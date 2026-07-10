@@ -14,6 +14,19 @@ if [ -n "$SSH_TUNNEL_HOST" ]; then
 
   echo "[tunnel] ${SUSER}@${SSH_TUNNEL_HOST}:${SPORT}  forward 127.0.0.1:${LPORT} -> ${RHOST}:${RPORT}"
 
+  # Диагностика сети: доступен ли исходящий SSH вообще (github) и наш сервер.
+  python - "$SSH_TUNNEL_HOST" "$SPORT" <<'PY'
+import socket, sys
+targets = [("github.com", 22, "github.com:22 (эталон)"),
+           (sys.argv[1], int(sys.argv[2]), f"{sys.argv[1]}:{sys.argv[2]} (наш сервер)")]
+for host, port, label in targets:
+    try:
+        socket.create_connection((host, port), timeout=8).close()
+        print(f"[probe] OK   {label}", flush=True)
+    except Exception as e:
+        print(f"[probe] FAIL {label} -> {type(e).__name__}: {e}", flush=True)
+PY
+
   # Фоновый цикл: держим туннель живым, при обрыве переподключаемся.
   # sshpass передаёт пароль при КАЖДОМ переподключении. -v даёт диагностику.
   (
