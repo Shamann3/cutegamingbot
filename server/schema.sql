@@ -238,6 +238,15 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS craft_count INT NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS harvest_notify BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE farm_plots ADD COLUMN IF NOT EXISTS harvest_notified BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Модерация. Эти колонки создаёт код бота (ban.py / mute.py), которого нет в
+-- контейнере сервера. Дублируем idempotent, иначе на «чистой» БД (managed на
+-- хостинге) rate_limit._check_user_status падает на отсутствующей колонке и
+-- отдаёт 503 на КАЖДЫЙ авторизованный запрос.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS banned BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMP;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_reason TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mute_until TIMESTAMPTZ;
+
 -- Подтянуть прошлые продажи из audit_events (если логи включались)
 UPDATE users u
 SET
