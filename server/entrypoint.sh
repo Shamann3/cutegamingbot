@@ -2,7 +2,7 @@
 # Точка входа контейнера. Если задан SSH_TUNNEL_HOST — перед запуском приложения
 # поднимаем постоянный SSH-туннель к серверу с базой (CuteHost) и держим его живым.
 # Приложение затем коннектится к 127.0.0.1:<LPORT>, туннель пробрасывает на Postgres.
-# Так порт Postgres НЕ нужно открывать наружу — наружу торчит только SSH.
+# Пароль передаётся через SSH_ASKPASS (в контейнере нет TTY, sshpass не работает).
 set -e
 
 if [ -n "$SSH_TUNNEL_HOST" ]; then
@@ -14,24 +14,18 @@ if [ -n "$SSH_TUNNEL_HOST" ]; then
 
   echo "[tunnel] ${SUSER}@${SSH_TUNNEL_HOST}:${SPORT}  forward 127.0.0.1:${LPORT} -> ${RHOST}:${RPORT}"
 
-  # Диагностика сети: доступен ли исходящий SSH вообще (github) и наш сервер.
-  python - "$SSH_TUNNEL_HOST" "$SPORT" <<'PY'
-import socket, sys
-targets = [("github.com", 22, "github.com:22 (эталон)"),
-           (sys.argv[1], int(sys.argv[2]), f"{sys.argv[1]}:{sys.argv[2]} (наш сервер)")]
-for host, port, label in targets:
-    try:
-        socket.create_connection((host, port), timeout=8).close()
-        print(f"[probe] OK   {label}", flush=True)
-    except Exception as e:
-        print(f"[probe] FAIL {label} -> {type(e).__name__}: {e}", flush=True)
-PY
+  # askpass-скрипт: отдаёт пароль из окружения без запроса в терминале.
+  ASKPASS=/tmp/ssh_askpass.sh
+  cat > "$ASKPASS" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$SSH_TUNNEL_PASSWORD"
+EOF
+  chmod +x "$ASKPASS"
 
   # Фоновый цикл: держим туннель живым, при обрыве переподключаемся.
-  # sshpass передаёт пароль при КАЖДОМ переподключении. -v даёт диагностику.
   (
     while true; do
-      sshpass -p "$SSH_TUNNEL_PASSWORD" ssh -v -N \
+      SSH_ASKPASS="$ASKPASS" SSH_ASKPASS_REQUIRE=force ssh -v -N \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         -o ServerAliveInterval=20 \
@@ -40,6 +34,7 @@ PY
         -o ConnectTimeout=15 \
         -o PreferredAuthentications=password \
         -o PubkeyAuthentication=no \
+        -o NumberOfPasswordPrompts=1 \
         -p "$SPORT" \
         -L "127.0.0.1:${LPORT}:${RHOST}:${RPORT}" \
         "${SUSER}@${SSH_TUNNEL_HOST}" 2>&1 | sed 's/^/[ssh] /'
