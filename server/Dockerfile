@@ -20,7 +20,7 @@ EXPOSE 8080
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 
-# ИСПРАВЛЕНО: Проверка здоровья теперь учитывает динамический порт PORT
+# ИСПРАВЛЕНО: теперь хелсчек проверяет динамический порт из переменной окружения
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD python -c "import urllib.request, os; port = os.environ.get('PORT', '8080'); urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=3)"
 
