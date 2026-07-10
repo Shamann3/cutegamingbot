@@ -62,7 +62,7 @@ services:
   - name: frontend
     environment_slug: node-js
     source_dir: /
-    build_command: npm ci && npm run build && npm --prefix admin ci && npm --prefix admin run build
+    build_command: npm ci && npm --prefix admin ci && npm run build
     run_command: npm start
     http_port: 8080
     routes:
