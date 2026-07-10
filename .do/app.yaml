@@ -22,9 +22,14 @@ services:
     health_check:
       http_path: /health
     routes:
+      # preserve_path_prefix: DO по умолчанию срезает префикс маршрута,
+      # тогда FastAPI получает /farm/state вместо /api/farm/state → 404.
       - path: /api
+        preserve_path_prefix: true
       - path: /admin/api
+        preserve_path_prefix: true
       - path: /health
+        preserve_path_prefix: true
     envs:
       - key: PRODUCTION
         value: "true"
