@@ -1,0 +1,13 @@
+# Только веб-сервер + база (тест фермы в браузере)
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+asyncpg==0.30.0
+python-dotenv==1.0.1
+pyotp==2.9.0
+qrcode[pil]==8.0
+aiohttp
+python-multipart
+tzdata
+
+# Farm bots (game + admin + support) — тот же venv, что и API
+aiogram==3.17.0

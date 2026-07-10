@@ -1,0 +1,12 @@
+# Cute Farm API (Railway)
+# Deploy this folder as a separate Railway service.
+# Set env: DB_*, BOT_TOKEN, WEBAPP_URL, FRONTEND_ORIGIN, PRODUCTION=true
+
+[phases.setup]
+nixPkgs = ["python312"]
+
+[phases.install]
+cmds = ["pip install -r requirements-server.txt"]
+
+[start]
+cmd = "python -m uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"

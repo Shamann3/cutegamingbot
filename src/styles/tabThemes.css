@@ -1,0 +1,686 @@
+/* === Общие переменные тем вкладок === */
+
+.tab-theme-farm {
+  --tab-accent: #6ee7b7;
+  --tab-accent-strong: #34d399;
+  --tab-accent-muted: rgba(110, 231, 183, 0.58);
+  --tab-accent-soft: rgba(52, 211, 153, 0.14);
+  --tab-accent-glow: rgba(52, 211, 153, 0.32);
+  --tab-surface: rgba(10, 28, 18, 0.96);
+  --tab-surface-alt: rgba(6, 18, 12, 0.94);
+  --tab-frame-border: rgba(52, 211, 153, 0.28);
+  --tab-title-color: #ecfdf5;
+  --tab-chip-border: rgba(52, 211, 153, 0.24);
+  --tab-balance-frame: linear-gradient(135deg, #bbf7d0 0%, #059669 35%, #6ee7b7 65%, #064e3b 100%);
+}
+
+.tab-theme-inventory {
+  --tab-accent: #f59e0b;
+  --tab-accent-strong: #d97706;
+  --tab-accent-muted: rgba(245, 158, 11, 0.62);
+  --tab-accent-soft: rgba(245, 158, 11, 0.14);
+  --tab-accent-glow: rgba(217, 119, 6, 0.3);
+  --tab-surface: rgba(28, 18, 10, 0.96);
+  --tab-surface-alt: rgba(18, 12, 8, 0.94);
+  --tab-frame-border: rgba(180, 110, 40, 0.34);
+  --tab-title-color: #fde68a;
+  --tab-chip-border: rgba(217, 119, 6, 0.28);
+  --tab-balance-frame: linear-gradient(135deg, #fde68a 0%, #b45309 35%, #f59e0b 65%, #451a03 100%);
+}
+
+.tab-theme-craft {
+  --tab-accent: #c4b5fd;
+  --tab-accent-strong: #a78bfa;
+  --tab-accent-muted: rgba(196, 181, 253, 0.62);
+  --tab-accent-soft: rgba(139, 92, 246, 0.16);
+  --tab-accent-glow: rgba(124, 58, 237, 0.34);
+  --tab-surface: rgba(18, 12, 36, 0.96);
+  --tab-surface-alt: rgba(12, 8, 28, 0.94);
+  --tab-frame-border: rgba(167, 139, 250, 0.32);
+  --tab-title-color: #ede9fe;
+  --tab-chip-border: rgba(139, 92, 246, 0.28);
+  --tab-balance-frame: linear-gradient(135deg, #ede9fe 0%, #6d28d9 35%, #a78bfa 65%, #312e81 100%);
+}
+
+.tab-theme-shop {
+  --tab-accent: #fbbf24;
+  --tab-accent-strong: #f59e0b;
+  --tab-accent-muted: rgba(251, 191, 36, 0.62);
+  --tab-accent-soft: rgba(251, 191, 36, 0.14);
+  --tab-accent-glow: rgba(251, 191, 36, 0.3);
+  --tab-surface: rgba(20, 16, 8, 0.96);
+  --tab-surface-alt: rgba(12, 10, 6, 0.94);
+  --tab-frame-border: rgba(212, 175, 55, 0.38);
+  --tab-title-color: #fef3c7;
+  --tab-chip-border: rgba(212, 175, 55, 0.3);
+  --tab-balance-frame: linear-gradient(135deg, #fff4c4 0%, #d4a72c 38%, #fbbf24 68%, #4a3018 100%);
+}
+
+.tab-theme-market {
+  --tab-accent: #d4a574;
+  --tab-accent-strong: #b87333;
+  --tab-accent-muted: rgba(212, 165, 116, 0.62);
+  --tab-accent-soft: rgba(184, 115, 51, 0.16);
+  --tab-accent-glow: rgba(184, 115, 51, 0.32);
+  --tab-surface: rgba(22, 14, 10, 0.96);
+  --tab-surface-alt: rgba(14, 10, 8, 0.94);
+  --tab-frame-border: rgba(184, 115, 51, 0.34);
+  --tab-title-color: #fde8d0;
+  --tab-chip-border: rgba(184, 115, 51, 0.28);
+  --tab-balance-frame: linear-gradient(135deg, #fde8d0 0%, #9a5f2a 35%, #cd9b5a 65%, #3d2314 100%);
+}
+
+.tab-theme-settings {
+  --tab-accent: #94a3b8;
+  --tab-accent-strong: #64748b;
+  --tab-accent-muted: rgba(148, 163, 184, 0.62);
+  --tab-accent-soft: rgba(100, 116, 139, 0.16);
+  --tab-accent-glow: rgba(100, 116, 139, 0.32);
+  --tab-surface: rgba(12, 16, 22, 0.96);
+  --tab-surface-alt: rgba(8, 12, 18, 0.94);
+  --tab-frame-border: rgba(148, 163, 184, 0.28);
+  --tab-title-color: #e2e8f0;
+  --tab-chip-border: rgba(100, 116, 139, 0.28);
+  --tab-balance-frame: linear-gradient(135deg, #e2e8f0 0%, #64748b 35%, #94a3b8 65%, #1e293b 100%);
+}
+
+.tab-theme-quests {
+  --tab-accent: #fb923c;
+  --tab-accent-strong: #f97316;
+  --tab-accent-muted: rgba(251, 146, 60, 0.62);
+  --tab-accent-soft: rgba(249, 115, 22, 0.16);
+  --tab-accent-glow: rgba(249, 115, 22, 0.32);
+  --tab-surface: rgba(24, 14, 8, 0.96);
+  --tab-surface-alt: rgba(16, 10, 6, 0.94);
+  --tab-frame-border: rgba(251, 146, 60, 0.32);
+  --tab-title-color: #ffedd5;
+  --tab-chip-border: rgba(249, 115, 22, 0.28);
+  --tab-balance-frame: linear-gradient(135deg, #ffedd5 0%, #c2410c 35%, #fb923c 65%, #431407 100%);
+}
+
+.tab-theme-chests {
+  --tab-accent: #fbbf24;
+  --tab-accent-strong: #f59e0b;
+  --tab-accent-muted: rgba(251, 191, 36, 0.62);
+  --tab-accent-soft: rgba(251, 191, 36, 0.14);
+  --tab-accent-glow: rgba(251, 191, 36, 0.3);
+  --tab-surface: rgba(24, 18, 6, 0.96);
+  --tab-surface-alt: rgba(14, 10, 4, 0.94);
+  --tab-frame-border: rgba(212, 175, 55, 0.34);
+  --tab-title-color: #fef3c7;
+  --tab-chip-border: rgba(212, 175, 55, 0.28);
+  --tab-balance-frame: linear-gradient(135deg, #fff4c4 0%, #d4a72c 38%, #fbbf24 68%, #4a3018 100%);
+}
+
+.tab-theme-profile {
+  --tab-accent: #67e8f9;
+  --tab-accent-strong: #22d3ee;
+  --tab-accent-muted: rgba(103, 232, 249, 0.62);
+  --tab-accent-soft: rgba(34, 211, 238, 0.14);
+  --tab-accent-glow: rgba(34, 211, 238, 0.32);
+  --tab-surface: rgba(6, 22, 32, 0.97);
+  --tab-surface-alt: rgba(4, 14, 22, 0.95);
+  --tab-frame-border: rgba(34, 211, 238, 0.28);
+  --tab-title-color: #ecfeff;
+  --tab-chip-border: rgba(34, 211, 238, 0.24);
+  --tab-balance-frame: linear-gradient(135deg, #a5f3fc 0%, #0891b2 35%, #67e8f9 65%, #083344 100%);
+}
+
+/* === Атмосфера фона === */
+
+.tab-atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.tab-atmosphere-base,
+.tab-atmosphere-glow,
+.tab-atmosphere-texture,
+.tab-atmosphere-vignette {
+  position: absolute;
+  inset: 0;
+}
+
+.tab-atmosphere--farm .tab-atmosphere-base {
+  background:
+    radial-gradient(ellipse 120% 70% at 50% -10%, rgba(52, 211, 153, 0.2) 0%, transparent 58%),
+    linear-gradient(180deg, rgba(6, 78, 59, 0.22) 0%, rgba(4, 20, 14, 0.38) 100%);
+}
+
+.tab-atmosphere--farm .tab-atmosphere-glow-a {
+  background: radial-gradient(circle at 12% 82%, rgba(74, 222, 128, 0.16) 0%, transparent 42%);
+}
+
+.tab-atmosphere--farm .tab-atmosphere-glow-b {
+  background: radial-gradient(circle at 88% 24%, rgba(134, 239, 172, 0.12) 0%, transparent 38%);
+}
+
+.tab-atmosphere--inventory .tab-atmosphere-base {
+  background:
+    radial-gradient(ellipse 90% 55% at 18% 100%, rgba(217, 119, 6, 0.22) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(40, 24, 8, 0.18) 0%, rgba(24, 14, 6, 0.42) 100%);
+}
+
+.tab-atmosphere--inventory .tab-atmosphere-glow-a {
+  background: radial-gradient(circle at 78% 18%, rgba(251, 191, 36, 0.14) 0%, transparent 40%);
+}
+
+.tab-atmosphere--inventory .tab-atmosphere-texture {
+  opacity: 0.35;
+  background-image: repeating-linear-gradient(
+    -12deg,
+    transparent 0,
+    transparent 18px,
+    rgba(120, 72, 24, 0.06) 18px,
+    rgba(120, 72, 24, 0.06) 19px
+  );
+}
+
+.tab-atmosphere--craft .tab-atmosphere-base {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(124, 58, 237, 0.24) 0%, transparent 62%),
+    linear-gradient(180deg, rgba(30, 18, 58, 0.28) 0%, rgba(10, 8, 24, 0.48) 100%);
+}
+
+.tab-atmosphere--craft .tab-atmosphere-glow-a {
+  background: radial-gradient(circle at 8% 42%, rgba(167, 139, 250, 0.18) 0%, transparent 44%);
+}
+
+.tab-atmosphere--craft .tab-atmosphere-glow-b {
+  background: radial-gradient(circle at 92% 68%, rgba(45, 212, 191, 0.1) 0%, transparent 36%);
+}
+
+.tab-atmosphere--craft .tab-atmosphere-texture {
+  opacity: 0.45;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(167, 139, 250, 0.08) 0%, transparent 24%),
+    radial-gradient(circle at 72% 58%, rgba(94, 234, 212, 0.06) 0%, transparent 20%),
+    radial-gradient(circle at 48% 82%, rgba(139, 92, 246, 0.07) 0%, transparent 18%);
+}
+
+.tab-atmosphere--shop .tab-atmosphere-base {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -8%, rgba(251, 191, 36, 0.26) 0%, transparent 58%),
+    linear-gradient(180deg, rgba(48, 32, 8, 0.2) 0%, rgba(16, 12, 6, 0.44) 100%);
+}
+
+.tab-atmosphere--shop .tab-atmosphere-glow-a {
+  background: radial-gradient(circle at 50% 8%, rgba(253, 224, 71, 0.2) 0%, transparent 48%);
+}
+
+.tab-atmosphere--shop .tab-atmosphere-texture {
+  opacity: 0.5;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent 40px,
+    rgba(251, 191, 36, 0.04) 40px,
+    rgba(251, 191, 36, 0.04) 41px
+  );
+}
+
+.tab-atmosphere--market .tab-atmosphere-base {
+  background:
+    radial-gradient(ellipse 110% 50% at 50% 100%, rgba(184, 115, 51, 0.2) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(28, 16, 10, 0.22) 0%, rgba(12, 8, 6, 0.46) 100%);
+}
+
+.tab-atmosphere--market .tab-atmosphere-glow-a {
+  background: radial-gradient(circle at 14% 22%, rgba(205, 155, 90, 0.14) 0%, transparent 40%);
+}
+
+.tab-atmosphere--market .tab-atmosphere-glow-b {
+  background: radial-gradient(circle at 86% 78%, rgba(154, 95, 42, 0.12) 0%, transparent 38%);
+}
+
+.tab-atmosphere--market .tab-atmosphere-texture {
+  opacity: 0.4;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0,
+    transparent 28px,
+    rgba(184, 115, 51, 0.05) 28px,
+    rgba(184, 115, 51, 0.05) 29px
+  );
+}
+
+.tab-atmosphere--settings .tab-atmosphere-base {
+  background:
+    radial-gradient(ellipse 110% 50% at 50% 100%, rgba(100, 116, 139, 0.18) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.24) 0%, rgba(8, 12, 20, 0.48) 100%);
+}
+
+.tab-atmosphere--settings .tab-atmosphere-glow-a {
+  background: radial-gradient(circle at 18% 24%, rgba(148, 163, 184, 0.12) 0%, transparent 42%);
+}
+
+.tab-atmosphere--settings .tab-atmosphere-glow-b {
+  background: radial-gradient(circle at 82% 76%, rgba(100, 116, 139, 0.1) 0%, transparent 38%);
+}
+
+.tab-atmosphere--settings .tab-atmosphere-texture {
+  opacity: 0.35;
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0,
+    transparent 28px,
+    rgba(148, 163, 184, 0.035) 28px,
+    rgba(148, 163, 184, 0.035) 29px
+  );
+}
+
+.tab-atmosphere--quests .tab-atmosphere-base {
+  background:
+    radial-gradient(ellipse 120% 70% at 50% -10%, rgba(251, 146, 60, 0.22) 0%, transparent 58%),
+    linear-gradient(180deg, rgba(124, 45, 18, 0.24) 0%, rgba(28, 12, 6, 0.42) 100%);
+}
+
+.tab-atmosphere--quests .tab-atmosphere-glow-a {
+  background: radial-gradient(circle at 14% 78%, rgba(253, 186, 116, 0.18) 0%, transparent 42%);
+}
+
+.tab-atmosphere--quests .tab-atmosphere-glow-b {
+  background: radial-gradient(circle at 86% 22%, rgba(249, 115, 22, 0.14) 0%, transparent 38%);
+}
+
+.tab-atmosphere--quests .tab-atmosphere-texture {
+  opacity: 0.42;
+  background-image: repeating-linear-gradient(
+    120deg,
+    transparent 0,
+    transparent 28px,
+    rgba(251, 146, 60, 0.045) 28px,
+    rgba(251, 146, 60, 0.045) 29px
+  );
+}
+
+.tab-atmosphere--profile .tab-atmosphere-base {
+  background:
+    radial-gradient(ellipse 110% 60% at 50% -5%, rgba(34, 211, 238, 0.18) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(6, 42, 58, 0.25) 0%, rgba(2, 14, 22, 0.4) 100%);
+}
+
+.tab-atmosphere--profile .tab-atmosphere-glow-a {
+  background: radial-gradient(circle at 15% 80%, rgba(103, 232, 249, 0.12) 0%, transparent 40%);
+}
+
+.tab-atmosphere--profile .tab-atmosphere-glow-b {
+  background: radial-gradient(circle at 85% 20%, rgba(34, 211, 238, 0.1) 0%, transparent 38%);
+}
+
+.tab-atmosphere--profile .tab-atmosphere-texture {
+  opacity: 0.35;
+  background-image: repeating-linear-gradient(
+    60deg,
+    transparent 0,
+    transparent 30px,
+    rgba(103, 232, 249, 0.04) 30px,
+    rgba(103, 232, 249, 0.04) 31px
+  );
+}
+
+.tab-atmosphere--chests .tab-atmosphere-base {
+  background:
+    radial-gradient(ellipse 110% 60% at 50% -8%, rgba(251, 191, 36, 0.24) 0%, transparent 58%),
+    linear-gradient(180deg, rgba(58, 40, 8, 0.24) 0%, rgba(18, 12, 4, 0.44) 100%);
+}
+
+.tab-atmosphere--chests .tab-atmosphere-glow-a {
+  background: radial-gradient(circle at 16% 80%, rgba(253, 224, 71, 0.18) 0%, transparent 42%);
+}
+
+.tab-atmosphere--chests .tab-atmosphere-glow-b {
+  background: radial-gradient(circle at 84% 22%, rgba(230, 180, 34, 0.14) 0%, transparent 38%);
+}
+
+.tab-atmosphere--chests .tab-atmosphere-texture {
+  opacity: 0.4;
+  background-image: repeating-linear-gradient(
+    -60deg,
+    transparent 0,
+    transparent 30px,
+    rgba(212, 175, 55, 0.045) 30px,
+    rgba(212, 175, 55, 0.045) 31px
+  );
+}
+
+.tab-atmosphere-vignette {
+  background: radial-gradient(ellipse at center, transparent 42%, rgba(2, 6, 4, 0.42) 100%);
+}
+
+.cute-turbo-mode .tab-atmosphere-texture {
+  display: none;
+}
+
+/* === Заголовки вкладок === */
+
+.tab-theme-inventory .inventory-hero-eyebrow,
+.tab-theme-shop .shop-exchange-eyebrow,
+.tab-theme-market .market-hero-eyebrow,
+.tab-theme-craft .craft-module-eyebrow,
+.tab-theme-quests .quests-hero-eyebrow,
+.tab-theme-settings .settings-hero-eyebrow,
+.tab-theme-chests .chest-hero-eyebrow {
+  color: var(--tab-accent-muted);
+}
+
+.tab-theme-inventory .inventory-hero-title,
+.tab-theme-shop .shop-exchange-title,
+.tab-theme-market .market-hero-title,
+.tab-theme-craft .craft-module-title,
+.tab-theme-settings .settings-hero-title,
+.tab-theme-chests .chest-hero-title {
+  color: var(--tab-title-color);
+  text-shadow: 0 2px 18px var(--tab-accent-glow);
+}
+
+.tab-theme-farm .farm-title-serif {
+  text-shadow: 0 2px 20px var(--tab-accent-glow);
+}
+
+/* === Рамки VineFrame === */
+
+.tab-theme-farm .farm-vine-frame-inner,
+.tab-theme-inventory .farm-vine-frame-inner,
+.tab-theme-craft .farm-vine-frame-inner,
+.tab-theme-shop .farm-vine-frame-inner,
+.tab-theme-market .farm-vine-frame-inner,
+.tab-theme-settings .farm-vine-frame-inner,
+.tab-theme-chests .farm-vine-frame-inner {
+  border-color: var(--tab-frame-border);
+  background: linear-gradient(180deg, var(--tab-surface) 0%, var(--tab-surface-alt) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 8px 24px rgba(0, 0, 0, 0.28),
+    0 0 20px var(--tab-accent-soft);
+}
+
+/* === Баланс КУТ внутри вкладки === */
+
+.tab-theme-farm .kut-balance-frame,
+.tab-theme-inventory .kut-balance-frame,
+.tab-theme-craft .kut-balance-frame,
+.tab-theme-shop .kut-balance-frame,
+.tab-theme-market .kut-balance-frame {
+  background: var(--tab-balance-frame);
+}
+
+.tab-theme-farm .kut-balance-inner,
+.tab-theme-inventory .kut-balance-inner,
+.tab-theme-craft .kut-balance-inner,
+.tab-theme-shop .kut-balance-inner,
+.tab-theme-market .kut-balance-inner {
+  background:
+    radial-gradient(circle at 18% 50%, var(--tab-accent-soft) 0%, transparent 52%),
+    linear-gradient(180deg, var(--tab-surface) 0%, var(--tab-surface-alt) 100%);
+  border-color: var(--tab-frame-border);
+}
+
+.tab-theme-farm .kut-donate-btn,
+.tab-theme-inventory .kut-donate-btn,
+.tab-theme-craft .kut-donate-btn,
+.tab-theme-shop .kut-donate-btn,
+.tab-theme-market .kut-donate-btn {
+  background: var(--tab-balance-frame);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.34),
+    0 0 20px var(--tab-accent-glow);
+}
+
+/* === Рюкзак === */
+
+.tab-theme-inventory .inventory-summary-chip,
+.tab-theme-inventory .inventory-search-input,
+.tab-theme-inventory .inventory-filter-chip {
+  border-color: var(--tab-chip-border);
+}
+
+.tab-theme-inventory .inventory-filter-chip-active {
+  border-color: var(--tab-accent-strong);
+  background: var(--tab-surface);
+  box-shadow: 0 0 0 1px var(--tab-accent-soft);
+}
+
+.tab-theme-inventory .inventory-filter-count {
+  background: var(--tab-accent-soft);
+  color: var(--tab-title-color);
+}
+
+.tab-theme-inventory .inventory-tile {
+  border-color: var(--tab-chip-border);
+  background: linear-gradient(180deg, var(--tab-surface) 0%, var(--tab-surface-alt) 100%);
+}
+
+.tab-theme-inventory .inventory-tile:active {
+  border-color: var(--tab-accent-strong);
+  box-shadow: 0 0 14px var(--tab-accent-glow);
+}
+
+.tab-theme-inventory .inventory-tile-meta {
+  color: var(--tab-accent-muted);
+}
+
+/* === Крафт === */
+
+.tab-theme-craft .craft-inventory-item,
+.tab-theme-craft .craft-slot-card,
+.tab-theme-craft .craft-book-item {
+  border-color: var(--tab-chip-border);
+}
+
+.tab-theme-craft .craft-inventory-item--picked,
+.tab-theme-craft .craft-slot-card--filled,
+.tab-theme-craft .craft-book-item--match {
+  border-color: var(--tab-accent-strong);
+  box-shadow: 0 0 0 1px var(--tab-accent-soft), 0 4px 14px var(--tab-accent-glow);
+}
+
+.tab-theme-craft .craft-book-header,
+.tab-theme-craft .craft-section-label {
+  color: var(--tab-accent-muted);
+}
+
+.tab-theme-craft .craft-action-btn {
+  background: linear-gradient(180deg, #ede9fe 0%, var(--tab-accent-strong) 55%, #5b21b6 100%);
+  border-color: rgba(237, 233, 254, 0.5);
+  color: #1e1033;
+}
+
+/* === Магазин === */
+
+.tab-theme-shop .shop-search-input,
+.tab-theme-shop .shop-tool-btn,
+.tab-theme-shop .shop-nav-chip {
+  border-color: var(--tab-chip-border);
+}
+
+.tab-theme-shop .shop-nav-chip-active,
+.tab-theme-shop .shop-tool-btn-active {
+  border-color: var(--tab-accent-strong);
+  background: var(--tab-surface);
+  box-shadow: 0 0 0 1px var(--tab-accent-soft);
+}
+
+.tab-theme-shop .shop-shelf-tile {
+  border-color: var(--tab-chip-border);
+}
+
+.tab-theme-shop .shop-shelf-tile-sale .shop-shelf-surface {
+  box-shadow: inset 0 0 18px var(--tab-accent-soft);
+}
+
+/* === Биржа === */
+
+.tab-theme-market .market-sell-card {
+  border-color: var(--tab-frame-border);
+  background:
+    radial-gradient(circle at 0% 50%, var(--tab-accent-soft) 0%, transparent 55%),
+    linear-gradient(135deg, var(--tab-surface) 0%, var(--tab-surface-alt) 100%);
+}
+
+.tab-theme-market .market-sell-card-glow {
+  background: radial-gradient(circle, var(--tab-accent-glow) 0%, transparent 70%);
+}
+
+.tab-theme-market .market-sell-card-btn {
+  border-color: var(--tab-accent-strong);
+  background: linear-gradient(180deg, #fde8d0 0%, var(--tab-accent-strong) 55%, #6b3f1f 100%);
+  color: #2a1408;
+}
+
+.tab-theme-market .market-shelf-tile {
+  border-color: var(--tab-chip-border);
+}
+
+.tab-theme-market .market-shelf-tile-mine {
+  border-color: var(--tab-accent-strong);
+  box-shadow: 0 0 12px var(--tab-accent-soft);
+}
+
+/* === Ферма === */
+
+.tab-theme-farm .farm-stat-chip-inner {
+  border-color: var(--tab-frame-border);
+  box-shadow: 0 0 12px var(--tab-accent-soft);
+}
+
+/* === Сундуки === */
+
+.tab-theme-chests .farm-stat-bar-inner {
+  border-color: var(--tab-frame-border);
+  box-shadow: 0 0 12px var(--tab-accent-soft);
+}
+
+.tab-theme-chests .chest-subtab-active {
+  border-color: var(--tab-accent-strong);
+  background: var(--tab-surface);
+  box-shadow: 0 0 0 1px var(--tab-accent-soft);
+}
+
+.tab-theme-market .shop-search-input,
+.tab-theme-market .shop-tool-btn,
+.tab-theme-market .shop-nav-chip {
+  border-color: var(--tab-chip-border);
+}
+
+.tab-theme-market .shop-nav-chip-active,
+.tab-theme-market .shop-tool-btn-active {
+  border-color: var(--tab-accent-strong);
+  background: var(--tab-surface);
+  box-shadow: 0 0 0 1px var(--tab-accent-soft);
+}
+
+.tab-theme-farm .farm-soil-inner {
+  box-shadow:
+    inset 0 0 24px rgba(0, 0, 0, 0.45),
+    0 0 14px var(--tab-accent-soft);
+}
+
+/* === Нижняя панель вкладок === */
+
+.app-shell[data-active-tab='farm'] .app-tab-bar-inner {
+  background: linear-gradient(135deg, #bbf7d0 0%, #059669 35%, #6ee7b7 65%, #064e3b 100%);
+}
+
+.app-shell[data-active-tab='inventory'] .app-tab-bar-inner {
+  background: linear-gradient(135deg, #fde68a 0%, #b45309 35%, #f59e0b 65%, #451a03 100%);
+}
+
+.app-shell[data-active-tab='craft'] .app-tab-bar-inner {
+  background: linear-gradient(135deg, #ede9fe 0%, #6d28d9 35%, #a78bfa 65%, #312e81 100%);
+}
+
+.app-shell[data-active-tab='quests'] .app-tab-bar-inner {
+  background: linear-gradient(135deg, #ffedd5 0%, #c2410c 35%, #fb923c 65%, #431407 100%);
+}
+
+.app-shell[data-active-tab='shop'] .app-tab-bar-inner {
+  background: linear-gradient(135deg, #fff4c4 0%, #d4a72c 38%, #fbbf24 68%, #4a3018 100%);
+}
+
+.app-shell[data-active-tab='market'] .app-tab-bar-inner {
+  background: linear-gradient(135deg, #fde8d0 0%, #9a5f2a 35%, #cd9b5a 65%, #3d2314 100%);
+}
+
+.app-shell[data-active-tab='settings'] .app-tab-bar-inner {
+  background: linear-gradient(135deg, #e2e8f0 0%, #64748b 35%, #94a3b8 65%, #1e293b 100%);
+}
+
+.app-shell[data-active-tab='chests'] .app-tab-bar-inner {
+  background: linear-gradient(135deg, #fff4c4 0%, #d4a72c 38%, #fbbf24 68%, #4a3018 100%);
+}
+
+.app-shell[data-active-tab='farm'] .app-tab-btn-active {
+  color: #ecfdf5;
+  box-shadow: inset 0 0 20px rgba(52, 211, 153, 0.18), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.app-shell[data-active-tab='inventory'] .app-tab-btn-active {
+  color: #fffbeb;
+  box-shadow: inset 0 0 20px rgba(245, 158, 11, 0.2), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.app-shell[data-active-tab='craft'] .app-tab-btn-active {
+  color: #f5f3ff;
+  box-shadow: inset 0 0 20px rgba(167, 139, 250, 0.22), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.app-shell[data-active-tab='quests'] .app-tab-btn-active {
+  color: #ffedd5;
+  box-shadow: inset 0 0 20px rgba(251, 146, 60, 0.22), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.app-shell[data-active-tab='shop'] .app-tab-btn-active {
+  color: #fffbeb;
+  box-shadow: inset 0 0 20px rgba(251, 191, 36, 0.2), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.app-shell[data-active-tab='market'] .app-tab-btn-active {
+  color: #fde8d0;
+  box-shadow: inset 0 0 20px rgba(184, 115, 51, 0.22), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.app-shell[data-active-tab='settings'] .app-tab-btn-active {
+  color: #e2e8f0;
+  box-shadow: inset 0 0 20px rgba(148, 163, 184, 0.2), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.app-shell[data-active-tab='chests'] .app-tab-btn-active {
+  color: #fffbeb;
+  box-shadow: inset 0 0 20px rgba(251, 191, 36, 0.2), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.app-tab-btn[data-tab='farm'].app-tab-btn-active .app-tab-icon {
+  filter: drop-shadow(0 0 6px rgba(52, 211, 153, 0.55));
+}
+
+.app-tab-btn[data-tab='inventory'].app-tab-btn-active .app-tab-icon {
+  filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.55));
+}
+
+.app-tab-btn[data-tab='craft'].app-tab-btn-active .app-tab-icon {
+  filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.55));
+}
+
+.app-tab-btn[data-tab='quests'].app-tab-btn-active .app-tab-icon {
+  filter: drop-shadow(0 0 6px rgba(251, 146, 60, 0.55));
+}
+
+.app-tab-btn[data-tab='shop'].app-tab-btn-active .app-tab-icon {
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.55));
+}
+
+.app-tab-btn[data-tab='market'].app-tab-btn-active .app-tab-icon {
+  filter: drop-shadow(0 0 6px rgba(205, 155, 90, 0.55));
+}
+
+.app-tab-btn[data-tab='settings'].app-tab-btn-active .app-tab-icon {
+  filter: drop-shadow(0 0 6px rgba(148, 163, 184, 0.55));
+}
+
+.app-tab-btn[data-tab='chests'].app-tab-btn-active .app-tab-icon {
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.55));
+}

@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      # Docker = только тестовая БД. Основная cutebase — PostgreSQL 17 локально.
+      POSTGRES_USER: ${DB_USER_TEST:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD_TEST:-admin}
+      POSTGRES_DB: ${DB_NAME_TEST:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER_TEST:-postgres} -d ${DB_NAME_TEST:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./server/.env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_SSL: "false"
+      PRODUCTION: "true"
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  bots:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["python", "bots_runner.py"]
+    env_file:
+      - ./server/.env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_SSL: "false"
+      PRODUCTION: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+volumes:
+  postgres_data:

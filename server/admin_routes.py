@@ -1,0 +1,3904 @@
+from datetime import date
+import logging
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field, field_validator
+
+from config import ADMIN_TOTP_VALID_WINDOW, owner_user_ids
+from admin_auth import (
+    build_otpauth_uri,
+    create_setup_token,
+    generate_totp_secret,
+    get_admin_user_id,
+    get_any_telegram_user_id,
+    issue_admin_token,
+    require_admin_session,
+    totp_qr_data_url,
+    totp_code_now,
+    normalize_totp_code,
+    normalize_totp_secret,
+    classify_admin_key,
+    validate_login_key,
+    verify_admin_token,
+    verify_totp,
+    force_reauth,
+    store_session_fingerprint,
+    _fresh_login_key,
+    _get_client_ip,
+    _key_matches,
+)
+from admin_db import (
+    accept_rules,
+    approve_application,
+    add_penalty_to_current_salary,
+    add_salary_payment,
+    add_shift,
+    add_staff_note,
+    add_strike,
+    approve_salary,
+    cancel_salary,
+    change_member_role,
+    cleanup_expired_pending,
+    count_pending_salary_approvals,
+    count_unpaid_salaries,
+    claim_kut_salary,
+    create_invite_token,
+    create_pending_payout,
+    delete_application_question,
+    delete_pending_payout,
+    delete_shift,
+    delete_staff_note,
+    find_valid_invite_token,
+    get_leaderboard,
+    get_member_card,
+    get_member_stats,
+    get_pending_payout,
+    list_application_questions,
+    list_invite_tokens,
+    list_payments,
+    list_pending_payouts,
+    list_shifts,
+    list_staff_notes,
+    list_strikes,
+    list_unpaid,
+    hard_delete_invite_token,
+    remove_strike,
+    revoke_invite_token,
+    set_availability,
+    upsert_application_question,
+    confirm_admin_registration,
+    create_admin_account,
+    create_application,
+    create_complaint,
+    create_salary_appeal,
+    current_week_start,
+    delete_pending_registration,
+    list_role_history,
+    set_member_curator,
+    get_admin_account,
+    get_admin_totp_secret,
+    get_dashboard_stats,
+    get_latest_application,
+    get_pending_registration,
+    get_pending_registration_by_token,
+    update_pending_totp_secret,
+    get_salary_owner,
+    list_applications,
+    list_complaints,
+    list_complaints_for_target,
+    list_my_salaries,
+    list_open_appeals,
+    list_salaries_for_week,
+    list_staff_actions,
+    list_staff_members,
+    log_staff_action,
+    pay_salary,
+    reject_application,
+    resolve_complaint,
+    resolve_salary_appeal,
+    delete_suspended_member,
+    save_pending_registration,
+    submit_complaint_evidence,
+    suspend_member,
+    take_complaint,
+    unsuspend_member,
+    upsert_salary,
+)
+from admin_permissions import (
+    ROLE_JUNIOR,
+    ROLE_LABELS,
+    ROLE_MODERATOR,
+    ROLE_OWNER,
+    ROLE_SENIOR,
+    get_admin_account_security,
+    require_active_admin,
+    require_admin_permission,
+)
+from config import ADMIN_BOT_TOKEN, ADMIN_ENABLED, ADMIN_JWT_SECRET, ADMIN_SESSION_MINUTES, INTERNAL_API_KEY
+from admin_appeals import (
+    get_appeal_messages, list_appeals, resolve_appeal,
+    send_appeal_message, take_appeal,
+)
+from admin_moderation import (
+    delete_log, get_player_history, get_moderator_stats, get_proof_url,
+    get_recent_logs, list_moderation_logs, unban_player,
+)
+from staff_notify import notify_owners, notify_staff
+from admin_session_cache import get_admin_session_minutes_cached
+from presence import get_day_analytics, get_online_summary, get_range_analytics
+from system_settings import get_maintenance_enabled, set_maintenance_enabled
+from admin_users import (
+    admin_adjust_balance,
+    admin_adjust_item,
+    admin_reset_onboarding,
+    admin_set_banned,
+    delete_player_note,
+    export_player_profile,
+    get_player_ban_history,
+    get_player_inventory,
+    get_player_quest_info,
+    get_user_admin_profile,
+    get_user_audit_history,
+    list_player_notes,
+    search_users,
+    upsert_player_note,
+)
+from admin_economy import (
+    bulk_grant_kut,
+    get_economy_overview,
+    get_economy_stats,
+    list_dex_items,
+    update_dex_item,
+)
+from economy_settings import get_economy_settings_payload, update_economy_settings
+from admin_market import (
+    admin_cancel_listing,
+    get_market_overview,
+    list_active_listings,
+)
+from admin_farm import (
+    get_farm_overview,
+    get_user_farm_admin,
+    global_farm_restart,
+    reset_user_plots,
+)
+from admin_quests import create_quest, delete_quest, update_quest
+from admin_content import (
+    create_craft_recipe,
+    create_crop,
+    create_dex_item,
+    delete_craft_recipe,
+    delete_crop,
+    delete_dex_item,
+    get_content_overview,
+    get_dex_item_full,
+    list_dex_items_admin,
+    update_craft_recipe,
+    update_crop,
+    update_dex_item_meta,
+)
+from farm_settings import get_farm_settings_payload, update_farm_settings
+from system_settings_admin import get_all_settings, get_settings_history, update_settings
+from admin_broadcast import (
+    cancel_scheduled_broadcast,
+    list_scheduled_broadcasts,
+)
+from quest_registry import all_quests
+from admin_broadcast import (
+    cancel_broadcast,
+    count_recipients,
+    delete_template,
+    get_broadcast_overview,
+    get_broadcast_run,
+    list_broadcast_history,
+    preview_broadcast,
+    save_template,
+    start_broadcast,
+)
+from admin_logs import get_logs_overview, list_audit_logs, list_system_logs
+from admin_accounts import get_account_profile, list_recent_accounts, search_accounts
+from admin_analytics import (
+    get_craft_analytics,
+    get_farm_analytics,
+    get_market_analytics,
+    get_quest_analytics,
+    get_retention_analytics,
+)
+from admin_audit import list_admin_audit, list_admin_action_types, log_admin_action
+from ip_ban import add_ip_ban, list_ip_bans, remove_ip_ban
+
+router = APIRouter(prefix="/admin/api", tags=["admin"])
+logger = logging.getLogger(__name__)
+
+
+def _parse_dt(value: str | None):
+    """Parse ISO 8601 string → timezone-aware datetime or None."""
+    if not value:
+        return None
+    from datetime import datetime, timezone
+    s = value.strip()
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Неверный формат даты: {s!r}")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+class RegisterStartBody(BaseModel):
+    inviteKey: str = Field(min_length=1, max_length=128)
+    model_config = {"extra": "forbid"}
+
+
+class RegisterConfirmBody(BaseModel):
+    setupToken: str = Field(min_length=16, max_length=128)
+    totp: str = Field(min_length=1, max_length=16)
+    model_config = {"extra": "forbid"}
+
+    @field_validator("totp")
+    @classmethod
+    def normalize_totp(cls, value: str) -> str:
+        from admin_auth import normalize_totp_code
+
+        code = normalize_totp_code(value)
+        if len(code) != 6:
+            raise ValueError("Код должен содержать 6 цифр")
+        return code
+
+
+class LoginBody(BaseModel):
+    loginKey: str = Field(min_length=1, max_length=128)
+    totp: str = Field(min_length=1, max_length=16)
+    model_config = {"extra": "forbid"}
+
+    @field_validator("totp")
+    @classmethod
+    def normalize_totp(cls, value: str) -> str:
+        from admin_auth import normalize_totp_code
+
+        code = normalize_totp_code(value)
+        if len(code) != 6:
+            raise ValueError("Код должен содержать 6 цифр")
+        return code
+
+
+class LoginKeyBody(BaseModel):
+    loginKey: str = Field(min_length=1, max_length=128)
+    model_config = {"extra": "forbid"}
+
+
+PAYOUT_TYPES = {"crypto", "kut", "stars", "other"}
+
+
+class ApplicationBody(BaseModel):
+    answers: dict[str, str] = Field(default_factory=dict)
+    payoutType: str = Field(min_length=1, max_length=32)
+    payoutDetails: str = Field(default="", max_length=300)
+    model_config = {"extra": "forbid"}
+
+
+ASSIGNABLE_ROLES = {ROLE_MODERATOR, ROLE_JUNIOR, ROLE_SENIOR}
+
+
+class ApproveApplicationBody(BaseModel):
+    role: str = Field(min_length=1, max_length=32)
+    model_config = {"extra": "forbid"}
+
+
+class RejectApplicationBody(BaseModel):
+    reason: str = Field(default="", max_length=300)
+    model_config = {"extra": "forbid"}
+
+
+SALARY_PAYOUT_TYPES = {"crypto", "kut", "stars", "other"}
+
+class SetSalaryBody(BaseModel):
+    userId: int = Field(ge=1)
+    baseAmount: int = Field(ge=0, le=100_000_000)
+    coefficient: float = Field(default=1.0, ge=0, le=10)
+    bonus: int = Field(default=0, ge=0, le=100_000_000)
+    bonusReason: str = Field(default="", max_length=300)
+    penalty: int = Field(default=0, ge=0, le=100_000_000)
+    penaltyReason: str = Field(default="", max_length=300)
+    note: str = Field(default="", max_length=300)
+    payoutType: str = Field(default="other", max_length=32)
+    model_config = {"extra": "forbid"}
+
+
+class PaySalaryBody(BaseModel):
+    amount: int | None = Field(default=None, ge=1, le=100_000_000)  # None = весь остаток
+    method: str | None = Field(default=None, max_length=32)
+    kind: str = Field(default="payment", pattern=r"^(payment|advance)$")
+    txid: str = Field(default="", max_length=300)
+    proof: str = Field(default="", max_length=600)
+    model_config = {"extra": "forbid"}
+
+
+ASSIGNABLE_STAFF_ROLES = {"moderator", "junior_admin", "senior_admin"}
+
+
+class ChangeRoleBody(BaseModel):
+    role: str = Field(min_length=1, max_length=32)
+    reason: str = Field(default="", max_length=300)
+    model_config = {"extra": "forbid"}
+
+
+class SetCuratorBody(BaseModel):
+    curatorId: int | None = Field(default=None)
+    model_config = {"extra": "forbid"}
+
+
+class AppealBody(BaseModel):
+    reason: str = Field(min_length=1, max_length=600)
+    model_config = {"extra": "forbid"}
+
+
+class ResolveAppealBody(BaseModel):
+    resolution: str = Field(default="", max_length=600)
+    model_config = {"extra": "forbid"}
+
+
+class MaintenanceBody(BaseModel):
+    enabled: bool
+    model_config = {"extra": "forbid"}
+
+
+class UserBalanceBody(BaseModel):
+    delta: int = Field(ge=-1_000_000_000, le=1_000_000_000)
+    note: str = Field(default="", max_length=256)
+    model_config = {"extra": "forbid"}
+
+
+class UserItemBody(BaseModel):
+    itemId: str = Field(min_length=1, max_length=128)
+    delta: int = Field(ge=-1_000_000, le=1_000_000)
+    note: str = Field(default="", max_length=256)
+    model_config = {"extra": "forbid"}
+
+
+class UserBanBody(BaseModel):
+    banned: bool
+    reason: str = Field(default="", max_length=512)
+    evidence: str = Field(default="", max_length=2000)
+    proofMediaId: str = Field(default="", max_length=256)
+    model_config = {"extra": "forbid"}
+
+
+class ComplaintBody(BaseModel):
+    targetAdminId: int = Field(ge=1)
+    subject: str = Field(default="", max_length=300)
+    reason: str = Field(min_length=1, max_length=2000)
+    model_config = {"extra": "forbid"}
+
+
+class ComplaintEvidenceBody(BaseModel):
+    evidence: str = Field(min_length=1, max_length=2000)
+    model_config = {"extra": "forbid"}
+
+
+class ComplaintResolveBody(BaseModel):
+    resolution: str = Field(default="", max_length=2000)
+    penalty: int = Field(default=0, ge=0, le=100_000_000)  # авто-штраф к зарплате
+    strike: bool = False  # выдать страйк
+    model_config = {"extra": "forbid"}
+
+
+class StaffNoteBody(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    model_config = {"extra": "forbid"}
+
+
+class StrikeBody(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+    model_config = {"extra": "forbid"}
+
+
+class AvailabilityBody(BaseModel):
+    availability: str = Field(pattern=r"^(active|vacation|afk)$")
+    until: str | None = Field(default=None, max_length=40)
+    model_config = {"extra": "forbid"}
+
+
+class ShiftBody(BaseModel):
+    userId: int = Field(ge=1)
+    startsAt: str = Field(min_length=4, max_length=40)
+    endsAt: str = Field(min_length=4, max_length=40)
+    note: str = Field(default="", max_length=300)
+    model_config = {"extra": "forbid"}
+
+
+class QuestionBody(BaseModel):
+    id: int | None = None
+    key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_]+$")
+    label: str = Field(min_length=1, max_length=300)
+    type: str = Field(default="text", pattern=r"^(text|textarea)$")
+    required: bool = True
+    sortOrder: int = Field(default=0, ge=0, le=999)
+    enabled: bool = True
+    model_config = {"extra": "forbid"}
+
+
+class EconomySettingsBody(BaseModel):
+    defaultBalance: int | None = Field(default=None, ge=0, le=10_000_000)
+    plotPriceStep: int | None = Field(default=None, ge=0, le=1_000_000)
+    clearCost: int | None = Field(default=None, ge=0, le=1_000_000)
+    model_config = {"extra": "forbid"}
+
+
+class DexItemPatchBody(BaseModel):
+    price: int | None = Field(default=None, ge=0, le=99_999_999)
+    dis: int | None = Field(default=None, ge=0, le=99_999_999)
+    remains: int | None = Field(default=None, ge=0, le=99_999_999)
+    model_config = {"extra": "forbid"}
+
+
+class BulkGrantBody(BaseModel):
+    delta: int = Field(ge=-1_000_000, le=1_000_000)
+    target: str = Field(default="all", pattern=r"^(all|online)$")
+    note: str = Field(default="", max_length=256)
+    model_config = {"extra": "forbid"}
+
+
+class MarketCancelBody(BaseModel):
+    reason: str = Field(default="", max_length=256)
+    model_config = {"extra": "forbid"}
+
+
+class FarmSettingsBody(BaseModel):
+    treeGrowSeconds: int | None = Field(default=None, ge=30, le=86_400)
+    tobaccoGrowSeconds: int | None = Field(default=None, ge=30, le=86_400)
+    maxPlots: int | None = Field(default=None, ge=1, le=100)
+    plotPriceStep: int | None = Field(default=None, ge=1, le=1_000_000)
+    waterIntervalSeconds: int | None = Field(default=None, ge=30, le=3600)
+    wiltGraceSeconds: int | None = Field(default=None, ge=10, le=3600)
+    waterCostPerUse: int | None = Field(default=None, ge=0, le=10)
+    model_config = {"extra": "forbid"}
+
+
+class HarvestDropBody(BaseModel):
+    itemId: str = Field(min_length=1, max_length=128)
+    minAmount: int = Field(default=1, ge=1, le=999)
+    maxAmount: int = Field(default=1, ge=1, le=999)
+    chancePercent: int = Field(default=100, ge=1, le=100)
+    model_config = {"extra": "forbid"}
+
+
+class CropCreateBody(BaseModel):
+    key: str = Field(min_length=2, max_length=50)
+    displayName: str = Field(min_length=1, max_length=120)
+    seedItemId: str = Field(min_length=1, max_length=128)
+    growSeconds: int = Field(ge=30, le=86_400)
+    harvestToolItemId: str | None = Field(default=None, max_length=128)
+    harvestToolCost: int = Field(default=1, ge=1, le=99)
+    waterItemId: str | None = Field(default=None, max_length=128)
+    waterCostPerUse: int | None = Field(default=None, ge=1, le=99)
+    spriteKey: str = Field(default="generic", max_length=32)
+    enabled: bool = True
+    harvestDrops: list[HarvestDropBody] = Field(min_length=1, max_length=20)
+    model_config = {"extra": "forbid"}
+
+
+class CropUpdateBody(BaseModel):
+    displayName: str | None = Field(default=None, max_length=120)
+    seedItemId: str | None = Field(default=None, max_length=128)
+    growSeconds: int | None = Field(default=None, ge=30, le=86_400)
+    harvestToolItemId: str | None = Field(default=None, max_length=128)
+    harvestToolCost: int | None = Field(default=None, ge=1, le=99)
+    waterItemId: str | None = Field(default=None, max_length=128)
+    waterCostPerUse: int | None = Field(default=None, ge=1, le=99)
+    spriteKey: str | None = Field(default=None, max_length=32)
+    enabled: bool | None = None
+    harvestDrops: list[HarvestDropBody] | None = Field(default=None, max_length=20)
+    clearHarvestTool: bool = False
+    clearWaterItem: bool = False
+    model_config = {"extra": "forbid"}
+
+
+class DexItemCreateBody(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    emoji: str = Field(default="📦", max_length=16)
+    name1: str = Field(default="", max_length=120)
+    price: int = Field(default=0, ge=0, le=99_999_999)
+    dis: int = Field(default=0, ge=0, le=99_999_999)
+    remains: int = Field(default=0, ge=0, le=99_999_999)
+    sorting: str | None = Field(default=None, max_length=64)
+    bio: str = Field(default="", max_length=1000)
+    use: str = Field(default="", max_length=500)
+    bonus: str = Field(default="", max_length=500)
+    craft: str = Field(default="", max_length=500)
+    model_config = {"extra": "forbid"}
+
+
+class DexItemMetaBody(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    emoji: str | None = Field(default=None, max_length=16)
+    name1: str | None = Field(default=None, max_length=120)
+    price: int | None = Field(default=None, ge=0, le=99_999_999)
+    dis: int | None = Field(default=None, ge=0, le=99_999_999)
+    remains: int | None = Field(default=None, ge=0, le=99_999_999)
+    sorting: str | None = Field(default=None, max_length=32)
+    bio: str | None = Field(default=None, max_length=500)
+    model_config = {"extra": "forbid"}
+
+
+class CraftRecipeCreateBody(BaseModel):
+    key: str = Field(min_length=2, max_length=50)
+    displayName: str = Field(default="", max_length=120)
+    resultItemId: str = Field(min_length=1, max_length=128)
+    ingredientAId: str = Field(min_length=1, max_length=128)
+    ingredientBId: str = Field(min_length=1, max_length=128)
+    successPercent: int = Field(default=100, ge=1, le=100)
+    enabled: bool = True
+    remains: int = Field(default=0, ge=0)
+    resultQty: int = Field(default=1, ge=1)
+    model_config = {"extra": "forbid"}
+
+
+class CraftRecipeUpdateBody(BaseModel):
+    displayName: str | None = Field(default=None, max_length=120)
+    resultItemId: str | None = Field(default=None, max_length=128)
+    ingredientAId: str | None = Field(default=None, max_length=128)
+    ingredientBId: str | None = Field(default=None, max_length=128)
+    successPercent: int | None = Field(default=None, ge=1, le=100)
+    enabled: bool | None = None
+    remains: int | None = Field(default=None, ge=0)
+    resultQty: int | None = Field(default=None, ge=1)
+    model_config = {"extra": "forbid"}
+
+
+class QuestRewardBody(BaseModel):
+    kind: str = Field(min_length=3, max_length=8)
+    amount: int = Field(default=1, ge=1, le=999_999)
+    itemId: str | None = Field(default=None, max_length=128)
+    model_config = {"extra": "forbid"}
+
+
+class QuestCreateBody(BaseModel):
+    key: str = Field(min_length=2, max_length=50)
+    period: str = Field(min_length=3, max_length=16)
+    action: str = Field(min_length=3, max_length=32)
+    target: int = Field(default=1, ge=1, le=9999)
+    title: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=500)
+    emoji: str = Field(default="📋", max_length=16)
+    enabled: bool = True
+    targetScope: str = Field(default="any", max_length=16)
+    targetCropKey: str | None = Field(default=None, max_length=64)
+    targetItemId: str | None = Field(default=None, max_length=128)
+    rewards: list[QuestRewardBody] = Field(default_factory=list, max_length=10)
+    # Scheduling
+    activeFrom: str | None = Field(default=None, max_length=64)
+    activeUntil: str | None = Field(default=None, max_length=64)
+    recurrence: str | None = Field(default=None, max_length=16)
+    recurrenceEnd: str | None = Field(default=None, max_length=64)
+    model_config = {"extra": "forbid"}
+
+
+class QuestUpdateBody(BaseModel):
+    period: str | None = Field(default=None, max_length=16)
+    action: str | None = Field(default=None, max_length=32)
+    target: int | None = Field(default=None, ge=1, le=9999)
+    title: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+    emoji: str | None = Field(default=None, max_length=16)
+    enabled: bool | None = None
+    targetScope: str | None = Field(default=None, max_length=16)
+    targetCropKey: str | None = Field(default=None, max_length=64)
+    targetItemId: str | None = Field(default=None, max_length=128)
+    rewards: list[QuestRewardBody] | None = Field(default=None, max_length=10)
+    # Scheduling (use empty string "" to clear a field)
+    activeFrom: str | None = Field(default=None, max_length=64)
+    activeUntil: str | None = Field(default=None, max_length=64)
+    recurrence: str | None = Field(default=None, max_length=16)
+    recurrenceEnd: str | None = Field(default=None, max_length=64)
+    clearSchedule: bool = False  # set to True to wipe all scheduling fields
+    model_config = {"extra": "forbid"}
+
+
+class BroadcastFilterBody(BaseModel):
+    excludeBanned: bool = True
+    minBalance: int | None = Field(default=None, ge=0, le=1_000_000_000)
+    maxBalance: int | None = Field(default=None, ge=0, le=1_000_000_000)
+    hasPlots: bool | None = None
+    username: str | None = Field(default=None, max_length=64)
+    userIds: list[int] | None = Field(default=None, max_length=500)
+    model_config = {"extra": "forbid"}
+
+
+class BroadcastChannelsBody(BaseModel):
+    webapp: bool = True
+    telegram: bool = True
+    model_config = {"extra": "forbid"}
+
+
+class BroadcastPreviewBody(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(default="", max_length=500)
+    detail: str = Field(default="", max_length=300)
+    telegramText: str = Field(default="", max_length=2000)
+    sampleUserId: int | None = Field(default=None, ge=1)
+    model_config = {"extra": "forbid"}
+
+
+class BroadcastCountBody(BaseModel):
+    audience: str = Field(default="all", pattern=r"^(all|online|filtered)$")
+    filter: BroadcastFilterBody | None = None
+    model_config = {"extra": "forbid"}
+
+
+class BroadcastSendBody(BaseModel):
+    audience: str = Field(default="all", pattern=r"^(all|online|filtered)$")
+    filter: BroadcastFilterBody | None = None
+    channels: BroadcastChannelsBody = Field(default_factory=BroadcastChannelsBody)
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(default="", max_length=500)
+    detail: str = Field(default="", max_length=300)
+    telegramText: str = Field(default="", max_length=2000)
+    templateKey: str | None = Field(default=None, max_length=64)
+    scheduledAt: str | None = Field(default=None, max_length=64)
+    label: str = Field(default="", max_length=120)
+    model_config = {"extra": "forbid"}
+
+
+class BroadcastTemplateBody(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(default="", max_length=500)
+    detail: str = Field(default="", max_length=300)
+    telegramText: str = Field(default="", max_length=2000)
+    templateId: int | None = Field(default=None, ge=1)
+    model_config = {"extra": "forbid"}
+
+
+@router.get("/health")
+async def admin_health():
+    login_key = _fresh_login_key()
+    return {
+        "ok": True,
+        "loginKeyConfigured": bool(login_key),
+        "loginKeyLength": len(login_key),
+    }
+
+
+@router.get("/auth/status")
+async def admin_auth_status(
+    request: Request,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    account = await get_admin_account(user_id)
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
+    verified = verify_admin_token(token) if token else None
+
+    application = await get_latest_application(user_id) if account else None
+
+    return {
+        "registered": account is not None,
+        "authenticated": verified is not None and verified[0] == user_id,
+        "userId": user_id,
+        "role": account["role"] if account else None,
+        "status": account["status"] if account else None,
+        "applicationStatus": application["status"] if application else None,
+        "isOwner": user_id in owner_user_ids(),
+    }
+
+
+@router.post("/auth/register/start")
+async def admin_register_start(
+    body: RegisterStartBody,
+    request: Request,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    from admin_auth_rate_limit import enforce_admin_auth_rate_limit
+
+    enforce_admin_auth_rate_limit(request)
+    await cleanup_expired_pending()
+
+    # Проверяем сначала env-ключи, потом DB-инвайты
+    key_type = classify_admin_key(body.inviteKey)
+    db_invite_token: str | None = None
+    if key_type is None:
+        invite_record = await find_valid_invite_token(body.inviteKey)
+        if invite_record is None:
+            raise HTTPException(status_code=403, detail="Неверный ключ доступа")
+        key_type = "staff"
+        db_invite_token = body.inviteKey
+
+    if await get_admin_account(user_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Аккаунт уже зарегистрирован. Войдите во вкладке «Вход».",
+        )
+
+    tg_user = getattr(request.state, "telegram_user", {}) or {}
+    account_name = tg_user.get("username") or tg_user.get("first_name") or str(user_id)
+
+    secret = generate_totp_secret()
+    setup_token = create_setup_token()
+    # Метка в приложении-аутентификаторе: «CuteEpsilon [имя] [хвост ключа]».
+    tail = secret[-4:]
+    label_name = f"{account_name} [{tail}]"
+    otpauth_uri = build_otpauth_uri(secret, account_name=label_name, issuer="CuteEpsilon")
+    qr_data_url = totp_qr_data_url(otpauth_uri)
+
+    await save_pending_registration(setup_token, user_id, secret, key_type, db_invite_token)
+
+    return {
+        "setupToken": setup_token,
+        "qrDataUrl": qr_data_url,
+        "totpSecret": secret,
+        "accountName": account_name,
+        "authenticatorLabel": f"CuteEpsilon {account_name} [{tail}]",
+        "expiresIn": 900,
+        "issuer": "CuteEpsilon",
+        "keyType": key_type,
+    }
+
+
+@router.post("/auth/register/reveal-code")
+async def admin_register_reveal_code(
+    body: RegisterConfirmBody,
+    request: Request,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    """Шаг «Получить подтверждающий код» при регистрации.
+
+    Возвращает актуальный код сервера, вычисленный от секрета в БД (как
+    «SERVER EXPECTED CODE NOW» в check-register-code.bat). Этот код гарантированно
+    проходит финальную проверку. Поле synced показывает, совпал ли код из
+    приложения (индикатор синхронизации, вход не блокирует).
+    """
+    from admin_auth_rate_limit import enforce_admin_auth_rate_limit
+
+    enforce_admin_auth_rate_limit(request)
+
+    pending = await get_pending_registration(body.setupToken, user_id)
+    if not pending:
+        raise HTTPException(status_code=400, detail="Сессия регистрации истекла. Начните заново.")
+
+    pending_secret = normalize_totp_secret(pending["totp_secret"])
+    if not pending_secret:
+        raise HTTPException(status_code=400, detail="Сессия регистрации повреждена. Начните заново.")
+
+    # Код считаем от секрета в БД — та же логика, что «SERVER EXPECTED CODE NOW»
+    # в check-register-code.bat. Он гарантированно пройдёт финальную проверку,
+    # т.к. сверяется с тем же секретом на том же сервере.
+    code = totp_code_now(pending_secret)
+    if not code:
+        raise HTTPException(status_code=400, detail="Не удалось получить код. Начните регистрацию заново.")
+
+    # Совпал ли код из приложения (широкое окно ±15 мин) — только индикатор синхронизации.
+    synced = verify_totp(pending_secret, body.totp, valid_window=max(ADMIN_TOTP_VALID_WINDOW, 30))
+    return {"ok": True, "code": code, "synced": synced}
+
+
+@router.post("/auth/register/confirm")
+async def admin_register_confirm(
+    body: RegisterConfirmBody,
+    request: Request,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    from admin_auth_rate_limit import enforce_admin_auth_rate_limit
+
+    enforce_admin_auth_rate_limit(request)
+
+    pending = await get_pending_registration(body.setupToken, user_id)
+    if not pending:
+        other = await get_pending_registration_by_token(body.setupToken)
+        if other and int(other["user_id"]) != int(user_id):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Сессия регистрации открыта с другого Telegram-аккаунта. "
+                    "Завершите её в том же аккаунте, с которого начали."
+                ),
+            )
+        raise HTTPException(status_code=400, detail="Сессия регистрации истекла. Начните заново.")
+
+    if await get_admin_account(user_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Аккаунт уже зарегистрирован. Войдите во вкладке «Вход».",
+        )
+
+    pending_secret = normalize_totp_secret(pending["totp_secret"])
+    if not pending_secret or not verify_totp(pending_secret, body.totp, valid_window=max(ADMIN_TOTP_VALID_WINDOW, 30)):
+        raise HTTPException(status_code=403, detail="Неверный код подтверждения. Начните заново.")
+
+    key_type = pending.get("key_type") or "staff"
+    if key_type == "owner":
+        role, status = "owner", "active"
+    else:
+        role, status = "applicant", "pending"
+
+    tg_user = getattr(request.state, "telegram_user", {}) or {}
+    ok = await confirm_admin_registration(
+        body.setupToken,
+        user_id,
+        pending_secret,
+        username=tg_user.get("username"),
+        first_name=tg_user.get("first_name"),
+        role=role,
+        status=status,
+        invite_token=pending.get("invite_token"),
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=409,
+            detail="Инвайт уже использован другим пользователем",
+        )
+
+    return {
+        "ok": True,
+        "registered": True,
+        "keyType": key_type,
+        "requiresApplication": key_type == "staff",
+    }
+
+
+@router.get("/auth/application-questions")
+async def admin_application_questions(_user_id: int = Depends(get_any_telegram_user_id)):
+    """Вопросы анкеты для формы регистрации кандидата."""
+    return {"items": await list_application_questions(enabled_only=True)}
+
+
+@router.post("/auth/application")
+async def admin_submit_application(
+    body: ApplicationBody,
+    request: Request,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    from admin_auth_rate_limit import enforce_admin_auth_rate_limit
+
+    enforce_admin_auth_rate_limit(request)
+
+    account = await get_admin_account(user_id)
+    if not account:
+        raise HTTPException(status_code=403, detail="Сначала пройдите регистрацию")
+    if account["status"] != "pending" or account["role"] != "applicant":
+        raise HTTPException(status_code=409, detail="Заявка недоступна для этого аккаунта")
+
+    payout_type = body.payoutType.strip().lower()
+    if payout_type not in PAYOUT_TYPES:
+        raise HTTPException(status_code=400, detail="Неверный способ выплаты")
+
+    # Чистим анкету: только непустые строковые ответы, до 2000 символов
+    answers = {
+        str(k)[:64]: str(v).strip()[:2000]
+        for k, v in (body.answers or {}).items()
+        if str(v).strip()
+    }
+
+    tg_user = getattr(request.state, "telegram_user", {}) or {}
+    created = await create_application(
+        user_id,
+        username=tg_user.get("username") or account.get("username"),
+        first_name=tg_user.get("first_name") or account.get("first_name"),
+        answers=answers,
+        payout_type=payout_type,
+        payout_details=body.payoutDetails.strip() or None,
+    )
+    if not created:
+        raise HTTPException(status_code=409, detail="Заявка уже отправлена и ожидает рассмотрения")
+
+    who = tg_user.get("username") or tg_user.get("first_name") or str(user_id)
+    notify_owners(f"<tg-emoji emoji-id='5400289821253990206'>📝</tg-emoji> <b>Новая заявка во вкладке Staff в админ панели Эпсилона, от {who} (ID {user_id}).</b>\n<blockquote><b>Виво-Эпсилон</b></blockquote>")
+
+    return {"ok": True, "submitted": True}
+
+
+async def _resolve_login_key_ok(user_id: int, account: dict, login_key: str) -> bool:
+    """env-ключ владельца ИЛИ персональный login_key пользователя."""
+    from db import db as _db
+    personal_key = account.get("login_key") or ""
+    if not personal_key:
+        personal_key = await _db.pool.fetchval(
+            "SELECT token FROM admin_invite_tokens WHERE used_by = $1 LIMIT 1",
+            user_id,
+        ) or ""
+        if personal_key:
+            await _db.pool.execute(
+                "UPDATE admin_accounts SET login_key = $1 WHERE user_id = $2",
+                personal_key, user_id,
+            )
+    return validate_login_key(login_key) or (
+        bool(personal_key) and _key_matches(login_key, personal_key)
+    )
+
+
+def _login_status_guard(account: dict) -> None:
+    status = account.get("status")
+    if status != "active" or account.get("role") == "suspended":
+        if status == "pending":
+            raise HTTPException(
+                status_code=403,
+                detail="Аккаунт ещё не активирован. Ожидайте решения владельца",
+            )
+        if status == "rejected":
+            raise HTTPException(status_code=403, detail="Заявка отклонена")
+        raise HTTPException(status_code=403, detail="Доступ к панели закрыт")
+
+
+@router.post("/auth/login/verify-key")
+async def admin_login_verify_key(
+    body: LoginKeyBody,
+    request: Request,
+    user_id: int = Depends(get_admin_user_id),
+):
+    """Проверка только ключа входа (без кода). Позволяет фронту показать поле
+    для кода лишь при верном ключе — как автопроверка ключа при регистрации."""
+    from admin_auth_rate_limit import enforce_admin_auth_rate_limit
+
+    enforce_admin_auth_rate_limit(request)
+
+    account = await get_admin_account(user_id)
+    if not account:
+        raise HTTPException(status_code=403, detail="Сначала пройдите регистрацию")
+
+    if not await _resolve_login_key_ok(user_id, account, body.loginKey):
+        raise HTTPException(status_code=403, detail="Неверный ключ входа")
+
+    _login_status_guard(account)
+
+    totp_secret = normalize_totp_secret(await get_admin_totp_secret(user_id) or "")
+    if not totp_secret:
+        raise HTTPException(status_code=403, detail="TOTP не настроен. Пройдите регистрацию заново.")
+
+    return {"ok": True}
+
+
+@router.post("/auth/login/reveal-code")
+async def admin_login_reveal_code(
+    body: LoginBody,
+    request: Request,
+    user_id: int = Depends(get_admin_user_id),
+):
+    """Шаг «Получить подтверждающий код» при входе. Проверяет ключ + код из
+    Authenticator широким окном (чинит рассинхрон часов) и возвращает актуальный
+    код сервера для завершения входа."""
+    from admin_auth_rate_limit import enforce_admin_auth_rate_limit
+
+    enforce_admin_auth_rate_limit(request)
+
+    account = await get_admin_account(user_id)
+    if not account:
+        raise HTTPException(status_code=403, detail="Сначала пройдите регистрацию")
+
+    if not await _resolve_login_key_ok(user_id, account, body.loginKey):
+        raise HTTPException(status_code=403, detail="Неверный ключ входа")
+
+    _login_status_guard(account)
+
+    totp_secret = normalize_totp_secret(await get_admin_totp_secret(user_id) or "")
+    if not totp_secret:
+        raise HTTPException(status_code=403, detail="TOTP не настроен. Пройдите регистрацию заново.")
+
+    # Код считаем от секрета в БД — как «SERVER EXPECTED CODE NOW» в батнике.
+    code = totp_code_now(totp_secret)
+    if not code:
+        raise HTTPException(status_code=400, detail="Не удалось получить код. Попробуйте снова.")
+
+    synced = verify_totp(totp_secret, body.totp, valid_window=max(ADMIN_TOTP_VALID_WINDOW, 30))
+    return {"ok": True, "code": code, "synced": synced}
+
+
+@router.post("/auth/login")
+async def admin_login(
+    body: LoginBody,
+    request: Request,
+    user_id: int = Depends(get_admin_user_id),
+):
+    from admin_auth_rate_limit import enforce_admin_auth_rate_limit
+
+    enforce_admin_auth_rate_limit(request)
+
+    account = await get_admin_account(user_id)
+    if not account:
+        raise HTTPException(status_code=403, detail="Сначала пройдите регистрацию")
+
+    if not await _resolve_login_key_ok(user_id, account, body.loginKey):
+        raise HTTPException(status_code=403, detail="Неверный ключ входа")
+
+    _login_status_guard(account)
+
+    totp_secret = await get_admin_totp_secret(user_id)
+    if not totp_secret or not verify_totp(totp_secret, body.totp, valid_window=max(ADMIN_TOTP_VALID_WINDOW, 30)):
+        raise HTTPException(status_code=403, detail="Неверный код из Google Authenticator")
+
+    token, exp = issue_admin_token(user_id)
+    await store_session_fingerprint(user_id, request)
+    await log_admin_action(
+        user_id, "login",
+        target_type="session",
+        target_label="Вход в панель",
+        ip=_get_client_ip(request),
+    )
+    return {
+        "ok": True,
+        "token": token,
+        "expiresAt": exp,
+        "sessionMinutes": get_admin_session_minutes_cached(),
+        "authenticated": True,
+    }
+
+
+@router.post("/auth/refresh")
+async def admin_refresh_session(admin_id: int = Depends(require_admin_session)):
+    token, exp = issue_admin_token(admin_id)
+    return {
+        "ok": True,
+        "token": token,
+        "expiresAt": exp,
+        "sessionMinutes": get_admin_session_minutes_cached(),
+    }
+
+
+@router.get("/auth/me")
+async def admin_me(user_id: int = Depends(require_active_admin)):
+    """Текущий админ: роль, статус, права — для фильтрации навигации фронта."""
+    account = await get_admin_account_security(user_id)
+    if not account:
+        raise HTTPException(status_code=403, detail="Админ-аккаунт не найден")
+    return account
+
+
+@router.post("/staff/accept-rules")
+async def staff_accept_rules(
+    request: Request,
+    user_id: int = Depends(require_active_admin),
+):
+    """Принятие правил при первом входе. Идемпотентно."""
+    changed = await accept_rules(user_id)
+    if changed:
+        await log_admin_action(
+            user_id, "rules_accept",
+            target_type="session",
+            target_label="Принял правила",
+            ip=_get_client_ip(request),
+        )
+    account = await get_admin_account_security(user_id)
+    return {
+        "ok": True,
+        "rulesAcceptedAt": account["rulesAcceptedAt"] if account else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Staff: заявки и сотрудники (owner / senior)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/staff/applications")
+async def staff_list_applications(
+    status: str = Query("pending"),
+    _user_id: int = Depends(require_admin_permission("review_applications")),
+):
+    if status not in {"pending", "approved", "rejected"}:
+        raise HTTPException(status_code=400, detail="Неверный статус")
+    return {"items": await list_applications(status)}
+
+
+@router.post("/staff/applications/{application_id}/approve")
+async def staff_approve_application(
+    application_id: int,
+    body: ApproveApplicationBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("assign_roles")),
+):
+    role = body.role.strip()
+    if role not in ASSIGNABLE_ROLES:
+        raise HTTPException(status_code=400, detail="Недопустимая роль")
+
+    result = await approve_application(application_id, role, user_id)
+    if not result:
+        raise HTTPException(status_code=409, detail="Заявка не найдена или уже рассмотрена")
+
+    await log_admin_action(
+        user_id, "staff_approve",
+        target_type="staff",
+        target_id=str(result["userId"]),
+        target_label=ROLE_LABELS.get(role, role),
+        details={"role": role, "applicationId": application_id},
+        ip=_get_client_ip(request),
+    )
+    notify_staff(
+        result["userId"],
+        f"<tg-emoji emoji-id='5208540237524911208'>✅</tg-emoji> <b>Ваша заявка в состав сотрудников Эпсилона одобрена! Вы повышены до роли : {ROLE_LABELS.get(role, role)}. </b>\n<blockquote><b>Виво-Эпсилон</b></blockquote>"
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/staff/applications/{application_id}/reject")
+async def staff_reject_application(
+    application_id: int,
+    body: RejectApplicationBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("review_applications")),
+):
+    result = await reject_application(application_id, body.reason.strip(), user_id)
+    if not result:
+        raise HTTPException(status_code=409, detail="Заявка не найдена или уже рассмотрена")
+
+    await log_admin_action(
+        user_id, "staff_reject",
+        target_type="staff",
+        target_id=str(result["userId"]),
+        target_label="Заявка отклонена",
+        details={"reason": body.reason.strip(), "applicationId": application_id},
+        ip=_get_client_ip(request),
+    )
+    reason_txt = body.reason.strip()
+    notify_staff(
+        result["userId"],
+        "❌ Ваша заявка отклонена."
+        + (f" Причина: {reason_txt}" if reason_txt else "")
+        + " Вы можете подать заявку заново.",
+    )
+    return {"ok": True, **result}
+
+
+@router.get("/staff/members")
+async def staff_list_members(
+    _user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    members = await list_staff_members()
+    for m in members:
+        m["roleLabel"] = ROLE_LABELS.get(m["role"], m["role"])
+    return {"items": members}
+
+
+@router.post("/staff/members/{member_id}/suspend")
+async def staff_suspend_member(
+    member_id: int,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    if member_id == user_id:
+        raise HTTPException(status_code=400, detail="Нельзя отстранить самого себя")
+
+    ok = await suspend_member(member_id, user_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Сотрудник не найден или это владелец")
+
+    await log_admin_action(
+        user_id, "staff_suspend",
+        target_type="staff",
+        target_id=str(member_id),
+        target_label="Отстранён",
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+@router.post("/staff/members/{member_id}/unsuspend")
+async def staff_unsuspend_member(
+    member_id: int,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    ok = await unsuspend_member(member_id, user_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Сотрудник не найден или не отстранён")
+
+    await log_admin_action(
+        user_id, "staff_unsuspend",
+        target_type="staff",
+        target_id=str(member_id),
+        target_label="Возвращён к работе",
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+@router.delete("/staff/members/{member_id}")
+async def staff_delete_member(
+    member_id: int,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("assign_roles")),
+):
+    if member_id == user_id:
+        raise HTTPException(status_code=400, detail="Нельзя удалить самого себя")
+    ok = await delete_suspended_member(member_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Сотрудник не найден или не отстранён")
+    await log_admin_action(
+        user_id, "staff_delete",
+        target_type="staff",
+        target_id=str(member_id),
+        target_label="Аккаунт удалён",
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+@router.post("/staff/members/{member_id}/role")
+async def staff_change_role(
+    member_id: int,
+    body: ChangeRoleBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("assign_roles")),
+):
+    role = body.role.strip()
+    if role not in ASSIGNABLE_STAFF_ROLES:
+        raise HTTPException(status_code=400, detail="Недопустимая роль")
+    if member_id == user_id:
+        raise HTTPException(status_code=400, detail="Нельзя менять свою роль")
+
+    result = await change_member_role(member_id, role, user_id, body.reason.strip())
+    if not result:
+        raise HTTPException(status_code=409, detail="Сотрудник не найден, это владелец или роль не изменилась")
+
+    await log_admin_action(
+        user_id, "staff_role_change",
+        target_type="staff", target_id=str(member_id),
+        target_label=f"{ROLE_LABELS.get(result['oldRole'], result['oldRole'])} → {ROLE_LABELS.get(role, role)}",
+        details={"oldRole": result["oldRole"], "newRole": role, "reason": body.reason.strip()},
+        ip=_get_client_ip(request),
+    )
+    notify_staff(
+        member_id,
+        f"<tg-emoji emoji-id='5454074580010295588'>🔄</tg-emoji> <b>Ваша должность изменена : {ROLE_LABELS.get(result['oldRole'], result['oldRole'])} → </b>"
+        f"<b>{ROLE_LABELS.get(role, role)}.</b>"
+        + (f" <b>Причина : {body.reason.strip()}</b>" if body.reason.strip() else "") + (f"<blockquote><b>Виво-Эпсилон</b></blockquote>"),
+
+    )
+    return {"ok": True, **result}
+
+
+@router.get("/staff/members/{member_id}/history")
+async def staff_role_history(
+    member_id: int,
+    _user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    return {"items": await list_role_history(member_id)}
+
+
+@router.post("/staff/members/{member_id}/curator")
+async def staff_set_curator(
+    member_id: int,
+    body: SetCuratorBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    curator_id = body.curatorId
+    if curator_id is not None:
+        if curator_id == member_id:
+            raise HTTPException(status_code=400, detail="Сотрудник не может быть своим куратором")
+        curator = await get_admin_account(curator_id)
+        if not curator or curator.get("role") not in ("senior_admin", "owner"):
+            raise HTTPException(status_code=400, detail="Куратором может быть только старший или владелец")
+
+    ok = await set_member_curator(member_id, curator_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+
+    await log_admin_action(
+        user_id, "staff_curator_set",
+        target_type="staff", target_id=str(member_id),
+        details={"curatorId": curator_id},
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Staff: зарплаты и апелляции
+# ---------------------------------------------------------------------------
+
+
+@router.get("/staff/salaries")
+async def staff_list_salaries(
+    _user_id: int = Depends(require_admin_permission("set_salary")),
+):
+    week_start = current_week_start()
+    return {
+        "weekStart": week_start.isoformat(),
+        "items": await list_salaries_for_week(week_start),
+    }
+
+
+@router.post("/staff/salaries")
+async def staff_set_salary(
+    body: SetSalaryBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("set_salary")),
+):
+    setter = await get_admin_account_security(user_id)
+    setter_role = setter["role"] if setter else None
+
+    target = await get_admin_account(body.userId)
+    if not target or target.get("status") != "active":
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    target_role = target.get("role")
+
+    # senior ставит только модераторам/младшим; owner — кому угодно из стаффа
+    if setter_role == ROLE_OWNER:
+        status = "approved"
+    elif setter_role == ROLE_SENIOR:
+        if target_role not in (ROLE_MODERATOR, ROLE_JUNIOR):
+            raise HTTPException(status_code=403, detail="Старший не может ставить эту зарплату")
+        status = "pending_approval"
+    else:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+    week_start = current_week_start()
+    payout_type = body.payoutType if body.payoutType in SALARY_PAYOUT_TYPES else "other"
+    salary_id = await upsert_salary(
+        body.userId, week_start,
+        base=body.baseAmount,
+        coefficient=body.coefficient,
+        bonus=body.bonus,
+        bonus_reason=body.bonusReason.strip(),
+        penalty=body.penalty,
+        penalty_reason=body.penaltyReason.strip(),
+        note=body.note.strip(),
+        setter_id=user_id,
+        status=status,
+        payout_type=payout_type,
+    )
+    if salary_id is None:
+        raise HTTPException(status_code=409, detail="Зарплата за неделю уже выплачена")
+
+    from admin_db import compute_salary_total
+    total = compute_salary_total(body.baseAmount, body.coefficient, body.bonus, body.penalty)
+
+    await log_admin_action(
+        user_id, "salary_set",
+        target_type="staff",
+        target_id=str(body.userId),
+        target_label=f"Зарплата {total}",
+        details={
+            "base": body.baseAmount, "coefficient": body.coefficient,
+            "bonus": body.bonus, "penalty": body.penalty, "total": total,
+            "status": status, "week": week_start.isoformat(),
+        },
+        ip=_get_client_ip(request),
+    )
+    status_txt = "ожидает одобрения" if status == "pending_approval" else "одобрена"
+    notify_staff(
+        body.userId,
+        f"<tg-emoji emoji-id='4958926882994127612'>💰</tg-emoji> <b>Вам выставлена зарплата на эту неделю: {total} ({status_txt}).</b>"
+        f"<b>Расчёт : ставка {body.baseAmount} × {body.coefficient} + бонус {body.bonus} − штраф {body.penalty}. </b>"
+        f"<b>Если не согласны, можно подать апелляцию в панели.</b>"
+        f"\n<blockquote><b>Виво-Эпсилон</b></blockquote>",
+    )
+    return {"ok": True, "salaryId": salary_id, "status": status, "total": total}
+
+
+@router.post("/staff/salaries/{salary_id}/approve")
+async def staff_approve_salary(
+    salary_id: int,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("approve_salary")),
+):
+    ok = await approve_salary(salary_id, user_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Начисление не найдено или уже одобрено")
+    await log_admin_action(
+        user_id, "salary_approve",
+        target_type="salary",
+        target_id=str(salary_id),
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+def _needs_cosign(amount: int, method: str | None) -> bool:
+    """Двойное подтверждение: kut ≥ 800, прочие способы ≥ 300."""
+    if (method or "") == "kut":
+        return amount >= 800
+    return amount >= 300
+
+
+@router.post("/staff/salaries/{salary_id}/pay")
+async def staff_pay_salary(
+    salary_id: int,
+    body: PaySalaryBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    from admin_db import get_salary_full
+
+    ctx = await get_salary_full(salary_id)
+    if not ctx or ctx["status"] not in ("approved", "partially_paid"):
+        raise HTTPException(status_code=409, detail="Начисление не одобрено или уже выплачено")
+    remaining = max(0, ctx["amount"] - ctx["paidAmount"])
+    method = (body.method.strip() if body.method else None) or ctx["payoutType"]
+    pay_amount = min(body.amount if body.amount is not None else remaining, remaining)
+
+    # Крупные суммы — требуют со-подтверждения второго владельца
+    if _needs_cosign(pay_amount, method):
+        payout_id = await create_pending_payout(
+            salary_id, ctx["userId"], pay_amount, method, body.kind,
+            body.txid.strip(), body.proof.strip(), user_id,
+        )
+        from staff_notify import notify_owners
+        notify_owners(
+            f"<tg-emoji emoji-id='5870972873450984431'>🔐</tg-emoji> <b>Требуется со-подтверждение выплаты : {pay_amount} ({method or '—'}). </b>"
+            f"<b>Откройте «Реестр → На подтверждении».</b>\n<blockquote><b>Виво-Эпсилон</b></blockquote>",
+            exclude=user_id,
+        )
+        await log_admin_action(
+            user_id, "salary_pay_request",
+            target_type="salary", target_id=str(salary_id),
+            details={"amount": pay_amount}, ip=_get_client_ip(request),
+        )
+        return {"ok": True, "pending": True, "payoutId": payout_id}
+
+    result = await add_salary_payment(
+        salary_id, user_id, pay_amount,
+        method=method,
+        kind=body.kind,
+        txid=body.txid.strip(),
+        proof=body.proof.strip(),
+    )
+    if not result:
+        raise HTTPException(status_code=409, detail="Начисление не одобрено или уже выплачено")
+    await log_admin_action(
+        user_id, "salary_pay",
+        target_type="salary",
+        target_id=str(salary_id),
+        details={"amount": result["amount"], "kind": body.kind, "txid": body.txid.strip()},
+        ip=_get_client_ip(request),
+    )
+    txid_txt = f" TXID: {body.txid.strip()}" if body.txid.strip() else ""
+    if result["status"] == "paid":
+        notify_staff(int(result["userId"]), f"<tg-emoji emoji-id='5208540237524911208'>✅</tg-emoji> <b>Ваша зарплата за неделю полностью выплачена. {txid_txt}</b>")
+    else:
+        notify_staff(
+            int(result["userId"]),
+            f"<tg-emoji emoji-id='5472030678633684592'>💸</tg-emoji> <b>Вам {'выдан аванс' if body.kind == 'advance' else 'частично выплачена зарплата'} : </b>"
+            f"<b>{result['amount']}. Остаток : {result['remaining']}.{txid_txt}</b>\n<blockquote><b>Виво-Эпсилон</b></blockquote>",
+        )
+    return {"ok": True, **result}
+
+
+@router.post("/staff/salaries/{salary_id}/cancel")
+async def staff_cancel_salary(
+    salary_id: int,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("set_salary")),
+):
+    ok = await cancel_salary(salary_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Начисление не найдено или уже выплачено")
+    await log_admin_action(
+        user_id, "salary_cancel",
+        target_type="salary",
+        target_id=str(salary_id),
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+@router.get("/staff/my-salary")
+async def staff_my_salary(user_id: int = Depends(require_active_admin)):
+    return {"items": await list_my_salaries(user_id)}
+
+
+@router.post("/staff/my-salary/claim-kut")
+async def staff_claim_kut_salary(user_id: int = Depends(require_active_admin)):
+    """Сотрудник забирает одобренную ЗП в kut на свой игровой баланс."""
+    result = await claim_kut_salary(user_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Нет одобренной зарплаты в kut для получения",
+        )
+    return {"ok": True, "amount": result["amount"], "salaryId": result["salaryId"]}
+
+
+@router.post("/staff/my-salary/{salary_id}/appeal")
+async def staff_appeal_salary(
+    salary_id: int,
+    body: AppealBody,
+    request: Request,
+    user_id: int = Depends(require_active_admin),
+):
+    ok = await create_salary_appeal(salary_id, user_id, body.reason.strip())
+    if not ok:
+        raise HTTPException(status_code=409, detail="Апелляция недоступна или уже подана")
+    await log_admin_action(
+        user_id, "salary_appeal",
+        target_type="salary",
+        target_id=str(salary_id),
+        details={"reason": body.reason.strip()},
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+@router.get("/staff/appeals")
+async def staff_list_appeals(
+    _user_id: int = Depends(require_admin_permission("set_salary")),
+):
+    return {"items": await list_open_appeals()}
+
+
+@router.post("/staff/appeals/{appeal_id}/resolve")
+async def staff_resolve_appeal(
+    appeal_id: int,
+    body: ResolveAppealBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("set_salary")),
+):
+    appellant_id = await resolve_salary_appeal(appeal_id, body.resolution.strip(), user_id)
+    if appellant_id is None:
+        raise HTTPException(status_code=409, detail="Апелляция не найдена или уже рассмотрена")
+    await log_admin_action(
+        user_id, "salary_appeal_resolve",
+        target_type="salary",
+        target_id=str(appeal_id),
+        details={"resolution": body.resolution.strip()},
+        ip=_get_client_ip(request),
+    )
+    res_txt = body.resolution.strip()
+    notify_staff(
+        appellant_id,
+        "<tg-emoji emoji-id='5400250414929041085'>⚖️</tg-emoji> <b>Ваша апелляция по зарплате рассмотрена.</b>"
+        + (f" <b>Решение : {res_txt}</b>" if res_txt else ""),
+    )
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Staff: реестр выплат, долги, KPI, отчёты
+# ---------------------------------------------------------------------------
+
+
+def _period_range(period: str):
+    from datetime import datetime, timedelta, timezone
+    now_dt = datetime.now(timezone.utc)
+    if period == "week":
+        start = now_dt - timedelta(days=7)
+    elif period == "all":
+        start = datetime(2000, 1, 1, tzinfo=timezone.utc)
+    else:  # month
+        start = now_dt - timedelta(days=30)
+    return start, now_dt + timedelta(days=1)
+
+
+@router.get("/staff/ledger")
+async def staff_ledger(
+    period: str = Query("month", pattern=r"^(week|month|all)$"),
+    userId: int | None = Query(None, ge=1),
+    _user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    date_from, date_to = _period_range(period)
+    data = await list_payments(date_from, date_to, userId)
+    return {"period": period, **data}
+
+
+@router.get("/staff/ledger/export")
+async def staff_ledger_export(
+    period: str = Query("month", pattern=r"^(week|month|all)$"),
+    _user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    date_from, date_to = _period_range(period)
+    data = await list_payments(date_from, date_to, None)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Дата", "Сотрудник", "Роль", "Сумма", "Способ", "Тип", "TXID", "Выплатил"])
+    for it in data["items"]:
+        name = it["firstName"] or (f"@{it['username']}" if it["username"] else str(it["userId"]))
+        writer.writerow([
+            it["paidAt"] or "", name, it["role"] or "", it["amount"],
+            it["method"] or "", it["kind"], it["txid"] or "", it["paidBy"] or "",
+        ])
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=payments_{period}.csv"},
+    )
+
+
+@router.get("/staff/unpaid")
+async def staff_unpaid(
+    _user_id: int = Depends(require_admin_permission("set_salary")),
+):
+    return {"items": await list_unpaid(current_week_start())}
+
+
+@router.get("/staff/members/{member_id}/stats")
+async def staff_member_stats(
+    member_id: int,
+    period: str = Query("week", pattern=r"^(week|month|all)$"),
+    _user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    date_from, _ = _period_range(period)
+    return {"period": period, **await get_member_stats(member_id, date_from)}
+
+
+@router.get("/staff/leaderboard")
+async def staff_leaderboard(
+    period: str = Query("week", pattern=r"^(week|month|all)$"),
+    _user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    date_from, _ = _period_range(period)
+    return {"period": period, "items": await get_leaderboard(date_from)}
+
+
+@router.post("/staff/reminders/send")
+async def staff_send_reminder(
+    user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    from staff_notify import build_salary_reminder, notify_owners
+    text = await build_salary_reminder()
+    if not text:
+        return {"ok": True, "sent": False, "detail": "Нет ожидающих/невыплаченных начислений"}
+    notify_owners(text)
+    return {"ok": True, "sent": True}
+
+
+@router.get("/staff/payouts/pending")
+async def staff_pending_payouts(
+    _user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    return {"items": await list_pending_payouts()}
+
+
+@router.post("/staff/payouts/pending/{payout_id}/confirm")
+async def staff_confirm_payout(
+    payout_id: int,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    p = await get_pending_payout(payout_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Запрос не найден")
+    if int(p["requested_by"]) == user_id:
+        raise HTTPException(status_code=403, detail="Нужно подтверждение другого владельца")
+    result = await add_salary_payment(
+        int(p["salary_id"]), user_id, int(p["amount"]),
+        method=p["method"], kind=p["kind"], txid=p["txid"], proof=p["proof"],
+    )
+    if not result:
+        await delete_pending_payout(payout_id)
+        raise HTTPException(status_code=409, detail="Начисление уже выплачено/недоступно")
+    await delete_pending_payout(payout_id)
+    await log_admin_action(
+        user_id, "salary_pay_cosign",
+        target_type="salary", target_id=str(p["salary_id"]),
+        details={"amount": result["amount"]}, ip=_get_client_ip(request),
+    )
+    notify_staff(int(result["userId"]), f"<tg-emoji emoji-id='4958926882994127612'>💰</tg-emoji> <b>Для вас была проведена выплата : {result['amount']}. Остаток : {result['remaining']}.</b>")
+    return {"ok": True, **result}
+
+
+@router.delete("/staff/payouts/pending/{payout_id}")
+async def staff_cancel_payout(
+    payout_id: int,
+    _user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    await delete_pending_payout(payout_id)
+    return {"ok": True}
+
+
+# --- Заметки о сотруднике ---
+
+@router.get("/staff/members/{member_id}/notes")
+async def staff_member_notes(member_id: int, _u: int = Depends(require_admin_permission("manage_staff"))):
+    return {"items": await list_staff_notes(member_id)}
+
+
+@router.post("/staff/members/{member_id}/notes")
+async def staff_member_note_add(
+    member_id: int, body: StaffNoteBody, request: Request,
+    user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    note_id = await add_staff_note(member_id, user_id, body.text.strip())
+    return {"ok": True, "id": note_id}
+
+
+@router.delete("/staff/members/{member_id}/notes/{note_id}")
+async def staff_member_note_delete(
+    member_id: int, note_id: int,
+    _u: int = Depends(require_admin_permission("manage_staff")),
+):
+    await delete_staff_note(note_id)
+    return {"ok": True}
+
+
+# --- Страйки ---
+
+@router.get("/staff/members/{member_id}/strikes")
+async def staff_member_strikes(member_id: int, _u: int = Depends(require_admin_permission("manage_staff"))):
+    return {"items": await list_strikes(member_id)}
+
+
+@router.delete("/staff/members/{member_id}/strikes/{strike_id}")
+async def staff_member_strike_remove(
+    member_id: int, strike_id: int,
+    _u: int = Depends(require_admin_permission("manage_staff")),
+):
+    ok = await remove_strike(strike_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Страйк не найден или уже истёк")
+    return {"ok": True}
+
+
+@router.post("/staff/members/{member_id}/strikes")
+async def staff_member_strike_add(
+    member_id: int, body: StrikeBody, request: Request,
+    user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    sid = await add_strike(member_id, body.reason.strip(), user_id)
+    await log_admin_action(
+        user_id, "staff_strike", target_type="staff", target_id=str(member_id),
+        details={"reason": body.reason.strip()}, ip=_get_client_ip(request),
+    )
+    notify_staff(member_id, f"<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Вам выдан страйк : {body.reason.strip()} (действует 30 дней).</b>")
+    return {"ok": True, "id": sid}
+
+
+# --- Доступность (отпуск/афк) ---
+
+@router.post("/staff/members/{member_id}/availability")
+async def staff_member_availability(
+    member_id: int, body: AvailabilityBody, request: Request,
+    user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    until = _parse_dt(body.until) if body.until else None
+    ok = await set_availability(member_id, body.availability, until)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    await log_admin_action(
+        user_id, "staff_availability", target_type="staff", target_id=str(member_id),
+        details={"availability": body.availability}, ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+# --- Смены ---
+
+@router.get("/staff/shifts")
+async def staff_shifts_list(
+    userId: int | None = Query(None, ge=1),
+    _u: int = Depends(require_admin_permission("manage_staff")),
+):
+    from datetime import datetime, timedelta, timezone
+    since = datetime.now(timezone.utc) - timedelta(days=7)
+    return {"items": await list_shifts(since, userId)}
+
+
+@router.post("/staff/shifts")
+async def staff_shift_add(
+    body: ShiftBody, request: Request,
+    user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    starts = _parse_dt(body.startsAt)
+    ends = _parse_dt(body.endsAt)
+    if not starts or not ends or ends <= starts:
+        raise HTTPException(status_code=400, detail="Неверный интервал смены")
+    sid = await add_shift(body.userId, starts, ends, body.note.strip(), user_id)
+    return {"ok": True, "id": sid}
+
+
+@router.delete("/staff/shifts/{shift_id}")
+async def staff_shift_delete(
+    shift_id: int, _u: int = Depends(require_admin_permission("manage_staff")),
+):
+    await delete_shift(shift_id)
+    return {"ok": True}
+
+
+# --- Дашборд / аудит сотрудника ---
+
+@router.get("/staff/members/{member_id}/card")
+async def staff_member_card(
+    member_id: int,
+    period: str = Query("week", pattern=r"^(week|month|all)$"),
+    _u: int = Depends(require_admin_permission("manage_staff")),
+):
+    date_from, _ = _period_range(period)
+    return {"period": period, **await get_member_card(member_id, date_from)}
+
+
+@router.get("/staff/members/{member_id}/audit")
+async def staff_member_audit(
+    member_id: int,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _u: int = Depends(require_admin_permission("manage_staff")),
+):
+    return await list_admin_audit(admin_user_id=member_id, limit=limit, offset=offset)
+
+
+# --- Шаблоны вопросов анкеты ---
+
+@router.get("/staff/questions")
+async def staff_questions_list(_u: int = Depends(require_admin_permission("manage_staff"))):
+    return {"items": await list_application_questions(enabled_only=False)}
+
+
+@router.post("/staff/questions")
+async def staff_question_upsert(
+    body: QuestionBody, _u: int = Depends(require_admin_permission("assign_roles")),
+):
+    qid = await upsert_application_question(
+        body.key, body.label.strip(), body.type, body.required, body.sortOrder, body.enabled, body.id,
+    )
+    return {"ok": True, "id": qid}
+
+
+@router.delete("/staff/questions/{question_id}")
+async def staff_question_delete(
+    question_id: int, _u: int = Depends(require_admin_permission("assign_roles")),
+):
+    await delete_application_question(question_id)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Staff: доказательная отчётность и жалобы
+# ---------------------------------------------------------------------------
+
+
+@router.get("/staff/members/{member_id}/actions")
+async def staff_member_actions(
+    member_id: int,
+    _user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    return {"items": await list_staff_actions(member_id)}
+
+
+@router.get("/staff/complaints")
+async def staff_get_complaints(
+    status: str | None = Query(None),
+    _user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    if status and status not in {"open", "in_progress", "resolved"}:
+        raise HTTPException(status_code=400, detail="Неверный статус")
+    return {"items": await list_complaints(status)}
+
+
+@router.post("/staff/complaints")
+async def staff_create_complaint(
+    body: ComplaintBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    target = await get_admin_account(body.targetAdminId)
+    if not target:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    if target.get("role") == ROLE_OWNER:
+        raise HTTPException(status_code=400, detail="Нельзя подать жалобу на владельца")
+
+    complaint_id = await create_complaint(
+        body.targetAdminId, body.subject.strip(), body.reason.strip(), user_id,
+    )
+    await log_admin_action(
+        user_id, "complaint_create",
+        target_type="staff", target_id=str(body.targetAdminId),
+        details={"complaintId": complaint_id},
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True, "complaintId": complaint_id}
+
+
+@router.post("/staff/complaints/{complaint_id}/take")
+async def staff_take_complaint(
+    complaint_id: int,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    ok, target_id = await take_complaint(complaint_id, user_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Жалоба не найдена или уже в работе")
+    await log_admin_action(
+        user_id, "complaint_take",
+        target_type="complaint", target_id=str(complaint_id),
+        ip=_get_client_ip(request),
+    )
+    if target_id:
+        notify_staff(
+            target_id,
+            "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>На вас поступила жалоба которая уже ушла на рассмотрение старшим составом Эпсилона</b>"
+            "<b>Зайдите в панель → «Жалобы на меня» и приложите доказательства.</b>\n<blockquote><b>Виво-Эпсилон</b></blockquote>",
+        )
+    return {"ok": True}
+
+
+@router.post("/staff/complaints/{complaint_id}/resolve")
+async def staff_resolve_complaint(
+    complaint_id: int,
+    body: ComplaintResolveBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    ok, target_id = await resolve_complaint(complaint_id, body.resolution.strip(), user_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Жалоба не найдена или уже закрыта")
+
+    res_txt = body.resolution.strip()
+    extras = []
+    # Авто-штраф к зарплате + страйк, если жалоба подтверждена
+    if target_id and body.penalty > 0:
+        applied = await add_penalty_to_current_salary(
+            target_id, body.penalty, f"жалоба #{complaint_id}: {res_txt}"[:300], user_id,
+        )
+        if applied:
+            extras.append(f"штраф {body.penalty}")
+    if target_id and body.strike:
+        await add_strike(target_id, f"жалоба #{complaint_id}: {res_txt}"[:500], user_id, complaint_id)
+        extras.append("страйк")
+
+    await log_admin_action(
+        user_id, "complaint_resolve",
+        target_type="complaint", target_id=str(complaint_id),
+        details={"resolution": res_txt, "penalty": body.penalty, "strike": body.strike},
+        ip=_get_client_ip(request),
+    )
+    if target_id:
+        suffix = f" <b>Применено : {', '.join(extras)}.</b>" if extras else ""
+        notify_staff(
+            target_id,
+            "<tg-emoji emoji-id='5400250414929041085'>⚖️</tg-emoji> <b>Жалоба на вас рассмотрена и закрыта.</b>"
+            + (f" <b>Решение : {res_txt}</b>" if res_txt else "") + suffix + (f"<blockquote><b>Виво-Эпсилон</b></blockquote>"),
+        )
+    return {"ok": True, "applied": extras}
+
+
+@router.get("/staff/my-complaints")
+async def staff_my_complaints(user_id: int = Depends(require_active_admin)):
+    """Открытые жалобы на текущего сотрудника — чтобы приложить доказательства."""
+    return {"items": await list_complaints_for_target(user_id)}
+
+
+@router.post("/staff/my-complaints/{complaint_id}/evidence")
+async def staff_submit_complaint_evidence(
+    complaint_id: int,
+    body: ComplaintEvidenceBody,
+    request: Request,
+    user_id: int = Depends(require_active_admin),
+):
+    if not await submit_complaint_evidence(complaint_id, user_id, body.evidence.strip()):
+        raise HTTPException(
+            status_code=409,
+            detail="Жалоба не найдена, не в работе или адресована не вам",
+        )
+    await log_admin_action(
+        user_id, "complaint_evidence",
+        target_type="complaint", target_id=str(complaint_id),
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+@router.get("/dashboard/stats")
+async def admin_dashboard_stats(_user_id: int = Depends(require_admin_session)):
+    stats = await get_dashboard_stats()
+    stats.update(await get_online_summary())
+    return stats
+
+
+@router.get("/dashboard/online")
+async def admin_dashboard_online(_user_id: int = Depends(require_admin_session)):
+    return await get_online_summary()
+
+
+@router.get("/dashboard/online/day")
+async def admin_dashboard_online_day(
+    day: date = Query(..., description="Дата YYYY-MM-DD (UTC)"),
+    _user_id: int = Depends(require_admin_session),
+):
+    return await get_day_analytics(day)
+
+
+@router.get("/dashboard/online/range")
+async def admin_dashboard_online_range(
+    from_: date = Query(..., alias="from", description="Начало периода YYYY-MM-DD"),
+    to: date = Query(..., description="Конец периода YYYY-MM-DD"),
+    _user_id: int = Depends(require_admin_session),
+):
+    try:
+        return await get_range_analytics(from_, to)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/dashboard/server")
+async def admin_dashboard_server(_user_id: int = Depends(require_admin_session)):
+    maintenance = await get_maintenance_enabled()
+    return {
+        "ok": True,
+        "maintenance": maintenance,
+        "adminEnabled": ADMIN_ENABLED,
+        "adminBotConfigured": bool(ADMIN_BOT_TOKEN),
+        "jwtConfigured": bool(ADMIN_JWT_SECRET),
+    }
+
+
+@router.get("/system/maintenance")
+async def admin_get_maintenance(_user_id: int = Depends(require_admin_permission("manage_settings"))):
+    enabled = await get_maintenance_enabled()
+    return {"maintenance": enabled}
+
+
+@router.post("/system/maintenance")
+async def admin_set_maintenance(
+    body: MaintenanceBody,
+    user_id: int = Depends(require_admin_permission("manage_settings")),
+):
+    enabled = await set_maintenance_enabled(body.enabled, admin_user_id=user_id)
+    return {"maintenance": enabled, "ok": True}
+
+
+class SystemSettingsBody(BaseModel):
+    # economy
+    defaultBalance: int | None = Field(default=None, ge=0, le=10_000_000)
+    plotPriceStep: int | None = Field(default=None, ge=0, le=1_000_000)
+    clearCost: int | None = Field(default=None, ge=0, le=1_000_000)
+    # farm
+    treeGrowSeconds: int | None = Field(default=None, ge=30, le=86_400)
+    tobaccoGrowSeconds: int | None = Field(default=None, ge=30, le=86_400)
+    maxPlots: int | None = Field(default=None, ge=1, le=100)
+    waterIntervalSeconds: int | None = Field(default=None, ge=30, le=3_600)
+    wiltGraceSeconds: int | None = Field(default=None, ge=10, le=3_600)
+    waterCostPerUse: int | None = Field(default=None, ge=0, le=10)
+    # seed economy
+    harvestSeedDropPercent: int | None = Field(default=None, ge=0, le=100)
+    dailySeedAmount: int | None = Field(default=None, ge=1, le=50)
+    starterTreeSeeds: int | None = Field(default=None, ge=0, le=100)
+    starterTobaccoSeeds: int | None = Field(default=None, ge=0, le=100)
+    starterWater: int | None = Field(default=None, ge=0, le=100)
+    starterAxe: int | None = Field(default=None, ge=0, le=100)
+    # system
+    adminSessionMinutes: int | None = Field(default=None, ge=5, le=1_440)
+    maintenance: bool | None = None
+    model_config = {"extra": "forbid"}
+
+
+@router.get("/system/settings")
+async def admin_system_settings_get(
+    _admin_id: int = Depends(require_admin_permission("manage_settings")),
+):
+    return await get_all_settings()
+
+
+@router.post("/system/settings")
+async def admin_system_settings_set(
+    body: SystemSettingsBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_settings")),
+):
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    try:
+        result = await update_settings(fields, admin_user_id=admin_id)
+        await log_admin_action(
+            admin_id, "settings_change",
+            target_type="setting",
+            target_label=f"Изменено настроек: {len(fields)}",
+            details={"keys": list(fields.keys())},
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/system/settings/history")
+async def admin_system_settings_history(
+    category: str | None = Query(None, max_length=32),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("manage_settings")),
+):
+    return await get_settings_history(category=category, limit=limit, offset=offset)
+
+
+def _strip_player_sensitive(request: Request, profile: dict) -> dict:
+    """Прячет IP/устройство/гео/историю входов, если нет права view_player_sensitive."""
+    account = getattr(request.state, "admin_account", None) or {}
+    if "view_player_sensitive" in set(account.get("permissions") or []):
+        return profile
+    profile.pop("device", None)
+    profile.pop("network", None)
+    profile.pop("loginHistory", None)
+    return profile
+
+
+@router.get("/users/search")
+async def admin_users_search(
+    q: str = Query(..., min_length=1, max_length=128),
+    _admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    return {"results": await search_users(q)}
+
+
+@router.get("/users/{target_user_id}/inventory")
+async def admin_user_inventory(
+    target_user_id: int,
+    _admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    try:
+        items = await get_player_inventory(target_user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"items": items}
+
+
+@router.get("/users/{target_user_id}")
+async def admin_user_profile(
+    target_user_id: int,
+    request: Request,
+    _admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    profile = await get_user_admin_profile(target_user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+    return _strip_player_sensitive(request, profile)
+
+
+@router.get("/accounts/recent")
+async def admin_accounts_recent(
+    limit: int = Query(30, ge=1, le=50),
+    _admin_id: int = Depends(require_admin_permission("view_accounts")),
+):
+    return {"results": await list_recent_accounts(limit=limit)}
+
+
+@router.get("/accounts/search")
+async def admin_accounts_search(
+    q: str = Query(..., min_length=1, max_length=128),
+    _admin_id: int = Depends(require_admin_permission("view_accounts")),
+):
+    return {"results": await search_accounts(q)}
+
+
+@router.get("/accounts/{target_user_id}")
+async def admin_account_profile(
+    target_user_id: int,
+    _admin_id: int = Depends(require_admin_permission("view_accounts")),
+):
+    profile = await get_account_profile(target_user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    return profile
+
+
+@router.get("/users/{target_user_id}/audit")
+async def admin_user_audit(
+    target_user_id: int,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    return await get_user_audit_history(target_user_id, limit=limit, offset=offset)
+
+
+@router.post("/users/{target_user_id}/balance")
+async def admin_user_balance(
+    target_user_id: int,
+    body: UserBalanceBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("adjust_balance")),
+):
+    try:
+        result = await admin_adjust_balance(
+            target_user_id,
+            body.delta,
+            admin_user_id=admin_id,
+            note=body.note,
+        )
+        await log_admin_action(
+            admin_id, "balance_change",
+            target_type="user", target_id=str(target_user_id),
+            target_label=f"Игрок {target_user_id}",
+            details={"delta": body.delta, "note": body.note or ""},
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/users/{target_user_id}/items")
+async def admin_user_items(
+    target_user_id: int,
+    body: UserItemBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("give_items")),
+):
+    try:
+        result = await admin_adjust_item(
+            target_user_id,
+            body.itemId,
+            body.delta,
+            admin_user_id=admin_id,
+            note=body.note,
+        )
+        await log_admin_action(
+            admin_id, "item_grant",
+            target_type="user", target_id=str(target_user_id),
+            target_label=f"Игрок {target_user_id}",
+            details={"itemId": body.itemId, "delta": body.delta, "note": body.note or ""},
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/users/{target_user_id}/ban")
+async def admin_user_ban(
+    target_user_id: int,
+    body: UserBanBody,
+    request: Request,
+    admin_id: int = Depends(require_active_admin),
+):
+    # Бан — право moderate_ban; разбан (отмена чужого решения) — moderate_unban.
+    account = getattr(request.state, "admin_account", None) or {}
+    perms = set(account.get("permissions") or [])
+    needed = "moderate_ban" if body.banned else "moderate_unban"
+    if needed not in perms:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+    # И бан, и разбан требуют причину и доказательства.
+    if not body.reason.strip():
+        raise HTTPException(status_code=400, detail="Укажите причину")
+    if not body.evidence.strip():
+        raise HTTPException(status_code=400, detail="Приложите доказательства (скриншоты/логи)")
+
+    try:
+        has_photo = bool(body.proofMediaId.strip()) and body.banned
+        result = await admin_set_banned(
+            target_user_id,
+            body.banned,
+            admin_user_id=admin_id,
+            reason=body.reason,
+            notify=not has_photo,  # если есть фото — уведомление придёт с ним
+        )
+        action = "ban_user" if body.banned else "unban_user"
+        await log_admin_action(
+            admin_id, action,
+            target_type="user", target_id=str(target_user_id),
+            target_label=f"Игрок {target_user_id}",
+            details={"reason": body.reason or ""},
+            ip=_get_client_ip(request),
+        )
+        # Токен-владелец пруфа: панель грузит фото через BOT_TOKEN/ADMIN_BOT_TOKEN
+        # (см. /users/upload-evidence), тем же и скачаем из архива.
+        _proof_id = body.proofMediaId.strip() or None
+        _proof_token = None
+        if _proof_id:
+            from config import BOT_TOKEN as _BT, ADMIN_BOT_TOKEN as _ABT
+            _proof_token = _BT or _ABT or None
+        await log_staff_action(
+            admin_id, "ban" if body.banned else "unban", target_user_id,
+            body.reason.strip(), body.evidence.strip(),
+            proof_media_id=_proof_id,
+            # Блокировка из веб-панели действует на весь проект (users.banned) -
+            # это охват «во всём проекте», как «банфулл» у бота.
+            scope="full", chat_id=0,
+            proof_bot_token=_proof_token,
+        )
+        # Если есть фото-доказательство — отправляем игроку вместе с уведомлением о бане
+        proof_id = body.proofMediaId.strip()
+        if proof_id and body.banned:
+            import asyncio as _asyncio
+            _asyncio.create_task(_send_ban_photo_to_player(target_user_id, proof_id, body.reason.strip()))
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/users/{target_user_id}/onboarding/reset")
+async def admin_user_onboarding_reset(
+    target_user_id: int,
+    admin_id: int = Depends(require_admin_permission("manage_settings")),
+):
+    try:
+        return await admin_reset_onboarding(target_user_id, admin_user_id=admin_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/economy/overview")
+async def admin_economy_overview(_admin_id: int = Depends(require_admin_permission("manage_economy"))):
+    return await get_economy_overview()
+
+
+@router.get("/economy/stats")
+async def admin_economy_stats(_admin_id: int = Depends(require_admin_permission("manage_economy"))):
+    return await get_economy_stats()
+
+
+@router.get("/economy/settings")
+async def admin_economy_settings_get(_admin_id: int = Depends(require_admin_permission("manage_economy"))):
+    return await get_economy_settings_payload()
+
+
+@router.post("/economy/settings")
+async def admin_economy_settings_set(
+    body: EconomySettingsBody,
+    admin_id: int = Depends(require_admin_permission("manage_economy")),
+):
+    try:
+        return await update_economy_settings(
+            default_balance=body.defaultBalance,
+            plot_price_step=body.plotPriceStep,
+            clear_cost=body.clearCost,
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/economy/dex")
+async def admin_economy_dex_list(
+    q: str = Query("", max_length=128),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("manage_economy")),
+):
+    return await list_dex_items(search=q, limit=limit, offset=offset)
+
+
+@router.patch("/economy/dex/{item_id}")
+async def admin_economy_dex_patch(
+    item_id: str,
+    body: DexItemPatchBody,
+    admin_id: int = Depends(require_admin_permission("manage_economy")),
+):
+    try:
+        return await update_dex_item(
+            item_id,
+            price=body.price,
+            dis=body.dis,
+            remains=body.remains,
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/economy/grants")
+async def admin_economy_grants(
+    body: BulkGrantBody,
+    admin_id: int = Depends(require_admin_permission("manage_economy")),
+):
+    if body.delta == 0:
+        raise HTTPException(status_code=400, detail="Сумма не может быть 0")
+    try:
+        return await bulk_grant_kut(
+            body.delta,
+            target=body.target,
+            note=body.note,
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/market/overview")
+async def admin_market_overview(_admin_id: int = Depends(require_admin_permission("view_market"))):
+    return await get_market_overview()
+
+
+@router.get("/market/listings")
+async def admin_market_listings(
+    q: str = Query("", max_length=128),
+    itemId: str = Query("", max_length=128),
+    sellerId: int | None = Query(None, ge=1),
+    suspicious: bool = Query(False),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("view_market")),
+):
+    return await list_active_listings(
+        q=q,
+        item_id=itemId,
+        seller_id=sellerId,
+        suspicious_only=suspicious,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post("/market/listings/{listing_id}/cancel")
+async def admin_market_cancel(
+    listing_id: int,
+    body: MarketCancelBody,
+    admin_id: int = Depends(require_admin_permission("market_cancel")),
+):
+    try:
+        return await admin_cancel_listing(
+            listing_id,
+            admin_user_id=admin_id,
+            reason=body.reason,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/farm/overview")
+async def admin_farm_overview(_admin_id: int = Depends(require_admin_permission("manage_farm"))):
+    return await get_farm_overview()
+
+
+@router.get("/farm/settings")
+async def admin_farm_settings_get(_admin_id: int = Depends(require_admin_permission("manage_farm"))):
+    return await get_farm_settings_payload()
+
+
+@router.post("/farm/settings")
+async def admin_farm_settings_set(
+    body: FarmSettingsBody,
+    admin_id: int = Depends(require_admin_permission("manage_farm")),
+):
+    import logging as _log
+    try:
+        return await update_farm_settings(
+            tree_grow_seconds=body.treeGrowSeconds,
+            tobacco_grow_seconds=body.tobaccoGrowSeconds,
+            max_plots=body.maxPlots,
+            plot_price_step=body.plotPriceStep,
+            water_interval_seconds=body.waterIntervalSeconds,
+            wilt_grace_seconds=body.wiltGraceSeconds,
+            water_cost_per_use=body.waterCostPerUse,
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        _log.getLogger("admin.farm_settings").exception("FARM SETTINGS ERROR: %s", e)
+        raise
+
+
+@router.get("/farm/users/search")
+async def admin_farm_users_search(
+    q: str = Query(..., min_length=1, max_length=128),
+    _admin_id: int = Depends(require_admin_permission("manage_farm")),
+):
+    return {"results": await search_users(q)}
+
+
+@router.get("/farm/users/{target_user_id}")
+async def admin_farm_user(
+    target_user_id: int,
+    _admin_id: int = Depends(require_admin_permission("manage_farm")),
+):
+    farm = await get_user_farm_admin(target_user_id)
+    if not farm:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+    return farm
+
+
+@router.post("/farm/users/{target_user_id}/reset")
+async def admin_farm_user_reset(
+    target_user_id: int,
+    plotId: int | None = Query(None, ge=1, le=100),
+    admin_id: int = Depends(require_admin_permission("manage_farm")),
+):
+    try:
+        return await reset_user_plots(
+            target_user_id,
+            plot_id=plotId,
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/farm/global-reset")
+async def admin_farm_global_reset(admin_id: int = Depends(require_admin_permission("manage_farm"))):
+    try:
+        return await global_farm_restart(admin_user_id=admin_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/content/overview")
+async def admin_content_overview(_admin_id: int = Depends(require_admin_permission("manage_content"))):
+    return await get_content_overview()
+
+
+@router.get("/content/dex")
+async def admin_content_dex_list(
+    q: str = Query("", max_length=128),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    scope: str = Query("all", max_length=16),
+    _admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    return await list_dex_items_admin(search=q, limit=limit, offset=offset, scope=scope)
+
+
+@router.post("/content/dex")
+async def admin_content_dex_create(
+    body: DexItemCreateBody,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        return await create_dex_item(
+            name=body.name,
+            emoji=body.emoji,
+            name1=body.name1,
+            price=body.price,
+            dis=body.dis,
+            remains=body.remains,
+            sorting=body.sorting,
+            bio=body.bio,
+            use=body.use,
+            bonus=body.bonus,
+            craft=body.craft,
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/content/dex/{item_id}")
+async def admin_content_dex_patch(
+    item_id: str,
+    body: DexItemMetaBody,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        return await update_dex_item_meta(
+            item_id,
+            name=body.name,
+            emoji=body.emoji,
+            name1=body.name1,
+            price=body.price,
+            dis=body.dis,
+            remains=body.remains,
+            sorting=body.sorting,
+            bio=body.bio,
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/content/crops")
+async def admin_content_crop_create(
+    body: CropCreateBody,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        return await create_crop(
+            key=body.key,
+            display_name=body.displayName,
+            seed_item_id=body.seedItemId,
+            grow_seconds=body.growSeconds,
+            harvest_tool_item_id=body.harvestToolItemId,
+            harvest_tool_cost=body.harvestToolCost,
+            water_item_id=body.waterItemId,
+            water_cost_per_use=body.waterCostPerUse,
+            sprite_key=body.spriteKey,
+            enabled=body.enabled,
+            harvest_drops=[drop.model_dump() for drop in body.harvestDrops],
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/content/crops/{crop_id}")
+async def admin_content_crop_patch(
+    crop_id: int,
+    body: CropUpdateBody,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        return await update_crop(
+            crop_id,
+            display_name=body.displayName,
+            seed_item_id=body.seedItemId,
+            grow_seconds=body.growSeconds,
+            harvest_tool_item_id=body.harvestToolItemId,
+            harvest_tool_cost=body.harvestToolCost,
+            water_item_id=body.waterItemId,
+            water_cost_per_use=body.waterCostPerUse,
+            sprite_key=body.spriteKey,
+            enabled=body.enabled,
+            harvest_drops=(
+                [drop.model_dump() for drop in body.harvestDrops]
+                if body.harvestDrops is not None
+                else None
+            ),
+            clear_harvest_tool=body.clearHarvestTool,
+            clear_water_item=body.clearWaterItem,
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/content/crops/{crop_id}")
+async def admin_content_crop_delete(
+    crop_id: int,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        return await delete_crop(crop_id, admin_user_id=admin_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/content/craft")
+async def admin_content_craft_create(
+    body: CraftRecipeCreateBody,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        return await create_craft_recipe(
+            key=body.key,
+            display_name=body.displayName,
+            result_item_id=body.resultItemId,
+            ingredient_a_id=body.ingredientAId,
+            ingredient_b_id=body.ingredientBId,
+            success_percent=body.successPercent,
+            enabled=body.enabled,
+            remains=body.remains,
+            result_qty=body.resultQty,
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/content/craft/{recipe_id}")
+async def admin_content_craft_patch(
+    recipe_id: int,
+    body: CraftRecipeUpdateBody,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        return await update_craft_recipe(
+            recipe_id,
+            display_name=body.displayName,
+            result_item_id=body.resultItemId,
+            ingredient_a_id=body.ingredientAId,
+            ingredient_b_id=body.ingredientBId,
+            success_percent=body.successPercent,
+            enabled=body.enabled,
+            remains=body.remains,
+            result_qty=body.resultQty,
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/content/craft/{recipe_id}")
+async def admin_content_craft_delete(
+    recipe_id: int,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        return await delete_craft_recipe(recipe_id, admin_user_id=admin_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/content/quests")
+async def admin_content_quest_create(
+    body: QuestCreateBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        result = await create_quest(
+            key=body.key,
+            period=body.period,
+            action=body.action,
+            target=body.target,
+            title=body.title,
+            description=body.description,
+            emoji=body.emoji,
+            enabled=body.enabled,
+            target_scope=body.targetScope,
+            target_crop_key=body.targetCropKey,
+            target_item_id=body.targetItemId,
+            rewards=[reward.model_dump() for reward in body.rewards],
+            active_from=_parse_dt(body.activeFrom),
+            active_until=_parse_dt(body.activeUntil),
+            recurrence=body.recurrence,
+            recurrence_end=_parse_dt(body.recurrenceEnd),
+            admin_user_id=admin_id,
+        )
+        await log_admin_action(
+            admin_id, "quest_create",
+            target_type="quest", target_id=body.key,
+            target_label=body.title or body.key,
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/content/quests/{quest_id}")
+async def admin_content_quest_patch(
+    quest_id: int,
+    body: QuestUpdateBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    from admin_quests import _UNSET as _QU
+    try:
+        # When clearSchedule=True, explicitly set all scheduling fields to None.
+        # Otherwise, only pass fields that were explicitly provided (others stay as _UNSET = don't touch).
+        if body.clearSchedule:
+            af = None
+            au = None
+            rec = None
+            re_end = None
+        else:
+            af = _parse_dt(body.activeFrom) if body.activeFrom is not None else _QU
+            au = _parse_dt(body.activeUntil) if body.activeUntil is not None else _QU
+            rec = body.recurrence if body.recurrence is not None else _QU
+            re_end = _parse_dt(body.recurrenceEnd) if body.recurrenceEnd is not None else _QU
+
+        result = await update_quest(
+            quest_id,
+            period=body.period,
+            action=body.action,
+            target=body.target,
+            title=body.title,
+            description=body.description,
+            emoji=body.emoji,
+            enabled=body.enabled,
+            target_scope=body.targetScope,
+            target_crop_key=body.targetCropKey,
+            target_item_id=body.targetItemId,
+            rewards=(
+                [reward.model_dump() for reward in body.rewards]
+                if body.rewards is not None
+                else None
+            ),
+            active_from=af,
+            active_until=au,
+            recurrence=rec,
+            recurrence_end=re_end,
+            admin_user_id=admin_id,
+        )
+        await log_admin_action(
+            admin_id, "quest_update",
+            target_type="quest", target_id=str(quest_id),
+            target_label=body.title or f"Квест #{quest_id}",
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/content/quests/{quest_id}")
+async def admin_content_quest_delete(
+    quest_id: int,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        result = await delete_quest(quest_id, admin_user_id=admin_id)
+        await log_admin_action(
+            admin_id, "quest_delete",
+            target_type="quest", target_id=str(quest_id),
+            target_label=f"Квест #{quest_id}",
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/broadcast/overview")
+async def admin_broadcast_overview(_admin_id: int = Depends(require_admin_permission("manage_broadcast"))):
+    return await get_broadcast_overview()
+
+
+@router.get("/broadcast/history")
+async def admin_broadcast_history(
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    status: str | None = Query(None, pattern=r"^(pending|running|done|failed|cancelled)$"),
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    return await list_broadcast_history(limit=limit, offset=offset, status=status)
+
+
+@router.get("/broadcast/runs/{run_id}")
+async def admin_broadcast_run(
+    run_id: int,
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    run = await get_broadcast_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Рассылка не найдена")
+    return run
+
+
+@router.post("/broadcast/runs/{run_id}/cancel")
+async def admin_broadcast_cancel(
+    run_id: int,
+    admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    try:
+        return await cancel_broadcast(run_id, admin_user_id=admin_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/broadcast/preview")
+async def admin_broadcast_preview(
+    body: BroadcastPreviewBody,
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    return await preview_broadcast(
+        title=body.title,
+        body=body.body,
+        detail=body.detail,
+        telegram_text=body.telegramText,
+        sample_user_id=body.sampleUserId,
+    )
+
+
+@router.post("/broadcast/count")
+async def admin_broadcast_count(
+    body: BroadcastCountBody,
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    filt = body.filter.model_dump() if body.filter else {}
+    count = await count_recipients(body.audience, filt)
+    return {"count": count}
+
+
+@router.post("/broadcast/send")
+async def admin_broadcast_send(
+    body: BroadcastSendBody,
+    admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    try:
+        filt = body.filter.model_dump() if body.filter else {}
+        return await start_broadcast(
+            audience=body.audience,
+            filter_data=filt,
+            channels=body.channels.model_dump(),
+            title=body.title,
+            body=body.body,
+            detail=body.detail,
+            telegram_text=body.telegramText,
+            template_key=body.templateKey,
+            scheduled_at=_parse_dt(body.scheduledAt),
+            label=body.label,
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/broadcast/templates")
+async def admin_broadcast_template_save(
+    body: BroadcastTemplateBody,
+    admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    try:
+        return await save_template(
+            name=body.name,
+            title=body.title,
+            body=body.body,
+            detail=body.detail,
+            telegram_text=body.telegramText,
+            admin_user_id=admin_id,
+            template_id=body.templateId,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/broadcast/templates/{template_id}")
+async def admin_broadcast_template_delete(
+    template_id: int,
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    try:
+        await delete_template(template_id)
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/logs/overview")
+async def admin_logs_overview(_admin_id: int = Depends(require_admin_permission("view_logs"))):
+    return await get_logs_overview()
+
+
+@router.get("/logs/audit")
+async def admin_logs_audit(
+    userId: int | None = Query(None, ge=1),
+    eventType: str | None = Query(None, max_length=64),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("view_logs")),
+):
+    return await list_audit_logs(
+        user_id=userId,
+        event_type=eventType,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/logs/system")
+async def admin_logs_system(
+    category: str = Query("security", pattern=r"^(security|errors|error|api)$"),
+    userId: int | None = Query(None, ge=1),
+    code: str | None = Query(None, max_length=64),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("view_logs")),
+):
+    return await list_system_logs(
+        category=category,
+        user_id=userId,
+        code=code,
+        limit=limit,
+        offset=offset,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Events & Scheduling
+# ---------------------------------------------------------------------------
+
+@router.get("/events/upcoming")
+async def admin_events_upcoming(_admin_id: int = Depends(require_admin_permission("manage_events"))):
+    """Все запланированные события: квесты с расписанием + отложенные рассылки."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+
+    # Timed quests
+    quest_events = []
+    for q in all_quests():
+        if not q.active_from and not q.active_until and not q.recurrence:
+            continue
+        from quest_registry import PERIOD_LABELS
+        if q.active_from and q.active_from >= now:
+            quest_events.append({
+                "type": "quest_activate",
+                "at": q.active_from.isoformat(),
+                "questId": q.db_id,
+                "questKey": q.key,
+                "questTitle": q.title,
+                "questEmoji": q.emoji,
+                "period": q.period,
+                "periodLabel": PERIOD_LABELS.get(q.period, q.period),
+                "recurrence": q.recurrence,
+            })
+        if q.active_until:
+            if q.active_until >= now:
+                quest_events.append({
+                    "type": "quest_deactivate",
+                    "at": q.active_until.isoformat(),
+                    "questId": q.db_id,
+                    "questKey": q.key,
+                    "questTitle": q.title,
+                    "questEmoji": q.emoji,
+                    "period": q.period,
+                    "periodLabel": PERIOD_LABELS.get(q.period, q.period),
+                    "recurrence": q.recurrence,
+                })
+
+    # Scheduled broadcasts
+    sched = await list_scheduled_broadcasts(limit=50)
+    broadcast_events = [
+        {
+            "type": "broadcast",
+            "at": item["scheduledAt"],
+            "broadcastId": item["id"],
+            "title": item["title"],
+            "label": item["label"],
+            "audience": item["audience"],
+            "recipientCount": item["recipientCount"],
+        }
+        for item in sched["items"]
+        if item["scheduledAt"]
+    ]
+
+    all_events = sorted(
+        quest_events + broadcast_events,
+        key=lambda e: e["at"],
+    )
+    return {"events": all_events, "count": len(all_events)}
+
+
+@router.get("/events/timed-quests")
+async def admin_events_timed_quests(_admin_id: int = Depends(require_admin_permission("manage_events"))):
+    """Список квестов с расписанием."""
+    from quest_registry import quest_to_admin_dict
+    timed = [
+        quest_to_admin_dict(q)
+        for q in all_quests()
+        if q.active_from or q.active_until or q.recurrence
+    ]
+    return {"quests": timed, "total": len(timed)}
+
+
+@router.get("/events/scheduled-broadcasts")
+async def admin_events_scheduled_broadcasts(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("manage_events")),
+):
+    return await list_scheduled_broadcasts(limit=limit, offset=offset)
+
+
+@router.delete("/events/scheduled-broadcasts/{run_id}")
+async def admin_events_cancel_broadcast(
+    run_id: int,
+    admin_id: int = Depends(require_admin_permission("manage_events")),
+):
+    try:
+        return await cancel_scheduled_broadcast(run_id, admin_user_id=admin_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Analytics
+# ---------------------------------------------------------------------------
+
+@router.get("/analytics/quests")
+async def admin_analytics_quests(
+    days: int = Query(30, ge=1, le=365),
+    _admin_id: int = Depends(require_admin_permission("view_analytics")),
+):
+    return await get_quest_analytics(days=days)
+
+
+@router.get("/analytics/farm")
+async def admin_analytics_farm(
+    days: int = Query(30, ge=1, le=365),
+    _admin_id: int = Depends(require_admin_permission("view_analytics")),
+):
+    return await get_farm_analytics(days=days)
+
+
+@router.get("/analytics/market")
+async def admin_analytics_market(
+    days: int = Query(30, ge=1, le=365),
+    itemId: str | None = Query(None, max_length=64),
+    _admin_id: int = Depends(require_admin_permission("view_analytics")),
+):
+    return await get_market_analytics(days=days, item_id=itemId)
+
+
+@router.get("/analytics/craft")
+async def admin_analytics_craft(
+    days: int = Query(30, ge=1, le=365),
+    _admin_id: int = Depends(require_admin_permission("view_analytics")),
+):
+    return await get_craft_analytics(days=days)
+
+
+@router.get("/analytics/retention")
+async def admin_analytics_retention(
+    days: int = Query(30, ge=1, le=365),
+    _admin_id: int = Depends(require_admin_permission("view_analytics")),
+):
+    return await get_retention_analytics(days=days)
+
+
+# ---------------------------------------------------------------------------
+# Extended player profile
+# ---------------------------------------------------------------------------
+
+@router.get("/users/{user_id}/quests")
+async def admin_user_quests(
+    user_id: int,
+    _admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    info = await get_player_quest_info(user_id)
+    if info is None:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+    return info
+
+
+@router.get("/users/{user_id}/bans")
+async def admin_user_bans(
+    user_id: int,
+    _admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    return {"bans": await get_player_ban_history(user_id)}
+
+
+@router.get("/users/{user_id}/notes")
+async def admin_user_notes_list(
+    user_id: int,
+    _admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    return {"notes": await list_player_notes(user_id)}
+
+
+class PlayerNoteBody(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    noteId: int | None = None
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/users/{user_id}/notes")
+async def admin_user_notes_upsert(
+    user_id: int,
+    body: PlayerNoteBody,
+    admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    try:
+        note = await upsert_player_note(
+            user_id,
+            body.text,
+            admin_user_id=admin_id,
+            note_id=body.noteId,
+        )
+        return note
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/users/{user_id}/notes/{note_id}")
+async def admin_user_notes_delete(
+    user_id: int,
+    note_id: int,
+    admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    try:
+        await delete_player_note(user_id, note_id, admin_user_id=admin_id)
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/users/{user_id}/export")
+async def admin_user_export(
+    user_id: int,
+    _admin_id: int = Depends(require_admin_permission("view_player_sensitive")),
+):
+    try:
+        import datetime as _dt
+        data = await export_player_profile(user_id)
+        data["exportedAt"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+        return data
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Dex full CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/content/dex/{item_id}")
+async def admin_dex_item_get(
+    item_id: str,
+    _admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        return await get_dex_item_full(item_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+class DexItemFullBody(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    emoji: str = Field(default="📦", max_length=8)
+    name1: str = Field(default="", max_length=120)
+    price: int = Field(default=0, ge=0)
+    dis: int = Field(default=0, ge=0)
+    remains: int = Field(default=0, ge=0)
+    sorting: str | None = Field(default=None, max_length=64)
+    bio: str = Field(default="", max_length=1000)
+    use: str = Field(default="", max_length=500)
+    bonus: str = Field(default="", max_length=500)
+    craft: str = Field(default="", max_length=500)
+    model_config = {"extra": "forbid"}
+
+
+@router.put("/content/dex/{item_id}")
+async def admin_dex_item_update(
+    item_id: str,
+    body: DexItemFullBody,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        return await update_dex_item_meta(
+            item_id,
+            name=body.name,
+            emoji=body.emoji,
+            name1=body.name1,
+            price=body.price,
+            dis=body.dis,
+            remains=body.remains,
+            sorting=body.sorting,
+            bio=body.bio,
+            use=body.use,
+            bonus=body.bonus,
+            craft=body.craft,
+            admin_user_id=admin_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/content/dex/{item_id}")
+async def admin_dex_item_delete(
+    item_id: str,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        result = await delete_dex_item(item_id, admin_user_id=admin_id)
+        await log_admin_action(
+            admin_id, "dex_item_delete",
+            target_type="dex_item", target_id=item_id,
+            target_label=f"DEX-предмет {item_id}",
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Security: admin audit log
+# ---------------------------------------------------------------------------
+
+
+@router.get("/security/audit")
+async def admin_security_audit(
+    admin_user_id: int | None = Query(None),
+    action: str | None = Query(None, max_length=50),
+    target_type: str | None = Query(None, max_length=32),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("manage_security")),
+):
+    return await list_admin_audit(
+        admin_user_id=admin_user_id,
+        action=action,
+        target_type=target_type,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/security/audit/actions")
+async def admin_security_audit_actions(_admin_id: int = Depends(require_admin_permission("manage_security"))):
+    return {"actions": await list_admin_action_types()}
+
+
+# ---------------------------------------------------------------------------
+# Security: IP bans
+# ---------------------------------------------------------------------------
+
+
+class IpBanBody(BaseModel):
+    ipOrCidr: str = Field(..., min_length=3, max_length=50)
+    reason: str = Field("", max_length=200)
+    expiresAt: str | None = None
+
+
+@router.get("/security/ip-bans")
+async def admin_security_ip_bans_list(_admin_id: int = Depends(require_admin_permission("manage_security"))):
+    return {"bans": await list_ip_bans()}
+
+
+@router.post("/security/ip-bans")
+async def admin_security_ip_bans_add(
+    body: IpBanBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_security")),
+):
+    try:
+        ban = await add_ip_ban(
+            body.ipOrCidr,
+            reason=body.reason,
+            banned_by=admin_id,
+            expires_at=_parse_dt(body.expiresAt),
+        )
+        await log_admin_action(
+            admin_id, "ip_ban_add",
+            target_type="ip", target_id=body.ipOrCidr,
+            target_label=body.ipOrCidr,
+            details={"reason": body.reason},
+            ip=_get_client_ip(request),
+        )
+        return {"ok": True, "ban": ban}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/security/ip-bans/{ban_id}")
+async def admin_security_ip_bans_remove(
+    ban_id: int,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_security")),
+):
+    removed = await remove_ip_ban(ban_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Бан не найден или уже снят")
+    await log_admin_action(
+        admin_id, "ip_ban_remove",
+        target_type="ip", target_id=str(ban_id),
+        target_label=f"IP-бан #{ban_id}",
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Security: sessions & 2FA management
+# ---------------------------------------------------------------------------
+
+
+@router.get("/security/sessions")
+async def admin_security_sessions(_admin_id: int = Depends(require_admin_permission("manage_security"))):
+    from db import db
+    rows = await db.pool.fetch(
+        """
+        SELECT user_id, username, first_name, registered_at,
+               last_ip, last_seen_at, session_fingerprint, force_reauth_at
+        FROM admin_accounts
+        ORDER BY last_seen_at DESC NULLS LAST
+        """
+    )
+    return {
+        "sessions": [
+            {
+                "userId": int(r["user_id"]),
+                "username": r["username"],
+                "firstName": r["first_name"],
+                "registeredAt": r["registered_at"].isoformat() if r["registered_at"] else None,
+                "lastIp": r["last_ip"],
+                "lastSeenAt": r["last_seen_at"].isoformat() if r["last_seen_at"] else None,
+                "hasFingerprint": bool(r["session_fingerprint"]),
+                "forceReauthAt": r["force_reauth_at"].isoformat() if r["force_reauth_at"] else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+class ForceReauthBody(BaseModel):
+    userId: int | None = None  # None = all admins
+
+
+@router.post("/security/sessions/force-reauth")
+async def admin_security_force_reauth(
+    body: ForceReauthBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_security")),
+):
+    count = await force_reauth(body.userId)
+    target = f"Администратор {body.userId}" if body.userId else "Все администраторы"
+    await log_admin_action(
+        admin_id, "force_reauth",
+        target_type="session",
+        target_id=str(body.userId) if body.userId else "all",
+        target_label=target,
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True, "affected": count}
+
+
+@router.post("/moderation/notify")
+async def moderation_notify(request: Request):
+    """Внутренний эндпоинт — бот вызывает после записи в staff_actions."""
+    key = request.headers.get("X-Internal-Key", "")
+    if not INTERNAL_API_KEY or key != INTERNAL_API_KEY:
+        raise HTTPException(status_code=403, detail="Неверный ключ")
+
+    body = await request.json()
+    log_id = body.get("logId")
+    if not log_id:
+        raise HTTPException(status_code=422, detail="logId обязателен")
+
+    row = await db.pool.fetchrow(
+        """
+        SELECT id, created_at, admin_user_id, admin_name, action_type,
+               target_player_id, target_name, reason, evidence,
+               proof_media_id, duration_minutes
+        FROM staff_actions WHERE id = $1
+        """,
+        int(log_id),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+
+    from admin_ws import broadcast_to_admins
+    await broadcast_to_admins({
+        "event": "new_moderation_log",
+        "data": {
+            "id": int(row["id"]),
+            "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+            "actionType": row["action_type"],
+            "adminId": int(row["admin_user_id"]),
+            "adminName": row["admin_name"] or "",
+            "targetId": int(row["target_player_id"]) if row["target_player_id"] else None,
+            "targetName": row["target_name"] or "",
+            "reason": row["reason"] or "",
+            "hasProof": bool(row["proof_media_id"]),
+            "durationMinutes": row["duration_minutes"],
+        },
+    })
+    return {"ok": True}
+
+
+@router.get("/photo-proxy")
+async def photo_proxy(
+    file_id: str = Query(...),
+    _admin_id: int = Depends(require_admin_session),
+):
+    """Проксирует файл из Telegram через наш сервер — обходит CORS.
+
+    file_id валиден только для бота, который его выдал. Сначала берём сохранённый
+    в БД токен-владелец пруфа (его пишут все системы наказаний рядом с file_id),
+    затем — настроенные токены как запасной вариант. Токен остаётся на сервере:
+    клиенту уходят только байты картинки.
+    """
+    import aiohttp
+    from admin_moderation import candidate_tokens_for_file
+    tokens = await candidate_tokens_for_file(file_id)
+    if not tokens:
+        raise HTTPException(502, "Токен бота не настроен")
+    async with aiohttp.ClientSession() as session:
+        for token in tokens:
+            async with session.get(
+                f"https://api.telegram.org/bot{token}/getFile",
+                params={"file_id": file_id},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json()
+            if not data.get("ok"):
+                continue
+            file_path = data["result"]["file_path"]
+            file_url = f"https://api.telegram.org/file/bot{token}/{file_path}"
+            async with session.get(file_url, timeout=aiohttp.ClientTimeout(total=30)) as img_resp:
+                content_type = img_resp.headers.get("Content-Type", "image/jpeg")
+                content = await img_resp.read()
+            return Response(content=content, media_type=content_type)
+    raise HTTPException(404, "Файл недоступен")
+
+
+@router.get("/appeals")
+async def admin_list_appeals(
+    status: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("manage_appeals")),
+):
+    return await list_appeals(status=status, limit=limit, offset=offset)
+
+
+@router.post("/appeals/{appeal_id}/take")
+async def admin_take_appeal(
+    appeal_id: int,
+    admin_id: int = Depends(require_admin_permission("manage_appeals")),
+):
+    try:
+        return await take_appeal(appeal_id, admin_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class ResolveAppealBody(BaseModel):
+    approve: bool
+    resolution: str = ""
+
+
+async def _send_ban_photo_to_player(user_id: int, file_id: str, reason: str) -> None:
+    """Отправляет фото-доказательство игроку через Telegram file_id."""
+    import aiohttp
+    from config import BOT_TOKEN
+
+    if not BOT_TOKEN or not file_id:
+        return
+
+    caption_text = "<tg-emoji emoji-id='5260483378729208732'>⛔️</tg-emoji> Аккаунт заблокирован"
+    if reason:
+        caption_text += f"\n<tg-emoji emoji-id='5303138782004924588'>💬</tg-emoji> {reason}"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            await session.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                json={
+                    "chat_id": user_id,
+                    "photo": file_id,
+                    "caption": caption_text,
+                    "parse_mode": "HTML",
+                },
+                timeout=aiohttp.ClientTimeout(total=15),
+            )
+    except Exception:
+        pass  # Не критично если фото не дошло
+
+
+async def _upload_photo_to_telegram(file: UploadFile, token: str, chat_id: str, caption: str = "") -> str:
+    """Загружает фото в Telegram и возвращает file_id."""
+    import aiohttp
+    data = aiohttp.FormData()
+    data.add_field("chat_id", chat_id)
+    if caption:
+        data.add_field("caption", caption)
+        data.add_field("parse_mode", "HTML")
+    data.add_field("photo", await file.read(), filename=file.filename or "photo.jpg", content_type=file.content_type or "image/jpeg")
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f"https://api.telegram.org/bot{token}/sendPhoto", data=data) as resp:
+            result = await resp.json()
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=f"Telegram: {result.get('description', 'ошибка')}")
+    sizes = result["result"]["photo"]
+    return sizes[-1]["file_id"]
+
+
+@router.post("/appeals/{appeal_id}/upload")
+async def admin_appeal_upload(
+    appeal_id: int,
+    file: UploadFile = File(...),
+    text: str = Form(default=""),
+    admin_id: int = Depends(require_admin_permission("manage_appeals")),
+):
+    from config import SUPPORT_BOT_TOKEN
+    from admin_db import get_admin_account
+
+    from db import db
+    row = await db.pool.fetchrow("SELECT user_id, status FROM ban_appeals WHERE id = $1", appeal_id)
+    if not row:
+        raise HTTPException(404, "Апелляция не найдена")
+    if row["status"] in ("approved", "rejected"):
+        raise HTTPException(400, "Апелляция закрыта")
+
+    acc = await get_admin_account(admin_id)
+    admin_name = (acc.get("firstName") or acc.get("username") or f"#{admin_id}") if acc else f"#{admin_id}"
+
+    # Загружаем фото — оно уже уходит игроку внутри этой функции
+    file_id = await _upload_photo_to_telegram(file, SUPPORT_BOT_TOKEN, str(row["user_id"]), text.strip())
+
+    # Сохраняем в БД напрямую — без повторной отправки игроку
+    msg_id = await db.pool.fetchval(
+        """
+        INSERT INTO ban_appeal_messages
+            (appeal_id, from_user, admin_id, admin_name, text, photo_file_id)
+        VALUES ($1, FALSE, $2, $3, $4, $5)
+        RETURNING id
+        """,
+        appeal_id, admin_id, admin_name, text.strip(), file_id,
+    )
+    await db.pool.execute(
+        "UPDATE ban_appeals SET taken_by = COALESCE(taken_by, $2), status = CASE WHEN status = 'pending' THEN 'taken' ELSE status END WHERE id = $1",
+        appeal_id, admin_id,
+    )
+    return {"id": int(msg_id)}
+
+
+@router.post("/users/upload-evidence")
+async def admin_upload_ban_evidence(
+    file: UploadFile = File(...),
+    admin_id: int = Depends(require_admin_permission("moderate_ban")),
+):
+    """Загружает фото-доказательство в Telegram, возвращает Telegram file_id."""
+    from config import BOT_TOKEN, ADMIN_BOT_TOKEN
+    import aiohttp
+
+    token = BOT_TOKEN or ADMIN_BOT_TOKEN
+    if not token:
+        raise HTTPException(status_code=503, detail="Токен бота не настроен — загрузка фото недоступна")
+
+    content = await file.read()
+    data = aiohttp.FormData()
+    data.add_field("chat_id", str(admin_id))
+    data.add_field("photo", content, filename=file.filename or "evidence.jpg", content_type=file.content_type or "image/jpeg")
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f"https://api.telegram.org/bot{token}/sendPhoto", data=data) as resp:
+            result = await resp.json()
+
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=f"Telegram: {result.get('description', 'ошибка загрузки')}")
+
+    sizes = result["result"]["photo"]
+    telegram_file_id = sizes[-1]["file_id"]
+    return {"fileId": telegram_file_id}
+
+
+@router.get("/users/evidence/{file_id:path}")
+async def admin_get_evidence(
+    file_id: str,
+    _admin_id: int = Depends(require_admin_session),
+):
+    """Возвращает временную ссылку на фото-доказательство через Telegram."""
+    from admin_moderation import get_proof_url
+    from fastapi.responses import RedirectResponse
+
+    try:
+        url = await get_proof_url_by_file_id(file_id)
+        return RedirectResponse(url)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+async def get_proof_url_by_file_id(file_id: str) -> str:
+    """Получает временный URL файла из Telegram по file_id."""
+    import aiohttp
+    from admin_moderation import candidate_tokens_for_file
+    # Приоритет — сохранённому в БД токену-владельцу пруфа, затем настроенные.
+    tokens = await candidate_tokens_for_file(file_id)
+    if not tokens:
+        raise RuntimeError("Токен бота не настроен")
+    last_error = ""
+    async with aiohttp.ClientSession() as session:
+        for token in tokens:
+            async with session.get(
+                f"https://api.telegram.org/bot{token}/getFile",
+                params={"file_id": file_id},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json()
+            if data.get("ok"):
+                return f"https://api.telegram.org/file/bot{token}/{data['result']['file_path']}"
+            last_error = data.get("description", "ошибка")
+    raise RuntimeError(f"Telegram getFile error: {last_error}")
+
+
+@router.post("/support/tickets-upload/{ticket_id}")
+async def admin_ticket_upload(
+    ticket_id: int,
+    file: UploadFile = File(...),
+    text: str = Form(default=""),
+    admin_id: int = Depends(require_admin_session),
+):
+    from config import SUPPORT_BOT_TOKEN
+    import support_db
+
+    ticket = await support_db.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Тикет не найден")
+    if ticket["status"] == "closed":
+        raise HTTPException(400, "Тикет закрыт")
+
+    from admin_routes import _admin_display_name
+    admin_name = await _admin_display_name_local(admin_id)
+
+    file_id = await _upload_photo_to_telegram(file, SUPPORT_BOT_TOKEN, str(ticket["user_id"]), text.strip())
+    await support_db.add_admin_message(ticket_id, admin_id, admin_name, text.strip(), file_id)
+    return {"ok": True, "fileId": file_id}
+
+
+async def _admin_display_name_local(admin_id: int) -> str:
+    try:
+        row = await db.pool.fetchrow(
+            "SELECT first_name, username FROM admin_accounts WHERE user_id = $1", admin_id,
+        )
+        if row:
+            return row["first_name"] or (f"@{row['username']}" if row["username"] else f"#{admin_id}")
+    except Exception:
+        pass
+    return f"#{admin_id}"
+
+
+@router.get("/appeals/{appeal_id}/messages")
+async def admin_appeal_messages(
+    appeal_id: int,
+    _admin_id: int = Depends(require_admin_permission("manage_appeals")),
+):
+    return {"items": await get_appeal_messages(appeal_id)}
+
+
+class AppealMessageBody(BaseModel):
+    text: str = ""
+    photoFileId: str = ""
+
+
+@router.post("/appeals/{appeal_id}/message")
+async def admin_send_appeal_message(
+    appeal_id: int,
+    body: AppealMessageBody,
+    admin_id: int = Depends(require_admin_permission("manage_appeals")),
+):
+    from admin_db import get_admin_account
+    acc = await get_admin_account(admin_id)
+    admin_name = (acc.get("firstName") or acc.get("username") or f"#{admin_id}") if acc else f"#{admin_id}"
+    try:
+        return await send_appeal_message(
+            appeal_id, admin_id, admin_name,
+            body.text, body.photoFileId or None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/appeals/{appeal_id}/resolve")
+async def admin_resolve_appeal(
+    appeal_id: int,
+    body: ResolveAppealBody,
+    admin_id: int = Depends(require_admin_permission("manage_appeals")),
+):
+    try:
+        return await resolve_appeal(
+            appeal_id, admin_id,
+            approve=body.approve,
+            resolution=body.resolution,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/moderation/logs")
+async def admin_moderation_logs(
+    action_type: str | None = Query(None),
+    player_id: int | None = Query(None),
+    sort_by: str = Query("date"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("moderate_ban")),
+):
+    return await list_moderation_logs(
+        action_type=action_type,
+        player_id=player_id,
+        sort_by=sort_by,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.delete("/moderation/logs/{log_id}")
+async def admin_moderation_delete_log(
+    log_id: int,
+    request: Request,
+    admin_id: int = Depends(require_admin_session),
+):
+    from admin_db import get_admin_account
+    acc = await get_admin_account(admin_id)
+    if not acc or acc.get("role") not in ("owner",):
+        raise HTTPException(status_code=403, detail="Только владелец может удалять записи архива")
+    try:
+        await delete_log(log_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    await log_admin_action(
+        admin_id, "moderation_log_delete",
+        target_type="moderation_log", target_id=str(log_id),
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+@router.get("/moderation/proof/{log_id}")
+async def admin_moderation_proof(
+    log_id: int,
+    _admin_id: int = Depends(require_admin_permission("moderate_ban")),
+):
+    try:
+        url = await get_proof_url(log_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"url": url}
+
+
+@router.get("/moderation/player-history/{player_id}")
+async def admin_player_history(
+    player_id: int,
+    _admin_id: int = Depends(require_admin_permission("moderate_ban")),
+):
+    return {"items": await get_player_history(player_id)}
+
+
+@router.get("/moderation/moderator-stats")
+async def admin_moderator_stats(
+    period: str = Query("week"),
+    _admin_id: int = Depends(require_admin_permission("moderate_ban")),
+):
+    return {"items": await get_moderator_stats(period)}
+
+
+@router.get("/moderation/recent")
+async def admin_moderation_recent(
+    limit: int = Query(5, ge=1, le=20),
+    _admin_id: int = Depends(require_admin_permission("moderate_ban")),
+):
+    return {"items": await get_recent_logs(limit)}
+
+
+@router.post("/moderation/unban/{user_id}")
+async def admin_moderation_unban(
+    user_id: int,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("moderate_unban")),
+):
+    from admin_db import get_admin_account
+
+    acc = await get_admin_account(admin_id)
+    admin_name = (acc.get("firstName") or acc.get("username") or "") if acc else ""
+
+    try:
+        await unban_player(user_id, admin_user_id=admin_id, admin_name=admin_name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    await log_admin_action(
+        admin_id, "unban_user",
+        target_type="player",
+        target_id=str(user_id),
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+@router.websocket("/ws/moderation")
+async def ws_moderation(websocket: WebSocket, token: str = Query("")):
+    from admin_auth import verify_admin_token
+    from admin_ws import ws_connect, ws_disconnect
+
+    if not verify_admin_token(token):
+        await websocket.close(code=4001)
+        return
+
+    await ws_connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        ws_disconnect(websocket)
+
+
+# ---------------------------------------------------------------------------
+# Invite tokens
+# ---------------------------------------------------------------------------
+
+
+class CreateInviteTokenBody(BaseModel):
+    label: str = Field(default="", max_length=200)
+    model_config = {"extra": "forbid"}
+
+
+@router.get("/staff/invites")
+async def get_invite_tokens(
+    user_id: int = Depends(require_admin_permission("assign_roles")),
+):
+    items = await list_invite_tokens()
+    return {"items": items}
+
+
+@router.post("/staff/invites")
+async def post_invite_token(
+    body: CreateInviteTokenBody,
+    user_id: int = Depends(require_admin_permission("assign_roles")),
+):
+    token = await create_invite_token(body.label, user_id)
+    return token
+
+
+@router.post("/staff/invites/{token_id}/revoke")
+async def revoke_invite_token_route(
+    token_id: int,
+    user_id: int = Depends(require_admin_permission("assign_roles")),
+):
+    ok = await revoke_invite_token(token_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Токен не найден или уже отозван/использован")
+    return {"ok": True}
+
+
+@router.delete("/staff/invites/{token_id}")
+async def hard_delete_invite_token_route(
+    token_id: int,
+    user_id: int = Depends(require_admin_permission("assign_roles")),
+):
+    ok = await hard_delete_invite_token(token_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Токен не найден")
+    return {"ok": True}

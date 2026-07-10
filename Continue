@@ -1,0 +1,12 @@
+[DB] connecting -> APP_MODE=test profile=test postgres@127.0.0.1:5432/cutebase (local)
+[DB][OK] connected to 'cutebase' via local | users=3894 | pool=1..20 | 178 ms
+Пул соединений создан, schema применена.
+Dex: 261 предметов в каталоге.
+pending token: jcNZ9mZE...
+key type: owner
+expires at: 2026-07-06 21:52:14.241390+00:00
+secret tail in DB: JSCH
+entered code: 700601
+server unix time: 1783373913
+MATCH narrow window: False
+MATCH wide window: False

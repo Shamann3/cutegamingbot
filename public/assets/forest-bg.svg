@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-label="Forest background">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0b1f14"/>
+      <stop offset="55%" stop-color="#123524"/>
+      <stop offset="100%" stop-color="#061008"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="#3d7a45" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#061008" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#sky)"/>
+  <rect width="1200" height="800" fill="url(#glow)"/>
+  <ellipse cx="220" cy="620" rx="180" ry="90" fill="#0a2418"/>
+  <ellipse cx="520" cy="650" rx="240" ry="110" fill="#0d2d1d"/>
+  <ellipse cx="900" cy="610" rx="200" ry="95" fill="#0a2217"/>
+  <path d="M120 520 Q180 360 250 520 Z" fill="#174028"/>
+  <path d="M300 540 Q360 300 430 540 Z" fill="#1d4b31"/>
+  <path d="M520 560 Q590 280 660 560 Z" fill="#205538"/>
+  <path d="M760 530 Q830 320 900 530 Z" fill="#1a4a2f"/>
+  <path d="M980 550 Q1040 360 1100 550 Z" fill="#163f29"/>
+  <circle cx="180" cy="180" r="3" fill="#fde68a" opacity="0.8"/>
+  <circle cx="420" cy="120" r="2" fill="#fef3c7" opacity="0.7"/>
+  <circle cx="760" cy="150" r="2.5" fill="#fde68a" opacity="0.75"/>
+  <circle cx="980" cy="210" r="2" fill="#fef3c7" opacity="0.65"/>
+</svg>

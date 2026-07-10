@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" role="img" aria-label="Cute crest">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fef3c7"/>
+      <stop offset="50%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#b45309"/>
+    </linearGradient>
+  </defs>
+  <path d="M120 8 L210 35 L185 95 Q120 112 55 95 L30 35 Z" fill="#123524" stroke="url(#gold)" stroke-width="4"/>
+  <text x="120" y="72" text-anchor="middle" font-size="42" fill="url(#gold)" font-family="Georgia, serif" font-weight="700">C</text>
+</svg>

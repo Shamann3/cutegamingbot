@@ -1,0 +1,10 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+asyncpg==0.30.0
+python-dotenv==1.0.1
+aiogram==3.17.0
+pydantic==2.10.6
+pydantic-core==2.27.2
+python-multipart
+aiohttp
+tzdata

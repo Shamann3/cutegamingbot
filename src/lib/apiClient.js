@@ -1,0 +1,163 @@
+import {
+  canAuthenticate,
+  getAuthErrorMessage,
+  getTelegramInitData,
+} from './telegram'
+import { getClientInfoHeaders } from './clientInfo'
+import { reportApiFailure } from './reportApiFailure'
+
+const API_BASE = import.meta.env.VITE_API_URL ?? ''
+
+export class ApiError extends Error {
+  constructor(message, { status = 0, code = 'unknown' } = {}) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+export function mapApiError(status, detail) {
+  const text = typeof detail === 'string' ? detail : `Ошибка ${status}`
+  if (status === 401) {
+    return new ApiError(
+      typeof detail === 'string' && detail
+        ? detail
+        : 'Сессия истекла. Пожалуйста, перезапустите приложение из Telegram бота',
+      { status, code: 'auth' },
+    )
+  }
+  if (status === 429) {
+    return new ApiError(
+      'Слишком часто. Пожалуйста, подождите 10 секунд и попробуйте снова',
+      { status, code: 'rate_limit' },
+    )
+  }
+  if (status === 503) {
+    const text = typeof detail === 'string' ? detail : `Ошибка ${status}`
+    const isMaintenance = text.includes('Технические работы')
+    return new ApiError(
+      isMaintenance ? 'Технические работы. Пожалуйста, зайдите позже' : text,
+      { status, code: isMaintenance ? 'maintenance' : 'unavailable' },
+    )
+  }
+  return new ApiError(text, { status, code: 'api' })
+}
+
+function buildAuthHeaders() {
+  if (!canAuthenticate()) {
+    throw new ApiError(getAuthErrorMessage(), { status: 401, code: 'auth' })
+  }
+
+  const initData = getTelegramInitData()
+  if (initData) {
+    return { 'X-Telegram-Init-Data': initData, ...getClientInfoHeaders() }
+  }
+
+  const devUserId = import.meta.env.VITE_DEV_USER_ID
+  return { 'X-Dev-User-Id': devUserId, ...getClientInfoHeaders() }
+}
+
+export function getApiAuthHeaders() {
+  return buildAuthHeaders()
+}
+
+export async function apiRequest(path, { method = 'GET', body, timeoutMs = 15000 } = {}) {
+  const authHeaders = buildAuthHeaders()
+
+  const headers = {
+    Accept: 'application/json',
+    'ngrok-skip-browser-warning': '1',
+    ...authHeaders,
+    ...(body ? { 'Content-Type': 'application/json' } : {}),
+  }
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      const apiErr = mapApiError(response.status, error.detail ?? error.message)
+      if (response.status === 403) {
+        window.dispatchEvent(new CustomEvent('api:forbidden', { detail: apiErr }))
+      }
+      if (response.status === 503 && apiErr.code === 'maintenance') {
+        window.dispatchEvent(new CustomEvent('api:maintenance', { detail: apiErr }))
+      }
+      throw apiErr
+    }
+
+    return response.json()
+  } catch (error) {
+    if (error instanceof ApiError) {
+      reportApiFailure(error, path)
+      throw error
+    }
+    if (error.name === 'AbortError') {
+      const timeoutError = new ApiError(
+        'Сервер не отвечает. Пожалуйста, запустите .\\start-server.ps1 в папке server (порт 8000).',
+        { status: 0, code: 'timeout' },
+      )
+      reportApiFailure(timeoutError, path)
+      throw timeoutError
+    }
+    if (error instanceof TypeError) {
+      const networkError = new ApiError(
+        'Нет связи с API. Пожалуйста, проверьте: start-server.ps1 + npm run dev + ngrok http 5173.',
+        { status: 0, code: 'network' },
+      )
+      reportApiFailure(networkError, path)
+      throw networkError
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+export async function submitComplaint({ reason, subject = '' }) {
+  return apiRequest('/api/complaints', {
+    method: 'POST',
+    body: { reason, subject },
+  })
+}
+
+let _supportBotUrl = import.meta.env.VITE_SUPPORT_BOT_URL || ''
+
+export function getSupportBotUrl() {
+  return _supportBotUrl
+}
+
+export async function fetchAppStatus() {
+  const API_BASE_URL = import.meta.env.VITE_API_URL ?? ''
+  let authHeaders = {}
+  try { authHeaders = buildAuthHeaders() } catch { /* не в Telegram ок */ }
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 8000)
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/status`, {
+      headers: { Accept: 'application/json', 'ngrok-skip-browser-warning': '1', ...authHeaders },
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      return { ok: false, maintenance: false }
+    }
+    const data = await response.json()
+    if (data.supportBotUrl) _supportBotUrl = data.supportBotUrl
+    return data
+  } catch {
+    return { ok: false, maintenance: false }
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}

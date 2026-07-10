@@ -1,0 +1,59 @@
+node_modules
+dist
+.DS_Store
+*.local
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+
+# Python
+server/.venv
+server/.env
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Telegram sessions (КРИТИЧНО — доступ к аккаунтам)
+*.session
+*.session-journal
+
+# Базы данных
+*.db
+database.db
+path_to_your_database.db
+path_to_your_database_file
+
+# Pickle / бэкапы
+*.pkl
+pkl/
+pkl_backups/
+
+# Логи (в корне и в logs/)
+logs/
+log.txt
+log_*.txt
+
+# Файлы с учётными данными / паролями
+unify-root-password.txt
+install-ssh-key-putty.txt
+putty-fix-database.txt
+putty-tunnel-guide.txt
+
+# Загруженные файлы (фото доказательств) — не коммитить
+server/evidence_files/*
+!server/evidence_files/.gitkeep
+
+# Инструменты / IDE
+.playwright-mcp/
+.idea/
+.cursor/
+.claude/settings.local.json
+
+# Скрипты с захардкоженным паролем postgres
+server/fix-cutehost-remote.ps1
+server/scripts/fix-postgres-on-server.sh
+server/set-db-password.ps1
+fix-cutehost-pg-password.bat
