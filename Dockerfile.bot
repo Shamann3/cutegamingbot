@@ -8,9 +8,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-# ca-certificates — для SSL к managed-базе и внешним API.
+# ca-certificates — SSL; build-essential — компилятор для TgCrypto (C-расширение,
+# нет wheel под py3.12, собирается из исходников).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-bot.txt ./
