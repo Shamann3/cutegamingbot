@@ -219,13 +219,17 @@ class Database:
         schema = Path(__file__).parent / "schema.sql"
         _mig_logger = logging.getLogger("cute-farm")
         async with self.pool.acquire() as conn:
+            # Сначала создаём/актуализируем схему (CREATE TABLE IF NOT EXISTS),
+            # затем миграции-ALTER. На пустой базе (например, свежая managed-БД
+            # на хостинге) обратный порядок падал: ALTER бил по ещё не созданной
+            # таблице farm_plots.
+            await conn.execute(schema.read_text(encoding="utf-8"))
             await conn.execute(
                 """
                 ALTER TABLE farm_plots
                 ADD COLUMN IF NOT EXISTS autowater_active BOOLEAN NOT NULL DEFAULT FALSE
                 """
             )
-            await conn.execute(schema.read_text(encoding="utf-8"))
 
             # Heal schema drift on pre-existing DBs: "CREATE TABLE IF NOT EXISTS"
             # never adds a UNIQUE constraint to a table that already exists, so
