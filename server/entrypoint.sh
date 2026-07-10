@@ -2,7 +2,7 @@
 # Точка входа контейнера. Если задан SSH_TUNNEL_HOST — перед запуском приложения
 # поднимаем постоянный SSH-туннель к серверу с базой (CuteHost) и держим его живым.
 # Приложение затем коннектится к 127.0.0.1:<LPORT>, туннель пробрасывает на Postgres.
-# Так порт Postgres НЕ нужно открывать наружу — наружу торчит только SSH (22).
+# Так порт Postgres НЕ нужно открывать наружу — наружу торчит только SSH.
 set -e
 
 if [ -n "$SSH_TUNNEL_HOST" ]; then
@@ -15,20 +15,23 @@ if [ -n "$SSH_TUNNEL_HOST" ]; then
   echo "[tunnel] ${SUSER}@${SSH_TUNNEL_HOST}:${SPORT}  forward 127.0.0.1:${LPORT} -> ${RHOST}:${RPORT}"
 
   # Фоновый цикл: держим туннель живым, при обрыве переподключаемся.
-  # sshpass передаёт пароль при КАЖДОМ переподключении (в отличие от autossh).
+  # sshpass передаёт пароль при КАЖДОМ переподключении. -v даёт диагностику.
   (
     while true; do
-      sshpass -p "$SSH_TUNNEL_PASSWORD" ssh -N \
+      sshpass -p "$SSH_TUNNEL_PASSWORD" ssh -v -N \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         -o ServerAliveInterval=20 \
         -o ServerAliveCountMax=3 \
         -o ExitOnForwardFailure=yes \
+        -o ConnectTimeout=15 \
+        -o PreferredAuthentications=password \
+        -o PubkeyAuthentication=no \
         -p "$SPORT" \
-        -L "${LPORT}:${RHOST}:${RPORT}" \
-        "${SUSER}@${SSH_TUNNEL_HOST}" || true
-      echo "[tunnel] ssh exited, reconnect in 3s..."
-      sleep 3
+        -L "127.0.0.1:${LPORT}:${RHOST}:${RPORT}" \
+        "${SUSER}@${SSH_TUNNEL_HOST}" 2>&1 | sed 's/^/[ssh] /'
+      echo "[tunnel] ssh session ended, reconnect in 5s..."
+      sleep 5
     done
   ) &
 
@@ -36,14 +39,14 @@ if [ -n "$SSH_TUNNEL_HOST" ]; then
   python - "$LPORT" <<'PY'
 import socket, sys, time
 port = int(sys.argv[1])
-for _ in range(30):
+for _ in range(40):
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=2):
             print("[tunnel] up", flush=True)
             sys.exit(0)
     except OSError:
         time.sleep(1)
-print("[tunnel] WARNING: local port not reachable after 30s", flush=True)
+print("[tunnel] WARNING: local port not reachable after 40s", flush=True)
 PY
 fi
 
