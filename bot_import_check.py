@@ -9,8 +9,9 @@ mods = [
     "bs4", "emoji", "geopy", "timezonefinder", "langdetect", "googletrans",
     "deep_translator", "translate", "praw", "pyowm", "cachetools", "psutil",
     "aiofiles", "aiohttp", "pydantic", "geonamescache", "better_profanity",
-    "transliterate", "ntplib", "speedtest", "yandex_translater",
+    "transliterate", "ntplib", "speedtest", "yandex.Translater",
     "google_trans_new", "libretranslatepy", "fragment_api_lib", "aiosend",
+    "pyowm",
 ]
 
 failed = []
