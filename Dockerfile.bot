@@ -14,7 +14,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-bot.txt ./
-RUN pip install -r requirements-bot.txt
+# --no-deps: requirements-bot.txt — полный слепок рабочего venv (все версии
+# уже зафиксированы), поэтому ставим ровно их, без пересчёта зависимостей.
+# Иначе pip упирается в конфликты (googletrans↔python-telegram-bot по httpx),
+# которые на сервере обойдены принудительной установкой.
+RUN pip install --no-deps -r requirements-bot.txt
 
 COPY . .
 RUN chmod +x /app/entrypoint-bot.sh
