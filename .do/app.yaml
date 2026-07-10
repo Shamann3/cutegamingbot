@@ -12,6 +12,10 @@ region: ams
 services:
   # ---------- FastAPI backend ----------
   - name: api
+    github:
+      repo: oleksandrfunded-beep/cutegaming
+      branch: main
+      deploy_on_push: true
     dockerfile_path: server/Dockerfile
     source_dir: /server
     http_port: 8080
@@ -60,6 +64,10 @@ services:
 
   # ---------- Frontend (игра + админка) ----------
   - name: frontend
+    github:
+      repo: oleksandrfunded-beep/cutegaming
+      branch: main
+      deploy_on_push: true
     environment_slug: node-js
     source_dir: /
     build_command: npm ci && npm --prefix admin ci && npm run build
@@ -79,6 +87,10 @@ services:
 workers:
   # ---------- Telegram-боты ----------
   - name: bots
+    github:
+      repo: oleksandrfunded-beep/cutegaming
+      branch: main
+      deploy_on_push: true
     dockerfile_path: server/Dockerfile
     source_dir: /server
     run_command: python bots_runner.py
