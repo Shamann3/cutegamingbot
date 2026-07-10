@@ -33,14 +33,25 @@ load_dotenv(ROOT_ENV_FILE, override=True)
 
 
 def _file_env(key: str, default: str = "") -> str:
-    return _FILE_ENV.get(key, default).strip()
+    """Значение конфигурации: сперва из .env-файлов, затем из окружения процесса.
+
+    Локально авторитетен корневой .env; на хостинге (DigitalOcean и т.п.) файла
+    нет — тогда берём переменную окружения, заданную в панели.
+    """
+    val = _FILE_ENV.get(key)
+    if val is None or val == "":
+        env_val = os.environ.get(key, "")
+        val = env_val if env_val != "" else default
+    return val.strip()
 
 
+# Чистим ТОЛЬКО «системные» PG*-переменные, которые asyncpg/libpq могли бы
+# подхватить неявно. DATABASE_URL и PRODUCTION НЕ трогаем — на хостинге это
+# легитимный способ передать конфигурацию через окружение.
 for _sys_key in (
     "PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD",
-    "PRODUCTION", "DATABASE_URL",
 ):
-    if _sys_key not in _FILE_ENV or not _file_env(_sys_key):
+    if _sys_key not in _FILE_ENV or not _FILE_ENV.get(_sys_key):
         os.environ.pop(_sys_key, None)
 
 _APP_MODE_ALIASES = {
@@ -269,14 +280,18 @@ DB_USER = _resolve_db_value("DB_USER")
 DB_PASSWORD = _resolve_db_value("DB_PASSWORD")
 DB_SSL = _resolve_db_value("DB_SSL").lower() or "auto"
 
-if APP_MODE == "main" and DB_LOCATION == "remote" and not DB_PASSWORD:
-    raise RuntimeError(
-        "main + remote: задай DB_PASSWORD_MAIN в корневом .env (пароль от cutebase на CuteHost)."
-    )
-if APP_MODE == "main" and DB_NAME.lower() != "cutebase":
-    raise RuntimeError(
-        f"APP_MODE=main: ожидается DB_NAME_MAIN=cutebase, сейчас '{DB_NAME}'."
-    )
+# Эти проверки актуальны только для «раздельной» конфигурации (host/user/pass).
+# Когда задан DATABASE_URL (managed-база на хостинге), подключение идёт по строке —
+# host/name/password из профиля не используются, поэтому guardrail'ы пропускаем.
+if not DATABASE_URL:
+    if APP_MODE == "main" and DB_LOCATION == "remote" and not DB_PASSWORD:
+        raise RuntimeError(
+            "main + remote: задай DB_PASSWORD_MAIN в корневом .env (пароль от cutebase на CuteHost)."
+        )
+    if APP_MODE == "main" and DB_NAME.lower() != "cutebase":
+        raise RuntimeError(
+            f"APP_MODE=main: ожидается DB_NAME_MAIN=cutebase, сейчас '{DB_NAME}'."
+        )
 
 
 def db_connection_label() -> str:

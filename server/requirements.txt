@@ -8,3 +8,5 @@ pydantic-core==2.27.2
 python-multipart
 aiohttp
 tzdata
+pyotp
+qrcode[pil]
