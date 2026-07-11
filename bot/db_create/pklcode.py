@@ -188,6 +188,11 @@ PKL_HEAL_RELOAD_COOLDOWN_SEC = float(os.getenv("PKL_HEAL_RELOAD_COOLDOWN_SEC", "
 
 # ✅ быстрый путь (по умолчанию включен): не трогаем самолечение если sync уже готов
 PKL_FASTPATH_READS = bool(int(os.getenv("PKL_FASTPATH_READS", "1")))
+# Пинговать Redis на КАЖДОМ чтении словаря — дорого (синхронный раунд-трип в
+# event-loop на каждый доступ). Данные и так лежат в памяти процесса, а фоновый
+# health-watcher (PKL_HEALTH_WATCHER, каждые 3с) следит за Redis. Поэтому пинг на
+# чтении по умолчанию ВЫКЛЮЧЕН — чтения становятся чисто in-memory (быстро).
+PKL_FASTPATH_PING = bool(int(os.getenv("PKL_FASTPATH_PING", "0")))
 
 
 # ---------- глобальные клиенты ----------
@@ -991,8 +996,11 @@ class GameStore(dict):
 
     # ✅ ЛЕНИВОЕ самолечение: только если реально надо
     def _maybe_heal_read(self) -> None:
-        if PKL_FASTPATH_READS and (not self._need_initial_sync) and _raw_ping_ok():
-            return
+        # Быстрый путь: данные уже в памяти и initial_sync выполнен → отдаём без
+        # обращения к Redis. Пинг делаем только если явно включён PKL_FASTPATH_PING.
+        if PKL_FASTPATH_READS and (not self._need_initial_sync):
+            if (not PKL_FASTPATH_PING) or _raw_ping_ok():
+                return
 
         deadline = time.time() + PKL_HEAL_READ_TIMEOUT_SEC
         while time.time() < deadline:

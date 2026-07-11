@@ -5001,6 +5001,10 @@ VGS_WARMUP_LOCK = asyncio.Lock()
 VGS_WARMUP_BATCH = int(os.getenv("VGS_WARMUP_BATCH", "3000"))
 VGS_WARMUP_SLEEP = float(os.getenv("VGS_WARMUP_SLEEP", "1.0"))
 VGS_WARMUP_TIME_BUDGET = float(os.getenv("VGS_WARMUP_TIME_BUDGET", "0.2"))
+# Фоновый прогрев всех 240k юзеров ВЫКЛЮЧЕН по умолчанию: кэш наполняется лениво
+# по первому обращению каждого юзера. Это убирает фоновую CPU-нагрузку (особенно
+# после каждого рестарта, т.к. Redis эфемерный). Включить: VGS_WARMUP_ENABLED=1.
+VGS_WARMUP_ENABLED = bool(int(os.getenv("VGS_WARMUP_ENABLED", "0")))
 
 # ============================================================
 # ЛЁГКАЯ ОТЛАДКА (почти не тратит ресурсы при level=0)
@@ -5159,10 +5163,22 @@ async def vgs_pending_flusher(db, interval: float = 2.0):
 # ============================================================
 # TG wrappers
 # ============================================================
+# Кэш bio/get_chat по user_id. get_chat — сетевой вызов к Telegram (~150–330мс)
+# и раньше делался на КАЖДУЮ команду (баланс/профиль). bio меняется редко,
+# поэтому кэшируем на VGS_BIO_CACHE_TTL — команды перестают ждать Telegram.
+_VGS_BIO_CACHE: Dict[int, tuple] = {}
+VGS_BIO_CACHE_TTL = float(os.getenv("VGS_BIO_CACHE_TTL", "600"))  # сек
+
 async def vgs_get_bio_safe(bot, user_id: int, fallback: str = "Пусто") -> str:
+    now = time.time()
+    hit = _VGS_BIO_CACHE.get(user_id)
+    if hit is not None and (now - hit[1]) < VGS_BIO_CACHE_TTL:
+        return hit[0] or fallback
     try:
         chat = await vgs_call(lambda: bot.get_chat(user_id), timeout=VGS_TG_TIMEOUT)
-        return getattr(chat, "bio", None) or fallback
+        bio = getattr(chat, "bio", None)
+        _VGS_BIO_CACHE[user_id] = (bio, now)
+        return bio or fallback
     except Exception as e:
         _vgs_err("BIO", "get_chat failed → fallback", e, uid=user_id, level=2)
         return fallback
@@ -5326,7 +5342,8 @@ async def add_or_update_user_info(message, db, start_balance, *, bot):
             first_name = (first_name_raw or "Неизвестный").strip() or "Неизвестный"
 
         # ── warmup (незаметно) ──
-        vgs_ensure_warmup_started(db, VGS_USER_CACHE)
+        if VGS_WARMUP_ENABLED:
+            vgs_ensure_warmup_started(db, VGS_USER_CACHE)
 
         # ── bio ──
         fallback_bio = (VGS_USER_CACHE.get(user_id, {}) or {}).get("bio") or "Пусто"
