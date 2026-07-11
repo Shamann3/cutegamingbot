@@ -146,7 +146,7 @@ class Database:
             "timeout": 10,
             "command_timeout": 30,
             "max_inactive_connection_lifetime": 300,
-            "statement_cache_size": 256,
+            "statement_cache_size": 0,
         }
         _t0 = time.perf_counter()
         _via = (

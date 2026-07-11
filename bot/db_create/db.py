@@ -715,6 +715,9 @@ class Database:
             max_size=warm_max,
             max_inactive_connection_lifetime=0.0,  # не закрывать тёплые соединения
             command_timeout=45.0,                   # предохранитель от зависших запросов
+            statement_cache_size=0,                 # обязательно для DO connection pool
+                                                    # (PgBouncer transaction mode) — иначе
+                                                    # ломаются prepared statements.
         )
         if ssl is not False:
             kwargs["ssl"] = ssl
