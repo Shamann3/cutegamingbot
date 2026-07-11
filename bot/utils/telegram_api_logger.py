@@ -1,4 +1,5 @@
 import logging
+import sys
 import time
 
 from aiogram.client.session.middlewares.base import BaseRequestMiddleware
@@ -7,17 +8,23 @@ from aiogram.methods import TelegramMethod
 logger = logging.getLogger("telegram_api")
 
 if not logger.handlers:
-    handler = logging.FileHandler("/app/log_telegram_api.txt", encoding="utf-8")
-
     formatter = logging.Formatter(
-        "[%(asctime)s] %(levelname)s %(message)s",
+        "[TG-API %(asctime)s] %(levelname)s %(message)s",
         "%d.%m.%Y %H:%M:%S"
     )
 
-    handler.setFormatter(formatter)
+    handlers = [logging.StreamHandler(sys.stdout)]
+    try:
+        handlers.append(logging.FileHandler("/app/log_telegram_api.txt", encoding="utf-8"))
+    except OSError:
+        pass
 
-    logger.addHandler(handler)
+    for h in handlers:
+        h.setFormatter(formatter)
+        logger.addHandler(h)
+
     logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 
 class TelegramApiLogger(BaseRequestMiddleware):

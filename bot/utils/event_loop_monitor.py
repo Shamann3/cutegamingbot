@@ -1,21 +1,28 @@
 import asyncio
 import logging
+import sys
 import time
 
 logger = logging.getLogger("event_loop")
 
 if not logger.handlers:
-    handler = logging.FileHandler("/app/log_event_loop.txt", encoding="utf-8")
-
     formatter = logging.Formatter(
-        "[%(asctime)s] %(message)s",
+        "[EVENTLOOP %(asctime)s] %(message)s",
         "%d.%m.%Y %H:%M:%S"
     )
 
-    handler.setFormatter(formatter)
+    handlers = [logging.StreamHandler(sys.stdout)]
+    try:
+        handlers.append(logging.FileHandler("/app/log_event_loop.txt", encoding="utf-8"))
+    except OSError:
+        pass
 
-    logger.addHandler(handler)
+    for h in handlers:
+        h.setFormatter(formatter)
+        logger.addHandler(h)
+
     logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 
 async def monitor_event_loop(

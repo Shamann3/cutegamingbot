@@ -36928,6 +36928,17 @@ async def botmain():
             print(f"[RUNBOT][WARN] Не удалось запустить run_bot: {type(e).__name__}: {e}")
             run_bot_task = None
 
+        # ─── Диагностика: детектор зависания event-loop + монитор сети до Telegram ───
+        # Пишут в /app/log_event_loop.txt и в stdout (network). Ловят «замирания»
+        # цикла (из-за которых виснут отправки в Telegram) и сетевые проблемы.
+        try:
+            asyncio.create_task(monitor_event_loop(interval=0.2, warn_delay=0.5))
+            from bot.utils.network_monitor import network_monitor
+            asyncio.create_task(network_monitor())
+            print("[DIAG] ✅ event_loop + network мониторы запущены")
+        except Exception as e:
+            print(f"[DIAG][WARN] мониторы не запущены: {type(e).__name__}: {e}")
+
     # ===================== 5) ЗАПУСК EDEN =====================
     async def _start_eden():
         """Запускает Eden-бота через run_eden()."""
