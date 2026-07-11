@@ -132,8 +132,9 @@ import signal
 import atexit
 from aiosend import CryptoPay, PollingRouter, TESTNET, MAINNET
 from aiosend.types import Invoice
+from bot.utils.telethon_logger import install_telethon_logger
 from redis.exceptions import AuthenticationError, ResponseError, ConnectionError, TimeoutError  # type: ignore
-
+from bot.utils.network_monitor import network_monitor
 from bot.utils.telegram_api_logger import TelegramApiLogger
 
 bot_start_time = time.time()
@@ -7549,42 +7550,16 @@ def _get_withdraw_request_lock(request_id: str) -> asyncio.Lock:
 
 
 async def _validate_withdraw_userbot_identity(tg_client) -> Any:
-    me = await tg_client.get_me()
-
-    me_id = _wd_safe_int(getattr(me, "id", 0), 0)
-    me_phone = _wd_safe_str(getattr(me, "phone", ""), "")
-    me_username = _wd_safe_str(getattr(me, "username", ""), "")
-    me_first_name = _wd_safe_str(getattr(me, "first_name", ""), "")
-
-    print(
-        f"🟦[WITHDRAW][USERBOT][ME] "
-        f"id={me_id} phone={me_phone!r} username={me_username!r} first_name={me_first_name!r}"
-    )
-
-    if EXPECTED_TECH_USER_ID > 0 and me_id != EXPECTED_TECH_USER_ID:
-        raise RuntimeError(
-            f"Открыта НЕ та сессия tech userbot. "
-            f"Ожидался user_id={EXPECTED_TECH_USER_ID}, а получен user_id={me_id}. "
-            f"Скорее всего, ты используешь не тот session-файл."
-        )
-
-    if _wd_safe_str(EXPECTED_TECH_PHONE, ""):
-        expected_phone = _wd_safe_str(EXPECTED_TECH_PHONE, "").lstrip("+")
-        actual_phone = _wd_safe_str(me_phone, "").lstrip("+")
-        if expected_phone and actual_phone and expected_phone != actual_phone:
-            raise RuntimeError(
-                f"Открыт не тот номер tech userbot. "
-                f"Ожидался {expected_phone}, а получен {actual_phone}. "
-                f"Проверь session-файл."
-            )
-
+    ...
     return me
 
 
 def build_withdraw_userbot_client() -> TelegramClient:
+
     if _wd_safe_str(TECH_STRING_SESSION, ""):
         print("🟦[WITHDRAW][USERBOT] build client from StringSession")
-        return TelegramClient(
+
+        client = TelegramClient(
             StringSession(TECH_STRING_SESSION),
             TECH_API_ID,
             TECH_API_HASH,
@@ -7595,8 +7570,13 @@ def build_withdraw_userbot_client() -> TelegramClient:
             system_lang_code="ru",
         )
 
+        install_telethon_logger(client)
+
+        return client
+
     print(f"🟦[WITHDRAW][USERBOT] build client from session file: {TECH_SESSION_NAME!r}")
-    return TelegramClient(
+
+    client = TelegramClient(
         TECH_SESSION_NAME,
         TECH_API_ID,
         TECH_API_HASH,
@@ -7606,6 +7586,10 @@ def build_withdraw_userbot_client() -> TelegramClient:
         lang_code="ru",
         system_lang_code="ru",
     )
+
+    install_telethon_logger(client)
+
+    return client
 
 
 async def register_withdraw_userbot_for_startup(
@@ -37011,6 +36995,36 @@ async def botmain():
                 delay = min(30.0, 3.0 * hard_failures)
                 print(f"[{label}][ERR] {type(e).__name__}: {e} → перезапуск polling через {delay:.0f}s ({hard_failures}/{max_hard_failures})")
                 await asyncio.sleep(delay)
+
+    # Запускаем монитор сети
+    asyncio.create_task(network_monitor())
+
+    print("[🚀] Запускаем основной и платёжный боты...")
+
+    await asyncio.gather(
+        _resilient_polling(
+            "MAIN",
+            lambda: dp.start_polling(
+                bot1,
+                allowed_updates=[
+                    "message",
+                    "edited_message",
+                    "callback_query",
+                    "inline_query",
+                    "chosen_inline_result",
+                    "pre_checkout_query"
+                ],
+            ),
+        ),
+        _resilient_polling(
+            "PAYMENT",
+            lambda: cp.start_polling(),
+        ),
+    )
+
+
+
+
 
     try:
         print("[🚀] Запускаем основной и платёжный боты...")
