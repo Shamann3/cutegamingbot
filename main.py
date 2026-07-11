@@ -5246,29 +5246,31 @@ async def _vgs_warmup_user_cache_background(db, user_cache: dict):
                 _vgs_dbg("WARMUP", f"done: cache={len(user_cache)}", level=1)
                 return
 
-            # Собираем батч в ОБЫЧНЫЙ dict (чистый CPU, без Redis) — быстро и
-            # не трогает event-loop.
-            batch = {}
-            for row in rows:
-                uid = row.get("user_id") if hasattr(row, "get") else row["user_id"]
-                reg_raw = row.get("data") if hasattr(row, "get") else row["data"]
-                reg_str = vgs_to_str(reg_raw)
-                batch[uid] = {
-                    "first_name": (row.get("first_name") if hasattr(row, "get") else row["first_name"]) or "",
-                    "username": (row.get("username") if hasattr(row, "get") else row["username"]) or "",
-                    "bio": (row.get("bio") if hasattr(row, "get") else row["bio"]) or "",
-                    "reg_date": reg_str,
-                }
-                last_uid = uid
+            # Построение батча (strftime по тысячам строк — CPU) И запись в
+            # pklcode-стор (синхронный Redis-I/O) выполняем ЦЕЛИКОМ в отдельном
+            # потоке. Иначе даже чистый CPU-цикл strftime блокировал event-loop
+            # на ~0.8с за батч (см. watchdog-стек vgs_to_str→strftime). В потоке
+            # GIL переключается каждые ~5мс, и цикл остаётся отзывчивым.
+            def _build_and_store(rows, start_last):
+                local_last = start_last
+                batch = {}
+                for row in rows:
+                    uid = row.get("user_id") if hasattr(row, "get") else row["user_id"]
+                    reg_raw = row.get("data") if hasattr(row, "get") else row["data"]
+                    reg_str = vgs_to_str(reg_raw)
+                    batch[uid] = {
+                        "first_name": (row.get("first_name") if hasattr(row, "get") else row["first_name"]) or "",
+                        "username": (row.get("username") if hasattr(row, "get") else row["username"]) or "",
+                        "bio": (row.get("bio") if hasattr(row, "get") else row["bio"]) or "",
+                        "reg_date": reg_str,
+                    }
+                    local_last = uid
+                if batch:
+                    user_cache.bulk_load(batch)
+                return local_last, len(batch)
 
-            # Запись в pklcode-стор — это СИНХРОННЫЙ блокирующий Redis-I/O.
-            # Раньше цикл писал по одному прямо в event-loop и морозил его на
-            # секунды/минуты (см. watchdog-стек). Теперь: один bulk_load на весь
-            # батч и в ОТДЕЛЬНОМ потоке, чтобы не блокировать цикл.
-            if batch:
-                await asyncio.to_thread(user_cache.bulk_load, batch)
-                loaded_tick += len(batch)
-
+            last_uid, added = await asyncio.to_thread(_build_and_store, rows, last_uid)
+            loaded_tick += added
             meta["warmup_last_uid"] = last_uid
 
         if loaded_tick:
