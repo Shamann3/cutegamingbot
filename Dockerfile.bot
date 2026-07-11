@@ -8,11 +8,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-# ca-certificates — SSL; build-essential — компилятор для TgCrypto (C-расширение,
-# нет wheel под py3.12, собирается из исходников).
+# ca-certificates — SSL; build-essential — компилятор для TgCrypto; locales —
+# main.py делает locale.setlocale(en_US.UTF-8), в slim-образе локалей нет.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates build-essential \
+    && apt-get install -y --no-install-recommends ca-certificates build-essential locales \
+    && sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
+    && locale-gen \
     && rm -rf /var/lib/apt/lists/*
+
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
 
 COPY requirements-bot.txt ./
 # --no-deps: requirements-bot.txt — полный слепок рабочего venv (все версии
