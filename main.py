@@ -134,6 +134,8 @@ from aiosend import CryptoPay, PollingRouter, TESTNET, MAINNET
 from aiosend.types import Invoice
 from redis.exceptions import AuthenticationError, ResponseError, ConnectionError, TimeoutError  # type: ignore
 
+from bot.utils.telegram_api_logger import TelegramApiLogger
+
 bot_start_time = time.time()
 import time
 import locale
@@ -150,14 +152,16 @@ bot1 = Bot(token=TOKEN, session=_bot1_session)
 dp = Dispatcher()
 router = Router()
 
+_bot1_session = _AiohttpSession(timeout=60.0)
 
+bot1 = Bot(
+    token=TOKEN,
+    session=_bot1_session
+)
 
+bot1.session.middleware(TelegramApiLogger())
 
-
-
-
-
-
+dp = Dispatcher()
 
 CRYPTOPAY_TOKEN = "570066:AAYNlme85ncDrUSAYPluFjD8YNlCPhgLvNS"
 USE_TESTNET = False   # ← укажите True, если токен от @CryptoTestnetBot
