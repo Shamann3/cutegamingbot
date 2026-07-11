@@ -5246,22 +5246,28 @@ async def _vgs_warmup_user_cache_background(db, user_cache: dict):
                 _vgs_dbg("WARMUP", f"done: cache={len(user_cache)}", level=1)
                 return
 
+            # Собираем батч в ОБЫЧНЫЙ dict (чистый CPU, без Redis) — быстро и
+            # не трогает event-loop.
+            batch = {}
             for row in rows:
                 uid = row.get("user_id") if hasattr(row, "get") else row["user_id"]
                 reg_raw = row.get("data") if hasattr(row, "get") else row["data"]
                 reg_str = vgs_to_str(reg_raw)
-
-                if uid not in user_cache:
-                    user_cache[uid] = {
-                        "first_name": (row.get("first_name") if hasattr(row, "get") else row["first_name"]) or "",
-                        "username": (row.get("username") if hasattr(row, "get") else row["username"]) or "",
-                        "bio": (row.get("bio") if hasattr(row, "get") else row["bio"]) or "",
-                        "reg_date": reg_str,
-                    }
+                batch[uid] = {
+                    "first_name": (row.get("first_name") if hasattr(row, "get") else row["first_name"]) or "",
+                    "username": (row.get("username") if hasattr(row, "get") else row["username"]) or "",
+                    "bio": (row.get("bio") if hasattr(row, "get") else row["bio"]) or "",
+                    "reg_date": reg_str,
+                }
                 last_uid = uid
-                loaded_tick += 1
-                if loaded_tick % 2000 == 0:
-                    await asyncio.sleep(0)
+
+            # Запись в pklcode-стор — это СИНХРОННЫЙ блокирующий Redis-I/O.
+            # Раньше цикл писал по одному прямо в event-loop и морозил его на
+            # секунды/минуты (см. watchdog-стек). Теперь: один bulk_load на весь
+            # батч и в ОТДЕЛЬНОМ потоке, чтобы не блокировать цикл.
+            if batch:
+                await asyncio.to_thread(user_cache.bulk_load, batch)
+                loaded_tick += len(batch)
 
             meta["warmup_last_uid"] = last_uid
 
