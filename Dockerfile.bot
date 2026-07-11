@@ -11,7 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # ca-certificates — SSL; build-essential — компилятор для TgCrypto; locales —
 # main.py делает locale.setlocale(en_US.UTF-8), в slim-образе локалей нет.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates build-essential locales \
+    && apt-get install -y --no-install-recommends ca-certificates build-essential locales redis-server \
     && sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
     && locale-gen \
     && rm -rf /var/lib/apt/lists/*
