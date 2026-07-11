@@ -36945,7 +36945,7 @@ async def botmain():
         # Пишут в /app/log_event_loop.txt и в stdout (network). Ловят «замирания»
         # цикла (из-за которых виснут отправки в Telegram) и сетевые проблемы.
         try:
-            asyncio.create_task(monitor_event_loop(interval=0.2, warn_delay=0.5, stall_threshold=0.7))
+            asyncio.create_task(monitor_event_loop(interval=0.2, warn_delay=0.5, stall_threshold=3.0))
             from bot.utils.network_monitor import network_monitor
             asyncio.create_task(network_monitor())
             print("[DIAG] ✅ event_loop + network мониторы запущены")

@@ -27,12 +27,19 @@ if not logger.handlers:
     logger.propagate = False
 
 
+# Служебные методы long-polling — не логируем (только шум).
+_SKIP_METHODS = {"GetUpdates", "GetMe"}
+
+
 class TelegramApiLogger(BaseRequestMiddleware):
 
     async def __call__(self, make_request, bot, method: TelegramMethod):
-        started = time.perf_counter()
-
         method_name = method.__class__.__name__
+
+        if method_name in _SKIP_METHODS:
+            return await make_request(bot, method)
+
+        started = time.perf_counter()
 
         logger.info(
             "➡ START %-28s",
