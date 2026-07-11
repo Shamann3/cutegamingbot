@@ -36963,9 +36963,13 @@ async def botmain():
         # цикла (из-за которых виснут отправки в Telegram) и сетевые проблемы.
         try:
             asyncio.create_task(monitor_event_loop(interval=0.2, warn_delay=0.5, stall_threshold=3.0))
-            from bot.utils.network_monitor import network_monitor
-            asyncio.create_task(network_monitor())
-            print("[DIAG] ✅ event_loop + network мониторы запущены")
+            # network_monitor (🌐 пинг Telegram каждые 30с) по умолчанию ВЫКЛЮЧЕН —
+            # только шумит в логах. Включить: DIAG_NETMON=1.
+            if os.getenv("DIAG_NETMON", "0") in ("1", "true", "yes", "on"):
+                from bot.utils.network_monitor import network_monitor
+                asyncio.create_task(network_monitor())
+                print("[DIAG] ✅ network monitor запущен")
+            print("[DIAG] ✅ event_loop monitor запущен")
         except Exception as e:
             print(f"[DIAG][WARN] мониторы не запущены: {type(e).__name__}: {e}")
 
