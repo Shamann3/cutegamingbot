@@ -515,7 +515,10 @@ async def inline_help_game(inline_query: types.InlineQuery):
     user_id = inline_query.from_user.id
     print(f"🎩🎩🎩 Получен инлайн-запрос: {query_text}")
 
+    import time
 
+    start = time.perf_counter()
+    print("[INLINE] START")
 
 
 
@@ -1824,6 +1827,7 @@ async def inline_help_game(inline_query: types.InlineQuery):
                 helper = _make_hint_article(
                     title="Добавьте ставку или слово →" , desc="Укажите ставку (по желанию) или слово для отгадывания" ,
                     buttons=[ "Добавить ставку → | слова 10 " , "Добавить слово  → | слова " ])
+                print(f"[INLINE] BEFORE ANSWER: {time.perf_counter() - start:.3f}s")
                 await inline_query.answer(results=[ helper ] , cache_time=1 , is_personal=True)
                 return
 
@@ -1832,6 +1836,7 @@ async def inline_help_game(inline_query: types.InlineQuery):
                 helper = _make_hint_article(
                     title="Добавьте слово →" , desc="Пожалуйста, укажите слово для отгадывания" ,
                     buttons=[ f"Добавить слово → | слова {bet_soft} " ])
+                print(f"[INLINE] BEFORE ANSWER: {time.perf_counter() - start:.3f}s")
                 await inline_query.answer(results=[ helper ] , cache_time=1 , is_personal=True)
                 return
 
@@ -1840,6 +1845,7 @@ async def inline_help_game(inline_query: types.InlineQuery):
                 helper = _make_hint_article(
                     title="Добавьте подсказку →" , desc="Например: краткое описание загаданного слова" ,
                     buttons=[ f"Добавить подсказку → | слова {word_soft} " ])
+                print(f"[INLINE] BEFORE ANSWER: {time.perf_counter() - start:.3f}s")
                 await inline_query.answer(results=[ helper ] , cache_time=1 , is_personal=True)
                 return
 
@@ -1866,13 +1872,14 @@ async def inline_help_game(inline_query: types.InlineQuery):
                             await _make_create_article(words_bet , word_soft.strip() , (hint_soft or "").strip()))
                 else:
                     results.append(await _make_create_article(0 , word_soft.strip() , (hint_soft or "").strip()))
-
+                print(f"[INLINE] BEFORE ANSWER: {time.perf_counter() - start:.3f}s")
                 await inline_query.answer(results=results , cache_time=1 , is_personal=True)
                 return
 
             # 5) есть слово без ставки, но уже есть подсказка → ТОЛЬКО «создать игру»
             if have_word and not have_bet and have_hint:
                 results.append(await _make_create_article(0 , word_soft.strip() , hint_soft.strip()))
+                print(f"[INLINE] BEFORE ANSWER: {time.perf_counter() - start:.3f}s")
                 await inline_query.answer(results=results , cache_time=1 , is_personal=True)
                 return
 
@@ -1893,6 +1900,7 @@ async def inline_help_game(inline_query: types.InlineQuery):
                         results.append(await _make_create_article(words_bet , word_soft.strip() , hint_soft.strip()))
                 else:
                     results.append(await _make_create_article(0 , word_soft.strip() , hint_soft.strip()))
+                print(f"[INLINE] BEFORE ANSWER: {time.perf_counter() - start:.3f}s")
                 await inline_query.answer(results=results , cache_time=1 , is_personal=True)
                 return
 
@@ -1900,11 +1908,13 @@ async def inline_help_game(inline_query: types.InlineQuery):
             helper = _make_hint_article(
                 title="Добавьте слово →" , desc="Пожалуйста, укажите слово для отгадывания" ,
                 buttons=[ "Добавить слово → | слова " ])
+            print(f"[INLINE] BEFORE ANSWER: {time.perf_counter() - start:.3f}s")
             await inline_query.answer(results=[ helper ] , cache_time=1 , is_personal=True)
 
         except Exception as e:
             print(f"[WORDS_INLINE][FATAL] {e!r}")
             try:
+                print(f"[INLINE] BEFORE ANSWER: {time.perf_counter() - start:.3f}s")
                 await inline_query.answer(
                     results=[ ] , cache_time=1 , is_personal=True , switch_pm_text="Произошла ошибка" ,
                     switch_pm_parameter="start" , )
