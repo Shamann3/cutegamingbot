@@ -149,7 +149,13 @@ NO_DELETE_STORES = set(EXCLUDED_STORES)
 AUTO_WARMUP = bool(int(os.getenv("PKL_AUTO_WARMUP", "0")))
 PRINT_SUMMARY = bool(int(os.getenv("PKL_SUMMARY", "1")))
 
-WRITE_DEBOUNCE_MS = int(os.getenv("PKL_WRITE_DEBOUNCE_MS", "0"))
+# ВАЖНО: 0 = сохранять СИНХРОННО прямо в вызывающем потоке. Так как pklcode
+# вызывается из корутин (event-loop), синхронный _save_now() блокирует весь
+# цикл на время Redis-записи (socket recv) — при всплеске записей (warmup,
+# массовые апдейты) loop замирает на секунды/минуты, и бот перестаёт отвечать.
+# Положительное значение уводит сохранение в фоновый threading.Timer и
+# коалесцирует всплеск записей в одно сохранение. НЕ ставить 0 на проде.
+WRITE_DEBOUNCE_MS = int(os.getenv("PKL_WRITE_DEBOUNCE_MS", "1000"))
 FORCE_SAVE_MS = int(os.getenv("PKL_FORCE_SAVE_MS", "15000"))
 SAVE_OPS_THRESHOLD = int(os.getenv("PKL_SAVE_OPS_THRESHOLD", "5000"))
 
