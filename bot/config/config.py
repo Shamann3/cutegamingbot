@@ -95,7 +95,7 @@ DATABASE_LOCATION = "local"   # <<< ГДЕ база: "remote" | "local" | ""
 # и т.п.). По умолчанию ВЫКЛ — консоль чистая и команды отвечают быстро
 # (каждый print с эмодзи через пайп логгера на Windows стоит миллисекунды).
 # Поставь True, только если нужна подробная отладка.
-DEBUG_VERBOSE = False
+DEBUG_VERBOSE = True
 
 
 def debug_print_bot_tokens() -> None:
