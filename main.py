@@ -4993,9 +4993,14 @@ VGS_USER_LOCK_TIMEOUT_SEC = 20.0
 
 VGS_META_KEY = "__vgs_meta__"
 VGS_WARMUP_LOCK = asyncio.Lock()
-VGS_WARMUP_BATCH = 5000
-VGS_WARMUP_SLEEP = 0.15
-VGS_WARMUP_TIME_BUDGET = 0.9
+# Прогрев кэша юзеров — ФОНОВЫЙ и низкоприоритетный. На 1 общем vCPU агрессивный
+# прогрев (0.9с работы / 0.15с отдыха ≈ 86% ядра) захватывал CPU/GIL и подвешивал
+# event-loop рябью ~0.6–0.9с. Делаем короткую работу и длинный отдых, чтобы почти
+# всё ядро оставалось циклу — команды отвечают за десятки мс. Прогрев чуть дольше
+# по времени, но пользователю незаметен. Тюнится через env.
+VGS_WARMUP_BATCH = int(os.getenv("VGS_WARMUP_BATCH", "3000"))
+VGS_WARMUP_SLEEP = float(os.getenv("VGS_WARMUP_SLEEP", "1.0"))
+VGS_WARMUP_TIME_BUDGET = float(os.getenv("VGS_WARMUP_TIME_BUDGET", "0.2"))
 
 # ============================================================
 # ЛЁГКАЯ ОТЛАДКА (почти не тратит ресурсы при level=0)
