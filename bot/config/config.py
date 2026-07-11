@@ -89,7 +89,7 @@ DATABASE_MODE = "test"   # <<< КАКАЯ база: "main" | "test" | ""
 # ||     main + remote  |  main + local  |  test + remote  |  test + local  ||
 # ||   Для "remote" SSH-туннель поднимается автоматически (для любой базы). ||
 # ============================================================================
-DATABASE_LOCATION = "local"   # <<< ГДЕ база: "remote" | "local" | ""
+DATABASE_LOCATION = "remote"   # <<< ГДЕ база: "remote" | "local" | ""
 
 # Подробные отладочные print'ы в консоль (таймеры, "🧩 database", [WORDS][DEBUG]
 # и т.п.). По умолчанию ВЫКЛ — консоль чистая и команды отвечают быстро
