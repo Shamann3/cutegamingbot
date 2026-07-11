@@ -147,6 +147,14 @@ global user_id_with_buttons3412
 # ВАЖНО: aiogram 3.x игнорирует kwargs timeout=/allowed_updates= в Bot(...),
 # поэтому таймаут задаём честно через сессию. allowed_updates передаётся в start_polling().
 from aiogram.client.session.aiohttp import AiohttpSession as _AiohttpSession
+from bot.utils.event_loop_monitor import monitor_event_loop
+
+
+
+
+
+
+
 
 _bot1_session = _AiohttpSession(timeout=60.0)
 
@@ -36823,6 +36831,7 @@ async def _warm_full_items_cache() -> None:
     except Exception as e:
         print(f"[PREP][WARN] get_full_items: {type(e).__name__}: {e}")
 async def botmain():
+
     global prepare_start_time, prepare_end_time, polling_start_time, polling_end_time
     global gamesorel, button_gamesorel
     global star_data
@@ -36856,6 +36865,14 @@ async def botmain():
     except Exception as e:
         print(f"[DB][FATAL] Ошибка подключения: {type(e).__name__}: {e}")
         return
+
+    # ===================== EVENT LOOP MONITOR =====================
+    try:
+        asyncio.create_task(monitor_event_loop())
+        print("✅ [MONITOR] Event Loop Monitor started")
+    except Exception as e:
+        print(f"⚠️ [MONITOR] start error: {e!r}")
+
 
     # ===================== 2) Прогревы/кэши (фон, не блокируют polling) =====================
     # ВАЖНО: прогрев списка предметов запускаем ПЕРВЫМ, ещё до тяжёлых стартовых
