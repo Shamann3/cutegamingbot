@@ -502,13 +502,16 @@ async def preload_discounts(emojis: List[str]):
     if not to_fetch:
         return
     debug_print(f"Загрузка скидок для {len(to_fetch)} эмодзи...")
-    tasks = [db.get_discounted_price(e) for e in to_fetch]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    for emoji, price in zip(to_fetch, results):
-        if isinstance(price, Exception):
-            debug_print(f"Ошибка скидки {emoji}: {price}")
-            price = None
-        _discount_cache[emoji] = (price, now)
+    # ОДИН запрос вместо N (раньше — 240 отдельных get_discounted_price).
+    prices = await db.get_discounts_bulk(to_fetch)
+    mapping = {emoji: (prices.get(emoji), now) for emoji in to_fetch}
+
+    # Запись в pklcode-кэш — синхронный Redis-I/O. 240 записей в цикле на
+    # event-loop раньше морозили его на ~2.6с. Пишем в ОТДЕЛЬНОМ потоке.
+    def _store(mapping):
+        for emoji, val in mapping.items():
+            _discount_cache[emoji] = val
+    await asyncio.to_thread(_store, mapping)
 
 async def get_discounted_price(emoji: str) -> Optional[int]:
     cached = _discount_cache.get(emoji)

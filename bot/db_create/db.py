@@ -15690,6 +15690,21 @@ class Database:
             print(f"Ошибка при получении скидки для предмета {item_name}: {e}")
             return 0
 
+    async def get_discounts_bulk(self, emojis):
+        """Массово получить скидки для списка эмодзи ОДНИМ запросом вместо N.
+        Возвращает {emoji: dis}. Раньше магазин делал по запросу на каждый из
+        ~240 эмодзи → долго и грузило пул."""
+        if not emojis:
+            return {}
+        try:
+            async with self.pool.acquire() as connection:
+                rows = await connection.fetch(
+                    "SELECT emoji, dis FROM dex WHERE emoji = ANY($1)", list(emojis))
+                return {r['emoji']: r['dis'] for r in rows}
+        except Exception as e:
+            print(f"Ошибка при массовом получении скидок: {e}")
+            return {}
+
     async def get_dex_balance(self , chat_id):
         """Метод для получения текущего баланса dex по chat_id."""
         try:
