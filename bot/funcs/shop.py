@@ -3495,143 +3495,156 @@ async def confirm_action(call: types.CallbackQuery):
 
 @dp.callback_query(lambda call: call.data.startswith('apply_coupon'))
 async def handle_apply_coupon(call):
-
     user_id = call.from_user.id
     message_id = call.message.message_id
-
     randommessagehelp1 = random.choice(randommessagehelp)
-
     if user_id not in user_buy or user_buy [ user_id ] != message_id:
         await call.answer(randommessagehelp1)
         return
     await call.answer()
     coupon_name = "Купон на скидку"
-
     # Получаем информацию о покупке
     purchase_data = current_purchase_data.get(user_id)
     if not purchase_data:
         await call.message.edit_text("<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>Ошибка обработки покупки.</b>")
         return
-
-    total_price = purchase_data [ 'total_price' ]
-    discount = random.uniform(0.05 , 0.50)  # Скидка от 5% до 20%
-    discount_price1 = total_price * (1 - discount)  # Применяем скидку
-    discount_price = round(discount_price1)
-
     # Получаем инвентарь пользователя
-    user_inventory = decode_items(await db.get_user_inventory(user_id))
-
-    # Проверяем наличие купона
-    coupon_quantity = user_inventory.get(coupon_name , 0)
+    user_inventory = decode_items(await db.get_user_inventory(user_id)) or {}
+    # Проверяем наличие купона (сам купон спишем только при успешной покупке)
+    coupon_quantity = int(user_inventory.get(coupon_name , 0) or 0)
     if coupon_quantity > 0:
-        # Уменьшаем количество купонов на 1
-        user_inventory [ coupon_name ] -= 1
-        if user_inventory [ coupon_name ] == 0:
-            del user_inventory [ coupon_name ]
-
-        # Обновляем инвентарь пользователя в базе данных
-        user_inventory_str = json.dumps(user_inventory)  # Преобразуем словарь в строку JSON
-
-
-        # Форматируем скидочную цену
-        formatted_discount_price = "{:,.0f}".format(discount_price).replace("," , ".")
-
+        total_price = max(0 , int(round(float(purchase_data.get('total_price' , 0)))))
+        # Если купон уже применяли на этой карточке покупки, повторно процент не «перекручиваем»
+        coupon_offer = purchase_data.get("coupon_offer")
+        if (
+            isinstance(coupon_offer , dict)
+            and coupon_offer.get("message_id") == message_id
+            and 20 <= _safe_int(coupon_offer.get("discount_percent") , 0) <= 75
+        ):
+            discount_percent = _safe_int(coupon_offer.get("discount_percent") , 0)
+            discount_price = _safe_int(coupon_offer.get("discount_total") , total_price)
+        else:
+            discount_percent = random.randint(20 , 75)  # от 20% до 75%
+            discount_price = max(0 , int(round(total_price * (100 - discount_percent) / 100)))
+        # Нормализуем значения и сохраняем
+        discount_percent = max(20 , min(75 , int(discount_percent)))
+        discount_price = max(0 , int(round(total_price * (100 - discount_percent) / 100)))
+        saved_amount = max(0.0 , float(total_price) - float(discount_price))
+        purchase_data["coupon_offer"] = {
+            "message_id": message_id ,
+            "discount_percent": discount_percent ,
+            "discount_total": discount_price
+        }
+        current_purchase_data[user_id] = purchase_data
+        full_price_formatted = _fmt_amount(total_price)
+        formatted_discount_price = _fmt_amount(discount_price)
+        saved_amount_formatted = _fmt_amount(saved_amount)
+        items_text = "\n".join(purchase_data.get("bought_items" , [])) or "-"
         # Создаем клавиатуру с двумя кнопками
         cancel_button = InlineKeyboardButton(text="Отменить" , callback_data="cancel341234123412")
         confirm_button = InlineKeyboardButton(
-            text="Купить" , callback_data=f"buy_with_coupon:{discount_price}")
-
+            text="Купить" , callback_data=f"buy_with_coupon:{discount_price}:{discount_percent}")
         # Создаем клавиатуру с использованием вложенных списков для кнопок
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[ [ cancel_button, confirm_button ]  # Одна строка с двумя кнопками
             ])
-
-
         await call.message.edit_text(
-            f'<tg-emoji emoji-id="5377599075237502153">🎟</tg-emoji> <b>Скидка : {int(discount * 100)}%</b>\n'
-            f'<b>{", ".join(purchase_data [ "bought_items" ])}</b>\n'
-            f'<tg-emoji emoji-id="5318892863780579996">🎩</tg-emoji> <b>{formatted_discount_price} кут</b>' , reply_markup=keyboard, parse_mode="HTML" ,disable_web_page_preview=True)
+            f"<tg-emoji emoji-id='5377599075237502153'>🎟</tg-emoji> <b>Купон применён!</b>\n"
+            f"{items_text}\n\n"
+            f"<tg-emoji emoji-id='5377599075237502153'>🎟</tg-emoji> <b>Скидка : 20-80%</b>\n"
+            f"<tg-emoji emoji-id='4967518033061872209'>💳</tg-emoji> <b>Было : {full_price_formatted} кут</b>\n"
+            f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>К оплате : {formatted_discount_price} кут</b>\n"
+            f"<tg-emoji emoji-id='5472401690793614752'>🛍️</tg-emoji> <b>Экономия : {saved_amount_formatted} кут</b>" ,
+            reply_markup=keyboard ,
+            parse_mode="HTML" ,
+            disable_web_page_preview=True
+        )
     else:
         await call.message.edit_text("<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>У вас нет купонов для применения.</b>", parse_mode="HTML" ,disable_web_page_preview=True)
-
-
 @dp.callback_query(lambda call: call.data.startswith('buy_with_coupon'))
 async def handle_confirm_purchase(call: types.CallbackQuery):
     user_id = call.from_user.id
     message_id = call.message.message_id
     randommessagehelp1 = random.choice(randommessagehelp)
-
     # защита от «чужих» кликов по этой карточке покупки
     if user_id not in user_buy or user_buy[user_id] != message_id:
         await call.answer(randommessagehelp1)
         return
-
-    # ожидаем формат: "buy_with_coupon:<discount_total>"
+    # ожидаемый формат: buy_with_coupon:<discount_total>:<discount_percent>
+    callback_discount_total = None
+    callback_discount_percent = None
     try:
-        parts = call.data.split(':', maxsplit=1)
-        if len(parts) < 2:
-            raise ValueError("callback_data is incomplete")
-        # скидочная цена ИМЕННО ЗА ВСЮ КОРЗИНУ
-        discount_total = float(parts[1])
-        if discount_total < 0:
-            discount_total = 0.0
+        parts = call.data.split(':')
+        if len(parts) >= 2:
+            callback_discount_total = max(0.0 , float(parts[1]))
+        if len(parts) >= 3:
+            callback_discount_percent = int(parts[2])
     except Exception:
-        await call.message.edit_text(
-            "<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>Ошибка при обработке покупки.</b>",
-            parse_mode="HTML",
-            disable_web_page_preview=True
-        )
-        return
-
-    # проверяем, что сообщение и пользователь совпадают
-    if user_id not in user_buy or user_buy[user_id] != call.message.message_id:
-        await call.answer("⚠️ Ошибка: информация о покупке не совпадает")
-        return
-
+        callback_discount_total = None
+        callback_discount_percent = None
     purchase_data = current_purchase_data.get(user_id)
     if not purchase_data:
         await call.answer("⚠️ Ошибка: информация о покупке не найдена")
         return
-
+    coupon_offer = purchase_data.get("coupon_offer")
+    offer_message_id = None
+    offer_discount_percent = None
+    offer_discount_total = None
+    if isinstance(coupon_offer , dict):
+        offer_message_id = _safe_int(coupon_offer.get("message_id") , 0)
+        offer_discount_percent = _safe_int(coupon_offer.get("discount_percent") , 0)
+        offer_discount_total = float(_safe_int(coupon_offer.get("discount_total") , 0))
+    # приоритет у сохранённого на сервере купона; callback принимаем только в новом формате
+    has_offer_coupon = offer_message_id == message_id and 20 <= offer_discount_percent <= 70
+    has_callback_coupon = (
+        callback_discount_total is not None
+        and callback_discount_percent is not None
+        and 20 <= int(callback_discount_percent) <= 70
+    )
+    if has_offer_coupon:
+        discount_percent = int(offer_discount_percent)
+        discount_total = max(0.0 , float(offer_discount_total))
+    elif has_callback_coupon:
+        discount_percent = callback_discount_percent
+        discount_total = max(0.0 , float(callback_discount_total or 0))
+    else:
+        await call.message.edit_text(
+            "<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>Купон недействителен. Примените купон заново.</b>",
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
+        return
     emojis = purchase_data.get('emojis')
     quantity = purchase_data.get('quantity')
     if not emojis or quantity is None:
         await call.answer("⚠️ Ошибка: недостающие данные для обработки покупки")
         return
-
     await call.answer()  # снимаем «часики»
-
     # --- 1) Подготовка корзины: читаем остатки и цены, считаем "полную" стоимость без скидки
     prepared_items = []  # элементы: dict(emoji, name, can_buy, price)
     total_price = 0.0
-
     for emoji in emojis:
         try:
             item_info = await db.get_item_info_by_emoji(emoji)  # ожидаем (name, remain)
         except Exception as e:
             print(f"[BUY][WARN] get_item_info_by_emoji({emoji}) failed: {e!r}")
             item_info = None
-
         if not item_info:
             # такого предмета нет - просто пропускаем
             continue
-
         item_name, item_remain = item_info
         can_buy = max(0, min(int(quantity), int(item_remain or 0)))
         if can_buy <= 0:
             # нет в наличии - пропускаем
             continue
-
         try:
             item_price = await db.get_item_price(item_name)
         except Exception as e:
             print(f"[BUY][WARN] get_item_price({item_name}) failed: {e!r}")
             item_price = None
-
         if item_price is None:
             # цену не нашли - пропускаем
             continue
-
         prepared_items.append({
             "emoji": emoji,
             "name": item_name,
@@ -3639,7 +3652,6 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
             "price": float(item_price),
         })
         total_price += float(item_price) * can_buy
-
     # если после фильтрации нечего покупать
     if not prepared_items:
         try:
@@ -3651,7 +3663,11 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
         except Exception as e:
             print(f"[BUY][WARN] edit_text no items failed: {e!r}")
         return
-
+    total_price = max(0.0 , float(total_price))
+    full_total = int(round(total_price))
+    discount_percent = max(20 , min(70 , int(discount_percent)))
+    discount_total = float(max(0 , round(full_total * (100 - discount_percent) / 100)))
+    saved_amount = max(0.0 , float(full_total) - float(discount_total))
     # --- 2) Списание средств ОДИН РАЗ (discount_total - это цена для пользователя за всю корзину)
     try:
         current_balance = await db.get_user_balance(user_id)
@@ -3659,11 +3675,9 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
         print(f"[BUY][ERR] get_user_balance failed: {e!r}")
         await call.message.reply("<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>Внутренняя ошибка счёта.</b>", parse_mode="HTML", disable_web_page_preview=True)
         return
-
     if float(current_balance) < float(discount_total):
         await call.message.reply("<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>Недостаточно средств</b>", parse_mode="HTML", disable_web_page_preview=True)
         return
-
     # списываем в «-истории» сразу всю discount_total
     new_balance = float(current_balance) - float(discount_total)
     try:
@@ -3673,14 +3687,12 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
         print(f"[BUY][ERR] balance/cutehistory_minus failed: {e!r}")
         await call.message.reply("<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>Ошибка списания средств.</b>", parse_mode="HTML", disable_web_page_preview=True)
         return
-
     # зачисляем в баланс группы (биржи) один раз
     try:
         chat_id = call.message.chat.id
         await db.update_dex_balance(bot1,chat_id, float(discount_total))
     except Exception as e:
         print(f"[BUY][WARN] update_dex_balance failed: {e!r}")
-
     # --- 3) Проведение покупки по предметам
     bought_items_lines = []
     for it in prepared_items:
@@ -3688,7 +3700,6 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
         item_name = it["name"]
         can_buy = it["can_buy"]
         item_price = it["price"]
-
         # уменьшаем остаток на бирже и добавляем в инвентарь
         try:
             await db.set_items(user_id, item_name, can_buy)         # пользователю
@@ -3696,35 +3707,44 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
         except Exception as e:
             print(f"[BUY][WARN] stock/inventory update failed for {item_name}: {e!r}")
             # продолжаем другие позиции
-
         # спец-логика для CuteCoin
         if item_name == "💠 CuteCoin":
             try:
                 await db.update_user_cutecoin_balance(user_id, can_buy)
             except Exception as e:
                 print(f"[BUY][WARN] update_user_cutecoin_balance failed: {e!r}")
-
         bought_items_lines.append(
             f"<code>{emoji}</code> {item_name} [{str(can_buy).replace(',', '.')} шт]"
         )
-
     # удаляем купон, если он был
     try:
         await db.delete_user_inventory1(user_id, "Купон на скидку")
     except Exception as e:
         print(f"[BUY][WARN] delete coupon failed: {e!r}")
-
+    # очищаем оффер купона после попытки покупки
+    try:
+        if isinstance(purchase_data , dict):
+            purchase_data.pop("coupon_offer" , None)
+            current_purchase_data[user_id] = purchase_data
+    except Exception as e:
+        print(f"[BUY][WARN] clear coupon_offer failed: {e!r}")
     # фиксируем пользователю «успешную покупку»
     try:
-        win_amount_formatted = "{:,.0f}".format(discount_total).replace(",", ".")
+        full_amount_formatted = _fmt_amount(full_total)
+        win_amount_formatted = _fmt_amount(discount_total)
+        saved_amount_formatted = _fmt_amount(saved_amount)
         items_list = "\n".join(bought_items_lines) if bought_items_lines else "-"
         await call.message.edit_text(
-            f"<tg-emoji emoji-id='5406683434124859552'>🛍</tg-emoji> <b>Успешная покупка!</b>\n{items_list}\n<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>{win_amount_formatted}</b>",
-            parse_mode="HTML"
+            f"<tg-emoji emoji-id='5406683434124859552'>🛍</tg-emoji> <b>Успешная покупка!</b>\n"
+            f"{items_list}\n\n"
+            f"<tg-emoji emoji-id='5377599075237502153'>🎟</tg-emoji> <b>Экономия : {saved_amount_formatted} кут</b>\n"
+            f"<tg-emoji emoji-id='4967518033061872209'>💳</tg-emoji> <b>Было : {full_amount_formatted} кут</b>\n"
+            f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>К оплате : {win_amount_formatted} кут</b>" ,
+            parse_mode="HTML" ,
+            disable_web_page_preview=True
         )
     except Exception as e:
         print(f"[BUY][WARN] edit_text result failed: {e!r}")
-
     # --- 4) Реферальное вознаграждение
     # бонус считаем от полной цены без скидки (total_price), 25%, округляем
     try:
@@ -3732,12 +3752,10 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
     except Exception as e:
         print(f"[BUY][WARN] get_refferer_id failed: {e!r}")
         refferer_id = None
-
     if refferer_id is not None and refferer_id != user_id:
         try:
             bonus_amount = max(0.0, float(total_price) * 0.25)
             win_amount_rounded = int(round(bonus_amount))
-
             # если бонус = 0 - НИЧЕГО НЕ ДЕЛАЕМ и НИЧЕГО НЕ ПИШЕМ
             if win_amount_rounded > 0:
                 # начисляем куты рефереру
@@ -3751,7 +3769,6 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
                     )
                 except Exception as e:
                     print(f"[BUY][ERR] referral balance update failed: {e!r}")
-
                 # фигурка свободы - только если нет
                 add_figurine = False
                 try:
@@ -3761,7 +3778,6 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
                         add_figurine = True
                 except Exception as e:
                     print(f"[BUY][WARN] set figurine failed: {e!r}")
-
                 # сообщение рефереру
                 try:
                     bonus_amount_formatted = "{:,.0f}".format(win_amount_rounded).replace(",", ".")
@@ -3769,7 +3785,6 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
                         msg = f"<tg-emoji emoji-id='5193209274452425995'>🎉</tg-emoji> <b>Кто-то из приглашённых пользователей совершил покупку в магазине, вы получили {bonus_amount_formatted} кут и фигурку свободы</b>"
                     else:
                         msg = f"<tg-emoji emoji-id='5193209274452425995'>🎉</tg-emoji> <b>Кто-то из приглашённых пользователей совершил покупку в магазине, вы получили {bonus_amount_formatted} кут</b>"
-
                     await bot1.send_message(refferer_id, msg, parse_mode="HTML", disable_web_page_preview=True)
                 except Exception as e:
                     print(f"[BUY][WARN] notify referrer failed: {e!r}")
