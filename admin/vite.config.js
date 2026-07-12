@@ -11,7 +11,7 @@ export default defineConfig({
   },
 
   build: {
-    outDir: '../dist/admin',
+    outDir: '../dist/panel',
     emptyOutDir: true,
     target: 'esnext',
     minify: 'esbuild',
