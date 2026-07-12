@@ -120,6 +120,13 @@ async def run_support_bot() -> None:
 
     dp = Dispatcher()
 
+    # Бот поддержки — только личные сообщения. Без этого глобального фильтра
+    # ни один из хендлеров ниже не проверял chat.type, поэтому если бота
+    # добавляли в группу, он реагировал на ЛЮБОЕ сообщение в чате как на
+    # обращение/апелляцию (F.text/F.photo ловят всё подряд). Фильтр на
+    # dp.message применяется сразу ко всем @dp.message(...) хендлерам ниже.
+    dp.message.filter(F.chat.type == "private")
+
     await bot.set_my_commands([
         types.BotCommand(command="start",  description="Главное меню"),
         types.BotCommand(command="status", description="Статус обращения"),

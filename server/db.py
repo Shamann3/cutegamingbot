@@ -1582,14 +1582,15 @@ class Database:
                 if not row:
                     raise ValueError("Профиль не найден")
                 store = normalize_progress_store(parse_progress_store(row["quest_progress"]))
-                bucket = store[quest.period]
-                if bucket.get("acceptedQuestId") != quest.id:
-                    raise ValueError("Сначала возьми это задание")
-                progress = int(bucket["progress"].get(quest.id, 0) or 0)
-                if progress < quest.target:
-                    raise ValueError("Задание ещё не выполнено")
-                if quest.id in bucket["claimed"]:
-                    raise ValueError("Награда уже получена")
+                # ВАЖНО: раньше здесь была своя (сломанная) проверка через
+                # bucket.get("acceptedQuestId") — legacy-поле для СТАРОГО формата
+                # "один активный квест на период". Система давно перешла на
+                # bucket["activeQuests"] (список, поддержка нескольких заданий за
+                # период), и это legacy-поле больше никогда не выставляется — из-за
+                # чего проверка ВСЕГДА проваливалась с «Сначала возьми это задание»,
+                # даже если задание было честно взято и выполнено. Всю валидацию
+                # (взято/выполнено/не получено) делает mark_quest_claimed() —
+                # она уже поддерживает актуальный формат.
                 store = mark_quest_claimed(store, quest.id)
                 raw_items = parse_items(row["items"])
                 stored, kut_reward = apply_quest_rewards(raw_items, quest)
