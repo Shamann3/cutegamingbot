@@ -614,12 +614,13 @@ async def top(message: Message):
                    f"<tg-emoji emoji-id='5192900470598833151'>🔰</tg-emoji> <b>Ваше место : <i>{win_amount_formatted}</i></b>\n\n"
 
             # Выводим информацию о топ-10 пользователях
+            _names_bulk = await db.get_names_bulk(uid for uid , _ in sorted_users [ :10 ])
             for rank , (user_id , referrals) in enumerate(sorted_users [ :10 ] , start=1):
                 referrals_with_dots = locale.format_string("%d" , referrals , grouping=True).replace("," , ".")
 
-                # Получаем имя и username пользователя
-                first_name = await db.get_firstname_by_user_id(user_id) or "Неизвестный"
-                username = await db.get_username_by_user_id(user_id)
+                # Получаем имя и username пользователя (один batched-запрос перед циклом)
+                first_name , username = _names_bulk.get(user_id , (None , None))
+                first_name = first_name or "Неизвестный"
 
                 # Формируем ссылку на пользователя
                 name_link = await create_user_link(user_id , first_name , username)
@@ -751,14 +752,13 @@ async def top(message: Message):
 
             rank = 1
 
+            _names_bulk = await db.get_names_bulk(uid for uid , _ in sorted_users [ :10 ])
             for user_id , balance in sorted_users [ :10 ]:
                 balance_with_dots = locale.format_string("%d" , balance , grouping=True).replace(',' , '.')
 
-                # Получаем имя и username пользователя по его user_id
+                # Получаем имя и username пользователя по его user_id (batched)
 
-                first_name = await db.get_firstname_by_user_id(user_id)
-
-                username = await db.get_username_by_user_id(user_id)
+                first_name , username = _names_bulk.get(user_id , (None , None))
 
                 # Формируем гиперссылку на пользователя
 
@@ -855,12 +855,12 @@ async def top(message: Message):
         position_text = "{:,.0f}".format(user_position or 0).replace("," , ".")
         text = f"<tg-emoji emoji-id='5318959255385043017'>💰</tg-emoji> <b>Статистика богачей\n<tg-emoji emoji-id='5294026527850132517'>✨</tg-emoji> Ваше место в топе : <i>{position_text}</i></b>\n\n"
         # Выводим информацию о топ-10 пользователях
+        _names_bulk = await db.get_names_bulk(uid for uid , _ in sorted_users [ :10 ])
         for rank , (user_id , balance) in enumerate(sorted_users [ :10 ] , start=1):
             balance_with_dots = locale.format_string("%d" , balance , grouping=True).replace(',' , '.')
 
-            # Получаем имя и username пользователя
-            first_name = await db.get_firstname_by_user_id(user_id)
-            username = await db.get_username_by_user_id(user_id)
+            # Получаем имя и username пользователя (batched)
+            first_name , username = _names_bulk.get(user_id , (None , None))
 
             # Формируем ссылку на пользователя
             name_link = await create_user_link(user_id , first_name , username)
@@ -896,12 +896,12 @@ async def top(message: Message):
         text = f"<tg-emoji emoji-id='5318967016390949076'>🎩</tg-emoji> <b>Статистика донатеров\n<tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji> Ваше место в топе: <i>{position_text}</i></b>\n\n"
 
         # Топ-10
+        _names_bulk = await db.get_names_bulk(uid for uid , _ in sorted_users [ :10 ])
         for rank , (user_id , donate) in enumerate(sorted_users [ :10 ] , start=1):
             donate_text = "{:,.0f}".format(donate).replace("," , ".")
             donate_text2 = "{:,.0f}".format(donate).replace("," , ".")
 
-            first_name = await db.get_firstname_by_user_id(user_id)
-            username = await db.get_username_by_user_id(user_id)
+            first_name , username = _names_bulk.get(user_id , (None , None))
             name_link = await create_user_link(user_id , first_name , username)
 
             if rank <= 3:
@@ -1030,12 +1030,12 @@ async def top(message: Message):
                 text += f"📯 Ваше место в топе: <b>{win_amount_formatted}</b>\n\n"
 
             # Выводим информацию о топ-пользователях (первые 10)
+            _names_bulk = await db.get_names_bulk(uid for uid , _ in sorted_users [ :10 ])
             for rank , (user_id , balance) in enumerate(sorted_users [ :10 ] , start=1):
                 balance_with_dots = locale.format_string("%d" , balance , grouping=True).replace(',' , '.')
 
-                # Получаем имя и username пользователя по его user_id
-                first_name = await db.get_firstname_by_user_id(user_id)
-                username = await db.get_username_by_user_id(user_id)
+                # Получаем имя и username пользователя по его user_id (batched)
+                first_name , username = _names_bulk.get(user_id , (None , None))
 
                 # Создаем ссылку на пользователя
                 name_link = await create_user_link(user_id , first_name , username)
@@ -1684,12 +1684,12 @@ async def callbiahsdofhasodfhoasack_top(call: types.CallbackQuery):
     text = f"<tg-emoji emoji-id='5318967016390949076'>🎩</tg-emoji> <b>Статистика донатеров\n<tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji> Ваше место в топе: <i>{position_text}</i></b>\n\n"
 
     # Топ-10
+    _names_bulk = await db.get_names_bulk(uid for uid, _ in sorted_users[:10])
     for rank, (user_id, donate) in enumerate(sorted_users[:10], start=1):
         donate_text = "{:,.0f}".format(donate).replace(",", ".")
         donate_text2 = "{:,.0f}".format(donate).replace(",", ".")
 
-        first_name = await db.get_firstname_by_user_id(user_id)
-        username = await db.get_username_by_user_id(user_id)
+        first_name, username = _names_bulk.get(user_id, (None, None))
         name_link = await create_user_link(user_id, first_name, username)
 
         if rank <= 3:
@@ -1739,12 +1739,13 @@ async def callasfasfawqfqwback_top(call: types.CallbackQuery):
                f"<tg-emoji emoji-id='5413628907343588244'>🐰</tg-emoji> <b>Ваше место : <i>{win_amount_formatted}</i></b>\n\n"
 
         # Выводим информацию о топ-10 пользователях
+        _names_bulk = await db.get_names_bulk(uid for uid , _ in sorted_users [ :10 ])
         for rank , (user_id , referrals) in enumerate(sorted_users [ :10 ] , start=1):
             referrals_with_dots = locale.format_string("%d" , referrals , grouping=True).replace("," , ".")
 
-            # Получаем имя и username пользователя
-            first_name = await db.get_firstname_by_user_id(user_id) or "Неизвестный"
-            username = await db.get_username_by_user_id(user_id)
+            # Получаем имя и username пользователя (batched)
+            first_name , username = _names_bulk.get(user_id , (None , None))
+            first_name = first_name or "Неизвестный"
 
             # Формируем ссылку на пользователя
             name_link = await create_user_link(user_id , first_name , username)
@@ -1799,12 +1800,13 @@ async def casdasdqwqdqwallback_top(call: types.CallbackQuery):
                f"<tg-emoji emoji-id='5397772549511717747'>🦞</tg-emoji> <b>Ваше место : <i>{win_amount_formatted}</i></b>\n\n"
 
         # Выводим информацию о топ-10 пользователях
+        _names_bulk = await db.get_names_bulk(uid for uid , _ in sorted_users [ :10 ])
         for rank , (user_id , referrals) in enumerate(sorted_users [ :10 ] , start=1):
             referrals_with_dots = locale.format_string("%d" , referrals , grouping=True).replace("," , ".")
 
-            # Получаем имя и username пользователя
-            first_name = await db.get_firstname_by_user_id(user_id) or "Неизвестный"
-            username = await db.get_username_by_user_id(user_id)
+            # Получаем имя и username пользователя (batched)
+            first_name , username = _names_bulk.get(user_id , (None , None))
+            first_name = first_name or "Неизвестный"
 
             # Формируем ссылку на пользователя
             name_link = await create_user_link(user_id , first_name , username)
@@ -1858,12 +1860,13 @@ async def callasdqiqjback_top(call: types.CallbackQuery):
                f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji> <b>Ваше место : <i>{win_amount_formatted}</i></b>\n\n"
 
         # Выводим информацию о топ-10 пользователях
+        _names_bulk = await db.get_names_bulk(uid for uid , _ in sorted_users [ :10 ])
         for rank , (user_id , referrals) in enumerate(sorted_users [ :10 ] , start=1):
             referrals_with_dots = locale.format_string("%d" , referrals , grouping=True).replace("," , ".")
 
-            # Получаем имя и username пользователя
-            first_name = await db.get_firstname_by_user_id(user_id) or "Неизвестный"
-            username = await db.get_username_by_user_id(user_id)
+            # Получаем имя и username пользователя (batched)
+            first_name , username = _names_bulk.get(user_id , (None , None))
+            first_name = first_name or "Неизвестный"
 
             # Формируем ссылку на пользователя
             name_link = await create_user_link(user_id , first_name , username)
@@ -1913,12 +1916,12 @@ async def callbrgtrgegrewrack_top(call: types.CallbackQuery):
         text = f"<tg-emoji emoji-id='5318959255385043017'>💰</tg-emoji> <b>Статистика богачей\n<tg-emoji emoji-id='5294026527850132517'>✨</tg-emoji> Ваше место в топе : <i>{win_amount_formatted}</i></b>\n\n"
 
         # Выводим информацию о топ-пользователях (первые 10)
+        _names_bulk = await db.get_names_bulk(uid for uid, _ in sorted_users[:10])
         for rank, (user_id, balance) in enumerate(sorted_users[:10], start=1):
             balance_with_dots = locale.format_string("%d", balance, grouping=True).replace(',', '.')
 
-            # Получаем имя и username пользователя по его user_id
-            first_name = await db.get_firstname_by_user_id(user_id)
-            username = await db.get_username_by_user_id(user_id)
+            # Получаем имя и username пользователя по его user_id (batched)
+            first_name, username = _names_bulk.get(user_id, (None, None))
 
             # Формируем ссылку на пользователя
             name_link = await create_user_link(user_id, first_name, username)
@@ -2049,12 +2052,12 @@ async def callbaasdqsdqwcqck_top(call: types.CallbackQuery):
             text += f"📯 Ваше место в топе: <b>{win_amount_formatted}</b>\n\n"
 
         # Выводим информацию о топ-пользователях (первые 10)
+        _names_bulk = await db.get_names_bulk(uid for uid, _ in sorted_users[:10])
         for rank, (user_id, balance) in enumerate(sorted_users[:10], start=1):
             balance_with_dots = locale.format_string("%d", balance, grouping=True).replace(',', '.')
 
-            # Получаем имя и username пользователя по его user_id
-            first_name = await db.get_firstname_by_user_id(user_id)
-            username = await db.get_username_by_user_id(user_id)
+            # Получаем имя и username пользователя по его user_id (batched)
+            first_name, username = _names_bulk.get(user_id, (None, None))
 
             # Формируем ссылку на пользователя
             name_link = await create_user_link(user_id, first_name, username)
@@ -3667,12 +3670,13 @@ async def caasqscwqscqllback_top(call: types.CallbackQuery):
                f"<tg-emoji emoji-id='5192900470598833151'>🔰</tg-emoji> <b>Ваше место : <i>{win_amount_formatted}</i></b>\n\n"
 
         # Выводим информацию о топ-10 пользователях
+        _names_bulk = await db.get_names_bulk(uid for uid, _ in sorted_users[:10])
         for rank, (user_id, referrals) in enumerate(sorted_users[:10], start=1):
             referrals_with_dots = locale.format_string("%d", referrals, grouping=True).replace(",", ".")
 
-            # Получаем имя и username пользователя
-            first_name = await db.get_firstname_by_user_id(user_id) or "Неизвестный"
-            username = await db.get_username_by_user_id(user_id)
+            # Получаем имя и username пользователя (batched)
+            first_name, username = _names_bulk.get(user_id, (None, None))
+            first_name = first_name or "Неизвестный"
 
             # Формируем ссылку на пользователя
             name_link = await create_user_link(user_id, first_name, username)

@@ -10694,6 +10694,30 @@ class Database:
         except Exception as e:
             print(f"Ошибка при получении имени пользователя: {str(e)}")
             return None
+
+    async def get_names_bulk(self, user_ids):
+        """Массово получить (first_name, username) для списка user_id ОДНИМ
+        запросом вместо N×2 (get_firstname_by_user_id + get_username_by_user_id
+        по одному на юзера). Используется в топ-10-рендерах ("топ", "стата" и т.п.),
+        где раньше на каждую команду уходило до 20 последовательных запросов.
+        Возвращает {user_id: (first_name, username)}.
+        """
+        ids = list({int(uid) for uid in user_ids if uid is not None})
+        if not ids or not await self.ensure_pool():
+            return {}
+        try:
+            async with self.pool.acquire() as connection:
+                rows = await connection.fetch(
+                    "SELECT user_id, first_name, username FROM users WHERE user_id = ANY($1::bigint[])",
+                    ids,
+                )
+                return {
+                    int(row["user_id"]): (row["first_name"], row["username"])
+                    for row in rows
+                }
+        except Exception as e:
+            print(f"Ошибка при массовом получении имён: {e}")
+            return {}
     async def add_winnings_ruletka(self , user_id , winnings):
         """
         Добавляет выигрыш к балансу пользователя.
