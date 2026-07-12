@@ -854,7 +854,17 @@ class Database:
                 total_harvest_amount = 0
                 primary_harvest_id = crop.harvest_id
                 for item_id, drop_amount in drops:
-                    game_items = add_item(game_items, item_id, drop_amount)
+                    # ВАЖНО: item_id из farm_crop_harvest_drops — «сырой» плейсхолдер-ключ
+                    # (например TOBACCO_ITEM_KEY), который сам по себе не является
+                    # id в таблице dex — он резолвится в реальный dex id только через
+                    # алиасы (dex_catalog.link_farm_item_aliases, по имени/эмодзи).
+                    # merge_items_for_storage() ниже сохраняет ТОЛЬКО канонические
+                    # dex id (all_game_item_ids() уже канонизирует их), поэтому если
+                    # добавить предмет в game_items под сырым ключом — при записи в БД
+                    # он молча потеряется (canonical-ключ останется 0, сырой отброшен).
+                    # Раньше так и происходило: собранный табак/дерево не сохранялись.
+                    canon_item_id = dex_catalog.canonical_key(item_id)
+                    game_items = add_item(game_items, canon_item_id, drop_amount)
                     if item_id == primary_harvest_id:
                         total_harvest_amount += drop_amount
                 if total_harvest_amount == 0 and drops:
@@ -863,7 +873,7 @@ class Database:
 
                 seed_dropped = roll_harvest_seed_drop(crop)
                 if seed_dropped:
-                    game_items = add_item(game_items, crop.seed_id, 1)
+                    game_items = add_item(game_items, dex_catalog.canonical_key(crop.seed_id), 1)
                 harvest_meta = seed_drop_client_meta(crop, dropped=seed_dropped)
                 from farm_notifications import notify_item
 
