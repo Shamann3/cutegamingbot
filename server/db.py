@@ -328,10 +328,11 @@ class Database:
         except Exception as _seed_err:
             _logger.warning("seed_default_content skipped: %s", _seed_err)
 
-        from quest_registry import load_quest_registry, seed_default_quests
+        from quest_registry import load_quest_registry, seed_default_quests, enabled_quests
 
         await seed_default_quests(self.pool)
         await load_quest_registry(self.pool)
+        print(f"[DB][OK] quest registry | enabled_quests={len(enabled_quests())}")
 
         from craft_definitions import validate_craft_recipes
 
@@ -1481,6 +1482,15 @@ class Database:
             daily_seed_claimed_on=row["daily_seed_claimed_on"] if row else None
         )
         payload["farmCrops"] = crops_for_client(parse_items(row["items"]) if row else {})
+        try:
+            from quest_registry import enabled_quests as _enabled_quests
+            _sec = payload.get("sections") or {}
+            print(
+                f"[QUESTS][DEBUG] user_id={user_id} registry_enabled={len(_enabled_quests())} "
+                f"sections=" + ",".join(f"{k}:{len(v)}" for k, v in _sec.items())
+            )
+        except Exception as _dbg_e:
+            print(f"[QUESTS][DEBUG][WARN] {_dbg_e}")
         return payload
 
     async def accept_quest(self, user_id, quest_id):
