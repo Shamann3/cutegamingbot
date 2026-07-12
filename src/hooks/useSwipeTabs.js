@@ -22,6 +22,19 @@ export function useSwipeTabs({ activeTab, onChange, enabled = true }) {
     if (!enabled) return undefined
 
     const onTouchStart = (event) => {
+      // Не трогаем свайп-навигацию, если жест начался на интерактивном контроле
+      // (слайдер громкости и т.п.) — иначе горизонтальный драг ползунка
+      // (например, увеличение громкости музыки в настройках) распознаётся как
+      // свайп между вкладками и неожиданно перекидывает пользователя на другой
+      // экран (например, с настроек на биржу).
+      const interactive = event.target?.closest?.(
+        'input, textarea, select, button, [role="slider"], [data-no-swipe]',
+      )
+      if (interactive) {
+        touchRef.current.tracking = false
+        return
+      }
+
       const touch = event.touches[0]
       touchRef.current = {
         startX: touch.clientX,
