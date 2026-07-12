@@ -596,6 +596,16 @@ async def session_sync(
             tg_user,
             force=True,
         )
+        # Один раз при входе в WebApp сверяем инвентарь с dex и молча убираем
+        # предметы, которых больше нет в магазине. Не должно ронять вход —
+        # сбой здесь не критичнее устаревшего предмета в инвентаре.
+        try:
+            await db.sanitize_user_items_against_dex(user_id)
+        except Exception as sanitize_err:
+            logger.warning(
+                "sanitize_user_items_against_dex failed for %s: %s",
+                user_id, sanitize_err,
+            )
         return {"ok": True}
     except Exception as e:
         raise _server_error(e, request)

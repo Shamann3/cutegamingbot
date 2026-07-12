@@ -1139,6 +1139,88 @@ class Database:
         raw_items = parse_items(items_raw)
         return dex_catalog.count_in_raw_items(raw_items, COUPON_ITEM_ID)
 
+    async def sanitize_user_items_against_dex(self, user_id) -> dict:
+        """Сверяет users.items с таблицей dex при входе в WebApp.
+
+        Формат хранения (см. user_items.items_to_db/json_db_codec) — JSON,
+        ключи это dex.name (кириллица экранирована в \\uXXXX), полностью
+        совместимый с текстовым ботом. Раньше это же (bot/db_create/db.py
+        sanitize_user_inventory_against_dex) делал только бот; здесь —
+        эквивалент для WebApp, вызывается один раз при входе (session_sync).
+
+        Для каждого предмета в инвентаре ищем dex_catalog.get(key) — он
+        резолвит ключ по id, name, name1 ИЛИ emoji (ровно та сверка "по
+        столбцам emoji и name", которую попросил пользователь, плюс
+        безопасный бонус — по id, если он валиден). Найденные предметы
+        схлопываются под канонический dex id (алиасы/дубли объединяются);
+        предметы, для которых dex_catalog не находит вообще ничего —
+        значит их больше нет в магазине — удаляются из инвентаря.
+
+        Пишем в БД ТОЛЬКО если реально что-то изменилось — под транзакционной
+        блокировкой строки (FOR UPDATE), чтобы не потерять параллельное
+        изменение инвентаря (например, сбор урожая в другой вкладке).
+
+        Важный нюанс сравнения "изменилось / не изменилось": промежуточный
+        рабочий вид (канонический numeric dex id) НЕЛЬЗЯ сравнивать напрямую
+        с исходным raw_items (там ключи — имена) — id и имя строкой всегда
+        различаются, и наивное сравнение считало бы «изменением» КАЖДЫЙ
+        валидный предмет на каждом входе, гоняя лишний UPDATE впустую. Поэтому
+        строим final_named — то же самое имя-представление, что даст
+        items_to_db() при записи — и сравниваем именно его с raw_items.
+        """
+        from dex_catalog import dex_catalog
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                items_raw = await conn.fetchval(
+                    "SELECT items FROM users WHERE user_id = $1 FOR UPDATE", user_id
+                )
+                raw_items = parse_items(items_raw)
+                if not raw_items:
+                    return {}
+
+                cleaned: dict[str, int] = {}
+                removed = 0
+                for key, qty in raw_items.items():
+                    try:
+                        qty = int(qty or 0)
+                    except (TypeError, ValueError):
+                        qty = 0
+                    if qty <= 0:
+                        removed += 1
+                        continue
+
+                    entry = dex_catalog.get(str(key))
+                    if entry is None:
+                        # Предмета больше нет в dex ни по id, ни по name,
+                        # ни по name1, ни по emoji — в магазине его не существует.
+                        removed += 1
+                        continue
+
+                    cleaned[entry.id] = cleaned.get(entry.id, 0) + qty
+
+                final_named: dict[str, int] = {}
+                for canon, qty in cleaned.items():
+                    entry = dex_catalog.get(canon)
+                    name = entry.name.strip() if entry and entry.name and entry.name.strip() else canon
+                    final_named[name] = final_named.get(name, 0) + qty
+
+                if final_named == raw_items:
+                    # Семантически ничего не поменялось — не трогаем БД.
+                    return raw_items
+
+                await conn.execute(
+                    "UPDATE users SET items = $2 WHERE user_id = $1",
+                    user_id,
+                    items_to_db(cleaned),
+                )
+
+        if removed:
+            print(
+                f"[INV][SANITIZE] user_id={user_id} removed={removed} left={len(cleaned)}"
+            )
+        return cleaned
+
     async def buy_shop_item(
         self,
         user_id,
