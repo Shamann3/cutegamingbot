@@ -10907,7 +10907,6 @@ html { scroll-behavior: smooth; }
 }
 
 @media (max-width: 860px) {
-  .panel-layout-chronicle { grid-template-columns: 0 1fr; }
   .ci-slide { padding: 0 1.5rem; }
 }
 
@@ -10924,6 +10923,14 @@ html { scroll-behavior: smooth; }
   grid-template-columns: 220px 1fr;
   height: 100%;
   overflow: hidden;
+}
+
+/* Мобильный override ДОЛЖЕН идти после базового правила выше — иначе при
+   равной специфичности побеждает последнее объявление по порядку в файле,
+   и на мобильном всё равно резервируется колонка 220px под скрытый .chs-nav
+   (текст сжимается в узкую правую колонку, слева пустая чёрная область). */
+@media (max-width: 860px) {
+  .panel-layout-chronicle { grid-template-columns: 0 1fr; }
 }
 
 .chs-root {

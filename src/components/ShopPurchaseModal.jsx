@@ -214,7 +214,7 @@ export default function ShopPurchaseModal({
                 <span className="shop-modal-coupon-title">Купон на скидку</span>
                 <span className="shop-modal-coupon-desc">
                   {couponActive
-                    ? 'Применён — скидка 20–80% определится при покупке'
+                    ? 'Скидка 20–80% определится при покупке'
                     : `У вас: ${couponCount} шт. Нажмите, чтобы применить`}
                 </span>
               </span>
