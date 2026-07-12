@@ -32,6 +32,7 @@ export function useShop({ isActive = true } = {}) {
   const [sortBy, setSortBy] = useState('name')
   const [sortOrder, setSortOrder] = useState('asc')
   const [items, setItems] = useState([])
+  const [couponCount, setCouponCount] = useState(0)
   const [page, setPage] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [totalItems, setTotalItems] = useState(0)
@@ -59,6 +60,7 @@ export function useShop({ isActive = true } = {}) {
 
   const applyCatalog = useCallback((data, { syncPlayer = true } = {}) => {
     setKut(data.kut ?? 0)
+    setCouponCount(data.couponCount ?? 0)
     setSortFilters(data.sortFilters ?? [])
     setActiveCategory(data.activeCategory ?? 'all')
     setSearch(data.search ?? queryRef.current.search ?? '')
@@ -316,7 +318,7 @@ export function useShop({ isActive = true } = {}) {
     )
   }, [currentQuery, loadCatalog, runCatalogAction, sortBy, sortOrder])
 
-  const buyItem = useCallback(async (itemId, quantity = 1) => {
+  const buyItem = useCallback(async (itemId, quantity = 1, useCoupon = false) => {
     if (busyRef.current || buyingItemId) return null
     busyRef.current = true
     setBuyingItemId(itemId)
@@ -324,14 +326,18 @@ export function useShop({ isActive = true } = {}) {
     setErrorCode(null)
     try {
       const q = currentQuery()
-      const data = await buyShopItem(itemId, { ...q, quantity })
+      const data = await buyShopItem(itemId, { ...q, quantity, useCoupon })
       applyCatalog(data)
       const purchased = data.purchased
       if (purchased) {
         const paid = purchased.paid ?? 0
         const qty = purchased.quantity ?? 1
         const paidText = paid > 0 ? ` за ${paid} кут` : ''
-        showPurchaseMessage(`Вы купили: ${purchased.name} ×${qty}${paidText}`)
+        const coupon = purchased.couponApplied
+        const couponText = coupon
+          ? ` 🎟 скидка ${coupon.percent}% (−${coupon.saved} кут)`
+          : ''
+        showPurchaseMessage(`Вы купили: ${purchased.name} ×${qty}${paidText}${couponText}`)
       }
       return data
     } catch (e) {
@@ -351,6 +357,7 @@ export function useShop({ isActive = true } = {}) {
 
   return {
     kut: displayKut,
+    couponCount,
     sortFilters,
     activeCategory,
     search,

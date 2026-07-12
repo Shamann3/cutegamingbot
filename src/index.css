@@ -7136,6 +7136,100 @@ body {
     font-variant-numeric: tabular-nums;
   }
 
+  .shop-modal-coupon {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    margin-top: 0.7rem;
+    padding: 0.55rem 0.65rem;
+    border-radius: 12px;
+    border: 1px solid rgba(212, 175, 55, 0.2);
+    background: rgba(5, 14, 9, 0.55);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .shop-modal-coupon:hover {
+    border-color: rgba(251, 191, 36, 0.4);
+  }
+
+  .shop-modal-coupon.shop-modal-coupon--active {
+    border-color: rgba(251, 191, 36, 0.65);
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.18), rgba(5, 14, 9, 0.6));
+  }
+
+  .shop-modal-coupon-icon {
+    flex-shrink: 0;
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+
+  .shop-modal-coupon-copy {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .shop-modal-coupon-title {
+    font-size: 0.74rem;
+    font-weight: 800;
+    color: #fde68a;
+  }
+
+  .shop-modal-coupon-desc {
+    font-size: 0.62rem;
+    line-height: 1.35;
+    color: rgba(254, 243, 199, 0.7);
+  }
+
+  .shop-modal-coupon-switch {
+    flex-shrink: 0;
+    width: 2.1rem;
+    height: 1.2rem;
+    border-radius: 9999px;
+    background: rgba(212, 175, 55, 0.2);
+    position: relative;
+    transition: background 0.15s ease;
+  }
+
+  .shop-modal-coupon--active .shop-modal-coupon-switch {
+    background: rgba(251, 191, 36, 0.85);
+  }
+
+  .shop-modal-coupon-switch-thumb {
+    position: absolute;
+    top: 0.14rem;
+    left: 0.14rem;
+    width: 0.92rem;
+    height: 0.92rem;
+    border-radius: 9999px;
+    background: #fde68a;
+    transition: transform 0.15s ease;
+  }
+
+  .shop-modal-coupon--active .shop-modal-coupon-switch-thumb {
+    transform: translateX(0.9rem);
+    background: #0a0f0a;
+  }
+
+  .shop-modal-coupon-total {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    line-height: 1;
+  }
+
+  .shop-modal-coupon-total-hint {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #fde68a;
+  }
+
   .shop-modal-actions {
     display: grid;
     grid-template-columns: 1fr 1.35fr;

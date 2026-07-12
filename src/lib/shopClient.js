@@ -40,6 +40,7 @@ export function buyShopItem(itemId, options = {}) {
     sortBy = 'name',
     sortOrder = 'asc',
     pageSize = 8,
+    useCoupon = false,
   } = options
 
   return apiRequest('/api/shop/buy', {
@@ -54,6 +55,7 @@ export function buyShopItem(itemId, options = {}) {
       sortBy,
       sortOrder,
       pageSize,
+      useCoupon,
     },
   })
 }

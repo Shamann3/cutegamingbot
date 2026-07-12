@@ -33,6 +33,7 @@ export default function ExchangeModule({
   const { isFavorite, toggleFavorite } = useShopFavorites()
   const {
     kut,
+    couponCount,
     sortFilters,
     activeCategory,
     search,
@@ -119,9 +120,9 @@ export default function ExchangeModule({
   const emptyCatalog = !initialLoading && items.length === 0
   const catalogBusy = refreshing || Boolean(buyingItemId)
 
-  const handleConfirmBuy = async (itemId, quantity) => {
+  const handleConfirmBuy = async (itemId, quantity, useCoupon) => {
     try {
-      await buyItem(itemId, quantity)
+      await buyItem(itemId, quantity, useCoupon)
       playSound('harvest')
       setSelectedItem(null)
     } catch {
@@ -219,6 +220,7 @@ export default function ExchangeModule({
       <ShopPurchaseModal
         item={selectedItem}
         kut={kut}
+        couponCount={couponCount}
         isOpen={Boolean(selectedItem)}
         isBuying={buyingItemId === selectedItem?.id}
         onClose={() => setSelectedItem(null)}

@@ -322,6 +322,7 @@ class ShopBuyAction(BaseModel):
     sortBy: str = "name"
     sortOrder: str = "asc"
     pageSize: int = Field(default=8, ge=8, le=16)
+    useCoupon: bool = False
     model_config = {"extra": "forbid"}
 
 
@@ -805,6 +806,7 @@ async def shop_buy(request: Request, body: ShopBuyAction, user_id: int = Depends
             sort_by=body.sortBy,
             sort_order=body.sortOrder,
             page_size=body.pageSize,
+            use_coupon=body.useCoupon,
         )
     except ValueError as e:
         raise _client_error(e)

@@ -1028,7 +1028,8 @@ class Database:
         )
         if cached is not None:
             balance = await self.get_user_balance(user_id)
-            return {**cached, "kut": int(balance or 0)}
+            coupon_count = await self._get_coupon_count(user_id)
+            return {**cached, "kut": int(balance or 0), "couponCount": coupon_count}
         async with self.pool.acquire() as conn:
             category_rows = await conn.fetch(
                 """
@@ -1097,6 +1098,7 @@ class Database:
                 offset,
             )
         balance = await self.get_user_balance(user_id)
+        coupon_count = await self._get_coupon_count(user_id)
         items = [item_to_client(dict(row)) for row in rows]
         result = {
             "kut": int(balance or 0),
@@ -1114,10 +1116,28 @@ class Database:
             "totalPages": total_pages,
             "items": items,
         }
+        # ВАЖНО: _shop_catalog_cache общий на ВСЕХ пользователей (ключ — только
+        # категория/страница/фильтры, без user_id). couponCount персонален,
+        # поэтому кэшируем result БЕЗ него и подмешиваем отдельно — иначе купон
+        # одного игрока «утёк» бы всем, кто получит эту же закэшированную страницу.
         self._shop_catalog_cache.set(
             category_id, page, search_q, price_filter, sort_by, sort_order, page_size, result
         )
+        result["couponCount"] = coupon_count
         return result
+
+    async def _get_coupon_count(self, user_id) -> int:
+        """Сколько «Купон на скидку» у игрока. Через dex_catalog.count_in_raw_items —
+        считает по всем алиасам предмета, а не только по точному ключу (см. баг
+        с потерей ресурсов фермы: сырой/канонический id могут не совпадать)."""
+        from config import COUPON_ITEM_ID
+        from dex_catalog import dex_catalog
+
+        items_raw = await self.pool.fetchval(
+            "SELECT items FROM users WHERE user_id = $1", user_id
+        )
+        raw_items = parse_items(items_raw)
+        return dex_catalog.count_in_raw_items(raw_items, COUPON_ITEM_ID)
 
     async def buy_shop_item(
         self,
@@ -1131,8 +1151,13 @@ class Database:
         sort_by="name",
         sort_order="asc",
         page_size=None,
+        use_coupon=False,
     ):
+        import random
+
         from shop_catalog import effective_price
+        from config import COUPON_ITEM_ID, COUPON_DISCOUNT_MIN_PERCENT, COUPON_DISCOUNT_MAX_PERCENT
+        from dex_catalog import dex_catalog
 
         await self.ensure_user(user_id)
         item_id = str(item_id).strip()
@@ -1140,6 +1165,10 @@ class Database:
             raise ValueError("Неверный предмет")
         quantity = max(1, min(int(quantity), 99))
         dex_id = int(item_id)
+        coupon_canon = dex_catalog.canonical_key(COUPON_ITEM_ID)
+        # Нельзя применить купон на скидку к покупке самих купонов — той же
+        # защитой, что была в старом текстовом боте (is_discount_coupon_in_cart).
+        use_coupon = bool(use_coupon) and coupon_canon != dex_catalog.canonical_key(item_id)
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 dex_row = await conn.fetchrow(
@@ -1158,21 +1187,39 @@ class Database:
                 unit_cost = effective_price(dex_row["price"], dex_row["dis"])
                 if unit_cost < 0:
                     raise ValueError("Этот предмет нельзя купить")
-                cost = unit_cost * buy_qty
+                full_cost = unit_cost * buy_qty
+
+                # users.items читаем ОДИН раз (нужен и для купона, и для выдачи
+                # предмета) — строка users уже залочена через FOR UPDATE ниже.
+                items_raw = await conn.fetchval(
+                    "SELECT items FROM users WHERE user_id = $1 FOR UPDATE", user_id
+                )
+                raw_items = parse_items(items_raw)
+
+                coupon_percent = 0
+                if use_coupon:
+                    if dex_catalog.count_in_raw_items(raw_items, coupon_canon) < 1:
+                        raise ValueError("У вас нет купона на скидку")
+                    coupon_percent = random.randint(
+                        COUPON_DISCOUNT_MIN_PERCENT, COUPON_DISCOUNT_MAX_PERCENT
+                    )
+                    raw_items = dex_catalog.take_from_raw_items(raw_items, coupon_canon, 1)
+
+                cost = full_cost
+                if coupon_percent:
+                    cost = round(full_cost * (1 - coupon_percent / 100))
+                    cost = max(0, min(cost, full_cost))
+
                 balance = await conn.fetchval(
-                    "SELECT balance FROM users WHERE user_id = $1 FOR UPDATE", user_id
+                    "SELECT balance FROM users WHERE user_id = $1", user_id
                 )
                 if balance is None:
                     raise ValueError("Профиль не найден")
                 if int(balance) < cost:
                     raise ValueError(f"У Вас недостаточно кут (нужно {cost})")
-                items_raw = await conn.fetchval(
-                    "SELECT items FROM users WHERE user_id = $1", user_id
-                )
                 tool_durability_raw = await conn.fetchval(
                     "SELECT tool_durability FROM users WHERE user_id = $1", user_id
                 )
-                raw_items = parse_items(items_raw)
                 stored = add_shop_item_to_storage(raw_items, str(dex_row["id"]), buy_qty)
                 tool_durability = parse_tool_durability(tool_durability_raw)
                 await conn.execute(
@@ -1197,6 +1244,11 @@ class Database:
                     "emoji": (dex_row["emoji"] or "").strip() or "📦",
                     "paid": cost,
                     "quantity": buy_qty,
+                    "couponApplied": (
+                        {"percent": coupon_percent, "saved": full_cost - cost}
+                        if coupon_percent
+                        else None
+                    ),
                 }
                 audit_payload = {
                     "amount": -cost,
@@ -1209,6 +1261,7 @@ class Database:
                         "quantity": buy_qty,
                         "paid": cost,
                         "remains_after": remains - buy_qty,
+                        "couponPercent": coupon_percent or None,
                     },
                 }
         schedule_balance_event(self.pool, "shop_buy", user_id, **audit_payload)

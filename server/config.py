@@ -495,6 +495,11 @@ TOBACCO_ITEM_ID = os.getenv("TOBACCO_ITEM_ID", "297")
 AXE_ITEM_ID = os.getenv("AXE_ITEM_ID", "295")
 WATER_ITEM_ID = os.getenv("WATER_ITEM_ID", "294")
 AUTOWATER_ITEM_ID = os.getenv("AUTOWATER_ITEM_ID", "298")
+COUPON_ITEM_ID = os.getenv("COUPON_ITEM_ID", "279")  # "Купон на скидку" в dex
+
+# Разброс случайной скидки при использовании купона в магазине.
+COUPON_DISCOUNT_MIN_PERCENT = int(os.getenv("COUPON_DISCOUNT_MIN_PERCENT", "20"))
+COUPON_DISCOUNT_MAX_PERCENT = int(os.getenv("COUPON_DISCOUNT_MAX_PERCENT", "80"))
 # Ключи в users.items — id из таблицы dex
 SEED_ITEM_KEY = SEED_ITEM_ID
 TREE_ITEM_KEY = TREE_ITEM_ID
