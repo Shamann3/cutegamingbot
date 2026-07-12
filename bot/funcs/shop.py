@@ -1044,70 +1044,68 @@ async def shop_op(message: Message):
 
     if any(
             command in message.text.strip().lower() for command in
-            [ "инвентарь" , "инвент" , "рюкзак" , "/backpack@cutegamingbot" , "/backpack" , "/backpack@CuteGamingBot" ,
-              "/bp" , "/bp" , "/BP" , "/bP" , "/Bp" ]):
+            ["инвентарь", "инвент", "рюкзак", "/backpack@cutegamingbot", "/backpack", "/backpack@CuteGamingBot",
+             "/bp", "/bp", "/BP", "/bP", "/Bp"]):
         if message.reply_to_message:
             user_id = message.reply_to_message.from_user.id
             first_name = await db.get_firstname_by_user_id(user_id)
             username = await db.get_username_by_user_id(user_id)
-            name_link = await create_user_link(user_id , first_name , username)
+            name_link = await create_user_link(user_id, first_name, username)
             header = f"<tg-emoji emoji-id='5406683434124859552'>🛍</tg-emoji> <b>Инвентарь {name_link}</b>\n\n"
         else:
             user_id = message.from_user.id
             header = "<tg-emoji emoji-id='5319009880164570032'>🎒</tg-emoji> <b>Ваш инвентарь</b>\n\n"
 
-        inventory_data = await db.get_user_inventory(user_id)
-
-        if inventory_data:
-            try:
-                inventory_items = inventory_data if isinstance(inventory_data, dict) else decode_items(inventory_data)
-                if not inventory_items:
-                    await message.reply(
-                        f"<tg-emoji emoji-id='5837137271416950239'>🏝</tg-emoji> <b>Инвентарь пуст</b>" ,
-                        parse_mode="HTML")
-                    return
-
-                page = 0
-                total_pages = inventory_total_pages(len(inventory_items))
-
-                inventory_list = await generate_inventory_page(inventory_items , page)
-                navigation_buttons = get_inventory_navigation_buttons(page , total_pages)
-
-                closeinventory1 = InlineKeyboardButton(
-                    text=" " , callback_data="close_message_inventory" , style="default" ,
-                    icon_custom_emoji_id="5226660202035554522")
-
-                # ====== ПОСТРОЕНИЕ КЛАВИАТУРЫ ======
-                keyboard_rows = [ ]
-
-                # Кнопка веб-приложения – только если buttonwebapp != 0
-                if buttonwebapp == 1:
-                    webapp_button = InlineKeyboardButton(
-                        text="Открыть в приложении" ,
-                        url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=inventory")
-                    keyboard_rows.append([ webapp_button ])
-
-                # Навигационные кнопки (только если есть куда листать)
-                if navigation_buttons:
-                    keyboard_rows.append(navigation_buttons)
-                # Кнопка закрытия
-                keyboard_rows.append([ closeinventory1 ])
-
-                markup = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
-
-                sent_inventory = await message.reply(
-                    f'{header}{inventory_list}' , parse_mode="HTML" , disable_web_page_preview=True ,
-                    reply_markup=markup)
-                user_inventory1 [ user_id ] = sent_inventory.message_id
-
-            except Exception as e:
-                logging.exception("inventory display error for user %s: %s", user_id, e)
+        try:
+            # Санитизация на лету:
+            # - удаляем предметы, которых нет в dex;
+            # - emoji-ключи приводим к каноническому dex.name;
+            # - при изменениях сохраняем обратно в users.items как чистый JSON.
+            inventory_items = await db.sanitize_user_inventory_against_dex(user_id)
+            if not inventory_items:
                 await message.reply(
-                    f"<b>Ошибка чтения инвентаря. Обратитесь к создателю бота</b>" , parse_mode="HTML" ,
-                    disable_web_page_preview=True)
-        else:
+                    f"<tg-emoji emoji-id='5837137271416950239'>🏝</tg-emoji> <b>Инвентарь пуст</b>",
+                    parse_mode="HTML")
+                return
+
+            page = 0
+            total_pages = inventory_total_pages(len(inventory_items))
+
+            inventory_list = await generate_inventory_page(inventory_items, page)
+            navigation_buttons = get_inventory_navigation_buttons(page, total_pages)
+
+            closeinventory1 = InlineKeyboardButton(
+                text=" ", callback_data="close_message_inventory", style="default",
+                icon_custom_emoji_id="5226660202035554522")
+
+            # ====== ПОСТРОЕНИЕ КЛАВИАТУРЫ ======
+            keyboard_rows = []
+
+            # Кнопка веб-приложения – только если buttonwebapp != 0
+            if buttonwebapp == 1:
+                webapp_button = InlineKeyboardButton(
+                    text="Открыть в приложении",
+                    url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=inventory")
+                keyboard_rows.append([webapp_button])
+
+            # Навигационные кнопки (только если есть куда листать)
+            if navigation_buttons:
+                keyboard_rows.append(navigation_buttons)
+            # Кнопка закрытия
+            keyboard_rows.append([closeinventory1])
+
+            markup = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+
+            sent_inventory = await message.reply(
+                f'{header}{inventory_list}', parse_mode="HTML", disable_web_page_preview=True,
+                reply_markup=markup)
+            user_inventory1[user_id] = sent_inventory.message_id
+
+        except Exception as e:
+            logging.exception("inventory display error for user %s: %s", user_id, e)
             await message.reply(
-                f"<tg-emoji emoji-id='5837137271416950239'>🏝</tg-emoji> <b>Инвентарь пуст</b>" , parse_mode="HTML")
+                f"<b>Ошибка чтения инвентаря. Обратитесь к создателю бота</b>", parse_mode="HTML",
+                disable_web_page_preview=True)
         return
     elif len(words) > 1 and words [ 0 ] in [ "купить" , "Купить" , "/buy@CuteGamingBot" ]:
 

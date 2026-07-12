@@ -20896,7 +20896,159 @@ class Database:
         """Удаляет растение."""
         async with self.pool.acquire() as conn:
             await conn.execute("DELETE FROM eden_plants WHERE id = $1", plant_id)
+    async def _get_inventory_dex_reference(self) -> Tuple [ Set [ str ] , Dict [ str , str ] , Dict [ str , str ] ]:
+        """
+        Быстрый справочник dex для валидации users.items.
 
+        Возвращает:
+        - valid_names: точные dex.name
+        - lower_to_name: casefold(name) -> канонический dex.name
+        - emoji_to_name: emoji -> канонический dex.name (первое совпадение по id)
+        """
+        if not self.pool:
+            raise ValueError("Соединение с базой данных не инициализировано.")
+
+        ttl_sec = 60.0
+        now = time.monotonic()
+        cache_ts = float(getattr(self , "_inventory_dex_ref_ts" , 0.0))
+        cached = getattr(self , "_inventory_dex_ref" , None)
+        if cached and (now - cache_ts) <= ttl_sec:
+            return cached [ "valid_names" ] , cached [ "lower_to_name" ] , cached [ "emoji_to_name" ]
+
+        lock = getattr(self , "_inventory_dex_ref_lock" , None)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._inventory_dex_ref_lock = lock
+
+        async with lock:
+            now = time.monotonic()
+            cache_ts = float(getattr(self , "_inventory_dex_ref_ts" , 0.0))
+            cached = getattr(self , "_inventory_dex_ref" , None)
+            if cached and (now - cache_ts) <= ttl_sec:
+                return cached [ "valid_names" ] , cached [ "lower_to_name" ] , cached [ "emoji_to_name" ]
+
+            async with self.pool.acquire() as connection:
+                rows = await connection.fetch("SELECT name, emoji FROM dex ORDER BY id ASC")
+
+            valid_names: Set [ str ] = set()
+            lower_to_name: Dict [ str , str ] = {}
+            emoji_to_name: Dict [ str , str ] = {}
+
+            for row in rows:
+                name = str(row [ "name" ] or "").strip()
+                if not name:
+                    continue
+
+                valid_names.add(name)
+                lower_key = name.casefold()
+                if lower_key and lower_key not in lower_to_name:
+                    lower_to_name [ lower_key ] = name
+
+                emoji = str(row [ "emoji" ] or "").strip()
+                if emoji and emoji not in emoji_to_name:
+                    emoji_to_name [ emoji ] = name
+
+            payload = {
+                "valid_names": valid_names ,
+                "lower_to_name": lower_to_name ,
+                "emoji_to_name": emoji_to_name ,
+            }
+            self._inventory_dex_ref = payload
+            self._inventory_dex_ref_ts = time.monotonic()
+            return valid_names , lower_to_name , emoji_to_name
+
+    async def sanitize_user_inventory_against_dex(self , user_id: int) -> Dict [ str , int ]:
+        """
+        Санитизация users.items при открытии инвентаря:
+        - принимает ключи, которые существуют в dex по name или emoji;
+        - emoji/alias-ключи приводит к каноническому dex.name;
+        - предметы, которых нет в dex, удаляет;
+        - записывает обратно только если есть реальные изменения.
+        """
+        if not self.pool:
+            raise ValueError("Соединение с базой данных не инициализировано.")
+
+        try:
+            async with self.pool.acquire() as connection:
+                row = await connection.fetchrow(
+                    "SELECT items FROM users WHERE user_id = $1" , user_id)
+
+            if not row:
+                return {}
+
+            raw_val = row [ "items" ]
+            decoded = decode_items(raw_val)
+            normalized = normalize_inventory(decoded)
+
+            raw_str = raw_val if isinstance(raw_val , str) else None
+            raw_nonempty = bool(raw_str and raw_str.strip() not in ("" , "{}" , '"{}"'))
+
+            # Защита от потери данных: если поле непустое, но не распарсилось,
+            # не перезаписываем его.
+            if raw_nonempty and not decoded:
+                return {}
+
+            if not normalized:
+                empty_canonical = encode_items({})
+                if raw_str != empty_canonical and not (raw_nonempty and not decoded):
+                    async with self.pool.acquire() as connection:
+                        await connection.execute(
+                            "UPDATE users SET items = $1 WHERE user_id = $2" ,
+                            empty_canonical ,
+                            user_id)
+                return {}
+
+            valid_names , lower_to_name , emoji_to_name = await self._get_inventory_dex_reference()
+
+            cleaned: Dict [ str , int ] = {}
+            removed_count = 0
+            remapped_count = 0
+
+            for raw_key , qty in normalized.items():
+                token = str(raw_key or "").strip()
+                if not token:
+                    removed_count += 1
+                    continue
+
+                canonical_name = None
+                if token in valid_names:
+                    canonical_name = token
+                elif token in emoji_to_name:
+                    canonical_name = emoji_to_name [ token ]
+                else:
+                    canonical_name = lower_to_name.get(token.casefold())
+
+                if not canonical_name:
+                    removed_count += 1
+                    continue
+
+                if canonical_name != token:
+                    remapped_count += 1
+
+                cleaned [ canonical_name ] = cleaned.get(canonical_name , 0) + int(qty)
+
+            source_canonical = encode_items(normalized)
+            cleaned_canonical = encode_items(cleaned)
+
+            if cleaned_canonical != source_canonical:
+                async with self.pool.acquire() as connection:
+                    await connection.execute(
+                        "UPDATE users SET items = $1 WHERE user_id = $2" ,
+                        cleaned_canonical ,
+                        user_id)
+
+                if removed_count or remapped_count:
+                    print(
+                        f"[INV][SANITIZE] user_id={user_id} "
+                        f"removed={removed_count}, remapped={remapped_count}, left={len(cleaned)}")
+
+            return cleaned
+
+        except Exception as e:
+            print(f"[ERROR] sanitize_user_inventory_against_dex user_id={user_id}: {e}")
+            return await self.get_user_inventory(user_id)
 
 # Singleton used across the bot (main.py, handlers, games).
 db = Database(db_settings)
+
+
