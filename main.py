@@ -134,7 +134,6 @@ from aiosend import CryptoPay, PollingRouter, TESTNET, MAINNET
 from aiosend.types import Invoice
 from bot.utils.telethon_logger import install_telethon_logger
 from redis.exceptions import AuthenticationError, ResponseError, ConnectionError, TimeoutError  # type: ignore
-from bot.utils.network_monitor import network_monitor
 from bot.utils.telegram_api_logger import TelegramApiLogger
 
 bot_start_time = time.time()
@@ -37047,9 +37046,6 @@ async def botmain():
                 delay = min(30.0, 3.0 * hard_failures)
                 print(f"[{label}][ERR] {type(e).__name__}: {e} → перезапуск polling через {delay:.0f}s ({hard_failures}/{max_hard_failures})")
                 await asyncio.sleep(delay)
-
-    # Запускаем монитор сети
-    asyncio.create_task(network_monitor())
 
     print("[🚀] Запускаем основной и платёжный боты...")
 
