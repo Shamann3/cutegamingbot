@@ -80,10 +80,15 @@ function serveFrom(res, root, urlPath, spaFallback) {
 
 const server = http.createServer((req, res) => {
   const urlPath = req.url || '/';
+  // Матчим префикс БЕЗ query-строки — иначе "/panel?v=123" (без слэша, но с
+  // query, как шлёт бот с cache-busting меткой) не совпадал ни с "/panel",
+  // ни с "/panel/" и уходил в игру вместо панели.
+  const pathOnly = urlPath.split('?')[0];
+  const query = urlPath.slice(pathOnly.length);
 
-  if (urlPath === '/panel' || urlPath.startsWith('/panel/')) {
-    const sub = urlPath === '/panel' ? '/' : urlPath.slice('/panel'.length);
-    serveFrom(res, path.join(DIST, 'panel'), sub, 'index.html');
+  if (pathOnly === '/panel' || pathOnly.startsWith('/panel/')) {
+    const subPath = pathOnly === '/panel' ? '/' : pathOnly.slice('/panel'.length);
+    serveFrom(res, path.join(DIST, 'panel'), subPath + query, 'index.html');
     return;
   }
 
