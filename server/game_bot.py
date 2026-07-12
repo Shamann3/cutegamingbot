@@ -5,6 +5,8 @@
 
 import asyncio
 import logging
+import time
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.exceptions import TelegramUnauthorizedError
@@ -15,6 +17,22 @@ from config import BOT_TOKEN, WEBAPP_URL
 from db import db
 
 logging.basicConfig(level=logging.INFO)
+
+
+def _webapp_url_fresh(url: str) -> str:
+    """Добавляет метку версии (?v=timestamp) к URL WebApp.
+
+    Telegram WebView агрессивно кэширует мини-приложение по URL. Свежая метка
+    заставляет клиент загрузить актуальный код при каждом открытии — иначе на
+    телефоне могла жить старая версия игры, и правки (например, фиксы багов)
+    не подхватывались бы после деплоя."""
+    try:
+        parts = urlparse(url)
+        query = dict(parse_qsl(parts.query))
+        query["v"] = str(int(time.time()))
+        return urlunparse(parts._replace(query=urlencode(query)))
+    except Exception:
+        return url
 
 _CHAT_BALANCE_TRIGGERS = {
     "баланс чата", "баланс группы", "балик чата", "балик группы",
@@ -58,7 +76,7 @@ async def main(*, manage_db: bool = True):
                 await message.answer(
                     text,
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="Открыть ферму", web_app=WebAppInfo(url=WEBAPP_URL))],
+                        [InlineKeyboardButton(text="Открыть ферму", web_app=WebAppInfo(url=_webapp_url_fresh(WEBAPP_URL)))],
                     ]),icon_custom_emoji_id="5449850741667668411",
                     parse_mode="HTML",
                 )
@@ -69,7 +87,7 @@ async def main(*, manage_db: bool = True):
             await bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
                     text="🌿 Ферма",
-                    web_app=WebAppInfo(url=WEBAPP_URL),
+                    web_app=WebAppInfo(url=_webapp_url_fresh(WEBAPP_URL)),
                 )
             )
             logging.info("Кнопка Web App: %s", WEBAPP_URL)
