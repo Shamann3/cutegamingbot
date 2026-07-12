@@ -239,6 +239,18 @@ _LOCATION_KEYS = frozenset({"DB_HOST", "DB_PORT", "DB_SSL"})
 
 
 def _resolve_db_value(key: str) -> str:
+    # DATABASE_URL — прямой сигнал «подключайся по строке к managed-базе».
+    # Раньше APP_MODE_IS_EXPLICIT (ниже) обрывал резолвинг ДО того, как эта
+    # переменная вообще проверялась, поэтому заданный на хостинге DATABASE_URL
+    # тихо игнорировался и подключение уезжало на SSH-туннель по DB_HOST/PORT
+    # профиля (main+remote) — те могли указывать на давно удалённый сервер.
+    # Проверяем DATABASE_URL первым делом, с высшим приоритетом, независимо
+    # от APP_MODE.
+    if key == "DATABASE_URL":
+        direct = _file_env("DATABASE_URL")
+        if direct:
+            return direct
+
     profile = active_db_profile()
     loc = DB_LOCATION
     prof_up = profile.upper()
