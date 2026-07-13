@@ -835,7 +835,7 @@ class Database:
             self.JACKCHAT_DEBUG = False
 
         if not hasattr(self, "JACKCHAT_ACTIVE_INTERVAL"):
-            self.JACKCHAT_ACTIVE_INTERVAL = 15.0
+            self.JACKCHAT_ACTIVE_INTERVAL = 60.0
         if not hasattr(self, "JACKCHAT_IDLE_INTERVAL"):
             self.JACKCHAT_IDLE_INTERVAL = 600.0
 
@@ -845,9 +845,9 @@ class Database:
             self.JACKCHAT_FAIL_MAX = 180.0
 
         if not hasattr(self, "JACKCHAT_TICK"):
-            self.JACKCHAT_TICK = 0.5
+            self.JACKCHAT_TICK = 1.0
         if not hasattr(self, "JACKCHAT_MAX_PER_TICK"):
-            self.JACKCHAT_MAX_PER_TICK = 6
+            self.JACKCHAT_MAX_PER_TICK = 2
 
         if not hasattr(self, "JACKCHAT_USER_TTL"):
             self.JACKCHAT_USER_TTL = 180.0
@@ -860,7 +860,7 @@ class Database:
 
         # ✅ TG защитные лимиты (важно, чтобы не дергать TG каждые 1 сек)
         if not hasattr(self, "JACKCHAT_TG_MIN_INTERVAL"):
-            self.JACKCHAT_TG_MIN_INTERVAL = 3.0  # минимум между TG вызовами по одному chat_id
+            self.JACKCHAT_TG_MIN_INTERVAL = 20.0  # минимум между TG вызовами по одному chat_id
         if not hasattr(self, "JACKCHAT_ACTIVITY_SOON_DELAY"):
             self.JACKCHAT_ACTIVITY_SOON_DELAY = 1.0  # после сообщения ставим check не раньше, чем через 1с
 
