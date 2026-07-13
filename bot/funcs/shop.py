@@ -3529,32 +3529,25 @@ async def handle_apply_coupon(call):
         # Нормализуем значения и сохраняем
         discount_percent = max(20 , min(75 , int(discount_percent)))
         discount_price = max(0 , int(round(total_price * (100 - discount_percent) / 100)))
-        saved_amount = max(0.0 , float(total_price) - float(discount_price))
         purchase_data["coupon_offer"] = {
             "message_id": message_id ,
             "discount_percent": discount_percent ,
             "discount_total": discount_price
         }
         current_purchase_data[user_id] = purchase_data
-        full_price_formatted = _fmt_amount(total_price)
-        formatted_discount_price = _fmt_amount(discount_price)
-        saved_amount_formatted = _fmt_amount(saved_amount)
         items_text = "\n".join(purchase_data.get("bought_items" , [])) or "-"
         # Создаем клавиатуру с двумя кнопками
         cancel_button = InlineKeyboardButton(text="Отменить" , callback_data="cancel341234123412")
         confirm_button = InlineKeyboardButton(
-            text="Купить" , callback_data=f"buy_with_coupon:{discount_price}:{discount_percent}")
+            text="Купить" , callback_data="buy_with_coupon")
         # Создаем клавиатуру с использованием вложенных списков для кнопок
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[ [ cancel_button, confirm_button ]  # Одна строка с двумя кнопками
             ])
         await call.message.edit_text(
-            f"<tg-emoji emoji-id='5377599075237502153'>🎟</tg-emoji> <b>Купон применён!</b>\n"
+            f"<tg-emoji emoji-id='5377599075237502153'>🎟</tg-emoji> <b>Купон почти применён!</b>\n"
             f"{items_text}\n\n"
-            f"<tg-emoji emoji-id='5377599075237502153'>🎟</tg-emoji> <b>Скидка : 20-80%</b>\n"
-            f"<tg-emoji emoji-id='4967518033061872209'>💳</tg-emoji> <b>Было : {full_price_formatted} кут</b>\n"
-            f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>К оплате : {formatted_discount_price} кут</b>\n"
-            f"<tg-emoji emoji-id='5472401690793614752'>🛍️</tg-emoji> <b>Экономия : {saved_amount_formatted} кут</b>" ,
+            f"<tg-emoji emoji-id='5377599075237502153'>🎟</tg-emoji> <b>Нажмите «Купить», чтобы завершить покупку с купоном.</b>" ,
             reply_markup=keyboard ,
             parse_mode="HTML" ,
             disable_web_page_preview=True
@@ -3570,18 +3563,6 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
     if user_id not in user_buy or user_buy[user_id] != message_id:
         await call.answer(randommessagehelp1)
         return
-    # ожидаемый формат: buy_with_coupon:<discount_total>:<discount_percent>
-    callback_discount_total = None
-    callback_discount_percent = None
-    try:
-        parts = call.data.split(':')
-        if len(parts) >= 2:
-            callback_discount_total = max(0.0 , float(parts[1]))
-        if len(parts) >= 3:
-            callback_discount_percent = int(parts[2])
-    except Exception:
-        callback_discount_total = None
-        callback_discount_percent = None
     purchase_data = current_purchase_data.get(user_id)
     if not purchase_data:
         await call.answer("⚠️ Ошибка: информация о покупке не найдена")
@@ -3594,19 +3575,10 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
         offer_message_id = _safe_int(coupon_offer.get("message_id") , 0)
         offer_discount_percent = _safe_int(coupon_offer.get("discount_percent") , 0)
         offer_discount_total = float(_safe_int(coupon_offer.get("discount_total") , 0))
-    # приоритет у сохранённого на сервере купона; callback принимаем только в новом формате
-    has_offer_coupon = offer_message_id == message_id and 20 <= offer_discount_percent <= 70
-    has_callback_coupon = (
-        callback_discount_total is not None
-        and callback_discount_percent is not None
-        and 20 <= int(callback_discount_percent) <= 70
-    )
-    if has_offer_coupon:
+    # Подтверждаем покупку только по купону, который уже применён к текущей карточке
+    if offer_message_id == message_id and 20 <= offer_discount_percent <= 75:
         discount_percent = int(offer_discount_percent)
         discount_total = max(0.0 , float(offer_discount_total))
-    elif has_callback_coupon:
-        discount_percent = callback_discount_percent
-        discount_total = max(0.0 , float(callback_discount_total or 0))
     else:
         await call.message.edit_text(
             "<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>Купон недействителен. Примените купон заново.</b>",
@@ -3665,7 +3637,7 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
         return
     total_price = max(0.0 , float(total_price))
     full_total = int(round(total_price))
-    discount_percent = max(20 , min(70 , int(discount_percent)))
+    discount_percent = max(20 , min(75 , int(discount_percent)))
     discount_total = float(max(0 , round(full_total * (100 - discount_percent) / 100)))
     saved_amount = max(0.0 , float(full_total) - float(discount_total))
     # --- 2) Списание средств ОДИН РАЗ (discount_total - это цена для пользователя за всю корзину)

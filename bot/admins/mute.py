@@ -93,14 +93,12 @@ class MuteConfig:
 
   # --- Официальные чаты проекта (мута/кика/размута) ---
   STAFF_CHAT_IDS: frozenset = frozenset({
-    -1002135149822,
+    -1001612636292,
     -1001921925861,
   })
 
   # --- Группы, где модерация намеренно отключена (бот работает как обычно) ---
-  MODERATION_EXCLUDED_CHAT_IDS: frozenset = frozenset({
-    -1001612636292,
-  })
+  MODERATION_EXCLUDED_CHAT_IDS: frozenset = frozenset({})
 
   # --- Команды ---
   MUTE_COMMANDS: frozenset = frozenset({

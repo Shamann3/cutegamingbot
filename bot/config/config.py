@@ -1,4 +1,4 @@
-TOKEN = "8645371828:AAHDCNf4WoMt7w-UrGpnv5brBCy58ueCDZI"
+TOKEN = "7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM"
 EDEN_TOKEN = "8784362237:AAFRZ_dQ281GO0YRX-oTL2UyRfISA7H6cP8"
 PWD = "legehdarg34123412cutegamingbot"
 
@@ -10,7 +10,7 @@ MESSAGE_MIN_WORDS = 2
 
 
 
-min_required_ref = 0 # количество пользователей которое должны пригасить другие пользователи при выводе валюты
+min_required_ref = 3 # количество пользователей которое должны пригасить другие пользователи при выводе валюты
 buttonwebapp = 1
 
 
@@ -508,7 +508,7 @@ commissionsubscribe = 0.4
 
 timeoutdonate = 2
 
-cute_groups = [ "-1001612636292" , "-1001990365675" ,"-1002135149822" ]
+cute_groups = [ "-1001612636292" , "-1001990365675" ,"-1001921925861" ]
 ADMIN_IDS = {6801702632,6488580935}
 allowed_users = [6801702632, 6488580935]
 timeoutourbot = 0
