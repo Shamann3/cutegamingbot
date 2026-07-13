@@ -12,8 +12,8 @@ from aiogram import Bot, Dispatcher, F, types
 from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, WebAppInfo
-from bot.config.config import TOKEN
-from config import WEBAPP_URL
+
+from config import BOT_TOKEN, WEBAPP_URL
 from db import db
 
 logging.basicConfig(level=logging.INFO)
@@ -50,7 +50,7 @@ async def main(*, manage_db: bool = True):
     else:
         await db.ensure_connected()
 
-    bot = Bot(token=TOKEN)
+    bot = Bot(token=BOT_TOKEN)
     try:
         try:
             me = await bot.get_me()
