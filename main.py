@@ -7558,11 +7558,49 @@ def _pop_send_request_action(token: str) -> Optional[Dict[str, Any]]:
 
 _WITHDRAW_USERBOT_CLIENT = None
 
-# ВАЖНО:
-# asyncio.Lock нельзя хранить в LazyGameStore / pickle-store.
-# Локи только в обычной RAM-структуре.
-_withdraw_request_locks: Dict[str, asyncio.Lock] = LazyGameStore("_withdraw_request_locks")
-_gift_send_global_lock = asyncio.Lock()
+# Флаг готовности юзербота для выводов. False = выводы отключены,
+# пока кто-то вручную не переавторизует сессию (см. reauth_withdraw_userbot.py)
+# и не задеплоит новый файл сессии.
+WITHDRAW_USERBOT_READY: bool = False
+
+# Троттлинг алертов админам, чтобы не заспамить их при каждой попытке
+# вывода, пока юзербот отключён.
+_WD_UNAUTH_ALERT_LAST_TS: float = 0.0
+_WD_UNAUTH_ALERT_COOLDOWN_SEC: float = 600.0  # раз в 10 минут
+
+
+async def _wd_alert_userbot_unauthorized(reason: str = "") -> None:
+    """Уведомляет админов, что юзербот для выводов не авторизован/отключён.
+
+    Троттлится, т.к. может вызываться при каждой попытке вывода, пока
+    проблема не устранена.
+    """
+    global _WD_UNAUTH_ALERT_LAST_TS
+
+    now = time.time()
+    if now - _WD_UNAUTH_ALERT_LAST_TS < _WD_UNAUTH_ALERT_COOLDOWN_SEC:
+        return
+    _WD_UNAUTH_ALERT_LAST_TS = now
+
+    text = (
+        "🟥 <b>Юзербот для выводов НЕ авторизован</b>\n\n"
+        "Все выводы (подарки/звёзды) сейчас недоступны пользователям.\n\n"
+        f"Причина: {reason or 'сессия withdraw_userbot_session не авторизована'}\n\n"
+        "Что делать:\n"
+        "1. Запусти <code>reauth_withdraw_userbot.py</code> локально (не на сервере) "
+        "с доступом к телефону/аккаунту выводного юзербота.\n"
+        "2. Переименуй новый файл сессии поверх старого "
+        "(<code>withdraw_userbot_session.session</code>).\n"
+        "3. Закоммить и запушь файл сессии, задеплой заново.\n\n"
+        "⚠️ Автоматический интерактивный вход на сервере отключён "
+        "(нет доступа к консоли/SSH), поэтому переавторизация ТОЛЬКО вручную локально."
+    )
+
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot1.send_message(admin_id, text, parse_mode="HTML")
+        except Exception as e:
+            print(f"🟨 [WITHDRAW][ALERT][WARN] не удалось уведомить admin_id={admin_id}: {e!r}")
 
 
 def set_withdraw_userbot_client(tg_client) -> None:
@@ -7675,6 +7713,8 @@ async def _ensure_withdraw_userbot_connected() -> TelegramClient:
 
 
 async def get_withdraw_userbot_client() -> TelegramClient:
+    global WITHDRAW_USERBOT_READY
+
     tg_client = await _ensure_withdraw_userbot_connected()
 
     try:
@@ -7684,23 +7724,20 @@ async def get_withdraw_userbot_client() -> TelegramClient:
         raise RuntimeError(f"Не удалось проверить авторизацию tech userbot: {e!r}") from e
 
     if not authorized:
-        if not ALLOW_INTERACTIVE_LOGIN:
-            raise RuntimeError("Tech userbot не авторизован, а интерактивный вход отключён.")
-
-        print("🟨[WITHDRAW][USERBOT] session not authorized -> start(phone=TECH_PHONE)")
-        try:
-            await tg_client.start(phone=TECH_PHONE)
-        except Exception as e:
-            raise RuntimeError(f"Не удалось авторизовать tech userbot: {e!r}") from e
-
-        try:
-            authorized = await tg_client.is_user_authorized()
-            print(f"🧪[WITHDRAW][USERBOT] is_user_authorized(after start)={authorized} | id={id(tg_client)}")
-        except Exception as e:
-            raise RuntimeError(f"Не удалось перепроверить авторизацию tech userbot: {e!r}") from e
-
-        if not authorized:
-            raise RuntimeError("Tech userbot не авторизован после start()")
+        # ВАЖНО: раньше здесь был автоматический интерактивный вход через
+        # tg_client.start(phone=...), который ждёт код из Telegram через input().
+        # На сервере (headless, без консоли и без доступа по SSH) это зависает
+        # НАВСЕГДА внутри _gift_send_global_lock и намертво блокирует ВСЕ
+        # выводы у всех пользователей до перезапуска процесса. Переавторизация
+        # возможна только вручную, локально (см. reauth_withdraw_userbot.py).
+        WITHDRAW_USERBOT_READY = False
+        await _wd_alert_userbot_unauthorized(
+            reason="get_withdraw_userbot_client: is_user_authorized=False"
+        )
+        raise RuntimeError(
+            "Юзербот для выводов не авторизован. Выводы временно недоступны, "
+            "администратор уведомлён и должен переавторизовать сессию вручную."
+        )
 
     try:
         await _validate_withdraw_userbot_identity(tg_client)
@@ -7708,6 +7745,7 @@ async def get_withdraw_userbot_client() -> TelegramClient:
     except Exception as e:
         raise RuntimeError(f"Ошибка проверки tech userbot identity: {e!r}") from e
 
+    WITHDRAW_USERBOT_READY = True
     return tg_client
 
 
@@ -36472,6 +36510,7 @@ async def run_bot():
 
     global main_userbot_client
     global withdraw_userbot_client
+    global WITHDRAW_USERBOT_READY
 
     MAIN_API_ID = 26543591
     MAIN_API_HASH = os.getenv("TG_MAIN_API_HASH", "a8de6a89ea1236962103eac13cd45d95")
@@ -36585,10 +36624,17 @@ async def run_bot():
                     f"🍻 Юзербот для выводов подключен и ждёт вызовов | "
                     f"id={getattr(me, 'id', 0)} username={getattr(me, 'username', '')!r}"
                 )
+                WITHDRAW_USERBOT_READY = True
             else:
-                print("🟨 [WITHDRAW] session не авторизована, пропускаем активный запуск")
+                print("🟥 [WITHDRAW] session НЕ авторизована — выводы отключены, уведомляю админов")
+                WITHDRAW_USERBOT_READY = False
+                await _wd_alert_userbot_unauthorized(
+                    reason="startup: withdraw_client.is_user_authorized=False"
+                )
         except Exception as e:
             print(f"⚠️ [WITHDRAW] boot error: {e!r}")
+            WITHDRAW_USERBOT_READY = False
+            await _wd_alert_userbot_unauthorized(reason=f"startup boot error: {e!r}")
 
         # =====================================================
         # 5) ФОНОВЫЕ СЕРВИСЫ
