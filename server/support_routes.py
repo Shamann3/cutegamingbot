@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import html as _html
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from admin_auth import require_admin_session, _get_client_ip
 from admin_audit import log_admin_action
+from admin_permissions import ROLE_LABELS
 from config import SUPPORT_BOT_TOKEN
 from telegram_notify import send_telegram_message
 from db import db
@@ -43,9 +46,11 @@ def _serialize_ticket(t: dict) -> dict:
 
 
 def _serialize_message(m: dict) -> dict:
+    is_system = not m["from_user"] and not m.get("admin_name")
     return {
         "id":          m["id"],
         "fromUser":    m["from_user"],
+        "isSystem":    is_system,
         "adminId":     m.get("admin_user_id"),
         "adminName":   m.get("admin_name"),
         "text":        m["text"],
@@ -69,6 +74,52 @@ async def _admin_display_name(admin_user_id: int) -> str:
     except Exception:
         pass
     return f"Администратор"
+
+
+async def _send_claim_greeting_if_needed(ticket: dict, admin_user_id: int) -> None:
+    """Перед ПЕРВЫМ ответом админа после claim отправляет пользователю
+    техническое сообщение: кто из сотрудников будет помогать (кликабельно),
+    его должность и счётчик закрытых им заявок. Не считается официальным
+    ответом админа - в админ-панели рисуется отдельным серым сообщением
+    (см. _serialize_message.isSystem)."""
+    if ticket.get("greeting_sent"):
+        return
+
+    try:
+        row = await db.pool.fetchrow(
+            "SELECT first_name, username, role FROM admin_accounts WHERE user_id = $1",
+            admin_user_id,
+        )
+    except Exception:
+        row = None
+
+    display_name = (
+        (row["first_name"] or (f"@{row['username']}" if row and row["username"] else None))
+        if row else None
+    ) or f"ID {admin_user_id}"
+    role_label = ROLE_LABELS.get(row["role"], row["role"]) if row and row.get("role") else "Сотрудник"
+    closed_count = await support_db.count_closed_tickets_for_admin(admin_user_id)
+
+    name_link = f'<a href="tg://user?id={admin_user_id}">{_html.escape(display_name)}</a>'
+    greeting_text = (
+        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Виво Эпсилон</b>\n"
+        f"<b><tg-emoji emoji-id='5390858914885568318'>👑</tg-emoji> Вам будет помогать "
+        f"{_html.escape(role_label)} {name_link}</b>\n"
+        f"<b><tg-emoji emoji-id='5391115556361370746'>👏</tg-emoji>На счёту сотрудника "
+        f"{closed_count} закрытых заявок на помощь</b>"
+    )
+
+    await support_db.add_system_message(ticket["id"], greeting_text)
+    if SUPPORT_BOT_TOKEN:
+        try:
+            await send_telegram_message(
+                greeting_text,
+                chat_id=str(ticket["user_id"]),
+                token=SUPPORT_BOT_TOKEN,
+            )
+        except Exception:
+            pass
+    await support_db.mark_greeting_sent(ticket["id"])
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +215,8 @@ async def reply_to_ticket(
         raise HTTPException(404, "Тикет не найден")
     if ticket["status"] == "closed":
         raise HTTPException(400, "Тикет закрыт")
+
+    await _send_claim_greeting_if_needed(ticket, admin_user_id)
 
     admin_name = await _admin_display_name(admin_user_id)
     photo_id = body.photoFileId.strip() or None
@@ -273,6 +326,8 @@ async def reply_with_photo(
         raise HTTPException(404, "Тикет не найден")
     if ticket["status"] == "closed":
         raise HTTPException(400, "Тикет закрыт")
+
+    await _send_claim_greeting_if_needed(ticket, admin_user_id)
 
     import aiohttp
     content = await file.read()

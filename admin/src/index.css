@@ -10018,6 +10018,9 @@ html { scroll-behavior: smooth; }
 .support-msg-admin {
   justify-content: flex-end;
 }
+.support-msg-system {
+  justify-content: center;
+}
 
 .support-msg-bubble {
   max-width: 72%;
@@ -10036,6 +10039,22 @@ html { scroll-behavior: smooth; }
   border: 1px solid var(--gold-soft);
   border-radius: 0.85rem 0 0.85rem 0.85rem;
   padding: 0.55rem 0.75rem;
+}
+.support-msg-system .support-msg-bubble {
+  max-width: 85%;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 0.7rem;
+  padding: 0.45rem 0.7rem;
+}
+.support-msg-system .support-msg-text {
+  color: var(--txt-dim);
+  font-size: 0.76rem;
+  font-style: italic;
+  text-align: center;
+}
+.support-msg-system .support-msg-time {
+  align-self: center;
 }
 
 .support-msg-sender {

@@ -25,6 +25,7 @@ _DDL = [
     "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS subject TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS assigned_admin_id BIGINT",
     "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS assigned_admin_name TEXT",
+    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS greeting_sent BOOLEAN NOT NULL DEFAULT FALSE",
     """CREATE TABLE IF NOT EXISTS support_messages (
         id            SERIAL PRIMARY KEY,
         ticket_id     INT NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
@@ -101,14 +102,34 @@ async def get_ticket(ticket_id: int) -> dict | None:
 
 
 async def claim_ticket(ticket_id: int, admin_user_id: int, admin_name: str) -> bool:
-    """Берёт тикет в работу. Возвращает True если успешно."""
+    """Берёт тикет в работу. Возвращает True если успешно.
+
+    greeting_sent сбрасывается в FALSE, чтобы при переназначении тикета
+    новому админу снова отправилось приветственное тех. сообщение (оно
+    называет конкретного админа - при смене исполнителя оно должно
+    обновиться)."""
     result = await db.pool.execute(
         """UPDATE support_tickets
-           SET assigned_admin_id = $2, assigned_admin_name = $3, updated_at = NOW()
+           SET assigned_admin_id = $2, assigned_admin_name = $3,
+               greeting_sent = FALSE, updated_at = NOW()
            WHERE id = $1 AND status = 'open'""",
         ticket_id, admin_user_id, admin_name,
     )
     return result == "UPDATE 1"
+
+
+async def count_closed_tickets_for_admin(admin_user_id: int) -> int:
+    return int(await db.pool.fetchval(
+        "SELECT COUNT(*) FROM support_tickets WHERE assigned_admin_id = $1 AND status = 'closed'",
+        admin_user_id,
+    ) or 0)
+
+
+async def mark_greeting_sent(ticket_id: int) -> None:
+    await db.pool.execute(
+        "UPDATE support_tickets SET greeting_sent = TRUE WHERE id = $1",
+        ticket_id,
+    )
 
 
 async def close_ticket(ticket_id: int) -> None:
@@ -156,6 +177,25 @@ async def add_admin_message(
         RETURNING id
         """,
         ticket_id, admin_user_id, admin_name, text, photo_file_id,
+    )
+    await db.pool.execute(
+        "UPDATE support_tickets SET updated_at = NOW() WHERE id = $1",
+        ticket_id,
+    )
+    return int(msg_id)
+
+
+async def add_system_message(ticket_id: int, text: str) -> int:
+    """Техническое сообщение (приветствие от лица системы, не от админа
+    и не от пользователя) - admin_user_id/admin_name оставляем NULL,
+    это и есть признак "системности" для фронтенда."""
+    msg_id = await db.pool.fetchval(
+        """
+        INSERT INTO support_messages (ticket_id, from_user, text)
+        VALUES ($1, FALSE, $2)
+        RETURNING id
+        """,
+        ticket_id, text,
     )
     await db.pool.execute(
         "UPDATE support_tickets SET updated_at = NOW() WHERE id = $1",

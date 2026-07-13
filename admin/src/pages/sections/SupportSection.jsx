@@ -231,20 +231,27 @@ function TicketThread({ ticket: initialTicket, onBack, onClosed }) {
       {/* Messages */}
       <div className="support-messages" ref={messagesRef}>
         {loading && <p className="sec-loading">Загрузка…</p>}
-        {messages.map((msg) => (
-          <div key={msg.id} className={`support-msg ${msg.fromUser ? 'support-msg-user' : 'support-msg-admin'}`}>
-            <div className="support-msg-bubble">
-              {!msg.fromUser && msg.adminName && (
-                <span className="support-msg-sender">{msg.adminName}</span>
-              )}
-              {msg.photoFileId && (
-                <TgPhoto fileId={msg.photoFileId} onClick style={{ marginBottom: msg.text ? 6 : 0 }} />
-              )}
-              {msg.text && <p className="support-msg-text">{msg.text}</p>}
-              <span className="support-msg-time">{fmtDate(msg.createdAt)}</span>
+        {messages.map((msg) => {
+          const side = msg.isSystem ? 'support-msg-system' : (msg.fromUser ? 'support-msg-user' : 'support-msg-admin')
+          return (
+            <div key={msg.id} className={`support-msg ${side}`}>
+              <div className="support-msg-bubble">
+                {!msg.fromUser && !msg.isSystem && msg.adminName && (
+                  <span className="support-msg-sender">{msg.adminName}</span>
+                )}
+                {msg.photoFileId && (
+                  <TgPhoto fileId={msg.photoFileId} onClick style={{ marginBottom: msg.text ? 6 : 0 }} />
+                )}
+                {msg.text && (
+                  <p className="support-msg-text">
+                    {msg.isSystem ? msg.text.replace(/<[^>]+>/g, '') : msg.text}
+                  </p>
+                )}
+                <span className="support-msg-time">{fmtDate(msg.createdAt)}</span>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
         {!loading && messages.length === 0 && <p className="sec-empty">Сообщений нет</p>}
         <div ref={bottomRef} />
       </div>
