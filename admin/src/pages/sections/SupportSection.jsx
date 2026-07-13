@@ -445,6 +445,7 @@ export default function SupportSection() {
         />
         {selected ? (
           <TicketThread
+            key={selected.id}
             ticket={selected}
             onBack={() => setSelected(null)}
             onClosed={handleClosed}

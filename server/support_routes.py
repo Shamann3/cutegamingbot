@@ -105,7 +105,7 @@ async def _send_claim_greeting_if_needed(ticket: dict, admin_user_id: int) -> No
         "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Виво Эпсилон</b>\n"
         f"<b><tg-emoji emoji-id='5390858914885568318'>👑</tg-emoji> Вам будет помогать "
         f"{_html.escape(role_label)} {name_link}</b>\n"
-        f"<b><tg-emoji emoji-id='5391115556361370746'>👏</tg-emoji>На счёту сотрудника "
+        f"<b><tg-emoji emoji-id='5391115556361370746'>👏</tg-emoji> На счёту сотрудника "
         f"{closed_count} закрытых заявок на помощь</b>"
     )
 
