@@ -9021,6 +9021,27 @@ async def _wd_send_gift_description_message_safe(user_id: int) -> bool:
 
 
 # =========================================================
+# ВРЕМЕННЫЙ ДЕБАГ: узнать file_id стикера (для пересборки
+# захардкоженных ID стикеров, которые сломались после смены
+# токена бота на продакшен - Telegram file_id привязан к
+# конкретному боту, поэтому старые ID перестали работать).
+# Убрать после того, как стикеры пересобраны.
+# =========================================================
+
+@dp.message(F.sticker, F.chat.type == "private")
+async def _debug_sticker_file_id(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    st = message.sticker
+    await message.reply(
+        f"file_id:\n<code>{st.file_id}</code>\n\n"
+        f"file_unique_id: <code>{st.file_unique_id}</code>\n"
+        f"emoji: {st.emoji or '-'}",
+        parse_mode="HTML",
+    )
+
+
+# =========================================================
 # MAIN CALLBACK HANDLER
 # =========================================================
 
