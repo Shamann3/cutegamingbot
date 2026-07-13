@@ -8,7 +8,6 @@ import sys
 
 from config import ADMIN_BOT_TOKEN, ADMIN_ENABLED, SUPPORT_BOT_TOKEN
 from admin_bot import run_admin_bot
-from game_bot import set_webapp_menu_button
 from support_bot import run_support_bot
 from db import db
 
@@ -24,16 +23,13 @@ def _boot(msg: str) -> None:
 
 
 async def main() -> None:
+    # BOT_TOKEN == TOKEN у cutebot (main.py) — это один и тот же бот.
+    # cutebot уже поллит и уже выставляет кнопку меню WebApp через
+    # существующий bot1, поэтому здесь мы вообще не создаём Bot(BOT_TOKEN) —
+    # ни поллинга, ни разовых вызовов. Компонент bots отвечает только за
+    # admin_bot/support_bot (свои отдельные токены).
     _boot("starting admin + support bots...")
     await db.ensure_connected()
-
-    # Кнопка WebApp на @CuteGamingBot — разовый вызов, БЕЗ поллинга.
-    # cutebot (main.py) — единственный, кто поллит этот токен; второй
-    # поллер здесь вызывал getUpdates-конфликт и терял часть команд.
-    try:
-        await set_webapp_menu_button()
-    except Exception:
-        logger.exception("set_webapp_menu_button failed")
 
     _boot("database ready — launching pollers...")
     try:
@@ -49,7 +45,7 @@ async def main() -> None:
         else:
             logger.warning("Support bot не запущен — задай SUPPORT_BOT_TOKEN в .env")
         if not tasks:
-            logger.warning("Нет активных пойлеров — процесс остаётся жив (только меню WebApp выставлено)")
+            logger.warning("Нет активных пойлеров (admin_bot/support_bot не заданы) — процесс остаётся жив")
             await asyncio.Event().wait()
         _boot(f"pollers starting ({len(tasks)} bot(s))...")
         await asyncio.gather(*tasks)

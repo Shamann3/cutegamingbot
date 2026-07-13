@@ -63,6 +63,7 @@ import time
 import difflib
 from typing import List, Union, Dict
 from aiogram.types import MessageEntity
+from aiogram.types import MenuButtonWebApp, WebAppInfo
 import pprint
 import pickle
 from aiogram.types import ChatJoinRequest
@@ -36879,6 +36880,21 @@ async def botmain():
     except Exception as e:
         print(f"[DB][FATAL] Ошибка подключения: {type(e).__name__}: {e}")
         return
+
+    # ===================== КНОПКА МЕНЮ WEBAPP (ФЕРМА) =====================
+    # Один и тот же бот (TOKEN == BOT_TOKEN), поэтому используем уже
+    # существующий bot1 - без создания второго Bot/сессии/подключения.
+    if WEBAPP_URL:
+        try:
+            await bot1.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text="🌿 Ферма",
+                    web_app=WebAppInfo(url=WEBAPP_URL),
+                )
+            )
+            print(f"✅ [MENU] Кнопка Web App выставлена: {WEBAPP_URL}")
+        except Exception as e:
+            print(f"⚠️ [MENU] set_chat_menu_button ошибка: {type(e).__name__}: {e}")
 
     # ===================== EVENT LOOP MONITOR =====================
     try:

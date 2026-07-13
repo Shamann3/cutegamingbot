@@ -1,6 +1,14 @@
+import os
+
 TOKEN = "7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM"
 EDEN_TOKEN = "8784362237:AAFRZ_dQ281GO0YRX-oTL2UyRfISA7H6cP8"
 PWD = "legehdarg34123412cutegamingbot"
+
+# URL WebApp фермы — тот же, что задан на компонентах api/bots в DO
+# (переменная окружения WEBAPP_URL). Нужен только для set_chat_menu_button
+# через уже существующий bot1 (см. main.py) - отдельного бота не создаём,
+# т.к. TOKEN и BOT_TOKEN - один и тот же токен.
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
 
 withdraw_disabled = False # true - отключение вывыдов
@@ -164,7 +172,7 @@ INVENTORY_MAX_ROWS_PER_PAGE = 10
 
 #картошка (тестовый бот )
 #8784362237:AAFRZ_dQ281GO0YRX-oTL2UyRfISA7H6cP8
-BOT_USERNAME123412 = 'opyuitestbot'   # должно быть определено выше
+BOT_USERNAME123412 = 'CuteGamingBot'   # должно быть определено выше
 APP_NAME = 'cute'               # должно быть определено выше
 
 
