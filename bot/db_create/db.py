@@ -116,6 +116,23 @@ def _ch_dbg(tag: str, msg: str) -> None:
 def _dbg(*a):
     if DEBUG_BAL:
         print(*a)
+
+def _vdbg(*args, **kwargs):
+    """Отладочный print для шумных фоновых циклов (ДЖЕКЧАТ, MSG_COUNTER,
+    ЛИМИТЫ и т.п.) — включается тем же DEBUG_VERBOSE, что и в main.py.
+    Раньше эти print были безусловными и печатались на каждой итерации
+    фоновых циклов (обход ~279 групп, флаш раз в 20с) НЕЗАВИСИМО от того,
+    пишет ли кто-то боту команды — то есть постоянный синхронный I/O на
+    event loop, даже когда бот якобы простаивает. Каждый print с эмодзи
+    через пайп логгера на хостинге стоит миллисекунд — под реальной
+    нагрузкой (много групп, много одновременных сообщений) это накапливается
+    и может ощущаться как «команда сработала через раз»."""
+    try:
+        from bot.config.config import DEBUG_VERBOSE as _DEBUG_VERBOSE
+    except Exception:
+        _DEBUG_VERBOSE = False
+    if _DEBUG_VERBOSE:
+        print(*args, **kwargs)
 from bot.config.db_config import (
     APP_MODE,
     DB_NAME,
@@ -1266,13 +1283,13 @@ class Database:
 
         if self._jackchat_task and not self._jackchat_task.done():
             self._jc("START", "already running -> skip")
-            print("🟨 [ДЖЕКЧАТ] уже запущен")
+            _vdbg("🟨 [ДЖЕКЧАТ] уже запущен")
             return
 
         self._jackchat_stop = False
         self._jackchat_task = asyncio.create_task(self._jackchat_loop(bot1))
         self._jc("START", "task created")
-        print("✅ [ДЖЕКЧАТ][START] система запущена")
+        _vdbg("✅ [ДЖЕКЧАТ][START] система запущена")
 
     async def jackchat_stop(self) -> None:
         """
@@ -1292,7 +1309,7 @@ class Database:
 
         self._jackchat_task = None
         self._jc("STOP", "stopped")
-        print("🛑 [ДЖЕКЧАТ][STOP] система остановлена")
+        _vdbg("🛑 [ДЖЕКЧАТ][STOP] система остановлена")
 
     # ======================================================================
     # ✅ JACKCHAT - внутренние helpers
@@ -1334,7 +1351,7 @@ class Database:
         st["next_check_ts"] = now + backoff
 
         self._jc("FAIL", f"chat_id={st.get('chat_id')} fails={fails} reason={reason} backoff={backoff:.1f}s next: {old:.3f}->{st['next_check_ts']:.3f}")
-        print(f"🟨 [ДЖЕКЧАТ][FAIL] chat_id={st.get('chat_id')} fails={fails} backoff={backoff:.1f}s reason={reason}")
+        _vdbg(f"🟨 [ДЖЕКЧАТ][FAIL] chat_id={st.get('chat_id')} fails={fails} backoff={backoff:.1f}s reason={reason}")
 
     def _jackchat_cleanup(self, now: float) -> None:
         # 1) забываем чаты без сообщений давно
@@ -1350,7 +1367,7 @@ class Database:
                 self._jc("GC", f"drop state chat_id={cid}")
                 self._jackchat_state.pop(cid, None)
                 self._jackchat_locks.pop(cid, None)
-                print(f"🧹 [ДЖЕКЧАТ][GC] забыли чат chat_id={cid} (долго не видели)")
+                _vdbg(f"🧹 [ДЖЕКЧАТ][GC] забыли чат chat_id={cid} (долго не видели)")
 
         except Exception as e:
             self._jc("GC:ERR", f"{type(e).__name__}: {e}")
@@ -1464,9 +1481,9 @@ class Database:
             self._jc("CHECK:COMPARE", f"prev_creator_id={prev} new_creator_id={creator_id} changed={changed}")
 
             if changed:
-                print(f"👑 [ДЖЕКЧАТ][CHANGED] chat_id={chat_id_int} prev={prev} now={creator_id}")
+                _vdbg(f"👑 [ДЖЕКЧАТ][CHANGED] chat_id={chat_id_int} prev={prev} now={creator_id}")
             else:
-                print(f"⚡ [ДЖЕКЧАТ][OK] chat_id={chat_id_int} creator_id={creator_id}")
+                _vdbg(f"⚡ [ДЖЕКЧАТ][OK] chat_id={chat_id_int} creator_id={creator_id}")
 
             # 4) имя/юзер владельца (кеш)
             u = await self._jackchat_get_user_public(creator_id)
@@ -1511,7 +1528,7 @@ class Database:
                         await self._jackchat_check_one(bot1, chat_id)
                     except Exception as e:
                         self._jc("LOOP:ERR", f"check_one chat_id={chat_id} {type(e).__name__}: {e}")
-                        print(f"❌ [ДЖЕКЧАТ][CHECK_ONE][ERROR] chat_id={chat_id} {type(e).__name__}: {e}")
+                        _vdbg(f"❌ [ДЖЕКЧАТ][CHECK_ONE][ERROR] chat_id={chat_id} {type(e).__name__}: {e}")
 
                 await asyncio.sleep(float(self.JACKCHAT_TICK))
 
@@ -1520,7 +1537,7 @@ class Database:
             return
         except Exception as e:
             self._jc("LOOP:FATAL", f"{type(e).__name__}: {e}")
-            print(f"❌ [ДЖЕКЧАТ][LOOP][FATAL] {type(e).__name__}: {e}")
+            _vdbg(f"❌ [ДЖЕКЧАТ][LOOP][FATAL] {type(e).__name__}: {e}")
             return
         finally:
             self._jc("LOOP", "STOP loop")
@@ -7801,7 +7818,7 @@ class Database:
         """
         ✅ У тебя уже было - оставил под твою схему.
         """
-        print(f"[ЛИМИТЫ][DEBUG] Проверяю истёкший кулдаун пользователя {user_id}")
+        _vdbg(f"[ЛИМИТЫ][DEBUG] Проверяю истёкший кулдаун пользователя {user_id}")
         try:
             res = await conn.execute(
                 """
@@ -7812,11 +7829,11 @@ class Database:
             )
             deleted = int(res.split()[-1])
         except Exception as e:
-            print(f"[ЛИМИТЫ][ERROR] Ошибка при удалении кулдауна: {e}")
+            _vdbg(f"[ЛИМИТЫ][ERROR] Ошибка при удалении кулдауна: {e}")
             deleted = 0
 
         if deleted > 0:
-            print(f"[ЛИМИТЫ][DEBUG] Кулдаун истёк → удалён, окно будет сброшено")
+            _vdbg(f"[ЛИМИТЫ][DEBUG] Кулдаун истёк → удалён, окно будет сброшено")
         return deleted > 0
 
     # ---------------------------------------------------------------
@@ -7833,19 +7850,19 @@ class Database:
             async with self.pool.acquire() as conn:
                 val = await conn.fetchval(
                     "SELECT window_started_at FROM withdraw_quota_window WHERE user_id=$1" , uid)
-            print(f"[ЛИМИТЫ][DEBUG] window_started_at пользователя {uid}: {val}")
+            _vdbg(f"[ЛИМИТЫ][DEBUG] window_started_at пользователя {uid}: {val}")
             return val
 
     # ---------------------------------------------------------------
     # Снять кулдаун если истёк + сбросить окно
     # ---------------------------------------------------------------
     async def clear_user_expired_withdraw_cooldown(self, user_id: int) -> int:
-        print(f"[ЛИМИТЫ][DEBUG] clear_user_expired_withdraw_cooldown({user_id})")
+        _vdbg(f"[ЛИМИТЫ][DEBUG] clear_user_expired_withdraw_cooldown({user_id})")
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 deleted = await self._delete_user_cooldown_if_expired(conn, user_id)
                 if deleted:
-                    print(f"[ЛИМИТЫ][DEBUG] Кулдаун истёк → сбрасываю окно")
+                    _vdbg(f"[ЛИМИТЫ][DEBUG] Кулдаун истёк → сбрасываю окно")
                     await conn.execute(
                         """
                         INSERT INTO withdraw_quota_window(user_id, window_started_at)
@@ -7855,7 +7872,7 @@ class Database:
                         user_id
                     )
                 else:
-                    print(f"[ЛИМИТЫ][DEBUG] Кулдауна нет → создаю окно при необходимости")
+                    _vdbg(f"[ЛИМИТЫ][DEBUG] Кулдауна нет → создаю окно при необходимости")
                     await conn.execute(
                         """
                         INSERT INTO withdraw_quota_window(user_id, window_started_at)
@@ -7876,7 +7893,7 @@ class Database:
             row = await conn.fetchrow(
                 "SELECT 1 FROM withdraw_cooldown WHERE user_id=$1 AND until_at > NOW()" , uid)
         active = bool(row)
-        print(f"[ЛИМИТЫ][DEBUG] has_active_cooldown({uid}) = {active}")
+        _vdbg(f"[ЛИМИТЫ][DEBUG] has_active_cooldown({uid}) = {active}")
         return active
 
     def _safe_used_percent_int(self , used_val: int , limit_val: int) -> int:
@@ -7923,7 +7940,7 @@ class Database:
             secs = 0
 
         if uid <= 0:
-            print(f"[ЛИМИТЫ][COOLDOWN][LOCKED][ABORT] bad uid={user_id!r}")
+            _vdbg(f"[ЛИМИТЫ][COOLDOWN][LOCKED][ABORT] bad uid={user_id!r}")
             return False
 
         if secs <= 0:
@@ -7933,7 +7950,7 @@ class Database:
                 secs = 12 * 3600
 
         if secs <= 0:
-            print(f"[ЛИМИТЫ][COOLDOWN][LOCKED][ABORT] bad secs={cooldown_seconds!r}")
+            _vdbg(f"[ЛИМИТЫ][COOLDOWN][LOCKED][ABORT] bad secs={cooldown_seconds!r}")
             return False
 
         cause = str(cause or "daily_limit").strip() or "daily_limit"
@@ -7964,7 +7981,7 @@ class Database:
                 END
             """ , uid , secs , cause , )
 
-        print(f"[ЛИМИТЫ][COOLDOWN][LOCKED] ✅ uid={uid} secs={secs} cause={cause!r} (NO-EXTEND)")
+        _vdbg(f"[ЛИМИТЫ][COOLDOWN][LOCKED] ✅ uid={uid} secs={secs} cause={cause!r} (NO-EXTEND)")
         return True
     async def refresh_withdraw_quota_if_needed(self , user_id: int , * , daily_limit: Optional [ int ] = None ,
             cooldown_seconds: Optional [ int ] = None , **_ignore_kwargs) -> Dict [ str , Any ]:
@@ -7984,13 +8001,13 @@ class Database:
         try:
             uid = int(user_id)
         except Exception:
-            print(f"🟥[ЛИМИТЫ][REFRESH][ABORT] bad user_id={user_id!r}")
+            _vdbg(f"🟥[ЛИМИТЫ][REFRESH][ABORT] bad user_id={user_id!r}")
             return {"allowed": False , "remaining": 0 , "daily_limit": 0 , "used": 0 , "cooldown_left": 0 ,
                     "cooldown_seconds": int(getattr(self , "WITHDRAW_DEFAULT_COOLDOWN_SEC" , 12 * 3600) or 12 * 3600) ,
                     "reason": "bad_user_id"}
 
         if not getattr(self , "pool" , None):
-            print("🟥[ЛИМИТЫ][REFRESH][ERROR] pool is None")
+            _vdbg("🟥[ЛИМИТЫ][REFRESH][ERROR] pool is None")
             return {"allowed": False , "remaining": 0 , "daily_limit": 0 , "used": 0 , "cooldown_left": 0 ,
                     "cooldown_seconds": int(getattr(self , "WITHDRAW_DEFAULT_COOLDOWN_SEC" , 12 * 3600) or 12 * 3600) ,
                     "reason": "no_pool"}
@@ -8004,7 +8021,7 @@ class Database:
                 if cooldown_seconds is None:
                     cooldown_seconds = cd
         except Exception as e:
-            print(f"🟧[ЛИМИТЫ][REFRESH][WARN] get_user_withdraw_limits err={type(e).__name__}: {e!r}")
+            _vdbg(f"🟧[ЛИМИТЫ][REFRESH][WARN] get_user_withdraw_limits err={type(e).__name__}: {e!r}")
 
         dl_i = int(daily_limit or 0)
         cd_i = int(cooldown_seconds or 0)
@@ -8039,7 +8056,7 @@ class Database:
                 try:
                     deleted = await self._delete_user_cooldown_if_expired(conn , uid)
                 except Exception as e:
-                    print(f"🟧[ЛИМИТЫ][REFRESH][WARN] _delete_user_cooldown_if_expired err={type(e).__name__}: {e!r}")
+                    _vdbg(f"🟧[ЛИМИТЫ][REFRESH][WARN] _delete_user_cooldown_if_expired err={type(e).__name__}: {e!r}")
 
                 if deleted:
                     await conn.execute(
@@ -8056,7 +8073,7 @@ class Database:
                             updated_at        = NOW()
                         WHERE user_id = $1
                         """ , uid , dl_i)
-                    print(f"🟩[ЛИМИТЫ][AUTO-RESET] uid={uid} cooldown expired -> reset window remaining={dl_i}")
+                    _vdbg(f"🟩[ЛИМИТЫ][AUTO-RESET] uid={uid} cooldown expired -> reset window remaining={dl_i}")
 
                 # 3) активный кулдаун?
                 cd_until = await conn.fetchval(
@@ -8082,7 +8099,7 @@ class Database:
                         WHERE user_id=$1
                         """ , uid , left_i , cd_until)
 
-                    print(f"🟦[ЛИМИТЫ][STATE] uid={uid} cooldown_active left={left_i}s")
+                    _vdbg(f"🟦[ЛИМИТЫ][STATE] uid={uid} cooldown_active left={left_i}s")
                     return {"allowed": False , "remaining": 0 , "daily_limit": int(dl_i) , "used": None ,
                             "cooldown_left": int(left_i) , "cooldown_seconds": int(cd_i) , "reason": "cooldown_active"}
 
@@ -8135,7 +8152,7 @@ class Database:
                         await self._set_withdraw_cooldown_idempotent(
                             conn , user_id=uid , cooldown_seconds=cd_i , cause="daily_limit")
                     except Exception as e:
-                        print(f"🟧[ЛИМИТЫ][AUTO-CD][WARN] set cooldown err={type(e).__name__}: {e!r}")
+                        _vdbg(f"🟧[ЛИМИТЫ][AUTO-CD][WARN] set cooldown err={type(e).__name__}: {e!r}")
 
                     left2 = await conn.fetchval(
                         """
@@ -8160,13 +8177,13 @@ class Database:
                         """ , uid , left2_i , cd_until2)
 
                     dt = time.perf_counter() - t0
-                    print(f"🟩[ЛИМИТЫ][AUTO-CD] uid={uid} remaining=0 -> cooldown left={left2_i}s dt={dt:.4f}s")
+                    _vdbg(f"🟩[ЛИМИТЫ][AUTO-CD] uid={uid} remaining=0 -> cooldown left={left2_i}s dt={dt:.4f}s")
                     return {"allowed": False , "remaining": 0 , "daily_limit": int(dl_i) , "used": int(used_truth) ,
                             "cooldown_left": int(left2_i) , "cooldown_seconds": int(cd_i) ,
                             "reason": "daily_limit_reached"}
 
                 dt = time.perf_counter() - t0
-                print(f"🟩[ЛИМИТЫ][REFRESH][OK] uid={uid} dt={dt:.4f}s")
+                _vdbg(f"🟩[ЛИМИТЫ][REFRESH][OK] uid={uid} dt={dt:.4f}s")
                 return {"allowed": bool(remaining > 0) , "remaining": int(remaining) , "daily_limit": int(dl_i) ,
                         "used": int(used_truth) , "cooldown_left": 0 , "cooldown_seconds": int(cd_i) ,
                         "reason": "ok" if remaining > 0 else "daily_limit_reached"}
@@ -8177,7 +8194,7 @@ class Database:
         НИЧЕГО НЕ ДРОПАЕТ. Только CREATE IF NOT EXISTS + ADD COLUMN IF NOT EXISTS.
         """
         if not getattr(self , "pool" , None):
-            print("[ЛИМИТЫ][SCHEMA][ERROR] pool is None")
+            _vdbg("[ЛИМИТЫ][SCHEMA][ERROR] pool is None")
             return
 
         async with self.pool.acquire() as conn:
@@ -8252,16 +8269,16 @@ class Database:
                     await conn.execute(
                         "CREATE INDEX IF NOT EXISTS idx_withdraw_log_user_created ON withdraw_log(user_id, created_at);")
                 except Exception as e:
-                    print(f"[ЛИМИТЫ][SCHEMA][WARN] idx withdraw_log пропущен: {e!r}")
+                    _vdbg(f"[ЛИМИТЫ][SCHEMA][WARN] idx withdraw_log пропущен: {e!r}")
 
                 # Защита от двойных кликов (если request_id у тебя реально пишется всегда)
                 try:
                     await conn.execute(
                         "CREATE UNIQUE INDEX IF NOT EXISTS uq_withdraw_log_user_req ON withdraw_log(user_id, request_id);")
                 except Exception as e:
-                    print(f"[ЛИМИТЫ][SCHEMA][WARN] uq withdraw_log пропущен: {e!r}")
+                    _vdbg(f"[ЛИМИТЫ][SCHEMA][WARN] uq withdraw_log пропущен: {e!r}")
 
-        print("[ЛИМИТЫ][SCHEMA] ✅ OK")
+        _vdbg("[ЛИМИТЫ][SCHEMA] ✅ OK")
     async def add_withdraw_usage(self , user_id: int , amount: int) -> Dict [ str , Any ]:
         """
         ВАЖНО: это то, что должно вызываться при успешном выводе,
@@ -8347,7 +8364,7 @@ class Database:
             return False
 
         if not getattr(self, "pool", None):
-            print("[ЛИМИТЫ][COOLDOWN][ERROR] pool is None")
+            _vdbg("[ЛИМИТЫ][COOLDOWN][ERROR] pool is None")
             return False
 
         async with self.pool.acquire() as conn:
@@ -8358,7 +8375,7 @@ class Database:
                     uid
                 )
                 if exists:
-                    print(f"[ЛИМИТЫ][COOLDOWN] uid={uid} already active -> no-extend")
+                    _vdbg(f"[ЛИМИТЫ][COOLDOWN] uid={uid} already active -> no-extend")
                     return False
 
                 try:
@@ -8374,10 +8391,10 @@ class Database:
                         """,
                         uid, cd, str(cause or "daily_limit")
                     )
-                    print(f"[ЛИМИТЫ][COOLDOWN] ✅ set uid={uid} sec={cd} cause={cause!r}")
+                    _vdbg(f"[ЛИМИТЫ][COOLDOWN] ✅ set uid={uid} sec={cd} cause={cause!r}")
                     return True
                 except Exception as e:
-                    print(f"[ЛИМИТЫ][COOLDOWN][ERROR] insert cooldown uid={uid} err={e!r}")
+                    _vdbg(f"[ЛИМИТЫ][COOLDOWN][ERROR] insert cooldown uid={uid} err={e!r}")
                     raise
 
     async def get_withdrawn_in_window(self , user_id: int) -> int:
@@ -8401,7 +8418,7 @@ class Database:
         async with self.pool.acquire() as conn:
             v = await conn.fetchval(SQL , uid)
             val = int(v or 0)
-            print(f"[ЛИМИТЫ][DEBUG] Сумма выводов с окна = {val}")
+            _vdbg(f"[ЛИМИТЫ][DEBUG] Сумма выводов с окна = {val}")
             return val
 
     # 4) «состояние квоты» в одном вызове - удобно для логов/статуса
@@ -8655,7 +8672,7 @@ class Database:
     async def ensure_quota_window(self , user_id: int) -> None:
         uid = int(user_id)
         async with self.pool.acquire() as conn:
-            print(f"[ЛИМИТЫ][DEBUG] Гарантирую окно пользователя {uid}")
+            _vdbg(f"[ЛИМИТЫ][DEBUG] Гарантирую окно пользователя {uid}")
             await conn.execute(
                 """
                 INSERT INTO withdraw_quota_window(user_id, window_started_at, updated_at)
@@ -8686,7 +8703,7 @@ class Database:
         """
         uid = int(user_id)
         if not getattr(self, "pool", None):
-            print("[ЛИМИТЫ][LIMITS][ERROR] pool is None")
+            _vdbg("[ЛИМИТЫ][LIMITS][ERROR] pool is None")
             return int(await self.get_canwithdrawal(user_id)), int(self.WITHDRAW_DEFAULT_COOLDOWN_SEC)
 
         async with self.pool.acquire() as conn:
@@ -9478,7 +9495,7 @@ class Database:
                 if hasattr(self , "get_canwithdrawal"):
                     dl = _safe_non_negative_local(await self.get_canwithdrawal(uid) or 0 , 0)
             except Exception as e:
-                print(f"[ЛИМИТЫ][AUTO-RESET][WARN] get_canwithdrawal uid={uid} err={e!r}")
+                _vdbg(f"[ЛИМИТЫ][AUTO-RESET][WARN] get_canwithdrawal uid={uid} err={e!r}")
                 dl = 0
 
         if dl <= 0:
@@ -9543,9 +9560,9 @@ class Database:
                 FROM withdraw_quota_window
                 WHERE user_id=$1
                 """ , uid , )
-            print(f"[ЛИМИТЫ][AUTO-RESET][STATE] uid={uid} row={dict(row) if row else None}")
+            _vdbg(f"[ЛИМИТЫ][AUTO-RESET][STATE] uid={uid} row={dict(row) if row else None}")
         except Exception as e:
-            print(f"[ЛИМИТЫ][AUTO-RESET][WARN] state fetch uid={uid} err={e!r}")
+            _vdbg(f"[ЛИМИТЫ][AUTO-RESET][WARN] state fetch uid={uid} err={e!r}")
 
         return True
 
@@ -9688,7 +9705,7 @@ class Database:
                               updated_at        = NOW()
                         """ , user_ids , int(await self.get_canwithdrawal(user_id)))
 
-                print(f"[ЛИМИТЫ][CLEANUP] удалено кулдаунов: {deleted_count}. сброшено окон: {len(user_ids)}")
+                _vdbg(f"[ЛИМИТЫ][CLEANUP] удалено кулдаунов: {deleted_count}. сброшено окон: {len(user_ids)}")
                 return deleted_count
 
     # ============================================================
@@ -9696,7 +9713,7 @@ class Database:
     # ============================================================
     async def can_withdraw(self , user_id: int) -> dict:
         uid = int(user_id)
-        print(f"[ЛИМИТЫ][DEBUG] can_withdraw({uid})")
+        _vdbg(f"[ЛИМИТЫ][DEBUG] can_withdraw({uid})")
         st = await self.refresh_withdraw_quota_if_needed(uid)
 
         if not st.get("allowed"):
@@ -17513,14 +17530,14 @@ class Database:
                             'UPDATE chat SET text = COALESCE(text, 0) + $2 WHERE chat_id = $1',
                             int(cid), int(cnt),
                         )
-            print(f"[MSG_COUNTER][FLUSH][OK] users={len(user_items)} chats={len(chat_items)}")
+            _vdbg(f"[MSG_COUNTER][FLUSH][OK] users={len(user_items)} chats={len(chat_items)}")
         except Exception as e:
             # Возвращаем дельты обратно в буфер, чтобы не потерять счётчики.
             for (uid, cid), cnt in user_snapshot.items():
                 self._pending_user_counts[(uid, cid)] = self._pending_user_counts.get((uid, cid), 0) + cnt
             for cid, cnt in chat_snapshot.items():
                 self._pending_chat_counts[cid] = self._pending_chat_counts.get(cid, 0) + cnt
-            print(f"[MSG_COUNTER][FLUSH][WARN] {type(e).__name__}: {e} (дельты возвращены в буфер)")
+            _vdbg(f"[MSG_COUNTER][FLUSH][WARN] {type(e).__name__}: {e} (дельты возвращены в буфер)")
 
     def start_message_counter_flush_loop(self, interval: Optional[float] = None) -> None:
         """
@@ -17539,13 +17556,13 @@ class Database:
                 try:
                     await self.flush_message_counters()
                 except Exception as e:
-                    print(f"[MSG_COUNTER][LOOP][WARN] {type(e).__name__}: {e}")
+                    _vdbg(f"[MSG_COUNTER][LOOP][WARN] {type(e).__name__}: {e}")
 
         # Флаг ставим ТОЛЬКО после успешного создания задачи: если event loop
         # ещё не запущен (RuntimeError), record_message() повторит попытку позже.
         asyncio.create_task(_loop())
         self._msg_counter_worker_started = True
-        print(f"[MSG_COUNTER][LOOP] started (interval={period:.0f}s)")
+        _vdbg(f"[MSG_COUNTER][LOOP] started (interval={period:.0f}s)")
 
     async def update_chat_message_count(self , chat_id):
         try:

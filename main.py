@@ -12096,7 +12096,7 @@ async def smart_send_or_edit_safe(
             parse_mode="HTML",
             disable_web_page_preview=True
         )
-        print("🟦 Сообщение успешно отредактировано (fallback edit_text).")
+        _vdbg("🟦 Сообщение успешно отредактировано (fallback edit_text).")
         return "edit", message_obj
     except Exception as e:
         print(f"🟨 Не удалось отредактировать сообщение (fallback edit_text): {type(e).__name__}: {e}. Пробую отправить новое.")
@@ -12152,15 +12152,15 @@ def resolve_back_callback_from_message(message_obj: Message, user_id: int) -> Op
         owner_id = None
 
     if owner_id is None:
-        print(f"🟨 Назад: сообщение не из экрана баланса (нет в balance_message_owner). chat={chat_id} msg={msg_id}")
+        _vdbg(f"🟨 Назад: сообщение не из экрана баланса (нет в balance_message_owner). chat={chat_id} msg={msg_id}")
         return None
 
     if int(owner_id) != int(user_id):
-        print(f"🟨 Назад: владелец не совпал. owner={owner_id} user={user_id} chat={chat_id} msg={msg_id}")
+        _vdbg(f"🟨 Назад: владелец не совпал. owner={owner_id} user={user_id} chat={chat_id} msg={msg_id}")
         return None
 
     cb = cb_pack("balance", int(owner_id))
-    print(f"🟦 Назад: определён callback для возврата к балансу: {cb}")
+    _vdbg(f"🟦 Назад: определён callback для возврата к балансу: {cb}")
     return cb
 
 
@@ -12184,11 +12184,11 @@ def resolve_back_callback_for_gift_menu(message_obj: Message, user_id: int) -> O
         cb = None
 
     if cb:
-        print(f"🟦 Назад: взят back_callback из gift_menu_back: {cb!r}")
+        _vdbg(f"🟦 Назад: взят back_callback из gift_menu_back: {cb!r}")
         return str(cb)
 
     cb2 = resolve_back_callback_from_message(message_obj, user_id)
-    print(f"🟦 Назад: fallback на баланс: {cb2!r}")
+    _vdbg(f"🟦 Назад: fallback на баланс: {cb2!r}")
     return cb2
 
 
@@ -12206,20 +12206,20 @@ def attach_gift_menu_meta(msg_obj: Optional[Message], user_id: int, back_callbac
 
     try:
         gift_menu_owner[key] = int(user_id)
-        print(f"🧷 Метаданные меню: gift_menu_owner[{key}] = {user_id}")
+        _vdbg(f"🧷 Метаданные меню: gift_menu_owner[{key}] = {user_id}")
     except Exception as e:
         print(f"🟥 Ошибка сохранения gift_menu_owner: {e}")
 
     try:
         if back_callback:
             gift_menu_back[key] = str(back_callback)
-            print(f"🧷 Метаданные меню: gift_menu_back[{key}] = {back_callback!r}")
+            _vdbg(f"🧷 Метаданные меню: gift_menu_back[{key}] = {back_callback!r}")
         else:
             try:
                 gift_menu_back.pop(key, None)
             except Exception:
                 pass
-            print(f"🧷 Метаданные меню: gift_menu_back[{key}] очищен")
+            _vdbg(f"🧷 Метаданные меню: gift_menu_back[{key}] очищен")
     except Exception as e:
         print(f"🟥 Ошибка сохранения gift_menu_back: {e}")
 
@@ -12390,7 +12390,7 @@ async def render_conc_stars_screen(*args, **kwargs):
         print(f"🟥 [CONC_STARS][MIN] ошибка: {e!r}")
         min_withdraw = 0
 
-    print(f"🟦 [CONC_STARS][MIN] MIN_WITHDRAW(now) = {min_withdraw} ⭐️")
+    _vdbg(f"🟦 [CONC_STARS][MIN] MIN_WITHDRAW(now) = {min_withdraw} ⭐️")
 
     # 3) ✅ единый refresh лимитов
     try:
@@ -12422,7 +12422,7 @@ async def render_conc_stars_screen(*args, **kwargs):
 
     # 4) ✅ если remaining > 0, но меньше min_withdraw - логично ставим лимит (кулдаун)
     if allowed and remaining > 0 and min_withdraw > 0 and remaining < min_withdraw:
-        print(f"🟨 [CONC_STARS][AUTO] remaining({remaining}) < min_withdraw({min_withdraw}) -> ставлю кулдаун")
+        _vdbg(f"🟨 [CONC_STARS][AUTO] remaining({remaining}) < min_withdraw({min_withdraw}) -> ставлю кулдаун")
         try:
             if cooldown_sec <= 0:
                 cooldown_sec = int(
@@ -12446,7 +12446,7 @@ async def render_conc_stars_screen(*args, **kwargs):
         remaining = int(state2.get("remaining") or 0)
         reason = str(state2.get("reason") or reason)
 
-        print(f"🟦 [CONC_STARS][AUTO] after refresh2 allowed={allowed} remaining={remaining} cd_left={cooldown_left}")
+        _vdbg(f"🟦 [CONC_STARS][AUTO] after refresh2 allowed={allowed} remaining={remaining} cd_left={cooldown_left}")
 
     # 5-6) ✅ ВАЖНО: если вывод запрещён ИЛИ remaining==0 - НЕ ПОКАЗЫВАЕМ "Доступно для вывода"
     #      Показываем ТОЛЬКО '🧰' + inline-кнопки статуса лимитов.
@@ -12475,7 +12475,7 @@ async def render_conc_stars_screen(*args, **kwargs):
             reply_markup=kb_locked,
         )
         attach_gift_menu_meta(msg_now, user_id, back_callback)
-        print(f"🟩 [CONC_STARS][RENDER] locked | uid={user_id} allowed={allowed} remaining={remaining} cd_left={cooldown_left}")
+        _vdbg(f"🟩 [CONC_STARS][RENDER] locked | uid={user_id} allowed={allowed} remaining={remaining} cd_left={cooldown_left}")
         return
 
     # 7) TON + speed_allowed
@@ -12484,7 +12484,7 @@ async def render_conc_stars_screen(*args, **kwargs):
     try:
         ton_bal = float(await get_balance_ton_fast(str(seed_phrase)) or 0.0)  # noqa: F821
         speed_flag = "+" if ton_bal >= TON_INSTANT_MIN else "-"  # noqa: F821
-        print(f"🟦 [CONC_STARS][TON] bal={ton_bal:.9f} flag={speed_flag}")
+        _vdbg(f"🟦 [CONC_STARS][TON] bal={ton_bal:.9f} flag={speed_flag}")
     except Exception as e:
         print(f"🟥 [CONC_STARS][TON] err={e!r}")
         ton_bal = 0.0
@@ -12497,7 +12497,7 @@ async def render_conc_stars_screen(*args, **kwargs):
         user_balance_int=int(user_balance_int),
         ton_bal=float(ton_bal),
     )
-    print(f"🟦 [CONC_STARS][SPEED] speed_allowed={bool(speed_allowed)}")
+    _vdbg(f"🟦 [CONC_STARS][SPEED] speed_allowed={bool(speed_allowed)}")
 
     # 8) клавиатура подарков
     try:
