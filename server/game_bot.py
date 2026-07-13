@@ -41,6 +41,30 @@ def _fmt(n: float) -> str:
     return "{:,.0f}".format(n).replace(",", ".")
 
 
+async def set_webapp_menu_button() -> None:
+    """Разовая установка постоянной кнопки меню WebApp — БЕЗ поллинга.
+
+    cutebot (main.py) уже поллит этот же BOT_TOKEN; второй одновременный
+    поллер на одном токене вызывает у Telegram getUpdates-конфликт, из-за
+    которого часть команд молча "проглатывается" не тем процессом (симптом
+    "отвечает через раз"). Меню WebApp не требует поллинга, поэтому здесь
+    только один короткий вызов API.
+    """
+    if not WEBAPP_URL:
+        return
+    bot = Bot(token=BOT_TOKEN)
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="🌿 Ферма",
+                web_app=WebAppInfo(url=_webapp_url_fresh(WEBAPP_URL)),
+            )
+        )
+        logging.info("Кнопка Web App: %s", WEBAPP_URL)
+    finally:
+        await bot.session.close()
+
+
 async def main(*, manage_db: bool = True):
     """if not BOT_TOKEN:
         raise RuntimeError("Задай BOT_TOKEN в server/.env")"""
