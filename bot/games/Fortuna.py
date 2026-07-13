@@ -2,7 +2,6 @@
 """
 🎡 Рулетка 0..12 с Jericho, маскировкой, сериями и корректным demo/0demo.
 """
-
 from main import *  # noqa: F401,F403
 
 import asyncio
@@ -39,14 +38,45 @@ DEMO_STREAK_BREAK = 3
 ZERO_MASK_WIN_PROB = 0.12
 ZERO_STREAK_BREAK = 3
 
+# Профиль экономики выпадений (чем ниже коэффициент, тем "жестче" игра).
+# Значения применяются как доля от естественного шанса победы по типу ставки.
+FORTUNA_WIN_PROFILE = "hard"  # soft / normal / hard
+FORTUNA_WIN_PROB_FACTORS = {
+    "soft": {
+        "number": 0.92,
+        "color": 0.95,
+        "parity": 0.95,
+        "range": 0.93,
+    },
+    "normal": {
+        "number": 0.82,
+        "color": 0.88,
+        "parity": 0.88,
+        "range": 0.85,
+    },
+    "hard": {
+        "number": 0.72,
+        "color": 0.82,
+        "parity": 0.82,
+        "range": 0.78,
+    },
+}
+
+# Сглаживание длинных луз-стрик: шанс слегка растет, но остается ниже естественного.
+FORTUNA_LOSE_STREAK_SOFTEN_FROM = 5
+FORTUNA_LOSE_STREAK_SOFTEN_STEP = 0.03
+FORTUNA_LOSE_STREAK_SOFTEN_CAP_STEPS = 3
+FORTUNA_MIN_NATURAL_SHARE = 0.52
+FORTUNA_MAX_NATURAL_SHARE = 0.90
+
 # ===================== ХРАНИЛИЩА / БЛОКИРОВКИ =====================
-_message_locks: Dict[int, asyncio.Lock] = {}
-_user_locks: Dict[int, asyncio.Lock] = {}
-_processing_messages: Dict[int, float] = {}
+_message_locks: Dict[int, asyncio.Lock] = LazyGameStore("_message_locks")
+_user_locks: Dict[int, asyncio.Lock] = LazyGameStore("_user_locks")
+_processing_messages: Dict[int, float] = LazyGameStore("_processing_messages")
 _processed_messages: Dict[int, float] = LazyGameStore("_processed_messages")
-_settled_events: Dict[str, float] = {}
+_settled_events: Dict[str, float] = LazyGameStore("_settled_events")
 _settled_events_lock = asyncio.Lock()
-_roulette_streaks: Dict[int, Dict[str, int]] = LazyGameStore("roulette_streaks")
+_roulette_streaks: Dict[int, Dict[str, int]] = LazyGameStore("_roulette_streaks")
 
 CLEANUP_AFTER_SECONDS = 60 * 10
 _CLEANUP_TASK: Optional[asyncio.Task] = None
@@ -54,7 +84,7 @@ _CLEANUP_TASK: Optional[asyncio.Task] = None
 try:
     last_used_times
 except NameError:
-    last_used_times: Dict[int, Dict[int, float]] = {}
+    last_used_times: Dict[int, Dict[int, float]] = LazyGameStore("last_used_times")
 
 # ===================== DEBUG =====================
 def _fdbg(tag: str, msg: str) -> None:
@@ -224,6 +254,101 @@ def _spin_roulette_number() -> int:
         num = random.randint(1, 12)
     _fdbg("SPIN", f"rand={r} zero_chance={FORTUNA_ZERO_CHANCE} -> {num}")
     return int(num)
+
+def _clamp01(v: float) -> float:
+    try:
+        x = float(v)
+    except Exception:
+        return 0.0
+    if x < 0.0:
+        return 0.0
+    if x > 1.0:
+        return 1.0
+    return x
+
+def _zero_chance_float() -> float:
+    try:
+        z = float(FORTUNA_ZERO_CHANCE)
+    except Exception:
+        z = 1.0 / 13.0
+    return _clamp01(z)
+
+def _natural_win_probability(parsed: dict) -> float:
+    mode = str(parsed.get("mode") or "")
+    zero_chance = _zero_chance_float()
+    non_zero_chance = max(0.0, 1.0 - zero_chance)
+
+    if mode == "number":
+        try:
+            selected = int(parsed.get("selected_number"))
+        except Exception:
+            return 0.0
+        if selected == 0:
+            return zero_chance
+        return non_zero_chance / 12.0
+
+    if mode in ("color", "parity"):
+        return non_zero_chance * 0.5
+
+    if mode == "range":
+        try:
+            start = int(parsed.get("start_num"))
+            end = int(parsed.get("end_num"))
+        except Exception:
+            return 0.0
+        left = max(1, start)
+        right = min(12, end)
+        width = max(0, right - left + 1)
+        return non_zero_chance * (float(width) / 12.0)
+
+    return 0.0
+
+def _target_win_probability(parsed: dict, lose_streak: int = 0) -> float:
+    mode = str(parsed.get("mode") or "")
+    natural_prob = _natural_win_probability(parsed)
+    if natural_prob <= 0:
+        return 0.0
+
+    profile = str(FORTUNA_WIN_PROFILE or "hard").strip().lower()
+    profile_map = FORTUNA_WIN_PROB_FACTORS.get(profile) or FORTUNA_WIN_PROB_FACTORS["hard"]
+    base_factor = float(profile_map.get(mode, profile_map.get("range", 0.78)))
+
+    target_prob = natural_prob * base_factor
+
+    if int(lose_streak or 0) >= FORTUNA_LOSE_STREAK_SOFTEN_FROM:
+        extra_steps = int(lose_streak or 0) - int(FORTUNA_LOSE_STREAK_SOFTEN_FROM) + 1
+        extra_steps = max(0, min(extra_steps, int(FORTUNA_LOSE_STREAK_SOFTEN_CAP_STEPS)))
+        target_prob += natural_prob * (float(FORTUNA_LOSE_STREAK_SOFTEN_STEP) * extra_steps)
+
+    min_prob = natural_prob * float(FORTUNA_MIN_NATURAL_SHARE)
+    max_prob = natural_prob * float(FORTUNA_MAX_NATURAL_SHARE)
+    if target_prob < min_prob:
+        target_prob = min_prob
+    if target_prob > max_prob:
+        target_prob = max_prob
+    return _clamp01(target_prob)
+
+def _spin_roulette_number_for_bet(parsed: dict, lose_streak: int = 0) -> int:
+    try:
+        win_prob = _target_win_probability(parsed, lose_streak=lose_streak)
+        roll = random.random()
+        if roll < win_prob:
+            num = _force_win_number(parsed)
+            outcome = "win"
+        else:
+            num = _force_loss_number(parsed)
+            outcome = "loss"
+
+        _fdbg(
+            "SPIN_CTRL",
+            f"mode={parsed.get('mode')} lose_streak={lose_streak} "
+            f"natural={_natural_win_probability(parsed):.4f} target={win_prob:.4f} "
+            f"roll={roll:.4f} outcome={outcome} -> {num}",
+        )
+        return int(num)
+    except Exception as e:
+        _fdbg("SPIN_CTRL", f"fallback to base spin due error: {e}")
+        return _spin_roulette_number()
 
 def _force_loss_number(parsed: dict) -> int:
     mode = parsed["mode"]
@@ -898,7 +1023,9 @@ async def _fortuna_free_game(
                     _mark_processed_message(message.message_id)
                     return
 
-                random_num = _spin_roulette_number()
+                streaks = _get_streaks(user_id)
+                lose_streak = int(streaks.get("lose_streak", 0) or 0)
+                random_num = _spin_roulette_number_for_bet(parsed, lose_streak=lose_streak)
                 mult = float(parsed["multiplier"] or 0.0)
 
                 # 0 и ставка на 0 => WIN
@@ -1392,7 +1519,7 @@ async def _fortuna_paid_game(
                     return
 
                 # ========== ОБЫЧНЫЙ РЕЖИМ (без demo/0demo) ==========
-                random_num = _spin_roulette_number()
+                random_num = _spin_roulette_number_for_bet(parsed, lose_streak=lose_streak)
                 mult = float(parsed["multiplier"] or 0.0)
 
                 # вспомогательные функции (из оригинального кода)
