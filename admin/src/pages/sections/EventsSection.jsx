@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
 import {
-  cancelScheduledBroadcast,
-  createTimedQuest,
+  cancelBroadcastRun,
   fetchScheduledBroadcasts,
   fetchTimedQuests,
   fetchUpcomingEvents,
   scheduleQuestEvent,
-  sendBroadcast,
 } from '../../lib/adminClient'
 import { notifyAdmin } from '../../lib/notify'
 
@@ -47,22 +45,6 @@ function relTime(iso) {
 }
 
 const RECURRENCE_LABELS = { daily: 'Ежедневно', weekly: 'Еженедельно' }
-
-const PERIOD_OPTIONS = [
-  { value: 'hourly', label: '⏱ Почасовое' },
-  { value: 'daily', label: '📅 Ежедневное' },
-  { value: 'weekly', label: '📆 Недельное' },
-]
-
-const ACTION_OPTIONS = [
-  { value: 'harvest', label: 'Сбор урожая' },
-  { value: 'plant', label: 'Посадка' },
-  { value: 'water', label: 'Полив' },
-  { value: 'craft', label: 'Крафт' },
-  { value: 'claim_daily_seed', label: 'Получить семя' },
-  { value: 'buy', label: 'Купить в магазине' },
-  { value: 'sell', label: 'Продать' },
-]
 
 // ---------------------------------------------------------------------------
 // Upcoming timeline
@@ -128,29 +110,9 @@ function UpcomingTimeline({ refreshKey }) {
 // Timed quests tab
 // ---------------------------------------------------------------------------
 
-const EMPTY_TIMED_QUEST = {
-  key: '',
-  period: 'daily',
-  action: 'harvest',
-  target: 5,
-  title: '',
-  description: '',
-  emoji: '⏰',
-  enabled: true,
-  targetScope: 'any',
-  rewards: [{ kind: 'kut', amount: 50, itemId: null }],
-  activeFrom: '',
-  activeUntil: '',
-  recurrence: '',
-  recurrenceEnd: '',
-}
-
 function TimedQuestsTab({ onRefreshTimeline }) {
   const [quests, setQuests] = useState([])
   const [loading, setLoading] = useState(true)
-  const [showCreate, setShowCreate] = useState(false)
-  const [form, setForm] = useState(EMPTY_TIMED_QUEST)
-  const [saving, setSaving] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
   const [editSchedule, setEditSchedule] = useState({ activeFrom: '', activeUntil: '', recurrence: '', recurrenceEnd: '' })
   const [savingSched, setSavingSched] = useState(false)
@@ -168,30 +130,6 @@ function TimedQuestsTab({ onRefreshTimeline }) {
   }, [])
 
   useEffect(() => { load() }, [load])
-
-  const handleCreate = async () => {
-    setSaving(true)
-    try {
-      const body = {
-        ...form,
-        target: Number(form.target),
-        activeFrom: form.activeFrom ? toIsoUtc(form.activeFrom) : undefined,
-        activeUntil: form.activeUntil ? toIsoUtc(form.activeUntil) : undefined,
-        recurrence: form.recurrence || undefined,
-        recurrenceEnd: form.recurrenceEnd ? toIsoUtc(form.recurrenceEnd) : undefined,
-      }
-      await createTimedQuest(body)
-      notifyAdmin(`Задание «${form.title}» создано`)
-      setShowCreate(false)
-      setForm(EMPTY_TIMED_QUEST)
-      await load()
-      onRefreshTimeline?.()
-    } catch (e) {
-      notifyAdmin(e.message || 'Ошибка создания', { error: true })
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const handleOpenSchedule = (q) => {
     setEditTarget(q)
@@ -267,16 +205,14 @@ function TimedQuestsTab({ onRefreshTimeline }) {
         </div>
       )}
 
-      <div className="ev-toolbar">
-        <button className="panel-users-btn panel-users-btn-primary" onClick={() => setShowCreate(true)}>
-          + Создать ивент
-        </button>
-      </div>
+      <p className="panel-shelf-muted">
+        Здесь только расписание уже существующих заданий. Создание и редактирование самих квестов — в разделе «Контент».
+      </p>
 
       {loading && <p className="panel-shelf-muted">Загрузка…</p>}
 
       {!loading && quests.length === 0 && (
-        <p className="panel-shelf-muted">Нет заданий с расписанием. Создайте первый ивент или добавьте расписание к существующему заданию в разделе «Контент».</p>
+        <p className="panel-shelf-muted">Нет заданий с расписанием. Добавьте расписание к существующему заданию в разделе «Контент».</p>
       )}
 
       {!loading && quests.length > 0 && (
@@ -309,121 +245,6 @@ function TimedQuestsTab({ onRefreshTimeline }) {
         </div>
       )}
 
-      {/* Create form */}
-      {showCreate && (
-        <div className="admin-modal-backdrop" onClick={() => setShowCreate(false)}>
-          <div className="admin-modal ev-create-modal" onClick={(e) => e.stopPropagation()}>
-            <p className="panel-shelf-label">Новый ивент-квест</p>
-            <div className="ev-create-form">
-              <div className="ev-form-row">
-                <div className="ev-form-field">
-                  <label className="ev-field-label">Ключ</label>
-                  <input className="panel-users-input" placeholder="event_harvest_spring" value={form.key}
-                    onChange={(e) => setForm(f => ({ ...f, key: e.target.value }))} />
-                </div>
-                <div className="ev-form-field">
-                  <label className="ev-field-label">Эмодзи</label>
-                  <input className="panel-users-input ev-emoji-input" value={form.emoji}
-                    onChange={(e) => setForm(f => ({ ...f, emoji: e.target.value }))} />
-                </div>
-              </div>
-
-              <div className="ev-form-field">
-                <label className="ev-field-label">Название</label>
-                <input className="panel-users-input" placeholder="Весенний сбор урожая" value={form.title}
-                  onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))} />
-              </div>
-
-              <div className="ev-form-field">
-                <label className="ev-field-label">Описание</label>
-                <input className="panel-users-input" value={form.description}
-                  onChange={(e) => setForm(f => ({ ...f, description: e.target.value }))} />
-              </div>
-
-              <div className="ev-form-row">
-                <div className="ev-form-field">
-                  <label className="ev-field-label">Период</label>
-                  <select className="panel-users-input" value={form.period}
-                    onChange={(e) => setForm(f => ({ ...f, period: e.target.value }))}>
-                    {PERIOD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-                <div className="ev-form-field">
-                  <label className="ev-field-label">Действие</label>
-                  <select className="panel-users-input" value={form.action}
-                    onChange={(e) => setForm(f => ({ ...f, action: e.target.value }))}>
-                    {ACTION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-                <div className="ev-form-field">
-                  <label className="ev-field-label">Цель (кол-во)</label>
-                  <input className="panel-users-input" type="number" min={1} max={9999} value={form.target}
-                    onChange={(e) => setForm(f => ({ ...f, target: e.target.value }))} />
-                </div>
-              </div>
-
-              <div className="ev-form-divider">📅 Расписание</div>
-
-              <div className="ev-form-row">
-                <div className="ev-form-field">
-                  <label className="ev-field-label">Начало</label>
-                  <input type="datetime-local" className="panel-users-input" value={form.activeFrom}
-                    onChange={(e) => setForm(f => ({ ...f, activeFrom: e.target.value }))} />
-                </div>
-                <div className="ev-form-field">
-                  <label className="ev-field-label">Конец</label>
-                  <input type="datetime-local" className="panel-users-input" value={form.activeUntil}
-                    onChange={(e) => setForm(f => ({ ...f, activeUntil: e.target.value }))} />
-                </div>
-              </div>
-
-              <div className="ev-form-row">
-                <div className="ev-form-field">
-                  <label className="ev-field-label">Повторение</label>
-                  <select className="panel-users-input" value={form.recurrence}
-                    onChange={(e) => setForm(f => ({ ...f, recurrence: e.target.value }))}>
-                    <option value="">Без повторения (разовый)</option>
-                    <option value="daily">Ежедневно</option>
-                    <option value="weekly">Еженедельно</option>
-                  </select>
-                </div>
-                {form.recurrence && (
-                  <div className="ev-form-field">
-                    <label className="ev-field-label">Конец серии</label>
-                    <input type="datetime-local" className="panel-users-input" value={form.recurrenceEnd}
-                      onChange={(e) => setForm(f => ({ ...f, recurrenceEnd: e.target.value }))} />
-                  </div>
-                )}
-              </div>
-
-              <div className="ev-form-divider">🏆 Награда</div>
-              <div className="ev-form-row">
-                <div className="ev-form-field">
-                  <label className="ev-field-label">Тип</label>
-                  <select className="panel-users-input" value={form.rewards[0]?.kind || 'kut'}
-                    onChange={(e) => setForm(f => ({ ...f, rewards: [{ ...f.rewards[0], kind: e.target.value }] }))}>
-                    <option value="kut">KUT</option>
-                    <option value="item">Предмет</option>
-                  </select>
-                </div>
-                <div className="ev-form-field">
-                  <label className="ev-field-label">Количество</label>
-                  <input type="number" className="panel-users-input" min={1} value={form.rewards[0]?.amount || 50}
-                    onChange={(e) => setForm(f => ({ ...f, rewards: [{ ...f.rewards[0], amount: Number(e.target.value) }] }))} />
-                </div>
-              </div>
-            </div>
-            <div className="ev-modal-actions">
-              <button className="panel-users-btn panel-users-btn-primary" onClick={handleCreate} disabled={saving}>
-                {saving ? 'Создание…' : 'Создать ивент'}
-              </button>
-              <button className="panel-users-btn" onClick={() => { setShowCreate(false); setForm(EMPTY_TIMED_QUEST) }}>
-                Отмена
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -432,23 +253,12 @@ function TimedQuestsTab({ onRefreshTimeline }) {
 // Scheduled broadcasts tab
 // ---------------------------------------------------------------------------
 
-const EMPTY_BROADCAST = {
-  title: '',
-  body: '',
-  telegramText: '',
-  audience: 'all',
-  label: '',
-  scheduledAt: '',
-}
-
 function ScheduledBroadcastsTab({ onRefreshTimeline }) {
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [showCreate, setShowCreate] = useState(false)
-  const [form, setForm] = useState(EMPTY_BROADCAST)
-  const [saving, setSaving] = useState(false)
   const [cancelTarget, setCancelTarget] = useState(null)
+  const [cancelling, setCancelling] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -465,40 +275,19 @@ function ScheduledBroadcastsTab({ onRefreshTimeline }) {
 
   useEffect(() => { load() }, [load])
 
-  const handleSchedule = async () => {
-    setSaving(true)
-    try {
-      await sendBroadcast({
-        title: form.title,
-        body: form.body,
-        telegramText: form.telegramText,
-        audience: form.audience,
-        label: form.label,
-        scheduledAt: form.scheduledAt ? toIsoUtc(form.scheduledAt) : null,
-        channels: { webapp: true, telegram: !!form.telegramText },
-      })
-      notifyAdmin(`Рассылка запланирована на ${fmtDt(toIsoUtc(form.scheduledAt))}`)
-      setShowCreate(false)
-      setForm(EMPTY_BROADCAST)
-      await load()
-      onRefreshTimeline?.()
-    } catch (e) {
-      notifyAdmin(e.message || 'Ошибка', { error: true })
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const handleCancel = async () => {
     if (!cancelTarget) return
+    setCancelling(true)
     try {
-      await cancelScheduledBroadcast(cancelTarget.id)
+      await cancelBroadcastRun(cancelTarget.id)
       notifyAdmin('Рассылка отменена')
       setCancelTarget(null)
       await load()
       onRefreshTimeline?.()
     } catch (e) {
       notifyAdmin(e.message || 'Ошибка', { error: true })
+    } finally {
+      setCancelling(false)
     }
   }
 
@@ -510,16 +299,15 @@ function ScheduledBroadcastsTab({ onRefreshTimeline }) {
         description={`Вы уверены, что хотите отменить запланированную рассылку «${cancelTarget?.title}»?`}
         confirmText="Отменить рассылку"
         danger
+        loading={cancelling}
         onConfirm={handleCancel}
-        onCancel={() => setCancelTarget(null)}
+        onCancel={() => { if (!cancelling) setCancelTarget(null) }}
       />
 
-      <div className="ev-toolbar">
-        <button className="panel-users-btn panel-users-btn-primary" onClick={() => setShowCreate(true)}>
-          + Запланировать рассылку
-        </button>
-        <span className="ev-toolbar-hint">Рассылок в очереди: {total}</span>
-      </div>
+      <p className="panel-shelf-muted">
+        Здесь только мониторинг очереди. Запланировать рассылку — в разделе «Рассылки» (поле «Запланировать на»).
+        {' '}Рассылок в очереди: {total}
+      </p>
 
       {loading && <p className="panel-shelf-muted">Загрузка…</p>}
       {!loading && items.length === 0 && (
@@ -546,61 +334,6 @@ function ScheduledBroadcastsTab({ onRefreshTimeline }) {
               </div>
             </div>
           ))}
-        </div>
-      )}
-
-      {/* Create scheduled broadcast modal */}
-      {showCreate && (
-        <div className="admin-modal-backdrop" onClick={() => setShowCreate(false)}>
-          <div className="admin-modal ev-broadcast-modal" onClick={(e) => e.stopPropagation()}>
-            <p className="panel-shelf-label">Запланировать рассылку</p>
-            <div className="ev-create-form">
-              <div className="ev-form-field">
-                <label className="ev-field-label">Метка (для себя)</label>
-                <input className="panel-users-input" placeholder="Пятничный ивент" value={form.label}
-                  onChange={(e) => setForm(f => ({ ...f, label: e.target.value }))} />
-              </div>
-              <div className="ev-form-field">
-                <label className="ev-field-label">Заголовок рассылки *</label>
-                <input className="panel-users-input" placeholder="Новое событие!" value={form.title}
-                  onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))} />
-              </div>
-              <div className="ev-form-field">
-                <label className="ev-field-label">Текст (Web App)</label>
-                <textarea className="panel-users-input ev-textarea" rows={3} value={form.body}
-                  onChange={(e) => setForm(f => ({ ...f, body: e.target.value }))} />
-              </div>
-              <div className="ev-form-field">
-                <label className="ev-field-label">Telegram-текст (оставьте пустым чтобы не отправлять в TG)</label>
-                <textarea className="panel-users-input ev-textarea" rows={2} value={form.telegramText}
-                  onChange={(e) => setForm(f => ({ ...f, telegramText: e.target.value }))} />
-              </div>
-              <div className="ev-form-row">
-                <div className="ev-form-field">
-                  <label className="ev-field-label">Аудитория</label>
-                  <select className="panel-users-input" value={form.audience}
-                    onChange={(e) => setForm(f => ({ ...f, audience: e.target.value }))}>
-                    <option value="all">Все игроки</option>
-                    <option value="online">Онлайн</option>
-                  </select>
-                </div>
-                <div className="ev-form-field">
-                  <label className="ev-field-label">Время отправки *</label>
-                  <input type="datetime-local" className="panel-users-input" value={form.scheduledAt}
-                    onChange={(e) => setForm(f => ({ ...f, scheduledAt: e.target.value }))} />
-                </div>
-              </div>
-            </div>
-            <div className="ev-modal-actions">
-              <button className="panel-users-btn panel-users-btn-primary" onClick={handleSchedule}
-                disabled={saving || !form.title || !form.scheduledAt}>
-                {saving ? 'Планирование…' : 'Запланировать'}
-              </button>
-              <button className="panel-users-btn" onClick={() => { setShowCreate(false); setForm(EMPTY_BROADCAST) }}>
-                Отмена
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>

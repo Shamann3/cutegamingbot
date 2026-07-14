@@ -18,6 +18,11 @@ const AUDIENCE_LABEL = {
   filtered: 'По фильтру',
 }
 
+function toIsoUtc(localStr) {
+  if (!localStr) return null
+  return new Date(localStr).toISOString()
+}
+
 function formatDate(iso) {
   if (!iso) return '-'
   try {
@@ -51,6 +56,10 @@ function isActiveRun(row) {
   return row?.status === 'pending' || row?.status === 'running'
 }
 
+function isCancellableRun(row) {
+  return isActiveRun(row) || row?.status === 'scheduled'
+}
+
 function progressLabel(row) {
   const pct = row.progressPercent ?? 0
   if (row.status === 'done') return '100%'
@@ -64,6 +73,7 @@ function progressLabel(row) {
 function statusLabel(status) {
   if (status === 'done') return 'Готово'
   if (status === 'running') return 'Отправка…'
+  if (status === 'scheduled') return 'Запланировано'
   if (status === 'cancelled') return 'Отменено'
   if (status === 'failed') return 'Ошибка'
   return 'В очереди'
@@ -72,6 +82,7 @@ function statusLabel(status) {
 function statusClass(status) {
   if (status === 'done') return 'done'
   if (status === 'running') return 'running'
+  if (status === 'scheduled') return 'scheduled'
   if (status === 'cancelled') return 'cancelled'
   if (status === 'failed') return 'failed'
   return 'pending'
@@ -89,6 +100,7 @@ function renderTelegramPreview(html) {
 
 function BroadcastRunCard({ row, expanded, onToggle, onCancel, cancelling }) {
   const active = isActiveRun(row)
+  const cancellable = isCancellableRun(row)
   const timing = active
     ? formatDuration(row.elapsedSeconds)
     : formatDuration(row.durationSeconds)
@@ -106,18 +118,29 @@ function BroadcastRunCard({ row, expanded, onToggle, onCancel, cancelling }) {
             <span className={`panel-broadcast-status panel-broadcast-status-${statusClass(row.status)}`}>
               {statusLabel(row.status)}
             </span>
+            {row.isDailyRotation && (
+              <span className="panel-broadcast-status panel-broadcast-status-auto" title="Ежедневная авто-рассылка (напоминалка), не ручная отправка админом">
+                🤖 Авто
+              </span>
+            )}
           </div>
           <p className="panel-shelf-muted panel-broadcast-run-meta">
             {formatDate(row.createdAt)}
             {' · '}
+            {row.isDailyRotation ? 'система' : `админ ${row.adminUserId}`}
+            {' · '}
             {AUDIENCE_LABEL[row.audience] || row.audience}
             {' · '}
             {channelsLabel(row.channels)}
+            {row.status === 'scheduled' && row.scheduledAt && (
+              <> · отправка {formatDate(row.scheduledAt)}</>
+            )}
           </p>
+          {row.label && <p className="panel-shelf-muted panel-broadcast-run-filter">Метка: {row.label}</p>}
           <p className="panel-shelf-muted panel-broadcast-run-filter">{row.filterSummary}</p>
         </div>
         <div className="panel-broadcast-run-actions">
-          {active && (
+          {cancellable && (
             <button
               type="button"
               className="panel-users-btn panel-users-btn-danger"
@@ -243,6 +266,8 @@ export default function BroadcastSection() {
   const [channelWebapp, setChannelWebapp] = useState(true)
   const [channelTelegram, setChannelTelegram] = useState(true)
 
+  const [scheduledAt, setScheduledAt] = useState('')
+
   const [recipientCount, setRecipientCount] = useState(null)
   const [countLoading, setCountLoading] = useState(false)
   const [preview, setPreview] = useState(null)
@@ -280,6 +305,7 @@ export default function BroadcastSection() {
     detail: detail.trim(),
     telegramText: telegramText.trim(),
     templateKey: templateKey || null,
+    scheduledAt: scheduledAt ? toIsoUtc(scheduledAt) : null,
   }), [
     audience,
     body,
@@ -287,6 +313,7 @@ export default function BroadcastSection() {
     channelTelegram,
     channelWebapp,
     detail,
+    scheduledAt,
     telegramText,
     templateKey,
     title,
@@ -418,8 +445,11 @@ export default function BroadcastSection() {
       const result = await sendBroadcast(buildPayload())
       setSendOpen(false)
       setInfo(
-        `Рассылка #${result.runId} запущена — ${result.recipientCount} получателей`,
+        scheduledAt
+          ? `Рассылка #${result.runId} запланирована на ${new Date(scheduledAt).toLocaleString('ru-RU')} — ${result.recipientCount} получателей`
+          : `Рассылка #${result.runId} запущена — ${result.recipientCount} получателей`,
       )
+      setScheduledAt('')
       await loadOverview()
       await refreshHistory({ offset: 0 })
     } catch (err) {
@@ -507,13 +537,14 @@ export default function BroadcastSection() {
       />
       <AdminActionModal
         open={sendOpen}
-        title="Отправить рассылку?"
+        title={scheduledAt ? 'Запланировать рассылку?' : 'Отправить рассылку?'}
         description={
           recipientCount != null
             ? `Получателей: ${recipientCount}. WebApp: ${channelWebapp ? 'да' : 'нет'}, Telegram: ${channelTelegram ? 'да' : 'нет'}.`
+              + (scheduledAt ? ` Отправка: ${new Date(scheduledAt).toLocaleString('ru-RU')}.` : '')
             : 'Сначала посчитайте получателей.'
         }
-        confirmText="Отправить"
+        confirmText={scheduledAt ? 'Запланировать' : 'Отправить'}
         danger
         loading={sending}
         onConfirm={confirmSend}
@@ -707,6 +738,15 @@ export default function BroadcastSection() {
               Telegram — личное сообщение от игрового бота
             </label>
           </div>
+          <label className="panel-economy-field">
+            <span>Запланировать на (необязательно — пусто = отправить сразу)</span>
+            <input
+              type="datetime-local"
+              className="panel-users-input"
+              value={scheduledAt}
+              onChange={(e) => setScheduledAt(e.target.value)}
+            />
+          </label>
           <button
             type="button"
             className="panel-users-btn panel-users-btn-primary panel-broadcast-send"
@@ -721,7 +761,7 @@ export default function BroadcastSection() {
               setSendOpen(true)
             }}
           >
-            {countLoading ? 'Считаем…' : 'Отправить рассылку'}
+            {countLoading ? 'Считаем…' : scheduledAt ? 'Запланировать рассылку' : 'Отправить рассылку'}
           </button>
         </article>
       </div>
@@ -744,6 +784,7 @@ export default function BroadcastSection() {
                 { value: '', label: 'Все статусы' },
                 { value: 'running', label: 'Отправка…' },
                 { value: 'pending', label: 'В очереди' },
+                { value: 'scheduled', label: 'Запланировано' },
                 { value: 'done', label: 'Готово' },
                 { value: 'cancelled', label: 'Отменено' },
                 { value: 'failed', label: 'Ошибка' },

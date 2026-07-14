@@ -179,10 +179,7 @@ from admin_content import (
 )
 from farm_settings import get_farm_settings_payload, update_farm_settings
 from system_settings_admin import get_all_settings, get_settings_history, update_settings
-from admin_broadcast import (
-    cancel_scheduled_broadcast,
-    list_scheduled_broadcasts,
-)
+from admin_broadcast import list_scheduled_broadcasts
 from quest_registry import all_quests
 from admin_broadcast import (
     cancel_broadcast,
@@ -2808,7 +2805,7 @@ async def admin_broadcast_overview(_admin_id: int = Depends(require_admin_permis
 async def admin_broadcast_history(
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    status: str | None = Query(None, pattern=r"^(pending|running|done|failed|cancelled)$"),
+    status: str | None = Query(None, pattern=r"^(pending|running|scheduled|done|failed|cancelled)$"),
     _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
 ):
     return await list_broadcast_history(limit=limit, offset=offset, status=status)
@@ -3146,18 +3143,9 @@ async def admin_events_scheduled_broadcasts(
     offset: int = Query(0, ge=0),
     _admin_id: int = Depends(require_admin_permission("manage_events")),
 ):
+    # Только чтение - отмена теперь только через /broadcast/runs/{id}/cancel
+    # (manage_broadcast), чтобы не было двух путей отмены с разными правами.
     return await list_scheduled_broadcasts(limit=limit, offset=offset)
-
-
-@router.delete("/events/scheduled-broadcasts/{run_id}")
-async def admin_events_cancel_broadcast(
-    run_id: int,
-    admin_id: int = Depends(require_admin_permission("manage_events")),
-):
-    try:
-        return await cancel_scheduled_broadcast(run_id, admin_user_id=admin_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ---------------------------------------------------------------------------

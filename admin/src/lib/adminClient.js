@@ -965,21 +965,12 @@ export async function fetchScheduledBroadcasts({ limit = 50, offset = 0 } = {}) 
   return adminFetch(`/events/scheduled-broadcasts?limit=${limit}&offset=${offset}`)
 }
 
-export async function cancelScheduledBroadcast(runId) {
-  return adminFetch(`/events/scheduled-broadcasts/${runId}`, { method: 'DELETE' })
-}
-
 export async function scheduleQuestEvent(questId, scheduleFields) {
   return adminFetch(`/content/quests/${questId}`, {
     method: 'PATCH',
     body: scheduleFields,
   })
 }
-
-export async function createTimedQuest(questData) {
-  return adminFetch('/content/quests', { method: 'POST', body: questData })
-}
-
 
 
 export function hasTelegramInitData() {

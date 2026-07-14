@@ -69,7 +69,7 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
 
 # Ежедневная ротация "напоминалок" (см. server/event_scheduler.py::_fire_daily_rotation_broadcast).
 # minBalance - опциональный порог: сообщение шлётся только тем, у кого баланс СТРОГО больше
-# указанного значения. Тексты и условия зафиксированы с владельцем проекта - каждое утверждение
+# указанного значения.
 # в тексте должно быть верно для любого получателя (без ложных заявлений о состоянии игрока).
 DAILY_ROTATION_TEMPLATES: list[dict[str, Any]] = [
     {
@@ -89,17 +89,17 @@ DAILY_ROTATION_TEMPLATES: list[dict[str, Any]] = [
     },
     {
         "label": "Ежедневная рассылка #4",
-        "text": "🎲 Заходи глянуть, что нового в игре сегодня — обычно там что-то да меняется.",
+        "text": "🎲 Заходи глянуть, что нового в игре сегодня обычно там что-то да меняется.",
         "min_balance": None,
     },
     {
         "label": "Ежедневная рассылка #5",
-        "text": "🎯 Каждый день на ферме — это шанс продвинуться чуть дальше. Сегодняшний ещё не использован.",
+        "text": "🎯 Каждый день на ферме это шанс продвинуться чуть дальше. Сегодняшний ещё не использован.",
         "min_balance": None,
     },
     {
         "label": "Ежедневная рассылка #6",
-        "text": "🌤 Пять минут на ферме — и день уже не прошёл зря.",
+        "text": "🌤 Пять минут на ферме и день уже не прошёл зря.",
         "min_balance": None,
     },
     {
@@ -626,6 +626,9 @@ def _run_row(row) -> dict:
         "errorMessage": row["error_message"],
         "createdAt": created_at.isoformat() if created_at else None,
         "finishedAt": finished_at.isoformat() if finished_at else None,
+        "label": row["label"] or "",
+        "scheduledAt": row["scheduled_at"].isoformat() if row["scheduled_at"] else None,
+        "isDailyRotation": bool(row["is_daily_rotation"]),
     }
 
 
@@ -636,7 +639,8 @@ async def get_broadcast_run(run_id: int) -> dict | None:
             id, admin_user_id, audience, filter_json, channels_json,
             title, body, detail, telegram_text, template_key,
             recipient_count, webapp_sent, telegram_sent, telegram_failed,
-            status, error_message, created_at, finished_at
+            status, error_message, created_at, finished_at,
+            label, scheduled_at, is_daily_rotation
         FROM broadcast_runs
         WHERE id = $1
         """,
@@ -654,7 +658,7 @@ async def list_broadcast_history(
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
     status_norm = (status or "").strip().lower()
-    if status_norm and status_norm not in ("pending", "running", "done", "failed", "cancelled"):
+    if status_norm and status_norm not in ("pending", "running", "scheduled", "done", "failed", "cancelled"):
         status_norm = ""
 
     if status_norm:
@@ -671,7 +675,8 @@ async def list_broadcast_history(
                 id, admin_user_id, audience, filter_json, channels_json,
                 title, body, detail, telegram_text, template_key,
                 recipient_count, webapp_sent, telegram_sent, telegram_failed,
-                status, error_message, created_at, finished_at
+                status, error_message, created_at, finished_at,
+                label, scheduled_at, is_daily_rotation
             FROM broadcast_runs
             WHERE status = $1
             ORDER BY created_at DESC
@@ -689,7 +694,8 @@ async def list_broadcast_history(
                 id, admin_user_id, audience, filter_json, channels_json,
                 title, body, detail, telegram_text, template_key,
                 recipient_count, webapp_sent, telegram_sent, telegram_failed,
-                status, error_message, created_at, finished_at
+                status, error_message, created_at, finished_at,
+                label, scheduled_at, is_daily_rotation
             FROM broadcast_runs
             ORDER BY created_at DESC
             LIMIT $1 OFFSET $2
@@ -767,7 +773,7 @@ async def cancel_broadcast(run_id: int, *, admin_user_id: int) -> dict:
     )
     if not row:
         raise ValueError("Рассылка не найдена")
-    if row["status"] not in ("pending", "running"):
+    if row["status"] not in ("pending", "running", "scheduled"):
         raise ValueError("Рассылка уже завершена")
 
     _cancel_requested.add(run_id)
@@ -1165,24 +1171,3 @@ async def list_scheduled_broadcasts(*, limit: int = 50, offset: int = 0) -> dict
     }
 
 
-async def cancel_scheduled_broadcast(run_id: int, *, admin_user_id: int) -> dict:
-    row = await db.pool.fetchrow(
-        "SELECT id, status, title FROM broadcast_runs WHERE id = $1",
-        run_id,
-    )
-    if not row:
-        raise ValueError("Рассылка не найдена")
-    if row["status"] != "scheduled":
-        raise ValueError(f"Рассылка уже в статусе «{row['status']}» — отмена невозможна")
-
-    await db.pool.execute(
-        """
-        UPDATE broadcast_runs
-        SET status = 'cancelled',
-            error_message = 'Отменено администратором',
-            finished_at = NOW()
-        WHERE id = $1
-        """,
-        run_id,
-    )
-    return {"ok": True, "runId": run_id}
