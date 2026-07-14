@@ -182,6 +182,15 @@ async def update_farm_settings(
     if plot_price_step is not None and not (1 <= plot_price_step <= 1_000_000):
         raise ValueError("Шаг цены грядки: от 1 до 1000000")
 
+    before = await db.pool.fetchrow(
+        """
+        SELECT tree_grow_seconds, tobacco_grow_seconds, max_plots,
+               water_interval_seconds, wilt_grace_seconds, water_cost_per_use,
+               plot_price_step
+        FROM system_settings WHERE id = 1
+        """
+    )
+
     updated = await db.pool.execute(
         """
         UPDATE system_settings SET
@@ -207,6 +216,7 @@ async def update_farm_settings(
     )
     if updated == "UPDATE 0":
         await ensure_system_settings_row(maintenance=False)
+        before = None
         await db.pool.execute(
             """
             UPDATE system_settings SET
@@ -228,6 +238,13 @@ async def update_farm_settings(
     await _refresh_cache()
     from economy_settings import refresh_economy_settings_cache
     await refresh_economy_settings_cache()
+    await _log_settings_history(
+        admin_user_id, before,
+        tree_grow_seconds=tree_grow_seconds, tobacco_grow_seconds=tobacco_grow_seconds,
+        max_plots=max_plots, water_interval_seconds=water_interval_seconds,
+        wilt_grace_seconds=wilt_grace_seconds, water_cost_per_use=water_cost_per_use,
+        plot_price_step=plot_price_step,
+    )
     # Синхронизируем farm_crops таблицу
     try:
         await db.pool.execute(
@@ -244,6 +261,36 @@ async def update_farm_settings(
         await _trim_plots_above_max(max_plots)
     await _normalize_growing_plots()
     return await get_farm_settings_payload()
+
+
+async def _log_settings_history(admin_user_id: int, before, **changed: int | None) -> None:
+    # snake_case kwarg -> (camelCase setting_key, DB column) - camelCase matches the
+    # naming SystemSection.jsx's History tab already knows how to label.
+    key_map = {
+        "tree_grow_seconds": ("treeGrowSeconds", "tree_grow_seconds"),
+        "tobacco_grow_seconds": ("tobaccoGrowSeconds", "tobacco_grow_seconds"),
+        "max_plots": ("maxPlots", "max_plots"),
+        "water_interval_seconds": ("waterIntervalSeconds", "water_interval_seconds"),
+        "wilt_grace_seconds": ("wiltGraceSeconds", "wilt_grace_seconds"),
+        "water_cost_per_use": ("waterCostPerUse", "water_cost_per_use"),
+        "plot_price_step": ("plotPriceStep", "plot_price_step"),
+    }
+    rows = []
+    for arg_key, new_val in changed.items():
+        if new_val is None:
+            continue
+        setting_key, col = key_map[arg_key]
+        old_val = before[col] if before else None
+        if str(new_val) != (str(old_val) if old_val is not None else None):
+            rows.append((admin_user_id, "farm", setting_key, str(old_val) if old_val is not None else None, str(new_val)))
+    if rows:
+        await db.pool.executemany(
+            """
+            INSERT INTO settings_history (admin_user_id, category, setting_key, old_value, new_value)
+            VALUES ($1, $2, $3, $4, $5)
+            """,
+            rows,
+        )
 
 
 async def _trim_plots_above_max(max_plots: int) -> int:

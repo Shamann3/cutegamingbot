@@ -1,4 +1,8 @@
-"""Экономические настройки — runtime-override поверх env/code."""
+"""Экономические настройки — runtime-override поверх env/code.
+
+Шаг цены грядки (plot_price_step) здесь только ЧИТАЕТСЯ (get_plot_price_step) -
+это farm_settings.py::update_farm_settings единственное место, где он
+редактируется, чтобы не было дублирующих экранов для одного и того же поля."""
 
 from __future__ import annotations
 
@@ -100,42 +104,69 @@ async def get_economy_settings_payload() -> dict:
 async def update_economy_settings(
     *,
     default_balance: int | None = None,
-    plot_price_step: int | None = None,
     clear_cost: int | None = None,
     admin_user_id: int,
 ) -> dict:
     if default_balance is not None and default_balance < 0:
         raise ValueError("Стартовый баланс не может быть отрицательным")
-    if plot_price_step is not None and plot_price_step < 0:
-        raise ValueError("Шаг цены грядки не может быть отрицательным")
     if clear_cost is not None and clear_cost < 0:
         raise ValueError("Стоимость очистки не может быть отрицательной")
+
+    before = await db.pool.fetchrow(
+        "SELECT default_balance, clear_cost FROM system_settings WHERE id = 1"
+    )
 
     updated = await db.pool.execute(
         """
         UPDATE system_settings SET
             default_balance = COALESCE($1, default_balance),
-            plot_price_step = COALESCE($2, plot_price_step),
-            clear_cost = COALESCE($3, clear_cost),
-            updated_by = $4,
+            clear_cost = COALESCE($2, clear_cost),
+            updated_by = $3,
             updated_at = NOW()
         WHERE id = 1
         """,
-        default_balance, plot_price_step, clear_cost, admin_user_id,
+        default_balance, clear_cost, admin_user_id,
     )
     if updated == "UPDATE 0":
         await ensure_system_settings_row(maintenance=False)
+        before = None
         await db.pool.execute(
             """
             UPDATE system_settings SET
                 default_balance = COALESCE($1, default_balance),
-                plot_price_step = COALESCE($2, plot_price_step),
-                clear_cost = COALESCE($3, clear_cost),
-                updated_by = $4,
+                clear_cost = COALESCE($2, clear_cost),
+                updated_by = $3,
                 updated_at = NOW()
             WHERE id = 1
             """,
-            default_balance, plot_price_step, clear_cost, admin_user_id,
+            default_balance, clear_cost, admin_user_id,
         )
     await _refresh_cache()
+    await _log_settings_history(admin_user_id, before, default_balance=default_balance, clear_cost=clear_cost)
     return await get_economy_settings_payload()
+
+
+async def _log_settings_history(
+    admin_user_id: int,
+    before,
+    *,
+    default_balance: int | None,
+    clear_cost: int | None,
+) -> None:
+    changed = {"defaultBalance": default_balance, "clearCost": clear_cost}
+    col_by_key = {"defaultBalance": "default_balance", "clearCost": "clear_cost"}
+    rows = []
+    for key, new_val in changed.items():
+        if new_val is None:
+            continue
+        old_val = before[col_by_key[key]] if before else None
+        if str(new_val) != (str(old_val) if old_val is not None else None):
+            rows.append((admin_user_id, "economy", key, str(old_val) if old_val is not None else None, str(new_val)))
+    if rows:
+        await db.pool.executemany(
+            """
+            INSERT INTO settings_history (admin_user_id, category, setting_key, old_value, new_value)
+            VALUES ($1, $2, $3, $4, $5)
+            """,
+            rows,
+        )

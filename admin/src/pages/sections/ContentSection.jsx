@@ -939,10 +939,20 @@ export default function ContentSection() {
                   onChange={(v) => setCropForm({ ...cropForm, seedItemId: v })}
                   hint="Любой предмет из dex: 🌱 саженец, название или id"
                 />
-                <label className="panel-economy-field">
-                  <span>Рост (секунды)</span>
-                  <input className="panel-users-input" value={cropForm.growSeconds} onChange={(e) => setCropForm({ ...cropForm, growSeconds: e.target.value.replace(/[^\d]/g, '') })} />
-                </label>
+                {(cropForm.key === 'tree' || cropForm.key === 'tobacco') ? (
+                  <label className="panel-economy-field">
+                    <span>Рост (секунды)</span>
+                    <input className="panel-users-input" value={cropForm.growSeconds} disabled />
+                    <span className="panel-shelf-muted">
+                      Для дерева и табака время роста берётся из настроек Фермы — редактируется там, не здесь
+                    </span>
+                  </label>
+                ) : (
+                  <label className="panel-economy-field">
+                    <span>Рост (секунды)</span>
+                    <input className="panel-users-input" value={cropForm.growSeconds} onChange={(e) => setCropForm({ ...cropForm, growSeconds: e.target.value.replace(/[^\d]/g, '') })} />
+                  </label>
+                )}
                 <DexItemSearchPicker
                   label="Инструмент сбора (топор и т.д.)"
                   value={cropForm.harvestToolItemId}

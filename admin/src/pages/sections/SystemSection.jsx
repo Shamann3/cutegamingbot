@@ -11,30 +11,24 @@ import { notifyAdmin } from '../../lib/notify'
 // Metadata
 // ---------------------------------------------------------------------------
 
+// Экономика и Ферма редактируются только в EconomySection/FarmSection теперь
+// (раньше те же поля можно было менять и здесь - без единого источника правды
+// и без истории для правок через Economy/Farm). Лейблы для них оставлены в
+// EXTRA_HISTORY_LABELS ниже, чтобы вкладка "История" продолжала показывать
+// человекочитаемые названия для старых и новых записей категорий economy/farm.
+const EXTRA_HISTORY_LABELS = {
+  defaultBalance: 'Стартовый баланс (kut)',
+  plotPriceStep: 'Шаг цены грядки',
+  clearCost: 'Стоимость очистки грядки',
+  treeGrowSeconds: 'Рост дерева (сек)',
+  tobaccoGrowSeconds: 'Рост табака (сек)',
+  maxPlots: 'Максимум грядок',
+  waterIntervalSeconds: 'Интервал полива (сек)',
+  wiltGraceSeconds: 'Засуха - отсрочка (сек)',
+  waterCostPerUse: 'Расход воды за полив',
+}
+
 const SETTING_GROUPS = [
-  {
-    id: 'economy',
-    label: 'Экономика',
-    emoji: '💰',
-    fields: [
-      { key: 'defaultBalance', label: 'Стартовый баланс (kut)', type: 'int', hint: 'Баланс нового игрока при регистрации' },
-      { key: 'plotPriceStep', label: 'Шаг цены грядки', type: 'int', hint: 'Каждая следующая грядка дороже на эту сумму' },
-      { key: 'clearCost', label: 'Стоимость очистки грядки', type: 'int', hint: 'Ручная очистка засохшей грядки' },
-    ],
-  },
-  {
-    id: 'farm',
-    label: 'Ферма',
-    emoji: '🌱',
-    fields: [
-      { key: 'treeGrowSeconds', label: 'Рост дерева (сек)', type: 'int', hint: '30–86400' },
-      { key: 'tobaccoGrowSeconds', label: 'Рост табака (сек)', type: 'int', hint: '30–86400' },
-      { key: 'maxPlots', label: 'Максимум грядок', type: 'int', hint: 'Лимит на игрока, 1–100' },
-      { key: 'waterIntervalSeconds', label: 'Интервал полива (сек)', type: 'int', hint: '30–3600' },
-      { key: 'wiltGraceSeconds', label: 'Засуха - отсрочка (сек)', type: 'int', hint: 'Время до засухи после "сухой земли"' },
-      { key: 'waterCostPerUse', label: 'Расход воды за полив', type: 'int', hint: '0–10, 0 = без расхода' },
-    ],
-  },
   {
     id: 'seed',
     label: 'Seed Economy',
@@ -65,7 +59,7 @@ const CATEGORY_LABELS = {
   system: '⚙️ Система',
 }
 
-const SETTING_LABELS = {}
+const SETTING_LABELS = { ...EXTRA_HISTORY_LABELS }
 SETTING_GROUPS.forEach((g) => g.fields.forEach((f) => { SETTING_LABELS[f.key] = f.label }))
 
 // ---------------------------------------------------------------------------
@@ -288,15 +282,13 @@ function HistoryTab({ refreshKey }) {
 // ---------------------------------------------------------------------------
 
 const TABS = [
-  { id: 'economy', label: '💰 Экономика' },
-  { id: 'farm', label: '🌱 Ферма' },
   { id: 'seed', label: '🌿 Семена' },
   { id: 'system', label: '⚙️ Система' },
   { id: 'history', label: '📋 История' },
 ]
 
 export default function SystemSection() {
-  const [tab, setTab] = useState('economy')
+  const [tab, setTab] = useState('seed')
   const [settings, setSettings] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -354,7 +346,10 @@ export default function SystemSection() {
       <article className="panel-shelf panel-shelf-page">
         <p className="panel-shelf-label">Settings · Настройки</p>
         <h2 className="panel-page-title">Системные настройки</h2>
-        <p className="panel-page-lead">Единый экран конфигурации. Значения override .env без перезапуска сервера.</p>
+        <p className="panel-page-lead">
+          Единый экран конфигурации. Значения override .env без перезапуска сервера.
+          Экономика и ферма редактируются в разделах «Экономика» и «Ферма» — здесь только их история изменений.
+        </p>
 
         {settings && (
           <div className={`sys-maintenance-bar ${settings.maintenance ? 'active' : ''}`}>

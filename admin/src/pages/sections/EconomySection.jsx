@@ -110,7 +110,6 @@ export default function EconomySection() {
   const [info, setInfo] = useState('')
 
   const [defaultBalance, setDefaultBalance] = useState('')
-  const [plotPriceStep, setPlotPriceStep] = useState('')
   const [clearCost, setClearCost] = useState('')
 
   const [grantDelta, setGrantDelta] = useState('')
@@ -123,7 +122,6 @@ export default function EconomySection() {
     const s = data?.settings
     if (s) {
       setDefaultBalance(String(s.defaultBalance ?? ''))
-      setPlotPriceStep(String(s.plotPriceStep ?? ''))
       setClearCost(String(s.clearCost ?? ''))
     }
   }, [])
@@ -165,12 +163,10 @@ export default function EconomySection() {
       payload = parseRequiredIntFields(
         {
           defaultBalance,
-          plotPriceStep,
           clearCost,
         },
         {
           defaultBalance: 'Стартовый баланс',
-          plotPriceStep: 'Шаг цены грядки',
           clearCost: 'Стоимость очистки',
         },
       )
@@ -295,8 +291,10 @@ export default function EconomySection() {
           <p className="panel-shelf-label">Настройки</p>
           <h3 className="panel-users-subtitle">Стартовый баланс и цены</h3>
           <p className="panel-shelf-muted">
-            Env: balance {envDefaults?.defaultBalance}, грядка +{envDefaults?.plotPriceStep},
-            очистка {envDefaults?.clearCost}
+            Env: balance {envDefaults?.defaultBalance}, очистка {envDefaults?.clearCost}
+          </p>
+          <p className="panel-shelf-muted">
+            Шаг цены грядки: {overview?.settings?.plotPriceStep ?? '-'} кут — редактируется в разделе «Ферма»
           </p>
           <div className="panel-economy-settings-form">
             <label className="panel-economy-field">
@@ -305,15 +303,6 @@ export default function EconomySection() {
                 className="panel-users-input"
                 value={defaultBalance}
                 onChange={(e) => setDefaultBalance(e.target.value.replace(/[^\d]/g, ''))}
-                disabled={loading || savingSettings}
-              />
-            </label>
-            <label className="panel-economy-field">
-              <span>Шаг цены грядки (PLOT_PRICE_STEP)</span>
-              <input
-                className="panel-users-input"
-                value={plotPriceStep}
-                onChange={(e) => setPlotPriceStep(e.target.value.replace(/[^\d]/g, ''))}
                 disabled={loading || savingSettings}
               />
             </label>

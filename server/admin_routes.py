@@ -425,7 +425,6 @@ class QuestionBody(BaseModel):
 
 class EconomySettingsBody(BaseModel):
     defaultBalance: int | None = Field(default=None, ge=0, le=10_000_000)
-    plotPriceStep: int | None = Field(default=None, ge=0, le=1_000_000)
     clearCost: int | None = Field(default=None, ge=0, le=1_000_000)
     model_config = {"extra": "forbid"}
 
@@ -2049,17 +2048,8 @@ async def admin_set_maintenance(
 
 
 class SystemSettingsBody(BaseModel):
-    # economy
-    defaultBalance: int | None = Field(default=None, ge=0, le=10_000_000)
-    plotPriceStep: int | None = Field(default=None, ge=0, le=1_000_000)
-    clearCost: int | None = Field(default=None, ge=0, le=1_000_000)
-    # farm
-    treeGrowSeconds: int | None = Field(default=None, ge=30, le=86_400)
-    tobaccoGrowSeconds: int | None = Field(default=None, ge=30, le=86_400)
-    maxPlots: int | None = Field(default=None, ge=1, le=100)
-    waterIntervalSeconds: int | None = Field(default=None, ge=30, le=3_600)
-    wiltGraceSeconds: int | None = Field(default=None, ge=10, le=3_600)
-    waterCostPerUse: int | None = Field(default=None, ge=0, le=10)
+    # economy/farm settings live only in EconomySettingsBody/FarmSettingsBody now -
+    # editing the same field from two screens caused drift (see settings_history gap).
     # seed economy
     harvestSeedDropPercent: int | None = Field(default=None, ge=0, le=100)
     dailySeedAmount: int | None = Field(default=None, ge=1, le=50)
@@ -2341,7 +2331,6 @@ async def admin_economy_settings_set(
     try:
         return await update_economy_settings(
             default_balance=body.defaultBalance,
-            plot_price_step=body.plotPriceStep,
             clear_cost=body.clearCost,
             admin_user_id=admin_id,
         )

@@ -1,7 +1,14 @@
 """Единый контроллер системных настроек.
 
 Читает из system_settings (одна строка id=1), логирует изменения в settings_history.
-Покрывает: экономику, ферму, seed economy, таймаут сессии администратора.
+Покрывает: seed economy, таймаут сессии администратора, maintenance.
+
+Экономика (defaultBalance/clearCost) и ферма (treeGrowSeconds и т.д.,
+включая plotPriceStep) сюда НЕ входят - раньше одни и те же колонки
+редактировались и здесь, и в EconomySection/FarmSection одновременно, без
+единого источника правды и без истории для изменений через Economy/Farm.
+Теперь единственные редакторы - economy_settings.py/farm_settings.py
+(каждый пишет свою историю в settings_history сам, категории "economy"/"farm").
 """
 
 from __future__ import annotations
@@ -16,18 +23,7 @@ from system_settings import ensure_system_settings_row
 # ---------------------------------------------------------------------------
 
 def _env_defaults() -> dict[str, Any]:
-    from config import (
-        ADMIN_SESSION_MINUTES,
-        CLEAR_COST,
-        DEFAULT_BALANCE,
-        MAX_PLOTS,
-        PLOT_PRICE_STEP,
-        TOBACCO_GROW_SECONDS,
-        TREE_GROW_SECONDS,
-        WATER_COST_PER_USE,
-        WATER_INTERVAL_SECONDS,
-        WILT_GRACE_SECONDS,
-    )
+    from config import ADMIN_SESSION_MINUTES
     from seed_economy import (
         DAILY_SEED_AMOUNT,
         HARVEST_SEED_DROP_PERCENT,
@@ -37,17 +33,6 @@ def _env_defaults() -> dict[str, Any]:
         STARTER_WATER,
     )
     return {
-        # economy
-        "defaultBalance": DEFAULT_BALANCE,
-        "plotPriceStep": PLOT_PRICE_STEP,
-        "clearCost": CLEAR_COST,
-        # farm
-        "treeGrowSeconds": TREE_GROW_SECONDS,
-        "tobaccoGrowSeconds": TOBACCO_GROW_SECONDS,
-        "maxPlots": MAX_PLOTS,
-        "waterIntervalSeconds": WATER_INTERVAL_SECONDS,
-        "wiltGraceSeconds": WILT_GRACE_SECONDS,
-        "waterCostPerUse": WATER_COST_PER_USE,
         # seed economy
         "harvestSeedDropPercent": HARVEST_SEED_DROP_PERCENT,
         "dailySeedAmount": DAILY_SEED_AMOUNT,
@@ -61,17 +46,6 @@ def _env_defaults() -> dict[str, Any]:
 
 
 _DB_COL_MAP: dict[str, str] = {
-    # economy
-    "defaultBalance": "default_balance",
-    "plotPriceStep": "plot_price_step",
-    "clearCost": "clear_cost",
-    # farm
-    "treeGrowSeconds": "tree_grow_seconds",
-    "tobaccoGrowSeconds": "tobacco_grow_seconds",
-    "maxPlots": "max_plots",
-    "waterIntervalSeconds": "water_interval_seconds",
-    "wiltGraceSeconds": "wilt_grace_seconds",
-    "waterCostPerUse": "water_cost_per_use",
     # seed economy
     "harvestSeedDropPercent": "harvest_seed_drop_percent",
     "dailySeedAmount": "daily_seed_amount",
@@ -91,15 +65,6 @@ _COL_DB_MAP = {v: k for k, v in _DB_COL_MAP.items()}
 _ALL_COLS = [v for k, v in _DB_COL_MAP.items() if k != "maintenance"]
 
 _VALIDATORS: dict[str, tuple[int, int]] = {
-    "defaultBalance": (0, 10_000_000),
-    "plotPriceStep": (0, 1_000_000),
-    "clearCost": (0, 1_000_000),
-    "treeGrowSeconds": (30, 86_400),
-    "tobaccoGrowSeconds": (30, 86_400),
-    "maxPlots": (1, 100),
-    "waterIntervalSeconds": (30, 3_600),
-    "wiltGraceSeconds": (10, 3_600),
-    "waterCostPerUse": (0, 10),
     "harvestSeedDropPercent": (0, 100),
     "dailySeedAmount": (1, 50),
     "starterTreeSeeds": (0, 100),
@@ -110,15 +75,6 @@ _VALIDATORS: dict[str, tuple[int, int]] = {
 }
 
 _CATEGORIES: dict[str, str] = {
-    "defaultBalance": "economy",
-    "plotPriceStep": "economy",
-    "clearCost": "economy",
-    "treeGrowSeconds": "farm",
-    "tobaccoGrowSeconds": "farm",
-    "maxPlots": "farm",
-    "waterIntervalSeconds": "farm",
-    "wiltGraceSeconds": "farm",
-    "waterCostPerUse": "farm",
     "harvestSeedDropPercent": "seed",
     "dailySeedAmount": "seed",
     "starterTreeSeeds": "seed",
@@ -266,9 +222,6 @@ async def update_settings(
 
 
 async def _refresh_downstream_caches(changed: dict[str, Any]) -> None:
-    economy_keys = {"defaultBalance", "plotPriceStep", "clearCost"}
-    farm_keys = {"treeGrowSeconds", "tobaccoGrowSeconds", "maxPlots",
-                 "waterIntervalSeconds", "wiltGraceSeconds", "waterCostPerUse"}
     seed_keys = {"harvestSeedDropPercent", "dailySeedAmount",
                  "starterTreeSeeds", "starterTobaccoSeeds", "starterWater", "starterAxe"}
     session_keys = {"adminSessionMinutes"}
@@ -277,27 +230,6 @@ async def _refresh_downstream_caches(changed: dict[str, Any]) -> None:
         from system_settings import refresh_maintenance_cache
         await refresh_maintenance_cache()
 
-    if economy_keys & set(changed):
-        from economy_settings import refresh_economy_settings_cache
-        await refresh_economy_settings_cache()
-
-    if farm_keys & set(changed):
-        from farm_settings import _refresh_cache as refresh_farm_cache
-        await refresh_farm_cache()
-        # Синхронизируем farm_crops с новыми значениями
-        from farm_settings import get_tree_grow_seconds, get_tobacco_grow_seconds
-        try:
-            await db.pool.execute(
-                "UPDATE farm_crops SET grow_seconds = $1 WHERE key = 'tree'",
-                get_tree_grow_seconds(),
-            )
-            await db.pool.execute(
-                "UPDATE farm_crops SET grow_seconds = $1 WHERE key = 'tobacco'",
-                get_tobacco_grow_seconds(),
-            )
-        except Exception:
-            pass
-
     if seed_keys & set(changed):
         from seed_economy import refresh_seed_settings_cache
         await refresh_seed_settings_cache()
@@ -305,12 +237,6 @@ async def _refresh_downstream_caches(changed: dict[str, Any]) -> None:
     if session_keys & set(changed):
         from admin_session_cache import refresh_session_cache
         await refresh_session_cache()
-
-    if "maxPlots" in changed:
-        max_val = int(changed["maxPlots"])
-        from farm_settings import _trim_plots_above_max, _normalize_growing_plots
-        await _trim_plots_above_max(max_val)
-        await _normalize_growing_plots()
 
 
 # ---------------------------------------------------------------------------
