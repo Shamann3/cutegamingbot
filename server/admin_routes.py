@@ -2930,6 +2930,8 @@ class DailyRotationBody(BaseModel):
     enabled: bool | None = None
     hour: int | None = Field(None, ge=0, le=23)
     minute: int | None = Field(None, ge=0, le=59)
+    cooldownDays: int | None = Field(None, ge=1, le=30)
+    sampleRate: float | None = Field(None, gt=0, lt=1)
 
 
 @router.get("/broadcast/daily-rotation")
@@ -2941,7 +2943,8 @@ async def admin_daily_rotation_get(
     row = await db.pool.fetchrow(
         """
         SELECT daily_broadcast_enabled, daily_broadcast_hour, daily_broadcast_minute,
-               daily_broadcast_rotation_index, daily_broadcast_next_fire_at
+               daily_broadcast_next_fire_at, daily_broadcast_cooldown_days,
+               daily_broadcast_sample_rate
         FROM system_settings WHERE id = 1
         """
     )
@@ -2951,7 +2954,8 @@ async def admin_daily_rotation_get(
         "enabled": bool(row["daily_broadcast_enabled"]),
         "hourUtc": int(row["daily_broadcast_hour"]),
         "minuteUtc": int(row["daily_broadcast_minute"]),
-        "rotationIndex": int(row["daily_broadcast_rotation_index"]),
+        "cooldownDays": int(row["daily_broadcast_cooldown_days"]),
+        "sampleRate": float(row["daily_broadcast_sample_rate"]),
         "nextFireAt": row["daily_broadcast_next_fire_at"].isoformat() if row["daily_broadcast_next_fire_at"] else None,
         "templateCount": len(DAILY_ROTATION_TEMPLATES),
     }
@@ -2980,6 +2984,14 @@ async def admin_daily_rotation_set(
     if body.minute is not None:
         updates.append(f"daily_broadcast_minute = ${idx}")
         params.append(body.minute)
+        idx += 1
+    if body.cooldownDays is not None:
+        updates.append(f"daily_broadcast_cooldown_days = ${idx}")
+        params.append(body.cooldownDays)
+        idx += 1
+    if body.sampleRate is not None:
+        updates.append(f"daily_broadcast_sample_rate = ${idx}")
+        params.append(body.sampleRate)
         idx += 1
     if reschedule:
         # Время поменялось - сбрасываем next_fire_at, планировщик пересчитает его на следующем тике.

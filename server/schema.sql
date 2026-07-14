@@ -707,6 +707,13 @@ CREATE INDEX IF NOT EXISTS users_last_seen_idx
     ON users (last_seen_at DESC)
     WHERE last_seen_at IS NOT NULL;
 
+-- Кулдаун ежедневной ротации напоминалок (server/admin_broadcast.py::start_daily_rotation_broadcast)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_broadcast_sent_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS users_last_daily_broadcast_idx
+    ON users (last_daily_broadcast_sent_at)
+    WHERE last_daily_broadcast_sent_at IS NOT NULL;
+
 -- Регистрация и клиентские данные WebApp
 ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_client_ip TEXT;
@@ -815,6 +822,13 @@ ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS daily_broadcast_hour SMALLI
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS daily_broadcast_minute SMALLINT NOT NULL DEFAULT 0;
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS daily_broadcast_rotation_index SMALLINT NOT NULL DEFAULT 0;
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS daily_broadcast_next_fire_at TIMESTAMPTZ;
+-- Не всем сразу и не каждый день одному и тому же игроку: кулдаун + случайная выборка
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS daily_broadcast_cooldown_days SMALLINT NOT NULL DEFAULT 2;
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS daily_broadcast_sample_rate REAL NOT NULL DEFAULT 0.5;
+
+-- Помечает запуск как ежедневную ротацию, чтобы _execute_broadcast обновлял
+-- users.last_daily_broadcast_sent_at только для неё, а не для ручных рассылок админа.
+ALTER TABLE broadcast_runs ADD COLUMN IF NOT EXISTS is_daily_rotation BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Security / API errors (дублируют Telegram error topic)
 CREATE TABLE IF NOT EXISTS system_logs (

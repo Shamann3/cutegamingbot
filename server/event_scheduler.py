@@ -213,11 +213,13 @@ async def _fire_scheduled_broadcasts() -> None:
 
 # ---------------------------------------------------------------------------
 
-# Daily rotation broadcast - "напоминалки" из DAILY_ROTATION_TEMPLATES, одна
-# в день по кругу. Время (daily_broadcast_hour/minute) - в UTC, как всё
-# в этом модуле (datetime.now(_UTC)). Атомарный claim через WHERE ...
-# next_fire_at = <прочитанное значение> - тот же паттерн, что и у recurring
-# quests, безопасен при нескольких тиках/воркерах.
+# Daily rotation broadcast - раз в день, случайный шаблон из DAILY_ROTATION_TEMPLATES,
+# случайной части игроков (sampleRate), у которых не было этой рассылки последние
+# cooldown_days дней (cooldownDays) - не всем сразу и не каждый день одному и тому же.
+# Время (daily_broadcast_hour/minute) - в UTC, как всё в этом модуле
+# (datetime.now(_UTC)). Атомарный claim через WHERE next_fire_at = <прочитанное
+# значение> - тот же паттерн, что и у recurring quests, безопасен при нескольких
+# тиках/воркерах.
 
 # ---------------------------------------------------------------------------
 
@@ -233,12 +235,13 @@ def _next_daily_slot(now: datetime, hour: int, minute: int) -> datetime:
 async def _fire_daily_rotation_broadcast() -> None:
 
     from db import db
-    from admin_broadcast import start_daily_rotation_broadcast, DAILY_ROTATION_TEMPLATES
+    from admin_broadcast import start_daily_rotation_broadcast
 
     settings = await db.pool.fetchrow(
         """
         SELECT daily_broadcast_enabled, daily_broadcast_hour, daily_broadcast_minute,
-               daily_broadcast_rotation_index, daily_broadcast_next_fire_at
+               daily_broadcast_next_fire_at, daily_broadcast_cooldown_days,
+               daily_broadcast_sample_rate
         FROM system_settings WHERE id = 1
         """
     )
@@ -265,34 +268,34 @@ async def _fire_daily_rotation_broadcast() -> None:
     if next_fire_at > now:
         return
 
-    rotation_index = int(settings["daily_broadcast_rotation_index"] or 0)
-    template_count = len(DAILY_ROTATION_TEMPLATES)
-
     claimed = await db.pool.fetchrow(
         """
         UPDATE system_settings
-        SET daily_broadcast_rotation_index = (daily_broadcast_rotation_index + 1) % $2,
-            daily_broadcast_next_fire_at = $3
+        SET daily_broadcast_next_fire_at = $2
         WHERE id = 1 AND daily_broadcast_next_fire_at = $1
-        RETURNING daily_broadcast_rotation_index
+        RETURNING id
         """,
         next_fire_at,
-        template_count,
         _next_daily_slot(now, hour, minute),
     )
     if not claimed:
         return  # другой тик/воркер уже забрал этот запуск
 
+    cooldown_days = int(settings["daily_broadcast_cooldown_days"] or 2)
+    sample_rate = float(settings["daily_broadcast_sample_rate"] or 0.5)
+
     try:
-        result = await start_daily_rotation_broadcast(rotation_index)
+        result = await start_daily_rotation_broadcast(
+            cooldown_days=cooldown_days, sample_rate=sample_rate,
+        )
         logger.info(
-            "Daily rotation broadcast fired: index=%s run_id=%s recipients=%s",
-            rotation_index, result.get("runId"), result.get("recipientCount"),
+            "Daily rotation broadcast fired: run_id=%s recipients=%s",
+            result.get("runId"), result.get("recipientCount"),
         )
     except ValueError as e:
-        logger.warning("Daily rotation broadcast skipped (index=%s): %s", rotation_index, e)
+        logger.warning("Daily rotation broadcast skipped (nobody eligible today): %s", e)
     except Exception:
-        logger.exception("Daily rotation broadcast failed (index=%s)", rotation_index)
+        logger.exception("Daily rotation broadcast failed")
 
 
 

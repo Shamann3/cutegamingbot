@@ -6,6 +6,7 @@ import asyncio
 import html
 import json
 import logging
+import random
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -237,6 +238,14 @@ def _normalize_filter(filter_data: dict | None) -> dict[str, Any]:
         cleaned = sorted({int(uid) for uid in user_ids if int(uid) > 0})
         if cleaned:
             result["userIds"] = cleaned
+    if raw.get("cooldownDays") is not None:
+        days = int(raw["cooldownDays"])
+        if days > 0:
+            result["cooldownDays"] = days
+    if raw.get("sampleRate") is not None:
+        rate = float(raw["sampleRate"])
+        if 0 < rate < 1:
+            result["sampleRate"] = rate
     return result
 
 
@@ -292,6 +301,27 @@ def _build_recipient_sql(
     if filter_data.get("userIds"):
         conditions.append(f"u.user_id = ANY(${idx}::bigint[])")
         params.append(filter_data["userIds"])
+        idx += 1
+
+    if filter_data.get("cooldownDays") is not None:
+        conditions.append(
+            f"(u.last_daily_broadcast_sent_at IS NULL "
+            f"OR u.last_daily_broadcast_sent_at < NOW() - (${idx} * INTERVAL '1 day'))"
+        )
+        params.append(int(filter_data["cooldownDays"]))
+        idx += 1
+
+    if filter_data.get("sampleRate") is not None:
+        # ВАЖНО: не random() - он пересчитывался бы на каждой отдельной странице
+        # LIMIT/OFFSET-пагинации (fetch_recipients вызывается по кругу несколькими
+        # отдельными запросами) и тасовал бы состав между страницами, теряя/дублируя
+        # юзеров. Вместо этого - детерминированный хэш от user_id + сегодняшней даты:
+        # стабилен для всех страниц ОДНОГО запуска, но меняется день ото дня.
+        threshold = max(1, min(999, round(float(filter_data["sampleRate"]) * 1000)))
+        conditions.append(
+            f"(abs(hashtext(u.user_id::text || to_char(CURRENT_DATE, 'YYYY-MM-DD'))) % 1000) < ${idx}"
+        )
+        params.append(threshold)
         idx += 1
 
     where = " AND ".join(conditions)
@@ -809,7 +839,7 @@ async def _execute_broadcast(run_id: int) -> None:
         """
         SELECT
             id, audience, filter_json, channels_json,
-            title, body, detail, telegram_text, cta_text, cta_url
+            title, body, detail, telegram_text, cta_text, cta_url, is_daily_rotation
         FROM broadcast_runs
         WHERE id = $1
         """,
@@ -832,6 +862,7 @@ async def _execute_broadcast(run_id: int) -> None:
     telegram_tpl = row["telegram_text"] or ""
     cta_text = row["cta_text"] or None
     cta_url = row["cta_url"] or None
+    is_daily_rotation = bool(row["is_daily_rotation"])
 
     await _update_run(run_id, status="running")
 
@@ -858,6 +889,7 @@ async def _execute_broadcast(run_id: int) -> None:
 
             # Batch WebApp notifications to reduce DB round-trips.
             webapp_batch: list[tuple[int, str, str, str]] = []
+            cooldown_batch: list[int] = []
 
             for user in page:
                 if await _is_cancelled(run_id):
@@ -903,6 +935,14 @@ async def _execute_broadcast(run_id: int) -> None:
                             cta_text=cta_text, cta_url=cta_url,
                         )
                         telegram_sent += 1
+                        if is_daily_rotation:
+                            cooldown_batch.append(user_id)
+                            if len(cooldown_batch) >= WEBAPP_NOTIFY_BATCH_SIZE:
+                                await db.pool.execute(
+                                    "UPDATE users SET last_daily_broadcast_sent_at = NOW() WHERE user_id = ANY($1::bigint[])",
+                                    cooldown_batch,
+                                )
+                                cooldown_batch.clear()
                         await asyncio.sleep(TELEGRAM_SEND_DELAY)
                     except Exception:
                         telegram_failed += 1
@@ -922,6 +962,13 @@ async def _execute_broadcast(run_id: int) -> None:
                     db.pool, webapp_batch
                 )
                 webapp_batch.clear()
+
+            if cooldown_batch:
+                await db.pool.execute(
+                    "UPDATE users SET last_daily_broadcast_sent_at = NOW() WHERE user_id = ANY($1::bigint[])",
+                    cooldown_batch,
+                )
+                cooldown_batch.clear()
 
             offset += RECIPIENT_PAGE_SIZE
             if len(page) < RECIPIENT_PAGE_SIZE:
@@ -976,6 +1023,7 @@ async def start_broadcast(
     admin_user_id: int,
     cta_text: str | None = None,
     cta_url: str | None = None,
+    is_daily_rotation: bool = False,
 ) -> dict:
     audience_norm = (audience or "all").strip().lower()
     if audience_norm not in ("all", "online", "filtered"):
@@ -1011,9 +1059,9 @@ async def start_broadcast(
             admin_user_id, audience, filter_json, channels_json,
             title, body, detail, telegram_text, template_key,
             recipient_count, status, scheduled_at, label,
-            cta_text, cta_url
+            cta_text, cta_url, is_daily_rotation
         )
-        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         RETURNING id
         """,
         admin_user_id,
@@ -1031,6 +1079,7 @@ async def start_broadcast(
         label_clean,
         cta_text_clean,
         cta_url_clean,
+        is_daily_rotation,
     )
     run_id = int(row["id"])
 
@@ -1049,24 +1098,33 @@ async def start_broadcast(
 DAILY_BROADCAST_SYSTEM_ACTOR_ID = 0  # sentinel admin_user_id для авто-рассылок, не реальный юзер
 
 
-async def start_daily_rotation_broadcast(rotation_index: int) -> dict:
-    """Запускает один из DAILY_ROTATION_TEMPLATES по индексу (с переносом по модулю).
-    Вызывается только из event_scheduler._fire_daily_rotation_broadcast."""
-    template = DAILY_ROTATION_TEMPLATES[rotation_index % len(DAILY_ROTATION_TEMPLATES)]
-    filter_data = {"minBalance": template["min_balance"]} if template["min_balance"] else None
-    audience = "filtered" if filter_data else "all"
+async def start_daily_rotation_broadcast(*, cooldown_days: int, sample_rate: float) -> dict:
+    """Запускает случайный шаблон из DAILY_ROTATION_TEMPLATES для случайной части
+    игроков, которым не слали ежедневную рассылку последние cooldown_days дней.
+    Не всем сразу и не каждый день одному и тому же - см. cooldownDays/sampleRate
+    в _build_recipient_sql. Вызывается только из
+    event_scheduler._fire_daily_rotation_broadcast."""
+    template = random.choice(DAILY_ROTATION_TEMPLATES)
+
+    filter_data: dict[str, Any] = {
+        "cooldownDays": cooldown_days,
+        "sampleRate": sample_rate,
+    }
+    if template["min_balance"]:
+        filter_data["minBalance"] = template["min_balance"]
 
     return await start_broadcast(
-        audience=audience,
+        audience="filtered",
         filter_data=filter_data,
         channels={"webapp": False, "telegram": True},
         title=template["label"],
         telegram_text=template["text"],
-        template_key=f"daily_rotation:{rotation_index % len(DAILY_ROTATION_TEMPLATES)}",
+        template_key=f"daily_rotation:{template['label']}",
         label=template["label"],
         admin_user_id=DAILY_BROADCAST_SYSTEM_ACTOR_ID,
         cta_text=DAILY_BROADCAST_CTA_TEXT,
         cta_url=daily_broadcast_cta_url(),
+        is_daily_rotation=True,
     )
 
 
