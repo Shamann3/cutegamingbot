@@ -10,7 +10,13 @@ import unicodedata
 import urllib.parse
 from datetime import datetime, date, time
 from telethon import functions, types
-from telethon.errors import RPCError, FloodWaitError
+from telethon.errors import (
+    RPCError,
+    FloodWaitError,
+    SessionPasswordNeededError,
+    PhoneCodeInvalidError,
+    PhoneCodeExpiredError,
+)
 from telethon import functions as tl_functions
 from telethon import types as tl_types
 from telethon.sessions import StringSession
@@ -478,10 +484,148 @@ WELCOME_BACK_MIN_AMOUNT = 10
 WELCOME_BACK_MAX_AMOUNT = 5000
 MAX_WELCOME_BACK_GIFTS = 3
 
+# ----- ECONOMY PRESSURE (GROUPS + CREATORS) -----
+# Глобальный триггер: если сумма всех групп выше софт-капа, Jericho плавно ужесточает выдачу.
+JERICHO_GROUPS_TOTAL_SOFT_CAP = 10000
+# Порог «горячей» группы для расчёта излишка по создателям.
+JERICHO_GROUP_EXCESS_THRESHOLD = 3000
+# Кэш и сглаживание, чтобы решения не дёргались каждый раунд.
+JERICHO_PRESSURE_CACHE_TTL_SEC = 45.0
+JERICHO_PRESSURE_EMA_ALPHA = 0.35
+# Веса влияния на пользователя.
+JERICHO_GLOBAL_PRESSURE_GAIN = 0.35
+JERICHO_CREATOR_PRESSURE_GAIN = 0.25
+JERICHO_MAX_CREATOR_PRESSURE = 0.12
+# Как сильно давление режет «победные» сценарии.
+JERICHO_DEMO_PRESSURE_WIN_REDUCE = 0.22
+JERICHO_ZERODEMO_PRESSURE_WIN_REDUCE = 0.55
+JERICHO_ZERODEMO_PRESSURE_BREAK_GAIN = 0.30
+# Границы вероятностей для естественности.
+JERICHO_DEMO_WIN_PROB_MIN = 0.28
+JERICHO_DEMO_WIN_PROB_MAX = 0.93
+JERICHO_ZERODEMO_FAIR_MIN = 0.005
+JERICHO_ZERODEMO_MASK_WIN_MIN = 0.015
+# Целевые winrate и окно мониторинга (легко менять без правки логики).
+JERICHO_TARGET_DEMO_WINRATE = 0.62
+JERICHO_TARGET_0DEMO_WINRATE = 0.10
+JERICHO_METRICS_SAMPLE_SIZE = 5000
+# Отладка Jericho.
+JERICHO_DEBUG_ENABLED = False
+JERICHO_DEBUG_PRINT_FULL_TRACE = False
+
+_jericho_pressure_cache = {
+    "expires_at": 0.0,
+    "initialized": False,
+    "ema_global_pressure": 0.0,
+    "snapshot": {
+        "groups_total": 0,
+        "total_excess": 0,
+        "hot_groups": 0,
+        "creator_excess_map": {},
+        "creator_hot_groups_map": {},
+        "global_pressure": 0.0,
+    },
+}
+
 
 # ==============================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ==============================================================
+
+def _clamp_float(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
+    return max(lo, min(hi, float(value)))
+
+
+def _jericho_debug(stage: str, msg: str) -> None:
+    if not JERICHO_DEBUG_ENABLED:
+        return
+    try:
+        print(f"[JERICHO][{stage}] {msg}", flush=True)
+    except Exception:
+        pass
+
+
+async def _get_jericho_economy_pressure_snapshot() -> dict:
+    """
+    Кэшированная сводка давления экономики:
+    - groups_total: сумма балансов всех групп
+    - total_excess: суммарный избыток групп выше порога
+    - global_pressure: сглаженное давление 0..1
+    """
+    now_mono = time.monotonic()
+    try:
+        if now_mono < float(_jericho_pressure_cache.get("expires_at", 0.0)):
+            cached = _jericho_pressure_cache.get("snapshot")
+            if isinstance(cached, dict):
+                return cached
+
+        raw = await db.get_group_economy_pressure_snapshot(JERICHO_GROUP_EXCESS_THRESHOLD)
+        groups_total = int(raw.get("groups_total", 0) or 0)
+        total_excess = int(raw.get("total_excess", 0) or 0)
+        hot_groups = int(raw.get("hot_groups", 0) or 0)
+        creator_excess_map = raw.get("creator_excess_map") or {}
+        creator_hot_groups_map = raw.get("creator_hot_groups_map") or {}
+
+        raw_global_pressure = 0.0
+        if groups_total > JERICHO_GROUPS_TOTAL_SOFT_CAP:
+            raw_global_pressure = (groups_total - JERICHO_GROUPS_TOTAL_SOFT_CAP) / max(1, JERICHO_GROUPS_TOTAL_SOFT_CAP)
+        raw_global_pressure = _clamp_float(raw_global_pressure, 0.0, 1.0)
+
+        prev_ema = float(_jericho_pressure_cache.get("ema_global_pressure", 0.0) or 0.0)
+        initialized = bool(_jericho_pressure_cache.get("initialized"))
+        if initialized:
+            ema_global = prev_ema * (1.0 - JERICHO_PRESSURE_EMA_ALPHA) + raw_global_pressure * JERICHO_PRESSURE_EMA_ALPHA
+        else:
+            ema_global = raw_global_pressure
+        ema_global = _clamp_float(ema_global, 0.0, 1.0)
+
+        snapshot = {
+            "groups_total": groups_total,
+            "total_excess": total_excess,
+            "hot_groups": hot_groups,
+            "creator_excess_map": creator_excess_map,
+            "creator_hot_groups_map": creator_hot_groups_map,
+            "global_pressure": ema_global,
+            "raw_global_pressure": raw_global_pressure,
+        }
+
+        _jericho_pressure_cache["initialized"] = True
+        _jericho_pressure_cache["ema_global_pressure"] = ema_global
+        _jericho_pressure_cache["snapshot"] = snapshot
+        _jericho_pressure_cache["expires_at"] = now_mono + JERICHO_PRESSURE_CACHE_TTL_SEC
+        return snapshot
+    except Exception as e:
+        print(f"[JERICHO] Ошибка pressure snapshot: {e}")
+        fallback = _jericho_pressure_cache.get("snapshot")
+        return fallback if isinstance(fallback, dict) else {
+            "groups_total": 0,
+            "total_excess": 0,
+            "hot_groups": 0,
+            "creator_excess_map": {},
+            "creator_hot_groups_map": {},
+            "global_pressure": 0.0,
+            "raw_global_pressure": 0.0,
+        }
+
+
+def _get_creator_pressure_for_user(snapshot: dict, user_id: int) -> float:
+    try:
+        total_excess = int(snapshot.get("total_excess", 0) or 0)
+        if total_excess <= 0:
+            return 0.0
+
+        creator_excess_map = snapshot.get("creator_excess_map") or {}
+        creator_excess = int(creator_excess_map.get(user_id, creator_excess_map.get(str(user_id), 0)) or 0)
+        if creator_excess <= 0:
+            return 0.0
+
+        creator_share = creator_excess / max(1, total_excess)
+        global_pressure = float(snapshot.get("global_pressure", 0.0) or 0.0)
+        pressure = global_pressure * creator_share * JERICHO_CREATOR_PRESSURE_GAIN
+        return _clamp_float(pressure, 0.0, JERICHO_MAX_CREATOR_PRESSURE)
+    except Exception:
+        return 0.0
+
 
 async def _fetch_recent_actions(user_id: int, limit: int = 15) -> list:
     loss_patterns = ["- " + c for c in LOSS_CAUSES]
@@ -603,6 +747,31 @@ async def jericho_check(user_id: int, bet_amount: int, game_name: str = "",
         balance        = int(await db.get_user_balance(user_id) or 0)
         debug.append(f"0demo={current_0demo} demo={current_demo} серия_0demo={consecutive} баланс={balance}")
 
+        economy_snapshot = await _get_jericho_economy_pressure_snapshot()
+        global_pressure = _clamp_float(float(economy_snapshot.get("global_pressure", 0.0) or 0.0), 0.0, 1.0)
+        creator_pressure = _get_creator_pressure_for_user(economy_snapshot, user_id)
+        system_pressure = _clamp_float(
+            global_pressure * JERICHO_GLOBAL_PRESSURE_GAIN + creator_pressure,
+            0.0,
+            0.35,
+        )
+        debug.append(
+            f"pressure: global={global_pressure:.3f} creator={creator_pressure:.3f} "
+            f"system={system_pressure:.3f} groups_total={int(economy_snapshot.get('groups_total', 0) or 0)} "
+            f"hot_groups={int(economy_snapshot.get('hot_groups', 0) or 0)}"
+        )
+
+        def _finish(action: str, trap: bool, reason: str) -> dict:
+            payload = {"action": action, "trap": trap, "reason": reason, "debug": "\n".join(debug)}
+            _jericho_debug(
+                "DECISION",
+                f"user={user_id} game={game_name or '-'} bet={bet_amount} action={action} reason={reason} "
+                f"pressure={system_pressure:.3f} demo={current_demo} zero={current_0demo} streak0={consecutive}",
+            )
+            if JERICHO_DEBUG_PRINT_FULL_TRACE:
+                _jericho_debug("TRACE", payload["debug"])
+            return payload
+
         is_newbie_protected = False
         try:
             newbie_expires = await db.get_newbie_expires_at(user_id)
@@ -620,7 +789,7 @@ async def jericho_check(user_id: int, bet_amount: int, game_name: str = "",
         no_0demo = is_newbie_protected
 
         if mode == "+":
-            return {"action": "normal", "trap": False, "reason": "debt_forced_legacy", "debug": "\n".join(debug)}
+            return _finish("normal", False, "debt_forced_legacy")
 
         # Подарок новичку при полном нуле
         if is_newbie_protected and balance == 0 and current_demo == 0 and current_0demo == 0:
@@ -636,18 +805,18 @@ async def jericho_check(user_id: int, bet_amount: int, game_name: str = "",
         # Начальная проверка
         if initial_check:
             if current_demo > 0:
-                return {"action": "force_win", "trap": False, "reason": "demo", "debug": "\n".join(debug)}
+                return _finish("force_win", False, "demo")
             if current_0demo > 0:
                 await db.set_consecutive_0demo(user_id, consecutive + 1)
-                return {"action": "force_loss", "trap": False, "reason": "0demo", "debug": "\n".join(debug)}
-            return {"action": "normal", "trap": False, "reason": "fair", "debug": "\n".join(debug)}
+                return _finish("force_loss", False, "0demo")
+            return _finish("normal", False, "fair")
 
         # Активация 0demo при долге
         if current_demo == 0 and current_0demo == 0:
             debt = int(await db.get_newbie_total_demo_given(user_id) or 0)
             if debt > 0 and not is_newbie_protected:
                 await _modify_0demo(user_id, bet_amount, debug)
-                return {"action": "force_loss", "trap": True, "reason": "debt_recovery", "debug": "\n".join(debug)}
+                return _finish("force_loss", True, "debt_recovery")
 
         # ===================================================================
         # 2. РЕЖИМ DEMO – УМНЫЕ ВЫИГРЫШИ С УКЛОНОМ НА МАЛЕНЬКИЕ СТАВКИ
@@ -663,7 +832,7 @@ async def jericho_check(user_id: int, bet_amount: int, game_name: str = "",
                     if act["is_loss"]: break
                     win_streak += 1
                 if win_streak >= DEMO_WIN_STREAK_BREAK:
-                    return {"action": "force_loss", "trap": False, "reason": "demo_streak_break", "debug": "\n".join(debug)}
+                    return _finish("force_loss", False, "demo_streak_break")
 
             # Вычисляем среднюю ставку
             avg_bet = None
@@ -699,45 +868,66 @@ async def jericho_check(user_id: int, bet_amount: int, game_name: str = "",
 
             # Добавляем случайный джиттер, чтобы размыть паттерн
             win_prob = base_win_prob + random.uniform(-DEMO_PROB_JITTER, DEMO_PROB_JITTER)
-            win_prob = max(0.05, min(0.95, win_prob))  # ограничиваем экстремумы
+            # При перегреве экономики мягко снижаем шанс победы в demo, но не ломаем естественность.
+            pressure_penalty = system_pressure * JERICHO_DEMO_PRESSURE_WIN_REDUCE
+            if pressure_penalty > 0:
+                win_prob -= pressure_penalty
+                debug.append(f"Demo pressure_penalty={pressure_penalty:.3f}")
+            win_prob = _clamp_float(win_prob, JERICHO_DEMO_WIN_PROB_MIN, JERICHO_DEMO_WIN_PROB_MAX)
             debug.append(f"Итоговая win_prob={win_prob:.2f}")
 
             # Принимаем решение
             if random.random() < win_prob:
-                return {"action": "force_win", "trap": False, "reason": "demo", "debug": "\n".join(debug)}
+                return _finish("force_win", False, "demo")
             else:
-                return {"action": "force_loss", "trap": False, "reason": "demo_loss", "debug": "\n".join(debug)}
+                return _finish("force_loss", False, "demo_loss")
 
         # ===================================================================
         # 3. РЕЖИМ 0DEMO – ХИТРАЯ МАСКИРОВКА С РЕДКИМИ ВЫИГРЫШАМИ
         # ===================================================================
         if current_0demo > 0:
+            fair_chance = max(
+                JERICHO_ZERODEMO_FAIR_MIN,
+                ZERODEMO_FAIR_CHANCE * (1.0 - system_pressure * JERICHO_ZERODEMO_PRESSURE_WIN_REDUCE),
+            )
+            masked_win_chance = max(
+                JERICHO_ZERODEMO_MASK_WIN_MIN,
+                ZERODEMO_WIN_CHANCE * (1.0 - system_pressure * JERICHO_ZERODEMO_PRESSURE_WIN_REDUCE),
+            )
+            debug.append(
+                f"0demo chances: fair={fair_chance:.3f} masked_win={masked_win_chance:.3f}"
+            )
+
             if game_name in NEAR_MISS_GAMES and random.random() < NEAR_MISS_PROB:
                 await db.set_consecutive_0demo(user_id, consecutive + 1)
-                return {"action": "near_miss", "trap": False, "reason": "0demo_near_miss", "debug": "\n".join(debug)}
+                return _finish("near_miss", False, "0demo_near_miss")
 
-            if random.random() < ZERODEMO_FAIR_CHANCE:
-                return {"action": "normal", "trap": False, "reason": "0demo_fair", "debug": "\n".join(debug)}
+            if random.random() < fair_chance:
+                return _finish("normal", False, "0demo_fair")
 
-            if random.random() < ZERODEMO_WIN_CHANCE:
+            if random.random() < masked_win_chance:
                 penalty = int(bet_amount * ZERODEMO_WIN_COST_MULTIPLIER)
                 await _modify_0demo(user_id, -penalty, debug)
                 debug.append(f"Скрытый штраф 0demo: -{penalty}")
                 await db.set_consecutive_0demo(user_id, 0)
-                return {"action": "force_win", "trap": False, "reason": "0demo_masked_win", "debug": "\n".join(debug)}
+                return _finish("force_win", False, "0demo_masked_win")
 
             base_break = 0.0
             if consecutive >= BREAK_SERIES_START:
                 base_break = (consecutive - BREAK_SERIES_START + 1) * BREAK_SERIES_STEP
             small_boost = max(0, 1 - bet_amount / BREAK_SMALL_BET_LIMIT) * BREAK_SMALL_BET_BOOST
-            total_break = min(base_break + small_boost, BREAK_MAX_CHANCE) * random.uniform(0.7, 1.3)
+            break_raw = min(base_break + small_boost, BREAK_MAX_CHANCE)
+            break_raw *= (1.0 + system_pressure * JERICHO_ZERODEMO_PRESSURE_BREAK_GAIN)
+            break_raw = min(break_raw, BREAK_MAX_CHANCE)
+            total_break = _clamp_float(break_raw * random.uniform(0.7, 1.3), 0.0, BREAK_MAX_CHANCE)
+            debug.append(f"0demo break_chance={total_break:.3f}")
 
             if random.random() < total_break:
                 await db.set_consecutive_0demo(user_id, 0)
-                return {"action": "force_loss", "trap": False, "reason": "0demo_fake_break", "debug": "\n".join(debug)}
+                return _finish("force_loss", False, "0demo_fake_break")
 
             await db.set_consecutive_0demo(user_id, consecutive + 1)
-            return {"action": "force_loss", "trap": False, "reason": "0demo", "debug": "\n".join(debug)}
+            return _finish("force_loss", False, "0demo")
 
         # ===================================================================
         # 4. Скрытый возврат долга
@@ -747,10 +937,26 @@ async def jericho_check(user_id: int, bet_amount: int, game_name: str = "",
             if random.random() < DEBT_RECOVERY_CHANCE * DEBT_RECOVERY_BOOST:
                 await _modify_0demo(user_id, bet_amount, debug)
                 await _reduce_debt(user_id, bet_amount)
-                return {"action": "force_loss", "trap": True, "reason": "debt_recovery", "debug": "\n".join(debug)}
+                return _finish("force_loss", True, "debt_recovery")
 
         # ===================================================================
-        # 5. Балансировка прибыли / убытков
+        # 5. Глобальная мягкая зачистка при перегреве экономики
+        # ===================================================================
+        if not no_0demo and system_pressure > 0:
+            economy_trap_prob = _clamp_float(system_pressure * 0.75, 0.0, 0.22)
+            if random.random() < economy_trap_prob:
+                base_multiplier = 0.25 + system_pressure * 0.65
+                creator_multiplier = 1.0 + creator_pressure * 3.0
+                trap_amount = max(1, int(bet_amount * base_multiplier * creator_multiplier))
+                await _modify_0demo(user_id, trap_amount, debug)
+                await db.set_consecutive_0demo(user_id, consecutive + 1)
+                debug.append(
+                    f"economy_pressure trigger: prob={economy_trap_prob:.3f} trap_amount={trap_amount}"
+                )
+                return _finish("force_loss", True, "economy_pressure")
+
+        # ===================================================================
+        # 6. Балансировка прибыли / убытков
         # ===================================================================
         try:
             profit = await db.get_profit_last_n(user_id, PROFIT_WINDOW)
@@ -759,16 +965,16 @@ async def jericho_check(user_id: int, bet_amount: int, game_name: str = "",
                 if extra > 0:
                     await _modify_0demo(user_id, extra, debug)
                     await db.set_consecutive_0demo(user_id, consecutive + 1)
-                    return {"action": "force_loss", "trap": False, "reason": "profit_0demo", "debug": "\n".join(debug)}
+                    return _finish("force_loss", False, "profit_0demo")
             elif profit < PROFIT_DEMO_THRESHOLD:
                 extra = int((PROFIT_DEMO_THRESHOLD - profit) * PROFIT_ADJUST_RATIO)
                 if extra > 0:
                     await db.add_demo_amount(user_id, extra)
-                    return {"action": "force_win", "trap": False, "reason": "profit_demo", "debug": "\n".join(debug)}
+                    return _finish("force_win", False, "profit_demo")
         except: pass
 
         # ===================================================================
-        # 6. Тактические детекторы (агрессия, мартингейл)
+        # 7. Тактические детекторы (агрессия, мартингейл)
         # ===================================================================
         recent = await _fetch_recent_actions(user_id, 15)
         if recent:
@@ -776,26 +982,27 @@ async def jericho_check(user_id: int, bet_amount: int, game_name: str = "",
             if agg > 0 and random.random() < agg:
                 if not no_0demo:
                     if random.random() < AGGRESSION_FAIR_CHANCE:
-                        return {"action": "normal", "trap": False, "reason": "aggression_fair", "debug": "\n".join(debug)}
+                        return _finish("normal", False, "aggression_fair")
                     trap_amount = int(bet_amount * random.uniform(AGGRESSION_TRAP_PERCENT_MIN, AGGRESSION_TRAP_PERCENT_MAX))
                     if trap_amount > 0:
                         await _modify_0demo(user_id, trap_amount, debug)
-                        return {"action": "force_loss", "trap": True, "reason": "aggressive_bet", "debug": "\n".join(debug)}
+                        return _finish("force_loss", True, "aggressive_bet")
             sus = _evaluate_martingale(recent)
             if sus > MARTINGALE_TRAP_CHANCE_MIN and random.random() < sus:
                 if not no_0demo:
                     if random.random() < MARTINGALE_FAIR_CHANCE:
-                        return {"action": "normal", "trap": False, "reason": "martingale_fair", "debug": "\n".join(debug)}
+                        return _finish("normal", False, "martingale_fair")
                     await _modify_0demo(user_id, bet_amount, debug)
                     await db.set_consecutive_0demo(user_id, consecutive + 1)
-                    return {"action": "force_loss", "trap": True, "reason": "martingale_trap", "debug": "\n".join(debug)}
+                    return _finish("force_loss", True, "martingale_trap")
 
         if consecutive > 0:
             await db.set_consecutive_0demo(user_id, 0)
-        return {"action": "normal", "trap": False, "reason": "fair", "debug": "\n".join(debug)}
+        return _finish("normal", False, "fair")
 
     except Exception as e:
         debug.append(f"!!! КРИТИЧЕСКИЙ СБОЙ JERICHO: {e}\n{traceback.format_exc()}")
+        _jericho_debug("ERROR", f"user={user_id} game={game_name or '-'} err={e}")
         return {"action": "normal", "trap": False, "reason": "error", "debug": "\n".join(debug)}
 
 
@@ -7215,7 +7422,13 @@ from typing import Dict, Any, Optional, Tuple, List
 
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.errors import RPCError, FloodWaitError
+from telethon.errors import (
+    RPCError,
+    FloodWaitError,
+    SessionPasswordNeededError,
+    PhoneCodeInvalidError,
+    PhoneCodeExpiredError,
+)
 from telethon.tl import functions as tl_functions
 from telethon.tl import types as tl_types
 
@@ -7351,6 +7564,21 @@ def _cleanup_admin_withdraw_actions() -> None:
             if status in {"done", "completed", "rejected", "refunded", "cancelled", "failed"}:
                 if age_from_update > ADMIN_ACTION_DONE_TTL:
                     to_delete.append(token)
+                continue
+
+            # processing может зависнуть при редкой аварии.
+            # В таком случае возвращаем токен в pending, чтобы кнопка снова работала.
+            if status == "processing":
+                if age_from_update > 20:
+                    payload["status"] = "pending"
+                    payload["updated_at"] = now
+                    payload["pressed_at"] = 0
+                    payload["pressed_by"] = 0
+                    ADMIN_WITHDRAW_ACTIONS[token] = payload
+                    print(
+                        f"[WITHDRAW][REGISTRY] recover token={token!r} "
+                        f"status='processing' -> 'pending'"
+                    )
                 continue
 
             # неизвестные статусы - аварийная чистка
@@ -7557,6 +7785,7 @@ def _pop_send_request_action(token: str) -> Optional[Dict[str, Any]]:
 # =========================================================
 
 _WITHDRAW_USERBOT_CLIENT = None
+_withdraw_request_locks: Dict[str, asyncio.Lock] = {}
 
 # Флаг готовности юзербота для выводов. False = выводы отключены,
 # пока кто-то вручную не переавторизует сессию (см. reauth_withdraw_userbot.py)
@@ -7567,6 +7796,175 @@ WITHDRAW_USERBOT_READY: bool = False
 # вывода, пока юзербот отключён.
 _WD_UNAUTH_ALERT_LAST_TS: float = 0.0
 _WD_UNAUTH_ALERT_COOLDOWN_SEC: float = 600.0  # раз в 10 минут
+# Защита от одновременных интерактивных логинов (несколько запросов вывода сразу).
+_WITHDRAW_INTERACTIVE_LOGIN_LOCK = asyncio.Lock()
+
+
+def _withdraw_interactive_login_allowed() -> bool:
+    """Можно ли безопасно запрашивать код логина в текущей консоли."""
+    if not ALLOW_INTERACTIVE_LOGIN:
+        return False
+
+    env_flag = _wd_safe_str(os.getenv("TG_WITHDRAW_INTERACTIVE_LOGIN"), "").lower()
+    if env_flag in {"1", "true", "yes", "on"}:
+        return True
+    if env_flag in {"0", "false", "no", "off"}:
+        return False
+
+    try:
+        stdin_is_tty = bool(getattr(sys.stdin, "isatty", lambda: False)())
+        # stdout может быть пайпом логгера (run-with-log.ps1), но интерактивный
+        # ввод всё равно возможен, если stdin подключён к консоли.
+        return stdin_is_tty
+    except Exception:
+        return False
+
+
+async def _try_interactive_withdraw_login(tg_client, reason: str = "") -> bool:
+    """Пробует интерактивный логин выводного юзербота (код/2FA) в локальной консоли."""
+    if not _withdraw_interactive_login_allowed():
+        print(
+            "🟨[WITHDRAW][LOGIN] interactive login disabled for this runtime "
+            "(no TTY or config off)."
+        )
+        print("👉 Можно принудительно включить: TG_WITHDRAW_INTERACTIVE_LOGIN=1")
+        return False
+
+    try:
+        if not tg_client.is_connected():
+            await tg_client.connect()
+    except Exception as e:
+        print(f"🟥[WITHDRAW][LOGIN] connect before interactive login failed: {e!r}")
+        return False
+
+    def _read_console_line(label: str, secret: bool = False) -> str:
+        print(label, flush=True)
+        try:
+            if secret:
+                import getpass
+                return (getpass.getpass("") or "").strip()
+            return (input() or "").strip()
+        except EOFError:
+            return ""
+        except Exception:
+            return ""
+
+    async with _WITHDRAW_INTERACTIVE_LOGIN_LOCK:
+        try:
+            print(
+                "🟨[WITHDRAW][LOGIN] Требуется авторизация юзербота для выводов."
+                f" reason={reason or 'manual'}"
+            )
+            print("👉 Введи код из Telegram в эту консоль (и 2FA-пароль, если включён).")
+
+            if await tg_client.is_user_authorized():
+                print("🟩[WITHDRAW][LOGIN] already authorized")
+                return True
+
+            async def _send_code_with_retry() -> str:
+                phone_code_hash_local = ""
+                for send_try in range(1, 5):
+                    try:
+                        send_code_result = await tg_client.send_code_request(TECH_PHONE)
+                        phone_code_hash_local = _wd_safe_str(
+                            getattr(send_code_result, "phone_code_hash", ""),
+                            "",
+                        )
+                        if phone_code_hash_local:
+                            return phone_code_hash_local
+                        print("🟨[WITHDRAW][LOGIN] send_code returned empty phone_code_hash")
+                    except Exception as e:
+                        err_name = type(e).__name__
+                        if err_name == "AuthRestartError":
+                            delay = min(6, 1 + send_try)
+                            print(
+                                f"🟨[WITHDRAW][LOGIN] AuthRestartError on send_code "
+                                f"(try {send_try}/4), retry in {delay}s..."
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+                        if err_name == "FloodWaitError":
+                            delay = int(getattr(e, "seconds", 2) or 2) + 1
+                            print(
+                                f"🟨[WITHDRAW][LOGIN] FloodWait on send_code "
+                                f"(try {send_try}/4), sleep {delay}s..."
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+                        print(f"🟥[WITHDRAW][LOGIN] send_code failed: {e!r}")
+                        return ""
+                return phone_code_hash_local
+
+            phone_code_hash = await _send_code_with_retry()
+            if not phone_code_hash:
+                print("🟥[WITHDRAW][LOGIN] failed to get phone_code_hash after retries")
+                return False
+
+            sign_in_done = False
+            for attempt in range(1, 4):
+                code = await asyncio.to_thread(
+                    _read_console_line,
+                    f"🔑 Введи код из Telegram для {TECH_PHONE} (попытка {attempt}/3):",
+                    False,
+                )
+                if not code:
+                    print("🟨[WITHDRAW][LOGIN] code is empty")
+                    continue
+
+                try:
+                    await tg_client.sign_in(
+                        phone=TECH_PHONE,
+                        code=code,
+                        phone_code_hash=phone_code_hash,
+                    )
+                    sign_in_done = True
+                    break
+                except SessionPasswordNeededError:
+                    password_ok = False
+                    for pass_try in range(1, 4):
+                        password = await asyncio.to_thread(
+                            _read_console_line,
+                            f"🔐 Введи пароль 2FA (попытка {pass_try}/3):",
+                            True,
+                        )
+                        if not password:
+                            print("🟨[WITHDRAW][LOGIN] 2FA password is empty")
+                            continue
+                        try:
+                            await tg_client.sign_in(password=password)
+                            password_ok = True
+                            break
+                        except Exception as pe:
+                            pe_name = type(pe).__name__
+                            if pe_name == "PasswordHashInvalidError":
+                                print("🟨[WITHDRAW][LOGIN] неверный пароль 2FA")
+                                continue
+                            print(f"🟥[WITHDRAW][LOGIN] 2FA sign_in failed: {pe!r}")
+                            break
+                    if password_ok:
+                        sign_in_done = True
+                        break
+                except PhoneCodeInvalidError:
+                    print("🟨[WITHDRAW][LOGIN] неверный код, попробуй ещё раз")
+                except PhoneCodeExpiredError:
+                    print("🟨[WITHDRAW][LOGIN] код устарел, отправляю новый...")
+                    phone_code_hash = await _send_code_with_retry()
+                    if not phone_code_hash:
+                        print("🟥[WITHDRAW][LOGIN] failed to refresh phone_code_hash")
+                        return False
+                except Exception as e:
+                    print(f"🟨[WITHDRAW][LOGIN] sign_in attempt {attempt} failed: {e!r}")
+
+            if not sign_in_done:
+                print("🟥[WITHDRAW][LOGIN] sign_in not completed")
+                return False
+
+            is_auth = await tg_client.is_user_authorized()
+            print(f"🧪[WITHDRAW][LOGIN] interactive result is_user_authorized={is_auth}")
+            return bool(is_auth)
+        except Exception as e:
+            print(f"🟥[WITHDRAW][LOGIN] interactive login failed: {e!r}")
+            return False
 
 
 async def _wd_alert_userbot_unauthorized(reason: str = "") -> None:
@@ -7582,6 +7980,16 @@ async def _wd_alert_userbot_unauthorized(reason: str = "") -> None:
         return
     _WD_UNAUTH_ALERT_LAST_TS = now
 
+    interactive_allowed = _withdraw_interactive_login_allowed()
+
+    interactive_hint = (
+        "⚠️ Интерактивная авторизация доступна только в локальной консоли. "
+        "Можно перезапустить проект локально и ввести код входа/2FA прямо в терминале."
+        if interactive_allowed
+        else "⚠️ Автоматический интерактивный вход на сервере отключён "
+             "(нет доступа к консоли/SSH), поэтому переавторизация ТОЛЬКО вручную локально."
+    )
+
     text = (
         "🟥 <b>Юзербот для выводов НЕ авторизован</b>\n\n"
         "Все выводы (подарки/звёзды) сейчас недоступны пользователям.\n\n"
@@ -7592,8 +8000,7 @@ async def _wd_alert_userbot_unauthorized(reason: str = "") -> None:
         "2. Переименуй новый файл сессии поверх старого "
         "(<code>withdraw_userbot_session.session</code>).\n"
         "3. Закоммить и запушь файл сессии, задеплой заново.\n\n"
-        "⚠️ Автоматический интерактивный вход на сервере отключён "
-        "(нет доступа к консоли/SSH), поэтому переавторизация ТОЛЬКО вручную локально."
+        f"{interactive_hint}"
     )
 
     for admin_id in ADMIN_IDS:
@@ -7610,6 +8017,11 @@ def set_withdraw_userbot_client(tg_client) -> None:
 
 
 def _get_withdraw_request_lock(request_id: str) -> asyncio.Lock:
+    global _withdraw_request_locks
+
+    if "_withdraw_request_locks" not in globals() or not isinstance(_withdraw_request_locks, dict):
+        _withdraw_request_locks = {}
+
     key = _wd_safe_str(request_id, "unknown")
     lock = _withdraw_request_locks.get(key)
     if lock is None:
@@ -7619,7 +8031,58 @@ def _get_withdraw_request_lock(request_id: str) -> asyncio.Lock:
 
 
 async def _validate_withdraw_userbot_identity(tg_client) -> Any:
-    ...
+    """
+    Проверяет, что выводной userbot авторизован именно под ожидаемым тех-аккаунтом.
+    Возвращает объект me (Telethon User) или кидает RuntimeError при несоответствии.
+    """
+    me = await tg_client.get_me()
+    if me is None:
+        raise RuntimeError("get_me returned None")
+
+    actual_id = _wd_safe_int(getattr(me, "id", 0), 0)
+    actual_username = _wd_safe_str(getattr(me, "username", ""), "")
+    actual_phone_raw = _wd_safe_str(getattr(me, "phone", ""), "")
+    actual_phone_digits = re.sub(r"\D+", "", actual_phone_raw)
+
+    expected_id = _wd_safe_int(EXPECTED_TECH_USER_ID, 0)
+    expected_phone_digits = re.sub(r"\D+", "", _wd_safe_str(EXPECTED_TECH_PHONE, ""))
+
+    def _phones_match(left: str, right: str) -> bool:
+        if not left or not right:
+            return True
+        if left == right:
+            return True
+        # Защита от форматов с префиксами/кодами страны.
+        return left.endswith(right) or right.endswith(left)
+
+    strict_identity = _wd_safe_str(
+        os.getenv("TG_WITHDRAW_STRICT_IDENTITY"),
+        "1",
+    ).lower() not in {"0", "false", "no", "off"}
+
+    mismatch_reasons: List[str] = []
+    if expected_id > 0 and actual_id != expected_id:
+        mismatch_reasons.append(f"id expected={expected_id} actual={actual_id}")
+
+    if expected_phone_digits and not _phones_match(actual_phone_digits, expected_phone_digits):
+        mismatch_reasons.append(
+            f"phone expected=*{expected_phone_digits[-4:]} actual=*{actual_phone_digits[-4:] if actual_phone_digits else 'none'}"
+        )
+
+    if mismatch_reasons:
+        reason_text = "; ".join(mismatch_reasons)
+        if strict_identity:
+            raise RuntimeError(
+                "withdraw userbot identity mismatch: "
+                f"{reason_text}. "
+                "Проверь TECH_SESSION_NAME / TECH_STRING_SESSION и ожидаемые EXPECTED_TECH_*."
+            )
+        print(f"🟨[WITHDRAW][USERBOT][IDENTITY][WARN] non-strict mismatch: {reason_text}")
+
+    print(
+        "🟩[WITHDRAW][USERBOT][IDENTITY] "
+        f"id={actual_id} username={actual_username!r} phone={actual_phone_raw!r}"
+    )
     return me
 
 
@@ -7724,19 +8187,25 @@ async def get_withdraw_userbot_client() -> TelegramClient:
         raise RuntimeError(f"Не удалось проверить авторизацию tech userbot: {e!r}") from e
 
     if not authorized:
-        # ВАЖНО: раньше здесь был автоматический интерактивный вход через
-        # tg_client.start(phone=...), который ждёт код из Telegram через input().
-        # На сервере (headless, без консоли и без доступа по SSH) это зависает
-        # НАВСЕГДА внутри _gift_send_global_lock и намертво блокирует ВСЕ
-        # выводы у всех пользователей до перезапуска процесса. Переавторизация
-        # возможна только вручную, локально (см. reauth_withdraw_userbot.py).
+        # Интерактивный логин разрешаем только при наличии локальной TTY-консоли.
+        # Это позволяет "ввести код" на локальном запуске и не вешает сервер.
+        login_ok = await _try_interactive_withdraw_login(
+            tg_client,
+            reason="get_withdraw_userbot_client",
+        )
+        if login_ok:
+            authorized = await tg_client.is_user_authorized()
+            print(f"🧪[WITHDRAW][USERBOT] post-login is_user_authorized={authorized}")
+
+    if not authorized:
         WITHDRAW_USERBOT_READY = False
         await _wd_alert_userbot_unauthorized(
             reason="get_withdraw_userbot_client: is_user_authorized=False"
         )
         raise RuntimeError(
-            "Юзербот для выводов не авторизован. Выводы временно недоступны, "
-            "администратор уведомлён и должен переавторизовать сессию вручную."
+            "Юзербот для выводов не авторизован. Выводы временно недоступны. "
+            "Запусти локально интерактивную авторизацию (если есть консоль) "
+            "или переавторизуй через reauth_withdraw_userbot.py."
         )
 
     try:
@@ -7756,11 +8225,15 @@ async def register_and_start_withdraw_userbot() -> TelegramClient:
 
     is_auth = await tg_client.is_user_authorized()
     if not is_auth:
-        if not ALLOW_INTERACTIVE_LOGIN:
-            raise RuntimeError("Tech userbot не авторизован, а интерактивный вход отключён.")
-
-        print("🟨[WITHDRAW][USERBOT] session not authorized, starting login...")
-        await tg_client.start(phone=TECH_PHONE)
+        login_ok = await _try_interactive_withdraw_login(
+            tg_client,
+            reason="register_and_start_withdraw_userbot",
+        )
+        if not login_ok:
+            raise RuntimeError(
+                "Tech userbot не авторизован, а интерактивный вход недоступен "
+                "(нет TTY или выключен настройками)."
+            )
 
     await _validate_withdraw_userbot_identity(tg_client)
     set_withdraw_userbot_client(tg_client)
@@ -8667,6 +9140,23 @@ def _gift_result(
     }
 
 
+_gift_send_global_lock = None
+
+
+def _gift_get_send_global_lock() -> asyncio.Lock:
+    """
+    Ленивая инициализация lock, чтобы исключить NameError
+    даже если порядок загрузки модулей/блоков изменится.
+    """
+    global _gift_send_global_lock
+
+    lock = _gift_send_global_lock
+    if lock is None or not hasattr(lock, "acquire"):
+        lock = asyncio.Lock()
+        _gift_send_global_lock = lock
+    return lock
+
+
 async def gift_executor_send(
     request_id: str,
     sender_user_id: int,
@@ -8716,7 +9206,7 @@ async def gift_executor_send(
             },
         )
 
-    async with _gift_send_global_lock:
+    async with _gift_get_send_global_lock():
         try:
             tg_client = await get_withdraw_userbot_client()
 
@@ -9139,19 +9629,42 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
         if recipient_user_id <= 0:
             recipient_user_id = sender_user_id
 
-        sender_display = await _wd_resolve_person_display(
-            user_id=sender_user_id,
-            username=sender_username,
-            first_name=sender_first_name,
-            fallback_text="Отправитель",
+        sender_display = (
+            f"@{_wd_normalize_username(sender_username)}"
+            if _wd_normalize_username(sender_username)
+            else (_wd_safe_str(sender_first_name, "") or f"Отправитель #{sender_user_id}")
+        )
+        recipient_display = (
+            f"@{_wd_normalize_username(recipient_username)}"
+            if _wd_normalize_username(recipient_username)
+            else (_wd_safe_str(recipient_first_name, "") or f"Получатель #{recipient_user_id}")
         )
 
-        recipient_display = await _wd_resolve_person_display(
-            user_id=recipient_user_id,
-            username=recipient_username,
-            first_name=recipient_first_name,
-            fallback_text="Получатель",
-        )
+        try:
+            sender_display = await asyncio.wait_for(
+                _wd_resolve_person_display(
+                    user_id=sender_user_id,
+                    username=sender_username,
+                    first_name=sender_first_name,
+                    fallback_text="Отправитель",
+                ),
+                timeout=2.5,
+            )
+        except Exception as e:
+            print(f"[ADMIN][WDACT][WARN] sender display fallback err={e!r}")
+
+        try:
+            recipient_display = await asyncio.wait_for(
+                _wd_resolve_person_display(
+                    user_id=recipient_user_id,
+                    username=recipient_username,
+                    first_name=recipient_first_name,
+                    fallback_text="Получатель",
+                ),
+                timeout=2.5,
+            )
+        except Exception as e:
+            print(f"[ADMIN][WDACT][WARN] recipient display fallback err={e!r}")
 
         is_self_withdraw = int(sender_user_id) == int(recipient_user_id)
         lock_key = rid or token
@@ -9213,256 +9726,301 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
             # защита от повторного нажатия после старта обработки
             payload_fresh = ADMIN_WITHDRAW_ACTIONS.get(token) or {}
             current_status = _wd_safe_str(payload_fresh.get("status"), "pending").lower()
+            if current_status == "processing":
+                updated_at = _wd_safe_int(payload_fresh.get("updated_at"), 0)
+                age = _wd_now_ts() - updated_at if updated_at > 0 else 10**9
+                if age > 20:
+                    _touch_admin_withdraw_action(
+                        token,
+                        status="pending",
+                        pressed_at=0,
+                        pressed_by=0,
+                    )
+                    current_status = "pending"
+                    print(f"[ADMIN][WDACT] token={token!r} recovered from stale processing")
+                else:
+                    await _adm_safe_answer(call, "⏳ Эта кнопка уже обрабатывается", show_alert=True)
+                    return
 
-            if current_status in {"processing", "done", "completed", "rejected", "refunded", "cancelled", "failed"}:
+            if current_status in {"done", "completed", "rejected", "refunded", "cancelled", "failed"}:
                 await _adm_safe_answer(call, "⛔ Эта кнопка уже была обработана", show_alert=True)
                 return
 
-            _mark_admin_withdraw_action_processing(token, call.from_user.id)
+            try:
+                _mark_admin_withdraw_action_processing(token, call.from_user.id)
 
-            # -----------------------------------------------------
-            # APPROVE
-            # -----------------------------------------------------
-            if kind == "approve":
-                if rid and await _wd_is_already_completed_safe(rid):
-                    _mark_admin_withdraw_action_done(token, call.from_user.id, "completed")
-                    await _adm_safe_answer(call, "✅ Эта заявка уже была выполнена", show_alert=True)
-                    return
+                # -----------------------------------------------------
+                # APPROVE
+                # -----------------------------------------------------
+                if kind == "approve":
+                    if rid and await _wd_is_already_completed_safe(rid):
+                        _mark_admin_withdraw_action_done(token, call.from_user.id, "completed")
+                        await _adm_safe_answer(call, "✅ Эта заявка уже была выполнена", show_alert=True)
+                        return
 
-                await _wd_mark_request_processing_safe(
-                    request_id=rid,
-                    admin_id=call.from_user.id,
-                )
-
-                await _safe_ping_user(
-                    sender_user_id,
-                    "<tg-emoji emoji-id='5924701179157156993'>⭐️</tg-emoji>",
-                )
-
-                gift_result = await _execute_gift_delivery(
-                    request_id=rid or token,
-                    sender_user_id=sender_user_id,
-                    sender_username=sender_username,
-                    sender_first_name=sender_first_name,
-                    recipient_user_id=recipient_user_id,
-                    recipient_username=recipient_username,
-                    recipient_first_name=recipient_first_name,
-                    amount=amount,
-                    is_friend=is_friend,
-                    is_self_withdraw=is_self_withdraw,
-                    gift_id=gift_id,
-                    has_upgrade=has_upgrade,
-                )
-
-                gift_ok = bool(gift_result.get("ok"))
-                gift_provider = _wd_safe_str(gift_result.get("provider"), "userbot")
-                gift_provider_result = gift_result.get("provider_result") or {}
-                gift_error = _wd_safe_str(gift_result.get("error"), "Не удалось отправить подарок")
-                real_gift_id = _wd_safe_int(gift_result.get("gift_id"), gift_id)
-                real_gift_stars = _wd_safe_int(gift_result.get("gift_stars"), 0)
-                message_used = bool(gift_result.get("message_used"))
-                message_mode = _wd_safe_str(gift_result.get("message_mode"), "")
-
-                print(
-                    f"[WITHDRAW][APPROVE] gift_ok={gift_ok} "
-                    f"preferred_gift_id={gift_id} real_gift_id={real_gift_id} "
-                    f"real_gift_stars={real_gift_stars} "
-                    f"message_used={message_used} message_mode={message_mode!r}"
-                )
-
-                if not gift_ok:
-                    await _wd_mark_request_failed_safe(
+                    await _wd_mark_request_processing_safe(
                         request_id=rid,
                         admin_id=call.from_user.id,
-                        error_text=gift_error,
+                    )
+
+                    await _safe_ping_user(
+                        sender_user_id,
+                        "<tg-emoji emoji-id='5924701179157156993'>⭐️</tg-emoji>",
+                    )
+
+                    gift_result = await _execute_gift_delivery(
+                        request_id=rid or token,
+                        sender_user_id=sender_user_id,
+                        sender_username=sender_username,
+                        sender_first_name=sender_first_name,
+                        recipient_user_id=recipient_user_id,
+                        recipient_username=recipient_username,
+                        recipient_first_name=recipient_first_name,
+                        amount=amount,
+                        is_friend=is_friend,
+                        is_self_withdraw=is_self_withdraw,
+                        gift_id=gift_id,
+                        has_upgrade=has_upgrade,
+                    )
+
+                    gift_ok = bool(gift_result.get("ok"))
+                    gift_provider = _wd_safe_str(gift_result.get("provider"), "userbot")
+                    gift_provider_result = gift_result.get("provider_result") or {}
+                    gift_error = _wd_safe_str(gift_result.get("error"), "Не удалось отправить подарок")
+                    real_gift_id = _wd_safe_int(gift_result.get("gift_id"), gift_id)
+                    real_gift_stars = _wd_safe_int(gift_result.get("gift_stars"), 0)
+                    message_used = bool(gift_result.get("message_used"))
+                    message_mode = _wd_safe_str(gift_result.get("message_mode"), "")
+
+                    print(
+                        f"[WITHDRAW][APPROVE] gift_ok={gift_ok} "
+                        f"preferred_gift_id={gift_id} real_gift_id={real_gift_id} "
+                        f"real_gift_stars={real_gift_stars} "
+                        f"message_used={message_used} message_mode={message_mode!r}"
+                    )
+
+                    if not gift_ok:
+                        await _wd_mark_request_failed_safe(
+                            request_id=rid,
+                            admin_id=call.from_user.id,
+                            error_text=gift_error,
+                            provider=gift_provider,
+                            provider_result=gift_provider_result,
+                        )
+
+                        _mark_admin_withdraw_action_done(token, call.from_user.id, "failed")
+
+                        try:
+                            fail_text = (
+                                "<tg-emoji emoji-id='5210952531676504517'>❌</tg-emoji> "
+                                "<b>Подарок не был отправлен</b>\n\n"
+                                f"<b>Причина :</b> <code>{gift_error}</code>\n\n"
+                                "<blockquote>Заявка НЕ закрыта как успешная.</blockquote>"
+                            )
+                            await _adm_safe_edit_channel_message(call, fail_text)
+                        except Exception as e:
+                            print(f"[WITHDRAW][APPROVE][WARN] fail edit err={e!r}")
+
+                        await _adm_safe_answer(
+                            call,
+                            f"❌ Ошибка отправки подарка: {gift_error}",
+                            show_alert=True,
+                        )
+                        return
+
+                    await _wd_mark_request_completed_safe(
+                        request_id=rid,
+                        admin_id=call.from_user.id,
                         provider=gift_provider,
                         provider_result=gift_provider_result,
                     )
 
-                    _mark_admin_withdraw_action_done(token, call.from_user.id, "failed")
+                    fallback_description_sent = False
+                    if not message_used:
+                        fallback_description_sent = await _safe_send_gift_description(recipient_user_id)
+
+                    print(
+                        f"[WITHDRAW][APPROVE][DESCRIPTION] "
+                        f"message_used={message_used} "
+                        f"message_mode={message_mode!r} "
+                        f"fallback_description_sent={fallback_description_sent}"
+                    )
+
+                    withdrawal_text = "🎁 Обычный вывод другу" if not is_self_withdraw else "Обычный вывод"
 
                     try:
-                        fail_text = (
-                            "<tg-emoji emoji-id='5210952531676504517'>❌</tg-emoji> "
-                            "<b>Подарок не был отправлен</b>\n\n"
-                            f"<b>Причина :</b> <code>{gift_error}</code>\n\n"
-                            "<blockquote>Заявка НЕ закрыта как успешная.</blockquote>"
-                        )
-                        await _adm_safe_edit_channel_message(call, fail_text)
+                        if hasattr(db, "save_withdrawal_record"):
+                            await db.save_withdrawal_record(
+                                user_id=call.from_user.id,
+                                amount=amount,
+                                withdrawal_text=withdrawal_text,
+                            )
                     except Exception as e:
-                        print(f"[WITHDRAW][APPROVE][WARN] fail edit err={e!r}")
+                        print(f"[WITHDRAW][APPROVE][WARN] save_withdrawal_record err={e!r}")
 
-                    await _adm_safe_answer(
-                        call,
-                        f"❌ Ошибка отправки подарка: {gift_error}",
-                        show_alert=True,
+                    emoj = "<tg-emoji emoji-id='5463289097336405244'>⭐️</tg-emoji>"
+                    recipient_name_link = await _wd_build_recipient_name_link(
+                        recipient_user_id=recipient_user_id,
+                        fallback_display=recipient_display,
                     )
+
+                    if is_self_withdraw:
+                        notify_text = (
+                            f"<b>{emoj} Ваша заявка на вывод кут одобрена!\n"
+                            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
+                            f"Подарок отправлен\n\n"
+                            f"<blockquote>@CuteGamingBot</blockquote></b>"
+                        )
+                    else:
+                        notify_text = (
+                            f"<b>{emoj} Ваша заявка на вывод кут одобрена!\n"
+                            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
+                            f"{recipient_name_link} получил свой подарок!\n\n"
+                            f"<blockquote>@CuteGamingBot</blockquote></b>"
+                        )
+
+                    await _adm_safe_notify_user(
+                        sender_user_id,
+                        notify_text,
+                        effect_id="5046509860389126442",
+                    )
+
+                    await _safe_channel_ping()
+
+                    recipient_tag = _wd_build_username_tag(recipient_username, recipient_user_id)
+                    sender_tag = _wd_build_username_tag(sender_username, sender_user_id)
+                    winf = "{:,.0f}".format(amount).replace(",", ".")
+
+                    if is_self_withdraw:
+                        public_text = (
+                            f"<tg-emoji emoji-id='5319106486863947724'>🎩</tg-emoji> "
+                            f"<b>{recipient_tag} вывел {winf} кут в TG Stars "
+                            f"<tg-emoji emoji-id='6028338546736107668'>⭐️</tg-emoji></b>"
+                        )
+                    else:
+                        public_text = (
+                            f"<tg-emoji emoji-id='5319106486863947724'>🎩</tg-emoji> "
+                            f"<b>{recipient_tag} вывел {winf} кут в TG Stars "
+                            f"<tg-emoji emoji-id='6028338546736107668'>⭐️</tg-emoji></b>\n"
+                            f"<tg-emoji emoji-id='5355132032592669254'>🍭</tg-emoji> "
+                            f"<b>От {sender_tag}</b>"
+                        )
+
+                    await _safe_public_log(public_text)
+                    await _render_and_edit_final_channel("approve")
+
+                    _mark_admin_withdraw_action_done(token, call.from_user.id, "completed")
+                    await _finalize_success_answer("✅ Подарок отправлен, заявка завершена!")
                     return
 
-                await _wd_mark_request_completed_safe(
-                    request_id=rid,
-                    admin_id=call.from_user.id,
-                    provider=gift_provider,
-                    provider_result=gift_provider_result,
-                )
+                # -----------------------------------------------------
+                # REFUND
+                # -----------------------------------------------------
+                if kind == "refund":
+                    rollback_done = False
 
-                fallback_description_sent = False
-                if not message_used:
-                    fallback_description_sent = await _safe_send_gift_description(recipient_user_id)
-
-                print(
-                    f"[WITHDRAW][APPROVE][DESCRIPTION] "
-                    f"message_used={message_used} "
-                    f"message_mode={message_mode!r} "
-                    f"fallback_description_sent={fallback_description_sent}"
-                )
-
-                withdrawal_text = "🎁 Обычный вывод другу" if not is_self_withdraw else "Обычный вывод"
-
-                try:
-                    if hasattr(db, "save_withdrawal_record"):
-                        await db.save_withdrawal_record(
-                            user_id=call.from_user.id,
-                            amount=amount,
-                            withdrawal_text=withdrawal_text,
-                        )
-                except Exception as e:
-                    print(f"[WITHDRAW][APPROVE][WARN] save_withdrawal_record err={e!r}")
-
-                emoj = "<tg-emoji emoji-id='5463289097336405244'>⭐️</tg-emoji>"
-                recipient_name_link = await _wd_build_recipient_name_link(
-                    recipient_user_id=recipient_user_id,
-                    fallback_display=recipient_display,
-                )
-
-                if is_self_withdraw:
-                    notify_text = (
-                        f"<b>{emoj} Ваша заявка на вывод кут одобрена!\n"
-                        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
-                        f"Подарок отправлен\n\n"
-                        f"<blockquote>@CuteGamingBot</blockquote></b>"
-                    )
-                else:
-                    notify_text = (
-                        f"<b>{emoj} Ваша заявка на вывод кут одобрена!\n"
-                        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
-                        f"{recipient_name_link} получил свой подарок!\n\n"
-                        f"<blockquote>@CuteGamingBot</blockquote></b>"
-                    )
-
-                await _adm_safe_notify_user(
-                    sender_user_id,
-                    notify_text,
-                    effect_id="5046509860389126442",
-                )
-
-                await _safe_channel_ping()
-
-                recipient_tag = _wd_build_username_tag(recipient_username, recipient_user_id)
-                sender_tag = _wd_build_username_tag(sender_username, sender_user_id)
-                winf = "{:,.0f}".format(amount).replace(",", ".")
-
-                if is_self_withdraw:
-                    public_text = (
-                        f"<tg-emoji emoji-id='5319106486863947724'>🎩</tg-emoji> "
-                        f"<b>{recipient_tag} вывел {winf} кут в TG Stars "
-                        f"<tg-emoji emoji-id='6028338546736107668'>⭐️</tg-emoji></b>"
-                    )
-                else:
-                    public_text = (
-                        f"<tg-emoji emoji-id='5319106486863947724'>🎩</tg-emoji> "
-                        f"<b>{recipient_tag} вывел {winf} кут в TG Stars "
-                        f"<tg-emoji emoji-id='6028338546736107668'>⭐️</tg-emoji></b>\n"
-                        f"<tg-emoji emoji-id='5355132032592669254'>🍭</tg-emoji> "
-                        f"<b>От {sender_tag}</b>"
-                    )
-
-                await _safe_public_log(public_text)
-                await _render_and_edit_final_channel("approve")
-
-                _mark_admin_withdraw_action_done(token, call.from_user.id, "completed")
-                await _finalize_success_answer("✅ Подарок отправлен, заявка завершена!")
-                return
-
-            # -----------------------------------------------------
-            # REFUND
-            # -----------------------------------------------------
-            if kind == "refund":
-                rollback_done = False
-
-                if rid and hasattr(db, "rollback_withdraw_strict"):
-                    try:
-                        rb = await db.rollback_withdraw_strict(
-                            user_id=sender_user_id,
-                            request_id=rid,
-                        )
-                        print(f"[ADMIN][REFUND] rollback_withdraw_strict -> {rb!r}")
-                        if isinstance(rb, dict) and rb.get("ok"):
-                            rollback_done = True
-                    except Exception as e:
-                        print(f"[ADMIN][REFUND][WARN] rollback err={e!r}")
-
-                if not rollback_done:
-                    try:
-                        balance = int(await db.get_user_balance(sender_user_id) or 0)
-                        await db.update_user_balance(sender_user_id, balance + amount)
-
-                        if hasattr(db, "cutehistory_plus"):
-                            await db.cutehistory_plus(
-                                sender_user_id,
-                                amount,
-                                "возврат кут с заявки на вывод (fallback)",
+                    if rid and hasattr(db, "rollback_withdraw_strict"):
+                        try:
+                            rb = await db.rollback_withdraw_strict(
+                                user_id=sender_user_id,
+                                request_id=rid,
                             )
+                            print(f"[ADMIN][REFUND] rollback_withdraw_strict -> {rb!r}")
+                            if isinstance(rb, dict) and rb.get("ok"):
+                                rollback_done = True
+                        except Exception as e:
+                            print(f"[ADMIN][REFUND][WARN] rollback err={e!r}")
 
-                        print(f"[ADMIN][REFUND][FALLBACK] uid={sender_user_id} amount={amount}")
-                    except Exception as e:
-                        print(f"[ADMIN][REFUND][ERROR] fallback refund err={e!r}")
-                        _mark_admin_withdraw_action_done(token, call.from_user.id, "failed")
-                        await _adm_safe_answer(call, "❌ Не удалось вернуть куты", show_alert=True)
-                        return
+                    if not rollback_done:
+                        try:
+                            balance = int(await db.get_user_balance(sender_user_id) or 0)
+                            await db.update_user_balance(sender_user_id, balance + amount)
 
-                await _safe_ping_user(
-                    sender_user_id,
-                    "<tg-emoji emoji-id='5195369389599265575'>🦅</tg-emoji>",
+                            if hasattr(db, "cutehistory_plus"):
+                                await db.cutehistory_plus(
+                                    sender_user_id,
+                                    amount,
+                                    "возврат кут с заявки на вывод (fallback)",
+                                )
+
+                            print(f"[ADMIN][REFUND][FALLBACK] uid={sender_user_id} amount={amount}")
+                        except Exception as e:
+                            print(f"[ADMIN][REFUND][ERROR] fallback refund err={e!r}")
+                            _mark_admin_withdraw_action_done(token, call.from_user.id, "failed")
+                            await _adm_safe_answer(call, "❌ Не удалось вернуть куты", show_alert=True)
+                            return
+
+                    await _wd_mark_request_failed_safe(
+                        request_id=rid,
+                        admin_id=call.from_user.id,
+                        error_text="refunded_by_admin",
+                        provider="manual",
+                        provider_result={
+                            "action": "refund",
+                            "rollback_done": bool(rollback_done),
+                        },
+                    )
+
+                    await _safe_ping_user(
+                        sender_user_id,
+                        "<tg-emoji emoji-id='5195369389599265575'>🦅</tg-emoji>",
+                    )
+
+                    emoj = "<tg-emoji emoji-id='5469963154391833732'>🍓</tg-emoji>"
+                    await _adm_safe_notify_user(
+                        sender_user_id,
+                        f"<b>{emoj} Ваша заявка на вывод кут отклонена! Куты возвращены\n\n"
+                        f"<blockquote>@CuteGamingBot</blockquote></b>",
+                        effect_id="5159385139981059251",
+                    )
+
+                    await _render_and_edit_final_channel("refund")
+                    _mark_admin_withdraw_action_done(token, call.from_user.id, "refunded")
+                    await _finalize_success_answer("🍃 Заявка отклонена, куты возвращены")
+                    return
+
+                # -----------------------------------------------------
+                # REJECT
+                # -----------------------------------------------------
+                if kind == "reject":
+                    await _wd_mark_request_failed_safe(
+                        request_id=rid,
+                        admin_id=call.from_user.id,
+                        error_text="rejected_by_admin",
+                        provider="manual",
+                        provider_result={"action": "reject"},
+                    )
+
+                    await _safe_ping_user(
+                        sender_user_id,
+                        "<tg-emoji emoji-id='5208923808169222461'>🥀</tg-emoji>",
+                    )
+
+                    emoj = "<tg-emoji emoji-id='5469913852462242978'>🧨</tg-emoji>"
+                    await _adm_safe_notify_user(
+                        sender_user_id,
+                        f"<b>{emoj} Ваша заявка на вывод кут отклонена!\n\n"
+                        f"<blockquote>@CuteGamingBot</blockquote></b>",
+                        effect_id="5104841245755180586",
+                    )
+
+                    await _render_and_edit_final_channel("reject")
+                    _mark_admin_withdraw_action_done(token, call.from_user.id, "rejected")
+                    await _finalize_success_answer("🍃 Заявка отклонена")
+                    return
+
+                _mark_admin_withdraw_action_done(token, call.from_user.id, "failed")
+                await _adm_safe_answer(call, "Неизвестное действие", show_alert=True)
+
+            except Exception as e:
+                _mark_admin_withdraw_action_done(token, call.from_user.id, "failed")
+                print(
+                    f"[ADMIN][WDACT][ERROR] token={token!r} kind={kind!r} "
+                    f"rid={rid!r} err={type(e).__name__}: {e!r}"
                 )
-
-                emoj = "<tg-emoji emoji-id='5469963154391833732'>🍓</tg-emoji>"
-                await _adm_safe_notify_user(
-                    sender_user_id,
-                    f"<b>{emoj} Ваша заявка на вывод кут отклонена! Куты возвращены\n\n"
-                    f"<blockquote>@CuteGamingBot</blockquote></b>",
-                    effect_id="5159385139981059251",
-                )
-
-                await _render_and_edit_final_channel("refund")
-                _mark_admin_withdraw_action_done(token, call.from_user.id, "refunded")
-                await _finalize_success_answer("🍃 Заявка отклонена, куты возвращены")
+                print(traceback.format_exc())
+                await _adm_safe_answer(call, "❌ Ошибка обработки кнопки", show_alert=True)
                 return
-
-            # -----------------------------------------------------
-            # REJECT
-            # -----------------------------------------------------
-            if kind == "reject":
-                await _safe_ping_user(
-                    sender_user_id,
-                    "<tg-emoji emoji-id='5208923808169222461'>🥀</tg-emoji>",
-                )
-
-                emoj = "<tg-emoji emoji-id='5469913852462242978'>🧨</tg-emoji>"
-                await _adm_safe_notify_user(
-                    sender_user_id,
-                    f"<b>{emoj} Ваша заявка на вывод кут отклонена!\n\n"
-                    f"<blockquote>@CuteGamingBot</blockquote></b>",
-                    effect_id="5104841245755180586",
-                )
-
-                await _render_and_edit_final_channel("reject")
-                _mark_admin_withdraw_action_done(token, call.from_user.id, "rejected")
-                await _finalize_success_answer("🍃 Заявка отклонена")
-                return
-
-            _mark_admin_withdraw_action_done(token, call.from_user.id, "failed")
-            await _adm_safe_answer(call, "Неизвестное действие", show_alert=True)
 
     finally:
         inflight.discard(inflight_key)
@@ -22649,9 +23207,37 @@ async def ensure_can_withdraw(
 # Данные о группах (название + ссылка) берём напрямую из Telegram и кешируем.
 # ============================================================
 
-# Кеш ссылок на официальные группы: chat_id -> (expires_ts, (title, url))
-_staff_link_cache: Dict[int, Tuple[float, Tuple[str, str]]] = LazyGameStore("_staff_link_cache")
+# Кеш ссылок на официальные группы:
+#   chat_id -> (expires_ts, (title, url))  для успешного резолва
+#   chat_id -> (expires_ts, None)          для временной "негативной" записи
+# Негативный кеш нужен, чтобы не долбить Telegram повторными get_chat для чатов,
+# где бот уже кикнут/недоступен (иначе логи зашумляются Forbidden-ошибками).
+_staff_link_cache: Dict[int, Tuple[float, Optional[Tuple[str, str]]]] = LazyGameStore("_staff_link_cache")
 _STAFF_LINK_TTL = 3600.0  # 1 час
+_STAFF_LINK_NEGATIVE_TTL = 86400.0  # 24 часа
+
+
+def _resolve_staff_link_from_config(chat_id: int) -> Optional[Tuple[str, str]]:
+    """
+    Быстрый fallback без Telegram API:
+    берём ссылку на чат из bot.config.config, если chat_id совпадает.
+    Это убирает лишние get_chat() для чатов, где бота кикнули.
+    """
+    try:
+        from bot.config import config as _cfg
+
+        cid = int(chat_id)
+        cfg_chat_id = _wd_safe_int(getattr(_cfg, "chat_id", 0), 0)
+        cfg_test_id = _wd_safe_int(getattr(_cfg, "test_id", 0), 0)
+        cfg_chat_link = _wd_safe_str(getattr(_cfg, "chat_link", ""), "")
+        cfg_chat_name = _wd_safe_str(getattr(_cfg, "target_chat_username", ""), "")
+
+        if cid in {cfg_chat_id, cfg_test_id} and cfg_chat_link.startswith("https://t.me/"):
+            title = cfg_chat_name or f"official chat {cid}"
+            return title, cfg_chat_link
+    except Exception:
+        return None
+    return None
 
 
 async def _resolve_chat_link(bot_obj: Any, chat_id: int) -> Optional[Tuple[str, str]]:
@@ -22668,11 +23254,19 @@ async def _resolve_chat_link(bot_obj: Any, chat_id: int) -> Optional[Tuple[str, 
     if cached and cached[0] > now:
         return cached[1]
 
+    cfg_fallback = _resolve_staff_link_from_config(cid)
+    if cfg_fallback:
+        _staff_link_cache[cid] = (now + _STAFF_LINK_TTL, cfg_fallback)
+        return cfg_fallback
+
     try:
         chat = await bot_obj.get_chat(cid)
     except Exception as e:
         print(f"[STAFFLINK][WARN] get_chat({cid}) failed: {e!r}")
-        return cached[1] if cached else None
+        if cached:
+            return cached[1]
+        _staff_link_cache[cid] = (now + _STAFF_LINK_NEGATIVE_TTL, None)
+        return None
 
     title = str(getattr(chat, "title", None) or getattr(chat, "full_name", None) or cid)
 
@@ -22691,7 +23285,10 @@ async def _resolve_chat_link(bot_obj: Any, chat_id: int) -> Optional[Tuple[str, 
         url = invite
 
     if not url:
-        return cached[1] if cached else None
+        if cached:
+            return cached[1]
+        _staff_link_cache[cid] = (now + _STAFF_LINK_NEGATIVE_TTL, None)
+        return None
 
     result = (title, url)
     _staff_link_cache[cid] = (now + _STAFF_LINK_TTL, result)
@@ -23863,11 +24460,22 @@ async def _recalc_withdraw_window(conn, db, uid: int) -> None:
     # ---------------------------------------------------
     # 3) восстанавливаем daily_limit
     #    приоритет:
-    #    1. текущий daily_limit из quota row
-    #    2. withdraw_limits.daily_amount_limit
-    #    3. db.get_canwithdrawal(uid)
+    #    1. users.canwithdrawal (источник истины)
+    #    2. текущий daily_limit из quota row
+    #    3. withdraw_limits.daily_amount_limit (legacy fallback)
     #    4. Default_WITHDRAW_DEFAULT_DAILY_LIMIT
     # ---------------------------------------------------
+    try:
+        if hasattr(db, "get_canwithdrawal"):
+            canw = _safe_non_negative(await db.get_canwithdrawal(uid) or 0, 0)
+            if canw > 0:
+                dl = int(canw)
+    except Exception as e:
+        print(f"[REFUND][WINDOW][WARN] get_canwithdrawal uid={uid} err={e!r}")
+
+    if dl <= 0:
+        dl = _safe_non_negative(dl, 0)
+
     if dl <= 0:
         try:
             row_lim = await conn.fetchrow(
@@ -23881,14 +24489,6 @@ async def _recalc_withdraw_window(conn, db, uid: int) -> None:
             dl = _safe_non_negative(row_lim["daily_amount_limit"], 0) if row_lim else 0
         except Exception as e:
             print(f"[REFUND][WINDOW][WARN] withdraw_limits uid={uid} err={e!r}")
-            dl = 0
-
-    if dl <= 0:
-        try:
-            if hasattr(db, "get_canwithdrawal"):
-                dl = _safe_non_negative(await db.get_canwithdrawal(uid) or 0, 0)
-        except Exception as e:
-            print(f"[REFUND][WINDOW][WARN] get_canwithdrawal uid={uid} err={e!r}")
             dl = 0
 
     if dl <= 0:
@@ -24020,12 +24620,30 @@ def _cleanup_admin_withdraw_actions(max_age_sec: int = 7 * 24 * 3600) -> None:
             to_delete.append(token)
             continue
 
-        try:
-            ts = float(payload.get("ts", 0) or 0)
-        except Exception:
-            ts = 0
+        status = str(payload.get("status", "pending") or "pending").strip().lower()
+        created_at = float(payload.get("created_at", 0) or 0)
+        updated_at = float(payload.get("updated_at", created_at) or created_at)
+        ts = float(payload.get("ts", created_at) or created_at)
 
-        if ts <= 0 or (now - ts) > max_age_sec:
+        if status == "processing":
+            age_update = (now - updated_at) if updated_at > 0 else (now - ts if ts > 0 else 10**9)
+            if age_update > 20:
+                payload["status"] = "pending"
+                payload["updated_at"] = int(now)
+                payload["pressed_at"] = 0
+                payload["pressed_by"] = 0
+                ADMIN_WITHDRAW_ACTIONS[safe_token] = payload
+                print(f"🟦 [ADMIN_WITHDRAW][CLEANUP] recover token={safe_token!r} processing->pending")
+            continue
+
+        if status in {"done", "completed", "rejected", "refunded", "cancelled", "failed"}:
+            age_update = (now - updated_at) if updated_at > 0 else (now - ts if ts > 0 else 10**9)
+            if age_update > max_age_sec:
+                to_delete.append(token)
+            continue
+
+        age_create = (now - created_at) if created_at > 0 else (now - ts if ts > 0 else 10**9)
+        if age_create > max_age_sec:
             to_delete.append(token)
 
     deleted_count = 0
@@ -24054,10 +24672,16 @@ def _register_admin_withdraw_action(payload: Dict[str, Any]) -> str:
 
     safe_payload = dict(payload or {})
     token = uuid.uuid4().hex[:16]
-    now_ts = time.time()
+    now_ts = int(time.time())
 
     ADMIN_WITHDRAW_ACTIONS[token] = {
         **safe_payload,
+        "token": token,
+        "status": "pending",
+        "created_at": now_ts,
+        "updated_at": now_ts,
+        "pressed_at": 0,
+        "pressed_by": 0,
         "ts": now_ts,
     }
 
@@ -26214,6 +26838,15 @@ async def _safe_render_withdraw_check_message(
 
     if msg is not None:
         try:
+            current_text = _wd_safe_str(getattr(msg, "text", ""), "")
+            target_plain = _strip_html_tags_soft(text)
+            if current_text and target_plain and current_text == target_plain:
+                print("🟦[WITHDRAW][UI][SAFE] edit_text skipped: same visible text")
+                return True
+        except Exception:
+            pass
+
+        try:
             await msg.edit_text(
                 text=text,
                 reply_markup=reply_markup,
@@ -26223,6 +26856,10 @@ async def _safe_render_withdraw_check_message(
             print("🟩[WITHDRAW][UI][SAFE] rendered via edit_text HTML")
             return True
         except Exception as e:
+            s = str(e).lower()
+            if "message is not modified" in s:
+                print("🟦[WITHDRAW][UI][SAFE] edit_text skipped: message is not modified")
+                return True
             print(f"🟨[WITHDRAW][UI][SAFE] edit_text HTML err={type(e).__name__}: {e!r}")
             if _looks_like_document_invalid_error(e):
                 try:
@@ -26247,7 +26884,14 @@ async def _safe_render_withdraw_check_message(
             print("🟩[WITHDRAW][UI][SAFE] rendered via edit_caption HTML")
             return True
         except Exception as e:
-            print(f"🟨[WITHDRAW][UI][SAFE] edit_caption HTML err={type(e).__name__}: {e!r}")
+            s = str(e).lower()
+            if "message is not modified" in s:
+                print("🟦[WITHDRAW][UI][SAFE] edit_caption skipped: message is not modified")
+                return True
+            if "there is no caption" in s:
+                print("🟦[WITHDRAW][UI][SAFE] edit_caption skipped: message has no caption")
+            else:
+                print(f"🟨[WITHDRAW][UI][SAFE] edit_caption HTML err={type(e).__name__}: {e!r}")
             if _looks_like_document_invalid_error(e):
                 try:
                     await msg.edit_caption(
@@ -26650,6 +27294,112 @@ async def _check_button_cooldown_or_answer(
     except Exception as e:
         print(f"🟨[WITHDRAW][BTN_GUARD][WARN] action={action_name} err={type(e).__name__}: {e!r}")
         return True
+
+
+def _withdraw_auto_gift_enabled() -> bool:
+    # Ручной режим выплат:
+    # подарок отправляется ТОЛЬКО когда администратор нажмёт 👍.
+    return False
+
+
+async def _wd_try_auto_gift_delivery_after_strict(
+    *,
+    request_id: str,
+    sender_user_id: int,
+    sender_username: str,
+    sender_first_name: str,
+    recipient_user_id: int,
+    recipient_username: str,
+    recipient_first_name: str,
+    amount: int,
+    is_friend: bool,
+    gift_id: int = 0,
+    has_upgrade: int = 0,
+) -> Dict[str, Any]:
+    request_id = _wd_safe_str(request_id, "")
+    sender_user_id = _wd_safe_int(sender_user_id, 0)
+    recipient_user_id = _wd_safe_int(recipient_user_id, 0)
+    amount = _wd_safe_int(amount, 0)
+    gift_id = _wd_safe_int(gift_id, 0)
+    has_upgrade = _wd_safe_int(has_upgrade, 0)
+    is_friend = bool(is_friend)
+    is_self_withdraw = sender_user_id > 0 and sender_user_id == recipient_user_id
+
+    if not _withdraw_auto_gift_enabled():
+        return {
+            "attempted": False,
+            "ok": False,
+            "error": "auto disabled",
+            "gift_result": {},
+        }
+
+    print(
+        f"[WITHDRAW][AUTO] ▶️ start rid={request_id!r} "
+        f"sender={sender_user_id} recipient={recipient_user_id} "
+        f"amount={amount} gift_id={gift_id} has_upgrade={has_upgrade} "
+        f"is_friend={is_friend}"
+    )
+
+    gift_result = await _execute_gift_delivery(
+        request_id=request_id,
+        sender_user_id=sender_user_id,
+        sender_username=sender_username,
+        sender_first_name=sender_first_name,
+        recipient_user_id=recipient_user_id,
+        recipient_username=recipient_username,
+        recipient_first_name=recipient_first_name,
+        amount=amount,
+        is_friend=is_friend,
+        is_self_withdraw=is_self_withdraw,
+        gift_id=gift_id,
+        has_upgrade=has_upgrade,
+    )
+
+    gift_ok = bool(gift_result.get("ok"))
+    provider = _wd_safe_str(gift_result.get("provider"), "userbot")
+    provider_result = gift_result.get("provider_result") or {}
+    gift_error = _wd_safe_str(gift_result.get("error"), "Не удалось отправить подарок автоматически")
+    message_used = bool(gift_result.get("message_used"))
+    message_mode = _wd_safe_str(gift_result.get("message_mode"), "")
+
+    if not gift_ok:
+        print(
+            f"[WITHDRAW][AUTO] ❌ fail rid={request_id!r} "
+            f"provider={provider!r} error={gift_error!r}"
+        )
+        return {
+            "attempted": True,
+            "ok": False,
+            "error": gift_error,
+            "gift_result": gift_result,
+        }
+
+    await _wd_mark_request_completed_safe(
+        request_id=request_id,
+        admin_id=0,
+        provider=f"{provider}:auto",
+        provider_result=provider_result,
+    )
+
+    fallback_description_sent = False
+    if not message_used:
+        fallback_description_sent = await _wd_send_gift_description_message_safe(recipient_user_id)
+
+    print(
+        f"[WITHDRAW][AUTO] ✅ success rid={request_id!r} "
+        f"provider={provider!r} message_used={message_used} "
+        f"message_mode={message_mode!r} "
+        f"fallback_description_sent={fallback_description_sent}"
+    )
+
+    return {
+        "attempted": True,
+        "ok": True,
+        "error": "",
+        "gift_result": gift_result,
+        "fallback_description_sent": fallback_description_sent,
+    }
+
 @dp.callback_query(lambda c: c.data and (c.data.startswith("send_request_") or c.data.startswith("srq:")))
 async def send_request_callback_self(callback_query: types.CallbackQuery):
     user_id = int(callback_query.from_user.id)
@@ -26850,13 +27600,130 @@ async def send_request_callback_self(callback_query: types.CallbackQuery):
         new_balance_str = _fmt_int(new_balance)
         formatted_time = datetime.now().strftime("%d.%m.%Y %H:%M")
 
+        auto_delivery = await _wd_try_auto_gift_delivery_after_strict(
+            request_id=rid,
+            sender_user_id=int(user_id),
+            sender_username=str(username or ""),
+            sender_first_name="",
+            recipient_user_id=int(user_id),
+            recipient_username=str(username or ""),
+            recipient_first_name="",
+            amount=int(amount),
+            is_friend=False,
+            gift_id=int(gift_id),
+            has_upgrade=int(has_upgrade),
+        )
+
+        auto_ok = bool(auto_delivery.get("ok"))
+        auto_attempted = bool(auto_delivery.get("attempted"))
+        auto_fail_reason = _wd_safe_str(auto_delivery.get("error"), "")
+
+        first_name = ""
+        username_db = _wd_normalize_username(username)
+
+        try:
+            if hasattr(db, "get_firstname_by_user_id"):
+                first_name = _wd_safe_str(await db.get_firstname_by_user_id(user_id), "")
+        except Exception as e:
+            print(f"[WITHDRAW][HANDLER][WARN] get_firstname_by_user_id err={e!r}")
+
+        try:
+            if hasattr(db, "get_username_by_user_id"):
+                username_db = _wd_normalize_username(await db.get_username_by_user_id(user_id)) or username_db
+        except Exception as e:
+            print(f"[WITHDRAW][HANDLER][WARN] get_username_by_user_id err={e!r}")
+
+        name_link = f"@{username_db}" if username_db else f"user_id {user_id}"
+        if first_name:
+            try:
+                name_link = await create_user_link(user_id, first_name, username_db or None)
+            except Exception as e:
+                print(f"[WITHDRAW][HANDLER][WARN] create_user_link err={e!r}")
+
+        if auto_ok:
+            success_text = (
+                f"<b><tg-emoji emoji-id='5924701179157156993'>⭐️</tg-emoji> Подарок отправлен автоматически\n"
+                f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> {amount_str} кут\n"
+                f"<tg-emoji emoji-id='5238108342873762772'>🦎</tg-emoji> {formatted_time}\n"
+                f"<tg-emoji emoji-id='5449820402018688838'>🌵</tg-emoji> Баланс : {new_balance_str} кут\n\n"
+                f"<blockquote>Выплата выполнена через tech userbot.</blockquote></b>"
+            )
+
+            try:
+                await callback_query.message.edit_text(
+                    success_text,
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="В главное меню", callback_data="9close_bonus")]
+                    ]),
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+            except Exception as e:
+                print(f"[WITHDRAW][HANDLER][UI][AUTO][WARN] edit_text err={e!r}")
+                try:
+                    await bot1.send_message(
+                        chat_id=user_id,
+                        text=success_text,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                except Exception as e2:
+                    print(f"[WITHDRAW][HANDLER][UI][AUTO][ERROR] fallback send_message err={e2!r}")
+
+            try:
+                channel_auto_text = await _wd_render_final_channel_text(
+                    kind="approve",
+                    result_flag="-",
+                    amount=int(amount),
+                    sender_display=name_link,
+                    recipient_display=name_link,
+                    sender_user_id=int(user_id),
+                    recipient_user_id=int(user_id),
+                    is_friend=False,
+                )
+                channel_auto_text += (
+                    "\n\n<blockquote><b>⚡️ Автовыплата через tech userbot</b></blockquote>"
+                )
+                msg = await bot1.send_message(
+                    chat_id="@CurrencyCute",
+                    text=channel_auto_text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+                print(
+                    f"[WITHDRAW][HANDLER][CHANNEL][AUTO] ✅ sent channel_msg_id={getattr(msg, 'message_id', None)} "
+                    f"rid={rid} gift_id={gift_id}"
+                )
+            except Exception as e:
+                print(f"[WITHDRAW][HANDLER][CHANNEL][AUTO][WARN] err={e!r}")
+
+            last_click_time[user_id] = current_time
+            print(
+                f"[WITHDRAW][HANDLER] 🟩 AUTO DONE send_request uid={user_id} "
+                f"amount={amount} new_bal={new_balance} gift_id={gift_id}"
+            )
+            return
+
+        if auto_attempted:
+            print(
+                f"[WITHDRAW][HANDLER][AUTO][FALLBACK] rid={rid} "
+                f"reason={auto_fail_reason!r} -> manual channel review"
+            )
+
+        auto_fail_note = (
+            "\n<blockquote>⚠️ Автовыплата сейчас недоступна, заявка передана администратору.</blockquote>"
+            if auto_attempted
+            else ""
+        )
+
         try:
             await callback_query.message.edit_text(
                 f"<b><tg-emoji emoji-id='5449850741667668411'>🌿</tg-emoji> Заявка создана | {amount_str} кут\n"
                 f"<tg-emoji emoji-id='5238108342873762772'>🦎</tg-emoji> {formatted_time}\n"
                 f"<tg-emoji emoji-id='5449820402018688838'>🌵</tg-emoji> Баланс : {new_balance_str} кут\n\n"
                 f"<blockquote>Админ скоро с вами свяжется\n"
-                f"Не меняйте username - иначе выплаты не будет</blockquote></b>",
+                f"Не меняйте username - иначе выплаты не будет</blockquote>"
+                f"{auto_fail_note}</b>",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(
                         text="Канал с выводами",
@@ -26885,10 +27752,6 @@ async def send_request_callback_self(callback_query: types.CallbackQuery):
             except Exception as e2:
                 print(f"[WITHDRAW][HANDLER][UI][ERROR] fallback send_message err={e2!r}")
 
-        first_name = await db.get_firstname_by_user_id(user_id)
-        username = await db.get_username_by_user_id(user_id)
-        name_link = await create_user_link(user_id, first_name, username)
-
         if is_nft:
             channel_message = (
                 f"<code>{gift_emoji}</code> <b>{amount_str} кут [ NFT ]</b>\n"
@@ -26902,20 +27765,22 @@ async def send_request_callback_self(callback_query: types.CallbackQuery):
                 f"<blockquote><b>@CuteGamingBot</b></blockquote>"
             )
 
-        sender_first_name = None
-        try:
-            if hasattr(db, "get_firstname_by_user_id"):
-                sender_first_name = await db.get_firstname_by_user_id(user_id)
-        except Exception as e:
-            print(f"[WITHDRAW][HANDLER][WARN] get_firstname_by_user_id err={e!r}")
+        if auto_attempted and auto_fail_reason:
+            channel_message = (
+                f"<b>⚠️ Автовыплата не удалась:</b> "
+                f"<code>{escape(auto_fail_reason)[:220]}</code>\n\n"
+                f"{channel_message}"
+            )
+
+        sender_first_name = first_name or None
 
         keyboard = _build_withdraw_channel_keyboard(
             request_id=rid,
             sender_user_id=int(user_id),
-            sender_username=username,
+            sender_username=username_db,
             sender_first_name=sender_first_name,
             recipient_user_id=int(user_id),
-            recipient_username=username,
+            recipient_username=username_db,
             recipient_first_name=sender_first_name,
             amount=int(amount),
             result_flag="-",
@@ -27310,6 +28175,24 @@ async def send_request_callback_friend(callback_query: types.CallbackQuery):
         except Exception as e:
             print(f"🟨[ВЫВОД][GIFTGIFT][HISTORY][WARN] err={type(e).__name__}: {e!r}")
 
+        auto_delivery = await _wd_try_auto_gift_delivery_after_strict(
+            request_id=str(rid),
+            sender_user_id=int(user_id),
+            sender_username=str(username_payer or ""),
+            sender_first_name="",
+            recipient_user_id=int(user_id2),
+            recipient_username=str(username_receiver or ""),
+            recipient_first_name="",
+            amount=int(amount),
+            is_friend=True,
+            gift_id=int(gift_id),
+            has_upgrade=int(has_upgrade),
+        )
+
+        auto_ok = bool(auto_delivery.get("ok"))
+        auto_attempted = bool(auto_delivery.get("attempted"))
+        auto_fail_reason = _wd_safe_str(auto_delivery.get("error"), "")
+
         markup_user = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(
@@ -27326,6 +28209,131 @@ async def send_request_callback_friend(callback_query: types.CallbackQuery):
         new_balance1 = _fmt0(new_balance)
         formatted_time = datetime.now().strftime("%d.%m.%Y %H:%M")
 
+        if auto_ok:
+            user_text = (
+                f"<b>"
+                f"<tg-emoji emoji-id='5924701179157156993'>⭐️</tg-emoji> Подарок отправлен автоматически\n"
+                f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> {amount1} кут\n"
+                f"<tg-emoji emoji-id='5253918628591463778'>⌚️</tg-emoji> {formatted_time}\n"
+                f"<tg-emoji emoji-id='5449820402018688838'>🌵</tg-emoji> Баланс : {new_balance1} кут\n\n"
+                f"<blockquote>Ваш друг получил подарок через tech userbot.</blockquote>"
+                f"</b>"
+            )
+
+            try:
+                await callback_query.message.edit_text(
+                    user_text,
+                    reply_markup=InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(text="В главное меню", callback_data="9close_bonus")]
+                        ]
+                    ),
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+            except Exception as e:
+                print(f"🟨[ВЫВОД][GIFTGIFT][UI][AUTO][WARN] edit_text err={type(e).__name__}: {e!r}")
+                try:
+                    await bot1.send_message(
+                        chat_id=clicker_id,
+                        text=user_text,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                except Exception as e2:
+                    print(f"🟥[ВЫВОД][GIFTGIFT][UI][AUTO][ERROR] send_message err={type(e2).__name__}: {e2!r}")
+
+            receiver_first_name = await _get_first_name_safe(user_id2)
+            payer_first_name = await _get_first_name_safe(user_id)
+
+            receiver_link_name = (
+                receiver_first_name
+                or (f"@{username_receiver}" if username_receiver else f"user_id {user_id2}")
+            )
+            sender_link_name = (
+                payer_first_name
+                or (f"@{username_payer}" if username_payer else f"user_id {user_id}")
+            )
+
+            try:
+                receiver_display = await create_user_link(
+                    user_id2,
+                    receiver_link_name,
+                    username_receiver or None,
+                )
+            except Exception as e:
+                print(f"🟨[ВЫВОД][GIFTGIFT][AUTO][LINK][WARN] receiver err={e!r}")
+                receiver_display = f"@{username_receiver}" if username_receiver else f"user_id {user_id2}"
+
+            try:
+                sender_display = await create_user_link(
+                    user_id,
+                    sender_link_name,
+                    username_payer or None,
+                )
+            except Exception as e:
+                print(f"🟨[ВЫВОД][GIFTGIFT][AUTO][LINK][WARN] sender err={e!r}")
+                sender_display = f"@{username_payer}" if username_payer else f"user_id {user_id}"
+
+            try:
+                channel_auto_text = await _wd_render_final_channel_text(
+                    kind="approve",
+                    result_flag="+",
+                    amount=int(amount),
+                    sender_display=sender_display,
+                    recipient_display=receiver_display,
+                    sender_user_id=int(user_id),
+                    recipient_user_id=int(user_id2),
+                    is_friend=True,
+                )
+                channel_auto_text += "\n\n<blockquote><b>⚡️ Автовыплата через tech userbot</b></blockquote>"
+
+                message = await bot1.send_message(
+                    chat_id="@CurrencyCute",
+                    text=channel_auto_text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+                message_id = _safe_int(getattr(message, "message_id", 0), 0)
+                user_bonus_requests.setdefault(user_id, []).append(message_id)
+                print(
+                    f"📣[ВЫВОД][GIFTGIFT][CHANNEL][AUTO] ✅ отправлено message_id={message_id} "
+                    f"rid={rid} gift_id={gift_id}"
+                )
+            except Exception as e:
+                print(f"🟥[ВЫВОД][GIFTGIFT][CHANNEL][AUTO][WARN] {type(e).__name__}: {e!r}")
+
+            try:
+                last_click_time[user_id] = now
+            except Exception:
+                pass
+
+            if raw.startswith("ggsr:"):
+                try:
+                    token = _safe_str(raw.split(":", 1)[1], "")
+                    if token:
+                        _pop_giftgift_send_request_action(token)
+                except Exception:
+                    pass
+
+            print(
+                f"✅[ВЫВОД][GIFTGIFT] AUTO DONE payer={user_id} receiver={user_id2} "
+                f"amount={amount} new_balance={new_balance} gift_id={gift_id}"
+            )
+            return
+
+        if auto_attempted:
+            print(
+                f"🟨[ВЫВОД][GIFTGIFT][AUTO][FALLBACK] rid={rid} "
+                f"reason={auto_fail_reason!r} -> manual review"
+            )
+
+        auto_fail_note = (
+            "\n<blockquote>⚠️ Автовыплата сейчас недоступна, заявка передана администратору.</blockquote>"
+            if auto_attempted
+            else ""
+        )
+
         user_text = (
             f"<b>"
             f"<tg-emoji emoji-id='5449850741667668411'>🌿</tg-emoji> Заявка создана • <u>{amount1}</u> кут\n"
@@ -27333,6 +28341,7 @@ async def send_request_callback_friend(callback_query: types.CallbackQuery):
             f"<tg-emoji emoji-id='5449820402018688838'>🌵</tg-emoji> Баланс : {new_balance1} кут\n\n"
             f"<blockquote>Админ скоро свяжется с вашим другом.\n"
             f"Попросите друга не менять username - иначе выплаты не будет.</blockquote>"
+            f"{auto_fail_note}"
             f"</b>"
         )
 
@@ -27386,6 +28395,13 @@ async def send_request_callback_friend(callback_query: types.CallbackQuery):
                 f"<b><tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> Для {uname_receiver}</b>\n"
                 f"<b><tg-emoji emoji-id='5465143921912846619'>🛩</tg-emoji> От {uname_payer}</b>\n\n"
                 f"<blockquote><b>@CuteGamingBot</b></blockquote>"
+            )
+
+        if auto_attempted and auto_fail_reason:
+            channel_message = (
+                f"<b>⚠️ Автовыплата не удалась:</b> "
+                f"<code>{escape(auto_fail_reason)[:220]}</code>\n\n"
+                f"{channel_message}"
             )
 
         base_mid = _safe_int(getattr(getattr(callback_query, "message", None), "message_id", 0), 0)
@@ -32560,6 +33576,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
         BALANCE_CHECK_COMMANDS = {"проверка баланса" , "проверка балансов" , "все балансы" , "все балики" ,
             "балансы все" , }
+        JERICHO_DEBUG_COMMANDS = {"jericho debug", "иерихон debug", "debug jericho", "джерико debug"}
 
         # =========================================================
         # MAIN LOGIC
@@ -32573,11 +33590,34 @@ async def add_firstname_to_usercheck_balance(message: Message):
                 total_balance_raw = await db.get_total_balance1()  # все пользователи
                 chat_balance_raw = await db.get_total_chat_balance()  # все группы
                 dex_balance_raw = await db.get_total_dex_balance()  # баланс DEX / покупок
+                pressure_snapshot = await _get_jericho_economy_pressure_snapshot()
+                jericho_metrics = await db.get_jericho_mode_metrics(JERICHO_METRICS_SAMPLE_SIZE)
 
                 # Безопасно приводим к числам
                 total_balance = _safe_balance(total_balance_raw)
                 chat_balance = _safe_balance(chat_balance_raw)
                 dex_balance = _safe_balance(dex_balance_raw)
+                groups_total_pressure = _safe_balance(pressure_snapshot.get("groups_total", 0))
+                groups_hot_count = _safe_balance(pressure_snapshot.get("hot_groups", 0))
+                groups_excess = _safe_balance(pressure_snapshot.get("total_excess", 0))
+                global_pressure_pct = _clamp_float(
+                    float(pressure_snapshot.get("global_pressure", 0.0) or 0.0),
+                    0.0,
+                    1.0,
+                ) * 100.0
+
+                demo_wins = _safe_balance(jericho_metrics.get("demo_wins", 0))
+                demo_losses = _safe_balance(jericho_metrics.get("demo_losses", 0))
+                zero_wins = _safe_balance(jericho_metrics.get("zero_demo_wins", 0))
+                zero_losses = _safe_balance(jericho_metrics.get("zero_demo_losses", 0))
+                rows_considered = _safe_balance(jericho_metrics.get("rows_considered", 0))
+
+                demo_total = demo_wins + demo_losses
+                zero_total = zero_wins + zero_losses
+                demo_winrate = (demo_wins / demo_total) if demo_total > 0 else 0.0
+                zero_winrate = (zero_wins / zero_total) if zero_total > 0 else 0.0
+                demo_delta = (demo_winrate - JERICHO_TARGET_DEMO_WINRATE) * 100.0
+                zero_delta = (zero_winrate - JERICHO_TARGET_0DEMO_WINRATE) * 100.0
 
                 # Считаем суммы
                 chat_and_dex_balance = chat_balance + dex_balance
@@ -32589,6 +33629,25 @@ async def add_firstname_to_usercheck_balance(message: Message):
                 formatted_dex_balance = _format_balance(dex_balance)
                 formatted_chat_and_dex_balance = _format_balance(chat_and_dex_balance)
                 formatted_total_sum_balance = _format_balance(total_sum_balance)
+                formatted_groups_total_pressure = _format_balance(groups_total_pressure)
+                formatted_groups_excess = _format_balance(groups_excess)
+                formatted_pressure_pct = f"{global_pressure_pct:.1f}"
+                formatted_demo_rate = f"{demo_winrate * 100.0:.1f}"
+                formatted_zero_rate = f"{zero_winrate * 100.0:.1f}"
+                formatted_demo_delta = f"{demo_delta:+.1f}"
+                formatted_zero_delta = f"{zero_delta:+.1f}"
+
+                creator_excess_map = pressure_snapshot.get("creator_excess_map") or {}
+                creator_pairs = []
+                for cid, excess in creator_excess_map.items():
+                    try:
+                        creator_pairs.append((int(cid), int(excess or 0)))
+                    except Exception:
+                        continue
+                creator_pairs.sort(key=lambda x: x[1], reverse=True)
+                top_creators_line = ", ".join(
+                    [f"{cid}:{_format_balance(ex)}" for cid, ex in creator_pairs[:3]]
+                ) if creator_pairs else "нет"
 
                 # Ответ
                 await message.answer(
@@ -32596,12 +33655,49 @@ async def add_firstname_to_usercheck_balance(message: Message):
                     f"🎍 <b>Группы + покупки:</b> <code>{formatted_chat_and_dex_balance}</code>\n"
                     f"🐲 <b>Обычный баланс групп:</b> <code>{formatted_chat_balance}</code>\n"
                     f"🏝 <b>С покупок / DEX:</b> <code>{formatted_dex_balance}</code>\n"
-                    f"🗺 <b>All balances:</b> <code>{formatted_total_sum_balance}</code>" , parse_mode=ParseMode.HTML)
+                    f"🗺 <b>All balances:</b> <code>{formatted_total_sum_balance}</code>\n\n"
+                    f"🧭 <b>Jericho pressure:</b> <code>{formatted_pressure_pct}%</code>\n"
+                    f"📦 <b>Сумма всех групп (pressure):</b> <code>{formatted_groups_total_pressure}</code>\n"
+                    f"🔥 <b>Групп выше {JERICHO_GROUP_EXCESS_THRESHOLD}:</b> <code>{groups_hot_count}</code>\n"
+                    f"⚖️ <b>Суммарный избыток групп:</b> <code>{formatted_groups_excess}</code>\n"
+                    f"👑 <b>Top creators excess:</b> <code>{top_creators_line}</code>\n\n"
+                    f"📊 <b>Jericho факт (sample={rows_considered}):</b>\n"
+                    f"• demo winrate: <code>{formatted_demo_rate}%</code> (target {JERICHO_TARGET_DEMO_WINRATE * 100:.0f}% | Δ {formatted_demo_delta}pp)\n"
+                    f"• 0demo winrate: <code>{formatted_zero_rate}%</code> (target {JERICHO_TARGET_0DEMO_WINRATE * 100:.0f}% | Δ {formatted_zero_delta}pp)",
+                    parse_mode=ParseMode.HTML,
+                )
 
             except Exception as e:
                 await message.answer(
                     f"❌ <b>Ошибка при получении балансов</b>\n"
                     f"<code>{str(e)}</code>" , parse_mode=ParseMode.HTML)
+
+        if message.from_user.id == 6801702632 and user_text in JERICHO_DEBUG_COMMANDS:
+            try:
+                pressure_snapshot = await _get_jericho_economy_pressure_snapshot()
+                metrics = await db.get_jericho_mode_metrics(JERICHO_METRICS_SAMPLE_SIZE)
+                await message.answer(
+                    "🧪 <b>Jericho debug</b>\n"
+                    f"• groups_soft_cap: <code>{JERICHO_GROUPS_TOTAL_SOFT_CAP}</code>\n"
+                    f"• group_excess_threshold: <code>{JERICHO_GROUP_EXCESS_THRESHOLD}</code>\n"
+                    f"• pressure_ttl: <code>{JERICHO_PRESSURE_CACHE_TTL_SEC}s</code>\n"
+                    f"• pressure_alpha: <code>{JERICHO_PRESSURE_EMA_ALPHA}</code>\n"
+                    f"• global_gain: <code>{JERICHO_GLOBAL_PRESSURE_GAIN}</code>\n"
+                    f"• creator_gain: <code>{JERICHO_CREATOR_PRESSURE_GAIN}</code>\n"
+                    f"• creator_pressure_max: <code>{JERICHO_MAX_CREATOR_PRESSURE}</code>\n"
+                    f"• demo_target_winrate: <code>{JERICHO_TARGET_DEMO_WINRATE:.2f}</code>\n"
+                    f"• 0demo_target_winrate: <code>{JERICHO_TARGET_0DEMO_WINRATE:.2f}</code>\n"
+                    f"• pressure_now: <code>{float(pressure_snapshot.get('global_pressure', 0.0) or 0.0):.3f}</code>\n"
+                    f"• groups_total: <code>{_safe_balance(pressure_snapshot.get('groups_total', 0))}</code>\n"
+                    f"• groups_excess: <code>{_safe_balance(pressure_snapshot.get('total_excess', 0))}</code>\n"
+                    f"• sample_rows: <code>{_safe_balance(metrics.get('rows_considered', 0))}</code>",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception as e:
+                await message.answer(
+                    f"❌ <b>Ошибка Jericho debug</b>\n<code>{str(e)}</code>",
+                    parse_mode=ParseMode.HTML,
+                )
 
         # Отправка информации о размерах словарей
 
@@ -34099,6 +35195,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
             return
         chat_id = message.chat.id
 
+
         task1 = asyncio.create_task(measure_time(staff_roster(message) , "состав"))
         await task1
         return
@@ -34121,6 +35218,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
             return
         chat_id = message.chat.id
 
+
         task1 = asyncio.create_task(measure_time(staff_permissions(message) , "права"))
         await task1
         return
@@ -34140,6 +35238,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
             return
         chat_id = message.chat.id
 
+
         task1 = asyncio.create_task(measure_time(mute(message) , "мут"))
         await task1
 
@@ -34155,6 +35254,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
         except GroupBanned:
             return
         chat_id = message.chat.id
+
 
         task1 = asyncio.create_task(measure_time(kick(message) , "кик"))
         await task1
@@ -34180,6 +35280,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
         except GroupBanned:
             return
         chat_id = message.chat.id
+
 
         task1 = asyncio.create_task(measure_time(ban(message) , "бан"))
         await task1
@@ -34211,6 +35312,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
         except GroupBanned:
             return
         chat_id = message.chat.id
+
 
         task1 = asyncio.create_task(measure_time(warn(message) , "варн"))
         await task1
@@ -36571,52 +37673,105 @@ async def run_bot():
         # маленькая пауза, чтобы polling и inline-хендлеры уже точно жили
         await _safe_sleep(5.0)
 
+        async def _is_userbot_authorized_without_login(client, label: str) -> bool:
+            try:
+                if not client.is_connected():
+                    await client.connect()
+                authorized = await client.is_user_authorized()
+                print(f"🧪 [{label}] precheck is_user_authorized={authorized}")
+                return bool(authorized)
+            except Exception as e:
+                print(f"⚠️ [{label}] precheck auth error: {e!r}")
+                return False
+
+        defer_withdraw_registration = False
+        main_authorized_before = await _is_userbot_authorized_without_login(main_client, "MAIN")
+        withdraw_authorized_before = await _is_userbot_authorized_without_login(withdraw_client, "WITHDRAW")
+
         # =====================================================
         # 2) ОСНОВНОЙ ЮЗЕРБОТ
         # =====================================================
-        await main_client.start()
-        print("🟩 Основной юзербот запущен!")
+        if not main_authorized_before:
+            print("🟨 [STARTUP] Основной юзербот не авторизован.")
+            print("👉 Сначала зарегистрируй основной юзербот. После этого перезапусти проект.")
+            await main_client.start()
+            print("🟩 [STARTUP] Основной юзербот зарегистрирован.")
+
+            if not withdraw_authorized_before:
+                defer_withdraw_registration = True
+                WITHDRAW_USERBOT_READY = False
+                print("⏭️ [WITHDRAW] На этом запуске регистрация выводного юзербота пропущена.")
+                print("👉 Перезапусти проект: на следующем запуске будет предложена регистрация юзербота для выводов.")
+        else:
+            await main_client.start()
+            print("🟩 Основной юзербот запущен!")
 
         # =====================================================
         # 3) РЕГИСТРАЦИЯ ВЫВОДНОГО ЮЗЕРБОТА
         # =====================================================
-        try:
-            if "register_withdraw_userbot_for_startup" in globals() and callable(globals().get("register_withdraw_userbot_for_startup")):
-                await register_withdraw_userbot_for_startup(withdraw_client)
-                print("🟩 [WITHDRAW] клиент передан в систему выводов")
-            else:
-                print("🟨 [WITHDRAW] register_withdraw_userbot_for_startup не найден, используем только глобальную регистрацию")
-        except Exception as e:
-            print(f"⚠️ [WITHDRAW] ошибка регистрации клиента в системе выводов: {e!r}")
+        if defer_withdraw_registration:
+            print("🟨 [WITHDRAW] Ожидаем повторный запуск проекта для регистрации выводного юзербота.")
+        else:
+            try:
+                if "register_withdraw_userbot_for_startup" in globals() and callable(globals().get("register_withdraw_userbot_for_startup")):
+                    await register_withdraw_userbot_for_startup(withdraw_client)
+                    print("🟩 [WITHDRAW] клиент передан в систему выводов")
+                else:
+                    print("🟨 [WITHDRAW] register_withdraw_userbot_for_startup не найден, используем только глобальную регистрацию")
+            except Exception as e:
+                print(f"⚠️ [WITHDRAW] ошибка регистрации клиента в системе выводов: {e!r}")
 
-        # =====================================================
-        # 4) WITHDRAW USERBOT
-        # =====================================================
-        try:
-            if not withdraw_client.is_connected():
-                await withdraw_client.connect()
-                print("🟩 [WITHDRAW] connect() done")
+            # =====================================================
+            # 4) WITHDRAW USERBOT
+            # =====================================================
+            try:
+                if not withdraw_client.is_connected():
+                    await withdraw_client.connect()
+                    print("🟩 [WITHDRAW] connect() done")
 
-            is_auth = await withdraw_client.is_user_authorized()
-            print(f"🧪 [WITHDRAW] is_user_authorized={is_auth}")
+                is_auth = await withdraw_client.is_user_authorized()
+                print(f"🧪 [WITHDRAW] is_user_authorized={is_auth}")
 
-            if is_auth:
-                me = await withdraw_client.get_me()
-                print(
-                    f"🍻 Юзербот для выводов подключен и ждёт вызовов | "
-                    f"id={getattr(me, 'id', 0)} username={getattr(me, 'username', '')!r}"
-                )
-                WITHDRAW_USERBOT_READY = True
-            else:
-                print("🟥 [WITHDRAW] session НЕ авторизована — выводы отключены, уведомляю админов")
+                login_on_startup = _wd_safe_str(
+                    os.getenv("TG_WITHDRAW_LOGIN_ON_STARTUP"),
+                    "",
+                ).lower() in {"1", "true", "yes", "on"}
+                if not is_auth and login_on_startup:
+                    login_ok = await _try_interactive_withdraw_login(
+                        withdraw_client,
+                        reason="startup",
+                    )
+                    if login_ok:
+                        is_auth = await withdraw_client.is_user_authorized()
+                        print(f"🧪 [WITHDRAW] post-login is_user_authorized={is_auth}")
+
+                if is_auth:
+                    me = await withdraw_client.get_me()
+                    print(
+                        f"🍻 Юзербот для выводов подключен и ждёт вызовов | "
+                        f"id={getattr(me, 'id', 0)} username={getattr(me, 'username', '')!r}"
+                    )
+                    WITHDRAW_USERBOT_READY = True
+                else:
+                    print("🟥 [WITHDRAW] session НЕ авторизована — выводы отключены, уведомляю админов")
+                    if _withdraw_interactive_login_allowed():
+                        if login_on_startup:
+                            print("👉 Запусти проект локально в консоли и введи код/2FA для выводного юзербота.")
+                        else:
+                            print("👉 На старте интерактивный вход отключён, чтобы не тормозить запуск.")
+                            print("👉 При попытке вывода бот сам попросит код/2FA в консоли.")
+                            print("👉 Если нужен вход именно на старте: TG_WITHDRAW_LOGIN_ON_STARTUP=1")
+                    else:
+                        print("👉 Зарегистрируй юзербот для выводов и перезапусти проект.")
+                    print("👉 Подсказка: python reauth_withdraw_userbot.py")
+                    WITHDRAW_USERBOT_READY = False
+                    await _wd_alert_userbot_unauthorized(
+                        reason="startup: withdraw_client.is_user_authorized=False"
+                    )
+            except Exception as e:
+                print(f"⚠️ [WITHDRAW] boot error: {e!r}")
                 WITHDRAW_USERBOT_READY = False
-                await _wd_alert_userbot_unauthorized(
-                    reason="startup: withdraw_client.is_user_authorized=False"
-                )
-        except Exception as e:
-            print(f"⚠️ [WITHDRAW] boot error: {e!r}")
-            WITHDRAW_USERBOT_READY = False
-            await _wd_alert_userbot_unauthorized(reason=f"startup boot error: {e!r}")
+                await _wd_alert_userbot_unauthorized(reason=f"startup boot error: {e!r}")
 
         # =====================================================
         # 5) ФОНОВЫЕ СЕРВИСЫ

@@ -38,6 +38,15 @@ DEMO_STREAK_BREAK = 3
 ZERO_MASK_WIN_PROB = 0.12
 ZERO_STREAK_BREAK = 3
 
+# Доп. контроль demo для ставок на одно число:
+# даже в demo-режиме такая ставка не должна гарантированно выигрывать.
+FORTUNA_DEMO_NUMBER_WIN_PROB_BASE = 0.34
+FORTUNA_DEMO_NUMBER_WIN_PROB_MIN = 0.14
+FORTUNA_DEMO_NUMBER_WIN_PROB_MAX = 0.55
+FORTUNA_DEMO_NUMBER_WIN_STREAK_PENALTY = 0.06
+FORTUNA_DEMO_NUMBER_LOSE_STREAK_BONUS = 0.03
+FORTUNA_DEMO_NUMBER_STREAK_CAP = 3
+
 # Профиль экономики выпадений (чем ниже коэффициент, тем "жестче" игра).
 # Значения применяются как доля от естественного шанса победы по типу ставки.
 FORTUNA_WIN_PROFILE = "hard"  # soft / normal / hard
@@ -487,8 +496,9 @@ async def _user_minus(user_id: int, amount: int) -> bool:
     if amt <= 0:
         return True
     try:
-        await db.update_user_balance(int(user_id), f"-{amt}")
-        return True
+        new_val = await db.update_user_balance(int(user_id), f"-{amt}")
+        if new_val is not None:
+            return True
     except Exception:
         pass
     try:
@@ -496,8 +506,8 @@ async def _user_minus(user_id: int, amount: int) -> bool:
     except Exception:
         cur = 0
     try:
-        await db.update_user_balance(int(user_id), max(0, cur - amt))
-        return True
+        new_val = await db.update_user_balance(int(user_id), max(0, cur - amt))
+        return new_val is not None
     except Exception:
         return False
 
@@ -1425,6 +1435,33 @@ async def _fortuna_paid_game(
                     elif random.random() < DEMO_MASK_LOSS_PROB:
                         should_lose = True
                         _fdbg("DEMO_MASK", "random chance -> LOSS/HOME")
+
+                    # Для режима "ставка на число" в demo добавляем отдельный вероятностный фильтр:
+                    # win остаются чаще, чем в обычной игре, но уже не 100% каждый раунд.
+                    if not should_lose and str(parsed.get("mode") or "") == "number":
+                        ws = max(0, min(int(win_streak or 0), int(FORTUNA_DEMO_NUMBER_STREAK_CAP)))
+                        ls = max(0, min(int(lose_streak or 0), int(FORTUNA_DEMO_NUMBER_STREAK_CAP)))
+                        number_demo_win_prob = float(FORTUNA_DEMO_NUMBER_WIN_PROB_BASE)
+                        number_demo_win_prob -= ws * float(FORTUNA_DEMO_NUMBER_WIN_STREAK_PENALTY)
+                        number_demo_win_prob += ls * float(FORTUNA_DEMO_NUMBER_LOSE_STREAK_BONUS)
+                        number_demo_win_prob = _clamp01(number_demo_win_prob)
+                        number_demo_win_prob = max(
+                            float(FORTUNA_DEMO_NUMBER_WIN_PROB_MIN),
+                            min(float(FORTUNA_DEMO_NUMBER_WIN_PROB_MAX), number_demo_win_prob),
+                        )
+
+                        number_roll = random.random()
+                        if number_roll >= number_demo_win_prob:
+                            should_lose = True
+                            _fdbg(
+                                "DEMO_NUMBER",
+                                f"roll={number_roll:.4f} >= prob={number_demo_win_prob:.4f} -> LOSS",
+                            )
+                        else:
+                            _fdbg(
+                                "DEMO_NUMBER",
+                                f"roll={number_roll:.4f} < prob={number_demo_win_prob:.4f} -> WIN",
+                            )
 
                     if should_lose:
                         # Маскировочный проигрыш, demo не списываем

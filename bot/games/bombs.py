@@ -243,15 +243,16 @@ async def _user_minus(user_id: int, amount: int) -> bool:
     if amt <= 0:
         return True
     try:
-        await db.update_user_balance(int(user_id), f"-{amt}")
-        return True
+        new_val = await db.update_user_balance(int(user_id), f"-{amt}")
+        if new_val is not None:
+            return True
     except Exception:
         pass
     try:
         cur = _dec(await db.get_user_balance(int(user_id)) or 0)
         newv = max(Decimal(0), cur - _dec(amt))
-        await db.update_user_balance(int(user_id), int(newv))
-        return True
+        new_val = await db.update_user_balance(int(user_id), int(newv))
+        return new_val is not None
     except Exception:
         return False
 

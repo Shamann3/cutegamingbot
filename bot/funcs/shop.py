@@ -2813,8 +2813,15 @@ async def shop_op(message: Message):
 
 
         elif "eaglewithdrawal" in str(second_name):
-            await eaglewithdrawal(db , user_id , message)
-            await db.delete_user_inventory1(user_id , item_name)
+            ok = await eaglewithdrawal(db , user_id , message)
+            if ok:
+                await db.delete_user_inventory1(user_id , item_name)
+            else:
+                await message.reply(
+                    "⚠️ <b>Не удалось применить предмет.</b>\n"
+                    "Предмет не был списан. Попробуйте ещё раз.",
+                    parse_mode="HTML",
+                )
         elif "ogyrchik" in str(second_name):
             await ogyrchik(db , user_id , message)
             await db.delete_user_inventory1(user_id , item_name)

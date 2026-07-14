@@ -7570,7 +7570,20 @@ class Database:
 
         try:
             async with self.pool.acquire() as connection:
-                query = """
+                query_with_creator = """
+                    SELECT 
+                        chat_id, 
+                        chatbalance, 
+                        dexbalance, 
+                        (chatbalance + dexbalance) AS total_balance, 
+                        creator_id,
+                        namechat, 
+                        usernamechat 
+                    FROM chat
+                    WHERE usernamechat IS NOT NULL
+                    AND usernamechat != 'username отсутствует'
+                """
+                query_without_creator = """
                     SELECT 
                         chat_id, 
                         chatbalance, 
@@ -7582,11 +7595,177 @@ class Database:
                     WHERE usernamechat IS NOT NULL
                     AND usernamechat != 'username отсутствует'
                 """
-                result = await connection.fetch(query)
+                try:
+                    result = await connection.fetch(query_with_creator)
+                except Exception as qerr:
+                    print(f"[get_group_balances] fallback без creator_id: {qerr}")
+                    result = await connection.fetch(query_without_creator)
                 return result
         except Exception as e:
             print(f"Ошибка при получении данных о группах: {e}")
             return None
+
+    async def get_group_economy_pressure_snapshot(self, per_group_threshold: int = 20000) -> Dict[str, Any]:
+        """
+        Сводка давления экономики по группам для Jericho:
+        - groups_total: сумма (chatbalance + dexbalance) по всем группам
+        - total_excess: суммарный «лишек» только по группам выше per_group_threshold
+        - creator_excess_map: лишек, агрегированный по creator_id
+        """
+        if not self.pool:
+            return {
+                "groups_total": 0,
+                "total_excess": 0,
+                "hot_groups": 0,
+                "creator_excess_map": {},
+                "creator_hot_groups_map": {},
+                "per_group_threshold": int(max(0, per_group_threshold)),
+            }
+
+        threshold = int(max(0, per_group_threshold))
+        base_result: Dict[str, Any] = {
+            "groups_total": 0,
+            "total_excess": 0,
+            "hot_groups": 0,
+            "creator_excess_map": {},
+            "creator_hot_groups_map": {},
+            "per_group_threshold": threshold,
+        }
+
+        try:
+            async with self.pool.acquire() as connection:
+                totals_row = await connection.fetchrow(
+                    """
+                    SELECT
+                        COALESCE(SUM(COALESCE(chatbalance, 0) + COALESCE(dexbalance, 0)), 0)::bigint AS groups_total,
+                        COALESCE(
+                            SUM(GREATEST(COALESCE(chatbalance, 0) + COALESCE(dexbalance, 0) - $1, 0)),
+                            0
+                        )::bigint AS total_excess,
+                        COUNT(*) FILTER (
+                            WHERE (COALESCE(chatbalance, 0) + COALESCE(dexbalance, 0)) > $1
+                        )::int AS hot_groups
+                    FROM chat
+                    """,
+                    threshold,
+                )
+
+                if totals_row:
+                    base_result["groups_total"] = int(totals_row["groups_total"] or 0)
+                    base_result["total_excess"] = int(totals_row["total_excess"] or 0)
+                    base_result["hot_groups"] = int(totals_row["hot_groups"] or 0)
+
+                # В старых схемах creator_id может отсутствовать — тогда просто вернём общую сводку.
+                try:
+                    creator_rows = await connection.fetch(
+                        """
+                        SELECT
+                            creator_id,
+                            SUM(
+                                GREATEST(COALESCE(chatbalance, 0) + COALESCE(dexbalance, 0) - $1, 0)
+                            )::bigint AS creator_excess,
+                            COUNT(*) FILTER (
+                                WHERE (COALESCE(chatbalance, 0) + COALESCE(dexbalance, 0)) > $1
+                            )::int AS creator_hot_groups
+                        FROM chat
+                        WHERE creator_id IS NOT NULL
+                        GROUP BY creator_id
+                        HAVING SUM(
+                            GREATEST(COALESCE(chatbalance, 0) + COALESCE(dexbalance, 0) - $1, 0)
+                        ) > 0
+                        ORDER BY creator_excess DESC
+                        """,
+                        threshold,
+                    )
+                except Exception as creator_err:
+                    print(f"[PRESSURE] creator breakdown недоступен: {creator_err}")
+                    creator_rows = []
+
+                creator_excess_map: Dict[int, int] = {}
+                creator_hot_groups_map: Dict[int, int] = {}
+                for row in creator_rows:
+                    try:
+                        creator_id = int(row["creator_id"])
+                    except Exception:
+                        continue
+                    creator_excess_map[creator_id] = int(row["creator_excess"] or 0)
+                    creator_hot_groups_map[creator_id] = int(row["creator_hot_groups"] or 0)
+
+                base_result["creator_excess_map"] = creator_excess_map
+                base_result["creator_hot_groups_map"] = creator_hot_groups_map
+
+            return base_result
+        except Exception as e:
+            print(f"[PRESSURE] Ошибка сводки по группам: {e}")
+            return base_result
+
+    async def get_jericho_mode_metrics(self, sample_size: int = 5000) -> Dict[str, Any]:
+        """
+        Быстрая сводка по фактическим исходам demo/0demo в истории игр.
+        Берёт последние sample_size записей из cutehistory, где фигурирует demo.
+        """
+        sample = int(max(100, min(200000, sample_size)))
+        fallback: Dict[str, Any] = {
+            "sample_size": sample,
+            "rows_considered": 0,
+            "demo_wins": 0,
+            "demo_losses": 0,
+            "zero_demo_wins": 0,
+            "zero_demo_losses": 0,
+        }
+
+        if not self.pool:
+            return fallback
+
+        try:
+            async with self.pool.acquire() as connection:
+                row = await connection.fetchrow(
+                    """
+                    SELECT
+                        COUNT(*)::int AS rows_considered,
+                        COUNT(*) FILTER (
+                            WHERE cause LIKE '+ %'
+                              AND cause ILIKE '%demo%'
+                              AND cause NOT ILIKE '%0demo%'
+                        )::int AS demo_wins,
+                        COUNT(*) FILTER (
+                            WHERE cause LIKE '- %'
+                              AND cause ILIKE '%demo%'
+                              AND cause NOT ILIKE '%0demo%'
+                        )::int AS demo_losses,
+                        COUNT(*) FILTER (
+                            WHERE cause LIKE '+ %'
+                              AND cause ILIKE '%0demo%'
+                        )::int AS zero_demo_wins,
+                        COUNT(*) FILTER (
+                            WHERE cause LIKE '- %'
+                              AND cause ILIKE '%0demo%'
+                        )::int AS zero_demo_losses
+                    FROM (
+                        SELECT cause
+                        FROM cutehistory
+                        WHERE cause ILIKE '%demo%'
+                        ORDER BY data DESC
+                        LIMIT $1
+                    ) s
+                    """,
+                    sample,
+                )
+
+            if not row:
+                return fallback
+
+            return {
+                "sample_size": sample,
+                "rows_considered": int(row["rows_considered"] or 0),
+                "demo_wins": int(row["demo_wins"] or 0),
+                "demo_losses": int(row["demo_losses"] or 0),
+                "zero_demo_wins": int(row["zero_demo_wins"] or 0),
+                "zero_demo_losses": int(row["zero_demo_losses"] or 0),
+            }
+        except Exception as e:
+            print(f"[JERICHO][METRICS] Ошибка чтения метрик: {e}")
+            return fallback
 
 
     async def get_user_referrals(self):
@@ -8878,10 +9057,12 @@ class Database:
     # ============================================================
     # ✅ LIMITS: получить лимиты пользователя (или дефолты)
     # ============================================================
+
     async def get_user_withdraw_limits(self, user_id: int) -> Tuple[int, int]:
         """
-        Берёт персональные лимиты из withdraw_limits.
-        Если записи нет - вернёт дефолты.
+        Источник истины по лимиту вывода: users.canwithdrawal.
+        withdraw_limits используем как дополнительное хранилище cooldown
+        и для обратной совместимости.
         """
         uid = int(user_id)
         if not getattr(self, "pool", None):
@@ -8889,26 +9070,382 @@ class Database:
             return int(await self.get_canwithdrawal(user_id)), int(self.WITHDRAW_DEFAULT_COOLDOWN_SEC)
 
         async with self.pool.acquire() as conn:
+            canwithdrawal_dl = int(
+                await conn.fetchval(
+                    "SELECT canwithdrawal FROM users WHERE user_id=$1",
+                    uid,
+                ) or 0
+            )
+
             row = await conn.fetchrow(
                 """
                 SELECT daily_amount_limit, cooldown_seconds
                 FROM withdraw_limits
                 WHERE user_id=$1
                 """,
-                uid
+                uid,
             )
-            if not row:
-                return int(await self.get_canwithdrawal(user_id)), int(self.WITHDRAW_DEFAULT_COOLDOWN_SEC)
 
-            dl = int(row["daily_amount_limit"] or 0)
+            if not row:
+                dl = int(canwithdrawal_dl or 0)
+                cd = int(self.WITHDRAW_DEFAULT_COOLDOWN_SEC or 12 * 3600)
+                if dl <= 0:
+                    dl = int(Default_WITHDRAW_DEFAULT_DAILY_LIMIT or 100)
+                return int(dl), int(cd)
+
+            row_dl = int(row["daily_amount_limit"] or 0)
             cd = int(row["cooldown_seconds"] or 0)
 
-            if dl <= 0:
-                dl = int(await self.get_canwithdrawal(user_id))
+            # КЛЮЧЕВОЕ ПРАВИЛО:
+            # если в users.canwithdrawal есть число > 0, берём именно его.
+            if canwithdrawal_dl > 0:
+                dl = int(canwithdrawal_dl)
+            else:
+                dl = int(row_dl or 0)
+                if dl <= 0:
+                    dl = int(Default_WITHDRAW_DEFAULT_DAILY_LIMIT or 100)
+
+                # Если canwithdrawal пустой, а в withdraw_limits есть лимит - синхронизируем users.
+                try:
+                    await conn.execute(
+                        """
+                        UPDATE users
+                        SET canwithdrawal = $2
+                        WHERE user_id = $1
+                          AND COALESCE(canwithdrawal, 0) <= 0
+                        """,
+                        uid,
+                        int(dl),
+                    )
+                except Exception as e:
+                    _vdbg(f"[ЛИМИТЫ][LIMITS][WARN] users sync err={type(e).__name__}: {e!r}")
+
+            # Поддерживаем withdraw_limits в синхроне с источником истины.
+            try:
+                if int(row_dl or 0) != int(dl):
+                    await conn.execute(
+                        """
+                        UPDATE withdraw_limits
+                        SET daily_amount_limit = $2,
+                            updated_at = NOW()
+                        WHERE user_id = $1
+                        """,
+                        uid,
+                        int(dl),
+                    )
+            except Exception as e:
+                _vdbg(f"[ЛИМИТЫ][LIMITS][WARN] withdraw_limits sync err={type(e).__name__}: {e!r}")
+
             if cd <= 0:
                 cd = int(self.WITHDRAW_DEFAULT_COOLDOWN_SEC)
 
             return int(dl), int(cd)
+
+    async def upsert_withdraw_limit(
+            self,
+            user_id: int,
+            daily_amount_limit: Optional[int] = None,
+            cooldown_seconds: Optional[int] = None,
+    ) -> None:
+        """
+        Установить/обновить персональные лимиты. Не переданный параметр - берём текущее значение/дефолт.
+        """
+        current_limit, current_cooldown = await self.get_user_withdraw_limits(user_id)
+        new_limit = daily_amount_limit if daily_amount_limit is not None else current_limit
+        new_cd = cooldown_seconds if cooldown_seconds is not None else current_cooldown
+
+        sql = """
+        INSERT INTO withdraw_limits (user_id, daily_amount_limit, cooldown_seconds, updated_at)
+        VALUES ($1, $2, $3, now())
+        ON CONFLICT (user_id) DO UPDATE
+          SET daily_amount_limit = EXCLUDED.daily_amount_limit,
+              cooldown_seconds   = EXCLUDED.cooldown_seconds,
+              updated_at         = now();
+        """
+        async with self.pool.acquire() as conn:
+            await conn.execute(sql, user_id, int(new_limit), int(new_cd))
+            # users.canwithdrawal — источник истины.
+            await conn.execute(
+                """
+                UPDATE users
+                SET canwithdrawal = $2
+                WHERE user_id = $1
+                """,
+                int(user_id),
+                int(new_limit),
+            )
+
+    async def _cleanup_expired_cooldown_and_reset_quota_locked(
+            self,
+            conn,
+            *,
+            user_id: int,
+            daily_limit: int,
+    ) -> bool:
+        """
+        Если кулдаун истёк:
+        - удаляем протухший withdraw_cooldown
+        - сбрасываем withdraw_quota_window
+        - нормализуем лимит перед reset
+
+        ВАЖНО:
+        - вызывать только под lock / внутри транзакции
+        - новый cooldown НЕ создаёт
+        """
+
+        def _safe_int_local(v, default: int = 0) -> int:
+            try:
+                return int(v)
+            except Exception:
+                return int(default)
+
+        def _safe_non_negative_local(v, default: int = 0) -> int:
+            x = _safe_int_local(v, default)
+            return x if x >= 0 else 0
+
+        uid = int(user_id)
+        dl = _safe_non_negative_local(daily_limit, 0)
+
+        # 1) удаляем только ПРОТУХШИЙ cooldown
+        res = await conn.execute(
+            """
+            DELETE FROM withdraw_cooldown
+            WHERE user_id=$1 AND until_at <= NOW()
+            """,
+            uid,
+        )
+
+        try:
+            deleted = int((res or "0").split()[-1])
+        except Exception:
+            deleted = 0
+
+        if deleted <= 0:
+            return False
+
+        # 2) нормализуем daily_limit
+        if dl <= 0:
+            try:
+                if hasattr(self, "get_canwithdrawal"):
+                    dl = _safe_non_negative_local(await self.get_canwithdrawal(uid) or 0, 0)
+            except Exception as e:
+                _vdbg(f"[ЛИМИТЫ][AUTO-RESET][WARN] get_canwithdrawal uid={uid} err={e!r}")
+                dl = 0
+
+        if dl <= 0:
+            try:
+                dl = _safe_non_negative_local(Default_WITHDRAW_DEFAULT_DAILY_LIMIT, 0)
+            except Exception:
+                dl = 100
+
+        if dl <= 0:
+            dl = 100
+
+        print(
+            f"[ЛИМИТЫ][AUTO-RESET] ✅ uid={uid} кулдаун истёк -> удалён({deleted}) "
+            f"-> сброс окна, лимит={dl}"
+        )
+
+        # 3) жёсткий reset quota window
+        await conn.execute(
+            """
+            INSERT INTO withdraw_quota_window(
+                user_id,
+                window_started_at,
+                used_in_window,
+                daily_limit,
+                remaining,
+                used_percent,
+                status,
+                cooldown_left_sec,
+                cooldown_until,
+                updated_at
+            )
+            VALUES ($1, NOW(), 0, $2, $2, 0, 'OK', 0, NULL, NOW())
+            ON CONFLICT (user_id) DO UPDATE
+              SET window_started_at = NOW(),
+                  used_in_window    = 0,
+                  daily_limit       = EXCLUDED.daily_limit,
+                  remaining         = EXCLUDED.remaining,
+                  used_percent      = 0,
+                  status            = 'OK',
+                  cooldown_left_sec = 0,
+                  cooldown_until    = NULL,
+                  updated_at        = NOW()
+            """,
+            uid,
+            int(dl),
+        )
+
+        # 4) лог текущего состояния после reset
+        try:
+            row = await conn.fetchrow(
+                """
+                SELECT
+                    user_id,
+                    window_started_at,
+                    used_in_window,
+                    daily_limit,
+                    remaining,
+                    used_percent,
+                    status,
+                    cooldown_left_sec,
+                    cooldown_until
+                FROM withdraw_quota_window
+                WHERE user_id=$1
+                """,
+                uid,
+            )
+            _vdbg(f"[ЛИМИТЫ][AUTO-RESET][STATE] uid={uid} row={dict(row) if row else None}")
+        except Exception as e:
+            _vdbg(f"[ЛИМИТЫ][AUTO-RESET][WARN] state fetch uid={uid} err={e!r}")
+
+        return True
+
+    async def remove_expired_withdraw_cooldowns(self, user_id) -> int:
+        """
+        Чистим просроченные кулдауны.
+        Для затронутых пользователей сбрасываем окно (used=0, remaining=daily_limit).
+        """
+        if not getattr(self, "pool", None):
+            return 0
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                rows = await conn.fetch("SELECT user_id FROM withdraw_cooldown WHERE until_at <= NOW()")
+                user_ids = [int(r["user_id"]) for r in rows] if rows else []
+
+                res = await conn.execute("DELETE FROM withdraw_cooldown WHERE until_at <= NOW()")
+                try:
+                    deleted_count = int((res or "0").split()[-1])
+                except Exception:
+                    deleted_count = 0
+
+                if user_ids:
+                    default_dl = int(Default_WITHDRAW_DEFAULT_DAILY_LIMIT or 100)
+
+                    # 1) пользователи, которые есть в users
+                    await conn.execute(
+                        """
+                        INSERT INTO withdraw_quota_window(
+                            user_id, window_started_at, used_in_window, daily_limit, remaining,
+                            used_percent, status, cooldown_left_sec, cooldown_until, updated_at
+                        )
+                        SELECT u.user_id, NOW(), 0,
+                               COALESCE(NULLIF(u.canwithdrawal,0), $2),
+                               COALESCE(NULLIF(u.canwithdrawal,0), $2),
+                               0, 'OK', 0, NULL, NOW()
+                          FROM users u
+                         WHERE u.user_id = ANY($1::BIGINT[])
+                        ON CONFLICT (user_id) DO UPDATE
+                          SET window_started_at = EXCLUDED.window_started_at,
+                              used_in_window    = 0,
+                              daily_limit       = EXCLUDED.daily_limit,
+                              remaining         = EXCLUDED.remaining,
+                              used_percent      = 0,
+                              status            = 'OK',
+                              cooldown_left_sec = 0,
+                              cooldown_until    = NULL,
+                              updated_at        = NOW()
+                        """,
+                        user_ids,
+                        int(default_dl),
+                    )
+
+                    # 2) user_id есть в cooldown, но нет строки в users
+                    await conn.execute(
+                        """
+                        INSERT INTO withdraw_quota_window(
+                            user_id, window_started_at, used_in_window, daily_limit, remaining,
+                            used_percent, status, cooldown_left_sec, cooldown_until, updated_at
+                        )
+                        SELECT u_id, NOW(), 0, $2, $2, 0, 'OK', 0, NULL, NOW()
+                          FROM UNNEST($1::BIGINT[]) AS t(u_id)
+                         WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.user_id = t.u_id)
+                        ON CONFLICT (user_id) DO UPDATE
+                          SET window_started_at = EXCLUDED.window_started_at,
+                              used_in_window    = 0,
+                              daily_limit       = EXCLUDED.daily_limit,
+                              remaining         = EXCLUDED.remaining,
+                              used_percent      = 0,
+                              status            = 'OK',
+                              cooldown_left_sec = 0,
+                              cooldown_until    = NULL,
+                              updated_at        = NOW()
+                        """,
+                        user_ids,
+                        int(default_dl),
+                    )
+
+                _vdbg(f"[ЛИМИТЫ][CLEANUP] удалено кулдаунов: {deleted_count}. сброшено окон: {len(user_ids)}")
+                return deleted_count
+
+    async def get_staff_daily_counts(self, user_id: int) -> Dict[int, int]:
+        """
+        Возвращает {chat_id: сколько сообщений пользователь написал СЕГОДНЯ}
+        по каждой официальной группе (MuteConfig.STAFF_CHAT_IDS).
+        Группы без сообщений присутствуют со значением 0.
+        При ошибке БД возвращает то, что успели собрать (по умолчанию нули).
+        """
+        result: Dict[int, int] = {}
+        if not self.pool:
+            return result
+
+        try:
+            from bot.admins.mute import MuteConfig
+        except Exception as e:
+            print(f"[STAFF_DAILY][CFG][WARN] {e!r}")
+            return result
+
+        staff_ids = [int(c) for c in MuteConfig.STAFF_CHAT_IDS]
+        if not staff_ids:
+            return result
+
+        for cid in staff_ids:
+            result[cid] = 0
+
+        today = date.today()
+        query = """
+            SELECT chat_id, COALESCE(SUM(text), 0) AS total
+            FROM chatchange
+            WHERE user_id = $1
+              AND date = $2
+              AND text IS NOT NULL
+              AND chat_id = ANY($3::bigint[])
+            GROUP BY chat_id
+        """
+        try:
+            async with self.pool.acquire() as connection:
+                rows = await connection.fetch(query, int(user_id), today, staff_ids)
+                for row in rows:
+                    result[int(row["chat_id"])] = int(row["total"] or 0)
+        except Exception as e:
+            print(f"[STAFF_DAILY][ERROR] uid={user_id}: {e!r}")
+
+        # Плюсуем несброшенные в БД сообщения из in-memory буфера.
+        try:
+            uid = int(user_id)
+            staff_set = set(staff_ids)
+            pending = getattr(self, "_pending_user_counts", {}) or {}
+
+            for (p_uid, p_cid), p_cnt in pending.items():
+                try:
+                    p_uid_i = int(p_uid)
+                    p_cid_i = int(p_cid)
+                    p_cnt_i = int(p_cnt or 0)
+                except Exception:
+                    continue
+
+                if p_cnt_i <= 0:
+                    continue
+                if p_uid_i != uid or p_cid_i not in staff_set:
+                    continue
+
+                result[p_cid_i] = int(result.get(p_cid_i, 0)) + p_cnt_i
+        except Exception as e:
+            print(f"[STAFF_DAILY][PENDING][WARN] uid={user_id}: {e!r}")
+
+        return result
 
     # ============================================================
     # ✅ 9) get_withdraw_state (UI-обёртка)

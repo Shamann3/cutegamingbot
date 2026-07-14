@@ -149,11 +149,18 @@ async def _user_plus(uid, amt):
 
 async def _user_minus(uid, amt):
     if amt <= 0: return True
-    try: await db.update_user_balance(int(uid), f"-{amt}")
+    try:
+        new_val = await db.update_user_balance(int(uid), f"-{amt}")
+        if new_val is not None:
+            return True
     except:
+        pass
+    try:
         cur = _safe_int(await db.get_user_balance(int(uid)), 0)
-        await db.update_user_balance(int(uid), max(0, cur - amt))
-    return True
+        new_val = await db.update_user_balance(int(uid), max(0, cur - amt))
+        return new_val is not None
+    except:
+        return False
 
 async def _home_take_and_log_tower_collapsed(*, bot, user_id: int, loss: int):
     try:

@@ -140,24 +140,70 @@ async def eaglewithdrawal(db, user_id: int, message):
     Увеличивает лимит вывода, отправляет стикер и сообщает новый баланс.
     """
     try:
+        uid = int(user_id)
         amount = 100
-        # 1️⃣ Получаем старый лимит
-        old_limit = await db.get_canwithdrawal(user_id)
 
-        # 2️⃣ Увеличиваем лимит
-        new_limit_value = old_limit + amount
-        await db.set_canwithdrawal(user_id, new_limit_value)
+        # 1) Берём текущий эффективный лимит (withdraw_limits -> fallback users.canwithdrawal)
+        try:
+            current_limit, current_cooldown = await db.get_user_withdraw_limits(uid)
+        except Exception as e:
+            print(f"[ITEM][EAGLE][WARN] get_user_withdraw_limits err={e!r}")
+            current_limit = await db.get_canwithdrawal(uid)
+            current_cooldown = int(getattr(db, "WITHDRAW_DEFAULT_COOLDOWN_SEC", 12 * 3600) or 12 * 3600)
 
-        # 3️⃣ Получаем обновлённый лимит (контроль)
-        new_limit = await db.get_canwithdrawal(user_id)
+        legacy_limit = int(await db.get_canwithdrawal(uid) or 0)
+        current_limit = max(int(current_limit or 0), int(legacy_limit or 0))
+        current_cooldown = int(current_cooldown or 0)
+        new_limit_value = current_limit + amount
 
-        # 4️⃣ Отправляем стикер
+        # 2) Обновляем источник истины для лимитов
+        await db.upsert_withdraw_limit(
+            uid,
+            daily_amount_limit=int(new_limit_value),
+            cooldown_seconds=int(current_cooldown),
+        )
+
+        # 3) Синхронизируем legacy-поле users.canwithdrawal для совместимости
+        await db.set_canwithdrawal(uid, int(new_limit_value))
+
+        # 4) Если был кулдаун по daily_limit — снимаем его, т.к. лимит повышен предметом
+        try:
+            if getattr(db, "pool", None):
+                async with db.pool.acquire() as connection:
+                    await connection.execute(
+                        """
+                        DELETE FROM withdraw_cooldown
+                        WHERE user_id = $1
+                          AND until_at > NOW()
+                          AND (
+                                cause = 'daily_limit'
+                                OR cause LIKE 'daily_limit:%'
+                              )
+                        """,
+                        uid,
+                    )
+        except Exception as e:
+            print(f"[ITEM][EAGLE][WARN] cooldown cleanup err={e!r}")
+
+        # 5) Пересчитываем quota window сразу, чтобы UI/проверки увидели новый лимит в этот же момент
+        try:
+            state = await db.refresh_withdraw_quota_if_needed(
+                uid,
+                daily_limit=int(new_limit_value),
+                cooldown_seconds=int(current_cooldown),
+            )
+            new_limit = int(state.get("daily_limit") or new_limit_value)
+        except Exception as e:
+            print(f"[ITEM][EAGLE][WARN] refresh_withdraw_quota_if_needed err={e!r}")
+            new_limit = int(new_limit_value)
+
+        # 6) Отправляем стикер
         await message.answer_sticker(
             "CAACAgIAAxkBAsly4mmKhmL5DgNlCiVDEJDCbRLELirxAAI4lAACg2UQSKgOxw5D17OVOgQ"
         )
         bet_amount_win_formated1 = "{:,.0f}".format(amount).replace("," , ".")
         bet_amount_win_formated = "{:,.0f}".format(new_limit).replace("," , ".")
-        # 5️⃣ Отправляем сообщение
+        # 7) Отправляем сообщение
         await message.answer(
             f"<tg-emoji emoji-id='5192951739623447936'>🦅</tg-emoji> <b>Лимит вывода увеличен!</b>\n\n"
             f"<tg-emoji emoji-id='5318892863780579996'>🎩</tg-emoji> <b>Добавлено : {bet_amount_win_formated1}</b>\n"
