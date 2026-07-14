@@ -125,7 +125,7 @@ function SystemCard({ row, variant }) {
       </div>
 
       <div className="panel-log-system-code">
-        <span className="panel-log-code">{row.code}</span>
+        <span className="panel-log-code">{row.code || '(нет кода)'}</span>
         {row.codeTitle && <span className="panel-log-code-title">{row.codeTitle}</span>}
       </div>
 
@@ -140,6 +140,12 @@ function SystemCard({ row, variant }) {
           )}
           {row.clientIp && <span>IP {row.clientIp}</span>}
         </div>
+      )}
+
+      {!row.message && !row.method && !row.path && !row.clientIp && (
+        <p className="panel-shelf-muted" style={{ marginTop: '0.35rem' }}>
+          Устаревшая запись без деталей (создана до текущей версии логирования)
+        </p>
       )}
     </article>
   )
