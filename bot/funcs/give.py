@@ -1176,12 +1176,12 @@ async def give(message: Message):
         if not allowed:
             return
 
-        await db.update_user_balance(sender_id , sender_balance - amount)
-        await db.update_user_balance(receiver_id , receiver_balance + amount)
-
-        await db.cutehistory_minus(sender_id , amount , "дать")
-        await db.cutehistory_plus(receiver_id , amount , "дать")
-        await db.add_transaction(sender_id , receiver_id , amount)
+        try:
+            await db.transfer_currency(sender_id , receiver_id , amount , cause="дать")
+        except InsufficientBalanceError:
+            await message.reply(
+                '<tg-emoji emoji-id="5375312095346704820">💰</tg-emoji> <b>Недостаточно кут для перевода.</b>' , parse_mode="HTML" , disable_web_page_preview=True)
+            return
 
         formatted_amount = _fmt_int(amount)
         sender_name = await db.get_firstname_by_user_id(sender_id)

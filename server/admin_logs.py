@@ -255,6 +255,83 @@ async def list_audit_logs(
     }
 
 
+def _transfer_row(row) -> dict:
+    return {
+        "id": int(row["id"]),
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+        "senderId": int(row["sender_id"]),
+        "receiverId": int(row["receiver_id"]),
+        "amount": int(row["amount"]),
+        "senderBalanceBefore": int(row["sender_balance_before"]),
+        "senderBalanceAfter": int(row["sender_balance_after"]),
+        "receiverBalanceBefore": int(row["receiver_balance_before"]),
+        "receiverBalanceAfter": int(row["receiver_balance_after"]),
+        "cause": row["cause"],
+    }
+
+
+async def list_p2p_transfers(
+    *,
+    sender_id: int | None = None,
+    receiver_id: int | None = None,
+    user_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    """Журнал переводов игрок->игрок ("дать"). user_id ищет по обеим сторонам сразу."""
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+    conditions = ["1=1"]
+    params: list[Any] = []
+    idx = 1
+
+    if user_id is not None and user_id > 0:
+        conditions.append(f"(sender_id = ${idx} OR receiver_id = ${idx})")
+        params.append(user_id)
+        idx += 1
+    else:
+        if sender_id is not None and sender_id > 0:
+            conditions.append(f"sender_id = ${idx}")
+            params.append(sender_id)
+            idx += 1
+        if receiver_id is not None and receiver_id > 0:
+            conditions.append(f"receiver_id = ${idx}")
+            params.append(receiver_id)
+            idx += 1
+
+    if date_from:
+        conditions.append(f"created_at >= ${idx}")
+        params.append(date_from)
+        idx += 1
+    if date_to:
+        conditions.append(f"created_at <= ${idx}")
+        params.append(date_to)
+        idx += 1
+
+    where = " AND ".join(conditions)
+    total = int(await db.pool.fetchval(f"SELECT COUNT(*)::int FROM p2p_transfers WHERE {where}", *params) or 0)
+
+    params.extend([limit, offset])
+    rows = await db.pool.fetch(
+        f"""
+        SELECT id, created_at, sender_id, receiver_id, amount,
+               sender_balance_before, sender_balance_after,
+               receiver_balance_before, receiver_balance_after, cause
+        FROM p2p_transfers
+        WHERE {where}
+        ORDER BY created_at DESC, id DESC
+        LIMIT ${idx} OFFSET ${idx + 1}
+        """,
+        *params,
+    )
+    return {
+        "total": total,
+        "items": [_transfer_row(r) for r in rows],
+    }
+
+
 async def list_system_logs(
     *,
     category: str = "security",

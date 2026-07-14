@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import AdminSelect from '../../components/AdminSelect'
-import { fetchAuditLogs, fetchLogsOverview, fetchSystemLogs } from '../../lib/adminClient'
+import { fetchAuditLogs, fetchLogsOverview, fetchSystemLogs, fetchTransferLogs } from '../../lib/adminClient'
 
 const TABS = [
   { id: 'audit', label: 'Audit', hint: 'действия игроков и админов' },
+  { id: 'transfers', label: 'Переводы', hint: 'P2P-переводы «дать» игрок → игрок' },
   { id: 'security', label: 'Security', hint: 'подозрительная активность' },
   { id: 'errors', label: 'Сбои', hint: '500 и ошибки сервера' },
 ]
@@ -81,6 +82,30 @@ function AuditCard({ row }) {
   )
 }
 
+function TransferCard({ row }) {
+  return (
+    <article className="panel-log-card">
+      <div className="panel-log-card-head">
+        <time className="panel-log-time">{formatDate(row.createdAt)}</time>
+        <span className="panel-log-badge panel-log-badge-default">{row.cause || 'дать'}</span>
+      </div>
+
+      <p className="panel-log-summary">
+        ID {row.senderId} → ID {row.receiverId} · <strong>{formatKut(row.amount)} КУТ</strong>
+      </p>
+
+      <div className="panel-log-balance">
+        <span className="panel-log-balance-flow">
+          Отправитель: {formatKut(row.senderBalanceBefore)} → {formatKut(row.senderBalanceAfter)}
+        </span>
+        <span className="panel-log-balance-flow">
+          Получатель: {formatKut(row.receiverBalanceBefore)} → {formatKut(row.receiverBalanceAfter)}
+        </span>
+      </div>
+    </article>
+  )
+}
+
 function SystemCard({ row, variant }) {
   const isError = variant === 'errors'
   const isSecurity = variant === 'security' || row.security
@@ -153,13 +178,19 @@ export default function LogsSection() {
             limit: 50,
             offset: nextOffset,
           })
-        : await fetchSystemLogs({
-            category: tab,
-            userId: uid || undefined,
-            code: typeFilter || undefined,
-            limit: 50,
-            offset: nextOffset,
-          })
+        : tab === 'transfers'
+          ? await fetchTransferLogs({
+              userId: uid || undefined,
+              limit: 50,
+              offset: nextOffset,
+            })
+          : await fetchSystemLogs({
+              category: tab,
+              userId: uid || undefined,
+              code: typeFilter || undefined,
+              limit: 50,
+              offset: nextOffset,
+            })
       setTotal(data.total ?? 0)
       setItems((prev) => (append ? [...prev, ...(data.items || [])] : data.items || []))
       setOffset(nextOffset + (data.items?.length ?? 0))
@@ -187,17 +218,19 @@ export default function LogsSection() {
           label: `${t.label} (${t.count})`,
         })),
       ]
-    : [
-        { value: '', label: 'Все коды' },
-        ...(overview?.systemCodes || [])
-          .filter((c) => (tab === 'security'
-            ? c.value.startsWith('ERR_SEC_')
-            : !c.value.startsWith('ERR_SEC_')))
-          .map((c) => ({
-            value: c.value,
-            label: `${c.label} (${c.count})`,
-          })),
-      ]
+    : tab === 'security' || tab === 'errors'
+      ? [
+          { value: '', label: 'Все коды' },
+          ...(overview?.systemCodes || [])
+            .filter((c) => (tab === 'security'
+              ? c.value.startsWith('ERR_SEC_')
+              : !c.value.startsWith('ERR_SEC_')))
+            .map((c) => ({
+              value: c.value,
+              label: `${c.label} (${c.count})`,
+            })),
+        ]
+      : []
 
   const stats = tab === 'audit'
     ? {
@@ -213,18 +246,27 @@ export default function LogsSection() {
           label: 'Security alerts',
           sub: 'подозрение на взлом / абьюз',
         }
-      : {
-          main: overview?.errorTotal,
-          today: overview?.errorToday,
-          label: 'Сбоев сервера',
-          sub: 'HTTP 500, БД, необработанные ошибки',
-        }
+      : tab === 'transfers'
+        ? {
+            main: total,
+            today: null,
+            label: 'Переводов по фильтру',
+            sub: 'P2P «дать» с балансом до/после',
+          }
+        : {
+            main: overview?.errorTotal,
+            today: overview?.errorToday,
+            label: 'Сбоев сервера',
+            sub: 'HTTP 500, БД, необработанные ошибки',
+          }
 
   const emptyMessage = tab === 'audit'
     ? 'Нет событий по выбранному фильтру'
     : tab === 'security'
       ? 'Подозрительной активности не зафиксировано'
-      : 'Сбоев сервера нет - всё работает штатно'
+      : tab === 'transfers'
+        ? 'Переводов по выбранному фильтру нет'
+        : 'Сбоев сервера нет - всё работает штатно'
 
   return (
     <div className="panel-logs">
@@ -260,7 +302,9 @@ export default function LogsSection() {
           <p className="panel-log-stat-value">
             {loading && !overview ? '…' : stats.main ?? 0}
           </p>
-          <p className="panel-shelf-muted">сегодня: {stats.today ?? 0} · {stats.sub}</p>
+          <p className="panel-shelf-muted">
+            {stats.today != null ? `сегодня: ${stats.today} · ` : ''}{stats.sub}
+          </p>
         </article>
         <article className="panel-shelf panel-log-stat">
           <p className="panel-shelf-label">В выборке</p>
@@ -286,7 +330,7 @@ export default function LogsSection() {
           }}
         >
           <label className="panel-economy-field panel-logs-filter-user">
-            <span>User ID</span>
+            <span>{tab === 'transfers' ? 'User ID (отправитель или получатель)' : 'User ID'}</span>
             <input
               className="panel-users-input"
               value={userId}
@@ -294,15 +338,17 @@ export default function LogsSection() {
               placeholder="необязательно"
             />
           </label>
-          <label className="panel-economy-field panel-logs-filter-type">
-            <span>{tab === 'audit' ? 'Тип события' : 'Код'}</span>
-            <AdminSelect
-              value={typeFilter}
-              onChange={setTypeFilter}
-              placeholder={tab === 'audit' ? 'Все типы' : 'Все коды'}
-              options={typeOptions}
-            />
-          </label>
+          {tab !== 'transfers' && (
+            <label className="panel-economy-field panel-logs-filter-type">
+              <span>{tab === 'audit' ? 'Тип события' : 'Код'}</span>
+              <AdminSelect
+                value={typeFilter}
+                onChange={setTypeFilter}
+                placeholder={tab === 'audit' ? 'Все типы' : 'Все коды'}
+                options={typeOptions}
+              />
+            </label>
+          )}
           <button type="submit" className="panel-users-btn panel-users-btn-primary" disabled={loading}>
             {loading ? '…' : 'Применить'}
           </button>
@@ -324,7 +370,11 @@ export default function LogsSection() {
             <AuditCard key={row.id} row={row} />
           ))}
 
-          {tab !== 'audit' && items.map((row) => (
+          {tab === 'transfers' && items.map((row) => (
+            <TransferCard key={row.id} row={row} />
+          ))}
+
+          {tab !== 'audit' && tab !== 'transfers' && items.map((row) => (
             <SystemCard key={row.id} row={row} variant={tab} />
           ))}
 

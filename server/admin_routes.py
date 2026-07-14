@@ -195,7 +195,7 @@ from admin_broadcast import (
     save_template,
     start_broadcast,
 )
-from admin_logs import get_logs_overview, list_audit_logs, list_system_logs
+from admin_logs import get_logs_overview, list_audit_logs, list_system_logs, list_p2p_transfers
 from admin_accounts import get_account_profile, list_recent_accounts, search_accounts
 from admin_analytics import (
     get_craft_analytics,
@@ -2926,6 +2926,28 @@ async def admin_logs_audit(
     return await list_audit_logs(
         user_id=userId,
         event_type=eventType,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/logs/transfers")
+async def admin_logs_transfers(
+    userId: int | None = Query(None, ge=1),
+    senderId: int | None = Query(None, ge=1),
+    receiverId: int | None = Query(None, ge=1),
+    dateFrom: str | None = Query(None, max_length=32),
+    dateTo: str | None = Query(None, max_length=32),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("view_logs")),
+):
+    return await list_p2p_transfers(
+        user_id=userId,
+        sender_id=senderId,
+        receiver_id=receiverId,
+        date_from=dateFrom,
+        date_to=dateTo,
         limit=limit,
         offset=offset,
     )

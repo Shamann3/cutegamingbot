@@ -57,6 +57,26 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE INDEX IF NOT EXISTS audit_events_created_at_idx ON audit_events (created_at DESC);
 CREATE INDEX IF NOT EXISTS audit_events_user_id_idx ON audit_events (user_id);
 
+-- Журнал P2P-переводов (команда "дать") - одна строка на весь перевод,
+-- баланс до/после у обеих сторон, пишется атомарно вместе с самим переводом
+-- (bot/db_create/db.py::transfer_currency).
+CREATE TABLE IF NOT EXISTS p2p_transfers (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    sender_id BIGINT NOT NULL,
+    receiver_id BIGINT NOT NULL,
+    amount BIGINT NOT NULL,
+    sender_balance_before BIGINT NOT NULL,
+    sender_balance_after BIGINT NOT NULL,
+    receiver_balance_before BIGINT NOT NULL,
+    receiver_balance_after BIGINT NOT NULL,
+    cause TEXT NOT NULL DEFAULT 'дать'
+);
+
+CREATE INDEX IF NOT EXISTS p2p_transfers_sender_idx ON p2p_transfers (sender_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS p2p_transfers_receiver_idx ON p2p_transfers (receiver_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS p2p_transfers_created_idx ON p2p_transfers (created_at DESC);
+
 -- Игровые события для аналитики (всегда пишутся, без Telegram-нотификаций)
 CREATE TABLE IF NOT EXISTS game_events (
     id BIGSERIAL PRIMARY KEY,

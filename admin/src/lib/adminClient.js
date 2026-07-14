@@ -1291,6 +1291,12 @@ export async function fetchSystemLogs({ category = 'security', userId = '', code
   return adminFetch(`/logs/system?${params}`)
 }
 
+export async function fetchTransferLogs({ userId = '', limit = 50, offset = 0 } = {}) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (userId) params.set('userId', String(userId))
+  return adminFetch(`/logs/transfers?${params}`)
+}
+
 // ---------------------------------------------------------------------------
 // Extended player profile
 // ---------------------------------------------------------------------------

@@ -322,6 +322,19 @@ class BalanceSnapshot:
     chatbalance: int
     dexbalance: int
 
+
+class InsufficientBalanceError(Exception):
+    """Недостаточно средств для перевода - поднимается Database.transfer_currency()."""
+
+
+@dataclass(frozen=True)
+class TransferResult:
+    transfer_id: int
+    sender_before: int
+    sender_after: int
+    receiver_before: int
+    receiver_after: int
+
 # -----------------------------
 # Внутренний формат кеша баланса
 # -----------------------------
@@ -5564,6 +5577,175 @@ class Database:
                 await connection.execute(query , user_id , amount , cause , formatted_date , first_name , username, balance)
         except Exception as e:
             print(f"[ERROR] Ошибка при записи данных с минусом в таблицу cutehistory: {e}")
+
+    async def transfer_currency(
+        self,
+        sender_id: int,
+        receiver_id: int,
+        amount: int,
+        cause: str = "дать",
+    ) -> "TransferResult":
+        """
+        Атомарный перевод кут между игроками: списание, начисление и вся
+        журнальная запись (cutehistory x2, moneyhistory, p2p_transfers) идут
+        в ОДНОЙ DB-транзакции — либо перевод происходит целиком, либо
+        не меняется ничего (в отличие от старого пути из отдельных вызовов
+        update_user_balance/cutehistory_plus/cutehistory_minus/add_transaction,
+        который мог списать у отправителя и не успеть начислить получателю).
+
+        Поднимает InsufficientBalanceError, если у отправителя не хватает
+        баланса на момент фиксации (финальная проверка на уровне SQL,
+        защищает от гонки даже если вызывающий код уже проверил баланс заранее).
+        """
+        if not self.pool:
+            raise RuntimeError("Подключение к базе данных не установлено.")
+
+        amount = int(amount)
+        sender_id = int(sender_id)
+        receiver_id = int(receiver_id)
+
+        sender_first_name = await self.get_name_by_user_id(sender_id)
+        sender_username = await self.get_username_by_user_id(sender_id)
+        receiver_first_name = await self.get_name_by_user_id(receiver_id)
+        receiver_username = await self.get_username_by_user_id(receiver_id)
+
+        current_datetime = datetime.now()
+        formatted_date = current_datetime.strftime("%H:%M %d.%m.%Y")
+        timestamp_without_microseconds = current_datetime.replace(microsecond=0)
+
+        # Детерминированный порядок блокировки по user_id - при встречных
+        # переводах A->B и B->A одновременно оба процесса лочат строки users
+        # в одном и том же порядке, поэтому дедлок невозможен.
+        first_id, second_id = sorted((sender_id, receiver_id))
+
+        async with self.pool.acquire() as connection:
+            async with connection.transaction():
+                # Лочим обе строки в детерминированном порядке (SELECT ... FOR UPDATE),
+                # затем применяем изменения к нужной стороне.
+                await connection.fetch(
+                    "SELECT user_id FROM users WHERE user_id = ANY($1::bigint[]) ORDER BY user_id FOR UPDATE",
+                    [first_id, second_id],
+                )
+
+                sender_row = await connection.fetchrow(
+                    """
+                    UPDATE users
+                       SET balance = balance - $2
+                     WHERE user_id = $1
+                       AND balance >= $2
+                    RETURNING balance
+                    """,
+                    sender_id, amount,
+                )
+                if sender_row is None:
+                    raise InsufficientBalanceError(
+                        f"user_id={sender_id} недостаточно баланса для перевода {amount}"
+                    )
+                sender_after = int(sender_row["balance"])
+                sender_before = sender_after + amount
+
+                receiver_row = await connection.fetchrow(
+                    """
+                    UPDATE users
+                       SET balance = balance + $2
+                     WHERE user_id = $1
+                    RETURNING balance
+                    """,
+                    receiver_id, amount,
+                )
+                if receiver_row is None:
+                    receiver_row = await connection.fetchrow(
+                        """
+                        INSERT INTO users (user_id, balance)
+                        VALUES ($1, $2)
+                        ON CONFLICT (user_id) DO UPDATE SET balance = users.balance + EXCLUDED.balance
+                        RETURNING balance
+                        """,
+                        receiver_id, amount,
+                    )
+                receiver_after = int(receiver_row["balance"])
+                receiver_before = receiver_after - amount
+
+                await connection.execute(
+                    """
+                    INSERT INTO cutehistory ("user_id", "-", cause, data, first_name, username, balance)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    """,
+                    sender_id, amount, cause, formatted_date,
+                    sender_first_name, sender_username, sender_after,
+                )
+                await connection.execute(
+                    """
+                    INSERT INTO cutehistory ("user_id", "+", cause, data, first_name, username, balance)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    """,
+                    receiver_id, amount, cause, formatted_date,
+                    receiver_first_name, receiver_username, receiver_after,
+                )
+                await connection.execute(
+                    """
+                    INSERT INTO moneyhistory (user_id, user_id2, money, data)
+                    VALUES ($1, $2, $3, $4)
+                    """,
+                    sender_id, receiver_id, amount, timestamp_without_microseconds,
+                )
+                transfer_row = await connection.fetchrow(
+                    """
+                    INSERT INTO p2p_transfers (
+                        sender_id, receiver_id, amount,
+                        sender_balance_before, sender_balance_after,
+                        receiver_balance_before, receiver_balance_after,
+                        cause
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    RETURNING id
+                    """,
+                    sender_id, receiver_id, amount,
+                    sender_before, sender_after,
+                    receiver_before, receiver_after,
+                    cause,
+                )
+
+        # Write-through кэш (тот же паттерн, что update_user_balance) - после
+        # успешного коммита, best-effort, не влияет на атомарность перевода.
+        for uid, new_val in ((sender_id, sender_after), (receiver_id, receiver_after)):
+            await self._refresh_balance_cache(uid, new_val)
+
+        return TransferResult(
+            transfer_id=int(transfer_row["id"]),
+            sender_before=sender_before,
+            sender_after=sender_after,
+            receiver_before=receiver_before,
+            receiver_after=receiver_after,
+        )
+
+    async def _refresh_balance_cache(self, user_id: int, new_balance: int) -> None:
+        """Best-effort обновление Redis/локального кэша баланса после transfer_currency.
+
+        Тот же паттерн, что update_user_balance: если user_cache_balance ещё не
+        приведён к plain dict в этом процессе - приводим (см. update_user_balance
+        для истории этого защитного приведения).
+        """
+        g = globals()
+        if "user_cache_balance" not in g or not isinstance(g.get("user_cache_balance"), dict):
+            g["user_cache_balance"] = {}
+        if "_balance_fresh_at" not in g or not isinstance(g.get("_balance_fresh_at"), dict):
+            g["_balance_fresh_at"] = {}
+        try:
+            g["user_cache_balance"][user_id] = new_balance
+            g["_balance_fresh_at"][user_id] = time.monotonic()
+        except Exception as e:
+            print(f"[WARN] transfer_currency: локальный кэш баланса не обновлён для {user_id}: {e}")
+
+        redis = getattr(self, "redis", None)
+        if not redis:
+            return
+        try:
+            await redis.set(f"bal:val:{user_id}", str(new_balance), ex=3600)
+            msg = json.dumps({"uid": user_id, "balance": new_balance, "ts": time.time()})
+            await redis.publish("bal:bus", msg)
+        except Exception as e:
+            print(f"[WARN] transfer_currency: Redis-кэш баланса не обновлён для {user_id}: {e}")
 
     async def get_group_ids34123412(self):
         """
