@@ -320,6 +320,23 @@ export default function LogsSection() {
         )}
       </div>
 
+      {tab === 'security' && (overview?.topSecurityIps?.length > 0) && (
+        <article className="panel-shelf">
+          <p className="panel-shelf-label">Топ IP за сегодня</p>
+          <p className="panel-shelf-muted" style={{ marginBottom: '0.5rem' }}>
+            20+ событий за 5 минут с одной IP банятся автоматически на 1 час
+          </p>
+          <div className="panel-log-list">
+            {overview.topSecurityIps.map((row) => (
+              <div key={row.ip} className="panel-log-card" style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
+                <span className="panel-log-code">{row.ip}</span>
+                <span className="panel-shelf-muted">{row.count} событий · последнее {formatDate(row.lastSeen)}</span>
+              </div>
+            ))}
+          </div>
+        </article>
+      )}
+
       <article className="panel-shelf panel-logs-feed">
         <form
           className="panel-logs-filters"

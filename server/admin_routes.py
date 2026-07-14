@@ -196,6 +196,7 @@ from admin_broadcast import (
     start_broadcast,
 )
 from admin_logs import get_logs_overview, list_audit_logs, list_system_logs, list_p2p_transfers
+from error_reporter import schedule_security_alert
 from admin_accounts import get_account_profile, list_recent_accounts, search_accounts
 from admin_analytics import (
     get_craft_analytics,
@@ -1000,12 +1001,26 @@ async def admin_login(
         raise HTTPException(status_code=403, detail="Сначала пройдите регистрацию")
 
     if not await _resolve_login_key_ok(user_id, account, body.loginKey):
+        schedule_security_alert(
+            "ERR_SEC_ADMIN_LOGIN_FAIL",
+            request=request,
+            user_id=user_id,
+            message="Неверный ключ входа в админку",
+            status=403,
+        )
         raise HTTPException(status_code=403, detail="Неверный ключ входа")
 
     _login_status_guard(account)
 
     totp_secret = await get_admin_totp_secret(user_id)
     if not totp_secret or not verify_totp(totp_secret, body.totp, valid_window=max(ADMIN_TOTP_VALID_WINDOW, 30)):
+        schedule_security_alert(
+            "ERR_SEC_ADMIN_LOGIN_FAIL",
+            request=request,
+            user_id=user_id,
+            message="Неверный код 2FA при входе в админку",
+            status=403,
+        )
         raise HTTPException(status_code=403, detail="Неверный код из Google Authenticator")
 
     token, exp = issue_admin_token(user_id)

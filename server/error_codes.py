@@ -199,6 +199,10 @@ ERROR_CATALOG: dict[str, dict[str, str]] = {
         "title": "Подмена itemId",
         "meaning": "Нечисловой или пустой itemId при покупке.",
     },
+    "ERR_SEC_ADMIN_LOGIN_FAIL": {
+        "title": "Неудачный вход в админку",
+        "meaning": "Неверный ключ входа или код 2FA при попытке входа в admin-панель.",
+    },
     "ERR_SEC_REPORT_FLOOD": {
         "title": "Флуд report-error",
         "meaning": "Слишком много клиентских отчётов об ошибках от одного игрока.",

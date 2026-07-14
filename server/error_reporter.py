@@ -6,6 +6,7 @@ import asyncio
 import html
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from config import (
@@ -27,6 +28,56 @@ logger = logging.getLogger("cute-farm.errors")
 
 _DEDUP_SECONDS = 45
 _recent_keys: dict[str, float] = {}
+
+# Автобан по IP: N событий безопасности (любых ERR_SEC_*) за M секунд -> бан
+# на T секунд через уже существующий ip_bans/IpBanMiddleware. Детекция
+# (security_watch/auth/rate_limit) и блокировка раньше не были связаны - IP
+# мог триггерить сотни алертов и никогда не блокироваться без ручного бана.
+_SEC_BAN_WINDOW_SEC = 300
+_SEC_BAN_THRESHOLD = 20
+_SEC_BAN_DURATION_SEC = 3600
+_AUTO_BAN_ACTOR_ID = 0  # sentinel banned_by для автоматических банов (не реальный user_id)
+_security_hits: dict[str, list[float]] = {}
+
+
+def _track_security_ip(client_ip: str) -> bool:
+    """True, если IP только что превысил порог автобана в текущем окне."""
+    ip = (client_ip or "").strip()
+    if ip.startswith("IP: "):
+        ip = ip[4:].strip()
+    if not ip or ip in ("unknown", "127.0.0.1", "::1"):
+        return False
+    now = time.monotonic()
+    hits = _security_hits.setdefault(ip, [])
+    hits.append(now)
+    cutoff = now - _SEC_BAN_WINDOW_SEC
+    while hits and hits[0] < cutoff:
+        hits.pop(0)
+    if len(hits) >= _SEC_BAN_THRESHOLD:
+        _security_hits.pop(ip, None)
+        return True
+    return False
+
+
+async def _auto_ban_ip(client_ip: str, code: str) -> None:
+    ip = (client_ip or "").strip()
+    if ip.startswith("IP: "):
+        ip = ip[4:].strip()
+    try:
+        from ip_ban import add_ip_ban
+
+        await add_ip_ban(
+            ip,
+            reason=(
+                f"Автобан: {_SEC_BAN_THRESHOLD}+ событий безопасности за "
+                f"{_SEC_BAN_WINDOW_SEC // 60} мин (последний код: {code})"
+            ),
+            banned_by=_AUTO_BAN_ACTOR_ID,
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=_SEC_BAN_DURATION_SEC),
+        )
+        logger.warning("Auto-banned IP %s after security threshold (code=%s)", ip, code)
+    except Exception:
+        logger.exception("Auto-ban failed for IP %s", ip)
 
 
 def _escape(value: Any) -> str:
@@ -116,6 +167,9 @@ async def report_error(
         source=source,
         client_ip=client_ip,
     )
+
+    if is_security_code(resolved) and client_ip and _track_security_ip(client_ip):
+        asyncio.create_task(_auto_ban_ip(client_ip, resolved))
 
     if not ERROR_REPORT_ENABLED:
         return

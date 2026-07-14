@@ -187,6 +187,18 @@ async def get_logs_overview() -> dict:
         LIMIT 30
         """
     )
+    top_security_ips = await db.pool.fetch(
+        """
+        SELECT client_ip, COUNT(*)::int AS cnt, MAX(created_at) AS last_seen
+        FROM system_logs
+        WHERE category = 'security'
+          AND client_ip IS NOT NULL
+          AND created_at >= date_trunc('day', NOW())
+        GROUP BY client_ip
+        ORDER BY cnt DESC
+        LIMIT 15
+        """
+    )
     return {
         "auditTotal": audit_total,
         "auditToday": audit_today,
@@ -206,6 +218,14 @@ async def get_logs_overview() -> dict:
         "systemCodes": [
             {"value": r["code"], "label": error_title(r["code"]), "count": int(r["cnt"])}
             for r in error_codes
+        ],
+        "topSecurityIps": [
+            {
+                "ip": r["client_ip"],
+                "count": int(r["cnt"]),
+                "lastSeen": r["last_seen"].isoformat() if r["last_seen"] else None,
+            }
+            for r in top_security_ips
         ],
     }
 
