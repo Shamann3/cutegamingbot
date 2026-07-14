@@ -34076,8 +34076,6 @@ async def add_firstname_to_usercheck_balance(message: Message):
             return
         chat_id = message.chat.id
 
-        if chat_id == -1001612636292:
-            return
         task1 = asyncio.create_task(measure_time(punishments(message) , "наказания"))
         await task1
         return
@@ -34101,8 +34099,6 @@ async def add_firstname_to_usercheck_balance(message: Message):
             return
         chat_id = message.chat.id
 
-        if chat_id == -1001612636292:
-            return
         task1 = asyncio.create_task(measure_time(staff_roster(message) , "состав"))
         await task1
         return
@@ -34125,8 +34121,6 @@ async def add_firstname_to_usercheck_balance(message: Message):
             return
         chat_id = message.chat.id
 
-        if chat_id == -1001612636292:
-            return
         task1 = asyncio.create_task(measure_time(staff_permissions(message) , "права"))
         await task1
         return
@@ -34146,9 +34140,6 @@ async def add_firstname_to_usercheck_balance(message: Message):
             return
         chat_id = message.chat.id
 
-        # Проверка: если chat_id равен указанному, выходим из функции
-        if chat_id == -1001612636292:
-            return  # немедленный выход
         task1 = asyncio.create_task(measure_time(mute(message) , "мут"))
         await task1
 
@@ -34165,9 +34156,6 @@ async def add_firstname_to_usercheck_balance(message: Message):
             return
         chat_id = message.chat.id
 
-        # Проверка: если chat_id равен указанному, выходим из функции
-        if chat_id == -1001612636292:
-            return  # немедленный выход
         task1 = asyncio.create_task(measure_time(kick(message) , "кик"))
         await task1
 
@@ -34193,9 +34181,6 @@ async def add_firstname_to_usercheck_balance(message: Message):
             return
         chat_id = message.chat.id
 
-        # Проверка: если chat_id равен указанному, выходим из функции
-        if chat_id == -1001612636292:
-            return  # немедленный выход
         task1 = asyncio.create_task(measure_time(ban(message) , "бан"))
         await task1
 
@@ -34227,9 +34212,6 @@ async def add_firstname_to_usercheck_balance(message: Message):
             return
         chat_id = message.chat.id
 
-        # Проверка: если chat_id равен указанному, выходим из функции
-        if chat_id == -1001612636292:
-            return  # немедленный выход
         task1 = asyncio.create_task(measure_time(warn(message) , "варн"))
         await task1
 
