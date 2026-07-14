@@ -196,6 +196,11 @@ export default function LogsSection() {
       setOffset(nextOffset + (data.items?.length ?? 0))
     } catch (err) {
       setError(err.message || 'Не удалось загрузить логи')
+      if (!append) {
+        // Не оставляем на экране данные другой вкладки/фильтра, выданные за актуальные
+        setItems([])
+        setTotal(0)
+      }
     } finally {
       setLoading(false)
     }
