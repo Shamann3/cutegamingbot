@@ -3,7 +3,7 @@ import AdminSelect from '../../components/AdminSelect'
 import { fetchAuditLogs, fetchLogsOverview, fetchSystemLogs, fetchTransferLogs } from '../../lib/adminClient'
 
 const TABS = [
-  { id: 'audit', label: 'Audit', hint: 'действия игроков и админов' },
+  { id: 'audit', label: 'Audit', hint: 'экономические события игроков' },
   { id: 'transfers', label: 'Переводы', hint: 'P2P-переводы «дать» игрок → игрок' },
   { id: 'security', label: 'Security', hint: 'подозрительная активность' },
   { id: 'errors', label: 'Сбои', hint: '500 и ошибки сервера' },
@@ -285,7 +285,8 @@ export default function LogsSection() {
         <p className="panel-shelf-label">Logs · Логи</p>
         <h2 className="panel-page-title">Логи и безопасность</h2>
         <p className="panel-page-lead">
-          Audit - действия игроков. Security - подозрительные запросы. Сбои - только реальные поломки сервера.
+          Audit - экономические события игроков (покупки, крафт, биржа). Действия самих админов (бан, выдача баланса и т.п.) — в разделе «Доступ» → «Аудит действий».
+          Security - подозрительные запросы. Сбои - только реальные поломки сервера.
         </p>
         {error && <p className="panel-shelf-error">{error}</p>}
       </article>

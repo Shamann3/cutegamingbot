@@ -90,6 +90,7 @@ export default function MarketSection() {
   const [info, setInfo] = useState('')
   const [cancelTarget, setCancelTarget] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
+  const [offset, setOffset] = useState(0)
 
   const loadOverview = useCallback(async () => {
     setError('')
@@ -107,12 +108,19 @@ export default function MarketSection() {
     setListLoading(true)
     setError('')
     try {
+      const nextOffset = opts.offset ?? 0
       const data = await fetchMarketListings({
         q: opts.q ?? '',
         itemId: opts.itemId ?? '',
         suspicious: opts.suspicious ?? false,
+        offset: nextOffset,
       })
-      setListings(data)
+      setListings((prev) => (
+        opts.append
+          ? { ...data, listings: [...prev.listings, ...(data.listings || [])] }
+          : data
+      ))
+      setOffset(nextOffset + (data.listings?.length ?? 0))
     } catch (err) {
       setError(err.message || 'Не удалось загрузить лоты')
     } finally {
@@ -122,12 +130,12 @@ export default function MarketSection() {
 
   useEffect(() => {
     loadOverview()
-    loadListings({ q: '', itemId: '', suspicious: false })
+    loadListings({ q: '', itemId: '', suspicious: false, offset: 0 })
   }, [loadOverview, loadListings])
 
   const handleSearch = (e) => {
     e.preventDefault()
-    loadListings({ q: query, itemId: itemFilter, suspicious: suspiciousOnly })
+    loadListings({ q: query, itemId: itemFilter, suspicious: suspiciousOnly, offset: 0 })
   }
 
   const openCancelDialog = (row) => {
@@ -155,7 +163,7 @@ export default function MarketSection() {
       setCancelReason('')
       await Promise.all([
         loadOverview(),
-        loadListings({ q: query, itemId: itemFilter, suspicious: suspiciousOnly }),
+        loadListings({ q: query, itemId: itemFilter, suspicious: suspiciousOnly, offset: 0 }),
       ])
     } catch (err) {
       setError(err.message || 'Не удалось снять лот')
@@ -323,6 +331,19 @@ export default function MarketSection() {
             <p className="panel-shelf-muted panel-economy-dex-empty">Активных лотов нет</p>
           )}
         </div>
+
+        {listings.listings.length < listings.total && (
+          <button
+            type="button"
+            className="panel-users-btn panel-broadcast-history-more"
+            disabled={listLoading}
+            onClick={() => loadListings({
+              q: query, itemId: itemFilter, suspicious: suspiciousOnly, offset, append: true,
+            })}
+          >
+            {listLoading ? '…' : `Показать ещё (${listings.listings.length}/${listings.total})`}
+          </button>
+        )}
       </article>
     </div>
   )

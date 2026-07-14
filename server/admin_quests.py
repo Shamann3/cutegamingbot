@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from admin_users import insert_admin_audit
 from db import db
 from dex_catalog import dex_catalog
 from quest_registry import (
@@ -246,12 +245,6 @@ async def create_quest(
             )
             await _replace_quest_rewards(conn, int(quest_id), cleaned_rewards)
 
-    await insert_admin_audit(
-        0,
-        "admin_quest_create",
-        admin_user_id=admin_user_id,
-        details={"quest_id": int(quest_id), "key": key},
-    )
     await _invalidate_quests()
     quest = get_quest_by_id(int(quest_id))
     if not quest:
@@ -375,12 +368,6 @@ async def update_quest(
             if cleaned_rewards is not None:
                 await _replace_quest_rewards(conn, quest_id, cleaned_rewards)
 
-    await insert_admin_audit(
-        0,
-        "admin_quest_update",
-        admin_user_id=admin_user_id,
-        details={"quest_id": quest_id, "key": row["key"]},
-    )
     await _invalidate_quests()
     quest = get_quest_by_id(quest_id)
     if not quest:
@@ -394,11 +381,5 @@ async def delete_quest(quest_id: int, *, admin_user_id: int) -> dict:
         raise ValueError("Задание не найдено")
 
     await db.pool.execute("DELETE FROM quests WHERE id = $1", quest_id)
-    await insert_admin_audit(
-        0,
-        "admin_quest_delete",
-        admin_user_id=admin_user_id,
-        details={"quest_id": quest_id, "key": row["key"], "title": row["title"]},
-    )
     await _invalidate_quests()
     return {"ok": True, "key": row["key"]}

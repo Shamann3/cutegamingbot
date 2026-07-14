@@ -17,7 +17,6 @@ import {
   fetchDexItemFull,
   patchContentCraft,
   patchContentCrop,
-  patchContentDexItem,
   patchContentQuest,
   updateDexItemFull,
 } from '../../lib/adminClient'

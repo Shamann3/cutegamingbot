@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from admin_users import get_user_admin_profile, insert_admin_audit, search_users
+from admin_users import get_user_admin_profile, search_users
 from db import db
 from farm_crops import crops_for_client
 from farm_settings import get_farm_settings_payload, update_farm_settings
@@ -123,13 +123,6 @@ async def reset_user_plots(
         )
         scope = "all"
 
-    await insert_admin_audit(
-        user_id,
-        "admin_farm_reset",
-        admin_user_id=admin_user_id,
-        details={"scope": scope, "plotsReset": reset_count},
-    )
-
     farm = await get_user_farm_admin(user_id)
     return {"ok": True, "plotsReset": reset_count, "farm": farm}
 
@@ -159,13 +152,6 @@ async def global_farm_restart(*, admin_user_id: int) -> dict:
             """
         )
         or 0
-    )
-
-    await insert_admin_audit(
-        0,
-        "admin_farm_global_reset",
-        admin_user_id=admin_user_id,
-        details={"plotsReset": reset_count},
     )
 
     return {"ok": True, "plotsReset": reset_count}

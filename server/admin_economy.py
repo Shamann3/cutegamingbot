@@ -8,7 +8,6 @@ from craft_definitions import enabled_craft_recipes
 from db import db
 from dex_catalog import dex_catalog
 from economy_settings import get_economy_settings_payload, get_plot_price_step, update_economy_settings
-from admin_users import admin_adjust_balance, insert_admin_audit
 from shop_catalog import effective_price
 
 
@@ -237,18 +236,6 @@ async def update_dex_item(
     db._shop_catalog_cache.clear()
     await dex_catalog.load(db.pool)
 
-    await insert_admin_audit(
-        0,
-        "admin_dex",
-        admin_user_id=admin_user_id,
-        details={
-            "item_id": str(dex_id),
-            "price": price,
-            "dis": dis,
-            "remains": remains,
-        },
-    )
-
     price_val = int(row["price"] or 0)
     dis_val = int(row["dis"] or 0)
     return {
@@ -344,20 +331,6 @@ async def bulk_grant_kut(
             )
 
     asyncio.create_task(_notify_all())
-
-    await insert_admin_audit(
-        0,
-        "admin_bulk_grant",
-        admin_user_id=admin_user_id,
-        amount=delta * success,
-        details={
-            "target": target,
-            "delta": delta,
-            "success": success,
-            "skipped": skipped,
-            "note": note_clean,
-        },
-    )
 
     return {
         "target": target,

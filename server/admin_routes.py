@@ -2196,7 +2196,7 @@ async def admin_user_balance(
             admin_id, "balance_change",
             target_type="user", target_id=str(target_user_id),
             target_label=f"Игрок {target_user_id}",
-            details={"delta": body.delta, "note": body.note or ""},
+            details={"delta": body.delta, "note": body.note or "", "balanceAfter": result.get("balance")},
             ip=_get_client_ip(request),
         )
         return result
@@ -2223,7 +2223,10 @@ async def admin_user_items(
             admin_id, "item_grant",
             target_type="user", target_id=str(target_user_id),
             target_label=f"Игрок {target_user_id}",
-            details={"itemId": body.itemId, "delta": body.delta, "note": body.note or ""},
+            details={
+                "itemId": body.itemId, "delta": body.delta, "note": body.note or "",
+                "countAfter": result.get("countAfter"),
+            },
             ip=_get_client_ip(request),
         )
         return result
@@ -2297,10 +2300,18 @@ async def admin_user_ban(
 @router.post("/users/{target_user_id}/onboarding/reset")
 async def admin_user_onboarding_reset(
     target_user_id: int,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("manage_settings")),
 ):
     try:
-        return await admin_reset_onboarding(target_user_id, admin_user_id=admin_id)
+        result = await admin_reset_onboarding(target_user_id, admin_user_id=admin_id)
+        await log_admin_action(
+            admin_id, "onboarding_reset",
+            target_type="user", target_id=str(target_user_id),
+            target_label=f"Игрок {target_user_id}",
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2349,16 +2360,24 @@ async def admin_economy_dex_list(
 async def admin_economy_dex_patch(
     item_id: str,
     body: DexItemPatchBody,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("manage_economy")),
 ):
     try:
-        return await update_dex_item(
+        result = await update_dex_item(
             item_id,
             price=body.price,
             dis=body.dis,
             remains=body.remains,
             admin_user_id=admin_id,
         )
+        await log_admin_action(
+            admin_id, "economy_dex_update",
+            target_type="dex_item", target_id=item_id, target_label=result.get("name") or item_id,
+            details={"price": body.price, "dis": body.dis, "remains": body.remains},
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2366,17 +2385,29 @@ async def admin_economy_dex_patch(
 @router.post("/economy/grants")
 async def admin_economy_grants(
     body: BulkGrantBody,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("manage_economy")),
 ):
     if body.delta == 0:
         raise HTTPException(status_code=400, detail="Сумма не может быть 0")
     try:
-        return await bulk_grant_kut(
+        result = await bulk_grant_kut(
             body.delta,
             target=body.target,
             note=body.note,
             admin_user_id=admin_id,
         )
+        await log_admin_action(
+            admin_id, "bulk_grant",
+            target_type="players", target_label=f"Массовая выдача ({body.target})",
+            details={
+                "delta": body.delta, "target": body.target, "note": body.note or "",
+                "success": result.get("success"), "skipped": result.get("skipped"),
+                "totalKut": result.get("totalKut"),
+            },
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2410,14 +2441,26 @@ async def admin_market_listings(
 async def admin_market_cancel(
     listing_id: int,
     body: MarketCancelBody,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("market_cancel")),
 ):
     try:
-        return await admin_cancel_listing(
+        result = await admin_cancel_listing(
             listing_id,
             admin_user_id=admin_id,
             reason=body.reason,
         )
+        await log_admin_action(
+            admin_id, "market_cancel",
+            target_type="listing", target_id=str(listing_id),
+            target_label=result.get("itemName") or f"Лот #{listing_id}",
+            details={
+                "reason": body.reason or "", "itemId": result.get("itemId"),
+                "quantity": result.get("returnedQuantity"), "price": result.get("price"),
+            },
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2478,23 +2521,42 @@ async def admin_farm_user(
 @router.post("/farm/users/{target_user_id}/reset")
 async def admin_farm_user_reset(
     target_user_id: int,
+    request: Request,
     plotId: int | None = Query(None, ge=1, le=100),
     admin_id: int = Depends(require_admin_permission("manage_farm")),
 ):
     try:
-        return await reset_user_plots(
+        result = await reset_user_plots(
             target_user_id,
             plot_id=plotId,
             admin_user_id=admin_id,
         )
+        await log_admin_action(
+            admin_id, "farm_reset",
+            target_type="user", target_id=str(target_user_id),
+            target_label=f"Игрок {target_user_id}",
+            details={"plotId": plotId, "plotsReset": result.get("plotsReset")},
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/farm/global-reset")
-async def admin_farm_global_reset(admin_id: int = Depends(require_admin_permission("manage_farm"))):
+async def admin_farm_global_reset(
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_farm")),
+):
     try:
-        return await global_farm_restart(admin_user_id=admin_id)
+        result = await global_farm_restart(admin_user_id=admin_id)
+        await log_admin_action(
+            admin_id, "farm_global_reset",
+            target_type="system", target_label="Глобальный сброс фермы",
+            details={"plotsReset": result.get("plotsReset")},
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2518,10 +2580,11 @@ async def admin_content_dex_list(
 @router.post("/content/dex")
 async def admin_content_dex_create(
     body: DexItemCreateBody,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("manage_content")),
 ):
     try:
-        return await create_dex_item(
+        result = await create_dex_item(
             name=body.name,
             emoji=body.emoji,
             name1=body.name1,
@@ -2535,6 +2598,12 @@ async def admin_content_dex_create(
             craft=body.craft,
             admin_user_id=admin_id,
         )
+        await log_admin_action(
+            admin_id, "dex_create",
+            target_type="dex_item", target_label=body.name,
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2543,10 +2612,11 @@ async def admin_content_dex_create(
 async def admin_content_dex_patch(
     item_id: str,
     body: DexItemMetaBody,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("manage_content")),
 ):
     try:
-        return await update_dex_item_meta(
+        result = await update_dex_item_meta(
             item_id,
             name=body.name,
             emoji=body.emoji,
@@ -2558,6 +2628,12 @@ async def admin_content_dex_patch(
             bio=body.bio,
             admin_user_id=admin_id,
         )
+        await log_admin_action(
+            admin_id, "dex_update",
+            target_type="dex_item", target_id=item_id, target_label=item_id,
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2565,10 +2641,11 @@ async def admin_content_dex_patch(
 @router.post("/content/crops")
 async def admin_content_crop_create(
     body: CropCreateBody,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("manage_content")),
 ):
     try:
-        return await create_crop(
+        result = await create_crop(
             key=body.key,
             display_name=body.displayName,
             seed_item_id=body.seedItemId,
@@ -2582,6 +2659,12 @@ async def admin_content_crop_create(
             harvest_drops=[drop.model_dump() for drop in body.harvestDrops],
             admin_user_id=admin_id,
         )
+        await log_admin_action(
+            admin_id, "crop_create",
+            target_type="crop", target_id=body.key, target_label=body.displayName,
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2590,10 +2673,11 @@ async def admin_content_crop_create(
 async def admin_content_crop_patch(
     crop_id: int,
     body: CropUpdateBody,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("manage_content")),
 ):
     try:
-        return await update_crop(
+        result = await update_crop(
             crop_id,
             display_name=body.displayName,
             seed_item_id=body.seedItemId,
@@ -2613,6 +2697,12 @@ async def admin_content_crop_patch(
             clear_water_item=body.clearWaterItem,
             admin_user_id=admin_id,
         )
+        await log_admin_action(
+            admin_id, "crop_update",
+            target_type="crop", target_id=str(crop_id),
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2620,10 +2710,17 @@ async def admin_content_crop_patch(
 @router.delete("/content/crops/{crop_id}")
 async def admin_content_crop_delete(
     crop_id: int,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("manage_content")),
 ):
     try:
-        return await delete_crop(crop_id, admin_user_id=admin_id)
+        result = await delete_crop(crop_id, admin_user_id=admin_id)
+        await log_admin_action(
+            admin_id, "crop_delete",
+            target_type="crop", target_id=str(crop_id),
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2631,10 +2728,11 @@ async def admin_content_crop_delete(
 @router.post("/content/craft")
 async def admin_content_craft_create(
     body: CraftRecipeCreateBody,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("manage_content")),
 ):
     try:
-        return await create_craft_recipe(
+        result = await create_craft_recipe(
             key=body.key,
             display_name=body.displayName,
             result_item_id=body.resultItemId,
@@ -2646,6 +2744,12 @@ async def admin_content_craft_create(
             result_qty=body.resultQty,
             admin_user_id=admin_id,
         )
+        await log_admin_action(
+            admin_id, "craft_create",
+            target_type="craft_recipe", target_id=body.key, target_label=body.displayName,
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2654,10 +2758,11 @@ async def admin_content_craft_create(
 async def admin_content_craft_patch(
     recipe_id: int,
     body: CraftRecipeUpdateBody,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("manage_content")),
 ):
     try:
-        return await update_craft_recipe(
+        result = await update_craft_recipe(
             recipe_id,
             display_name=body.displayName,
             result_item_id=body.resultItemId,
@@ -2669,6 +2774,12 @@ async def admin_content_craft_patch(
             result_qty=body.resultQty,
             admin_user_id=admin_id,
         )
+        await log_admin_action(
+            admin_id, "craft_update",
+            target_type="craft_recipe", target_id=str(recipe_id),
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2676,10 +2787,17 @@ async def admin_content_craft_patch(
 @router.delete("/content/craft/{recipe_id}")
 async def admin_content_craft_delete(
     recipe_id: int,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("manage_content")),
 ):
     try:
-        return await delete_craft_recipe(recipe_id, admin_user_id=admin_id)
+        result = await delete_craft_recipe(recipe_id, admin_user_id=admin_id)
+        await log_admin_action(
+            admin_id, "craft_delete",
+            target_type="craft_recipe", target_id=str(recipe_id),
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -3234,6 +3352,7 @@ class PlayerNoteBody(BaseModel):
 async def admin_user_notes_upsert(
     user_id: int,
     body: PlayerNoteBody,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("view_players")),
 ):
     try:
@@ -3242,6 +3361,12 @@ async def admin_user_notes_upsert(
             body.text,
             admin_user_id=admin_id,
             note_id=body.noteId,
+        )
+        await log_admin_action(
+            admin_id, "note_upsert",
+            target_type="user", target_id=str(user_id),
+            target_label=f"Игрок {user_id}",
+            ip=_get_client_ip(request),
         )
         return note
     except ValueError as e:
@@ -3252,10 +3377,17 @@ async def admin_user_notes_upsert(
 async def admin_user_notes_delete(
     user_id: int,
     note_id: int,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("view_players")),
 ):
     try:
         await delete_player_note(user_id, note_id, admin_user_id=admin_id)
+        await log_admin_action(
+            admin_id, "note_delete",
+            target_type="user", target_id=str(user_id),
+            target_label=f"Игрок {user_id}",
+            ip=_get_client_ip(request),
+        )
         return {"ok": True}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -3309,10 +3441,11 @@ class DexItemFullBody(BaseModel):
 async def admin_dex_item_update(
     item_id: str,
     body: DexItemFullBody,
+    request: Request,
     admin_id: int = Depends(require_admin_permission("manage_content")),
 ):
     try:
-        return await update_dex_item_meta(
+        result = await update_dex_item_meta(
             item_id,
             name=body.name,
             emoji=body.emoji,
@@ -3327,6 +3460,12 @@ async def admin_dex_item_update(
             craft=body.craft,
             admin_user_id=admin_id,
         )
+        await log_admin_action(
+            admin_id, "dex_update",
+            target_type="dex_item", target_id=item_id, target_label=item_id,
+            ip=_get_client_ip(request),
+        )
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

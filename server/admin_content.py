@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from admin_users import insert_admin_audit
 from content_registry import (
     all_crops,
     crop_to_admin_dict,
@@ -213,12 +212,6 @@ async def create_dex_item(
         (bonus or "").strip(),
         (craft or "").strip(),
     )
-    await insert_admin_audit(
-        0,
-        "admin_dex_create",
-        admin_user_id=admin_user_id,
-        details={"item_id": str(new_row["id"]), "name": clean_name},
-    )
     await _invalidate_content()
     return {
         "id": str(new_row["id"]),
@@ -310,12 +303,6 @@ async def update_dex_item_meta(
     if row is None:
         raise ValueError("Предмет не найден")
 
-    await insert_admin_audit(
-        0,
-        "admin_dex_update",
-        admin_user_id=admin_user_id,
-        details={"item_id": str(dex_id)},
-    )
     await _invalidate_content()
     return {
         "id": str(row["id"]),
@@ -385,12 +372,6 @@ async def delete_dex_item(item_id: str, *, admin_user_id: int) -> dict:
     if not row:
         raise ValueError("Предмет не найден")
 
-    await insert_admin_audit(
-        0,
-        "admin_dex_delete",
-        admin_user_id=admin_user_id,
-        details={"item_id": item_id_str, "name": str(row["name"])},
-    )
     await _invalidate_content()
     return {"deleted": True, "id": item_id_str, "name": str(row["name"])}
 
@@ -557,12 +538,6 @@ async def create_crop(
                     drop["sort_order"],
                 )
 
-    await insert_admin_audit(
-        0,
-        "admin_crop_create",
-        admin_user_id=admin_user_id,
-        details={"crop_id": int(crop_id), "key": key},
-    )
     await _invalidate_content()
     return await _load_crop_row(int(crop_id))
 
@@ -665,12 +640,6 @@ async def update_crop(
                         drop["sort_order"],
                     )
 
-    await insert_admin_audit(
-        0,
-        "admin_crop_update",
-        admin_user_id=admin_user_id,
-        details={"crop_id": crop_id, "key": row["key"]},
-    )
     await _invalidate_content()
     return await _load_crop_row(crop_id)
 
@@ -683,12 +652,6 @@ async def delete_crop(crop_id: int, *, admin_user_id: int) -> dict:
     if count <= 1:
         raise ValueError("Нельзя удалить последнюю культуру")
     await db.pool.execute("DELETE FROM farm_crops WHERE id = $1", crop_id)
-    await insert_admin_audit(
-        0,
-        "admin_crop_delete",
-        admin_user_id=admin_user_id,
-        details={"crop_id": crop_id, "key": row["key"]},
-    )
     await _invalidate_content()
     return {"deleted": True, "id": crop_id}
 
@@ -751,12 +714,6 @@ async def create_craft_recipe(
         sort_order,
         max(0, int(remains)),
         max(1, int(result_qty)),
-    )
-    await insert_admin_audit(
-        0,
-        "admin_craft_create",
-        admin_user_id=admin_user_id,
-        details={"recipe_id": int(recipe_id), "key": key},
     )
     await _invalidate_content()
     from content_registry import get_craft_recipe_by_id
@@ -846,12 +803,6 @@ async def update_craft_recipe(
             *params,
         )
 
-    await insert_admin_audit(
-        0,
-        "admin_craft_update",
-        admin_user_id=admin_user_id,
-        details={"recipe_id": recipe_id, "key": row["key"]},
-    )
     await _invalidate_content()
     from content_registry import get_craft_recipe_by_id
 
@@ -866,11 +817,5 @@ async def delete_craft_recipe(recipe_id: int, *, admin_user_id: int) -> dict:
     if row is None:
         raise ValueError("Рецепт не найден")
     await db.pool.execute("DELETE FROM craft_recipes WHERE id = $1", recipe_id)
-    await insert_admin_audit(
-        0,
-        "admin_craft_delete",
-        admin_user_id=admin_user_id,
-        details={"recipe_id": recipe_id, "key": row["key"]},
-    )
     await _invalidate_content()
     return {"deleted": True, "id": recipe_id}

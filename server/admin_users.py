@@ -1,4 +1,8 @@
-"""Admin: поиск игроков, профиль, модерация, audit."""
+"""Admin: поиск игроков, профиль, модерация.
+
+Действия админов логируются через admin_audit.log_admin_action (admin_audit_log,
+видно в Security -> "Аудит действий") - здесь этого больше нет, чтобы не
+дублировать одно и то же действие в две разные таблицы под разными именами."""
 
 from __future__ import annotations
 
@@ -20,34 +24,6 @@ def _safe_dict(value: Any) -> dict:
         except (json.JSONDecodeError, ValueError):
             return {}
     return {}
-
-
-async def insert_admin_audit(
-    target_user_id: int,
-    event_type: str,
-    *,
-    admin_user_id: int,
-    amount: int | None = None,
-    balance_before: int | None = None,
-    balance_after: int | None = None,
-    details: dict[str, Any] | None = None,
-) -> None:
-    payload = dict(details or {})
-    payload["admin_user_id"] = admin_user_id
-    await db.pool.execute(
-        """
-        INSERT INTO audit_events (
-            user_id, event_type, amount, balance_before, balance_after, details
-        )
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-        """,
-        target_user_id,
-        event_type,
-        amount,
-        balance_before,
-        balance_after,
-        json.dumps(payload, ensure_ascii=False),
-    )
 
 
 async def is_user_banned(user_id: int) -> bool:
@@ -233,16 +209,6 @@ async def admin_adjust_balance(
                 after,
             )
 
-    await insert_admin_audit(
-        user_id,
-        "admin_balance",
-        admin_user_id=admin_user_id,
-        amount=delta,
-        balance_before=before,
-        balance_after=after,
-        details={"note": note.strip()} if note.strip() else {},
-    )
-
     if note.strip() and notify_player:
         from admin_player_notify import notify_balance_adjustment
 
@@ -300,14 +266,6 @@ async def admin_adjust_item(
                 items_to_db(updated_items),
             )
 
-    await insert_admin_audit(
-        user_id,
-        "admin_item",
-        admin_user_id=admin_user_id,
-        amount=delta,
-        details={"item_id": item_id, "count_after": int(count_after), "note": note.strip()},
-    )
-
     if note.strip():
         from admin_player_notify import notify_item_adjustment
 
@@ -354,13 +312,6 @@ async def admin_set_banned(
             banned,
             reason_clean,
         )
-
-    await insert_admin_audit(
-        user_id,
-        "admin_ban" if banned else "admin_unban",
-        admin_user_id=admin_user_id,
-        details={"reason": reason_clean} if reason_clean else {},
-    )
 
     if notify:
         from admin_player_notify import notify_banned, notify_unbanned
@@ -425,13 +376,6 @@ async def admin_reset_onboarding(user_id: int, *, admin_user_id: int) -> dict:
                 """,
                 user_id,
             )
-
-    await insert_admin_audit(
-        user_id,
-        "admin_onboarding_reset",
-        admin_user_id=admin_user_id,
-        details={},
-    )
 
     from admin_player_notify import notify_onboarding_reset
 
@@ -630,12 +574,6 @@ async def upsert_player_note(
             text,
         )
 
-    await insert_admin_audit(
-        player_id,
-        "admin_note",
-        admin_user_id=admin_user_id,
-        details={"note_id": int(row["id"]), "text_preview": text[:80]},
-    )
     return {
         "id": int(row["id"]),
         "adminUserId": int(row["admin_user_id"]),
@@ -653,12 +591,6 @@ async def delete_player_note(player_id: int, note_id: int, *, admin_user_id: int
     )
     if not deleted:
         raise ValueError("Заметка не найдена")
-    await insert_admin_audit(
-        player_id,
-        "admin_note_delete",
-        admin_user_id=admin_user_id,
-        details={"note_id": note_id},
-    )
 
 
 # ---------------------------------------------------------------------------

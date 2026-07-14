@@ -9,7 +9,6 @@ from config import ANALYTICS_TZ
 from market_rules import MARKET_MAX_PRICE, MARKET_MIN_PRICE
 from db import db
 from dex_catalog import dex_catalog
-from admin_users import insert_admin_audit
 from shop_catalog import effective_price
 from user_items import add_shop_item_to_storage, items_to_db, parse_items
 
@@ -311,21 +310,6 @@ async def admin_cancel_listing(
     item_name = entry.name if entry else str(row["item_id"])
     emoji = entry.emoji if entry else "📦"
 
-    await insert_admin_audit(
-        seller_id,
-        "admin_market_cancel",
-        admin_user_id=admin_user_id,
-        details={
-            "listing_id": listing_id,
-            "item_id": str(row["item_id"]),
-            "name": item_name,
-            "emoji": emoji,
-            "quantity": qty,
-            "price": int(row["price"] or 0),
-            "reason": reason_clean or None,
-        },
-    )
-
     from admin_player_notify import notify_market_listing_removed
 
     notify_market_listing_removed(
@@ -342,4 +326,7 @@ async def admin_cancel_listing(
         "listingId": listing_id,
         "sellerId": seller_id,
         "returnedQuantity": qty,
+        "itemId": str(row["item_id"]),
+        "itemName": item_name,
+        "price": int(row["price"] or 0),
     }
