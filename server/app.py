@@ -439,15 +439,18 @@ def _server_error(exc: Exception, request: Request) -> HTTPException:
         path=request.url.path,
         exc=exc,
     )
-    if PRODUCTION:
-        return HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
-    return HTTPException(status_code=500, detail=str(exc))
+    detail = "Внутренняя ошибка сервера" if PRODUCTION else str(exc)
+    http_exc = HTTPException(status_code=500, detail=detail)
+    # Уже залогировано выше через schedule_server_exception — не даём
+    # http_exception_handler записать вторую строку в system_logs для той же ошибки.
+    http_exc._already_reported = True
+    return http_exc
 
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
-    if not (exc.status_code == 500 and detail == "Внутренняя ошибка сервера"):
+    if not getattr(exc, "_already_reported", False):
         schedule_http_error(
             user_id=_request_user_id(request),
             method=request.method,

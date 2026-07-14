@@ -165,9 +165,6 @@ async def record_balance_event(
     balance_after: int | None = None,
     details: dict[str, Any] | None = None,
 ) -> None:
-    if not AUDIT_LOG_ENABLED:
-        return
-
     if pool is not None:
         try:
             await _insert_event(

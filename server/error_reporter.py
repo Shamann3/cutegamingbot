@@ -268,8 +268,6 @@ def schedule_http_error(
 ) -> None:
     if path == "/api/report-error":
         return
-    if not ERROR_REPORT_ENABLED:
-        return
     if _is_expected_client_auth_failure(status, detail):
         return
     code = code_from_api_path(path, status)
