@@ -2739,6 +2739,18 @@ async def _safe_member_count(chat_id: int) -> int:
         return 0
 
 
+def _link_from_names_bulk(user_id: int, names_bulk: dict) -> str:
+    """Как _safe_create_user_link, но по уже загруженным именам (без похода в БД на каждого юзера)."""
+    first_name, username = names_bulk.get(user_id, (None, None))
+    display_name = first_name if first_name else (username if username else f"id {user_id}")
+    display_name = escape(display_name)
+
+    if username:
+        return f"<a href='https://t.me/{escape(username)}'>{display_name}</a>"
+
+    return f"<a href='tg://user?id={int(user_id)}'>{display_name}</a>"
+
+
 async def _safe_edit_stats_message(
     call: types.CallbackQuery,
     text: str,
@@ -3171,9 +3183,14 @@ async def _stat_text_day(chat_id: int, user_id: int, day_key: Optional[str] = No
 
     member_count = await _safe_member_count(chat_id)
 
-    if max_messages_user is not None and member_count >= 1000:
+    top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
+    max_uid = max_cnt = None
+    if max_messages_user is not None:
         max_uid, max_cnt = _extract_top_row(max_messages_user)
-        max_user_link = await _safe_create_user_link(max_uid)
+    names_bulk = await db.get_names_bulk(top_ids + ([max_uid] if max_uid is not None else []))
+
+    if max_messages_user is not None and member_count >= 1000:
+        max_user_link = _link_from_names_bulk(max_uid, names_bulk)
 
         text += (
             f"👑 <b><i>{max_user_link}</i> - царь статистики!</b>\n"
@@ -3183,7 +3200,7 @@ async def _stat_text_day(chat_id: int, user_id: int, day_key: Optional[str] = No
     if top_users:
         for rank, row in enumerate(top_users, start=1):
             uid, cnt = _extract_top_row(row)
-            name_link = await _safe_create_user_link(uid)
+            name_link = _link_from_names_bulk(uid, names_bulk)
 
             if rank <= 3:
                 text += f"<b>{rank}. {name_link} ─ {_fmt_int(cnt)}</b>\n"
@@ -3219,9 +3236,14 @@ async def _stat_text_week(chat_id: int, user_id: int, week_key: Optional[str] = 
 
     member_count = await _safe_member_count(chat_id)
 
-    if max_messages_user is not None and member_count >= 1000:
+    top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
+    max_uid = max_cnt = None
+    if max_messages_user is not None:
         max_uid, max_cnt = _extract_top_row(max_messages_user)
-        max_link = await _safe_create_user_link(max_uid)
+    names_bulk = await db.get_names_bulk(top_ids + ([max_uid] if max_uid is not None else []))
+
+    if max_messages_user is not None and member_count >= 1000:
+        max_link = _link_from_names_bulk(max_uid, names_bulk)
 
         text += (
             f"👑 <b><i>{max_link}</i> - царь статистики!</b>\n"
@@ -3231,7 +3253,7 @@ async def _stat_text_week(chat_id: int, user_id: int, week_key: Optional[str] = 
     if top_users:
         for rank, row in enumerate(top_users, start=1):
             uid, cnt = _extract_top_row(row)
-            name_link = await _safe_create_user_link(uid)
+            name_link = _link_from_names_bulk(uid, names_bulk)
 
             if rank <= 3:
                 text += f"<b>{rank}. {name_link} ─ {_fmt_int(cnt)}</b>\n"
@@ -3269,9 +3291,14 @@ async def _stat_text_month(chat_id: int, user_id: int, month_key: Optional[str] 
 
     member_count = await _safe_member_count(chat_id)
 
-    if max_messages_user is not None and member_count >= 1000:
+    top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
+    max_uid = max_cnt = None
+    if max_messages_user is not None:
         max_uid, max_cnt = _extract_top_row(max_messages_user)
-        max_link = await _safe_create_user_link(max_uid)
+    names_bulk = await db.get_names_bulk(top_ids + ([max_uid] if max_uid is not None else []))
+
+    if max_messages_user is not None and member_count >= 1000:
+        max_link = _link_from_names_bulk(max_uid, names_bulk)
 
         text += (
             f"👑 <b><i>{max_link}</i> - царь статистики месяца!</b>\n"
@@ -3281,7 +3308,7 @@ async def _stat_text_month(chat_id: int, user_id: int, month_key: Optional[str] 
     if top_users:
         for rank, row in enumerate(top_users, start=1):
             uid, cnt = _extract_top_row(row)
-            name_link = await _safe_create_user_link(uid)
+            name_link = _link_from_names_bulk(uid, names_bulk)
 
             if rank <= 3:
                 text += f"<b>{rank}. {name_link} ─ {_fmt_int(cnt)}</b>\n"
@@ -3307,9 +3334,14 @@ async def _stat_text_all(chat_id: int, user_id: int, limit: int = 30) -> str:
 
     member_count = await _safe_member_count(chat_id)
 
-    if max_messages_user is not None and member_count >= 1000:
+    top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
+    max_uid = max_cnt = None
+    if max_messages_user is not None:
         max_uid, max_cnt = _extract_top_row(max_messages_user)
-        max_link = await _safe_create_user_link(max_uid)
+    names_bulk = await db.get_names_bulk(top_ids + ([max_uid] if max_uid is not None else []))
+
+    if max_messages_user is not None and member_count >= 1000:
+        max_link = _link_from_names_bulk(max_uid, names_bulk)
 
         text += (
             f"👑 <b><i>{max_link}</i> - царь статистики!</b>\n"
@@ -3319,7 +3351,7 @@ async def _stat_text_all(chat_id: int, user_id: int, limit: int = 30) -> str:
     if top_users:
         for rank, row in enumerate(top_users, start=1):
             uid, cnt = _extract_top_row(row)
-            name_link = await _safe_create_user_link(uid)
+            name_link = _link_from_names_bulk(uid, names_bulk)
 
             if rank <= 3:
                 text += f"<b>{rank}. {name_link} ─ {_fmt_int(cnt)}</b>\n"
