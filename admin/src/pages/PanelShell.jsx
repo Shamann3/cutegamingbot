@@ -265,7 +265,7 @@ export default function PanelShell({ onLogout }) {
           {isSecurity && <SecuritySection />}
           {isStaff && <StaffSection role={role} permissions={permissions} myUserId={myUserId} />}
           {isSupport && <SupportSection />}
-          {isModeration && <ModerationSection role={role} />}
+          {isModeration && <ModerationSection role={role} permissions={permissions} />}
           {isChronicle && <ChronicleSection />}
           {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && (
             <SectionPlaceholder sectionId={section} />

@@ -1,40 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import { WORLD_BORDERS } from '../../lib/worldborders'
 import { getAdminProfile } from '../../lib/adminProfile'
 
 /**
  * Командный Пункт — owner-only «режим Бога».
- * Ritual command center built on ONE continuous MapLibre globe: spin the real
- * dark-satellite Earth and keep zooming, unbroken, from orbit down to a single
- * rooftop. Living souls (by geo/IP) glow on the sphere; gold country borders
- * engrave the obsidian world; the Great Alchemy levers, per-soul dossier with
- * Shadowban, and the Ragnarök freeze frame it.
+ * Ritual command center built on a hand-rolled orthographic globe (plain 2D
+ * canvas, no map library): spin the sphere and zoom in, unbroken, from orbit
+ * down to the ground ("Око нисходит" hands off to CommandMap's real Leaflet
+ * map for that final descent). Living souls (by geo/IP) glow on the sphere;
+ * gold country borders engrave the obsidian world; the Great Alchemy levers,
+ * per-soul dossier with Shadowban, and the Ragnarök freeze frame it.
  *
- * Imagery: Esri World Imagery (no API key), tinted obsidian+gold via raster
- * paint + a crimson/gold atmosphere. Runs on simulated data; real wiring seams
- * are marked `TODO(live)`. Destructive rites only affect this view until wired.
+ * Runs on simulated data; real wiring seams are marked `TODO(live)`.
+ * Destructive rites only affect this view until wired.
  */
-
-/* Esri World Imagery — free, keyless, tiles down to z19 (a single house) */
-const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-
-/* gold country borders, straight from the bundled Natural Earth rings → GeoJSON */
-const BORDERS_GEOJSON = {
-  type: 'FeatureCollection',
-  features: WORLD_BORDERS.map((country) => ({
-    type: 'Feature', properties: {},
-    geometry: {
-      type: 'MultiLineString',
-      coordinates: country.map((ring) => {
-        const c = []
-        for (let i = 0; i < ring.length; i += 2) c.push([ring[i], ring[i + 1]])
-        return c
-      }),
-    },
-  })),
-}
 
 /* real cities → seeded souls */
 const CITIES = [
@@ -56,9 +35,50 @@ const CITIES = [
 const seed = (s) => { const x = Math.sin(s * 99.7) * 10000; return x - Math.floor(x) }
 const fmt = (n) => Math.round(n).toLocaleString('ru-RU')
 
+/* ---------- sphere math (orthographic globe, plain 2D canvas) ---------- */
+const D = Math.PI / 180
+
+/** lat/lon (degrees) -> unit vector on the sphere (x right, y up, z toward the viewer at yaw=0,pitch=0) */
+function llToVec(lat, lon) {
+  const la = lat * D, lo = lon * D
+  const cl = Math.cos(la)
+  return [cl * Math.sin(lo), Math.sin(la), cl * Math.cos(lo)]
+}
+
+function norm(v) {
+  const len = Math.hypot(v[0], v[1], v[2]) || 1
+  return [v[0] / len, v[1] / len, v[2] / len]
+}
+
+function nearAnyCity(lat, lon) {
+  return CITIES.some((c) => Math.abs(c[1] - lat) < 1.5 && Math.abs(c[2] - lon) < 1.5)
+}
+
+/* country borders (WORLD_BORDERS: country -> ring -> flat [lon,lat,...]) as vectors, ready to rotate+draw */
+const RINGS = WORLD_BORDERS.flatMap((country) =>
+  country.map((ring) => {
+    const pts = []
+    for (let i = 0; i < ring.length; i += 2) pts.push(llToVec(ring[i + 1], ring[i]))
+    return pts
+  })
+)
+
+/* sparse continent dot-texture, sampled from the same border rings; brighter near known cities */
+const LAND = WORLD_BORDERS.flatMap((country, ci) =>
+  country.flatMap((ring) => {
+    const pts = []
+    for (let i = 0; i < ring.length; i += 2) {
+      const lon = ring[i], lat = ring[i + 1]
+      pts.push({ v: llToVec(lat, lon), b: 0.35 + seed(ci * 7 + i) * 0.55, city: nearAnyCity(lat, lon) })
+    }
+    return pts
+  })
+)
+
 function buildPlayers() {
   return CITIES.map((c, i) => ({
     name: c[0], lat: c[1], lon: c[2], city: c[3], country: c[4],
+    v: llToVec(c[1], c[2]), phase: seed(i + 11) * Math.PI * 2, hub: i < 8,
     shadow: false,
     id: 100000 + Math.floor(seed(i + 3) * 899999),
     ip: `${5 + Math.floor(seed(i) * 250)}.${Math.floor(seed(i + 1) * 255)}.${Math.floor(seed(i + 2) * 255)}.${Math.floor(seed(i + 7) * 255)}`,
@@ -67,18 +87,6 @@ function buildPlayers() {
     dev: ['iPhone 15 · iOS 18', 'Pixel 8 · Android 15', 'Samsung S24', 'Desktop · Chrome', 'iPad · Safari'][Math.floor(seed(i + 4) * 5)],
     seen: ['только что', '2 мин', '7 мин', 'только что', '1 мин', 'только что'][Math.floor(seed(i + 6) * 6)],
   }))
-}
-
-/* souls → GeoJSON for the map's circle layers (occluded correctly behind the globe) */
-function soulsFC(players) {
-  return {
-    type: 'FeatureCollection',
-    features: players.map((p) => ({
-      type: 'Feature',
-      properties: { id: p.id, name: p.name, city: p.city, country: p.country, shadow: p.shadow ? 1 : 0 },
-      geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
-    })),
-  }
 }
 
 const CH_ACTS = [
@@ -95,14 +103,16 @@ export default function CommandCenterSection({ onExit, architect }) {
   )
 
   const mapWrapRef = useRef(null)
-  const mapRef = useRef(null)
+  const canvasRef = useRef(null)
+  const onDescendRef = useRef(null)
   const engine = useRef({
-    rush: false, eclipse: false, frozen: false,
+    rush: false, eclipse: false, frozen: false, paused: false, arcs: [],
     players: buildPlayers(), reduce,
   })
 
   const [levers, setLevers] = useState({ craft: 62, tax: 8, gravity: 100 })
   const [rites, setRites] = useState({ rush: false, eclipse: false, silence: false })
+  const [focus, setFocus] = useState(null)
   const [frozen, setFrozen] = useState(false)
   const [soundOn, setSoundOn] = useState(false)
   const [dossierId, setDossierId] = useState(null)

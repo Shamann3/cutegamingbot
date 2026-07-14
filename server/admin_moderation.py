@@ -239,7 +239,16 @@ async def get_proof_url(log_id: int) -> str:
 
 
 async def unban_player(user_id: int, *, admin_user_id: int, admin_name: str = "") -> None:
-    """Снимает бан + пишет лог unban в staff_actions."""
+    """Снимает бан + пишет лог unban в staff_actions.
+
+    Сам разбан (UPDATE users, audit_events, уведомление игроку, инвалидация
+    кэша, broadcast админам) делегирован в admin_users.admin_set_banned -
+    единый источник правды, чтобы разбан из архива Модерации не отличался
+    от разбана из карточки игрока (Users): раньше это были два независимых
+    пути, и разбан отсюда не писался в audit_events и не уведомлял игрока.
+    staff_actions пишем отдельно - это специфичная для архива Модерации
+    история дела, её health не зависит от общего audit_events.
+    """
     row = await db.pool.fetchrow(
         "SELECT user_id, banned FROM users WHERE user_id = $1", user_id
     )
@@ -248,50 +257,22 @@ async def unban_player(user_id: int, *, admin_user_id: int, admin_name: str = ""
     if not row["banned"]:
         raise ValueError("Игрок не забанен")
 
-    async with db.pool.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute(
-                """
-                UPDATE users
-                SET banned = FALSE,
-                    banned_at = NULL,
-                    banned_reason = NULL
-                WHERE user_id = $1
-                """,
-                user_id,
-            )
-            target_name = await conn.fetchval(
-                "SELECT COALESCE(display_name, first_name, username, '') FROM users WHERE user_id = $1",
-                user_id,
-            ) or ""
-            await conn.execute(
-                """
-                INSERT INTO staff_actions
-                    (admin_user_id, admin_name, action_type, target_player_id,
-                     target_name, reason, evidence, chat_id, scope)
-                VALUES ($1, $2, 'unban', $3, $4, '', '', 0, 'full')
-                """,
-                admin_user_id, admin_name, user_id, target_name,
-            )
+    from admin_users import admin_set_banned
+    await admin_set_banned(user_id, False, admin_user_id=admin_user_id)
 
-    from rate_limit import invalidate_ban_cache
-    invalidate_ban_cache(user_id)
-
-    import asyncio
-    from admin_ws import broadcast_to_admins
-    asyncio.create_task(broadcast_to_admins({
-        "event": "new_moderation_log",
-        "data": {
-            "actionType": "unban",
-            "adminId": admin_user_id,
-            "adminName": admin_name,
-            "targetId": user_id,
-            "targetName": target_name,
-            "reason": "",
-            "scope": "full",
-            "chatId": 0,
-        },
-    }))
+    target_name = await db.pool.fetchval(
+        "SELECT COALESCE(display_name, first_name, username, '') FROM users WHERE user_id = $1",
+        user_id,
+    ) or ""
+    await db.pool.execute(
+        """
+        INSERT INTO staff_actions
+            (admin_user_id, admin_name, action_type, target_player_id,
+             target_name, reason, evidence, chat_id, scope)
+        VALUES ($1, $2, 'unban', $3, $4, '', '', 0, 'full')
+        """,
+        admin_user_id, admin_name, user_id, target_name,
+    )
 
 
 async def get_player_history(player_id: int) -> list[dict]:

@@ -102,7 +102,7 @@ function MiniHistory({ items, currentId, emptyText }) {
 // ---------------------------------------------------------------------------
 // Case modal
 // ---------------------------------------------------------------------------
-function CaseModal({ item, role, onClose, onUnbanned }) {
+function CaseModal({ item, role, perms, onClose, onUnbanned }) {
   const meta = actionMeta(item.actionType, item.scope)
   const [unbanLoading, setUnbanLoading] = useState(false)
   const [unbanDone, setUnbanDone] = useState(false)
@@ -160,7 +160,7 @@ function CaseModal({ item, role, onClose, onUnbanned }) {
   }
 
   // кнопка видна только owner, только на бане, и только пока не разбанили в этой сессии
-  const canUnban = role === 'owner' && item.actionType === 'ban' && !unbanDone
+  const canUnban = perms.has('moderate_unban') && item.actionType === 'ban' && !unbanDone
   const playerOffenseCount = playerHistory.filter(h => ['ban','mute','kick','warn'].includes(h.actionType)).length
   const isRecidivist = playerOffenseCount > 2
 
@@ -810,7 +810,8 @@ function AppealsTab({ role }) {
   )
 }
 
-export default function ModerationSection({ role }) {
+export default function ModerationSection({ role, permissions = [] }) {
+  const perms = new Set(permissions)
   const [mainTab, setMainTab] = useState('archive')
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
@@ -877,7 +878,7 @@ export default function ModerationSection({ role }) {
   return (
     <div className="arc-shell">
       {openCase && (
-        <CaseModal item={openCase} role={role}
+        <CaseModal item={openCase} role={role} perms={perms}
           onClose={() => setOpenCase(null)}
           onUnbanned={() => { setOpenCase(null); load() }} />
       )}

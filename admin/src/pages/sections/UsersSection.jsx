@@ -701,6 +701,23 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
   return (
     <div className="panel-users">
       <AdminActionModal
+        open={pendingAction === 'ban'}
+        title="Забанить игрока?"
+        description="Игрок потеряет доступ к игре и получит сообщение в боте."
+        confirmText="Забанить"
+        danger
+        loading={actionLoading}
+        onConfirm={() => {
+          setPendingAction(null)
+          runAction(() =>
+            setAdminUserBanned(profile.userId, true, banReason, banEvidence, banPhotoIds[0] || ''),
+          ).then(() => { setBanReason(''); setBanEvidence(''); setBanPhotoIds([]) })
+        }}
+        onCancel={() => {
+          if (!actionLoading) setPendingAction(null)
+        }}
+      />
+      <AdminActionModal
         open={pendingAction === 'unban'}
         title="Снять бан?"
         description="Игрок получит сообщение в игровом боте."
@@ -708,7 +725,9 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
         loading={actionLoading}
         onConfirm={() => {
           setPendingAction(null)
-          runAction(() => setAdminUserBanned(profile.userId, false))
+          runAction(() =>
+            setAdminUserBanned(profile.userId, false, unbanReason, unbanEvidence, unbanPhotoIds[0] || ''),
+          ).then(() => { setUnbanReason(''); setUnbanEvidence(''); setUnbanPhotoIds([]) })
         }}
         onCancel={() => {
           if (!actionLoading) setPendingAction(null)
@@ -1084,11 +1103,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                     !hasProfile || actionLoading || (hasProfile && profile.banned) ||
                     !banReason.trim() || (!banEvidence.trim() && banPhotoIds.length === 0)
                   }
-                  onClick={() =>
-                    runAction(() =>
-                      setAdminUserBanned(profile.userId, true, banReason, banEvidence, banPhotoIds[0] || ''),
-                    ).then(() => { setBanReason(''); setBanEvidence(''); setBanPhotoIds([]) })
-                  }
+                  onClick={() => setPendingAction('ban')}
                 >
                   Забанить
                 </button>
@@ -1129,11 +1144,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                     !hasProfile || actionLoading || (hasProfile && !profile.banned) ||
                     !unbanReason.trim() || (!unbanEvidence.trim() && unbanPhotoIds.length === 0)
                   }
-                  onClick={() =>
-                    runAction(() =>
-                      setAdminUserBanned(profile.userId, false, unbanReason, unbanEvidence, unbanPhotoIds[0] || ''),
-                    ).then(() => { setUnbanReason(''); setUnbanEvidence(''); setUnbanPhotoIds([]) })
-                  }
+                  onClick={() => setPendingAction('unban')}
                 >
                   Снять бан
                 </button>
