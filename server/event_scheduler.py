@@ -72,6 +72,8 @@ async def _tick() -> None:
 
     await _fire_scheduled_broadcasts()
 
+    await _fire_daily_rotation_broadcast()
+
     await _advance_recurring_quests()
 
     await _send_harvest_notifications()
@@ -207,6 +209,90 @@ async def _fire_scheduled_broadcasts() -> None:
 
         logger.info("Fired scheduled broadcast run_id=%s", run_id)
 
+
+
+# ---------------------------------------------------------------------------
+
+# Daily rotation broadcast - "напоминалки" из DAILY_ROTATION_TEMPLATES, одна
+# в день по кругу. Время (daily_broadcast_hour/minute) - в UTC, как всё
+# в этом модуле (datetime.now(_UTC)). Атомарный claim через WHERE ...
+# next_fire_at = <прочитанное значение> - тот же паттерн, что и у recurring
+# quests, безопасен при нескольких тиках/воркерах.
+
+# ---------------------------------------------------------------------------
+
+
+
+def _next_daily_slot(now: datetime, hour: int, minute: int) -> datetime:
+    candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if candidate <= now:
+        candidate += timedelta(days=1)
+    return candidate
+
+
+async def _fire_daily_rotation_broadcast() -> None:
+
+    from db import db
+    from admin_broadcast import start_daily_rotation_broadcast, DAILY_ROTATION_TEMPLATES
+
+    settings = await db.pool.fetchrow(
+        """
+        SELECT daily_broadcast_enabled, daily_broadcast_hour, daily_broadcast_minute,
+               daily_broadcast_rotation_index, daily_broadcast_next_fire_at
+        FROM system_settings WHERE id = 1
+        """
+    )
+    if not settings or not settings["daily_broadcast_enabled"]:
+        return
+
+    now = datetime.now(_UTC)
+    hour = int(settings["daily_broadcast_hour"] or 12)
+    minute = int(settings["daily_broadcast_minute"] or 0)
+    next_fire_at = settings["daily_broadcast_next_fire_at"]
+
+    if next_fire_at is None:
+        # Первый тик после деплоя/включения - не стреляем сразу, только выставляем расписание.
+        await db.pool.execute(
+            """
+            UPDATE system_settings
+            SET daily_broadcast_next_fire_at = $1
+            WHERE id = 1 AND daily_broadcast_next_fire_at IS NULL
+            """,
+            _next_daily_slot(now, hour, minute),
+        )
+        return
+
+    if next_fire_at > now:
+        return
+
+    rotation_index = int(settings["daily_broadcast_rotation_index"] or 0)
+    template_count = len(DAILY_ROTATION_TEMPLATES)
+
+    claimed = await db.pool.fetchrow(
+        """
+        UPDATE system_settings
+        SET daily_broadcast_rotation_index = (daily_broadcast_rotation_index + 1) % $2,
+            daily_broadcast_next_fire_at = $3
+        WHERE id = 1 AND daily_broadcast_next_fire_at = $1
+        RETURNING daily_broadcast_rotation_index
+        """,
+        next_fire_at,
+        template_count,
+        _next_daily_slot(now, hour, minute),
+    )
+    if not claimed:
+        return  # другой тик/воркер уже забрал этот запуск
+
+    try:
+        result = await start_daily_rotation_broadcast(rotation_index)
+        logger.info(
+            "Daily rotation broadcast fired: index=%s run_id=%s recipients=%s",
+            rotation_index, result.get("runId"), result.get("recipientCount"),
+        )
+    except ValueError as e:
+        logger.warning("Daily rotation broadcast skipped (index=%s): %s", rotation_index, e)
+    except Exception:
+        logger.exception("Daily rotation broadcast failed (index=%s)", rotation_index)
 
 
 

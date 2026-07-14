@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from config import ONLINE_WINDOW_SECONDS
+from config import ONLINE_WINDOW_SECONDS, WEBAPP_URL
 from db import db
 from presence import count_online
 from user_notify import create_admin_message_notifications_batch
@@ -65,6 +65,60 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         ),
     },
 ]
+
+# Ежедневная ротация "напоминалок" (см. server/event_scheduler.py::_fire_daily_rotation_broadcast).
+# minBalance - опциональный порог: сообщение шлётся только тем, у кого баланс СТРОГО больше
+# указанного значения. Тексты и условия зафиксированы с владельцем проекта - каждое утверждение
+# в тексте должно быть верно для любого получателя (без ложных заявлений о состоянии игрока).
+DAILY_ROTATION_TEMPLATES: list[dict[str, Any]] = [
+    {
+        "label": "Ежедневная рассылка #1 (баланс > 100)",
+        "text": "🐰 Ферма ждёт тебя. Баланс {{balance}} кут, дел на сегодня хватит на пару минут.",
+        "min_balance": 101,
+    },
+    {
+        "label": "Ежедневная рассылка #2",
+        "text": "☀️ Новый день на ферме уже начался. Загляни, пока не пропустил ничего интересного.",
+        "min_balance": None,
+    },
+    {
+        "label": "Ежедневная рассылка #3 (баланс > 50)",
+        "text": "🧺 У тебя {{balance}} кут в кармане. Всегда приятно посмотреть, что на них можно взять.",
+        "min_balance": 51,
+    },
+    {
+        "label": "Ежедневная рассылка #4",
+        "text": "🎲 Заходи глянуть, что нового в игре сегодня — обычно там что-то да меняется.",
+        "min_balance": None,
+    },
+    {
+        "label": "Ежедневная рассылка #5",
+        "text": "🎯 Каждый день на ферме — это шанс продвинуться чуть дальше. Сегодняшний ещё не использован.",
+        "min_balance": None,
+    },
+    {
+        "label": "Ежедневная рассылка #6",
+        "text": "🌤 Пять минут на ферме — и день уже не прошёл зря.",
+        "min_balance": None,
+    },
+    {
+        "label": "Ежедневная рассылка #7",
+        "text": "📊 Твоя позиция в топе изменилась за последний день. Глянь, что там сейчас.",
+        "min_balance": None,
+    },
+    {
+        "label": "Ежедневная рассылка #8",
+        "text": "🔝 Топ недели обновляется каждый день. Сегодня твой шанс подвинуться выше.",
+        "min_balance": None,
+    },
+]
+
+DAILY_BROADCAST_CTA_TEXT = "🌾 Открыть ферму"
+
+
+def daily_broadcast_cta_url() -> str | None:
+    return WEBAPP_URL or None
+
 
 TELEGRAM_SEND_DELAY = 0.04
 PROGRESS_UPDATE_EVERY = 25
@@ -755,7 +809,7 @@ async def _execute_broadcast(run_id: int) -> None:
         """
         SELECT
             id, audience, filter_json, channels_json,
-            title, body, detail, telegram_text
+            title, body, detail, telegram_text, cta_text, cta_url
         FROM broadcast_runs
         WHERE id = $1
         """,
@@ -776,6 +830,8 @@ async def _execute_broadcast(run_id: int) -> None:
     body = row["body"] or ""
     detail = row["detail"] or ""
     telegram_tpl = row["telegram_text"] or ""
+    cta_text = row["cta_text"] or None
+    cta_url = row["cta_url"] or None
 
     await _update_run(run_id, status="running")
 
@@ -842,7 +898,10 @@ async def _execute_broadcast(run_id: int) -> None:
 
                 if channels["telegram"] and tg_text.strip():
                     try:
-                        await send_telegram_message(tg_text, chat_id=str(user_id))
+                        await send_telegram_message(
+                            tg_text, chat_id=str(user_id),
+                            cta_text=cta_text, cta_url=cta_url,
+                        )
                         telegram_sent += 1
                         await asyncio.sleep(TELEGRAM_SEND_DELAY)
                     except Exception:
@@ -915,6 +974,8 @@ async def start_broadcast(
     scheduled_at=None,
     label: str = "",
     admin_user_id: int,
+    cta_text: str | None = None,
+    cta_url: str | None = None,
 ) -> dict:
     audience_norm = (audience or "all").strip().lower()
     if audience_norm not in ("all", "online", "filtered"):
@@ -941,14 +1002,18 @@ async def start_broadcast(
     status = "scheduled" if is_scheduled else "pending"
     label_clean = (label or "").strip()[:120]
 
+    cta_text_clean = (cta_text or "").strip()[:64] or None
+    cta_url_clean = (cta_url or "").strip()[:512] or None
+
     row = await db.pool.fetchrow(
         """
         INSERT INTO broadcast_runs (
             admin_user_id, audience, filter_json, channels_json,
             title, body, detail, telegram_text, template_key,
-            recipient_count, status, scheduled_at, label
+            recipient_count, status, scheduled_at, label,
+            cta_text, cta_url
         )
-        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         RETURNING id
         """,
         admin_user_id,
@@ -964,6 +1029,8 @@ async def start_broadcast(
         status,
         scheduled_at,
         label_clean,
+        cta_text_clean,
+        cta_url_clean,
     )
     run_id = int(row["id"])
 
@@ -977,6 +1044,30 @@ async def start_broadcast(
         "status": status,
         "scheduledAt": scheduled_at.isoformat() if scheduled_at else None,
     }
+
+
+DAILY_BROADCAST_SYSTEM_ACTOR_ID = 0  # sentinel admin_user_id для авто-рассылок, не реальный юзер
+
+
+async def start_daily_rotation_broadcast(rotation_index: int) -> dict:
+    """Запускает один из DAILY_ROTATION_TEMPLATES по индексу (с переносом по модулю).
+    Вызывается только из event_scheduler._fire_daily_rotation_broadcast."""
+    template = DAILY_ROTATION_TEMPLATES[rotation_index % len(DAILY_ROTATION_TEMPLATES)]
+    filter_data = {"minBalance": template["min_balance"]} if template["min_balance"] else None
+    audience = "filtered" if filter_data else "all"
+
+    return await start_broadcast(
+        audience=audience,
+        filter_data=filter_data,
+        channels={"webapp": False, "telegram": True},
+        title=template["label"],
+        telegram_text=template["text"],
+        template_key=f"daily_rotation:{rotation_index % len(DAILY_ROTATION_TEMPLATES)}",
+        label=template["label"],
+        admin_user_id=DAILY_BROADCAST_SYSTEM_ACTOR_ID,
+        cta_text=DAILY_BROADCAST_CTA_TEXT,
+        cta_url=daily_broadcast_cta_url(),
+    )
 
 
 async def list_scheduled_broadcasts(*, limit: int = 50, offset: int = 0) -> dict:

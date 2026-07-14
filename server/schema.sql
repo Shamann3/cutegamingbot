@@ -805,6 +805,17 @@ ALTER TABLE broadcast_runs ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT 
 CREATE INDEX IF NOT EXISTS broadcast_runs_scheduled_idx
     ON broadcast_runs (scheduled_at) WHERE status = 'scheduled';
 
+-- CTA-кнопка рассылки (web_app-кнопка "Открыть ферму" и т.п.)
+ALTER TABLE broadcast_runs ADD COLUMN IF NOT EXISTS cta_text TEXT;
+ALTER TABLE broadcast_runs ADD COLUMN IF NOT EXISTS cta_url TEXT;
+
+-- Ежедневная ротация "напоминалок" (server/event_scheduler.py::_fire_daily_rotation_broadcast)
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS daily_broadcast_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS daily_broadcast_hour SMALLINT NOT NULL DEFAULT 12;
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS daily_broadcast_minute SMALLINT NOT NULL DEFAULT 0;
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS daily_broadcast_rotation_index SMALLINT NOT NULL DEFAULT 0;
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS daily_broadcast_next_fire_at TIMESTAMPTZ;
+
 -- Security / API errors (дублируют Telegram error topic)
 CREATE TABLE IF NOT EXISTS system_logs (
     id BIGSERIAL PRIMARY KEY,

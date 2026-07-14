@@ -194,6 +194,7 @@ from admin_broadcast import (
     preview_broadcast,
     save_template,
     start_broadcast,
+    DAILY_ROTATION_TEMPLATES,
 )
 from admin_logs import get_logs_overview, list_audit_logs, list_system_logs, list_p2p_transfers
 from error_reporter import schedule_security_alert
@@ -2923,6 +2924,81 @@ async def admin_broadcast_template_delete(
         return {"ok": True}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+class DailyRotationBody(BaseModel):
+    enabled: bool | None = None
+    hour: int | None = Field(None, ge=0, le=23)
+    minute: int | None = Field(None, ge=0, le=59)
+
+
+@router.get("/broadcast/daily-rotation")
+async def admin_daily_rotation_get(
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    from db import db
+
+    row = await db.pool.fetchrow(
+        """
+        SELECT daily_broadcast_enabled, daily_broadcast_hour, daily_broadcast_minute,
+               daily_broadcast_rotation_index, daily_broadcast_next_fire_at
+        FROM system_settings WHERE id = 1
+        """
+    )
+    if not row:
+        raise HTTPException(status_code=500, detail="system_settings не инициализирован")
+    return {
+        "enabled": bool(row["daily_broadcast_enabled"]),
+        "hourUtc": int(row["daily_broadcast_hour"]),
+        "minuteUtc": int(row["daily_broadcast_minute"]),
+        "rotationIndex": int(row["daily_broadcast_rotation_index"]),
+        "nextFireAt": row["daily_broadcast_next_fire_at"].isoformat() if row["daily_broadcast_next_fire_at"] else None,
+        "templateCount": len(DAILY_ROTATION_TEMPLATES),
+    }
+
+
+@router.post("/broadcast/daily-rotation")
+async def admin_daily_rotation_set(
+    body: DailyRotationBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    from db import db
+
+    updates: list[str] = []
+    params: list = []
+    idx = 1
+    if body.enabled is not None:
+        updates.append(f"daily_broadcast_enabled = ${idx}")
+        params.append(body.enabled)
+        idx += 1
+    reschedule = body.hour is not None or body.minute is not None
+    if body.hour is not None:
+        updates.append(f"daily_broadcast_hour = ${idx}")
+        params.append(body.hour)
+        idx += 1
+    if body.minute is not None:
+        updates.append(f"daily_broadcast_minute = ${idx}")
+        params.append(body.minute)
+        idx += 1
+    if reschedule:
+        # Время поменялось - сбрасываем next_fire_at, планировщик пересчитает его на следующем тике.
+        updates.append("daily_broadcast_next_fire_at = NULL")
+    if not updates:
+        raise HTTPException(status_code=400, detail="Нечего менять")
+
+    await db.pool.execute(
+        f"UPDATE system_settings SET {', '.join(updates)} WHERE id = 1",
+        *params,
+    )
+    await log_admin_action(
+        admin_id, "settings_change",
+        target_type="setting",
+        target_label="Ежедневная рассылка: расписание",
+        details=body.model_dump(exclude_none=True),
+        ip=_get_client_ip(request),
+    )
+    return await admin_daily_rotation_get(_admin_id=admin_id)
 
 
 @router.get("/logs/overview")
