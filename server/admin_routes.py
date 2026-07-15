@@ -1,4 +1,5 @@
 from datetime import date
+import json
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
@@ -197,6 +198,16 @@ from admin_broadcast import (
 )
 from admin_logs import get_logs_overview, list_audit_logs, list_system_logs, list_p2p_transfers
 from error_reporter import schedule_security_alert
+from group_posts import (
+    create_campaign,
+    delete_campaign,
+    get_campaign,
+    list_campaign_log,
+    list_campaigns,
+    run_campaign_now,
+    set_campaign_status,
+    update_campaign,
+)
 from admin_accounts import get_account_profile, list_recent_accounts, search_accounts
 from admin_analytics import (
     get_craft_analytics,
@@ -3153,6 +3164,152 @@ async def admin_daily_rotation_run_now(
         ip=_get_client_ip(request),
     )
     return result
+
+
+@router.get("/group-posts")
+async def admin_group_posts_list(
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    return {"items": await list_campaigns()}
+
+
+@router.post("/group-posts")
+async def admin_group_posts_create(
+    label: str = Form(default=""),
+    chat_ids: str = Form(...),
+    telegram_text: str = Form(default=""),
+    buttons: str = Form(default="[]"),
+    interval_minutes: int = Form(...),
+    photo: UploadFile | None = File(default=None),
+    admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    try:
+        buttons_data = json.loads(buttons) if buttons else []
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Некорректный формат кнопок")
+
+    photo_bytes = None
+    photo_mime = None
+    if photo is not None and photo.filename:
+        photo_bytes = await photo.read()
+        photo_mime = photo.content_type or "image/jpeg"
+        if len(photo_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Фото больше 10МБ")
+
+    try:
+        return await create_campaign(
+            admin_user_id=admin_id,
+            label=label,
+            chat_ids=chat_ids,
+            telegram_text=telegram_text,
+            buttons=buttons_data,
+            interval_minutes=interval_minutes,
+            photo_bytes=photo_bytes,
+            photo_mime=photo_mime,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/group-posts/{campaign_id}")
+async def admin_group_posts_update(
+    campaign_id: int,
+    label: str | None = Form(default=None),
+    chat_ids: str | None = Form(default=None),
+    telegram_text: str | None = Form(default=None),
+    buttons: str | None = Form(default=None),
+    interval_minutes: int | None = Form(default=None),
+    photo: UploadFile | None = File(default=None),
+    clear_photo: bool = Form(default=False),
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    buttons_data = None
+    if buttons is not None:
+        try:
+            buttons_data = json.loads(buttons)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Некорректный формат кнопок")
+
+    photo_bytes = None
+    photo_mime = None
+    if photo is not None and photo.filename:
+        photo_bytes = await photo.read()
+        photo_mime = photo.content_type or "image/jpeg"
+        if len(photo_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Фото больше 10МБ")
+
+    try:
+        return await update_campaign(
+            campaign_id,
+            label=label,
+            chat_ids=chat_ids,
+            telegram_text=telegram_text,
+            buttons=buttons_data,
+            interval_minutes=interval_minutes,
+            photo_bytes=photo_bytes,
+            photo_mime=photo_mime,
+            clear_photo=clear_photo,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/group-posts/{campaign_id}/pause")
+async def admin_group_posts_pause(
+    campaign_id: int,
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    try:
+        return await set_campaign_status(campaign_id, "paused")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/group-posts/{campaign_id}/resume")
+async def admin_group_posts_resume(
+    campaign_id: int,
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    try:
+        return await set_campaign_status(campaign_id, "active")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/group-posts/{campaign_id}/run-now")
+async def admin_group_posts_run_now(
+    campaign_id: int,
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    try:
+        return await run_campaign_now(campaign_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/group-posts/{campaign_id}")
+async def admin_group_posts_delete(
+    campaign_id: int,
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    try:
+        await delete_campaign(campaign_id)
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/group-posts/{campaign_id}/log")
+async def admin_group_posts_log(
+    campaign_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    campaign = await get_campaign(campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Кампания не найдена")
+    return await list_campaign_log(campaign_id, limit=limit, offset=offset)
 
 
 @router.get("/logs/overview")
