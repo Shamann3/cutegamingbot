@@ -975,3 +975,40 @@ CREATE TABLE IF NOT EXISTS ban_appeal_messages (
 
 CREATE INDEX IF NOT EXISTS ban_appeal_messages_appeal_idx
     ON ban_appeal_messages (appeal_id, created_at ASC);
+
+-- Циклические посты в группы (см. docs/superpowers/specs/2026-07-15-group-post-campaigns-design.md).
+-- Без FK на существующие таблицы намеренно — см. broadcast_recipients выше и
+-- инцидент 2026-07-15 (InvalidForeignKeyError уронил старт всего api).
+CREATE TABLE IF NOT EXISTS group_post_campaigns (
+    id BIGSERIAL PRIMARY KEY,
+    admin_user_id BIGINT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    chat_ids BIGINT[] NOT NULL,
+    telegram_text TEXT NOT NULL DEFAULT '',
+    photo_bytes BYTEA,
+    photo_mime TEXT,
+    photo_file_id TEXT,
+    buttons_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    interval_minutes INT NOT NULL CHECK (interval_minutes >= 1),
+    status TEXT NOT NULL DEFAULT 'active',
+    next_fire_at TIMESTAMPTZ,
+    total_sent INT NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS group_post_campaigns_active_idx
+    ON group_post_campaigns (next_fire_at) WHERE status = 'active';
+
+CREATE TABLE IF NOT EXISTS group_post_log (
+    id BIGSERIAL PRIMARY KEY,
+    campaign_id BIGINT NOT NULL,
+    chat_id BIGINT NOT NULL,
+    status TEXT NOT NULL,
+    fail_reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS group_post_log_campaign_idx
+    ON group_post_log (campaign_id, id);
