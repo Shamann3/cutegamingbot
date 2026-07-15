@@ -837,9 +837,14 @@ ALTER TABLE broadcast_runs ADD COLUMN IF NOT EXISTS telegram_failed_reasons JSON
 -- Кому конкретно ушла рассылка (по каналам) - для просмотра в админке "кому отправило".
 -- status: 'sent' | 'failed'. fail_reason заполнен только для status='failed'
 -- (см. server/telegram_notify.py::_classify_error для telegram-каналов).
+-- Без FK на broadcast_runs(id) намеренно: в проде на момент миграции у broadcast_runs
+-- не нашлось подходящего unique/primary key constraint (см. инцидент 2026-07-15,
+-- CREATE TABLE падал с InvalidForeignKeyError и ронял старт всего api). run_id всегда
+-- пишется программно из admin_broadcast.py, так что ссылочная целостность гарантируется
+-- на уровне приложения, а не FK.
 CREATE TABLE IF NOT EXISTS broadcast_recipients (
     id BIGSERIAL PRIMARY KEY,
-    run_id BIGINT NOT NULL REFERENCES broadcast_runs (id) ON DELETE CASCADE,
+    run_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
     channel TEXT NOT NULL,
     status TEXT NOT NULL,
