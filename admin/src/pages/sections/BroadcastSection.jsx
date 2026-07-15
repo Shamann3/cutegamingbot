@@ -338,6 +338,9 @@ function BroadcastRunCard({ row, expanded, onToggle, onCancel, cancelling }) {
                     <span className="panel-broadcast-recipient-channel">
                       {r.channel === 'telegram' ? 'Telegram' : 'WebApp'}
                     </span>
+                    {r.templateLabel && (
+                      <span className="panel-shelf-muted panel-broadcast-recipient-template">{r.templateLabel}</span>
+                    )}
                     <span className={`panel-broadcast-recipient-status panel-broadcast-recipient-status-${r.status}`}>
                       {r.status === 'sent' ? 'Доставлено' : 'Ошибка'}
                       {r.failReason && ` · ${FAIL_REASON_LABEL[r.failReason] || r.failReason}`}

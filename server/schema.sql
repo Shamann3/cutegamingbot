@@ -858,6 +858,11 @@ CREATE INDEX IF NOT EXISTS broadcast_recipients_run_idx
 CREATE INDEX IF NOT EXISTS broadcast_recipients_run_status_idx
     ON broadcast_recipients (run_id, status);
 
+-- Какой именно из шаблонов ежедневной ротации достался ЭТОМУ игроку (при
+-- is_daily_rotation - у каждого получателя текст выбирается персонально, см.
+-- admin_broadcast.py::pick_daily_template). NULL для обычных ручных рассылок.
+ALTER TABLE broadcast_recipients ADD COLUMN IF NOT EXISTS template_label TEXT;
+
 -- Security / API errors (дублируют Telegram error topic)
 CREATE TABLE IF NOT EXISTS system_logs (
     id BIGSERIAL PRIMARY KEY,

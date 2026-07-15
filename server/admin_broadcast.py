@@ -121,6 +121,23 @@ def daily_broadcast_cta_url() -> str | None:
     return WEBAPP_URL or None
 
 
+def _eligible_daily_templates(balance: int) -> list[dict[str, Any]]:
+    return [
+        t for t in DAILY_ROTATION_TEMPLATES
+        if not t["min_balance"] or balance > t["min_balance"]
+    ]
+
+
+def pick_daily_template(balance: int) -> dict[str, Any]:
+    """Каждый получатель ежедневной ротации видит только ОДНО сообщение, но какое
+    именно - выбирается лично для него (случайно среди шаблонов, чей min_balance
+    ему подходит), а не одно на весь запуск. См. _execute_broadcast."""
+    eligible = _eligible_daily_templates(balance)
+    if not eligible:
+        eligible = [t for t in DAILY_ROTATION_TEMPLATES if not t["min_balance"]]
+    return random.choice(eligible)
+
+
 TELEGRAM_SEND_DELAY = 0.04
 PROGRESS_UPDATE_EVERY = 25
 RECIPIENT_PAGE_SIZE = 500
@@ -662,6 +679,7 @@ def _recipient_row(row) -> dict:
         "channel": row["channel"],
         "status": row["status"],
         "failReason": row["fail_reason"],
+        "templateLabel": row["template_label"],
         "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
     }
 
@@ -702,7 +720,7 @@ async def list_broadcast_recipients(
     )
     rows = await db.pool.fetch(
         f"""
-        SELECT br.user_id, br.channel, br.status, br.fail_reason, br.created_at,
+        SELECT br.user_id, br.channel, br.status, br.fail_reason, br.template_label, br.created_at,
                u.username, u.display_name, u.first_name
         FROM broadcast_recipients br
         LEFT JOIN users u ON u.user_id = br.user_id
@@ -916,28 +934,32 @@ async def _update_run(
 
 async def _flush_recipient_log(
     run_id: int,
-    batch: list[tuple[int, str, str, str | None]],
+    batch: list[tuple[int, str, str, str | None, str | None]],
 ) -> None:
-    """batch: (user_id, channel, status, fail_reason). Bulk-insert через UNNEST,
-    чтобы не делать по запросу на каждого получателя (см. server perf review)."""
+    """batch: (user_id, channel, status, fail_reason, template_label). template_label
+    заполнен только для telegram-строк ежедневной ротации - какой именно из 8
+    текстов достался этому конкретному игроку. Bulk-insert через UNNEST, чтобы не
+    делать по запросу на каждого получателя (см. server perf review)."""
     if not batch:
         return
     user_ids = [b[0] for b in batch]
     channels = [b[1] for b in batch]
     statuses = [b[2] for b in batch]
     reasons = [b[3] for b in batch]
+    labels = [b[4] for b in batch]
     try:
         await db.pool.execute(
             """
-            INSERT INTO broadcast_recipients (run_id, user_id, channel, status, fail_reason)
-            SELECT $1, u, c, s, r
-            FROM UNNEST($2::bigint[], $3::text[], $4::text[], $5::text[]) AS t(u, c, s, r)
+            INSERT INTO broadcast_recipients (run_id, user_id, channel, status, fail_reason, template_label)
+            SELECT $1, u, c, s, r, l
+            FROM UNNEST($2::bigint[], $3::text[], $4::text[], $5::text[], $6::text[]) AS t(u, c, s, r, l)
             """,
             run_id,
             user_ids,
             channels,
             statuses,
             reasons,
+            labels,
         )
     except Exception:
         logger.exception("Failed to log broadcast recipients (run_id=%s)", run_id)
@@ -979,12 +1001,12 @@ async def _execute_broadcast(run_id: int) -> None:
     telegram_sent = 0
     telegram_failed = 0
     telegram_failed_reasons: dict[str, int] = {}
-    recipient_log: list[tuple[int, str, str, str | None]] = []
+    recipient_log: list[tuple[int, str, str, str | None, str | None]] = []
 
     async def _log_webapp_batch(user_ids: list[int], ok: bool) -> None:
         status = "sent" if ok else "failed"
         reason = None if ok else "other"
-        recipient_log.extend((uid, "webapp", status, reason) for uid in user_ids)
+        recipient_log.extend((uid, "webapp", status, reason, None) for uid in user_ids)
         if len(recipient_log) >= RECIPIENT_LOG_FLUSH_SIZE:
             await _flush_recipient_log(run_id, recipient_log)
             recipient_log.clear()
@@ -1036,10 +1058,20 @@ async def _execute_broadcast(run_id: int) -> None:
                 web_title = render_template(title, user)
                 web_body = render_template(body, user)
                 web_detail = render_template(detail, user)
-                tg_text = render_telegram_template(
-                    telegram_tpl or _default_telegram_html(title, body, detail),
-                    user,
-                )
+
+                template_label: str | None = None
+                if is_daily_rotation:
+                    # Каждый получатель видит только одно сообщение, но какое -
+                    # выбирается лично для него (учитывая его баланс), не одно на
+                    # весь запуск. См. pick_daily_template.
+                    picked = pick_daily_template(int(user.get("balance") or 0))
+                    template_label = picked["label"]
+                    tg_text = render_telegram_template(picked["text"], user)
+                else:
+                    tg_text = render_telegram_template(
+                        telegram_tpl or _default_telegram_html(title, body, detail),
+                        user,
+                    )
 
                 if channels["webapp"]:
                     webapp_batch.append((user_id, web_title, web_body, web_detail))
@@ -1061,7 +1093,7 @@ async def _execute_broadcast(run_id: int) -> None:
                         )
                         if result.ok:
                             telegram_sent += 1
-                            recipient_log.append((user_id, "telegram", "sent", None))
+                            recipient_log.append((user_id, "telegram", "sent", None, template_label))
                             if is_daily_rotation:
                                 cooldown_batch.append(user_id)
                                 if len(cooldown_batch) >= WEBAPP_NOTIFY_BATCH_SIZE:
@@ -1074,7 +1106,7 @@ async def _execute_broadcast(run_id: int) -> None:
                             telegram_failed += 1
                             reason = result.category or "other"
                             telegram_failed_reasons[reason] = telegram_failed_reasons.get(reason, 0) + 1
-                            recipient_log.append((user_id, "telegram", "failed", reason))
+                            recipient_log.append((user_id, "telegram", "failed", reason, template_label))
                         if len(recipient_log) >= RECIPIENT_LOG_FLUSH_SIZE:
                             await _flush_recipient_log(run_id, recipient_log)
                             recipient_log.clear()
@@ -1082,7 +1114,7 @@ async def _execute_broadcast(run_id: int) -> None:
                     except Exception:
                         telegram_failed += 1
                         telegram_failed_reasons["other"] = telegram_failed_reasons.get("other", 0) + 1
-                        recipient_log.append((user_id, "telegram", "failed", "other"))
+                        recipient_log.append((user_id, "telegram", "failed", "other", template_label))
                         logger.exception("Telegram broadcast failed (user_id=%s)", user_id)
 
                 processed += 1
@@ -1245,35 +1277,42 @@ async def start_broadcast(
 DAILY_BROADCAST_SYSTEM_ACTOR_ID = 0  # sentinel admin_user_id для авто-рассылок, не реальный юзер
 
 
+_DAILY_ROTATION_PREVIEW_TEXT = (
+    "Каждый получатель видит ОДНО сообщение, но какое именно - выбирается лично "
+    "для него (случайно, с учётом его баланса), а не одно на весь запуск. "
+    "Возможные тексты:\n\n"
+    + "\n\n".join(f"— {t['text']}" for t in DAILY_ROTATION_TEMPLATES)
+)
+
+
 async def start_daily_rotation_broadcast(
     *,
     cooldown_days: int,
     sample_rate: float,
     admin_user_id: int = DAILY_BROADCAST_SYSTEM_ACTOR_ID,
 ) -> dict:
-    """Запускает случайный шаблон из DAILY_ROTATION_TEMPLATES для случайной части
-    игроков, которым не слали ежедневную рассылку последние cooldown_days дней.
-    Не всем сразу и не каждый день одному и тому же - см. cooldownDays/sampleRate
-    в _build_recipient_sql. Вызывается из event_scheduler._fire_daily_rotation_broadcast
-    (авто, admin_user_id по умолчанию - системный) и из run_daily_rotation_now
-    (ручной запуск админом из панели, admin_user_id - реальный)."""
-    template = random.choice(DAILY_ROTATION_TEMPLATES)
-
+    """Запускает ежедневную ротацию для случайной части игроков, которым не слали
+    напоминание последние cooldown_days дней (см. cooldownDays/sampleRate в
+    _build_recipient_sql). Текст выбирается ОТДЕЛЬНО для каждого получателя внутри
+    _execute_broadcast (см. pick_daily_template) - не один шаблон на весь запуск,
+    поэтому здесь фильтр по аудитории без minBalance: кому именно какой из 8
+    текстов подходит, решается по ходу отправки. Вызывается из
+    event_scheduler._fire_daily_rotation_broadcast (авто, admin_user_id по
+    умолчанию - системный) и из run_daily_rotation_now (ручной запуск админом,
+    admin_user_id - реальный)."""
     filter_data: dict[str, Any] = {
         "cooldownDays": cooldown_days,
         "sampleRate": sample_rate,
     }
-    if template["min_balance"]:
-        filter_data["minBalance"] = template["min_balance"]
 
     return await start_broadcast(
         audience="filtered",
         filter_data=filter_data,
         channels={"webapp": False, "telegram": True},
-        title=template["label"],
-        telegram_text=template["text"],
-        template_key=f"daily_rotation:{template['label']}",
-        label=template["label"],
+        title="Ежедневная рассылка (у каждого свой текст)",
+        telegram_text=_DAILY_ROTATION_PREVIEW_TEXT,
+        template_key="daily_rotation:per_user",
+        label="Ежедневная рассылка (ротация по игроку)",
         admin_user_id=admin_user_id,
         cta_text=DAILY_BROADCAST_CTA_TEXT,
         cta_url=daily_broadcast_cta_url(),
