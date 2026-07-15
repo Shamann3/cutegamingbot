@@ -3,12 +3,18 @@ docs/superpowers/specs/2026-07-15-group-post-campaigns-design.md)."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from db import db
+from telegram_notify import (
+    send_telegram_message,
+    send_telegram_photo_bytes,
+    send_telegram_photo_by_file_id,
+)
 
 logger = logging.getLogger("cute-farm.admin.group_posts")
 
@@ -211,3 +217,198 @@ async def delete_campaign(campaign_id: int) -> None:
     result = await db.pool.execute("DELETE FROM group_post_campaigns WHERE id = $1", campaign_id)
     if result == "DELETE 0":
         raise ValueError("Кампания не найдена")
+
+
+TELEGRAM_SEND_DELAY = 0.04  # тот же троттлинг, что у admin_broadcast.py
+POST_LOG_FLUSH_SIZE = 100
+
+
+async def _flush_post_log(campaign_id: int, batch: list[tuple[int, str, str | None]]) -> None:
+    """batch: (chat_id, status, fail_reason). Bulk-insert через UNNEST - тот же
+    паттерн, что у admin_broadcast.py::_flush_recipient_log."""
+    if not batch:
+        return
+    chat_ids = [b[0] for b in batch]
+    statuses = [b[1] for b in batch]
+    reasons = [b[2] for b in batch]
+    try:
+        await db.pool.execute(
+            """
+            INSERT INTO group_post_log (campaign_id, chat_id, status, fail_reason)
+            SELECT $1, c, s, r
+            FROM UNNEST($2::bigint[], $3::text[], $4::text[]) AS t(c, s, r)
+            """,
+            campaign_id, chat_ids, statuses, reasons,
+        )
+    except Exception:
+        logger.exception("Failed to log group post recipients (campaign_id=%s)", campaign_id)
+
+
+async def _execute_group_post_send(row) -> dict:
+    """row: asyncpg Record с полями из _CAMPAIGN_FIELDS. Шлёт пост во все
+    chat_ids кампании, возвращает {"sent": int, "failed": int, "fileId": str|None}."""
+    campaign_id = int(row["id"])
+    chat_ids: list[int] = list(row["chat_ids"] or [])
+    text = row["telegram_text"] or ""
+    buttons = row["buttons_json"]
+    if isinstance(buttons, str):
+        buttons = json.loads(buttons) if buttons else []
+    photo_bytes = row["photo_bytes"]
+    photo_mime = row["photo_mime"] or "image/jpeg"
+    file_id = row["photo_file_id"]
+
+    sent = 0
+    failed = 0
+    log_batch: list[tuple[int, str, str | None]] = []
+    new_file_id: str | None = None
+
+    for chat_id in chat_ids:
+        if photo_bytes is not None and not file_id and new_file_id is None:
+            result = await send_telegram_photo_bytes(
+                photo_bytes,
+                chat_id=str(chat_id),
+                caption=text,
+                content_type=photo_mime,
+                buttons=buttons,
+            )
+            if result.ok and result.file_id:
+                new_file_id = result.file_id
+        elif photo_bytes is not None:
+            result = await send_telegram_photo_by_file_id(
+                file_id or new_file_id,
+                chat_id=str(chat_id),
+                caption=text,
+                buttons=buttons,
+            )
+        else:
+            result = await send_telegram_message(text, chat_id=str(chat_id), buttons=buttons)
+
+        if result.ok:
+            sent += 1
+            log_batch.append((chat_id, "sent", None))
+        else:
+            failed += 1
+            log_batch.append((chat_id, "failed", result.category or "other"))
+
+        if len(log_batch) >= POST_LOG_FLUSH_SIZE:
+            await _flush_post_log(campaign_id, log_batch)
+            log_batch.clear()
+        await asyncio.sleep(TELEGRAM_SEND_DELAY)
+
+    await _flush_post_log(campaign_id, log_batch)
+
+    updates = ["total_sent = total_sent + $2", "updated_at = NOW()"]
+    params: list[Any] = [campaign_id, sent]
+    idx = 3
+    if new_file_id:
+        updates.append(f"photo_file_id = ${idx}")
+        params.append(new_file_id)
+        idx += 1
+    if failed and failed == len(chat_ids):
+        updates.append(f"last_error = ${idx}")
+        params.append(f"Не доставлено ни в одну группу ({failed}/{len(chat_ids)})")
+        idx += 1
+    elif sent:
+        updates.append("last_error = NULL")
+
+    await db.pool.execute(
+        f"UPDATE group_post_campaigns SET {', '.join(updates)} WHERE id = $1",
+        *params,
+    )
+    return {"sent": sent, "failed": failed, "fileId": new_file_id}
+
+
+async def _fire_group_post_campaigns() -> None:
+    """Вызывается из event_scheduler._tick() каждые 30с."""
+    now = datetime.now(_UTC)
+    due = await db.pool.fetch(
+        """
+        SELECT id, interval_minutes, next_fire_at
+        FROM group_post_campaigns
+        WHERE status = 'active' AND next_fire_at IS NOT NULL AND next_fire_at <= $1
+        """,
+        now,
+    )
+    for candidate in due:
+        campaign_id = int(candidate["id"])
+        interval = int(candidate["interval_minutes"])
+        prev_fire_at = candidate["next_fire_at"]
+        claimed = await db.pool.fetchrow(
+            """
+            UPDATE group_post_campaigns
+            SET next_fire_at = $3
+            WHERE id = $1 AND next_fire_at = $2
+            RETURNING id
+            """,
+            campaign_id, prev_fire_at, now + timedelta(minutes=interval),
+        )
+        if not claimed:
+            continue  # другой тик/воркер уже забрал этот запуск
+        row = await db.pool.fetchrow(
+            f"SELECT {_CAMPAIGN_FIELDS} FROM group_post_campaigns WHERE id = $1",
+            campaign_id,
+        )
+        if not row or row["status"] != "active":
+            continue
+        try:
+            result = await _execute_group_post_send(row)
+            logger.info(
+                "Group post campaign fired: id=%s sent=%s failed=%s",
+                campaign_id, result["sent"], result["failed"],
+            )
+        except Exception:
+            logger.exception("Group post campaign failed (id=%s)", campaign_id)
+
+    # Кампании без next_fire_at (только что созданные) - выставляем расписание,
+    # не стреляем сразу (та же логика, что у ежедневной ротации в admin_broadcast.py).
+    fresh = await db.pool.fetch(
+        "SELECT id, interval_minutes FROM group_post_campaigns WHERE status = 'active' AND next_fire_at IS NULL"
+    )
+    for row in fresh:
+        await db.pool.execute(
+            "UPDATE group_post_campaigns SET next_fire_at = $2 WHERE id = $1 AND next_fire_at IS NULL",
+            int(row["id"]), now + timedelta(minutes=int(row["interval_minutes"])),
+        )
+
+
+async def run_campaign_now(campaign_id: int) -> dict:
+    """Кнопка «Отправить сейчас» - не трогает next_fire_at."""
+    row = await db.pool.fetchrow(
+        f"SELECT {_CAMPAIGN_FIELDS} FROM group_post_campaigns WHERE id = $1",
+        campaign_id,
+    )
+    if not row:
+        raise ValueError("Кампания не найдена")
+    return await _execute_group_post_send(row)
+
+
+async def list_campaign_log(campaign_id: int, *, limit: int = 50, offset: int = 0) -> dict:
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    total = int(
+        await db.pool.fetchval(
+            "SELECT COUNT(*)::int FROM group_post_log WHERE campaign_id = $1", campaign_id,
+        ) or 0
+    )
+    rows = await db.pool.fetch(
+        """
+        SELECT chat_id, status, fail_reason, created_at
+        FROM group_post_log
+        WHERE campaign_id = $1
+        ORDER BY id DESC
+        LIMIT $2 OFFSET $3
+        """,
+        campaign_id, limit, offset,
+    )
+    return {
+        "total": total,
+        "items": [
+            {
+                "chatId": int(r["chat_id"]),
+                "status": r["status"],
+                "failReason": r["fail_reason"],
+                "createdAt": r["created_at"].isoformat() if r["created_at"] else None,
+            }
+            for r in rows
+        ],
+    }

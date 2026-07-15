@@ -74,6 +74,8 @@ async def _tick() -> None:
 
     await _fire_daily_rotation_broadcast()
 
+    await _fire_group_post_campaigns()
+
     await _advance_recurring_quests()
 
     await _send_harvest_notifications()
@@ -81,6 +83,11 @@ async def _tick() -> None:
     from game_events_maintenance import maybe_purge_old_game_events
 
     await maybe_purge_old_game_events()
+
+
+async def _fire_group_post_campaigns() -> None:
+    from group_posts import _fire_group_post_campaigns as _run
+    await _run()
 
 
 
