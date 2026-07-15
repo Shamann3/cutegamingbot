@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 from typing import Any
 
 from db import db
@@ -32,6 +33,66 @@ def _check_caption_limit(text: str, *, has_photo: bool) -> None:
             f"Текст поста с фото не может быть длиннее {_PHOTO_CAPTION_LIMIT} "
             f"символов (сейчас: {len(text)})"
         )
+
+
+# Теги, которые Telegram реально понимает в parse_mode=HTML. Любой другой тег
+# или несбалансированные/неверно вложенные теги Telegram отвергает целиком
+# ("Bad Request: can't parse entities") - причём отвечает бесполезным byte
+# offset, без указания какой тег виноват (см. инцидент). Поэтому ловим это
+# при сохранении кампании, а не постфактум при реальной отправке во все группы.
+_TG_ALLOWED_HTML_TAGS = {
+    "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+    "span", "tg-spoiler", "a", "code", "pre", "tg-emoji", "blockquote",
+}
+
+
+class _TelegramHtmlValidator(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[str] = []
+        self.error: str | None = None
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if self.error:
+            return
+        if tag not in _TG_ALLOWED_HTML_TAGS:
+            self.error = f"тег <{tag}> не поддерживается Telegram"
+            return
+        self.stack.append(tag)
+
+    def handle_startendtag(self, tag: str, attrs) -> None:
+        self.handle_starttag(tag, attrs)
+        if not self.error:
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self.error:
+            return
+        if not self.stack:
+            self.error = f"лишний закрывающий тег </{tag}> без открывающего"
+            return
+        if self.stack[-1] != tag:
+            self.error = (
+                f"неверная вложенность тегов: ожидался </{self.stack[-1]}>, "
+                f"встретился </{tag}>"
+            )
+            return
+        self.stack.pop()
+
+
+def _validate_telegram_html(text: str) -> None:
+    if not text or "<" not in text:
+        return
+    parser = _TelegramHtmlValidator()
+    try:
+        parser.feed(text)
+        parser.close()
+    except Exception as exc:
+        raise ValueError(f"Некорректный HTML в тексте поста: {exc}")
+    if parser.error:
+        raise ValueError(f"Некорректный HTML в тексте поста: {parser.error}")
+    if parser.stack:
+        raise ValueError(f"Некорректный HTML в тексте поста: не закрыт тег <{parser.stack[-1]}>")
 
 
 def _normalize_chat_ids(raw: Any) -> list[int]:
@@ -150,6 +211,7 @@ async def create_campaign(
     if interval_minutes < 1:
         raise ValueError("Интервал должен быть не меньше 1 минуты")
     _check_caption_limit(text_clean, has_photo=photo_bytes is not None)
+    _validate_telegram_html(text_clean)
 
     row = await db.pool.fetchrow(
         """
@@ -202,6 +264,7 @@ async def update_campaign(
         telegram_text.strip() if telegram_text is not None else (existing["telegramText"] or "")
     )
     _check_caption_limit(final_text, has_photo=final_has_photo)
+    _validate_telegram_html(final_text)
 
     sets: list[str] = []
     params: list[Any] = []
