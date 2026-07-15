@@ -1268,6 +1268,17 @@ export async function saveDailyRotationSettings(payload) {
   return adminFetch('/broadcast/daily-rotation', { method: 'POST', body: payload })
 }
 
+export async function runDailyRotationNow() {
+  return adminFetch('/broadcast/daily-rotation/run-now', { method: 'POST', body: {} })
+}
+
+export async function fetchBroadcastRunRecipients(runId, { limit = 50, offset = 0, status = '', channel = '' } = {}) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (status) params.set('status', status)
+  if (channel) params.set('channel', channel)
+  return adminFetch(`/broadcast/runs/${runId}/recipients?${params}`)
+}
+
 export async function fetchLogsOverview() {
   return adminFetch('/logs/overview')
 }

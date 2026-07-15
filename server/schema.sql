@@ -834,6 +834,25 @@ ALTER TABLE broadcast_runs ADD COLUMN IF NOT EXISTS is_daily_rotation BOOLEAN NO
 -- {"blocked": 3, "chat_not_found": 12, "other": 1}. См. server/telegram_notify.py::_classify_error.
 ALTER TABLE broadcast_runs ADD COLUMN IF NOT EXISTS telegram_failed_reasons JSONB NOT NULL DEFAULT '{}'::jsonb;
 
+-- Кому конкретно ушла рассылка (по каналам) - для просмотра в админке "кому отправило".
+-- status: 'sent' | 'failed'. fail_reason заполнен только для status='failed'
+-- (см. server/telegram_notify.py::_classify_error для telegram-каналов).
+CREATE TABLE IF NOT EXISTS broadcast_recipients (
+    id BIGSERIAL PRIMARY KEY,
+    run_id BIGINT NOT NULL REFERENCES broadcast_runs (id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    channel TEXT NOT NULL,
+    status TEXT NOT NULL,
+    fail_reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS broadcast_recipients_run_idx
+    ON broadcast_recipients (run_id, id);
+
+CREATE INDEX IF NOT EXISTS broadcast_recipients_run_status_idx
+    ON broadcast_recipients (run_id, status);
+
 -- Security / API errors (дублируют Telegram error topic)
 CREATE TABLE IF NOT EXISTS system_logs (
     id BIGSERIAL PRIMARY KEY,

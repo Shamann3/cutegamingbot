@@ -188,7 +188,9 @@ from admin_broadcast import (
     get_broadcast_overview,
     get_broadcast_run,
     list_broadcast_history,
+    list_broadcast_recipients,
     preview_broadcast,
+    run_daily_rotation_now,
     save_template,
     start_broadcast,
     DAILY_ROTATION_TEMPLATES,
@@ -2940,6 +2942,23 @@ async def admin_broadcast_run(
     return run
 
 
+@router.get("/broadcast/runs/{run_id}/recipients")
+async def admin_broadcast_run_recipients(
+    run_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    status: str | None = Query(None, max_length=16),
+    channel: str | None = Query(None, max_length=16),
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    run = await get_broadcast_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Рассылка не найдена")
+    return await list_broadcast_recipients(
+        run_id, limit=limit, offset=offset, status=status, channel=channel,
+    )
+
+
 @router.post("/broadcast/runs/{run_id}/cancel")
 async def admin_broadcast_cancel(
     run_id: int,
@@ -3115,6 +3134,25 @@ async def admin_daily_rotation_set(
         ip=_get_client_ip(request),
     )
     return await admin_daily_rotation_get(_admin_id=admin_id)
+
+
+@router.post("/broadcast/daily-rotation/run-now")
+async def admin_daily_rotation_run_now(
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    try:
+        result = await run_daily_rotation_now(admin_user_id=admin_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await log_admin_action(
+        admin_id, "broadcast_run_now",
+        target_type="broadcast",
+        target_label=f"Ежедневная ротация: ручной запуск (run_id={result.get('runId')})",
+        details={"runId": result.get("runId"), "recipientCount": result.get("recipientCount")},
+        ip=_get_client_ip(request),
+    )
+    return result
 
 
 @router.get("/logs/overview")

@@ -7,8 +7,10 @@ import {
   deleteBroadcastTemplate,
   fetchBroadcastHistory,
   fetchBroadcastOverview,
+  fetchBroadcastRunRecipients,
   fetchDailyRotationSettings,
   previewBroadcast,
+  runDailyRotationNow,
   saveBroadcastTemplate,
   saveDailyRotationSettings,
   sendBroadcast,
@@ -126,6 +128,43 @@ function BroadcastRunCard({ row, expanded, onToggle, onCancel, cancelling }) {
     : formatDuration(row.durationSeconds)
   const pct = row.progressPercent ?? 0
 
+  const [recipients, setRecipients] = useState([])
+  const [recipientsTotal, setRecipientsTotal] = useState(0)
+  const [recipientsLoading, setRecipientsLoading] = useState(false)
+  const [recipientsError, setRecipientsError] = useState('')
+  const [recipientsLoaded, setRecipientsLoaded] = useState(false)
+  const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('')
+
+  const loadRecipients = useCallback(async ({ append = false, offset = 0, status = recipientsStatusFilter } = {}) => {
+    setRecipientsLoading(true)
+    setRecipientsError('')
+    try {
+      const data = await fetchBroadcastRunRecipients(row.id, { limit: 50, offset, status })
+      setRecipientsTotal(data.total ?? 0)
+      setRecipients((prev) => (append ? [...prev, ...(data.items || [])] : data.items || []))
+      setRecipientsLoaded(true)
+    } catch (err) {
+      setRecipientsError(err.message || 'Не удалось загрузить получателей')
+    } finally {
+      setRecipientsLoading(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row.id])
+
+  useEffect(() => {
+    if (expanded && !recipientsLoaded && !recipientsLoading && row.recipientCount > 0) {
+      loadRecipients({ offset: 0 })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, recipientsLoaded, recipientsLoading, row.recipientCount])
+
+  const handleRecipientsFilter = (status) => {
+    setRecipientsStatusFilter(status)
+    setRecipients([])
+    setRecipientsLoaded(false)
+    loadRecipients({ offset: 0, status })
+  }
+
   return (
     <article
       className={`panel-broadcast-run-card panel-broadcast-run-card-${statusClass(row.status)}${active ? ' panel-broadcast-run-card-active' : ''}`}
@@ -147,7 +186,7 @@ function BroadcastRunCard({ row, expanded, onToggle, onCancel, cancelling }) {
           <p className="panel-shelf-muted panel-broadcast-run-meta">
             {formatDate(row.createdAt)}
             {' · '}
-            {row.isDailyRotation ? 'система' : `админ ${row.adminUserId}`}
+            {row.adminUserId === 0 ? 'система (авто-расписание)' : `админ ${row.adminUserId}`}
             {' · '}
             {AUDIENCE_LABEL[row.audience] || row.audience}
             {' · '}
@@ -254,6 +293,71 @@ function BroadcastRunCard({ row, expanded, onToggle, onCancel, cancelling }) {
             {row.templateKey && ` · шаблон ${row.templateKey}`}
             {row.finishedAt && ` · завершено ${formatDate(row.finishedAt)}`}
           </p>
+
+          <div className="panel-broadcast-recipients">
+            <div className="panel-broadcast-recipients-head">
+              <p className="panel-shelf-label">Кому отправлено</p>
+              <div className="panel-broadcast-recipients-filters">
+                {[
+                  { key: '', label: 'Все' },
+                  { key: 'sent', label: 'Доставлено' },
+                  { key: 'failed', label: 'Ошибка' },
+                ].map((opt) => (
+                  <button
+                    key={opt.key || 'all'}
+                    type="button"
+                    className={`panel-users-btn panel-users-btn-sm${recipientsStatusFilter === opt.key ? ' panel-users-btn-active' : ''}`}
+                    onClick={() => handleRecipientsFilter(opt.key)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {recipientsError && <p className="panel-shelf-error">{recipientsError}</p>}
+            {row.recipientCount <= 0 && <p className="panel-shelf-muted">Получателей не было</p>}
+            {recipientsLoading && recipients.length === 0 && <p className="panel-shelf-muted">Загрузка…</p>}
+            {!recipientsLoading && recipientsLoaded && recipients.length === 0 && row.recipientCount > 0 && (
+              <p className="panel-shelf-muted">
+                {recipientsStatusFilter
+                  ? 'Нет записей по этому фильтру'
+                  : 'Детализация по получателям недоступна — эта рассылка была отправлена до появления этой функции'}
+              </p>
+            )}
+
+            {recipients.length > 0 && (
+              <ul className="panel-broadcast-recipients-list">
+                {recipients.map((r, i) => (
+                  <li key={`${r.userId}-${r.channel}-${i}`} className="panel-broadcast-recipient-row">
+                    <span className="panel-broadcast-recipient-name">
+                      {r.displayName || `Игрок ${r.userId}`}
+                      {r.username && <span className="panel-shelf-muted"> · @{r.username}</span>}
+                      <span className="panel-shelf-muted"> · ID {r.userId}</span>
+                    </span>
+                    <span className="panel-broadcast-recipient-channel">
+                      {r.channel === 'telegram' ? 'Telegram' : 'WebApp'}
+                    </span>
+                    <span className={`panel-broadcast-recipient-status panel-broadcast-recipient-status-${r.status}`}>
+                      {r.status === 'sent' ? 'Доставлено' : 'Ошибка'}
+                      {r.failReason && ` · ${FAIL_REASON_LABEL[r.failReason] || r.failReason}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {recipients.length < recipientsTotal && (
+              <button
+                type="button"
+                className="panel-users-btn panel-broadcast-recipients-more"
+                disabled={recipientsLoading}
+                onClick={() => loadRecipients({ append: true, offset: recipients.length, status: recipientsStatusFilter })}
+              >
+                {recipientsLoading ? '…' : `Показать ещё (${recipients.length}/${recipientsTotal})`}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </article>
@@ -312,6 +416,7 @@ export default function BroadcastSection() {
   const [rotationCooldown, setRotationCooldown] = useState('2')
   const [rotationSampleRate, setRotationSampleRate] = useState('50')
   const [rotationSaving, setRotationSaving] = useState(false)
+  const [rotationRunning, setRotationRunning] = useState(false)
 
   const buildFilter = useCallback(() => {
     const filter = { excludeBanned }
@@ -582,6 +687,22 @@ export default function BroadcastSection() {
     }
   }
 
+  const handleRunRotationNow = async () => {
+    setRotationRunning(true)
+    setError('')
+    setInfo('')
+    try {
+      const result = await runDailyRotationNow()
+      setInfo(`Ежедневная рассылка запущена вручную — рассылка #${result.runId}, ${result.recipientCount} получателей`)
+      await loadOverview()
+      await refreshHistory({ offset: 0 })
+    } catch (err) {
+      setError(err.message || 'Не удалось запустить рассылку')
+    } finally {
+      setRotationRunning(false)
+    }
+  }
+
   const handleDeleteTemplate = async (tpl) => {
     if (!tpl?.id || String(tpl.key || '').startsWith('builtin:')) return
     setError('')
@@ -683,7 +804,7 @@ export default function BroadcastSection() {
         <p className="panel-shelf-muted">
           Раз в день боту случайного набора игроков уходит одно из напоминаний
           (см. историю ниже, карточки с бейджем «🤖 Авто»). Кулдаун не даёт слать
-          одному игроку чаще, чем раз в N дней; доля выборки — сколько % подходящих
+          одному игроку чаще, чем раз в N дней; доля выборки сколько % подходящих
           игроков получат сообщение за один запуск.
         </p>
         {rotationLoading ? (
@@ -742,14 +863,25 @@ export default function BroadcastSection() {
               {' · '}
               {rotation?.templateCount ?? 0} шаблонов в ротации
             </p>
-            <button
-              type="button"
-              className="panel-users-btn panel-users-btn-primary"
-              disabled={rotationSaving}
-              onClick={handleSaveRotation}
-            >
-              {rotationSaving ? '…' : 'Сохранить настройки'}
-            </button>
+            <div className="panel-broadcast-rotation-actions">
+              <button
+                type="button"
+                className="panel-users-btn panel-users-btn-primary"
+                disabled={rotationSaving}
+                onClick={handleSaveRotation}
+              >
+                {rotationSaving ? '…' : 'Сохранить настройки'}
+              </button>
+              <button
+                type="button"
+                className="panel-users-btn panel-users-btn-danger"
+                disabled={rotationRunning}
+                title="Запустить ротацию прямо сейчас, не дожидаясь расписания. Расписание не сбивается."
+                onClick={handleRunRotationNow}
+              >
+                {rotationRunning ? 'Запуск…' : '▶ Запустить сейчас'}
+              </button>
+            </div>
           </div>
         )}
       </article>

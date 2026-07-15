@@ -125,6 +125,7 @@ TELEGRAM_SEND_DELAY = 0.04
 PROGRESS_UPDATE_EVERY = 25
 RECIPIENT_PAGE_SIZE = 500
 WEBAPP_NOTIFY_BATCH_SIZE = 100
+RECIPIENT_LOG_FLUSH_SIZE = 300
 
 _broadcast_tasks: dict[int, asyncio.Task] = {}
 _cancel_requested: set[int] = set()
@@ -653,6 +654,72 @@ async def get_broadcast_run(run_id: int) -> dict | None:
     return _run_row(row) if row else None
 
 
+def _recipient_row(row) -> dict:
+    return {
+        "userId": int(row["user_id"]),
+        "username": row["username"],
+        "displayName": row["display_name"] or row["first_name"] or None,
+        "channel": row["channel"],
+        "status": row["status"],
+        "failReason": row["fail_reason"],
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+    }
+
+
+async def list_broadcast_recipients(
+    run_id: int,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+    channel: str | None = None,
+) -> dict:
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    conditions = ["br.run_id = $1"]
+    params: list[Any] = [run_id]
+    idx = 2
+
+    status_norm = (status or "").strip().lower()
+    if status_norm in ("sent", "failed"):
+        conditions.append(f"br.status = ${idx}")
+        params.append(status_norm)
+        idx += 1
+
+    channel_norm = (channel or "").strip().lower()
+    if channel_norm in ("webapp", "telegram"):
+        conditions.append(f"br.channel = ${idx}")
+        params.append(channel_norm)
+        idx += 1
+
+    where = " AND ".join(conditions)
+    total = int(
+        await db.pool.fetchval(
+            f"SELECT COUNT(*)::int FROM broadcast_recipients br WHERE {where}",
+            *params,
+        )
+        or 0
+    )
+    rows = await db.pool.fetch(
+        f"""
+        SELECT br.user_id, br.channel, br.status, br.fail_reason, br.created_at,
+               u.username, u.display_name, u.first_name
+        FROM broadcast_recipients br
+        LEFT JOIN users u ON u.user_id = br.user_id
+        WHERE {where}
+        ORDER BY br.id
+        LIMIT ${idx} OFFSET ${idx + 1}
+        """,
+        *params,
+        limit,
+        offset,
+    )
+    return {
+        "total": total,
+        "items": [_recipient_row(r) for r in rows],
+    }
+
+
 async def list_broadcast_history(
     *,
     limit: int = 30,
@@ -847,6 +914,35 @@ async def _update_run(
     )
 
 
+async def _flush_recipient_log(
+    run_id: int,
+    batch: list[tuple[int, str, str, str | None]],
+) -> None:
+    """batch: (user_id, channel, status, fail_reason). Bulk-insert через UNNEST,
+    чтобы не делать по запросу на каждого получателя (см. server perf review)."""
+    if not batch:
+        return
+    user_ids = [b[0] for b in batch]
+    channels = [b[1] for b in batch]
+    statuses = [b[2] for b in batch]
+    reasons = [b[3] for b in batch]
+    try:
+        await db.pool.execute(
+            """
+            INSERT INTO broadcast_recipients (run_id, user_id, channel, status, fail_reason)
+            SELECT $1, u, c, s, r
+            FROM UNNEST($2::bigint[], $3::text[], $4::text[], $5::text[]) AS t(u, c, s, r)
+            """,
+            run_id,
+            user_ids,
+            channels,
+            statuses,
+            reasons,
+        )
+    except Exception:
+        logger.exception("Failed to log broadcast recipients (run_id=%s)", run_id)
+
+
 async def _execute_broadcast(run_id: int) -> None:
     row = await db.pool.fetchrow(
         """
@@ -883,6 +979,15 @@ async def _execute_broadcast(run_id: int) -> None:
     telegram_sent = 0
     telegram_failed = 0
     telegram_failed_reasons: dict[str, int] = {}
+    recipient_log: list[tuple[int, str, str, str | None]] = []
+
+    async def _log_webapp_batch(user_ids: list[int], ok: bool) -> None:
+        status = "sent" if ok else "failed"
+        reason = None if ok else "other"
+        recipient_log.extend((uid, "webapp", status, reason) for uid in user_ids)
+        if len(recipient_log) >= RECIPIENT_LOG_FLUSH_SIZE:
+            await _flush_recipient_log(run_id, recipient_log)
+            recipient_log.clear()
 
     try:
         recipient_total = await count_recipients(row["audience"], filter_json or {})
@@ -907,6 +1012,7 @@ async def _execute_broadcast(run_id: int) -> None:
 
             for user in page:
                 if await _is_cancelled(run_id):
+                    await _flush_recipient_log(run_id, recipient_log)
                     row_now = await db.pool.fetchrow(
                         """
                         SELECT webapp_sent, telegram_sent, telegram_failed
@@ -938,8 +1044,12 @@ async def _execute_broadcast(run_id: int) -> None:
                 if channels["webapp"]:
                     webapp_batch.append((user_id, web_title, web_body, web_detail))
                     if len(webapp_batch) >= WEBAPP_NOTIFY_BATCH_SIZE:
-                        webapp_sent += await create_admin_message_notifications_batch(
+                        inserted = await create_admin_message_notifications_batch(
                             db.pool, webapp_batch
+                        )
+                        webapp_sent += inserted
+                        await _log_webapp_batch(
+                            [b[0] for b in webapp_batch], inserted == len(webapp_batch)
                         )
                         webapp_batch.clear()
 
@@ -951,6 +1061,7 @@ async def _execute_broadcast(run_id: int) -> None:
                         )
                         if result.ok:
                             telegram_sent += 1
+                            recipient_log.append((user_id, "telegram", "sent", None))
                             if is_daily_rotation:
                                 cooldown_batch.append(user_id)
                                 if len(cooldown_batch) >= WEBAPP_NOTIFY_BATCH_SIZE:
@@ -963,10 +1074,15 @@ async def _execute_broadcast(run_id: int) -> None:
                             telegram_failed += 1
                             reason = result.category or "other"
                             telegram_failed_reasons[reason] = telegram_failed_reasons.get(reason, 0) + 1
+                            recipient_log.append((user_id, "telegram", "failed", reason))
+                        if len(recipient_log) >= RECIPIENT_LOG_FLUSH_SIZE:
+                            await _flush_recipient_log(run_id, recipient_log)
+                            recipient_log.clear()
                         await asyncio.sleep(TELEGRAM_SEND_DELAY)
                     except Exception:
                         telegram_failed += 1
                         telegram_failed_reasons["other"] = telegram_failed_reasons.get("other", 0) + 1
+                        recipient_log.append((user_id, "telegram", "failed", "other"))
                         logger.exception("Telegram broadcast failed (user_id=%s)", user_id)
 
                 processed += 1
@@ -980,9 +1096,11 @@ async def _execute_broadcast(run_id: int) -> None:
                     )
 
             if webapp_batch and channels["webapp"]:
-                webapp_sent += await create_admin_message_notifications_batch(
+                inserted = await create_admin_message_notifications_batch(
                     db.pool, webapp_batch
                 )
+                webapp_sent += inserted
+                await _log_webapp_batch([b[0] for b in webapp_batch], inserted == len(webapp_batch))
                 webapp_batch.clear()
 
             if cooldown_batch:
@@ -991,6 +1109,9 @@ async def _execute_broadcast(run_id: int) -> None:
                     cooldown_batch,
                 )
                 cooldown_batch.clear()
+
+            await _flush_recipient_log(run_id, recipient_log)
+            recipient_log.clear()
 
             offset += RECIPIENT_PAGE_SIZE
             if len(page) < RECIPIENT_PAGE_SIZE:
@@ -1007,6 +1128,8 @@ async def _execute_broadcast(run_id: int) -> None:
         )
     except Exception as exc:
         logger.exception("Broadcast run failed (id=%s)", run_id)
+        await _flush_recipient_log(run_id, recipient_log)
+        recipient_log.clear()
         await _update_run(
             run_id,
             status="failed",
@@ -1122,12 +1245,18 @@ async def start_broadcast(
 DAILY_BROADCAST_SYSTEM_ACTOR_ID = 0  # sentinel admin_user_id для авто-рассылок, не реальный юзер
 
 
-async def start_daily_rotation_broadcast(*, cooldown_days: int, sample_rate: float) -> dict:
+async def start_daily_rotation_broadcast(
+    *,
+    cooldown_days: int,
+    sample_rate: float,
+    admin_user_id: int = DAILY_BROADCAST_SYSTEM_ACTOR_ID,
+) -> dict:
     """Запускает случайный шаблон из DAILY_ROTATION_TEMPLATES для случайной части
     игроков, которым не слали ежедневную рассылку последние cooldown_days дней.
     Не всем сразу и не каждый день одному и тому же - см. cooldownDays/sampleRate
-    в _build_recipient_sql. Вызывается только из
-    event_scheduler._fire_daily_rotation_broadcast."""
+    в _build_recipient_sql. Вызывается из event_scheduler._fire_daily_rotation_broadcast
+    (авто, admin_user_id по умолчанию - системный) и из run_daily_rotation_now
+    (ручной запуск админом из панели, admin_user_id - реальный)."""
     template = random.choice(DAILY_ROTATION_TEMPLATES)
 
     filter_data: dict[str, Any] = {
@@ -1145,10 +1274,32 @@ async def start_daily_rotation_broadcast(*, cooldown_days: int, sample_rate: flo
         telegram_text=template["text"],
         template_key=f"daily_rotation:{template['label']}",
         label=template["label"],
-        admin_user_id=DAILY_BROADCAST_SYSTEM_ACTOR_ID,
+        admin_user_id=admin_user_id,
         cta_text=DAILY_BROADCAST_CTA_TEXT,
         cta_url=daily_broadcast_cta_url(),
         is_daily_rotation=True,
+    )
+
+
+async def run_daily_rotation_now(*, admin_user_id: int) -> dict:
+    """Ручной триггер ежедневной ротации "прямо сейчас" (кнопка в админке),
+    не трогает daily_broadcast_next_fire_at - автоматическое расписание остаётся
+    как было. Использует текущие cooldownDays/sampleRate из system_settings,
+    поэтому уважает тот же кулдаун, что и авто-рассылка."""
+    settings = await db.pool.fetchrow(
+        """
+        SELECT daily_broadcast_cooldown_days, daily_broadcast_sample_rate
+        FROM system_settings WHERE id = 1
+        """
+    )
+    if not settings:
+        raise ValueError("system_settings не инициализирован")
+    cooldown_days = int(settings["daily_broadcast_cooldown_days"] or 2)
+    sample_rate = float(settings["daily_broadcast_sample_rate"] or 0.5)
+    return await start_daily_rotation_broadcast(
+        cooldown_days=cooldown_days,
+        sample_rate=sample_rate,
+        admin_user_id=admin_user_id,
     )
 
 
