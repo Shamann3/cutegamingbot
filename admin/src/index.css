@@ -4916,6 +4916,60 @@ body {
   margin-top: 0.35rem;
 }
 
+.panel-broadcast-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.panel-broadcast-tab-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.panel-broadcast-tab-btn-active {
+  border-color: #eab308;
+  color: #eab308;
+}
+
+.panel-grouppost-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.panel-grouppost-button-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.5rem;
+}
+
+.panel-grouppost-button {
+  display: grid;
+  grid-template-columns: minmax(6rem, 1fr) minmax(8rem, 1.4fr) 7rem auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .panel-grouppost-button {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel-grouppost-row-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .panel-broadcast-rotation-actions {
   display: flex;
   flex-wrap: wrap;

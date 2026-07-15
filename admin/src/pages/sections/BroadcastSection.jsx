@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
 import AdminSelect from '../../components/AdminSelect'
+import GroupPostsPanel from './GroupPostsPanel'
 import {
   cancelBroadcastRun,
   countBroadcastRecipients,
@@ -369,6 +370,7 @@ function BroadcastRunCard({ row, expanded, onToggle, onCancel, cancelling }) {
 
 export default function BroadcastSection() {
   const [overview, setOverview] = useState(null)
+  const [activeTab, setActiveTab] = useState('players')
   const [history, setHistory] = useState([])
   const [historyTotal, setHistoryTotal] = useState(0)
   const [historyStatus, setHistoryStatus] = useState('')
@@ -742,7 +744,25 @@ export default function BroadcastSection() {
   const templates = overview?.templates || []
 
   return (
-    <div className="panel-broadcast">
+    <>
+      <div className="panel-broadcast-tabs">
+        <button
+          type="button"
+          className={`panel-broadcast-tab-btn${activeTab === 'players' ? ' panel-broadcast-tab-btn-active' : ''}`}
+          onClick={() => setActiveTab('players')}
+        >
+          Рассылка игрокам
+        </button>
+        <button
+          type="button"
+          className={`panel-broadcast-tab-btn${activeTab === 'groups' ? ' panel-broadcast-tab-btn-active' : ''}`}
+          onClick={() => setActiveTab('groups')}
+        >
+          Посты в группы
+        </button>
+      </div>
+      {activeTab === 'players' && (
+      <div className="panel-broadcast">
       <AdminActionModal
         open={cancelTarget != null}
         title={`Отменить рассылку #${cancelTarget?.id ?? ''}?`}
@@ -1140,6 +1160,9 @@ export default function BroadcastSection() {
           </button>
         )}
       </article>
-    </div>
+      </div>
+      )}
+      {activeTab === 'groups' && <GroupPostsPanel />}
+    </>
   )
 }
