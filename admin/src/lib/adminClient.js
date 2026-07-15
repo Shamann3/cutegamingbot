@@ -1512,6 +1512,18 @@ async function _uploadFile(path, file, text = '') {
   return resp.json()
 }
 
+async function _uploadForm(path, method, fields) {
+  const form = new FormData()
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined || value === null) continue
+    form.append(key, value)
+  }
+  const prefix = import.meta.env.VITE_ADMIN_API_PREFIX || '/admin/api'
+  const resp = await fetch(`${prefix}${path}`, { method, headers: _uploadHeaders(), body: form })
+  if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.detail || 'Ошибка запроса') }
+  return resp.json()
+}
+
 export async function uploadAppealPhoto(appealId, file, text = '') {
   return _uploadFile(`/appeals/${appealId}/upload`, file, text)
 }
@@ -1581,4 +1593,56 @@ export async function revokeInviteToken(tokenId) {
 
 export async function deleteInviteToken(tokenId) {
   return adminRequest(`/staff/invites/${tokenId}`, { method: 'DELETE' })
+}
+
+// ---------------------------------------------------------------------------
+// Group Post Campaigns
+// ---------------------------------------------------------------------------
+
+export async function fetchGroupPostCampaigns() {
+  return adminFetch('/group-posts')
+}
+
+export async function createGroupPostCampaign({ label, chatIds, telegramText, buttons, intervalMinutes, photoFile }) {
+  return _uploadForm('/group-posts', 'POST', {
+    label: label || '',
+    chat_ids: chatIds,
+    telegram_text: telegramText || '',
+    buttons: JSON.stringify(buttons || []),
+    interval_minutes: String(intervalMinutes),
+    ...(photoFile ? { photo: photoFile } : {}),
+  })
+}
+
+export async function updateGroupPostCampaign(campaignId, { label, chatIds, telegramText, buttons, intervalMinutes, photoFile, clearPhoto }) {
+  const fields = {}
+  if (label !== undefined) fields.label = label
+  if (chatIds !== undefined) fields.chat_ids = chatIds
+  if (telegramText !== undefined) fields.telegram_text = telegramText
+  if (buttons !== undefined) fields.buttons = JSON.stringify(buttons)
+  if (intervalMinutes !== undefined) fields.interval_minutes = String(intervalMinutes)
+  if (photoFile) fields.photo = photoFile
+  if (clearPhoto) fields.clear_photo = 'true'
+  return _uploadForm(`/group-posts/${campaignId}`, 'PATCH', fields)
+}
+
+export async function pauseGroupPostCampaign(campaignId) {
+  return adminFetch(`/group-posts/${campaignId}/pause`, { method: 'POST', body: {} })
+}
+
+export async function resumeGroupPostCampaign(campaignId) {
+  return adminFetch(`/group-posts/${campaignId}/resume`, { method: 'POST', body: {} })
+}
+
+export async function runGroupPostCampaignNow(campaignId) {
+  return adminFetch(`/group-posts/${campaignId}/run-now`, { method: 'POST', body: {} })
+}
+
+export async function deleteGroupPostCampaign(campaignId) {
+  return adminFetch(`/group-posts/${campaignId}`, { method: 'DELETE' })
+}
+
+export async function fetchGroupPostCampaignLog(campaignId, { limit = 50, offset = 0 } = {}) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return adminFetch(`/group-posts/${campaignId}/log?${params}`)
 }
