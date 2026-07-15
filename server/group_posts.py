@@ -20,6 +20,19 @@ logger = logging.getLogger("cute-farm.admin.group_posts")
 
 _UTC = timezone.utc
 
+# Telegram Bot API: sendPhoto's caption is capped at 1024 chars (sendMessage
+# text-only allows up to 4096). A campaign with a photo and text longer than
+# this fails delivery to every target group at send time.
+_PHOTO_CAPTION_LIMIT = 1024
+
+
+def _check_caption_limit(text: str, *, has_photo: bool) -> None:
+    if has_photo and len(text) > _PHOTO_CAPTION_LIMIT:
+        raise ValueError(
+            f"Текст поста с фото не может быть длиннее {_PHOTO_CAPTION_LIMIT} "
+            f"символов (сейчас: {len(text)})"
+        )
+
 
 def _normalize_chat_ids(raw: Any) -> list[int]:
     if isinstance(raw, str):
@@ -63,13 +76,20 @@ def _campaign_row(row) -> dict:
     buttons = row["buttons_json"]
     if isinstance(buttons, str):
         buttons = json.loads(buttons) if buttons else []
+    # list_campaigns() projects a precomputed `has_photo` boolean (to avoid
+    # pulling the full photo_bytes BYTEA over the wire); get_campaign() and
+    # the send-execution paths select the real photo_bytes column instead.
+    if "has_photo" in row.keys():
+        has_photo = bool(row["has_photo"])
+    else:
+        has_photo = row["photo_bytes"] is not None
     return {
         "id": int(row["id"]),
         "adminUserId": int(row["admin_user_id"]),
         "label": row["label"] or "",
         "chatIds": list(row["chat_ids"] or []),
         "telegramText": row["telegram_text"] or "",
-        "hasPhoto": row["photo_bytes"] is not None,
+        "hasPhoto": has_photo,
         "buttons": buttons or [],
         "intervalMinutes": int(row["interval_minutes"]),
         "status": row["status"],
@@ -87,10 +107,19 @@ _CAMPAIGN_FIELDS = """
     total_sent, last_error, created_at, updated_at
 """
 
+# Same as _CAMPAIGN_FIELDS but for list views: replaces the raw photo_bytes
+# BYTEA (up to 10MB per campaign) with a cheap boolean, since list callers
+# only ever need to know whether a photo is attached, not the bytes.
+_LIST_CAMPAIGN_FIELDS = """
+    id, admin_user_id, label, chat_ids, telegram_text, (photo_bytes IS NOT NULL) AS has_photo,
+    photo_mime, photo_file_id, buttons_json, interval_minutes, status, next_fire_at,
+    total_sent, last_error, created_at, updated_at
+"""
+
 
 async def list_campaigns() -> list[dict]:
     rows = await db.pool.fetch(
-        f"SELECT {_CAMPAIGN_FIELDS} FROM group_post_campaigns ORDER BY created_at DESC"
+        f"SELECT {_LIST_CAMPAIGN_FIELDS} FROM group_post_campaigns ORDER BY created_at DESC"
     )
     return [_campaign_row(r) for r in rows]
 
@@ -120,6 +149,7 @@ async def create_campaign(
         raise ValueError("Укажите текст поста или фото")
     if interval_minutes < 1:
         raise ValueError("Интервал должен быть не меньше 1 минуты")
+    _check_caption_limit(text_clean, has_photo=photo_bytes is not None)
 
     row = await db.pool.fetchrow(
         """
@@ -157,6 +187,21 @@ async def update_campaign(
     existing = await get_campaign(campaign_id)
     if not existing:
         raise ValueError("Кампания не найдена")
+
+    # Resolve the post-update state to validate the photo-caption length:
+    # - explicit new photo_bytes -> will have a photo
+    # - clear_photo -> will not have a photo
+    # - neither given -> photo state carries over from the existing campaign
+    if photo_bytes is not None:
+        final_has_photo = True
+    elif clear_photo:
+        final_has_photo = False
+    else:
+        final_has_photo = bool(existing["hasPhoto"])
+    final_text = (
+        telegram_text.strip() if telegram_text is not None else (existing["telegramText"] or "")
+    )
+    _check_caption_limit(final_text, has_photo=final_has_photo)
 
     sets: list[str] = []
     params: list[Any] = []
