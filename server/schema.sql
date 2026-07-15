@@ -916,6 +916,13 @@ INSERT INTO chat (chat_id, chatbalance, dexbalance)
 SELECT -1003855337972, 0, 0
 WHERE NOT EXISTS (SELECT 1 FROM chat WHERE chat_id = -1003855337972);
 
+-- В проде эта таблица уже содержит namechat (название группы) - её завёл
+-- старый bot/db_create/db.py. Здесь - только для чистых/тестовых БД, где
+-- chat создаётся впервые этим файлом (CREATE TABLE выше её не потрогает).
+-- Используется в admin-панели для выбора группы по имени в "Постах в группы"
+-- (server/group_posts.py::list_known_chats).
+ALTER TABLE chat ADD COLUMN IF NOT EXISTS namechat TEXT;
+
 -- Логи взносов в чёрный рынок от покупок в магазине
 CREATE TABLE IF NOT EXISTS black_market_shop_deposits (
     id BIGSERIAL PRIMARY KEY,

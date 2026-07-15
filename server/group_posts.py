@@ -457,3 +457,27 @@ async def list_campaign_log(campaign_id: int, *, limit: int = 50, offset: int = 
             for r in rows
         ],
     }
+
+
+async def list_known_chats() -> list[dict]:
+    """Группы для выбора в форме кампании - берёт из уже существующей таблицы
+    chat (её ведёт легаси-бот, у неё есть namechat - название группы). Не все
+    строки обязательно имеют namechat (например технические чаты чёрного
+    рынка) - такие показываются просто по chat_id."""
+    rows = await db.pool.fetch(
+        "SELECT chat_id, namechat FROM chat ORDER BY namechat NULLS LAST, chat_id"
+    )
+    return [
+        {"chatId": int(r["chat_id"]), "name": r["namechat"]}
+        for r in rows
+    ]
+
+
+async def get_campaign_photo(campaign_id: int) -> tuple[bytes, str]:
+    row = await db.pool.fetchrow(
+        "SELECT photo_bytes, photo_mime FROM group_post_campaigns WHERE id = $1",
+        campaign_id,
+    )
+    if not row or row["photo_bytes"] is None:
+        raise ValueError("У кампании нет фото")
+    return bytes(row["photo_bytes"]), row["photo_mime"] or "image/jpeg"

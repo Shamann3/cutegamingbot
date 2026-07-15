@@ -4,7 +4,9 @@ import {
   createGroupPostCampaign,
   deleteGroupPostCampaign,
   fetchGroupPostCampaignLog,
+  fetchGroupPostCampaignPhotoBlob,
   fetchGroupPostCampaigns,
+  fetchKnownChats,
   pauseGroupPostCampaign,
   resumeGroupPostCampaign,
   runGroupPostCampaignNow,
@@ -84,6 +86,93 @@ function ButtonsBuilder({ rows, onChange }) {
       <button type="button" className="panel-users-btn" onClick={addRow}>
         + новый ряд кнопок
       </button>
+    </div>
+  )
+}
+
+function ChatPicker({ selectedIds, onChange }) {
+  const [chats, setChats] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
+  const [manualId, setManualId] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    fetchKnownChats()
+      .then((data) => { if (!cancelled) setChats(data.items || []) })
+      .catch((err) => { if (!cancelled) setError(err.message || 'Не удалось загрузить группы') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  const toggle = (chatId) => {
+    onChange(
+      selectedIds.includes(chatId)
+        ? selectedIds.filter((id) => id !== chatId)
+        : [...selectedIds, chatId],
+    )
+  }
+
+  const addManual = () => {
+    const id = Number(manualId.trim())
+    if (!Number.isFinite(id) || id === 0) return
+    if (!selectedIds.includes(id)) onChange([...selectedIds, id])
+    setManualId('')
+  }
+
+  const query = search.trim().toLowerCase()
+  const filtered = query
+    ? chats.filter((c) => (c.name || '').toLowerCase().includes(query) || String(c.chatId).includes(query))
+    : chats
+
+  const knownIds = new Set(chats.map((c) => c.chatId))
+  const manualSelected = selectedIds.filter((id) => !knownIds.has(id))
+
+  return (
+    <div className="panel-grouppost-chatpicker">
+      <input
+        className="panel-users-input"
+        placeholder="Поиск группы по названию или ID"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      {loading && <p className="panel-shelf-muted">Загрузка групп…</p>}
+      {error && <p className="panel-shelf-error">{error}</p>}
+      {!loading && !error && (
+        <div className="panel-grouppost-chatpicker-list">
+          {filtered.length === 0 && <p className="panel-shelf-muted">Ничего не найдено</p>}
+          {filtered.map((c) => (
+            <label key={c.chatId} className="panel-market-check panel-grouppost-chatpicker-item">
+              <input type="checkbox" checked={selectedIds.includes(c.chatId)} onChange={() => toggle(c.chatId)} />
+              <span>{c.name || `Группа ${c.chatId}`}</span>
+              <span className="panel-shelf-muted"> · ID {c.chatId}</span>
+            </label>
+          ))}
+        </div>
+      )}
+      {manualSelected.length > 0 && (
+        <div className="panel-grouppost-chatpicker-manual-list">
+          {manualSelected.map((id) => (
+            <span key={id} className="panel-grouppost-chip">
+              ID {id}
+              <button type="button" onClick={() => toggle(id)}>✕</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="panel-grouppost-chatpicker-add">
+        <input
+          className="panel-users-input"
+          placeholder="Добавить group ID вручную (если группы нет в списке)"
+          value={manualId}
+          onChange={(e) => setManualId(e.target.value.replace(/[^\d-]/g, ''))}
+        />
+        <button type="button" className="panel-users-btn panel-users-btn-sm" onClick={addManual}>
+          + добавить
+        </button>
+      </div>
+      <p className="panel-shelf-muted">Выбрано групп: {selectedIds.length}</p>
     </div>
   )
 }
@@ -195,12 +284,13 @@ function CampaignCard({ campaign, onEdit, onPause, onResume, onDelete, onRunNow,
 
 const emptyForm = {
   label: '',
-  chatIdsText: '',
+  chatIds: [],
   telegramText: '',
   buttons: [],
   intervalMinutes: '10',
   photoFile: null,
   clearPhoto: false,
+  existingHasPhoto: false,
 }
 
 export default function GroupPostsPanel() {
@@ -245,14 +335,55 @@ export default function GroupPostsPanel() {
     setEditingId(campaign.id)
     setForm({
       label: campaign.label,
-      chatIdsText: campaign.chatIds.join(', '),
+      chatIds: campaign.chatIds,
       telegramText: campaign.telegramText,
       buttons: campaign.buttons,
       intervalMinutes: String(campaign.intervalMinutes),
       photoFile: null,
       clearPhoto: false,
+      existingHasPhoto: campaign.hasPhoto,
     })
     setFormOpen(true)
+  }
+
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState('')
+  const [photoPreviewLoading, setPhotoPreviewLoading] = useState(false)
+
+  useEffect(() => {
+    let revokeUrl = null
+    let cancelled = false
+
+    if (form.photoFile) {
+      const url = URL.createObjectURL(form.photoFile)
+      revokeUrl = url
+      setPhotoPreviewUrl(url)
+    } else if (editingId && form.existingHasPhoto && !form.clearPhoto) {
+      setPhotoPreviewLoading(true)
+      fetchGroupPostCampaignPhotoBlob(editingId)
+        .then((blob) => {
+          if (cancelled) return
+          const url = URL.createObjectURL(blob)
+          revokeUrl = url
+          setPhotoPreviewUrl(url)
+        })
+        .catch(() => { if (!cancelled) setPhotoPreviewUrl('') })
+        .finally(() => { if (!cancelled) setPhotoPreviewLoading(false) })
+    } else {
+      setPhotoPreviewUrl('')
+    }
+
+    return () => {
+      cancelled = true
+      if (revokeUrl) URL.revokeObjectURL(revokeUrl)
+    }
+  }, [form.photoFile, form.clearPhoto, form.existingHasPhoto, editingId])
+
+  const handleRemovePhoto = () => {
+    if (form.photoFile) {
+      setForm({ ...form, photoFile: null })
+    } else {
+      setForm({ ...form, clearPhoto: true })
+    }
   }
 
   const handleSave = async () => {
@@ -261,7 +392,7 @@ export default function GroupPostsPanel() {
       setError('Интервал должен быть не меньше 1 минуты')
       return
     }
-    if (!form.chatIdsText.trim()) {
+    if (form.chatIds.length === 0) {
       setError('Укажите хотя бы одну группу')
       return
     }
@@ -271,7 +402,7 @@ export default function GroupPostsPanel() {
       if (editingId) {
         await updateGroupPostCampaign(editingId, {
           label: form.label,
-          chatIds: form.chatIdsText,
+          chatIds: form.chatIds.join(','),
           telegramText: form.telegramText,
           buttons: form.buttons,
           intervalMinutes: interval,
@@ -282,7 +413,7 @@ export default function GroupPostsPanel() {
       } else {
         await createGroupPostCampaign({
           label: form.label,
-          chatIds: form.chatIdsText,
+          chatIds: form.chatIds.join(','),
           telegramText: form.telegramText,
           buttons: form.buttons,
           intervalMinutes: interval,
@@ -389,8 +520,8 @@ export default function GroupPostsPanel() {
               <input className="panel-users-input" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} maxLength={120} />
             </label>
             <label className="panel-economy-field">
-              <span>Группы (chat_id через запятую или с новой строки)</span>
-              <textarea className="panel-users-input panel-broadcast-textarea" value={form.chatIdsText} onChange={(e) => setForm({ ...form, chatIdsText: e.target.value })} rows={2} />
+              <span>Группы</span>
+              <ChatPicker selectedIds={form.chatIds} onChange={(chatIds) => setForm({ ...form, chatIds })} />
             </label>
             <label className="panel-economy-field">
               <span>Текст поста (HTML)</span>
@@ -398,13 +529,20 @@ export default function GroupPostsPanel() {
             </label>
             <label className="panel-economy-field">
               <span>Фото (необязательно)</span>
-              <input type="file" accept="image/*" onChange={(e) => setForm({ ...form, photoFile: e.target.files?.[0] || null })} />
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setForm({ ...form, photoFile: e.target.files?.[0] || null, clearPhoto: false })}
+              />
             </label>
-            {editingId && (
-              <label className="panel-market-check">
-                <input type="checkbox" checked={form.clearPhoto} onChange={(e) => setForm({ ...form, clearPhoto: e.target.checked })} />
-                Убрать текущее фото
-              </label>
+            {photoPreviewLoading && <p className="panel-shelf-muted">Загрузка превью…</p>}
+            {photoPreviewUrl && (
+              <div className="panel-grouppost-photo-preview">
+                <img src={photoPreviewUrl} alt="Превью фото поста" />
+                <button type="button" className="panel-users-btn panel-users-btn-danger panel-users-btn-sm" onClick={handleRemovePhoto}>
+                  ✕ Убрать фото
+                </button>
+              </div>
             )}
             <label className="panel-economy-field">
               <span>Кнопки</span>

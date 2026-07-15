@@ -202,8 +202,10 @@ from group_posts import (
     create_campaign,
     delete_campaign,
     get_campaign,
+    get_campaign_photo,
     list_campaign_log,
     list_campaigns,
+    list_known_chats,
     run_campaign_now,
     set_campaign_status,
     update_campaign,
@@ -3173,6 +3175,13 @@ async def admin_group_posts_list(
     return {"items": await list_campaigns()}
 
 
+@router.get("/group-posts/known-chats")
+async def admin_group_posts_known_chats(
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    return {"items": await list_known_chats()}
+
+
 @router.post("/group-posts")
 async def admin_group_posts_create(
     label: str = Form(default=""),
@@ -3310,6 +3319,18 @@ async def admin_group_posts_log(
     if not campaign:
         raise HTTPException(status_code=404, detail="Кампания не найдена")
     return await list_campaign_log(campaign_id, limit=limit, offset=offset)
+
+
+@router.get("/group-posts/{campaign_id}/photo")
+async def admin_group_posts_photo(
+    campaign_id: int,
+    _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
+):
+    try:
+        photo_bytes, photo_mime = await get_campaign_photo(campaign_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return Response(content=photo_bytes, media_type=photo_mime)
 
 
 @router.get("/logs/overview")

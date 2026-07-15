@@ -1646,3 +1646,15 @@ export async function fetchGroupPostCampaignLog(campaignId, { limit = 50, offset
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   return adminFetch(`/group-posts/${campaignId}/log?${params}`)
 }
+
+export async function fetchKnownChats() {
+  return adminFetch('/group-posts/known-chats')
+}
+
+export async function fetchGroupPostCampaignPhotoBlob(campaignId) {
+  const resp = await fetch(`${API_PREFIX}/group-posts/${campaignId}/photo`, {
+    headers: adminHeaders(),
+  })
+  if (!resp.ok) throw new Error(`Ошибка ${resp.status}`)
+  return resp.blob()
+}
