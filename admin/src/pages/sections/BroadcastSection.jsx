@@ -417,6 +417,7 @@ export default function BroadcastSection() {
   const [rotationSampleRate, setRotationSampleRate] = useState('50')
   const [rotationSaving, setRotationSaving] = useState(false)
   const [rotationRunning, setRotationRunning] = useState(false)
+  const [rotationMsg, setRotationMsg] = useState(null)
 
   const buildFilter = useCallback(() => {
     const filter = { excludeBanned }
@@ -653,23 +654,23 @@ export default function BroadcastSection() {
     const cooldownDays = Number(rotationCooldown)
     const sampleRate = Number(rotationSampleRate) / 100
     if (!Number.isFinite(hour) || hour < 0 || hour > 23) {
-      setError('Час должен быть от 0 до 23')
+      setRotationMsg({ type: 'error', text: 'Час должен быть от 0 до 23' })
       return
     }
     if (!Number.isFinite(minute) || minute < 0 || minute > 59) {
-      setError('Минута должна быть от 0 до 59')
+      setRotationMsg({ type: 'error', text: 'Минута должна быть от 0 до 59' })
       return
     }
     if (!Number.isFinite(cooldownDays) || cooldownDays < 1 || cooldownDays > 30) {
-      setError('Кулдаун должен быть от 1 до 30 дней')
+      setRotationMsg({ type: 'error', text: 'Кулдаун должен быть от 1 до 30 дней' })
       return
     }
     if (!Number.isFinite(sampleRate) || sampleRate <= 0 || sampleRate >= 1) {
-      setError('Доля выборки должна быть от 1 до 99%')
+      setRotationMsg({ type: 'error', text: 'Доля выборки должна быть от 1 до 99%' })
       return
     }
     setRotationSaving(true)
-    setError('')
+    setRotationMsg(null)
     try {
       const data = await saveDailyRotationSettings({
         enabled: rotationEnabled,
@@ -679,9 +680,9 @@ export default function BroadcastSection() {
         sampleRate,
       })
       setRotation(data)
-      setInfo('Настройки ежедневной рассылки сохранены')
+      setRotationMsg({ type: 'info', text: 'Настройки сохранены' })
     } catch (err) {
-      setError(err.message || 'Не удалось сохранить настройки')
+      setRotationMsg({ type: 'error', text: err.message || 'Не удалось сохранить настройки' })
     } finally {
       setRotationSaving(false)
     }
@@ -689,15 +690,17 @@ export default function BroadcastSection() {
 
   const handleRunRotationNow = async () => {
     setRotationRunning(true)
-    setError('')
-    setInfo('')
+    setRotationMsg(null)
     try {
       const result = await runDailyRotationNow()
-      setInfo(`Ежедневная рассылка запущена вручную — рассылка #${result.runId}, ${result.recipientCount} получателей`)
+      setRotationMsg({
+        type: 'info',
+        text: `Запущено — рассылка #${result.runId}, ${result.recipientCount} получателей. Смотри в истории ниже.`,
+      })
       await loadOverview()
       await refreshHistory({ offset: 0 })
     } catch (err) {
-      setError(err.message || 'Не удалось запустить рассылку')
+      setRotationMsg({ type: 'error', text: err.message || 'Не удалось запустить рассылку' })
     } finally {
       setRotationRunning(false)
     }
@@ -882,6 +885,11 @@ export default function BroadcastSection() {
                 {rotationRunning ? 'Запуск…' : '▶ Запустить сейчас'}
               </button>
             </div>
+            {rotationMsg && (
+              <p className={rotationMsg.type === 'error' ? 'panel-shelf-error' : 'panel-users-info'}>
+                {rotationMsg.text}
+              </p>
+            )}
           </div>
         )}
       </article>
