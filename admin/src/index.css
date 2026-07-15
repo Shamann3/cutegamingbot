@@ -4900,6 +4900,22 @@ body {
   resize: vertical;
 }
 
+.panel-broadcast-rotation-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(6rem, 1fr));
+  gap: 0.65rem;
+}
+
+@media (max-width: 720px) {
+  .panel-broadcast-rotation-grid {
+    grid-template-columns: repeat(2, minmax(6rem, 1fr));
+  }
+}
+
+.panel-broadcast-run-fail-reasons {
+  margin-top: 0.35rem;
+}
+
 .panel-broadcast-templates {
   display: flex;
   flex-wrap: wrap;

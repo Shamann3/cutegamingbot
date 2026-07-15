@@ -7,8 +7,10 @@ import {
   deleteBroadcastTemplate,
   fetchBroadcastHistory,
   fetchBroadcastOverview,
+  fetchDailyRotationSettings,
   previewBroadcast,
   saveBroadcastTemplate,
+  saveDailyRotationSettings,
   sendBroadcast,
 } from '../../lib/adminClient'
 
@@ -302,6 +304,15 @@ export default function BroadcastSection() {
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [templateName, setTemplateName] = useState('')
 
+  const [rotation, setRotation] = useState(null)
+  const [rotationLoading, setRotationLoading] = useState(true)
+  const [rotationEnabled, setRotationEnabled] = useState(true)
+  const [rotationHour, setRotationHour] = useState('12')
+  const [rotationMinute, setRotationMinute] = useState('0')
+  const [rotationCooldown, setRotationCooldown] = useState('2')
+  const [rotationSampleRate, setRotationSampleRate] = useState('50')
+  const [rotationSaving, setRotationSaving] = useState(false)
+
   const buildFilter = useCallback(() => {
     const filter = { excludeBanned }
     if (audience !== 'filtered') {
@@ -378,9 +389,27 @@ export default function BroadcastSection() {
     }
   }, [historyStatus])
 
+  const loadRotation = useCallback(async () => {
+    setRotationLoading(true)
+    try {
+      const data = await fetchDailyRotationSettings()
+      setRotation(data)
+      setRotationEnabled(Boolean(data.enabled))
+      setRotationHour(String(data.hourUtc))
+      setRotationMinute(String(data.minuteUtc))
+      setRotationCooldown(String(data.cooldownDays))
+      setRotationSampleRate(String(Math.round(data.sampleRate * 100)))
+    } catch (err) {
+      setError(err.message || 'Не удалось загрузить настройки ежедневной рассылки')
+    } finally {
+      setRotationLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     loadOverview()
-  }, [loadOverview])
+    loadRotation()
+  }, [loadOverview, loadRotation])
 
   useEffect(() => {
     setHistoryOffset(0)
@@ -513,6 +542,46 @@ export default function BroadcastSection() {
     }
   }
 
+  const handleSaveRotation = async () => {
+    const hour = Number(rotationHour)
+    const minute = Number(rotationMinute)
+    const cooldownDays = Number(rotationCooldown)
+    const sampleRate = Number(rotationSampleRate) / 100
+    if (!Number.isFinite(hour) || hour < 0 || hour > 23) {
+      setError('Час должен быть от 0 до 23')
+      return
+    }
+    if (!Number.isFinite(minute) || minute < 0 || minute > 59) {
+      setError('Минута должна быть от 0 до 59')
+      return
+    }
+    if (!Number.isFinite(cooldownDays) || cooldownDays < 1 || cooldownDays > 30) {
+      setError('Кулдаун должен быть от 1 до 30 дней')
+      return
+    }
+    if (!Number.isFinite(sampleRate) || sampleRate <= 0 || sampleRate >= 1) {
+      setError('Доля выборки должна быть от 1 до 99%')
+      return
+    }
+    setRotationSaving(true)
+    setError('')
+    try {
+      const data = await saveDailyRotationSettings({
+        enabled: rotationEnabled,
+        hour,
+        minute,
+        cooldownDays,
+        sampleRate,
+      })
+      setRotation(data)
+      setInfo('Настройки ежедневной рассылки сохранены')
+    } catch (err) {
+      setError(err.message || 'Не удалось сохранить настройки')
+    } finally {
+      setRotationSaving(false)
+    }
+  }
+
   const handleDeleteTemplate = async (tpl) => {
     if (!tpl?.id || String(tpl.key || '').startsWith('builtin:')) return
     setError('')
@@ -608,6 +677,82 @@ export default function BroadcastSection() {
           </button>
         </article>
       </div>
+
+      <article className="panel-shelf panel-broadcast-rotation">
+        <p className="panel-shelf-label">Ежедневная авто-рассылка · напоминалки 🤖</p>
+        <p className="panel-shelf-muted">
+          Раз в день боту случайного набора игроков уходит одно из напоминаний
+          (см. историю ниже, карточки с бейджем «🤖 Авто»). Кулдаун не даёт слать
+          одному игроку чаще, чем раз в N дней; доля выборки — сколько % подходящих
+          игроков получат сообщение за один запуск.
+        </p>
+        {rotationLoading ? (
+          <p className="panel-shelf-muted">Загрузка…</p>
+        ) : (
+          <div className="panel-economy-settings-form">
+            <label className="panel-market-check">
+              <input
+                type="checkbox"
+                checked={rotationEnabled}
+                onChange={(e) => setRotationEnabled(e.target.checked)}
+              />
+              Включена
+            </label>
+            <div className="panel-broadcast-rotation-grid">
+              <label className="panel-economy-field">
+                <span>Час отправки (UTC)</span>
+                <input
+                  className="panel-users-input"
+                  value={rotationHour}
+                  onChange={(e) => setRotationHour(e.target.value.replace(/[^\d]/g, ''))}
+                  maxLength={2}
+                />
+              </label>
+              <label className="panel-economy-field">
+                <span>Минута</span>
+                <input
+                  className="panel-users-input"
+                  value={rotationMinute}
+                  onChange={(e) => setRotationMinute(e.target.value.replace(/[^\d]/g, ''))}
+                  maxLength={2}
+                />
+              </label>
+              <label className="panel-economy-field">
+                <span>Кулдаун (дни)</span>
+                <input
+                  className="panel-users-input"
+                  value={rotationCooldown}
+                  onChange={(e) => setRotationCooldown(e.target.value.replace(/[^\d]/g, ''))}
+                  maxLength={2}
+                />
+              </label>
+              <label className="panel-economy-field">
+                <span>Доля выборки (%)</span>
+                <input
+                  className="panel-users-input"
+                  value={rotationSampleRate}
+                  onChange={(e) => setRotationSampleRate(e.target.value.replace(/[^\d]/g, ''))}
+                  maxLength={2}
+                />
+              </label>
+            </div>
+            <p className="panel-shelf-muted">
+              Следующий запуск:{' '}
+              {rotation?.nextFireAt ? formatDate(rotation.nextFireAt) : 'ещё не запланирован'}
+              {' · '}
+              {rotation?.templateCount ?? 0} шаблонов в ротации
+            </p>
+            <button
+              type="button"
+              className="panel-users-btn panel-users-btn-primary"
+              disabled={rotationSaving}
+              onClick={handleSaveRotation}
+            >
+              {rotationSaving ? '…' : 'Сохранить настройки'}
+            </button>
+          </div>
+        )}
+      </article>
 
       <div className="panel-economy-grid-2">
         <article className="panel-shelf">

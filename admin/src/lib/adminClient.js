@@ -1260,6 +1260,14 @@ export async function deleteBroadcastTemplate(templateId) {
   return adminFetch(`/broadcast/templates/${templateId}`, { method: 'DELETE' })
 }
 
+export async function fetchDailyRotationSettings() {
+  return adminFetch('/broadcast/daily-rotation')
+}
+
+export async function saveDailyRotationSettings(payload) {
+  return adminFetch('/broadcast/daily-rotation', { method: 'POST', body: payload })
+}
+
 export async function fetchLogsOverview() {
   return adminFetch('/logs/overview')
 }
