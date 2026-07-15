@@ -830,6 +830,10 @@ ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS daily_broadcast_sample_rate
 -- users.last_daily_broadcast_sent_at только для неё, а не для ручных рассылок админа.
 ALTER TABLE broadcast_runs ADD COLUMN IF NOT EXISTS is_daily_rotation BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Разбивка причин недоставки Telegram-сообщений при рассылке, например
+-- {"blocked": 3, "chat_not_found": 12, "other": 1}. См. server/telegram_notify.py::_classify_error.
+ALTER TABLE broadcast_runs ADD COLUMN IF NOT EXISTS telegram_failed_reasons JSONB NOT NULL DEFAULT '{}'::jsonb;
+
 -- Security / API errors (дублируют Telegram error topic)
 CREATE TABLE IF NOT EXISTS system_logs (
     id BIGSERIAL PRIMARY KEY,

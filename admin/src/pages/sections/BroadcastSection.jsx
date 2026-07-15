@@ -39,6 +39,24 @@ function channelsLabel(channels) {
   return parts.length ? parts.join(' + ') : '-'
 }
 
+const FAIL_REASON_LABEL = {
+  blocked: 'заблокировали бота',
+  chat_not_found: 'не открывали чат с ботом',
+  deactivated: 'аккаунт деактивирован',
+  rate_limited: 'лимит Telegram (повторить позже)',
+  other: 'другая ошибка',
+}
+
+function failReasonsSummary(reasons) {
+  if (!reasons || typeof reasons !== 'object') return ''
+  const entries = Object.entries(reasons).filter(([, count]) => count > 0)
+  if (!entries.length) return ''
+  return entries
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, count]) => `${FAIL_REASON_LABEL[key] || key}: ${count}`)
+    .join(' · ')
+}
+
 function formatDuration(seconds) {
   if (seconds == null) return '-'
   const value = Number(seconds)
@@ -200,6 +218,12 @@ function BroadcastRunCard({ row, expanded, onToggle, onCancel, cancelling }) {
         </div>
         <span className="panel-broadcast-progress-label">{progressLabel(row)}</span>
       </div>
+
+      {row.telegramFailed > 0 && failReasonsSummary(row.telegramFailedReasons) && (
+        <p className="panel-shelf-muted panel-broadcast-run-fail-reasons">
+          Не доставлено: {failReasonsSummary(row.telegramFailedReasons)}
+        </p>
+      )}
 
       {row.errorMessage && (
         <p className="panel-shelf-error panel-broadcast-run-error">{row.errorMessage}</p>

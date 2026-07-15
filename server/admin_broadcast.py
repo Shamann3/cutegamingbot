@@ -591,6 +591,9 @@ def _run_row(row) -> dict:
     if isinstance(channels_json, str):
         channels_json = json.loads(channels_json)
     channels = channels_json or {}
+    failed_reasons = _row_get(row, "telegram_failed_reasons") or {}
+    if isinstance(failed_reasons, str):
+        failed_reasons = json.loads(failed_reasons) if failed_reasons else {}
     recipient_count = int(row["recipient_count"] or 0)
     webapp_sent = int(row["webapp_sent"] or 0)
     telegram_sent = int(row["telegram_sent"] or 0)
@@ -619,6 +622,7 @@ def _run_row(row) -> dict:
         "webappSent": webapp_sent,
         "telegramSent": telegram_sent,
         "telegramFailed": int(row["telegram_failed"] or 0),
+        "telegramFailedReasons": failed_reasons,
         "progressPercent": _calc_progress(status, recipient_count, webapp_sent, telegram_sent, channels),
         "durationSeconds": duration_seconds,
         "elapsedSeconds": elapsed_seconds,
@@ -638,7 +642,7 @@ async def get_broadcast_run(run_id: int) -> dict | None:
         SELECT
             id, admin_user_id, audience, filter_json, channels_json,
             title, body, detail, telegram_text, template_key,
-            recipient_count, webapp_sent, telegram_sent, telegram_failed,
+            recipient_count, webapp_sent, telegram_sent, telegram_failed, telegram_failed_reasons,
             status, error_message, created_at, finished_at,
             label, scheduled_at, is_daily_rotation
         FROM broadcast_runs
@@ -674,7 +678,7 @@ async def list_broadcast_history(
             SELECT
                 id, admin_user_id, audience, filter_json, channels_json,
                 title, body, detail, telegram_text, template_key,
-                recipient_count, webapp_sent, telegram_sent, telegram_failed,
+                recipient_count, webapp_sent, telegram_sent, telegram_failed, telegram_failed_reasons,
                 status, error_message, created_at, finished_at,
                 label, scheduled_at, is_daily_rotation
             FROM broadcast_runs
@@ -693,7 +697,7 @@ async def list_broadcast_history(
             SELECT
                 id, admin_user_id, audience, filter_json, channels_json,
                 title, body, detail, telegram_text, template_key,
-                recipient_count, webapp_sent, telegram_sent, telegram_failed,
+                recipient_count, webapp_sent, telegram_sent, telegram_failed, telegram_failed_reasons,
                 status, error_message, created_at, finished_at,
                 label, scheduled_at, is_daily_rotation
             FROM broadcast_runs
@@ -801,6 +805,7 @@ async def _update_run(
     webapp_sent: int | None = None,
     telegram_sent: int | None = None,
     telegram_failed: int | None = None,
+    telegram_failed_reasons: dict[str, int] | None = None,
     recipient_count: int | None = None,
     error_message: str | None = None,
     finished: bool = False,
@@ -809,9 +814,9 @@ async def _update_run(
     params: list[Any] = []
     idx = 1
 
-    def add(field: str, value: Any) -> None:
+    def add(field: str, value: Any, cast: str = "") -> None:
         nonlocal idx
-        sets.append(f"{field} = ${idx}")
+        sets.append(f"{field} = ${idx}{cast}")
         params.append(value)
         idx += 1
 
@@ -823,6 +828,8 @@ async def _update_run(
         add("telegram_sent", telegram_sent)
     if telegram_failed is not None:
         add("telegram_failed", telegram_failed)
+    if telegram_failed_reasons is not None:
+        add("telegram_failed_reasons", json.dumps(telegram_failed_reasons, ensure_ascii=False), "::jsonb")
     if recipient_count is not None:
         add("recipient_count", recipient_count)
     if error_message is not None:
@@ -875,6 +882,7 @@ async def _execute_broadcast(run_id: int) -> None:
     webapp_sent = 0
     telegram_sent = 0
     telegram_failed = 0
+    telegram_failed_reasons: dict[str, int] = {}
 
     try:
         recipient_total = await count_recipients(row["audience"], filter_json or {})
@@ -912,6 +920,7 @@ async def _execute_broadcast(run_id: int) -> None:
                         webapp_sent=int(row_now["webapp_sent"] or 0) if row_now else webapp_sent,
                         telegram_sent=int(row_now["telegram_sent"] or 0) if row_now else telegram_sent,
                         telegram_failed=int(row_now["telegram_failed"] or 0) if row_now else telegram_failed,
+                        telegram_failed_reasons=telegram_failed_reasons,
                         error_message="Отменено администратором",
                         finished=True,
                     )
@@ -936,22 +945,28 @@ async def _execute_broadcast(run_id: int) -> None:
 
                 if channels["telegram"] and tg_text.strip():
                     try:
-                        await send_telegram_message(
+                        result = await send_telegram_message(
                             tg_text, chat_id=str(user_id),
                             cta_text=cta_text, cta_url=cta_url,
                         )
-                        telegram_sent += 1
-                        if is_daily_rotation:
-                            cooldown_batch.append(user_id)
-                            if len(cooldown_batch) >= WEBAPP_NOTIFY_BATCH_SIZE:
-                                await db.pool.execute(
-                                    "UPDATE users SET last_daily_broadcast_sent_at = NOW() WHERE user_id = ANY($1::bigint[])",
-                                    cooldown_batch,
-                                )
-                                cooldown_batch.clear()
+                        if result.ok:
+                            telegram_sent += 1
+                            if is_daily_rotation:
+                                cooldown_batch.append(user_id)
+                                if len(cooldown_batch) >= WEBAPP_NOTIFY_BATCH_SIZE:
+                                    await db.pool.execute(
+                                        "UPDATE users SET last_daily_broadcast_sent_at = NOW() WHERE user_id = ANY($1::bigint[])",
+                                        cooldown_batch,
+                                    )
+                                    cooldown_batch.clear()
+                        else:
+                            telegram_failed += 1
+                            reason = result.category or "other"
+                            telegram_failed_reasons[reason] = telegram_failed_reasons.get(reason, 0) + 1
                         await asyncio.sleep(TELEGRAM_SEND_DELAY)
                     except Exception:
                         telegram_failed += 1
+                        telegram_failed_reasons["other"] = telegram_failed_reasons.get("other", 0) + 1
                         logger.exception("Telegram broadcast failed (user_id=%s)", user_id)
 
                 processed += 1
@@ -961,6 +976,7 @@ async def _execute_broadcast(run_id: int) -> None:
                         webapp_sent=webapp_sent,
                         telegram_sent=telegram_sent,
                         telegram_failed=telegram_failed,
+                        telegram_failed_reasons=telegram_failed_reasons,
                     )
 
             if webapp_batch and channels["webapp"]:
@@ -986,6 +1002,7 @@ async def _execute_broadcast(run_id: int) -> None:
             webapp_sent=webapp_sent,
             telegram_sent=telegram_sent,
             telegram_failed=telegram_failed,
+            telegram_failed_reasons=telegram_failed_reasons,
             finished=True,
         )
     except Exception as exc:
@@ -996,6 +1013,7 @@ async def _execute_broadcast(run_id: int) -> None:
             webapp_sent=webapp_sent,
             telegram_sent=telegram_sent,
             telegram_failed=telegram_failed,
+            telegram_failed_reasons=telegram_failed_reasons,
             error_message=str(exc)[:500],
             finished=True,
         )
