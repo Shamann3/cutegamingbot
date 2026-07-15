@@ -744,7 +744,7 @@ export default function BroadcastSection() {
   const templates = overview?.templates || []
 
   return (
-    <>
+    <div className="panel-broadcast-wrap">
       <div className="panel-broadcast-tabs">
         <button
           type="button"
@@ -1163,6 +1163,6 @@ export default function BroadcastSection() {
       </div>
       )}
       {activeTab === 'groups' && <GroupPostsPanel />}
-    </>
+    </div>
   )
 }
