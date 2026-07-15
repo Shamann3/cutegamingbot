@@ -306,6 +306,7 @@ async def _execute_group_post_send(row) -> dict:
     failed = 0
     log_batch: list[tuple[int, str, str | None]] = []
     new_file_id: str | None = None
+    last_failure_reason: str | None = None
 
     for chat_id in chat_ids:
         if photo_bytes is not None and not file_id and new_file_id is None:
@@ -333,7 +334,15 @@ async def _execute_group_post_send(row) -> dict:
             log_batch.append((chat_id, "sent", None))
         else:
             failed += 1
-            log_batch.append((chat_id, "failed", result.category or "other"))
+            reason = result.category or "other"
+            # "other" не говорит ни о чём - показываем реальный текст ошибки от
+            # Telegram (например "can't parse entities" из-за битого HTML в
+            # тексте/кнопках), а не бесполезное слово "other".
+            if reason == "other" and result.description:
+                reason = result.description[:300]
+            log_batch.append((chat_id, "failed", reason))
+            if not last_failure_reason:
+                last_failure_reason = reason
 
         if len(log_batch) >= POST_LOG_FLUSH_SIZE:
             await _flush_post_log(campaign_id, log_batch)
@@ -351,7 +360,8 @@ async def _execute_group_post_send(row) -> dict:
         idx += 1
     if failed and failed == len(chat_ids):
         updates.append(f"last_error = ${idx}")
-        params.append(f"Не доставлено ни в одну группу ({failed}/{len(chat_ids)})")
+        detail = f" — {last_failure_reason}" if last_failure_reason else ""
+        params.append(f"Не доставлено ни в одну группу ({failed}/{len(chat_ids)}){detail}"[:500])
         idx += 1
     elif sent:
         updates.append("last_error = NULL")
