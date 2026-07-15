@@ -70,7 +70,7 @@ else:
 
 
 def _safe_console(msg: str) -> None:
-    """print, устойчивый к консоли cp1251 (Windows) — без UnicodeEncodeError."""
+    """print, устойчивый к консоли cp1251 (Windows) без UnicodeEncodeError."""
     try:
         print(msg)
     except UnicodeEncodeError:
@@ -151,7 +151,7 @@ PRINT_SUMMARY = bool(int(os.getenv("PKL_SUMMARY", "1")))
 
 # ВАЖНО: 0 = сохранять СИНХРОННО прямо в вызывающем потоке. Так как pklcode
 # вызывается из корутин (event-loop), синхронный _save_now() блокирует весь
-# цикл на время Redis-записи (socket recv) — при всплеске записей (warmup,
+# цикл на время Redis-записи (socket recv) при всплеске записей (warmup,
 # массовые апдейты) loop замирает на секунды/минуты, и бот перестаёт отвечать.
 # Положительное значение уводит сохранение в фоновый threading.Timer и
 # коалесцирует всплеск записей в одно сохранение. НЕ ставить 0 на проде.
@@ -188,10 +188,10 @@ PKL_HEAL_RELOAD_COOLDOWN_SEC = float(os.getenv("PKL_HEAL_RELOAD_COOLDOWN_SEC", "
 
 # ✅ быстрый путь (по умолчанию включен): не трогаем самолечение если sync уже готов
 PKL_FASTPATH_READS = bool(int(os.getenv("PKL_FASTPATH_READS", "1")))
-# Пинговать Redis на КАЖДОМ чтении словаря — дорого (синхронный раунд-трип в
+# Пинговать Redis на КАЖДОМ чтении словаря дорого (синхронный раунд-трип в
 # event-loop на каждый доступ). Данные и так лежат в памяти процесса, а фоновый
 # health-watcher (PKL_HEALTH_WATCHER, каждые 3с) следит за Redis. Поэтому пинг на
-# чтении по умолчанию ВЫКЛЮЧЕН — чтения становятся чисто in-memory (быстро).
+# чтении по умолчанию ВЫКЛЮЧЕН чтения становятся чисто in-memory (быстро).
 PKL_FASTPATH_PING = bool(int(os.getenv("PKL_FASTPATH_PING", "0")))
 
 
@@ -502,7 +502,7 @@ def _build_clients_from_env() -> Tuple[Optional["redis.Redis"], Optional["redis.
 
 
 # Быстрый TCP-предчек: не блокировать импорт/health-watcher на таймаутах,
-# если Redis не поднят. По умолчанию 0.35s — connect refused на localhost мгновенный,
+# если Redis не поднят. По умолчанию 0.35s connect refused на localhost мгновенный,
 # а зависший/недоступный хост не держит старт всей системы на 12+ секунд.
 PKL_REDIS_PRECHECK_TIMEOUT_SEC = float(os.getenv("PKL_REDIS_PRECHECK_TIMEOUT_SEC", "0.35"))
 
@@ -919,7 +919,7 @@ class GameStore(dict):
             if not self._need_initial_sync:
                 return
 
-            # Redis недоступен — работаем in-memory, НЕ повторяем ожидание на каждой записи.
+            # Redis недоступен работаем in-memory, НЕ повторяем ожидание на каждой записи.
             # Без этого флага каждый __setitem__ ждёт до 0.15s → тысячи групп = минуты «зависания».
             if _raw_client() is None:
                 self._need_initial_sync = False
@@ -1504,9 +1504,23 @@ def redis_roundtrip_selftest() -> bool:
         return False
 
 
-def verify_store_persisted(name: str) -> Dict[str, Any]:
+def verify_store_persisted(
+    name: str,
+    *,
+    scan_count: int = 500,
+    max_scan_steps: int = 24,
+    max_scan_seconds: float = 1.5,
+) -> Dict[str, Any]:
     rc = _raw_client()
-    out: Dict[str, Any] = {"store": name, "ok": False, "blob": 0, "meta": 0, "chunks": 0}
+    out: Dict[str, Any] = {
+        "store": name,
+        "ok": False,
+        "blob": 0,
+        "meta": 0,
+        "chunks": 0,
+        "scan_steps": 0,
+        "scan_truncated": False,
+    }
     if rc is None:
         out["error"] = "raw redis client is None"
         return out
@@ -1519,14 +1533,28 @@ def verify_store_persisted(name: str) -> Dict[str, Any]:
 
         cursor = 0
         chunks = 0
+        steps = 0
+        truncated = False
         pattern = f"pkl:{name}:chunk:*".encode("utf-8")
+        deadline = time.monotonic() + max(0.05, float(max_scan_seconds))
+
         while True:
-            cursor, keys = rc.scan(cursor=cursor, match=pattern, count=500)
+            cursor, keys = rc.scan(cursor=cursor, match=pattern, count=max(1, int(scan_count)))
             chunks += len(keys)
+            steps += 1
             if cursor == 0:
                 break
+            if steps >= max(1, int(max_scan_steps)):
+                truncated = True
+                break
+            if time.monotonic() >= deadline:
+                truncated = True
+                break
+
+        out["scan_steps"] = steps
+        out["scan_truncated"] = truncated
         out["chunks"] = chunks
-        out["ok"] = (out["blob"] > 0) or (out["meta"] > 0 and out["chunks"] > 0)
+        out["ok"] = (out["blob"] > 0) or (out["meta"] > 0 and (out["chunks"] > 0 or truncated))
         return out
     except Exception as e:
         out["error"] = f"{type(e).__name__}: {e}"

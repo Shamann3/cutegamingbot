@@ -59,6 +59,7 @@ _MOD_SCOPE_FULL_SUFFIXES: Tuple[str, ...] = ("full", "фулл", "фул", "фу
 _MUTE_CMD_ROOTS: Tuple[str, ...] = ("мут", "mute", "замутить")
 
 from aiogram import BaseMiddleware, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
   CallbackQuery,
   ChatPermissions,
@@ -109,11 +110,11 @@ class MuteConfig:
   })
 
   # --- Ожидание фото-доказательства (шаг 2) ---
-  # Единый таймаут для всех систем наказаний — правка только в punish_proof.py
+  # Единый таймаут для всех систем наказаний правка только в punish_proof.py
   PROOF_TIMEOUT_SEC: int = PROOF_TIMEOUT_SEC
 
   # --- Фоновый воркер ---
-  # Как часто проверять истёкшие муты (секунды); ожидание фото — punish_proof
+  # Как часто проверять истёкшие муты (секунды); ожидание фото punish_proof
   WORKER_INTERVAL_SEC: int = 20
 
   # --- Отладка и логи ---
@@ -903,6 +904,10 @@ _MUTE_MAINTENANCE_INTERVAL_SEC = 5.0
 # перезапуска никто не «в сети», пока снова не напишет сообщение).
 _admin_last_active: Dict[int, float] = LazyGameStore("_admin_last_active")
 _ADMIN_LAST_ACTIVE_MAX = 10000
+# UID'ы, по которым Telegram возвращал "chat not found".
+# Чтобы не спамить сеть/логи, повторную проверку делаем только через TTL.
+_staff_tg_identity_retry_at: Dict[int, float] = {}
+_STAFF_TG_IDENTITY_RETRY_SEC = 6 * 60 * 60
 # Пороги статусов активности (секунды):
 #   ≤ ONLINE  → 🟢 в сети   (активен прямо сейчас, ~минуту после сообщения)
 #   ≤ RECENT  → 🟡 недавно   (был активен совсем недавно)
@@ -2768,7 +2773,7 @@ async def _scan_expired_mutes_from_db() -> None:
 
 
 async def _mute_expiry_loop() -> None:
-  """Фоновая проверка: истёкшие муты (ожидание фото — punish_proof worker)."""
+  """Фоновая проверка: истёкшие муты (ожидание фото punish_proof worker)."""
   while True:
     try:
       await asyncio.sleep(cfg.WORKER_INTERVAL_SEC)
@@ -2884,7 +2889,7 @@ async def _cleanup_expired_pending_async() -> None:
 
 
 async def _maybe_mute_maintenance() -> None:
-  """Фоновая уборка истёкших мутов (ожидание фото — только proof worker)."""
+  """Фоновая уборка истёкших мутов (ожидание фото только proof worker)."""
   global _mute_maintenance_last
   now = time.time()
   if now - _mute_maintenance_last < _MUTE_MAINTENANCE_INTERVAL_SEC:
@@ -3126,6 +3131,37 @@ async def _confirm_lookup_user_id(
   return uid, name, username
 
 
+def _staff_tg_identity_allowed(uid: int) -> bool:
+  retry_at = float(_staff_tg_identity_retry_at.get(int(uid), 0.0) or 0.0)
+  return time.time() >= retry_at
+
+
+def _staff_tg_identity_backoff(uid: int) -> None:
+  _staff_tg_identity_retry_at[int(uid)] = time.time() + _STAFF_TG_IDENTITY_RETRY_SEC
+  # Лёгкая уборка, чтобы словарь не рос бесконечно.
+  if len(_staff_tg_identity_retry_at) > 5000:
+    now = time.time()
+    for k in list(_staff_tg_identity_retry_at.keys()):
+      if _staff_tg_identity_retry_at.get(k, 0.0) <= now:
+        _staff_tg_identity_retry_at.pop(k, None)
+
+
+async def _safe_fetch_user_chat(uid: int):
+  uid = int(uid)
+  if uid <= 0:
+    return None
+  if not _staff_tg_identity_allowed(uid):
+    return None
+  try:
+    return await _bot().get_chat(uid)
+  except TelegramBadRequest as e:
+    if "chat not found" in str(e).lower():
+      _staff_tg_identity_backoff(uid)
+    return None
+  except Exception:
+    return None
+
+
 async def _lookup_target_by_token(
   token: str,
   *,
@@ -3165,14 +3201,12 @@ async def _lookup_target_by_token(
       return None, None, None
     name = await db.get_firstname_by_user_id(uid)
     if not name:
-      try:
-        chat = await _bot().get_chat(uid)
+      chat = await _safe_fetch_user_chat(uid)
+      if chat is not None:
         name = (
           getattr(chat, "full_name", None)
           or getattr(chat, "first_name", None)
         )
-      except Exception:
-        pass
     return uid, name or str(uid), None
 
   if _looks_like_telegram_username(token):
@@ -3220,10 +3254,10 @@ async def _resolve_reply_or_explicit(
   *,
   source_chat_id: Optional[int] = None,
 ) -> Tuple[int, str, Optional[str], List[str], Optional[str]]:
-  # При ответе на сообщение нарушитель по умолчанию — автор этого сообщения.
+  # При ответе на сообщение нарушитель по умолчанию автор этого сообщения.
   # Цель переопределяем при явной ссылке (@user / t.me / username) или при
   # числовом ID в начале команды. Если число не существует в Telegram
-  # («кик 10 10»), НЕ подменяем на автора reply — возвращаем not_found.
+  # («кик 10 10»), НЕ подменяем на автора reply возвращаем not_found.
   if body:
     from bot.admins.punish_validate import invalid_numeric_target_token
 
@@ -5732,10 +5766,7 @@ async def _enrich_staff_identity(row: Dict[str, Any], uid: int) -> None:
 
   # 3) Последний рубеж перед голым ID - спросить сам Telegram по user_id.
   if not first_name and not username:
-    try:
-      chat = await _bot().get_chat(uid)
-    except Exception:
-      chat = None
+    chat = await _safe_fetch_user_chat(uid)
     if chat is not None:
       tg_name = getattr(chat, "full_name", None) or getattr(chat, "first_name", None)
       if tg_name and str(tg_name).strip():

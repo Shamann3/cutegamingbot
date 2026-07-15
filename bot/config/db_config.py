@@ -1,6 +1,6 @@
 """Единая, простая конфигурация базы данных для бота и WebApp.
 
-Один переключатель — APP_MODE в .env:
+Один переключатель APP_MODE в .env:
 
     APP_MODE=test  →  локальная cutebase   @ localhost:5432        (без SSH)
     APP_MODE=main  →  боевая  cutebase      @ 127.0.0.1:15432      (SSH-туннель)
@@ -13,7 +13,7 @@
     DB_HOST_TEST / DB_PORT_TEST / DB_NAME_TEST / DB_USER_TEST / DB_PASSWORD_TEST / DB_SSL_TEST
     DB_HOST_MAIN / DB_PORT_MAIN / DB_NAME_MAIN / DB_USER_MAIN / DB_PASSWORD_MAIN / DB_SSL_MAIN
 
-Этот модуль — единственный источник правды. И бот, и WebApp, и скрипты
+Этот модуль единственный источник правды. И бот, и WebApp, и скрипты
 импортируют настройки отсюда, поэтому все всегда смотрят в одну и ту же БД.
 """
 from __future__ import annotations
@@ -125,7 +125,7 @@ _CONFIG_PY_FILE = Path(__file__).resolve().parent / "config.py"
 
 def _read_config_var(name: str) -> str:
     """Читает строковую переменную (DATABASE_MODE/DATABASE_LOCATION) из config.py
-    БЕЗ импорта модуля. Парсинг файла — чтобы и бот, и сервер читали одно и то же
+    БЕЗ импорта модуля. Парсинг файла чтобы и бот, и сервер читали одно и то же
     значение независимо от sys.path. Возвращает сырое значение (нижний регистр) или ''.
     """
     try:
@@ -171,7 +171,7 @@ def _resolve_location() -> str:
 
 
 # host/port/ssl зависят от РАСПОЛОЖЕНИЯ (local:5432 / remote:15432 через туннель),
-# а name/user/password — от ПРОФИЛЯ (это идентичность и креды самой базы).
+# а name/user/password от ПРОФИЛЯ (это идентичность и креды самой базы).
 _LOCATION_KEYS = frozenset({"host", "port", "ssl"})
 
 
@@ -220,7 +220,7 @@ DB_SSL: str = _profile_value("ssl").lower() or "auto"
 #  SSL / пул
 # --------------------------------------------------------------------------- #
 def db_ssl_mode():
-    """False — без SSL (локально), контекст — для явного DB_SSL=true, иначе авто."""
+    """False без SSL (локально), контекст для явного DB_SSL=true, иначе авто."""
     if DB_SSL == "true":
         ctx = _ssl.create_default_context()
         ctx.check_hostname = False
@@ -296,7 +296,7 @@ def validate_database_profile() -> List[str]:
     if DB_LOCATION == "remote" and DB_HOST not in ("127.0.0.1", "localhost", "::1"):
         warnings.append(f"remote идёт через SSH-туннель на localhost, сейчас host={DB_HOST}.")
     if DB_LOCATION == "local" and DB_PORT == 15432:
-        warnings.append("local на порту :15432 — это порт SSH-туннеля. Локально обычно :5432.")
+        warnings.append("local на порту :15432 это порт SSH-туннеля. Локально обычно :5432.")
     return warnings
 
 
@@ -310,7 +310,7 @@ def bootstrap_database_env() -> None:
     """Готовит окружение и один раз печатает выбранную БД (идемпотентно)."""
     global _BANNER_SHOWN
 
-    # Пробрасываем ключи .env в окружение процесса — чтобы дочерние процессы
+    # Пробрасываем ключи .env в окружение процесса чтобы дочерние процессы
     # (например, plink для SSH-туннеля) и сторонний код видели те же значения.
     for key, value in _FILE_ENV.items():
         os.environ.setdefault(key, value)
@@ -328,11 +328,11 @@ def bootstrap_database_env() -> None:
     bar = "#" * 64
     loc_word = "СЕРВЕР CuteHost" if DB_LOCATION == "remote" else "ЛОКАЛЬНО"
     if APP_MODE == "main":
-        headline = f">>> MAIN ({loc_word}) — БОЕВАЯ БАЗА (живые игроки!) <<<"
+        headline = f">>> MAIN ({loc_word}) БОЕВАЯ БАЗА (живые игроки!) <<<"
     else:
-        headline = f">>> TEST ({loc_word}) — тестовая песочница <<<"
+        headline = f">>> TEST ({loc_word}) тестовая песочница <<<"
 
-    # Крупный блок сверху — переключатель базы невозможно не заметить.
+    # Крупный блок сверху переключатель базы невозможно не заметить.
     _safe_log("")
     _safe_log(bar)
     _safe_log(f"##  {headline}")
@@ -344,8 +344,8 @@ def bootstrap_database_env() -> None:
     _safe_log(f"##  сменить: config.py -> DATABASE_MODE и DATABASE_LOCATION")
     _safe_log(bar)
 
-    # Матрица 2×2 — видно все доступные комбинации и какая активна.
-    _safe_log("  БАЗА ДАННЫХ — матрица профиль × расположение:")
+    # Матрица 2×2 видно все доступные комбинации и какая активна.
+    _safe_log("  БАЗА ДАННЫХ матрица профиль × расположение:")
     for profile in ("test", "main"):
         for location in ("local", "remote"):
             active = (profile == ACTIVE_DB_PROFILE and location == DB_LOCATION)

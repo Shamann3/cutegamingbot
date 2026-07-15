@@ -28,7 +28,7 @@ export default function FarmPet({ emoji }) {
       prevX.current = next.x
       setSpot(next)
       setHop((h) => h + 1)
-      // прискакав — заняться делом
+      // прискакав заняться делом
       emoteTimer = window.setTimeout(() => {
         if (!alive) return
         setEmote(EMOTES[Math.floor(Math.random() * EMOTES.length)])

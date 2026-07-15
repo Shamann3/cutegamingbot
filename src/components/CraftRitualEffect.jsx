@@ -310,7 +310,7 @@ const CraftRitualEffect = forwardRef(function CraftRitualEffect({
   const ariaLabel = isSuccess
     ? `${result?.name ?? 'Готово'}${result?.qty > 1 ? ` ×${result.qty}` : ''}`
     : isFail
-      ? (recipe ? `${formatRecipeLine(recipe)} — не вышло` : 'Не вышло')
+      ? (recipe ? `${formatRecipeLine(recipe)}  не вышло` : 'Не вышло')
       : undefined
 
   const orbStyle = (angle) => ({

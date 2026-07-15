@@ -21,7 +21,7 @@ function cropNeedsHarvestTool(crop) {
   )
 }
 
-/** Инструмент для сбора урожая — через dex (id / name / emoji). */
+/** Инструмент для сбора урожая через dex (id / name / emoji). */
 export function resolveHarvestTool(
   plotCrop,
   axe,

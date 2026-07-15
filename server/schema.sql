@@ -883,6 +883,23 @@ INSERT INTO chat (chat_id, chatbalance, dexbalance)
 SELECT -1003855337972, 0, 0
 WHERE NOT EXISTS (SELECT 1 FROM chat WHERE chat_id = -1003855337972);
 
+-- Логи взносов в чёрный рынок от покупок в магазине
+CREATE TABLE IF NOT EXISTS black_market_shop_deposits (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    source_chat_id BIGINT,
+    target_chat_id BIGINT NOT NULL,
+    amount BIGINT NOT NULL CHECK (amount > 0),
+    note TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bm_shop_deposits_user_created
+    ON black_market_shop_deposits (user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_bm_shop_deposits_target_created
+    ON black_market_shop_deposits (target_chat_id, created_at DESC);
+
 -- Апелляции банов игроков
 CREATE TABLE IF NOT EXISTS ban_appeals (
     id BIGSERIAL PRIMARY KEY,

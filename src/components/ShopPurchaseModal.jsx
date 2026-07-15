@@ -38,7 +38,7 @@ export default function ShopPurchaseModal({
   const isCouponItself = item?.name === 'Купон на скидку'
   const canUseCoupon = couponCount > 0 && !isCouponItself
   const couponActive = canUseCoupon && useCoupon
-  // Скидка от купона (20–80%) считается случайно на сервере в момент покупки —
+  // Скидка от купона (20–80%) считается случайно на сервере в момент покупки
   // заранее показать точную цену нельзя. Пока купон применяется, не блокируем
   // подтверждение и не предлагаем пополнить баланс по ПОЛНОЙ цене: реальная
   // сумма почти наверняка окажется меньше, сервер сам проверит остаток кут.
@@ -60,7 +60,7 @@ export default function ShopPurchaseModal({
   else if (needsTopUp) confirmLabel = `Пополнить ${formatKut(suggestedTopUp)} КУТ`
   else if (couponActive) confirmLabel = 'Купить со скидкой 🎟'
 
-  // Хук ДО раннего return — иначе нарушение Rules of Hooks
+  // Хук ДО раннего return иначе нарушение Rules of Hooks
   useEnterConfirm(isOpen && Boolean(item) && !confirmDisabled, () => {
     if (needsTopUp && onContextualDonate) {
       onContextualDonate(buildDonateContext({ balance: kut, neededCost: totalCost, actionLabel }))

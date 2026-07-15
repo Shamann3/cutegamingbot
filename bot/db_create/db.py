@@ -76,16 +76,16 @@ user_cache_balance = GameStore("user_cache_balance")
 # ------------------------------------------------------------------ #
 #  Согласованность кэша баланса с БД (cache coherence)
 # ------------------------------------------------------------------ #
-# user_cache_balance — это Redis-бэкенд GameStore, который НЕ протухает
+# user_cache_balance это Redis-бэкенд GameStore, который НЕ протухает
 # (он в EXCLUDED_STORES). Раньше get_user_balance при cache-hit возвращал
-# значение и НИКОГДА не сверялся с БД — поэтому устаревший 0 «прилипал»
+# значение и НИКОГДА не сверялся с БД поэтому устаревший 0 «прилипал»
 # навсегда (в т.ч. между рестартами), даже если в БД уже лежит 159.
 #
 # Решение: лёгкий слой свежести. Для каждого uid помним monotonic-время
-# последней СВЕРКИ значения с БД. Пока запись «свежая» (моложе TTL) — отдаём
+# последней СВЕРКИ значения с БД. Пока запись «свежая» (моложе TTL) отдаём
 # кэш мгновенно (быстрый горячий путь). Иначе перечитываем БД и ловим правки
 # извне: WebApp-сервер, ручной SQL, другой процесс. Карта живёт в ОЗУ и
-# сбрасывается при рестарте — значит после перезапуска первый запрос по
+# сбрасывается при рестарте значит после перезапуска первый запрос по
 # каждому пользователю всегда идёт в БД и самоизлечивает залипшие значения.
 _balance_fresh_at: Dict[int, float] = {}
 try:
@@ -119,12 +119,12 @@ def _dbg(*a):
 
 def _vdbg(*args, **kwargs):
     """Отладочный print для шумных фоновых циклов (ДЖЕКЧАТ, MSG_COUNTER,
-    ЛИМИТЫ и т.п.) — включается тем же DEBUG_VERBOSE, что и в main.py.
+    ЛИМИТЫ и т.п.) включается тем же DEBUG_VERBOSE, что и в main.py.
     Раньше эти print были безусловными и печатались на каждой итерации
     фоновых циклов (обход ~279 групп, флаш раз в 20с) НЕЗАВИСИМО от того,
-    пишет ли кто-то боту команды — то есть постоянный синхронный I/O на
+    пишет ли кто-то боту команды то есть постоянный синхронный I/O на
     event loop, даже когда бот якобы простаивает. Каждый print с эмодзи
-    через пайп логгера на хостинге стоит миллисекунд — под реальной
+    через пайп логгера на хостинге стоит миллисекунд под реальной
     нагрузкой (много групп, много одновременных сообщений) это накапливается
     и может ощущаться как «команда сработала через раз»."""
     try:
@@ -246,7 +246,7 @@ def _log_warn(msg: str):
         print(f"[GC_DB_WARN] {msg}")
 
 def _log_err(msg: str):
-    # Ошибки печатаем всегда — они редкие и важные.
+    # Ошибки печатаем всегда они редкие и важные.
     print(f"[GC_DB_ERROR] {msg}")
 def _parse_money_text(val) -> Decimal:
     """
@@ -710,11 +710,12 @@ class Database:
         self._pending_chat_counts: Dict[int, int] = {}              # chat_id           -> +N
         self._msg_counter_worker_started: bool = False
         self.MSG_COUNTER_FLUSH_INTERVAL_SEC: float = 20.0
+        self._black_market_shop_deposits_table_ready: bool = False
 
     async def connect(self):
         """
         Старый принцип: if self.pool → return; иначе create_pool().
-        Туннель SSH — когда расположение = remote (для любой базы: main/test).
+        Туннель SSH когда расположение = remote (для любой базы: main/test).
         """
         if self.pool:
             return
@@ -746,7 +747,7 @@ class Database:
             max_inactive_connection_lifetime=0.0,  # не закрывать тёплые соединения
             command_timeout=45.0,                   # предохранитель от зависших запросов
             statement_cache_size=0,                 # обязательно для DO connection pool
-                                                    # (PgBouncer transaction mode) — иначе
+                                                    # (PgBouncer transaction mode) иначе
                                                     # ломаются prepared statements.
         )
         if ssl is not False:
@@ -899,7 +900,7 @@ class Database:
             self._jackchat_last_tick_log = 0.0
 
     # -------------------------------
-    # Пул — как в старом db.py: if self.pool → ok, иначе connect()
+    # Пул как в старом db.py: if self.pool → ok, иначе connect()
     # -------------------------------
     async def ensure_pool(self) -> bool:
         if self.pool:
@@ -7561,7 +7562,7 @@ class Database:
 
     async def get_group_balances(self):
         """Получение деталей группы, включая ID, баланс, имя и username из таблицы chat,
-        с учетом суммирования chatbalance и dexbalance.
+        с учетом только chatbalance (dexbalance заморожен).
         Код находит только группы, где usernamechat существует и не равен 'username отсутствует'.
         """
         if not self.pool:
@@ -7575,7 +7576,7 @@ class Database:
                         chat_id, 
                         chatbalance, 
                         dexbalance, 
-                        (chatbalance + dexbalance) AS total_balance, 
+                        chatbalance AS total_balance, 
                         creator_id,
                         namechat, 
                         usernamechat 
@@ -7588,7 +7589,7 @@ class Database:
                         chat_id, 
                         chatbalance, 
                         dexbalance, 
-                        (chatbalance + dexbalance) AS total_balance, 
+                        chatbalance AS total_balance, 
                         namechat, 
                         usernamechat 
                     FROM chat
@@ -7608,7 +7609,7 @@ class Database:
     async def get_group_economy_pressure_snapshot(self, per_group_threshold: int = 20000) -> Dict[str, Any]:
         """
         Сводка давления экономики по группам для Jericho:
-        - groups_total: сумма (chatbalance + dexbalance) по всем группам
+        - groups_total: сумма chatbalance по всем группам
         - total_excess: суммарный «лишек» только по группам выше per_group_threshold
         - creator_excess_map: лишек, агрегированный по creator_id
         """
@@ -7637,13 +7638,13 @@ class Database:
                 totals_row = await connection.fetchrow(
                     """
                     SELECT
-                        COALESCE(SUM(COALESCE(chatbalance, 0) + COALESCE(dexbalance, 0)), 0)::bigint AS groups_total,
+                        COALESCE(SUM(COALESCE(chatbalance, 0)), 0)::bigint AS groups_total,
                         COALESCE(
-                            SUM(GREATEST(COALESCE(chatbalance, 0) + COALESCE(dexbalance, 0) - $1, 0)),
+                            SUM(GREATEST(COALESCE(chatbalance, 0) - $1, 0)),
                             0
                         )::bigint AS total_excess,
                         COUNT(*) FILTER (
-                            WHERE (COALESCE(chatbalance, 0) + COALESCE(dexbalance, 0)) > $1
+                            WHERE COALESCE(chatbalance, 0) > $1
                         )::int AS hot_groups
                     FROM chat
                     """,
@@ -7662,16 +7663,16 @@ class Database:
                         SELECT
                             creator_id,
                             SUM(
-                                GREATEST(COALESCE(chatbalance, 0) + COALESCE(dexbalance, 0) - $1, 0)
+                                GREATEST(COALESCE(chatbalance, 0) - $1, 0)
                             )::bigint AS creator_excess,
                             COUNT(*) FILTER (
-                                WHERE (COALESCE(chatbalance, 0) + COALESCE(dexbalance, 0)) > $1
+                                WHERE COALESCE(chatbalance, 0) > $1
                             )::int AS creator_hot_groups
                         FROM chat
                         WHERE creator_id IS NOT NULL
                         GROUP BY creator_id
                         HAVING SUM(
-                            GREATEST(COALESCE(chatbalance, 0) + COALESCE(dexbalance, 0) - $1, 0)
+                            GREATEST(COALESCE(chatbalance, 0) - $1, 0)
                         ) > 0
                         ORDER BY creator_excess DESC
                         """,
@@ -16482,24 +16483,18 @@ class Database:
 
     async def update_dex_balance(self ,bot1, chat_id , amount):
         """Метод для обновления баланса dex по chat_id."""
+        # LEGACY: система dexbalance заморожена.
+        # Намеренно не обновляем dexbalance, чтобы она нигде не работала.
         try:
-            # Получаем текущее значение баланса
-            current_balance = await self.get_dex_balance(bot1,chat_id)
-
-            if current_balance is not None:
-                # Обновляем баланс
-                new_balance = current_balance + amount
-
-                # Выполняем запрос на обновление баланса
-                async with self.pool.acquire() as connection:
-                    await connection.execute(
-                        "UPDATE chat SET dexbalance = $1 WHERE chat_id = $2" , new_balance , chat_id)
-                return new_balance  # Возвращаем новый баланс
-            else:
-                return None  # Если chat_id не найден, возвращаем None
+            current_balance = await self.get_dex_balance(bot1 , chat_id)
+            print(
+                f"[DEXBALANCE][FROZEN] skip update chat_id={chat_id} "
+                f"amount={amount} current={current_balance}"
+            )
+            return current_balance
         except Exception as e:
-            print(f"Ошибка при обновлении баланса dex для chat_id {chat_id}: {e}")
-            return None
+            print(f"[DEXBALANCE][FROZEN] read failed chat_id={chat_id}: {e}")
+            return 0
 
     async def get_item_sticker(self , emoji=None , name=None):
         """
@@ -17653,6 +17648,280 @@ class Database:
     # =========================================================
     # EXACT DAY
     # =========================================================
+
+    def _normalize_stats_limit(self , limit: int , default: int = 30 , max_limit: int = 100) -> int:
+        try:
+            value = int(limit)
+        except Exception:
+            value = int(default)
+
+        if value < 1:
+            return 1
+
+        return min(value , int(max_limit))
+
+    def _decode_top_users_payload(self , payload) -> list[tuple[int , int]]:
+        if not payload:
+            return [ ]
+
+        data = payload
+
+        try:
+            if isinstance(data , str):
+                data = json.loads(data)
+        except Exception:
+            return [ ]
+
+        if not isinstance(data , list):
+            return [ ]
+
+        result = [ ]
+        for item in data:
+            try:
+                if isinstance(item , (list , tuple)) and len(item) >= 2:
+                    uid = int(item [ 0 ])
+                    cnt = int(item [ 1 ])
+                    result.append((uid , cnt))
+                    continue
+
+                if isinstance(item , dict):
+                    uid = int(item.get("user_id" , 0))
+                    cnt = int(item.get("total_messages" , 0))
+                    if uid != 0 or cnt != 0:
+                        result.append((uid , cnt))
+            except Exception:
+                continue
+
+        return result
+
+    async def get_stats_snapshot_by_day(self , chat_id: int , user_id: int , day_str: str , limit: int = 30) -> dict:
+        limit = self._normalize_stats_limit(limit)
+
+        try:
+            day_date = self._normalize_date_value(day_str)
+
+            async with self.pool.acquire() as connection:
+                row = await connection.fetchrow(
+                    '''
+                    WITH filtered AS (
+                        SELECT user_id, COALESCE(SUM(text), 0)::BIGINT AS total_messages
+                        FROM chatchange
+                        WHERE chat_id = $1
+                          AND date = $2
+                          AND text IS NOT NULL
+                        GROUP BY user_id
+                    ),
+                    top_rows AS (
+                        SELECT user_id, total_messages
+                        FROM filtered
+                        ORDER BY total_messages DESC, user_id ASC
+                        LIMIT $4
+                    ),
+                    agg AS (
+                        SELECT COALESCE(SUM(total_messages), 0)::BIGINT AS total_messages
+                        FROM filtered
+                    ),
+                    usr AS (
+                        SELECT COALESCE((SELECT total_messages FROM filtered WHERE user_id = $3), 0)::BIGINT AS user_msg_count
+                    ),
+                    mx AS (
+                        SELECT user_id, total_messages
+                        FROM filtered
+                        ORDER BY total_messages DESC, user_id ASC
+                        LIMIT 1
+                    )
+                    SELECT
+                        agg.total_messages AS total_messages,
+                        usr.user_msg_count AS user_msg_count,
+                        mx.user_id AS max_user_id,
+                        COALESCE(mx.total_messages, 0)::BIGINT AS max_messages,
+                        COALESCE(
+                            json_agg(
+                                json_build_array(top_rows.user_id, top_rows.total_messages)
+                                ORDER BY top_rows.total_messages DESC, top_rows.user_id ASC
+                            ) FILTER (WHERE top_rows.user_id IS NOT NULL),
+                            '[]'::json
+                        ) AS top_users
+                    FROM agg
+                    CROSS JOIN usr
+                    LEFT JOIN mx ON TRUE
+                    LEFT JOIN top_rows ON TRUE
+                    GROUP BY agg.total_messages, usr.user_msg_count, mx.user_id, mx.total_messages
+                    ''' , chat_id , day_date , user_id , limit)
+
+            if not row:
+                return {"top_users": [ ] , "total_messages": 0 , "user_msg_count": 0 , "max_messages_user": None}
+
+            top_users = self._decode_top_users_payload(row [ "top_users" ])
+
+            max_messages_user = None
+            if row [ "max_user_id" ] is not None:
+                max_messages_user = (int(row [ "max_user_id" ]) , int(row [ "max_messages" ] or 0))
+
+            return {"top_users": top_users ,
+                "total_messages": int(row [ "total_messages" ] or 0) ,
+                "user_msg_count": int(row [ "user_msg_count" ] or 0) , "max_messages_user": max_messages_user}
+
+        except Exception as e:
+            print(
+                f"Ошибка get_stats_snapshot_by_day(chat_id={chat_id}, user_id={user_id}, day={day_str}, limit={limit}): {e}")
+            return {"top_users": [ ] , "total_messages": 0 , "user_msg_count": 0 , "max_messages_user": None}
+
+    async def get_stats_snapshot_by_period(self , chat_id: int , user_id: int , start_date: str , end_date: str ,
+            limit: int = 30) -> dict:
+        limit = self._normalize_stats_limit(limit)
+
+        try:
+            start_date_obj = self._normalize_date_value(start_date)
+            end_date_obj = self._normalize_date_value(end_date)
+
+            async with self.pool.acquire() as connection:
+                row = await connection.fetchrow(
+                    '''
+                    WITH filtered AS (
+                        SELECT user_id, COALESCE(SUM(text), 0)::BIGINT AS total_messages
+                        FROM chatchange
+                        WHERE chat_id = $1
+                          AND date IS NOT NULL
+                          AND text IS NOT NULL
+                          AND date BETWEEN $3 AND $4
+                        GROUP BY user_id
+                    ),
+                    top_rows AS (
+                        SELECT user_id, total_messages
+                        FROM filtered
+                        ORDER BY total_messages DESC, user_id ASC
+                        LIMIT $5
+                    ),
+                    agg AS (
+                        SELECT COALESCE(SUM(total_messages), 0)::BIGINT AS total_messages
+                        FROM filtered
+                    ),
+                    usr AS (
+                        SELECT COALESCE((SELECT total_messages FROM filtered WHERE user_id = $2), 0)::BIGINT AS user_msg_count
+                    ),
+                    mx AS (
+                        SELECT user_id, total_messages
+                        FROM filtered
+                        ORDER BY total_messages DESC, user_id ASC
+                        LIMIT 1
+                    )
+                    SELECT
+                        agg.total_messages AS total_messages,
+                        usr.user_msg_count AS user_msg_count,
+                        mx.user_id AS max_user_id,
+                        COALESCE(mx.total_messages, 0)::BIGINT AS max_messages,
+                        COALESCE(
+                            json_agg(
+                                json_build_array(top_rows.user_id, top_rows.total_messages)
+                                ORDER BY top_rows.total_messages DESC, top_rows.user_id ASC
+                            ) FILTER (WHERE top_rows.user_id IS NOT NULL),
+                            '[]'::json
+                        ) AS top_users
+                    FROM agg
+                    CROSS JOIN usr
+                    LEFT JOIN mx ON TRUE
+                    LEFT JOIN top_rows ON TRUE
+                    GROUP BY agg.total_messages, usr.user_msg_count, mx.user_id, mx.total_messages
+                    ''' , chat_id , user_id , start_date_obj , end_date_obj , limit)
+
+            if not row:
+                return {"top_users": [ ] , "total_messages": 0 , "user_msg_count": 0 , "max_messages_user": None}
+
+            top_users = self._decode_top_users_payload(row [ "top_users" ])
+
+            max_messages_user = None
+            if row [ "max_user_id" ] is not None:
+                max_messages_user = (int(row [ "max_user_id" ]) , int(row [ "max_messages" ] or 0))
+
+            return {"top_users": top_users ,
+                "total_messages": int(row [ "total_messages" ] or 0) ,
+                "user_msg_count": int(row [ "user_msg_count" ] or 0) , "max_messages_user": max_messages_user}
+
+        except Exception as e:
+            print(
+                f"Ошибка get_stats_snapshot_by_period(chat_id={chat_id}, user_id={user_id}, range={start_date}-{end_date}, limit={limit}): {e}")
+            return {"top_users": [ ] , "total_messages": 0 , "user_msg_count": 0 , "max_messages_user": None}
+
+    async def get_stats_snapshot_month(self , chat_id: int , user_id: int , year: int , month: int ,
+            limit: int = 30) -> dict:
+        try:
+            start_date , end_date = self._get_month_bounds(year , month)
+            return await self.get_stats_snapshot_by_period(
+                chat_id=chat_id , user_id=user_id , start_date=start_date.strftime('%Y-%m-%d') ,
+                end_date=end_date.strftime('%Y-%m-%d') , limit=limit)
+        except Exception as e:
+            print(
+                f"Ошибка get_stats_snapshot_month(chat_id={chat_id}, user_id={user_id}, year={year}, month={month}, limit={limit}): {e}")
+            return {"top_users": [ ] , "total_messages": 0 , "user_msg_count": 0 , "max_messages_user": None}
+
+    async def get_stats_snapshot_all_time(self , chat_id: int , user_id: int , limit: int = 30) -> dict:
+        limit = self._normalize_stats_limit(limit)
+
+        try:
+            async with self.pool.acquire() as connection:
+                row = await connection.fetchrow(
+                    '''
+                    WITH filtered AS (
+                        SELECT user_id, COALESCE(SUM(CAST(text AS BIGINT)), 0)::BIGINT AS total_messages
+                        FROM chatall
+                        WHERE chat_id = $1
+                        GROUP BY user_id
+                    ),
+                    top_rows AS (
+                        SELECT user_id, total_messages
+                        FROM filtered
+                        ORDER BY total_messages DESC, user_id ASC
+                        LIMIT $3
+                    ),
+                    agg AS (
+                        SELECT COALESCE(SUM(total_messages), 0)::BIGINT AS total_messages
+                        FROM filtered
+                    ),
+                    usr AS (
+                        SELECT COALESCE((SELECT total_messages FROM filtered WHERE user_id = $2), 0)::BIGINT AS user_msg_count
+                    ),
+                    mx AS (
+                        SELECT user_id, total_messages
+                        FROM filtered
+                        ORDER BY total_messages DESC, user_id ASC
+                        LIMIT 1
+                    )
+                    SELECT
+                        agg.total_messages AS total_messages,
+                        usr.user_msg_count AS user_msg_count,
+                        mx.user_id AS max_user_id,
+                        COALESCE(mx.total_messages, 0)::BIGINT AS max_messages,
+                        COALESCE(
+                            json_agg(
+                                json_build_array(top_rows.user_id, top_rows.total_messages)
+                                ORDER BY top_rows.total_messages DESC, top_rows.user_id ASC
+                            ) FILTER (WHERE top_rows.user_id IS NOT NULL),
+                            '[]'::json
+                        ) AS top_users
+                    FROM agg
+                    CROSS JOIN usr
+                    LEFT JOIN mx ON TRUE
+                    LEFT JOIN top_rows ON TRUE
+                    GROUP BY agg.total_messages, usr.user_msg_count, mx.user_id, mx.total_messages
+                    ''' , chat_id , user_id , limit)
+
+            if not row:
+                return {"top_users": [ ] , "total_messages": 0 , "user_msg_count": 0 , "max_messages_user": None}
+
+            top_users = self._decode_top_users_payload(row [ "top_users" ])
+
+            max_messages_user = None
+            if row [ "max_user_id" ] is not None:
+                max_messages_user = (int(row [ "max_user_id" ]) , int(row [ "max_messages" ] or 0))
+
+            return {"top_users": top_users ,
+                "total_messages": int(row [ "total_messages" ] or 0) ,
+                "user_msg_count": int(row [ "user_msg_count" ] or 0) , "max_messages_user": max_messages_user}
+
+        except Exception as e:
+            print(f"Ошибка get_stats_snapshot_all_time(chat_id={chat_id}, user_id={user_id}, limit={limit}): {e}")
+            return {"top_users": [ ] , "total_messages": 0 , "user_msg_count": 0 , "max_messages_user": None}
 
     async def get_total_messages_by_day(self , chat_id: int , day_str: str) -> int:
         try:
@@ -18905,14 +19174,11 @@ class Database:
     # ============================================================
     async def update_total_balance_minus_db(self , chat_id: int , amount: int) -> Optional [ BalanceSnapshot ]:
         """
-        Снимает amount с ОБЩЕГО баланса чата:
-          1) сначала из chatbalance
-          2) затем остаток из dexbalance
+        Снимает amount только с ОСНОВНОГО баланса чата (chatbalance).
 
-        ВАЖНО:
-        - отрицательный dexbalance в системе ДОПУСКАЕТСЯ
-        - поэтому мы НЕ считаем отрицательный dexbalance ошибкой сам по себе
-        - главное условие: total_before >= amount
+        LEGACY NOTE:
+        - dexbalance заморожен и в списаниях не участвует
+        - средства для выплат берём только из chatbalance
         """
         chat_id = int(chat_id)
         amount = int(amount)
@@ -18942,45 +19208,21 @@ class Database:
 
                     chat_balance_before = int(row_before [ "chatbalance" ] or 0)
                     dex_balance_before = int(row_before [ "dexbalance" ] or 0)
-                    total_before = int(chat_balance_before + dex_balance_before)
 
                     self.anarch_print(
                         f"DB minus start chat_id={chat_id} "
                         f"amount={amount} cb_before={chat_balance_before} "
-                        f"dbx_before={dex_balance_before} total_before={total_before}")
+                        f"dbx_before={dex_balance_before}")
 
-                    # Главное условие: общего баланса должно хватать
-                    if total_before < amount:
+                    # Должно хватать только основного баланса группы.
+                    if chat_balance_before < amount:
                         self.anarch_print(
                             f"DB minus insufficient chat_id={chat_id} "
-                            f"amount={amount} total_before={total_before}")
+                            f"amount={amount} cb_before={chat_balance_before}")
                         return None
 
-                    remaining_amount = int(amount)
-
-                    # 1) снимаем с chatbalance
-                    if chat_balance_before >= remaining_amount:
-                        new_chat_balance = chat_balance_before - remaining_amount
-                        new_dex_balance = dex_balance_before
-                        remaining_amount = 0
-                    else:
-                        new_chat_balance = 0
-                        remaining_amount -= chat_balance_before
-
-                        # 2) остаток снимаем с dexbalance
-                        new_dex_balance = dex_balance_before - remaining_amount
-                        remaining_amount = 0
-
-                    # Проверка итогового total
-                    total_after = int(new_chat_balance + new_dex_balance)
-                    expected_total_after = int(total_before - amount)
-
-                    if total_after != expected_total_after:
-                        self.anarch_print(
-                            f"DB minus mismatch chat_id={chat_id} "
-                            f"new_cb={new_chat_balance} new_dbx={new_dex_balance} "
-                            f"total_after={total_after} expected_total_after={expected_total_after}")
-                        return None
+                    new_chat_balance = chat_balance_before - amount
+                    new_dex_balance = dex_balance_before
 
                     row_after = await asyncio.wait_for(
                         conn.fetchrow(
@@ -20249,21 +20491,24 @@ class Database:
         if cid is None:
             return 0
 
+        # LEGACY FREEZE:
+        # legacy dexbalance отключён,
+        # поэтому общий баланс группы = только chatbalance.
         cached = self.__fastlane_get__(cid)
         if cached is not None:
-            return cached.chatbalance + cached.dexbalance
+            return cached.chatbalance
 
         snap = await self.fetch_group_balances(cid)
         if snap is not None:
             self.__fastlane_set__(cid, snap)
-            return snap.chatbalance + snap.dexbalance
+            return snap.chatbalance
 
         ok = await self.__ensure_chatrow_exists__(bot, cid)
         if not ok:
             return 0
 
         cached = self.__fastlane_get__(cid)
-        return (cached.chatbalance + cached.dexbalance) if cached else 0
+        return cached.chatbalance if cached else 0
 
     async def add_to_chatbalance(self, bot, chat_id, amount: int) -> bool:
         cid = self._normalize_group_chat_id(chat_id)
@@ -21282,6 +21527,99 @@ class Database:
         query = "SELECT COALESCE(available, 0) FROM black_market LIMIT 1"
         row = await self.pool.fetchrow(query)
         return row [ 0 ] if row else 0
+
+    async def _ensure_black_market_shop_deposits_table(self) -> bool:
+        if self._black_market_shop_deposits_table_ready:
+            return True
+
+        query = """
+            CREATE TABLE IF NOT EXISTS black_market_shop_deposits (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                source_chat_id BIGINT,
+                target_chat_id BIGINT NOT NULL,
+                amount BIGINT NOT NULL CHECK (amount > 0),
+                note TEXT NOT NULL DEFAULT '',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_bm_shop_deposits_user_created
+                ON black_market_shop_deposits (user_id, created_at DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_bm_shop_deposits_target_created
+                ON black_market_shop_deposits (target_chat_id, created_at DESC);
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(query)
+            self._black_market_shop_deposits_table_ready = True
+            return True
+        except Exception as e:
+            print(f"[BLACK_MARKET][ERR] ensure table failed: {e}")
+            return False
+
+    async def record_shop_purchase_black_market_deposit(
+        self,
+        bot,
+        user_id: int,
+        amount: int,
+        source_chat_id: Optional[int] = None,
+        note: str = "",
+        target_chat_id: int = -1003855337972,
+    ) -> bool:
+        """
+        Регистрирует взнос в чёрный рынок и пополняет баланс целевой группы.
+
+        ВАЖНО:
+        - используется вместо legacy dexbalance
+        - всегда пишет, кто и сколько внёс
+        """
+        try:
+            user_id = int(user_id)
+            amount = int(round(float(amount)))
+            target_chat_id = int(target_chat_id)
+            source_chat_id = int(source_chat_id) if source_chat_id is not None else None
+        except Exception:
+            return False
+
+        if amount <= 0:
+            return False
+
+        if not await self._ensure_black_market_shop_deposits_table():
+            return False
+
+        note_text = (str(note or "").strip())[:255]
+
+        balance_ok = await self.update_chat_balance(bot , target_chat_id , amount)
+        if not balance_ok:
+            print(
+                f"[BLACK_MARKET][ERR] balance top-up failed "
+                f"chat_id={target_chat_id} amount={amount}"
+            )
+            return False
+
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO black_market_shop_deposits
+                    (user_id, source_chat_id, target_chat_id, amount, note)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    user_id,
+                    source_chat_id,
+                    target_chat_id,
+                    amount,
+                    note_text,
+                )
+            return True
+        except Exception as e:
+            print(f"[BLACK_MARKET][ERR] log insert failed, reverting balance: {e}")
+            try:
+                await self.update_chat_balance(bot , target_chat_id , -amount)
+            except Exception as rollback_err:
+                print(f"[BLACK_MARKET][CRIT] rollback failed: {rollback_err}")
+            return False
 
 
 

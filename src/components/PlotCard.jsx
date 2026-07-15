@@ -341,7 +341,7 @@ function PlotCard({
 
           {status === PlotStatus.GROWING && autowaterActive && (
             <p className="text-center text-[10px] font-semibold text-sky-200/80">
-              🚰 Автополив активен — поливать вручную не нужно
+              🚰 Автополив активен - поливать вручную не нужно
             </p>
           )}
 
@@ -374,7 +374,7 @@ function PlotCard({
                     })
                   }}
                 >
-                  🛒 Нет воды — купить
+                  🛒 Нет воды - купить
                 </button>
               )}
             </>

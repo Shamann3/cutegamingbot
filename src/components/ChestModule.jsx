@@ -164,7 +164,7 @@ function SingleResult({ item }) {
       </div>
       <div className="chest-single-name">{item.name}</div>
       <div className="chest-single-sub">
-        {item.wasDupe ? `Дубль → +${item.shardsGranted} 💎` : '✓ Новое — в коллекции'}
+        {item.wasDupe ? `Дубль → +${item.shardsGranted} 💎` : '✓ Новое в коллекции'}
       </div>
     </div>
   )

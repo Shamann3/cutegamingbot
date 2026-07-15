@@ -141,7 +141,7 @@ export default function CraftModule({ isActive = true }) {
     const inA = slotA === itemId
     const inB = slotB === itemId
 
-    // Оба слота — один предмет: убираем оба
+    // Оба слота один предмет: убираем оба
     if (inA && inB) {
       setSlotA(null)
       setSlotB(null)
@@ -173,12 +173,12 @@ export default function CraftModule({ isActive = true }) {
       return
     }
     if (!slotB) {
-      // Тот же предмет что в A, но только 1 шт — не ставим
+      // Тот же предмет что в A, но только 1 шт не ставим
       if (slotA === itemId && owned < 2) return
       setSlotB(itemId)
       return
     }
-    // Оба слота заняты — заменяем B (но не если тот же предмет что в A и не хватает)
+    // Оба слота заняты заменяем B (но не если тот же предмет что в A и не хватает)
     if (slotA === itemId && owned < 2) return
     setSlotB(itemId)
   }
@@ -327,7 +327,7 @@ export default function CraftModule({ isActive = true }) {
           <div className="craft-recipes-empty">
             <span className="craft-recipes-empty-emoji" aria-hidden>⚗️</span>
             <p>Пока нет рецептов</p>
-            <p className="craft-recipes-empty-hint">Загляните позже — крафты появятся вместе с новыми предметами</p>
+            <p className="craft-recipes-empty-hint">Загляните позже, крафты появятся вместе с новыми предметами</p>
           </div>
         ) : (
           <div className={[
@@ -355,7 +355,7 @@ export default function CraftModule({ isActive = true }) {
                     const handleRecipeClick = () => {
                       if (isBusy) return
                       const [ingA, ingB] = recipe.ingredients
-                      // Одинаковый предмет в обоих слотах — проверяем что есть >= 2
+                      // Одинаковый предмет в обоих слотах проверяем что есть >= 2
                       if (ingA.id === ingB.id && (inventoryById.get(ingA.id)?.owned ?? 0) < 2) return
                       setSlotA(ingA.id)
                       setSlotB(ingB.id)

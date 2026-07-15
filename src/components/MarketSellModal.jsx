@@ -49,7 +49,7 @@ export default function MarketSellModal({
 
   const canSubmit = Boolean(selected) && maxQty > 0 && !isBusy && !isLoading && hasValidQty && hasValidPrice
 
-  // Все переменные выше уже определены — теперь можно безопасно вызвать хук
+  // Все переменные выше уже определены теперь можно безопасно вызвать хук
   useEnterConfirm(isOpen, () => { if (canSubmit && selected) onConfirm(selected.itemId, price, quantity) }, { enabled: !isBusy })
 
   if (!isOpen) return null

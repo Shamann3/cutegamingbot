@@ -1,4 +1,4 @@
-/* Cosmetic background "worlds" — each equipped background swaps in a real themed image
+/* Cosmetic background "worlds" each equipped background swaps in a real themed image
    (public/backgrounds/*.png), with a tasteful per-theme motion layer (::before / ::after). */
 .farm-bg-cosmetic-overlay { position:absolute; inset:0; z-index:2; pointer-events:none; opacity:0; transition:opacity .5s; overflow:hidden; background-size:cover; background-position:center; background-repeat:no-repeat; }
 /* dim every tab's warm atmosphere so a themed image reads clean (set on .app-shell when a bg is equipped) */
@@ -6,7 +6,7 @@
 .farm-bg-cosmetic-overlay::before,
 .farm-bg-cosmetic-overlay::after { content:""; position:absolute; inset:0; pointer-events:none; }
 
-/* ══ 🌙 Ночь ══  (звёздное небо — картинка + тихое мерцание акцентных звёзд) */
+/* ══ 🌙 Ночь ══  (звёздное небо картинка + тихое мерцание акцентных звёзд) */
 .farm-bg--bg_night .farm-bg-cosmetic-overlay { opacity:1; background-image:url("/backgrounds/night.png"); }
 .farm-bg--bg_night .farm-bg-cosmetic-overlay::before {
   background-image:
@@ -15,7 +15,7 @@
     radial-gradient(1.5px 1.5px at 120px 170px,#fff,transparent);
   background-size:230px 270px; mix-blend-mode:screen; animation:bg-twinkle 4.5s ease-in-out infinite; }
 
-/* ══ 🌌 Галактика ══  (космос — картинка + медленно дышащее свечение туманности + искры) */
+/* ══ 🌌 Галактика ══  (космос картинка + медленно дышащее свечение туманности + искры) */
 .farm-bg--bg_galaxy .farm-bg-cosmetic-overlay { opacity:1; background-image:url("/backgrounds/galaxy.png"); }
 .farm-bg--bg_galaxy .farm-bg-cosmetic-overlay::before {
   background:radial-gradient(38% 26% at 32% 40%,rgba(180,120,255,.20),transparent 70%);
@@ -26,7 +26,7 @@
     radial-gradient(1.2px 1.2px at 150px 30px,#e6d8ff,transparent);
   background-size:200px 240px; mix-blend-mode:screen; animation:bg-twinkle 3.6s ease-in-out infinite; }
 
-/* ══ ❄️ Зима ══  (снежная сцена — картинка + мягко падающий снег) */
+/* ══ ❄️ Зима ══  (снежная сцена картинка + мягко падающий снег) */
 .farm-bg--bg_winter .farm-bg-cosmetic-overlay { opacity:1; background-image:url("/backgrounds/winter.png"); }
 .farm-bg--bg_winter .farm-bg-cosmetic-overlay::before {
   background-image:
@@ -35,13 +35,13 @@
     radial-gradient(2.4px 2.4px at 170px 130px,#fff,transparent);
   background-size:130px 220px,170px 250px,150px 230px; animation:bg-snow 9s linear infinite; }
 
-/* ══ 🌅 Закат ══  (закат над морем — картинка + тёплое свечение у солнца справа-внизу) */
+/* ══ 🌅 Закат ══  (закат над морем картинка + тёплое свечение у солнца справа-внизу) */
 .farm-bg--bg_sunset .farm-bg-cosmetic-overlay { opacity:1; background-image:url("/backgrounds/sunset.png"); }
 .farm-bg--bg_sunset .farm-bg-cosmetic-overlay::after {
   background:radial-gradient(20% 14% at 80% 72%,rgba(255,220,140,.4),transparent 70%);
   mix-blend-mode:screen; animation:bg-glow 6.5s ease-in-out infinite; }
 
-/* ══ 🍂 Осень ══  (золотая осень — картинка + падающие листья) */
+/* ══ 🍂 Осень ══  (золотая осень картинка + падающие листья) */
 .farm-bg--bg_autumn .farm-bg-cosmetic-overlay { opacity:1; background-image:url("/backgrounds/autumn.png"); }
 .farm-bg--bg_autumn .farm-bg-cosmetic-overlay::before {
   background-image:
@@ -50,7 +50,7 @@
     radial-gradient(2.6px 2.6px at 190px 140px,rgba(200,90,30,.85),transparent);
   background-size:160px 220px,190px 250px,150px 210px; animation:bg-leaves 11s linear infinite; }
 
-/* ══ 🌸 Весна ══  (цветущая весна — картинка + плывущие лепестки) */
+/* ══ 🌸 Весна ══  (цветущая весна картинка + плывущие лепестки) */
 .farm-bg--bg_spring2 .farm-bg-cosmetic-overlay { opacity:1; background-image:url("/backgrounds/spring.png"); }
 .farm-bg--bg_spring2 .farm-bg-cosmetic-overlay::before {
   background-image:
@@ -59,7 +59,7 @@
     radial-gradient(2.4px 2.4px at 190px 40px,rgba(255,170,205,.85),transparent);
   background-size:170px 230px,200px 260px,160px 220px; animation:bg-petals 12s linear infinite; }
 
-/* ══ ☄️ Звездопад ══  (то же ночное небо, что «Ночь», но с летящими метеорами — две звезды со сдвигом) */
+/* ══ ☄️ Звездопад ══  (то же ночное небо, что «Ночь», но с летящими метеорами две звезды со сдвигом) */
 .farm-bg--bg_starfall .farm-bg-cosmetic-overlay { opacity:1; background-image:url("/backgrounds/starfall.png"); }
 .farm-bg--bg_starfall .farm-bg-cosmetic-overlay::before,
 .farm-bg--bg_starfall .farm-bg-cosmetic-overlay::after {
@@ -69,7 +69,7 @@
 .farm-bg--bg_starfall .farm-bg-cosmetic-overlay::before { top:14%; width:52%; animation:bg-shoot 5s ease-in infinite; }
 .farm-bg--bg_starfall .farm-bg-cosmetic-overlay::after  { top:34%; width:40%; animation:bg-shoot 5s ease-in 2.6s infinite; }
 
-/* ── ambient keyframes ── */
+/* ambient keyframes  */
 @keyframes bg-twinkle { 0%,100%{ opacity:.4 } 50%{ opacity:1 } }
 @keyframes bg-snow   { from{ background-position:0 0,0 0,0 0 } to{ background-position:8px 220px,-10px 250px,6px 230px } }
 @keyframes bg-leaves { from{ background-position:0 0,0 0,0 0 } to{ background-position:30px 220px,-26px 250px,20px 210px } }
@@ -87,12 +87,12 @@
   .farm-bg-cosmetic-overlay::after { animation:none !important; }
 }
 
-/* Питомец живёт НА грядках — слой поверх плиток, внутри секции грядок (position:relative). */
+/* Питомец живёт НА грядках слой поверх плиток, внутри секции грядок (position:relative). */
 .farm-pet-layer { position:absolute; inset:0; z-index:15; pointer-events:none; overflow:hidden; }
 .farm-pet-body { position:absolute; transform:translate(-50%,-50%);
   transition: left 1.5s cubic-bezier(.34,.12,.2,1), top 1.5s cubic-bezier(.34,.12,.2,1); }
 .farm-pet-move { position:relative; display:block; }
-/* тень на земле — «стоит на почве»; сжимается в прыжке */
+/* тень на земле «стоит на почве»; сжимается в прыжке */
 .farm-pet-shadow { position:absolute; left:50%; bottom:-7px; width:32px; height:9px; transform:translateX(-50%);
   background:radial-gradient(ellipse at center, rgba(30,15,0,.34), rgba(30,15,0,0) 70%); border-radius:50%;
   animation: farm-pet-shadow 1.5s cubic-bezier(.3,.7,.3,1); }
@@ -126,7 +126,7 @@
   .farm-pet-hop, .farm-pet-shadow, .farm-pet-glyph, .farm-pet-emote { animation:none; }
 }
 
-/* Plot skins — recolor the plot tile border/glow. Real plot element is `.farm-vine-frame`
+/* Plot skins recolor the plot tile border/glow. Real plot element is `.farm-vine-frame`
    (VineFrame root, rendered by PlotCard.jsx): it draws its border via a `background` gradient
    revealed through 4px padding around `.farm-vine-frame-inner`, so recoloring that background
    recolors the visible border. Box-shadow adds the glow. */
@@ -135,13 +135,13 @@
 .plot-skin--plot_oak       .farm-vine-frame { background:linear-gradient(155deg, #b98a55 0%, #5c3a1e 40%, #8B5A2B 70%, #3d2810 100%) !important; box-shadow:0 12px 36px rgba(0,0,0,.5), 0 0 12px rgba(139,90,43,.4) !important; }
 .plot-skin--plot_sunflower .farm-vine-frame { background:linear-gradient(155deg, #fce68a 0%, #b8860b 40%, #f2c94c 70%, #6b5010 100%) !important; box-shadow:0 12px 36px rgba(0,0,0,.5), 0 0 16px rgba(242,201,76,.45) !important; }
 
-/* Profile frame + title — equipped cosmetics shown on the player card (ProfileModule.jsx).
+/* Profile frame + title equipped cosmetics shown on the player card (ProfileModule.jsx).
    `.profile-avatar-wrap` wraps the real avatar element (`.profile-avatar-img` / `.profile-avatar-fallback`)
    so the frame badge can anchor to it via absolute positioning. */
 .profile-avatar-wrap { position:relative; display:inline-flex; flex-shrink:0; }
 .profile-frame-badge { position:absolute; bottom:-4px; right:-4px; font-size:20px; line-height:1;
   filter:drop-shadow(0 1px 3px rgba(0,0,0,.45)); }
-/* Титул — «эмблема ранга»: золотая печать с эмодзи + лента с названием (заслуга = золото) */
+/* Титул «эмблема ранга»: золотая печать с эмодзи + лента с названием (заслуга = золото) */
 .profile-title-emblem { display:inline-flex; align-items:center; gap:6px; margin-top:8px; max-width:100%;
   padding:3px 12px 3px 3px; border-radius:999px;
   background:linear-gradient(180deg,#fff6d8 0%,#f3ca6a 55%,#e6ad3c 100%);

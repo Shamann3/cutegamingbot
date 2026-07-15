@@ -66,7 +66,7 @@ export default function App() {
     return () => window.removeEventListener('api:forbidden', handler)
   }, [banned])
 
-  // Только реальные техработы из /api/status — не любой HTTP 503
+  // Только реальные техработы из /api/status не любой HTTP 503
   useEffect(() => {
     const handler = (event) => {
       const err = event.detail

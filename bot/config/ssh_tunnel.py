@@ -115,7 +115,7 @@ def _stop() -> None:
 
 
 async def ensure_ssh_tunnel() -> None:
-    """Если расположение = remote и порт закрыт — поднять plink (для ЛЮБОЙ базы:
+    """Если расположение = remote и порт закрыт поднять plink (для ЛЮБОЙ базы:
     и main, и test). Иначе мгновенный return."""
     if DB_LOCATION != "remote":
         return

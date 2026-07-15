@@ -1271,7 +1271,7 @@ async def _validate_ban_target_in_chat(chat_id: int, target_id: int) -> Optional
     BanDebug.log("TG", "get_chat_member", chat_id=chat_id, user_id=target_id, err=err)
     return None  # не удалось проверить - разрешаем попытку (мог ещё не вступить)
   if member is None:
-    return None  # not_participant — превентивный бан допустим
+    return None  # not_participant превентивный бан допустим
 
   status = getattr(member, "status", None)
   user = getattr(member, "user", None)

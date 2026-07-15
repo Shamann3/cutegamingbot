@@ -1,5 +1,5 @@
 """
-Фоновое обслуживание БД — не блокирует ответы пользователю.
+Фоновое обслуживание БД не блокирует ответы пользователю.
 """
 from __future__ import annotations
 
@@ -19,9 +19,9 @@ _balance_sync_last: Dict[int, float] = LazyGameStore("_balance_sync_last")
 
 # Примечание: учёт сообщений (буферы, накопление, сброс в БД и фоновый цикл)
 # полностью вынесен в класс Database (bot/db_create/db.py):
-#   db.record_message(user_id, chat_id)          — мгновенный +1 в памяти;
-#   db.flush_message_counters()                  — пакетная запись в БД;
-#   db.start_message_counter_flush_loop()        — фоновый цикл сброса.
+#   db.record_message(user_id, chat_id)          мгновенный +1 в памяти;
+#   db.flush_message_counters()                   пакетная запись в БД;
+#   db.start_message_counter_flush_loop()         фоновый цикл сброса.
 # Здесь мы только вызываем db.record_message() на каждое сообщение.
 
 
@@ -135,7 +135,7 @@ def schedule_message_housekeeping(db, message: Any, *, start_balance: int, bot) 
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
 
-    # Засчитываем только «содержательные» сообщения — от MESSAGE_MIN_WORDS слов.
+    # Засчитываем только «содержательные» сообщения от MESSAGE_MIN_WORDS слов.
     # Короткие односложные («привет») в статистику не идут.
     if _message_word_count(message) >= _min_words_for_count():
         db.record_message(user_id, chat_id)

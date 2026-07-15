@@ -626,21 +626,16 @@ async def chatbalance(message: Message):
             print("[БАЛАНС ЧАТА] ✅ ensure_group выполнен")
 
             chat_balance = await db.get_chat_balancebalance(bot1 , chat_id)
-            dexchat_balance = await db.get_dex_balance(bot1 , chat_id)
 
             print(f"[БАЛАНС ЧАТА] 🟩 Сырой chat_balance={chat_balance!r}")
-            print(f"[БАЛАНС ЧАТА] 🟩 Сырой dexchat_balance={dexchat_balance!r}")
 
             chat_balance = float(chat_balance) if chat_balance not in (None , "") else 0.0
-            dexchat_balance = float(dexchat_balance) if dexchat_balance not in (None , "") else 0.0
-            total_balance = chat_balance + dexchat_balance
+            total_balance = chat_balance
 
             print(f"[БАЛАНС ЧАТА] 🟩 chat_balance={chat_balance}")
-            print(f"[БАЛАНС ЧАТА] 🟩 dexchat_balance={dexchat_balance}")
             print(f"[БАЛАНС ЧАТА] 🟩 total_balance={total_balance}")
 
             chat_balance_formatted = "{:,.0f}".format(chat_balance).replace("," , ".")
-            dexchat_balance_formatted = "{:,.0f}".format(dexchat_balance).replace("," , ".")
             total_balance_formatted = "{:,.0f}".format(total_balance).replace("," , ".")
 
             balance_button = InlineKeyboardButton(
@@ -648,7 +643,7 @@ async def chatbalance(message: Message):
                 icon_custom_emoji_id="6028338546736107668")
 
             details_button = InlineKeyboardButton(
-                text="Подробнее" , callback_data=f"group_balance_details:{chat_balance}:{dexchat_balance}" ,
+                text="Подробнее" , callback_data=f"group_balance_details:{chat_balance}" ,
                 style="default" , icon_custom_emoji_id="6028346797368283073")
 
             keyboard = InlineKeyboardMarkup(
@@ -691,19 +686,17 @@ async def show_balance_details(callback_query: CallbackQuery):
         await callback_query.answer(randommessagebonus1)
         return
     data = callback_query.data.split(":")
-    if len(data) == 3:
-        _ , chat_balance_str , dexchat_balance_str = data
+    if len(data) == 2:
+        _ , chat_balance_str = data
 
         # Преобразуем балансы из строк в числа
         chat_balance = float(chat_balance_str)
-        dexchat_balance = float(dexchat_balance_str)
 
         # Считаем общий баланс
-        total_balance = chat_balance + dexchat_balance
+        total_balance = chat_balance
 
         # Форматируем балансы для вывода
         chat_balance_formatted = "{:,.0f}".format(chat_balance).replace("," , ".")
-        dexchat_balance_formatted = "{:,.0f}".format(dexchat_balance).replace("," , ".")
         total_balance_formatted = "{:,.0f}".format(total_balance).replace("," , ".")
 
         back_button = InlineKeyboardButton(text="Вернуться к балансу" , callback_data="back_to_balance")
@@ -715,27 +708,18 @@ async def show_balance_details(callback_query: CallbackQuery):
         # Отправляем подробное сообщение с расчетом
         await callback_query.message.edit_text(
             f"<tg-emoji emoji-id='5472146462362048818'>💡</tg-emoji> <b>Как устроен баланс группы</b>\n\n"
-            f"Каждая группа имеет <b>два вида баланса</b>. Они работают вместе и образуют общий запас кутов:\n\n"
 
-            f"<tg-emoji emoji-id='5267229058659264159'>🟢</tg-emoji> <b>Обычный баланс</b> - {chat_balance_formatted} кут\n"
+            f"<tg-emoji emoji-id='5267229058659264159'>🟢</tg-emoji> <b>Общий баланс группы - {chat_balance_formatted} кут</b>\n"
             f"<pre>Это основной игровой баланс. Когда кто-то выигрывает в игре, куты берутся отсюда. "
             f"Если кто-то проигрывает - его ставка возвращается обратно в этот баланс, пополняя его.</pre>\n\n"
 
-            f"<tg-emoji emoji-id='5267176161842046521'>🟡</tg-emoji> <b>Баланс с покупок</b> - {dexchat_balance_formatted} кут\n"
-            f"<pre>Этот баланс пополняется, когда участники совершают покупки предметов в магазине, внутри группы. "
-            f"Игры также могут использовать этот баланс для выплат выигрышей, но снять куты с него напрямую нельзя - "
-            f"он служит для поддержки игр и экономики группы.</pre>\n\n"
-
-            f"<tg-emoji emoji-id='5431449001532594346'>⚡️</tg-emoji> <b>Общий баланс группы</b> = {chat_balance_formatted} + {dexchat_balance_formatted} = "
-            f"<b>{total_balance_formatted} кут</b>\n\n"
-
-            f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji> <b>Доход владельца группы:</b>\n"
+            f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji> <b>Доход владельца группы :</b>\n"
             f"<pre>Если участники активно играют и часть из них проигрывает, обычный баланс группы постепенно растёт. "
             f"Владелец группы может снимать куты только с обычного баланса, тем самым зарабатывая на активности игроков, "
             f"при этом игры остаются честными и прозрачными.</pre>", parse_mode="HTML" , reply_markup=keyboard)
 
     else:
-        await callback_query.answer("🟡 Ошибка: некорректные данные." , show_alert=True)
+        await callback_query.answer("⚠️ Ошибка: некорректные данные." , show_alert=True)
 
 @dp.callback_query(lambda c: c.data == "back_to_balance")
 async def back_to_balance(callback_query: CallbackQuery):
@@ -750,18 +734,15 @@ async def back_to_balance(callback_query: CallbackQuery):
     # Получаем балансы
     chat_id = callback_query.message.chat.id
     chat_balance = await db.get_chat_balancebalance(bot1,chat_id)
-    dexchat_balance = await db.get_dex_balance(bot1,chat_id)
 
     # Преобразуем балансы в числа
     chat_balance = float(chat_balance) if chat_balance else 0.0
-    dexchat_balance = float(dexchat_balance) if dexchat_balance else 0.0
 
     # Считаем общий баланс
-    total_balance = chat_balance + dexchat_balance
+    total_balance = chat_balance
 
     # Форматируем балансы для красивого вывода
     chat_balance_formatted = "{:,.0f}".format(chat_balance).replace(",", ".")
-    dexchat_balance_formatted = "{:,.0f}".format(dexchat_balance).replace(",", ".")
     total_balance_formatted = "{:,.0f}".format(total_balance).replace(",", ".")
 
     # Создаем клавиатуру с кнопкой "Подробнее"
@@ -770,7 +751,7 @@ async def back_to_balance(callback_query: CallbackQuery):
 
     # Создаём кнопку "Подробнее"
     details_button = InlineKeyboardButton(
-        text="Подробнее" , callback_data=f"group_balance_details:{chat_balance}:{dexchat_balance}")
+        text="Подробнее" , callback_data=f"group_balance_details:{chat_balance}")
 
     # Создаём клавиатуру с кнопками
     keyboard = InlineKeyboardMarkup(

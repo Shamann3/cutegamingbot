@@ -1,4 +1,5 @@
 from main import *
+import asyncio
 
 
 
@@ -206,8 +207,11 @@ def _top_save_store(store , store_name: str):
 async def top(message: Message):
     from bot.design.buttons import btn_top
 
+    if not message.text:
+        return
 
-    if message.text and message.text.strip().lower() in [ "топ" , "статистика" ]:
+
+    if message.text and message.text.strip().lower() == "топ":
         top_debug_print("════════════════════════════════════")
         top_debug_print("📥 [ТОП] Хэндлер top ВООБЩЕ был вызван")
         top_debug_print(f"💬 [ТОП] message.text: {message.text!r}")
@@ -280,6 +284,7 @@ async def top(message: Message):
 
         top_debug_print("🏁 [ТОП] Обработка команды завершена")
         top_debug_print("════════════════════════════════════")
+        return
 
 
 
@@ -496,14 +501,10 @@ async def top(message: Message):
             stata_debug_print(f"👤 [СТАТА][WEEK] user_id: {user_id}")
             stata_debug_print(f"💬 [СТАТА][WEEK] chat_id: {chat_id}")
 
-            try:
-                current_stata = await db.get_current_stata(chat_id)
-                stata_debug_print(f"⚙️ [СТАТА][WEEK] current_stata: {current_stata}")
-            except Exception as e:
-                stata_debug_print(f"❌ [СТАТА][WEEK] Ошибка при получении current_stata: {e}")
-                current_stata = 1
+            stats_enabled = await _is_stata_enabled(chat_id)
+            stata_debug_print(f"⚙️ [СТАТА][WEEK] stats_enabled: {stats_enabled}")
 
-            if int(current_stata or 0) == 0:
+            if not stats_enabled:
                 try:
                     text_stata_random1 = random.choice(text_stata_random)
                 except Exception:
@@ -571,6 +572,7 @@ async def top(message: Message):
 
         stata_debug_print("🏁 [СТАТА][WEEK] Обработка команды завершена")
         stata_debug_print("════════════════════════════════════")
+        return
 
 
 
@@ -927,10 +929,9 @@ async def top(message: Message):
 
         # Формируем список данных о группах с учетом суммарного баланса
         group_data = [ {"chat_id": item.get("chat_id") ,
-            "balance": (int(item.get("chatbalance") or 0) + int(item.get("dexbalance") or 0)) ,
+            "balance": int(item.get("chatbalance") or 0) ,
             "name": (item.get("namechat") or "Без названия") , "username": (item.get("usernamechat") or "")} for item in
-            data if item.get("chat_id") is not None and (
-                        int(item.get("chatbalance") or 0) + int(item.get("dexbalance") or 0)) > 0 and item.get(
+            data if item.get("chat_id") is not None and int(item.get("chatbalance") or 0) > 0 and item.get(
                 "chat_id") != -1002135149822 ]
 
         if not group_data:
@@ -1281,14 +1282,10 @@ async def top(message: Message):
             stata_debug_print(f"👤 [СТАТА][ALL] user_id: {user_id}")
             stata_debug_print(f"💬 [СТАТА][ALL] chat_id: {chat_id}")
 
-            try:
-                current_stata = await db.get_current_stata(chat_id)
-                stata_debug_print(f"⚙️ [СТАТА][ALL] current_stata: {current_stata}")
-            except Exception as e:
-                stata_debug_print(f"❌ [СТАТА][ALL] Ошибка при получении current_stata: {e}")
-                current_stata = 1
+            stats_enabled = await _is_stata_enabled(chat_id)
+            stata_debug_print(f"⚙️ [СТАТА][ALL] stats_enabled: {stats_enabled}")
 
-            if int(current_stata or 0) == 0:
+            if not stats_enabled:
                 try:
                     text_stata_random1 = random.choice(text_stata_random)
                 except Exception:
@@ -1361,6 +1358,7 @@ async def top(message: Message):
 
         stata_debug_print("🏁 [СТАТА][ALL] Обработка команды завершена")
         stata_debug_print("════════════════════════════════════")
+        return
 
 
 
@@ -1581,14 +1579,10 @@ async def top(message: Message):
             stata_debug_print(f"🧪 [СТАТА] normalized_text: {normalized_text!r}")
             stata_debug_print(f"🧪 [СТАТА] num_rows: {num_rows}")
 
-            try:
-                current_stata = await db.get_current_stata(chat_id)
-                stata_debug_print(f"⚙️ [СТАТА] current_stata: {current_stata}")
-            except Exception as e:
-                stata_debug_print(f"❌ [СТАТА] Ошибка при получении current_stata: {e}")
-                current_stata = 1
+            stats_enabled = await _is_stata_enabled(chat_id)
+            stata_debug_print(f"⚙️ [СТАТА] stats_enabled: {stats_enabled}")
 
-            if int(current_stata or 0) == 0:
+            if not stats_enabled:
                 try:
                     text_stata_random1 = random.choice(text_stata_random)
                 except Exception:
@@ -1649,6 +1643,7 @@ async def top(message: Message):
 
         stata_debug_print("🏁 [СТАТА] Обработка команды завершена")
         stata_debug_print("════════════════════════════════════")
+        return
 
 
 
@@ -1963,12 +1958,12 @@ async def calsadqwdqwqdqwcqlback_top(call: types.CallbackQuery):
     group_data = [
         {
             "chat_id": row["chat_id"],
-            "balance": row["chatbalance"] + row["dexbalance"],
+            "balance": int(row["chatbalance"] or 0),
             "name": row["namechat"],
             "username": row["usernamechat"]
         }
         for row in data
-        if "chat_id" in row and row["chatbalance"] + row["dexbalance"] > 0 and row["chat_id"] != -1002135149822
+        if "chat_id" in row and int(row["chatbalance"] or 0) > 0 and row["chat_id"] != -1002135149822
     ]
 
     if not group_data:
@@ -2466,6 +2461,38 @@ async def _safe_edit_stats_message(
 
 STATS_DAY_LOOKBACK_DAYS = 7
 STATS_WEEK_LOOKBACK_WEEKS = 3
+STATS_SWITCH_CACHE_TTL_SEC = 2.0
+STATS_MEMBER_COUNT_CACHE_TTL_SEC = 30.0
+STATS_MONTH_KEYS_CACHE_TTL_SEC = 15.0
+
+_stats_switch_cache = {}
+_stats_member_count_cache = {}
+_stats_month_keys_cache = {}
+
+
+def _mono_now() -> float:
+    try:
+        return asyncio.get_running_loop().time()
+    except Exception:
+        return 0.0
+
+
+async def _is_stata_enabled(chat_id: int) -> bool:
+    now_ts = _mono_now()
+    cached = _stats_switch_cache.get(chat_id)
+
+    if cached and (now_ts - cached[1]) < STATS_SWITCH_CACHE_TTL_SEC:
+        return bool(cached[0])
+
+    try:
+        current_stata = await db.get_current_stata(chat_id)
+    except Exception as e:
+        print(f"Ошибка при получении current_stata для chat_id {chat_id}: {e}")
+        current_stata = 1
+
+    enabled = int(current_stata or 0) != 0
+    _stats_switch_cache[chat_id] = (enabled, now_ts)
+    return enabled
 
 
 # =========================================================
@@ -2733,10 +2760,18 @@ async def _safe_create_user_link(user_id: int) -> str:
 
 
 async def _safe_member_count(chat_id: int) -> int:
+    now_ts = _mono_now()
+    cached = _stats_member_count_cache.get(chat_id)
+    if cached and (now_ts - cached[1]) < STATS_MEMBER_COUNT_CACHE_TTL_SEC:
+        return int(cached[0])
+
     try:
-        return _safe_int(await db.get_user_by_chat_id_count(chat_id), 0)
+        value = _safe_int(await db.get_user_by_chat_id_count(chat_id), 0)
     except Exception:
-        return 0
+        value = 0
+
+    _stats_member_count_cache[chat_id] = (value, now_ts)
+    return value
 
 
 def _link_from_names_bulk(user_id: int, names_bulk: dict) -> str:
@@ -2803,6 +2838,11 @@ async def _safe_edit_stats_message(
 # =========================================================
 
 async def _get_available_month_keys(chat_id: int):
+    now_ts = _mono_now()
+    cached = _stats_month_keys_cache.get(chat_id)
+    if cached and (now_ts - cached[1]) < STATS_MONTH_KEYS_CACHE_TTL_SEC:
+        return list(cached[0])
+
     raw = await db.get_available_months(chat_id, limit=120)
 
     result = []
@@ -2827,6 +2867,7 @@ async def _get_available_month_keys(chat_id: int):
             continue
 
     result = sorted(set(result))
+    _stats_month_keys_cache[chat_id] = (tuple(result), now_ts)
     return result
 
 
@@ -3171,17 +3212,20 @@ async def _stat_text_day(chat_id: int, user_id: int, day_key: Optional[str] = No
     target_day = _parse_day_key(resolved_key)
     day_str = target_day.strftime("%Y-%m-%d")
 
-    top_users = await db.get_top_users_by_day(chat_id, day_str, limit=limit)
-    total_messages = await db.get_total_messages_by_day(chat_id, day_str)
-    user_msg_count = await db.get_user_message_count_by_day(chat_id, user_id, day_str)
-    max_messages_user = await db.find_user_with_max_messages_by_day(chat_id, day_str)
+    stats_snapshot, member_count = await asyncio.gather(
+        db.get_stats_snapshot_by_day(chat_id=chat_id, user_id=user_id, day_str=day_str, limit=limit),
+        _safe_member_count(chat_id),
+    )
+
+    top_users = stats_snapshot.get("top_users") or []
+    total_messages = int(stats_snapshot.get("total_messages") or 0)
+    user_msg_count = int(stats_snapshot.get("user_msg_count") or 0)
+    max_messages_user = stats_snapshot.get("max_messages_user")
 
     text = (
         f"<tg-emoji emoji-id='5424987025667293801'>🐰</tg-emoji> <b>Статистика сообщений за день</b> <code>[{_day_label(target_day)}]</code>\n"
         f"<tg-emoji emoji-id='5193136281483254509'>🦅</tg-emoji> <b>Вы написали :</b> <i>{_fmt_int(user_msg_count)}</i>\n\n"
     )
-
-    member_count = await _safe_member_count(chat_id)
 
     top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
     max_uid = max_cnt = None
@@ -3222,10 +3266,21 @@ async def _stat_text_week(chat_id: int, user_id: int, week_key: Optional[str] = 
     date_from = week_start_date.strftime("%Y-%m-%d")
     date_to = week_end_date.strftime("%Y-%m-%d")
 
-    top_users = await db.get_top_users_by_period(chat_id, date_from, date_to, limit=limit)
-    total_messages = await db.get_total_messages_by_period(chat_id, date_from, date_to)
-    user_msg_count = await db.get_user_message_count_by_period(chat_id, user_id, date_from, date_to)
-    max_messages_user = await db.find_user_with_max_messages_by_period(chat_id, date_from, date_to)
+    stats_snapshot, member_count = await asyncio.gather(
+        db.get_stats_snapshot_by_period(
+            chat_id=chat_id,
+            user_id=user_id,
+            start_date=date_from,
+            end_date=date_to,
+            limit=limit,
+        ),
+        _safe_member_count(chat_id),
+    )
+
+    top_users = stats_snapshot.get("top_users") or []
+    total_messages = int(stats_snapshot.get("total_messages") or 0)
+    user_msg_count = int(stats_snapshot.get("user_msg_count") or 0)
+    max_messages_user = stats_snapshot.get("max_messages_user")
 
     period_str = f"{week_start_date.strftime('%d.%m.%Y')} - {week_end_date.strftime('%d.%m.%Y')}"
 
@@ -3233,8 +3288,6 @@ async def _stat_text_week(chat_id: int, user_id: int, week_key: Optional[str] = 
         f"<tg-emoji emoji-id='5438529285184847871'>🎁</tg-emoji> <b>Статистика сообщений за неделю</b> <code>[{period_str}]</code>\n"
         f"<tg-emoji emoji-id='5246815104871201488'>🐒</tg-emoji> <b>Вы написали :</b> <i>{_fmt_int(user_msg_count)}</i>\n\n"
     )
-
-    member_count = await _safe_member_count(chat_id)
 
     top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
     max_uid = max_cnt = None
@@ -3279,17 +3332,26 @@ async def _stat_text_month(chat_id: int, user_id: int, month_key: Optional[str] 
             f"<tg-emoji emoji-id='5436371618169389408'>🎁</tg-emoji> В базе пока нет данных по месяцам для этого чата."
         )
 
-    top_users = await db.get_top_users_month(chat_id, year, month, limit=limit)
-    total_messages = await db.get_total_messages_month(chat_id, year, month)
-    user_msg_count = await db.get_user_message_count_month(chat_id, user_id, year, month)
-    max_messages_user = await db.find_user_with_max_messages_month(chat_id, year, month)
+    stats_snapshot, member_count = await asyncio.gather(
+        db.get_stats_snapshot_month(
+            chat_id=chat_id,
+            user_id=user_id,
+            year=year,
+            month=month,
+            limit=limit,
+        ),
+        _safe_member_count(chat_id),
+    )
+
+    top_users = stats_snapshot.get("top_users") or []
+    total_messages = int(stats_snapshot.get("total_messages") or 0)
+    user_msg_count = int(stats_snapshot.get("user_msg_count") or 0)
+    max_messages_user = stats_snapshot.get("max_messages_user")
 
     text = (
         f"<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>Статистика сообщений за месяц</b> <code>[{_month_range_label(year, month)}]</code>\n"
         f"<tg-emoji emoji-id='5436371618169389408'>🎁</tg-emoji> <b>Вы написали :</b> <i>{_fmt_int(user_msg_count)}</i>\n\n"
     )
-
-    member_count = await _safe_member_count(chat_id)
 
     top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
     max_uid = max_cnt = None
@@ -3322,17 +3384,20 @@ async def _stat_text_month(chat_id: int, user_id: int, month_key: Optional[str] 
 
 
 async def _stat_text_all(chat_id: int, user_id: int, limit: int = 30) -> str:
-    top_users = await db.get_top_users1(chat_id, limit=limit)
-    total_messages = await db.get_total_messages(chat_id)
-    user_msg_count = await db.get_user_message_count(chat_id, user_id)
-    max_messages_user = await db.find_user_with_max_messages_all(chat_id)
+    stats_snapshot, member_count = await asyncio.gather(
+        db.get_stats_snapshot_all_time(chat_id=chat_id, user_id=user_id, limit=limit),
+        _safe_member_count(chat_id),
+    )
+
+    top_users = stats_snapshot.get("top_users") or []
+    total_messages = int(stats_snapshot.get("total_messages") or 0)
+    user_msg_count = int(stats_snapshot.get("user_msg_count") or 0)
+    max_messages_user = stats_snapshot.get("max_messages_user")
 
     text = (
         f"<tg-emoji emoji-id='5303138782004924588'>💬</tg-emoji> <b>Статистика сообщений за всё время</b>\n"
         f"<tg-emoji emoji-id='5318872213577834693'>🎒</tg-emoji> <b>Вы написали :</b> <i>{_fmt_int(user_msg_count)}</i>\n\n"
     )
-
-    member_count = await _safe_member_count(chat_id)
 
     top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
     max_uid = max_cnt = None
@@ -3373,13 +3438,7 @@ async def _guard_can_edit(call: types.CallbackQuery) -> bool:
     user_id = call.from_user.id
     message_id = call.message.message_id
 
-    try:
-        current_stata = await db.get_current_stata(chat_id)
-    except Exception as e:
-        print(f"Ошибка при получении current_stata для chat_id {chat_id}: {e}")
-        current_stata = 1
-
-    if current_stata == 0:
+    if not await _is_stata_enabled(chat_id):
         await call.answer("⚠️ Статистика сейчас выключена", show_alert=True)
         return False
 
@@ -3411,10 +3470,10 @@ async def cb_stats_today(call: types.CallbackQuery):
         if len(parts) == 2 and parts[1].strip():
             day_key = parts[1].strip()
 
-        day_key = await _resolve_valid_day_key(chat_id, day_key)
-
-        text = await _stat_text_day(chat_id, user_id, day_key=day_key, limit=30)
-        kb = await _kb_stats(chat_id=chat_id, active="day", day_key=day_key)
+        text, kb = await asyncio.gather(
+            _stat_text_day(chat_id, user_id, day_key=day_key, limit=30),
+            _kb_stats(chat_id=chat_id, active="day", day_key=day_key),
+        )
         await _safe_edit_stats_message(call, text, kb)
 
     except Exception as e:
@@ -3436,10 +3495,10 @@ async def cb_stats_day_nav(call: types.CallbackQuery):
         if len(parts) == 2 and parts[1].strip():
             day_key = parts[1].strip()
 
-        day_key = await _resolve_valid_day_key(chat_id, day_key)
-
-        text = await _stat_text_day(chat_id, user_id, day_key=day_key, limit=30)
-        kb = await _kb_stats(chat_id=chat_id, active="day", day_key=day_key)
+        text, kb = await asyncio.gather(
+            _stat_text_day(chat_id, user_id, day_key=day_key, limit=30),
+            _kb_stats(chat_id=chat_id, active="day", day_key=day_key),
+        )
         await _safe_edit_stats_message(call, text, kb)
 
     except Exception as e:
@@ -3469,10 +3528,10 @@ async def cb_stats_week(call: types.CallbackQuery):
         if len(parts) == 2 and parts[1].strip():
             week_key = parts[1].strip()
 
-        week_key = await _resolve_valid_week_key(chat_id, week_key)
-
-        text = await _stat_text_week(chat_id, user_id, week_key=week_key, limit=30)
-        kb = await _kb_stats(chat_id=chat_id, active="week", week_key=week_key)
+        text, kb = await asyncio.gather(
+            _stat_text_week(chat_id, user_id, week_key=week_key, limit=30),
+            _kb_stats(chat_id=chat_id, active="week", week_key=week_key),
+        )
         await _safe_edit_stats_message(call, text, kb)
 
     except Exception as e:
@@ -3494,10 +3553,10 @@ async def cb_stats_week_nav(call: types.CallbackQuery):
         if len(parts) == 2 and parts[1].strip():
             week_key = parts[1].strip()
 
-        week_key = await _resolve_valid_week_key(chat_id, week_key)
-
-        text = await _stat_text_week(chat_id, user_id, week_key=week_key, limit=30)
-        kb = await _kb_stats(chat_id=chat_id, active="week", week_key=week_key)
+        text, kb = await asyncio.gather(
+            _stat_text_week(chat_id, user_id, week_key=week_key, limit=30),
+            _kb_stats(chat_id=chat_id, active="week", week_key=week_key),
+        )
         await _safe_edit_stats_message(call, text, kb)
 
     except Exception as e:
@@ -3527,10 +3586,10 @@ async def cb_stats_month(call: types.CallbackQuery):
         if len(parts) == 2 and parts[1].strip():
             month_key = parts[1].strip()
 
-        month_key = await _resolve_valid_month_key(chat_id, month_key)
-
-        text = await _stat_text_month(chat_id, user_id, month_key=month_key, limit=30)
-        kb = await _kb_stats(chat_id=chat_id, active="month", month_key=month_key)
+        text, kb = await asyncio.gather(
+            _stat_text_month(chat_id, user_id, month_key=month_key, limit=30),
+            _kb_stats(chat_id=chat_id, active="month", month_key=month_key),
+        )
         await _safe_edit_stats_message(call, text, kb)
 
     except Exception as e:
@@ -3562,8 +3621,10 @@ async def cb_stats_month_nav(call: types.CallbackQuery):
             await call.answer("⚠️ Для выбранного месяца нет данных", show_alert=False)
             month_key = await _resolve_valid_month_key(chat_id, None)
 
-        text = await _stat_text_month(chat_id, user_id, month_key=month_key, limit=30)
-        kb = await _kb_stats(chat_id=chat_id, active="month", month_key=month_key)
+        text, kb = await asyncio.gather(
+            _stat_text_month(chat_id, user_id, month_key=month_key, limit=30),
+            _kb_stats(chat_id=chat_id, active="month", month_key=month_key),
+        )
         await _safe_edit_stats_message(call, text, kb)
 
     except Exception as e:
@@ -3588,8 +3649,10 @@ async def cb_stats_all(call: types.CallbackQuery):
         chat_id = call.message.chat.id
         user_id = call.from_user.id
 
-        text = await _stat_text_all(chat_id, user_id, limit=30)
-        kb = await _kb_stats(chat_id=chat_id, active="all")
+        text, kb = await asyncio.gather(
+            _stat_text_all(chat_id, user_id, limit=30),
+            _kb_stats(chat_id=chat_id, active="all"),
+        )
         await _safe_edit_stats_message(call, text, kb)
 
     except Exception as e:

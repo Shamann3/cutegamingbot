@@ -60,6 +60,7 @@ global args
 import unicodedata
 
 REFERRAL_SOURCE_CHAT_ID = -1002135149822
+BLACK_MARKET_GROUP_CHAT_ID = -1003855337972
 
 
 def _safe_int(value , default=0):
@@ -113,13 +114,9 @@ async def _get_group_balance_safe(chat_id: int) -> Optional [ int ]:
 
         ("get_group_balance" , (chat_id ,)) ,
 
-        ("get_dex_balance" , (chat_id ,)) ,
-
         ("get_chat_balance" , (bot1 , chat_id)) ,
 
         ("get_group_balance" , (bot1 , chat_id)) ,
-
-        ("get_dex_balance" , (bot1 , chat_id)) ,
 
     ]
 
@@ -232,7 +229,7 @@ async def _debit_group_balance_safe(chat_id: int , amount: int) -> bool:
 
     delta_variants = [
 
-        ("update_dex_balance" , (bot1 , chat_id , -amount)) ,
+        ("update_chat_balance" , (bot1 , chat_id , -amount)) ,
 
         ("add_chat_balance" , (chat_id , -amount)) ,
 
@@ -369,7 +366,7 @@ async def generate_inventory_page(inventory_items, page):
 
     size = inventory_page_size()
     if size <= 0:
-        # Навигация выключена — показываем весь инвентарь одним списком.
+        # Навигация выключена показываем весь инвентарь одним списком.
         page_items = items_list
     else:
         start = page * size
@@ -435,7 +432,7 @@ async def generate_inventory_page(inventory_items, page):
 def get_inventory_navigation_buttons(page, total_pages):
     buttons = []
 
-    # Навигация полностью отключена флагом — кнопок нет.
+    # Навигация полностью отключена флагом кнопок нет.
     if not globals().get("True_button_navigation_inventory", True):
         return buttons
 
@@ -502,11 +499,11 @@ async def preload_discounts(emojis: List[str]):
     if not to_fetch:
         return
     debug_print(f"Загрузка скидок для {len(to_fetch)} эмодзи...")
-    # ОДИН запрос вместо N (раньше — 240 отдельных get_discounted_price).
+    # ОДИН запрос вместо N (раньше 240 отдельных get_discounted_price).
     prices = await db.get_discounts_bulk(to_fetch)
     mapping = {emoji: (prices.get(emoji), now) for emoji in to_fetch}
 
-    # Запись в pklcode-кэш — синхронный Redis-I/O. 240 записей в цикле на
+    # Запись в pklcode-кэш синхронный Redis-I/O. 240 записей в цикле на
     # event-loop раньше морозили его на ~2.6с. Пишем в ОТДЕЛЬНОМ потоке.
     def _store(mapping):
         for emoji, val in mapping.items():
@@ -1625,27 +1622,7 @@ async def shop_op(message: Message):
 
             new_balance = current_balance - total_price
 
-            try:
-
-                chat_id_random = await db.get_random_chat()
-
-                print(f"[BUY_MESSAGE] chat_id_random: {chat_id_random}")
-
-            except Exception as e:
-
-                print(f"[BUY_MESSAGE] Ошибка получения random chat: {e}")
-
-                await message.reply(
-
-                    "<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>Ошибка при обработке покупки</b>" ,
-
-                    parse_mode="HTML" ,
-
-                    disable_web_page_preview=True
-
-                )
-
-                return
+            source_chat_id = int(getattr(message.chat , "id" , 0) or 0)
 
             # =========================================================
 
@@ -1653,15 +1630,34 @@ async def shop_op(message: Message):
 
             # =========================================================
 
+            market_deposit_ok = False
             try:
 
-                await db.update_dex_balance(bot1 , chat_id_random , total_price)
+                # LEGACY: dexbalance заморожен.
+                # Теперь покупка всегда уходит в баланс чёрного рынка
+                # и логируется по пользователю.
+                market_deposit_ok = await db.record_shop_purchase_black_market_deposit(
+                    bot1 ,
+                    user_id=user_id ,
+                    amount=total_price ,
+                    source_chat_id=source_chat_id ,
+                    note="shop_buy_message" ,
+                    target_chat_id=BLACK_MARKET_GROUP_CHAT_ID ,
+                )
+                if not market_deposit_ok:
+                    raise RuntimeError("black market deposit failed")
 
                 await db.update_user_balance(user_id , new_balance)
 
                 await db.cutehistory_minus(user_id , total_price , "покупка предмета через .купить")
 
             except Exception as e:
+
+                if market_deposit_ok:
+                    try:
+                        await db.update_chat_balance(bot1 , BLACK_MARKET_GROUP_CHAT_ID , -total_price)
+                    except Exception as rollback_err:
+                        print(f"[BUY_MESSAGE][ROLLBACK] Не удалось откатить рынок: {rollback_err}")
 
                 print(f"[BUY_MESSAGE] Ошибка при основном списании/зачислении: {e}")
 
@@ -3298,7 +3294,7 @@ async def shop_op(message: Message):
         print("Ошибка: Инвентарь пуст.")
         return  # Прерываем выполнение, если инвентарь не найден или пуст
 
-    # Преобразуем инвентарь в словарь (единый кодек — любой формат из БД)
+    # Преобразуем инвентарь в словарь (единый кодек любой формат из БД)
     user_inventory = decode_items(user_inventory)
     if not user_inventory:
         await message.reply("<b>Ошибка: Невозможно загрузить инвентарь пользователя.</b>", parse_mode="HTML" ,disable_web_page_preview=True)
@@ -3666,12 +3662,39 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
         print(f"[BUY][ERR] balance/cutehistory_minus failed: {e!r}")
         await call.message.reply("<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>Ошибка списания средств.</b>", parse_mode="HTML", disable_web_page_preview=True)
         return
-    # зачисляем в баланс группы (биржи) один раз
+    # зачисляем в баланс чёрного рынка один раз
     try:
-        chat_id = call.message.chat.id
-        await db.update_dex_balance(bot1,chat_id, float(discount_total))
+        source_chat_id = int(getattr(call.message.chat , "id" , 0) or 0)
+        market_deposit_amount = _safe_int(discount_total , 0)
+        market_deposit_ok = await db.record_shop_purchase_black_market_deposit(
+            bot1 ,
+            user_id=user_id ,
+            amount=market_deposit_amount ,
+            source_chat_id=source_chat_id ,
+            note="shop_buy_coupon" ,
+            target_chat_id=BLACK_MARKET_GROUP_CHAT_ID ,
+        )
+        if not market_deposit_ok:
+            raise RuntimeError("black market deposit failed")
     except Exception as e:
-        print(f"[BUY][WARN] update_dex_balance failed: {e!r}")
+        print(f"[BUY][WARN] black market deposit failed: {e!r}")
+        try:
+            # Откатываем списание пользователя, если не смогли зачислить в рынок.
+            await db.update_user_balance(user_id , current_balance)
+            await db.cutehistory_plus(
+                user_id ,
+                float(discount_total) ,
+                "возврат средств: не удалось зачислить куты на черный рынок" ,
+            )
+        except Exception as rollback_err:
+            print(f"[BUY][CRIT] rollback after market deposit failure failed: {rollback_err!r}")
+        await call.message.reply(
+            "<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> "
+            "<b>Покупка отменена: не удалось зачислить куты на чёрный рынок. Средства возвращены.</b>" ,
+            parse_mode="HTML" ,
+            disable_web_page_preview=True ,
+        )
+        return
     # --- 3) Проведение покупки по предметам
     bought_items_lines = []
     for it in prepared_items:
@@ -3906,21 +3929,34 @@ async def process_buy_callback(callback_query: types.CallbackQuery):
 
             new_balance = current_balance - item_total_price
 
+            # Списание у пользователя / зачисление в чёрный рынок / выдача предмета
+            market_deposit_ok = False
             try:
-                chat_id_random = await db.get_random_chat()
-                print(f"[BUY] chat_id_random: {chat_id_random}")
-            except Exception as e:
-                print(f"[BUY] Ошибка получения random chat: {e}")
-                return
-
-            # Списание у пользователя / начисление в dex / выдача предмета
-            try:
-                await db.update_dex_balance(bot1, chat_id_random, item_total_price)
+                source_chat_id = int(getattr(callback_query.message.chat , "id" , 0) or 0)
+                market_deposit_ok = await db.record_shop_purchase_black_market_deposit(
+                    bot1 ,
+                    user_id=user_id ,
+                    amount=item_total_price ,
+                    source_chat_id=source_chat_id ,
+                    note="shop_buy_callback" ,
+                    target_chat_id=BLACK_MARKET_GROUP_CHAT_ID ,
+                )
+                if not market_deposit_ok:
+                    raise RuntimeError("black market deposit failed")
                 await db.update_user_balance(user_id, new_balance)
                 await db.cutehistory_minus(user_id, item_total_price, "покупка предмета")
                 await db.set_items(user_id, item_name, bought_quantity)
                 await db.buy_item(item_name, bought_quantity)
             except Exception as e:
+                if market_deposit_ok:
+                    try:
+                        await db.update_chat_balance(bot1 , BLACK_MARKET_GROUP_CHAT_ID , -item_total_price)
+                    except Exception as rollback_err:
+                        print(f"[BUY][ROLLBACK] Не удалось откатить рынок: {rollback_err}")
+                try:
+                    await db.update_user_balance(user_id , current_balance)
+                except Exception as rollback_err:
+                    print(f"[BUY][ROLLBACK] Не удалось откатить баланс пользователя: {rollback_err}")
                 print(
                     f"[BUY] Ошибка финансового/инвентарного обновления "
                     f"для пользователя {user_id}, item={item_name}: {e}"
@@ -4517,7 +4553,7 @@ async def page_info_handler(callback: CallbackQuery):
 
 # ---------------------------------------------------------------------------
 # Публичные алиасы для ButtonRegistry (main.py) и IDE/статического анализа.
-# Логика — в обработчиках выше; здесь только стабильные имена экспорта.
+# Логика в обработчиках выше; здесь только стабильные имена экспорта.
 # ---------------------------------------------------------------------------
 shop_reset_sorting = reset_filter_handler
 shop_filter_by_sorting = apply_filter_handler

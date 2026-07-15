@@ -29,9 +29,26 @@ if not logger.handlers:
 
 # Последний «тик» асинхронного монитора. Обновляется из loop.
 # Отдельный поток-сторож сравнивает его с реальным временем: если loop
-# завис (тик не обновляется), поток снимает стек ГЛАВНОГО потока —
+# завис (тик не обновляется), поток снимает стек ГЛАВНОГО потока
 # так видно, какая именно синхронная функция блокирует процесс.
 _last_tick = [time.monotonic()]
+_monitor_state_lock = threading.Lock()
+_monitor_running = False
+_watchdog_started = False
+
+
+def _start_watchdog_once(stall_threshold: float) -> None:
+    global _watchdog_started
+    with _monitor_state_lock:
+        if _watchdog_started:
+            return
+        _watchdog_started = True
+    threading.Thread(
+        target=_watchdog,
+        args=(stall_threshold,),
+        daemon=True,
+        name="loop-watchdog",
+    ).start()
 
 
 def _watchdog(stall_threshold: float):
@@ -66,38 +83,45 @@ async def monitor_event_loop(
     stall_threshold - при зависании дольше этого поток-сторож снимет стек.
     """
 
-    loop = asyncio.get_running_loop()
+    global _monitor_running
 
-    # Поток-сторож: работает даже когда loop полностью заморожен.
-    threading.Thread(
-        target=_watchdog,
-        args=(stall_threshold,),
-        daemon=True,
-        name="loop-watchdog",
-    ).start()
+    with _monitor_state_lock:
+        if _monitor_running:
+            logger.info("[SKIP] monitor already running")
+            return
+        _monitor_running = True
 
-    logger.info(
-        "[START] interval=%.3fs warn_delay=%.3fs stall_threshold=%.1fs",
-        interval,
-        warn_delay,
-        stall_threshold,
-    )
+    try:
+        loop = asyncio.get_running_loop()
 
-    next_time = loop.time() + interval
+        # Поток-сторож: работает даже когда loop полностью заморожен.
+        _start_watchdog_once(stall_threshold)
 
-    while True:
-        await asyncio.sleep(interval)
+        logger.info(
+            "[START] interval=%.3fs warn_delay=%.3fs stall_threshold=%.1fs",
+            interval,
+            warn_delay,
+            stall_threshold,
+        )
 
-        _last_tick[0] = time.monotonic()
+        next_time = loop.time() + interval
 
-        now = loop.time()
+        while True:
+            await asyncio.sleep(interval)
 
-        delay = now - next_time
+            _last_tick[0] = time.monotonic()
 
-        if delay >= warn_delay:
-            logger.warning(
-                "[BLOCK] EventLoop blocked %.3f sec",
-                delay,
-            )
+            now = loop.time()
 
-        next_time = now + interval
+            delay = now - next_time
+
+            if delay >= warn_delay:
+                logger.warning(
+                    "[BLOCK] EventLoop blocked %.3f sec",
+                    delay,
+                )
+
+            next_time = now + interval
+    finally:
+        with _monitor_state_lock:
+            _monitor_running = False

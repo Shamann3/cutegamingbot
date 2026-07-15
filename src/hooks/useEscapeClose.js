@@ -17,7 +17,7 @@ export function useEscapeClose(isOpen, onClose, { enabled = true } = {}) {
 }
 
 /**
- * Enter — подтверждает действие в модалке когда фокус не в input/textarea.
+ * Enter подтверждает действие в модалке когда фокус не в input/textarea.
  * onConfirm вызывается только если enabled=true и нет активного input.
  */
 export function useEnterConfirm(isOpen, onConfirm, { enabled = true } = {}) {

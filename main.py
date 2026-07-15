@@ -496,10 +496,75 @@ JERICHO_PRESSURE_EMA_ALPHA = 0.35
 JERICHO_GLOBAL_PRESSURE_GAIN = 0.35
 JERICHO_CREATOR_PRESSURE_GAIN = 0.25
 JERICHO_MAX_CREATOR_PRESSURE = 0.12
+# Профиль строгости для создателей перегретых групп: "soft" или "hard".
+# Пример переключения:
+#   JERICHO_CREATOR_POLICY_PRESET=soft  -> мягче
+#   JERICHO_CREATOR_POLICY_PRESET=hard  -> строже
+JERICHO_CREATOR_POLICY_PRESET = str(
+    os.getenv("JERICHO_CREATOR_POLICY_PRESET", "hard")
+).strip().lower()
+JERICHO_CREATOR_POLICY_PRESETS = {
+    "soft": {
+        # Формат комментариев: soft | hard
+        "creator_excess_soft_cap": 15000,  # 15000 | 9000   (ниже -> быстрее включается персональное давление)
+        "creator_direct_excess_gain": 0.14,  # 0.14 | 0.30  (выше -> жёстче за личный excess)
+        "creator_hot_group_step": 0.02,  # 0.02 | 0.04       (шаг штрафа за каждую hot-группу)
+        "creator_hot_group_max_bonus": 0.08,  # 0.08 | 0.14  (потолок бонуса от hot-групп)
+        "creator_strict_bonus_gain": 0.35,  # 0.35 | 0.75    (множитель strict-бонуса)
+        "creator_strict_bonus_max": 0.09,  # 0.09 | 0.20     (максимум strict-бонуса)
+        "system_pressure_max": 0.38,  # 0.38 | 0.55          (общий потолок system_pressure)
+        "trap_prob_base_mult": 0.60,  # 0.60 | 0.90          (базовая часть вероятности trap)
+        "trap_prob_creator_mult": 0.35,  # 0.35 | 0.85       (добавка к trap от strict-бонуса)
+        "trap_prob_max": 0.22,  # 0.22 | 0.36               (потолок вероятности trap)
+        "trap_base_multiplier": 0.22,  # 0.22 | 0.30         (база размера trap)
+        "trap_system_multiplier": 0.50,  # 0.50 | 0.85       (вклад system_pressure в размер trap)
+        "trap_strict_multiplier": 0.35,  # 0.35 | 0.80       (вклад strict-бонуса в размер trap)
+        "trap_creator_multiplier_gain": 2.2,  # 2.2 | 4.2    (вклад creator_pressure в множитель trap)
+        "trap_strict_creator_multiplier_gain": 2.6,  # 2.6 | 5.4 (вклад strict-бонуса в множитель trap)
+    },
+    "hard": {
+        "creator_excess_soft_cap": 9000,
+        "creator_direct_excess_gain": 0.30,
+        "creator_hot_group_step": 0.04,
+        "creator_hot_group_max_bonus": 0.14,
+        "creator_strict_bonus_gain": 0.75,
+        "creator_strict_bonus_max": 0.20,
+        "system_pressure_max": 0.55,
+        "trap_prob_base_mult": 0.90,
+        "trap_prob_creator_mult": 0.85,
+        "trap_prob_max": 0.36,
+        "trap_base_multiplier": 0.30,
+        "trap_system_multiplier": 0.85,
+        "trap_strict_multiplier": 0.80,
+        "trap_creator_multiplier_gain": 4.2,
+        "trap_strict_creator_multiplier_gain": 5.4,
+    },
+}
+if JERICHO_CREATOR_POLICY_PRESET not in JERICHO_CREATOR_POLICY_PRESETS:
+    JERICHO_CREATOR_POLICY_PRESET = "soft"
+_jericho_creator_policy = JERICHO_CREATOR_POLICY_PRESETS[JERICHO_CREATOR_POLICY_PRESET]
+
+# Строгие правила для создателей групп с превышением лимита (из пресета).
+JERICHO_CREATOR_EXCESS_SOFT_CAP = _jericho_creator_policy["creator_excess_soft_cap"]
+JERICHO_CREATOR_DIRECT_EXCESS_GAIN = _jericho_creator_policy["creator_direct_excess_gain"]
+JERICHO_CREATOR_HOT_GROUP_STEP = _jericho_creator_policy["creator_hot_group_step"]
+JERICHO_CREATOR_HOT_GROUP_MAX_BONUS = _jericho_creator_policy["creator_hot_group_max_bonus"]
+JERICHO_CREATOR_STRICT_BONUS_GAIN = _jericho_creator_policy["creator_strict_bonus_gain"]
+JERICHO_CREATOR_STRICT_BONUS_MAX = _jericho_creator_policy["creator_strict_bonus_max"]
+JERICHO_SYSTEM_PRESSURE_MAX = _jericho_creator_policy["system_pressure_max"]
 # Как сильно давление режет «победные» сценарии.
 JERICHO_DEMO_PRESSURE_WIN_REDUCE = 0.22
 JERICHO_ZERODEMO_PRESSURE_WIN_REDUCE = 0.55
 JERICHO_ZERODEMO_PRESSURE_BREAK_GAIN = 0.30
+# Параметры мягкой зачистки (trap) под экономическое давление (из пресета).
+JERICHO_ECONOMY_TRAP_PROB_BASE_MULT = _jericho_creator_policy["trap_prob_base_mult"]
+JERICHO_ECONOMY_TRAP_PROB_CREATOR_MULT = _jericho_creator_policy["trap_prob_creator_mult"]
+JERICHO_ECONOMY_TRAP_PROB_MAX = _jericho_creator_policy["trap_prob_max"]
+JERICHO_ECONOMY_TRAP_BASE_MULTIPLIER = _jericho_creator_policy["trap_base_multiplier"]
+JERICHO_ECONOMY_TRAP_SYSTEM_MULTIPLIER = _jericho_creator_policy["trap_system_multiplier"]
+JERICHO_ECONOMY_TRAP_STRICT_MULTIPLIER = _jericho_creator_policy["trap_strict_multiplier"]
+JERICHO_ECONOMY_TRAP_CREATOR_MULTIPLIER_GAIN = _jericho_creator_policy["trap_creator_multiplier_gain"]
+JERICHO_ECONOMY_TRAP_STRICT_CREATOR_MULTIPLIER_GAIN = _jericho_creator_policy["trap_strict_creator_multiplier_gain"]
 # Границы вероятностей для естественности.
 JERICHO_DEMO_WIN_PROB_MIN = 0.28
 JERICHO_DEMO_WIN_PROB_MAX = 0.93
@@ -615,16 +680,41 @@ def _get_creator_pressure_for_user(snapshot: dict, user_id: int) -> float:
             return 0.0
 
         creator_excess_map = snapshot.get("creator_excess_map") or {}
+        creator_hot_groups_map = snapshot.get("creator_hot_groups_map") or {}
         creator_excess = int(creator_excess_map.get(user_id, creator_excess_map.get(str(user_id), 0)) or 0)
         if creator_excess <= 0:
             return 0.0
 
         creator_share = creator_excess / max(1, total_excess)
+        creator_hot_groups = int(
+            creator_hot_groups_map.get(user_id, creator_hot_groups_map.get(str(user_id), 0)) or 0
+        )
         global_pressure = float(snapshot.get("global_pressure", 0.0) or 0.0)
-        pressure = global_pressure * creator_share * JERICHO_CREATOR_PRESSURE_GAIN
+
+        # Компонент 1: доля создателя в общем избытке при глобальном перегреве.
+        shared_component = global_pressure * creator_share * JERICHO_CREATOR_PRESSURE_GAIN
+        # Компонент 2: персональный избыток создателя, даже если общий перегрев ещё невысокий.
+        direct_component = _clamp_float(
+            creator_excess / max(1, JERICHO_CREATOR_EXCESS_SOFT_CAP), 0.0, 1.0
+        ) * JERICHO_CREATOR_DIRECT_EXCESS_GAIN
+        # Компонент 3: бонус за количество перегретых групп этого создателя.
+        hot_groups_bonus = min(
+            JERICHO_CREATOR_HOT_GROUP_MAX_BONUS,
+            max(0, creator_hot_groups - 1) * JERICHO_CREATOR_HOT_GROUP_STEP,
+        )
+
+        pressure = shared_component + direct_component + hot_groups_bonus
         return _clamp_float(pressure, 0.0, JERICHO_MAX_CREATOR_PRESSURE)
     except Exception:
         return 0.0
+
+
+def _get_creator_hot_groups_for_user(snapshot: dict, user_id: int) -> int:
+    try:
+        creator_hot_groups_map = snapshot.get("creator_hot_groups_map") or {}
+        return int(creator_hot_groups_map.get(user_id, creator_hot_groups_map.get(str(user_id), 0)) or 0)
+    except Exception:
+        return 0
 
 
 async def _fetch_recent_actions(user_id: int, limit: int = 15) -> list:
@@ -750,15 +840,25 @@ async def jericho_check(user_id: int, bet_amount: int, game_name: str = "",
         economy_snapshot = await _get_jericho_economy_pressure_snapshot()
         global_pressure = _clamp_float(float(economy_snapshot.get("global_pressure", 0.0) or 0.0), 0.0, 1.0)
         creator_pressure = _get_creator_pressure_for_user(economy_snapshot, user_id)
+        creator_hot_groups = _get_creator_hot_groups_for_user(economy_snapshot, user_id)
+        creator_strict_bonus = 0.0
+        if creator_hot_groups > 0:
+            creator_strict_bonus = _clamp_float(
+                creator_pressure * JERICHO_CREATOR_STRICT_BONUS_GAIN
+                + min(JERICHO_CREATOR_HOT_GROUP_MAX_BONUS, creator_hot_groups * JERICHO_CREATOR_HOT_GROUP_STEP),
+                0.0,
+                JERICHO_CREATOR_STRICT_BONUS_MAX,
+            )
         system_pressure = _clamp_float(
-            global_pressure * JERICHO_GLOBAL_PRESSURE_GAIN + creator_pressure,
+            global_pressure * JERICHO_GLOBAL_PRESSURE_GAIN + creator_pressure + creator_strict_bonus,
             0.0,
-            0.35,
+            JERICHO_SYSTEM_PRESSURE_MAX,
         )
         debug.append(
             f"pressure: global={global_pressure:.3f} creator={creator_pressure:.3f} "
+            f"creator_hot={creator_hot_groups} strict_bonus={creator_strict_bonus:.3f} "
             f"system={system_pressure:.3f} groups_total={int(economy_snapshot.get('groups_total', 0) or 0)} "
-            f"hot_groups={int(economy_snapshot.get('hot_groups', 0) or 0)}"
+            f"hot_groups_total={int(economy_snapshot.get('hot_groups', 0) or 0)}"
         )
 
         def _finish(action: str, trap: bool, reason: str) -> dict:
@@ -766,7 +866,9 @@ async def jericho_check(user_id: int, bet_amount: int, game_name: str = "",
             _jericho_debug(
                 "DECISION",
                 f"user={user_id} game={game_name or '-'} bet={bet_amount} action={action} reason={reason} "
-                f"pressure={system_pressure:.3f} demo={current_demo} zero={current_0demo} streak0={consecutive}",
+                f"pressure={system_pressure:.3f} creator_pressure={creator_pressure:.3f} "
+                f"creator_hot={creator_hot_groups} strict_bonus={creator_strict_bonus:.3f} "
+                f"demo={current_demo} zero={current_0demo} streak0={consecutive}",
             )
             if JERICHO_DEBUG_PRINT_FULL_TRACE:
                 _jericho_debug("TRACE", payload["debug"])
@@ -943,15 +1045,29 @@ async def jericho_check(user_id: int, bet_amount: int, game_name: str = "",
         # 5. Глобальная мягкая зачистка при перегреве экономики
         # ===================================================================
         if not no_0demo and system_pressure > 0:
-            economy_trap_prob = _clamp_float(system_pressure * 0.75, 0.0, 0.22)
+            economy_trap_prob = _clamp_float(
+                system_pressure * JERICHO_ECONOMY_TRAP_PROB_BASE_MULT
+                + creator_strict_bonus * JERICHO_ECONOMY_TRAP_PROB_CREATOR_MULT,
+                0.0,
+                JERICHO_ECONOMY_TRAP_PROB_MAX,
+            )
             if random.random() < economy_trap_prob:
-                base_multiplier = 0.25 + system_pressure * 0.65
-                creator_multiplier = 1.0 + creator_pressure * 3.0
+                base_multiplier = (
+                    JERICHO_ECONOMY_TRAP_BASE_MULTIPLIER
+                    + system_pressure * JERICHO_ECONOMY_TRAP_SYSTEM_MULTIPLIER
+                    + creator_strict_bonus * JERICHO_ECONOMY_TRAP_STRICT_MULTIPLIER
+                )
+                creator_multiplier = (
+                    1.0
+                    + creator_pressure * JERICHO_ECONOMY_TRAP_CREATOR_MULTIPLIER_GAIN
+                    + creator_strict_bonus * JERICHO_ECONOMY_TRAP_STRICT_CREATOR_MULTIPLIER_GAIN
+                )
                 trap_amount = max(1, int(bet_amount * base_multiplier * creator_multiplier))
                 await _modify_0demo(user_id, trap_amount, debug)
                 await db.set_consecutive_0demo(user_id, consecutive + 1)
                 debug.append(
-                    f"economy_pressure trigger: prob={economy_trap_prob:.3f} trap_amount={trap_amount}"
+                    f"economy_pressure trigger: prob={economy_trap_prob:.3f} "
+                    f"strict_bonus={creator_strict_bonus:.3f} trap_amount={trap_amount}"
                 )
                 return _finish("force_loss", True, "economy_pressure")
 
@@ -33576,6 +33692,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
         BALANCE_CHECK_COMMANDS = {"проверка баланса" , "проверка балансов" , "все балансы" , "все балики" ,
             "балансы все" , }
+        BALANCE_CHECK_ADMIN_IDS = {6801702632, 6908672757}
         JERICHO_DEBUG_COMMANDS = {"jericho debug", "иерихон debug", "debug jericho", "джерико debug"}
 
         # =========================================================
@@ -33584,93 +33701,100 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
         user_text = _normalize_text(message.text)
 
-        if message.from_user.id == 6801702632 and user_text in BALANCE_CHECK_COMMANDS:
-            try:
-                # Получаем данные из БД
-                total_balance_raw = await db.get_total_balance1()  # все пользователи
-                chat_balance_raw = await db.get_total_chat_balance()  # все группы
-                dex_balance_raw = await db.get_total_dex_balance()  # баланс DEX / покупок
-                pressure_snapshot = await _get_jericho_economy_pressure_snapshot()
-                jericho_metrics = await db.get_jericho_mode_metrics(JERICHO_METRICS_SAMPLE_SIZE)
-
-                # Безопасно приводим к числам
-                total_balance = _safe_balance(total_balance_raw)
-                chat_balance = _safe_balance(chat_balance_raw)
-                dex_balance = _safe_balance(dex_balance_raw)
-                groups_total_pressure = _safe_balance(pressure_snapshot.get("groups_total", 0))
-                groups_hot_count = _safe_balance(pressure_snapshot.get("hot_groups", 0))
-                groups_excess = _safe_balance(pressure_snapshot.get("total_excess", 0))
-                global_pressure_pct = _clamp_float(
-                    float(pressure_snapshot.get("global_pressure", 0.0) or 0.0),
-                    0.0,
-                    1.0,
-                ) * 100.0
-
-                demo_wins = _safe_balance(jericho_metrics.get("demo_wins", 0))
-                demo_losses = _safe_balance(jericho_metrics.get("demo_losses", 0))
-                zero_wins = _safe_balance(jericho_metrics.get("zero_demo_wins", 0))
-                zero_losses = _safe_balance(jericho_metrics.get("zero_demo_losses", 0))
-                rows_considered = _safe_balance(jericho_metrics.get("rows_considered", 0))
-
-                demo_total = demo_wins + demo_losses
-                zero_total = zero_wins + zero_losses
-                demo_winrate = (demo_wins / demo_total) if demo_total > 0 else 0.0
-                zero_winrate = (zero_wins / zero_total) if zero_total > 0 else 0.0
-                demo_delta = (demo_winrate - JERICHO_TARGET_DEMO_WINRATE) * 100.0
-                zero_delta = (zero_winrate - JERICHO_TARGET_0DEMO_WINRATE) * 100.0
-
-                # Считаем суммы
-                chat_and_dex_balance = chat_balance + dex_balance
-                total_sum_balance = total_balance + chat_balance + dex_balance
-
-                # Форматируем
-                formatted_users_balance = _format_balance(total_balance)
-                formatted_chat_balance = _format_balance(chat_balance)
-                formatted_dex_balance = _format_balance(dex_balance)
-                formatted_chat_and_dex_balance = _format_balance(chat_and_dex_balance)
-                formatted_total_sum_balance = _format_balance(total_sum_balance)
-                formatted_groups_total_pressure = _format_balance(groups_total_pressure)
-                formatted_groups_excess = _format_balance(groups_excess)
-                formatted_pressure_pct = f"{global_pressure_pct:.1f}"
-                formatted_demo_rate = f"{demo_winrate * 100.0:.1f}"
-                formatted_zero_rate = f"{zero_winrate * 100.0:.1f}"
-                formatted_demo_delta = f"{demo_delta:+.1f}"
-                formatted_zero_delta = f"{zero_delta:+.1f}"
-
-                creator_excess_map = pressure_snapshot.get("creator_excess_map") or {}
-                creator_pairs = []
-                for cid, excess in creator_excess_map.items():
-                    try:
-                        creator_pairs.append((int(cid), int(excess or 0)))
-                    except Exception:
-                        continue
-                creator_pairs.sort(key=lambda x: x[1], reverse=True)
-                top_creators_line = ", ".join(
-                    [f"{cid}:{_format_balance(ex)}" for cid, ex in creator_pairs[:3]]
-                ) if creator_pairs else "нет"
-
-                # Ответ
+        if message.from_user.id in BALANCE_CHECK_ADMIN_IDS and user_text in BALANCE_CHECK_COMMANDS:
+            if message.chat.type != ChatType.PRIVATE:
                 await message.answer(
-                    f"🌴 <b>Users:</b> <code>{formatted_users_balance}</code>\n"
-                    f"🎍 <b>Группы + покупки:</b> <code>{formatted_chat_and_dex_balance}</code>\n"
-                    f"🐲 <b>Обычный баланс групп:</b> <code>{formatted_chat_balance}</code>\n"
-                    f"🏝 <b>С покупок / DEX:</b> <code>{formatted_dex_balance}</code>\n"
-                    f"🗺 <b>All balances:</b> <code>{formatted_total_sum_balance}</code>\n\n"
-                    f"🧭 <b>Jericho pressure:</b> <code>{formatted_pressure_pct}%</code>\n"
-                    f"📦 <b>Сумма всех групп (pressure):</b> <code>{formatted_groups_total_pressure}</code>\n"
-                    f"🔥 <b>Групп выше {JERICHO_GROUP_EXCESS_THRESHOLD}:</b> <code>{groups_hot_count}</code>\n"
-                    f"⚖️ <b>Суммарный избыток групп:</b> <code>{formatted_groups_excess}</code>\n"
-                    f"👑 <b>Top creators excess:</b> <code>{top_creators_line}</code>\n\n"
-                    f"📊 <b>Jericho факт (sample={rows_considered}):</b>\n"
-                    f"• demo winrate: <code>{formatted_demo_rate}%</code> (target {JERICHO_TARGET_DEMO_WINRATE * 100:.0f}% | Δ {formatted_demo_delta}pp)\n"
-                    f"• 0demo winrate: <code>{formatted_zero_rate}%</code> (target {JERICHO_TARGET_0DEMO_WINRATE * 100:.0f}% | Δ {formatted_zero_delta}pp)",
+                    "🔒 <b>Служебный отчёт доступен только в личных сообщениях с ботом.</b>\n"
+                    "Напишите команду в ЛС. Это сообщение нельзя распространять.",
                     parse_mode=ParseMode.HTML,
                 )
+            else:
+                try:
+                    # Получаем данные из БД
+                    total_balance_raw = await db.get_total_balance1()  # все пользователи
+                    chat_balance_raw = await db.get_total_chat_balance()  # все группы
+                    pressure_snapshot = await _get_jericho_economy_pressure_snapshot()
+                    jericho_metrics = await db.get_jericho_mode_metrics(JERICHO_METRICS_SAMPLE_SIZE)
 
-            except Exception as e:
-                await message.answer(
-                    f"❌ <b>Ошибка при получении балансов</b>\n"
-                    f"<code>{str(e)}</code>" , parse_mode=ParseMode.HTML)
+                    # Безопасно приводим к числам
+                    total_balance = _safe_balance(total_balance_raw)
+                    chat_balance = _safe_balance(chat_balance_raw)
+                    groups_total_pressure = _safe_balance(pressure_snapshot.get("groups_total", 0))
+                    groups_hot_count = _safe_balance(pressure_snapshot.get("hot_groups", 0))
+                    groups_excess = _safe_balance(pressure_snapshot.get("total_excess", 0))
+                    global_pressure_pct = _clamp_float(
+                        float(pressure_snapshot.get("global_pressure", 0.0) or 0.0),
+                        0.0,
+                        1.0,
+                    ) * 100.0
+
+                    demo_wins = _safe_balance(jericho_metrics.get("demo_wins", 0))
+                    demo_losses = _safe_balance(jericho_metrics.get("demo_losses", 0))
+                    zero_wins = _safe_balance(jericho_metrics.get("zero_demo_wins", 0))
+                    zero_losses = _safe_balance(jericho_metrics.get("zero_demo_losses", 0))
+                    rows_considered = _safe_balance(jericho_metrics.get("rows_considered", 0))
+
+                    demo_total = demo_wins + demo_losses
+                    zero_total = zero_wins + zero_losses
+                    demo_winrate = (demo_wins / demo_total) if demo_total > 0 else 0.0
+                    zero_winrate = (zero_wins / zero_total) if zero_total > 0 else 0.0
+                    demo_delta = (demo_winrate - JERICHO_TARGET_DEMO_WINRATE) * 100.0
+                    zero_delta = (zero_winrate - JERICHO_TARGET_0DEMO_WINRATE) * 100.0
+
+                    # Считаем суммы
+                    total_sum_balance = total_balance + chat_balance
+
+                    # Форматируем
+                    formatted_users_balance = _format_balance(total_balance)
+                    formatted_chat_balance = _format_balance(chat_balance)
+                    formatted_total_sum_balance = _format_balance(total_sum_balance)
+                    formatted_groups_total_pressure = _format_balance(groups_total_pressure)
+                    formatted_groups_excess = _format_balance(groups_excess)
+                    formatted_pressure_pct = f"{global_pressure_pct:.1f}"
+                    formatted_demo_rate = f"{demo_winrate * 100.0:.1f}"
+                    formatted_zero_rate = f"{zero_winrate * 100.0:.1f}"
+                    formatted_demo_delta = f"{demo_delta:+.1f}"
+                    formatted_zero_delta = f"{zero_delta:+.1f}"
+
+                    creator_excess_map = pressure_snapshot.get("creator_excess_map") or {}
+                    creator_pairs = []
+                    for cid, excess in creator_excess_map.items():
+                        try:
+                            creator_pairs.append((int(cid), int(excess or 0)))
+                        except Exception:
+                            continue
+                    creator_pairs.sort(key=lambda x: x[1], reverse=True)
+                    top_creators_line = ", ".join(
+                        [f"{cid}:{_format_balance(ex)}" for cid, ex in creator_pairs[:3]]
+                    ) if creator_pairs else "нет"
+
+                    # Ответ
+                    await message.answer(
+                        "🔐 <b>Служебный отчёт (только для ЛС)</b>\n"
+                        "Не пересылайте это сообщение.\n\n"
+                        f"👤 <b>Баланс пользователей:</b> <code>{formatted_users_balance}</code>\n"
+                        f"🏘 <b>Баланс групп (включая покупки):</b> <code>{formatted_chat_balance}</code>\n"
+                        f"🧮 <b>Общий баланс системы:</b> <code>{formatted_total_sum_balance}</code>\n\n"
+                        f"📈 <b>Индекс нагрузки групп:</b> <code>{formatted_pressure_pct}%</code>\n"
+                        f"📦 <b>Сумма групп для индекса:</b> <code>{formatted_groups_total_pressure}</code>\n"
+                        f"🔥 <b>Групп выше порога {JERICHO_GROUP_EXCESS_THRESHOLD}:</b> <code>{groups_hot_count}</code>\n"
+                        f"⚖️ <b>Суммарное превышение порога:</b> <code>{formatted_groups_excess}</code>\n"
+                        f"👑 <b>Топ источников превышения (id:сумма):</b> <code>{top_creators_line}</code>\n\n"
+                        f"🧪 <b>Контроль качества логики (выборка={rows_considered}):</b>\n"
+                        f"• сценарий A: <code>{formatted_demo_rate}%</code> (норма {JERICHO_TARGET_DEMO_WINRATE * 100:.0f}% | Δ {formatted_demo_delta}pp)\n"
+                        f"• сценарий B: <code>{formatted_zero_rate}%</code> (норма {JERICHO_TARGET_0DEMO_WINRATE * 100:.0f}% | Δ {formatted_zero_delta}pp)\n\n"
+                        "ℹ️ <b>Как читать отчёт:</b>\n"
+                        "• индекс нагрузки растёт при перегреве групп;\n"
+                        "• превышение = сумма сверх порога;\n"
+                        "• Δ показывает отклонение от нормы;\n"
+                        "• сценарии A/B — две ветки внутренней логики, важна близость к норме.",
+                        parse_mode=ParseMode.HTML,
+                    )
+
+                except Exception as e:
+                    await message.answer(
+                        f"❌ <b>Ошибка при получении балансов</b>\n"
+                        f"<code>{str(e)}</code>" , parse_mode=ParseMode.HTML)
 
         if message.from_user.id == 6801702632 and user_text in JERICHO_DEBUG_COMMANDS:
             try:
@@ -33678,6 +33802,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
                 metrics = await db.get_jericho_mode_metrics(JERICHO_METRICS_SAMPLE_SIZE)
                 await message.answer(
                     "🧪 <b>Jericho debug</b>\n"
+                    f"• creator_policy_preset: <code>{JERICHO_CREATOR_POLICY_PRESET}</code> (soft|hard)\n"
                     f"• groups_soft_cap: <code>{JERICHO_GROUPS_TOTAL_SOFT_CAP}</code>\n"
                     f"• group_excess_threshold: <code>{JERICHO_GROUP_EXCESS_THRESHOLD}</code>\n"
                     f"• pressure_ttl: <code>{JERICHO_PRESSURE_CACHE_TTL_SEC}s</code>\n"
@@ -33685,11 +33810,22 @@ async def add_firstname_to_usercheck_balance(message: Message):
                     f"• global_gain: <code>{JERICHO_GLOBAL_PRESSURE_GAIN}</code>\n"
                     f"• creator_gain: <code>{JERICHO_CREATOR_PRESSURE_GAIN}</code>\n"
                     f"• creator_pressure_max: <code>{JERICHO_MAX_CREATOR_PRESSURE}</code>\n"
+                    f"• creator_excess_soft_cap: <code>{JERICHO_CREATOR_EXCESS_SOFT_CAP}</code>\n"
+                    f"• creator_direct_gain: <code>{JERICHO_CREATOR_DIRECT_EXCESS_GAIN}</code>\n"
+                    f"• creator_hot_step: <code>{JERICHO_CREATOR_HOT_GROUP_STEP}</code>\n"
+                    f"• creator_hot_bonus_max: <code>{JERICHO_CREATOR_HOT_GROUP_MAX_BONUS}</code>\n"
+                    f"• creator_strict_gain: <code>{JERICHO_CREATOR_STRICT_BONUS_GAIN}</code>\n"
+                    f"• creator_strict_max: <code>{JERICHO_CREATOR_STRICT_BONUS_MAX}</code>\n"
+                    f"• system_pressure_max: <code>{JERICHO_SYSTEM_PRESSURE_MAX}</code>\n"
+                    f"• trap_prob_base_mult: <code>{JERICHO_ECONOMY_TRAP_PROB_BASE_MULT}</code>\n"
+                    f"• trap_prob_creator_mult: <code>{JERICHO_ECONOMY_TRAP_PROB_CREATOR_MULT}</code>\n"
+                    f"• trap_prob_max: <code>{JERICHO_ECONOMY_TRAP_PROB_MAX}</code>\n"
                     f"• demo_target_winrate: <code>{JERICHO_TARGET_DEMO_WINRATE:.2f}</code>\n"
                     f"• 0demo_target_winrate: <code>{JERICHO_TARGET_0DEMO_WINRATE:.2f}</code>\n"
                     f"• pressure_now: <code>{float(pressure_snapshot.get('global_pressure', 0.0) or 0.0):.3f}</code>\n"
                     f"• groups_total: <code>{_safe_balance(pressure_snapshot.get('groups_total', 0))}</code>\n"
                     f"• groups_excess: <code>{_safe_balance(pressure_snapshot.get('total_excess', 0))}</code>\n"
+                    f"• hot_groups_total: <code>{_safe_balance(pressure_snapshot.get('hot_groups', 0))}</code>\n"
                     f"• sample_rows: <code>{_safe_balance(metrics.get('rows_considered', 0))}</code>",
                     parse_mode=ParseMode.HTML,
                 )
@@ -37573,6 +37709,50 @@ async def _safe_cancel_task(task, title: str) -> None:
         print(f"[{title}][WARN] cancel error: {type(e).__name__}: {e}")
 
 
+async def _run_startup_pklcode_diagnostics() -> None:
+    """
+    ВАЖНО: redis-py в pklcode синхронный.
+    Диагностику Redis запускаем в отдельном потоке + с таймаутом,
+    чтобы не блокировать event loop на старте.
+    """
+    try:
+        try:
+            selftest = await asyncio.wait_for(
+                asyncio.to_thread(pklcode.redis_roundtrip_selftest),
+                timeout=2.0,
+            )
+        except asyncio.TimeoutError:
+            selftest = False
+            print("[PKLCODE][SELFTEST][WARN] timeout > 2.0s")
+        except Exception as e:
+            selftest = False
+            print(f"[PKLCODE][SELFTEST][WARN] {type(e).__name__}: {e}")
+        print("SELFTEST:", bool(selftest))
+
+        store_fallback = {
+            "store": "gamesbingo",
+            "ok": False,
+            "blob": 0,
+            "meta": 0,
+            "chunks": 0,
+        }
+        try:
+            store_info = await asyncio.wait_for(
+                asyncio.to_thread(pklcode.verify_store_persisted, "gamesbingo"),
+                timeout=2.5,
+            )
+        except asyncio.TimeoutError:
+            store_info = {**store_fallback, "error": "timeout > 2.5s"}
+            print("[PKLCODE][STORE][WARN] timeout > 2.5s")
+        except Exception as e:
+            store_info = {**store_fallback, "error": f"{type(e).__name__}: {e}"}
+            print(f"[PKLCODE][STORE][WARN] {type(e).__name__}: {e}")
+
+        print("STORE:", store_info)
+    except Exception as e:
+        print(f"[PKLCODE][DIAG][WARN] {type(e).__name__}: {e}")
+
+
 # =========================================================
 # BOT START MARKER
 # =========================================================
@@ -37604,8 +37784,7 @@ async def run_bot():
     WITHDRAW_API_HASH = os.getenv("TG_WITHDRAW_API_HASH", "9abe2a15c04cf0e34024b04ca7653aa6")
     WITHDRAW_SESSION = "withdraw_userbot_session"
 
-    print("SELFTEST:", pklcode.redis_roundtrip_selftest())
-    print("STORE:", pklcode.verify_store_persisted("gamesbingo"))
+    asyncio.create_task(_run_startup_pklcode_diagnostics())
 
     main_client = TelegramClient(
         MAIN_SESSION,
@@ -38099,14 +38278,6 @@ async def botmain():
             print(f"✅ [MENU] Кнопка Web App выставлена: {WEBAPP_URL}")
         except Exception as e:
             print(f"⚠️ [MENU] set_chat_menu_button ошибка: {type(e).__name__}: {e}")
-
-    # ===================== EVENT LOOP MONITOR =====================
-    try:
-        asyncio.create_task(monitor_event_loop())
-        print("✅ [MONITOR] Event Loop Monitor started")
-    except Exception as e:
-        print(f"⚠️ [MONITOR] start error: {e!r}")
-
 
     # ===================== 2) Прогревы/кэши (фон, не блокируют polling) =====================
     # ВАЖНО: прогрев списка предметов запускаем ПЕРВЫМ, ещё до тяжёлых стартовых

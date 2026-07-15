@@ -166,7 +166,7 @@ async def eaglewithdrawal(db, user_id: int, message):
         # 3) Синхронизируем legacy-поле users.canwithdrawal для совместимости
         await db.set_canwithdrawal(uid, int(new_limit_value))
 
-        # 4) Если был кулдаун по daily_limit — снимаем его, т.к. лимит повышен предметом
+        # 4) Если был кулдаун по daily_limit снимаем его, т.к. лимит повышен предметом
         try:
             if getattr(db, "pool", None):
                 async with db.pool.acquire() as connection:

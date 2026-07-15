@@ -84,10 +84,10 @@ async def inspect_chat_member(
   Запрашивает участника в группе.
 
   Возвращает (member, error_kind):
-    • (member, None) — успех (любой status, в т.ч. left/kicked);
-    • (None, 'invalid_user') — user_id не существует в Telegram;
-    • (None, 'not_participant') — аккаунт есть, но не в этой группе;
-    • (None, 'check_failed') — сетевая/прочая ошибка.
+    • (member, None) успех (любой status, в т.ч. left/kicked);
+    • (None, 'invalid_user') user_id не существует в Telegram;
+    • (None, 'not_participant') аккаунт есть, но не в этой группе;
+    • (None, 'check_failed') сетевая/прочая ошибка.
   """
   if chat_id > 0:
     return None, "check_failed"
@@ -108,13 +108,13 @@ async def verify_telegram_user_exists(
   probe_chat_ids: Optional[Iterable[int]] = None,
 ) -> bool:
   """
-  Проверяет, что user_id — реальный аккаунт Telegram.
+  Проверяет, что user_id реальный аккаунт Telegram.
 
   Стратегия:
-    1. getChat(user_id) — если бот уже «знаком» с пользователем;
-    2. getChatMember в официальных группах — успешный ответ подтверждает ID;
-    3. USER_NOT_PARTICIPANT в хотя бы одной группе — ID валиден;
-    4. PARTICIPANT_ID_INVALID / USER_ID_INVALID — ID недействителен.
+    1. getChat(user_id) если бот уже «знаком» с пользователем;
+    2. getChatMember в официальных группах успешный ответ подтверждает ID;
+    3. USER_NOT_PARTICIPANT в хотя бы одной группе ID валиден;
+    4. PARTICIPANT_ID_INVALID / USER_ID_INVALID ID недействителен.
   """
   if user_id <= 0:
     return False
@@ -186,7 +186,7 @@ def punishment_invalid_user_html(user_id: int) -> str:
 
 def invalid_numeric_target_token(body: list[str]) -> Optional[str]:
   """
-  «бан 10 10», «кик 99 99» — только цифры без единиц срока.
+  «бан 10 10», «кик 99 99» только цифры без единиц срока.
   Возвращает первый токен для сообщения об ошибке или None.
   """
   if not body:
@@ -211,7 +211,7 @@ async def reject_invalid_target_reply(
   debug_tag: str = "invalid_user",
 ) -> bool:
   """
-  План Б на шаге пруфа/финализации: если цель недействительна — ответ админу.
+  План Б на шаге пруфа/финализации: если цель недействительна ответ админу.
 
   Returns True, если цель отклонена (вызывающий код должен прервать обработку).
   """

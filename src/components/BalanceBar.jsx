@@ -25,7 +25,7 @@ export default function BalanceBar({
     })
   }, [balanceBar, kut, farmCrops, seedCounts, items, waterCount, axe])
 
-  // В закреплённом режиме скрываем нулевые ресурсы — они не нужны
+  // В закреплённом режиме скрываем нулевые ресурсы они не нужны
   const visibleChips = fixed
     ? chips.filter((c) => c.kind === 'kut' || Number(c.value) > 0)
     : chips

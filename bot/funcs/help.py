@@ -571,7 +571,7 @@ async def _help_reject_intruder(call: types.CallbackQuery) -> None:
 
 
 def _help_owner_guard(user_id: int, message_id: int) -> bool:
-    """True — нажал автор help-сообщения."""
+    """True нажал автор help-сообщения."""
     return _help_is_message_owner(user_id, message_id)
 
 

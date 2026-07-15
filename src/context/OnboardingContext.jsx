@@ -3,7 +3,7 @@ import { completeOnboarding, startOnboarding } from '../lib/onboardingClient'
 import { removeStorage, writeStorage } from '../utils/safeStorage'
 
 const STORAGE_KEY = 'cute_interactive_guide_done'
-// После закрытия приветствия — тихая подсказка-пульс на вкладке «Магазин»,
+// После закрытия приветствия тихая подсказка-пульс на вкладке «Магазин»,
 // сама гаснет по таймауту или как только игрок туда заходит.
 const SHOP_HINT_MS = 45000
 

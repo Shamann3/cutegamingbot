@@ -1,4 +1,4 @@
-# DigitalOcean App Platform — спецификация всего приложения.
+# DigitalOcean App Platform  спецификация всего приложения.
 # Применение: DO → твой App → Settings → App Spec → Edit → вставить этот файл → Save.
 # Один домен, маршрутизация по путям:
 #   /api, /admin/api, /health  → сервис api (FastAPI)
@@ -57,7 +57,7 @@ services:
         value: REPLACE_ME
       - key: ADMIN_LOGIN_KEY
         value: REPLACE_ME
-      # URL узнаешь после первого деплоя — потом впиши реальный https://...ondigitalocean.app
+      # URL узнаешь после первого деплоя потом впиши реальный https://...ondigitalocean.app
       - key: WEBAPP_URL
         value: REPLACE_ME
       - key: ADMIN_WEBAPP_URL
@@ -81,7 +81,7 @@ services:
     routes:
       - path: /
     envs:
-      # Пусто = фронт ходит на тот же домен (/api, /admin/api) — это и нужно при одном домене.
+      # Пусто = фронт ходит на тот же домен (/api, /admin/api) это и нужно при одном домене.
       - key: VITE_API_URL
         scope: BUILD_TIME
         value: ""

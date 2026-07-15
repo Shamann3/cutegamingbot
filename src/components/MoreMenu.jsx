@@ -43,7 +43,7 @@ export default function MoreMenu({ isOpen, onClose, active, onChange }) {
               style={accent ? {
                 // ЭФФЕКТ СТЕКЛА: полупрозрачный градиент в цвет вкладки поверх тёмной карточки.
                 // accent содержит только { strong, glow } (см. TAB_ACCENTS), поэтому строим фон
-                // из accent.glow — это уже translucent rgba, даёт стеклянный оттенок вкладки.
+                // из accent.glow это уже translucent rgba, даёт стеклянный оттенок вкладки.
                 background: `linear-gradient(180deg, ${accent.glow} 0%, rgba(6, 16, 10, 0.85) 100%)`,
                 backdropFilter: 'blur(8px)', // Размытие фона под кнопкой
                 WebkitBackdropFilter: 'blur(8px)',

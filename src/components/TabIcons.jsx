@@ -1,4 +1,4 @@
-// Единый набор line-иконок для нижнего таб-бара — вместо эмодзи, которые
+// Единый набор line-иконок для нижнего таб-бара вместо эмодзи, которые
 // неровно рендерятся между iOS/Android/десктоп Telegram. stroke=currentColor,
 // поэтому цвет (тусклый/акцент вкладки) управляется через CSS в TabBar.
 
@@ -121,7 +121,7 @@ export const TAB_ICONS = {
   more: More,
 }
 
-// Те же значения, что в src/styles/tabThemes.css (--tab-accent-strong / --tab-accent-glow) —
+// Те же значения, что в src/styles/tabThemes.css (--tab-accent-strong / --tab-accent-glow)
 // держать в синхроне, если поменяются там.
 export const TAB_ACCENTS = {
   farm: { strong: '#34d399', glow: 'rgba(52, 211, 153, 0.32)' },

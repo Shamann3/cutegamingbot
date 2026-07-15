@@ -41,7 +41,7 @@ function StatCard({ emoji, label, value, sub }) {
   return (
     <div className="profile-stat-card">
       <span className="profile-stat-emoji">{emoji}</span>
-      <span className="profile-stat-value">{value?.toLocaleString('ru-RU') ?? '—'}</span>
+      <span className="profile-stat-value">{value?.toLocaleString('ru-RU') ?? '-'}</span>
       <span className="profile-stat-label">{label}</span>
       {sub && <span className="profile-stat-sub">{sub}</span>}
     </div>
