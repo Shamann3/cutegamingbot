@@ -19,7 +19,7 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
 
 withdraw_disabled = False # true - отключение вывыдов
-MESSAGE_CHECK_WITHDRAWAL = 200   # минимальное число сообщений в офиц. группе за сегодня
+MESSAGE_CHECK_WITHDRAWAL = 250   # минимальное число сообщений в офиц. группе за сегодня
 MESSAGE_MIN_WORDS = 2
 
 
