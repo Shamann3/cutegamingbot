@@ -129,14 +129,28 @@ function ChatPicker({ selectedIds, onChange }) {
   const knownIds = new Set(chats.map((c) => c.chatId))
   const manualSelected = selectedIds.filter((id) => !knownIds.has(id))
 
+  const selectAll = () => {
+    const filteredIds = filtered.map((c) => c.chatId)
+    onChange([...new Set([...selectedIds, ...filteredIds])])
+  }
+  const clearAll = () => onChange([])
+
   return (
     <div className="panel-grouppost-chatpicker">
-      <input
-        className="panel-users-input"
-        placeholder="Поиск группы по названию или ID"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
+      <div className="panel-grouppost-chatpicker-toolbar">
+        <input
+          className="panel-users-input"
+          placeholder="Поиск группы по названию или ID"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <button type="button" className="panel-users-btn panel-users-btn-sm" disabled={loading || filtered.length === 0} onClick={selectAll}>
+          Выбрать все{query ? ' (найденные)' : ''}
+        </button>
+        <button type="button" className="panel-users-btn panel-users-btn-sm panel-users-btn-danger" disabled={selectedIds.length === 0} onClick={clearAll}>
+          Снять все
+        </button>
+      </div>
       {loading && <p className="panel-shelf-muted">Загрузка групп…</p>}
       {error && <p className="panel-shelf-error">{error}</p>}
       {!loading && !error && (
