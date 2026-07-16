@@ -79,6 +79,7 @@ from aiogram.methods import SendMessage
 import logging
 import json
 import base64
+import re
 from typing import Dict
 import psutil
 from sys import getsizeof
@@ -176,12 +177,60 @@ bot1.session.middleware(TelegramApiLogger())
 dp = Dispatcher()
 router = Router()
 
+@dp.callback_query(lambda c: isinstance(c.data, str) and c.data.startswith("kingm:"))
+async def king_stats_menu_callback(call: types.CallbackQuery):
+    from bot.funcs.king_stats import handle_king_stats_callback
+
+    chat_id = 0
+    try:
+        if call.message and call.message.chat:
+            chat_id = int(call.message.chat.id)
+    except Exception:
+        chat_id = 0
+
+    # Для групп учитываем стандартную проверку бана/состояния.
+    if chat_id < 0:
+        try:
+            await update(bot1, chat_id, db)
+        except Exception as e:
+            if type(e).__name__ == "GroupBanned":
+                return
+
+    await measure_time(
+        handle_king_stats_callback(call, db=db, bot=bot1),
+        "царь меню",
+    )
+
 CRYPTOPAY_TOKEN = "570066:AAYNlme85ncDrUSAYPluFjD8YNlCPhgLvNS"
 USE_TESTNET = False   # ← укажите True, если токен от @CryptoTestnetBot
 NETWORK = TESTNET if USE_TESTNET else MAINNET
 
-# ✅ ИСПРАВЛЕНО: добавлен параметр network
-cp = CryptoPay(token=CRYPTOPAY_TOKEN, network=NETWORK)
+# В локальной тест-песочнице не блокируем старт бота внешними сетевыми зависимостями.
+def _is_local_test_sandbox() -> bool:
+    mode = str(globals().get("DATABASE_MODE", "") or "").strip().lower()
+    location = str(globals().get("DATABASE_LOCATION", "") or "").strip().lower()
+    return mode == "test" and location == "local"
+
+
+def _build_cryptopay_client() -> Optional[CryptoPay]:
+    force_enable = str(os.getenv("CRYPTOPAY_FORCE_ENABLE", "0")).strip().lower() in {"1", "true", "yes", "on"}
+    force_disable = str(os.getenv("CRYPTOPAY_FORCE_DISABLE", "0")).strip().lower() in {"1", "true", "yes", "on"}
+    if force_disable and not force_enable:
+        print("[PAYMENT] CryptoPay disabled by CRYPTOPAY_FORCE_DISABLE.")
+        return None
+
+    if _is_local_test_sandbox() and not force_enable:
+        print("[PAYMENT] CryptoPay disabled in local test sandbox.")
+        return None
+
+    try:
+        return CryptoPay(token=CRYPTOPAY_TOKEN, network=NETWORK)
+    except Exception as e:
+        print(f"[PAYMENT][WARN] CryptoPay init failed: {type(e).__name__}: {e}")
+        return None
+
+
+cp: Optional[CryptoPay] = _build_cryptopay_client()
 
 payment_router = PollingRouter()
 from bot.config.config import PWD
@@ -1985,6 +2034,8 @@ def get_currency_display(currency: str, for_text: bool = False) -> str:
         return currency
 
 async def get_available_currencies() -> List[str]:
+    if cp is None:
+        return []
     try:
         currencies = await cp.get_currencies()
         all_codes = [c.code for c in currencies]
@@ -2126,24 +2177,25 @@ from functools import lru_cache
 def get_crypto_keyboard(stars_whole: int, is_buyback: bool = False, kut_amount: Optional[int] = None) -> InlineKeyboardMarkup:
     """Клавиатура выбора криптовалюты. Для выкупа добавляет _buyback_<kut> в callback_data."""
     crypto_buttons = []
-    for curr, text, emoji_id, has_custom in _CRYPTO_BUTTON_TEMPLATES:
-        if is_buyback and kut_amount is not None:
-            cb_data = f"crypto_{curr}_{stars_whole}_buyback_{kut_amount}"
-        else:
-            cb_data = f"crypto_{curr}_{stars_whole}"
+    if cp is not None:
+        for curr, text, emoji_id, has_custom in _CRYPTO_BUTTON_TEMPLATES:
+            if is_buyback and kut_amount is not None:
+                cb_data = f"crypto_{curr}_{stars_whole}_buyback_{kut_amount}"
+            else:
+                cb_data = f"crypto_{curr}_{stars_whole}"
 
-        if has_custom:
-            btn = InlineKeyboardButton(
-                text=text,
-                callback_data=cb_data,
-                icon_custom_emoji_id=emoji_id
-            )
-        else:
-            btn = InlineKeyboardButton(
-                text=text,
-                callback_data=cb_data
-            )
-        crypto_buttons.append(btn)
+            if has_custom:
+                btn = InlineKeyboardButton(
+                    text=text,
+                    callback_data=cb_data,
+                    icon_custom_emoji_id=emoji_id
+                )
+            else:
+                btn = InlineKeyboardButton(
+                    text=text,
+                    callback_data=cb_data
+                )
+            crypto_buttons.append(btn)
 
     crypto_rows = [crypto_buttons[i:i+2] for i in range(0, len(crypto_buttons), 2)]
     stars_view = format(stars_whole, ',d').replace(',', ' ')
@@ -2483,6 +2535,10 @@ async def crypto_choice_handler(callback: CallbackQuery):
         except ValueError:
             await callback.answer("❌ Ошибка данных выкупа", show_alert=True)
             return
+
+    if cp is None:
+        await callback.answer("Крипто-платежи временно недоступны.", show_alert=True)
+        return
 
     await callback.answer("🔄 Создаём счёт...")
     chat_id = callback.message.chat.id
@@ -35622,6 +35678,22 @@ async def add_firstname_to_usercheck_balance(message: Message):
         task1 = asyncio.create_task(measure_time(reklamachat(message) , "рекламачат"))
         await task1
 
+    from bot.funcs.king_stats import (
+        handle_king_stats_command,
+        has_king_stats_pending_input,
+        is_king_stats_command,
+    )
+    if is_king_stats_command(message.text or "") or has_king_stats_pending_input(message):
+        try:
+            await update(bot1, chat_id, db)
+        except GroupBanned:
+            return
+        await measure_time(
+            handle_king_stats_command(message, db=db, bot=bot1),
+            "царь статистики",
+        )
+        return
+
     if _matches_custom_command(message.text or ""):
         _vdbg("--------------------------------------------------------------------------------------------------")
         # Проверка на точное совпадение с ключевыми словами
@@ -35882,9 +35954,10 @@ async def add_firstname_to_usercheck_balance(message: Message):
             "статистика приглашений" , "реферальная статистика" , "реферальная стата" , "реферальный топ" , "реф топ" ,
             "реф стата" , "реф статистика" , "статистика рефералов" , "стата рефералов" , "стата реф"}
 
-        print(f"🧪 [TOP MAIN] text_lower={text_lower!r}" , flush=True)
+        _top_cmd_norm = _normalize_command_text(text_lower)
+        print(f"🧪 [TOP MAIN] text_lower={text_lower!r} | norm={_top_cmd_norm!r}" , flush=True)
 
-        if text_lower in toptext:
+        if _top_cmd_norm in toptext:
             print("✅ [TOP MAIN] text_lower найден в toptext" , flush=True)
 
             from bot.funcs.top import top
@@ -38288,6 +38361,25 @@ async def botmain():
     except Exception as e:
         print(f"[HOUSEKEEPING][WARN] loop start: {type(e).__name__}: {e}")
 
+    try:
+        if hasattr(db, "ensure_king_stats_schema"):
+            await db.ensure_king_stats_schema()
+    except Exception as e:
+        print(f"[KING][WARN] ensure schema: {type(e).__name__}: {e}")
+
+    try:
+        from bot.runtime.king_stats_worker import start_king_stats_worker
+        start_king_stats_worker(
+            db,
+            bot1,
+            interval_sec=KING_STATS_WORKER_INTERVAL_SEC,
+            payout_mode=KING_STATS_PAYOUT_MODE,
+            period_kind=KING_STATS_PERIOD_KIND,
+            interval_force_new_round=KING_STATS_INTERVAL_FORCE_NEW_ROUND,
+        )
+    except Exception as e:
+        print(f"[KING][WARN] worker start: {type(e).__name__}: {e}")
+
     # ===================== 3) Регистрация кнопок =====================
     try:
         button_registry = ButtonRegistry(dp)
@@ -38376,7 +38468,11 @@ async def botmain():
                 print(f"[🌱][WARN] Eden-бот: ошибка закрытия сессии: {type(e).__name__}: {e}")
 
     # ===================== 6) Основной запуск =====================
-    cp.include_router(payment_router)
+    if cp is not None:
+        cp.include_router(payment_router)
+        print("[PAYMENT] CryptoPay polling enabled.")
+    else:
+        print("[PAYMENT] CryptoPay polling skipped.")
 
     # Запускаем Eden как отдельную задачу
     #eden_task = asyncio.create_task(_start_eden())
@@ -38429,7 +38525,7 @@ async def botmain():
 
     print("[🚀] Запускаем основной и платёжный боты...")
 
-    await asyncio.gather(
+    first_polling_tasks = [
         _resilient_polling(
             "MAIN",
             lambda: dp.start_polling(
@@ -38444,11 +38540,13 @@ async def botmain():
                 ],
             ),
         ),
-        _resilient_polling(
-            "PAYMENT",
-            lambda: cp.start_polling(),
-        ),
-    )
+    ]
+    if cp is not None:
+        first_polling_tasks.append(
+            _resilient_polling("PAYMENT", lambda: cp.start_polling())
+        )
+
+    await asyncio.gather(*first_polling_tasks)
 
 
 
@@ -38456,7 +38554,7 @@ async def botmain():
 
     try:
         print("[🚀] Запускаем основной и платёжный боты...")
-        await asyncio.gather(
+        second_polling_tasks = [
             _resilient_polling(
                 "MAIN",
                 lambda: dp.start_polling(
@@ -38467,8 +38565,12 @@ async def botmain():
                     ],
                 ),
             ),
-            _resilient_polling("PAYMENT", lambda: cp.start_polling()),  # платёжный бот
-        )
+        ]
+        if cp is not None:
+            second_polling_tasks.append(
+                _resilient_polling("PAYMENT", lambda: cp.start_polling())
+            )
+        await asyncio.gather(*second_polling_tasks)
     except asyncio.CancelledError:
         print("[SYSTEM] Получен CancelledError (остановка).")
         raise
