@@ -270,11 +270,25 @@ def _normalize_filter(filter_data: dict | None) -> dict[str, Any]:
 def _build_recipient_sql(
     audience: str,
     filter_data: dict[str, Any],
+    *,
+    exclude_run_id: int | None = None,
 ) -> tuple[str, list[Any]]:
     audience = (audience or "all").strip().lower()
     conditions = ["1=1"]
     params: list[Any] = []
     idx = 1
+
+    if exclude_run_id is not None:
+        # Резюме прерванной рассылки (см. recover_orphaned_broadcasts) - не
+        # отправляем повторно тем, кому уже пытались отправить в ЭТОМ запуске
+        # (и успешно, и неуспешно - вторую попытку такому получателю делать не
+        # надо, это не по адресу выбранной аудитории, а конкретно эта рассылка).
+        conditions.append(
+            f"NOT EXISTS (SELECT 1 FROM broadcast_recipients br "
+            f"WHERE br.run_id = ${idx} AND br.user_id = u.user_id)"
+        )
+        params.append(exclude_run_id)
+        idx += 1
 
     if filter_data.get("excludeBanned", True):
         conditions.append("u.banned = FALSE")
@@ -365,9 +379,10 @@ async def fetch_recipients(
     *,
     limit: int | None = None,
     offset: int = 0,
+    exclude_run_id: int | None = None,
 ) -> list[dict]:
     filt = _normalize_filter(filter_data)
-    sql, params = _build_recipient_sql(audience, filt)
+    sql, params = _build_recipient_sql(audience, filt, exclude_run_id=exclude_run_id)
     if limit is not None:
         sql += f" LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}"
         params.extend([max(1, int(limit)), max(0, int(offset))])
@@ -836,20 +851,18 @@ async def _is_cancelled(run_id: int) -> bool:
 
 
 async def recover_orphaned_broadcasts() -> int:
-    """После перезапуска сервера — снять зависшие рассылки."""
-    result = await db.pool.execute(
-        """
-        UPDATE broadcast_runs
-        SET status = 'cancelled',
-            error_message = COALESCE(NULLIF(error_message, ''), 'Остановлено: сервер перезапущен'),
-            finished_at = COALESCE(finished_at, NOW())
-        WHERE status IN ('pending', 'running')
-        """
+    """После перезапуска сервера (плановый рестарт, деплой, краш) — рассылки,
+    которые были 'pending'/'running' в момент остановки, продолжаются с того
+    места, где их прервали, а не отменяются. exclude_run_id в fetch_recipients
+    (см. _execute_broadcast) гарантирует, что уже обработанным получателям
+    сообщение не уйдёт повторно - раньше это просто помечалось 'cancelled' и
+    админу приходилось перезапускать вручную, теряя прогресс."""
+    rows = await db.pool.fetch(
+        "SELECT id FROM broadcast_runs WHERE status IN ('pending', 'running')"
     )
-    try:
-        return int(str(result).split()[-1])
-    except (ValueError, IndexError):
-        return 0
+    for row in rows:
+        schedule_broadcast_run(int(row["id"]))
+    return len(rows)
 
 
 async def cancel_broadcast(run_id: int, *, admin_user_id: int) -> dict:
@@ -970,7 +983,8 @@ async def _execute_broadcast(run_id: int) -> None:
         """
         SELECT
             id, audience, filter_json, channels_json,
-            title, body, detail, telegram_text, cta_text, cta_url, is_daily_rotation
+            title, body, detail, telegram_text, cta_text, cta_url, is_daily_rotation,
+            recipient_count, webapp_sent, telegram_sent, telegram_failed, telegram_failed_reasons
         FROM broadcast_runs
         WHERE id = $1
         """,
@@ -995,13 +1009,28 @@ async def _execute_broadcast(run_id: int) -> None:
     cta_url = row["cta_url"] or None
     is_daily_rotation = bool(row["is_daily_rotation"])
 
+    # Резюме после рестарта (см. recover_orphaned_broadcasts): если counters уже
+    # ненулевые - это не первый заход на этот run_id, продолжаем накапливать
+    # поверх, а не с нуля (иначе итоговые цифры и recipient_count разъедутся,
+    # и часть получателей задвоится - см. exclude_run_id в fetch_recipients).
+    resuming = row["webapp_sent"] or row["telegram_sent"] or row["telegram_failed"]
+
     await _update_run(run_id, status="running")
 
-    webapp_sent = 0
-    telegram_sent = 0
-    telegram_failed = 0
-    telegram_failed_reasons: dict[str, int] = {}
+    webapp_sent = int(row["webapp_sent"] or 0)
+    telegram_sent = int(row["telegram_sent"] or 0)
+    telegram_failed = int(row["telegram_failed"] or 0)
+    existing_reasons = row["telegram_failed_reasons"]
+    if isinstance(existing_reasons, str):
+        existing_reasons = json.loads(existing_reasons) if existing_reasons else {}
+    telegram_failed_reasons: dict[str, int] = dict(existing_reasons or {})
     recipient_log: list[tuple[int, str, str, str | None, str | None]] = []
+
+    if resuming:
+        logger.info(
+            "Resuming broadcast run_id=%s after restart (webapp_sent=%s telegram_sent=%s telegram_failed=%s)",
+            run_id, webapp_sent, telegram_sent, telegram_failed,
+        )
 
     async def _log_webapp_batch(user_ids: list[int], ok: bool) -> None:
         status = "sent" if ok else "failed"
@@ -1024,6 +1053,7 @@ async def _execute_broadcast(run_id: int) -> None:
                 filter_json or {},
                 limit=RECIPIENT_PAGE_SIZE,
                 offset=offset,
+                exclude_run_id=run_id,
             )
             if not page:
                 break
