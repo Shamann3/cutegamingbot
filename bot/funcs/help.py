@@ -541,6 +541,15 @@ texthelpgame = f"""
 📚 <b>Помощь : <code>Хелп</code></b>
 """
 
+kinghelp = """
+<tg-emoji emoji-id='5425094988260188065'>💪</tg-emoji> <b>Вы хотите, чтобы ваша группа стала живее и активнее? Система «Царь статистики» создана именно для этого. </b>
+
+<blockquote><b><tg-emoji emoji-id='5246750298109656142'>🕺</tg-emoji> Вы сами выбираете период (день, неделя, месяц) и назначаете награды для трёх лучших участников - все призы автоматически списываются с вашего баланса.</b></blockquote>
+ 
+<blockquote><b><tg-emoji emoji-id='5382316645840619380'>🖊</tg-emoji> Никаких сложностей : включите, задайте призы, и топ-3 получат своё. Гибкие настройки под ваш стиль - и активность взлетит. Попробуйте - вы увидите результат сразу.</b></blockquote>
+<b>Просто напишите в группе «<code>система царя статистики</code>»</b>
+"""
+
 user_message_admin_help = LazyGameStore("user_message_admin_help")
 
 # --- Help: только автор сообщения «хелп» может нажимать кнопки ---
@@ -632,6 +641,9 @@ async def help(message: Message):
 
     if is_admin_help_text(message.text):
         await send_admin_help(message)
+
+    if message.text and message.text.lower() in ["хелп царь", "царь хелп", "царь помощь", "help king"]:
+        await message.reply(kinghelp, parse_mode="HTML", disable_web_page_preview=True)
 
     if message.text.lower() in [ "/rules","правила" , "где правила" , "правила группы" , "правила чата" , "смотреть правила" ]:
         if str(message.chat.id) in cute_groups:  # Проверяем, что сообщение в разрешённой группе
@@ -1077,6 +1089,39 @@ async def calltewdxwback_main(call: types.CallbackQuery):
         if "message is not modified" in str(e):
             await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
         pass  # Игнорируем ошибку MessageNotModified
+
+
+@dp.callback_query(lambda c: c.data.startswith('9help_btnking'))
+async def callback_help_king_9(call: types.CallbackQuery):
+    try:
+        await call.message.edit_text(
+            text=kinghelp,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=btn_help9,
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            await call.answer("🥹 Вы уже находитесь в этой вкладке", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data.startswith('help_btnking'))
+async def callback_help_king(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    message_id = call.message.message_id
+    try:
+        if not _help_owner_guard(user_id, message_id):
+            await _help_reject_intruder(call)
+            return
+        await call.message.edit_text(
+            text=kinghelp,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=btn_help,
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            await call.answer("🥹 Вы уже находитесь в этой вкладке", show_alert=True)
 
 @dp.callback_query(lambda c: c.data.startswith('9help_btn4'))
 async def caloakdaslpdlback_main(call: types.CallbackQuery):

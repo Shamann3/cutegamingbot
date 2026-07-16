@@ -18,6 +18,32 @@ PWD = "legehdarg34123412cutegamingbot"
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
 
+
+# ============================================================================
+# KING STATS: РЕЖИМ АВТО-ВЫПЛАТ
+# ============================================================================
+# KING_STATS_PAYOUT_MODE:
+#   "period_change"    -> выплата при смене периода (основной боевой режим)
+#   "interval_seconds" -> выплата каждые N секунд (удобно для быстрого теста)
+KING_STATS_PAYOUT_MODE = "period_change"
+#
+# KING_STATS_PERIOD_KIND:
+#   "day" | "week" | "month"
+# Базовый период по умолчанию (если в группе не задан свой через команду).
+KING_STATS_PERIOD_KIND = "day"
+#
+# Частота тика воркера.
+# - В режиме "period_change" влияет только на частоту проверки смены периода.
+# - В режиме "interval_seconds" это фактический шаг выплат.
+KING_STATS_WORKER_INTERVAL_SEC = 120
+#
+# Только для режима "interval_seconds":
+#   True  -> каждый интервал становится отдельным раундом (легко тестировать повторные выплаты)
+#   False -> выплаты идут один раз на текущий day/week/month период
+KING_STATS_INTERVAL_FORCE_NEW_ROUND = True
+
+
+
 withdraw_disabled = False # true - отключение вывыдов
 MESSAGE_CHECK_WITHDRAWAL = 250   # минимальное число сообщений в офиц. группе за сегодня
 MESSAGE_MIN_WORDS = 2

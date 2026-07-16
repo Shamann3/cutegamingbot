@@ -290,6 +290,7 @@ btn_help6 = InlineKeyboardButton(text="🛡 Кланы", callback_data="help_btn
 # btn_help8 = InlineKeyboardButton(text="🏡 Имущество", callback_data="help_btn8")
 # btn_help9 = InlineKeyboardButton(text="🧑🏼‍🌾 Фермерство", callback_data="help_btn9")
 btn_help10 = InlineKeyboardButton(text="Функции", callback_data="help_btnfunk", style="default" ,icon_custom_emoji_id="5206482003297342650")
+btn_helpking = InlineKeyboardButton(text="Царь статы", callback_data="help_btnking", style="default" ,icon_custom_emoji_id="5262924479226473498")
 
 btn_help1111 = InlineKeyboardButton(text="🩵 Оформление профиля", callback_data="help_editprofile")
 
@@ -301,6 +302,7 @@ inline_keyboard = [
     [btn_help1],
     [btn_help22],
     [btn_help10],
+    [btn_helpking],
     [btn_help2, btn_help3],
     [btn_help5],
     [btn_help5123],
@@ -331,6 +333,7 @@ btn_help69 = InlineKeyboardButton(text="🛡 Кланы", callback_data="9help_b
 # btn_help89 = InlineKeyboardButton(text="🏡 Имущество", callback_data="9help_btn8")
 # btn_help99 = InlineKeyboardButton(text="🧑🏼‍🌾 Фермерство", callback_data="9help_btn9")
 btn_help109 = InlineKeyboardButton(text="Функции", callback_data="9help_btnfunk", style="default" ,icon_custom_emoji_id="5206482003297342650")
+btn_helpking9 = InlineKeyboardButton(text="Царь статы", callback_data="9help_btnking", style="default" ,icon_custom_emoji_id="5262924479226473498")
 
 btn_help11119 = InlineKeyboardButton(text="🩵 Оформление профиля", callback_data="9help_editprofile")
 btn_help5123123 = InlineKeyboardButton(text="Админы", callback_data="help_btnadmin", style="default" ,icon_custom_emoji_id="5352668069984510307")
@@ -341,6 +344,7 @@ inline_keyboard = [
     [btn_help19],
     [btn_help229],
     [btn_help109],
+    [btn_helpking9],
     [btn_help29, btn_help39],
     [btn_help59],
     [btn_help5123123],
@@ -373,6 +377,7 @@ btn_clans_inline = InlineKeyboardButton(text="🛡 Кланы", callback_data="h
 # btn_property_inline = InlineKeyboardButton(text="🏡 Имущество", callback_data="help_property")
 # btn_farming_inline = InlineKeyboardButton(text="🧑🏼‍🌾 Фермерство", callback_data="help_farming")
 btn_functions_inline = InlineKeyboardButton(text="Функции", callback_data="help_functions", style="default" ,icon_custom_emoji_id="5206482003297342650")
+btn_helpking91 = InlineKeyboardButton(text="Царь статы", callback_data="9help_btnking", style="default" ,icon_custom_emoji_id="5262924479226473498")
 btn_hide_inline = InlineKeyboardButton(text="Скрыть", callback_data="help_hide", style="default" ,icon_custom_emoji_id="5226660202035554522")
 btn_help5123123123 = InlineKeyboardButton(text="Админы", callback_data="help_btnadmin", style="default" ,icon_custom_emoji_id="5352668069984510307")
 btn_help1111_inline = InlineKeyboardButton(text="🩵 Оформление профиля", callback_data="help_profileedit")

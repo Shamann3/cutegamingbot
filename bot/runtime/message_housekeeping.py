@@ -17,6 +17,70 @@ _housekeeping_worker_started = False
 _user_light_last: Dict[int, float] = LazyGameStore("_user_light_last")
 _balance_sync_last: Dict[int, float] = LazyGameStore("_balance_sync_last")
 
+_BOT_COMMAND_EXACT = frozenset({
+    "топ",
+    "стата",
+    "статистика",
+    "вся стата",
+    "вся статистика",
+    "баланс",
+    "мой баланс",
+    "профиль",
+    "инвентарь",
+    "магазин",
+    "задания",
+    "хелп",
+    "help",
+    "помощь",
+    "царь",
+    "king",
+    "царь награды",
+})
+
+_BOT_COMMAND_PREFIXES = (
+    "царь ",
+    "king ",
+    "топ ",
+    "стата ",
+    "статистика ",
+    "хелп ",
+    "help ",
+    "профиль",
+    "магазин",
+    "задания",
+    "дать ",
+    "sypher",
+)
+
+_GAME_TRIGGER_PREFIXES = (
+    "трейд ",
+    "фортуна ",
+    "рулетка ",
+    "кости ",
+    "башня ",
+    "найди пару",
+    "мемори ",
+    "бинго ",
+    "шашки ",
+    "дуэль ",
+    "мины ",
+    "бомбы ",
+    "провода ",
+    "риск ",
+    "плиты ",
+    "шар ",
+    "шарик ",
+    "куб ",
+    "кубик ",
+    "дарт ",
+    "дартс ",
+    "фут ",
+    "футбол ",
+    "баскет ",
+    "баскетбол ",
+    "боулинг ",
+)
+
 # Примечание: учёт сообщений (буферы, накопление, сброс в БД и фоновый цикл)
 # полностью вынесен в класс Database (bot/db_create/db.py):
 #   db.record_message(user_id, chat_id)          мгновенный +1 в памяти;
@@ -131,13 +195,63 @@ def _min_words_for_count() -> int:
         return 2
 
 
+def _is_bot_related_or_game_trigger(message: Any) -> bool:
+    """True, если сообщение относится к командам/игровым триггерам и не должно идти в стату."""
+    try:
+        from_user = getattr(message, "from_user", None)
+        if from_user is not None and bool(getattr(from_user, "is_bot", False)):
+            return True
+
+        if getattr(message, "via_bot", None) is not None:
+            return True
+
+        entities = list(getattr(message, "entities", None) or []) + list(
+            getattr(message, "caption_entities", None) or []
+        )
+        for ent in entities:
+            if str(getattr(ent, "type", "")).lower() == "bot_command":
+                return True
+
+        raw_text = getattr(message, "text", None) or getattr(message, "caption", None) or ""
+        normalized = " ".join(str(raw_text).strip().lower().split())
+        if not normalized:
+            return True
+
+        if normalized.startswith("/") or normalized.startswith("!") or normalized.startswith("."):
+            return True
+
+        if normalized in _BOT_COMMAND_EXACT:
+            return True
+
+        if any(normalized.startswith(prefix) for prefix in _BOT_COMMAND_PREFIXES):
+            return True
+
+        try:
+            from bot.funcs.king_stats import is_king_stats_command
+            if is_king_stats_command(normalized):
+                return True
+        except Exception:
+            pass
+
+        if any(normalized.startswith(prefix) for prefix in _GAME_TRIGGER_PREFIXES):
+            return True
+
+        return False
+    except Exception:
+        # Fail-safe: если фильтр не смог отработать, не блокируем учёт.
+        return False
+
+
 def schedule_message_housekeeping(db, message: Any, *, start_balance: int, bot) -> None:
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
 
     # Засчитываем только «содержательные» сообщения от MESSAGE_MIN_WORDS слов.
-    # Короткие односложные («привет») в статистику не идут.
-    if _message_word_count(message) >= _min_words_for_count():
+    # Короткие односложные («привет») и команды/игровые триггеры в статистику не идут.
+    if (
+        _message_word_count(message) >= _min_words_for_count()
+        and not _is_bot_related_or_game_trigger(message)
+    ):
         db.record_message(user_id, chat_id)
 
     asyncio.create_task(_light_user_chat_touch(db, message, start_balance, bot))

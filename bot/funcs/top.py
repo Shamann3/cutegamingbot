@@ -216,6 +216,7 @@ async def top(message: Message):
         top_debug_print("📥 [ТОП] Хэндлер top ВООБЩЕ был вызван")
         top_debug_print(f"💬 [ТОП] message.text: {message.text!r}")
 
+        chat_id = None
         user_id = None
 
         try:
@@ -374,6 +375,7 @@ async def top(message: Message):
         stata_debug_print("════════════════════════════════════")
         stata_debug_print("📥 [СТАТА][WEEK] open_week_stats_message_improved был вызван")
 
+        chat_id = None
         user_id = None
 
         try:
@@ -433,21 +435,21 @@ async def top(message: Message):
 
                 now_dt = _now_dt()
                 fallback_month_key = _build_month_key(now_dt.year , now_dt.month)
+                fallback_year_key = str(int(now_dt.year))
 
                 fallback_text = (
                     "<tg-emoji emoji-id='5438529285184847871'>🎁</tg-emoji> <b>Статистика сообщений за неделю</b>\n"
                     "<i>Не удалось сразу открыть недельную статистику. Нажми на нужный раздел ниже.</i>")
 
-                fallback_kb = InlineKeyboardMarkup(
-                    inline_keyboard=[ [ InlineKeyboardButton(
-                        text="За неделю" , callback_data=f"weekstate123:{fallback_week_key}" , style="default" ,
-                        icon_custom_emoji_id="5438529285184847871") ] , [ InlineKeyboardButton(
-                        text="За день" , callback_data=f"state123:{fallback_day_key}" , style="default" ,
-                        icon_custom_emoji_id="5424987025667293801") , InlineKeyboardButton(
-                        text="За месяц" , callback_data=f"monthstate123:{fallback_month_key}" , style="default" ,
-                        icon_custom_emoji_id="5436371618169389408") , InlineKeyboardButton(
-                        text="За всё время" , callback_data="fullstate123" , style="default" ,
-                        icon_custom_emoji_id="5303138782004924588") ] ])
+                fallback_chat_id = chat_id if chat_id is not None else (message.chat.id if message and message.chat else 0)
+                fallback_kb = await _kb_stats(
+                    chat_id=int(fallback_chat_id),
+                    active="week",
+                    day_key=fallback_day_key,
+                    week_key=fallback_week_key,
+                    month_key=fallback_month_key,
+                    year_key=fallback_year_key,
+                )
 
                 stata_debug_print("🛟 [СТАТА][WEEK] Пробую отправить fallback-меню статистики")
 
@@ -534,21 +536,26 @@ async def top(message: Message):
 
                 now_dt = _now_dt()
                 fallback_month_key = _build_month_key(now_dt.year , now_dt.month)
+                fallback_year_key = str(int(now_dt.year))
+
+                fallback_chat_id = chat_id if chat_id is not None else (message.chat.id if message and message.chat else 0)
+                fallback_kb = await _kb_stats(
+                    chat_id=int(fallback_chat_id),
+                    active="week",
+                    day_key=fallback_day_key,
+                    week_key=fallback_week_key,
+                    month_key=fallback_month_key,
+                    year_key=fallback_year_key,
+                )
 
                 sent_messagestata = await message.reply(
                     text=("<tg-emoji emoji-id='5438529285184847871'>🎁</tg-emoji> "
                           "<b>Статистика сообщений</b>\n"
-                          "<i>Выбери нужный вид статистики кнопками ниже.</i>") , reply_markup=InlineKeyboardMarkup(
-                        inline_keyboard=[ [ InlineKeyboardButton(
-                            text="За неделю" , callback_data=f"weekstate123:{fallback_week_key}" , style="default" ,
-                            icon_custom_emoji_id="5438529285184847871") ] , [ InlineKeyboardButton(
-                            text="За день" , callback_data=f"state123:{fallback_day_key}" , style="default" ,
-                            icon_custom_emoji_id="5424987025667293801") , InlineKeyboardButton(
-                            text="За месяц" , callback_data=f"monthstate123:{fallback_month_key}" , style="default" ,
-                            icon_custom_emoji_id="5436371618169389408") , InlineKeyboardButton(
-                            text="За всё время" , callback_data="fullstate123" , style="default" ,
-                            icon_custom_emoji_id="5303138782004924588") ] ]) , parse_mode="HTML" ,
-                    disable_web_page_preview=True)
+                          "<i>Выбери нужный вид статистики кнопками ниже.</i>"),
+                    reply_markup=fallback_kb,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
 
                 if user_id is None and message.from_user:
                     user_id = message.from_user.id
@@ -1142,6 +1149,7 @@ async def top(message: Message):
         stata_debug_print("════════════════════════════════════")
         stata_debug_print("📥 [СТАТА][ALL] open_all_stats_message_improved был вызван")
 
+        chat_id = None
         user_id = None
 
         try:
@@ -1208,20 +1216,21 @@ async def top(message: Message):
                 now_dt = _now_dt()
                 fallback_month_key = _build_month_key(now_dt.year , now_dt.month)
 
+                fallback_year_key = str(int(now_dt.year))
+
                 fallback_text = (
                     "<tg-emoji emoji-id='5303138782004924588'>💬</tg-emoji> <b>Статистика сообщений за всё время</b>\n"
                     "<i>Не удалось сразу открыть полную статистику. Нажми на нужный раздел ниже.</i>")
 
-                fallback_kb = InlineKeyboardMarkup(
-                    inline_keyboard=[ [ InlineKeyboardButton(
-                        text="За всё время" , callback_data="fullstate123" , style="default" ,
-                        icon_custom_emoji_id="5303138782004924588") ] , [ InlineKeyboardButton(
-                        text="За день" , callback_data=f"state123:{fallback_day_key}" , style="default" ,
-                        icon_custom_emoji_id="5424987025667293801") , InlineKeyboardButton(
-                        text="За неделю" , callback_data=f"weekstate123:{fallback_week_key}" , style="default" ,
-                        icon_custom_emoji_id="5438529285184847871") , InlineKeyboardButton(
-                        text="За месяц" , callback_data=f"monthstate123:{fallback_month_key}" , style="default" ,
-                        icon_custom_emoji_id="5436371618169389408") ] ])
+                fallback_chat_id = chat_id if chat_id is not None else (message.chat.id if message and message.chat else 0)
+                fallback_kb = await _kb_stats(
+                    chat_id=int(fallback_chat_id),
+                    active="all",
+                    day_key=fallback_day_key,
+                    week_key=fallback_week_key,
+                    month_key=fallback_month_key,
+                    year_key=fallback_year_key,
+                )
 
                 stata_debug_print("🛟 [СТАТА][ALL] Пробую отправить fallback-меню статистики")
 
@@ -1311,21 +1320,26 @@ async def top(message: Message):
 
                 now_dt = _now_dt()
                 fallback_month_key = _build_month_key(now_dt.year , now_dt.month)
+                fallback_year_key = str(int(now_dt.year))
+
+                fallback_chat_id = chat_id if chat_id is not None else (message.chat.id if message and message.chat else 0)
+                fallback_kb = await _kb_stats(
+                    chat_id=int(fallback_chat_id),
+                    active="all",
+                    day_key=fallback_day_key,
+                    week_key=fallback_week_key,
+                    month_key=fallback_month_key,
+                    year_key=fallback_year_key,
+                )
 
                 sent_messagestata = await message.reply(
                     text=("<tg-emoji emoji-id='5303138782004924588'>💬</tg-emoji> "
                           "<b>Статистика сообщений</b>\n"
-                          "<i>Выбери нужный вид статистики кнопками ниже.</i>") , reply_markup=InlineKeyboardMarkup(
-                        inline_keyboard=[ [ InlineKeyboardButton(
-                            text="За всё время" , callback_data="fullstate123" , style="default" ,
-                            icon_custom_emoji_id="5303138782004924588") ] , [ InlineKeyboardButton(
-                            text="За день" , callback_data=f"state123:{fallback_day_key}" , style="default" ,
-                            icon_custom_emoji_id="5424987025667293801") , InlineKeyboardButton(
-                            text="За неделю" , callback_data=f"weekstate123:{fallback_week_key}" , style="default" ,
-                            icon_custom_emoji_id="5438529285184847871") , InlineKeyboardButton(
-                            text="За месяц" , callback_data=f"monthstate123:{fallback_month_key}" , style="default" ,
-                            icon_custom_emoji_id="5436371618169389408") ] ]) , parse_mode="HTML" ,
-                    disable_web_page_preview=True)
+                          "<i>Выбери нужный вид статистики кнопками ниже.</i>"),
+                    reply_markup=fallback_kb,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
 
                 if user_id is None and message.from_user:
                     user_id = message.from_user.id
@@ -1449,6 +1463,7 @@ async def top(message: Message):
         stata_debug_print("════════════════════════════════════")
         stata_debug_print("📥 [СТАТА] open_stats_message_improved был вызван")
 
+        chat_id = None
         user_id = None
 
         try:
@@ -1508,19 +1523,20 @@ async def top(message: Message):
                 now_dt = _now_dt()
                 fallback_month_key = _build_month_key(now_dt.year , now_dt.month)
 
+                fallback_year_key = str(int(now_dt.year))
+
                 fallback_text = ("<tg-emoji emoji-id='5424987025667293801'>🐰</tg-emoji> <b>Статистика сообщений</b>\n"
                                  "<i>Не удалось открыть полную статистику сразу. Нажми на нужный раздел ниже.</i>")
 
-                fallback_kb = InlineKeyboardMarkup(
-                    inline_keyboard=[ [ InlineKeyboardButton(
-                        text="За день" , callback_data=f"state123:{fallback_day_key}" , style="default" ,
-                        icon_custom_emoji_id="5424987025667293801") ] , [ InlineKeyboardButton(
-                        text="За всё время" , callback_data="fullstate123" , style="default" ,
-                        icon_custom_emoji_id="5303138782004924588") , InlineKeyboardButton(
-                        text="За неделю" , callback_data=f"weekstate123:{fallback_week_key}" , style="default" ,
-                        icon_custom_emoji_id="5438529285184847871") , InlineKeyboardButton(
-                        text="За месяц" , callback_data=f"monthstate123:{fallback_month_key}" , style="default" ,
-                        icon_custom_emoji_id="5436371618169389408") ] ])
+                fallback_chat_id = chat_id if chat_id is not None else (message.chat.id if message and message.chat else 0)
+                fallback_kb = await _kb_stats(
+                    chat_id=int(fallback_chat_id),
+                    active="day",
+                    day_key=fallback_day_key,
+                    week_key=fallback_week_key,
+                    month_key=fallback_month_key,
+                    year_key=fallback_year_key,
+                )
 
                 stata_debug_print("🛟 [СТАТА] Пробую отправить fallback-меню статистики")
 
@@ -1556,6 +1572,7 @@ async def top(message: Message):
         stata_debug_print("📥 [СТАТА] Хэндлер статы ВООБЩЕ был вызван")
         stata_debug_print(f"💬 [СТАТА] message.text: {message.text!r}")
 
+        chat_id = None
         user_id = None
 
         try:
@@ -1607,21 +1624,26 @@ async def top(message: Message):
 
                 now_dt = _now_dt()
                 fallback_month_key = _build_month_key(now_dt.year , now_dt.month)
+                fallback_year_key = str(int(now_dt.year))
+
+                fallback_chat_id = chat_id if chat_id is not None else (message.chat.id if message and message.chat else 0)
+                fallback_kb = await _kb_stats(
+                    chat_id=int(fallback_chat_id),
+                    active="day",
+                    day_key=fallback_day_key,
+                    week_key=fallback_week_key,
+                    month_key=fallback_month_key,
+                    year_key=fallback_year_key,
+                )
 
                 sent_messagestata = await message.reply(
                     text=("<tg-emoji emoji-id='5424987025667293801'>🐰</tg-emoji> "
                           "<b>Статистика сообщений</b>\n"
-                          "<i>Выбери нужный вид статистики кнопками ниже.</i>") , reply_markup=InlineKeyboardMarkup(
-                        inline_keyboard=[ [ InlineKeyboardButton(
-                            text="За день" , callback_data=f"state123:{fallback_day_key}" , style="default" ,
-                            icon_custom_emoji_id="5424987025667293801") ] , [ InlineKeyboardButton(
-                            text="За всё время" , callback_data="fullstate123" , style="default" ,
-                            icon_custom_emoji_id="5303138782004924588") , InlineKeyboardButton(
-                            text="За неделю" , callback_data=f"weekstate123:{fallback_week_key}" , style="default" ,
-                            icon_custom_emoji_id="5438529285184847871") , InlineKeyboardButton(
-                            text="За месяц" , callback_data=f"monthstate123:{fallback_month_key}" , style="default" ,
-                            icon_custom_emoji_id="5436371618169389408") ] ]) , parse_mode="HTML" ,
-                    disable_web_page_preview=True)
+                          "<i>Выбери нужный вид статистики кнопками ниже.</i>"),
+                    reply_markup=fallback_kb,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
 
                 if user_id is None and message.from_user:
                     user_id = message.from_user.id
@@ -2490,6 +2512,10 @@ async def _is_stata_enabled(chat_id: int) -> bool:
         print(f"Ошибка при получении current_stata для chat_id {chat_id}: {e}")
         current_stata = 1
 
+    if current_stata is None:
+        # fail-open: при временных сбоях БД не ломаем кнопки статистики.
+        current_stata = 1
+
     enabled = int(current_stata or 0) != 0
     _stats_switch_cache[chat_id] = (enabled, now_ts)
     return enabled
@@ -2932,6 +2958,33 @@ async def _resolve_valid_month_key(chat_id: int, requested_month_key: Optional[s
     return month_keys[-1]
 
 
+async def _get_available_year_keys(chat_id: int) -> List[str]:
+    month_keys = await _get_available_month_keys(chat_id)
+    years: list[str] = []
+    for key in month_keys:
+        y, _m = _parse_month_key(key)
+        years.append(str(int(y)))
+
+    years = sorted(set(years))
+    if years:
+        return years
+
+    now = _now_dt()
+    return [str(int(now.year))]
+
+
+async def _resolve_valid_year_key(chat_id: int, requested_year_key: Optional[str] = None) -> str:
+    year_keys = await _get_available_year_keys(chat_id)
+    if not year_keys:
+        return str(int(_now_dt().year))
+
+    requested = str(requested_year_key or "").strip()
+    if requested and requested in year_keys:
+        return requested
+
+    return year_keys[-1]
+
+
 async def _get_day_nav_info(chat_id: int, day_key: Optional[str]):
     day_keys = await _get_available_day_keys(chat_id)
     resolved_key = await _resolve_valid_day_key(chat_id, day_key)
@@ -3010,6 +3063,30 @@ async def _get_month_nav_info(chat_id: int, month_key: Optional[str]):
     }
 
 
+async def _get_year_nav_info(chat_id: int, year_key: Optional[str]):
+    year_keys = await _get_available_year_keys(chat_id)
+    resolved_key = await _resolve_valid_year_key(chat_id, year_key)
+
+    prev_key = None
+    next_key = None
+    has_data = resolved_key in year_keys
+
+    if has_data:
+        idx = year_keys.index(resolved_key)
+        if idx > 0:
+            prev_key = year_keys[idx - 1]
+        if idx < len(year_keys) - 1:
+            next_key = year_keys[idx + 1]
+
+    return {
+        "resolved_key": resolved_key,
+        "year_keys": year_keys,
+        "prev_key": prev_key,
+        "next_key": next_key,
+        "has_data": has_data,
+    }
+
+
 # =========================================================
 # КЛАВИАТУРА
 # =========================================================
@@ -3019,7 +3096,8 @@ async def _kb_stats(
     active: str = "day",
     day_key: Optional[str] = None,
     week_key: Optional[str] = None,
-    month_key: Optional[str] = None
+    month_key: Optional[str] = None,
+    year_key: Optional[str] = None,
 ) -> InlineKeyboardMarkup:
     if active == "day":
         day_key = await _resolve_valid_day_key(chat_id, day_key)
@@ -3029,10 +3107,13 @@ async def _kb_stats(
 
     if active == "month":
         month_key = await _resolve_valid_month_key(chat_id, month_key)
+    if active == "year":
+        year_key = await _resolve_valid_year_key(chat_id, year_key)
 
     t_day = "✔️ За день" if active == "day" else "За день"
     t_week = "✔️ За неделю" if active == "week" else "За неделю"
     t_month = "✔️ За месяц" if active == "month" else "За месяц"
+    t_year = "✔️ За год" if active == "year" else "За год"
     t_all = "✔️ За всё время" if active == "all" else "За всё время"
 
     btn_day = InlineKeyboardButton(
@@ -3053,6 +3134,12 @@ async def _kb_stats(
         style="default",
         icon_custom_emoji_id="5436371618169389408"
     )
+    btn_year = InlineKeyboardButton(
+        text=t_year,
+        callback_data=f"yearstate123:{year_key or ''}",
+        style="default",
+        icon_custom_emoji_id="5249233098444399524"
+    )
     btn_all = InlineKeyboardButton(
         text=t_all,
         callback_data="fullstate123",
@@ -3068,7 +3155,8 @@ async def _kb_stats(
 
     rows = [
         [btn_day],
-        [btn_all, btn_week, btn_month],
+        [btn_week, btn_month, btn_year],
+        [btn_all],
     ]
 
     if active == "day":
@@ -3196,6 +3284,42 @@ async def _kb_stats(
 
         if prev_key or next_key:
             rows.append(nav_row)
+    elif active == "year":
+        nav = await _get_year_nav_info(chat_id, year_key)
+        resolved_key = nav["resolved_key"]
+        prev_key = nav["prev_key"]
+        next_key = nav["next_key"]
+        year_view = _safe_int(resolved_key, _now_dt().year)
+
+        nav_row = []
+        if prev_key:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text=" ",
+                    callback_data=f"yearnav123:{prev_key}",
+                    style="default",
+                    icon_custom_emoji_id="5805509901048356965"
+                )
+            )
+        nav_row.append(
+            InlineKeyboardButton(
+                text=f"{year_view} год",
+                callback_data="yearnoop123",
+                style="default",
+                icon_custom_emoji_id="5274055917766202507"
+            )
+        )
+        if next_key:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text=" ",
+                    callback_data=f"yearnav123:{next_key}",
+                    style="default",
+                    icon_custom_emoji_id="5807453545548487345"
+                )
+            )
+        if prev_key or next_key:
+            rows.append(nav_row)
 
     rows.append([btn_back])
 
@@ -3206,32 +3330,108 @@ async def _kb_stats(
 # ТЕКСТЫ
 # =========================================================
 
+def _king_count_for_period(summary: dict | None, period_kind: str) -> int:
+    info = summary or {}
+    period = str(period_kind or "day").strip().lower()
+    if period == "day":
+        return int(info.get("day_count") or 0)
+    if period == "week":
+        return int(info.get("period_week_total") or 0)
+    if period == "month":
+        return int(info.get("month_count") or 0)
+    if period == "year":
+        return int(info.get("year_count") or 0)
+    return int(info.get("total_count") or 0)
+
+
+def _period_status_title(period_kind: str) -> str:
+    period = str(period_kind or "day").strip().lower()
+    if period == "day":
+        return "Сегодня"
+    if period == "week":
+        return "За неделю"
+    if period == "month":
+        return "За месяц"
+    if period == "year":
+        return "За год"
+    return "За всё время"
+
+
+def _chat_king_history_line(summary: dict | None, period_kind: str = "day") -> str:
+    info = summary or {}
+    day_count = int(info.get("day_count") or 0)
+    week_count = int(info.get("period_week_total") or 0)
+    month_count = int(info.get("month_count") or 0)
+    year_count = int(info.get("year_count") or 0)
+    total_count = int(info.get("total_count") or 0)
+    period_count = _king_count_for_period(info, period_kind)
+    status_title = _period_status_title(period_kind)
+    period = str(period_kind or "day").strip().lower()
+
+    status_line = (
+        f"<tg-emoji emoji-id='5229011542011299168'>👑</tg-emoji> <b>{status_title} в этой группе : вы - царь статистики.</b>\n"
+        if period_count > 0
+        else f"<tg-emoji emoji-id='5229011542011299168'>👑</tg-emoji> <b>{status_title} в этой группе : вы пока не царь статистики.</b>\n"
+    )
+    if period == "day":
+        achievements_line = (
+            "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji> <b>"
+            f"<i>{_fmt_int(day_count)}</i> раз за день • "
+            f"<i>{_fmt_int(week_count)}</i> раз за неделю • "
+            f"<i>{_fmt_int(month_count)}</i> раз за месяц • "
+            f"<i>{_fmt_int(year_count)}</i> раз за год • "
+            f"<i>{_fmt_int(total_count)}</i> всего</b>\n\n"
+        )
+    elif period == "week":
+        achievements_line = (
+            "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji> "
+            f"<b><i>{_fmt_int(week_count)}</i> раз за неделю</b>\n\n"
+        )
+    elif period == "month":
+        achievements_line = (
+            "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji> "
+            f"<b><i>{_fmt_int(month_count)}</i> раз за месяц</b>\n\n"
+        )
+    elif period == "year":
+        achievements_line = (
+            "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji> "
+            f"<b><i>{_fmt_int(year_count)}</i> раз за год</b>\n\n"
+        )
+    else:
+        achievements_line = (
+            "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji> "
+            f"<b><i>{_fmt_int(total_count)}</i> раз за всё время</b>\n\n"
+        )
+    return status_line + achievements_line
+
+
 async def _stat_text_day(chat_id: int, user_id: int, day_key: Optional[str] = None, limit: int = 30) -> str:
     nav = await _get_day_nav_info(chat_id, day_key)
     resolved_key = nav["resolved_key"]
     target_day = _parse_day_key(resolved_key)
     day_str = target_day.strftime("%Y-%m-%d")
 
-    stats_snapshot, member_count = await asyncio.gather(
+    stats_snapshot, member_count, chat_king = await asyncio.gather(
         db.get_stats_snapshot_by_day(chat_id=chat_id, user_id=user_id, day_str=day_str, limit=limit),
         _safe_member_count(chat_id),
+        db.get_user_chat_king_summary(chat_id=chat_id, user_id=user_id, reference_date=target_day),
     )
 
     top_users = stats_snapshot.get("top_users") or []
     total_messages = int(stats_snapshot.get("total_messages") or 0)
     user_msg_count = int(stats_snapshot.get("user_msg_count") or 0)
     max_messages_user = stats_snapshot.get("max_messages_user")
-
-    text = (
-        f"<tg-emoji emoji-id='5424987025667293801'>🐰</tg-emoji> <b>Статистика сообщений за день</b> <code>[{_day_label(target_day)}]</code>\n"
-        f"<tg-emoji emoji-id='5193136281483254509'>🦅</tg-emoji> <b>Вы написали :</b> <i>{_fmt_int(user_msg_count)}</i>\n\n"
-    )
-
     top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
     max_uid = max_cnt = None
     if max_messages_user is not None:
         max_uid, max_cnt = _extract_top_row(max_messages_user)
     names_bulk = await db.get_names_bulk(top_ids + ([max_uid] if max_uid is not None else []))
+
+    text = (
+        f"<tg-emoji emoji-id='5424987025667293801'>🐰</tg-emoji> <b>Статистика сообщений за день</b> <code>[{_day_label(target_day)}]</code>\n"
+        f"<tg-emoji emoji-id='5193136281483254509'>🦅</tg-emoji> <b>Вы написали :</b> <i>{_fmt_int(user_msg_count)}</i>\n\n"
+        f"{_chat_king_history_line(chat_king, period_kind='day')}"
+    )
 
     if max_messages_user is not None and member_count >= 1000:
         max_user_link = _link_from_names_bulk(max_uid, names_bulk)
@@ -3266,7 +3466,7 @@ async def _stat_text_week(chat_id: int, user_id: int, week_key: Optional[str] = 
     date_from = week_start_date.strftime("%Y-%m-%d")
     date_to = week_end_date.strftime("%Y-%m-%d")
 
-    stats_snapshot, member_count = await asyncio.gather(
+    stats_snapshot, member_count, chat_king = await asyncio.gather(
         db.get_stats_snapshot_by_period(
             chat_id=chat_id,
             user_id=user_id,
@@ -3275,25 +3475,26 @@ async def _stat_text_week(chat_id: int, user_id: int, week_key: Optional[str] = 
             limit=limit,
         ),
         _safe_member_count(chat_id),
+        db.get_user_chat_king_summary(chat_id=chat_id, user_id=user_id, reference_date=week_end_date),
     )
 
     top_users = stats_snapshot.get("top_users") or []
     total_messages = int(stats_snapshot.get("total_messages") or 0)
     user_msg_count = int(stats_snapshot.get("user_msg_count") or 0)
     max_messages_user = stats_snapshot.get("max_messages_user")
+    top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
+    max_uid = max_cnt = None
+    if max_messages_user is not None:
+        max_uid, max_cnt = _extract_top_row(max_messages_user)
+    names_bulk = await db.get_names_bulk(top_ids + ([max_uid] if max_uid is not None else []))
 
     period_str = f"{week_start_date.strftime('%d.%m.%Y')} - {week_end_date.strftime('%d.%m.%Y')}"
 
     text = (
         f"<tg-emoji emoji-id='5438529285184847871'>🎁</tg-emoji> <b>Статистика сообщений за неделю</b> <code>[{period_str}]</code>\n"
         f"<tg-emoji emoji-id='5246815104871201488'>🐒</tg-emoji> <b>Вы написали :</b> <i>{_fmt_int(user_msg_count)}</i>\n\n"
+        f"{_chat_king_history_line(chat_king, period_kind='week')}"
     )
-
-    top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
-    max_uid = max_cnt = None
-    if max_messages_user is not None:
-        max_uid, max_cnt = _extract_top_row(max_messages_user)
-    names_bulk = await db.get_names_bulk(top_ids + ([max_uid] if max_uid is not None else []))
 
     if max_messages_user is not None and member_count >= 1000:
         max_link = _link_from_names_bulk(max_uid, names_bulk)
@@ -3332,7 +3533,12 @@ async def _stat_text_month(chat_id: int, user_id: int, month_key: Optional[str] 
             f"<tg-emoji emoji-id='5436371618169389408'>🎁</tg-emoji> В базе пока нет данных по месяцам для этого чата."
         )
 
-    stats_snapshot, member_count = await asyncio.gather(
+    if month == 12:
+        month_end_date = date(year, 12, 31)
+    else:
+        month_end_date = date(year, month + 1, 1) - timedelta(days=1)
+
+    stats_snapshot, member_count, chat_king = await asyncio.gather(
         db.get_stats_snapshot_month(
             chat_id=chat_id,
             user_id=user_id,
@@ -3341,23 +3547,24 @@ async def _stat_text_month(chat_id: int, user_id: int, month_key: Optional[str] 
             limit=limit,
         ),
         _safe_member_count(chat_id),
+        db.get_user_chat_king_summary(chat_id=chat_id, user_id=user_id, reference_date=month_end_date),
     )
 
     top_users = stats_snapshot.get("top_users") or []
     total_messages = int(stats_snapshot.get("total_messages") or 0)
     user_msg_count = int(stats_snapshot.get("user_msg_count") or 0)
     max_messages_user = stats_snapshot.get("max_messages_user")
-
-    text = (
-        f"<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>Статистика сообщений за месяц</b> <code>[{_month_range_label(year, month)}]</code>\n"
-        f"<tg-emoji emoji-id='5436371618169389408'>🎁</tg-emoji> <b>Вы написали :</b> <i>{_fmt_int(user_msg_count)}</i>\n\n"
-    )
-
     top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
     max_uid = max_cnt = None
     if max_messages_user is not None:
         max_uid, max_cnt = _extract_top_row(max_messages_user)
     names_bulk = await db.get_names_bulk(top_ids + ([max_uid] if max_uid is not None else []))
+
+    text = (
+        f"<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>Статистика сообщений за месяц</b> <code>[{_month_range_label(year, month)}]</code>\n"
+        f"<tg-emoji emoji-id='5436371618169389408'>🎁</tg-emoji> <b>Вы написали :</b> <i>{_fmt_int(user_msg_count)}</i>\n\n"
+        f"{_chat_king_history_line(chat_king, period_kind='month')}"
+    )
 
     if max_messages_user is not None and member_count >= 1000:
         max_link = _link_from_names_bulk(max_uid, names_bulk)
@@ -3383,27 +3590,86 @@ async def _stat_text_month(chat_id: int, user_id: int, month_key: Optional[str] 
     return text
 
 
-async def _stat_text_all(chat_id: int, user_id: int, limit: int = 30) -> str:
-    stats_snapshot, member_count = await asyncio.gather(
-        db.get_stats_snapshot_all_time(chat_id=chat_id, user_id=user_id, limit=limit),
+async def _stat_text_year(chat_id: int, user_id: int, year_key: Optional[str] = None, limit: int = 30) -> str:
+    nav = await _get_year_nav_info(chat_id, year_key)
+    resolved_key = nav["resolved_key"]
+    year = _safe_int(resolved_key, _now_dt().year)
+    period_start = date(int(year), 1, 1)
+    period_end = date(int(year), 12, 31)
+
+    stats_snapshot, member_count, chat_king = await asyncio.gather(
+        db.get_stats_snapshot_by_period(
+            chat_id=chat_id,
+            user_id=user_id,
+            start_date=period_start.strftime("%Y-%m-%d"),
+            end_date=period_end.strftime("%Y-%m-%d"),
+            limit=limit,
+        ),
         _safe_member_count(chat_id),
+        db.get_user_chat_king_summary(chat_id=chat_id, user_id=user_id, reference_date=period_end),
     )
 
     top_users = stats_snapshot.get("top_users") or []
     total_messages = int(stats_snapshot.get("total_messages") or 0)
     user_msg_count = int(stats_snapshot.get("user_msg_count") or 0)
     max_messages_user = stats_snapshot.get("max_messages_user")
-
-    text = (
-        f"<tg-emoji emoji-id='5303138782004924588'>💬</tg-emoji> <b>Статистика сообщений за всё время</b>\n"
-        f"<tg-emoji emoji-id='5318872213577834693'>🎒</tg-emoji> <b>Вы написали :</b> <i>{_fmt_int(user_msg_count)}</i>\n\n"
-    )
-
     top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
     max_uid = max_cnt = None
     if max_messages_user is not None:
         max_uid, max_cnt = _extract_top_row(max_messages_user)
     names_bulk = await db.get_names_bulk(top_ids + ([max_uid] if max_uid is not None else []))
+
+    text = (
+        f"<tg-emoji emoji-id='5249233098444399524'>🗓</tg-emoji> <b>Статистика сообщений за год</b> <code>[{year}]</code>\n"
+        f"<tg-emoji emoji-id='5318872213577834693'>🎒</tg-emoji> <b>Вы написали :</b> <i>{_fmt_int(user_msg_count)}</i>\n\n"
+        f"{_chat_king_history_line(chat_king, period_kind='year')}"
+    )
+
+    if max_messages_user is not None and member_count >= 1000:
+        max_link = _link_from_names_bulk(max_uid, names_bulk)
+        text += (
+            f"👑 <b><i>{max_link}</i> - царь статистики года!</b>\n"
+            f"🏆 <b>{_fmt_int(max_cnt)}</b> сообщений за год\n\n"
+        )
+
+    if top_users:
+        for rank, row in enumerate(top_users, start=1):
+            uid, cnt = _extract_top_row(row)
+            name_link = _link_from_names_bulk(uid, names_bulk)
+            if rank <= 3:
+                text += f"<b>{rank}. {name_link} ─ {_fmt_int(cnt)}</b>\n"
+            else:
+                text += f"{rank}. {name_link} ─ <b>{_fmt_int(cnt)}</b>\n"
+    else:
+        text += "За выбранный год сообщений пока нет.\n"
+
+    text += f"\n<tg-emoji emoji-id='5247000905156419417'>🧞‍♂️</tg-emoji> <b>Всего в чате:</b> <i>{_fmt_int(total_messages)}</i> сообщений"
+    return text
+
+
+async def _stat_text_all(chat_id: int, user_id: int, limit: int = 30) -> str:
+    now_ref = datetime.now(BOT_TIMEZONE).date()
+    stats_snapshot, member_count, chat_king = await asyncio.gather(
+        db.get_stats_snapshot_all_time(chat_id=chat_id, user_id=user_id, limit=limit),
+        _safe_member_count(chat_id),
+        db.get_user_chat_king_summary(chat_id=chat_id, user_id=user_id, reference_date=now_ref),
+    )
+
+    top_users = stats_snapshot.get("top_users") or []
+    total_messages = int(stats_snapshot.get("total_messages") or 0)
+    user_msg_count = int(stats_snapshot.get("user_msg_count") or 0)
+    max_messages_user = stats_snapshot.get("max_messages_user")
+    top_ids = [_extract_top_row(row)[0] for row in top_users] if top_users else []
+    max_uid = max_cnt = None
+    if max_messages_user is not None:
+        max_uid, max_cnt = _extract_top_row(max_messages_user)
+    names_bulk = await db.get_names_bulk(top_ids + ([max_uid] if max_uid is not None else []))
+
+    text = (
+        f"<tg-emoji emoji-id='5303138782004924588'>💬</tg-emoji> <b>Статистика сообщений за всё время</b>\n"
+        f"<tg-emoji emoji-id='5318872213577834693'>🎒</tg-emoji> <b>Вы написали :</b> <i>{_fmt_int(user_msg_count)}</i>\n\n"
+        f"{_chat_king_history_line(chat_king, period_kind='all')}"
+    )
 
     if max_messages_user is not None and member_count >= 1000:
         max_link = _link_from_names_bulk(max_uid, names_bulk)
@@ -3442,11 +3708,15 @@ async def _guard_can_edit(call: types.CallbackQuery) -> bool:
         await call.answer("⚠️ Статистика сейчас выключена", show_alert=True)
         return False
 
-    hint = random.choice(randommessagehelp)
-
-    if user_id not in user_top or user_top.get(user_id) != message_id:
-        await call.answer(hint)
-        return False
+    if user_top.get(user_id) != message_id:
+        # Самовосстановление привязки: если у пользователя по какой-то причине
+        # не совпал message_id, разрешаем работу кнопок и перепривязываем.
+        try:
+            user_top[user_id] = message_id
+            if hasattr(user_top, "save") and callable(user_top.save):
+                user_top.save()
+        except Exception:
+            pass
 
     await call.answer()
     return True
@@ -3634,6 +3904,70 @@ async def cb_stats_month_nav(call: types.CallbackQuery):
 
 @dp.callback_query(lambda c: isinstance(c.data, str) and c.data == "monthnoop123")
 async def cb_stats_month_noop(call: types.CallbackQuery):
+    try:
+        await call.answer()
+    except Exception:
+        pass
+
+
+@dp.callback_query(lambda c: isinstance(c.data, str) and c.data.startswith("yearstate123"))
+async def cb_stats_year(call: types.CallbackQuery):
+    if not await _guard_can_edit(call):
+        return
+
+    try:
+        chat_id = call.message.chat.id
+        user_id = call.from_user.id
+
+        year_key = None
+        parts = str(call.data).split(":", 1)
+        if len(parts) == 2 and parts[1].strip():
+            year_key = parts[1].strip()
+
+        text, kb = await asyncio.gather(
+            _stat_text_year(chat_id, user_id, year_key=year_key, limit=30),
+            _kb_stats(chat_id=chat_id, active="year", year_key=year_key),
+        )
+        await _safe_edit_stats_message(call, text, kb)
+    except Exception as e:
+        print(f"❌ Произошла ошибка в cb_stats_year: {e}")
+        await call.answer("⚠️ Не удалось открыть статистику за год", show_alert=False)
+
+
+@dp.callback_query(lambda c: isinstance(c.data, str) and c.data.startswith("yearnav123:"))
+async def cb_stats_year_nav(call: types.CallbackQuery):
+    if not await _guard_can_edit(call):
+        return
+
+    try:
+        chat_id = call.message.chat.id
+        user_id = call.from_user.id
+
+        year_key = None
+        parts = str(call.data).split(":", 1)
+        if len(parts) == 2 and parts[1].strip():
+            year_key = parts[1].strip()
+
+        year_keys = await _get_available_year_keys(chat_id)
+        if not year_keys:
+            await call.answer("ℹ️ В базе пока нет статистики по годам", show_alert=True)
+            return
+        if year_key not in year_keys:
+            await call.answer("⚠️ Для выбранного года нет данных", show_alert=False)
+            year_key = await _resolve_valid_year_key(chat_id, None)
+
+        text, kb = await asyncio.gather(
+            _stat_text_year(chat_id, user_id, year_key=year_key, limit=30),
+            _kb_stats(chat_id=chat_id, active="year", year_key=year_key),
+        )
+        await _safe_edit_stats_message(call, text, kb)
+    except Exception as e:
+        print(f"❌ Произошла ошибка в cb_stats_year_nav: {e}")
+        await call.answer("⚠️ Не удалось переключить год", show_alert=False)
+
+
+@dp.callback_query(lambda c: isinstance(c.data, str) and c.data == "yearnoop123")
+async def cb_stats_year_noop(call: types.CallbackQuery):
     try:
         await call.answer()
     except Exception:

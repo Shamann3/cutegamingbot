@@ -899,6 +899,1439 @@ class Database:
         if not hasattr(self, "_jackchat_last_tick_log"):
             self._jackchat_last_tick_log = 0.0
 
+    async def ensure_king_stats_schema(self) -> None:
+        if not await self.ensure_pool():
+            raise RuntimeError("Пул соединений не инициализирован (ensure_king_stats_schema).")
+
+        sql = """
+        ALTER TABLE chat
+            ADD COLUMN IF NOT EXISTS creator_id BIGINT,
+            ADD COLUMN IF NOT EXISTS namechat TEXT,
+            ADD COLUMN IF NOT EXISTS usernamechat TEXT,
+            ADD COLUMN IF NOT EXISTS chatlink TEXT;
+
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS king_stats JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+        CREATE TABLE IF NOT EXISTS chat_king_reward_settings (
+            chat_id BIGINT PRIMARY KEY,
+            creator_id BIGINT,
+            enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            min_messages INT NOT NULL DEFAULT 0 CHECK (min_messages >= 0),
+            period_kind TEXT NOT NULL DEFAULT 'day',
+            reward_p1 JSONB NOT NULL DEFAULT '{}'::jsonb,
+            reward_p2 JSONB NOT NULL DEFAULT '{}'::jsonb,
+            reward_p3 JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        ALTER TABLE chat_king_reward_settings
+            ADD COLUMN IF NOT EXISTS period_kind TEXT NOT NULL DEFAULT 'day';
+        ALTER TABLE chat_king_reward_settings
+            ADD COLUMN IF NOT EXISTS active_until_ts TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS start_at_ts TIMESTAMPTZ;
+        UPDATE chat_king_reward_settings
+        SET period_kind = 'day'
+        WHERE period_kind IS NULL
+           OR COALESCE(period_kind, '') = ''
+           OR period_kind NOT IN ('day', 'week', 'month');
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'chk_chat_king_reward_settings_period_kind'
+                  AND conrelid = 'chat_king_reward_settings'::regclass
+            ) THEN
+                ALTER TABLE chat_king_reward_settings
+                    ADD CONSTRAINT chk_chat_king_reward_settings_period_kind
+                    CHECK (period_kind IN ('day', 'week', 'month'));
+            END IF;
+        END $$;
+        ALTER TABLE chat_king_reward_settings
+            ALTER COLUMN min_messages SET DEFAULT 0;
+        ALTER TABLE chat_king_reward_settings
+            DROP CONSTRAINT IF EXISTS chat_king_reward_settings_min_messages_check;
+        ALTER TABLE chat_king_reward_settings
+            DROP CONSTRAINT IF EXISTS chk_chat_king_reward_settings_min_messages_non_negative;
+        UPDATE chat_king_reward_settings
+        SET min_messages = 0
+        WHERE min_messages IS NULL
+           OR min_messages < 0;
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'chk_chat_king_reward_settings_min_messages_non_negative'
+                  AND conrelid = 'chat_king_reward_settings'::regclass
+            ) THEN
+                ALTER TABLE chat_king_reward_settings
+                    ADD CONSTRAINT chk_chat_king_reward_settings_min_messages_non_negative
+                    CHECK (min_messages >= 0);
+            END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS chat_king_daily_results (
+            id BIGSERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            stat_date DATE NOT NULL,
+            winner_user_id BIGINT,
+            top_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            total_messages BIGINT NOT NULL DEFAULT 0,
+            announced BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            announced_at TIMESTAMPTZ,
+            UNIQUE (chat_id, stat_date)
+        );
+        ALTER TABLE chat_king_daily_results
+            ADD COLUMN IF NOT EXISTS period_type TEXT NOT NULL DEFAULT 'day',
+            ADD COLUMN IF NOT EXISTS period_key TEXT NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS period_from DATE,
+            ADD COLUMN IF NOT EXISTS period_to DATE;
+        UPDATE chat_king_daily_results
+        SET period_type = 'day'
+        WHERE COALESCE(period_type, '') = '';
+        UPDATE chat_king_daily_results
+        SET period_key = TO_CHAR(stat_date, 'YYYY-MM-DD')
+        WHERE COALESCE(period_key, '') = '';
+        ALTER TABLE chat_king_daily_results
+            DROP CONSTRAINT IF EXISTS chat_king_daily_results_chat_id_stat_date_key;
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'uq_chat_king_daily_results_period'
+                  AND conrelid = 'chat_king_daily_results'::regclass
+            ) THEN
+                ALTER TABLE chat_king_daily_results
+                    ADD CONSTRAINT uq_chat_king_daily_results_period
+                    UNIQUE (chat_id, period_type, period_key);
+            END IF;
+        END $$;
+        CREATE INDEX IF NOT EXISTS idx_chat_king_daily_results_chat_date
+            ON chat_king_daily_results (chat_id, stat_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_chat_king_daily_results_period
+            ON chat_king_daily_results (chat_id, period_type, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS chat_king_reward_log (
+            id BIGSERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            stat_date DATE NOT NULL,
+            user_id BIGINT NOT NULL,
+            place SMALLINT NOT NULL CHECK (place BETWEEN 1 AND 3),
+            kut_awarded BIGINT NOT NULL DEFAULT 0,
+            items_awarded_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            delivered BOOLEAN NOT NULL DEFAULT FALSE,
+            details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            error_text TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            delivered_at TIMESTAMPTZ,
+            UNIQUE (chat_id, stat_date, user_id, place)
+        );
+        ALTER TABLE chat_king_reward_log
+            ADD COLUMN IF NOT EXISTS period_type TEXT NOT NULL DEFAULT 'day',
+            ADD COLUMN IF NOT EXISTS period_key TEXT NOT NULL DEFAULT '';
+        UPDATE chat_king_reward_log
+        SET period_type = 'day'
+        WHERE COALESCE(period_type, '') = '';
+        UPDATE chat_king_reward_log
+        SET period_key = TO_CHAR(stat_date, 'YYYY-MM-DD')
+        WHERE COALESCE(period_key, '') = '';
+        ALTER TABLE chat_king_reward_log
+            DROP CONSTRAINT IF EXISTS chat_king_reward_log_chat_id_stat_date_user_id_place_key;
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'uq_chat_king_reward_log_period_user_place'
+                  AND conrelid = 'chat_king_reward_log'::regclass
+            ) THEN
+                ALTER TABLE chat_king_reward_log
+                    ADD CONSTRAINT uq_chat_king_reward_log_period_user_place
+                    UNIQUE (chat_id, period_type, period_key, user_id, place);
+            END IF;
+        END $$;
+        CREATE INDEX IF NOT EXISTS idx_chat_king_reward_log_chat_date
+            ON chat_king_reward_log (chat_id, stat_date DESC, place ASC);
+        CREATE INDEX IF NOT EXISTS idx_chat_king_reward_log_period
+            ON chat_king_reward_log (chat_id, period_type, created_at DESC, place ASC);
+        """
+
+        async with self.pool.acquire() as conn:
+            await conn.execute(sql)
+
+    def _king_place_column(self, place: int) -> str:
+        mapping = {1: "reward_p1", 2: "reward_p2", 3: "reward_p3"}
+        key = int(place)
+        if key not in mapping:
+            raise ValueError("Место должно быть 1, 2 или 3")
+        return mapping[key]
+
+    def _normalize_king_period_kind(self, value: Any) -> str:
+        token = str(value or "").strip().lower()
+        if token in {"day", "week", "month"}:
+            return token
+        return "day"
+
+    def _default_king_period_kind(self) -> str:
+        try:
+            from bot.config.config import KING_STATS_PERIOD_KIND as _KING_STATS_PERIOD_KIND
+        except Exception:
+            _KING_STATS_PERIOD_KIND = "day"
+        return self._normalize_king_period_kind(_KING_STATS_PERIOD_KIND)
+
+    async def resolve_dex_item_token(self, token: str) -> dict[str, Any] | None:
+        """
+        Находит предмет в dex по любому токену:
+        - id (число)
+        - name (точно/без регистра)
+        - name1 (алиас)
+        - emoji
+        Возвращает {id, name, name1, emoji} или None.
+        """
+        if not await self.ensure_pool():
+            return None
+
+        raw = str(token or "").strip()
+        if not raw:
+            return None
+
+        async with self.pool.acquire() as conn:
+            row = None
+
+            if raw.isdigit():
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, name, name1, emoji
+                    FROM dex
+                    WHERE id = $1
+                    LIMIT 1
+                    """,
+                    int(raw),
+                )
+                if row:
+                    return {
+                        "id": int(row["id"]),
+                        "name": str(row["name"] or ""),
+                        "name1": str(row["name1"] or ""),
+                        "emoji": str(row["emoji"] or ""),
+                    }
+
+            row = await conn.fetchrow(
+                """
+                SELECT id, name, name1, emoji
+                FROM dex
+                WHERE emoji = $1
+                   OR LOWER(name) = LOWER($1)
+                   OR LOWER(name1) = LOWER($1)
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                raw,
+            )
+            if row:
+                return {
+                    "id": int(row["id"]),
+                    "name": str(row["name"] or ""),
+                    "name1": str(row["name1"] or ""),
+                    "emoji": str(row["emoji"] or ""),
+                }
+
+            row = await conn.fetchrow(
+                """
+                SELECT id, name, name1, emoji
+                FROM dex
+                WHERE name ILIKE $1
+                   OR name1 ILIKE $1
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                f"{raw}%",
+            )
+
+            if row:
+                return {
+                    "id": int(row["id"]),
+                    "name": str(row["name"] or ""),
+                    "name1": str(row["name1"] or ""),
+                    "emoji": str(row["emoji"] or ""),
+                }
+        return None
+
+    def _parse_json_obj(self, value: Any, default: dict[str, Any] | None = None) -> dict[str, Any]:
+        fallback = default.copy() if isinstance(default, dict) else {}
+        if value is None:
+            return fallback
+        if isinstance(value, dict):
+            return value.copy()
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                return fallback
+        return fallback
+
+    def _parse_json_list(self, value: Any, default: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        fallback = list(default or [])
+        if value is None:
+            return fallback
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return [item for item in parsed if isinstance(item, dict)]
+            except Exception:
+                return fallback
+        return fallback
+
+    def _normalize_king_reward_payload(self, payload: Any) -> dict[str, Any]:
+        source = self._parse_json_obj(payload)
+        kut = max(0, int(source.get("kut", 0) or 0))
+        raw_items = source.get("items", [])
+        if isinstance(raw_items, str):
+            try:
+                raw_items = json.loads(raw_items)
+            except Exception:
+                raw_items = []
+        if not isinstance(raw_items, list):
+            raw_items = []
+
+        merged: dict[str, int] = {}
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            item_id = str(item.get("item_id") or item.get("id") or "").strip()
+            if not item_id:
+                continue
+            amount = int(item.get("amount") or item.get("qty") or 0)
+            if amount <= 0:
+                continue
+            merged[item_id] = merged.get(item_id, 0) + amount
+
+        items = [{"item_id": key, "amount": value} for key, value in merged.items() if value > 0]
+        return {"kut": kut, "items": items}
+
+    def _default_king_settings(self, chat_id: int) -> dict[str, Any]:
+        return {
+            "chat_id": int(chat_id),
+            "creator_id": None,
+            "enabled": False,
+            "min_messages": 0,
+            "period_kind": self._default_king_period_kind(),
+            "active_until_ts": None,
+            "start_at_ts": None,
+            "place_1": {"kut": 0, "items": []},
+            "place_2": {"kut": 0, "items": []},
+            "place_3": {"kut": 0, "items": []},
+        }
+
+    async def ensure_chat_king_settings_row(self, chat_id: int, creator_id: int | None = None) -> None:
+        await self.ensure_king_stats_schema()
+        default_period_kind = self._default_king_period_kind()
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO chat_king_reward_settings (chat_id, creator_id, period_kind)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (chat_id) DO NOTHING
+                """,
+                int(chat_id),
+                int(creator_id) if creator_id is not None else None,
+                default_period_kind,
+            )
+            if creator_id is not None:
+                await conn.execute(
+                    """
+                    UPDATE chat_king_reward_settings
+                    SET creator_id = $2,
+                        updated_at = NOW()
+                    WHERE chat_id = $1
+                    """,
+                    int(chat_id),
+                    int(creator_id),
+                )
+
+    async def get_chat_king_reward_settings(self, chat_id: int) -> dict[str, Any]:
+        await self.ensure_king_stats_schema()
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT chat_id, creator_id, enabled, min_messages, period_kind, active_until_ts, start_at_ts, reward_p1, reward_p2, reward_p3
+                FROM chat_king_reward_settings
+                WHERE chat_id = $1
+                """,
+                int(chat_id),
+            )
+        if not row:
+            return self._default_king_settings(chat_id)
+        return {
+            "chat_id": int(row["chat_id"]),
+            "creator_id": int(row["creator_id"]) if row["creator_id"] is not None else None,
+            "enabled": bool(row["enabled"]),
+            "min_messages": max(0, int(row["min_messages"] or 0)),
+            "period_kind": self._normalize_king_period_kind(row["period_kind"]),
+            "active_until_ts": row["active_until_ts"],
+            "start_at_ts": row["start_at_ts"],
+            "place_1": self._normalize_king_reward_payload(row["reward_p1"]),
+            "place_2": self._normalize_king_reward_payload(row["reward_p2"]),
+            "place_3": self._normalize_king_reward_payload(row["reward_p3"]),
+        }
+
+    async def set_chat_king_enabled(
+            self,
+            chat_id: int,
+            enabled: bool,
+            *,
+            creator_id: int | None = None,
+    ) -> dict[str, Any]:
+        await self.ensure_chat_king_settings_row(chat_id, creator_id=creator_id)
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE chat_king_reward_settings
+                SET enabled = $2,
+                    creator_id = COALESCE($3, creator_id),
+                    updated_at = NOW()
+                WHERE chat_id = $1
+                """,
+                int(chat_id),
+                bool(enabled),
+                int(creator_id) if creator_id is not None else None,
+            )
+        return await self.get_chat_king_reward_settings(chat_id)
+
+    async def set_chat_king_min_messages(
+            self,
+            chat_id: int,
+            min_messages: int,
+            *,
+            creator_id: int | None = None,
+    ) -> dict[str, Any]:
+        await self.ensure_chat_king_settings_row(chat_id, creator_id=creator_id)
+        min_value = max(0, int(min_messages))
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE chat_king_reward_settings
+                SET min_messages = $2,
+                    creator_id = COALESCE($3, creator_id),
+                    updated_at = NOW()
+                WHERE chat_id = $1
+                """,
+                int(chat_id),
+                min_value,
+                int(creator_id) if creator_id is not None else None,
+            )
+        return await self.get_chat_king_reward_settings(chat_id)
+
+    async def set_chat_king_period_kind(
+            self,
+            chat_id: int,
+            period_kind: str,
+            *,
+            creator_id: int | None = None,
+    ) -> dict[str, Any]:
+        await self.ensure_chat_king_settings_row(chat_id, creator_id=creator_id)
+        period_kind_s = self._normalize_king_period_kind(period_kind)
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE chat_king_reward_settings
+                SET period_kind = $2,
+                    creator_id = COALESCE($3, creator_id),
+                    updated_at = NOW()
+                WHERE chat_id = $1
+                """,
+                int(chat_id),
+                period_kind_s,
+                int(creator_id) if creator_id is not None else None,
+            )
+        return await self.get_chat_king_reward_settings(chat_id)
+
+    async def set_chat_king_active_until(
+            self,
+            chat_id: int,
+            active_until_ts: datetime | None,
+            *,
+            creator_id: int | None = None,
+    ) -> dict[str, Any]:
+        await self.ensure_chat_king_settings_row(chat_id, creator_id=creator_id)
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE chat_king_reward_settings
+                SET active_until_ts = $2,
+                    creator_id = COALESCE($3, creator_id),
+                    updated_at = NOW()
+                WHERE chat_id = $1
+                """,
+                int(chat_id),
+                active_until_ts,
+                int(creator_id) if creator_id is not None else None,
+            )
+        return await self.get_chat_king_reward_settings(chat_id)
+
+    async def set_chat_king_start_at(
+            self,
+            chat_id: int,
+            start_at_ts: datetime | None,
+            *,
+            creator_id: int | None = None,
+    ) -> dict[str, Any]:
+        await self.ensure_chat_king_settings_row(chat_id, creator_id=creator_id)
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE chat_king_reward_settings
+                SET start_at_ts = $2,
+                    creator_id = COALESCE($3, creator_id),
+                    updated_at = NOW()
+                WHERE chat_id = $1
+                """,
+                int(chat_id),
+                start_at_ts,
+                int(creator_id) if creator_id is not None else None,
+            )
+        return await self.get_chat_king_reward_settings(chat_id)
+
+    async def allocate_creator_item_rewards(
+            self,
+            creator_id: int | None,
+            winners: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """
+        Резервирует предметы для выплат "Царя статистики" строго из инвентаря создателя.
+        Ничего не "чеканится": если предметов не хватает, возвращаем частичную/нулевую выдачу.
+        """
+        try:
+            creator_id_safe = int(creator_id) if creator_id is not None else None
+        except Exception:
+            creator_id_safe = None
+
+        result: dict[str, Any] = {
+            "ok": True,
+            "creator_id": creator_id_safe,
+            "alloc_by_user": {},
+            "missing_by_user": {},
+            "updated": False,
+        }
+
+        if creator_id is None:
+            return result
+        creator_i = int(creator_id)
+        if creator_i <= 0:
+            return result
+
+        normalized_winners: list[dict[str, Any]] = []
+        token_to_name: dict[str, str] = {}
+        for row in winners or []:
+            try:
+                uid = int(row.get("user_id") or 0)
+            except Exception:
+                uid = 0
+            if uid <= 0:
+                continue
+
+            planned_items: list[dict[str, Any]] = []
+            for item in row.get("planned_items") or []:
+                if not isinstance(item, dict):
+                    continue
+                token = str(item.get("item_id") or "").strip()
+                try:
+                    amount = max(0, int(item.get("amount") or 0))
+                except Exception:
+                    amount = 0
+                if not token or amount <= 0:
+                    continue
+
+                resolved_name = token_to_name.get(token)
+                if resolved_name is None:
+                    resolved_name = token
+                    try:
+                        resolved_item = await self.resolve_dex_item_token(token)
+                        if resolved_item and str(resolved_item.get("name") or "").strip():
+                            resolved_name = str(resolved_item.get("name")).strip()
+                    except Exception:
+                        resolved_name = token
+                    token_to_name[token] = resolved_name
+
+                planned_items.append(
+                    {
+                        "token": token,
+                        "item_id": str(resolved_name),
+                        "amount": int(amount),
+                    }
+                )
+
+            normalized_winners.append({"user_id": uid, "items": planned_items})
+            result["alloc_by_user"][uid] = []
+            result["missing_by_user"][uid] = []
+
+        if not any(row.get("items") for row in normalized_winners):
+            return result
+
+        if not await self.ensure_pool():
+            return {"ok": False, "error": "pool_unavailable", "alloc_by_user": {}, "missing_by_user": {}}
+
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    creator_row = await conn.fetchrow(
+                        """
+                        SELECT items
+                        FROM users
+                        WHERE user_id = $1
+                        FOR UPDATE
+                        """,
+                        creator_i,
+                    )
+                    if not creator_row:
+                        for row in normalized_winners:
+                            uid = int(row["user_id"])
+                            result["missing_by_user"][uid].extend(
+                                [{"item_id": str(it["item_id"]), "amount": int(it["amount"])} for it in
+                                 row.get("items") or []]
+                            )
+                        result["reason"] = "creator_not_found"
+                        result["alloc_by_user"] = {k: v for k, v in result["alloc_by_user"].items() if v}
+                        result["missing_by_user"] = {k: v for k, v in result["missing_by_user"].items() if v}
+                        return result
+
+                    inventory_raw = creator_row["items"]
+                    inventory_decoded = decode_items(inventory_raw)
+                    inventory: dict[str, int] = {}
+                    if isinstance(inventory_decoded, dict):
+                        for key, value in inventory_decoded.items():
+                            item_name = str(key or "").strip()
+                            if not item_name:
+                                continue
+                            try:
+                                qty = int(value or 0)
+                            except Exception:
+                                qty = 0
+                            if qty > 0:
+                                inventory[item_name] = qty
+
+                    changed = False
+                    for row in normalized_winners:
+                        uid = int(row["user_id"])
+                        for item in row.get("items") or []:
+                            token = str(item.get("token") or "").strip()
+                            item_name = str(item.get("item_id") or "").strip()
+                            need = max(0, int(item.get("amount") or 0))
+                            if not item_name or need <= 0:
+                                continue
+
+                            deduct_key = item_name
+                            have = max(0, int(inventory.get(deduct_key, 0)))
+                            if have <= 0 and token and token != item_name:
+                                token_have = max(0, int(inventory.get(token, 0)))
+                                if token_have > 0:
+                                    have = token_have
+                                    deduct_key = token
+
+                            give = min(need, have)
+                            if give > 0:
+                                remaining = have - give
+                                if remaining > 0:
+                                    inventory[deduct_key] = remaining
+                                else:
+                                    inventory.pop(deduct_key, None)
+                                changed = True
+                                result["alloc_by_user"][uid].append({"item_id": item_name, "amount": int(give)})
+
+                            miss = need - give
+                            if miss > 0:
+                                result["missing_by_user"][uid].append({"item_id": item_name, "amount": int(miss)})
+
+                    if changed:
+                        await conn.execute(
+                            "UPDATE users SET items = $2 WHERE user_id = $1",
+                            creator_i,
+                            encode_items(inventory),
+                        )
+                        result["updated"] = True
+
+            result["alloc_by_user"] = {k: v for k, v in result["alloc_by_user"].items() if v}
+            result["missing_by_user"] = {k: v for k, v in result["missing_by_user"].items() if v}
+            return result
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": str(e),
+                "creator_id": creator_i,
+                "alloc_by_user": {},
+                "missing_by_user": {},
+                "updated": False,
+            }
+
+    async def reset_chat_king_settings(
+            self,
+            chat_id: int,
+            *,
+            creator_id: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Полный сброс настроек «Царя статистики» для группы:
+        - выключает систему
+        - сбрасывает порог/период/срок/дату старта
+        - очищает награды 1/2/3 мест
+        """
+        await self.ensure_chat_king_settings_row(chat_id, creator_id=creator_id)
+        default_period_kind = self._default_king_period_kind()
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE chat_king_reward_settings
+                SET enabled = FALSE,
+                    min_messages = 0,
+                    period_kind = $2,
+                    active_until_ts = NULL,
+                    start_at_ts = NULL,
+                    reward_p1 = '{}'::jsonb,
+                    reward_p2 = '{}'::jsonb,
+                    reward_p3 = '{}'::jsonb,
+                    creator_id = COALESCE($3, creator_id),
+                    updated_at = NOW()
+                WHERE chat_id = $1
+                """,
+                int(chat_id),
+                default_period_kind,
+                int(creator_id) if creator_id is not None else None,
+            )
+        return await self.get_chat_king_reward_settings(chat_id)
+
+    async def set_chat_king_place_kut_reward(
+            self,
+            chat_id: int,
+            place: int,
+            kut: int,
+            *,
+            creator_id: int | None = None,
+    ) -> dict[str, Any]:
+        await self.ensure_chat_king_settings_row(chat_id, creator_id=creator_id)
+        settings = await self.get_chat_king_reward_settings(chat_id)
+        reward = self._normalize_king_reward_payload(settings.get(f"place_{int(place)}"))
+        reward["kut"] = max(0, int(kut))
+        column = self._king_place_column(place)
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                f"""
+                UPDATE chat_king_reward_settings
+                SET {column} = $2::jsonb,
+                    creator_id = COALESCE($3, creator_id),
+                    updated_at = NOW()
+                WHERE chat_id = $1
+                """,
+                int(chat_id),
+                json.dumps(reward, ensure_ascii=False),
+                int(creator_id) if creator_id is not None else None,
+            )
+        return await self.get_chat_king_reward_settings(chat_id)
+
+    async def add_chat_king_place_item_reward(
+            self,
+            chat_id: int,
+            place: int,
+            item_id: str,
+            amount: int,
+            *,
+            creator_id: int | None = None,
+    ) -> dict[str, Any]:
+        item_token = str(item_id or "").strip()
+        amount_i = int(amount)
+        if not item_token:
+            raise ValueError("item_id пустой")
+        if amount_i <= 0:
+            raise ValueError("Количество предмета должно быть больше 0")
+
+        await self.ensure_chat_king_settings_row(chat_id, creator_id=creator_id)
+        settings = await self.get_chat_king_reward_settings(chat_id)
+        reward = self._normalize_king_reward_payload(settings.get(f"place_{int(place)}"))
+
+        merged: dict[str, int] = {}
+        for row in reward.get("items", []):
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("item_id") or "").strip()
+            value = int(row.get("amount") or 0)
+            if key and value > 0:
+                merged[key] = merged.get(key, 0) + value
+        merged[item_token] = merged.get(item_token, 0) + amount_i
+        reward["items"] = [{"item_id": key, "amount": value} for key, value in merged.items() if value > 0]
+
+        column = self._king_place_column(place)
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                f"""
+                UPDATE chat_king_reward_settings
+                SET {column} = $2::jsonb,
+                    creator_id = COALESCE($3, creator_id),
+                    updated_at = NOW()
+                WHERE chat_id = $1
+                """,
+                int(chat_id),
+                json.dumps(reward, ensure_ascii=False),
+                int(creator_id) if creator_id is not None else None,
+            )
+        return await self.get_chat_king_reward_settings(chat_id)
+
+    async def clear_chat_king_place_reward(
+            self,
+            chat_id: int,
+            place: int,
+            *,
+            creator_id: int | None = None,
+    ) -> dict[str, Any]:
+        await self.ensure_chat_king_settings_row(chat_id, creator_id=creator_id)
+        column = self._king_place_column(place)
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                f"""
+                UPDATE chat_king_reward_settings
+                SET {column} = $2::jsonb,
+                    creator_id = COALESCE($3, creator_id),
+                    updated_at = NOW()
+                WHERE chat_id = $1
+                """,
+                int(chat_id),
+                json.dumps({}, ensure_ascii=False),
+                int(creator_id) if creator_id is not None else None,
+            )
+        return await self.get_chat_king_reward_settings(chat_id)
+
+    async def get_chat_meta_basic(self, chat_id: int) -> dict[str, Any]:
+        chat_id_i = int(chat_id)
+        if not await self.ensure_pool():
+            return {
+                "chat_id": chat_id_i,
+                "namechat": None,
+                "usernamechat": None,
+                "chatlink": None,
+                "creator_id": None,
+                "chatbalance": 0,
+            }
+
+        async with self.pool.acquire() as conn:
+            row = None
+            try:
+                row = await conn.fetchrow(
+                    """
+                    SELECT chat_id, namechat, usernamechat, chatlink, creator_id, COALESCE(chatbalance, 0) AS chatbalance
+                    FROM chat
+                    WHERE chat_id = $1
+                    LIMIT 1
+                    """,
+                    chat_id_i,
+                )
+            except Exception:
+                # В старых схемах поля creator_id/chatlink могут отсутствовать.
+                row = await conn.fetchrow(
+                    """
+                    SELECT chat_id, namechat, usernamechat, COALESCE(chatbalance, 0) AS chatbalance
+                    FROM chat
+                    WHERE chat_id = $1
+                    LIMIT 1
+                    """,
+                    chat_id_i,
+                )
+
+        if not row:
+            return {
+                "chat_id": chat_id_i,
+                "namechat": None,
+                "usernamechat": None,
+                "chatlink": None,
+                "creator_id": None,
+                "chatbalance": 0,
+            }
+
+        keys = set(row.keys()) if hasattr(row, "keys") else set()
+        return {
+            "chat_id": int(row["chat_id"]),
+            "namechat": row["namechat"] if "namechat" in keys else None,
+            "usernamechat": row["usernamechat"] if "usernamechat" in keys else None,
+            "chatlink": row["chatlink"] if "chatlink" in keys else None,
+            "creator_id": int(row["creator_id"]) if ("creator_id" in keys and row["creator_id"] is not None) else None,
+            "chatbalance": int(row["chatbalance"] or 0) if "chatbalance" in keys else 0,
+        }
+
+    async def list_creator_groups_with_positive_balance(
+            self,
+            creator_id: int,
+            *,
+            exclude_chat_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        if not await self.ensure_pool():
+            return []
+
+        creator_id_i = int(creator_id)
+        exclude_id = int(exclude_chat_id) if exclude_chat_id is not None else None
+        async with self.pool.acquire() as conn:
+            try:
+                if exclude_id is None:
+                    rows = await conn.fetch(
+                        """
+                        SELECT chat_id, namechat, usernamechat, chatlink, COALESCE(chatbalance, 0) AS chatbalance
+                        FROM chat
+                        WHERE creator_id = $1
+                          AND COALESCE(chatbalance, 0) > 0
+                        ORDER BY chatbalance DESC, chat_id ASC
+                        """,
+                        creator_id_i,
+                    )
+                else:
+                    rows = await conn.fetch(
+                        """
+                        SELECT chat_id, namechat, usernamechat, chatlink, COALESCE(chatbalance, 0) AS chatbalance
+                        FROM chat
+                        WHERE creator_id = $1
+                          AND chat_id <> $2
+                          AND COALESCE(chatbalance, 0) > 0
+                        ORDER BY chatbalance DESC, chat_id ASC
+                        """,
+                        creator_id_i,
+                        exclude_id,
+                    )
+            except Exception:
+                # Если в схеме нет creator_id/chatlink/namechat, возвращаем пусто.
+                return []
+
+        result: list[dict[str, Any]] = []
+        for row in rows or []:
+            result.append(
+                {
+                    "chat_id": int(row["chat_id"]),
+                    "namechat": row["namechat"],
+                    "usernamechat": row["usernamechat"],
+                    "chatlink": row["chatlink"] if "chatlink" in row.keys() else None,
+                    "chatbalance": int(row["chatbalance"] or 0),
+                }
+            )
+        return result
+
+    async def deduct_chatbalance_up_to(self, chat_id: int, amount: int) -> dict[str, Any]:
+        """
+        Снимает ИЗ chat.chatbalance до amount (не более доступного).
+        Возвращает фактически списанную сумму и новый баланс.
+        """
+        if not await self.ensure_pool():
+            return {"ok": False, "deducted": 0, "chatbalance_after": 0}
+
+        cid = int(chat_id)
+        need = max(0, int(amount))
+        if need <= 0:
+            snap = await self.fetch_group_balances(cid)
+            return {
+                "ok": True,
+                "deducted": 0,
+                "chatbalance_after": int(snap.chatbalance if snap else 0),
+            }
+
+        deducted = 0
+        chat_after = 0
+        dex_after = 0
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """
+                    SELECT COALESCE(chatbalance, 0) AS chatbalance, COALESCE(dexbalance, 0) AS dexbalance
+                    FROM chat
+                    WHERE chat_id = $1
+                    LIMIT 1
+                    FOR UPDATE
+                    """,
+                    cid,
+                )
+                if not row:
+                    return {"ok": False, "deducted": 0, "chatbalance_after": 0}
+
+                current_chat = int(row["chatbalance"] or 0)
+                current_dex = int(row["dexbalance"] or 0)
+                deducted = min(current_chat, need)
+
+                if deducted > 0:
+                    row_after = await conn.fetchrow(
+                        """
+                        UPDATE chat
+                        SET chatbalance = GREATEST(COALESCE(chatbalance, 0) - $2, 0)
+                        WHERE chat_id = $1
+                        RETURNING COALESCE(chatbalance, 0) AS chatbalance, COALESCE(dexbalance, 0) AS dexbalance
+                        """,
+                        cid,
+                        deducted,
+                    )
+                    chat_after = int(row_after["chatbalance"] or 0) if row_after else max(0, current_chat - deducted)
+                    dex_after = int(row_after["dexbalance"] or 0) if row_after else current_dex
+                else:
+                    chat_after = current_chat
+                    dex_after = current_dex
+
+        try:
+            self.__fastlane_set__(cid, BalanceSnapshot(chatbalance=chat_after, dexbalance=dex_after))
+            self.__negguard_clear__(cid)
+        except Exception:
+            pass
+
+        return {
+            "ok": True,
+            "deducted": int(deducted),
+            "chatbalance_after": int(chat_after),
+        }
+
+    async def list_chat_ids_with_king_enabled(self) -> list[int]:
+        await self.ensure_king_stats_schema()
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT chat_id
+                FROM chat_king_reward_settings
+                WHERE enabled = TRUE
+                ORDER BY chat_id ASC
+                """
+            )
+        return [int(row["chat_id"]) for row in rows]
+
+    async def list_enabled_chat_king_profiles(self) -> list[dict[str, Any]]:
+        await self.ensure_king_stats_schema()
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT chat_id, period_kind, start_at_ts, active_until_ts
+                FROM chat_king_reward_settings
+                WHERE enabled = TRUE
+                ORDER BY chat_id ASC
+                """
+            )
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            result.append(
+                {
+                    "chat_id": int(row["chat_id"]),
+                    "period_kind": self._normalize_king_period_kind(row["period_kind"]),
+                    "start_at_ts": row["start_at_ts"],
+                    "active_until_ts": row["active_until_ts"],
+                }
+            )
+        return result
+
+    async def has_chat_king_period_result(self, chat_id: int, period_type: str, period_key: str) -> bool:
+        await self.ensure_king_stats_schema()
+        period_type_s = str(period_type or "day").strip().lower() or "day"
+        period_key_s = str(period_key or "").strip()
+        if not period_key_s:
+            return False
+
+        async with self.pool.acquire() as conn:
+            exists = await conn.fetchval(
+                """
+                SELECT 1
+                FROM chat_king_daily_results
+                WHERE chat_id = $1
+                  AND period_type = $2
+                  AND period_key = $3
+                LIMIT 1
+                """,
+                int(chat_id),
+                period_type_s,
+                period_key_s,
+            )
+        return bool(exists)
+
+    async def has_chat_king_day_result(self, chat_id: int, stat_date: date) -> bool:
+        return await self.has_chat_king_period_result(
+            chat_id=int(chat_id),
+            period_type="day",
+            period_key=stat_date.isoformat(),
+        )
+
+    async def create_chat_king_period_result(
+            self,
+            *,
+            chat_id: int,
+            stat_date: date,
+            period_type: str,
+            period_key: str,
+            period_from: date | None,
+            period_to: date | None,
+            winner_user_id: int | None,
+            top_rows: list[dict[str, Any]],
+            total_messages: int,
+    ) -> bool:
+        await self.ensure_king_stats_schema()
+        period_type_s = str(period_type or "day").strip().lower() or "day"
+        period_key_s = str(period_key or "").strip()
+        if not period_key_s:
+            raise ValueError("period_key пустой")
+
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO chat_king_daily_results (
+                    chat_id,
+                    stat_date,
+                    period_type,
+                    period_key,
+                    period_from,
+                    period_to,
+                    winner_user_id,
+                    top_json,
+                    total_messages
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+                ON CONFLICT (chat_id, period_type, period_key) DO NOTHING
+                RETURNING id
+                """,
+                int(chat_id),
+                stat_date,
+                period_type_s,
+                period_key_s,
+                period_from,
+                period_to,
+                int(winner_user_id) if winner_user_id is not None else None,
+                json.dumps(top_rows, ensure_ascii=False),
+                int(total_messages or 0),
+            )
+        return bool(row)
+
+    async def create_chat_king_day_result(
+            self,
+            chat_id: int,
+            stat_date: date,
+            winner_user_id: int | None,
+            top_rows: list[dict[str, Any]],
+            total_messages: int,
+    ) -> bool:
+        return await self.create_chat_king_period_result(
+            chat_id=int(chat_id),
+            stat_date=stat_date,
+            period_type="day",
+            period_key=stat_date.isoformat(),
+            period_from=stat_date,
+            period_to=stat_date,
+            winner_user_id=winner_user_id,
+            top_rows=top_rows,
+            total_messages=total_messages,
+        )
+
+    async def mark_chat_king_period_announced(self, chat_id: int, period_type: str, period_key: str) -> None:
+        await self.ensure_king_stats_schema()
+        period_type_s = str(period_type or "day").strip().lower() or "day"
+        period_key_s = str(period_key or "").strip()
+        if not period_key_s:
+            return
+
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE chat_king_daily_results
+                SET announced = TRUE,
+                    announced_at = NOW()
+                WHERE chat_id = $1
+                  AND period_type = $2
+                  AND period_key = $3
+                """,
+                int(chat_id),
+                period_type_s,
+                period_key_s,
+            )
+
+    async def mark_chat_king_day_announced(self, chat_id: int, stat_date: date) -> None:
+        await self.mark_chat_king_period_announced(
+            chat_id=int(chat_id),
+            period_type="day",
+            period_key=stat_date.isoformat(),
+        )
+
+    async def get_user_king_stats(self, user_id: int) -> dict[str, Any]:
+        await self.ensure_king_stats_schema()
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT king_stats FROM users WHERE user_id = $1",
+                int(user_id),
+            )
+
+        raw = self._parse_json_obj(row["king_stats"] if row else {})
+        now_month_key = datetime.now().strftime("%Y-%m")
+        month_key = str(raw.get("day_king_month_key") or "")
+        month_count = int(raw.get("day_king_month_count") or 0)
+        if month_key != now_month_key:
+            month_count = 0
+
+        return {
+            "day_king_total_count": int(raw.get("day_king_total_count") or 0),
+            "day_king_month_count": max(0, month_count),
+            "day_king_month_key": now_month_key,
+            "last_day_king_date": str(raw.get("last_day_king_date") or ""),
+            "last_day_king_chat_id": int(raw.get("last_day_king_chat_id") or 0),
+        }
+
+    async def get_user_chat_king_summary(
+            self,
+            *,
+            chat_id: int,
+            user_id: int,
+            reference_date: date | None = None,
+    ) -> dict[str, Any]:
+        await self.ensure_king_stats_schema()
+        ref = reference_date or datetime.now().date()
+        ref = ref if isinstance(ref, date) else datetime.now().date()
+
+        month_start = ref.replace(day=1)
+        if month_start.month == 12:
+            month_next = date(month_start.year + 1, 1, 1)
+        else:
+            month_next = date(month_start.year, month_start.month + 1, 1)
+
+        year_start = date(ref.year, 1, 1)
+        year_next = date(ref.year + 1, 1, 1)
+
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE stat_date = $3) AS day_count,
+                    COUNT(*) FILTER (WHERE stat_date >= $4 AND stat_date < $5) AS month_count,
+                    COUNT(*) FILTER (WHERE stat_date >= $6 AND stat_date < $7) AS year_count,
+                    COUNT(*) AS total_count,
+                    COUNT(*) FILTER (WHERE period_type = 'day') AS period_day_total,
+                    COUNT(*) FILTER (WHERE period_type = 'week') AS period_week_total,
+                    COUNT(*) FILTER (WHERE period_type = 'month') AS period_month_total,
+                    MAX(stat_date) AS last_win_date
+                FROM chat_king_daily_results
+                WHERE chat_id = $1
+                  AND winner_user_id = $2
+                """,
+                int(chat_id),
+                int(user_id),
+                ref,
+                month_start,
+                month_next,
+                year_start,
+                year_next,
+            )
+
+        def _row_value(key: str, default: Any = None) -> Any:
+            try:
+                if row is None:
+                    return default
+                return row[key]
+            except Exception:
+                return default
+
+        last_win_date = _row_value("last_win_date")
+        return {
+            "reference_date": ref.isoformat(),
+            "day_count": int(_row_value("day_count") or 0),
+            "month_count": int(_row_value("month_count") or 0),
+            "year_count": int(_row_value("year_count") or 0),
+            "total_count": int(_row_value("total_count") or 0),
+            "period_day_total": int(_row_value("period_day_total") or 0),
+            "period_week_total": int(_row_value("period_week_total") or 0),
+            "period_month_total": int(_row_value("period_month_total") or 0),
+            "last_win_date": last_win_date.isoformat() if last_win_date else "",
+        }
+
+    async def increment_user_day_king_win(self, user_id: int, stat_date: date, chat_id: int) -> dict[str, Any]:
+        await self.ensure_king_stats_schema()
+        month_key = stat_date.strftime("%Y-%m")
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT king_stats FROM users WHERE user_id = $1 FOR UPDATE",
+                    int(user_id),
+                )
+                if not row:
+                    return {
+                        "ok": False,
+                        "reason": "user_not_found",
+                    }
+
+                stats = self._parse_json_obj(row["king_stats"])
+                if str(stats.get("day_king_month_key") or "") != month_key:
+                    stats["day_king_month_key"] = month_key
+                    stats["day_king_month_count"] = 0
+
+                stats["day_king_total_count"] = int(stats.get("day_king_total_count") or 0) + 1
+                stats["day_king_month_count"] = int(stats.get("day_king_month_count") or 0) + 1
+                stats["last_day_king_date"] = stat_date.isoformat()
+                stats["last_day_king_chat_id"] = int(chat_id)
+
+                await conn.execute(
+                    "UPDATE users SET king_stats = $2::jsonb WHERE user_id = $1",
+                    int(user_id),
+                    json.dumps(stats, ensure_ascii=False),
+                )
+
+        return {"ok": True, "stats": stats}
+
+    async def award_chat_king_reward(
+            self,
+            chat_id: int,
+            stat_date: date,
+            user_id: int,
+            place: int,
+            reward_payload: Any,
+            details_extra: dict[str, Any] | None = None,
+            *,
+            period_type: str = "day",
+            period_key: str | None = None,
+    ) -> dict[str, Any]:
+        await self.ensure_king_stats_schema()
+        reward = self._normalize_king_reward_payload(reward_payload)
+        kut = int(reward.get("kut") or 0)
+        items = reward.get("items") or []
+        if kut <= 0 and not items:
+            return {"ok": True, "skipped": True, "reason": "empty_reward"}
+
+        place_i = int(place)
+        chat_i = int(chat_id)
+        user_i = int(user_id)
+        period_type_s = str(period_type or "day").strip().lower() or "day"
+        period_key_s = str(period_key or stat_date.isoformat()).strip() or stat_date.isoformat()
+
+        log_id: int | None = None
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, delivered
+                    FROM chat_king_reward_log
+                    WHERE chat_id = $1
+                      AND period_type = $2
+                      AND period_key = $3
+                      AND user_id = $4
+                      AND place = $5
+                    FOR UPDATE
+                    """,
+                    chat_i,
+                    period_type_s,
+                    period_key_s,
+                    user_i,
+                    place_i,
+                )
+
+                if row and bool(row["delivered"]):
+                    return {"ok": True, "already_delivered": True, "log_id": int(row["id"])}
+
+                if not row:
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO chat_king_reward_log (
+                            chat_id,
+                            stat_date,
+                            period_type,
+                            period_key,
+                            user_id,
+                            place,
+                            kut_awarded,
+                            items_awarded_json,
+                            delivered
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, FALSE)
+                        ON CONFLICT (chat_id, period_type, period_key, user_id, place) DO UPDATE
+                        SET kut_awarded = EXCLUDED.kut_awarded,
+                            items_awarded_json = EXCLUDED.items_awarded_json
+                        RETURNING id, delivered
+                        """,
+                        chat_i,
+                        stat_date,
+                        period_type_s,
+                        period_key_s,
+                        user_i,
+                        place_i,
+                        kut,
+                        json.dumps(items, ensure_ascii=False),
+                    )
+
+                log_id = int(row["id"])
+                if bool(row["delivered"]):
+                    return {"ok": True, "already_delivered": True, "log_id": log_id}
+
+        details: dict[str, Any] = {"kut": kut, "items": [], "balance_after": None}
+        if isinstance(details_extra, dict) and details_extra:
+            details["meta"] = details_extra
+        try:
+            if kut > 0:
+                details["balance_after"] = await self.update_user_balance(user_i, f"+{kut}")
+
+            for item in items:
+                item_id = str(item.get("item_id") or "").strip()
+                amount = int(item.get("amount") or 0)
+                if not item_id or amount <= 0:
+                    continue
+                resolved_name = item_id
+                try:
+                    resolved_item = await self.resolve_dex_item_token(item_id)
+                    if resolved_item and str(resolved_item.get("name") or "").strip():
+                        resolved_name = str(resolved_item.get("name")).strip()
+                except Exception:
+                    pass
+
+                await self.set_items(user_i, resolved_name, amount)
+                details_item = {"item_id": resolved_name, "amount": amount}
+                if resolved_name != item_id:
+                    details_item["source_token"] = item_id
+                details["items"].append(details_item)
+
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE chat_king_reward_log
+                    SET delivered = TRUE,
+                        delivered_at = NOW(),
+                        details_json = $2::jsonb,
+                        error_text = NULL
+                    WHERE id = $1
+                    """,
+                    int(log_id or 0),
+                    json.dumps(details, ensure_ascii=False),
+                )
+            return {
+                "ok": True,
+                "delivered": True,
+                "log_id": int(log_id or 0),
+                "details": details,
+            }
+        except Exception as e:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE chat_king_reward_log
+                    SET delivered = FALSE,
+                        details_json = $2::jsonb,
+                        error_text = $3
+                    WHERE id = $1
+                    """,
+                    int(log_id or 0),
+                    json.dumps(details, ensure_ascii=False),
+                    str(e),
+                )
+            return {
+                "ok": False,
+                "delivered": False,
+                "log_id": int(log_id or 0),
+                "error": str(e),
+                "details": details,
+            }
+
+
+
+
+
+
+
+
+
+
     # -------------------------------
     # Пул как в старом db.py: if self.pool → ok, иначе connect()
     # -------------------------------
