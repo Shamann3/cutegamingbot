@@ -38602,6 +38602,15 @@ async def botmain():
             print(f"[BOT][WARN] Ошибка при закрытии bot session: {type(e).__name__}: {e}")
 
 if __name__ == "__main__":
+    # Kill-switch: BOT_KILL_SWITCH=true на деплое DO — процесс не трогает
+    # Telegram (ни поллинга bot1, ни Telethon-юзербота) и просто спит, чтобы
+    # можно было зайти в Console контейнера и запустить main.py вручную без
+    # конфликта "terminated by other getUpdates request".
+    if os.environ.get("BOT_KILL_SWITCH", "").strip().lower() in ("1", "true", "yes", "on"):
+        print("[KILL-SWITCH] BOT_KILL_SWITCH=true — боты не запускаются, процесс простаивает.")
+        while True:
+            time.sleep(3600)
+
     print("Предварительный запуск")
     start_time = time.perf_counter()
 
