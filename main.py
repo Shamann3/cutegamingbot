@@ -5163,35 +5163,18 @@ async def inline_add_or_update_user_info(bot1, user_id, first_name, username, db
     first_name = re.sub(r'[<>/{}"]', '', first_name) if first_name else "Неизвестный"
     username = username or ""
 
-    # Проверяем, если словарь пуст, загружаем данные из базы
-    if not user_cache:
-        try:
-            print("🔄 Загружаю пользователей из базы данных...")
-            users_from_db = await db.fetch_all(
-                "SELECT user_id, first_name, username, bio FROM users")
-
-            total = len(users_from_db)
-            print(f"📊 Получено {total} пользователей из базы.")
-
-            loaded = 0
-            for user in users_from_db:
-                user_cache [ user [ "user_id" ] ] = {"first_name": user.get("first_name") or "" ,
-                    "username": user.get("username") or "" , "bio": user.get("bio") or "" , }
-                loaded += 1
-
-                # каждые 10 000 записей выводим прогресс
-                if loaded % 10000 == 0:
-                    print(f"➡️ Уже загружено {loaded} пользователей...")
-
-            print(f"✅ Загрузка завершена. Всего записей в user_cache: {len(user_cache)}")
-
-            # Покажем пример первых 3 пользователей для контроля
-            example_ids = list(user_cache.keys()) [ :3 ]
-            for uid in example_ids:
-                print(f"👤 user_id={uid}, данные={user_cache [ uid ]}")
-
-        except Exception as e:
-            print(f"❌ Ошибка при загрузке данных пользователей из базы: {e}")
+    # ВАЖНО: раньше здесь был "if not user_cache: <полная синхронная загрузка
+    # всех пользователей из БД одним циклом без await внутри>". user_cache -
+    # обычный dict в памяти процесса, пустой после каждого рестарта бота.
+    # Любой первый inline-колбэк (крестики-нолики, память и т.д.) после
+    # рестарта попадал сюда и запускал for-цикл на 200 000+ строк БЕЗ единого
+    # await внутри - это блокировало ЕДИНСТВЕННЫЙ event loop бота целиком на
+    # несколько МИНУТ (см. инцидент 2026-07-16: "STALL" + "Уже загружено
+    # N пользователей..." тянулось больше 4 минут, бот не отвечал никому).
+    # Убрано целиком: код ниже (строки с db.add_data/user_cache[user_id]=...)
+    # и так корректно добавляет/обновляет ОДНОГО конкретного user_id - кэш
+    # просто наполняется постепенно, по одному пользователю за раз, вместо
+    # одного катастрофического залпового реюда.
 
     # Получаем данные пользователя из Telegram API
     try:
