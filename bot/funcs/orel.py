@@ -421,6 +421,14 @@ async def join_game_callback(callback_query: CallbackQuery):
             gamesorel[game_id] = game
             gamesorel.save()
 
+            # Отвечаем на callback СРАЗУ, как только игрок реально добавлен в
+            # лобби - дальше идёт сборка списка участников (запрос в БД на
+            # каждого) и редактирование сообщения в Telegram, это может занять
+            # больше времени, чем Telegram готов ждать ответ на callback
+            # ("query is too old and response timeout expired" под нагрузкой -
+            # см. инцидент с задержками в пати).
+            await callback_query.answer("❕ Вы присоединились к игре!")
+
             chat_id = game.get("chat_id")
             message_id = game.get("message_id")
 
@@ -446,7 +454,6 @@ async def join_game_callback(callback_query: CallbackQuery):
                     reply_markup=keyboard
                 )
 
-            await callback_query.answer("❕ Вы присоединились к игре!")
             gamesorel.save()
 
     finally:
@@ -479,6 +486,12 @@ async def start_game_callback(callback_query: CallbackQuery):
     if len(game.get("participants", [])) < 2:
         await callback_query.answer("💭 Невозможно начать игру. Недостаточно участников.")
         return
+
+    # Отвечаем на callback СРАЗУ, до похода в БД за проверкой баланса и
+    # редактирования сообщения в Telegram - иначе под нагрузкой Telegram
+    # успевает пометить callback как просроченный ("query is too old") прежде
+    # чем эти запросы завершатся.
+    await callback_query.answer("❕ Игра началась!")
 
     bet = int(game.get("bet", 0) or 0)
 
@@ -514,8 +527,6 @@ async def start_game_callback(callback_query: CallbackQuery):
             "<tg-emoji emoji-id='5269254848703902904'>🦅</tg-emoji> <b>Нажмите на кнопку, чтобы подкинуть монетку</b>",
             reply_markup=_kb_roll(game_id)
         )
-
-    await callback_query.answer("❕ Игра началась!")
 
 
 # ============================================================
