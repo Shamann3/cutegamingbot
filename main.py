@@ -38420,6 +38420,21 @@ async def botmain():
         try:
             run_bot_task = asyncio.create_task(run_bot())
             print("[RUNBOT] background task started")
+
+            def _run_bot_task_done(task: "asyncio.Task") -> None:
+                # run_bot_task живёт в nonlocal всё время работы процесса, поэтому
+                # объект задачи никогда не попадёт в GC и стандартное asyncio
+                # предупреждение "Task exception was never retrieved" не сработает —
+                # без этого коллбэка падение run_bot() в первых строках (до первого
+                # print) остаётся полностью невидимым в логах.
+                if task.cancelled():
+                    return
+                exc = task.exception()
+                if exc is not None:
+                    print(f"🟥 [RUNBOT][CRASH] run_bot() упал с исключением: {type(exc).__name__}: {exc!r}")
+                    traceback.print_exception(type(exc), exc, exc.__traceback__)
+
+            run_bot_task.add_done_callback(_run_bot_task_done)
         except Exception as e:
             print(f"[RUNBOT][WARN] Не удалось запустить run_bot: {type(e).__name__}: {e}")
             run_bot_task = None
