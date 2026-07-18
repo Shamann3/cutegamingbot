@@ -38454,12 +38454,12 @@ async def botmain():
         except Exception as e:
             print(f"[DIAG][WARN] мониторы не запущены: {type(e).__name__}: {e}")
 
-        # Плановый ежедневный авто-рестарт (03:00 МСК по умолчанию).
+        # Плановый авто-рестарт раз в час (заменяет прежний ежедневный в 03:00 МСК).
         try:
-            from bot.utils.daily_restart import start_daily_restart
-            start_daily_restart()
+            from bot.utils.hourly_restart import start_hourly_restart
+            start_hourly_restart()
         except Exception as e:
-            print(f"[DAILY_RESTART][WARN] не запущен: {type(e).__name__}: {e}")
+            print(f"[HOURLY_RESTART][WARN] не запущен: {type(e).__name__}: {e}")
 
     # ===================== 5) ЗАПУСК EDEN =====================
     async def _start_eden():
