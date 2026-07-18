@@ -1035,9 +1035,30 @@ class GameStore(dict):
                 return
 
             with self._lock:
+                # Запись в Redis дебаунсится (WRITE_DEBOUNCE_MS), поэтому снапшот
+                # может быть старее памяти. Раньше здесь был clear()+update(), и
+                # reload по промаху затирал только что сделанные записи, которые
+                # ещё не успели сохраниться. Мерджим, отдавая приоритет памяти.
+                local_data = dict(self)
+                local_ts = dict(self.timestamps)
+
                 self.clear()
                 super().update(data_dict)
-                self.timestamps = ts_dict
+                self.timestamps = dict(ts_dict)
+
+                for k, v in local_data.items():
+                    remote_k_ts = ts_dict.get(k)
+                    local_k_ts = local_ts.get(k)
+                    is_new_locally = k not in data_dict
+                    is_fresher_locally = (
+                        local_k_ts is not None
+                        and (remote_k_ts is None or local_k_ts > remote_k_ts)
+                    )
+                    if is_new_locally or is_fresher_locally:
+                        super().__setitem__(k, v)
+                        if local_k_ts is not None:
+                            self.timestamps[k] = local_k_ts
+
                 self._rebuild_expire_heap()
                 self._migrate_keys_to_str()
 

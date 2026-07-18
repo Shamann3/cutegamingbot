@@ -9,7 +9,6 @@ from typing import Any
 
 from aiogram import types
 from aiogram.exceptions import TelegramBadRequest
-from bot.db_create.pklcode import LazyGameStore
 
 from bot.config.config import (
     KING_STATS_INTERVAL_FORCE_NEW_ROUND,
@@ -223,12 +222,18 @@ _HELP_TEXT = (
 _KING_MENU_PREFIX = "kingm"
 _KING_STRICT_INLINE_ONLY = True
 _KING_PENDING_INPUT_TIMEOUT_SEC = 120
-_KING_PENDING_INPUTS: dict[tuple[int, int], dict[str, Any]] = LazyGameStore("_KING_PENDING_INPUTS")
-_KING_MENU_OWNERS: dict[tuple[int, int], int] = LazyGameStore("_KING_MENU_OWNERS")
+# Эфемерное состояние меню живёт только в памяти процесса.
+# Раньше здесь был LazyGameStore (Redis): запись в него дебаунсится на 1 сек,
+# а любой промах по ключу делает clear() + reload снапшота из Redis.
+# has_king_stats_pending_input() дёргается на КАЖДОЕ текстовое сообщение бота,
+# то есть промах случался в пределах этой секунды почти всегда - и только что
+# выставленный pending стирался до того, как успевал сохраниться.
+_KING_PENDING_INPUTS: dict[tuple[int, int], dict[str, Any]] = {}
+_KING_MENU_OWNERS: dict[tuple[int, int], int] = {}
 _KING_MENU_RENDER_STATE: dict[
     tuple[int, int],
     tuple[str, tuple[tuple[tuple[str, str, str, str, str], ...], ...]],
-] = LazyGameStore("_KING_MENU_RENDER_STATE")
+] = {}
 
 
 def _kc(*parts: Any) -> str:
