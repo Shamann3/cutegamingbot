@@ -19,6 +19,10 @@ __pycache__/
 # Telegram sessions (КРИТИЧНО — доступ к аккаунтам)
 *.session
 *.session-journal
+*.session-shm
+*.session-wal
+# карантинные копии из _quarantine_session_files() в run_bot()
+*.session.corrupt-*
 
 # Базы данных
 *.db

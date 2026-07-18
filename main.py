@@ -33943,13 +33943,13 @@ async def add_firstname_to_usercheck_balance(message: Message):
             total_swap_human = bytes_to_human_readable(swap.total)
             # Аптайм и интернет
             uptime = get_uptime()
-            ping , download_speed , upload_speed = test_internet_speed()
+            ping , download_speed , upload_speed = await asyncio.to_thread(test_internet_speed)
 
             def speed_human(bps):
                 return f"{bps / 1024 / 1024:.2f} Мбит/с" if bps else "Ошибка"
 
             # Доп. данные
-            cpu_percent = psutil.cpu_percent(interval=1)
+            cpu_percent = await asyncio.to_thread(psutil.cpu_percent, interval=1)
             python_version = sys.version.split() [ 0 ]
             os_info = platform.platform()
             net_io = psutil.net_io_counters()
@@ -37852,6 +37852,9 @@ async def run_bot():
     global withdraw_userbot_client
     global WITHDRAW_USERBOT_READY
 
+    main_client = None
+    withdraw_client = None
+
     MAIN_API_ID = 26543591
     MAIN_API_HASH = os.getenv("TG_MAIN_API_HASH", "a8de6a89ea1236962103eac13cd45d95")
     MAIN_SESSION = "main_userbot_session"
@@ -37862,27 +37865,75 @@ async def run_bot():
 
     asyncio.create_task(_run_startup_pklcode_diagnostics())
 
-    main_client = TelegramClient(
-        MAIN_SESSION,
-        MAIN_API_ID,
-        MAIN_API_HASH,
-        device_model="CuteGaming Main Userbot",
-        system_version="Windows",
-        app_version="1.0",
-        lang_code="ru",
-        system_lang_code="ru",
-    )
+    def _is_telethon_session_unpack_error(exc: Exception) -> bool:
+        text = str(exc).lower()
+        return (
+            isinstance(exc, ValueError)
+            and "too many values to unpack" in text
+            and "expected 5" in text
+        )
 
-    withdraw_client = TelegramClient(
-        WITHDRAW_SESSION,
-        WITHDRAW_API_ID,
-        WITHDRAW_API_HASH,
-        device_model="CuteGaming Withdraw Userbot",
-        system_version="Windows",
-        app_version="1.0",
-        lang_code="ru",
-        system_lang_code="ru",
-    )
+    def _quarantine_session_files(session_name: str) -> list[str]:
+        moved: list[str] = []
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        for suffix in (".session", ".session-journal", ".session-shm", ".session-wal"):
+            src = Path(f"{session_name}{suffix}")
+            if not src.exists():
+                continue
+            dst = src.with_name(f"{src.name}.corrupt-{stamp}")
+            try:
+                shutil.move(str(src), str(dst))
+                moved.append(str(dst))
+            except Exception as move_err:
+                print(f"🟨 [SESSION][WARN] Не удалось перенести {src}: {move_err!r}")
+        return moved
+
+    try:
+        main_client = TelegramClient(
+            MAIN_SESSION,
+            MAIN_API_ID,
+            MAIN_API_HASH,
+            device_model="CuteGaming Main Userbot",
+            system_version="Windows",
+            app_version="1.0",
+            lang_code="ru",
+            system_lang_code="ru",
+        )
+    except Exception as e:
+        if _is_telethon_session_unpack_error(e):
+            moved = _quarantine_session_files(MAIN_SESSION)
+            print("🟥 [MAIN][SESSION] Файл сессии повреждён/несовместим с текущей Telethon.")
+            if moved:
+                print(f"🟨 [MAIN][SESSION] Повреждённые файлы перенесены в quarantine: {moved}")
+            print("👉 Выполни переавторизацию: reauth-main.bat")
+            print("👉 После этого перезапусти main.py")
+            WITHDRAW_USERBOT_READY = False
+            return
+        raise
+
+    try:
+        withdraw_client = TelegramClient(
+            WITHDRAW_SESSION,
+            WITHDRAW_API_ID,
+            WITHDRAW_API_HASH,
+            device_model="CuteGaming Withdraw Userbot",
+            system_version="Windows",
+            app_version="1.0",
+            lang_code="ru",
+            system_lang_code="ru",
+        )
+    except Exception as e:
+        if _is_telethon_session_unpack_error(e):
+            moved = _quarantine_session_files(WITHDRAW_SESSION)
+            print("🟥 [WITHDRAW][SESSION] Файл сессии повреждён/несовместим с текущей Telethon.")
+            if moved:
+                print(f"🟨 [WITHDRAW][SESSION] Повреждённые файлы перенесены в quarantine: {moved}")
+            print("👉 Выполни переавторизацию: reauth_withdraw_userbot.py")
+            print("👉 До переавторизации выводы будут отключены.")
+            WITHDRAW_USERBOT_READY = False
+            withdraw_client = None
+        else:
+            raise
 
     main_userbot_client = main_client
     withdraw_userbot_client = withdraw_client
@@ -37939,9 +37990,11 @@ async def run_bot():
                 print(f"⚠️ [{label}] precheck auth error: {e!r}")
                 return False
 
-        defer_withdraw_registration = False
+        defer_withdraw_registration = withdraw_client is None
         main_authorized_before = await _is_userbot_authorized_without_login(main_client, "MAIN")
-        withdraw_authorized_before = await _is_userbot_authorized_without_login(withdraw_client, "WITHDRAW")
+        withdraw_authorized_before = False
+        if withdraw_client is not None:
+            withdraw_authorized_before = await _is_userbot_authorized_without_login(withdraw_client, "WITHDRAW")
 
         # =====================================================
         # 2) ОСНОВНОЙ ЮЗЕРБОТ
@@ -37965,7 +38018,11 @@ async def run_bot():
         # 3) РЕГИСТРАЦИЯ ВЫВОДНОГО ЮЗЕРБОТА
         # =====================================================
         if defer_withdraw_registration:
-            print("🟨 [WITHDRAW] Ожидаем повторный запуск проекта для регистрации выводного юзербота.")
+            if withdraw_client is None:
+                print("🟨 [WITHDRAW] Выводной юзербот недоступен (битая/отсутствующая session).")
+                print("👉 Подсказка: python reauth_withdraw_userbot.py")
+            else:
+                print("🟨 [WITHDRAW] Ожидаем повторный запуск проекта для регистрации выводного юзербота.")
         else:
             try:
                 if "register_withdraw_userbot_for_startup" in globals() and callable(globals().get("register_withdraw_userbot_for_startup")):
@@ -38245,7 +38302,8 @@ async def run_bot():
         print(f"⚠️ Ошибка при обработке: {e!r}")
     finally:
         try:
-            await main_client.disconnect()
+            if main_client is not None and main_client.is_connected():
+                await main_client.disconnect()
         except Exception:
             pass
 
