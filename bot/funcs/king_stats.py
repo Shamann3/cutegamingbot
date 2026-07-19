@@ -276,8 +276,36 @@ def _tune_menu_store_ttl() -> None:
 _tune_menu_store_ttl()
 
 
-def _kc(*parts: Any) -> str:
-    return ":".join([_KING_MENU_PREFIX, *[str(p) for p in parts]])
+def _kc(group_chat_id: Any, *parts: Any) -> str:
+    """
+    kingm:<group_chat_id>:<действие>[:аргументы]
+
+    Группа едет прямо в кнопке, поэтому меню не зависит ни от состояния в
+    памяти, ни от Redis: оно переживает рестарт и работает при нескольких
+    экземплярах бота. Именно из-за зависимости от общего состояния
+    вылезало «Меню устарело».
+    """
+    return ":".join([_KING_MENU_PREFIX, str(int(group_chat_id)), *[str(p) for p in parts]])
+
+
+def _split_callback_data(data: str) -> tuple[int | None, list[str]]:
+    """
+    Разбирает callback_data, понимая оба формата.
+
+    Новый:  kingm:<gid>:action:...  -> (gid, ['action', ...])
+    Старый: kingm:action:...        -> (None, ['action', ...])
+
+    Старый нужен для меню, открытых до этой версии: после раскатки их
+    кнопки обязаны продолжать работать.
+    """
+    raw = str(data or "").split(":")
+    tail = raw[1:]
+    if tail:
+        try:
+            return int(tail[0]), tail[1:]
+        except (TypeError, ValueError):
+            pass
+    return None, tail
 
 
 def _is_king_menu_open_intent(text: str) -> bool:
@@ -414,9 +442,11 @@ async def _resolve_group_menu_context(db, chat_id: int) -> dict[str, Any]:
 def _king_menu_keyboard(
     settings: dict[str, Any],
     *,
+    group_chat_id: int,
     group_button: tuple[str, str] | None = None,
     group_balance: int | None = None,
 ) -> types.InlineKeyboardMarkup:
+    kc = lambda *p: _kc(group_chat_id, *p)
     enabled = bool(settings.get("enabled"))
     period_kind = str(settings.get("period_kind") or "day")
     balance_view = max(0, int(group_balance or 0))
@@ -435,7 +465,7 @@ def _king_menu_keyboard(
         [
             types.InlineKeyboardButton(
                 text=f"Баланс группы : {balance_view} кут",
-                callback_data=_kc("noop"),
+                callback_data=kc("noop"),
                 style="default",
                 icon_custom_emoji_id="5224257782013769471",
             )
@@ -447,55 +477,55 @@ def _king_menu_keyboard(
             [
                 types.InlineKeyboardButton(
                     text="Вкл",
-                    callback_data=_kc("toggle", "on"),
+                    callback_data=kc("toggle", "on"),
                     style="default",
                     icon_custom_emoji_id=on_icon,
                 ),
                 types.InlineKeyboardButton(
                     text="Выкл",
-                    callback_data=_kc("toggle", "off"),
+                    callback_data=kc("toggle", "off"),
                     style="default",
                     icon_custom_emoji_id=off_icon,
                 ),
             ],
-            [types.InlineKeyboardButton(text="Статистика за :", callback_data=_kc("noop"), style="default")],
+            [types.InlineKeyboardButton(text="Статистика за :", callback_data=kc("noop"), style="default")],
             [
                 types.InlineKeyboardButton(
                     text="День",
-                    callback_data=_kc("period", "day"),
+                    callback_data=kc("period", "day"),
                     style="default",
                     icon_custom_emoji_id=day_icon,
                 ),
                 types.InlineKeyboardButton(
                     text="Неделя",
-                    callback_data=_kc("period", "week"),
+                    callback_data=kc("period", "week"),
                     style="default",
                     icon_custom_emoji_id=week_icon,
                 ),
                 types.InlineKeyboardButton(
                     text="Месяц",
-                    callback_data=_kc("period", "month"),
+                    callback_data=kc("period", "month"),
                     style="default",
                     icon_custom_emoji_id=month_icon,
                 ),
             ],
-            [types.InlineKeyboardButton(text="Награды за :", callback_data=_kc("noop"), style="default")],
+            [types.InlineKeyboardButton(text="Награды за :", callback_data=kc("noop"), style="default")],
             [
                 types.InlineKeyboardButton(
                     text="1 место",
-                    callback_data=_kc("place", "1"),
+                    callback_data=kc("place", "1"),
                     style="default",
                     icon_custom_emoji_id="5280735858926822987",
                 ),
                 types.InlineKeyboardButton(
                     text="2 место",
-                    callback_data=_kc("place", "2"),
+                    callback_data=kc("place", "2"),
                     style="default",
                     icon_custom_emoji_id="5287582088336264294",
                 ),
                 types.InlineKeyboardButton(
                     text="3 место",
-                    callback_data=_kc("place", "3"),
+                    callback_data=kc("place", "3"),
                     style="default",
                     icon_custom_emoji_id="5287277338931779754",
                 ),
@@ -503,7 +533,7 @@ def _king_menu_keyboard(
             [
                 types.InlineKeyboardButton(
                     text="Минимальное количество сообщений",
-                    callback_data=_kc("min", "custom"),
+                    callback_data=kc("min", "custom"),
                     style="default",
                     icon_custom_emoji_id="5222108309795908493",
                 )
@@ -511,7 +541,7 @@ def _king_menu_keyboard(
             [
                 types.InlineKeyboardButton(
                     text=f"Срок системы : {duration_view}",
-                    callback_data=_kc("duration", "custom"),
+                    callback_data=kc("duration", "custom"),
                     style="default",
                     icon_custom_emoji_id="5411520005386806155",
                 )
@@ -519,7 +549,7 @@ def _king_menu_keyboard(
             [
                 types.InlineKeyboardButton(
                     text=f"Старт с даты : {start_view}",
-                    callback_data=_kc("start", "custom"),
+                    callback_data=kc("start", "custom"),
                     style="default",
                     icon_custom_emoji_id="5454409660473827001",
                 )
@@ -527,7 +557,7 @@ def _king_menu_keyboard(
             [
                 types.InlineKeyboardButton(
                     text="Распределить куты",
-                    callback_data=_kc("budget", "alloc"),
+                    callback_data=kc("budget", "alloc"),
                     style="default",
                     icon_custom_emoji_id="5258500400918587241",
                 )
@@ -535,7 +565,7 @@ def _king_menu_keyboard(
             [
                 types.InlineKeyboardButton(
                     text="Сбросить все настройки",
-                    callback_data=_kc("reset", "all"),
+                    callback_data=kc("reset", "all"),
                     style="default",
                     icon_custom_emoji_id="5253529465899739917",
                 )
@@ -543,7 +573,7 @@ def _king_menu_keyboard(
             [
                 types.InlineKeyboardButton(
                     text="Обновить сообщение",
-                    callback_data=_kc("open"),
+                    callback_data=kc("open"),
                     style="default",
                     icon_custom_emoji_id="5454409660473827001",
                 )
@@ -551,7 +581,7 @@ def _king_menu_keyboard(
             [
                 types.InlineKeyboardButton(
                     text="Подвести итоги",
-                    callback_data=_kc("finalize"),
+                    callback_data=kc("finalize"),
                     style="default",
                     icon_custom_emoji_id="5411520005386806155",
                 )
@@ -559,7 +589,7 @@ def _king_menu_keyboard(
             [
                 types.InlineKeyboardButton(
                     text="Закрыть",
-                    callback_data=_kc("close"),
+                    callback_data=kc("close"),
                     style="default",
                     icon_custom_emoji_id="5256110225848543598",
                 )
@@ -582,8 +612,10 @@ def _king_place_keyboard(
     settings: dict[str, Any],
     place: int,
     *,
+    group_chat_id: int,
     show_input_cancel: bool = False,
 ) -> types.InlineKeyboardMarkup:
+    kc = lambda *p: _kc(group_chat_id, *p)
     p = int(place)
     reward = settings.get(f"place_{p}") or {}
     has_kut = int(reward.get("kut") or 0) > 0
@@ -603,7 +635,7 @@ def _king_place_keyboard(
         [
             types.InlineKeyboardButton(
                 text=kut_title,
-                callback_data=_kc("place", p, "kut", "custom"),
+                callback_data=kc("place", p, "kut", "custom"),
                 style="default",
                 icon_custom_emoji_id="5258500400918587241",
             ),
@@ -611,7 +643,7 @@ def _king_place_keyboard(
         [
             types.InlineKeyboardButton(
                 text=item_title,
-                callback_data=_kc("place", p, "item", "custom"),
+                callback_data=kc("place", p, "item", "custom"),
                 style="default",
                 icon_custom_emoji_id="5463172695132745432",
             ),
@@ -619,7 +651,7 @@ def _king_place_keyboard(
         [
             types.InlineKeyboardButton(
                 text="Очистить",
-                callback_data=_kc("place", p, "clear"),
+                callback_data=kc("place", p, "clear"),
                 style="default",
                 icon_custom_emoji_id="5253529465899739917",
             )
@@ -630,25 +662,26 @@ def _king_place_keyboard(
             [
                 types.InlineKeyboardButton(
                     text="Отмена ввода",
-                    callback_data=_kc("input", "cancel"),
+                    callback_data=kc("input", "cancel"),
                     style="default",
                     icon_custom_emoji_id="5305605746795225897",
                 ),
-                types.InlineKeyboardButton(text="В меню", callback_data=_kc("open"), style="default"),
+                types.InlineKeyboardButton(text="В меню", callback_data=kc("open"), style="default"),
             ]
         )
     else:
-        rows.append([types.InlineKeyboardButton(text="В меню", callback_data=_kc("open"), style="default")])
+        rows.append([types.InlineKeyboardButton(text="В меню", callback_data=kc("open"), style="default")])
     return types.InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _pending_cancel_keyboard() -> types.InlineKeyboardMarkup:
+def _pending_cancel_keyboard(*, group_chat_id: int) -> types.InlineKeyboardMarkup:
+    kc = lambda *p: _kc(group_chat_id, *p)
     return types.InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 types.InlineKeyboardButton(
                     text="Отмена ввода",
-                    callback_data=_kc("input", "cancel"),
+                    callback_data=kc("input", "cancel"),
                     style="default",
                     icon_custom_emoji_id="5305605746795225897",
                 )
@@ -657,18 +690,19 @@ def _pending_cancel_keyboard() -> types.InlineKeyboardMarkup:
     )
 
 
-def _budget_confirm_keyboard() -> types.InlineKeyboardMarkup:
+def _budget_confirm_keyboard(*, group_chat_id: int) -> types.InlineKeyboardMarkup:
+    kc = lambda *p: _kc(group_chat_id, *p)
     return types.InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 types.InlineKeyboardButton(
                     text="Все в порядке",
-                    callback_data=_kc("budget", "confirm"),
+                    callback_data=kc("budget", "confirm"),
                     style="default",
                     icon_custom_emoji_id="5411520005386806155",
                 )
             ],
-            list(_pending_cancel_keyboard().inline_keyboard[0]),
+            list(_pending_cancel_keyboard(group_chat_id=group_chat_id).inline_keyboard[0]),
         ]
     )
 
@@ -676,11 +710,17 @@ def _budget_confirm_keyboard() -> types.InlineKeyboardMarkup:
 def _king_menu_keyboard_with_pending_cancel(
     settings: dict[str, Any],
     *,
+    group_chat_id: int,
     group_button: tuple[str, str] | None = None,
     group_balance: int | None = None,
 ) -> types.InlineKeyboardMarkup:
     # По UX-требованию: в главном меню не показываем "Отмена ввода".
-    return _king_menu_keyboard(settings, group_button=group_button, group_balance=group_balance)
+    return _king_menu_keyboard(
+        settings,
+        group_chat_id=group_chat_id,
+        group_button=group_button,
+        group_balance=group_balance,
+    )
 
 
 def _main_menu_keyboard_for_user(
@@ -692,15 +732,24 @@ def _main_menu_keyboard_for_user(
     group_balance: int | None = None,
 ) -> types.InlineKeyboardMarkup:
     # Главная панель всегда без кнопки отмены ввода.
-    return _king_menu_keyboard(settings, group_button=group_button, group_balance=group_balance)
+    # chat_id тут исторически и есть группа, которую настраиваем.
+    return _king_menu_keyboard(
+        settings,
+        group_chat_id=int(chat_id),
+        group_button=group_button,
+        group_balance=group_balance,
+    )
 
 
-def _help_keyboard_for_user(panel_chat_id: int, user_id: int) -> types.InlineKeyboardMarkup:
+def _help_keyboard_for_user(
+    panel_chat_id: int, user_id: int, *, group_chat_id: int
+) -> types.InlineKeyboardMarkup:
+    kc = lambda *p: _kc(group_chat_id, *p)
     rows: list[list[types.InlineKeyboardButton]] = [
-        [types.InlineKeyboardButton(text="Назад", callback_data=_kc("open"), style="default")]
+        [types.InlineKeyboardButton(text="Назад", callback_data=kc("open"), style="default")]
     ]
     if _get_pending_input(panel_chat_id, user_id) is not None:
-        rows.append(list(_pending_cancel_keyboard().inline_keyboard[0]))
+        rows.append(list(_pending_cancel_keyboard(group_chat_id=group_chat_id).inline_keyboard[0]))
     return types.InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -1125,7 +1174,7 @@ async def _reply_pending_input_error(
         f"<b>Осталось : {left_sec} сек.</b>\n"
 
     )
-    markup = _pending_cancel_keyboard()
+    markup = _pending_cancel_keyboard(group_chat_id=group_chat_id)
     sent = await _reply_barnum(message, details, reply_markup=markup)
     if sent is not None:
         panel_chat_id = int(sent.chat.id)
@@ -1300,7 +1349,9 @@ async def _ensure_creator_permissions_callback(
     return False
 
 
-async def _resolve_menu_callback_group(call: types.CallbackQuery, db, bot) -> int | None:
+async def _resolve_menu_callback_group(
+    call: types.CallbackQuery, db, bot, *, group_from_data: int | None = None
+) -> int | None:
     """
     Проверяет права на клик и возвращает ГРУППУ, которую настраивает это меню.
     None - клик отклонён, пользователю уже отвечено.
@@ -1319,6 +1370,17 @@ async def _resolve_menu_callback_group(call: types.CallbackQuery, db, bot) -> in
 
     owner_id = _get_menu_owner(panel_chat_id, message_id)
     group_chat_id = _get_menu_target(panel_chat_id, message_id)
+
+    if group_from_data is not None:
+        # Кнопка сама принесла группу - это источник истины. Никакое состояние
+        # в памяти или Redis на этот путь больше не влияет, поэтому «Меню
+        # устарело» здесь невозможно в принципе.
+        group_chat_id = int(group_from_data)
+        if owner_id is None:
+            # Владельца не знаем, но право действовать всё равно решает
+            # проверка создателя группы ниже - она и есть настоящая защита.
+            owner_id = user_id
+        _bind_menu_message(panel_chat_id, message_id, owner_id, group_chat_id)
 
     # Привязка могла потеряться, хотя сообщение живо. Прежде чем отвечать
     # «Меню устарело», пробуем восстановить её по обратной карте.
@@ -1534,7 +1596,12 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
     # chat_id - какая ГРУППА настраивается. Дальше по функции chat_id всегда
     # означает группу, а операции над сообщением идут по panel_chat_id.
     panel_chat_id = int(msg.chat.id)
-    resolved_group_id = await _resolve_menu_callback_group(call, db, bot)
+    # Группа приезжает прямо в кнопке. Для меню, открытых до этой версии,
+    # group_from_data будет None - тогда работает старый путь через сторы.
+    group_from_data, tail = _split_callback_data(data)
+    resolved_group_id = await _resolve_menu_callback_group(
+        call, db, bot, group_from_data=group_from_data
+    )
     if resolved_group_id is None:
         return True
     chat_id = int(resolved_group_id)
@@ -1547,7 +1614,10 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
     group_context = await _resolve_group_menu_context(db, chat_id)
     group_button = group_context.get("button")
     group_balance = int(group_context.get("balance") or 0)
-    parts = data.split(":")
+    # Собираем parts так, чтобы индексы ниже по функции остались прежними:
+    # parts[1] - действие, parts[2..] - аргументы. Разница между старым и
+    # новым форматом уже поглощена в _split_callback_data.
+    parts = [_KING_MENU_PREFIX, *tail]
     action = parts[1] if len(parts) > 1 else "open"
 
     if action == "noop":
@@ -1570,6 +1640,7 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
                 settings,
                 group_button=group_button,
                 group_balance=group_balance,
+                group_chat_id=chat_id,
             ),
             bind_owner_id=user_id,
         )
@@ -1626,7 +1697,7 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
         await _edit_king_menu_message(
             call,
             _HELP_TEXT + "\n\nНазад - в меню.",
-            reply_markup=_help_keyboard_for_user(panel_chat_id, user_id),
+            reply_markup=_help_keyboard_for_user(panel_chat_id, user_id, group_chat_id=chat_id),
             bind_owner_id=user_id,
         )
         await call.answer()
@@ -1650,7 +1721,7 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
             await _edit_king_menu_message(
                 call,
                 _king_place_text(settings, place),
-                reply_markup=_king_place_keyboard(settings, place),
+                reply_markup=_king_place_keyboard(settings, place, group_chat_id=chat_id),
                 bind_owner_id=user_id,
             )
             await call.answer()
@@ -1681,7 +1752,7 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
                 call,
                 _king_place_text(settings, place)
                 + f"\n\n<tg-emoji emoji-id='5215327832040811010'>⏳</tg-emoji> <b>Введите : <code>предмет количество</code>\nПример : <code>🚬 1</code>\nОжидание : {_KING_PENDING_INPUT_TIMEOUT_SEC} сек.</b>",
-                reply_markup=_king_place_keyboard(settings, place, show_input_cancel=True),
+                reply_markup=_king_place_keyboard(settings, place, show_input_cancel=True, group_chat_id=chat_id),
                 bind_owner_id=user_id,
             )
             await call.answer("Жду ввод предмета.", show_alert=True)
@@ -1692,7 +1763,7 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
             await _edit_king_menu_message(
                 call,
                 _king_place_text(settings, place),
-                reply_markup=_king_place_keyboard(settings, place),
+                reply_markup=_king_place_keyboard(settings, place, group_chat_id=chat_id),
                 bind_owner_id=user_id,
             )
             await call.answer("Награда очищена.")
@@ -1714,7 +1785,7 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
                     call,
                     _king_place_text(settings, place)
                     + f"\n\n<tg-emoji emoji-id='5215327832040811010'>⏳</tg-emoji> <b>Введите сумму кут которую получит победитель на {place} месте\nОжидание : {_KING_PENDING_INPUT_TIMEOUT_SEC} сек.</b>",
-                    reply_markup=_king_place_keyboard(settings, place, show_input_cancel=True),
+                    reply_markup=_king_place_keyboard(settings, place, show_input_cancel=True, group_chat_id=chat_id),
                     bind_owner_id=user_id,
                 )
                 await call.answer("Жду сумму.", show_alert=True)
@@ -1733,7 +1804,7 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
             await _edit_king_menu_message(
                 call,
                 _king_place_text(settings, place),
-                reply_markup=_king_place_keyboard(settings, place),
+                reply_markup=_king_place_keyboard(settings, place, group_chat_id=chat_id),
                 bind_owner_id=user_id,
             )
             await call.answer("Награда обновлена.")
@@ -1802,6 +1873,7 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
                     settings,
                     group_button=group_button,
                     group_balance=group_balance,
+                    group_chat_id=chat_id,
                 ),
                 bind_owner_id=user_id,
             )
@@ -1856,6 +1928,7 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
                 settings,
                 group_button=group_button,
                 group_balance=group_balance,
+                group_chat_id=chat_id,
             ),
             bind_owner_id=user_id,
         )
@@ -1881,6 +1954,7 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
                 settings,
                 group_button=group_button,
                 group_balance=group_balance,
+                group_chat_id=chat_id,
             ),
             bind_owner_id=user_id,
         )
@@ -1908,6 +1982,7 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
                     settings,
                     group_button=group_button,
                     group_balance=group_balance,
+                    group_chat_id=chat_id,
                 ),
                 bind_owner_id=user_id,
             )
@@ -2487,7 +2562,7 @@ async def _handle_king_stats_command_inner(message: types.Message, db, bot) -> b
             sent = await _reply_barnum(
                 message,
                 confirm_text,
-                reply_markup=_budget_confirm_keyboard(),
+                reply_markup=_budget_confirm_keyboard(group_chat_id=chat_id),
             )
             if sent is not None:
                 confirm_payload["panel_message_id"] = int(sent.message_id)
@@ -2497,7 +2572,7 @@ async def _handle_king_stats_command_inner(message: types.Message, db, bot) -> b
                     int(sent.chat.id),
                     int(sent.message_id),
                     confirm_text,
-                    _budget_confirm_keyboard(),
+                    _budget_confirm_keyboard(group_chat_id=chat_id),
                 )
             return True
 
