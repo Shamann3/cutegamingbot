@@ -45,14 +45,14 @@ export default function TradeModule({
           <KutBalance value={kut ?? 0} className="trade-header-balance" onDonate={openDonate} />
         </header>
 
-        <div className="trade-subtabs" role="tablist" aria-label="Разделы торговли">
+        <div className="segment-tabs" role="tablist" aria-label="Разделы торговли">
           {SEGMENTS.map((s) => (
             <button
               key={s.id}
               type="button"
               role="tab"
               aria-selected={segment === s.id}
-              className={`trade-subtab${segment === s.id ? ' trade-subtab-active' : ''}`}
+              className={`segment-tab${segment === s.id ? ' segment-tab-active' : ''}`}
               onClick={() => onSegmentChange(s.id)}
             >
               {s.label}

@@ -263,14 +263,14 @@ export default function FarmModule({ isActive = true }) {
       <div className="relative z-10 farm-shell py-3 farm-shell-with-bar animate-slide-up">
         <FarmHeader isPreview={isPreview} />
 
-        <div className="farm-subtabs" role="tablist" aria-label="Разделы фермы">
+        <div className="segment-tabs" role="tablist" aria-label="Разделы фермы">
           {FARM_SEGMENTS.map((s) => (
             <button
               key={s.id}
               type="button"
               role="tab"
               aria-selected={farmSegment === s.id}
-              className={`farm-subtab${farmSegment === s.id ? ' farm-subtab-active' : ''}`}
+              className={`segment-tab${farmSegment === s.id ? ' segment-tab-active' : ''}`}
               onClick={() => setFarmSegment(s.id)}
             >
               {s.label}

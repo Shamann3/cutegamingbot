@@ -122,14 +122,14 @@ export default function ProfileModule({ isActive = true }) {
           {profile && <KutBalance value={profile.balance} className="profile-module-balance" />}
         </header>
 
-        <div className="profile-subtabs" role="tablist" aria-label="Разделы профиля">
+        <div className="segment-tabs" role="tablist" aria-label="Разделы профиля">
           {PROFILE_SEGMENTS.map((s) => (
             <button
               key={s.id}
               type="button"
               role="tab"
               aria-selected={profileSegment === s.id}
-              className={`profile-subtab${profileSegment === s.id ? ' profile-subtab-active' : ''}`}
+              className={`segment-tab${profileSegment === s.id ? ' segment-tab-active' : ''}`}
               onClick={() => setProfileSegment(s.id)}
             >
               {s.label}
