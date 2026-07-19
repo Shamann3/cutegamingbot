@@ -1295,13 +1295,16 @@ body {
     pointer-events: auto;
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 0.12rem;
+    gap: 0.05rem;
     max-width: 42rem;
     margin: 0 auto;
-    padding: 3px;
-    border-radius: 16px;
+    padding: 4px;
+    border-radius: 17px;
     background: linear-gradient(135deg, #f5e6a8 0%, #8b6914 35%, #e2c35a 65%, #4a3018 100%);
-    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.45);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+      0 -4px 24px rgba(0, 0, 0, 0.45);
   }
 
   .app-tab-btn {
@@ -1310,19 +1313,22 @@ body {
     align-items: center;
     gap: 0.06rem;
     padding: 0.34rem 0.08rem 0.28rem;
-    border: none;
+    border: 1px solid rgba(212, 175, 55, 0.14);
     border-radius: 13px;
     background: linear-gradient(180deg, rgba(10, 24, 16, 0.92) 0%, rgba(6, 16, 10, 0.96) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
     color: rgba(245, 230, 200, 0.65);
     cursor: pointer;
-    transition: color 0.2s, background 0.2s, box-shadow 0.2s;
+    transition: color 0.2s, background 0.2s, box-shadow 0.2s, border-color 0.2s;
     min-width: 0;
   }
 
   .app-tab-btn-active {
     color: #fef3c7;
+    border-color: rgba(212, 175, 55, 0.4);
     background: linear-gradient(180deg, rgba(22, 52, 34, 0.98) 0%, rgba(14, 36, 24, 0.98) 100%);
     box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
       inset 0 0 20px var(--tab-icon-glow, rgba(212, 175, 55, 0.12)),
       0 2px 8px rgba(0, 0, 0, 0.35);
   }
@@ -1334,7 +1340,10 @@ body {
     width: 1.15rem;
     height: 1.15rem;
     line-height: 1;
-    transition: color 0.2s, filter 0.2s;
+    color: var(--tab-icon-strong, rgba(245, 230, 200, 0.65));
+    opacity: 0.6;
+    filter: drop-shadow(0 0 3px var(--tab-icon-glow, transparent));
+    transition: color 0.2s, filter 0.2s, opacity 0.2s;
   }
 
   .app-tab-icon svg {
@@ -1343,6 +1352,7 @@ body {
   }
 
   .app-tab-btn-active .app-tab-icon {
+    opacity: 1;
     color: var(--tab-icon-strong, #fef3c7);
     filter: drop-shadow(0 0 5px var(--tab-icon-glow, rgba(212, 175, 55, 0.4)));
   }
