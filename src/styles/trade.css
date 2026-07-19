@@ -26,12 +26,14 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.55rem;
   margin-bottom: 0.75rem;
 }
 
 .trade-header-main {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .trade-header-eyebrow {
@@ -54,6 +56,20 @@
 
 .trade-header-balance {
   flex-shrink: 0;
+}
+
+@media (max-width: 380px) {
+  .trade-header-balance {
+    width: 100%;
+  }
+
+  .trade-header-balance .kut-balance-frame {
+    width: 100%;
+  }
+
+  .trade-header-balance .kut-balance-inner {
+    justify-content: space-between;
+  }
 }
 
 .trade-subtabs {
