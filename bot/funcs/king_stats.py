@@ -1016,7 +1016,8 @@ async def _reply_barnum(
         if can_use_effect:
             payload["message_effect_id"] = _BARNUM_EFFECT_MAIN
         return await message.bot.send_message(**payload)
-    except Exception:
+    except Exception as primary_error:
+        print(f"⚠️ [KING][SEND] основная отправка не прошла: {type(primary_error).__name__}: {primary_error}")
         try:
             return await message.reply(
                 text,
@@ -1024,7 +1025,10 @@ async def _reply_barnum(
                 disable_web_page_preview=True,
                 reply_markup=reply_markup,
             )
-        except Exception:
+        except Exception as fallback_error:
+            # Раньше здесь была полная тишина: пользователь не получал ничего
+            # и в логе тоже ничего не оставалось.
+            print(f"🔥 [KING][SEND] запасная отправка тоже упала: {type(fallback_error).__name__}: {fallback_error}")
             return None
 
 
@@ -1395,6 +1399,28 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
     data = str(getattr(call, "data", "") or "")
     if not is_king_stats_callback(data):
         return False
+    try:
+        return await _handle_king_stats_callback_inner(call, db, bot)
+    except Exception:
+        import traceback
+        msg = getattr(call, "message", None)
+        panel_chat_id = int(getattr(getattr(msg, "chat", None), "id", 0) or 0)
+        message_id = int(getattr(msg, "message_id", 0) or 0)
+        print(
+            f"🔥 [KING][CB][FAIL] data={data!r} panel_chat_id={panel_chat_id} "
+            f"message_id={message_id} user_id={getattr(call.from_user, 'id', None)} "
+            f"target={_get_menu_target(panel_chat_id, message_id)}"
+        )
+        traceback.print_exc()
+        try:
+            await call.answer("Не удалось выполнить. Откройте меню заново.", show_alert=True)
+        except Exception:
+            pass
+        return True
+
+
+async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) -> bool:
+    data = str(getattr(call, "data", "") or "")
 
     msg = getattr(call, "message", None)
     if msg is None or getattr(msg, "chat", None) is None:
@@ -1411,6 +1437,10 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
         return True
     chat_id = int(resolved_group_id)
     user_id = int(call.from_user.id)
+    print(
+        f"👑 [KING][CB] data={data!r} panel_chat_id={panel_chat_id} "
+        f"group_chat_id={chat_id} user_id={user_id}"
+    )
     settings = await db.get_chat_king_reward_settings(chat_id)
     group_context = await _resolve_group_menu_context(db, chat_id)
     group_button = group_context.get("button")
@@ -2053,6 +2083,38 @@ def _parse_place_from_text(text: str) -> int | None:
 
 
 async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
+    """
+    Обёртка с диагностикой. Раньше любой сбой внутри выглядел для пользователя
+    как полная тишина: _reply_barnum глотает исключения и возвращает None,
+    а необработанное исключение уходило в лог aiogram без контекста.
+    """
+    try:
+        return await _handle_king_stats_command_inner(message, db, bot)
+    except Exception:
+        import traceback
+        panel_chat_id = int(getattr(getattr(message, "chat", None), "id", 0) or 0)
+        user_id = int(getattr(getattr(message, "from_user", None), "id", 0) or 0)
+        pending = _get_pending_input(panel_chat_id, user_id)
+        print(
+            f"🔥 [KING][CMD][FAIL] panel_chat_id={panel_chat_id} user_id={user_id} "
+            f"text={str(getattr(message, 'text', ''))[:64]!r} "
+            f"pending_type={(pending or {}).get('type')} "
+            f"group_chat_id={(pending or {}).get('group_chat_id')}"
+        )
+        traceback.print_exc()
+        try:
+            await _reply_barnum(
+                message,
+                "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> "
+                "<b>Не удалось применить значение.</b>\n"
+                "<b>Откройте меню командой в группе и попробуйте ещё раз.</b>",
+            )
+        except Exception:
+            pass
+        return True
+
+
+async def _handle_king_stats_command_inner(message: types.Message, db, bot) -> bool:
     normalized = _norm_text(getattr(message, "text", ""))
     # panel_chat_id - куда пришло сообщение. chat_id - какую ГРУППУ настраиваем.
     # В группе они совпадают, в ЛС нет: там группа берётся из payload ожидания.
@@ -2077,6 +2139,11 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
 
         raw_text = str(getattr(message, "text", "") or "").strip()
         panel_message_id = int(pending.get("panel_message_id") or 0)
+        print(
+            f"👑 [KING][INPUT] type={pending.get('type')!r} text={raw_text[:48]!r} "
+            f"panel_chat_id={panel_chat_id} group_chat_id={chat_id} "
+            f"panel_message_id={panel_message_id}"
+        )
         if not raw_text:
             await _reply_pending_input_error(
                 message,
