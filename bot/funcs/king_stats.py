@@ -260,6 +260,54 @@ _KING_DM_LAST_MENU: dict[tuple[int, int], int] = LazyGameStore("_KING_DM_LAST_ME
 _KING_MENU_BINDING_TTL_SEC = 30 * 24 * 60 * 60
 
 
+# Сессия настройки в ЛС. Пока она жива, меню работает всегда - «Меню
+# устарело» внутри окна невозможно. Через 15 минут бездействия сессия
+# закрывается, и нужно снова написать команду в группе.
+_KING_DM_SESSION_TTL_SEC = 15 * 60
+# (user_id, group_chat_id) -> время последней активности
+_KING_DM_SESSIONS: dict[tuple[int, int], float] = LazyGameStore("_KING_DM_SESSIONS")
+
+
+def _touch_dm_session(user_id: int, group_chat_id: int) -> None:
+    _KING_DM_SESSIONS[_dm_menu_key(user_id, group_chat_id)] = float(time.time())
+
+
+def _dm_session_expired(user_id: int, group_chat_id: int) -> bool:
+    """
+    True только при доказанном истечении.
+
+    Если записи нет - НЕ блокируем. Состояние уже терялось (рестарт,
+    вытеснение, второй экземпляр бота), и раньше это выливалось в «Меню
+    устарело» у людей, которые никуда не уходили. Отсутствие данных теперь
+    трактуется в пользу пользователя: сессия просто начинается заново.
+    """
+    raw = _KING_DM_SESSIONS.get(_dm_menu_key(user_id, group_chat_id))
+    if raw is None:
+        return False
+    try:
+        last_seen = float(raw)
+    except Exception:
+        return False
+    return (time.time() - last_seen) > _KING_DM_SESSION_TTL_SEC
+
+
+def _dm_session_left_sec(user_id: int, group_chat_id: int) -> int:
+    raw = _KING_DM_SESSIONS.get(_dm_menu_key(user_id, group_chat_id))
+    if raw is None:
+        return int(_KING_DM_SESSION_TTL_SEC)
+    try:
+        left = _KING_DM_SESSION_TTL_SEC - (time.time() - float(raw))
+    except Exception:
+        return int(_KING_DM_SESSION_TTL_SEC)
+    return max(0, int(left))
+
+
+_KING_SESSION_EXPIRED_TEXT = (
+    "Настройка закрыта: прошло больше 15 минут.\n"
+    "Напишите «система царя статистики» в группе, чтобы открыть меню заново."
+)
+
+
 def _tune_menu_store_ttl() -> None:
     for store in (_KING_MENU_OWNERS, _KING_MENU_TARGET,
                   _KING_MENU_RENDER_STATE, _KING_DM_LAST_MENU):
@@ -1305,6 +1353,8 @@ async def _open_menu_in_dm(bot, db, *, group_chat_id: int, user_id: int) -> type
     _bind_menu_message(panel_chat_id, message_id, int(user_id), int(group_chat_id))
     _remember_menu_state(panel_chat_id, message_id, desired_text, desired_markup)
     _remember_dm_menu(int(user_id), int(group_chat_id), message_id)
+    # Команда в группе открывает новую 15-минутную сессию настройки в ЛС.
+    _touch_dm_session(int(user_id), int(group_chat_id))
     return sent
 
 
@@ -1402,7 +1452,7 @@ async def _resolve_menu_callback_group(
             f"dm_last_size={len(_KING_DM_LAST_MENU)} "
             f"dm_last_for_user={[k for k in list(_KING_DM_LAST_MENU) if str(user_id) in str(k)][:5]}"
         )
-        await call.answer("Меню устарело. Откройте его командой в группе.", show_alert=True)
+        await call.answer(_KING_SESSION_EXPIRED_TEXT, show_alert=True)
         return None
     if owner_id != user_id:
         print(
@@ -1419,11 +1469,22 @@ async def _resolve_menu_callback_group(
             group_chat_id = panel_chat_id
             _bind_menu_target(panel_chat_id, message_id, group_chat_id)
         else:
-            await call.answer("Меню устарело. Откройте его командой в группе.", show_alert=True)
+            await call.answer(_KING_SESSION_EXPIRED_TEXT, show_alert=True)
             return None
+
+    is_private_panel = getattr(msg.chat, "type", "") == "private"
+    if is_private_panel and _dm_session_expired(user_id, int(group_chat_id)):
+        print(f"⏳ [KING][SESSION] истекла | user_id={user_id} group={group_chat_id}")
+        await call.answer(_KING_SESSION_EXPIRED_TEXT, show_alert=True)
+        return None
 
     if not await _ensure_creator_permissions_callback(call, db, bot, group_chat_id=group_chat_id):
         return None
+
+    # Любое действие продлевает сессию: пока пользователь работает с меню,
+    # оно остаётся активным.
+    if is_private_panel:
+        _touch_dm_session(user_id, int(group_chat_id))
     return int(group_chat_id)
 
 
@@ -2310,9 +2371,22 @@ async def _handle_king_stats_command_inner(message: types.Message, db, bot) -> b
     group_balance = int(group_context.get("balance") or 0)
 
     if pending is not None:
+        if is_private and _dm_session_expired(user_id, chat_id):
+            print(f"⏳ [KING][SESSION] истекла на вводе | user_id={user_id} group={chat_id}")
+            _clear_pending_input(panel_chat_id, user_id)
+            await _reply_barnum(
+                message,
+                "<tg-emoji emoji-id='5215327832040811010'>⏳</tg-emoji> "
+                f"<b>{_html.escape(_KING_SESSION_EXPIRED_TEXT)}</b>",
+            )
+            return True
+
         if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
             _clear_pending_input(panel_chat_id, user_id)
             return True
+
+        if is_private:
+            _touch_dm_session(user_id, chat_id)
 
         raw_text = str(getattr(message, "text", "") or "").strip()
         panel_message_id = int(pending.get("panel_message_id") or 0)
