@@ -37,6 +37,8 @@ export default function MarketplaceModule({
   initialItemId = '',
   initialHighlightOnly = false,
   onSearchUsed,
+  embedded = false,
+  section = 'browse',
 }) {
   const { playSound } = useSettings()
   const {
@@ -175,68 +177,24 @@ export default function MarketplaceModule({
   }
 
   return (
-    <div className="relative min-h-screen tab-theme-market market-exchange">
-      <FarmBackground />
-      <TabAtmosphere variant="market" />
+    <div className={embedded ? 'relative market-exchange' : 'relative min-h-screen tab-theme-market market-exchange'}>
+      {!embedded && <FarmBackground />}
+      {!embedded && <TabAtmosphere variant="market" />}
 
-      <div className="relative z-10 market-shell py-4 pb-2 animate-slide-up">
-        <header className="market-hero">
-          <div className="market-hero-copy">
-            <p className="market-hero-eyebrow">Игроки · торговля</p>
-            <h1 className="market-hero-title">Биржа</h1>
-          </div>
-          <KutBalance
-            value={kut}
-            className="market-hero-balance"
-            onDonate={openDonate}
-          />
-        </header>
-
-        <section className="market-sell-card" aria-label="Выставить предмет">
-          <div className="market-sell-card-glow" aria-hidden />
-          <div className="market-sell-card-content">
-            <span className="market-sell-card-icon" aria-hidden>📤</span>
-            <div className="market-sell-card-text">
-              <p className="market-sell-card-title">Продать из рюкзака</p>
-              <p className="market-sell-card-sub">Комиссия {commissionPercent}% при продаже · саженцы и вода запрещены</p>
+      <div className={embedded ? 'relative z-10 market-shell' : 'relative z-10 market-shell py-4 pb-2 animate-slide-up'}>
+        {!embedded && (
+          <header className="market-hero">
+            <div className="market-hero-copy">
+              <p className="market-hero-eyebrow">Игроки · торговля</p>
+              <h1 className="market-hero-title">Биржа</h1>
             </div>
-          </div>
-          <button
-            type="button"
-            className="market-sell-card-btn"
-            disabled={catalogBusy}
-            onClick={openSell}
-          >
-            Выставить лот
-          </button>
-        </section>
-
-        <div className="market-tools-row">
-          <ShopSearch
-            className="market-search"
-            value={search}
-            onChange={setSearch}
-            disabled={catalogBusy && !search}
-            placeholder="Искать лоты игроков…"
-            ariaLabel="Поиск лотов на бирже"
-          />
-          <ShopToolbar
-            className="market-toolbar"
-            priceFilter={priceFilter}
-            sortBy={sortBy}
-            sortOrder={sortOrder}
-            onPriceFilterChange={changePriceFilter}
-            onSortChange={changeSort}
-            disabled={catalogBusy}
-          />
-        </div>
-
-        {!initialLoading && totalItems > 0 ? (
-          <p className="market-lots-badge" role="status">
-            <span className="market-lots-badge-dot" aria-hidden />
-            {totalItems} {totalItems === 1 ? 'лот' : totalItems < 5 ? 'лота' : 'лотов'} на бирже
-          </p>
-        ) : null}
+            <KutBalance
+              value={kut}
+              className="market-hero-balance"
+              onDonate={openDonate}
+            />
+          </header>
+        )}
 
         {actionMessage ? (
           <p className="market-toast market-toast-ok" role="status">
@@ -250,51 +208,103 @@ export default function MarketplaceModule({
           </p>
         ) : null}
 
-        <VineFrame className="market-board-frame">
-          <section id="onboarding-market-board" className="market-board" aria-label="Лоты игроков">
-            <div className={`market-board-showroom ${refreshing ? 'market-board-showroom-refresh' : ''}`}>
-              {initialLoading ? (
-                <ShopSkeletonGrid count={pageSize} gridClassName={gridClassName} />
-              ) : emptyCatalog ? (
-                <div className="market-board-empty">
-                  <span className="market-board-empty-icon" aria-hidden>💱</span>
-                  <p>{marketEmptyMessage(activeCategory, hasSearch)}</p>
-                </div>
-              ) : (
-                <div className={`market-shelf-grid ${gridClassName}`}>
-                  {items.map((item) => (
-                    <MarketShelfTile
-                      key={item.id}
-                      item={item}
-                      kut={kut}
-                      onSelect={setSelectedItem}
-                      onOpenSellerProfile={setProfileUserId}
-                      isBusy={busyListingId === item.id}
-                      disabled={catalogBusy && busyListingId !== item.id}
-                      isHighlighted={highlightItemId != null && String(highlightItemId) === String(item.itemId)}
-                    />
-                  ))}
-                </div>
-              )}
+        {section === 'sell' && (
+          <section className="market-sell-card" aria-label="Выставить предмет">
+            <div className="market-sell-card-glow" aria-hidden />
+            <div className="market-sell-card-content">
+              <span className="market-sell-card-icon" aria-hidden>📤</span>
+              <div className="market-sell-card-text">
+                <p className="market-sell-card-title">Продать из рюкзака</p>
+                <p className="market-sell-card-sub">Комиссия {commissionPercent}% при продаже · саженцы и вода запрещены</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="market-sell-card-btn"
+              disabled={catalogBusy}
+              onClick={openSell}
+            >
+              Выставить лот
+            </button>
+          </section>
+        )}
+
+        {section === 'browse' && (
+          <>
+            <div className="market-tools-row">
+              <ShopSearch
+                className="market-search"
+                value={search}
+                onChange={setSearch}
+                disabled={catalogBusy && !search}
+                placeholder="Искать лоты игроков…"
+                ariaLabel="Поиск лотов на бирже"
+              />
+              <ShopToolbar
+                className="market-toolbar"
+                priceFilter={priceFilter}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onPriceFilterChange={changePriceFilter}
+                onSortChange={changeSort}
+                disabled={catalogBusy}
+              />
             </div>
 
-            <ShopNavigation
-              className="market-nav"
-              sortFilters={sortFilters}
-              activeCategory={activeCategory}
-              page={page}
-              totalPages={totalPages}
-              totalItems={totalItems}
-              disabled={catalogBusy}
-              onSelectSort={selectSort}
-              onResetSort={resetSort}
-              onGoToPage={goToPage}
-              ariaLabel="Навигация по лотам"
-              categoriesLabel="Тип предмета"
-              allChipEmoji="💱"
-            />
-          </section>
-        </VineFrame>
+            {!initialLoading && totalItems > 0 ? (
+              <p className="market-lots-badge" role="status">
+                <span className="market-lots-badge-dot" aria-hidden />
+                {totalItems} {totalItems === 1 ? 'лот' : totalItems < 5 ? 'лота' : 'лотов'} на бирже
+              </p>
+            ) : null}
+
+            <VineFrame className="market-board-frame">
+              <section id="onboarding-market-board" className="market-board" aria-label="Лоты игроков">
+                <div className={`market-board-showroom ${refreshing ? 'market-board-showroom-refresh' : ''}`}>
+                  {initialLoading ? (
+                    <ShopSkeletonGrid count={pageSize} gridClassName={gridClassName} />
+                  ) : emptyCatalog ? (
+                    <div className="market-board-empty">
+                      <span className="market-board-empty-icon" aria-hidden>💱</span>
+                      <p>{marketEmptyMessage(activeCategory, hasSearch)}</p>
+                    </div>
+                  ) : (
+                    <div className={`market-shelf-grid ${gridClassName}`}>
+                      {items.map((item) => (
+                        <MarketShelfTile
+                          key={item.id}
+                          item={item}
+                          kut={kut}
+                          onSelect={setSelectedItem}
+                          onOpenSellerProfile={setProfileUserId}
+                          isBusy={busyListingId === item.id}
+                          disabled={catalogBusy && busyListingId !== item.id}
+                          isHighlighted={highlightItemId != null && String(highlightItemId) === String(item.itemId)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <ShopNavigation
+                  className="market-nav"
+                  sortFilters={sortFilters}
+                  activeCategory={activeCategory}
+                  page={page}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  disabled={catalogBusy}
+                  onSelectSort={selectSort}
+                  onResetSort={resetSort}
+                  onGoToPage={goToPage}
+                  ariaLabel="Навигация по лотам"
+                  categoriesLabel="Тип предмета"
+                  allChipEmoji="💱"
+                />
+              </section>
+            </VineFrame>
+          </>
+        )}
       </div>
 
       <MarketListingModal
