@@ -1,0 +1,62 @@
+/* Заглушка «Розыгрыши» — по образцу .market-board-empty (src/index.css). */
+
+.giveaways-shell {
+  width: 100%;
+  max-width: 28rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+@media (min-width: 520px) {
+  .giveaways-shell {
+    max-width: 36rem;
+  }
+}
+
+.giveaways-header {
+  margin-bottom: 0.85rem;
+}
+
+.giveaways-header-eyebrow {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--tab-accent-muted);
+}
+
+.giveaways-header-title {
+  margin: 0.1rem 0 0;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 1.55rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--tab-title-color);
+  text-shadow: 0 2px 18px var(--tab-accent-glow);
+}
+
+.giveaways-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+  padding: 3rem 1.25rem;
+}
+
+.giveaways-empty-icon {
+  font-size: 2.4rem;
+  filter: drop-shadow(0 2px 10px var(--tab-accent-glow));
+}
+
+.giveaways-empty p {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--tab-title-color);
+  max-width: 16rem;
+}

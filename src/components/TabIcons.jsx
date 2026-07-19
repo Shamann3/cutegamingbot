@@ -108,6 +108,16 @@ const More = () => (
   </Icon>
 )
 
+const Gift = () => (
+  <Icon>
+    <rect x="4" y="9" width="16" height="11" rx="1.5" />
+    <path d="M4 9h16" />
+    <path d="M12 9v11" />
+    <path d="M12 9c-1.6-3.6-6-3.6-6-1 0 1 .9 1 2 1" />
+    <path d="M12 9c1.6-3.6 6-3.6 6-1 0 1-.9 1-2 1" />
+  </Icon>
+)
+
 export const TAB_ICONS = {
   farm: Farm,
   inventory: Inventory,
@@ -119,6 +129,8 @@ export const TAB_ICONS = {
   profile: Profile,
   settings: Settings,
   more: More,
+  trade: Market,
+  giveaways: Gift,
 }
 
 // Те же значения, что в src/styles/tabThemes.css (--tab-accent-strong / --tab-accent-glow)
@@ -134,4 +146,6 @@ export const TAB_ACCENTS = {
   profile: { strong: '#22d3ee', glow: 'rgba(34, 211, 238, 0.32)' },
   settings: { strong: '#64748b', glow: 'rgba(100, 116, 139, 0.32)' },
   more: { strong: '#d4af37', glow: 'rgba(212, 175, 55, 0.32)' },
+  trade: { strong: '#cd9b5a', glow: 'rgba(184, 115, 51, 0.32)' },
+  giveaways: { strong: '#f472b6', glow: 'rgba(244, 114, 182, 0.34)' },
 }
