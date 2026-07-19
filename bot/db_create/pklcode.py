@@ -142,9 +142,15 @@ EXCLUDED_STORES = (
     "group_cache",
     "user_cache",
     "u",
-    "ADMIN_WITHDRAW_ACTIONS"
+    "ADMIN_WITHDRAW_ACTIONS",
+    # ✅ настройки меню подарков (sypheraddgift/sypherupdategift) - постоянные
+    # данные, не должны протухать по TTL как временные кэши/pending-действия
+    "_gift_menu_emoji_overrides",
+    "_gift_menu_manual_gifts",
 )
-NO_DELETE_STORES = set(EXCLUDED_STORES)
+# NO_DELETE_STORES не включает меню подарков: там нужен рабочий явный del
+# (кнопки "Удалить подарок" / "Вернуть базовое эмодзи"), просто без авто-TTL
+NO_DELETE_STORES = set(EXCLUDED_STORES) - {"_gift_menu_emoji_overrides", "_gift_menu_manual_gifts"}
 
 AUTO_WARMUP = bool(int(os.getenv("PKL_AUTO_WARMUP", "0")))
 PRINT_SUMMARY = bool(int(os.getenv("PKL_SUMMARY", "1")))

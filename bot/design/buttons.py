@@ -1122,9 +1122,6 @@ GIFTS_DEBUG = True
 GIFTS_DEBUG_PRINT_IDS_ONLY = False
 GIFTS_DEBUG_MAX_ITEMS = 200
 
-GIFT_MENU_EMOJI_OVERRIDES_FILE = Path("gift_menu_emoji_overrides.json")
-GIFT_MENU_MANUAL_GIFTS_FILE = Path("gift_menu_manual_gifts.json")
-
 SYSTEM_ICON_IDS: Dict[str, Optional[str]] = {
     "back": "5960671702059848143",
     "close": "5226660202035554522",
@@ -1218,60 +1215,73 @@ def _fmt_int1(n: Any) -> str:
 
 
 # ============================================================
-# ✅ OVERRIDES LOAD/SAVE
+# ✅ OVERRIDES - хранится в Redis-бэкенде (_gift_menu_emoji_overrides -
+# LazyGameStore), как и все остальные постоянные данные бота. Раньше здесь
+# был отдельный слой на локальных JSON-файлах (относительный путь), который
+# на каждом рестарте/редеплое (эфемерная ФС хостинга) терял данные -
+# из-за этого sypheraddgift/sypherupdategift выглядели как "не сохраняются".
 # ============================================================
-def _load_gift_menu_emoji_overrides_sync() -> Dict[str, Dict[str, str]]:
-    try:
-        if not GIFT_MENU_EMOJI_OVERRIDES_FILE.exists():
-            return {}
-
-        raw = json.loads(GIFT_MENU_EMOJI_OVERRIDES_FILE.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict):
-            return {}
-
-        clean: Dict[str, Dict[str, str]] = {}
-        for gift_id, payload in raw.items():
-            gid = _normalize_gift_id(gift_id)
-            if not gid or not isinstance(payload, dict):
-                continue
-
-            custom_emoji_id = _normalize_custom_emoji_id(payload.get("custom_emoji_id"))
-            if not custom_emoji_id:
-                continue
-
-            clean[gid] = {"custom_emoji_id": custom_emoji_id}
-
-        return clean
-    except Exception as e:
-        print(f"🟥 [GIFT_MENU_EMOJI][LOAD][ERROR] {e!r}")
-        return {}
+_LEGACY_GIFT_MENU_EMOJI_OVERRIDES_FILE = Path("gift_menu_emoji_overrides.json")
+_LEGACY_GIFT_MENU_MANUAL_GIFTS_FILE = Path("gift_menu_manual_gifts.json")
+_gift_menu_legacy_migration_lock = asyncio.Lock()
+_gift_menu_legacy_migration_done = False
 
 
-def _save_gift_menu_emoji_overrides_sync(data: Dict[str, Dict[str, str]]) -> bool:
-    try:
-        GIFT_MENU_EMOJI_OVERRIDES_FILE.parent.mkdir(parents=True, exist_ok=True)
-        GIFT_MENU_EMOJI_OVERRIDES_FILE.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        return True
-    except Exception as e:
-        print(f"🟥 [GIFT_MENU_EMOJI][SAVE][ERROR] {e!r}")
-        return False
+async def _migrate_legacy_gift_menu_json_once() -> None:
+    """Разовый перенос старых локальных JSON (до фикса персистентности) в Redis."""
+    global _gift_menu_legacy_migration_done
 
+    if _gift_menu_legacy_migration_done:
+        return
 
-async def ensure_gift_menu_emoji_overrides_loaded() -> None:
-    global _gift_menu_emoji_overrides
-
-    async with _gift_menu_emoji_overrides_lock:
-        if _gift_menu_emoji_overrides:
+    async with _gift_menu_legacy_migration_lock:
+        if _gift_menu_legacy_migration_done:
             return
-        _gift_menu_emoji_overrides = _load_gift_menu_emoji_overrides_sync()
+        _gift_menu_legacy_migration_done = True
+
+        try:
+            if _LEGACY_GIFT_MENU_EMOJI_OVERRIDES_FILE.exists():
+                raw = json.loads(_LEGACY_GIFT_MENU_EMOJI_OVERRIDES_FILE.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    for gift_id, payload in raw.items():
+                        gid = _normalize_gift_id(gift_id)
+                        if not gid or gid in _gift_menu_emoji_overrides or not isinstance(payload, dict):
+                            continue
+                        ceid = _normalize_custom_emoji_id(payload.get("custom_emoji_id"))
+                        if ceid:
+                            _gift_menu_emoji_overrides[gid] = {"custom_emoji_id": ceid}
+                _LEGACY_GIFT_MENU_EMOJI_OVERRIDES_FILE.rename(
+                    _LEGACY_GIFT_MENU_EMOJI_OVERRIDES_FILE.with_suffix(".json.migrated")
+                )
+                print("🟩 [GIFT_MENU_EMOJI][MIGRATE] legacy JSON перенесён в Redis")
+        except Exception as e:
+            print(f"🟥 [GIFT_MENU_EMOJI][MIGRATE][ERROR] {e!r}")
+
+        try:
+            if _LEGACY_GIFT_MENU_MANUAL_GIFTS_FILE.exists():
+                raw = json.loads(_LEGACY_GIFT_MENU_MANUAL_GIFTS_FILE.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    for gift_id, payload in raw.items():
+                        gid = _normalize_gift_id(gift_id)
+                        if not gid or gid in _gift_menu_manual_gifts or not isinstance(payload, dict):
+                            continue
+                        _gift_menu_manual_gifts[gid] = {
+                            "custom_emoji_id": _normalize_custom_emoji_id(payload.get("custom_emoji_id")),
+                            "emoji": str(payload.get("emoji") or "🎁"),
+                            "price": int(_safe_int(payload.get("price"), default=0, clamp_min=0) or 0),
+                            "upgrade_price": int(_safe_int(payload.get("upgrade_price"), default=0, clamp_min=0) or 0),
+                            "has_upgrade": int(_safe_int(payload.get("has_upgrade"), default=0, clamp_min=0) or 0),
+                        }
+                _LEGACY_GIFT_MENU_MANUAL_GIFTS_FILE.rename(
+                    _LEGACY_GIFT_MENU_MANUAL_GIFTS_FILE.with_suffix(".json.migrated")
+                )
+                print("🟩 [GIFT_MENU_MANUAL][MIGRATE] legacy JSON перенесён в Redis")
+        except Exception as e:
+            print(f"🟥 [GIFT_MENU_MANUAL][MIGRATE][ERROR] {e!r}")
 
 
 async def get_gift_menu_emoji_override(gift_id: Any) -> Optional[str]:
-    await ensure_gift_menu_emoji_overrides_loaded()
-
+    await _migrate_legacy_gift_menu_json_once()
     gid = _normalize_gift_id(gift_id)
     if not gid:
         return None
@@ -1286,47 +1296,36 @@ async def get_gift_menu_emoji_override(gift_id: Any) -> Optional[str]:
 
 
 async def set_gift_menu_emoji_override(gift_id: Any, custom_emoji_id: Any) -> bool:
-    global _gift_menu_emoji_overrides
-
+    await _migrate_legacy_gift_menu_json_once()
     gid = _normalize_gift_id(gift_id)
     ceid = _normalize_custom_emoji_id(custom_emoji_id)
 
     if not gid or not ceid:
         return False
 
-    await ensure_gift_menu_emoji_overrides_loaded()
-
-    async with _gift_menu_emoji_overrides_lock:
-        current = dict(_gift_menu_emoji_overrides or {})
-        current[gid] = {"custom_emoji_id": ceid}
-
-        ok = _save_gift_menu_emoji_overrides_sync(current)
-        if not ok:
-            return False
-
-        _gift_menu_emoji_overrides = current
+    try:
+        async with _gift_menu_emoji_overrides_lock:
+            _gift_menu_emoji_overrides[gid] = {"custom_emoji_id": ceid}
         return True
+    except Exception as e:
+        print(f"🟥 [GIFT_MENU_EMOJI][SET][ERROR] gift_id={gift_id!r} err={e!r}")
+        return False
 
 
 async def reset_gift_menu_emoji_override(gift_id: Any) -> bool:
-    global _gift_menu_emoji_overrides
-
+    await _migrate_legacy_gift_menu_json_once()
     gid = _normalize_gift_id(gift_id)
     if not gid:
         return False
 
-    await ensure_gift_menu_emoji_overrides_loaded()
-
-    async with _gift_menu_emoji_overrides_lock:
-        current = dict(_gift_menu_emoji_overrides or {})
-        current.pop(gid, None)
-
-        ok = _save_gift_menu_emoji_overrides_sync(current)
-        if not ok:
-            return False
-
-        _gift_menu_emoji_overrides = current
+    try:
+        async with _gift_menu_emoji_overrides_lock:
+            if gid in _gift_menu_emoji_overrides:
+                del _gift_menu_emoji_overrides[gid]
         return True
+    except Exception as e:
+        print(f"🟥 [GIFT_MENU_EMOJI][RESET][ERROR] gift_id={gift_id!r} err={e!r}")
+        return False
 
 
 async def resolve_gift_menu_icon_override(gift_id: Any) -> Optional[str]:
@@ -1337,62 +1336,15 @@ async def resolve_gift_menu_icon_override(gift_id: Any) -> Optional[str]:
 
 
 # ============================================================
-# ✅ MANUAL GIFTS LOAD/SAVE
+# ✅ MANUAL GIFTS - хранится в Redis-бэкенде (_gift_menu_manual_gifts)
 # ============================================================
-def _load_gift_menu_manual_gifts_sync() -> Dict[str, Dict[str, Any]]:
-    try:
-        if not GIFT_MENU_MANUAL_GIFTS_FILE.exists():
-            return {}
-
-        raw = json.loads(GIFT_MENU_MANUAL_GIFTS_FILE.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict):
-            return {}
-
-        clean: Dict[str, Dict[str, Any]] = {}
-        for gift_id, payload in raw.items():
-            gid = _normalize_gift_id(gift_id)
-            if not gid or not isinstance(payload, dict):
-                continue
-
-            clean[gid] = {
-                "custom_emoji_id": _normalize_custom_emoji_id(payload.get("custom_emoji_id")),
-                "emoji": str(payload.get("emoji") or "🎁"),
-                "price": int(_safe_int(payload.get("price"), default=0, clamp_min=0) or 0),
-                "upgrade_price": int(_safe_int(payload.get("upgrade_price"), default=0, clamp_min=0) or 0),
-                "has_upgrade": int(_safe_int(payload.get("has_upgrade"), default=0, clamp_min=0) or 0),
-            }
-
-        return clean
-    except Exception as e:
-        print(f"🟥 [GIFT_MENU_MANUAL][LOAD][ERROR] {e!r}")
-        return {}
-
-
-def _save_gift_menu_manual_gifts_sync(data: Dict[str, Dict[str, Any]]) -> bool:
-    try:
-        GIFT_MENU_MANUAL_GIFTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        GIFT_MENU_MANUAL_GIFTS_FILE.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        return True
-    except Exception as e:
-        print(f"🟥 [GIFT_MENU_MANUAL][SAVE][ERROR] {e!r}")
-        return False
-
-
-async def ensure_gift_menu_manual_gifts_loaded() -> None:
-    global _gift_menu_manual_gifts
-
-    async with _gift_menu_manual_gifts_lock:
-        if _gift_menu_manual_gifts:
-            return
-        _gift_menu_manual_gifts = _load_gift_menu_manual_gifts_sync()
-
-
 async def get_all_manual_gifts() -> Dict[str, Dict[str, Any]]:
-    await ensure_gift_menu_manual_gifts_loaded()
-    return dict(_gift_menu_manual_gifts or {})
+    await _migrate_legacy_gift_menu_json_once()
+    try:
+        return dict(_gift_menu_manual_gifts)
+    except Exception as e:
+        print(f"🟥 [GIFT_MENU_MANUAL][GET_ALL][ERROR] {e!r}")
+        return {}
 
 
 async def add_manual_gift(
@@ -1404,57 +1356,47 @@ async def add_manual_gift(
     upgrade_price: int = 0,
     has_upgrade: int = 0,
 ) -> bool:
-    global _gift_menu_manual_gifts
-
+    await _migrate_legacy_gift_menu_json_once()
     gid = _normalize_gift_id(gift_id)
     ceid = _normalize_custom_emoji_id(custom_emoji_id)
 
     if not gid:
         return False
 
-    await ensure_gift_menu_manual_gifts_loaded()
+    try:
+        async with _gift_menu_manual_gifts_lock:
+            _gift_menu_manual_gifts[gid] = {
+                "custom_emoji_id": ceid,
+                "emoji": str(emoji or "🎁"),
+                "price": int(_safe_int(price, default=0, clamp_min=0) or 0),
+                "upgrade_price": int(_safe_int(upgrade_price, default=0, clamp_min=0) or 0),
+                "has_upgrade": int(_safe_int(has_upgrade, default=0, clamp_min=0) or 0),
+            }
 
-    async with _gift_menu_manual_gifts_lock:
-        current = dict(_gift_menu_manual_gifts or {})
-        current[gid] = {
-            "custom_emoji_id": ceid,
-            "emoji": str(emoji or "🎁"),
-            "price": int(_safe_int(price, default=0, clamp_min=0) or 0),
-            "upgrade_price": int(_safe_int(upgrade_price, default=0, clamp_min=0) or 0),
-            "has_upgrade": int(_safe_int(has_upgrade, default=0, clamp_min=0) or 0),
-        }
-
-        ok = _save_gift_menu_manual_gifts_sync(current)
-        if not ok:
-            return False
-
-        _gift_menu_manual_gifts = current
         print(
             f"🟩 [GIFT_MENU_MANUAL][ADD] "
             f"gift_id={gid} custom_emoji_id={ceid} price={price}"
         )
         return True
+    except Exception as e:
+        print(f"🟥 [GIFT_MENU_MANUAL][ADD][ERROR] gift_id={gift_id!r} err={e!r}")
+        return False
 
 
 async def remove_manual_gift(gift_id: Any) -> bool:
-    global _gift_menu_manual_gifts
-
+    await _migrate_legacy_gift_menu_json_once()
     gid = _normalize_gift_id(gift_id)
     if not gid:
         return False
 
-    await ensure_gift_menu_manual_gifts_loaded()
-
-    async with _gift_menu_manual_gifts_lock:
-        current = dict(_gift_menu_manual_gifts or {})
-        current.pop(gid, None)
-
-        ok = _save_gift_menu_manual_gifts_sync(current)
-        if not ok:
-            return False
-
-        _gift_menu_manual_gifts = current
+    try:
+        async with _gift_menu_manual_gifts_lock:
+            if gid in _gift_menu_manual_gifts:
+                del _gift_menu_manual_gifts[gid]
         return True
+    except Exception as e:
+        print(f"🟥 [GIFT_MENU_MANUAL][REMOVE][ERROR] gift_id={gift_id!r} err={e!r}")
+        return False
 
 
 # ============================================================
