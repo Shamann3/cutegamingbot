@@ -51,7 +51,7 @@ export function getAuthErrorMessage() {
   return 'Не удалось определить пользователя.'
 }
 
-const VALID_TABS = new Set(['farm', 'inventory', 'craft', 'quests', 'shop', 'market', 'settings'])
+const VALID_TABS = new Set(['farm', 'inventory', 'craft', 'quests', 'shop', 'market', 'trade', 'giveaways', 'settings'])
 
 /** Читает вкладку из startapp-параметра Telegram (например ?startapp=market) */
 export function getStartTab() {
