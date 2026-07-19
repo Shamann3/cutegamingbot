@@ -9,7 +9,7 @@ from typing import Any
 
 from aiogram import types
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
-from bot.db_create.pklcode import LazyGameStore
+from bot.db_create.pklcode import GameStore, LazyGameStore
 
 from bot.config.config import (
     KING_STATS_INTERVAL_FORCE_NEW_ROUND,
@@ -1044,8 +1044,29 @@ def _pending_seconds_left(payload: dict[str, Any] | None) -> int:
     return max(0, expires_at - int(time.time()))
 
 
+def _pending_present_in_memory(key: tuple[int, int]) -> bool:
+    """
+    Дешёвая проверка наличия ключа без похода в Redis.
+
+    Это горячий путь: has_king_stats_pending_input() зовётся на КАЖДОЕ
+    текстовое сообщение бота, а ожидание ввода есть от силы у одного
+    человека. Обычный .get() на промахе запускает перезалив стора -
+    синхронное чтение из Redis с распаковкой прямо в event loop, то есть
+    подтормаживание всего бота, включая игры и их кнопки. Читаем словарь
+    напрямую, минуя эту машинерию.
+    """
+    try:
+        backing = _KING_PENDING_INPUTS._load()
+        return dict.__contains__(backing, GameStore._canon_key(key))
+    except Exception:
+        # Не смогли заглянуть напрямую - идём обычным путём, корректность важнее.
+        return True
+
+
 def _get_pending_input(chat_id: int, user_id: int) -> dict[str, Any] | None:
     key = _pending_key(chat_id, user_id)
+    if not _pending_present_in_memory(key):
+        return None
     payload = _KING_PENDING_INPUTS.get(key)
     if not isinstance(payload, dict):
         return None
