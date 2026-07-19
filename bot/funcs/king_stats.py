@@ -252,6 +252,29 @@ _KING_MENU_TARGET: dict[tuple[int, int], int] = LazyGameStore("_KING_MENU_TARGET
 # (user_id, group_chat_id) -> message_id последнего меню этой группы в ЛС
 _KING_DM_LAST_MENU: dict[tuple[int, int], int] = LazyGameStore("_KING_DM_LAST_MENU")
 
+# Сообщение меню висит в чате неделями, а записи в сторе по умолчанию
+# протухают через DEFAULT_EXPIRY_SECONDS = 7200 (2 часа). Именно поэтому
+# «Меню устарело» вылезало у людей, которые никуда не уходили: сообщение на
+# месте, а привязка к нему уже вычищена уборщиком. Держим привязки 30 дней.
+# Ожидание ввода не трогаем: у него свой таймаут 120 секунд.
+_KING_MENU_BINDING_TTL_SEC = 30 * 24 * 60 * 60
+
+
+def _tune_menu_store_ttl() -> None:
+    for store in (_KING_MENU_OWNERS, _KING_MENU_TARGET,
+                  _KING_MENU_RENDER_STATE, _KING_DM_LAST_MENU):
+        try:
+            backing = store._load()
+            if int(getattr(backing, "expiry_seconds", 0) or 0) < _KING_MENU_BINDING_TTL_SEC:
+                backing.expiry_seconds = _KING_MENU_BINDING_TTL_SEC
+                backing._rebuild_expire_heap()
+        except Exception as tune_error:
+            print(f"⚠️ [KING][TTL] не смог настроить срок хранения: "
+                  f"{type(tune_error).__name__}: {tune_error}")
+
+
+_tune_menu_store_ttl()
+
 
 def _kc(*parts: Any) -> str:
     return ":".join([_KING_MENU_PREFIX, *[str(p) for p in parts]])
@@ -750,6 +773,50 @@ def _pending_key_matches(raw_key: Any, chat_id: int, user_id: int) -> bool:
     except Exception:
         pass
     return False
+
+
+def _parse_pair_key(raw_key: Any) -> tuple[int, int] | None:
+    """
+    Ключи-кортежи хранятся в сторе как строки ('(555, 104)'), поэтому перебор
+    отдаёт str. Возвращает пару чисел или None.
+    """
+    if isinstance(raw_key, tuple) and len(raw_key) == 2:
+        try:
+            return int(raw_key[0]), int(raw_key[1])
+        except Exception:
+            return None
+    try:
+        parsed = ast.literal_eval(str(raw_key or "").strip())
+        if isinstance(parsed, tuple) and len(parsed) == 2:
+            return int(parsed[0]), int(parsed[1])
+    except Exception:
+        pass
+    return None
+
+
+def _recover_menu_binding(message_id: int, user_id: int) -> int | None:
+    """
+    Восстанавливает группу для сообщения-меню, если привязка потерялась
+    (сброс Redis, вытеснение). Ищем по обратной карте «последнее меню группы
+    в ЛС»: ключ (user_id, group_chat_id) -> message_id.
+    """
+    target_message_id = int(message_id)
+    target_user_id = int(user_id)
+    try:
+        for raw_key in list(_KING_DM_LAST_MENU):
+            pair = _parse_pair_key(raw_key)
+            if pair is None or pair[0] != target_user_id:
+                continue
+            try:
+                stored_message_id = int(_KING_DM_LAST_MENU.get(raw_key) or 0)
+            except Exception:
+                continue
+            if stored_message_id == target_message_id:
+                return pair[1]
+    except Exception as recover_error:
+        print(f"⚠️ [KING][RECOVER] перебор не удался: "
+              f"{type(recover_error).__name__}: {recover_error}")
+    return None
 
 
 def _button_signature(button: Any) -> tuple[str, str, str, str, str]:
@@ -1251,6 +1318,19 @@ async def _resolve_menu_callback_group(call: types.CallbackQuery, db, bot) -> in
     user_id = int(call.from_user.id)
 
     owner_id = _get_menu_owner(panel_chat_id, message_id)
+    group_chat_id = _get_menu_target(panel_chat_id, message_id)
+
+    # Привязка могла потеряться, хотя сообщение живо. Прежде чем отвечать
+    # «Меню устарело», пробуем восстановить её по обратной карте.
+    if owner_id is None or group_chat_id is None:
+        recovered_group = _recover_menu_binding(message_id, user_id)
+        if recovered_group is not None:
+            print(f"♻️ [KING][RECOVER] восстановил привязку {panel_chat_id}/{message_id} "
+                  f"-> группа {recovered_group}, владелец {user_id}")
+            owner_id = user_id
+            group_chat_id = recovered_group
+            _bind_menu_message(panel_chat_id, message_id, user_id, recovered_group)
+
     if owner_id is None:
         await call.answer("Меню устарело. Откройте его командой в группе.", show_alert=True)
         return None
@@ -1258,7 +1338,6 @@ async def _resolve_menu_callback_group(call: types.CallbackQuery, db, bot) -> in
         await call.answer("Это меню открыл другой пользователь.", show_alert=True)
         return None
 
-    group_chat_id = _get_menu_target(panel_chat_id, message_id)
     if group_chat_id is None:
         # Меню, открытые до переезда в ЛС, лежали прямо в группе и привязки не
         # имеют: для них целевая группа - это и есть чат сообщения.
@@ -1385,14 +1464,25 @@ async def _edit_menu_message_by_id(
 
 
 async def _delete_menu_message_by_id(bot, chat_id: int, message_id: int) -> None:
+    """
+    Привязку снимаем ТОЛЬКО после успешного удаления.
+
+    Раньше unbind шёл первым, а падение delete_message проглатывалось. Если
+    Telegram отказывался удалять (старое сообщение, снятые права), меню
+    оставалось висеть в чате уже без привязки - и клик по нему отвечал
+    «Меню устарело», хотя пользователь никуда не уходил.
+    """
     mid = int(message_id or 0)
     if mid <= 0:
         return
-    _unbind_menu_owner(int(chat_id), mid)
     try:
         await bot.delete_message(chat_id=int(chat_id), message_id=mid)
-    except Exception:
-        pass
+    except Exception as delete_error:
+        # Сообщение осталось в чате - значит его кнопки должны продолжать работать.
+        print(f"⚠️ [KING][DEL] не удалил {chat_id}/{mid}, привязку сохраняю: "
+              f"{type(delete_error).__name__}: {delete_error}")
+        return
+    _unbind_menu_owner(int(chat_id), mid)
 
 
 async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool:
