@@ -1,6 +1,20 @@
-export default function FarmHeader({ isPreview }) {
+import { TAB_ICONS } from './TabIcons'
+
+export default function FarmHeader({ isPreview, onOpenInventory, onOpenCraft }) {
+  const InventoryIcon = TAB_ICONS.inventory
+  const CraftIcon = TAB_ICONS.craft
+
   return (
     <header className="farm-header text-center">
+      <div className="farm-header-tools">
+        <button type="button" className="farm-header-tool-btn" onClick={onOpenInventory} aria-label="Инвентарь">
+          <InventoryIcon />
+        </button>
+        <button type="button" className="farm-header-tool-btn" onClick={onOpenCraft} aria-label="Крафты">
+          <CraftIcon />
+        </button>
+      </div>
+
       <div className="farm-header-crest-wrap mx-auto">
         <div className="farm-header-crest-glow" aria-hidden />
         <img

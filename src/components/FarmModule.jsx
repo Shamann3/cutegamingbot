@@ -22,7 +22,7 @@ import TabAtmosphere from './TabAtmosphere'
 import { useContextualDonate } from '../hooks/useContextualDonate'
 import '../styles/cosmetic-effects.css'
 
-export default function FarmModule({ isActive = true }) {
+export default function FarmModule({ isActive = true, onOpenInventory, onOpenCraft }) {
   const { playSound, performanceMode, turboMode } = useSettings()
   const onboarding = useOnboardingOptional()
   const { equipped } = useEquippedCosmetics()
@@ -252,7 +252,7 @@ export default function FarmModule({ isActive = true }) {
       )}
 
       <div className="relative z-10 farm-shell py-3 farm-shell-with-bar animate-slide-up">
-        <FarmHeader isPreview={isPreview} />
+        <FarmHeader isPreview={isPreview} onOpenInventory={onOpenInventory} onOpenCraft={onOpenCraft} />
 
         {loading && plots.length === 0 ? (
           <div className="text-center py-12 text-amber-100 font-semibold drop-shadow-md">

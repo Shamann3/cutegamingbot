@@ -7,6 +7,7 @@ import { fetchMyProfile } from '../lib/profileClient'
 import { fetchCollection } from '../lib/chestClient'
 import { useEquippedCosmetics } from '../hooks/useEquippedCosmetics'
 import { RARITY_ACCENT } from '../constants/chests'
+import { TAB_ICONS } from './TabIcons'
 import '../styles/chests.css'
 import '../styles/cosmetic-effects.css'
 
@@ -63,7 +64,7 @@ function LeaderRow({ item, valueLabel }) {
   )
 }
 
-export default function ProfileModule({ isActive = true }) {
+export default function ProfileModule({ isActive = true, onOpenSettings }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -98,6 +99,7 @@ export default function ProfileModule({ isActive = true }) {
   const myRank = leaderboard.myRank?.[board] ?? 0
   const myValue = leaderboard.myValue?.[board] ?? 0
   const iMeInTop = rows.some((r) => r.isMe)
+  const SettingsIcon = TAB_ICONS.settings
 
   return (
     <div className="relative min-h-screen tab-theme-profile profile-module">
@@ -112,7 +114,12 @@ export default function ProfileModule({ isActive = true }) {
               <span aria-hidden>👤</span> Профиль
             </h1>
           </div>
-          {profile && <KutBalance value={profile.balance} className="profile-module-balance" />}
+          <div className="profile-module-header-actions">
+            {profile && <KutBalance value={profile.balance} className="profile-module-balance" />}
+            <button type="button" className="profile-settings-btn" onClick={onOpenSettings} aria-label="Настройки">
+              <SettingsIcon />
+            </button>
+          </div>
         </header>
 
         {loading && (

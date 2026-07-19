@@ -1037,6 +1037,7 @@ body {
   }
 
   .farm-header {
+    position: relative;
     margin-bottom: 0.85rem;
   }
 
@@ -1109,6 +1110,32 @@ body {
     font-size: 0.75rem;
     font-weight: 600;
     color: rgba(253, 230, 138, 0.9);
+  }
+
+  .farm-header-tools {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.6rem;
+    display: flex;
+    gap: 0.4rem;
+    z-index: 2;
+  }
+
+  .farm-header-tool-btn {
+    display: grid;
+    place-items: center;
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 999px;
+    border: 1px solid rgba(212, 175, 55, 0.32);
+    background: linear-gradient(180deg, rgba(10, 24, 16, 0.92) 0%, rgba(6, 16, 10, 0.96) 100%);
+    color: rgba(245, 230, 200, 0.75);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .farm-header-tool-btn svg {
+    width: 1.05rem;
+    height: 1.05rem;
   }
 
   .maintenance-screen {
@@ -10600,6 +10627,29 @@ body.onboarding-content-lock .app-tab-bar {
 
 .profile-module-balance {
   margin-top: 0.1rem;
+}
+
+.profile-module-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.profile-settings-btn {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid var(--tab-chip-border, rgba(100, 116, 139, 0.28));
+  background: linear-gradient(180deg, rgba(10, 24, 16, 0.92) 0%, rgba(6, 16, 10, 0.96) 100%);
+  color: rgba(245, 230, 200, 0.75);
+}
+
+.profile-settings-btn svg {
+  width: 1.05rem;
+  height: 1.05rem;
 }
 
 .profile-loading,
