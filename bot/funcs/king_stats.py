@@ -80,10 +80,20 @@ def _is_king_context(text: str) -> bool:
 
 
 def is_king_stats_command(text: str | None) -> bool:
+    """
+    Любое упоминание царя статистики - это команда открыть меню.
+
+    Раньше мало было назвать царя и статистику: требовалось ещё одно слово
+    из списка ниже, поэтому «статистика царя» или «царя статистику» молча
+    игнорировались. Теперь достаточно самого упоминания, а список слов
+    остался для формулировок вроде «включить царя» без слова «статистика».
+    """
     normalized = _norm_text(text)
     if not _is_king_context(normalized):
         return False
     if normalized.startswith("царь") or normalized.startswith("king"):
+        return True
+    if _contains_any(normalized, ("стат", "statistic")):
         return True
     return _contains_any(
         normalized,
@@ -201,23 +211,6 @@ def _settings_text(settings: dict[str, Any]) -> str:
     )
 
 
-_HELP_TEXT = (
-    "<b><tg-emoji emoji-id='5467406098367521267'>👑</tg-emoji> Царь статистики</b>\n"
-    "Напишите : <code>система царя статистики</code>\n"
-    "Дальше только кнопки : период, срок, дата старта, минимум, награды.\n"
-    "Ручной ввод после кнопки «вручную»:\n"
-    "• кут: <code>500</code>\n"
-    "• предмет : <code>🚬 1</code>\n\n"
-    "Срок системы: <code>30 мин</code>, <code>12 часов</code>, <code>2 месяца</code>, <code>навсегда</code>\n"
-    "Старт с даты: <code>16.07.2026</code>, <code>16 июня</code>, <code>16 июня 2026</code>\n"
-    "Если задан срок — выплата будет в конце конкурса (в test тоже).\n"
-    "Распределение кут: бюджет -> 3 суммы -> «Все в порядке»\n"
-    "Сброс: кнопка «Сбросить все настройки».\n"
-    "Ожидание ручного ввода : 120 сек.\n"
-    "Если формат неверный — бот даст кнопку «Отмена ввода».\n"
-    "Минимум сообщений: кнопки 0/10/30/50 или свой.\n"
-    "Кнопки работают только у создателя, который открыл меню."
-)
 
 
 _KING_MENU_PREFIX = "kingm"
@@ -789,18 +782,6 @@ def _main_menu_keyboard_for_user(
     )
 
 
-def _help_keyboard_for_user(
-    panel_chat_id: int, user_id: int, *, group_chat_id: int
-) -> types.InlineKeyboardMarkup:
-    kc = lambda *p: _kc(group_chat_id, *p)
-    rows: list[list[types.InlineKeyboardButton]] = [
-        [types.InlineKeyboardButton(text="Назад", callback_data=kc("open"), style="default")]
-    ]
-    if _get_pending_input(panel_chat_id, user_id) is not None:
-        rows.append(list(_pending_cancel_keyboard(group_chat_id=group_chat_id).inline_keyboard[0]))
-    return types.InlineKeyboardMarkup(inline_keyboard=rows)
-
-
 async def _resolve_item_name_for_reward(db, token: str) -> tuple[str | None, str]:
     raw = str(token or "").strip()
     if not raw:
@@ -1196,16 +1177,38 @@ async def _reply_barnum(
             return None
 
 
-async def _resolve_bot_mention(bot) -> str:
-    """@username бота для подсказки «запустите бота». Без имени - нейтральный текст."""
+async def _resolve_bot_username(bot) -> str | None:
     try:
         me = await bot.get_me()
-        username = str(getattr(me, "username", "") or "").strip()
-        if username:
-            return f"@{username}"
+        username = str(getattr(me, "username", "") or "").strip().lstrip("@")
+        return username or None
     except Exception:
-        pass
-    return "бота"
+        return None
+
+
+async def _resolve_bot_mention(bot) -> str:
+    """@username бота для подсказки «запустите бота». Без имени - нейтральный текст."""
+    username = await _resolve_bot_username(bot)
+    return f"@{username}" if username else "бота"
+
+
+async def _open_in_dm_keyboard(bot) -> types.InlineKeyboardMarkup | None:
+    """Кнопка-ссылка в личку с ботом. Без username кнопку не рисуем."""
+    username = await _resolve_bot_username(bot)
+    if not username:
+        return None
+    return types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                types.InlineKeyboardButton(
+                    text="Открыть в ЛС",
+                    url=f"https://t.me/{username}",
+                    style="default",
+                    icon_custom_emoji_id="5454409660473827001",
+                )
+            ]
+        ]
+    )
 
 
 async def _reply_pending_input_error(
@@ -1293,6 +1296,7 @@ async def _deliver_menu_to_dm(message: types.Message, db, bot, *, group_chat_id:
             "<b>Не могу написать вам в личные сообщения.</b>\n"
             f"<b>Откройте {_html.escape(mention)}, нажмите «Запустить», "
             "затем напишите эту команду в группе ещё раз.</b>",
+            reply_markup=await _open_in_dm_keyboard(bot),
         )
         return True
 
@@ -1300,6 +1304,7 @@ async def _deliver_menu_to_dm(message: types.Message, db, bot, *, group_chat_id:
         message,
         "<tg-emoji emoji-id='5467406098367521267'>👑</tg-emoji> "
         "<b>Настройки отправлены вам в личные сообщения.</b>",
+        reply_markup=await _open_in_dm_keyboard(bot),
     )
     return True
 
@@ -1749,16 +1754,6 @@ async def _handle_king_stats_callback_inner(call: types.CallbackQuery, db, bot) 
                 group_button=group_button,
                 group_balance=group_balance,
             ),
-            bind_owner_id=user_id,
-        )
-        await call.answer()
-        return True
-
-    if action == "help":
-        await _edit_king_menu_message(
-            call,
-            _HELP_TEXT + "\n\nНазад - в меню.",
-            reply_markup=_help_keyboard_for_user(panel_chat_id, user_id, group_chat_id=chat_id),
             bind_owner_id=user_id,
         )
         await call.answer()
@@ -2730,35 +2725,6 @@ async def _handle_king_stats_command_inner(message: types.Message, db, bot) -> b
     if not is_king_stats_command(normalized):
         return False
 
-    show_help_aliases = {
-        "царь",
-        "царь статистики",
-        "царь стата",
-        "царь команды",
-        "царь хелп",
-        "царь help",
-        "царь помощь",
-        "king",
-        "king help",
-    }
-    if normalized in show_help_aliases or (
-        _is_king_context(normalized)
-        and _contains_any(
-            normalized,
-            (
-                "помощ",
-                "хелп",
-                "help",
-                "команд",
-                "инструкц",
-                "как пользоваться",
-                "как использовать",
-                "что умеет",
-            ),
-        )
-    ):
-        await _reply_barnum(message, _HELP_TEXT)
-        return True
 
     # Помощь выше отвечает где угодно, а настройки живут только в ЛС: из ЛС
     # непонятно, какую группу настраивать, поэтому просим написать в группе.
@@ -3175,10 +3141,9 @@ async def _handle_king_stats_command_inner(message: types.Message, db, bot) -> b
 
     await _reply_barnum(
         message,
-        "<tg-emoji emoji-id='6028435952299413210'>ℹ</tg-emoji> <b>Команда не распознана.\n"
-        "Проверьте формат или откройте меню : <code>система царя статистики</code>.\n"
-        "Подсказка по командам : <code>царь</code>.</b>\n\n"
-        + _HELP_TEXT,
+        "<tg-emoji emoji-id='6028435952299413210'>ℹ</tg-emoji> "
+        "<b>Команда не распознана.\n"
+        "Откройте меню : <code>система царя статистики</code>.</b>",
     )
     return True
 
