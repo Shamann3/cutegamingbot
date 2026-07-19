@@ -3,7 +3,7 @@ import { completeOnboarding, startOnboarding } from '../lib/onboardingClient'
 import { removeStorage, writeStorage } from '../utils/safeStorage'
 
 const STORAGE_KEY = 'cute_interactive_guide_done'
-// После закрытия приветствия тихая подсказка-пульс на вкладке «Магазин»,
+// После закрытия приветствия тихая подсказка-пульс на вкладке «Торговля»,
 // сама гаснет по таймауту или как только игрок туда заходит.
 const SHOP_HINT_MS = 45000
 
@@ -48,10 +48,10 @@ export function OnboardingProvider({ children, activeTab }) {
   }, [shopHintActive])
 
   useEffect(() => {
-    if (shopHintActive && activeTab === 'shop') setShopHintActive(false)
+    if (shopHintActive && activeTab === 'trade') setShopHintActive(false)
   }, [activeTab, shopHintActive])
 
-  const pulseTab = shopHintActive ? 'shop' : null
+  const pulseTab = shopHintActive ? 'trade' : null
 
   const value = useMemo(
     () => ({ visible, starting, dismiss, pulseTab }),

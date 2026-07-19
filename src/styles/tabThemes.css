@@ -625,14 +625,6 @@
   background: linear-gradient(135deg, #ffedd5 0%, #c2410c 35%, #fb923c 65%, #431407 100%);
 }
 
-.app-shell[data-active-tab='shop'] .app-tab-bar-inner {
-  background: linear-gradient(135deg, #fff4c4 0%, #d4a72c 38%, #fbbf24 68%, #4a3018 100%);
-}
-
-.app-shell[data-active-tab='market'] .app-tab-bar-inner {
-  background: linear-gradient(135deg, #fde8d0 0%, #9a5f2a 35%, #cd9b5a 65%, #3d2314 100%);
-}
-
 .app-shell[data-active-tab='settings'] .app-tab-bar-inner {
   background: linear-gradient(135deg, #e2e8f0 0%, #64748b 35%, #94a3b8 65%, #1e293b 100%);
 }
@@ -661,16 +653,6 @@
   box-shadow: inset 0 0 20px rgba(251, 146, 60, 0.22), 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
-.app-shell[data-active-tab='shop'] .app-tab-btn-active {
-  color: #fffbeb;
-  box-shadow: inset 0 0 20px rgba(251, 191, 36, 0.2), 0 2px 8px rgba(0, 0, 0, 0.35);
-}
-
-.app-shell[data-active-tab='market'] .app-tab-btn-active {
-  color: #fde8d0;
-  box-shadow: inset 0 0 20px rgba(184, 115, 51, 0.22), 0 2px 8px rgba(0, 0, 0, 0.35);
-}
-
 .app-shell[data-active-tab='settings'] .app-tab-btn-active {
   color: #e2e8f0;
   box-shadow: inset 0 0 20px rgba(148, 163, 184, 0.2), 0 2px 8px rgba(0, 0, 0, 0.35);
@@ -695,14 +677,6 @@
 
 .app-tab-btn[data-tab='quests'].app-tab-btn-active .app-tab-icon {
   filter: drop-shadow(0 0 6px rgba(251, 146, 60, 0.55));
-}
-
-.app-tab-btn[data-tab='shop'].app-tab-btn-active .app-tab-icon {
-  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.55));
-}
-
-.app-tab-btn[data-tab='market'].app-tab-btn-active .app-tab-icon {
-  filter: drop-shadow(0 0 6px rgba(205, 155, 90, 0.55));
 }
 
 .app-tab-btn[data-tab='settings'].app-tab-btn-active .app-tab-icon {

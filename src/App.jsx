@@ -3,8 +3,8 @@ import { PlayerSyncProvider } from './context/PlayerSyncContext'
 import { OnboardingProvider, useOnboardingOptional } from './context/OnboardingContext'
 import FarmModule from './components/FarmModule'
 import CraftModule from './components/CraftModule'
-import ExchangeModule from './components/ExchangeModule'
-import MarketplaceModule from './components/MarketplaceModule'
+import TradeModule from './components/TradeModule'
+import GiveawaysModule from './components/GiveawaysModule'
 import ChestModule from './components/ChestModule'
 import InventoryModule from './components/InventoryModule'
 import QuestsModule from './components/QuestsModule'
@@ -25,6 +25,7 @@ import { useSwipeTabs } from './hooks/useSwipeTabs'
 import { usePresencePing } from './hooks/usePresencePing'
 import { syncSession } from './lib/sessionClient'
 import { canAuthenticate, getStartTab } from './lib/telegram'
+import { resolveStartTab } from './utils/tradeNav'
 import { fetchAppStatus } from './lib/apiClient'
 
 export default function App() {
@@ -103,16 +104,22 @@ export default function App() {
 }
 
 function AppWithOnboarding() {
-  const [tab, setTab] = useState(() => getStartTab() ?? 'farm')
+  const [tab, setTab] = useState(() => resolveStartTab(getStartTab() ?? 'farm').tab)
+  const [tradeSegment, setTradeSegment] = useState(() => resolveStartTab(getStartTab() ?? 'farm').tradeSegment)
 
   return (
     <OnboardingProvider activeTab={tab}>
-      <AppShell tab={tab} setTab={setTab} />
+      <AppShell
+        tab={tab}
+        setTab={setTab}
+        tradeSegment={tradeSegment}
+        setTradeSegment={setTradeSegment}
+      />
     </OnboardingProvider>
   )
 }
 
-function AppShell({ tab, setTab }) {
+function AppShell({ tab, setTab, tradeSegment, setTradeSegment }) {
   const onboarding = useOnboardingOptional()
   const blockSwipe = Boolean(onboarding?.visible)
   const { equipped } = useEquippedCosmetics()
@@ -127,15 +134,17 @@ function AppShell({ tab, setTab }) {
     setShopSearch(item?.name ?? '')
     setShopItemId(item?.id ? String(item.id) : '')
     setShopHighlightOnly(true)
-    setTab('shop')
-  }, [setTab])
+    setTab('trade')
+    setTradeSegment('shop')
+  }, [setTab, setTradeSegment])
 
   const handleGuideNavigateMarket = useCallback((item) => {
     setMarketSearch(item?.name ?? '')
     setMarketItemId(item?.itemId ? String(item.itemId) : '')
     setMarketHighlightOnly(true)
-    setTab('market')
-  }, [setTab])
+    setTab('trade')
+    setTradeSegment('market')
+  }, [setTab, setTradeSegment])
 
   useSwipeTabs({ activeTab: tab, onChange: setTab, enabled: !blockSwipe })
 
@@ -146,11 +155,12 @@ function AppShell({ tab, setTab }) {
       setShopSearch(search)
       setShopItemId(itemId ? String(itemId) : '')
       setShopHighlightOnly(Boolean(e.detail?.highlightOnly))
-      setTab('shop')
+      setTab('trade')
+      setTradeSegment('shop')
     }
     window.addEventListener('farm:go-to-shop', handler)
     return () => window.removeEventListener('farm:go-to-shop', handler)
-  }, [setTab])
+  }, [setTab, setTradeSegment])
 
   useEffect(() => {
     const handler = (e) => {
@@ -159,11 +169,12 @@ function AppShell({ tab, setTab }) {
       setMarketSearch(search)
       setMarketItemId(itemId ? String(itemId) : '')
       setMarketHighlightOnly(Boolean(e.detail?.highlightOnly))
-      setTab('market')
+      setTab('trade')
+      setTradeSegment('market')
     }
     window.addEventListener('farm:go-to-market', handler)
     return () => window.removeEventListener('farm:go-to-market', handler)
-  }, [setTab])
+  }, [setTab, setTradeSegment])
 
   return (
     <div className={`app-shell${equipped.background ? ' app-has-bg' : ''}`} data-active-tab={tab}>
@@ -175,7 +186,11 @@ function AppShell({ tab, setTab }) {
       <ItemGuideToastLayer />
       <main className="app-main">
         <div className={tab === 'farm' ? '' : 'hidden'} aria-hidden={tab !== 'farm'}>
-          <FarmModule isActive={tab === 'farm'} />
+          <FarmModule
+            isActive={tab === 'farm'}
+            onOpenInventory={() => setTab('inventory')}
+            onOpenCraft={() => setTab('craft')}
+          />
         </div>
         <div className={tab === 'inventory' ? '' : 'hidden'} aria-hidden={tab !== 'inventory'}>
           <InventoryModule isActive={tab === 'inventory'} />
@@ -186,37 +201,37 @@ function AppShell({ tab, setTab }) {
         <div className={tab === 'quests' ? '' : 'hidden'} aria-hidden={tab !== 'quests'}>
           <QuestsModule isActive={tab === 'quests'} />
         </div>
-        <div className={tab === 'shop' ? '' : 'hidden'} aria-hidden={tab !== 'shop'}>
-          <ExchangeModule
-            isActive={tab === 'shop'}
-            initialSearch={shopSearch}
-            initialItemId={shopItemId}
-            initialHighlightOnly={shopHighlightOnly}
-            onSearchUsed={() => {
+        <div className={tab === 'trade' ? '' : 'hidden'} aria-hidden={tab !== 'trade'}>
+          <TradeModule
+            isActive={tab === 'trade'}
+            segment={tradeSegment}
+            onSegmentChange={setTradeSegment}
+            shopSearch={shopSearch}
+            shopItemId={shopItemId}
+            shopHighlightOnly={shopHighlightOnly}
+            onShopSearchUsed={() => {
               setShopSearch('')
               setShopItemId('')
               setShopHighlightOnly(false)
             }}
-          />
-        </div>
-        <div className={tab === 'market' ? '' : 'hidden'} aria-hidden={tab !== 'market'}>
-          <MarketplaceModule
-            isActive={tab === 'market'}
-            initialSearch={marketSearch}
-            initialItemId={marketItemId}
-            initialHighlightOnly={marketHighlightOnly}
-            onSearchUsed={() => {
+            marketSearch={marketSearch}
+            marketItemId={marketItemId}
+            marketHighlightOnly={marketHighlightOnly}
+            onMarketSearchUsed={() => {
               setMarketSearch('')
               setMarketItemId('')
               setMarketHighlightOnly(false)
             }}
           />
         </div>
+        <div className={tab === 'giveaways' ? '' : 'hidden'} aria-hidden={tab !== 'giveaways'}>
+          <GiveawaysModule isActive={tab === 'giveaways'} />
+        </div>
         <div className={tab === 'chests' ? '' : 'hidden'} aria-hidden={tab !== 'chests'}>
           <ChestModule isActive={tab === 'chests'} />
         </div>
         <div className={tab === 'profile' ? '' : 'hidden'} aria-hidden={tab !== 'profile'}>
-          <ProfileModule isActive={tab === 'profile'} />
+          <ProfileModule isActive={tab === 'profile'} onOpenSettings={() => setTab('settings')} />
         </div>
         <div className={tab === 'settings' ? '' : 'hidden'} aria-hidden={tab !== 'settings'}>
           <SettingsModule />
