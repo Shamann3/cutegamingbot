@@ -28,7 +28,7 @@ const PERF_OPTIONS = [
   },
 ]
 
-export default function SettingsModule() {
+export default function SettingsModule({ embedded = false }) {
   const {
     soundEnabled,
     toggleSound,
@@ -79,15 +79,17 @@ export default function SettingsModule() {
   }
 
   return (
-    <div className="relative min-h-screen tab-theme-settings settings-module">
-      <FarmBackground />
-      <TabAtmosphere variant="settings" />
+    <div className={embedded ? 'relative settings-module' : 'relative min-h-screen tab-theme-settings settings-module'}>
+      {!embedded && <FarmBackground />}
+      {!embedded && <TabAtmosphere variant="settings" />}
 
-      <div className="relative z-10 settings-shell py-4 pb-2 animate-slide-up">
-        <header className="settings-hero">
-          <p className="settings-hero-eyebrow">Cute</p>
-          <h1 className="settings-hero-title">Настройки</h1>
-        </header>
+      <div className={embedded ? 'relative z-10 settings-shell' : 'relative z-10 settings-shell py-4 pb-2 animate-slide-up'}>
+        {!embedded && (
+          <header className="settings-hero">
+            <p className="settings-hero-eyebrow">Cute</p>
+            <h1 className="settings-hero-title">Настройки</h1>
+          </header>
+        )}
 
         <VineFrame className="settings-panel-frame">
           <section className="settings-section" aria-labelledby="settings-sound-title">

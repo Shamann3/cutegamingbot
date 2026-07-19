@@ -7,7 +7,7 @@ import { fetchMyProfile } from '../lib/profileClient'
 import { fetchCollection } from '../lib/chestClient'
 import { useEquippedCosmetics } from '../hooks/useEquippedCosmetics'
 import { RARITY_ACCENT } from '../constants/chests'
-import { TAB_ICONS } from './TabIcons'
+import SettingsModule from './SettingsModule'
 import '../styles/chests.css'
 import '../styles/cosmetic-effects.css'
 
@@ -15,6 +15,11 @@ const BOARDS = [
   { id: 'balance', label: 'Баланс', emoji: '💰', unit: 'кут' },
   { id: 'harvests', label: 'Урожай', emoji: '🌾', unit: 'сборов' },
   { id: 'sales', label: 'Биржа', emoji: '💱', unit: 'предметов' },
+]
+
+const PROFILE_SEGMENTS = [
+  { id: 'profile', label: 'Профиль' },
+  { id: 'settings', label: 'Настройки' },
 ]
 
 function Avatar({ photoUrl, name, size = 56 }) {
@@ -64,12 +69,13 @@ function LeaderRow({ item, valueLabel }) {
   )
 }
 
-export default function ProfileModule({ isActive = true, onOpenSettings }) {
+export default function ProfileModule({ isActive = true }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [board, setBoard] = useState('balance')
   const [showcase, setShowcase] = useState([])
+  const [profileSegment, setProfileSegment] = useState('profile')
   const { equipped } = useEquippedCosmetics()
 
   useEffect(() => {
@@ -99,7 +105,6 @@ export default function ProfileModule({ isActive = true, onOpenSettings }) {
   const myRank = leaderboard.myRank?.[board] ?? 0
   const myValue = leaderboard.myValue?.[board] ?? 0
   const iMeInTop = rows.some((r) => r.isMe)
-  const SettingsIcon = TAB_ICONS.settings
 
   return (
     <div className="relative min-h-screen tab-theme-profile profile-module">
@@ -114,23 +119,35 @@ export default function ProfileModule({ isActive = true, onOpenSettings }) {
               <span aria-hidden>👤</span> Профиль
             </h1>
           </div>
-          <div className="profile-module-header-actions">
-            {profile && <KutBalance value={profile.balance} className="profile-module-balance" />}
-            <button type="button" className="profile-settings-btn" onClick={onOpenSettings} aria-label="Настройки">
-              <SettingsIcon />
-            </button>
-          </div>
+          {profile && <KutBalance value={profile.balance} className="profile-module-balance" />}
         </header>
 
-        {loading && (
+        <div className="profile-subtabs" role="tablist" aria-label="Разделы профиля">
+          {PROFILE_SEGMENTS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              role="tab"
+              aria-selected={profileSegment === s.id}
+              className={`profile-subtab${profileSegment === s.id ? ' profile-subtab-active' : ''}`}
+              onClick={() => setProfileSegment(s.id)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {profileSegment === 'settings' && <SettingsModule embedded />}
+
+        {profileSegment === 'profile' && loading && (
           <div className="profile-loading">Загрузка профиля…</div>
         )}
 
-        {error && !loading && (
+        {profileSegment === 'profile' && error && !loading && (
           <div className="profile-error">{error}</div>
         )}
 
-        {!loading && profile && (
+        {profileSegment === 'profile' && !loading && profile && (
           <>
             {/* Карточка игрока */}
             <VineFrame className="profile-card-frame">

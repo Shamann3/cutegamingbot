@@ -186,11 +186,7 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment }) {
       <ItemGuideToastLayer />
       <main className="app-main">
         <div className={tab === 'farm' ? '' : 'hidden'} aria-hidden={tab !== 'farm'}>
-          <FarmModule
-            isActive={tab === 'farm'}
-            onOpenInventory={() => setTab('inventory')}
-            onOpenCraft={() => setTab('craft')}
-          />
+          <FarmModule isActive={tab === 'farm'} />
         </div>
         <div className={tab === 'inventory' ? '' : 'hidden'} aria-hidden={tab !== 'inventory'}>
           <InventoryModule isActive={tab === 'inventory'} />
@@ -231,7 +227,7 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment }) {
           <ChestModule isActive={tab === 'chests'} />
         </div>
         <div className={tab === 'profile' ? '' : 'hidden'} aria-hidden={tab !== 'profile'}>
-          <ProfileModule isActive={tab === 'profile'} onOpenSettings={() => setTab('settings')} />
+          <ProfileModule isActive={tab === 'profile'} />
         </div>
         <div className={tab === 'settings' ? '' : 'hidden'} aria-hidden={tab !== 'settings'}>
           <SettingsModule />

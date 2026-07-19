@@ -68,7 +68,7 @@ function waitMs(ms) {
   })
 }
 
-export default function CraftModule({ isActive = true }) {
+export default function CraftModule({ isActive = true, embedded = false }) {
   const { playSound, soundEnabled, liteMode, turboMode, musicGain } = useSettings()
   const ritualSoundTimersRef = useRef([])
   const craftRitualStopRef = useRef(null)
@@ -298,20 +298,22 @@ export default function CraftModule({ isActive = true }) {
   ].filter(Boolean).join(' ')
 
   return (
-    <div className={['relative min-h-screen tab-theme-craft craft-module', ritualQuakeClass].filter(Boolean).join(' ')}>
-      <FarmBackground />
-      <TabAtmosphere variant="craft" />
+    <div className={[embedded ? 'relative craft-module' : 'relative min-h-screen tab-theme-craft craft-module', ritualQuakeClass].filter(Boolean).join(' ')}>
+      {!embedded && <FarmBackground />}
+      {!embedded && <TabAtmosphere variant="craft" />}
 
-      <div className="relative z-10 craft-module-shell animate-slide-up">
-        <header className="craft-module-header">
-          <div className="craft-module-header-main">
-            <p className="craft-module-eyebrow">Алхимия · рецепты</p>
-            <h1 className="craft-module-title craft-module-title--compact">
-              <span aria-hidden>⚗️</span> Крафты
-            </h1>
-          </div>
-          <KutBalance value={kut} className="craft-module-balance" />
-        </header>
+      <div className={embedded ? 'relative z-10 craft-module-shell' : 'relative z-10 craft-module-shell animate-slide-up'}>
+        {!embedded && (
+          <header className="craft-module-header">
+            <div className="craft-module-header-main">
+              <p className="craft-module-eyebrow">Алхимия · рецепты</p>
+              <h1 className="craft-module-title craft-module-title--compact">
+                <span aria-hidden>⚗️</span> Крафты
+              </h1>
+            </div>
+            <KutBalance value={kut} className="craft-module-balance" />
+          </header>
+        )}
 
         {craftMessage && !isRitualActive ? (
           <p className="craft-toast craft-toast-ok" role="status">{craftMessage}</p>

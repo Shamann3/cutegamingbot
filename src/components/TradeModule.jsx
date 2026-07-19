@@ -11,7 +11,6 @@ import '../styles/trade.css'
 const SEGMENTS = [
   { id: 'shop', label: 'Магазин' },
   { id: 'market', label: 'Биржа' },
-  { id: 'sell', label: 'Продать' },
 ]
 
 export default function TradeModule({
@@ -73,7 +72,6 @@ export default function TradeModule({
         ) : (
           <MarketplaceModule
             embedded
-            section={segment === 'sell' ? 'sell' : 'browse'}
             isActive={isActive}
             initialSearch={marketSearch}
             initialItemId={marketItemId}

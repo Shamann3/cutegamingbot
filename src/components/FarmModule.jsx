@@ -19,10 +19,19 @@ import BuyPlotCard from './BuyPlotCard'
 import BalanceBar from './BalanceBar'
 import DonateModal from './DonateModal'
 import TabAtmosphere from './TabAtmosphere'
+import InventoryModule from './InventoryModule'
+import CraftModule from './CraftModule'
 import { useContextualDonate } from '../hooks/useContextualDonate'
 import '../styles/cosmetic-effects.css'
 
-export default function FarmModule({ isActive = true, onOpenInventory, onOpenCraft }) {
+const FARM_SEGMENTS = [
+  { id: 'plots', label: 'Грядки' },
+  { id: 'inventory', label: 'Инвентарь' },
+  { id: 'craft', label: 'Крафт' },
+]
+
+export default function FarmModule({ isActive = true }) {
+  const [farmSegment, setFarmSegment] = useState('plots')
   const { playSound, performanceMode, turboMode } = useSettings()
   const onboarding = useOnboardingOptional()
   const { equipped } = useEquippedCosmetics()
@@ -252,9 +261,27 @@ export default function FarmModule({ isActive = true, onOpenInventory, onOpenCra
       )}
 
       <div className="relative z-10 farm-shell py-3 farm-shell-with-bar animate-slide-up">
-        <FarmHeader isPreview={isPreview} onOpenInventory={onOpenInventory} onOpenCraft={onOpenCraft} />
+        <FarmHeader isPreview={isPreview} />
 
-        {loading && plots.length === 0 ? (
+        <div className="farm-subtabs" role="tablist" aria-label="Разделы фермы">
+          {FARM_SEGMENTS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              role="tab"
+              aria-selected={farmSegment === s.id}
+              className={`farm-subtab${farmSegment === s.id ? ' farm-subtab-active' : ''}`}
+              onClick={() => setFarmSegment(s.id)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {farmSegment === 'inventory' && <InventoryModule embedded isActive={isActive} />}
+        {farmSegment === 'craft' && <CraftModule embedded isActive={isActive} />}
+
+        {farmSegment === 'plots' && (loading && plots.length === 0 ? (
           <div className="text-center py-12 text-amber-100 font-semibold drop-shadow-md">
             Загрузка фермы…
           </div>
@@ -357,7 +384,7 @@ export default function FarmModule({ isActive = true, onOpenInventory, onOpenCra
               </div>
             </section>
           </>
-        )}
+        ))}
       </div>
 
       <DonateModal
