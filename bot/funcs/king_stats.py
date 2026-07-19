@@ -8,7 +8,8 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from aiogram import types
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from bot.db_create.pklcode import LazyGameStore
 
 from bot.config.config import (
     KING_STATS_INTERVAL_FORCE_NEW_ROUND,
@@ -222,18 +223,34 @@ _HELP_TEXT = (
 _KING_MENU_PREFIX = "kingm"
 _KING_STRICT_INLINE_ONLY = True
 _KING_PENDING_INPUT_TIMEOUT_SEC = 120
-# Эфемерное состояние меню живёт только в памяти процесса.
-# Раньше здесь был LazyGameStore (Redis): запись в него дебаунсится на 1 сек,
-# а любой промах по ключу делает clear() + reload снапшота из Redis.
-# has_king_stats_pending_input() дёргается на КАЖДОЕ текстовое сообщение бота,
-# то есть промах случался в пределах этой секунды почти всегда - и только что
-# выставленный pending стирался до того, как успевал сохраниться.
-_KING_PENDING_INPUTS: dict[tuple[int, int], dict[str, Any]] = {}
-_KING_MENU_OWNERS: dict[tuple[int, int], int] = {}
+# Состояние меню персистентное: контейнер перезапускается ежечасно, и без
+# этого меню в ЛС умирало бы у пользователей по нескольку раз в день.
+#
+# ВАЖНО про ключи: GameStore._canon_key приводит ключ к str, поэтому кортеж
+# (-100123, 456) лежит в сторе как строка '(-100123, 456)'. Чтение и запись
+# тем же кортежем работают (канонизация двусторонняя), но ПЕРЕБОР стора
+# отдаёт строки, а не кортежи. Поэтому прямой перебор запрещён: доступ только
+# через хелперы ниже, а где перебор неизбежен (_clear_pending_input) -
+# сравнение идёт через _pending_key_matches, понимающий оба вида ключа.
+#
+# Персистентность безопасна только вместе с исправлением
+# _force_reload_from_redis_once в pklcode (мердж снапшота с памятью вместо
+# clear()): иначе дебаунс записи 1000 мс против кулдауна перезалива 350 мс
+# снова начнёт терять pending-ввод.
+
+# (panel_chat_id, user_id) -> payload ожидания ручного ввода
+_KING_PENDING_INPUTS: dict[tuple[int, int], dict[str, Any]] = LazyGameStore("_KING_PENDING_INPUTS")
+# (panel_chat_id, message_id) -> user_id, кто открыл меню
+_KING_MENU_OWNERS: dict[tuple[int, int], int] = LazyGameStore("_KING_MENU_OWNERS")
+# (panel_chat_id, message_id) -> (text, signature), антидубль при edit_message_text
 _KING_MENU_RENDER_STATE: dict[
     tuple[int, int],
     tuple[str, tuple[tuple[tuple[str, str, str, str, str], ...], ...]],
-] = {}
+] = LazyGameStore("_KING_MENU_RENDER_STATE")
+# (panel_chat_id, message_id) -> group_chat_id, какую группу настраивает это меню
+_KING_MENU_TARGET: dict[tuple[int, int], int] = LazyGameStore("_KING_MENU_TARGET")
+# (user_id, group_chat_id) -> message_id последнего меню этой группы в ЛС
+_KING_DM_LAST_MENU: dict[tuple[int, int], int] = LazyGameStore("_KING_DM_LAST_MENU")
 
 
 def _kc(*parts: Any) -> str:
@@ -655,11 +672,11 @@ def _main_menu_keyboard_for_user(
     return _king_menu_keyboard(settings, group_button=group_button, group_balance=group_balance)
 
 
-def _help_keyboard_for_user(chat_id: int, user_id: int) -> types.InlineKeyboardMarkup:
+def _help_keyboard_for_user(panel_chat_id: int, user_id: int) -> types.InlineKeyboardMarkup:
     rows: list[list[types.InlineKeyboardButton]] = [
         [types.InlineKeyboardButton(text="Назад", callback_data=_kc("open"), style="default")]
     ]
-    if _get_pending_input(chat_id, user_id) is not None:
+    if _get_pending_input(panel_chat_id, user_id) is not None:
         rows.append(list(_pending_cancel_keyboard().inline_keyboard[0]))
     return types.InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -800,16 +817,77 @@ def _get_menu_owner(chat_id: int, message_id: int) -> int | None:
     return int(value) if value is not None else None
 
 
-def _unbind_menu_owner(chat_id: int, message_id: int) -> None:
-    key = _menu_key(chat_id, message_id)
+def _unbind_menu_owner(panel_chat_id: int, message_id: int) -> None:
+    key = _menu_key(panel_chat_id, message_id)
     _store_discard(_KING_MENU_OWNERS, key)
     _store_discard(_KING_MENU_RENDER_STATE, key)
+    _store_discard(_KING_MENU_TARGET, key)
 
 
-def _set_pending_input(chat_id: int, user_id: int, payload: dict[str, Any]) -> None:
+def _bind_menu_target(panel_chat_id: int, message_id: int, group_chat_id: int) -> None:
+    """Запоминает, какую ГРУППУ настраивает меню, лежащее в panel_chat_id."""
+    _KING_MENU_TARGET[_menu_key(panel_chat_id, message_id)] = int(group_chat_id)
+
+
+def _get_menu_target(panel_chat_id: int, message_id: int) -> int | None:
+    value = _KING_MENU_TARGET.get(_menu_key(panel_chat_id, message_id))
+    try:
+        return int(value) if value is not None else None
+    except Exception:
+        return None
+
+
+def _bind_menu_message(
+    panel_chat_id: int,
+    message_id: int,
+    owner_user_id: int,
+    group_chat_id: int,
+) -> None:
+    """Полная привязка сообщения-меню: владелец + целевая группа."""
+    _bind_menu_owner(panel_chat_id, message_id, owner_user_id)
+    _bind_menu_target(panel_chat_id, message_id, group_chat_id)
+
+
+def _dm_menu_key(user_id: int, group_chat_id: int) -> tuple[int, int]:
+    return int(user_id), int(group_chat_id)
+
+
+def _remember_dm_menu(user_id: int, group_chat_id: int, message_id: int) -> None:
+    _KING_DM_LAST_MENU[_dm_menu_key(user_id, group_chat_id)] = int(message_id)
+
+
+def _get_dm_last_menu(user_id: int, group_chat_id: int) -> int | None:
+    value = _KING_DM_LAST_MENU.get(_dm_menu_key(user_id, group_chat_id))
+    try:
+        return int(value) if value is not None else None
+    except Exception:
+        return None
+
+
+def _set_pending_input(
+    panel_chat_id: int,
+    user_id: int,
+    payload: dict[str, Any],
+    *,
+    group_chat_id: int,
+) -> None:
     data = dict(payload or {})
+    # Группа, которую настраиваем, обязана ехать внутри payload: в ЛС её
+    # неоткуда взять из самого сообщения пользователя.
+    data["group_chat_id"] = int(group_chat_id)
     data["expires_at"] = int(time.time()) + int(_KING_PENDING_INPUT_TIMEOUT_SEC)
-    _KING_PENDING_INPUTS[_pending_key(chat_id, user_id)] = data
+    _KING_PENDING_INPUTS[_pending_key(panel_chat_id, user_id)] = data
+
+
+def _pending_group_chat_id(payload: dict[str, Any] | None, fallback: int) -> int:
+    if isinstance(payload, dict):
+        try:
+            value = payload.get("group_chat_id")
+            if value is not None:
+                return int(value)
+        except Exception:
+            pass
+    return int(fallback)
 
 
 def _pending_seconds_left(payload: dict[str, Any] | None) -> int:
@@ -950,11 +1028,25 @@ async def _reply_barnum(
             return None
 
 
+async def _resolve_bot_mention(bot) -> str:
+    """@username бота для подсказки «запустите бота». Без имени - нейтральный текст."""
+    try:
+        me = await bot.get_me()
+        username = str(getattr(me, "username", "") or "").strip()
+        if username:
+            return f"@{username}"
+    except Exception:
+        pass
+    return "бота"
+
+
 async def _reply_pending_input_error(
     message: types.Message,
     user_id: int,
     pending: dict[str, Any] | None,
     text: str,
+    *,
+    group_chat_id: int,
 ) -> types.Message | None:
     left_sec = _pending_seconds_left(pending)
     details = (
@@ -965,10 +1057,12 @@ async def _reply_pending_input_error(
     markup = _pending_cancel_keyboard()
     sent = await _reply_barnum(message, details, reply_markup=markup)
     if sent is not None:
-        chat_id = int(sent.chat.id)
+        panel_chat_id = int(sent.chat.id)
         message_id = int(sent.message_id)
-        _bind_menu_owner(chat_id, message_id, int(user_id))
-        _remember_menu_state(chat_id, message_id, details, markup)
+        # У сообщения есть кнопка «Отмена ввода», значит по нему прилетит
+        # колбэк - и ему нужна привязка к группе, иначе клик отвалится.
+        _bind_menu_message(panel_chat_id, message_id, int(user_id), int(group_chat_id))
+        _remember_menu_state(panel_chat_id, message_id, details, markup)
     return sent
 
 
@@ -977,16 +1071,17 @@ async def _send_bound_menu_message(
     settings: dict[str, Any],
     owner_user_id: int,
     *,
+    group_chat_id: int,
     text: str | None = None,
     db=None,
     group_button: tuple[str, str] | None = None,
     group_balance: int | None = None,
 ) -> None:
-    chat_id = int(message.chat.id)
+    """Отвечает меню в том же чате, куда пришло сообщение (в новом потоке - ЛС)."""
     resolved_group_button = group_button
     resolved_group_balance = group_balance
     if resolved_group_button is None or resolved_group_balance is None:
-        context = await _resolve_group_menu_context(db, chat_id)
+        context = await _resolve_group_menu_context(db, int(group_chat_id))
         if resolved_group_button is None:
             resolved_group_button = context.get("button")
         if resolved_group_balance is None:
@@ -994,7 +1089,7 @@ async def _send_bound_menu_message(
     desired_text = text or _king_menu_text(settings, group_button=resolved_group_button)
     desired_markup = _main_menu_keyboard_for_user(
         settings,
-        chat_id,
+        int(group_chat_id),
         int(owner_user_id),
         group_button=resolved_group_button,
         group_balance=resolved_group_balance,
@@ -1005,80 +1100,174 @@ async def _send_bound_menu_message(
         reply_markup=desired_markup,
     )
     if sent is not None:
-        chat_id = int(sent.chat.id)
+        panel_chat_id = int(sent.chat.id)
         message_id = int(sent.message_id)
-        _bind_menu_owner(chat_id, message_id, int(owner_user_id))
-        _remember_menu_state(chat_id, message_id, desired_text, desired_markup)
+        _bind_menu_message(panel_chat_id, message_id, int(owner_user_id), int(group_chat_id))
+        _remember_menu_state(panel_chat_id, message_id, desired_text, desired_markup)
+        _remember_dm_menu(int(owner_user_id), int(group_chat_id), message_id)
 
 
-async def _ensure_creator_permissions(message: types.Message, db, bot) -> bool:
-    if message.chat.type == "private":
-        await _reply_barnum(message, "<tg-emoji emoji-id='5260483378729208732'>⛔️</tg-emoji> <b>Только в группе.</b>")
-        return False
-
-    chat_id = int(message.chat.id)
+async def _deliver_menu_to_dm(message: types.Message, db, bot, *, group_chat_id: int) -> bool:
+    """
+    Команда пришла в группе: шлём меню в ЛС и отвечаем в группе.
+    Всегда возвращает True - сообщение обработано в любом исходе.
+    """
     user_id = int(message.from_user.id)
+    if not await _ensure_creator_permissions(message, db, bot, group_chat_id=int(group_chat_id)):
+        return True
 
-    try:
-        await db.update_chat_creator_if_owner(bot, user_id, chat_id)
-    except Exception:
-        pass
+    sent = await _open_menu_in_dm(bot, db, group_chat_id=int(group_chat_id), user_id=user_id)
+    if sent is None:
+        mention = await _resolve_bot_mention(bot)
+        await _reply_barnum(
+            message,
+            "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> "
+            "<b>Не могу написать вам в личные сообщения.</b>\n"
+            f"<b>Откройте {_html.escape(mention)}, нажмите «Запустить», "
+            "затем напишите эту команду в группе ещё раз.</b>",
+        )
+        return True
 
-    creator_id = await db.get_group_creator(chat_id)
-    if creator_id is None:
-        await _reply_barnum(message, "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Не удалось определить создателя.</b>")
-        return False
-    if int(creator_id) != user_id:
-        await _reply_barnum(message, "<tg-emoji emoji-id='5260483378729208732'>⛔️</tg-emoji> <b>Только создатель группы.</b>")
-        return False
+    await _reply_barnum(
+        message,
+        "<tg-emoji emoji-id='5467406098367521267'>👑</tg-emoji> "
+        "<b>Настройки отправлены вам в личные сообщения.</b>",
+    )
     return True
 
 
-async def _ensure_creator_permissions_callback(call: types.CallbackQuery, db, bot) -> bool:
-    msg = getattr(call, "message", None)
-    if msg is None or getattr(msg, "chat", None) is None:
-        await call.answer("Сообщение недоступно.", show_alert=True)
-        return False
+async def _open_menu_in_dm(bot, db, *, group_chat_id: int, user_id: int) -> types.Message | None:
+    """
+    Присылает меню настроек группы в ЛС пользователю.
 
-    if msg.chat.type == "private":
-        await call.answer("Только в группе.", show_alert=True)
-        return False
+    None - Telegram не даёт боту писать первым (пользователь не запускал бота
+    или заблокировал его). Предыдущее меню ЭТОЙ ЖЕ группы удаляется, меню
+    других групп остаются жить.
+    """
+    settings = await db.get_chat_king_reward_settings(int(group_chat_id))
+    context = await _resolve_group_menu_context(db, int(group_chat_id))
+    group_button = context.get("button")
+    group_balance = int(context.get("balance") or 0)
 
-    chat_id = int(msg.chat.id)
-    user_id = int(call.from_user.id)
+    desired_text = _king_menu_text(settings, group_button=group_button)
+    desired_markup = _main_menu_keyboard_for_user(
+        settings,
+        int(group_chat_id),
+        int(user_id),
+        group_button=group_button,
+        group_balance=group_balance,
+    )
+
     try:
-        await db.update_chat_creator_if_owner(bot, user_id, chat_id)
+        sent = await bot.send_message(
+            chat_id=int(user_id),
+            text=desired_text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=desired_markup,
+        )
+    except TelegramForbiddenError:
+        return None
+    except Exception:
+        return None
+
+    if sent is None:
+        return None
+
+    # Старое меню этой же группы больше не нужно: иначе в ЛС копятся дубли,
+    # каждый со своим состоянием отрисовки.
+    previous_message_id = _get_dm_last_menu(int(user_id), int(group_chat_id))
+    if previous_message_id and int(previous_message_id) != int(sent.message_id):
+        await _delete_menu_message_by_id(bot, int(user_id), int(previous_message_id))
+
+    panel_chat_id = int(sent.chat.id)
+    message_id = int(sent.message_id)
+    _bind_menu_message(panel_chat_id, message_id, int(user_id), int(group_chat_id))
+    _remember_menu_state(panel_chat_id, message_id, desired_text, desired_markup)
+    _remember_dm_menu(int(user_id), int(group_chat_id), message_id)
+    return sent
+
+
+async def _is_group_creator(db, bot, group_chat_id: int, user_id: int) -> tuple[bool, str | None]:
+    """
+    Единая проверка прав на ГРУППУ: (можно, причина_отказа).
+    Принимает group_chat_id явно, потому что вызывается и из группы, и из ЛС,
+    где чат сообщения группой не является.
+    """
+    try:
+        await db.update_chat_creator_if_owner(bot, int(user_id), int(group_chat_id))
     except Exception:
         pass
 
-    creator_id = await db.get_group_creator(chat_id)
+    creator_id = await db.get_group_creator(int(group_chat_id))
     if creator_id is None:
-        await call.answer("Не удалось определить создателя.", show_alert=True)
-        return False
-    if int(creator_id) != user_id:
-        await call.answer("Только создатель группы.", show_alert=True)
-        return False
-    return True
+        return False, "Не удалось определить создателя группы."
+    if int(creator_id) != int(user_id):
+        return False, "Только создатель группы."
+    return True, None
 
 
-async def _ensure_menu_callback_permissions(call: types.CallbackQuery, db, bot) -> bool:
-    if not await _ensure_creator_permissions_callback(call, db, bot):
-        return False
+async def _ensure_creator_permissions(message: types.Message, db, bot, *, group_chat_id: int) -> bool:
+    ok, reason = await _is_group_creator(db, bot, int(group_chat_id), int(message.from_user.id))
+    if ok:
+        return True
+    await _reply_barnum(
+        message,
+        "<tg-emoji emoji-id='5260483378729208732'>⛔️</tg-emoji> "
+        f"<b>{_html.escape(reason or 'Нет доступа.')}</b>",
+    )
+    return False
+
+
+async def _ensure_creator_permissions_callback(
+    call: types.CallbackQuery, db, bot, *, group_chat_id: int
+) -> bool:
+    ok, reason = await _is_group_creator(db, bot, int(group_chat_id), int(call.from_user.id))
+    if ok:
+        return True
+    await call.answer(reason or "Нет доступа.", show_alert=True)
+    return False
+
+
+async def _resolve_menu_callback_group(call: types.CallbackQuery, db, bot) -> int | None:
+    """
+    Проверяет права на клик и возвращает ГРУППУ, которую настраивает это меню.
+    None - клик отклонён, пользователю уже отвечено.
+
+    Порядок важен: сначала дешёвые проверки без БД (владелец, привязка),
+    и только потом поход в БД за создателем.
+    """
     msg = getattr(call, "message", None)
     if msg is None or getattr(msg, "chat", None) is None:
         await call.answer("Сообщение недоступно.", show_alert=True)
-        return False
+        return None
 
-    chat_id = int(msg.chat.id)
+    panel_chat_id = int(msg.chat.id)
+    message_id = int(msg.message_id)
     user_id = int(call.from_user.id)
-    owner_id = _get_menu_owner(chat_id, int(msg.message_id))
+
+    owner_id = _get_menu_owner(panel_chat_id, message_id)
     if owner_id is None:
-        await call.answer("Меню устарело. Откройте заново.", show_alert=True)
-        return False
+        await call.answer("Меню устарело. Откройте его командой в группе.", show_alert=True)
+        return None
     if owner_id != user_id:
         await call.answer("Это меню открыл другой пользователь.", show_alert=True)
-        return False
-    return True
+        return None
+
+    group_chat_id = _get_menu_target(panel_chat_id, message_id)
+    if group_chat_id is None:
+        # Меню, открытые до переезда в ЛС, лежали прямо в группе и привязки не
+        # имеют: для них целевая группа - это и есть чат сообщения.
+        if msg.chat.type != "private":
+            group_chat_id = panel_chat_id
+            _bind_menu_target(panel_chat_id, message_id, group_chat_id)
+        else:
+            await call.answer("Меню устарело. Откройте его командой в группе.", show_alert=True)
+            return None
+
+    if not await _ensure_creator_permissions_callback(call, db, bot, group_chat_id=group_chat_id):
+        return None
+    return int(group_chat_id)
 
 
 async def _edit_king_menu_message(
@@ -1093,6 +1282,9 @@ async def _edit_king_menu_message(
         return None
     chat_id = int(msg.chat.id)
     message_id = int(msg.message_id)
+    # Если редактирование сорвётся и придётся слать НОВОЕ сообщение, оно должно
+    # унаследовать привязку к группе - иначе его кнопки сразу станут «устаревшими».
+    inherited_target = _get_menu_target(chat_id, message_id)
     if _is_same_menu_state(chat_id, message_id, text, reply_markup, current_message=msg):
         if bind_owner_id is not None:
             _bind_menu_owner(chat_id, message_id, int(bind_owner_id))
@@ -1128,6 +1320,8 @@ async def _edit_king_menu_message(
                 _remember_menu_state(sent_chat_id, sent_message_id, text, reply_markup)
                 if bind_owner_id is not None:
                     _bind_menu_owner(sent_chat_id, sent_message_id, int(bind_owner_id))
+                if inherited_target is not None:
+                    _bind_menu_target(sent_chat_id, sent_message_id, inherited_target)
             return sent
         except Exception:
             return None
@@ -1139,11 +1333,14 @@ async def _edit_king_menu_message(
                 disable_web_page_preview=True,
                 reply_markup=reply_markup,
             )
-            if bind_owner_id is not None and sent is not None:
+            if sent is not None:
                 sent_chat_id = int(sent.chat.id)
                 sent_message_id = int(sent.message_id)
-                _bind_menu_owner(sent_chat_id, sent_message_id, int(bind_owner_id))
-                _remember_menu_state(sent_chat_id, sent_message_id, text, reply_markup)
+                if bind_owner_id is not None:
+                    _bind_menu_owner(sent_chat_id, sent_message_id, int(bind_owner_id))
+                    _remember_menu_state(sent_chat_id, sent_message_id, text, reply_markup)
+                if inherited_target is not None:
+                    _bind_menu_target(sent_chat_id, sent_message_id, inherited_target)
             return sent
         except Exception:
             return None
@@ -1205,9 +1402,14 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
         return True
 
     await db.ensure_king_stats_schema()
-    chat_id = int(msg.chat.id)
-    if not await _ensure_menu_callback_permissions(call, db, bot):
+    # panel_chat_id - где лежит сообщение меню (в новом потоке это ЛС).
+    # chat_id - какая ГРУППА настраивается. Дальше по функции chat_id всегда
+    # означает группу, а операции над сообщением идут по panel_chat_id.
+    panel_chat_id = int(msg.chat.id)
+    resolved_group_id = await _resolve_menu_callback_group(call, db, bot)
+    if resolved_group_id is None:
         return True
+    chat_id = int(resolved_group_id)
     user_id = int(call.from_user.id)
     settings = await db.get_chat_king_reward_settings(chat_id)
     group_context = await _resolve_group_menu_context(db, chat_id)
@@ -1221,13 +1423,13 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
         return True
 
     if action == "input" and len(parts) >= 3 and parts[2] == "cancel":
-        pending_before_cancel = _get_pending_input(chat_id, user_id)
+        pending_before_cancel = _get_pending_input(panel_chat_id, user_id)
         panel_message_id = (
             int(pending_before_cancel.get("panel_message_id") or 0)
             if isinstance(pending_before_cancel, dict)
             else 0
         )
-        _clear_pending_input(chat_id, user_id)
+        _clear_pending_input(panel_chat_id, user_id)
         settings = await db.get_chat_king_reward_settings(chat_id)
         await _edit_king_menu_message(
             call,
@@ -1240,13 +1442,13 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
             bind_owner_id=user_id,
         )
         if panel_message_id > 0 and panel_message_id != int(msg.message_id):
-            await _delete_menu_message_by_id(bot, chat_id, panel_message_id)
+            await _delete_menu_message_by_id(bot, panel_chat_id, panel_message_id)
         await call.answer("Ввод отменён.")
         return True
 
     if action == "close":
-        _clear_pending_input(chat_id, user_id)
-        _unbind_menu_owner(chat_id, int(msg.message_id))
+        _clear_pending_input(panel_chat_id, user_id)
+        _unbind_menu_owner(panel_chat_id, int(msg.message_id))
         try:
             await msg.delete()
         except Exception:
@@ -1255,7 +1457,7 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
         return True
 
     if action == "reset" and len(parts) >= 3 and str(parts[2]).lower() == "all":
-        _clear_pending_input(chat_id, user_id)
+        _clear_pending_input(panel_chat_id, user_id)
         settings = await db.reset_chat_king_settings(chat_id, creator_id=user_id)
         await _edit_king_menu_message(
             call,
@@ -1292,7 +1494,7 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
         await _edit_king_menu_message(
             call,
             _HELP_TEXT + "\n\nНазад - в меню.",
-            reply_markup=_help_keyboard_for_user(chat_id, user_id),
+            reply_markup=_help_keyboard_for_user(panel_chat_id, user_id),
             bind_owner_id=user_id,
         )
         await call.answer()
@@ -1331,16 +1533,17 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
             return True
 
         if sub_action == "item" and len(parts) >= 5 and str(parts[4]).lower() == "custom":
-            if not await _ensure_creator_permissions_callback(call, db, bot):
+            if not await _ensure_creator_permissions_callback(call, db, bot, group_chat_id=chat_id):
                 return True
             _set_pending_input(
-                chat_id,
+                panel_chat_id,
                 int(call.from_user.id),
                 {
                     "type": "place_item_custom",
                     "place": int(place),
                     "panel_message_id": int(msg.message_id),
                 },
+                group_chat_id=chat_id,
             )
             await _edit_king_menu_message(
                 call,
@@ -1366,13 +1569,14 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
         if sub_action == "kut" and len(parts) >= 5:
             if str(parts[4]).lower() == "custom":
                 _set_pending_input(
-                    chat_id,
+                    panel_chat_id,
                     int(call.from_user.id),
                     {
                         "type": "place_kut_custom",
                         "place": int(place),
                         "panel_message_id": int(msg.message_id),
                     },
+                    group_chat_id=chat_id,
                 )
                 await _edit_king_menu_message(
                     call,
@@ -1449,12 +1653,13 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
         raw_min = str(parts[2]).strip().lower()
         if raw_min == "custom":
             _set_pending_input(
-                chat_id,
+                panel_chat_id,
                 int(call.from_user.id),
                 {
                     "type": "min_custom",
                     "panel_message_id": int(msg.message_id),
                 },
+                group_chat_id=chat_id,
             )
             settings = await db.get_chat_king_reward_settings(chat_id)
             await _edit_king_menu_message(
@@ -1502,12 +1707,13 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
 
     if action == "duration" and len(parts) >= 3 and str(parts[2]).lower() == "custom":
         _set_pending_input(
-            chat_id,
+            panel_chat_id,
             int(call.from_user.id),
             {
                 "type": "duration_custom",
                 "panel_message_id": int(msg.message_id),
             },
+            group_chat_id=chat_id,
         )
         settings = await db.get_chat_king_reward_settings(chat_id)
         await _edit_king_menu_message(
@@ -1526,12 +1732,13 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
 
     if action == "start" and len(parts) >= 3 and str(parts[2]).lower() == "custom":
         _set_pending_input(
-            chat_id,
+            panel_chat_id,
             int(call.from_user.id),
             {
                 "type": "start_date_custom",
                 "panel_message_id": int(msg.message_id),
             },
+            group_chat_id=chat_id,
         )
         settings = await db.get_chat_king_reward_settings(chat_id)
         await _edit_king_menu_message(
@@ -1552,12 +1759,13 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
         budget_action = str(parts[2]).lower()
         if budget_action == "alloc":
             _set_pending_input(
-                chat_id,
+                panel_chat_id,
                 int(call.from_user.id),
                 {
                     "type": "budget_total_custom",
                     "panel_message_id": int(msg.message_id),
                 },
+                group_chat_id=chat_id,
             )
             settings = await db.get_chat_king_reward_settings(chat_id)
             await _edit_king_menu_message(
@@ -1575,7 +1783,7 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
             return True
 
         if budget_action == "confirm":
-            pending = _get_pending_input(chat_id, user_id)
+            pending = _get_pending_input(panel_chat_id, user_id)
             if not pending or str(pending.get("type") or "") != "budget_confirm":
                 await call.answer("Сначала задайте распределение.", show_alert=True)
                 return True
@@ -1587,7 +1795,7 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
             settings = await db.set_chat_king_place_kut_reward(chat_id, 1, p1, creator_id=user_id)
             settings = await db.set_chat_king_place_kut_reward(chat_id, 2, p2, creator_id=user_id)
             settings = await db.set_chat_king_place_kut_reward(chat_id, 3, p3, creator_id=user_id)
-            _clear_pending_input(chat_id, user_id)
+            _clear_pending_input(panel_chat_id, user_id)
             menu_text = _king_menu_text(settings, group_button=group_button)
             menu_markup = _main_menu_keyboard_for_user(
                 settings,
@@ -1597,9 +1805,9 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
                 group_balance=group_balance,
             )
             current_menu_message_id = int(msg.message_id)
-            await _delete_menu_message_by_id(bot, chat_id, current_menu_message_id)
+            await _delete_menu_message_by_id(bot, panel_chat_id, current_menu_message_id)
             if panel_message_id > 0 and panel_message_id != current_menu_message_id:
-                await _delete_menu_message_by_id(bot, chat_id, panel_message_id)
+                await _delete_menu_message_by_id(bot, panel_chat_id, panel_message_id)
             sent = None
             try:
                 sent = await msg.answer(
@@ -1611,7 +1819,7 @@ async def handle_king_stats_callback(call: types.CallbackQuery, db, bot) -> bool
             except Exception:
                 sent = None
             if sent is not None:
-                _bind_menu_owner(int(sent.chat.id), int(sent.message_id), user_id)
+                _bind_menu_message(int(sent.chat.id), int(sent.message_id), user_id, chat_id)
                 _remember_menu_state(int(sent.chat.id), int(sent.message_id), menu_text, menu_markup)
             await call.answer("Распределение сохранено.")
             return True
@@ -1846,17 +2054,25 @@ def _parse_place_from_text(text: str) -> int | None:
 
 async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
     normalized = _norm_text(getattr(message, "text", ""))
-    chat_id = int(message.chat.id)
+    # panel_chat_id - куда пришло сообщение. chat_id - какую ГРУППУ настраиваем.
+    # В группе они совпадают, в ЛС нет: там группа берётся из payload ожидания.
+    panel_chat_id = int(message.chat.id)
     user_id = int(message.from_user.id)
+    is_private = message.chat.type == "private"
     await db.ensure_king_stats_schema()
+
+    pending = _get_pending_input(panel_chat_id, user_id)
+
+    # Пока есть ожидание ввода - группу берём из payload: в ЛС из самого
+    # сообщения её не вывести. Без ожидания настраиваем чат, куда пришла команда.
+    chat_id = _pending_group_chat_id(pending, panel_chat_id)
     group_context = await _resolve_group_menu_context(db, chat_id)
     group_button = group_context.get("button")
     group_balance = int(group_context.get("balance") or 0)
 
-    pending = _get_pending_input(chat_id, user_id)
     if pending is not None:
-        if not await _ensure_creator_permissions(message, db, bot):
-            _clear_pending_input(chat_id, user_id)
+        if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
+            _clear_pending_input(panel_chat_id, user_id)
             return True
 
         raw_text = str(getattr(message, "text", "") or "").strip()
@@ -1867,14 +2083,15 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                 user_id,
                 pending,
                 "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Я жду значение для настройки.</b>\n<b>Отправьте ввод в нужном формате.</b>",
+                group_chat_id=chat_id,
             )
             return True
 
         if is_king_stats_command(raw_text):
-            _clear_pending_input(chat_id, user_id)
+            _clear_pending_input(panel_chat_id, user_id)
             settings = await db.get_chat_king_reward_settings(chat_id)
             if panel_message_id > 0:
-                await _delete_menu_message_by_id(bot, chat_id, panel_message_id)
+                await _delete_menu_message_by_id(bot, panel_chat_id, panel_message_id)
             await _send_bound_menu_message(
                 message,
                 settings,
@@ -1882,14 +2099,15 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                 db=db,
                 group_button=group_button,
                 group_balance=group_balance,
+                group_chat_id=chat_id,
             )
             return True
 
         if _norm_text(raw_text) in {"отмена", "cancel", "стоп"}:
-            _clear_pending_input(chat_id, user_id)
+            _clear_pending_input(panel_chat_id, user_id)
             settings = await db.get_chat_king_reward_settings(chat_id)
             if panel_message_id > 0:
-                await _delete_menu_message_by_id(bot, chat_id, panel_message_id)
+                await _delete_menu_message_by_id(bot, panel_chat_id, panel_message_id)
             await _send_bound_menu_message(
                 message,
                 settings,
@@ -1897,6 +2115,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                 db=db,
                 group_button=group_button,
                 group_balance=group_balance,
+                group_chat_id=chat_id,
             )
             return True
 
@@ -1915,15 +2134,16 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                         user_id,
                         pending,
                         "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Не понял минимум сообщений.</b>\n<b>Введите число: <code>0</code> (выкл) или <code>30</code>.</b>",
+                        group_chat_id=chat_id,
                     )
                     return True
 
             settings = await db.set_chat_king_min_messages(chat_id, max(0, min_value), creator_id=user_id)
-            _clear_pending_input(chat_id, user_id)
+            _clear_pending_input(panel_chat_id, user_id)
             min_now = int(settings.get("min_messages") or 0)
             min_view = "выкл" if min_now <= 0 else str(min_now)
             if panel_message_id > 0:
-                await _delete_menu_message_by_id(bot, chat_id, panel_message_id)
+                await _delete_menu_message_by_id(bot, panel_chat_id, panel_message_id)
             await _send_bound_menu_message(
                 message,
                 settings,
@@ -1935,6 +2155,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                 db=db,
                 group_button=group_button,
                 group_balance=group_balance,
+                group_chat_id=chat_id,
             )
             return True
 
@@ -1946,6 +2167,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                     user_id,
                     pending,
                     "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Не понял срок.</b>\n<b>Примеры: <code>30 мин</code>, <code>12 часов</code>, <code>2 месяца</code>, <code>навсегда</code>.</b>",
+                    group_chat_id=chat_id,
                 )
                 return True
             if mode == "forever":
@@ -1957,9 +2179,9 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                     target_dt.astimezone(timezone.utc),
                     creator_id=user_id,
                 )
-            _clear_pending_input(chat_id, user_id)
+            _clear_pending_input(panel_chat_id, user_id)
             if panel_message_id > 0:
-                await _delete_menu_message_by_id(bot, chat_id, panel_message_id)
+                await _delete_menu_message_by_id(bot, panel_chat_id, panel_message_id)
             await _send_bound_menu_message(
                 message,
                 settings,
@@ -1967,6 +2189,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                 db=db,
                 group_button=group_button,
                 group_balance=group_balance,
+                group_chat_id=chat_id,
             )
             return True
 
@@ -1978,6 +2201,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                     user_id,
                     pending,
                     "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Не понял дату старта.</b>\n<b>Примеры: <code>16.07.2026</code>, <code>16 июня</code>, <code>16 июня 2026</code>, <code>сразу</code>.</b>",
+                    group_chat_id=chat_id,
                 )
                 return True
             if mode == "clear":
@@ -1998,9 +2222,9 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                     start_local.astimezone(timezone.utc),
                     creator_id=user_id,
                 )
-            _clear_pending_input(chat_id, user_id)
+            _clear_pending_input(panel_chat_id, user_id)
             if panel_message_id > 0:
-                await _delete_menu_message_by_id(bot, chat_id, panel_message_id)
+                await _delete_menu_message_by_id(bot, panel_chat_id, panel_message_id)
             await _send_bound_menu_message(
                 message,
                 settings,
@@ -2008,6 +2232,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                 db=db,
                 group_button=group_button,
                 group_balance=group_balance,
+                group_chat_id=chat_id,
             )
             return True
 
@@ -2019,6 +2244,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                     user_id,
                     pending,
                     "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Не понял общий бюджет.</b>\n<b>Введите число, например: <code>1000</code>.</b>",
+                    group_chat_id=chat_id,
                 )
                 return True
             next_payload = {
@@ -2027,21 +2253,23 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                 "total_kut": int(total_kut),
             }
             _set_pending_input(
-                chat_id,
+                panel_chat_id,
                 user_id,
                 next_payload,
+                group_chat_id=chat_id,
             )
             if panel_message_id > 0:
-                await _delete_menu_message_by_id(bot, chat_id, panel_message_id)
+                await _delete_menu_message_by_id(bot, panel_chat_id, panel_message_id)
             sent = await _reply_pending_input_error(
                 message,
                 user_id,
-                _get_pending_input(chat_id, user_id),
+                _get_pending_input(panel_chat_id, user_id),
                 f"<tg-emoji emoji-id='6028435952299413210'>ℹ</tg-emoji> <b>Теперь введите 3 суммы для мест:</b>\n<b><code>500 300 200</code> (сумма = {int(total_kut)}).</b>",
+                group_chat_id=chat_id,
             )
             if sent is not None:
                 next_payload["panel_message_id"] = int(sent.message_id)
-                _set_pending_input(chat_id, user_id, next_payload)
+                _set_pending_input(panel_chat_id, user_id, next_payload, group_chat_id=chat_id)
             return True
 
         if pending_type == "budget_split_custom":
@@ -2053,6 +2281,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                     user_id,
                     pending,
                     "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Не понял распределение.</b>\n<b>Нужно 3 числа: <code>500 300 200</code>.</b>",
+                    group_chat_id=chat_id,
                 )
                 return True
             p1, p2, p3 = dist
@@ -2062,6 +2291,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                     user_id,
                     pending,
                     f"<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Сумма не сходится.</b>\n<b>Ожидается: {total_kut}, сейчас: {p1 + p2 + p3}.</b>",
+                    group_chat_id=chat_id,
                 )
                 return True
 
@@ -2073,7 +2303,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                 "p2": int(p2),
                 "p3": int(p3),
             }
-            _set_pending_input(chat_id, user_id, confirm_payload)
+            _set_pending_input(panel_chat_id, user_id, confirm_payload, group_chat_id=chat_id)
             bet_amount_win_formated1 = "{:,.0f}".format(p1).replace("," , ".")
             bet_amount_win_formated2 = "{:,.0f}".format(p2).replace("," , ".")
             bet_amount_win_formated3 = "{:,.0f}".format(p3).replace("," , ".")
@@ -2084,7 +2314,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                 "<b>Если всё верно, нажмите «Все в порядке».</b>"
             )
             if panel_message_id > 0:
-                await _delete_menu_message_by_id(bot, chat_id, panel_message_id)
+                await _delete_menu_message_by_id(bot, panel_chat_id, panel_message_id)
             sent = await _reply_barnum(
                 message,
                 confirm_text,
@@ -2092,7 +2322,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
             )
             if sent is not None:
                 confirm_payload["panel_message_id"] = int(sent.message_id)
-                _set_pending_input(chat_id, user_id, confirm_payload)
+                _set_pending_input(panel_chat_id, user_id, confirm_payload, group_chat_id=chat_id)
                 _bind_menu_owner(int(sent.chat.id), int(sent.message_id), user_id)
                 _remember_menu_state(
                     int(sent.chat.id),
@@ -2112,12 +2342,13 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                     user_id,
                     pending,
                     "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Не понял сумму награды.</b>\n<b>Введите только число, например: <code>500</code>.</b>",
+                    group_chat_id=chat_id,
                 )
                 return True
             settings = await db.set_chat_king_place_kut_reward(chat_id, place, kut, creator_id=user_id)
-            _clear_pending_input(chat_id, user_id)
+            _clear_pending_input(panel_chat_id, user_id)
             if panel_message_id > 0:
-                await _delete_menu_message_by_id(bot, chat_id, panel_message_id)
+                await _delete_menu_message_by_id(bot, panel_chat_id, panel_message_id)
             await _send_bound_menu_message(
                 message,
                 settings,
@@ -2125,6 +2356,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                 db=db,
                 group_button=group_button,
                 group_balance=group_balance,
+                group_chat_id=chat_id,
             )
             return True
 
@@ -2137,6 +2369,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                     user_id,
                     pending,
                     "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Не понял формат предмета.</b>\n<b>Нужно: <code>предмет количество</code>, пример: <code>🚬 1</code>.</b>",
+                    group_chat_id=chat_id,
                 )
                 return True
             token = str(m.group(1) or "").strip()
@@ -2148,6 +2381,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                     user_id,
                     pending,
                     f"<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Предмет не найден: {token}.</b>\n<b>Проверьте эмодзи / id / название.</b>",
+                    group_chat_id=chat_id,
                 )
                 return True
             settings = await db.add_chat_king_place_item_reward(
@@ -2157,9 +2391,9 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                 amount=amount,
                 creator_id=user_id,
             )
-            _clear_pending_input(chat_id, user_id)
+            _clear_pending_input(panel_chat_id, user_id)
             if panel_message_id > 0:
-                await _delete_menu_message_by_id(bot, chat_id, panel_message_id)
+                await _delete_menu_message_by_id(bot, panel_chat_id, panel_message_id)
             await _send_bound_menu_message(
                 message,
                 settings,
@@ -2167,29 +2401,16 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
                 db=db,
                 group_button=group_button,
                 group_balance=group_balance,
+                group_chat_id=chat_id,
             )
             return True
 
-        _clear_pending_input(chat_id, user_id)
+        _clear_pending_input(panel_chat_id, user_id)
         await _reply_barnum(message, "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Режим ввода сброшен. Откройте меню заново.</b>")
         return True
 
     if not is_king_stats_command(normalized):
         return False
-
-    if _is_king_menu_open_intent(normalized):
-        if not await _ensure_creator_permissions(message, db, bot):
-            return True
-        settings = await db.get_chat_king_reward_settings(chat_id)
-        await _send_bound_menu_message(
-            message,
-            settings,
-            user_id,
-            db=db,
-            group_button=group_button,
-            group_balance=group_balance,
-        )
-        return True
 
     show_help_aliases = {
         "царь",
@@ -2221,19 +2442,21 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
         await _reply_barnum(message, _HELP_TEXT)
         return True
 
-    if _KING_STRICT_INLINE_ONLY:
-        if not await _ensure_creator_permissions(message, db, bot):
-            return True
-        settings = await db.get_chat_king_reward_settings(chat_id)
-        await _send_bound_menu_message(
+    # Помощь выше отвечает где угодно, а настройки живут только в ЛС: из ЛС
+    # непонятно, какую группу настраивать, поэтому просим написать в группе.
+    if is_private:
+        await _reply_barnum(
             message,
-            settings,
-            user_id,
-            db=db,
-            group_button=group_button,
-            group_balance=group_balance,
+            "<tg-emoji emoji-id='5467406098367521267'>👑</tg-emoji> <b>Царь статистики</b>\n"
+            "<b>Напишите эту команду в той группе, которую хотите настроить.</b>\n"
+            "<b>Меню настроек я пришлю сюда, в личные сообщения.</b>",
         )
         return True
+
+    # Открыть меню: и явное «система царя статистики», и любой другой
+    # распознанный запрос - меню всегда уезжает в ЛС.
+    if _is_king_menu_open_intent(normalized) or _KING_STRICT_INLINE_ONLY:
+        return await _deliver_menu_to_dm(message, db, bot, group_chat_id=chat_id)
 
     show_settings_aliases = {
         "царь награды",
@@ -2288,7 +2511,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
         )
     )
     if enable_intent:
-        if not await _ensure_creator_permissions(message, db, bot):
+        if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
             return True
         settings = await db.set_chat_king_enabled(chat_id, True, creator_id=user_id)
         await _reply_barnum(message, "<b><tg-emoji emoji-id='5852871561983299073'>✅</tg-emoji> Система «Царь статистики» включена.</b>\n\n" + _settings_text(settings))
@@ -2314,7 +2537,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
         )
     )
     if disable_intent:
-        if not await _ensure_creator_permissions(message, db, bot):
+        if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
             return True
         settings = await db.set_chat_king_enabled(chat_id, False, creator_id=user_id)
         await _reply_barnum(message, "<tg-emoji emoji-id='5852871561983299073'>✅</tg-emoji> <b>Система «Царь статистики» выключена.</b>\n\n" + _settings_text(settings))
@@ -2327,7 +2550,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
         else None
     )
     if m or period_from_free_text:
-        if not await _ensure_creator_permissions(message, db, bot):
+        if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
             return True
         if m:
             raw = m.group(1)
@@ -2368,7 +2591,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
         )
     )
     if finalize_intent:
-        if not await _ensure_creator_permissions(message, db, bot):
+        if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
             return True
         settings = await db.get_chat_king_reward_settings(chat_id)
         context = resolve_current_king_context(
@@ -2412,7 +2635,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
     if _is_king_context(normalized) and _contains_any(normalized, ("мин", "миним", "порог")):
         min_from_free_text = _extract_first_int(normalized, min_value=1, max_value=100000)
     if m or min_from_free_text is not None:
-        if not await _ensure_creator_permissions(message, db, bot):
+        if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
             return True
         min_value = int(m.group(1)) if m else int(min_from_free_text or 1)
         settings = await db.set_chat_king_min_messages(chat_id, min_value, creator_id=user_id)
@@ -2430,7 +2653,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
         and place_clear is not None
         and not _contains_any(normalized, ("все", "всё"))
     ):
-        if not await _ensure_creator_permissions(message, db, bot):
+        if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
             return True
         place = int(m.group(1)) if m else int(place_clear or 1)
         settings = await db.clear_chat_king_place_reward(chat_id, place, creator_id=user_id)
@@ -2446,7 +2669,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
         and _contains_any(normalized, ("очист", "сброс"))
         and _contains_any(normalized, ("все", "всё"))
     ):
-        if not await _ensure_creator_permissions(message, db, bot):
+        if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
             return True
         await db.clear_chat_king_place_reward(chat_id, 1, creator_id=user_id)
         await db.clear_chat_king_place_reward(chat_id, 2, creator_id=user_id)
@@ -2463,7 +2686,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
         and _contains_any(normalized, ("наград", "приз", "мест"))
         and (mk is not None or km is not None)
     ):
-        if not await _ensure_creator_permissions(message, db, bot):
+        if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
             return True
         if m:
             place = int(m.group(1))
@@ -2485,7 +2708,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
     # Короткая форма: "царь награды 1 🚬 1"
     m = re.fullmatch(r"царь(?: награды| награда| место)? ([123]) ([^\s]+) (\d{1,9})", normalized)
     if m:
-        if not await _ensure_creator_permissions(message, db, bot):
+        if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
             return True
         place = int(m.group(1))
         token = str(m.group(2) or "").strip()
@@ -2523,7 +2746,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
         and _contains_any(normalized, ("предмет",))
         and (mi1 is not None or mi2 is not None)
     ):
-        if not await _ensure_creator_permissions(message, db, bot):
+        if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
             return True
         if m:
             place = int(m.group(1))
@@ -2569,7 +2792,7 @@ async def handle_king_stats_command(message: types.Message, db, bot) -> bool:
         and _contains_any(normalized, ("предметы",))
         and (mb1 is not None or mb2 is not None)
     ):
-        if not await _ensure_creator_permissions(message, db, bot):
+        if not await _ensure_creator_permissions(message, db, bot, group_chat_id=chat_id):
             return True
         if m:
             place = int(m.group(1))
