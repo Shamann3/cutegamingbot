@@ -641,6 +641,21 @@ def _build_result_kb(
 
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
+_PERMANENT_MEDIA_ERRORS = (
+    "wrong file identifier",
+    "wrong remote file id",
+    "sticker_id_invalid",
+    "file reference expired",
+    "wrong type of the web page content",
+    "failed to get http url content",
+)
+
+def _is_permanent_media_error(e: Exception) -> bool:
+    """Ошибка file_id, которую ретрай не исправит - нужен фолбэк, а не повтор."""
+    s = str(e).lower()
+    return any(marker in s for marker in _PERMANENT_MEDIA_ERRORS)
+
+
 async def _send_sticker_with_kb(message: Message, sticker_id: str, kb: InlineKeyboardMarkup, max_tries: int = 5) -> bool:
     chat_id = message.chat.id
     reply_to = message.message_id
@@ -664,7 +679,15 @@ async def _send_sticker_with_kb(message: Message, sticker_id: str, kb: InlineKey
         except RetryAfter as e:
             wait = getattr(e, "retry_after", 1.0) or 1.0
             await asyncio.sleep(wait + 0.2)
-        except TelegramAPIError:
+        except TelegramAPIError as e:
+            # Битый/протухший file_id - ошибка ПОСТОЯННАЯ, ретраи бессмысленны.
+            # Раньше такой стикер долбился все 5 раз с backoff 0.25→0.5→1→2→2.5:
+            # ~6 секунд на пустом месте, и всё это время расходовался общий
+            # лимит Telegram на токен (см. лог: пять FAIL SendSticker подряд,
+            # последний 3041мс). Сразу уходим на текстовый фолбэк.
+            if _is_permanent_media_error(e):
+                _fdbg("STICKER", f"permanent error, no retry: {e}")
+                return False
             tries += 1
             await asyncio.sleep(delay + random.random() * 0.2)
             delay = min(2.5, delay * 2)
