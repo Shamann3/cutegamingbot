@@ -950,10 +950,29 @@ class Database:
         END $$;
         ALTER TABLE chat_king_reward_settings
             ALTER COLUMN min_messages SET DEFAULT 0;
-        ALTER TABLE chat_king_reward_settings
-            DROP CONSTRAINT IF EXISTS chat_king_reward_settings_min_messages_check;
-        ALTER TABLE chat_king_reward_settings
-            DROP CONSTRAINT IF EXISTS chk_chat_king_reward_settings_min_messages_non_negative;
+        -- Сносим ЛЮБЫЕ старые CHECK-ограничения на min_messages, не полагаясь на
+        -- имя. В проде обнаружилось ограничение ck_king_settings_min_messages,
+        -- запрещающее ноль: из-за него падал INSERT в ensure_chat_king_settings_row,
+        -- то есть любая первая запись настроек для чата. Перечисление имён такие
+        -- случаи не ловит, поэтому ищем по определению ограничения.
+        DO $$
+        DECLARE
+            legacy record;
+        BEGIN
+            FOR legacy IN
+                SELECT conname
+                FROM pg_constraint
+                WHERE conrelid = 'chat_king_reward_settings'::regclass
+                  AND contype = 'c'
+                  AND pg_get_constraintdef(oid) ILIKE '%min_messages%'
+                  AND conname <> 'chk_chat_king_reward_settings_min_messages_non_negative'
+            LOOP
+                EXECUTE format(
+                    'ALTER TABLE chat_king_reward_settings DROP CONSTRAINT %I',
+                    legacy.conname
+                );
+            END LOOP;
+        END $$;
         UPDATE chat_king_reward_settings
         SET min_messages = 0
         WHERE min_messages IS NULL
