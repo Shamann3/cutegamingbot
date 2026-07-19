@@ -160,6 +160,21 @@ async def safe_answer(cb: CallbackQuery, text: str = "", show_alert: bool = Fals
     except Exception:
         pass
 
+def fire_answer(cb: CallbackQuery, text: str = "", show_alert: bool = False) -> None:
+    """
+    AnswerCallbackQuery «в фоне», без ожидания ответа Telegram.
+
+    По логам AnswerCallbackQuery стоит ~150мс сетевого RTT. Раньше он
+    awaited-ился ПЕРЕД правкой доски, и EditMessageText уходил только после
+    него - т.е. пользователь ждал два round-trip'а подряд вместо одного.
+    Ждать ответ на answer нам незачем: крутилка на кнопке гаснет по факту
+    доставки запроса. Теперь answer и edit летят параллельно.
+    """
+    try:
+        asyncio.create_task(safe_answer(cb, text, show_alert))
+    except Exception:
+        pass
+
 # ======== безопасные редакторы inline-сообщений ============
 async def _edit_inline_text_core(inline_message_id: str, text: str,
                                  reply_markup: Optional[InlineKeyboardMarkup]) -> bool:
@@ -664,9 +679,18 @@ async def inline_memory_memory_open111(cb: CallbackQuery):
                 mv.append((row, col))
 
             # обновим текст/клавиатуру
-            kb = _build_keyboard_from_state(game)
-            txt = await _build_turn_text(game, last_open_emoji=emoji, found_pair=False)
-            await safe_edit_inline_text(game["inline_message_id"], txt, kb)
+            # ПЕРФ: раньше на парном ходе шло ДВА последовательных
+            # EditMessageText - сначала «клетка открыта», сразу за ним
+            # «найдена пара». Каждый - отдельный сетевой round-trip к Telegram
+            # (~100-170мс по логам TG-API), итого ~300мс на один клик.
+            # Второй кадр полностью перекрывает первый (та же доска + строка
+            # про пару), поэтому промежуточный кадр не нужен: сверяем пару
+            # ДО отрисовки и шлём один финальный edit.
+            # Порядок безопасен: _build_turn_text/_build_keyboard_from_state
+            # читают turn/matches/revealed и не смотрят на locked, а
+            # _hide_pair_after_delay сначала спит и идёт через тот же
+            # per-message лок правки.
+            found_pair = False
 
             # если выбрано 2 клетки - сверяем
             if len(mv) % 2 == 0:
@@ -675,22 +699,29 @@ async def inline_memory_memory_open111(cb: CallbackQuery):
                 e2 = game["board"][c2[0]][c2[1]]
 
                 if e1 == e2:
+                    found_pair = True
                     game.setdefault("revealed", set()).update([c1, c2])
                     game.setdefault("matches", {}).setdefault(uid, {"score": 0, "turns": []})
                     game["matches"][uid]["score"] += 1
-                    await safe_answer(cb, _msg("pair_found"))
-
-                    # показать «найдена пара»
-                    kb = _build_keyboard_from_state(game)
-                    txt = await _build_turn_text(game, last_open_emoji=emoji, found_pair=True)
-                    await safe_edit_inline_text(game["inline_message_id"], txt, kb)
+                    fire_answer(cb, _msg("pair_found"))
                 else:
                     # не-пара - блокируем и скрываем позже, передаём ход сопернику
                     game["locked"] = True
                     def _coro():
                         return _hide_pair_after_delay(game_id, uid, [c1, c2])
                     _schedule_hide(game_id, _coro)
-                    await safe_answer(cb, _msg("pair_miss"))
+                    fire_answer(cb, _msg("pair_miss"))
+            else:
+                # ВАЖНО: на «первой» клетке хода answerCallbackQuery не
+                # отправлялся вообще (в логах на kind=first виден только
+                # EditMessageText). Из-за этого крутилка на кнопке висела до
+                # тайм-аута на стороне Telegram - визуально это и читалось как
+                # «кнопка тупит», даже когда доска уже перерисовалась.
+                fire_answer(cb)
+
+            kb = _build_keyboard_from_state(game)
+            txt = await _build_turn_text(game, last_open_emoji=emoji, found_pair=found_pair)
+            await safe_edit_inline_text(game["inline_message_id"], txt, kb)
 
             _save_inline()
 
