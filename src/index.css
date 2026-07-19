@@ -1868,19 +1868,44 @@ body {
     padding: 0.85rem 0.95rem 1rem;
   }
 
+  .settings-section {
+    border-radius: 14px;
+    border: 1px solid rgba(212, 175, 55, 0.18);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(6, 16, 10, 0.4) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    padding: 0.9rem 0.95rem;
+  }
+
   .settings-section + .settings-section {
-    margin-top: 1.1rem;
-    padding-top: 1rem;
-    border-top: 1px solid rgba(148, 163, 184, 0.14);
+    margin-top: 0.75rem;
   }
 
   .settings-section-title {
-    margin: 0 0 0.55rem;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0 0 0.65rem;
     font-size: 0.72rem;
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: rgba(226, 232, 240, 0.88);
+  }
+
+  .settings-section-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 999px;
+    font-size: 0.94rem;
+    border: 1px solid rgba(212, 175, 55, 0.32);
+    background:
+      radial-gradient(circle at 32% 26%, rgba(253, 224, 165, 0.4) 0%, transparent 60%),
+      rgba(212, 175, 55, 0.1);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
   }
 
   .settings-notify-test-btn {

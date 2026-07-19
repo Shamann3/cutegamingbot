@@ -94,6 +94,7 @@ export default function SettingsModule({ embedded = false }) {
         <VineFrame className="settings-panel-frame">
           <section className="settings-section" aria-labelledby="settings-sound-title">
             <h2 id="settings-sound-title" className="settings-section-title">
+              <span className="settings-section-icon" aria-hidden>🔊</span>
               Звук
             </h2>
 
@@ -153,6 +154,7 @@ export default function SettingsModule({ embedded = false }) {
 
           <section className="settings-section" aria-labelledby="settings-notify-title">
             <h2 id="settings-notify-title" className="settings-section-title">
+              <span className="settings-section-icon" aria-hidden>🔔</span>
               Уведомления
             </h2>
             <div className="shop-sheet-settings">
@@ -187,6 +189,7 @@ export default function SettingsModule({ embedded = false }) {
 
           <section className="settings-section" aria-labelledby="settings-perf-title">
             <h2 id="settings-perf-title" className="settings-section-title">
+              <span className="settings-section-icon" aria-hidden>⚙️</span>
               Оптимизация
             </h2>
             <p className="settings-section-hint">
@@ -224,6 +227,7 @@ export default function SettingsModule({ embedded = false }) {
 
           <section className="settings-section" aria-labelledby="settings-support-title">
             <h2 id="settings-support-title" className="settings-section-title">
+              <span className="settings-section-icon" aria-hidden>💬</span>
               Поддержка
             </h2>
             <p className="settings-section-hint">
