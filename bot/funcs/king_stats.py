@@ -1332,9 +1332,21 @@ async def _resolve_menu_callback_group(call: types.CallbackQuery, db, bot) -> in
             _bind_menu_message(panel_chat_id, message_id, user_id, recovered_group)
 
     if owner_id is None:
+        print(
+            f"🧯 [KING][STALE] нет владельца | panel_chat_id={panel_chat_id} "
+            f"message_id={message_id} user_id={user_id} "
+            f"target={_get_menu_target(panel_chat_id, message_id)} "
+            f"owners_size={len(_KING_MENU_OWNERS)} targets_size={len(_KING_MENU_TARGET)} "
+            f"dm_last_size={len(_KING_DM_LAST_MENU)} "
+            f"dm_last_for_user={[k for k in list(_KING_DM_LAST_MENU) if str(user_id) in str(k)][:5]}"
+        )
         await call.answer("Меню устарело. Откройте его командой в группе.", show_alert=True)
         return None
     if owner_id != user_id:
+        print(
+            f"🧯 [KING][STALE] чужое меню | panel_chat_id={panel_chat_id} "
+            f"message_id={message_id} owner={owner_id} clicked_by={user_id}"
+        )
         await call.answer("Это меню открыл другой пользователь.", show_alert=True)
         return None
 
