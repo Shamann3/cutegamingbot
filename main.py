@@ -5232,16 +5232,31 @@ async def inline_add_or_update_user_info(bot1, user_id, first_name, username, db
     # просто наполняется постепенно, по одному пользователю за раз, вместо
     # одного катастрофического залпового реюда.
 
-    # Получаем данные пользователя из Telegram API
-    try:
-        chat_data = await bot1.get_chat(user_id)
-        bio = getattr(chat_data, 'bio', "Пусто")
-    except Exception as e:
-        print(f"❌ Ошибка при получении данных чата: {e}")
-        bio = "Пусто"
+    # ВАЖНО (перф инлайн-кнопок): раньше здесь БЕЗУСЛОВНО вызывался
+    # bot1.get_chat(user_id) - сетевой запрос к Telegram (73-380мс по логам
+    # TG-API) на КАЖДЫЙ инлайн-колбэк, причём ДО callback_query.answer().
+    # Эта функция дёргается из _sync_inline_user в начале всех инлайн-игр
+    # (крестики-нолики, кнб, мины, память, шашки, дуэль, орёл) - отсюда и
+    # тормоза кнопок в играх 1 на 1. Для команд ту же проблему уже починили
+    # кэшем vgs_get_bio_safe (см. комментарий у _VGS_BIO_CACHE), инлайн-путь
+    # просто забыли. Теперь:
+    #   1) если юзер в кэше и имя/username не изменились - писать нечего,
+    #      значит и bio запрашивать незачем → 0 сетевых вызовов, мгновенно;
+    #   2) в остальных случаях bio берём через кэш с TTL, а не сырым get_chat.
+    cached = user_cache.get(user_id)
+    if (
+        cached is not None
+        and cached.get('first_name') == first_name
+        and cached.get('username') == username
+    ):
+        return
+
+    bio = await vgs_get_bio_safe(
+        bot1, user_id, fallback=(cached or {}).get('bio') or "Пусто"
+    )
 
     # Если пользователя нет в user_cache, добавляем его
-    if user_id not in user_cache:
+    if cached is None:
         try:
             await db.add_data(user_id, first_name, username, bio, start_balance)
             user_cache[user_id] = {
@@ -8308,6 +8323,21 @@ async def register_withdraw_userbot_for_startup(
 
 async def _ensure_withdraw_userbot_connected() -> TelegramClient:
     global _WITHDRAW_USERBOT_CLIENT
+
+    if _WITHDRAW_USERBOT_CLIENT is None:
+        # main.py бывает загружен дважды под разными именами модуля
+        # (__main__ при старте процесса и "main" из-за `from main import ...`
+        # в bot/*), из-за чего у каждой копии свой набор globals().
+        # Клиент, зарегистрированный в одной копии, не виден в другой -
+        # ищем его в уже загруженных модулях так же, как это делает
+        # диагностический CHECK, и кэшируем сюда, чтобы больше не искать.
+        recovered = await _get_registered_withdraw_userbot_client_silent()
+        if recovered is not None:
+            print(
+                f"🟨[WITHDRAW][USERBOT] client не найден в локальных globals(), "
+                f"восстановлен через cross-module lookup | id={id(recovered)}"
+            )
+            _WITHDRAW_USERBOT_CLIENT = recovered
 
     if _WITHDRAW_USERBOT_CLIENT is None:
         raise RuntimeError(
