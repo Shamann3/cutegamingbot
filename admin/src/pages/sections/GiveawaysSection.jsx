@@ -220,15 +220,15 @@ export default function GiveawaysSection() {
 
             <label className="admin-modal-field">
               <span>Название</span>
-              <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+              <input className="panel-users-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </label>
             <label className="admin-modal-field">
               <span>Описание</span>
-              <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+              <textarea className="admin-modal-textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
             </label>
             <label className="admin-modal-field">
               <span>Эмодзи</span>
-              <input value={form.emoji} onChange={(e) => setForm({ ...form, emoji: e.target.value })} maxLength={8} />
+              <input className="panel-users-input" value={form.emoji} onChange={(e) => setForm({ ...form, emoji: e.target.value })} maxLength={8} />
             </label>
             <label className="admin-modal-field">
               <span>Редкость</span>
@@ -242,21 +242,21 @@ export default function GiveawaysSection() {
             {form.prizeType === 'kut' ? (
               <label className="admin-modal-field">
                 <span>Сумма КУТ</span>
-                <input type="number" min={1} value={form.prizeKutAmount} onChange={(e) => setForm({ ...form, prizeKutAmount: e.target.value })} />
+                <input className="panel-users-input" type="number" min={1} value={form.prizeKutAmount} onChange={(e) => setForm({ ...form, prizeKutAmount: e.target.value })} />
               </label>
             ) : (
               <>
                 <label className="admin-modal-field">
                   <span>Название приза</span>
-                  <input value={form.prizeTitle} onChange={(e) => setForm({ ...form, prizeTitle: e.target.value })} />
+                  <input className="panel-users-input" value={form.prizeTitle} onChange={(e) => setForm({ ...form, prizeTitle: e.target.value })} />
                 </label>
                 <label className="admin-modal-field">
                   <span>Эмодзи приза</span>
-                  <input value={form.prizeEmoji} onChange={(e) => setForm({ ...form, prizeEmoji: e.target.value })} maxLength={8} />
+                  <input className="panel-users-input" value={form.prizeEmoji} onChange={(e) => setForm({ ...form, prizeEmoji: e.target.value })} maxLength={8} />
                 </label>
                 <label className="admin-modal-field">
                   <span>Описание приза (для игрока)</span>
-                  <textarea value={form.prizeDescription} onChange={(e) => setForm({ ...form, prizeDescription: e.target.value })} />
+                  <textarea className="admin-modal-textarea" value={form.prizeDescription} onChange={(e) => setForm({ ...form, prizeDescription: e.target.value })} />
                 </label>
               </>
             )}
@@ -268,7 +268,7 @@ export default function GiveawaysSection() {
             {form.drawType === 'timer' && (
               <label className="admin-modal-field">
                 <span>Дата окончания</span>
-                <input type="datetime-local" value={form.endsAt} onChange={(e) => setForm({ ...form, endsAt: e.target.value })} />
+                <input className="panel-users-input" type="datetime-local" value={form.endsAt} onChange={(e) => setForm({ ...form, endsAt: e.target.value })} />
               </label>
             )}
 
@@ -282,6 +282,7 @@ export default function GiveawaysSection() {
                     options={CONDITION_KIND_OPTIONS}
                   />
                   <input
+                    className="panel-users-input"
                     type="number"
                     min={1}
                     value={cond.targetValue}
@@ -290,6 +291,7 @@ export default function GiveawaysSection() {
                   />
                   {cond.kind === 'item_count' && (
                     <input
+                      className="panel-users-input"
                       placeholder="id предмета"
                       value={cond.itemId}
                       onChange={(e) => updateCondition(idx, { itemId: e.target.value })}
