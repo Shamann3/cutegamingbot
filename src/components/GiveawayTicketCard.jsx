@@ -28,9 +28,9 @@ export default function GiveawayTicketCard({ giveaway, onOpenDetail, onSwipePart
     dragRef.current.tracking = false
     if (dragX >= SWIPE_THRESHOLD) {
       setSwiping(true)
-      const ok = await onSwipeParticipate(giveaway.id)
+      await onSwipeParticipate(giveaway.id)
       setSwiping(false)
-      if (!ok) setDragX(0)
+      setDragX(0)
     } else {
       setDragX(0)
     }

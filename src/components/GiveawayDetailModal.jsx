@@ -29,13 +29,23 @@ export default function GiveawayDetailModal({
   useEffect(() => {
     if (!isOpen || !giveawayId) {
       setDetail(null)
-      return
+      return undefined
     }
+    let cancelled = false
     setLoading(true)
     fetchGiveaway(giveawayId)
-      .then(setDetail)
-      .catch(() => setDetail(null))
-      .finally(() => setLoading(false))
+      .then((data) => {
+        if (!cancelled) setDetail(data)
+      })
+      .catch(() => {
+        if (!cancelled) setDetail(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [isOpen, giveawayId])
 
   if (!isOpen || !giveawayId) return null
@@ -70,7 +80,11 @@ export default function GiveawayDetailModal({
                     : detail.prize.title}
                 </p>
                 <span className="giveaway-detail-badge">
-                  {detail.drawType === 'instant' ? 'Мгновенно' : 'По таймеру'}
+                  {detail.drawType === 'instant'
+                    ? 'Мгновенно'
+                    : detail.endsAt
+                      ? `Розыгрыш: ${new Date(detail.endsAt).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}`
+                      : 'По таймеру'}
                 </span>
               </div>
 
