@@ -106,6 +106,7 @@ export default function App() {
 function AppWithOnboarding() {
   const [tab, setTab] = useState(() => resolveStartTab(getStartTab() ?? 'farm').tab)
   const [tradeSegment, setTradeSegment] = useState(() => resolveStartTab(getStartTab() ?? 'farm').tradeSegment)
+  const [farmSegment, setFarmSegment] = useState('plots')
 
   return (
     <OnboardingProvider activeTab={tab}>
@@ -114,12 +115,14 @@ function AppWithOnboarding() {
         setTab={setTab}
         tradeSegment={tradeSegment}
         setTradeSegment={setTradeSegment}
+        farmSegment={farmSegment}
+        setFarmSegment={setFarmSegment}
       />
     </OnboardingProvider>
   )
 }
 
-function AppShell({ tab, setTab, tradeSegment, setTradeSegment }) {
+function AppShell({ tab, setTab, tradeSegment, setTradeSegment, farmSegment, setFarmSegment }) {
   const onboarding = useOnboardingOptional()
   const blockSwipe = Boolean(onboarding?.visible)
   const { equipped } = useEquippedCosmetics()
@@ -145,6 +148,18 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment }) {
     setTab('trade')
     setTradeSegment('market')
   }, [setTab, setTradeSegment])
+
+  const handleGiveawayNavigateCondition = useCallback((target) => {
+    if (target === 'trade') {
+      setTab('trade')
+    } else if (target === 'farm-inventory') {
+      setTab('farm')
+      setFarmSegment('inventory')
+    } else {
+      setTab('farm')
+      setFarmSegment('plots')
+    }
+  }, [setTab, setFarmSegment])
 
   useSwipeTabs({ activeTab: tab, onChange: setTab, enabled: !blockSwipe })
 
@@ -186,7 +201,7 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment }) {
       <ItemGuideToastLayer />
       <main className="app-main">
         <div className={tab === 'farm' ? '' : 'hidden'} aria-hidden={tab !== 'farm'}>
-          <FarmModule isActive={tab === 'farm'} />
+          <FarmModule isActive={tab === 'farm'} farmSegment={farmSegment} onFarmSegmentChange={setFarmSegment} />
         </div>
         <div className={tab === 'inventory' ? '' : 'hidden'} aria-hidden={tab !== 'inventory'}>
           <InventoryModule isActive={tab === 'inventory'} />
@@ -221,7 +236,7 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment }) {
           />
         </div>
         <div className={tab === 'giveaways' ? '' : 'hidden'} aria-hidden={tab !== 'giveaways'}>
-          <GiveawaysModule isActive={tab === 'giveaways'} />
+          <GiveawaysModule isActive={tab === 'giveaways'} onNavigateCondition={handleGiveawayNavigateCondition} />
         </div>
         <div className={tab === 'chests' ? '' : 'hidden'} aria-hidden={tab !== 'chests'}>
           <ChestModule isActive={tab === 'chests'} />

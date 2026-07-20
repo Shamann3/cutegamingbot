@@ -30,8 +30,7 @@ const FARM_SEGMENTS = [
   { id: 'craft', label: 'Крафт' },
 ]
 
-export default function FarmModule({ isActive = true }) {
-  const [farmSegment, setFarmSegment] = useState('plots')
+export default function FarmModule({ isActive = true, farmSegment, onFarmSegmentChange }) {
   const { playSound, performanceMode, turboMode } = useSettings()
   const onboarding = useOnboardingOptional()
   const { equipped } = useEquippedCosmetics()
@@ -271,7 +270,7 @@ export default function FarmModule({ isActive = true }) {
               role="tab"
               aria-selected={farmSegment === s.id}
               className={`segment-tab${farmSegment === s.id ? ' segment-tab-active' : ''}`}
-              onClick={() => setFarmSegment(s.id)}
+              onClick={() => onFarmSegmentChange(s.id)}
             >
               {s.label}
             </button>
