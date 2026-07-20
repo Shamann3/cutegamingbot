@@ -74,6 +74,8 @@ async def _tick() -> None:
 
     await _fire_daily_rotation_broadcast()
 
+    await _fire_giveaway_draws()
+
     await _fire_group_post_campaigns()
 
     await _advance_recurring_quests()
@@ -83,6 +85,15 @@ async def _tick() -> None:
     from game_events_maintenance import maybe_purge_old_game_events
 
     await maybe_purge_old_game_events()
+
+
+async def _fire_giveaway_draws() -> None:
+    from db import db
+
+    try:
+        await db.draw_timer_giveaways()
+    except Exception:
+        logger.exception("Giveaway draw tick error")
 
 
 async def _fire_group_post_campaigns() -> None:
