@@ -634,7 +634,7 @@ class GiveawayCreateBody(BaseModel):
     prizeTitle: str | None = Field(default=None, max_length=120)
     prizeEmoji: str | None = Field(default=None, max_length=16)
     prizeDescription: str | None = Field(default=None, max_length=500)
-    drawType: str = Field(min_length=6, max_length=16)
+    drawType: str = Field(min_length=5, max_length=16)
     endsAt: str | None = Field(default=None, max_length=64)
     conditions: list[GiveawayConditionBody] = Field(default_factory=list, max_length=10)
     enabled: bool = True
