@@ -1042,6 +1042,11 @@ CREATE TABLE IF NOT EXISTS giveaways (
     drawn_at TIMESTAMPTZ
 );
 
+-- v2: розыгрыш может быть анонсирован заранее — starts_at в будущем значит
+-- "виден во вкладке «Скоро», участие заблокировано". NULL = доступен сразу
+-- (весь существующий v1-контент автоматически остаётся активным).
+ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ;
+
 CREATE TABLE IF NOT EXISTS giveaway_conditions (
     id SERIAL PRIMARY KEY,
     giveaway_id INT NOT NULL REFERENCES giveaways(id) ON DELETE CASCADE,

@@ -1236,6 +1236,10 @@ export async function deleteGiveawayAdmin(giveawayId) {
   return adminFetch(`/content/giveaways/${giveawayId}`, { method: 'DELETE' })
 }
 
+export async function completeGiveawayAdmin(giveawayId) {
+  return adminFetch(`/content/giveaways/${giveawayId}/complete`, { method: 'POST' })
+}
+
 export async function fetchBroadcastOverview() {
   return adminFetch('/broadcast/overview')
 }

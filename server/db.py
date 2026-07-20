@@ -6,6 +6,7 @@ import os
 import time
 from datetime import timedelta
 from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 
 import asyncpg
@@ -85,6 +86,7 @@ from user_items import (
     autowater_count,
 )
 from giveaway_conditions import all_conditions_met
+from giveaway_display import display_name, giveaway_bucket
 
 ONBOARDING_PLOT_ID = 1
 ONBOARDING_PREPARE_STEP_INDEX = {"plant": 2, "water": 3, "harvest": 4}
@@ -1815,6 +1817,25 @@ class Database:
             "description": row["prize_description"],
         }
 
+    async def _giveaway_participants(self, conn, giveaway_id, limit=4):
+        count = await conn.fetchval(
+            "SELECT COUNT(*)::int FROM giveaway_entries WHERE giveaway_id = $1",
+            giveaway_id,
+        )
+        rows = await conn.fetch(
+            """
+            SELECT u.username, u.first_name
+            FROM giveaway_entries e
+            JOIN users u ON u.user_id = e.user_id
+            WHERE e.giveaway_id = $1
+            ORDER BY e.joined_at DESC
+            LIMIT $2
+            """,
+            giveaway_id, limit,
+        )
+        preview = [display_name(r["username"], r["first_name"]) for r in rows]
+        return int(count or 0), preview
+
     async def get_giveaways_state(self, user_id):
         await self.ensure_user(user_id)
         async with self.pool.acquire() as conn:
@@ -1833,6 +1854,7 @@ class Database:
             for row in rows:
                 conditions = await self._giveaway_conditions(conn, row["id"])
                 conditions_met = all_conditions_met(ctx, conditions)
+                participants_count, participants_preview = await self._giveaway_participants(conn, row["id"])
                 items.append({
                     "id": row["id"],
                     "title": row["title"],
@@ -1840,12 +1862,15 @@ class Database:
                     "rarity": row["rarity"],
                     "prize": self._giveaway_prize_summary(row),
                     "drawType": row["draw_type"],
+                    "startsAt": row["starts_at"].isoformat() if row["starts_at"] else None,
                     "endsAt": row["ends_at"].isoformat() if row["ends_at"] else None,
                     "status": row["status"],
                     "conditionsCount": len(conditions),
                     "conditionsMet": conditions_met,
                     "joined": bool(row["joined"]),
                     "won": bool(row["winner_user_id"] == user_id) if row["winner_user_id"] else None,
+                    "participantsCount": participants_count,
+                    "participantsPreview": participants_preview,
                 })
         return {"giveaways": items}
 
@@ -1889,6 +1914,7 @@ class Database:
             "rarity": row["rarity"],
             "prize": self._giveaway_prize_summary(row),
             "drawType": row["draw_type"],
+            "startsAt": row["starts_at"].isoformat() if row["starts_at"] else None,
             "endsAt": row["ends_at"].isoformat() if row["ends_at"] else None,
             "status": row["status"],
             "conditions": condition_progress,
@@ -1920,6 +1946,8 @@ class Database:
                 if not already_joined:
                     if row["status"] != "active" or not row["enabled"]:
                         raise ValueError("Розыгрыш недоступен")
+                    if giveaway_bucket(row["status"], row["starts_at"], datetime.now(timezone.utc)) == "upcoming":
+                        raise ValueError("Розыгрыш ещё не начался")
 
                     ctx = await self._giveaway_condition_ctx(conn, user_id)
                     conditions = await self._giveaway_conditions(conn, giveaway_id)
@@ -2048,6 +2076,90 @@ class Database:
                 title="Вы выиграли в розыгрыше!",
                 body=f"«{title}» — приз: {prize_text}",
             )
+
+    async def get_giveaways_history(self, limit=30):
+        rows = await self.pool.fetch(
+            """
+            SELECT g.*,
+              (SELECT COUNT(*)::int FROM giveaway_entries e WHERE e.giveaway_id = g.id) AS entries_count,
+              u.username AS winner_username, u.first_name AS winner_first_name
+            FROM giveaways g
+            LEFT JOIN users u ON u.user_id = g.winner_user_id
+            WHERE g.status = 'completed' AND g.enabled = TRUE
+            ORDER BY g.drawn_at DESC NULLS LAST, g.id DESC
+            LIMIT $1
+            """,
+            limit,
+        )
+        items = []
+        for row in rows:
+            is_timer = row["draw_type"] == "timer"
+            items.append({
+                "id": row["id"],
+                "title": row["title"],
+                "emoji": row["emoji"],
+                "rarity": row["rarity"],
+                "prize": self._giveaway_prize_summary(row),
+                "drawType": row["draw_type"],
+                "winnerName": display_name(row["winner_username"], row["winner_first_name"]) if is_timer else None,
+                "recipientsCount": None if is_timer else int(row["entries_count"] or 0),
+                "drawnAt": row["drawn_at"].isoformat() if row["drawn_at"] else None,
+            })
+        return {"giveaways": items}
+
+    async def complete_instant_giveaway(self, giveaway_id):
+        result = await self.pool.execute(
+            """
+            UPDATE giveaways
+            SET status = 'completed', drawn_at = NOW(), updated_at = NOW()
+            WHERE id = $1 AND draw_type = 'instant' AND status = 'active'
+            """,
+            giveaway_id,
+        )
+        return result == "UPDATE 1"
+
+    async def get_giveaway_winners_feed(self, limit=20):
+        timer_rows = await self.pool.fetch(
+            """
+            SELECT g.title, g.emoji, g.prize_type, g.prize_kut_amount, g.prize_title, g.prize_emoji, g.prize_description,
+                   u.username, u.first_name, g.drawn_at AS at
+            FROM giveaways g
+            LEFT JOIN users u ON u.user_id = g.winner_user_id
+            WHERE g.draw_type = 'timer' AND g.status = 'completed' AND g.winner_user_id IS NOT NULL AND g.enabled = TRUE
+            ORDER BY g.drawn_at DESC
+            LIMIT $1
+            """,
+            limit,
+        )
+        instant_rows = await self.pool.fetch(
+            """
+            SELECT g.title, g.emoji, g.prize_type, g.prize_kut_amount, g.prize_title, g.prize_emoji, g.prize_description,
+                   u.username, u.first_name, e.joined_at AS at
+            FROM giveaway_entries e
+            JOIN giveaways g ON g.id = e.giveaway_id
+            JOIN users u ON u.user_id = e.user_id
+            WHERE g.draw_type = 'instant' AND g.status != 'cancelled' AND g.enabled = TRUE
+            ORDER BY e.joined_at DESC
+            LIMIT $1
+            """,
+            limit,
+        )
+        merged = sorted(
+            [dict(r) for r in timer_rows] + [dict(r) for r in instant_rows],
+            key=lambda r: r["at"],
+            reverse=True,
+        )[:limit]
+        winners = [
+            {
+                "displayName": display_name(r["username"], r["first_name"]),
+                "prize": self._giveaway_prize_summary(r),
+                "giveawayTitle": r["title"],
+                "giveawayEmoji": r["emoji"],
+                "at": r["at"].isoformat(),
+            }
+            for r in merged
+        ]
+        return {"winners": winners}
 
     async def get_craft_recipes(self, user_id):
         from craft_catalog import recipes_for_client

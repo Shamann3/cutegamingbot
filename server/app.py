@@ -814,6 +814,26 @@ async def giveaway_participate(
         raise _client_error(e)
 
 
+@app.get("/api/giveaways/history")
+async def giveaways_history(request: Request, user_id: int = Depends(rate_limit)):
+    if is_maintenance():
+        raise maintenance_http_error()
+    try:
+        return await db.get_giveaways_history()
+    except Exception as e:
+        raise _server_error(e, request)
+
+
+@app.get("/api/giveaways/winners-feed")
+async def giveaways_winners_feed(request: Request, user_id: int = Depends(rate_limit)):
+    if is_maintenance():
+        raise maintenance_http_error()
+    try:
+        return await db.get_giveaway_winners_feed()
+    except Exception as e:
+        raise _server_error(e, request)
+
+
 @app.get("/api/shop/catalog")
 async def shop_catalog(
     request: Request,

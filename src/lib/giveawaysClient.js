@@ -14,3 +14,11 @@ export function participateInGiveaway(giveawayId) {
     body: {},
   })
 }
+
+export function fetchGiveawayHistory() {
+  return apiRequest('/api/giveaways/history')
+}
+
+export function fetchGiveawayWinnersFeed() {
+  return apiRequest('/api/giveaways/winners-feed')
+}

@@ -36,12 +36,14 @@ def _validate_prize(prize_type: str, prize_kut_amount, prize_title, prize_emoji,
     return prize_type, None, title, emoji, description
 
 
-def _validate_draw(draw_type: str, ends_at):
+def _validate_draw(draw_type: str, ends_at, starts_at=None):
     draw_type = (draw_type or "").strip().lower()
     if draw_type not in _VALID_DRAW_TYPE:
         raise ValueError(f"Тип розыгрыша: {', '.join(sorted(_VALID_DRAW_TYPE))}")
     if draw_type == "timer" and not ends_at:
         raise ValueError("Укажите дату окончания для розыгрыша по таймеру")
+    if starts_at and ends_at and starts_at >= ends_at:
+        raise ValueError("Дата начала должна быть раньше даты окончания")
     return draw_type
 
 
@@ -89,6 +91,7 @@ def _giveaway_to_admin_dict(row: dict, conditions: list[dict], entries_count: in
         "prizeEmoji": row["prize_emoji"],
         "prizeDescription": row["prize_description"],
         "drawType": row["draw_type"],
+        "startsAt": row["starts_at"].isoformat() if row["starts_at"] else None,
         "endsAt": row["ends_at"].isoformat() if row["ends_at"] else None,
         "status": row["status"],
         "winnerUserId": row["winner_user_id"],
@@ -132,6 +135,7 @@ async def create_giveaway(
     prize_description: str | None = None,
     draw_type: str,
     ends_at=None,
+    starts_at=None,
     conditions: list[dict] | None = None,
     enabled: bool = True,
     admin_user_id: int,
@@ -143,7 +147,7 @@ async def create_giveaway(
     prize_type, kut_amount, p_title, p_emoji, p_desc = _validate_prize(
         prize_type, prize_kut_amount, prize_title, prize_emoji, prize_description
     )
-    draw_type = _validate_draw(draw_type, ends_at)
+    draw_type = _validate_draw(draw_type, ends_at, starts_at)
     cleaned_conditions = _validate_conditions(conditions or [])
 
     sort_order = int(
@@ -157,14 +161,14 @@ async def create_giveaway(
                 INSERT INTO giveaways (
                     title, description, emoji, rarity, prize_type, prize_kut_amount,
                     prize_title, prize_emoji, prize_description, draw_type, ends_at,
-                    enabled, sort_order
+                    starts_at, enabled, sort_order
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                 RETURNING id
                 """,
                 title, (description or "").strip(), (emoji or "🎁").strip() or "🎁", rarity,
                 prize_type, kut_amount, p_title, p_emoji, p_desc, draw_type, ends_at,
-                bool(enabled), sort_order,
+                starts_at, bool(enabled), sort_order,
             )
             await _replace_conditions(conn, int(giveaway_id), cleaned_conditions)
 
@@ -186,6 +190,7 @@ async def update_giveaway(
     prize_description: str | None = _UNSET,
     draw_type: str | None = None,
     ends_at=_UNSET,
+    starts_at=_UNSET,
     conditions: list[dict] | None = None,
     enabled: bool | None = None,
     admin_user_id: int,
@@ -228,11 +233,16 @@ async def update_giveaway(
         params.append(p_emoji_v); sets.append(f"prize_emoji = ${len(params)}")
         params.append(p_desc_v); sets.append(f"prize_description = ${len(params)}")
 
-    if draw_type is not None or ends_at is not _UNSET:
+    if draw_type is not None or ends_at is not _UNSET or starts_at is not _UNSET:
         resolved_ends_at = ends_at if ends_at is not _UNSET else row["ends_at"]
-        draw_type_v = _validate_draw(draw_type if draw_type is not None else row["draw_type"], resolved_ends_at)
+        resolved_starts_at = starts_at if starts_at is not _UNSET else row["starts_at"]
+        draw_type_v = _validate_draw(
+            draw_type if draw_type is not None else row["draw_type"],
+            resolved_ends_at, resolved_starts_at,
+        )
         params.append(draw_type_v); sets.append(f"draw_type = ${len(params)}")
         params.append(resolved_ends_at); sets.append(f"ends_at = ${len(params)}")
+        params.append(resolved_starts_at); sets.append(f"starts_at = ${len(params)}")
 
     if enabled is not None:
         params.append(bool(enabled))
@@ -268,4 +278,20 @@ async def cancel_giveaway(giveaway_id: int, *, admin_user_id: int) -> dict:
         "UPDATE giveaways SET status = 'cancelled', updated_at = NOW() WHERE id = $1",
         giveaway_id,
     )
+    return {"ok": True, "title": row["title"]}
+
+
+async def complete_giveaway(giveaway_id: int, *, admin_user_id: int) -> dict:
+    row = await db.pool.fetchrow(
+        "SELECT id, title, draw_type, status FROM giveaways WHERE id = $1", giveaway_id
+    )
+    if row is None:
+        raise ValueError("Розыгрыш не найден")
+    if row["draw_type"] != "instant":
+        raise ValueError("Завершить вручную можно только мгновенный розыгрыш — таймерные завершаются сами")
+    if row["status"] != "active":
+        raise ValueError("Розыгрыш уже завершён или отменён")
+    ok = await db.complete_instant_giveaway(giveaway_id)
+    if not ok:
+        raise ValueError("Не удалось завершить — розыгрыш уже изменился, обновите список")
     return {"ok": True, "title": row["title"]}

@@ -388,3 +388,116 @@
   padding: 0.5rem 0.75rem;
   margin: 0 0 0.5rem;
 }
+
+.giveaways-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.giveaway-history-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.giveaway-history-emoji {
+  flex-shrink: 0;
+  font-size: 1.8rem;
+  opacity: 0.75;
+}
+
+.giveaway-history-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.giveaway-history-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.giveaway-history-result {
+  font-size: 0.7rem;
+  color: rgba(245, 240, 224, 0.65);
+}
+
+.giveaway-history-prize {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--ticket-accent-strong);
+}
+
+.giveaway-ticket-participants {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.giveaway-ticket-avatars {
+  display: flex;
+}
+
+.giveaway-ticket-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1.5px solid rgba(6, 16, 10, 1);
+  color: rgba(245, 240, 224, 0.9);
+  font-size: 0.6rem;
+  font-weight: 800;
+  margin-left: -0.45rem;
+}
+
+.giveaway-ticket-avatar:first-child {
+  margin-left: 0;
+}
+
+.giveaway-ticket-participants-count {
+  font-size: 0.66rem;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.giveaway-winners-feed {
+  position: relative;
+  z-index: 10;
+  margin: 0.5rem 0.75rem 0;
+  padding: 0.55rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(253, 230, 138, 0.25);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(245, 240, 224, 0.9);
+  animation: giveaway-feed-fade 0.4s ease;
+}
+
+.giveaway-winners-feed-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes giveaway-feed-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
