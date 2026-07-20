@@ -1910,7 +1910,7 @@ class Database:
                 row = await conn.fetchrow(
                     "SELECT * FROM giveaways WHERE id = $1 FOR UPDATE", giveaway_id
                 )
-                if not row or row["status"] != "active" or not row["enabled"]:
+                if not row:
                     raise ValueError("Розыгрыш недоступен")
 
                 already_joined = await conn.fetchval(
@@ -1918,6 +1918,9 @@ class Database:
                     giveaway_id, user_id,
                 )
                 if not already_joined:
+                    if row["status"] != "active" or not row["enabled"]:
+                        raise ValueError("Розыгрыш недоступен")
+
                     ctx = await self._giveaway_condition_ctx(conn, user_id)
                     conditions = await self._giveaway_conditions(conn, giveaway_id)
                     if not all_conditions_met(ctx, conditions):
