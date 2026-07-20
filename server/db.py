@@ -6,6 +6,7 @@ import os
 import time
 from datetime import timedelta
 from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 
 import asyncpg
@@ -85,6 +86,7 @@ from user_items import (
     autowater_count,
 )
 from giveaway_conditions import all_conditions_met
+from giveaway_display import display_name, giveaway_bucket
 
 ONBOARDING_PLOT_ID = 1
 ONBOARDING_PREPARE_STEP_INDEX = {"plant": 2, "water": 3, "harvest": 4}
@@ -1815,6 +1817,25 @@ class Database:
             "description": row["prize_description"],
         }
 
+    async def _giveaway_participants(self, conn, giveaway_id, limit=4):
+        count = await conn.fetchval(
+            "SELECT COUNT(*)::int FROM giveaway_entries WHERE giveaway_id = $1",
+            giveaway_id,
+        )
+        rows = await conn.fetch(
+            """
+            SELECT u.username, u.first_name
+            FROM giveaway_entries e
+            JOIN users u ON u.user_id = e.user_id
+            WHERE e.giveaway_id = $1
+            ORDER BY e.joined_at DESC
+            LIMIT $2
+            """,
+            giveaway_id, limit,
+        )
+        preview = [display_name(r["username"], r["first_name"]) for r in rows]
+        return int(count or 0), preview
+
     async def get_giveaways_state(self, user_id):
         await self.ensure_user(user_id)
         async with self.pool.acquire() as conn:
@@ -1833,6 +1854,7 @@ class Database:
             for row in rows:
                 conditions = await self._giveaway_conditions(conn, row["id"])
                 conditions_met = all_conditions_met(ctx, conditions)
+                participants_count, participants_preview = await self._giveaway_participants(conn, row["id"])
                 items.append({
                     "id": row["id"],
                     "title": row["title"],
@@ -1840,12 +1862,15 @@ class Database:
                     "rarity": row["rarity"],
                     "prize": self._giveaway_prize_summary(row),
                     "drawType": row["draw_type"],
+                    "startsAt": row["starts_at"].isoformat() if row["starts_at"] else None,
                     "endsAt": row["ends_at"].isoformat() if row["ends_at"] else None,
                     "status": row["status"],
                     "conditionsCount": len(conditions),
                     "conditionsMet": conditions_met,
                     "joined": bool(row["joined"]),
                     "won": bool(row["winner_user_id"] == user_id) if row["winner_user_id"] else None,
+                    "participantsCount": participants_count,
+                    "participantsPreview": participants_preview,
                 })
         return {"giveaways": items}
 
@@ -1889,6 +1914,7 @@ class Database:
             "rarity": row["rarity"],
             "prize": self._giveaway_prize_summary(row),
             "drawType": row["draw_type"],
+            "startsAt": row["starts_at"].isoformat() if row["starts_at"] else None,
             "endsAt": row["ends_at"].isoformat() if row["ends_at"] else None,
             "status": row["status"],
             "conditions": condition_progress,
@@ -1920,6 +1946,8 @@ class Database:
                 if not already_joined:
                     if row["status"] != "active" or not row["enabled"]:
                         raise ValueError("Розыгрыш недоступен")
+                    if giveaway_bucket(row["status"], row["starts_at"], datetime.now(timezone.utc)) == "upcoming":
+                        raise ValueError("Розыгрыш ещё не начался")
 
                     ctx = await self._giveaway_condition_ctx(conn, user_id)
                     conditions = await self._giveaway_conditions(conn, giveaway_id)
