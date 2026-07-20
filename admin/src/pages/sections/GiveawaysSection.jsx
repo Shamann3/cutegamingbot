@@ -159,19 +159,20 @@ export default function GiveawaysSection() {
   }
 
   return (
-    <div className="panel-section">
-      <div className="panel-section-header">
-        <h2>Розыгрыши</h2>
+    <div className="panel-content">
+      <article className="panel-shelf panel-shelf-page">
+        <p className="panel-shelf-label">Giveaways · Розыгрыши</p>
+        <h2 className="panel-page-title">Розыгрыши</h2>
         <button type="button" className="panel-users-btn panel-users-btn-primary" onClick={openCreate}>
           + Новый розыгрыш
         </button>
-      </div>
+        {error && <p className="panel-shelf-error">{error}</p>}
+      </article>
 
-      {error && <p className="panel-error-text">{error}</p>}
       {loading ? (
         <p>Загрузка…</p>
       ) : (
-        <table className="panel-table">
+        <table className="panel-economy-dex-table">
           <thead>
             <tr>
               <th>Приз</th>
@@ -213,7 +214,7 @@ export default function GiveawaysSection() {
       )}
 
       {form && (
-        <div className="panel-modal-backdrop" role="presentation" onClick={() => setForm(null)}>
+        <div className="admin-modal-backdrop" role="presentation" onClick={() => setForm(null)}>
           <div className="admin-modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h3>{form.id ? 'Редактировать розыгрыш' : 'Новый розыгрыш'}</h3>
 
