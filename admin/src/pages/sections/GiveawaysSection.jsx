@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import AdminSelect from '../../components/AdminSelect'
 import AdminActionModal from '../../components/AdminActionModal'
+import { notifyAdmin } from '../../lib/notify'
 import {
   fetchGiveawaysAdmin,
   createGiveawayAdmin,
@@ -30,6 +31,23 @@ const CONDITION_KIND_OPTIONS = [
   { value: 'harvest_count', label: 'Урожаев собрано ≥' },
   { value: 'item_count', label: 'Предмет в рюкзаке ≥' },
 ]
+
+const DATE_PRESETS = [
+  { label: '+1 день', days: 1 },
+  { label: '+3 дня', days: 3 },
+  { label: '+1 неделя', days: 7 },
+]
+
+function toDatetimeLocal(date) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function presetDatetime(days) {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return toDatetimeLocal(date)
+}
 
 function emptyForm() {
   return {
@@ -143,7 +161,11 @@ export default function GiveawaysSection() {
       setForm(null)
       await load()
     } catch (e) {
-      setError(e?.message || 'Ошибка сохранения')
+      // Модалка (z-index: 1000) перекрывает шапку страницы, где рендерится
+      // {error} — без этого алерт-фолбэка ошибка валидации (например,
+      // «дата начала позже даты окончания») была полностью невидима, и
+      // казалось, что сохранение просто ничего не делает.
+      notifyAdmin(e?.message || 'Ошибка сохранения', { error: true })
     } finally {
       setSaving(false)
     }
@@ -157,7 +179,7 @@ export default function GiveawaysSection() {
       setCancelTarget(null)
       await load()
     } catch (e) {
-      setError(e?.message || 'Ошибка отмены')
+      notifyAdmin(e?.message || 'Ошибка отмены', { error: true })
     } finally {
       setSaving(false)
     }
@@ -171,7 +193,7 @@ export default function GiveawaysSection() {
       setCompleteTarget(null)
       await load()
     } catch (e) {
-      setError(e?.message || 'Ошибка завершения')
+      notifyAdmin(e?.message || 'Ошибка завершения', { error: true })
     } finally {
       setSaving(false)
     }
@@ -199,6 +221,7 @@ export default function GiveawaysSection() {
               <th>Тип</th>
               <th>Старт</th>
               <th>Статус</th>
+              <th>Включён</th>
               <th>Участников</th>
               <th>Победитель</th>
               <th />
@@ -212,6 +235,7 @@ export default function GiveawaysSection() {
                 <td>{DRAW_TYPE_OPTIONS.find((d) => d.value === item.drawType)?.label}</td>
                 <td>{item.startsAt ? new Date(item.startsAt).toLocaleString('ru-RU') : 'сразу'}</td>
                 <td>{item.status}</td>
+                <td>{item.enabled ? '✅' : '🚫 скрыт'}</td>
                 <td>{item.entriesCount}</td>
                 <td>{item.winnerUserId ?? '—'}</td>
                 <td>
@@ -255,6 +279,18 @@ export default function GiveawaysSection() {
             <label className="admin-modal-field">
               <span>Дата начала (необязательно — пусто значит «сразу»)</span>
               <input className="panel-users-input" type="datetime-local" value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} />
+              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                {DATE_PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    className="panel-users-btn"
+                    onClick={() => setForm({ ...form, startsAt: presetDatetime(p.days) })}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </label>
             <label className="admin-modal-field">
               <span>Описание</span>
@@ -303,6 +339,23 @@ export default function GiveawaysSection() {
               <label className="admin-modal-field">
                 <span>Дата окончания</span>
                 <input className="panel-users-input" type="datetime-local" value={form.endsAt} onChange={(e) => setForm({ ...form, endsAt: e.target.value })} />
+                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                  {DATE_PRESETS.map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      className="panel-users-btn"
+                      onClick={() => setForm({ ...form, endsAt: presetDatetime(p.days) })}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                {form.startsAt && form.endsAt && form.startsAt >= form.endsAt && (
+                  <p className="panel-shelf-error" style={{ margin: '4px 0 0' }}>
+                    ⚠️ Дата начала позже даты окончания — розыгрыш не сохранится
+                  </p>
+                )}
               </label>
             )}
 

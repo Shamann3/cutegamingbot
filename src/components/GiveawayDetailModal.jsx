@@ -124,7 +124,13 @@ export default function GiveawayDetailModal({
               {error && <p className="giveaway-detail-error">{error}</p>}
               {detail.result ? (
                 <div className="giveaway-detail-result">
-                  {detail.result.won ? '🎉 Вы выиграли!' : 'В этот раз не повезло'}
+                  {detail.result.won
+                    ? '🎉 Вы выиграли!'
+                    : detail.winnerName
+                      ? `🏆 Победитель: ${detail.winnerName}`
+                      : detail.recipientsCount != null
+                        ? `🎁 ${detail.recipientsCount} игроков получили приз`
+                        : 'В этот раз не повезло'}
                 </div>
               ) : detail.joined ? (
                 <div className="giveaway-detail-joined">

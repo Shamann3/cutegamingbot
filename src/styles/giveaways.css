@@ -403,6 +403,7 @@
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(0, 0, 0, 0.3);
+  cursor: pointer;
 }
 
 .giveaway-history-emoji {
@@ -500,4 +501,15 @@
 @keyframes giveaway-feed-fade {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.giveaways-retry-btn {
+  padding: 0.5rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(245, 240, 224, 0.9);
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
 }

@@ -7,7 +7,7 @@ import GiveawayHistoryCard from './GiveawayHistoryCard'
 import GiveawayWinnersFeed from './GiveawayWinnersFeed'
 import { useGiveaways } from '../hooks/useGiveaways'
 import { useGiveawayHistory } from '../hooks/useGiveawayHistory'
-import { RARITY_ORDER } from '../constants/giveaways'
+import { GIVEAWAYS_COMING_SOON, RARITY_ORDER } from '../constants/giveaways'
 import '../styles/giveaways.css'
 
 const TABS = [
@@ -21,7 +21,11 @@ function sortByRarity(list) {
 }
 
 export default function GiveawaysModule({ isActive = true, onNavigateCondition }) {
-  const { giveaways, initialLoading, error, participate, participatingId, clearError } = useGiveaways({ isActive })
+  // Хуки вызываются безусловно (правила хуков) — при GIVEAWAYS_COMING_SOON
+  // просто не даём им поллить, передавая isActive=false.
+  const { giveaways, initialLoading, error, participate, participatingId, clearError } = useGiveaways({
+    isActive: isActive && !GIVEAWAYS_COMING_SOON,
+  })
   const history = useGiveawayHistory()
   const [openId, setOpenId] = useState(null)
   const [tab, setTab] = useState('active')
@@ -60,6 +64,25 @@ export default function GiveawaysModule({ isActive = true, onNavigateCondition }
     ))),
     [giveaways, now],
   )
+
+  if (GIVEAWAYS_COMING_SOON) {
+    return (
+      <div className="relative min-h-screen tab-theme-giveaways giveaways-module" aria-hidden={!isActive}>
+        <FarmBackground />
+        <TabAtmosphere variant="giveaways" />
+        <div className="relative z-10 giveaways-shell py-4 pb-2 animate-slide-up">
+          <header className="giveaways-header">
+            <p className="giveaways-header-eyebrow">Cute</p>
+            <h1 className="giveaways-header-title">Розыгрыши</h1>
+          </header>
+          <div className="giveaways-empty">
+            <span className="giveaways-empty-icon" aria-hidden>🎁</span>
+            <p>Скоро тут будут розыгрыши на звёзды, нфт...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="relative min-h-screen tab-theme-giveaways giveaways-module" aria-hidden={!isActive}>
@@ -127,6 +150,14 @@ export default function GiveawaysModule({ isActive = true, onNavigateCondition }
               ))}
             </div>
           )
+        ) : history.error && history.giveaways === null ? (
+          <div className="giveaways-empty">
+            <span className="giveaways-empty-icon" aria-hidden>⚠️</span>
+            <p>{history.error}</p>
+            <button type="button" className="giveaways-retry-btn" onClick={() => history.load()}>
+              Повторить
+            </button>
+          </div>
         ) : history.loading || history.giveaways === null ? (
           <p className="giveaways-empty">Загрузка…</p>
         ) : history.giveaways.length === 0 ? (
@@ -137,7 +168,7 @@ export default function GiveawaysModule({ isActive = true, onNavigateCondition }
         ) : (
           <div className="giveaways-history-list">
             {history.giveaways.map((giveaway) => (
-              <GiveawayHistoryCard key={giveaway.id} giveaway={giveaway} />
+              <GiveawayHistoryCard key={giveaway.id} giveaway={giveaway} onOpenDetail={handleOpenDetail} />
             ))}
           </div>
         )}

@@ -1902,8 +1902,17 @@ class Database:
                     "satisfied": current >= cond["target_value"],
                 })
             result = None
+            winner_name = None
+            recipients_count = None
             if row["status"] == "completed":
                 result = {"won": row["winner_user_id"] == user_id}
+                if row["draw_type"] == "timer":
+                    winner_row = await conn.fetchrow(
+                        "SELECT username, first_name FROM users WHERE user_id = $1", row["winner_user_id"],
+                    )
+                    winner_name = display_name(winner_row["username"], winner_row["first_name"]) if winner_row else None
+                else:
+                    recipients_count, _ = await self._giveaway_participants(conn, giveaway_id, limit=0)
             elif row["status"] == "cancelled":
                 result = {"won": False}
         return {
@@ -1921,6 +1930,8 @@ class Database:
             "conditionsMet": all(c["satisfied"] for c in condition_progress),
             "joined": bool(joined),
             "result": result,
+            "winnerName": winner_name,
+            "recipientsCount": recipients_count,
         }
 
     async def participate_in_giveaway(self, user_id, giveaway_id):
