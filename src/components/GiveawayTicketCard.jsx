@@ -3,14 +3,20 @@ import { RARITY_ACCENT, RARITY_LABEL, formatGiveawayDeadline, formatGiveawayPriz
 
 const SWIPE_THRESHOLD = 90
 
+function initial(name) {
+  const clean = name.replace(/^@/, '')
+  return clean.charAt(0).toUpperCase() || '?'
+}
+
 export default function GiveawayTicketCard({ giveaway, onOpenDetail, onSwipeParticipate }) {
   const [dragX, setDragX] = useState(0)
   const [swiping, setSwiping] = useState(false)
   const dragRef = useRef({ startX: 0, tracking: false })
   const accent = RARITY_ACCENT[giveaway.rarity] ?? RARITY_ACCENT.common
   const isLegendary = giveaway.rarity === 'legendary'
+  const isUpcoming = Boolean(giveaway.startsAt) && new Date(giveaway.startsAt).getTime() > Date.now()
 
-  const canSwipe = giveaway.status === 'active' && !giveaway.joined
+  const canSwipe = giveaway.status === 'active' && !giveaway.joined && !isUpcoming
     && (giveaway.conditionsCount === 0 || giveaway.conditionsMet)
 
   const onTouchStart = (event) => {
@@ -46,7 +52,8 @@ export default function GiveawayTicketCard({ giveaway, onOpenDetail, onSwipePart
     statusLabel = giveaway.drawType === 'instant' ? '✅ Приз получен' : '🎟️ Вы в розыгрыше'
   }
 
-  const deadline = giveaway.drawType === 'timer' ? formatGiveawayDeadline(giveaway.endsAt) : null
+  const deadline = !isUpcoming && giveaway.drawType === 'timer' ? formatGiveawayDeadline(giveaway.endsAt) : null
+  const startLabel = isUpcoming ? formatGiveawayDeadline(giveaway.startsAt) : null
   const prizeLabel = formatGiveawayPrize(giveaway.prize)
 
   return (
@@ -76,12 +83,26 @@ export default function GiveawayTicketCard({ giveaway, onOpenDetail, onSwipePart
           {canSwipe && !statusLabel && (
             <span className="giveaway-ticket-swipe-hint">Смахните →</span>
           )}
+          {isUpcoming && !statusLabel && (
+            <span className="giveaway-ticket-swipe-hint">⏳ Скоро</span>
+          )}
         </div>
       </div>
       <div className="giveaway-ticket-footer">
+        {startLabel && <span className="giveaway-ticket-chip">🚀 Старт {startLabel}</span>}
         {deadline && <span className="giveaway-ticket-chip">⏳ До {deadline}</span>}
         <span className="giveaway-ticket-chip giveaway-ticket-chip--prize">{prizeLabel}</span>
       </div>
+      {giveaway.participantsCount > 0 && (
+        <div className="giveaway-ticket-participants">
+          <div className="giveaway-ticket-avatars">
+            {(giveaway.participantsPreview ?? []).slice(0, 4).map((name, i) => (
+              <span key={i} className="giveaway-ticket-avatar">{initial(name)}</span>
+            ))}
+          </div>
+          <span className="giveaway-ticket-participants-count">👥 {giveaway.participantsCount} участников</span>
+        </div>
+      )}
     </button>
   )
 }

@@ -4,6 +4,7 @@ import TabAtmosphere from './TabAtmosphere'
 import GiveawayTicketCard from './GiveawayTicketCard'
 import GiveawayDetailModal from './GiveawayDetailModal'
 import GiveawayHistoryCard from './GiveawayHistoryCard'
+import GiveawayWinnersFeed from './GiveawayWinnersFeed'
 import { useGiveaways } from '../hooks/useGiveaways'
 import { useGiveawayHistory } from '../hooks/useGiveawayHistory'
 import { RARITY_ORDER } from '../constants/giveaways'
@@ -141,6 +142,8 @@ export default function GiveawaysModule({ isActive = true, onNavigateCondition }
           </div>
         )}
       </div>
+
+      <GiveawayWinnersFeed />
 
       <GiveawayDetailModal
         giveawayId={openId}

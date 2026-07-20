@@ -52,6 +52,7 @@ export default function GiveawayDetailModal({
   if (!isOpen || !giveawayId) return null
 
   const accent = detail ? (RARITY_ACCENT[detail.rarity] ?? RARITY_ACCENT.common) : RARITY_ACCENT.common
+  const isUpcoming = Boolean(detail?.startsAt) && new Date(detail.startsAt).getTime() > Date.now()
 
   return (
     <Portal lockScroll>
@@ -129,6 +130,10 @@ export default function GiveawayDetailModal({
                 <div className="giveaway-detail-joined">
                   {detail.drawType === 'instant' ? '✅ Приз получен' : '🎟️ Вы участвуете, ждите розыгрыша'}
                 </div>
+              ) : isUpcoming ? (
+                <button type="button" className="giveaway-detail-cta" disabled>
+                  ⏳ {formatGiveawayDeadlineTime(detail.startsAt)}
+                </button>
               ) : (
                 <button
                   type="button"
