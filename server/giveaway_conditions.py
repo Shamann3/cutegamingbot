@@ -1,14 +1,16 @@
 """Розыгрыши: реестр проверяемых условий участия.
 
 Каждое условие — запись в CONDITION_CHECKERS. Новые типы условий
-(channel_sub, quest_count, referral_count — следующие фазы) добавляются
-сюда новой записью, не трогая участие/список/детали розыгрыша.
+(quest_count — следующие фазы) добавляются сюда новой записью, не трогая
+участие/список/детали розыгрыша.
 """
 from __future__ import annotations
 
 from typing import Callable
 
-VALID_CONDITION_KINDS = frozenset({"balance", "harvest_count", "item_count"})
+VALID_CONDITION_KINDS = frozenset({
+    "balance", "harvest_count", "item_count", "channel_sub", "referral_count",
+})
 
 
 def check_balance(ctx: dict, cond: dict) -> bool:
@@ -24,10 +26,21 @@ def check_item_count(ctx: dict, cond: dict) -> bool:
     return int(items.get(cond["item_id"], 0)) >= int(cond["target_value"])
 
 
+def check_referral_count(ctx: dict, cond: dict) -> bool:
+    return int(ctx.get("referral_count") or 0) >= int(cond["target_value"])
+
+
+def check_channel_sub(ctx: dict, cond: dict) -> bool:
+    channel_sub = ctx.get("channel_sub") or {}
+    return bool(channel_sub.get(cond["item_id"], False))
+
+
 CONDITION_CHECKERS: dict[str, Callable[[dict, dict], bool]] = {
     "balance": check_balance,
     "harvest_count": check_harvest_count,
     "item_count": check_item_count,
+    "referral_count": check_referral_count,
+    "channel_sub": check_channel_sub,
 }
 
 

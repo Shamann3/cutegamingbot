@@ -23,10 +23,26 @@ def test_item_count_condition():
     assert condition_satisfied({"balance": 0, "harvest_count": 0, "items": {}}, cond) is False
 
 
+def test_referral_count_condition():
+    cond = {"kind": "referral_count", "target_value": 3}
+    assert condition_satisfied({"balance": 0, "harvest_count": 0, "items": {}, "referral_count": 3}, cond) is True
+    assert condition_satisfied({"balance": 0, "harvest_count": 0, "items": {}, "referral_count": 2}, cond) is False
+
+
+def test_channel_sub_condition():
+    cond = {"kind": "channel_sub", "target_value": 1, "item_id": "cute_channel"}
+    ctx_subscribed = {"balance": 0, "harvest_count": 0, "items": {}, "channel_sub": {"cute_channel": True}}
+    ctx_not_subscribed = {"balance": 0, "harvest_count": 0, "items": {}, "channel_sub": {"cute_channel": False}}
+    ctx_missing = {"balance": 0, "harvest_count": 0, "items": {}, "channel_sub": {}}
+    assert condition_satisfied(ctx_subscribed, cond) is True
+    assert condition_satisfied(ctx_not_subscribed, cond) is False
+    assert condition_satisfied(ctx_missing, cond) is False
+
+
 def test_unknown_kind_is_not_satisfied():
-    # Условия из будущих фаз (channel_sub, quest_count, referral_count) не должны
-    # падать с исключением — просто "не выполнено" до того, как появится чекер.
-    cond = {"kind": "channel_sub", "target_value": 1}
+    # Условия из будущих фаз (quest_count и т.п.) не должны падать с
+    # исключением — просто "не выполнено" до того, как появится чекер.
+    cond = {"kind": "quest_count", "target_value": 1}
     ctx = {"balance": 999999, "harvest_count": 999999, "items": {}}
     assert condition_satisfied(ctx, cond) is False
 
