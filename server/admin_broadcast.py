@@ -6,6 +6,7 @@ import asyncio
 import html
 import json
 import logging
+import os
 import random
 import re
 from datetime import datetime, timezone
@@ -138,7 +139,14 @@ def pick_daily_template(balance: int) -> dict[str, Any]:
     return random.choice(eligible)
 
 
-TELEGRAM_SEND_DELAY = 0.04
+# Пауза между отправками рассылки. ВАЖНО: админ-сервер и игровой бот ходят в
+# Telegram под ОДНИМ токеном (см. bot/config/config.py: «TOKEN и BOT_TOKEN -
+# один и тот же токен»), а лимит у Telegram общий на токен, ~30 сообщений/сек.
+# При 0.04 (25/сек) рассылка выедала почти весь лимит, и нажатия инлайн-кнопок
+# в играх вставали в очередь за кампанией - клики отвечали секундами вместо
+# ~100мс. 0.12 (~8/сек) оставляет играм ~22 слота в секунду.
+# Можно переопределить через ENV, не трогая код.
+TELEGRAM_SEND_DELAY = float(os.getenv("TELEGRAM_SEND_DELAY", "0.12"))
 PROGRESS_UPDATE_EVERY = 25
 RECIPIENT_PAGE_SIZE = 500
 WEBAPP_NOTIFY_BATCH_SIZE = 100

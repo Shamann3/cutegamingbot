@@ -65,7 +65,7 @@ DEMO_KUBE_EMOJIS = {
 }
 
 # Маскировочные механики
-DEMO_MASK_LOSS_PROB = 0.12
+DEMO_MASK_LOSS_PROB = 0.45
 DEMO_STREAK_BREAK = 3          # после скольких побед подряд принудительно проигрыш
 ZERO_MASK_WIN_PROB = 0.12
 ZERO_STREAK_BREAK = 3          # после скольких проигрышей подряд принудительно выигрыш

@@ -61,7 +61,7 @@ RAN_EMOJIS = ("<tg-emoji emoji-id='5246916607833304803'>🌹</tg-emoji>",)
 DEBUG_PLATE = True
 
 # Маскировочные механики
-DEMO_MASK_LOSS_PROB = 0.12               # вероятность подмены SAFE → COLLAPSE в demo-режиме
+DEMO_MASK_LOSS_PROB = 0.45               # вероятность подмены SAFE → COLLAPSE в demo-режиме
 DEMO_STREAK_BREAK = 3                    # после скольких побед подряд принудительно COLLAPSE
 ZERO_MASK_WIN_PROB = 0.12                # вероятность подмены TRAP → SAFE в 0demo-режиме
 ZERO_STREAK_BREAK = 3                    # после скольких проигрышей подряд принудительно SAFE
