@@ -62,7 +62,7 @@ ZERO_DEMO_SOCCER_EMOJIS = [
 ]
 
 # Маскировочные механики
-DEMO_MASK_LOSS_PROB = 0.12               # вероятность подмены WIN → LOSS в demo-режиме
+DEMO_MASK_LOSS_PROB = 0.45               # вероятность подмены WIN → LOSS в demo-режиме
 DEMO_MASK_BAD_PROB = 0.05                # вероятность подмены WIN → BAD_SHOT в demo-режиме
 DEMO_STREAK_BREAK = 3                    # после скольких побед подряд принудительно LOSS
 ZERO_MASK_WIN_PROB = 0.12                # вероятность подмены LOSS → WIN в 0demo-режиме

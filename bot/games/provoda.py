@@ -42,7 +42,7 @@ DEBUG_WIRES = True
 DEBUG_WIRES_FIELD = True
 
 # Маскировочные механики
-DEMO_MASK_LOSS_PROB = 0.12               # вероятность подмены WIN → LOSS в demo-режиме
+DEMO_MASK_LOSS_PROB = 0.45               # вероятность подмены WIN → LOSS в demo-режиме
 DEMO_STREAK_BREAK = 3                    # после скольких побед подряд принудительно LOSS
 ZERO_MASK_WIN_PROB = 0.12                # вероятность подмены LOSS → WIN в 0demo-режиме
 ZERO_STREAK_BREAK = 3                    # после скольких проигрышей подряд принудительно WIN

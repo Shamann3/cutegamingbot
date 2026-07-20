@@ -51,7 +51,7 @@ JAM_ICON_ID = "5890899073573063763"   # 🚫
 
 # Константы для JAM (неудачный исход)
 SLOTS_JAM_CHANCE = Decimal('0.08')     # общая вероятность заклинивания
-DEMO_MASK_LOSS_PROB = 0.12
+DEMO_MASK_LOSS_PROB = 0.45
 DEMO_STREAK_BREAK = 3
 ZERO_MASK_WIN_PROB = 0.12
 ZERO_STREAK_BREAK = 3
