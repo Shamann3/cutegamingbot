@@ -244,3 +244,15 @@
   font-weight: 700;
   padding: 0.75rem;
 }
+
+.giveaway-detail-error {
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fca5a5;
+  background: rgba(220, 38, 38, 0.12);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  margin: 0 0 0.5rem;
+}

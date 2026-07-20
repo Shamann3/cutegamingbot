@@ -7,8 +7,13 @@ import { useGiveaways } from '../hooks/useGiveaways'
 import '../styles/giveaways.css'
 
 export default function GiveawaysModule({ isActive = true, onNavigateCondition }) {
-  const { giveaways, initialLoading, error, participate, participatingId } = useGiveaways({ isActive })
+  const { giveaways, initialLoading, error, participate, participatingId, clearError } = useGiveaways({ isActive })
   const [openId, setOpenId] = useState(null)
+
+  const handleOpenDetail = (id) => {
+    clearError()
+    setOpenId(id)
+  }
 
   const handleNavigateCondition = (target) => {
     setOpenId(null)
@@ -41,7 +46,7 @@ export default function GiveawaysModule({ isActive = true, onNavigateCondition }
               <GiveawayTicketCard
                 key={giveaway.id}
                 giveaway={giveaway}
-                onOpenDetail={setOpenId}
+                onOpenDetail={handleOpenDetail}
                 onSwipeParticipate={participate}
               />
             ))}
@@ -59,6 +64,7 @@ export default function GiveawaysModule({ isActive = true, onNavigateCondition }
         }}
         onNavigateCondition={handleNavigateCondition}
         isParticipating={participatingId === openId}
+        error={openId ? error : null}
       />
     </div>
   )

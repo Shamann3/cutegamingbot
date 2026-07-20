@@ -22,6 +22,7 @@ export default function GiveawayDetailModal({
   onParticipate,
   onNavigateCondition,
   isParticipating,
+  error,
 }) {
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -119,6 +120,7 @@ export default function GiveawayDetailModal({
               </div>
 
               {/* Зона 3: действие */}
+              {error && <p className="giveaway-detail-error">{error}</p>}
               {detail.result ? (
                 <div className="giveaway-detail-result">
                   {detail.result.won ? '🎉 Вы выиграли!' : 'В этот раз не повезло'}

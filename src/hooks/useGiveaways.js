@@ -93,6 +93,7 @@ export function useGiveaways({ isActive = true } = {}) {
     errorCode,
     participatingId,
     participate,
+    clearError: () => setError(null),
     reload: () => load({ silent: true }),
   }
 }
