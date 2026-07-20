@@ -23,7 +23,7 @@ function errorClass(code) {
   return 'inventory-toast-error'
 }
 
-export default function InventoryModule({ isActive = true }) {
+export default function InventoryModule({ isActive = true, embedded = false }) {
   const {
     kut,
     items,
@@ -61,22 +61,24 @@ export default function InventoryModule({ isActive = true }) {
   }, [items])
 
   return (
-    <div className="relative min-h-screen tab-theme-inventory inventory-module">
-      <FarmBackground />
-      <TabAtmosphere variant="inventory" />
+    <div className={embedded ? 'relative inventory-module' : 'relative min-h-screen tab-theme-inventory inventory-module'}>
+      {!embedded && <FarmBackground />}
+      {!embedded && <TabAtmosphere variant="inventory" />}
 
-      <div className="relative z-10 inventory-shell py-4 pb-2 animate-slide-up">
-        <header className="inventory-hero">
-          <div className="inventory-hero-copy">
-            <p className="inventory-hero-eyebrow">Cute</p>
-            <h1 className="inventory-hero-title">Инвентарь</h1>
-          </div>
-          <KutBalance
-            value={kut}
-            className="inventory-hero-balance"
-            onDonate={() => setDonateOpen(true)}
-          />
-        </header>
+      <div className={embedded ? 'relative z-10 inventory-shell' : 'relative z-10 inventory-shell py-4 pb-2 animate-slide-up'}>
+        {!embedded && (
+          <header className="inventory-hero">
+            <div className="inventory-hero-copy">
+              <p className="inventory-hero-eyebrow">Cute</p>
+              <h1 className="inventory-hero-title">Инвентарь</h1>
+            </div>
+            <KutBalance
+              value={kut}
+              className="inventory-hero-balance"
+              onDonate={() => setDonateOpen(true)}
+            />
+          </header>
+        )}
 
         <div className="inventory-summary" role="status">
           <span className="inventory-summary-chip">

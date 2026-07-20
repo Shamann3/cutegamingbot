@@ -1,0 +1,258 @@
+/* Заглушка «Розыгрыши» — по образцу .market-board-empty (src/index.css). */
+
+.giveaways-shell {
+  width: 100%;
+  max-width: 28rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+@media (min-width: 520px) {
+  .giveaways-shell {
+    max-width: 36rem;
+  }
+}
+
+.giveaways-header {
+  margin-bottom: 0.85rem;
+}
+
+.giveaways-header-eyebrow {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--tab-accent-muted);
+}
+
+.giveaways-header-title {
+  margin: 0.1rem 0 0;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 1.55rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--tab-title-color);
+  text-shadow: 0 2px 18px var(--tab-accent-glow);
+}
+
+.giveaways-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+  padding: 3rem 1.25rem;
+}
+
+.giveaways-empty-icon {
+  font-size: 2.4rem;
+  filter: drop-shadow(0 2px 10px var(--tab-accent-glow));
+}
+
+.giveaways-empty p {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--tab-title-color);
+  max-width: 16rem;
+}
+
+.giveaways-ticket-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.giveaway-ticket {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 1rem 0.75rem;
+  border-radius: 14px;
+  border: 1px solid var(--ticket-accent-strong);
+  background:
+    radial-gradient(circle at 50% 0%, var(--ticket-accent-glow) 0%, transparent 65%),
+    linear-gradient(180deg, rgba(10, 24, 16, 0.94) 0%, rgba(6, 16, 10, 0.98) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 14px var(--ticket-accent-glow);
+  color: #f5f0e0;
+  cursor: pointer;
+  text-align: center;
+  transition: transform 0.15s ease;
+}
+
+/* Перфорация по бокам билета — вырезы через radial-gradient маску. */
+.giveaway-ticket::before,
+.giveaway-ticket::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(4, 10, 7, 1) 60%, transparent 62%);
+  transform: translateY(-50%);
+}
+.giveaway-ticket::before { left: -7px; }
+.giveaway-ticket::after { right: -7px; }
+
+.giveaway-ticket--swiping {
+  transition: transform 0.2s ease;
+  opacity: 0.6;
+}
+
+.giveaway-ticket-rarity {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ticket-accent-strong);
+}
+
+.giveaway-ticket-emoji {
+  font-size: 2rem;
+  filter: drop-shadow(0 0 8px var(--ticket-accent-glow));
+}
+
+.giveaway-ticket-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.giveaway-ticket-status {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--ticket-accent-strong);
+}
+
+.giveaway-ticket-swipe-hint {
+  font-size: 0.6rem;
+  font-weight: 600;
+  opacity: 0.6;
+}
+
+.giveaway-detail-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.giveaway-detail-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  text-align: center;
+}
+
+.giveaway-detail-hero-emoji {
+  font-size: 3rem;
+  filter: drop-shadow(0 0 14px var(--ticket-accent-glow));
+}
+
+.giveaway-detail-title {
+  margin: 0;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 1.2rem;
+}
+
+.giveaway-detail-prize {
+  margin: 0;
+  font-weight: 800;
+  color: var(--ticket-accent-strong);
+}
+
+.giveaway-detail-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--ticket-accent-strong);
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.giveaway-detail-conditions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.giveaway-detail-condition {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 10px;
+  background: rgba(8, 18, 12, 0.6);
+  font-size: 0.78rem;
+}
+
+.giveaway-detail-condition--done {
+  opacity: 0.7;
+}
+
+.giveaway-detail-condition-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.giveaway-detail-condition-goto {
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--ticket-accent-strong);
+  background: transparent;
+  color: var(--ticket-accent-strong);
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.giveaway-detail-cta {
+  width: 100%;
+  padding: 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  background: rgba(148, 163, 184, 0.15);
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 800;
+  font-size: 0.92rem;
+}
+
+.giveaway-detail-cta--ready {
+  border-color: #fde68a;
+  background: linear-gradient(180deg, #fde68a 0%, #d4a72c 100%);
+  color: #2a1808;
+  animation: giveaway-cta-pulse 2s ease-in-out infinite;
+}
+
+@keyframes giveaway-cta-pulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(212, 175, 55, 0.4); }
+  50% { box-shadow: 0 0 24px rgba(212, 175, 55, 0.75); }
+}
+
+.giveaway-detail-joined,
+.giveaway-detail-result {
+  text-align: center;
+  font-weight: 700;
+  padding: 0.75rem;
+}
+
+.giveaway-detail-error {
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fca5a5;
+  background: rgba(220, 38, 38, 0.12);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  margin: 0 0 0.5rem;
+}

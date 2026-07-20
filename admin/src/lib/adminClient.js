@@ -1220,6 +1220,22 @@ export async function deleteContentQuest(questId) {
   return adminFetch(`/content/quests/${questId}`, { method: 'DELETE' })
 }
 
+export async function fetchGiveawaysAdmin() {
+  return adminFetch('/content/giveaways')
+}
+
+export async function createGiveawayAdmin(payload) {
+  return adminFetch('/content/giveaways', { method: 'POST', body: payload })
+}
+
+export async function patchGiveawayAdmin(giveawayId, payload) {
+  return adminFetch(`/content/giveaways/${giveawayId}`, { method: 'PATCH', body: payload })
+}
+
+export async function deleteGiveawayAdmin(giveawayId) {
+  return adminFetch(`/content/giveaways/${giveawayId}`, { method: 'DELETE' })
+}
+
 export async function fetchBroadcastOverview() {
   return adminFetch('/broadcast/overview')
 }

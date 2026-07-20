@@ -100,11 +100,13 @@ const Settings = () => (
   </Icon>
 )
 
-const More = () => (
+const Gift = () => (
   <Icon>
-    <circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none" />
-    <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
-    <circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none" />
+    <rect x="4" y="9" width="16" height="11" rx="1.5" />
+    <path d="M4 9h16" />
+    <path d="M12 9v11" />
+    <path d="M12 9c-1.6-3.6-6-3.6-6-1 0 1 .9 1 2 1" />
+    <path d="M12 9c1.6-3.6 6-3.6 6-1 0 1-.9 1-2 1" />
   </Icon>
 )
 
@@ -118,7 +120,8 @@ export const TAB_ICONS = {
   chests: Chests,
   profile: Profile,
   settings: Settings,
-  more: More,
+  trade: Market,
+  giveaways: Gift,
 }
 
 // Те же значения, что в src/styles/tabThemes.css (--tab-accent-strong / --tab-accent-glow)
@@ -133,5 +136,6 @@ export const TAB_ACCENTS = {
   chests: { strong: '#e6b422', glow: 'rgba(230,180,34,0.5)' },
   profile: { strong: '#22d3ee', glow: 'rgba(34, 211, 238, 0.32)' },
   settings: { strong: '#64748b', glow: 'rgba(100, 116, 139, 0.32)' },
-  more: { strong: '#d4af37', glow: 'rgba(212, 175, 55, 0.32)' },
+  trade: { strong: '#cd9b5a', glow: 'rgba(184, 115, 51, 0.32)' },
+  giveaways: { strong: '#f472b6', glow: 'rgba(244, 114, 182, 0.34)' },
 }

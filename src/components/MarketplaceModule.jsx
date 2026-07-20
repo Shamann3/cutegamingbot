@@ -37,6 +37,7 @@ export default function MarketplaceModule({
   initialItemId = '',
   initialHighlightOnly = false,
   onSearchUsed,
+  embedded = false,
 }) {
   const { playSound } = useSettings()
   const {
@@ -175,22 +176,36 @@ export default function MarketplaceModule({
   }
 
   return (
-    <div className="relative min-h-screen tab-theme-market market-exchange">
-      <FarmBackground />
-      <TabAtmosphere variant="market" />
+    <div className={embedded ? 'relative market-exchange' : 'relative min-h-screen tab-theme-market market-exchange'}>
+      {!embedded && <FarmBackground />}
+      {!embedded && <TabAtmosphere variant="market" />}
 
-      <div className="relative z-10 market-shell py-4 pb-2 animate-slide-up">
-        <header className="market-hero">
-          <div className="market-hero-copy">
-            <p className="market-hero-eyebrow">Игроки · торговля</p>
-            <h1 className="market-hero-title">Биржа</h1>
-          </div>
-          <KutBalance
-            value={kut}
-            className="market-hero-balance"
-            onDonate={openDonate}
-          />
-        </header>
+      <div className={embedded ? 'relative z-10 market-shell' : 'relative z-10 market-shell py-4 pb-2 animate-slide-up'}>
+        {!embedded && (
+          <header className="market-hero">
+            <div className="market-hero-copy">
+              <p className="market-hero-eyebrow">Игроки · торговля</p>
+              <h1 className="market-hero-title">Биржа</h1>
+            </div>
+            <KutBalance
+              value={kut}
+              className="market-hero-balance"
+              onDonate={openDonate}
+            />
+          </header>
+        )}
+
+        {actionMessage ? (
+          <p className="market-toast market-toast-ok" role="status">
+            {actionMessage}
+          </p>
+        ) : null}
+
+        {error ? (
+          <p className={`market-toast ${errorClass(errorCode)}`} role="alert">
+            {error}
+          </p>
+        ) : null}
 
         <section className="market-sell-card" aria-label="Выставить предмет">
           <div className="market-sell-card-glow" aria-hidden />
@@ -235,18 +250,6 @@ export default function MarketplaceModule({
           <p className="market-lots-badge" role="status">
             <span className="market-lots-badge-dot" aria-hidden />
             {totalItems} {totalItems === 1 ? 'лот' : totalItems < 5 ? 'лота' : 'лотов'} на бирже
-          </p>
-        ) : null}
-
-        {actionMessage ? (
-          <p className="market-toast market-toast-ok" role="status">
-            {actionMessage}
-          </p>
-        ) : null}
-
-        {error ? (
-          <p className={`market-toast ${errorClass(errorCode)}`} role="alert">
-            {error}
           </p>
         ) : null}
 

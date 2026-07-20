@@ -727,13 +727,34 @@ body {
     align-items: center;
     justify-content: center;
     padding: 0 0.75rem;
+    background:
+      radial-gradient(circle at 50% 30%, rgba(74, 222, 128, 0.1) 0%, transparent 60%),
+      radial-gradient(circle at 30% 40%, rgba(180, 140, 60, 0.1) 0%, transparent 45%),
+      radial-gradient(circle at 70% 60%, rgba(120, 180, 100, 0.07) 0%, transparent 40%),
+      linear-gradient(to bottom, #1a1208, #0a0604);
+  }
+
+  .farm-buy-plot-icon-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    margin-bottom: 0.4rem;
+    border-radius: 999px;
+    border: 1px solid rgba(212, 175, 55, 0.42);
+    background:
+      radial-gradient(circle at 35% 30%, rgba(190, 242, 100, 0.32) 0%, transparent 55%),
+      linear-gradient(180deg, rgba(52, 211, 153, 0.16) 0%, rgba(120, 72, 24, 0.14) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      0 0 14px rgba(74, 222, 128, 0.3);
   }
 
   .farm-buy-plot-icon {
-    margin-bottom: 0.25rem;
-    font-size: 1.875rem;
-    color: #fcd34d;
-    filter: drop-shadow(0 0 12px rgba(212, 175, 55, 0.5));
+    font-size: 1.4rem;
+    line-height: 1;
+    filter: drop-shadow(0 0 8px rgba(212, 175, 55, 0.5));
   }
 
   .farm-buy-plot-label {
@@ -744,6 +765,13 @@ body {
     text-transform: uppercase;
     letter-spacing: 0.025em;
     color: rgba(254, 243, 199, 0.95);
+  }
+
+  .farm-buy-plot-body {
+    position: relative;
+    background:
+      radial-gradient(circle at 50% 0%, rgba(212, 175, 55, 0.1) 0%, transparent 65%),
+      rgba(6, 16, 10, 0.6);
   }
 
   .farm-buy-plot-eyebrow {
@@ -758,10 +786,15 @@ body {
 
   .farm-buy-plot-price {
     margin: 0 0 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
     text-align: center;
-    font-size: 0.875rem;
+    font-size: 0.9rem;
     font-weight: 800;
     color: #fef3c7;
+    text-shadow: 0 0 10px rgba(212, 175, 55, 0.35);
   }
 
   .farm-buy-plot-btn {
@@ -1111,6 +1144,52 @@ body {
     color: rgba(253, 230, 138, 0.9);
   }
 
+  /* Единый сегмент-переключатель («дорожка» + плавающая таблетка) —
+     используется на Ферме, в Торговле и в Профиле (.segment-tabs/.segment-tab). */
+  .segment-tabs {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 0.3rem;
+    padding: 0.25rem;
+    margin: 0 0 0.85rem;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(4, 10, 7, 0.6) 0%, rgba(4, 10, 7, 0.82) 100%);
+    border: 1px solid rgba(212, 175, 55, 0.22);
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+
+  .segment-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+    padding: 0.4rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, color 0.2s, box-shadow 0.2s;
+  }
+
+  .segment-tab-active {
+    border-color: var(--tab-accent-strong, #34d399);
+    background:
+      linear-gradient(180deg, var(--tab-accent-soft, rgba(52, 211, 153, 0.18)) 0%, transparent 100%),
+      var(--tab-surface, rgba(10, 28, 18, 0.96));
+    color: var(--tab-title-color, #ecfdf5);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 0 10px var(--tab-accent-soft, rgba(52, 211, 153, 0.14)),
+      0 0 0 1px var(--tab-accent-soft, rgba(52, 211, 153, 0.14)),
+      0 2px 6px rgba(0, 0, 0, 0.35);
+  }
+
   .maintenance-screen {
     position: fixed;
     inset: 0;
@@ -1261,14 +1340,17 @@ body {
   .app-tab-bar-inner {
     pointer-events: auto;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.12rem;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.05rem;
     max-width: 42rem;
     margin: 0 auto;
-    padding: 3px;
-    border-radius: 16px;
+    padding: 4px;
+    border-radius: 17px;
     background: linear-gradient(135deg, #f5e6a8 0%, #8b6914 35%, #e2c35a 65%, #4a3018 100%);
-    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.45);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+      0 -4px 24px rgba(0, 0, 0, 0.45);
   }
 
   .app-tab-btn {
@@ -1277,19 +1359,22 @@ body {
     align-items: center;
     gap: 0.06rem;
     padding: 0.34rem 0.08rem 0.28rem;
-    border: none;
+    border: 1px solid rgba(212, 175, 55, 0.14);
     border-radius: 13px;
     background: linear-gradient(180deg, rgba(10, 24, 16, 0.92) 0%, rgba(6, 16, 10, 0.96) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
     color: rgba(245, 230, 200, 0.65);
     cursor: pointer;
-    transition: color 0.2s, background 0.2s, box-shadow 0.2s;
+    transition: color 0.2s, background 0.2s, box-shadow 0.2s, border-color 0.2s;
     min-width: 0;
   }
 
   .app-tab-btn-active {
     color: #fef3c7;
+    border-color: rgba(212, 175, 55, 0.4);
     background: linear-gradient(180deg, rgba(22, 52, 34, 0.98) 0%, rgba(14, 36, 24, 0.98) 100%);
     box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
       inset 0 0 20px var(--tab-icon-glow, rgba(212, 175, 55, 0.12)),
       0 2px 8px rgba(0, 0, 0, 0.35);
   }
@@ -1301,7 +1386,10 @@ body {
     width: 1.15rem;
     height: 1.15rem;
     line-height: 1;
-    transition: color 0.2s, filter 0.2s;
+    color: var(--tab-icon-strong, rgba(245, 230, 200, 0.65));
+    opacity: 0.6;
+    filter: drop-shadow(0 0 3px var(--tab-icon-glow, transparent));
+    transition: color 0.2s, filter 0.2s, opacity 0.2s;
   }
 
   .app-tab-icon svg {
@@ -1310,6 +1398,7 @@ body {
   }
 
   .app-tab-btn-active .app-tab-icon {
+    opacity: 1;
     color: var(--tab-icon-strong, #fef3c7);
     filter: drop-shadow(0 0 5px var(--tab-icon-glow, rgba(212, 175, 55, 0.4)));
   }
@@ -1347,6 +1436,61 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* Не поднимаем кнопку над рядом transform'ом — на некоторых устройствах/при
+     кадрировании скриншотов область, куда влезает трансформ, обрезается по
+     исходному (нетрансформированному) боксу элемента. Кнопка остаётся той же
+     высоты, что и соседи, и выделяется только цветом/рамкой/свечением. */
+  .app-tab-btn-giveaways {
+    border: 1px solid rgba(253, 224, 165, 0.6);
+    background:
+      radial-gradient(circle at 32% 22%, rgba(255, 214, 165, 0.85) 0%, transparent 50%),
+      linear-gradient(180deg, #f9a8d4 0%, #be185d 55%, #4c0519 100%);
+    animation: giveaways-glow 3s ease-in-out infinite;
+  }
+
+  .app-tab-btn-giveaways .app-tab-icon {
+    width: 1.3rem;
+    height: 1.3rem;
+    color: #fff7ed;
+    filter: drop-shadow(0 1px 3px rgba(76, 5, 25, 0.6));
+  }
+
+  .app-tab-btn-giveaways .app-tab-label {
+    color: #fce7f3;
+    text-shadow: 0 1px 2px rgba(76, 5, 25, 0.6);
+  }
+
+  .app-tab-btn-giveaways.app-tab-btn-active {
+    background:
+      radial-gradient(circle at 32% 22%, rgba(255, 224, 189, 0.95) 0%, transparent 52%),
+      linear-gradient(180deg, #fbcfe8 0%, #db2777 55%, #4c0519 100%);
+  }
+
+  @keyframes giveaways-glow {
+    0%, 100% {
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.35),
+        inset 0 -3px 6px rgba(76, 5, 25, 0.35),
+        0 0 0 1px rgba(212, 175, 55, 0.35),
+        0 0 6px rgba(244, 114, 182, 0.4);
+    }
+    50% {
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.35),
+        inset 0 -3px 6px rgba(76, 5, 25, 0.35),
+        0 0 0 1px rgba(253, 224, 165, 0.6),
+        0 0 12px rgba(244, 114, 182, 0.6);
+    }
+  }
+
+  .cute-turbo-mode .app-tab-btn-giveaways {
+    animation: none !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 0 0 1px rgba(253, 224, 165, 0.5),
+      0 0 6px rgba(244, 114, 182, 0.45) !important;
   }
 
   /* Рюкзак */
@@ -1757,19 +1901,44 @@ body {
     padding: 0.85rem 0.95rem 1rem;
   }
 
+  .settings-section {
+    border-radius: 14px;
+    border: 1px solid rgba(212, 175, 55, 0.18);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(6, 16, 10, 0.4) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    padding: 0.9rem 0.95rem;
+  }
+
   .settings-section + .settings-section {
-    margin-top: 1.1rem;
-    padding-top: 1rem;
-    border-top: 1px solid rgba(148, 163, 184, 0.14);
+    margin-top: 0.75rem;
   }
 
   .settings-section-title {
-    margin: 0 0 0.55rem;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0 0 0.65rem;
     font-size: 0.72rem;
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: rgba(226, 232, 240, 0.88);
+  }
+
+  .settings-section-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 999px;
+    font-size: 0.94rem;
+    border: 1px solid rgba(212, 175, 55, 0.32);
+    background:
+      radial-gradient(circle at 32% 26%, rgba(253, 224, 165, 0.4) 0%, transparent 60%),
+      rgba(212, 175, 55, 0.1);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
   }
 
   .settings-notify-test-btn {
@@ -10577,6 +10746,11 @@ body.onboarding-content-lock .app-tab-bar {
 
 .profile-module-balance {
   margin-top: 0.1rem;
+}
+
+.profile-shell .segment-tabs {
+  margin-left: 1rem;
+  margin-right: 1rem;
 }
 
 .profile-loading,

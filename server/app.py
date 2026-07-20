@@ -312,6 +312,10 @@ class CancelQuestBody(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class ParticipateGiveawayBody(BaseModel):
+    model_config = {"extra": "forbid"}
+
+
 class ShopBuyAction(BaseModel):
     itemId: str = Field(min_length=1)
     category: str = "all"
@@ -774,6 +778,38 @@ async def quests_cancel(body: CancelQuestBody, user_id: int = Depends(rate_limit
 async def quests_claim(body: ClaimQuestBody, user_id: int = Depends(rate_limit)):
     try:
         return await db.claim_quest_reward(user_id, body.questId)
+    except ValueError as e:
+        raise _client_error(e)
+
+
+@app.get("/api/giveaways")
+async def giveaways_state(request: Request, user_id: int = Depends(rate_limit)):
+    if is_maintenance():
+        raise maintenance_http_error()
+    try:
+        return await db.get_giveaways_state(user_id)
+    except Exception as e:
+        raise _server_error(e, request)
+
+
+@app.get("/api/giveaways/{giveaway_id}")
+async def giveaway_detail(giveaway_id: int, request: Request, user_id: int = Depends(rate_limit)):
+    try:
+        return await db.get_giveaway_detail(user_id, giveaway_id)
+    except ValueError as e:
+        raise _client_error(e)
+    except Exception as e:
+        raise _server_error(e, request)
+
+
+@app.post("/api/giveaways/{giveaway_id}/participate")
+async def giveaway_participate(
+    giveaway_id: int,
+    body: ParticipateGiveawayBody,
+    user_id: int = Depends(rate_limit),
+):
+    try:
+        return await db.participate_in_giveaway(user_id, giveaway_id)
     except ValueError as e:
         raise _client_error(e)
 

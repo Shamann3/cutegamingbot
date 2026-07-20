@@ -28,6 +28,7 @@ export default function ExchangeModule({
   initialItemId = '',
   initialHighlightOnly = false,
   onSearchUsed,
+  embedded = false,
 }) {
   const { playSound } = useSettings()
   const { isFavorite, toggleFavorite } = useShopFavorites()
@@ -131,24 +132,26 @@ export default function ExchangeModule({
   }
 
   return (
-    <div className="relative min-h-screen tab-theme-shop shop-exchange">
-      <FarmBackground />
-      <TabAtmosphere variant="shop" />
+    <div className={embedded ? 'relative shop-exchange' : 'relative min-h-screen tab-theme-shop shop-exchange'}>
+      {!embedded && <FarmBackground />}
+      {!embedded && <TabAtmosphere variant="shop" />}
 
-      <div className="relative z-10 shop-exchange-shell py-4 pb-2 animate-slide-up">
-        <header className="shop-exchange-header">
-          <div className="shop-exchange-header-main">
-            <div>
-              <p className="shop-exchange-eyebrow">Cute</p>
-              <h1 className="shop-exchange-title">Магазин</h1>
+      <div className={embedded ? 'relative z-10 shop-exchange-shell' : 'relative z-10 shop-exchange-shell py-4 pb-2 animate-slide-up'}>
+        {!embedded && (
+          <header className="shop-exchange-header">
+            <div className="shop-exchange-header-main">
+              <div>
+                <p className="shop-exchange-eyebrow">Cute</p>
+                <h1 className="shop-exchange-title">Магазин</h1>
+              </div>
             </div>
-          </div>
-          <KutBalance
-            value={kut}
-            className="shop-exchange-balance"
-            onDonate={openDonate}
-          />
-        </header>
+            <KutBalance
+              value={kut}
+              className="shop-exchange-balance"
+              onDonate={openDonate}
+            />
+          </header>
+        )}
 
         <ShopSearch
           value={search}

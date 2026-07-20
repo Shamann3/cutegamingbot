@@ -7,6 +7,7 @@ import { fetchMyProfile } from '../lib/profileClient'
 import { fetchCollection } from '../lib/chestClient'
 import { useEquippedCosmetics } from '../hooks/useEquippedCosmetics'
 import { RARITY_ACCENT } from '../constants/chests'
+import SettingsModule from './SettingsModule'
 import '../styles/chests.css'
 import '../styles/cosmetic-effects.css'
 
@@ -14,6 +15,11 @@ const BOARDS = [
   { id: 'balance', label: 'Баланс', emoji: '💰', unit: 'кут' },
   { id: 'harvests', label: 'Урожай', emoji: '🌾', unit: 'сборов' },
   { id: 'sales', label: 'Биржа', emoji: '💱', unit: 'предметов' },
+]
+
+const PROFILE_SEGMENTS = [
+  { id: 'profile', label: 'Профиль' },
+  { id: 'settings', label: 'Настройки' },
 ]
 
 function Avatar({ photoUrl, name, size = 56 }) {
@@ -69,6 +75,7 @@ export default function ProfileModule({ isActive = true }) {
   const [error, setError] = useState(null)
   const [board, setBoard] = useState('balance')
   const [showcase, setShowcase] = useState([])
+  const [profileSegment, setProfileSegment] = useState('profile')
   const { equipped } = useEquippedCosmetics()
 
   useEffect(() => {
@@ -115,15 +122,32 @@ export default function ProfileModule({ isActive = true }) {
           {profile && <KutBalance value={profile.balance} className="profile-module-balance" />}
         </header>
 
-        {loading && (
+        <div className="segment-tabs" role="tablist" aria-label="Разделы профиля">
+          {PROFILE_SEGMENTS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              role="tab"
+              aria-selected={profileSegment === s.id}
+              className={`segment-tab${profileSegment === s.id ? ' segment-tab-active' : ''}`}
+              onClick={() => setProfileSegment(s.id)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {profileSegment === 'settings' && <SettingsModule embedded />}
+
+        {profileSegment === 'profile' && loading && (
           <div className="profile-loading">Загрузка профиля…</div>
         )}
 
-        {error && !loading && (
+        {profileSegment === 'profile' && error && !loading && (
           <div className="profile-error">{error}</div>
         )}
 
-        {!loading && profile && (
+        {profileSegment === 'profile' && !loading && profile && (
           <>
             {/* Карточка игрока */}
             <VineFrame className="profile-card-frame">

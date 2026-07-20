@@ -8,6 +8,7 @@ export const PANEL_SECTIONS = [
   { id: 'market',    label: 'Market',          labelRu: 'Биржа',        permission: 'view_market' },
   { id: 'farm',      label: 'Farm Management', labelRu: 'Ферма',        permission: 'manage_farm' },
   { id: 'content',   label: 'Content',         labelRu: 'Контент',      permission: 'manage_content' },
+  { id: 'giveaways', label: 'Giveaways',       labelRu: 'Розыгрыши',   permission: 'manage_content' },
   { id: 'broadcast', label: 'Broadcast',       labelRu: 'Рассылка',     permission: 'manage_broadcast' },
   { id: 'logs',      label: 'Logs',            labelRu: 'Логи',         permission: 'view_logs' },
   { id: 'analytics', label: 'Analytics',       labelRu: 'Аналитика',    permission: 'view_analytics' },

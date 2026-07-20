@@ -25,8 +25,8 @@ export default function BuyPlotCard({ price, kut, isBusy, onBuy, onContextualDon
         aria-label={canAfford ? 'Купить грядку' : 'Пополнить баланс'}
       >
         <div className="farm-soil-inner farm-buy-plot-inner">
-          <span className="farm-buy-plot-icon" aria-hidden>
-            ✚
+          <span className="farm-buy-plot-icon-wrap" aria-hidden>
+            <span className="farm-buy-plot-icon">🌱</span>
           </span>
           <p className="farm-buy-plot-label">
             Ещё одна грядка
@@ -34,12 +34,12 @@ export default function BuyPlotCard({ price, kut, isBusy, onBuy, onContextualDon
         </div>
       </button>
 
-      <div className="farm-panel-body">
+      <div className="farm-panel-body farm-buy-plot-body">
         <p className="farm-buy-plot-eyebrow">
           Расширьте ферму
         </p>
         <p className="farm-buy-plot-price">
-          {formatKut(price)} КУТ
+          <span aria-hidden>🪙</span> {formatKut(price)} КУТ
         </p>
         <button
           type="button"

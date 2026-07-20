@@ -1019,3 +1019,41 @@ CREATE TABLE IF NOT EXISTS group_post_log (
 
 CREATE INDEX IF NOT EXISTS group_post_log_campaign_idx
     ON group_post_log (campaign_id, id);
+
+CREATE TABLE IF NOT EXISTS giveaways (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    emoji TEXT NOT NULL DEFAULT '🎁',
+    rarity TEXT NOT NULL CHECK (rarity IN ('common', 'rare', 'legendary')),
+    prize_type TEXT NOT NULL CHECK (prize_type IN ('kut', 'manual')),
+    prize_kut_amount INT,
+    prize_title TEXT,
+    prize_emoji TEXT,
+    prize_description TEXT,
+    draw_type TEXT NOT NULL CHECK (draw_type IN ('timer', 'instant')),
+    ends_at TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'cancelled')),
+    winner_user_id BIGINT,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    drawn_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS giveaway_conditions (
+    id SERIAL PRIMARY KEY,
+    giveaway_id INT NOT NULL REFERENCES giveaways(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('balance', 'harvest_count', 'item_count')),
+    target_value INT NOT NULL CHECK (target_value >= 1),
+    item_id TEXT,
+    sort_order INT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS giveaway_entries (
+    giveaway_id INT NOT NULL REFERENCES giveaways(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (giveaway_id, user_id)
+);

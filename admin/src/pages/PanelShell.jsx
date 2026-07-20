@@ -14,6 +14,7 @@ import EconomySection from './sections/EconomySection'
 import MarketSection from './sections/MarketSection'
 import FarmSection from './sections/FarmSection'
 import ContentSection from './sections/ContentSection'
+import GiveawaysSection from './sections/GiveawaysSection'
 import BroadcastSection from './sections/BroadcastSection'
 import LogsSection from './sections/LogsSection'
 import AnalyticsSection from './sections/AnalyticsSection'
@@ -114,6 +115,7 @@ export default function PanelShell({ onLogout }) {
   const isMarket = section === 'market'
   const isFarm = section === 'farm'
   const isContent = section === 'content'
+  const isGiveaways = section === 'giveaways'
   const isBroadcast = section === 'broadcast'
   const isLogs = section === 'logs'
   const isAnalytics = section === 'analytics'
@@ -257,6 +259,7 @@ export default function PanelShell({ onLogout }) {
           {isMarket && <MarketSection />}
           {isFarm && <FarmSection />}
           {isContent && <ContentSection />}
+          {isGiveaways && <GiveawaysSection />}
           {isBroadcast && <BroadcastSection />}
           {isLogs && <LogsSection />}
           {isAnalytics && <AnalyticsSection />}
@@ -267,7 +270,7 @@ export default function PanelShell({ onLogout }) {
           {isSupport && <SupportSection />}
           {isModeration && <ModerationSection role={role} permissions={permissions} />}
           {isChronicle && <ChronicleSection />}
-          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && (
+          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

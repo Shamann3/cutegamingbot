@@ -59,7 +59,12 @@ from dex_catalog import dex_catalog, farm_item_ids_for_client
 from shop_cache import build_shop_catalog_cache
 from audit_log import schedule_balance_event
 from game_events_log import log_game_event
-from user_notify import create_market_sale_notification, schedule_market_sale_telegram
+from user_notify import (
+    create_admin_message_notification,
+    create_market_sale_notification,
+    schedule_market_sale_telegram,
+    schedule_player_telegram_dm,
+)
 from item_catalog import items_for_display, merge_items_for_storage, normalize_items
 from user_items import (
     add_item,
@@ -79,6 +84,7 @@ from user_items import (
     water_count,
     autowater_count,
 )
+from giveaway_conditions import all_conditions_met
 
 ONBOARDING_PLOT_ID = 1
 ONBOARDING_PREPARE_STEP_INDEX = {"plant": 2, "water": 3, "harvest": 4}
@@ -1767,6 +1773,281 @@ class Database:
             "rewards": reward_summary(quest),
         }
         return state
+
+    async def _giveaway_condition_ctx(self, conn, user_id):
+        row = await conn.fetchrow(
+            "SELECT balance, harvest_count, items FROM users WHERE user_id = $1",
+            user_id,
+        )
+        if not row:
+            return {"balance": 0, "harvest_count": 0, "items": {}}
+        return {
+            "balance": int(row["balance"] or 0),
+            "harvest_count": int(row["harvest_count"] or 0),
+            "items": parse_items(row["items"]),
+        }
+
+    async def _giveaway_conditions(self, conn, giveaway_id):
+        rows = await conn.fetch(
+            """
+            SELECT kind, target_value, item_id
+            FROM giveaway_conditions
+            WHERE giveaway_id = $1
+            ORDER BY sort_order
+            """,
+            giveaway_id,
+        )
+        return [
+            {"kind": r["kind"], "target_value": int(r["target_value"]), "item_id": r["item_id"]}
+            for r in rows
+        ]
+
+    def _giveaway_prize_summary(self, row):
+        if row["prize_type"] == "kut":
+            return {
+                "type": "kut",
+                "amount": int(row["prize_kut_amount"] or 0),
+            }
+        return {
+            "type": "manual",
+            "title": row["prize_title"],
+            "emoji": row["prize_emoji"],
+            "description": row["prize_description"],
+        }
+
+    async def get_giveaways_state(self, user_id):
+        await self.ensure_user(user_id)
+        async with self.pool.acquire() as conn:
+            ctx = await self._giveaway_condition_ctx(conn, user_id)
+            rows = await conn.fetch(
+                """
+                SELECT g.*, (e.user_id IS NOT NULL) AS joined
+                FROM giveaways g
+                LEFT JOIN giveaway_entries e ON e.giveaway_id = g.id AND e.user_id = $1
+                WHERE g.enabled = TRUE AND g.status != 'cancelled'
+                ORDER BY g.sort_order, g.id
+                """,
+                user_id,
+            )
+            items = []
+            for row in rows:
+                conditions = await self._giveaway_conditions(conn, row["id"])
+                conditions_met = all_conditions_met(ctx, conditions)
+                items.append({
+                    "id": row["id"],
+                    "title": row["title"],
+                    "emoji": row["emoji"],
+                    "rarity": row["rarity"],
+                    "prize": self._giveaway_prize_summary(row),
+                    "drawType": row["draw_type"],
+                    "endsAt": row["ends_at"].isoformat() if row["ends_at"] else None,
+                    "status": row["status"],
+                    "conditionsCount": len(conditions),
+                    "conditionsMet": conditions_met,
+                    "joined": bool(row["joined"]),
+                    "won": bool(row["winner_user_id"] == user_id) if row["winner_user_id"] else None,
+                })
+        return {"giveaways": items}
+
+    async def get_giveaway_detail(self, user_id, giveaway_id):
+        await self.ensure_user(user_id)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM giveaways WHERE id = $1", giveaway_id)
+            if not row:
+                raise ValueError("Розыгрыш не найден")
+            ctx = await self._giveaway_condition_ctx(conn, user_id)
+            conditions = await self._giveaway_conditions(conn, giveaway_id)
+            joined = await conn.fetchval(
+                "SELECT 1 FROM giveaway_entries WHERE giveaway_id = $1 AND user_id = $2",
+                giveaway_id, user_id,
+            )
+            condition_progress = []
+            for cond in conditions:
+                if cond["kind"] == "balance":
+                    current = ctx["balance"]
+                elif cond["kind"] == "harvest_count":
+                    current = ctx["harvest_count"]
+                else:
+                    current = ctx["items"].get(cond["item_id"], 0)
+                condition_progress.append({
+                    "kind": cond["kind"],
+                    "targetValue": cond["target_value"],
+                    "itemId": cond["item_id"],
+                    "current": current,
+                    "satisfied": current >= cond["target_value"],
+                })
+            result = None
+            if row["status"] == "completed":
+                result = {"won": row["winner_user_id"] == user_id}
+            elif row["status"] == "cancelled":
+                result = {"won": False}
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "description": row["description"],
+            "emoji": row["emoji"],
+            "rarity": row["rarity"],
+            "prize": self._giveaway_prize_summary(row),
+            "drawType": row["draw_type"],
+            "endsAt": row["ends_at"].isoformat() if row["ends_at"] else None,
+            "status": row["status"],
+            "conditions": condition_progress,
+            "conditionsMet": all(c["satisfied"] for c in condition_progress),
+            "joined": bool(joined),
+            "result": result,
+        }
+
+    async def participate_in_giveaway(self, user_id, giveaway_id):
+        # ВАЖНО: не вызывать self.get_giveaway_detail(...) (сам берёт соединение
+        # из пула) пока ещё держим conn из self.pool.acquire() ниже — иначе на
+        # секунду занимаем два соединения из пула одновременно. Поэтому ранний
+        # выход при already_joined не return'ится изнутри "async with conn",
+        # а просто ничего не делает внутри транзакции — единый return после
+        # блока сам сходит за актуальным состоянием на уже свободном соединении.
+        await self.ensure_user(user_id)
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT * FROM giveaways WHERE id = $1 FOR UPDATE", giveaway_id
+                )
+                if not row:
+                    raise ValueError("Розыгрыш недоступен")
+
+                already_joined = await conn.fetchval(
+                    "SELECT 1 FROM giveaway_entries WHERE giveaway_id = $1 AND user_id = $2",
+                    giveaway_id, user_id,
+                )
+                if not already_joined:
+                    if row["status"] != "active" or not row["enabled"]:
+                        raise ValueError("Розыгрыш недоступен")
+
+                    ctx = await self._giveaway_condition_ctx(conn, user_id)
+                    conditions = await self._giveaway_conditions(conn, giveaway_id)
+                    if not all_conditions_met(ctx, conditions):
+                        raise ValueError("Не все условия выполнены")
+
+                    await conn.execute(
+                        "INSERT INTO giveaway_entries (giveaway_id, user_id) VALUES ($1, $2)",
+                        giveaway_id, user_id,
+                    )
+
+                    if row["draw_type"] == "instant" and row["prize_type"] == "kut":
+                        balance_before = await conn.fetchval(
+                            "SELECT balance FROM users WHERE user_id = $1", user_id
+                        )
+                        balance_before = int(balance_before or 0)
+                        amount = int(row["prize_kut_amount"] or 0)
+                        balance_after = balance_before + amount
+                        await conn.execute(
+                            "UPDATE users SET balance = $2 WHERE user_id = $1",
+                            user_id, balance_after,
+                        )
+                        schedule_balance_event(
+                            self.pool,
+                            "giveaway_reward",
+                            user_id,
+                            amount=amount,
+                            balance_before=balance_before,
+                            balance_after=balance_after,
+                            details={"giveaway_id": giveaway_id, "title": row["title"]},
+                        )
+                    log_game_event(
+                        self.pool,
+                        "giveaway_participate",
+                        user_id,
+                        {"giveaway_id": giveaway_id, "draw_type": row["draw_type"]},
+                    )
+        return await self.get_giveaway_detail(user_id, giveaway_id)
+
+    async def draw_timer_giveaways(self):
+        # pending_notifications собираются, пока держим conn, и отправляются
+        # ПОСЛЕ того, как async with self.pool.acquire() отпустит соединение —
+        # create_admin_message_notification само делает await self.pool.acquire()
+        # внутри себя, вызывать его с await, ещё держа conn, значит требовать
+        # два соединения из пула одновременно на одну и ту же операцию.
+        pending_notifications = []
+        async with self.pool.acquire() as conn:
+            due = await conn.fetch(
+                """
+                SELECT id FROM giveaways
+                WHERE status = 'active' AND draw_type = 'timer'
+                  AND ends_at IS NOT NULL AND ends_at <= NOW()
+                """
+            )
+            for row in due:
+                giveaway_id = row["id"]
+                async with conn.transaction():
+                    giveaway = await conn.fetchrow(
+                        "SELECT * FROM giveaways WHERE id = $1 FOR UPDATE", giveaway_id
+                    )
+                    if not giveaway or giveaway["status"] != "active":
+                        continue
+                    winner = await conn.fetchval(
+                        """
+                        SELECT user_id FROM giveaway_entries
+                        WHERE giveaway_id = $1
+                        ORDER BY random() LIMIT 1
+                        """,
+                        giveaway_id,
+                    )
+                    if winner is None:
+                        await conn.execute(
+                            "UPDATE giveaways SET status = 'cancelled', drawn_at = NOW() WHERE id = $1",
+                            giveaway_id,
+                        )
+                        continue
+                    await conn.execute(
+                        """
+                        UPDATE giveaways
+                        SET status = 'completed', winner_user_id = $2, drawn_at = NOW()
+                        WHERE id = $1
+                        """,
+                        giveaway_id, winner,
+                    )
+                    if giveaway["prize_type"] == "kut":
+                        amount = int(giveaway["prize_kut_amount"] or 0)
+                        balance_before = await conn.fetchval(
+                            "SELECT balance FROM users WHERE user_id = $1", winner
+                        )
+                        balance_before = int(balance_before or 0)
+                        balance_after = balance_before + amount
+                        await conn.execute(
+                            "UPDATE users SET balance = $2 WHERE user_id = $1",
+                            winner, balance_after,
+                        )
+                        schedule_balance_event(
+                            self.pool,
+                            "giveaway_reward",
+                            winner,
+                            amount=amount,
+                            balance_before=balance_before,
+                            balance_after=balance_after,
+                            details={"giveaway_id": giveaway_id, "title": giveaway["title"]},
+                        )
+                    prize_text = (
+                        f"{giveaway['prize_kut_amount']} КУТ"
+                        if giveaway["prize_type"] == "kut"
+                        else (giveaway["prize_title"] or "приз")
+                    )
+                    schedule_player_telegram_dm(
+                        winner,
+                        f"🎉 Вы выиграли в розыгрыше «{giveaway['title']}»! Приз: {prize_text}",
+                    )
+                    log_game_event(
+                        self.pool,
+                        "giveaway_drawn",
+                        winner,
+                        {"giveaway_id": giveaway_id},
+                    )
+                    pending_notifications.append((winner, giveaway["title"], prize_text))
+
+        for winner, title, prize_text in pending_notifications:
+            await create_admin_message_notification(
+                self.pool,
+                winner,
+                title="Вы выиграли в розыгрыше!",
+                body=f"«{title}» — приз: {prize_text}",
+            )
 
     async def get_craft_recipes(self, user_id):
         from craft_catalog import recipes_for_client
