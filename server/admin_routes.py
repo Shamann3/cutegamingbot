@@ -164,6 +164,12 @@ from admin_farm import (
     reset_user_plots,
 )
 from admin_quests import create_quest, delete_quest, update_quest
+from admin_giveaways import (
+    cancel_giveaway,
+    create_giveaway,
+    list_giveaways_admin,
+    update_giveaway,
+)
 from admin_content import (
     create_craft_recipe,
     create_crop,
@@ -608,6 +614,47 @@ class QuestUpdateBody(BaseModel):
     recurrence: str | None = Field(default=None, max_length=16)
     recurrenceEnd: str | None = Field(default=None, max_length=64)
     clearSchedule: bool = False  # set to True to wipe all scheduling fields
+    model_config = {"extra": "forbid"}
+
+
+class GiveawayConditionBody(BaseModel):
+    kind: str = Field(min_length=3, max_length=16)
+    targetValue: int = Field(default=1, ge=1)
+    itemId: str | None = Field(default=None, max_length=128)
+    model_config = {"extra": "forbid"}
+
+
+class GiveawayCreateBody(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=500)
+    emoji: str = Field(default="🎁", max_length=16)
+    rarity: str = Field(min_length=3, max_length=16)
+    prizeType: str = Field(min_length=3, max_length=16)
+    prizeKutAmount: int | None = Field(default=None, ge=1)
+    prizeTitle: str | None = Field(default=None, max_length=120)
+    prizeEmoji: str | None = Field(default=None, max_length=16)
+    prizeDescription: str | None = Field(default=None, max_length=500)
+    drawType: str = Field(min_length=6, max_length=16)
+    endsAt: str | None = Field(default=None, max_length=64)
+    conditions: list[GiveawayConditionBody] = Field(default_factory=list, max_length=10)
+    enabled: bool = True
+    model_config = {"extra": "forbid"}
+
+
+class GiveawayUpdateBody(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+    emoji: str | None = Field(default=None, max_length=16)
+    rarity: str | None = Field(default=None, max_length=16)
+    prizeType: str | None = Field(default=None, max_length=16)
+    prizeKutAmount: int | None = Field(default=None, ge=1)
+    prizeTitle: str | None = Field(default=None, max_length=120)
+    prizeEmoji: str | None = Field(default=None, max_length=16)
+    prizeDescription: str | None = Field(default=None, max_length=500)
+    drawType: str | None = Field(default=None, max_length=16)
+    endsAt: str | None = Field(default=None, max_length=64)
+    conditions: list[GiveawayConditionBody] | None = Field(default=None, max_length=10)
+    enabled: bool | None = None
     model_config = {"extra": "forbid"}
 
 
@@ -2922,6 +2969,103 @@ async def admin_content_quest_delete(
             admin_id, "quest_delete",
             target_type="quest", target_id=str(quest_id),
             target_label=f"Квест #{quest_id}",
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/content/giveaways")
+async def admin_content_giveaways_list(
+    _admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    return await list_giveaways_admin()
+
+
+@router.post("/content/giveaways")
+async def admin_content_giveaway_create(
+    body: GiveawayCreateBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        result = await create_giveaway(
+            title=body.title,
+            description=body.description,
+            emoji=body.emoji,
+            rarity=body.rarity,
+            prize_type=body.prizeType,
+            prize_kut_amount=body.prizeKutAmount,
+            prize_title=body.prizeTitle,
+            prize_emoji=body.prizeEmoji,
+            prize_description=body.prizeDescription,
+            draw_type=body.drawType,
+            ends_at=_parse_dt(body.endsAt),
+            conditions=[c.model_dump() for c in body.conditions],
+            enabled=body.enabled,
+            admin_user_id=admin_id,
+        )
+        await log_admin_action(
+            admin_id, "giveaway_create",
+            target_type="giveaway", target_label=body.title,
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/content/giveaways/{giveaway_id}")
+async def admin_content_giveaway_patch(
+    giveaway_id: int,
+    body: GiveawayUpdateBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    from admin_giveaways import _UNSET
+
+    try:
+        result = await update_giveaway(
+            giveaway_id,
+            title=body.title,
+            description=body.description,
+            emoji=body.emoji,
+            rarity=body.rarity,
+            prize_type=body.prizeType,
+            prize_kut_amount=body.prizeKutAmount if body.prizeKutAmount is not None else _UNSET,
+            prize_title=body.prizeTitle if body.prizeTitle is not None else _UNSET,
+            prize_emoji=body.prizeEmoji if body.prizeEmoji is not None else _UNSET,
+            prize_description=body.prizeDescription if body.prizeDescription is not None else _UNSET,
+            draw_type=body.drawType,
+            ends_at=_parse_dt(body.endsAt) if body.endsAt is not None else _UNSET,
+            conditions=[c.model_dump() for c in body.conditions] if body.conditions is not None else None,
+            enabled=body.enabled,
+            admin_user_id=admin_id,
+        )
+        await log_admin_action(
+            admin_id, "giveaway_update",
+            target_type="giveaway", target_id=str(giveaway_id),
+            target_label=body.title or f"Розыгрыш #{giveaway_id}",
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/content/giveaways/{giveaway_id}")
+async def admin_content_giveaway_cancel(
+    giveaway_id: int,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        result = await cancel_giveaway(giveaway_id, admin_user_id=admin_id)
+        await log_admin_action(
+            admin_id, "giveaway_cancel",
+            target_type="giveaway", target_id=str(giveaway_id),
+            target_label=f"Розыгрыш #{giveaway_id}",
             ip=_get_client_ip(request),
         )
         return result
