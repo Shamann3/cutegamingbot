@@ -2085,7 +2085,7 @@ class Database:
               u.username AS winner_username, u.first_name AS winner_first_name
             FROM giveaways g
             LEFT JOIN users u ON u.user_id = g.winner_user_id
-            WHERE g.status = 'completed'
+            WHERE g.status = 'completed' AND g.enabled = TRUE
             ORDER BY g.drawn_at DESC NULLS LAST, g.id DESC
             LIMIT $1
             """,
@@ -2125,7 +2125,7 @@ class Database:
                    u.username, u.first_name, g.drawn_at AS at
             FROM giveaways g
             LEFT JOIN users u ON u.user_id = g.winner_user_id
-            WHERE g.draw_type = 'timer' AND g.status = 'completed' AND g.winner_user_id IS NOT NULL
+            WHERE g.draw_type = 'timer' AND g.status = 'completed' AND g.winner_user_id IS NOT NULL AND g.enabled = TRUE
             ORDER BY g.drawn_at DESC
             LIMIT $1
             """,
@@ -2138,7 +2138,7 @@ class Database:
             FROM giveaway_entries e
             JOIN giveaways g ON g.id = e.giveaway_id
             JOIN users u ON u.user_id = e.user_id
-            WHERE g.draw_type = 'instant' AND g.status != 'cancelled'
+            WHERE g.draw_type = 'instant' AND g.status != 'cancelled' AND g.enabled = TRUE
             ORDER BY e.joined_at DESC
             LIMIT $1
             """,
