@@ -3043,7 +3043,7 @@ async def admin_content_giveaway_patch(
             prize_description=body.prizeDescription if body.prizeDescription is not None else _UNSET,
             draw_type=body.drawType,
             ends_at=_parse_dt(body.endsAt) if body.endsAt is not None else _UNSET,
-            starts_at=_parse_dt(body.startsAt),
+            starts_at=_parse_dt(body.startsAt) if "startsAt" in body.model_fields_set else _UNSET,
             conditions=[c.model_dump() for c in body.conditions] if body.conditions is not None else None,
             enabled=body.enabled,
             admin_user_id=admin_id,
