@@ -10,3 +10,4 @@ aiohttp
 tzdata
 pyotp
 qrcode[pil]
+pytest==8.3.4
