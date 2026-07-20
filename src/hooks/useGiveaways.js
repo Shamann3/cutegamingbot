@@ -18,6 +18,7 @@ export function useGiveaways({ isActive = true } = {}) {
   const [errorCode, setErrorCode] = useState(null)
   const [participatingId, setParticipatingId] = useState(null)
   const mountedRef = useRef(false)
+  const busyRef = useRef(false)
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!canAuthenticate()) {
@@ -49,6 +50,8 @@ export function useGiveaways({ isActive = true } = {}) {
   }, [])
 
   const participate = useCallback(async (giveawayId) => {
+    if (busyRef.current || !giveawayId) return
+    busyRef.current = true
     setParticipatingId(giveawayId)
     try {
       await participateInGiveaway(giveawayId)
@@ -58,6 +61,7 @@ export function useGiveaways({ isActive = true } = {}) {
       setError(formatGiveawayError(err))
       return false
     } finally {
+      busyRef.current = false
       setParticipatingId(null)
     }
   }, [load])
