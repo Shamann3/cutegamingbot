@@ -79,6 +79,16 @@ const Content = () => (
   </Icon>
 )
 
+const Giveaways = () => (
+  <Icon>
+    <rect x="4" y="10" width="16" height="9.5" rx="1.4" />
+    <path d="M4 13.5h16" />
+    <path d="M12 10v9.5" />
+    <path d="M12 10c-1.8 0-4-1-4-3.1C8 5.3 9.2 4 10.6 4c1.7 0 2.9 2.3 3.4 4.3" />
+    <path d="M12 10c1.8 0 4-1 4-3.1 0-1.6-1.2-2.9-2.6-2.9-1.7 0-2.9 2.3-3.4 4.3" />
+  </Icon>
+)
+
 const Broadcast = () => (
   <Icon>
     <circle cx="12" cy="18" r="1.4" />
@@ -172,6 +182,7 @@ export const NAV_ICONS = {
   market: Market,
   farm: Farm,
   content: Content,
+  giveaways: Giveaways,
   broadcast: Broadcast,
   logs: Logs,
   analytics: Analytics,

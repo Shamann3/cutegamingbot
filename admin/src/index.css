@@ -5603,15 +5603,20 @@ body {
   position: fixed;
   inset: 0;
   z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
   background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(4px);
 }
 
 .admin-modal {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  /* Centered via the backdrop's flexbox, not position:fixed + transform —
+     the modalPop entrance animation below also animates `transform`, and a
+     static transform: translate(-50%, -50%) here gets silently overwritten
+     by the animation's keyframe values (animations always win over a
+     non-!important transform), which used to push the modal off-center. */
   z-index: 1001;
   width: min(calc(100vw - 2rem), 22rem);
   max-height: 88vh;
@@ -6478,11 +6483,14 @@ body {
     max-width: 100vw !important;
   }
 
-  /* Модальные окна — по центру с учётом нижнего навбара */
+  /* Модальные окна — по центру с учётом нижнего навбара.
+     Центрирование теперь на flexbox бэкдропа (см. .admin-modal-backdrop
+     выше); padding-bottom здесь просто смещает центр вверх на половину
+     высоты нижнего навбара, как раньше делал top: calc(50% - 28px). */
+  .admin-modal-backdrop {
+    padding-bottom: 56px !important;
+  }
   .admin-modal {
-    top: calc(50% - 28px) !important; /* 28px = половина высоты нижнего навбара */
-    left: 50% !important;
-    transform: translate(-50%, -50%) !important;
     width: calc(100vw - 1.5rem) !important;
     max-height: calc(100vh - 80px) !important;
   }
