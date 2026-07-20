@@ -6,6 +6,7 @@ import {
   createGiveawayAdmin,
   patchGiveawayAdmin,
   deleteGiveawayAdmin,
+  completeGiveawayAdmin,
 } from '../../lib/adminClient'
 
 const RARITY_OPTIONS = [
@@ -42,6 +43,7 @@ function emptyForm() {
     prizeEmoji: '🎁',
     prizeDescription: '',
     drawType: 'instant',
+    startsAt: '',
     endsAt: '',
     enabled: true,
     conditions: [],
@@ -55,6 +57,7 @@ export default function GiveawaysSection() {
   const [form, setForm] = useState(null) // null = список, объект = форма создания/редактирования
   const [saving, setSaving] = useState(false)
   const [cancelTarget, setCancelTarget] = useState(null)
+  const [completeTarget, setCompleteTarget] = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -85,6 +88,7 @@ export default function GiveawaysSection() {
     prizeEmoji: item.prizeEmoji ?? '🎁',
     prizeDescription: item.prizeDescription ?? '',
     drawType: item.drawType,
+    startsAt: item.startsAt ? item.startsAt.slice(0, 16) : '',
     endsAt: item.endsAt ? item.endsAt.slice(0, 16) : '',
     enabled: item.enabled,
     conditions: item.conditions.map((c) => ({
@@ -122,6 +126,7 @@ export default function GiveawaysSection() {
         prizeEmoji: form.prizeType === 'manual' ? form.prizeEmoji : null,
         prizeDescription: form.prizeType === 'manual' ? form.prizeDescription : null,
         drawType: form.drawType,
+        startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : null,
         endsAt: form.drawType === 'timer' && form.endsAt ? new Date(form.endsAt).toISOString() : null,
         enabled: form.enabled,
         conditions: form.conditions.map((c) => ({
@@ -158,6 +163,20 @@ export default function GiveawaysSection() {
     }
   }
 
+  const confirmComplete = async () => {
+    if (!completeTarget) return
+    setSaving(true)
+    try {
+      await completeGiveawayAdmin(completeTarget.id)
+      setCompleteTarget(null)
+      await load()
+    } catch (e) {
+      setError(e?.message || 'Ошибка завершения')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="panel-content">
       <article className="panel-shelf panel-shelf-page">
@@ -178,6 +197,7 @@ export default function GiveawaysSection() {
               <th>Приз</th>
               <th>Редкость</th>
               <th>Тип</th>
+              <th>Старт</th>
               <th>Статус</th>
               <th>Участников</th>
               <th>Победитель</th>
@@ -190,6 +210,7 @@ export default function GiveawaysSection() {
                 <td>{item.emoji} {item.title}</td>
                 <td>{RARITY_OPTIONS.find((r) => r.value === item.rarity)?.label}</td>
                 <td>{DRAW_TYPE_OPTIONS.find((d) => d.value === item.drawType)?.label}</td>
+                <td>{item.startsAt ? new Date(item.startsAt).toLocaleString('ru-RU') : 'сразу'}</td>
                 <td>{item.status}</td>
                 <td>{item.entriesCount}</td>
                 <td>{item.winnerUserId ?? '—'}</td>
@@ -204,6 +225,15 @@ export default function GiveawaysSection() {
                       onClick={() => setCancelTarget(item)}
                     >
                       Отменить
+                    </button>
+                  )}
+                  {item.status === 'active' && item.drawType === 'instant' && (
+                    <button
+                      type="button"
+                      className="panel-users-btn"
+                      onClick={() => setCompleteTarget(item)}
+                    >
+                      Завершить
                     </button>
                   )}
                 </td>
@@ -221,6 +251,10 @@ export default function GiveawaysSection() {
             <label className="admin-modal-field">
               <span>Название</span>
               <input className="panel-users-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+            </label>
+            <label className="admin-modal-field">
+              <span>Дата начала (необязательно — пусто значит «сразу»)</span>
+              <input className="panel-users-input" type="datetime-local" value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} />
             </label>
             <label className="admin-modal-field">
               <span>Описание</span>
@@ -331,6 +365,16 @@ export default function GiveawaysSection() {
         loading={saving}
         onConfirm={confirmCancel}
         onCancel={() => setCancelTarget(null)}
+      />
+
+      <AdminActionModal
+        open={Boolean(completeTarget)}
+        title="Завершить розыгрыш?"
+        description={completeTarget ? `«${completeTarget.title}» — уйдёт из «Активных»/«Скоро» и появится во вкладке «Прошедшие» игроков с числом получивших приз.` : ''}
+        confirmText="Завершить"
+        loading={saving}
+        onConfirm={confirmComplete}
+        onCancel={() => setCompleteTarget(null)}
       />
     </div>
   )
