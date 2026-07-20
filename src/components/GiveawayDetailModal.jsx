@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import Portal from './Portal'
 import { fetchGiveaway } from '../lib/giveawaysClient'
-import { RARITY_ACCENT, RARITY_LABEL } from '../constants/giveaways'
+import { RARITY_ACCENT, formatGiveawayDeadlineTime, formatGiveawayPrize } from '../constants/giveaways'
 
 const CONDITION_LABEL = {
   balance: (cond) => `Баланс: ${cond.current} из ${cond.targetValue} КУТ`,
@@ -71,21 +71,19 @@ export default function GiveawayDetailModal({
             <>
               {/* Зона 1: приз + таймер */}
               <div className="giveaway-detail-hero">
-                <span className="giveaway-detail-hero-emoji" aria-hidden>
-                  {detail.prize.type === 'kut' ? '💰' : (detail.prize.emoji ?? '🎁')}
-                </span>
+                <div className="giveaway-detail-hero-icon-wrap">
+                  <span className="giveaway-detail-hero-emoji" aria-hidden>
+                    {detail.prize.type === 'kut' ? '💰' : (detail.prize.emoji ?? '🎁')}
+                  </span>
+                </div>
                 <h2 className="giveaway-detail-title">{detail.title}</h2>
-                <p className="giveaway-detail-prize">
-                  {detail.prize.type === 'kut'
-                    ? `${detail.prize.amount} КУТ`
-                    : detail.prize.title}
-                </p>
+                <p className="giveaway-detail-prize">{formatGiveawayPrize(detail.prize)}</p>
                 <span className="giveaway-detail-badge">
                   {detail.drawType === 'instant'
-                    ? 'Мгновенно'
+                    ? <>⚡ Мгновенно всем выполнившим</>
                     : detail.endsAt
-                      ? `Розыгрыш: ${new Date(detail.endsAt).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}`
-                      : 'По таймеру'}
+                      ? <>🕒 {formatGiveawayDeadlineTime(detail.endsAt)}</>
+                      : <>🕒 По таймеру</>}
                 </span>
               </div>
 
@@ -94,28 +92,30 @@ export default function GiveawayDetailModal({
                 {detail.conditions.length === 0 ? (
                   <p className="giveaway-detail-no-conditions">Условий нет — участвуйте сразу</p>
                 ) : (
-                  detail.conditions.map((cond, idx) => (
-                    <div
-                      key={idx}
-                      className={`giveaway-detail-condition${cond.satisfied ? ' giveaway-detail-condition--done' : ''}`}
-                    >
-                      <span className="giveaway-detail-condition-check" aria-hidden>
-                        {cond.satisfied ? '✅' : '⬜'}
-                      </span>
-                      <span className="giveaway-detail-condition-label">
-                        {(CONDITION_LABEL[cond.kind] ?? (() => cond.kind))(cond)}
-                      </span>
-                      {!cond.satisfied && (
-                        <button
-                          type="button"
-                          className="giveaway-detail-condition-goto"
-                          onClick={() => onNavigateCondition(CONDITION_NAV_TARGET[cond.kind] ?? 'farm')}
-                        >
-                          Перейти
-                        </button>
-                      )}
-                    </div>
-                  ))
+                  <div className="giveaway-detail-conditions-card">
+                    {detail.conditions.map((cond, idx) => (
+                      <div
+                        key={idx}
+                        className={`giveaway-detail-condition${cond.satisfied ? ' giveaway-detail-condition--done' : ''}`}
+                      >
+                        <span className="giveaway-detail-condition-status" aria-hidden>
+                          {cond.satisfied ? '🟢' : '⚪'}
+                        </span>
+                        <span className="giveaway-detail-condition-label">
+                          {(CONDITION_LABEL[cond.kind] ?? (() => cond.kind))(cond)}
+                        </span>
+                        {!cond.satisfied && (
+                          <button
+                            type="button"
+                            className="giveaway-detail-condition-goto"
+                            onClick={() => onNavigateCondition(CONDITION_NAV_TARGET[cond.kind] ?? 'farm')}
+                          >
+                            Перейти
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -136,7 +136,11 @@ export default function GiveawayDetailModal({
                   disabled={!detail.conditionsMet || isParticipating}
                   onClick={() => onParticipate(detail.id)}
                 >
-                  {isParticipating ? 'Секунду…' : 'Участвовать'}
+                  {isParticipating
+                    ? 'Секунду…'
+                    : detail.conditionsMet
+                      ? 'Участвовать'
+                      : <>🔒 Завершите задания</>}
                 </button>
               )}
             </>

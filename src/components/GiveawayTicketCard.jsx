@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { RARITY_ACCENT, RARITY_LABEL } from '../constants/giveaways'
+import { RARITY_ACCENT, RARITY_LABEL, formatGiveawayDeadline, formatGiveawayPrize } from '../constants/giveaways'
 
 const SWIPE_THRESHOLD = 90
 
@@ -8,6 +8,7 @@ export default function GiveawayTicketCard({ giveaway, onOpenDetail, onSwipePart
   const [swiping, setSwiping] = useState(false)
   const dragRef = useRef({ startX: 0, tracking: false })
   const accent = RARITY_ACCENT[giveaway.rarity] ?? RARITY_ACCENT.common
+  const isLegendary = giveaway.rarity === 'legendary'
 
   const canSwipe = giveaway.status === 'active' && !giveaway.joined
     && (giveaway.conditionsCount === 0 || giveaway.conditionsMet)
@@ -45,6 +46,9 @@ export default function GiveawayTicketCard({ giveaway, onOpenDetail, onSwipePart
     statusLabel = giveaway.drawType === 'instant' ? '✅ Приз получен' : '🎟️ Вы в розыгрыше'
   }
 
+  const deadline = giveaway.drawType === 'timer' ? formatGiveawayDeadline(giveaway.endsAt) : null
+  const prizeLabel = formatGiveawayPrize(giveaway.prize)
+
   return (
     <button
       type="button"
@@ -60,13 +64,24 @@ export default function GiveawayTicketCard({ giveaway, onOpenDetail, onSwipePart
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
-      <span className="giveaway-ticket-rarity">{RARITY_LABEL[giveaway.rarity] ?? giveaway.rarity}</span>
-      <span className="giveaway-ticket-emoji" aria-hidden>{giveaway.emoji}</span>
-      <span className="giveaway-ticket-title">{giveaway.title}</span>
-      {statusLabel && <span className="giveaway-ticket-status">{statusLabel}</span>}
-      {canSwipe && !statusLabel && (
-        <span className="giveaway-ticket-swipe-hint">Смахните →</span>
-      )}
+      {isLegendary && <span className="giveaway-ticket-legendary-badge">Легендарный</span>}
+      <div className="giveaway-ticket-top">
+        <span className="giveaway-ticket-emoji" aria-hidden>{giveaway.emoji}</span>
+        <div className="giveaway-ticket-info">
+          {!isLegendary && (
+            <span className="giveaway-ticket-rarity">{RARITY_LABEL[giveaway.rarity] ?? giveaway.rarity}</span>
+          )}
+          <span className="giveaway-ticket-title">{giveaway.title}</span>
+          {statusLabel && <span className="giveaway-ticket-status">{statusLabel}</span>}
+          {canSwipe && !statusLabel && (
+            <span className="giveaway-ticket-swipe-hint">Смахните →</span>
+          )}
+        </div>
+      </div>
+      <div className="giveaway-ticket-footer">
+        {deadline && <span className="giveaway-ticket-chip">⏳ До {deadline}</span>}
+        <span className="giveaway-ticket-chip giveaway-ticket-chip--prize">{prizeLabel}</span>
+      </div>
     </button>
   )
 }

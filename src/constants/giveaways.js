@@ -13,3 +13,22 @@ export const RARITY_ACCENT = {
   rare: { strong: '#5b9be0', glow: 'rgba(91, 155, 224, 0.32)' },
   legendary: { strong: '#f472b6', glow: 'rgba(244, 114, 182, 0.34)' },
 }
+
+export function formatGiveawayDeadline(endsAtIso) {
+  if (!endsAtIso) return null
+  return new Date(endsAtIso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+}
+
+export function formatGiveawayDeadlineTime(endsAtIso) {
+  if (!endsAtIso) return null
+  const date = new Date(endsAtIso)
+  const day = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+  const time = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  return `${day} в ${time}`
+}
+
+export function formatGiveawayPrize(prize) {
+  if (!prize) return ''
+  if (prize.type === 'kut') return `${Number(prize.amount ?? 0).toLocaleString('ru-RU')} КУТ`
+  return `${prize.emoji ?? '🎁'} ${prize.title ?? 'Приз'}`
+}
