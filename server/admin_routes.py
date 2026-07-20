@@ -166,6 +166,7 @@ from admin_farm import (
 from admin_quests import create_quest, delete_quest, update_quest
 from admin_giveaways import (
     cancel_giveaway,
+    complete_giveaway,
     create_giveaway,
     list_giveaways_admin,
     update_giveaway,
@@ -635,6 +636,7 @@ class GiveawayCreateBody(BaseModel):
     prizeEmoji: str | None = Field(default=None, max_length=16)
     prizeDescription: str | None = Field(default=None, max_length=500)
     drawType: str = Field(min_length=5, max_length=16)
+    startsAt: str | None = Field(default=None, max_length=64)
     endsAt: str | None = Field(default=None, max_length=64)
     conditions: list[GiveawayConditionBody] = Field(default_factory=list, max_length=10)
     enabled: bool = True
@@ -652,6 +654,7 @@ class GiveawayUpdateBody(BaseModel):
     prizeEmoji: str | None = Field(default=None, max_length=16)
     prizeDescription: str | None = Field(default=None, max_length=500)
     drawType: str | None = Field(default=None, max_length=16)
+    startsAt: str | None = Field(default=None, max_length=64)
     endsAt: str | None = Field(default=None, max_length=64)
     conditions: list[GiveawayConditionBody] | None = Field(default=None, max_length=10)
     enabled: bool | None = None
@@ -3002,6 +3005,7 @@ async def admin_content_giveaway_create(
             prize_description=body.prizeDescription,
             draw_type=body.drawType,
             ends_at=_parse_dt(body.endsAt),
+            starts_at=_parse_dt(body.startsAt),
             conditions=[c.model_dump() for c in body.conditions],
             enabled=body.enabled,
             admin_user_id=admin_id,
@@ -3039,6 +3043,7 @@ async def admin_content_giveaway_patch(
             prize_description=body.prizeDescription if body.prizeDescription is not None else _UNSET,
             draw_type=body.drawType,
             ends_at=_parse_dt(body.endsAt) if body.endsAt is not None else _UNSET,
+            starts_at=_parse_dt(body.startsAt) if body.startsAt is not None else _UNSET,
             conditions=[c.model_dump() for c in body.conditions] if body.conditions is not None else None,
             enabled=body.enabled,
             admin_user_id=admin_id,
@@ -3064,6 +3069,25 @@ async def admin_content_giveaway_cancel(
         result = await cancel_giveaway(giveaway_id, admin_user_id=admin_id)
         await log_admin_action(
             admin_id, "giveaway_cancel",
+            target_type="giveaway", target_id=str(giveaway_id),
+            target_label=f"Розыгрыш #{giveaway_id}",
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/content/giveaways/{giveaway_id}/complete")
+async def admin_content_giveaway_complete(
+    giveaway_id: int,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    try:
+        result = await complete_giveaway(giveaway_id, admin_user_id=admin_id)
+        await log_admin_action(
+            admin_id, "giveaway_complete",
             target_type="giveaway", target_id=str(giveaway_id),
             target_label=f"Розыгрыш #{giveaway_id}",
             ip=_get_client_ip(request),
