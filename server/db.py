@@ -2121,7 +2121,7 @@ class Database:
     async def get_giveaway_winners_feed(self, limit=20):
         timer_rows = await self.pool.fetch(
             """
-            SELECT g.title, g.emoji, g.prize_type, g.prize_kut_amount, g.prize_title, g.prize_emoji,
+            SELECT g.title, g.emoji, g.prize_type, g.prize_kut_amount, g.prize_title, g.prize_emoji, g.prize_description,
                    u.username, u.first_name, g.drawn_at AS at
             FROM giveaways g
             LEFT JOIN users u ON u.user_id = g.winner_user_id
@@ -2133,12 +2133,12 @@ class Database:
         )
         instant_rows = await self.pool.fetch(
             """
-            SELECT g.title, g.emoji, g.prize_type, g.prize_kut_amount, g.prize_title, g.prize_emoji,
+            SELECT g.title, g.emoji, g.prize_type, g.prize_kut_amount, g.prize_title, g.prize_emoji, g.prize_description,
                    u.username, u.first_name, e.joined_at AS at
             FROM giveaway_entries e
             JOIN giveaways g ON g.id = e.giveaway_id
             JOIN users u ON u.user_id = e.user_id
-            WHERE g.draw_type = 'instant'
+            WHERE g.draw_type = 'instant' AND g.status != 'cancelled'
             ORDER BY e.joined_at DESC
             LIMIT $1
             """,
