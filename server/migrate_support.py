@@ -46,6 +46,22 @@ CREATE INDEX IF NOT EXISTS idx_support_messages_ticket
     ON support_messages (ticket_id, created_at);
 
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS photo_file_id TEXT;
+
+-- Один открытый тикет на пользователя: схлопываем существующие дубли
+-- (оставляем самый новый открытый тикет, остальные закрываем) и ставим
+-- уникальный частичный индекс от гонки. См. support_db._DDL.
+UPDATE support_tickets t
+SET status = 'closed', updated_at = NOW()
+WHERE t.status = 'open'
+  AND t.id NOT IN (
+      SELECT DISTINCT ON (user_id) id
+      FROM support_tickets
+      WHERE status = 'open'
+      ORDER BY user_id, created_at DESC
+  );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_support_tickets_one_open
+    ON support_tickets (user_id) WHERE status = 'open';
 """
 
 
