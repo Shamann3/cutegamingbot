@@ -81,6 +81,7 @@ PERMISSIONS_BY_ROLE = {
         "review_applications",
         "manage_staff",
         "set_salary",
+        "pay_salary",
         "manage_appeals",
     },
     ROLE_JUNIOR: {
