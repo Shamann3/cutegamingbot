@@ -63,6 +63,7 @@ from game_events_log import log_game_event
 from user_notify import (
     create_admin_message_notification,
     create_market_sale_notification,
+    schedule_market_purchase_broadcast,
     schedule_market_sale_telegram,
     schedule_player_telegram_dm,
 )
@@ -326,10 +327,20 @@ class Database:
 
         await dex_catalog.load(self.pool)
 
-        from content_registry import load_content_registry, seed_default_content
+        from content_registry import (
+            load_content_registry,
+            migrate_legacy_craft_recipes,
+            seed_default_content,
+        )
 
         try:
             await seed_default_content(self.pool)
+            # Переносим рецепты из старой таблицы craft в управляемую craft_recipes,
+            # ПОСЛЕ dex_catalog.load (нужны emoji→id) и ДО загрузки реестра, чтобы
+            # вебапп/админка и база (craft_recipes) больше не расходились.
+            _migrated_craft = await migrate_legacy_craft_recipes(self.pool)
+            if _migrated_craft:
+                print(f"[DB][OK] craft: перенесено {_migrated_craft} legacy-рецептов в craft_recipes")
             await load_content_registry(self.pool)
             from content_registry import all_crops
 
@@ -2596,7 +2607,7 @@ class Database:
                 seller_id = int(row["seller_id"])
                 user_rows = await conn.fetch(
                     """
-                    SELECT user_id, balance, items FROM users
+                    SELECT user_id, balance, items, username, first_name FROM users
                     WHERE user_id = ANY($1::bigint[])
                     ORDER BY user_id
                     FOR UPDATE
@@ -2715,6 +2726,15 @@ class Database:
             commission=commission,
             payout=seller_payout,
             balance=seller_balance_after,
+        )
+        # Публичное объявление о покупке в группы биржи (fire-and-forget).
+        schedule_market_purchase_broadcast(
+            emoji=sale_emoji,
+            name=sale_name,
+            quantity=buy_qty,
+            paid=total_cost,
+            buyer_name=(buyer_row["first_name"] or None),
+            buyer_username=(buyer_row["username"] or None),
         )
         catalog = await self.get_market_catalog(
             user_id,

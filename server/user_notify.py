@@ -175,6 +175,67 @@ def schedule_market_sale_telegram(
     schedule_player_telegram_dm(seller_id, text)
 
 
+def format_market_purchase_broadcast(
+    *,
+    emoji: str,
+    name: str,
+    quantity: int,
+    paid: int,
+    buyer_name: str | None = None,
+    buyer_username: str | None = None,
+) -> str:
+    """Публичное объявление о покупке на бирже для групповых чатов."""
+    uname = (buyer_username or "").lstrip("@").strip()
+    if uname:
+        label = _escape(buyer_name or f"@{uname}")
+        buyer = f"<a href='https://t.me/{_escape(uname)}'>{label}</a>"
+    elif buyer_name:
+        buyer = _escape(buyer_name)
+    else:
+        buyer = "Игрок"
+    lines = [
+        "<b><tg-emoji emoji-id='5406683434124859552'>🛍</tg-emoji> Новая сделка на бирже!</b>",
+        "",
+        f"<tg-emoji emoji-id='5193065010795911968'>🛍</tg-emoji> <b>{buyer} только что забрал(а) лот :</b>",
+        f"<code>{_escape(emoji or '📦')}</code> <b>{_escape(name)} ×{_escape(quantity)}</b>",
+        f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>За {_escape(paid)} кут</b>",
+        "",
+        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b><i>Торгуй и ты!</i></b>",
+    ]
+    return "\n".join(lines)
+
+
+async def _broadcast_market_purchase(text: str) -> None:
+    from config import MARKET_BROADCAST_GROUP_IDS
+
+    for chat_id in MARKET_BROADCAST_GROUP_IDS:
+        try:
+            await send_telegram_message(text, chat_id=str(chat_id))
+        except Exception:
+            logger.exception("Market purchase broadcast failed (chat_id=%s)", chat_id)
+
+
+def schedule_market_purchase_broadcast(
+    *,
+    emoji: str,
+    name: str,
+    quantity: int,
+    paid: int,
+    buyer_name: str | None = None,
+    buyer_username: str | None = None,
+) -> None:
+    """Fire-and-forget: шлём объявление о покупке во все группы биржи."""
+    text = format_market_purchase_broadcast(
+        emoji=emoji or "📦",
+        name=name,
+        quantity=quantity,
+        paid=paid,
+        buyer_name=buyer_name,
+        buyer_username=buyer_username,
+    )
+    asyncio.create_task(_broadcast_market_purchase(text))
+
+
 async def create_admin_message_notification(
     pool: asyncpg.Pool | None,
     user_id: int,

@@ -152,6 +152,14 @@ ALTER TABLE craft_recipes ADD COLUMN IF NOT EXISTS remains INT NOT NULL DEFAULT 
 ALTER TABLE craft_recipes ADD COLUMN IF NOT EXISTS result_qty INT NOT NULL DEFAULT 1;
 -- result_qty: сколько предметов выдаётся при успешном крафте
 
+-- Отметки одноразовых контент-миграций (чтобы не повторять их на каждом старте).
+-- Напр. legacy_craft_to_recipes: перенос старой таблицы craft в craft_recipes —
+-- после переноса рецепт, удалённый админом, не должен возвращаться при рестарте.
+CREATE TABLE IF NOT EXISTS content_migrations (
+    key TEXT PRIMARY KEY,
+    done_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Обучение при первом входе
 ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_done BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_active BOOLEAN NOT NULL DEFAULT FALSE;

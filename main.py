@@ -479,12 +479,12 @@ DEMO_WIN_STREAK_BREAK = 3          # после скольки побед под
 # ----- DEMO РЕЖИМ: УМНАЯ РАЗДАЧА ВЫИГРЫШЕЙ -----
 DEMO_SMALL_BET_RATIO = 0.6         # ставка ≤ 60% от средней считается маленькой
 DEMO_LARGE_BET_RATIO = 2.0         # ставка ≥ 200% от средней считается большой
-DEMO_SMALL_WIN_PROB = 0.90         # шанс выигрыша при маленькой ставке
-DEMO_MEDIUM_WIN_PROB = 0.70        # шанс выигрыша при средней ставке
-DEMO_LARGE_WIN_PROB = 0.35         # шанс выигрыша при большой ставке
+DEMO_SMALL_WIN_PROB = 0.15         # шанс выигрыша при маленькой ставке
+DEMO_MEDIUM_WIN_PROB = 0.15        # шанс выигрыша при средней ставке
+DEMO_LARGE_WIN_PROB = 0.15         # шанс выигрыша при большой ставке
 DEMO_PROB_JITTER = 0.10            # случайное отклонение вероятности (±10%)
-DEMO_AGGRESSION_WIN_PROB_MIN = 0.20  # мин. шанс выигрыша при агрессивном скачке
-DEMO_AGGRESSION_WIN_PROB_MAX = 0.50  # макс. шанс выигрыша при агрессивном скачке
+DEMO_AGGRESSION_WIN_PROB_MIN = 0.15  # мин. шанс выигрыша при агрессивном скачке
+DEMO_AGGRESSION_WIN_PROB_MAX = 0.15  # макс. шанс выигрыша при агрессивном скачке
 
 # ----- АНАЛИЗ ПРИБЫЛИ / УБЫТКОВ (PROFIT WINDOW) -----
 PROFIT_WINDOW = 50
@@ -519,7 +519,7 @@ NEAR_MISS_PROB = 0.3
 
 # ----- 0DEMO РЕЖИМ: МАСКИРОВОЧНЫЕ ВЫИГРЫШИ -----
 ZERODEMO_FAIR_CHANCE = 0.02
-ZERODEMO_WIN_CHANCE = 0.06
+ZERODEMO_WIN_CHANCE = 0.15
 ZERODEMO_WIN_COST_MULTIPLIER = 2.3
 
 # ----- НАСТРОЙКИ WELCOME BACK -----
@@ -615,13 +615,13 @@ JERICHO_ECONOMY_TRAP_STRICT_MULTIPLIER = _jericho_creator_policy["trap_strict_mu
 JERICHO_ECONOMY_TRAP_CREATOR_MULTIPLIER_GAIN = _jericho_creator_policy["trap_creator_multiplier_gain"]
 JERICHO_ECONOMY_TRAP_STRICT_CREATOR_MULTIPLIER_GAIN = _jericho_creator_policy["trap_strict_creator_multiplier_gain"]
 # Границы вероятностей для естественности.
-JERICHO_DEMO_WIN_PROB_MIN = 0.28
-JERICHO_DEMO_WIN_PROB_MAX = 0.93
+JERICHO_DEMO_WIN_PROB_MIN = 0.15
+JERICHO_DEMO_WIN_PROB_MAX = 0.15
 JERICHO_ZERODEMO_FAIR_MIN = 0.005
-JERICHO_ZERODEMO_MASK_WIN_MIN = 0.015
+JERICHO_ZERODEMO_MASK_WIN_MIN = 0.15
 # Целевые winrate и окно мониторинга (легко менять без правки логики).
-JERICHO_TARGET_DEMO_WINRATE = 0.62
-JERICHO_TARGET_0DEMO_WINRATE = 0.10
+JERICHO_TARGET_DEMO_WINRATE = 0.15
+JERICHO_TARGET_0DEMO_WINRATE = 0.15
 JERICHO_METRICS_SAMPLE_SIZE = 5000
 # Отладка Jericho.
 JERICHO_DEBUG_ENABLED = False
@@ -38431,15 +38431,36 @@ async def botmain():
     # ===================== КНОПКА МЕНЮ WEBAPP (ФЕРМА) =====================
     # Один и тот же бот (TOKEN == BOT_TOKEN), поэтому используем уже
     # существующий bot1 - без создания второго Bot/сессии/подключения.
-    if WEBAPP_URL:
+    #
+    # ВАЖНО: кнопка меню в BotFather ГЛОБАЛЬНА для токена, а прод и локальная
+    # разработка используют ОДИН токен. Раньше локальный запуск с
+    # WEBAPP_URL=ngrok перетирал кнопку общего бота на дев-туннель, который
+    # потом отваливался (ERR_NGROK_3200). Поэтому кнопку меняем ТОЛЬКО на
+    # хостинге (PRODUCTION=true в .do/app.yaml) и НИКОГДА не подставляем
+    # ngrok/не-https URL. Если на хостинге WEBAPP_URL пуст или похож на
+    # туннель — используем канонический хостинг-URL, чтобы кнопка всегда вела
+    # на прод.
+    _PROD_WEBAPP_URL = "https://cutegaming-mobet.ondigitalocean.app/"
+    _is_production = os.getenv("PRODUCTION", "").strip().lower() == "true"
+    _menu_url = (WEBAPP_URL or "").strip()
+    if _menu_url and ("ngrok" in _menu_url.lower() or not _menu_url.startswith("https://")):
+        # дев-туннель / не-https — к BotFather не подпускаем
+        _menu_url = ""
+    if not _is_production:
+        print(
+            f"ℹ️ [MENU] Не прод (PRODUCTION!=true) — кнопку Web App не трогаем "
+            f"(WEBAPP_URL={WEBAPP_URL!r})"
+        )
+    else:
+        _target_url = _menu_url or _PROD_WEBAPP_URL
         try:
             await bot1.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
                     text="🌿 Ферма",
-                    web_app=WebAppInfo(url=WEBAPP_URL),
+                    web_app=WebAppInfo(url=_target_url),
                 )
             )
-            print(f"✅ [MENU] Кнопка Web App выставлена: {WEBAPP_URL}")
+            print(f"✅ [MENU] Кнопка Web App выставлена: {_target_url}")
         except Exception as e:
             print(f"⚠️ [MENU] set_chat_menu_button ошибка: {type(e).__name__}: {e}")
 

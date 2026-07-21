@@ -284,6 +284,90 @@ async def _fetch_craft(pool: asyncpg.Pool) -> tuple[CraftRecipeDef, ...]:
     )
 
 
+async def migrate_legacy_craft_recipes(pool: asyncpg.Pool) -> int:
+    """Одноразовый идемпотентный перенос рецептов из старой таблицы craft в
+    управляемую craft_recipes.
+
+    Пары ингредиентов, уже присутствующие в craft_recipes (в любом порядке),
+    пропускаются. Возвращает число реально перенесённых рецептов. Старую таблицу
+    craft НЕ трогаем — её может ещё читать текстовый бот. После переноса
+    load_content_registry больше не подмешивает legacy, поэтому источник правды
+    один: craft_recipes (вебапп и админка совпадают с базой).
+
+    Выполняется РОВНО ОДИН РАЗ (отметка в content_migrations): иначе рецепт,
+    удалённый админом после переноса, возвращался бы при следующем рестарте, ведь
+    в старой таблице craft он ещё есть."""
+    try:
+        already = await pool.fetchval(
+            "SELECT 1 FROM content_migrations WHERE key = 'legacy_craft_to_recipes'"
+        )
+    except Exception:
+        # Таблица-маркер ещё не создана (schema применяется в этой же migrate()) —
+        # тогда просто пропускаем перенос, он выполнится на следующем старте.
+        return 0
+    if already:
+        return 0
+
+    legacy = await _fetch_craft_legacy(pool)
+
+    existing_rows = await pool.fetch(
+        "SELECT ingredient_a_id, ingredient_b_id FROM craft_recipes"
+    )
+    existing_pairs: set[str] = set()
+    for r in existing_rows:
+        existing_pairs.add(
+            "|".join(sorted([
+                dex_catalog.canonical_key(str(r["ingredient_a_id"])),
+                dex_catalog.canonical_key(str(r["ingredient_b_id"])),
+            ]))
+        )
+
+    next_sort = int(
+        await pool.fetchval("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM craft_recipes") or 0
+    )
+    migrated = 0
+    for recipe in legacy:
+        pair = "|".join(sorted([
+            dex_catalog.canonical_key(recipe.ingredient_ids[0]),
+            dex_catalog.canonical_key(recipe.ingredient_ids[1]),
+        ]))
+        if pair in existing_pairs:
+            continue
+        inserted = await pool.fetchval(
+            """
+            INSERT INTO craft_recipes (
+                key, display_name, result_item_id, ingredient_a_id, ingredient_b_id,
+                success_percent, enabled, sort_order, remains, result_qty
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (key) DO NOTHING
+            RETURNING id
+            """,
+            recipe.key,
+            recipe.display_name,
+            recipe.result_id,
+            recipe.ingredient_ids[0],
+            recipe.ingredient_ids[1],
+            max(1, min(100, int(recipe.success_percent))),
+            bool(recipe.enabled),
+            next_sort,
+            max(0, int(recipe.remains)),
+            max(1, int(recipe.result_qty)),
+        )
+        if inserted is not None:
+            existing_pairs.add(pair)
+            next_sort += 1
+            migrated += 1
+
+    # Отмечаем миграцию выполненной — даже если переносить было нечего (пустая
+    # или отсутствующая таблица craft): второй раз запускать её не нужно.
+    await pool.execute(
+        "INSERT INTO content_migrations (key) VALUES ('legacy_craft_to_recipes') "
+        "ON CONFLICT (key) DO NOTHING"
+    )
+    return migrated
+
+
 def _seed_lookup_keys(crop: CropDef) -> set[str]:
     keys = {dex_catalog.resolve_item_id(crop.seed_id), crop.key}
     seed_entry = dex_catalog.get(crop.seed_id)
@@ -308,24 +392,13 @@ async def load_content_registry(pool: asyncpg.Pool) -> None:
     global _registry_loaded, _crops, _craft_recipes
     _crops = await _fetch_crops(pool)
 
-    managed = list(await _fetch_craft(pool))
-
-    # Рецепты из таблицы craft (пользовательская) — добавляем те которых нет в managed
-    legacy = await _fetch_craft_legacy(pool)
-    managed_pairs: set[str] = set()
-    for r in managed:
-        pair = "|".join(sorted([dex_catalog.canonical_key(r.ingredient_ids[0]),
-                                 dex_catalog.canonical_key(r.ingredient_ids[1])]))
-        managed_pairs.add(pair)
-
-    for r in legacy:
-        pair = "|".join(sorted([dex_catalog.canonical_key(r.ingredient_ids[0]),
-                                 dex_catalog.canonical_key(r.ingredient_ids[1])]))
-        if pair not in managed_pairs:
-            managed.append(r)
-            managed_pairs.add(pair)
-
-    _craft_recipes = tuple(managed)
+    # Источник правды по крафту — только управляемая таблица craft_recipes.
+    # Рецепты из старой таблицы craft переносятся в craft_recipes одноразовой
+    # идемпотентной миграцией (migrate_legacy_craft_recipes) при старте, поэтому
+    # здесь их больше НЕ подмешиваем: иначе вебапп/админка показывали бы рецепты,
+    # которых нет в craft_recipes, и их нельзя было бы отредактировать/удалить в
+    # панели (рассинхрон «в вебаппе/админке есть, а в базе нет»).
+    _craft_recipes = tuple(await _fetch_craft(pool))
     _rebuild_indexes()
     _registry_loaded = True
 
