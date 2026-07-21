@@ -1916,7 +1916,9 @@ class Database:
         # channel_sub — вне блока conn: HTTP-вызов к Telegram не должен
         # держать соединение из пула открытым (см. server/telegram_membership.py).
         channels = {c["item_id"] for c in conditions if c["kind"] == "channel_sub"}
-        ctx["channel_sub"] = await resolve_channel_sub(self.pool, user_id, channels)
+        # force_refresh=True: кнопка «Участвовать» гейтится на conditionsMet — если бы
+        # деталь читала кэш, только что подписавшийся игрок был бы заблокирован до 10 мин.
+        ctx["channel_sub"] = await resolve_channel_sub(self.pool, user_id, channels, force_refresh=True)
 
         condition_progress = []
         for cond in conditions:
