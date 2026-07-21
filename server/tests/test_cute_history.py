@@ -145,3 +145,33 @@ def test_date_filters_bound_as_date_objects_not_strings():
     # they must be bound as datetime.date objects
     assert date(2026, 5, 10) in captured_args
     assert date(2026, 7, 22) in captured_args
+
+
+def test_donate_source_failure_degrades_to_cutehistory_only():
+    """The legacy `donate` table schema varies (prod `data` is `time`, not a
+    timestamp, so `data::timestamptz` raises CannotCoerceError). Donations are a
+    best-effort secondary source — a donate-query failure must degrade to a
+    cutehistory-only feed, never 500 the whole endpoint."""
+    import asyncio
+    import admin_cute_history
+
+    class FakePool:
+        async def fetchval(self, query, *args):
+            if "FROM donate" in query:
+                raise RuntimeError("cannot cast type time without time zone to timestamptz")
+            return 3  # cutehistory count
+
+        async def fetch(self, query, *args):
+            if "FROM donate" in query:
+                raise RuntimeError("cannot cast type time without time zone to timestamptz")
+            return []  # cutehistory rows
+
+    original_pool = admin_cute_history.db.pool
+    admin_cute_history.db.pool = FakePool()
+    try:
+        result = asyncio.run(admin_cute_history.get_user_cute_history(123))
+    finally:
+        admin_cute_history.db.pool = original_pool
+
+    assert result["total"] == 3       # cutehistory only; donate contributed nothing
+    assert result["items"] == []
