@@ -7397,6 +7397,10 @@ async def callback_top(call: types.CallbackQuery):
 
                 try:
                     await msg.edit_reply_markup(reply_markup=kb_new)
+                except TelegramRetryAfter as e:
+                    # flood control: не долбим Telegram - прекращаем обновлять таймер
+                    print(f"[Бонус старт] flood control, останавливаю таймер: retry_after={getattr(e, 'retry_after', '?')}")
+                    break
                 except TelegramBadRequest as e:
                     print(f"[Бонус старт] TelegramBadRequest (обновление таймера): {e}")
                     break
@@ -10945,6 +10949,7 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
             set_bonus_owner(msg.message_id, user_id)
             _bonus_requests[(user_id, msg.message_id)] = True
             cancel_timers[msg.message_id] = False
+            _tick = 0
 
             try:
                 while not cancel_timers.get(msg.message_id, False):
@@ -10969,10 +10974,17 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
                     if chat.id == user_id:
                         new_kb_buttons.append([InlineKeyboardButton(text="✖️", callback_data="9close_bonus")])
                     new_kb = InlineKeyboardMarkup(inline_keyboard=new_kb_buttons)
-                    try:
-                        await msg.edit_reply_markup(reply_markup=new_kb)
-                    except Exception:
-                        pass
+                    # Правим кнопку раз в 5 сек (и каждую секунду в последние 10),
+                    # а при flood control ждём столько, сколько просит Telegram -
+                    # раньше цикл долбил edit каждую секунду весь кулдаун.
+                    _tick += 1
+                    if rem_sec <= 10 or (_tick % 5 == 0):
+                        try:
+                            await msg.edit_reply_markup(reply_markup=new_kb)
+                        except TelegramRetryAfter as _fe:
+                            await asyncio.sleep(int(getattr(_fe, "retry_after", 5) or 5))
+                        except Exception:
+                            pass
             finally:
                 cancel_timers.pop(msg.message_id, None)
             bns_unlock_award_lock(user_id)
@@ -11419,6 +11431,7 @@ async def _show_cooldown_timer(
         bns_dump_user(user_id)
 
     cancel_timers[msg.message_id] = False
+    _tick = 0
     try:
         while not cancel_timers.get(msg.message_id, False):
             await asyncio.sleep(1)
@@ -11436,10 +11449,19 @@ async def _show_cooldown_timer(
             m, s = divmod(rem, 60)
             ts_new = f"{h:02d}:{m:02d}:{s:02d}"
             new_kb = make_cooldown_keyboard(ts_new)
-            try:
-                await msg.edit_reply_markup(reply_markup=new_kb)
-            except Exception:
-                pass
+            # Раньше кнопку правили КАЖДУЮ секунду весь кулдаун (часы!) - это
+            # гарантированно упиралось в flood control, а ошибка глоталась и цикл
+            # долбил Telegram каждую секунду. Теперь: правим раз в 5 сек (и каждую
+            # секунду только в последние 10 сек), а при flood - ждём столько,
+            # сколько просит Telegram, а не долбим.
+            _tick += 1
+            if rem_sec <= 10 or (_tick % 5 == 0):
+                try:
+                    await msg.edit_reply_markup(reply_markup=new_kb)
+                except TelegramRetryAfter as _fe:
+                    await asyncio.sleep(int(getattr(_fe, "retry_after", 5) or 5))
+                except Exception:
+                    pass
     finally:
         cancel_timers.pop(msg.message_id, None)
 
