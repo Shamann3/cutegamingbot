@@ -1,6 +1,6 @@
 // Переключатель заглушки «скоро»: true — вкладка «Розыгрыши» показывает
 // только анонс-плашку вместо реального списка; false — обычный интерфейс.
-export const GIVEAWAYS_COMING_SOON = true
+export const GIVEAWAYS_COMING_SOON = false
 
 export const RARITY_ORDER = ['common', 'rare', 'legendary']
 
