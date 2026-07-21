@@ -531,6 +531,7 @@ function CounterpartyLine({ direction, cp }) {
 function CuteHistoryFeed({ userId }) {
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
+  const [donations, setDonations] = useState(null)
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -563,6 +564,7 @@ function CuteHistoryFeed({ userId }) {
       })
       if (reqId !== loadReqRef.current) return  // stale - newer request is in flight
       setTotal(data.total || 0)
+      setDonations(data.donations || null)
       setItems((prev) => nextOffset === 0 ? (data.items || []) : [...prev, ...(data.items || [])])
       setOffset(nextOffset)
     } catch (e) {
@@ -597,6 +599,13 @@ function CuteHistoryFeed({ userId }) {
           Только переводы
         </label>
       </div>
+
+      {donations && (
+        <div className="pu-cute-donations">
+          💜 Донаты: {donations.count} шт · {donations.total.toLocaleString('ru-RU')} kut
+          <span className="pu-cute-donations-hint"> (без дат — таблица их не хранит)</span>
+        </div>
+      )}
 
       {error && <p className="panel-shelf-error">{error}</p>}
       {!loading && items.length === 0 && <p className="panel-shelf-muted">Записей нет</p>}
@@ -636,6 +645,8 @@ function CuteHistoryFeed({ userId }) {
         .pu-cute-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; align-items: center; }
         .pu-cute-filters .panel-users-input { flex: 1 1 120px; min-width: 100px; }
         .pu-cute-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cccccc; white-space: nowrap; }
+        .pu-cute-donations { font-size: 13px; color: #d29bff; background: #1a1420; border: 1px solid #2c2038; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
+        .pu-cute-donations-hint { color: #7a7280; font-size: 11px; }
         .pu-cute-badge { margin-left: 6px; font-size: 10px; padding: 1px 6px; border-radius: 6px; background: #2a2a30; color: #d0a94a; vertical-align: middle; }
         .pu-cute-badge-tr { color: #6fb1ff; }
         .pu-cute-in { color: #57c785; }
