@@ -136,7 +136,7 @@ export default function GiveawaysModule({ isActive = true, onNavigateCondition }
           upcomingList.length === 0 ? (
             <div className="giveaways-empty">
               <span className="giveaways-empty-icon" aria-hidden>⌛</span>
-              <p>Анонсов пока нет — загляните позже</p>
+              <p>Анонсов пока нет, загляните позже</p>
             </div>
           ) : (
             <div className="giveaways-ticket-grid">
