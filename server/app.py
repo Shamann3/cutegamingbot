@@ -792,6 +792,30 @@ async def giveaways_state(request: Request, user_id: int = Depends(rate_limit)):
         raise _server_error(e, request)
 
 
+# ВАЖНО: литеральные маршруты (/history, /winners-feed) должны быть
+# зарегистрированы РАНЬШЕ динамического /{giveaway_id}, иначе FastAPI
+# сопоставит "history"/"winners-feed" с {giveaway_id: int}, парсинг в int
+# упадёт → 422 «Неверный формат запроса». См. test_giveaway_routes_order.py.
+@app.get("/api/giveaways/history")
+async def giveaways_history(request: Request, user_id: int = Depends(rate_limit)):
+    if is_maintenance():
+        raise maintenance_http_error()
+    try:
+        return await db.get_giveaways_history()
+    except Exception as e:
+        raise _server_error(e, request)
+
+
+@app.get("/api/giveaways/winners-feed")
+async def giveaways_winners_feed(request: Request, user_id: int = Depends(rate_limit)):
+    if is_maintenance():
+        raise maintenance_http_error()
+    try:
+        return await db.get_giveaway_winners_feed()
+    except Exception as e:
+        raise _server_error(e, request)
+
+
 @app.get("/api/giveaways/{giveaway_id}")
 async def giveaway_detail(giveaway_id: int, request: Request, user_id: int = Depends(rate_limit)):
     try:
@@ -812,26 +836,6 @@ async def giveaway_participate(
         return await db.participate_in_giveaway(user_id, giveaway_id)
     except ValueError as e:
         raise _client_error(e)
-
-
-@app.get("/api/giveaways/history")
-async def giveaways_history(request: Request, user_id: int = Depends(rate_limit)):
-    if is_maintenance():
-        raise maintenance_http_error()
-    try:
-        return await db.get_giveaways_history()
-    except Exception as e:
-        raise _server_error(e, request)
-
-
-@app.get("/api/giveaways/winners-feed")
-async def giveaways_winners_feed(request: Request, user_id: int = Depends(rate_limit)):
-    if is_maintenance():
-        raise maintenance_http_error()
-    try:
-        return await db.get_giveaway_winners_feed()
-    except Exception as e:
-        raise _server_error(e, request)
 
 
 @app.get("/api/shop/catalog")
