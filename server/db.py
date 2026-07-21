@@ -2010,16 +2010,18 @@ class Database:
                     )
 
                     if row["draw_type"] == "instant" and row["prize_type"] == "kut":
-                        balance_before = await conn.fetchval(
-                            "SELECT balance FROM users WHERE user_id = $1", user_id
-                        )
-                        balance_before = int(balance_before or 0)
                         amount = int(row["prize_kut_amount"] or 0)
-                        balance_after = balance_before + amount
-                        await conn.execute(
-                            "UPDATE users SET balance = $2 WHERE user_id = $1",
-                            user_id, balance_after,
+                        # Атомарное относительное начисление с RETURNING: сама
+                        # UPDATE берёт блокировку строки users, поэтому параллельная
+                        # операция с балансом (сбор урожая, награда за квест,
+                        # покупка) не может быть потеряна. Абсолютная запись после
+                        # чтения без FOR UPDATE давала lost-update — куты пропадали.
+                        balance_after = await conn.fetchval(
+                            "UPDATE users SET balance = balance + $2 WHERE user_id = $1 RETURNING balance",
+                            user_id, amount,
                         )
+                        balance_after = int(balance_after or 0)
+                        balance_before = balance_after - amount
                         schedule_balance_event(
                             self.pool,
                             "giveaway_reward",
@@ -2084,15 +2086,16 @@ class Database:
                     )
                     if giveaway["prize_type"] == "kut":
                         amount = int(giveaway["prize_kut_amount"] or 0)
-                        balance_before = await conn.fetchval(
-                            "SELECT balance FROM users WHERE user_id = $1", winner
+                        # Атомарное относительное начисление с RETURNING (см.
+                        # participate): не теряем параллельные изменения баланса
+                        # победителя вместо небезопасной абсолютной записи после
+                        # чтения без FOR UPDATE.
+                        balance_after = await conn.fetchval(
+                            "UPDATE users SET balance = balance + $2 WHERE user_id = $1 RETURNING balance",
+                            winner, amount,
                         )
-                        balance_before = int(balance_before or 0)
-                        balance_after = balance_before + amount
-                        await conn.execute(
-                            "UPDATE users SET balance = $2 WHERE user_id = $1",
-                            winner, balance_after,
-                        )
+                        balance_after = int(balance_after or 0)
+                        balance_before = balance_after - amount
                         schedule_balance_event(
                             self.pool,
                             "giveaway_reward",
