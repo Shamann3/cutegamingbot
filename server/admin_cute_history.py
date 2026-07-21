@@ -78,18 +78,6 @@ def normalize_cute_row(row: Any, name_map: dict) -> dict:
     return item
 
 
-def normalize_donate_row(row: Any) -> dict:
-    """Строка donate → элемент фида (всегда начисление, kind='donate')."""
-    return {
-        "ts": _iso(row["ts"]),
-        "cause": "донат",
-        "amount": int(row["count"]),
-        "direction": "in",
-        "balance": None,
-        "kind": "donate",
-    }
-
-
 def merge_and_paginate(cute_items: list, donate_items: list, offset: int, limit: int) -> list:
     """Слить два списка, отсортировать по ts DESC (None — в конец), срез [offset:offset+limit]."""
     combined = list(cute_items) + list(donate_items)
@@ -162,47 +150,28 @@ async def get_user_cute_history(
         *params, fetch_n,
     )
 
-    # --- donate (исключается фильтром "только переводы" и направлением "out") ---
+    # --- сводка донатов ---
+    # Таблица donate содержит только (user_id, count, data=time-без-даты): ни
+    # даты, ни id, поэтому донаты нельзя расположить на хронологической оси.
+    # Отдаём сводку (сколько раз и на какую сумму), а не строки фида. Best-effort:
+    # сбой донатов не должен ронять основной фид cutehistory. Фильтры по дате к
+    # донатам неприменимы (даты нет); direction="out"/only_transfers их исключают.
+    donations = None
     include_donate = (not only_transfers) and direction != "out"
-    donate_rows: list = []
-    donate_total = 0
     if include_donate:
-        # `donate` — legacy-таблица бота с непредсказуемой схемой (на проде
-        # `data` имеет тип `time`, а не timestamp, поэтому `data::timestamptz`
-        # роняет CannotCoerceError). Донаты — вспомогательный источник: их сбой
-        # не должен ронять основной фид cutehistory, поэтому блок — best-effort.
         try:
-            dconds = ["user_id = $1"]
-            dparams: list[Any] = [user_id]
-            didx = 2
-            if date_from:
-                dconds.append(f"data::timestamptz >= ${didx}::date")
-                dparams.append(date_from)
-                didx += 1
-            if date_to:
-                dconds.append(f"data::timestamptz < (${didx}::date + INTERVAL '1 day')")
-                dparams.append(date_to)
-                didx += 1
-            if q:
-                # у донатов единственная причина — слово "донат"
-                dconds.append(f"'донат' ILIKE '%'||${didx}||'%'")
-                dparams.append(q)
-                didx += 1
-            dwhere = " AND ".join(dconds)
-            donate_total = int(await db.pool.fetchval(
-                f"SELECT COUNT(*)::int FROM donate WHERE {dwhere}", *dparams
-            ) or 0)
-            donate_rows = await db.pool.fetch(
-                f"SELECT count, data::timestamptz AS ts FROM donate WHERE {dwhere} "
-                f"ORDER BY ts DESC LIMIT ${didx}",
-                *dparams, fetch_n,
+            drow = await db.pool.fetchrow(
+                "SELECT COUNT(*)::int AS n, COALESCE(SUM(count), 0)::bigint AS total "
+                "FROM donate WHERE user_id = $1",
+                user_id,
             )
+            if drow and drow["n"]:
+                donations = {"count": int(drow["n"]), "total": int(drow["total"])}
         except Exception as donate_err:
             logging.getLogger("cute-farm").warning(
-                "cute-history donate source skipped (schema mismatch?): %s", donate_err
+                "cute-history donations summary skipped: %s", donate_err
             )
-            donate_rows = []
-            donate_total = 0
+            donations = None
 
     # --- имена контрагентов (батч) ---
     cp_ids: set[int] = set()
@@ -224,6 +193,5 @@ async def get_user_cute_history(
         }
 
     cute_items = [normalize_cute_row(r, name_map) for r in cute_rows]
-    donate_items = [normalize_donate_row(r) for r in donate_rows]
-    items = merge_and_paginate(cute_items, donate_items, offset, limit)
-    return {"total": cute_total + donate_total, "items": items}
+    items = merge_and_paginate(cute_items, [], offset, limit)
+    return {"total": cute_total, "items": items, "donations": donations}
