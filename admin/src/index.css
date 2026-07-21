@@ -1837,7 +1837,8 @@ body {
 
 .panel-users-bottom-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  /* История — большое поле на всю ширину: Ферма сверху, История под ней */
+  grid-template-columns: 1fr;
   gap: 1rem;
 }
 
@@ -2472,7 +2473,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  max-height: 22rem;
+  max-height: 42rem;
   overflow-y: auto;
 }
 
