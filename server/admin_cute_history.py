@@ -5,6 +5,7 @@ get_user_cute_history (DB) добавляется в Task 4.
 """
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import Any
 
@@ -166,31 +167,42 @@ async def get_user_cute_history(
     donate_rows: list = []
     donate_total = 0
     if include_donate:
-        dconds = ["user_id = $1"]
-        dparams: list[Any] = [user_id]
-        didx = 2
-        if date_from:
-            dconds.append(f"data::timestamptz >= ${didx}::date")
-            dparams.append(date_from)
-            didx += 1
-        if date_to:
-            dconds.append(f"data::timestamptz < (${didx}::date + INTERVAL '1 day')")
-            dparams.append(date_to)
-            didx += 1
-        if q:
-            # у донатов единственная причина — слово "донат"
-            dconds.append(f"'донат' ILIKE '%'||${didx}||'%'")
-            dparams.append(q)
-            didx += 1
-        dwhere = " AND ".join(dconds)
-        donate_total = int(await db.pool.fetchval(
-            f"SELECT COUNT(*)::int FROM donate WHERE {dwhere}", *dparams
-        ) or 0)
-        donate_rows = await db.pool.fetch(
-            f"SELECT count, data::timestamptz AS ts FROM donate WHERE {dwhere} "
-            f"ORDER BY ts DESC LIMIT ${didx}",
-            *dparams, fetch_n,
-        )
+        # `donate` — legacy-таблица бота с непредсказуемой схемой (на проде
+        # `data` имеет тип `time`, а не timestamp, поэтому `data::timestamptz`
+        # роняет CannotCoerceError). Донаты — вспомогательный источник: их сбой
+        # не должен ронять основной фид cutehistory, поэтому блок — best-effort.
+        try:
+            dconds = ["user_id = $1"]
+            dparams: list[Any] = [user_id]
+            didx = 2
+            if date_from:
+                dconds.append(f"data::timestamptz >= ${didx}::date")
+                dparams.append(date_from)
+                didx += 1
+            if date_to:
+                dconds.append(f"data::timestamptz < (${didx}::date + INTERVAL '1 day')")
+                dparams.append(date_to)
+                didx += 1
+            if q:
+                # у донатов единственная причина — слово "донат"
+                dconds.append(f"'донат' ILIKE '%'||${didx}||'%'")
+                dparams.append(q)
+                didx += 1
+            dwhere = " AND ".join(dconds)
+            donate_total = int(await db.pool.fetchval(
+                f"SELECT COUNT(*)::int FROM donate WHERE {dwhere}", *dparams
+            ) or 0)
+            donate_rows = await db.pool.fetch(
+                f"SELECT count, data::timestamptz AS ts FROM donate WHERE {dwhere} "
+                f"ORDER BY ts DESC LIMIT ${didx}",
+                *dparams, fetch_n,
+            )
+        except Exception as donate_err:
+            logging.getLogger("cute-farm").warning(
+                "cute-history donate source skipped (schema mismatch?): %s", donate_err
+            )
+            donate_rows = []
+            donate_total = 0
 
     # --- имена контрагентов (батч) ---
     cp_ids: set[int] = set()
