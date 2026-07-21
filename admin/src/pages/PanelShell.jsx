@@ -245,6 +245,7 @@ export default function PanelShell({ onLogout }) {
               initialUserId={usersInitialId}
               onInitialUserConsumed={() => setUsersInitialId(null)}
               permissions={permissions}
+              role={role}
             />
           )}
           {isAccounts && (

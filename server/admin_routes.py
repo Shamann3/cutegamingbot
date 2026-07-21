@@ -114,6 +114,7 @@ from admin_permissions import (
     get_admin_account_security,
     require_active_admin,
     require_admin_permission,
+    require_admin_role,
 )
 from config import ADMIN_BOT_TOKEN, ADMIN_ENABLED, ADMIN_JWT_SECRET, ADMIN_SESSION_MINUTES, INTERNAL_API_KEY
 from admin_appeals import (
@@ -2254,7 +2255,8 @@ async def admin_user_cute_history(
     onlyTransfers: bool = Query(False),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    _admin_id: int = Depends(require_admin_permission("view_players")),
+    # История кут — только для владельцев (не для сотрудников с view_players)
+    _admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
 ):
     return await get_user_cute_history(
         target_user_id,

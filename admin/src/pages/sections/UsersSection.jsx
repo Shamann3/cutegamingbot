@@ -656,7 +656,8 @@ function CuteHistoryFeed({ userId }) {
   )
 }
 
-export default function UsersSection({ initialUserId = null, onInitialUserConsumed, permissions = [] }) {
+export default function UsersSection({ initialUserId = null, onInitialUserConsumed, permissions = [], role = null }) {
+  const isOwner = role === 'owner'  // история кут — только для владельцев
   const perms = new Set(permissions)
   const canBan = perms.has('moderate_ban')
   const canUnban = perms.has('moderate_unban')
@@ -1344,7 +1345,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   : 'Кут — полная история'}
               </h3>
 
-              {hasProfile && (
+              {hasProfile && isOwner && (
                 <div className="pu-hist-switch">
                   <button
                     className={`pu-hist-tab${historySource === 'audit' ? ' active' : ''}`}
@@ -1363,7 +1364,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 .pu-hist-tab.active { background: #1c1c22; color: #fff; }
               `}</style>
 
-              {hasProfile && historySource === 'cute' && (
+              {hasProfile && isOwner && historySource === 'cute' && (
                 <CuteHistoryFeed userId={profile.userId} />
               )}
 
