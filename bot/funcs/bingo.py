@@ -833,6 +833,12 @@ async def _countdown_and_game(game_id: int):
         participants= list(game['participants'])
 
     for i in range(5, 0, -1):  # 5..1
+        # Внутри лока только быстрая работа в памяти. Саму правку (сеть + возможный
+        # flood-sleep) делаем ВНЕ лока - иначе тап «ролл» ждёт, пока докрутится
+        # правка обратного отсчёта, что и вызывало залипание кнопки бинго.
+        do_edit = False
+        keyboard = None
+        game = None
         async with _get_lock(_game_locks, game_id):
             game = gamesbingo.get(game_id)
             if not game:
@@ -847,16 +853,19 @@ async def _countdown_and_game(game_id: int):
                     inline_keyboard=[[InlineKeyboardButton(text=f"{i}", callback_data=f"rollbingo:{game_id}")]]
                 )
                 button_bingo[game_id]['keyboard_roll'] = keyboard
-                try:
-                    await safe_edit_text_and_markup(
-                        game,
-                        chat_id=chat_id, message_id=message_id,
-                        text="<tg-emoji emoji-id='5370783443175086955'>🍪</tg-emoji> <b>Нажмите, чтобы получить случайное число</b>",
-                        reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
-                    )
-                except Exception as e:
-                    if not _is_flood_error(e):
-                        print(f"[BINGO][edit countdown] {e}")
+                do_edit = True
+
+        if do_edit:
+            try:
+                await safe_edit_text_and_markup(
+                    game,
+                    chat_id=chat_id, message_id=message_id,
+                    text="<tg-emoji emoji-id='5370783443175086955'>🍪</tg-emoji> <b>Нажмите, чтобы получить случайное число</b>",
+                    reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
+                )
+            except Exception as e:
+                if not _is_flood_error(e):
+                    print(f"[BINGO][edit countdown] {e}")
         await asyncio.sleep(1)
 
     # автодобив

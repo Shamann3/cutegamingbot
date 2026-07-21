@@ -728,6 +728,11 @@ async def _countdown_and_autofill(game_id: int):
         participants = list(game['participants'])
 
     for i in range(5, 0, -1):
+        # Правку обратного отсчёта (сеть + возможный flood-sleep) выносим ЗА лок,
+        # иначе тап «ролл» ждёт завершения этой правки - залипание кнопки.
+        do_edit = False
+        kb = None
+        game = None
         async with _get_lock(_game_locks, game_id):
             game = gameskosti.get(game_id)
             if not game:
@@ -741,11 +746,14 @@ async def _countdown_and_autofill(game_id: int):
                     inline_keyboard=[[InlineKeyboardButton(text=f"{i}", callback_data=f"kostiroll:{game_id}")]]
                 )
                 button_kosti[game_id]['keyboard_roll'] = kb
-                await _safe_edit_game(
-                    game,
-                    "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> <b>Нажмите, чтобы получить случайное число</b>",
-                    kb,
-                )
+                do_edit = True
+
+        if do_edit:
+            await _safe_edit_game(
+                game,
+                "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> <b>Нажмите, чтобы получить случайное число</b>",
+                kb,
+            )
 
         await asyncio.sleep(1)
 
