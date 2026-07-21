@@ -1008,6 +1008,21 @@ export async function fetchAdminUserAudit(userId, { limit = 50, offset = 0 } = {
   return adminFetch(`/users/${userId}/audit?${params}`)
 }
 
+export async function fetchAdminUserCuteHistory(userId, {
+  dateFrom = '', dateTo = '', direction = '', q = '',
+  onlyTransfers = false, limit = 50, offset = 0,
+} = {}) {
+  const params = new URLSearchParams()
+  if (dateFrom) params.set('dateFrom', dateFrom)
+  if (dateTo) params.set('dateTo', dateTo)
+  if (direction) params.set('direction', direction)
+  if (q) params.set('q', q)
+  if (onlyTransfers) params.set('onlyTransfers', 'true')
+  params.set('limit', String(limit))
+  params.set('offset', String(offset))
+  return adminFetch(`/users/${userId}/cute-history?${params}`)
+}
+
 export async function adjustAdminUserBalance(userId, delta, note = '') {
   return adminFetch(`/users/${userId}/balance`, {
     method: 'POST',

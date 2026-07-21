@@ -7,6 +7,7 @@ import {
   exportPlayerProfile,
   fetchAdminUser,
   fetchAdminUserAudit,
+  fetchAdminUserCuteHistory,
   fetchContentDex,
   fetchPlayerBans,
   fetchPlayerInventory,
@@ -514,6 +515,136 @@ function DexItemQuickPicker({ dexItems, onSelect, disabled }) {
   )
 }
 
+// ---- Полная история кут (cutehistory + donate + переводы) ----
+const CUTE_PAGE = 50
+
+function CounterpartyLine({ direction, cp }) {
+  const name = cp.username ? `@${cp.username}` : (cp.name || 'игрок')
+  const arrow = direction === 'out' ? '→' : '←'
+  return (
+    <p className="panel-shelf-muted">
+      {arrow} {name} <span style={{ opacity: 0.6 }}>(id {cp.userId})</span>
+    </p>
+  )
+}
+
+function CuteHistoryFeed({ userId }) {
+  const [items, setItems] = useState([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  // filters
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [direction, setDirection] = useState('')      // '' | 'in' | 'out'
+  const [q, setQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+  const [onlyTransfers, setOnlyTransfers] = useState(false)
+
+  // debounce the free-text cause search so typing doesn't fire a request per keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 350)
+    return () => clearTimeout(t)
+  }, [q])
+
+  // Monotonically-increasing counter: if a newer request lands before an older
+  // one resolves, the older result is discarded (no stale overwrites).
+  const loadReqRef = useRef(0)
+
+  const load = useCallback(async (nextOffset) => {
+    const reqId = ++loadReqRef.current
+    setLoading(true)
+    setError('')
+    try {
+      const data = await fetchAdminUserCuteHistory(userId, {
+        dateFrom, dateTo, direction, q: debouncedQ, onlyTransfers,
+        limit: CUTE_PAGE, offset: nextOffset,
+      })
+      if (reqId !== loadReqRef.current) return  // stale - newer request is in flight
+      setTotal(data.total || 0)
+      setItems((prev) => nextOffset === 0 ? (data.items || []) : [...prev, ...(data.items || [])])
+      setOffset(nextOffset)
+    } catch (e) {
+      if (reqId !== loadReqRef.current) return
+      setError(e.message || 'Ошибка загрузки')
+    } finally {
+      if (reqId === loadReqRef.current) setLoading(false)
+    }
+  }, [userId, dateFrom, dateTo, direction, debouncedQ, onlyTransfers])
+
+  // первичная загрузка и перезагрузка при смене фильтров
+  useEffect(() => { load(0) }, [load])
+
+  return (
+    <div className="pu-cute">
+      <div className="pu-cute-filters">
+        <input type="date" className="panel-users-input" value={dateFrom}
+               onChange={(e) => setDateFrom(e.target.value)} />
+        <input type="date" className="panel-users-input" value={dateTo}
+               onChange={(e) => setDateTo(e.target.value)} />
+        <select className="panel-users-input" value={direction}
+                onChange={(e) => setDirection(e.target.value)}>
+          <option value="">Все</option>
+          <option value="in">Начисления</option>
+          <option value="out">Списания</option>
+        </select>
+        <input className="panel-users-input" placeholder="Поиск по причине…" value={q}
+               onChange={(e) => setQ(e.target.value)} />
+        <label className="pu-cute-check">
+          <input type="checkbox" checked={onlyTransfers}
+                 onChange={(e) => setOnlyTransfers(e.target.checked)} />
+          Только переводы
+        </label>
+      </div>
+
+      {error && <p className="panel-shelf-error">{error}</p>}
+      {!loading && items.length === 0 && <p className="panel-shelf-muted">Записей нет</p>}
+
+      <ul className="panel-users-audit-list">
+        {items.map((it, i) => (
+          <li key={i} className="panel-users-audit-item">
+            <div className="panel-users-audit-head">
+              <span className="panel-users-audit-type">
+                {it.cause || '—'}
+                {it.kind === 'donate' && <span className="pu-cute-badge">донат</span>}
+                {it.kind === 'transfer' && <span className="pu-cute-badge pu-cute-badge-tr">перевод</span>}
+              </span>
+              <time className="panel-users-audit-time">{formatDate(it.ts)}</time>
+            </div>
+            <p className={`panel-users-audit-amount ${it.direction === 'in' ? 'pu-cute-in' : 'pu-cute-out'}`}>
+              {it.direction === 'in' ? '+' : '−'}{Math.abs(it.amount)} kut
+            </p>
+            {it.balance != null && (
+              <p className="panel-shelf-muted">Баланс: {it.balance}</p>
+            )}
+            {it.counterparty && (
+              <CounterpartyLine direction={it.direction} cp={it.counterparty} />
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {items.length < total && (
+        <button className="panel-users-btn" disabled={loading}
+                onClick={() => load(offset + CUTE_PAGE)}>
+          {loading ? '…' : `Ещё (${items.length}/${total})`}
+        </button>
+      )}
+
+      <style>{`
+        .pu-cute-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; align-items: center; }
+        .pu-cute-filters .panel-users-input { flex: 1 1 120px; min-width: 100px; }
+        .pu-cute-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cccccc; white-space: nowrap; }
+        .pu-cute-badge { margin-left: 6px; font-size: 10px; padding: 1px 6px; border-radius: 6px; background: #2a2a30; color: #d0a94a; vertical-align: middle; }
+        .pu-cute-badge-tr { color: #6fb1ff; }
+        .pu-cute-in { color: #57c785; }
+        .pu-cute-out { color: #e06666; }
+      `}</style>
+    </div>
+  )
+}
+
 export default function UsersSection({ initialUserId = null, onInitialUserConsumed, permissions = [] }) {
   const perms = new Set(permissions)
   const canBan = perms.has('moderate_ban')
@@ -531,6 +662,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
   const [profileTab, setProfileTab] = useState('profile')
+  const [historySource, setHistorySource] = useState('audit')  // 'audit' | 'cute'
 
   const [kutDelta, setKutDelta] = useState('')
   const [kutNote, setKutNote] = useState('')
@@ -1196,61 +1328,88 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
             <div className="panel-users-audit-block">
               <p className="panel-shelf-label">История</p>
               <h3 className="panel-users-subtitle panel-users-subtitle-tight">
-                События {hasProfile ? `(${audit?.total ?? 0})` : ''}
+                {historySource === 'audit'
+                  ? <>События {hasProfile ? `(${audit?.total ?? 0})` : ''}</>
+                  : 'Кут — полная история'}
               </h3>
 
-              {!hasProfile && (
-                <ul className="panel-users-audit-list panel-users-audit-list-empty">
-                  {[1, 2, 3].map((n) => (
-                    <li key={n} className="panel-users-audit-ghost">
-                      <span className="panel-users-ghost-bar panel-users-ghost-bar-wide" />
-                    </li>
-                  ))}
-                </ul>
+              {hasProfile && (
+                <div className="pu-hist-switch">
+                  <button
+                    className={`pu-hist-tab${historySource === 'audit' ? ' active' : ''}`}
+                    onClick={() => setHistorySource('audit')}
+                  >Действия</button>
+                  <button
+                    className={`pu-hist-tab${historySource === 'cute' ? ' active' : ''}`}
+                    onClick={() => setHistorySource('cute')}
+                  >Кут (полная)</button>
+                </div>
               )}
 
-              {hasProfile && (audit?.events || []).length === 0 && (
-                <p className="panel-shelf-muted">Записей пока нет</p>
+              <style>{`
+                .pu-hist-switch { display: inline-flex; gap: 4px; margin: 6px 0 10px; }
+                .pu-hist-tab { font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 1px solid #1c1c20; background: #0a0a0c; color: #aaa; cursor: pointer; }
+                .pu-hist-tab.active { background: #1c1c22; color: #fff; }
+              `}</style>
+
+              {hasProfile && historySource === 'cute' && (
+                <CuteHistoryFeed userId={profile.userId} />
               )}
 
-              {hasProfile && (audit?.events || []).length > 0 && (
-                <ul className="panel-users-audit-list">
-                  {audit.events.map((ev) => (
-                    <li key={ev.id} className="panel-users-audit-item">
-                      <div className="panel-users-audit-head">
-                        <span className="panel-users-audit-type">
-                          {EVENT_LABELS[ev.eventType] || ev.eventType}
-                        </span>
-                        <time className="panel-users-audit-time">{formatDate(ev.createdAt)}</time>
-                      </div>
-                      {ev.amount != null && (
-                        <p className="panel-users-audit-amount">
-                          {ev.amount > 0 ? '+' : ''}
-                          {ev.amount} kut
-                        </p>
-                      )}
-                      {ev.balanceBefore != null && ev.balanceAfter != null && (
-                        <p className="panel-shelf-muted">
-                          Баланс: {ev.balanceBefore} → {ev.balanceAfter}
-                        </p>
-                      )}
-                      {ev.details?.item_id && (
-                        <p className="panel-shelf-muted">
-                          Предмет: {ev.details.item_id}
-                          {ev.details.count_after != null && ` (осталось ${ev.details.count_after})`}
-                        </p>
-                      )}
-                      {ev.details?.admin_user_id && (
-                        <p className="panel-shelf-muted">Admin ID: {ev.details.admin_user_id}</p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {historySource === 'audit' && (<>
+                {!hasProfile && (
+                  <ul className="panel-users-audit-list panel-users-audit-list-empty">
+                    {[1, 2, 3].map((n) => (
+                      <li key={n} className="panel-users-audit-ghost">
+                        <span className="panel-users-ghost-bar panel-users-ghost-bar-wide" />
+                      </li>
+                    ))}
+                  </ul>
+                )}
 
-              {!hasProfile && !loading && (
-                <EmptyHint>История действий игрока</EmptyHint>
-              )}
+                {hasProfile && (audit?.events || []).length === 0 && (
+                  <p className="panel-shelf-muted">Записей пока нет</p>
+                )}
+
+                {hasProfile && (audit?.events || []).length > 0 && (
+                  <ul className="panel-users-audit-list">
+                    {audit.events.map((ev) => (
+                      <li key={ev.id} className="panel-users-audit-item">
+                        <div className="panel-users-audit-head">
+                          <span className="panel-users-audit-type">
+                            {EVENT_LABELS[ev.eventType] || ev.eventType}
+                          </span>
+                          <time className="panel-users-audit-time">{formatDate(ev.createdAt)}</time>
+                        </div>
+                        {ev.amount != null && (
+                          <p className="panel-users-audit-amount">
+                            {ev.amount > 0 ? '+' : ''}
+                            {ev.amount} kut
+                          </p>
+                        )}
+                        {ev.balanceBefore != null && ev.balanceAfter != null && (
+                          <p className="panel-shelf-muted">
+                            Баланс: {ev.balanceBefore} → {ev.balanceAfter}
+                          </p>
+                        )}
+                        {ev.details?.item_id && (
+                          <p className="panel-shelf-muted">
+                            Предмет: {ev.details.item_id}
+                            {ev.details.count_after != null && ` (осталось ${ev.details.count_after})`}
+                          </p>
+                        )}
+                        {ev.details?.admin_user_id && (
+                          <p className="panel-shelf-muted">Admin ID: {ev.details.admin_user_id}</p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {!hasProfile && !loading && (
+                  <EmptyHint>История действий игрока</EmptyHint>
+                )}
+              </>)}
             </div>
           </div>
         </article>

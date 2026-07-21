@@ -7119,29 +7119,6 @@ class Database:
                 receiver_after = int(receiver_row["balance"])
                 receiver_before = receiver_after - amount
 
-                await connection.execute(
-                    """
-                    INSERT INTO cutehistory ("user_id", "-", cause, data, first_name, username, balance)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    """,
-                    sender_id, amount, cause, formatted_date,
-                    sender_first_name, sender_username, sender_after,
-                )
-                await connection.execute(
-                    """
-                    INSERT INTO cutehistory ("user_id", "+", cause, data, first_name, username, balance)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    """,
-                    receiver_id, amount, cause, formatted_date,
-                    receiver_first_name, receiver_username, receiver_after,
-                )
-                await connection.execute(
-                    """
-                    INSERT INTO moneyhistory (user_id, user_id2, money, data)
-                    VALUES ($1, $2, $3, $4)
-                    """,
-                    sender_id, receiver_id, amount, timestamp_without_microseconds,
-                )
                 transfer_row = await connection.fetchrow(
                     """
                     INSERT INTO p2p_transfers (
@@ -7157,6 +7134,31 @@ class Database:
                     sender_before, sender_after,
                     receiver_before, receiver_after,
                     cause,
+                )
+                transfer_id = int(transfer_row["id"])
+
+                await connection.execute(
+                    """
+                    INSERT INTO cutehistory ("user_id", "-", cause, data, first_name, username, balance, transfer_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    """,
+                    sender_id, amount, cause, formatted_date,
+                    sender_first_name, sender_username, sender_after, transfer_id,
+                )
+                await connection.execute(
+                    """
+                    INSERT INTO cutehistory ("user_id", "+", cause, data, first_name, username, balance, transfer_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    """,
+                    receiver_id, amount, cause, formatted_date,
+                    receiver_first_name, receiver_username, receiver_after, transfer_id,
+                )
+                await connection.execute(
+                    """
+                    INSERT INTO moneyhistory (user_id, user_id2, money, data)
+                    VALUES ($1, $2, $3, $4)
+                    """,
+                    sender_id, receiver_id, amount, timestamp_without_microseconds,
                 )
 
         # Write-through кэш (тот же паттерн, что update_user_balance) - после

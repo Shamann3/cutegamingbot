@@ -204,6 +204,7 @@ from admin_broadcast import (
     DAILY_ROTATION_TEMPLATES,
 )
 from admin_logs import get_logs_overview, list_audit_logs, list_system_logs, list_p2p_transfers
+from admin_cute_history import get_user_cute_history
 from error_reporter import schedule_security_alert
 from group_posts import (
     create_campaign,
@@ -2241,6 +2242,30 @@ async def admin_user_audit(
     _admin_id: int = Depends(require_admin_permission("view_players")),
 ):
     return await get_user_audit_history(target_user_id, limit=limit, offset=offset)
+
+
+@router.get("/users/{target_user_id}/cute-history")
+async def admin_user_cute_history(
+    target_user_id: int,
+    dateFrom: str | None = Query(None, max_length=32),
+    dateTo: str | None = Query(None, max_length=32),
+    direction: str | None = Query(None, pattern="^(in|out)$"),
+    q: str | None = Query(None, max_length=200),
+    onlyTransfers: bool = Query(False),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    return await get_user_cute_history(
+        target_user_id,
+        date_from=dateFrom,
+        date_to=dateTo,
+        direction=direction,
+        q=q,
+        only_transfers=onlyTransfers,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post("/users/{target_user_id}/balance")

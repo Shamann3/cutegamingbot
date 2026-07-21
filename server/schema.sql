@@ -77,6 +77,25 @@ CREATE INDEX IF NOT EXISTS p2p_transfers_sender_idx ON p2p_transfers (sender_id,
 CREATE INDEX IF NOT EXISTS p2p_transfers_receiver_idx ON p2p_transfers (receiver_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS p2p_transfers_created_idx ON p2p_transfers (created_at DESC);
 
+-- Legacy-таблица истории кут (создаётся игровым ботом). Здесь — только
+-- CREATE IF NOT EXISTS для свежих БД + индекс по user_id (новый admin-эндпоинт
+-- /users/{id}/cute-history фильтрует по user_id). Колонка transfer_id
+-- добавляется ALTER-миграцией в db.py (после того как таблица гарантированно есть).
+CREATE TABLE IF NOT EXISTS cutehistory (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    "+" BIGINT,
+    "-" BIGINT,
+    cause TEXT,
+    data TEXT,
+    first_name TEXT,
+    username TEXT,
+    balance BIGINT,
+    transfer_id BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS cutehistory_user_idx ON cutehistory (user_id);
+
 -- Игровые события для аналитики (всегда пишутся, без Telegram-нотификаций)
 CREATE TABLE IF NOT EXISTS game_events (
     id BIGSERIAL PRIMARY KEY,
