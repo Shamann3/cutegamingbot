@@ -166,6 +166,12 @@ async def game_filter(message: Message):
 
 @dp.callback_query(lambda c: c.data.startswith('button_'))
 async def process_adm_menu(call: types.CallbackQuery):
+    # Гасим спиннер кнопки сразу - раньше этот обработчик не отвечал на
+    # callback ни на одном пути, и кнопка «висела» до таймаута.
+    try:
+        await call.answer()
+    except Exception:
+        pass
     if db.exists(call.from_user.id):
         for user in db.data():
             if int(user[0]) == int(call.from_user.id):

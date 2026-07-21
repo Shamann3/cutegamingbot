@@ -2,6 +2,7 @@ import random
 
 from main import *
 import uuid
+from bot.games.safe_game_edit import safe_game_edit
 user_coefficients = {}
 user_gild = {}
 gamesgild = {}
@@ -184,7 +185,8 @@ async def join_game_callback(callback_query: types.CallbackQuery):
     win_amount_formatted2 = "{:,.0f}".format(total_pot).replace(",", ".")
     win_text = f"\n💰 Выигрыш <b>{win_amount_formatted2}</b> кут" if total_pot > 0 else ""
 
-    await bot1.edit_message_text(
+    await safe_game_edit(
+        game,
         chat_id=callback_query.message.chat.id,
         message_id=callback_query.message.message_id,
         text=f"🧨 <b>Играем в гильд</b>{win_text}\n{participants_text}",
@@ -212,18 +214,20 @@ async def start_game_callback(callback_query: types.CallbackQuery):
         await callback_query.answer("В игре должны участвовать 2 игрока.")
         return
 
+    # Гасим спиннер сразу, до сетевых/БД запросов.
+    await callback_query.answer()
+
     keyboard = create_game_keyboard_gild(game['board'], game_id)
 
     creator_name = await db.get_firstname_by_user_id(game['creator'])
 
-    await bot1.edit_message_text(
+    await safe_game_edit(
+        game,
         chat_id=callback_query.message.chat.id,
         message_id=callback_query.message.message_id,
         text=f"🌟 Первый ход от <a href='tg://user?id={game['creator']}'>{creator_name}</a>.",
         reply_markup=keyboard,
         parse_mode="HTML")
-
-    await callback_query.answer()
 
 @dp.callback_query(lambda c: c.data.startswith('gildclick:'))
 async def board_click_callback(callback_query: types.CallbackQuery):
@@ -254,6 +258,10 @@ async def board_click_callback(callback_query: types.CallbackQuery):
         await callback_query.answer("На этом месте уже стоит шашка.")
         return
 
+    # Гасим спиннер сразу - иначе на победном ходу (ниже return без answer)
+    # и на обычном ходу кнопка «висит» до завершения сетевых запросов.
+    await callback_query.answer()
+
     update_board_on_move(game['board'], pos, current_player_symbol)
 
     winner = check_victory(game['board'], game['participants'])
@@ -261,10 +269,12 @@ async def board_click_callback(callback_query: types.CallbackQuery):
         game['game_active'] = False
         winner_name = await bot1.get_chat_member(callback_query.message.chat.id, winner)
         winner_name_text = winner_name.user.full_name if winner_name else 'Unknown User'
-        await bot1.edit_message_text(
+        await safe_game_edit(
+            game,
             chat_id=callback_query.message.chat.id,
             message_id=callback_query.message.message_id,
             text=f"🏆 Игра окончена! Победитель: <a href='tg://user?id={winner}'>{winner_name_text}</a>",
+            reply_markup=None,
             parse_mode="HTML"
         )
         return
@@ -277,12 +287,11 @@ async def board_click_callback(callback_query: types.CallbackQuery):
     next_turn_name = await bot1.get_chat_member(callback_query.message.chat.id, game['turn'])
     next_turn_name_text = next_turn_name.user.full_name if next_turn_name else 'Unknown User'
 
-    await bot1.edit_message_text(
+    await safe_game_edit(
+        game,
         chat_id=callback_query.message.chat.id,
         message_id=callback_query.message.message_id,
         text=f"🔄 Ход игрока <a href='tg://user?id={game['turn']}'>{next_turn_name_text}</a>",
         reply_markup=keyboard,
         parse_mode="HTML"
     )
-
-    await callback_query.answer()

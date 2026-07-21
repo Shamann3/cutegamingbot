@@ -27,7 +27,10 @@ from aiogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessag
 from aiogram import Bot, Dispatcher, types, F
 from main import gamesmine,button_gamesmine,_format_hms,_pair_seconds_left,_pair_seconds_left, db, bot1, dp,get_current_time_formatted,timehistorygames,pending_context,send_invoice_to_user
 
+import asyncio
 import uuid
+
+from bot.games.safe_game_edit import safe_game_edit
 
 
 
@@ -381,7 +384,8 @@ async def mines_join_game_callback(callback_query: CallbackQuery):
             button_gamesmine[game_id]['keyboard_start'] = keyboard
 
             try:
-                await bot1.edit_message_text(
+                await safe_game_edit(
+                    game,
                     chat_id=chat_id,
                     message_id=message_id,
                     text=f"<tg-emoji emoji-id='5469913852462242978'>🧨</tg-emoji> <b>Играем в мины</b>{win_text}\n{participants_text}",
@@ -454,9 +458,9 @@ async def mines_start_game_callback(callback_query: CallbackQuery):
         user_links_text = ', '.join(insufficient_user_links)
         message_text = f"⛑ <b>Игра остановлена!\nНедостаточно средств для игры у {user_links_text}</b>"
 
-        await bot1.edit_message_text(
-            chat_id=chat_id , message_id=message_id , text=message_text ,
-            parse_mode="HTML" , disable_web_page_preview=True)
+        await safe_game_edit(
+            game , chat_id=chat_id , message_id=message_id , text=message_text ,
+            reply_markup=None , parse_mode="HTML" , disable_web_page_preview=True)
         del gamesmine [ game_id ]  # Удаляем игру из активных игр
         return  # Завершаем выполнение функции
     # Генерация случайного количества мин на поле (10 мин)
@@ -471,15 +475,17 @@ async def mines_start_game_callback(callback_query: CallbackQuery):
     # Создание клавиатуры с кнопками для игрового поля 5x5
     keyboard = create_game_keyboard(game['board'], game_id)
     button_gamesmine [ game_id ] [ 'keyboard_start' ] = keyboard
-    creator_name = await db.get_firstname_by_user_id(game['creator'])
 
-    first_name = await db.get_firstname_by_user_id(game['creator'])
-    username = await db.get_username_by_user_id(game['creator'])
+    # Имя и username создателя читаем параллельно (раньше был дубль-запрос).
+    first_name , username = await asyncio.gather(
+        db.get_firstname_by_user_id(game['creator']) ,
+        db.get_username_by_user_id(game['creator']) ,
+    )
 
     # Формируем ссылку на пользователя
     name_link111 = await create_user_link(game['creator'] , first_name , username)
-    await bot1.edit_message_text(
-        chat_id=chat_id, message_id=message_id,
+    await safe_game_edit(
+        game , chat_id=chat_id, message_id=message_id,
         text=f"<tg-emoji emoji-id='5188216731453103384'>✔️</tg-emoji> <b>Первый ход от {name_link111}</b>",
         reply_markup=keyboard, parse_mode="HTML" , disable_web_page_preview=True
     )
@@ -504,30 +510,9 @@ async def mines_mine_click_callback(callback_query: CallbackQuery):
 
     game = gamesmine[game_id]
 
-    required_bet = game [ 'bet' ]  # Предполагается, что в игре есть ставка
-    insufficient_balance = [ ]
-    for participant in game [ 'participants' ]:
-        current_balance = await db.get_user_balance(participant)  # Получаем баланс участника асинхронно
-        if current_balance is None or current_balance < required_bet:
-            insufficient_balance.append(participant)
-
-    if insufficient_balance:
-        first_names = [ await db.get_firstname_by_user_id(participant) for participant in insufficient_balance ]
-        usernames = [ await db.get_username_by_user_id(participant) for participant in insufficient_balance ]
-
-        # Формируем сообщение об остановке игры
-        insufficient_user_links = [ await create_user_link(participant , first_name , username) for
-                                    participant , first_name , username in
-                                    zip(insufficient_balance , first_names , usernames) ]
-        user_links_text = ', '.join(insufficient_user_links)
-        message_text = f"⛑ <b>Игра остановлена!\nНедостаточно средств для игры у {user_links_text}</b>"
-
-        await bot1.edit_message_text(
-            chat_id=chat_id , message_id=message_id , text=message_text ,
-            parse_mode="HTML" , disable_web_page_preview=True)
-        del gamesmine [ game_id ]  # Удаляем игру из активных игр
-        return  # Завершаем выполнение функции
-
+    # Сначала - дешёвые проверки в памяти (без сети/БД). Так спорные тапы
+    # (не твой ход / уже разминировано) отвечаются мгновенно, а не после
+    # запросов балансов.
     if not game['game_active']:
         print(f"Отладка: Игра с ID {game_id} уже завершена.")
         await callback_query.answer("💭 Игра уже завершена.")
@@ -548,7 +533,33 @@ async def mines_mine_click_callback(callback_query: CallbackQuery):
         print(f"Отладка: Пользователь с ID {user_id} попытался нажать на уже разминированную клетку {x}.")
         await callback_query.answer("❕ Эта клетка уже разминирована.")
         return
+
+    # Гасим спиннер кнопки СРАЗУ, до сетевых/БД задержек - иначе кнопка «висит».
     await callback_query.answer()
+
+    required_bet = game [ 'bet' ]  # Предполагается, что в игре есть ставка
+    # Балансы участников читаем параллельно, а не по одному.
+    _participants = list(game [ 'participants' ])
+    _balances = await asyncio.gather(*[ db.get_user_balance(p) for p in _participants ])
+    insufficient_balance = [ p for p , bal in zip(_participants , _balances)
+                             if bal is None or bal < required_bet ]
+
+    if insufficient_balance:
+        first_names = [ await db.get_firstname_by_user_id(participant) for participant in insufficient_balance ]
+        usernames = [ await db.get_username_by_user_id(participant) for participant in insufficient_balance ]
+
+        # Формируем сообщение об остановке игры
+        insufficient_user_links = [ await create_user_link(participant , first_name , username) for
+                                    participant , first_name , username in
+                                    zip(insufficient_balance , first_names , usernames) ]
+        user_links_text = ', '.join(insufficient_user_links)
+        message_text = f"⛑ <b>Игра остановлена!\nНедостаточно средств для игры у {user_links_text}</b>"
+
+        await safe_game_edit(
+            game , chat_id=chat_id , message_id=message_id , text=message_text ,
+            reply_markup=None , parse_mode="HTML" , disable_web_page_preview=True)
+        del gamesmine [ game_id ]  # Удаляем игру из активных игр
+        return  # Завершаем выполнение функции
 
     if x in game['mines']:
         print(f"Отладка: Пользователь с ID {user_id} попал на мину!")
@@ -765,8 +776,8 @@ async def mines_mine_click_callback(callback_query: CallbackQuery):
             keyboard = InlineKeyboardMarkup(inline_keyboard=[ [ button ],[ button2 ] ])
         button_gamesmine [ game_id ] [ 'keyboard_stрsfiasfjasart' ] = keyboard
         messagetextmemem = random.choice(["🔥", "💥"])
-        await bot1.edit_message_text(
-            chat_id=chat_id , message_id=message_id ,
+        await safe_game_edit(
+            game , chat_id=chat_id , message_id=message_id ,
             text=f"<tg-emoji emoji-id='5469785308386041323'>💥</tg-emoji>" ,
             reply_markup=keyboard ,  # Empty list for inline_keyboard
             parse_mode="HTML" , disable_web_page_preview=True)
@@ -788,8 +799,8 @@ async def mines_mine_click_callback(callback_query: CallbackQuery):
 
     # Формируем ссылку на пользователя
     name_link111111 = await create_user_link(game['turn'] , first_name , username)
-    await bot1.edit_message_text(
-        chat_id=chat_id, message_id=message_id,
+    await safe_game_edit(
+        game , chat_id=chat_id, message_id=message_id,
         text=f"{next_player_emoji} <b>Ход {name_link111111}</b>",
         reply_markup=keyboard, parse_mode="HTML" , disable_web_page_preview=True
     )
