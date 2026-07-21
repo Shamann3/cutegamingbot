@@ -1187,7 +1187,7 @@ async def add_salary_payment(
         async with conn.transaction():
             row = await conn.fetchrow(
                 """
-                SELECT user_id, amount, paid_amount, status, payout_type
+                SELECT s.user_id, s.amount, s.paid_amount, s.status, a.payout_type
                 FROM staff_salaries s
                 LEFT JOIN admin_accounts a ON a.user_id = s.user_id
                 WHERE s.id = $1 FOR UPDATE OF s

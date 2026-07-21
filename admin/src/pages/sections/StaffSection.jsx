@@ -792,7 +792,7 @@ const SALARY_STATUS = {
   cancelled: { label: 'снято', color: '#94a3b8' },
 }
 
-function SalariesTab({ isOwner }) {
+function SalariesTab({ isOwner, canPay = false }) {
   const [week, setWeek] = useState('')
   const [rows, setRows] = useState([])
   const [appeals, setAppeals] = useState([])
@@ -1027,7 +1027,7 @@ function SalariesTab({ isOwner }) {
                     Одобрить
                   </button>
                 )}
-                {isOwner && s && (s.status === 'approved' || s.status === 'partially_paid') && (
+                {canPay && s && (s.status === 'approved' || s.status === 'partially_paid') && (
                   <button className="sec-btn sec-btn-sm sec-btn-success" disabled={busy === `pay-${s.salaryId}`}
                     onClick={() => setPayFor(m)}>
                     {s.status === 'partially_paid' ? 'Доплатить' : 'Выплатить'}
@@ -2108,7 +2108,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null }
       {activeTab === 'applications' && <ApplicationsTab />}
       {activeTab === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} />}
       {activeTab === 'invites' && <InvitesTab />}
-      {activeTab === 'salaries' && <SalariesTab isOwner={isOwner} />}
+      {activeTab === 'salaries' && <SalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
       {activeTab === 'ledger' && <LedgerTab />}
       {activeTab === 'leaderboard' && <LeaderboardTab />}
       {activeTab === 'shifts' && <ShiftsTab />}
