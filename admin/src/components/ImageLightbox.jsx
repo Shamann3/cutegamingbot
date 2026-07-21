@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 // Telegram-подобный просмотрщик изображений: клик по фото → оно
@@ -6,38 +6,41 @@ import { createPortal } from 'react-dom'
 // Закрытие: клик по фону, Esc, кнопка ✕. Клик по фото — зум 1x ↔ 2x.
 export default function ImageLightbox({ src, alt = 'фото', onClose }) {
   const [zoomed, setZoomed] = useState(false)
-  const [closing, setClosing] = useState(false)
-  const closeTimer = useRef(null)
-
-  const handleClose = useCallback(() => {
-    if (closing) return
-    setClosing(true)
-    closeTimer.current = setTimeout(onClose, 180)
-  }, [closing, onClose])
 
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') handleClose() }
-    window.addEventListener('keydown', onKey)
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        onClose()
+      }
+    }
+    // capture-фаза, чтобы никакой другой обработчик не перехватил Esc
+    document.addEventListener('keydown', onKey, true)
     // Блокируем прокрутку страницы под лайтбоксом
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
-      window.removeEventListener('keydown', onKey)
+      document.removeEventListener('keydown', onKey, true)
       document.body.style.overflow = prevOverflow
-      clearTimeout(closeTimer.current)
     }
-  }, [handleClose])
+  }, [onClose])
 
   if (!src) return null
 
+  // Закрываем только если клик пришёлся именно по фону, а не по фото/кнопкам
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) onClose()
+  }
+
   return createPortal(
     <div
-      className={`img-lightbox${closing ? ' img-lightbox-closing' : ''}`}
-      onClick={handleClose}
+      className="img-lightbox"
+      onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
     >
-      <button className="img-lightbox-close" onClick={handleClose} aria-label="Закрыть">✕</button>
+      <button className="img-lightbox-close" onClick={onClose} aria-label="Закрыть">✕</button>
       <a
         className="img-lightbox-download"
         href={src}
@@ -46,13 +49,15 @@ export default function ImageLightbox({ src, alt = 'фото', onClose }) {
         title="Скачать"
         aria-label="Скачать"
       >⤓</a>
-      <img
-        src={src}
-        alt={alt}
-        className={`img-lightbox-img${zoomed ? ' img-lightbox-img-zoom' : ''}`}
-        onClick={(e) => { e.stopPropagation(); setZoomed((z) => !z) }}
-        draggable={false}
-      />
+      <div className="img-lightbox-stage" onClick={handleBackdropClick}>
+        <img
+          src={src}
+          alt={alt}
+          className={`img-lightbox-img${zoomed ? ' img-lightbox-img-zoom' : ''}`}
+          onClick={(e) => { e.stopPropagation(); setZoomed((z) => !z) }}
+          draggable={false}
+        />
+      </div>
     </div>,
     document.body,
   )
