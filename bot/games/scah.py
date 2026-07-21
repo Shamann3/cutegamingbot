@@ -1010,8 +1010,11 @@ async def scah_select_piece_callback(callback_query: types.CallbackQuery):
             winner_id = game["players"][winner]
             loser_id = game["players"]["white" if winner == "black" else "black"]
             stake = game["bet"]
-            await db.update_user_balance(winner_id, await db.get_user_balance(winner_id) + stake)
-            await db.update_user_balance(loser_id, await db.get_user_balance(loser_id) - stake)
+            # Атомарный DELTA-режим: SET balance = balance + $2 под Redis-локом.
+            # Раньше здесь был read-modify-write (get + SET абсолютного значения),
+            # который затирал параллельные изменения баланса и кут «пропадал».
+            await db.update_user_balance(winner_id, f"+{int(stake)}")
+            await db.update_user_balance(loser_id, f"-{int(stake)}")
             await db.update_user_winamount(winner_id, stake)#
             await db.update_user_wins(winner_id, 1, bot1, ref_coin)
             await db.update_user_loose(loser_id, 1, bot1, ref_coin)#
@@ -1111,8 +1114,9 @@ async def scah_surrender_callback(callback_query: types.CallbackQuery):
         await safe_callback_answer(callback_query, "❗️ Вы не участник.")
         return
     stake = game["bet"]
-    await db.update_user_balance(winner_id, await db.get_user_balance(winner_id) + stake)
-    await db.update_user_balance(loser_id, await db.get_user_balance(loser_id) - stake)
+    # Атомарный DELTA-режим (см. пояснение выше) — без гонки read-modify-write.
+    await db.update_user_balance(winner_id, f"+{int(stake)}")
+    await db.update_user_balance(loser_id, f"-{int(stake)}")
     await db.update_user_winamount(winner_id, stake)#
     await db.update_user_wins(winner_id, 1, bot1, ref_coin)
     await db.update_user_loose(loser_id, 1, bot1, ref_coin)#
