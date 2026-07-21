@@ -79,7 +79,7 @@ def _load_risk_step_multiplier() -> Decimal:
 
 RISK_STEP_MULTIPLIER = _load_risk_step_multiplier()
 
-_RISK_HOME_CHANCE_DEFAULT = Decimal("0.10")
+_RISK_HOME_CHANCE_DEFAULT = Decimal("0.15")
 
 def _load_risk_home_chance() -> Decimal:
     try:

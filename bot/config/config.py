@@ -264,9 +264,9 @@ Trade_FIXED_WIN_TOTAL_MULTIPLIER = 2.0   # 2.0 = удвоение ставки (
 #  - ВВЕРХ 45%
 #  - ВНИЗ  45%
 #  - СДЕЛКА СОРВАЛАСЬ 10%  -> ставка "сгорает" (проигрыш) независимо от выбора
-Trade_P_OUTCOME_UP = 0.45
-Trade_P_OUTCOME_DOWN = 0.45
-Trade_P_OUTCOME_BROKEN = 0.10  # понятный для людей "третий исход"
+Trade_P_OUTCOME_UP = 0.425
+Trade_P_OUTCOME_DOWN = 0.425
+Trade_P_OUTCOME_BROKEN = 0.15  # "домой" (сделка сорвалась) = 15%
 
 
 # ------------------- Настройки -------------------
@@ -349,7 +349,7 @@ slots_MIN_BET = 2
 slots_BASE_MAX_BET = 1000  # базовый максимум, дальше может ужать челлендж
 # 0.03 = 3% на спин. Меняй здесь.
 
-SLOTS_JAM_CHANCE = Decimal("0.08")
+SLOTS_JAM_CHANCE = Decimal("0.15")
 # Скрытый исход "автомат заклинил"
 slots_MIN_BET = 2
 slots_BASE_MAX_BET = 1000  # базовый максимум, дальше может ужать челлендж
@@ -363,7 +363,7 @@ SOCCER_TARGET_VALUES = {3, 5, 4}   # гол (dice values)
 
 # Скрытый исход "неудачный удар"
 # 0.05 = 5% на удар. Меняй здесь.
-SOCCER_BAD_SHOT_CHANCE = Decimal("0.08")
+SOCCER_BAD_SHOT_CHANCE = Decimal("0.15")
 
 
 
@@ -377,7 +377,7 @@ DARTS_TARGET_VALUES = {6}
 
 # Скрытый исход "неудачный бросок"
 # 0.05 = 5% на бросок. Меняй здесь.
-DARTS_BAD_THROW_CHANCE = Decimal("0.8")
+DARTS_BAD_THROW_CHANCE = Decimal("0.15")
 
 
 
@@ -387,14 +387,14 @@ KUBE_MULTIPLIER = Decimal("6")
 
 # Скрытый исход "кубик потерялся"
 # 0.05 = 5% на бросок. Меняй здесь.
-KUBE_LOST_CHANCE = Decimal("0.5")
+KUBE_LOST_CHANCE = Decimal("0.15")
 
 
 FORTUNA_MAXIMUM_BET_AMOUNT = 5000
 
 FORTUNA_MIN_BET = 3
 
-FORTUNA_ZERO_CHANCE_PROD = Decimal("8") / Decimal("100")   # 8% в проде
+FORTUNA_ZERO_CHANCE_PROD = Decimal("15") / Decimal("100")   # 15% в проде
 
 # тест
 FORTUNA_TEST_ZERO_MODE = False
@@ -513,7 +513,7 @@ TARGET_VALUES = {4, 5}            # попадание 🏀 (dice values)
 
 # Скрытый исход "мяч сдулся"
 # 0.03 = 3% на бросок. Меняй здесь.
-BASKET_FLAT_CHANCE = Decimal("0.08")
+BASKET_FLAT_CHANCE = Decimal("0.15")
 
 
 
@@ -524,7 +524,7 @@ bowling_BASE_MAX_BET = 1000
 BOWLING_TARGET_VALUES = {6}
 # Скрытый исход "неудачный удар"
 # 0.05 = 5% на бросок. Меняй здесь.
-BOWLING_BAD_HIT_CHANCE = Decimal("0.08")
+BOWLING_BAD_HIT_CHANCE = Decimal("0.15")
 
 
 
