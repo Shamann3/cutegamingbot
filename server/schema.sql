@@ -1062,3 +1062,22 @@ CREATE TABLE IF NOT EXISTS giveaway_entries (
     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (giveaway_id, user_id)
 );
+
+-- v3: новые типы условий участия — подписка на Telegram-канал и «пригласить
+-- N друзей» (через уже существующий users.refferals). CHECK на giveaway_conditions.kind
+-- создан инлайн через CREATE TABLE IF NOT EXISTS, поэтому на уже существующей
+-- живой таблице его нужно пересоздать явно (DROP+ADD, а не EXISTS-гвардинг,
+-- т.к. Postgres не поддерживает ADD CONSTRAINT IF NOT EXISTS для CHECK).
+ALTER TABLE giveaway_conditions DROP CONSTRAINT IF EXISTS giveaway_conditions_kind_check;
+ALTER TABLE giveaway_conditions ADD CONSTRAINT giveaway_conditions_kind_check
+    CHECK (kind IN ('balance', 'harvest_count', 'item_count', 'channel_sub', 'referral_count'));
+
+-- Кэш проверки подписки на канал (getChatMember), TTL проверяется в коде
+-- (server/telegram_membership.py), не в схеме.
+CREATE TABLE IF NOT EXISTS giveaway_channel_sub_cache (
+    user_id BIGINT NOT NULL,
+    channel TEXT NOT NULL,
+    is_member BOOLEAN NOT NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, channel)
+);

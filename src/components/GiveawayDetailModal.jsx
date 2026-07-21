@@ -2,11 +2,16 @@ import { useEffect, useState } from 'react'
 import Portal from './Portal'
 import { fetchGiveaway } from '../lib/giveawaysClient'
 import { RARITY_ACCENT, formatGiveawayDeadlineTime, formatGiveawayPrize } from '../constants/giveaways'
+import { openTelegramBotLink, getTelegramUser } from '../lib/telegram'
+
+const BOT_USERNAME = 'CuteGamingBot'
 
 const CONDITION_LABEL = {
   balance: (cond) => `Баланс: ${cond.current} из ${cond.targetValue} КУТ`,
   harvest_count: (cond) => `Урожаев собрано: ${cond.current} из ${cond.targetValue}`,
   item_count: (cond) => `Предмет «${cond.itemId}»: ${cond.current} из ${cond.targetValue}`,
+  channel_sub: (cond) => `Подписка на @${cond.itemId}`,
+  referral_count: (cond) => `Приглашено друзей: ${cond.current} из ${cond.targetValue}`,
 }
 
 const CONDITION_NAV_TARGET = {
@@ -105,7 +110,30 @@ export default function GiveawayDetailModal({
                         <span className="giveaway-detail-condition-label">
                           {(CONDITION_LABEL[cond.kind] ?? (() => cond.kind))(cond)}
                         </span>
-                        {!cond.satisfied && (
+                        {!cond.satisfied && cond.kind === 'channel_sub' && (
+                          <button
+                            type="button"
+                            className="giveaway-detail-condition-goto"
+                            onClick={() => openTelegramBotLink(`https://t.me/${cond.itemId}`)}
+                          >
+                            Перейти
+                          </button>
+                        )}
+                        {!cond.satisfied && cond.kind === 'referral_count' && (
+                          <button
+                            type="button"
+                            className="giveaway-detail-condition-goto"
+                            onClick={() => {
+                              const userId = getTelegramUser()?.id
+                              if (!userId) return
+                              const inviteLink = `https://t.me/${BOT_USERNAME}?start=${userId}`
+                              openTelegramBotLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}`)
+                            }}
+                          >
+                            Перейти
+                          </button>
+                        )}
+                        {!cond.satisfied && cond.kind !== 'channel_sub' && cond.kind !== 'referral_count' && (
                           <button
                             type="button"
                             className="giveaway-detail-condition-goto"

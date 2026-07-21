@@ -8,7 +8,9 @@ from db import db
 _VALID_RARITY = frozenset({"common", "rare", "legendary"})
 _VALID_PRIZE_TYPE = frozenset({"kut", "manual"})
 _VALID_DRAW_TYPE = frozenset({"timer", "instant"})
-_VALID_CONDITION_KIND = frozenset({"balance", "harvest_count", "item_count"})
+_VALID_CONDITION_KIND = frozenset({
+    "balance", "harvest_count", "item_count", "channel_sub", "referral_count",
+})
 _UNSET = object()
 
 
@@ -62,6 +64,11 @@ def _validate_conditions(conditions: list[dict]) -> list[dict]:
             item_id = str(cond.get("item_id") or cond.get("itemId") or "").strip()
             if not item_id:
                 raise ValueError(f"Условие #{idx + 1}: укажите предмет")
+        elif kind == "channel_sub":
+            item_id = str(cond.get("item_id") or cond.get("itemId") or "").strip().lstrip("@")
+            if not item_id:
+                raise ValueError(f"Условие #{idx + 1}: укажите канал")
+            target_value = 1
         cleaned.append({"kind": kind, "target_value": target_value, "item_id": item_id, "sort_order": idx})
     return cleaned
 

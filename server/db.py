@@ -85,7 +85,8 @@ from user_items import (
     water_count,
     autowater_count,
 )
-from giveaway_conditions import all_conditions_met
+from giveaway_conditions import all_conditions_met, condition_satisfied
+from telegram_membership import resolve_channel_sub
 from giveaway_display import display_name, giveaway_bucket
 
 ONBOARDING_PLOT_ID = 1
@@ -1778,15 +1779,16 @@ class Database:
 
     async def _giveaway_condition_ctx(self, conn, user_id):
         row = await conn.fetchrow(
-            "SELECT balance, harvest_count, items FROM users WHERE user_id = $1",
+            "SELECT balance, harvest_count, items, refferals FROM users WHERE user_id = $1",
             user_id,
         )
         if not row:
-            return {"balance": 0, "harvest_count": 0, "items": {}}
+            return {"balance": 0, "harvest_count": 0, "items": {}, "referral_count": 0}
         return {
             "balance": int(row["balance"] or 0),
             "harvest_count": int(row["harvest_count"] or 0),
             "items": parse_items(row["items"]),
+            "referral_count": int(row["refferals"] or 0),
         }
 
     async def _giveaway_conditions(self, conn, giveaway_id):
@@ -1850,28 +1852,38 @@ class Database:
                 """,
                 user_id,
             )
-            items = []
+            rows_conditions = []
+            channels = set()
             for row in rows:
                 conditions = await self._giveaway_conditions(conn, row["id"])
-                conditions_met = all_conditions_met(ctx, conditions)
                 participants_count, participants_preview = await self._giveaway_participants(conn, row["id"])
-                items.append({
-                    "id": row["id"],
-                    "title": row["title"],
-                    "emoji": row["emoji"],
-                    "rarity": row["rarity"],
-                    "prize": self._giveaway_prize_summary(row),
-                    "drawType": row["draw_type"],
-                    "startsAt": row["starts_at"].isoformat() if row["starts_at"] else None,
-                    "endsAt": row["ends_at"].isoformat() if row["ends_at"] else None,
-                    "status": row["status"],
-                    "conditionsCount": len(conditions),
-                    "conditionsMet": conditions_met,
-                    "joined": bool(row["joined"]),
-                    "won": bool(row["winner_user_id"] == user_id) if row["winner_user_id"] else None,
-                    "participantsCount": participants_count,
-                    "participantsPreview": participants_preview,
-                })
+                channels.update(c["item_id"] for c in conditions if c["kind"] == "channel_sub")
+                rows_conditions.append((row, conditions, participants_count, participants_preview))
+        # channel_sub требует HTTP-вызова к Telegram — резолвим одним пакетным
+        # вызовом на все уникальные каналы этой пачки розыгрышей, уже без
+        # открытого соединения из пула (см. server/telegram_membership.py).
+        ctx["channel_sub"] = await resolve_channel_sub(self.pool, user_id, channels)
+
+        items = []
+        for row, conditions, participants_count, participants_preview in rows_conditions:
+            conditions_met = all_conditions_met(ctx, conditions)
+            items.append({
+                "id": row["id"],
+                "title": row["title"],
+                "emoji": row["emoji"],
+                "rarity": row["rarity"],
+                "prize": self._giveaway_prize_summary(row),
+                "drawType": row["draw_type"],
+                "startsAt": row["starts_at"].isoformat() if row["starts_at"] else None,
+                "endsAt": row["ends_at"].isoformat() if row["ends_at"] else None,
+                "status": row["status"],
+                "conditionsCount": len(conditions),
+                "conditionsMet": conditions_met,
+                "joined": bool(row["joined"]),
+                "won": bool(row["winner_user_id"] == user_id) if row["winner_user_id"] else None,
+                "participantsCount": participants_count,
+                "participantsPreview": participants_preview,
+            })
         return {"giveaways": items}
 
     async def get_giveaway_detail(self, user_id, giveaway_id):
@@ -1886,21 +1898,6 @@ class Database:
                 "SELECT 1 FROM giveaway_entries WHERE giveaway_id = $1 AND user_id = $2",
                 giveaway_id, user_id,
             )
-            condition_progress = []
-            for cond in conditions:
-                if cond["kind"] == "balance":
-                    current = ctx["balance"]
-                elif cond["kind"] == "harvest_count":
-                    current = ctx["harvest_count"]
-                else:
-                    current = ctx["items"].get(cond["item_id"], 0)
-                condition_progress.append({
-                    "kind": cond["kind"],
-                    "targetValue": cond["target_value"],
-                    "itemId": cond["item_id"],
-                    "current": current,
-                    "satisfied": current >= cond["target_value"],
-                })
             result = None
             winner_name = None
             recipients_count = None
@@ -1915,6 +1912,33 @@ class Database:
                     recipients_count, _ = await self._giveaway_participants(conn, giveaway_id, limit=0)
             elif row["status"] == "cancelled":
                 result = {"won": False}
+
+        # channel_sub — вне блока conn: HTTP-вызов к Telegram не должен
+        # держать соединение из пула открытым (см. server/telegram_membership.py).
+        channels = {c["item_id"] for c in conditions if c["kind"] == "channel_sub"}
+        # force_refresh=True: кнопка «Участвовать» гейтится на conditionsMet — если бы
+        # деталь читала кэш, только что подписавшийся игрок был бы заблокирован до 10 мин.
+        ctx["channel_sub"] = await resolve_channel_sub(self.pool, user_id, channels, force_refresh=True)
+
+        condition_progress = []
+        for cond in conditions:
+            if cond["kind"] == "balance":
+                current = ctx["balance"]
+            elif cond["kind"] == "harvest_count":
+                current = ctx["harvest_count"]
+            elif cond["kind"] == "item_count":
+                current = ctx["items"].get(cond["item_id"], 0)
+            elif cond["kind"] == "referral_count":
+                current = ctx["referral_count"]
+            else:
+                current = None
+            condition_progress.append({
+                "kind": cond["kind"],
+                "targetValue": cond["target_value"],
+                "itemId": cond["item_id"],
+                "current": current,
+                "satisfied": condition_satisfied(ctx, cond),
+            })
         return {
             "id": row["id"],
             "title": row["title"],
@@ -1935,13 +1959,27 @@ class Database:
         }
 
     async def participate_in_giveaway(self, user_id, giveaway_id):
+        # channel_sub — единственный тип условия с внешним HTTP-вызовом
+        # (Telegram); проверяем его здесь, ДО открытия транзакции с
+        # блокировкой строки — сетевой вызов никогда не должен идти под
+        # FOR UPDATE или с удержанием соединения из пула. force_refresh=True:
+        # перед реальным участием кэш полностью игнорируется, проверка живая
+        # (условия читаются дважды — здесь и ещё раз под блокировкой ниже —
+        # это осознанный компромисс: остальные условия (balance/harvest/item/
+        # referral) остаются под тем же FOR UPDATE, что и раньше, без
+        # изменений в их атомарности).
+        await self.ensure_user(user_id)
+        async with self.pool.acquire() as conn:
+            conditions_preview = await self._giveaway_conditions(conn, giveaway_id)
+        channels = {c["item_id"] for c in conditions_preview if c["kind"] == "channel_sub"}
+        channel_sub_ctx = await resolve_channel_sub(self.pool, user_id, channels, force_refresh=True)
+
         # ВАЖНО: не вызывать self.get_giveaway_detail(...) (сам берёт соединение
         # из пула) пока ещё держим conn из self.pool.acquire() ниже — иначе на
         # секунду занимаем два соединения из пула одновременно. Поэтому ранний
         # выход при already_joined не return'ится изнутри "async with conn",
         # а просто ничего не делает внутри транзакции — единый return после
         # блока сам сходит за актуальным состоянием на уже свободном соединении.
-        await self.ensure_user(user_id)
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
@@ -1961,6 +1999,7 @@ class Database:
                         raise ValueError("Розыгрыш ещё не начался")
 
                     ctx = await self._giveaway_condition_ctx(conn, user_id)
+                    ctx["channel_sub"] = channel_sub_ctx
                     conditions = await self._giveaway_conditions(conn, giveaway_id)
                     if not all_conditions_met(ctx, conditions):
                         raise ValueError("Не все условия выполнены")

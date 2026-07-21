@@ -30,6 +30,8 @@ const CONDITION_KIND_OPTIONS = [
   { value: 'balance', label: 'Баланс КУТ ≥' },
   { value: 'harvest_count', label: 'Урожаев собрано ≥' },
   { value: 'item_count', label: 'Предмет в рюкзаке ≥' },
+  { value: 'channel_sub', label: 'Подписка на Telegram-канал' },
+  { value: 'referral_count', label: 'Пригласить друзей ≥' },
 ]
 
 const DATE_PRESETS = [
@@ -149,8 +151,8 @@ export default function GiveawaysSection() {
         enabled: form.enabled,
         conditions: form.conditions.map((c) => ({
           kind: c.kind,
-          targetValue: Number(c.targetValue),
-          itemId: c.kind === 'item_count' ? c.itemId : null,
+          targetValue: c.kind === 'channel_sub' ? 1 : Number(c.targetValue),
+          itemId: c.kind === 'item_count' || c.kind === 'channel_sub' ? c.itemId : null,
         })),
       }
       if (form.id) {
@@ -368,18 +370,28 @@ export default function GiveawaysSection() {
                     onChange={(v) => updateCondition(idx, { kind: v })}
                     options={CONDITION_KIND_OPTIONS}
                   />
-                  <input
-                    className="panel-users-input"
-                    type="number"
-                    min={1}
-                    value={cond.targetValue}
-                    onChange={(e) => updateCondition(idx, { targetValue: e.target.value })}
-                    style={{ width: 90 }}
-                  />
+                  {cond.kind !== 'channel_sub' && (
+                    <input
+                      className="panel-users-input"
+                      type="number"
+                      min={1}
+                      value={cond.targetValue}
+                      onChange={(e) => updateCondition(idx, { targetValue: e.target.value })}
+                      style={{ width: 90 }}
+                    />
+                  )}
                   {cond.kind === 'item_count' && (
                     <input
                       className="panel-users-input"
                       placeholder="id предмета"
+                      value={cond.itemId}
+                      onChange={(e) => updateCondition(idx, { itemId: e.target.value })}
+                    />
+                  )}
+                  {cond.kind === 'channel_sub' && (
+                    <input
+                      className="panel-users-input"
+                      placeholder="@username канала"
                       value={cond.itemId}
                       onChange={(e) => updateCondition(idx, { itemId: e.target.value })}
                     />
