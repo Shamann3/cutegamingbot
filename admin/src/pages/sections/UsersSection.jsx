@@ -539,25 +539,39 @@ function CuteHistoryFeed({ userId }) {
   const [dateTo, setDateTo] = useState('')
   const [direction, setDirection] = useState('')      // '' | 'in' | 'out'
   const [q, setQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
   const [onlyTransfers, setOnlyTransfers] = useState(false)
 
+  // debounce the free-text cause search so typing doesn't fire a request per keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 350)
+    return () => clearTimeout(t)
+  }, [q])
+
+  // Monotonically-increasing counter: if a newer request lands before an older
+  // one resolves, the older result is discarded (no stale overwrites).
+  const loadReqRef = useRef(0)
+
   const load = useCallback(async (nextOffset) => {
+    const reqId = ++loadReqRef.current
     setLoading(true)
     setError('')
     try {
       const data = await fetchAdminUserCuteHistory(userId, {
-        dateFrom, dateTo, direction, q, onlyTransfers,
+        dateFrom, dateTo, direction, q: debouncedQ, onlyTransfers,
         limit: CUTE_PAGE, offset: nextOffset,
       })
+      if (reqId !== loadReqRef.current) return  // stale - newer request is in flight
       setTotal(data.total || 0)
       setItems((prev) => nextOffset === 0 ? (data.items || []) : [...prev, ...(data.items || [])])
       setOffset(nextOffset)
     } catch (e) {
+      if (reqId !== loadReqRef.current) return
       setError(e.message || 'Ошибка загрузки')
     } finally {
-      setLoading(false)
+      if (reqId === loadReqRef.current) setLoading(false)
     }
-  }, [userId, dateFrom, dateTo, direction, q, onlyTransfers])
+  }, [userId, dateFrom, dateTo, direction, debouncedQ, onlyTransfers])
 
   // первичная загрузка и перезагрузка при смене фильтров
   useEffect(() => { load(0) }, [load])
