@@ -241,6 +241,21 @@ class Database:
                 """
             )
 
+            # cutehistory (legacy-таблица бота): колонка связи с p2p_transfers.
+            # ALTER идёт после schema.sql, где таблица гарантированно есть
+            # (CREATE IF NOT EXISTS). Индекс по transfer_id — только после того,
+            # как колонка добавлена.
+            try:
+                await conn.execute(
+                    "ALTER TABLE cutehistory ADD COLUMN IF NOT EXISTS transfer_id BIGINT"
+                )
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS cutehistory_transfer_idx "
+                    "ON cutehistory (transfer_id)"
+                )
+            except Exception as _mig_err:
+                _mig_logger.warning("cutehistory.transfer_id migration skipped: %s", _mig_err)
+
             # Heal schema drift on pre-existing DBs: "CREATE TABLE IF NOT EXISTS"
             # never adds a UNIQUE constraint to a table that already exists, so
             # older databases can miss the unique keys that ON CONFLICT relies on.
