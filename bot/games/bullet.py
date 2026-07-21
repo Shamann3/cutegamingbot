@@ -13,6 +13,7 @@ import json
 from main import *
 import uuid
 from bot.funcs.func import *
+from bot.games.safe_game_edit import safe_game_edit
 user_message_bullet = {}
 user_messagebullet = {}
 
@@ -169,7 +170,8 @@ async def join_game_callback(callback_query: CallbackQuery):
     keyboard = InlineKeyboardMarkup().add(
         InlineKeyboardButton("Начать игру" , callback_data=f"bulletstart:{game_id}"))
 
-    await bot1.edit_message_text(
+    await safe_game_edit(
+        game,
         chat_id=callback_query.message.chat.id , message_id=callback_query.message.message_id ,
         text=(f"🎯 <b>Играем в русскую рулетку!\n"
               f"{bet_text}"  # Добавляем текст со ставкой, если она больше 0
@@ -192,6 +194,9 @@ async def start_game_callback(callback_query: CallbackQuery):
     if user_id not in game["participants"]:
         await callback_query.answer("❗ Вы не участвуете в этой игре.")
         return
+
+    # Гасим спиннер сразу, до сетевых/БД запросов ниже.
+    await callback_query.answer()
 
     # Инициализация current_player, если это первая игра
     if 'current_player' not in game:
@@ -226,8 +231,10 @@ async def start_game_callback(callback_query: CallbackQuery):
     # Создаем клавиатуру, передавая имя участника
     keyboard = create_keyboard_russian_roulette(pepeppefirst_name)
 
-    await callback_query.message.edit_text(
-        f"<b>🎯 В кого стреляем? {random_message_text} \n♨️ Текущий ход : {creator_link}</b>",
+    await safe_game_edit(
+        game,
+        chat_id=callback_query.message.chat.id, message_id=callback_query.message.message_id,
+        text=f"<b>🎯 В кого стреляем? {random_message_text} \n♨️ Текущий ход : {creator_link}</b>",
         parse_mode="HTML",
         disable_web_page_preview=True,
         reply_markup=keyboard
@@ -254,6 +261,10 @@ async def game_actions(call: types.CallbackQuery):
     if game_info['current_player'] != user_id:
         await call.answer("❗ Не ваш ход.")
         return
+
+    # chat_id/message_id сообщения игры - для безопасного редактирования.
+    _chat_id = call.message.chat.id if call.message else None
+    _message_id = call.message.message_id if call.message else None
 
     # Убеждаемся, что `game_field` и `shots_used` инициализированы
     if "game_field" not in game_info or "shots_used" not in game_info:
@@ -297,7 +308,11 @@ async def game_actions(call: types.CallbackQuery):
     if call.data == "shoot_bot":
         game_info["shots_used"] += 1
         if bullet_status == "💣":
-            await call.message.edit_text(f"💥 <b>{opponent_link} проиграл! Выстрел был смертельным!</b>", parse_mode="HTML")
+            await call.answer()  # гасим спиннер кнопки сразу
+            await safe_game_edit(
+                game_info, chat_id=_chat_id, message_id=_message_id,
+                text=f"💥 <b>{opponent_link} проиграл! Выстрел был смертельным!</b>",
+                reply_markup=None, parse_mode="HTML")
             winner_id = opponent_user_id  # Противник стал победителем
             loser_id = user_id
 
@@ -319,8 +334,9 @@ async def game_actions(call: types.CallbackQuery):
             game_info["game_field"][bullet_index] = "✔️"
             textbotsurvival = random.choice([f"{opponent_link} выжил", f"{opponent_link} остался в живых"])
             await call.answer(textbotsurvival)
-            await call.message.edit_text(
-                f"💠 <b>{textbotsurvival} | {game_info['shots_used']} / 7 пуль использовано \n🩵 Текущий ход : {next_player_link}</b>",
+            await safe_game_edit(
+                game_info, chat_id=_chat_id, message_id=_message_id,
+                text=f"💠 <b>{textbotsurvival} | {game_info['shots_used']} / 7 пуль использовано \n🩵 Текущий ход : {next_player_link}</b>",
                 parse_mode="HTML", disable_web_page_preview=True,
                 reply_markup=create_keyboard_russian_roulette(creator_first_name)
             )
@@ -329,7 +345,11 @@ async def game_actions(call: types.CallbackQuery):
     elif call.data == "shoot_self":
         game_info["shots_used"] += 1
         if bullet_status == "💣":
-            await call.message.edit_text("💢 <b>Вы проиграли! Выстрел в себя был смертельным!</b>", parse_mode="HTML")
+            await call.answer()  # гасим спиннер кнопки сразу
+            await safe_game_edit(
+                game_info, chat_id=_chat_id, message_id=_message_id,
+                text="💢 <b>Вы проиграли! Выстрел в себя был смертельным!</b>",
+                reply_markup=None, parse_mode="HTML")
             winner_id = opponent_user_id  # Противник стал победителем
             loser_id = user_id
 
@@ -351,15 +371,20 @@ async def game_actions(call: types.CallbackQuery):
             game_info["game_field"][bullet_index] = "✔️"
             textselfsurvival = random.choice(["Вы выжили", "Вы остались в живых"])
             await call.answer(textselfsurvival)
-            await call.message.edit_text(
-                f"❇️ <b>{textselfsurvival} | {game_info['shots_used']} / 7 пуль использовано \n💚 Текущий ход : {next_player_link}</b>",
+            await safe_game_edit(
+                game_info, chat_id=_chat_id, message_id=_message_id,
+                text=f"❇️ <b>{textselfsurvival} | {game_info['shots_used']} / 7 пуль использовано \n💚 Текущий ход : {next_player_link}</b>",
                 parse_mode="HTML", disable_web_page_preview=True,
                 reply_markup=create_keyboard_russian_roulette(creator_first_name)
             )
             print(f"[DEBUG] Пользователь {user_id} выстрелил в себя, использовано пуль: {game_info['shots_used']}.")
 
-    # Проверка на окончание игры
-    if game_info["shots_used"] >= 7:
-        await call.message.edit_text("♨️ <b>Игра окончена!</b>", parse_mode="HTML", disable_web_page_preview=True)
+    # Проверка на окончание игры (только если игра ещё активна - на смертельном
+    # выстреле она уже удалена выше, повторное удаление дало бы KeyError).
+    if game_info["shots_used"] >= 7 and game_info.get("game_id") in active_games_bullet:
+        await safe_game_edit(
+            game_info, chat_id=_chat_id, message_id=_message_id,
+            text="♨️ <b>Игра окончена!</b>", reply_markup=None,
+            parse_mode="HTML", disable_web_page_preview=True)
         del active_games_bullet[game_info["game_id"]]
 
