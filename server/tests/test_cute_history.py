@@ -87,3 +87,13 @@ def test_merge_none_ts_goes_last():
         0, 10,
     )
     assert [i["kind"] for i in out] == ["y", "x"]
+
+
+def test_cute_history_route_registered():
+    import os
+    os.environ.setdefault("PRODUCTION", "false")
+    from app import app
+    paths = [getattr(r, "path", "") for r in app.router.routes]
+    assert any(p.endswith("/users/{target_user_id}/cute-history") for p in paths), (
+        f"cute-history route not registered: {paths}"
+    )
