@@ -488,6 +488,13 @@ CLEAR_COST = 10
 # Чёрный рынок — технический чат, куда зачисляется комиссия с биржи
 TECH_CHAT_ID = -1003855337972
 
+# Группы, куда шлём публичное объявление о каждой покупке на бирже.
+# Игровой бот (BOT_TOKEN) должен состоять в этих чатах.
+MARKET_BROADCAST_GROUP_IDS = (
+    -1001612636292,  # https://t.me/CuteGamingChat
+    -1001921925861,  # https://t.me/CuteChat3
+)
+
 SEED_ITEM_ID = os.getenv("SEED_ITEM_ID", "299")
 TREE_ITEM_ID = os.getenv("TREE_ITEM_ID", "290")
 TOBACCO_SEED_ITEM_ID = os.getenv("TOBACCO_SEED_ITEM_ID", "296")
