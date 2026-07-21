@@ -10483,6 +10483,79 @@ html { scroll-behavior: smooth; }
 }
 .support-reply-photo-wrap:hover .support-reply-photo-remove { opacity: 1; }
 
+/* ── Просмотрщик изображений (лайтбокс) ─────────────────── */
+@keyframes img-lightbox-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes img-lightbox-zoom-in {
+  from { opacity: 0; transform: scale(0.88); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.img-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1rem, 5vw, 4rem);
+  background: rgba(6, 8, 12, 0.9);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: zoom-out;
+  animation: img-lightbox-fade-in 0.18s ease;
+}
+.img-lightbox-closing { animation: img-lightbox-fade-in 0.18s ease reverse; }
+
+.img-lightbox-img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 10px;
+  object-fit: contain;
+  cursor: zoom-in;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  user-select: none;
+  animation: img-lightbox-zoom-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.img-lightbox-closing .img-lightbox-img {
+  animation: img-lightbox-zoom-in 0.18s ease reverse;
+}
+.img-lightbox-img-zoom {
+  transform: scale(1.9);
+  cursor: zoom-out;
+}
+
+.img-lightbox-close,
+.img-lightbox-download {
+  position: fixed;
+  top: clamp(0.75rem, 2vw, 1.5rem);
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  background: rgba(20, 24, 32, 0.7);
+  color: #e8e8e8;
+  font-size: 1.15rem;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  z-index: 1;
+  transition: background 0.15s, transform 0.15s, border-color 0.15s;
+}
+.img-lightbox-close { right: clamp(0.75rem, 2vw, 1.5rem); }
+.img-lightbox-download { right: calc(clamp(0.75rem, 2vw, 1.5rem) + 54px); font-size: 1.35rem; }
+.img-lightbox-close:hover,
+.img-lightbox-download:hover {
+  background: rgba(40, 46, 58, 0.9);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.08);
+}
+
 /* Empty state — занимает всю колонку чтобы не было рывка при открытии тикета */
 .support-empty-state {
   display: flex;

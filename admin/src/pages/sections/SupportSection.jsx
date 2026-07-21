@@ -10,6 +10,7 @@ import {
 } from '../../lib/adminClient'
 import { showToast } from '../../components/ToastHost'
 import TgPhoto from '../../components/TgPhoto'
+import ImageLightbox from '../../components/ImageLightbox'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -55,6 +56,7 @@ function TicketThread({ ticket: initialTicket, onBack, onClosed }) {
   const fileInputRef = useRef(null)
   const [claiming, setClaiming] = useState(false)
   const [closing, setClosing] = useState(false)
+  const [lightboxSrc, setLightboxSrc] = useState(null)
   const bottomRef = useRef(null)
   const messagesRef = useRef(null)
   const pollRef = useRef(null)
@@ -240,7 +242,7 @@ function TicketThread({ ticket: initialTicket, onBack, onClosed }) {
                   <span className="support-msg-sender">{msg.adminName}</span>
                 )}
                 {msg.photoFileId && (
-                  <TgPhoto fileId={msg.photoFileId} onClick style={{ marginBottom: msg.text ? 6 : 0 }} />
+                  <TgPhoto fileId={msg.photoFileId} onClick={setLightboxSrc} style={{ marginBottom: msg.text ? 6 : 0 }} />
                 )}
                 {msg.text && (
                   <p className="support-msg-text">
@@ -317,6 +319,10 @@ function TicketThread({ ticket: initialTicket, onBack, onClosed }) {
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoSelect(f); e.target.value = '' }}
           />
         </div>
+      )}
+
+      {lightboxSrc && (
+        <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
       )}
     </div>
   )

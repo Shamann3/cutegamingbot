@@ -57,7 +57,7 @@ export default function TgPhoto({ fileId, className = '', style = {}, onClick })
         cursor: onClick ? 'zoom-in' : 'default',
         ...style,
       }}
-      onClick={onClick ? () => window.open(src, '_blank') : undefined}
+      onClick={onClick ? () => onClick(src) : undefined}
     />
   )
 }
