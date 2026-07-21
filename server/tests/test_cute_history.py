@@ -97,3 +97,51 @@ def test_cute_history_route_registered():
     assert any(p.endswith("/users/{target_user_id}/cute-history") for p in paths), (
         f"cute-history route not registered: {paths}"
     )
+
+
+def test_parse_date_returns_date_or_none():
+    from datetime import date
+    from admin_cute_history import _parse_date
+    assert _parse_date("2026-05-10") == date(2026, 5, 10)
+    assert _parse_date("") is None
+    assert _parse_date(None) is None
+    assert _parse_date("not-a-date") is None
+    assert _parse_date(date(2026, 7, 22)) == date(2026, 7, 22)
+
+
+def test_date_filters_bound_as_date_objects_not_strings():
+    """Regression: asyncpg encodes a $N::date param with its date codec, which
+    calls .toordinal() and therefore needs a datetime.date, not a str. Passing
+    the raw 'YYYY-MM-DD' string raised
+    `DataError: ... 'str' object has no attribute 'toordinal'`.
+    get_user_cute_history must convert date_from/date_to before binding."""
+    import asyncio
+    from datetime import date
+    import admin_cute_history
+
+    captured_args = []
+
+    class FakePool:
+        async def fetchval(self, query, *args):
+            captured_args.extend(args)
+            return 0
+
+        async def fetch(self, query, *args):
+            captured_args.extend(args)
+            return []
+
+    original_pool = admin_cute_history.db.pool
+    admin_cute_history.db.pool = FakePool()
+    try:
+        asyncio.run(admin_cute_history.get_user_cute_history(
+            123, date_from="2026-05-10", date_to="2026-07-22",
+        ))
+    finally:
+        admin_cute_history.db.pool = original_pool
+
+    # raw date strings must never reach asyncpg
+    assert "2026-05-10" not in captured_args
+    assert "2026-07-22" not in captured_args
+    # they must be bound as datetime.date objects
+    assert date(2026, 5, 10) in captured_args
+    assert date(2026, 7, 22) in captured_args

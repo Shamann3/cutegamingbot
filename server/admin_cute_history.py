@@ -5,9 +5,28 @@ get_user_cute_history (DB) добавляется в Task 4.
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from db import db
+
+
+def _parse_date(value):
+    """'YYYY-MM-DD' -> datetime.date for asyncpg date binding; None/invalid -> None.
+
+    asyncpg encodes a ``$N::date`` parameter with its date codec, which calls
+    ``.toordinal()`` and therefore requires a ``datetime.date`` — a raw string
+    raises ``DataError: 'str' object has no attribute 'toordinal'``. The date
+    filters must be converted before they are bound.
+    """
+    if not value:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
 
 
 def cute_direction(plus, minus) -> str:
@@ -97,6 +116,9 @@ async def get_user_cute_history(
     limit = max(1, min(int(limit), 100))
     offset = max(0, int(offset))
     fetch_n = offset + limit
+    # asyncpg binds $N::date via its date codec (needs datetime.date, not str)
+    date_from = _parse_date(date_from)
+    date_to = _parse_date(date_to)
 
     # --- cutehistory WHERE ---
     conds = ["ch.user_id = $1"]
