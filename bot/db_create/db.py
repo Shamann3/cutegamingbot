@@ -7915,10 +7915,15 @@ class Database:
 
         query_check = "SELECT 1 FROM users WHERE user_id = $1"
 
+        # ВАЖНО: для существующего пользователя НЕ трогаем balance и data.
+        # balance = куты игрока, data = дата регистрации ("время в боте" в стате).
+        # Раньше здесь стояло SET data=..., balance=start_balance, из-за чего переход
+        # по чужой реф-ссылке обнулял куты и сбрасывал дату регистрации на сегодня.
+        # Обновляем только профильные поля.
         query_update = """
         UPDATE users
-        SET data = $1, first_name = $2, username = $3, bio = $4, balance = $5
-        WHERE user_id = $6
+        SET first_name = $1, username = $2, bio = $3
+        WHERE user_id = $4
         """
 
         query_insert = """
@@ -7931,10 +7936,10 @@ class Database:
             exists = await connection.fetchval(query_check , user_id)
 
             if exists:
-                # Обновляем данные для существующего пользователя
+                # Обновляем ТОЛЬКО профиль существующего пользователя (без balance/data)
                 await connection.execute(
-                    query_update , registration_date , first_name , username , bio , start_balance , user_id)
-                print(f"⭐️ Пользователь с ID {user_id} обновлен.")
+                    query_update , first_name , username , bio , user_id)
+                print(f"⭐️ Пользователь с ID {user_id} обновлен (профиль; баланс и дата сохранены).")
             else:
                 # Добавляем нового пользователя без столбца id
                 await connection.execute(
