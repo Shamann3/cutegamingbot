@@ -17,6 +17,27 @@ def test_cute_direction():
     assert cute_direction(None, 50) == "out"
 
 
+def test_cute_direction_treats_zero_as_empty():
+    # legacy cutehistory хранит неиспользуемую колонку как 0, а не NULL:
+    # списание имеет "+"=0 и "-"=сумма, и должно определяться как "out"
+    assert cute_direction(0, 300) == "out"
+    assert cute_direction(300, 0) == "in"
+    assert cute_direction(0, 0) == "out"
+
+
+def test_normalize_deposit_with_zero_plus_reads_minus_amount():
+    # Реальный кейс с прода: пополнение бч, "+"=0 (не NULL), "-"=сумма.
+    row = {"plus": 0, "minus": 300, "cause": "положено на баланс группы",
+           "balance": 4, "transfer_id": None, "ts": TS_A,
+           "sender_id": None, "receiver_id": None,
+           "chat_id": -1001612636292, "group_name": "CuteGamingChat",
+           "group_username": "CuteGamingChat"}
+    item = normalize_cute_row(row, {})
+    assert item["direction"] == "out"
+    assert item["amount"] == 300
+    assert item["kind"] == "chat_deposit"
+
+
 def test_counterparty_id_out_returns_receiver():
     assert counterparty_id("out", 111, 222) == 222
 

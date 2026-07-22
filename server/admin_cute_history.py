@@ -31,8 +31,12 @@ def _parse_date(value):
 
 
 def cute_direction(plus, minus) -> str:
-    """Направление строки cutehistory: '+' заполнено → 'in', иначе 'out'."""
-    return "in" if plus is not None else "out"
+    """Направление строки cutehistory: '+' содержит сумму → 'in', иначе 'out'.
+
+    Legacy-таблица хранит неиспользуемую колонку как 0 (а не NULL), поэтому
+    проверяем на truthy, а не на None: у списания "+"=0 и "-"=сумма → 'out'.
+    """
+    return "in" if plus else "out"
 
 
 def counterparty_id(direction: str, sender_id, receiver_id):
@@ -56,7 +60,7 @@ def normalize_cute_row(row: Any, name_map: dict) -> dict:
     plus = row["plus"]
     minus = row["minus"]
     direction = cute_direction(plus, minus)
-    amount = int(plus if direction == "in" else minus)
+    amount = int((plus if direction == "in" else minus) or 0)
     is_transfer = row["transfer_id"] is not None
     chat_id = row.get("chat_id")
     is_chat_deposit = (not is_transfer) and chat_id is not None
