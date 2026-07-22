@@ -89,10 +89,21 @@ export default function GiveawayDetailModal({
             <p className="giveaway-detail-loading">Загрузка…</p>
           ) : (
             <>
+              {/* Лента-серийник */}
+              <div className="giveaway-detail-ribbon">
+                <span className="giveaway-detail-ribbon-serial">
+                  БИЛЕТ № {String(detail.id).padStart(4, '0')}
+                </span>
+                <span className="giveaway-detail-ribbon-label">
+                  {detail.result ? 'Итоги' : detail.drawType === 'instant' ? 'Мгновенный' : 'Розыгрыш'}
+                </span>
+              </div>
+
               {/* Зона 1: приз + таймер */}
               <div className="giveaway-detail-hero">
                 <div className="giveaway-detail-hero-icon-wrap">
                   <span className="giveaway-detail-hero-ring" aria-hidden />
+                  <span className="giveaway-detail-hero-seal" aria-hidden />
                   <span className="giveaway-detail-hero-emoji" aria-hidden>
                     {detail.prize.type === 'kut' ? '💰' : (detail.prize.emoji ?? '🎁')}
                   </span>
@@ -109,6 +120,8 @@ export default function GiveawayDetailModal({
                   </span>
                 )}
               </div>
+
+              <div className="giveaway-detail-perf" aria-hidden />
 
               {detail.result ? (
                 /* Завершён — раскрытие победителя */

@@ -328,12 +328,38 @@
   text-transform: uppercase;
 }
 
-/* ======================= МОДАЛКА ДЕТАЛЕЙ ======================= */
+/* ============= МОДАЛКА ДЕТАЛЕЙ — призовой билет ============= */
 
 .giveaway-detail-modal {
+  position: relative;
   display: flex;
   flex-direction: column;
   padding: 1.6rem 1.15rem 1.15rem;
+  overflow: hidden;
+}
+/* Гильоше — гравированная защитная сетка, как на призовых облигациях
+   и лотерейных билетах; сгущается за призом и тает книзу. */
+.giveaway-detail-modal::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.7;
+  background:
+    repeating-radial-gradient(circle at 50% 4.2rem, transparent 0 7px, rgba(253, 230, 138, 0.05) 7px 8px),
+    radial-gradient(circle at 50% 4.2rem, var(--ticket-accent-glow) 0%, transparent 52%);
+  -webkit-mask: linear-gradient(#000 0%, transparent 62%);
+  mask: linear-gradient(#000 0%, transparent 62%);
+  z-index: 0;
+}
+/* Контент — над гильоше; кнопку закрытия не трогаем (у неё своё
+   абсолютное позиционирование из .shop-modal-close). */
+.giveaway-detail-modal > *:not(.shop-modal-close) {
+  position: relative;
+  z-index: 1;
+}
+.giveaway-detail-modal .shop-modal-close {
+  z-index: 3;
 }
 
 .giveaway-detail-loading {
@@ -341,6 +367,41 @@
   text-align: center;
   font-weight: 600;
   color: rgba(245, 240, 224, 0.7);
+}
+
+/* Лента-серийник наверху билета */
+.giveaway-detail-ribbon {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: -0.4rem 0 0.9rem;
+  padding-right: 2rem; /* место под кнопку закрытия */
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid rgba(253, 230, 138, 0.14);
+}
+.giveaway-detail-ribbon-serial {
+  font: 700 0.58rem/1 ui-monospace, 'SF Mono', Menlo, monospace;
+  letter-spacing: 0.14em;
+  color: rgba(253, 230, 138, 0.75);
+}
+.giveaway-detail-ribbon-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.56rem;
+  font-weight: 900;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--tab-accent-muted);
+}
+.giveaway-detail-ribbon-label::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--ticket-accent-strong);
+  box-shadow: 0 0 8px var(--ticket-accent-glow);
 }
 
 /* Зона 1: приз */
@@ -356,9 +417,9 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: 5.5rem;
-  height: 5.5rem;
-  margin-bottom: 0.1rem;
+  width: 6rem;
+  height: 6rem;
+  margin-bottom: 0.25rem;
 }
 .giveaway-detail-hero-icon-wrap::before {
   content: '';
@@ -367,12 +428,27 @@
   background: radial-gradient(circle, var(--ticket-accent-glow) 0%, transparent 68%);
 }
 
+/* Медальон-печать под эмодзи — гравировка + золотой рант */
+.giveaway-detail-hero-seal {
+  position: absolute;
+  inset: 0.45rem;
+  border-radius: 999px;
+  background:
+    repeating-radial-gradient(circle at 50% 50%, transparent 0 3px, rgba(253, 230, 138, 0.08) 3px 4px),
+    radial-gradient(circle at 50% 32%, rgba(58, 28, 46, 0.92), rgba(12, 6, 12, 0.96));
+  border: 1px solid color-mix(in srgb, var(--ticket-accent-strong) 55%, #fde68a);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 14px rgba(0, 0, 0, 0.6),
+    0 0 18px var(--ticket-accent-glow);
+}
+
 .giveaway-detail-hero-ring {
   position: absolute;
-  inset: 0;
+  inset: -0.05rem;
   border-radius: 999px;
-  border: 1px dashed color-mix(in srgb, var(--ticket-accent-strong) 42%, transparent);
-  animation: giveaway-spin 18s linear infinite;
+  border: 1px dashed color-mix(in srgb, var(--ticket-accent-strong) 46%, #fde68a);
+  animation: giveaway-spin 22s linear infinite;
 }
 @keyframes giveaway-spin {
   to { transform: rotate(360deg); }
@@ -380,8 +456,8 @@
 
 .giveaway-detail-hero-emoji {
   position: relative;
-  font-size: 3.6rem;
-  filter: drop-shadow(0 0 16px var(--ticket-accent-glow));
+  font-size: 3.3rem;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
 }
 
 .giveaway-detail-title {
@@ -394,32 +470,71 @@
 }
 
 .giveaway-detail-prize {
-  margin: 0;
+  position: relative;
+  margin: 0.15rem 0 0;
+  padding: 0 0.4rem;
   font-family: Cinzel, Georgia, serif;
-  font-size: 2.05rem;
+  font-size: 2.35rem;
   font-weight: 700;
-  line-height: 1.05;
-  background: linear-gradient(100deg, #fde68a 0%, #fff4cf 45%, #f7c948 55%, #fde68a 100%);
+  line-height: 1.02;
+  letter-spacing: 0.01em;
+  background: linear-gradient(100deg, #f7c948 0%, #fde68a 30%, #fffdf5 50%, #fde68a 70%, #f7c948 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: #fde68a;
-  text-shadow: 0 0 30px var(--ticket-accent-glow);
+  text-shadow: 0 0 34px var(--ticket-accent-glow);
 }
+/* Засечки-звёзды по бокам суммы — «джекпот-марка» */
+.giveaway-detail-prize::before,
+.giveaway-detail-prize::after {
+  content: '✦';
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--ticket-accent-strong) 70%, #fde68a);
+  opacity: 0.7;
+  -webkit-text-fill-color: currentColor;
+}
+.giveaway-detail-prize::before { left: -0.65rem; }
+.giveaway-detail-prize::after { right: -0.65rem; }
 
 .giveaway-detail-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.32rem;
-  margin-top: 0.2rem;
-  padding: 0.3rem 0.8rem;
+  margin-top: 0.45rem;
+  padding: 0.32rem 0.85rem;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid color-mix(in srgb, var(--ticket-accent-strong) 30%, rgba(255, 255, 255, 0.1));
   font-size: 0.68rem;
   font-weight: 700;
-  color: rgba(245, 240, 224, 0.85);
+  color: rgba(245, 240, 224, 0.88);
 }
+
+/* Отрывная перфорация — разделяет «приз» и «вход» */
+.giveaway-detail-perf {
+  position: relative;
+  height: 0;
+  margin: 1.2rem -1.15rem 0;
+  border-top: 2px dashed rgba(253, 230, 138, 0.32);
+}
+.giveaway-detail-perf::before,
+.giveaway-detail-perf::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #060309;
+  transform: translateY(-50%);
+  box-shadow: inset 0 0 0 1px rgba(253, 230, 138, 0.12);
+}
+.giveaway-detail-perf::before { left: -10px; }
+.giveaway-detail-perf::after { right: -10px; }
 
 /* Зона 2: таблица условий (ledger) */
 .giveaway-detail-conditions {
