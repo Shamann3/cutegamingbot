@@ -14,13 +14,15 @@ export default function GiveawayHistoryCard({ giveaway, onOpenDetail }) {
         if (e.key === 'Enter' || e.key === ' ') onOpenDetail?.(giveaway.id)
       }}
     >
-      <span className="giveaway-history-emoji" aria-hidden>{giveaway.emoji}</span>
+      <span className="giveaway-history-medal" aria-hidden>{giveaway.emoji}</span>
       <div className="giveaway-history-info">
         <span className="giveaway-history-title">{giveaway.title}</span>
         <span className="giveaway-history-result">
-          {giveaway.winnerName
-            ? `🏆 Победитель: ${giveaway.winnerName}`
-            : `🎁 ${giveaway.recipientsCount ?? 0} игроков получили приз`}
+          {giveaway.winnerName ? (
+            <>👑 <span className="giveaway-history-result-winner">{giveaway.winnerName}</span></>
+          ) : (
+            `🎁 ${giveaway.recipientsCount ?? 0} игроков получили приз`
+          )}
         </span>
       </div>
       <span className="giveaway-history-prize">{formatGiveawayPrize(giveaway.prize)}</span>

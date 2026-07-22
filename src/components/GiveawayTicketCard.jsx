@@ -54,7 +54,9 @@ export default function GiveawayTicketCard({ giveaway, onOpenDetail, onSwipePart
 
   const deadline = !isUpcoming && giveaway.drawType === 'timer' ? formatGiveawayDeadline(giveaway.endsAt) : null
   const startLabel = isUpcoming ? formatGiveawayDeadline(giveaway.startsAt) : null
+  const isInstant = !isUpcoming && giveaway.drawType === 'instant'
   const prizeLabel = formatGiveawayPrize(giveaway.prize)
+  const serial = `№ ${String(giveaway.id).padStart(4, '0')}`
 
   return (
     <button
@@ -72,37 +74,48 @@ export default function GiveawayTicketCard({ giveaway, onOpenDetail, onSwipePart
       onTouchEnd={onTouchEnd}
     >
       {isLegendary && <span className="giveaway-ticket-legendary-badge">Легендарный</span>}
-      <div className="giveaway-ticket-top">
+      <span className="giveaway-ticket-notch giveaway-ticket-notch--top" aria-hidden />
+      <span className="giveaway-ticket-notch giveaway-ticket-notch--bottom" aria-hidden />
+
+      <div className="giveaway-ticket-stub">
         <span className="giveaway-ticket-emoji" aria-hidden>{giveaway.emoji}</span>
-        <div className="giveaway-ticket-info">
-          {!isLegendary && (
-            <span className="giveaway-ticket-rarity">{RARITY_LABEL[giveaway.rarity] ?? giveaway.rarity}</span>
-          )}
-          <span className="giveaway-ticket-title">{giveaway.title}</span>
-          {statusLabel && <span className="giveaway-ticket-status">{statusLabel}</span>}
-          {canSwipe && !statusLabel && (
-            <span className="giveaway-ticket-swipe-hint">Смахните →</span>
-          )}
-          {isUpcoming && !statusLabel && (
-            <span className="giveaway-ticket-swipe-hint">⏳ Скоро</span>
-          )}
-        </div>
+        <span className="giveaway-ticket-serial">{serial}</span>
       </div>
-      <div className="giveaway-ticket-footer">
-        {startLabel && <span className="giveaway-ticket-chip">🚀 Старт {startLabel}</span>}
-        {deadline && <span className="giveaway-ticket-chip">⏳ До {deadline}</span>}
-        <span className="giveaway-ticket-chip giveaway-ticket-chip--prize">{prizeLabel}</span>
-      </div>
-      {giveaway.participantsCount > 0 && (
-        <div className="giveaway-ticket-participants">
-          <div className="giveaway-ticket-avatars">
-            {(giveaway.participantsPreview ?? []).slice(0, 4).map((name, i) => (
-              <span key={i} className="giveaway-ticket-avatar">{initial(name)}</span>
-            ))}
+
+      <div className="giveaway-ticket-body">
+        <span className="giveaway-ticket-rarity">{RARITY_LABEL[giveaway.rarity] ?? giveaway.rarity}</span>
+        <span className="giveaway-ticket-title">{giveaway.title}</span>
+        <span className="giveaway-ticket-prize">{prizeLabel}</span>
+
+        {(startLabel || deadline || isInstant) && (
+          <div className="giveaway-ticket-meta">
+            {startLabel && <span className="giveaway-chip">🚀 Старт {startLabel}</span>}
+            {deadline && <span className="giveaway-chip">⏳ До {deadline}</span>}
+            {isInstant && <span className="giveaway-chip">⚡ Мгновенно всем</span>}
           </div>
-          <span className="giveaway-ticket-participants-count">👥 {giveaway.participantsCount} участников</span>
+        )}
+
+        <div className="giveaway-ticket-foot">
+          {giveaway.participantsCount > 0 ? (
+            <div className="giveaway-ticket-participants">
+              <div className="giveaway-ticket-avatars">
+                {(giveaway.participantsPreview ?? []).slice(0, 4).map((name, i) => (
+                  <span key={i} className="giveaway-ticket-avatar">{initial(name)}</span>
+                ))}
+              </div>
+              <span className="giveaway-ticket-participants-count">👥 {giveaway.participantsCount}</span>
+            </div>
+          ) : <span />}
+
+          {statusLabel ? (
+            <span className="giveaway-ticket-status">{statusLabel}</span>
+          ) : canSwipe ? (
+            <span className="giveaway-ticket-swipe-hint">Смахните <span className="giveaway-swipe-arrow">→</span></span>
+          ) : isUpcoming ? (
+            <span className="giveaway-ticket-swipe-hint">⏳ Скоро</span>
+          ) : null}
         </div>
-      )}
+      </div>
     </button>
   )
 }
