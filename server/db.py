@@ -1840,16 +1840,26 @@ class Database:
         ]
 
     def _giveaway_prize_summary(self, row):
+        # Анимация — чисто декоративная витрина приза (видео-стикер/Lottie
+        # вместо статичного emoji), не завязана на prize_type: и КУТ-джекпот,
+        # и ручной приз могут её иметь.
+        animation_url = row["prize_animation_url"]
+        animation = (
+            {"url": animation_url, "type": row["prize_animation_type"] or "webm"}
+            if animation_url else None
+        )
         if row["prize_type"] == "kut":
             return {
                 "type": "kut",
                 "amount": int(row["prize_kut_amount"] or 0),
+                "animation": animation,
             }
         return {
             "type": "manual",
             "title": row["prize_title"],
             "emoji": row["prize_emoji"],
             "description": row["prize_description"],
+            "animation": animation,
         }
 
     async def _giveaway_participants(self, conn, giveaway_id, limit=4):
@@ -2211,6 +2221,7 @@ class Database:
         timer_rows = await self.pool.fetch(
             """
             SELECT g.title, g.emoji, g.prize_type, g.prize_kut_amount, g.prize_title, g.prize_emoji, g.prize_description,
+                   g.prize_animation_url, g.prize_animation_type,
                    u.username, u.first_name, g.drawn_at AS at
             FROM giveaways g
             LEFT JOIN users u ON u.user_id = g.winner_user_id
@@ -2223,6 +2234,7 @@ class Database:
         instant_rows = await self.pool.fetch(
             """
             SELECT g.title, g.emoji, g.prize_type, g.prize_kut_amount, g.prize_title, g.prize_emoji, g.prize_description,
+                   g.prize_animation_url, g.prize_animation_type,
                    u.username, u.first_name, e.joined_at AS at
             FROM giveaway_entries e
             JOIN giveaways g ON g.id = e.giveaway_id

@@ -21,6 +21,11 @@ const PRIZE_TYPE_OPTIONS = [
   { value: 'manual', label: 'NFT / подарок (вручную)' },
 ]
 
+const ANIMATION_TYPE_OPTIONS = [
+  { value: 'webm', label: 'Видео-стикер Telegram (.webm)' },
+  { value: 'lottie', label: 'Lottie-анимация (.json)' },
+]
+
 const DRAW_TYPE_OPTIONS = [
   { value: 'instant', label: 'Мгновенно всем выполнившим' },
   { value: 'timer', label: 'Случайно по таймеру' },
@@ -62,6 +67,8 @@ function emptyForm() {
     prizeTitle: '',
     prizeEmoji: '🎁',
     prizeDescription: '',
+    prizeAnimationUrl: '',
+    prizeAnimationType: 'webm',
     drawType: 'instant',
     startsAt: '',
     endsAt: '',
@@ -107,6 +114,8 @@ export default function GiveawaysSection() {
     prizeTitle: item.prizeTitle ?? '',
     prizeEmoji: item.prizeEmoji ?? '🎁',
     prizeDescription: item.prizeDescription ?? '',
+    prizeAnimationUrl: item.prizeAnimationUrl ?? '',
+    prizeAnimationType: item.prizeAnimationType ?? 'webm',
     drawType: item.drawType,
     startsAt: item.startsAt ? item.startsAt.slice(0, 16) : '',
     endsAt: item.endsAt ? item.endsAt.slice(0, 16) : '',
@@ -145,6 +154,8 @@ export default function GiveawaysSection() {
         prizeTitle: form.prizeType === 'manual' ? form.prizeTitle : null,
         prizeEmoji: form.prizeType === 'manual' ? form.prizeEmoji : null,
         prizeDescription: form.prizeType === 'manual' ? form.prizeDescription : null,
+        prizeAnimationUrl: form.prizeAnimationUrl.trim() || null,
+        prizeAnimationType: form.prizeAnimationUrl.trim() ? form.prizeAnimationType : null,
         drawType: form.drawType,
         startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : null,
         endsAt: form.drawType === 'timer' && form.endsAt ? new Date(form.endsAt).toISOString() : null,
@@ -331,6 +342,26 @@ export default function GiveawaysSection() {
                   <textarea className="admin-modal-textarea" value={form.prizeDescription} onChange={(e) => setForm({ ...form, prizeDescription: e.target.value })} />
                 </label>
               </>
+            )}
+
+            <label className="admin-modal-field">
+              <span>Анимация приза (необязательно — заменяет эмодзи в карточке и окне на анимированный видео-стикер или Lottie, например купленного в Telegram мишку)</span>
+              <input
+                className="panel-users-input"
+                placeholder="https://.../gift.webm или .json"
+                value={form.prizeAnimationUrl}
+                onChange={(e) => setForm({ ...form, prizeAnimationUrl: e.target.value })}
+              />
+            </label>
+            {form.prizeAnimationUrl.trim() && (
+              <label className="admin-modal-field">
+                <span>Формат анимации</span>
+                <AdminSelect
+                  value={form.prizeAnimationType}
+                  onChange={(v) => setForm({ ...form, prizeAnimationType: v })}
+                  options={ANIMATION_TYPE_OPTIONS}
+                />
+              </label>
             )}
 
             <label className="admin-modal-field">

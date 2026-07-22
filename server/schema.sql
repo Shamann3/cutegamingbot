@@ -1075,6 +1075,13 @@ CREATE TABLE IF NOT EXISTS giveaways (
 -- (весь существующий v1-контент автоматически остаётся активным).
 ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ;
 
+-- v3: анимированная витрина приза (видео-стикер Telegram .webm или Lottie-
+-- json) вместо статичного эмодзи в карточке/модалке. Чисто декоративно —
+-- не влияет на механику выдачи приза. NULL = показываем emoji как раньше.
+ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS prize_animation_url TEXT;
+ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS prize_animation_type TEXT
+  CHECK (prize_animation_type IN ('webm', 'lottie'));
+
 CREATE TABLE IF NOT EXISTS giveaway_conditions (
     id SERIAL PRIMARY KEY,
     giveaway_id INT NOT NULL REFERENCES giveaways(id) ON DELETE CASCADE,

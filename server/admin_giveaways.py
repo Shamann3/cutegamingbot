@@ -7,6 +7,7 @@ from db import db
 
 _VALID_RARITY = frozenset({"common", "rare", "legendary"})
 _VALID_PRIZE_TYPE = frozenset({"kut", "manual"})
+_VALID_ANIMATION_TYPE = frozenset({"webm", "lottie"})
 _VALID_DRAW_TYPE = frozenset({"timer", "instant"})
 _VALID_CONDITION_KIND = frozenset({
     "balance", "harvest_count", "item_count", "channel_sub", "referral_count",
@@ -21,21 +22,34 @@ def _validate_rarity(value: str) -> str:
     return value
 
 
-def _validate_prize(prize_type: str, prize_kut_amount, prize_title, prize_emoji, prize_description):
+def _validate_prize(
+    prize_type: str, prize_kut_amount, prize_title, prize_emoji, prize_description,
+    prize_animation_url=None, prize_animation_type=None,
+):
     prize_type = (prize_type or "").strip().lower()
     if prize_type not in _VALID_PRIZE_TYPE:
         raise ValueError(f"Тип приза: {', '.join(sorted(_VALID_PRIZE_TYPE))}")
+
+    # Анимация — витрина приза (webm-стикер или Lottie-json), не завязана на
+    # prize_type: доступна и для КУТ-джекпота, и для ручного приза.
+    animation_url = (prize_animation_url or "").strip() or None
+    animation_type = (prize_animation_type or "").strip().lower() or None
+    if animation_url and animation_type not in _VALID_ANIMATION_TYPE:
+        raise ValueError(f"Тип анимации: {', '.join(sorted(_VALID_ANIMATION_TYPE))}")
+    if not animation_url:
+        animation_type = None
+
     if prize_type == "kut":
         amount = int(prize_kut_amount or 0)
         if amount < 1:
             raise ValueError("Укажите сумму КУТ")
-        return prize_type, amount, None, None, None
+        return prize_type, amount, None, None, None, animation_url, animation_type
     title = (prize_title or "").strip()
     if not title:
         raise ValueError("Укажите название приза")
     emoji = (prize_emoji or "🎁").strip() or "🎁"
     description = (prize_description or "").strip()
-    return prize_type, None, title, emoji, description
+    return prize_type, None, title, emoji, description, animation_url, animation_type
 
 
 def _validate_draw(draw_type: str, ends_at, starts_at=None):
@@ -97,6 +111,8 @@ def _giveaway_to_admin_dict(row: dict, conditions: list[dict], entries_count: in
         "prizeTitle": row["prize_title"],
         "prizeEmoji": row["prize_emoji"],
         "prizeDescription": row["prize_description"],
+        "prizeAnimationUrl": row["prize_animation_url"],
+        "prizeAnimationType": row["prize_animation_type"],
         "drawType": row["draw_type"],
         "startsAt": row["starts_at"].isoformat() if row["starts_at"] else None,
         "endsAt": row["ends_at"].isoformat() if row["ends_at"] else None,
@@ -140,6 +156,8 @@ async def create_giveaway(
     prize_title: str | None = None,
     prize_emoji: str | None = None,
     prize_description: str | None = None,
+    prize_animation_url: str | None = None,
+    prize_animation_type: str | None = None,
     draw_type: str,
     ends_at=None,
     starts_at=None,
@@ -151,8 +169,9 @@ async def create_giveaway(
     if not title:
         raise ValueError("Укажите название розыгрыша")
     rarity = _validate_rarity(rarity)
-    prize_type, kut_amount, p_title, p_emoji, p_desc = _validate_prize(
-        prize_type, prize_kut_amount, prize_title, prize_emoji, prize_description
+    prize_type, kut_amount, p_title, p_emoji, p_desc, anim_url, anim_type = _validate_prize(
+        prize_type, prize_kut_amount, prize_title, prize_emoji, prize_description,
+        prize_animation_url, prize_animation_type,
     )
     draw_type = _validate_draw(draw_type, ends_at, starts_at)
     cleaned_conditions = _validate_conditions(conditions or [])
@@ -167,15 +186,16 @@ async def create_giveaway(
                 """
                 INSERT INTO giveaways (
                     title, description, emoji, rarity, prize_type, prize_kut_amount,
-                    prize_title, prize_emoji, prize_description, draw_type, ends_at,
+                    prize_title, prize_emoji, prize_description, prize_animation_url,
+                    prize_animation_type, draw_type, ends_at,
                     starts_at, enabled, sort_order
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                 RETURNING id
                 """,
                 title, (description or "").strip(), (emoji or "🎁").strip() or "🎁", rarity,
-                prize_type, kut_amount, p_title, p_emoji, p_desc, draw_type, ends_at,
-                starts_at, bool(enabled), sort_order,
+                prize_type, kut_amount, p_title, p_emoji, p_desc, anim_url, anim_type,
+                draw_type, ends_at, starts_at, bool(enabled), sort_order,
             )
             await _replace_conditions(conn, int(giveaway_id), cleaned_conditions)
 
@@ -195,6 +215,8 @@ async def update_giveaway(
     prize_title: str | None = _UNSET,
     prize_emoji: str | None = _UNSET,
     prize_description: str | None = _UNSET,
+    prize_animation_url: str | None = _UNSET,
+    prize_animation_type: str | None = _UNSET,
     draw_type: str | None = None,
     ends_at=_UNSET,
     starts_at=_UNSET,
@@ -226,19 +248,31 @@ async def update_giveaway(
         sets.append(f"rarity = ${len(params)}")
 
     current_prize_type = prize_type if prize_type is not None else row["prize_type"]
-    if prize_type is not None or prize_kut_amount is not _UNSET or prize_title is not _UNSET:
+    if (
+        prize_type is not None or prize_kut_amount is not _UNSET or prize_title is not _UNSET
+        or prize_animation_url is not _UNSET or prize_animation_type is not _UNSET
+    ):
         resolved_amount = prize_kut_amount if prize_kut_amount is not _UNSET else row["prize_kut_amount"]
         resolved_title = prize_title if prize_title is not _UNSET else row["prize_title"]
         resolved_emoji = prize_emoji if prize_emoji is not _UNSET else row["prize_emoji"]
         resolved_desc = prize_description if prize_description is not _UNSET else row["prize_description"]
-        prize_type_v, kut_amount_v, p_title_v, p_emoji_v, p_desc_v = _validate_prize(
-            current_prize_type, resolved_amount, resolved_title, resolved_emoji, resolved_desc
+        resolved_anim_url = (
+            prize_animation_url if prize_animation_url is not _UNSET else row["prize_animation_url"]
+        )
+        resolved_anim_type = (
+            prize_animation_type if prize_animation_type is not _UNSET else row["prize_animation_type"]
+        )
+        prize_type_v, kut_amount_v, p_title_v, p_emoji_v, p_desc_v, anim_url_v, anim_type_v = _validate_prize(
+            current_prize_type, resolved_amount, resolved_title, resolved_emoji, resolved_desc,
+            resolved_anim_url, resolved_anim_type,
         )
         params.append(prize_type_v); sets.append(f"prize_type = ${len(params)}")
         params.append(kut_amount_v); sets.append(f"prize_kut_amount = ${len(params)}")
         params.append(p_title_v); sets.append(f"prize_title = ${len(params)}")
         params.append(p_emoji_v); sets.append(f"prize_emoji = ${len(params)}")
         params.append(p_desc_v); sets.append(f"prize_description = ${len(params)}")
+        params.append(anim_url_v); sets.append(f"prize_animation_url = ${len(params)}")
+        params.append(anim_type_v); sets.append(f"prize_animation_type = ${len(params)}")
 
     if draw_type is not None or ends_at is not _UNSET or starts_at is not _UNSET:
         resolved_ends_at = ends_at if ends_at is not _UNSET else row["ends_at"]

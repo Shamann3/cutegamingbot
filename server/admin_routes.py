@@ -637,6 +637,8 @@ class GiveawayCreateBody(BaseModel):
     prizeTitle: str | None = Field(default=None, max_length=120)
     prizeEmoji: str | None = Field(default=None, max_length=16)
     prizeDescription: str | None = Field(default=None, max_length=500)
+    prizeAnimationUrl: str | None = Field(default=None, max_length=500)
+    prizeAnimationType: str | None = Field(default=None, max_length=16)
     drawType: str = Field(min_length=5, max_length=16)
     startsAt: str | None = Field(default=None, max_length=64)
     endsAt: str | None = Field(default=None, max_length=64)
@@ -655,6 +657,8 @@ class GiveawayUpdateBody(BaseModel):
     prizeTitle: str | None = Field(default=None, max_length=120)
     prizeEmoji: str | None = Field(default=None, max_length=16)
     prizeDescription: str | None = Field(default=None, max_length=500)
+    prizeAnimationUrl: str | None = Field(default=None, max_length=500)
+    prizeAnimationType: str | None = Field(default=None, max_length=16)
     drawType: str | None = Field(default=None, max_length=16)
     startsAt: str | None = Field(default=None, max_length=64)
     endsAt: str | None = Field(default=None, max_length=64)
@@ -3030,6 +3034,8 @@ async def admin_content_giveaway_create(
             prize_title=body.prizeTitle,
             prize_emoji=body.prizeEmoji,
             prize_description=body.prizeDescription,
+            prize_animation_url=body.prizeAnimationUrl,
+            prize_animation_type=body.prizeAnimationType,
             draw_type=body.drawType,
             ends_at=_parse_dt(body.endsAt),
             starts_at=_parse_dt(body.startsAt),
@@ -3068,6 +3074,8 @@ async def admin_content_giveaway_patch(
             prize_title=body.prizeTitle if body.prizeTitle is not None else _UNSET,
             prize_emoji=body.prizeEmoji if body.prizeEmoji is not None else _UNSET,
             prize_description=body.prizeDescription if body.prizeDescription is not None else _UNSET,
+            prize_animation_url=body.prizeAnimationUrl if body.prizeAnimationUrl is not None else _UNSET,
+            prize_animation_type=body.prizeAnimationType if body.prizeAnimationType is not None else _UNSET,
             draw_type=body.drawType,
             ends_at=_parse_dt(body.endsAt) if body.endsAt is not None else _UNSET,
             starts_at=_parse_dt(body.startsAt) if "startsAt" in body.model_fields_set else _UNSET,

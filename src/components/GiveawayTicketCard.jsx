@@ -8,6 +8,7 @@ import {
   isDrawToday,
 } from '../constants/giveaways'
 import { useNow } from '../hooks/useNow'
+import AnimatedPrizeIcon from './AnimatedPrizeIcon'
 
 const SWIPE_THRESHOLD = 90
 const POPULAR_THRESHOLD = 50
@@ -143,7 +144,12 @@ export default function GiveawayTicketCard({ giveaway, onOpenDetail, onSwipePart
               <span className="giveaway-card-spark giveaway-card-spark--4" aria-hidden />
             </>
           )}
-          <span className="giveaway-card-icon" aria-hidden>{giveaway.emoji}</span>
+          <AnimatedPrizeIcon
+            emoji={giveaway.emoji}
+            animation={giveaway.prize?.animation}
+            iconClassName="giveaway-card-icon"
+            mediaClassName="giveaway-card-icon giveaway-card-icon-media"
+          />
         </div>
         <span className="giveaway-card-eyebrow">{giveaway.title}</span>
         <span className="giveaway-card-prize">{formatGiveawayPrize(giveaway.prize)}</span>
