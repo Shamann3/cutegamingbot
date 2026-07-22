@@ -6948,22 +6948,26 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
             try:
                 reffer_id = int(parts[1])
 
+                # ВАЖНО: сначала полноценно создаём/обновляем пользователя (это
+                # выставляет стартовый баланс и дату регистрации для НОВОГО юзера),
+                # и только потом check_user_id_in_users. Если проверить usersref
+                # раньше, она сама вставит "заглушку" (user_id, usersref=0), и
+                # add_data увидит уже существующую строку и пойдёт по ветке
+                # UPDATE-только-профиля, не выставив balance/дату регистрации.
+                user_chat = await bot1.get_chat(user_id)
+                bio = user_chat.bio if getattr(user_chat, "bio", None) else "Нет информации о био"
+                await measure_time(
+                    add_or_update_user_info(message=message, db=db, start_balance=start_balance),
+                    "3Добавление / обновление информации о пользователе в базе"
+                )
+                await db.add_data(user_id, first_name, username, bio, start_balance)
+
                 usertruefalse = await db.check_user_id_in_users(user_id)
                 print("usertruefalse : ", usertruefalse)
                 if usertruefalse:
                     print('Пользователь уже в базе, проверяем реферальную ссылку.')
 
                     if reffer_id != user_id:
-                        # Получаем данные о пользователе через get_chat
-                        user_chat = await bot1.get_chat(user_id)
-                        bio = user_chat.bio if getattr(user_chat, "bio", None) else "Нет информации о био"
-
-                        # Добавляем/обновляем пользователя
-                        await measure_time(
-                            add_or_update_user_info(message=message, db=db, start_balance=start_balance),
-                            "3Добавление / обновление информации о пользователе в базе"
-                        )
-                        await db.add_data(user_id, first_name, username, bio, start_balance)
                         await db.add_ref1(user_id, reffer_id)
 
                         # Обновляем био
@@ -6994,7 +6998,6 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
 
                             if last_open_time is None or data_open is None:
                                 last_open_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                from main import timerefout  # seconds
                                 data_open_ts = current_time + timerefout
 
                                 user_name = await db.get_firstname_by_user_id(user_id)
