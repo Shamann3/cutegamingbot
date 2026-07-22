@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Portal from './Portal'
 import { fetchGiveaway } from '../lib/giveawaysClient'
 import { formatGiveawayDeadlineTime, formatGiveawayPrize } from '../constants/giveaways'
@@ -7,14 +7,19 @@ import AnimatedPrizeIcon from './AnimatedPrizeIcon'
 
 const BOT_USERNAME = 'CuteGamingBot'
 
-// Канал может прийти как @name, name или полный https://t.me/name — приводим
-// к аккуратному @name для подписи.
-function channelHandle(raw) {
-  const name = String(raw ?? '')
+// Канал может прийти как @name, name или полный https://t.me/name — сводим
+// к чистому имени, из которого строим и подпись, и ссылку «Перейти».
+function channelStripped(raw) {
+  return String(raw ?? '')
     .replace(/^https?:\/\/(t\.me|telegram\.me)\//i, '')
     .replace(/^@/, '')
     .replace(/\/+$/, '')
-  return `@${name}`
+}
+function channelHandle(raw) {
+  return `@${channelStripped(raw)}`
+}
+function channelUrl(raw) {
+  return `https://t.me/${channelStripped(raw)}`
 }
 
 // Короткая подпись условия + признак числового прогресса (для полоски).
@@ -65,27 +70,37 @@ export default function GiveawayDetailModal({
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(false)
 
+  const reload = useCallback((withSpinner = true) => {
+    if (!giveawayId) return
+    if (withSpinner) setLoading(true)
+    fetchGiveaway(giveawayId)
+      .then((data) => setDetail(data))
+      .catch(() => { if (withSpinner) setDetail(null) })
+      .finally(() => setLoading(false))
+  }, [giveawayId])
+
   useEffect(() => {
     if (!isOpen || !giveawayId) {
       setDetail(null)
       return undefined
     }
-    let cancelled = false
-    setLoading(true)
-    fetchGiveaway(giveawayId)
-      .then((data) => {
-        if (!cancelled) setDetail(data)
-      })
-      .catch(() => {
-        if (!cancelled) setDetail(null)
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
+    reload()
+    return undefined
+  }, [isOpen, giveawayId, reload])
+
+  // Перепроверка условий после возврата из Telegram: игрок нажал «Перейти»,
+  // подписался на канал и вернулся в мини-апп — при возврате фокуса тихо
+  // перезапрашиваем детали (channel_sub проверяется живьём, force_refresh),
+  // и выполненное условие сразу становится зелёным. Без спиннера, чтобы не
+  // моргать, если ничего не изменилось.
+  useEffect(() => {
+    if (!isOpen || !giveawayId) return undefined
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') reload(false)
     }
-  }, [isOpen, giveawayId])
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [isOpen, giveawayId, reload])
 
   if (!isOpen || !giveawayId) return null
 
@@ -270,9 +285,9 @@ export default function GiveawayDetailModal({
                                 <button
                                   type="button"
                                   className="giveaway-detail-condition-goto"
-                                  onClick={() => openTelegramBotLink(`https://t.me/${cond.itemId}`)}
+                                  onClick={() => openTelegramBotLink(channelUrl(cond.itemId))}
                                 >
-                                  Перейти
+                                  Открыть
                                 </button>
                               )}
                               {!cond.satisfied && cond.kind === 'referral_count' && (

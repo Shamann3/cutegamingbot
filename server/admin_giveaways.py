@@ -79,9 +79,13 @@ def _validate_conditions(conditions: list[dict]) -> list[dict]:
             if not item_id:
                 raise ValueError(f"Условие #{idx + 1}: укажите предмет")
         elif kind == "channel_sub":
-            item_id = str(cond.get("item_id") or cond.get("itemId") or "").strip().lstrip("@")
+            # Принимаем и @username, и ссылку (https://t.me/name) — храним
+            # чистый идентификатор, чтобы getChatMember и ссылка «Перейти»
+            # работали одинаково.
+            from telegram_membership import normalize_channel
+            item_id = normalize_channel(cond.get("item_id") or cond.get("itemId"))
             if not item_id:
-                raise ValueError(f"Условие #{idx + 1}: укажите канал")
+                raise ValueError(f"Условие #{idx + 1}: укажите канал (@username или ссылку)")
             target_value = 1
         cleaned.append({"kind": kind, "target_value": target_value, "item_id": item_id, "sort_order": idx})
     return cleaned
