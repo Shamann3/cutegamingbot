@@ -212,6 +212,15 @@
   filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5));
   animation: giveaway-float 3.6s ease-in-out infinite;
 }
+/* Анимированный приз (видео-стикер/Lottie) вместо emoji — тот же плавающий
+   ореол и тень, но с явными размерами (у <video>/<div> нет font-size). */
+.giveaway-card-icon-media {
+  width: 2.7rem;
+  height: 2.7rem;
+  object-fit: contain;
+  border-radius: 10px;
+  overflow: hidden;
+}
 @keyframes giveaway-glow-pulse {
   0%, 100% { opacity: 0.8; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.06); }
@@ -597,6 +606,14 @@
   position: relative;
   font-size: 3.3rem;
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+}
+/* Анимированный приз в модалке — тот же медальон, явные размеры вместо font-size. */
+.giveaway-detail-hero-media {
+  width: 3.6rem;
+  height: 3.6rem;
+  object-fit: contain;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .giveaway-detail-title {
@@ -1211,6 +1228,7 @@
   .giveaway-detail-cta--ready,
   .giveaway-card-icon-glow,
   .giveaway-card-icon,
+  .giveaway-card-icon-media,
   .giveaway-card-spark,
   .giveaway-card-timer--urgent,
   .giveaway-card-status--ready,

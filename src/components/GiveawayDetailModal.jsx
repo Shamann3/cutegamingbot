@@ -3,6 +3,7 @@ import Portal from './Portal'
 import { fetchGiveaway } from '../lib/giveawaysClient'
 import { formatGiveawayDeadlineTime, formatGiveawayPrize } from '../constants/giveaways'
 import { openTelegramBotLink, getTelegramUser } from '../lib/telegram'
+import AnimatedPrizeIcon from './AnimatedPrizeIcon'
 
 const BOT_USERNAME = 'CuteGamingBot'
 
@@ -135,9 +136,12 @@ export default function GiveawayDetailModal({
                 <div className="giveaway-detail-hero-icon-wrap">
                   <span className="giveaway-detail-hero-ring" aria-hidden />
                   <span className="giveaway-detail-hero-seal" aria-hidden />
-                  <span className="giveaway-detail-hero-emoji" aria-hidden>
-                    {detail.prize.type === 'kut' ? '💰' : (detail.prize.emoji ?? '🎁')}
-                  </span>
+                  <AnimatedPrizeIcon
+                    emoji={detail.prize.type === 'kut' ? '💰' : (detail.prize.emoji ?? '🎁')}
+                    animation={detail.prize.animation}
+                    iconClassName="giveaway-detail-hero-emoji"
+                    mediaClassName="giveaway-detail-hero-emoji giveaway-detail-hero-media"
+                  />
                 </div>
                 <h2 className="giveaway-detail-title">{detail.title}</h2>
                 <p className="giveaway-detail-prize">{formatGiveawayPrize(detail.prize)}</p>
