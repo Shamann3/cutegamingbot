@@ -7010,33 +7010,33 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
                                     icon_custom_emoji_id="5470088387048266598") ] ])
                             new_user_link = await create_user_link(user_id , first_name , username)
                             await bot1.send_message(
-                                reffer_id , ("🌿 <b>По вашей реф-ссылке перешёл новый пользователь!</b>\n"
-                                             f"🌱 <b>{new_user_link}</b>\n\n"
-                                             f"🪴 <b>Чтобы получить {ref_coin} кут за приглашение — "
+                                reffer_id , ("<tg-emoji emoji-id='5449850741667668411'>🌿</tg-emoji> <b>По вашей реф-ссылке перешёл новый пользователь!</b>\n"
+                                             f"<tg-emoji emoji-id='5449885771420934013'>🌱</tg-emoji> <b>{new_user_link}</b>\n\n"
+                                             f"<tg-emoji emoji-id='5278428495121248059'>🪴</tg-emoji> <b>Чтобы получить {ref_coin} кут за приглашение — "
                                              "приглашённый должен сыграть в любую игру | результат не важен.</b>\n\n"
-                                             "💰 <b>+ Вы будете зарабатывать 25% от его покупок в магазине!</b>") ,
+                                             "<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+ Вы будете зарабатывать 25% от его покупок в магазине!</b>") ,
                                 reply_markup=markup112132 , parse_mode="HTML" , disable_web_page_preview=True)
 
                             # ===== НОВОЕ: приветствие для самого перешедшего пользователя =====
                             await bot1.send_message(
-                                user_id , "🌱 <b>Вы перешли по реферальной ссылке!</b>\n"
-                                          f"🎁 Ваш друг получит {ref_coin} кут, когда вы сыграете в любую игру.\n"
-                                          "🛍️ А вы будете получать 25% от его покупок в магазине!" , parse_mode="HTML")
+                                user_id , "<tg-emoji emoji-id='5449885771420934013'>🌱</tg-emoji> <b>Вы перешли по реферальной ссылке!</b>\n"
+                                          f"<tg-emoji emoji-id='5317000922096769303'>🎁</tg-emoji> <b>Ваш друг получит {ref_coin} кут, когда вы сыграете в любую игру.</b>\n"
+                                          "<tg-emoji emoji-id='5406683434124859552'>🛍</tg-emoji> <b>А вы будете получать 25% от его покупок в магазине!</b>" , parse_mode="HTML")
                             # =================================================================
                             print(f"🔋 Уведомление отправлено. Время: {time.time() - start_time:.3f} сек.")
                     else:
                         await bot1.send_message(
-                            user_id , "⚠️ <b>Нельзя регистрироваться по своей ссылке.</b>" , parse_mode="HTML" ,
+                            user_id , "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Нельзя регистрироваться по своей ссылке.</b>" , parse_mode="HTML" ,
                             disable_web_page_preview=True)
                 else:
                     # Уже использовал реферальную ссылку ранее
                     await bot1.send_message(
-                        user_id , "💭 <b>Вы уже использовали кут ранее, реферальная ссылка не засчитана</b>" ,
+                        user_id , "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Вы уже использовали кут ранее, реферальная ссылка не засчитана</b>" ,
                         parse_mode="HTML" , disable_web_page_preview=True)
                     print('Пользователь уже использовал кут ранее.')
             except ValueError:
                 await bot1.send_message(
-                    user_id , "⚠️ <b>Некорректный реферальный ID. Попробуйте ещё раз.</b>" , parse_mode="HTML" ,
+                    user_id , "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Некорректный реферальный ID. Попробуйте ещё раз.</b>" , parse_mode="HTML" ,
                     disable_web_page_preview=True)
 
         # Обычное меню (отображается всегда после обработки рефералки)
