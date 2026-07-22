@@ -170,6 +170,38 @@ def test_donations_summary_returned():
     assert result["donations"] == {"count": 2, "total": 150}
 
 
+def test_normalize_chat_deposit_attaches_group():
+    row = {"plus": None, "minus": 300, "cause": "положено на баланс группы",
+           "balance": 1200, "transfer_id": None, "ts": TS_A,
+           "sender_id": None, "receiver_id": None,
+           "chat_id": -1001921925861, "group_name": "Cute Chat", "group_username": "LegendaryChat"}
+    item = normalize_cute_row(row, {})
+    assert item["kind"] == "chat_deposit"
+    assert item["direction"] == "out"
+    assert item["amount"] == 300
+    assert "counterparty" not in item
+    assert item["group"] == {"chatId": -1001921925861, "name": "Cute Chat", "username": "LegendaryChat"}
+
+
+def test_normalize_chat_deposit_unknown_group_keeps_chat_id():
+    row = {"plus": None, "minus": 50, "cause": "положено на баланс группы",
+           "balance": 0, "transfer_id": None, "ts": TS_A,
+           "sender_id": None, "receiver_id": None,
+           "chat_id": -100500, "group_name": None, "group_username": None}
+    item = normalize_cute_row(row, {})
+    assert item["group"] == {"chatId": -100500, "name": None, "username": None}
+
+
+def test_normalize_transfer_takes_precedence_over_chat_id():
+    row = {"plus": None, "minus": 500, "cause": "дать", "balance": 1500,
+           "transfer_id": 7, "ts": TS_A, "sender_id": 111, "receiver_id": 222,
+           "chat_id": -100999, "group_name": "X", "group_username": "x"}
+    item = normalize_cute_row(row, {222: {"name": "Аня", "username": "anya"}})
+    assert item["kind"] == "transfer"
+    assert "group" not in item
+    assert item["counterparty"]["userId"] == 222
+
+
 def test_donations_summary_failure_degrades_to_none():
     """The legacy `donate` table schema varies (prod `data` is `time`, not a
     timestamp). A donations-summary failure must degrade to donations=None and a

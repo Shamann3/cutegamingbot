@@ -52,19 +52,22 @@ def _iso(ts) -> str | None:
 
 
 def normalize_cute_row(row: Any, name_map: dict) -> dict:
-    """Строка cutehistory (+ данные джойна p2p) → элемент фида."""
+    """Строка cutehistory (+ данные джойнов) → элемент фида."""
     plus = row["plus"]
     minus = row["minus"]
     direction = cute_direction(plus, minus)
     amount = int(plus if direction == "in" else minus)
     is_transfer = row["transfer_id"] is not None
+    chat_id = row.get("chat_id")
+    is_chat_deposit = (not is_transfer) and chat_id is not None
+    kind = "transfer" if is_transfer else ("chat_deposit" if is_chat_deposit else "cute")
     item = {
         "ts": _iso(row["ts"]),
         "cause": row["cause"],
         "amount": amount,
         "direction": direction,
         "balance": int(row["balance"]) if row["balance"] is not None else None,
-        "kind": "transfer" if is_transfer else "cute",
+        "kind": kind,
     }
     if is_transfer:
         cp_id = counterparty_id(direction, row["sender_id"], row["receiver_id"])
@@ -75,6 +78,12 @@ def normalize_cute_row(row: Any, name_map: dict) -> dict:
                 "name": info.get("name"),
                 "username": info.get("username"),
             }
+    elif is_chat_deposit:
+        item["group"] = {
+            "chatId": int(chat_id),
+            "name": row.get("group_name"),
+            "username": row.get("group_username"),
+        }
     return item
 
 
@@ -139,10 +148,13 @@ async def get_user_cute_history(
     cute_rows = await db.pool.fetch(
         f"""
         SELECT ch."+" AS plus, ch."-" AS minus, ch.cause, ch.balance, ch.transfer_id,
+               ch.chat_id,
                to_timestamp(ch.data,'HH24:MI DD.MM.YYYY') AS ts,
-               p.sender_id, p.receiver_id
+               p.sender_id, p.receiver_id,
+               c.namechat AS group_name, c.usernamechat AS group_username
         FROM cutehistory ch
         LEFT JOIN p2p_transfers p ON p.id = ch.transfer_id
+        LEFT JOIN chat c ON c.chat_id = ch.chat_id
         WHERE {where}
         ORDER BY ts DESC NULLS LAST
         LIMIT ${idx}
