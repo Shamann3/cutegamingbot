@@ -31,6 +31,15 @@ const CONDITION_NAV_TARGET = {
   item_count: 'farm-inventory',
 }
 
+// Иконка-квест для каждого типа условия.
+const CONDITION_ICON = {
+  balance: '💰',
+  harvest_count: '🌾',
+  item_count: '📦',
+  channel_sub: '📣',
+  referral_count: '🤝',
+}
+
 function pluralPlayers(n) {
   const mod10 = n % 10
   const mod100 = n % 100
@@ -89,7 +98,11 @@ export default function GiveawayDetailModal({
     '--tab-accent-muted': 'rgba(249, 168, 212, 0.72)',
   }
   const isUpcoming = Boolean(detail?.startsAt) && new Date(detail.startsAt).getTime() > Date.now()
+  const totalConditions = detail ? detail.conditions.length : 0
   const satisfiedCount = detail ? detail.conditions.filter((c) => c.satisfied).length : 0
+  const progressPercent = totalConditions > 0
+    ? Math.round((satisfiedCount / totalConditions) * 100)
+    : 0
 
   return (
     <Portal lockScroll>
@@ -188,14 +201,32 @@ export default function GiveawayDetailModal({
                 )
               ) : (
                 <>
-                  {/* Зона 2: таблица условий */}
+                  {/* Прогресс выполнения условий */}
+                  {totalConditions > 0 && (
+                    <div className="giveaway-progress">
+                      <div className="giveaway-progress-top">
+                        <span className="giveaway-progress-label">
+                          Выполнено {satisfiedCount} из {totalConditions} условий
+                        </span>
+                        <span className="giveaway-progress-percent">{progressPercent}%</span>
+                      </div>
+                      <div className="giveaway-progress-bar">
+                        <span
+                          className="giveaway-progress-bar-fill"
+                          style={{ width: `${progressPercent}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Зона 2: список квестов-условий */}
                   <div className="giveaway-detail-conditions">
                     {detail.conditions.length === 0 ? (
                       <p className="giveaway-detail-no-conditions">Условий нет — участвуйте сразу</p>
                     ) : (
                       <div className="giveaway-ledger">
                         <div className="giveaway-ledger-head">
-                          <span className="giveaway-ledger-head-title">Условия участия</span>
+                          <span className="giveaway-ledger-head-title">Задания</span>
                           <span className="giveaway-ledger-head-count">
                             {satisfiedCount} / {detail.conditions.length}
                           </span>
@@ -213,7 +244,7 @@ export default function GiveawayDetailModal({
                               className={`giveaway-detail-condition${cond.satisfied ? ' giveaway-detail-condition--done' : ''}`}
                             >
                               <span className="giveaway-detail-condition-status" aria-hidden>
-                                {cond.satisfied ? '✓' : '○'}
+                                {cond.satisfied ? '✓' : (CONDITION_ICON[cond.kind] ?? '○')}
                               </span>
                               <div className="giveaway-detail-condition-main">
                                 <span className="giveaway-detail-condition-label">{label}</span>
@@ -273,9 +304,23 @@ export default function GiveawayDetailModal({
                   {/* Зона 3: действие */}
                   {error && <p className="giveaway-detail-error">{error}</p>}
                   {detail.joined ? (
-                    <div className="giveaway-detail-joined">
-                      {detail.drawType === 'instant' ? '✅ Приз получен' : '🎟️ Вы участвуете, ждите розыгрыша'}
-                    </div>
+                    detail.drawType === 'instant' ? (
+                      <div className="giveaway-detail-joined">✅ Приз получен</div>
+                    ) : (
+                      <div className="giveaway-participating">
+                        <p className="giveaway-participating-title">🎉 Вы участвуете в розыгрыше</p>
+                        <div className="giveaway-participating-stats">
+                          <span className="giveaway-participating-stat">
+                            👥 {detail.participantsCount ?? 0} {pluralPlayers(detail.participantsCount ?? 0)}
+                          </span>
+                          {(detail.participantsCount ?? 0) > 0 && (
+                            <span className="giveaway-participating-stat giveaway-participating-chance">
+                              🎯 шанс ~1 из {detail.participantsCount}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )
                   ) : isUpcoming ? (
                     <button type="button" className="giveaway-detail-cta" disabled>
                       ⏳ {formatGiveawayDeadlineTime(detail.startsAt)}
