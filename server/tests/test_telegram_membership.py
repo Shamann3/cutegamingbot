@@ -1,7 +1,12 @@
 """telegram_membership: чистые функции статус-маппинга и TTL, без сети/БД."""
 from datetime import datetime, timedelta, timezone
 
-from telegram_membership import _is_cache_fresh, _is_member_status, TTL_MINUTES
+from telegram_membership import (
+    _is_cache_fresh,
+    _is_member_status,
+    normalize_channel,
+    TTL_MINUTES,
+)
 
 NOW = datetime(2026, 7, 20, 12, 0, tzinfo=timezone.utc)
 
@@ -38,3 +43,26 @@ def test_is_cache_fresh_stale_after_ttl():
 def test_is_cache_fresh_exactly_at_ttl_boundary_is_stale():
     checked_at = NOW - timedelta(minutes=TTL_MINUTES)
     assert _is_cache_fresh(checked_at, NOW, ttl_minutes=TTL_MINUTES) is False
+
+
+def test_normalize_channel_plain_username():
+    assert normalize_channel("mychannel") == "mychannel"
+    assert normalize_channel("@mychannel") == "mychannel"
+    assert normalize_channel("  @mychannel  ") == "mychannel"
+
+
+def test_normalize_channel_from_link():
+    assert normalize_channel("https://t.me/mychannel") == "mychannel"
+    assert normalize_channel("http://t.me/mychannel") == "mychannel"
+    assert normalize_channel("t.me/mychannel") == "mychannel"
+    assert normalize_channel("https://t.me/mychannel/") == "mychannel"
+    assert normalize_channel("https://telegram.me/mychannel") == "mychannel"
+
+
+def test_normalize_channel_preserves_case_and_underscores():
+    assert normalize_channel("https://t.me/Cute_Gaming") == "Cute_Gaming"
+
+
+def test_normalize_channel_empty():
+    assert normalize_channel("") == ""
+    assert normalize_channel(None) == ""

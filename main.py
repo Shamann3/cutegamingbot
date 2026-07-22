@@ -4999,7 +4999,7 @@ async def on_user_join_message(message: Message):
         #    (лучше делать на каждого вступившего - если функции умеют работать по uid)
         try:
             await measure_time(
-                add_or_update_user_info(message=message, db=db, start_balance=start_balance),
+                add_or_update_user_info(message=message, db=db, start_balance=start_balance, bot=message.bot),
                 "Добавление / обновление пользователя (new_chat_members)"
             )
         except Exception as e:
@@ -5049,7 +5049,7 @@ async def on_user_join_or_leave(event: ChatMemberUpdated):
 
         try:
             await measure_time(
-                add_or_update_user_info(message=event, db=db, start_balance=start_balance),
+                add_or_update_user_info(message=event, db=db, start_balance=start_balance, bot=event.bot),
                 "Добавление / обновление пользователя (chat_member)"
             )
         except Exception as e:
@@ -5370,7 +5370,6 @@ VGS_RETRY_BASE_DELAY = 0.15
 # ГЛОБАЛЬНЫЕ КЭШИ
 # ============================================================
 VGS_USER_CACHE: Dict[int, Dict[str, Any]] = LazyGameStore("VGS_USER_CACHE")           # user_id -> {first_name, username, bio, reg_date}
-VGS_USER_BALANCE_CACHE: Dict[int, float] = LazyGameStore("VGS_USER_BALANCE_CACHE")            # user_id -> balance
 
 VGS_PENDING_UPDATES: Dict[int, Dict[str, Any]] = LazyGameStore("VGS_PENDING_UPDATES")
 VGS_PENDING_LOCK = asyncio.Lock()
@@ -5773,9 +5772,6 @@ async def add_or_update_user_info(message, db, start_balance, *, bot):
                 "reg_date": reg_date_str,
             }
             VGS_USER_CACHE[user_id] = current
-
-            if user_id not in VGS_USER_BALANCE_CACHE:
-                VGS_USER_BALANCE_CACHE[user_id] = start_balance
 
             # Пробуем записать точную data
             try:
@@ -6971,7 +6967,7 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
                 user_chat = await bot1.get_chat(user_id)
                 bio = user_chat.bio if getattr(user_chat, "bio", None) else "Нет информации о био"
                 await measure_time(
-                    add_or_update_user_info(message=message, db=db, start_balance=start_balance),
+                    add_or_update_user_info(message=message, db=db, start_balance=start_balance, bot=message.bot),
                     "3Добавление / обновление информации о пользователе в базе"
                 )
                 await db.add_data(user_id, first_name, username, bio, start_balance)
@@ -6990,10 +6986,6 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
                         # Достаём пригласившего
                         inviting_user_data = await db.get_user_data(reffer_id)
                         if inviting_user_data:
-                            current_balance = inviting_user_data['balance']
-                            current_refferals = inviting_user_data['refferals']
-                            new_balance = current_balance + ref_coin  # (если где-то используете)
-
                             ref_first_name = await db.get_firstname_by_user_id(reffer_id)
                             first_name_hui = await db.get_firstname_by_user_id(user_id)
                             await db.insert_refcheck_entry(
@@ -7091,7 +7083,7 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
         message_state[message.from_user.id] = sent_message.message_id
 
         await measure_time(
-            add_or_update_user_info(message=message, db=db, start_balance=start_balance),
+            add_or_update_user_info(message=message, db=db, start_balance=start_balance, bot=message.bot),
             "2Добавление / обновление информации о пользователе в базе"
         )
         return
@@ -7118,7 +7110,7 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
     message_state[user_id] = sent.message_id
 
     await measure_time(
-        add_or_update_user_info(message=message, db=db, start_balance=start_balance),
+        add_or_update_user_info(message=message, db=db, start_balance=start_balance, bot=message.bot),
         "Добавление/обновление информации о пользователе в базе"
     )
 
@@ -18739,7 +18731,15 @@ async def qst_withdraw_callback(callback_query: types.CallbackQuery):
             await callback_query.answer("Не удалось списать Virtual balance (повторите позже).", show_alert=True)
             return
 
-        added = await _try_db_call(["add_user_balance", "update_user_balance", "add_or_update_balance", "credit_user_balance"], user_id, amount, default=False)
+        # ВАЖНО: update_user_balance(uid, N) без знака - это SET (заменить баланс на N), а не ADD.
+        # Раньше здесь был общий _try_db_call с "update_user_balance" в списке имён - если
+        # add_user_balance/add_or_update_balance/credit_user_balance отсутствуют, срабатывал
+        # fallback на update_user_balance(user_id, amount), который ЗАТИРАЛ основной баланс
+        # суммой вывода вместо начисления к нему. Явно используем delta-режим ("+N").
+        added = await _try_db_call(["add_user_balance", "add_or_update_balance", "credit_user_balance"], user_id, amount, default=None)
+        if added is None:
+            added = await db.update_user_balance(user_id, f"+{int(amount)}")
+        added = bool(added is not None and added is not False)
         if not added:
             _qdbg("qst_withdraw: add to main balance failed -> trying to rollback virtual")
             try:
