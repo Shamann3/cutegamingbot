@@ -91,7 +91,8 @@ CREATE TABLE IF NOT EXISTS cutehistory (
     first_name TEXT,
     username TEXT,
     balance BIGINT,
-    transfer_id BIGINT
+    transfer_id BIGINT,
+    chat_id BIGINT
 );
 
 CREATE INDEX IF NOT EXISTS cutehistory_user_idx ON cutehistory (user_id);

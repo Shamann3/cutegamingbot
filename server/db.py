@@ -253,6 +253,13 @@ class Database:
                     "CREATE INDEX IF NOT EXISTS cutehistory_transfer_idx "
                     "ON cutehistory (transfer_id)"
                 )
+                await conn.execute(
+                    "ALTER TABLE cutehistory ADD COLUMN IF NOT EXISTS chat_id BIGINT"
+                )
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS cutehistory_chat_idx "
+                    "ON cutehistory (chat_id)"
+                )
             except Exception as _mig_err:
                 _mig_logger.warning("cutehistory.transfer_id migration skipped: %s", _mig_err)
 
