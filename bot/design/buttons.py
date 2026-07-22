@@ -1250,10 +1250,15 @@ async def _migrate_legacy_gift_menu_json_once() -> None:
                         ceid = _normalize_custom_emoji_id(payload.get("custom_emoji_id"))
                         if ceid:
                             _gift_menu_emoji_overrides[gid] = {"custom_emoji_id": ceid}
-                _LEGACY_GIFT_MENU_EMOJI_OVERRIDES_FILE.rename(
-                    _LEGACY_GIFT_MENU_EMOJI_OVERRIDES_FILE.with_suffix(".json.migrated")
-                )
-                print("🟩 [GIFT_MENU_EMOJI][MIGRATE] legacy JSON перенесён в Redis")
+                # Переименовываем legacy-файл ТОЛЬКО после подтверждённой записи
+                # в Redis - иначе при обрыве между миграцией и debounce-сохранением
+                # данные терялись бы безвозвратно (флаг миграции не переживает
+                # рестарт процесса, а переименованный файл - уже не подхватится).
+                if await _flush_gift_store(_gift_menu_emoji_overrides, "_gift_menu_emoji_overrides"):
+                    _LEGACY_GIFT_MENU_EMOJI_OVERRIDES_FILE.rename(
+                        _LEGACY_GIFT_MENU_EMOJI_OVERRIDES_FILE.with_suffix(".json.migrated")
+                    )
+                    print("🟩 [GIFT_MENU_EMOJI][MIGRATE] legacy JSON перенесён в Redis")
         except Exception as e:
             print(f"🟥 [GIFT_MENU_EMOJI][MIGRATE][ERROR] {e!r}")
 
@@ -1272,12 +1277,34 @@ async def _migrate_legacy_gift_menu_json_once() -> None:
                             "upgrade_price": int(_safe_int(payload.get("upgrade_price"), default=0, clamp_min=0) or 0),
                             "has_upgrade": int(_safe_int(payload.get("has_upgrade"), default=0, clamp_min=0) or 0),
                         }
-                _LEGACY_GIFT_MENU_MANUAL_GIFTS_FILE.rename(
-                    _LEGACY_GIFT_MENU_MANUAL_GIFTS_FILE.with_suffix(".json.migrated")
-                )
-                print("🟩 [GIFT_MENU_MANUAL][MIGRATE] legacy JSON перенесён в Redis")
+                if await _flush_gift_store(_gift_menu_manual_gifts, "_gift_menu_manual_gifts"):
+                    _LEGACY_GIFT_MENU_MANUAL_GIFTS_FILE.rename(
+                        _LEGACY_GIFT_MENU_MANUAL_GIFTS_FILE.with_suffix(".json.migrated")
+                    )
+                    print("🟩 [GIFT_MENU_MANUAL][MIGRATE] legacy JSON перенесён в Redis")
         except Exception as e:
             print(f"🟥 [GIFT_MENU_MANUAL][MIGRATE][ERROR] {e!r}")
+
+
+async def _flush_gift_store(store: Any, store_label: str) -> bool:
+    """
+    Синхронно дожидается реального сохранения в Redis вместо того, чтобы
+    полагаться на фоновый debounce-таймер (WRITE_DEBOUNCE_MS). Без этого
+    админ мог получить "успешно добавлено", а изменение могло не успеть
+    доехать до Redis (например рестарт/редеплой в течение debounce-окна) -
+    внешне это выглядело как "подарок пропал/настройки откатились".
+    """
+    try:
+        await asyncio.to_thread(store.flush)
+    except Exception as e:
+        print(f"🟥 [GIFT_MENU][FLUSH][ERROR] store={store_label} err={e!r}")
+        return False
+
+    if bool(getattr(store, "_dirty_since_boot", False)):
+        print(f"🟥 [GIFT_MENU][FLUSH][NOT_PERSISTED] store={store_label} - Redis недоступен или запись не подтвердилась")
+        return False
+
+    return True
 
 
 async def get_gift_menu_emoji_override(gift_id: Any) -> Optional[str]:
@@ -1306,7 +1333,7 @@ async def set_gift_menu_emoji_override(gift_id: Any, custom_emoji_id: Any) -> bo
     try:
         async with _gift_menu_emoji_overrides_lock:
             _gift_menu_emoji_overrides[gid] = {"custom_emoji_id": ceid}
-        return True
+        return await _flush_gift_store(_gift_menu_emoji_overrides, "_gift_menu_emoji_overrides")
     except Exception as e:
         print(f"🟥 [GIFT_MENU_EMOJI][SET][ERROR] gift_id={gift_id!r} err={e!r}")
         return False
@@ -1322,7 +1349,7 @@ async def reset_gift_menu_emoji_override(gift_id: Any) -> bool:
         async with _gift_menu_emoji_overrides_lock:
             if gid in _gift_menu_emoji_overrides:
                 del _gift_menu_emoji_overrides[gid]
-        return True
+        return await _flush_gift_store(_gift_menu_emoji_overrides, "_gift_menu_emoji_overrides")
     except Exception as e:
         print(f"🟥 [GIFT_MENU_EMOJI][RESET][ERROR] gift_id={gift_id!r} err={e!r}")
         return False
@@ -1373,11 +1400,13 @@ async def add_manual_gift(
                 "has_upgrade": int(_safe_int(has_upgrade, default=0, clamp_min=0) or 0),
             }
 
-        print(
-            f"🟩 [GIFT_MENU_MANUAL][ADD] "
-            f"gift_id={gid} custom_emoji_id={ceid} price={price}"
-        )
-        return True
+        ok = await _flush_gift_store(_gift_menu_manual_gifts, "_gift_menu_manual_gifts")
+        if ok:
+            print(
+                f"🟩 [GIFT_MENU_MANUAL][ADD] "
+                f"gift_id={gid} custom_emoji_id={ceid} price={price}"
+            )
+        return ok
     except Exception as e:
         print(f"🟥 [GIFT_MENU_MANUAL][ADD][ERROR] gift_id={gift_id!r} err={e!r}")
         return False
@@ -1393,7 +1422,7 @@ async def remove_manual_gift(gift_id: Any) -> bool:
         async with _gift_menu_manual_gifts_lock:
             if gid in _gift_menu_manual_gifts:
                 del _gift_menu_manual_gifts[gid]
-        return True
+        return await _flush_gift_store(_gift_menu_manual_gifts, "_gift_menu_manual_gifts")
     except Exception as e:
         print(f"🟥 [GIFT_MENU_MANUAL][REMOVE][ERROR] gift_id={gift_id!r} err={e!r}")
         return False
