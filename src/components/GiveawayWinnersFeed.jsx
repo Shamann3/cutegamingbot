@@ -32,10 +32,12 @@ export default function GiveawayWinnersFeed() {
 
   return (
     <div className="giveaway-winners-feed" key={current.at}>
-      <span aria-hidden>🎉</span>
+      <span className="giveaway-winners-feed-medal" aria-hidden>🏆</span>
       <span className="giveaway-winners-feed-text">
-        {current.displayName} выиграл {formatGiveawayPrize(current.prize)} в «{current.giveawayTitle}» · {timeAgo(current.at)}
+        <span className="giveaway-winners-feed-name">{current.displayName}</span>
+        {' выиграл '}{formatGiveawayPrize(current.prize)} в «{current.giveawayTitle}»
       </span>
+      <span className="giveaway-winners-feed-time">{timeAgo(current.at)}</span>
     </div>
   )
 }

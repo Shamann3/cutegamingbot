@@ -6,18 +6,31 @@ import { openTelegramBotLink, getTelegramUser } from '../lib/telegram'
 
 const BOT_USERNAME = 'CuteGamingBot'
 
+// Короткая подпись условия + признак числового прогресса (для полоски).
 const CONDITION_LABEL = {
-  balance: (cond) => `Баланс: ${cond.current} из ${cond.targetValue} КУТ`,
-  harvest_count: (cond) => `Урожаев собрано: ${cond.current} из ${cond.targetValue}`,
-  item_count: (cond) => `Предмет «${cond.itemId}»: ${cond.current} из ${cond.targetValue}`,
+  balance: () => 'Баланс КУТ',
+  harvest_count: () => 'Урожаев собрано',
+  item_count: (cond) => `Предмет «${cond.itemId}»`,
   channel_sub: (cond) => `Подписка на @${cond.itemId}`,
-  referral_count: (cond) => `Приглашено друзей: ${cond.current} из ${cond.targetValue}`,
+  referral_count: () => 'Приглашено друзей',
 }
 
 const CONDITION_NAV_TARGET = {
   balance: 'trade',
   harvest_count: 'farm',
   item_count: 'farm-inventory',
+}
+
+function pluralPlayers(n) {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'игрок'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'игрока'
+  return 'игроков'
+}
+
+function prizeWithIcon(prize) {
+  return `${prize?.type === 'kut' ? '💰 ' : ''}${formatGiveawayPrize(prize)}`
 }
 
 export default function GiveawayDetailModal({
@@ -58,6 +71,7 @@ export default function GiveawayDetailModal({
 
   const accent = detail ? (RARITY_ACCENT[detail.rarity] ?? RARITY_ACCENT.common) : RARITY_ACCENT.common
   const isUpcoming = Boolean(detail?.startsAt) && new Date(detail.startsAt).getTime() > Date.now()
+  const satisfiedCount = detail ? detail.conditions.filter((c) => c.satisfied).length : 0
 
   return (
     <Portal lockScroll>
@@ -78,109 +92,178 @@ export default function GiveawayDetailModal({
               {/* Зона 1: приз + таймер */}
               <div className="giveaway-detail-hero">
                 <div className="giveaway-detail-hero-icon-wrap">
+                  <span className="giveaway-detail-hero-ring" aria-hidden />
                   <span className="giveaway-detail-hero-emoji" aria-hidden>
                     {detail.prize.type === 'kut' ? '💰' : (detail.prize.emoji ?? '🎁')}
                   </span>
                 </div>
                 <h2 className="giveaway-detail-title">{detail.title}</h2>
                 <p className="giveaway-detail-prize">{formatGiveawayPrize(detail.prize)}</p>
-                <span className="giveaway-detail-badge">
-                  {detail.drawType === 'instant'
-                    ? <>⚡ Мгновенно всем выполнившим</>
-                    : detail.endsAt
-                      ? <>🕒 {formatGiveawayDeadlineTime(detail.endsAt)}</>
-                      : <>🕒 По таймеру</>}
-                </span>
-              </div>
-
-              {/* Зона 2: условия */}
-              <div className="giveaway-detail-conditions">
-                {detail.conditions.length === 0 ? (
-                  <p className="giveaway-detail-no-conditions">Условий нет — участвуйте сразу</p>
-                ) : (
-                  <div className="giveaway-detail-conditions-card">
-                    {detail.conditions.map((cond, idx) => (
-                      <div
-                        key={idx}
-                        className={`giveaway-detail-condition${cond.satisfied ? ' giveaway-detail-condition--done' : ''}`}
-                      >
-                        <span className="giveaway-detail-condition-status" aria-hidden>
-                          {cond.satisfied ? '🟢' : '⚪'}
-                        </span>
-                        <span className="giveaway-detail-condition-label">
-                          {(CONDITION_LABEL[cond.kind] ?? (() => cond.kind))(cond)}
-                        </span>
-                        {!cond.satisfied && cond.kind === 'channel_sub' && (
-                          <button
-                            type="button"
-                            className="giveaway-detail-condition-goto"
-                            onClick={() => openTelegramBotLink(`https://t.me/${cond.itemId}`)}
-                          >
-                            Перейти
-                          </button>
-                        )}
-                        {!cond.satisfied && cond.kind === 'referral_count' && (
-                          <button
-                            type="button"
-                            className="giveaway-detail-condition-goto"
-                            onClick={() => {
-                              const userId = getTelegramUser()?.id
-                              if (!userId) return
-                              const inviteLink = `https://t.me/${BOT_USERNAME}?start=${userId}`
-                              openTelegramBotLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}`)
-                            }}
-                          >
-                            Перейти
-                          </button>
-                        )}
-                        {!cond.satisfied && cond.kind !== 'channel_sub' && cond.kind !== 'referral_count' && (
-                          <button
-                            type="button"
-                            className="giveaway-detail-condition-goto"
-                            onClick={() => onNavigateCondition(CONDITION_NAV_TARGET[cond.kind] ?? 'farm')}
-                          >
-                            Перейти
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                {!detail.result && (
+                  <span className="giveaway-detail-badge">
+                    {detail.drawType === 'instant'
+                      ? <>⚡ Мгновенно всем выполнившим</>
+                      : detail.endsAt
+                        ? <>🕒 {formatGiveawayDeadlineTime(detail.endsAt)}</>
+                        : <>🕒 По таймеру</>}
+                  </span>
                 )}
               </div>
 
-              {/* Зона 3: действие */}
-              {error && <p className="giveaway-detail-error">{error}</p>}
               {detail.result ? (
-                <div className="giveaway-detail-result">
-                  {detail.result.won
-                    ? '🎉 Вы выиграли!'
-                    : detail.winnerName
-                      ? `🏆 Победитель: ${detail.winnerName}`
-                      : detail.recipientsCount != null
-                        ? `🎁 ${detail.recipientsCount} игроков получили приз`
-                        : 'В этот раз не повезло'}
-                </div>
-              ) : detail.joined ? (
-                <div className="giveaway-detail-joined">
-                  {detail.drawType === 'instant' ? '✅ Приз получен' : '🎟️ Вы участвуете, ждите розыгрыша'}
-                </div>
-              ) : isUpcoming ? (
-                <button type="button" className="giveaway-detail-cta" disabled>
-                  ⏳ {formatGiveawayDeadlineTime(detail.startsAt)}
-                </button>
+                /* Завершён — раскрытие победителя */
+                detail.result.won ? (
+                  <div className="giveaway-winner giveaway-winner--you">
+                    <div className="giveaway-winner-inner">
+                      <div className="giveaway-winner-crown" aria-hidden>🎉</div>
+                      <p className="giveaway-winner-eyebrow">Поздравляем</p>
+                      <p className="giveaway-winner-name">Вы выиграли!</p>
+                      <span className="giveaway-winner-prize">{prizeWithIcon(detail.prize)}</span>
+                    </div>
+                  </div>
+                ) : detail.winnerName ? (
+                  <div className="giveaway-winner">
+                    <div className="giveaway-winner-inner">
+                      <div className="giveaway-winner-crown" aria-hidden>👑</div>
+                      <p className="giveaway-winner-eyebrow">Победитель</p>
+                      <p className="giveaway-winner-name">{detail.winnerName}</p>
+                      <div className="giveaway-winner-laurel" aria-hidden>
+                        <span className="giveaway-winner-laurel-line" />
+                        <span>🌿</span>
+                        <span className="giveaway-winner-laurel-line giveaway-winner-laurel-line--right" />
+                      </div>
+                      <span className="giveaway-winner-prize">{prizeWithIcon(detail.prize)}</span>
+                    </div>
+                  </div>
+                ) : detail.recipientsCount != null ? (
+                  <div className="giveaway-winner">
+                    <div className="giveaway-winner-inner">
+                      <div className="giveaway-winner-crown" aria-hidden>🎁</div>
+                      <p className="giveaway-winner-eyebrow">Приз получили</p>
+                      <p className="giveaway-winner-name">
+                        {detail.recipientsCount} {pluralPlayers(detail.recipientsCount)}
+                      </p>
+                      <span className="giveaway-winner-prize">{prizeWithIcon(detail.prize)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="giveaway-winner">
+                    <div className="giveaway-winner-inner">
+                      <div className="giveaway-winner-crown" aria-hidden>🎲</div>
+                      <p className="giveaway-winner-eyebrow">Розыгрыш завершён</p>
+                      <p className="giveaway-winner-name" style={{ fontSize: '1.3rem' }}>В этот раз не повезло</p>
+                    </div>
+                  </div>
+                )
               ) : (
-                <button
-                  type="button"
-                  className={`giveaway-detail-cta${detail.conditionsMet ? ' giveaway-detail-cta--ready' : ''}`}
-                  disabled={!detail.conditionsMet || isParticipating}
-                  onClick={() => onParticipate(detail.id)}
-                >
-                  {isParticipating
-                    ? 'Секунду…'
-                    : detail.conditionsMet
-                      ? 'Участвовать'
-                      : <>🔒 Завершите задания</>}
-                </button>
+                <>
+                  {/* Зона 2: таблица условий */}
+                  <div className="giveaway-detail-conditions">
+                    {detail.conditions.length === 0 ? (
+                      <p className="giveaway-detail-no-conditions">Условий нет — участвуйте сразу</p>
+                    ) : (
+                      <div className="giveaway-ledger">
+                        <div className="giveaway-ledger-head">
+                          <span className="giveaway-ledger-head-title">Условия участия</span>
+                          <span className="giveaway-ledger-head-count">
+                            {satisfiedCount} / {detail.conditions.length}
+                          </span>
+                        </div>
+                        {detail.conditions.map((cond, idx) => {
+                          const hasProgress = cond.kind !== 'channel_sub'
+                            && cond.targetValue != null && cond.current != null
+                          const percent = hasProgress && cond.targetValue > 0
+                            ? Math.min(100, Math.round((cond.current / cond.targetValue) * 100))
+                            : (cond.satisfied ? 100 : 0)
+                          const label = (CONDITION_LABEL[cond.kind] ?? (() => cond.kind))(cond)
+                          return (
+                            <div
+                              key={idx}
+                              className={`giveaway-detail-condition${cond.satisfied ? ' giveaway-detail-condition--done' : ''}`}
+                            >
+                              <span className="giveaway-detail-condition-status" aria-hidden>
+                                {cond.satisfied ? '✓' : '○'}
+                              </span>
+                              <div className="giveaway-detail-condition-main">
+                                <span className="giveaway-detail-condition-label">{label}</span>
+                                {hasProgress && (
+                                  <div className="giveaway-detail-condition-progress">
+                                    <span className="giveaway-detail-condition-bar">
+                                      <span
+                                        className="giveaway-detail-condition-bar-fill"
+                                        style={{ width: `${percent}%` }}
+                                      />
+                                    </span>
+                                    <span className="giveaway-detail-condition-num">
+                                      {cond.current} / {cond.targetValue}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              {!cond.satisfied && cond.kind === 'channel_sub' && (
+                                <button
+                                  type="button"
+                                  className="giveaway-detail-condition-goto"
+                                  onClick={() => openTelegramBotLink(`https://t.me/${cond.itemId}`)}
+                                >
+                                  Перейти
+                                </button>
+                              )}
+                              {!cond.satisfied && cond.kind === 'referral_count' && (
+                                <button
+                                  type="button"
+                                  className="giveaway-detail-condition-goto"
+                                  onClick={() => {
+                                    const userId = getTelegramUser()?.id
+                                    if (!userId) return
+                                    const inviteLink = `https://t.me/${BOT_USERNAME}?start=${userId}`
+                                    openTelegramBotLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}`)
+                                  }}
+                                >
+                                  Позвать
+                                </button>
+                              )}
+                              {!cond.satisfied && cond.kind !== 'channel_sub' && cond.kind !== 'referral_count' && (
+                                <button
+                                  type="button"
+                                  className="giveaway-detail-condition-goto"
+                                  onClick={() => onNavigateCondition(CONDITION_NAV_TARGET[cond.kind] ?? 'farm')}
+                                >
+                                  Перейти
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Зона 3: действие */}
+                  {error && <p className="giveaway-detail-error">{error}</p>}
+                  {detail.joined ? (
+                    <div className="giveaway-detail-joined">
+                      {detail.drawType === 'instant' ? '✅ Приз получен' : '🎟️ Вы участвуете, ждите розыгрыша'}
+                    </div>
+                  ) : isUpcoming ? (
+                    <button type="button" className="giveaway-detail-cta" disabled>
+                      ⏳ {formatGiveawayDeadlineTime(detail.startsAt)}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className={`giveaway-detail-cta${detail.conditionsMet ? ' giveaway-detail-cta--ready' : ''}`}
+                      disabled={!detail.conditionsMet || isParticipating}
+                      onClick={() => onParticipate(detail.id)}
+                    >
+                      {isParticipating
+                        ? 'Секунду…'
+                        : detail.conditionsMet
+                          ? 'Участвовать'
+                          : <>🔒 Завершите задания</>}
+                    </button>
+                  )}
+                </>
               )}
             </>
           )}
