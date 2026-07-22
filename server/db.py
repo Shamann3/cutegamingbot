@@ -432,6 +432,44 @@ class Database:
             return None
         return int(value)
 
+    async def _adjust_balance_in_tx(self, conn, user_id, delta, *, allow_negative=False):
+        """
+        ЕДИНАЯ точка изменения users.balance внутри УЖЕ открытой транзакции.
+
+        Раньше почти каждый метод, меняющий баланс (buy_plot, clear_plot,
+        claim_quest_reward, participate_in_giveaway, draw_timer_giveaways),
+        сам делал SELECT ... FOR UPDATE + UPDATE balance = balance ± $n —
+        семь независимых копий одного и того же паттерна. Здесь он один.
+
+        delta: положительное значение - начисление, отрицательное - списание.
+        allow_negative=False (по умолчанию) - бросает ValueError, если списание
+        уводит баланс в минус (сохраняет прежнее поведение buy_plot/clear_plot).
+        allow_negative=True - разрешает уйти в минус без проверки (используется
+        там, где раньше проверки не было вообще, например начисление награды).
+
+        Принимает уже открытое conn/транзакцию (а не берёт своё соединение),
+        чтобы баланс менялся в ТОЙ ЖЕ атомарной транзакции, что и остальные
+        поля (items, quest_progress и т.п.), которые вызывающий метод меняет
+        рядом - разбиение на несколько запросов внутри одной транзакции не
+        нарушает атомарность (либо всё коммитится, либо всё откатывается).
+
+        Возвращает (balance_before, balance_after). Бросает LookupError, если
+        пользователь не найден.
+        """
+        row = await conn.fetchrow(
+            "SELECT balance FROM users WHERE user_id = $1 FOR UPDATE", user_id
+        )
+        if row is None:
+            raise LookupError(f"user {user_id} not found")
+        balance_before = int(row["balance"] or 0)
+        balance_after = balance_before + int(delta)
+        if not allow_negative and balance_after < 0:
+            raise ValueError("insufficient balance")
+        await conn.execute(
+            "UPDATE users SET balance = $2 WHERE user_id = $1", user_id, balance_after
+        )
+        return balance_before, balance_after
+
     async def get_user_items(self, user_id):
         row = await self.pool.fetchval("SELECT items FROM users WHERE user_id = $1", user_id)
         return parse_items(row)
@@ -716,21 +754,19 @@ class Database:
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                balance = await conn.fetchval(
-                    "SELECT balance FROM users WHERE user_id = $1 FOR UPDATE", user_id
-                )
-                if balance is None:
-                    raise ValueError("Профиль не найден")
                 owned = await self.get_owned_plot_count(conn, user_id)
                 if owned >= get_max_plots():
                     raise ValueError(f"У Вас уже максимум грядок ({get_max_plots()})")
                 next_id = owned + 1
                 price = plot_buy_price(next_id)
-                if int(balance) < price:
+                try:
+                    balance_before, balance_after = await self._adjust_balance_in_tx(
+                        conn, user_id, -price
+                    )
+                except LookupError:
+                    raise ValueError("Профиль не найден")
+                except ValueError:
                     raise ValueError(f"У Вас недостаточно кут (нужно {price})")
-                await conn.execute(
-                    "UPDATE users SET balance = balance - $2 WHERE user_id = $1", user_id, price
-                )
                 await conn.execute(
                     """
                     INSERT INTO farm_plots (user_id, plot_id, status)
@@ -744,8 +780,8 @@ class Database:
             "plot_buy",
             user_id,
             amount=-price,
-            balance_before=int(balance),
-            balance_after=int(balance) - price,
+            balance_before=balance_before,
+            balance_after=balance_after,
             details={"plot_id": next_id, "price": price},
         )
         return await self.get_farm_state(user_id)
@@ -984,23 +1020,19 @@ class Database:
         clear_cost = get_clear_cost()
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                balance = await conn.fetchval(
-                    "SELECT balance FROM users WHERE user_id = $1 FOR UPDATE", user_id
-                )
-                if balance is None:
+                try:
+                    balance_before, balance_after = await self._adjust_balance_in_tx(
+                        conn, user_id, -clear_cost
+                    )
+                except LookupError:
                     raise ValueError("Профиль не найден")
-                if int(balance) < clear_cost:
+                except ValueError:
                     raise ValueError("У Вас недостаточно кут")
                 row = await self._get_plot(conn, user_id, plot_id, for_update=True)
                 if not row or row["status"] != "WITHERED":
                     raise ValueError("Растение на грядке ещё не засохло")
                 withered_crop_id = row.get("crop_id")
                 row = apply_harvest(row)
-                await conn.execute(
-                    "UPDATE users SET balance = balance - $2 WHERE user_id = $1",
-                    user_id,
-                    clear_cost,
-                )
                 await self._save_plot(conn, user_id, row)
         log_game_event(
             self.pool,
@@ -1013,8 +1045,8 @@ class Database:
             "plot_clear",
             user_id,
             amount=-clear_cost,
-            balance_before=int(balance),
-            balance_after=int(balance) - clear_cost,
+            balance_before=balance_before,
+            balance_after=balance_after,
             details={"plot_id": plot_id, "cost": clear_cost},
         )
         return await self.get_farm_state(user_id)
@@ -1751,7 +1783,7 @@ class Database:
             async with conn.transaction():
                 row = await conn.fetchrow(
                     """
-                    SELECT quest_progress, items, balance
+                    SELECT quest_progress, items
                     FROM users WHERE user_id = $1 FOR UPDATE
                     """,
                     user_id,
@@ -1771,20 +1803,21 @@ class Database:
                 store = mark_quest_claimed(store, quest.id)
                 raw_items = parse_items(row["items"])
                 stored, kut_reward = apply_quest_rewards(raw_items, quest)
-                balance_before = int(row["balance"] or 0)
-                balance_after = balance_before + kut_reward
+                # allow_negative=True: как и раньше, начисление награды не
+                # проверяется на уход в минус (награда всегда неотрицательна).
+                balance_before, balance_after = await self._adjust_balance_in_tx(
+                    conn, user_id, kut_reward, allow_negative=True
+                )
                 await conn.execute(
                     """
                     UPDATE users
                     SET items = $2,
-                        quest_progress = $3::jsonb,
-                        balance = $4
+                        quest_progress = $3::jsonb
                     WHERE user_id = $1
                     """,
                     user_id,
                     items_to_db(stored),
                     json.dumps(progress_store_to_db(store)),
-                    balance_after,
                 )
                 if kut_reward:
                     schedule_balance_event(
@@ -2057,17 +2090,11 @@ class Database:
 
                     if row["draw_type"] == "instant" and row["prize_type"] == "kut":
                         amount = int(row["prize_kut_amount"] or 0)
-                        # Атомарное относительное начисление с RETURNING: сама
-                        # UPDATE берёт блокировку строки users, поэтому параллельная
-                        # операция с балансом (сбор урожая, награда за квест,
-                        # покупка) не может быть потеряна. Абсолютная запись после
-                        # чтения без FOR UPDATE давала lost-update — куты пропадали.
-                        balance_after = await conn.fetchval(
-                            "UPDATE users SET balance = balance + $2 WHERE user_id = $1 RETURNING balance",
-                            user_id, amount,
+                        # allow_negative=True: как и раньше, начисление приза не
+                        # проверяется на уход в минус (приз всегда неотрицателен).
+                        balance_before, balance_after = await self._adjust_balance_in_tx(
+                            conn, user_id, amount, allow_negative=True
                         )
-                        balance_after = int(balance_after or 0)
-                        balance_before = balance_after - amount
                         schedule_balance_event(
                             self.pool,
                             "giveaway_reward",
@@ -2132,16 +2159,11 @@ class Database:
                     )
                     if giveaway["prize_type"] == "kut":
                         amount = int(giveaway["prize_kut_amount"] or 0)
-                        # Атомарное относительное начисление с RETURNING (см.
-                        # participate): не теряем параллельные изменения баланса
-                        # победителя вместо небезопасной абсолютной записи после
-                        # чтения без FOR UPDATE.
-                        balance_after = await conn.fetchval(
-                            "UPDATE users SET balance = balance + $2 WHERE user_id = $1 RETURNING balance",
-                            winner, amount,
+                        # allow_negative=True: как и раньше, начисление приза не
+                        # проверяется на уход в минус (приз всегда неотрицателен).
+                        balance_before, balance_after = await self._adjust_balance_in_tx(
+                            conn, winner, amount, allow_negative=True
                         )
-                        balance_after = int(balance_after or 0)
-                        balance_before = balance_after - amount
                         schedule_balance_event(
                             self.pool,
                             "giveaway_reward",

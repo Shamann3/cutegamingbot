@@ -5319,22 +5319,26 @@ class Database:
             return None
 
     async def award_reward_to_user(self , user_id: int , amount: int) -> bool:
+        """
+        Раньше сама делала SELECT ... FOR UPDATE + UPDATE balance напрямую -
+        в обход update_user_balance, из-за чего кэш баланса (user_cache_balance/
+        Redis) не обновлялся сразу после начисления. Теперь начисление идёт
+        через единую защищённую функцию (delta-режим), аудит-запись в
+        user_balance_log сохранена как была.
+        """
         try:
-            # Попытка атомарно через SQL (надежный путь)
+            new_balance = await self.update_user_balance(int(user_id) , f"+{int(amount)}")
+            if new_balance is None:
+                _log_warn(f"award_reward_to_user: update_user_balance failed for user {user_id}")
+                return False
+
             async with self.pool.acquire() as conn:
-                async with conn.transaction():
-                    row = await conn.fetchrow("SELECT balance FROM users WHERE user_id = $1 FOR UPDATE" , int(user_id))
-                    if not row:
-                        _log_warn(f"award_reward_to_user: user {user_id} not found")
-                        return False
-                    cur = int(row [ "balance" ] or 0)
-                    new = cur + int(amount)
-                    await conn.execute("UPDATE users SET balance = $1 WHERE user_id = $2" , new , int(user_id))
-                    await conn.execute(
-                        "INSERT INTO user_balance_log(user_id, amount, note, created_at) VALUES($1, $2, $3, NOW())" ,
-                        int(user_id) , int(amount) , "gc_reward")
-                    _log_ok(f"award_reward_to_user: user={user_id} +{amount} -> {new}")
-                    return True
+                await conn.execute(
+                    "INSERT INTO user_balance_log(user_id, amount, note, created_at) VALUES($1, $2, $3, NOW())" ,
+                    int(user_id) , int(amount) , "gc_reward")
+
+            _log_ok(f"award_reward_to_user: user={user_id} +{amount} -> {new_balance}")
+            return True
         except Exception as e:
             _log_err(f"award_reward_to_user({user_id}, {amount}): {e}\n{traceback.format_exc()}")
             return False
@@ -12919,32 +12923,21 @@ class Database:
         """
         Добавляет выигрыш к балансу пользователя.
 
+        Делегирует в update_user_balance (delta-режим) вместо прямого raw SQL -
+        так пишущий путь остаётся ЕДИНЫМ для всех начислений/списаний баланса
+        в проекте (защита от гонок, кэш user_cache_balance/Redis всегда актуален).
+
         :param user_id: ID пользователя.
         :param winnings: Сумма выигрыша.
         :return: True, если операция успешна, иначе False.
         """
         try:
-            # Открываем соединение из пула
-            async with self.pool.acquire() as connection:
-                # Получаем текущий баланс пользователя
-                query_balance = "SELECT balance FROM users WHERE user_id = $1"
-                result = await connection.fetchrow(query_balance , user_id)
-
-                if result is None:
-                    print(f"Пользователь с ID {user_id} не найден.")
-                    return False
-
-                current_balance = result [ 'balance' ]
-
-                # Вычисляем новый баланс
-                new_balance = current_balance + winnings
-
-                # Обновляем баланс
-                query_update = "UPDATE users SET balance = $1 WHERE user_id = $2"
-                await connection.execute(query_update , new_balance , user_id)
-
-                print(f"Баланс пользователя {user_id} увеличен на {winnings}. Новый баланс: {new_balance}.")
-                return True
+            new_balance = await self.update_user_balance(user_id , f"+{int(winnings)}")
+            if new_balance is None:
+                print(f"Пользователь с ID {user_id} не найден или начисление не удалось.")
+                return False
+            print(f"Баланс пользователя {user_id} увеличен на {winnings}. Новый баланс: {new_balance}.")
+            return True
         except Exception as e:
             print(f"Ошибка при добавлении выигрыша для пользователя {user_id}: {str(e)}")
             return False
@@ -13121,6 +13114,15 @@ class Database:
             result = await connection.fetchrow(query , user_id)
             return result [ 'count' ]  # Возвращаем количество транзакций
 
+    # ─────────────────────────────────────────────────────────────────────
+    # Начиная отсюда - функции для отдельных игр (bingo/orel/knb/kosti).
+    # На момент ревью 2026-07 ни одна из них не вызывается нигде в проекте
+    # (проверено по всем call site'ам, включая динамический getattr(db, name)
+    # диспетчинг) - оставлены как готовый API на случай, если игра снова будет
+    # подключена. Все переведены на update_user_balance (delta-режим) вместо
+    # прямого raw SQL, чтобы у ЛЮБОГО пишущего пути в проекте была одна и та
+    # же защита от гонок/ухода в минус и одинаковое обновление кэша баланса.
+    # ─────────────────────────────────────────────────────────────────────
     async def increment_user_balance_bingo(self , user_id , amount):
         """
         Увеличивает баланс пользователя на указанную сумму.
@@ -13128,19 +13130,7 @@ class Database:
         :param amount: Сумма, на которую нужно увеличить баланс.
         :return: Новый баланс пользователя после изменения.
         """
-        query = """
-        UPDATE users
-        SET balance = balance + $1
-        WHERE user_id = $2
-        """
-
-        async with self.pool.acquire() as connection:
-            # Выполняем обновление баланса
-            await connection.execute(query , amount , user_id)
-
-            # Получаем новый баланс
-            new_balance = await self.get_user_balance(user_id)
-            return new_balance
+        return await self.update_user_balance(user_id , f"+{int(amount)}")
 
     async def deduct_balance_bingo(self , user_id , amount):
         """
@@ -13149,22 +13139,11 @@ class Database:
         :param amount: Сумма, на которую нужно уменьшить баланс.
         :return: Кортеж из флага успешности операции и нового баланса (или старого, если операция не удалась).
         """
-        query_get_balance = "SELECT balance FROM users WHERE user_id = $1"
-        query_update_balance = "UPDATE users SET balance = balance - $1 WHERE user_id = $2"
-
-        async with self.pool.acquire() as connection:
-            # Получаем текущий баланс пользователя
-            current_balance = await connection.fetchval(query_get_balance , user_id)
-
-            if current_balance is None or current_balance < amount:
-                return False , current_balance  # Если баланса недостаточно или не найдено, возвращаем False и текущий баланс
-
-            # Обновляем баланс пользователя
-            await connection.execute(query_update_balance , amount , user_id)
-
-            # Получаем новый баланс после вычитания
-            new_balance = await self.get_user_balance(user_id)
-            return True , new_balance
+        current_balance = await self.get_user_balance(user_id)
+        new_balance = await self.update_user_balance(user_id , f"-{int(amount)}")
+        if new_balance is None:
+            return False , current_balance
+        return True , new_balance
 
     async def deduct_balance_orel(self , user_id , amount):
         """
@@ -13173,20 +13152,8 @@ class Database:
         :param amount: Сумма, на которую нужно уменьшить баланс.
         :return: Флаг успешности операции (True/False).
         """
-        query_get_balance = "SELECT balance FROM users WHERE user_id = $1"
-        query_update_balance = "UPDATE users SET balance = balance - $1 WHERE user_id = $2"
-
-        async with self.pool.acquire() as connection:
-            # Получаем текущий баланс пользователя
-            current_balance = await connection.fetchval(query_get_balance , user_id)
-
-            if current_balance is None or current_balance < amount:
-                return False  # Если баланса недостаточно или не найдено, возвращаем False
-
-            # Обновляем баланс пользователя
-            await connection.execute(query_update_balance , amount , user_id)
-
-            return True
+        new_balance = await self.update_user_balance(user_id , f"-{int(amount)}")
+        return new_balance is not None
 
     async def add_balance_orel(self , user_id , amount):
         """
@@ -13195,20 +13162,8 @@ class Database:
         :param amount: Сумма, на которую нужно увеличить баланс.
         :return: Флаг успешности операции (True/False).
         """
-        query_get_balance = "SELECT balance FROM users WHERE user_id = $1"
-        query_update_balance = "UPDATE users SET balance = balance + $1 WHERE user_id = $2"
-
-        async with self.pool.acquire() as connection:
-            # Получаем текущий баланс пользователя
-            current_balance = await connection.fetchval(query_get_balance , user_id)
-
-            if current_balance is None:
-                return False  # Если пользователь не найден, возвращаем False
-
-            # Обновляем баланс пользователя
-            await connection.execute(query_update_balance , amount , user_id)
-
-            return True
+        new_balance = await self.update_user_balance(user_id , f"+{int(amount)}")
+        return new_balance is not None
 
     async def deduct_balance_knb(self , user_id , amount):
         """
@@ -13217,21 +13172,11 @@ class Database:
         :param amount: Сумма, на которую нужно уменьшить баланс.
         :return: Кортеж (True/False, новый баланс).
         """
-        query_get_balance = "SELECT balance FROM users WHERE user_id = $1"
-        query_update_balance = "UPDATE users SET balance = balance - $1 WHERE user_id = $2"
-
-        async with self.pool.acquire() as connection:
-            # Получаем текущий баланс пользователя
-            current_balance = await connection.fetchval(query_get_balance , user_id)
-
-            if current_balance is None or current_balance < amount:
-                return False , current_balance  # Если баланс меньше необходимой суммы, возвращаем False и текущий баланс
-
-            # Обновляем баланс пользователя
-            new_balance = current_balance - amount
-            await connection.execute(query_update_balance , amount , user_id)
-
-            return True , new_balance
+        current_balance = await self.get_user_balance(user_id)
+        new_balance = await self.update_user_balance(user_id , f"-{int(amount)}")
+        if new_balance is None:
+            return False , current_balance
+        return True , new_balance
 
     async def add_balance_knb(self , user_id , amount):
         """
@@ -13240,21 +13185,8 @@ class Database:
         :param amount: Сумма, на которую нужно увеличить баланс.
         :return: True, если операция прошла успешно, иначе False.
         """
-        query_get_balance = "SELECT balance FROM users WHERE user_id = $1"
-        query_update_balance = "UPDATE users SET balance = balance + $1 WHERE user_id = $2"
-
-        async with self.pool.acquire() as connection:
-            # Получаем текущий баланс пользователя
-            current_balance = await connection.fetchval(query_get_balance , user_id)
-
-            if current_balance is None:
-                return False  # Если пользователь не найден, возвращаем False
-
-            # Обновляем баланс пользователя
-            new_balance = current_balance + amount
-            await connection.execute(query_update_balance , amount , user_id)
-
-            return True
+        new_balance = await self.update_user_balance(user_id , f"+{int(amount)}")
+        return new_balance is not None
 
     async def deduct_balance_kosti(self , user_id , amount):
         """
@@ -13263,30 +13195,15 @@ class Database:
         :param amount: Сумма, на которую нужно уменьшить баланс.
         :return: True, если операция прошла успешно, иначе False.
         """
-        query_get_balance = "SELECT balance FROM users WHERE user_id = $1"
-        query_update_balance = "UPDATE users SET balance = balance - $1 WHERE user_id = $2"
-
-        async with self.pool.acquire() as connection:
-            # Получаем текущий баланс пользователя
-            current_balance = await connection.fetchval(query_get_balance , user_id)
-
-            if current_balance is None or current_balance < amount:
-                return False  # Если баланс меньше суммы или пользователь не найден, возвращаем False
-
-            # Обновляем баланс пользователя
-            new_balance = current_balance - amount
-            await connection.execute(query_update_balance , amount , user_id)
-
-            return True
+        new_balance = await self.update_user_balance(user_id , f"-{int(amount)}")
+        return new_balance is not None
 
     async def add_balance_kosti(self, user_id, amount, bet):
-        """Обновляем баланс пользователя после игры с костями"""
-        current_balance = await self.get_user_balance(user_id)
-        if current_balance is None:
-            return False
-        new_balance = current_balance + amount - bet
-        await self.update_user_balance(user_id, new_balance)
-        return True
+        """Обновляем баланс пользователя после игры с костями (net = amount - bet)."""
+        net = int(amount) - int(bet)
+        sign = "+" if net >= 0 else "-"
+        new_balance = await self.update_user_balance(user_id, f"{sign}{abs(net)}")
+        return new_balance is not None
 
     async def get_user_assets(self , user_id):
         try:
@@ -13625,16 +13542,17 @@ class Database:
             return None
 
     async def subtract_money(self, user_id, amount):
-        """Вычитаем деньги из баланса пользователя."""
-        async with self.pool.acquire() as connection:
-            async with connection.transaction():
-                # Вычитаем указанную сумму из баланса пользователя
-                result = await connection.execute(
-                    "UPDATE users SET balance = balance - $1 WHERE user_id = $2",
-                    amount, user_id
-                )
-                # Если сумма обновлена, проверяем, что все прошло успешно
-                return result
+        """
+        Вычитаем деньги из баланса пользователя.
+
+        Раньше делал это через raw SQL (UPDATE ... SET balance = balance - $1)
+        напрямую, в обход update_user_balance - из-за этого не было защиты от
+        ухода в минус, и локальный/Redis-кэш баланса (user_cache_balance)
+        оставался устаревшим после списания. Теперь делегируем в единую
+        защищённую функцию (delta-режим), которая сама блокирует запись,
+        не даёт уйти в минус и обновляет кэш.
+        """
+        return await self.update_user_balance(user_id, f"-{int(amount)}")
 
 
 
@@ -13649,38 +13567,45 @@ class Database:
 
 
     async def retrieve_user_balance(self, username):
-        """Получает баланс пользователя по имени пользователя."""
+        """
+        Получает баланс пользователя по имени пользователя.
+
+        Раньше читала balance напрямую raw SQL по username - отдельный,
+        не связанный с get_user_balance путь чтения (и без кэша). Теперь
+        сначала резолвит username -> user_id (get_user_id_by_username),
+        а сам баланс берёт через ЕДИНУЮ get_user_balance - тот же кэш,
+        то же поведение, что и везде в проекте.
+        """
         print(f"Поиск баланса для пользователя: {username}")
-        username_lower = username.lower()
-
-        try:
-            # Получаем баланс пользователя по имени
-            async with self.pool.acquire() as connection:
-                result = await connection.fetchrow("SELECT balance FROM users WHERE LOWER(username) = $1", username_lower)
-        except Exception as e:
-            print(f"Ошибка при получении баланса пользователя {username}: {e}")
+        user_id = await self.get_user_id_by_username(username)
+        if user_id is None:
+            print(f"Пользователь @{username} не найден в базе данных")
             return None
+        return await self.get_user_balance(user_id)
 
-        if result:
-            # Вернем баланс пользователя
-            return result['balance']
-        else:
+    async def modify_user_balance(self, username, new_balance):
+        """
+        Обновляет баланс пользователя по имени пользователя.
+
+        Раньше писала balance напрямую raw SQL по username, в обход
+        update_user_balance (без защиты от гонок/ухода в минус и без
+        обновления кэша). Теперь резолвит username -> user_id и делегирует
+        в update_user_balance - тот же единый путь записи, что и везде
+        в проекте. new_balance можно передавать как абсолютное значение,
+        так и дельтой ("+N"/"-N") - update_user_balance поддерживает оба режима.
+        """
+        print(f"Обновление баланса пользователя @{username} до {new_balance}")
+        user_id = await self.get_user_id_by_username(username)
+        if user_id is None:
             print(f"Пользователь @{username} не найден в базе данных")
             return None
 
-    async def modify_user_balance(self, username, new_balance):
-        """Обновляет баланс пользователя."""
-        print(f"Обновление баланса пользователя @{username} до {new_balance}")
-
-        try:
-            # Обновление баланса пользователя по имени пользователя
-            async with self.pool.acquire() as connection:
-                await connection.execute(
-                    "UPDATE users SET balance = $1 WHERE LOWER(username) = $2", new_balance, username.lower()
-                )
+        result = await self.update_user_balance(user_id, new_balance)
+        if result is None:
+            print(f"Ошибка при обновлении баланса пользователя {username}")
+        else:
             print(f"Баланс пользователя @{username} успешно обновлен")
-        except Exception as e:
-            print(f"Ошибка при обновлении баланса пользователя {username}: {e}")
+        return result
 
     async def handle_withdraw(self, message, admin_id):
         """Обрабатывает снятие средств."""
