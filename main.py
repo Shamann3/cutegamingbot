@@ -6951,168 +6951,121 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
 
     # Логика рефералок работает и для /START (мы уже пропустили через декоратор)
     # Доп. проверка чата:
+    # В начале убедитесь, что user_id определён (если нет выше):
+    user_id = message.from_user.id
+
     if message.chat.type == ChatType.PRIVATE:
         parts = message.text.split()
-        # Проверяем, есть ли хотя бы один параметр, и он является числовым (user_id)
-        if len(parts) == 2 and parts[1].isdigit():
+        if len(parts) == 2 and parts [ 1 ].isdigit():
             try:
-                reffer_id = int(parts[1])
+                reffer_id = int(parts [ 1 ])
 
-                # ВАЖНО: сначала полноценно создаём/обновляем пользователя (это
-                # выставляет стартовый баланс и дату регистрации для НОВОГО юзера),
-                # и только потом check_user_id_in_users. Если проверить usersref
-                # раньше, она сама вставит "заглушку" (user_id, usersref=0), и
-                # add_data увидит уже существующую строку и пойдёт по ветке
-                # UPDATE-только-профиля, не выставив balance/дату регистрации.
-                user_chat = await bot1.get_chat(user_id)
-                bio = user_chat.bio if getattr(user_chat, "bio", None) else "Нет информации о био"
+                # Получаем bio с защитой от ошибки
+                try:
+                    user_chat = await bot1.get_chat(user_id)
+                    bio = user_chat.bio if getattr(user_chat , "bio" , None) else "Нет информации о био"
+                except Exception:
+                    bio = "Нет информации о био"
+
+                # Создаём/обновляем основного пользователя
                 await measure_time(
-                    add_or_update_user_info(message=message, db=db, start_balance=start_balance, bot=message.bot),
-                    "3Добавление / обновление информации о пользователе в базе"
-                )
-                await db.add_data(user_id, first_name, username, bio, start_balance)
+                    add_or_update_user_info(message=message , db=db , start_balance=start_balance , bot=message.bot) ,
+                    "3Добавление / обновление информации о пользователе в базе")
+                await db.add_data(user_id , first_name , username , bio , start_balance)
 
-                usertruefalse = await db.check_user_id_in_users(user_id)
-                print("usertruefalse : ", usertruefalse)
-                if usertruefalse:
-                    print('Пользователь уже в базе, проверяем реферальную ссылку.')
+                # Проверяем, не было ли уже реферального перехода (таблица usersref)
+                already_referred = await db.check_user_id_in_users(user_id)
 
+                # Если записи о реферале ЕЩЁ НЕТ — обрабатываем ссылку
+                if not already_referred:
                     if reffer_id != user_id:
-                        await db.add_ref1(user_id, reffer_id)
+                        # Фиксируем реферальную связь
+                        await db.add_ref1(user_id , reffer_id)
+                        await db.check_and_update_bio(user_id , bot1)
 
-                        # Обновляем био
-                        await db.check_and_update_bio(user_id, bot1)
-
-                        # Достаём пригласившего
                         inviting_user_data = await db.get_user_data(reffer_id)
                         if inviting_user_data:
                             ref_first_name = await db.get_firstname_by_user_id(reffer_id)
                             first_name_hui = await db.get_firstname_by_user_id(user_id)
                             await db.insert_refcheck_entry(
-                                user_id=user_id, ref_user_id=reffer_id, first_name=first_name_hui,
-                                ref_first_name=ref_first_name
-                            )
+                                user_id=user_id , ref_user_id=reffer_id , first_name=first_name_hui ,
+                                ref_first_name=ref_first_name)
 
                             await db.remove_expired_refout()
 
-                            data_open_datetime = time.time()
-                            current_time_str = datetime.fromtimestamp(data_open_datetime).strftime('%Y-%m-%d %H:%M:%S')
-                            current_time1 = datetime.strptime(current_time_str, '%Y-%m-%d %H:%M:%S')
                             current_time = time.time()
-
-                            last_open_time, data_open = await db.get_ref_times(user_id, reffer_id)
-
+                            last_open_time , data_open = await db.get_ref_times(user_id , reffer_id)
                             if last_open_time is None or data_open is None:
                                 last_open_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                 data_open_ts = current_time + timerefout
-
                                 user_name = await db.get_firstname_by_user_id(user_id)
                                 await db.add_refout(
-                                    user_id, reffer_id, user_name, last_open_time,
-                                    datetime.fromtimestamp(data_open_ts).strftime("%Y-%m-%d %H:%M:%S")
-                                )
+                                    user_id , reffer_id , user_name , last_open_time ,
+                                    datetime.fromtimestamp(data_open_ts).strftime("%Y-%m-%d %H:%M:%S"))
 
+                            # Уведомление пригласившему
                             markup112132 = InlineKeyboardMarkup(
-                                inline_keyboard=[[InlineKeyboardButton(text="Играть", switch_inline_query="игры", style="default" ,icon_custom_emoji_id="5470088387048266598")]]
-                            )
-
-                            new_user_link = await create_user_link(user_id, first_name, username)
+                                inline_keyboard=[ [ InlineKeyboardButton(
+                                    text="Играть" , switch_inline_query="игры" ,
+                                    icon_custom_emoji_id="5470088387048266598") ] ])
+                            new_user_link = await create_user_link(user_id , first_name , username)
                             await bot1.send_message(
-                                reffer_id,
-                                (
-                                    "🌿 <b>По вашей реф-ссылке перешёл новый пользователь!</b>\n"
-                                    f"🌱 <b>{new_user_link}</b>\n\n"
-                                    f"🪴 <b>Чтобы получить {ref_coin} кут за приглашение - приглашённый должен сыграть в любую игру | результат не важен.</b>\n\n"
-                                    "💰 <b>+ Вы будете зарабатывать 25% от его покупок в магазине!</b>"
-                                ),
-                                reply_markup=markup112132,
-                                parse_mode="HTML",
-                                disable_web_page_preview=True
-                            )
+                                reffer_id , ("🌿 <b>По вашей реф-ссылке перешёл новый пользователь!</b>\n"
+                                             f"🌱 <b>{new_user_link}</b>\n\n"
+                                             f"🪴 <b>Чтобы получить {ref_coin} кут за приглашение — "
+                                             "приглашённый должен сыграть в любую игру | результат не важен.</b>\n\n"
+                                             "💰 <b>+ Вы будете зарабатывать 25% от его покупок в магазине!</b>") ,
+                                reply_markup=markup112132 , parse_mode="HTML" , disable_web_page_preview=True)
 
+                            # ===== НОВОЕ: приветствие для самого перешедшего пользователя =====
+                            await bot1.send_message(
+                                user_id , "🌱 <b>Вы перешли по реферальной ссылке!</b>\n"
+                                          f"🎁 Ваш друг получит {ref_coin} кут, когда вы сыграете в любую игру.\n"
+                                          "🛍️ А вы будете получать 25% от его покупок в магазине!" , parse_mode="HTML")
+                            # =================================================================
                             print(f"🔋 Уведомление отправлено. Время: {time.time() - start_time:.3f} сек.")
                     else:
                         await bot1.send_message(
-                            user_id, "⚠️ <b>Нельзя регистрироваться по своей ссылке.</b>",
-                            parse_mode="HTML", disable_web_page_preview=True
-                        )
+                            user_id , "⚠️ <b>Нельзя регистрироваться по своей ссылке.</b>" , parse_mode="HTML" ,
+                            disable_web_page_preview=True)
                 else:
+                    # Уже использовал реферальную ссылку ранее
                     await bot1.send_message(
-                        user_id, "💭 <b>Вы уже использовали кут ранее, реферальная ссылка не засчитана</b>",
-                        parse_mode="HTML", disable_web_page_preview=True
-                    )
+                        user_id , "💭 <b>Вы уже использовали кут ранее, реферальная ссылка не засчитана</b>" ,
+                        parse_mode="HTML" , disable_web_page_preview=True)
                     print('Пользователь уже использовал кут ранее.')
             except ValueError:
                 await bot1.send_message(
-                    user_id, "⚠️ <b>Некорректный реферальный ID. Попробуйте ещё раз.</b>",
-                    parse_mode="HTML", disable_web_page_preview=True
-                )
+                    user_id , "⚠️ <b>Некорректный реферальный ID. Попробуйте ещё раз.</b>" , parse_mode="HTML" ,
+                    disable_web_page_preview=True)
 
-        # Далее - обычный старт/меню
+        # Обычное меню (отображается всегда после обработки рефералки)
         try:
             subscription_status = await db.get_user_subscription(user_id)
         except Exception as e:
             print(f"Ошибка при получении статуса подписки для пользователя {user_id}: {e}")
             subscription_status = 0
 
-        markup_start = await create_start_inline_markup(subscription_status, user_id, db)
+        markup_start = await create_start_inline_markup(subscription_status , user_id , db)
         sent_message = await bot1(
             SendMessage(
-                chat_id=message.chat.id,
-                text="<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji>",
-                reply_markup=markup_start,
-                message_effect_id="5107584321108051014",
-                parse_mode="HTML"
-            )
-        )
+                chat_id=message.chat.id , text="<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji>" ,
+                reply_markup=markup_start , message_effect_id="5107584321108051014" , parse_mode="HTML"))
 
         markup1 = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Играть", switch_inline_query="игры", style="default" ,icon_custom_emoji_id="5470088387048266598")]]
-        )
+            inline_keyboard=[ [ InlineKeyboardButton(
+                text="Играть" , switch_inline_query="игры" , icon_custom_emoji_id="5470088387048266598") ] ])
         sent_message1 = await bot1(
             SendMessage(
-                chat_id=message.chat.id,
-                text="<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji>",
-                reply_markup=markup1,
-                message_effect_id="5046509860389126442",
-                parse_mode="HTML"
-            )
-        )
-        message_id = sent_message.message_id
+                chat_id=message.chat.id , text="<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji>" ,
+                reply_markup=markup1 , message_effect_id="5046509860389126442" , parse_mode="HTML"))
         bns_add_request(user_id , sent_message.message_id , reason="print('🏉🏉🏉🏉🏉🏉 message_text : ', message.text)")
-        message_state[message.from_user.id] = sent_message.message_id
+        message_state [ message.from_user.id ] = sent_message.message_id
 
         await measure_time(
-            add_or_update_user_info(message=message, db=db, start_balance=start_balance, bot=message.bot),
-            "2Добавление / обновление информации о пользователе в базе"
-        )
+            add_or_update_user_info(message=message , db=db , start_balance=start_balance , bot=message.bot) ,
+            "2Добавление / обновление информации о пользователе в базе")
         return
-
-    # 4) Любой другой чат (не PRIVATE) - просто меню (как у вас ниже)
-    try:
-        subscription_status = await db.get_user_subscription(user_id)
-    except Exception as e:
-        print(f"Ошибка при получении статуса подписки для пользователя {user_id}: {e}")
-        subscription_status = 0
-
-    markup = await create_start_inline_markup(subscription_status, user_id, db)
-    sent = await bot1(
-        SendMessage(
-            chat_id=message.chat.id,
-            text="<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji>",
-            reply_markup=markup,
-            message_effect_id="5107584321108051014",
-            parse_mode="HTML"
-        )
-    )
-    message_id = sent.message_id
-    bns_add_request(user_id , sent.message_id , reason="render_need_family_tag")
-    message_state[user_id] = sent.message_id
-
-    await measure_time(
-        add_or_update_user_info(message=message, db=db, start_balance=start_balance, bot=message.bot),
-        "Добавление/обновление информации о пользователе в базе"
-    )
 
 
 
