@@ -618,6 +618,7 @@ function CuteHistoryFeed({ userId }) {
                 {it.cause || '—'}
                 {it.kind === 'donate' && <span className="pu-cute-badge">донат</span>}
                 {it.kind === 'transfer' && <span className="pu-cute-badge pu-cute-badge-tr">перевод</span>}
+                {it.kind === 'chat_deposit' && <span className="pu-cute-badge pu-cute-badge-bch">бч</span>}
               </span>
               <time className="panel-users-audit-time">{formatDate(it.ts)}</time>
             </div>
@@ -629,6 +630,13 @@ function CuteHistoryFeed({ userId }) {
             )}
             {it.counterparty && (
               <CounterpartyLine direction={it.direction} cp={it.counterparty} />
+            )}
+            {it.group && (
+              <p className="panel-shelf-muted">
+                → группа {it.group.name || '—'}
+                {it.group.username ? ` @${it.group.username}` : ''}{' '}
+                <span style={{ opacity: 0.6 }}>(id {it.group.chatId})</span>
+              </p>
             )}
           </li>
         ))}
@@ -649,6 +657,7 @@ function CuteHistoryFeed({ userId }) {
         .pu-cute-donations-hint { color: #7a7280; font-size: 11px; }
         .pu-cute-badge { margin-left: 6px; font-size: 10px; padding: 1px 6px; border-radius: 6px; background: #2a2a30; color: #d0a94a; vertical-align: middle; }
         .pu-cute-badge-tr { color: #6fb1ff; }
+        .pu-cute-badge-bch { color: #57c785; }
         .pu-cute-in { color: #57c785; }
         .pu-cute-out { color: #e06666; }
       `}</style>

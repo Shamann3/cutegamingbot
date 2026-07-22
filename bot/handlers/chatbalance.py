@@ -344,7 +344,7 @@ async def chatbalance(message: Message):
             print("[ПОПОЛНЕНИЕ БАЛАНСА ГРУППЫ] ✅ Баланс пользователя обновлён")
 
             print("[ПОПОЛНЕНИЕ БАЛАНСА ГРУППЫ] 🟩 Пишу историю cutehistory_minus...")
-            await db.cutehistory_minus(user_id , amount , "положено на баланс группы")
+            await db.cutehistory_minus(user_id , amount , "положено на баланс группы" , chat_id=chat_id)
             print("[ПОПОЛНЕНИЕ БАЛАНСА ГРУППЫ] ✅ История списания записана")
 
             # Зачисление в чат

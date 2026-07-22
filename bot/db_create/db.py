@@ -6998,12 +6998,13 @@ class Database:
         except Exception as e:
             print(f"[ERROR] Ошибка при записи данных с плюсом в таблицу cutehistory: {e}")
 
-    async def cutehistory_minus(self , user_id , amount , cause):
+    async def cutehistory_minus(self , user_id , amount , cause , chat_id=None):
         """
         Записывает данные с минусом в таблицу cutehistory.
         :param user_id: ID пользователя.
         :param amount: Сумма.
         :param cause: Причина.
+        :param chat_id: (необязательно) ID группы-получателя при пополнении баланса чата.
         """
         if not self.pool:
             raise RuntimeError("Подключение к базе данных не установлено.")
@@ -7023,11 +7024,11 @@ class Database:
 
         try:
             query = """
-                INSERT INTO cutehistory ("user_id", "-", cause, data, first_name, username, balance)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO cutehistory ("user_id", "-", cause, data, first_name, username, balance, chat_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             """
             async with self.pool.acquire() as connection:
-                await connection.execute(query , user_id , amount , cause , formatted_date , first_name , username, balance)
+                await connection.execute(query , user_id , amount , cause , formatted_date , first_name , username, balance, chat_id)
         except Exception as e:
             print(f"[ERROR] Ошибка при записи данных с минусом в таблицу cutehistory: {e}")
 
