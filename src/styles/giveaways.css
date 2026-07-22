@@ -330,6 +330,20 @@
 
 /* ============= МОДАЛКА ДЕТАЛЕЙ — призовой билет ============= */
 
+/* Собственное «билетное» окно — перекрывает зелёный фон базового .shop-modal
+   (он фермерски-изумрудный) винно-розовым, с рант-градиентом розовое→золото. */
+.shop-modal.giveaway-detail-modal {
+  border: 1px solid transparent;
+  background:
+    radial-gradient(135% 72% at 50% -8%, rgba(120, 34, 82, 0.5) 0%, transparent 56%) padding-box,
+    linear-gradient(180deg, #1c0b16 0%, #0b0510 100%) padding-box,
+    linear-gradient(135deg, #fde68a 0%, #f472b6 52%, #a78bfa 100%) border-box;
+  box-shadow:
+    0 26px 64px rgba(0, 0, 0, 0.62),
+    0 0 30px rgba(244, 114, 182, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
 .giveaway-detail-modal {
   position: relative;
   display: flex;
