@@ -1,17 +1,27 @@
 import { useEffect, useState } from 'react'
 import Portal from './Portal'
 import { fetchGiveaway } from '../lib/giveawaysClient'
-import { RARITY_ACCENT, formatGiveawayDeadlineTime, formatGiveawayPrize } from '../constants/giveaways'
+import { formatGiveawayDeadlineTime, formatGiveawayPrize } from '../constants/giveaways'
 import { openTelegramBotLink, getTelegramUser } from '../lib/telegram'
 
 const BOT_USERNAME = 'CuteGamingBot'
+
+// Канал может прийти как @name, name или полный https://t.me/name — приводим
+// к аккуратному @name для подписи.
+function channelHandle(raw) {
+  const name = String(raw ?? '')
+    .replace(/^https?:\/\/(t\.me|telegram\.me)\//i, '')
+    .replace(/^@/, '')
+    .replace(/\/+$/, '')
+  return `@${name}`
+}
 
 // Короткая подпись условия + признак числового прогресса (для полоски).
 const CONDITION_LABEL = {
   balance: () => 'Баланс КУТ',
   harvest_count: () => 'Урожаев собрано',
   item_count: (cond) => `Предмет «${cond.itemId}»`,
-  channel_sub: (cond) => `Подписка на @${cond.itemId}`,
+  channel_sub: (cond) => `Подписка на ${channelHandle(cond.itemId)}`,
   referral_count: () => 'Приглашено друзей',
 }
 
@@ -69,7 +79,15 @@ export default function GiveawayDetailModal({
 
   if (!isOpen || !giveawayId) return null
 
-  const accent = detail ? (RARITY_ACCENT[detail.rarity] ?? RARITY_ACCENT.common) : RARITY_ACCENT.common
+  // Окно розыгрыша всегда носит фирменную розово-золотую тему вкладки (не по
+  // редкости) — иначе common/rare красили бы рамку в зелёный/синий. Редкость
+  // читается на карточках-билетах в списке. --tab-accent-muted задаём здесь,
+  // т.к. модалка рендерится через Portal вне обёртки .tab-theme-giveaways.
+  const themeVars = {
+    '--ticket-accent-strong': '#f472b6',
+    '--ticket-accent-glow': 'rgba(244, 114, 182, 0.34)',
+    '--tab-accent-muted': 'rgba(249, 168, 212, 0.72)',
+  }
   const isUpcoming = Boolean(detail?.startsAt) && new Date(detail.startsAt).getTime() > Date.now()
   const satisfiedCount = detail ? detail.conditions.filter((c) => c.satisfied).length : 0
 
@@ -81,7 +99,7 @@ export default function GiveawayDetailModal({
           role="dialog"
           aria-modal="true"
           onClick={(e) => e.stopPropagation()}
-          style={{ '--ticket-accent-strong': accent.strong, '--ticket-accent-glow': accent.glow }}
+          style={themeVars}
         >
           <button type="button" className="shop-modal-close" onClick={onClose} aria-label="Закрыть">✕</button>
 
