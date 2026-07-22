@@ -1909,6 +1909,7 @@ class Database:
                 "drawType": row["draw_type"],
                 "startsAt": row["starts_at"].isoformat() if row["starts_at"] else None,
                 "endsAt": row["ends_at"].isoformat() if row["ends_at"] else None,
+                "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
                 "status": row["status"],
                 "conditionsCount": len(conditions),
                 "conditionsMet": conditions_met,
@@ -1927,6 +1928,7 @@ class Database:
                 raise ValueError("Розыгрыш не найден")
             ctx = await self._giveaway_condition_ctx(conn, user_id)
             conditions = await self._giveaway_conditions(conn, giveaway_id)
+            participants_count, _ = await self._giveaway_participants(conn, giveaway_id, limit=0)
             joined = await conn.fetchval(
                 "SELECT 1 FROM giveaway_entries WHERE giveaway_id = $1 AND user_id = $2",
                 giveaway_id, user_id,
@@ -1989,6 +1991,7 @@ class Database:
             "result": result,
             "winnerName": winner_name,
             "recipientsCount": recipients_count,
+            "participantsCount": participants_count,
         }
 
     async def participate_in_giveaway(self, user_id, giveaway_id):
