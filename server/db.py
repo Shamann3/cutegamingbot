@@ -971,7 +971,9 @@ class Database:
                 await conn.execute(
                     """
                     UPDATE users
-                    SET items = $2, tool_durability = $3::jsonb
+                    SET items = $2,
+                        tool_durability = $3::jsonb,
+                        harvest_count = harvest_count + 1
                     WHERE user_id = $1
                     """,
                     user_id,

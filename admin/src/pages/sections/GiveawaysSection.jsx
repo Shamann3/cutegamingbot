@@ -422,7 +422,7 @@ export default function GiveawaysSection() {
                   {cond.kind === 'channel_sub' && (
                     <input
                       className="panel-users-input"
-                      placeholder="@username канала"
+                      placeholder="@username или ссылка https://t.me/…"
                       value={cond.itemId}
                       onChange={(e) => updateCondition(idx, { itemId: e.target.value })}
                     />

@@ -20,6 +20,25 @@ TTL_MINUTES = 10
 _MEMBER_STATUSES = frozenset({"member", "administrator", "creator"})
 
 
+def normalize_channel(raw: str | None) -> str:
+    """Приводит любой ввод канала к чистому идентификатору без @ и без URL:
+    '@name' / 'name' / 'https://t.me/name' / 't.me/name/' → 'name'.
+    Так админ может вставить ссылку на канал, а не только @username, и всё
+    (getChatMember, кэш, ссылка «Перейти») работает одинаково."""
+    s = (raw or "").strip()
+    low = s.lower()
+    for prefix in ("https://", "http://"):
+        if low.startswith(prefix):
+            s = s[len(prefix):]
+            low = s.lower()
+            break
+    for host in ("t.me/", "telegram.me/"):
+        if low.startswith(host):
+            s = s[len(host):]
+            break
+    return s.lstrip("@").rstrip("/").strip()
+
+
 def _is_member_status(status: str | None) -> bool:
     return (status or "").strip().lower() in _MEMBER_STATUSES
 
@@ -37,7 +56,14 @@ async def _fetch_chat_member_status(channel: str, user_id: int) -> str | None:
 
     if not BOT_TOKEN:
         return None
-    chat_id = channel if channel.startswith("@") else f"@{channel}"
+    # Нормализуем даже уже сохранённые каналы-ссылки (старые данные могли
+    # прийти как https://t.me/name). Числовой chat_id (-100…) для приватных
+    # каналов передаём как есть — к нему @ не добавляем.
+    normalized = normalize_channel(channel)
+    if normalized.lstrip("-").isdigit():
+        chat_id = normalized
+    else:
+        chat_id = f"@{normalized}"
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/getChatMember"
     try:
         async with aiohttp.ClientSession() as session:
