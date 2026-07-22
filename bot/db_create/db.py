@@ -379,6 +379,30 @@ class PublicCheckResult_CheckpublickGroup:
     reason_CheckpublickGroup: str = ""
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # =========================
 #   PUBLIC GROUP CHECKER
 # =========================
@@ -468,6 +492,23 @@ class PublicGroupChecker_CheckpublickGroup:
 
             print(f"[CHECKPUBLICKGROUP][CACHE] Попадание в кэш chat_id={chat_id_CheckpublickGroup}")
             return res_CheckpublickGroup
+
+
+
+
+
+    async def get_referrals_with_details(self , referrer_id: int) -> List [ Dict [ str , Any ] ]:
+        """Возвращает список пользователей, у которых refferer_id = referrer_id."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT user_id, first_name, username
+                FROM users
+                WHERE refferer_id = $1
+                ORDER BY user_id
+                """ , referrer_id)
+            return [ dict(row) for row in rows ]
+
 
     async def _save_to_cache_CheckpublickGroup(
         self,
@@ -23581,7 +23622,17 @@ class Database:
         except Exception as e:
             print(f"[ERROR] sanitize_user_inventory_against_dex user_id={user_id}: {e}")
             return await self.get_user_inventory(user_id)
-
+    async def get_referrals_with_details(self , referrer_id: int) -> List [ Dict [ str , Any ] ]:
+        """Возвращает список пользователей, у которых refferer_id = referrer_id."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT user_id, first_name, username
+                FROM users
+                WHERE refferer_id = $1
+                ORDER BY user_id
+                """ , referrer_id)
+            return [ dict(row) for row in rows ]
 # Singleton used across the bot (main.py, handlers, games).
 db = Database(db_settings)
 

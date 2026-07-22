@@ -1,0 +1,8 @@
+# 1. Добавить все измененные файлы (Dockerfile, конфиги и т.д.) в индекс
+git add .
+
+# 2. Закоммитить изменения (название коммита внутри кавычек можно написать любое)
+git commit -m "fix: digitalocean deployment and ssh tunnel config"
+
+# 3. Отправить изменения в ветку main на GitHub
+git push origin main
