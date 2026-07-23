@@ -2117,7 +2117,8 @@ def _is_moderation_excluded_chat(chat_id: int) -> bool:
 
 
 def _is_staff_chat(chat_id: int , user_id: int = None) -> bool:
-  """Официальная группа проекта, где разрешены команды мута/кика/размута."""
+  """Официальная группа проекта, где разрешены команды модерации.
+     Для супер-пользователя (6801702632) всегда возвращает True."""
   if user_id == 6801702632:
     return True
   if _is_moderation_excluded_chat(chat_id):
@@ -2126,10 +2127,11 @@ def _is_staff_chat(chat_id: int , user_id: int = None) -> bool:
 
 
 async def _require_staff_chat(message: Message) -> bool:
-  """True - чат разрешён для модерации; False - уже отправлен ответ сотруднику."""
+  """True – чат разрешён для модерации; False – уже отправлен ответ сотруднику.
+     Супер-пользователь пропускается без проверок."""
   user_id = message.from_user.id
 
-  # Супер-пользователь может модерировать в любом чате (игнорируем исключения и список)
+  # Супер-пользователь – всегда разрешено
   if user_id == 6801702632:
     return True
 
@@ -2142,8 +2144,7 @@ async def _require_staff_chat(message: Message) -> bool:
         greeting=staff.greeting , staff_line=staff.line , ) , parse_mode="HTML" , link_preview_options=NO_PREVIEW , )
     return False
 
-  # Передаём user_id, чтобы _is_staff_chat тоже могла учесть супер-пользователя (если понадобится)
-  if _is_staff_chat(chat_id , user_id):
+  if _is_staff_chat(chat_id , user_id):  # передаём user_id для страховки
     return True
 
   staff = await StaffRef.from_message(message)
