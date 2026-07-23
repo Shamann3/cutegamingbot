@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
 import AdminSelect from '../../components/AdminSelect'
 import CraftRecipeWizard from '../../components/CraftRecipeWizard'
+import CraftMapView from '../../components/craftmap/CraftMapView'
 import DexItemSearchPicker from '../../components/DexItemSearchPicker'
 import {
   createContentCraft,
@@ -52,6 +53,7 @@ const TABS = [
   { id: 'items', label: 'Предметы' },
   { id: 'crops', label: 'Культуры' },
   { id: 'craft', label: 'Крафт' },
+  { id: 'map', label: '🗺 Карта' },
   { id: 'quests', label: 'Задания' },
 ]
 
@@ -1088,6 +1090,8 @@ export default function ContentSection() {
           )}
         </div>
       )}
+
+      {tab === 'map' && <CraftMapView />}
 
       {tab === 'quests' && (
         <div className="panel-content-stack">
