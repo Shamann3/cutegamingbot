@@ -57,30 +57,31 @@ function hasCycle(index, nodeIds) {
   const color = new Map()
   for (const id of nodeIds) color.set(id, WHITE)
   const cycleNodes = new Set()
+  const path = []
 
   const visit = (node) => {
     color.set(node, GRAY)
+    path.push(node)
     for (const next of index.forward.get(node) || []) {
       const c = color.get(next) ?? WHITE
       if (c === GRAY) {
-        cycleNodes.add(node)
-        cycleNodes.add(next)
-        return true
-      }
-      if (c === WHITE && visit(next)) {
-        cycleNodes.add(node)
-        return true
+        // back-edge: cycle members are the path segment from `next` to the top
+        const start = path.indexOf(next)
+        if (start !== -1) {
+          for (let i = start; i < path.length; i++) cycleNodes.add(path[i])
+        }
+      } else if (c === WHITE) {
+        visit(next)
       }
     }
+    path.pop()
     color.set(node, BLACK)
-    return false
   }
 
-  let found = false
   for (const id of nodeIds) {
-    if ((color.get(id) ?? WHITE) === WHITE && visit(id)) found = true
+    if ((color.get(id) ?? WHITE) === WHITE) visit(id)
   }
-  return { found, cycleNodes }
+  return { found: cycleNodes.size > 0, cycleNodes }
 }
 
 export function detectErrors(graph, items) {
@@ -149,28 +150,41 @@ export function detectErrors(graph, items) {
     })
   }
 
-  // unreachable results (a produced item whose ancestry doesn't bottom out at base resources)
-  const memo = new Map()
-  const reachable = (id, stack) => {
-    if (memo.has(id)) return memo.get(id)
-    if (stack.has(id)) return false // cycle
-    const producers = index.backward.get(id)
-    if (!producers || producers.size === 0) {
-      memo.set(id, true) // base resource
+  // unreachable results: a produced item is reachable if it has no producers
+  // (base resource) OR at least one recipe whose ingredients are all reachable
+  // and non-missing. Only positive results are memoized (a false may be a
+  // transient stack sentinel).
+  const nodeById = new Map(nodes.map((n) => [n.id, n]))
+  const reachMemo = new Map()
+  const isReachable = (id, stack) => {
+    if (reachMemo.has(id)) return reachMemo.get(id)
+    if (stack.has(id)) return false // cycle along this path
+    const recipeIds = index.producedBy.get(id) || []
+    if (recipeIds.length === 0) {
+      reachMemo.set(id, true) // base resource
       return true
     }
     stack.add(id)
-    let ok = true
-    for (const ing of producers) {
-      const node = graph.nodes.find((n) => n.id === ing)
-      if (node && node.item && node.item.missing) { ok = false; break }
-      if (!reachable(ing, stack)) { ok = false; break }
+    let ok = false
+    for (const rid of recipeIds) {
+      const recipe = index.recipesById.get(rid)
+      if (!recipe) continue
+      const ings = [String(recipe.ingredientAId), String(recipe.ingredientBId)]
+      let allOk = true
+      for (const ing of ings) {
+        const node = nodeById.get(ing)
+        if (node && node.item && node.item.missing) { allOk = false; break }
+        if (!isReachable(ing, stack)) { allOk = false; break }
+      }
+      if (allOk) { ok = true; break } // at least one recipe resolves
     }
     stack.delete(id)
-    memo.set(id, ok)
+    if (ok) reachMemo.set(id, true)
     return ok
   }
-  const unreachable = nodeIds.filter((id) => (index.producedBy.get(id) || []).length > 0 && !reachable(id, new Set()))
+  const unreachable = nodeIds.filter(
+    (id) => (index.producedBy.get(id) || []).length > 0 && !isReachable(id, new Set()),
+  )
   if (unreachable.length) {
     errors.push({
       type: 'unreachable',
@@ -195,11 +209,12 @@ export function computeStats(graph, items, errors) {
     (id) => (index.usedIn.get(id) || []).length === 0 && (index.producedBy.get(id) || []).length > 0,
   )
 
-  // Longest-path depth on the DAG; cyclic nodes contribute 0 (guarded by stack).
+  // Longest-path depth on the DAG. Cyclic nodes have undefined depth (null),
+  // are not memoized while transient, and are excluded from the stats.
   const depthMemo = new Map()
   const depthOf = (id, stack) => {
     if (depthMemo.has(id)) return depthMemo.get(id)
-    if (stack.has(id)) return 0
+    if (stack.has(id)) return null // cyclic: depth undefined
     const parents = index.backward.get(id)
     if (!parents || parents.size === 0) {
       depthMemo.set(id, 0)
@@ -207,12 +222,18 @@ export function computeStats(graph, items, errors) {
     }
     stack.add(id)
     let best = 0
-    for (const p of parents) best = Math.max(best, 1 + depthOf(p, stack))
+    let cyclic = false
+    for (const p of parents) {
+      const d = depthOf(p, stack)
+      if (d === null) { cyclic = true; break }
+      best = Math.max(best, 1 + d)
+    }
     stack.delete(id)
+    if (cyclic) return null // do not memoize a transient cyclic result
     depthMemo.set(id, best)
     return best
   }
-  const depths = nodeIds.map((id) => depthOf(id, new Set()))
+  const depths = nodeIds.map((id) => depthOf(id, new Set())).filter((d) => d !== null)
   const nonBase = depths.filter((d) => d > 0)
   const maxDepth = depths.length ? Math.max(...depths) : 0
   const avgDepth = nonBase.length ? nonBase.reduce((a, b) => a + b, 0) / nonBase.length : 0
