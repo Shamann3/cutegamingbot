@@ -8,6 +8,9 @@ import { notifyAdmin } from '../../lib/notify'
 import { buildGraph } from './graph/buildGraph'
 import { layoutGraph } from './graph/layout'
 import ItemNode from './nodes/ItemNode'
+import { useCraftMapState } from './useCraftMapState'
+import SearchBar from './panels/SearchBar'
+import FilterPanel from './panels/FilterPanel'
 
 const nodeTypes = { item: ItemNode }
 
@@ -41,6 +44,18 @@ export default function CraftMapView() {
   const rfRef = useRef(null)
 
   const graph = useMemo(() => buildGraph(raw.items, raw.recipes), [raw.items, raw.recipes])
+  const mapState = useCraftMapState(graph)
+
+  useEffect(() => {
+    const { matchedIds, visibleIds } = mapState
+    const searching = matchedIds.size > 0
+    setNodes((prev) => prev.map((n) => {
+      const hiddenByFilter = !visibleIds.has(n.id)
+      const dimmed = hiddenByFilter || (searching && !matchedIds.has(n.id))
+      const highlighted = searching && matchedIds.has(n.id)
+      return { ...n, hidden: hiddenByFilter, data: { ...n.data, dimmed, highlighted } }
+    }))
+  }, [mapState.matchedIds, mapState.visibleIds, setNodes])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -102,6 +117,8 @@ export default function CraftMapView() {
       <div className="craftmap-toolbar">
         <button className="panel-users-btn" onClick={runAutoLayout} disabled={loading}>⤢ Авто-раскладка</button>
         <button className="panel-users-btn" onClick={load} disabled={loading}>↻ Обновить</button>
+        <SearchBar query={mapState.query} onChange={mapState.setQuery} count={mapState.matchedIds.size} />
+        <FilterPanel categories={mapState.categories} hidden={mapState.hiddenCategories} onToggle={mapState.toggleCategory} />
         <span className="panel-shelf-muted">{loading ? 'Загрузка…' : `${graph.nodes.length} предметов · ${graph.edges.length} связей`}</span>
       </div>
       <ReactFlow
