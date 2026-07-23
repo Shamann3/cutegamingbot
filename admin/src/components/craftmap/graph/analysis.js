@@ -2,7 +2,7 @@
 
 export function traverseChain(itemId, graph) {
   const start = String(itemId)
-  const { edges, index } = graph
+  const { edges } = graph
   const edgesByTarget = new Map()
   const edgesBySource = new Map()
   for (const e of edges) {

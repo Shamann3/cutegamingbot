@@ -135,7 +135,7 @@ export default function CraftMapView() {
   const onPaneClick = useCallback(() => {
     setSelectedId(null)
     setEdges((prev) => prev.map((e) => ({ ...e, animated: false, style: { ...(e.style || {}), opacity: 1 } })))
-    setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, dimmed: false, highlighted: false } })))
+    setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, dimmed: false, highlighted: false, errored: false } })))
   }, [setNodes, setEdges])
 
   const focusItems = useCallback((itemIds) => {
@@ -158,7 +158,6 @@ export default function CraftMapView() {
 
   const onNodeContextMenu = useCallback((evt, node) => {
     evt.preventDefault()
-    const item = graph.index.itemsById.get(node.id) || node.data.item
     setCtxMenu({
       x: evt.clientX,
       y: evt.clientY,
@@ -170,7 +169,7 @@ export default function CraftMapView() {
         { label: '🔗 Копировать ссылку', onClick: () => navigator.clipboard?.writeText(`${window.location.origin}${window.location.pathname}#craft-item-${node.id}`) },
       ],
     })
-  }, [graph, goTo])
+  }, [goTo])
 
   const runAutoLayout = useCallback(() => {
     const positions = layoutGraph(graph.nodes, graph.edges)

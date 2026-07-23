@@ -6,7 +6,7 @@ export default function FilterPanel({ categories, hidden, onToggle }) {
         <button
           key={cat}
           type="button"
-          className={`craftmap-node-tag${hidden.has(cat) ? '' : ' craftmap-tag-active'}`}
+          className="craftmap-node-tag"
           style={{ cursor: 'pointer', opacity: hidden.has(cat) ? 0.4 : 1 }}
           onClick={() => onToggle(cat)}
         >

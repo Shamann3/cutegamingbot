@@ -49,4 +49,17 @@ describe('buildGraph', () => {
     expect(one).toBeDefined()
     expect(one.item.missing).toBe(true)
   })
+
+  it('does not duplicate a recipe id in usedIn when both ingredient slots are the same item', () => {
+    const sameItems = [
+      { id: '1', name: 'Бревно', emoji: '🪵' },
+      { id: '2', name: 'Доска', emoji: '🪵' },
+    ]
+    const sameRecipes = [
+      { id: 20, key: 'plank', resultItemId: '2', ingredientAId: '1', ingredientBId: '1', successPercent: 100, enabled: true, remains: 0, resultQty: 1 },
+    ]
+    const g = buildGraph(sameItems, sameRecipes)
+    expect(g.index.usedIn.get('1')).toEqual([20]) // not [20, 20]
+    expect(g.edges.map((e) => e.id).sort()).toEqual(['20:a', '20:b']) // both slot edges still present
+  })
 })

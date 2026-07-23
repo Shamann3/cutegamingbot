@@ -6,6 +6,15 @@ function pushMap(map, key, value) {
   else map.set(key, [value])
 }
 
+function pushMapUnique(map, key, value) {
+  const arr = map.get(key)
+  if (arr) {
+    if (!arr.includes(value)) arr.push(value)
+  } else {
+    map.set(key, [value])
+  }
+}
+
 function addSet(map, key, value) {
   const set = map.get(key)
   if (set) set.add(value)
@@ -52,7 +61,7 @@ export function buildGraph(items, recipes, { includeOrphans = false } = {}) {
         resultQty: recipe.resultQty,
         enabled: recipe.enabled !== false,
       })
-      pushMap(usedIn, ing, rid)
+      pushMapUnique(usedIn, ing, rid)
       addSet(forward, ing, result)
       addSet(backward, result, ing)
     }
