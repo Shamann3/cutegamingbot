@@ -7,13 +7,15 @@ import { fetchCraftMap, saveCraftMapPositions } from '../../lib/adminClient'
 import { notifyAdmin } from '../../lib/notify'
 import { buildGraph } from './graph/buildGraph'
 import { layoutGraph } from './graph/layout'
-import { traverseChain } from './graph/analysis'
+import { traverseChain, detectErrors, computeStats } from './graph/analysis'
 import ItemNode from './nodes/ItemNode'
 import { useCraftMapState } from './useCraftMapState'
 import SearchBar from './panels/SearchBar'
 import FilterPanel from './panels/FilterPanel'
 import PropertiesPanel from './panels/PropertiesPanel'
 import ContextMenu from './panels/ContextMenu'
+import StatsBar from './panels/StatsBar'
+import ErrorsPanel from './panels/ErrorsPanel'
 
 const nodeTypes = { item: ItemNode }
 
@@ -71,6 +73,9 @@ export default function CraftMapView() {
     () => (selectedId ? traverseChain(selectedId, graph) : null),
     [selectedId, graph],
   )
+
+  const errors = useMemo(() => detectErrors(graph, raw.items), [graph, raw.items])
+  const stats = useMemo(() => computeStats(graph, raw.items, errors), [graph, raw.items, errors])
 
   useEffect(() => {
     if (!chain) return
@@ -133,6 +138,14 @@ export default function CraftMapView() {
     setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, dimmed: false, highlighted: false } })))
   }, [setNodes, setEdges])
 
+  const focusItems = useCallback((itemIds) => {
+    const set = new Set(itemIds.map(String))
+    setNodes((prev) => prev.map((n) => ({
+      ...n,
+      data: { ...n.data, errored: set.has(n.id), dimmed: set.size > 0 && !set.has(n.id) },
+    })))
+  }, [setNodes])
+
   const goTo = useCallback((itemId) => {
     const id = String(itemId)
     setSelectedId(id)
@@ -178,40 +191,44 @@ export default function CraftMapView() {
   }
 
   return (
-    <div className="craftmap-wrap">
-      <div className="craftmap-toolbar">
-        <button className="panel-users-btn" onClick={runAutoLayout} disabled={loading}>⤢ Авто-раскладка</button>
-        <button className="panel-users-btn" onClick={load} disabled={loading}>↻ Обновить</button>
-        <SearchBar query={mapState.query} onChange={mapState.setQuery} count={mapState.matchedIds.size} />
-        <FilterPanel categories={mapState.categories} hidden={mapState.hiddenCategories} onToggle={mapState.toggleCategory} />
-        <span className="panel-shelf-muted">{loading ? 'Загрузка…' : `${graph.nodes.length} предметов · ${graph.edges.length} связей`}</span>
+    <>
+      <StatsBar stats={stats} />
+      <div className="craftmap-wrap">
+        <div className="craftmap-toolbar">
+          <button className="panel-users-btn" onClick={runAutoLayout} disabled={loading}>⤢ Авто-раскладка</button>
+          <button className="panel-users-btn" onClick={load} disabled={loading}>↻ Обновить</button>
+          <SearchBar query={mapState.query} onChange={mapState.setQuery} count={mapState.matchedIds.size} />
+          <FilterPanel categories={mapState.categories} hidden={mapState.hiddenCategories} onToggle={mapState.toggleCategory} />
+          <span className="panel-shelf-muted">{loading ? 'Загрузка…' : `${graph.nodes.length} предметов · ${graph.edges.length} связей`}</span>
+        </div>
+        <ReactFlow
+          className="craftmap-flow"
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeDragStop={onNodeDragStop}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+          onNodeContextMenu={onNodeContextMenu}
+          nodeTypes={nodeTypes}
+          onInit={(inst) => { rfRef.current = inst }}
+          onlyRenderVisibleElements
+          minZoom={0.1}
+          maxZoom={2.5}
+          fitView
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background gap={22} />
+          <MiniMap pannable zoomable />
+          <Controls />
+        </ReactFlow>
+        {selectedItem ? (
+          <PropertiesPanel item={selectedItem} graph={graph} onClose={onPaneClick} onGoTo={goTo} />
+        ) : null}
+        {ctxMenu ? <ContextMenu x={ctxMenu.x} y={ctxMenu.y} actions={ctxMenu.actions} onClose={() => setCtxMenu(null)} /> : null}
+        <ErrorsPanel errors={errors} onFocus={focusItems} />
       </div>
-      <ReactFlow
-        className="craftmap-flow"
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeDragStop={onNodeDragStop}
-        onNodeClick={onNodeClick}
-        onPaneClick={onPaneClick}
-        onNodeContextMenu={onNodeContextMenu}
-        nodeTypes={nodeTypes}
-        onInit={(inst) => { rfRef.current = inst }}
-        onlyRenderVisibleElements
-        minZoom={0.1}
-        maxZoom={2.5}
-        fitView
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background gap={22} />
-        <MiniMap pannable zoomable />
-        <Controls />
-      </ReactFlow>
-      {selectedItem ? (
-        <PropertiesPanel item={selectedItem} graph={graph} onClose={onPaneClick} onGoTo={goTo} />
-      ) : null}
-      {ctxMenu ? <ContextMenu x={ctxMenu.x} y={ctxMenu.y} actions={ctxMenu.actions} onClose={() => setCtxMenu(null)} /> : null}
-    </div>
+    </>
   )
 }
