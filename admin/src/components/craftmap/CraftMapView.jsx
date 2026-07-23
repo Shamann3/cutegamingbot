@@ -12,6 +12,7 @@ import ItemNode from './nodes/ItemNode'
 import { useCraftMapState } from './useCraftMapState'
 import SearchBar from './panels/SearchBar'
 import FilterPanel from './panels/FilterPanel'
+import PropertiesPanel from './panels/PropertiesPanel'
 
 const nodeTypes = { item: ItemNode }
 
@@ -47,6 +48,11 @@ export default function CraftMapView() {
   const graph = useMemo(() => buildGraph(raw.items, raw.recipes), [raw.items, raw.recipes])
   const mapState = useCraftMapState(graph)
   const [selectedId, setSelectedId] = useState(null)
+
+  const selectedItem = useMemo(
+    () => (selectedId ? (graph.index.itemsById.get(selectedId) || graph.nodes.find((n) => n.id === selectedId)?.item) : null),
+    [selectedId, graph],
+  )
 
   useEffect(() => {
     const { matchedIds, visibleIds } = mapState
@@ -125,6 +131,16 @@ export default function CraftMapView() {
     setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, dimmed: false, highlighted: false } })))
   }, [setNodes, setEdges])
 
+  const goTo = useCallback((itemId) => {
+    const id = String(itemId)
+    setSelectedId(id)
+    const node = nodes.find((n) => n.id === id)
+    if (node && rfRef.current) {
+      // node is ~230x120; offset to its center
+      rfRef.current.setCenter(node.position.x + 115, node.position.y + 60, { zoom: 1.2, duration: 400 })
+    }
+  }, [nodes])
+
   const runAutoLayout = useCallback(() => {
     const positions = layoutGraph(graph.nodes, graph.edges)
     setNodes((prev) => prev.map((n) => ({ ...n, position: positions[n.id] || n.position })))
@@ -173,6 +189,9 @@ export default function CraftMapView() {
         <MiniMap pannable zoomable />
         <Controls />
       </ReactFlow>
+      {selectedItem ? (
+        <PropertiesPanel item={selectedItem} graph={graph} onClose={onPaneClick} onGoTo={goTo} />
+      ) : null}
     </div>
   )
 }
