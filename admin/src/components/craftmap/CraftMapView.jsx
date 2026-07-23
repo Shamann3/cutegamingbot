@@ -8,6 +8,7 @@ import { notifyAdmin } from '../../lib/notify'
 import { buildGraph } from './graph/buildGraph'
 import { layoutGraph } from './graph/layout'
 import { traverseChain, detectErrors, computeStats } from './graph/analysis'
+import { nodeVisual, edgeVisual } from './graph/viewState'
 import ItemNode from './nodes/ItemNode'
 import { useCraftMapState } from './useCraftMapState'
 import SearchBar from './panels/SearchBar'
@@ -34,7 +35,7 @@ function toFlowEdges(graph) {
     source: e.source,
     target: e.target,
     animated: false,
-    data: { recipeId: e.recipeId, recipeKey: e.recipeKey, resultQty: e.resultQty },
+    data: { recipeId: e.recipeId, recipeKey: e.recipeKey, resultQty: e.resultQty, enabled: e.enabled },
     style: e.enabled ? undefined : { strokeDasharray: '5 5', opacity: 0.6 },
   }))
 }
@@ -51,23 +52,13 @@ export default function CraftMapView() {
   const graph = useMemo(() => buildGraph(raw.items, raw.recipes), [raw.items, raw.recipes])
   const mapState = useCraftMapState(graph)
   const [selectedId, setSelectedId] = useState(null)
+  const [errorFocus, setErrorFocus] = useState(null) // Set<string> | null
   const [ctxMenu, setCtxMenu] = useState(null)
 
   const selectedItem = useMemo(
     () => (selectedId ? (graph.index.itemsById.get(selectedId) || graph.nodes.find((n) => n.id === selectedId)?.item) : null),
     [selectedId, graph],
   )
-
-  useEffect(() => {
-    const { matchedIds, visibleIds } = mapState
-    const searching = matchedIds.size > 0
-    setNodes((prev) => prev.map((n) => {
-      const hiddenByFilter = !visibleIds.has(n.id)
-      const dimmed = hiddenByFilter || (searching && !matchedIds.has(n.id))
-      const highlighted = searching && matchedIds.has(n.id)
-      return { ...n, hidden: hiddenByFilter, data: { ...n.data, dimmed, highlighted } }
-    }))
-  }, [mapState.matchedIds, mapState.visibleIds, setNodes])
 
   const chain = useMemo(
     () => (selectedId ? traverseChain(selectedId, graph) : null),
@@ -78,21 +69,26 @@ export default function CraftMapView() {
   const stats = useMemo(() => computeStats(graph, raw.items, errors), [graph, raw.items, errors])
 
   useEffect(() => {
-    if (!chain) return
-    setNodes((prev) => prev.map((n) => ({
-      ...n,
-      data: {
-        ...n.data,
-        dimmed: !chain.nodes.has(n.id),
-        highlighted: n.id === selectedId,
-      },
-    })))
-    setEdges((prev) => prev.map((e) => ({
-      ...e,
-      animated: chain.edges.has(e.id),
-      style: { ...(e.style || {}), opacity: chain.edges.has(e.id) ? 1 : 0.12 },
-    })))
-  }, [chain, selectedId, setNodes, setEdges])
+    const ctx = {
+      selectedId,
+      chainNodes: chain ? chain.nodes : null,
+      chainEdges: chain ? chain.edges : null,
+      matchedIds: mapState.matchedIds,
+      visibleIds: mapState.visibleIds,
+      errorFocus,
+    }
+    setNodes((prev) => prev.map((n) => {
+      const v = nodeVisual(n.id, ctx)
+      return { ...n, hidden: v.hidden, data: { ...n.data, dimmed: v.dimmed, highlighted: v.highlighted, errored: v.errored } }
+    }))
+    setEdges((prev) => prev.map((e) => {
+      const v = edgeVisual(e.id, e.data?.enabled !== false, ctx)
+      const style = { ...(e.style || {}), opacity: v.opacity }
+      if (v.dashed) style.strokeDasharray = '5 5'
+      else delete style.strokeDasharray
+      return { ...e, animated: v.animated, style }
+    }))
+  }, [selectedId, chain, mapState.matchedIds, mapState.visibleIds, errorFocus, setNodes, setEdges])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -131,20 +127,16 @@ export default function CraftMapView() {
 
   const onNodeDragStop = useCallback((_evt, node) => { persist([node]) }, [persist])
 
-  const onNodeClick = useCallback((_evt, node) => { setSelectedId(node.id) }, [])
+  const onNodeClick = useCallback((_evt, node) => { setErrorFocus(null); setSelectedId(node.id) }, [])
   const onPaneClick = useCallback(() => {
     setSelectedId(null)
-    setEdges((prev) => prev.map((e) => ({ ...e, animated: false, style: { ...(e.style || {}), opacity: 1 } })))
-    setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, dimmed: false, highlighted: false, errored: false } })))
-  }, [setNodes, setEdges])
+    setErrorFocus(null)
+  }, [])
 
   const focusItems = useCallback((itemIds) => {
-    const set = new Set(itemIds.map(String))
-    setNodes((prev) => prev.map((n) => ({
-      ...n,
-      data: { ...n.data, errored: set.has(n.id), dimmed: set.size > 0 && !set.has(n.id) },
-    })))
-  }, [setNodes])
+    setSelectedId(null)
+    setErrorFocus(new Set(itemIds.map(String)))
+  }, [])
 
   const goTo = useCallback((itemId) => {
     const id = String(itemId)
