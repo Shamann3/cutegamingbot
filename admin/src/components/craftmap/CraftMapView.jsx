@@ -17,6 +17,7 @@ import PropertiesPanel from './panels/PropertiesPanel'
 import ContextMenu from './panels/ContextMenu'
 import StatsBar from './panels/StatsBar'
 import ErrorsPanel from './panels/ErrorsPanel'
+import AddCraftPanel from './panels/AddCraftPanel'
 
 const nodeTypes = { item: ItemNode }
 
@@ -40,7 +41,7 @@ function toFlowEdges(graph) {
   }))
 }
 
-export default function CraftMapView() {
+export default function CraftMapView({ canEdit = false }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [raw, setRaw] = useState({ items: [], recipes: [], positions: {} })
@@ -54,6 +55,7 @@ export default function CraftMapView() {
   const [selectedId, setSelectedId] = useState(null)
   const [errorFocus, setErrorFocus] = useState(null) // Set<string> | null
   const [ctxMenu, setCtxMenu] = useState(null)
+  const [showAdd, setShowAdd] = useState(false)
 
   const selectedItem = useMemo(
     () => (selectedId ? (graph.index.itemsById.get(selectedId) || graph.nodes.find((n) => n.id === selectedId)?.item) : null),
@@ -188,6 +190,7 @@ export default function CraftMapView() {
         <div className="craftmap-toolbar">
           <button className="panel-users-btn" onClick={runAutoLayout} disabled={loading}>⤢ Авто-раскладка</button>
           <button className="panel-users-btn" onClick={load} disabled={loading}>↻ Обновить</button>
+          {canEdit ? <button className="panel-users-btn panel-users-btn-primary" onClick={() => setShowAdd(true)}>＋ Новый крафт</button> : null}
           <SearchBar query={mapState.query} onChange={mapState.setQuery} count={mapState.matchedIds.size} />
           <FilterPanel categories={mapState.categories} hidden={mapState.hiddenCategories} onToggle={mapState.toggleCategory} />
           <span className="panel-shelf-muted">{loading ? 'Загрузка…' : `${graph.nodes.length} предметов · ${graph.edges.length} связей`}</span>
@@ -218,6 +221,7 @@ export default function CraftMapView() {
           <PropertiesPanel item={selectedItem} graph={graph} onClose={onPaneClick} onGoTo={goTo} />
         ) : null}
         {ctxMenu ? <ContextMenu x={ctxMenu.x} y={ctxMenu.y} actions={ctxMenu.actions} onClose={() => setCtxMenu(null)} /> : null}
+        {showAdd ? <AddCraftPanel onClose={() => setShowAdd(false)} onCreated={() => { setShowAdd(false); load() }} /> : null}
         <ErrorsPanel errors={errors} onFocus={focusItems} />
       </div>
     </>
