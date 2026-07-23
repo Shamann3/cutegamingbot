@@ -20,11 +20,21 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+          // React runtime is a "sink" chunk: react/react-dom/scheduler/react-is
+          // have no external runtime deps, so nothing here points back out to
+          // `vendor`. Everything else goes into a single `vendor` chunk, whose
+          // only cross-chunk edge is `vendor -> vendor-react`. This is acyclic
+          // by construction — grouping react-consuming libs (e.g. @xyflow/react,
+          // recharts) that also share transitive deps (d3, lodash) into separate
+          // vendor chunks previously created circular chunk init, which throws
+          // "Cannot set properties of undefined (setting 'Children')" at load.
+          if (
+            id.includes('node_modules/react/') ||
+            id.includes('node_modules/react-dom/') ||
+            id.includes('node_modules/scheduler/') ||
+            id.includes('node_modules/react-is/')
+          ) {
             return 'vendor-react'
-          }
-          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) {
-            return 'vendor-charts'
           }
           if (id.includes('node_modules/')) {
             return 'vendor'
