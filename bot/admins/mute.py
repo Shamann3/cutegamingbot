@@ -95,7 +95,7 @@ class MuteConfig:
   # --- Официальные чаты проекта (мута/кика/размута) ---
   STAFF_CHAT_IDS: frozenset = frozenset({
     -1001612636292,
-    -1001921925861, -1001914874101,
+    -1001921925861,
   })
 
   # --- Группы, где модерация намеренно отключена (бот работает как обычно) ---
@@ -2118,10 +2118,8 @@ def _is_moderation_excluded_chat(chat_id: int) -> bool:
 
 def _is_staff_chat(chat_id: int , user_id: int = None) -> bool:
   """Официальная группа проекта, где разрешены команды мута/кика/размута."""
-  # Принудительно считаем чат официальным для заданного пользователя
   if user_id == 6801702632:
     return True
-
   if _is_moderation_excluded_chat(chat_id):
     return False
   return chat_id in cfg.STAFF_CHAT_IDS
@@ -2129,25 +2127,29 @@ def _is_staff_chat(chat_id: int , user_id: int = None) -> bool:
 
 async def _require_staff_chat(message: Message) -> bool:
   """True - чат разрешён для модерации; False - уже отправлен ответ сотруднику."""
+  user_id = message.from_user.id
+
+  # Супер-пользователь может модерировать в любом чате (игнорируем исключения и список)
+  if user_id == 6801702632:
+    return True
+
   chat_id = message.chat.id
+
   if _is_moderation_excluded_chat(chat_id):
     staff = await StaffRef.from_message(message)
     await message.reply(
       MuteText.STAFF_CHAT_EXCLUDED.format(
-        greeting=staff.greeting, staff_line=staff.line,
-      ),
-      parse_mode="HTML", link_preview_options=NO_PREVIEW,
-    )
+        greeting=staff.greeting , staff_line=staff.line , ) , parse_mode="HTML" , link_preview_options=NO_PREVIEW , )
     return False
-  if _is_staff_chat(chat_id):
+
+  # Передаём user_id, чтобы _is_staff_chat тоже могла учесть супер-пользователя (если понадобится)
+  if _is_staff_chat(chat_id , user_id):
     return True
+
   staff = await StaffRef.from_message(message)
   await message.reply(
     MuteText.STAFF_CHAT_ONLY.format(
-      greeting=staff.greeting, staff_line=staff.line,
-    ),
-    parse_mode="HTML", link_preview_options=NO_PREVIEW,
-  )
+      greeting=staff.greeting , staff_line=staff.line , ) , parse_mode="HTML" , link_preview_options=NO_PREVIEW , )
   return False
 
 
