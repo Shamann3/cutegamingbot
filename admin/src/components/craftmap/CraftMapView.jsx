@@ -7,6 +7,7 @@ import { fetchCraftMap, saveCraftMapPositions } from '../../lib/adminClient'
 import { notifyAdmin } from '../../lib/notify'
 import { buildGraph } from './graph/buildGraph'
 import { layoutGraph } from './graph/layout'
+import { traverseChain } from './graph/analysis'
 import ItemNode from './nodes/ItemNode'
 import { useCraftMapState } from './useCraftMapState'
 import SearchBar from './panels/SearchBar'
@@ -45,6 +46,7 @@ export default function CraftMapView() {
 
   const graph = useMemo(() => buildGraph(raw.items, raw.recipes), [raw.items, raw.recipes])
   const mapState = useCraftMapState(graph)
+  const [selectedId, setSelectedId] = useState(null)
 
   useEffect(() => {
     const { matchedIds, visibleIds } = mapState
@@ -56,6 +58,28 @@ export default function CraftMapView() {
       return { ...n, hidden: hiddenByFilter, data: { ...n.data, dimmed, highlighted } }
     }))
   }, [mapState.matchedIds, mapState.visibleIds, setNodes])
+
+  const chain = useMemo(
+    () => (selectedId ? traverseChain(selectedId, graph) : null),
+    [selectedId, graph],
+  )
+
+  useEffect(() => {
+    if (!chain) return
+    setNodes((prev) => prev.map((n) => ({
+      ...n,
+      data: {
+        ...n.data,
+        dimmed: !chain.nodes.has(n.id),
+        highlighted: n.id === selectedId,
+      },
+    })))
+    setEdges((prev) => prev.map((e) => ({
+      ...e,
+      animated: chain.edges.has(e.id),
+      style: { ...(e.style || {}), opacity: chain.edges.has(e.id) ? 1 : 0.12 },
+    })))
+  }, [chain, selectedId, setNodes, setEdges])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -94,6 +118,13 @@ export default function CraftMapView() {
 
   const onNodeDragStop = useCallback((_evt, node) => { persist([node]) }, [persist])
 
+  const onNodeClick = useCallback((_evt, node) => { setSelectedId(node.id) }, [])
+  const onPaneClick = useCallback(() => {
+    setSelectedId(null)
+    setEdges((prev) => prev.map((e) => ({ ...e, animated: false, style: { ...(e.style || {}), opacity: 1 } })))
+    setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, dimmed: false, highlighted: false } })))
+  }, [setNodes, setEdges])
+
   const runAutoLayout = useCallback(() => {
     const positions = layoutGraph(graph.nodes, graph.edges)
     setNodes((prev) => prev.map((n) => ({ ...n, position: positions[n.id] || n.position })))
@@ -128,6 +159,8 @@ export default function CraftMapView() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeDragStop={onNodeDragStop}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         onInit={(inst) => { rfRef.current = inst }}
         onlyRenderVisibleElements
