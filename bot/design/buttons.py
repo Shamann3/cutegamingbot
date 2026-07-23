@@ -1365,9 +1365,85 @@ async def resolve_gift_menu_icon_override(gift_id: Any) -> Optional[str]:
 # ============================================================
 # ✅ MANUAL GIFTS - хранится в Redis-бэкенде (_gift_menu_manual_gifts)
 # ============================================================
+_DEFAULT_MANUAL_GIFTS = {
+    "5922558454332916696": {
+        "custom_emoji_id": "5345935030143196497",
+        "emoji": "🎁",
+        "price": 60,
+        "upgrade_price": 0,
+        "has_upgrade": 0,
+    },
+    "5956217000635139069": {
+        "custom_emoji_id": "5379850840691476775",
+        "emoji": "🎁",
+        "price": 60,
+        "upgrade_price": 0,
+        "has_upgrade": 0,
+    },
+    "5801108895304779062": {
+        "custom_emoji_id": "5224628072619216265",
+        "emoji": "🎁",
+        "price": 60,
+        "upgrade_price": 0,
+        "has_upgrade": 0,
+    },
+    "5800655655995968830": {
+        "custom_emoji_id": "5226661632259691727",
+        "emoji": "🎁",
+        "price": 60,
+        "upgrade_price": 0,
+        "has_upgrade": 0,
+    },
+    "5866352046986232958": {
+        "custom_emoji_id": "5289761157173775507",
+        "emoji": "🎁",
+        "price": 60,
+        "upgrade_price": 0,
+        "has_upgrade": 0,
+    },
+    "5893356958802511476": {
+        "custom_emoji_id": "5317000922096769303",
+        "emoji": "🎁",
+        "price": 60,
+        "upgrade_price": 0,
+        "has_upgrade": 0,
+    },
+    "5935895822435615975": {
+        "custom_emoji_id": "5359736160224586485",
+        "emoji": "🎁",
+        "price": 60,
+        "upgrade_price": 0,
+        "has_upgrade": 0,
+    },
+    "5969796561943660080": {
+        "custom_emoji_id": "5393309541620291208",
+        "emoji": "🎁",
+        "price": 60,
+        "upgrade_price": 0,
+        "has_upgrade": 0,
+    },
+    "6026193266406327981": {
+        "custom_emoji_id": "5447213743417105726",
+        "emoji": "🎁",
+        "price": 60,
+        "upgrade_price": 0,
+        "has_upgrade": 0,
+    },
+    "5974210632977745012": {
+        "custom_emoji_id": "5398092984136802109",
+        "emoji": "🎁",
+        "price": 60,
+        "upgrade_price": 0,
+        "has_upgrade": 0,
+    },
+}
+
 async def get_all_manual_gifts() -> Dict[str, Dict[str, Any]]:
     await _migrate_legacy_gift_menu_json_once()
     try:
+        # Если хранилище пустое (нет данных в памяти) — загружаем дефолтные
+        if not _gift_menu_manual_gifts:
+            _gift_menu_manual_gifts.update(_DEFAULT_MANUAL_GIFTS)
         return dict(_gift_menu_manual_gifts)
     except Exception as e:
         print(f"🟥 [GIFT_MENU_MANUAL][GET_ALL][ERROR] {e!r}")
