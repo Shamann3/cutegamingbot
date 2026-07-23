@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^1.1.8",
+    "@xyflow/react": "^12.11.2",
     "leaflet": "^1.9.4",
     "maplibre-gl": "^5.24.0",
     "react": "^18.3.1",
