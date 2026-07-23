@@ -172,6 +172,15 @@ ALTER TABLE craft_recipes ADD COLUMN IF NOT EXISTS remains INT NOT NULL DEFAULT 
 ALTER TABLE craft_recipes ADD COLUMN IF NOT EXISTS result_qty INT NOT NULL DEFAULT 1;
 -- result_qty: сколько предметов выдаётся при успешном крафте
 
+-- Координаты карточек предметов в визуальном редакторе крафта (общие для всех админов).
+CREATE TABLE IF NOT EXISTS craft_map_positions (
+    item_id     TEXT PRIMARY KEY,
+    x           DOUBLE PRECISION NOT NULL,
+    y           DOUBLE PRECISION NOT NULL,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by  BIGINT
+);
+
 -- Отметки одноразовых контент-миграций (чтобы не повторять их на каждом старте).
 -- Напр. legacy_craft_to_recipes: перенос старой таблицы craft в craft_recipes —
 -- после переноса рецепт, удалённый админом, не должен возвращаться при рестарте.
