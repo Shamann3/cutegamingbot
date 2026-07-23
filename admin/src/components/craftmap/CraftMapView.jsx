@@ -13,6 +13,7 @@ import { useCraftMapState } from './useCraftMapState'
 import SearchBar from './panels/SearchBar'
 import FilterPanel from './panels/FilterPanel'
 import PropertiesPanel from './panels/PropertiesPanel'
+import ContextMenu from './panels/ContextMenu'
 
 const nodeTypes = { item: ItemNode }
 
@@ -48,6 +49,7 @@ export default function CraftMapView() {
   const graph = useMemo(() => buildGraph(raw.items, raw.recipes), [raw.items, raw.recipes])
   const mapState = useCraftMapState(graph)
   const [selectedId, setSelectedId] = useState(null)
+  const [ctxMenu, setCtxMenu] = useState(null)
 
   const selectedItem = useMemo(
     () => (selectedId ? (graph.index.itemsById.get(selectedId) || graph.nodes.find((n) => n.id === selectedId)?.item) : null),
@@ -141,6 +143,22 @@ export default function CraftMapView() {
     }
   }, [nodes])
 
+  const onNodeContextMenu = useCallback((evt, node) => {
+    evt.preventDefault()
+    const item = graph.index.itemsById.get(node.id) || node.data.item
+    setCtxMenu({
+      x: evt.clientX,
+      y: evt.clientY,
+      actions: [
+        { label: '🔗 Показать цепочку', onClick: () => setSelectedId(node.id) },
+        { label: '✨ Выделить связанные', onClick: () => setSelectedId(node.id) },
+        { label: '🎯 Центрировать', onClick: () => goTo(node.id) },
+        { label: '📋 Копировать ID', onClick: () => navigator.clipboard?.writeText(node.id) },
+        { label: '🔗 Копировать ссылку', onClick: () => navigator.clipboard?.writeText(`${window.location.origin}${window.location.pathname}#craft-item-${node.id}`) },
+      ],
+    })
+  }, [graph, goTo])
+
   const runAutoLayout = useCallback(() => {
     const positions = layoutGraph(graph.nodes, graph.edges)
     setNodes((prev) => prev.map((n) => ({ ...n, position: positions[n.id] || n.position })))
@@ -177,6 +195,7 @@ export default function CraftMapView() {
         onNodeDragStop={onNodeDragStop}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
+        onNodeContextMenu={onNodeContextMenu}
         nodeTypes={nodeTypes}
         onInit={(inst) => { rfRef.current = inst }}
         onlyRenderVisibleElements
@@ -192,6 +211,7 @@ export default function CraftMapView() {
       {selectedItem ? (
         <PropertiesPanel item={selectedItem} graph={graph} onClose={onPaneClick} onGoTo={goTo} />
       ) : null}
+      {ctxMenu ? <ContextMenu x={ctxMenu.x} y={ctxMenu.y} actions={ctxMenu.actions} onClose={() => setCtxMenu(null)} /> : null}
     </div>
   )
 }
