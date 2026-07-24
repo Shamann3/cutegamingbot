@@ -17,16 +17,18 @@ export default function AddCraftPanel({ onClose, onCreated }) {
     if (ingA === ingB) { notifyAdmin('Ингредиенты A и B должны быть разными', { error: true }); return }
     setSaving(true)
     try {
+      const pct = parseInt(successPercent, 10)
+      const qty = parseInt(resultQty, 10)
       await createContentCraft({
         key: makeCraftKey(resultId, ingA, ingB),
         displayName: '',
         resultItemId: resultId,
         ingredientAId: ingA,
         ingredientBId: ingB,
-        successPercent: Math.max(1, Math.min(100, parseInt(successPercent, 10) || 100)),
+        successPercent: Number.isFinite(pct) ? Math.max(1, Math.min(100, pct)) : 100,
         enabled: true,
         remains: 0,
-        resultQty: Math.max(1, parseInt(resultQty, 10) || 1),
+        resultQty: Number.isFinite(qty) ? Math.max(1, qty) : 1,
       })
       notifyAdmin('Крафт создан')
       onCreated()

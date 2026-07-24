@@ -49,6 +49,7 @@ export default function CraftMapView({ canEdit = false }) {
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const saveTimer = useRef(null)
+  const pendingPositions = useRef(new Map())
   const rfRef = useRef(null)
 
   const graph = useMemo(() => buildGraph(raw.items, raw.recipes), [raw.items, raw.recipes])
@@ -58,6 +59,7 @@ export default function CraftMapView({ canEdit = false }) {
   const [ctxMenu, setCtxMenu] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null) // recipe object | null
+  const [deleting, setDeleting] = useState(false)
 
   const selectedItem = useMemo(
     () => (selectedId ? (graph.index.itemsById.get(selectedId) || graph.nodes.find((n) => n.id === selectedId)?.item) : null),
@@ -97,6 +99,7 @@ export default function CraftMapView({ canEdit = false }) {
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setErrorFocus(null)
     try {
       const data = await fetchCraftMap()
       const g = buildGraph(data.items, data.recipes)
@@ -118,9 +121,14 @@ export default function CraftMapView({ canEdit = false }) {
   useEffect(() => { load() }, [load])
 
   const persist = useCallback((changedNodes) => {
-    const payload = changedNodes.map((n) => ({ itemId: n.id, x: n.position.x, y: n.position.y }))
+    for (const n of changedNodes) {
+      pendingPositions.current.set(n.id, { itemId: n.id, x: n.position.x, y: n.position.y })
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
+      const payload = [...pendingPositions.current.values()]
+      pendingPositions.current.clear()
+      if (!payload.length) return
       try {
         await saveCraftMapPositions(payload)
       } catch {
@@ -131,7 +139,14 @@ export default function CraftMapView({ canEdit = false }) {
 
   const onNodeDragStop = useCallback((_evt, node) => { persist([node]) }, [persist])
 
-  const onNodeClick = useCallback((_evt, node) => { setErrorFocus(null); setSelectedId(node.id) }, [])
+  // Every selection path must clear the error focus, otherwise nodeVisual's
+  // errorFocus precedence hides the chain highlight the user just asked for.
+  const select = useCallback((id) => {
+    setErrorFocus(null)
+    setSelectedId(String(id))
+  }, [])
+
+  const onNodeClick = useCallback((_evt, node) => { select(node.id) }, [select])
   const onPaneClick = useCallback(() => {
     setSelectedId(null)
     setErrorFocus(null)
@@ -144,13 +159,13 @@ export default function CraftMapView({ canEdit = false }) {
 
   const goTo = useCallback((itemId) => {
     const id = String(itemId)
-    setSelectedId(id)
+    select(id)
     const node = nodes.find((n) => n.id === id)
     if (node && rfRef.current) {
       // node is ~230x120; offset to its center
       rfRef.current.setCenter(node.position.x + 115, node.position.y + 60, { zoom: 1.2, duration: 400 })
     }
-  }, [nodes])
+  }, [nodes, select])
 
   const onNodeContextMenu = useCallback((evt, node) => {
     evt.preventDefault()
@@ -158,14 +173,14 @@ export default function CraftMapView({ canEdit = false }) {
       x: evt.clientX,
       y: evt.clientY,
       actions: [
-        { label: '🔗 Показать цепочку', onClick: () => setSelectedId(node.id) },
-        { label: '✨ Выделить связанные', onClick: () => setSelectedId(node.id) },
+        { label: '🔗 Показать цепочку', onClick: () => select(node.id) },
+        { label: '✨ Выделить связанные', onClick: () => select(node.id) },
         { label: '🎯 Центрировать', onClick: () => goTo(node.id) },
         { label: '📋 Копировать ID', onClick: () => navigator.clipboard?.writeText(node.id) },
         { label: '🔗 Копировать ссылку', onClick: () => navigator.clipboard?.writeText(`${window.location.origin}${window.location.pathname}#craft-item-${node.id}`) },
       ],
     })
-  }, [goTo])
+  }, [graph, goTo, select])
 
   const runAutoLayout = useCallback(() => {
     const positions = layoutGraph(graph.nodes, graph.edges)
@@ -175,7 +190,8 @@ export default function CraftMapView({ canEdit = false }) {
   }, [graph, setNodes])
 
   const confirmDelete = useCallback(async () => {
-    if (!deleteTarget) return
+    if (!deleteTarget || deleting) return
+    setDeleting(true)
     try {
       await deleteContentCraft(deleteTarget.id)
       notifyAdmin('Крафт удалён')
@@ -184,8 +200,10 @@ export default function CraftMapView({ canEdit = false }) {
       await load()
     } catch (err) {
       notifyAdmin(err?.message || 'Не удалось удалить крафт', { error: true })
+    } finally {
+      setDeleting(false)
     }
-  }, [deleteTarget, load])
+  }, [deleteTarget, deleting, load])
 
   if (error) {
     return (
