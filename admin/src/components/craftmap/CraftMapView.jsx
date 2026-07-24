@@ -16,6 +16,7 @@ import { useCraftMapState } from './useCraftMapState'
 import SearchBar from './panels/SearchBar'
 import FilterPanel from './panels/FilterPanel'
 import PropertiesPanel from './panels/PropertiesPanel'
+import RecipePanel from './panels/RecipePanel'
 import ContextMenu from './panels/ContextMenu'
 import StatsBar from './panels/StatsBar'
 import ErrorsPanel from './panels/ErrorsPanel'
@@ -64,10 +65,15 @@ export default function CraftMapView({ canEdit = false }) {
   const [deleteTarget, setDeleteTarget] = useState(null) // recipe object | null
   const [deleting, setDeleting] = useState(false)
 
-  const selectedItem = useMemo(
-    () => (selectedId ? (graph.index.itemsById.get(selectedId) || graph.nodes.find((n) => n.id === selectedId)?.item) : null),
+  const selectedNode = useMemo(
+    () => (selectedId ? graph.nodes.find((n) => n.id === selectedId) || null : null),
     [selectedId, graph],
   )
+  const selectedItem = useMemo(() => {
+    if (!selectedNode || selectedNode.kind === 'recipe') return null
+    return graph.index.itemsById.get(selectedNode.id) || selectedNode.item
+  }, [selectedNode, graph])
+  const selectedRecipe = selectedNode && selectedNode.kind === 'recipe' ? selectedNode.recipe : null
 
   const chain = useMemo(
     () => (selectedId ? traverseChain(selectedId, graph) : null),
@@ -172,18 +178,26 @@ export default function CraftMapView({ canEdit = false }) {
 
   const onNodeContextMenu = useCallback((evt, node) => {
     evt.preventDefault()
+    const isRecipe = node.type === 'recipe'
+    const recipe = isRecipe ? node.data?.recipe : null
     setCtxMenu({
       x: evt.clientX,
       y: evt.clientY,
-      actions: [
-        { label: '🔗 Показать цепочку', onClick: () => select(node.id) },
-        { label: '✨ Выделить связанные', onClick: () => select(node.id) },
-        { label: '🎯 Центрировать', onClick: () => goTo(node.id) },
-        { label: '📋 Копировать ID', onClick: () => navigator.clipboard?.writeText(node.id) },
-        { label: '🔗 Копировать ссылку', onClick: () => navigator.clipboard?.writeText(`${window.location.origin}${window.location.pathname}#craft-item-${node.id}`) },
-      ],
+      actions: isRecipe
+        ? [
+            { label: '🔗 Показать цепочку', onClick: () => select(node.id) },
+            { label: '📋 Копировать ключ', onClick: () => navigator.clipboard?.writeText(recipe?.key || '') },
+            ...(canEdit && recipe ? [{ label: '🗑 Удалить рецепт', onClick: () => setDeleteTarget(recipe) }] : []),
+          ]
+        : [
+            { label: '🔗 Показать цепочку', onClick: () => select(node.id) },
+            { label: '✨ Выделить связанные', onClick: () => select(node.id) },
+            { label: '🎯 Центрировать', onClick: () => goTo(node.id) },
+            { label: '📋 Копировать ID', onClick: () => navigator.clipboard?.writeText(node.id) },
+            { label: '🔗 Копировать ссылку', onClick: () => navigator.clipboard?.writeText(`${window.location.origin}${window.location.pathname}#craft-item-${node.id}`) },
+          ],
     })
-  }, [graph, goTo, select])
+  }, [graph, goTo, select, canEdit])
 
   const runAutoLayout = useCallback(() => {
     const positions = layoutGraph(graph.nodes, graph.edges)
@@ -253,7 +267,10 @@ export default function CraftMapView({ canEdit = false }) {
           <MiniMap pannable zoomable />
           <Controls />
         </ReactFlow>
-        {selectedItem ? (
+        {selectedRecipe ? (
+          <RecipePanel recipe={selectedRecipe} onClose={onPaneClick}
+            canEdit={canEdit} onDelete={(r) => setDeleteTarget(r)} />
+        ) : selectedItem ? (
           <PropertiesPanel item={selectedItem} graph={graph} onClose={onPaneClick} onGoTo={goTo}
             canEdit={canEdit} onDeleteRecipe={(r) => setDeleteTarget(r)} />
         ) : null}

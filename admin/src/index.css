@@ -12072,3 +12072,8 @@ input[type=range].cc-dial::-moz-range-thumb{width:16px;height:16px;border-radius
 [data-theme="light"] .craftmap-recipe-node { background: #f6f2ff; border-color: rgba(120,80,220,.35); }
 [data-theme="light"] .craftmap-recipe-qty { color: #241a3a; }
 [data-theme="light"] .craftmap-recipe-name { color: #6b7280; }
+
+.craftmap-recipe-panel { position: absolute; top: 0; right: 0; height: 100%; width: 320px; z-index: 7;
+  background: rgba(16,19,26,.97); border-left: 1px solid rgba(255,255,255,.08);
+  box-shadow: -12px 0 30px rgba(0,0,0,.4); overflow-y: auto; padding: 16px; }
+[data-theme="light"] .craftmap-recipe-panel { background: #ffffff; color: #1a2230; }
