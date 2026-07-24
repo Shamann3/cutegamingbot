@@ -6,7 +6,7 @@ export function useCraftMapState(graph) {
 
   const categories = useMemo(() => {
     const set = new Set()
-    for (const n of graph.nodes) if (n.item.sorting) set.add(n.item.sorting)
+    for (const n of graph.nodes) if (n.item && n.item.sorting) set.add(n.item.sorting)
     return [...set].sort()
   }, [graph])
 
@@ -15,9 +15,16 @@ export function useCraftMapState(graph) {
     if (!q) return new Set()
     const out = new Set()
     for (const n of graph.nodes) {
+      if (!n.item) continue
       const i = n.item
       const hay = [i.id, i.name, i.name1, i.sorting, i.bio].filter(Boolean).join(' ').toLowerCase()
       if (hay.includes(q)) out.add(n.id)
+    }
+    // A recipe node counts as matched when its result item matched, so a search
+    // doesn't dim the very recipe that produces the highlighted item.
+    for (const n of graph.nodes) {
+      if (n.kind !== 'recipe' || !n.recipe) continue
+      if (out.has(String(n.recipe.resultItemId))) out.add(n.id)
     }
     return out
   }, [graph, query])
@@ -25,8 +32,16 @@ export function useCraftMapState(graph) {
   const visibleIds = useMemo(() => {
     const out = new Set()
     for (const n of graph.nodes) {
-      if (n.item.sorting && hiddenCategories.has(n.item.sorting)) continue
+      if (n.item && n.item.sorting && hiddenCategories.has(n.item.sorting)) continue
       out.add(n.id)
+    }
+    // A recipe node without its ingredients/result on screen is a dangling
+    // orphan — hide it whenever any linked item is filtered out.
+    for (const n of graph.nodes) {
+      if (n.kind !== 'recipe' || !n.recipe) continue
+      const r = n.recipe
+      const linked = [String(r.ingredientAId), String(r.ingredientBId), String(r.resultItemId)]
+      if (linked.some((id) => !out.has(id))) out.delete(n.id)
     }
     return out
   }, [graph, hiddenCategories])

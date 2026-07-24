@@ -10,27 +10,30 @@ const recipes = [
 ]
 
 describe('traverseChain', () => {
-  it('collects full upstream (ancestors) of a mid-chain item', () => {
+  it('collects full upstream (ancestors) of a mid-chain item, including recipe nodes', () => {
     const g = buildGraph(items, recipes)
     const chain = traverseChain('5', g)
-    expect([...chain.upstream].sort()).toEqual(['1', '2', '3', '4'])
+    expect([...chain.upstream].sort()).toEqual(['1', '2', '3', '4', 'r:10', 'r:11'])
     expect([...chain.downstream]).toEqual([])
   })
 
-  it('collects full downstream (descendants) of a base resource', () => {
+  it('collects full downstream (descendants) of a base resource, including recipe nodes', () => {
     const g = buildGraph(items, recipes)
     const chain = traverseChain('1', g)
-    expect([...chain.downstream].sort()).toEqual(['3', '5'])
+    expect([...chain.downstream].sort()).toEqual(['3', '5', 'r:10', 'r:11'])
     expect([...chain.upstream]).toEqual([])
   })
 
-  it('includes the selected node and the connecting edges', () => {
+  it('includes the selected node and the connecting edges through the recipe node', () => {
     const g = buildGraph(items, recipes)
     const chain = traverseChain('3', g)
     expect(chain.nodes.has('3')).toBe(true)
-    // upstream edges producing 3, downstream edges consuming 3
+    expect(chain.nodes.has('r:10')).toBe(true)
+    // upstream: both ingredients into recipe 10, then recipe 10 out to item 3
     expect(chain.edges.has('10:a')).toBe(true)
     expect(chain.edges.has('10:b')).toBe(true)
+    expect(chain.edges.has('10:out')).toBe(true)
+    // downstream: item 3 feeds recipe 11
     expect(chain.edges.has('11:a')).toBe(true)
   })
 })
