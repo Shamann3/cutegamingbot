@@ -243,7 +243,7 @@ export default function CraftMapView({ canEdit = false }) {
           {canEdit ? <button className="panel-users-btn panel-users-btn-primary" onClick={() => setShowAdd(true)}>＋ Новый крафт</button> : null}
           <SearchBar query={mapState.query} onChange={mapState.setQuery} count={mapState.matchedIds.size} />
           <FilterPanel categories={mapState.categories} hidden={mapState.hiddenCategories} onToggle={mapState.toggleCategory} />
-          <span className="panel-shelf-muted">{loading ? 'Загрузка…' : `${graph.nodes.length} предметов · ${graph.edges.length} связей`}</span>
+          <span className="panel-shelf-muted">{loading ? 'Загрузка…' : `${graph.nodes.filter((n) => n.kind === 'item').length} предметов · ${stats.links} связей`}</span>
         </div>
         <ReactFlow
           className="craftmap-flow"
