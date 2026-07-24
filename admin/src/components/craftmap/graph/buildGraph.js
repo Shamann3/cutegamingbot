@@ -32,6 +32,7 @@ export function buildGraph(items, recipes, { includeOrphans = false } = {}) {
   const backward = new Map()
   const referenced = new Set()
   const edges = []
+  const recipeNodes = []
 
   const ensureItem = (id) => {
     const key = String(id)
@@ -42,40 +43,44 @@ export function buildGraph(items, recipes, { includeOrphans = false } = {}) {
   for (const recipe of recipes || []) {
     const rid = recipe.id
     recipesById.set(rid, recipe)
+    const recipeNodeId = `r:${rid}`
     const result = String(recipe.resultItemId)
+    const enabled = recipe.enabled !== false
+    const meta = {
+      recipeId: rid,
+      recipeKey: recipe.key,
+      successPercent: recipe.successPercent,
+      resultQty: recipe.resultQty,
+      enabled,
+    }
     const slots = [
       ['a', String(recipe.ingredientAId)],
       ['b', String(recipe.ingredientBId)],
     ]
+
     referenced.add(result)
     for (const [slot, ing] of slots) {
       referenced.add(ing)
-      edges.push({
-        id: `${rid}:${slot}`,
-        source: ing,
-        target: result,
-        recipeId: rid,
-        recipeKey: recipe.key,
-        slot,
-        successPercent: recipe.successPercent,
-        resultQty: recipe.resultQty,
-        enabled: recipe.enabled !== false,
-      })
+      // Visual: ingredient -> recipe node.
+      edges.push({ id: `${rid}:${slot}`, source: ing, target: recipeNodeId, slot, ...meta })
+      // Semantic: item -> item, so analysis keeps its current meaning.
       pushMapUnique(usedIn, ing, rid)
       addSet(forward, ing, result)
       addSet(backward, result, ing)
     }
+    edges.push({ id: `${rid}:out`, source: recipeNodeId, target: result, slot: 'out', ...meta })
     pushMap(producedBy, result, rid)
+    recipeNodes.push({ id: recipeNodeId, kind: 'recipe', recipe })
   }
 
   const nodeIds = includeOrphans
     ? new Set([...itemsById.keys(), ...referenced])
     : referenced
 
-  const nodes = [...nodeIds].map((id) => ({ id, item: ensureItem(id) }))
+  const itemNodes = [...nodeIds].map((id) => ({ id, kind: 'item', item: ensureItem(id) }))
 
   return {
-    nodes,
+    nodes: [...itemNodes, ...recipeNodes],
     edges,
     index: { itemsById, recipesById, producedBy, usedIn, forward, backward },
   }

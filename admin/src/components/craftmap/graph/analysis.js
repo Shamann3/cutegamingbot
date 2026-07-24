@@ -241,7 +241,9 @@ export function computeStats(graph, items, errors) {
   return {
     items: (items || []).length,
     recipes: index.recipesById.size,
-    links: edges.length,
+    // Ingredient->recipe contributions (a/b slots), not raw render edges —
+    // the recipe node's synthetic `out` hop is a rendering detail, not a link.
+    links: edges.filter((e) => e.slot !== 'out').length,
     baseResources: baseResources.length,
     finalItems: finalItems.length,
     maxDepth,
