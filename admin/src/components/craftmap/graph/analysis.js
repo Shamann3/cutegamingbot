@@ -92,11 +92,21 @@ export function detectErrors(graph, items) {
   // cycles
   const { found, cycleNodes } = hasCycle(index, nodeIds)
   if (found) {
+    // Recipe nodes bridge two item nodes, so a cycle's edges only line up once
+    // the bridging recipe nodes are counted as cycle members too.
+    const cycleMembers = new Set(cycleNodes)
+    for (const recipe of index.recipesById.values()) {
+      const result = String(recipe.resultItemId)
+      const ings = [String(recipe.ingredientAId), String(recipe.ingredientBId)]
+      if (cycleNodes.has(result) && ings.some((i) => cycleNodes.has(i))) {
+        cycleMembers.add(`r:${recipe.id}`)
+      }
+    }
     errors.push({
       type: 'cycle',
       severity: 'error',
       itemIds: [...cycleNodes],
-      edgeIds: edges.filter((e) => cycleNodes.has(e.source) && cycleNodes.has(e.target)).map((e) => e.id),
+      edgeIds: edges.filter((e) => cycleMembers.has(e.source) && cycleMembers.has(e.target)).map((e) => e.id),
       message: 'Обнаружена циклическая зависимость в рецептах',
     })
   }
