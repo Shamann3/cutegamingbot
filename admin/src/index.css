@@ -12047,3 +12047,7 @@ input[type=range].cc-dial::-moz-range-thumb{width:16px;height:16px;border-radius
   background: rgba(16,19,26,.98); border-left: 1px solid rgba(255,255,255,.08);
   box-shadow: -12px 0 30px rgba(0,0,0,.45); overflow-y: auto; padding: 16px; }
 [data-theme="light"] .craftmap-add { background: #ffffff; color: #1a2230; }
+
+.craftmap-recipe-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+.craftmap-recipe-del { background: none; border: 0; cursor: pointer; font-size: 14px; opacity: .7; padding: 2px 4px; border-radius: 6px; }
+.craftmap-recipe-del:hover { opacity: 1; background: rgba(255,80,80,.15); }

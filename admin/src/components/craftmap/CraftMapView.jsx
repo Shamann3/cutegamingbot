@@ -3,8 +3,9 @@ import {
   ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { fetchCraftMap, saveCraftMapPositions } from '../../lib/adminClient'
+import { fetchCraftMap, saveCraftMapPositions, deleteContentCraft } from '../../lib/adminClient'
 import { notifyAdmin } from '../../lib/notify'
+import AdminActionModal from '../AdminActionModal'
 import { buildGraph } from './graph/buildGraph'
 import { layoutGraph } from './graph/layout'
 import { traverseChain, detectErrors, computeStats } from './graph/analysis'
@@ -56,6 +57,7 @@ export default function CraftMapView({ canEdit = false }) {
   const [errorFocus, setErrorFocus] = useState(null) // Set<string> | null
   const [ctxMenu, setCtxMenu] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null) // recipe object | null
 
   const selectedItem = useMemo(
     () => (selectedId ? (graph.index.itemsById.get(selectedId) || graph.nodes.find((n) => n.id === selectedId)?.item) : null),
@@ -172,6 +174,19 @@ export default function CraftMapView({ canEdit = false }) {
     saveCraftMapPositions(payload).catch(() => notifyAdmin('Не удалось сохранить раскладку', { error: true }))
   }, [graph, setNodes])
 
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget) return
+    try {
+      await deleteContentCraft(deleteTarget.id)
+      notifyAdmin('Крафт удалён')
+      setDeleteTarget(null)
+      setSelectedId(null)
+      await load()
+    } catch (err) {
+      notifyAdmin(err?.message || 'Не удалось удалить крафт', { error: true })
+    }
+  }, [deleteTarget, load])
+
   if (error) {
     return (
       <div className="craftmap-wrap" style={{ display: 'grid', placeItems: 'center' }}>
@@ -218,10 +233,19 @@ export default function CraftMapView({ canEdit = false }) {
           <Controls />
         </ReactFlow>
         {selectedItem ? (
-          <PropertiesPanel item={selectedItem} graph={graph} onClose={onPaneClick} onGoTo={goTo} />
+          <PropertiesPanel item={selectedItem} graph={graph} onClose={onPaneClick} onGoTo={goTo}
+            canEdit={canEdit} onDeleteRecipe={(r) => setDeleteTarget(r)} />
         ) : null}
         {ctxMenu ? <ContextMenu x={ctxMenu.x} y={ctxMenu.y} actions={ctxMenu.actions} onClose={() => setCtxMenu(null)} /> : null}
         {showAdd ? <AddCraftPanel onClose={() => setShowAdd(false)} onCreated={() => { setShowAdd(false); load() }} /> : null}
+        {deleteTarget ? (
+          <AdminActionModal open danger
+            title={`Удалить рецепт «${deleteTarget.displayName || deleteTarget.key}»?`}
+            description="Рецепт будет удалён из craft_recipes и сразу исчезнет из игры."
+            confirmText="Удалить"
+            onConfirm={confirmDelete}
+            onCancel={() => setDeleteTarget(null)} />
+        ) : null}
         <ErrorsPanel errors={errors} onFocus={focusItems} />
       </div>
     </>
