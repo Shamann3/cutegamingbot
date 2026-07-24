@@ -11,6 +11,7 @@ import { layoutGraph } from './graph/layout'
 import { traverseChain, detectErrors, computeStats } from './graph/analysis'
 import { nodeVisual, edgeVisual } from './graph/viewState'
 import ItemNode from './nodes/ItemNode'
+import RecipeNode from './nodes/RecipeNode'
 import { useCraftMapState } from './useCraftMapState'
 import SearchBar from './panels/SearchBar'
 import FilterPanel from './panels/FilterPanel'
@@ -20,14 +21,16 @@ import StatsBar from './panels/StatsBar'
 import ErrorsPanel from './panels/ErrorsPanel'
 import AddCraftPanel from './panels/AddCraftPanel'
 
-const nodeTypes = { item: ItemNode }
+const nodeTypes = { item: ItemNode, recipe: RecipeNode }
 
 function toFlowNodes(graph, positions) {
   return graph.nodes.map((n) => ({
     id: n.id,
-    type: 'item',
+    type: n.kind === 'recipe' ? 'recipe' : 'item',
     position: positions[n.id] || { x: 0, y: 0 },
-    data: { item: n.item, dimmed: false, highlighted: false, errored: false },
+    data: n.kind === 'recipe'
+      ? { recipe: n.recipe, dimmed: false, highlighted: false, errored: false }
+      : { item: n.item, dimmed: false, highlighted: false, errored: false },
   }))
 }
 

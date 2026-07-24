@@ -12053,3 +12053,22 @@ input[type=range].cc-dial::-moz-range-thumb{width:16px;height:16px;border-radius
 .craftmap-recipe-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
 .craftmap-recipe-del { background: none; border: 0; cursor: pointer; font-size: 14px; opacity: .7; padding: 2px 4px; border-radius: 6px; }
 .craftmap-recipe-del:hover { opacity: 1; background: rgba(255,80,80,.15); }
+
+/* Recipe node — the "machine" between ingredients and result */
+.craftmap-recipe-node { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; width: 120px; padding: 8px 10px; border-radius: 12px;
+  background: rgba(46,38,64,.94); border: 1px solid rgba(168,140,255,.35);
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  transition: transform .15s ease, box-shadow .15s ease, opacity .2s ease, border-color .2s ease; }
+.craftmap-recipe-node:hover { transform: translateY(-2px); border-color: rgba(168,140,255,.75); }
+.craftmap-recipe-main { display: flex; align-items: baseline; gap: 6px; }
+.craftmap-recipe-icon { font-size: 15px; }
+.craftmap-recipe-pct { font-size: 12px; font-weight: 600; color: #cdbcff; }
+.craftmap-recipe-qty { font-size: 12px; font-weight: 700; color: #eef1f6; }
+.craftmap-recipe-name { font-size: 10px; color: #9aa3b8; max-width: 104px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.craftmap-recipe-node-off { border-style: dashed; opacity: .6; }
+
+[data-theme="light"] .craftmap-recipe-node { background: #f6f2ff; border-color: rgba(120,80,220,.35); }
+[data-theme="light"] .craftmap-recipe-qty { color: #241a3a; }
+[data-theme="light"] .craftmap-recipe-name { color: #6b7280; }

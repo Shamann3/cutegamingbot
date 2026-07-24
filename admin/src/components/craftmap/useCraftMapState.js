@@ -6,7 +6,7 @@ export function useCraftMapState(graph) {
 
   const categories = useMemo(() => {
     const set = new Set()
-    for (const n of graph.nodes) if (n.item.sorting) set.add(n.item.sorting)
+    for (const n of graph.nodes) if (n.item && n.item.sorting) set.add(n.item.sorting)
     return [...set].sort()
   }, [graph])
 
@@ -15,6 +15,7 @@ export function useCraftMapState(graph) {
     if (!q) return new Set()
     const out = new Set()
     for (const n of graph.nodes) {
+      if (!n.item) continue
       const i = n.item
       const hay = [i.id, i.name, i.name1, i.sorting, i.bio].filter(Boolean).join(' ').toLowerCase()
       if (hay.includes(q)) out.add(n.id)
@@ -25,7 +26,7 @@ export function useCraftMapState(graph) {
   const visibleIds = useMemo(() => {
     const out = new Set()
     for (const n of graph.nodes) {
-      if (n.item.sorting && hiddenCategories.has(n.item.sorting)) continue
+      if (n.item && n.item.sorting && hiddenCategories.has(n.item.sorting)) continue
       out.add(n.id)
     }
     return out
