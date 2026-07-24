@@ -4,7 +4,11 @@ export default function PropertiesPanel({ item, graph, onClose, onGoTo, canEdit 
   const producedBy = (index.producedBy.get(item.id) || []).map((rid) => index.recipesById.get(rid)).filter(Boolean)
   const usedIn = (index.usedIn.get(item.id) || []).map((rid) => index.recipesById.get(rid)).filter(Boolean)
 
-  const recipeLine = (r) => `${r.ingredientAEmoji || '❓'} + ${r.ingredientBEmoji || '❓'} → ${r.resultEmoji || '❓'} ×${r.resultQty}`
+  const itemLabel = (emoji, name, id) => `${emoji || '❓'} ${name || id} #${id}`
+  const recipeLine = (r) =>
+    `${itemLabel(r.ingredientAEmoji, r.ingredientAName, r.ingredientAId)}`
+    + ` + ${itemLabel(r.ingredientBEmoji, r.ingredientBName, r.ingredientBId)}`
+    + ` → ${itemLabel(r.resultEmoji, r.resultName, r.resultItemId)} ×${r.resultQty}`
 
   return (
     <aside className="craftmap-props">
@@ -22,7 +26,7 @@ export default function PropertiesPanel({ item, graph, onClose, onGoTo, canEdit 
       <h4 className="panel-shelf-label" style={{ marginTop: 14 }}>Рецепты создания ({producedBy.length})</h4>
       {producedBy.length ? producedBy.map((r) => (
         <div key={r.id} className="craftmap-recipe-row">
-          <span className="panel-shelf-muted">{recipeLine(r)}</span>
+          <span className="panel-shelf-muted" style={{ minWidth: 0, wordBreak: 'break-word' }}>{recipeLine(r)}</span>
           {canEdit ? (
             <button className="craftmap-recipe-del" title="Удалить рецепт" onClick={() => onDeleteRecipe && onDeleteRecipe(r)}>🗑</button>
           ) : null}
