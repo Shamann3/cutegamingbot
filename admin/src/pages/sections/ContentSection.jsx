@@ -23,6 +23,8 @@ import {
 } from '../../lib/adminClient'
 import { parseRequiredIntFields } from '../../lib/formNumbers'
 import { notifyAdmin } from '../../lib/notify'
+import { useIsDesktop } from '../../lib/useIsDesktop'
+import { contentTabs } from '../../components/craftmap/graph/contentTabs'
 
 // ---- Dex Item Preview ----
 function DexItemPreview({ item }) {
@@ -49,14 +51,6 @@ function DexItemPreview({ item }) {
   )
 }
 
-const TABS = [
-  { id: 'items', label: 'Предметы' },
-  { id: 'crops', label: 'Культуры' },
-  { id: 'craft', label: 'Крафт' },
-  { id: 'map', label: '🗺 Карта' },
-  { id: 'quests', label: 'Задания' },
-]
-
 const EMPTY_DROP = { itemId: '', minAmount: '1', maxAmount: '1', chancePercent: '100' }
 const EMPTY_QUEST_REWARD = { kind: 'kut', amount: '10', itemId: '' }
 
@@ -71,8 +65,16 @@ function ItemOption({ item }) {
   return `${item.emoji || '📦'} ${item.name} (#${item.id})`
 }
 
-export default function ContentSection() {
+export default function ContentSection({ role = null }) {
   const [tab, setTab] = useState('crops')
+  const isDesktop = useIsDesktop()
+  const canUseMap = role === 'owner' && isDesktop
+  const TABS = contentTabs(canUseMap)
+
+  // If the map tab becomes unavailable (resize to mobile, or non-owner), leave it.
+  useEffect(() => {
+    if (tab === 'map' && !canUseMap) setTab('items')
+  }, [tab, canUseMap])
   const [overview, setOverview] = useState(null)
   const [dexItems, setDexItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -1091,7 +1093,7 @@ export default function ContentSection() {
         </div>
       )}
 
-      {tab === 'map' && <CraftMapView />}
+      {tab === 'map' && canUseMap && <CraftMapView canEdit={canUseMap} />}
 
       {tab === 'quests' && (
         <div className="panel-content-stack">

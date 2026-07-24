@@ -1,4 +1,4 @@
-export default function PropertiesPanel({ item, graph, onClose, onGoTo }) {
+export default function PropertiesPanel({ item, graph, onClose, onGoTo, canEdit = false, onDeleteRecipe }) {
   if (!item) return null
   const { index } = graph
   const producedBy = (index.producedBy.get(item.id) || []).map((rid) => index.recipesById.get(rid)).filter(Boolean)
@@ -21,7 +21,12 @@ export default function PropertiesPanel({ item, graph, onClose, onGoTo }) {
 
       <h4 className="panel-shelf-label" style={{ marginTop: 14 }}>Рецепты создания ({producedBy.length})</h4>
       {producedBy.length ? producedBy.map((r) => (
-        <div key={r.id} className="panel-shelf-muted">{recipeLine(r)}</div>
+        <div key={r.id} className="craftmap-recipe-row">
+          <span className="panel-shelf-muted">{recipeLine(r)}</span>
+          {canEdit ? (
+            <button className="craftmap-recipe-del" title="Удалить рецепт" onClick={() => onDeleteRecipe && onDeleteRecipe(r)}>🗑</button>
+          ) : null}
+        </div>
       )) : <p className="panel-shelf-muted">— базовый ресурс —</p>}
 
       <h4 className="panel-shelf-label" style={{ marginTop: 14 }}>Используется в ({usedIn.length})</h4>

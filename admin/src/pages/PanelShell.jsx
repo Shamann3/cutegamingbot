@@ -259,7 +259,7 @@ export default function PanelShell({ onLogout }) {
           {isEconomy && <EconomySection />}
           {isMarket && <MarketSection />}
           {isFarm && <FarmSection />}
-          {isContent && <ContentSection />}
+          {isContent && <ContentSection role={role} />}
           {isGiveaways && <GiveawaysSection />}
           {isBroadcast && <BroadcastSection />}
           {isLogs && <LogsSection />}
