@@ -13,6 +13,7 @@ from content_registry import (
 )
 from db import db
 from dex_catalog import dex_catalog
+from craft_map import serialize_positions
 
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]{1,48}$")
 
@@ -819,3 +820,68 @@ async def delete_craft_recipe(recipe_id: int, *, admin_user_id: int) -> dict:
     await db.pool.execute("DELETE FROM craft_recipes WHERE id = $1", recipe_id)
     await _invalidate_content()
     return {"deleted": True, "id": recipe_id}
+
+
+async def get_craft_map() -> dict:
+    """Данные для визуального редактора: предметы, рецепты, сохранённые позиции."""
+    from content_registry import all_craft_recipes, ensure_content_registry_loaded
+
+    await ensure_content_registry_loaded(db.pool)
+    recipes = [recipe_to_admin_dict(recipe) for recipe in all_craft_recipes()]
+
+    rows = await db.pool.fetch(
+        'SELECT id, name, name1, emoji, price, sorting, bio, "use", bonus FROM dex ORDER BY id ASC'
+    )
+    items = []
+    for row in rows:
+        item_id = str(row["id"])
+        items.append(
+            {
+                "id": item_id,
+                "name": (row["name"] or "").strip() or item_id,
+                "name1": (row["name1"] or "").strip(),
+                "emoji": (row["emoji"] or "").strip() or "📦",
+                "price": int(row["price"] or 0),
+                "sorting": row["sorting"],
+                "bio": (row["bio"] or "").strip(),
+                "use": str(row["use"] or "").strip() if row["use"] not in (None, 0) else "",
+                "bonus": str(row["bonus"] or "").strip() if row["bonus"] not in (None, 0) else "",
+            }
+        )
+
+    pos_rows = await db.pool.fetch("SELECT item_id, x, y FROM craft_map_positions")
+    positions = serialize_positions(pos_rows)
+
+    return {"items": items, "recipes": recipes, "positions": positions}
+
+
+async def save_craft_map_positions(positions: list[dict], *, admin_user_id: int) -> dict:
+    """Батч-upsert координат карточек."""
+    args = []
+    for pos in positions or []:
+        item_id = str(pos.get("itemId", "")).strip()
+        if not item_id:
+            continue
+        try:
+            x = float(pos["x"])
+            y = float(pos["y"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        args.append((item_id, x, y, admin_user_id))
+
+    if not args:
+        return {"saved": 0}
+
+    await db.pool.executemany(
+        """
+        INSERT INTO craft_map_positions (item_id, x, y, updated_by, updated_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (item_id) DO UPDATE
+            SET x = EXCLUDED.x,
+                y = EXCLUDED.y,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = NOW()
+        """,
+        args,
+    )
+    return {"saved": len(args)}

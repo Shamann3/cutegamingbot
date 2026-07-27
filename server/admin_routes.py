@@ -180,8 +180,10 @@ from admin_content import (
     delete_crop,
     delete_dex_item,
     get_content_overview,
+    get_craft_map,
     get_dex_item_full,
     list_dex_items_admin,
+    save_craft_map_positions,
     update_craft_recipe,
     update_crop,
     update_dex_item_meta,
@@ -543,6 +545,18 @@ class DexItemMetaBody(BaseModel):
     remains: int | None = Field(default=None, ge=0, le=99_999_999)
     sorting: str | None = Field(default=None, max_length=32)
     bio: str | None = Field(default=None, max_length=500)
+    model_config = {"extra": "forbid"}
+
+
+class CraftMapPositionItem(BaseModel):
+    itemId: str = Field(min_length=1, max_length=64)
+    x: float
+    y: float
+    model_config = {"extra": "forbid"}
+
+
+class CraftMapPositionsBody(BaseModel):
+    positions: list[CraftMapPositionItem] = Field(default_factory=list, max_length=5000)
     model_config = {"extra": "forbid"}
 
 
@@ -2896,6 +2910,22 @@ async def admin_content_craft_delete(
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/content/craft-map")
+async def admin_content_craft_map(
+    _admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    return await get_craft_map()
+
+
+@router.post("/content/craft-map/positions")
+async def admin_content_craft_map_positions(
+    body: CraftMapPositionsBody,
+    admin_id: int = Depends(require_admin_permission("manage_content")),
+):
+    positions = [p.model_dump() for p in body.positions]
+    return await save_craft_map_positions(positions, admin_user_id=admin_id)
 
 
 @router.post("/content/quests")

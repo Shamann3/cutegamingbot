@@ -1223,6 +1223,17 @@ export async function deleteContentCraft(recipeId) {
   return adminFetch(`/content/craft/${recipeId}`, { method: 'DELETE' })
 }
 
+export async function fetchCraftMap() {
+  return adminFetch('/content/craft-map')
+}
+
+export async function saveCraftMapPositions(positions) {
+  return adminFetch('/content/craft-map/positions', {
+    method: 'POST',
+    body: { positions },
+  })
+}
+
 export async function createContentQuest(payload) {
   return adminFetch('/content/quests', { method: 'POST', body: payload })
 }
