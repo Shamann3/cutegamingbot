@@ -598,50 +598,57 @@ _BLOCKING_KICK_ERRORS = frozenset({
 })
 
 
-async def _validate_kick_before(target_id: int , * , scope: Scope , source_chat_id: int , user_id: int = None ,
-        # добавлен параметр
-) -> Tuple [ Optional [ str ] , bool ]:
+async def _validate_kick_before(
+  target_id: int,
+  *,
+  scope: Scope,
+  source_chat_id: int,
+) -> Tuple[Optional[str], bool]:
   """Предпроверка кика: блокирующая ошибка и состоит ли пользователь в целевых группах."""
-  chat_ids = list(cfg.STAFF_CHAT_IDS) if scope == "all" else [ source_chat_id ]
+  chat_ids = list(cfg.STAFF_CHAT_IDS) if scope == "all" else [source_chat_id]
   any_member = False
   for cid in chat_ids:
-    if scope == "chat" and not _is_staff_chat(cid , user_id):  # передаём user_id
-      return "команда доступна только в официальных группах проекта" , False
-    err = await _validate_kick_target_in_chat(cid , target_id)
+    if scope == "chat" and not _is_staff_chat(cid):
+      return "команда доступна только в официальных группах проекта", False
+    err = await _validate_kick_target_in_chat(cid, target_id)
     if err in _BLOCKING_KICK_ERRORS:
-      return err , any_member
+      return err, any_member
     from bot.admins.punish_validate import inspect_chat_member
-    member , _probe_err = await inspect_chat_member(cid , target_id)
-    if member and getattr(member , "status" , None) not in ("left" , "kicked"):
+    member, _probe_err = await inspect_chat_member(cid, target_id)
+    if member and getattr(member, "status", None) not in ("left", "kicked"):
       any_member = True
-  return None , any_member
+  return None, any_member
 
-async def _kick_with_scope(target_id: int , * , scope: Scope , source_chat_id: int , user_id: int = None ,
-        # добавлен параметр
-) -> Tuple [ int , List [ int ] , List [ str ] ]:
-    """Исключает пользователя из одной группы или из всех групп проекта."""
-    if scope == "all":
-      return await _kick_in_all_staff_chats(target_id)
 
-    if not _is_staff_chat(source_chat_id , user_id):
-      return 0 , [ ] , [ "команда доступна только в официальных группах проекта" ]
+async def _kick_with_scope(
+  target_id: int,
+  *,
+  scope: Scope,
+  source_chat_id: int,
+) -> Tuple[int, List[int], List[str]]:
+  """Исключает пользователя из одной группы или из всех групп проекта."""
+  if scope == "all":
+    return await _kick_in_all_staff_chats(target_id)
 
-    err = await _validate_kick_target_in_chat(source_chat_id , target_id)
-    if err in _BLOCKING_KICK_ERRORS:
-      return 0 , [ ] , [ err ]
-    if err:
-      return 0 , [ ] , [ err ]
+  if not _is_staff_chat(source_chat_id):
+    return 0, [], ["команда доступна только в официальных группах проекта"]
 
-    try:
-      member = await _bot().get_chat_member(source_chat_id , target_id)
-      if getattr(member , "status" , None) in ("left" , "kicked"):
-        return 0 , [ ] , [ "пользователь не состоит в этой группе" ]
-    except Exception as e:
-      return 0 , [ ] , [ str(e) ]
+  err = await _validate_kick_target_in_chat(source_chat_id, target_id)
+  if err in _BLOCKING_KICK_ERRORS:
+    return 0, [], [err]
+  if err:
+    return 0, [], [err]
 
-    if await _kick_in_chat(source_chat_id , target_id):
-      return 1 , [ source_chat_id ] , [ ]
-    return 0 , [ ] , [ "не удалось исключить из группы" ]
+  try:
+    member = await _bot().get_chat_member(source_chat_id, target_id)
+    if getattr(member, "status", None) in ("left", "kicked"):
+      return 0, [], ["пользователь не состоит в этой группе"]
+  except Exception as e:
+    return 0, [], [str(e)]
+
+  if await _kick_in_chat(source_chat_id, target_id):
+    return 1, [source_chat_id], []
+  return 0, [], ["не удалось исключить из группы"]
 
 
 async def _kick_in_all_staff_chats(

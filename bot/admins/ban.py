@@ -1326,36 +1326,45 @@ async def _ban_in_chat(chat_id: int, user_id: int, tg_until: Optional[int]) -> b
     BanDebug.error("TG", "ban", e, chat_id=chat_id, user_id=user_id)
     return False
 
-async def _validate_ban_before(target_id: int , * , scope: Scope , source_chat_id: int , user_id: int = None ,
-        # добавлен параметр
-) -> Optional [ str ]:
+
+async def _validate_ban_before(
+  target_id: int,
+  *,
+  scope: Scope,
+  source_chat_id: int,
+) -> Optional[str]:
   """Предпроверка бана: только блокирующая ошибка (бот/создатель/админ) или текст об охвате."""
-  chat_ids = list(cfg.STAFF_CHAT_IDS) if scope == "all" else [ source_chat_id ]
+  chat_ids = list(cfg.STAFF_CHAT_IDS) if scope == "all" else [source_chat_id]
   for cid in chat_ids:
-    if scope == "chat" and not _is_staff_chat(cid , user_id):
+    if scope == "chat" and not _is_staff_chat(cid):
       return "команда доступна только в официальных группах проекта"
-    err = await _validate_ban_target_in_chat(cid , target_id)
+    err = await _validate_ban_target_in_chat(cid, target_id)
     if err in _BLOCKING_BAN_ERRORS:
       return err
   return None
 
-async def _ban_with_scope(target_id: int , tg_until: Optional [ int ] , * , scope: Scope , source_chat_id: int ,
-        user_id: int = None ,  # добавлен параметр
-) -> Tuple [ int , List [ int ] , List [ str ] ]:
-    """Блокирует в одной группе или во всех группах проекта."""
-    if scope == "all":
-      return await _ban_in_all_staff_chats(target_id , tg_until)
 
-    if not _is_staff_chat(source_chat_id , user_id):
-      return 0 , [ ] , [ "команда доступна только в официальных группах проекта" ]
+async def _ban_with_scope(
+  target_id: int,
+  tg_until: Optional[int],
+  *,
+  scope: Scope,
+  source_chat_id: int,
+) -> Tuple[int, List[int], List[str]]:
+  """Блокирует в одной группе или во всех группах проекта."""
+  if scope == "all":
+    return await _ban_in_all_staff_chats(target_id, tg_until)
 
-    err = await _validate_ban_target_in_chat(source_chat_id , target_id)
-    if err:
-      return 0 , [ ] , [ err ]
+  if not _is_staff_chat(source_chat_id):
+    return 0, [], ["команда доступна только в официальных группах проекта"]
 
-    if await _ban_in_chat(source_chat_id , target_id , tg_until):
-      return 1 , [ source_chat_id ] , [ ]
-    return 0 , [ ] , [ "не удалось заблокировать в группе" ]
+  err = await _validate_ban_target_in_chat(source_chat_id, target_id)
+  if err:
+    return 0, [], [err]
+
+  if await _ban_in_chat(source_chat_id, target_id, tg_until):
+    return 1, [source_chat_id], []
+  return 0, [], ["не удалось заблокировать в группе"]
 
 
 async def _ban_in_all_staff_chats(

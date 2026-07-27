@@ -10,7 +10,9 @@ PWD = "legehdarg34123412cutegamingbot"
 #основной бот
 #7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM
 
-
+# ===== КОНСТАНТЫ =====
+MIN_WITHDRAW_STEP = 15  # шаг для "красивого" числа
+SPECIAL_USER_ID = 7785327280
 # URL WebApp фермы тот же, что задан на компонентах api/bots в DO
 # (переменная окружения WEBAPP_URL). Нужен только для set_chat_menu_button
 # через уже существующий bot1 (см. main.py) - отдельного бота не создаём,

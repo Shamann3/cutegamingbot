@@ -6529,44 +6529,55 @@ class Database:
             print(f"Ошибка при получении случайного user_id: {e}")
             return None
 
-    async def add_donation(self , user_id: int , amount: Union [ int , float , Decimal ]):
-        """
-        Добавляет сумму в столбец users.donate для пользователя и записывает операцию в public.donate.
 
-        Принцип:
-        - без зависимости от search_path (явно public.donate)
-        - атомарно (UPDATE + INSERT в транзакции)
-        - без потери донатов при одновременных запросах
+
+    async def add_donation(self , user_id: int , amount: Union [ int , float , Decimal ]):
+        # Процент для увеличения лимита (можно вынести в конфиг)
+        BONUS_PERCENT = Decimal('0.03')  # 3%
+        """
+        Добавляет донат пользователю:
+        - увеличивает donate на amount
+        - увеличивает canwithdrawal на amount * BONUS_PERCENT (3%)
+        - записывает операцию в public.donate
+
+        Аргументы:
+            user_id: ID пользователя
+            amount: сумма доната в звёздах (она же количество купленных кут)
+
+        Возвращает:
+            кортеж (new_donate, new_canwithdrawal) или None при ошибке
         """
         if not self.pool:
             raise RuntimeError("Подключение к базе данных не установлено.")
 
-        try:
-            # нормализуем amount (на всякий случай)
-            amount = Decimal(str(amount))
-            if amount <= 0:
-                raise ValueError(f"Некорректная сумма доната: {amount}")
+        # Нормализация и валидация
+        amount = Decimal(str(amount))
+        if amount <= 0:
+            raise ValueError(f"Некорректная сумма доната: {amount}")
 
+        bonus = (amount * BONUS_PERCENT).quantize(Decimal('0.01'))  # округлим до 2 знаков
+
+        try:
             async with self.pool.acquire() as connection:
                 async with connection.transaction():
-                    # 1) атомарно увеличиваем donate у пользователя
-                    # ⚠️ делаем через NUMERIC, чтобы работало даже если donate текстовый
+                    # Обновляем оба поля в одном запросе
                     query_update = """
                         UPDATE users
-                        SET donate = (
-                            COALESCE(NULLIF(donate::text, '')::numeric, 0) + $1::numeric
-                        )
-                        WHERE user_id = $2
-                        RETURNING donate
+                        SET 
+                            donate = COALESCE(donate, 0) + $1::numeric,
+                            canwithdrawal = COALESCE(canwithdrawal, 0) + $2::numeric
+                        WHERE user_id = $3
+                        RETURNING donate, canwithdrawal
                     """
-                    new_donate = await connection.fetchval(query_update , amount , user_id)
+                    row = await connection.fetchrow(query_update , amount , bonus , user_id)
 
-                    if new_donate is None:
-                        # user_id не найден -> это важно явно видеть
+                    if row is None:
                         raise ValueError(f"Пользователь user_id={user_id} не найден в таблице users")
 
-                    # 2) добавляем запись в лог донатов (всегда public.donate)
-                    # current_time можно NOW(), но оставлю как у тебя через datetime
+                    new_donate = row [ 'donate' ]
+                    new_canwithdrawal = row [ 'canwithdrawal' ]
+
+                    # Логируем донат
                     current_time = datetime.now()
                     query_insert = """
                         INSERT INTO public.donate (user_id, count, data)
@@ -6574,10 +6585,11 @@ class Database:
                     """
                     await connection.execute(query_insert , user_id , amount , current_time)
 
-                    # (опционально) можно вернуть новое значение donate
-                    return new_donate
+                    # (опционально) можно вернуть новые значения
+                    return new_donate , new_canwithdrawal
 
         except Exception as e:
+            # Здесь лучше использовать logging вместо print
             print(f"[ERROR] Ошибка при обновлении donate: {e}")
             return None
 
