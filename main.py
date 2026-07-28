@@ -13397,8 +13397,8 @@ async def render_conc_stars_screen(*args, **kwargs):
                  f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_esc} кут\n"
                  f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_esc}\n"
                  f"<blockquote><tg-emoji emoji-id='5420542898452077602'>🧘‍♂️</tg-emoji> <b>Повысьте лимит до {target_esc} кут!</b>\n"
-                 f"<tg-emoji emoji-id='6039573425268201570'>📤</tg-emoji> Пополните баланс на {need_purchase_esc} кут, чтобы расширить текущий порог на {need_limit_esc} кут "
-                 f"<tg-emoji emoji-id='6037175527846975726'>🎁</tg-emoji> и выводить без ограничений.</blockquote>\n"
+                 f"<tg-emoji emoji-id='6039573425268201570'>📤</tg-emoji> Пополните баланс на {need_purchase_esc} кут\n"
+                 f"<tg-emoji emoji-id='6037175527846975726'>🎁</tg-emoji> Чтобы расширить текущий порог на {need_limit_esc} кут</blockquote>\n"
                  f"Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>"
                  f"</b>")
 
@@ -13510,7 +13510,7 @@ async def is_animated_emoji(emoji: str) -> bool:
 @dp.callback_query(lambda c: c.data == 'instantwithdrawal')
 async def close_bonus_callback(callback_query: types.CallbackQuery):
     await callback_query.message.edit_text(
-        f"Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>" , parse_mode="HTML")
+        f"<b>Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji></b>" , parse_mode="HTML")
 
 
 
@@ -29136,8 +29136,8 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
                  f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_esc} кут\n"
                  f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_esc}\n"
                  f"<blockquote><tg-emoji emoji-id='5420542898452077602'>🧘‍♂️</tg-emoji> <b>Повысьте лимит до {target_esc} кут!</b>\n"
-                 f"<tg-emoji emoji-id='6039573425268201570'>📤</tg-emoji> Пополните баланс на {need_purchase_esc} кут, чтобы расширить текущий порог на {need_limit_esc} кут "
-                 f"<tg-emoji emoji-id='6037175527846975726'>🎁</tg-emoji> и выводить без ограничений.</blockquote>\n"
+                 f"<tg-emoji emoji-id='6039573425268201570'>📤</tg-emoji> Пополните баланс на {need_purchase_esc} кут\n"
+                 f"<tg-emoji emoji-id='6037175527846975726'>🎁</tg-emoji> Чтобы расширить текущий порог на {need_limit_esc} кут</blockquote>\n"
                  f"Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>"
                  f"</b>")
 
@@ -34809,8 +34809,8 @@ async def add_firstname_to_usercheck_balance(message: Message):
                      f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_esc} кут\n"
                      f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_esc}\n"
                      f"<blockquote><tg-emoji emoji-id='5420542898452077602'>🧘‍♂️</tg-emoji> <b>Повысьте лимит до {target_esc} кут!</b>\n"
-                     f"<tg-emoji emoji-id='6039573425268201570'>📤</tg-emoji> Пополните баланс на {need_purchase_esc} кут, чтобы расширить текущий порог на {need_limit_esc} кут "
-                     f"<tg-emoji emoji-id='6037175527846975726'>🎁</tg-emoji> и выводить без ограничений.</blockquote>\n"
+                     f"<tg-emoji emoji-id='6039573425268201570'>📤</tg-emoji> Пополните баланс на {need_purchase_esc} кут\n"
+                     f"<tg-emoji emoji-id='6037175527846975726'>🎁</tg-emoji> Чтобы расширить текущий порог на {need_limit_esc} кут</blockquote>\n"
                      f"Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>"
                      f"</b>")
 
