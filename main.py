@@ -2823,168 +2823,214 @@ async def successful_payment_handler(message: Message):
     total_amount = message.successful_payment.total_amount
     payload = message.successful_payment.invoice_payload
 
+    print(f"🟢 [PAYMENT] Вызов обработчика, user_id={user_id}, total={total_amount}, payload={payload}")
+
     # ==============================
     # 1. ВЫКУП потерянных кут
     # ==============================
     if payload.startswith("buyback_"):
+        print(f"🔵 [PAYMENT] Выкуп для user_id={user_id}")
         try:
-            _ , bet_str , nonce = payload.split("_")
+            _, bet_str, nonce = payload.split("_")
             bet = int(bet_str)
-        except (ValueError , IndexError):
-            await message.answer("❌ Ошибка в данных платежа." , parse_mode="HTML")
+        except (ValueError, IndexError):
+            await message.answer("❌ Ошибка в данных платежа.", parse_mode="HTML")
             return
 
-        expected_stars = max(1 , int(bet * MULTIPLIER_BUYBACK))
+        expected_stars = max(1, int(bet * MULTIPLIER_BUYBACK))
         if total_amount != expected_stars:
-            await message.answer("❌ Неверная сумма звёзд для выкупа." , parse_mode="HTML")
+            await message.answer("❌ Неверная сумма звёзд для выкупа.", parse_mode="HTML")
             return
 
         try:
             user_home = await db.get_user_home(user_id)
             if user_home < bet:
-                await message.answer("❌ Недостаточно потерянных кут для выкупа." , parse_mode="HTML")
+                await message.answer("❌ Недостаточно потерянных кут для выкупа.", parse_mode="HTML")
                 return
 
-            await db.subtract_home_amount(user_id , bet)
+            await db.subtract_home_amount(user_id, bet)
             remaining_home = await db.get_user_home(user_id)
 
             current_balance = await db.get_user_balance(user_id)
             new_balance = current_balance + bet
-            await db.update_user_balance(user_id , new_balance)
-            await db.cutehistory_plus(user_id , bet , "выкуп потерянных кут")
+            await db.update_user_balance(user_id, new_balance)
+            await db.cutehistory_plus(user_id, bet, "выкуп потерянных кут")
 
             # Вызов add_donation без передачи bonus — вычисляется внутри (3%)
-            await db.add_donation(user_id , bet)
-            logger.info(f"Выкуп: user_id={user_id}, кут={bet}, звёзд={total_amount}")
+            await db.add_donation(user_id, bet)
+            print(f"✅ [PAYMENT] Выкуп успешен: user={user_id}, кут={bet}")
+
         except Exception as e:
-            logger.exception(f"Ошибка БД при выкупе user_id={user_id}: {e}")
-            await message.answer("⚠️ Ошибка при зачислении выкупа. Попробуйте позже." , parse_mode="HTML")
+            print(f"❌ [PAYMENT] Ошибка БД при выкупе user_id={user_id}: {e}")
+            await message.answer("⚠️ Ошибка при зачислении выкупа. Попробуйте позже.", parse_mode="HTML")
             return
 
         stars_view = _fmt_int1(bet)
         markup = InlineKeyboardMarkup(
-            inline_keyboard=[ [ InlineKeyboardButton(
-                text="Выкуплено" , callback_data="dummy" , style="success" ,
-                icon_custom_emoji_id="5438646400353075235") ] ,
-                [ InlineKeyboardButton(text=f"+ {stars_view} кут" , callback_data="dummy") ] ,
-                [ InlineKeyboardButton(text="Закрыть" , callback_data="9close_bonus") ] ])
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Выкуплено", callback_data="dummy", style="success",
+                                      icon_custom_emoji_id="5438646400353075235")],
+                [InlineKeyboardButton(text=f"+ {stars_view} кут", callback_data="dummy")],
+                [InlineKeyboardButton(text="Закрыть", callback_data="9close_bonus")]
+            ]
+        )
 
         # Отправка эмодзи для выкупа
-        bonus_emoji_options = [ ("5436013559630822151" , "🌿") , ("5424783865124258527" , "🌿") ,
-            ("5321481358965510372" , "🌿") ]
-        chosen_emoji_id , chosen_emoji_text = random.choice(bonus_emoji_options)
+        bonus_emoji_options = [
+            ("5436013559630822151", "🌿"),
+            ("5424783865124258527", "🌿"),
+            ("5321481358965510372", "🌿")
+        ]
+        chosen_emoji_id, chosen_emoji_text = random.choice(bonus_emoji_options)
         emoji_tag = f'<tg-emoji emoji-id="{chosen_emoji_id}">{chosen_emoji_text}</tg-emoji>'
 
         try:
             await bot1.send_message(
-                chat_id=message.chat.id , text=emoji_tag , message_effect_id="5046509860389126442" ,
-                reply_markup=markup , parse_mode="HTML")
+                chat_id=message.chat.id,
+                text=emoji_tag,
+                message_effect_id="5046509860389126442",
+                reply_markup=markup,
+                parse_mode="HTML"
+            )
+            print(f"📨 [PAYMENT] Сообщение для выкупа отправлено user={user_id}")
         except Exception as e:
-            logger.warning(f"Не удалось отправить сообщение с эффектом: {e}")
+            print(f"⚠️ [PAYMENT] Не удалось отправить с эффектом: {e}")
             await bot1.send_message(
-                chat_id=message.chat.id , text=emoji_tag , reply_markup=markup , parse_mode="HTML")
+                chat_id=message.chat.id,
+                text=emoji_tag,
+                reply_markup=markup,
+                parse_mode="HTML"
+            )
 
         # Уведомление админу
         try:
             first_name = message.from_user.first_name or str(user_id)
             user_link = f'<a href="tg://user?id={user_id}">{_html(first_name)}</a>'
-            buyback_message = (f"♻️ <b>Выкуп потерянных кут в Stars</b>\n"
-                               f"━━━━━━━━━━━━━━━━━━━\n"
-                               f"👤 <b>Пользователь :</b> {user_link} [<code>{user_id}</code>]\n"
-                               f"💰 <b>Выкуплено :</b> <code>{_fmt_int1(bet)} кут</code>\n"
-                               f"📦 <b>Осталось для выкупа :</b> <code>{_fmt_int1(remaining_home) if remaining_home is not None else '?'} кут</code>\n"
-                               f"⭐️ <b>Заработано : <code>{total_amount}</code> звёзд </b>")
-            await bot1.send_message(6801702632 , buyback_message , parse_mode="HTML")
+            buyback_message = (
+                f"♻️ <b>Выкуп потерянных кут в Stars</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"👤 <b>Пользователь :</b> {user_link} [<code>{user_id}</code>]\n"
+                f"💰 <b>Выкуплено :</b> <code>{_fmt_int1(bet)} кут</code>\n"
+                f"📦 <b>Осталось для выкупа :</b> <code>{_fmt_int1(remaining_home) if remaining_home is not None else '?'} кут</code>\n"
+                f"⭐️ <b>Заработано : <code>{total_amount}</code> звёзд </b>"
+            )
+            await bot1.send_message(6801702632, buyback_message, parse_mode="HTML")
+            print(f"📨 [PAYMENT] Уведомление админу отправлено для user={user_id}")
         except Exception as e:
-            logger.exception(f"Ошибка отправки уведомления админу о выкупе: {e}")
+            print(f"❌ [PAYMENT] Ошибка отправки уведомления админу: {e}")
 
-        logger.info(f"Платёж (выкуп) обработан: user_id={user_id}")
+        print(f"🏁 [PAYMENT] Выкуп завершён для user={user_id}")
         return
 
     # ==============================
     # 2. ОБЫЧНЫЙ ДОНАТ
     # ==============================
+    print(f"🟢 [PAYMENT] Обычный донат для user_id={user_id}")
     stars_amount = int(total_amount // donate_bet)
     if stars_amount < 1:
-        await message.answer("❌ Сумма меньше минимальной." , parse_mode="HTML")
-        logger.warning(f"User {user_id} paid {total_amount} stars, stars_amount = {stars_amount}")
+        await message.answer("❌ Сумма меньше минимальной.", parse_mode="HTML")
+        print(f"⚠️ [PAYMENT] stars_amount=0 для user={user_id}, total={total_amount}")
         return
 
     try:
-        # Обновляем баланс
+        # ---- Обновляем баланс ----
         current_balance = await db.get_user_balance(user_id)
         new_balance = current_balance + stars_amount
-        await db.update_user_balance(user_id , new_balance)
-        await db.cutehistory_plus(user_id , stars_amount , "покупка кут за звезды")
+        await db.update_user_balance(user_id, new_balance)
+        await db.cutehistory_plus(user_id, stars_amount, "покупка кут за звезды")
+        print(f"💰 [PAYMENT] Баланс обновлён: user={user_id}, +{stars_amount}, new={new_balance}")
 
-        # Вычисляем бонус заранее (3% с округлением вверх)
+        # ---- Вычисляем бонус заранее (3% с округлением вверх) ----
         BONUS_PERCENT = Decimal('0.03')
-        bonus = (Decimal(stars_amount) * BONUS_PERCENT).quantize(Decimal('0.01') , rounding=ROUND_HALF_UP)
+        bonus = (Decimal(stars_amount) * BONUS_PERCENT).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        print(f"🧮 [PAYMENT] Вычислен бонус: {bonus} для amount={stars_amount}")
 
-        # Добавляем донат с явной передачей бонуса
-        new_donate , new_canwithdrawal , actual_bonus = await db.add_donation(
-            user_id , stars_amount , bonus=bonus)
+        # ---- Добавляем донат с явной передачей бонуса ----
+        new_donate, new_canwithdrawal, actual_bonus = await db.add_donation(
+            user_id, stars_amount, bonus=bonus
+        )
+        print(f"📊 [PAYMENT] add_donation вернул: donate={new_donate}, limit={new_canwithdrawal}, actual_bonus={actual_bonus}")
 
-        # Проверка согласованности
+        # ---- Проверка согласованности ----
         if actual_bonus != bonus:
-            logger.warning(
-                f"Бонус из БД ({actual_bonus}) отличается от вычисленного ({bonus}) "
-                f"для user={user_id}, amount={stars_amount}. Использую значение из БД.")
+            print(f"⚠️ [PAYMENT] Бонус из БД ({actual_bonus}) != вычисленного ({bonus}) – использую БД")
             bonus = actual_bonus
 
-        logger.info(
-            f"Донат: user={user_id}, +{stars_amount} кут, "
-            f"бонус к лимиту +{bonus}, новый лимит={new_canwithdrawal}")
+        print(f"✅ [PAYMENT] Донат успешен: user={user_id}, +{stars_amount}, бонус={bonus}, лимит={new_canwithdrawal}")
 
     except Exception as e:
-        logger.exception(f"Ошибка БД при обработке платежа user_id={user_id}: {e}")
-        await message.answer("⚠️ Произошла ошибка при зачислении средств." , parse_mode="HTML")
+        print(f"❌ [PAYMENT] Ошибка БД при обработке доната user_id={user_id}: {e}")
+        await message.answer("⚠️ Произошла ошибка при зачислении средств.", parse_mode="HTML")
         return
 
-    # --- Форматируем числа ---
+    # ---- Форматируем числа ----
     balance_fmt = _fmt_dot_safe(new_balance)
     bonus_fmt = _fmt_dot_safe(bonus)
     limit_fmt = _fmt_dot_safe(new_canwithdrawal)
 
-    # --- Первое сообщение (эмодзи + кнопка "Закрыть") ---
+    # ---- Первое сообщение (эмодзи + кнопка "Закрыть") ----
     markup1 = InlineKeyboardMarkup(
-        inline_keyboard=[ [ InlineKeyboardButton(text=f"+ {_fmt_int1(stars_amount)} кут" , callback_data="dummy") ] ,
-            [ InlineKeyboardButton(text="Закрыть" , callback_data="9close_bonus") ] ])
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"+ {_fmt_int1(stars_amount)} кут", callback_data="dummy")],
+            [InlineKeyboardButton(text="Закрыть", callback_data="9close_bonus")]
+        ]
+    )
 
-    bonus_emoji_options = [ ("5436013559630822151" , "🌿") , ("5424783865124258527" , "🌿") ,
-        ("5321481358965510372" , "🌿") ]
-    chosen_emoji_id , chosen_emoji_text = random.choice(bonus_emoji_options)
+    bonus_emoji_options = [
+        ("5436013559630822151", "🌿"),
+        ("5424783865124258527", "🌿"),
+        ("5321481358965510372", "🌿")
+    ]
+    chosen_emoji_id, chosen_emoji_text = random.choice(bonus_emoji_options)
     emoji_tag = f'<tg-emoji emoji-id="{chosen_emoji_id}">{chosen_emoji_text}</tg-emoji>'
 
-    # --- Второе сообщение (информация о бонусе) ---
-    text_info = (f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji>")
+    # ---- Второе сообщение (информация о бонусе) ----
+    text_info = f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji>"
 
     markup2 = InlineKeyboardMarkup(
         inline_keyboard=[
-            [ InlineKeyboardButton(text=f"+ {bonus_fmt} кут" , callback_data="dummy" , style="success") ] ,
-            [ InlineKeyboardButton(text="К лимиту выводов" , callback_data="dummy") ] ])
+            [InlineKeyboardButton(text=f"+ {bonus_fmt} кут", callback_data="dummy", style="success")],
+            [InlineKeyboardButton(text="К лимиту выводов", callback_data="dummy")]
+        ]
+    )
 
     # Отправляем второе сообщение (информационное) без эффекта
     try:
         await bot1.send_message(
-            chat_id=message.chat.id , text=text_info , reply_markup=markup2 , parse_mode="HTML")
+            chat_id=message.chat.id,
+            text=text_info,
+            reply_markup=markup2,
+            parse_mode="HTML"
+        )
+        print(f"📨 [PAYMENT] Второе сообщение отправлено user={user_id}")
     except Exception as e:
-        logger.warning(f"Не удалось отправить второе сообщение: {e}")
+        print(f"⚠️ [PAYMENT] Не удалось отправить второе сообщение: {e}")
         await bot1.send_message(
-            chat_id=message.chat.id , text=text_info , parse_mode="HTML")
+            chat_id=message.chat.id,
+            text=text_info,
+            parse_mode="HTML"
+        )
 
     # Отправляем первое сообщение с эффектом
     try:
         await bot1.send_message(
-            chat_id=message.chat.id , text=emoji_tag , message_effect_id="5046509860389126442" , reply_markup=markup1 ,
-            parse_mode="HTML")
+            chat_id=message.chat.id,
+            text=emoji_tag,
+            message_effect_id="5046509860389126442",
+            reply_markup=markup1,
+            parse_mode="HTML"
+        )
+        print(f"📨 [PAYMENT] Первое сообщение с эффектом отправлено user={user_id}")
     except Exception as e:
-        logger.warning(f"Не удалось отправить первое сообщение с эффектом: {e}")
+        print(f"⚠️ [PAYMENT] Не удалось отправить первое сообщение с эффектом: {e}")
         await bot1.send_message(
-            chat_id=message.chat.id , text=emoji_tag , reply_markup=markup1 , parse_mode="HTML")
+            chat_id=message.chat.id,
+            text=emoji_tag,
+            reply_markup=markup1,
+            parse_mode="HTML"
+        )
 
-    logger.info(f"Платёж (донат) обработан: user_id={user_id}, сумма={stars_amount}")
-
+    print(f"🏁 [PAYMENT] Донат завершён для user={user_id}, сумма={stars_amount}")
 
 processed_invoices = set()
 
