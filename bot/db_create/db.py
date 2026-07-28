@@ -6535,28 +6535,29 @@ class Database:
         self,
         user_id: int,
         amount: Union[int, float, Decimal],
-        bonus_percent: Decimal = Decimal('0.03')  # 3% по умолчанию
+        bonus_percent: Decimal = Decimal('0.03'),
+        bonus: Optional[Decimal] = None  # <-- НОВЫЙ ПАРАМЕТР
     ) -> Tuple[Decimal, Decimal, Decimal]:
         """
         Добавляет донат пользователю.
 
         - Увеличивает поле `donate` на `amount`
-        - Увеличивает поле `canwithdrawal` на `amount * bonus_percent`
+        - Увеличивает поле `canwithdrawal` на `bonus` (если передан) или на `amount * bonus_percent`
         - Записывает операцию в таблицу `public.donate`
 
         Аргументы:
             user_id: ID пользователя
             amount: сумма доната в звёздах (она же количество купленных кут)
             bonus_percent: процент от суммы, добавляемый к лимиту вывода (по умолчанию 3%)
+            bonus: опционально – готовое значение бонуса (если не указано, вычисляется)
 
         Возвращает:
-            Кортеж (new_donate, new_canwithdrawal, bonus)
-            где bonus – точная сумма, добавленная к лимиту вывода.
+            Кортеж (new_donate, new_canwithdrawal, bonus_used)
+            где bonus_used – фактически добавленная сумма (для сверки)
 
         Исключения:
             ValueError: если amount <= 0 или пользователь не найден
             RuntimeError: если нет подключения к БД
-            Exception: при других ошибках БД
         """
         if not self.pool:
             raise RuntimeError("Подключение к базе данных не установлено.")
@@ -6566,13 +6567,22 @@ class Database:
         if amount <= 0:
             raise ValueError(f"Некорректная сумма доната: {amount}")
 
-        # Расчёт бонуса (округляем до 2 знаков)
-        bonus = (amount * bonus_percent).quantize(Decimal('0.01'))
+        # Если бонус не передан – вычисляем
+        if bonus is None:
+            bonus = (amount * bonus_percent).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        else:
+            bonus = Decimal(str(bonus)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            # Проверяем, что переданный бонус соответствует ожидаемому (с погрешностью 0.01)
+            expected_bonus = (amount * bonus_percent).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            if abs(bonus - expected_bonus) > Decimal('0.01'):
+                logger.warning(
+                    f"Переданный бонус {bonus} не совпадает с ожидаемым {expected_bonus} "
+                    f"для amount={amount}, bonus_percent={bonus_percent}. Использую переданный."
+                )
 
         try:
             async with self.pool.acquire() as connection:
                 async with connection.transaction():
-                    # Обновляем оба поля одним запросом
                     query_update = """
                         UPDATE users
                         SET 
@@ -6597,12 +6607,16 @@ class Database:
                     """
                     await connection.execute(query_insert, user_id, amount, current_time)
 
-                    # Возвращаем все три значения
+                    logger.info(
+                        f"Донат БД: user={user_id}, amount={amount}, bonus={bonus}, "
+                        f"new_donate={new_donate}, new_limit={new_canwithdrawal}"
+                    )
+
                     return new_donate, new_canwithdrawal, bonus
 
         except Exception as e:
-            print(f"Ошибка при обновлении donate для user_id={user_id}: {e}")
-            raise  # пробрасываем дальше
+            logger.exception(f"Ошибка при обновлении donate для user_id={user_id}: {e}")
+            raise
 
 
 
