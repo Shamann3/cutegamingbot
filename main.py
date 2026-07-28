@@ -2801,7 +2801,7 @@ async def buy_stars_handler(callback_query: types.CallbackQuery):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="Открыть в лс", url="https://t.me/CuteGamingBot")
         ]])
-        await callback_query.message.edit_text("💭", reply_markup=keyboard, parse_mode="HTML")
+        await callback_query.message.edit_text("<tg-emoji emoji-id='5465143921912846619'>💭</tg-emoji>", reply_markup=keyboard, parse_mode="HTML")
     else:
         await callback_query.message.delete()
 
@@ -2818,161 +2818,161 @@ async def pre_checkout_handler(pre_checkout_query: PreCheckoutQuery):
 
 @dp.message(lambda message: message.content_type == types.ContentType.SUCCESSFUL_PAYMENT)
 async def successful_payment_handler(message: Message):
-    """Обработка успешного платежа (донат или выкуп)."""
+    """Обработка успешного платежа (донат или выкуп потерянных кут)."""
     user_id = message.from_user.id
     total_amount = message.successful_payment.total_amount
     payload = message.successful_payment.invoice_payload
 
-    # Переменная для хранения остатка потерянных кут после выкупа
-    remaining_home = None
-
     # ==============================
-    # 1. Определение типа операции
+    # 1. Обработка выкупа (buyback)
     # ==============================
     if payload.startswith("buyback_"):
-        # --- ВЫКУП потерянных кут ---
         try:
             _, bet_str, nonce = payload.split("_")
             bet = int(bet_str)
         except (ValueError, IndexError):
-            await message.answer("<tg-emoji emoji-id='4958526153955476488'>❌</tg-emoji> Ошибка в данных платежа.", parse_mode="HTML")
+            await message.answer("❌ Ошибка в данных платежа.", parse_mode="HTML")
             return
 
         expected_stars = max(1, int(bet * MULTIPLIER_BUYBACK))
         if total_amount != expected_stars:
-            await message.answer("<tg-emoji emoji-id='4958526153955476488'>❌</tg-emoji> Неверная сумма звёзд для выкупа. Попробуйте ещё раз.", parse_mode="HTML")
+            await message.answer("❌ Неверная сумма звёзд для выкупа.", parse_mode="HTML")
             return
 
         try:
             user_home = await db.get_user_home(user_id)
             if user_home < bet:
-                await message.answer("<tg-emoji emoji-id='4958526153955476488'>❌</tg-emoji> Недостаточно потерянных кут для выкупа.", parse_mode="HTML")
+                await message.answer("❌ Недостаточно потерянных кут для выкупа.", parse_mode="HTML")
                 return
 
             await db.subtract_home_amount(user_id, bet)
-
-            # ✅ Получаем актуальный остаток сразу после выкупа
             remaining_home = await db.get_user_home(user_id)
 
             current_balance = await db.get_user_balance(user_id)
             new_balance = current_balance + bet
             await db.update_user_balance(user_id, new_balance)
             await db.cutehistory_plus(user_id, bet, "выкуп потерянных кут")
-            await db.add_donation(user_id , bet)
-            logger.info(f"Выкуп: user_id={user_id}, кут={bet}, звёзд={total_amount}")
+            await db.add_donation(user_id, bet)   # добавляем в donate (и бонус к лимиту, если нужно)
+            logger.info(f"Выкуп: user={user_id}, кут={bet}, звёзд={total_amount}")
+
         except Exception as e:
-            logger.exception(f"Ошибка БД при выкупе user_id={user_id}: {e}")
-            await message.answer("<tg-emoji emoji-id='5420323339723881652'>⚠️</tg-emoji> Произошла ошибка при зачислении выкупа. Попробуйте позже.", parse_mode="HTML")
+            logger.exception(f"Ошибка БД при выкупе user={user_id}: {e}")
+            await message.answer("⚠️ Ошибка при зачислении выкупа. Попробуйте позже.", parse_mode="HTML")
             return
 
-        stars_view = _fmt_int1(bet)
-
-        markup = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Выкуплено", callback_data="dummy", style="success",
-                icon_custom_emoji_id="5438646400353075235")],
-            [InlineKeyboardButton(text=f"+ {stars_view} кут", callback_data="dummy")],
-            [InlineKeyboardButton(text="Закрыть", callback_data="9close_bonus")]
-        ])
-
-    else:
-        # --- ОБЫЧНЫЙ ДОНАТ ---
-        stars_amount = int(total_amount // donate_bet)
-        if stars_amount < 1:
-            await message.answer("<tg-emoji emoji-id='4958526153955476488'>❌</tg-emoji> Ошибка: сумма перевода меньше минимальной.", parse_mode="HTML")
-            logger.warning(f"User {user_id} paid {total_amount} stars, stars_amount = {stars_amount}")
-            return
-
+        # Уведомление админу
         try:
-            current_balance = await db.get_user_balance(user_id)
-            new_balance = current_balance + stars_amount
-            await db.update_user_balance(user_id, new_balance)
-            await db.cutehistory_plus(user_id, stars_amount, "покупка кут за звезды")
-            await db.add_donation(user_id, stars_amount)
-
+            first_name = message.from_user.first_name or str(user_id)
+            user_link = f'<a href="tg://user?id={user_id}">{_html(first_name)}</a>'
+            admin_msg = (
+                f"<tg-emoji emoji-id='5805232145513322780'>♻️</tg-emoji> <b>Выкуп потерянных кут в Stars</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+                f"<tg-emoji emoji-id='5258011929993026890'>👤</tg-emoji> <b>Пользователь :</b> {user_link} [<code>{user_id}</code>]\n"
+                f"<tg-emoji emoji-id='5348418461838098123'>💰</tg-emoji> <b>Выкуплено :</b> <code>{_fmt_int1(bet)} кут</code>\n"
+                f"<tg-emoji emoji-id='5258134813302332906'>📦</tg-emoji> <b>Осталось :</b> <code>{_fmt_int1(remaining_home)} кут</code>\n"
+                f"<tg-emoji emoji-id='5258165702707125574'>⭐️</tg-emoji> <b>Заработано :</b> <code>{total_amount} звёзд</code>"
+            )
+            await bot1.send_message(6801702632, admin_msg, parse_mode="HTML")
         except Exception as e:
-            logger.exception(f"Ошибка БД при обработке платежа user_id={user_id}: {e}")
-            await message.answer("⚠️ Произошла ошибка при зачислении средств.")
-            return
+            logger.exception(f"Ошибка отправки уведомления админу: {e}")
 
-        stars_view = _fmt_int1(stars_amount)
+        # Кнопки для выкупа
         markup = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"+ {stars_view} кут", callback_data="dummy")],
-            [InlineKeyboardButton(text="Закрыть", callback_data="9close_bonus")]
+            [InlineKeyboardButton("Выкуплено", callback_data="dummy", style="success",
+                                  icon_custom_emoji_id="5438646400353075235")],
+            [InlineKeyboardButton(f"+ {_fmt_int1(bet)} кут", callback_data="dummy")],
+            [InlineKeyboardButton("Закрыть", callback_data="9close_bonus")]
         ])
 
+        # Отправляем только эмодзи (как было)
+        emoji_tag = random.choice([
+            ('<tg-emoji emoji-id="5436013559630822151">🌿</tg-emoji>'),
+            ('<tg-emoji emoji-id="5424783865124258527">🌿</tg-emoji>'),
+            ('<tg-emoji emoji-id="5321481358965510372">🌿</tg-emoji>')
+        ])
+        try:
+            await bot1.send_message(
+                chat_id=message.chat.id,
+                text=emoji_tag,
+                message_effect_id="5046509860389126442",
+                reply_markup=markup,
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.warning(f"Не удалось отправить с эффектом: {e}")
+            await bot1.send_message(
+                chat_id=message.chat.id,
+                text=emoji_tag,
+                reply_markup=markup,
+                parse_mode="HTML"
+            )
+
+        logger.info(f"Платёж (выкуп) обработан: user={user_id}")
+        return
+
     # ==============================
-    # 2. Отправка красивого сообщения
+    # 2. Обработка обычного доната
     # ==============================
-    bonus_emoji_options = [
-        ("5436013559630822151", "🌿"),
-        ("5424783865124258527", "🌿"),
-        ("5321481358965510372", "🌿")
-    ]
-    chosen_emoji_id, chosen_emoji_text = random.choice(bonus_emoji_options)
-    emoji_tag = f'<tg-emoji emoji-id="{chosen_emoji_id}">{chosen_emoji_text}</tg-emoji>'
+    stars_amount = int(total_amount // donate_bet)
+    if stars_amount < 1:
+        await message.answer("❌ Сумма меньше минимальной.", parse_mode="HTML")
+        logger.warning(f"User {user_id} paid {total_amount} stars → stars_amount=0")
+        return
 
     try:
+        # --- Обновляем баланс ---
+        current_balance = await db.get_user_balance(user_id)
+        new_balance = current_balance + stars_amount
+        await db.update_user_balance(user_id, new_balance)
+        await db.cutehistory_plus(user_id, stars_amount, "покупка кут за звезды")
+
         # --- Добавляем донат и получаем бонус к лимиту ---
-        new_donate , new_canwithdrawal , bonus = await db.add_donation(user_id , stars_amount)
-        # Форматирование чисел
-        balance_fmt = _fmt_dot_safe(new_balance)
-        stars_view = _fmt_int1(stars_amount)
-        bonus_fmt = _fmt_dot_safe(bonus)
-
-        # Текст сообщения (лаконичный, с информацией о лимите)
-
-        markup123 = InlineKeyboardMarkup(
-            inline_keyboard=[ [ InlineKeyboardButton(text=f"+ {bonus_fmt} кут" , callback_data="dummy") ] ,
-                [ InlineKeyboardButton(text="к лимиту выводов" , callback_data="dummy") ] ])
-        await bot.send_message(
-            chat_id=user_id , text="<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji>" , reply_markup=markup123 , parse_mode="HTML"  # обязательно
+        new_donate, new_canwithdrawal, bonus = await db.add_donation(user_id, stars_amount)
+        logger.info(
+            f"Донат: user={user_id}, +{stars_amount} кут, "
+            f"бонус к лимиту +{bonus}, новый лимит={new_canwithdrawal}"
         )
+
+    except Exception as e:
+        logger.exception(f"Ошибка БД при донате user={user_id}: {e}")
+        await message.answer("⚠️ Ошибка при зачислении доната. Попробуйте позже.", parse_mode="HTML")
+        return
+
+    # ---- Форматируем числа ----
+    balance_fmt = _fmt_dot_safe(new_balance)
+    bonus_fmt = _fmt_dot_safe(bonus)
+    limit_fmt = _fmt_dot_safe(new_canwithdrawal)
+
+    # ---- Текст сообщения ----
+    text = (
+        "<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji>"
+    )
+
+    # ---- Кнопки ----
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(f"+ {bonus_fmt} кут", callback_data="dummy")],
+        [InlineKeyboardButton("К лимиту выводов", callback_data="dummy")]
+    ])
+
+    # ---- Отправка с эффектом ----
+    try:
         await bot1.send_message(
             chat_id=message.chat.id,
-            text=emoji_tag,
+            text=text,
             message_effect_id="5046509860389126442",
             reply_markup=markup,
             parse_mode="HTML"
         )
     except Exception as e:
-        logger.warning(f"Не удалось отправить сообщение с эффектом: {e}")
+        logger.warning(f"Не удалось отправить с эффектом: {e}")
         await bot1.send_message(
             chat_id=message.chat.id,
-            text=emoji_tag,
+            text=text,
             reply_markup=markup,
             parse_mode="HTML"
         )
 
-    # ==============================
-    # 3. Уведомление админу о выкупе
-    # ==============================
-    if payload.startswith("buyback_"):
-        try:
-            # Формируем ссылку на пользователя
-            first_name = message.from_user.first_name or str(user_id)
-            username = message.from_user.username
-            if username:
-                user_link = f'<a href="tg://user?id={user_id}">{_html(first_name)}</a>'
-            else:
-                user_link = f'<a href="tg://user?id={user_id}">{_html(first_name)}</a>'
-
-            buyback_message = (
-                f"<tg-emoji emoji-id='5805232145513322780'>♻️</tg-emoji> <b>Выкуп потерянных кут в Stars</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
-                f"<tg-emoji emoji-id='5886412370347036129'>👤</tg-emoji> <b>Пользователь :</b> {user_link} [<code>{user_id}</code>]\n"
-                f"<tg-emoji emoji-id='5987880246865565644'>💰</tg-emoji> <b>Выкуплено :</b> <code>{_fmt_int1(bet)} кут</code>\n"
-                f"<tg-emoji emoji-id='6021767126514144698'>📦</tg-emoji> <b>Осталось для выкупа :</b> <code>{_fmt_int1(remaining_home) if remaining_home is not None else '?'} кут</code>\n"
-                f"<tg-emoji emoji-id='6028338546736107668'>⭐️</tg-emoji> <b>Заработано : <code>{total_amount}</code> звёзд </b>"
-            )
-            await bot1.send_message(
-                6801702632,   # ID администратора выкупов
-                buyback_message,
-                parse_mode="HTML"
-            )
-        except Exception as e:
-            logger.exception(f"Ошибка отправки уведомления админу о выкупе: {e}")
-
-    logger.info(f"Платёж обработан: user_id={user_id}, type={'buyback' if payload.startswith('buyback_') else 'donate'}")
+    logger.info(f"Платёж (донат) обработан: user={user_id}, сумма={stars_amount}")
 processed_invoices = set()
 
 @payment_router.invoice_paid()
@@ -13319,31 +13319,47 @@ async def render_conc_stars_screen(*args, **kwargs):
                 icon_custom_emoji_id="5226660202035554522")]
         ])
 
-    # Форматирование и расчёт красивого лимита
-    STEP = MIN_WITHDRAW_STEP
-    target = ((daily_limit // STEP) + 1) * STEP
-    need = target - daily_limit
+    # ---- 8. ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
+    try:
+        user_limit = await db.get_user_canwithdrawal(user_id)
+    except Exception as e:
+        print(f"🟥 [CONC_STARS][CANWITHDRAWAL] err={e!r}")
+        user_limit = daily_limit  # fallback на старый лимит
 
+    # ---- 9. Расчёт "красивого" лимита (кратного STEP) ----
+    STEP = MIN_WITHDRAW_STEP  # например, 15
+    target = ((user_limit // STEP) + 1) * STEP
+    need = target - user_limit
+
+    # Если лимит уже кратен STEP, то need = 0, показываем это
+    if need < 0:
+        need = 0
+
+    # ---- 10. Форматирование чисел ----
     balance_fmt = _fmt_dot_safe(user_balance_int)
     remaining_fmt = _fmt_dot_safe(remaining)
     need_fmt = _fmt_dot_safe(need)
     target_fmt = _fmt_dot_safe(target)
 
-    text_parts = [ "<b>" ,
-        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n" ,
-        f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n" ,
-        f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n" ,
-        f"<blockquote><b>Осталось {need_fmt} кут до лимита {target_fmt} кут. Пополните баланс для вывода удобных сумм без остатков.</b></blockquote>\n\n",
-        "Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>" , "</b>" ]
+    # ---- 11. Сборка текста (коротко и понятно) ----
+    text_parts = [
+        "<b>",
+        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n",
+        f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n",
+        f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n",
+        f"<blockquote><b>Осталось {need_fmt} кут до удобного лимита {target_fmt} кут.\n",
+        f"Пополните баланс, чтобы увеличить лимит вывода до круглого числа.</b></blockquote>\n\n",
+        "Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>",
+        "</b>"
+    ]
 
     # Персональная благодарность для специального пользователя
-
     if user_id == SPECIAL_USER_ID:
         text_parts.append("\n\n<b><i>Спасибо за идею Игорь. Виво-Эпсилон. | Текст был написан лично Иэрихоном</i></b>")
 
     full_text = "".join(text_parts)
 
-    # ---- 11. Отправка/редактирование сообщения ----
+    # ---- 12. Отправка/редактирование ----
     mode, msg_now = await smart_send_or_edit_safe(
         message_obj=message_obj,
         text=full_text,
@@ -28887,7 +28903,7 @@ async def get_min_gift_price_now(bot1) -> int:
 # Обработчик для кнопки "Вернуться назад"
 @dp.callback_query(lambda c: isinstance(c.data, str) and c.data == "back_to_stars_choice")
 async def back_to_stars_choice(callback_query: types.CallbackQuery):
-    # 0) гасим крутилку
+    # ---- 0. Гасим уведомление ----
     try:
         await callback_query.answer()
     except Exception:
@@ -28900,7 +28916,7 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
         print(f"🟥 [WITHDRAW][BACK] нет message в callback | uid={user_id}")
         return
 
-    # 1) глобальный запрет вывода
+    # ---- 1. Глобальный запрет вывода ----
     if withdraw_disabled:  # noqa: F821
         try:
             await send_withdraw_disabled_message(callback_query)  # noqa: F821
@@ -28920,18 +28936,13 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
 
     print(f"🟦 [WITHDRAW][BACK] start | uid={user_id} back_callback={back_callback!r}")
 
-    # ---- 3. Баланс пользователя ----
+    # ---- 3. Получаем баланс ----
     try:
         user_balance = await db.get_user_balance(user_id)  # noqa: F821
     except Exception as e:
         print(f"🟥 [WITHDRAW][BACK][ERROR] get_user_balance: {type(e).__name__}: {e!r}")
         user_balance = 0
-
-    try:
-        user_balance_int = int(user_balance or 0)
-    except Exception:
-        user_balance_int = 0
-
+    user_balance_int = int(user_balance or 0)
     user_balance_fmt = _fmt_dot_safe(user_balance_int)
 
     # ---- 4. Минимальная сумма вывода ----
@@ -28941,9 +28952,7 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
         print(f"🟥 [WITHDRAW][BACK][MIN] err: {e!r}")
         min_withdraw = 0
 
-    print(f"🟦 [WITHDRAW][BACK][MIN] MIN_WITHDRAW(now) = {min_withdraw} ⭐️")
-
-    # ---- 5. Единый источник правды по лимитам ----
+    # ---- 5. Обновляем лимиты (daily_limit, remaining и т.д.) ----
     try:
         state = await db.refresh_withdraw_quota_if_needed(  # noqa: F821
             user_id,
@@ -28969,21 +28978,13 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
     cooldown_sec = int(state.get("cooldown_seconds") or 0)
     reason = str(state.get("reason") or state.get("cause") or "")
 
-    print(
-        f"🟦 [WITHDRAW][BACK][STATE] allowed={allowed} limit={daily_limit} used={used} "
-        f"remaining={remaining} cd_left={cooldown_left} cd_sec={cooldown_sec} reason={reason!r}"
-    )
-
     # ---- 6. Если вывод заблокирован или остаток исчерпан – показываем блокировку ----
     if (not allowed) or (remaining <= 0):
-        # Если остаток = 0, а кулдаун ещё не активен – запускаем его
         if allowed and remaining <= 0 and cooldown_sec > 0:
             try:
-                print(f"🟨 [WITHDRAW][BACK][FORCE] remaining<=0 but allowed=True -> start cooldown sec={cooldown_sec}")
                 await db.start_user_withdraw_cooldown(user_id, int(cooldown_sec), "daily_limit")  # noqa: F821
             except Exception as e:
                 print(f"🟠 [WITHDRAW][BACK][FORCE][WARN] start_user_withdraw_cooldown: {type(e).__name__}: {e!r}")
-
             try:
                 cooldown_left = int(await db.get_user_cooldown_left(user_id) or cooldown_left)  # noqa: F821
             except Exception:
@@ -29008,16 +29009,8 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
             ])
 
         try:
-            await msg.edit_text(
-                "🧰",
-                reply_markup=kb_locked,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-            try:
-                attach_gift_menu_meta(msg, user_id, back_callback)
-            except Exception:
-                pass
+            await msg.edit_text("🧰", reply_markup=kb_locked, parse_mode="HTML", disable_web_page_preview=True)
+            attach_gift_menu_meta(msg, user_id, back_callback)
         except Exception as e:
             print(f"🟥 [WITHDRAW][BACK][ERROR] edit_text locked: {type(e).__name__}: {e!r}")
         return
@@ -29029,7 +29022,6 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
     try:
         ton_bal = float(await get_balance_ton_fast(str(seed_phrase)) or 0.0)  # noqa: F821
         speed_flag = "+" if ton_bal >= TON_INSTANT_MIN else "-"  # noqa: F821
-        print(f"🟦 [WITHDRAW][BACK][TON] bal={ton_bal:.9f} -> speed_flag={speed_flag!r}")
     except Exception as e:
         speed_flag = "-"
         print(f"🟥 [WITHDRAW][BACK][TON][ERROR] {type(e).__name__}: {e!r} -> speed_flag='-'")
@@ -29044,14 +29036,9 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
         )
     except Exception as e:
         speed_allowed = False
-        print(f"🟥 [WITHDRAW][BACK][ERROR] decide_speed_allowed_safe: {type(e).__name__}: {e!r} -> speed_allowed=False")
+        print(f"🟥 [WITHDRAW][BACK][ERROR] decide_speed_allowed_safe: {type(e).__name__}: {e!r}")
 
-    print(
-        f"🟦 [WITHDRAW][BACK] uid={user_id} bal={user_balance_int} remaining={remaining} "
-        f"ton={ton_bal:.9f} speed_flag={speed_flag!r} speed_allowed={bool(speed_allowed)}"
-    )
-
-    # ---- 8. Генерация клавиатуры ----
+    # ---- 8. Генерация клавиатуры подарков ----
     try:
         kb = await generate_gift_keyboard(  # noqa: F821
             bot1,  # noqa: F821
@@ -29067,42 +29054,47 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
                 icon_custom_emoji_id="5226660202035554522")]
         ])
 
-    # Форматирование и красивый лимит
-    STEP = MIN_WITHDRAW_STEP
-    target = ((daily_limit // STEP) + 1) * STEP
-    need = target - daily_limit
+    # ---- 9. Получаем АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
+    try:
+        user_limit = await db.get_user_canwithdrawal(user_id)  # noqa: F821
+    except Exception as e:
+        print(f"🟥 [WITHDRAW][BACK][CANWITHDRAWAL] err={e!r}")
+        user_limit = daily_limit  # fallback на старый лимит
 
+    # ---- 10. Расчёт "красивого" лимита (кратного STEP) ----
+    STEP = MIN_WITHDRAW_STEP  # например, 15
+    target = ((user_limit // STEP) + 1) * STEP
+    need = target - user_limit
+    if need < 0:
+        need = 0
+
+    # ---- 11. Форматирование чисел ----
     balance_fmt = _fmt_dot_safe(user_balance_int)
     remaining_fmt = _fmt_dot_safe(remaining)
     need_fmt = _fmt_dot_safe(need)
     target_fmt = _fmt_dot_safe(target)
 
-    text_parts = [ "<b>" ,
-        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n" ,
-        f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n" ,
-        f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n" ,
-        f"<blockquote><b>Осталось {need_fmt} кут до лимита {target_fmt} кут. Пополните для вывода круглых сумм.</b></blockquote>\n\n" ,
-        "Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>" , "</b>" ]
-
-    # Персональная благодарность для специального пользователя
+    # ---- 12. Сборка текста (коротко и понятно) ----
+    text_parts = [
+        "<b>",
+        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n",
+        f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n",
+        f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n",
+        f"<blockquote><b>Осталось {need_fmt} кут до удобного лимита {target_fmt} кут.\n",
+        f"Пополните баланс, чтобы увеличить лимит вывода до круглого числа.</b></blockquote>\n\n",
+        "Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>",
+        "</b>"
+    ]
 
     if user_id == SPECIAL_USER_ID:
         text_parts.append("\n\n<b><i>Спасибо за идею Игорь. Виво-Эпсилон. | Текст был написан лично Иэрихоном</i></b>")
 
     full_text = "".join(text_parts)
 
-    # ---- 11. Редактируем сообщение ----
+    # ---- 13. Редактируем сообщение ----
     try:
-        await msg.edit_text(
-            full_text,
-            reply_markup=kb,
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
-        try:
-            attach_gift_menu_meta(msg, user_id, back_callback)
-        except Exception as e:
-            print(f"🟠 [WITHDRAW][BACK][WARN] attach_gift_menu_meta: {type(e).__name__}: {e!r}")
+        await msg.edit_text(full_text, reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
+        attach_gift_menu_meta(msg, user_id, back_callback)
     except Exception as e:
         print(f"🟥 [WITHDRAW][BACK][ERROR] edit_text normal: {type(e).__name__}: {e!r}")
 
@@ -34598,7 +34590,6 @@ async def add_firstname_to_usercheck_balance(message: Message):
         target = ((current // step) + 1) * step
         return target , target - current
 
-    # ===== ОСНОВНОЙ БЛОК =====
     user_id = message.from_user.id
 
     if message.chat.type == ChatType.PRIVATE and user_id in user_gift:
@@ -34634,11 +34625,11 @@ async def add_firstname_to_usercheck_balance(message: Message):
         except Exception as e:
             print(f"🟥 [WITHDRAW][FINISH] refresh_withdraw_quota_if_needed: {type(e).__name__}: {e}")
             state = {"allowed": True , "cooldown_left": 0 , "daily_limit": 0 , "used": 0 , "remaining": 0 ,
-                "cooldown_seconds": 0 , }
+                     "cooldown_seconds": 0 , }
 
         allowed = state.get("allowed" , True)
         remaining = int(state.get("remaining" , 0))
-        daily_limit = int(state.get("daily_limit" , 0))  # текущий лимит за 6ч
+        daily_limit = int(state.get("daily_limit" , 0))  # пока оставляем для fallback
         cooldown_sec = int(state.get("cooldown_seconds" , 0))
 
         # ---- 4. Если кулдаун или нет остатка — блокируем и выходим ----
@@ -34716,19 +34707,33 @@ async def add_firstname_to_usercheck_balance(message: Message):
                     text=" " , callback_data="9close_bonus" , style="default" ,
                     icon_custom_emoji_id="5226660202035554522") ] ])
 
-        # Форматирование и расчёт красивого лимита
+        # ---- 9. Получаем АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
+        try:
+            user_limit = await db.get_user_canwithdrawal(user_id)
+        except Exception as e:
+            print(f"🟥 [WITHDRAW][FINISH] get_user_canwithdrawal: {type(e).__name__}: {e}")
+            user_limit = daily_limit  # fallback на старый лимит
+
+        # ---- 10. Расчёт "красивого" лимита (кратного STEP) ----
+        STEP = MIN_WITHDRAW_STEP
+        target = ((user_limit // STEP) + 1) * STEP
+        need = target - user_limit
+        if need < 0:
+            need = 0
+
+        # ---- 11. Форматирование чисел ----
         balance_fmt = _fmt_dot_safe(user_balance)
         remaining_fmt = _fmt_dot_safe(remaining)
-
-        target , need = next_round_limit(daily_limit)  # сразу распаковываем
         need_fmt = _fmt_dot_safe(need)
         target_fmt = _fmt_dot_safe(target)
 
+        # ---- 12. Сборка текста (коротко и понятно) ----
         text_parts = [ "<b>" ,
             "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n" ,
             f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n" ,
             f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n" ,
-            f"<blockquote><b>Осталось {need_fmt} кут до лимита {target_fmt} кут. Пополните для вывода круглых сумм.</b></blockquote>\n\n" ,
+            f"<blockquote><b>Осталось {need_fmt} кут до удобного лимита {target_fmt} кут.\n" ,
+            f"Пополните баланс, чтобы увеличить лимит вывода до круглого числа.</b></blockquote>\n\n" ,
             "Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>" , "</b>" ]
 
         # Персональная благодарность для специального пользователя
@@ -34737,12 +34742,11 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
         full_text = "".join(text_parts)
 
-        # ---- 11. Отправляем ----
+        # ---- 13. Отправляем ----
         try:
             sent = await message.answer(
                 full_text , reply_markup=kb , parse_mode="HTML" , disable_web_page_preview=True , )
             print(f"📨 [WITHDRAW][FINISH] Экран отправлен. msg_id={getattr(sent , 'message_id' , None)}")
-            # сохраняем мету для возврата
             try:
                 attach_gift_menu_meta(sent , owner_id_for_back , back_callback)
                 print("🧷 [WITHDRAW][FINISH] Мета gift_menu_owner/gift_menu_back сохранена")
@@ -34751,7 +34755,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
         except Exception as e:
             print(f"🟥 [WITHDRAW][FINISH] Ошибка отправки: {type(e).__name__}: {e}")
 
-        # ---- 12. Чистим состояние ----
+        # ---- 14. Чистим состояние ----
         user_gift.pop(user_id , None)
         print(f"🧹 [WITHDRAW][FINISH] Состояние очищено user_id={user_id}")
 
