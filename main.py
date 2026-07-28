@@ -13186,10 +13186,9 @@ def _kb_withdraw_locked(
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-# ============================================================
-# ✅ ОСНОВНОЙ РЕНДЕР (улучшенная версия с text_parts)
-# ============================================================
 async def render_conc_stars_screen(*args, **kwargs):
+    from html import escape  # убедитесь, что импорт есть в начале файла
+
     message_obj: Optional[Message] = kwargs.get("message_obj")
     user_id = kwargs.get("user_id")
     seed_phrase = kwargs.get("seed_phrase")
@@ -13350,7 +13349,7 @@ async def render_conc_stars_screen(*args, **kwargs):
 
     # ---- 8. ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
     try:
-        user_limit = remaining#await db.get_user_canwithdrawal(user_id)
+        user_limit = remaining  # await db.get_user_canwithdrawal(user_id) – закомментировано
         user_limit = int(user_limit or 0)
     except Exception as e:
         print(f"🟥 [CONC_STARS][CANWITHDRAWAL] err={e!r}")
@@ -13360,7 +13359,6 @@ async def render_conc_stars_screen(*args, **kwargs):
     STEP = MIN_WITHDRAW_STEP
     BONUS_PERCENT = Decimal('0.03')
 
-    # Функция расчёта (можно вынести отдельно)
     def calculate_purchase_to_target(limit, step, bonus_pct):
         target = ((limit // step) + 1) * step
         need_limit = target - limit
@@ -13378,32 +13376,44 @@ async def render_conc_stars_screen(*args, **kwargs):
         bonus_pct=BONUS_PERCENT
     )
 
-    # ---- 10. Форматирование чисел ----
+    # ---- 10. Форматирование чисел и экранирование ----
     balance_fmt = _fmt_dot_safe(user_balance_int)
     remaining_fmt = _fmt_dot_safe(remaining)
     need_limit_fmt = _fmt_dot_safe(need_limit)
     target_fmt = _fmt_dot_safe(target)
     need_purchase_fmt = _fmt_dot_safe(need_purchase)
 
-    text_parts = [ "<b>" ,
-                   "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n" ,
-                   f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n" ,
-                   f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n" ,
-                   f"<blockquote><b>Повысьте лимит до {target_fmt} кут!\n"
-                   f"Пополните баланс на {need_purchase_fmt} кут, чтобы расширить текущий порог на {need_limit_fmt} кут "
-                   f"и выводить без ограничений.</b></blockquote>" ,  # закрываем общий жирный шрифт
-                   "\n<b>Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji></b>"]
+    # Экранируем все переменные
+    balance_esc = escape(balance_fmt)
+    remaining_esc = escape(remaining_fmt)
+    need_limit_esc = escape(need_limit_fmt)
+    target_esc = escape(target_fmt)
+    need_purchase_esc = escape(need_purchase_fmt)
 
+    # ---- 11. Сборка текста с правильной вложенностью тегов ----
+    full_text = (
+        f"<b>"
+        f"<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n"
+        f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_esc} кут\n"
+        f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_esc}\n"
+        f"<blockquote><b>Повысьте лимит до {target_esc} кут!</b>\n"
+        f"Пополните баланс на {need_purchase_esc} кут, чтобы расширить текущий порог на {need_limit_esc} кут "
+        f"и выводить без ограничений.</blockquote>\n"
+        f"Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>"
+        f"</b>"
+    )
+
+    # Персональная благодарность
     if user_id == SPECIAL_USER_ID:
-        text_parts.append("\n\n<b><i>Спасибо за идею Игорь. Виво-Эпсилон. | Текст был написан лично Иэрихоном</i></b>")
-
-    full_text = "".join(text_parts)
+        full_text += "\n\n<b><i>Спасибо за идею Игорь. Виво-Эпсилон. | Текст был написан лично Иэрихоном</i></b>"
 
     # ---- 12. Отправка ----
     mode, msg_now = await smart_send_or_edit_safe(
         message_obj=message_obj,
         text=full_text,
         reply_markup=kb,
+        parse_mode="HTML",  # добавляем явно, если smart_send_or_edit_safe не передаёт
+        disable_web_page_preview=True,
     )
     attach_gift_menu_meta(msg_now, user_id, back_callback)
 
@@ -29111,32 +29121,41 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
         bonus_pct=BONUS_PERCENT
     )
 
-    # ---- Форматирование ----
     balance_fmt = _fmt_dot_safe(user_balance_int)
     remaining_fmt = _fmt_dot_safe(remaining)
     need_limit_fmt = _fmt_dot_safe(need_limit)
     target_fmt = _fmt_dot_safe(target)
     need_purchase_fmt = _fmt_dot_safe(need_purchase)
 
-    # ---- Текст ----
-    text_parts = [ "<b>" ,
-        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n" ,
-        f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n" ,
-        f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n" ,
-        f"<blockquote><b>Повысьте лимит до {target_fmt} кут!\n"
-        f"Пополните баланс на {need_purchase_fmt} кут, чтобы расширить текущий порог на {need_limit_fmt} кут "
-        f"и выводить без ограничений.</b></blockquote>" ,  # закрываем общий жирный шрифт
-        "\nВыберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji></b>" ]
+    # Экранируем все переменные, чтобы избежать конфликтов с HTML
+    balance_esc = escape(balance_fmt)
+    remaining_esc = escape(remaining_fmt)
+    need_limit_esc = escape(need_limit_fmt)
+    target_esc = escape(target_fmt)
+    need_purchase_esc = escape(need_purchase_fmt)
 
+    # Формируем текст с правильной вложенностью тегов
+    full_text = (f"<b>"
+                 f"<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n"
+                 f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_esc} кут\n"
+                 f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_esc}\n"
+                 f"<blockquote><b>Повысьте лимит до {target_esc} кут!</b>\n"
+                 f"Пополните баланс на {need_purchase_esc} кут, чтобы расширить текущий порог на {need_limit_esc} кут "
+                 f"и выводить без ограничений.</blockquote>\n"
+                 f"Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>"
+                 f"</b>")
+
+    # Персональная благодарность для специального пользователя
     if user_id == SPECIAL_USER_ID:
-        text_parts.append("\n\n<b><i>Спасибо за идею Игорь. Виво-Эпсилон. | Текст был написан лично Иэрихоном</i></b>")
-
-    full_text = "".join(text_parts)
+        # Если благодарность содержит HTML, она должна быть безопасной.
+        # Можно обернуть в escape, если есть сомнения, но здесь оставим как есть,
+        # так как текст статичен и не содержит пользовательских данных.
+        full_text += "\n\n<b><i>Спасибо за идею Игорь. Виво-Эпсилон. | Текст был написан лично Иэрихоном</i></b>"
 
     # ---- Редактируем сообщение ----
     try:
-        await msg.edit_text(full_text, reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
-        attach_gift_menu_meta(msg, user_id, back_callback)
+        await msg.edit_text(full_text , reply_markup=kb , parse_mode="HTML" , disable_web_page_preview=True)
+        attach_gift_menu_meta(msg , user_id , back_callback)
     except Exception as e:
         print(f"🟥 [WITHDRAW][BACK][ERROR] edit_text normal: {type(e).__name__}: {e!r}")
 
@@ -34775,29 +34794,36 @@ async def add_firstname_to_usercheck_balance(message: Message):
         need_purchase , target , need_limit = calculate_purchase_to_target(
             limit=user_limit , step=STEP , bonus_pct=BONUS_PERCENT)
 
-        # ---- 11. Форматирование чисел ----
         balance_fmt = _fmt_dot_safe(user_balance)
         remaining_fmt = _fmt_dot_safe(remaining)
         need_limit_fmt = _fmt_dot_safe(need_limit)
         target_fmt = _fmt_dot_safe(target)
         need_purchase_fmt = _fmt_dot_safe(need_purchase)
 
-        text_parts = [ "<b>" ,
-                       "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n" ,
-                       f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n" ,
-                       f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n" ,
-                       f"<blockquote><b>Повысьте лимит до {target_fmt} кут!\n"
-                       f"Пополните баланс на {need_purchase_fmt} кут, чтобы расширить текущий порог на {need_limit_fmt} кут "
-                       f"и выводить без ограничений.</b></blockquote>" ,  # закрываем общий жирный шрифт
-                       "\nВыберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji></b>" ]
+        # Экранируем все переменные, чтобы избежать конфликтов с HTML
+        balance_esc = escape(balance_fmt)
+        remaining_esc = escape(remaining_fmt)
+        need_limit_esc = escape(need_limit_fmt)
+        target_esc = escape(target_fmt)
+        need_purchase_esc = escape(need_purchase_fmt)
+
+        # Формируем текст с правильной вложенностью тегов
+        full_text = (f"<b>"
+                     f"<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n"
+                     f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_esc} кут\n"
+                     f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_esc}\n"
+                     f"<blockquote><b>Повысьте лимит до {target_esc} кут!</b>\n"
+                     f"Пополните баланс на {need_purchase_esc} кут, чтобы расширить текущий порог на {need_limit_esc} кут "
+                     f"и выводить без ограничений.</blockquote>\n"
+                     f"Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>"
+                     f"</b>")
 
         # Персональная благодарность для специального пользователя
         if user_id == SPECIAL_USER_ID:
-            text_parts.append(THANK_TEXT)
+            # Если THANK_TEXT содержит HTML, его тоже нужно экранировать (если он не доверенный)
+            full_text += THANK_TEXT  # или escape(THANK_TEXT), если он может содержать опасные символы
 
-        full_text = "".join(text_parts)
-
-        # ---- 13. Отправляем ----
+        # ---- 13. Отправка ----
         try:
             sent = await message.answer(
                 full_text , reply_markup=kb , parse_mode="HTML" , disable_web_page_preview=True , )
