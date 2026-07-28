@@ -2818,14 +2818,11 @@ async def pre_checkout_handler(pre_checkout_query: PreCheckoutQuery):
 
 @dp.message(lambda message: message.content_type == types.ContentType.SUCCESSFUL_PAYMENT)
 async def successful_payment_handler(message: Message):
-    """Обработка успешного платежа (донат или выкуп потерянных кут)."""
     user_id = message.from_user.id
     total_amount = message.successful_payment.total_amount
     payload = message.successful_payment.invoice_payload
 
-    # ==============================
-    # 1. Обработка выкупа (buyback)
-    # ==============================
+    # ==================== ВЫКУП ====================
     if payload.startswith("buyback_"):
         try:
             _, bet_str, nonce = payload.split("_")
@@ -2852,7 +2849,7 @@ async def successful_payment_handler(message: Message):
             new_balance = current_balance + bet
             await db.update_user_balance(user_id, new_balance)
             await db.cutehistory_plus(user_id, bet, "выкуп потерянных кут")
-            await db.add_donation(user_id, bet)   # добавляем в donate (и бонус к лимиту, если нужно)
+            await db.add_donation(user_id, bet)   # если нужно добавлять в donate
             logger.info(f"Выкуп: user={user_id}, кут={bet}, звёзд={total_amount}")
 
         except Exception as e:
@@ -2865,12 +2862,12 @@ async def successful_payment_handler(message: Message):
             first_name = message.from_user.first_name or str(user_id)
             user_link = f'<a href="tg://user?id={user_id}">{_html(first_name)}</a>'
             admin_msg = (
-                f"<tg-emoji emoji-id='5805232145513322780'>♻️</tg-emoji> <b>Выкуп потерянных кут в Stars</b>\n"
+                f"♻️ <b>Выкуп потерянных кут в Stars</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
-                f"<tg-emoji emoji-id='5258011929993026890'>👤</tg-emoji> <b>Пользователь :</b> {user_link} [<code>{user_id}</code>]\n"
-                f"<tg-emoji emoji-id='5348418461838098123'>💰</tg-emoji> <b>Выкуплено :</b> <code>{_fmt_int1(bet)} кут</code>\n"
-                f"<tg-emoji emoji-id='5258134813302332906'>📦</tg-emoji> <b>Осталось :</b> <code>{_fmt_int1(remaining_home)} кут</code>\n"
-                f"<tg-emoji emoji-id='5258165702707125574'>⭐️</tg-emoji> <b>Заработано :</b> <code>{total_amount} звёзд</code>"
+                f"👤 <b>Пользователь :</b> {user_link} [<code>{user_id}</code>]\n"
+                f"💰 <b>Выкуплено :</b> <code>{_fmt_int1(bet)} кут</code>\n"
+                f"📦 <b>Осталось :</b> <code>{_fmt_int1(remaining_home)} кут</code>\n"
+                f"⭐️ <b>Заработано :</b> <code>{total_amount} звёзд</code>"
             )
             await bot1.send_message(6801702632, admin_msg, parse_mode="HTML")
         except Exception as e:
@@ -2884,11 +2881,10 @@ async def successful_payment_handler(message: Message):
             [InlineKeyboardButton("Закрыть", callback_data="9close_bonus")]
         ])
 
-        # Отправляем только эмодзи (как было)
         emoji_tag = random.choice([
-            ('<tg-emoji emoji-id="5436013559630822151">🌿</tg-emoji>'),
-            ('<tg-emoji emoji-id="5424783865124258527">🌿</tg-emoji>'),
-            ('<tg-emoji emoji-id="5321481358965510372">🌿</tg-emoji>')
+            '<tg-emoji emoji-id="5436013559630822151">🌿</tg-emoji>',
+            '<tg-emoji emoji-id="5424783865124258527">🌿</tg-emoji>',
+            '<tg-emoji emoji-id="5321481358965510372">🌿</tg-emoji>'
         ])
         try:
             await bot1.send_message(
@@ -2906,13 +2902,9 @@ async def successful_payment_handler(message: Message):
                 reply_markup=markup,
                 parse_mode="HTML"
             )
-
-        logger.info(f"Платёж (выкуп) обработан: user={user_id}")
         return
 
-    # ==============================
-    # 2. Обработка обычного доната
-    # ==============================
+    # ==================== ДОНАТ ====================
     stars_amount = int(total_amount // donate_bet)
     if stars_amount < 1:
         await message.answer("❌ Сумма меньше минимальной.", parse_mode="HTML")
@@ -2920,13 +2912,13 @@ async def successful_payment_handler(message: Message):
         return
 
     try:
-        # --- Обновляем баланс ---
+        # Обновляем баланс
         current_balance = await db.get_user_balance(user_id)
         new_balance = current_balance + stars_amount
         await db.update_user_balance(user_id, new_balance)
         await db.cutehistory_plus(user_id, stars_amount, "покупка кут за звезды")
 
-        # --- Добавляем донат и получаем бонус к лимиту ---
+        # Добавляем донат и получаем бонус к лимиту
         new_donate, new_canwithdrawal, bonus = await db.add_donation(user_id, stars_amount)
         logger.info(
             f"Донат: user={user_id}, +{stars_amount} кут, "
@@ -2950,11 +2942,11 @@ async def successful_payment_handler(message: Message):
 
     # ---- Кнопки ----
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(f"+ {bonus_fmt} кут", callback_data="dummy")],
-        [InlineKeyboardButton("К лимиту выводов", callback_data="dummy")]
+        [InlineKeyboardButton(f"+ {bonus_fmt} кут", callback_data="dummy",style="success")],
+        [InlineKeyboardButton("К лимиту выводов", callback_data="dummy",style="success")]
     ])
 
-    # ---- Отправка с эффектом ----
+    # ---- Отправка ----
     try:
         await bot1.send_message(
             chat_id=message.chat.id,
@@ -13153,19 +13145,14 @@ async def render_conc_stars_screen(*args, **kwargs):
         return
 
     if seed_phrase is None:
-        seed_phrase = SEED_PHRASE  # noqa: F821
+        seed_phrase = SEED_PHRASE
 
     back_callback = resolve_back_callback_for_gift_menu(message_obj, user_id)
     if back_callback is None:
         back_callback = resolve_back_callback_from_message(message_obj, user_id)
 
-    print(
-        f"🟦 [CONC_STARS][RENDER] старт | user_id={user_id} "
-        f"back_callback={back_callback!r} seed_len={len(str(seed_phrase) or '')}"
-    )
-
     # ---- 0. Глобальный запрет вывода ----
-    if withdraw_disabled:  # noqa: F821
+    if withdraw_disabled:
         mode, msg_now = await smart_send_or_edit_safe(
             message_obj=message_obj,
             text="💭 Вывод временно недоступен.",
@@ -13176,30 +13163,23 @@ async def render_conc_stars_screen(*args, **kwargs):
 
     # ---- 1. Баланс пользователя ----
     try:
-        user_balance = await db.get_user_balance(user_id)  # noqa: F821
+        user_balance = await db.get_user_balance(user_id)
     except Exception as e:
         print(f"🟥 [CONC_STARS][BAL] db.get_user_balance({user_id}) err={e!r}")
         user_balance = 0
-
-    try:
-        user_balance_int = int(user_balance or 0)
-    except Exception:
-        user_balance_int = 0
-
+    user_balance_int = int(user_balance or 0)
     user_balance_fmt = _fmt_dot_safe(user_balance_int)
 
-    # ---- 2. Минимальная сумма вывода (самый дешёвый подарок) ----
+    # ---- 2. Минимальная сумма вывода ----
     try:
-        min_withdraw = int(await get_min_gift_price_now(bot1) or 0)  # noqa: F821
+        min_withdraw = int(await get_min_gift_price_now(bot1) or 0)
     except Exception as e:
         print(f"🟥 [CONC_STARS][MIN] ошибка: {e!r}")
         min_withdraw = 0
 
-    _vdbg(f"🟦 [CONC_STARS][MIN] MIN_WITHDRAW(now) = {min_withdraw} ⭐️")
-
-    # ---- 3. Единый refresh лимитов ----
+    # ---- 3. Обновляем лимиты (remaining и т.д.) ----
     try:
-        state = await db.refresh_withdraw_quota_if_needed(user_id)  # noqa: F821
+        state = await db.refresh_withdraw_quota_if_needed(user_id)
     except Exception as e:
         print(f"🟥 [CONC_STARS][LIMITS] refresh_withdraw_quota_if_needed({user_id}) ошибка: {e!r}")
         state = {
@@ -13214,46 +13194,31 @@ async def render_conc_stars_screen(*args, **kwargs):
 
     allowed = bool(state.get("allowed"))
     cooldown_left = int(state.get("cooldown_left") or 0)
-    daily_limit = int(state.get("daily_limit") or 0)
+    daily_limit = int(state.get("daily_limit") or 0)   # fallback
     used = int(state.get("used") or 0) if state.get("used") is not None else 0
     remaining = int(state.get("remaining") or 0)
     cooldown_sec = int(state.get("cooldown_seconds") or 0)
     reason = str(state.get("reason") or "")
 
-    print(
-        f"🟦 [CONC_STARS][LIMITS] allowed={allowed} limit={daily_limit} used={used} "
-        f"remaining={remaining} cd_left={cooldown_left} cd_sec={cooldown_sec} reason={reason!r}"
-    )
-
-    # ---- 4. Если remaining > 0, но меньше min_withdraw – ставим кулдаун ----
+    # ---- 4. Если остаток меньше минимального – ставим кулдаун ----
     if allowed and remaining > 0 and min_withdraw > 0 and remaining < min_withdraw:
-        _vdbg(f"🟨 [CONC_STARS][AUTO] remaining({remaining}) < min_withdraw({min_withdraw}) -> ставлю кулдаун")
         try:
             if cooldown_sec <= 0:
-                cooldown_sec = int(
-                    getattr(db, "WITHDRAW_DEFAULT_COOLDOWN_SEC", 12 * 3600) or (12 * 3600)
-                )  # noqa: F821
-            await db.start_user_withdraw_cooldown(user_id, int(cooldown_sec), "min_withdraw_block")  # noqa: F821
+                cooldown_sec = int(getattr(db, "WITHDRAW_DEFAULT_COOLDOWN_SEC", 12 * 3600) or (12 * 3600))
+            await db.start_user_withdraw_cooldown(user_id, int(cooldown_sec), "min_withdraw_block")
         except Exception as e:
             print(f"🟥 [CONC_STARS][AUTO] start_user_withdraw_cooldown err={e!r}")
 
-        # повторный refresh, чтобы UI показал таймер
         try:
-            state2 = await db.refresh_withdraw_quota_if_needed(user_id)  # noqa: F821
+            state2 = await db.refresh_withdraw_quota_if_needed(user_id)
         except Exception as e:
-            print(f"🟥 [CONC_STARS][AUTO] refresh2 err={e!r}")
             state2 = state
-
         allowed = bool(state2.get("allowed"))
         cooldown_left = int(state2.get("cooldown_left") or 0)
-        daily_limit = int(state2.get("daily_limit") or daily_limit)
-        used = int(state2.get("used") or used) if state2.get("used") is not None else used
         remaining = int(state2.get("remaining") or 0)
         reason = str(state2.get("reason") or reason)
 
-        _vdbg(f"🟦 [CONC_STARS][AUTO] after refresh2 allowed={allowed} remaining={remaining} cd_left={cooldown_left}")
-
-    # ---- 5. Если вывод запрещён ИЛИ remaining == 0 – показываем блокировку ----
+    # ---- 5. Если вывод запрещён или остаток исчерпан – блокировка ----
     if (not allowed) or (remaining <= 0):
         try:
             kb_locked = _kb_withdraw_locked(
@@ -13268,9 +13233,9 @@ async def render_conc_stars_screen(*args, **kwargs):
             print(f"🟥 [CONC_STARS][LOCKED_KB] err={e!r}")
             kb_locked = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Вывод недоступен", callback_data="noop", style="danger",
-                    icon_custom_emoji_id="5449505950283078474")],
+                                      icon_custom_emoji_id="5449505950283078474")],
                 [InlineKeyboardButton(text="Назад", callback_data=str(back_callback or "9close_bonus"), style="default",
-                    icon_custom_emoji_id="5960671702059848143")],
+                                      icon_custom_emoji_id="5960671702059848143")],
             ])
 
         mode, msg_now = await smart_send_or_edit_safe(
@@ -13279,16 +13244,14 @@ async def render_conc_stars_screen(*args, **kwargs):
             reply_markup=kb_locked,
         )
         attach_gift_menu_meta(msg_now, user_id, back_callback)
-        _vdbg(f"🟩 [CONC_STARS][RENDER] locked | uid={user_id} allowed={allowed} remaining={remaining} cd_left={cooldown_left}")
         return
 
     # ---- 6. TON и speed_allowed ----
     ton_bal = 0.0
     speed_flag = "-"
     try:
-        ton_bal = float(await get_balance_ton_fast(str(seed_phrase)) or 0.0)  # noqa: F821
-        speed_flag = "+" if ton_bal >= TON_INSTANT_MIN else "-"  # noqa: F821
-        _vdbg(f"🟦 [CONC_STARS][TON] bal={ton_bal:.9f} flag={speed_flag}")
+        ton_bal = float(await get_balance_ton_fast(str(seed_phrase)) or 0.0)
+        speed_flag = "+" if ton_bal >= TON_INSTANT_MIN else "-"
     except Exception as e:
         print(f"🟥 [CONC_STARS][TON] err={e!r}")
         ton_bal = 0.0
@@ -13301,12 +13264,11 @@ async def render_conc_stars_screen(*args, **kwargs):
         user_balance_int=int(user_balance_int),
         ton_bal=float(ton_bal),
     )
-    _vdbg(f"🟦 [CONC_STARS][SPEED] speed_allowed={bool(speed_allowed)}")
 
     # ---- 7. Генерация клавиатуры подарков ----
     try:
-        kb = await generate_gift_keyboard(  # noqa: F821
-            bot1,  # noqa: F821
+        kb = await generate_gift_keyboard(
+            bot1,
             remaining=int(remaining),
             speed_allowed=bool(speed_allowed),
             owner_id=int(user_id),
@@ -13316,7 +13278,7 @@ async def render_conc_stars_screen(*args, **kwargs):
         print(f"🟥 [CONC_STARS][KB] generate_gift_keyboard err={e!r}")
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=" ", callback_data="9close_bonus", style="default",
-                icon_custom_emoji_id="5226660202035554522")]
+                                  icon_custom_emoji_id="5226660202035554522")]
         ])
 
     # ---- 8. ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
@@ -13324,14 +13286,12 @@ async def render_conc_stars_screen(*args, **kwargs):
         user_limit = await db.get_user_canwithdrawal(user_id)
     except Exception as e:
         print(f"🟥 [CONC_STARS][CANWITHDRAWAL] err={e!r}")
-        user_limit = daily_limit  # fallback на старый лимит
+        user_limit = daily_limit  # fallback
 
     # ---- 9. Расчёт "красивого" лимита (кратного STEP) ----
-    STEP = MIN_WITHDRAW_STEP  # например, 15
+    STEP = MIN_WITHDRAW_STEP
     target = ((user_limit // STEP) + 1) * STEP
     need = target - user_limit
-
-    # Если лимит уже кратен STEP, то need = 0, показываем это
     if need < 0:
         need = 0
 
@@ -13341,7 +13301,7 @@ async def render_conc_stars_screen(*args, **kwargs):
     need_fmt = _fmt_dot_safe(need)
     target_fmt = _fmt_dot_safe(target)
 
-    # ---- 11. Сборка текста (коротко и понятно) ----
+    # ---- 11. Сборка текста ----
     text_parts = [
         "<b>",
         "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n",
@@ -13353,13 +13313,12 @@ async def render_conc_stars_screen(*args, **kwargs):
         "</b>"
     ]
 
-    # Персональная благодарность для специального пользователя
     if user_id == SPECIAL_USER_ID:
         text_parts.append("\n\n<b><i>Спасибо за идею Игорь. Виво-Эпсилон. | Текст был написан лично Иэрихоном</i></b>")
 
     full_text = "".join(text_parts)
 
-    # ---- 12. Отправка/редактирование ----
+    # ---- 12. Отправка ----
     mode, msg_now = await smart_send_or_edit_safe(
         message_obj=message_obj,
         text=full_text,
@@ -13367,10 +13326,7 @@ async def render_conc_stars_screen(*args, **kwargs):
     )
     attach_gift_menu_meta(msg_now, user_id, back_callback)
 
-    print(
-        f"🟩 [CONC_STARS][RENDER] done | uid={user_id} remaining={remaining} "
-        f"min_withdraw={min_withdraw} TON={ton_bal:.9f} speed_allowed={bool(speed_allowed)}"
-    )
+    print(f"🟩 [CONC_STARS][RENDER] done | uid={user_id} remaining={remaining} target={target} need={need}")
 # ============================================================
 # ✅ conc_stars CALLBACK (замени свою функцию на эту)
 # ============================================================
@@ -28899,11 +28855,8 @@ async def get_min_gift_price_now(bot1) -> int:
         print(f"🟥 [GIFTS][MIN_NOW][ERROR] {e!r}")
         return 0
 
-# Обработчик для кнопки "Вернуться назад"
-# Обработчик для кнопки "Вернуться назад"
 @dp.callback_query(lambda c: isinstance(c.data, str) and c.data == "back_to_stars_choice")
 async def back_to_stars_choice(callback_query: types.CallbackQuery):
-    # ---- 0. Гасим уведомление ----
     try:
         await callback_query.answer()
     except Exception:
@@ -28913,18 +28866,16 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
     msg = getattr(callback_query, "message", None)
 
     if not msg:
-        print(f"🟥 [WITHDRAW][BACK] нет message в callback | uid={user_id}")
+        print(f"🟥 [WITHDRAW][BACK] нет message | uid={user_id}")
         return
 
-    # ---- 1. Глобальный запрет вывода ----
-    if withdraw_disabled:  # noqa: F821
+    if withdraw_disabled:
         try:
-            await send_withdraw_disabled_message(callback_query)  # noqa: F821
+            await send_withdraw_disabled_message(callback_query)
         except Exception as e:
             print(f"🟥 [WITHDRAW][BACK][ERROR] send_withdraw_disabled_message: {type(e).__name__}: {e!r}")
         return
 
-    # ---- 2. Восстанавливаем back_callback ----
     back_callback = None
     try:
         back_callback = resolve_back_callback_for_gift_menu(msg, user_id)
@@ -28932,29 +28883,25 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
             back_callback = resolve_back_callback_from_message(msg, user_id)
     except Exception as e:
         print(f"🟥 [WITHDRAW][BACK][ERROR] resolve_back_callback: {type(e).__name__}: {e!r}")
-        back_callback = None
 
-    print(f"🟦 [WITHDRAW][BACK] start | uid={user_id} back_callback={back_callback!r}")
-
-    # ---- 3. Получаем баланс ----
+    # ---- Получаем баланс ----
     try:
-        user_balance = await db.get_user_balance(user_id)  # noqa: F821
+        user_balance = await db.get_user_balance(user_id)
     except Exception as e:
         print(f"🟥 [WITHDRAW][BACK][ERROR] get_user_balance: {type(e).__name__}: {e!r}")
         user_balance = 0
     user_balance_int = int(user_balance or 0)
-    user_balance_fmt = _fmt_dot_safe(user_balance_int)
 
-    # ---- 4. Минимальная сумма вывода ----
+    # ---- Минимальная сумма ----
     try:
-        min_withdraw = int(await get_min_gift_price_now(bot1) or 0)  # noqa: F821
+        min_withdraw = int(await get_min_gift_price_now(bot1) or 0)
     except Exception as e:
         print(f"🟥 [WITHDRAW][BACK][MIN] err: {e!r}")
         min_withdraw = 0
 
-    # ---- 5. Обновляем лимиты (daily_limit, remaining и т.д.) ----
+    # ---- Обновляем лимиты ----
     try:
-        state = await db.refresh_withdraw_quota_if_needed(  # noqa: F821
+        state = await db.refresh_withdraw_quota_if_needed(
             user_id,
             min_withdraw_amount=int(min_withdraw or int(globals().get("WITHDRAW_MIN_AMOUNT", 15) or 15)),
         )
@@ -28978,15 +28925,15 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
     cooldown_sec = int(state.get("cooldown_seconds") or 0)
     reason = str(state.get("reason") or state.get("cause") or "")
 
-    # ---- 6. Если вывод заблокирован или остаток исчерпан – показываем блокировку ----
+    # ---- Блокировка ----
     if (not allowed) or (remaining <= 0):
         if allowed and remaining <= 0 and cooldown_sec > 0:
             try:
-                await db.start_user_withdraw_cooldown(user_id, int(cooldown_sec), "daily_limit")  # noqa: F821
+                await db.start_user_withdraw_cooldown(user_id, int(cooldown_sec), "daily_limit")
             except Exception as e:
                 print(f"🟠 [WITHDRAW][BACK][FORCE][WARN] start_user_withdraw_cooldown: {type(e).__name__}: {e!r}")
             try:
-                cooldown_left = int(await db.get_user_cooldown_left(user_id) or cooldown_left)  # noqa: F821
+                cooldown_left = int(await db.get_user_cooldown_left(user_id) or cooldown_left)
             except Exception:
                 pass
 
@@ -29003,9 +28950,9 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
             print(f"🟥 [WITHDRAW][BACK][LOCKED_KB] err={e!r}")
             kb_locked = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Вывод недоступен", callback_data="noop", style="danger",
-                    icon_custom_emoji_id="5449505950283078474")],
+                                      icon_custom_emoji_id="5449505950283078474")],
                 [InlineKeyboardButton(text="Назад", callback_data=str(back_callback or "9close_bonus"), style="default",
-                    icon_custom_emoji_id="5960671702059848143")],
+                                      icon_custom_emoji_id="5960671702059848143")],
             ])
 
         try:
@@ -29015,16 +28962,16 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
             print(f"🟥 [WITHDRAW][BACK][ERROR] edit_text locked: {type(e).__name__}: {e!r}")
         return
 
-    # ---- 7. TON и speed_allowed ----
-    seed_phrase = SEED_PHRASE  # noqa: F821
+    # ---- TON и speed ----
+    seed_phrase = SEED_PHRASE
     ton_bal = 0.0
     speed_flag = "-"
     try:
-        ton_bal = float(await get_balance_ton_fast(str(seed_phrase)) or 0.0)  # noqa: F821
-        speed_flag = "+" if ton_bal >= TON_INSTANT_MIN else "-"  # noqa: F821
+        ton_bal = float(await get_balance_ton_fast(str(seed_phrase)) or 0.0)
+        speed_flag = "+" if ton_bal >= TON_INSTANT_MIN else "-"
     except Exception as e:
         speed_flag = "-"
-        print(f"🟥 [WITHDRAW][BACK][TON][ERROR] {type(e).__name__}: {e!r} -> speed_flag='-'")
+        print(f"🟥 [WITHDRAW][BACK][TON][ERROR] {type(e).__name__}: {e!r}")
 
     try:
         speed_allowed = await decide_speed_allowed_safe(
@@ -29038,10 +28985,10 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
         speed_allowed = False
         print(f"🟥 [WITHDRAW][BACK][ERROR] decide_speed_allowed_safe: {type(e).__name__}: {e!r}")
 
-    # ---- 8. Генерация клавиатуры подарков ----
+    # ---- Генерация клавиатуры ----
     try:
-        kb = await generate_gift_keyboard(  # noqa: F821
-            bot1,  # noqa: F821
+        kb = await generate_gift_keyboard(
+            bot1,
             remaining=int(remaining),
             speed_allowed=bool(speed_allowed),
             owner_id=int(user_id),
@@ -29051,30 +28998,30 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
         print(f"🟥 [WITHDRAW][BACK][ERROR] generate_gift_keyboard: {type(e).__name__}: {e!r}")
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=" ", callback_data="9close_bonus", style="default",
-                icon_custom_emoji_id="5226660202035554522")]
+                                  icon_custom_emoji_id="5226660202035554522")]
         ])
 
-    # ---- 9. Получаем АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
+    # ---- ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ ----
     try:
-        user_limit = await db.get_user_canwithdrawal(user_id)  # noqa: F821
+        user_limit = await db.get_user_canwithdrawal(user_id)
     except Exception as e:
         print(f"🟥 [WITHDRAW][BACK][CANWITHDRAWAL] err={e!r}")
-        user_limit = daily_limit  # fallback на старый лимит
+        user_limit = daily_limit
 
-    # ---- 10. Расчёт "красивого" лимита (кратного STEP) ----
-    STEP = MIN_WITHDRAW_STEP  # например, 15
+    # ---- Расчёт красивого лимита ----
+    STEP = MIN_WITHDRAW_STEP
     target = ((user_limit // STEP) + 1) * STEP
     need = target - user_limit
     if need < 0:
         need = 0
 
-    # ---- 11. Форматирование чисел ----
+    # ---- Форматирование ----
     balance_fmt = _fmt_dot_safe(user_balance_int)
     remaining_fmt = _fmt_dot_safe(remaining)
     need_fmt = _fmt_dot_safe(need)
     target_fmt = _fmt_dot_safe(target)
 
-    # ---- 12. Сборка текста (коротко и понятно) ----
+    # ---- Текст ----
     text_parts = [
         "<b>",
         "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n",
@@ -29091,7 +29038,7 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
 
     full_text = "".join(text_parts)
 
-    # ---- 13. Редактируем сообщение ----
+    # ---- Редактируем сообщение ----
     try:
         await msg.edit_text(full_text, reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
         attach_gift_menu_meta(msg, user_id, back_callback)
