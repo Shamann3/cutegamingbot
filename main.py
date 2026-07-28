@@ -2964,22 +2964,7 @@ async def successful_payment_handler(message: Message):
     chosen_emoji_id, chosen_emoji_text = random.choice(bonus_emoji_options)
     emoji_tag = f'<tg-emoji emoji-id="{chosen_emoji_id}">{chosen_emoji_text}</tg-emoji>'
 
-    try:
-        await bot1.send_message(
-            chat_id=message.chat.id,
-            text=emoji_tag,
-            message_effect_id="5046509860389126442",
-            reply_markup=markup1,
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        logger.warning(f"Не удалось отправить первое сообщение с эффектом: {e}")
-        await bot1.send_message(
-            chat_id=message.chat.id,
-            text=emoji_tag,
-            reply_markup=markup1,
-            parse_mode="HTML"
-        )
+
 
     # --- ВТОРОЕ СООБЩЕНИЕ (информация о бонусе к лимиту) ---
     # Используем ваш премиум-эмодзи и добавляем кнопки
@@ -2988,8 +2973,8 @@ async def successful_payment_handler(message: Message):
     )
 
     markup2 = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"{bonus_fmt} ", callback_data="dummy", style="success")],
-        [InlineKeyboardButton(text="к лимиту выводов", callback_data="9close_bonus")]
+        [InlineKeyboardButton(text=f"+ {bonus_fmt} кут", callback_data="dummy", style="success")],
+        [InlineKeyboardButton(text="К лимиту выводов", callback_data="dummy")]
     ])
 
     try:
@@ -3008,6 +2993,23 @@ async def successful_payment_handler(message: Message):
             parse_mode="HTML"
         )
 
+        
+    try:
+        await bot1.send_message(
+            chat_id=message.chat.id,
+            text=emoji_tag,
+            message_effect_id="5046509860389126442",
+            reply_markup=markup1,
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.warning(f"Не удалось отправить первое сообщение с эффектом: {e}")
+        await bot1.send_message(
+            chat_id=message.chat.id,
+            text=emoji_tag,
+            reply_markup=markup1,
+            parse_mode="HTML"
+        )
     logger.info(f"Платёж (донат) обработан: user_id={user_id}, сумма={stars_amount}")
 
 
@@ -13330,7 +13332,7 @@ async def render_conc_stars_screen(*args, **kwargs):
 
     # ---- 8. ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
     try:
-        user_limit = await db.get_user_canwithdrawal(user_id)
+        user_limit = remaining#await db.get_user_canwithdrawal(user_id)
         user_limit = int(user_limit or 0)
     except Exception as e:
         print(f"🟥 [CONC_STARS][CANWITHDRAWAL] err={e!r}")
@@ -29069,7 +29071,7 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
 
     # ---- ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
     try:
-        user_limit = await db.get_user_canwithdrawal(user_id)
+        user_limit = remaining#await db.get_user_canwithdrawal(user_id)
         user_limit = int(user_limit or 0)
     except Exception as e:
         print(f"🟥 [WITHDRAW][BACK][CANWITHDRAWAL] err={e!r}")
@@ -29113,7 +29115,7 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
     ]
     if need_purchase > 0:
         text_parts.append(f"Купите <b>{need_purchase_fmt}</b> кут, чтобы достичь этого лимита.\n")
-    text_parts.append("</b></blockquote>\n\n")
+    text_parts.append("</b></blockquote>\n")
     text_parts.append("Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>")
     text_parts.append("</b>")
 
@@ -34740,7 +34742,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
         # ---- 9. ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
         try:
-            user_limit = await db.get_user_canwithdrawal(user_id)
+            user_limit = remaining#await db.get_user_canwithdrawal(user_id)
             user_limit = int(user_limit or 0)
         except Exception as e:
             print(f"🟥 [WITHDRAW][FINISH] get_user_canwithdrawal: {type(e).__name__}: {e}")
@@ -34779,7 +34781,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
             f"<blockquote><b>Осталось {need_limit_fmt} кут до удобного лимита {target_fmt} кут.\n" , ]
         if need_purchase > 0:
             text_parts.append(f"Купите <b>{need_purchase_fmt}</b> кут, чтобы достичь этого лимита.\n")
-        text_parts.append("</b></blockquote>\n\n")
+        text_parts.append("</b></blockquote>\n")
         text_parts.append("Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>")
         text_parts.append("</b>")
 
