@@ -13186,6 +13186,9 @@ def _kb_withdraw_locked(
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
+# ============================================================
+# ✅ ОСНОВНОЙ РЕНДЕР (исправленная версия с корректным вызовом)
+# ============================================================
 async def render_conc_stars_screen(*args, **kwargs):
     from html import escape  # убедитесь, что импорт есть в начале файла
 
@@ -13234,7 +13237,6 @@ async def render_conc_stars_screen(*args, **kwargs):
         print(f"🟥 [CONC_STARS][BAL] db.get_user_balance({user_id}) err={e!r}")
         user_balance = 0
     user_balance_int = int(user_balance or 0)
-    user_balance_fmt = _fmt_dot_safe(user_balance_int)
 
     # ---- 2. Минимальная сумма вывода ----
     try:
@@ -13243,7 +13245,7 @@ async def render_conc_stars_screen(*args, **kwargs):
         print(f"🟥 [CONC_STARS][MIN] ошибка: {e!r}")
         min_withdraw = 0
 
-    # ---- 3. Обновляем лимиты (remaining и т.д.) ----
+    # ---- 3. Обновляем лимиты ----
     try:
         state = await db.refresh_withdraw_quota_if_needed(user_id)
     except Exception as e:
@@ -13260,7 +13262,7 @@ async def render_conc_stars_screen(*args, **kwargs):
 
     allowed = bool(state.get("allowed"))
     cooldown_left = int(state.get("cooldown_left") or 0)
-    daily_limit = int(state.get("daily_limit") or 0)   # fallback
+    daily_limit = int(state.get("daily_limit") or 0)
     used = int(state.get("used") or 0) if state.get("used") is not None else 0
     remaining = int(state.get("remaining") or 0)
     cooldown_sec = int(state.get("cooldown_seconds") or 0)
@@ -13347,13 +13349,13 @@ async def render_conc_stars_screen(*args, **kwargs):
                                   icon_custom_emoji_id="5226660202035554522")]
         ])
 
-    # ---- 8. ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
+    # ---- 8. ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ ----
     try:
         user_limit = remaining  # await db.get_user_canwithdrawal(user_id) – закомментировано
         user_limit = int(user_limit or 0)
     except Exception as e:
         print(f"🟥 [CONC_STARS][CANWITHDRAWAL] err={e!r}")
-        user_limit = daily_limit  # fallback
+        user_limit = daily_limit
 
     # ---- 9. Расчёт "красивого" лимита и необходимой покупки ----
     STEP = MIN_WITHDRAW_STEP
@@ -13383,14 +13385,13 @@ async def render_conc_stars_screen(*args, **kwargs):
     target_fmt = _fmt_dot_safe(target)
     need_purchase_fmt = _fmt_dot_safe(need_purchase)
 
-    # Экранируем все переменные
     balance_esc = escape(balance_fmt)
     remaining_esc = escape(remaining_fmt)
     need_limit_esc = escape(need_limit_fmt)
     target_esc = escape(target_fmt)
     need_purchase_esc = escape(need_purchase_fmt)
 
-    # ---- 11. Сборка текста с правильной вложенностью тегов ----
+    # ---- 11. Сборка текста с правильной вложенностью ----
     full_text = (
         f"<b>"
         f"<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n"
@@ -13403,17 +13404,14 @@ async def render_conc_stars_screen(*args, **kwargs):
         f"</b>"
     )
 
-    # Персональная благодарность
     if user_id == SPECIAL_USER_ID:
         full_text += "\n\n<b><i>Спасибо за идею Игорь. Виво-Эпсилон. | Текст был написан лично Иэрихоном</i></b>"
 
-    # ---- 12. Отправка ----
+    # ---- 12. Отправка (БЕЗ лишних параметров!) ----
     mode, msg_now = await smart_send_or_edit_safe(
         message_obj=message_obj,
         text=full_text,
         reply_markup=kb,
-        parse_mode="HTML",  # добавляем явно, если smart_send_or_edit_safe не передаёт
-        disable_web_page_preview=True,
     )
     attach_gift_menu_meta(msg_now, user_id, back_callback)
 
