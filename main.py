@@ -2988,8 +2988,8 @@ async def successful_payment_handler(message: Message):
     )
 
     markup2 = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="К лимиту выводов", callback_data="dummy", style="success")],
-        [InlineKeyboardButton(text="Закрыть", callback_data="9close_bonus")]
+        [InlineKeyboardButton(text=f"{bonus_fmt} ", callback_data="dummy", style="success")],
+        [InlineKeyboardButton(text="к лимиту выводов", callback_data="9close_bonus")]
     ])
 
     try:
@@ -13330,23 +13330,40 @@ async def render_conc_stars_screen(*args, **kwargs):
 
     # ---- 8. ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
     try:
-        user_limit = remaining#await db.get_user_canwithdrawal(user_id)
+        user_limit = await db.get_user_canwithdrawal(user_id)
+        user_limit = int(user_limit or 0)
     except Exception as e:
         print(f"🟥 [CONC_STARS][CANWITHDRAWAL] err={e!r}")
         user_limit = daily_limit  # fallback
 
-    # ---- 9. Расчёт "красивого" лимита (кратного STEP) ----
+    # ---- 9. Расчёт "красивого" лимита и необходимой покупки ----
     STEP = MIN_WITHDRAW_STEP
-    target = ((user_limit // STEP) + 1) * STEP
-    need = target - user_limit
-    if need < 0:
-        need = 0
+    BONUS_PERCENT = Decimal('0.03')
+
+    # Функция расчёта (можно вынести отдельно)
+    def calculate_purchase_to_target(limit, step, bonus_pct):
+        target = ((limit // step) + 1) * step
+        need_limit = target - limit
+        if need_limit <= 0:
+            return 0, int(target), 0
+        need_purchase = int((Decimal(need_limit) / bonus_pct).quantize(Decimal('0'), rounding=ROUND_CEILING))
+        bonus_actual = (Decimal(need_purchase) * bonus_pct).quantize(Decimal('0.01'))
+        if bonus_actual < need_limit:
+            need_purchase += 1
+        return int(need_purchase), int(target), int(need_limit)
+
+    need_purchase, target, need_limit = calculate_purchase_to_target(
+        limit=user_limit,
+        step=STEP,
+        bonus_pct=BONUS_PERCENT
+    )
 
     # ---- 10. Форматирование чисел ----
     balance_fmt = _fmt_dot_safe(user_balance_int)
     remaining_fmt = _fmt_dot_safe(remaining)
-    need_fmt = _fmt_dot_safe(need)
+    need_limit_fmt = _fmt_dot_safe(need_limit)
     target_fmt = _fmt_dot_safe(target)
+    need_purchase_fmt = _fmt_dot_safe(need_purchase)
 
     # ---- 11. Сборка текста ----
     text_parts = [
@@ -13354,11 +13371,13 @@ async def render_conc_stars_screen(*args, **kwargs):
         "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n",
         f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n",
         f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n",
-        f"<blockquote><b>Осталось {need_fmt} кут до удобного лимита {target_fmt} кут.\n",
-        f"Пополните баланс, чтобы увеличить лимит вывода до круглого числа.</b></blockquote>\n\n",
-        "Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>",
-        "</b>"
+        f"<blockquote><b>Осталось {need_limit_fmt} кут до удобного лимита {target_fmt} кут.\n",
     ]
+    if need_purchase > 0:
+        text_parts.append(f"Купите <b>{need_purchase_fmt}</b> кут, чтобы достичь этого лимита.\n")
+    text_parts.append("</b></blockquote>\n\n")
+    text_parts.append("Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>")
+    text_parts.append("</b>")
 
     if user_id == SPECIAL_USER_ID:
         text_parts.append("\n\n<b><i>Спасибо за идею Игорь. Виво-Эпсилон. | Текст был написан лично Иэрихоном</i></b>")
@@ -13373,7 +13392,7 @@ async def render_conc_stars_screen(*args, **kwargs):
     )
     attach_gift_menu_meta(msg_now, user_id, back_callback)
 
-    print(f"🟩 [CONC_STARS][RENDER] done | uid={user_id} remaining={remaining} target={target} need={need}")
+    print(f"🟩 [CONC_STARS][RENDER] done | uid={user_id} remaining={remaining} target={target} need_limit={need_limit} need_purchase={need_purchase}")
 # ============================================================
 # ✅ conc_stars CALLBACK (замени свою функцию на эту)
 # ============================================================
@@ -29048,25 +29067,41 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
                                   icon_custom_emoji_id="5226660202035554522")]
         ])
 
-    # ---- ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ ----
+    # ---- ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
     try:
-        user_limit = remaining#await db.get_user_canwithdrawal(user_id)
+        user_limit = await db.get_user_canwithdrawal(user_id)
+        user_limit = int(user_limit or 0)
     except Exception as e:
         print(f"🟥 [WITHDRAW][BACK][CANWITHDRAWAL] err={e!r}")
-        user_limit = daily_limit
+        user_limit = daily_limit  # fallback
 
-    # ---- Расчёт красивого лимита ----
+    # ---- Расчёт "красивого" лимита и необходимой покупки ----
     STEP = MIN_WITHDRAW_STEP
-    target = ((user_limit // STEP) + 1) * STEP
-    need = target - user_limit
-    if need < 0:
-        need = 0
+    BONUS_PERCENT = Decimal('0.03')
+
+    def calculate_purchase_to_target(limit, step, bonus_pct):
+        target = ((limit // step) + 1) * step
+        need_limit = target - limit
+        if need_limit <= 0:
+            return 0, int(target), 0
+        need_purchase = int((Decimal(need_limit) / bonus_pct).quantize(Decimal('0'), rounding=ROUND_CEILING))
+        bonus_actual = (Decimal(need_purchase) * bonus_pct).quantize(Decimal('0.01'))
+        if bonus_actual < need_limit:
+            need_purchase += 1
+        return int(need_purchase), int(target), int(need_limit)
+
+    need_purchase, target, need_limit = calculate_purchase_to_target(
+        limit=user_limit,
+        step=STEP,
+        bonus_pct=BONUS_PERCENT
+    )
 
     # ---- Форматирование ----
     balance_fmt = _fmt_dot_safe(user_balance_int)
     remaining_fmt = _fmt_dot_safe(remaining)
-    need_fmt = _fmt_dot_safe(need)
+    need_limit_fmt = _fmt_dot_safe(need_limit)
     target_fmt = _fmt_dot_safe(target)
+    need_purchase_fmt = _fmt_dot_safe(need_purchase)
 
     # ---- Текст ----
     text_parts = [
@@ -29074,11 +29109,13 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
         "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n",
         f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n",
         f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n",
-        f"<blockquote><b>Осталось {need_fmt} кут до удобного лимита {target_fmt} кут.\n",
-        f"Пополните баланс, чтобы увеличить лимит вывода до круглого числа.</b></blockquote>\n\n",
-        "Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>",
-        "</b>"
+        f"<blockquote><b>Осталось {need_limit_fmt} кут до удобного лимита {target_fmt} кут.\n",
     ]
+    if need_purchase > 0:
+        text_parts.append(f"Купите <b>{need_purchase_fmt}</b> кут, чтобы достичь этого лимита.\n")
+    text_parts.append("</b></blockquote>\n\n")
+    text_parts.append("Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>")
+    text_parts.append("</b>")
 
     if user_id == SPECIAL_USER_ID:
         text_parts.append("\n\n<b><i>Спасибо за идею Игорь. Виво-Эпсилон. | Текст был написан лично Иэрихоном</i></b>")
@@ -34701,34 +34738,50 @@ async def add_firstname_to_usercheck_balance(message: Message):
                     text=" " , callback_data="9close_bonus" , style="default" ,
                     icon_custom_emoji_id="5226660202035554522") ] ])
 
-        # ---- 9. Получаем АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
+        # ---- 9. ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
         try:
-            user_limit = remaining#await db.get_user_canwithdrawal(user_id)
+            user_limit = await db.get_user_canwithdrawal(user_id)
+            user_limit = int(user_limit or 0)
         except Exception as e:
             print(f"🟥 [WITHDRAW][FINISH] get_user_canwithdrawal: {type(e).__name__}: {e}")
-            user_limit = daily_limit  # fallback на старый лимит
+            user_limit = daily_limit  # fallback
 
-        # ---- 10. Расчёт "красивого" лимита (кратного STEP) ----
+        # ---- 10. Расчёт "красивого" лимита и необходимой покупки ----
         STEP = MIN_WITHDRAW_STEP
-        target = ((user_limit // STEP) + 1) * STEP
-        need = target - user_limit
-        if need < 0:
-            need = 0
+        BONUS_PERCENT = Decimal('0.03')
+
+        def calculate_purchase_to_target(limit , step , bonus_pct):
+            target = ((limit // step) + 1) * step
+            need_limit = target - limit
+            if need_limit <= 0:
+                return 0 , int(target) , 0
+            need_purchase = int((Decimal(need_limit) / bonus_pct).quantize(Decimal('0') , rounding=ROUND_CEILING))
+            bonus_actual = (Decimal(need_purchase) * bonus_pct).quantize(Decimal('0.01'))
+            if bonus_actual < need_limit:
+                need_purchase += 1
+            return int(need_purchase) , int(target) , int(need_limit)
+
+        need_purchase , target , need_limit = calculate_purchase_to_target(
+            limit=user_limit , step=STEP , bonus_pct=BONUS_PERCENT)
 
         # ---- 11. Форматирование чисел ----
         balance_fmt = _fmt_dot_safe(user_balance)
         remaining_fmt = _fmt_dot_safe(remaining)
-        need_fmt = _fmt_dot_safe(need)
+        need_limit_fmt = _fmt_dot_safe(need_limit)
         target_fmt = _fmt_dot_safe(target)
+        need_purchase_fmt = _fmt_dot_safe(need_purchase)
 
-        # ---- 12. Сборка текста (коротко и понятно) ----
+        # ---- 12. Сборка текста ----
         text_parts = [ "<b>" ,
             "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n" ,
             f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n" ,
             f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n" ,
-            f"<blockquote><b>Осталось {need_fmt} кут до удобного лимита {target_fmt} кут.\n" ,
-            f"Пополните баланс, чтобы увеличить лимит вывода до круглого числа.</b></blockquote>\n\n" ,
-            "Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>" , "</b>" ]
+            f"<blockquote><b>Осталось {need_limit_fmt} кут до удобного лимита {target_fmt} кут.\n" , ]
+        if need_purchase > 0:
+            text_parts.append(f"Купите <b>{need_purchase_fmt}</b> кут, чтобы достичь этого лимита.\n")
+        text_parts.append("</b></blockquote>\n\n")
+        text_parts.append("Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>")
+        text_parts.append("</b>")
 
         # Персональная благодарность для специального пользователя
         if user_id == SPECIAL_USER_ID:
