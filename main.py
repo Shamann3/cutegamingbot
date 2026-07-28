@@ -29126,7 +29126,7 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
         f"<blockquote><b>Повысьте лимит до {target_fmt} кут!\n"
         f"Пополните баланс на {need_purchase_fmt} кут, чтобы расширить текущий порог на {need_limit_fmt} кут "
         f"и выводить без ограничений.</b></blockquote>" ,  # закрываем общий жирный шрифт
-        "\n<b>Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji></b>" ]
+        "\nВыберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji></b>" ]
 
     if user_id == SPECIAL_USER_ID:
         text_parts.append("\n\n<b><i>Спасибо за идею Игорь. Виво-Эпсилон. | Текст был написан лично Иэрихоном</i></b>")
@@ -34789,7 +34789,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
                        f"<blockquote><b>Повысьте лимит до {target_fmt} кут!\n"
                        f"Пополните баланс на {need_purchase_fmt} кут, чтобы расширить текущий порог на {need_limit_fmt} кут "
                        f"и выводить без ограничений.</b></blockquote>" ,  # закрываем общий жирный шрифт
-                       "\n<b>Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji></b>" ]
+                       "\nВыберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji></b>" ]
 
         # Персональная благодарность для специального пользователя
         if user_id == SPECIAL_USER_ID:
