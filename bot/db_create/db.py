@@ -9,7 +9,7 @@ from aiogram.types import Message
 from datetime import datetime, timezone, date, timedelta
 import random
 
-
+from decimal import Decimal, ROUND_HALF_UP   # ← этого не хватает
 
 
 from dataclasses import dataclass
