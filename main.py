@@ -2993,7 +2993,7 @@ async def successful_payment_handler(message: Message):
             parse_mode="HTML"
         )
 
-        
+
     try:
         await bot1.send_message(
             chat_id=message.chat.id,
@@ -13373,11 +13373,9 @@ async def render_conc_stars_screen(*args, **kwargs):
         "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n",
         f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n",
         f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n",
-        f"<blockquote><b>Осталось {need_limit_fmt} кут до удобного лимита {target_fmt} кут.\n",
+        f"<blockquote><b>Купите {need_limit_fmt} кут для удобного лимита {target_fmt} кут.\n",
     ]
-    if need_purchase > 0:
-        text_parts.append(f"Купите <b>{need_purchase_fmt}</b> кут, чтобы достичь этого лимита.\n")
-    text_parts.append("</b></blockquote>\n\n")
+    text_parts.append("</b></blockquote>\n")
     text_parts.append("Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>")
     text_parts.append("</b>")
 
@@ -29111,10 +29109,9 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
         "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n",
         f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n",
         f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n",
-        f"<blockquote><b>Осталось {need_limit_fmt} кут до удобного лимита {target_fmt} кут.\n",
+        f"<blockquote><b>Купите {need_limit_fmt} кут для удобного лимита {target_fmt} кут.\n",
     ]
-    if need_purchase > 0:
-        text_parts.append(f"Купите <b>{need_purchase_fmt}</b> кут, чтобы достичь этого лимита.\n")
+
     text_parts.append("</b></blockquote>\n")
     text_parts.append("Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>")
     text_parts.append("</b>")
@@ -34778,9 +34775,8 @@ async def add_firstname_to_usercheck_balance(message: Message):
             "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n" ,
             f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n" ,
             f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n" ,
-            f"<blockquote><b>Осталось {need_limit_fmt} кут до удобного лимита {target_fmt} кут.\n" , ]
-        if need_purchase > 0:
-            text_parts.append(f"Купите <b>{need_purchase_fmt}</b> кут, чтобы достичь этого лимита.\n")
+            f"<blockquote><b>Купите {need_limit_fmt} кут для удобного лимита {target_fmt} кут.\n" , ]
+
         text_parts.append("</b></blockquote>\n")
         text_parts.append("Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>")
         text_parts.append("</b>")
