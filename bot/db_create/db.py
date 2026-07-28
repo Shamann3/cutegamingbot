@@ -33,7 +33,7 @@ import datetime as dt
 from aiogram.exceptions import TelegramAPIError
 DEBUG_CRAFT = True  # False – отключить все логи
 DEBUG_CRAFT_LEVEL = 2  # 0 – только ошибки, 1 – основное, 2 – детали
-logger = logging.getLogger(__name__)
+
 
 CHATHI_OFF = 0
 CHATHI_ON = 1
@@ -6601,7 +6601,7 @@ class Database:
                     return new_donate, new_canwithdrawal, bonus
 
         except Exception as e:
-            logger.exception(f"Ошибка при обновлении donate для user_id={user_id}: {e}")
+            print(f"Ошибка при обновлении donate для user_id={user_id}: {e}")
             raise  # пробрасываем дальше
 
 
