@@ -33,7 +33,7 @@ import datetime as dt
 from aiogram.exceptions import TelegramAPIError
 DEBUG_CRAFT = True  # False – отключить все логи
 DEBUG_CRAFT_LEVEL = 2  # 0 – только ошибки, 1 – основное, 2 – детали
-
+logger = logging.getLogger(__name__)
 
 CHATHI_OFF = 0
 CHATHI_ON = 1
@@ -6531,21 +6531,32 @@ class Database:
 
 
 
-    async def add_donation(self , user_id: int , amount: Union [ int , float , Decimal ]):
-        # Процент для увеличения лимита (можно вынести в конфиг)
-        BONUS_PERCENT = Decimal('0.03')  # 3%
+    async def add_donation(
+        self,
+        user_id: int,
+        amount: Union[int, float, Decimal],
+        bonus_percent: Decimal = Decimal('0.03')  # 3% по умолчанию
+    ) -> Tuple[Decimal, Decimal, Decimal]:
         """
-        Добавляет донат пользователю:
-        - увеличивает donate на amount
-        - увеличивает canwithdrawal на amount * BONUS_PERCENT (3%)
-        - записывает операцию в public.donate
+        Добавляет донат пользователю.
+
+        - Увеличивает поле `donate` на `amount`
+        - Увеличивает поле `canwithdrawal` на `amount * bonus_percent`
+        - Записывает операцию в таблицу `public.donate`
 
         Аргументы:
             user_id: ID пользователя
             amount: сумма доната в звёздах (она же количество купленных кут)
+            bonus_percent: процент от суммы, добавляемый к лимиту вывода (по умолчанию 3%)
 
         Возвращает:
-            кортеж (new_donate, new_canwithdrawal) или None при ошибке
+            Кортеж (new_donate, new_canwithdrawal, bonus)
+            где bonus – точная сумма, добавленная к лимиту вывода.
+
+        Исключения:
+            ValueError: если amount <= 0 или пользователь не найден
+            RuntimeError: если нет подключения к БД
+            Exception: при других ошибках БД
         """
         if not self.pool:
             raise RuntimeError("Подключение к базе данных не установлено.")
@@ -6555,12 +6566,13 @@ class Database:
         if amount <= 0:
             raise ValueError(f"Некорректная сумма доната: {amount}")
 
-        bonus = (amount * BONUS_PERCENT).quantize(Decimal('0.01'))  # округлим до 2 знаков
+        # Расчёт бонуса (округляем до 2 знаков)
+        bonus = (amount * bonus_percent).quantize(Decimal('0.01'))
 
         try:
             async with self.pool.acquire() as connection:
                 async with connection.transaction():
-                    # Обновляем оба поля в одном запросе
+                    # Обновляем оба поля одним запросом
                     query_update = """
                         UPDATE users
                         SET 
@@ -6569,29 +6581,28 @@ class Database:
                         WHERE user_id = $3
                         RETURNING donate, canwithdrawal
                     """
-                    row = await connection.fetchrow(query_update , amount , bonus , user_id)
+                    row = await connection.fetchrow(query_update, amount, bonus, user_id)
 
                     if row is None:
                         raise ValueError(f"Пользователь user_id={user_id} не найден в таблице users")
 
-                    new_donate = row [ 'donate' ]
-                    new_canwithdrawal = row [ 'canwithdrawal' ]
+                    new_donate = row['donate']
+                    new_canwithdrawal = row['canwithdrawal']
 
-                    # Логируем донат
+                    # Логируем донат в историю
                     current_time = datetime.now()
                     query_insert = """
                         INSERT INTO public.donate (user_id, count, data)
                         VALUES ($1, $2::numeric, $3)
                     """
-                    await connection.execute(query_insert , user_id , amount , current_time)
+                    await connection.execute(query_insert, user_id, amount, current_time)
 
-                    # (опционально) можно вернуть новые значения
-                    return new_donate , new_canwithdrawal
+                    # Возвращаем все три значения
+                    return new_donate, new_canwithdrawal, bonus
 
         except Exception as e:
-            # Здесь лучше использовать logging вместо print
-            print(f"[ERROR] Ошибка при обновлении donate: {e}")
-            return None
+            logger.exception(f"Ошибка при обновлении donate для user_id={user_id}: {e}")
+            raise  # пробрасываем дальше
 
 
 

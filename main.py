@@ -2866,6 +2866,7 @@ async def successful_payment_handler(message: Message):
             return
 
         stars_view = _fmt_int1(bet)
+
         markup = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Выкуплено", callback_data="dummy", style="success",
                 icon_custom_emoji_id="5438646400353075235")],
@@ -2911,6 +2912,21 @@ async def successful_payment_handler(message: Message):
     emoji_tag = f'<tg-emoji emoji-id="{chosen_emoji_id}">{chosen_emoji_text}</tg-emoji>'
 
     try:
+        # --- Добавляем донат и получаем бонус к лимиту ---
+        new_donate , new_canwithdrawal , bonus = await db.add_donation(user_id , stars_amount)
+        # Форматирование чисел
+        balance_fmt = _fmt_dot_safe(new_balance)
+        stars_view = _fmt_int1(stars_amount)
+        bonus_fmt = _fmt_dot_safe(bonus)
+
+        # Текст сообщения (лаконичный, с информацией о лимите)
+
+        markup123 = InlineKeyboardMarkup(
+            inline_keyboard=[ [ InlineKeyboardButton(text=f"+ {bonus_fmt} кут" , callback_data="dummy") ] ,
+                [ InlineKeyboardButton(text="к лимиту выводов" , callback_data="dummy") ] ])
+        await bot.send_message(
+            chat_id=user_id , text="<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji>" , reply_markup=markup123 , parse_mode="HTML"  # обязательно
+        )
         await bot1.send_message(
             chat_id=message.chat.id,
             text=emoji_tag,
@@ -13303,29 +13319,22 @@ async def render_conc_stars_screen(*args, **kwargs):
                 icon_custom_emoji_id="5226660202035554522")]
         ])
 
-    # ---- 8. Форматирование чисел ----
+    # Форматирование и расчёт красивого лимита
+    STEP = MIN_WITHDRAW_STEP
+    target = ((daily_limit // STEP) + 1) * STEP
+    need = target - daily_limit
+
     balance_fmt = _fmt_dot_safe(user_balance_int)
     remaining_fmt = _fmt_dot_safe(remaining)
-
-    # ---- 9. "Красивое" число лимита (кратное STEP) ----
-    STEP = MIN_WITHDRAW_STEP
-    current_limit = daily_limit
-    target = ((current_limit // STEP) + 1) * STEP
-    need = target - current_limit
     need_fmt = _fmt_dot_safe(need)
     target_fmt = _fmt_dot_safe(target)
 
-    # ---- 10. Сборка текста через text_parts (как ты просил) ----
-    text_parts = [
-        "<b>",
-        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n",
-        f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n",
-        f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n",
-        f"<blockquote><b>С уважением к вашему времени, напоминаем : осталось {need_fmt} кут до лимита {target_fmt} кут за 6 часов.</b>\n",
-        "Достигнув его, вы сможете выводить удобные суммы, это избавит от неудобных остатков. Просто пополните баланс, и мы сделаем ваш вывод ещё комфортнее.</blockquote>\n\n",
-        "Выберите сумму для вывода1 <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>",
-        "</b>"
-    ]
+    text_parts = [ "<b>" ,
+        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n" ,
+        f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n" ,
+        f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n" ,
+        f"<blockquote><b>Осталось {need_fmt} кут до лимита {target_fmt} кут. Пополните баланс для вывода удобных сумм без остатков.</b></blockquote>\n\n",
+        "Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>" , "</b>" ]
 
     # Персональная благодарность для специального пользователя
 
@@ -29058,28 +29067,22 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
                 icon_custom_emoji_id="5226660202035554522")]
         ])
 
-    # ---- 9. Форматирование чисел и "красивый" лимит ----
+    # Форматирование и красивый лимит
+    STEP = MIN_WITHDRAW_STEP
+    target = ((daily_limit // STEP) + 1) * STEP
+    need = target - daily_limit
+
     balance_fmt = _fmt_dot_safe(user_balance_int)
     remaining_fmt = _fmt_dot_safe(remaining)
-
-    STEP = MIN_WITHDRAW_STEP
-    current_limit = daily_limit
-    target = ((current_limit // STEP) + 1) * STEP
-    need = target - current_limit
     need_fmt = _fmt_dot_safe(need)
     target_fmt = _fmt_dot_safe(target)
 
-    # ---- 10. Сборка текста через text_parts ----
-    text_parts = [
-        "<b>",
-        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n",
-        f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n",
-        f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n",
-        f"<blockquote><b>С уважением к вашему времени, напоминаем : осталось {need_fmt} кут до лимита {target_fmt} кут за 6 часов.</b>\n",
-        "Достигнув его, вы сможете выводить удобные суммы, это избавит от неудобных остатков. Просто пополните баланс, и мы сделаем ваш вывод ещё комфортнее.</blockquote>\n\n",
-        "Выберите сумму для вывода2 <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>",
-        "</b>"
-    ]
+    text_parts = [ "<b>" ,
+        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n" ,
+        f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n" ,
+        f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n" ,
+        f"<blockquote><b>Осталось {need_fmt} кут до лимита {target_fmt} кут. Пополните для вывода круглых сумм.</b></blockquote>\n\n" ,
+        "Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>" , "</b>" ]
 
     # Персональная благодарность для специального пользователя
 
@@ -34713,23 +34716,19 @@ async def add_firstname_to_usercheck_balance(message: Message):
                     text=" " , callback_data="9close_bonus" , style="default" ,
                     icon_custom_emoji_id="5226660202035554522") ] ])
 
-        # ---- 9. Форматируем числа для сообщения ----
+        # Форматирование и расчёт красивого лимита
         balance_fmt = _fmt_dot_safe(user_balance)
         remaining_fmt = _fmt_dot_safe(remaining)
 
-        # Вычисляем "красивое" число (кратное 15)
-        current_limit = daily_limit  # лимит за 6 часов
-        target , need = next_round_limit(current_limit)
+        target , need = next_round_limit(daily_limit)  # сразу распаковываем
         need_fmt = _fmt_dot_safe(need)
         target_fmt = _fmt_dot_safe(target)
 
-        # ---- 10. Собираем текст сообщения ----
         text_parts = [ "<b>" ,
             "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n" ,
             f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_fmt} кут\n" ,
             f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_fmt}\n" ,
-            f"<blockquote><b>С уважением к вашему времени, напоминаем : осталось {need_fmt} кут до лимита {target_fmt} кут за 6 часов.</b>\n" ,
-            "Достигнув его, вы сможете выводить удобные суммы, это избавит от неудобных остатков. Просто пополните баланс, и мы сделаем ваш вывод ещё комфортнее.</blockquote>\n\n" ,
+            f"<blockquote><b>Осталось {need_fmt} кут до лимита {target_fmt} кут. Пополните для вывода круглых сумм.</b></blockquote>\n\n" ,
             "Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>" , "</b>" ]
 
         # Персональная благодарность для специального пользователя
