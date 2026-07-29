@@ -33,6 +33,9 @@ export function useShop({ isActive = true } = {}) {
   const [sortOrder, setSortOrder] = useState('asc')
   const [items, setItems] = useState([])
   const [couponCount, setCouponCount] = useState(0)
+  // Диапазон приходит с сервера: захардкоженная в интерфейсе «до −80%» не
+  // совпадала ни с ботом, ни с самим сервером.
+  const [couponDiscount, setCouponDiscount] = useState(null)
   const [page, setPage] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [totalItems, setTotalItems] = useState(0)
@@ -61,6 +64,7 @@ export function useShop({ isActive = true } = {}) {
   const applyCatalog = useCallback((data, { syncPlayer = true } = {}) => {
     setKut(data.kut ?? 0)
     setCouponCount(data.couponCount ?? 0)
+    if (data.couponDiscount) setCouponDiscount(data.couponDiscount)
     setSortFilters(data.sortFilters ?? [])
     setActiveCategory(data.activeCategory ?? 'all')
     setSearch(data.search ?? queryRef.current.search ?? '')
@@ -358,6 +362,7 @@ export function useShop({ isActive = true } = {}) {
   return {
     kut: displayKut,
     couponCount,
+    couponDiscount,
     sortFilters,
     activeCategory,
     search,

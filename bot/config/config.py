@@ -215,6 +215,27 @@ APP_NAME = 'cute'               # должно быть определено в�
 
 DONATE_BET_STARS_PER_KUT = 1  # курс для доната (1⭐ = 1 кут) – оставь как есть
 MULTIPLIER_BUYBACK = 0.8  # скидка при выкупе потерянных кут (20%)
+
+# ==============================================================
+# «Купон на скидку»
+# ==============================================================
+# Имена переменных совпадают с server/config.py: диапазон обязан быть одинаковым
+# в текстовом боте и в WebApp, иначе одна и та же покупка даёт разную скидку в
+# зависимости от того, откуда её сделали.
+COUPON_ITEM_NAME = "Купон на скидку"
+COUPON_DISCOUNT_MIN_PERCENT = int(os.getenv("COUPON_DISCOUNT_MIN_PERCENT", "20"))
+COUPON_DISCOUNT_MAX_PERCENT = int(os.getenv("COUPON_DISCOUNT_MAX_PERCENT", "75"))
+# Сколько живёт неиспользованная бронь купона. Купон списывается при применении и
+# по истечении срока не возвращается, иначе ожидание = бесплатная перекрутка.
+COUPON_RESERVATION_TTL_SECONDS = int(os.getenv("COUPON_RESERVATION_TTL_SECONDS", "900"))
+# Купон действует на одну единицу предмета. Раньше он скидывал корзину целиком,
+# то есть до 500 CuteCoin или 1000 LoveCoin за один купон.
+COUPON_DISCOUNTED_UNITS = 1
+# Выплата за продажу предмета, купленного по купону, не может превысить
+# уплаченную за него сумму: продажа возвращает 25-45% цены, а купон позволяет
+# купить за 25%, и без этого ограничения цикл «купил-продал» печатал куты.
+SELL_PAYOUT_MIN_PERCENT = 25
+SELL_PAYOUT_MAX_PERCENT = 45
 TOKENtest = "7357700583:AAHHA3jr6f38X6LwNvx9a2scXZHee3DJXTY"
 async def get_bot_username_by_token(token: str):
     bot_usernames = {

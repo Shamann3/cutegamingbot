@@ -1139,8 +1139,8 @@ GIFT_BUTTON_RULES: Dict[str, Any] = {
 
 UI_TEXTS: Dict[str, str] = {
     "back": "Назад к балансу",
-    "min_withdraw_prefix": "🧩 Мин. вывод сейчас : ",
-    "min_withdraw_prefix_info": "ℹ️ Мин. вывод сейчас: ",
+    "min_withdraw_prefix": "Мин. вывод сейчас : ",
+    "min_withdraw_prefix_info": "Мин. вывод сейчас: ",
     "speed_title": "⚡ Моментальный вывод",
 }
 

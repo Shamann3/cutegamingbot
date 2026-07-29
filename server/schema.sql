@@ -1125,3 +1125,54 @@ CREATE TABLE IF NOT EXISTS giveaway_channel_sub_cache (
     checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, channel)
 );
+
+-- «Купон на скидку»: бронь выпавшего процента.
+--
+-- Купон списывается из инвентаря в момент создания брони, а не в момент
+-- покупки. Иначе неудачная покупка (не хватило кут) откатывала списание купона
+-- вместе с транзакцией, и процент можно было перекручивать бесплатно, пока не
+-- выпадет максимум. Процент живёт здесь, а не в памяти процесса, потому что
+-- бронь общая для текстового бота и WebApp и должна переживать перезапуск.
+--
+-- item_id — это dex.id в виде текста: у бота инвентарь по названиям, у сервера
+-- по id, и только id одинаково разрешается обеими сторонами.
+CREATE TABLE IF NOT EXISTS coupon_reservations (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    item_id TEXT NOT NULL,
+    percent INT NOT NULL CHECK (percent BETWEEN 1 AND 99),
+    source TEXT NOT NULL DEFAULT 'bot',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    resolved_at TIMESTAMPTZ,
+    resolution TEXT CHECK (resolution IN ('used', 'expired'))
+);
+
+-- Одна активная бронь на игрока: гарантия уровня БД, потому что бот и сервер —
+-- разные процессы и договориться могут только через уникальный индекс.
+CREATE UNIQUE INDEX IF NOT EXISTS coupon_reservations_active_uniq
+    ON coupon_reservations (user_id)
+    WHERE resolved_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS coupon_reservations_expiry_idx
+    ON coupon_reservations (expires_at)
+    WHERE resolved_at IS NULL;
+
+-- Себестоимость единиц, купленных по купону.
+--
+-- Скидка доходит до 75%, а продажа предмета возвращает 25-45% его цены, поэтому
+-- без этого учёта покупка со скидкой была источником кут из воздуха. Выплата за
+-- такую единицу ограничивается фактически уплаченной за неё суммой.
+CREATE TABLE IF NOT EXISTS discounted_holdings (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    item_id TEXT NOT NULL,
+    quantity INT NOT NULL CHECK (quantity > 0),
+    unit_paid BIGINT NOT NULL CHECK (unit_paid >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Порядок колонок = порядок списания: самые дешёвые единицы уходят первыми,
+-- иначе можно продать «дорогую» единицу по полной ставке и оставить дешёвую.
+CREATE INDEX IF NOT EXISTS discounted_holdings_user_item_idx
+    ON discounted_holdings (user_id, item_id, unit_paid ASC, id ASC);

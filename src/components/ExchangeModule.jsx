@@ -35,6 +35,7 @@ export default function ExchangeModule({
   const {
     kut,
     couponCount,
+    couponDiscount,
     sortFilters,
     activeCategory,
     search,
@@ -224,6 +225,7 @@ export default function ExchangeModule({
         item={selectedItem}
         kut={kut}
         couponCount={couponCount}
+        couponDiscount={couponDiscount}
         isOpen={Boolean(selectedItem)}
         isBuying={buyingItemId === selectedItem?.id}
         onClose={() => setSelectedItem(null)}

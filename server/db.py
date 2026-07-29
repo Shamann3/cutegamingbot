@@ -1200,6 +1200,16 @@ class Database:
             category_id, page, search_q, price_filter, sort_by, sort_order, page_size, result
         )
         result["couponCount"] = coupon_count
+        # Диапазон отдаём с сервера: в интерфейсе была захардкожена «до −80%»,
+        # которая не совпадала ни с ботом, ни с самим сервером.
+        from coupon_rules import discount_bounds, COUPON_DISCOUNTED_UNITS
+
+        coupon_min, coupon_max = discount_bounds()
+        result["couponDiscount"] = {
+            "minPercent": coupon_min,
+            "maxPercent": coupon_max,
+            "units": COUPON_DISCOUNTED_UNITS,
+        }
         return result
 
     async def _get_coupon_count(self, user_id) -> int:
@@ -1214,6 +1224,189 @@ class Database:
         )
         raw_items = parse_items(items_raw)
         return dex_catalog.count_in_raw_items(raw_items, COUPON_ITEM_ID)
+
+    @staticmethod
+    async def _expire_coupon_reservations(conn, user_id):
+        """Погасить просроченные брони. Купон при этом не возвращается.
+
+        Возврат сделал бы ожидание бесплатной перекруткой процента, а уникальный
+        индекс coupon_reservations_active_uniq иначе навсегда заблокировал бы
+        игроку купоны.
+        """
+        await conn.execute(
+            """
+            UPDATE coupon_reservations
+            SET resolved_at = NOW(), resolution = 'expired'
+            WHERE user_id = $1 AND resolved_at IS NULL AND expires_at <= NOW()
+            """,
+            user_id,
+        )
+
+    async def reserve_coupon_discount(self, user_id, item_id, source="webapp"):
+        """Списать купон и зафиксировать выпавший процент.
+
+        Списание происходит здесь, отдельной закоммиченной транзакцией, а не
+        внутри покупки. Иначе неудачная покупка (не хватило кут) откатывала
+        списание купона вместе с процентом, и его можно было перекручивать
+        бесплатно, пока не выпадет максимум.
+
+        Если активная бронь уже есть, процент НЕ перекручивается — бронь просто
+        перевешивается на новый предмет с тем же процентом и без продления срока.
+        """
+        from config import COUPON_ITEM_ID
+        from coupon_rules import reservation_ttl_seconds, roll_discount_percent
+        from dex_catalog import dex_catalog
+
+        coupon_canon = dex_catalog.canonical_key(COUPON_ITEM_ID)
+        item_key = dex_catalog.canonical_key(item_id)
+        ttl = reservation_ttl_seconds()
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT 1 FROM users WHERE user_id = $1 FOR UPDATE", user_id
+                )
+                await self._expire_coupon_reservations(conn, user_id)
+
+                active = await conn.fetchrow(
+                    """
+                    SELECT id, percent FROM coupon_reservations
+                    WHERE user_id = $1 AND resolved_at IS NULL
+                    """,
+                    user_id,
+                )
+                if active:
+                    await conn.execute(
+                        "UPDATE coupon_reservations SET item_id = $2 WHERE id = $1",
+                        active["id"],
+                        item_key,
+                    )
+                    return int(active["id"]), int(active["percent"])
+
+                items_raw = await conn.fetchval(
+                    "SELECT items FROM users WHERE user_id = $1", user_id
+                )
+                raw_items = parse_items(items_raw)
+                if dex_catalog.count_in_raw_items(raw_items, coupon_canon) < 1:
+                    raise ValueError("У вас нет купона на скидку")
+
+                percent = roll_discount_percent()
+                stored = dex_catalog.take_from_raw_items(raw_items, coupon_canon, 1)
+                await conn.execute(
+                    "UPDATE users SET items = $2 WHERE user_id = $1",
+                    user_id,
+                    items_to_db(stored),
+                )
+                reservation_id = await conn.fetchval(
+                    """
+                    INSERT INTO coupon_reservations
+                        (user_id, item_id, percent, source, expires_at)
+                    VALUES ($1, $2, $3, $4, NOW() + ($5 || ' seconds')::interval)
+                    RETURNING id
+                    """,
+                    user_id,
+                    item_key,
+                    percent,
+                    str(source),
+                    str(ttl),
+                )
+                return int(reservation_id), percent
+
+    @staticmethod
+    async def claim_coupon_reservation(conn, reservation_id):
+        """Погасить бронь ровно один раз и вернуть её процент.
+
+        Атомарный UPDATE вместо «прочитал — применил — погасил»: два
+        одновременных подтверждения покупки иначе оба увидели бы активную бронь и
+        оба получили бы скидку с одного купона.
+        """
+        return await conn.fetchval(
+            """
+            UPDATE coupon_reservations
+            SET resolved_at = NOW(), resolution = 'used'
+            WHERE id = $1 AND resolved_at IS NULL
+            RETURNING percent
+            """,
+            reservation_id,
+        )
+
+    @staticmethod
+    async def _record_discounted_units(conn, user_id, item_id, quantity, unit_paid):
+        """Запомнить себестоимость единиц, купленных по купону.
+
+        Нужно, чтобы продажа не вернула больше уплаченного: скидка доходит до
+        75%, а продажа возвращает 25-45% цены.
+        """
+        quantity = max(0, int(quantity))
+        if quantity <= 0:
+            return
+        await conn.execute(
+            """
+            INSERT INTO discounted_holdings (user_id, item_id, quantity, unit_paid)
+            VALUES ($1, $2, $3, $4)
+            """,
+            user_id,
+            str(item_id),
+            quantity,
+            max(0, int(unit_paid)),
+        )
+
+    @staticmethod
+    async def take_discounted_units(conn, user_id, item_id, quantity):
+        """Списать до `quantity` скидочных единиц, начиная с самых дешёвых.
+
+        Дешёвые первыми — иначе игрок продавал бы «дорогую» единицу по полной
+        ставке и оставлял дешёвую, обходя ограничение выплаты.
+
+        Возвращает список уплаченных за единицу сумм длиной не больше quantity.
+        """
+        quantity = max(0, int(quantity))
+        if quantity <= 0:
+            return []
+
+        rows = await conn.fetch(
+            """
+            SELECT id, quantity, unit_paid FROM discounted_holdings
+            WHERE user_id = $1 AND item_id = $2
+            ORDER BY unit_paid ASC, id ASC
+            FOR UPDATE
+            """,
+            user_id,
+            str(item_id),
+        )
+
+        taken = []
+        for row in rows:
+            if len(taken) >= quantity:
+                break
+            available = int(row["quantity"])
+            need = quantity - len(taken)
+            use = min(available, need)
+            taken.extend([int(row["unit_paid"])] * use)
+            if use >= available:
+                await conn.execute(
+                    "DELETE FROM discounted_holdings WHERE id = $1", row["id"]
+                )
+            else:
+                await conn.execute(
+                    "UPDATE discounted_holdings SET quantity = quantity - $2 WHERE id = $1",
+                    row["id"],
+                    use,
+                )
+        return taken
+
+    @staticmethod
+    async def count_discounted_units(conn, user_id, item_id) -> int:
+        """Сколько единиц предмета у игрока куплено по купону."""
+        value = await conn.fetchval(
+            """
+            SELECT COALESCE(SUM(quantity), 0) FROM discounted_holdings
+            WHERE user_id = $1 AND item_id = $2
+            """,
+            user_id,
+            str(item_id),
+        )
+        return int(value or 0)
 
     async def sanitize_user_items_against_dex(self, user_id) -> dict:
         """Сверяет users.items с таблицей dex при входе в WebApp.
@@ -1311,10 +1504,9 @@ class Database:
         page_size=None,
         use_coupon=False,
     ):
-        import random
-
         from shop_catalog import effective_price
-        from config import COUPON_ITEM_ID, COUPON_DISCOUNT_MIN_PERCENT, COUPON_DISCOUNT_MAX_PERCENT
+        from config import COUPON_ITEM_ID
+        from coupon_rules import apply_coupon_to_cost, discount_bounds, discounted_units
         from dex_catalog import dex_catalog
 
         await self.ensure_user(user_id)
@@ -1324,9 +1516,43 @@ class Database:
         quantity = max(1, min(int(quantity), 99))
         dex_id = int(item_id)
         coupon_canon = dex_catalog.canonical_key(COUPON_ITEM_ID)
+        item_canon = dex_catalog.canonical_key(item_id)
         # Нельзя применить купон на скидку к покупке самих купонов — той же
         # защитой, что была в старом текстовом боте (is_discount_coupon_in_cart).
-        use_coupon = bool(use_coupon) and coupon_canon != dex_catalog.canonical_key(item_id)
+        use_coupon = bool(use_coupon) and coupon_canon != item_canon
+
+        coupon_reservation_id = None
+        if use_coupon:
+            # Предмет проверяем до брони, иначе опечатка в item_id сожгла бы купон.
+            preview = await self.pool.fetchrow(
+                "SELECT price, dis, remains FROM dex WHERE id = $1", dex_id
+            )
+            if not preview:
+                raise ValueError("Предмет не найден")
+            if int(preview["remains"] or 0) < 1:
+                raise ValueError("К сожалению, товар закончился")
+            preview_unit_cost = effective_price(preview["price"], preview["dis"])
+            if preview_unit_cost < 0:
+                raise ValueError("Этот предмет нельзя купить")
+            # Купон списывается при применении, поэтому нельзя позволить сжечь его
+            # на покупке, которая не может состояться ни при каком проценте.
+            best_case_cost, _ = apply_coupon_to_cost(
+                preview_unit_cost,
+                min(quantity, int(preview["remains"] or 0)),
+                discount_bounds()[1],
+            )
+            preview_balance = await self.pool.fetchval(
+                "SELECT balance FROM users WHERE user_id = $1", user_id
+            )
+            if int(preview_balance or 0) < best_case_cost:
+                raise ValueError("У Вас недостаточно кут даже с максимальной скидкой")
+            # Бронь коммитится отдельно от покупки: если списывать купон внутри
+            # транзакции покупки, то отказ по нехватке кут откатывал списание, и
+            # процент можно было перекручивать бесплатно до максимума.
+            coupon_reservation_id, _ = await self.reserve_coupon_discount(
+                user_id, item_id, source="webapp"
+            )
+
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 dex_row = await conn.fetchrow(
@@ -1355,18 +1581,22 @@ class Database:
                 raw_items = parse_items(items_raw)
 
                 coupon_percent = 0
-                if use_coupon:
-                    if dex_catalog.count_in_raw_items(raw_items, coupon_canon) < 1:
-                        raise ValueError("У вас нет купона на скидку")
-                    coupon_percent = random.randint(
-                        COUPON_DISCOUNT_MIN_PERCENT, COUPON_DISCOUNT_MAX_PERCENT
-                    )
-                    raw_items = dex_catalog.take_from_raw_items(raw_items, coupon_canon, 1)
-
                 cost = full_cost
-                if coupon_percent:
-                    cost = round(full_cost * (1 - coupon_percent / 100))
-                    cost = max(0, min(cost, full_cost))
+                coupon_saved = 0
+                if coupon_reservation_id is not None:
+                    claimed = await self.claim_coupon_reservation(
+                        conn, coupon_reservation_id
+                    )
+                    if claimed is None:
+                        # Бронь погасило параллельное подтверждение покупки. Молча
+                        # взять полную цену нельзя — игрок этого не ожидает.
+                        raise ValueError(
+                            "Купон уже использован в другой покупке, попробуйте снова"
+                        )
+                    coupon_percent = int(claimed)
+                    cost, coupon_saved = apply_coupon_to_cost(
+                        unit_cost, buy_qty, coupon_percent
+                    )
 
                 balance = await conn.fetchval(
                     "SELECT balance FROM users WHERE user_id = $1", user_id
@@ -1374,6 +1604,10 @@ class Database:
                 if balance is None:
                     raise ValueError("Профиль не найден")
                 if int(balance) < cost:
+                    # Сумму со скидкой не показываем: по ней вычисляется процент,
+                    # который игрок не должен знать до завершения покупки.
+                    if coupon_percent:
+                        raise ValueError("У Вас недостаточно кут для покупки с купоном")
                     raise ValueError(f"У Вас недостаточно кут (нужно {cost})")
                 tool_durability_raw = await conn.fetchval(
                     "SELECT tool_durability FROM users WHERE user_id = $1", user_id
@@ -1396,6 +1630,18 @@ class Database:
                 await conn.execute(
                     "UPDATE dex SET remains = remains - $2 WHERE id = $1", dex_id, buy_qty
                 )
+                if coupon_percent:
+                    # Себестоимость скидочной единицы — иначе продажа вернёт
+                    # 25-45% цены за предмет, купленный за 25%, и цикл
+                    # «купил-продал» станет источником кут.
+                    units = discounted_units(buy_qty)
+                    await self._record_discounted_units(
+                        conn,
+                        user_id,
+                        item_canon,
+                        units,
+                        (cost - unit_cost * (buy_qty - units)) // max(1, units),
+                    )
                 purchased = {
                     "id": str(dex_row["id"]),
                     "name": (dex_row["name"] or "").strip() or str(dex_row["id"]),
@@ -1403,7 +1649,7 @@ class Database:
                     "paid": cost,
                     "quantity": buy_qty,
                     "couponApplied": (
-                        {"percent": coupon_percent, "saved": full_cost - cost}
+                        {"percent": coupon_percent, "saved": coupon_saved}
                         if coupon_percent
                         else None
                     ),
@@ -2574,6 +2820,15 @@ class Database:
                     "SELECT items FROM users WHERE user_id = $1 FOR UPDATE", user_id
                 )
                 raw_items = parse_items(items_raw)
+                # Единицы, купленные по купону, на биржу не выпускаем: их выплата
+                # ограничена уплаченной суммой, а после передачи другому игроку
+                # это ограничение теряется — так скидку отмывали через альтов.
+                owned = count_item_in_storage(raw_items, item_key)
+                discounted = await self.count_discounted_units(conn, user_id, item_key)
+                if owned - discounted < quantity:
+                    raise ValueError(
+                        "Предметы, купленные по купону на скидку, нельзя выставить на биржу"
+                    )
                 stored = take_item_from_storage(raw_items, item_key, quantity)
                 await conn.execute(
                     "UPDATE users SET items = $2 WHERE user_id = $1", user_id, items_to_db(stored)

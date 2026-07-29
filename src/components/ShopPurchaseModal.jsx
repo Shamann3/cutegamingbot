@@ -10,6 +10,7 @@ export default function ShopPurchaseModal({
   item,
   kut,
   couponCount = 0,
+  couponDiscount = null,
   isOpen,
   isBuying,
   onClose,
@@ -38,21 +39,31 @@ export default function ShopPurchaseModal({
   const isCouponItself = item?.name === 'Купон на скидку'
   const canUseCoupon = couponCount > 0 && !isCouponItself
   const couponActive = canUseCoupon && useCoupon
-  // Скидка от купона (20–80%) считается случайно на сервере в момент покупки
-  // заранее показать точную цену нельзя. Пока купон применяется, не блокируем
-  // подтверждение и не предлагаем пополнить баланс по ПОЛНОЙ цене: реальная
-  // сумма почти наверняка окажется меньше, сервер сам проверит остаток кут.
-  const canAfford = couponActive || kut >= totalCost
+
+  const couponMin = couponDiscount?.minPercent ?? 20
+  const couponMax = couponDiscount?.maxPercent ?? 75
+  const couponUnits = couponDiscount?.units ?? 1
+  // Точный процент выпадает на сервере и до завершения покупки не показывается,
+  // поэтому итоговую сумму заранее не знает и клиент. Но нижнюю границу цены
+  // (скидка максимальная, на couponUnits единиц) посчитать можно, и купон нельзя
+  // давать применить, если даже её не хватает: купон списывается при применении.
+  const couponUnitCount = Math.min(quantity, couponUnits)
+  const bestCaseCost = hasValidQuantity
+    ? price * (quantity - couponUnitCount)
+      + (price - Math.round((price * couponMax) / 100)) * couponUnitCount
+    : 0
+  const canAfford = couponActive ? kut >= bestCaseCost : kut >= totalCost
   const outOfStock = !item || maxByStock < 1
   const needsTopUp = !outOfStock && hasValidQuantity && !canAfford
   const hasSale = item?.salePrice != null && item.salePrice > 0
+  const neededCost = couponActive ? bestCaseCost : totalCost
 
   const confirmDisabled = isBuying || outOfStock
     || (!needsTopUp && !canAfford)
     || !hasValidQuantity || quantity < 1
 
   const actionLabel = item ? `Купить «${item.name}»` : 'Покупка'
-  const suggestedTopUp = needsTopUp ? suggestDonateAmount(kut, totalCost) : 0
+  const suggestedTopUp = needsTopUp ? suggestDonateAmount(kut, neededCost) : 0
 
   let confirmLabel = 'Подтвердить покупку'
   if (isBuying) confirmLabel = 'Оформляем покупку…'
@@ -63,7 +74,7 @@ export default function ShopPurchaseModal({
   // Хук ДО раннего return иначе нарушение Rules of Hooks
   useEnterConfirm(isOpen && Boolean(item) && !confirmDisabled, () => {
     if (needsTopUp && onContextualDonate) {
-      onContextualDonate(buildDonateContext({ balance: kut, neededCost: totalCost, actionLabel }))
+      onContextualDonate(buildDonateContext({ balance: kut, neededCost, actionLabel }))
     } else if (!confirmDisabled) {
       onConfirm(item.id, quantity, couponActive)
     }
@@ -105,7 +116,7 @@ export default function ShopPurchaseModal({
 
   const handleConfirm = () => {
     if (needsTopUp && onContextualDonate) {
-      onContextualDonate(buildDonateContext({ balance: kut, neededCost: totalCost, actionLabel }))
+      onContextualDonate(buildDonateContext({ balance: kut, neededCost, actionLabel }))
       return
     }
     if (confirmDisabled) return
@@ -214,7 +225,8 @@ export default function ShopPurchaseModal({
                 <span className="shop-modal-coupon-title">Купон на скидку</span>
                 <span className="shop-modal-coupon-desc">
                   {couponActive
-                    ? 'Скидка 20–80% определится при покупке'
+                    ? `Скидка ${couponMin}–${couponMax}% определится при покупке`
+                    + `, на ${couponUnits} шт. Купон списывается сразу и не возвращается`
                     : `У вас: ${couponCount} шт. Нажмите, чтобы применить`}
                 </span>
               </span>
@@ -257,7 +269,9 @@ export default function ShopPurchaseModal({
                 {couponActive ? (
                   <span className="shop-modal-coupon-total">
                     <span className="shop-modal-price-old">{formatKut(totalCost)}</span>
-                    <span className="shop-modal-coupon-total-hint">до −80% 🎟</span>
+                    <span className="shop-modal-coupon-total-hint">
+                      до −{couponMax}% 🎟
+                    </span>
                   </span>
                 ) : (
                   formatKut(totalCost)

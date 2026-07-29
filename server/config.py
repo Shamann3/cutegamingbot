@@ -504,9 +504,15 @@ WATER_ITEM_ID = os.getenv("WATER_ITEM_ID", "294")
 AUTOWATER_ITEM_ID = os.getenv("AUTOWATER_ITEM_ID", "298")
 COUPON_ITEM_ID = os.getenv("COUPON_ITEM_ID", "279")  # "Купон на скидку" в dex
 
-# Разброс случайной скидки при использовании купона в магазине.
+# Разброс случайной скидки при использовании купона в магазине. Те же имена
+# переменных читает bot/config/config.py — диапазон обязан совпадать в WebApp и
+# в текстовом боте, раньше он разъехался (80 против 75) и в интерфейсе была
+# написана третья цифра.
 COUPON_DISCOUNT_MIN_PERCENT = int(os.getenv("COUPON_DISCOUNT_MIN_PERCENT", "20"))
-COUPON_DISCOUNT_MAX_PERCENT = int(os.getenv("COUPON_DISCOUNT_MAX_PERCENT", "80"))
+COUPON_DISCOUNT_MAX_PERCENT = int(os.getenv("COUPON_DISCOUNT_MAX_PERCENT", "75"))
+# Сколько живёт неиспользованная бронь купона. По истечении срока купон не
+# возвращается — иначе ожидание становится бесплатной перекруткой процента.
+COUPON_RESERVATION_TTL_SECONDS = int(os.getenv("COUPON_RESERVATION_TTL_SECONDS", "900"))
 # Ключи в users.items — id из таблицы dex
 SEED_ITEM_KEY = SEED_ITEM_ID
 TREE_ITEM_KEY = TREE_ITEM_ID
