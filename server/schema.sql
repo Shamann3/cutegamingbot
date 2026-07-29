@@ -468,6 +468,19 @@ CREATE TABLE IF NOT EXISTS staff_salaries (
     paid_at TIMESTAMPTZ
 );
 
+-- Legacy-БД: таблица могла существовать без PK/UNIQUE на id.
+-- CREATE TABLE IF NOT EXISTS это не исправляет, а любой REFERENCES staff_salaries(id)
+-- требует unique index/constraint → InvalidForeignKeyError при старте API.
+-- Unique INDEX достаточно для FK; IF NOT EXISTS безопасен при уже существующем PK.
+DO $$
+BEGIN
+    CREATE UNIQUE INDEX IF NOT EXISTS staff_salaries_id_uidx ON staff_salaries (id);
+EXCEPTION
+    WHEN unique_violation THEN
+        RAISE NOTICE 'staff_salaries_id_uidx skipped (duplicate ids): %', SQLERRM;
+    WHEN duplicate_table THEN NULL;
+END $$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS staff_salaries_user_week_idx
     ON staff_salaries (user_id, week_start);
 CREATE INDEX IF NOT EXISTS staff_salaries_week_idx
@@ -487,14 +500,16 @@ ALTER TABLE staff_salaries ADD COLUMN IF NOT EXISTS payout_type TEXT NOT NULL DE
 ALTER TABLE staff_salaries ADD COLUMN IF NOT EXISTS paid_amount INT NOT NULL DEFAULT 0;
 
 -- Частичные выплаты / аванс
-ALTER TABLE staff_salaries ADD COLUMN IF NOT EXISTS paid_amount INT NOT NULL DEFAULT 0;
 ALTER TABLE staff_salaries DROP CONSTRAINT IF EXISTS staff_salaries_status_check;
 ALTER TABLE staff_salaries ADD CONSTRAINT staff_salaries_status_check
     CHECK (status IN ('pending_approval', 'approved', 'partially_paid', 'paid', 'cancelled'));
 
+-- Дочерние таблицы без inline FK: на legacy-БД CREATE IF NOT EXISTS со ссылкой
+-- падал бы до того, как успеем починить unique на id (если id_uidx выше
+-- по какой-то причине не создался). FK навешиваем отдельно ниже.
 CREATE TABLE IF NOT EXISTS salary_payments (
     id BIGSERIAL PRIMARY KEY,
-    salary_id BIGINT NOT NULL REFERENCES staff_salaries(id) ON DELETE CASCADE,
+    salary_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
     amount INT NOT NULL CHECK (amount > 0),
     method TEXT,
@@ -504,6 +519,21 @@ CREATE TABLE IF NOT EXISTS salary_payments (
     paid_by BIGINT,
     paid_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'salary_payments_salary_id_fkey'
+    ) THEN
+        ALTER TABLE salary_payments
+            ADD CONSTRAINT salary_payments_salary_id_fkey
+            FOREIGN KEY (salary_id) REFERENCES staff_salaries(id) ON DELETE CASCADE;
+    END IF;
+EXCEPTION
+    WHEN invalid_foreign_key THEN
+        RAISE NOTICE 'salary_payments_salary_id_fkey skipped: %', SQLERRM;
+    WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS salary_payments_salary_idx ON salary_payments (salary_id);
 CREATE INDEX IF NOT EXISTS salary_payments_paid_at_idx ON salary_payments (paid_at DESC);
@@ -588,7 +618,7 @@ CREATE TABLE IF NOT EXISTS application_questions (
 -- Ожидающие со-подтверждения крупные выплаты (нужен второй владелец)
 CREATE TABLE IF NOT EXISTS pending_payouts (
     id BIGSERIAL PRIMARY KEY,
-    salary_id BIGINT NOT NULL REFERENCES staff_salaries(id) ON DELETE CASCADE,
+    salary_id BIGINT,
     user_id BIGINT NOT NULL,
     amount INT NOT NULL,
     method TEXT,
@@ -598,12 +628,26 @@ CREATE TABLE IF NOT EXISTS pending_payouts (
     requested_by BIGINT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'pending_payouts_salary_id_fkey'
+    ) THEN
+        ALTER TABLE pending_payouts
+            ADD CONSTRAINT pending_payouts_salary_id_fkey
+            FOREIGN KEY (salary_id) REFERENCES staff_salaries(id) ON DELETE CASCADE;
+    END IF;
+EXCEPTION
+    WHEN invalid_foreign_key THEN
+        RAISE NOTICE 'pending_payouts_salary_id_fkey skipped: %', SQLERRM;
+    WHEN duplicate_object THEN NULL;
+END $$;
 CREATE INDEX IF NOT EXISTS pending_payouts_created_idx ON pending_payouts (created_at DESC);
 
 -- Апелляции работников по зарплате
 CREATE TABLE IF NOT EXISTS salary_appeals (
     id BIGSERIAL PRIMARY KEY,
-    salary_id BIGINT NOT NULL REFERENCES staff_salaries(id) ON DELETE CASCADE,
+    salary_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
     reason TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
@@ -612,6 +656,20 @@ CREATE TABLE IF NOT EXISTS salary_appeals (
     reviewed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'salary_appeals_salary_id_fkey'
+    ) THEN
+        ALTER TABLE salary_appeals
+            ADD CONSTRAINT salary_appeals_salary_id_fkey
+            FOREIGN KEY (salary_id) REFERENCES staff_salaries(id) ON DELETE CASCADE;
+    END IF;
+EXCEPTION
+    WHEN invalid_foreign_key THEN
+        RAISE NOTICE 'salary_appeals_salary_id_fkey skipped: %', SQLERRM;
+    WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS salary_appeals_status_idx
     ON salary_appeals (status, created_at DESC);
@@ -1186,33 +1244,29 @@ ALTER TABLE staff_salaries ADD COLUMN IF NOT EXISTS period_type TEXT NOT NULL DE
 ALTER TABLE staff_salaries ADD COLUMN IF NOT EXISTS period_start DATE;
 UPDATE staff_salaries SET period_start = week_start WHERE period_start IS NULL;
 ALTER TABLE staff_salaries ALTER COLUMN period_start SET DEFAULT CURRENT_DATE;
-
--- На старых БД staff_salaries могла появиться без UNIQUE/PK на id
--- (CREATE TABLE IF NOT EXISTS не чинит уже существующую таблицу).
--- Без unique на id любые REFERENCES staff_salaries(id) падают с
--- InvalidForeignKeyError.
+-- На всякий случай ещё раз (идемпотентно): FK ниже требуют unique на id
 DO $$
 BEGIN
-    BEGIN
-        ALTER TABLE staff_salaries ADD CONSTRAINT staff_salaries_pkey PRIMARY KEY (id);
-    EXCEPTION
-        WHEN duplicate_object THEN NULL;
-        WHEN invalid_table_definition THEN NULL; -- уже есть другой PK
-        WHEN unique_violation THEN NULL;
-    END;
-    BEGIN
-        ALTER TABLE staff_salaries ADD CONSTRAINT staff_salaries_id_key UNIQUE (id);
-    EXCEPTION
-        WHEN duplicate_object THEN NULL;
-        WHEN invalid_table_definition THEN NULL;
-        WHEN unique_violation THEN NULL;
-    END;
+    CREATE UNIQUE INDEX IF NOT EXISTS staff_salaries_id_uidx ON staff_salaries (id);
+EXCEPTION
+    WHEN unique_violation THEN
+        RAISE NOTICE 'staff_salaries_id_uidx (payroll) skipped: %', SQLERRM;
+    WHEN duplicate_table THEN NULL;
 END $$;
 
--- Уникальность: один оклад на сотрудника за конкретный период
+-- Уникальность: один оклад на сотрудника за конкретный период.
+-- Дубликаты после миграции week→period не должны валить старт API.
 DROP INDEX IF EXISTS staff_salaries_user_week_idx;
-CREATE UNIQUE INDEX IF NOT EXISTS staff_salaries_user_period_idx
-    ON staff_salaries (user_id, period_type, period_start);
+DO $$
+BEGIN
+    CREATE UNIQUE INDEX IF NOT EXISTS staff_salaries_user_period_idx
+        ON staff_salaries (user_id, period_type, period_start);
+EXCEPTION
+    WHEN unique_violation THEN
+        -- Оставляем дубликаты как есть; уникальность добьём позже вручную/скриптом.
+        RAISE NOTICE 'staff_salaries_user_period_idx skipped (duplicates): %', SQLERRM;
+    WHEN duplicate_table THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS staff_salaries_period_idx
     ON staff_salaries (period_type, period_start DESC);
@@ -1380,6 +1434,10 @@ BEGIN
             ADD CONSTRAINT pending_payouts_bonus_id_fkey
             FOREIGN KEY (bonus_id) REFERENCES staff_bonuses(id) ON DELETE CASCADE;
     END IF;
+EXCEPTION
+    WHEN invalid_foreign_key THEN
+        RAISE NOTICE 'pending_payouts_bonus_id_fkey skipped: %', SQLERRM;
+    WHEN duplicate_object THEN NULL;
 END $$;
 ALTER TABLE pending_payouts ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'salary';
 DO $$
@@ -1391,4 +1449,8 @@ BEGIN
             ADD CONSTRAINT pending_payouts_source_check
             CHECK (source IN ('salary', 'bonus'));
     END IF;
+EXCEPTION
+    WHEN check_violation THEN
+        RAISE NOTICE 'pending_payouts_source_check skipped: %', SQLERRM;
+    WHEN duplicate_object THEN NULL;
 END $$;
