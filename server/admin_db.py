@@ -612,6 +612,8 @@ def current_week_start():
 
 
 def _salary_row(r) -> dict:
+    period_type = r.get("period_type") or "week"
+    period_start = r.get("period_start") or r.get("week_start")
     return {
         "salaryId": int(r["salary_id"]) if r["salary_id"] is not None else None,
         "amount": int(r["amount"]) if r["amount"] is not None else None,
@@ -626,6 +628,10 @@ def _salary_row(r) -> dict:
         "payoutProof": r["payout_proof"],
         "status": r["status"],
         "payoutType": r.get("payout_type") or "other",
+        "periodType": period_type,
+        "periodStart": period_start.isoformat() if period_start else None,
+        "weekStart": (r.get("week_start") or period_start).isoformat()
+        if (r.get("week_start") or period_start) else None,
         "note": r["note"],
         "setBy": int(r["set_by"]) if r["set_by"] else None,
         "approvedBy": int(r["approved_by"]) if r["approved_by"] else None,
@@ -636,17 +642,26 @@ def _salary_row(r) -> dict:
 
 
 async def list_salaries_for_week(week_start) -> list[dict]:
+    return await list_salaries_for_period("week", week_start)
+
+
+async def list_salaries_for_period(period_type: str, period_start) -> list[dict]:
     rows = await db.pool.fetch(
         """
         SELECT a.user_id, a.username, a.first_name, a.role,
                a.payout_type, a.payout_details,
+               a.stars_username, a.crypto_network, a.crypto_address,
+               a.card_bank, a.card_number, a.card_holder, a.card_sbp_phone,
                s.id AS salary_id, s.amount, s.paid_amount, s.status, s.note,
                s.base_amount, s.coefficient, s.bonus, s.bonus_reason,
                s.penalty, s.penalty_reason, s.txid, s.payout_proof,
-               s.payout_type, s.set_by, s.approved_by, s.paid_by, s.approved_at, s.paid_at
+               s.payout_type, s.set_by, s.approved_by, s.paid_by, s.approved_at, s.paid_at,
+               s.week_start, s.period_type, s.period_start
         FROM admin_accounts a
         LEFT JOIN staff_salaries s
-          ON s.user_id = a.user_id AND s.week_start = $1
+          ON s.user_id = a.user_id
+         AND s.period_type = $1
+         AND s.period_start = $2
         WHERE a.status = 'active'
           AND a.role IN ('senior_admin', 'junior_admin', 'moderator')
         ORDER BY
@@ -658,7 +673,7 @@ async def list_salaries_for_week(week_start) -> list[dict]:
             END,
             a.user_id
         """,
-        week_start,
+        period_type, period_start,
     )
     return [
         {
@@ -668,6 +683,13 @@ async def list_salaries_for_week(week_start) -> list[dict]:
             "role": r["role"],
             "payoutType": r["payout_type"],
             "payoutDetails": r["payout_details"],
+            "starsUsername": r["stars_username"] or (r["username"] or ""),
+            "cryptoNetwork": r["crypto_network"] or "",
+            "cryptoAddress": r["crypto_address"] or "",
+            "cardBank": r["card_bank"] or "",
+            "cardNumber": r["card_number"] or "",
+            "cardHolder": r["card_holder"] or "",
+            "cardSbpPhone": r["card_sbp_phone"] or "",
             "salary": _salary_row(r) if r["salary_id"] is not None else None,
         }
         for r in rows
@@ -685,16 +707,22 @@ async def upsert_salary(
     bonus: int, bonus_reason: str | None, penalty: int, penalty_reason: str | None,
     note: str | None, setter_id: int, status: str,
     payout_type: str = "other",
+    period_type: str = "week",
+    period_start=None,
 ) -> int | None:
-    """Создаёт/обновляет зарплату на неделю. Не трогает уже выплаченную."""
+    """Создаёт/обновляет зарплату за период. Не трогает уже выплаченную."""
     amount = compute_salary_total(base, coefficient, bonus, penalty)
+    p_type = (period_type or "week").strip().lower()
+    p_start = period_start or week_start
+    # week_start обязателен в legacy-схеме — дублируем period_start
+    wk = p_start
     row = await db.pool.fetchrow(
         """
         INSERT INTO staff_salaries
-            (user_id, week_start, amount, base_amount, coefficient,
+            (user_id, week_start, period_type, period_start, amount, base_amount, coefficient,
              bonus, bonus_reason, penalty, penalty_reason, note, set_by, status, payout_type)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        ON CONFLICT (user_id, week_start) DO UPDATE
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        ON CONFLICT (user_id, period_type, period_start) DO UPDATE
         SET amount = EXCLUDED.amount,
             base_amount = EXCLUDED.base_amount,
             coefficient = EXCLUDED.coefficient,
@@ -706,13 +734,14 @@ async def upsert_salary(
             set_by = EXCLUDED.set_by,
             status = EXCLUDED.status,
             payout_type = EXCLUDED.payout_type,
+            week_start = EXCLUDED.week_start,
             approved_by = NULL, approved_at = NULL,
             txid = NULL, payout_proof = NULL,
             updated_at = NOW()
         WHERE staff_salaries.status <> 'paid'
         RETURNING id
         """,
-        user_id, week_start, amount, base, coefficient,
+        user_id, wk, p_type, p_start, amount, base, coefficient,
         bonus, bonus_reason or None, penalty, penalty_reason or None,
         note or None, setter_id, status, payout_type,
     )
@@ -720,17 +749,21 @@ async def upsert_salary(
 
 
 async def claim_kut_salary(user_id: int) -> dict | None:
-    """Сотрудник забирает одобренную ЗП в kut на свой игровой баланс."""
+    """Сотрудник забирает одобренную ЗП в kut на свой игровой баланс (с аудитом)."""
+    from staff_payroll import credit_kut_with_audit, schedule_kut_audit
+
+    audit_ev = None
     async with db.pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(
                 """
-                SELECT id, amount
+                SELECT id, amount, paid_amount, period_type, period_start
                 FROM staff_salaries
                 WHERE user_id = $1
-                  AND status = 'approved'
+                  AND status IN ('approved', 'partially_paid')
                   AND payout_type = 'kut'
-                ORDER BY week_start DESC
+                  AND amount > COALESCE(paid_amount, 0)
+                ORDER BY COALESCE(period_start, week_start) DESC
                 LIMIT 1
                 FOR UPDATE
                 """,
@@ -739,13 +772,24 @@ async def claim_kut_salary(user_id: int) -> dict | None:
             if not row:
                 return None
             salary_id = int(row["id"])
-            amount = int(row["amount"])
-            # Начисляем kut на игровой баланс
-            await conn.execute(
-                "UPDATE users SET balance = balance + $2 WHERE user_id = $1",
-                user_id, amount,
+            remaining = int(row["amount"]) - int(row["paid_amount"] or 0)
+            if remaining <= 0:
+                return None
+
+            audit_ev = await credit_kut_with_audit(
+                conn, user_id, remaining,
+                cause="Зарплата (kut, самовыдача)",
+                event_type="staff_salary_kut",
+                details={"salaryId": salary_id, "kind": "self_claim"},
             )
-            # Помечаем выплаченной
+            await conn.execute(
+                """
+                INSERT INTO salary_payments
+                    (salary_id, user_id, amount, method, kind, txid, paid_by)
+                VALUES ($1, $2, $3, 'kut', 'payment', 'kut-self-claim', $2)
+                """,
+                salary_id, user_id, remaining,
+            )
             await conn.execute(
                 """
                 UPDATE staff_salaries
@@ -755,7 +799,8 @@ async def claim_kut_salary(user_id: int) -> dict | None:
                 """,
                 salary_id, user_id,
             )
-    return {"salaryId": salary_id, "amount": amount}
+    schedule_kut_audit(audit_ev)
+    return {"salaryId": salary_id, "amount": remaining}
 
 
 async def approve_salary(salary_id: int, owner_id: int) -> bool:
@@ -808,7 +853,8 @@ async def cancel_salary(salary_id: int) -> bool:
 async def get_salary_full(salary_id: int) -> dict | None:
     row = await db.pool.fetchrow(
         """
-        SELECT s.id, s.user_id, s.amount, s.paid_amount, s.status, a.payout_type
+        SELECT s.id, s.user_id, s.amount, s.paid_amount, s.status,
+               COALESCE(NULLIF(s.payout_type, ''), a.payout_type, 'other') AS payout_type
         FROM staff_salaries s
         LEFT JOIN admin_accounts a ON a.user_id = s.user_id
         WHERE s.id = $1
@@ -838,15 +884,15 @@ async def get_salary_owner(salary_id: int) -> dict | None:
 async def list_my_salaries(user_id: int, limit: int = 8) -> list[dict]:
     rows = await db.pool.fetch(
         """
-        SELECT s.id, s.week_start, s.amount, s.status, s.note,
+        SELECT s.id, s.week_start, s.period_type, s.period_start, s.amount, s.status, s.note,
                s.base_amount, s.coefficient, s.bonus, s.bonus_reason,
                s.penalty, s.penalty_reason, s.txid, s.payout_proof,
-               s.payout_type, s.approved_at, s.paid_at,
+               s.payout_type, s.approved_at, s.paid_at, s.paid_amount,
                a.id AS appeal_id, a.status AS appeal_status
         FROM staff_salaries s
         LEFT JOIN salary_appeals a ON a.salary_id = s.id
         WHERE s.user_id = $1
-        ORDER BY s.week_start DESC
+        ORDER BY COALESCE(s.period_start, s.week_start) DESC
         LIMIT $2
         """,
         user_id, limit,
@@ -855,7 +901,11 @@ async def list_my_salaries(user_id: int, limit: int = 8) -> list[dict]:
         {
             "salaryId": int(r["id"]),
             "weekStart": r["week_start"].isoformat() if r["week_start"] else None,
+            "periodType": r["period_type"] or "week",
+            "periodStart": (r["period_start"] or r["week_start"]).isoformat()
+            if (r["period_start"] or r["week_start"]) else None,
             "amount": int(r["amount"]),
+            "paidAmount": int(r["paid_amount"] or 0),
             "baseAmount": int(r["base_amount"]) if r["base_amount"] is not None else 0,
             "coefficient": float(r["coefficient"]) if r["coefficient"] is not None else 1.0,
             "bonus": int(r["bonus"]) if r["bonus"] is not None else 0,
@@ -1183,11 +1233,15 @@ async def add_salary_payment(
     method: str | None, kind: str, txid: str | None, proof: str | None,
 ) -> dict | None:
     """Добавляет выплату (полную/частичную/аванс). Возвращает итог или None."""
+    from staff_payroll import credit_kut_with_audit, schedule_kut_audit
+
+    audit_ev = None
     async with db.pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(
                 """
-                SELECT s.user_id, s.amount, s.paid_amount, s.status, a.payout_type
+                SELECT s.user_id, s.amount, s.paid_amount, s.status, s.payout_type AS salary_payout,
+                       a.payout_type
                 FROM staff_salaries s
                 LEFT JOIN admin_accounts a ON a.user_id = s.user_id
                 WHERE s.id = $1 FOR UPDATE OF s
@@ -1202,7 +1256,15 @@ async def add_salary_payment(
             if remaining <= 0:
                 return None
             pay = min(amount, remaining)
-            pay_method = method or row["payout_type"]
+            pay_method = method or row["salary_payout"] or row["payout_type"]
+
+            if pay_method == "kut":
+                audit_ev = await credit_kut_with_audit(
+                    conn, int(row["user_id"]), pay,
+                    cause="Зарплата (kut)",
+                    event_type="staff_salary_kut",
+                    details={"salaryId": salary_id, "kind": kind},
+                )
 
             await conn.execute(
                 """
@@ -1226,6 +1288,7 @@ async def add_salary_payment(
                 """,
                 salary_id, new_paid, new_status, paid_by, txid or None, proof or None,
             )
+    schedule_kut_audit(audit_ev)
     return {
         "userId": int(row["user_id"]),
         "total": total,
@@ -1737,7 +1800,7 @@ async def create_pending_payout(
 async def list_pending_payouts() -> list[dict]:
     rows = await db.pool.fetch(
         """
-        SELECT p.id, p.salary_id, p.user_id, p.amount, p.method, p.kind,
+        SELECT p.id, p.salary_id, p.bonus_id, p.source, p.user_id, p.amount, p.method, p.kind,
                p.requested_by, p.created_at, a.username, a.first_name
         FROM pending_payouts p
         LEFT JOIN admin_accounts a ON a.user_id = p.user_id
@@ -1747,7 +1810,9 @@ async def list_pending_payouts() -> list[dict]:
     return [
         {
             "id": int(r["id"]),
-            "salaryId": int(r["salary_id"]),
+            "salaryId": int(r["salary_id"]) if r["salary_id"] else None,
+            "bonusId": int(r["bonus_id"]) if r.get("bonus_id") else None,
+            "source": r.get("source") or "salary",
             "userId": int(r["user_id"]),
             "username": r["username"],
             "firstName": r["first_name"],

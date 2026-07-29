@@ -528,10 +528,10 @@ export async function fetchStaffMembers() {
 
 
 
-export async function fetchStaffSalaries() {
-
-  return adminRequest('/staff/salaries')
-
+export async function fetchStaffSalaries(periodType = 'week', periodStart = null) {
+  const params = new URLSearchParams({ periodType })
+  if (periodStart) params.set('periodStart', periodStart)
+  return adminRequest(`/staff/salaries?${params}`)
 }
 
 
@@ -558,16 +558,20 @@ export async function approveStaffSalary(salaryId) {
 
 
 
-export async function payStaffSalary(salaryId, { amount = null, method = null, kind = 'payment', txid = '', proof = '' } = {}) {
+export async function payStaffSalary(salaryId, { amount = null, method = null, kind = 'payment', txid = '', proof = '', starsMethod = null, starsUsername = null } = {}) {
 
   return adminRequest(`/staff/salaries/${salaryId}/pay`, {
 
     method: 'POST',
 
-    body: { amount, method, kind, txid, proof },
+    body: { amount, method, kind, txid, proof, starsMethod, starsUsername },
 
   })
 
+}
+
+export async function fetchFragmentHealth() {
+  return adminRequest('/staff/fragment-health')
 }
 
 
@@ -770,6 +774,74 @@ export async function fetchMySalary() {
 
 export async function claimKutSalary() {
   return adminRequest('/staff/my-salary/claim-kut', { method: 'POST' })
+}
+
+export async function claimKutBonus() {
+  return adminRequest('/staff/my-salary/claim-kut-bonus', { method: 'POST' })
+}
+
+export async function fetchPayoutSettings() {
+  return adminRequest('/staff/payout-settings')
+}
+
+export async function updatePayoutSettings(payload) {
+  return adminRequest('/staff/payout-settings', { method: 'PUT', body: payload })
+}
+
+export async function fetchMyPayoutProfile() {
+  return adminRequest('/staff/my-payout-profile')
+}
+
+export async function updateMyPayoutProfile(payload) {
+  return adminRequest('/staff/my-payout-profile', { method: 'PUT', body: payload })
+}
+
+export async function updateMemberPayoutProfile(memberId, payload) {
+  return adminRequest(`/staff/members/${memberId}/payout-profile`, { method: 'PUT', body: payload })
+}
+
+export async function fetchStaffBonuses(status = null) {
+  const q = status ? `?status=${encodeURIComponent(status)}` : ''
+  return adminRequest(`/staff/bonuses${q}`)
+}
+
+export async function createStaffBonus(payload) {
+  return adminRequest('/staff/bonuses', { method: 'POST', body: payload })
+}
+
+export async function approveStaffBonus(bonusId) {
+  return adminRequest(`/staff/bonuses/${bonusId}/approve`, { method: 'POST', body: {} })
+}
+
+export async function payStaffBonus(bonusId, { amount = null, method = null, kind = 'payment', txid = '', proof = '' } = {}) {
+  return adminRequest(`/staff/bonuses/${bonusId}/pay`, {
+    method: 'POST',
+    body: { amount, method, kind, txid, proof },
+  })
+}
+
+export async function cancelStaffBonus(bonusId) {
+  return adminRequest(`/staff/bonuses/${bonusId}/cancel`, { method: 'POST', body: {} })
+}
+
+export async function fetchContractTemplates() {
+  return adminRequest('/staff/contract-templates')
+}
+
+export async function saveContractTemplate(payload) {
+  return adminRequest('/staff/contract-templates', { method: 'POST', body: payload })
+}
+
+export async function deleteContractTemplate(templateId) {
+  return adminRequest(`/staff/contract-templates/${templateId}`, { method: 'DELETE' })
+}
+
+export async function renderContract(payload) {
+  return adminRequest('/staff/contract-templates/render', { method: 'POST', body: payload })
+}
+
+export async function sendContract(payload) {
+  return adminRequest('/staff/contract-templates/send', { method: 'POST', body: payload })
 }
 
 

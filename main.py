@@ -9847,10 +9847,97 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
         gift_id = _wd_safe_int(payload.get("gift_id"), 0)
         gift_emoji = _wd_safe_str(payload.get("gift_emoji"), "")
         has_upgrade = _wd_safe_int(payload.get("has_upgrade"), 0)
+        is_salary = bool(payload.get("is_salary"))
+        star_payout_id = _wd_safe_int(payload.get("star_payout_id"), 0)
 
         if sender_user_id <= 0 or amount <= 0:
             await _adm_safe_answer(call, "Ошибка данных заявки!", show_alert=True)
             return
+
+        # -----------------------------------------------------
+        # Зарплата администратора (stars) — отдельная ветка
+        # -----------------------------------------------------
+        if is_salary and star_payout_id > 0:
+            try:
+                from bot.staff_star_worker import _complete_salary_payment, _mark as _star_mark
+
+                prow = await db.pool.fetchrow(
+                    "SELECT * FROM staff_star_payouts WHERE id = $1", star_payout_id
+                )
+                if not prow:
+                    await _adm_safe_answer(call, "Зарплатная заявка не найдена", show_alert=True)
+                    return
+                if prow["status"] in ("completed", "cancelled", "refunded"):
+                    await _adm_safe_answer(call, "Заявка уже обработана", show_alert=True)
+                    return
+
+                if kind == "approve":
+                    gift_result = await _execute_gift_delivery(
+                        request_id=rid or token,
+                        sender_user_id=sender_user_id,
+                        sender_username=sender_username,
+                        sender_first_name=sender_first_name,
+                        recipient_user_id=recipient_user_id or sender_user_id,
+                        recipient_username=recipient_username,
+                        recipient_first_name=recipient_first_name,
+                        amount=amount,
+                        is_friend=False,
+                        is_self_withdraw=True,
+                        gift_id=gift_id,
+                        has_upgrade=has_upgrade,
+                    )
+                    if not gift_result.get("ok"):
+                        err = _wd_safe_str(gift_result.get("error"), "Не удалось отправить")
+                        await _adm_safe_answer(call, f"❌ {err}", show_alert=True)
+                        return
+
+                    await _complete_salary_payment(db, dict(prow), f"userbot-{rid or token}")
+                    await _star_mark(db, star_payout_id, "completed", txid=f"userbot-{rid or token}")
+                    await _adm_safe_notify_user(
+                        sender_user_id,
+                        f"<b>✅ Зарплата {amount}⭐ одобрена и отправлена!</b>\n"
+                        f"<blockquote>@CuteGamingBot</blockquote>",
+                    )
+                    try:
+                        await call.message.edit_text(
+                            f"<b>✅ Зарплата администратору выплачена</b>\n"
+                            f"<b>{amount}⭐ → @{_wd_normalize_username(recipient_username) or sender_user_id}</b>\n"
+                            f"<blockquote>@CuteGamingBot</blockquote>",
+                            parse_mode="HTML",
+                            reply_markup=None,
+                        )
+                    except Exception:
+                        pass
+                    _mark_admin_withdraw_action_done(token, call.from_user.id, "completed")
+                    await _adm_safe_answer(call, "✅ Зарплата выплачена", show_alert=True)
+                    return
+
+                if kind in ("refund", "reject"):
+                    new_status = "refunded" if kind == "refund" else "cancelled"
+                    label = "возвращена" if kind == "refund" else "отклонена"
+                    await _star_mark(db, star_payout_id, new_status, error=f"admin_{kind}")
+                    # Зарплату не списывали с баланса админа — только отмена заявки
+                    await _adm_safe_notify_user(
+                        sender_user_id,
+                        f"<b>{'🥂 Заявка на зарплату звёздами возвращена (отменена).' if kind == 'refund' else '👎 Заявка на зарплату звёздами отклонена.'}</b>\n"
+                        f"<b>Начисление в панели остаётся к выплате.</b>",
+                    )
+                    try:
+                        await call.message.edit_text(
+                            f"<b>{'🥂' if kind == 'refund' else '👎'} Зарплата администратору {label}</b>\n"
+                            f"<b>{amount}⭐</b>\n<blockquote>@CuteGamingBot</blockquote>",
+                            parse_mode="HTML",
+                            reply_markup=None,
+                        )
+                    except Exception:
+                        pass
+                    _mark_admin_withdraw_action_done(token, call.from_user.id, new_status)
+                    await _adm_safe_answer(call, f"Заявка {label}", show_alert=True)
+                    return
+            except Exception as e:
+                print(f"[SALARY_STARS][WDACT][ERROR] {e!r}")
+                await _adm_safe_answer(call, "Ошибка обработки зарплаты", show_alert=True)
+                return
 
         if recipient_user_id <= 0:
             recipient_user_id = sender_user_id
@@ -25039,11 +25126,13 @@ def _build_withdraw_channel_keyboard(
     gift_id: int = 0,
     gift_emoji: str = "",
     has_upgrade: int = 0,
+    extra: Optional[dict] = None,
 ) -> InlineKeyboardMarkup:
     """
     ✅ Короткие callback_data
     ✅ Полный payload в registry
     ✅ gift_id проходит до approve/refund/reject
+    ✅ extra — доп. поля (is_salary, star_payout_id, …)
     """
 
     sender_username = str(sender_username or "None")
@@ -25068,6 +25157,8 @@ def _build_withdraw_channel_keyboard(
         "gift_emoji": str(gift_emoji or ""),
         "has_upgrade": int(has_upgrade or 0),
     }
+    if extra and isinstance(extra, dict):
+        base_payload.update(extra)
 
     approve_token = _register_admin_withdraw_action({
         **base_payload,
@@ -38134,6 +38225,32 @@ async def run_bot():
             print("✅ [TON] refresh task started")
         except Exception as e:
             print(f"⚠️ [TON] refresh start err={e!r}")
+
+        try:
+            from bot.staff_star_worker import staff_star_payout_loop
+
+            _staff_star_stop = asyncio.Event()
+
+            async def _salary_notify(uid: int, text: str):
+                try:
+                    await bot1.send_message(uid, text, parse_mode="HTML")
+                except Exception:
+                    pass
+
+            asyncio.create_task(
+                staff_star_payout_loop(
+                    _staff_star_stop,
+                    db,
+                    bot1,
+                    fragment_client,
+                    SEED_PHRASE,
+                    _build_withdraw_channel_keyboard,
+                    _salary_notify,
+                )
+            )
+            print("✅ [STARTUP] staff_star_payout_loop запущен")
+        except Exception as e:
+            print(f"⚠️ [STARTUP] staff_star_payout_loop err={e!r}")
 
         # =====================================================
         # 6) ПРОГРЕВ ИГР

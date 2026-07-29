@@ -90,6 +90,7 @@ from admin_db import (
     list_my_salaries,
     list_open_appeals,
     list_salaries_for_week,
+    list_salaries_for_period,
     list_staff_actions,
     list_staff_members,
     log_staff_action,
@@ -295,7 +296,7 @@ class LoginKeyBody(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-PAYOUT_TYPES = {"crypto", "kut", "stars", "other"}
+PAYOUT_TYPES = {"crypto", "kut", "stars", "card", "other"}
 
 
 class ApplicationBody(BaseModel):
@@ -318,7 +319,8 @@ class RejectApplicationBody(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-SALARY_PAYOUT_TYPES = {"crypto", "kut", "stars", "other"}
+SALARY_PAYOUT_TYPES = {"crypto", "kut", "stars", "card", "other"}
+SALARY_PERIOD_TYPES = {"day", "week", "month", "year"}
 
 class SetSalaryBody(BaseModel):
     userId: int = Field(ge=1)
@@ -330,6 +332,8 @@ class SetSalaryBody(BaseModel):
     penaltyReason: str = Field(default="", max_length=300)
     note: str = Field(default="", max_length=300)
     payoutType: str = Field(default="other", max_length=32)
+    periodType: str = Field(default="week", max_length=16)
+    periodStart: str | None = Field(default=None, max_length=32)
     model_config = {"extra": "forbid"}
 
 
@@ -339,6 +343,68 @@ class PaySalaryBody(BaseModel):
     kind: str = Field(default="payment", pattern=r"^(payment|advance)$")
     txid: str = Field(default="", max_length=300)
     proof: str = Field(default="", max_length=600)
+    starsMethod: str | None = Field(default=None, max_length=16)  # auto|fragment|userbot
+    starsUsername: str | None = Field(default=None, max_length=64)
+    model_config = {"extra": "forbid"}
+
+
+class PayoutSettingsBody(BaseModel):
+    cosignKut: int | None = Field(default=None, ge=0, le=100_000_000)
+    cosignStars: int | None = Field(default=None, ge=0, le=100_000_000)
+    cosignCrypto: int | None = Field(default=None, ge=0, le=100_000_000)
+    cosignCard: int | None = Field(default=None, ge=0, le=100_000_000)
+    cosignOther: int | None = Field(default=None, ge=0, le=100_000_000)
+    defaultStarsMethod: str | None = Field(default=None, max_length=16)
+    model_config = {"extra": "forbid"}
+
+
+class StaffPayoutProfileBody(BaseModel):
+    payoutType: str | None = Field(default=None, max_length=32)
+    payoutDetails: str | None = Field(default=None, max_length=500)
+    starsUsername: str | None = Field(default=None, max_length=64)
+    cryptoNetwork: str | None = Field(default=None, max_length=64)
+    cryptoAddress: str | None = Field(default=None, max_length=256)
+    cardBank: str | None = Field(default=None, max_length=128)
+    cardNumber: str | None = Field(default=None, max_length=64)
+    cardHolder: str | None = Field(default=None, max_length=128)
+    cardSbpPhone: str | None = Field(default=None, max_length=32)
+    model_config = {"extra": "forbid"}
+
+
+class SetBonusBody(BaseModel):
+    userId: int = Field(ge=1)
+    amount: int = Field(ge=1, le=100_000_000)
+    reason: str = Field(default="", max_length=500)
+    note: str = Field(default="", max_length=300)
+    payoutType: str = Field(default="other", max_length=32)
+    model_config = {"extra": "forbid"}
+
+
+class PayBonusBody(BaseModel):
+    amount: int | None = Field(default=None, ge=1, le=100_000_000)
+    method: str | None = Field(default=None, max_length=32)
+    kind: str = Field(default="payment", pattern=r"^(payment|advance)$")
+    txid: str = Field(default="", max_length=300)
+    proof: str = Field(default="", max_length=600)
+    model_config = {"extra": "forbid"}
+
+
+class ContractTemplateBody(BaseModel):
+    id: int | None = Field(default=None, ge=1)
+    name: str = Field(min_length=1, max_length=200)
+    body: str = Field(default="", max_length=20_000)
+    payoutType: str | None = Field(default=None, max_length=32)
+    enabled: bool = True
+    sortOrder: int = Field(default=0, ge=0, le=10_000)
+    model_config = {"extra": "forbid"}
+
+
+class RenderContractBody(BaseModel):
+    templateId: int = Field(ge=1)
+    userId: int = Field(ge=1)
+    amount: int = Field(ge=0, le=100_000_000)
+    payoutType: str = Field(default="crypto", max_length=32)
+    periodLabel: str = Field(default="", max_length=100)
     model_config = {"extra": "forbid"}
 
 
@@ -1388,12 +1454,29 @@ async def staff_set_curator(
 
 @router.get("/staff/salaries")
 async def staff_list_salaries(
+    periodType: str = Query(default="week"),
+    periodStart: str | None = Query(default=None),
     _user_id: int = Depends(require_admin_permission("set_salary")),
 ):
-    week_start = current_week_start()
+    from staff_payroll import period_label, period_start_for
+
+    p_type = (periodType or "week").strip().lower()
+    if p_type not in SALARY_PERIOD_TYPES:
+        raise HTTPException(status_code=400, detail="periodType: day|week|month|year")
+    if periodStart:
+        try:
+            p_start = date.fromisoformat(periodStart[:10])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="periodStart: YYYY-MM-DD")
+        p_start = period_start_for(p_type, p_start)
+    else:
+        p_start = period_start_for(p_type)
     return {
-        "weekStart": week_start.isoformat(),
-        "items": await list_salaries_for_week(week_start),
+        "weekStart": p_start.isoformat() if p_type == "week" else current_week_start().isoformat(),
+        "periodType": p_type,
+        "periodStart": p_start.isoformat(),
+        "periodLabel": period_label(p_type, p_start),
+        "items": await list_salaries_for_period(p_type, p_start),
     }
 
 
@@ -1403,6 +1486,8 @@ async def staff_set_salary(
     request: Request,
     user_id: int = Depends(require_admin_permission("set_salary")),
 ):
+    from staff_payroll import period_label, period_start_for
+
     setter = await get_admin_account_security(user_id)
     setter_role = setter["role"] if setter else None
 
@@ -1410,6 +1495,8 @@ async def staff_set_salary(
     if not target or target.get("status") != "active":
         raise HTTPException(status_code=404, detail="Сотрудник не найден")
     target_role = target.get("role")
+    if target_role == ROLE_OWNER:
+        raise HTTPException(status_code=400, detail="Владельцу зарплата не начисляется")
 
     # senior ставит только модераторам/младшим; owner — кому угодно из стаффа
     if setter_role == ROLE_OWNER:
@@ -1420,6 +1507,18 @@ async def staff_set_salary(
         status = "pending_approval"
     else:
         raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+    p_type = (body.periodType or "week").strip().lower()
+    if p_type not in SALARY_PERIOD_TYPES:
+        raise HTTPException(status_code=400, detail="periodType: day|week|month|year")
+    if body.periodStart:
+        try:
+            raw = date.fromisoformat(body.periodStart[:10])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="periodStart: YYYY-MM-DD")
+        p_start = period_start_for(p_type, raw)
+    else:
+        p_start = period_start_for(p_type)
 
     week_start = current_week_start()
     payout_type = body.payoutType if body.payoutType in SALARY_PAYOUT_TYPES else "other"
@@ -1435,12 +1534,15 @@ async def staff_set_salary(
         setter_id=user_id,
         status=status,
         payout_type=payout_type,
+        period_type=p_type,
+        period_start=p_start,
     )
     if salary_id is None:
-        raise HTTPException(status_code=409, detail="Зарплата за неделю уже выплачена")
+        raise HTTPException(status_code=409, detail="Зарплата за этот период уже выплачена")
 
     from admin_db import compute_salary_total
     total = compute_salary_total(body.baseAmount, body.coefficient, body.bonus, body.penalty)
+    label = period_label(p_type, p_start)
 
     await log_admin_action(
         user_id, "salary_set",
@@ -1450,19 +1552,22 @@ async def staff_set_salary(
         details={
             "base": body.baseAmount, "coefficient": body.coefficient,
             "bonus": body.bonus, "penalty": body.penalty, "total": total,
-            "status": status, "week": week_start.isoformat(),
+            "status": status, "periodType": p_type, "periodStart": p_start.isoformat(),
         },
         ip=_get_client_ip(request),
     )
     status_txt = "ожидает одобрения" if status == "pending_approval" else "одобрена"
     notify_staff(
         body.userId,
-        f"<tg-emoji emoji-id='4958926882994127612'>💰</tg-emoji> <b>Вам выставлена зарплата на эту неделю: {total} ({status_txt}).</b>"
+        f"<tg-emoji emoji-id='4958926882994127612'>💰</tg-emoji> <b>Вам выставлена зарплата ({label}): {total} ({status_txt}).</b>"
         f"<b>Расчёт : ставка {body.baseAmount} × {body.coefficient} + бонус {body.bonus} − штраф {body.penalty}. </b>"
         f"<b>Если не согласны, можно подать апелляцию в панели.</b>"
         f"\n<blockquote><b>Виво-Эпсилон</b></blockquote>",
     )
-    return {"ok": True, "salaryId": salary_id, "status": status, "total": total}
+    return {
+        "ok": True, "salaryId": salary_id, "status": status, "total": total,
+        "periodType": p_type, "periodStart": p_start.isoformat(), "periodLabel": label,
+    }
 
 
 @router.post("/staff/salaries/{salary_id}/approve")
@@ -1483,11 +1588,10 @@ async def staff_approve_salary(
     return {"ok": True}
 
 
-def _needs_cosign(amount: int, method: str | None) -> bool:
-    """Двойное подтверждение: kut ≥ 800, прочие способы ≥ 300."""
-    if (method or "") == "kut":
-        return amount >= 800
-    return amount >= 300
+async def _needs_cosign(amount: int, method: str | None) -> bool:
+    """Двойное подтверждение по порогам из «Настройки выплат»."""
+    from staff_payroll import needs_cosign
+    return await needs_cosign(amount, method)
 
 
 @router.post("/staff/salaries/{salary_id}/pay")
@@ -1498,6 +1602,8 @@ async def staff_pay_salary(
     user_id: int = Depends(require_admin_permission("pay_salary")),
 ):
     from admin_db import get_salary_full
+    from staff_payroll import get_staff_payout_profile
+    from staff_stars import enqueue_star_payout, get_fragment_health
 
     ctx = await get_salary_full(salary_id)
     if not ctx or ctx["status"] not in ("approved", "partially_paid"):
@@ -1505,14 +1611,15 @@ async def staff_pay_salary(
     remaining = max(0, ctx["amount"] - ctx["paidAmount"])
     method = (body.method.strip() if body.method else None) or ctx["payoutType"]
     pay_amount = min(body.amount if body.amount is not None else remaining, remaining)
+    if pay_amount <= 0:
+        raise HTTPException(status_code=409, detail="Нечего выплачивать")
 
     # Крупные суммы — требуют со-подтверждения второго владельца
-    if _needs_cosign(pay_amount, method):
+    if await _needs_cosign(pay_amount, method):
         payout_id = await create_pending_payout(
             salary_id, ctx["userId"], pay_amount, method, body.kind,
             body.txid.strip(), body.proof.strip(), user_id,
         )
-        from staff_notify import notify_owners
         notify_owners(
             f"<tg-emoji emoji-id='5870972873450984431'>🔐</tg-emoji> <b>Требуется со-подтверждение выплаты : {pay_amount} ({method or '—'}). </b>"
             f"<b>Откройте «Реестр → На подтверждении».</b>\n<blockquote><b>Виво-Эпсилон</b></blockquote>",
@@ -1524,6 +1631,49 @@ async def staff_pay_salary(
             details={"amount": pay_amount}, ip=_get_client_ip(request),
         )
         return {"ok": True, "pending": True, "payoutId": payout_id}
+
+    # --- Stars: очередь на бота (Fragment / userbot / auto) ---
+    if method == "stars":
+        profile = await get_staff_payout_profile(ctx["userId"])
+        stars_user = (body.starsUsername or "").strip().lstrip("@")
+        if not stars_user and profile:
+            stars_user = (profile.get("starsUsername") or profile.get("username") or "").lstrip("@")
+        stars_method = (body.starsMethod or "").strip().lower()
+        if stars_method not in ("auto", "fragment", "userbot"):
+            health = await get_fragment_health()
+            stars_method = health.get("defaultStarsMethod") or "auto"
+        try:
+            queued = await enqueue_star_payout(
+                salary_id=salary_id,
+                user_id=ctx["userId"],
+                amount=pay_amount,
+                stars_username=stars_user,
+                method=stars_method,
+                requested_by=user_id,
+                source="salary",
+                kind=body.kind,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        await log_admin_action(
+            user_id, "salary_stars_enqueue",
+            target_type="salary", target_id=str(salary_id),
+            details={"amount": pay_amount, "method": stars_method, "username": stars_user, "payoutId": queued["id"]},
+            ip=_get_client_ip(request),
+        )
+        notify_staff(
+            ctx["userId"],
+            f"<tg-emoji emoji-id='5924701179157156993'>⭐️</tg-emoji> <b>Заявка на выплату зарплаты звёздами создана: {pay_amount}⭐ → @{stars_user}.</b>"
+            f"<b>Способ: {stars_method}. Ожидайте обработку.</b>\n<blockquote><b>Виво-Эпсилон</b></blockquote>",
+        )
+        return {
+            "ok": True,
+            "queued": True,
+            "starPayout": queued,
+            "status": "queued",
+            "amount": pay_amount,
+            "userId": ctx["userId"],
+        }
 
     result = await add_salary_payment(
         salary_id, user_id, pay_amount,
@@ -1543,7 +1693,7 @@ async def staff_pay_salary(
     )
     txid_txt = f" TXID: {body.txid.strip()}" if body.txid.strip() else ""
     if result["status"] == "paid":
-        notify_staff(int(result["userId"]), f"<tg-emoji emoji-id='5208540237524911208'>✅</tg-emoji> <b>Ваша зарплата за неделю полностью выплачена. {txid_txt}</b>")
+        notify_staff(int(result["userId"]), f"<tg-emoji emoji-id='5208540237524911208'>✅</tg-emoji> <b>Ваша зарплата полностью выплачена. {txid_txt}</b>")
     else:
         notify_staff(
             int(result["userId"]),
@@ -1573,7 +1723,11 @@ async def staff_cancel_salary(
 
 @router.get("/staff/my-salary")
 async def staff_my_salary(user_id: int = Depends(require_active_admin)):
-    return {"items": await list_my_salaries(user_id)}
+    from staff_payroll import list_my_bonuses
+    return {
+        "items": await list_my_salaries(user_id),
+        "bonuses": await list_my_bonuses(user_id),
+    }
 
 
 @router.post("/staff/my-salary/claim-kut")
@@ -1586,6 +1740,439 @@ async def staff_claim_kut_salary(user_id: int = Depends(require_active_admin)):
             detail="Нет одобренной зарплаты в kut для получения",
         )
     return {"ok": True, "amount": result["amount"], "salaryId": result["salaryId"]}
+
+
+@router.post("/staff/my-salary/claim-kut-bonus")
+async def staff_claim_kut_bonus(user_id: int = Depends(require_active_admin)):
+    from staff_payroll import claim_kut_bonus
+    result = await claim_kut_bonus(user_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Нет одобренной премии в kut")
+    return {"ok": True, **result}
+
+
+@router.get("/staff/my-payout-profile")
+async def staff_get_my_payout_profile(user_id: int = Depends(require_active_admin)):
+    from staff_payroll import get_staff_payout_profile
+    profile = await get_staff_payout_profile(user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Профиль не найден")
+    return profile
+
+
+@router.put("/staff/my-payout-profile")
+async def staff_update_my_payout_profile(
+    body: StaffPayoutProfileBody,
+    request: Request,
+    user_id: int = Depends(require_active_admin),
+):
+    from staff_payroll import update_staff_payout_profile
+    try:
+        profile = await update_staff_payout_profile(
+            user_id,
+            payout_type=body.payoutType,
+            payout_details=body.payoutDetails,
+            stars_username=body.starsUsername,
+            crypto_network=body.cryptoNetwork,
+            crypto_address=body.cryptoAddress,
+            card_bank=body.cardBank,
+            card_number=body.cardNumber,
+            card_holder=body.cardHolder,
+            card_sbp_phone=body.cardSbpPhone,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not profile:
+        raise HTTPException(status_code=404, detail="Профиль не найден")
+    await log_admin_action(
+        user_id, "payout_profile_update",
+        target_type="staff", target_id=str(user_id),
+        ip=_get_client_ip(request),
+    )
+    return profile
+
+
+@router.put("/staff/members/{member_id}/payout-profile")
+async def staff_update_member_payout_profile(
+    member_id: int,
+    body: StaffPayoutProfileBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    """Владелец/плательщик может сам прописать реквизиты сотруднику."""
+    from staff_payroll import update_staff_payout_profile
+    try:
+        profile = await update_staff_payout_profile(
+            member_id,
+            payout_type=body.payoutType,
+            payout_details=body.payoutDetails,
+            stars_username=body.starsUsername,
+            crypto_network=body.cryptoNetwork,
+            crypto_address=body.cryptoAddress,
+            card_bank=body.cardBank,
+            card_number=body.cardNumber,
+            card_holder=body.cardHolder,
+            card_sbp_phone=body.cardSbpPhone,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not profile:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    await log_admin_action(
+        user_id, "payout_profile_update",
+        target_type="staff", target_id=str(member_id),
+        ip=_get_client_ip(request),
+    )
+    return profile
+
+
+# ---------------------------------------------------------------------------
+# Настройки выплат / премии / договоры
+# ---------------------------------------------------------------------------
+
+@router.get("/staff/payout-settings")
+async def staff_get_payout_settings(
+    _user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    from staff_payroll import get_payout_settings
+    from staff_stars import get_fragment_health
+    settings = await get_payout_settings()
+    settings["fragment"] = await get_fragment_health()
+    return settings
+
+
+@router.get("/staff/fragment-health")
+async def staff_fragment_health(
+    _user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    from staff_stars import get_fragment_health
+    return await get_fragment_health()
+
+
+@router.get("/staff/star-payouts")
+async def staff_list_star_payouts(
+    status: str | None = Query(default=None),
+    _user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    from staff_stars import list_star_payouts
+    return {"items": await list_star_payouts(status=status)}
+
+
+@router.put("/staff/payout-settings")
+async def staff_put_payout_settings(
+    body: PayoutSettingsBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("approve_salary")),
+):
+    from staff_payroll import update_payout_settings
+    try:
+        settings = await update_payout_settings(
+            updated_by=user_id,
+            cosign_kut=body.cosignKut,
+            cosign_stars=body.cosignStars,
+            cosign_crypto=body.cosignCrypto,
+            cosign_card=body.cosignCard,
+            cosign_other=body.cosignOther,
+            default_stars_method=body.defaultStarsMethod,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await log_admin_action(
+        user_id, "payout_settings_update",
+        target_type="settings", target_id="payout",
+        details=settings, ip=_get_client_ip(request),
+    )
+    return settings
+
+
+@router.get("/staff/bonuses")
+async def staff_list_bonuses(
+    status: str | None = Query(default=None),
+    _user_id: int = Depends(require_admin_permission("set_salary")),
+):
+    from staff_payroll import list_bonuses
+    return {"items": await list_bonuses(status=status)}
+
+
+@router.post("/staff/bonuses")
+async def staff_create_bonus(
+    body: SetBonusBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("set_salary")),
+):
+    from staff_payroll import create_bonus
+
+    setter = await get_admin_account_security(user_id)
+    setter_role = setter["role"] if setter else None
+    target = await get_admin_account(body.userId)
+    if not target or target.get("status") != "active":
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    target_role = target.get("role")
+    if target_role == ROLE_OWNER:
+        raise HTTPException(status_code=400, detail="Владельцу премия не начисляется")
+
+    if setter_role == ROLE_OWNER:
+        status = "approved"
+    elif setter_role == ROLE_SENIOR:
+        if target_role not in (ROLE_MODERATOR, ROLE_JUNIOR):
+            raise HTTPException(status_code=403, detail="Старший не может ставить эту премию")
+        status = "pending_approval"
+    else:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+    payout_type = body.payoutType if body.payoutType in SALARY_PAYOUT_TYPES else "other"
+    bonus_id = await create_bonus(
+        body.userId,
+        amount=body.amount,
+        reason=body.reason.strip(),
+        note=body.note.strip() or None,
+        payout_type=payout_type,
+        setter_id=user_id,
+        status=status,
+    )
+    await log_admin_action(
+        user_id, "bonus_set",
+        target_type="staff", target_id=str(body.userId),
+        details={"amount": body.amount, "status": status, "bonusId": bonus_id},
+        ip=_get_client_ip(request),
+    )
+    status_txt = "ожидает одобрения" if status == "pending_approval" else "одобрена"
+    notify_staff(
+        body.userId,
+        f"<tg-emoji emoji-id='4958926882994127612'>🎁</tg-emoji> <b>Вам выставлена премия: {body.amount} ({status_txt}).</b>"
+        + (f" <b>Причина: {body.reason.strip()}</b>" if body.reason.strip() else "")
+        + "\n<blockquote><b>Виво-Эпсилон</b></blockquote>",
+    )
+    return {"ok": True, "bonusId": bonus_id, "status": status}
+
+
+@router.post("/staff/bonuses/{bonus_id}/approve")
+async def staff_approve_bonus(
+    bonus_id: int,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("approve_salary")),
+):
+    from staff_payroll import approve_bonus
+    ok = await approve_bonus(bonus_id, user_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Премия не найдена или уже одобрена")
+    await log_admin_action(
+        user_id, "bonus_approve", target_type="bonus", target_id=str(bonus_id),
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+@router.post("/staff/bonuses/{bonus_id}/pay")
+async def staff_pay_bonus(
+    bonus_id: int,
+    body: PayBonusBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    from staff_payroll import add_bonus_payment, get_bonus
+
+    ctx = await get_bonus(bonus_id)
+    if not ctx or ctx["status"] not in ("approved", "partially_paid"):
+        raise HTTPException(status_code=409, detail="Премия не одобрена или уже выплачена")
+    remaining = max(0, ctx["amount"] - ctx["paidAmount"])
+    method = (body.method.strip() if body.method else None) or ctx["payoutType"]
+    pay_amount = min(body.amount if body.amount is not None else remaining, remaining)
+
+    if await _needs_cosign(pay_amount, method):
+        # Переиспользуем pending_payouts с bonus_id (salary_id NULL)
+        from db import db as _db
+        row = await _db.pool.fetchrow(
+            """
+            INSERT INTO pending_payouts
+                (salary_id, bonus_id, source, user_id, amount, method, kind, txid, proof, requested_by)
+            VALUES (NULL, $1, 'bonus', $2, $3, $4, $5, $6, $7, $8) RETURNING id
+            """,
+            bonus_id, ctx["userId"], pay_amount, method, body.kind,
+            body.txid.strip() or None, body.proof.strip() or None, user_id,
+        )
+        notify_owners(
+            f"<tg-emoji emoji-id='5870972873450984431'>🔐</tg-emoji> <b>Со-подтверждение премии: {pay_amount} ({method or '—'}).</b>"
+            f"<b>Откройте «Реестр → На подтверждении».</b>\n<blockquote><b>Виво-Эпсилон</b></blockquote>",
+            exclude=user_id,
+        )
+        await log_admin_action(
+            user_id, "bonus_pay_request",
+            target_type="bonus", target_id=str(bonus_id),
+            details={"amount": pay_amount}, ip=_get_client_ip(request),
+        )
+        return {"ok": True, "pending": True, "payoutId": int(row["id"])}
+
+    result = await add_bonus_payment(
+        bonus_id, user_id, pay_amount,
+        method=method, kind=body.kind,
+        txid=body.txid.strip(), proof=body.proof.strip(),
+    )
+    if not result:
+        raise HTTPException(status_code=409, detail="Премия не одобрена или уже выплачена")
+    await log_admin_action(
+        user_id, "bonus_pay",
+        target_type="bonus", target_id=str(bonus_id),
+        details={"amount": result["amount"]}, ip=_get_client_ip(request),
+    )
+    notify_staff(
+        int(result["userId"]),
+        f"<tg-emoji emoji-id='5208540237524911208'>✅</tg-emoji> <b>Премия: выплачено {result['amount']}.</b>"
+        + (f" <b>Остаток: {result['remaining']}.</b>" if result["remaining"] else ""),
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/staff/bonuses/{bonus_id}/cancel")
+async def staff_cancel_bonus(
+    bonus_id: int,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("set_salary")),
+):
+    from staff_payroll import cancel_bonus
+    ok = await cancel_bonus(bonus_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Премия не найдена или уже выплачена")
+    await log_admin_action(
+        user_id, "bonus_cancel", target_type="bonus", target_id=str(bonus_id),
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+@router.get("/staff/contract-templates")
+async def staff_list_contract_templates(
+    _user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    from staff_payroll import list_contract_templates
+    return {"items": await list_contract_templates()}
+
+
+@router.post("/staff/contract-templates")
+async def staff_save_contract_template(
+    body: ContractTemplateBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("approve_salary")),
+):
+    from staff_payroll import upsert_contract_template
+    if body.payoutType and body.payoutType not in ("crypto", "card", "other", "stars", "kut"):
+        raise HTTPException(status_code=400, detail="Неверный payoutType шаблона")
+    tid = await upsert_contract_template(
+        template_id=body.id,
+        name=body.name.strip(),
+        body=body.body,
+        payout_type=body.payoutType,
+        enabled=body.enabled,
+        sort_order=body.sortOrder,
+        updated_by=user_id,
+    )
+    await log_admin_action(
+        user_id, "contract_template_save",
+        target_type="contract", target_id=str(tid),
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True, "id": tid}
+
+
+@router.delete("/staff/contract-templates/{template_id}")
+async def staff_delete_contract_template(
+    template_id: int,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("approve_salary")),
+):
+    from staff_payroll import delete_contract_template
+    ok = await delete_contract_template(template_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+    await log_admin_action(
+        user_id, "contract_template_delete",
+        target_type="contract", target_id=str(template_id),
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+@router.post("/staff/contract-templates/render")
+async def staff_render_contract(
+    body: RenderContractBody,
+    user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    from staff_payroll import get_staff_payout_profile, list_contract_templates, render_contract
+    templates = await list_contract_templates()
+    tpl = next((t for t in templates if t["id"] == body.templateId), None)
+    if not tpl:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+    profile = await get_staff_payout_profile(body.userId)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    text = render_contract(
+        tpl["body"],
+        amount=body.amount,
+        staff_name=profile.get("firstName") or "",
+        staff_username=profile.get("username") or "",
+        payout_type=body.payoutType,
+        details={
+            "cryptoNetwork": profile.get("cryptoNetwork") or "",
+            "cryptoAddress": profile.get("cryptoAddress") or "",
+            "cardBank": profile.get("cardBank") or "",
+            "cardNumber": profile.get("cardNumber") or "",
+            "cardHolder": profile.get("cardHolder") or "",
+            "cardSbpPhone": profile.get("cardSbpPhone") or "",
+            "starsUsername": profile.get("starsUsername") or "",
+        },
+        period_label_text=body.periodLabel,
+    )
+    return {"text": text, "templateName": tpl["name"]}
+
+
+@router.post("/staff/contract-templates/send")
+async def staff_send_contract(
+    body: RenderContractBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    """Рендерит договор и отправляет сотруднику в Telegram."""
+    from staff_payroll import get_staff_payout_profile, list_contract_templates, render_contract
+
+    templates = await list_contract_templates()
+    tpl = next((t for t in templates if t["id"] == body.templateId), None)
+    if not tpl:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+    profile = await get_staff_payout_profile(body.userId)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    text = render_contract(
+        tpl["body"],
+        amount=body.amount,
+        staff_name=profile.get("firstName") or "",
+        staff_username=profile.get("username") or "",
+        payout_type=body.payoutType,
+        details={
+            "cryptoNetwork": profile.get("cryptoNetwork") or "",
+            "cryptoAddress": profile.get("cryptoAddress") or "",
+            "cardBank": profile.get("cardBank") or "",
+            "cardNumber": profile.get("cardNumber") or "",
+            "cardHolder": profile.get("cardHolder") or "",
+            "cardSbpPhone": profile.get("cardSbpPhone") or "",
+            "starsUsername": profile.get("starsUsername") or "",
+        },
+        period_label_text=body.periodLabel,
+    )
+    chunk = text if len(text) <= 3500 else text[:3500] + "\n…"
+    safe = chunk.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    notify_staff(
+        body.userId,
+        f"<tg-emoji emoji-id='5870521446382696672'>📄</tg-emoji> <b>Договор / инструкция по выплате</b>\n\n"
+        f"<pre>{safe}</pre>"
+        f"\n<blockquote><b>Виво-Эпсилон</b></blockquote>",
+    )
+    await log_admin_action(
+        user_id, "contract_send",
+        target_type="staff", target_id=str(body.userId),
+        details={"templateId": body.templateId, "amount": body.amount},
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True, "text": text}
 
 
 @router.post("/staff/my-salary/{salary_id}/appeal")
@@ -1753,17 +2340,32 @@ async def staff_confirm_payout(
         raise HTTPException(status_code=404, detail="Запрос не найден")
     if int(p["requested_by"]) == user_id:
         raise HTTPException(status_code=403, detail="Нужно подтверждение другого владельца")
-    result = await add_salary_payment(
-        int(p["salary_id"]), user_id, int(p["amount"]),
-        method=p["method"], kind=p["kind"], txid=p["txid"], proof=p["proof"],
-    )
+
+    source = p.get("source") or "salary"
+    if source == "bonus" or p.get("bonus_id"):
+        from staff_payroll import add_bonus_payment
+        result = await add_bonus_payment(
+            int(p["bonus_id"]), user_id, int(p["amount"]),
+            method=p["method"], kind=p["kind"], txid=p["txid"], proof=p["proof"],
+        )
+        target_type, target_id = "bonus", str(p["bonus_id"])
+    else:
+        if not p.get("salary_id"):
+            await delete_pending_payout(payout_id)
+            raise HTTPException(status_code=409, detail="Битый запрос выплаты")
+        result = await add_salary_payment(
+            int(p["salary_id"]), user_id, int(p["amount"]),
+            method=p["method"], kind=p["kind"], txid=p["txid"], proof=p["proof"],
+        )
+        target_type, target_id = "salary", str(p["salary_id"])
+
     if not result:
         await delete_pending_payout(payout_id)
         raise HTTPException(status_code=409, detail="Начисление уже выплачено/недоступно")
     await delete_pending_payout(payout_id)
     await log_admin_action(
         user_id, "salary_pay_cosign",
-        target_type="salary", target_id=str(p["salary_id"]),
+        target_type=target_type, target_id=target_id,
         details={"amount": result["amount"]}, ip=_get_client_ip(request),
     )
     notify_staff(int(result["userId"]), f"<tg-emoji emoji-id='4958926882994127612'>💰</tg-emoji> <b>Для вас была проведена выплата : {result['amount']}. Остаток : {result['remaining']}.</b>")

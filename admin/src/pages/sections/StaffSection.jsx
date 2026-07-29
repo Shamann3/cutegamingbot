@@ -55,6 +55,10 @@ import AdminSelect from '../../components/AdminSelect'
 import CountUp from '../../components/CountUp'
 import { showToast } from '../../components/ToastHost'
 import { APPLICATION_QUESTIONS, PAYOUT_OPTIONS } from '../../config/applicationQuestions'
+import PayrollSalariesTab from './payroll/SalariesTab'
+import PayrollBonusesTab from './payroll/BonusesTab'
+import PayrollSettingsTab from './payroll/SettingsTab'
+import PayrollMySalaryTab from './payroll/MySalaryTab'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -815,13 +819,18 @@ function SalariesTab({ isOwner, canPay = false }) {
     } finally { setBusy(null) }
   }
 
-  const submitPay = async ({ amount, kind, txid, proof }) => {
+  const submitPay = async ({ amount, kind, txid, proof, starsMethod, starsUsername }) => {
     setBusy(`pay-${payFor.salary.salaryId}`)
     try {
-      await payStaffSalary(payFor.salary.salaryId, {
-        amount: amount || null, method: payFor.payoutType || null, kind, txid, proof,
+      const r = await payStaffSalary(payFor.salary.salaryId, {
+        amount: amount || null,
+        method: payFor.salary?.payoutType || payFor.payoutType || null,
+        kind, txid, proof, starsMethod, starsUsername,
       })
       setPayFor(null)
+      if (r?.queued) {
+        alert(`Заявка Stars: ${r.starPayout?.method || 'auto'} → @${r.starPayout?.starsUsername || '?'}`)
+      }
       await load()
     } catch (err) {
       alert(err?.message || 'Ошибка')
@@ -1010,6 +1019,7 @@ function SalariesTab({ isOwner, canPay = false }) {
                     { value: 'kut', label: '🟡 Kut (в игровой баланс)' },
                     { value: 'crypto', label: '₿ Крипта' },
                     { value: 'stars', label: '⭐ Telegram Stars' },
+                    { value: 'card', label: '💳 Карта / СБП' },
                     { value: 'other', label: 'Другое' },
                   ]}
                 />
@@ -1079,61 +1089,13 @@ function SalariesTab({ isOwner, canPay = false }) {
       )}
 
       {payFor && (
-        <PayModal
+        <PayrollPayModal
           member={payFor}
           busy={busy === `pay-${payFor.salary.salaryId}`}
           onClose={() => setPayFor(null)}
           onSubmit={submitPay}
         />
       )}
-    </div>
-  )
-}
-
-function PayModal({ member, busy, onClose, onSubmit }) {
-  const s = member.salary
-  const remaining = Math.max(0, (s.amount || 0) - (s.paidAmount || 0))
-  const [amount, setAmount] = useState(String(remaining))
-  const [kind, setKind] = useState('payment')
-  const [txid, setTxid] = useState('')
-  const [proof, setProof] = useState('')
-
-  return (
-    <div className="admin-modal-backdrop" role="presentation" onClick={() => !busy && onClose()}>
-      <div className="admin-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3 className="admin-modal-title">Выплата — {nameOf(member)}</h3>
-        <p className="admin-modal-desc">
-          Всего: {s.amount} · уже выплачено: {s.paidAmount || 0} · остаток: {remaining}
-          {member.payoutType ? ` · способ: ${member.payoutType}` : ''}
-        </p>
-        <label className="admin-modal-field">
-          <span>Сумма выплаты</span>
-          <input className="sec-input" type="number" min="1" max={remaining}
-            value={amount} onChange={(e) => setAmount(e.target.value)} disabled={busy} />
-        </label>
-        <label className="admin-modal-field">
-          <span>Тип</span>
-          <AdminSelect value={kind} onChange={setKind} options={[
-            { value: 'payment', label: 'Выплата' },
-            { value: 'advance', label: 'Аванс' },
-          ]} />
-        </label>
-        <label className="admin-modal-field">
-          <span>TXID / хеш (необязательно)</span>
-          <input className="sec-input" value={txid} onChange={(e) => setTxid(e.target.value)} disabled={busy} />
-        </label>
-        <label className="admin-modal-field">
-          <span>Ссылка на пруф (необязательно)</span>
-          <input className="sec-input" value={proof} onChange={(e) => setProof(e.target.value)} disabled={busy} />
-        </label>
-        <div className="admin-modal-actions">
-          <button className="panel-users-btn" disabled={busy} onClick={onClose}>Отмена</button>
-          <button className="panel-users-btn panel-users-btn-primary" disabled={busy}
-            onClick={() => onSubmit({ amount: Number.parseInt(amount, 10) || null, kind, txid: txid.trim(), proof: proof.trim() })}>
-            {busy ? '…' : 'Провести'}
-          </button>
-        </div>
-      </div>
     </div>
   )
 }
@@ -2067,19 +2029,21 @@ export default function StaffSection({ role, permissions = [], myUserId = null }
 
   const tabs = useMemo(() => {
     const list = []
-    if (perms.has('review_applications')) list.push({ id: 'applications', label: '📝 Заявки' })
-    if (perms.has('manage_staff')) list.push({ id: 'members', label: '👥 Сотрудники' })
-    if (perms.has('assign_roles')) list.push({ id: 'invites', label: '🔑 Инвайты' })
-    if (perms.has('set_salary')) list.push({ id: 'salaries', label: '💰 Зарплаты' })
-    if (perms.has('pay_salary')) list.push({ id: 'ledger', label: '📒 Реестр' })
-    if (perms.has('manage_staff')) list.push({ id: 'leaderboard', label: '🏆 Отчёты' })
-    if (perms.has('manage_staff')) list.push({ id: 'shifts', label: '📅 Смены' })
-    if (perms.has('manage_staff')) list.push({ id: 'complaints', label: '⚖️ Жалобы' })
-    if (perms.has('manage_staff')) list.push({ id: 'questions', label: '❓ Анкета' })
-    if (role && role !== 'owner') list.push({ id: 'mysalary', label: '🧾 Моя зарплата' })
-    if (role && role !== 'owner') list.push({ id: 'mycomplaints', label: '🛡 Жалобы на меня' })
+    if (perms.has('review_applications')) list.push({ id: 'applications', label: 'Заявки' })
+    if (perms.has('manage_staff')) list.push({ id: 'members', label: 'Сотрудники' })
+    if (perms.has('assign_roles')) list.push({ id: 'invites', label: 'Инвайты' })
+    if (perms.has('set_salary')) list.push({ id: 'salaries', label: 'Зарплаты' })
+    if (perms.has('set_salary')) list.push({ id: 'bonuses', label: 'Премии' })
+    if (perms.has('pay_salary')) list.push({ id: 'ledger', label: 'Реестр' })
+    if (isOwner) list.push({ id: 'payoutsettings', label: 'Настройки выплат' })
+    if (perms.has('manage_staff')) list.push({ id: 'leaderboard', label: 'Отчёты' })
+    if (perms.has('manage_staff')) list.push({ id: 'shifts', label: 'Смены' })
+    if (perms.has('manage_staff')) list.push({ id: 'complaints', label: 'Жалобы' })
+    if (perms.has('manage_staff')) list.push({ id: 'questions', label: 'Анкета' })
+    if (role && role !== 'owner') list.push({ id: 'mysalary', label: 'Моя зарплата' })
+    if (role && role !== 'owner') list.push({ id: 'mycomplaints', label: 'Жалобы на меня' })
     return list
-  }, [perms, role])
+  }, [perms, role, isOwner])
 
   const [tab, setTab] = useState(null)
   const activeTab = tab && tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id
@@ -2089,7 +2053,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null }
       <header className="sec-header">
         <h2 className="sec-title">Стафф</h2>
         <p className="sec-subtitle">
-          Заявки, сотрудники и зарплаты
+          Заявки, сотрудники, зарплаты и выплаты
         </p>
       </header>
 
@@ -2097,6 +2061,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null }
         {tabs.map((t) => (
           <button
             key={t.id}
+            type="button"
             className={`sec-tab${activeTab === t.id ? ' sec-tab-active' : ''}`}
             onClick={() => setTab(t.id)}
           >
@@ -2108,13 +2073,15 @@ export default function StaffSection({ role, permissions = [], myUserId = null }
       {activeTab === 'applications' && <ApplicationsTab />}
       {activeTab === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} />}
       {activeTab === 'invites' && <InvitesTab />}
-      {activeTab === 'salaries' && <SalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
+      {activeTab === 'salaries' && <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
+      {activeTab === 'bonuses' && <PayrollBonusesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
       {activeTab === 'ledger' && <LedgerTab />}
+      {activeTab === 'payoutsettings' && <PayrollSettingsTab />}
       {activeTab === 'leaderboard' && <LeaderboardTab />}
       {activeTab === 'shifts' && <ShiftsTab />}
       {activeTab === 'complaints' && <ComplaintsTab />}
       {activeTab === 'questions' && <QuestionsTab isOwner={isOwner} />}
-      {activeTab === 'mysalary' && <MySalaryTab />}
+      {activeTab === 'mysalary' && <PayrollMySalaryTab />}
       {activeTab === 'mycomplaints' && <MyComplaintsTab />}
       {!activeTab && <p className="sec-empty">Нет доступных разделов</p>}
     </section>

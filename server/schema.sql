@@ -1176,3 +1176,146 @@ CREATE TABLE IF NOT EXISTS discounted_holdings (
 -- иначе можно продать «дорогую» единицу по полной ставке и оставить дешёвую.
 CREATE INDEX IF NOT EXISTS discounted_holdings_user_item_idx
     ON discounted_holdings (user_id, item_id, unit_paid ASC, id ASC);
+
+-- ---------------------------------------------------------------------------
+-- Payroll v2: периоды, настройки выплат, премии, реквизиты, договоры
+-- ---------------------------------------------------------------------------
+
+-- Период зарплаты: day / week / month / year (week_start остаётся для совместимости)
+ALTER TABLE staff_salaries ADD COLUMN IF NOT EXISTS period_type TEXT NOT NULL DEFAULT 'week';
+ALTER TABLE staff_salaries ADD COLUMN IF NOT EXISTS period_start DATE;
+UPDATE staff_salaries SET period_start = week_start WHERE period_start IS NULL;
+ALTER TABLE staff_salaries ALTER COLUMN period_start SET DEFAULT CURRENT_DATE;
+
+-- Уникальность: один оклад на сотрудника за конкретный период
+DROP INDEX IF EXISTS staff_salaries_user_week_idx;
+CREATE UNIQUE INDEX IF NOT EXISTS staff_salaries_user_period_idx
+    ON staff_salaries (user_id, period_type, period_start);
+
+CREATE INDEX IF NOT EXISTS staff_salaries_period_idx
+    ON staff_salaries (period_type, period_start DESC);
+
+-- Структурированные реквизиты сотрудника (поверх legacy payout_details)
+ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS stars_username TEXT;
+ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS crypto_network TEXT;
+ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS crypto_address TEXT;
+ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS card_bank TEXT;
+ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS card_number TEXT;
+ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS card_holder TEXT;
+ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS card_sbp_phone TEXT;
+
+-- Настройки выплат (одна строка id=1), пороги cosign задаёт владелец
+CREATE TABLE IF NOT EXISTS staff_payout_settings (
+    id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    cosign_kut INT NOT NULL DEFAULT 800 CHECK (cosign_kut >= 0),
+    cosign_stars INT NOT NULL DEFAULT 300 CHECK (cosign_stars >= 0),
+    cosign_crypto INT NOT NULL DEFAULT 300 CHECK (cosign_crypto >= 0),
+    cosign_card INT NOT NULL DEFAULT 300 CHECK (cosign_card >= 0),
+    cosign_other INT NOT NULL DEFAULT 300 CHECK (cosign_other >= 0),
+    -- auto: Fragment если жив, иначе userbot; fragment / userbot — жёсткий выбор
+    default_stars_method TEXT NOT NULL DEFAULT 'auto'
+        CHECK (default_stars_method IN ('auto', 'fragment', 'userbot')),
+    updated_by BIGINT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO staff_payout_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- Здоровье Fragment (пишет бот, читает панель)
+ALTER TABLE staff_payout_settings ADD COLUMN IF NOT EXISTS fragment_ok BOOLEAN;
+ALTER TABLE staff_payout_settings ADD COLUMN IF NOT EXISTS fragment_ton NUMERIC(18, 6);
+ALTER TABLE staff_payout_settings ADD COLUMN IF NOT EXISTS fragment_checked_at TIMESTAMPTZ;
+ALTER TABLE staff_payout_settings ADD COLUMN IF NOT EXISTS fragment_error TEXT;
+
+-- Очередь выплат зарплаты звёздами (панель → бот)
+CREATE TABLE IF NOT EXISTS staff_star_payouts (
+    id BIGSERIAL PRIMARY KEY,
+    salary_id BIGINT REFERENCES staff_salaries(id) ON DELETE SET NULL,
+    bonus_id BIGINT REFERENCES staff_bonuses(id) ON DELETE SET NULL,
+    source TEXT NOT NULL DEFAULT 'salary'
+        CHECK (source IN ('salary', 'bonus')),
+    user_id BIGINT NOT NULL,
+    amount INT NOT NULL CHECK (amount > 0),
+    stars_username TEXT NOT NULL,
+    method TEXT NOT NULL
+        CHECK (method IN ('auto', 'fragment', 'userbot')),
+    status TEXT NOT NULL DEFAULT 'queued'
+        CHECK (status IN (
+            'queued', 'processing', 'channel_pending',
+            'completed', 'failed', 'cancelled', 'refunded'
+        )),
+    requested_by BIGINT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'payment',
+    error TEXT,
+    txid TEXT,
+    channel_message_id BIGINT,
+    request_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS staff_star_payouts_status_idx
+    ON staff_star_payouts (status, created_at ASC);
+CREATE INDEX IF NOT EXISTS staff_star_payouts_user_idx
+    ON staff_star_payouts (user_id, created_at DESC);
+
+-- Разовые премии (отдельная сущность от периодической зарплаты)
+CREATE TABLE IF NOT EXISTS staff_bonuses (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    amount INT NOT NULL CHECK (amount > 0),
+    reason TEXT NOT NULL DEFAULT '',
+    payout_type TEXT NOT NULL DEFAULT 'other',
+    status TEXT NOT NULL DEFAULT 'pending_approval'
+        CHECK (status IN ('pending_approval', 'approved', 'partially_paid', 'paid', 'cancelled')),
+    paid_amount INT NOT NULL DEFAULT 0,
+    note TEXT,
+    set_by BIGINT,
+    approved_by BIGINT,
+    paid_by BIGINT,
+    txid TEXT,
+    payout_proof TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    approved_at TIMESTAMPTZ,
+    paid_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS staff_bonuses_user_idx ON staff_bonuses (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS staff_bonuses_status_idx ON staff_bonuses (status, created_at DESC);
+
+-- Платежи по премиям (частичные / аванс)
+CREATE TABLE IF NOT EXISTS bonus_payments (
+    id BIGSERIAL PRIMARY KEY,
+    bonus_id BIGINT NOT NULL REFERENCES staff_bonuses(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    amount INT NOT NULL CHECK (amount > 0),
+    method TEXT,
+    kind TEXT NOT NULL DEFAULT 'payment' CHECK (kind IN ('payment', 'advance')),
+    txid TEXT,
+    proof TEXT,
+    paid_by BIGINT,
+    paid_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS bonus_payments_bonus_idx ON bonus_payments (bonus_id);
+
+-- Шаблоны договоров для крипты/карты (текст с плейсхолдерами)
+CREATE TABLE IF NOT EXISTS salary_contract_templates (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    payout_type TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INT NOT NULL DEFAULT 0,
+    updated_by BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- pending_payouts: поддержка выплат по премиям (salary_id может быть NULL)
+ALTER TABLE pending_payouts ALTER COLUMN salary_id DROP NOT NULL;
+ALTER TABLE pending_payouts ADD COLUMN IF NOT EXISTS bonus_id BIGINT REFERENCES staff_bonuses(id) ON DELETE CASCADE;
+ALTER TABLE pending_payouts ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'salary'
+    CHECK (source IN ('salary', 'bonus'));
