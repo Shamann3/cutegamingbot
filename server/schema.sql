@@ -1187,6 +1187,28 @@ ALTER TABLE staff_salaries ADD COLUMN IF NOT EXISTS period_start DATE;
 UPDATE staff_salaries SET period_start = week_start WHERE period_start IS NULL;
 ALTER TABLE staff_salaries ALTER COLUMN period_start SET DEFAULT CURRENT_DATE;
 
+-- На старых БД staff_salaries могла появиться без UNIQUE/PK на id
+-- (CREATE TABLE IF NOT EXISTS не чинит уже существующую таблицу).
+-- Без unique на id любые REFERENCES staff_salaries(id) падают с
+-- InvalidForeignKeyError.
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE staff_salaries ADD CONSTRAINT staff_salaries_pkey PRIMARY KEY (id);
+    EXCEPTION
+        WHEN duplicate_object THEN NULL;
+        WHEN invalid_table_definition THEN NULL; -- уже есть другой PK
+        WHEN unique_violation THEN NULL;
+    END;
+    BEGIN
+        ALTER TABLE staff_salaries ADD CONSTRAINT staff_salaries_id_key UNIQUE (id);
+    EXCEPTION
+        WHEN duplicate_object THEN NULL;
+        WHEN invalid_table_definition THEN NULL;
+        WHEN unique_violation THEN NULL;
+    END;
+END $$;
+
 -- Уникальность: один оклад на сотрудника за конкретный период
 DROP INDEX IF EXISTS staff_salaries_user_week_idx;
 CREATE UNIQUE INDEX IF NOT EXISTS staff_salaries_user_period_idx
@@ -1227,40 +1249,7 @@ ALTER TABLE staff_payout_settings ADD COLUMN IF NOT EXISTS fragment_ton NUMERIC(
 ALTER TABLE staff_payout_settings ADD COLUMN IF NOT EXISTS fragment_checked_at TIMESTAMPTZ;
 ALTER TABLE staff_payout_settings ADD COLUMN IF NOT EXISTS fragment_error TEXT;
 
--- Очередь выплат зарплаты звёздами (панель → бот)
-CREATE TABLE IF NOT EXISTS staff_star_payouts (
-    id BIGSERIAL PRIMARY KEY,
-    salary_id BIGINT REFERENCES staff_salaries(id) ON DELETE SET NULL,
-    bonus_id BIGINT REFERENCES staff_bonuses(id) ON DELETE SET NULL,
-    source TEXT NOT NULL DEFAULT 'salary'
-        CHECK (source IN ('salary', 'bonus')),
-    user_id BIGINT NOT NULL,
-    amount INT NOT NULL CHECK (amount > 0),
-    stars_username TEXT NOT NULL,
-    method TEXT NOT NULL
-        CHECK (method IN ('auto', 'fragment', 'userbot')),
-    status TEXT NOT NULL DEFAULT 'queued'
-        CHECK (status IN (
-            'queued', 'processing', 'channel_pending',
-            'completed', 'failed', 'cancelled', 'refunded'
-        )),
-    requested_by BIGINT NOT NULL,
-    kind TEXT NOT NULL DEFAULT 'payment',
-    error TEXT,
-    txid TEXT,
-    channel_message_id BIGINT,
-    request_id TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    completed_at TIMESTAMPTZ
-);
-
-CREATE INDEX IF NOT EXISTS staff_star_payouts_status_idx
-    ON staff_star_payouts (status, created_at ASC);
-CREATE INDEX IF NOT EXISTS staff_star_payouts_user_idx
-    ON staff_star_payouts (user_id, created_at DESC);
-
--- Разовые премии (отдельная сущность от периодической зарплаты)
+-- Разовые премии — ДО staff_star_payouts (FK bonus_id)
 CREATE TABLE IF NOT EXISTS staff_bonuses (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
@@ -1301,6 +1290,71 @@ CREATE TABLE IF NOT EXISTS bonus_payments (
 
 CREATE INDEX IF NOT EXISTS bonus_payments_bonus_idx ON bonus_payments (bonus_id);
 
+-- Очередь выплат зарплаты звёздами (панель → бот)
+-- FK добавляем отдельно: CREATE IF NOT EXISTS не допишет REFERENCES на уже
+-- существующую таблицу, а inline FK падал на БД без PK у staff_salaries.
+CREATE TABLE IF NOT EXISTS staff_star_payouts (
+    id BIGSERIAL PRIMARY KEY,
+    salary_id BIGINT,
+    bonus_id BIGINT,
+    source TEXT NOT NULL DEFAULT 'salary'
+        CHECK (source IN ('salary', 'bonus')),
+    user_id BIGINT NOT NULL,
+    amount INT NOT NULL CHECK (amount > 0),
+    stars_username TEXT NOT NULL,
+    method TEXT NOT NULL
+        CHECK (method IN ('auto', 'fragment', 'userbot')),
+    status TEXT NOT NULL DEFAULT 'queued'
+        CHECK (status IN (
+            'queued', 'processing', 'channel_pending',
+            'completed', 'failed', 'cancelled', 'refunded'
+        )),
+    requested_by BIGINT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'payment',
+    error TEXT,
+    txid TEXT,
+    channel_message_id BIGINT,
+    request_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+
+DO $$
+BEGIN
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'staff_star_payouts_salary_id_fkey'
+        ) THEN
+            ALTER TABLE staff_star_payouts
+                ADD CONSTRAINT staff_star_payouts_salary_id_fkey
+                FOREIGN KEY (salary_id) REFERENCES staff_salaries(id) ON DELETE SET NULL;
+        END IF;
+    EXCEPTION
+        WHEN invalid_foreign_key THEN
+            RAISE NOTICE 'staff_star_payouts_salary_id_fkey skipped: %', SQLERRM;
+        WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'staff_star_payouts_bonus_id_fkey'
+        ) THEN
+            ALTER TABLE staff_star_payouts
+                ADD CONSTRAINT staff_star_payouts_bonus_id_fkey
+                FOREIGN KEY (bonus_id) REFERENCES staff_bonuses(id) ON DELETE SET NULL;
+        END IF;
+    EXCEPTION
+        WHEN invalid_foreign_key THEN
+            RAISE NOTICE 'staff_star_payouts_bonus_id_fkey skipped: %', SQLERRM;
+        WHEN duplicate_object THEN NULL;
+    END;
+END $$;
+
+CREATE INDEX IF NOT EXISTS staff_star_payouts_status_idx
+    ON staff_star_payouts (status, created_at ASC);
+CREATE INDEX IF NOT EXISTS staff_star_payouts_user_idx
+    ON staff_star_payouts (user_id, created_at DESC);
+
 -- Шаблоны договоров для крипты/карты (текст с плейсхолдерами)
 CREATE TABLE IF NOT EXISTS salary_contract_templates (
     id BIGSERIAL PRIMARY KEY,
@@ -1316,6 +1370,25 @@ CREATE TABLE IF NOT EXISTS salary_contract_templates (
 
 -- pending_payouts: поддержка выплат по премиям (salary_id может быть NULL)
 ALTER TABLE pending_payouts ALTER COLUMN salary_id DROP NOT NULL;
-ALTER TABLE pending_payouts ADD COLUMN IF NOT EXISTS bonus_id BIGINT REFERENCES staff_bonuses(id) ON DELETE CASCADE;
-ALTER TABLE pending_payouts ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'salary'
-    CHECK (source IN ('salary', 'bonus'));
+ALTER TABLE pending_payouts ADD COLUMN IF NOT EXISTS bonus_id BIGINT;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'pending_payouts_bonus_id_fkey'
+    ) THEN
+        ALTER TABLE pending_payouts
+            ADD CONSTRAINT pending_payouts_bonus_id_fkey
+            FOREIGN KEY (bonus_id) REFERENCES staff_bonuses(id) ON DELETE CASCADE;
+    END IF;
+END $$;
+ALTER TABLE pending_payouts ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'salary';
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'pending_payouts_source_check'
+    ) THEN
+        ALTER TABLE pending_payouts
+            ADD CONSTRAINT pending_payouts_source_check
+            CHECK (source IN ('salary', 'bonus'));
+    END IF;
+END $$;
