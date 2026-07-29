@@ -614,6 +614,7 @@ def current_week_start():
 def _salary_row(r) -> dict:
     period_type = r.get("period_type") or "week"
     period_start = r.get("period_start") or r.get("week_start")
+    period_end = r.get("period_end")
     return {
         "salaryId": int(r["salary_id"]) if r["salary_id"] is not None else None,
         "amount": int(r["amount"]) if r["amount"] is not None else None,
@@ -630,6 +631,7 @@ def _salary_row(r) -> dict:
         "payoutType": r.get("payout_type") or "other",
         "periodType": period_type,
         "periodStart": period_start.isoformat() if period_start else None,
+        "periodEnd": period_end.isoformat() if period_end else None,
         "weekStart": (r.get("week_start") or period_start).isoformat()
         if (r.get("week_start") or period_start) else None,
         "note": r["note"],
@@ -640,12 +642,11 @@ def _salary_row(r) -> dict:
         "paidAt": r["paid_at"].isoformat() if r["paid_at"] else None,
     }
 
-
 async def list_salaries_for_week(week_start) -> list[dict]:
     return await list_salaries_for_period("week", week_start)
 
 
-async def list_salaries_for_period(period_type: str, period_start) -> list[dict]:
+async def list_salaries_for_period(period_type: str, period_start, period_end=None) -> list[dict]:
     rows = await db.pool.fetch(
         """
         SELECT a.user_id, a.username, a.first_name, a.role,
@@ -656,12 +657,13 @@ async def list_salaries_for_period(period_type: str, period_start) -> list[dict]
                s.base_amount, s.coefficient, s.bonus, s.bonus_reason,
                s.penalty, s.penalty_reason, s.txid, s.payout_proof,
                s.payout_type, s.set_by, s.approved_by, s.paid_by, s.approved_at, s.paid_at,
-               s.week_start, s.period_type, s.period_start
+               s.week_start, s.period_type, s.period_start, s.period_end
         FROM admin_accounts a
         LEFT JOIN staff_salaries s
           ON s.user_id = a.user_id
          AND s.period_type = $1
          AND s.period_start = $2
+         AND s.period_end = $3
         WHERE a.status = 'active'
           AND a.role IN ('senior_admin', 'junior_admin', 'moderator')
         ORDER BY
@@ -673,7 +675,7 @@ async def list_salaries_for_period(period_type: str, period_start) -> list[dict]
             END,
             a.user_id
         """,
-        period_type, period_start,
+        period_type, period_start, period_end,
     )
     return [
         {
@@ -709,20 +711,22 @@ async def upsert_salary(
     payout_type: str = "other",
     period_type: str = "week",
     period_start=None,
+    period_end=None,
 ) -> int | None:
     """Создаёт/обновляет зарплату за период. Не трогает уже выплаченную."""
     amount = compute_salary_total(base, coefficient, bonus, penalty)
     p_type = (period_type or "week").strip().lower()
     p_start = period_start or week_start
+    p_end = period_end or p_start
     # week_start обязателен в legacy-схеме — дублируем period_start
     wk = p_start
     row = await db.pool.fetchrow(
         """
         INSERT INTO staff_salaries
-            (user_id, week_start, period_type, period_start, amount, base_amount, coefficient,
+            (user_id, week_start, period_type, period_start, period_end, amount, base_amount, coefficient,
              bonus, bonus_reason, penalty, penalty_reason, note, set_by, status, payout_type)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-        ON CONFLICT (user_id, period_type, period_start) DO UPDATE
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        ON CONFLICT (user_id, period_type, period_start, period_end) DO UPDATE
         SET amount = EXCLUDED.amount,
             base_amount = EXCLUDED.base_amount,
             coefficient = EXCLUDED.coefficient,
@@ -741,7 +745,7 @@ async def upsert_salary(
         WHERE staff_salaries.status <> 'paid'
         RETURNING id
         """,
-        user_id, wk, p_type, p_start, amount, base, coefficient,
+        user_id, wk, p_type, p_start, p_end, amount, base, coefficient,
         bonus, bonus_reason or None, penalty, penalty_reason or None,
         note or None, setter_id, status, payout_type,
     )

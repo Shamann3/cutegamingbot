@@ -12,6 +12,90 @@ logger = logging.getLogger("staff-star-worker")
 WITHDRAW_CHANNEL = "@CurrencyCute"
 
 
+async def refresh_star_gifts_cache(db, bot) -> int:
+    """Синхронизирует каталог подарков (live + manual) в БД для админ-панели."""
+    try:
+        from bot.design.buttons import (
+            _merge_live_and_manual_gifts,
+            get_all_manual_gifts,
+            get_available_gifts_fast,
+        )
+    except Exception:
+        logger.exception("gift imports failed")
+        return 0
+
+    payload = []
+    try:
+        live = await get_available_gifts_fast(bot)
+        manual = await get_all_manual_gifts()
+        merged = _merge_live_and_manual_gifts(live, manual)
+        for g in merged or []:
+            try:
+                if isinstance(g, dict):
+                    gift_id = int(g.get("id") or 0)
+                    stars = int(g.get("price") or g.get("stars") or 0)
+                    emoji = g.get("emoji") or g.get("base_emoji") or "🎁"
+                    custom = str(
+                        g.get("manual_custom_emoji_id")
+                        or g.get("custom_emoji_id")
+                        or ""
+                    )
+                    has_up = bool(int(g.get("has_upgrade") or 0))
+                    up_stars = int(g.get("upgrade_price") or 0)
+                    source = "manual" if g.get("is_manual") else "live"
+                else:
+                    gift_id = int(getattr(g, "id", 0) or 0)
+                    stars = int(
+                        getattr(g, "star_count", None)
+                        or getattr(g, "stars", None)
+                        or 0
+                    )
+                    emoji = getattr(g, "emoji", None) or "🎁"
+                    sticker = getattr(g, "sticker", None)
+                    custom = ""
+                    if sticker is not None:
+                        custom = str(getattr(sticker, "custom_emoji_id", None) or "")
+                    has_up = bool(getattr(g, "upgrade_star_count", None))
+                    up_stars = int(getattr(g, "upgrade_star_count", None) or 0)
+                    source = "live"
+            except Exception:
+                continue
+            if gift_id <= 0 or stars <= 0:
+                continue
+            payload.append((gift_id, stars, emoji, custom or None, has_up, up_stars, source))
+    except Exception:
+        logger.exception("collect gifts for cache failed")
+        return 0
+
+    if not payload:
+        return 0
+    try:
+        n = 0
+        async with db.pool.acquire() as conn:
+            for gift_id, stars, emoji, custom, has_up, up_stars, source in payload:
+                await conn.execute(
+                    """
+                    INSERT INTO star_gifts_cache
+                        (gift_id, stars, emoji, custom_emoji_id, has_upgrade, upgrade_stars, source, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                    ON CONFLICT (gift_id) DO UPDATE SET
+                        stars = EXCLUDED.stars,
+                        emoji = EXCLUDED.emoji,
+                        custom_emoji_id = EXCLUDED.custom_emoji_id,
+                        has_upgrade = EXCLUDED.has_upgrade,
+                        upgrade_stars = EXCLUDED.upgrade_stars,
+                        source = EXCLUDED.source,
+                        updated_at = NOW()
+                    """,
+                    gift_id, stars, emoji, custom, has_up, up_stars, source,
+                )
+                n += 1
+        return n
+    except Exception:
+        logger.exception("persist star gifts cache failed")
+        return 0
+
+
 async def refresh_fragment_health(db, fragment_client, seed_phrase: str) -> dict:
     """Пишет fragment_ok / ton в staff_payout_settings."""
     ton = None
@@ -220,7 +304,7 @@ async def _post_salary_channel(
     first_name: str,
     build_keyboard: Callable[..., Any],
 ) -> int | None:
-    """Пост в @CurrencyCute с пометкой зарплаты + те же wdact-кнопки."""
+    """Пост в @CurrencyCute в стиле вывода игрока + пометка зарплаты админа."""
     amount = int(row["amount"])
     user_id = int(row["user_id"])
     username = (row["stars_username"] or "").lstrip("@")
@@ -228,13 +312,18 @@ async def _post_salary_channel(
     amount_str = "{:,.0f}".format(amount).replace(",", ".")
     name = escape(first_name or username or str(user_id))
     name_link = f'<a href="tg://user?id={user_id}">{name}</a>'
+    gift_id = int(row.get("gift_id") or 0)
+    gift_emoji = (row.get("gift_emoji") or "⭐")[:16] or "⭐"
+    has_upgrade = int(row.get("has_upgrade") or 0)
 
+    # Тот же визуальный язык, что у вывода игрока, но с явным маркером зарплаты
     channel_message = (
-        f"<b>💼 Выплата зарплаты администратору</b>\n"
-        f"<b>{amount_str} кут → stars "
+        f"<code>{escape(gift_emoji)}</code> "
+        f"<b>{amount_str} кут в stars "
         f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>\n"
-        f"<b><tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> Для <i>{name_link}</i>"
-        f" (@{escape(username)})</b>\n\n"
+        f"<b><tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
+        f"Для <i>{name_link}</i></b>\n"
+        f"<b>💼 Зарплата администратора</b>\n\n"
         f"<blockquote><b>@CuteGamingBot</b></blockquote>"
     )
 
@@ -250,9 +339,9 @@ async def _post_salary_channel(
         result_flag="-",
         is_friend=False,
         channel_message_id_hint=0,
-        gift_id=0,
-        gift_emoji="⭐",
-        has_upgrade=0,
+        gift_id=gift_id,
+        gift_emoji=gift_emoji,
+        has_upgrade=has_upgrade,
         extra={
             "is_salary": True,
             "star_payout_id": int(row["id"]),
@@ -375,6 +464,7 @@ async def staff_star_payout_loop(
         try:
             if ticks % 8 == 0:  # ~каждую минуту при sleep 8
                 await refresh_fragment_health(db, fragment_client, seed_phrase)
+                await refresh_star_gifts_cache(db, bot)
             # до 3 заявок за тик
             for _ in range(3):
                 got = await process_one_payout(

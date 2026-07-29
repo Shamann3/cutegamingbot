@@ -1454,3 +1454,58 @@ EXCEPTION
         RAISE NOTICE 'pending_payouts_source_check skipped: %', SQLERRM;
     WHEN duplicate_object THEN NULL;
 END $$;
+
+-- ---------------------------------------------------------------------------
+-- Payroll v3: произвольные даты + подарки для Stars
+-- ---------------------------------------------------------------------------
+ALTER TABLE staff_salaries ADD COLUMN IF NOT EXISTS period_end DATE;
+
+UPDATE staff_salaries
+SET period_end = period_start
+WHERE period_end IS NULL AND period_type = 'day';
+
+UPDATE staff_salaries
+SET period_end = period_start + 6
+WHERE period_end IS NULL AND period_type = 'week';
+
+UPDATE staff_salaries
+SET period_end = (date_trunc('month', period_start) + INTERVAL '1 month' - INTERVAL '1 day')::date
+WHERE period_end IS NULL AND period_type = 'month';
+
+UPDATE staff_salaries
+SET period_end = make_date(EXTRACT(YEAR FROM period_start)::int, 12, 31)
+WHERE period_end IS NULL AND period_type = 'year';
+
+UPDATE staff_salaries
+SET period_end = COALESCE(period_start, week_start, CURRENT_DATE)
+WHERE period_end IS NULL;
+
+ALTER TABLE staff_salaries ALTER COLUMN period_end SET DEFAULT CURRENT_DATE;
+
+DROP INDEX IF EXISTS staff_salaries_user_period_idx;
+DO $$
+BEGIN
+    CREATE UNIQUE INDEX IF NOT EXISTS staff_salaries_user_period_idx
+        ON staff_salaries (user_id, period_type, period_start, period_end);
+EXCEPTION
+    WHEN unique_violation THEN
+        RAISE NOTICE 'staff_salaries_user_period_idx skipped (duplicates): %', SQLERRM;
+    WHEN duplicate_table THEN NULL;
+END $$;
+
+ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS gift_id BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS gift_emoji TEXT NOT NULL DEFAULT '⭐';
+ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS has_upgrade INT NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS star_gifts_cache (
+    gift_id BIGINT PRIMARY KEY,
+    stars INT NOT NULL CHECK (stars > 0),
+    emoji TEXT NOT NULL DEFAULT '🎁',
+    custom_emoji_id TEXT,
+    has_upgrade BOOLEAN NOT NULL DEFAULT FALSE,
+    upgrade_stars INT NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'live',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS star_gifts_cache_stars_idx ON star_gifts_cache (stars ASC);

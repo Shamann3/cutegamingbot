@@ -21,10 +21,19 @@ import {
   roleLabel,
 } from './shared'
 
+function todayIso() {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+
 export default function PayrollSalariesTab({ isOwner, canPay = false }) {
   const [periodType, setPeriodType] = useState('week')
-  const [anchorDate, setAnchorDate] = useState('')
+  const [rangeFrom, setRangeFrom] = useState('')
+  const [rangeTo, setRangeTo] = useState('')
   const [periodStart, setPeriodStart] = useState('')
+  const [periodEnd, setPeriodEnd] = useState('')
   const [periodLabel, setPeriodLabel] = useState('')
   const [rows, setRows] = useState([])
   const [appeals, setAppeals] = useState([])
@@ -36,13 +45,26 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
   const pendingCount = rows.filter((m) => m.salary?.status === 'pending_approval').length
   const unpaidCount = rows.filter((m) => ['approved', 'partially_paid'].includes(m.salary?.status)).length
   const notSetCount = rows.filter((m) => !m.salary).length
+  const isCustom = periodType === 'custom'
 
   const load = useCallback(async () => {
+    if (isCustom && (!rangeFrom || !rangeTo)) {
+      setRows([])
+      setPeriodLabel('Укажите даты начала и конца')
+      return
+    }
     setLoading(true)
     try {
-      const data = await fetchStaffSalaries(periodType, anchorDate || null)
+      const startArg = isCustom ? rangeFrom : (rangeFrom || null)
+      const endArg = isCustom ? rangeTo : null
+      const data = await fetchStaffSalaries(periodType, startArg, endArg)
       setPeriodLabel(data.periodLabel || '')
       setPeriodStart(data.periodStart || '')
+      setPeriodEnd(data.periodEnd || '')
+      if (!isCustom && data.periodStart) {
+        setRangeFrom(data.periodStart)
+        if (data.periodEnd) setRangeTo(data.periodEnd)
+      }
       const items = data.items || []
       setRows(items)
       const seeded = {}
@@ -56,12 +78,13 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
       setDrafts(seeded)
       const ap = await fetchSalaryAppeals()
       setAppeals(ap.items || [])
-    } catch {
+    } catch (err) {
       setRows([])
+      setPeriodLabel(err?.message || 'Ошибка загрузки')
     } finally {
       setLoading(false)
     }
-  }, [periodType, anchorDate])
+  }, [periodType, rangeFrom, rangeTo, isCustom])
 
   useEffect(() => { load() }, [load])
 
@@ -73,6 +96,10 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
     const amount = Number.parseInt(dft.amount, 10)
     if (!Number.isFinite(amount) || amount < 0) {
       alert('Введите сумму')
+      return
+    }
+    if (isCustom && (!rangeFrom || !rangeTo)) {
+      alert('Укажите период: с какого и по какой день')
       return
     }
     setBusy(`set-${userId}`)
@@ -87,7 +114,8 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
         penaltyReason: '',
         payoutType: dft.payoutType || 'kut',
         periodType,
-        periodStart: periodStart || anchorDate || undefined,
+        periodStart: isCustom ? rangeFrom : (periodStart || rangeFrom || undefined),
+        periodEnd: isCustom ? rangeTo : (periodEnd || undefined),
       })
       await load()
     } catch (err) {
@@ -159,19 +187,47 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
               role="tab"
               aria-selected={periodType === opt.value}
               className={`payroll-period${periodType === opt.value ? ' is-active' : ''}`}
-              onClick={() => { setPeriodType(opt.value); setAnchorDate('') }}
+              onClick={() => {
+                setPeriodType(opt.value)
+                if (opt.value === 'custom') {
+                  const t = todayIso()
+                  setRangeFrom((v) => v || t)
+                  setRangeTo((v) => v || t)
+                } else {
+                  setRangeFrom('')
+                  setRangeTo('')
+                }
+              }}
             >
               {opt.label}
             </button>
           ))}
         </div>
-        <input
-          className="sec-input payroll-date"
-          type="date"
-          value={anchorDate || periodStart || ''}
-          onChange={(e) => setAnchorDate(e.target.value)}
-          title="Дата внутри нужного периода"
-        />
+
+        <label className="payroll-date-field">
+          <span>{isCustom ? 'С' : 'Дата'}</span>
+          <input
+            className="sec-input payroll-date"
+            type="date"
+            value={rangeFrom || periodStart || ''}
+            onChange={(e) => setRangeFrom(e.target.value)}
+            title={isCustom ? 'Начало периода' : 'Дата внутри периода'}
+          />
+        </label>
+        {(isCustom || periodEnd) && (
+          <label className="payroll-date-field">
+            <span>По</span>
+            <input
+              className="sec-input payroll-date"
+              type="date"
+              value={isCustom ? rangeTo : (rangeTo || periodEnd || '')}
+              onChange={(e) => setRangeTo(e.target.value)}
+              disabled={!isCustom}
+              title="Конец периода"
+            />
+          </label>
+        )}
+
         <button type="button" className="sec-btn sec-btn-ghost" onClick={load}>Обновить</button>
         {isOwner && (
           <button
@@ -300,7 +356,13 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
         })}
       </div>
 
-      {!loading && rows.length === 0 && <p className="sec-empty">Нет сотрудников для начисления</p>}
+      {!loading && rows.length === 0 && (
+        <p className="sec-empty">
+          {isCustom && (!rangeFrom || !rangeTo)
+            ? 'Выберите даты «С» и «По»'
+            : 'Нет сотрудников для начисления'}
+        </p>
+      )}
 
       {appeals.length > 0 && (
         <section className="payroll-appeals">

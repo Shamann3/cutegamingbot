@@ -13,6 +13,7 @@ export const PERIOD_OPTIONS = [
   { value: 'week', label: 'Неделя' },
   { value: 'month', label: 'Месяц' },
   { value: 'year', label: 'Год' },
+  { value: 'custom', label: 'Свои даты' },
 ]
 
 export const SALARY_PAYOUT_OPTIONS = [

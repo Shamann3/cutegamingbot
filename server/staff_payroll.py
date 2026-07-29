@@ -11,9 +11,8 @@ from db import db
 
 logger = logging.getLogger(__name__)
 
-PERIOD_TYPES = ("day", "week", "month", "year")
+PERIOD_TYPES = ("day", "week", "month", "year", "custom")
 PAYOUT_METHODS = ("kut", "stars", "crypto", "card", "other")
-
 DEFAULT_COSIGN = {
     "kut": 800,
     "stars": 300,
@@ -28,10 +27,10 @@ DEFAULT_COSIGN = {
 # ---------------------------------------------------------------------------
 
 def period_start_for(period_type: str, on: date | None = None) -> date:
-    """Начало периода, содержащего дату `on` (или сегодня)."""
+    """Начало периода, содержащего дату `on` (или сегодня). Для custom — сама дата."""
     d = on or date.today()
     pt = (period_type or "week").strip().lower()
-    if pt == "day":
+    if pt in ("day", "custom"):
         return d
     if pt == "week":
         return d - timedelta(days=d.weekday())
@@ -42,9 +41,15 @@ def period_start_for(period_type: str, on: date | None = None) -> date:
     raise ValueError(f"Неизвестный period_type: {period_type}")
 
 
-def period_end_for(period_type: str, start: date) -> date:
-    """Последний день периода (включительно)."""
+def period_end_for(period_type: str, start: date, end: date | None = None) -> date:
+    """Последний день периода (включительно). Для custom — явный end или start."""
     pt = (period_type or "week").strip().lower()
+    if pt == "custom":
+        if end is None:
+            return start
+        if end < start:
+            raise ValueError("period_end раньше period_start")
+        return end
     if pt == "day":
         return start
     if pt == "week":
@@ -57,17 +62,38 @@ def period_end_for(period_type: str, start: date) -> date:
     raise ValueError(f"Неизвестный period_type: {period_type}")
 
 
-def period_label(period_type: str, start: date) -> str:
-    end = period_end_for(period_type, start)
-    if period_type == "day":
+def period_label(period_type: str, start: date, end: date | None = None) -> str:
+    resolved_end = period_end_for(period_type, start, end)
+    pt = (period_type or "week").strip().lower()
+    if pt == "day":
         return start.isoformat()
-    if period_type == "week":
-        return f"{start.isoformat()} — {end.isoformat()}"
-    if period_type == "month":
+    if pt == "month" and start.day == 1 and resolved_end == period_end_for("month", start):
         return start.strftime("%Y-%m")
-    if period_type == "year":
+    if pt == "year" and start.month == 1 and start.day == 1 and resolved_end.month == 12:
         return str(start.year)
-    return start.isoformat()
+    if start == resolved_end:
+        return start.isoformat()
+    return f"{start.isoformat()} — {resolved_end.isoformat()}"
+
+
+def resolve_period(
+    period_type: str,
+    period_start: date | None = None,
+    period_end: date | None = None,
+) -> tuple[str, date, date]:
+    """Нормализует тип/даты периода. Возвращает (type, start, end)."""
+    pt = (period_type or "week").strip().lower()
+    if pt not in PERIOD_TYPES:
+        raise ValueError(f"periodType: {', '.join(PERIOD_TYPES)}")
+    if pt == "custom":
+        if not period_start or not period_end:
+            raise ValueError("Для произвольного периода укажите дату начала и конца")
+        if period_end < period_start:
+            raise ValueError("Дата конца раньше даты начала")
+        return pt, period_start, period_end
+    start = period_start_for(pt, period_start)
+    end = period_end_for(pt, start)
+    return pt, start, end
 
 
 # ---------------------------------------------------------------------------

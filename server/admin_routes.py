@@ -320,7 +320,7 @@ class RejectApplicationBody(BaseModel):
 
 
 SALARY_PAYOUT_TYPES = {"crypto", "kut", "stars", "card", "other"}
-SALARY_PERIOD_TYPES = {"day", "week", "month", "year"}
+SALARY_PERIOD_TYPES = {"day", "week", "month", "year", "custom"}
 
 class SetSalaryBody(BaseModel):
     userId: int = Field(ge=1)
@@ -334,6 +334,7 @@ class SetSalaryBody(BaseModel):
     payoutType: str = Field(default="other", max_length=32)
     periodType: str = Field(default="week", max_length=16)
     periodStart: str | None = Field(default=None, max_length=32)
+    periodEnd: str | None = Field(default=None, max_length=32)
     model_config = {"extra": "forbid"}
 
 
@@ -345,6 +346,9 @@ class PaySalaryBody(BaseModel):
     proof: str = Field(default="", max_length=600)
     starsMethod: str | None = Field(default=None, max_length=16)  # auto|fragment|userbot
     starsUsername: str | None = Field(default=None, max_length=64)
+    giftId: int | None = Field(default=None, ge=0)
+    giftEmoji: str | None = Field(default=None, max_length=32)
+    hasUpgrade: int | None = Field(default=None, ge=0, le=1)
     model_config = {"extra": "forbid"}
 
 
@@ -1456,27 +1460,34 @@ async def staff_set_curator(
 async def staff_list_salaries(
     periodType: str = Query(default="week"),
     periodStart: str | None = Query(default=None),
+    periodEnd: str | None = Query(default=None),
     _user_id: int = Depends(require_admin_permission("set_salary")),
 ):
-    from staff_payroll import period_label, period_start_for
+    from staff_payroll import period_label, resolve_period
 
-    p_type = (periodType or "week").strip().lower()
-    if p_type not in SALARY_PERIOD_TYPES:
-        raise HTTPException(status_code=400, detail="periodType: day|week|month|year")
+    raw_start = None
+    raw_end = None
     if periodStart:
         try:
-            p_start = date.fromisoformat(periodStart[:10])
+            raw_start = date.fromisoformat(periodStart[:10])
         except ValueError:
             raise HTTPException(status_code=400, detail="periodStart: YYYY-MM-DD")
-        p_start = period_start_for(p_type, p_start)
-    else:
-        p_start = period_start_for(p_type)
+    if periodEnd:
+        try:
+            raw_end = date.fromisoformat(periodEnd[:10])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="periodEnd: YYYY-MM-DD")
+    try:
+        p_type, p_start, p_end = resolve_period(periodType or "week", raw_start, raw_end)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {
         "weekStart": p_start.isoformat() if p_type == "week" else current_week_start().isoformat(),
         "periodType": p_type,
         "periodStart": p_start.isoformat(),
-        "periodLabel": period_label(p_type, p_start),
-        "items": await list_salaries_for_period(p_type, p_start),
+        "periodEnd": p_end.isoformat(),
+        "periodLabel": period_label(p_type, p_start, p_end),
+        "items": await list_salaries_for_period(p_type, p_start, p_end),
     }
 
 
@@ -1486,7 +1497,7 @@ async def staff_set_salary(
     request: Request,
     user_id: int = Depends(require_admin_permission("set_salary")),
 ):
-    from staff_payroll import period_label, period_start_for
+    from staff_payroll import period_label, resolve_period
 
     setter = await get_admin_account_security(user_id)
     setter_role = setter["role"] if setter else None
@@ -1508,17 +1519,22 @@ async def staff_set_salary(
     else:
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
-    p_type = (body.periodType or "week").strip().lower()
-    if p_type not in SALARY_PERIOD_TYPES:
-        raise HTTPException(status_code=400, detail="periodType: day|week|month|year")
+    raw_start = None
+    raw_end = None
     if body.periodStart:
         try:
-            raw = date.fromisoformat(body.periodStart[:10])
+            raw_start = date.fromisoformat(body.periodStart[:10])
         except ValueError:
             raise HTTPException(status_code=400, detail="periodStart: YYYY-MM-DD")
-        p_start = period_start_for(p_type, raw)
-    else:
-        p_start = period_start_for(p_type)
+    if body.periodEnd:
+        try:
+            raw_end = date.fromisoformat(body.periodEnd[:10])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="periodEnd: YYYY-MM-DD")
+    try:
+        p_type, p_start, p_end = resolve_period(body.periodType or "week", raw_start, raw_end)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     week_start = current_week_start()
     payout_type = body.payoutType if body.payoutType in SALARY_PAYOUT_TYPES else "other"
@@ -1536,13 +1552,14 @@ async def staff_set_salary(
         payout_type=payout_type,
         period_type=p_type,
         period_start=p_start,
+        period_end=p_end,
     )
     if salary_id is None:
         raise HTTPException(status_code=409, detail="Зарплата за этот период уже выплачена")
 
     from admin_db import compute_salary_total
     total = compute_salary_total(body.baseAmount, body.coefficient, body.bonus, body.penalty)
-    label = period_label(p_type, p_start)
+    label = period_label(p_type, p_start, p_end)
 
     await log_admin_action(
         user_id, "salary_set",
@@ -1552,7 +1569,8 @@ async def staff_set_salary(
         details={
             "base": body.baseAmount, "coefficient": body.coefficient,
             "bonus": body.bonus, "penalty": body.penalty, "total": total,
-            "status": status, "periodType": p_type, "periodStart": p_start.isoformat(),
+            "status": status, "periodType": p_type,
+            "periodStart": p_start.isoformat(), "periodEnd": p_end.isoformat(),
         },
         ip=_get_client_ip(request),
     )
@@ -1560,13 +1578,13 @@ async def staff_set_salary(
     notify_staff(
         body.userId,
         f"<tg-emoji emoji-id='4958926882994127612'>💰</tg-emoji> <b>Вам выставлена зарплата ({label}): {total} ({status_txt}).</b>"
-        f"<b>Расчёт : ставка {body.baseAmount} × {body.coefficient} + бонус {body.bonus} − штраф {body.penalty}. </b>"
         f"<b>Если не согласны, можно подать апелляцию в панели.</b>"
         f"\n<blockquote><b>Виво-Эпсилон</b></blockquote>",
     )
     return {
         "ok": True, "salaryId": salary_id, "status": status, "total": total,
-        "periodType": p_type, "periodStart": p_start.isoformat(), "periodLabel": label,
+        "periodType": p_type, "periodStart": p_start.isoformat(),
+        "periodEnd": p_end.isoformat(), "periodLabel": label,
     }
 
 
@@ -1652,6 +1670,9 @@ async def staff_pay_salary(
                 requested_by=user_id,
                 source="salary",
                 kind=body.kind,
+                gift_id=int(body.giftId or 0),
+                gift_emoji=(body.giftEmoji or "⭐").strip() or "⭐",
+                has_upgrade=int(body.hasUpgrade or 0),
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1847,6 +1868,18 @@ async def staff_fragment_health(
 ):
     from staff_stars import get_fragment_health
     return await get_fragment_health()
+
+
+@router.get("/staff/star-gifts")
+async def staff_star_gifts(
+    amount: int | None = Query(default=None, ge=1, le=100_000_000),
+    exact: bool = Query(default=True),
+    _user_id: int = Depends(require_admin_permission("pay_salary")),
+):
+    """Каталог подарков для зарплатных Stars (тот же набор, что у игроков)."""
+    from staff_stars import list_star_gifts
+    items = await list_star_gifts(amount=amount, exact=exact)
+    return {"items": items, "amount": amount, "exact": exact}
 
 
 @router.get("/staff/star-payouts")

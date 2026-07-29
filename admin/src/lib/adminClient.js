@@ -528,9 +528,10 @@ export async function fetchStaffMembers() {
 
 
 
-export async function fetchStaffSalaries(periodType = 'week', periodStart = null) {
+export async function fetchStaffSalaries(periodType = 'week', periodStart = null, periodEnd = null) {
   const params = new URLSearchParams({ periodType })
   if (periodStart) params.set('periodStart', periodStart)
+  if (periodEnd) params.set('periodEnd', periodEnd)
   return adminRequest(`/staff/salaries?${params}`)
 }
 
@@ -558,13 +559,35 @@ export async function approveStaffSalary(salaryId) {
 
 
 
-export async function payStaffSalary(salaryId, { amount = null, method = null, kind = 'payment', txid = '', proof = '', starsMethod = null, starsUsername = null } = {}) {
+export async function payStaffSalary(salaryId, {
+  amount = null,
+  method = null,
+  kind = 'payment',
+  txid = '',
+  proof = '',
+  starsMethod = null,
+  starsUsername = null,
+  giftId = null,
+  giftEmoji = null,
+  hasUpgrade = null,
+} = {}) {
 
   return adminRequest(`/staff/salaries/${salaryId}/pay`, {
 
     method: 'POST',
 
-    body: { amount, method, kind, txid, proof, starsMethod, starsUsername },
+    body: {
+      amount,
+      method,
+      kind,
+      txid,
+      proof,
+      starsMethod,
+      starsUsername,
+      giftId,
+      giftEmoji,
+      hasUpgrade,
+    },
 
   })
 
@@ -572,6 +595,13 @@ export async function payStaffSalary(salaryId, { amount = null, method = null, k
 
 export async function fetchFragmentHealth() {
   return adminRequest('/staff/fragment-health')
+}
+
+export async function fetchStarGifts(amount = null, exact = true) {
+  const params = new URLSearchParams()
+  if (amount != null) params.set('amount', String(amount))
+  params.set('exact', exact ? 'true' : 'false')
+  return adminRequest(`/staff/star-gifts?${params}`)
 }
 
 

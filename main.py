@@ -9872,6 +9872,10 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
                     return
 
                 if kind == "approve":
+                    if gift_id <= 0:
+                        gift_id = _wd_safe_int(prow.get("gift_id"), 0)
+                        gift_emoji = _wd_safe_str(prow.get("gift_emoji"), gift_emoji) or gift_emoji
+                        has_upgrade = _wd_safe_int(prow.get("has_upgrade"), has_upgrade)
                     gift_result = await _execute_gift_delivery(
                         request_id=rid or token,
                         sender_user_id=sender_user_id,
@@ -9898,11 +9902,29 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
                         f"<b>✅ Зарплата {amount}⭐ одобрена и отправлена!</b>\n"
                         f"<blockquote>@CuteGamingBot</blockquote>",
                     )
+                    amount_fmt = _wd_fmt_amount(amount)
+                    uname = _wd_normalize_username(recipient_username or sender_username)
+                    disp_name = (recipient_first_name or sender_first_name or uname or str(sender_user_id)).strip()
+                    rid_uid = recipient_user_id or sender_user_id
+                    if rid_uid > 0:
+                        recipient_display = f'<a href="tg://user?id={rid_uid}">{escape(disp_name)}</a>'
+                    else:
+                        recipient_display = escape(disp_name)
+                    if uname:
+                        recipient_display = f"{recipient_display} (@{escape(uname)})"
                     try:
                         await call.message.edit_text(
-                            f"<b>✅ Зарплата администратору выплачена</b>\n"
-                            f"<b>{amount}⭐ → @{_wd_normalize_username(recipient_username) or sender_user_id}</b>\n"
-                            f"<blockquote>@CuteGamingBot</blockquote>",
+                            (
+                                f"<tg-emoji emoji-id='5395325195542078574'>🍀</tg-emoji> "
+                                f"<b>Выплата зарплаты выполнена</b>\n"
+                                f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
+                                f"<b>{amount_fmt} кут в stars "
+                                f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji></b>\n\n"
+                                f"<b><tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
+                                f"Для {recipient_display}</b>\n"
+                                f"<b>💼 Зарплата администратора</b>\n\n"
+                                f"<blockquote><b>@CuteGamingBot</b></blockquote>"
+                            ),
                             parse_mode="HTML",
                             reply_markup=None,
                         )

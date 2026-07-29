@@ -12,6 +12,20 @@ logger = logging.getLogger(__name__)
 
 STAR_METHODS = ("auto", "fragment", "userbot")
 
+# Дефолтные подарки (как в bot/design/buttons.py) — fallback, пока бот не синхронизировал live-каталог
+DEFAULT_STAR_GIFTS = [
+    {"giftId": 5922558454332916696, "stars": 60, "emoji": "🎁", "customEmojiId": "5345935030143196497", "hasUpgrade": False, "source": "manual"},
+    {"giftId": 5956217000635139069, "stars": 60, "emoji": "🎁", "customEmojiId": "5379850840691476775", "hasUpgrade": False, "source": "manual"},
+    {"giftId": 5801108895304779062, "stars": 60, "emoji": "🎁", "customEmojiId": "5224628072619216265", "hasUpgrade": False, "source": "manual"},
+    {"giftId": 5800655655995968830, "stars": 60, "emoji": "🎁", "customEmojiId": "5226661632259691727", "hasUpgrade": False, "source": "manual"},
+    {"giftId": 5866352046986232958, "stars": 60, "emoji": "🎁", "customEmojiId": "5289761157173775507", "hasUpgrade": False, "source": "manual"},
+    {"giftId": 5893356958802511476, "stars": 60, "emoji": "🎁", "customEmojiId": "5317000922096769303", "hasUpgrade": False, "source": "manual"},
+    {"giftId": 5935895822435615975, "stars": 60, "emoji": "🎁", "customEmojiId": "5359736160224586485", "hasUpgrade": False, "source": "manual"},
+    {"giftId": 5969796561943660080, "stars": 60, "emoji": "🎁", "customEmojiId": "5393309541620291208", "hasUpgrade": False, "source": "manual"},
+    {"giftId": 6026193266406327981, "stars": 60, "emoji": "🎁", "customEmojiId": "5447213743417105726", "hasUpgrade": False, "source": "manual"},
+    {"giftId": 5974210632977745012, "stars": 60, "emoji": "🎁", "customEmojiId": "5398092984136802109", "hasUpgrade": False, "source": "manual"},
+]
+
 
 def _row(r) -> dict[str, Any]:
     return {
@@ -26,6 +40,9 @@ def _row(r) -> dict[str, Any]:
         "status": r["status"],
         "requestedBy": int(r["requested_by"]) if r["requested_by"] else None,
         "kind": r["kind"] or "payment",
+        "giftId": int(r["gift_id"]) if r.get("gift_id") else 0,
+        "giftEmoji": r.get("gift_emoji") or "⭐",
+        "hasUpgrade": int(r["has_upgrade"] or 0) if r.get("has_upgrade") is not None else 0,
         "error": r["error"],
         "txid": r["txid"],
         "channelMessageId": int(r["channel_message_id"]) if r["channel_message_id"] else None,
@@ -33,6 +50,19 @@ def _row(r) -> dict[str, Any]:
         "createdAt": r["created_at"].isoformat() if r["created_at"] else None,
         "updatedAt": r["updated_at"].isoformat() if r["updated_at"] else None,
         "completedAt": r["completed_at"].isoformat() if r["completed_at"] else None,
+    }
+
+
+def _gift_cache_row(r) -> dict[str, Any]:
+    return {
+        "giftId": int(r["gift_id"]),
+        "stars": int(r["stars"]),
+        "emoji": r["emoji"] or "🎁",
+        "customEmojiId": r["custom_emoji_id"] or "",
+        "hasUpgrade": bool(r["has_upgrade"]),
+        "upgradeStars": int(r["upgrade_stars"] or 0),
+        "source": r["source"] or "live",
+        "updatedAt": r["updated_at"].isoformat() if r.get("updated_at") else None,
     }
 
 
@@ -89,6 +119,67 @@ async def update_fragment_health(
     )
 
 
+async def upsert_star_gifts_cache(gifts: list[dict[str, Any]]) -> int:
+    """Бот пишет live/manual каталог подарков для панели."""
+    if not gifts:
+        return 0
+    n = 0
+    async with db.pool.acquire() as conn:
+        for g in gifts:
+            gift_id = int(g.get("giftId") or g.get("gift_id") or 0)
+            stars = int(g.get("stars") or g.get("price") or 0)
+            if gift_id <= 0 or stars <= 0:
+                continue
+            await conn.execute(
+                """
+                INSERT INTO star_gifts_cache
+                    (gift_id, stars, emoji, custom_emoji_id, has_upgrade, upgrade_stars, source, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                ON CONFLICT (gift_id) DO UPDATE SET
+                    stars = EXCLUDED.stars,
+                    emoji = EXCLUDED.emoji,
+                    custom_emoji_id = EXCLUDED.custom_emoji_id,
+                    has_upgrade = EXCLUDED.has_upgrade,
+                    upgrade_stars = EXCLUDED.upgrade_stars,
+                    source = EXCLUDED.source,
+                    updated_at = NOW()
+                """,
+                gift_id,
+                stars,
+                (g.get("emoji") or "🎁")[:32],
+                str(g.get("customEmojiId") or g.get("custom_emoji_id") or "")[:64] or None,
+                bool(g.get("hasUpgrade") or g.get("has_upgrade")),
+                int(g.get("upgradeStars") or g.get("upgrade_stars") or 0),
+                str(g.get("source") or "live")[:16],
+            )
+            n += 1
+    return n
+
+
+async def list_star_gifts(*, amount: int | None = None, exact: bool = True) -> list[dict[str, Any]]:
+    """Каталог подарков для выплаты Stars. exact=True → только price == amount."""
+    rows = await db.pool.fetch(
+        "SELECT * FROM star_gifts_cache ORDER BY stars ASC, gift_id ASC"
+    )
+    items = [_gift_cache_row(r) for r in rows] if rows else list(DEFAULT_STAR_GIFTS)
+    if not rows:
+        # seed defaults so UI сразу работает до синка бота
+        try:
+            await upsert_star_gifts_cache(DEFAULT_STAR_GIFTS)
+        except Exception:
+            logger.exception("seed star gifts cache failed")
+    if amount is None:
+        return items
+    amount = int(amount)
+    if exact:
+        matched = [g for g in items if int(g["stars"]) == amount]
+        if matched:
+            return matched
+        # если точных нет — показать все ≤ amount (владелец видит варианты)
+        return [g for g in items if int(g["stars"]) <= amount]
+    return [g for g in items if int(g["stars"]) <= amount]
+
+
 async def enqueue_star_payout(
     *,
     user_id: int,
@@ -100,6 +191,9 @@ async def enqueue_star_payout(
     bonus_id: int | None = None,
     source: str = "salary",
     kind: str = "payment",
+    gift_id: int = 0,
+    gift_emoji: str = "⭐",
+    has_upgrade: int = 0,
 ) -> dict:
     method = (method or "auto").strip().lower()
     if method not in STAR_METHODS:
@@ -114,17 +208,36 @@ async def enqueue_star_payout(
     if source == "bonus" and not bonus_id:
         raise ValueError("bonus_id required")
 
+    # Для userbot / auto (канал) желателен подарок; 0 = авто-подбор по сумме
+    if method in ("userbot", "auto") and gift_id:
+        gifts = await list_star_gifts(amount=amount, exact=True)
+        known = {int(g["giftId"]) for g in gifts}
+        # если каталог пуст по сумме — всё равно принимаем выбранный id (бот проверит при отправке)
+        if known and gift_id not in known and gifts:
+            # разрешаем и подарки с другой ценой только если exact list пуст
+            all_gifts = await list_star_gifts(amount=None)
+            all_ids = {int(g["giftId"]) for g in all_gifts}
+            if gift_id in all_ids:
+                match = next(g for g in all_gifts if int(g["giftId"]) == gift_id)
+                if int(match["stars"]) != amount:
+                    raise ValueError(
+                        f"Подарок стоит {match['stars']}⭐, а сумма выплаты {amount}. "
+                        "Измените сумму или выберите другой подарок."
+                    )
+
     request_id = f"salstar-{uuid.uuid4().hex[:16]}"
     row = await db.pool.fetchrow(
         """
         INSERT INTO staff_star_payouts
             (salary_id, bonus_id, source, user_id, amount, stars_username,
-             method, status, requested_by, kind, request_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', $8, $9, $10)
+             method, status, requested_by, kind, request_id,
+             gift_id, gift_emoji, has_upgrade)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', $8, $9, $10, $11, $12, $13)
         RETURNING *
         """,
         salary_id, bonus_id, source, user_id, amount, username,
         method, requested_by, kind, request_id,
+        int(gift_id or 0), (gift_emoji or "⭐")[:32], int(has_upgrade or 0),
     )
     return _row(row)
 
