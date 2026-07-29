@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import AdminSelect from '../../../components/AdminSelect'
+import AdminSelect from '../../components/AdminSelect'
 import {
   fetchContractTemplates,
   fetchFragmentHealth,
   renderContract,
   sendContract,
-} from '../../../lib/adminClient'
+} from '../../lib/adminClient'
 
 function nameOf(item) {
   if (!item) return '—'
