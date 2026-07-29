@@ -2538,61 +2538,67 @@ def _is_mute_related_message(message: Message) -> bool:
     return True
   return False
 
+def _cleanup_chat_mutes_storage() -> None:
+  """Удаляет невалидные ключи из _chat_mutes при старте."""
+  for key in list(_chat_mutes.keys()):
+    if not isinstance(key , tuple) or len(key) != 2:
+      MuteDebug.log("INIT" , "removing invalid key from _chat_mutes" , key=key)
+      _chat_mutes.pop(key , None)
 
-def _cleanup_expired_chat_mutes_sync() -> List[Tuple[int, int]]:
-  """Возвращает список (chat_id, user_id) с истёкшим мутом."""
+
+# Вызовите сразу после объявления _chat_mutes (или внутри attach_mute_system)
+_cleanup_chat_mutes_storage()
+def _cleanup_expired_chat_mutes_sync() -> List [ Tuple [ int , int ] ]:
   now = datetime.now()
-  expired: List[Tuple[int, int]] = []
-  for key, until in list(_chat_mutes.items()):
+  expired: List [ Tuple [ int , int ] ] = [ ]
+  for key , until in list(_chat_mutes.items()):
+    if not isinstance(key , tuple) or len(key) != 2:
+      _chat_mutes.pop(key , None)
+      continue
     if until <= now:
       expired.append(key)
-      _chat_mutes.pop(key, None)
-      MuteDebug.log("CHAT_MUTE", "expired", chat=key[0], user=key[1])
+      _chat_mutes.pop(key , None)
+      MuteDebug.log("CHAT_MUTE" , "expired" , chat=key [ 0 ] , user=key [ 1 ])
   return expired
 
 
-async def _resolve_mute_scope(user_id: int) -> Tuple[bool, List[int]]:
-  """Охват действующего мута ДО снятия: (глобальный_ли, точные_затронутые_группы).
-
-  • глобальный - мут «во всех группах» (muteall / запись users.mute_until);
-  • точные затронутые группы - ИМЕННО те официальные чаты, где наказание реально
-    наложено: конкретные ряды active_mutes (chat_id≠0) и записи в памяти
-    `_chat_mutes` (туда попадают только успешно ограниченные чаты).
-
-  Здесь НЕ делаем подстановку «все группы» для глобального охвата - это решает
-  вызывающий код (как запасной вариант, когда точный набор неизвестен, например
-  после перезапуска). Это и даёт правило: уведомление о снятии уходит только в
-  группы, где пользователь действительно был наказан.
-  """
+async def _resolve_mute_scope(user_id: int) -> Tuple [ bool , List [ int ] ]:
   global_scope = False
-  chats: List[int] = []
+  chats: List [ int ] = [ ]
   seen = set()
   pool = _db().pool
   if pool:
     try:
       async with pool.acquire() as conn:
         rows = await conn.fetch(
-          "SELECT chat_id, scope FROM active_mutes WHERE user_id = $1", user_id,
-        )
+          "SELECT chat_id, scope FROM active_mutes WHERE user_id = $1" , user_id , )
         for r in rows:
-          cid = int(r["chat_id"])
-          if (r["scope"] or "") == "all" or cid == 0:
+          cid = int(r [ "chat_id" ])
+          if (r [ "scope" ] or "") == "all" or cid == 0:
             global_scope = True
           if _is_staff_chat(cid) and cid not in seen:
             seen.add(cid)
             chats.append(cid)
         urow = await conn.fetchrow(
-          "SELECT mute_until FROM users WHERE user_id = $1", user_id,
-        )
-        if urow and urow["mute_until"] is not None:
+          "SELECT mute_until FROM users WHERE user_id = $1" , user_id , )
+        if urow and urow [ "mute_until" ] is not None:
           global_scope = True
     except Exception as e:
-      MuteDebug.log("AUTO", "resolve scope skip", err=str(e), user=user_id)
-  for (cid, uid) in list(_chat_mutes.keys()):
+      MuteDebug.log("AUTO" , "resolve scope skip" , err=str(e) , user=user_id)
+
+  # 🔒 Безопасный обход ключей _chat_mutes
+  for key in list(_chat_mutes.keys()):
+    if not isinstance(key , tuple) or len(key) != 2:
+      # Логируем и удаляем невалидный ключ, чтобы не мешал в будущем
+      MuteDebug.log("WARN" , "invalid key in _chat_mutes, removing" , key=key)
+      _chat_mutes.pop(key , None)
+      continue
+    cid , uid = key
     if uid == user_id and _is_staff_chat(cid) and cid not in seen:
       seen.add(cid)
       chats.append(cid)
-  return global_scope, chats
+
+  return global_scope , chats
 
 
 async def _expire_mute(
