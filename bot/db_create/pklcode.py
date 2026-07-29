@@ -30,8 +30,11 @@ import zlib
 import heapq
 import copy
 import signal
+import concurrent.futures
 
 import redis  # type: ignore
+
+from bot.db_create import hash_backend
 
 
 # ========= ОТЛАДКА =========
@@ -168,6 +171,48 @@ SAVE_OPS_THRESHOLD = int(os.getenv("PKL_SAVE_OPS_THRESHOLD", "5000"))
 DEFAULT_EXPIRY_SECONDS = int(os.getenv("PKL_DEFAULT_EXPIRY_SECONDS", "7200"))
 CLEANUP_INTERVAL_SEC = int(os.getenv("PKL_CLEANUP_INTERVAL_SEC", "5"))
 
+# expiry_seconds >= этого значения означает "никогда не истекает"
+NEVER_EXPIRE_SEC = 10 ** 9
+
+# ============================================================
+# Сроки жизни, отличные от DEFAULT_EXPIRY_SECONDS.
+# ------------------------------------------------------------
+# ВАЖНО: политика TTL должна быть известна В МОМЕНТ создания стора.
+# Раньше её выставляли постфактум (`store.expiry_seconds = ...` в
+# bot/admins/punish_timers.py и bot/funcs/king_stats.py), и между созданием
+# стора и этой строкой существовало окно, в котором уборщик видел дефолтные
+# 2 часа. С прогревом на старте окно растягивается на всё время до импорта
+# соответствующего модуля - и наказания/привязки меню сносились при каждом
+# перезапуске. Поэтому политика живёт здесь, рядом с EXCLUDED_STORES.
+STORE_EXPIRY_OVERRIDES: Dict[str, float] = {
+    # Наказания действуют до своей даты снятия, уборщик их трогать не должен.
+    # (в EXCLUDED_STORES не добавляем: там нужен рабочий явный del)
+    "mod_punish_timers": float(NEVER_EXPIRE_SEC),
+    # Сообщение меню висит в чате неделями - привязки держим 30 дней.
+    "_KING_MENU_OWNERS": 30 * 24 * 3600.0,
+    "_KING_MENU_TARGET": 30 * 24 * 3600.0,
+    "_KING_MENU_RENDER_STATE": 30 * 24 * 3600.0,
+    "_KING_DM_LAST_MENU": 30 * 24 * 3600.0,
+}
+
+
+def register_store_expiry(name: str, seconds: float) -> None:
+    """
+    Объявить срок жизни стора. Работает и до его создания, и после.
+
+    Вызывай это вместо `store.expiry_seconds = ...`: присваивание атрибута
+    действует только с момента вызова, а реестр - с момента создания стора.
+    """
+    STORE_EXPIRY_OVERRIDES[name] = float(seconds)
+    inst = GameStore._instances.get(name)
+    if inst is not None:
+        inst.expiry_seconds = float(seconds)
+
+
+def _expiry_for(name: str) -> float:
+    return float(STORE_EXPIRY_OVERRIDES.get(name, DEFAULT_EXPIRY_SECONDS))
+# ============================================================
+
 COMPRESS_ZLIB = bool(int(os.getenv("PKL_COMPRESS", "1")))
 ZLIB_LEVEL = int(os.getenv("PKL_ZLIB_LEVEL", "3"))
 
@@ -199,6 +244,178 @@ PKL_FASTPATH_READS = bool(int(os.getenv("PKL_FASTPATH_READS", "1")))
 # health-watcher (PKL_HEALTH_WATCHER, каждые 3с) следит за Redis. Поэтому пинг на
 # чтении по умолчанию ВЫКЛЮЧЕН чтения становятся чисто in-memory (быстро).
 PKL_FASTPATH_PING = bool(int(os.getenv("PKL_FASTPATH_PING", "0")))
+
+# hash = per-key Redis Hash (быстро, не деградирует со временем)
+# blob = legacy full-dict pickle snapshot
+PKL_STORAGE_MODE = os.getenv("PKL_STORAGE_MODE", "hash").strip().lower()
+PKL_IO_THREADS = int(os.getenv("PKL_IO_THREADS", "2"))
+
+# ============================================================
+# ✅ v2: ноль Redis-I/O в горячем пути (event-loop)
+# ------------------------------------------------------------
+# Чтение обслуживается ТОЛЬКО из памяти процесса, запись помечает ключ грязным
+# и уходит в единый фоновый писатель. Ставь 0, чтобы вернуть прежнее поведение.
+PKL_HOT_PATH_V2 = bool(int(os.getenv("PKL_HOT_PATH_V2", "1")))
+
+# Данными владеет один процесс: память авторитетна, промах чтения - это промах,
+# а не повод перезаливать весь стор из Redis. Если запустишь несколько процессов
+# на одну БД Redis - поставь 0 (вернётся reload-on-miss).
+PKL_SINGLE_PROCESS = bool(int(os.getenv("PKL_SINGLE_PROCESS", "1")))
+
+# Сколько ключей просматривать за один шаг подметания TTL (чтобы не держать
+# _lock надолго на сторах с сотнями тысяч ключей).
+PKL_SWEEP_BUDGET = int(os.getenv("PKL_SWEEP_BUDGET", "20000"))
+
+# Страховка для сторов, чей TTL не объявлен в STORE_EXPIRY_OVERRIDES: столько
+# секунд после загрузки стор не подметается. Даёт модулям время выставить свой
+# срок жизни до того, как уборщик что-то удалит.
+PKL_SWEEP_GRACE_SEC = float(os.getenv("PKL_SWEEP_GRACE_SEC", "120"))
+
+# Пауза перед повторной попыткой первичной загрузки, если Redis недоступен.
+PKL_SYNC_RETRY_SEC = float(os.getenv("PKL_SYNC_RETRY_SEC", "2"))
+# ============================================================
+
+
+# ---------- единый фоновый писатель (вместо threading.Timer на каждую запись) ----------
+# Прежняя схема создавала новый поток ОС на КАЖДУЮ запись в любой стор и
+# отменяла предыдущий. При 200+ сторах это давало постоянную churn потоков и
+# конкуренцию за GIL с event-loop. Теперь один поток обслуживает все сторы,
+# коалесцируя всплеск записей в одно сохранение на стор.
+_writer_cv = threading.Condition()
+# name -> store. Держим сам объект, а не только имя: если GameStore._instances
+# подменится (тесты, boot-reset), сохранение по имени ушло бы в ДРУГОЙ объект, а
+# hash_save_keys трактует отсутствие ключа как удаление - то есть стёрло бы
+# данные в Redis.
+_writer_pending: Dict[str, "GameStore"] = {}
+_writer_started = False
+
+
+def _notify_writer(store: "GameStore") -> None:
+    with _writer_cv:
+        _writer_pending[store.name] = store
+        _writer_cv.notify()
+
+
+def _writer_loop() -> None:
+    debounce = max(0.0, WRITE_DEBOUNCE_MS / 1000.0)
+    while True:
+        try:
+            with _writer_cv:
+                while not _writer_pending:
+                    _writer_cv.wait(timeout=1.0)
+
+            # Окно коалесцирования: собрать всплеск записей в одно сохранение.
+            if debounce > 0:
+                time.sleep(debounce)
+
+            with _writer_cv:
+                stores = list(_writer_pending.values())
+                _writer_pending.clear()
+
+            for store in stores:
+                # Внутри bulk() сохранять нельзя: контекст сам сохранит один раз
+                # на выходе. Возвращаем стор в очередь.
+                if store._in_bulk > 0:
+                    _notify_writer(store)
+                    continue
+                try:
+                    with store._sync_lock:
+                        store._save_now()
+                except Exception:
+                    pass
+        except Exception:
+            time.sleep(0.2)
+
+
+def _start_writer() -> None:
+    global _writer_started
+    if _writer_started:
+        return
+    _writer_started = True
+    threading.Thread(target=_writer_loop, name="pkl-writer", daemon=True).start()
+
+
+# ---------- единый сборщик TTL (вместо потока _service_loop на каждый стор) ----------
+_sweeper_started = False
+
+
+def _sweeper_loop() -> None:
+    interval = max(1, CLEANUP_INTERVAL_SEC)
+    while True:
+        try:
+            for store in list(getattr(GameStore, "_instances", {}).values()):
+                try:
+                    store._sweep_expired_step()
+                except Exception:
+                    pass
+                try:
+                    store._maybe_flush_touch_ts()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        time.sleep(interval)
+
+
+def _start_sweeper() -> None:
+    global _sweeper_started
+    if _sweeper_started:
+        return
+    _sweeper_started = True
+    threading.Thread(target=_sweeper_loop, name="pkl-sweeper", daemon=True).start()
+
+
+# ---------- фоновый IO-пул (Redis не блокирует event-loop) ----------
+_io_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+_io_executor_lock = threading.Lock()
+_store_io_futures: Dict[str, List[concurrent.futures.Future]] = {}
+_store_io_futures_lock = threading.Lock()
+
+
+def _get_io_executor() -> concurrent.futures.ThreadPoolExecutor:
+    global _io_executor
+    with _io_executor_lock:
+        if _io_executor is None:
+            _io_executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=max(1, PKL_IO_THREADS),
+                thread_name_prefix="pkl-io",
+            )
+        return _io_executor
+
+
+def _io_submit(store_name: str, fn: Callable, *args, wait: bool = False, timeout: float = 5.0):
+    """Запуск Redis-операции в фоновом потоке. wait=True только для flush/load."""
+    try:
+        fut = _get_io_executor().submit(fn, *args)
+    except RuntimeError:
+        # На выходе из процесса пул уже закрыт ("cannot schedule new futures
+        # after shutdown"). Раньше это роняло первичную загрузку стора; лучше
+        # выполнить операцию прямо здесь - мы и так в потоке завершения.
+        return fn(*args)
+    with _store_io_futures_lock:
+        _store_io_futures.setdefault(store_name, []).append(fut)
+    if wait:
+        try:
+            return fut.result(timeout=max(0.05, float(timeout)))
+        finally:
+            with _store_io_futures_lock:
+                lst = _store_io_futures.get(store_name, [])
+                if fut in lst:
+                    lst.remove(fut)
+    return fut
+
+
+def _io_wait_store(store_name: str, timeout: float = 10.0) -> None:
+    """Дождаться всех pending IO-операций стора (для flush/shutdown)."""
+    with _store_io_futures_lock:
+        futs = list(_store_io_futures.get(store_name, []))
+    for fut in futs:
+        try:
+            fut.result(timeout=max(0.05, float(timeout)))
+        except Exception:
+            pass
+    with _store_io_futures_lock:
+        _store_io_futures.pop(store_name, None)
 
 
 # ---------- глобальные клиенты ----------
@@ -331,6 +548,11 @@ def _purge_all_ram() -> int:
                 s._touch_dirty = False
                 s._touch_count = 0
                 s._last_touch_save_ts = 0.0
+                s._hash_dirty_keys.clear()
+                s._touch_keys.clear()
+                s._sweep_keys = []
+                s._sweep_pos = 0
+                s._sync_retry_after = 0.0
         except Exception as e:
             _err(f"{_r(0)} [pklcode] purge RAM '{s.name}': {type(e).__name__}: {e}")
         else:
@@ -376,14 +598,19 @@ def _list_all_store_names() -> Set[str]:
     if rc is None:
         return names
 
-    for pattern in (b"pkl:*:blob", b"pkl:*:meta"):
+    for pattern in (b"pkl:*:blob", b"pkl:*:meta", b"pkl:*:data"):
         cursor = 0
         while True:
             cursor, keys = rc.scan(cursor=cursor, match=pattern, count=1000)
             for k in keys:
                 s = k.decode("utf-8", "ignore")
                 if s.startswith("pkl:"):
-                    n = s[4:-5]
+                    if s.endswith(":blob") or s.endswith(":meta"):
+                        n = s[4:-5]
+                    elif s.endswith(":data"):
+                        n = s[4:-5]
+                    else:
+                        continue
                     if n:
                         names.add(n)
             if cursor == 0:
@@ -396,6 +623,7 @@ def _delete_store_redis(store: str) -> int:
     if rc is None:
         return 0
     removed = 0
+    removed += hash_backend.hash_delete_store(rc, store)
     removed += _scan_delete_pattern_raw(rc, f"pkl:{store}:blob", scan_count=1000)
     removed += _scan_delete_pattern_raw(rc, f"pkl:{store}:meta", scan_count=1000)
     removed += _scan_delete_pattern_raw(rc, f"pkl:{store}:chunk:*", scan_count=1000)
@@ -423,6 +651,11 @@ def _delete_store_ram(store: str) -> bool:
             gs._touch_dirty = False
             gs._touch_count = 0
             gs._last_touch_save_ts = 0.0
+            gs._hash_dirty_keys.clear()
+            gs._touch_keys.clear()
+            gs._sweep_keys = []
+            gs._sweep_pos = 0
+            gs._sync_retry_after = 0.0
         return True
     except Exception:
         return False
@@ -592,6 +825,32 @@ def set_redis_client(client) -> None:
         except Exception as e:
             _err(f"{_r(1)} [pklcode] initial_sync('{inst.name}'): {e}")
 
+    # ✅ Флаги читаем здесь, а не при импорте: main.py импортирует pklcode на
+    # строке 135, а os.environ.setdefault("PKL_...") делает на 3724 - к тому
+    # моменту константы модуля уже заморожены.
+    global _boot_warmup_done
+    if (
+        PKL_HOT_PATH_V2
+        and not _boot_warmup_done
+        and bool(int(os.getenv("PKL_BOOT_WARMUP", "1") or "1"))
+    ):
+        _boot_warmup_done = True
+        try:
+            budget = float(os.getenv("PKL_BOOT_WARMUP_BUDGET_SEC", "8"))
+            t0 = time.monotonic()
+            warmed, truncated = _boot_warmup_blocking(budget)
+            _ok(
+                f"{_g(3)} [pklcode] BOOT WARMUP: стораджей={warmed} "
+                f"за {time.monotonic() - t0:.2f}с"
+            )
+            # Полный прогрев может занять десятки секунд, а держать старт бота
+            # столько нельзя. Что не влезло в бюджет - догружаем фоном; до
+            # первого обращения такой стор успевает прогреться.
+            if truncated:
+                _start_async_warmup()
+        except Exception as e:
+            _warn(f"[pklcode] BOOT WARMUP error: {type(e).__name__}: {e}")
+
     if AUTO_WARMUP and PKL_ASYNC_WARMUP:
         _start_async_warmup()
     elif AUTO_WARMUP:
@@ -620,7 +879,9 @@ def _iter_store_names_from_redis() -> Iterable[str]:
                 cursor, keys = rc.scan(cursor=cursor, match=match, count=500)
                 for k in keys:
                     s = k.decode("utf-8", "ignore")
-                    if s.startswith("pkl:") and (s.endswith(":blob") or s.endswith(":meta")):
+                    if s.startswith("pkl:") and (
+                        s.endswith(":blob") or s.endswith(":meta") or s.endswith(":data")
+                    ):
                         name = s[4:-5]
                         if name and name not in seen:
                             seen.add(name)
@@ -632,6 +893,7 @@ def _iter_store_names_from_redis() -> Iterable[str]:
 
     yield from _yield_from(b"pkl:*:blob")
     yield from _yield_from(b"pkl:*:meta")
+    yield from _yield_from(b"pkl:*:data")
 
 
 def warmup_from_redis() -> int:
@@ -644,6 +906,34 @@ def warmup_from_redis() -> int:
         except Exception:
             pass
     return cnt
+
+
+_boot_warmup_done = False
+
+
+def _boot_warmup_blocking(budget_sec: float) -> Tuple[int, bool]:
+    """
+    Прогрев всех сторов из Redis ДО начала обслуживания апдейтов.
+
+    Без него первое обращение к стору происходит уже внутри хендлера и тянет
+    полный HGETALL в event-loop (на 20k ключей это ~0.5с залипания на каждый
+    стор). set_redis_client() вызывается на старте, до поллинга, поэтому здесь
+    блокироваться безопасно - бот ещё никого не обслуживает.
+    """
+    deadline = time.monotonic() + max(0.0, float(budget_sec))
+    warmed = 0
+    truncated = False
+    for name in _iter_store_names_from_redis():
+        if time.monotonic() >= deadline:
+            truncated = True
+            break
+        inst = GameStore._instances.get(name) or GameStore(name)
+        try:
+            inst._initial_sync_if_needed()
+            warmed += 1
+        except Exception:
+            pass
+    return warmed, truncated
 
 
 def _async_warmup_loop():
@@ -715,12 +1005,15 @@ class GameStore(dict):
         self.redis_chunk_key = f"pkl:{name}:chunk:"
 
         self.timestamps: Dict[str, float] = {}
-        self.expiry_seconds = DEFAULT_EXPIRY_SECONDS
+        # Срок жизни известен сразу, до первого тика уборщика.
+        self.expiry_seconds = _expiry_for(name)
         self.cleanup_interval = CLEANUP_INTERVAL_SEC
         self._expire_heap: List[Tuple[float, str]] = []
 
         self._need_initial_sync = True
         self._dirty_since_boot = False
+        # Момент, раньше которого не повторяем первичную загрузку (Redis лежит).
+        self._sync_retry_after = 0.0
 
         self._sync_lock = threading.RLock()
         self._lock = threading.RLock()
@@ -751,8 +1044,84 @@ class GameStore(dict):
         self._heal_reload_inflight = False
         self._heal_last_reload_ts = 0.0
 
-        self._svc_thread = threading.Thread(target=self._service_loop, daemon=True)
-        self._svc_thread.start()
+        # ✅ hash-backend: точечное сохранение ключей (без полного blob)
+        self._hash_dirty_keys: Set[str] = set()
+        self._storage_mode = PKL_STORAGE_MODE
+
+        # ✅ v2: touch-метки TTL пишутся батчем, а не через полное сохранение.
+        # Раньше в hash-режиме touch вообще не доезжал до Redis: ключ не попадал
+        # в _hash_dirty_keys, _save_now() видел пустой набор и выходил. В итоге
+        # score в zset не обновлялся, и активно читаемый ключ удалялся из Redis
+        # по TTL, хотя в памяти жил.
+        self._touch_keys: Set[str] = set()
+
+        # ✅ v2: пошаговое подметание TTL по timestamps вместо вечно растущей
+        # _expire_heap (в hash-режиме куча вообще никогда не сливалась - ветка
+        # hash в _cleanup_expired_now выходила до цикла слива).
+        self._sweep_keys: List[str] = []
+        self._sweep_pos = 0
+        # Страховка: не подметаем стор сразу после создания, если его TTL не
+        # объявлен в реестре - модуль мог ещё не выставить свой expiry_seconds.
+        self._sweep_not_before = (
+            0.0 if name in STORE_EXPIRY_OVERRIDES
+            else time.time() + max(0.0, PKL_SWEEP_GRACE_SEC)
+        )
+
+        if PKL_HOT_PATH_V2:
+            _start_writer()
+            _start_sweeper()
+            self._svc_thread = None
+        else:
+            self._svc_thread = threading.Thread(target=self._service_loop, daemon=True)
+            self._svc_thread.start()
+
+    def _is_hash_mode(self) -> bool:
+        return self._storage_mode == "hash"
+
+    def _never_expires(self) -> bool:
+        """True, если стор не должен чистить ключи по TTL."""
+        if self.name in EXCLUDED_STORES:
+            return True
+        try:
+            exp = float(self.expiry_seconds)
+        except Exception:
+            return True
+        return exp <= 0 or exp >= NEVER_EXPIRE_SEC
+
+    def _maintain_exp_zset(self) -> bool:
+        """
+        Нужен ли Redis-zset со сроками жизни.
+
+        В одно-процессном режиме локальные timestamps авторитетны, TTL считается
+        в памяти, и zset - это лишний ZADD на каждую запись. Он нужен только
+        когда несколько процессов делят одну БД Redis.
+        """
+        if self._never_expires():
+            return False
+        if PKL_HOT_PATH_V2 and PKL_SINGLE_PROCESS:
+            return False
+        return True
+
+    @staticmethod
+    def _excluded_stores() -> Set[str]:
+        return set(EXCLUDED_STORES)
+
+    def _hash_mark_dirty(self, sk: str) -> None:
+        # _lock реентрантный: часть вызывающих уже держит его (bulk_load).
+        # Снимок набора в писателе тоже делается под ним, иначе итерация по
+        # изменяемому set падает с RuntimeError.
+        with self._lock:
+            self._hash_dirty_keys.add(sk)
+        self._pending_dirty = True
+        self._dirty_since_boot = True
+
+    def _delete_blob_keys(self, rc) -> None:
+        try:
+            rc.delete(self.redis_blob_key.encode("utf-8"))
+            rc.delete(self.redis_meta_key.encode("utf-8"))
+            self._delete_old_chunks_fast(rc)
+        except Exception:
+            pass
 
     @staticmethod
     def _canon_key(key: Any) -> str:
@@ -921,22 +1290,99 @@ class GameStore(dict):
         if not self._need_initial_sync:
             return
 
+        # Пауза перед повторной попыткой проверяется ДО взятия _sync_lock, иначе
+        # каждое чтение при лежащем Redis платило бы _wait_redis_ready (150мс).
+        if self._sync_retry_after and time.time() < self._sync_retry_after:
+            return
+
         with self._sync_lock:
             if not self._need_initial_sync:
                 return
-
-            # Redis недоступен работаем in-memory, НЕ повторяем ожидание на каждой записи.
-            # Без этого флага каждый __setitem__ ждёт до 0.15s → тысячи групп = минуты «зависания».
-            if _raw_client() is None:
-                self._need_initial_sync = False
-                self._dirty_since_boot = True
+            if self._sync_retry_after and time.time() < self._sync_retry_after:
                 return
 
-            if not _wait_redis_ready(timeout=0.15):
-                self._need_initial_sync = False
+            if _raw_client() is None or not _wait_redis_ready(timeout=0.15):
+                # НЕ сдаёмся навсегда. Раньше здесь выставлялось
+                # _need_initial_sync = False, и стор до самого перезапуска
+                # отдавал пустоту, хотя данные в Redis были целы: health-watcher
+                # переспрашивал только сторы с _need_initial_sync = True.
                 self._dirty_since_boot = True
+                self._sync_retry_after = time.time() + PKL_SYNC_RETRY_SEC
                 return
 
+            self._sync_retry_after = 0.0
+
+            # ---------- hash mode: HGETALL вместо огромного pickle blob ----------
+            if self._is_hash_mode():
+                rc = _raw_client()
+                if rc is None:
+                    # Клиент мог отвалиться между проверкой выше и этой строкой:
+                    # повторим позже, а не сдаёмся до перезапуска.
+                    self._dirty_since_boot = True
+                    self._sync_retry_after = time.time() + PKL_SYNC_RETRY_SEC
+                    return
+
+                def _hash_boot_load() -> bool:
+                    # Записи, сделанные ДО первой удачной загрузки (например,
+                    # пока Redis лежал), нельзя терять: hash_load_all делает
+                    # clear() + update(), а прежний код вдобавок очищал
+                    # _hash_dirty_keys - такие записи исчезали и из памяти, и из
+                    # очереди на сохранение.
+                    with self._lock:
+                        pending = {
+                            sk: dict.__getitem__(self, sk)
+                            for sk in self._hash_dirty_keys
+                            if dict.__contains__(self, sk)
+                        }
+                        pending_ts = {sk: self.timestamps.get(sk) for sk in pending}
+                        pending_del = {
+                            sk for sk in self._hash_dirty_keys if sk not in pending
+                        }
+
+                    if hash_backend.hash_has_data(rc, self.name):
+                        ok = hash_backend.hash_load_all(self, rc)
+                    elif self._dirty_since_boot and (self or self.timestamps):
+                        with self._lock:
+                            keys = set(self.keys())
+                        return hash_backend.hash_save_keys(self, rc, keys)
+                    else:
+                        ok = hash_backend.hash_migrate_from_blob(
+                            self,
+                            rc,
+                            load_blob_fn=self._load_payload,
+                            unpack_blob_fn=self._unpack_bytes,
+                            delete_blob_fn=self._delete_blob_keys,
+                        )
+
+                    if pending or pending_del:
+                        with self._lock:
+                            for sk, value in pending.items():
+                                dict.__setitem__(self, sk, value)
+                                ts = pending_ts.get(sk)
+                                if ts is not None:
+                                    self.timestamps[sk] = ts
+                            for sk in pending_del:
+                                if dict.__contains__(self, sk):
+                                    dict.__delitem__(self, sk)
+                                self.timestamps.pop(sk, None)
+                            self._hash_dirty_keys |= set(pending) | pending_del
+                        self._pending_dirty = True
+                    return ok
+
+                try:
+                    _io_submit(self.name, _hash_boot_load, wait=True, timeout=3.0)
+                except Exception as e:
+                    self._log_err("hash initial_sync failed", e)
+
+                self._need_initial_sync = False
+                self._touch_dirty = False
+                self._touch_count = 0
+                self._last_touch_save_ts = time.time()
+                if self._hash_dirty_keys:
+                    self._schedule_save()
+                return
+
+            # ---------- legacy blob mode ----------
             if self._dirty_since_boot and (self or self.timestamps):
                 try:
                     payload = self._pack_bytes()
@@ -1002,6 +1448,14 @@ class GameStore(dict):
 
     # ✅ ЛЕНИВОЕ самолечение: только если реально надо
     def _maybe_heal_read(self) -> None:
+        # ✅ v2: в вызывающем потоке (это event-loop) НИКОГДА не спим и не ждём
+        # Redis. Единственный допустимый Redis-I/O здесь - однократная загрузка
+        # стора при первом обращении; всё остальное делают фоновые потоки.
+        if PKL_HOT_PATH_V2:
+            if self._need_initial_sync:
+                self._initial_sync_if_needed()
+            return
+
         # Быстрый путь: данные уже в памяти и initial_sync выполнен → отдаём без
         # обращения к Redis. Пинг делаем только если явно включён PKL_FASTPATH_PING.
         if PKL_FASTPATH_READS and (not self._need_initial_sync):
@@ -1021,6 +1475,13 @@ class GameStore(dict):
             time.sleep(PKL_HEAL_RETRY_DELAY_SEC)
 
     def _force_reload_from_redis_once(self) -> None:
+        # ✅ v2 + один процесс: память авторитетна, поэтому промах - это просто
+        # промах. Прежнее поведение тянуло в event-loop полный HGETALL стора со
+        # снятием pickle с каждого значения (плюс ZADD на каждую метку времени)
+        # на КАЖДЫЙ промах чтения, с кулдауном всего 0.35с. Стоимость росла
+        # вместе с размером стора - отсюда и "через несколько часов всё встаёт".
+        if PKL_HOT_PATH_V2 and PKL_SINGLE_PROCESS:
+            return
         if not PKL_HEAL_FORCE_RELOAD_ON_MISS:
             return
         if self._heal_reload_inflight:
@@ -1031,6 +1492,44 @@ class GameStore(dict):
         self._heal_reload_inflight = True
         try:
             self._maybe_heal_read()
+
+            # hash mode: перезагрузка по ключам, не огромный blob
+            if self._is_hash_mode():
+                rc = _raw_client()
+                if rc is None:
+                    return
+
+                has_unsaved_local = bool(
+                    self._pending_dirty or self._dirty_since_boot or self._hash_dirty_keys
+                )
+
+                if not has_unsaved_local:
+                    hash_backend.hash_load_all(self, rc)
+                    self._heal_last_reload_ts = time.time()
+                    return
+
+                # Мердж: сохраняем локальные несохранённые записи
+                local_data = dict(self)
+                local_ts = dict(self.timestamps)
+                hash_backend.hash_load_all(self, rc)
+
+                with self._lock:
+                    for k, v in local_data.items():
+                        remote_k_ts = self.timestamps.get(k)
+                        local_k_ts = local_ts.get(k)
+                        is_new_locally = k not in self
+                        is_fresher_locally = (
+                            local_k_ts is not None
+                            and (remote_k_ts is None or local_k_ts > remote_k_ts)
+                        )
+                        if is_new_locally or is_fresher_locally:
+                            super().__setitem__(k, v)
+                            if local_k_ts is not None:
+                                self.timestamps[k] = local_k_ts
+
+                self._heal_last_reload_ts = time.time()
+                return
+
             raw_bytes = self._load_payload()
             if raw_bytes is None:
                 return
@@ -1085,11 +1584,19 @@ class GameStore(dict):
         finally:
             self._heal_reload_inflight = False
 
-    def _mark_touch_dirty(self) -> None:
+    def _mark_touch_dirty(self, sk: Optional[str] = None) -> None:
         if self.name in EXCLUDED_STORES:
             return
         if TOUCH_SAVE_MS <= 0:
             return
+
+        # ✅ v2: копим сами ключи, чтобы фоновый писатель обновил только метки
+        # времени (HSET ts) одним пайплайном - без полного сохранения значений.
+        if PKL_HOT_PATH_V2:
+            if sk is not None and not self._never_expires():
+                self._touch_keys.add(sk)
+            return
+
         self._touch_dirty = True
         self._touch_count += 1
         if self._touch_count >= max(1, TOUCH_BATCH_MAX):
@@ -1097,8 +1604,41 @@ class GameStore(dict):
             self._pending_dirty = True
             self._schedule_save()
 
+    def _maybe_flush_touch_ts(self) -> None:
+        """Батч-сохранение TTL-меток. Вызывается только из фонового сборщика."""
+        if not (PKL_HOT_PATH_V2 and self._is_hash_mode()):
+            return
+        if TOUCH_SAVE_MS <= 0 or not self._touch_keys:
+            return
+        if (time.time() - self._last_touch_save_ts) * 1000.0 < TOUCH_SAVE_MS:
+            return
+
+        # Снимок под _lock: горячий путь чтения пополняет _touch_keys из
+        # event-loop, а итерация по изменяемому set бросает RuntimeError.
+        with self._lock:
+            keys = set(self._touch_keys)
+            self._touch_keys.clear()
+        self._last_touch_save_ts = time.time()
+
+        rc = _raw_client()
+        if rc is None:
+            with self._lock:
+                self._touch_keys |= keys
+            return
+        try:
+            hash_backend.hash_save_timestamps(self, rc, keys)
+        except Exception:
+            with self._lock:
+                self._touch_keys |= keys
+
     def _schedule_save(self) -> None:
         self._pending_dirty = True
+
+        # ✅ v2: только помечаем стор грязным и будим единый писатель. Никаких
+        # threading.Timer на каждую запись и никакого Redis-I/O в этом потоке.
+        if PKL_HOT_PATH_V2:
+            _notify_writer(self)
+            return
 
         if WRITE_DEBOUNCE_MS <= 0:
             self._save_now()
@@ -1116,9 +1656,61 @@ class GameStore(dict):
         self._debounce_timer.daemon = True
         self._debounce_timer.start()
 
+    def _requeue_dirty(self, keys: Set[str]) -> None:
+        """Вернуть незаписанные ключи в очередь (Redis недоступен/ошибка)."""
+        with self._lock:
+            self._hash_dirty_keys |= keys
+        self._pending_dirty = True
+        self._dirty_since_boot = True
+
     def _save_now(self) -> None:
         if _raw_client() is None or not _wait_redis_ready(timeout=0.1):
             self._dirty_since_boot = True
+            return
+
+        # ---------- hash mode: сохраняем только изменённые ключи ----------
+        if self._is_hash_mode():
+            with self._lock:
+                keys = set(self._hash_dirty_keys)
+                self._hash_dirty_keys.clear()
+            if not keys:
+                self._pending_dirty = False
+                return
+
+            rc = _raw_client()
+            if rc is None:
+                self._requeue_dirty(keys)
+                return
+
+            def _do_save() -> bool:
+                return hash_backend.hash_save_keys(self, rc, keys)
+
+            try:
+                if PKL_HOT_PATH_V2:
+                    # Мы уже в фоновом потоке (pkl-writer / health / atexit),
+                    # поэтому сохраняем прямо здесь: общий пул на 2 воркера был
+                    # узким местом - один тяжёлый стор затыкал записи всем.
+                    if not _do_save():
+                        self._requeue_dirty(keys)
+                        return
+                else:
+                    _io_submit(self.name, _do_save, wait=False)
+                # fire-and-forget; flush() дождётся через _io_wait_store
+                self._pending_dirty = bool(self._hash_dirty_keys)
+                self._ops_since_save = 0
+                self._last_save_ts = time.time()
+                if not self._hash_dirty_keys:
+                    self._dirty_since_boot = False
+                    if not PKL_HOT_PATH_V2:
+                        # В v2 TTL-метки сливаются своим таймером
+                        # (_maybe_flush_touch_ts). Если сбрасывать его здесь, то
+                        # при частых записях он не наступит никогда, _touch_keys
+                        # будет расти, а TTL живых ключей не доедет до Redis.
+                        self._touch_dirty = False
+                        self._touch_count = 0
+                        self._last_touch_save_ts = time.time()
+            except Exception:
+                self._requeue_dirty(keys)
             return
 
         try:
@@ -1156,6 +1748,34 @@ class GameStore(dict):
     def flush(self) -> None:
         self._initial_sync_if_needed()
         with self._sync_lock:
+            if self._is_hash_mode():
+                _io_wait_store(self.name, timeout=10.0)
+                with self._lock:
+                    keys = set(self._hash_dirty_keys)
+                    self._hash_dirty_keys.clear()
+                rc = _raw_client()
+                if rc and keys:
+                    if not hash_backend.hash_save_keys(self, rc, keys):
+                        self._requeue_dirty(keys)
+                        return
+
+                # ✅ TTL-метки прочитанных ключей: без этого после перезапуска
+                # активно используемые ключи выглядят "старыми" и истекают.
+                if rc and PKL_HOT_PATH_V2 and self._touch_keys:
+                    with self._lock:
+                        touched = set(self._touch_keys)
+                        self._touch_keys.clear()
+                    try:
+                        hash_backend.hash_save_timestamps(self, rc, touched)
+                    except Exception:
+                        with self._lock:
+                            self._touch_keys |= touched
+                    self._last_touch_save_ts = time.time()
+                self._pending_dirty = False
+                self._ops_since_save = 0
+                self._last_save_ts = time.time()
+                self._dirty_since_boot = False
+                return
             self._save_now()
 
     @contextmanager
@@ -1175,6 +1795,7 @@ class GameStore(dict):
             return
         self._initial_sync_if_needed()
         now = time.time()
+        dirty_keys: Set[str] = set()
         with self.bulk():
             with self._lock:
                 for key, value in mapping.items():
@@ -1182,6 +1803,8 @@ class GameStore(dict):
                     existed = dict.__contains__(self, sk)
                     dict.__setitem__(self, sk, value)
                     self.timestamps[sk] = now
+                    if self._is_hash_mode():
+                        dirty_keys.add(sk)
                     self._ops_total += 1
                     if existed:
                         self._ops_updated += 1
@@ -1190,6 +1813,9 @@ class GameStore(dict):
                 self._ops_since_save += len(mapping)
                 self._bulk_dirty = True
                 self._dirty_since_boot = True
+                if self._is_hash_mode():
+                    self._hash_dirty_keys |= dirty_keys
+                    self._pending_dirty = True
 
     @contextmanager
     def edit(self, key: Any, default: Any = None):
@@ -1239,9 +1865,25 @@ class GameStore(dict):
 
     def save_if_changed(self, key, value) -> bool:
         sk = self._canon_key(key)
-        if sk not in self:
+        if not dict.__contains__(self, sk):
             return True
         old = dict.__getitem__(self, sk)
+
+        # ✅ v2: рекурсивный обход вложенных словарей/списков на КАЖДОЙ записи -
+        # это O(размера значения) CPU прямо в event-loop. Сравниваем дёшево:
+        # скаляры по значению, остальное считаем изменившимся. Лишняя запись
+        # ничего не стоит - ключ всё равно коалесцируется до одного HSET.
+        if PKL_HOT_PATH_V2:
+            if old is value:
+                # Тот же объект: скорее всего его мутировали на месте (частый
+                # паттерн store[k]["field"] = ... ; store[k] = store[k]).
+                return True
+            if type(old) is type(value) and isinstance(
+                value, (int, float, bool, str, bytes, type(None))
+            ):
+                return old != value
+            return True
+
         if isinstance(old, dict) and isinstance(value, dict):
             return self._check_nested_changes(old, value)
         if isinstance(old, list) and isinstance(value, list):
@@ -1252,20 +1894,106 @@ class GameStore(dict):
         return self.name in NO_DELETE_STORES
 
     def _push_expiry(self, sk: str, ts: float) -> None:
+        # ✅ v2: куча больше не используется. Раньше сюда попадал КАЖДЫЙ touch на
+        # чтении, а сливалась куча только в blob-ветке _cleanup_expired_now - то
+        # есть в hash-режиме она росла на один элемент с каждого чтения и никогда
+        # не уменьшалась. TTL теперь считается напрямую по timestamps.
+        if PKL_HOT_PATH_V2:
+            return
         if self.name in EXCLUDED_STORES:
             return
         heapq.heappush(self._expire_heap, (ts + self.expiry_seconds, sk))
 
     def _rebuild_expire_heap(self) -> None:
         self._expire_heap.clear()
+        if PKL_HOT_PATH_V2:
+            return
         if self.name in EXCLUDED_STORES:
             return
         for sk, ts in self.timestamps.items():
             heapq.heappush(self._expire_heap, (ts + self.expiry_seconds, sk))
 
+    def _sweep_expired_step(self, budget: Optional[int] = None) -> int:
+        """
+        Пошаговое истечение по локальным timestamps.
+
+        Просматриваем ключи порциями, чтобы не держать _lock на сторах с сотнями
+        тысяч ключей. Удалённые ключи помечаются грязными - фоновый писатель
+        сделает HDEL. Локальная память здесь авторитетна, поэтому активно
+        читаемый ключ не может быть удалён (в отличие от старой чистки по
+        Redis-zset, которая сносила живые данные, т.к. touch туда не доезжал).
+        """
+        if not PKL_HOT_PATH_V2:
+            return 0
+        if self._never_expires() or self._deletes_forbidden():
+            return 0
+        if self._need_initial_sync:
+            return 0
+        if self._sweep_not_before and time.time() < self._sweep_not_before:
+            return 0
+
+        limit = max(1, int(budget if budget is not None else PKL_SWEEP_BUDGET))
+        exp = float(self.expiry_seconds)
+        now = time.time()
+        doomed: List[str] = []
+
+        with self._lock:
+            if self._sweep_pos >= len(self._sweep_keys):
+                self._sweep_keys = list(self.timestamps.keys())
+                self._sweep_pos = 0
+            chunk = self._sweep_keys[self._sweep_pos:self._sweep_pos + limit]
+            self._sweep_pos += limit
+
+            for sk in chunk:
+                ts = self.timestamps.get(sk)
+                if ts is None:
+                    continue
+                if (now - ts) <= exp:
+                    continue
+                if dict.__contains__(self, sk):
+                    dict.__delitem__(self, sk)
+                self.timestamps.pop(sk, None)
+                doomed.append(sk)
+
+        if not doomed:
+            return 0
+
+        self._ops_deleted += len(doomed)
+        self._dirty_since_boot = True
+        for sk in doomed:
+            self._touch_keys.discard(sk)
+            if self._is_hash_mode():
+                self._hash_mark_dirty(sk)
+        if not self._is_hash_mode():
+            self._pending_dirty = True
+        self._schedule_save()
+        return len(doomed)
+
     def _cleanup_expired_now(self) -> int:
         if self.name in EXCLUDED_STORES or self._deletes_forbidden():
             return 0
+
+        # ✅ v2: истечение считается по локальным timestamps, а не по Redis-zset.
+        if PKL_HOT_PATH_V2:
+            return self._sweep_expired_step()
+
+        if self._is_hash_mode():
+            rc = _raw_client()
+            if rc is None:
+                return 0
+
+            def _do_cleanup() -> int:
+                return hash_backend.hash_cleanup_expired(self, rc)
+
+            try:
+                removed = _io_submit(self.name, _do_cleanup, wait=True, timeout=2.0)
+            except Exception:
+                removed = 0
+            if removed:
+                self._ops_deleted += removed
+                self.save()
+            return int(removed or 0)
+
         now = time.time()
         removed = 0
         with self._lock:
@@ -1371,7 +2099,7 @@ class GameStore(dict):
                 now = time.time()
                 self.timestamps[k] = now
                 self._push_expiry(k, now)
-                self._mark_touch_dirty()
+                self._mark_touch_dirty(k)
 
         with self._lock:
             if dict.__contains__(self, sk):
@@ -1442,6 +2170,8 @@ class GameStore(dict):
                 self._ops_skipped += 1
         if changed:
             self._dirty_since_boot = True
+            if self._is_hash_mode():
+                self._hash_mark_dirty(sk)
             if self._in_bulk > 0:
                 self._bulk_dirty = True
             else:
@@ -1452,33 +2182,39 @@ class GameStore(dict):
         if self._deletes_forbidden():
             return
         sk = self._canon_key(key)
-        deleted = False
+        # Удалить могли по нормализованному ключу (sk2). Раньше и метка времени,
+        # и пометка "грязного" ключа брались всё равно от sk: метка оставалась
+        # висеть навсегда, а в Redis уходил HDEL не того поля - данные удалённого
+        # ключа оставались в хранилище.
+        deleted_key: Optional[str] = None
         with self._lock:
             if dict.__contains__(self, sk):
                 dict.__delitem__(self, sk)
-                deleted = True
+                deleted_key = sk
             else:
                 try:
+                    sk2 = None
                     if isinstance(key, str) and key.isdigit():
                         sk2 = str(int(key))
-                        if dict.__contains__(self, sk2):
-                            dict.__delitem__(self, sk2)
-                            deleted = True
                     elif isinstance(key, int):
                         sk2 = str(key)
-                        if dict.__contains__(self, sk2):
-                            dict.__delitem__(self, sk2)
-                            deleted = True
+                    if sk2 is not None and dict.__contains__(self, sk2):
+                        dict.__delitem__(self, sk2)
+                        deleted_key = sk2
                 except Exception:
                     pass
 
-            if deleted:
-                self.timestamps.pop(sk, None)
+            if deleted_key is not None:
+                self.timestamps.pop(deleted_key, None)
+                self._touch_keys.discard(deleted_key)
                 self._ops_deleted += 1
                 self._ops_total += 1
                 self._ops_since_save += 1
+        deleted = deleted_key is not None
         if deleted:
             self._dirty_since_boot = True
+            if self._is_hash_mode():
+                self._hash_mark_dirty(deleted_key)
             if self._in_bulk > 0:
                 self._bulk_dirty = True
             else:
@@ -1552,6 +2288,12 @@ def verify_store_persisted(
     max_scan_seconds: float = 1.5,
 ) -> Dict[str, Any]:
     rc = _raw_client()
+    if rc is None:
+        return {"store": name, "ok": False, "error": "raw redis client is None"}
+
+    if PKL_STORAGE_MODE == "hash":
+        return hash_backend.hash_verify_persisted(rc, name)
+
     out: Dict[str, Any] = {
         "store": name,
         "ok": False,

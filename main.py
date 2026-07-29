@@ -3720,12 +3720,10 @@ if REDIS_REQUIRED and rds is None:
         f"Проверь Redis на {SELECTED_HOST}:{SELECTED_PORT} (или сними REDIS_REQUIRED)."
     )
 
-# ---------- быстрые настройки pklcode ----------
-os.environ.setdefault("PKL_LOG_LEVEL", "40")
-os.environ.setdefault("PKL_SUMMARY", "1")
-os.environ.setdefault("PKL_AUTO_WARMUP", "0")
-os.environ.setdefault("PKL_WRITE_DEBOUNCE_MS", "200")
-os.environ.setdefault("PKL_LOG_SKIPS", "0")
+# ---------- настройки pklcode ----------
+# Здесь их выставлять УЖЕ ПОЗДНО: pklcode импортирован на строке 135, а его
+# константы читаются при импорте. Настройки PKL_* живут в корневом .env, он
+# разворачивается в окружение bootstrap_database_env() на строке 57.
 
 # ---------- pklcode ----------
 import bot.db_create.pklcode as pklcode
@@ -13265,26 +13263,16 @@ async def render_conc_stars_screen(*args, **kwargs):
     daily_limit = int(state.get("daily_limit") or 0)
     used = int(state.get("used") or 0) if state.get("used") is not None else 0
     remaining = int(state.get("remaining") or 0)
-    cooldown_sec = int(state.get("cooldown_seconds") or 0)
     reason = str(state.get("reason") or "")
 
-    # ---- 4. Если остаток меньше минимального – ставим кулдаун ----
+    # ---- 4. Остаток меньше минимальной цены подарка ----
+    # Таймер здесь НЕ ставится. Раньше ставился кулдаун "min_withdraw_block" на полный срок,
+    # и если лимит пользователя вообще меньше минимальной цены подарка, таймер
+    # перезапускался бесконечно: истёк -> экран открылся -> поставился заново.
     if allowed and remaining > 0 and min_withdraw > 0 and remaining < min_withdraw:
-        try:
-            if cooldown_sec <= 0:
-                cooldown_sec = int(getattr(db, "WITHDRAW_DEFAULT_COOLDOWN_SEC", 12 * 3600) or (12 * 3600))
-            await db.start_user_withdraw_cooldown(user_id, int(cooldown_sec), "min_withdraw_block")
-        except Exception as e:
-            print(f"🟥 [CONC_STARS][AUTO] start_user_withdraw_cooldown err={e!r}")
-
-        try:
-            state2 = await db.refresh_withdraw_quota_if_needed(user_id)
-        except Exception as e:
-            state2 = state
-        allowed = bool(state2.get("allowed"))
-        cooldown_left = int(state2.get("cooldown_left") or 0)
-        remaining = int(state2.get("remaining") or 0)
-        reason = str(state2.get("reason") or reason)
+        print(
+            f"🟨 [CONC_STARS][MIN] uid={user_id} остаток {remaining} меньше минимальной "
+            f"цены подарка {min_withdraw} -> экран с предложением повысить лимит, без таймера")
 
     # ---- 5. Если вывод запрещён или остаток исчерпан – блокировка ----
     if (not allowed) or (remaining <= 0):
@@ -23144,21 +23132,30 @@ def _kb_info_back(left_seconds: int, back_callback: Optional[str] = None) -> Inl
       - если пришли из баланса -> возвращаем туда
       - иначе закрываем/в меню (как у тебя было)
     """
-    time_text = _fmt_hms(int(left_seconds or 0))
+    left_i = _to_int(left_seconds, 0)
 
     back_cd = str(back_callback) if back_callback else "9close_bonus"
     back_text = "Назад к балансу" if back_callback else "Назад"
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Вывод недоступен", callback_data="noop", style="danger" ,
-                icon_custom_emoji_id="5449505950283078474")],
-            [InlineKeyboardButton(text=f"Осталось : {time_text}", callback_data="noop", style="default" ,
-                icon_custom_emoji_id="5891211339170326418")],
-            [InlineKeyboardButton(text=back_text, callback_data=back_cd, style="default" ,
-                            icon_custom_emoji_id="5960671702059848143")],
-        ]
+    rows = [
+        [InlineKeyboardButton(text="Вывод недоступен", callback_data="noop", style="danger" ,
+            icon_custom_emoji_id="5449505950283078474")],
+    ]
+
+    # Строку таймера показываем только когда таймер реально идёт:
+    # "Осталось : 00:00:00" сбивало с толку на экранах без кулдауна.
+    if left_i > 0:
+        rows.append(
+            [InlineKeyboardButton(text=f"Осталось : {_fmt_hms(left_i)}", callback_data="noop", style="default" ,
+                icon_custom_emoji_id="5891211339170326418")]
+        )
+
+    rows.append(
+        [InlineKeyboardButton(text=back_text, callback_data=back_cd, style="default" ,
+                        icon_custom_emoji_id="5960671702059848143")]
     )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def build_instant_withdraw_keyboard(amount: Optional[int]) -> InlineKeyboardMarkup:
@@ -23934,37 +23931,36 @@ async def show_available_gifts_under_limit(
     process_gifts_list=None,
 ) -> bool:
     """
-    Показывает подарки под remaining. Если нет - ставит кулдаун.
+    Показывает подарки под remaining.
+    Если подходящих нет - показывает сообщение и предлагает повысить лимит (без таймера).
     """
     msg = callback_query.message
     uid = _to_int(user_id, 0)
     rem = _to_int(remaining, 0)
-    cd = _to_int(cooldown_sec, 12 * 3600)
 
-    print(f"[GIFTS][SHOW] uid={uid} remaining={rem} cooldown={cd}")
+    print(f"[GIFTS][SHOW] uid={uid} remaining={rem}")
 
     gifts = await get_all_gifts_minimal(bot1)
     available = [g for g in gifts if _to_int(g.get("price"), 0) <= rem]
 
     if not available:
-        print("[GIFTS][NONE] нет подарков под лимит -> ставлю кулдаун")
-        try:
-            await db.start_user_withdraw_cooldown(uid, cd, "no_available_gifts")
-        except Exception as e:
-            print(f"[GIFTS][WARN] start cooldown failed: {e!r}")
+        # Таймер здесь НЕ ставится. Отсутствие подходящего подарка - это не исчерпанный
+        # лимит: если лимит пользователя меньше самого дешёвого подарка, кулдаун
+        # возрождался бы вечно, сразу после каждого истечения.
+        print("[GIFTS][NONE] нет подарков под лимит -> сообщение без таймера")
 
         left = 0
         try:
             left = _to_int(await db.get_user_cooldown_left(uid), 0)
         except Exception:
-            left = cd
+            left = 0
 
         await _safe_edit_text(
             msg,
             (
                 "<tg-emoji emoji-id='5260293700088511294'>⛔️</tg-emoji> <b>Подарков для вывода нет</b>\n"
                 f"<tg-emoji emoji-id='5472404950673791399'>🧮</tg-emoji> Доступно к выводу : <b>{_fmt_int(rem)} <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>\n\n"
-                f"<tg-emoji emoji-id='5451646226975955576'>⌛️</tg-emoji> Следующая попытка через : <b>{_fmt_hms(left)}</b>"
+                "<tg-emoji emoji-id='5420542898452077602'>🧘‍♂️</tg-emoji> <b>Повысьте лимит вывода, чтобы открыть подарки</b>"
             ),
             reply_markup=_kb_info_back(left),
         )
@@ -29009,21 +29005,12 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
     daily_limit = int(state.get("daily_limit") or 0)
     used = int(state.get("used") or 0) if state.get("used") is not None else 0
     remaining = int(state.get("remaining") or 0)
-    cooldown_sec = int(state.get("cooldown_seconds") or 0)
     reason = str(state.get("reason") or state.get("cause") or "")
 
     # ---- Блокировка ----
+    # Таймер тут не ставится: экран только показывает остаток, который посчитала БД.
+    # Постановка при рендере и была причиной перезапуска таймера.
     if (not allowed) or (remaining <= 0):
-        if allowed and remaining <= 0 and cooldown_sec > 0:
-            try:
-                await db.start_user_withdraw_cooldown(user_id, int(cooldown_sec), "daily_limit")
-            except Exception as e:
-                print(f"🟠 [WITHDRAW][BACK][FORCE][WARN] start_user_withdraw_cooldown: {type(e).__name__}: {e!r}")
-            try:
-                cooldown_left = int(await db.get_user_cooldown_left(user_id) or cooldown_left)
-            except Exception:
-                pass
-
         try:
             kb_locked = _kb_withdraw_locked(
                 int(cooldown_left),
@@ -30926,9 +30913,8 @@ async def process_user_gift_recipient(message: types.Message):
             allowed = bool(state.get("allowed"))
             cooldown_left = int(state.get("cooldown_left") or 0)
             remaining = int(state.get("remaining") or 0)
-            cooldown_sec = int(state.get("cooldown_seconds") or 0)
         except Exception:
-            allowed, cooldown_left, remaining, cooldown_sec = True, 0, 0, 0
+            allowed, cooldown_left, remaining = True, 0, 0
 
         if not allowed:
             try:
@@ -30945,12 +30931,11 @@ async def process_user_gift_recipient(message: types.Message):
             return
 
         if remaining <= 0:
+            # Таймер не ставим: он уже поставлен при том выводе, который исчерпал лимит.
             try:
-                if cooldown_sec > 0:
-                    await db.start_user_withdraw_cooldown(user_id, int(cooldown_sec), "daily_limit")
-                    cooldown_left = int(await db.get_user_cooldown_left(user_id) or 0)
-            except Exception as e:
-                print(f"[WITHDRAW][GIFT][FINISH][WARN] force cooldown on remaining=0 failed: {type(e).__name__}: {e!r}")
+                cooldown_left = int(await db.get_user_cooldown_left(user_id) or cooldown_left)
+            except Exception:
+                pass
 
             try:
                 await message.answer("🧰", reply_markup=kb_withdraw_blocked(int(cooldown_left)))
@@ -34687,23 +34672,16 @@ async def add_firstname_to_usercheck_balance(message: Message):
         allowed = state.get("allowed" , True)
         remaining = int(state.get("remaining" , 0))
         daily_limit = int(state.get("daily_limit" , 0))  # пока оставляем для fallback
-        cooldown_sec = int(state.get("cooldown_seconds" , 0))
 
         # ---- 4. Если кулдаун или нет остатка — блокируем и выходим ----
         if not allowed or remaining <= 0:
-            if not allowed:
-                cooldown_left = int(state.get("cooldown_left" , 0))
-            else:  # remaining <= 0, ставим кулдаун если ещё нет
-                cooldown_left = 0
+            # Таймер не ставим: он рождается только при выводе, исчерпавшем лимит.
+            cooldown_left = int(state.get("cooldown_left" , 0))
+            if not cooldown_left:
                 try:
-                    has_cd = await db.has_active_withdraw_cooldown(user_id)
-                    if not has_cd and cooldown_sec > 0:
-                        await db.start_user_withdraw_cooldown(
-                            user_id , cooldown_sec , "daily_limit")
-                        cooldown_left = cooldown_sec
-                        print(f"⏳ [WITHDRAW][FINISH] cooldown started secs={cooldown_sec}")
+                    cooldown_left = int(await db.get_user_cooldown_left(user_id) or 0)
                 except Exception as e:
-                    print(f"🟥 [WITHDRAW][FINISH] start cooldown: {type(e).__name__}: {e}")
+                    print(f"🟥 [WITHDRAW][FINISH] get_user_cooldown_left: {type(e).__name__}: {e}")
 
             try:
                 await message.answer("🧰" , reply_markup=kb_withdraw_blocked(cooldown_left))

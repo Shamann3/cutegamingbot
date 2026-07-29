@@ -30,10 +30,13 @@ _reconcile_done = False
 def _get_store() -> GameStore:
   global _store
   if _store is None:
-    s = GameStore(_STORE_NAME)
+    # TTL is declared in pklcode.STORE_EXPIRY_OVERRIDES and applied when the
+    # store is constructed. Setting expiry_seconds here (as before) left a
+    # window where the sweeper saw the default 2 hours and silently lifted
+    # every punishment older than that - with boot warmup the window lasts
+    # until this module is first used.
     # Do NOT add to EXCLUDED_STORES - we need del store[key] on lift/expiry.
-    s.expiry_seconds = 10 ** 12
-    _store = s
+    _store = GameStore(_STORE_NAME)
   return _store
 
 

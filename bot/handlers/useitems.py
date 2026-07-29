@@ -149,7 +149,10 @@ async def eaglewithdrawal(db, user_id: int, message):
         except Exception as e:
             print(f"[ITEM][EAGLE][WARN] get_user_withdraw_limits err={e!r}")
             current_limit = await db.get_canwithdrawal(uid)
-            current_cooldown = int(getattr(db, "WITHDRAW_DEFAULT_COOLDOWN_SEC", 12 * 3600) or 12 * 3600)
+            current_cooldown = int(
+                getattr(db, "WITHDRAW_DEFAULT_COOLDOWN_SEC", WITHDRAW_DEFAULT_COOLDOWN_SEC)
+                or WITHDRAW_DEFAULT_COOLDOWN_SEC
+            )
 
         legacy_limit = int(await db.get_canwithdrawal(uid) or 0)
         current_limit = max(int(current_limit or 0), int(legacy_limit or 0))

@@ -316,6 +316,15 @@ def _safe_str(v) -> str:
 
 Default_WITHDRAW_DEFAULT_DAILY_LIMIT = 100 # минимальная сумма для вывода / также в табилице users столбец canwithdrawal стоит 100, если хочешь заменить - изменить и там тоже в свойствах базы данных
 
+# Единственный источник срока кулдауна выводов. Раньше значение дублировалось
+# подстановками 12*3600 по db.py/main.py/useitems.py, и пользователь видел то 6, то 12 часов.
+WITHDRAW_DEFAULT_COOLDOWN_SEC = 6 * 3600
+
+# Причины, по которым таймер выводов больше НЕ ставится: отсутствие подходящего подарка -
+# это не исчерпанный лимит, а такой таймер перезапускался вечно, если лимит пользователя
+# меньше цены самого дешёвого подарка. Уже выставленные снимаются при показе статуса.
+_OBSOLETE_WITHDRAW_COOLDOWN_CAUSES = ("min_withdraw_block" , "no_available_gifts")
+
 
 @dataclass(frozen=True)
 class BalanceSnapshot:
@@ -726,7 +735,7 @@ class Database:
         self.__CACHE_USERPROFILE_SLAB__ = {}
         self.__CACHE_CHATMETA_ATLAS__: Dict [ int , Dict [ str , Any ] ] = GameStore("__CACHE_CHATMETA_ATLAS__")
 
-        self.WITHDRAW_DEFAULT_COOLDOWN_SEC = 12 * 1800
+        self.WITHDRAW_DEFAULT_COOLDOWN_SEC = WITHDRAW_DEFAULT_COOLDOWN_SEC
 
         # ------------------------------
         # Настройки производительности баланса
@@ -9687,29 +9696,31 @@ class Database:
 
 
     # ============================================================
-    # ✅ 4) cooldown: удалить истёкший (как у тебя)
+    # ✅ 4) cooldown: проверка отбытого таймера
     # ============================================================
-    async def _delete_user_cooldown_if_expired(self, conn, user_id: int) -> bool:
+    async def _has_expired_withdraw_cooldown(self , conn , user_id: int) -> bool:
         """
-        ✅ У тебя уже было - оставил под твою схему.
+        Есть ли ОТБЫТЫЙ (истёкший) кулдаун.
+
+        Снятие кулдауна отдельно от сброса окна здесь сознательно не предусмотрено:
+        именно такой примитив и приводил к состоянию "таймера нет, лимит нулевой",
+        из которого система заводила новый таймер. Снимать умеет только
+        _advance_withdraw_window_locked - вместе с переводом окна, одной транзакцией.
         """
-        _vdbg(f"[ЛИМИТЫ][DEBUG] Проверяю истёкший кулдаун пользователя {user_id}")
         try:
-            res = await conn.execute(
+            row = await conn.fetchval(
                 """
-                DELETE FROM withdraw_cooldown
+                SELECT 1
+                FROM withdraw_cooldown
                 WHERE user_id = $1 AND until_at <= NOW()
-                """,
+                LIMIT 1
+                """ ,
                 int(user_id)
             )
-            deleted = int(res.split()[-1])
         except Exception as e:
-            _vdbg(f"[ЛИМИТЫ][ERROR] Ошибка при удалении кулдауна: {e}")
-            deleted = 0
-
-        if deleted > 0:
-            _vdbg(f"[ЛИМИТЫ][DEBUG] Кулдаун истёк → удалён, окно будет сброшено")
-        return deleted > 0
+            _vdbg(f"[ЛИМИТЫ][ERROR] Проверка истёкшего кулдауна: {e}")
+            return False
+        return bool(row)
 
     # ---------------------------------------------------------------
     async def get_today_withdrawn(self , user_id: int) -> int:
@@ -9733,30 +9744,37 @@ class Database:
     # ---------------------------------------------------------------
     async def clear_user_expired_withdraw_cooldown(self, user_id: int) -> int:
         _vdbg(f"[ЛИМИТЫ][DEBUG] clear_user_expired_withdraw_cooldown({user_id})")
+        uid = int(user_id)
+
+        if not getattr(self , "pool" , None):
+            return 0
+
+        dl = 0
+        try:
+            dl , _cd = await self.get_user_withdraw_limits(uid)
+        except Exception as e:
+            _vdbg(f"[ЛИМИТЫ][WARN] clear_user_expired: limits err={e!r}")
+        dl = self._withdraw_daily_limit_fallback_int(dl)
+
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                deleted = await self._delete_user_cooldown_if_expired(conn, user_id)
-                if deleted:
-                    _vdbg(f"[ЛИМИТЫ][DEBUG] Кулдаун истёк → сбрасываю окно")
-                    await conn.execute(
-                        """
-                        INSERT INTO withdraw_quota_window(user_id, window_started_at)
-                        VALUES ($1, NOW())
-                        ON CONFLICT (user_id) DO UPDATE SET window_started_at = NOW()
-                        """,
-                        user_id
-                    )
-                else:
-                    _vdbg(f"[ЛИМИТЫ][DEBUG] Кулдауна нет → создаю окно при необходимости")
-                    await conn.execute(
-                        """
-                        INSERT INTO withdraw_quota_window(user_id, window_started_at)
-                        VALUES ($1, NOW())
-                        ON CONFLICT (user_id) DO NOTHING
-                        """,
-                        user_id
-                    )
-                return int(deleted)
+                await conn.execute("SELECT pg_advisory_xact_lock($1::bigint)" , uid)
+
+                await conn.execute(
+                    """
+                    INSERT INTO withdraw_quota_window(user_id, window_started_at)
+                    VALUES ($1, NOW())
+                    ON CONFLICT (user_id) DO NOTHING
+                    """ ,
+                    uid
+                )
+
+                if not await self._has_expired_withdraw_cooldown(conn , uid):
+                    return 0
+
+                await self._advance_withdraw_window_locked(
+                    conn , user_id=uid , daily_limit=int(dl) , reason="clear_expired_manual")
+                return 1
 
     # есть ли активный кулдаун прямо сейчас
     # ---------------------------------------------------------------
@@ -9790,6 +9808,73 @@ class Database:
         except Exception:
             return 0
 
+    def _withdraw_cooldown_sec_default(self) -> int:
+        """Срок кулдауна выводов по умолчанию. Одно значение на весь проект."""
+        try:
+            secs = int(getattr(self , "WITHDRAW_DEFAULT_COOLDOWN_SEC" , 0) or 0)
+        except Exception:
+            secs = 0
+        if secs <= 0:
+            secs = int(WITHDRAW_DEFAULT_COOLDOWN_SEC)
+        return secs if secs > 0 else int(WITHDRAW_DEFAULT_COOLDOWN_SEC)
+
+    def _withdraw_daily_limit_fallback_int(self , value) -> int:
+        """Нормализует лимит вывода: значение -> дефолт проекта -> 100."""
+        dl = self._safe_non_negative_int(value , 0)
+        if dl <= 0:
+            try:
+                dl = self._safe_non_negative_int(Default_WITHDRAW_DEFAULT_DAILY_LIMIT , 0)
+            except Exception:
+                dl = 0
+        return dl if dl > 0 else 100
+
+    async def _advance_withdraw_window_locked(self , conn , * , user_id: int , daily_limit: int ,
+            reason: str = "cooldown_served" , ) -> bool:
+        """
+        Переводит окно квоты на новый отсчёт: снимает ОТБЫТЫЙ кулдаун и обнуляет израсходованное.
+
+        ВАЖНО:
+        - вызывать только внутри транзакции, удерживающей pg_advisory_xact_lock(user_id);
+        - живой кулдаун не удаляется НИКОГДА (условие until_at <= NOW()), поэтому вызов
+          не может обнулить идущий таймер;
+        - новый кулдаун здесь не ставится - таймер рождается только при фиксации вывода.
+
+        Раньше сброс окна был привязан к тому, чей DELETE успел первым удалить строку
+        (`if deleted: reset`). Если строку убирал другой путь, окно оставалось
+        исчерпанным, и следующая проверка статуса заводила новый таймер на полный срок -
+        пользователь видел "таймер закончился и снова начался".
+        """
+        uid = int(user_id)
+        dl = self._withdraw_daily_limit_fallback_int(daily_limit)
+
+        await conn.execute(
+            """
+            DELETE FROM withdraw_cooldown
+            WHERE user_id = $1 AND until_at <= NOW()
+            """ , uid , )
+
+        await conn.execute(
+            """
+            INSERT INTO withdraw_quota_window(
+                user_id, window_started_at, used_in_window, daily_limit, remaining,
+                used_percent, status, cooldown_left_sec, cooldown_until, updated_at
+            )
+            VALUES ($1, NOW(), 0, $2, $2, 0, 'OK', 0, NULL, NOW())
+            ON CONFLICT (user_id) DO UPDATE
+              SET window_started_at = NOW(),
+                  used_in_window    = 0,
+                  daily_limit       = EXCLUDED.daily_limit,
+                  remaining         = EXCLUDED.remaining,
+                  used_percent      = 0,
+                  status            = 'OK',
+                  cooldown_left_sec = 0,
+                  cooldown_until    = NULL,
+                  updated_at        = NOW()
+            """ , uid , int(dl) , )
+
+        print(f"[ЛИМИТЫ][WINDOW-ADVANCE] ✅ uid={uid} причина={reason} лимит={dl}")
+        return True
+
     async def _set_withdraw_cooldown_idempotent(self , conn , * , user_id: int , cooldown_seconds: int ,
             cause: str = "daily_limit" , ) -> bool:
         """
@@ -9819,10 +9904,7 @@ class Database:
             return False
 
         if secs <= 0:
-            try:
-                secs = int(getattr(self , "WITHDRAW_DEFAULT_COOLDOWN_SEC" , 12 * 3600) or (12 * 3600))
-            except Exception:
-                secs = 12 * 3600
+            secs = self._withdraw_cooldown_sec_default()
 
         if secs <= 0:
             _vdbg(f"[ЛИМИТЫ][COOLDOWN][LOCKED][ABORT] bad secs={cooldown_seconds!r}")
@@ -9861,16 +9943,22 @@ class Database:
     async def refresh_withdraw_quota_if_needed(self , user_id: int , * , daily_limit: Optional [ int ] = None ,
             cooldown_seconds: Optional [ int ] = None , **_ignore_kwargs) -> Dict [ str , Any ]:
         """
-        ✅ UI/статус квоты (железобетон):
-        - гарантирует строку withdraw_quota_window
-        - удаляет истёкший cooldown и сбрасывает окно
-        - если cooldown активен -> allowed=False + cooldown_left
-        - иначе считает used (истина) по withdraw_log от window_started_at
-        - пишет used_percent как INT 0..100 (под SMALLINT + CHECK)
-        - если remaining==0 -> ставит cooldown NO-EXTEND и возвращает allowed=False
+        ✅ UI/статус квоты. ТОЛЬКО ЧИТАЕТ состояние и лечит устаревшее окно.
+
+        Гарантии:
+        - НИКОГДА не ставит кулдаун. Таймер рождается исключительно при фиксации вывода,
+          исчерпавшего лимит (add_withdraw_strict / add_withdraw). Раньше именно эта
+          функция заводила новый таймер при remaining==0, поэтому таймер "заканчивался
+          и снова начинался" на каждом открытии экрана вывода;
+        - кулдаун активен -> allowed=False + cooldown_left, состояние не меняется;
+        - кулдаун отбыт (или снят другим путём), а окно осталось исчерпанным ->
+          окно переводится на новый отсчёт, лимит снова доступен;
+        - весь блок идёт под pg_advisory_xact_lock(uid) - тем же локом, что и вывод,
+          поэтому гонок между показом статуса и списанием больше нет.
         """
 
         t0 = time.perf_counter()
+        cd_default = self._withdraw_cooldown_sec_default()
 
         # -------- normalize uid --------
         try:
@@ -9878,14 +9966,12 @@ class Database:
         except Exception:
             _vdbg(f"🟥[ЛИМИТЫ][REFRESH][ABORT] bad user_id={user_id!r}")
             return {"allowed": False , "remaining": 0 , "daily_limit": 0 , "used": 0 , "cooldown_left": 0 ,
-                    "cooldown_seconds": int(getattr(self , "WITHDRAW_DEFAULT_COOLDOWN_SEC" , 12 * 3600) or 12 * 3600) ,
-                    "reason": "bad_user_id"}
+                    "cooldown_seconds": int(cd_default) , "reason": "bad_user_id"}
 
         if not getattr(self , "pool" , None):
             _vdbg("🟥[ЛИМИТЫ][REFRESH][ERROR] pool is None")
             return {"allowed": False , "remaining": 0 , "daily_limit": 0 , "used": 0 , "cooldown_left": 0 ,
-                    "cooldown_seconds": int(getattr(self , "WITHDRAW_DEFAULT_COOLDOWN_SEC" , 12 * 3600) or 12 * 3600) ,
-                    "reason": "no_pool"}
+                    "cooldown_seconds": int(cd_default) , "reason": "no_pool"}
 
         # -------- limits --------
         try:
@@ -9910,10 +9996,12 @@ class Database:
             dl_i = int(Default_WITHDRAW_DEFAULT_DAILY_LIMIT)
 
         if cd_i <= 0:
-            cd_i = int(getattr(self , "WITHDRAW_DEFAULT_COOLDOWN_SEC" , 12 * 3600) or 12 * 3600)
+            cd_i = int(cd_default)
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
+                # 0) тот же лок, что берёт add_withdraw_strict: статус и списание больше не пересекаются
+                await conn.execute("SELECT pg_advisory_xact_lock($1::bigint)" , int(uid))
 
                 # 1) ensure quota row (и сразу правильные типы)
                 await conn.execute(
@@ -9926,41 +10014,36 @@ class Database:
                     ON CONFLICT (user_id) DO NOTHING
                     """ , uid , dl_i)
 
-                # 2) удалить истёкший кулдаун (как у тебя) + сбросить окно
-                deleted = False
-                try:
-                    deleted = await self._delete_user_cooldown_if_expired(conn , uid)
-                except Exception as e:
-                    _vdbg(f"🟧[ЛИМИТЫ][REFRESH][WARN] _delete_user_cooldown_if_expired err={type(e).__name__}: {e!r}")
+                # 2) состояние кулдауна: живой -> блокировка, отбытый -> перевод окна
+                cd_row = await conn.fetchrow(
+                    """
+                    SELECT until_at,
+                           cause,
+                           (until_at > NOW()) AS is_active,
+                           GREATEST(0, EXTRACT(EPOCH FROM (until_at - NOW()))::BIGINT) AS left_sec
+                    FROM withdraw_cooldown
+                    WHERE user_id=$1
+                    """ , uid)
 
-                if deleted:
-                    await conn.execute(
-                        """
-                        UPDATE withdraw_quota_window
-                        SET window_started_at = NOW(),
-                            used_in_window    = 0,
-                            daily_limit       = $2,
-                            remaining         = $2,
-                            used_percent      = 0,
-                            status            = 'OK',
-                            cooldown_left_sec = 0,
-                            cooldown_until    = NULL,
-                            updated_at        = NOW()
-                        WHERE user_id = $1
-                        """ , uid , dl_i)
-                    _vdbg(f"🟩[ЛИМИТЫ][AUTO-RESET] uid={uid} cooldown expired -> reset window remaining={dl_i}")
+                # Таймер за причины, отличные от исчерпания лимита ("нет подарков под лимит",
+                # "остаток меньше цены подарка"), больше не ставится. Снимаем уже выставленные:
+                # они блокируют вывод при доступном остатке. Окно не трогаем - лимит не выбран.
+                if cd_row is not None and bool(cd_row [ "is_active" ]):
+                    cause_now = str(cd_row [ "cause" ] or "")
+                    if cause_now in _OBSOLETE_WITHDRAW_COOLDOWN_CAUSES:
+                        await conn.execute(
+                            """
+                            DELETE FROM withdraw_cooldown
+                            WHERE user_id=$1
+                              AND until_at > NOW()
+                              AND cause = ANY($2::TEXT[])
+                            """ , uid , list(_OBSOLETE_WITHDRAW_COOLDOWN_CAUSES))
+                        print(f"[ЛИМИТЫ][COOLDOWN] 🧹 uid={uid} снят устаревший таймер причины {cause_now!r}")
+                        cd_row = None
 
-                # 3) активный кулдаун?
-                cd_until = await conn.fetchval(
-                    "SELECT until_at FROM withdraw_cooldown WHERE user_id=$1 AND until_at > NOW()" , uid)
-                if cd_until is not None:
-                    left = await conn.fetchval(
-                        """
-                        SELECT GREATEST(0, EXTRACT(EPOCH FROM (until_at - NOW()))::BIGINT)
-                        FROM withdraw_cooldown
-                        WHERE user_id=$1 AND until_at > NOW()
-                        """ , uid)
-                    left_i = int(left or 0)
+                if cd_row is not None and bool(cd_row [ "is_active" ]):
+                    left_i = int(cd_row [ "left_sec" ] or 0)
+                    cd_until = cd_row [ "until_at" ]
 
                     await conn.execute(
                         """
@@ -9978,7 +10061,13 @@ class Database:
                     return {"allowed": False , "remaining": 0 , "daily_limit": int(dl_i) , "used": None ,
                             "cooldown_left": int(left_i) , "cooldown_seconds": int(cd_i) , "reason": "cooldown_active"}
 
-                # 4) window_started_at
+                if cd_row is not None:
+                    # Таймер отбыт. Перевод окна безусловный - он больше не зависит от того,
+                    # чей DELETE успел первым (именно эта зависимость и возрождала таймер).
+                    await self._advance_withdraw_window_locked(
+                        conn , user_id=uid , daily_limit=int(dl_i) , reason="cooldown_served")
+
+                # 3) window_started_at
                 ws = await conn.fetchval(
                     "SELECT window_started_at FROM withdraw_quota_window WHERE user_id=$1" , uid)
                 if not ws:
@@ -9987,7 +10076,7 @@ class Database:
                         "UPDATE withdraw_quota_window SET window_started_at=$2, updated_at=NOW() WHERE user_id=$1" ,
                         uid , ws)
 
-                # 5) истина used по withdraw_log
+                # 4) истина used по withdraw_log
                 used_truth = int(
                     await conn.fetchval(
                         """
@@ -9997,6 +10086,24 @@ class Database:
                         """ , uid , ws) or 0)
 
                 remaining = max(0 , int(dl_i) - int(used_truth))
+
+                # 5) самолечение: лимит исчерпан, а живого таймера нет.
+                # Значит таймер за это окно уже отбыт (или снят предметом/возвратом) -
+                # окно устарело. Переводим его вперёд вместо постановки нового таймера.
+                if remaining <= 0:
+                    await self._advance_withdraw_window_locked(
+                        conn , user_id=uid , daily_limit=int(dl_i) , reason="stale_window_no_cooldown")
+
+                    ws = await conn.fetchval(
+                        "SELECT window_started_at FROM withdraw_quota_window WHERE user_id=$1" , uid)
+                    used_truth = int(
+                        await conn.fetchval(
+                            """
+                            SELECT COALESCE(SUM(amount),0)::BIGINT
+                            FROM withdraw_log
+                            WHERE user_id=$1 AND created_at >= $2
+                            """ , uid , ws) or 0)
+                    remaining = max(0 , int(dl_i) - int(used_truth))
 
                 # ✅ в окно пишем безопасное used_store (не больше dl_i)
                 used_store = min(int(used_truth) , int(dl_i))
@@ -10021,42 +10128,9 @@ class Database:
                 print(
                     f"🟦[ЛИМИТЫ][STATE] uid={uid} ws={ws} limit={dl_i} used_truth={used_truth} used_store={used_store} remaining={remaining} used_percent={used_percent_i} status={status}")
 
-                # 6) remaining==0 -> поставить кулдаун NO-EXTEND
-                if remaining <= 0 and cd_i > 0:
-                    try:
-                        await self._set_withdraw_cooldown_idempotent(
-                            conn , user_id=uid , cooldown_seconds=cd_i , cause="daily_limit")
-                    except Exception as e:
-                        _vdbg(f"🟧[ЛИМИТЫ][AUTO-CD][WARN] set cooldown err={type(e).__name__}: {e!r}")
-
-                    left2 = await conn.fetchval(
-                        """
-                        SELECT GREATEST(0, EXTRACT(EPOCH FROM (until_at - NOW()))::BIGINT)
-                        FROM withdraw_cooldown
-                        WHERE user_id=$1 AND until_at > NOW()
-                        """ , uid)
-                    left2_i = int(left2 or 0)
-                    cd_until2 = await conn.fetchval(
-                        "SELECT until_at FROM withdraw_cooldown WHERE user_id=$1 AND until_at > NOW()" , uid)
-
-                    await conn.execute(
-                        """
-                        UPDATE withdraw_quota_window
-                        SET status='COOLDOWN',
-                            cooldown_left_sec=$2,
-                            cooldown_until=$3,
-                            remaining=0,
-                            used_percent=100,
-                            updated_at=NOW()
-                        WHERE user_id=$1
-                        """ , uid , left2_i , cd_until2)
-
-                    dt = time.perf_counter() - t0
-                    _vdbg(f"🟩[ЛИМИТЫ][AUTO-CD] uid={uid} remaining=0 -> cooldown left={left2_i}s dt={dt:.4f}s")
-                    return {"allowed": False , "remaining": 0 , "daily_limit": int(dl_i) , "used": int(used_truth) ,
-                            "cooldown_left": int(left2_i) , "cooldown_seconds": int(cd_i) ,
-                            "reason": "daily_limit_reached"}
-
+                # Кулдаун здесь НЕ ставится сознательно: остаток нулевым дойти до этой точки
+                # уже не может (шаг 5 переводит окно), а если лимит равен нулю - это настройка
+                # лимита, а не отбытый таймер, и таймер тут был бы бессмысленным.
                 dt = time.perf_counter() - t0
                 _vdbg(f"🟩[ЛИМИТЫ][REFRESH][OK] uid={uid} dt={dt:.4f}s")
                 return {"allowed": bool(remaining > 0) , "remaining": int(remaining) , "daily_limit": int(dl_i) ,
@@ -10230,11 +10304,17 @@ class Database:
     # ---------------------------------------------------------------
     async def start_user_withdraw_cooldown(self, user_id: int, cooldown_seconds: int, cause: str = "daily_limit") -> bool:
         """
-        ✅ Идемпотентно ставит кулдаун.
-        ВАЖНО: таблица withdraw_cooldown = (user_id, started_at, until_at, cause)
+        Ставит кулдаун выводов ТОЛЬКО если лимит действительно исчерпан.
+
+        Это защитный вход для внешнего кода. Экраны бота раньше вызывали его при каждом
+        рендере, и таймер рождался заново после каждого истечения. Теперь проверка
+        исчерпания живёт здесь: если лимит не выбран, кулдаун не появится, кто бы ни позвал.
+        Основной путь постановки - фиксация вывода в add_withdraw_strict.
         """
         uid = int(user_id)
         cd = int(cooldown_seconds or 0)
+        if cd <= 0:
+            cd = self._withdraw_cooldown_sec_default()
         if cd <= 0:
             return False
 
@@ -10244,6 +10324,8 @@ class Database:
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock($1::bigint)" , uid)
+
                 # Не продлеваем активный кулдаун (NO-EXTEND)
                 exists = await conn.fetchval(
                     "SELECT 1 FROM withdraw_cooldown WHERE user_id=$1 AND until_at > NOW()",
@@ -10251,6 +10333,32 @@ class Database:
                 )
                 if exists:
                     _vdbg(f"[ЛИМИТЫ][COOLDOWN] uid={uid} already active -> no-extend")
+                    return False
+
+                dl_check , _cd_check = 0 , 0
+                try:
+                    dl_check , _cd_check = await self.get_user_withdraw_limits(uid)
+                except Exception as e:
+                    _vdbg(f"[ЛИМИТЫ][COOLDOWN][WARN] limits uid={uid} err={e!r}")
+                dl_check = self._withdraw_daily_limit_fallback_int(dl_check)
+
+                used_check = int(
+                    await conn.fetchval(
+                        """
+                        SELECT COALESCE(SUM(l.amount),0)::BIGINT
+                        FROM withdraw_log l
+                        WHERE l.user_id=$1
+                          AND l.created_at >= COALESCE(
+                                (SELECT w.window_started_at
+                                   FROM withdraw_quota_window w
+                                  WHERE w.user_id=$1),
+                                NOW())
+                        """ , uid) or 0)
+
+                if used_check < dl_check:
+                    print(
+                        f"[ЛИМИТЫ][COOLDOWN] 🚫 uid={uid} отказ: лимит не исчерпан "
+                        f"({used_check}/{dl_check}), причина={cause!r}")
                     return False
 
                 try:
@@ -10602,7 +10710,7 @@ class Database:
 
             if not row:
                 dl = int(canwithdrawal_dl or 0)
-                cd = int(self.WITHDRAW_DEFAULT_COOLDOWN_SEC or 12 * 3600)
+                cd = self._withdraw_cooldown_sec_default()
                 if dl <= 0:
                     dl = int(Default_WITHDRAW_DEFAULT_DAILY_LIMIT or 100)
                 return int(dl), int(cd)
@@ -10689,134 +10797,7 @@ class Database:
                 int(new_limit),
             )
 
-    async def _cleanup_expired_cooldown_and_reset_quota_locked(
-            self,
-            conn,
-            *,
-            user_id: int,
-            daily_limit: int,
-    ) -> bool:
-        """
-        Если кулдаун истёк:
-        - удаляем протухший withdraw_cooldown
-        - сбрасываем withdraw_quota_window
-        - нормализуем лимит перед reset
-
-        ВАЖНО:
-        - вызывать только под lock / внутри транзакции
-        - новый cooldown НЕ создаёт
-        """
-
-        def _safe_int_local(v, default: int = 0) -> int:
-            try:
-                return int(v)
-            except Exception:
-                return int(default)
-
-        def _safe_non_negative_local(v, default: int = 0) -> int:
-            x = _safe_int_local(v, default)
-            return x if x >= 0 else 0
-
-        uid = int(user_id)
-        dl = _safe_non_negative_local(daily_limit, 0)
-
-        # 1) удаляем только ПРОТУХШИЙ cooldown
-        res = await conn.execute(
-            """
-            DELETE FROM withdraw_cooldown
-            WHERE user_id=$1 AND until_at <= NOW()
-            """,
-            uid,
-        )
-
-        try:
-            deleted = int((res or "0").split()[-1])
-        except Exception:
-            deleted = 0
-
-        if deleted <= 0:
-            return False
-
-        # 2) нормализуем daily_limit
-        if dl <= 0:
-            try:
-                if hasattr(self, "get_canwithdrawal"):
-                    dl = _safe_non_negative_local(await self.get_canwithdrawal(uid) or 0, 0)
-            except Exception as e:
-                _vdbg(f"[ЛИМИТЫ][AUTO-RESET][WARN] get_canwithdrawal uid={uid} err={e!r}")
-                dl = 0
-
-        if dl <= 0:
-            try:
-                dl = _safe_non_negative_local(Default_WITHDRAW_DEFAULT_DAILY_LIMIT, 0)
-            except Exception:
-                dl = 100
-
-        if dl <= 0:
-            dl = 100
-
-        print(
-            f"[ЛИМИТЫ][AUTO-RESET] ✅ uid={uid} кулдаун истёк -> удалён({deleted}) "
-            f"-> сброс окна, лимит={dl}"
-        )
-
-        # 3) жёсткий reset quota window
-        await conn.execute(
-            """
-            INSERT INTO withdraw_quota_window(
-                user_id,
-                window_started_at,
-                used_in_window,
-                daily_limit,
-                remaining,
-                used_percent,
-                status,
-                cooldown_left_sec,
-                cooldown_until,
-                updated_at
-            )
-            VALUES ($1, NOW(), 0, $2, $2, 0, 'OK', 0, NULL, NOW())
-            ON CONFLICT (user_id) DO UPDATE
-              SET window_started_at = NOW(),
-                  used_in_window    = 0,
-                  daily_limit       = EXCLUDED.daily_limit,
-                  remaining         = EXCLUDED.remaining,
-                  used_percent      = 0,
-                  status            = 'OK',
-                  cooldown_left_sec = 0,
-                  cooldown_until    = NULL,
-                  updated_at        = NOW()
-            """,
-            uid,
-            int(dl),
-        )
-
-        # 4) лог текущего состояния после reset
-        try:
-            row = await conn.fetchrow(
-                """
-                SELECT
-                    user_id,
-                    window_started_at,
-                    used_in_window,
-                    daily_limit,
-                    remaining,
-                    used_percent,
-                    status,
-                    cooldown_left_sec,
-                    cooldown_until
-                FROM withdraw_quota_window
-                WHERE user_id=$1
-                """,
-                uid,
-            )
-            _vdbg(f"[ЛИМИТЫ][AUTO-RESET][STATE] uid={uid} row={dict(row) if row else None}")
-        except Exception as e:
-            _vdbg(f"[ЛИМИТЫ][AUTO-RESET][WARN] state fetch uid={uid} err={e!r}")
-
-        return True
-
-    async def remove_expired_withdraw_cooldowns(self, user_id) -> int:
+    async def remove_expired_withdraw_cooldowns(self, user_id=None) -> int:
         """
         Чистим просроченные кулдауны.
         Для затронутых пользователей сбрасываем окно (used=0, remaining=daily_limit).
@@ -11244,55 +11225,6 @@ class Database:
                 """ , int(uid_) , int(used_store_) , int(dl_) , int(remaining_) , int(used_percent_) , str(status_) ,
                 int(cooldown_left_sec_) , cooldown_until_ , )
 
-        async def _set_cooldown_best_effort(conn_ , uid_: int , secs_: int , cause_: str) -> bool:
-            secs_ = _safe_non_negative_local(secs_ , 0)
-            if secs_ <= 0:
-                try:
-                    secs_ = _safe_non_negative_local(
-                        getattr(self , "WITHDRAW_DEFAULT_COOLDOWN_SEC" , 12 * 3600) or (12 * 3600) , 12 * 3600 , )
-                except Exception:
-                    secs_ = 12 * 3600
-
-            if secs_ <= 0:
-                print(f"[ВЫВОД][{rid}] 🟨 cooldown skipped: bad secs={secs_}")
-                return False
-
-            cause_ = _safe_str_local(cause_ , "daily_limit")
-
-            helper = getattr(self , "_set_withdraw_cooldown_idempotent" , None)
-            if callable(helper):
-                try:
-                    return bool(
-                        await helper(
-                            conn_ , user_id=int(uid_) , cooldown_seconds=int(secs_) , cause=str(cause_) , ))
-                except Exception as e:
-                    print(f"[ВЫВОД][{rid}] 🟠 helper _set_withdraw_cooldown_idempotent failed -> fallback SQL: {e!r}")
-
-            await conn_.execute(
-                """
-                INSERT INTO withdraw_cooldown(user_id, started_at, until_at, cause)
-                VALUES ($1, NOW(), NOW() + ($2::bigint * INTERVAL '1 second'), $3)
-                ON CONFLICT (user_id) DO UPDATE
-                SET
-                    started_at = CASE
-                        WHEN withdraw_cooldown.until_at > NOW()
-                            THEN withdraw_cooldown.started_at
-                        ELSE EXCLUDED.started_at
-                    END,
-                    until_at = CASE
-                        WHEN withdraw_cooldown.until_at > NOW()
-                            THEN withdraw_cooldown.until_at
-                        ELSE EXCLUDED.until_at
-                    END,
-                    cause = CASE
-                        WHEN withdraw_cooldown.until_at > NOW()
-                            THEN withdraw_cooldown.cause
-                        ELSE EXCLUDED.cause
-                    END
-                """ , int(uid_) , int(secs_) , str(cause_) , )
-            print(f"[ВЫВОД][{rid}] ✅ cooldown set via SQL fallback uid={uid_} secs={secs_} cause={cause_!r}")
-            return True
-
         rid = _safe_str_local(request_id , "")
         if not rid:
             rid = uuid.uuid4().hex [ :16 ]
@@ -11411,8 +11343,7 @@ class Database:
                     dl = 100
 
                 if cd <= 0:
-                    cd = _safe_non_negative_local(
-                        getattr(self , "WITHDRAW_DEFAULT_COOLDOWN_SEC" , 12 * 3600) or (12 * 3600) , 12 * 3600 , )
+                    cd = self._withdraw_cooldown_sec_default()
 
                 ensure_helper = getattr(self , "_ensure_quota_row_locked" , None)
                 if callable(ensure_helper):
@@ -11509,80 +11440,37 @@ class Database:
                     f"bal={bal} amount={amount_i}")
 
                 if int(remaining_truth) <= 0:
-                    active_cd_check = await conn.fetchval(
-                        """
-                        SELECT 1
-                        FROM withdraw_cooldown
-                        WHERE user_id=$1 AND until_at > NOW()
-                        LIMIT 1
-                        """ , int(uid) , )
+                    # Живого таймера здесь быть не может: активный кулдаун отсекается выше.
+                    # Значит окно устарело (таймер отбыт или снят) -> переводим его вперёд.
+                    await self._advance_withdraw_window_locked(
+                        conn , user_id=int(uid) , daily_limit=int(dl_db) , reason=f"stale_window:{rid}")
 
-                    if not active_cd_check:
-                        ws = await conn.fetchval("SELECT NOW()")
+                    ws = await conn.fetchval(
+                        "SELECT window_started_at FROM withdraw_quota_window WHERE user_id=$1" , int(uid) , )
+                    used_truth = 0
+                    remaining_truth = int(dl_db)
 
-                        await conn.execute(
-                            """
-                            UPDATE withdraw_quota_window
-                            SET
-                                window_started_at   = $2,
-                                used_in_window      = 0,
-                                daily_limit         = $3,
-                                remaining           = $3,
-                                used_percent        = 0,
-                                status              = 'OK',
-                                cooldown_left_sec   = 0,
-                                cooldown_until      = NULL,
-                                updated_at          = NOW()
-                            WHERE user_id = $1
-                            """ , int(uid) , ws , int(dl_db) , )
-
-                        used_truth = 0
-                        remaining_truth = int(dl_db)
-
-                        print(
-                            f"[ВЫВОД][{rid}] ♻️ HARD RESET window after expired cooldown "
-                            f"new_ws={ws} new_remaining={remaining_truth}")
+                    print(
+                        f"[ВЫВОД][{rid}] ♻️ окно переведено вперёд (таймер уже отбыт) "
+                        f"new_ws={ws} new_remaining={remaining_truth}")
 
                 if amount_i > int(remaining_truth):
-                    cooldown_left = 0
-                    cooldown_set = False
-                    cd_until2 = None
+                    # Неудачная попытка вывода таймер НЕ ставит: он рождается только ниже,
+                    # после реального списания, исчерпавшего лимит.
                     used_store_pre = min(
                         _safe_non_negative_local(used_truth , 0) , _safe_non_negative_local(dl_db , 0) , )
 
-                    if int(remaining_truth) <= 0 and int(cd) > 0:
-                        cooldown_set = await _set_cooldown_best_effort(
-                            conn , uid_=uid , secs_=int(cd) , cause_="daily_limit" , )
-
-                        left_helper = getattr(self , "_get_withdraw_cooldown_left_locked" , None)
-                        if callable(left_helper):
-                            cooldown_left = _safe_non_negative_local(await left_helper(conn , user_id=uid) or 0 , 0)
-                        else:
-                            cooldown_left = await _cooldown_left_locked_fallback(conn , uid)
-
-                        cd_until2 = await conn.fetchval(
-                            """
-                            SELECT until_at
-                            FROM withdraw_cooldown
-                            WHERE user_id=$1 AND until_at > NOW()
-                            """ , int(uid) , )
-
-                        await _update_quota_window_safe(
-                            conn , uid_=int(uid) , daily_limit_=int(dl_db) , used_value_=int(used_store_pre) ,
-                            status_="COOLDOWN" , cooldown_left_sec_=int(cooldown_left) , cooldown_until_=cd_until2 , )
-                    else:
-                        await _update_quota_window_safe(
-                            conn , uid_=int(uid) , daily_limit_=int(dl_db) , used_value_=int(used_store_pre) ,
-                            status_="OK" if int(dl_db) - int(used_store_pre) > 0 else "LIMIT_REACHED" ,
-                            cooldown_left_sec_=0 , cooldown_until_=None , )
+                    await _update_quota_window_safe(
+                        conn , uid_=int(uid) , daily_limit_=int(dl_db) , used_value_=int(used_store_pre) ,
+                        status_="OK" if int(dl_db) - int(used_store_pre) > 0 else "LIMIT_REACHED" ,
+                        cooldown_left_sec_=0 , cooldown_until_=None , )
 
                     print(
                         f"[ВЫВОД][{rid}] 🟥 exceeds_remaining amount={amount_i} "
-                        f"remaining_truth={remaining_truth} cd_set={cooldown_set} cd_left={cooldown_left}")
+                        f"remaining_truth={remaining_truth}")
                     return _make_fail(
                         "exceeds_remaining" , daily_limit=int(dl_db) , used=int(min(int(used_truth) , int(dl_db))) ,
-                        remaining=int(remaining_truth) , cooldown_set=bool(cooldown_set) ,
-                        cooldown_left=int(cooldown_left) , )
+                        remaining=int(remaining_truth) , cooldown_set=False , cooldown_left=0 , )
 
                 print(f"[ВЫВОД][{rid}] 💳 UPDATE users.balance -{amount_i}")
                 row_bal = await conn.fetchrow(
@@ -11628,9 +11516,14 @@ class Database:
                 cd_until_after = None
                 cooldown_set2 = False
 
-                if remaining_store <= 0 and int(cd) > 0:
-                    cooldown_set2 = await _set_cooldown_best_effort(
-                        conn , uid_=uid , secs_=int(cd) , cause_=f"daily_limit:{rid}" , )
+                if remaining_store <= 0:
+                    # ЕДИНСТВЕННАЯ точка рождения таймера: лимит исчерпан этим списанием.
+                    # Постановка обязательна и идёт в той же транзакции - если она сорвётся,
+                    # откатится весь вывод. Иначе появилось бы состояние "лимит выбран,
+                    # таймера нет", которое лечится обнулением окна = бесплатный лимит.
+                    secs_arm = _safe_non_negative_local(cd , 0) or self._withdraw_cooldown_sec_default()
+                    cooldown_set2 = await self._set_withdraw_cooldown_idempotent(
+                        conn , user_id=int(uid) , cooldown_seconds=int(secs_arm) , cause=f"daily_limit:{rid}" , )
 
                     left_helper = getattr(self , "_get_withdraw_cooldown_left_locked" , None)
                     if callable(left_helper):
@@ -11680,123 +11573,22 @@ class Database:
     async def _cleanup_expired_cooldown_and_reset_quota_locked(self , conn , * , user_id: int ,
             daily_limit: int , ) -> bool:
         """
-        Если кулдаун истёк:
-        - удаляем протухший withdraw_cooldown
-        - сбрасываем withdraw_quota_window
-        - нормализуем лимит перед reset
+        Если кулдаун ОТБЫТ - снимает его и переводит окно квоты вперёд.
 
-        ВАЖНО:
-        - вызывать только под lock / внутри транзакции
-        - новый cooldown НЕ создаёт
+        Вся работа делегирована _advance_withdraw_window_locked, чтобы в проекте
+        существовал ровно один способ снять кулдаун - вместе со сбросом
+        израсходованного. Живой таймер не трогается.
+
+        Вызывать только внутри транзакции, удерживающей pg_advisory_xact_lock(user_id).
+        Возвращает True, если окно было переведено.
         """
-
-        def _safe_int_local(v , default: int = 0) -> int:
-            try:
-                return int(v)
-            except Exception:
-                return int(default)
-
-        def _safe_non_negative_local(v , default: int = 0) -> int:
-            x = _safe_int_local(v , default)
-            return x if x >= 0 else 0
-
         uid = int(user_id)
-        dl = _safe_non_negative_local(daily_limit , 0)
 
-        # ---------------------------------------------------
-        # 1) удаляем только ПРОТУХШИЙ cooldown
-        # ---------------------------------------------------
-        res = await conn.execute(
-            """
-            DELETE FROM withdraw_cooldown
-            WHERE user_id=$1 AND until_at <= NOW()
-            """ , uid , )
-
-        try:
-            deleted = int((res or "0").split() [ -1 ])
-        except Exception:
-            deleted = 0
-
-        if deleted <= 0:
+        if not await self._has_expired_withdraw_cooldown(conn , uid):
             return False
 
-        # ---------------------------------------------------
-        # 2) нормализуем daily_limit
-        # ---------------------------------------------------
-        if dl <= 0:
-            try:
-                if hasattr(self , "get_canwithdrawal"):
-                    dl = _safe_non_negative_local(await self.get_canwithdrawal(uid) or 0 , 0)
-            except Exception as e:
-                _vdbg(f"[ЛИМИТЫ][AUTO-RESET][WARN] get_canwithdrawal uid={uid} err={e!r}")
-                dl = 0
-
-        if dl <= 0:
-            try:
-                dl = _safe_non_negative_local(Default_WITHDRAW_DEFAULT_DAILY_LIMIT , 0)
-            except Exception:
-                dl = 100
-
-        if dl <= 0:
-            dl = 100
-
-        print(
-            f"[ЛИМИТЫ][AUTO-RESET] ✅ uid={uid} кулдаун истёк -> удалён({deleted}) "
-            f"-> сброс окна, лимит={dl}")
-
-        # ---------------------------------------------------
-        # 3) жёсткий reset quota window
-        # ---------------------------------------------------
-        await conn.execute(
-            """
-            INSERT INTO withdraw_quota_window(
-                user_id,
-                window_started_at,
-                used_in_window,
-                daily_limit,
-                remaining,
-                used_percent,
-                status,
-                cooldown_left_sec,
-                cooldown_until,
-                updated_at
-            )
-            VALUES ($1, NOW(), 0, $2, $2, 0, 'OK', 0, NULL, NOW())
-            ON CONFLICT (user_id) DO UPDATE
-              SET window_started_at = NOW(),
-                  used_in_window    = 0,
-                  daily_limit       = EXCLUDED.daily_limit,
-                  remaining         = EXCLUDED.remaining,
-                  used_percent      = 0,
-                  status            = 'OK',
-                  cooldown_left_sec = 0,
-                  cooldown_until    = NULL,
-                  updated_at        = NOW()
-            """ , uid , int(dl) , )
-
-        # ---------------------------------------------------
-        # 4) лог текущего состояния после reset
-        # ---------------------------------------------------
-        try:
-            row = await conn.fetchrow(
-                """
-                SELECT
-                    user_id,
-                    window_started_at,
-                    used_in_window,
-                    daily_limit,
-                    remaining,
-                    used_percent,
-                    status,
-                    cooldown_left_sec,
-                    cooldown_until
-                FROM withdraw_quota_window
-                WHERE user_id=$1
-                """ , uid , )
-            _vdbg(f"[ЛИМИТЫ][AUTO-RESET][STATE] uid={uid} row={dict(row) if row else None}")
-        except Exception as e:
-            _vdbg(f"[ЛИМИТЫ][AUTO-RESET][WARN] state fetch uid={uid} err={e!r}")
-
+        await self._advance_withdraw_window_locked(
+            conn , user_id=uid , daily_limit=int(daily_limit) , reason="cooldown_served")
         return True
 
     async def _get_withdraw_cooldown_left_locked(self , conn , * , user_id: int) -> int:
@@ -11839,107 +11631,12 @@ class Database:
             VALUES ($1, NOW(), 0, $2, $2, 0, 'OK', 0, NULL, NOW())
             ON CONFLICT (user_id) DO NOTHING
             """ , uid , int(dl) , )
-    async def upsert_withdraw_limit(self , user_id: int , daily_amount_limit: Optional [ int ] = None ,
-                                    cooldown_seconds: Optional [ int ] = None) -> None:
-        """
-        Установить/обновить персональные лимиты. Не переданный параметр - берём текущее значение/дефолт.
-        """
-        # берём текущие (или дефолты)
-        current_limit , current_cooldown = await self.get_user_withdraw_limits(user_id)
-        new_limit = daily_amount_limit if daily_amount_limit is not None else current_limit
-        new_cd = cooldown_seconds if cooldown_seconds is not None else current_cooldown
-
-        sql = """
-        INSERT INTO withdraw_limits (user_id, daily_amount_limit, cooldown_seconds, updated_at)
-        VALUES ($1, $2, $3, now())
-        ON CONFLICT (user_id) DO UPDATE
-          SET daily_amount_limit = EXCLUDED.daily_amount_limit,
-              cooldown_seconds   = EXCLUDED.cooldown_seconds,
-              updated_at         = now();
-        """
-        async with self.pool.acquire() as conn:
-            await conn.execute(sql , user_id , int(new_limit) , int(new_cd))
-
     # ---------- кулдауны ----------
 
     async def _get_active_cooldown(self , user_id: int):
         sql = "SELECT started_at, until_at, cause FROM withdraw_cooldown WHERE user_id = $1 AND until_at > now()"
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(sql , user_id)
-
-    # ============================================================
-    # ✅ 11) Тех-обслуживание: чистка просроченных кулдаунов пачкой
-    # ============================================================
-    async def remove_expired_withdraw_cooldowns(self, user_id) -> int:
-        """
-        Чистим просроченные кулдауны.
-        Для затронутых пользователей сбрасываем окно (used=0, remaining=daily_limit).
-        """
-        if not getattr(self , "pool" , None):
-            return 0
-
-        async with self.pool.acquire() as conn:
-            async with conn.transaction():
-                rows = await conn.fetch("SELECT user_id FROM withdraw_cooldown WHERE until_at <= NOW()")
-                user_ids = [ int(r [ "user_id" ]) for r in rows ] if rows else [ ]
-
-                res = await conn.execute("DELETE FROM withdraw_cooldown WHERE until_at <= NOW()")
-                try:
-                    deleted_count = int((res or "0").split() [ -1 ])
-                except Exception:
-                    deleted_count = 0
-
-                if user_ids:
-                    # сброс окна (daily_limit берём из withdraw_limits, иначе дефолт)
-                    # 1) пользователи с персональным лимитом
-                    await conn.execute(
-                        """
-                        INSERT INTO withdraw_quota_window(
-                            user_id, window_started_at, used_in_window, daily_limit, remaining,
-                            used_percent, status, cooldown_left_sec, cooldown_until, updated_at
-                        )
-                        SELECT l.user_id, NOW(), 0,
-                               COALESCE(NULLIF(l.daily_amount_limit,0), $2),
-                               COALESCE(NULLIF(l.daily_amount_limit,0), $2),
-                               0, 'OK', 0, NULL, NOW()
-                          FROM withdraw_limits l
-                         WHERE l.user_id = ANY($1::BIGINT[])
-                        ON CONFLICT (user_id) DO UPDATE
-                          SET window_started_at = EXCLUDED.window_started_at,
-                              used_in_window    = 0,
-                              daily_limit       = EXCLUDED.daily_limit,
-                              remaining         = EXCLUDED.remaining,
-                              used_percent      = 0,
-                              status            = 'OK',
-                              cooldown_left_sec = 0,
-                              cooldown_until    = NULL,
-                              updated_at        = NOW()
-                        """ , user_ids , int(await self.get_canwithdrawal(user_id)))
-
-                    # 2) пользователи без строки в withdraw_limits
-                    await conn.execute(
-                        """
-                        INSERT INTO withdraw_quota_window(
-                            user_id, window_started_at, used_in_window, daily_limit, remaining,
-                            used_percent, status, cooldown_left_sec, cooldown_until, updated_at
-                        )
-                        SELECT u_id, NOW(), 0, $2, $2, 0, 'OK', 0, NULL, NOW()
-                          FROM UNNEST($1::BIGINT[]) AS t(u_id)
-                         WHERE NOT EXISTS (SELECT 1 FROM withdraw_limits l WHERE l.user_id = t.u_id)
-                        ON CONFLICT (user_id) DO UPDATE
-                          SET window_started_at = EXCLUDED.window_started_at,
-                              used_in_window    = 0,
-                              daily_limit       = EXCLUDED.daily_limit,
-                              remaining         = EXCLUDED.remaining,
-                              used_percent      = 0,
-                              status            = 'OK',
-                              cooldown_left_sec = 0,
-                              cooldown_until    = NULL,
-                              updated_at        = NOW()
-                        """ , user_ids , int(await self.get_canwithdrawal(user_id)))
-
-                _vdbg(f"[ЛИМИТЫ][CLEANUP] удалено кулдаунов: {deleted_count}. сброшено окон: {len(user_ids)}")
-                return deleted_count
 
     # ============================================================
     # ✅ 6) can_withdraw - лёгкая обёртка для UI
@@ -11969,8 +11666,8 @@ class Database:
         - FOR UPDATE: balance, cooldown, quota window
         - used считается по withdraw_log внутри транзакции (истина)
         - request_id: двойной клик НЕ спишет повторно
-        - ✅ кулдаун ставится ТОЛЬКО идемпотентно (НЕ перезапускает таймер)
-        - ✅ если remaining == 0 -> ставим кулдаун и возвращаем cooldown_left
+        - ✅ кулдаун ставится ровно один раз: только после списания, исчерпавшего лимит
+        - ✅ отбытый кулдаун снимается вместе с переводом окна (одной операцией)
         """
         rid = request_id or uuid.uuid4().hex [ :16 ]
         t0 = time.perf_counter()
@@ -11997,8 +11694,6 @@ class Database:
                     "SELECT amount, created_at FROM withdraw_log WHERE user_id=$1 AND request_id=$2" , uid , rid)
                 if prev:
                     print(f"[ВЫВОД][DEBUG] DUPLICATE rid={rid} -> ignore повтор")
-                    # возвращаем текущее состояние (в транзакции - быстрее/правильнее)
-                    await conn.execute("DELETE FROM withdraw_cooldown WHERE user_id=$1 AND until_at <= NOW()" , uid)
 
                     cd_active = await conn.fetchval(
                         "SELECT until_at FROM withdraw_cooldown WHERE user_id=$1 AND until_at > NOW()" , uid)
@@ -12056,13 +11751,12 @@ class Database:
                             "SELECT GREATEST(EXTRACT(EPOCH FROM ($1 - NOW()))::BIGINT, 0)" , cd [ "until_at" ]) or 0)
                     return {"ok": False , "error": "cooldown_active" , "cooldown_left": left}
 
-                if cd and cd [ "until_at" ] and cd [ "until_at" ] <= now:
-                    await conn.execute("DELETE FROM withdraw_cooldown WHERE user_id=$1" , uid)
-
                 # 4) limits
                 daily_limit , cooldown_seconds = await self.get_user_withdraw_limits(uid)
                 daily_limit = int(daily_limit or 0)
                 cooldown_seconds = int(cooldown_seconds or 0)
+                if cooldown_seconds <= 0:
+                    cooldown_seconds = self._withdraw_cooldown_sec_default()
 
                 # 5) окно квоты FOR UPDATE
                 await conn.execute(
@@ -12071,6 +11765,12 @@ class Database:
                     VALUES ($1, NOW())
                     ON CONFLICT (user_id) DO NOTHING
                     """ , uid)
+
+                # отбытый кулдаун снимаем ТОЛЬКО вместе с переводом окна: снятие
+                # без сброса израсходованного оставляло лимит нулевым и возрождало таймер
+                if cd and cd [ "until_at" ] and cd [ "until_at" ] <= now:
+                    await self._advance_withdraw_window_locked(
+                        conn , user_id=uid , daily_limit=int(daily_limit) , reason=f"cooldown_served:{rid}")
                 ws = await conn.fetchval(
                     "SELECT window_started_at FROM withdraw_quota_window WHERE user_id=$1 FOR UPDATE" , uid)
                 if not ws:
@@ -12089,23 +11789,23 @@ class Database:
 
                 remaining = max(0 , int(daily_limit) - int(used))
 
+                # лимит исчерпан, но живого таймера нет -> окно устарело, переводим вперёд
+                if remaining <= 0:
+                    await self._advance_withdraw_window_locked(
+                        conn , user_id=uid , daily_limit=int(daily_limit) , reason=f"stale_window:{rid}")
+                    ws = await conn.fetchval(
+                        "SELECT window_started_at FROM withdraw_quota_window WHERE user_id=$1" , uid)
+                    used = 0
+                    remaining = max(0 , int(daily_limit))
+
                 print(
                     f"[ВЫВОД][DEBUG] limit={daily_limit} used={used} remaining={remaining} bal={bal} amount={amount_i}")
 
-                # 7) запрет превышения
+                # 7) запрет превышения (неудачная попытка таймер НЕ ставит)
                 if amount_i > remaining:
-                    cooldown_set = False
-                    cooldown_left = 0
-
-                    # ✅ ВАЖНО: кулдаун ставим ТОЛЬКО идемпотентно (не сбрасывает таймер)
-                    if remaining <= 0 and cooldown_seconds > 0:
-                        cooldown_set = await self._set_withdraw_cooldown_idempotent(
-                            conn , user_id=uid , cooldown_seconds=cooldown_seconds , cause="daily_limit")
-                        cooldown_left = await self._get_withdraw_cooldown_left_locked(conn , user_id=uid)
-
                     return {"ok": False , "error": "exceeds_remaining" , "daily_limit": int(daily_limit) ,
-                        "used": int(used) , "remaining": int(remaining) , "cooldown_set": bool(cooldown_set) ,
-                        "cooldown_left": int(cooldown_left) , }
+                        "used": int(used) , "remaining": int(remaining) , "cooldown_set": False ,
+                        "cooldown_left": 0 , }
 
                 # 8) списание баланса (лучше RETURNING, чтобы не читать второй раз)
                 row_bal = await conn.fetchrow(
@@ -12133,10 +11833,10 @@ class Database:
                 cooldown_set = False
                 cooldown_left = 0
 
-                # 10) ✅ если лимит выбит - ставим кулдаун ИДЕМПОТЕНТНО (не сбрасывает)
-                if remaining_after <= 0 and cooldown_seconds > 0:
+                # 10) ✅ лимит выбит этим списанием - единственная точка рождения таймера
+                if remaining_after <= 0:
                     cooldown_set = await self._set_withdraw_cooldown_idempotent(
-                        conn , user_id=uid , cooldown_seconds=cooldown_seconds , cause="daily_limit")
+                        conn , user_id=uid , cooldown_seconds=int(cooldown_seconds) , cause=f"daily_limit:{rid}")
                     cooldown_left = await self._get_withdraw_cooldown_left_locked(conn , user_id=uid)
 
                 dt = time.perf_counter() - t0

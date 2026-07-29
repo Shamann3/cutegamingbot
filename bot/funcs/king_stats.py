@@ -10,6 +10,7 @@ from typing import Any
 from aiogram import types
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from bot.db_create.pklcode import GameStore, LazyGameStore
+from bot.db_create import pklcode
 
 from bot.config.config import (
     KING_STATS_INTERVAL_FORCE_NEW_ROUND,
@@ -250,6 +251,11 @@ _KING_DM_LAST_MENU: dict[tuple[int, int], int] = LazyGameStore("_KING_DM_LAST_ME
 # «Меню устарело» вылезало у людей, которые никуда не уходили: сообщение на
 # месте, а привязка к нему уже вычищена уборщиком. Держим привязки 30 дней.
 # Ожидание ввода не трогаем: у него свой таймаут 120 секунд.
+#
+# Сам срок объявлен в pklcode.STORE_EXPIRY_OVERRIDES и применяется в момент
+# создания стора. Выставлять его здесь, после создания, нельзя: до этой строки
+# существовало окно, в котором уборщик видел дефолтные 2 часа и успевал снести
+# привязки (при прогреве сторов на старте окно длится до импорта этого модуля).
 _KING_MENU_BINDING_TTL_SEC = 30 * 24 * 60 * 60
 
 
@@ -301,20 +307,31 @@ _KING_SESSION_EXPIRED_TEXT = (
 )
 
 
-def _tune_menu_store_ttl() -> None:
+def _check_menu_store_ttl() -> None:
+    """
+    Страховка: срок хранения привязок меню должен быть уже объявлен в pklcode.
+
+    Ничего не выставляем - только громко жалуемся, если реестр разошёлся с
+    ожиданиями этого модуля. Молчаливое расхождение означало бы возврат бага
+    «Меню устарело» у людей, которые никуда не уходили.
+    """
     for store in (_KING_MENU_OWNERS, _KING_MENU_TARGET,
                   _KING_MENU_RENDER_STATE, _KING_DM_LAST_MENU):
         try:
-            backing = store._load()
-            if int(getattr(backing, "expiry_seconds", 0) or 0) < _KING_MENU_BINDING_TTL_SEC:
-                backing.expiry_seconds = _KING_MENU_BINDING_TTL_SEC
-                backing._rebuild_expire_heap()
-        except Exception as tune_error:
-            print(f"⚠️ [KING][TTL] не смог настроить срок хранения: "
-                  f"{type(tune_error).__name__}: {tune_error}")
+            declared = pklcode.STORE_EXPIRY_OVERRIDES.get(store.name)
+            if declared is None or declared < _KING_MENU_BINDING_TTL_SEC:
+                print(
+                    f"⚠️ [KING][TTL] {store.name}: в pklcode."
+                    f"STORE_EXPIRY_OVERRIDES объявлено {declared}, "
+                    f"нужно минимум {_KING_MENU_BINDING_TTL_SEC} - "
+                    f"привязки меню будут вычищаться раньше времени"
+                )
+        except Exception as check_error:
+            print(f"⚠️ [KING][TTL] не смог проверить срок хранения: "
+                  f"{type(check_error).__name__}: {check_error}")
 
 
-_tune_menu_store_ttl()
+_check_menu_store_ttl()
 
 
 def _kc(group_chat_id: Any, *parts: Any) -> str:

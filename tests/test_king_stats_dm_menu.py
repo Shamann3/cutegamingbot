@@ -1,5 +1,15 @@
-import io, sys, asyncio, types as pytypes
+import io, os, pathlib, sys, asyncio, types as pytypes
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+_ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+# Шаг 5 проверяет пережитие рестарта через НАСТОЯЩИЙ Redis, а pklcode берёт
+# доступы из окружения процесса. Без этого вызова REDIS_PASSWORD не выставлен,
+# Redis не подключается, и шаг 5 падал независимо от проверяемой логики.
+from bot.config.db_config import bootstrap_database_env
+bootstrap_database_env()
 
 import bot.funcs.king_stats as ks
 from aiogram.exceptions import TelegramForbiddenError
