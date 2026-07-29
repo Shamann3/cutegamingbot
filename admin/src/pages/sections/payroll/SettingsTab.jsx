@@ -47,21 +47,19 @@ export default function PayrollSettingsTab() {
 
   return (
     <div className="sec-tab-body payroll-tab">
-      <div className="payroll-hero">
+      <header className="payroll-header">
         <div>
-          <h3 className="payroll-hero-title">Настройки выплат</h3>
-          <p className="payroll-hero-sub">Пороги cosign, Fragment и шаблоны договоров</p>
+          <h3 className="payroll-title">Настройки выплат</h3>
+          <p className="payroll-sub">Пороги cosign, Fragment и шаблоны договоров</p>
         </div>
-        <div className="payroll-hero-stats">
-          {fragDead && <span className="payroll-stat payroll-stat-danger">Fragment недоступен</span>}
+        <div className="payroll-summary">
+          {fragDead && <span>Fragment недоступен</span>}
           {!fragDead && frag?.ok && (
-            <span className="payroll-stat payroll-stat-ok">
-              Fragment {frag.ton != null ? `${Number(frag.ton).toFixed(2)} TON` : 'OK'}
-            </span>
+            <span>Fragment {frag.ton != null ? `${Number(frag.ton).toFixed(2)} TON` : 'OK'}</span>
           )}
-          {(!frag || frag.ok == null) && <span className="payroll-stat">Fragment: нет данных</span>}
+          {(!frag || frag.ok == null) && <span>Fragment: нет данных</span>}
         </div>
-      </div>
+      </header>
 
       <section className="payroll-panel">
         <h4 className="payroll-panel-title">Со-подтверждение (второй владелец)</h4>

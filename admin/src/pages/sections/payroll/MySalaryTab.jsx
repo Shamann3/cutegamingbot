@@ -9,7 +9,20 @@ import {
   fetchMySalary,
   updateMyPayoutProfile,
 } from '../../../lib/adminClient'
-import { SALARY_PAYOUT_OPTIONS, StatusBadge, fmtDate } from './shared'
+import {
+  PERIOD_OPTIONS,
+  SALARY_PAYOUT_OPTIONS,
+  StatusBadge,
+  fmtDate,
+  payoutLabel,
+} from './shared'
+
+function periodLabelOf(item) {
+  if (!item) return ''
+  const kind = PERIOD_OPTIONS.find((p) => p.value === item.periodType)?.label || item.periodType
+  const date = item.periodStart || item.weekStart
+  return [kind, date].filter(Boolean).join(' · ')
+}
 
 export default function PayrollMySalaryTab() {
   const [items, setItems] = useState([])
@@ -80,36 +93,26 @@ export default function PayrollMySalaryTab() {
       <div className="payroll-my-grid">
         {current ? (
           <div className="payroll-my-card">
-            <p className="staff-salary-card-label">
-              Зарплата
-              {current.periodType
-                ? ` · ${current.periodType}: ${current.periodStart || current.weekStart}`
-                : ''}
-            </p>
-            <p className="staff-salary-card-amount"><CountUp value={current.amount} /></p>
-            <StatusBadge status={current.status} />
-
-            <div className="staff-payslip-breakdown">
-              <div><span>Ставка</span><b>{current.baseAmount}</b></div>
-              <div><span>Коэффициент</span><b>×{current.coefficient}</b></div>
-              {current.bonus > 0 && (
-                <div><span>Бонус{current.bonusReason ? ` (${current.bonusReason})` : ''}</span><b>+{current.bonus}</b></div>
-              )}
-              {current.penalty > 0 && (
-                <div><span>Штраф{current.penaltyReason ? ` (${current.penaltyReason})` : ''}</span><b>−{current.penalty}</b></div>
-              )}
-              <div className="staff-payslip-breakdown-total"><span>К выплате</span><b>{current.amount}</b></div>
+            <p className="payroll-my-label">Зарплата</p>
+            <p className="payroll-my-period">{periodLabelOf(current)}</p>
+            <p className="payroll-my-amount"><CountUp value={current.amount} /></p>
+            <div className="payroll-row-meta">
+              <StatusBadge status={current.status} />
+              <span className="payroll-muted">{payoutLabel(current.payoutType)}</span>
             </div>
 
             {current.status === 'paid' && current.txid === 'kut-self-claim' && (
-              <p className="staff-hint">Получено в kut на игровой баланс</p>
+              <p className="payroll-hint">Получено в kut на игровой баланс</p>
             )}
             {current.status === 'paid' && current.txid && current.txid !== 'kut-self-claim' && (
-              <p className="staff-hint">Выплачено. TXID: {current.txid}</p>
+              <p className="payroll-hint">Выплачено · TXID: {current.txid}</p>
             )}
 
             {['approved', 'partially_paid'].includes(current.status) && current.payoutType === 'kut' && remainingKut > 0 && (
-              <button type="button" className="sec-btn sec-btn-success" disabled={busy}
+              <button
+                type="button"
+                className="sec-btn sec-btn-success"
+                disabled={busy}
                 onClick={async () => {
                   setBusy(true)
                   try {
@@ -121,19 +124,24 @@ export default function PayrollMySalaryTab() {
                   } finally {
                     setBusy(false)
                   }
-                }}>
+                }}
+              >
                 Получить {remainingKut} kut
               </button>
             )}
 
             {current.status !== 'paid' && current.status !== 'cancelled' && !current.appealId && (
-              <button type="button" className="sec-btn sec-btn-ghost" disabled={busy}
-                onClick={() => setAppealFor(current)}>
-                Подать апелляцию
+              <button
+                type="button"
+                className="sec-btn sec-btn-ghost"
+                disabled={busy}
+                onClick={() => setAppealFor(current)}
+              >
+                Апелляция
               </button>
             )}
             {current.appealStatus === 'open' && (
-              <p className="staff-hint">Апелляция ожидает рассмотрения</p>
+              <p className="payroll-hint">Апелляция на рассмотрении</p>
             )}
           </div>
         ) : (
@@ -142,12 +150,15 @@ export default function PayrollMySalaryTab() {
 
         {claimableBonus && (
           <div className="payroll-my-card">
-            <p className="staff-salary-card-label">Премия в kut</p>
-            <p className="staff-salary-card-amount">
+            <p className="payroll-my-label">Премия</p>
+            <p className="payroll-my-amount">
               <CountUp value={claimableBonus.amount - (claimableBonus.paidAmount || 0)} />
             </p>
             {claimableBonus.reason && <p className="payroll-reason">{claimableBonus.reason}</p>}
-            <button type="button" className="sec-btn sec-btn-success" disabled={busy}
+            <button
+              type="button"
+              className="sec-btn sec-btn-success"
+              disabled={busy}
               onClick={async () => {
                 setBusy(true)
                 try {
@@ -159,7 +170,8 @@ export default function PayrollMySalaryTab() {
                 } finally {
                   setBusy(false)
                 }
-              }}>
+              }}
+            >
               Получить премию
             </button>
           </div>
@@ -167,60 +179,92 @@ export default function PayrollMySalaryTab() {
 
         {profile && (
           <div className="payroll-my-card payroll-my-card-wide">
-            <p className="staff-salary-card-label">Реквизиты для выплат</p>
-            <label className="payroll-payout-label">Способ
-              <AdminSelect value={profile.payoutType || 'other'}
+            <p className="payroll-my-label">Реквизиты</p>
+            <label className="payroll-field">
+              <span>Способ</span>
+              <AdminSelect
+                value={profile.payoutType || 'other'}
                 onChange={(v) => setProfile((p) => ({ ...p, payoutType: v }))}
-                options={SALARY_PAYOUT_OPTIONS} />
+                options={SALARY_PAYOUT_OPTIONS}
+              />
             </label>
             <div className="payroll-fields">
-              <label>Stars @username
-                <input className="sec-input" value={profile.starsUsername || ''}
-                  onChange={(e) => setProfile((p) => ({ ...p, starsUsername: e.target.value }))} />
+              <label className="payroll-field">
+                <span>Stars @username</span>
+                <input
+                  className="sec-input"
+                  value={profile.starsUsername || ''}
+                  onChange={(e) => setProfile((p) => ({ ...p, starsUsername: e.target.value }))}
+                />
               </label>
-              <label>Сеть крипты
-                <input className="sec-input" value={profile.cryptoNetwork || ''}
-                  onChange={(e) => setProfile((p) => ({ ...p, cryptoNetwork: e.target.value }))} />
+              <label className="payroll-field">
+                <span>Сеть</span>
+                <input
+                  className="sec-input"
+                  value={profile.cryptoNetwork || ''}
+                  onChange={(e) => setProfile((p) => ({ ...p, cryptoNetwork: e.target.value }))}
+                />
               </label>
-              <label>Адрес
-                <input className="sec-input" value={profile.cryptoAddress || ''}
-                  onChange={(e) => setProfile((p) => ({ ...p, cryptoAddress: e.target.value }))} />
+              <label className="payroll-field">
+                <span>Адрес</span>
+                <input
+                  className="sec-input"
+                  value={profile.cryptoAddress || ''}
+                  onChange={(e) => setProfile((p) => ({ ...p, cryptoAddress: e.target.value }))}
+                />
               </label>
-              <label>Банк
-                <input className="sec-input" value={profile.cardBank || ''}
-                  onChange={(e) => setProfile((p) => ({ ...p, cardBank: e.target.value }))} />
+              <label className="payroll-field">
+                <span>Банк</span>
+                <input
+                  className="sec-input"
+                  value={profile.cardBank || ''}
+                  onChange={(e) => setProfile((p) => ({ ...p, cardBank: e.target.value }))}
+                />
               </label>
-              <label>Карта
-                <input className="sec-input" value={profile.cardNumber || ''}
-                  onChange={(e) => setProfile((p) => ({ ...p, cardNumber: e.target.value }))} />
+              <label className="payroll-field">
+                <span>Карта</span>
+                <input
+                  className="sec-input"
+                  value={profile.cardNumber || ''}
+                  onChange={(e) => setProfile((p) => ({ ...p, cardNumber: e.target.value }))}
+                />
               </label>
-              <label>ФИО
-                <input className="sec-input" value={profile.cardHolder || ''}
-                  onChange={(e) => setProfile((p) => ({ ...p, cardHolder: e.target.value }))} />
+              <label className="payroll-field">
+                <span>ФИО</span>
+                <input
+                  className="sec-input"
+                  value={profile.cardHolder || ''}
+                  onChange={(e) => setProfile((p) => ({ ...p, cardHolder: e.target.value }))}
+                />
               </label>
-              <label>СБП телефон
-                <input className="sec-input" value={profile.cardSbpPhone || ''}
-                  onChange={(e) => setProfile((p) => ({ ...p, cardSbpPhone: e.target.value }))} />
+              <label className="payroll-field">
+                <span>СБП</span>
+                <input
+                  className="sec-input"
+                  value={profile.cardSbpPhone || ''}
+                  onChange={(e) => setProfile((p) => ({ ...p, cardSbpPhone: e.target.value }))}
+                />
               </label>
             </div>
             <button type="button" className="sec-btn sec-btn-sm" disabled={busy} onClick={saveProfile}>
-              Сохранить реквизиты
+              Сохранить
             </button>
           </div>
         )}
       </div>
 
       {items.length > 1 && (
-        <div className="payroll-history">
-          <h3 className="sec-ipban-section-title">История</h3>
+        <section className="payroll-history">
+          <h4 className="payroll-section-title">История</h4>
           {items.slice(1).map((s) => (
             <div key={s.salaryId} className="payroll-history-row">
               <span>{fmtDate(s.periodStart || s.weekStart)}</span>
               <StatusBadge status={s.status} />
+              <span className="payroll-muted">{payoutLabel(s.payoutType)}</span>
               <b>{s.amount}</b>
             </div>
           ))}
-        </div>
+        </section>
       )}
 
       {appealFor && (
@@ -228,12 +272,21 @@ export default function PayrollMySalaryTab() {
           <div className="admin-modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h3 className="admin-modal-title">Апелляция</h3>
             <p className="admin-modal-desc">Сумма: {appealFor.amount}</p>
-            <textarea className="admin-modal-textarea" rows={4} value={reason}
-              onChange={(e) => setReason(e.target.value)} placeholder="Почему не согласны"
-              disabled={busy} />
+            <textarea
+              className="admin-modal-textarea"
+              rows={4}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Почему не согласны"
+              disabled={busy}
+            />
             <div className="admin-modal-actions">
-              <button type="button" className="panel-users-btn" disabled={busy} onClick={() => setAppealFor(null)}>Отмена</button>
-              <button type="button" className="panel-users-btn panel-users-btn-primary"
+              <button type="button" className="panel-users-btn" disabled={busy} onClick={() => setAppealFor(null)}>
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="panel-users-btn panel-users-btn-primary"
                 disabled={busy || !reason.trim()}
                 onClick={async () => {
                   setBusy(true)
@@ -247,7 +300,8 @@ export default function PayrollMySalaryTab() {
                   } finally {
                     setBusy(false)
                   }
-                }}>
+                }}
+              >
                 Отправить
               </button>
             </div>

@@ -6,6 +6,7 @@ import {
   renderContract,
   sendContract,
 } from '../../lib/adminClient'
+import { payoutLabel } from './payroll/shared'
 
 function nameOf(item) {
   if (!item) return '—'
@@ -89,66 +90,78 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
 
   return (
     <div className="admin-modal-backdrop" role="presentation" onClick={() => !busy && onClose()}>
-      <div className="admin-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3 className="admin-modal-title">Выплата — {nameOf(member)}</h3>
+      <div className="admin-modal payroll-pay-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h3 className="admin-modal-title">Выплата</h3>
         <p className="admin-modal-desc">
-          Всего: {s.amount} · уже: {s.paidAmount || 0} · остаток: {remaining}
-          {payoutType ? ` · ${payoutType}` : ''}
+          {nameOf(member)}
+          <span className="payroll-dot">·</span>
+          {payoutLabel(payoutType)}
+          <span className="payroll-dot">·</span>
+          остаток {remaining}
+          {s.paidAmount > 0 ? ` из ${s.amount}` : ''}
         </p>
 
         <label className="admin-modal-field">
           <span>Сумма</span>
-          <input className="sec-input" type="number" min="1" max={remaining} value={amount}
-            onChange={(e) => setAmount(e.target.value)} disabled={busy} />
+          <input
+            className="sec-input"
+            type="number"
+            min="1"
+            max={remaining}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            disabled={busy}
+          />
         </label>
         <label className="admin-modal-field">
           <span>Тип</span>
-          <AdminSelect value={kind} onChange={setKind} options={[
-            { value: 'payment', label: 'Выплата' },
-            { value: 'advance', label: 'Аванс' },
-          ]} />
+          <AdminSelect
+            value={kind}
+            onChange={setKind}
+            options={[
+              { value: 'payment', label: 'Выплата' },
+              { value: 'advance', label: 'Аванс' },
+            ]}
+          />
         </label>
 
         {payoutType === 'stars' && (
-          <>
-            <div style={{ marginBottom: 8, fontSize: '0.82rem' }}>
-              {fragDead && (
-                <span className="staff-badge" style={{ '--badge-color': '#ef4444' }}>
-                  Fragment недоступен{frag?.error ? `: ${frag.error}` : ''}
-                </span>
-              )}
-              {!fragDead && frag?.ok && (
-                <span className="staff-badge" style={{ '--badge-color': '#34d399' }}>
-                  Fragment OK{frag.ton != null ? ` · ${Number(frag.ton).toFixed(2)} TON` : ''}
-                </span>
-              )}
-              {fragUnknown && !fragDead && (
-                <span className="staff-badge" style={{ '--badge-color': '#94a3b8' }}>
-                  Fragment: нет свежих данных
-                </span>
-              )}
-            </div>
+          <div className="payroll-pay-block">
+            <p className="payroll-hint">
+              {fragDead && `Fragment недоступен${frag?.error ? `: ${frag.error}` : ''}`}
+              {!fragDead && frag?.ok && `Fragment OK${frag.ton != null ? ` · ${Number(frag.ton).toFixed(2)} TON` : ''}`}
+              {fragUnknown && !fragDead && 'Fragment: нет свежих данных'}
+            </p>
             <label className="admin-modal-field">
-              <span>Метод Stars</span>
-              <AdminSelect value={starsMethod} onChange={setStarsMethod} options={[
-                { value: 'auto', label: 'Auto (Fragment → userbot)' },
-                { value: 'fragment', label: fragDead ? 'Fragment (недоступен)' : 'Fragment' },
-                { value: 'userbot', label: 'Userbot → канал' },
-              ]} />
+              <span>Метод</span>
+              <AdminSelect
+                value={starsMethod}
+                onChange={setStarsMethod}
+                options={[
+                  { value: 'auto', label: 'Auto' },
+                  { value: 'fragment', label: fragDead ? 'Fragment (нет)' : 'Fragment' },
+                  { value: 'userbot', label: 'Userbot' },
+                ]}
+              />
             </label>
             {fragDead && starsMethod === 'fragment' && (
-              <p className="staff-hint" style={{ color: '#ef4444' }}>Fragment не работает — Auto или Userbot.</p>
+              <p className="payroll-hint payroll-hint-warn">Fragment не работает — Auto или Userbot</p>
             )}
             <label className="admin-modal-field">
-              <span>Username для Stars</span>
-              <input className="sec-input" value={starsUsername}
-                onChange={(e) => setStarsUsername(e.target.value)} disabled={busy} placeholder="@username" />
+              <span>Username</span>
+              <input
+                className="sec-input"
+                value={starsUsername}
+                onChange={(e) => setStarsUsername(e.target.value)}
+                disabled={busy}
+                placeholder="@username"
+              />
             </label>
-          </>
+          </div>
         )}
 
         {(payoutType === 'crypto' || payoutType === 'card' || payoutType === 'other') && (
-          <>
+          <div className="payroll-pay-block">
             <label className="admin-modal-field">
               <span>TXID</span>
               <input className="sec-input" value={txid} onChange={(e) => setTxid(e.target.value)} disabled={busy} />
@@ -157,32 +170,46 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
               <span>Пруф</span>
               <input className="sec-input" value={proof} onChange={(e) => setProof(e.target.value)} disabled={busy} />
             </label>
-          </>
+          </div>
         )}
 
         {(payoutType === 'crypto' || payoutType === 'card') && (
-          <div style={{ marginTop: 8 }}>
-            <p className="staff-hint">Договор</p>
-            <AdminSelect value={tplId} onChange={setTplId} options={[
-              { value: '', label: '— шаблон —' },
-              ...templates.map((t) => ({ value: String(t.id), label: t.name })),
-            ]} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-              <button type="button" className="sec-btn sec-btn-sm" disabled={cBusy || !tplId} onClick={doRender}>Показать</button>
-              <button type="button" className="sec-btn sec-btn-sm" disabled={cBusy || !contractText}
-                onClick={() => { navigator.clipboard?.writeText(contractText); alert('Скопировано') }}>Копировать</button>
-              <button type="button" className="sec-btn sec-btn-sm" disabled={cBusy || !tplId} onClick={doSendContract}>В бот</button>
+          <div className="payroll-pay-block">
+            <p className="payroll-my-label">Договор</p>
+            <AdminSelect
+              value={tplId}
+              onChange={setTplId}
+              options={[
+                { value: '', label: '— шаблон —' },
+                ...templates.map((t) => ({ value: String(t.id), label: t.name })),
+              ]}
+            />
+            <div className="payroll-row-actions" style={{ marginTop: 8 }}>
+              <button type="button" className="sec-btn sec-btn-sm" disabled={cBusy || !tplId} onClick={doRender}>
+                Показать
+              </button>
+              <button
+                type="button"
+                className="sec-btn sec-btn-sm"
+                disabled={cBusy || !contractText}
+                onClick={() => { navigator.clipboard?.writeText(contractText); alert('Скопировано') }}
+              >
+                Копировать
+              </button>
+              <button type="button" className="sec-btn sec-btn-sm" disabled={cBusy || !tplId} onClick={doSendContract}>
+                В бот
+              </button>
             </div>
             {contractText && (
-              <textarea className="sec-input" rows={5} readOnly value={contractText}
-                style={{ width: '100%', marginTop: 8, fontSize: '0.8rem' }} />
+              <textarea className="sec-input payroll-textarea" rows={5} readOnly value={contractText} />
             )}
           </div>
         )}
 
         <div className="admin-modal-actions">
-          <button className="panel-users-btn" disabled={busy} onClick={onClose}>Отмена</button>
+          <button type="button" className="panel-users-btn" disabled={busy} onClick={onClose}>Отмена</button>
           <button
+            type="button"
             className="panel-users-btn panel-users-btn-primary"
             disabled={busy || (payoutType === 'stars' && starsMethod === 'fragment' && fragDead)}
             onClick={() => onSubmit({

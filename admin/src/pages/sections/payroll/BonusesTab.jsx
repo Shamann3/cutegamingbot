@@ -8,7 +8,7 @@ import {
   fetchStaffMembers,
   payStaffBonus,
 } from '../../../lib/adminClient'
-import { ROLE_BADGE_COLOR, SALARY_PAYOUT_OPTIONS, StatusBadge, nameOf, roleLabel } from './shared'
+import { SALARY_PAYOUT_OPTIONS, StatusBadge, nameOf, roleLabel } from './shared'
 
 export default function PayrollBonusesTab({ isOwner, canPay = false }) {
   const [items, setItems] = useState([])
@@ -59,16 +59,16 @@ export default function PayrollBonusesTab({ isOwner, canPay = false }) {
 
   return (
     <div className="sec-tab-body payroll-tab">
-      <div className="payroll-hero">
+      <header className="payroll-header">
         <div>
-          <h3 className="payroll-hero-title">Разовые премии</h3>
-          <p className="payroll-hero-sub">Вне дневного / недельного / месячного / годового оклада</p>
+          <h3 className="payroll-title">Премии</h3>
+          <p className="payroll-sub">Разовые выплаты вне оклада</p>
         </div>
-      </div>
+      </header>
 
       <div className="payroll-create">
         <div className="payroll-fields payroll-fields-create">
-          <label>Сотрудник
+          <label className="payroll-field">Сотрудник
             <AdminSelect
               value={form.userId}
               onChange={(v) => setForm((f) => ({ ...f, userId: v }))}
@@ -78,21 +78,21 @@ export default function PayrollBonusesTab({ isOwner, canPay = false }) {
               ]}
             />
           </label>
-          <label>Сумма
+          <label className="payroll-field">Сумма
             <input className="sec-input" type="number" min="1" value={form.amount}
               onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} />
           </label>
-          <label>Способ
+          <label className="payroll-field">Способ
             <AdminSelect value={form.payoutType}
               onChange={(v) => setForm((f) => ({ ...f, payoutType: v }))}
               options={SALARY_PAYOUT_OPTIONS} />
           </label>
         </div>
-        <input className="sec-input" placeholder="Причина премии" value={form.reason}
+        <input className="sec-input" placeholder="Причина" value={form.reason}
           onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))} />
-        <div className="payroll-toolbar" style={{ marginTop: '0.6rem' }}>
+        <div className="payroll-toolbar">
           <button type="button" className="sec-btn sec-btn-sm sec-btn-success" disabled={busy === 'create'} onClick={handleCreate}>
-            Выставить премию
+            Выставить
           </button>
           <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={load}>Обновить</button>
         </div>
@@ -100,29 +100,22 @@ export default function PayrollBonusesTab({ isOwner, canPay = false }) {
 
       {loading && <p className="sec-loading">Загрузка…</p>}
 
-      <div className="payroll-grid">
+      <div className="payroll-list">
         {items.map((b) => (
-          <article key={b.bonusId} className="payroll-card">
-            <header className="payroll-card-head">
-              <div>
-                <div className="payroll-card-name">{nameOf(b)}</div>
-                <div className="payroll-card-meta">
-                  {b.role && (
-                    <span className="staff-badge" style={{ '--badge-color': ROLE_BADGE_COLOR[b.role] || '#94a3b8' }}>
-                      {roleLabel(b.role)}
-                    </span>
-                  )}
+          <article key={b.bonusId} className="payroll-row">
+            <div className="payroll-row-main">
+              <div className="payroll-row-who">
+                <div className="payroll-row-name">{nameOf(b)}</div>
+                <div className="payroll-row-meta">
+                  {b.role && <span>{roleLabel(b.role)}</span>}
                   <StatusBadge status={b.status} />
                   <span className="payroll-muted">{SALARY_PAYOUT_OPTIONS.find((o) => o.value === b.payoutType)?.label || b.payoutType}</span>
                 </div>
               </div>
-              <div className="payroll-card-total">
-                <span>Сумма</span>
-                <b>{b.amount}</b>
-              </div>
-            </header>
+              <div className="payroll-row-amount">{b.amount}</div>
+            </div>
             {b.reason && <p className="payroll-reason">{b.reason}</p>}
-            <footer className="payroll-card-actions">
+            <footer className="payroll-row-actions">
               {isOwner && b.status === 'pending_approval' && (
                 <button type="button" className="sec-btn sec-btn-sm" disabled={busy === `appr-${b.bonusId}`}
                   onClick={async () => {

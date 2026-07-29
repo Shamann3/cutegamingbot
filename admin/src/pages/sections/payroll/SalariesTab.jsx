@@ -13,11 +13,11 @@ import {
 import PayrollPayModal from '../PayrollPayModal'
 import {
   PERIOD_OPTIONS,
-  ROLE_BADGE_COLOR,
   SALARY_PAYOUT_OPTIONS,
   StatusBadge,
   draftTotal,
   nameOf,
+  payoutLabel,
   roleLabel,
 } from './shared'
 
@@ -49,12 +49,7 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
       for (const m of items) {
         const s = m.salary
         seeded[m.userId] = {
-          base: s ? String(s.baseAmount) : '',
-          coefficient: s ? String(s.coefficient) : '1',
-          bonus: s && s.bonus ? String(s.bonus) : '',
-          bonusReason: s?.bonusReason || '',
-          penalty: s && s.penalty ? String(s.penalty) : '',
-          penaltyReason: s?.penaltyReason || '',
+          amount: s ? String(s.amount ?? s.baseAmount ?? '') : '',
           payoutType: s?.payoutType || m.payoutType || 'kut',
         }
       }
@@ -75,21 +70,21 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
 
   const handleSet = async (userId) => {
     const dft = drafts[userId] || {}
-    const baseAmount = Number.parseInt(dft.base, 10)
-    if (!Number.isFinite(baseAmount) || baseAmount < 0) {
-      alert('Введите ставку')
+    const amount = Number.parseInt(dft.amount, 10)
+    if (!Number.isFinite(amount) || amount < 0) {
+      alert('Введите сумму')
       return
     }
     setBusy(`set-${userId}`)
     try {
       await setStaffSalary({
         userId,
-        baseAmount,
-        coefficient: Number.parseFloat(dft.coefficient) || 1,
-        bonus: Number.parseInt(dft.bonus, 10) || 0,
-        bonusReason: (dft.bonusReason || '').trim(),
-        penalty: Number.parseInt(dft.penalty, 10) || 0,
-        penaltyReason: (dft.penaltyReason || '').trim(),
+        baseAmount: amount,
+        coefficient: 1,
+        bonus: 0,
+        bonusReason: '',
+        penalty: 0,
+        penaltyReason: '',
         payoutType: dft.payoutType || 'kut',
         periodType,
         periodStart: periodStart || anchorDate || undefined,
@@ -135,27 +130,41 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
 
   return (
     <div className="sec-tab-body payroll-tab">
-      <div className="payroll-hero">
+      <header className="payroll-header">
         <div>
-          <h3 className="payroll-hero-title">Зарплаты</h3>
-          <p className="payroll-hero-sub">
-            Период: <strong>{periodLabel || '—'}</strong>
-            {' · '}владелец одобряет → затем «Выплатить»
+          <h3 className="payroll-title">Зарплаты</h3>
+          <p className="payroll-sub">
+            {periodLabel || 'Период'}
+            <span className="payroll-dot">·</span>
+            выставить
+            <span className="payroll-arrow">→</span>
+            одобрить
+            <span className="payroll-arrow">→</span>
+            выплатить
           </p>
         </div>
-        <div className="payroll-hero-stats">
-          <span className="payroll-stat payroll-stat-warn">⏳ {pendingCount}</span>
-          <span className="payroll-stat payroll-stat-pay">💸 {unpaidCount}</span>
-          <span className="payroll-stat">➖ {notSetCount}</span>
+        <div className="payroll-summary" aria-label="Сводка">
+          <span><b>{pendingCount}</b> ждут</span>
+          <span><b>{unpaidCount}</b> к выплате</span>
+          <span><b>{notSetCount}</b> без суммы</span>
         </div>
-      </div>
+      </header>
 
       <div className="payroll-toolbar">
-        <AdminSelect
-          value={periodType}
-          onChange={(v) => { setPeriodType(v); setAnchorDate('') }}
-          options={PERIOD_OPTIONS}
-        />
+        <div className="payroll-periods" role="tablist" aria-label="Период">
+          {PERIOD_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="tab"
+              aria-selected={periodType === opt.value}
+              className={`payroll-period${periodType === opt.value ? ' is-active' : ''}`}
+              onClick={() => { setPeriodType(opt.value); setAnchorDate('') }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
         <input
           className="sec-input payroll-date"
           type="date"
@@ -181,101 +190,107 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
               }
             }}
           >
-            Напомнить владельцам
+            Напомнить
           </button>
         )}
       </div>
 
       {loading && <p className="sec-loading">Загрузка…</p>}
 
-      <div className="payroll-grid">
+      <div className="payroll-list">
         {rows.map((m) => {
           const s = m.salary
           const dft = drafts[m.userId] || {}
           const locked = s && s.status === 'paid'
           const total = draftTotal(dft)
+          const savedType = s?.payoutType || dft.payoutType || 'kut'
+
           return (
-            <article key={m.userId} className={`payroll-card${locked ? ' payroll-card-locked' : ''}`}>
-              <header className="payroll-card-head">
-                <div>
-                  <div className="payroll-card-name">{nameOf(m)}</div>
-                  <div className="payroll-card-meta">
-                    <span className="staff-badge" style={{ '--badge-color': ROLE_BADGE_COLOR[m.role] || '#94a3b8' }}>
-                      {roleLabel(m.role)}
-                    </span>
-                    {s && <StatusBadge status={s.status} />}
+            <article key={m.userId} className={`payroll-row${locked ? ' is-locked' : ''}`}>
+              <div className="payroll-row-main">
+                <div className="payroll-row-who">
+                  <div className="payroll-row-name">{nameOf(m)}</div>
+                  <div className="payroll-row-meta">
+                    <span>{roleLabel(m.role)}</span>
+                    {s ? <StatusBadge status={s.status} /> : <span className="payroll-status">не выставлено</span>}
                     {s?.status === 'partially_paid' && (
                       <span className="payroll-muted">{s.paidAmount}/{s.amount}</span>
                     )}
+                    {s && <span className="payroll-muted">{payoutLabel(savedType)}</span>}
                   </div>
                 </div>
-                <div className="payroll-card-total">
-                  <span>Итого</span>
-                  <b>{total}</b>
+                <div className="payroll-row-amount" aria-label="Сумма">
+                  {total > 0 ? total : '—'}
                 </div>
-              </header>
-
-              <div className="payroll-fields">
-                <label>Ставка
-                  <input className="sec-input" type="number" min="0" disabled={locked}
-                    value={dft.base ?? ''} onChange={(e) => setField(m.userId, 'base', e.target.value)} />
-                </label>
-                <label>Коэф.
-                  <input className="sec-input" type="number" min="0" step="0.05" disabled={locked}
-                    value={dft.coefficient ?? '1'} onChange={(e) => setField(m.userId, 'coefficient', e.target.value)} />
-                </label>
-                <label>Бонус
-                  <input className="sec-input" type="number" min="0" disabled={locked}
-                    value={dft.bonus ?? ''} onChange={(e) => setField(m.userId, 'bonus', e.target.value)} />
-                </label>
-                <label>Штраф
-                  <input className="sec-input" type="number" min="0" disabled={locked}
-                    value={dft.penalty ?? ''} onChange={(e) => setField(m.userId, 'penalty', e.target.value)} />
-                </label>
               </div>
 
-              <input className="sec-input" placeholder="За что бонус" disabled={locked}
-                value={dft.bonusReason ?? ''} onChange={(e) => setField(m.userId, 'bonusReason', e.target.value)} />
-              <input className="sec-input" placeholder="За что штраф" disabled={locked}
-                value={dft.penaltyReason ?? ''} onChange={(e) => setField(m.userId, 'penaltyReason', e.target.value)} />
+              {!locked && (
+                <div className="payroll-row-edit">
+                  <label className="payroll-field">
+                    <span>Сумма</span>
+                    <input
+                      className="sec-input"
+                      type="number"
+                      min="0"
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={dft.amount ?? ''}
+                      onChange={(e) => setField(m.userId, 'amount', e.target.value)}
+                    />
+                  </label>
+                  <label className="payroll-field">
+                    <span>Способ</span>
+                    <AdminSelect
+                      value={dft.payoutType || 'kut'}
+                      onChange={(v) => setField(m.userId, 'payoutType', v)}
+                      options={SALARY_PAYOUT_OPTIONS}
+                    />
+                  </label>
+                </div>
+              )}
 
-              <label className="payroll-payout-label">
-                Способ
-                <AdminSelect
-                  value={dft.payoutType || 'kut'}
-                  onChange={(v) => setField(m.userId, 'payoutType', v)}
-                  disabled={locked}
-                  options={SALARY_PAYOUT_OPTIONS}
-                />
-              </label>
-
-              <footer className="payroll-card-actions">
+              <footer className="payroll-row-actions">
                 {!locked && (
-                  <button type="button" className="sec-btn sec-btn-sm" disabled={busy === `set-${m.userId}`}
-                    onClick={() => handleSet(m.userId)}>
+                  <button
+                    type="button"
+                    className="sec-btn sec-btn-sm"
+                    disabled={busy === `set-${m.userId}`}
+                    onClick={() => handleSet(m.userId)}
+                  >
                     {s ? 'Сохранить' : 'Выставить'}
                   </button>
                 )}
                 {isOwner && s?.status === 'pending_approval' && (
-                  <button type="button" className="sec-btn sec-btn-sm" disabled={busy === `appr-${s.salaryId}`}
-                    onClick={() => handleAction(approveStaffSalary, s.salaryId, `appr-${s.salaryId}`)}>
+                  <button
+                    type="button"
+                    className="sec-btn sec-btn-sm"
+                    disabled={busy === `appr-${s.salaryId}`}
+                    onClick={() => handleAction(approveStaffSalary, s.salaryId, `appr-${s.salaryId}`)}
+                  >
                     Одобрить
                   </button>
                 )}
                 {canPay && s && ['approved', 'partially_paid'].includes(s.status) && (
-                  <button type="button" className="sec-btn sec-btn-sm sec-btn-success"
-                    disabled={busy === `pay-${s.salaryId}`} onClick={() => setPayFor(m)}>
+                  <button
+                    type="button"
+                    className="sec-btn sec-btn-sm sec-btn-success"
+                    disabled={busy === `pay-${s.salaryId}`}
+                    onClick={() => setPayFor(m)}
+                  >
                     {s.status === 'partially_paid' ? 'Доплатить' : 'Выплатить'}
                   </button>
                 )}
                 {s && s.status !== 'paid' && s.status !== 'cancelled' && (
-                  <button type="button" className="sec-btn sec-btn-sm sec-btn-ghost"
+                  <button
+                    type="button"
+                    className="sec-btn sec-btn-sm sec-btn-ghost"
                     disabled={busy === `cancel-${s.salaryId}`}
                     onClick={() => {
                       if (confirm('Снять начисление?')) {
                         handleAction(cancelStaffSalary, s.salaryId, `cancel-${s.salaryId}`)
                       }
-                    }}>
+                    }}
+                  >
                     Снять
                   </button>
                 )}
@@ -288,16 +303,18 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
       {!loading && rows.length === 0 && <p className="sec-empty">Нет сотрудников для начисления</p>}
 
       {appeals.length > 0 && (
-        <div className="payroll-appeals">
-          <h3 className="sec-ipban-section-title">Апелляции <span className="sec-count">{appeals.length}</span></h3>
+        <section className="payroll-appeals">
+          <h4 className="payroll-section-title">Апелляции <span className="payroll-muted">{appeals.length}</span></h4>
           {appeals.map((a) => (
             <div key={a.appealId} className="payroll-appeal-row">
               <div>
                 <strong>{nameOf(a)}</strong>
                 <span className="payroll-muted"> · {a.amount}</span>
-                <p className="staff-answer-a">{a.reason}</p>
+                <p className="payroll-reason">{a.reason}</p>
               </div>
-              <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm"
+              <button
+                type="button"
+                className="sec-btn sec-btn-ghost sec-btn-sm"
                 disabled={busy === `appeal-${a.appealId}`}
                 onClick={async () => {
                   const resolution = prompt('Решение (необязательно):') ?? ''
@@ -310,12 +327,13 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
                   } finally {
                     setBusy(null)
                   }
-                }}>
+                }}
+              >
                 Рассмотреть
               </button>
             </div>
           ))}
-        </div>
+        </section>
       )}
 
       {payFor && (

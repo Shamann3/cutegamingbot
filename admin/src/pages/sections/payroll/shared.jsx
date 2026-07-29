@@ -1,11 +1,11 @@
 /** Общие константы и хелперы payroll UI */
 
 export const SALARY_STATUS = {
-  pending_approval: { label: 'ожидает одобрения', color: '#fbbf24' },
-  approved: { label: 'одобрено', color: '#fb923c' },
-  partially_paid: { label: 'частично', color: '#60a5fa' },
-  paid: { label: 'выплачено', color: '#34d399' },
-  cancelled: { label: 'снято', color: '#94a3b8' },
+  pending_approval: { label: 'ожидает', color: '#a1a1aa' },
+  approved: { label: 'к выплате', color: '#d4d4d8' },
+  partially_paid: { label: 'частично', color: '#a1a1aa' },
+  paid: { label: 'выплачено', color: '#71717a' },
+  cancelled: { label: 'снято', color: '#52525b' },
 }
 
 export const PERIOD_OPTIONS = [
@@ -16,10 +16,10 @@ export const PERIOD_OPTIONS = [
 ]
 
 export const SALARY_PAYOUT_OPTIONS = [
-  { value: 'kut', label: 'Kut → игровой баланс' },
-  { value: 'stars', label: 'Telegram Stars' },
+  { value: 'kut', label: 'Kut' },
+  { value: 'stars', label: 'Stars' },
   { value: 'crypto', label: 'Крипта' },
-  { value: 'card', label: 'Карта / СБП' },
+  { value: 'card', label: 'Карта' },
   { value: 'other', label: 'Другое' },
 ]
 
@@ -60,18 +60,20 @@ export function fmtDate(iso) {
   }
 }
 
+export function payoutLabel(value) {
+  return SALARY_PAYOUT_OPTIONS.find((o) => o.value === value)?.label || value || '—'
+}
+
+/** Итог черновика — одна сумма (без коэффициентов). */
 export function draftTotal(dft) {
-  const base = Number.parseInt(dft?.base, 10) || 0
-  const coeff = Number.parseFloat(dft?.coefficient) || 0
-  const bonus = Number.parseInt(dft?.bonus, 10) || 0
-  const penalty = Number.parseInt(dft?.penalty, 10) || 0
-  return Math.max(0, Math.round(base * coeff) + bonus - penalty)
+  const n = Number.parseInt(dft?.amount ?? dft?.base, 10)
+  return Number.isFinite(n) && n >= 0 ? n : 0
 }
 
 export function StatusBadge({ status }) {
-  const st = SALARY_STATUS[status] || { label: status || '—', color: '#94a3b8' }
+  const st = SALARY_STATUS[status] || { label: status || 'не выставлено', color: '#71717a' }
   return (
-    <span className="staff-badge" style={{ '--badge-color': st.color }}>
+    <span className="payroll-status" style={{ color: st.color }}>
       {st.label}
     </span>
   )
