@@ -599,9 +599,10 @@ export async function fetchFragmentHealth() {
 
 export async function fetchStarGifts(amount = null, exact = true) {
   const params = new URLSearchParams()
-  if (amount != null) params.set('amount', String(amount))
+  if (amount != null && amount !== '') params.set('amount', String(amount))
   params.set('exact', exact ? 'true' : 'false')
-  return adminRequest(`/staff/star-gifts?${params}`)
+  const q = params.toString()
+  return adminRequest(`/staff/star-gifts${q ? `?${q}` : ''}`)
 }
 
 

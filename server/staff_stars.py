@@ -120,7 +120,7 @@ async def update_fragment_health(
 
 
 async def upsert_star_gifts_cache(gifts: list[dict[str, Any]]) -> int:
-    """Бот пишет live/manual каталог подарков для панели."""
+    """Бот/API пишет live/manual каталог подарков для панели."""
     if not gifts:
         return 0
     n = 0
@@ -156,28 +156,104 @@ async def upsert_star_gifts_cache(gifts: list[dict[str, Any]]) -> int:
     return n
 
 
+async def fetch_live_gifts_from_telegram() -> list[dict[str, Any]]:
+    """Тянет live-каталог через Bot API getAvailableGifts (тот же набор, что у игроков)."""
+    import aiohttp
+    try:
+        from config import BOT_TOKEN
+    except Exception:
+        BOT_TOKEN = ""
+    if not BOT_TOKEN:
+        return []
+
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getAvailableGifts"
+    out: list[dict[str, Any]] = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=12)) as resp:
+                data = await resp.json(content_type=None)
+        if not isinstance(data, dict) or not data.get("ok"):
+            logger.warning("getAvailableGifts failed: %s", data)
+            return []
+        gifts = ((data.get("result") or {}).get("gifts")) or []
+        for g in gifts:
+            try:
+                gift_id = int(g.get("id") or 0)
+                stars = int(g.get("star_count") or 0)
+                if gift_id <= 0 or stars <= 0:
+                    continue
+                sticker = g.get("sticker") or {}
+                emoji = (sticker.get("emoji") if isinstance(sticker, dict) else None) or "🎁"
+                custom = ""
+                if isinstance(sticker, dict):
+                    custom = str(sticker.get("custom_emoji_id") or "")
+                upgrade = g.get("upgrade_star_count")
+                out.append({
+                    "giftId": gift_id,
+                    "stars": stars,
+                    "emoji": emoji,
+                    "customEmojiId": custom,
+                    "hasUpgrade": upgrade is not None,
+                    "upgradeStars": int(upgrade or 0),
+                    "source": "live",
+                })
+            except Exception:
+                continue
+    except Exception:
+        logger.exception("fetch_live_gifts_from_telegram failed")
+        return []
+    return out
+
+
+async def refresh_star_gifts_from_telegram() -> int:
+    """Live Telegram + ручные дефолты → star_gifts_cache."""
+    live = await fetch_live_gifts_from_telegram()
+    # manuals поверх/рядом — не затирают live с тем же id (ON CONFLICT обновляет)
+    merged = list(DEFAULT_STAR_GIFTS) + live
+    # если live пришёл с тем же id что manual — live важнее: кладём live последним
+    by_id: dict[int, dict[str, Any]] = {}
+    for g in merged:
+        by_id[int(g["giftId"])] = g
+    # live wins
+    for g in live:
+        by_id[int(g["giftId"])] = g
+    return await upsert_star_gifts_cache(list(by_id.values()))
+
+
 async def list_star_gifts(*, amount: int | None = None, exact: bool = True) -> list[dict[str, Any]]:
-    """Каталог подарков для выплаты Stars. exact=True → только price == amount."""
-    rows = await db.pool.fetch(
-        "SELECT * FROM star_gifts_cache ORDER BY stars ASC, gift_id ASC"
-    )
-    items = [_gift_cache_row(r) for r in rows] if rows else list(DEFAULT_STAR_GIFTS)
-    if not rows:
-        # seed defaults so UI сразу работает до синка бота
+    """Каталог подарков: live Telegram + ручные. exact=True → сначала price == amount."""
+    # Всегда пытаемся освежить live-каталог (панель не зависит от бота)
+    try:
+        await refresh_star_gifts_from_telegram()
+    except Exception:
+        logger.exception("refresh gifts before list failed")
+
+    try:
+        rows = await db.pool.fetch(
+            "SELECT * FROM star_gifts_cache ORDER BY stars ASC, gift_id ASC"
+        )
+    except Exception:
+        logger.exception("star_gifts_cache read failed")
+        rows = []
+
+    items = [_gift_cache_row(r) for r in rows] if rows else []
+    if not items:
+        items = list(DEFAULT_STAR_GIFTS)
         try:
             await upsert_star_gifts_cache(DEFAULT_STAR_GIFTS)
         except Exception:
             logger.exception("seed star gifts cache failed")
+
     if amount is None:
         return items
     amount = int(amount)
+    exact_matches = [g for g in items if int(g["stars"]) == amount]
     if exact:
-        matched = [g for g in items if int(g["stars"]) == amount]
-        if matched:
-            return matched
-        # если точных нет — показать все ≤ amount (владелец видит варианты)
+        if exact_matches:
+            return exact_matches
         return [g for g in items if int(g["stars"]) <= amount]
-    return [g for g in items if int(g["stars"]) <= amount]
+    # exact=False: всё ≤ amount, точные сверху уже на клиенте; здесь просто фильтр
+    return [g for g in items if int(g["stars"]) <= amount] or items
 
 
 async def enqueue_star_payout(
@@ -270,7 +346,23 @@ async def cancel_star_payout(payout_id: int) -> bool:
         """
         UPDATE staff_star_payouts
         SET status = 'cancelled', updated_at = NOW()
-        WHERE id = $1 AND status IN ('queued', 'failed', 'channel_pending')
+        WHERE id = $1 AND status IN ('queued', 'failed', 'channel_pending', 'processing')
+        """,
+        payout_id,
+    )
+    try:
+        return int(result.split()[-1]) > 0
+    except (ValueError, IndexError):
+        return False
+
+
+async def requeue_star_payout(payout_id: int) -> bool:
+    """Вернуть failed/stuck заявку в очередь (после фикса воркера)."""
+    result = await db.pool.execute(
+        """
+        UPDATE staff_star_payouts
+        SET status = 'queued', error = NULL, updated_at = NOW()
+        WHERE id = $1 AND status IN ('failed', 'processing')
         """,
         payout_id,
     )

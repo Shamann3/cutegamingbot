@@ -139,6 +139,16 @@ async def refresh_fragment_health(db, fragment_client, seed_phrase: str) -> dict
 async def _claim_next(db) -> Optional[dict]:
     async with db.pool.acquire() as conn:
         async with conn.transaction():
+            # Зависшие processing → снова в очередь
+            await conn.execute(
+                """
+                UPDATE staff_star_payouts
+                SET status = 'queued', updated_at = NOW(),
+                    error = COALESCE(error, 'requeued: stuck processing')
+                WHERE status = 'processing'
+                  AND updated_at < NOW() - INTERVAL '3 minutes'
+                """
+            )
             row = await conn.fetchrow(
                 """
                 SELECT * FROM staff_star_payouts
@@ -390,58 +400,74 @@ async def process_one_payout(
         pass
 
     async def do_channel(reason_prefix: str | None = None) -> None:
-        mid = await _post_salary_channel(
-            bot, row=row, first_name=first_name, build_keyboard=build_keyboard,
-        )
+        """Пост в @CurrencyCute с wdact — как заявка на вывод игрока."""
+        try:
+            mid = await _post_salary_channel(
+                bot, row=row, first_name=first_name, build_keyboard=build_keyboard,
+            )
+        except Exception as e:
+            logger.exception("salary channel post failed payout=%s", payout_id)
+            await _mark(db, payout_id, "failed", error=f"channel post: {e}"[:400])
+            if notify_user:
+                await notify_user(
+                    user_id,
+                    f"<b>❌ Не удалось отправить заявку зарплаты в канал: {escape(str(e)[:200])}</b>",
+                )
+            return
         await _mark(db, payout_id, "channel_pending",
                     error=reason_prefix, channel_message_id=mid)
         if notify_user:
             await notify_user(
                 user_id,
-                f"<b>💼 Заявка на зарплату звёздами ({amount}⭐) отправлена в канал выводов.</b>",
+                f"<b>💼 Заявка на зарплату ({amount}⭐) отправлена в канал выводов @CurrencyCute.</b>\n"
+                f"<b>Ожидайте подтверждения 👍</b>",
             )
 
     try:
-        if method == "userbot":
-            await do_channel()
-            return True
-
-        # fragment or auto
-        ok, txid, err = await _try_fragment(fragment_client, seed_phrase, username, amount)
-        if ok:
-            await _complete_salary_payment(db, row, txid or "fragment")
-            await _mark(db, payout_id, "completed", txid=txid)
-            try:
-                await bot.send_message(
-                    chat_id=WITHDRAW_CHANNEL,
-                    text=(
-                        f"<b>✅ Зарплата администратору выплачена через Fragment</b>\n"
-                        f"<b>{amount}⭐ → @{escape(username)}</b>\n"
-                        f"<blockquote><b>@CuteGamingBot</b></blockquote>"
-                    ),
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                )
-            except Exception:
-                logger.exception("channel success log failed")
+        # fragment — мгновенно через Fragment, без канала
+        if method == "fragment":
+            ok, txid, err = await _try_fragment(fragment_client, seed_phrase, username, amount)
+            if ok:
+                await _complete_salary_payment(db, row, txid or "fragment")
+                await _mark(db, payout_id, "completed", txid=txid)
+                try:
+                    await bot.send_message(
+                        chat_id=WITHDRAW_CHANNEL,
+                        text=(
+                            f"<tg-emoji emoji-id='5395325195542078574'>🍀</tg-emoji> "
+                            f"<b>Выплата зарплаты выполнена (Fragment)</b>\n"
+                            f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
+                            f"<b>{amount} кут в stars "
+                            f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji></b>\n\n"
+                            f"<b><tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
+                            f"Для @{escape(username)}</b>\n"
+                            f"<b>💼 Зарплата администратора</b>\n\n"
+                            f"<blockquote><b>@CuteGamingBot</b></blockquote>"
+                        ),
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    logger.exception("channel success log failed")
+                if notify_user:
+                    await notify_user(
+                        user_id,
+                        f"<b>✅ Зарплата {amount}⭐ отправлена на @{username} (Fragment).</b>",
+                    )
+                return True
+            await _mark(db, payout_id, "failed", error=err)
             if notify_user:
                 await notify_user(
                     user_id,
-                    f"<b>✅ Зарплата {amount}⭐ отправлена на @{username} (Fragment).</b>",
+                    f"<b>❌ Fragment: {escape(err or 'ошибка')}</b>",
                 )
             return True
 
-        # Fragment failed
-        if method == "auto":
-            await do_channel(reason_prefix=f"Fragment: {err}")
-            return True
-
-        await _mark(db, payout_id, "failed", error=err)
-        if notify_user:
-            await notify_user(
-                user_id,
-                f"<b>❌ Не удалось выплатить зарплату звёздами: {escape(err or 'ошибка')}</b>",
-            )
+        # auto / userbot — как вывод игрока: заявка в канал с кнопками 👎🥂👍
+        # (auto больше не уходит сразу в Fragment — владелец видит заявку в канале)
+        await do_channel(
+            reason_prefix="auto→channel" if method == "auto" else None,
+        )
         return True
     except Exception as e:
         logger.exception("process star payout %s failed", payout_id)
@@ -458,7 +484,21 @@ async def staff_star_payout_loop(
     build_keyboard: Callable[..., Any],
     notify_user: Callable[[int, str], Awaitable[None]] | None = None,
 ) -> None:
-    """Раз в ~8 сек: health Fragment + обработка очереди."""
+    """Раз в ~8 сек: health Fragment + каталог подарков + очередь зарплат."""
+    try:
+        # Подхватить заявки, которые зависли до фикса воркера
+        await db.pool.execute(
+            """
+            UPDATE staff_star_payouts
+            SET status = 'queued', error = NULL, updated_at = NOW()
+            WHERE status IN ('failed', 'processing')
+              AND created_at > NOW() - INTERVAL '48 hours'
+            """
+        )
+        logger.info("staff_star_payout_loop: requeued recent failed/processing")
+    except Exception:
+        logger.exception("startup requeue failed")
+
     ticks = 0
     while not stop_event.is_set():
         try:

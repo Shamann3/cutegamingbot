@@ -1876,10 +1876,18 @@ async def staff_star_gifts(
     exact: bool = Query(default=True),
     _user_id: int = Depends(require_admin_permission("pay_salary")),
 ):
-    """Каталог подарков для зарплатных Stars (тот же набор, что у игроков)."""
+    """Каталог подарков для зарплатных Stars (live Telegram + ручные)."""
     from staff_stars import list_star_gifts
     items = await list_star_gifts(amount=amount, exact=exact)
-    return {"items": items, "amount": amount, "exact": exact}
+    live_n = sum(1 for g in items if g.get("source") == "live")
+    manual_n = sum(1 for g in items if g.get("source") == "manual")
+    return {
+        "items": items,
+        "amount": amount,
+        "exact": exact,
+        "liveCount": live_n,
+        "manualCount": manual_n,
+    }
 
 
 @router.get("/staff/star-payouts")

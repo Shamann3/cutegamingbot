@@ -56,17 +56,20 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   }, [payoutType])
 
   useEffect(() => {
-    if (!needsGift || amountNum <= 0) {
+    if (!needsGift) {
       setGifts([])
       return
     }
     let cancelled = false
     setGiftsLoading(true)
-    fetchStarGifts(amountNum, true)
+    // Тянем полный каталог (live+manual), сортируем: точное совпадение суммы сверху
+    fetchStarGifts(null, false)
       .then((d) => {
         if (cancelled) return
         const items = d.items || []
-        setGifts(items)
+        const exact = items.filter((g) => Number(g.stars) === amountNum)
+        const rest = items.filter((g) => Number(g.stars) !== amountNum)
+        setGifts(amountNum > 0 ? [...exact, ...rest] : items)
         if (giftId && !items.some((g) => Number(g.giftId) === Number(giftId))) {
           setGiftId(0)
           setGiftMeta(null)
@@ -205,14 +208,14 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
                 value={starsMethod}
                 onChange={setStarsMethod}
                 options={[
-                  { value: 'auto', label: 'Auto (Fragment → userbot)' },
-                  { value: 'fragment', label: fragDead ? 'Fragment (нет)' : 'Fragment' },
-                  { value: 'userbot', label: 'Userbot → канал' },
+                  { value: 'auto', label: 'Канал (как вывод игрока)' },
+                  { value: 'userbot', label: 'Канал + userbot' },
+                  { value: 'fragment', label: fragDead ? 'Fragment (нет)' : 'Fragment (сразу)' },
                 ]}
               />
             </label>
             {fragDead && starsMethod === 'fragment' && (
-              <p className="payroll-hint payroll-hint-warn">Fragment не работает — Auto или Userbot</p>
+              <p className="payroll-hint payroll-hint-warn">Fragment не работает — выберите канал</p>
             )}
             <label className="admin-modal-field">
               <span>Username</span>
@@ -229,8 +232,8 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
               <div className="payroll-gifts">
                 <p className="payroll-my-label">Подарок</p>
                 <p className="payroll-hint">
-                  Те же подарки, что доступны игрокам при выводе.
-                  {giftsLoading ? ' Загрузка…' : gifts.length ? ` Найдено: ${gifts.length}` : ' Нет точных совпадений по сумме'}
+                  Live Telegram + ручные (как у игроков).
+                  {giftsLoading ? ' Загрузка…' : ` Доступно: ${gifts.length}`}
                 </p>
                 <div className="payroll-gifts-grid">
                   <button
@@ -249,11 +252,12 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
                       className={`payroll-gift${Number(giftId) === Number(g.giftId) ? ' is-active' : ''}`}
                       onClick={() => selectGift(g)}
                       disabled={busy}
-                      title={`ID ${g.giftId}`}
+                      title={`${g.source || 'gift'} · ID ${g.giftId}`}
                     >
                       <span className="payroll-gift-emoji">{g.emoji || '🎁'}</span>
                       <span className="payroll-gift-meta">
                         {g.stars}⭐{g.hasUpgrade ? ' · NFT' : ''}
+                        {g.source === 'live' ? ' · TG' : g.source === 'manual' ? ' · руч.' : ''}
                       </span>
                     </button>
                   ))}
