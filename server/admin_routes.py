@@ -1595,7 +1595,7 @@ async def staff_set_salary(
             f"<tg-emoji emoji-id='4958926882994127612'>💰</tg-emoji> "
             f"<b>Вам выставлена зарплата</b>\n"
             f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
-            f"<b>{total} · {label}</b>\n"
+            f"<b>{total} кут · {label}</b>\n"
             f"<b>Статус: {status_txt}</b>\n"
             f"<blockquote>Если не согласны — апелляция в панели.\n"
             f"Виво-Эпсилон</blockquote>"
@@ -1709,7 +1709,7 @@ async def _enqueue_salary_stars_channel(
     )
     notify_owners(
         (
-            f"<tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
+            f"<tg-emoji emoji-id='5422818196031840237'>🌿</tg-emoji> "
             f"<b>Заявка на выплату зарплаты администратору</b>\n"
             f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
             f"<b>{amount} кут в stars · {n} сообщ.</b>\n"
@@ -4878,6 +4878,8 @@ async def admin_security_force_reauth(
 @router.post("/moderation/notify")
 async def moderation_notify(request: Request):
     """Внутренний эндпоинт — бот вызывает после записи в staff_actions."""
+    from db import db
+
     key = request.headers.get("X-Internal-Key", "")
     if not INTERNAL_API_KEY or key != INTERNAL_API_KEY:
         raise HTTPException(status_code=403, detail="Неверный ключ")
@@ -5151,24 +5153,15 @@ async def admin_ticket_upload(
     if ticket["status"] == "closed":
         raise HTTPException(400, "Тикет закрыт")
 
-    from admin_routes import _admin_display_name
-    admin_name = await _admin_display_name_local(admin_id)
+    acc = await get_admin_account(admin_id)
+    admin_name = (
+        (acc.get("firstName") or acc.get("username") or f"#{admin_id}")
+        if acc else f"#{admin_id}"
+    )
 
     file_id = await _upload_photo_to_telegram(file, SUPPORT_BOT_TOKEN, str(ticket["user_id"]), text.strip())
     await support_db.add_admin_message(ticket_id, admin_id, admin_name, text.strip(), file_id)
     return {"ok": True, "fileId": file_id}
-
-
-async def _admin_display_name_local(admin_id: int) -> str:
-    try:
-        row = await db.pool.fetchrow(
-            "SELECT first_name, username FROM admin_accounts WHERE user_id = $1", admin_id,
-        )
-        if row:
-            return row["first_name"] or (f"@{row['username']}" if row["username"] else f"#{admin_id}")
-    except Exception:
-        pass
-    return f"#{admin_id}"
 
 
 @router.get("/appeals/{appeal_id}/messages")

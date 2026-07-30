@@ -82,16 +82,15 @@ def top_debug_print(text: str):
 # =========================================================
 def get_bot_timezone():
     try:
-        tz = ZoneInfo("Europe/Oslo")
-        top_debug_print("✅ [ТОП][TZ] Успешно загружен ZoneInfo('Europe/Oslo')")
+        tz = ZoneInfo("Europe/Moscow")
+        top_debug_print("✅ [ТОП][TZ] Успешно загружен ZoneInfo('Europe/Moscow')")
         return tz
     except Exception as e:
-        top_debug_print(f"❌ [ТОП][TZ] Ошибка ZoneInfo('Europe/Oslo'): {e}")
-        top_debug_print("🛟 [ТОП][TZ] Использую fallback UTC+1")
+        top_debug_print(f"❌ [ТОП][TZ] Ошибка ZoneInfo('Europe/Moscow'): {e}")
+        top_debug_print("🛟 [ТОП][TZ] Использую fallback UTC+3 (MSK)")
 
-        # Fallback: фиксированный UTC+1
-        # Это не учитывает летнее/зимнее время, но код будет работать всегда.
-        return timezone(timedelta(hours=1))
+        # Fallback: фиксированный MSK (UTC+3), без DST — как у царя статистики.
+        return timezone(timedelta(hours=3))
 
 BOT_TIMEZONE = get_bot_timezone()
 
@@ -2217,7 +2216,7 @@ def _safe_int(value, default: int = 0) -> int:
 
 
 def _now_dt() -> datetime:
-    return datetime.now()
+    return datetime.now(BOT_TIMEZONE)
 
 
 def _today_date() -> date:
@@ -2572,7 +2571,7 @@ def _safe_int(value, default: int = 0) -> int:
 
 
 def _now_dt() -> datetime:
-    return datetime.now()
+    return datetime.now(BOT_TIMEZONE)
 
 
 def _today_date() -> date:

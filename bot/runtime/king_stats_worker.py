@@ -743,6 +743,14 @@ async def finalize_chat_king_day(
     if await db.has_chat_king_period_result(chat_id, period_type_s, period_key_s):
         return {"ok": True, "skipped": "already_processed"}
 
+    # Дочитываем буфер сообщений в БД, чтобы выплата и «стата» видели
+    # один и тот же закрытый период (без потери последних сообщений суток).
+    try:
+        if hasattr(db, "flush_message_counters"):
+            await db.flush_message_counters()
+    except Exception as e:
+        print(f"[KING][FLUSH][WARN] chat_id={chat_id}: {type(e).__name__}: {e}")
+
     min_messages = max(0, int(settings.get("min_messages") or 0))
     top_rows_raw, total_messages = await _load_king_top_rows(
         db,

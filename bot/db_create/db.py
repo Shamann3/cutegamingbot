@@ -48,6 +48,19 @@ BALANCE_DEBUG = False  # <- поставишь True, если нужны под�
 BALANCE_STATUS_1_TO_2_SEC = 3 * 24 * 3600      # 3 дня -> статус 2 (спящий)
 BALANCE_STATUS_MAX_TO_3_SEC = 7 * 24 * 3600    # 7 дней -> статус 3 (сгоревший)
 
+# Граница суток для статистики сообщений и «Царя статистики» — одна:
+# Москва (UTC+3). Иначе выплата царя (MSK) и запись в chatchange (локаль
+# сервера / UTC) расходились на несколько часов.
+_MSK_TZ = timezone(timedelta(hours=3))
+
+
+def _msk_now() -> datetime:
+    return datetime.now(_MSK_TZ)
+
+
+def _msk_today() -> date:
+    return _msk_now().date()
+
 SLEEP_RECOVERY_DEFAULT_NEEDED = 25
 # статусы
 BAL_STATUS_ACTIVE = 1
@@ -755,8 +768,10 @@ class Database:
         # Каждое сообщение мгновенно (в памяти, без БД) прибавляется к буферу
         # через record_message(); фоновый цикл раз в _MSG_COUNTER_FLUSH_INTERVAL_SEC
         # пакетно пишет накопленные дельты в БД (flush_message_counters).
+        # Ключ буфера включает MSK-дату записи, чтобы сообщения до полуночи
+        # не «переезжали» на новый день при отложенном flush.
         # ------------------------------
-        self._pending_user_counts: Dict[Tuple[int, int], int] = {}  # (user_id, chat_id) -> +N
+        self._pending_user_counts: Dict[Tuple[int, int, date], int] = {}  # (user_id, chat_id, msk_day) -> +N
         self._pending_chat_counts: Dict[int, int] = {}              # chat_id           -> +N
         self._msg_counter_worker_started: bool = False
         self.MSG_COUNTER_FLUSH_INTERVAL_SEC: float = 20.0
@@ -2150,8 +2165,8 @@ class Database:
             reference_date: date | None = None,
     ) -> dict[str, Any]:
         await self.ensure_king_stats_schema()
-        ref = reference_date or datetime.now().date()
-        ref = ref if isinstance(ref, date) else datetime.now().date()
+        ref = reference_date or _msk_today()
+        ref = ref if isinstance(ref, date) else _msk_today()
 
         month_start = ref.replace(day=1)
         if month_start.month == 12:
@@ -10899,7 +10914,7 @@ class Database:
         for cid in staff_ids:
             result[cid] = 0
 
-        today = date.today()
+        today = _msk_today()
         query = """
             SELECT chat_id, COALESCE(SUM(text), 0) AS total
             FROM chatchange
@@ -10923,11 +10938,19 @@ class Database:
             staff_set = set(staff_ids)
             pending = getattr(self, "_pending_user_counts", {}) or {}
 
-            for (p_uid, p_cid), p_cnt in pending.items():
+            for key, p_cnt in pending.items():
                 try:
+                    if isinstance(key, tuple) and len(key) >= 3:
+                        p_uid, p_cid, p_day = key[0], key[1], key[2]
+                    elif isinstance(key, tuple) and len(key) == 2:
+                        p_uid, p_cid, p_day = key[0], key[1], today
+                    else:
+                        continue
                     p_uid_i = int(p_uid)
                     p_cid_i = int(p_cid)
                     p_cnt_i = int(p_cnt or 0)
+                    if isinstance(p_day, date) and p_day != today:
+                        continue
                 except Exception:
                     continue
 
@@ -18402,11 +18425,11 @@ class Database:
         Добавление или обновление записи пользователя в таблице chatchange.
         ВАЖНО:
         - chatchange.text  -> bigint
-        - chatchange.date  -> date
+        - chatchange.date  -> date (MSK-сутки, как у «Царя статистики»)
         """
         try:
-            now_dt = datetime.now()
-            today_date = now_dt.date()
+            now_dt = _msk_now().replace(tzinfo=None)
+            today_date = _msk_today()
 
             async with self.pool.acquire() as connection:
                 await connection.execute(
@@ -18572,7 +18595,7 @@ class Database:
 
     async def get_total_messages_today(self , chat_id: int) -> int:
         try:
-            today_date = datetime.now().date()
+            today_date = _msk_today()
 
             async with self.pool.acquire() as connection:
                 result = await connection.fetchval(
@@ -18592,7 +18615,7 @@ class Database:
 
     async def get_user_message_count_today(self , chat_id: int , user_id: int) -> int:
         try:
-            today_date = datetime.now().date()
+            today_date = _msk_today()
 
             async with self.pool.acquire() as connection:
                 result = await connection.fetchval(
@@ -18635,7 +18658,7 @@ class Database:
         for cid in staff_ids:
             result[cid] = 0
 
-        today = date.today()
+        today = _msk_today()
         query = """
             SELECT chat_id, COALESCE(SUM(text), 0) AS total
             FROM chatchange
@@ -18652,6 +18675,33 @@ class Database:
                     result[int(row["chat_id"])] = int(row["total"] or 0)
         except Exception as e:
             print(f"[STAFF_DAILY][ERROR] uid={user_id}: {e!r}")
+
+        # Плюсуем несброшенные в БД сообщения из in-memory буфера (только MSK-сегодня).
+        try:
+            uid = int(user_id)
+            staff_set = set(staff_ids)
+            pending = getattr(self, "_pending_user_counts", {}) or {}
+            for key, p_cnt in pending.items():
+                try:
+                    if isinstance(key, tuple) and len(key) >= 3:
+                        p_uid, p_cid, p_day = key[0], key[1], key[2]
+                    elif isinstance(key, tuple) and len(key) == 2:
+                        p_uid, p_cid, p_day = key[0], key[1], today
+                    else:
+                        continue
+                    p_uid_i = int(p_uid)
+                    p_cid_i = int(p_cid)
+                    p_cnt_i = int(p_cnt or 0)
+                    if isinstance(p_day, date) and p_day != today:
+                        continue
+                except Exception:
+                    continue
+                if p_cnt_i <= 0 or p_uid_i != uid or p_cid_i not in staff_set:
+                    continue
+                result[p_cid_i] = int(result.get(p_cid_i, 0)) + p_cnt_i
+        except Exception as e:
+            print(f"[STAFF_DAILY][PENDING][WARN] uid={user_id}: {e!r}")
+
         return result
 
     async def get_daily_messages9999(self, user_id: int) -> bool:
@@ -18697,7 +18747,7 @@ class Database:
         if not staff_ids:
             return True  # нет официальных групп — проверять нечего
 
-        today_date = date.today()
+        today_date = _msk_today()
 
         # Максимум дневных сумм по каждой группе → «набрано в одной группе».
         query = """
@@ -18732,7 +18782,7 @@ class Database:
 
     async def get_top_users_today(self , chat_id: int , limit: int = 30):
         try:
-            today_date = datetime.now().date()
+            today_date = _msk_today()
 
             async with self.pool.acquire() as connection:
                 rows = await connection.fetch(
@@ -18755,7 +18805,7 @@ class Database:
 
     async def find_user_with_max_messages(self , chat_id: int , bot1=None):
         try:
-            today_date = datetime.now().date()
+            today_date = _msk_today()
 
             async with self.pool.acquire() as connection:
                 row = await connection.fetchrow(
@@ -19154,8 +19204,8 @@ class Database:
 
     async def get_total_messages_7d(self , chat_id: int) -> int:
         try:
-            start_date = datetime.now().date() - timedelta(days=6)
-            end_date = datetime.now().date()
+            end_date = _msk_today()
+            start_date = end_date - timedelta(days=6)
 
             async with self.pool.acquire() as connection:
                 result = await connection.fetchval(
@@ -19176,8 +19226,8 @@ class Database:
 
     async def get_user_message_count_7d(self , chat_id: int , user_id: int) -> int:
         try:
-            start_date = datetime.now().date() - timedelta(days=6)
-            end_date = datetime.now().date()
+            end_date = _msk_today()
+            start_date = end_date - timedelta(days=6)
 
             async with self.pool.acquire() as connection:
                 result = await connection.fetchval(
@@ -19199,8 +19249,8 @@ class Database:
 
     async def get_top_users_7d(self , chat_id: int , limit: int = 30):
         try:
-            start_date = datetime.now().date() - timedelta(days=6)
-            end_date = datetime.now().date()
+            end_date = _msk_today()
+            start_date = end_date - timedelta(days=6)
 
             async with self.pool.acquire() as connection:
                 rows = await connection.fetch(
@@ -19224,8 +19274,8 @@ class Database:
 
     async def find_user_with_max_messages_7d(self , chat_id: int):
         try:
-            start_date = datetime.now().date() - timedelta(days=6)
-            end_date = datetime.now().date()
+            end_date = _msk_today()
+            start_date = end_date - timedelta(days=6)
 
             async with self.pool.acquire() as connection:
                 row = await connection.fetchrow(
@@ -19575,7 +19625,9 @@ class Database:
             return
         if uid <= 0 or cid == 0:
             return
-        self._pending_user_counts[(uid, cid)] = self._pending_user_counts.get((uid, cid), 0) + 1
+        day = _msk_today()
+        key = (uid, cid, day)
+        self._pending_user_counts[key] = self._pending_user_counts.get(key, 0) + 1
         self._pending_chat_counts[cid] = self._pending_chat_counts.get(cid, 0) + 1
 
         # Немедленная запись: планируем flush на ближайший тик event loop.
@@ -19597,7 +19649,7 @@ class Database:
         """
         Сбрасывает накопленные счётчики сообщений в БД одной транзакцией:
             _pending_user_counts -> chatchange: +N сообщений пользователя за
-                                     СЕГОДНЯ в конкретной группе
+                                     зафиксированный MSK-день в группе
                                      (UPSERT по user_id+chat_id+date);
             _pending_chat_counts -> chat.text: +N к общему счётчику группы.
 
@@ -19617,22 +19669,36 @@ class Database:
         self._pending_user_counts = {}
         self._pending_chat_counts = {}
 
-        user_items = [(uid, cid, cnt) for (uid, cid), cnt in user_snapshot.items() if cnt > 0]
+        user_items: list[tuple[int, int, date, int]] = []
+        for key, cnt in user_snapshot.items():
+            if not cnt or cnt <= 0:
+                continue
+            try:
+                if isinstance(key, tuple) and len(key) >= 3:
+                    uid, cid, day = key[0], key[1], key[2]
+                elif isinstance(key, tuple) and len(key) == 2:
+                    # Совместимость со старым форматом буфера (до MSK-ключа).
+                    uid, cid, day = key[0], key[1], _msk_today()
+                else:
+                    continue
+                if not isinstance(day, date):
+                    day = _msk_today()
+                user_items.append((int(uid), int(cid), day, int(cnt)))
+            except Exception:
+                continue
         chat_items = [(cid, cnt) for cid, cnt in chat_snapshot.items() if cnt > 0]
-
-        today = date.today()
 
         try:
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
-                    for uid, cid, cnt in user_items:
+                    for uid, cid, day, cnt in user_items:
                         status = await conn.execute(
                             '''
                             UPDATE chatchange
                             SET text = COALESCE(text, 0) + $4
                             WHERE user_id = $1 AND chat_id = $2 AND date = $3
                             ''',
-                            int(uid), int(cid), today, int(cnt),
+                            int(uid), int(cid), day, int(cnt),
                         )
                         try:
                             updated = int(str(status).split()[-1])
@@ -19644,7 +19710,7 @@ class Database:
                                 INSERT INTO chatchange (user_id, chat_id, date, text)
                                 VALUES ($1, $2, $3, $4)
                                 ''',
-                                int(uid), int(cid), today, int(cnt),
+                                int(uid), int(cid), day, int(cnt),
                             )
 
                     for cid, cnt in chat_items:
@@ -19655,8 +19721,23 @@ class Database:
             _vdbg(f"[MSG_COUNTER][FLUSH][OK] users={len(user_items)} chats={len(chat_items)}")
         except Exception as e:
             # Возвращаем дельты обратно в буфер, чтобы не потерять счётчики.
-            for (uid, cid), cnt in user_snapshot.items():
-                self._pending_user_counts[(uid, cid)] = self._pending_user_counts.get((uid, cid), 0) + cnt
+            for key, cnt in user_snapshot.items():
+                try:
+                    if isinstance(key, tuple) and len(key) >= 3:
+                        restore_key = (
+                            int(key[0]),
+                            int(key[1]),
+                            key[2] if isinstance(key[2], date) else _msk_today(),
+                        )
+                    elif isinstance(key, tuple) and len(key) == 2:
+                        restore_key = (int(key[0]), int(key[1]), _msk_today())
+                    else:
+                        continue
+                except Exception:
+                    continue
+                self._pending_user_counts[restore_key] = (
+                    self._pending_user_counts.get(restore_key, 0) + int(cnt or 0)
+                )
             for cid, cnt in chat_snapshot.items():
                 self._pending_chat_counts[cid] = self._pending_chat_counts.get(cid, 0) + cnt
             _vdbg(f"[MSG_COUNTER][FLUSH][WARN] {type(e).__name__}: {e} (дельты возвращены в буфер)")

@@ -403,7 +403,7 @@ def _salary_channel_text(
         f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>\n"
         f"<b><tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
         f"Для <i>{name_html}</i>{uname_txt}</b>\n"
-        f"<b><tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
+        f"<b><tg-emoji emoji-id='5422818196031840237'>🌿</tg-emoji> "
         f"Заявка на выплату зарплаты администратору</b>"
         f"{part_line}\n\n"
         f"<blockquote><b>@CuteGamingBot</b></blockquote>"
