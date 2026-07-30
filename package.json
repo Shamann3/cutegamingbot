@@ -8,7 +8,7 @@
     "dev:all": "concurrently -n game,admin -c green,cyan \"vite\" \"npm run dev --prefix admin\"",
     "dev:game": "vite",
     "dev:admin": "npm run dev --prefix admin",
-    "build": "npm --prefix admin ci && vite build && npm --prefix admin run build",
+    "build": "vite build && npm --prefix admin run build",
     "build:game": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 5173 --strictPort",
     "preview:telegram": "npm run build && vite preview --host 127.0.0.1 --port 5173 --strictPort",
