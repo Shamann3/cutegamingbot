@@ -1754,24 +1754,32 @@ export async function fetchGroupPostCampaigns() {
   return adminFetch('/group-posts')
 }
 
-export async function createGroupPostCampaign({ label, chatIds, telegramText, buttons, intervalMinutes, photoFile }) {
+export async function createGroupPostCampaign({ label, chatIds, telegramText, buttons, intervalMinutes, photoFile, deletePrevious, pinMessage, pinNotify, chatOverrides }) {
   return _uploadForm('/group-posts', 'POST', {
     label: label || '',
     chat_ids: chatIds,
     telegram_text: telegramText || '',
     buttons: JSON.stringify(buttons || []),
     interval_minutes: String(intervalMinutes),
+    delete_previous: deletePrevious ? 'true' : 'false',
+    pin_message: pinMessage ? 'true' : 'false',
+    pin_notify: pinNotify ? 'true' : 'false',
+    chat_overrides: JSON.stringify(chatOverrides || {}),
     ...(photoFile ? { photo: photoFile } : {}),
   })
 }
 
-export async function updateGroupPostCampaign(campaignId, { label, chatIds, telegramText, buttons, intervalMinutes, photoFile, clearPhoto }) {
+export async function updateGroupPostCampaign(campaignId, { label, chatIds, telegramText, buttons, intervalMinutes, photoFile, clearPhoto, deletePrevious, pinMessage, pinNotify, chatOverrides }) {
   const fields = {}
   if (label !== undefined) fields.label = label
   if (chatIds !== undefined) fields.chat_ids = chatIds
   if (telegramText !== undefined) fields.telegram_text = telegramText
   if (buttons !== undefined) fields.buttons = JSON.stringify(buttons)
   if (intervalMinutes !== undefined) fields.interval_minutes = String(intervalMinutes)
+  if (deletePrevious !== undefined) fields.delete_previous = deletePrevious ? 'true' : 'false'
+  if (pinMessage !== undefined) fields.pin_message = pinMessage ? 'true' : 'false'
+  if (pinNotify !== undefined) fields.pin_notify = pinNotify ? 'true' : 'false'
+  if (chatOverrides !== undefined) fields.chat_overrides = JSON.stringify(chatOverrides || {})
   if (photoFile) fields.photo = photoFile
   if (clearPhoto) fields.clear_photo = 'true'
   return _uploadForm(`/group-posts/${campaignId}`, 'PATCH', fields)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
 import {
   createGroupPostCampaign,
@@ -18,7 +18,15 @@ const FAIL_REASON_LABEL = {
   chat_not_found: 'группа не найдена',
   deactivated: 'группа недоступна',
   rate_limited: 'лимит Telegram (повторится позже)',
+  no_rights: 'у бота нет прав в группе',
+  message_not_found: 'сообщения уже нет',
+  cant_delete: 'сообщение нельзя удалить',
   other: 'другая ошибка',
+}
+
+function describeFailReason(reason) {
+  if (!reason) return ''
+  return FAIL_REASON_LABEL[reason] || reason
 }
 
 function formatDate(iso) {
@@ -90,21 +98,9 @@ function ButtonsBuilder({ rows, onChange }) {
   )
 }
 
-function ChatPicker({ selectedIds, onChange }) {
-  const [chats, setChats] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+function ChatPicker({ selectedIds, onChange, chats, loading, error }) {
   const [search, setSearch] = useState('')
   const [manualId, setManualId] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    fetchKnownChats()
-      .then((data) => { if (!cancelled) setChats(data.items || []) })
-      .catch((err) => { if (!cancelled) setError(err.message || 'Не удалось загрузить группы') })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [])
 
   const toggle = (chatId) => {
     onChange(
@@ -191,6 +187,81 @@ function ChatPicker({ selectedIds, onChange }) {
   )
 }
 
+const OVERRIDE_FIELDS = [
+  { key: 'deletePrevious', label: 'Удалять предыдущий' },
+  { key: 'pin', label: 'Закреплять' },
+]
+
+function ChatOverridesEditor({ chatIds, chatNames, overrides, onChange, defaults }) {
+  if (chatIds.length === 0) {
+    return <p className="panel-shelf-muted">Сначала выберите группы выше</p>
+  }
+
+  const setField = (chatId, field, value) => {
+    const key = String(chatId)
+    onChange({ ...overrides, [key]: { ...(overrides[key] || {}), [field]: value } })
+  }
+
+  const resetChat = (chatId) => {
+    const next = { ...overrides }
+    delete next[String(chatId)]
+    onChange(next)
+  }
+
+  return (
+    <div className="panel-grouppost-overrides">
+      <p className="panel-shelf-muted">
+        Каждая группа наследует настройки кампании. Меняя галочку здесь, вы делаете исключение
+        именно для этой группы — она перестанет следовать за настройкой кампании, пока не нажать «↺».
+      </p>
+      <div className="panel-grouppost-overrides-list">
+        {chatIds.map((chatId) => {
+          const entry = overrides[String(chatId)] || {}
+          const overridden = OVERRIDE_FIELDS.some((field) => entry[field.key] !== undefined)
+          return (
+            <div
+              key={chatId}
+              className={`panel-grouppost-override-row${overridden ? ' panel-grouppost-override-row-custom' : ''}`}
+            >
+              <span className="panel-grouppost-override-name">
+                {chatNames.get(chatId) || `Группа ${chatId}`}
+                <span className="panel-shelf-muted"> · ID {chatId}</span>
+              </span>
+              {OVERRIDE_FIELDS.map((field) => {
+                const isOverride = entry[field.key] !== undefined
+                const value = isOverride ? entry[field.key] : defaults[field.key]
+                return (
+                  <label
+                    key={field.key}
+                    className={`panel-market-check panel-grouppost-override-check${isOverride ? ' panel-grouppost-override-check-custom' : ''}`}
+                    title={isOverride ? 'Исключение для этой группы' : 'Наследует настройку кампании'}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(value)}
+                      onChange={() => setField(chatId, field.key, !value)}
+                    />
+                    <span>{field.label}</span>
+                  </label>
+                )
+              })}
+              <button
+                type="button"
+                className="panel-users-btn panel-users-btn-sm"
+                disabled={!overridden}
+                title="Вернуть наследование настроек кампании"
+                onClick={() => resetChat(chatId)}
+              >
+                ↺
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function CampaignLog({ campaignId }) {
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
@@ -231,8 +302,12 @@ function CampaignLog({ campaignId }) {
               <span className="panel-shelf-muted">{formatDate(item.createdAt)}</span>
               <span className={`panel-broadcast-recipient-status panel-broadcast-recipient-status-${item.status}`}>
                 {item.status === 'sent' ? 'Доставлено' : 'Ошибка'}
-                {item.failReason && ` · ${FAIL_REASON_LABEL[item.failReason] || item.failReason}`}
+                {item.failReason && ` · ${describeFailReason(item.failReason)}`}
+                {item.pinStatus === 'pinned' && ' · 📌 закреплён'}
+                {item.pinStatus === 'failed' && ' · 📌 закрепить не удалось'}
+                {item.deletedCount > 0 && ` · 🗑 удалено прошлых: ${item.deletedCount}`}
               </span>
+              {item.cleanupError && <span className="panel-shelf-error">{item.cleanupError}</span>}
             </li>
           ))}
         </ul>
@@ -252,6 +327,7 @@ function CampaignLog({ campaignId }) {
 }
 
 function CampaignCard({ campaign, onEdit, onPause, onResume, onDelete, onRunNow, busy, expanded, onToggle }) {
+  const overrideCount = Object.keys(campaign.chatOverrides || {}).length
   return (
     <article className={`panel-broadcast-run-card panel-broadcast-run-card-${campaign.status === 'active' ? 'running' : 'pending'}`}>
       <div className="panel-broadcast-run-head">
@@ -269,6 +345,19 @@ function CampaignCard({ campaign, onEdit, onPause, onResume, onDelete, onRunNow,
             {' · '}отправлено {campaign.totalSent} раз
             {campaign.nextFireAt && ` · след. отправка ${formatDate(campaign.nextFireAt)}`}
           </p>
+          <div className="panel-grouppost-badges">
+            {campaign.deletePrevious && <span className="panel-grouppost-badge">🗑 удаляет предыдущий пост</span>}
+            {campaign.pinMessage && (
+              <span className="panel-grouppost-badge">
+                📌 закрепляет{campaign.pinNotify ? ' с уведомлением' : ' тихо'}
+              </span>
+            )}
+            {overrideCount > 0 && (
+              <span className="panel-grouppost-badge">
+                ⚙ исключений по группам: {overrideCount}
+              </span>
+            )}
+          </div>
           {campaign.lastError && <p className="panel-shelf-error">{campaign.lastError}</p>}
         </div>
         <div className="panel-broadcast-run-actions">
@@ -305,6 +394,10 @@ const emptyForm = {
   photoFile: null,
   clearPhoto: false,
   existingHasPhoto: false,
+  deletePrevious: false,
+  pinMessage: false,
+  pinNotify: false,
+  chatOverrides: {},
 }
 
 export default function GroupPostsPanel() {
@@ -322,6 +415,25 @@ export default function GroupPostsPanel() {
 
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Список групп нужен и выбору целей, и настройкам по группам - грузим один раз.
+  const [chats, setChats] = useState([])
+  const [chatsLoading, setChatsLoading] = useState(true)
+  const [chatsError, setChatsError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    fetchKnownChats()
+      .then((data) => { if (!cancelled) setChats(data.items || []) })
+      .catch((err) => { if (!cancelled) setChatsError(err.message || 'Не удалось загрузить группы') })
+      .finally(() => { if (!cancelled) setChatsLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  const chatNames = useMemo(
+    () => new Map(chats.map((c) => [c.chatId, c.name])),
+    [chats],
+  )
 
   const load = useCallback(async () => {
     setError('')
@@ -356,8 +468,25 @@ export default function GroupPostsPanel() {
       photoFile: null,
       clearPhoto: false,
       existingHasPhoto: campaign.hasPhoto,
+      deletePrevious: Boolean(campaign.deletePrevious),
+      pinMessage: Boolean(campaign.pinMessage),
+      pinNotify: Boolean(campaign.pinNotify),
+      chatOverrides: campaign.chatOverrides || {},
     })
     setFormOpen(true)
+  }
+
+  // Переопределение, оставшееся от снятой группы, ввело бы в заблуждение: в
+  // форме его не видно, а бэкенд его всё равно отбросит.
+  const handleChatIdsChange = (chatIds) => {
+    const allowed = new Set(chatIds.map(String))
+    setForm((prev) => ({
+      ...prev,
+      chatIds,
+      chatOverrides: Object.fromEntries(
+        Object.entries(prev.chatOverrides).filter(([key]) => allowed.has(key)),
+      ),
+    }))
   }
 
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState('')
@@ -412,6 +541,12 @@ export default function GroupPostsPanel() {
     }
     setSaving(true)
     setError('')
+    const behaviour = {
+      deletePrevious: form.deletePrevious,
+      pinMessage: form.pinMessage,
+      pinNotify: form.pinMessage && form.pinNotify,
+      chatOverrides: form.chatOverrides,
+    }
     try {
       if (editingId) {
         await updateGroupPostCampaign(editingId, {
@@ -422,6 +557,7 @@ export default function GroupPostsPanel() {
           intervalMinutes: interval,
           photoFile: form.photoFile,
           clearPhoto: form.clearPhoto,
+          ...behaviour,
         })
         setInfo('Кампания обновлена')
       } else {
@@ -432,6 +568,7 @@ export default function GroupPostsPanel() {
           buttons: form.buttons,
           intervalMinutes: interval,
           photoFile: form.photoFile,
+          ...behaviour,
         })
         setInfo('Кампания создана')
       }
@@ -476,7 +613,13 @@ export default function GroupPostsPanel() {
     setInfo('')
     try {
       const result = await runGroupPostCampaignNow(campaign.id)
-      setInfo(`Отправлено сейчас: успешно ${result.sent}, ошибок ${result.failed}`)
+      const extra = [
+        result.pinned ? `закреплено ${result.pinned}` : '',
+        result.deleted ? `удалено прошлых ${result.deleted}` : '',
+      ].filter(Boolean).join(', ')
+      setInfo(
+        `Отправлено сейчас: успешно ${result.sent}, ошибок ${result.failed}${extra ? `, ${extra}` : ''}`,
+      )
       await load()
     } catch (err) {
       setError(err.message || 'Не удалось отправить')
@@ -535,8 +678,69 @@ export default function GroupPostsPanel() {
             </label>
             <label className="panel-economy-field">
               <span>Группы</span>
-              <ChatPicker selectedIds={form.chatIds} onChange={(chatIds) => setForm({ ...form, chatIds })} />
+              <ChatPicker
+                selectedIds={form.chatIds}
+                onChange={handleChatIdsChange}
+                chats={chats}
+                loading={chatsLoading}
+                error={chatsError}
+              />
             </label>
+            <div className="panel-economy-field">
+              <span>Поведение поста</span>
+              <div className="panel-grouppost-behaviour">
+                <label className="panel-market-check">
+                  <input
+                    type="checkbox"
+                    checked={form.deletePrevious}
+                    onChange={(e) => setForm({ ...form, deletePrevious: e.target.checked })}
+                  />
+                  <span>
+                    Удалять предыдущий пост
+                    <span className="panel-shelf-muted"> — в группе остаётся только свежий пост кампании</span>
+                  </span>
+                </label>
+                <label className="panel-market-check">
+                  <input
+                    type="checkbox"
+                    checked={form.pinMessage}
+                    onChange={(e) => setForm({ ...form, pinMessage: e.target.checked })}
+                  />
+                  <span>
+                    Закреплять пост
+                    <span className="panel-shelf-muted"> — предыдущий закреп кампании снимается автоматически</span>
+                  </span>
+                </label>
+                {form.pinMessage && (
+                  <label className="panel-market-check panel-grouppost-behaviour-nested">
+                    <input
+                      type="checkbox"
+                      checked={form.pinNotify}
+                      onChange={(e) => setForm({ ...form, pinNotify: e.target.checked })}
+                    />
+                    <span>
+                      Уведомлять участников о закрепе
+                      <span className="panel-shelf-muted"> — иначе закреп проходит тихо, без пуша каждые {form.intervalMinutes || 'N'} мин</span>
+                    </span>
+                  </label>
+                )}
+              </div>
+              <p className="panel-shelf-muted">
+                Для удаления боту нужны права администратора на удаление сообщений, для закрепа —
+                право закреплять. Если прав нет, пост всё равно отправится, а причина будет видна
+                в истории отправок.
+              </p>
+            </div>
+            <div className="panel-economy-field">
+              <span>Настройки по группам</span>
+              <ChatOverridesEditor
+                chatIds={form.chatIds}
+                chatNames={chatNames}
+                overrides={form.chatOverrides}
+                onChange={(chatOverrides) => setForm({ ...form, chatOverrides })}
+                defaults={{ deletePrevious: form.deletePrevious, pin: form.pinMessage }}
+              />
+            </div>
             <label className="panel-economy-field">
               <span>Текст поста (HTML)</span>
               <textarea className="panel-users-input panel-broadcast-textarea" value={form.telegramText} onChange={(e) => setForm({ ...form, telegramText: e.target.value })} rows={4} maxLength={2000} />

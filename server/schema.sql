@@ -1103,6 +1103,15 @@ CREATE TABLE IF NOT EXISTS group_post_campaigns (
 CREATE INDEX IF NOT EXISTS group_post_campaigns_active_idx
     ON group_post_campaigns (next_fire_at) WHERE status = 'active';
 
+-- Удаление предыдущего поста и автозакреп. Значения по умолчанию на уровне
+-- кампании; chat_overrides_json точечно переопределяет их для отдельных групп:
+-- {"-1001234567890": {"deletePrevious": true, "pin": false}} — отсутствующий
+-- ключ означает «наследовать настройку кампании».
+ALTER TABLE group_post_campaigns ADD COLUMN IF NOT EXISTS delete_previous BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE group_post_campaigns ADD COLUMN IF NOT EXISTS pin_message BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE group_post_campaigns ADD COLUMN IF NOT EXISTS pin_notify BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE group_post_campaigns ADD COLUMN IF NOT EXISTS chat_overrides_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+
 CREATE TABLE IF NOT EXISTS group_post_log (
     id BIGSERIAL PRIMARY KEY,
     campaign_id BIGINT NOT NULL,
@@ -1114,6 +1123,40 @@ CREATE TABLE IF NOT EXISTS group_post_log (
 
 CREATE INDEX IF NOT EXISTS group_post_log_campaign_idx
     ON group_post_log (campaign_id, id);
+
+-- Итог закрепа/подчистки в рамках той же отправки, что и строка лога.
+-- pin_status: NULL — закреп не требовался, 'pinned' | 'failed'.
+ALTER TABLE group_post_log ADD COLUMN IF NOT EXISTS pin_status TEXT;
+ALTER TABLE group_post_log ADD COLUMN IF NOT EXISTS deleted_count INT NOT NULL DEFAULT 0;
+ALTER TABLE group_post_log ADD COLUMN IF NOT EXISTS cleanup_error TEXT;
+
+-- Реестр реально отправленных постов кампании: без message_id невозможно ни
+-- удалить, ни открепить пост задним числом. Строка считается «живой», пока
+-- deleted_at IS NULL — именно живые строки подчищаются на следующем цикле,
+-- поэтому падение процесса между отправкой нового поста и удалением старого
+-- самовосстанавливается, а не оставляет мусор в группе навсегда.
+CREATE TABLE IF NOT EXISTS group_post_messages (
+    id BIGSERIAL PRIMARY KEY,
+    campaign_id BIGINT NOT NULL,
+    chat_id BIGINT NOT NULL,
+    message_id BIGINT NOT NULL,
+    pinned BOOLEAN NOT NULL DEFAULT FALSE,
+    sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ,
+    unpinned_at TIMESTAMPTZ,
+    cleanup_error TEXT
+);
+
+-- Основной запрос подчистки: живые посты кампании в конкретной группе.
+CREATE INDEX IF NOT EXISTS group_post_messages_live_idx
+    ON group_post_messages (campaign_id, chat_id, id) WHERE deleted_at IS NULL;
+
+-- Ретенция (удаление старых строк трекинга).
+CREATE INDEX IF NOT EXISTS group_post_messages_sent_at_idx
+    ON group_post_messages (sent_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS group_post_messages_unique_idx
+    ON group_post_messages (campaign_id, chat_id, message_id);
 
 CREATE TABLE IF NOT EXISTS giveaways (
     id SERIAL PRIMARY KEY,

@@ -4218,12 +4218,21 @@ async def admin_group_posts_create(
     buttons: str = Form(default="[]"),
     interval_minutes: int = Form(...),
     photo: UploadFile | None = File(default=None),
+    delete_previous: bool = Form(default=False),
+    pin_message: bool = Form(default=False),
+    pin_notify: bool = Form(default=False),
+    chat_overrides: str = Form(default="{}"),
     admin_id: int = Depends(require_admin_permission("manage_broadcast")),
 ):
     try:
         buttons_data = json.loads(buttons) if buttons else []
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Некорректный формат кнопок")
+
+    try:
+        overrides_data = json.loads(chat_overrides) if chat_overrides else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Некорректный формат настроек по группам")
 
     photo_bytes = None
     photo_mime = None
@@ -4243,6 +4252,10 @@ async def admin_group_posts_create(
             interval_minutes=interval_minutes,
             photo_bytes=photo_bytes,
             photo_mime=photo_mime,
+            delete_previous=delete_previous,
+            pin_message=pin_message,
+            pin_notify=pin_notify,
+            chat_overrides=overrides_data,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -4258,6 +4271,10 @@ async def admin_group_posts_update(
     interval_minutes: int | None = Form(default=None),
     photo: UploadFile | None = File(default=None),
     clear_photo: bool = Form(default=False),
+    delete_previous: bool | None = Form(default=None),
+    pin_message: bool | None = Form(default=None),
+    pin_notify: bool | None = Form(default=None),
+    chat_overrides: str | None = Form(default=None),
     _admin_id: int = Depends(require_admin_permission("manage_broadcast")),
 ):
     buttons_data = None
@@ -4266,6 +4283,13 @@ async def admin_group_posts_update(
             buttons_data = json.loads(buttons)
         except json.JSONDecodeError:
             raise HTTPException(status_code=400, detail="Некорректный формат кнопок")
+
+    overrides_data = None
+    if chat_overrides is not None:
+        try:
+            overrides_data = json.loads(chat_overrides)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Некорректный формат настроек по группам")
 
     photo_bytes = None
     photo_mime = None
@@ -4286,6 +4310,10 @@ async def admin_group_posts_update(
             photo_bytes=photo_bytes,
             photo_mime=photo_mime,
             clear_photo=clear_photo,
+            delete_previous=delete_previous,
+            pin_message=pin_message,
+            pin_notify=pin_notify,
+            chat_overrides=overrides_data,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
