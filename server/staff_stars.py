@@ -529,12 +529,15 @@ async def deliver_salary_payout_to_channel(
             approve_token = $4,
             reject_token = $5,
             refund_token = $6,
+            part_index = $7,
+            parts_total = $8,
             error = NULL,
             updated_at = NOW()
         WHERE id = $1
         RETURNING *
         """,
         payout_id, mid, chat_id, approve_token, reject_token, refund_token,
+        int(part or 0), int(parts or 0),
     )
     return _row(updated)
 

@@ -7569,12 +7569,134 @@ async def _adm_safe_edit_channel_message(call: types.CallbackQuery, text: str):
             text=text,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            parse_mode="HTML",disable_web_page_preview=True
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=None,
         )
         return True
     except Exception as e:
         print(f"[ADMIN][CHANNEL][EDIT][WARN] err={e!r}")
-        return False
+        try:
+            await call.message.edit_text(
+                text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=None,
+            )
+            return True
+        except Exception as e2:
+            print(f"[ADMIN][CHANNEL][EDIT][WARN2] err={e2!r}")
+            return False
+
+
+def _salary_mark_all_tokens_done(prow: dict, admin_id: int, final_status: str) -> None:
+    """Закрывает 👍/👎/🥂 одной зарплатной заявки — как у обычного вывода."""
+    for key in ("approve_token", "reject_token", "refund_token"):
+        t = _wd_safe_str(prow.get(key), "")
+        if t:
+            _mark_admin_withdraw_action_done(t, admin_id, final_status)
+
+
+async def _salary_build_people_display(
+    *,
+    user_id: int,
+    username: str,
+    first_name: str,
+) -> str:
+    uname = _wd_normalize_username(username)
+    disp = (first_name or uname or str(user_id)).strip()
+    if user_id > 0:
+        try:
+            link = await create_user_link(user_id, disp, uname or None)
+            if link:
+                base = str(link)
+            else:
+                base = f'<a href="tg://user?id={user_id}">{escape(disp)}</a>'
+        except Exception:
+            base = f'<a href="tg://user?id={user_id}">{escape(disp)}</a>'
+    else:
+        base = escape(disp)
+    if uname:
+        return f"{base} (@{escape(uname)})"
+    return base
+
+
+def _salary_render_channel_final(
+    *,
+    kind: str,
+    amount: int,
+    recipient_display: str,
+    part: int = 0,
+    parts: int = 0,
+    gift_error: str = "",
+) -> str:
+    amount_fmt = _wd_fmt_amount(amount)
+    part_line = ""
+    if part > 0 and parts > 1:
+        part_line = (
+            f"\n<b><tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
+            f"Часть {part}/{parts}</b>"
+        )
+    people = (
+        f"<b><tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
+        f"Для {recipient_display}</b>"
+    )
+    badge = (
+        f"<b><tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
+        f"Зарплата администратора</b>"
+    )
+
+    if kind == "approve":
+        return (
+            f"<tg-emoji emoji-id='5395325195542078574'>🍀</tg-emoji> "
+            f"<b>Выплата зарплаты выполнена</b>\n"
+            f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
+            f"<b>{amount_fmt} кут в stars "
+            f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji></b>"
+            f"{part_line}\n\n"
+            f"{people}\n"
+            f"{badge}\n\n"
+            f"<blockquote><b>@CuteGamingBot</b></blockquote>"
+        )
+    if kind == "refund":
+        return (
+            f"<tg-emoji emoji-id='5440911110838425969'>🌹</tg-emoji> "
+            f"<b>Зарплата возвращена (без списания)</b>\n"
+            f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
+            f"<b>{amount_fmt} кут в stars "
+            f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>"
+            f"{part_line}\n\n"
+            f"{people}\n"
+            f"{badge}\n\n"
+            f"<blockquote><b>@CuteGamingBot</b></blockquote>"
+        )
+    if kind == "reject":
+        return (
+            f"<tg-emoji emoji-id='5420315771991497307'>🔥</tg-emoji> "
+            f"<b>Зарплата отклонена</b>\n"
+            f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
+            f"<b>{amount_fmt} кут в stars "
+            f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>"
+            f"{part_line}\n\n"
+            f"{people}\n"
+            f"{badge}\n\n"
+            f"<blockquote><b>@CuteGamingBot</b></blockquote>"
+        )
+    if kind == "fail":
+        err = escape(_wd_safe_str(gift_error, "ошибка")[:220])
+        return (
+            f"<tg-emoji emoji-id='5210952531676504517'>❌</tg-emoji> "
+            f"<b>Подарок по зарплате не отправлен</b>\n\n"
+            f"<b>Причина :</b> <code>{err}</code>\n"
+            f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
+            f"<b>{amount_fmt} кут в stars "
+            f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>"
+            f"{part_line}\n\n"
+            f"{people}\n"
+            f"{badge}\n\n"
+            f"<blockquote>Заявка НЕ закрыта. Нажмите 👍 ещё раз или откройте панель.</blockquote>"
+        )
+    return f"<b>Неизвестное действие</b>\n{people}"
 
 
 async def _adm_safe_delete_channel_message(call: types.CallbackQuery):
@@ -9844,15 +9966,25 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
                         kind_db = "refund"
                     uname = _wd_safe_str(prow["stars_username"], "").lstrip("@")
                     uid = _wd_safe_int(prow["user_id"], 0)
-                    payload = {
-                        "kind": kind_db,
+                    first_name_db = ""
+                    try:
+                        first_name_db = _wd_safe_str(
+                            await db.pool.fetchval(
+                                "SELECT first_name FROM admin_accounts WHERE user_id = $1",
+                                uid,
+                            ),
+                            "",
+                        )
+                    except Exception:
+                        pass
+                    base_payload = {
                         "request_id": _wd_safe_str(prow["request_id"], f"salstar-{prow['id']}"),
                         "sender_user_id": uid,
                         "sender_username": uname,
-                        "sender_first_name": "",
+                        "sender_first_name": first_name_db,
                         "recipient_user_id": uid,
                         "recipient_username": uname,
-                        "recipient_first_name": "",
+                        "recipient_first_name": first_name_db,
                         "amount": _wd_safe_int(prow["amount"], 0),
                         "result_flag": "-",
                         "is_friend": False,
@@ -9864,17 +9996,34 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
                         "salary_id": _wd_safe_int(prow["salary_id"], 0),
                         "bonus_id": _wd_safe_int(prow.get("bonus_id"), 0),
                         "salary_source": _wd_safe_str(prow["source"], "salary"),
-                        "status": "pending",
-                        "token": token,
+                        "part_index": _wd_safe_int(prow.get("part_index"), 0),
+                        "parts_total": _wd_safe_int(prow.get("parts_total"), 0),
                     }
-                    ADMIN_WITHDRAW_ACTIONS[token] = {
-                        **payload,
-                        "created_at": _wd_now_ts(),
-                        "updated_at": _wd_now_ts(),
-                        "pressed_at": 0,
-                        "pressed_by": 0,
-                    }
-                    print(f"[ADMIN][WDACT] salary token from DB token={token!r} kind={kind_db}")
+                    now_ts = _wd_now_ts()
+                    # Прогреваем все 3 токена — как registry у обычных выводов
+                    for t_kind, t_key in (
+                        ("approve", "approve_token"),
+                        ("reject", "reject_token"),
+                        ("refund", "refund_token"),
+                    ):
+                        t_val = _wd_safe_str(prow.get(t_key), "")
+                        if not t_val:
+                            continue
+                        ADMIN_WITHDRAW_ACTIONS[t_val] = {
+                            **base_payload,
+                            "kind": t_kind,
+                            "token": t_val,
+                            "status": "pending",
+                            "created_at": now_ts,
+                            "updated_at": now_ts,
+                            "pressed_at": 0,
+                            "pressed_by": 0,
+                        }
+                    payload = dict(ADMIN_WITHDRAW_ACTIONS.get(token) or {})
+                    print(
+                        f"[ADMIN][WDACT] salary tokens hydrated from DB "
+                        f"payout={prow['id']} pressed={kind_db}"
+                    )
             except Exception as e:
                 print(f"[ADMIN][WDACT][WARN] salary db lookup err={e!r}")
                 payload = None
@@ -9909,160 +10058,252 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
             return
 
         # -----------------------------------------------------
-        # Зарплата администратора (stars) — отдельная ветка
+        # Зарплата администратора (stars) — как обычный вывод:
+        # lock → atomic claim → gift/userbot → edit канала → done
         # -----------------------------------------------------
         if is_salary and star_payout_id > 0:
-            try:
-                from bot.staff_star_worker import _complete_salary_payment, _mark as _star_mark
+            salary_lock = _get_withdraw_request_lock(f"salary:{star_payout_id}")
+            async with salary_lock:
+                try:
+                    from bot.staff_star_worker import _complete_salary_payment, _mark as _star_mark
 
-                prow = await db.pool.fetchrow(
-                    "SELECT * FROM staff_star_payouts WHERE id = $1", star_payout_id
-                )
-                if not prow:
-                    await _adm_safe_answer(call, "Зарплатная заявка не найдена", show_alert=True)
-                    return
-                if prow["status"] in ("completed", "cancelled", "refunded"):
-                    await _adm_safe_answer(call, "Заявка уже обработана", show_alert=True)
-                    return
-                if prow["status"] not in ("channel_pending", "processing", "queued", "failed"):
-                    await _adm_safe_answer(call, f"Статус заявки: {prow['status']}", show_alert=True)
-                    return
-
-                # Как у обычных выводов: сразу processing, чтобы 👍 нельзя было нажать дважды
-                _mark_admin_withdraw_action_processing(token, call.from_user.id)
-
-                if kind == "approve":
-                    if gift_id <= 0:
-                        gift_id = _wd_safe_int(prow.get("gift_id"), 0)
-                        gift_emoji = _wd_safe_str(prow.get("gift_emoji"), gift_emoji) or gift_emoji
-                        has_upgrade = _wd_safe_int(prow.get("has_upgrade"), has_upgrade)
-                    gift_result = await _execute_gift_delivery(
-                        request_id=rid or token,
-                        sender_user_id=sender_user_id,
-                        sender_username=sender_username,
-                        sender_first_name=sender_first_name,
-                        recipient_user_id=recipient_user_id or sender_user_id,
-                        recipient_username=recipient_username,
-                        recipient_first_name=recipient_first_name,
-                        amount=amount,
-                        is_friend=False,
-                        is_self_withdraw=True,
-                        gift_id=gift_id,
-                        has_upgrade=has_upgrade,
+                    # Атомарно забираем заявку (защита от двойного 👍)
+                    claimed = await db.pool.fetchrow(
+                        """
+                        UPDATE staff_star_payouts
+                        SET status = 'processing', updated_at = NOW()
+                        WHERE id = $1
+                          AND (
+                            status IN ('channel_pending', 'queued', 'failed')
+                            OR (
+                              status = 'processing'
+                              AND updated_at < NOW() - INTERVAL '45 seconds'
+                            )
+                          )
+                        RETURNING *
+                        """,
+                        star_payout_id,
                     )
-                    if not gift_result.get("ok"):
-                        err = _wd_safe_str(gift_result.get("error"), "Не удалось отправить")
-                        # Вернём кнопку в pending — как у обычных выводов при ошибке формы
-                        _touch_admin_withdraw_action(
-                            token,
-                            status="pending",
-                            pressed_at=0,
-                            pressed_by=0,
+                    if not claimed:
+                        cur = await db.pool.fetchrow(
+                            "SELECT status FROM staff_star_payouts WHERE id = $1",
+                            star_payout_id,
                         )
-                        await _adm_safe_answer(call, f"❌ {err}", show_alert=True)
+                        st = _wd_safe_str(cur["status"] if cur else "", "missing")
+                        if st in ("completed", "cancelled", "refunded"):
+                            await _adm_safe_answer(call, "⛔ Эта заявка уже обработана", show_alert=True)
+                        elif st == "processing":
+                            await _adm_safe_answer(call, "⏳ Уже обрабатывается", show_alert=True)
+                        else:
+                            await _adm_safe_answer(call, "Зарплатная заявка не найдена", show_alert=True)
                         return
 
-                    await _complete_salary_payment(db, dict(prow), f"userbot-{rid or token}")
-                    await _star_mark(db, star_payout_id, "completed", txid=f"userbot-{rid or token}")
-                    amount_fmt = _wd_fmt_amount(amount)
-                    uname = _wd_normalize_username(recipient_username or sender_username)
-                    disp_name = (recipient_first_name or sender_first_name or uname or str(sender_user_id)).strip()
-                    rid_uid = recipient_user_id or sender_user_id
-                    if rid_uid > 0:
-                        recipient_display = f'<a href="tg://user?id={rid_uid}">{escape(disp_name)}</a>'
-                    else:
-                        recipient_display = escape(disp_name)
-                    if uname:
-                        recipient_display = f"{recipient_display} (@{escape(uname)})"
-                    await _adm_safe_notify_user(
-                        sender_user_id,
-                        (
-                            f"<tg-emoji emoji-id='5208540237524911208'>✅</tg-emoji> "
-                            f"<b>Зарплата {amount_fmt}"
-                            f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji> "
-                            f"выплачена</b>\n"
-                            f"<blockquote>Подарок отправлен через юзербот.\n"
-                            f"Виво-Эпсилон</blockquote>"
-                        ),
-                    )
+                    prow = dict(claimed)
+                    _mark_admin_withdraw_action_processing(token, call.from_user.id)
+
+                    # Подтянем имя для красивого «Для …» и резолва получателя
                     try:
-                        await call.message.edit_text(
-                            (
-                                f"<tg-emoji emoji-id='5395325195542078574'>🍀</tg-emoji> "
-                                f"<b>Выплата зарплаты выполнена</b>\n"
-                                f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
-                                f"<b>{amount_fmt} кут в stars "
-                                f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji></b>\n\n"
-                                f"<b><tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
-                                f"Для {recipient_display}</b>\n"
-                                f"<b><tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
-                                f"Зарплата администратора</b>\n\n"
-                                f"<blockquote><b>@CuteGamingBot</b></blockquote>"
-                            ),
-                            parse_mode="HTML",
-                            reply_markup=None,
+                        fn = await db.pool.fetchval(
+                            "SELECT first_name FROM admin_accounts WHERE user_id = $1",
+                            sender_user_id,
                         )
+                        if fn:
+                            sender_first_name = _wd_safe_str(fn, sender_first_name)
+                            recipient_first_name = _wd_safe_str(fn, recipient_first_name)
                     except Exception:
                         pass
-                    _mark_admin_withdraw_action_done(token, call.from_user.id, "completed")
-                    await _adm_safe_answer(call, "✅ Зарплата выплачена", show_alert=True)
+
+                    if not recipient_username:
+                        recipient_username = sender_username
+                    if recipient_user_id <= 0:
+                        recipient_user_id = sender_user_id
+
+                    gift_id = gift_id or _wd_safe_int(prow.get("gift_id"), 0)
+                    gift_emoji = gift_emoji or _wd_safe_str(prow.get("gift_emoji"), "⭐")
+                    has_upgrade = has_upgrade or _wd_safe_int(prow.get("has_upgrade"), 0)
+                    part_n = _wd_safe_int(prow.get("part_index"), 0)
+                    parts_n = _wd_safe_int(prow.get("parts_total"), 0)
+
+                    recipient_display = await _salary_build_people_display(
+                        user_id=recipient_user_id or sender_user_id,
+                        username=recipient_username or sender_username,
+                        first_name=recipient_first_name or sender_first_name,
+                    )
+
+                    print(
+                        f"[SALARY_STARS][WDACT] kind={kind!r} payout={star_payout_id} "
+                        f"amount={amount} gift_id={gift_id} part={part_n}/{parts_n} "
+                        f"user={sender_user_id} @{recipient_username}"
+                    )
+
+                    if kind == "approve":
+                        # Лёгкий ping как у обычных выводов
+                        try:
+                            await _wd_send_html(
+                                sender_user_id,
+                                "<tg-emoji emoji-id='5924701179157156993'>⭐️</tg-emoji>",
+                            )
+                        except Exception:
+                            pass
+
+                        gift_result = await _execute_gift_delivery(
+                            request_id=rid or token,
+                            sender_user_id=sender_user_id,
+                            sender_username=sender_username,
+                            sender_first_name=sender_first_name,
+                            recipient_user_id=recipient_user_id or sender_user_id,
+                            recipient_username=recipient_username,
+                            recipient_first_name=recipient_first_name,
+                            amount=amount,
+                            is_friend=False,
+                            is_self_withdraw=True,
+                            gift_id=gift_id,
+                            has_upgrade=has_upgrade,
+                        )
+
+                        if not gift_result.get("ok"):
+                            err = _wd_safe_str(gift_result.get("error"), "Не удалось отправить подарок")
+                            # Вернём в channel_pending — кнопки снова можно нажать
+                            await _star_mark(
+                                db, star_payout_id, "channel_pending",
+                                error=f"gift_fail: {err}"[:400],
+                            )
+                            _touch_admin_withdraw_action(
+                                token,
+                                status="pending",
+                                pressed_at=0,
+                                pressed_by=0,
+                            )
+                            fail_txt = _salary_render_channel_final(
+                                kind="fail",
+                                amount=amount,
+                                recipient_display=recipient_display,
+                                part=part_n,
+                                parts=parts_n,
+                                gift_error=err,
+                            )
+                            # Показать ошибку, но оставить кнопки (повтор 👍)
+                            try:
+                                kb = call.message.reply_markup
+                                await bot1.edit_message_text(
+                                    text=fail_txt,
+                                    chat_id=call.message.chat.id,
+                                    message_id=call.message.message_id,
+                                    parse_mode="HTML",
+                                    disable_web_page_preview=True,
+                                    reply_markup=kb,
+                                )
+                            except Exception as e:
+                                print(f"[SALARY_STARS][FAIL_EDIT][WARN] {e!r}")
+                            await _adm_safe_answer(call, f"❌ {err}", show_alert=True)
+                            return
+
+                        await _complete_salary_payment(
+                            db, prow, f"userbot-{rid or token}"
+                        )
+                        await _star_mark(
+                            db, star_payout_id, "completed",
+                            txid=f"userbot-{rid or token}",
+                        )
+                        _salary_mark_all_tokens_done(prow, call.from_user.id, "completed")
+
+                        amount_fmt = _wd_fmt_amount(amount)
+                        await _adm_safe_notify_user(
+                            sender_user_id,
+                            (
+                                f"<b><tg-emoji emoji-id='5463289097336405244'>⭐️</tg-emoji> "
+                                f"Ваша зарплата одобрена!\n"
+                                f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
+                                f"Подарок {amount_fmt}⭐ отправлен\n\n"
+                                f"<blockquote>@CuteGamingBot</blockquote></b>"
+                            ),
+                            effect_id="5046509860389126442",
+                        )
+
+                        final_txt = _salary_render_channel_final(
+                            kind="approve",
+                            amount=amount,
+                            recipient_display=recipient_display,
+                            part=part_n,
+                            parts=parts_n,
+                        )
+                        await _adm_safe_edit_channel_message(call, final_txt)
+                        await _adm_safe_answer(call, "✅ Зарплата выплачена", show_alert=True)
+                        return
+
+                    if kind in ("refund", "reject"):
+                        new_status = "refunded" if kind == "refund" else "cancelled"
+                        await _star_mark(db, star_payout_id, new_status, error=f"admin_{kind}")
+                        _salary_mark_all_tokens_done(prow, call.from_user.id, new_status)
+
+                        # Мягкий ping + DM как у обычных выводов
+                        try:
+                            ping = (
+                                "<tg-emoji emoji-id='5195369389599265575'>🦅</tg-emoji>"
+                                if kind == "refund"
+                                else "<tg-emoji emoji-id='5208923808169222461'>🥀</tg-emoji>"
+                            )
+                            await _wd_send_html(sender_user_id, ping)
+                        except Exception:
+                            pass
+
+                        if kind == "refund":
+                            staff_txt = (
+                                f"<b><tg-emoji emoji-id='5469963154391833732'>🍓</tg-emoji> "
+                                f"Заявка на зарплату возвращена. Начисление остаётся к выплате.\n\n"
+                                f"<blockquote>@CuteGamingBot</blockquote></b>"
+                            )
+                            effect = "5159385139981059251"
+                        else:
+                            staff_txt = (
+                                f"<b><tg-emoji emoji-id='5469913852462242978'>🧨</tg-emoji> "
+                                f"Заявка на зарплату отклонена. Начисление остаётся к выплате.\n\n"
+                                f"<blockquote>@CuteGamingBot</blockquote></b>"
+                            )
+                            effect = "5104841245755180586"
+
+                        await _adm_safe_notify_user(sender_user_id, staff_txt, effect_id=effect)
+
+                        final_txt = _salary_render_channel_final(
+                            kind=kind,
+                            amount=amount,
+                            recipient_display=recipient_display,
+                            part=part_n,
+                            parts=parts_n,
+                        )
+                        await _adm_safe_edit_channel_message(call, final_txt)
+                        label = "возвращена" if kind == "refund" else "отклонена"
+                        await _adm_safe_answer(call, f"🍃 Заявка {label}", show_alert=True)
+                        return
+
+                    # Неизвестный kind — откат
+                    await _star_mark(db, star_payout_id, "channel_pending", error="unknown_kind")
+                    _touch_admin_withdraw_action(token, status="pending", pressed_at=0, pressed_by=0)
+                    await _adm_safe_answer(call, "Неизвестное действие", show_alert=True)
                     return
 
-                if kind in ("refund", "reject"):
-                    new_status = "refunded" if kind == "refund" else "cancelled"
-                    label = "возвращена" if kind == "refund" else "отклонена"
-                    await _star_mark(db, star_payout_id, new_status, error=f"admin_{kind}")
-                    amount_fmt = _wd_fmt_amount(amount)
-                    if kind == "refund":
-                        staff_txt = (
-                            f"<tg-emoji emoji-id='5266997495497522280'>🥂</tg-emoji> "
-                            f"<b>Заявка на зарплату возвращена</b>\n"
-                            f"<blockquote>Начисление в панели остаётся к выплате.\n"
-                            f"Виво-Эпсилон</blockquote>"
-                        )
-                        ch_txt = (
-                            f"<tg-emoji emoji-id='5266997495497522280'>🥂</tg-emoji> "
-                            f"<b>Зарплата администратору возвращена</b>\n"
-                            f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
-                            f"<b>{amount_fmt} кут в stars "
-                            f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>\n"
-                            f"<b><tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
-                            f"Заявка на выплату зарплаты администратору</b>\n\n"
-                            f"<blockquote><b>@CuteGamingBot</b></blockquote>"
-                        )
-                    else:
-                        staff_txt = (
-                            f"<tg-emoji emoji-id='5210952531676504517'>👎</tg-emoji> "
-                            f"<b>Заявка на зарплату отклонена</b>\n"
-                            f"<blockquote>Начисление в панели остаётся к выплате.\n"
-                            f"Виво-Эпсилон</blockquote>"
-                        )
-                        ch_txt = (
-                            f"<tg-emoji emoji-id='5210952531676504517'>👎</tg-emoji> "
-                            f"<b>Зарплата администратору отклонена</b>\n"
-                            f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
-                            f"<b>{amount_fmt} кут в stars "
-                            f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>\n"
-                            f"<b><tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
-                            f"Заявка на выплату зарплаты администратору</b>\n\n"
-                            f"<blockquote><b>@CuteGamingBot</b></blockquote>"
-                        )
-                    await _adm_safe_notify_user(sender_user_id, staff_txt)
+                except Exception as e:
+                    print(f"[SALARY_STARS][WDACT][ERROR] {e!r}")
+                    print(traceback.format_exc())
                     try:
-                        await call.message.edit_text(
-                            ch_txt,
-                            parse_mode="HTML",
-                            reply_markup=None,
+                        await db.pool.execute(
+                            """
+                            UPDATE staff_star_payouts
+                            SET status = 'channel_pending',
+                                error = $2,
+                                updated_at = NOW()
+                            WHERE id = $1 AND status = 'processing'
+                            """,
+                            star_payout_id,
+                            f"handler_error: {e!r}"[:400],
                         )
                     except Exception:
                         pass
-                    _mark_admin_withdraw_action_done(token, call.from_user.id, new_status)
-                    await _adm_safe_answer(call, f"Заявка {label}", show_alert=True)
+                    _touch_admin_withdraw_action(
+                        token, status="pending", pressed_at=0, pressed_by=0,
+                    )
+                    await _adm_safe_answer(call, "❌ Ошибка обработки зарплаты", show_alert=True)
                     return
-            except Exception as e:
-                print(f"[SALARY_STARS][WDACT][ERROR] {e!r}")
-                await _adm_safe_answer(call, "Ошибка обработки зарплаты", show_alert=True)
-                return
 
         if recipient_user_id <= 0:
             recipient_user_id = sender_user_id

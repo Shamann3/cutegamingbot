@@ -1500,6 +1500,8 @@ ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS approve_token TEXT;
 ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS reject_token TEXT;
 ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS refund_token TEXT;
 ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS channel_chat_id TEXT;
+ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS part_index INT NOT NULL DEFAULT 0;
+ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS parts_total INT NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS staff_star_payouts_approve_token_idx
     ON staff_star_payouts (approve_token) WHERE approve_token IS NOT NULL;
