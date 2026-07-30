@@ -356,17 +356,50 @@ async def cancel_star_payout(payout_id: int) -> bool:
         return False
 
 
-async def requeue_star_payout(payout_id: int) -> bool:
-    """Вернуть failed/stuck заявку в очередь (после фикса воркера)."""
+async def cancel_open_star_payouts_for_salary(salary_id: int) -> int:
+    """Снимает незавершённые заявки по зарплате перед новой."""
     result = await db.pool.execute(
         """
         UPDATE staff_star_payouts
-        SET status = 'queued', error = NULL, updated_at = NOW()
-        WHERE id = $1 AND status IN ('failed', 'processing')
+        SET status = 'cancelled', updated_at = NOW(),
+            error = COALESCE(error, 'replaced by new salary request')
+        WHERE salary_id = $1
+          AND status IN ('queued', 'processing', 'channel_pending', 'failed')
         """,
-        payout_id,
+        salary_id,
     )
     try:
-        return int(result.split()[-1]) > 0
+        return int(result.split()[-1])
     except (ValueError, IndexError):
-        return False
+        return 0
+
+
+async def enqueue_salary_channel_request(
+    *,
+    salary_id: int,
+    user_id: int,
+    amount: int,
+    requested_by: int,
+    stars_username: str | None = None,
+    gift_id: int = 0,
+    gift_emoji: str = "⭐",
+    has_upgrade: int = 0,
+) -> dict:
+    """
+    Строгий флоу зарплаты Stars:
+    назначена/одобрена → заявка в канал выводов (как у игроков) → 👍 → userbot.
+    """
+    await cancel_open_star_payouts_for_salary(salary_id)
+    return await enqueue_star_payout(
+        salary_id=salary_id,
+        user_id=user_id,
+        amount=amount,
+        stars_username=stars_username or "",
+        method="userbot",
+        requested_by=requested_by,
+        source="salary",
+        kind="payment",
+        gift_id=gift_id,
+        gift_emoji=gift_emoji,
+        has_upgrade=has_upgrade,
+    )

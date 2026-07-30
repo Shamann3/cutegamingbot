@@ -9897,11 +9897,6 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
 
                     await _complete_salary_payment(db, dict(prow), f"userbot-{rid or token}")
                     await _star_mark(db, star_payout_id, "completed", txid=f"userbot-{rid or token}")
-                    await _adm_safe_notify_user(
-                        sender_user_id,
-                        f"<b>✅ Зарплата {amount}⭐ одобрена и отправлена!</b>\n"
-                        f"<blockquote>@CuteGamingBot</blockquote>",
-                    )
                     amount_fmt = _wd_fmt_amount(amount)
                     uname = _wd_normalize_username(recipient_username or sender_username)
                     disp_name = (recipient_first_name or sender_first_name or uname or str(sender_user_id)).strip()
@@ -9912,6 +9907,17 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
                         recipient_display = escape(disp_name)
                     if uname:
                         recipient_display = f"{recipient_display} (@{escape(uname)})"
+                    await _adm_safe_notify_user(
+                        sender_user_id,
+                        (
+                            f"<tg-emoji emoji-id='5208540237524911208'>✅</tg-emoji> "
+                            f"<b>Зарплата {amount_fmt}"
+                            f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji> "
+                            f"выплачена</b>\n"
+                            f"<blockquote>Подарок отправлен через юзербот.\n"
+                            f"Виво-Эпсилон</blockquote>"
+                        ),
+                    )
                     try:
                         await call.message.edit_text(
                             (
@@ -9922,7 +9928,8 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
                                 f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji></b>\n\n"
                                 f"<b><tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
                                 f"Для {recipient_display}</b>\n"
-                                f"<b>💼 Зарплата администратора</b>\n\n"
+                                f"<b><tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
+                                f"Зарплата администратора</b>\n\n"
                                 f"<blockquote><b>@CuteGamingBot</b></blockquote>"
                             ),
                             parse_mode="HTML",
@@ -9938,16 +9945,45 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
                     new_status = "refunded" if kind == "refund" else "cancelled"
                     label = "возвращена" if kind == "refund" else "отклонена"
                     await _star_mark(db, star_payout_id, new_status, error=f"admin_{kind}")
-                    # Зарплату не списывали с баланса админа — только отмена заявки
-                    await _adm_safe_notify_user(
-                        sender_user_id,
-                        f"<b>{'🥂 Заявка на зарплату звёздами возвращена (отменена).' if kind == 'refund' else '👎 Заявка на зарплату звёздами отклонена.'}</b>\n"
-                        f"<b>Начисление в панели остаётся к выплате.</b>",
-                    )
+                    amount_fmt = _wd_fmt_amount(amount)
+                    if kind == "refund":
+                        staff_txt = (
+                            f"<tg-emoji emoji-id='5266997495497522280'>🥂</tg-emoji> "
+                            f"<b>Заявка на зарплату возвращена</b>\n"
+                            f"<blockquote>Начисление в панели остаётся к выплате.\n"
+                            f"Виво-Эпсилон</blockquote>"
+                        )
+                        ch_txt = (
+                            f"<tg-emoji emoji-id='5266997495497522280'>🥂</tg-emoji> "
+                            f"<b>Зарплата администратору возвращена</b>\n"
+                            f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
+                            f"<b>{amount_fmt} кут в stars "
+                            f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>\n"
+                            f"<b><tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
+                            f"Заявка на выплату зарплаты администратору</b>\n\n"
+                            f"<blockquote><b>@CuteGamingBot</b></blockquote>"
+                        )
+                    else:
+                        staff_txt = (
+                            f"<tg-emoji emoji-id='5210952531676504517'>👎</tg-emoji> "
+                            f"<b>Заявка на зарплату отклонена</b>\n"
+                            f"<blockquote>Начисление в панели остаётся к выплате.\n"
+                            f"Виво-Эпсилон</blockquote>"
+                        )
+                        ch_txt = (
+                            f"<tg-emoji emoji-id='5210952531676504517'>👎</tg-emoji> "
+                            f"<b>Зарплата администратору отклонена</b>\n"
+                            f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
+                            f"<b>{amount_fmt} кут в stars "
+                            f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>\n"
+                            f"<b><tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
+                            f"Заявка на выплату зарплаты администратору</b>\n\n"
+                            f"<blockquote><b>@CuteGamingBot</b></blockquote>"
+                        )
+                    await _adm_safe_notify_user(sender_user_id, staff_txt)
                     try:
                         await call.message.edit_text(
-                            f"<b>{'🥂' if kind == 'refund' else '👎'} Зарплата администратору {label}</b>\n"
-                            f"<b>{amount}⭐</b>\n<blockquote>@CuteGamingBot</blockquote>",
+                            ch_txt,
                             parse_mode="HTML",
                             reply_markup=None,
                         )

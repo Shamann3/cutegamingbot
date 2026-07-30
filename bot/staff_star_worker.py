@@ -9,7 +9,8 @@ from typing import Any, Awaitable, Callable, Optional
 
 logger = logging.getLogger("staff-star-worker")
 
-WITHDRAW_CHANNEL = "@CurrencyCute"
+# Канал выводов (тот же, что для игроков)
+WITHDRAW_CHANNEL = -1002552723822
 
 
 async def refresh_star_gifts_cache(db, bot) -> int:
@@ -307,14 +308,53 @@ async def _try_fragment(
     return False, None, last_err or "Fragment send failed"
 
 
+async def _resolve_salary_gift(db, row: dict) -> tuple[int, str, int]:
+    """Подбирает gift_id по сумме, если владелец не указал подарок при назначении."""
+    gift_id = int(row.get("gift_id") or 0)
+    gift_emoji = (row.get("gift_emoji") or "⭐")[:16] or "⭐"
+    has_upgrade = int(row.get("has_upgrade") or 0)
+    if gift_id > 0:
+        return gift_id, gift_emoji, has_upgrade
+    amount = int(row["amount"])
+    try:
+        g = await db.pool.fetchrow(
+            """
+            SELECT gift_id, emoji, has_upgrade FROM star_gifts_cache
+            WHERE stars = $1
+            ORDER BY CASE WHEN source = 'live' THEN 0 ELSE 1 END, gift_id
+            LIMIT 1
+            """,
+            amount,
+        )
+        if g:
+            gift_id = int(g["gift_id"])
+            gift_emoji = (g["emoji"] or gift_emoji)[:16] or gift_emoji
+            has_upgrade = int(bool(g["has_upgrade"]))
+            await db.pool.execute(
+                """
+                UPDATE staff_star_payouts
+                SET gift_id = $2, gift_emoji = $3, has_upgrade = $4, updated_at = NOW()
+                WHERE id = $1
+                """,
+                int(row["id"]), gift_id, gift_emoji, has_upgrade,
+            )
+            row["gift_id"] = gift_id
+            row["gift_emoji"] = gift_emoji
+            row["has_upgrade"] = has_upgrade
+    except Exception:
+        logger.exception("resolve salary gift failed payout=%s", row.get("id"))
+    return gift_id, gift_emoji, has_upgrade
+
+
 async def _post_salary_channel(
     bot,
+    db,
     *,
     row: dict,
     first_name: str,
     build_keyboard: Callable[..., Any],
 ) -> int | None:
-    """Пост в @CurrencyCute в стиле вывода игрока + пометка зарплаты админа."""
+    """Пост в канал выводов как у игроков + явная пометка зарплаты администратора."""
     amount = int(row["amount"])
     user_id = int(row["user_id"])
     username = (row["stars_username"] or "").lstrip("@")
@@ -322,18 +362,17 @@ async def _post_salary_channel(
     amount_str = "{:,.0f}".format(amount).replace(",", ".")
     name = escape(first_name or username or str(user_id))
     name_link = f'<a href="tg://user?id={user_id}">{name}</a>'
-    gift_id = int(row.get("gift_id") or 0)
-    gift_emoji = (row.get("gift_emoji") or "⭐")[:16] or "⭐"
-    has_upgrade = int(row.get("has_upgrade") or 0)
+    gift_id, gift_emoji, has_upgrade = await _resolve_salary_gift(db, row)
+    uname_txt = f" (@{escape(username)})" if username else ""
 
-    # Тот же визуальный язык, что у вывода игрока, но с явным маркером зарплаты
     channel_message = (
         f"<code>{escape(gift_emoji)}</code> "
         f"<b>{amount_str} кут в stars "
         f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>\n"
         f"<b><tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
-        f"Для <i>{name_link}</i></b>\n"
-        f"<b>💼 Зарплата администратора</b>\n\n"
+        f"Для <i>{name_link}</i>{uname_txt}</b>\n"
+        f"<b><tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
+        f"Заявка на выплату зарплаты администратору</b>\n\n"
         f"<blockquote><b>@CuteGamingBot</b></blockquote>"
     )
 
@@ -400,10 +439,10 @@ async def process_one_payout(
         pass
 
     async def do_channel(reason_prefix: str | None = None) -> None:
-        """Пост в @CurrencyCute с wdact — как заявка на вывод игрока."""
+        """Пост в канал выводов с wdact — как заявка на вывод игрока."""
         try:
             mid = await _post_salary_channel(
-                bot, row=row, first_name=first_name, build_keyboard=build_keyboard,
+                bot, db, row=row, first_name=first_name, build_keyboard=build_keyboard,
             )
         except Exception as e:
             logger.exception("salary channel post failed payout=%s", payout_id)
@@ -411,7 +450,12 @@ async def process_one_payout(
             if notify_user:
                 await notify_user(
                     user_id,
-                    f"<b>❌ Не удалось отправить заявку зарплаты в канал: {escape(str(e)[:200])}</b>",
+                    (
+                        f"<tg-emoji emoji-id='5420315771991497307'>🔥</tg-emoji> "
+                        f"<b>Не удалось отправить заявку зарплаты в канал</b>\n"
+                        f"<code>{escape(str(e)[:200])}</code>\n"
+                        f"<blockquote>Виво-Эпсилон</blockquote>"
+                    ),
                 )
             return
         await _mark(db, payout_id, "channel_pending",
@@ -419,8 +463,14 @@ async def process_one_payout(
         if notify_user:
             await notify_user(
                 user_id,
-                f"<b>💼 Заявка на зарплату ({amount}⭐) отправлена в канал выводов @CurrencyCute.</b>\n"
-                f"<b>Ожидайте подтверждения 👍</b>",
+                (
+                    f"<tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
+                    f"<b>Заявка на зарплату {amount}"
+                    f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji> "
+                    f"в канале выводов</b>\n"
+                    f"<blockquote>Ожидайте подтверждения 👍 от владельца.\n"
+                    f"Виво-Эпсилон</blockquote>"
+                ),
             )
 
     try:
@@ -441,7 +491,8 @@ async def process_one_payout(
                             f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji></b>\n\n"
                             f"<b><tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
                             f"Для @{escape(username)}</b>\n"
-                            f"<b>💼 Зарплата администратора</b>\n\n"
+                            f"<b><tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
+                            f"Зарплата администратора</b>\n\n"
                             f"<blockquote><b>@CuteGamingBot</b></blockquote>"
                         ),
                         parse_mode="HTML",
@@ -452,19 +503,28 @@ async def process_one_payout(
                 if notify_user:
                     await notify_user(
                         user_id,
-                        f"<b>✅ Зарплата {amount}⭐ отправлена на @{username} (Fragment).</b>",
+                        (
+                            f"<tg-emoji emoji-id='5208540237524911208'>✅</tg-emoji> "
+                            f"<b>Зарплата {amount}"
+                            f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji> "
+                            f"отправлена на @{escape(username)}</b>\n"
+                            f"<blockquote>Fragment · Виво-Эпсилон</blockquote>"
+                        ),
                     )
                 return True
             await _mark(db, payout_id, "failed", error=err)
             if notify_user:
                 await notify_user(
                     user_id,
-                    f"<b>❌ Fragment: {escape(err or 'ошибка')}</b>",
+                    (
+                        f"<tg-emoji emoji-id='5420315771991497307'>🔥</tg-emoji> "
+                        f"<b>Fragment: {escape(err or 'ошибка')}</b>\n"
+                        f"<blockquote>Виво-Эпсилон</blockquote>"
+                    ),
                 )
             return True
 
         # auto / userbot — как вывод игрока: заявка в канал с кнопками 👎🥂👍
-        # (auto больше не уходит сразу в Fragment — владелец видит заявку в канале)
         await do_channel(
             reason_prefix="auto→channel" if method == "auto" else None,
         )

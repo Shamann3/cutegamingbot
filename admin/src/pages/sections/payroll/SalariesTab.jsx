@@ -104,7 +104,7 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
     }
     setBusy(`set-${userId}`)
     try {
-      await setStaffSalary({
+      const r = await setStaffSalary({
         userId,
         baseAmount: amount,
         coefficient: 1,
@@ -117,6 +117,14 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
         periodStart: isCustom ? rangeFrom : (periodStart || rangeFrom || undefined),
         periodEnd: isCustom ? rangeTo : (periodEnd || undefined),
       })
+      if (r?.starQueued) {
+        alert(
+          `Stars: заявка на зарплату ушла в канал выводов → @${r.starPayout?.starsUsername || '?'}.\n`
+          + 'Нажмите 👍 под сообщением в канале, чтобы отправить подарок.',
+        )
+      } else if ((dft.payoutType || 'kut') === 'stars' && r?.status === 'approved' && !r?.starQueued) {
+        alert('Stars: заявка в канал не создана — у сотрудника нет username для Stars (профиль выплат).')
+      }
       await load()
     } catch (err) {
       alert(err?.message || 'Ошибка')
@@ -128,7 +136,13 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
   const handleAction = async (fn, id, key) => {
     setBusy(key)
     try {
-      await fn(id)
+      const r = await fn(id)
+      if (r?.starQueued) {
+        alert(
+          `Stars: заявка в канал выводов → @${r.starPayout?.starsUsername || '?'}.\n`
+          + 'Нажмите 👍 под сообщением, чтобы отправить подарок.',
+        )
+      }
       await load()
     } catch (err) {
       alert(err?.message || 'Ошибка')
@@ -146,7 +160,10 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
       })
       setPayFor(null)
       if (r?.queued) {
-        alert(`Заявка Stars: ${r.starPayout?.method || 'auto'} → @${r.starPayout?.starsUsername || '?'}`)
+        alert(
+          `Stars: заявка в канал выводов → @${r.starPayout?.starsUsername || '?'}.\n`
+          + 'Нажмите 👍 под сообщением, чтобы отправить подарок.',
+        )
       }
       await load()
     } catch (err) {
@@ -166,9 +183,9 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
             <span className="payroll-dot">·</span>
             выставить
             <span className="payroll-arrow">→</span>
-            одобрить
+            Stars: канал выводов
             <span className="payroll-arrow">→</span>
-            выплатить
+            👍 подарок
           </p>
         </div>
         <div className="payroll-summary" aria-label="Сводка">

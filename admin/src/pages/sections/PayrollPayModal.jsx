@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import AdminSelect from '../../components/AdminSelect'
 import {
   fetchContractTemplates,
-  fetchFragmentHealth,
   fetchStarGifts,
   renderContract,
   sendContract,
@@ -14,7 +13,7 @@ function nameOf(item) {
   return item.firstName || (item.username ? `@${item.username}` : `ID ${item.userId}`)
 }
 
-/** Модалка выплаты: Stars (метод/username/подарок/Fragment) + договоры для crypto/card */
+/** Модалка выплаты: Stars (канал → 👍 → userbot) + договоры для crypto/card */
 export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   const s = member.salary
   const remaining = Math.max(0, (s.amount || 0) - (s.paidAmount || 0))
@@ -23,9 +22,7 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   const [kind, setKind] = useState('payment')
   const [txid, setTxid] = useState('')
   const [proof, setProof] = useState('')
-  const [starsMethod, setStarsMethod] = useState('auto')
   const [starsUsername, setStarsUsername] = useState(member.starsUsername || member.username || '')
-  const [frag, setFrag] = useState(null)
   const [gifts, setGifts] = useState([])
   const [giftId, setGiftId] = useState(0)
   const [giftMeta, setGiftMeta] = useState(null)
@@ -36,12 +33,9 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   const [cBusy, setCBusy] = useState(false)
 
   const amountNum = Number.parseInt(amount, 10) || 0
-  const needsGift = payoutType === 'stars' && (starsMethod === 'userbot' || starsMethod === 'auto')
+  const needsGift = payoutType === 'stars'
 
   useEffect(() => {
-    if (payoutType === 'stars') {
-      fetchFragmentHealth().then(setFrag).catch(() => setFrag(null))
-    }
     if (payoutType === 'crypto' || payoutType === 'card') {
       fetchContractTemplates()
         .then((d) => {
@@ -83,9 +77,6 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
       })
     return () => { cancelled = true }
   }, [needsGift, amountNum])
-
-  const fragDead = frag && (frag.ok === false || (frag.ok === true && frag.ton != null && frag.ton <= 0))
-  const fragUnknown = !frag || frag.ok == null || frag.stale
 
   const selectGift = (g) => {
     if (!g) {
@@ -139,7 +130,7 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   }
 
   const submit = () => {
-    if (needsGift && starsMethod === 'userbot' && !giftId) {
+    if (needsGift && !giftId) {
       const ok = confirm(
         'Подарок не выбран — бот подберёт по сумме автоматически. Продолжить?',
       )
@@ -150,7 +141,7 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
       kind,
       txid: txid.trim(),
       proof: proof.trim(),
-      starsMethod: payoutType === 'stars' ? starsMethod : null,
+      starsMethod: payoutType === 'stars' ? 'userbot' : null,
       starsUsername: payoutType === 'stars' ? starsUsername.trim() : null,
       giftId: needsGift ? (giftId || 0) : 0,
       giftEmoji: needsGift ? (giftMeta?.emoji || '⭐') : '⭐',
@@ -198,25 +189,8 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
         {payoutType === 'stars' && (
           <div className="payroll-pay-block">
             <p className="payroll-hint">
-              {fragDead && `Fragment недоступен${frag?.error ? `: ${frag.error}` : ''}`}
-              {!fragDead && frag?.ok && `Fragment OK${frag.ton != null ? ` · ${Number(frag.ton).toFixed(2)} TON` : ''}`}
-              {fragUnknown && !fragDead && 'Fragment: нет свежих данных'}
+              Повторная заявка в канал выводов (как у игроков). После 👍 юзербот отправит подарок.
             </p>
-            <label className="admin-modal-field">
-              <span>Метод</span>
-              <AdminSelect
-                value={starsMethod}
-                onChange={setStarsMethod}
-                options={[
-                  { value: 'auto', label: 'Канал (как вывод игрока)' },
-                  { value: 'userbot', label: 'Канал + userbot' },
-                  { value: 'fragment', label: fragDead ? 'Fragment (нет)' : 'Fragment (сразу)' },
-                ]}
-              />
-            </label>
-            {fragDead && starsMethod === 'fragment' && (
-              <p className="payroll-hint payroll-hint-warn">Fragment не работает — выберите канал</p>
-            )}
             <label className="admin-modal-field">
               <span>Username</span>
               <input
@@ -232,7 +206,7 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
               <div className="payroll-gifts">
                 <p className="payroll-my-label">Подарок</p>
                 <p className="payroll-hint">
-                  Live Telegram + ручные (как у игроков).
+                  Каталог как у игроков.
                   {giftsLoading ? ' Загрузка…' : ` Доступно: ${gifts.length}`}
                 </p>
                 <div className="payroll-gifts-grid">
