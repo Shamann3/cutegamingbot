@@ -13,16 +13,24 @@ function nameOf(item) {
   return item.firstName || (item.username ? `@${item.username}` : `ID ${item.userId}`)
 }
 
+function normalizeStarsUser(value) {
+  return String(value || '').trim().replace(/^@+/, '')
+}
+
 /** Модалка выплаты: Stars (канал → 👍 → userbot) + договоры для crypto/card */
 export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   const s = member.salary
   const remaining = Math.max(0, (s.amount || 0) - (s.paidAmount || 0))
   const payoutType = s?.payoutType || member.payoutType || 'other'
+  const isStars = payoutType === 'stars'
+
   const [amount, setAmount] = useState(String(remaining))
   const [kind, setKind] = useState('payment')
   const [txid, setTxid] = useState('')
   const [proof, setProof] = useState('')
-  const [starsUsername, setStarsUsername] = useState(member.starsUsername || member.username || '')
+  const [starsUsername, setStarsUsername] = useState(
+    normalizeStarsUser(member.starsUsername || member.username || ''),
+  )
   const [gifts, setGifts] = useState([])
   const [giftId, setGiftId] = useState(0)
   const [giftMeta, setGiftMeta] = useState(null)
@@ -33,30 +41,29 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   const [cBusy, setCBusy] = useState(false)
 
   const amountNum = Number.parseInt(amount, 10) || 0
-  const needsGift = payoutType === 'stars'
+  const starsUserClean = normalizeStarsUser(starsUsername)
+  const starsUserOk = starsUserClean.length >= 5
 
   useEffect(() => {
-    if (payoutType === 'crypto' || payoutType === 'card') {
-      fetchContractTemplates()
-        .then((d) => {
-          const items = (d.items || []).filter(
-            (t) => t.enabled && (!t.payoutType || t.payoutType === payoutType || t.payoutType === 'other'),
-          )
-          setTemplates(items)
-          if (items[0]) setTplId(String(items[0].id))
-        })
-        .catch(() => setTemplates([]))
-    }
+    if (payoutType !== 'crypto' && payoutType !== 'card') return
+    fetchContractTemplates()
+      .then((d) => {
+        const items = (d.items || []).filter(
+          (t) => t.enabled && (!t.payoutType || t.payoutType === payoutType || t.payoutType === 'other'),
+        )
+        setTemplates(items)
+        if (items[0]) setTplId(String(items[0].id))
+      })
+      .catch(() => setTemplates([]))
   }, [payoutType])
 
   useEffect(() => {
-    if (!needsGift) {
+    if (!isStars) {
       setGifts([])
       return
     }
     let cancelled = false
     setGiftsLoading(true)
-    // Тянем полный каталог (live+manual), сортируем: точное совпадение суммы сверху
     fetchStarGifts(null, false)
       .then((d) => {
         if (cancelled) return
@@ -64,10 +71,13 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
         const exact = items.filter((g) => Number(g.stars) === amountNum)
         const rest = items.filter((g) => Number(g.stars) !== amountNum)
         setGifts(amountNum > 0 ? [...exact, ...rest] : items)
-        if (giftId && !items.some((g) => Number(g.giftId) === Number(giftId))) {
-          setGiftId(0)
-          setGiftMeta(null)
-        }
+        setGiftId((prev) => {
+          if (prev && !items.some((g) => Number(g.giftId) === Number(prev))) {
+            setGiftMeta(null)
+            return 0
+          }
+          return prev
+        })
       })
       .catch(() => {
         if (!cancelled) setGifts([])
@@ -76,7 +86,7 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
         if (!cancelled) setGiftsLoading(false)
       })
     return () => { cancelled = true }
-  }, [needsGift, amountNum])
+  }, [isStars, amountNum])
 
   const selectGift = (g) => {
     if (!g) {
@@ -130,29 +140,44 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   }
 
   const submit = () => {
-    if (needsGift && !giftId) {
-      const ok = confirm(
-        'Подарок не выбран — бот подберёт по сумме автоматически. Продолжить?',
-      )
-      if (!ok) return
+    if (!amountNum || amountNum < 1) {
+      alert('Укажите сумму')
+      return
+    }
+    if (isStars) {
+      if (!starsUserOk) {
+        alert('Укажите Telegram username для Stars (минимум 5 символов, без @)')
+        return
+      }
+      if (!giftId) {
+        const ok = confirm('Подарок не выбран — бот подберёт по сумме автоматически. Продолжить?')
+        if (!ok) return
+      }
     }
     onSubmit({
       amount: amountNum || null,
       kind,
       txid: txid.trim(),
       proof: proof.trim(),
-      starsMethod: payoutType === 'stars' ? 'userbot' : null,
-      starsUsername: payoutType === 'stars' ? starsUsername.trim() : null,
-      giftId: needsGift ? (giftId || 0) : 0,
-      giftEmoji: needsGift ? (giftMeta?.emoji || '⭐') : '⭐',
-      hasUpgrade: needsGift ? (giftMeta?.hasUpgrade ? 1 : 0) : 0,
+      starsMethod: isStars ? 'userbot' : null,
+      starsUsername: isStars ? starsUserClean : null,
+      giftId: isStars ? (giftId || 0) : 0,
+      giftEmoji: isStars ? (giftMeta?.emoji || '⭐') : '⭐',
+      hasUpgrade: isStars ? (giftMeta?.hasUpgrade ? 1 : 0) : 0,
     })
   }
 
+  const canSubmit = !busy && amountNum > 0 && (!isStars || starsUserOk)
+
   return (
     <div className="admin-modal-backdrop" role="presentation" onClick={() => !busy && onClose()}>
-      <div className="admin-modal payroll-pay-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <h3 className="admin-modal-title">Выплата</h3>
+      <div
+        className="admin-modal payroll-pay-modal"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="admin-modal-title">{isStars ? 'Заявка Stars' : 'Выплата'}</h3>
         <p className="admin-modal-desc">
           {nameOf(member)}
           <span className="payroll-dot">·</span>
@@ -174,70 +199,83 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
             disabled={busy}
           />
         </label>
-        <label className="admin-modal-field">
-          <span>Тип</span>
-          <AdminSelect
-            value={kind}
-            onChange={setKind}
-            options={[
-              { value: 'payment', label: 'Выплата' },
-              { value: 'advance', label: 'Аванс' },
-            ]}
-          />
-        </label>
 
-        {payoutType === 'stars' && (
+        {!isStars && (
+          <label className="admin-modal-field">
+            <span>Тип</span>
+            <AdminSelect
+              value={kind}
+              onChange={setKind}
+              options={[
+                { value: 'payment', label: 'Выплата' },
+                { value: 'advance', label: 'Аванс' },
+              ]}
+            />
+          </label>
+        )}
+
+        {isStars && (
           <div className="payroll-pay-block">
-            <p className="payroll-hint">
-              Повторная заявка в канал выводов (как у игроков). После 👍 юзербот отправит подарок.
-            </p>
+            <div className="payroll-flow-card">
+              <p className="payroll-flow-step"><b>1</b> Заявка уходит в канал выводов</p>
+              <p className="payroll-flow-step"><b>2</b> Владелец жмёт 👍 под сообщением</p>
+              <p className="payroll-flow-step"><b>3</b> Юзербот отправляет подарок</p>
+            </div>
+
             <label className="admin-modal-field">
-              <span>Username</span>
+              <span>Username Stars</span>
               <input
                 className="sec-input"
                 value={starsUsername}
                 onChange={(e) => setStarsUsername(e.target.value)}
                 disabled={busy}
-                placeholder="@username"
+                placeholder="username без @"
+                autoComplete="off"
+                spellCheck={false}
               />
             </label>
-
-            {needsGift && (
-              <div className="payroll-gifts">
-                <p className="payroll-my-label">Подарок</p>
-                <p className="payroll-hint">
-                  Каталог как у игроков.
-                  {giftsLoading ? ' Загрузка…' : ` Доступно: ${gifts.length}`}
-                </p>
-                <div className="payroll-gifts-grid">
-                  <button
-                    type="button"
-                    className={`payroll-gift${giftId === 0 ? ' is-active' : ''}`}
-                    onClick={() => selectGift(null)}
-                    disabled={busy}
-                  >
-                    <span className="payroll-gift-emoji">⭐</span>
-                    <span className="payroll-gift-meta">Авто · {amountNum || '—'}⭐</span>
-                  </button>
-                  {gifts.map((g) => (
-                    <button
-                      key={g.giftId}
-                      type="button"
-                      className={`payroll-gift${Number(giftId) === Number(g.giftId) ? ' is-active' : ''}`}
-                      onClick={() => selectGift(g)}
-                      disabled={busy}
-                      title={`${g.source || 'gift'} · ID ${g.giftId}`}
-                    >
-                      <span className="payroll-gift-emoji">{g.emoji || '🎁'}</span>
-                      <span className="payroll-gift-meta">
-                        {g.stars}⭐{g.hasUpgrade ? ' · NFT' : ''}
-                        {g.source === 'live' ? ' · TG' : g.source === 'manual' ? ' · руч.' : ''}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {!starsUserOk && (
+              <p className="payroll-hint payroll-hint-warn">Нужен валидный username (от 5 символов)</p>
             )}
+            {starsUserOk && (
+              <p className="payroll-hint">Получатель: @{starsUserClean}</p>
+            )}
+
+            <div className="payroll-gifts">
+              <p className="payroll-my-label">Подарок</p>
+              <p className="payroll-hint">
+                {giftsLoading
+                  ? 'Загрузка каталога…'
+                  : `Как у игроков · ${gifts.length} шт. · точные ${amountNum || '—'}⭐ сверху`}
+              </p>
+              <div className="payroll-gifts-grid">
+                <button
+                  type="button"
+                  className={`payroll-gift${giftId === 0 ? ' is-active' : ''}`}
+                  onClick={() => selectGift(null)}
+                  disabled={busy}
+                >
+                  <span className="payroll-gift-emoji">⭐</span>
+                  <span className="payroll-gift-meta">Авто · {amountNum || '—'}⭐</span>
+                </button>
+                {gifts.map((g) => (
+                  <button
+                    key={g.giftId}
+                    type="button"
+                    className={`payroll-gift${Number(giftId) === Number(g.giftId) ? ' is-active' : ''}`}
+                    onClick={() => selectGift(g)}
+                    disabled={busy}
+                    title={`${g.source || 'gift'} · ID ${g.giftId}`}
+                  >
+                    <span className="payroll-gift-emoji">{g.emoji || '🎁'}</span>
+                    <span className="payroll-gift-meta">
+                      {g.stars}⭐{g.hasUpgrade ? ' · NFT' : ''}
+                      {g.source === 'live' ? ' · TG' : g.source === 'manual' ? ' · руч.' : ''}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -288,14 +326,16 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
         )}
 
         <div className="admin-modal-actions">
-          <button type="button" className="panel-users-btn" disabled={busy} onClick={onClose}>Отмена</button>
+          <button type="button" className="panel-users-btn" disabled={busy} onClick={onClose}>
+            Отмена
+          </button>
           <button
             type="button"
             className="panel-users-btn panel-users-btn-primary"
-            disabled={busy || (payoutType === 'stars' && starsMethod === 'fragment' && fragDead)}
+            disabled={!canSubmit}
             onClick={submit}
           >
-            {busy ? '…' : (payoutType === 'stars' ? 'Заявка Stars' : 'Провести')}
+            {busy ? '…' : (isStars ? 'Отправить в канал' : 'Провести')}
           </button>
         </div>
       </div>

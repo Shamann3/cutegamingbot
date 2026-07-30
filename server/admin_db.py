@@ -615,6 +615,9 @@ def _salary_row(r) -> dict:
     period_type = r.get("period_type") or "week"
     period_start = r.get("period_start") or r.get("week_start")
     period_end = r.get("period_end")
+    payout_type = r.get("salary_payout_type")
+    if payout_type is None:
+        payout_type = r.get("payout_type") or "other"
     return {
         "salaryId": int(r["salary_id"]) if r["salary_id"] is not None else None,
         "amount": int(r["amount"]) if r["amount"] is not None else None,
@@ -628,7 +631,7 @@ def _salary_row(r) -> dict:
         "txid": r["txid"],
         "payoutProof": r["payout_proof"],
         "status": r["status"],
-        "payoutType": r.get("payout_type") or "other",
+        "payoutType": payout_type or "other",
         "periodType": period_type,
         "periodStart": period_start.isoformat() if period_start else None,
         "periodEnd": period_end.isoformat() if period_end else None,
@@ -642,6 +645,12 @@ def _salary_row(r) -> dict:
         "paidAt": r["paid_at"].isoformat() if r["paid_at"] else None,
     }
 
+
+def _salary_row_from_list(r) -> dict:
+    """Адаптер для list_salaries_for_period (алиасы salary_id / salary_payout_type)."""
+    return _salary_row(r)
+
+
 async def list_salaries_for_week(week_start) -> list[dict]:
     return await list_salaries_for_period("week", week_start)
 
@@ -650,13 +659,14 @@ async def list_salaries_for_period(period_type: str, period_start, period_end=No
     rows = await db.pool.fetch(
         """
         SELECT a.user_id, a.username, a.first_name, a.role,
-               a.payout_type, a.payout_details,
+               a.payout_type AS profile_payout_type, a.payout_details,
                a.stars_username, a.crypto_network, a.crypto_address,
                a.card_bank, a.card_number, a.card_holder, a.card_sbp_phone,
                s.id AS salary_id, s.amount, s.paid_amount, s.status, s.note,
                s.base_amount, s.coefficient, s.bonus, s.bonus_reason,
                s.penalty, s.penalty_reason, s.txid, s.payout_proof,
-               s.payout_type, s.set_by, s.approved_by, s.paid_by, s.approved_at, s.paid_at,
+               s.payout_type AS salary_payout_type,
+               s.set_by, s.approved_by, s.paid_by, s.approved_at, s.paid_at,
                s.week_start, s.period_type, s.period_start, s.period_end
         FROM admin_accounts a
         LEFT JOIN staff_salaries s
@@ -683,7 +693,7 @@ async def list_salaries_for_period(period_type: str, period_start, period_end=No
             "username": r["username"],
             "firstName": r["first_name"],
             "role": r["role"],
-            "payoutType": r["payout_type"],
+            "payoutType": r["profile_payout_type"],
             "payoutDetails": r["payout_details"],
             "starsUsername": r["stars_username"] or (r["username"] or ""),
             "cryptoNetwork": r["crypto_network"] or "",
@@ -692,7 +702,7 @@ async def list_salaries_for_period(period_type: str, period_start, period_end=No
             "cardNumber": r["card_number"] or "",
             "cardHolder": r["card_holder"] or "",
             "cardSbpPhone": r["card_sbp_phone"] or "",
-            "salary": _salary_row(r) if r["salary_id"] is not None else None,
+            "salary": _salary_row_from_list(r) if r["salary_id"] is not None else None,
         }
         for r in rows
     ]

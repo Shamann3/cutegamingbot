@@ -93,7 +93,9 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
 
   const handleSet = async (userId) => {
     const dft = drafts[userId] || {}
+    const member = rows.find((m) => m.userId === userId)
     const amount = Number.parseInt(dft.amount, 10)
+    const payoutType = dft.payoutType || 'kut'
     if (!Number.isFinite(amount) || amount < 0) {
       alert('Введите сумму')
       return
@@ -101,6 +103,18 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
     if (isCustom && (!rangeFrom || !rangeTo)) {
       alert('Укажите период: с какого и по какой день')
       return
+    }
+    if (payoutType === 'stars') {
+      const starsUser = String(member?.starsUsername || member?.username || '')
+        .trim()
+        .replace(/^@+/, '')
+      if (starsUser.length < 5) {
+        alert(
+          'Для Stars у сотрудника нужен username в профиле выплат (реквизиты).\n'
+          + 'Попросите сотрудника указать его во вкладке «Моя зарплата».',
+        )
+        return
+      }
     }
     setBusy(`set-${userId}`)
     try {
@@ -112,18 +126,20 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
         bonusReason: '',
         penalty: 0,
         penaltyReason: '',
-        payoutType: dft.payoutType || 'kut',
+        payoutType,
         periodType,
         periodStart: isCustom ? rangeFrom : (periodStart || rangeFrom || undefined),
         periodEnd: isCustom ? rangeTo : (periodEnd || undefined),
       })
       if (r?.starQueued) {
         alert(
-          `Stars: заявка на зарплату ушла в канал выводов → @${r.starPayout?.starsUsername || '?'}.\n`
-          + 'Нажмите 👍 под сообщением в канале, чтобы отправить подарок.',
+          `Заявка на зарплату Stars → @${r.starPayout?.starsUsername || '?'}\n`
+          + 'Ушла в канал выводов. Нажмите 👍 под сообщением, чтобы отправить подарок.',
         )
-      } else if ((dft.payoutType || 'kut') === 'stars' && r?.status === 'approved' && !r?.starQueued) {
-        alert('Stars: заявка в канал не создана — у сотрудника нет username для Stars (профиль выплат).')
+      } else if (payoutType === 'stars' && r?.status === 'approved' && !r?.starQueued) {
+        alert('Stars: заявка в канал не создана — проверьте username сотрудника в реквизитах.')
+      } else if (payoutType === 'stars' && r?.status === 'pending_approval') {
+        alert('Зарплата Stars ждёт одобрения владельца — после одобрения заявка уйдёт в канал.')
       }
       await load()
     } catch (err) {
@@ -181,11 +197,7 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
           <p className="payroll-sub">
             {periodLabel || 'Период'}
             <span className="payroll-dot">·</span>
-            выставить
-            <span className="payroll-arrow">→</span>
-            Stars: канал выводов
-            <span className="payroll-arrow">→</span>
-            👍 подарок
+            выставить → канал → 👍 подарок
           </p>
         </div>
         <div className="payroll-summary" aria-label="Сводка">
@@ -319,6 +331,13 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
                       options={SALARY_PAYOUT_OPTIONS}
                     />
                   </label>
+                  {(dft.payoutType || 'kut') === 'stars' && (
+                    <p className="payroll-stars-hint">
+                      {String(m.starsUsername || m.username || '').replace(/^@+/, '').length >= 5
+                        ? `Stars → @${String(m.starsUsername || m.username || '').replace(/^@+/, '')} · заявка в канал сразу после выставления`
+                        : 'Нет username Stars в реквизитах — заявка в канал не создастся'}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -350,7 +369,9 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
                     disabled={busy === `pay-${s.salaryId}`}
                     onClick={() => setPayFor(m)}
                   >
-                    {s.status === 'partially_paid' ? 'Доплатить' : 'Выплатить'}
+                    {savedType === 'stars'
+                      ? (s.status === 'partially_paid' ? 'Ещё в канал' : 'В канал')
+                      : (s.status === 'partially_paid' ? 'Доплатить' : 'Выплатить')}
                   </button>
                 )}
                 {s && s.status !== 'paid' && s.status !== 'cancelled' && (
