@@ -132,9 +132,11 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
         periodEnd: isCustom ? rangeTo : (periodEnd || undefined),
       })
       if (r?.starQueued) {
+        const n = (r.starPayouts || []).length || 1
+        const posted = (r.starPayouts || []).filter((p) => p?.status === 'channel_pending').length
         alert(
-          `Заявка на зарплату Stars → @${r.starPayout?.starsUsername || '?'}\n`
-          + 'Ушла в канал выводов. Нажмите 👍 под сообщением, чтобы отправить подарок.',
+          `Заявка Stars → @${r.starPayout?.starsUsername || '?'}\n`
+          + `${n} сообщ., в канале уже ${posted}. Нажмите 👍 под каждым.`,
         )
       } else if (payoutType === 'stars' && r?.status === 'approved' && !r?.starQueued) {
         alert('Stars: заявка в канал не создана — проверьте username сотрудника в реквизитах.')
@@ -176,9 +178,11 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
       })
       setPayFor(null)
       if (r?.queued) {
+        const n = (r.starPayouts || []).length || 1
+        const posted = r.posted ?? (r.starPayouts || []).filter((p) => p?.status === 'channel_pending').length
         alert(
-          `Stars: заявка в канал выводов → @${r.starPayout?.starsUsername || '?'}.\n`
-          + 'Нажмите 👍 под сообщением, чтобы отправить подарок.',
+          `Stars: ${n} заявк(и) → @${r.starPayout?.starsUsername || '?'}\n`
+          + `В канале уже: ${posted}. Нажмите 👍 под каждым сообщением.`,
         )
       }
       await load()

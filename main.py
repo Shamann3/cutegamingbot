@@ -9825,6 +9825,60 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
 
         payload = _get_admin_withdraw_action(token)
         if not payload:
+            # Зарплатные заявки из API: токены лежат в staff_star_payouts
+            try:
+                prow = await db.pool.fetchrow(
+                    """
+                    SELECT * FROM staff_star_payouts
+                    WHERE approve_token = $1 OR reject_token = $1 OR refund_token = $1
+                    LIMIT 1
+                    """,
+                    token,
+                )
+                if prow and prow["status"] not in ("completed", "cancelled", "refunded"):
+                    if prow["approve_token"] == token:
+                        kind_db = "approve"
+                    elif prow["reject_token"] == token:
+                        kind_db = "reject"
+                    else:
+                        kind_db = "refund"
+                    uname = _wd_safe_str(prow["stars_username"], "").lstrip("@")
+                    uid = _wd_safe_int(prow["user_id"], 0)
+                    payload = {
+                        "kind": kind_db,
+                        "request_id": _wd_safe_str(prow["request_id"], f"salstar-{prow['id']}"),
+                        "sender_user_id": uid,
+                        "sender_username": uname,
+                        "sender_first_name": "",
+                        "recipient_user_id": uid,
+                        "recipient_username": uname,
+                        "recipient_first_name": "",
+                        "amount": _wd_safe_int(prow["amount"], 0),
+                        "result_flag": "-",
+                        "is_friend": False,
+                        "gift_id": _wd_safe_int(prow["gift_id"], 0),
+                        "gift_emoji": _wd_safe_str(prow["gift_emoji"], "⭐"),
+                        "has_upgrade": _wd_safe_int(prow["has_upgrade"], 0),
+                        "is_salary": True,
+                        "star_payout_id": _wd_safe_int(prow["id"], 0),
+                        "salary_id": _wd_safe_int(prow["salary_id"], 0),
+                        "bonus_id": _wd_safe_int(prow.get("bonus_id"), 0),
+                        "salary_source": _wd_safe_str(prow["source"], "salary"),
+                        "status": "pending",
+                        "token": token,
+                    }
+                    ADMIN_WITHDRAW_ACTIONS[token] = {
+                        **payload,
+                        "created_at": _wd_now_ts(),
+                        "updated_at": _wd_now_ts(),
+                        "pressed_at": 0,
+                        "pressed_by": 0,
+                    }
+                    print(f"[ADMIN][WDACT] salary token from DB token={token!r} kind={kind_db}")
+            except Exception as e:
+                print(f"[ADMIN][WDACT][WARN] salary db lookup err={e!r}")
+                payload = None
+        if not payload:
             await _adm_safe_answer(
                 call,
                 "Заявка не найдена, уже обработана или повреждена",

@@ -12235,11 +12235,54 @@ input[type=range].cc-dial::-moz-range-thumb{width:16px;height:16px;border-radius
   color: #e4e4e7;
 }
 
-.payroll-gift.is-active {
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.08);
-  color: #fafafa;
+.payroll-gift.is-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
+
+.payroll-gift-basket {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.55rem;
+}
+
+.payroll-basket-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.payroll-basket-item {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e4e4e7;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.payroll-basket-item:hover {
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.payroll-basket-x {
+  opacity: 0.55;
+  font-size: 0.85rem;
+}
+
+[data-theme="light"] .payroll-basket-item {
+  background: #fff;
+  border-color: rgba(15, 23, 42, 0.1);
+  color: #0f172a;
+}
+
 
 .payroll-gift-emoji {
   font-size: 1.25rem;

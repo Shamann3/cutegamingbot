@@ -374,6 +374,254 @@ async def cancel_open_star_payouts_for_salary(salary_id: int) -> int:
         return 0
 
 
+WITHDRAW_CHANNELS = ("@CurrencyCute", "-1002552723822")
+
+
+def _salary_channel_text(
+    *,
+    amount: int,
+    gift_emoji: str,
+    name_html: str,
+    username: str,
+    part: int | None = None,
+    parts: int | None = None,
+) -> str:
+    from html import escape
+    amount_str = "{:,.0f}".format(int(amount)).replace(",", ".")
+    emoji = escape((gift_emoji or "⭐")[:16] or "⭐")
+    uname = (username or "").lstrip("@")
+    uname_txt = f" (@{escape(uname)})" if uname else ""
+    part_line = ""
+    if part and parts and parts > 1:
+        part_line = (
+            f"\n<b><tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
+            f"Часть {int(part)}/{int(parts)}</b>"
+        )
+    return (
+        f"<code>{emoji}</code> "
+        f"<b>{amount_str} кут в stars "
+        f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>\n"
+        f"<b><tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
+        f"Для <i>{name_html}</i>{uname_txt}</b>\n"
+        f"<b><tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
+        f"Заявка на выплату зарплаты администратору</b>"
+        f"{part_line}\n\n"
+        f"<blockquote><b>@CuteGamingBot</b></blockquote>"
+    )
+
+
+async def _send_channel_message_http(
+    *,
+    text: str,
+    approve_token: str,
+    reject_token: str,
+    refund_token: str,
+) -> tuple[int | None, str | None, str | None]:
+    """Сразу шлёт в канал через Bot API. Возвращает (message_id, chat_id, error)."""
+    import aiohttp
+
+    try:
+        from config import BOT_TOKEN
+    except Exception:
+        BOT_TOKEN = ""
+    if not BOT_TOKEN:
+        return None, None, "BOT_TOKEN не настроен"
+
+    reply_markup = {
+        "inline_keyboard": [[
+            {"text": "👎", "callback_data": f"wdact:{reject_token}"},
+            {"text": "🥂", "callback_data": f"wdact:{refund_token}"},
+            {"text": "👍", "callback_data": f"wdact:{approve_token}"},
+        ]],
+    }
+    last_err = "channel unavailable"
+    async with aiohttp.ClientSession() as session:
+        for chat_id in WITHDRAW_CHANNELS:
+            payload = {
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+                "reply_markup": reply_markup,
+            }
+            try:
+                async with session.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=20),
+                ) as resp:
+                    data = await resp.json(content_type=None)
+                if isinstance(data, dict) and data.get("ok"):
+                    mid = ((data.get("result") or {}).get("message_id"))
+                    logger.info("salary channel HTTP ok chat=%s mid=%s", chat_id, mid)
+                    return int(mid or 0) or None, str(chat_id), None
+                last_err = str((data or {}).get("description") or data)[:300]
+                logger.warning("salary channel HTTP fail chat=%s: %s", chat_id, last_err)
+            except Exception as e:
+                last_err = str(e)[:300]
+                logger.warning("salary channel HTTP err chat=%s: %r", chat_id, e)
+    return None, None, last_err
+
+
+async def deliver_salary_payout_to_channel(
+    payout_id: int,
+    *,
+    first_name: str = "",
+    part: int | None = None,
+    parts: int | None = None,
+) -> dict:
+    """
+    Мгновенный пост заявки зарплаты в канал выводов (как у игроков).
+    Токены кнопок пишутся в БД — wdact работает даже без in-memory registry.
+    """
+    row = await db.pool.fetchrow("SELECT * FROM staff_star_payouts WHERE id = $1", payout_id)
+    if not row:
+        raise ValueError(f"payout {payout_id} not found")
+    if row["status"] in ("completed", "cancelled", "refunded"):
+        return _row(row)
+    if row["status"] == "channel_pending" and row.get("channel_message_id"):
+        return _row(row)
+
+    from html import escape
+
+    user_id = int(row["user_id"])
+    username = (row["stars_username"] or "").lstrip("@")
+    amount = int(row["amount"])
+    gift_emoji = row.get("gift_emoji") or "⭐"
+    name = escape(first_name or username or str(user_id))
+    name_html = f'<a href="tg://user?id={user_id}">{name}</a>'
+
+    approve_token = uuid.uuid4().hex[:24]
+    reject_token = uuid.uuid4().hex[:24]
+    refund_token = uuid.uuid4().hex[:24]
+
+    text = _salary_channel_text(
+        amount=amount,
+        gift_emoji=gift_emoji,
+        name_html=name_html,
+        username=username,
+        part=part,
+        parts=parts,
+    )
+    mid, chat_id, err = await _send_channel_message_http(
+        text=text,
+        approve_token=approve_token,
+        reject_token=reject_token,
+        refund_token=refund_token,
+    )
+    if mid is None:
+        await db.pool.execute(
+            """
+            UPDATE staff_star_payouts
+            SET status = 'queued', error = $2, updated_at = NOW()
+            WHERE id = $1
+            """,
+            payout_id, f"channel post: {err}"[:400],
+        )
+        raise RuntimeError(err or "не удалось отправить в канал выводов")
+
+    updated = await db.pool.fetchrow(
+        """
+        UPDATE staff_star_payouts
+        SET status = 'channel_pending',
+            channel_message_id = $2,
+            channel_chat_id = $3,
+            approve_token = $4,
+            reject_token = $5,
+            refund_token = $6,
+            error = NULL,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        """,
+        payout_id, mid, chat_id, approve_token, reject_token, refund_token,
+    )
+    return _row(updated)
+
+
+async def get_salary_wdact_by_token(token: str) -> dict | None:
+    """Payload для wdact: из БД (если API запостила заявку без in-memory registry)."""
+    token = (token or "").strip()
+    if not token:
+        return None
+    row = await db.pool.fetchrow(
+        """
+        SELECT * FROM staff_star_payouts
+        WHERE approve_token = $1 OR reject_token = $1 OR refund_token = $1
+        LIMIT 1
+        """,
+        token,
+    )
+    if not row:
+        return None
+    if row["status"] in ("completed", "cancelled", "refunded"):
+        return None
+    if row["approve_token"] == token:
+        kind = "approve"
+    elif row["reject_token"] == token:
+        kind = "reject"
+    else:
+        kind = "refund"
+    username = (row["stars_username"] or "").lstrip("@")
+    uid = int(row["user_id"])
+    return {
+        "kind": kind,
+        "request_id": row["request_id"] or f"salstar-{row['id']}",
+        "sender_user_id": uid,
+        "sender_username": username,
+        "sender_first_name": "",
+        "recipient_user_id": uid,
+        "recipient_username": username,
+        "recipient_first_name": "",
+        "amount": int(row["amount"]),
+        "result_flag": "-",
+        "is_friend": False,
+        "gift_id": int(row["gift_id"] or 0),
+        "gift_emoji": row["gift_emoji"] or "⭐",
+        "has_upgrade": int(row["has_upgrade"] or 0),
+        "is_salary": True,
+        "star_payout_id": int(row["id"]),
+        "salary_id": int(row["salary_id"]) if row["salary_id"] else 0,
+        "bonus_id": int(row["bonus_id"]) if row.get("bonus_id") else 0,
+        "salary_source": row["source"] or "salary",
+        "status": "pending",
+        "token": token,
+    }
+
+
+def _normalize_gift_items(gifts: list[dict] | None, *, fallback_amount: int) -> list[dict]:
+    """Список подарков → [{giftId, giftEmoji, hasUpgrade, stars}, ...]."""
+    if not gifts:
+        return [{
+            "giftId": 0,
+            "giftEmoji": "⭐",
+            "hasUpgrade": 0,
+            "stars": int(fallback_amount),
+        }]
+    out: list[dict] = []
+    for g in gifts:
+        if not isinstance(g, dict):
+            continue
+        stars = int(g.get("stars") or g.get("amount") or 0)
+        gift_id = int(g.get("giftId") or g.get("gift_id") or 0)
+        if stars <= 0:
+            continue
+        out.append({
+            "giftId": gift_id,
+            "giftEmoji": (g.get("giftEmoji") or g.get("gift_emoji") or g.get("emoji") or "⭐")[:32],
+            "hasUpgrade": int(g.get("hasUpgrade") or g.get("has_upgrade") or 0),
+            "stars": stars,
+        })
+    if not out:
+        return [{
+            "giftId": 0,
+            "giftEmoji": "⭐",
+            "hasUpgrade": 0,
+            "stars": int(fallback_amount),
+        }]
+    return out
+
+
 async def enqueue_salary_channel_request(
     *,
     salary_id: int,
@@ -384,22 +632,75 @@ async def enqueue_salary_channel_request(
     gift_id: int = 0,
     gift_emoji: str = "⭐",
     has_upgrade: int = 0,
-) -> dict:
+    gifts: list[dict] | None = None,
+    first_name: str = "",
+) -> list[dict]:
     """
     Строгий флоу зарплаты Stars:
-    назначена/одобрена → заявка в канал выводов (как у игроков) → 👍 → userbot.
+    назначена/одобрена/выплата → N заявок в канал (1 подарок = 1 сообщение) → 👍 → userbot.
+
+    Пост в канал делается СРАЗУ через Bot API (не ждём фоновый воркер).
     """
     await cancel_open_star_payouts_for_salary(salary_id)
-    return await enqueue_star_payout(
-        salary_id=salary_id,
-        user_id=user_id,
-        amount=amount,
-        stars_username=stars_username or "",
-        method="userbot",
-        requested_by=requested_by,
-        source="salary",
-        kind="payment",
-        gift_id=gift_id,
-        gift_emoji=gift_emoji,
-        has_upgrade=has_upgrade,
-    )
+
+    if gifts:
+        items = _normalize_gift_items(gifts, fallback_amount=amount)
+        gift_sum = sum(int(i["stars"]) for i in items)
+        if gift_sum != int(amount):
+            raise ValueError(
+                f"Сумма подарков {gift_sum}⭐ не равна сумме выплаты {amount}⭐. "
+                "Подберите подарки так, чтобы сумма совпала (например 50+50+15=115)."
+            )
+    elif gift_id:
+        items = [{
+            "giftId": int(gift_id),
+            "giftEmoji": gift_emoji or "⭐",
+            "hasUpgrade": int(has_upgrade or 0),
+            "stars": int(amount),
+        }]
+    else:
+        items = _normalize_gift_items(None, fallback_amount=amount)
+
+    # Имя для ссылки в канале
+    if not first_name:
+        try:
+            first_name = await db.pool.fetchval(
+                "SELECT first_name FROM admin_accounts WHERE user_id = $1", user_id
+            ) or ""
+        except Exception:
+            first_name = ""
+
+    posted: list[dict] = []
+    parts = len(items)
+    for idx, item in enumerate(items, start=1):
+        row = await enqueue_star_payout(
+            salary_id=salary_id,
+            user_id=user_id,
+            amount=int(item["stars"]),
+            stars_username=stars_username or "",
+            method="userbot",
+            requested_by=requested_by,
+            source="salary",
+            kind="payment",
+            gift_id=int(item["giftId"] or 0),
+            gift_emoji=item["giftEmoji"] or "⭐",
+            has_upgrade=int(item["hasUpgrade"] or 0),
+        )
+        try:
+            delivered = await deliver_salary_payout_to_channel(
+                int(row["id"]),
+                first_name=first_name,
+                part=idx if parts > 1 else None,
+                parts=parts if parts > 1 else None,
+            )
+            posted.append(delivered)
+        except Exception as e:
+            logger.exception("immediate channel post failed payout=%s", row["id"])
+            # Остаётся queued — подхватит воркер бота
+            failed = await get_star_payout(int(row["id"]))
+            if failed:
+                failed = {**failed, "error": str(e)[:300]}
+                posted.append(failed)
+            else:
+                posted.append(row)
+    return posted

@@ -1496,6 +1496,17 @@ END $$;
 ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS gift_id BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS gift_emoji TEXT NOT NULL DEFAULT '⭐';
 ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS has_upgrade INT NOT NULL DEFAULT 0;
+ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS approve_token TEXT;
+ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS reject_token TEXT;
+ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS refund_token TEXT;
+ALTER TABLE staff_star_payouts ADD COLUMN IF NOT EXISTS channel_chat_id TEXT;
+
+CREATE INDEX IF NOT EXISTS staff_star_payouts_approve_token_idx
+    ON staff_star_payouts (approve_token) WHERE approve_token IS NOT NULL;
+CREATE INDEX IF NOT EXISTS staff_star_payouts_reject_token_idx
+    ON staff_star_payouts (reject_token) WHERE reject_token IS NOT NULL;
+CREATE INDEX IF NOT EXISTS staff_star_payouts_refund_token_idx
+    ON staff_star_payouts (refund_token) WHERE refund_token IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS star_gifts_cache (
     gift_id BIGINT PRIMARY KEY,

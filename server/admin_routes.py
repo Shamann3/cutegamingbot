@@ -322,6 +322,14 @@ class RejectApplicationBody(BaseModel):
 SALARY_PAYOUT_TYPES = {"crypto", "kut", "stars", "card", "other"}
 SALARY_PERIOD_TYPES = {"day", "week", "month", "year", "custom"}
 
+class SalaryGiftItem(BaseModel):
+    giftId: int = Field(ge=0)
+    giftEmoji: str = Field(default="⭐", max_length=32)
+    hasUpgrade: int = Field(default=0, ge=0, le=1)
+    stars: int = Field(ge=1, le=100_000_000)
+    model_config = {"extra": "forbid"}
+
+
 class SetSalaryBody(BaseModel):
     userId: int = Field(ge=1)
     baseAmount: int = Field(ge=0, le=100_000_000)
@@ -335,11 +343,11 @@ class SetSalaryBody(BaseModel):
     periodType: str = Field(default="week", max_length=16)
     periodStart: str | None = Field(default=None, max_length=32)
     periodEnd: str | None = Field(default=None, max_length=32)
-    # Опционально: подарок для авто-заявки в канал (Stars)
     giftId: int | None = Field(default=None, ge=0)
     giftEmoji: str | None = Field(default=None, max_length=32)
     hasUpgrade: int | None = Field(default=None, ge=0, le=1)
     starsUsername: str | None = Field(default=None, max_length=64)
+    gifts: list[SalaryGiftItem] | None = None
     model_config = {"extra": "forbid"}
 
 
@@ -354,6 +362,7 @@ class PaySalaryBody(BaseModel):
     giftId: int | None = Field(default=None, ge=0)
     giftEmoji: str | None = Field(default=None, max_length=32)
     hasUpgrade: int | None = Field(default=None, ge=0, le=1)
+    gifts: list[SalaryGiftItem] | None = None
     model_config = {"extra": "forbid"}
 
 
@@ -1595,6 +1604,9 @@ async def staff_set_salary(
 
     star_queued = None
     if payout_type == "stars" and status == "approved" and total > 0:
+        gifts_payload = None
+        if body.gifts:
+            gifts_payload = [g.model_dump() for g in body.gifts]
         star_queued = await _enqueue_salary_stars_channel(
             salary_id=salary_id,
             staff_user_id=body.userId,
@@ -1604,6 +1616,7 @@ async def staff_set_salary(
             gift_id=int(body.giftId or 0),
             gift_emoji=(body.giftEmoji or "⭐"),
             has_upgrade=int(body.hasUpgrade or 0),
+            gifts=gifts_payload,
         )
 
     return {
@@ -1611,7 +1624,8 @@ async def staff_set_salary(
         "periodType": p_type, "periodStart": p_start.isoformat(),
         "periodEnd": p_end.isoformat(), "periodLabel": label,
         "starQueued": bool(star_queued),
-        "starPayout": star_queued,
+        "starPayouts": star_queued or [],
+        "starPayout": (star_queued or [None])[0],
     }
 
 
@@ -1625,8 +1639,9 @@ async def _enqueue_salary_stars_channel(
     gift_id: int = 0,
     gift_emoji: str = "⭐",
     has_upgrade: int = 0,
-) -> dict | None:
-    """После назначения/одобрения Stars — сразу заявка в канал выводов."""
+    gifts: list[dict] | None = None,
+) -> list[dict] | None:
+    """После назначения/одобрения/выплаты Stars — сразу заявки в канал выводов."""
     from staff_payroll import get_staff_payout_profile
     from staff_stars import enqueue_salary_channel_request
 
@@ -1654,6 +1669,8 @@ async def _enqueue_salary_stars_channel(
             gift_id=gift_id,
             gift_emoji=gift_emoji or "⭐",
             has_upgrade=has_upgrade,
+            gifts=gifts,
+            first_name=(profile or {}).get("firstName") or "",
         )
     except ValueError as e:
         notify_owners(
@@ -1664,7 +1681,20 @@ async def _enqueue_salary_stars_channel(
                 f"<blockquote>Виво-Эпсилон</blockquote>"
             ),
         )
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        notify_owners(
+            (
+                f"<tg-emoji emoji-id='5420315771991497307'>🔥</tg-emoji> "
+                f"<b>Ошибка отправки зарплаты в канал</b>\n"
+                f"<code>{e}</code>\n"
+                f"<blockquote>Виво-Эпсилон</blockquote>"
+            ),
+        )
         return None
+
+    n = len(queued or [])
+    posted_n = sum(1 for q in (queued or []) if q.get("status") == "channel_pending")
     notify_staff(
         staff_user_id,
         (
@@ -1672,7 +1702,7 @@ async def _enqueue_salary_stars_channel(
             f"<b>Заявка на зарплату {amount}⭐ создана</b>\n"
             f"<tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
             f"<b>Получатель: @{stars_user}</b>\n"
-            f"<blockquote>Заявка ушла в канал выводов.\n"
+            f"<blockquote>{n} сообщ. в канале выводов · в канале уже {posted_n}\n"
             f"Ожидайте подтверждения 👍\n"
             f"Виво-Эпсилон</blockquote>"
         ),
@@ -1682,10 +1712,10 @@ async def _enqueue_salary_stars_channel(
             f"<tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
             f"<b>Заявка на выплату зарплаты администратору</b>\n"
             f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
-            f"<b>{amount} кут в stars</b>\n"
+            f"<b>{amount} кут в stars · {n} сообщ.</b>\n"
             f"<tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
             f"<b>Для @{stars_user}</b>\n"
-            f"<blockquote>Откройте канал выводов и нажмите 👍\n"
+            f"<blockquote>Откройте канал выводов (@CurrencyCute) и нажмите 👍\n"
             f"Виво-Эпсилон</blockquote>"
         ),
         exclude=requested_by,
@@ -1723,7 +1753,12 @@ async def staff_approve_salary(
                 requested_by=user_id,
             )
 
-    return {"ok": True, "starQueued": bool(star_queued), "starPayout": star_queued}
+    return {
+        "ok": True,
+        "starQueued": bool(star_queued),
+        "starPayouts": star_queued or [],
+        "starPayout": (star_queued or [None])[0],
+    }
 
 
 async def _needs_cosign(amount: int, method: str | None) -> bool:
@@ -1740,7 +1775,6 @@ async def staff_pay_salary(
     user_id: int = Depends(require_admin_permission("pay_salary")),
 ):
     from admin_db import get_salary_full
-    from staff_payroll import get_staff_payout_profile
 
     ctx = await get_salary_full(salary_id)
     if not ctx or ctx["status"] not in ("approved", "partially_paid"):
@@ -1751,8 +1785,9 @@ async def staff_pay_salary(
     if pay_amount <= 0:
         raise HTTPException(status_code=409, detail="Нечего выплачивать")
 
-    # Крупные суммы — требуют со-подтверждения второго владельца
-    if await _needs_cosign(pay_amount, method):
+    # Stars: подтверждение — это 👍 в канале, cosign не нужен
+    # (иначе крупные суммы «оплачивались» без заявки в канал)
+    if method != "stars" and await _needs_cosign(pay_amount, method):
         payout_id = await create_pending_payout(
             salary_id, ctx["userId"], pay_amount, method, body.kind,
             body.txid.strip(), body.proof.strip(), user_id,
@@ -1769,64 +1804,48 @@ async def staff_pay_salary(
         )
         return {"ok": True, "pending": True, "payoutId": payout_id}
 
-    # --- Stars: строгий флоу — заявка в канал выводов → 👍 → userbot ---
+    # --- Stars: строгий флоу — N заявок в канал → 👍 → userbot ---
     if method == "stars":
-        from staff_stars import enqueue_salary_channel_request
-
-        profile = await get_staff_payout_profile(ctx["userId"])
-        stars_user = (body.starsUsername or "").strip().lstrip("@")
-        if not stars_user and profile:
-            stars_user = (profile.get("starsUsername") or profile.get("username") or "").lstrip("@")
-        if not stars_user or len(stars_user) < 5:
-            raise HTTPException(status_code=400, detail="Укажите Telegram username для Stars")
+        gifts_payload = [g.model_dump() for g in body.gifts] if body.gifts else None
         try:
-            queued = await enqueue_salary_channel_request(
+            queued_list = await _enqueue_salary_stars_channel(
                 salary_id=salary_id,
-                user_id=ctx["userId"],
+                staff_user_id=ctx["userId"],
                 amount=pay_amount,
                 requested_by=user_id,
-                stars_username=stars_user,
+                stars_username=body.starsUsername,
                 gift_id=int(body.giftId or 0),
                 gift_emoji=(body.giftEmoji or "⭐").strip() or "⭐",
                 has_upgrade=int(body.hasUpgrade or 0),
+                gifts=gifts_payload,
             )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        except HTTPException:
+            raise
+        if not queued_list:
+            raise HTTPException(
+                status_code=400,
+                detail="Не удалось создать заявку Stars — проверьте username сотрудника",
+            )
         await log_admin_action(
             user_id, "salary_stars_enqueue",
             target_type="salary", target_id=str(salary_id),
-            details={"amount": pay_amount, "method": "userbot", "username": stars_user, "payoutId": queued["id"]},
+            details={
+                "amount": pay_amount,
+                "method": "userbot",
+                "count": len(queued_list),
+                "payoutIds": [q.get("id") for q in queued_list],
+            },
             ip=_get_client_ip(request),
-        )
-        notify_staff(
-            ctx["userId"],
-            (
-                f"<tg-emoji emoji-id='5924701179157156993'>⭐️</tg-emoji> "
-                f"<b>Заявка на зарплату {pay_amount}⭐ → @{stars_user}</b>\n"
-                f"<blockquote>Ушла в канал выводов. Ожидайте 👍\n"
-                f"Виво-Эпсилон</blockquote>"
-            ),
-        )
-        notify_owners(
-            (
-                f"<tg-emoji emoji-id='5422818196031840237'>💼</tg-emoji> "
-                f"<b>Заявка на выплату зарплаты администратору</b>\n"
-                f"<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> "
-                f"<b>{pay_amount} кут в stars</b>\n"
-                f"<tg-emoji emoji-id='5294026527850132517'>🍬</tg-emoji> "
-                f"<b>Для @{stars_user}</b>\n"
-                f"<blockquote>Откройте канал выводов и нажмите 👍\n"
-                f"Виво-Эпсилон</blockquote>"
-            ),
-            exclude=user_id,
         )
         return {
             "ok": True,
             "queued": True,
-            "starPayout": queued,
+            "starPayouts": queued_list,
+            "starPayout": queued_list[0],
             "status": "queued",
             "amount": pay_amount,
             "userId": ctx["userId"],
+            "posted": sum(1 for q in queued_list if q.get("status") == "channel_pending"),
         }
 
     result = await add_salary_payment(

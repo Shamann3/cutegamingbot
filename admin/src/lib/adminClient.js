@@ -570,6 +570,7 @@ export async function payStaffSalary(salaryId, {
   giftId = null,
   giftEmoji = null,
   hasUpgrade = null,
+  gifts = null,
 } = {}) {
 
   return adminRequest(`/staff/salaries/${salaryId}/pay`, {
@@ -587,6 +588,7 @@ export async function payStaffSalary(salaryId, {
       giftId,
       giftEmoji,
       hasUpgrade,
+      gifts,
     },
 
   })

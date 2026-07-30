@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import AdminSelect from '../../components/AdminSelect'
 import {
   fetchContractTemplates,
@@ -17,7 +17,7 @@ function normalizeStarsUser(value) {
   return String(value || '').trim().replace(/^@+/, '')
 }
 
-/** Модалка выплаты: Stars (канал → 👍 → userbot) + договоры для crypto/card */
+/** Модалка выплаты: Stars (мультиподарки → N сообщений в канал → 👍) */
 export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   const s = member.salary
   const remaining = Math.max(0, (s.amount || 0) - (s.paidAmount || 0))
@@ -32,8 +32,7 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
     normalizeStarsUser(member.starsUsername || member.username || ''),
   )
   const [gifts, setGifts] = useState([])
-  const [giftId, setGiftId] = useState(0)
-  const [giftMeta, setGiftMeta] = useState(null)
+  const [selected, setSelected] = useState([]) // [{giftId, giftEmoji, hasUpgrade, stars}]
   const [giftsLoading, setGiftsLoading] = useState(false)
   const [templates, setTemplates] = useState([])
   const [tplId, setTplId] = useState('')
@@ -43,6 +42,12 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   const amountNum = Number.parseInt(amount, 10) || 0
   const starsUserClean = normalizeStarsUser(starsUsername)
   const starsUserOk = starsUserClean.length >= 5
+  const selectedSum = useMemo(
+    () => selected.reduce((acc, g) => acc + Number(g.stars || 0), 0),
+    [selected],
+  )
+  const sumOk = selected.length === 0 || selectedSum === amountNum
+  const remainingToPick = Math.max(0, amountNum - selectedSum)
 
   useEffect(() => {
     if (payoutType !== 'crypto' && payoutType !== 'card') return
@@ -68,16 +73,11 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
       .then((d) => {
         if (cancelled) return
         const items = d.items || []
-        const exact = items.filter((g) => Number(g.stars) === amountNum)
-        const rest = items.filter((g) => Number(g.stars) !== amountNum)
-        setGifts(amountNum > 0 ? [...exact, ...rest] : items)
-        setGiftId((prev) => {
-          if (prev && !items.some((g) => Number(g.giftId) === Number(prev))) {
-            setGiftMeta(null)
-            return 0
-          }
-          return prev
-        })
+        const budget = remainingToPick > 0 ? remainingToPick : amountNum
+        const exact = items.filter((g) => Number(g.stars) === budget)
+        const fit = items.filter((g) => Number(g.stars) <= budget && Number(g.stars) !== budget)
+        const rest = items.filter((g) => Number(g.stars) > budget)
+        setGifts(amountNum > 0 ? [...exact, ...fit, ...rest] : items)
       })
       .catch(() => {
         if (!cancelled) setGifts([])
@@ -86,20 +86,32 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
         if (!cancelled) setGiftsLoading(false)
       })
     return () => { cancelled = true }
-  }, [isStars, amountNum])
+  }, [isStars, amountNum, remainingToPick])
 
-  const selectGift = (g) => {
-    if (!g) {
-      setGiftId(0)
-      setGiftMeta(null)
+  const addGift = (g) => {
+    if (!g) return
+    const stars = Number(g.stars) || 0
+    if (stars <= 0) return
+    if (selectedSum + stars > amountNum) {
+      alert(`Не влезает: ${selectedSum}+${stars} > ${amountNum}. Уберите подарок или увеличьте сумму.`)
       return
     }
-    setGiftId(Number(g.giftId))
-    setGiftMeta(g)
-    if (Number(g.stars) > 0 && Number(g.stars) !== amountNum) {
-      setAmount(String(g.stars))
-    }
+    setSelected((prev) => [
+      ...prev,
+      {
+        giftId: Number(g.giftId),
+        giftEmoji: g.emoji || '⭐',
+        hasUpgrade: g.hasUpgrade ? 1 : 0,
+        stars,
+      },
+    ])
   }
+
+  const removeGiftAt = (idx) => {
+    setSelected((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  const clearGifts = () => setSelected([])
 
   const doRender = async () => {
     if (!tplId) return
@@ -149,11 +161,18 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
         alert('Укажите Telegram username для Stars (минимум 5 символов, без @)')
         return
       }
-      if (!giftId) {
-        const ok = confirm('Подарок не выбран — бот подберёт по сумме автоматически. Продолжить?')
+      if (selected.length > 0 && selectedSum !== amountNum) {
+        alert(`Сумма подарков ${selectedSum}⭐ ≠ выплате ${amountNum}⭐`)
+        return
+      }
+      if (selected.length === 0) {
+        const ok = confirm(
+          'Подарки не выбраны — в канал уйдёт 1 заявка на всю сумму, бот подберёт подарок сам. Продолжить?',
+        )
         if (!ok) return
       }
     }
+    const first = selected[0]
     onSubmit({
       amount: amountNum || null,
       kind,
@@ -161,13 +180,14 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
       proof: proof.trim(),
       starsMethod: isStars ? 'userbot' : null,
       starsUsername: isStars ? starsUserClean : null,
-      giftId: isStars ? (giftId || 0) : 0,
-      giftEmoji: isStars ? (giftMeta?.emoji || '⭐') : '⭐',
-      hasUpgrade: isStars ? (giftMeta?.hasUpgrade ? 1 : 0) : 0,
+      giftId: first ? first.giftId : 0,
+      giftEmoji: first ? first.giftEmoji : '⭐',
+      hasUpgrade: first ? first.hasUpgrade : 0,
+      gifts: isStars && selected.length > 0 ? selected : null,
     })
   }
 
-  const canSubmit = !busy && amountNum > 0 && (!isStars || starsUserOk)
+  const canSubmit = !busy && amountNum > 0 && (!isStars || (starsUserOk && sumOk))
 
   return (
     <div className="admin-modal-backdrop" role="presentation" onClick={() => !busy && onClose()}>
@@ -195,7 +215,10 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
             min="1"
             max={remaining}
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => {
+              setAmount(e.target.value)
+              setSelected([])
+            }}
             disabled={busy}
           />
         </label>
@@ -217,9 +240,9 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
         {isStars && (
           <div className="payroll-pay-block">
             <div className="payroll-flow-card">
-              <p className="payroll-flow-step"><b>1</b> Заявка уходит в канал выводов</p>
-              <p className="payroll-flow-step"><b>2</b> Владелец жмёт 👍 под сообщением</p>
-              <p className="payroll-flow-step"><b>3</b> Юзербот отправляет подарок</p>
+              <p className="payroll-flow-step"><b>1</b> Выберите 1+ подарков на сумму выплаты</p>
+              <p className="payroll-flow-step"><b>2</b> Каждый подарок = отдельное сообщение в канале</p>
+              <p className="payroll-flow-step"><b>3</b> 👍 под каждым → юзербот отправит подарок</p>
             </div>
 
             <label className="admin-modal-field">
@@ -242,38 +265,62 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
             )}
 
             <div className="payroll-gifts">
-              <p className="payroll-my-label">Подарок</p>
+              <div className="payroll-gift-basket">
+                <p className="payroll-my-label">Корзина подарков</p>
+                <p className={`payroll-hint${sumOk ? '' : ' payroll-hint-warn'}`}>
+                  Собрано <b>{selectedSum}</b> / {amountNum}⭐
+                  {selected.length > 0 ? ` · ${selected.length} сообщ. в канале` : ' · авто 1 сообщ.'}
+                  {remainingToPick > 0 && selected.length > 0 ? ` · ещё ${remainingToPick}⭐` : ''}
+                </p>
+                {selected.length > 0 && (
+                  <div className="payroll-basket-list">
+                    {selected.map((g, idx) => (
+                      <button
+                        key={`${g.giftId}-${idx}`}
+                        type="button"
+                        className="payroll-basket-item"
+                        onClick={() => removeGiftAt(idx)}
+                        disabled={busy}
+                        title="Убрать"
+                      >
+                        <span>{g.giftEmoji || '🎁'}</span>
+                        <span>{g.stars}⭐</span>
+                        <span className="payroll-basket-x">×</span>
+                      </button>
+                    ))}
+                    <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={clearGifts} disabled={busy}>
+                      Очистить
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <p className="payroll-my-label">Каталог</p>
               <p className="payroll-hint">
                 {giftsLoading
-                  ? 'Загрузка каталога…'
-                  : `Как у игроков · ${gifts.length} шт. · точные ${amountNum || '—'}⭐ сверху`}
+                  ? 'Загрузка…'
+                  : `Нажмите подарок, чтобы добавить. Для 115⭐ — например 50+50+15.`}
               </p>
               <div className="payroll-gifts-grid">
-                <button
-                  type="button"
-                  className={`payroll-gift${giftId === 0 ? ' is-active' : ''}`}
-                  onClick={() => selectGift(null)}
-                  disabled={busy}
-                >
-                  <span className="payroll-gift-emoji">⭐</span>
-                  <span className="payroll-gift-meta">Авто · {amountNum || '—'}⭐</span>
-                </button>
-                {gifts.map((g) => (
-                  <button
-                    key={g.giftId}
-                    type="button"
-                    className={`payroll-gift${Number(giftId) === Number(g.giftId) ? ' is-active' : ''}`}
-                    onClick={() => selectGift(g)}
-                    disabled={busy}
-                    title={`${g.source || 'gift'} · ID ${g.giftId}`}
-                  >
-                    <span className="payroll-gift-emoji">{g.emoji || '🎁'}</span>
-                    <span className="payroll-gift-meta">
-                      {g.stars}⭐{g.hasUpgrade ? ' · NFT' : ''}
-                      {g.source === 'live' ? ' · TG' : g.source === 'manual' ? ' · руч.' : ''}
-                    </span>
-                  </button>
-                ))}
+                {gifts.map((g) => {
+                  const stars = Number(g.stars) || 0
+                  const fits = selectedSum + stars <= amountNum
+                  return (
+                    <button
+                      key={g.giftId}
+                      type="button"
+                      className={`payroll-gift${fits ? '' : ' is-disabled'}`}
+                      onClick={() => addGift(g)}
+                      disabled={busy || !fits}
+                      title={`${g.source || 'gift'} · ID ${g.giftId}`}
+                    >
+                      <span className="payroll-gift-emoji">{g.emoji || '🎁'}</span>
+                      <span className="payroll-gift-meta">
+                        {g.stars}⭐{g.hasUpgrade ? ' · NFT' : ''}
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           </div>
@@ -335,7 +382,11 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
             disabled={!canSubmit}
             onClick={submit}
           >
-            {busy ? '…' : (isStars ? 'Отправить в канал' : 'Провести')}
+            {busy
+              ? '…'
+              : (isStars
+                ? (selected.length > 1 ? `В канал · ${selected.length} сообщ.` : 'Отправить в канал')
+                : 'Провести')}
           </button>
         </div>
       </div>
