@@ -4231,7 +4231,7 @@ temp_whispers: Dict[int, Dict] = LazyGameStore("temp_whispers")
 button_temp_whispers = LazyGameStore("button_temp_whispers")
 
 
-ADMIN_WITHDRAW_ACTIONS: Dict[str, Dict[str, Any]] = LazyGameStore("ADMIN_WITHDRAW_ACTIONS")
+ADMIN_WITHDRAW_ACTIONS: Dict[str, Dict[str, Any]] = LazyGameStore("admin_withdraw_actions")
 
 user_message_store = LazyGameStore("user_message_store")
 user_message_textglobhelp = LazyGameStore("user_message_textglobhelp")
@@ -7681,7 +7681,7 @@ ALLOW_INTERACTIVE_LOGIN = True
 # - очень старые мусорные записи
 # =========================================================
 
-ADMIN_WITHDRAW_ACTIONS: Dict[str, Dict[str, Any]] = LazyGameStore("ADMIN_WITHDRAW_ACTIONS")
+ADMIN_WITHDRAW_ACTIONS: Dict[str, Dict[str, Any]] = LazyGameStore("admin_withdraw_actions")
 
 # Через сколько можно чистить уже ЗАВЕРШЁННЫЕ заявки
 ADMIN_ACTION_DONE_TTL = 60 * 60 * 24 * 14      # 14 дней
@@ -9870,6 +9870,12 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
                 if prow["status"] in ("completed", "cancelled", "refunded"):
                     await _adm_safe_answer(call, "Заявка уже обработана", show_alert=True)
                     return
+                if prow["status"] not in ("channel_pending", "processing", "queued", "failed"):
+                    await _adm_safe_answer(call, f"Статус заявки: {prow['status']}", show_alert=True)
+                    return
+
+                # Как у обычных выводов: сразу processing, чтобы 👍 нельзя было нажать дважды
+                _mark_admin_withdraw_action_processing(token, call.from_user.id)
 
                 if kind == "approve":
                     if gift_id <= 0:
@@ -9892,6 +9898,13 @@ async def admin_withdraw_action_handler(call: types.CallbackQuery):
                     )
                     if not gift_result.get("ok"):
                         err = _wd_safe_str(gift_result.get("error"), "Не удалось отправить")
+                        # Вернём кнопку в pending — как у обычных выводов при ошибке формы
+                        _touch_admin_withdraw_action(
+                            token,
+                            status="pending",
+                            pressed_at=0,
+                            pressed_by=0,
+                        )
                         await _adm_safe_answer(call, f"❌ {err}", show_alert=True)
                         return
 
@@ -25000,172 +25013,9 @@ test_gift_mode = False  # ✅ True = тест (вместо настоящего
 
 
 
-# Persistent store вместо обычного dict
-ADMIN_WITHDRAW_ACTIONS = LazyGameStore("admin_withdraw_actions")
-
-
-def _cleanup_admin_withdraw_actions(max_age_sec: int = 7 * 24 * 3600) -> None:
-    now = time.time()
-    to_delete = []
-
-    try:
-        items_snapshot = list(ADMIN_WITHDRAW_ACTIONS.items())
-    except Exception as e:
-        print(f"🟥 [ADMIN_WITHDRAW][CLEANUP] Ошибка получения items(): {e}")
-        return
-
-    for token, payload in items_snapshot:
-        safe_token = str(token or "").strip()
-
-        if not safe_token:
-            to_delete.append(token)
-            continue
-
-        if not isinstance(payload, dict):
-            print(
-                f"🟨 [ADMIN_WITHDRAW][CLEANUP] "
-                f"Удаляю битую запись token={safe_token!r}: payload не dict"
-            )
-            to_delete.append(token)
-            continue
-
-        status = str(payload.get("status", "pending") or "pending").strip().lower()
-        created_at = float(payload.get("created_at", 0) or 0)
-        updated_at = float(payload.get("updated_at", created_at) or created_at)
-        ts = float(payload.get("ts", created_at) or created_at)
-
-        if status == "processing":
-            age_update = (now - updated_at) if updated_at > 0 else (now - ts if ts > 0 else 10**9)
-            if age_update > 20:
-                payload["status"] = "pending"
-                payload["updated_at"] = int(now)
-                payload["pressed_at"] = 0
-                payload["pressed_by"] = 0
-                ADMIN_WITHDRAW_ACTIONS[safe_token] = payload
-                print(f"🟦 [ADMIN_WITHDRAW][CLEANUP] recover token={safe_token!r} processing->pending")
-            continue
-
-        if status in {"done", "completed", "rejected", "refunded", "cancelled", "failed"}:
-            age_update = (now - updated_at) if updated_at > 0 else (now - ts if ts > 0 else 10**9)
-            if age_update > max_age_sec:
-                to_delete.append(token)
-            continue
-
-        age_create = (now - created_at) if created_at > 0 else (now - ts if ts > 0 else 10**9)
-        if age_create > max_age_sec:
-            to_delete.append(token)
-
-    deleted_count = 0
-
-    for token in to_delete:
-        try:
-            ADMIN_WITHDRAW_ACTIONS.pop(token, None)
-            deleted_count += 1
-        except Exception as e:
-            print(f"🟥 [ADMIN_WITHDRAW][CLEANUP] Ошибка удаления token={token!r}: {e}")
-
-    if deleted_count > 0:
-        try:
-            store_size = len(ADMIN_WITHDRAW_ACTIONS)
-        except Exception:
-            store_size = "unknown"
-
-        print(
-            f"🟦 [ADMIN_WITHDRAW][CLEANUP] "
-            f"Удалено записей: {deleted_count}, осталось: {store_size}"
-        )
-
-
-def _register_admin_withdraw_action(payload: Dict[str, Any]) -> str:
-    _cleanup_admin_withdraw_actions()
-
-    safe_payload = dict(payload or {})
-    token = uuid.uuid4().hex[:16]
-    now_ts = int(time.time())
-
-    ADMIN_WITHDRAW_ACTIONS[token] = {
-        **safe_payload,
-        "token": token,
-        "status": "pending",
-        "created_at": now_ts,
-        "updated_at": now_ts,
-        "pressed_at": 0,
-        "pressed_by": 0,
-        "ts": now_ts,
-    }
-
-    print(
-        f"🟩 [ADMIN_WITHDRAW][REGISTER] "
-        f"token={token!r}, keys={list(ADMIN_WITHDRAW_ACTIONS[token].keys())}"
-    )
-
-    return token
-
-
-def _get_admin_withdraw_action(token: str) -> Optional[Dict[str, Any]]:
-    _cleanup_admin_withdraw_actions()
-
-    safe_token = str(token or "").strip()
-    if not safe_token:
-        print("🟨 [ADMIN_WITHDRAW][GET] Пустой token")
-        return None
-
-    try:
-        payload = ADMIN_WITHDRAW_ACTIONS.get(safe_token)
-    except Exception as e:
-        print(f"🟥 [ADMIN_WITHDRAW][GET] Ошибка чтения token={safe_token!r}: {e}")
-        return None
-
-    if payload is None:
-        print(f"🟨 [ADMIN_WITHDRAW][GET] token={safe_token!r} не найден")
-        return None
-
-    if not isinstance(payload, dict):
-        print(
-            f"🟨 [ADMIN_WITHDRAW][GET] token={safe_token!r} содержит битый payload, удаляю"
-        )
-        try:
-            ADMIN_WITHDRAW_ACTIONS.pop(safe_token, None)
-        except Exception as e:
-            print(f"🟥 [ADMIN_WITHDRAW][GET] Ошибка удаления битого token={safe_token!r}: {e}")
-        return None
-
-    print(
-        f"🟦 [ADMIN_WITHDRAW][GET] "
-        f"token={safe_token!r} найден, keys={list(payload.keys())}"
-    )
-
-    return dict(payload)
-
-
-def _pop_admin_withdraw_action(token: str) -> Optional[Dict[str, Any]]:
-    _cleanup_admin_withdraw_actions()
-
-    safe_token = str(token or "").strip()
-    if not safe_token:
-        print("🟨 [ADMIN_WITHDRAW][POP] Пустой token")
-        return None
-
-    try:
-        payload = ADMIN_WITHDRAW_ACTIONS.pop(safe_token, None)
-    except Exception as e:
-        print(f"🟥 [ADMIN_WITHDRAW][POP] Ошибка pop token={safe_token!r}: {e}")
-        return None
-
-    if payload is None:
-        print(f"🟨 [ADMIN_WITHDRAW][POP] token={safe_token!r} не найден")
-        return None
-
-    if not isinstance(payload, dict):
-        print(f"🟨 [ADMIN_WITHDRAW][POP] token={safe_token!r} имел битый payload")
-        return None
-
-    print(
-        f"🟩 [ADMIN_WITHDRAW][POP] "
-        f"token={safe_token!r} удалён, keys={list(payload.keys())}"
-    )
-
-    return dict(payload)
+# Persistent store — тот же ключ, что уже используется выводами игроков.
+# НЕ переопределяем ADMIN_WITHDRAW_ACTIONS / registry ниже в файле.
+# pending-заявки живут до нажатия кнопки (см. _cleanup_admin_withdraw_actions выше).
 
 
 def _build_withdraw_channel_keyboard(

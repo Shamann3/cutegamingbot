@@ -9,8 +9,10 @@ from typing import Any, Awaitable, Callable, Optional
 
 logger = logging.getLogger("staff-star-worker")
 
-# Канал выводов (тот же, что для игроков)
-WITHDRAW_CHANNEL = -1002552723822
+# Тот же канал, что у выводов игроков в main.py (с запасным numeric id)
+WITHDRAW_CHANNEL_PRIMARY = "@CurrencyCute"
+WITHDRAW_CHANNEL_FALLBACK = -1002552723822
+WITHDRAW_CHANNELS = (WITHDRAW_CHANNEL_PRIMARY, WITHDRAW_CHANNEL_FALLBACK)
 
 
 async def refresh_star_gifts_cache(db, bot) -> int:
@@ -308,6 +310,32 @@ async def _try_fragment(
     return False, None, last_err or "Fragment send failed"
 
 
+async def _send_withdraw_channel_message(bot, *, text: str, reply_markup=None):
+    """Пост в канал выводов строго как у игроков: сначала @CurrencyCute, потом numeric fallback."""
+    last_err: Exception | None = None
+    for chat_id in WITHDRAW_CHANNELS:
+        try:
+            msg = await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            logger.info(
+                "salary channel post ok chat=%s message_id=%s",
+                chat_id,
+                getattr(msg, "message_id", None),
+            )
+            return msg, chat_id
+        except Exception as e:
+            last_err = e
+            logger.warning("salary channel post failed chat=%s err=%r", chat_id, e)
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError("withdraw channel unavailable")
+
+
 async def _resolve_salary_gift(db, row: dict) -> tuple[int, str, int]:
     """Подбирает gift_id по сумме, если владелец не указал подарок при назначении."""
     gift_id = int(row.get("gift_id") or 0)
@@ -400,12 +428,10 @@ async def _post_salary_channel(
         },
     )
 
-    msg = await bot.send_message(
-        chat_id=WITHDRAW_CHANNEL,
+    msg, _chat = await _send_withdraw_channel_message(
+        bot,
         text=channel_message,
         reply_markup=keyboard,
-        parse_mode="HTML",
-        disable_web_page_preview=True,
     )
     return getattr(msg, "message_id", None)
 
@@ -428,6 +454,14 @@ async def process_one_payout(
     username = (row.get("stars_username") or "").lstrip("@")
     amount = int(row["amount"])
     user_id = int(row["user_id"])
+    logger.info(
+        "salary payout claim id=%s method=%s amount=%s user=%s username=%s",
+        payout_id, method, amount, user_id, username,
+    )
+    print(
+        f"[SALARY_STARS] claim id={payout_id} method={method} "
+        f"amount={amount} user={user_id} @{username}"
+    )
 
     first_name = ""
     try:
@@ -481,8 +515,8 @@ async def process_one_payout(
                 await _complete_salary_payment(db, row, txid or "fragment")
                 await _mark(db, payout_id, "completed", txid=txid)
                 try:
-                    await bot.send_message(
-                        chat_id=WITHDRAW_CHANNEL,
+                    await _send_withdraw_channel_message(
+                        bot,
                         text=(
                             f"<tg-emoji emoji-id='5395325195542078574'>🍀</tg-emoji> "
                             f"<b>Выплата зарплаты выполнена (Fragment)</b>\n"
@@ -495,8 +529,6 @@ async def process_one_payout(
                             f"Зарплата администратора</b>\n\n"
                             f"<blockquote><b>@CuteGamingBot</b></blockquote>"
                         ),
-                        parse_mode="HTML",
-                        disable_web_page_preview=True,
                     )
                 except Exception:
                     logger.exception("channel success log failed")
@@ -544,29 +576,40 @@ async def staff_star_payout_loop(
     build_keyboard: Callable[..., Any],
     notify_user: Callable[[int, str], Awaitable[None]] | None = None,
 ) -> None:
-    """Раз в ~8 сек: health Fragment + каталог подарков + очередь зарплат."""
+    """Раз в ~3 сек: health Fragment + каталог подарков + очередь зарплат → канал."""
     try:
-        # Подхватить заявки, которые зависли до фикса воркера
+        # Подхватить заявки, которые зависли / не ушли в канал
         await db.pool.execute(
             """
             UPDATE staff_star_payouts
             SET status = 'queued', error = NULL, updated_at = NOW()
             WHERE status IN ('failed', 'processing')
-              AND created_at > NOW() - INTERVAL '48 hours'
+              AND created_at > NOW() - INTERVAL '72 hours'
             """
         )
-        logger.info("staff_star_payout_loop: requeued recent failed/processing")
+        n_queued = await db.pool.fetchval(
+            "SELECT COUNT(*) FROM staff_star_payouts WHERE status = 'queued'"
+        )
+        logger.info(
+            "staff_star_payout_loop: started, queued=%s channels=%s",
+            n_queued,
+            WITHDRAW_CHANNELS,
+        )
+        print(
+            f"✅ [SALARY_STARS] loop ready | queued={n_queued} "
+            f"channels={WITHDRAW_CHANNELS}"
+        )
     except Exception:
         logger.exception("startup requeue failed")
 
     ticks = 0
     while not stop_event.is_set():
         try:
-            if ticks % 8 == 0:  # ~каждую минуту при sleep 8
+            if ticks % 20 == 0:  # ~каждую минуту при sleep 3
                 await refresh_fragment_health(db, fragment_client, seed_phrase)
                 await refresh_star_gifts_cache(db, bot)
-            # до 3 заявок за тик
-            for _ in range(3):
+            # до 5 заявок за тик — быстрее уходит в канал
+            for _ in range(5):
                 got = await process_one_payout(
                     db, bot, fragment_client, seed_phrase, build_keyboard, notify_user,
                 )
@@ -578,6 +621,6 @@ async def staff_star_payout_loop(
             logger.exception("staff_star_payout_loop tick error")
         ticks += 1
         try:
-            await asyncio.wait_for(stop_event.wait(), timeout=8.0)
+            await asyncio.wait_for(stop_event.wait(), timeout=3.0)
         except asyncio.TimeoutError:
             pass
