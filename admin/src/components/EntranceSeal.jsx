@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { hasTelegramInitData, isAdminSessionValid } from '../lib/adminClient'
 import { vivoEpsilonLogo } from './EpsilonLogo'
 
-/** ~5.5s удержание + ~0.5s выход ≈ 6 секунд */
+/** ~5.5s hold + ~0.5s exit ≈ 6s — Iris Awakening */
 export const ENTRANCE_HOLD_MS = 5500
 export const ENTRANCE_EXIT_MS = 500
 export const ENTRANCE_LOGIN_HOLD_MS = 5300
 export const ENTRANCE_LITE_HOLD_MS = 1400
+
+/** 10 тонких лучей — достаточно для гипноза, без фейерверка */
+const RAY_COUNT = 10
 
 function detectLiteEntrance() {
   if (typeof window === 'undefined') return false
@@ -18,9 +21,26 @@ function detectLiteEntrance() {
   return prefersReduced || veryWeakCpu
 }
 
+function buildRays(count) {
+  const cx = 100
+  const cy = 88 // центр ока в viewBox колец
+  const inner = 10
+  const outer = 72
+  return Array.from({ length: count }, (_, i) => {
+    const deg = (360 / count) * i - 90
+    const rad = (deg * Math.PI) / 180
+    return {
+      x1: cx + Math.cos(rad) * inner,
+      y1: cy + Math.sin(rad) * inner,
+      x2: cx + Math.cos(rad) * outer,
+      y2: cy + Math.sin(rad) * outer,
+    }
+  })
+}
+
 /**
- * Печать входа (~6с): один слой логотипа с progressive reveal
- * (без наложения кусков) → штамп → серьёзный копирайт → выход.
+ * Iris Awakening — око раскрывается, лучи, затем герб, wordmark, текст.
+ * Слои сменяют друг друга по времени (без каши из overlapping clip’ов).
  */
 export default function EntranceSeal({
   displayName = '',
@@ -30,6 +50,8 @@ export default function EntranceSeal({
   const [phase, setPhase] = useState('in')
   const [lite] = useState(detectLiteEntrance)
   const doneRef = useRef(false)
+  const rays = useMemo(() => buildRays(RAY_COUNT), [])
+
   const holdMs = lite
     ? ENTRANCE_LITE_HOLD_MS
     : variant === 'login'
@@ -75,7 +97,7 @@ export default function EntranceSeal({
 
   return (
     <div
-      className={`ent-root ent-root--${variant}${lite ? ' ent-root--lite' : ''}${phase === 'out' ? ' ent-root--out' : ''}`}
+      className={`ent-root ent-root--iris ent-root--${variant}${lite ? ' ent-root--lite' : ''}${phase === 'out' ? ' ent-root--out' : ''}`}
       role="status"
       aria-live="polite"
       aria-label={greeting}
@@ -87,31 +109,49 @@ export default function EntranceSeal({
       <div className="ent-stage">
         <svg className="ent-rings" viewBox="0 0 200 200" aria-hidden="true">
           <circle className="ent-ring ent-ring--a" cx="100" cy="100" r="94" />
-          <circle className="ent-ring ent-ring--b" cx="100" cy="100" r="80" />
-          <path
-            className="ent-ring ent-ring--shield"
-            d="M100 18 L162 40 V96 C162 136 134 164 100 178 C66 164 38 136 38 96 V40 Z"
-          />
-          <circle className="ent-ring ent-ring--c" cx="100" cy="100" r="56" />
-          <circle className="ent-ring ent-ring--core" cx="100" cy="100" r="3.5" />
+          <circle className="ent-ring ent-ring--b" cx="100" cy="100" r="78" />
+          <circle className="ent-ring ent-ring--c" cx="100" cy="100" r="52" />
+          <g className="ent-rays">
+            {rays.map((ray, i) => (
+              <line
+                key={i}
+                className="ent-ray"
+                style={{ '--ray-i': i }}
+                x1={ray.x1}
+                y1={ray.y1}
+                x2={ray.x2}
+                y2={ray.y2}
+              />
+            ))}
+          </g>
+          <circle className="ent-ring ent-ring--core" cx="100" cy="88" r="2.8" />
         </svg>
 
-        <div className="ent-brackets" aria-hidden="true">
-          <span className="ent-bracket ent-bracket--tl" />
-          <span className="ent-bracket ent-bracket--tr" />
-          <span className="ent-bracket ent-bracket--bl" />
-          <span className="ent-bracket ent-bracket--br" />
-        </div>
-
-        <div className="ent-beam" aria-hidden="true" />
-
-        {/* Один слой — progressive inset reveal, без наложений кусков */}
         <div className="ent-mark" aria-hidden="true">
-          <div className="ent-logo-reveal">
+          <div className="ent-eye-bloom" />
+
+          {/* 1. Око — круговая маска */}
+          <div className="ent-layer ent-layer--eye">
             <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
           </div>
+
+          {/* 2. Герб (корона + крылья + око) — после ока */}
+          <div className="ent-layer ent-layer--crest">
+            <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
+          </div>
+
+          {/* 3. Полный consolidate герба */}
+          <div className="ent-layer ent-layer--full">
+            <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
+          </div>
+
           <div className="ent-stamp" />
-          <div className="ent-mark-glow" />
+
+          {/* Wordmark отдельно — трекинг сжимается */}
+          <div className="ent-wordmark">
+            <span className="ent-wm-line ent-wm-line--cute">CUTE</span>
+            <span className="ent-wm-line ent-wm-line--eps">EPSILON</span>
+          </div>
         </div>
 
         <div className="ent-copy">

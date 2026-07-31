@@ -1,14 +1,13 @@
 /* ============================================================
-   ENTRANCE SEAL — ч/б печать входа (~6 секунд)
+   IRIS AWAKENING — ч/б печать входа (~6 секунд)
    ------------------------------------------------------------
-   Таймлайн (boot):
-     0.0–1.2   void, кольца, щит
-     1.0–1.8   скобы, луч
-     1.6–4.0   progressive reveal ОДНОГО логотипа (без наложений)
-     3.8–4.6   штамп / glow
-     4.2–5.4   серьёзный копирайт, удержание
-     5.2–5.5   вспышка
-     5.5–6.0   выход
+   0.0–0.8   тьма, точка-зрачок
+   0.8–2.2   око раскрывается (circle mask)
+   1.4–2.6   тонкие лучи → гаснут
+   2.4–3.6   герб fade+rise (око растворяется)
+   3.4–4.2   consolidate + bloom
+   4.0–5.5   wordmark + серьёзный копирайт
+   5.5–6.0   вспышка и выход
    ============================================================ */
 
 .ent-root {
@@ -16,6 +15,9 @@
   --ent-ease-out: cubic-bezier(0.4, 0, 1, 1);
   --ent-ink: #f5f5f5;
   --ent-mute: rgba(255, 255, 255, 0.42);
+  /* Центр ока внутри .ent-layer (полный PNG contain → глаз ~38%) */
+  --ent-eye-x: 50%;
+  --ent-eye-y: 38%;
 
   position: fixed;
   inset: 0;
@@ -50,8 +52,8 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 68% 52% at 50% 46%, #161616 0%, #090909 40%, #000 78%);
-  animation: entVoidIn 1.2s var(--ent-ease) both;
+    radial-gradient(ellipse 62% 48% at 50% 42%, #141414 0%, #080808 42%, #000 78%);
+  animation: entVoidIn 1.1s var(--ent-ease) both;
 }
 
 @keyframes entVoidIn {
@@ -64,9 +66,9 @@
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 82% 68% at 50% 50%, transparent 38%, rgba(0, 0, 0, 0.8) 100%);
+    radial-gradient(ellipse 78% 64% at 50% 44%, transparent 36%, rgba(0, 0, 0, 0.82) 100%);
   opacity: 0;
-  animation: entFade 1.3s 0.25s var(--ent-ease) both;
+  animation: entFade 1.4s 0.2s var(--ent-ease) both;
 }
 
 .ent-grid {
@@ -75,16 +77,16 @@
   pointer-events: none;
   opacity: 0;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
-  background-size: 52px 52px;
-  mask-image: radial-gradient(ellipse 55% 50% at 50% 48%, #000 8%, transparent 72%);
-  -webkit-mask-image: radial-gradient(ellipse 55% 50% at 50% 48%, #000 8%, transparent 72%);
-  animation: entGridIn 1.7s 0.2s var(--ent-ease) both;
+    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 50% 46% at 50% 44%, #000 6%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse 50% 46% at 50% 44%, #000 6%, transparent 70%);
+  animation: entGridIn 1.8s 0.25s var(--ent-ease) both;
 }
 
 @keyframes entGridIn {
-  from { opacity: 0; transform: scale(1.08); }
+  from { opacity: 0; transform: scale(1.06); }
   to   { opacity: 1; transform: scale(1); }
 }
 
@@ -96,7 +98,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(1rem, 3vh, 1.7rem);
+  gap: clamp(0.85rem, 2.6vh, 1.5rem);
   width: min(92vw, 30rem);
   padding:
     max(1.25rem, env(safe-area-inset-top, 0px))
@@ -105,14 +107,14 @@
     max(1rem, env(safe-area-inset-left, 0px));
 }
 
-/* --- Кольца --- */
+/* --- Кольца + лучи --- */
 
 .ent-rings {
   position: absolute;
   left: 50%;
-  top: calc(38% - 0.1rem);
-  width: min(78vw, 22.5rem);
-  height: min(78vw, 22.5rem);
+  top: 36%;
+  width: min(76vw, 22rem);
+  height: min(76vw, 22rem);
   transform: translate(-50%, -50%);
   pointer-events: none;
   overflow: visible;
@@ -120,52 +122,45 @@
 
 .ent-ring {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.55);
+  stroke: rgba(255, 255, 255, 0.5);
   stroke-linecap: round;
   transform-origin: 100px 100px;
 }
 
 .ent-ring--a {
-  stroke-width: 0.5;
+  stroke-width: 0.45;
   stroke-dasharray: 590;
   stroke-dashoffset: 590;
+  opacity: 0.7;
   animation:
-    entDraw 1.5s 0.15s var(--ent-ease) forwards,
-    entSpin 16s linear infinite;
+    entDraw 1.6s 0.35s var(--ent-ease) forwards,
+    entSpin 22s linear infinite;
 }
 
 .ent-ring--b {
-  stroke-width: 0.35;
-  stroke: rgba(255, 255, 255, 0.24);
-  stroke-dasharray: 7 11;
-  stroke-dashoffset: 500;
+  stroke-width: 0.3;
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-dasharray: 6 12;
+  stroke-dashoffset: 490;
   animation:
-    entDraw 1.6s 0.4s var(--ent-ease) forwards,
-    entSpinRev 20s linear infinite;
-}
-
-.ent-ring--shield {
-  stroke-width: 0.85;
-  stroke: rgba(255, 255, 255, 0.8);
-  stroke-dasharray: 540;
-  stroke-dashoffset: 540;
-  fill: rgba(255, 255, 255, 0.015);
-  animation: entDraw 1.6s 0.65s var(--ent-ease) forwards;
+    entDraw 1.7s 0.7s var(--ent-ease) forwards,
+    entSpinRev 28s linear infinite;
 }
 
 .ent-ring--c {
-  stroke-width: 0.6;
-  stroke: rgba(255, 255, 255, 0.62);
-  stroke-dasharray: 360;
-  stroke-dashoffset: 360;
-  animation: entDraw 1.2s 0.95s var(--ent-ease) forwards;
+  stroke-width: 0.55;
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-dasharray: 330;
+  stroke-dashoffset: 330;
+  animation: entDraw 1.3s 1.05s var(--ent-ease) forwards;
 }
 
 .ent-ring--core {
   fill: #fff;
   stroke: none;
   opacity: 0;
-  animation: entCore 0.9s 0.55s var(--ent-ease) both;
+  transform-origin: 100px 88px;
+  animation: entPupil 1.1s 0.35s var(--ent-ease) both;
 }
 
 @keyframes entDraw {
@@ -180,139 +175,181 @@
   to { transform: rotate(-360deg); }
 }
 
-@keyframes entCore {
-  0%   { opacity: 0; transform: scale(0.2); }
-  40%  { opacity: 1; transform: scale(1.9); }
-  100% { opacity: 0.28; transform: scale(1); }
+@keyframes entPupil {
+  0%   { opacity: 0; transform: scale(0.15); }
+  35%  { opacity: 1; transform: scale(1.6); }
+  70%  { opacity: 0.85; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.6); }
 }
 
-/* --- Скобы --- */
-
-.ent-brackets {
-  position: absolute;
-  left: 50%;
-  top: 38%;
-  width: min(72vw, 20.5rem);
-  height: min(72vw, 20.5rem);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
+/* Лучи — короткая жизнь, staggered */
+.ent-rays {
+  opacity: 1;
 }
 
-.ent-bracket {
-  position: absolute;
-  width: 1.45rem;
-  height: 1.45rem;
-  border: 1.5px solid rgba(255, 255, 255, 0.55);
+.ent-ray {
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 0.35;
+  stroke-linecap: round;
   opacity: 0;
-  animation: entBracketIn 0.8s 1.15s var(--ent-ease) both;
+  transform-origin: 100px 88px;
+  animation: entRay 1.35s calc(1.4s + var(--ray-i) * 0.035s) var(--ent-ease) both;
 }
 
-.ent-bracket--tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
-.ent-bracket--tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
-.ent-bracket--bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
-.ent-bracket--br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
-
-@keyframes entBracketIn {
-  from { opacity: 0; transform: scale(1.35); }
-  to   { opacity: 1; transform: scale(1); }
+@keyframes entRay {
+  0% {
+    opacity: 0;
+    stroke-dasharray: 80;
+    stroke-dashoffset: 80;
+  }
+  22% {
+    opacity: 0.4;
+  }
+  55% {
+    opacity: 0.28;
+    stroke-dashoffset: 0;
+  }
+  100% {
+    opacity: 0;
+    stroke-dashoffset: -12;
+  }
 }
 
-/* --- Луч --- */
-
-.ent-beam {
-  position: absolute;
-  left: 50%;
-  top: 12%;
-  width: min(56vw, 15.5rem);
-  height: 1px;
-  transform: translateX(-50%);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent);
-  opacity: 0;
-  pointer-events: none;
-  animation: entBeam 1.7s 1.25s var(--ent-ease) both;
-}
-
-@keyframes entBeam {
-  0%   { opacity: 0; transform: translateX(-50%) translateY(0); }
-  10%  { opacity: 0.9; }
-  100% { opacity: 0; transform: translateX(-50%) translateY(min(48vw, 14rem)); }
-}
-
-/* --- Логотип: ОДИН слой, progressive inset (без наложений) --- */
+/* --- Марка: слои Iris --- */
 
 .ent-mark {
   position: relative;
   z-index: 3;
-  width: min(54vw, 15.5rem);
-  aspect-ratio: 1 / 1.15;
-  margin-top: 0.45rem;
+  width: min(52vw, 14.5rem);
+  /* место под герб + HTML wordmark */
+  aspect-ratio: 1 / 1.28;
+  margin-top: 0.35rem;
 }
 
-.ent-logo-reveal {
+.ent-eye-bloom {
   position: absolute;
-  inset: 0;
+  left: 50%;
+  /* bloom над гербом: ~38% от высоты слоя (78% mark) ≈ 30% mark */
+  top: 30%;
+  width: 58%;
+  height: 40%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.28) 0%, transparent 68%);
+  opacity: 0;
+  z-index: 0;
+  animation: entEyeBloom 2.4s 0.7s var(--ent-ease) both;
+}
+
+@keyframes entEyeBloom {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.3); }
+  30%  { opacity: 0.85; transform: translate(-50%, -50%) scale(1); }
+  70%  { opacity: 0.45; transform: translate(-50%, -50%) scale(1.15); }
+  100% { opacity: 0.12; transform: translate(-50%, -50%) scale(1.25); }
+}
+
+.ent-layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 78%;
   display: grid;
   place-items: center;
-  /* стартовое состояние — точка в центре глаза */
+  overflow: hidden;
   opacity: 0;
-  clip-path: inset(38% 40% 48% 40%);
-  will-change: clip-path, opacity, transform;
-  animation: entLogoReveal 2.6s 1.6s var(--ent-ease) forwards;
+  will-change: opacity, transform, clip-path;
 }
 
-.ent-logo-reveal img {
+.ent-layer img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  object-position: center 0%;
   pointer-events: none;
   filter: brightness(0) invert(1);
   -webkit-filter: brightness(0) invert(1);
 }
 
-/*
-  Только inset → inset: браузеры интерполируют гладко.
-  Этапы: зрачок → око → герб → полный знак со словом.
-*/
-@keyframes entLogoReveal {
+/* Слой ока: только зона глаза, круговое раскрытие.
+   Клип герба снизу, чтобы wordmark PNG не мелькал. */
+.ent-layer--eye {
+  z-index: 3;
+  clip-path: circle(0% at var(--ent-eye-x) var(--ent-eye-y));
+  animation: entIrisOpen 1.55s 0.75s var(--ent-ease) forwards;
+}
+
+@keyframes entIrisOpen {
   0% {
     opacity: 0;
-    clip-path: inset(38% 42% 50% 42%);
-    transform: scale(0.94);
-    filter: blur(6px);
+    clip-path: circle(0% at var(--ent-eye-x) var(--ent-eye-y));
+    transform: scale(0.92);
   }
-  8% {
+  10% {
+    opacity: 1;
+  }
+  55% {
+    clip-path: circle(16% at var(--ent-eye-x) var(--ent-eye-y));
+    transform: scale(1);
+  }
+  82% {
+    opacity: 1;
+    clip-path: circle(24% at var(--ent-eye-x) var(--ent-eye-y));
+  }
+  /* растворяемся, когда входит crest */
+  100% {
+    opacity: 0;
+    clip-path: circle(26% at var(--ent-eye-x) var(--ent-eye-y));
+  }
+}
+
+/* Герб без wordmark — fade + rise после ока */
+.ent-layer--crest {
+  z-index: 4;
+  /* верх эмблемы, без нижней текстовой зоны PNG */
+  clip-path: inset(0 4% 36% 4%);
+  animation: entCrestRise 1.35s 2.35s var(--ent-ease) forwards;
+}
+
+@keyframes entCrestRise {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+    filter: blur(5px);
+  }
+  55% {
     opacity: 1;
     filter: blur(0);
   }
-  22% {
-    /* зрачок / центр ока */
-    clip-path: inset(32% 34% 48% 34%);
-    transform: scale(0.97);
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
   }
-  40% {
-    /* всё око */
-    clip-path: inset(24% 22% 42% 22%);
-    transform: scale(0.99);
+}
+
+/* Полный consolidate герба — лёгкий stamp поверх crest */
+.ent-layer--full {
+  z-index: 5;
+  clip-path: inset(0 4% 36% 4%);
+  animation: entFullSeal 0.95s 3.35s var(--ent-ease) forwards;
+}
+
+@keyframes entFullSeal {
+  0% {
+    opacity: 0;
+    transform: scale(1.08);
+    filter: brightness(1.6);
   }
-  58% {
-    /* корона + крылья + око (без wordmark) */
-    clip-path: inset(0% 10% 38% 10%);
-    transform: scale(1);
-  }
-  78% {
-    /* полный логотип */
-    clip-path: inset(0% 2% 0% 2%);
-    transform: scale(1.015);
-  }
-  90% {
-    clip-path: inset(0 0 0 0);
-    transform: scale(1.03);
-    filter: brightness(1.12);
+  45% {
+    opacity: 1;
+    transform: scale(0.985);
+    filter: brightness(1.1);
   }
   100% {
     opacity: 1;
-    clip-path: inset(0 0 0 0);
     transform: scale(1);
     filter: brightness(1);
   }
@@ -320,39 +357,81 @@
 
 .ent-stamp {
   position: absolute;
-  inset: -12%;
+  left: 50%;
+  top: 34%;
+  width: 70%;
+  height: 55%;
+  transform: translate(-50%, -50%);
   border-radius: 50%;
   pointer-events: none;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 64%);
+  z-index: 2;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.26) 0%, transparent 66%);
   opacity: 0;
-  animation: entStampGlow 0.9s 3.9s var(--ent-ease) both;
-  z-index: 1;
+  animation: entStampGlow 0.9s 3.4s var(--ent-ease) both;
 }
 
 @keyframes entStampGlow {
-  0%   { opacity: 0; transform: scale(0.55); }
-  40%  { opacity: 0.85; transform: scale(1.15); }
-  100% { opacity: 0; transform: scale(1.4); }
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  40%  { opacity: 0.8; transform: translate(-50%, -50%) scale(1.1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.35); }
 }
 
-.ent-mark-glow {
+/* HTML wordmark — трекинг сжимается */
+.ent-wordmark {
   position: absolute;
-  inset: -18%;
-  border-radius: 50%;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.12rem;
+  z-index: 6;
   pointer-events: none;
-  z-index: 0;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0%, transparent 68%);
+}
+
+.ent-wm-line {
+  display: block;
+  margin: 0;
+  font-family: Inter, system-ui, sans-serif;
+  font-weight: 620;
+  text-transform: uppercase;
+  color: #fff;
+  line-height: 1;
   opacity: 0;
-  animation: entMarkPulse 2.4s 4.2s ease-in-out both;
+  white-space: nowrap;
 }
 
-@keyframes entMarkPulse {
-  0%   { opacity: 0; transform: scale(0.92); }
-  40%  { opacity: 0.65; transform: scale(1.04); }
-  100% { opacity: 0.22; transform: scale(1); }
+.ent-wm-line--cute {
+  font-size: clamp(0.72rem, 2.6vw, 0.95rem);
+  letter-spacing: 0.55em;
+  animation: entWmIn 0.9s 3.95s var(--ent-ease) forwards;
 }
 
-/* --- Текст --- */
+.ent-wm-line--eps {
+  font-size: clamp(0.72rem, 2.6vw, 0.95rem);
+  letter-spacing: 0.55em;
+  animation: entWmIn 0.9s 4.15s var(--ent-ease) forwards;
+}
+
+@keyframes entWmIn {
+  0% {
+    opacity: 0;
+    letter-spacing: 0.55em;
+    transform: translateY(8px);
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    letter-spacing: 0.18em;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* --- Копирайт --- */
 
 .ent-copy {
   position: relative;
@@ -361,86 +440,86 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 0.35rem;
+  gap: 0.32rem;
   max-width: 26rem;
 }
 
 .ent-kicker {
   margin: 0;
   font-family: Inter, system-ui, sans-serif;
-  font-size: 0.64rem;
+  font-size: 0.62rem;
   font-weight: 640;
   letter-spacing: 0.36em;
   text-transform: uppercase;
   color: var(--ent-mute);
   opacity: 0;
-  animation: entCopyIn 0.7s 4.15s var(--ent-ease) both;
+  animation: entCopyIn 0.7s 4.35s var(--ent-ease) both;
 }
 
 .ent-title {
   margin: 0;
   font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(1.5rem, 4.6vw, 2.1rem);
+  font-size: clamp(1.45rem, 4.5vw, 2.05rem);
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: #fff;
   opacity: 0;
-  animation: entCopyIn 0.75s 4.3s var(--ent-ease) both;
+  animation: entCopyIn 0.75s 4.5s var(--ent-ease) both;
 }
 
 .ent-sub {
-  margin: 0.15rem 0 0;
+  margin: 0.1rem 0 0;
   font-family: Inter, system-ui, sans-serif;
-  font-size: clamp(0.8rem, 2.4vw, 0.94rem);
-  font-weight: 480;
+  font-size: clamp(0.78rem, 2.3vw, 0.92rem);
+  font-weight: 460;
   letter-spacing: 0.03em;
-  color: rgba(255, 255, 255, 0.58);
-  opacity: 0;
-  animation: entCopyIn 0.7s 4.5s var(--ent-ease) both;
-}
-
-.ent-line {
-  margin: 0.35rem 0 0;
-  max-width: 22rem;
-  font-family: Inter, system-ui, sans-serif;
-  font-size: clamp(0.72rem, 2.1vw, 0.82rem);
-  font-weight: 430;
-  letter-spacing: 0.02em;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.38);
+  color: rgba(255, 255, 255, 0.55);
   opacity: 0;
   animation: entCopyIn 0.7s 4.7s var(--ent-ease) both;
 }
 
-.ent-rule {
-  width: 3.2rem;
-  height: 1px;
-  margin-top: 0.4rem;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.42), transparent);
+.ent-line {
+  margin: 0.3rem 0 0;
+  max-width: 22rem;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: clamp(0.7rem, 2vw, 0.8rem);
+  font-weight: 420;
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.36);
   opacity: 0;
-  animation: entCopyIn 0.55s 4.9s var(--ent-ease) both;
+  animation: entCopyIn 0.7s 4.9s var(--ent-ease) both;
+}
+
+.ent-rule {
+  width: 3rem;
+  height: 1px;
+  margin-top: 0.35rem;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  opacity: 0;
+  animation: entCopyIn 0.55s 5.05s var(--ent-ease) both;
 }
 
 .ent-meta {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  margin-top: 0.15rem;
+  gap: 0.5rem;
+  margin-top: 0.1rem;
   font-family: Inter, system-ui, sans-serif;
-  font-size: 0.58rem;
+  font-size: 0.56rem;
   font-weight: 620;
   letter-spacing: 0.22em;
-  color: rgba(255, 255, 255, 0.26);
+  color: rgba(255, 255, 255, 0.24);
   opacity: 0;
-  animation: entCopyIn 0.6s 5.05s var(--ent-ease) both;
+  animation: entCopyIn 0.6s 5.15s var(--ent-ease) both;
 }
 
 .ent-meta-dot {
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 @keyframes entCopyIn {
@@ -460,34 +539,38 @@
   inset: 0;
   z-index: 5;
   pointer-events: none;
-  background: radial-gradient(ellipse 80% 60% at 50% 40%,
-    rgba(255, 255, 255, 0.55) 0%,
-    rgba(255, 255, 255, 0.1) 34%,
+  background: radial-gradient(ellipse 72% 55% at 50% 38%,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.08) 36%,
     transparent 66%);
   opacity: 0;
-  animation: entFlash 0.7s 5.2s ease both;
+  animation: entFlash 0.7s 5.25s ease both;
 }
 
 @keyframes entFlash {
   0%   { opacity: 0; }
-  30%  { opacity: 1; }
+  28%  { opacity: 1; }
   100% { opacity: 0; }
 }
 
 /* Login — чуть сжатый хвост */
-.ent-root--login .ent-flash { animation-delay: 5s; }
-.ent-root--login .ent-logo-reveal { animation-delay: 1.45s; }
-.ent-root--login .ent-stamp { animation-delay: 3.7s; }
-.ent-root--login .ent-mark-glow { animation-delay: 4s; }
-.ent-root--login .ent-kicker { animation-delay: 3.95s; }
-.ent-root--login .ent-title { animation-delay: 4.1s; }
-.ent-root--login .ent-sub { animation-delay: 4.3s; }
-.ent-root--login .ent-line { animation-delay: 4.5s; }
-.ent-root--login .ent-rule { animation-delay: 4.7s; }
-.ent-root--login .ent-meta { animation-delay: 4.85s; }
+.ent-root--login .ent-layer--eye { animation-delay: 0.65s; }
+.ent-root--login .ent-ray { animation-delay: calc(1.25s + var(--ray-i) * 0.035s); }
+.ent-root--login .ent-layer--crest { animation-delay: 2.2s; }
+.ent-root--login .ent-layer--full { animation-delay: 3.15s; }
+.ent-root--login .ent-stamp { animation-delay: 3.2s; }
+.ent-root--login .ent-wm-line--cute { animation-delay: 3.75s; }
+.ent-root--login .ent-wm-line--eps { animation-delay: 3.95s; }
+.ent-root--login .ent-kicker { animation-delay: 4.15s; }
+.ent-root--login .ent-title { animation-delay: 4.3s; }
+.ent-root--login .ent-sub { animation-delay: 4.5s; }
+.ent-root--login .ent-line { animation-delay: 4.7s; }
+.ent-root--login .ent-rule { animation-delay: 4.85s; }
+.ent-root--login .ent-meta { animation-delay: 4.95s; }
+.ent-root--login .ent-flash { animation-delay: 5.05s; }
 
 /* ============================================================
-   МАРКА В ПАНЕЛИ — коротко, без обрезки
+   МАРКА В ПАНЕЛИ
    ============================================================ */
 
 .eps-logo {
@@ -663,20 +746,22 @@
   }
 }
 
-/* --- Производительность --- */
+/* --- Производительность / lite --- */
 
 body.perf-light .ent-grid,
-body.perf-light .ent-beam,
+body.perf-light .ent-rays,
+body.perf-light .ent-ray,
 body.perf-light .ent-stamp,
 body.perf-light .ent-flash,
-body.perf-light .ent-mark-glow,
+body.perf-light .ent-eye-bloom,
 body.perf-light .ent-ring--a,
 body.perf-light .ent-ring--b,
 .ent-root--lite .ent-grid,
-.ent-root--lite .ent-beam,
+.ent-root--lite .ent-rays,
+.ent-root--lite .ent-ray,
 .ent-root--lite .ent-stamp,
 .ent-root--lite .ent-flash,
-.ent-root--lite .ent-mark-glow,
+.ent-root--lite .ent-eye-bloom,
 .ent-root--lite .ent-ring--a,
 .ent-root--lite .ent-ring--b {
   animation: none !important;
@@ -684,38 +769,44 @@ body.perf-light .ent-ring--b,
 }
 
 body.perf-light .ent-ring--c,
-body.perf-light .ent-ring--shield,
-.ent-root--lite .ent-ring--c,
-.ent-root--lite .ent-ring--shield {
+.ent-root--lite .ent-ring--c {
   stroke-dashoffset: 0;
   animation: none;
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
-body.perf-light .ent-logo-reveal,
-.ent-root--lite .ent-logo-reveal {
+body.perf-light .ent-layer--eye,
+body.perf-light .ent-layer--crest,
+.ent-root--lite .ent-layer--eye,
+.ent-root--lite .ent-layer--crest {
+  animation: none !important;
+  opacity: 0 !important;
+}
+
+body.perf-light .ent-layer--full,
+.ent-root--lite .ent-layer--full {
   animation: entLogoLite 0.55s var(--ent-ease) both !important;
-  clip-path: inset(0 0 0 0) !important;
   opacity: 1 !important;
+  clip-path: inset(0 4% 36% 4%) !important;
   filter: none !important;
   transform: none !important;
 }
 
+body.perf-light .ent-wm-line,
 body.perf-light .ent-kicker,
 body.perf-light .ent-title,
 body.perf-light .ent-sub,
 body.perf-light .ent-line,
 body.perf-light .ent-meta,
 body.perf-light .ent-rule,
-body.perf-light .ent-brackets .ent-bracket,
 body.perf-light .ent-vignette,
+.ent-root--lite .ent-wm-line,
 .ent-root--lite .ent-kicker,
 .ent-root--lite .ent-title,
 .ent-root--lite .ent-sub,
 .ent-root--lite .ent-line,
 .ent-root--lite .ent-meta,
 .ent-root--lite .ent-rule,
-.ent-root--lite .ent-brackets .ent-bracket,
 .ent-root--lite .ent-vignette {
   animation-duration: 0.4s !important;
   animation-delay: 0.15s !important;
@@ -733,31 +824,37 @@ body.perf-light .panel-brand-halo {
 
 @media (prefers-reduced-motion: reduce) {
   .ent-grid,
-  .ent-beam,
+  .ent-ray,
+  .ent-rays,
   .ent-stamp,
   .ent-flash,
-  .ent-mark-glow,
+  .ent-eye-bloom,
   .ent-ring--a,
   .ent-ring--b {
     animation: none !important;
     opacity: 0 !important;
   }
 
-  .ent-ring--c,
-  .ent-ring--shield {
+  .ent-ring--c {
     stroke-dashoffset: 0;
     animation: none;
     opacity: 0.4;
   }
 
-  .ent-logo-reveal,
+  .ent-layer--eye,
+  .ent-layer--crest {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .ent-layer--full,
+  .ent-wm-line,
   .ent-kicker,
   .ent-title,
   .ent-sub,
   .ent-line,
   .ent-meta,
   .ent-rule,
-  .ent-bracket,
   .ent-void,
   .ent-vignette {
     animation: entFade 0.35s ease both !important;
@@ -765,6 +862,11 @@ body.perf-light .panel-brand-halo {
     opacity: 1 !important;
     transform: none !important;
     filter: none !important;
+    clip-path: inset(0 4% 36% 4%) !important;
+    letter-spacing: 0.18em !important;
+  }
+
+  .ent-wm-line {
     clip-path: none !important;
   }
 
@@ -786,13 +888,12 @@ body.perf-light .panel-brand-halo {
 
 @media (max-width: 480px) {
   .ent-mark {
-    width: min(60vw, 13.5rem);
+    width: min(58vw, 13rem);
   }
 
-  .ent-rings,
-  .ent-brackets {
-    width: min(84vw, 18.5rem);
-    height: min(84vw, 18.5rem);
+  .ent-rings {
+    width: min(82vw, 18rem);
+    height: min(82vw, 18rem);
   }
 
   .ent-meta {
@@ -831,11 +932,11 @@ body.perf-light .panel-brand-halo {
 
 @media (max-height: 640px) {
   .ent-stage {
-    gap: 0.65rem;
+    gap: 0.55rem;
   }
 
   .ent-mark {
-    width: min(38vh, 11.5rem);
+    width: min(36vh, 11rem);
   }
 
   .ent-meta,
