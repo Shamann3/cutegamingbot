@@ -191,10 +191,13 @@ function ReviewModal({ application, onClose, onApproved, onRejected }) {
               <AdminSelect value={role} onChange={setRole} options={ASSIGN_ROLE_OPTIONS} />
             </label>
             <div className="admin-modal-actions">
-              <button className="panel-users-btn panel-users-btn-danger" disabled={loading} onClick={() => setShowReject(true)}>
+              <button type="button" className="panel-users-btn" data-modal-cancel disabled={loading} onClick={onClose}>
+                Закрыть
+              </button>
+              <button type="button" className="panel-users-btn panel-users-btn-danger" disabled={loading} onClick={() => setShowReject(true)}>
                 Отклонить
               </button>
-              <button className="panel-users-btn panel-users-btn-primary" disabled={loading} onClick={handleApprove}>
+              <button type="button" className="panel-users-btn panel-users-btn-primary" data-modal-confirm disabled={loading} onClick={handleApprove}>
                 {loading ? '…' : 'Принять'}
               </button>
             </div>
@@ -213,10 +216,10 @@ function ReviewModal({ application, onClose, onApproved, onRejected }) {
               />
             </label>
             <div className="admin-modal-actions">
-              <button className="panel-users-btn" disabled={loading} onClick={() => setShowReject(false)}>
+              <button type="button" className="panel-users-btn" data-modal-cancel disabled={loading} onClick={() => setShowReject(false)}>
                 Назад
               </button>
-              <button className="panel-users-btn panel-users-btn-danger" disabled={loading} onClick={handleReject}>
+              <button type="button" className="panel-users-btn panel-users-btn-danger" data-modal-confirm disabled={loading} onClick={handleReject}>
                 {loading ? '…' : 'Подтвердить отклонение'}
               </button>
             </div>
@@ -504,7 +507,7 @@ function MemberActionsModal({ member, onClose, onSaved, canManageStaff = false }
         </div>
 
         <div className="admin-modal-actions">
-          <button className="panel-users-btn" onClick={onClose}>Закрыть</button>
+          <button type="button" className="panel-users-btn" data-modal-cancel data-modal-confirm onClick={onClose}>Закрыть</button>
         </div>
       </div>
     </div>
@@ -585,7 +588,7 @@ function MemberManageModal({ member, members, canAssignRoles, onClose, onSaved }
         )}
 
         <div className="admin-modal-actions">
-          <button className="panel-users-btn" disabled={busy} onClick={onClose}>Закрыть</button>
+          <button type="button" className="panel-users-btn" data-modal-cancel data-modal-confirm disabled={busy} onClick={onClose}>Закрыть</button>
         </div>
       </div>
     </div>
@@ -1575,7 +1578,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null }
         </p>
       </header>
 
-      <nav className="sec-tabs">
+      <nav className="sec-tabs" aria-label="Разделы стаффа">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -1588,20 +1591,22 @@ export default function StaffSection({ role, permissions = [], myUserId = null }
         ))}
       </nav>
 
-      {activeTab === 'applications' && <ApplicationsTab />}
-      {activeTab === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} />}
-      {activeTab === 'invites' && <InvitesTab />}
-      {activeTab === 'salaries' && <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
-      {activeTab === 'bonuses' && <PayrollBonusesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
-      {activeTab === 'ledger' && <LedgerTab />}
-      {activeTab === 'payoutsettings' && <PayrollSettingsTab />}
-      {activeTab === 'leaderboard' && <LeaderboardTab />}
-      {activeTab === 'shifts' && <ShiftsTab />}
-      {activeTab === 'complaints' && <ComplaintsTab />}
-      {activeTab === 'questions' && <QuestionsTab isOwner={isOwner} />}
-      {activeTab === 'mysalary' && <PayrollMySalaryTab />}
-      {activeTab === 'mycomplaints' && <MyComplaintsTab />}
-      {!activeTab && <p className="sec-empty">Нет доступных разделов</p>}
+      <div className="sec-tab-body">
+        {activeTab === 'applications' && <ApplicationsTab />}
+        {activeTab === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} />}
+        {activeTab === 'invites' && <InvitesTab />}
+        {activeTab === 'salaries' && <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
+        {activeTab === 'bonuses' && <PayrollBonusesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
+        {activeTab === 'ledger' && <LedgerTab />}
+        {activeTab === 'payoutsettings' && <PayrollSettingsTab />}
+        {activeTab === 'leaderboard' && <LeaderboardTab />}
+        {activeTab === 'shifts' && <ShiftsTab />}
+        {activeTab === 'complaints' && <ComplaintsTab />}
+        {activeTab === 'questions' && <QuestionsTab isOwner={isOwner} />}
+        {activeTab === 'mysalary' && <PayrollMySalaryTab />}
+        {activeTab === 'mycomplaints' && <MyComplaintsTab />}
+        {!activeTab && <p className="sec-empty">Нет доступных разделов</p>}
+      </div>
     </section>
   )
 }

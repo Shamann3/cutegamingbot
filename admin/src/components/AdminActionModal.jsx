@@ -1,3 +1,5 @@
+import { useEffect, useId, useRef } from 'react'
+
 export default function AdminActionModal({
   open,
   title,
@@ -14,9 +16,30 @@ export default function AdminActionModal({
   onConfirm,
   onCancel,
 }) {
-  if (!open) return null
-
+  const titleId = useId()
+  const dialogRef = useRef(null)
+  const confirmRef = useRef(null)
   const reasonOk = !reasonRequired || String(reason || '').trim().length > 0
+
+  useEffect(() => {
+    if (!open) return undefined
+    const prev = document.activeElement
+    const t = window.setTimeout(() => {
+      if (showReason) {
+        dialogRef.current?.querySelector('textarea')?.focus()
+      } else {
+        confirmRef.current?.focus()
+      }
+    }, 0)
+    return () => {
+      window.clearTimeout(t)
+      if (prev && typeof prev.focus === 'function') {
+        try { prev.focus() } catch { /* ignore */ }
+      }
+    }
+  }, [open, showReason])
+
+  if (!open) return null
 
   return (
     <div
@@ -27,13 +50,14 @@ export default function AdminActionModal({
       }}
     >
       <div
+        ref={dialogRef}
         className="admin-modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="admin-modal-title"
+        aria-labelledby={titleId}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 id="admin-modal-title" className="admin-modal-title">
+        <h3 id={titleId} className="admin-modal-title">
           {title}
         </h3>
         {description && <p className="admin-modal-desc">{description}</p>}
@@ -54,14 +78,17 @@ export default function AdminActionModal({
           <button
             type="button"
             className="panel-users-btn"
+            data-modal-cancel
             disabled={loading}
             onClick={() => onCancel?.()}
           >
             {cancelText}
           </button>
           <button
+            ref={confirmRef}
             type="button"
             className={`panel-users-btn${danger ? ' panel-users-btn-danger' : ' panel-users-btn-primary'}`}
+            data-modal-confirm
             disabled={loading || !reasonOk}
             onClick={() => onConfirm?.()}
           >

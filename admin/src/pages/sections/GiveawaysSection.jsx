@@ -441,10 +441,10 @@ export default function GiveawaysSection() {
             </label>
 
             <div className="admin-modal-actions">
-              <button type="button" className="panel-users-btn" onClick={() => setForm(null)} disabled={saving}>
+              <button type="button" className="panel-users-btn" data-modal-cancel onClick={() => setForm(null)} disabled={saving}>
                 Отмена
               </button>
-              <button type="button" className="panel-users-btn panel-users-btn-primary" onClick={save} disabled={saving}>
+              <button type="button" className="panel-users-btn panel-users-btn-primary" data-modal-confirm onClick={save} disabled={saving}>
                 {saving ? '…' : 'Сохранить'}
               </button>
             </div>

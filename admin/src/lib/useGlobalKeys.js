@@ -1,55 +1,122 @@
 import { useEffect } from 'react'
 
 /**
- * Глобальные горячие клавиши для всей админки.
- * ESC закрывает модалки, дропдауны, мобильный сайдбар.
- * Enter подтверждает сфокусированную кнопку.
+ * Глобальные горячие клавиши админки.
+ *
+ * Esc:
+ *  1) закрыть открытый AdminSelect
+ *  2) закрыть верхнюю модалку (кнопка отмены / backdrop)
+ *  3) закрыть lightbox
+ *  4) кастомный onEscape (мобильное меню и т.п.)
+ *
+ * Enter:
+ *  — в модалке: подтвердить (primary/danger), в textarea — Ctrl/⌘+Enter
+ *  — вне модалки: активировать сфокусированную кнопку
  */
+
+function isTextEntry(el) {
+  if (!el || el === document.body) return false
+  if (el.isContentEditable) return true
+  const tag = el.tagName
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true
+  if (tag !== 'INPUT') return false
+  const type = String(el.type || 'text').toLowerCase()
+  return !['button', 'submit', 'checkbox', 'radio', 'file', 'reset', 'image', 'hidden'].includes(type)
+}
+
+function topBackdrop() {
+  const nodes = document.querySelectorAll('.admin-modal-backdrop')
+  return nodes.length ? nodes[nodes.length - 1] : null
+}
+
+function findCancelButton(root) {
+  return (
+    root.querySelector('[data-modal-cancel]:not(:disabled)') ||
+    root.querySelector('.admin-modal-actions [data-modal-cancel]:not(:disabled)') ||
+    null
+  )
+}
+
+function findConfirmButton(root) {
+  const actions = root.querySelector('.admin-modal-actions')
+  if (!actions) return null
+  return (
+    actions.querySelector('[data-modal-confirm]:not(:disabled)') ||
+    actions.querySelector('.panel-users-btn-primary:not(:disabled)') ||
+    actions.querySelector('.panel-users-btn-danger:not(:disabled)') ||
+    [...actions.querySelectorAll('button:not(:disabled)')].at(-1) ||
+    null
+  )
+}
+
 export function useGlobalKeys({ onEscape, onEnter } = {}) {
   useEffect(() => {
     const handler = (e) => {
-      // Не перехватываем если фокус в textarea/input (пусть пишут)
-      const tag = document.activeElement?.tagName
-      const isTyping = tag === 'TEXTAREA' || (tag === 'INPUT' && e.key !== 'Escape')
+      if (e.isComposing) return
 
       if (e.key === 'Escape') {
-        e.preventDefault()
-
-        // 1. Закрыть открытый AdminSelect дропдаун
         const openSelect = document.querySelector('.panel-select-open')
         if (openSelect) {
+          e.preventDefault()
           openSelect.querySelector('.panel-select-trigger')?.click()
           return
         }
 
-        // 2. Закрыть верхний backdrop (модалка)
-        const backdrops = document.querySelectorAll('.admin-modal-backdrop')
-        if (backdrops.length > 0) {
-          backdrops[backdrops.length - 1].click()
+        const lightbox = document.querySelector('.img-lightbox')
+        if (lightbox) {
+          e.preventDefault()
+          lightbox.querySelector('.img-lightbox-close')?.click()
           return
         }
 
-        // 3. Закрыть rules-gate
-        const rulesGate = document.querySelector('.rules-gate-backdrop')
-        if (rulesGate) {
-          rulesGate.click()
+        const backdrop = topBackdrop()
+        if (backdrop) {
+          e.preventDefault()
+          const cancel = findCancelButton(backdrop)
+          if (cancel) {
+            cancel.click()
+            return
+          }
+          // Клик по backdrop — стандартный onCancel у модалок
+          backdrop.click()
           return
         }
 
-        // 4. Кастомный колбэк (напр. закрыть мобильный сайдбар)
         onEscape?.()
         return
       }
 
-      if (e.key === 'Enter' && !isTyping) {
-        // Enter на сфокусированной кнопке нажимаем её
-        const focused = document.activeElement
-        if (focused?.tagName === 'BUTTON' && !focused.disabled) {
-          focused.click()
+      if (e.key !== 'Enter' || e.shiftKey || e.altKey) return
+
+      const backdrop = topBackdrop()
+      if (backdrop) {
+        const active = document.activeElement
+        const typing = isTextEntry(active) && backdrop.contains(active)
+
+        if (typing) {
+          // В многострочном поле — только Ctrl/⌘+Enter
+          if (active.tagName === 'TEXTAREA' && !(e.ctrlKey || e.metaKey)) return
+        } else if (active?.tagName === 'BUTTON' && backdrop.contains(active) && !active.disabled) {
+          e.preventDefault()
+          active.click()
           return
         }
-        onEnter?.()
+
+        const confirm = findConfirmButton(backdrop)
+        if (confirm) {
+          e.preventDefault()
+          confirm.click()
+        }
+        return
       }
+
+      const focused = document.activeElement
+      if (focused?.tagName === 'BUTTON' && !focused.disabled && !isTextEntry(focused)) {
+        // Нативная активация кнопки по Enter уже есть; не дублируем.
+        return
+      }
+
+      onEnter?.()
     }
 
     window.addEventListener('keydown', handler)

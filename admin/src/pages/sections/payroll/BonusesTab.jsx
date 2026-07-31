@@ -153,8 +153,8 @@ export default function PayrollBonusesTab({ isOwner, canPay = false }) {
             <h3 className="admin-modal-title">Выплата премии — {nameOf(payFor)}</h3>
             <p className="admin-modal-desc">{payFor.amount} · {payFor.payoutType}</p>
             <div className="admin-modal-actions">
-              <button type="button" className="panel-users-btn" onClick={() => setPayFor(null)}>Отмена</button>
-              <button type="button" className="panel-users-btn panel-users-btn-primary" disabled={!!busy}
+              <button type="button" className="panel-users-btn" data-modal-cancel onClick={() => setPayFor(null)}>Отмена</button>
+              <button type="button" className="panel-users-btn panel-users-btn-primary" data-modal-confirm disabled={!!busy}
                 onClick={async () => {
                   setBusy(`pay-${payFor.bonusId}`)
                   try {

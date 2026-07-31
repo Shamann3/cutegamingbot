@@ -281,12 +281,13 @@ export default function PayrollMySalaryTab() {
               disabled={busy}
             />
             <div className="admin-modal-actions">
-              <button type="button" className="panel-users-btn" disabled={busy} onClick={() => setAppealFor(null)}>
+              <button type="button" className="panel-users-btn" data-modal-cancel disabled={busy} onClick={() => setAppealFor(null)}>
                 Отмена
               </button>
               <button
                 type="button"
                 className="panel-users-btn panel-users-btn-primary"
+                data-modal-confirm
                 disabled={busy || !reason.trim()}
                 onClick={async () => {
                   setBusy(true)

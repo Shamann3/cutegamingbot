@@ -373,12 +373,13 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
         )}
 
         <div className="admin-modal-actions">
-          <button type="button" className="panel-users-btn" disabled={busy} onClick={onClose}>
+          <button type="button" className="panel-users-btn" data-modal-cancel disabled={busy} onClick={onClose}>
             Отмена
           </button>
           <button
             type="button"
             className="panel-users-btn panel-users-btn-primary"
+            data-modal-confirm
             disabled={!canSubmit}
             onClick={submit}
           >

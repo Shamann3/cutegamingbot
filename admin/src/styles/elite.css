@@ -91,29 +91,54 @@ body,
   letter-spacing: -0.011em;
 }
 
-/* Скроллбары — тонкие и почти невидимые, проявляются при наведении */
+/* Скроллбары — заметные там, где есть overflow (Стафф, чаты, модалки…).
+   Не «невидимые»: пользователь должен сразу видеть, что можно листать. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.38) rgba(255, 255, 255, 0.06);
 }
 
 *::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
+  width: 10px;
+  height: 10px;
 }
 
 *::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb {
-  border-radius: var(--e-r-pill);
-  background: rgba(255, 255, 255, 0.1);
-  transition: background var(--e-fast) var(--e-ease);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.32);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.5);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Зоны, где скролл — часть UX: оставляем место под ползунок */
+.sec-tab-body,
+.support-ticket-list,
+.support-messages,
+.panel-sidebar-nav,
+.admin-modal,
+.panel-layout > .panel-content,
+.panel-layout > .panel-economy,
+.panel-layout > .panel-settings,
+.panel-layout > .panel-logs,
+.panel-layout > .analytics-section,
+.panel-layout > .chs-root,
+.panel-layout > .arc-shell {
+  scrollbar-gutter: stable;
 }
 
 /* Единое кольцо фокуса для доступности с клавиатуры.
@@ -1351,6 +1376,14 @@ body,
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 0.15rem;
+}
+
+/* Вложенные списки внутри вкладки — свой скролл только если явно задан;
+   иначе листается весь .sec-tab-body (Стафф, Безопасность). */
+.panel-security .sec-tab-body > * {
+  min-width: 0;
 }
 
 /* ============================================================
@@ -1453,11 +1486,15 @@ body,
 .panel-security {
   display: flex !important;
   flex-direction: column;
-  gap: 1rem;
-  padding: 0.35rem 0.15rem 1.5rem !important;
+  gap: 0.65rem;
+  padding: 0.15rem 0.05rem 0.35rem !important;
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
+  min-height: 0 !important;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden !important;
 }
 
 .panel-security .sec-header {
@@ -1484,6 +1521,11 @@ body,
   flex: 1 1 auto;
   min-height: 0;
   padding-top: 0.15rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
 }
 
 /* Жёлтая «предупреждающая» плашка подсказок — в монохром */
@@ -2266,7 +2308,7 @@ body,
 }
 
 /* ============================================================
-   15. АДАПТИВ
+   15. АДАПТИВ — планшет / телефон
    ============================================================ */
 
 @media (max-width: 1100px) {
@@ -2275,6 +2317,194 @@ body,
   }
   .elite-search:focus-within {
     width: 13rem;
+  }
+
+  /* Планшет: уже сайдбар, больше рабочей зоны */
+  .panel-layout-page,
+  .panel-layout-support,
+  .panel-layout-staff,
+  .panel-layout-security,
+  .panel-layout-users,
+  .panel-layout-accounts,
+  .panel-layout-economy,
+  .panel-layout-market,
+  .panel-layout-farm,
+  .panel-layout-content,
+  .panel-layout-broadcast,
+  .panel-layout-logs,
+  .panel-layout-analytics,
+  .panel-layout-settings,
+  .panel-layout-events,
+  .panel-layout-chronicle {
+    grid-template-columns: minmax(11rem, 12.5rem) minmax(0, 1fr) !important;
+  }
+
+  .support-layout {
+    grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr) !important;
+  }
+
+  .admin-modal {
+    width: min(calc(100vw - 1.5rem), 28rem) !important;
+    max-height: min(90dvh, 40rem);
+  }
+
+  .staff-review-modal,
+  .payroll-pay-modal {
+    width: min(calc(100vw - 1.5rem), 36rem) !important;
+  }
+}
+
+@media (max-width: 900px) {
+  /* Планшеты: тот же паттерн, что телефон — нижняя навигация +
+     сайдбар-sheet. Иначе узкая колонка сайдбара съедает экран. */
+  .panel-mobile-bottombar {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 300;
+    min-height: 56px;
+    padding: 0 10px;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: rgba(5, 5, 8, 0.98);
+    border-top: 1px solid var(--e-line);
+    gap: 0.15rem;
+  }
+
+  .panel-shell {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    max-height: none !important;
+  }
+
+  .panel-shell-main {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding-bottom: calc(68px + max(8px, env(safe-area-inset-bottom, 0px))) !important;
+  }
+
+  .panel-layout,
+  .panel-layout-dashboard,
+  .panel-layout-page,
+  .panel-layout-support,
+  .panel-layout-staff,
+  .panel-layout-security,
+  .panel-layout-users,
+  .panel-layout-accounts,
+  .panel-layout-economy,
+  .panel-layout-market,
+  .panel-layout-farm,
+  .panel-layout-content,
+  .panel-layout-broadcast,
+  .panel-layout-logs,
+  .panel-layout-analytics,
+  .panel-layout-settings,
+  .panel-layout-events,
+  .panel-layout-chronicle {
+    grid-template-columns: 1fr !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .panel-layout > .panel-shelf-page,
+  .panel-layout > .panel-security,
+  .panel-layout > .panel-users,
+  .panel-layout > .panel-accounts,
+  .panel-layout > .panel-economy,
+  .panel-layout > .panel-market,
+  .panel-layout > .panel-farm,
+  .panel-layout > .panel-content,
+  .panel-layout > .panel-broadcast,
+  .panel-layout > .panel-broadcast-wrap,
+  .panel-layout > .panel-logs,
+  .panel-layout > .panel-settings,
+  .panel-layout > .panel-events,
+  .panel-layout > .analytics-section,
+  .panel-layout > .support-section,
+  .panel-layout > .chs-root,
+  .panel-layout > .arc-shell {
+    grid-column: 1 !important;
+    grid-row: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .panel-shelf-sidebar {
+    position: fixed !important;
+    inset: auto 0 0 0 !important;
+    top: auto !important;
+    width: 100% !important;
+    max-height: 88dvh !important;
+    z-index: 310 !important;
+    grid-column: unset !important;
+    grid-row: unset !important;
+    height: auto !important;
+    transform: translateY(100%);
+    visibility: hidden;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 18px 18px 0 0 !important;
+    border-top: 1px solid var(--e-line) !important;
+    background: var(--e-surface-0) !important;
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 16px)) !important;
+  }
+
+  .panel-sidebar-mobile-open {
+    transform: translateY(0) !important;
+    visibility: visible !important;
+  }
+
+  .panel-mobile-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 290;
+    background: rgba(0, 0, 0, 0.65);
+  }
+
+  .panel-security .sec-tab-body {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .support-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .sec-tabs {
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .sec-tab {
+    min-height: 2.45rem;
+    padding: 0.5rem 0.8rem;
+  }
+
+  .panel-users-btn,
+  .sec-btn,
+  .panel-mobile-tab {
+    min-height: 2.55rem;
+  }
+
+  .admin-modal-backdrop {
+    padding: 0.65rem;
+    align-items: flex-end;
+  }
+
+  .admin-modal {
+    width: 100% !important;
+    max-width: none !important;
+    max-height: min(92dvh, 44rem);
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+    border-radius: 18px 18px 12px 12px;
   }
 }
 
