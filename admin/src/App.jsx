@@ -5,6 +5,7 @@ import { initAdminTelegram } from './lib/telegram'
 import AuthPage from './pages/AuthPage'
 import PanelShell from './pages/PanelShell'
 import SplashPage from './pages/SplashPage'
+import EntranceSeal from './components/EntranceSeal'
 
 export default function App() {
   const [screen, setScreen] = useState('splash')
@@ -31,6 +32,11 @@ export default function App() {
   }, [])
 
   const finishAuth = useCallback(() => {
+    // После успешного логина — короткая печать власти/защиты, затем панель.
+    setScreen('entrance')
+  }, [])
+
+  const finishEntrance = useCallback(() => {
     setScreen('panel')
   }, [])
 
@@ -45,6 +51,16 @@ export default function App() {
 
   if (screen === 'auth') {
     return <AuthPage displayName={displayName} onAuthenticated={finishAuth} />
+  }
+
+  if (screen === 'entrance') {
+    return (
+      <EntranceSeal
+        displayName={displayName}
+        variant="login"
+        onFinished={finishEntrance}
+      />
+    )
   }
 
   return <PanelShell onLogout={handleLogout} />

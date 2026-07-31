@@ -3,6 +3,7 @@ import { getAdminInitials, getAdminProfile } from '../lib/adminProfile'
 import { groupSections } from '../constants/panelNav'
 import { NAV_ICONS } from './NavIcons'
 import SessionTimer from './SessionTimer'
+import EpsilonLogo from './EpsilonLogo'
 
 function SpeakerIcon({ muted }) {
   return (
@@ -143,6 +144,16 @@ export default function PanelSidebar({
         >
           ✕
         </button>
+      </div>
+
+      <div className="panel-brand" aria-label="Cute Epsilon">
+        <div className="panel-brand-mark">
+          <EpsilonLogo size="sm" decorative />
+        </div>
+        <div className="panel-brand-meta">
+          <p className="panel-brand-name">Cute Epsilon</p>
+          <p className="panel-brand-tag">Protected panel</p>
+        </div>
       </div>
 
       <nav className="panel-sidebar-nav" aria-label="Навигация панели">

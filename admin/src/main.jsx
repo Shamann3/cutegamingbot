@@ -5,6 +5,7 @@ import AdminErrorBoundary from './components/AdminErrorBoundary'
 import './index.css'
 // Финальный слой каскада — перебивает исторические !important из index.css.
 import './styles/elite.css'
+import './styles/entrance.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

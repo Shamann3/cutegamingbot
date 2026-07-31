@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getAdminProfile } from '../lib/adminProfile'
 import { NAV_ICONS } from './NavIcons'
+import EpsilonLogo from './EpsilonLogo'
 
 function SearchIcon() {
   return (
@@ -117,6 +118,9 @@ export default function EliteTopbar({
 
   return (
     <div className={`elite-topbar${compact ? ' elite-topbar-compact' : ''}`}>
+      <div className="elite-brand-slot" aria-hidden="true" title="Cute Epsilon">
+        <EpsilonLogo size="sm" decorative />
+      </div>
       <div className="elite-greeting">
         {compact ? (
           <h1 className="elite-greeting-title elite-greeting-title-compact">

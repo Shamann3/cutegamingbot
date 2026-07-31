@@ -16,7 +16,7 @@ import PanelBackdrop from '../components/PanelBackdrop'
 import GoldBackdrop from '../components/GoldBackdrop'
 import RegisterForm from '../components/RegisterForm'
 import ApplicationForm from '../components/ApplicationForm'
-import vivoEpsilonLogo from '../../../assets/VivoEpsilon.png'
+import EpsilonLogo from '../components/EpsilonLogo'
 
 function slideClassForMode(nextMode) {
   return nextMode === 'register' ? 'auth-form-from-right' : 'auth-form-from-left'
@@ -99,7 +99,8 @@ export default function AuthPage({ displayName, onAuthenticated }) {
 
         setInfo('')
         setSuccess('Подключение успешно')
-        window.setTimeout(() => onAuthenticated(), 900)
+        // Короткая пауза на success-toast, затем печать входа (EntranceSeal).
+        window.setTimeout(() => onAuthenticated(), 320)
       } catch (err) {
         setSuccess('')
         const status = err?.status ? ` [код ${err.status}]` : ''
@@ -264,7 +265,7 @@ export default function AuthPage({ displayName, onAuthenticated }) {
       <div className="auth-card">
         <header className="auth-header">
           <div className="auth-logo-wrap">
-            <img className="auth-logo" src={vivoEpsilonLogo} alt="Vivo Epsilon" draggable="false" />
+            <EpsilonLogo className="auth-logo" size="lg" alt="Cute Epsilon" />
           </div>
           <h1 className="auth-title">Panel</h1>
           <p className="auth-subtitle">Защищённый доступ</p>
