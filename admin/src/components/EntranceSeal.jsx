@@ -2,21 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { hasTelegramInitData, isAdminSessionValid } from '../lib/adminClient'
 import { vivoEpsilonLogo } from './EpsilonLogo'
 
-/** Полный цикл печати: ~4.5s hold + ~0.5s выход ≈ 5s */
-export const ENTRANCE_HOLD_MS = 4500
+/** ~5.5s удержание + ~0.5s выход ≈ 6 секунд */
+export const ENTRANCE_HOLD_MS = 5500
 export const ENTRANCE_EXIT_MS = 500
-/** После логина — тот же масштаб, чуть плотнее */
-export const ENTRANCE_LOGIN_HOLD_MS = 4300
-/** Лёгкий режим (слабые устройства / reduce-motion) */
-export const ENTRANCE_LITE_HOLD_MS = 1200
-
-const PIECES = [
-  { id: 'eye', label: 'Око' },
-  { id: 'wing-l', label: 'Крыло' },
-  { id: 'wing-r', label: 'Крыло' },
-  { id: 'crown', label: 'Корона' },
-  { id: 'wordmark', label: 'Марка' },
-]
+export const ENTRANCE_LOGIN_HOLD_MS = 5300
+export const ENTRANCE_LITE_HOLD_MS = 1400
 
 function detectLiteEntrance() {
   if (typeof window === 'undefined') return false
@@ -29,16 +19,15 @@ function detectLiteEntrance() {
 }
 
 /**
- * Кинематографичная ч/б печать входа (~5с):
- * тишина → кольца/щит → сборка эмблемы → штамп → удержание → выход.
- * Только transform/opacity/stroke-dashoffset.
+ * Печать входа (~6с): один слой логотипа с progressive reveal
+ * (без наложения кусков) → штамп → серьёзный копирайт → выход.
  */
 export default function EntranceSeal({
   displayName = '',
-  variant = 'boot', // 'boot' | 'login'
+  variant = 'boot',
   onFinished,
 }) {
-  const [phase, setPhase] = useState('in') // in | out
+  const [phase, setPhase] = useState('in')
   const [lite] = useState(detectLiteEntrance)
   const doneRef = useRef(false)
   const holdMs = lite
@@ -75,10 +64,14 @@ export default function EntranceSeal({
   const authed =
     variant === 'login' || isAdminSessionValid() || hasTelegramInitData()
 
-  const title = authed ? 'Власть закреплена' : 'Контур закрыт'
+  const title = authed ? 'Власть системы' : 'Серьёзный контур'
   const greeting = authed
-    ? (displayName ? `${displayName} · доступ открыт` : 'Доступ открыт')
-    : (displayName ? `${displayName} · вход в контур` : 'Вход в контур')
+    ? (displayName
+      ? `${displayName} · полный контроль`
+      : 'Полный контроль открыт')
+    : (displayName
+      ? `${displayName} · вход в систему`
+      : 'Вход в закрытую систему')
 
   return (
     <div
@@ -90,7 +83,6 @@ export default function EntranceSeal({
       <div className="ent-void" aria-hidden="true" />
       <div className="ent-vignette" aria-hidden="true" />
       <div className="ent-grid" aria-hidden="true" />
-      <div className="ent-noise" aria-hidden="true" />
 
       <div className="ent-stage">
         <svg className="ent-rings" viewBox="0 0 200 200" aria-hidden="true">
@@ -111,16 +103,11 @@ export default function EntranceSeal({
           <span className="ent-bracket ent-bracket--br" />
         </div>
 
-        <div className="ent-beam ent-beam--a" aria-hidden="true" />
-        <div className="ent-beam ent-beam--b" aria-hidden="true" />
+        <div className="ent-beam" aria-hidden="true" />
 
+        {/* Один слой — progressive inset reveal, без наложений кусков */}
         <div className="ent-mark" aria-hidden="true">
-          {PIECES.map((piece) => (
-            <div key={piece.id} className={`ent-piece ent-piece--${piece.id}`}>
-              <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
-            </div>
-          ))}
-          <div className="ent-piece ent-piece--full">
+          <div className="ent-logo-reveal">
             <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
           </div>
           <div className="ent-stamp" />
@@ -131,13 +118,16 @@ export default function EntranceSeal({
           <p className="ent-kicker">Cute Epsilon</p>
           <p className="ent-title">{title}</p>
           <p className="ent-sub">{greeting}</p>
+          <p className="ent-line">
+            Закрытый контур управления. Без права на ошибку.
+          </p>
           <div className="ent-rule" aria-hidden="true" />
           <div className="ent-meta" aria-hidden="true">
-            <span>AUTHORITY</span>
+            <span>POWER</span>
             <span className="ent-meta-dot" />
-            <span>PROTECTION</span>
+            <span>SYSTEM</span>
             <span className="ent-meta-dot" />
-            <span>COMMAND</span>
+            <span>CONTROL</span>
           </div>
         </div>
       </div>

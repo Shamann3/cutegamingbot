@@ -146,7 +146,7 @@ export default function PanelSidebar({
         </button>
       </div>
 
-      <div className="panel-brand" aria-label="Epsilon Command">
+      <div className="panel-brand" aria-label="Epsilon">
         <div className="panel-brand-crest" aria-hidden="true">
           <span className="panel-brand-halo" />
           <span className="panel-brand-ring" />
@@ -155,9 +155,8 @@ export default function PanelSidebar({
           </div>
         </div>
         <div className="panel-brand-meta">
-          <p className="panel-brand-eyebrow">Command</p>
-          <p className="panel-brand-name">Epsilon</p>
-          <p className="panel-brand-tag">Власть · Защита</p>
+          <p className="panel-brand-name">Власть</p>
+          <p className="panel-brand-tag">часть целого</p>
         </div>
       </div>
 
