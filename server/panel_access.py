@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+import time
+
 from admin_permissions import (
     ALL_PERMISSIONS,
     PERMISSIONS_BY_ROLE,
@@ -73,6 +75,14 @@ CONFIGURABLE_SECTION_IDS = [s["id"] for s in PANEL_SECTION_DEFS if not s.get("ow
 CONFIGURABLE_ROLES = (ROLE_SENIOR, ROLE_JUNIOR, ROLE_MODERATOR)
 
 _TABLES_READY = False
+# Короткий in-memory кэш дефолтов ролей — снимает лишние SELECT при кликах.
+_ROLE_DEFAULTS_CACHE: tuple[float, dict[str, dict[str, bool]]] | None = None
+_ROLE_DEFAULTS_TTL_SEC = 8.0
+
+
+def invalidate_role_defaults_cache() -> None:
+    global _ROLE_DEFAULTS_CACHE
+    _ROLE_DEFAULTS_CACHE = None
 
 
 async def ensure_panel_access_tables() -> None:
@@ -141,7 +151,16 @@ async def _seed_role_defaults_if_empty() -> None:
         )
 
 
-async def get_role_defaults_map() -> dict[str, dict[str, bool]]:
+async def get_role_defaults_map(*, force: bool = False) -> dict[str, dict[str, bool]]:
+    global _ROLE_DEFAULTS_CACHE
+    now = time.monotonic()
+    if (
+        not force
+        and _ROLE_DEFAULTS_CACHE is not None
+        and (now - _ROLE_DEFAULTS_CACHE[0]) < _ROLE_DEFAULTS_TTL_SEC
+    ):
+        return _ROLE_DEFAULTS_CACHE[1]
+
     await ensure_panel_access_tables()
     rows = await db.pool.fetch(
         "SELECT role, section_id, enabled FROM admin_panel_role_defaults"
@@ -157,6 +176,7 @@ async def get_role_defaults_map() -> dict[str, dict[str, bool]]:
         for sid in CONFIGURABLE_SECTION_IDS:
             if sid not in out[role]:
                 out[role][sid] = _builtin_default_enabled(role, sid)
+    _ROLE_DEFAULTS_CACHE = (now, out)
     return out
 
 
@@ -169,17 +189,17 @@ async def get_user_overrides(user_id: int) -> dict[str, bool]:
     return {r["section_id"]: bool(r["allowed"]) for r in rows}
 
 
-async def effective_panel_sections(role: str, user_id: int) -> list[str]:
-    """Итоговый список section_id для навигации."""
+def effective_sections_from_maps(
+    role: str,
+    role_defaults: dict[str, dict[str, bool]],
+    overrides: dict[str, bool],
+) -> list[str]:
+    """Чистый расчёт без БД — для overview и optimistic-патчей."""
     if role == ROLE_OWNER:
         return list(ALL_SECTION_IDS)
-
-    defaults = await get_role_defaults_map()
-    role_map = defaults.get(role) or {
+    role_map = role_defaults.get(role) or {
         sid: _builtin_default_enabled(role, sid) for sid in CONFIGURABLE_SECTION_IDS
     }
-    overrides = await get_user_overrides(user_id)
-
     enabled: list[str] = []
     for sid in CONFIGURABLE_SECTION_IDS:
         if sid in overrides:
@@ -189,6 +209,15 @@ async def effective_panel_sections(role: str, user_id: int) -> list[str]:
         if allowed:
             enabled.append(sid)
     return enabled
+
+
+async def effective_panel_sections(role: str, user_id: int) -> list[str]:
+    """Итоговый список section_id для навигации."""
+    if role == ROLE_OWNER:
+        return list(ALL_SECTION_IDS)
+    defaults = await get_role_defaults_map()
+    overrides = await get_user_overrides(user_id)
+    return effective_sections_from_maps(role, defaults, overrides)
 
 
 def permissions_for_sections(role: str, section_ids: list[str]) -> list[str]:
@@ -254,6 +283,7 @@ async def set_role_default(role: str, section_id: str, enabled: bool, updated_by
         bool(enabled),
         updated_by,
     )
+    invalidate_role_defaults_cache()
 
 
 async def set_user_override(
@@ -289,8 +319,54 @@ async def set_user_override(
     )
 
 
+async def set_user_overrides_batch(
+    items: list[dict],
+    updated_by: int,
+) -> int:
+    """Пакетная запись оверрайдов. item: {userId, sectionId, allowed|reset}.
+
+    Один round-trip на upsert и один на delete — вместо N последовательных PUT.
+    """
+    await ensure_panel_access_tables()
+    upserts: list[tuple[int, str, bool, int]] = []
+    deletes: list[tuple[int, str]] = []
+    for raw in items:
+        uid = int(raw["userId"])
+        sid = str(raw["sectionId"])
+        if sid not in CONFIGURABLE_SECTION_IDS:
+            raise ValueError(f"Раздел недоступен: {sid}")
+        if raw.get("reset"):
+            deletes.append((uid, sid))
+        else:
+            if "allowed" not in raw or raw["allowed"] is None:
+                raise ValueError("Укажите allowed или reset")
+            upserts.append((uid, sid, bool(raw["allowed"]), updated_by))
+
+    async with db.pool.acquire() as conn:
+        async with conn.transaction():
+            if deletes:
+                await conn.executemany(
+                    "DELETE FROM admin_panel_user_access WHERE user_id = $1 AND section_id = $2",
+                    deletes,
+                )
+            if upserts:
+                await conn.executemany(
+                    """
+                    INSERT INTO admin_panel_user_access
+                        (user_id, section_id, allowed, updated_at, updated_by)
+                    VALUES ($1, $2, $3, NOW(), $4)
+                    ON CONFLICT (user_id, section_id) DO UPDATE
+                    SET allowed = EXCLUDED.allowed,
+                        updated_at = NOW(),
+                        updated_by = EXCLUDED.updated_by
+                    """,
+                    upserts,
+                )
+    return len(upserts) + len(deletes)
+
+
 async def list_panel_access_overview() -> dict:
-    """Данные для вкладки владельца."""
+    """Данные для вкладки владельца — без N+1 по каждому сотруднику."""
     await ensure_panel_access_tables()
     defaults = await get_role_defaults_map()
     members = await db.pool.fetch(
@@ -310,13 +386,14 @@ async def list_panel_access_overview() -> dict:
         """,
         list(CONFIGURABLE_ROLES),
     )
+    member_ids = [int(m["user_id"]) for m in members]
     override_rows = await db.pool.fetch(
         """
         SELECT user_id, section_id, allowed
         FROM admin_panel_user_access
         WHERE user_id = ANY($1::bigint[])
         """,
-        [int(m["user_id"]) for m in members] or [0],
+        member_ids or [0],
     )
     overrides_by_user: dict[int, dict[str, bool]] = {}
     for r in override_rows:
@@ -327,7 +404,7 @@ async def list_panel_access_overview() -> dict:
     for m in members:
         uid = int(m["user_id"])
         role = m["role"]
-        sections = await effective_panel_sections(role, uid)
+        ov = overrides_by_user.get(uid, {})
         items.append(
             {
                 "userId": uid,
@@ -335,8 +412,8 @@ async def list_panel_access_overview() -> dict:
                 "firstName": m["first_name"],
                 "role": role,
                 "roleLabel": ROLE_LABELS.get(role, role),
-                "overrides": overrides_by_user.get(uid, {}),
-                "effectiveSections": sections,
+                "overrides": ov,
+                "effectiveSections": effective_sections_from_maps(role, defaults, ov),
             }
         )
 

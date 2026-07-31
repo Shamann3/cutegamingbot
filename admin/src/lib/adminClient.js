@@ -510,6 +510,20 @@ export async function setPanelUserAccess({ userId, sectionId, allowed = null, re
 
 
 
+export async function setPanelUserAccessBatch(items = []) {
+
+  return adminRequest('/panel-access/user-batch', {
+
+    method: 'PUT',
+
+    body: { items },
+
+  })
+
+}
+
+
+
 export async function acceptStaffRules() {
 
   return adminRequest('/staff/accept-rules', { method: 'POST', body: {} })

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   fetchPanelAccess,
   setPanelRoleDefault,
   setPanelUserAccess,
+  setPanelUserAccessBatch,
 } from '../../lib/adminClient'
+import { sectionBlurb } from '../../constants/panelNav'
 
 const GROUP_LABELS = {
   overview: 'Обзор',
@@ -90,8 +92,9 @@ function HelpModal({ onClose }) {
           <li>
             <strong>Сравнение</strong>
             <span>
-              Матрица доступов: сравните всех или выбранных администраторов
-              по вкладкам, подсветите только отличия.
+              Матрица доступов: сравните администраторов, кликайте ON/OFF прямо
+              в ячейке, читайте описание вкладки под названием строки.
+              Shift+клик — сброс к дефолту роли.
             </span>
           </li>
         </ul>
@@ -111,7 +114,15 @@ function HelpModal({ onClose }) {
   )
 }
 
-function ComparePane({ allMembers, sectionsByGroup, configurableSections }) {
+const ComparePane = memo(function ComparePane({
+  allMembers,
+  sectionsByGroup,
+  configurableSections,
+  busyKeys,
+  onToggleCell,
+  onResetCell,
+  onSetRowForAll,
+}) {
   const [picked, setPicked] = useState(() => new Set())
   const [onlyDiff, setOnlyDiff] = useState(false)
   const [roleFilter, setRoleFilter] = useState('all')
@@ -131,7 +142,9 @@ function ComparePane({ allMembers, sectionsByGroup, configurableSections }) {
   }, [pool])
 
   const selected = useMemo(
-    () => pool.filter((m) => picked.has(m.userId)),
+    () => pool
+      .filter((m) => picked.has(m.userId))
+      .map((m) => (m._effSet ? m : { ...m, _effSet: new Set(m.effectiveSections || []) })),
     [pool, picked],
   )
 
@@ -151,17 +164,24 @@ function ComparePane({ allMembers, sectionsByGroup, configurableSections }) {
     const rows = []
     for (const g of sectionsByGroup) {
       for (const s of g.items) {
-        const cells = selected.map((m) => ({
-          userId: m.userId,
-          open: (m.effectiveSections || []).includes(s.id),
-          override: m.overrides?.[s.id],
-        }))
+        const eff = s.id
+        const cells = selected.map((m) => {
+          const set = m._effSet || null
+          const open = set ? set.has(eff) : (m.effectiveSections || []).includes(eff)
+          return {
+            userId: m.userId,
+            name: memberName(m),
+            open,
+            override: m.overrides?.[s.id],
+          }
+        })
         const opens = cells.map((c) => c.open)
         const hasDiff = opens.length > 1 && new Set(opens.map(Boolean)).size > 1
         rows.push({
           sectionId: s.id,
           label: s.label,
           group: g.label,
+          blurb: s.blurb || sectionBlurb(s.id),
           cells,
           hasDiff,
           openCount: opens.filter(Boolean).length,
@@ -175,22 +195,28 @@ function ComparePane({ allMembers, sectionsByGroup, configurableSections }) {
     if (selected.length < 2) return 0
     let n = 0
     for (const s of configurableSections) {
-      const opens = selected.map((m) => (m.effectiveSections || []).includes(s.id))
+      const opens = selected.map((m) => {
+        if (m._effSet) return m._effSet.has(s.id)
+        return (m.effectiveSections || []).includes(s.id)
+      })
       if (new Set(opens.map(Boolean)).size > 1) n += 1
     }
     return n
   }, [selected, configurableSections])
 
+  const cellBusy = (userId, sectionId) => busyKeys?.has(`cmp-${userId}-${sectionId}`)
+  const rowBusy = (sectionId) => busyKeys?.has(`cmp-row-${sectionId}`)
+
   return (
     <div className="pa-pane pa-pane-compare">
       <div className="pa-cyber">
-        <div className="pa-cyber-scan" aria-hidden="true" />
         <header className="pa-cyber-head">
           <div>
             <p className="pa-cyber-kicker">ACCESS MATRIX // COMPARE</p>
             <h3 className="pa-cyber-title">Сравнение доступов</h3>
             <p className="pa-cyber-sub">
-              Выберите администраторов — матрица покажет, у кого какая вкладка открыта.
+              Клик по ячейке — вкл/выкл доступ. Shift+клик — сброс к дефолту роли.
+              Под названием вкладки — коротко, зачем она нужна.
             </p>
           </div>
           <div className="pa-cyber-meters" aria-hidden="true">
@@ -299,7 +325,7 @@ function ComparePane({ allMembers, sectionsByGroup, configurableSections }) {
                 <tr>
                   <th className="pa-cyber-corner">
                     <span>SECTION</span>
-                    <span className="pa-cyber-corner-sub">вкладка</span>
+                    <span className="pa-cyber-corner-sub">вкладка · что делает</span>
                   </th>
                   {selected.map((m) => (
                     <th key={m.userId} title={`${memberName(m)} · ${m.roleLabel}`}>
@@ -316,32 +342,76 @@ function ComparePane({ allMembers, sectionsByGroup, configurableSections }) {
                 </tr>
               </thead>
               <tbody>
-                {matrixRows.map((row) => (
-                  <tr
-                    key={row.sectionId}
-                    className={`pa-cyber-row${row.hasDiff ? ' is-diff' : ''}${row.openCount === selected.length ? ' is-full' : ''}${row.openCount === 0 ? ' is-none' : ''}`}
-                  >
-                    <th scope="row">
-                      <span className="pa-cyber-sec-group">{row.group}</span>
-                      <span className="pa-cyber-sec-label">{row.label}</span>
-                    </th>
-                    {row.cells.map((c) => (
-                      <td key={c.userId}>
-                        <span
-                          className={`pa-cyber-cell${c.open ? ' is-open' : ' is-closed'}${c.override === true ? ' is-grant' : ''}${c.override === false ? ' is-deny' : ''}`}
-                          title={
-                            c.open
-                              ? (c.override === true ? 'Открыто (персонально выдано)' : 'Открыто')
-                              : (c.override === false ? 'Закрыто (персональный запрет)' : 'Закрыто')
-                          }
-                        >
-                          <span className="pa-cyber-dot" aria-hidden="true" />
-                          <span className="pa-cyber-cell-txt">{c.open ? 'ON' : 'OFF'}</span>
-                        </span>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {matrixRows.map((row) => {
+                  const rBusy = rowBusy(row.sectionId)
+                  return (
+                    <tr
+                      key={row.sectionId}
+                      className={`pa-cyber-row${row.hasDiff ? ' is-diff' : ''}${row.openCount === selected.length ? ' is-full' : ''}${row.openCount === 0 ? ' is-none' : ''}${rBusy ? ' is-busy' : ''}`}
+                    >
+                      <th scope="row">
+                        <div className="pa-cyber-sec">
+                          <span className="pa-cyber-sec-group">{row.group}</span>
+                          <span className="pa-cyber-sec-label">{row.label}</span>
+                          {row.blurb && (
+                            <p className="pa-cyber-sec-blurb">{row.blurb}</p>
+                          )}
+                          {selected.length > 1 && (
+                            <div className="pa-cyber-row-ops">
+                              <button
+                                type="button"
+                                className="pa-cyber-mini"
+                                disabled={rBusy}
+                                onClick={() => onSetRowForAll?.(row.sectionId, true, selected.map((m) => m.userId))}
+                                title="Открыть эту вкладку всем выбранным"
+                              >
+                                всем ON
+                              </button>
+                              <button
+                                type="button"
+                                className="pa-cyber-mini"
+                                disabled={rBusy}
+                                onClick={() => onSetRowForAll?.(row.sectionId, false, selected.map((m) => m.userId))}
+                                title="Закрыть эту вкладку всем выбранным"
+                              >
+                                всем OFF
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </th>
+                      {row.cells.map((c) => {
+                        const busy = cellBusy(c.userId, row.sectionId) || rBusy
+                        return (
+                          <td key={c.userId}>
+                            <button
+                              type="button"
+                              className={`pa-cyber-cell${c.open ? ' is-open' : ' is-closed'}${c.override === true ? ' is-grant' : ''}${c.override === false ? ' is-deny' : ''}${busy ? ' is-busy' : ''}`}
+                              disabled={busy}
+                              aria-pressed={c.open}
+                              aria-label={`${row.label} · ${c.name}: ${c.open ? 'открыто' : 'закрыто'}. Клик — переключить. Shift+клик — дефолт.`}
+                              title={
+                                c.open
+                                  ? `${c.name}: открыто${c.override === true ? ' (выдано)' : ''}. Клик — закрыть. Shift+клик — дефолт.`
+                                  : `${c.name}: закрыто${c.override === false ? ' (запрет)' : ''}. Клик — открыть. Shift+клик — дефолт.`
+                              }
+                              onClick={(e) => {
+                                if (e.shiftKey) {
+                                  onResetCell?.(c.userId, row.sectionId)
+                                  return
+                                }
+                                onToggleCell?.(c.userId, row.sectionId, !c.open)
+                              }}
+                            >
+                              <span className="pa-cyber-dot" aria-hidden="true" />
+                              <span className="pa-cyber-cell-txt">{busy ? '…' : (c.open ? 'ON' : 'OFF')}</span>
+                            </button>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
                 {matrixRows.length === 0 && (
                   <tr>
                     <td colSpan={selected.length + 1} className="pa-cyber-none">
@@ -356,10 +426,11 @@ function ComparePane({ allMembers, sectionsByGroup, configurableSections }) {
 
         {selected.length > 0 && (
           <footer className="pa-cyber-legend">
-            <span><i className="pa-cyber-lg pa-cyber-lg-on" /> открыто</span>
-            <span><i className="pa-cyber-lg pa-cyber-lg-off" /> закрыто</span>
-            <span><i className="pa-cyber-lg pa-cyber-lg-diff" /> есть отличия в строке</span>
-            <span>угол ячейки · персональный override</span>
+            <span><i className="pa-cyber-lg pa-cyber-lg-on" /> открыто · клик выкл</span>
+            <span><i className="pa-cyber-lg pa-cyber-lg-off" /> закрыто · клик вкл</span>
+            <span><i className="pa-cyber-lg pa-cyber-lg-diff" /> отличия в строке</span>
+            <span>Shift+клик · дефолт роли</span>
+            <span>угол · персональный override</span>
             {selected.length >= 2 && (
               <span className="pa-cyber-legend-stat">
                 совпадений: {configurableSections.length - diffCount}/{configurableSections.length}
@@ -370,24 +441,50 @@ function ComparePane({ allMembers, sectionsByGroup, configurableSections }) {
       </div>
     </div>
   )
-}
+})
 
 export default function PanelAccessSection() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [busyKey, setBusyKey] = useState(null)
+  const [busyKeys, setBusyKeys] = useState(() => new Set())
   const [selectedId, setSelectedId] = useState(null)
   const [roleTab, setRoleTab] = useState('senior_admin')
   const [viewTab, setViewTab] = useState('defaults')
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
   const [helpOpen, setHelpOpen] = useState(false)
+  const pendingSeq = useRef(new Map())
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
+  const markBusy = useCallback((key) => {
+    setBusyKeys((prev) => {
+      if (prev.has(key)) return prev
+      const next = new Set(prev)
+      next.add(key)
+      return next
+    })
+  }, [])
+
+  const clearBusy = useCallback((key) => {
+    setBusyKeys((prev) => {
+      if (!prev.has(key)) return prev
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
+  }, [])
+
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true)
+      setError('')
+    }
     try {
       const d = await fetchPanelAccess()
+      // Подготовка Set для быстрых includes в матрице
+      d.members = (d.members || []).map((m) => ({
+        ...m,
+        _effSet: new Set(m.effectiveSections || []),
+      }))
       setData(d)
       setSelectedId((prev) => {
         if (prev && (d.members || []).some((m) => m.userId === prev)) return prev
@@ -397,10 +494,14 @@ export default function PanelAccessSection() {
         setRoleTab(d.roles[0].id)
       }
     } catch (e) {
-      setError(e?.message || 'Не удалось загрузить доступы')
-      setData(null)
+      if (!silent) {
+        setError(e?.message || 'Не удалось загрузить доступы')
+        setData(null)
+      } else {
+        throw e
+      }
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -421,11 +522,20 @@ export default function PanelAccessSection() {
       groups.push({
         id: s.group,
         label: GROUP_LABELS[s.group] || s.group,
-        items: configurableSections.filter((x) => x.group === s.group),
+        items: configurableSections
+          .filter((x) => x.group === s.group)
+          .map((x) => ({ ...x, blurb: sectionBlurb(x.id) })),
       })
     }
     return groups
   }, [configurableSections])
+
+  // Members с _effSet для матрицы (если load уже положил — ок)
+  const membersForCompare = useMemo(() => {
+    return (data?.members || []).map((m) => (
+      m._effSet ? m : { ...m, _effSet: new Set(m.effectiveSections || []) }
+    ))
+  }, [data])
 
   const members = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -446,9 +556,8 @@ export default function PanelAccessSection() {
 
   const toggleRoleDefault = async (sectionId, enabled) => {
     const key = `role-${roleTab}-${sectionId}`
-    setBusyKey(key)
-    try {
-      await setPanelRoleDefault({ role: roleTab, sectionId, enabled })
+    // Optimistic UI сразу — сеть в фоне
+    startTransition(() => {
       setData((prev) => {
         if (!prev) return prev
         return {
@@ -466,22 +575,62 @@ export default function PanelAccessSection() {
             const set = new Set(m.effectiveSections || [])
             if (enabled) set.add(sectionId)
             else set.delete(sectionId)
-            return { ...m, effectiveSections: [...set] }
+            return { ...m, effectiveSections: [...set], _effSet: set }
           }),
         }
       })
+    })
+    markBusy(key)
+    try {
+      await setPanelRoleDefault({ role: roleTab, sectionId, enabled })
     } catch (e) {
       alert(e?.message || 'Ошибка')
-      await load()
+      try { await load({ silent: true }) } catch { /* ignore */ }
     } finally {
-      setBusyKey(null)
+      clearBusy(key)
     }
   }
+
+  const patchMemberAccess = useCallback((userId, sectionId, mode) => {
+    // mode: true | false | 'reset' — мгновенный локальный патч без ожидания сети
+    setData((prev) => {
+      if (!prev) return prev
+      let changed = false
+      const members = (prev.members || []).map((m) => {
+        if (m.userId !== userId) return m
+        changed = true
+        const overrides = { ...(m.overrides || {}) }
+        if (mode === 'reset') delete overrides[sectionId]
+        else overrides[sectionId] = !!mode
+
+        const roleMap = prev.roleDefaults?.[m.role] || {}
+        const fromRole = !!roleMap[sectionId]
+        const open = Object.prototype.hasOwnProperty.call(overrides, sectionId)
+          ? !!overrides[sectionId]
+          : fromRole
+
+        const set = new Set(m.effectiveSections || [])
+        if (open) set.add(sectionId)
+        else set.delete(sectionId)
+
+        return {
+          ...m,
+          overrides,
+          effectiveSections: [...set],
+          _effSet: set,
+        }
+      })
+      if (!changed) return prev
+      return { ...prev, members }
+    })
+  }, [])
 
   const setUserSection = async (sectionId, mode) => {
     if (!selected) return
     const key = `user-${selected.userId}-${sectionId}`
-    setBusyKey(key)
+    const patchMode = mode === 'default' ? 'reset' : mode === 'grant'
+    startTransition(() => patchMemberAccess(selected.userId, sectionId, patchMode))
+    markBusy(key)
     try {
       if (mode === 'default') {
         await setPanelUserAccess({ userId: selected.userId, sectionId, reset: true })
@@ -492,13 +641,90 @@ export default function PanelAccessSection() {
           allowed: mode === 'grant',
         })
       }
-      await load()
     } catch (e) {
       alert(e?.message || 'Ошибка')
+      try { await load({ silent: true }) } catch { /* ignore */ }
     } finally {
-      setBusyKey(null)
+      clearBusy(key)
     }
   }
+
+  const compareToggleCell = useCallback(async (userId, sectionId, nextOpen) => {
+    const key = `cmp-${userId}-${sectionId}`
+    const seq = (pendingSeq.current.get(key) || 0) + 1
+    pendingSeq.current.set(key, seq)
+    startTransition(() => patchMemberAccess(userId, sectionId, nextOpen))
+    markBusy(key)
+    try {
+      await setPanelUserAccess({ userId, sectionId, allowed: !!nextOpen })
+    } catch (e) {
+      if (pendingSeq.current.get(key) === seq) {
+        alert(e?.message || 'Ошибка')
+        try { await load({ silent: true }) } catch { /* ignore */ }
+      }
+    } finally {
+      if (pendingSeq.current.get(key) === seq) {
+        pendingSeq.current.delete(key)
+        clearBusy(key)
+      }
+    }
+  }, [patchMemberAccess, markBusy, clearBusy, load])
+
+  const compareResetCell = useCallback(async (userId, sectionId) => {
+    const key = `cmp-${userId}-${sectionId}`
+    const seq = (pendingSeq.current.get(key) || 0) + 1
+    pendingSeq.current.set(key, seq)
+    startTransition(() => patchMemberAccess(userId, sectionId, 'reset'))
+    markBusy(key)
+    try {
+      await setPanelUserAccess({ userId, sectionId, reset: true })
+    } catch (e) {
+      if (pendingSeq.current.get(key) === seq) {
+        alert(e?.message || 'Ошибка')
+        try { await load({ silent: true }) } catch { /* ignore */ }
+      }
+    } finally {
+      if (pendingSeq.current.get(key) === seq) {
+        pendingSeq.current.delete(key)
+        clearBusy(key)
+      }
+    }
+  }, [patchMemberAccess, markBusy, clearBusy, load])
+
+  const compareSetRowForAll = useCallback(async (sectionId, open, userIds) => {
+    const ids = userIds || []
+    if (!ids.length) return
+    const key = `cmp-row-${sectionId}`
+    const idSet = new Set(ids)
+    // Один setState на всю строку — без N перерисовок
+    startTransition(() => {
+      setData((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          members: (prev.members || []).map((m) => {
+            if (!idSet.has(m.userId)) return m
+            const overrides = { ...(m.overrides || {}), [sectionId]: !!open }
+            const set = new Set(m.effectiveSections || [])
+            if (open) set.add(sectionId)
+            else set.delete(sectionId)
+            return { ...m, overrides, effectiveSections: [...set], _effSet: set }
+          }),
+        }
+      })
+    })
+    markBusy(key)
+    try {
+      await setPanelUserAccessBatch(
+        ids.map((uid) => ({ userId: uid, sectionId, allowed: !!open })),
+      )
+    } catch (e) {
+      alert(e?.message || 'Ошибка')
+      try { await load({ silent: true }) } catch { /* ignore */ }
+    } finally {
+      clearBusy(key)
+    }
+  }, [markBusy, clearBusy, load])
 
   const sectionState = (sectionId) => {
     if (!selected) return { on: false, state: 'default' }
@@ -517,20 +743,24 @@ export default function PanelAccessSection() {
       return
     }
     if (!confirm('Сбросить все персональные исключения к дефолту роли?')) return
-    setBusyKey(`user-${selected.userId}-reset`)
+    const key = `user-${selected.userId}-reset`
+    markBusy(key)
+    startTransition(() => {
+      for (const sectionId of overs) patchMemberAccess(selected.userId, sectionId, 'reset')
+    })
     try {
-      for (const sectionId of overs) {
-        await setPanelUserAccess({
+      await setPanelUserAccessBatch(
+        overs.map((sectionId) => ({
           userId: selected.userId,
           sectionId,
           reset: true,
-        })
-      }
-      await load()
+        })),
+      )
     } catch (e) {
       alert(e?.message || 'Ошибка')
+      try { await load({ silent: true }) } catch { /* ignore */ }
     } finally {
-      setBusyKey(null)
+      clearBusy(key)
     }
   }
 
@@ -614,7 +844,7 @@ export default function PanelAccessSection() {
                   <ul className="pa-section-list">
                     {g.items.map((s) => {
                       const on = !!roleDefaults[s.id]
-                      const busy = busyKey === `role-${roleTab}-${s.id}`
+                      const busy = busyKeys.has(`role-${roleTab}-${s.id}`)
                       return (
                         <li key={s.id} className="pa-section-row">
                           <span className="pa-section-name">{s.label}</span>
@@ -701,7 +931,7 @@ export default function PanelAccessSection() {
                       <button
                         type="button"
                         className="sec-btn sec-btn-ghost sec-btn-sm"
-                        disabled={busyKey?.startsWith(`user-${selected.userId}`)}
+                        disabled={[...busyKeys].some((k) => k.startsWith(`user-${selected.userId}`))}
                         onClick={resetAllOverrides}
                       >
                         Сбросить исключения
@@ -715,7 +945,7 @@ export default function PanelAccessSection() {
                           <ul className="pa-section-list">
                             {g.items.map((s) => {
                               const { on, state } = sectionState(s.id)
-                              const busy = busyKey === `user-${selected.userId}-${s.id}`
+                              const busy = busyKeys.has(`user-${selected.userId}-${s.id}`)
                               return (
                                 <li key={s.id} className="pa-section-row pa-section-row-user">
                                   <div className="pa-section-who">
@@ -767,9 +997,13 @@ export default function PanelAccessSection() {
 
         {data && viewTab === 'compare' && (
           <ComparePane
-            allMembers={data.members || []}
+            allMembers={membersForCompare}
             sectionsByGroup={sectionsByGroup}
             configurableSections={configurableSections}
+            busyKeys={busyKeys}
+            onToggleCell={compareToggleCell}
+            onResetCell={compareResetCell}
+            onSetRowForAll={compareSetRowForAll}
           />
         )}
       </div>

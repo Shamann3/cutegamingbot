@@ -1240,6 +1240,32 @@ class PanelUserAccessBody(BaseModel):
     reset: bool = False
 
 
+class PanelUserAccessBatchItem(BaseModel):
+    userId: int
+    sectionId: str
+    allowed: bool | None = None
+    reset: bool = False
+
+
+class PanelUserAccessBatchBody(BaseModel):
+    items: list[PanelUserAccessBatchItem] = Field(default_factory=list)
+
+
+async def _panel_target_role(target_user_id: int) -> str:
+    """Лёгкая проверка цели без полного get_admin_account."""
+    from db import db as _db
+
+    row = await _db.pool.fetchrow(
+        "SELECT role, status FROM admin_accounts WHERE user_id = $1",
+        int(target_user_id),
+    )
+    if not row or row["status"] != "active":
+        raise HTTPException(status_code=404, detail="Администратор не найден")
+    if row["role"] == ROLE_OWNER:
+        raise HTTPException(status_code=400, detail="Доступ владельца не ограничивается")
+    return str(row["role"])
+
+
 @router.get("/panel-access")
 async def panel_access_overview(
     user_id: int = Depends(require_admin_permission("manage_panel_access")),
@@ -1282,11 +1308,7 @@ async def panel_access_set_user(
 
     if int(body.userId) == int(user_id):
         raise HTTPException(status_code=400, detail="Нельзя менять доступ самому себе здесь")
-    target = await get_admin_account(body.userId)
-    if not target or target.get("status") != "active":
-        raise HTTPException(status_code=404, detail="Администратор не найден")
-    if target.get("role") == ROLE_OWNER:
-        raise HTTPException(status_code=400, detail="Доступ владельца не ограничивается")
+    await _panel_target_role(body.userId)
 
     allowed = None if body.reset else body.allowed
     if not body.reset and body.allowed is None:
@@ -1295,15 +1317,77 @@ async def panel_access_set_user(
         await set_user_override(int(body.userId), body.sectionId, allowed, user_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    await log_admin_action(
-        user_id,
-        "panel_user_access",
-        target_type="staff",
-        target_id=str(body.userId),
-        details={"sectionId": body.sectionId, "allowed": allowed, "reset": body.reset},
-        ip=_get_client_ip(request),
-    )
+    # Аудит не блокирует ответ UI — пишем в фоне.
+    try:
+        import asyncio
+
+        asyncio.create_task(
+            log_admin_action(
+                user_id,
+                "panel_user_access",
+                target_type="staff",
+                target_id=str(body.userId),
+                details={"sectionId": body.sectionId, "allowed": allowed, "reset": body.reset},
+                ip=_get_client_ip(request),
+            )
+        )
+    except Exception:
+        pass
     return {"ok": True}
+
+
+@router.put("/panel-access/user-batch")
+async def panel_access_set_user_batch(
+    body: PanelUserAccessBatchBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("manage_panel_access")),
+):
+    """Пакетное изменение доступов (строка «всем ON/OFF», массовые клики)."""
+    from panel_access import set_user_overrides_batch
+
+    if not body.items:
+        return {"ok": True, "count": 0}
+    if len(body.items) > 200:
+        raise HTTPException(status_code=400, detail="Слишком много изменений за раз")
+
+    seen_targets: set[int] = set()
+    payload = []
+    for item in body.items:
+        tid = int(item.userId)
+        if tid == int(user_id):
+            raise HTTPException(status_code=400, detail="Нельзя менять доступ самому себе здесь")
+        if tid not in seen_targets:
+            await _panel_target_role(tid)
+            seen_targets.add(tid)
+        payload.append(
+            {
+                "userId": tid,
+                "sectionId": item.sectionId,
+                "allowed": item.allowed,
+                "reset": bool(item.reset),
+            }
+        )
+    try:
+        count = await set_user_overrides_batch(payload, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        import asyncio
+
+        asyncio.create_task(
+            log_admin_action(
+                user_id,
+                "panel_user_access_batch",
+                target_type="panel",
+                target_id="batch",
+                details={"count": count, "sample": payload[:8]},
+                ip=_get_client_ip(request),
+            )
+        )
+    except Exception:
+        pass
+    return {"ok": True, "count": count}
 
 
 @router.post("/staff/accept-rules")
