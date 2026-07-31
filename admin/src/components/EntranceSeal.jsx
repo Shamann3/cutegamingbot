@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { hasTelegramInitData, isAdminSessionValid } from '../lib/adminClient'
 import { vivoEpsilonLogo } from './EpsilonLogo'
-import EpsilonCrestMark from './EpsilonCrestMark'
 
 /** ~5.5s hold + ~0.5s выход = 6s */
 export const ENTRANCE_HOLD_MS = 5500
@@ -21,7 +20,7 @@ function detectLiteEntrance() {
 
 /**
  * Печать входа (~6с).
- * Марка — SVG по частям: око+крылья синхронно → корона → текст → штамп PNG.
+ * Только оригинальный полный логотип — без SVG-дорисовок.
  */
 export default function EntranceSeal({
   displayName = '',
@@ -94,7 +93,6 @@ export default function EntranceSeal({
             d="M100 18 L162 40 V96 C162 136 134 164 100 178 C66 164 38 136 38 96 V40 Z"
           />
           <circle className="ent-ring ent-ring--c" cx="100" cy="100" r="56" />
-          <circle className="ent-ring ent-ring--core" cx="100" cy="100" r="3" />
         </svg>
 
         <div className="ent-brackets" aria-hidden="true">
@@ -104,17 +102,16 @@ export default function EntranceSeal({
           <span className="ent-bracket ent-bracket--br" />
         </div>
 
-        <div className="ent-beam" aria-hidden="true" />
-
         <div className="ent-mark" aria-hidden="true">
-          {/* SVG-сборка по частям */}
-          <EpsilonCrestMark className="ent-crest" />
-          {/* Финальный штамп — оригинальный PNG */}
-          <div className="ent-seal-png">
-            <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
+          <div className="ent-logo">
+            <img
+              src={vivoEpsilonLogo}
+              alt=""
+              draggable={false}
+              decoding="async"
+            />
           </div>
           <div className="ent-stamp" />
-          <div className="ent-mark-glow" />
         </div>
 
         <div className="ent-copy">
