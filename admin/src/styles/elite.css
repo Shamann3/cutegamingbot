@@ -1166,26 +1166,27 @@ body,
   max-height: calc(100dvh - 3.2rem) !important;
 }
 
-/* Контент раздела — строго вторая строка, со своим скроллом */
-.panel-shelf-page,
-.panel-security,
-.panel-users,
-.panel-economy,
-.panel-market,
-.panel-farm,
-.panel-content,
-.panel-content-stats,
-.panel-content-tabs,
-.panel-content-grid,
-.panel-content-stack,
-.panel-broadcast,
-.panel-broadcast-wrap,
-.panel-logs,
-.panel-settings,
-.panel-events,
-.panel-layout-analytics .analytics-section,
-.support-section,
-.chs-root {
+/* Контент раздела — строго вторая строка.
+   ВАЖНО: только КОРНЕВЫЕ обёртки секций. Вложенные .panel-content-stats /
+   .panel-content-tabs и т.п. сюда НЕ входят — иначе они вырываются из
+   flex-родителя в сетку layout и ломают «Контент» (карта крафта
+   наезжает на статистику). */
+.panel-layout > .panel-shelf-page,
+.panel-layout > .panel-security,
+.panel-layout > .panel-users,
+.panel-layout > .panel-economy,
+.panel-layout > .panel-market,
+.panel-layout > .panel-farm,
+.panel-layout > .panel-content,
+.panel-layout > .panel-broadcast,
+.panel-layout > .panel-broadcast-wrap,
+.panel-layout > .panel-logs,
+.panel-layout > .panel-settings,
+.panel-layout > .panel-events,
+.panel-layout > .analytics-section,
+.panel-layout > .support-section,
+.panel-layout > .chs-root,
+.panel-layout-analytics > .analytics-section {
   grid-column: 2 !important;
   grid-row: 2 !important;
   min-height: 0;
@@ -1197,6 +1198,83 @@ body,
 /* Сайдбар тянется на обе строки шапка+контент */
 .panel-shelf-sidebar {
   grid-row: 1 / -1 !important;
+}
+
+/* ============================================================
+   КОНТЕНТ · карта крафта
+   ------------------------------------------------------------
+   Раньше .craftmap-wrap = calc(100dvh − 12rem) внутри уже
+   ужатого layout → холст React Flow вылезал поверх статистики
+   и кнопок (тёмное «пятно» справа). Тулбар вынесен из absolute
+   поверх canvas; shell занимает оставшуюся высоту колонки.
+   ============================================================ */
+
+.panel-layout-content > .panel-content:has(.craftmap-shell) {
+  overflow: hidden;
+}
+
+.panel-layout-content > .panel-content:has(.craftmap-shell) > :not(.craftmap-shell) {
+  flex-shrink: 0;
+}
+
+.craftmap-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.craftmap-shell > .craftmap-stats,
+.craftmap-shell > .craftmap-toolbar {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 2;
+}
+
+.craftmap-shell > .craftmap-toolbar {
+  top: auto;
+  left: auto;
+  right: auto;
+  pointer-events: auto;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0 0.1rem;
+}
+
+.craftmap-shell > .craftmap-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 280px;
+  height: auto !important;
+  max-height: none;
+  overflow: hidden;
+  isolation: isolate;
+  contain: layout paint;
+  z-index: 1;
+}
+
+.craftmap-shell > .craftmap-wrap .react-flow,
+.craftmap-shell > .craftmap-wrap .craftmap-flow {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.craftmap-wrap-empty {
+  display: grid;
+  place-items: center;
+  min-height: 280px;
+}
+
+.craftmap-empty {
+  text-align: center;
+  display: grid;
+  gap: 0.75rem;
+  justify-items: center;
 }
 
 /* ============================================================
@@ -1485,21 +1563,32 @@ body,
   border-bottom-left-radius: 6px;
 }
 
-/* Ответ администратора — инверсия: сразу видно, где «мы» */
+/* Ответ администратора — инверсия: сразу видно, где «мы».
+   !important обязателен: в index.css есть правило
+   `.panel-shelf p { color: var(--txt) }` (светлый текст), которое
+   по специфичности перебивало тёмный цвет на белом пузыре —
+   сообщение становилось невидимым. */
+.panel-shelf .support-msg-admin .support-msg-bubble,
 .support-msg-admin .support-msg-bubble {
-  border-color: transparent;
+  border-color: transparent !important;
   border-bottom-right-radius: 6px;
-  background: var(--e-invert-bg);
-  color: var(--e-invert-text);
+  background: var(--e-invert-bg) !important;
+  color: var(--e-invert-text) !important;
 }
 
+.panel-shelf .support-msg-admin .support-msg-text,
+.panel-shelf .support-msg-admin .support-msg-sender,
+.panel-shelf .support-msg-admin p,
 .support-msg-admin .support-msg-text,
 .support-msg-admin .support-msg-sender {
-  color: var(--e-invert-text);
+  color: var(--e-invert-text) !important;
+  -webkit-text-fill-color: var(--e-invert-text) !important;
 }
 
+.panel-shelf .support-msg-admin .support-msg-time,
 .support-msg-admin .support-msg-time {
-  color: rgba(10, 10, 10, 0.55);
+  color: rgba(10, 10, 10, 0.55) !important;
+  -webkit-text-fill-color: rgba(10, 10, 10, 0.55) !important;
 }
 
 /* Системное сообщение — по центру, без пузыря, тихое */

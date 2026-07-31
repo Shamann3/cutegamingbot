@@ -224,27 +224,35 @@ export default function CraftMapView({ canEdit = false }) {
 
   if (error) {
     return (
-      <div className="craftmap-wrap" style={{ display: 'grid', placeItems: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <p className="panel-shelf-muted">{error}</p>
-          <button className="panel-users-btn panel-users-btn-primary" onClick={load}>Повторить</button>
+      <div className="craftmap-shell">
+        <div className="craftmap-wrap craftmap-wrap-empty">
+          <div className="craftmap-empty">
+            <p className="panel-shelf-muted">{error}</p>
+            <button type="button" className="panel-users-btn panel-users-btn-primary" onClick={load}>Повторить</button>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <>
+    <div className="craftmap-shell">
       <StatsBar stats={stats} />
+      <div className="craftmap-toolbar">
+        <button type="button" className="panel-users-btn" onClick={runAutoLayout} disabled={loading}>⤢ Авто-раскладка</button>
+        <button type="button" className="panel-users-btn" onClick={load} disabled={loading}>↻ Обновить</button>
+        {canEdit ? (
+          <button type="button" className="panel-users-btn panel-users-btn-primary" onClick={() => setShowAdd(true)}>
+            ＋ Новый крафт
+          </button>
+        ) : null}
+        <SearchBar query={mapState.query} onChange={mapState.setQuery} count={mapState.matchedIds.size} />
+        <FilterPanel categories={mapState.categories} hidden={mapState.hiddenCategories} onToggle={mapState.toggleCategory} />
+        <span className="panel-shelf-muted">
+          {loading ? 'Загрузка…' : `${graph.nodes.filter((n) => n.kind === 'item').length} предметов · ${stats.links} связей`}
+        </span>
+      </div>
       <div className="craftmap-wrap">
-        <div className="craftmap-toolbar">
-          <button className="panel-users-btn" onClick={runAutoLayout} disabled={loading}>⤢ Авто-раскладка</button>
-          <button className="panel-users-btn" onClick={load} disabled={loading}>↻ Обновить</button>
-          {canEdit ? <button className="panel-users-btn panel-users-btn-primary" onClick={() => setShowAdd(true)}>＋ Новый крафт</button> : null}
-          <SearchBar query={mapState.query} onChange={mapState.setQuery} count={mapState.matchedIds.size} />
-          <FilterPanel categories={mapState.categories} hidden={mapState.hiddenCategories} onToggle={mapState.toggleCategory} />
-          <span className="panel-shelf-muted">{loading ? 'Загрузка…' : `${graph.nodes.filter((n) => n.kind === 'item').length} предметов · ${stats.links} связей`}</span>
-        </div>
         <ReactFlow
           className="craftmap-flow"
           nodes={nodes}
@@ -286,6 +294,6 @@ export default function CraftMapView({ canEdit = false }) {
         ) : null}
         <ErrorsPanel errors={errors} onFocus={focusItems} />
       </div>
-    </>
+    </div>
   )
 }
