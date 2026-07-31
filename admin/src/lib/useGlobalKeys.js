@@ -82,6 +82,14 @@ export function useGlobalKeys({ onEscape, onEnter } = {}) {
           return
         }
 
+        // Полноэкранная карта крафта
+        const fsExit = document.querySelector('[data-craftmap-fs-exit]')
+        if (fsExit) {
+          e.preventDefault()
+          fsExit.click()
+          return
+        }
+
         onEscape?.()
         return
       }

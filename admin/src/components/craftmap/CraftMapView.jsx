@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState,
 } from '@xyflow/react'
@@ -64,6 +65,25 @@ export default function CraftMapView({ canEdit = false }) {
   const [showAdd, setShowAdd] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null) // recipe object | null
   const [deleting, setDeleting] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
+
+  useEffect(() => {
+    if (!fullscreen) return undefined
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const id = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event('resize'))
+      rfRef.current?.fitView?.({ padding: 0.12, duration: 200 })
+    })
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.cancelAnimationFrame(id)
+      window.requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'))
+        rfRef.current?.fitView?.({ padding: 0.15, duration: 180 })
+      })
+    }
+  }, [fullscreen])
 
   const selectedNode = useMemo(
     () => (selectedId ? graph.nodes.find((n) => n.id === selectedId) || null : null),
@@ -235,8 +255,29 @@ export default function CraftMapView({ canEdit = false }) {
     )
   }
 
-  return (
-    <div className="craftmap-shell">
+  const shell = (
+    <div
+      className={`craftmap-shell${fullscreen ? ' craftmap-shell-fs' : ''}`}
+      role={fullscreen ? 'dialog' : undefined}
+      aria-modal={fullscreen ? true : undefined}
+      aria-label={fullscreen ? 'Карта крафта на весь экран' : undefined}
+    >
+      {fullscreen ? (
+        <div className="craftmap-fs-bar">
+          <div className="craftmap-fs-title">
+            <span className="craftmap-fs-kicker">Content · Карта</span>
+            <strong>Карта крафта</strong>
+          </div>
+          <button
+            type="button"
+            className="panel-users-btn"
+            data-craftmap-fs-exit
+            onClick={() => setFullscreen(false)}
+          >
+            ✕ Свернуть
+          </button>
+        </div>
+      ) : null}
       <StatsBar stats={stats} />
       <div className="craftmap-toolbar">
         <button type="button" className="panel-users-btn" onClick={runAutoLayout} disabled={loading}>⤢ Авто-раскладка</button>
@@ -251,6 +292,15 @@ export default function CraftMapView({ canEdit = false }) {
         <span className="panel-shelf-muted">
           {loading ? 'Загрузка…' : `${graph.nodes.filter((n) => n.kind === 'item').length} предметов · ${stats.links} связей`}
         </span>
+        <button
+          type="button"
+          className={`panel-users-btn${fullscreen ? '' : ' panel-users-btn-primary'} craftmap-fs-toggle`}
+          data-craftmap-fs-exit={fullscreen ? true : undefined}
+          onClick={() => setFullscreen((v) => !v)}
+          title={fullscreen ? 'Свернуть (Esc)' : 'Открыть на весь экран'}
+        >
+          {fullscreen ? '⛶ Свернуть' : '⛶ На весь экран'}
+        </button>
       </div>
       <div className="craftmap-wrap">
         <ReactFlow
@@ -296,4 +346,9 @@ export default function CraftMapView({ canEdit = false }) {
       </div>
     </div>
   )
+
+  if (fullscreen && typeof document !== 'undefined') {
+    return createPortal(shell, document.body)
+  }
+  return shell
 }

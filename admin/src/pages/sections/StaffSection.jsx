@@ -1591,22 +1591,22 @@ export default function StaffSection({ role, permissions = [], myUserId = null }
         ))}
       </nav>
 
-      <div className="sec-tab-body">
-        {activeTab === 'applications' && <ApplicationsTab />}
-        {activeTab === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} />}
-        {activeTab === 'invites' && <InvitesTab />}
-        {activeTab === 'salaries' && <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
-        {activeTab === 'bonuses' && <PayrollBonusesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
-        {activeTab === 'ledger' && <LedgerTab />}
-        {activeTab === 'payoutsettings' && <PayrollSettingsTab />}
-        {activeTab === 'leaderboard' && <LeaderboardTab />}
-        {activeTab === 'shifts' && <ShiftsTab />}
-        {activeTab === 'complaints' && <ComplaintsTab />}
-        {activeTab === 'questions' && <QuestionsTab isOwner={isOwner} />}
-        {activeTab === 'mysalary' && <PayrollMySalaryTab />}
-        {activeTab === 'mycomplaints' && <MyComplaintsTab />}
-        {!activeTab && <p className="sec-empty">Нет доступных разделов</p>}
-      </div>
+      {/* Каждая вкладка сама рендерит .sec-tab-body — без внешней обёртки,
+          иначе вложенный overflow ломает прокрутку (Зарплаты и др.). */}
+      {activeTab === 'applications' && <ApplicationsTab />}
+      {activeTab === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} />}
+      {activeTab === 'invites' && <InvitesTab />}
+      {activeTab === 'salaries' && <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
+      {activeTab === 'bonuses' && <PayrollBonusesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
+      {activeTab === 'ledger' && <LedgerTab />}
+      {activeTab === 'payoutsettings' && <PayrollSettingsTab />}
+      {activeTab === 'leaderboard' && <LeaderboardTab />}
+      {activeTab === 'shifts' && <ShiftsTab />}
+      {activeTab === 'complaints' && <ComplaintsTab />}
+      {activeTab === 'questions' && <QuestionsTab isOwner={isOwner} />}
+      {activeTab === 'mysalary' && <PayrollMySalaryTab />}
+      {activeTab === 'mycomplaints' && <MyComplaintsTab />}
+      {!activeTab && <p className="sec-empty sec-tab-body">Нет доступных разделов</p>}
     </section>
   )
 }

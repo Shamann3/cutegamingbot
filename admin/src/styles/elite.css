@@ -478,7 +478,8 @@ body,
   border: none !important;
   border-radius: var(--e-r-pill) !important;
   background: transparent !important;
-  color: var(--e-text-3) !important;
+  color: var(--e-text-2) !important;
+  -webkit-text-fill-color: var(--e-text-2) !important;
   font: inherit;
   font-size: 0.82rem;
   font-weight: 560;
@@ -495,14 +496,17 @@ body,
 }
 
 .sec-tabs:has(> :nth-child(5)) .sec-tab {
-  border: 1px solid var(--e-line) !important;
-  background: var(--e-surface-1) !important;
+  border: 1px solid var(--e-line-strong) !important;
+  background: var(--e-surface-2) !important;
   padding: 0.4rem 0.85rem !important;
+  color: var(--e-text-2) !important;
+  -webkit-text-fill-color: var(--e-text-2) !important;
 }
 
 .sec-tab:hover:not(.sec-tab-active) {
-  background: var(--e-surface-2) !important;
-  color: var(--e-text-2) !important;
+  background: var(--e-surface-3) !important;
+  color: var(--e-text) !important;
+  -webkit-text-fill-color: var(--e-text) !important;
 }
 
 .sec-tab:active {
@@ -510,9 +514,11 @@ body,
   transition-duration: var(--e-fast);
 }
 
-.sec-tab-active {
+.sec-tab-active,
+.sec-tabs:has(> :nth-child(5)) .sec-tab-active {
   background: var(--e-invert-bg) !important;
   color: var(--e-invert-text) !important;
+  -webkit-text-fill-color: var(--e-invert-text) !important;
   font-weight: 620;
   border-color: transparent !important;
   box-shadow: 0 2px 10px -2px rgba(0, 0, 0, 0.6) !important;
@@ -1370,19 +1376,22 @@ body,
   flex-shrink: 0;
 }
 
-.panel-security .sec-tab-body {
+/* Прямой потомок .panel-security — рабочая зона вкладки со скроллом */
+.panel-security > .sec-tab-body {
   flex: 1 1 auto !important;
   min-height: 0 !important;
-  overflow-x: hidden;
-  overflow-y: auto;
+  height: auto !important;
+  max-height: none !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding-right: 0.15rem;
+  padding-right: 0.25rem;
+  padding-bottom: 1.25rem;
+  scrollbar-gutter: stable;
 }
 
-/* Вложенные списки внутри вкладки — свой скролл только если явно задан;
-   иначе листается весь .sec-tab-body (Стафф, Безопасность). */
-.panel-security .sec-tab-body > * {
+.panel-security > .sec-tab-body > * {
   min-width: 0;
 }
 
@@ -1468,6 +1477,85 @@ body,
   justify-items: center;
 }
 
+/* Полноэкранная карта крафта — поверх всей панели */
+.craftmap-shell-fs {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 820;
+  display: flex !important;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding:
+    max(0.65rem, env(safe-area-inset-top, 0px))
+    max(0.75rem, env(safe-area-inset-right, 0px))
+    max(0.65rem, env(safe-area-inset-bottom, 0px))
+    max(0.75rem, env(safe-area-inset-left, 0px));
+  background: var(--e-void);
+  min-height: 0 !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  width: 100vw !important;
+  box-sizing: border-box;
+}
+
+.craftmap-fs-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  padding: 0.15rem 0.1rem;
+}
+
+.craftmap-fs-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.craftmap-fs-kicker {
+  color: var(--e-text-4);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.craftmap-fs-title strong {
+  color: var(--e-text);
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.craftmap-shell-fs > .craftmap-stats,
+.craftmap-shell-fs > .craftmap-toolbar {
+  flex-shrink: 0;
+}
+
+.craftmap-shell-fs > .craftmap-wrap {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  border-radius: 16px;
+}
+
+.craftmap-fs-toggle {
+  margin-left: auto;
+}
+
+@media (max-width: 900px) {
+  .craftmap-shell-fs {
+    z-index: 850;
+  }
+
+  .craftmap-fs-toggle {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
 /* ============================================================
    11. ПОДДЕРЖКА — эталонный экран №2
    ============================================================ */
@@ -1514,18 +1602,11 @@ body,
   flex: 0 0 auto;
 }
 
-.panel-security .sec-tab-body {
+.panel-security > .sec-tab-body {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-  flex: 1 1 auto;
-  min-height: 0;
   padding-top: 0.15rem;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-gutter: stable;
 }
 
 /* Жёлтая «предупреждающая» плашка подсказок — в монохром */
