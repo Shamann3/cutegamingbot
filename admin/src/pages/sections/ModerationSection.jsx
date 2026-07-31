@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TgPhoto from '../../components/TgPhoto'
 import {
   deleteModerationLog, fetchAppealMessages, fetchAppeals, fetchModerationLogs,
@@ -6,6 +6,7 @@ import {
   getAdminToken, postModerationUnban, resolveAppeal, sendAppealMessage,
   takeAppeal, uploadAppealPhoto,
 } from '../../lib/adminClient'
+import { filterSectionTabs } from '../../constants/panelAccessTree'
 
 const API_PREFIX = import.meta.env.VITE_ADMIN_API_PREFIX || '/admin/api'
 
@@ -810,9 +811,11 @@ function AppealsTab({ role }) {
   )
 }
 
-export default function ModerationSection({ role, permissions = [] }) {
+export default function ModerationSection({ role, permissions = [], panelTabs = null }) {
   const perms = new Set(permissions)
-  const [mainTab, setMainTab] = useState('archive')
+  const mainTabs = useMemo(() => filterSectionTabs('moderation', MAIN_TABS, panelTabs), [panelTabs])
+  const [mainTab, setMainTab] = useState(mainTabs[0]?.id || 'archive')
+  const activeMainTab = mainTabs.some((t) => t.id === mainTab) ? mainTab : mainTabs[0]?.id
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -897,18 +900,18 @@ export default function ModerationSection({ role, permissions = [] }) {
           )}
         </div>
 
-        {!loading && items.length > 0 && mainTab === 'archive' && <StatsBar items={items} total={total} />}
+        {!loading && items.length > 0 && activeMainTab === 'archive' && <StatsBar items={items} total={total} />}
 
         {/* Главные табы */}
         <div className="arc-main-tabs">
-          {MAIN_TABS.map(t => (
-            <button key={t.id} className={`arc-main-tab${mainTab===t.id?' arc-main-tab-on':''}`}
+          {mainTabs.map(t => (
+            <button key={t.id} className={`arc-main-tab${activeMainTab===t.id?' arc-main-tab-on':''}`}
               onClick={() => setMainTab(t.id)}>{t.label}</button>
           ))}
         </div>
 
         {/* Фильтры — только в архиве */}
-        {mainTab === 'archive' && (
+        {activeMainTab === 'archive' && (
           <div className="arc-filters">
             <div className="arc-tabs">
               {FILTER_TYPES.map(f => (
@@ -934,13 +937,13 @@ export default function ModerationSection({ role, permissions = [] }) {
       </div>
 
       {/* Апелляции */}
-      {mainTab === 'appeals' && <AppealsTab role={role} />}
+      {activeMainTab === 'appeals' && <AppealsTab role={role} />}
 
       {/* Статистика модераторов */}
-      {mainTab === 'stats' && <ModeratorStatsTab />}
+      {activeMainTab === 'stats' && <ModeratorStatsTab />}
 
       {/* Архив */}
-      {mainTab === 'archive' && (
+      {activeMainTab === 'archive' && (
         <>
           {loading && <div className="arc-loading"><div className="arc-spinner" /> Загружаем архив...</div>}
           {error && <div className="arc-error">{error}</div>}

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import AdminSelect from '../../components/AdminSelect'
 import { fetchAuditLogs, fetchLogsOverview, fetchSystemLogs, fetchTransferLogs } from '../../lib/adminClient'
+import { filterSectionTabs } from '../../constants/panelAccessTree'
 
 const TABS = [
   { id: 'audit', label: 'Audit', hint: 'экономические события игроков' },
@@ -151,9 +152,15 @@ function SystemCard({ row, variant }) {
   )
 }
 
-export default function LogsSection() {
-  const [tab, setTab] = useState('audit')
+export default function LogsSection({ panelTabs = null }) {
+  const tabs = useMemo(() => filterSectionTabs('logs', TABS, panelTabs), [panelTabs])
+  const [tab, setTab] = useState(tabs[0]?.id || 'audit')
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0]?.id || 'audit')
   const [overview, setOverview] = useState(null)
+
+  useEffect(() => {
+    if (tabs.length && !tabs.some((t) => t.id === tab)) setTab(tabs[0].id)
+  }, [tabs, tab])
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -292,11 +299,11 @@ export default function LogsSection() {
       </article>
 
       <div className="panel-logs-tabs">
-        {TABS.map((item) => (
+        {tabs.map((item) => (
           <button
             key={item.id}
             type="button"
-            className={`panel-logs-tab${tab === item.id ? ' panel-logs-tab-active' : ''}`}
+            className={`panel-logs-tab${activeTab === item.id ? ' panel-logs-tab-active' : ''}`}
             onClick={() => {
               setTab(item.id)
               setTypeFilter('')

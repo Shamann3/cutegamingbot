@@ -8,6 +8,7 @@ import {
   forceReauth,
   removeIpBan,
 } from '../../lib/adminClient'
+import { filterSectionTabs } from '../../constants/panelAccessTree'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -413,8 +414,10 @@ const TABS = [
   { id: 'sessions', label: '🔐 Сессии и 2FA' },
 ]
 
-export default function SecuritySection() {
-  const [tab, setTab] = useState('audit')
+export default function SecuritySection({ panelTabs = null }) {
+  const tabs = filterSectionTabs('security', TABS, panelTabs)
+  const [tab, setTab] = useState(tabs[0]?.id || 'audit')
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id
 
   return (
     <section className="panel-security">
@@ -426,10 +429,10 @@ export default function SecuritySection() {
       </header>
 
       <nav className="sec-tabs">
-        {TABS.map(t => (
+        {tabs.map(t => (
           <button
             key={t.id}
-            className={`sec-tab${tab === t.id ? ' sec-tab-active' : ''}`}
+            className={`sec-tab${activeTab === t.id ? ' sec-tab-active' : ''}`}
             onClick={() => setTab(t.id)}
           >
             {t.label}
@@ -437,9 +440,10 @@ export default function SecuritySection() {
         ))}
       </nav>
 
-      {tab === 'audit' && <AuditTab />}
-      {tab === 'ipbans' && <IpBansTab />}
-      {tab === 'sessions' && <SessionsTab />}
+      {activeTab === 'audit' && <AuditTab />}
+      {activeTab === 'ipbans' && <IpBansTab />}
+      {activeTab === 'sessions' && <SessionsTab />}
+      {!activeTab && <p className="sec-empty sec-tab-body">Нет доступных разделов</p>}
     </section>
   )
 }

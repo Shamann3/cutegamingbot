@@ -71,6 +71,99 @@ SECTION_BY_ID = {s["id"]: s for s in PANEL_SECTION_DEFS}
 ALL_SECTION_IDS = [s["id"] for s in PANEL_SECTION_DEFS]
 CONFIGURABLE_SECTION_IDS = [s["id"] for s in PANEL_SECTION_DEFS if not s.get("ownerOnly")]
 
+# Внутренние вкладки разделов. Ключ в БД: "staff.salaries".
+# ownerOnly — не настраивается для ролей (остаётся только у owner через код секции).
+# selfOnly — личные вкладки сотрудника; в дефолтах ролей обычно включены.
+SECTION_TABS: dict[str, list[dict]] = {
+    "staff": [
+        {"id": "applications", "label": "Заявки", "perm": "review_applications"},
+        {"id": "members", "label": "Сотрудники", "perm": "manage_staff"},
+        {"id": "invites", "label": "Инвайты", "perm": "assign_roles"},
+        {"id": "salaries", "label": "Зарплаты", "perm": "set_salary"},
+        {"id": "bonuses", "label": "Премии", "perm": "set_salary"},
+        {"id": "ledger", "label": "Реестр", "perm": "pay_salary"},
+        {"id": "payoutsettings", "label": "Настройки выплат", "ownerOnly": True},
+        {"id": "leaderboard", "label": "Отчёты", "perm": "manage_staff"},
+        {"id": "shifts", "label": "Смены", "perm": "manage_staff"},
+        {"id": "complaints", "label": "Жалобы", "perm": "manage_staff"},
+        {"id": "questions", "label": "Анкета", "perm": "manage_staff"},
+        {"id": "mysalary", "label": "Моя зарплата", "selfOnly": True},
+        {"id": "mycomplaints", "label": "Жалобы на меня", "selfOnly": True},
+    ],
+    "content": [
+        {"id": "items", "label": "Предметы"},
+        {"id": "crops", "label": "Культуры"},
+        {"id": "craft", "label": "Крафт"},
+        {"id": "map", "label": "Карта", "ownerOnly": True},
+        {"id": "quests", "label": "Задания"},
+    ],
+    "moderation": [
+        {"id": "archive", "label": "Архив"},
+        {"id": "appeals", "label": "Апелляции", "perm": "manage_appeals"},
+        {"id": "stats", "label": "Статистика"},
+    ],
+    "security": [
+        {"id": "audit", "label": "Аудит"},
+        {"id": "ipbans", "label": "IP-баны"},
+        {"id": "sessions", "label": "Сессии"},
+    ],
+    "settings": [
+        {"id": "seed", "label": "Семена"},
+        {"id": "system", "label": "Система"},
+        {"id": "history", "label": "История"},
+    ],
+    "events": [
+        {"id": "timeline", "label": "Расписание"},
+        {"id": "quests", "label": "Ивент-квесты"},
+        {"id": "broadcasts", "label": "Рассылки"},
+    ],
+    "broadcast": [
+        {"id": "players", "label": "Игрокам"},
+        {"id": "groups", "label": "В группы"},
+    ],
+    "analytics": [
+        {"id": "quests", "label": "Квесты"},
+        {"id": "farm", "label": "Ферма"},
+        {"id": "market", "label": "Биржа"},
+        {"id": "craft", "label": "Крафт"},
+        {"id": "retention", "label": "Удержание"},
+    ],
+    "logs": [
+        {"id": "audit", "label": "Audit"},
+        {"id": "transfers", "label": "Переводы"},
+        {"id": "security", "label": "Security"},
+        {"id": "errors", "label": "Сбои"},
+    ],
+}
+
+
+def child_key(parent_id: str, tab_id: str) -> str:
+    return f"{parent_id}.{tab_id}"
+
+
+def parse_access_key(key: str) -> tuple[str, str | None]:
+    if "." not in key:
+        return key, None
+    parent, tab = key.split(".", 1)
+    return parent, tab
+
+
+def _configurable_child_keys() -> list[str]:
+    keys: list[str] = []
+    for parent, tabs in SECTION_TABS.items():
+        if parent not in CONFIGURABLE_SECTION_IDS:
+            continue
+        for t in tabs:
+            if t.get("ownerOnly"):
+                continue
+            keys.append(child_key(parent, t["id"]))
+    return keys
+
+
+# Все ключи матрицы: родители + дети (без owner-only детей).
+CONFIGURABLE_ACCESS_KEYS = CONFIGURABLE_SECTION_IDS + _configurable_child_keys()
+CONFIGURABLE_ACCESS_KEY_SET = set(CONFIGURABLE_ACCESS_KEYS)
+
 # Роли, для которых настраиваются дефолты (не owner / не кандидаты).
 CONFIGURABLE_ROLES = (ROLE_SENIOR, ROLE_JUNIOR, ROLE_MODERATOR)
 
@@ -115,31 +208,63 @@ async def ensure_panel_access_tables() -> None:
     _TABLES_READY = True
 
 
-def _builtin_default_enabled(role: str, section_id: str) -> bool:
-    """Дефолт «из коробки» — как прежняя видимость по правам роли."""
-    sec = SECTION_BY_ID.get(section_id)
-    if not sec:
-        return False
-    if sec.get("ownerOnly"):
-        return role == ROLE_OWNER
+def _builtin_default_enabled(role: str, access_key: str) -> bool:
+    """Дефолт «из коробки» для родителя или child-ключа parent.tab."""
+    parent_id, tab_id = parse_access_key(access_key)
+
+    if tab_id is None:
+        sec = SECTION_BY_ID.get(parent_id)
+        if not sec:
+            return False
+        if sec.get("ownerOnly"):
+            return role == ROLE_OWNER
+        if role == ROLE_OWNER:
+            return True
+        role_perms = PERMISSIONS_BY_ROLE.get(role, set())
+        perms = sec.get("permissions") or []
+        if not perms:
+            return role in (ROLE_SENIOR, ROLE_JUNIOR, ROLE_MODERATOR, ROLE_OWNER)
+        return any(p in role_perms for p in perms)
+
+    # Дочерняя вкладка
     if role == ROLE_OWNER:
         return True
-    role_perms = PERMISSIONS_BY_ROLE.get(role, set())
-    perms = sec.get("permissions") or []
-    if not perms:
-        # Разделы без permission раньше были видны всем активным админам.
-        return role in (ROLE_SENIOR, ROLE_JUNIOR, ROLE_MODERATOR, ROLE_OWNER)
-    return any(p in role_perms for p in perms)
+    if not _builtin_default_enabled(role, parent_id):
+        return False
+    tabs = SECTION_TABS.get(parent_id) or []
+    meta = next((t for t in tabs if t["id"] == tab_id), None)
+    if not meta or meta.get("ownerOnly"):
+        return False
+    if meta.get("selfOnly"):
+        return True
+    perm = meta.get("perm")
+    if not perm:
+        return True
+    return perm in PERMISSIONS_BY_ROLE.get(role, set())
 
 
 async def _seed_role_defaults_if_empty() -> None:
     count = await db.pool.fetchval("SELECT COUNT(*) FROM admin_panel_role_defaults")
     if count and int(count) > 0:
+        # Досев новых child-ключей на уже живых БД (идемпотентно).
+        rows = []
+        for role in CONFIGURABLE_ROLES:
+            for key in CONFIGURABLE_ACCESS_KEYS:
+                rows.append((role, key, _builtin_default_enabled(role, key)))
+        if rows:
+            await db.pool.executemany(
+                """
+                INSERT INTO admin_panel_role_defaults (role, section_id, enabled)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (role, section_id) DO NOTHING
+                """,
+                rows,
+            )
         return
     rows = []
     for role in CONFIGURABLE_ROLES:
-        for sid in CONFIGURABLE_SECTION_IDS:
-            rows.append((role, sid, _builtin_default_enabled(role, sid)))
+        for key in CONFIGURABLE_ACCESS_KEYS:
+            rows.append((role, key, _builtin_default_enabled(role, key)))
     if rows:
         await db.pool.executemany(
             """
@@ -171,11 +296,11 @@ async def get_role_defaults_map(*, force: bool = False) -> dict[str, dict[str, b
         if role not in out:
             continue
         out[role][row["section_id"]] = bool(row["enabled"])
-    # Дозаполнить отсутствующие секции builtin-значениями
+    # Дозаполнить отсутствующие ключи (родители + дети) builtin-значениями
     for role in CONFIGURABLE_ROLES:
-        for sid in CONFIGURABLE_SECTION_IDS:
-            if sid not in out[role]:
-                out[role][sid] = _builtin_default_enabled(role, sid)
+        for key in CONFIGURABLE_ACCESS_KEYS:
+            if key not in out[role]:
+                out[role][key] = _builtin_default_enabled(role, key)
     _ROLE_DEFAULTS_CACHE = (now, out)
     return out
 
@@ -189,26 +314,62 @@ async def get_user_overrides(user_id: int) -> dict[str, bool]:
     return {r["section_id"]: bool(r["allowed"]) for r in rows}
 
 
+def _resolve_key(
+    key: str,
+    role: str,
+    role_map: dict[str, bool],
+    overrides: dict[str, bool],
+) -> bool:
+    if key in overrides:
+        return bool(overrides[key])
+    if key in role_map:
+        return bool(role_map[key])
+    return _builtin_default_enabled(role, key)
+
+
 def effective_sections_from_maps(
     role: str,
     role_defaults: dict[str, dict[str, bool]],
     overrides: dict[str, bool],
 ) -> list[str]:
-    """Чистый расчёт без БД — для overview и optimistic-патчей."""
+    """Родительские разделы для сайдбара (без child-ключей)."""
     if role == ROLE_OWNER:
         return list(ALL_SECTION_IDS)
-    role_map = role_defaults.get(role) or {
-        sid: _builtin_default_enabled(role, sid) for sid in CONFIGURABLE_SECTION_IDS
-    }
+    role_map = role_defaults.get(role) or {}
     enabled: list[str] = []
     for sid in CONFIGURABLE_SECTION_IDS:
-        if sid in overrides:
-            allowed = overrides[sid]
-        else:
-            allowed = bool(role_map.get(sid, _builtin_default_enabled(role, sid)))
-        if allowed:
+        if _resolve_key(sid, role, role_map, overrides):
             enabled.append(sid)
     return enabled
+
+
+def effective_tabs_from_maps(
+    role: str,
+    role_defaults: dict[str, dict[str, bool]],
+    overrides: dict[str, bool],
+    parent_sections: list[str] | None = None,
+) -> dict[str, list[str]]:
+    """sectionId → список разрешённых внутренних tab id."""
+    if role == ROLE_OWNER:
+        return {
+            parent: [t["id"] for t in tabs]
+            for parent, tabs in SECTION_TABS.items()
+        }
+    parents = set(parent_sections or effective_sections_from_maps(role, role_defaults, overrides))
+    role_map = role_defaults.get(role) or {}
+    out: dict[str, list[str]] = {}
+    for parent, tabs in SECTION_TABS.items():
+        if parent not in parents:
+            continue
+        allowed_tabs: list[str] = []
+        for t in tabs:
+            if t.get("ownerOnly"):
+                continue
+            key = child_key(parent, t["id"])
+            if _resolve_key(key, role, role_map, overrides):
+                allowed_tabs.append(t["id"])
+        out[parent] = allowed_tabs
+    return out
 
 
 async def effective_panel_sections(role: str, user_id: int) -> list[str]:
@@ -254,20 +415,29 @@ def permissions_for_sections(role: str, section_ids: list[str]) -> list[str]:
     return sorted(result)
 
 
-async def resolve_account_access(role: str, user_id: int, status: str) -> tuple[list[str], list[str]]:
-    """(permissions, panelSections) для активного аккаунта."""
+async def resolve_account_access(
+    role: str, user_id: int, status: str,
+) -> tuple[list[str], list[str], dict[str, list[str]]]:
+    """(permissions, panelSections, panelTabs) для активного аккаунта."""
     if status != "active":
-        return [], []
-    sections = await effective_panel_sections(role, user_id)
+        return [], [], {}
+    if role == ROLE_OWNER:
+        sections = list(ALL_SECTION_IDS)
+        tabs = effective_tabs_from_maps(role, {}, {}, sections)
+        return sorted(ALL_PERMISSIONS), sections, tabs
+    defaults = await get_role_defaults_map()
+    overrides = await get_user_overrides(user_id)
+    sections = effective_sections_from_maps(role, defaults, overrides)
+    tabs = effective_tabs_from_maps(role, defaults, overrides, sections)
     perms = permissions_for_sections(role, sections)
-    return perms, sections
+    return perms, sections, tabs
 
 
 async def set_role_default(role: str, section_id: str, enabled: bool, updated_by: int) -> None:
     await ensure_panel_access_tables()
     if role not in CONFIGURABLE_ROLES:
         raise ValueError("Роль нельзя настраивать")
-    if section_id not in CONFIGURABLE_SECTION_IDS:
+    if section_id not in CONFIGURABLE_ACCESS_KEY_SET:
         raise ValueError("Раздел недоступен для настройки")
     await db.pool.execute(
         """
@@ -294,7 +464,7 @@ async def set_user_override(
 ) -> None:
     """allowed=None — сброс оверрайда (вернуться к дефолту роли)."""
     await ensure_panel_access_tables()
-    if section_id not in CONFIGURABLE_SECTION_IDS:
+    if section_id not in CONFIGURABLE_ACCESS_KEY_SET:
         raise ValueError("Раздел недоступен для настройки")
     if allowed is None:
         await db.pool.execute(
@@ -333,7 +503,7 @@ async def set_user_overrides_batch(
     for raw in items:
         uid = int(raw["userId"])
         sid = str(raw["sectionId"])
-        if sid not in CONFIGURABLE_SECTION_IDS:
+        if sid not in CONFIGURABLE_ACCESS_KEY_SET:
             raise ValueError(f"Раздел недоступен: {sid}")
         if raw.get("reset"):
             deletes.append((uid, sid))
@@ -405,6 +575,8 @@ async def list_panel_access_overview() -> dict:
         uid = int(m["user_id"])
         role = m["role"]
         ov = overrides_by_user.get(uid, {})
+        sections = effective_sections_from_maps(role, defaults, ov)
+        tabs = effective_tabs_from_maps(role, defaults, ov, sections)
         items.append(
             {
                 "userId": uid,
@@ -413,7 +585,34 @@ async def list_panel_access_overview() -> dict:
                 "role": role,
                 "roleLabel": ROLE_LABELS.get(role, role),
                 "overrides": ov,
-                "effectiveSections": effective_sections_from_maps(role, defaults, ov),
+                "effectiveSections": sections,
+                "effectiveTabs": tabs,
+            }
+        )
+
+    tree = []
+    for s in PANEL_SECTION_DEFS:
+        if s.get("ownerOnly"):
+            continue
+        children = []
+        for t in SECTION_TABS.get(s["id"], []):
+            if t.get("ownerOnly"):
+                continue
+            children.append(
+                {
+                    "id": t["id"],
+                    "key": child_key(s["id"], t["id"]),
+                    "label": t["label"],
+                    "selfOnly": bool(t.get("selfOnly")),
+                }
+            )
+        tree.append(
+            {
+                "id": s["id"],
+                "label": s["label"],
+                "group": s["group"],
+                "configurable": True,
+                "children": children,
             }
         )
 
@@ -428,6 +627,7 @@ async def list_panel_access_overview() -> dict:
             }
             for s in PANEL_SECTION_DEFS
         ],
+        "tree": tree,
         "roles": [
             {"id": r, "label": ROLE_LABELS.get(r, r)} for r in CONFIGURABLE_ROLES
         ],

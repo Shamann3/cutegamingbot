@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
 import AdminSelect from '../../components/AdminSelect'
 import GroupPostsPanel from './GroupPostsPanel'
+import { filterSectionTabs } from '../../constants/panelAccessTree'
 import {
   cancelBroadcastRun,
   countBroadcastRecipients,
@@ -368,9 +369,15 @@ function BroadcastRunCard({ row, expanded, onToggle, onCancel, cancelling }) {
   )
 }
 
-export default function BroadcastSection() {
+const BROADCAST_TABS = [
+  { id: 'players', label: 'Игрокам' },
+  { id: 'groups', label: 'В группы' },
+]
+
+export default function BroadcastSection({ panelTabs = null }) {
+  const tabs = useMemo(() => filterSectionTabs('broadcast', BROADCAST_TABS, panelTabs), [panelTabs])
   const [overview, setOverview] = useState(null)
-  const [activeTab, setActiveTab] = useState('players')
+  const [activeTab, setActiveTab] = useState(tabs[0]?.id || 'players')
   const [history, setHistory] = useState([])
   const [historyTotal, setHistoryTotal] = useState(0)
   const [historyStatus, setHistoryStatus] = useState('')
@@ -742,26 +749,23 @@ export default function BroadcastSection() {
   }
 
   const templates = overview?.templates || []
+  const currentTab = tabs.some((t) => t.id === activeTab) ? activeTab : tabs[0]?.id
 
   return (
     <div className="panel-broadcast-wrap">
       <div className="panel-broadcast-tabs">
-        <button
-          type="button"
-          className={`panel-broadcast-tab-btn${activeTab === 'players' ? ' panel-broadcast-tab-btn-active' : ''}`}
-          onClick={() => setActiveTab('players')}
-        >
-          Рассылка игрокам
-        </button>
-        <button
-          type="button"
-          className={`panel-broadcast-tab-btn${activeTab === 'groups' ? ' panel-broadcast-tab-btn-active' : ''}`}
-          onClick={() => setActiveTab('groups')}
-        >
-          Посты в группы
-        </button>
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={`panel-broadcast-tab-btn${currentTab === t.id ? ' panel-broadcast-tab-btn-active' : ''}`}
+            onClick={() => setActiveTab(t.id)}
+          >
+            {t.id === 'players' ? 'Рассылка игрокам' : 'Посты в группы'}
+          </button>
+        ))}
       </div>
-      {activeTab === 'players' && (
+      {currentTab === 'players' && (
       <div className="panel-broadcast">
       <AdminActionModal
         open={cancelTarget != null}
@@ -1162,7 +1166,7 @@ export default function BroadcastSection() {
       </article>
       </div>
       )}
-      {activeTab === 'groups' && <GroupPostsPanel />}
+      {currentTab === 'groups' && <GroupPostsPanel />}
     </div>
   )
 }

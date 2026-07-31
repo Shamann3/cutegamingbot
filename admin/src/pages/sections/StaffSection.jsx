@@ -47,6 +47,7 @@ import PayrollSalariesTab from './payroll/SalariesTab'
 import PayrollBonusesTab from './payroll/BonusesTab'
 import PayrollSettingsTab from './payroll/SettingsTab'
 import PayrollMySalaryTab from './payroll/MySalaryTab'
+import { filterSectionTabs } from '../../constants/panelAccessTree'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1544,7 +1545,7 @@ function InvitesTab() {
 // Main
 // ---------------------------------------------------------------------------
 
-export default function StaffSection({ role, permissions = [], myUserId = null }) {
+export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null }) {
   const perms = useMemo(() => new Set(permissions), [permissions])
   const isOwner = role === 'owner'
 
@@ -1563,8 +1564,8 @@ export default function StaffSection({ role, permissions = [], myUserId = null }
     if (perms.has('manage_staff')) list.push({ id: 'questions', label: 'Анкета' })
     if (role && role !== 'owner') list.push({ id: 'mysalary', label: 'Моя зарплата' })
     if (role && role !== 'owner') list.push({ id: 'mycomplaints', label: 'Жалобы на меня' })
-    return list
-  }, [perms, role, isOwner])
+    return filterSectionTabs('staff', list, panelTabs)
+  }, [perms, role, isOwner, panelTabs])
 
   const [tab, setTab] = useState(null)
   const activeTab = tab && tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id

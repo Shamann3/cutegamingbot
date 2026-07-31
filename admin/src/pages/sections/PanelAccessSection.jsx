@@ -6,6 +6,8 @@ import {
   setPanelUserAccessBatch,
 } from '../../lib/adminClient'
 import { sectionBlurb } from '../../constants/panelNav'
+import { parseAccessKey } from '../../constants/panelAccessTree'
+import PanelAccessWizard from './PanelAccessWizard'
 
 const GROUP_LABELS = {
   overview: 'Обзор',
@@ -18,6 +20,7 @@ const GROUP_LABELS = {
 }
 
 const TABS = [
+  { id: 'wizard', label: 'Простая настройка' },
   { id: 'defaults', label: 'Дефолты ролей' },
   { id: 'members', label: 'Администраторы' },
   { id: 'compare', label: 'Сравнение' },
@@ -31,6 +34,74 @@ function memberName(m) {
 function shortName(m) {
   const full = memberName(m)
   return full.length > 14 ? `${full.slice(0, 12)}…` : full
+}
+
+function memberHasKey(m, key) {
+  const { parentId, tabId } = parseAccessKey(key)
+  if (!tabId) {
+    return m._effSet ? m._effSet.has(parentId) : (m.effectiveSections || []).includes(parentId)
+  }
+  const parentOn = m._effSet
+    ? m._effSet.has(parentId)
+    : (m.effectiveSections || []).includes(parentId)
+  if (!parentOn) return false
+  return (m.effectiveTabs?.[parentId] || []).includes(tabId)
+}
+
+function applyKeyToMember(m, key, open, roleMap) {
+  const overrides = { ...(m.overrides || {}) }
+  overrides[key] = !!open
+  const { parentId, tabId } = parseAccessKey(key)
+  const set = new Set(m.effectiveSections || [])
+  const tabs = { ...(m.effectiveTabs || {}) }
+
+  if (!tabId) {
+    if (open) set.add(parentId)
+    else set.delete(parentId)
+  } else {
+    const resolved = Object.prototype.hasOwnProperty.call(overrides, key)
+      ? !!overrides[key]
+      : !!roleMap?.[key]
+    const list = new Set(tabs[parentId] || [])
+    if (resolved) list.add(tabId)
+    else list.delete(tabId)
+    tabs[parentId] = [...list]
+  }
+
+  return {
+    ...m,
+    overrides,
+    effectiveSections: [...set],
+    _effSet: set,
+    effectiveTabs: tabs,
+  }
+}
+
+function resetKeyOnMember(m, key, roleMap) {
+  const overrides = { ...(m.overrides || {}) }
+  delete overrides[key]
+  const { parentId, tabId } = parseAccessKey(key)
+  const fromRole = !!roleMap?.[key]
+  const set = new Set(m.effectiveSections || [])
+  const tabs = { ...(m.effectiveTabs || {}) }
+
+  if (!tabId) {
+    if (fromRole) set.add(parentId)
+    else set.delete(parentId)
+  } else {
+    const list = new Set(tabs[parentId] || [])
+    if (fromRole) list.add(tabId)
+    else list.delete(tabId)
+    tabs[parentId] = [...list]
+  }
+
+  return {
+    ...m,
+    overrides,
+    effectiveSections: [...set],
+    _effSet: set,
+    effectiveTabs: tabs,
+  }
 }
 
 function Toggle({ on, disabled, onClick, label }) {
@@ -57,6 +128,21 @@ function StateChip({ state }) {
   return <span className="pa-chip pa-chip-default">дефолт</span>
 }
 
+function ExpandBtn({ open, onClick, label }) {
+  return (
+    <button
+      type="button"
+      className={`pa-expand-btn${open ? ' is-open' : ''}`}
+      onClick={onClick}
+      aria-expanded={open}
+      title={open ? 'Свернуть вкладки' : 'Показать внутренние вкладки'}
+      aria-label={label}
+    >
+      <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+    </button>
+  )
+}
+
 function HelpModal({ onClose }) {
   return (
     <div className="admin-modal-backdrop" role="presentation" onClick={onClose}>
@@ -70,37 +156,44 @@ function HelpModal({ onClose }) {
         <p className="pa-help-kicker">ACCESS · GUIDE</p>
         <h3 id="pa-help-title" className="admin-modal-title">Что это за вкладка</h3>
         <p className="admin-modal-desc">
-          «Админ панель» — центр управления видимостью разделов панели.
-          Доступна только владельцу. Изменения применяются сразу, без перезапуска.
+          «Админ панель» — центр управления видимостью разделов и внутренних вкладок.
+          Доступна только владельцу. Изменения применяются сразу.
         </p>
 
         <ul className="pa-help-list">
           <li>
+            <strong>Простая настройка</strong>
+            <span>
+              Выберите администратора и пройдите по разделам как по слайдам:
+              разрешить / запретить раздел и каждую внутреннюю вкладку.
+            </span>
+          </li>
+          <li>
             <strong>Дефолты ролей</strong>
             <span>
-              Базовый набор вкладок для старшего, младшего и модератора.
-              Выдаёте роль — человек сразу получает эти разделы.
+              Базовый набор для старшего, младшего и модератора.
+              Раскройте раздел (▸), чтобы настроить внутренние вкладки.
             </span>
           </li>
           <li>
             <strong>Администраторы</strong>
             <span>
-              Персональные исключения поверх дефолта: Выдать / Дефолт / Запрет
-              для каждой вкладки у конкретного человека.
+              Персональные исключения: Выдать / Дефолт / Запрет
+              для раздела и каждой внутренней вкладки.
             </span>
           </li>
           <li>
             <strong>Сравнение</strong>
             <span>
-              Матрица доступов: сравните администраторов, кликайте ON/OFF прямо
-              в ячейке, читайте описание вкладки под названием строки.
-              Shift+клик — сброс к дефолту роли.
+              Матрица: клик ON/OFF, Shift+клик — сброс к дефолту.
+              Раскройте строку раздела, чтобы сравнить внутренние вкладки.
             </span>
           </li>
         </ul>
 
         <p className="pa-help-note">
           Итоговый доступ = дефолт роли ± персональные исключения.
+          Можно открыть «Стафф», но скрыть, например, «Зарплаты».
           Вкладка «Админ панель» у других ролей недоступна.
         </p>
 
@@ -116,8 +209,10 @@ function HelpModal({ onClose }) {
 
 const ComparePane = memo(function ComparePane({
   allMembers,
-  sectionsByGroup,
-  configurableSections,
+  treeByGroup,
+  flatKeys,
+  expanded,
+  onToggleExpand,
   busyKeys,
   onToggleCell,
   onResetCell,
@@ -132,7 +227,6 @@ const ComparePane = memo(function ComparePane({
     return allMembers.filter((m) => m.role === roleFilter)
   }, [allMembers, roleFilter])
 
-  // При смене фильтра — убираем из выбора тех, кого больше нет в пуле
   useEffect(() => {
     setPicked((prev) => {
       const allowed = new Set(pool.map((m) => m.userId))
@@ -142,9 +236,7 @@ const ComparePane = memo(function ComparePane({
   }, [pool])
 
   const selected = useMemo(
-    () => pool
-      .filter((m) => picked.has(m.userId))
-      .map((m) => (m._effSet ? m : { ...m, _effSet: new Set(m.effectiveSections || []) })),
+    () => pool.filter((m) => picked.has(m.userId)),
     [pool, picked],
   )
 
@@ -162,47 +254,60 @@ const ComparePane = memo(function ComparePane({
 
   const matrixRows = useMemo(() => {
     const rows = []
-    for (const g of sectionsByGroup) {
-      for (const s of g.items) {
-        const eff = s.id
-        const cells = selected.map((m) => {
-          const set = m._effSet || null
-          const open = set ? set.has(eff) : (m.effectiveSections || []).includes(eff)
-          return {
+    for (const g of treeByGroup) {
+      for (const node of g.items) {
+        const pushRow = (accessKey, label, blurb, depth, parentId, childCount) => {
+          const cells = selected.map((m) => ({
             userId: m.userId,
             name: memberName(m),
-            open,
-            override: m.overrides?.[s.id],
+            open: memberHasKey(m, accessKey),
+            override: m.overrides?.[accessKey],
+          }))
+          const opens = cells.map((c) => c.open)
+          const hasDiff = opens.length > 1 && new Set(opens.map(Boolean)).size > 1
+          rows.push({
+            sectionId: accessKey,
+            label,
+            group: g.label,
+            blurb,
+            cells,
+            hasDiff,
+            openCount: opens.filter(Boolean).length,
+            depth,
+            parentId,
+            childCount,
+            expanded: expanded.has(parentId || accessKey),
+          })
+        }
+
+        pushRow(
+          node.id,
+          node.label,
+          node.blurb || sectionBlurb(node.id),
+          0,
+          null,
+          node.children?.length || 0,
+        )
+
+        if (expanded.has(node.id) && node.children?.length) {
+          for (const ch of node.children) {
+            pushRow(ch.key, ch.label, ch.blurb || '', 1, node.id, 0)
           }
-        })
-        const opens = cells.map((c) => c.open)
-        const hasDiff = opens.length > 1 && new Set(opens.map(Boolean)).size > 1
-        rows.push({
-          sectionId: s.id,
-          label: s.label,
-          group: g.label,
-          blurb: s.blurb || sectionBlurb(s.id),
-          cells,
-          hasDiff,
-          openCount: opens.filter(Boolean).length,
-        })
+        }
       }
     }
     return onlyDiff ? rows.filter((r) => r.hasDiff) : rows
-  }, [sectionsByGroup, selected, onlyDiff])
+  }, [treeByGroup, selected, onlyDiff, expanded])
 
   const diffCount = useMemo(() => {
     if (selected.length < 2) return 0
     let n = 0
-    for (const s of configurableSections) {
-      const opens = selected.map((m) => {
-        if (m._effSet) return m._effSet.has(s.id)
-        return (m.effectiveSections || []).includes(s.id)
-      })
+    for (const key of flatKeys) {
+      const opens = selected.map((m) => memberHasKey(m, key))
       if (new Set(opens.map(Boolean)).size > 1) n += 1
     }
     return n
-  }, [selected, configurableSections])
+  }, [selected, flatKeys])
 
   const cellBusy = (userId, sectionId) => busyKeys?.has(`cmp-${userId}-${sectionId}`)
   const rowBusy = (sectionId) => busyKeys?.has(`cmp-row-${sectionId}`)
@@ -215,8 +320,8 @@ const ComparePane = memo(function ComparePane({
             <p className="pa-cyber-kicker">ACCESS MATRIX // COMPARE</p>
             <h3 className="pa-cyber-title">Сравнение доступов</h3>
             <p className="pa-cyber-sub">
-              Клик по ячейке — вкл/выкл доступ. Shift+клик — сброс к дефолту роли.
-              Под названием вкладки — коротко, зачем она нужна.
+              Клик по ячейке — вкл/выкл. Shift+клик — сброс к дефолту роли.
+              Раскройте раздел (▸), чтобы увидеть внутренние вкладки.
             </p>
           </div>
           <div className="pa-cyber-meters" aria-hidden="true">
@@ -229,42 +334,29 @@ const ComparePane = memo(function ComparePane({
               <em>отличий</em>
             </span>
             <span className="pa-cyber-meter">
-              <b>{configurableSections.length}</b>
-              <em>вкладок</em>
+              <b>{flatKeys.length}</b>
+              <em>ключей</em>
             </span>
           </div>
         </header>
 
         <div className="pa-cyber-controls">
           <div className="pa-cyber-filters">
-            <button
-              type="button"
-              className={`pa-cyber-chip${roleFilter === 'all' ? ' is-on' : ''}`}
-              onClick={() => setRoleFilter('all')}
-            >
-              Все роли
-            </button>
-            <button
-              type="button"
-              className={`pa-cyber-chip${roleFilter === 'senior_admin' ? ' is-on' : ''}`}
-              onClick={() => setRoleFilter('senior_admin')}
-            >
-              Старшие
-            </button>
-            <button
-              type="button"
-              className={`pa-cyber-chip${roleFilter === 'junior_admin' ? ' is-on' : ''}`}
-              onClick={() => setRoleFilter('junior_admin')}
-            >
-              Младшие
-            </button>
-            <button
-              type="button"
-              className={`pa-cyber-chip${roleFilter === 'moderator' ? ' is-on' : ''}`}
-              onClick={() => setRoleFilter('moderator')}
-            >
-              Модераторы
-            </button>
+            {[
+              ['all', 'Все роли'],
+              ['senior_admin', 'Старшие'],
+              ['junior_admin', 'Младшие'],
+              ['moderator', 'Модераторы'],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={`pa-cyber-chip${roleFilter === id ? ' is-on' : ''}`}
+                onClick={() => setRoleFilter(id)}
+              >
+                {label}
+              </button>
+            ))}
           </div>
           <div className="pa-cyber-actions">
             <button type="button" className="pa-cyber-chip" onClick={selectAll} disabled={!pool.length}>
@@ -285,9 +377,7 @@ const ComparePane = memo(function ComparePane({
         </div>
 
         <div className="pa-cyber-pick">
-          {pool.length === 0 && (
-            <p className="pa-empty">Нет администраторов в этом фильтре</p>
-          )}
+          {pool.length === 0 && <p className="pa-empty">Нет администраторов в этом фильтре</p>}
           {pool.map((m) => {
             const on = picked.has(m.userId)
             const n = (m.effectiveSections || []).length
@@ -303,7 +393,7 @@ const ComparePane = memo(function ComparePane({
                 <span className="pa-cyber-person-body">
                   <span className="pa-cyber-person-name">{memberName(m)}</span>
                   <span className="pa-cyber-person-meta">
-                    {m.roleLabel} · {n}/{configurableSections.length}
+                    {m.roleLabel} · {n} разд.
                   </span>
                 </span>
               </button>
@@ -325,7 +415,7 @@ const ComparePane = memo(function ComparePane({
                 <tr>
                   <th className="pa-cyber-corner">
                     <span>SECTION</span>
-                    <span className="pa-cyber-corner-sub">вкладка · что делает</span>
+                    <span className="pa-cyber-corner-sub">раздел · внутренние вкладки</span>
                   </th>
                   {selected.map((m) => (
                     <th key={m.userId} title={`${memberName(m)} · ${m.roleLabel}`}>
@@ -333,7 +423,7 @@ const ComparePane = memo(function ComparePane({
                       <span className="pa-cyber-col-role">{m.roleLabel}</span>
                       <span className="pa-cyber-col-bar" aria-hidden="true">
                         <i style={{
-                          width: `${Math.round(((m.effectiveSections || []).length / Math.max(1, configurableSections.length)) * 100)}%`,
+                          width: `${Math.round(((m.effectiveSections || []).length / Math.max(1, flatKeys.filter((k) => !k.includes('.')).length)) * 100)}%`,
                         }}
                         />
                       </span>
@@ -344,16 +434,26 @@ const ComparePane = memo(function ComparePane({
               <tbody>
                 {matrixRows.map((row) => {
                   const rBusy = rowBusy(row.sectionId)
+                  const isChild = row.depth > 0
                   return (
                     <tr
                       key={row.sectionId}
-                      className={`pa-cyber-row${row.hasDiff ? ' is-diff' : ''}${row.openCount === selected.length ? ' is-full' : ''}${row.openCount === 0 ? ' is-none' : ''}${rBusy ? ' is-busy' : ''}`}
+                      className={`pa-cyber-row${row.hasDiff ? ' is-diff' : ''}${row.openCount === selected.length ? ' is-full' : ''}${row.openCount === 0 ? ' is-none' : ''}${rBusy ? ' is-busy' : ''}${isChild ? ' is-child' : ''}`}
                     >
                       <th scope="row">
-                        <div className="pa-cyber-sec">
-                          <span className="pa-cyber-sec-group">{row.group}</span>
-                          <span className="pa-cyber-sec-label">{row.label}</span>
-                          {row.blurb && (
+                        <div className={`pa-cyber-sec${isChild ? ' is-child' : ''}`}>
+                          <span className="pa-cyber-sec-group">{isChild ? '↳ вкладка' : row.group}</span>
+                          <div className="pa-cyber-sec-line">
+                            {!isChild && row.childCount > 0 && (
+                              <ExpandBtn
+                                open={expanded.has(row.sectionId)}
+                                onClick={() => onToggleExpand?.(row.sectionId)}
+                                label={`Внутренние вкладки: ${row.label}`}
+                              />
+                            )}
+                            <span className="pa-cyber-sec-label">{row.label}</span>
+                          </div>
+                          {row.blurb && !isChild && (
                             <p className="pa-cyber-sec-blurb">{row.blurb}</p>
                           )}
                           {selected.length > 1 && (
@@ -363,7 +463,6 @@ const ComparePane = memo(function ComparePane({
                                 className="pa-cyber-mini"
                                 disabled={rBusy}
                                 onClick={() => onSetRowForAll?.(row.sectionId, true, selected.map((m) => m.userId))}
-                                title="Открыть эту вкладку всем выбранным"
                               >
                                 всем ON
                               </button>
@@ -372,7 +471,6 @@ const ComparePane = memo(function ComparePane({
                                 className="pa-cyber-mini"
                                 disabled={rBusy}
                                 onClick={() => onSetRowForAll?.(row.sectionId, false, selected.map((m) => m.userId))}
-                                title="Закрыть эту вкладку всем выбранным"
                               >
                                 всем OFF
                               </button>
@@ -389,11 +487,10 @@ const ComparePane = memo(function ComparePane({
                               className={`pa-cyber-cell${c.open ? ' is-open' : ' is-closed'}${c.override === true ? ' is-grant' : ''}${c.override === false ? ' is-deny' : ''}${busy ? ' is-busy' : ''}`}
                               disabled={busy}
                               aria-pressed={c.open}
-                              aria-label={`${row.label} · ${c.name}: ${c.open ? 'открыто' : 'закрыто'}. Клик — переключить. Shift+клик — дефолт.`}
                               title={
                                 c.open
-                                  ? `${c.name}: открыто${c.override === true ? ' (выдано)' : ''}. Клик — закрыть. Shift+клик — дефолт.`
-                                  : `${c.name}: закрыто${c.override === false ? ' (запрет)' : ''}. Клик — открыть. Shift+клик — дефолт.`
+                                  ? `${c.name}: открыто. Клик — закрыть. Shift+клик — дефолт.`
+                                  : `${c.name}: закрыто. Клик — открыть. Shift+клик — дефолт.`
                               }
                               onClick={(e) => {
                                 if (e.shiftKey) {
@@ -429,13 +526,8 @@ const ComparePane = memo(function ComparePane({
             <span><i className="pa-cyber-lg pa-cyber-lg-on" /> открыто · клик выкл</span>
             <span><i className="pa-cyber-lg pa-cyber-lg-off" /> закрыто · клик вкл</span>
             <span><i className="pa-cyber-lg pa-cyber-lg-diff" /> отличия в строке</span>
+            <span>▸ · внутренние вкладки</span>
             <span>Shift+клик · дефолт роли</span>
-            <span>угол · персональный override</span>
-            {selected.length >= 2 && (
-              <span className="pa-cyber-legend-stat">
-                совпадений: {configurableSections.length - diffCount}/{configurableSections.length}
-              </span>
-            )}
           </footer>
         )}
       </div>
@@ -449,10 +541,11 @@ export default function PanelAccessSection() {
   const [busyKeys, setBusyKeys] = useState(() => new Set())
   const [selectedId, setSelectedId] = useState(null)
   const [roleTab, setRoleTab] = useState('senior_admin')
-  const [viewTab, setViewTab] = useState('defaults')
+  const [viewTab, setViewTab] = useState('wizard')
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
   const [helpOpen, setHelpOpen] = useState(false)
+  const [expanded, setExpanded] = useState(() => new Set(['staff']))
   const pendingSeq = useRef(new Map())
 
   const markBusy = useCallback((key) => {
@@ -473,6 +566,15 @@ export default function PanelAccessSection() {
     })
   }, [])
 
+  const toggleExpand = useCallback((id) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!silent) {
       setLoading(true)
@@ -480,10 +582,10 @@ export default function PanelAccessSection() {
     }
     try {
       const d = await fetchPanelAccess()
-      // Подготовка Set для быстрых includes в матрице
       d.members = (d.members || []).map((m) => ({
         ...m,
         _effSet: new Set(m.effectiveSections || []),
+        effectiveTabs: m.effectiveTabs || {},
       }))
       setData(d)
       setSelectedId((prev) => {
@@ -508,29 +610,42 @@ export default function PanelAccessSection() {
 
   useEffect(() => { load() }, [load])
 
-  const configurableSections = useMemo(
-    () => (data?.sections || []).filter((s) => s.configurable),
-    [data],
-  )
-
-  const sectionsByGroup = useMemo(() => {
+  const treeByGroup = useMemo(() => {
+    const tree = data?.tree || []
     const groups = []
     const seen = new Set()
-    for (const s of configurableSections) {
-      if (seen.has(s.group)) continue
-      seen.add(s.group)
+    for (const node of tree) {
+      if (seen.has(node.group)) continue
+      seen.add(node.group)
       groups.push({
-        id: s.group,
-        label: GROUP_LABELS[s.group] || s.group,
-        items: configurableSections
-          .filter((x) => x.group === s.group)
-          .map((x) => ({ ...x, blurb: sectionBlurb(x.id) })),
+        id: node.group,
+        label: GROUP_LABELS[node.group] || node.group,
+        items: tree
+          .filter((x) => x.group === node.group)
+          .map((x) => ({
+            ...x,
+            blurb: sectionBlurb(x.id),
+            children: (x.children || []).map((ch) => ({
+              ...ch,
+              blurb: ch.blurb || '',
+            })),
+          })),
       })
     }
     return groups
-  }, [configurableSections])
+  }, [data])
 
-  // Members с _effSet для матрицы (если load уже положил — ок)
+  const flatKeys = useMemo(() => {
+    const keys = []
+    for (const g of treeByGroup) {
+      for (const node of g.items) {
+        keys.push(node.id)
+        for (const ch of node.children || []) keys.push(ch.key)
+      }
+    }
+    return keys
+  }, [treeByGroup])
+
   const membersForCompare = useMemo(() => {
     return (data?.members || []).map((m) => (
       m._effSet ? m : { ...m, _effSet: new Set(m.effectiveSections || []) }
@@ -554,35 +669,49 @@ export default function PanelAccessSection() {
 
   const roleDefaults = data?.roleDefaults?.[roleTab] || {}
 
-  const toggleRoleDefault = async (sectionId, enabled) => {
-    const key = `role-${roleTab}-${sectionId}`
-    // Optimistic UI сразу — сеть в фоне
+  const toggleRoleDefault = async (accessKey, enabled) => {
+    const key = `role-${roleTab}-${accessKey}`
     startTransition(() => {
       setData((prev) => {
         if (!prev) return prev
+        const nextRoleMap = {
+          ...(prev.roleDefaults?.[roleTab] || {}),
+          [accessKey]: enabled,
+        }
         return {
           ...prev,
           roleDefaults: {
             ...prev.roleDefaults,
-            [roleTab]: {
-              ...(prev.roleDefaults?.[roleTab] || {}),
-              [sectionId]: enabled,
-            },
+            [roleTab]: nextRoleMap,
           },
           members: (prev.members || []).map((m) => {
             if (m.role !== roleTab) return m
-            if (m.overrides && Object.prototype.hasOwnProperty.call(m.overrides, sectionId)) return m
+            if (m.overrides && Object.prototype.hasOwnProperty.call(m.overrides, accessKey)) return m
+            const { parentId, tabId } = parseAccessKey(accessKey)
             const set = new Set(m.effectiveSections || [])
-            if (enabled) set.add(sectionId)
-            else set.delete(sectionId)
-            return { ...m, effectiveSections: [...set], _effSet: set }
+            const tabs = { ...(m.effectiveTabs || {}) }
+            if (!tabId) {
+              if (enabled) set.add(parentId)
+              else set.delete(parentId)
+            } else {
+              const list = new Set(tabs[parentId] || [])
+              if (enabled) list.add(tabId)
+              else list.delete(tabId)
+              tabs[parentId] = [...list]
+            }
+            return {
+              ...m,
+              effectiveSections: [...set],
+              _effSet: set,
+              effectiveTabs: tabs,
+            }
           }),
         }
       })
     })
     markBusy(key)
     try {
-      await setPanelRoleDefault({ role: roleTab, sectionId, enabled })
+      await setPanelRoleDefault({ role: roleTab, sectionId: accessKey, enabled })
     } catch (e) {
       alert(e?.message || 'Ошибка')
       try { await load({ silent: true }) } catch { /* ignore */ }
@@ -591,53 +720,35 @@ export default function PanelAccessSection() {
     }
   }
 
-  const patchMemberAccess = useCallback((userId, sectionId, mode) => {
-    // mode: true | false | 'reset' — мгновенный локальный патч без ожидания сети
+  const patchMemberAccess = useCallback((userId, accessKey, mode) => {
     setData((prev) => {
       if (!prev) return prev
       let changed = false
-      const members = (prev.members || []).map((m) => {
+      const membersNext = (prev.members || []).map((m) => {
         if (m.userId !== userId) return m
         changed = true
-        const overrides = { ...(m.overrides || {}) }
-        if (mode === 'reset') delete overrides[sectionId]
-        else overrides[sectionId] = !!mode
-
         const roleMap = prev.roleDefaults?.[m.role] || {}
-        const fromRole = !!roleMap[sectionId]
-        const open = Object.prototype.hasOwnProperty.call(overrides, sectionId)
-          ? !!overrides[sectionId]
-          : fromRole
-
-        const set = new Set(m.effectiveSections || [])
-        if (open) set.add(sectionId)
-        else set.delete(sectionId)
-
-        return {
-          ...m,
-          overrides,
-          effectiveSections: [...set],
-          _effSet: set,
-        }
+        if (mode === 'reset') return resetKeyOnMember(m, accessKey, roleMap)
+        return applyKeyToMember(m, accessKey, !!mode, roleMap)
       })
       if (!changed) return prev
-      return { ...prev, members }
+      return { ...prev, members: membersNext }
     })
   }, [])
 
-  const setUserSection = async (sectionId, mode) => {
+  const setUserSection = async (accessKey, mode) => {
     if (!selected) return
-    const key = `user-${selected.userId}-${sectionId}`
+    const key = `user-${selected.userId}-${accessKey}`
     const patchMode = mode === 'default' ? 'reset' : mode === 'grant'
-    startTransition(() => patchMemberAccess(selected.userId, sectionId, patchMode))
+    startTransition(() => patchMemberAccess(selected.userId, accessKey, patchMode))
     markBusy(key)
     try {
       if (mode === 'default') {
-        await setPanelUserAccess({ userId: selected.userId, sectionId, reset: true })
+        await setPanelUserAccess({ userId: selected.userId, sectionId: accessKey, reset: true })
       } else {
         await setPanelUserAccess({
           userId: selected.userId,
-          sectionId,
+          sectionId: accessKey,
           allowed: mode === 'grant',
         })
       }
@@ -648,6 +759,20 @@ export default function PanelAccessSection() {
       clearBusy(key)
     }
   }
+
+  const wizardSetKey = useCallback(async (userId, accessKey, allowed) => {
+    const key = `wiz-${userId}-${accessKey}`
+    startTransition(() => patchMemberAccess(userId, accessKey, !!allowed))
+    markBusy(key)
+    try {
+      await setPanelUserAccess({ userId, sectionId: accessKey, allowed: !!allowed })
+    } catch (e) {
+      alert(e?.message || 'Ошибка')
+      try { await load({ silent: true }) } catch { /* ignore */ }
+    } finally {
+      clearBusy(key)
+    }
+  }, [patchMemberAccess, markBusy, clearBusy, load])
 
   const compareToggleCell = useCallback(async (userId, sectionId, nextOpen) => {
     const key = `cmp-${userId}-${sectionId}`
@@ -696,7 +821,6 @@ export default function PanelAccessSection() {
     if (!ids.length) return
     const key = `cmp-row-${sectionId}`
     const idSet = new Set(ids)
-    // Один setState на всю строку — без N перерисовок
     startTransition(() => {
       setData((prev) => {
         if (!prev) return prev
@@ -704,11 +828,8 @@ export default function PanelAccessSection() {
           ...prev,
           members: (prev.members || []).map((m) => {
             if (!idSet.has(m.userId)) return m
-            const overrides = { ...(m.overrides || {}), [sectionId]: !!open }
-            const set = new Set(m.effectiveSections || [])
-            if (open) set.add(sectionId)
-            else set.delete(sectionId)
-            return { ...m, overrides, effectiveSections: [...set], _effSet: set }
+            const roleMap = prev.roleDefaults?.[m.role] || {}
+            return applyKeyToMember(m, sectionId, !!open, roleMap)
           }),
         }
       })
@@ -726,13 +847,12 @@ export default function PanelAccessSection() {
     }
   }, [markBusy, clearBusy, load])
 
-  const sectionState = (sectionId) => {
+  const sectionState = (accessKey) => {
     if (!selected) return { on: false, state: 'default' }
-    const ov = selected.overrides?.[sectionId]
+    const ov = selected.overrides?.[accessKey]
     if (ov === true) return { on: true, state: 'grant' }
     if (ov === false) return { on: false, state: 'deny' }
-    const on = (selected.effectiveSections || []).includes(sectionId)
-    return { on, state: 'default' }
+    return { on: memberHasKey(selected, accessKey), state: 'default' }
   }
 
   const resetAllOverrides = async () => {
@@ -746,7 +866,7 @@ export default function PanelAccessSection() {
     const key = `user-${selected.userId}-reset`
     markBusy(key)
     startTransition(() => {
-      for (const sectionId of overs) patchMemberAccess(selected.userId, sectionId, 'reset')
+      for (const accessKey of overs) patchMemberAccess(selected.userId, accessKey, 'reset')
     })
     try {
       await setPanelUserAccessBatch(
@@ -764,13 +884,124 @@ export default function PanelAccessSection() {
     }
   }
 
+  const renderDefaultsNode = (node) => {
+    const on = !!roleDefaults[node.id]
+    const busy = busyKeys.has(`role-${roleTab}-${node.id}`)
+    const open = expanded.has(node.id)
+    const kids = node.children || []
+    return (
+      <li key={node.id} className="pa-tree-block">
+        <div className="pa-section-row pa-section-row-parent">
+          <div className="pa-section-who">
+            {kids.length > 0 && (
+              <ExpandBtn
+                open={open}
+                onClick={() => toggleExpand(node.id)}
+                label={`Внутренние вкладки: ${node.label}`}
+              />
+            )}
+            <span className="pa-section-name">{node.label}</span>
+            {kids.length > 0 && (
+              <span className="pa-child-count">{kids.length} вкл.</span>
+            )}
+          </div>
+          <Toggle
+            on={on}
+            disabled={busy}
+            label={`${node.label}: ${on ? 'включено' : 'выключено'}`}
+            onClick={() => toggleRoleDefault(node.id, !on)}
+          />
+        </div>
+        {open && kids.length > 0 && (
+          <ul className="pa-child-list">
+            {kids.map((ch) => {
+              const chOn = !!roleDefaults[ch.key]
+              const chBusy = busyKeys.has(`role-${roleTab}-${ch.key}`)
+              return (
+                <li key={ch.key} className="pa-section-row pa-section-row-child">
+                  <span className="pa-section-name">
+                    <span className="pa-child-mark" aria-hidden="true">↳</span>
+                    {ch.label}
+                  </span>
+                  <Toggle
+                    on={chOn}
+                    disabled={chBusy}
+                    label={`${ch.label}: ${chOn ? 'включено' : 'выключено'}`}
+                    onClick={() => toggleRoleDefault(ch.key, !chOn)}
+                  />
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </li>
+    )
+  }
+
+  const renderMemberNode = (node) => {
+    const { on, state } = sectionState(node.id)
+    const busy = busyKeys.has(`user-${selected.userId}-${node.id}`)
+    const open = expanded.has(node.id)
+    const kids = node.children || []
+    return (
+      <li key={node.id} className="pa-tree-block">
+        <div className="pa-section-row pa-section-row-user pa-section-row-parent">
+          <div className="pa-section-who">
+            {kids.length > 0 && (
+              <ExpandBtn
+                open={open}
+                onClick={() => toggleExpand(node.id)}
+                label={`Внутренние вкладки: ${node.label}`}
+              />
+            )}
+            <span className="pa-section-name">{node.label}</span>
+            <StateChip state={state} />
+          </div>
+          <div className="pa-user-actions" role="group" aria-label={`Доступ: ${node.label}`}>
+            <button type="button" className={`pa-pill${state === 'grant' ? ' is-on' : ''}`} disabled={busy} onClick={() => setUserSection(node.id, 'grant')}>Выдать</button>
+            <button type="button" className={`pa-pill${state === 'default' ? ' is-on' : ''}`} disabled={busy} onClick={() => setUserSection(node.id, 'default')}>Дефолт</button>
+            <button type="button" className={`pa-pill pa-pill-danger${state === 'deny' ? ' is-on' : ''}`} disabled={busy} onClick={() => setUserSection(node.id, 'deny')}>Запрет</button>
+            <span className={`pa-eff${on ? ' is-on' : ''}`}>{on ? 'открыто' : 'закрыто'}</span>
+          </div>
+        </div>
+        {open && kids.length > 0 && (
+          <ul className={`pa-child-list${!on ? ' is-dim' : ''}`}>
+            {kids.map((ch) => {
+              const st = sectionState(ch.key)
+              const chBusy = busyKeys.has(`user-${selected.userId}-${ch.key}`)
+              return (
+                <li key={ch.key} className="pa-section-row pa-section-row-user pa-section-row-child">
+                  <div className="pa-section-who">
+                    <span className="pa-section-name">
+                      <span className="pa-child-mark" aria-hidden="true">↳</span>
+                      {ch.label}
+                    </span>
+                    <StateChip state={st.state} />
+                  </div>
+                  <div className="pa-user-actions" role="group" aria-label={`Доступ: ${ch.label}`}>
+                    <button type="button" className={`pa-pill${st.state === 'grant' ? ' is-on' : ''}`} disabled={chBusy} onClick={() => setUserSection(ch.key, 'grant')}>Выдать</button>
+                    <button type="button" className={`pa-pill${st.state === 'default' ? ' is-on' : ''}`} disabled={chBusy} onClick={() => setUserSection(ch.key, 'default')}>Дефолт</button>
+                    <button type="button" className={`pa-pill pa-pill-danger${st.state === 'deny' ? ' is-on' : ''}`} disabled={chBusy} onClick={() => setUserSection(ch.key, 'deny')}>Запрет</button>
+                    <span className={`pa-eff${st.on && on ? ' is-on' : ''}`}>
+                      {st.on && on ? 'открыто' : 'закрыто'}
+                    </span>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </li>
+    )
+  }
+
   return (
     <section className="panel-security panel-panel-access">
       <header className="sec-header pa-header">
         <div className="pa-header-text">
           <h2 className="sec-title">Админ панель</h2>
           <p className="sec-subtitle">
-            Дефолтные вкладки по ролям и персональный доступ каждого администратора.
+            Разделы и внутренние вкладки для каждой роли и каждого администратора.
             Только владелец · изменения применяются сразу.
           </p>
         </div>
@@ -818,6 +1049,15 @@ export default function PanelAccessSection() {
           </div>
         )}
 
+        {data && viewTab === 'wizard' && (
+          <PanelAccessWizard
+            members={data.members || []}
+            roleDefaults={data.roleDefaults || {}}
+            busyKeys={busyKeys}
+            onSetKey={wizardSetKey}
+          />
+        )}
+
         {data && viewTab === 'defaults' && (
           <div className="pa-pane pa-pane-defaults">
             <div className="pa-role-tabs" role="tablist" aria-label="Роли">
@@ -835,28 +1075,15 @@ export default function PanelAccessSection() {
               ))}
             </div>
             <p className="pa-hint">
-              Базовый набор вкладок при выдаче роли. Персональные исключения во вкладке «Администраторы».
+              Базовый набор при выдаче роли. Нажмите ▸ у раздела, чтобы настроить внутренние вкладки
+              (например Стафф → Зарплаты).
             </p>
             <div className="pa-section-groups">
-              {sectionsByGroup.map((g) => (
+              {treeByGroup.map((g) => (
                 <div key={g.id} className="pa-group elite-block">
                   <p className="pa-group-label">{g.label}</p>
                   <ul className="pa-section-list">
-                    {g.items.map((s) => {
-                      const on = !!roleDefaults[s.id]
-                      const busy = busyKeys.has(`role-${roleTab}-${s.id}`)
-                      return (
-                        <li key={s.id} className="pa-section-row">
-                          <span className="pa-section-name">{s.label}</span>
-                          <Toggle
-                            on={on}
-                            disabled={busy}
-                            label={`${s.label}: ${on ? 'включено' : 'выключено'}`}
-                            onClick={() => toggleRoleDefault(s.id, !on)}
-                          />
-                        </li>
-                      )
-                    })}
+                    {g.items.map(renderDefaultsNode)}
                   </ul>
                 </div>
               ))}
@@ -905,7 +1132,7 @@ export default function PanelAccessSection() {
                       <span className="pa-member-name">{memberName(m)}</span>
                       <span className="pa-member-meta">{m.roleLabel}</span>
                       <span className="pa-member-count">
-                        {(m.effectiveSections || []).length} вкладок
+                        {(m.effectiveSections || []).length} разд.
                       </span>
                     </button>
                   </li>
@@ -939,51 +1166,11 @@ export default function PanelAccessSection() {
                     </div>
 
                     <div className="pa-section-groups">
-                      {sectionsByGroup.map((g) => (
+                      {treeByGroup.map((g) => (
                         <div key={g.id} className="pa-group elite-block">
                           <p className="pa-group-label">{g.label}</p>
                           <ul className="pa-section-list">
-                            {g.items.map((s) => {
-                              const { on, state } = sectionState(s.id)
-                              const busy = busyKeys.has(`user-${selected.userId}-${s.id}`)
-                              return (
-                                <li key={s.id} className="pa-section-row pa-section-row-user">
-                                  <div className="pa-section-who">
-                                    <span className="pa-section-name">{s.label}</span>
-                                    <StateChip state={state} />
-                                  </div>
-                                  <div className="pa-user-actions" role="group" aria-label={`Доступ: ${s.label}`}>
-                                    <button
-                                      type="button"
-                                      className={`pa-pill${state === 'grant' ? ' is-on' : ''}`}
-                                      disabled={busy}
-                                      onClick={() => setUserSection(s.id, 'grant')}
-                                    >
-                                      Выдать
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className={`pa-pill${state === 'default' ? ' is-on' : ''}`}
-                                      disabled={busy}
-                                      onClick={() => setUserSection(s.id, 'default')}
-                                    >
-                                      Дефолт
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className={`pa-pill pa-pill-danger${state === 'deny' ? ' is-on' : ''}`}
-                                      disabled={busy}
-                                      onClick={() => setUserSection(s.id, 'deny')}
-                                    >
-                                      Запрет
-                                    </button>
-                                    <span className={`pa-eff${on ? ' is-on' : ''}`}>
-                                      {on ? 'открыто' : 'закрыто'}
-                                    </span>
-                                  </div>
-                                </li>
-                              )
-                            })}
+                            {g.items.map(renderMemberNode)}
                           </ul>
                         </div>
                       ))}
@@ -998,8 +1185,10 @@ export default function PanelAccessSection() {
         {data && viewTab === 'compare' && (
           <ComparePane
             allMembers={membersForCompare}
-            sectionsByGroup={sectionsByGroup}
-            configurableSections={configurableSections}
+            treeByGroup={treeByGroup}
+            flatKeys={flatKeys}
+            expanded={expanded}
+            onToggleExpand={toggleExpand}
             busyKeys={busyKeys}
             onToggleCell={compareToggleCell}
             onResetCell={compareResetCell}

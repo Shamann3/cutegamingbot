@@ -49,6 +49,7 @@ export default function PanelShell({ onLogout }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [permissions, setPermissions] = useState([])
   const [panelSections, setPanelSections] = useState(null)
+  const [panelTabs, setPanelTabs] = useState(null)
   const [role, setRole] = useState(null)
   const [myUserId, setMyUserId] = useState(null)
   const [needsRules, setNeedsRules] = useState(false)
@@ -61,6 +62,7 @@ export default function PanelShell({ onLogout }) {
         if (cancelled) return
         setPermissions(me.permissions || [])
         setPanelSections(Array.isArray(me.panelSections) ? me.panelSections : null)
+        setPanelTabs(me.panelTabs && typeof me.panelTabs === 'object' ? me.panelTabs : null)
         setRole(me.role || null)
         setMyUserId(me.userId || null)
         // Окно правил при первом входе - кроме владельца.
@@ -305,17 +307,17 @@ export default function PanelShell({ onLogout }) {
           {isEconomy && <EconomySection />}
           {isMarket && <MarketSection />}
           {isFarm && <FarmSection />}
-          {isContent && <ContentSection role={role} />}
+          {isContent && <ContentSection role={role} panelTabs={panelTabs} />}
           {isGiveaways && <GiveawaysSection />}
-          {isBroadcast && <BroadcastSection />}
-          {isLogs && <LogsSection />}
-          {isAnalytics && <AnalyticsSection />}
-          {isSettings && <SystemSection />}
-          {isEvents && <EventsSection />}
-          {isSecurity && <SecuritySection />}
-          {isStaff && <StaffSection role={role} permissions={permissions} myUserId={myUserId} />}
+          {isBroadcast && <BroadcastSection panelTabs={panelTabs} />}
+          {isLogs && <LogsSection panelTabs={panelTabs} />}
+          {isAnalytics && <AnalyticsSection panelTabs={panelTabs} />}
+          {isSettings && <SystemSection panelTabs={panelTabs} />}
+          {isEvents && <EventsSection panelTabs={panelTabs} />}
+          {isSecurity && <SecuritySection panelTabs={panelTabs} />}
+          {isStaff && <StaffSection role={role} permissions={permissions} myUserId={myUserId} panelTabs={panelTabs} />}
           {isSupport && <SupportSection />}
-          {isModeration && <ModerationSection role={role} permissions={permissions} />}
+          {isModeration && <ModerationSection role={role} permissions={permissions} panelTabs={panelTabs} />}
           {isChronicle && <ChronicleSection />}
           {isPanelAccess && <PanelAccessSection />}
           {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && (

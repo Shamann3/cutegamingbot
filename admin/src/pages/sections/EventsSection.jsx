@@ -8,6 +8,7 @@ import {
   scheduleQuestEvent,
 } from '../../lib/adminClient'
 import { notifyAdmin } from '../../lib/notify'
+import { filterSectionTabs } from '../../constants/panelAccessTree'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -350,8 +351,10 @@ const TABS = [
   { id: 'broadcasts', label: '📢 Рассылки' },
 ]
 
-export default function EventsSection() {
-  const [tab, setTab] = useState('timeline')
+export default function EventsSection({ panelTabs = null }) {
+  const tabs = filterSectionTabs('events', TABS, panelTabs)
+  const [tab, setTab] = useState(tabs[0]?.id || 'timeline')
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id
   const [timelineKey, setTimelineKey] = useState(0)
 
   const refreshTimeline = useCallback(() => setTimelineKey((k) => k + 1), [])
@@ -368,22 +371,22 @@ export default function EventsSection() {
       </article>
 
       <div className="sys-tabs">
-        {TABS.map((t) => (
-          <button key={t.id} className={`sys-tab${tab === t.id ? ' active' : ''}`} onClick={() => setTab(t.id)}>
+        {tabs.map((t) => (
+          <button key={t.id} className={`sys-tab${activeTab === t.id ? ' active' : ''}`} onClick={() => setTab(t.id)}>
             {t.label}
           </button>
         ))}
       </div>
 
       <div className="ev-content">
-        {tab === 'timeline' && (
+        {activeTab === 'timeline' && (
           <article className="panel-shelf">
             <p className="panel-shelf-label">Ближайшие события</p>
             <UpcomingTimeline refreshKey={timelineKey} />
           </article>
         )}
-        {tab === 'quests' && <TimedQuestsTab onRefreshTimeline={refreshTimeline} />}
-        {tab === 'broadcasts' && <ScheduledBroadcastsTab onRefreshTimeline={refreshTimeline} />}
+        {activeTab === 'quests' && <TimedQuestsTab onRefreshTimeline={refreshTimeline} />}
+        {activeTab === 'broadcasts' && <ScheduledBroadcastsTab onRefreshTimeline={refreshTimeline} />}
       </div>
     </div>
   )

@@ -25,6 +25,7 @@ import { parseRequiredIntFields } from '../../lib/formNumbers'
 import { notifyAdmin } from '../../lib/notify'
 import { useIsDesktop } from '../../lib/useIsDesktop'
 import { contentTabs } from '../../components/craftmap/graph/contentTabs'
+import { filterSectionTabs } from '../../constants/panelAccessTree'
 
 // ---- Dex Item Preview ----
 function DexItemPreview({ item }) {
@@ -65,16 +66,20 @@ function ItemOption({ item }) {
   return `${item.emoji || '📦'} ${item.name} (#${item.id})`
 }
 
-export default function ContentSection({ role = null }) {
+export default function ContentSection({ role = null, panelTabs = null }) {
   const [tab, setTab] = useState('crops')
   const isDesktop = useIsDesktop()
   const canUseMap = role === 'owner' && isDesktop
-  const TABS = contentTabs(canUseMap)
+  const TABS = useMemo(
+    () => filterSectionTabs('content', contentTabs(canUseMap), panelTabs),
+    [canUseMap, panelTabs],
+  )
 
   // If the map tab becomes unavailable (resize to mobile, or non-owner), leave it.
   useEffect(() => {
     if (tab === 'map' && !canUseMap) setTab('items')
-  }, [tab, canUseMap])
+    else if (TABS.length && !TABS.some((t) => t.id === tab)) setTab(TABS[0].id)
+  }, [tab, canUseMap, TABS])
   const [overview, setOverview] = useState(null)
   const [dexItems, setDexItems] = useState([])
   const [loading, setLoading] = useState(true)

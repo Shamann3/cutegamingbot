@@ -6,6 +6,7 @@ import {
   setMaintenanceState,
 } from '../../lib/adminClient'
 import { notifyAdmin } from '../../lib/notify'
+import { filterSectionTabs } from '../../constants/panelAccessTree'
 
 // ---------------------------------------------------------------------------
 // Metadata
@@ -287,8 +288,10 @@ const TABS = [
   { id: 'history', label: '📋 История' },
 ]
 
-export default function SystemSection() {
-  const [tab, setTab] = useState('seed')
+export default function SystemSection({ panelTabs = null }) {
+  const tabs = filterSectionTabs('settings', TABS, panelTabs)
+  const [tab, setTab] = useState(tabs[0]?.id || 'seed')
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id
   const [settings, setSettings] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -379,10 +382,10 @@ export default function SystemSection() {
       )}
 
       <div className="sys-tabs">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
-            className={`sys-tab${tab === t.id ? ' active' : ''}`}
+            className={`sys-tab${activeTab === t.id ? ' active' : ''}`}
             onClick={() => setTab(t.id)}
           >
             {t.label}
@@ -392,9 +395,9 @@ export default function SystemSection() {
 
       {loading && <p className="panel-shelf-muted" style={{ padding: '1rem' }}>Загрузка…</p>}
 
-      {!loading && settings && tab !== 'history' && (
+      {!loading && settings && activeTab && activeTab !== 'history' && (
         <div className="sys-content">
-          {SETTING_GROUPS.filter((g) => g.id === tab).map((group) => (
+          {SETTING_GROUPS.filter((g) => g.id === activeTab).map((group) => (
             <SettingGroup
               key={group.id}
               group={group}
@@ -408,7 +411,7 @@ export default function SystemSection() {
         </div>
       )}
 
-      {!loading && tab === 'history' && (
+      {!loading && activeTab === 'history' && (
         <div className="sys-content">
           <article className="panel-shelf">
             <p className="panel-shelf-label">История изменений</p>

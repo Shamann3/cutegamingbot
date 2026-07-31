@@ -126,12 +126,16 @@ async def get_admin_account_security(user_id: int) -> dict | None:
         try:
             from panel_access import resolve_account_access
 
-            permissions, panel_sections = await resolve_account_access(role, user_id_i, status)
+            permissions, panel_sections, panel_tabs = await resolve_account_access(
+                role, user_id_i, status,
+            )
         except Exception:
             permissions = permissions_for_role(role)
             panel_sections = []
+            panel_tabs = {}
     else:
         permissions = []
+        panel_tabs = {}
 
     return {
         "userId": user_id_i,
@@ -142,6 +146,7 @@ async def get_admin_account_security(user_id: int) -> dict | None:
         "status": status,
         "permissions": permissions,
         "panelSections": panel_sections,
+        "panelTabs": panel_tabs,
         "hiredAt": row["hired_at"].isoformat() if row["hired_at"] else None,
         "hiredBy": int(row["hired_by"]) if row["hired_by"] else None,
         "rulesAcceptedAt": row["rules_accepted_at"].isoformat() if row["rules_accepted_at"] else None,

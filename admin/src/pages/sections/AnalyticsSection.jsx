@@ -6,6 +6,7 @@ import {
   fetchAnalyticsQuests,
   fetchAnalyticsRetention,
 } from '../../lib/adminClient'
+import { filterSectionTabs } from '../../constants/panelAccessTree'
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -906,8 +907,10 @@ const TABS = [
   { id: 'retention', label: '👥 Удержание' },
 ]
 
-export default function AnalyticsSection() {
-  const [tab, setTab] = useState('quests')
+export default function AnalyticsSection({ panelTabs = null }) {
+  const tabs = filterSectionTabs('analytics', TABS, panelTabs)
+  const [tab, setTab] = useState(tabs[0]?.id || 'quests')
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id
   const [days, setDays] = useState(30)
 
   return (
@@ -917,10 +920,10 @@ export default function AnalyticsSection() {
       </div>
 
       <div className="analytics-tabs">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
-            className={`analytics-tab${tab === t.id ? ' active' : ''}`}
+            className={`analytics-tab${activeTab === t.id ? ' active' : ''}`}
             onClick={() => setTab(t.id)}
           >
             {t.label}
@@ -929,11 +932,11 @@ export default function AnalyticsSection() {
       </div>
 
       <div className="analytics-content">
-        {tab === 'quests'    && <QuestsTab    days={days} onDaysChange={setDays} />}
-        {tab === 'farm'      && <FarmTab      days={days} onDaysChange={setDays} />}
-        {tab === 'market'    && <MarketTab    days={days} onDaysChange={setDays} />}
-        {tab === 'craft'     && <CraftTab     days={days} onDaysChange={setDays} />}
-        {tab === 'retention' && <RetentionTab days={days} onDaysChange={setDays} />}
+        {activeTab === 'quests'    && <QuestsTab    days={days} onDaysChange={setDays} />}
+        {activeTab === 'farm'      && <FarmTab      days={days} onDaysChange={setDays} />}
+        {activeTab === 'market'    && <MarketTab    days={days} onDaysChange={setDays} />}
+        {activeTab === 'craft'     && <CraftTab     days={days} onDaysChange={setDays} />}
+        {activeTab === 'retention' && <RetentionTab days={days} onDaysChange={setDays} />}
       </div>
     </div>
   )
