@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { hasTelegramInitData, isAdminSessionValid } from '../lib/adminClient'
 import { vivoEpsilonLogo } from './EpsilonLogo'
 
-/** Полный цикл печати: ~1.85s, выход ~0.35s */
-export const ENTRANCE_HOLD_MS = 1850
-export const ENTRANCE_EXIT_MS = 380
-/** Укороченный цикл после логина */
-export const ENTRANCE_LOGIN_HOLD_MS = 1550
-/** Лёгкий режим (слабые устройства) */
-export const ENTRANCE_LITE_HOLD_MS = 700
+/** Полный цикл печати: ~4.5s hold + ~0.5s выход ≈ 5s */
+export const ENTRANCE_HOLD_MS = 4500
+export const ENTRANCE_EXIT_MS = 500
+/** После логина — тот же масштаб, чуть плотнее */
+export const ENTRANCE_LOGIN_HOLD_MS = 4300
+/** Лёгкий режим (слабые устройства / reduce-motion) */
+export const ENTRANCE_LITE_HOLD_MS = 1200
 
 const PIECES = [
   { id: 'eye', label: 'Око' },
@@ -25,14 +25,13 @@ function detectLiteEntrance() {
   } catch { /* ignore */ }
   const prefersReduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
   const veryWeakCpu = (navigator.hardwareConcurrency || 4) <= 2
-  // Полная анимация CSS-only и короткая; lite — только reduce-motion,
-  // сохранённый «Лёгкий режим» или совсем слабый CPU.
   return prefersReduced || veryWeakCpu
 }
 
 /**
- * Кинематографичная ч/б печать входа: кольца защиты → сборка эмблемы
- * по кускам → штамп → короткий выход. Только transform/opacity.
+ * Кинематографичная ч/б печать входа (~5с):
+ * тишина → кольца/щит → сборка эмблемы → штамп → удержание → выход.
+ * Только transform/opacity/stroke-dashoffset.
  */
 export default function EntranceSeal({
   displayName = '',
@@ -49,7 +48,6 @@ export default function EntranceSeal({
       : ENTRANCE_HOLD_MS
 
   useEffect(() => {
-    // Декодируем марку заранее — сборка кусков не ждёт первого paint.
     const warm = new Image()
     warm.src = vivoEpsilonLogo
     if (warm.decode) warm.decode().catch(() => {})
@@ -58,8 +56,8 @@ export default function EntranceSeal({
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-    const hold = reduced ? 420 : holdMs
-    const exit = reduced ? 160 : ENTRANCE_EXIT_MS
+    const hold = reduced ? 500 : holdMs
+    const exit = reduced ? 180 : ENTRANCE_EXIT_MS
 
     const t1 = window.setTimeout(() => setPhase('out'), hold)
     const t2 = window.setTimeout(() => {
@@ -77,10 +75,10 @@ export default function EntranceSeal({
   const authed =
     variant === 'login' || isAdminSessionValid() || hasTelegramInitData()
 
-  const title = authed ? 'Власть закреплена' : 'Защищённый контур'
+  const title = authed ? 'Власть закреплена' : 'Контур закрыт'
   const greeting = authed
-    ? (displayName ? `Доступ подтверждён, ${displayName}` : 'Доступ подтверждён')
-    : (displayName ? `Добро пожаловать, ${displayName}` : 'Добро пожаловать')
+    ? (displayName ? `${displayName} · доступ открыт` : 'Доступ открыт')
+    : (displayName ? `${displayName} · вход в контур` : 'Вход в контур')
 
   return (
     <div
@@ -92,17 +90,17 @@ export default function EntranceSeal({
       <div className="ent-void" aria-hidden="true" />
       <div className="ent-vignette" aria-hidden="true" />
       <div className="ent-grid" aria-hidden="true" />
+      <div className="ent-noise" aria-hidden="true" />
 
       <div className="ent-stage">
-        {/* Кольца + щит защиты — stroke-dash через CSS */}
         <svg className="ent-rings" viewBox="0 0 200 200" aria-hidden="true">
-          <circle className="ent-ring ent-ring--a" cx="100" cy="100" r="92" />
-          <circle className="ent-ring ent-ring--b" cx="100" cy="100" r="78" />
+          <circle className="ent-ring ent-ring--a" cx="100" cy="100" r="94" />
+          <circle className="ent-ring ent-ring--b" cx="100" cy="100" r="80" />
           <path
             className="ent-ring ent-ring--shield"
-            d="M100 22 L158 42 V95 C158 132 132 158 100 172 C68 158 42 132 42 95 V42 Z"
+            d="M100 18 L162 40 V96 C162 136 134 164 100 178 C66 164 38 136 38 96 V40 Z"
           />
-          <circle className="ent-ring ent-ring--c" cx="100" cy="100" r="58" />
+          <circle className="ent-ring ent-ring--c" cx="100" cy="100" r="56" />
           <circle className="ent-ring ent-ring--core" cx="100" cy="100" r="3.5" />
         </svg>
 
@@ -113,43 +111,33 @@ export default function EntranceSeal({
           <span className="ent-bracket ent-bracket--br" />
         </div>
 
-        <div className="ent-beam" aria-hidden="true" />
+        <div className="ent-beam ent-beam--a" aria-hidden="true" />
+        <div className="ent-beam ent-beam--b" aria-hidden="true" />
 
         <div className="ent-mark" aria-hidden="true">
           {PIECES.map((piece) => (
-            <div
-              key={piece.id}
-              className={`ent-piece ent-piece--${piece.id}`}
-            >
-              <img
-                src={vivoEpsilonLogo}
-                alt=""
-                draggable={false}
-                decoding="async"
-              />
+            <div key={piece.id} className={`ent-piece ent-piece--${piece.id}`}>
+              <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
             </div>
           ))}
           <div className="ent-piece ent-piece--full">
-            <img
-              src={vivoEpsilonLogo}
-              alt=""
-              draggable={false}
-              decoding="async"
-            />
+            <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
           </div>
           <div className="ent-stamp" />
+          <div className="ent-mark-glow" />
         </div>
 
         <div className="ent-copy">
           <p className="ent-kicker">Cute Epsilon</p>
           <p className="ent-title">{title}</p>
           <p className="ent-sub">{greeting}</p>
+          <div className="ent-rule" aria-hidden="true" />
           <div className="ent-meta" aria-hidden="true">
             <span>AUTHORITY</span>
             <span className="ent-meta-dot" />
             <span>PROTECTION</span>
             <span className="ent-meta-dot" />
-            <span>PANEL</span>
+            <span>COMMAND</span>
           </div>
         </div>
       </div>

@@ -118,7 +118,8 @@ export default function EliteTopbar({
 
   return (
     <div className={`elite-topbar${compact ? ' elite-topbar-compact' : ''}`}>
-      <div className="elite-brand-slot" aria-hidden="true" title="Cute Epsilon">
+      <div className="elite-brand-slot" title="Epsilon Command" aria-label="Epsilon">
+        <span className="elite-brand-slot-ring" aria-hidden="true" />
         <EpsilonLogo size="sm" decorative />
       </div>
       <div className="elite-greeting">
