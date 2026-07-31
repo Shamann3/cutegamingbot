@@ -556,7 +556,7 @@ async def process_one_payout(
                 )
             return True
 
-        # auto / userbot — как вывод игрока: заявка в канал с кнопками 👎🥂👍
+        # auto / userbot — как вывод игрока: заявка в канал с кнопками 👎👍
         await do_channel(
             reason_prefix="auto→channel" if method == "auto" else None,
         )

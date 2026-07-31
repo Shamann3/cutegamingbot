@@ -427,10 +427,10 @@ async def _send_channel_message_http(
     if not BOT_TOKEN:
         return None, None, "BOT_TOKEN не настроен"
 
+    # Только отказ / одобрение — без 🥂 (возврат), чтобы не путать операторов.
     reply_markup = {
         "inline_keyboard": [[
             {"text": "👎", "callback_data": f"wdact:{reject_token}"},
-            {"text": "🥂", "callback_data": f"wdact:{refund_token}"},
             {"text": "👍", "callback_data": f"wdact:{approve_token}"},
         ]],
     }

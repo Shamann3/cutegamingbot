@@ -1596,7 +1596,9 @@ export default function StaffSection({ role, permissions = [], myUserId = null }
       {activeTab === 'applications' && <ApplicationsTab />}
       {activeTab === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} />}
       {activeTab === 'invites' && <InvitesTab />}
-      {activeTab === 'salaries' && <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
+      {activeTab === 'salaries' && (
+        <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} myUserId={myUserId} />
+      )}
       {activeTab === 'bonuses' && <PayrollBonusesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
       {activeTab === 'ledger' && <LedgerTab />}
       {activeTab === 'payoutsettings' && <PayrollSettingsTab />}

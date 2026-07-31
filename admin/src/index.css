@@ -12314,6 +12314,18 @@ input[type=range].cc-dial::-moz-range-thumb{width:16px;height:16px;border-radius
   gap: 0.45rem;
 }
 
+.payroll-pay-modal {
+  width: min(calc(100vw - 1.5rem), 36rem);
+  max-height: min(90dvh, 44rem);
+}
+
+.payroll-pay-modal .payroll-gifts-grid {
+  max-height: min(38vh, 16rem);
+  overflow-y: auto;
+  padding-right: 0.15rem;
+  overscroll-behavior: contain;
+}
+
 .payroll-gifts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));

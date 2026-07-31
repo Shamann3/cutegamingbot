@@ -174,6 +174,16 @@ const Chronicle = () => (
   </Icon>
 )
 
+const PanelAccess = () => (
+  <Icon>
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+    <path d="M8 12h8" />
+    <path d="M12 8v8" />
+    <circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
+    <circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" />
+  </Icon>
+)
+
 export const NAV_ICONS = {
   dashboard: Dashboard,
   users: Players,
@@ -193,4 +203,5 @@ export const NAV_ICONS = {
   security: Security,
   moderation: Moderation,
   chronicle: Chronicle,
+  panelAccess: PanelAccess,
 }

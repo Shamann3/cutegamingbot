@@ -19,6 +19,7 @@ export const PANEL_SECTIONS = [
   { id: 'chronicle', label: 'Chronicle',       labelRu: 'Хронология',   group: 'insights' },
   { id: 'settings',  label: 'Settings',        labelRu: 'Настройки',    group: 'system',  permission: 'manage_settings' },
   { id: 'security',  label: 'Security',        labelRu: 'Доступ',       group: 'system',  permission: 'manage_security' },
+  { id: 'panelAccess', label: 'Admin Panel',   labelRu: 'Админ панель', group: 'system',  permission: 'manage_panel_access' },
 ]
 
 /** Блоки сайдбара. Порядок здесь = порядок в меню.
@@ -33,10 +34,17 @@ export const PANEL_GROUPS = [
   { id: 'system',   label: 'Система' },
 ]
 
-/** Секции, видимые с учётом прав текущего админа. */
-export function visibleSections(permissions = []) {
+/** Секции, видимые с учётом прав и (опционально) матрицы panelSections с бэка. */
+export function visibleSections(permissions = [], panelSections = null) {
   const perms = new Set(permissions)
-  return PANEL_SECTIONS.filter((s) => !s.permission || perms.has(s.permission))
+  const allowedIds = Array.isArray(panelSections) && panelSections.length > 0
+    ? new Set(panelSections)
+    : null
+  return PANEL_SECTIONS.filter((s) => {
+    if (allowedIds && !allowedIds.has(s.id)) return false
+    if (s.permission && !perms.has(s.permission)) return false
+    return true
+  })
 }
 
 /** Раскладывает секции по блокам сайдбара. Пустые блоки отбрасываются,

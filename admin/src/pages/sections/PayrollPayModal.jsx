@@ -17,6 +17,15 @@ function normalizeStarsUser(value) {
   return String(value || '').trim().replace(/^@+/, '')
 }
 
+function sortGiftsStable(items) {
+  return [...(items || [])].sort((a, b) => {
+    const sa = Number(a.stars) || 0
+    const sb = Number(b.stars) || 0
+    if (sa !== sb) return sa - sb
+    return Number(a.giftId || 0) - Number(b.giftId || 0)
+  })
+}
+
 /** Модалка выплаты: Stars (мультиподарки → N сообщений в канал → 👍) */
 export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   const s = member.salary
@@ -31,7 +40,7 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   const [starsUsername, setStarsUsername] = useState(
     normalizeStarsUser(member.starsUsername || member.username || ''),
   )
-  const [gifts, setGifts] = useState([])
+  const [catalog, setCatalog] = useState([])
   const [selected, setSelected] = useState([]) // [{giftId, giftEmoji, hasUpgrade, stars}]
   const [giftsLoading, setGiftsLoading] = useState(false)
   const [templates, setTemplates] = useState([])
@@ -49,6 +58,27 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
   const sumOk = selected.length === 0 || selectedSum === amountNum
   const remainingToPick = Math.max(0, amountNum - selectedSum)
 
+  // Каталог грузим один раз — без пересортировки при каждом клике (из‑за неё «прыгала» сетка).
+  useEffect(() => {
+    if (!isStars) {
+      setCatalog([])
+      return
+    }
+    let cancelled = false
+    setGiftsLoading(true)
+    fetchStarGifts(null, false)
+      .then((d) => {
+        if (!cancelled) setCatalog(sortGiftsStable(d.items || []))
+      })
+      .catch(() => {
+        if (!cancelled) setCatalog([])
+      })
+      .finally(() => {
+        if (!cancelled) setGiftsLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [isStars])
+
   useEffect(() => {
     if (payoutType !== 'crypto' && payoutType !== 'card') return
     fetchContractTemplates()
@@ -61,32 +91,6 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
       })
       .catch(() => setTemplates([]))
   }, [payoutType])
-
-  useEffect(() => {
-    if (!isStars) {
-      setGifts([])
-      return
-    }
-    let cancelled = false
-    setGiftsLoading(true)
-    fetchStarGifts(null, false)
-      .then((d) => {
-        if (cancelled) return
-        const items = d.items || []
-        const budget = remainingToPick > 0 ? remainingToPick : amountNum
-        const exact = items.filter((g) => Number(g.stars) === budget)
-        const fit = items.filter((g) => Number(g.stars) <= budget && Number(g.stars) !== budget)
-        const rest = items.filter((g) => Number(g.stars) > budget)
-        setGifts(amountNum > 0 ? [...exact, ...fit, ...rest] : items)
-      })
-      .catch(() => {
-        if (!cancelled) setGifts([])
-      })
-      .finally(() => {
-        if (!cancelled) setGiftsLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [isStars, amountNum, remainingToPick])
 
   const addGift = (g) => {
     if (!g) return
@@ -299,12 +303,12 @@ export default function PayrollPayModal({ member, busy, onClose, onSubmit }) {
               <p className="payroll-hint">
                 {giftsLoading
                   ? 'Загрузка…'
-                  : `Нажмите подарок, чтобы добавить. Для 115⭐ — например 50+50+15.`}
+                  : 'Нажмите подарок, чтобы добавить. Порядок каталога стабильный.'}
               </p>
-              <div className="payroll-gifts-grid">
-                {gifts.map((g) => {
+              <div className="payroll-gifts-grid" role="list">
+                {catalog.map((g) => {
                   const stars = Number(g.stars) || 0
-                  const fits = selectedSum + stars <= amountNum
+                  const fits = amountNum > 0 && selectedSum + stars <= amountNum
                   return (
                     <button
                       key={g.giftId}

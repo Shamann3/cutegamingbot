@@ -66,10 +66,11 @@ ALL_PERMISSIONS = {
     "approve_salary",          # одобрять зарплату (owner)
     "pay_salary",              # выплачивать зарплату (owner)
     "manage_appeals",          # апелляции банов (owner + senior)
+    "manage_panel_access",     # матрица доступов к вкладкам (только owner)
 }
 
 PERMISSIONS_BY_ROLE = {
-    ROLE_OWNER: set(ALL_PERMISSIONS),
+    ROLE_OWNER: set(ALL_PERMISSIONS),  # включая manage_panel_access
     ROLE_SENIOR: {
         "view_players",
         "moderate_ban",
@@ -117,15 +118,30 @@ async def get_admin_account_security(user_id: int) -> dict | None:
 
     role = row["role"] or ROLE_APPLICANT
     status = row["status"] or STATUS_PENDING
+    user_id_i = int(row["user_id"])
+
+    # Права и видимые разделы с учётом матрицы доступов (дефолты роли + оверрайды).
+    panel_sections: list[str] = []
+    if status == STATUS_ACTIVE:
+        try:
+            from panel_access import resolve_account_access
+
+            permissions, panel_sections = await resolve_account_access(role, user_id_i, status)
+        except Exception:
+            permissions = permissions_for_role(role)
+            panel_sections = []
+    else:
+        permissions = []
 
     return {
-        "userId": int(row["user_id"]),
+        "userId": user_id_i,
         "username": row["username"],
         "firstName": row["first_name"],
         "role": role,
         "roleLabel": ROLE_LABELS.get(role, role),
         "status": status,
-        "permissions": permissions_for_role(role) if status == STATUS_ACTIVE else [],
+        "permissions": permissions,
+        "panelSections": panel_sections,
         "hiredAt": row["hired_at"].isoformat() if row["hired_at"] else None,
         "hiredBy": int(row["hired_by"]) if row["hired_by"] else None,
         "rulesAcceptedAt": row["rules_accepted_at"].isoformat() if row["rules_accepted_at"] else None,

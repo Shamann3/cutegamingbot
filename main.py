@@ -25382,10 +25382,11 @@ def _build_withdraw_channel_keyboard(
         "kind": "reject",
     })
 
+    # Только 👎 отказ / 👍 одобрение. Шампанское (возврат) убрано по UX.
+    _ = refund_token  # токен всё ещё регистрируем на случай старых сообщений
     return InlineKeyboardMarkup(
         inline_keyboard=[[
             InlineKeyboardButton(text="👎", callback_data=f"wdact:{reject_token}"),
-            InlineKeyboardButton(text="🥂", callback_data=f"wdact:{refund_token}"),
             InlineKeyboardButton(text="👍", callback_data=f"wdact:{approve_token}"),
         ]]
     )

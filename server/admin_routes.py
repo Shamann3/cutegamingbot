@@ -1226,6 +1226,86 @@ async def admin_me(user_id: int = Depends(require_active_admin)):
     return account
 
 
+class PanelRoleDefaultBody(BaseModel):
+    role: str
+    sectionId: str
+    enabled: bool
+
+
+class PanelUserAccessBody(BaseModel):
+    userId: int
+    sectionId: str
+    # None / omit via reset=true — сброс к дефолту роли
+    allowed: bool | None = None
+    reset: bool = False
+
+
+@router.get("/panel-access")
+async def panel_access_overview(
+    user_id: int = Depends(require_admin_permission("manage_panel_access")),
+):
+    from panel_access import list_panel_access_overview
+
+    return await list_panel_access_overview()
+
+
+@router.put("/panel-access/role-default")
+async def panel_access_set_role_default(
+    body: PanelRoleDefaultBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("manage_panel_access")),
+):
+    from panel_access import set_role_default
+
+    try:
+        await set_role_default(body.role, body.sectionId, body.enabled, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await log_admin_action(
+        user_id,
+        "panel_role_default",
+        target_type="panel",
+        target_id=f"{body.role}:{body.sectionId}",
+        details={"enabled": body.enabled},
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
+@router.put("/panel-access/user")
+async def panel_access_set_user(
+    body: PanelUserAccessBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("manage_panel_access")),
+):
+    from panel_access import set_user_override
+
+    if int(body.userId) == int(user_id):
+        raise HTTPException(status_code=400, detail="Нельзя менять доступ самому себе здесь")
+    target = await get_admin_account(body.userId)
+    if not target or target.get("status") != "active":
+        raise HTTPException(status_code=404, detail="Администратор не найден")
+    if target.get("role") == ROLE_OWNER:
+        raise HTTPException(status_code=400, detail="Доступ владельца не ограничивается")
+
+    allowed = None if body.reset else body.allowed
+    if not body.reset and body.allowed is None:
+        raise HTTPException(status_code=400, detail="Укажите allowed или reset")
+    try:
+        await set_user_override(int(body.userId), body.sectionId, allowed, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await log_admin_action(
+        user_id,
+        "panel_user_access",
+        target_type="staff",
+        target_id=str(body.userId),
+        details={"sectionId": body.sectionId, "allowed": allowed, "reset": body.reset},
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True}
+
+
 @router.post("/staff/accept-rules")
 async def staff_accept_rules(
     request: Request,
@@ -1522,6 +1602,8 @@ async def staff_set_salary(
     target_role = target.get("role")
     if target_role == ROLE_OWNER:
         raise HTTPException(status_code=400, detail="Владельцу зарплата не начисляется")
+    if int(body.userId) == int(user_id):
+        raise HTTPException(status_code=403, detail="Нельзя назначать зарплату самому себе")
 
     # senior ставит только модераторам/младшим; owner — кому угодно из стаффа
     if setter_role == ROLE_OWNER:
@@ -1602,30 +1684,15 @@ async def staff_set_salary(
         ),
     )
 
-    star_queued = None
-    if payout_type == "stars" and status == "approved" and total > 0:
-        gifts_payload = None
-        if body.gifts:
-            gifts_payload = [g.model_dump() for g in body.gifts]
-        star_queued = await _enqueue_salary_stars_channel(
-            salary_id=salary_id,
-            staff_user_id=body.userId,
-            amount=total,
-            requested_by=user_id,
-            stars_username=body.starsUsername,
-            gift_id=int(body.giftId or 0),
-            gift_emoji=(body.giftEmoji or "⭐"),
-            has_upgrade=int(body.hasUpgrade or 0),
-            gifts=gifts_payload,
-        )
-
+    # Сохранение зарплаты НЕ ставит заявку в канал выводов.
+    # В канал — только явная кнопка «В канал» / pay (PayrollPayModal).
     return {
         "ok": True, "salaryId": salary_id, "status": status, "total": total,
         "periodType": p_type, "periodStart": p_start.isoformat(),
         "periodEnd": p_end.isoformat(), "periodLabel": label,
-        "starQueued": bool(star_queued),
-        "starPayouts": star_queued or [],
-        "starPayout": (star_queued or [None])[0],
+        "starQueued": False,
+        "starPayouts": [],
+        "starPayout": None,
     }
 
 
@@ -1741,23 +1808,12 @@ async def staff_approve_salary(
         ip=_get_client_ip(request),
     )
 
-    star_queued = None
-    ctx = await get_salary_full(salary_id)
-    if ctx and ctx.get("payoutType") == "stars":
-        remaining = max(0, int(ctx["amount"]) - int(ctx.get("paidAmount") or 0))
-        if remaining > 0:
-            star_queued = await _enqueue_salary_stars_channel(
-                salary_id=salary_id,
-                staff_user_id=int(ctx["userId"]),
-                amount=remaining,
-                requested_by=user_id,
-            )
-
+    # Одобрение тоже только сохраняет статус — в канал идём через «В канал».
     return {
         "ok": True,
-        "starQueued": bool(star_queued),
-        "starPayouts": star_queued or [],
-        "starPayout": (star_queued or [None])[0],
+        "starQueued": False,
+        "starPayouts": [],
+        "starPayout": None,
     }
 
 
@@ -1779,6 +1835,8 @@ async def staff_pay_salary(
     ctx = await get_salary_full(salary_id)
     if not ctx or ctx["status"] not in ("approved", "partially_paid"):
         raise HTTPException(status_code=409, detail="Начисление не одобрено или уже выплачено")
+    if int(ctx["userId"]) == int(user_id):
+        raise HTTPException(status_code=403, detail="Нельзя выплачивать зарплату самому себе")
     remaining = max(0, ctx["amount"] - ctx["paidAmount"])
     method = (body.method.strip() if body.method else None) or ctx["payoutType"]
     pay_amount = min(body.amount if body.amount is not None else remaining, remaining)

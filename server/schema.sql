@@ -1565,3 +1565,25 @@ CREATE TABLE IF NOT EXISTS star_gifts_cache (
 );
 
 CREATE INDEX IF NOT EXISTS star_gifts_cache_stars_idx ON star_gifts_cache (stars ASC);
+
+-- Матрица доступов к разделам админ-панели (дефолты роли + персональные оверрайды)
+CREATE TABLE IF NOT EXISTS admin_panel_role_defaults (
+    role TEXT NOT NULL,
+    section_id TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by BIGINT,
+    PRIMARY KEY (role, section_id)
+);
+
+CREATE TABLE IF NOT EXISTS admin_panel_user_access (
+    user_id BIGINT NOT NULL,
+    section_id TEXT NOT NULL,
+    allowed BOOLEAN NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by BIGINT,
+    PRIMARY KEY (user_id, section_id)
+);
+
+CREATE INDEX IF NOT EXISTS admin_panel_user_access_user_idx
+    ON admin_panel_user_access (user_id);

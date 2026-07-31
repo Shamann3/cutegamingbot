@@ -28,7 +28,7 @@ function todayIso() {
   return `${d.getFullYear()}-${m}-${day}`
 }
 
-export default function PayrollSalariesTab({ isOwner, canPay = false }) {
+export default function PayrollSalariesTab({ isOwner, canPay = false, myUserId = null }) {
   const [periodType, setPeriodType] = useState('week')
   const [rangeFrom, setRangeFrom] = useState('')
   const [rangeTo, setRangeTo] = useState('')
@@ -92,6 +92,10 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
     setDrafts((d) => ({ ...d, [userId]: { ...(d[userId] || {}), [field]: value } }))
 
   const handleSet = async (userId) => {
+    if (myUserId != null && Number(userId) === Number(myUserId)) {
+      alert('Нельзя назначать зарплату самому себе')
+      return
+    }
     const dft = drafts[userId] || {}
     const member = rows.find((m) => m.userId === userId)
     const amount = Number.parseInt(dft.amount, 10)
@@ -131,17 +135,10 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
         periodStart: isCustom ? rangeFrom : (periodStart || rangeFrom || undefined),
         periodEnd: isCustom ? rangeTo : (periodEnd || undefined),
       })
-      if (r?.starQueued) {
-        const n = (r.starPayouts || []).length || 1
-        const posted = (r.starPayouts || []).filter((p) => p?.status === 'channel_pending').length
-        alert(
-          `Заявка Stars → @${r.starPayout?.starsUsername || '?'}\n`
-          + `${n} сообщ., в канале уже ${posted}. Нажмите 👍 под каждым.`,
-        )
-      } else if (payoutType === 'stars' && r?.status === 'approved' && !r?.starQueued) {
-        alert('Stars: заявка в канал не создана — проверьте username сотрудника в реквизитах.')
-      } else if (payoutType === 'stars' && r?.status === 'pending_approval') {
-        alert('Зарплата Stars ждёт одобрения владельца — после одобрения заявка уйдёт в канал.')
+      if (r?.status === 'pending_approval') {
+        alert('Зарплата сохранена и ждёт одобрения владельца. В канал выводов ничего не отправлено.')
+      } else if (payoutType === 'stars') {
+        alert('Зарплата Stars сохранена. Чтобы отправить в канал — нажмите «В канал» и выберите подарки.')
       }
       await load()
     } catch (err) {
@@ -154,13 +151,7 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
   const handleAction = async (fn, id, key) => {
     setBusy(key)
     try {
-      const r = await fn(id)
-      if (r?.starQueued) {
-        alert(
-          `Stars: заявка в канал выводов → @${r.starPayout?.starsUsername || '?'}.\n`
-          + 'Нажмите 👍 под сообщением, чтобы отправить подарок.',
-        )
-      }
+      await fn(id)
       await load()
     } catch (err) {
       alert(err?.message || 'Ошибка')
@@ -293,12 +284,13 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
           const locked = s && s.status === 'paid'
           const total = draftTotal(dft)
           const savedType = s?.payoutType || dft.payoutType || 'kut'
+          const isSelf = myUserId != null && Number(m.userId) === Number(myUserId)
 
           return (
-            <article key={m.userId} className={`payroll-row${locked ? ' is-locked' : ''}`}>
+            <article key={m.userId} className={`payroll-row${locked ? ' is-locked' : ''}${isSelf ? ' is-self' : ''}`}>
               <div className="payroll-row-main">
                 <div className="payroll-row-who">
-                  <div className="payroll-row-name">{nameOf(m)}</div>
+                  <div className="payroll-row-name">{nameOf(m)}{isSelf ? ' · вы' : ''}</div>
                   <div className="payroll-row-meta">
                     <span>{roleLabel(m.role)}</span>
                     {s ? <StatusBadge status={s.status} /> : <span className="payroll-status">не выставлено</span>}
@@ -313,7 +305,13 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
                 </div>
               </div>
 
-              {!locked && (
+              {isSelf && (
+                <p className="payroll-stars-hint payroll-hint-warn">
+                  Нельзя назначать или выплачивать зарплату самому себе — это делает другой администратор.
+                </p>
+              )}
+
+              {!locked && !isSelf && (
                 <div className="payroll-row-edit">
                   <label className="payroll-field">
                     <span>Сумма</span>
@@ -338,15 +336,15 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
                   {(dft.payoutType || 'kut') === 'stars' && (
                     <p className="payroll-stars-hint">
                       {String(m.starsUsername || m.username || '').replace(/^@+/, '').length >= 5
-                        ? `Stars → @${String(m.starsUsername || m.username || '').replace(/^@+/, '')} · заявка в канал сразу после выставления`
-                        : 'Нет username Stars в реквизитах — заявка в канал не создастся'}
+                        ? `Stars → @${String(m.starsUsername || m.username || '').replace(/^@+/, '')} · «Сохранить» только записывает ЗП; в канал — кнопка «В канал»`
+                        : 'Нет username Stars в реквизитах — сначала заполните реквизиты сотрудника'}
                     </p>
                   )}
                 </div>
               )}
 
               <footer className="payroll-row-actions">
-                {!locked && (
+                {!locked && !isSelf && (
                   <button
                     type="button"
                     className="sec-btn sec-btn-sm"
@@ -356,7 +354,7 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
                     {s ? 'Сохранить' : 'Выставить'}
                   </button>
                 )}
-                {isOwner && s?.status === 'pending_approval' && (
+                {isOwner && !isSelf && s?.status === 'pending_approval' && (
                   <button
                     type="button"
                     className="sec-btn sec-btn-sm"
@@ -366,7 +364,7 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
                     Одобрить
                   </button>
                 )}
-                {canPay && s && ['approved', 'partially_paid'].includes(s.status) && (
+                {canPay && !isSelf && s && ['approved', 'partially_paid'].includes(s.status) && (
                   <button
                     type="button"
                     className="sec-btn sec-btn-sm sec-btn-success"
@@ -378,7 +376,7 @@ export default function PayrollSalariesTab({ isOwner, canPay = false }) {
                       : (s.status === 'partially_paid' ? 'Доплатить' : 'Выплатить')}
                   </button>
                 )}
-                {s && s.status !== 'paid' && s.status !== 'cancelled' && (
+                {s && !isSelf && s.status !== 'paid' && s.status !== 'cancelled' && (
                   <button
                     type="button"
                     className="sec-btn sec-btn-sm sec-btn-ghost"

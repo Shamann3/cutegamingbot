@@ -474,6 +474,42 @@ export async function fetchAdminMe() {
 
 
 
+export async function fetchPanelAccess() {
+
+  return adminRequest('/panel-access')
+
+}
+
+
+
+export async function setPanelRoleDefault({ role, sectionId, enabled }) {
+
+  return adminRequest('/panel-access/role-default', {
+
+    method: 'PUT',
+
+    body: { role, sectionId, enabled: !!enabled },
+
+  })
+
+}
+
+
+
+export async function setPanelUserAccess({ userId, sectionId, allowed = null, reset = false }) {
+
+  return adminRequest('/panel-access/user', {
+
+    method: 'PUT',
+
+    body: { userId, sectionId, allowed, reset: !!reset },
+
+  })
+
+}
+
+
+
 export async function acceptStaffRules() {
 
   return adminRequest('/staff/accept-rules', { method: 'POST', body: {} })

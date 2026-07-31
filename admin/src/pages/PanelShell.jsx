@@ -26,6 +26,7 @@ import StaffSection from './sections/StaffSection'
 import SupportSection from './sections/SupportSection'
 import ModerationSection from './sections/ModerationSection'
 import ChronicleSection from './sections/ChronicleSection'
+import PanelAccessSection from './sections/PanelAccessSection'
 import CommandCenterSection from './sections/CommandCenterSection'
 import RulesGateModal from '../components/RulesGateModal'
 import CursorGlow from '../components/CursorGlow'
@@ -47,6 +48,7 @@ export default function PanelShell({ onLogout }) {
   const [usersInitialId, setUsersInitialId] = useState(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [permissions, setPermissions] = useState([])
+  const [panelSections, setPanelSections] = useState(null)
   const [role, setRole] = useState(null)
   const [myUserId, setMyUserId] = useState(null)
   const [needsRules, setNeedsRules] = useState(false)
@@ -58,6 +60,7 @@ export default function PanelShell({ onLogout }) {
       .then((me) => {
         if (cancelled) return
         setPermissions(me.permissions || [])
+        setPanelSections(Array.isArray(me.panelSections) ? me.panelSections : null)
         setRole(me.role || null)
         setMyUserId(me.userId || null)
         // Окно правил при первом входе - кроме владельца.
@@ -80,7 +83,18 @@ export default function PanelShell({ onLogout }) {
     }
   }, [onLogout])
 
-  const navSections = useMemo(() => visibleSections(permissions), [permissions])
+  const navSections = useMemo(
+    () => visibleSections(permissions, panelSections),
+    [permissions, panelSections],
+  )
+
+  // Если текущий раздел закрыли в матрице — уводим на первую доступную вкладку.
+  useEffect(() => {
+    if (!navSections.length) return
+    if (!navSections.some((s) => s.id === section)) {
+      setSection(navSections[0].id)
+    }
+  }, [navSections, section])
 
   // Счётчик открытых обращений — питает значок у пункта «Поддержка» и точку
   // на колокольчике. Опрашиваем только когда вкладка на экране, чтобы
@@ -145,6 +159,7 @@ export default function PanelShell({ onLogout }) {
   const isSupport = section === 'support'
   const isModeration = section === 'moderation'
   const isChronicle  = section === 'chronicle'
+  const isPanelAccess = section === 'panelAccess'
 
   return (
     <div className="panel-shell">
@@ -238,7 +253,9 @@ export default function PanelShell({ onLogout }) {
                                       ? ' panel-layout-support'
                                       : isChronicle
                                         ? ' panel-layout-chronicle'
-                                        : ' panel-layout-page'
+                                        : isPanelAccess
+                                          ? ' panel-layout-panel-access'
+                                          : ' panel-layout-page'
           }`}
         >
           <PanelSidebar
@@ -300,7 +317,8 @@ export default function PanelShell({ onLogout }) {
           {isSupport && <SupportSection />}
           {isModeration && <ModerationSection role={role} permissions={permissions} />}
           {isChronicle && <ChronicleSection />}
-          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && (
+          {isPanelAccess && <PanelAccessSection />}
+          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>
