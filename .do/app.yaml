@@ -75,7 +75,12 @@ services:
       deploy_on_push: true
     environment_slug: node-js
     source_dir: /
-    build_command: npm ci && npm --prefix admin ci && npm run build
+    # Два npm ci параллельно + без audit/fund — обычно минуты экономии на каждом деплое.
+    # npm run build собирает игру и admin (см. package.json → "build").
+    build_command: >
+      (npm ci --no-audit --no-fund &
+       npm --prefix admin ci --no-audit --no-fund &
+       wait) && npm run build
     run_command: npm start
     http_port: 8080
     routes:
@@ -90,7 +95,7 @@ services:
         value: /admin/api
 
 workers:
-  # ---------- Telegram-боты ----------
+  # ---------- Telegram-боты (admin + support) ----------
   - name: bots
     github:
       repo: oleksandrfunded-beep/cutegaming
@@ -99,6 +104,8 @@ workers:
     dockerfile_path: server/Dockerfile
     source_dir: /server
     run_command: python bots_runner.py
+    # Ровно один инстанс: второй параллельный getUpdates = TelegramConflictError.
+    instance_count: 1
     envs:
       - key: PRODUCTION
         value: "true"
@@ -108,6 +115,9 @@ workers:
         value: "true"
       - key: REDIS_REQUIRED
         value: "false"
+      # Пауза перед polling: старый worker успевает закрыть сессию после SIGTERM.
+      - key: BOT_POLLING_START_DELAY
+        value: "8"
       - key: BOT_TOKEN
         value: REPLACE_ME
       - key: ADMIN_BOT_TOKEN

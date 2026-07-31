@@ -111,8 +111,9 @@ async def run_support_bot() -> None:
 
     try:
         me = await bot.get_me()
-        logger.info("Support bot: @%s", me.username)
+        logger.info("Support bot: @%s (id=%s)", me.username, me.id)
     except TelegramUnauthorizedError:
+        await bot.session.close()
         raise RuntimeError(
             "SUPPORT_BOT_TOKEN отклонён Telegram. Создай бота в @BotFather и "
             "вставь токен как SUPPORT_BOT_TOKEN в server/.env"
@@ -495,4 +496,9 @@ async def run_support_bot() -> None:
                 reply_markup=_main_menu_kb(),
             )
 
-    await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+    from bot_polling import run_polling
+    await run_polling(
+        dp, bot,
+        label="support-bot",
+        allowed_updates=["message", "callback_query"],
+    )

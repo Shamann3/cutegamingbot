@@ -4,12 +4,17 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
 
+# ca-certificates — TLS; openssh-client — SSH-туннель к БД (entrypoint.sh).
+# Слой меняется редко → Docker/DO кэширует его между деплоями.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates openssh-client sshpass \
+    && apt-get install -y --no-install-recommends ca-certificates openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
+# Зависимости отдельным слоем: пока requirements.txt не менялся,
+# повторные деплои api/bots берут этот слой из кэша (экономия минут).
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
@@ -20,7 +25,6 @@ EXPOSE 8080
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 
-# ИСПРАВЛЕНО: теперь хелсчек проверяет динамический порт из переменной окружения
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD python -c "import urllib.request, os; port = os.environ.get('PORT', '8080'); urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=3)"
 

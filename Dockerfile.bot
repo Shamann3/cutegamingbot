@@ -1,32 +1,45 @@
-# Образ для main.py (@Cute3TestBot + telethon-юзерботы) на DigitalOcean.
-# Контекст сборки — корень репозитория (нужны main.py, bot/, config и т.д.).
+# Образ для main.py (@CuteGamingBot + telethon-юзерботы) на DigitalOcean.
+# Multi-stage: компилятор (build-essential) остаётся только в builder —
+# финальный образ легче, а повторные деплои кэшируют тяжёлый pip-слой.
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-bot.txt ./
+# --no-deps: requirements-bot.txt — полный слепок рабочего venv (все версии
+# уже зафиксированы). Без --no-deps pip упирается в конфликты
+# (googletrans↔python-telegram-bot по httpx).
+RUN pip install --prefix=/install --no-cache-dir --no-deps -r requirements-bot.txt
+
+
 FROM python:3.12-slim
 
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
 
-# ca-certificates — SSL; build-essential — компилятор для TgCrypto; locales —
-# main.py делает locale.setlocale(en_US.UTF-8), в slim-образе локалей нет.
+# runtime: SSL + locales (main.py::locale.setlocale) + redis-server.
+# Без build-essential — образ заметно меньше и быстрее пушится в registry.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates build-essential locales redis-server \
+    && apt-get install -y --no-install-recommends ca-certificates locales redis-server \
     && sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
     && locale-gen \
     && rm -rf /var/lib/apt/lists/*
 
-ENV LANG=en_US.UTF-8 \
-    LANGUAGE=en_US:en \
-    LC_ALL=en_US.UTF-8
-
-COPY requirements-bot.txt ./
-# --no-deps: requirements-bot.txt — полный слепок рабочего venv (все версии
-# уже зафиксированы), поэтому ставим ровно их, без пересчёта зависимостей.
-# Иначе pip упирается в конфликты (googletrans↔python-telegram-bot по httpx),
-# которые на сервере обойдены принудительной установкой.
-RUN pip install --no-deps -r requirements-bot.txt
-
+COPY --from=builder /install /usr/local
 COPY . .
 RUN chmod +x /app/entrypoint-bot.sh
 

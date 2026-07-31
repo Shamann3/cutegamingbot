@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -11,8 +10,6 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.filters import Command
 from aiogram.types import MenuButtonWebApp, WebAppInfo
-from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
 
 from config import ADMIN_BOT_TOKEN, ADMIN_ENABLED, ADMIN_WEBAPP_URL, admin_user_ids
 
@@ -49,61 +46,66 @@ async def run_admin_bot() -> None:
         logger.warning("ADMIN_BOT_TOKEN не задан — admin bot пропущен")
         return
 
+    from bot_polling import run_polling
+
     bot = Bot(token=ADMIN_BOT_TOKEN)
     try:
-        try:
-            me = await bot.get_me()
-            logger.info("Admin bot: @%s", me.username)
-        except TelegramUnauthorizedError:
-            raise RuntimeError(
-                "ADMIN_BOT_TOKEN отклонён Telegram. Создайте второго бота в @BotFather "
-                "и вставьте его API Token в server/.env"
-            ) from None
+        me = await bot.get_me()
+        logger.info("Admin bot: @%s (id=%s)", me.username, me.id)
+    except TelegramUnauthorizedError:
+        await bot.session.close()
+        raise RuntimeError(
+            "ADMIN_BOT_TOKEN отклонён Telegram. Создайте второго бота в @BotFather "
+            "и вставьте его API Token в server/.env"
+        ) from None
 
-        dp = Dispatcher()
+    dp = Dispatcher()
+
+    if ADMIN_WEBAPP_URL:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="🛡 Panel",
+                web_app=WebAppInfo(url=_webapp_url_fresh(ADMIN_WEBAPP_URL)),
+            )
+        )
+        logger.info("Admin Web App URL: %s", ADMIN_WEBAPP_URL)
+
+    @dp.message(Command("start"))
+    async def cmd_start(message: types.Message):
+        user_id = message.from_user.id
+        name = message.from_user.first_name or "admin"
+        if _is_admin(user_id):
+            text = f"<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Добро пожаловать, {name}.\nЭто бот модерации всей экосистемой Cute.</b>\n<blockquote><b>Виво-Эпсилон!</b></blockquote>"
+        else:
+            # Кандидаты/новый персонал: доступ внутри панели проверяется по ключу.
+            text = (
+                f"<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Добро пожаловать, {name}.\nЭто бот модерации всей экосистемой Cute.</b>\n<b>Откройте панель и пройдите регистрацию по выданному ключу.</b>\n<blockquote><b>Виво-Эпсилон!</b></blockquote>"
+            )
 
         if ADMIN_WEBAPP_URL:
-            await bot.set_chat_menu_button(
-                menu_button=MenuButtonWebApp(
-                    text="🛡 Panel",
-                    web_app=WebAppInfo(url=_webapp_url_fresh(ADMIN_WEBAPP_URL)),
-                )
-            )
-            logger.info("Admin Web App URL: %s", ADMIN_WEBAPP_URL)
-
-        @dp.message(Command("start"))
-        async def cmd_start(message: types.Message):
-            user_id = message.from_user.id
-            name = message.from_user.first_name or "admin"
-            if _is_admin(user_id):
-                text = f"<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Добро пожаловать, {name}.\nЭто бот модерации всей экосистемой Cute.</b>\n<blockquote><b>Виво-Эпсилон!</b></blockquote>"
-            else:
-                # Кандидаты/новый персонал: доступ внутри панели проверяется по ключу.
-                text = (
-                    f"<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Добро пожаловать, {name}.\nЭто бот модерации всей экосистемой Cute.</b>\n<b>Откройте панель и пройдите регистрацию по выданному ключу.</b>\n<blockquote><b>Виво-Эпсилон!</b></blockquote>"
-                )
-
-            if ADMIN_WEBAPP_URL:
-                await message.answer(
-                    text,
-                    reply_markup=types.InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                types.InlineKeyboardButton(
-                                    text="Открыть панель",
-                                    web_app=WebAppInfo(url=_webapp_url_fresh(ADMIN_WEBAPP_URL)),icon_custom_emoji_id="5361948635317680832",
-                                )
-                            ]
+            await message.answer(
+                text,
+                reply_markup=types.InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            types.InlineKeyboardButton(
+                                text="Открыть панель",
+                                web_app=WebAppInfo(url=_webapp_url_fresh(ADMIN_WEBAPP_URL)),
+                                icon_custom_emoji_id="5361948635317680832",
+                            )
                         ]
-                    ),parse_mode="HTML"
-                )
-            else:
-                #ошибка 512910 ADMIN_WEBAPP_URL не задан в .env
-                await message.answer(text + "\n\n<b>Ошибка <code>#512910</code> ( обратитесь к сотрудникам эпсилона )</b> ", parse_mode="HTML")
+                    ]
+                ),
+                parse_mode="HTML",
+            )
+        else:
+            #ошибка 512910 ADMIN_WEBAPP_URL не задан в .env
+            await message.answer(
+                text + "\n\n<b>Ошибка <code>#512910</code> ( обратитесь к сотрудникам эпсилона )</b> ",
+                parse_mode="HTML",
+            )
 
-        await dp.start_polling(bot)
-    finally:
-        await bot.session.close()
+    await run_polling(dp, bot, label="admin-bot")
 
 
 async def main() -> None:
