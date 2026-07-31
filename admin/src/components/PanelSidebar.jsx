@@ -155,8 +155,8 @@ export default function PanelSidebar({
           </div>
         </div>
         <div className="panel-brand-meta">
-          <p className="panel-brand-name">Власть</p>
-          <p className="panel-brand-tag">часть целого</p>
+          <p className="panel-brand-name">Epsilon</p>
+          <p className="panel-brand-tag">Управление</p>
         </div>
       </div>
 
