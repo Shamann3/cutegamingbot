@@ -1,15 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { hasTelegramInitData, isAdminSessionValid } from '../lib/adminClient'
 import { vivoEpsilonLogo } from './EpsilonLogo'
 
-/** ~5.5s hold + ~0.5s exit ≈ 6s — Iris Awakening */
-export const ENTRANCE_HOLD_MS = 5500
+/** ~6.5s hold + ~0.5s exit ≈ 7 секунд */
+export const ENTRANCE_HOLD_MS = 6500
 export const ENTRANCE_EXIT_MS = 500
-export const ENTRANCE_LOGIN_HOLD_MS = 5300
-export const ENTRANCE_LITE_HOLD_MS = 1400
+export const ENTRANCE_LOGIN_HOLD_MS = 6500
+export const ENTRANCE_LITE_HOLD_MS = 1600
 
-/** 10 тонких лучей — достаточно для гипноза, без фейерверка */
-const RAY_COUNT = 10
+/** Куски герба — как в первой версии, но с чистым финальным штампом */
+const PIECES = [
+  { id: 'eye' },
+  { id: 'wing-l' },
+  { id: 'wing-r' },
+  { id: 'crown' },
+  { id: 'wordmark' },
+]
 
 function detectLiteEntrance() {
   if (typeof window === 'undefined') return false
@@ -21,36 +27,19 @@ function detectLiteEntrance() {
   return prefersReduced || veryWeakCpu
 }
 
-function buildRays(count) {
-  const cx = 100
-  const cy = 88 // центр ока в viewBox колец
-  const inner = 10
-  const outer = 72
-  return Array.from({ length: count }, (_, i) => {
-    const deg = (360 / count) * i - 90
-    const rad = (deg * Math.PI) / 180
-    return {
-      x1: cx + Math.cos(rad) * inner,
-      y1: cy + Math.sin(rad) * inner,
-      x2: cx + Math.cos(rad) * outer,
-      y2: cy + Math.sin(rad) * outer,
-    }
-  })
-}
-
 /**
- * Iris Awakening — око раскрывается, лучи, затем герб, wordmark, текст.
- * Слои сменяют друг друга по времени (без каши из overlapping clip’ов).
+ * Heraldic Assembly — элитная печать входа (~7с).
+ * Сборка кусков → единый штамп полного логотипа (без дублей текста) → копирайт.
+ * Показывается и при первом заходе (до регистрации/логина), и после входа.
  */
 export default function EntranceSeal({
   displayName = '',
-  variant = 'boot',
+  variant = 'boot', // boot | login
   onFinished,
 }) {
   const [phase, setPhase] = useState('in')
   const [lite] = useState(detectLiteEntrance)
   const doneRef = useRef(false)
-  const rays = useMemo(() => buildRays(RAY_COUNT), [])
 
   const holdMs = lite
     ? ENTRANCE_LITE_HOLD_MS
@@ -67,7 +56,7 @@ export default function EntranceSeal({
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-    const hold = reduced ? 500 : holdMs
+    const hold = reduced ? 550 : holdMs
     const exit = reduced ? 180 : ENTRANCE_EXIT_MS
 
     const t1 = window.setTimeout(() => setPhase('out'), hold)
@@ -83,21 +72,18 @@ export default function EntranceSeal({
     }
   }, [holdMs, onFinished])
 
+  // boot до авторизации — «порог»; login / уже в сессии — «власть»
   const authed =
     variant === 'login' || isAdminSessionValid() || hasTelegramInitData()
 
-  const title = authed ? 'Власть системы' : 'Серьёзный контур'
+  const title = authed ? 'Власть системы' : 'Порог системы'
   const greeting = authed
-    ? (displayName
-      ? `${displayName} · полный контроль`
-      : 'Полный контроль открыт')
-    : (displayName
-      ? `${displayName} · вход в систему`
-      : 'Вход в закрытую систему')
+    ? (displayName ? `${displayName} · контроль открыт` : 'Контроль открыт')
+    : (displayName ? `${displayName} · вход разрешён` : 'Вход в закрытый контур')
 
   return (
     <div
-      className={`ent-root ent-root--iris ent-root--${variant}${lite ? ' ent-root--lite' : ''}${phase === 'out' ? ' ent-root--out' : ''}`}
+      className={`ent-root ent-root--herald ent-root--${variant}${lite ? ' ent-root--lite' : ''}${phase === 'out' ? ' ent-root--out' : ''}`}
       role="status"
       aria-live="polite"
       aria-label={greeting}
@@ -105,67 +91,60 @@ export default function EntranceSeal({
       <div className="ent-void" aria-hidden="true" />
       <div className="ent-vignette" aria-hidden="true" />
       <div className="ent-grid" aria-hidden="true" />
+      <div className="ent-sheen-bg" aria-hidden="true" />
 
       <div className="ent-stage">
         <svg className="ent-rings" viewBox="0 0 200 200" aria-hidden="true">
-          <circle className="ent-ring ent-ring--a" cx="100" cy="100" r="94" />
-          <circle className="ent-ring ent-ring--b" cx="100" cy="100" r="78" />
-          <circle className="ent-ring ent-ring--c" cx="100" cy="100" r="52" />
-          <g className="ent-rays">
-            {rays.map((ray, i) => (
-              <line
-                key={i}
-                className="ent-ray"
-                style={{ '--ray-i': i }}
-                x1={ray.x1}
-                y1={ray.y1}
-                x2={ray.x2}
-                y2={ray.y2}
-              />
-            ))}
-          </g>
-          <circle className="ent-ring ent-ring--core" cx="100" cy="88" r="2.8" />
+          <circle className="ent-ring ent-ring--a" cx="100" cy="100" r="96" />
+          <circle className="ent-ring ent-ring--b" cx="100" cy="100" r="82" />
+          <path
+            className="ent-ring ent-ring--shield"
+            d="M100 16 L164 38 V98 C164 138 136 166 100 180 C64 166 36 138 36 98 V38 Z"
+          />
+          <circle className="ent-ring ent-ring--c" cx="100" cy="100" r="58" />
+          <circle className="ent-ring ent-ring--core" cx="100" cy="100" r="3" />
         </svg>
 
+        <div className="ent-brackets" aria-hidden="true">
+          <span className="ent-bracket ent-bracket--tl" />
+          <span className="ent-bracket ent-bracket--tr" />
+          <span className="ent-bracket ent-bracket--bl" />
+          <span className="ent-bracket ent-bracket--br" />
+        </div>
+
+        <div className="ent-beam ent-beam--a" aria-hidden="true" />
+        <div className="ent-beam ent-beam--b" aria-hidden="true" />
+
         <div className="ent-mark" aria-hidden="true">
-          <div className="ent-eye-bloom" />
+          {/* Куски — собираются по очереди; на штампе гасятся */}
+          {PIECES.map((piece) => (
+            <div key={piece.id} className={`ent-piece ent-piece--${piece.id}`}>
+              <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
+            </div>
+          ))}
 
-          {/* 1. Око — круговая маска */}
-          <div className="ent-layer ent-layer--eye">
-            <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
-          </div>
-
-          {/* 2. Герб (корона + крылья + око) — после ока */}
-          <div className="ent-layer ent-layer--crest">
-            <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
-          </div>
-
-          {/* 3. Полный consolidate герба */}
-          <div className="ent-layer ent-layer--full">
+          {/* Единственный финальный логотип (PNG уже с CUTE EPSILON) */}
+          <div className="ent-piece ent-piece--full">
             <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
           </div>
 
           <div className="ent-stamp" />
-
-          {/* Wordmark отдельно — трекинг сжимается */}
-          <div className="ent-wordmark">
-            <span className="ent-wm-line ent-wm-line--cute">CUTE</span>
-            <span className="ent-wm-line ent-wm-line--eps">EPSILON</span>
-          </div>
+          <div className="ent-mark-glow" />
+          <div className="ent-logo-sheen" />
         </div>
 
         <div className="ent-copy">
-          <p className="ent-kicker">Cute Epsilon</p>
+          <p className="ent-kicker">Command access</p>
           <p className="ent-title">{title}</p>
           <p className="ent-sub">{greeting}</p>
           <p className="ent-line">
-            Закрытый контур управления. Без права на ошибку.
+            Закрытый контур управления. Серьёзный проект — без права на ошибку.
           </p>
           <div className="ent-rule" aria-hidden="true" />
           <div className="ent-meta" aria-hidden="true">
-            <span>POWER</span>
+            <span>AUTHORITY</span>
             <span className="ent-meta-dot" />
-            <span>SYSTEM</span>
+            <span>PROTECTION</span>
             <span className="ent-meta-dot" />
             <span>CONTROL</span>
           </div>
