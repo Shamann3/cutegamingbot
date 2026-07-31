@@ -15,6 +15,11 @@ const GROUP_LABELS = {
   system: 'Система',
 }
 
+const TABS = [
+  { id: 'defaults', label: 'Дефолты ролей' },
+  { id: 'members', label: 'Администраторы' },
+]
+
 function memberName(m) {
   if (!m) return '—'
   return m.firstName || (m.username ? `@${m.username}` : `ID ${m.userId}`)
@@ -30,7 +35,9 @@ function Toggle({ on, disabled, onClick, label }) {
       aria-pressed={on}
       title={label}
     >
-      <span className="pa-toggle-knob" />
+      <span className="pa-toggle-track" aria-hidden="true">
+        <span className="pa-toggle-knob" />
+      </span>
       <span className="pa-toggle-label">{on ? 'Вкл' : 'Выкл'}</span>
     </button>
   )
@@ -48,6 +55,7 @@ export default function PanelAccessSection() {
   const [busyKey, setBusyKey] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
   const [roleTab, setRoleTab] = useState('senior_admin')
+  const [viewTab, setViewTab] = useState('defaults')
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
 
@@ -61,12 +69,17 @@ export default function PanelAccessSection() {
         if (prev && (d.members || []).some((m) => m.userId === prev)) return prev
         return d.members?.[0]?.userId ?? null
       })
+      if (d.roles?.length && !d.roles.some((r) => r.id === roleTab)) {
+        setRoleTab(d.roles[0].id)
+      }
     } catch (e) {
       setError(e?.message || 'Не удалось загрузить доступы')
       setData(null)
     } finally {
       setLoading(false)
     }
+  // roleTab только для seed при первой загрузке — не перезагружаем при смене роли
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -113,9 +126,30 @@ export default function PanelAccessSection() {
     setBusyKey(key)
     try {
       await setPanelRoleDefault({ role: roleTab, sectionId, enabled })
-      await load()
+      setData((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          roleDefaults: {
+            ...prev.roleDefaults,
+            [roleTab]: {
+              ...(prev.roleDefaults?.[roleTab] || {}),
+              [sectionId]: enabled,
+            },
+          },
+          members: (prev.members || []).map((m) => {
+            if (m.role !== roleTab) return m
+            if (m.overrides && Object.prototype.hasOwnProperty.call(m.overrides, sectionId)) return m
+            const set = new Set(m.effectiveSections || [])
+            if (enabled) set.add(sectionId)
+            else set.delete(sectionId)
+            return { ...m, effectiveSections: [...set] }
+          }),
+        }
+      })
     } catch (e) {
       alert(e?.message || 'Ошибка')
+      await load()
     } finally {
       setBusyKey(null)
     }
@@ -152,33 +186,76 @@ export default function PanelAccessSection() {
     return { on, state: 'default' }
   }
 
+  const resetAllOverrides = async () => {
+    if (!selected) return
+    const overs = Object.keys(selected.overrides || {})
+    if (!overs.length) {
+      alert('Персональных исключений нет')
+      return
+    }
+    if (!confirm('Сбросить все персональные исключения к дефолту роли?')) return
+    setBusyKey(`user-${selected.userId}-reset`)
+    try {
+      for (const sectionId of overs) {
+        await setPanelUserAccess({
+          userId: selected.userId,
+          sectionId,
+          reset: true,
+        })
+      }
+      await load()
+    } catch (e) {
+      alert(e?.message || 'Ошибка')
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
   return (
-    <section className="panel-shelf panel-shelf-page pa-page">
-      <header className="pa-hero">
-        <div>
-          <p className="pa-eyebrow">Только владелец</p>
-          <h2 className="sec-title">Админ панель</h2>
-          <p className="sec-desc">
-            Дефолтные вкладки по ролям и персональные исключения для каждого администратора.
-            Изменения применяются сразу — без перезапуска.
-          </p>
-        </div>
-        <button type="button" className="sec-btn sec-btn-ghost" onClick={load} disabled={loading}>
-          Обновить
-        </button>
+    <section className="panel-security panel-panel-access">
+      <header className="sec-header">
+        <h2 className="sec-title">Админ панель</h2>
+        <p className="sec-subtitle">
+          Дефолтные вкладки по ролям и персональный доступ каждого администратора.
+          Только владелец · изменения применяются сразу.
+        </p>
       </header>
 
-      {loading && !data && <p className="sec-loading">Загрузка матрицы доступов…</p>}
-      {error && <p className="sec-empty">{error}</p>}
+      <nav className="sec-tabs pa-view-tabs" aria-label="Разделы доступов">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={`sec-tab${viewTab === t.id ? ' sec-tab-active' : ''}`}
+            onClick={() => setViewTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="sec-btn sec-btn-ghost sec-btn-sm pa-refresh"
+          onClick={load}
+          disabled={loading}
+        >
+          {loading ? '…' : 'Обновить'}
+        </button>
+      </nav>
 
-      {data && (
-        <div className="pa-layout">
-          <aside className="pa-defaults elite-block">
-            <div className="pa-block-head">
-              <h3 className="pa-block-title">Дефолты ролей</h3>
-              <p className="pa-block-sub">Базовый набор вкладок при выдаче роли</p>
-            </div>
-            <div className="pa-role-tabs" role="tablist">
+      <div className="sec-tab-body pa-tab-body">
+        {loading && !data && <p className="sec-loading">Загрузка матрицы доступов…</p>}
+        {error && (
+          <div className="pa-error elite-block">
+            <p className="sec-empty" style={{ margin: 0 }}>{error}</p>
+            <button type="button" className="sec-btn sec-btn-sm" onClick={load}>
+              Повторить
+            </button>
+          </div>
+        )}
+
+        {data && viewTab === 'defaults' && (
+          <div className="pa-pane pa-pane-defaults">
+            <div className="pa-role-tabs" role="tablist" aria-label="Роли">
               {(data.roles || []).map((r) => (
                 <button
                   key={r.id}
@@ -192,9 +269,12 @@ export default function PanelAccessSection() {
                 </button>
               ))}
             </div>
+            <p className="pa-hint">
+              Базовый набор вкладок при выдаче роли. Персональные исключения во вкладке «Администраторы».
+            </p>
             <div className="pa-section-groups">
               {sectionsByGroup.map((g) => (
-                <div key={g.id} className="pa-group">
+                <div key={g.id} className="pa-group elite-block">
                   <p className="pa-group-label">{g.label}</p>
                   <ul className="pa-section-list">
                     {g.items.map((s) => {
@@ -216,24 +296,40 @@ export default function PanelAccessSection() {
                 </div>
               ))}
             </div>
-          </aside>
+          </div>
+        )}
 
-          <div className="pa-people elite-block">
-            <div className="pa-block-head pa-block-head-row">
-              <div>
-                <h3 className="pa-block-title">Администраторы</h3>
-                <p className="pa-block-sub">Персонально открыть или закрыть вкладку поверх дефолта</p>
-              </div>
-              <input
-                className="sec-input pa-search"
-                placeholder="Поиск…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
+        {data && viewTab === 'members' && (
+          <div className="pa-pane pa-pane-members">
+            <div className="pa-people-toolbar">
+              <label className="pa-member-select-wrap">
+                <span className="pa-field-label">Администратор</span>
+                <select
+                  className="sec-input pa-member-select"
+                  value={selectedId ?? ''}
+                  onChange={(e) => setSelectedId(Number(e.target.value) || null)}
+                >
+                  {!members.length && <option value="">Нет сотрудников</option>}
+                  {members.map((m) => (
+                    <option key={m.userId} value={m.userId}>
+                      {memberName(m)} · {m.roleLabel}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="pa-search-wrap">
+                <span className="pa-field-label">Поиск</span>
+                <input
+                  className="sec-input pa-search"
+                  placeholder="Имя, @username, ID…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </label>
             </div>
 
             <div className="pa-people-split">
-              <ul className="pa-member-list">
+              <ul className="pa-member-list" aria-label="Список администраторов">
                 {members.map((m) => (
                   <li key={m.userId}>
                     <button
@@ -260,7 +356,7 @@ export default function PanelAccessSection() {
                   <>
                     <div className="pa-detail-head">
                       <div>
-                        <h4 className="pa-detail-name">{memberName(selected)}</h4>
+                        <h3 className="pa-detail-name">{memberName(selected)}</h3>
                         <p className="pa-detail-meta">
                           {selected.roleLabel}
                           {selected.username ? ` · @${selected.username}` : ''}
@@ -271,25 +367,7 @@ export default function PanelAccessSection() {
                         type="button"
                         className="sec-btn sec-btn-ghost sec-btn-sm"
                         disabled={busyKey?.startsWith(`user-${selected.userId}`)}
-                        onClick={async () => {
-                          if (!confirm('Сбросить все персональные исключения к дефолту роли?')) return
-                          setBusyKey(`user-${selected.userId}-reset`)
-                          try {
-                            const overs = Object.keys(selected.overrides || {})
-                            for (const sectionId of overs) {
-                              await setPanelUserAccess({
-                                userId: selected.userId,
-                                sectionId,
-                                reset: true,
-                              })
-                            }
-                            await load()
-                          } catch (e) {
-                            alert(e?.message || 'Ошибка')
-                          } finally {
-                            setBusyKey(null)
-                          }
-                        }}
+                        onClick={resetAllOverrides}
                       >
                         Сбросить исключения
                       </button>
@@ -297,7 +375,7 @@ export default function PanelAccessSection() {
 
                     <div className="pa-section-groups">
                       {sectionsByGroup.map((g) => (
-                        <div key={g.id} className="pa-group">
+                        <div key={g.id} className="pa-group elite-block">
                           <p className="pa-group-label">{g.label}</p>
                           <ul className="pa-section-list">
                             {g.items.map((s) => {
@@ -309,7 +387,7 @@ export default function PanelAccessSection() {
                                     <span className="pa-section-name">{s.label}</span>
                                     <StateChip state={state} />
                                   </div>
-                                  <div className="pa-user-actions">
+                                  <div className="pa-user-actions" role="group" aria-label={`Доступ: ${s.label}`}>
                                     <button
                                       type="button"
                                       className={`pa-pill${state === 'grant' ? ' is-on' : ''}`}
@@ -334,7 +412,7 @@ export default function PanelAccessSection() {
                                     >
                                       Запрет
                                     </button>
-                                    <span className={`pa-eff${on ? ' is-on' : ''}`} title="Итоговый доступ">
+                                    <span className={`pa-eff${on ? ' is-on' : ''}`}>
                                       {on ? 'открыто' : 'закрыто'}
                                     </span>
                                   </div>
@@ -350,8 +428,8 @@ export default function PanelAccessSection() {
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </section>
   )
 }

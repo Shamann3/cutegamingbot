@@ -254,7 +254,7 @@ export default function PanelShell({ onLogout }) {
                                       : isChronicle
                                         ? ' panel-layout-chronicle'
                                         : isPanelAccess
-                                          ? ' panel-layout-panel-access'
+                                          ? ' panel-layout-security'
                                           : ' panel-layout-page'
           }`}
         >
