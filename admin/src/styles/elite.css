@@ -1123,32 +1123,80 @@ body,
 }
 
 /* ============================================================
+   APP SHELL — на весь экран
+   ------------------------------------------------------------
+   Раньше .panel-shell скроллился целиком (padding main +
+   height: calc(100dvh − 3.2rem) → контент выше окна → полоса
+   справа). Теперь shell = ровно viewport, скролл только внутри
+   рабочей области вкладки.
+   ============================================================ */
+
+.panel-shell {
+  height: 100% !important;
+  height: var(--tg-viewport-stable-height, 100dvh) !important;
+  max-height: var(--tg-viewport-stable-height, 100dvh) !important;
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
+.panel-shell-main {
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  padding:
+    max(0.55rem, env(safe-area-inset-top, 0px))
+    max(0.65rem, env(safe-area-inset-right, 0px))
+    max(0.55rem, env(safe-area-inset-bottom, 0px))
+    max(0.65rem, env(safe-area-inset-left, 0px)) !important;
+}
+
+.panel-layout {
+  width: 100% !important;
+  max-width: none !important;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+}
+
+/* ============================================================
    СЕТКИ ПОД ШАПКУ
    ------------------------------------------------------------
-   EliteTopbar занимает строку 1 / колонку 2. Если у layout
-   остаётся `grid-template-rows: 1fr` (как было у staff), контент
-   либо перекрывается шапкой, либо уезжает в неявную строку за
-   пределы 100dvh — и пользователь видит только заголовок + вкладки
-   над чёрной пустотой. Правило для ВСЕХ сеток: строка 1 = шапка
-   (auto), строка 2 = контент (minmax 0, 1fr).
+   EliteTopbar = строка 1. Контент = строка 2 (minmax 0, 1fr).
+   Высота = 100% родителя (shell-main), НЕ calc(100dvh − N) —
+   иначе снова появляется внешний скролл.
    ============================================================ */
 
 .panel-layout-dashboard {
-  grid-template-rows: auto minmax(14rem, auto) minmax(8rem, auto) minmax(17rem, auto);
+  grid-template-rows: auto minmax(10rem, auto) minmax(7rem, auto) minmax(12rem, 1fr);
   gap: var(--e-gap);
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-content: stretch;
 }
 
 .panel-pulse-hero        { grid-row: 2; }
 .panel-shelf-players     { grid-row: 3; }
 .panel-shelf-server      { grid-row: 3; }
 .panel-shelf-maintenance { grid-row: 3; }
-.panel-shelf-online      { grid-row: 4; }
+.panel-shelf-online      { grid-row: 4; min-height: 0; }
 
 .panel-layout-page,
 .panel-layout-support,
 .panel-layout-staff,
 .panel-layout-security,
 .panel-layout-users,
+.panel-layout-accounts,
 .panel-layout-economy,
 .panel-layout-market,
 .panel-layout-farm,
@@ -1161,19 +1209,20 @@ body,
 .panel-layout-chronicle {
   grid-template-rows: auto minmax(0, 1fr) !important;
   align-content: stretch;
+  align-items: stretch !important;
+  gap: 0.55rem !important;
   min-height: 0 !important;
-  height: calc(100dvh - 3.2rem) !important;
-  max-height: calc(100dvh - 3.2rem) !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
 }
 
 /* Контент раздела — строго вторая строка.
-   ВАЖНО: только КОРНЕВЫЕ обёртки секций. Вложенные .panel-content-stats /
-   .panel-content-tabs и т.п. сюда НЕ входят — иначе они вырываются из
-   flex-родителя в сетку layout и ломают «Контент» (карта крафта
-   наезжает на статистику). */
+   ВАЖНО: только КОРНЕВЫЕ обёртки секций. */
 .panel-layout > .panel-shelf-page,
 .panel-layout > .panel-security,
 .panel-layout > .panel-users,
+.panel-layout > .panel-accounts,
 .panel-layout > .panel-economy,
 .panel-layout > .panel-market,
 .panel-layout > .panel-farm,
@@ -1186,18 +1235,122 @@ body,
 .panel-layout > .analytics-section,
 .panel-layout > .support-section,
 .panel-layout > .chs-root,
+.panel-layout > .arc-shell,
 .panel-layout-analytics > .analytics-section {
   grid-column: 2 !important;
   grid-row: 2 !important;
-  min-height: 0;
+  min-height: 0 !important;
+  height: 100%;
   max-height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-/* Сайдбар тянется на обе строки шапка+контент */
+/* Разделы с собственной внутренней раскладкой — без двойного скролла */
+.panel-layout > .support-section,
+.panel-layout > .panel-security,
+.panel-layout > .panel-users,
+.panel-layout-content > .panel-content:has(.craftmap-shell) {
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.panel-layout > .panel-users {
+  min-height: 0 !important;
+}
+
+.panel-layout > .panel-users .panel-users-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Сайдбар на всю высоту сетки — sticky не нужен без внешнего скролла */
 .panel-shelf-sidebar {
   grid-row: 1 / -1 !important;
+  height: 100% !important;
+  max-height: none !important;
+  position: relative !important;
+  top: auto !important;
+  align-self: stretch !important;
+  overflow: hidden !important;
+}
+
+/* Компактные заголовки разделов — больше места рабочей зоне.
+   Контекст уже есть в EliteTopbar / сайдбаре. */
+.panel-shelf-page {
+  padding: 0.55rem 0.85rem !important;
+  flex-shrink: 0;
+}
+
+.panel-shelf-page .panel-shelf-label {
+  margin: 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+}
+
+.panel-shelf-page .panel-page-title,
+.panel-security .sec-title,
+.support-section .sec-title {
+  margin: 0.1rem 0 0 !important;
+  font-size: 1.05rem !important;
+  line-height: 1.25 !important;
+  font-weight: 650 !important;
+}
+
+.panel-shelf-page .panel-page-lead,
+.panel-security .sec-subtitle {
+  margin: 0.2rem 0 0 !important;
+  font-size: 0.76rem !important;
+  line-height: 1.35 !important;
+  color: var(--e-text-3) !important;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.panel-security .sec-header,
+.support-section-header {
+  flex-shrink: 0;
+  margin-bottom: 0.35rem !important;
+}
+
+.panel-security {
+  padding: 0.15rem 0.05rem 0.35rem !important;
+  gap: 0.65rem !important;
+  min-height: 0 !important;
+}
+
+.panel-settings {
+  padding-bottom: 0.75rem !important;
+  min-height: 0 !important;
+}
+
+.panel-content,
+.panel-economy,
+.panel-market,
+.panel-farm,
+.panel-logs,
+.panel-broadcast-wrap,
+.panel-accounts,
+.analytics-section,
+.chs-root {
+  min-height: 0;
+}
+
+.panel-security .sec-tabs {
+  flex-shrink: 0;
+}
+
+.panel-security .sec-tab-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* ============================================================
@@ -1209,12 +1362,17 @@ body,
    поверх canvas; shell занимает оставшуюся высоту колонки.
    ============================================================ */
 
-.panel-layout-content > .panel-content:has(.craftmap-shell) {
-  overflow: hidden;
-}
-
 .panel-layout-content > .panel-content:has(.craftmap-shell) > :not(.craftmap-shell) {
   flex-shrink: 0;
+}
+
+.panel-layout-content > .panel-content {
+  min-height: 0;
+}
+
+.panel-layout-content > .panel-content:has(.craftmap-shell) .craftmap-shell {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .craftmap-shell {
@@ -1349,15 +1507,31 @@ body,
   backdrop-filter: none !important;
 }
 
+.support-section {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  gap: 0.55rem !important;
+}
+
 .support-layout {
   gap: var(--e-gap);
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+}
+
+.support-list-wrap,
+.support-thread-wrap,
+.support-empty-state {
+  min-height: 0;
+  height: 100%;
 }
 
 .support-list-wrap {
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
-  min-height: 0;
 }
 
 .sec-audit-filters {
@@ -2122,6 +2296,73 @@ body,
   :root {
     --e-r-card: 18px;
     --e-r-block: 14px;
+  }
+
+  /* Мобильный: shell снова скроллится — фиксированный bottom bar
+     и одна колонка; внутренние height:100% иначе обрезают контент. */
+  .panel-shell {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    max-height: none !important;
+  }
+
+  .panel-shell-main {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding-top: max(8px, env(safe-area-inset-top, 0px)) !important;
+    padding-left: max(12px, env(safe-area-inset-left, 0px)) !important;
+    padding-right: max(12px, env(safe-area-inset-right, 0px)) !important;
+    padding-bottom: calc(64px + max(8px, env(safe-area-inset-bottom, 0px))) !important;
+  }
+
+  .panel-layout,
+  .panel-layout-page,
+  .panel-layout-support,
+  .panel-layout-staff,
+  .panel-layout-security,
+  .panel-layout-users,
+  .panel-layout-accounts,
+  .panel-layout-economy,
+  .panel-layout-market,
+  .panel-layout-farm,
+  .panel-layout-content,
+  .panel-layout-broadcast,
+  .panel-layout-logs,
+  .panel-layout-analytics,
+  .panel-layout-settings,
+  .panel-layout-events,
+  .panel-layout-chronicle,
+  .panel-layout-dashboard {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .panel-layout > .panel-shelf-page,
+  .panel-layout > .panel-security,
+  .panel-layout > .panel-users,
+  .panel-layout > .panel-accounts,
+  .panel-layout > .panel-economy,
+  .panel-layout > .panel-market,
+  .panel-layout > .panel-farm,
+  .panel-layout > .panel-content,
+  .panel-layout > .panel-broadcast,
+  .panel-layout > .panel-broadcast-wrap,
+  .panel-layout > .panel-logs,
+  .panel-layout > .panel-settings,
+  .panel-layout > .panel-events,
+  .panel-layout > .analytics-section,
+  .panel-layout > .support-section,
+  .panel-layout > .chs-root,
+  .panel-layout > .arc-shell {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .panel-security .sec-tab-body {
+    overflow: visible !important;
   }
 
   .elite-greeting-title {

@@ -12077,8 +12077,8 @@ input[type=range].cc-dial::-moz-range-thumb{width:16px;height:16px;border-radius
   position: relative;
   width: 100%;
   flex: 1 1 auto;
-  min-height: 280px;
-  height: min(70dvh, calc(100dvh - 18rem));
+  min-height: 240px;
+  height: auto;
   border-radius: 18px;
   overflow: hidden;
   isolation: isolate;
