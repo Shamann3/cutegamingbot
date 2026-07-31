@@ -4,8 +4,10 @@
    Таймлайн (boot):
      0.00–1.40  тишина, void, кольца
      1.20–2.40  щит, скобы, луч
-     2.20–4.60  один слой марки — мягкий clip-path
-     4.40–5.10  удержание / glow
+     2.05       SVG: око + оба крыла СИНХРОННО
+     2.95       SVG: корона
+     3.45       SVG: CUTE / EPSILON
+     3.95–4.50  штамп оригинальным PNG
      4.70–5.40  текст о пользе панели
      5.30–5.55  мягкая вспышка
      5.50–6.00  выход
@@ -240,27 +242,120 @@
   100% { opacity: 0; transform: translateX(-50%) translateY(min(44vw, 12.5rem)); }
 }
 
-/* --- Марка: один слой, расширяющийся clip-path --- */
+/* --- Марка: настоящие SVG-части, синхронная сборка ---
+   1) око + оба крыла — ОДИН момент
+   2) корона
+   3) wordmark
+   4) штамп оригинальным PNG
+*/
 
 .ent-mark {
   position: relative;
   z-index: 3;
   width: min(56vw, 16rem);
-  aspect-ratio: 1 / 1.15;
+  aspect-ratio: 240 / 278;
   margin-top: 0.55rem;
+  isolation: isolate;
 }
 
-.ent-mark-reveal {
+.ent-crest {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-  /* Только clip/transform/opacity — без filter, чтобы не дёргалось */
-  will-change: clip-path, transform, opacity;
-  animation: entAssemble 2.8s 2.15s var(--ent-ease-soft) both;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  z-index: 2;
+  animation: entCrestFadeOut 0.55s 4s var(--ent-ease-soft) forwards;
 }
 
-.ent-mark-reveal img {
+.eps-crest-part {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+
+/* ── Шаг 1: око и крылья СИНХРОННО (один delay / одна длительность) ── */
+.eps-crest-eye,
+.eps-crest-wing-l,
+.eps-crest-wing-r {
+  animation-duration: 0.85s;
+  animation-delay: 2.05s;
+  animation-timing-function: var(--ent-ease-soft);
+  animation-fill-mode: both;
+}
+
+.eps-crest-eye {
+  animation-name: crestEyeIn;
+  transform-origin: 120px 112px;
+}
+
+.eps-crest-wing-l {
+  animation-name: crestWingLIn;
+  transform-origin: 70px 90px;
+}
+
+.eps-crest-wing-r {
+  animation-name: crestWingRIn;
+  transform-origin: 170px 90px;
+}
+
+/* ── Шаг 2: корона ПОСЛЕ глаз/крыльев ── */
+.eps-crest-crown {
+  animation: crestCrownIn 0.8s 2.95s var(--ent-ease-soft) both;
+  transform-origin: 120px 40px;
+}
+
+/* ── Шаг 3: название ── */
+.eps-crest-words {
+  animation: crestWordsIn 0.75s 3.45s var(--ent-ease-soft) both;
+  transform-origin: 120px 220px;
+}
+
+@keyframes crestEyeIn {
+  0%   { opacity: 0; transform: scale(0.78); }
+  60%  { opacity: 1; transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes crestWingLIn {
+  0%   { opacity: 0; transform: translate(-18px, 6px) rotate(-10deg); }
+  100% { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+}
+
+@keyframes crestWingRIn {
+  0%   { opacity: 0; transform: translate(18px, 6px) rotate(10deg); }
+  100% { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+}
+
+@keyframes crestCrownIn {
+  0%   { opacity: 0; transform: translateY(-22px) scale(0.9); }
+  65%  { opacity: 1; transform: translateY(2px) scale(1.03); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes crestWordsIn {
+  0%   { opacity: 0; transform: translateY(14px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes entCrestFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* Оригинальный PNG — финальный штамп поверх сборки */
+.ent-seal-png {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  animation: entSealPngIn 0.7s 3.95s var(--ent-ease-soft) both;
+}
+
+.ent-seal-png img {
   display: block;
   width: 100%;
   height: 100%;
@@ -270,49 +365,10 @@
   -webkit-filter: brightness(0) invert(1);
 }
 
-/*
-  Мягкое раскрытие одного слоя только через inset.
-  Больше промежуточных кадров — ровнее интерполяция.
-*/
-@keyframes entAssemble {
-  0% {
-    opacity: 0;
-    transform: scale(0.96);
-    clip-path: inset(38% 38% 52% 38%);
-  }
-  8% {
-    opacity: 1;
-    transform: scale(1);
-    clip-path: inset(34% 34% 48% 34%);
-  }
-  22% {
-    clip-path: inset(28% 26% 44% 26%);
-  }
-  38% {
-    /* око */
-    clip-path: inset(24% 18% 42% 18%);
-  }
-  54% {
-    /* + крылья */
-    clip-path: inset(14% 3% 40% 3%);
-  }
-  68% {
-    /* + корона */
-    clip-path: inset(0% 3% 40% 3%);
-  }
-  82% {
-    /* + wordmark */
-    clip-path: inset(0% 2% 0% 2%);
-  }
-  92% {
-    clip-path: inset(0 0 0 0);
-    transform: scale(1.018);
-  }
-  100% {
-    opacity: 1;
-    clip-path: inset(0 0 0 0);
-    transform: scale(1);
-  }
+@keyframes entSealPngIn {
+  0%   { opacity: 0; transform: scale(0.97); }
+  55%  { opacity: 1; transform: scale(1.015); }
+  100% { opacity: 1; transform: scale(1); }
 }
 
 .ent-stamp {
@@ -320,16 +376,16 @@
   inset: -10%;
   border-radius: 50%;
   pointer-events: none;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.22) 0%, transparent 66%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.2) 0%, transparent 66%);
   opacity: 0;
-  animation: entStampGlow 1.1s 4.45s var(--ent-ease-soft) both;
-  z-index: 1;
+  animation: entStampGlow 1.05s 4.15s var(--ent-ease-soft) both;
+  z-index: 6;
 }
 
 @keyframes entStampGlow {
-  0%   { opacity: 0; transform: scale(0.7); }
-  40%  { opacity: 0.55; transform: scale(1.1); }
-  100% { opacity: 0; transform: scale(1.28); }
+  0%   { opacity: 0; transform: scale(0.72); }
+  40%  { opacity: 0.5; transform: scale(1.08); }
+  100% { opacity: 0; transform: scale(1.26); }
 }
 
 .ent-mark-glow {
@@ -340,13 +396,13 @@
   z-index: 0;
   background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0%, transparent 70%);
   opacity: 0;
-  animation: entMarkPulse 2.6s 4.55s ease-in-out both;
+  animation: entMarkPulse 2.5s 4.25s ease-in-out both;
 }
 
 @keyframes entMarkPulse {
   0%   { opacity: 0; transform: scale(0.94); }
-  40%  { opacity: 0.45; transform: scale(1.03); }
-  100% { opacity: 0.18; transform: scale(1); }
+  40%  { opacity: 0.42; transform: scale(1.03); }
+  100% { opacity: 0.16; transform: scale(1); }
 }
 
 /* --- Текст --- */
@@ -464,9 +520,16 @@
 }
 
 /* Login — чуть раньше финал (hold 5.3s) */
+.ent-root--login .eps-crest-eye,
+.ent-root--login .eps-crest-wing-l,
+.ent-root--login .eps-crest-wing-r { animation-delay: 1.9s; }
+.ent-root--login .eps-crest-crown { animation-delay: 2.75s; }
+.ent-root--login .eps-crest-words { animation-delay: 3.25s; }
+.ent-root--login .ent-crest { animation-delay: 3.8s; }
+.ent-root--login .ent-seal-png { animation-delay: 3.75s; }
 .ent-root--login .ent-flash { animation-delay: 5.1s; }
-.ent-root--login .ent-stamp { animation-delay: 4.3s; }
-.ent-root--login .ent-mark-glow { animation-delay: 4.4s; }
+.ent-root--login .ent-stamp { animation-delay: 4s; }
+.ent-root--login .ent-mark-glow { animation-delay: 4.1s; }
 .ent-root--login .ent-kicker { animation-delay: 4.55s; }
 .ent-root--login .ent-title { animation-delay: 4.7s; }
 .ent-root--login .ent-sub { animation-delay: 4.85s; }
@@ -698,12 +761,22 @@ body.perf-light .ent-ring--shield,
   opacity: 0.45;
 }
 
-body.perf-light .ent-mark-reveal,
-.ent-root--lite .ent-mark-reveal {
-  animation: entStampLite 0.55s var(--ent-ease) both !important;
-  clip-path: none !important;
+body.perf-light .ent-crest,
+.ent-root--lite .ent-crest {
+  animation: none !important;
+  opacity: 0 !important;
+}
+
+body.perf-light .eps-crest-part,
+.ent-root--lite .eps-crest-part {
+  animation: none !important;
+  opacity: 0 !important;
+}
+
+body.perf-light .ent-seal-png,
+.ent-root--lite .ent-seal-png {
+  animation: entStampLite 0.55s var(--ent-ease-soft) both !important;
   opacity: 1 !important;
-  filter: none !important;
   transform: none !important;
 }
 
@@ -755,13 +828,17 @@ body.perf-light .panel-brand-halo,
     opacity: 0.4;
   }
 
-  .ent-mark-reveal {
+  .ent-crest,
+  .eps-crest-part {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .ent-seal-png {
     animation: entFade 0.35s ease both !important;
     animation-delay: 0s !important;
     opacity: 1 !important;
-    clip-path: none !important;
     transform: none !important;
-    filter: none !important;
   }
 
   .ent-kicker,

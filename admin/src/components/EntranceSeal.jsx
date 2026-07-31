@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { hasTelegramInitData, isAdminSessionValid } from '../lib/adminClient'
 import { vivoEpsilonLogo } from './EpsilonLogo'
+import EpsilonCrestMark from './EpsilonCrestMark'
 
 /** ~5.5s hold + ~0.5s выход = 6s */
 export const ENTRANCE_HOLD_MS = 5500
@@ -19,7 +20,8 @@ function detectLiteEntrance() {
 }
 
 /**
- * Печать входа (~6с). Один слой марки + спокойный текст о пользе панели.
+ * Печать входа (~6с).
+ * Марка — SVG по частям: око+крылья синхронно → корона → текст → штамп PNG.
  */
 export default function EntranceSeal({
   displayName = '',
@@ -105,13 +107,11 @@ export default function EntranceSeal({
         <div className="ent-beam" aria-hidden="true" />
 
         <div className="ent-mark" aria-hidden="true">
-          <div className="ent-mark-reveal">
-            <img
-              src={vivoEpsilonLogo}
-              alt=""
-              draggable={false}
-              decoding="async"
-            />
+          {/* SVG-сборка по частям */}
+          <EpsilonCrestMark className="ent-crest" />
+          {/* Финальный штамп — оригинальный PNG */}
+          <div className="ent-seal-png">
+            <img src={vivoEpsilonLogo} alt="" draggable={false} decoding="async" />
           </div>
           <div className="ent-stamp" />
           <div className="ent-mark-glow" />
