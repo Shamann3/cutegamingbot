@@ -43,7 +43,8 @@ function userName(t) {
 // Thread view
 // ---------------------------------------------------------------------------
 
-function TicketThread({ ticket: initialTicket, onBack, onClosed }) {
+function TicketThread({ ticket: initialTicket, onBack, onClosed, onStatusSync }) {
+  const ticketId = initialTicket.id
   const [ticket, setTicket] = useState(initialTicket)
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -57,24 +58,34 @@ function TicketThread({ ticket: initialTicket, onBack, onClosed }) {
   const [claiming, setClaiming] = useState(false)
   const [closing, setClosing] = useState(false)
   const [lightboxSrc, setLightboxSrc] = useState(null)
+  // Пока не получен ответ сервера, статус из списка считается недостоверным:
+  // список кэшируется/опрашивается, и тикет мог быть закрыт или открыт после
+  // его загрузки. До синхронизации не рисуем ни «открыт», ни «архив».
+  const [synced, setSynced] = useState(false)
   const bottomRef = useRef(null)
   const messagesRef = useRef(null)
-  const pollRef = useRef(null)
+  const reqIdRef = useRef(0)
 
   const load = useCallback(async () => {
+    const reqId = ++reqIdRef.current
     try {
-      const data = await fetchSupportTicket(ticket.id)
+      const data = await fetchSupportTicket(ticketId)
+      if (reqId !== reqIdRef.current) return
       setTicket(data.ticket)
       setMessages(data.messages || [])
+      setSynced(true)
+      onStatusSync?.(ticketId, data.ticket?.status)
     } catch { /* ignore */ } finally {
-      setLoading(false)
+      if (reqId === reqIdRef.current) setLoading(false)
     }
-  }, [ticket.id])
+  }, [ticketId, onStatusSync])
 
   useEffect(() => {
     load()
-    pollRef.current = setInterval(load, 4000)
-    return () => clearInterval(pollRef.current)
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') load()
+    }, 4000)
+    return () => clearInterval(id)
   }, [load])
 
   useEffect(() => {
@@ -151,6 +162,26 @@ function TicketThread({ ticket: initialTicket, onBack, onClosed }) {
   const isOpen = ticket.status === 'open'
   const isClaimed = Boolean(ticket.assignedAdminName)
 
+  // Статус ещё не подтверждён сервером — не показываем ни «архив» (могли бы
+  // соврать про свежий тикет), ни форму ответа в закрытый тикет.
+  if (!synced) {
+    return (
+      <div className="support-thread-wrap">
+        <div className="support-thread-header">
+          <button className="sec-btn sec-btn-ghost sec-btn-sm" onClick={onBack}>← Назад</button>
+          <div className="support-thread-title">
+            <span className="support-thread-name">{userName(ticket)}</span>
+            {ticket.subject && <span className="support-thread-sub">· {ticket.subject}</span>}
+            <span className="staff-badge" style={{ '--badge-color': '#64748b' }}>…</span>
+          </div>
+        </div>
+        <div className="support-messages">
+          <p className="sec-loading">Загрузка…</p>
+        </div>
+      </div>
+    )
+  }
+
   // Экран обязательного взятия тикета
   if (isOpen && !isClaimed) {
     return (
@@ -161,7 +192,7 @@ function TicketThread({ ticket: initialTicket, onBack, onClosed }) {
             <span className="support-thread-name">{userName(ticket)}</span>
             {ticket.username && <span className="support-thread-sub">@{ticket.username}</span>}
             {ticket.subject && <span className="support-thread-sub">· {ticket.subject}</span>}
-            <span className="staff-badge support-badge-open" style={{ '--badge-color': '#34d399' }}>
+            <span className="staff-badge support-badge-open" style={{ '--badge-color': 'var(--e-text)' }}>
               открыт
             </span>
           </div>
@@ -211,12 +242,12 @@ function TicketThread({ ticket: initialTicket, onBack, onClosed }) {
           {ticket.subject && <span className="support-thread-sub">· {ticket.subject}</span>}
           <span
             className={`staff-badge ${isOpen ? 'support-badge-open' : ''}`}
-            style={{ '--badge-color': isOpen ? '#34d399' : '#94a3b8' }}
+            style={{ '--badge-color': isOpen ? 'var(--e-text)' : 'var(--e-text-4)' }}
           >
             {isOpen ? 'открыт' : 'архив'}
           </span>
           {isClaimed && (
-            <span className="staff-badge" style={{ '--badge-color': '#a78bfa' }}>
+            <span className="staff-badge" style={{ '--badge-color': 'var(--e-text-3)' }}>
               ✋ {ticket.assignedAdminName}
             </span>
           )}
@@ -341,20 +372,47 @@ function TicketList({ onSelect, selectedId, reload }) {
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('open')
+  // Монотонный счётчик запросов: ответ применяется только если он самый свежий.
+  // Без него ответ медленного опроса предыдущей вкладки перезаписывал список
+  // уже после переключения фильтра — открытые тикеты показывались в «Архиве».
+  const reqIdRef = useRef(0)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (opts = {}) => {
+    const { silent = false } = opts
+    const reqId = ++reqIdRef.current
+    const reqFilter = filter
+    if (!silent) setLoading(true)
     try {
-      const data = await fetchSupportTickets(filter)
-      setTickets(data.tickets || [])
-    } catch { setTickets([]) } finally { setLoading(false) }
+      const data = await fetchSupportTickets(reqFilter)
+      if (reqId !== reqIdRef.current) return
+      // Вторая линия защиты: даже свежий ответ фильтруем по статусу, чтобы
+      // тикет физически не мог отрисоваться в чужой вкладке.
+      const wanted = reqFilter === 'open' ? 'open' : 'closed'
+      setTickets((data.tickets || []).filter((t) => t.status === wanted))
+    } catch {
+      if (reqId !== reqIdRef.current) return
+      setTickets([])
+    } finally {
+      if (reqId === reqIdRef.current) setLoading(false)
+    }
+  }, [filter])
+
+  // Переключение вкладки: сбрасываем список сразу, чтобы старые строки
+  // не «протекали» в новую вкладку на время загрузки.
+  useEffect(() => {
+    reqIdRef.current += 1
+    setTickets([])
+    setLoading(true)
   }, [filter])
 
   useEffect(() => { load() }, [load, reload])
 
-  // Авто-обновление списка каждые 8 секунд
+  // Авто-обновление списка каждые 8 секунд — silent, без скелетона,
+  // иначе список мигал «Загрузка…» при каждом опросе.
   useEffect(() => {
-    const id = setInterval(load, 8000)
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') load({ silent: true })
+    }, 8000)
     return () => clearInterval(id)
   }, [load])
 
@@ -372,7 +430,7 @@ function TicketList({ onSelect, selectedId, reload }) {
             </button>
           ))}
         </div>
-        <button className="sec-btn sec-btn-ghost" onClick={load}>↻</button>
+        <button className="sec-btn sec-btn-ghost" onClick={() => load()}>↻</button>
       </div>
 
       {loading && <p className="sec-loading">Загрузка…</p>}
@@ -419,6 +477,8 @@ export default function SupportSection() {
   const [selected, setSelected] = useState(null)
   const [reload, setReload] = useState(0)
   const [stats, setStats] = useState(null)
+  const selectedRef = useRef(selected)
+  selectedRef.current = selected
 
   useEffect(() => {
     const load = () => fetchSupportStats().then(setStats).catch(() => {})
@@ -427,17 +487,28 @@ export default function SupportSection() {
     return () => clearInterval(id)
   }, [reload])
 
-  const handleClosed = () => {
+  const handleClosed = useCallback(() => {
     setSelected(null)
     setReload((r) => r + 1)
-  }
+  }, [])
+
+  // Тред получил авторитетный статус с сервера. Если он расходится с тем, что
+  // лежит в списке, список устарел — перезагружаем его, чтобы тикет уехал
+  // в свою вкладку.
+  const handleStatusSync = useCallback((ticketId, status) => {
+    if (!status) return
+    const prev = selectedRef.current
+    if (!prev || prev.id !== ticketId || prev.status === status) return
+    setSelected({ ...prev, status })
+    setReload((r) => r + 1)
+  }, [])
 
   return (
     <div className="panel-shelf support-section">
       <div className="support-section-header">
         <h2 className="sec-title">Поддержка</h2>
         {stats?.openTickets > 0 && (
-          <span className="staff-badge staff-badge-pulse" style={{ '--badge-color': '#fbbf24' }}>
+          <span className="staff-badge staff-badge-pulse">
             {stats.openTickets} открытых
           </span>
         )}
@@ -455,6 +526,7 @@ export default function SupportSection() {
             ticket={selected}
             onBack={() => setSelected(null)}
             onClosed={handleClosed}
+            onStatusSync={handleStatusSync}
           />
         ) : (
           <div className="support-empty-state">

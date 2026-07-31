@@ -28,24 +28,6 @@ _DDL = [
     "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS assigned_admin_id BIGINT",
     "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS assigned_admin_name TEXT",
     "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS greeting_sent BOOLEAN NOT NULL DEFAULT FALSE",
-    # Инвариант «один открытый тикет на пользователя». Раньше он нигде не был
-    # закреплён: get_or_create_ticket всегда делал INSERT, и при быстрых
-    # повторных сообщениях (флуд) у пользователя копились дубли открытых
-    # тикетов — админ закрывал один, остальные оставались висеть в списке.
-    # Сначала схлопываем существующие дубли (оставляем самый новый открытый
-    # тикет пользователя, остальные закрываем), затем ставим уникальный
-    # частичный индекс, который защищает от гонки на уровне БД.
-    """UPDATE support_tickets t
-       SET status = 'closed', updated_at = NOW()
-       WHERE t.status = 'open'
-         AND t.id NOT IN (
-             SELECT DISTINCT ON (user_id) id
-             FROM support_tickets
-             WHERE status = 'open'
-             ORDER BY user_id, created_at DESC
-         )""",
-    """CREATE UNIQUE INDEX IF NOT EXISTS uq_support_tickets_one_open
-       ON support_tickets (user_id) WHERE status = 'open'""",
     """CREATE TABLE IF NOT EXISTS support_messages (
         id            SERIAL PRIMARY KEY,
         ticket_id     INT NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
@@ -67,7 +49,42 @@ async def ensure_tables() -> None:
     async with db.pool.acquire() as conn:
         for stmt in _DDL:
             await conn.execute(stmt)
+        await _ensure_one_open_ticket_invariant(conn)
     logger.info("Support tables OK")
+
+
+async def _ensure_one_open_ticket_invariant(conn) -> None:
+    """Инвариант «один открытый тикет на пользователя».
+
+    Изначально он нигде не был закреплён: get_or_create_ticket всегда делал
+    INSERT, и при быстрых повторных сообщениях у пользователя копились дубли
+    открытых тикетов — админ закрывал один, остальные висели в «Открытых».
+
+    Схлопывание дублей — разовая миграция, поэтому выполняется только если
+    уникального индекса ещё нет. Раньше этот UPDATE стоял в _DDL и массово
+    закрывал тикеты при КАЖДОМ старте API.
+    """
+    already = await conn.fetchval(
+        "SELECT 1 FROM pg_indexes "
+        "WHERE indexname = 'uq_support_tickets_one_open'"
+    )
+    if not already:
+        closed = await conn.execute(
+            """UPDATE support_tickets
+               SET status = 'closed', updated_at = NOW()
+               WHERE status = 'open'
+                 AND id NOT IN (
+                     SELECT DISTINCT ON (user_id) id
+                     FROM support_tickets
+                     WHERE status = 'open'
+                     ORDER BY user_id, created_at DESC
+                 )""",
+        )
+        logger.info("Support: схлопнуты дубли открытых тикетов (%s)", closed)
+    await conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_support_tickets_one_open "
+        "ON support_tickets (user_id) WHERE status = 'open'"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -178,11 +195,18 @@ async def mark_greeting_sent(ticket_id: int) -> None:
     )
 
 
-async def close_ticket(ticket_id: int) -> None:
-    await db.pool.execute(
-        "UPDATE support_tickets SET status = 'closed', updated_at = NOW() WHERE id = $1",
+async def close_ticket(ticket_id: int) -> bool:
+    """Закрывает тикет. Возвращает False если он уже был закрыт.
+
+    Условие status = 'open' делает операцию идемпотентной: повторное закрытие
+    не трогает updated_at, иначе старый тикет прыгал в начало «Архива» и
+    пользователю уходило второе уведомление о закрытии."""
+    result = await db.pool.execute(
+        "UPDATE support_tickets SET status = 'closed', updated_at = NOW() "
+        "WHERE id = $1 AND status = 'open'",
         ticket_id,
     )
+    return result == "UPDATE 1"
 
 
 async def count_open_tickets() -> int:

@@ -267,7 +267,11 @@ async def close_ticket(
     if not ticket:
         raise HTTPException(404, "Тикет не найден")
 
-    await support_db.close_ticket(ticket_id)
+    closed_now = await support_db.close_ticket(ticket_id)
+    if not closed_now:
+        # Тикет уже закрыт (двойной клик, или его закрыл пользователь/другой
+        # админ) — не пишем лог второй раз и не уведомляем повторно.
+        return {"ok": True, "alreadyClosed": True}
 
     await log_admin_action(
         admin_user_id,

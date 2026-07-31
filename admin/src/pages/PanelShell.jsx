@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PANEL_SECTIONS, visibleSections } from '../constants/panelNav'
 import PanelSidebar from '../components/PanelSidebar'
+import EliteTopbar from '../components/EliteTopbar'
 import PanelBackdrop from '../components/PanelBackdrop'
 import GoldBackdrop from '../components/GoldBackdrop'
 import { NAV_ICONS } from '../components/NavIcons'
 import ToastHost from '../components/ToastHost'
-import { fetchAdminMe, logoutAdmin, registerUnauthorizedHandler } from '../lib/adminClient'
+import { fetchAdminMe, fetchSupportStats, logoutAdmin, registerUnauthorizedHandler } from '../lib/adminClient'
 import DashboardSection from './sections/DashboardSection'
 import SectionPlaceholder from './sections/SectionPlaceholder'
 import UsersSection from './sections/UsersSection'
@@ -80,6 +81,24 @@ export default function PanelShell({ onLogout }) {
   }, [onLogout])
 
   const navSections = useMemo(() => visibleSections(permissions), [permissions])
+
+  // Счётчик открытых обращений — питает значок у пункта «Поддержка» и точку
+  // на колокольчике. Опрашиваем только когда вкладка на экране, чтобы
+  // фоновая панель не долбила API.
+  const [openTickets, setOpenTickets] = useState(0)
+  useEffect(() => {
+    if (!navSections.some((s) => s.id === 'support')) return
+    let cancelled = false
+    const load = () => {
+      if (document.visibilityState !== 'visible') return
+      fetchSupportStats()
+        .then((d) => { if (!cancelled) setOpenTickets(d.openTickets || 0) })
+        .catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 20_000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [navSections])
 
   const handleLogout = useCallback(() => {
     logoutAdmin()
@@ -237,6 +256,15 @@ export default function PanelShell({ onLogout }) {
             onMusicVolumeChange={setMusicVolume}
             onToggleMusic={toggleMusicMute}
             onEnterGodMode={() => setGodMode(true)}
+            badges={{ support: openTickets }}
+          />
+
+          <EliteTopbar
+            sections={navSections}
+            activeSection={section}
+            onNavigate={handleNavigate}
+            openTickets={openTickets}
+            onOpenNotifications={() => handleNavigate('support')}
           />
 
           {isDashboard && <DashboardSection />}

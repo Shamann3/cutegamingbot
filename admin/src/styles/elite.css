@@ -1,0 +1,1905 @@
+/* ============================================================================
+   ELITE — монохромный дизайн-слой админ-панели
+   ----------------------------------------------------------------------------
+   Подключается ПОСЛЕ index.css (см. main.jsx) и является финальным,
+   авторитетным слоем каскада. index.css — исторический монолит с множеством
+   !important-переопределений, поэтому здесь !important используется точечно:
+   только там, где перебиваем такое правило.
+
+   Язык системы:
+     • глубокий чёрный, послойные поверхности, hairline-границы;
+     • ни одного цветного акцента — иерархия строится ЯРКОСТЬЮ, не цветом;
+     • капсульные элементы управления с физикой нажатия;
+     • крупные скругления и много воздуха.
+
+   Точки настройки — блок токенов ниже. Менять цвета следует только там.
+   ============================================================================ */
+
+/* ============================================================
+   1. ТОКЕНЫ
+   ============================================================ */
+
+:root {
+  /* --- Поверхности: от самой глубокой к самой приподнятой --- */
+  --e-void: #040404;          /* фон страницы */
+  --e-surface-0: #0a0a0a;     /* карточки */
+  --e-surface-1: #101010;     /* вложенные блоки */
+  --e-surface-2: #161616;     /* hover / приподнятое */
+  --e-surface-3: #1d1d1d;     /* активное */
+
+  /* --- Границы: hairline, три ступени заметности --- */
+  --e-line: rgba(255, 255, 255, 0.06);
+  --e-line-strong: rgba(255, 255, 255, 0.1);
+  --e-line-focus: rgba(255, 255, 255, 0.22);
+
+  /* --- Текст: 4 ступени, вся иерархия только через них --- */
+  --e-text: #f4f4f5;          /* заголовки, главные значения */
+  --e-text-2: #b8b8bd;        /* основной текст */
+  --e-text-3: #7c7c85;        /* подписи */
+  --e-text-4: #52525b;        /* отключённое, мета */
+
+  /* --- Инверсия: белая заливка + чёрный текст = высший приоритет --- */
+  --e-invert-bg: #f4f4f5;
+  --e-invert-text: #0a0a0a;
+
+  /* --- Радиусы --- */
+  --e-r-card: 22px;
+  --e-r-block: 16px;
+  --e-r-input: 12px;
+  --e-r-pill: 999px;
+
+  /* --- Тени: чёрные и мягкие, плюс внутренний блик сверху --- */
+  --e-shadow-card:
+    0 1px 0 0 rgba(255, 255, 255, 0.04) inset,
+    0 20px 50px -12px rgba(0, 0, 0, 0.9);
+  --e-shadow-raised:
+    0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+    0 28px 60px -14px rgba(0, 0, 0, 0.95);
+  --e-glow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 8px 26px -6px rgba(255, 255, 255, 0.12);
+
+  /* --- Движение: одна кривая на всю систему + физика нажатия --- */
+  --e-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --e-ease-press: cubic-bezier(0.4, 0, 0.2, 1);
+  --e-fast: 0.16s;
+  --e-med: 0.28s;
+  --e-slow: 0.5s;
+
+  /* --- Сетка --- */
+  --e-gap: 0.85rem;
+}
+
+/* Уважаем системную настройку «меньше движения» */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================
+   2. БАЗА
+   ============================================================ */
+
+body,
+.panel-shell,
+.auth-screen {
+  background: var(--e-void) !important;
+  color: var(--e-text-2);
+  letter-spacing: -0.011em;
+}
+
+/* Скроллбары — тонкие и почти невидимые, проявляются при наведении */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: var(--e-r-pill);
+  background: rgba(255, 255, 255, 0.1);
+  transition: background var(--e-fast) var(--e-ease);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Единое кольцо фокуса для доступности с клавиатуры.
+   :focus-visible, а не :focus — чтобы кольцо не появлялось от клика мышью. */
+:focus-visible {
+  outline: 2px solid var(--e-line-focus);
+  outline-offset: 2px;
+  border-radius: var(--e-r-input);
+}
+
+::selection {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--e-text);
+}
+
+/* ============================================================
+   3. ПОВЕРХНОСТИ
+   ============================================================ */
+
+.panel-shelf,
+.auth-card,
+.admin-modal {
+  border: 1px solid var(--e-line) !important;
+  border-radius: var(--e-r-card);
+  background: var(--e-surface-0) !important;
+  box-shadow: var(--e-shadow-card) !important;
+  backdrop-filter: none;
+}
+
+/* Сайдбар приподнят над контентом — он «шасси» панели */
+.panel-shelf-sidebar {
+  border-radius: var(--e-r-card);
+  background: var(--e-surface-0) !important;
+  box-shadow: var(--e-shadow-raised) !important;
+  padding: 1.1rem 0.7rem 0.7rem;
+  gap: 0.75rem;
+}
+
+.panel-shelf-quiet {
+  border: none;
+  border-top: 1px solid var(--e-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Вложенный блок внутри карточки — на ступень светлее, без своей тени */
+.elite-block {
+  border: 1px solid var(--e-line);
+  border-radius: var(--e-r-block);
+  background: var(--e-surface-1);
+  padding: 0.9rem 1rem;
+}
+
+/* ============================================================
+   4. ТИПОГРАФИКА
+   Отменяем градиентную заливку заголовков из index.css: в монохроме
+   заголовок — просто плотный белый с отрицательным трекингом.
+   ============================================================ */
+
+.sec-title,
+.auth-title,
+.panel-profile-name,
+.elite-greeting-title {
+  background: none !important;
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: var(--e-text) !important;
+  letter-spacing: -0.028em;
+  font-weight: 650;
+}
+
+.sec-title {
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+
+.sec-subtitle,
+.auth-subtitle,
+.panel-shelf-label,
+.auth-kicker,
+.panel-profile-kicker {
+  color: var(--e-text-3) !important;
+  opacity: 1;
+}
+
+/* Микро-подпись над значением: капитель с широким трекингом.
+   Единый приём для всех «шапок» блоков — держит ритм системы. */
+.panel-shelf-label,
+.elite-eyebrow {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+/* Крупные числовые значения — табличные цифры, чтобы не «прыгали»
+   при обновлении метрик по таймеру */
+.panel-stat-value,
+.elite-metric {
+  color: var(--e-text) !important;
+  font-weight: 680;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ============================================================
+   5. КНОПКИ — капсульные, с физикой нажатия
+   ------------------------------------------------------------
+   Три уровня: primary (инверсия), secondary (.sec-btn), ghost.
+   Нажатие = мгновенное сжатие 0.96 на быстрой кривой; отпускание —
+   плавный возврат. Это и даёт «айфоновое» ощущение отклика.
+   ============================================================ */
+
+.sec-btn,
+.elite-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid var(--e-line-strong) !important;
+  border-radius: var(--e-r-pill) !important;
+  background: var(--e-surface-2) !important;
+  color: var(--e-text) !important;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 560;
+  letter-spacing: -0.01em;
+  padding: 0.52rem 1.05rem;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+  transition:
+    background var(--e-fast) var(--e-ease),
+    border-color var(--e-fast) var(--e-ease),
+    transform var(--e-med) var(--e-ease),
+    box-shadow var(--e-med) var(--e-ease),
+    opacity var(--e-fast) linear;
+}
+
+.sec-btn:hover:not(:disabled),
+.elite-btn:hover:not(:disabled) {
+  background: var(--e-surface-3) !important;
+  border-color: var(--e-line-focus) !important;
+}
+
+/* Сжатие. Длительность здесь короче, чем при возврате — так нажатие
+   читается как мгновенное, а отпускание как упругое. */
+.sec-btn:active:not(:disabled),
+.elite-btn:active:not(:disabled),
+.elite-pill:active:not(:disabled),
+.panel-nav-item:active,
+.elite-icon-btn:active:not(:disabled) {
+  transform: scale(0.96);
+  transition-duration: var(--e-fast);
+  transition-timing-function: var(--e-ease-press);
+}
+
+.sec-btn:disabled,
+.elite-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.sec-btn-sm {
+  font-size: 0.78rem;
+  padding: 0.38rem 0.8rem;
+}
+
+/* Ghost — только контур, для второстепенных действий */
+.sec-btn-ghost {
+  background: transparent !important;
+  border-color: var(--e-line) !important;
+  color: var(--e-text-3) !important;
+}
+
+.sec-btn-ghost:hover:not(:disabled) {
+  background: var(--e-surface-1) !important;
+  border-color: var(--e-line-strong) !important;
+  color: var(--e-text) !important;
+}
+
+/* Primary — инверсия. Единственный «яркий» элемент на экране,
+   поэтому на экране он должен быть один. */
+.auth-btn-primary,
+.panel-users-btn-primary,
+.rules-gate-btn:not(:disabled),
+.elite-btn-primary,
+.support-claim-btn,
+.support-reply-send-btn {
+  border: 1px solid transparent !important;
+  border-radius: var(--e-r-pill) !important;
+  background: var(--e-invert-bg) !important;
+  color: var(--e-invert-text) !important;
+  font-weight: 620 !important;
+  letter-spacing: -0.012em;
+  box-shadow: var(--e-glow) !important;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform var(--e-med) var(--e-ease),
+    box-shadow var(--e-med) var(--e-ease),
+    filter var(--e-fast) var(--e-ease),
+    opacity var(--e-fast) linear;
+}
+
+.auth-btn-primary:hover:not(:disabled),
+.panel-users-btn-primary:hover:not(:disabled),
+.rules-gate-btn:not(:disabled):hover,
+.elite-btn-primary:hover:not(:disabled),
+.support-claim-btn:hover:not(:disabled),
+.support-reply-send-btn:hover:not(:disabled) {
+  filter: none;
+  background: #ffffff !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 12px 34px -6px rgba(255, 255, 255, 0.2) !important;
+  transform: translateY(-1px);
+}
+
+.auth-btn-primary:active:not(:disabled),
+.panel-users-btn-primary:active:not(:disabled),
+.elite-btn-primary:active:not(:disabled),
+.support-claim-btn:active:not(:disabled),
+.support-reply-send-btn:active:not(:disabled) {
+  transform: scale(0.96) !important;
+  transition-duration: var(--e-fast);
+  transition-timing-function: var(--e-ease-press);
+}
+
+.support-reply-send-btn:disabled,
+.support-claim-btn:disabled {
+  opacity: 0.3;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Опасное действие — в монохроме отличается не цветом, а контуром
+   и подчёркнуто «холодным» тёмным фоном */
+.sec-btn-danger,
+.panel-logout-btn {
+  background: transparent !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  color: var(--e-text-3) !important;
+  border-radius: var(--e-r-pill) !important;
+}
+
+.sec-btn-danger:hover:not(:disabled),
+.panel-logout-btn:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  color: var(--e-text) !important;
+}
+
+.sec-btn-success {
+  border-color: var(--e-line-strong) !important;
+  color: var(--e-text) !important;
+}
+
+/* Круглая иконочная кнопка */
+.elite-icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  flex: 0 0 auto;
+  border: 1px solid var(--e-line);
+  border-radius: var(--e-r-pill);
+  background: var(--e-surface-1);
+  color: var(--e-text-2);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background var(--e-fast) var(--e-ease),
+    border-color var(--e-fast) var(--e-ease),
+    color var(--e-fast) var(--e-ease),
+    transform var(--e-med) var(--e-ease);
+}
+
+.elite-icon-btn:hover {
+  background: var(--e-surface-2);
+  border-color: var(--e-line-strong);
+  color: var(--e-text);
+}
+
+.elite-icon-btn svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+/* ============================================================
+   6. СЕГМЕНТИРОВАННЫЕ ВКЛАДКИ
+   Дорожка-капсула, активный сегмент — инвертированная пилюля.
+   Так вкладка «Открытые/Архив» читается однозначно: перепутать
+   активный сегмент невозможно даже краем глаза.
+   ============================================================ */
+
+.sec-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem !important;
+  padding: 0.22rem;
+  border: 1px solid var(--e-line);
+  border-radius: var(--e-r-pill);
+  background: var(--e-surface-1);
+}
+
+.sec-tab {
+  border: none !important;
+  border-radius: var(--e-r-pill) !important;
+  background: transparent !important;
+  color: var(--e-text-3) !important;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 560;
+  letter-spacing: -0.008em;
+  padding: 0.42rem 0.95rem !important;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: none !important;
+  transition:
+    background var(--e-fast) var(--e-ease),
+    color var(--e-fast) var(--e-ease),
+    transform var(--e-med) var(--e-ease);
+}
+
+.sec-tab:hover:not(.sec-tab-active) {
+  background: var(--e-surface-2) !important;
+  color: var(--e-text-2) !important;
+}
+
+.sec-tab:active {
+  transform: scale(0.97);
+  transition-duration: var(--e-fast);
+}
+
+.sec-tab-active {
+  background: var(--e-invert-bg) !important;
+  color: var(--e-invert-text) !important;
+  font-weight: 620;
+  box-shadow: 0 2px 10px -2px rgba(0, 0, 0, 0.6) !important;
+}
+
+/* ============================================================
+   7. ПОЛЯ ВВОДА
+   ============================================================ */
+
+.sec-input,
+.auth-input,
+.panel-users-input,
+.admin-modal-textarea,
+.support-reply-input,
+.elite-input {
+  border: 1px solid var(--e-line) !important;
+  border-radius: var(--e-r-input) !important;
+  background: var(--e-surface-1) !important;
+  color: var(--e-text) !important;
+  font: inherit;
+  letter-spacing: -0.01em;
+  transition:
+    border-color var(--e-fast) var(--e-ease),
+    background var(--e-fast) var(--e-ease),
+    box-shadow var(--e-fast) var(--e-ease);
+}
+
+.sec-input::placeholder,
+.auth-input::placeholder,
+.support-reply-input::placeholder,
+.elite-input::placeholder {
+  color: var(--e-text-4);
+}
+
+.sec-input:focus,
+.auth-input:focus,
+.panel-users-input:focus,
+.admin-modal-textarea:focus,
+.support-reply-input:focus,
+.elite-input:focus {
+  outline: none;
+  border-color: var(--e-line-focus) !important;
+  background: var(--e-surface-2) !important;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ============================================================
+   8. ЗНАЧКИ И СЧЁТЧИКИ
+   В монохроме статус кодируется ЯРКОСТЬЮ: активное — белое,
+   архивное — приглушённое. Компоненты передают нейтральный
+   --badge-color, цветных статусов в системе больше нет.
+   ============================================================ */
+
+.staff-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  border: 1px solid var(--e-line-strong);
+  border-radius: var(--e-r-pill);
+  background: var(--e-surface-1);
+  color: var(--badge-color, var(--e-text-2));
+  font-size: 0.7rem;
+  font-weight: 580;
+  letter-spacing: 0.01em;
+  padding: 0.2rem 0.6rem;
+  white-space: nowrap;
+}
+
+/* «Живой» значок — инверсия + мягкая пульсация. Только для того,
+   что требует внимания прямо сейчас (открытые тикеты). */
+.staff-badge-pulse {
+  background: var(--e-invert-bg);
+  border-color: transparent;
+  color: var(--e-invert-text) !important;
+  animation: elite-pulse 2.6s var(--e-ease) infinite;
+}
+
+@keyframes elite-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.16); }
+  50%      { box-shadow: 0 0 0 5px rgba(255, 255, 255, 0); }
+}
+
+/* Счётчик непрочитанных: инверсия, табличные цифры, фиксированный минимум
+   ширины — чтобы «1» и «12» не дёргали строку */
+.support-unread-badge,
+.elite-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: var(--e-r-pill);
+  background: var(--e-invert-bg);
+  color: var(--e-invert-text);
+  font-size: 0.68rem;
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* ============================================================
+   9. САЙДБАР
+   Навигация сгруппирована по смыслу, профиль прижат к низу.
+   ============================================================ */
+
+.panel-sidebar-nav {
+  gap: 0.05rem;
+  padding: 0 0.15rem;
+}
+
+/* Группа разделов + её подпись */
+.panel-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.panel-nav-group + .panel-nav-group {
+  margin-top: 0.85rem;
+}
+
+.panel-nav-group-label {
+  padding: 0 0.7rem 0.35rem;
+  color: var(--e-text-4);
+  font-size: 0.62rem;
+  font-weight: 620;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.panel-nav-item {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+  border: none;
+  border-radius: var(--e-r-block) !important;
+  background: transparent;
+  color: var(--e-text-3);
+  padding: 0.58rem 0.7rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background var(--e-fast) var(--e-ease),
+    color var(--e-fast) var(--e-ease),
+    transform var(--e-med) var(--e-ease);
+}
+
+.panel-nav-item:hover:not(.panel-nav-item-active) {
+  background: var(--e-surface-1);
+  color: var(--e-text-2);
+}
+
+/* Активный пункт — заполненная плашка. Полоску-маркер справа из
+   index.css убираем: в сгруппированном меню она ломала ритм. */
+.panel-nav-item-active {
+  background: var(--e-surface-3) !important;
+  border-right: none !important;
+  border-radius: var(--e-r-block) !important;
+  color: var(--e-text) !important;
+  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.05) inset !important;
+}
+
+.panel-nav-item-active .panel-nav-label {
+  color: var(--e-text) !important;
+  font-weight: 600;
+}
+
+.panel-nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  opacity: 0.75;
+  transition: opacity var(--e-fast) var(--e-ease);
+}
+
+.panel-nav-item-active .panel-nav-icon {
+  opacity: 1;
+}
+
+.panel-nav-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.panel-nav-label {
+  font-size: 0.855rem;
+  font-weight: 540;
+  letter-spacing: -0.011em;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Английский подзаголовок в сгруппированном меню — визуальный шум.
+   Группа уже задаёт контекст, поэтому скрываем. */
+.panel-nav-sublabel {
+  display: none;
+}
+
+/* Скользящий индикатор из index.css больше не нужен — активное
+   состояние выражено самой плашкой */
+.panel-nav-indicator {
+  display: none !important;
+}
+
+/* Счётчик у пункта меню (открытые тикеты) */
+.panel-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  flex: 0 0 auto;
+  padding: 0 0.32rem;
+  border-radius: var(--e-r-pill);
+  background: var(--e-invert-bg);
+  color: var(--e-invert-text);
+  font-size: 0.66rem;
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* --- Профиль внизу сайдбара --- */
+
+.panel-sidebar-account {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--e-line);
+  border-radius: var(--e-r-block);
+  background: var(--e-surface-1);
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  cursor: default;
+}
+
+.panel-sidebar-account .panel-profile-avatar {
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: 0 0 auto;
+  border-radius: var(--e-r-pill);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--e-line-strong) !important;
+}
+
+.panel-sidebar-account .panel-profile-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.panel-sidebar-account .panel-profile-initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--e-surface-3);
+  color: var(--e-text);
+  font-size: 0.78rem;
+  font-weight: 620;
+}
+
+.panel-sidebar-account .panel-profile-meta {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.panel-sidebar-account .panel-profile-name {
+  font-size: 0.83rem !important;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-sidebar-account .panel-profile-kicker {
+  font-size: 0.67rem !important;
+  font-weight: 520;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-sidebar-account .panel-profile-username {
+  display: none;
+}
+
+.panel-sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem 0.15rem 0;
+  border-top: 1px solid var(--e-line);
+}
+
+/* Служебные переключатели внизу — приглушены, они не часть основного потока */
+.panel-perf-btn,
+.panel-logout-btn {
+  width: 100%;
+  border-radius: var(--e-r-pill) !important;
+  font-size: 0.78rem !important;
+  font-weight: 560 !important;
+  padding: 0.5rem 0.8rem !important;
+}
+
+.panel-perf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid var(--e-line) !important;
+  background: transparent !important;
+  color: var(--e-text-4) !important;
+  cursor: pointer;
+  transition:
+    background var(--e-fast) var(--e-ease),
+    color var(--e-fast) var(--e-ease),
+    transform var(--e-med) var(--e-ease);
+}
+
+.panel-perf-btn:hover {
+  background: var(--e-surface-1) !important;
+  color: var(--e-text-2) !important;
+}
+
+.panel-perf-btn:active,
+.panel-logout-btn:active {
+  transform: scale(0.97);
+  transition-duration: var(--e-fast);
+}
+
+.panel-music-card {
+  border: 1px solid var(--e-line);
+  border-radius: var(--e-r-block);
+  background: var(--e-surface-1);
+  padding: 0.5rem 0.6rem;
+}
+
+.panel-music-label {
+  color: var(--e-text-3);
+  font-size: 0.73rem;
+  font-weight: 540;
+}
+
+.panel-music-pct {
+  margin-left: auto;
+  color: var(--e-text-4);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.panel-music-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  border-radius: var(--e-r-pill);
+  background: transparent;
+  color: var(--e-text-3);
+  cursor: pointer;
+  transition: color var(--e-fast) var(--e-ease);
+}
+
+.panel-music-icon-btn:hover {
+  color: var(--e-text);
+}
+
+/* ============================================================
+   10. ШАПКА — приветствие, поиск, уведомления
+   ------------------------------------------------------------
+   Живёт в сетке .panel-layout: колонка 2..-1, строка 1. Сайдбар
+   занимает колонку 1 и все строки, поэтому шапка встаёт ровно над
+   контентом, не задевая его.
+   ============================================================ */
+
+.elite-topbar {
+  grid-column: 2 / -1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+  padding: 0.15rem 0.35rem 0.35rem;
+}
+
+.elite-greeting {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.elite-greeting-kicker {
+  color: var(--e-text-3);
+  font-size: 0.78rem;
+  font-weight: 520;
+  letter-spacing: -0.008em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.elite-greeting-title {
+  margin: 0;
+  font-size: clamp(1.3rem, 1.7vw, 1.72rem);
+  line-height: 1.12;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.elite-wave {
+  display: inline-block;
+  margin-left: 0.3rem;
+  transform-origin: 70% 70%;
+  animation: elite-wave 3.2s var(--e-ease) infinite;
+}
+
+@keyframes elite-wave {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  70%           { transform: rotate(13deg); }
+  80%           { transform: rotate(-8deg); }
+  90%           { transform: rotate(9deg); }
+}
+
+.elite-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+/* Поиск — капсула, разворачивается по фокусу */
+.elite-search {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 13rem;
+  border: 1px solid var(--e-line);
+  border-radius: var(--e-r-pill);
+  background: var(--e-surface-1);
+  padding: 0.42rem 0.85rem;
+  transition:
+    width var(--e-med) var(--e-ease),
+    border-color var(--e-fast) var(--e-ease),
+    background var(--e-fast) var(--e-ease);
+}
+
+.elite-search:focus-within {
+  width: 17rem;
+  border-color: var(--e-line-focus);
+  background: var(--e-surface-2);
+}
+
+.elite-search svg {
+  width: 0.92rem;
+  height: 0.92rem;
+  flex: 0 0 auto;
+  color: var(--e-text-4);
+}
+
+.elite-search input {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--e-text);
+  font: inherit;
+  font-size: 0.82rem;
+  letter-spacing: -0.01em;
+}
+
+.elite-search input:focus {
+  outline: none;
+}
+
+.elite-search input::placeholder {
+  color: var(--e-text-4);
+}
+
+.elite-search-wrap {
+  position: relative;
+}
+
+.elite-kbd {
+  flex: 0 0 auto;
+  border: 1px solid var(--e-line);
+  border-radius: 6px;
+  background: var(--e-surface-2);
+  color: var(--e-text-4);
+  font-family: inherit;
+  font-size: 0.64rem;
+  font-weight: 600;
+  padding: 0.08rem 0.3rem;
+  line-height: 1.3;
+}
+
+/* Выдача поиска — всплывающая панель поверх контента */
+.elite-search-results {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  width: max(100%, 17rem);
+  border: 1px solid var(--e-line-strong);
+  border-radius: var(--e-r-block);
+  background: var(--e-surface-1);
+  box-shadow: var(--e-shadow-raised);
+  padding: 0.3rem;
+  animation: elite-pop 0.18s var(--e-ease) both;
+}
+
+@keyframes elite-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.elite-search-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--e-text-2);
+  font: inherit;
+  text-align: left;
+  padding: 0.45rem 0.55rem;
+  cursor: pointer;
+  transition: background var(--e-fast) var(--e-ease);
+}
+
+.elite-search-item-active {
+  background: var(--e-surface-3);
+  color: var(--e-text);
+}
+
+.elite-search-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+
+.elite-search-item-label {
+  font-size: 0.83rem;
+  font-weight: 560;
+  white-space: nowrap;
+}
+
+.elite-search-item-sub {
+  min-width: 0;
+  flex: 1;
+  color: var(--e-text-4);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.elite-search-item-now {
+  flex: 0 0 auto;
+  border-radius: var(--e-r-pill);
+  background: var(--e-surface-0);
+  color: var(--e-text-4);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.4rem;
+}
+
+.elite-search-empty {
+  margin: 0;
+  padding: 0.6rem 0.55rem;
+  color: var(--e-text-4);
+  font-size: 0.78rem;
+}
+
+/* Точка на колокольчике вместо цветного бейджа */
+.elite-bell-dot {
+  position: absolute;
+  top: 0.42rem;
+  right: 0.45rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: var(--e-r-pill);
+  background: var(--e-invert-bg);
+  box-shadow: 0 0 0 2px var(--e-surface-1);
+}
+
+/* Шапка есть у всех сеток — добавляем ей строку.
+   Дашборд: было 3 строки контента, стало «шапка + 3». */
+.panel-layout-dashboard {
+  grid-template-rows: auto minmax(14rem, auto) minmax(8rem, auto) minmax(17rem, auto);
+  gap: var(--e-gap);
+}
+
+.panel-pulse-hero      { grid-row: 2; }
+.panel-shelf-players   { grid-row: 3; }
+.panel-shelf-server    { grid-row: 3; }
+.panel-shelf-maintenance { grid-row: 3; }
+.panel-shelf-online    { grid-row: 4; }
+
+/* Одноколоночные разделы: контент уезжает на вторую строку */
+.panel-shelf-page {
+  grid-row: 2;
+}
+
+.panel-layout-page {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* Поддержка — во всю высоту экрана под шапкой */
+.panel-layout-support {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* Хроника занимала все строки — теперь со второй, чтобы не залезть под шапку */
+.chs-root {
+  grid-row: 2 / -1;
+}
+
+/* ============================================================
+   11. ПОДДЕРЖКА — эталонный экран №2
+   ============================================================ */
+
+.support-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.15rem;
+}
+
+.support-layout {
+  gap: var(--e-gap);
+}
+
+.support-list-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-height: 0;
+}
+
+.sec-audit-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+/* Кнопка обновления — круглая иконка, не «кнопка с буквой» */
+.support-list-wrap .sec-btn-ghost {
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: 0 0 auto;
+  padding: 0 !important;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.support-ticket-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+/* Строка тикета — карточка, а не кнопка-ссылка */
+.support-ticket-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--e-r-block);
+  background: var(--e-surface-1);
+  padding: 0.68rem 0.8rem;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background var(--e-fast) var(--e-ease),
+    border-color var(--e-fast) var(--e-ease),
+    transform var(--e-med) var(--e-ease);
+}
+
+.support-ticket-row:hover {
+  background: var(--e-surface-2);
+  border-color: var(--e-line);
+}
+
+.support-ticket-row:active {
+  transform: scale(0.99);
+  transition-duration: var(--e-fast);
+}
+
+/* Выбранный тикет — вертикальный маркер слева + приподнятая поверхность */
+.support-ticket-row-active {
+  position: relative;
+  background: var(--e-surface-3);
+  border-color: var(--e-line-strong);
+}
+
+.support-ticket-row-active::before {
+  content: '';
+  position: absolute;
+  top: 0.75rem;
+  bottom: 0.75rem;
+  left: 0;
+  width: 2px;
+  border-radius: var(--e-r-pill);
+  background: var(--e-invert-bg);
+}
+
+.support-ticket-row-top {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.support-ticket-name {
+  min-width: 0;
+  flex: 1;
+  color: var(--e-text);
+  font-size: 0.855rem;
+  font-weight: 580;
+  letter-spacing: -0.011em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.support-ticket-time {
+  flex: 0 0 auto;
+  color: var(--e-text-4);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.support-ticket-subject {
+  color: var(--e-text-3);
+  font-size: 0.73rem;
+  font-weight: 540;
+}
+
+.support-ticket-claimed {
+  color: var(--e-text-4);
+  font-size: 0.7rem;
+}
+
+.support-ticket-preview {
+  margin: 0;
+  color: var(--e-text-3);
+  font-size: 0.765rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* --- Тред --- */
+
+.support-thread-wrap {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--e-line);
+  border-radius: var(--e-r-card);
+  background: var(--e-surface-0);
+  overflow: hidden;
+}
+
+.support-thread-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--e-line);
+  background: var(--e-surface-0);
+  padding: 0.7rem 0.85rem;
+}
+
+.support-thread-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.support-thread-name {
+  color: var(--e-text);
+  font-size: 0.93rem;
+  font-weight: 620;
+  letter-spacing: -0.015em;
+}
+
+.support-thread-sub {
+  color: var(--e-text-4);
+  font-size: 0.76rem;
+}
+
+.support-thread-actions {
+  flex: 0 0 auto;
+}
+
+.support-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.95rem;
+}
+
+.support-msg {
+  display: flex;
+  max-width: 100%;
+}
+
+.support-msg-user   { justify-content: flex-start; }
+.support-msg-admin  { justify-content: flex-end; }
+.support-msg-system { justify-content: center; }
+
+/* Пузырь: асимметричный «хвост» — скругление угла у своей стороны меньше */
+.support-msg-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+  max-width: min(78%, 34rem);
+  border: 1px solid var(--e-line);
+  border-radius: 18px;
+  background: var(--e-surface-1);
+  padding: 0.55rem 0.8rem;
+}
+
+.support-msg-user .support-msg-bubble {
+  border-bottom-left-radius: 6px;
+}
+
+/* Ответ администратора — инверсия: сразу видно, где «мы» */
+.support-msg-admin .support-msg-bubble {
+  border-color: transparent;
+  border-bottom-right-radius: 6px;
+  background: var(--e-invert-bg);
+  color: var(--e-invert-text);
+}
+
+.support-msg-admin .support-msg-text,
+.support-msg-admin .support-msg-sender {
+  color: var(--e-invert-text);
+}
+
+.support-msg-admin .support-msg-time {
+  color: rgba(10, 10, 10, 0.55);
+}
+
+/* Системное сообщение — по центру, без пузыря, тихое */
+.support-msg-system .support-msg-bubble {
+  max-width: min(90%, 40rem);
+  border-style: dashed;
+  border-color: var(--e-line-strong);
+  background: transparent;
+  text-align: center;
+}
+
+.support-msg-system .support-msg-text {
+  color: var(--e-text-3);
+  font-size: 0.75rem;
+}
+
+.support-msg-sender {
+  font-size: 0.68rem;
+  font-weight: 640;
+  letter-spacing: 0.01em;
+  opacity: 0.75;
+}
+
+.support-msg-text {
+  margin: 0;
+  color: var(--e-text);
+  font-size: 0.83rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.support-msg-time {
+  align-self: flex-end;
+  color: var(--e-text-4);
+  font-size: 0.63rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Форма ответа --- */
+
+.support-reply-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  border-top: 1px solid var(--e-line);
+  background: var(--e-surface-0);
+  padding: 0.7rem 0.85rem 0.8rem;
+}
+
+.support-reply-input {
+  width: 100%;
+  resize: none;
+  padding: 0.6rem 0.75rem !important;
+  font-size: 0.83rem !important;
+  line-height: 1.45;
+}
+
+.support-reply-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.support-reply-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.support-reply-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: 0 0 auto;
+  border: 1px solid var(--e-line);
+  border-radius: var(--e-r-pill);
+  background: var(--e-surface-1);
+  color: var(--e-text-3);
+  font-size: 0.9rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background var(--e-fast) var(--e-ease),
+    color var(--e-fast) var(--e-ease),
+    transform var(--e-med) var(--e-ease);
+}
+
+.support-reply-attach-btn:hover:not(:disabled) {
+  background: var(--e-surface-2);
+  color: var(--e-text);
+}
+
+.support-reply-attach-btn:active:not(:disabled) {
+  transform: scale(0.94);
+  transition-duration: var(--e-fast);
+}
+
+.support-reply-attach-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.support-reply-hint {
+  color: var(--e-text-4);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.support-reply-send-btn {
+  padding: 0.5rem 1.2rem !important;
+  font-size: 0.83rem !important;
+}
+
+/* --- Экран взятия тикета --- */
+
+.support-claim-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  flex: 0 0 auto;
+  border-top: 1px solid var(--e-line);
+  padding: 1.1rem 0.9rem 1.3rem;
+  text-align: center;
+}
+
+.support-claim-hint {
+  max-width: 26rem;
+  margin: 0;
+  color: var(--e-text-3);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.support-claim-btn {
+  padding: 0.62rem 1.5rem !important;
+  font-size: 0.86rem !important;
+}
+
+.support-messages-preview {
+  opacity: 0.6;
+}
+
+.support-preview-more {
+  align-self: center;
+  color: var(--e-text-4);
+  font-size: 0.72rem;
+}
+
+/* --- Пустые состояния --- */
+
+.support-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 0;
+  border: 1px dashed var(--e-line-strong);
+  border-radius: var(--e-r-card);
+  background: transparent;
+  color: var(--e-text-4);
+}
+
+.support-empty-state p {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.support-empty-icon {
+  font-size: 1.6rem;
+  opacity: 0.4;
+}
+
+.sec-empty,
+.sec-loading {
+  padding: 1rem 0.35rem;
+  color: var(--e-text-4);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+/* ============================================================
+   12. ГЛАВНАЯ — эталонный экран №1
+   ============================================================ */
+
+/* Живая точка «сейчас на ферме» — белая, без цветного свечения */
+.panel-live-dot,
+.pulse-hero-dot,
+.panel-online-live-dot {
+  background: var(--e-text) !important;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Мятный ореол за счётчиком онлайна — единственный цветной блик,
+   оставшийся после нейтрализации палитры. Делаем нейтральным. */
+.pulse-hero-figure::before {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.07), transparent 68%) !important;
+}
+
+.pulse-hero-value {
+  color: var(--e-text) !important;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+.pulse-hero-unit,
+.pulse-hero-foot {
+  color: var(--e-text-4) !important;
+}
+
+.pulse-hero-foot strong {
+  color: var(--e-text-2) !important;
+}
+
+/* График онлайна: линия белая, ореол убран — в монохроме он мутил кадр */
+.pulse-hero-wave-trace,
+.online-chart-line {
+  stroke: var(--e-text) !important;
+  filter: none !important;
+}
+
+.online-chart-avg-line {
+  stroke: rgba(255, 255, 255, 0.35) !important;
+}
+
+.online-chart-dot-current {
+  fill: var(--e-text) !important;
+  filter: none !important;
+}
+
+/* Пик отличаем не цветом, а полым кружком */
+.online-chart-dot-peak {
+  fill: var(--e-void) !important;
+  stroke: var(--e-text) !important;
+  stroke-width: 2;
+}
+
+.panel-online-legend-dot-current {
+  background: var(--e-text) !important;
+  box-shadow: none !important;
+}
+
+.panel-online-legend-dot-peak {
+  background: transparent !important;
+  box-shadow: 0 0 0 1.5px var(--e-text-3) inset !important;
+}
+
+.online-chart-legend-line-avg {
+  background: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Переключатель периода — карточки-сегменты вместо градиентных плашек */
+.online-analytics-modes {
+  gap: 0.4rem;
+}
+
+.online-analytics-mode {
+  border: 1px solid var(--e-line) !important;
+  border-radius: var(--e-r-block) !important;
+  background: var(--e-surface-1) !important;
+  color: var(--e-text-3) !important;
+  box-shadow: none !important;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background var(--e-fast) var(--e-ease),
+    border-color var(--e-fast) var(--e-ease),
+    color var(--e-fast) var(--e-ease),
+    transform var(--e-med) var(--e-ease);
+}
+
+.online-analytics-mode:hover:not(.online-analytics-mode-active) {
+  background: var(--e-surface-2) !important;
+  border-color: var(--e-line-strong) !important;
+  color: var(--e-text-2) !important;
+}
+
+.online-analytics-mode:active {
+  transform: scale(0.98);
+  transition-duration: var(--e-fast);
+}
+
+/* Правило системы: инвертируются только МЕЛКИЕ элементы управления
+   (пилюли, вкладки, кнопки). Крупная поверхность вместо инверсии
+   поднимается на ступень и получает белый маркер сверху — сплошная
+   белая плита такого размера перебивала бы весь экран. */
+.online-analytics-mode-active {
+  position: relative;
+  background: var(--e-surface-3) !important;
+  border-color: var(--e-line-strong) !important;
+  color: var(--e-text) !important;
+  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.06) inset !important;
+  overflow: hidden;
+}
+
+.online-analytics-mode-active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0.85rem;
+  right: 0.85rem;
+  height: 2px;
+  border-radius: var(--e-r-pill);
+  background: var(--e-invert-bg);
+}
+
+.online-analytics-mode-label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+
+.online-analytics-mode-hint {
+  color: var(--e-text-4);
+  font-size: 0.68rem;
+}
+
+.online-analytics-mode-active .online-analytics-mode-hint {
+  color: var(--e-text-3) !important;
+}
+
+/* Навигация по периоду — капсулы */
+.panel-online-nav-btn,
+.panel-online-nav-chip {
+  border: 1px solid var(--e-line) !important;
+  border-radius: var(--e-r-pill) !important;
+  background: var(--e-surface-1) !important;
+  color: var(--e-text-3) !important;
+  box-shadow: none !important;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background var(--e-fast) var(--e-ease),
+    color var(--e-fast) var(--e-ease),
+    transform var(--e-med) var(--e-ease);
+}
+
+.panel-online-nav-btn:hover:not(:disabled),
+.panel-online-nav-chip:hover:not(.panel-online-nav-chip-active) {
+  background: var(--e-surface-2) !important;
+  border-color: var(--e-line-strong) !important;
+  color: var(--e-text) !important;
+}
+
+.panel-online-nav-btn:active:not(:disabled),
+.panel-online-nav-chip:active {
+  transform: scale(0.94);
+  transition-duration: var(--e-fast);
+}
+
+.panel-online-nav-chip {
+  font-size: 0.8rem;
+  font-weight: 560;
+  padding: 0.42rem 0.9rem !important;
+}
+
+.panel-online-nav-chip-active {
+  background: var(--e-invert-bg) !important;
+  border-color: transparent !important;
+  color: var(--e-invert-text) !important;
+}
+
+.panel-online-date-input {
+  border: 1px solid var(--e-line) !important;
+  border-radius: var(--e-r-pill) !important;
+  background: var(--e-surface-1) !important;
+  color: var(--e-text-2) !important;
+  font-size: 0.8rem !important;
+  padding: 0.42rem 0.75rem !important;
+}
+
+.panel-online-date-input:focus {
+  outline: none;
+  border-color: var(--e-line-focus) !important;
+}
+
+/* Плитки метрик — плоские, значение доминирует */
+.panel-online-stat {
+  border: 1px solid var(--e-line) !important;
+  border-radius: var(--e-r-block) !important;
+  background: var(--e-surface-1) !important;
+}
+
+.panel-online-stat-label {
+  color: var(--e-text-4) !important;
+  font-size: 0.64rem;
+  letter-spacing: 0.11em;
+}
+
+.panel-online-stat-value {
+  color: var(--e-text) !important;
+  font-weight: 680;
+  letter-spacing: -0.03em;
+}
+
+/* «Сейчас» было мятно-зелёным — в монохроме выделяем весом, не цветом */
+.panel-online-stat-value-live {
+  color: var(--e-text) !important;
+}
+
+.panel-online-stat-hint {
+  color: var(--e-text-4) !important;
+  font-size: 0.7rem;
+}
+
+.panel-online-live-badge {
+  border: 1px solid var(--e-line-strong) !important;
+  background: var(--e-surface-1) !important;
+  color: var(--e-text-2) !important;
+}
+
+/* ============================================================
+   13. НЕЙТРАЛИЗАЦИЯ ЦВЕТА
+   ------------------------------------------------------------
+   В index.css ~66 мест с семантическими цветами (зелёный «ок»,
+   янтарный «внимание», сиреневый, синий). В монохромной системе
+   они превращаются в ступени яркости:
+       ок / активно / live  → --e-text   (самый яркий)
+       внимание / в процессе → --e-text-2
+       мета / выключено      → --e-text-4
+   Ошибки НЕ трогаем: красный — единственное исключение, иначе
+   в панели, где удаляют данные, ошибку легко пропустить.
+   ============================================================ */
+
+.panel-shelf-ok,
+.panel-server-ok,
+.panel-shell-ok,
+.panel-maintenance-status,
+.staff-payslip-total b,
+.analytics-cell-success,
+.sec-session-active {
+  color: var(--e-text) !important;
+  background: transparent !important;
+}
+
+.panel-server-warn,
+.panel-maintenance-active,
+.rules-gate-timer,
+.pu-quest-timer,
+.dex-preview-price {
+  color: var(--e-text-2) !important;
+}
+
+.support-ticket-claimed,
+.panel-account-badge-online {
+  color: var(--e-text-3) !important;
+  background: transparent !important;
+}
+
+.analytics-rate.good {
+  background: var(--e-surface-2) !important;
+  color: var(--e-text) !important;
+}
+
+/* Успешный «ок»-значок поверх аватара/фото — белая точка */
+.ev-photo-ok,
+.support-reply-photo-ok {
+  background: var(--e-invert-bg) !important;
+  color: var(--e-invert-text) !important;
+}
+
+/* ============================================================
+   14. СНЯТИЕ СТАРЫХ ЭФФЕКТОВ
+   Наследие «люкс»-темы: подъём карточек на hover и белый блик,
+   пробегающий по кнопке. На инвертированной (белой) primary-кнопке
+   блик не виден вообще, а подъём всех карточек делал экран
+   «дышащим» и шумным — минимализму это противоречит.
+   ============================================================ */
+
+.panel-shelf:hover,
+.staff-member-row:hover,
+.staff-salary-card-row:hover,
+.staff-complaint-row:hover {
+  transform: none;
+  border-color: var(--e-line-strong) !important;
+  box-shadow: var(--e-shadow-card) !important;
+}
+
+.auth-btn-primary::after,
+.panel-users-btn-primary::after,
+.rules-gate-btn::after {
+  display: none;
+}
+
+/* Возврат к «сжатию»: правило из index.css сдвигало кнопку вниз
+   вместо масштабирования */
+.sec-btn:active:not(:disabled),
+.auth-btn-primary:active,
+.panel-users-btn:active,
+.rules-gate-btn:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+/* ============================================================
+   15. АДАПТИВ
+   ============================================================ */
+
+@media (max-width: 1100px) {
+  .elite-search {
+    width: 10rem;
+  }
+  .elite-search:focus-within {
+    width: 13rem;
+  }
+}
+
+@media (max-width: 860px) {
+  .elite-topbar {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+  }
+  .elite-search,
+  .elite-search:focus-within {
+    width: 100%;
+  }
+  .elite-topbar-actions {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --e-r-card: 18px;
+    --e-r-block: 14px;
+  }
+
+  .elite-greeting-title {
+    font-size: 1.28rem;
+  }
+
+  /* На мобильном сайдбар — bottom-sheet: там подзаголовки полезны,
+     места хватает, а группы помогают ориентироваться в 18 разделах */
+  .panel-nav-sublabel {
+    display: block;
+    color: var(--e-text-4);
+    font-size: 0.68rem;
+  }
+
+  .support-msg-bubble {
+    max-width: 88%;
+  }
+}

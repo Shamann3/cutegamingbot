@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { getAdminInitials, getAdminProfile } from '../lib/adminProfile'
+import { groupSections } from '../constants/panelNav'
 import { NAV_ICONS } from './NavIcons'
 import SessionTimer from './SessionTimer'
 
@@ -46,14 +47,15 @@ export default function PanelSidebar({
   musicVolume = 0,
   onMusicVolumeChange,
   onToggleMusic,
+  badges = {},
 }) {
   const { displayName, username, photoUrl } = getAdminProfile()
   const initials = getAdminInitials(displayName)
 
-  const navRef = useRef(null)
   const sidebarRef = useRef(null)
   const grabRef = useRef(null)
-  const [indicator, setIndicator] = useState({ top: 0, height: 0, visible: false })
+
+  const navGroups = useMemo(() => groupSections(sections), [sections])
 
   // Свайп-вниз для закрытия bottom-sheet на мобильных.
   //
@@ -124,27 +126,6 @@ export default function PanelSidebar({
     }
   }, [onClose])
 
-  useLayoutEffect(() => {
-    const nav = navRef.current
-    if (!nav) return
-    const active = nav.querySelector('.panel-nav-item-active')
-    if (active) {
-      setIndicator({ top: active.offsetTop, height: active.offsetHeight, visible: true })
-    } else {
-      setIndicator((p) => ({ ...p, visible: false }))
-    }
-  }, [activeSection, sections])
-
-  useEffect(() => {
-    const onResize = () => {
-      const nav = navRef.current
-      const active = nav?.querySelector('.panel-nav-item-active')
-      if (active) setIndicator({ top: active.offsetTop, height: active.offsetHeight, visible: true })
-    }
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-
   return (
     <aside
       ref={sidebarRef}
@@ -164,58 +145,64 @@ export default function PanelSidebar({
         </button>
       </div>
 
-      <div className="panel-sidebar-profile">
-        <div className="panel-profile-avatar" aria-hidden="true">
-          {photoUrl ? (
-            <img className="panel-profile-photo" src={photoUrl} alt="" />
-          ) : (
-            <span className="panel-profile-initials">{initials}</span>
-          )}
-        </div>
-
-        <div className="panel-profile-meta">
-          <p className="panel-profile-kicker">
-            {role === 'owner' ? '👑 Владелец' : 'Cute Epsilon'}
-          </p>
-          <h1 className="panel-profile-name">{displayName}</h1>
-          {username && <p className="panel-profile-username">@{username}</p>}
-        </div>
-      </div>
-
-      <nav className="panel-sidebar-nav" aria-label="Навигация панели" ref={navRef}>
-        {indicator.visible && (
-          <span
-            className="panel-nav-indicator"
-            style={{ transform: `translateY(${indicator.top}px)`, height: `${indicator.height}px` }}
-            aria-hidden="true"
-          />
-        )}
-        {sections.map((item) => {
-          const active = item.id === activeSection
-          const NavIcon = NAV_ICONS[item.id]
-          return (
-            <button
-              key={item.id}
-              type="button"
-              className={`panel-nav-item${active ? ' panel-nav-item-active' : ''}`}
-              aria-current={active ? 'page' : undefined}
-              onClick={() => onNavigate(item.id)}
-            >
-              {NavIcon && (
-                <span className="panel-nav-icon">
-                  <NavIcon />
-                </span>
-              )}
-              <span className="panel-nav-text">
-                <span className="panel-nav-label">{item.labelRu}</span>
-                <span className="panel-nav-sublabel">{item.label}</span>
+      <nav className="panel-sidebar-nav" aria-label="Навигация панели">
+        {navGroups.map((group) => (
+          <div className="panel-nav-group" key={group.id}>
+            {group.label && (
+              <span className="panel-nav-group-label" aria-hidden="true">
+                {group.label}
               </span>
-            </button>
-          )
-        })}
+            )}
+            {group.items.map((item) => {
+              const active = item.id === activeSection
+              const NavIcon = NAV_ICONS[item.id]
+              const count = badges[item.id]
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`panel-nav-item${active ? ' panel-nav-item-active' : ''}`}
+                  aria-current={active ? 'page' : undefined}
+                  onClick={() => onNavigate(item.id)}
+                >
+                  {NavIcon && (
+                    <span className="panel-nav-icon">
+                      <NavIcon />
+                    </span>
+                  )}
+                  <span className="panel-nav-text">
+                    <span className="panel-nav-label">{item.labelRu}</span>
+                    <span className="panel-nav-sublabel">{item.label}</span>
+                  </span>
+                  {count > 0 && (
+                    <span className="panel-nav-badge" aria-label={`${count} новых`}>
+                      {count > 99 ? '99+' : count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        ))}
       </nav>
 
       <div className="panel-sidebar-footer">
+        <div className="panel-sidebar-account">
+          <div className="panel-profile-avatar" aria-hidden="true">
+            {photoUrl ? (
+              <img className="panel-profile-photo" src={photoUrl} alt="" />
+            ) : (
+              <span className="panel-profile-initials">{initials}</span>
+            )}
+          </div>
+          <div className="panel-profile-meta">
+            <p className="panel-profile-name">{displayName}</p>
+            <p className="panel-profile-kicker">
+              {role === 'owner' ? '👑 Владелец' : username ? `@${username}` : 'Cute Epsilon'}
+            </p>
+          </div>
+        </div>
+
         <SessionTimer compact onExpired={onSessionExpired} />
 
         <div className="panel-music-card">
