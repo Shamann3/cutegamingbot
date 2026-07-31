@@ -1362,9 +1362,9 @@ function QuestionsTab({ isOwner = false }) {
 // ---------------------------------------------------------------------------
 
 const TOKEN_STATUS = {
-  used: { label: 'использован', color: '#34d399' },
-  revoked: { label: 'отозван', color: '#f87171' },
-  active: { label: 'активен', color: '#fbbf24' },
+  used:    { label: 'использован', color: 'var(--e-text-3)' },
+  revoked: { label: 'отозван',     color: 'var(--e-text-4)' },
+  active:  { label: 'активен',     color: 'var(--e-text)' },
 }
 
 function tokenStatus(t) {

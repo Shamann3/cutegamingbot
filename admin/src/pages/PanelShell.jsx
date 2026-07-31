@@ -265,6 +265,7 @@ export default function PanelShell({ onLogout }) {
             onNavigate={handleNavigate}
             openTickets={openTickets}
             onOpenNotifications={() => handleNavigate('support')}
+            compact={section !== 'dashboard'}
           />
 
           {isDashboard && <DashboardSection />}
