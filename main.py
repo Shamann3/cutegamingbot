@@ -13697,8 +13697,13 @@ async def render_conc_stars_screen(*args, **kwargs):
         min_withdraw = 0
 
     # ---- 3. Обновляем лимиты ----
+    # min_withdraw_amount обязателен: иначе «крошки» ниже цены подарка
+    # никогда не получали таймер обновления окна.
     try:
-        state = await db.refresh_withdraw_quota_if_needed(user_id)
+        state = await db.refresh_withdraw_quota_if_needed(
+            user_id,
+            min_withdraw_amount=int(min_withdraw or 0),
+        )
     except Exception as e:
         print(f"🟥 [CONC_STARS][LIMITS] refresh_withdraw_quota_if_needed({user_id}) ошибка: {e!r}")
         state = {
@@ -13718,17 +13723,16 @@ async def render_conc_stars_screen(*args, **kwargs):
     remaining = int(state.get("remaining") or 0)
     reason = str(state.get("reason") or "")
 
-    # ---- 4. Остаток меньше минимальной цены подарка ----
-    # Таймер здесь НЕ ставится. Раньше ставился кулдаун "min_withdraw_block" на полный срок,
-    # и если лимит пользователя вообще меньше минимальной цены подарка, таймер
-    # перезапускался бесконечно: истёк -> экран открылся -> поставился заново.
+    # ---- 4. Остаток меньше мин. подарка ----
+    # Таймер ставит refresh_withdraw_quota_if_needed (unspendable_*).
+    # Здесь только лог для экрана «повысьте лимит» без активного кулдауна.
     if allowed and remaining > 0 and min_withdraw > 0 and remaining < min_withdraw:
         print(
-            f"🟨 [CONC_STARS][MIN] uid={user_id} остаток {remaining} меньше минимальной "
-            f"цены подарка {min_withdraw} -> экран с предложением повысить лимит, без таймера")
+            f"🟨 [CONC_STARS][MIN] uid={user_id} остаток {remaining} < мин.подарка {min_withdraw} "
+            f"limit={daily_limit} reason={reason!r}")
 
-    # ---- 5. Если вывод запрещён или остаток исчерпан – блокировка ----
-    if (not allowed) or (remaining <= 0):
+    # ---- 5. Если вывод запрещён / кулдаун / остаток исчерпан – блокировка ----
+    if (not allowed) or (remaining <= 0) or (cooldown_left > 0):
         try:
             kb_locked = _kb_withdraw_locked(
                 int(cooldown_left),
@@ -29302,9 +29306,8 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
     reason = str(state.get("reason") or state.get("cause") or "")
 
     # ---- Блокировка ----
-    # Таймер тут не ставится: экран только показывает остаток, который посчитала БД.
-    # Постановка при рендере и была причиной перезапуска таймера.
-    if (not allowed) or (remaining <= 0):
+    # Таймер ставит refresh (в т.ч. unspendable_* при остатке < мин. подарка).
+    if (not allowed) or (remaining <= 0) or (cooldown_left > 0):
         try:
             kb_locked = _kb_withdraw_locked(
                 int(cooldown_left),

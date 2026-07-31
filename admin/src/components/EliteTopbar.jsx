@@ -134,6 +134,22 @@ export default function EliteTopbar({
       </div>
 
       <div className="elite-topbar-actions">
+        {/* Колокольчик слева от поиска — не под системным ✕ Telegram WebApp */}
+        <button
+          type="button"
+          className="elite-icon-btn"
+          aria-label={openTickets > 0
+            ? `Открытых обращений: ${openTickets}`
+            : 'Уведомлений нет'}
+          title={openTickets > 0
+            ? `${openTickets} открытых обращений`
+            : 'Уведомлений нет'}
+          onClick={onOpenNotifications}
+        >
+          <BellIcon />
+          {openTickets > 0 && <span className="elite-bell-dot" aria-hidden="true" />}
+        </button>
+
         <div className="elite-search-wrap" ref={wrapRef}>
           <div className="elite-search">
             <SearchIcon />
@@ -179,21 +195,6 @@ export default function EliteTopbar({
             </div>
           )}
         </div>
-
-        <button
-          type="button"
-          className="elite-icon-btn"
-          aria-label={openTickets > 0
-            ? `Открытых обращений: ${openTickets}`
-            : 'Уведомлений нет'}
-          title={openTickets > 0
-            ? `${openTickets} открытых обращений`
-            : 'Уведомлений нет'}
-          onClick={onOpenNotifications}
-        >
-          <BellIcon />
-          {openTickets > 0 && <span className="elite-bell-dot" aria-hidden="true" />}
-        </button>
       </div>
     </div>
   )

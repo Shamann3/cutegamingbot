@@ -240,6 +240,40 @@ class Database:
                 ADD COLUMN IF NOT EXISTS autowater_active BOOLEAN NOT NULL DEFAULT FALSE
                 """
             )
+            # Купоны: явный CREATE на том же conn (без второго acquire — иначе
+            # риск дедлока при pool min_size=1).
+            try:
+                await conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS coupon_reservations (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL,
+                        item_id TEXT NOT NULL,
+                        percent INT NOT NULL CHECK (percent BETWEEN 1 AND 99),
+                        source TEXT NOT NULL DEFAULT 'bot',
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        expires_at TIMESTAMPTZ NOT NULL,
+                        resolved_at TIMESTAMPTZ,
+                        resolution TEXT CHECK (resolution IN ('used', 'expired'))
+                    );
+                    CREATE UNIQUE INDEX IF NOT EXISTS coupon_reservations_active_uniq
+                        ON coupon_reservations (user_id) WHERE resolved_at IS NULL;
+                    CREATE INDEX IF NOT EXISTS coupon_reservations_expiry_idx
+                        ON coupon_reservations (expires_at) WHERE resolved_at IS NULL;
+                    CREATE TABLE IF NOT EXISTS discounted_holdings (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL,
+                        item_id TEXT NOT NULL,
+                        quantity INT NOT NULL CHECK (quantity > 0),
+                        unit_paid BIGINT NOT NULL CHECK (unit_paid >= 0),
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    );
+                    CREATE INDEX IF NOT EXISTS discounted_holdings_user_item_idx
+                        ON discounted_holdings (user_id, item_id, unit_paid ASC, id ASC);
+                    """
+                )
+            except Exception as _coupon_schema_err:
+                _mig_logger.warning("coupon tables ensure skipped: %s", _coupon_schema_err)
 
             # cutehistory (legacy-таблица бота): колонка связи с p2p_transfers.
             # ALTER идёт после schema.sql, где таблица гарантированно есть
@@ -1398,15 +1432,56 @@ class Database:
     @staticmethod
     async def count_discounted_units(conn, user_id, item_id) -> int:
         """Сколько единиц предмета у игрока куплено по купону."""
-        value = await conn.fetchval(
-            """
-            SELECT COALESCE(SUM(quantity), 0) FROM discounted_holdings
-            WHERE user_id = $1 AND item_id = $2
-            """,
-            user_id,
-            str(item_id),
-        )
-        return int(value or 0)
+        try:
+            value = await conn.fetchval(
+                """
+                SELECT COALESCE(SUM(quantity), 0) FROM discounted_holdings
+                WHERE user_id = $1 AND item_id = $2
+                """,
+                user_id,
+                str(item_id),
+            )
+            return int(value or 0)
+        except Exception as exc:
+            # Таблица ещё не применена на окружении — не валим всю биржу 500.
+            if type(exc).__name__ in ("UndefinedTableError", "UndefinedTable"):
+                return 0
+            raise
+
+    async def ensure_coupon_tables(self) -> None:
+        """Идемпотентно создать таблицы купонов (на случай старой БД без миграции)."""
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS coupon_reservations (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    item_id TEXT NOT NULL,
+                    percent INT NOT NULL CHECK (percent BETWEEN 1 AND 99),
+                    source TEXT NOT NULL DEFAULT 'bot',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    resolved_at TIMESTAMPTZ,
+                    resolution TEXT CHECK (resolution IN ('used', 'expired'))
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS coupon_reservations_active_uniq
+                    ON coupon_reservations (user_id) WHERE resolved_at IS NULL;
+                CREATE INDEX IF NOT EXISTS coupon_reservations_expiry_idx
+                    ON coupon_reservations (expires_at) WHERE resolved_at IS NULL;
+                CREATE TABLE IF NOT EXISTS discounted_holdings (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    item_id TEXT NOT NULL,
+                    quantity INT NOT NULL CHECK (quantity > 0),
+                    unit_paid BIGINT NOT NULL CHECK (unit_paid >= 0),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS discounted_holdings_user_item_idx
+                    ON discounted_holdings (user_id, item_id, unit_paid ASC, id ASC);
+                """
+            )
 
     async def sanitize_user_items_against_dex(self, user_id) -> dict:
         """Сверяет users.items с таблицей dex при входе в WebApp.
@@ -1523,6 +1598,12 @@ class Database:
 
         coupon_reservation_id = None
         if use_coupon:
+            try:
+                await self.ensure_coupon_tables()
+            except Exception as schema_err:
+                raise ValueError(
+                    "Сервис купонов временно недоступен, попробуйте позже"
+                ) from schema_err
             # Предмет проверяем до брони, иначе опечатка в item_id сожгла бы купон.
             preview = await self.pool.fetchrow(
                 "SELECT price, dis, remains FROM dex WHERE id = $1", dex_id
@@ -1549,9 +1630,21 @@ class Database:
             # Бронь коммитится отдельно от покупки: если списывать купон внутри
             # транзакции покупки, то отказ по нехватке кут откатывал списание, и
             # процент можно было перекручивать бесплатно до максимума.
-            coupon_reservation_id, _ = await self.reserve_coupon_discount(
-                user_id, item_id, source="webapp"
-            )
+            try:
+                coupon_reservation_id, _ = await self.reserve_coupon_discount(
+                    user_id, item_id, source="webapp"
+                )
+            except ValueError:
+                raise
+            except Exception as reserve_err:
+                name = type(reserve_err).__name__
+                if name in ("UndefinedTableError", "UndefinedTable"):
+                    raise ValueError(
+                        "Сервис купонов обновляется, повторите через минуту"
+                    ) from reserve_err
+                raise ValueError(
+                    "Не удалось применить купон, попробуйте снова"
+                ) from reserve_err
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -2825,6 +2918,13 @@ class Database:
                 # это ограничение теряется — так скидку отмывали через альтов.
                 owned = count_item_in_storage(raw_items, item_key)
                 discounted = await self.count_discounted_units(conn, user_id, item_key)
+                # «Призраки» после крафта/траты без списания holdings блокировали
+                # всю биржу по предмету — подрезаем учёт до реального inventory.
+                if discounted > owned:
+                    await self.take_discounted_units(
+                        conn, user_id, item_key, discounted - owned
+                    )
+                    discounted = owned
                 if owned - discounted < quantity:
                     raise ValueError(
                         "Предметы, купленные по купону на скидку, нельзя выставить на биржу"
