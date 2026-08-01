@@ -2,11 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 import { hasTelegramInitData, isAdminSessionValid } from '../lib/adminClient'
 import { vivoEpsilonLogo } from './EpsilonLogo'
 
-/** ~5.5s hold + ~0.5s выход = 6s */
-export const ENTRANCE_HOLD_MS = 5500
-export const ENTRANCE_EXIT_MS = 500
-export const ENTRANCE_LOGIN_HOLD_MS = 5300
-export const ENTRANCE_LITE_HOLD_MS = 1400
+/**
+ * Жёсткий таймлайн на 6.0с:
+ *   0.00–1.10  сцена (фон / кольца)
+ *   1.10–2.60  появление полного логотипа (1.5с)
+ *   2.60–3.10  пауза 0.5с на «цельную» марку
+ *   3.10–3.70  появление текста
+ *   3.70–5.55  время прочитать
+ *   5.55–6.00  выход → панель / auth
+ */
+export const ENTRANCE_HOLD_MS = 5550
+export const ENTRANCE_EXIT_MS = 450
+export const ENTRANCE_LOGIN_HOLD_MS = 5550
+export const ENTRANCE_LITE_HOLD_MS = 1600
 
 function detectLiteEntrance() {
   if (typeof window === 'undefined') return false
@@ -19,7 +27,7 @@ function detectLiteEntrance() {
 }
 
 /**
- * Печать входа (~6с).
+ * Печать входа (ровно 6с).
  * Только оригинальный полный логотип — без SVG-дорисовок.
  */
 export default function EntranceSeal({
@@ -45,8 +53,8 @@ export default function EntranceSeal({
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-    const hold = reduced ? 520 : holdMs
-    const exit = reduced ? 180 : ENTRANCE_EXIT_MS
+    const hold = reduced ? 700 : holdMs
+    const exit = reduced ? 200 : ENTRANCE_EXIT_MS
 
     const t1 = window.setTimeout(() => setPhase('out'), hold)
     const t2 = window.setTimeout(() => {
