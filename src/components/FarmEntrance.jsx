@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import '../styles/farmEntrance.css'
 
-const SESSION_KEY = 'cute_farm_entrance_v2'
+const SESSION_KEY = 'cute_farm_entrance_v3'
 /** Полный цикл: появление → пауза «прочитать» → выход. */
 const TOTAL_MS = 4000
 const OUT_MS = 480
@@ -122,8 +122,8 @@ export default function FarmEntrance({ active = false, onDone }) {
           <div className="farm-ent-stamp" aria-hidden />
           <div className="farm-ent-crest">
             <img
-              src="/assets/cute-crest.png?v=2"
-              alt=""
+              src="/assets/cute-crest.png?v=3"
+              alt="Cute Farming"
               draggable={false}
               className="farm-ent-crest-img"
             />
@@ -131,7 +131,7 @@ export default function FarmEntrance({ active = false, onDone }) {
         </div>
 
         <div className="farm-ent-copy">
-          <p className="farm-ent-brand">CUTE</p>
+          <p className="farm-ent-brand">CUTE FARMING</p>
           <p className="farm-ent-title">Ферма</p>
           <p className="farm-ent-line" aria-hidden />
           <p className="farm-ent-tag">выращивай · торгуй · побеждай</p>

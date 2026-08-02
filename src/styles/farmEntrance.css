@@ -205,9 +205,10 @@
 .farm-ent-mark {
   position: relative;
   z-index: 3;
-  width: min(52vw, 15rem);
+  /* Логотип проекта — главный герой сцены */
+  width: min(68vw, 18.5rem);
   aspect-ratio: 1 / 1.12;
-  margin-top: clamp(0.2rem, 1.5vh, 0.6rem);
+  margin-top: clamp(0.15rem, 1.2vh, 0.5rem);
   display: grid;
   place-items: center;
 }
@@ -245,8 +246,9 @@
   user-select: none;
   -webkit-user-drag: none;
   filter:
-    drop-shadow(0 0 22px rgba(232, 197, 106, 0.38))
-    drop-shadow(0 10px 28px rgba(0, 0, 0, 0.6));
+    drop-shadow(0 0 28px rgba(232, 197, 106, 0.45))
+    drop-shadow(0 0 40px rgba(61, 214, 140, 0.18))
+    drop-shadow(0 12px 32px rgba(0, 0, 0, 0.65));
 }
 
 /* --- Текст --- */

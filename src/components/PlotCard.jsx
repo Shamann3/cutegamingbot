@@ -1,7 +1,8 @@
 import { memo, useState } from 'react'
 import VineFrame from './VineFrame'
-import RuneOverlay from './decor/RuneOverlay'
+import SoilField from './decor/SoilField'
 import { PlotStatus, ITEM_IDS } from '../types/farm'
+import '../styles/soilField.css'
 import {
   getGrowthProgress,
   getGrowthStage,
@@ -251,52 +252,31 @@ function PlotCard({
             autowaterActive ? ' farm-soil-autowater-active' : ''
           }`}
         >
-          <RuneOverlay />
-
-          <div
-            className="absolute inset-0 opacity-[0.15] bg-[radial-gradient(circle_at_30%_40%,_white_1px,_transparent_1px)] bg-[length:10px_10px]"
-            aria-hidden
+          <SoilField
+            status={status}
+            moist={moist}
+            dry={isDry}
+            ready={status === PlotStatus.READY}
           />
 
-        {moist && (
-          <div
-            className="absolute inset-0 bg-sky-500/15 pointer-events-none transition-opacity duration-500"
-            aria-hidden
-          />
-        )}
+          {waterAnimating && waterAnimVariant === 'autowater' && <AutoWaterEffect mode="burst" />}
+          {waterAnimating && waterAnimVariant !== 'autowater' && <WaterEffect active />}
+          {autowaterActive && !waterAnimating && <AutoWaterEffect mode="idle" />}
 
-        {waterAnimating && waterAnimVariant === 'autowater' && <AutoWaterEffect mode="burst" />}
-        {waterAnimating && waterAnimVariant !== 'autowater' && <WaterEffect active />}
-        {autowaterActive && !waterAnimating && <AutoWaterEffect mode="idle" />}
+          {autowaterActive && (
+            <div className="farm-autowater-badge" aria-label="Автополив активен">
+              <span className="farm-autowater-badge-dot" aria-hidden />
+              <span>Автополив</span>
+            </div>
+          )}
 
-        {autowaterActive && (
-          <div className="farm-autowater-badge" aria-label="Автополив активен">
-            <span className="farm-autowater-badge-dot" aria-hidden />
-            <span>Автополив</span>
+          <div className="relative z-10">
+            <PlantSprite
+              status={status}
+              growthStage={growthStage}
+              cropKey={plotCrop?.spriteKey ?? plotCrop?.key}
+            />
           </div>
-        )}
-
-        {isDry && (
-          <div className="absolute inset-0 bg-orange-900/30 animate-pulse-soft pointer-events-none" />
-        )}
-
-        {drySoon && !isDry && (
-          <div className="absolute inset-0 bg-amber-600/15 pointer-events-none" aria-hidden />
-        )}
-
-        <PlantSprite
-          status={status}
-          growthStage={growthStage}
-          cropKey={plotCrop?.spriteKey ?? plotCrop?.key}
-        />
-
-        {status === PlotStatus.EMPTY && (
-          <div className="absolute bottom-2 flex gap-1 opacity-35" aria-hidden>
-            <span className="w-8 h-1 bg-amber-950/50 rounded" />
-            <span className="w-6 h-1 bg-amber-950/40 rounded" />
-            <span className="w-10 h-1 bg-amber-950/50 rounded" />
-          </div>
-        )}
         </div>
       </div>
 

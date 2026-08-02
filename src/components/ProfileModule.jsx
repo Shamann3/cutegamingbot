@@ -8,8 +8,10 @@ import { fetchCollection } from '../lib/chestClient'
 import { useEquippedCosmetics } from '../hooks/useEquippedCosmetics'
 import { RARITY_ACCENT } from '../constants/chests'
 import SettingsModule from './SettingsModule'
+import ProfileAnalytics from './ProfileAnalytics'
 import '../styles/chests.css'
 import '../styles/cosmetic-effects.css'
+import '../styles/profileAnalytics.css'
 
 const BOARDS = [
   { id: 'balance', label: 'Баланс', emoji: '💰', unit: 'кут' },
@@ -39,17 +41,6 @@ function Avatar({ photoUrl, name, size = 56 }) {
   return (
     <div className="profile-avatar-fallback" style={{ width: size, height: size, fontSize: size * 0.4 }}>
       {letter}
-    </div>
-  )
-}
-
-function StatCard({ emoji, label, value, sub }) {
-  return (
-    <div className="profile-stat-card">
-      <span className="profile-stat-emoji">{emoji}</span>
-      <span className="profile-stat-value">{value?.toLocaleString('ru-RU') ?? '-'}</span>
-      <span className="profile-stat-label">{label}</span>
-      {sub && <span className="profile-stat-sub">{sub}</span>}
     </div>
   )
 }
@@ -114,10 +105,8 @@ export default function ProfileModule({ isActive = true }) {
       <div className="relative z-10 profile-shell animate-slide-up">
         <header className="profile-module-header">
           <div className="profile-module-header-main">
-            <p className="profile-module-eyebrow">Игрок · статистика</p>
-            <h1 className="profile-module-title">
-              <span aria-hidden>👤</span> Профиль
-            </h1>
+            <p className="profile-module-eyebrow">Cute · игрок</p>
+            <h1 className="profile-module-title">Профиль</h1>
           </div>
           {profile && <KutBalance value={profile.balance} className="profile-module-balance" />}
         </header>
@@ -190,13 +179,7 @@ export default function ProfileModule({ isActive = true }) {
               </div>
             )}
 
-            {/* Статистика */}
-            <div className="profile-stats-grid">
-              <StatCard emoji="🌾" label="Урожаев" value={profile.harvestCount} />
-              <StatCard emoji="⚗️" label="Крафтов" value={profile.craftCount} />
-              <StatCard emoji="💱" label="Продано" value={profile.marketItemsSold} sub="предметов" />
-              <StatCard emoji="🏪" label="Сделок" value={profile.marketSalesCount} sub="на бирже" />
-            </div>
+            <ProfileAnalytics profile={profile} leaderboard={leaderboard} />
 
             {/* Лидерборд */}
             <VineFrame className="profile-leaderboard-frame">
