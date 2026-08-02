@@ -85,8 +85,8 @@ def listing_to_client(row: dict, *, viewer_id: int | None = None) -> dict:
 
 def sellable_item_to_client(entry, *, count: int) -> dict:
     return {
-        "itemId": entry.id,
-        "name": entry.name,
-        "emoji": entry.emoji,
+        "itemId": str(entry.id),
+        "name": (entry.name or "").strip() or str(entry.id),
+        "emoji": (entry.emoji or "").strip() or "📦",
         "count": int(count),
     }

@@ -308,6 +308,7 @@ export function useMarketplace({ isActive = true } = {}) {
     setBusyListingId('__creating__')
     setError(null)
     setErrorCode(null)
+    setSellableError(null)
     try {
       const data = await listMarketItem(itemId, price, { ...currentQuery(), quantity })
       applyCatalog(data)
@@ -316,10 +317,13 @@ export function useMarketplace({ isActive = true } = {}) {
       if (listed) {
         showMessage(`Выставлено: ${listed.emoji ?? ''} ${listed.name} ×${listed.quantity}`)
       }
-      await loadSellable()
+      await loadSellable().catch(() => {})
       return data
     } catch (e) {
-      setError(formatError(e))
+      const msg = formatError(e)
+      // Показываем ошибку и в модалке выставления, и в общем баннере.
+      setSellableError(msg)
+      setError(msg)
       setErrorCode(e instanceof ApiError ? e.code : 'api')
       throw e
     } finally {

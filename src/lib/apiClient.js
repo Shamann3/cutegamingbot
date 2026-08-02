@@ -17,8 +17,31 @@ export class ApiError extends Error {
   }
 }
 
+function detailToText(detail, status) {
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object') {
+          const loc = Array.isArray(item.loc) ? item.loc.filter((x) => x !== 'body' && x !== 'query').join('.') : ''
+          const msg = item.msg || item.message || ''
+          if (loc && msg) return `${loc}: ${msg}`
+          return msg || ''
+        }
+        return ''
+      })
+      .filter(Boolean)
+    if (parts.length) return parts.join('; ')
+  }
+  if (detail && typeof detail === 'object' && typeof detail.message === 'string') {
+    return detail.message
+  }
+  return `Ошибка ${status}`
+}
+
 export function mapApiError(status, detail) {
-  const text = typeof detail === 'string' ? detail : `Ошибка ${status}`
+  const text = detailToText(detail, status)
   if (status === 401) {
     return new ApiError(
       typeof detail === 'string' && detail

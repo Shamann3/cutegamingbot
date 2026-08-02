@@ -337,7 +337,9 @@ class MarketCatalogQuery(BaseModel):
     priceFilter: str = "all"
     sortBy: str = "name"
     sortOrder: str = "asc"
-    pageSize: int = Field(default=8, ge=8, le=16)
+    # Шире, чем «канон» 8/12/16: UI может прислать промежуточное значение —
+    # normalize_page_size на бэке приведёт к валидному размеру страницы.
+    pageSize: int = Field(default=8, ge=1, le=64)
 
 
 class MarketListAction(MarketCatalogQuery):

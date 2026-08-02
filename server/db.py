@@ -1491,16 +1491,21 @@ class Database:
         if quantity <= 0:
             return []
 
-        rows = await conn.fetch(
-            """
-            SELECT id, quantity, unit_paid FROM discounted_holdings
-            WHERE user_id = $1 AND item_id = $2
-            ORDER BY unit_paid ASC, id ASC
-            FOR UPDATE
-            """,
-            user_id,
-            str(item_id),
-        )
+        try:
+            rows = await conn.fetch(
+                """
+                SELECT id, quantity, unit_paid FROM discounted_holdings
+                WHERE user_id = $1 AND item_id = $2
+                ORDER BY unit_paid ASC, id ASC
+                FOR UPDATE
+                """,
+                user_id,
+                str(item_id),
+            )
+        except Exception as exc:
+            if type(exc).__name__ in ("UndefinedTableError", "UndefinedTable"):
+                return []
+            raise
 
         taken = []
         for row in rows:
@@ -2916,8 +2921,7 @@ class Database:
             limit_idx = len(params) + 1
             offset_idx = len(params) + 2
             order_sql = build_market_order_clause(sort_by, sort_order)
-            rows = await conn.fetch(
-                f"""
+            listing_sql = f"""
                 SELECT l.id AS listing_id, l.seller_id, l.item_id, l.quantity, l.price,
                        l.created_at,
                        d.name, d.name1, d.emoji, d.sorting, d.stick, d.use, d.bonus,
@@ -2933,13 +2937,48 @@ class Database:
                 WHERE {where_sql}
                 ORDER BY {order_sql}
                 LIMIT ${limit_idx} OFFSET ${offset_idx}
-                """,
-                *params,
-                page_size,
-                offset,
-            )
+                """
+            listing_sql_legacy = f"""
+                SELECT l.id AS listing_id, l.seller_id, l.item_id, l.quantity, l.price,
+                       l.created_at,
+                       d.name, d.name1, d.emoji, d.sorting, d.stick, d.use, d.bonus,
+                       d.craft, d.bio,
+                       u.username AS seller_username,
+                       u.first_name AS seller_first_name,
+                       u.last_name AS seller_last_name,
+                       NULL::text AS seller_display_name,
+                       NULL::text AS seller_photo_url
+                FROM market_listings l
+                JOIN dex d ON CAST(d.id AS TEXT) = l.item_id
+                LEFT JOIN users u ON u.user_id = l.seller_id
+                WHERE {where_sql}
+                ORDER BY {order_sql}
+                LIMIT ${limit_idx} OFFSET ${offset_idx}
+                """
+            try:
+                rows = await conn.fetch(
+                    listing_sql, *params, page_size, offset,
+                )
+            except Exception as listing_err:
+                if type(listing_err).__name__ not in (
+                    "UndefinedColumnError",
+                    "UndefinedColumn",
+                ):
+                    raise
+                print(f"[MARKET][CATALOG][WARN] legacy seller columns: {listing_err!r}")
+                rows = await conn.fetch(
+                    listing_sql_legacy, *params, page_size, offset,
+                )
         balance = await self.get_user_balance(user_id)
-        items = [listing_to_client(dict(row), viewer_id=user_id) for row in rows]
+        items = []
+        for row in rows:
+            try:
+                items.append(listing_to_client(dict(row), viewer_id=user_id))
+            except Exception as row_err:
+                print(
+                    f"[MARKET][CATALOG][WARN] skip listing "
+                    f"{row.get('listing_id')!r}: {row_err!r}"
+                )
         from market_rules import market_commission_meta
 
         return {
@@ -2966,25 +3005,34 @@ class Database:
         from user_items import count_item_in_storage
 
         await self.ensure_user(user_id)
+        try:
+            await self.ensure_coupon_tables()
+        except Exception:
+            pass
         async with self.pool.acquire() as conn:
             items_raw = await conn.fetchval("SELECT items FROM users WHERE user_id = $1", user_id)
-        raw_items = parse_items(items_raw)
-        normalized = normalize_items(raw_items)
-        sellable = []
-        seen = set()
-        for item_id in normalized:
-            canon = normalize_market_item_id(item_id)
-            if not canon or canon in seen:
-                continue
-            seen.add(canon)
-            qty = count_item_in_storage(raw_items, canon)
-            if qty < 1 or not is_market_listable(canon):
-                continue
-            entry = dex_catalog.get(canon)
-            if not entry:
-                continue
-            sellable.append(sellable_item_to_client(entry, count=qty))
-        sellable.sort(key=lambda row: row["name"].lower())
+            raw_items = parse_items(items_raw)
+            normalized = normalize_items(raw_items)
+            sellable = []
+            seen = set()
+            for item_id in normalized:
+                canon = normalize_market_item_id(item_id)
+                if not canon or canon in seen:
+                    continue
+                seen.add(canon)
+                owned = count_item_in_storage(raw_items, canon)
+                if owned < 1 or not is_market_listable(canon):
+                    continue
+                # Купонные единицы нельзя выставлять — не показываем их в списке.
+                discounted = await self.count_discounted_units(conn, user_id, canon)
+                listable_qty = max(0, int(owned) - min(int(discounted or 0), int(owned)))
+                if listable_qty < 1:
+                    continue
+                entry = dex_catalog.get(canon)
+                if not entry:
+                    continue
+                sellable.append(sellable_item_to_client(entry, count=listable_qty))
+        sellable.sort(key=lambda row: str(row.get("name") or "").lower())
         balance = await self.get_user_balance(user_id)
         from market_rules import market_commission_meta
 
@@ -3018,11 +3066,18 @@ class Database:
         )
 
         await self.ensure_user(user_id)
+        try:
+            await self.ensure_coupon_tables()
+        except Exception:
+            pass
         item_key = normalize_market_item_id(item_id)
         if not item_key or not is_market_listable(item_key):
             raise ValueError("Этот предмет нельзя выставить на биржу")
-        quantity = max(1, min(int(quantity), MARKET_MAX_LIST_QUANTITY))
-        price = int(price)
+        try:
+            quantity = max(1, min(int(quantity), MARKET_MAX_LIST_QUANTITY))
+            price = int(price)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Некорректные цена или количество") from exc
         if price < MARKET_MIN_PRICE or price > MARKET_MAX_PRICE:
             raise ValueError(f"Цена должна быть от {MARKET_MIN_PRICE} до {MARKET_MAX_PRICE} КУТ")
         entry = dex_catalog.get(item_key)
@@ -3042,15 +3097,25 @@ class Database:
                 # «Призраки» после крафта/траты без списания holdings блокировали
                 # всю биржу по предмету — подрезаем учёт до реального inventory.
                 if discounted > owned:
-                    await self.take_discounted_units(
-                        conn, user_id, item_key, discounted - owned
-                    )
+                    try:
+                        await self.take_discounted_units(
+                            conn, user_id, item_key, discounted - owned
+                        )
+                    except Exception as ghost_err:
+                        print(f"[MARKET][LIST][WARN] ghost holdings trim: {ghost_err!r}")
                     discounted = owned
-                if owned - discounted < quantity:
+                listable = max(0, int(owned) - int(discounted or 0))
+                if owned < quantity:
+                    raise ValueError(f"Недостаточно предметов (доступно {owned})")
+                if listable < quantity:
                     raise ValueError(
+                        f"Можно выставить только {listable} шт. "
                         "Предметы, купленные по купону на скидку, нельзя выставить на биржу"
                     )
-                stored = take_item_from_storage(raw_items, item_key, quantity)
+                try:
+                    stored = take_item_from_storage(raw_items, item_key, quantity)
+                except ValueError as exc:
+                    raise ValueError(str(exc) or "Не удалось списать предмет") from exc
                 await conn.execute(
                     "UPDATE users SET items = $2 WHERE user_id = $1", user_id, items_to_db(stored)
                 )
@@ -3064,36 +3129,52 @@ class Database:
                     quantity,
                     price,
                 )
-        schedule_balance_event(
-            self.pool,
-            "market_list",
-            user_id,
-            details={
-                "item_id": item_key,
-                "name": entry.name,
-                "emoji": entry.emoji,
-                "quantity": quantity,
-                "price": price,
-            },
-        )
-        catalog = await self.get_market_catalog(
-            user_id,
-            category_id=category_id,
-            page=page,
-            search=search,
-            price_filter=price_filter,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            page_size=page_size,
-        )
+        try:
+            schedule_balance_event(
+                self.pool,
+                "market_list",
+                user_id,
+                details={
+                    "item_id": item_key,
+                    "name": entry.name,
+                    "emoji": entry.emoji,
+                    "quantity": quantity,
+                    "price": price,
+                },
+            )
+        except Exception as audit_err:
+            print(f"[MARKET][LIST][WARN] audit skipped: {audit_err!r}")
+        try:
+            catalog = await self.get_market_catalog(
+                user_id,
+                category_id=category_id,
+                page=page,
+                search=search,
+                price_filter=price_filter,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                page_size=page_size,
+            )
+        except Exception as cat_err:
+            print(f"[MARKET][LIST][WARN] catalog refresh failed: {cat_err!r}")
+            catalog = {
+                "kut": int(await self.get_user_balance(user_id) or 0),
+                "items": [],
+                "page": 0,
+                "totalPages": 0,
+                "totalItems": 0,
+            }
         catalog["listed"] = {
             "itemId": item_key,
-            "name": entry.name,
-            "emoji": entry.emoji,
+            "name": (entry.name or "").strip() or str(item_key),
+            "emoji": (entry.emoji or "").strip() or "📦",
             "quantity": quantity,
             "price": price,
         }
-        catalog["player"] = await self._player_snapshot(user_id)
+        try:
+            catalog["player"] = await self._player_snapshot(user_id)
+        except Exception:
+            pass
         return catalog
 
     async def buy_market_listing(
@@ -3174,18 +3255,35 @@ class Database:
                     total_cost,
                     items_to_db(buyer_stored),
                 )
-                await conn.execute(
-                    """
-                    UPDATE users
-                    SET balance = balance + $2,
-                        market_sales_count = market_sales_count + 1,
-                        market_items_sold = market_items_sold + $3
-                    WHERE user_id = $1
-                    """,
-                    int(row["seller_id"]),
-                    seller_payout,
-                    buy_qty,
-                )
+                try:
+                    await conn.execute(
+                        """
+                        UPDATE users
+                        SET balance = balance + $2,
+                            market_sales_count = market_sales_count + 1,
+                            market_items_sold = market_items_sold + $3
+                        WHERE user_id = $1
+                        """,
+                        int(row["seller_id"]),
+                        seller_payout,
+                        buy_qty,
+                    )
+                except Exception as stats_err:
+                    # Старые БД без market_* колонок: выплата важнее статистики.
+                    if type(stats_err).__name__ not in (
+                        "UndefinedColumnError",
+                        "UndefinedColumn",
+                    ):
+                        raise
+                    await conn.execute(
+                        """
+                        UPDATE users
+                        SET balance = balance + $2
+                        WHERE user_id = $1
+                        """,
+                        int(row["seller_id"]),
+                        seller_payout,
+                    )
                 remaining = available - buy_qty
                 if remaining <= 0:
                     await conn.execute(
@@ -3204,93 +3302,120 @@ class Database:
                     )
         from config import TECH_CHAT_ID
 
-        await self.update_chat_balance(TECH_CHAT_ID, commission)
-        schedule_balance_event(
-            self.pool,
-            "market_buy",
-            user_id,
-            amount=-total_cost,
-            details={
-                "listing_id": listing_id,
-                "item_id": str(row["item_id"]),
-                "name": row["name"] or str(row["item_id"]),
-                "emoji": row["emoji"] or "📦",
-                "quantity": buy_qty,
-                "paid": total_cost,
-                "seller_id": int(row["seller_id"]),
-            },
-        )
-        schedule_balance_event(
-            self.pool,
-            "market_sell",
-            int(row["seller_id"]),
-            amount=seller_payout,
-            details={
-                "listing_id": listing_id,
-                "item_id": str(row["item_id"]),
-                "name": row["name"] or str(row["item_id"]),
-                "emoji": row["emoji"] or "📦",
-                "quantity": buy_qty,
-                "gross": total_cost,
-                "commission": commission,
-                "payout": seller_payout,
-                "buyer_id": user_id,
-            },
-        )
+        sale_name = (row["name"] or str(row["item_id"]) or "").strip() or str(row["item_id"])
+        sale_emoji = (row["emoji"] or "").strip() or "📦"
         seller_balance_after = int(seller_balance) + seller_payout
-        sale_name = row["name"] or str(row["item_id"])
-        sale_emoji = row["emoji"] or "📦"
-        await create_market_sale_notification(
-            self.pool,
-            int(row["seller_id"]),
-            listing_id=listing_id,
-            item_id=str(row["item_id"]),
-            name=sale_name,
-            emoji=sale_emoji,
-            quantity=buy_qty,
-            gross=total_cost,
-            commission=commission,
-            payout=seller_payout,
-            balance=seller_balance_after,
-            buyer_id=user_id,
-        )
-        schedule_market_sale_telegram(
-            int(row["seller_id"]),
-            emoji=sale_emoji,
-            name=sale_name,
-            quantity=buy_qty,
-            gross=total_cost,
-            commission=commission,
-            payout=seller_payout,
-            balance=seller_balance_after,
-        )
-        # Публичное объявление о покупке в группы биржи (fire-and-forget).
-        schedule_market_purchase_broadcast(
-            emoji=sale_emoji,
-            name=sale_name,
-            quantity=buy_qty,
-            paid=total_cost,
-            buyer_name=(buyer_row["first_name"] or None),
-            buyer_username=(buyer_row["username"] or None),
-        )
-        catalog = await self.get_market_catalog(
-            user_id,
-            category_id=category_id,
-            page=page,
-            search=search,
-            price_filter=price_filter,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            page_size=page_size,
-        )
+
+        # Побочка после COMMIT не должна превращать успешную покупку в HTTP 500.
+        try:
+            await self.update_chat_balance(TECH_CHAT_ID, commission)
+        except Exception as e:
+            print(f"[MARKET][BUY][WARN] commission wallet: {e!r}")
+        try:
+            schedule_balance_event(
+                self.pool,
+                "market_buy",
+                user_id,
+                amount=-total_cost,
+                details={
+                    "listing_id": listing_id,
+                    "item_id": str(row["item_id"]),
+                    "name": sale_name,
+                    "emoji": sale_emoji,
+                    "quantity": buy_qty,
+                    "paid": total_cost,
+                    "seller_id": int(row["seller_id"]),
+                },
+            )
+            schedule_balance_event(
+                self.pool,
+                "market_sell",
+                int(row["seller_id"]),
+                amount=seller_payout,
+                details={
+                    "listing_id": listing_id,
+                    "item_id": str(row["item_id"]),
+                    "name": sale_name,
+                    "emoji": sale_emoji,
+                    "quantity": buy_qty,
+                    "gross": total_cost,
+                    "commission": commission,
+                    "payout": seller_payout,
+                    "buyer_id": user_id,
+                },
+            )
+        except Exception as e:
+            print(f"[MARKET][BUY][WARN] audit skipped: {e!r}")
+        try:
+            await create_market_sale_notification(
+                self.pool,
+                int(row["seller_id"]),
+                listing_id=listing_id,
+                item_id=str(row["item_id"]),
+                name=sale_name,
+                emoji=sale_emoji,
+                quantity=buy_qty,
+                gross=total_cost,
+                commission=commission,
+                payout=seller_payout,
+                balance=seller_balance_after,
+                buyer_id=user_id,
+            )
+        except Exception as e:
+            print(f"[MARKET][BUY][WARN] seller notify: {e!r}")
+        try:
+            schedule_market_sale_telegram(
+                int(row["seller_id"]),
+                emoji=sale_emoji,
+                name=sale_name,
+                quantity=buy_qty,
+                gross=total_cost,
+                commission=commission,
+                payout=seller_payout,
+                balance=seller_balance_after,
+            )
+            schedule_market_purchase_broadcast(
+                emoji=sale_emoji,
+                name=sale_name,
+                quantity=buy_qty,
+                paid=total_cost,
+                buyer_name=(buyer_row["first_name"] or None),
+                buyer_username=(buyer_row["username"] or None),
+            )
+        except Exception as e:
+            print(f"[MARKET][BUY][WARN] broadcast: {e!r}")
+
+        try:
+            catalog = await self.get_market_catalog(
+                user_id,
+                category_id=category_id,
+                page=page,
+                search=search,
+                price_filter=price_filter,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                page_size=page_size,
+            )
+        except Exception as cat_err:
+            print(f"[MARKET][BUY][WARN] catalog refresh failed: {cat_err!r}")
+            catalog = {
+                "kut": int(await self.get_user_balance(user_id) or 0),
+                "items": [],
+                "page": 0,
+                "totalPages": 0,
+                "totalItems": 0,
+            }
         catalog["purchased"] = {
             "listingId": listing_id,
-            "name": row["name"] or str(row["item_id"]),
-            "emoji": row["emoji"] or "📦",
+            "name": sale_name,
+            "emoji": sale_emoji,
             "quantity": buy_qty,
             "paid": total_cost,
         }
-        catalog["player"] = await self._player_snapshot(user_id)
+        try:
+            catalog["player"] = await self._player_snapshot(user_id)
+        except Exception:
+            pass
         return catalog
 
     async def update_chat_balance(self, chat_id, amount):
@@ -3391,17 +3516,30 @@ class Database:
                     """,
                     listing_id,
                 )
-        catalog = await self.get_market_catalog(
-            user_id,
-            category_id=category_id,
-            page=page,
-            search=search,
-            price_filter=price_filter,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            page_size=page_size,
-        )
-        catalog["player"] = await self._player_snapshot(user_id)
+        try:
+            catalog = await self.get_market_catalog(
+                user_id,
+                category_id=category_id,
+                page=page,
+                search=search,
+                price_filter=price_filter,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                page_size=page_size,
+            )
+        except Exception as cat_err:
+            print(f"[MARKET][CANCEL][WARN] catalog refresh failed: {cat_err!r}")
+            catalog = {
+                "kut": int(await self.get_user_balance(user_id) or 0),
+                "items": [],
+                "page": 0,
+                "totalPages": 0,
+                "totalItems": 0,
+            }
+        try:
+            catalog["player"] = await self._player_snapshot(user_id)
+        except Exception:
+            pass
         return catalog
 
     async def sync_user_profile(self, user_id, tg_user):

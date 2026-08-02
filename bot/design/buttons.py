@@ -1141,6 +1141,8 @@ UI_TEXTS: Dict[str, str] = {
     "back": "Назад к балансу",
     "min_withdraw_prefix": "Мин. вывод сейчас : ",
     "min_withdraw_prefix_info": "Мин. вывод сейчас: ",
+    "withdraw_locked": "Вывод временно недоступен",
+    "withdraw_wait_limit": "Дождитесь обновления лимита",
     "speed_title": "⚡ Моментальный вывод",
 }
 
@@ -1875,10 +1877,12 @@ async def generate_gift_keyboard(
         rows.append(_mk_back_row(back_callback))
         return InlineKeyboardMarkup(inline_keyboard=rows)
 
+    # Остаток меньше самого дешёвого подарка — не «повысьте/донат»,
+    # а ожидание обновления лимита (таймер ставит refresh_withdraw_quota).
     if isinstance(rem, int) and min_price > 0 and rem < min_price:
         rows: List[List[InlineKeyboardButton]] = []
-        rows.append(_mk_info_row(f"{UI_TEXTS['min_withdraw_prefix']}{min_price} ⭐️", emoji_for_icon="💝"))
-        rows.append(_mk_donate_row())
+        rows.append(_mk_info_row(UI_TEXTS["withdraw_locked"], emoji_for_icon="❤️"))
+        rows.append(_mk_info_row(UI_TEXTS["withdraw_wait_limit"], emoji_for_icon="🧘‍♂️"))
         rows.append(_mk_back_row(back_callback))
         return InlineKeyboardMarkup(inline_keyboard=rows)
 

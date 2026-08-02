@@ -13620,32 +13620,45 @@ def _kb_withdraw_locked(
 
     rows = []
 
-    rows.append([InlineKeyboardButton(text="Вывод недоступен", callback_data="noop", style="danger" ,
-                icon_custom_emoji_id="5449505950283078474")])
+    rows.append([InlineKeyboardButton(
+        text="Вывод временно недоступен",
+        callback_data="noop",
+        style="danger",
+        icon_custom_emoji_id="5449505950283078474",
+    )])
 
-    # таймер - только если есть (обычный процесс: после него снова полный лимит ~100)
+    # Всегда объясняем: нужно подождать обновления лимита (после таймера снова полный лимит / +100).
+    wait_reasons = {
+        "cooldown_active",
+        "unspendable_remainder",
+        "unspendable_cap",
+        "min_withdraw_block",
+        "need_higher_limit",
+        "daily_limit_reached",
+        "limit_reached",
+        "LIMIT_REACHED",
+    }
+    if left_i > 0 or rs in wait_reasons or not rs:
+        rows.append([InlineKeyboardButton(
+            text="Дождитесь обновления лимита",
+            callback_data="noop",
+            style="default",
+            icon_custom_emoji_id="5420542898452077602",
+        )])
+
     if left_i > 0:
         rows.append([InlineKeyboardButton(
             text=f"Осталось : {_fmt_hms_safe(left_i)}",
-            callback_data="noop", style="default" ,
-                icon_custom_emoji_id="5891211339170326418"
-        )])
-    elif rs == "need_higher_limit":
-        rows.append([InlineKeyboardButton(
-            text="Повысьте лимит вывода",
-            callback_data="noop", style="default",
-            icon_custom_emoji_id="5420542898452077602"
-        )])
-        rows.append([InlineKeyboardButton(
-            text="Пополнить баланс",
-            callback_data="insert_stars", style="default",
-            icon_custom_emoji_id="6039573425268201570"
+            callback_data="noop",
+            style="default",
+            icon_custom_emoji_id="5891211339170326418",
         )])
 
     rows.append([InlineKeyboardButton(
         text="Назад",
-        callback_data=str(back_callback or "9close_bonus"), style="default" ,
-                            icon_custom_emoji_id="5960671702059848143"
+        callback_data=str(back_callback or "9close_bonus"),
+        style="default",
+        icon_custom_emoji_id="5960671702059848143",
     )])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -13744,6 +13757,24 @@ async def render_conc_stars_screen(*args, **kwargs):
         print(
             f"🟨 [CONC_STARS][MIN] uid={user_id} остаток {remaining} < мин.подарка {min_withdraw} "
             f"limit={daily_limit} reason={reason!r} allowed={allowed} cd={cooldown_left}")
+        # Страховка: refresh обязан был поставить таймер. Если нет — повторяем.
+        if cooldown_left <= 0:
+            try:
+                state = await db.refresh_withdraw_quota_if_needed(
+                    user_id,
+                    min_withdraw_amount=int(min_withdraw or 0),
+                )
+                allowed = bool(state.get("allowed"))
+                cooldown_left = int(state.get("cooldown_left") or 0)
+                daily_limit = int(state.get("daily_limit") or daily_limit)
+                used = int(state.get("used") or 0) if state.get("used") is not None else used
+                remaining = int(state.get("remaining") or 0)
+                reason = str(state.get("reason") or reason)
+                crumbs_blocked = bool(
+                    min_withdraw > 0 and remaining > 0 and remaining < min_withdraw
+                )
+            except Exception as e:
+                print(f"🟥 [CONC_STARS][MIN][RETRY] err={e!r}")
 
     # ---- 5. Если вывод запрещён / кулдаун / крошки / need_higher – блокировка ----
     if (
@@ -23606,35 +23637,49 @@ def _normalize_add_withdraw_result(raw: Any, *, strict_used: bool, rid: str) -> 
 
 def _kb_info_back(left_seconds: int, back_callback: Optional[str] = None) -> InlineKeyboardMarkup:
     """
-    Экран "Вывод недоступен" + таймер.
+    Экран блокировки вывода: подождите обновления лимита + таймер.
     back_callback:
       - если пришли из баланса -> возвращаем туда
       - иначе закрываем/в меню (как у тебя было)
     """
     left_i = _to_int(left_seconds, 0)
-
     back_cd = str(back_callback) if back_callback else "9close_bonus"
-    back_text = "Назад к балансу" if back_callback else "Назад"
-
-    rows = [
-        [InlineKeyboardButton(text="Вывод недоступен", callback_data="noop", style="danger" ,
-            icon_custom_emoji_id="5449505950283078474")],
-    ]
-
-    # Строку таймера показываем только когда таймер реально идёт:
-    # "Осталось : 00:00:00" сбивало с толку на экранах без кулдауна.
-    if left_i > 0:
-        rows.append(
-            [InlineKeyboardButton(text=f"Осталось : {_fmt_hms(left_i)}", callback_data="noop", style="default" ,
-                icon_custom_emoji_id="5891211339170326418")]
+    try:
+        return _kb_withdraw_locked(
+            left_i,
+            reason="cooldown_active" if left_i > 0 else "unspendable_remainder",
+            back_callback=back_cd,
         )
-
-    rows.append(
-        [InlineKeyboardButton(text=back_text, callback_data=back_cd, style="default" ,
-                        icon_custom_emoji_id="5960671702059848143")]
-    )
-
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    except Exception:
+        back_text = "Назад к балансу" if back_callback else "Назад"
+        rows = [
+            [InlineKeyboardButton(
+                text="Вывод временно недоступен",
+                callback_data="noop",
+                style="danger",
+                icon_custom_emoji_id="5449505950283078474",
+            )],
+            [InlineKeyboardButton(
+                text="Дождитесь обновления лимита",
+                callback_data="noop",
+                style="default",
+                icon_custom_emoji_id="5420542898452077602",
+            )],
+        ]
+        if left_i > 0:
+            rows.append([InlineKeyboardButton(
+                text=f"Осталось : {_fmt_hms(left_i)}",
+                callback_data="noop",
+                style="default",
+                icon_custom_emoji_id="5891211339170326418",
+            )])
+        rows.append([InlineKeyboardButton(
+            text=back_text,
+            callback_data=back_cd,
+            style="default",
+            icon_custom_emoji_id="5960671702059848143",
+        )])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def build_instant_withdraw_keyboard(amount: Optional[int]) -> InlineKeyboardMarkup:
@@ -23925,19 +23970,18 @@ async def ensure_can_withdraw(
         try:
             if cooldown_left > 0:
                 await cb.answer(f"⏳ Кулдаун активен. Осталось: {cooldown_left} сек.", show_alert=True)
-            elif reason == "need_higher_limit":
+            elif cooldown_left > 0 or reason in (
+                "unspendable_remainder",
+                "unspendable_cap",
+                "need_higher_limit",
+                "min_withdraw_block",
+            ) or (min_w > 0 and remaining < min_w):
                 await cb.answer(
-                    f"⚠️ Лимит вывода ниже мин. подарка ({_fmt_dot_int(min_w)} ⭐). Повысьте лимит.",
-                    show_alert=True,
-                )
-            elif min_w > 0 and remaining < min_w:
-                await cb.answer(
-                    f"⚠️ Остаток {_fmt_dot_int(remaining)} меньше мин. подарка {_fmt_dot_int(min_w)} ⭐.\n"
-                    f"Дождитесь обновления лимита.",
+                    "⏳ Вывод временно недоступен. Дождитесь обновления лимита.",
                     show_alert=True,
                 )
             else:
-                await cb.answer("⚠️ Вывод временно недоступен. Подождите обновления лимита.", show_alert=True)
+                await cb.answer("⚠️ Вывод временно недоступен. Дождитесь обновления лимита.", show_alert=True)
         except Exception:
             pass
         return False
@@ -24444,7 +24488,7 @@ async def show_available_gifts_under_limit(
 ) -> bool:
     """
     Показывает подарки под remaining.
-    Если подходящих нет - показывает сообщение и предлагает повысить лимит (без таймера).
+    Если подходящих нет (остаток < мин. подарка) — экран ожидания обновления лимита.
     """
     msg = callback_query.message
     uid = _to_int(user_id, 0)
@@ -24456,25 +24500,36 @@ async def show_available_gifts_under_limit(
     available = [g for g in gifts if _to_int(g.get("price"), 0) <= rem]
 
     if not available:
-        # Таймер здесь НЕ ставится. Отсутствие подходящего подарка - это не исчерпанный
-        # лимит: если лимит пользователя меньше самого дешёвого подарка, кулдаун
-        # возрождался бы вечно, сразу после каждого истечения.
-        print("[GIFTS][NONE] нет подарков под лимит -> сообщение без таймера")
+        print("[GIFTS][NONE] нет подарков под лимит -> ждём обновления лимита")
 
         left = 0
+        reason = "unspendable_remainder"
         try:
-            left = _to_int(await db.get_user_cooldown_left(uid), 0)
-        except Exception:
+            min_w = 0
+            try:
+                min_w = int(await get_min_gift_price_now(bot1) or 0)
+            except Exception:
+                min_w = 0
+            if db is not None and hasattr(db, "refresh_withdraw_quota_if_needed"):
+                st = await db.refresh_withdraw_quota_if_needed(
+                    uid, min_withdraw_amount=int(min_w or 0)
+                )
+                left = _to_int(st.get("cooldown_left"), 0)
+                reason = str(st.get("reason") or st.get("cause") or reason)
+            if left <= 0:
+                left = _to_int(await db.get_user_cooldown_left(uid), 0) if db is not None else 0
+        except Exception as e:
+            print(f"[GIFTS][NONE][WARN] refresh/cooldown: {e!r}")
             left = 0
 
         await _safe_edit_text(
             msg,
-            (
-                "<tg-emoji emoji-id='5260293700088511294'>⛔️</tg-emoji> <b>Подарков для вывода нет</b>\n"
-                f"<tg-emoji emoji-id='5472404950673791399'>🧮</tg-emoji> Доступно к выводу : <b>{_fmt_int(rem)} <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji></b>\n\n"
-                "<tg-emoji emoji-id='5420542898452077602'>🧘‍♂️</tg-emoji> <b>Повысьте лимит вывода, чтобы открыть подарки</b>"
+            "🧰",
+            reply_markup=_kb_withdraw_locked(
+                left,
+                remaining=rem,
+                reason=reason,
             ),
-            reply_markup=_kb_info_back(left),
         )
         return False
 
@@ -29361,6 +29416,23 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
     remaining = int(state.get("remaining") or 0)
     reason = str(state.get("reason") or state.get("cause") or "")
     crumbs_blocked = bool(min_withdraw > 0 and remaining > 0 and remaining < min_withdraw)
+    if crumbs_blocked and cooldown_left <= 0:
+        try:
+            state = await db.refresh_withdraw_quota_if_needed(
+                user_id,
+                min_withdraw_amount=int(min_withdraw or 0),
+            )
+            allowed = bool(state.get("allowed"))
+            cooldown_left = int(state.get("cooldown_left") or 0)
+            daily_limit = int(state.get("daily_limit") or daily_limit)
+            used = int(state.get("used") or 0) if state.get("used") is not None else used
+            remaining = int(state.get("remaining") or 0)
+            reason = str(state.get("reason") or reason)
+            crumbs_blocked = bool(
+                min_withdraw > 0 and remaining > 0 and remaining < min_withdraw
+            )
+        except Exception as e:
+            print(f"🟥 [WITHDRAW][BACK][MIN][RETRY] err={e!r}")
 
     # ---- Блокировка ----
     # Таймер ставит refresh (unspendable_* при остатке < мин. подарка).
@@ -31099,19 +31171,40 @@ async def giftconfirmwithdrawal_callback(callback_query: types.CallbackQuery):
 
 
 
-def kb_withdraw_blocked(left_seconds: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Вывод недоступен", callback_data="noop", style="danger" ,
-                icon_custom_emoji_id="5449505950283078474")],
-            [InlineKeyboardButton(text="у друга лимит", callback_data="noop")],
-            [ InlineKeyboardButton(text="осталось ждать :" , callback_data="noop") ],
-            [InlineKeyboardButton(text=f"{_fmt_hms(left_seconds)}", callback_data="noop", style="default" ,
-                icon_custom_emoji_id="5891211339170326418")],
-            [InlineKeyboardButton(text="Назад", callback_data="9close_bonus", style="default" ,
-                icon_custom_emoji_id="5960671702059848143")],
+def kb_withdraw_blocked(left_seconds: int, *, reason: str = "") -> InlineKeyboardMarkup:
+    """Единый locked-экран: подождите обновления лимита + таймер."""
+    try:
+        return _kb_withdraw_locked(int(left_seconds or 0), reason=str(reason or "cooldown_active"))
+    except Exception:
+        left_i = max(0, int(left_seconds or 0))
+        rows = [
+            [InlineKeyboardButton(
+                text="Вывод временно недоступен",
+                callback_data="noop",
+                style="danger",
+                icon_custom_emoji_id="5449505950283078474",
+            )],
+            [InlineKeyboardButton(
+                text="Дождитесь обновления лимита",
+                callback_data="noop",
+                style="default",
+                icon_custom_emoji_id="5420542898452077602",
+            )],
         ]
-    )
+        if left_i > 0:
+            rows.append([InlineKeyboardButton(
+                text=f"Осталось : {_fmt_hms(left_i)}",
+                callback_data="noop",
+                style="default",
+                icon_custom_emoji_id="5891211339170326418",
+            )])
+        rows.append([InlineKeyboardButton(
+            text="Назад",
+            callback_data="9close_bonus",
+            style="default",
+            icon_custom_emoji_id="5960671702059848143",
+        )])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def _resend_recipient_prompt(message, chat_id, old_msg_id, text):
@@ -31281,31 +31374,26 @@ async def process_user_gift_recipient(message: types.Message):
         except Exception:
             allowed, cooldown_left, remaining = True, 0, 0
 
-        if not allowed:
+        crumbs = bool(_min_gift > 0 and remaining > 0 and remaining < _min_gift)
+        if (not allowed) or remaining <= 0 or crumbs or cooldown_left > 0:
+            # Таймер ставит refresh (в т.ч. при крошках < мин. подарка).
             try:
-                await message.answer("🧰", reply_markup=kb_withdraw_blocked(int(cooldown_left)))
+                cooldown_left = int(
+                    state.get("cooldown_left")
+                    or await db.get_user_cooldown_left(user_id)
+                    or cooldown_left
+                    or 0
+                )
+            except Exception:
+                pass
+            reason = str(state.get("reason") or state.get("cause") or "")
+            try:
+                await message.answer(
+                    "🧰",
+                    reply_markup=kb_withdraw_blocked(int(cooldown_left), reason=reason),
+                )
             except Exception as e:
                 print(f"[WITHDRAW][GIFT][FINISH][ERROR] kb_withdraw_blocked: {type(e).__name__}: {e!r}")
-
-            try:
-                del user_gift[user_id]
-            except Exception:
-                pass
-
-            await _delete_user_message()
-            return
-
-        if remaining <= 0:
-            # Таймер не ставим: он уже поставлен при том выводе, который исчерпал лимит.
-            try:
-                cooldown_left = int(await db.get_user_cooldown_left(user_id) or cooldown_left)
-            except Exception:
-                pass
-
-            try:
-                await message.answer("🧰", reply_markup=kb_withdraw_blocked(int(cooldown_left)))
-            except Exception as e:
-                print(f"[WITHDRAW][GIFT][FINISH][ERROR] show blocked on remaining=0: {type(e).__name__}: {e!r}")
 
             try:
                 del user_gift[user_id]
@@ -35042,23 +35130,27 @@ async def add_firstname_to_usercheck_balance(message: Message):
         remaining = int(state.get("remaining" , 0))
         daily_limit = int(state.get("daily_limit" , 0))  # пока оставляем для fallback
 
-        # ---- 4. Если кулдаун или нет остатка — блокируем и выходим ----
-        if not allowed or remaining <= 0:
-            # Таймер не ставим: он рождается только при выводе, исчерпавшем лимит.
+        # ---- 4. Если кулдаун / нет остатка / крошки < мин. подарка — ждём лимит ----
+        crumbs = bool(_min_gift > 0 and remaining > 0 and remaining < _min_gift)
+        if (not allowed) or remaining <= 0 or crumbs:
             cooldown_left = int(state.get("cooldown_left" , 0))
             if not cooldown_left:
                 try:
                     cooldown_left = int(await db.get_user_cooldown_left(user_id) or 0)
                 except Exception as e:
                     print(f"🟥 [WITHDRAW][FINISH] get_user_cooldown_left: {type(e).__name__}: {e}")
+            reason = str(state.get("reason") or state.get("cause") or "")
 
             try:
-                await message.answer("🧰" , reply_markup=kb_withdraw_blocked(cooldown_left))
+                await message.answer(
+                    "🧰",
+                    reply_markup=kb_withdraw_blocked(cooldown_left, reason=reason),
+                )
             except Exception:
                 await message.answer("🧰" , reply_markup=_kb_info_back(cooldown_left))
 
             user_gift.pop(user_id , None)
-            print(f"🧹 [WITHDRAW][FINISH] EXIT blocked. left={cooldown_left}")
+            print(f"🧹 [WITHDRAW][FINISH] EXIT blocked. left={cooldown_left} crumbs={crumbs}")
             return
 
         # ---- 5. Получаем баланс и TON ----
