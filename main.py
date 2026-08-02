@@ -13607,10 +13607,12 @@ def _kb_withdraw_locked(
     if rs:
         if rs == "cooldown_active":
             pretty_reason = "кулдаун"
-        elif rs in ("limit_reached", "LIMIT_REACHED"):
+        elif rs in ("limit_reached", "LIMIT_REACHED", "daily_limit_reached"):
             pretty_reason = "лимит достигнут"
-        elif rs == "min_withdraw_block":
-            pretty_reason = "мин. вывод выше остатка"
+        elif rs in ("unspendable_remainder", "unspendable_cap", "min_withdraw_block"):
+            pretty_reason = "остаток меньше мин. подарка"
+        elif rs == "need_higher_limit":
+            pretty_reason = "нужно повысить лимит"
         elif rs == "refresh_failed":
             pretty_reason = "ошибка обновления лимитов"
         else:
@@ -13621,12 +13623,23 @@ def _kb_withdraw_locked(
     rows.append([InlineKeyboardButton(text="Вывод недоступен", callback_data="noop", style="danger" ,
                 icon_custom_emoji_id="5449505950283078474")])
 
-    # таймер - только если есть
+    # таймер - только если есть (обычный процесс: после него снова полный лимит ~100)
     if left_i > 0:
         rows.append([InlineKeyboardButton(
             text=f"Осталось : {_fmt_hms_safe(left_i)}",
             callback_data="noop", style="default" ,
                 icon_custom_emoji_id="5891211339170326418"
+        )])
+    elif rs == "need_higher_limit":
+        rows.append([InlineKeyboardButton(
+            text="Повысьте лимит вывода",
+            callback_data="noop", style="default",
+            icon_custom_emoji_id="5420542898452077602"
+        )])
+        rows.append([InlineKeyboardButton(
+            text="Пополнить баланс",
+            callback_data="insert_stars", style="default",
+            icon_custom_emoji_id="6039573425268201570"
         )])
 
     rows.append([InlineKeyboardButton(
@@ -13724,22 +13737,29 @@ async def render_conc_stars_screen(*args, **kwargs):
     reason = str(state.get("reason") or "")
 
     # ---- 4. Остаток меньше мин. подарка ----
-    # Таймер ставит refresh_withdraw_quota_if_needed (unspendable_*).
-    # Здесь только лог для экрана «повысьте лимит» без активного кулдауна.
-    if allowed and remaining > 0 and min_withdraw > 0 and remaining < min_withdraw:
+    # Таймер обязан поставить refresh (unspendable_*). Если по любой причине
+    # refresh вернул «allowed» с крошками — блокируем экран сами.
+    crumbs_blocked = bool(min_withdraw > 0 and remaining > 0 and remaining < min_withdraw)
+    if crumbs_blocked:
         print(
             f"🟨 [CONC_STARS][MIN] uid={user_id} остаток {remaining} < мин.подарка {min_withdraw} "
-            f"limit={daily_limit} reason={reason!r}")
+            f"limit={daily_limit} reason={reason!r} allowed={allowed} cd={cooldown_left}")
 
-    # ---- 5. Если вывод запрещён / кулдаун / остаток исчерпан – блокировка ----
-    if (not allowed) or (remaining <= 0) or (cooldown_left > 0):
+    # ---- 5. Если вывод запрещён / кулдаун / крошки / need_higher – блокировка ----
+    if (
+        (not allowed)
+        or (remaining <= 0)
+        or (cooldown_left > 0)
+        or crumbs_blocked
+        or reason == "need_higher_limit"
+    ):
         try:
             kb_locked = _kb_withdraw_locked(
                 int(cooldown_left),
                 daily_limit=int(daily_limit),
                 used=int(used),
                 remaining=int(remaining),
-                reason=str(reason or ""),
+                reason=str(reason or ("unspendable_remainder" if crumbs_blocked else "")),
                 back_callback=back_callback,
             )
         except Exception as e:
@@ -13794,16 +13814,18 @@ async def render_conc_stars_screen(*args, **kwargs):
                                   icon_custom_emoji_id="5226660202035554522")]
         ])
 
-    # ---- 8. ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ ----
+    # ---- 8. Актуальный дневной лимит (не «крошки» remaining) ----
     try:
-        user_limit = remaining  # await db.get_user_canwithdrawal(user_id) – закомментировано
-        user_limit = int(user_limit or 0)
+        user_limit = int(daily_limit or 0)
+        if user_limit <= 0:
+            user_limit = int(await db.get_canwithdrawal(user_id) or 0)
     except Exception as e:
         print(f"🟥 [CONC_STARS][CANWITHDRAWAL] err={e!r}")
-        user_limit = daily_limit
+        user_limit = int(daily_limit or 0)
 
     # ---- 9. Расчёт "красивого" лимита и необходимой покупки ----
-    STEP = MIN_WITHDRAW_STEP
+    # Шаг «красивого» порога — не ниже цены самого дешёвого подарка.
+    STEP = max(int(MIN_WITHDRAW_STEP or 15), int(min_withdraw or 0) or int(MIN_WITHDRAW_STEP or 15))
     BONUS_PERCENT = Decimal('0.03')
 
     def calculate_purchase_to_target(limit, step, bonus_pct):
@@ -23872,7 +23894,12 @@ async def ensure_can_withdraw(
         return False
 
     try:
-        st = await dbx.refresh_withdraw_quota_if_needed(uid)
+        min_w = int(await get_min_gift_price_now(bot1) or 0)
+    except Exception:
+        min_w = 0
+
+    try:
+        st = await dbx.refresh_withdraw_quota_if_needed(uid, min_withdraw_amount=int(min_w or 0))
     except Exception as e:
         print(f"[WITHDRAW][ERROR] refresh_withdraw_quota_if_needed failed uid={uid}: {e!r}")
         try:
@@ -23887,13 +23914,30 @@ async def ensure_can_withdraw(
     used = st.get("used")
     cooldown_left = int(st.get("cooldown_left") or 0)
     reason = str(st.get("reason") or "")
+    if min_w > 0 and remaining > 0 and remaining < min_w:
+        allowed = False
+        reason = reason or "unspendable_remainder"
 
     print(f"🟦 Лимиты(UI-STATE): allowed={allowed} limit={daily_limit} used={used} remaining={remaining} cd_left={cooldown_left} cause='{reason}'")
 
-    # кулдаун
-    if not allowed and cooldown_left > 0:
+    # кулдаун / крошки < мин. подарка / need_higher
+    if not allowed:
         try:
-            await cb.answer(f"⏳ Кулдаун активен. Осталось: {cooldown_left} сек.", show_alert=True)
+            if cooldown_left > 0:
+                await cb.answer(f"⏳ Кулдаун активен. Осталось: {cooldown_left} сек.", show_alert=True)
+            elif reason == "need_higher_limit":
+                await cb.answer(
+                    f"⚠️ Лимит вывода ниже мин. подарка ({_fmt_dot_int(min_w)} ⭐). Повысьте лимит.",
+                    show_alert=True,
+                )
+            elif min_w > 0 and remaining < min_w:
+                await cb.answer(
+                    f"⚠️ Остаток {_fmt_dot_int(remaining)} меньше мин. подарка {_fmt_dot_int(min_w)} ⭐.\n"
+                    f"Дождитесь обновления лимита.",
+                    show_alert=True,
+                )
+            else:
+                await cb.answer("⚠️ Вывод временно недоступен. Подождите обновления лимита.", show_alert=True)
         except Exception:
             pass
         return False
@@ -23902,6 +23946,17 @@ async def ensure_can_withdraw(
     if remaining <= 0:
         try:
             await cb.answer("⚠️ Лимит вывода исчерпан. Подождите обновления лимита.", show_alert=True)
+        except Exception:
+            pass
+        return False
+
+    # сумма меньше самого дешёвого подарка
+    if min_w > 0 and amt < min_w:
+        try:
+            await cb.answer(
+                f"⚠️ Минимальный вывод: {_fmt_dot_int(min_w)} ⭐ (самый дешёвый подарок).",
+                show_alert=True,
+            )
         except Exception:
             pass
         return False
@@ -29281,11 +29336,11 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
         print(f"🟥 [WITHDRAW][BACK][MIN] err: {e!r}")
         min_withdraw = 0
 
-    # ---- Обновляем лимиты ----
+    # ---- Обновляем лимиты (мин. = самый дешёвый подарок из каталога) ----
     try:
         state = await db.refresh_withdraw_quota_if_needed(
             user_id,
-            min_withdraw_amount=int(min_withdraw or int(globals().get("WITHDRAW_MIN_AMOUNT", 15) or 15)),
+            min_withdraw_amount=int(min_withdraw or 0),
         )
     except Exception as e:
         print(f"🟥 [WITHDRAW][BACK][ERROR] refresh_withdraw_quota_if_needed: {type(e).__name__}: {e!r}")
@@ -29305,17 +29360,24 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
     used = int(state.get("used") or 0) if state.get("used") is not None else 0
     remaining = int(state.get("remaining") or 0)
     reason = str(state.get("reason") or state.get("cause") or "")
+    crumbs_blocked = bool(min_withdraw > 0 and remaining > 0 and remaining < min_withdraw)
 
     # ---- Блокировка ----
-    # Таймер ставит refresh (в т.ч. unspendable_* при остатке < мин. подарка).
-    if (not allowed) or (remaining <= 0) or (cooldown_left > 0):
+    # Таймер ставит refresh (unspendable_* при остатке < мин. подарка).
+    if (
+        (not allowed)
+        or (remaining <= 0)
+        or (cooldown_left > 0)
+        or crumbs_blocked
+        or reason == "need_higher_limit"
+    ):
         try:
             kb_locked = _kb_withdraw_locked(
                 int(cooldown_left),
                 daily_limit=int(daily_limit),
                 used=int(used),
                 remaining=int(remaining),
-                reason=str(reason or ""),
+                reason=str(reason or ("unspendable_remainder" if crumbs_blocked else "")),
                 back_callback=back_callback,
             )
         except Exception as e:
@@ -29373,16 +29435,17 @@ async def back_to_stars_choice(callback_query: types.CallbackQuery):
                                   icon_custom_emoji_id="5226660202035554522")]
         ])
 
-    # ---- ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
+    # ---- Актуальный дневной лимит (не remaining) ----
     try:
-        user_limit = remaining#await db.get_user_canwithdrawal(user_id)
-        user_limit = int(user_limit or 0)
+        user_limit = int(daily_limit or 0)
+        if user_limit <= 0:
+            user_limit = int(await db.get_canwithdrawal(user_id) or 0)
     except Exception as e:
         print(f"🟥 [WITHDRAW][BACK][CANWITHDRAWAL] err={e!r}")
-        user_limit = daily_limit  # fallback
+        user_limit = int(daily_limit or 0)
 
     # ---- Расчёт "красивого" лимита и необходимой покупки ----
-    STEP = MIN_WITHDRAW_STEP
+    STEP = max(int(MIN_WITHDRAW_STEP or 15), int(min_withdraw or 0) or int(MIN_WITHDRAW_STEP or 15))
     BONUS_PERCENT = Decimal('0.03')
 
     def calculate_purchase_to_target(limit, step, bonus_pct):
@@ -31192,9 +31255,13 @@ async def process_user_gift_recipient(message: types.Message):
         await message.answer("✨", reply_markup=ReplyKeyboardRemove())
 
         try:
+            _min_gift = int(await get_min_gift_price_now(bot1) or 0)
+        except Exception:
+            _min_gift = 0
+        try:
             state = await db.refresh_withdraw_quota_if_needed(
                 user_id,
-                min_withdraw_amount=int(globals().get("WITHDRAW_MIN_AMOUNT", 15))
+                min_withdraw_amount=int(_min_gift or 0),
             )
         except Exception as e:
             print(f"[WITHDRAW][GIFT][FINISH][ERROR] refresh_withdraw_quota_if_needed: {type(e).__name__}: {e!r}")
@@ -34959,8 +35026,12 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
         # ---- 3. Получаем актуальное состояние вывода ----
         try:
+            _min_gift = int(await get_min_gift_price_now(bot1) or 0)
+        except Exception:
+            _min_gift = 0
+        try:
             state = await db.refresh_withdraw_quota_if_needed(
-                user_id , min_withdraw_amount=MIN_WITHDRAW_STEP)
+                user_id , min_withdraw_amount=int(_min_gift or 0))
             print(f"🧠 [WITHDRAW][STATE] {state}")
         except Exception as e:
             print(f"🟥 [WITHDRAW][FINISH] refresh_withdraw_quota_if_needed: {type(e).__name__}: {e}")

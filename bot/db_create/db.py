@@ -9962,16 +9962,19 @@ class Database:
         ✅ UI/статус квоты + лечение устаревшего окна.
 
         Кулдаун по-прежнему рождается при исчерпании лимита выводом
-        (add_withdraw_strict). Дополнительно — одноразовый таймер, когда
-        остаток окна больше 0, но меньше цены самого дешёвого подарка:
-        иначе «крошки» (например 6 при мин. подарке 15) зависали навсегда.
+        (add_withdraw_strict). Дополнительно — таймер, когда остаток окна
+        больше 0, но меньше цены самого дешёвого подарка: иначе «крошки»
+        (например 8 при мин. подарке 15) зависали на экране «Мин. вывод»
+        без таймера.
 
-        Правила для остатка < мин. подарка:
-        - daily_limit ≥ мин. подарка → таймер `unspendable_remainder`, после
-          него окно сбрасывается и лимит снова полный;
-        - daily_limit < мин. подарка → таймер `unspendable_cap` один раз на
-          цикл; после сброса статус NEED_HIGHER_LIMIT (без вечного цикла),
-          пока лимит не вырастет (донат).
+        Правила для остатка < мин. подарка (min_withdraw_amount = min цена
+        подарка из каталога):
+        - daily_limit ≥ мин. подарка → всегда таймер `unspendable_remainder`;
+          после него окно сбрасывается и снова доступен полный лимит
+          (обычно 100);
+        - daily_limit < мин. подарка → один цикл `unspendable_cap`, затем
+          NEED_HIGHER_LIMIT с allowed=False (нужно повысить лимит донатом),
+          без вечного цикла таймеров.
         """
 
         t0 = time.perf_counter()
@@ -10092,14 +10095,14 @@ class Database:
 
                 if cd_row is not None:
                     served_cause = str(cd_row [ "cause" ] or "")
-                    # Таймер отбыт. Перевод окна безусловный.
+                    # Таймер отбыт. Перевод окна безусловный → снова полный daily_limit.
                     await self._advance_withdraw_window_locked(
                         conn , user_id=uid , daily_limit=int(dl_i) , reason="cooldown_served")
                     # Весь дневной лимит ниже мин. подарка — после одного цикла
-                    # не ставим таймер снова (иначе вечный loop 6→таймер→6).
-                    if served_cause in ("unspendable_cap" , "unspendable_remainder") and (
-                            min_w <= 0 or dl_i < min_w):
+                    # не ставим таймер снова (иначе вечный loop 8→таймер→8).
+                    if served_cause == "unspendable_cap" and min_w > 0 and dl_i < min_w:
                         mark_need_higher = True
+                    # unspendable_remainder при достаточном лимите → окно полное, дальше ок.
 
                 # 3) window_started_at
                 ws = await conn.fetchval(
@@ -10121,8 +10124,8 @@ class Database:
 
                 remaining = max(0 , int(dl_i) - int(used_truth))
 
-                # Лимит вырос после NEED_HIGHER_LIMIT — снимаем «замок» до проверки крошек
-                if prev_status == "NEED_HIGHER_LIMIT" and min_w > 0 and dl_i >= min_w:
+                # Лимит вырос (донат/орёл) — снимаем «замок» NEED_HIGHER_LIMIT
+                if (mark_need_higher or prev_status == "NEED_HIGHER_LIMIT") and min_w > 0 and dl_i >= min_w:
                     prev_status = "OK"
                     mark_need_higher = False
 
@@ -10142,39 +10145,42 @@ class Database:
                             """ , uid , ws) or 0)
                     remaining = max(0 , int(dl_i) - int(used_truth))
 
-                # 6) остаток меньше мин. подарка — одноразовый таймер обновления окна
-                if (
+                # 6) остаток меньше мин. подарка — таймер обновления окна (полный лимит снова)
+                #    Если лимит окна ≥ мин. подарка — ставим ВСЕГДА (даже после старого
+                #    NEED_HIGHER_LIMIT): это обычный процесс «крошки → таймер → снова ~100».
+                crumbs_unspendable = (
                     remaining > 0
                     and min_w > 0
                     and remaining < min_w
-                    and not mark_need_higher
-                    and prev_status != "NEED_HIGHER_LIMIT"
-                ):
-                    if dl_i >= min_w:
-                        # Крошки большого лимита: после таймера снова полный лимит.
-                        await self._set_withdraw_cooldown_idempotent(
-                            conn , user_id=uid , cooldown_seconds=int(cd_i) ,
-                            cause="unspendable_remainder")
-                        left_i = int(cd_i)
-                        await conn.execute(
-                            """
-                            UPDATE withdraw_quota_window
-                            SET status='COOLDOWN',
-                                cooldown_left_sec=$2,
-                                cooldown_until=NOW() + ($2::bigint * INTERVAL '1 second'),
-                                remaining=0,
-                                used_percent=0,
-                                updated_at=NOW()
-                            WHERE user_id=$1
-                            """ , uid , left_i)
-                        print(
-                            f"[ЛИМИТЫ][UNSPENDABLE] uid={uid} remainder={remaining}<min={min_w} "
-                            f"limit={dl_i} → таймер unspendable_remainder {left_i}s")
-                        return {"allowed": False , "remaining": 0 , "daily_limit": int(dl_i) ,
-                                "used": int(used_truth) , "cooldown_left": int(left_i) ,
-                                "cooldown_seconds": int(cd_i) ,
-                                "reason": "unspendable_remainder" , "cause": "unspendable_remainder"}
-                    # Весь лимит ниже мин. подарка — один цикл таймера, затем NEED_HIGHER_LIMIT
+                )
+                if crumbs_unspendable and dl_i >= min_w:
+                    await self._set_withdraw_cooldown_idempotent(
+                        conn , user_id=uid , cooldown_seconds=int(cd_i) ,
+                        cause="unspendable_remainder")
+                    left_i = int(cd_i)
+                    await conn.execute(
+                        """
+                        UPDATE withdraw_quota_window
+                        SET status='COOLDOWN',
+                            cooldown_left_sec=$2,
+                            cooldown_until=NOW() + ($2::bigint * INTERVAL '1 second'),
+                            remaining=0,
+                            used_percent=0,
+                            updated_at=NOW()
+                        WHERE user_id=$1
+                        """ , uid , left_i)
+                    print(
+                        f"[ЛИМИТЫ][UNSPENDABLE] uid={uid} remainder={remaining}<min={min_w} "
+                        f"limit={dl_i} → таймер unspendable_remainder {left_i}s "
+                        f"(после таймера снова полный лимит {dl_i})")
+                    return {"allowed": False , "remaining": 0 , "daily_limit": int(dl_i) ,
+                            "used": int(used_truth) , "cooldown_left": int(left_i) ,
+                            "cooldown_seconds": int(cd_i) ,
+                            "reason": "unspendable_remainder" , "cause": "unspendable_remainder" ,
+                            "min_withdraw": int(min_w)}
+
+                if crumbs_unspendable and dl_i < min_w and not mark_need_higher and prev_status != "NEED_HIGHER_LIMIT":
+                    # Весь лимит ниже мин. подарка — один цикл таймера, затем need_higher
                     await self._set_withdraw_cooldown_idempotent(
                         conn , user_id=uid , cooldown_seconds=int(cd_i) ,
                         cause="unspendable_cap")
@@ -10196,7 +10202,8 @@ class Database:
                     return {"allowed": False , "remaining": 0 , "daily_limit": int(dl_i) ,
                             "used": int(used_truth) , "cooldown_left": int(left_i) ,
                             "cooldown_seconds": int(cd_i) ,
-                            "reason": "unspendable_cap" , "cause": "unspendable_cap"}
+                            "reason": "unspendable_cap" , "cause": "unspendable_cap" ,
+                            "min_withdraw": int(min_w)}
 
                 # ✅ в окно пишем безопасное used_store (не больше dl_i)
                 used_store = min(int(used_truth) , int(dl_i))
@@ -10205,17 +10212,20 @@ class Database:
                 if mark_need_higher or (
                         prev_status == "NEED_HIGHER_LIMIT"
                         and min_w > 0
-                        and remaining > 0
-                        and remaining < min_w
                         and dl_i < min_w):
                     status = "NEED_HIGHER_LIMIT"
                     reason = "need_higher_limit"
+                    # Не отдаём «allowed» с крошками — иначе UI показывает «Мин. вывод»
+                    # без таймера и пользователь застревает.
+                    allowed_out = False
                 elif remaining > 0:
                     status = "OK"
                     reason = "ok"
+                    allowed_out = True
                 else:
                     status = "LIMIT_REACHED"
                     reason = "daily_limit_reached"
+                    allowed_out = False
 
                 await conn.execute(
                     """
@@ -10234,13 +10244,13 @@ class Database:
                 print(
                     f"🟦[ЛИМИТЫ][STATE] uid={uid} ws={ws} limit={dl_i} used_truth={used_truth} "
                     f"used_store={used_store} remaining={remaining} used_percent={used_percent_i} "
-                    f"status={status} min_w={min_w}")
+                    f"status={status} min_w={min_w} allowed={allowed_out}")
 
                 dt = time.perf_counter() - t0
                 _vdbg(f"🟩[ЛИМИТЫ][REFRESH][OK] uid={uid} dt={dt:.4f}s")
-                return {"allowed": bool(remaining > 0) , "remaining": int(remaining) , "daily_limit": int(dl_i) ,
+                return {"allowed": bool(allowed_out) , "remaining": int(remaining) , "daily_limit": int(dl_i) ,
                         "used": int(used_truth) , "cooldown_left": 0 , "cooldown_seconds": int(cd_i) ,
-                        "reason": reason}
+                        "reason": reason , "min_withdraw": int(min_w)}
 
     async def ensure_withdraw_schema(self) -> None:
         """

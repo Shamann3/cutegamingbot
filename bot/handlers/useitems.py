@@ -188,12 +188,22 @@ async def eaglewithdrawal(db, user_id: int, message):
         except Exception as e:
             print(f"[ITEM][EAGLE][WARN] cooldown cleanup err={e!r}")
 
-        # 5) Пересчитываем quota window сразу, чтобы UI/проверки увидели новый лимит в этот же момент
+        # 5) Пересчитываем quota window сразу, чтобы UI/проверки увидели новый лимит в этот же момент.
+        #    min_withdraw из каталога подарков — чтобы «крошки» < мин. подарка сразу ушли в таймер.
+        min_w = 0
+        try:
+            from bot.design.buttons import get_min_withdraw_amount_from_gifts
+            bot_obj = getattr(message, "bot", None)
+            if bot_obj is not None:
+                min_w = int(await get_min_withdraw_amount_from_gifts(bot_obj) or 0)
+        except Exception as e:
+            print(f"[ITEM][EAGLE][WARN] min gift price err={e!r}")
         try:
             state = await db.refresh_withdraw_quota_if_needed(
                 uid,
                 daily_limit=int(new_limit_value),
                 cooldown_seconds=int(current_cooldown),
+                min_withdraw_amount=int(min_w or 0),
             )
             new_limit = int(state.get("daily_limit") or new_limit_value)
         except Exception as e:
