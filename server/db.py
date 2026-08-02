@@ -254,7 +254,10 @@ class Database:
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         expires_at TIMESTAMPTZ NOT NULL,
                         resolved_at TIMESTAMPTZ,
-                        resolution TEXT CHECK (resolution IN ('used', 'expired'))
+                        resolution TEXT CHECK (resolution IN ('used', 'expired', 'released')),
+                        -- TRUE = купон уже списан при броне (legacy). FALSE = спишется
+                        -- только при успешной покупке; при expire/release возвращать нечего.
+                        coupon_held BOOLEAN NOT NULL DEFAULT TRUE
                     );
                     CREATE UNIQUE INDEX IF NOT EXISTS coupon_reservations_active_uniq
                         ON coupon_reservations (user_id) WHERE resolved_at IS NULL;
@@ -270,6 +273,28 @@ class Database:
                     );
                     CREATE INDEX IF NOT EXISTS discounted_holdings_user_item_idx
                         ON discounted_holdings (user_id, item_id, unit_paid ASC, id ASC);
+                    """
+                )
+                # Живые БД: колонка + расширенный CHECK resolution.
+                await conn.execute(
+                    """
+                    ALTER TABLE coupon_reservations
+                        ADD COLUMN IF NOT EXISTS coupon_held BOOLEAN NOT NULL DEFAULT TRUE
+                    """
+                )
+                await conn.execute(
+                    """
+                    DO $coupon_res$
+                    BEGIN
+                        ALTER TABLE coupon_reservations
+                            DROP CONSTRAINT IF EXISTS coupon_reservations_resolution_check;
+                        ALTER TABLE coupon_reservations
+                            ADD CONSTRAINT coupon_reservations_resolution_check
+                            CHECK (resolution IS NULL OR resolution IN ('used', 'expired', 'released'));
+                    EXCEPTION WHEN others THEN
+                        NULL;
+                    END
+                    $coupon_res$
                     """
                 )
             except Exception as _coupon_schema_err:
@@ -1260,32 +1285,104 @@ class Database:
         return dex_catalog.count_in_raw_items(raw_items, COUPON_ITEM_ID)
 
     @staticmethod
-    async def _expire_coupon_reservations(conn, user_id):
-        """Погасить просроченные брони. Купон при этом не возвращается.
+    async def _refund_held_coupon(conn, user_id):
+        """Вернуть 1 купон в инвентарь (только для legacy coupon_held=TRUE)."""
+        from config import COUPON_ITEM_ID
+        from dex_catalog import dex_catalog
 
-        Возврат сделал бы ожидание бесплатной перекруткой процента, а уникальный
-        индекс coupon_reservations_active_uniq иначе навсегда заблокировал бы
-        игроку купоны.
+        coupon_canon = dex_catalog.canonical_key(COUPON_ITEM_ID)
+        items_raw = await conn.fetchval(
+            "SELECT items FROM users WHERE user_id = $1", user_id
+        )
+        raw_items = parse_items(items_raw)
+        stored = dex_catalog.add_to_raw_items(raw_items, coupon_canon, 1)
+        await conn.execute(
+            "UPDATE users SET items = $2 WHERE user_id = $1",
+            user_id,
+            items_to_db(stored),
+        )
+
+    @staticmethod
+    async def _expire_coupon_reservations(conn, user_id):
+        """Погасить просроченные брони.
+
+        Новые брони (coupon_held=FALSE) купон не держат — только снимаем бронь
+        процента. Legacy-брони (coupon_held=TRUE) возвращают купон в инвентарь.
+        Перекрутка процента после TTL возможна, но без сжигания купона.
         """
+        held_rows = await conn.fetch(
+            """
+            SELECT id FROM coupon_reservations
+            WHERE user_id = $1
+              AND resolved_at IS NULL
+              AND expires_at <= NOW()
+              AND coupon_held IS TRUE
+            FOR UPDATE
+            """,
+            user_id,
+        )
+        for row in held_rows:
+            await Database._refund_held_coupon(conn, user_id)
+            await conn.execute(
+                """
+                UPDATE coupon_reservations
+                SET resolved_at = NOW(), resolution = 'expired'
+                WHERE id = $1 AND resolved_at IS NULL
+                """,
+                row["id"],
+            )
         await conn.execute(
             """
             UPDATE coupon_reservations
             SET resolved_at = NOW(), resolution = 'expired'
-            WHERE user_id = $1 AND resolved_at IS NULL AND expires_at <= NOW()
+            WHERE user_id = $1
+              AND resolved_at IS NULL
+              AND expires_at <= NOW()
             """,
             user_id,
         )
 
+    async def release_coupon_reservation(self, user_id, *, reason="released"):
+        """Снять активную бронь (отмена). Legacy coupon_held → возврат купона."""
+        resolution = "released" if reason == "released" else "expired"
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT 1 FROM users WHERE user_id = $1 FOR UPDATE", user_id
+                )
+                active = await conn.fetchrow(
+                    """
+                    SELECT id, coupon_held FROM coupon_reservations
+                    WHERE user_id = $1 AND resolved_at IS NULL
+                    FOR UPDATE
+                    """,
+                    user_id,
+                )
+                if not active:
+                    return False
+                if bool(active["coupon_held"]):
+                    await self._refund_held_coupon(conn, user_id)
+                await conn.execute(
+                    """
+                    UPDATE coupon_reservations
+                    SET resolved_at = NOW(), resolution = $2
+                    WHERE id = $1 AND resolved_at IS NULL
+                    """,
+                    active["id"],
+                    resolution,
+                )
+                return True
+
     async def reserve_coupon_discount(self, user_id, item_id, source="webapp"):
-        """Списать купон и зафиксировать выпавший процент.
+        """Зафиксировать выпавший процент БЕЗ списания купона.
 
-        Списание происходит здесь, отдельной закоммиченной транзакцией, а не
-        внутри покупки. Иначе неудачная покупка (не хватило кут) откатывала
-        списание купона вместе с процентом, и его можно было перекручивать
-        бесплатно, пока не выпадет максимум.
+        Купон списывается только при успешной покупке (в той же транзакции).
+        Бронь процента живёт отдельно: пока она активна, процент НЕ
+        перекручивается (перевешиваем item_id). Так нельзя бесплатно крутить
+        скидку до максимума, и нельзя узнать процент до покупки — API его
+        клиенту не отдаёт до purchased.couponApplied.
 
-        Если активная бронь уже есть, процент НЕ перекручивается — бронь просто
-        перевешивается на новый предмет с тем же процентом и без продления срока.
+        Если активная бронь уже есть — возвращаем её (тот же percent).
         """
         from config import COUPON_ITEM_ID
         from coupon_rules import reservation_ttl_seconds, roll_discount_percent
@@ -1304,7 +1401,7 @@ class Database:
 
                 active = await conn.fetchrow(
                     """
-                    SELECT id, percent FROM coupon_reservations
+                    SELECT id, percent, coupon_held FROM coupon_reservations
                     WHERE user_id = $1 AND resolved_at IS NULL
                     """,
                     user_id,
@@ -1325,17 +1422,12 @@ class Database:
                     raise ValueError("У вас нет купона на скидку")
 
                 percent = roll_discount_percent()
-                stored = dex_catalog.take_from_raw_items(raw_items, coupon_canon, 1)
-                await conn.execute(
-                    "UPDATE users SET items = $2 WHERE user_id = $1",
-                    user_id,
-                    items_to_db(stored),
-                )
+                # Купон в инвентаре НЕ трогаем — только бронь процента.
                 reservation_id = await conn.fetchval(
                     """
                     INSERT INTO coupon_reservations
-                        (user_id, item_id, percent, source, expires_at)
-                    VALUES ($1, $2, $3, $4, NOW() + ($5 || ' seconds')::interval)
+                        (user_id, item_id, percent, source, expires_at, coupon_held)
+                    VALUES ($1, $2, $3, $4, NOW() + ($5 || ' seconds')::interval, FALSE)
                     RETURNING id
                     """,
                     user_id,
@@ -1348,21 +1440,22 @@ class Database:
 
     @staticmethod
     async def claim_coupon_reservation(conn, reservation_id):
-        """Погасить бронь ровно один раз и вернуть её процент.
+        """Погасить бронь ровно один раз и вернуть (percent, coupon_held).
 
-        Атомарный UPDATE вместо «прочитал — применил — погасил»: два
-        одновременных подтверждения покупки иначе оба увидели бы активную бронь и
-        оба получили бы скидку с одного купона.
+        Атомарный UPDATE: два одновременных confirm иначе оба взяли бы скидку.
         """
-        return await conn.fetchval(
+        row = await conn.fetchrow(
             """
             UPDATE coupon_reservations
             SET resolved_at = NOW(), resolution = 'used'
             WHERE id = $1 AND resolved_at IS NULL
-            RETURNING percent
+            RETURNING percent, coupon_held
             """,
             reservation_id,
         )
+        if row is None:
+            return None
+        return int(row["percent"]), bool(row["coupon_held"])
 
     @staticmethod
     async def _record_discounted_units(conn, user_id, item_id, quantity, unit_paid):
@@ -1464,7 +1557,8 @@ class Database:
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     expires_at TIMESTAMPTZ NOT NULL,
                     resolved_at TIMESTAMPTZ,
-                    resolution TEXT CHECK (resolution IN ('used', 'expired'))
+                    resolution TEXT CHECK (resolution IN ('used', 'expired', 'released')),
+                    coupon_held BOOLEAN NOT NULL DEFAULT TRUE
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS coupon_reservations_active_uniq
                     ON coupon_reservations (user_id) WHERE resolved_at IS NULL;
@@ -1480,6 +1574,27 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS discounted_holdings_user_item_idx
                     ON discounted_holdings (user_id, item_id, unit_paid ASC, id ASC);
+                """
+            )
+            await conn.execute(
+                """
+                ALTER TABLE coupon_reservations
+                    ADD COLUMN IF NOT EXISTS coupon_held BOOLEAN NOT NULL DEFAULT TRUE
+                """
+            )
+            await conn.execute(
+                """
+                DO $coupon_res$
+                BEGIN
+                    ALTER TABLE coupon_reservations
+                        DROP CONSTRAINT IF EXISTS coupon_reservations_resolution_check;
+                    ALTER TABLE coupon_reservations
+                        ADD CONSTRAINT coupon_reservations_resolution_check
+                        CHECK (resolution IS NULL OR resolution IN ('used', 'expired', 'released'));
+                EXCEPTION WHEN others THEN
+                    NULL;
+                END
+                $coupon_res$
                 """
             )
 
@@ -1615,8 +1730,8 @@ class Database:
             preview_unit_cost = effective_price(preview["price"], preview["dis"])
             if preview_unit_cost < 0:
                 raise ValueError("Этот предмет нельзя купить")
-            # Купон списывается при применении, поэтому нельзя позволить сжечь его
-            # на покупке, которая не может состояться ни при каком проценте.
+            # Даже при макс. скидке покупка должна быть возможна — иначе бронь
+            # процента создастся впустую (купон при этом уже не сгорает).
             best_case_cost, _ = apply_coupon_to_cost(
                 preview_unit_cost,
                 min(quantity, int(preview["remains"] or 0)),
@@ -1627,9 +1742,9 @@ class Database:
             )
             if int(preview_balance or 0) < best_case_cost:
                 raise ValueError("У Вас недостаточно кут даже с максимальной скидкой")
-            # Бронь коммитится отдельно от покупки: если списывать купон внутри
-            # транзакции покупки, то отказ по нехватке кут откатывал списание, и
-            # процент можно было перекручивать бесплатно до максимума.
+            # Бронь процента коммитится отдельно; купон списывается только внутри
+            # транзакции покупки. Так процент нельзя перекрутить бесплатно
+            # (пока бронь жива — тот же %), и купон не сгорает при ошибке.
             try:
                 coupon_reservation_id, _ = await self.reserve_coupon_discount(
                     user_id, item_id, source="webapp"
@@ -1681,12 +1796,18 @@ class Database:
                         conn, coupon_reservation_id
                     )
                     if claimed is None:
-                        # Бронь погасило параллельное подтверждение покупки. Молча
-                        # взять полную цену нельзя — игрок этого не ожидает.
                         raise ValueError(
                             "Купон уже использован в другой покупке, попробуйте снова"
                         )
-                    coupon_percent = int(claimed)
+                    coupon_percent, coupon_already_held = claimed
+                    # Новая бронь: купон ещё в инвентаре — списываем здесь.
+                    # Legacy coupon_held: уже списан при броне — повторно не трогаем.
+                    if not coupon_already_held:
+                        if dex_catalog.count_in_raw_items(raw_items, coupon_canon) < 1:
+                            raise ValueError("У вас нет купона на скидку")
+                        raw_items = dex_catalog.take_from_raw_items(
+                            raw_items, coupon_canon, 1
+                        )
                     cost, coupon_saved = apply_coupon_to_cost(
                         unit_cost, buy_qty, coupon_percent
                     )

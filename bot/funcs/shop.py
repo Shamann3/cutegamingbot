@@ -3550,7 +3550,8 @@ async def handle_apply_coupon(call):
         await call.message.edit_text(
             f"<tg-emoji emoji-id='5377599075237502153'>🎟</tg-emoji> <b>Купон почти применён!</b>\n"
             f"{items_text}\n\n"
-            f"<tg-emoji emoji-id='5377599075237502153'>🎟</tg-emoji> <b>Нажмите «Купить», чтобы завершить покупку с купоном.</b>" ,
+            f"<tg-emoji emoji-id='5377599075237502153'>🎟</tg-emoji> <b>Нажмите «Купить», чтобы завершить покупку с купоном.</b>\n"
+            f"<i>Купон спишется только после успешной оплаты. Точный процент скидки заранее не показывается.</i>" ,
             reply_markup=keyboard ,
             parse_mode="HTML" ,
             disable_web_page_preview=True
@@ -4224,6 +4225,15 @@ async def process_cancel_callback(callback_query: types.CallbackQuery):
     # Удаляем сообщение с покупкой
     await callback_query.answer('✅ Сообщение с покупкой удалено')
     await callback_query.message.delete()
+
+    # Очищаем оффер купона: купон не списывался до покупки, бронь % в памяти снимаем.
+    try:
+        purchase_data = current_purchase_data.get(user_id)
+        if isinstance(purchase_data, dict):
+            purchase_data.pop("coupon_offer", None)
+            current_purchase_data[user_id] = purchase_data
+    except Exception as e:
+        print(f"⚠️ [DEBUG] clear coupon_offer on cancel failed: {e!r}")
 
     # Очищаем данные после отмены
     current_sale_data = {}

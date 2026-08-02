@@ -225,8 +225,7 @@ MULTIPLIER_BUYBACK = 0.8  # скидка при выкупе потерянны�
 COUPON_ITEM_NAME = "Купон на скидку"
 COUPON_DISCOUNT_MIN_PERCENT = int(os.getenv("COUPON_DISCOUNT_MIN_PERCENT", "20"))
 COUPON_DISCOUNT_MAX_PERCENT = int(os.getenv("COUPON_DISCOUNT_MAX_PERCENT", "75"))
-# Сколько живёт неиспользованная бронь купона. Купон списывается при применении и
-# по истечении срока не возвращается, иначе ожидание = бесплатная перекрутка.
+# TTL брони процента (WebApp). Купон списывается только после успешной покупки.
 COUPON_RESERVATION_TTL_SECONDS = int(os.getenv("COUPON_RESERVATION_TTL_SECONDS", "900"))
 # Купон действует на одну единицу предмета. Раньше он скидывал корзину целиком,
 # то есть до 500 CuteCoin или 1000 LoveCoin за один купон.

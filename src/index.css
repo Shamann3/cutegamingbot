@@ -7305,12 +7305,24 @@ body {
     font-variant-numeric: tabular-nums;
   }
 
+  .shop-modal-coupon-wrap {
+    width: 100%;
+    margin-top: 0.7rem;
+  }
+
+  .shop-modal-coupon-wrap--active {
+    padding: 0.15rem;
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(5, 14, 9, 0.35));
+    box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.22);
+  }
+
   .shop-modal-coupon {
     display: flex;
     align-items: center;
     gap: 0.55rem;
     width: 100%;
-    margin-top: 0.7rem;
+    margin-top: 0;
     padding: 0.55rem 0.65rem;
     border-radius: 12px;
     border: 1px solid rgba(212, 175, 55, 0.2);
@@ -7318,6 +7330,18 @@ body {
     cursor: pointer;
     text-align: left;
     transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .shop-modal-coupon-warn {
+    margin: 0.45rem 0.35rem 0.2rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: 10px;
+    border: 1px solid rgba(251, 191, 36, 0.35);
+    background: rgba(251, 191, 36, 0.1);
+    color: #fde68a;
+    font-size: 0.68rem;
+    font-weight: 650;
+    line-height: 1.4;
   }
 
   .shop-modal-coupon:hover {

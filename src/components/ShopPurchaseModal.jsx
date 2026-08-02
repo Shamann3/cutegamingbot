@@ -43,10 +43,10 @@ export default function ShopPurchaseModal({
   const couponMin = couponDiscount?.minPercent ?? 20
   const couponMax = couponDiscount?.maxPercent ?? 75
   const couponUnits = couponDiscount?.units ?? 1
-  // Точный процент выпадает на сервере и до завершения покупки не показывается,
-  // поэтому итоговую сумму заранее не знает и клиент. Но нижнюю границу цены
-  // (скидка максимальная, на couponUnits единиц) посчитать можно, и купон нельзя
-  // давать применить, если даже её не хватает: купон списывается при применении.
+  // Точный процент выпадает на сервере и до успешной покупки не показывается.
+  // Нижнюю границу цены (макс. скидка на couponUnits шт.) считаем только чтобы
+  // не дать начать покупку, которой не хватит кут даже в лучшем случае.
+  // Купон списывается только после успешной оплаты.
   const couponUnitCount = Math.min(quantity, couponUnits)
   const bestCaseCost = hasValidQuantity
     ? price * (quantity - couponUnitCount)
@@ -214,26 +214,34 @@ export default function ShopPurchaseModal({
           </div>
 
           {canUseCoupon ? (
-            <button
-              type="button"
-              className={`shop-modal-coupon${couponActive ? ' shop-modal-coupon--active' : ''}`}
-              onClick={() => setUseCoupon((prev) => !prev)}
-              aria-pressed={couponActive}
-            >
-              <span className="shop-modal-coupon-icon" aria-hidden>🎟</span>
-              <span className="shop-modal-coupon-copy">
-                <span className="shop-modal-coupon-title">Купон на скидку</span>
-                <span className="shop-modal-coupon-desc">
-                  {couponActive
-                    ? `Скидка ${couponMin}–${couponMax}% определится при покупке`
-                    + `, на ${couponUnits} шт. Купон списывается сразу и не возвращается`
-                    : `У вас: ${couponCount} шт. Нажмите, чтобы применить`}
+            <div className={`shop-modal-coupon-wrap${couponActive ? ' shop-modal-coupon-wrap--active' : ''}`}>
+              <button
+                type="button"
+                className={`shop-modal-coupon${couponActive ? ' shop-modal-coupon--active' : ''}`}
+                onClick={() => setUseCoupon((prev) => !prev)}
+                aria-pressed={couponActive}
+              >
+                <span className="shop-modal-coupon-icon" aria-hidden>🎟</span>
+                <span className="shop-modal-coupon-copy">
+                  <span className="shop-modal-coupon-title">Купон на скидку</span>
+                  <span className="shop-modal-coupon-desc">
+                    {couponActive
+                      ? `Скидка ${couponMin}–${couponMax}% на ${couponUnits} шт. выпадет только после покупки`
+                      : `У вас: ${couponCount} шт. Включите, чтобы купить со скидкой`}
+                  </span>
                 </span>
-              </span>
-              <span className="shop-modal-coupon-switch" aria-hidden>
-                <span className="shop-modal-coupon-switch-thumb" />
-              </span>
-            </button>
+                <span className="shop-modal-coupon-switch" aria-hidden>
+                  <span className="shop-modal-coupon-switch-thumb" />
+                </span>
+              </button>
+              {couponActive ? (
+                <p className="shop-modal-coupon-warn" role="note">
+                  Купон спишется только после успешной покупки.
+                  Точный процент скидки заранее не показывается — вы узнаете его
+                  в чеке после оплаты. Отмена или ошибка покупки купон не тратит.
+                </p>
+              ) : null}
+            </div>
           ) : null}
 
           {needsTopUp ? (

@@ -246,6 +246,15 @@ class DexCatalog:
                 break
         return apply_item_count_to_storage(stored, target, self.count_in_raw_items(stored, target))
 
+    def add_to_raw_items(self, raw_items: dict, item_ref: str, amount: int) -> dict:
+        """Добавить предмет в users.items (для возврата купона с legacy-брони)."""
+        target = self.resolve_item_id(item_ref)
+        amount = max(0, int(amount))
+        if amount <= 0:
+            return dict(raw_items or {})
+        current = self.count_in_raw_items(raw_items, target)
+        return apply_item_count_to_storage(raw_items or {}, target, current + amount)
+
     def as_client_dict(self) -> dict[str, dict[str, str]]:
         return {
             entry.id: {

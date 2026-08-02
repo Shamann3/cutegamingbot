@@ -510,8 +510,9 @@ COUPON_ITEM_ID = os.getenv("COUPON_ITEM_ID", "279")  # "Купон на скид
 # написана третья цифра.
 COUPON_DISCOUNT_MIN_PERCENT = int(os.getenv("COUPON_DISCOUNT_MIN_PERCENT", "20"))
 COUPON_DISCOUNT_MAX_PERCENT = int(os.getenv("COUPON_DISCOUNT_MAX_PERCENT", "75"))
-# Сколько живёт неиспользованная бронь купона. По истечении срока купон не
-# возвращается — иначе ожидание становится бесплатной перекруткой процента.
+# Сколько живёт неиспользованная бронь процента. Купон из инвентаря при броне
+# больше не списывается (только при успешной покупке). После TTL бронь снимается
+# и процент можно выпасть заново — без сжигания купона.
 COUPON_RESERVATION_TTL_SECONDS = int(os.getenv("COUPON_RESERVATION_TTL_SECONDS", "900"))
 # Ключи в users.items — id из таблицы dex
 SEED_ITEM_KEY = SEED_ITEM_ID
