@@ -33,17 +33,29 @@ def normalize_market_item_id(item_id: str) -> str:
 
 
 def market_blocked_item_ids() -> frozenset[str]:
-    blocked = set(seed_item_ids())
-    blocked.add(dex_catalog.canonical_key(WATER_ITEM_KEY))
-    blocked.add(dex_catalog.canonical_key(AUTOWATER_ITEM_KEY))
+    blocked = set()
+    try:
+        blocked.update(seed_item_ids())
+    except Exception as exc:
+        # Реестр культур ещё не прогрет — не валим биржу.
+        print(f"[MARKET][RULES][WARN] seed_item_ids: {exc!r}")
+    try:
+        blocked.add(dex_catalog.canonical_key(WATER_ITEM_KEY))
+        blocked.add(dex_catalog.canonical_key(AUTOWATER_ITEM_KEY))
+    except Exception as exc:
+        print(f"[MARKET][RULES][WARN] water keys: {exc!r}")
     return frozenset(blocked)
 
 
 def is_market_listable(item_id: str) -> bool:
-    canon = normalize_market_item_id(item_id)
-    if not canon:
+    try:
+        canon = normalize_market_item_id(item_id)
+        if not canon:
+            return False
+        return canon not in market_blocked_item_ids()
+    except Exception as exc:
+        print(f"[MARKET][RULES][WARN] is_market_listable({item_id!r}): {exc!r}")
         return False
-    return canon not in market_blocked_item_ids()
 
 def seller_label(user_id: int) -> str:
     tail = str(abs(int(user_id)))[-4:].rjust(4, "0")

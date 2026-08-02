@@ -676,7 +676,12 @@ async def farm_state(request: Request, user_id: int = Depends(rate_limit)):
     try:
         return await db.get_farm_state(user_id, persist_sync=False)
     except Exception as e:
-        raise _server_error(e, request)
+        # Один ретрай после ensure_user — редкий race на первом заходе.
+        try:
+            await db.ensure_user(user_id)
+            return await db.get_farm_state(user_id, persist_sync=False)
+        except Exception:
+            raise _server_error(e, request)
 
 
 @app.get("/api/inventory")

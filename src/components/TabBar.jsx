@@ -5,7 +5,6 @@ import { TAB_ACCENTS, TAB_ICONS } from './TabIcons'
 const PRIMARY = [
   { id: 'farm', label: 'Ферма' },
   { id: 'trade', label: 'Торговля' },
-  { id: 'giveaways', label: 'Розыгрыши' },
   { id: 'quests', label: 'Задания' },
   { id: 'profile', label: 'Профиль' },
 ]
@@ -28,7 +27,7 @@ export default function TabBar({ active, onChange }) {
             <button
               key={tab.id}
               type="button"
-              className={`app-tab-btn ${isActive ? 'app-tab-btn-active' : ''} ${isPulsing ? 'app-tab-btn-pulse' : ''} ${tab.id === 'giveaways' ? 'app-tab-btn-giveaways' : ''}`}
+              className={`app-tab-btn ${isActive ? 'app-tab-btn-active' : ''} ${isPulsing ? 'app-tab-btn-pulse' : ''}`}
               data-onboarding-tab={tab.id}
               data-tab={tab.id}
               aria-current={isActive ? 'page' : undefined}

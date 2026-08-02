@@ -4,7 +4,6 @@ import { OnboardingProvider, useOnboardingOptional } from './context/OnboardingC
 import FarmModule from './components/FarmModule'
 import CraftModule from './components/CraftModule'
 import TradeModule from './components/TradeModule'
-import GiveawaysModule from './components/GiveawaysModule'
 import ChestModule from './components/ChestModule'
 import InventoryModule from './components/InventoryModule'
 import QuestsModule from './components/QuestsModule'
@@ -149,19 +148,12 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment, farmSegment, set
     setTradeSegment('market')
   }, [setTab, setTradeSegment])
 
-  const handleGiveawayNavigateCondition = useCallback((target) => {
-    if (target === 'trade') {
-      setTab('trade')
-    } else if (target === 'farm-inventory') {
-      setTab('farm')
-      setFarmSegment('inventory')
-    } else {
-      setTab('farm')
-      setFarmSegment('plots')
-    }
-  }, [setTab, setFarmSegment])
-
   useSwipeTabs({ activeTab: tab, onChange: setTab, enabled: !blockSwipe })
+
+  // Если deep-link / старое состояние всё ещё на giveaways — сразу на ферму.
+  useEffect(() => {
+    if (tab === 'giveaways') setTab('farm')
+  }, [tab, setTab])
 
   useEffect(() => {
     const handler = (e) => {
@@ -234,9 +226,6 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment, farmSegment, set
               setMarketHighlightOnly(false)
             }}
           />
-        </div>
-        <div className={tab === 'giveaways' ? '' : 'hidden'} aria-hidden={tab !== 'giveaways'}>
-          <GiveawaysModule isActive={tab === 'giveaways'} onNavigateCondition={handleGiveawayNavigateCondition} />
         </div>
         <div className={tab === 'chests' ? '' : 'hidden'} aria-hidden={tab !== 'chests'}>
           <ChestModule isActive={tab === 'chests'} />

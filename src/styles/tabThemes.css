@@ -1,17 +1,24 @@
 /* === Общие переменные тем вкладок === */
 
 .tab-theme-farm {
-  --tab-accent: #6ee7b7;
-  --tab-accent-strong: #34d399;
-  --tab-accent-muted: rgba(110, 231, 183, 0.58);
-  --tab-accent-soft: rgba(52, 211, 153, 0.14);
-  --tab-accent-glow: rgba(52, 211, 153, 0.32);
-  --tab-surface: rgba(10, 28, 18, 0.96);
-  --tab-surface-alt: rgba(6, 18, 12, 0.94);
-  --tab-frame-border: rgba(52, 211, 153, 0.28);
-  --tab-title-color: #ecfdf5;
-  --tab-chip-border: rgba(52, 211, 153, 0.24);
-  --tab-balance-frame: linear-gradient(135deg, #bbf7d0 0%, #059669 35%, #6ee7b7 65%, #064e3b 100%);
+  /* Черно-золото-зелёный: админский принцип, фермерская палитра */
+  --tab-accent: #e8c56a;
+  --tab-accent-strong: #3dd68c;
+  --tab-accent-muted: rgba(232, 197, 106, 0.62);
+  --tab-accent-soft: rgba(61, 214, 140, 0.14);
+  --tab-accent-glow: rgba(61, 214, 140, 0.28);
+  --tab-surface: rgba(8, 14, 11, 0.97);
+  --tab-surface-alt: rgba(5, 10, 8, 0.95);
+  --tab-frame-border: rgba(232, 197, 106, 0.28);
+  --tab-title-color: #f4efe2;
+  --tab-chip-border: rgba(61, 214, 140, 0.26);
+  --tab-balance-frame: linear-gradient(135deg, #f0d78a 0%, #2f9e64 38%, #e8c56a 68%, #0b1a12 100%);
+  --farm-ink: #f4efe2;
+  --farm-gold: #e8c56a;
+  --farm-gold-deep: #b8892d;
+  --farm-green: #3dd68c;
+  --farm-green-deep: #1f7a4d;
+  --farm-void: #050806;
 }
 
 .tab-theme-inventory {
@@ -160,16 +167,17 @@
 
 .tab-atmosphere--farm .tab-atmosphere-base {
   background:
-    radial-gradient(ellipse 120% 70% at 50% -10%, rgba(52, 211, 153, 0.2) 0%, transparent 58%),
-    linear-gradient(180deg, rgba(6, 78, 59, 0.22) 0%, rgba(4, 20, 14, 0.38) 100%);
+    radial-gradient(ellipse 110% 65% at 50% -8%, rgba(232, 197, 106, 0.14) 0%, transparent 55%),
+    radial-gradient(ellipse 90% 50% at 80% 100%, rgba(61, 214, 140, 0.12) 0%, transparent 50%),
+    linear-gradient(180deg, rgba(8, 16, 12, 0.55) 0%, rgba(3, 7, 5, 0.78) 100%);
 }
 
 .tab-atmosphere--farm .tab-atmosphere-glow-a {
-  background: radial-gradient(circle at 12% 82%, rgba(74, 222, 128, 0.16) 0%, transparent 42%);
+  background: radial-gradient(circle at 14% 78%, rgba(61, 214, 140, 0.14) 0%, transparent 42%);
 }
 
 .tab-atmosphere--farm .tab-atmosphere-glow-b {
-  background: radial-gradient(circle at 88% 24%, rgba(134, 239, 172, 0.12) 0%, transparent 38%);
+  background: radial-gradient(circle at 88% 22%, rgba(232, 197, 106, 0.12) 0%, transparent 38%);
 }
 
 .tab-atmosphere--inventory .tab-atmosphere-base {

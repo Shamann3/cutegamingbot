@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ITEM_IDS } from '../types/farm'
 import { getPerfClockMs } from '../utils/devicePerf'
 import { useSettings } from '../context/SettingsContext'
@@ -11,6 +11,7 @@ import { canPerformAction, getEffectivePlotStatus, isPlotDry } from '../utils/pl
 import { buildFarmSlots } from '../utils/farmSlots'
 import { WATER_ANIM_MS } from '../utils/farmTiming'
 import FarmBackground from './FarmBackground'
+import FarmEntrance from './FarmEntrance'
 import FarmPet from './FarmPet'
 import FarmHeader from './FarmHeader'
 import FarmToastLayer from './FarmToastLayer'
@@ -23,6 +24,7 @@ import InventoryModule from './InventoryModule'
 import CraftModule from './CraftModule'
 import { useContextualDonate } from '../hooks/useContextualDonate'
 import '../styles/cosmetic-effects.css'
+import '../styles/farmElite.css'
 
 const FARM_SEGMENTS = [
   { id: 'plots', label: 'Грядки' },
@@ -67,6 +69,7 @@ export default function FarmModule({ isActive = true, farmSegment, onFarmSegment
   const [waterAnimPlots, setWaterAnimPlots] = useState(() => new Map())
   const [busyPlotId, setBusyPlotId] = useState(null)
   const [buyingPlot, setBuyingPlot] = useState(false)
+  const [farmRevealed, setFarmRevealed] = useState(false)
   const actionLockRef = useRef(new Set())
   const waterTimeoutsRef = useRef(new Map())
   const {
@@ -75,6 +78,10 @@ export default function FarmModule({ isActive = true, farmSegment, onFarmSegment
     openContextualDonate,
     closeDonate,
   } = useContextualDonate()
+
+  const handleEntranceDone = useCallback(() => {
+    setFarmRevealed(true)
+  }, [])
 
   const slots = buildFarmSlots({
     plots,
@@ -239,13 +246,19 @@ export default function FarmModule({ isActive = true, farmSegment, onFarmSegment
   }
 
   return (
-    <div className="relative min-h-screen tab-theme-farm farm-module">
+    <div
+      className={[
+        'relative min-h-screen tab-theme-farm farm-module farm-module--elite',
+        farmRevealed ? 'farm-module--revealed' : '',
+      ].filter(Boolean).join(' ')}
+    >
+      <FarmEntrance active={isActive} onDone={handleEntranceDone} />
       <FarmBackground />
       <TabAtmosphere variant="farm" />
       <FarmToastLayer gainToasts={gainToasts} spendToasts={spendToasts} />
 
       {/* Закреплённая панель ресурсов над табами */}
-      {isActive && (
+      {isActive && farmRevealed && (
         <BalanceBar
           fixed
           balanceBar={balanceBar}
@@ -259,7 +272,12 @@ export default function FarmModule({ isActive = true, farmSegment, onFarmSegment
         />
       )}
 
-      <div className="relative z-10 farm-shell py-3 farm-shell-with-bar animate-slide-up">
+      <div
+        className={[
+          'relative z-10 farm-shell py-3 farm-shell-with-bar',
+          farmRevealed ? 'farm-shell--enter' : 'farm-shell--waiting',
+        ].join(' ')}
+      >
         <FarmHeader isPreview={isPreview} />
 
         <div className="segment-tabs" role="tablist" aria-label="Разделы фермы">

@@ -11,5 +11,9 @@ export function resolveStartTab(rawTab) {
   if (rawTab === 'trade') {
     return { tab: 'trade', tradeSegment: 'shop' }
   }
-  return { tab: rawTab, tradeSegment: 'shop' }
+  // Вкладка розыгрышей скрыта — deep-link ведёт на ферму.
+  if (rawTab === 'giveaways') {
+    return { tab: 'farm', tradeSegment: 'shop' }
+  }
+  return { tab: rawTab || 'farm', tradeSegment: 'shop' }
 }

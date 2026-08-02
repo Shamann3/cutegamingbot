@@ -1,0 +1,303 @@
+/* ============================================================
+   FARM ELITE — black / gold / green
+   Scoped to .tab-theme-farm so магазин/биржа не ломаются.
+   ============================================================ */
+
+.tab-theme-farm.farm-module--elite {
+  background:
+    radial-gradient(ellipse 100% 60% at 50% -5%, rgba(232, 197, 106, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 45% at 100% 100%, rgba(61, 214, 140, 0.07) 0%, transparent 45%),
+    linear-gradient(180deg, #070b09 0%, #050806 55%, #030504 100%);
+  color: var(--farm-ink, #f4efe2);
+}
+
+.tab-theme-farm .farm-shell--waiting {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(14px);
+}
+
+.tab-theme-farm .farm-shell--enter {
+  animation: farmShellEnter 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes farmShellEnter {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.982);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.tab-theme-farm .farm-header-crest-glow {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(232, 197, 106, 0.38) 0%,
+    rgba(61, 214, 140, 0.12) 42%,
+    transparent 72%
+  );
+  animation: farmCrestBreathe 4.8s ease-in-out infinite;
+}
+
+@keyframes farmCrestBreathe {
+  0%, 100% { opacity: 0.38; transform: translateY(-50%) scale(0.96); }
+  50% { opacity: 0.62; transform: translateY(-50%) scale(1.04); }
+}
+
+.tab-theme-farm .farm-header-cute {
+  background: linear-gradient(to bottom, #f7e7b0, #e8c56a, #9a6f1f);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  letter-spacing: 0.38em;
+}
+
+.tab-theme-farm .farm-header-title {
+  background: linear-gradient(to bottom, #f8f4e8, #e8c56a 55%, #2f9e64);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 16px rgba(61, 214, 140, 0.18));
+}
+
+/* --- Кнопки: база + shimmer + press --- */
+
+.tab-theme-farm .farm-btn,
+.tab-theme-farm .farm-btn-primary,
+.tab-theme-farm .farm-btn-harvest,
+.tab-theme-farm .farm-btn-seed,
+.tab-theme-farm .farm-btn-buy,
+.tab-theme-farm .farm-btn-water,
+.tab-theme-farm .farm-btn-autowater,
+.tab-theme-farm .farm-btn-danger,
+.tab-theme-farm .farm-batch-btn {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    transform 0.22s cubic-bezier(0.34, 1.4, 0.64, 1),
+    box-shadow 0.28s ease,
+    filter 0.22s ease,
+    border-color 0.22s ease;
+}
+
+.tab-theme-farm .farm-btn::before,
+.tab-theme-farm .farm-btn-primary::before,
+.tab-theme-farm .farm-btn-harvest::before,
+.tab-theme-farm .farm-btn-seed::before,
+.tab-theme-farm .farm-btn-buy::before,
+.tab-theme-farm .farm-btn-water::before,
+.tab-theme-farm .farm-btn-autowater::before,
+.tab-theme-farm .farm-batch-btn::before {
+  content: '';
+  position: absolute;
+  inset: -40% -60%;
+  background: linear-gradient(
+    115deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.22) 48%,
+    transparent 62%
+  );
+  transform: translateX(-40%) rotate(8deg);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1;
+  transition: opacity 0.2s ease;
+}
+
+.tab-theme-farm .farm-btn:not(:disabled):hover::before,
+.tab-theme-farm .farm-btn-primary:not(:disabled):hover::before,
+.tab-theme-farm .farm-btn-harvest:not(:disabled):hover::before,
+.tab-theme-farm .farm-btn-seed:not(:disabled):hover::before,
+.tab-theme-farm .farm-btn-buy:not(:disabled):hover::before,
+.tab-theme-farm .farm-btn-water:not(:disabled):hover::before,
+.tab-theme-farm .farm-btn-autowater:not(:disabled):hover::before,
+.tab-theme-farm .farm-batch-btn:not(:disabled):hover::before {
+  opacity: 1;
+  animation: farmBtnShimmer 0.85s ease;
+}
+
+@keyframes farmBtnShimmer {
+  from { transform: translateX(-55%) rotate(8deg); }
+  to { transform: translateX(55%) rotate(8deg); }
+}
+
+.tab-theme-farm .farm-btn:not(:disabled):active,
+.tab-theme-farm .farm-btn-primary:not(:disabled):active,
+.tab-theme-farm .farm-btn-harvest:not(:disabled):active,
+.tab-theme-farm .farm-btn-seed:not(:disabled):active,
+.tab-theme-farm .farm-btn-buy:not(:disabled):active,
+.tab-theme-farm .farm-btn-water:not(:disabled):active,
+.tab-theme-farm .farm-btn-autowater:not(:disabled):active,
+.tab-theme-farm .farm-batch-btn:not(:disabled):active {
+  transform: scale(0.965) translateY(1px);
+}
+
+/* Рост / сбор / семена — изумруд */
+.tab-theme-farm .farm-btn-primary,
+.tab-theme-farm .farm-btn-harvest,
+.tab-theme-farm .farm-btn-seed {
+  color: #04140c;
+  border-color: rgba(232, 197, 106, 0.45);
+  background: linear-gradient(180deg, #7ef0b4 0%, #3dd68c 42%, #1f7a4d 100%);
+  box-shadow:
+    0 4px 16px rgba(31, 122, 77, 0.45),
+    0 0 0 0 rgba(61, 214, 140, 0),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.tab-theme-farm .farm-btn-primary:not(:disabled):hover,
+.tab-theme-farm .farm-btn-harvest:not(:disabled):hover,
+.tab-theme-farm .farm-btn-seed:not(:disabled):hover {
+  filter: brightness(1.07);
+  box-shadow:
+    0 6px 22px rgba(31, 122, 77, 0.55),
+    0 0 22px rgba(61, 214, 140, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  transform: translateY(-1px);
+}
+
+/* Покупка — золото */
+.tab-theme-farm .farm-btn-buy,
+.tab-theme-farm .farm-btn-buy--donate {
+  color: #2a1808;
+  border-color: rgba(247, 231, 176, 0.55);
+  background: linear-gradient(180deg, #f7e7b0 0%, #e8c56a 45%, #b8892d 100%);
+  box-shadow:
+    0 4px 16px rgba(184, 137, 45, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.tab-theme-farm .farm-btn-buy:not(:disabled):hover,
+.tab-theme-farm .farm-btn-buy--donate:not(:disabled):hover {
+  filter: brightness(1.06);
+  box-shadow:
+    0 6px 22px rgba(184, 137, 45, 0.55),
+    0 0 20px rgba(232, 197, 106, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Полив — тёмный изумруд */
+.tab-theme-farm .farm-btn-water {
+  color: #e8fff3;
+  border-color: rgba(110, 231, 183, 0.35);
+  background: linear-gradient(180deg, #1a5c40 0%, #134e38 50%, #0c2f22 100%);
+  box-shadow:
+    0 3px 14px rgba(12, 47, 34, 0.5),
+    inset 0 1px 0 rgba(167, 243, 208, 0.18);
+}
+
+.tab-theme-farm .farm-btn-water:not(:disabled):hover {
+  box-shadow:
+    0 5px 18px rgba(12, 47, 34, 0.58),
+    0 0 18px rgba(61, 214, 140, 0.22),
+    inset 0 1px 0 rgba(167, 243, 208, 0.24);
+  transform: translateY(-1px);
+}
+
+.tab-theme-farm .farm-btn-autowater {
+  color: #f4efe2;
+  border-color: rgba(232, 197, 106, 0.32);
+  background: linear-gradient(180deg, #245c3f 0%, #163c2a 55%, #0c2419 100%);
+  box-shadow:
+    0 3px 14px rgba(8, 30, 20, 0.5),
+    inset 0 1px 0 rgba(232, 197, 106, 0.12);
+}
+
+.tab-theme-farm .farm-btn-danger {
+  color: #fff7ed;
+  border-color: rgba(232, 197, 106, 0.28);
+  background: linear-gradient(180deg, #5a3a1a 0%, #3d2410 100%);
+}
+
+.tab-theme-farm .farm-batch-btn--harvest {
+  background: linear-gradient(135deg, #14532d 0%, #1f7a4d 45%, #3dd68c 100%);
+  color: #04140c;
+  border: 1px solid rgba(232, 197, 106, 0.35);
+  box-shadow:
+    0 4px 18px rgba(31, 122, 77, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.tab-theme-farm .farm-batch-btn--water {
+  background: linear-gradient(135deg, #0f2e22 0%, #1a5c40 55%, #245c3f 100%);
+  color: #e8fff3;
+  border: 1px solid rgba(110, 231, 183, 0.32);
+  box-shadow:
+    0 4px 18px rgba(12, 47, 34, 0.45),
+    inset 0 1px 0 rgba(167, 243, 208, 0.12);
+}
+
+.tab-theme-farm .segment-tabs {
+  background: linear-gradient(180deg, rgba(8, 14, 11, 0.88) 0%, rgba(4, 8, 6, 0.94) 100%);
+  border: 1px solid rgba(232, 197, 106, 0.16);
+  box-shadow: inset 0 1px 0 rgba(61, 214, 140, 0.06);
+}
+
+.tab-theme-farm .segment-tab {
+  transition:
+    color 0.22s ease,
+    background 0.28s ease,
+    transform 0.22s cubic-bezier(0.34, 1.4, 0.64, 1),
+    box-shadow 0.28s ease;
+}
+
+.tab-theme-farm .segment-tab-active {
+  color: #04140c;
+  background: linear-gradient(180deg, #e8c56a 0%, #3dd68c 100%);
+  box-shadow: 0 2px 12px rgba(61, 214, 140, 0.25);
+}
+
+.tab-theme-farm .segment-tab:not(.segment-tab-active):active {
+  transform: scale(0.97);
+}
+
+/* Грядки появляются после сигила */
+.tab-theme-farm.farm-module--revealed .farm-plots-grid > * {
+  animation: farmPlotIn 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tab-theme-farm.farm-module--revealed .farm-plots-grid > *:nth-child(1) { animation-delay: 0.05s; }
+.tab-theme-farm.farm-module--revealed .farm-plots-grid > *:nth-child(2) { animation-delay: 0.12s; }
+.tab-theme-farm.farm-module--revealed .farm-plots-grid > *:nth-child(3) { animation-delay: 0.19s; }
+.tab-theme-farm.farm-module--revealed .farm-plots-grid > *:nth-child(4) { animation-delay: 0.26s; }
+.tab-theme-farm.farm-module--revealed .farm-plots-grid > *:nth-child(5) { animation-delay: 0.33s; }
+.tab-theme-farm.farm-module--revealed .farm-plots-grid > *:nth-child(6) { animation-delay: 0.4s; }
+.tab-theme-farm.farm-module--revealed .farm-plots-grid > *:nth-child(n+7) { animation-delay: 0.47s; }
+
+@keyframes farmPlotIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-theme-farm .farm-shell--enter,
+  .tab-theme-farm.farm-module--revealed .farm-plots-grid > *,
+  .tab-theme-farm .farm-header-crest-glow {
+    animation: none !important;
+  }
+
+  .tab-theme-farm .farm-shell--waiting {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  .tab-theme-farm .farm-btn::before,
+  .tab-theme-farm .farm-btn-primary::before,
+  .tab-theme-farm .farm-batch-btn::before {
+    display: none;
+  }
+}

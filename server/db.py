@@ -735,26 +735,56 @@ class Database:
             plots = await self._fetch_plots(conn, user_id)
             synced = []
             for row in plots:
-                before = dict(row)
-                row = sync_growing_plot(row, current)
-                if persist_sync and self._plot_persist_needed(before, row):
-                    await self._save_plot(conn, user_id, row)
-                synced.append(plot_to_json(row))
-            user_row = await conn.fetchrow(
-                """
-                SELECT items, tool_durability, daily_seed_claimed_on, balance,
-                       onboarding_done, onboarding_active, onboarding_seed_granted,
-                       onboarding_demo_logs, onboarding_step
-                FROM users WHERE user_id = $1
-                """,
-                user_id,
-            )
+                try:
+                    before = dict(row)
+                    row = sync_growing_plot(row, current)
+                    if persist_sync and self._plot_persist_needed(before, row):
+                        await self._save_plot(conn, user_id, row)
+                    synced.append(plot_to_json(row))
+                except Exception as plot_err:
+                    print(f"[FARM][STATE][WARN] plot sync uid={user_id}: {plot_err!r}")
+                    try:
+                        synced.append(plot_to_json(dict(row)))
+                    except Exception:
+                        pass
+            try:
+                user_row = await conn.fetchrow(
+                    """
+                    SELECT items, tool_durability, daily_seed_claimed_on, balance,
+                           onboarding_done, onboarding_active, onboarding_seed_granted,
+                           onboarding_demo_logs, onboarding_step
+                    FROM users WHERE user_id = $1
+                    """,
+                    user_id,
+                )
+            except Exception as col_err:
+                # Старая БД без onboarding_* — ферма всё равно должна открыться.
+                if type(col_err).__name__ not in ("UndefinedColumnError", "UndefinedColumn"):
+                    raise
+                print(f"[FARM][STATE][WARN] legacy user columns: {col_err!r}")
+                user_row = await conn.fetchrow(
+                    """
+                    SELECT items, balance,
+                           NULL::jsonb AS tool_durability,
+                           NULL::date AS daily_seed_claimed_on,
+                           FALSE AS onboarding_done,
+                           FALSE AS onboarding_active,
+                           0 AS onboarding_seed_granted,
+                           0 AS onboarding_demo_logs,
+                           0 AS onboarding_step
+                    FROM users WHERE user_id = $1
+                    """,
+                    user_id,
+                )
         if user_row is None:
             raise RuntimeError(f"User {user_id} not found after ensure_user")
         items_raw_val = user_row["items"]
         items = parse_items(items_raw_val)
         normalized = normalize_items(items)
-        tool_durability = parse_tool_durability(user_row["tool_durability"])
+        try:
+            tool_durability = parse_tool_durability(user_row["tool_durability"])
+        except Exception:
+            tool_durability = {}
         daily_seed_claimed_on = user_row["daily_seed_claimed_on"]
         balance = int(user_row["balance"] or 0)
         onboarding = {
@@ -764,8 +794,36 @@ class Database:
             "demoLogs": int(user_row["onboarding_demo_logs"] or 0),
             "step": int(user_row["onboarding_step"] or 0),
         }
-        meta = self._build_state_meta(owned, items, tool_durability, kut=balance)
+        try:
+            meta = self._build_state_meta(owned, items, tool_durability, kut=balance)
+        except Exception as meta_err:
+            print(f"[FARM][STATE][WARN] meta fallback: {meta_err!r}")
+            meta = {
+                "ownedPlots": owned,
+                "maxPlots": max(owned, 1),
+                "nextPlotId": None,
+                "nextPlotPrice": None,
+                "seedCount": 0,
+                "tobaccoSeedCount": 0,
+                "seedCounts": {},
+                "items": items,
+                "itemsDisplay": [],
+                "itemCatalog": {},
+                "farmItemIds": {},
+                "farmCrops": [],
+                "balanceBar": [],
+                "axe": None,
+                "waterCount": 0,
+                "autowaterCount": 0,
+                "growSeconds": 20 * 60,
+                "waterIntervalSeconds": 60,
+            }
         from seed_economy import seed_economy_for_client
+
+        try:
+            seed_economy = seed_economy_for_client(daily_seed_claimed_on=daily_seed_claimed_on)
+        except Exception:
+            seed_economy = None
 
         return {
             "kut": int(balance or 0),
@@ -773,7 +831,7 @@ class Database:
             **meta,
             "plots": synced,
             "onboarding": onboarding,
-            "seedEconomy": seed_economy_for_client(daily_seed_claimed_on=daily_seed_claimed_on),
+            "seedEconomy": seed_economy,
         }
 
     async def get_inventory_state(self, user_id):
@@ -1541,10 +1599,27 @@ class Database:
             )
             return int(value or 0)
         except Exception as exc:
-            # Таблица ещё не применена на окружении — не валим всю биржу 500.
-            if type(exc).__name__ in ("UndefinedTableError", "UndefinedTable"):
-                return 0
-            raise
+            # Любая схема/права/отсутствующая таблица — биржа должна жить.
+            print(f"[MARKET][COUPON][WARN] count_discounted_units: {exc!r}")
+            return 0
+
+    @staticmethod
+    async def count_all_discounted_units(conn, user_id) -> dict[str, int]:
+        """Сводка купонных единиц по item_id за один запрос."""
+        try:
+            rows = await conn.fetch(
+                """
+                SELECT item_id, COALESCE(SUM(quantity), 0)::int AS qty
+                FROM discounted_holdings
+                WHERE user_id = $1
+                GROUP BY item_id
+                """,
+                user_id,
+            )
+            return {str(r["item_id"]): int(r["qty"] or 0) for r in rows}
+        except Exception as exc:
+            print(f"[MARKET][COUPON][WARN] count_all_discounted_units: {exc!r}")
+            return {}
 
     async def ensure_coupon_tables(self) -> None:
         """Идемпотентно создать таблицы купонов (на случай старой БД без миграции)."""
@@ -3001,43 +3076,58 @@ class Database:
 
     async def get_market_sellable(self, user_id):
         from market_catalog import sellable_item_to_client
-        from market_rules import is_market_listable, normalize_market_item_id
+        from market_rules import is_market_listable, market_commission_meta, normalize_market_item_id
         from user_items import count_item_in_storage
 
         await self.ensure_user(user_id)
         try:
             await self.ensure_coupon_tables()
-        except Exception:
-            pass
-        async with self.pool.acquire() as conn:
-            items_raw = await conn.fetchval("SELECT items FROM users WHERE user_id = $1", user_id)
-            raw_items = parse_items(items_raw)
-            normalized = normalize_items(raw_items)
+        except Exception as coupon_err:
+            print(f"[MARKET][SELLABLE][WARN] ensure_coupon_tables: {coupon_err!r}")
+
+        sellable = []
+        try:
+            async with self.pool.acquire() as conn:
+                items_raw = await conn.fetchval(
+                    "SELECT items FROM users WHERE user_id = $1", user_id
+                )
+                raw_items = parse_items(items_raw)
+                normalized = normalize_items(raw_items)
+                discounted_map = await self.count_all_discounted_units(conn, user_id)
+                seen = set()
+                for item_id in normalized:
+                    try:
+                        canon = normalize_market_item_id(item_id)
+                        if not canon or canon in seen:
+                            continue
+                        seen.add(canon)
+                        owned = count_item_in_storage(raw_items, canon)
+                        if owned < 1 or not is_market_listable(canon):
+                            continue
+                        discounted = int(discounted_map.get(str(canon), 0) or 0)
+                        listable_qty = max(0, int(owned) - min(discounted, int(owned)))
+                        if listable_qty < 1:
+                            continue
+                        entry = dex_catalog.get(canon)
+                        if not entry:
+                            continue
+                        sellable.append(sellable_item_to_client(entry, count=listable_qty))
+                    except Exception as item_err:
+                        print(f"[MARKET][SELLABLE][WARN] skip item {item_id!r}: {item_err!r}")
+            sellable.sort(key=lambda row: str(row.get("name") or "").lower())
+        except Exception as sellable_err:
+            # Каталог лотов у тестировщика уже грузится — окно продажи не должно
+            # падать целиком из‑за купонов/dex/нормализации.
+            print(f"[MARKET][SELLABLE][ERROR] {sellable_err!r}")
             sellable = []
-            seen = set()
-            for item_id in normalized:
-                canon = normalize_market_item_id(item_id)
-                if not canon or canon in seen:
-                    continue
-                seen.add(canon)
-                owned = count_item_in_storage(raw_items, canon)
-                if owned < 1 or not is_market_listable(canon):
-                    continue
-                # Купонные единицы нельзя выставлять — не показываем их в списке.
-                discounted = await self.count_discounted_units(conn, user_id, canon)
-                listable_qty = max(0, int(owned) - min(int(discounted or 0), int(owned)))
-                if listable_qty < 1:
-                    continue
-                entry = dex_catalog.get(canon)
-                if not entry:
-                    continue
-                sellable.append(sellable_item_to_client(entry, count=listable_qty))
-        sellable.sort(key=lambda row: str(row.get("name") or "").lower())
-        balance = await self.get_user_balance(user_id)
-        from market_rules import market_commission_meta
+
+        try:
+            balance = int(await self.get_user_balance(user_id) or 0)
+        except Exception:
+            balance = 0
 
         return {
-            "kut": int(balance or 0),
+            "kut": balance,
             "items": sellable,
             **market_commission_meta(),
         }
