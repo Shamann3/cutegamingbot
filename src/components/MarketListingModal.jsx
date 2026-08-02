@@ -94,6 +94,7 @@ export default function MarketListingModal({
             ✕
           </button>
 
+          <div className="shop-modal-scroll">
           <div className="shop-modal-hero">
             <span className="shop-modal-emoji" aria-hidden>{item.emoji}</span>
           </div>
@@ -199,6 +200,7 @@ export default function MarketListingModal({
                 При продаже всего лота: {formatKut(grossIfSold)} КУТ − комиссия {commissionPercent}% ({formatKut(commissionIfSold)} КУТ)
               </p>
             ) : null}
+          </div>
           </div>
 
           <div className="shop-modal-actions">

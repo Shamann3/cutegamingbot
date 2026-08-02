@@ -142,6 +142,7 @@ export default function ShopPurchaseModal({
           ✕
         </button>
 
+        <div className="shop-modal-scroll">
         <div className="shop-modal-hero">
           <span className="shop-modal-emoji" aria-hidden>{item.emoji}</span>
         </div>
@@ -287,6 +288,7 @@ export default function ShopPurchaseModal({
               </span>
             </div>
           </div>
+        </div>
         </div>
 
         <div className="shop-modal-actions">

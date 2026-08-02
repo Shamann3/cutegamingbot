@@ -388,8 +388,80 @@
   background: radial-gradient(ellipse at center, transparent 42%, rgba(2, 6, 4, 0.42) 100%);
 }
 
-.cute-turbo-mode .tab-atmosphere-texture {
+/* Растительность на всех вкладках — тонкая отсылка к ферме */
+.tab-atmosphere-vines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.55;
+}
+
+.tab-vine-stem {
+  stroke: rgba(61, 214, 140, 0.38);
+  stroke-width: 1.15;
+}
+
+.tab-vine-stem--floor {
+  stroke: rgba(232, 197, 106, 0.22);
+  stroke-width: 1;
+}
+
+.tab-vine-leaf {
+  fill: rgba(61, 214, 140, 0.28);
+  stroke: none;
+}
+
+.tab-vine--l {
+  animation: tabVineSway 7s ease-in-out infinite;
+  transform-origin: 8px 140px;
+}
+
+.tab-vine--r {
+  animation: tabVineSwayRev 7.4s ease-in-out infinite;
+  transform-origin: 92px 140px;
+}
+
+@keyframes tabVineSway {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(1.2deg); }
+}
+
+@keyframes tabVineSwayRev {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-1.2deg); }
+}
+
+.tab-atmosphere--shop .tab-vine-stem,
+.tab-atmosphere--market .tab-vine-stem,
+.tab-atmosphere--chests .tab-vine-stem {
+  stroke: rgba(232, 197, 106, 0.32);
+}
+
+.tab-atmosphere--shop .tab-vine-leaf,
+.tab-atmosphere--market .tab-vine-leaf,
+.tab-atmosphere--chests .tab-vine-leaf {
+  fill: rgba(232, 197, 106, 0.22);
+}
+
+.tab-atmosphere--quests .tab-vine-stem {
+  stroke: rgba(61, 214, 140, 0.34);
+}
+
+.cute-turbo-mode .tab-atmosphere-texture,
+.cute-turbo-mode .tab-atmosphere-vines {
   display: none;
+}
+
+.cute-lite-mode .tab-vine--l,
+.cute-lite-mode .tab-vine--r {
+  animation: none !important;
+}
+
+.cute-lite-mode .tab-atmosphere-vines {
+  opacity: 0.38;
 }
 
 /* === Заголовки вкладок === */

@@ -7112,9 +7112,13 @@ body {
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    padding: 1rem 0.75rem calc(5rem + env(safe-area-inset-bottom, 0px));
+    padding:
+      max(0.5rem, env(safe-area-inset-top, 0px))
+      0.75rem
+      calc(5rem + env(safe-area-inset-bottom, 0px));
     background: rgba(2, 6, 4, 0.72);
     backdrop-filter: blur(4px);
+    overscroll-behavior: contain;
   }
 
   .shop-modal-root.player-profile-root {
@@ -7132,7 +7136,13 @@ body {
 
   .shop-modal {
     position: relative;
+    display: flex;
+    flex-direction: column;
     width: min(100%, 24rem);
+    max-height: min(
+      86dvh,
+      calc(100dvh - 1rem - env(safe-area-inset-top, 0px) - 5rem - env(safe-area-inset-bottom, 0px))
+    );
     border-radius: 18px;
     border: 1px solid rgba(212, 175, 55, 0.35);
     background: linear-gradient(180deg, rgba(14, 32, 22, 0.98) 0%, rgba(8, 18, 12, 1) 100%);
@@ -7165,6 +7175,7 @@ body {
   }
 
   .shop-modal-hero {
+    flex-shrink: 0;
     display: flex;
     justify-content: center;
     padding: 1.35rem 1rem 0.75rem;
@@ -7179,8 +7190,64 @@ body {
   }
 
 
+  .shop-modal-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(232, 197, 106, 0.35) transparent;
+  }
+
   .shop-modal-content {
     padding: 0 1rem 0.85rem;
+  }
+
+  /* Низкие окна / Telegram WebView: компактнее, всё умещается */
+  @media (max-height: 720px) {
+    .shop-modal-hero {
+      padding: 0.85rem 1rem 0.45rem;
+    }
+
+    .shop-modal-emoji {
+      font-size: 2.35rem;
+    }
+
+    .shop-modal-title {
+      font-size: 1.02rem;
+    }
+
+    .shop-modal-bio {
+      margin-top: 0.45rem;
+      padding: 0.4rem 0.55rem;
+    }
+
+    .shop-modal-stats {
+      margin-top: 0.55rem;
+    }
+  }
+
+  @media (max-height: 580px) {
+    .shop-modal {
+      max-height: min(
+        92dvh,
+        calc(100dvh - 0.5rem - env(safe-area-inset-top, 0px) - 4.25rem - env(safe-area-inset-bottom, 0px))
+      );
+    }
+
+    .shop-modal-hero {
+      padding: 0.55rem 0.85rem 0.25rem;
+    }
+
+    .shop-modal-emoji {
+      font-size: 1.85rem;
+    }
+
+    .shop-modal-content {
+      padding: 0 0.85rem 0.55rem;
+    }
   }
 
   .shop-modal-category {
@@ -7438,12 +7505,13 @@ body {
   }
 
   .shop-modal-actions {
+    flex-shrink: 0;
     display: grid;
     grid-template-columns: 1fr 1.35fr;
     gap: 0.45rem;
-    padding: 0.75rem 1rem 1rem;
+    padding: 0.75rem 1rem calc(0.85rem + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid rgba(212, 175, 55, 0.16);
-    background: rgba(4, 10, 7, 0.45);
+    background: linear-gradient(180deg, rgba(4, 10, 7, 0.92) 0%, rgba(4, 10, 7, 0.98) 100%);
   }
 
   .shop-modal-cancel {
@@ -8896,6 +8964,45 @@ body {
 .cute-lite-mode .farm-bg-particles,
 .cute-lite-mode .farm-bg-firefly {
   display: none !important;
+}
+
+/* Lite: грядка остаётся красивой, но без тяжёлых анимаций */
+.cute-lite-mode .soil-field-moss,
+.cute-lite-mode .soil-field-mist,
+.cute-lite-mode .soil-field-canopy,
+.cute-lite-mode .soil-vine--tl,
+.cute-lite-mode .soil-vine--tr,
+.cute-lite-mode .soil-vine--bl,
+.cute-lite-mode .soil-vine--br,
+.cute-lite-mode .soil-blade,
+.cute-lite-mode .soil-spore,
+.cute-lite-mode .soil-field-ready-glow,
+.cute-lite-mode .soil-field-dew,
+.cute-lite-mode .soil-field-rim {
+  animation: none !important;
+}
+
+.cute-lite-mode .soil-field-spores {
+  display: none !important;
+}
+
+.cute-lite-mode .soil-field-mist,
+.cute-lite-mode .soil-field-canopy {
+  opacity: 0.22 !important;
+  filter: none !important;
+}
+
+.cute-lite-mode .farm-ent-flora,
+.cute-lite-mode .farm-ent-flash,
+.cute-lite-mode .farm-ent-aurora {
+  display: none !important;
+}
+
+.cute-lite-mode .shop-modal {
+  max-height: min(
+    88dvh,
+    calc(100dvh - 0.75rem - env(safe-area-inset-top, 0px) - 4.5rem - env(safe-area-inset-bottom, 0px))
+  ) !important;
 }
 
 .cute-lite-mode .shop-shelf-emoji--pop,

@@ -105,7 +105,7 @@ export default function ProfileModule({ isActive = true }) {
       <div className="relative z-10 profile-shell animate-slide-up">
         <header className="profile-module-header">
           <div className="profile-module-header-main">
-            <p className="profile-module-eyebrow">Cute · игрок</p>
+            <p className="profile-module-eyebrow">Cute Farming · фермер</p>
             <h1 className="profile-module-title">Профиль</h1>
           </div>
           {profile && <KutBalance value={profile.balance} className="profile-module-balance" />}
