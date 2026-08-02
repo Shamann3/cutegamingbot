@@ -5,7 +5,7 @@ export default function MaintenanceScreen() {
         <div className="farm-header-crest-wrap maintenance-crest-wrap">
           <div className="farm-header-crest-glow" aria-hidden />
           <img
-            src="/assets/cute-crest.png?v=2"
+            src="/assets/cute-crest.png?v=4"
             alt=""
             draggable={false}
             className="farm-header-crest-img"

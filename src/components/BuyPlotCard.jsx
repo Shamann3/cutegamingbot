@@ -26,7 +26,7 @@ export default function BuyPlotCard({ price, kut, isBusy, onBuy, onContextualDon
         onClick={handlePrimaryClick}
         aria-label={canAfford ? 'Купить грядку' : 'Пополнить баланс'}
       >
-        <div className="farm-soil-inner farm-buy-plot-inner relative">
+          <div className="farm-soil-inner farm-buy-plot-inner farm-buy-plot-inner--soil relative">
           <SoilField status="empty" />
           <span className="farm-buy-plot-icon-wrap relative z-10" aria-hidden>
             <span className="farm-buy-plot-icon">🌱</span>

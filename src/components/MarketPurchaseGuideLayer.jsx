@@ -48,6 +48,15 @@ export default function MarketPurchaseGuideLayer({ onNavigateMarket }) {
       syncFromMarket?.(result)
       if (result?.kut != null) setKutOverride(Number(result.kut))
       playSound('harvest')
+      const purchased = result?.purchased
+      window.dispatchEvent(new CustomEvent('farm:purchase-complete', {
+        detail: {
+          name: purchased?.name || item?.name || 'Саженец',
+          emoji: purchased?.emoji || item?.emoji || '🌱',
+          itemId: purchased?.itemId || item?.itemId || '',
+          quantity: Number(purchased?.quantity ?? quantity ?? 1),
+        },
+      }))
       handleClose()
     } catch {
       // ошибка в API

@@ -70,6 +70,7 @@ export function useFarm({ isActive = true } = {}) {
   }
   const [claimingDailySeed, setClaimingDailySeed] = useState(false)
   const busyRef = useRef(false)
+  const pendingInventoryRefreshRef = useRef(false)
   const { gainToasts, spendToasts, processFarmNotify } = useFarmToasts()
 
   const setFarmError = useCallback((e) => {
@@ -194,10 +195,25 @@ export function useFarm({ isActive = true } = {}) {
 
   useEffect(() => {
     if (inventoryTick === 0) return undefined
-    if (busyRef.current) return undefined
+    if (busyRef.current) {
+      pendingInventoryRefreshRef.current = true
+      return undefined
+    }
     refresh().catch(() => {})
     return undefined
   }, [inventoryTick, refresh])
+
+  useEffect(() => {
+    const onBought = () => {
+      if (busyRef.current) {
+        pendingInventoryRefreshRef.current = true
+        return
+      }
+      refresh().catch(() => {})
+    }
+    window.addEventListener('farm:purchase-complete', onBought)
+    return () => window.removeEventListener('farm:purchase-complete', onBought)
+  }, [refresh])
 
   const runAction = useCallback(
     async (apiFn, ...args) => {
@@ -214,9 +230,13 @@ export function useFarm({ isActive = true } = {}) {
         throw e
       } finally {
         busyRef.current = false
+        if (pendingInventoryRefreshRef.current) {
+          pendingInventoryRefreshRef.current = false
+          refresh().catch(() => {})
+        }
       }
     },
-    [applyState, setFarmError, processFarmNotify],
+    [applyState, setFarmError, processFarmNotify, refresh],
   )
 
   const claimDailySeed = useCallback(async (seedItemId) => {

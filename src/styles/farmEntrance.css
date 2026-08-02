@@ -1,15 +1,13 @@
 /* ============================================================
-   FARM ENTRANCE SEAL — ровно 4.0 секунды
+   FARM ENTRANCE SEAL — ровно 6.0 секунд (как админская печать)
    ------------------------------------------------------------
-   Телефон / планшет / ПК: fixed + safe-area + clamp()
-     0.00–0.85  void, aurora, grid
-     0.35–1.80  SVG-кольца (draw)
-     1.10–1.90  скобы
-     1.35–2.70  герб
-     2.35–3.00  stamp glow
-     2.45–3.35  текст + линия + tagline
-     3.35–3.52  пауза «прочитать»
-     3.52–4.00  выход
+     0.00–1.10  void / grid / aurora
+     1.10–2.60  герб (1.5с)
+     2.60–3.10  пауза — марка цельная
+     3.10–3.70  текст
+     3.70–5.55  прочитать
+     5.35       flash
+     5.55–6.00  выход
    ============================================================ */
 
 .farm-ent-root {
@@ -27,9 +25,8 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: #020403;
+  background: #000;
   color: var(--fe-ink);
-  /* Блокируем клики сквозь сигил, пока идёт вход */
   pointer-events: auto;
   touch-action: none;
   isolation: isolate;
@@ -40,38 +37,33 @@
 
 .farm-ent-root--out {
   pointer-events: none;
-  animation: farmEntOut 0.48s var(--fe-ease-out) forwards;
+  animation: farmEntOut 0.45s var(--fe-ease-out) forwards;
 }
 
 @keyframes farmEntOut {
   to {
     opacity: 0;
-    transform: scale(1.035);
-    filter: blur(2px);
+    transform: scale(1.02);
   }
 }
-
-/* --- Фон --- */
 
 .farm-ent-void {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 72% 54% at 50% 44%, #15241c 0%, #0a120e 42%, #020403 78%);
-  animation: farmEntFade 1s var(--fe-ease-soft) both;
+    radial-gradient(ellipse 68% 52% at 50% 46%, #121a14 0%, #070a08 40%, #000 78%);
+  animation: farmEntFade 1.35s var(--fe-ease-soft) both;
 }
 
 .farm-ent-aurora {
   position: absolute;
-  inset: -10%;
+  inset: -8%;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 55% 40% at 50% 38%, rgba(232, 197, 106, 0.16) 0%, transparent 58%),
-    radial-gradient(ellipse 48% 36% at 62% 58%, rgba(61, 214, 140, 0.14) 0%, transparent 55%),
-    radial-gradient(ellipse 40% 30% at 30% 62%, rgba(61, 214, 140, 0.08) 0%, transparent 50%);
+    radial-gradient(ellipse 48% 36% at 50% 40%, rgba(232, 197, 106, 0.14) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 32% at 58% 56%, rgba(61, 214, 140, 0.12) 0%, transparent 58%);
   opacity: 0;
-  animation: farmEntAurora 2.4s 0.15s var(--fe-ease-soft) both;
-  filter: blur(2px);
+  animation: farmEntFade 1.6s 0.2s var(--fe-ease-soft) both;
 }
 
 .farm-ent-vignette {
@@ -79,40 +71,34 @@
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 82% 70% at 50% 48%, transparent 34%, rgba(0, 0, 0, 0.86) 100%);
+    radial-gradient(ellipse 82% 68% at 50% 50%, transparent 38%, rgba(0, 0, 0, 0.82) 100%);
   opacity: 0;
-  animation: farmEntFade 1.2s 0.2s var(--fe-ease-soft) both;
+  animation: farmEntFade 1.4s 0.25s var(--fe-ease-soft) both;
 }
 
 .farm-ent-grid {
   position: absolute;
-  inset: -22%;
+  inset: -20%;
   pointer-events: none;
   opacity: 0;
   background-image:
     linear-gradient(rgba(232, 197, 106, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(61, 214, 140, 0.035) 1px, transparent 1px);
-  background-size: clamp(36px, 7vw, 56px) clamp(36px, 7vw, 56px);
-  mask-image: radial-gradient(ellipse 58% 52% at 50% 46%, #000 8%, transparent 72%);
-  -webkit-mask-image: radial-gradient(ellipse 58% 52% at 50% 46%, #000 8%, transparent 72%);
-  animation: farmEntGrid 1.8s 0.18s var(--fe-ease-soft) both;
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 55% 50% at 50% 48%, #000 8%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse 55% 50% at 50% 48%, #000 8%, transparent 72%);
+  animation: farmEntGridIn 1.8s 0.2s var(--fe-ease-soft) both;
 }
 
-.farm-ent-dust {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0;
-  background-image:
-    radial-gradient(1.5px 1.5px at 18% 28%, rgba(232, 197, 106, 0.55), transparent),
-    radial-gradient(1.2px 1.2px at 72% 22%, rgba(61, 214, 140, 0.45), transparent),
-    radial-gradient(1px 1px at 42% 68%, rgba(244, 239, 226, 0.35), transparent),
-    radial-gradient(1.4px 1.4px at 84% 64%, rgba(232, 197, 106, 0.4), transparent),
-    radial-gradient(1px 1px at 28% 78%, rgba(61, 214, 140, 0.35), transparent);
-  animation: farmEntDust 2.8s 0.4s var(--fe-ease-soft) both;
+@keyframes farmEntFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-/* --- Сцена --- */
+@keyframes farmEntGridIn {
+  from { opacity: 0; transform: scale(1.06); }
+  to { opacity: 1; transform: scale(1); }
+}
 
 .farm-ent-stage {
   position: relative;
@@ -120,222 +106,69 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(0.85rem, 2.8vh, 1.55rem);
+  gap: clamp(1.1rem, 3.4vh, 1.9rem);
   width: min(92vw, 30rem);
   padding:
-    max(1.1rem, env(safe-area-inset-top, 0px))
+    max(1.25rem, env(safe-area-inset-top, 0px))
     max(1rem, env(safe-area-inset-right, 0px))
-    max(1.1rem, env(safe-area-inset-bottom, 0px))
+    max(1.25rem, env(safe-area-inset-bottom, 0px))
     max(1rem, env(safe-area-inset-left, 0px));
 }
 
-.farm-ent-orbit {
+/* --- Кольца + щит --- */
+
+.farm-ent-rings {
   position: absolute;
   left: 50%;
-  top: 38%;
-  width: min(78vw, 22rem);
-  height: min(78vw, 22rem);
+  top: calc(40% - 0.2rem);
+  width: min(80vw, 23rem);
+  height: min(80vw, 23rem);
   transform: translate(-50%, -50%);
   pointer-events: none;
-}
-
-.farm-ent-svg {
-  width: 100%;
-  height: 100%;
   overflow: visible;
 }
 
 .farm-ent-ring {
   fill: none;
+  stroke: rgba(232, 197, 106, 0.55);
   stroke-linecap: round;
   transform-origin: 100px 100px;
 }
 
 .farm-ent-ring--a {
-  stroke: rgba(232, 197, 106, 0.62);
-  stroke-width: 0.9;
-  stroke-dasharray: 580;
-  stroke-dashoffset: 580;
+  stroke-width: 0.45;
+  stroke-dasharray: 590;
+  stroke-dashoffset: 590;
   animation:
-    farmEntDraw 1.55s 0.35s var(--fe-ease-soft) forwards,
-    farmEntSpin 26s linear infinite;
+    farmEntDraw 1.6s 0.15s var(--fe-ease-soft) forwards,
+    farmEntSpin 22s linear infinite;
 }
 
 .farm-ent-ring--b {
-  stroke: rgba(61, 214, 140, 0.32);
-  stroke-width: 0.55;
-  stroke-dasharray: 8 14;
-  stroke-dashoffset: 520;
+  stroke-width: 0.32;
+  stroke: rgba(61, 214, 140, 0.28);
+  stroke-dasharray: 7 12;
+  stroke-dashoffset: 500;
   animation:
-    farmEntDraw 1.65s 0.55s var(--fe-ease-soft) forwards,
-    farmEntSpinRev 34s linear infinite;
+    farmEntDraw 1.7s 0.4s var(--fe-ease-soft) forwards,
+    farmEntSpinRev 28s linear infinite;
+}
+
+.farm-ent-ring--shield {
+  stroke-width: 0.85;
+  stroke: rgba(232, 197, 106, 0.78);
+  stroke-dasharray: 540;
+  stroke-dashoffset: 540;
+  fill: rgba(61, 214, 140, 0.02);
+  animation: farmEntDraw 1.75s 0.65s var(--fe-ease-soft) forwards;
 }
 
 .farm-ent-ring--c {
-  stroke: rgba(232, 197, 106, 0.38);
-  stroke-width: 1.15;
-  stroke-dasharray: 365;
-  stroke-dashoffset: 365;
-  fill: rgba(61, 214, 140, 0.025);
-  animation: farmEntDraw 1.4s 0.85s var(--fe-ease-soft) forwards;
-}
-
-.farm-ent-brackets {
-  position: absolute;
-  inset: 8%;
-  pointer-events: none;
-}
-
-.farm-ent-bracket {
-  position: absolute;
-  width: clamp(1.1rem, 3.2vw, 1.55rem);
-  height: clamp(1.1rem, 3.2vw, 1.55rem);
-  border: 1.5px solid rgba(232, 197, 106, 0.55);
-  opacity: 0;
-  animation: farmEntBracket 0.95s 1.15s var(--fe-ease-soft) both;
-}
-
-.farm-ent-bracket--tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
-.farm-ent-bracket--tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
-.farm-ent-bracket--bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
-.farm-ent-bracket--br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
-
-/* --- Герб --- */
-
-.farm-ent-mark {
-  position: relative;
-  z-index: 3;
-  /* Логотип проекта — главный герой сцены */
-  width: min(68vw, 18.5rem);
-  aspect-ratio: 1 / 1.12;
-  margin-top: clamp(0.15rem, 1.2vh, 0.5rem);
-  display: grid;
-  place-items: center;
-}
-
-.farm-ent-stamp {
-  position: absolute;
-  inset: -14%;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 1;
-  background:
-    radial-gradient(circle, rgba(232, 197, 106, 0.22) 0%, rgba(61, 214, 140, 0.1) 38%, transparent 68%);
-  opacity: 0;
-  animation: farmEntStamp 1.15s 2.35s var(--fe-ease-soft) both;
-}
-
-.farm-ent-crest {
-  position: relative;
-  z-index: 2;
-  width: 100%;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  opacity: 0;
-  will-change: transform, opacity, filter;
-  animation: farmEntCrest 1.35s 1.35s var(--fe-ease-soft) both;
-}
-
-.farm-ent-crest-img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-  user-select: none;
-  -webkit-user-drag: none;
-  filter:
-    drop-shadow(0 0 28px rgba(232, 197, 106, 0.45))
-    drop-shadow(0 0 40px rgba(61, 214, 140, 0.18))
-    drop-shadow(0 12px 32px rgba(0, 0, 0, 0.65));
-}
-
-/* --- Текст --- */
-
-.farm-ent-copy {
-  position: relative;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  opacity: 0;
-  animation: farmEntCopy 0.9s 2.45s var(--fe-ease-soft) both;
-}
-
-.farm-ent-brand {
-  margin: 0;
-  font-family: Cinzel, Georgia, 'Times New Roman', serif;
-  font-size: clamp(0.68rem, 1.8vw, 0.78rem);
-  font-weight: 700;
-  letter-spacing: 0.46em;
-  text-indent: 0.46em;
-  color: rgba(232, 197, 106, 0.86);
-  text-transform: uppercase;
-}
-
-.farm-ent-title {
-  margin: 0.4rem 0 0;
-  font-family: Cinzel, Georgia, 'Times New Roman', serif;
-  font-size: clamp(1.55rem, 5.2vw, 2.15rem);
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  line-height: 1.05;
-  color: #f7f1e2;
-  text-shadow:
-    0 0 28px rgba(61, 214, 140, 0.28),
-    0 0 40px rgba(232, 197, 106, 0.16),
-    0 2px 12px rgba(0, 0, 0, 0.55);
-}
-
-.farm-ent-line {
-  margin: 0.7rem 0 0;
-  width: 0;
-  height: 1px;
-  border: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(232, 197, 106, 0.75) 35%,
-    rgba(61, 214, 140, 0.7) 65%,
-    transparent 100%
-  );
-  animation: farmEntLine 0.85s 2.75s var(--fe-ease-soft) both;
-}
-
-.farm-ent-tag {
-  margin: 0.55rem 0 0;
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: clamp(0.68rem, 2vw, 0.8rem);
-  letter-spacing: 0.14em;
-  color: rgba(244, 239, 226, 0.55);
-  opacity: 0;
-  animation: farmEntTag 0.75s 2.95s var(--fe-ease-soft) both;
-}
-
-/* --- Keyframes --- */
-
-@keyframes farmEntFade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes farmEntAurora {
-  0% { opacity: 0; transform: scale(0.94); }
-  55% { opacity: 1; transform: scale(1.02); }
-  100% { opacity: 0.85; transform: scale(1); }
-}
-
-@keyframes farmEntGrid {
-  from { opacity: 0; transform: scale(1.08); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-@keyframes farmEntDust {
-  0% { opacity: 0; transform: translateY(8px); }
-  40% { opacity: 0.85; }
-  100% { opacity: 0.55; transform: translateY(0); }
+  stroke-width: 0.6;
+  stroke: rgba(232, 197, 106, 0.6);
+  stroke-dasharray: 360;
+  stroke-dashoffset: 360;
+  animation: farmEntDraw 1.35s 0.95s var(--fe-ease-soft) forwards;
 }
 
 @keyframes farmEntDraw {
@@ -350,124 +183,223 @@
   to { transform: rotate(-360deg); }
 }
 
-@keyframes farmEntBracket {
-  from { opacity: 0; transform: scale(1.28); }
+/* --- Скобы --- */
+
+.farm-ent-brackets {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: min(74vw, 21rem);
+  height: min(74vw, 21rem);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.farm-ent-bracket {
+  position: absolute;
+  width: 1.45rem;
+  height: 1.45rem;
+  border: 1.5px solid rgba(232, 197, 106, 0.55);
+  opacity: 0;
+  animation: farmEntBracketIn 0.9s 1.25s var(--fe-ease-soft) both;
+}
+
+.farm-ent-bracket--tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.farm-ent-bracket--tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+.farm-ent-bracket--bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+.farm-ent-bracket--br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+
+@keyframes farmEntBracketIn {
+  from { opacity: 0; transform: scale(1.22); }
   to { opacity: 1; transform: scale(1); }
 }
 
-@keyframes farmEntCrest {
-  0% {
-    opacity: 0;
-    transform: scale(0.9) translateY(14px);
-    filter: blur(5px);
-  }
-  58% {
-    opacity: 1;
-    transform: scale(1.025) translateY(0);
-    filter: blur(0);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-    filter: blur(0);
-  }
+/* --- Герб --- */
+
+.farm-ent-mark {
+  position: relative;
+  z-index: 3;
+  width: min(62vw, 17.5rem);
+  aspect-ratio: 1 / 1.12;
+  margin-top: 0.35rem;
+  display: grid;
+  place-items: center;
+}
+
+.farm-ent-crest {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: farmEntCrestIn 1.5s 1.1s var(--fe-ease-soft) both;
+}
+
+.farm-ent-crest-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  background: transparent;
+  filter:
+    drop-shadow(0 0 22px rgba(232, 197, 106, 0.35))
+    drop-shadow(0 10px 28px rgba(0, 0, 0, 0.55));
+}
+
+@keyframes farmEntCrestIn {
+  0% { opacity: 0; transform: scale(0.94); }
+  62% { opacity: 1; transform: scale(1.015); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.farm-ent-stamp {
+  position: absolute;
+  inset: -12%;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    radial-gradient(circle, rgba(232, 197, 106, 0.2) 0%, transparent 62%),
+    radial-gradient(circle, rgba(61, 214, 140, 0.12) 0%, transparent 72%);
+  opacity: 0;
+  animation: farmEntStamp 1.1s 2.2s var(--fe-ease-soft) both;
 }
 
 @keyframes farmEntStamp {
-  0% { opacity: 0; transform: scale(0.78); }
-  38% { opacity: 0.7; transform: scale(1.1); }
-  100% { opacity: 0; transform: scale(1.38); }
+  0% { opacity: 0; transform: scale(0.8); }
+  40% { opacity: 0.7; transform: scale(1.08); }
+  100% { opacity: 0; transform: scale(1.3); }
 }
 
-@keyframes farmEntCopy {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* --- Текст --- */
+
+.farm-ent-copy {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.35rem;
+  max-width: 24rem;
 }
 
-@keyframes farmEntLine {
-  from { width: 0; opacity: 0; }
-  to { width: min(42vw, 11rem); opacity: 1; }
+.farm-ent-kicker {
+  margin: 0;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(232, 197, 106, 0.62);
+  opacity: 0;
+  animation: farmEntCopyIn 0.55s 3.1s var(--fe-ease-soft) both;
 }
 
-@keyframes farmEntTag {
-  from { opacity: 0; letter-spacing: 0.28em; }
-  to { opacity: 1; letter-spacing: 0.14em; }
+.farm-ent-title {
+  margin: 0;
+  font-family: Cinzel, "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(1.55rem, 4.6vw, 2.05rem);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #f0d78a 0%, #3dd68c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  opacity: 0;
+  animation: farmEntCopyIn 0.6s 3.22s var(--fe-ease-soft) both;
 }
 
-/* Планшет / десктоп — чуть крупнее сцена, больше воздуха */
-@media (min-width: 720px) {
-  .farm-ent-orbit {
-    width: min(58vw, 24rem);
-    height: min(58vw, 24rem);
-  }
-
-  .farm-ent-mark {
-    width: min(36vw, 16.5rem);
-  }
-
-  .farm-ent-title {
-    letter-spacing: 0.14em;
-  }
+.farm-ent-sub {
+  margin: 0.2rem 0 0;
+  font-size: clamp(0.78rem, 2.3vw, 0.9rem);
+  letter-spacing: 0.04em;
+  color: rgba(244, 239, 226, 0.55);
+  opacity: 0;
+  animation: farmEntCopyIn 0.6s 3.36s var(--fe-ease-soft) both;
 }
 
-@media (min-width: 1100px) {
-  .farm-ent-stage {
-    width: min(40vw, 32rem);
-  }
+.farm-ent-rule {
+  width: 3.2rem;
+  height: 1px;
+  margin-top: 0.45rem;
+  background: linear-gradient(90deg, transparent, rgba(232, 197, 106, 0.55), transparent);
+  opacity: 0;
+  animation: farmEntCopyIn 0.5s 3.48s var(--fe-ease-soft) both;
 }
 
-/* Landscape phone: компактнее по вертикали */
-@media (max-height: 480px) and (orientation: landscape) {
-  .farm-ent-orbit {
-    width: min(42vh, 16rem);
-    height: min(42vh, 16rem);
-    top: 42%;
-  }
-
-  .farm-ent-mark {
-    width: min(28vh, 9.5rem);
-  }
-
-  .farm-ent-title {
-    font-size: 1.25rem;
-  }
-
-  .farm-ent-tag {
-    display: none;
-  }
+.farm-ent-meta {
+  margin: 0.1rem 0 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(61, 214, 140, 0.55);
+  opacity: 0;
+  animation: farmEntCopyIn 0.5s 3.58s var(--fe-ease-soft) both;
 }
 
-/* Reduced motion — короткий фирменный fade, без кручений */
+@keyframes farmEntCopyIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Flash перед выходом --- */
+
+.farm-ent-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: radial-gradient(ellipse 60% 50% at 50% 45%, rgba(244, 239, 226, 0.22) 0%, transparent 70%);
+  opacity: 0;
+  animation: farmEntFlash 0.45s 5.35s var(--fe-ease-soft) both;
+}
+
+@keyframes farmEntFlash {
+  0% { opacity: 0; }
+  35% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* --- Lite / reduced --- */
+
+.farm-ent-root--lite .farm-ent-rings,
+.farm-ent-root--lite .farm-ent-brackets,
+.farm-ent-root--lite .farm-ent-aurora,
+.farm-ent-root--lite .farm-ent-grid,
+.farm-ent-root--lite .farm-ent-flash {
+  display: none;
+}
+
+.farm-ent-root--lite .farm-ent-crest {
+  animation-delay: 0.15s;
+  animation-duration: 0.7s;
+}
+
+.farm-ent-root--lite .farm-ent-copy > * {
+  animation-delay: 0.55s !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .farm-ent-ring--a,
-  .farm-ent-ring--b,
-  .farm-ent-ring--c {
-    stroke-dashoffset: 0 !important;
-    animation: farmEntFade 0.45s var(--fe-ease-soft) both !important;
+  .farm-ent-ring--b {
+    animation: farmEntDraw 0.01s forwards !important;
   }
 
   .farm-ent-crest,
-  .farm-ent-copy,
-  .farm-ent-line,
-  .farm-ent-tag,
-  .farm-ent-bracket,
+  .farm-ent-copy > *,
   .farm-ent-stamp,
-  .farm-ent-aurora,
-  .farm-ent-grid,
-  .farm-ent-dust,
-  .farm-ent-void,
-  .farm-ent-vignette {
-    animation-duration: 0.45s !important;
-    animation-delay: 0.05s !important;
-  }
-
-  .farm-ent-root--out {
-    animation-duration: 0.28s !important;
+  .farm-ent-flash {
+    animation-duration: 0.01s !important;
+    animation-delay: 0s !important;
+    opacity: 1 !important;
   }
 }

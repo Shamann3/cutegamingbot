@@ -1,6 +1,6 @@
 /**
- * Аналитика профиля в духе admin AnalyticsSection:
- * SVG-чарты + ранги, палитра black / gold / green.
+ * Полезная аналитика профиля — только то, что помогает игроку действовать.
+ * Палитра: black / gold / green.
  */
 
 const GOLD = '#e8c56a'
@@ -11,193 +11,128 @@ function fmt(n) {
   return Number(n).toLocaleString('ru-RU')
 }
 
-function rankPercentile(rank, total) {
-  if (!rank || !total || total < 1) return 0
-  return Math.max(0, Math.min(100, Math.round((1 - (rank - 1) / total) * 100)))
+function bestRank(ranks) {
+  const valid = ranks.filter((r) => r.value > 0)
+  if (!valid.length) return null
+  return valid.reduce((a, b) => (a.value < b.value ? a : b))
 }
 
-function BarChart({ items }) {
-  const max = Math.max(...items.map((i) => i.value), 1)
-  return (
-    <div className="pa-bars" role="img" aria-label="Активность">
-      {items.map((item) => {
-        const h = Math.max(8, Math.round((item.value / max) * 100))
-        return (
-          <div key={item.id} className="pa-bar-col">
-            <div className="pa-bar-track">
-              <div
-                className="pa-bar-fill"
-                style={{
-                  height: `${h}%`,
-                  background: item.color,
-                  boxShadow: `0 0 12px ${item.color}55`,
-                }}
-              />
-            </div>
-            <span className="pa-bar-value">{fmt(item.value)}</span>
-            <span className="pa-bar-label">{item.label}</span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function RingStat({ label, value, max = 100, color = GOLD, sub }) {
-  const pct = Math.max(0, Math.min(100, max > 0 ? (value / max) * 100 : 0))
-  const r = 34
-  const c = 2 * Math.PI * r
-  const offset = c - (pct / 100) * c
-  return (
-    <div className="pa-ring">
-      <svg viewBox="0 0 84 84" className="pa-ring-svg" aria-hidden>
-        <circle cx="42" cy="42" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6" />
-        <circle
-          cx="42"
-          cy="42"
-          r={r}
-          fill="none"
-          stroke={color}
-          strokeWidth="6"
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={offset}
-          transform="rotate(-90 42 42)"
-          style={{ filter: `drop-shadow(0 0 6px ${color}88)` }}
-        />
-        <text x="42" y="46" textAnchor="middle" className="pa-ring-text">
-          {Math.round(pct)}%
-        </text>
-      </svg>
-      <p className="pa-ring-label">{label}</p>
-      {sub ? <p className="pa-ring-sub">{sub}</p> : null}
-    </div>
-  )
-}
-
-function MixChart({ harvest, craft, sales }) {
-  const total = Math.max(harvest + craft + sales, 1)
-  const parts = [
-    { id: 'h', label: 'Урожай', value: harvest, color: GREEN },
-    { id: 'c', label: 'Крафт', value: craft, color: GOLD },
-    { id: 's', label: 'Биржа', value: sales, color: '#8fd9b0' },
-  ]
-  let cursor = 0
-  const segments = parts.map((p) => {
-    const start = cursor
-    const share = (p.value / total) * 100
-    cursor += share
-    return { ...p, start, share }
-  })
-
-  return (
-    <div className="pa-mix">
-      <div className="pa-mix-track" aria-hidden>
-        {segments.map((s) => (
-          <span
-            key={s.id}
-            className="pa-mix-seg"
-            style={{
-              width: `${Math.max(s.share, s.value > 0 ? 4 : 0)}%`,
-              background: s.color,
-              boxShadow: s.value > 0 ? `0 0 10px ${s.color}44` : 'none',
-            }}
-          />
-        ))}
-      </div>
-      <div className="pa-mix-legend">
-        {parts.map((p) => (
-          <span key={p.id} className="pa-mix-item">
-            <i style={{ background: p.color }} aria-hidden />
-            {p.label}
-            <strong>{fmt(p.value)}</strong>
-          </span>
-        ))}
-      </div>
-    </div>
-  )
+function nextTip({ harvest, sold, deals, balance, best }) {
+  if (harvest === 0) {
+    return {
+      title: 'Начни с урожая',
+      body: 'Посади саженец на пустой грядке и доведи до сбора — это основа прогресса.',
+      tone: 'green',
+    }
+  }
+  if (sold === 0 && harvest > 0) {
+    return {
+      title: 'Продай урожай',
+      body: 'Собранные предметы можно продать на бирже и усилить баланс.',
+      tone: 'gold',
+    }
+  }
+  if (best && best.value > 20) {
+    return {
+      title: `Поднимись в топе «${best.label}»`,
+      body: `Сейчас #${fmt(best.value)}. Несколько удачных циклов заметно сдвинут место.`,
+      tone: 'gold',
+    }
+  }
+  if (balance < 50 && harvest > 0) {
+    return {
+      title: 'Усиль экономику',
+      body: 'Низкий баланс — продай лишнее на бирже или собери готовые грядки.',
+      tone: 'green',
+    }
+  }
+  if (deals > 0) {
+    return {
+      title: 'Держи ритм',
+      body: 'Ферма + биржа работают лучше всего в цикле: посадил → собрал → продал.',
+      tone: 'green',
+    }
+  }
+  return {
+    title: 'Твой следующий шаг',
+    body: 'Проверь грядки: полей сухие, собери готовые, посади новые саженцы.',
+    tone: 'green',
+  }
 }
 
 export default function ProfileAnalytics({ profile, leaderboard }) {
   const harvest = Number(profile?.harvestCount || 0)
-  const craft = Number(profile?.craftCount || 0)
   const sold = Number(profile?.marketItemsSold || 0)
   const deals = Number(profile?.marketSalesCount || 0)
+  const balance = Number(profile?.balance || 0)
   const days = Number(profile?.daysInGame || 0)
   const totalPlayers = Number(leaderboard?.total || 0)
 
-  const harvestRank = Number(leaderboard?.myRank?.harvests || 0)
-  const salesRank = Number(leaderboard?.myRank?.sales || 0)
-  const balanceRank = Number(leaderboard?.myRank?.balance || 0)
-
-  const bars = [
-    { id: 'harvest', label: 'Урожай', value: harvest, color: GREEN },
-    { id: 'craft', label: 'Крафт', value: craft, color: GOLD },
-    { id: 'sold', label: 'Продано', value: sold, color: '#6ee7b7' },
-    { id: 'deals', label: 'Сделки', value: deals, color: '#c4a35a' },
+  const ranks = [
+    { id: 'harvests', label: 'Урожай', value: Number(leaderboard?.myRank?.harvests || 0), color: GREEN },
+    { id: 'sales', label: 'Биржа', value: Number(leaderboard?.myRank?.sales || 0), color: GOLD },
+    { id: 'balance', label: 'Баланс', value: Number(leaderboard?.myRank?.balance || 0), color: '#9fd9b4' },
   ]
+  const top = bestRank(ranks)
+  const tip = nextTip({ harvest, sold, deals, balance, best: top })
 
   return (
-    <section className="pa-root" aria-label="Аналитика игрока">
+    <section className="pa-root" aria-label="Полезная сводка">
       <header className="pa-header">
-        <p className="pa-eyebrow">Аналитика</p>
-        <h2 className="pa-title">Твой прогресс</h2>
+        <p className="pa-eyebrow">Сводка</p>
+        <h2 className="pa-title">Что важно сейчас</h2>
         <p className="pa-sub">
           {days > 0 ? `${days} дн. в игре` : 'Первый день'}
-          {totalPlayers > 0 ? ` · среди ${fmt(totalPlayers)} игроков` : ''}
+          {totalPlayers > 0 ? ` · ${fmt(totalPlayers)} игроков` : ''}
         </p>
       </header>
-
-      <div className="pa-card pa-card--bars">
-        <div className="pa-card-head">
-          <span>Активность</span>
-          <span className="pa-card-hint">урожай · крафт · биржа</span>
-        </div>
-        <BarChart items={bars} />
-      </div>
-
-      <div className="pa-card">
-        <div className="pa-card-head">
-          <span>Состав прогресса</span>
-        </div>
-        <MixChart harvest={harvest} craft={craft} sales={sold} />
-      </div>
-
-      <div className="pa-rings">
-        <RingStat
-          label="Урожай"
-          value={rankPercentile(harvestRank, totalPlayers)}
-          color={GREEN}
-          sub={harvestRank > 0 ? `топ #${fmt(harvestRank)}` : 'нет ранга'}
-        />
-        <RingStat
-          label="Биржа"
-          value={rankPercentile(salesRank, totalPlayers)}
-          color={GOLD}
-          sub={salesRank > 0 ? `топ #${fmt(salesRank)}` : 'нет ранга'}
-        />
-        <RingStat
-          label="Баланс"
-          value={rankPercentile(balanceRank, totalPlayers)}
-          color="#9fd9b4"
-          sub={balanceRank > 0 ? `топ #${fmt(balanceRank)}` : 'нет ранга'}
-        />
-      </div>
 
       <div className="pa-kpi-row">
         <div className="pa-kpi">
           <span className="pa-kpi-label">КУТ</span>
-          <strong className="pa-kpi-value">{fmt(profile?.balance)}</strong>
+          <strong className="pa-kpi-value">{fmt(balance)}</strong>
         </div>
         <div className="pa-kpi">
-          <span className="pa-kpi-label">Сборы</span>
+          <span className="pa-kpi-label">Урожаи</span>
           <strong className="pa-kpi-value" style={{ color: GREEN }}>{fmt(harvest)}</strong>
         </div>
         <div className="pa-kpi">
-          <span className="pa-kpi-label">Сделки</span>
-          <strong className="pa-kpi-value" style={{ color: GOLD }}>{fmt(deals)}</strong>
+          <span className="pa-kpi-label">Продано</span>
+          <strong className="pa-kpi-value" style={{ color: GOLD }}>{fmt(sold)}</strong>
         </div>
       </div>
+
+      <div className={`pa-tip pa-tip--${tip.tone}`}>
+        <p className="pa-tip-title">{tip.title}</p>
+        <p className="pa-tip-body">{tip.body}</p>
+      </div>
+
+      {top ? (
+        <div className="pa-rank-card">
+          <div className="pa-rank-main">
+            <span className="pa-rank-label">Твой лучший ранг</span>
+            <strong className="pa-rank-value" style={{ color: top.color }}>
+              #{fmt(top.value)}
+            </strong>
+            <span className="pa-rank-meta">{top.label}</span>
+          </div>
+          <ul className="pa-rank-list">
+            {ranks.map((r) => (
+              <li key={r.id}>
+                <span>{r.label}</span>
+                <strong style={{ color: r.value > 0 ? r.color : undefined }}>
+                  {r.value > 0 ? `#${fmt(r.value)}` : '—'}
+                </strong>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="pa-rank-card pa-rank-card--empty">
+          <p className="pa-tip-title">Ранг появится после активности</p>
+          <p className="pa-tip-body">Собери урожай или сделай сделку на бирже — и место в топе обновится.</p>
+        </div>
+      )}
     </section>
   )
 }

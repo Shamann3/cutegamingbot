@@ -1,5 +1,5 @@
 /**
- * Завораживающее поле грядки: почва, мох, лианы, споры света.
+ * Поле грядки: слои почвы, борозды, лианы, крона, споры.
  * status: empty | growing | ready | dry
  */
 export default function SoilField({
@@ -22,58 +22,54 @@ export default function SoilField({
       aria-hidden
     >
       <div className="soil-field-earth" />
+      <div className="soil-field-furrows" />
       <div className="soil-field-moss" />
       <div className="soil-field-mist" />
+      <div className="soil-field-canopy" />
 
-      {/* Угловая растительность */}
       <svg className="soil-field-vines" viewBox="0 0 160 112" preserveAspectRatio="none">
         <g className="soil-vine soil-vine--tl" fill="none" strokeLinecap="round">
-          <path className="soil-vine-stem" d="M4 28 C18 22, 22 10, 36 6" />
-          <path className="soil-vine-leaf" d="M14 22 C18 16, 24 16, 26 20 C22 22, 18 24, 14 22Z" />
-          <path className="soil-vine-leaf" d="M24 12 C28 7, 34 8, 35 12 C31 14, 27 15, 24 12Z" />
+          <path className="soil-vine-stem" d="M2 34 C16 24, 24 8, 44 4" />
+          <path className="soil-vine-stem soil-vine-stem--thin" d="M8 40 C20 34, 28 18, 40 12" />
+          <path className="soil-vine-leaf" d="M12 28 C18 20, 28 20, 30 26 C24 28, 18 30, 12 28Z" />
+          <path className="soil-vine-leaf" d="M24 14 C30 6, 40 8, 41 14 C35 16, 29 17, 24 14Z" />
+          <path className="soil-vine-leaf" d="M34 8 C38 2, 46 3, 47 8 C42 10, 38 11, 34 8Z" />
         </g>
         <g className="soil-vine soil-vine--tr" fill="none" strokeLinecap="round">
-          <path className="soil-vine-stem" d="M156 30 C142 22, 138 10, 124 6" />
-          <path className="soil-vine-leaf" d="M146 22 C142 16, 136 16, 134 20 C138 22, 142 24, 146 22Z" />
-          <path className="soil-vine-leaf" d="M136 12 C132 7, 126 8, 125 12 C129 14, 133 15, 136 12Z" />
+          <path className="soil-vine-stem" d="M158 34 C144 24, 136 8, 116 4" />
+          <path className="soil-vine-stem soil-vine-stem--thin" d="M152 40 C140 34, 132 18, 120 12" />
+          <path className="soil-vine-leaf" d="M148 28 C142 20, 132 20, 130 26 C136 28, 142 30, 148 28Z" />
+          <path className="soil-vine-leaf" d="M136 14 C130 6, 120 8, 119 14 C125 16, 131 17, 136 14Z" />
+          <path className="soil-vine-leaf" d="M126 8 C122 2, 114 3, 113 8 C118 10, 122 11, 126 8Z" />
         </g>
         <g className="soil-vine soil-vine--bl" fill="none" strokeLinecap="round">
-          <path className="soil-vine-stem" d="M6 96 C20 100, 28 104, 42 102" />
-          <path className="soil-vine-leaf" d="M18 98 C22 104, 28 104, 30 100 C26 98, 22 97, 18 98Z" />
+          <path className="soil-vine-stem" d="M4 102 C22 106, 38 108, 54 104" />
+          <path className="soil-vine-leaf" d="M16 102 C22 110, 32 110, 34 104 C28 102, 22 100, 16 102Z" />
+          <path className="soil-vine-leaf" d="M34 104 C40 112, 50 110, 52 104 C46 102, 40 101, 34 104Z" />
         </g>
         <g className="soil-vine soil-vine--br" fill="none" strokeLinecap="round">
-          <path className="soil-vine-stem" d="M154 96 C140 100, 132 104, 118 102" />
-          <path className="soil-vine-leaf" d="M142 98 C138 104, 132 104, 130 100 C134 98, 138 97, 142 98Z" />
+          <path className="soil-vine-stem" d="M156 102 C138 106, 122 108, 106 104" />
+          <path className="soil-vine-leaf" d="M144 102 C138 110, 128 110, 126 104 C132 102, 138 100, 144 102Z" />
+          <path className="soil-vine-leaf" d="M126 104 C120 112, 110 110, 108 104 C114 102, 120 101, 126 104Z" />
         </g>
       </svg>
 
-      {/* Травинки у низа */}
       <div className="soil-field-grass">
-        {Array.from({ length: 9 }, (_, i) => (
+        {Array.from({ length: 12 }, (_, i) => (
           <span key={i} className={`soil-blade soil-blade--${i + 1}`} />
         ))}
       </div>
 
-      {/* Золотые споры / пыльца */}
       <div className="soil-field-spores">
-        <span className="soil-spore soil-spore--1" />
-        <span className="soil-spore soil-spore--2" />
-        <span className="soil-spore soil-spore--3" />
-        <span className="soil-spore soil-spore--4" />
-        <span className="soil-spore soil-spore--5" />
+        {Array.from({ length: 8 }, (_, i) => (
+          <span key={i} className={`soil-spore soil-spore--${i + 1}`} />
+        ))}
       </div>
 
-      {/* Тонкая золотая руна — едва заметный орнамент */}
-      <svg className="soil-field-runes" viewBox="0 0 120 80" preserveAspectRatio="xMidYMid slice">
-        <g fill="none" stroke="currentColor" strokeWidth="1">
-          <circle cx="28" cy="26" r="6" />
-          <path d="M28 20 L28 32 M22 26 L34 26" />
-          <path d="M62 38 L68 32 L74 38 L68 44 Z" />
-          <path d="M22 56 Q36 50 50 56 T78 56" />
-        </g>
-      </svg>
+      <div className="soil-field-rim" />
 
       {ready && <div className="soil-field-ready-glow" />}
+      {moist && !dry && <div className="soil-field-dew" />}
     </div>
   )
 }

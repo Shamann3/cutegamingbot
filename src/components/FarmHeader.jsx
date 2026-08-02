@@ -4,7 +4,7 @@ export default function FarmHeader({ isPreview }) {
       <div className="farm-header-crest-wrap mx-auto">
         <div className="farm-header-crest-glow" aria-hidden />
         <img
-          src="/assets/cute-crest.png?v=2"
+          src="/assets/cute-crest.png?v=4"
           alt="Cute Farming"
           draggable={false}
           className="farm-header-crest-img"

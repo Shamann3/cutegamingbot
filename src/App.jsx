@@ -132,21 +132,29 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment, farmSegment, set
   const [marketItemId, setMarketItemId] = useState('')
   const [marketHighlightOnly, setMarketHighlightOnly] = useState(false)
 
+  // Модалка покупки поверх текущей вкладки — не уводим с фермы,
+  // иначе после покупки саженец «пропадает» из виду.
   const handleGuideNavigateShop = useCallback((item) => {
     setShopSearch(item?.name ?? '')
     setShopItemId(item?.id ? String(item.id) : '')
     setShopHighlightOnly(true)
-    setTab('trade')
     setTradeSegment('shop')
-  }, [setTab, setTradeSegment])
+  }, [setTradeSegment])
 
   const handleGuideNavigateMarket = useCallback((item) => {
     setMarketSearch(item?.name ?? '')
     setMarketItemId(item?.itemId ? String(item.itemId) : '')
     setMarketHighlightOnly(true)
-    setTab('trade')
     setTradeSegment('market')
-  }, [setTab, setTradeSegment])
+  }, [setTradeSegment])
+
+  useEffect(() => {
+    const handler = () => {
+      setTab('farm')
+    }
+    window.addEventListener('farm:purchase-complete', handler)
+    return () => window.removeEventListener('farm:purchase-complete', handler)
+  }, [setTab])
 
   useSwipeTabs({ activeTab: tab, onChange: setTab, enabled: !blockSwipe })
 

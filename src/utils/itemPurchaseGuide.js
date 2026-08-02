@@ -8,7 +8,7 @@ function itemKey(item) {
   return String(item?.id ?? item?.itemId ?? '').trim()
 }
 
-function matchesTarget(item, target) {
+function matchesTarget(item, target, { allowFuzzyName = true } = {}) {
   const key = itemKey(item)
   if (!key) return false
   if (target.canonId && target.resolver.resolve(key) === target.canonId) {
@@ -17,17 +17,27 @@ function matchesTarget(item, target) {
   if (target.canonId && key === target.canonId) {
     return true
   }
+  if (!allowFuzzyName) return false
   const name = String(item?.name ?? '').trim().toLowerCase()
   const needle = String(target.name ?? '').trim().toLowerCase()
-  if (needle && name && (name === needle || name.includes(needle) || needle.includes(name))) {
-    return true
-  }
-  return false
+  if (!needle || !name) return false
+  if (name === needle) return true
+  // Не покупаем урожай по имени культуры («Дерево» → бревно):
+  // fuzzy только для явных саженцев / совпадения с именем семени.
+  const looksLikeSeed = /сажен|семеч|seed|🌱/i.test(name) || /сажен|семеч|seed/i.test(needle)
+  if (!looksLikeSeed) return false
+  return name.includes(needle) || needle.includes(name)
 }
 
 function pickMatch(items, target) {
   if (!items?.length) return null
-  return items.find((item) => matchesTarget(item, target)) ?? null
+  const byId = items.find((item) => matchesTarget(item, target, { allowFuzzyName: false }))
+  if (byId) return byId
+  // Без canonId — только точное имя; с canonId fuzzy лишь как запасной путь.
+  if (!target.canonId) {
+    return items.find((item) => matchesTarget(item, target, { allowFuzzyName: true })) ?? null
+  }
+  return items.find((item) => matchesTarget(item, target, { allowFuzzyName: true })) ?? null
 }
 
 function uniqueSearches(target) {
