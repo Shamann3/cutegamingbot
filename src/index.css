@@ -1078,13 +1078,9 @@ body {
     font-family: Cinzel, Georgia, serif;
   }
 
-  .farm-header {
-    margin-bottom: 0.85rem;
-  }
-
+  /* База хедера фермы — финальные размеры/атмосфера в theme.css */
   .farm-header-crest-wrap {
     position: relative;
-    width: min(100%, 540px);
     margin-left: auto;
     margin-right: auto;
   }
@@ -1093,56 +1089,17 @@ body {
     position: absolute;
     inset-inline: 0;
     top: 50%;
-    height: 6.5rem;
     transform: translateY(-50%);
     pointer-events: none;
-    opacity: 0.45;
-    filter: blur(48px);
-    background: radial-gradient(ellipse at center, rgba(212, 175, 55, 0.42) 0%, transparent 72%);
   }
 
   .farm-header-crest-img {
     display: block;
     width: 100%;
-    max-width: 420px;
     height: auto;
-    max-height: 180px;
     margin-inline: auto;
     object-fit: contain;
     background: transparent;
-    mix-blend-mode: normal;
-    filter:
-      drop-shadow(0 0 18px rgba(232, 197, 106, 0.22))
-      drop-shadow(0 10px 28px rgba(0, 0, 0, 0.65));
-  }
-
-  .farm-header-titles {
-    margin-top: -0.1rem;
-  }
-
-  .farm-header-cute {
-    margin: 0;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.32em;
-    text-transform: uppercase;
-    line-height: 1;
-    background: linear-gradient(to bottom, #fef3c7, #fde68a, #d97706);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
-  .farm-header-title {
-    margin: 0.18rem 0 0;
-    font-size: 1.85rem;
-    font-weight: 700;
-    line-height: 1.02;
-    background: linear-gradient(to bottom, #fffbeb, #fde68a, #d97706);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    filter: drop-shadow(0 2px 16px rgba(212, 175, 55, 0.22));
   }
 
   .farm-header-preview-badge {
@@ -1310,20 +1267,7 @@ body {
     width: 100%;
   }
 
-  @media (min-width: 520px) {
-    .farm-header-crest-wrap {
-      width: min(100%, 580px);
-    }
-
-    .farm-header-crest-img {
-      max-width: 560px;
-      max-height: 248px;
-    }
-
-    .farm-header-title {
-      font-size: 2rem;
-    }
-  }
+  /* размеры герба — в theme.css */
 
   .app-shell {
     min-height: 100vh;
@@ -10135,14 +10079,25 @@ body.onboarding-content-lock .app-tab-bar {
 .quests-hero {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  margin-bottom: 0.75rem;
+  gap: 0.7rem;
+  margin-bottom: 0.85rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 22px;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.1) 0%, transparent 46%),
+    rgba(10, 16, 12, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 12px 28px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
 }
 
 .quests-hero-identity {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.7rem;
   min-width: 0;
 }
 
@@ -10152,33 +10107,37 @@ body.onboarding-content-lock .app-tab-bar {
 
 .quests-npc-avatar {
   flex-shrink: 0;
-  width: 3rem;
-  height: 3rem;
+  width: 2.85rem;
+  height: 2.85rem;
   display: grid;
   place-items: center;
-  font-size: 1.55rem;
+  font-size: 1.4rem;
   border-radius: 16px;
-  background: linear-gradient(145deg, rgba(251, 146, 60, 0.28) 0%, rgba(124, 45, 18, 0.42) 100%);
-  border: 1px solid rgba(251, 146, 60, 0.38);
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+    rgba(18, 24, 16, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow:
-    inset 0 0 18px rgba(251, 146, 60, 0.12),
-    0 8px 20px rgba(0, 0, 0, 0.28);
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 6px 16px rgba(0, 0, 0, 0.22);
 }
 
 .quests-hero-eyebrow {
   margin: 0;
   font-size: 0.58rem;
-  font-weight: 800;
-  letter-spacing: 0.16em;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  color: rgba(220, 230, 214, 0.55);
 }
 
 .quests-hero-title {
-  margin: 0.08rem 0 0;
-  font-size: 1.35rem;
-  font-weight: 900;
-  color: var(--tab-title-color, #ffedd5);
-  line-height: 1.05;
+  margin: 0.1rem 0 0;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--tab-title-color, #f4efe2);
+  line-height: 1.12;
+  letter-spacing: -0.01em;
 }
 
 .quests-hero-sub {
@@ -10204,6 +10163,17 @@ body.onboarding-content-lock .app-tab-bar {
 
 .quests-hero-balance .kut-donate-btn {
   width: 100%;
+}
+
+.cute-lite-mode .quests-hero,
+.cute-turbo-mode .quests-hero,
+.cute-lite-mode .profile-module-header,
+.cute-turbo-mode .profile-module-header {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.08) 0%, transparent 46%),
+    rgba(8, 16, 12, 0.72);
 }
 
 .quests-summary {
@@ -10902,34 +10872,51 @@ body.onboarding-content-lock .app-tab-bar {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 1rem 1rem 0.5rem;
+  gap: 0.65rem;
+  margin: 0 0.75rem 0.65rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 22px;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.1) 0%, transparent 46%),
+    rgba(8, 16, 12, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 12px 28px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
 }
 
 .profile-module-header-main {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.18rem;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .profile-module-eyebrow {
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--tab-accent-muted, rgba(103,232,249,0.6));
+  letter-spacing: 0.14em;
+  color: rgba(210, 228, 214, 0.55);
 }
 
 .profile-module-title {
-  font-size: 1.35rem;
-  font-weight: 900;
-  color: var(--tab-title-color, #ecfeff);
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--tab-title-color, #eef3ea);
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
 }
 
 .profile-module-balance {
-  margin-top: 0.1rem;
+  margin-top: 0;
+  flex-shrink: 0;
 }
 
 .profile-shell .segment-tabs {

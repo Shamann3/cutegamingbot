@@ -4,17 +4,17 @@
    ============================================================ */
 
 :root {
-  --glass-bg: rgba(6, 14, 10, 0.42);
-  --glass-bg-strong: rgba(6, 12, 9, 0.62);
-  --glass-bg-soft: rgba(10, 18, 14, 0.32);
-  --glass-border: rgba(61, 214, 140, 0.22);
-  --glass-border-gold: rgba(61, 214, 140, 0.3);
-  --glass-highlight: rgba(255, 255, 255, 0.22);
-  --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
-  --glass-blur: 8px;
-  --glass-blur-soft: 6px;
-  --glass-radius: 18px;
-  --glass-radius-sm: 14px;
+  --glass-bg: rgba(8, 16, 12, 0.38);
+  --glass-bg-strong: rgba(6, 14, 10, 0.55);
+  --glass-bg-soft: rgba(10, 18, 14, 0.28);
+  --glass-border: rgba(140, 190, 150, 0.18);
+  --glass-border-gold: rgba(160, 200, 160, 0.22);
+  --glass-highlight: rgba(255, 255, 255, 0.16);
+  --glass-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
+  --glass-blur: 18px;
+  --glass-blur-soft: 12px;
+  --glass-radius: 20px;
+  --glass-radius-sm: 16px;
   --glass-radius-pill: 999px;
   --glass-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --glass-duration: 0.42s;
@@ -50,8 +50,13 @@
 .farm-vine-frame {
   border-radius: calc(var(--glass-radius) + 4px) !important;
   background:
-    linear-gradient(145deg, rgba(61, 214, 140, 0.4) 0%, rgba(10, 24, 16, 0.85) 45%, rgba(61, 214, 140, 0.28) 100%) !important;
-  padding: 2px !important;
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--season-accent, #6aaf70) 28%, transparent) 0%,
+      rgba(10, 24, 16, 0.72) 48%,
+      color-mix(in srgb, var(--season-accent, #6aaf70) 18%, transparent) 100%
+    ) !important;
+  padding: 1px !important;
 }
 
 .farm-vine-frame-inner {

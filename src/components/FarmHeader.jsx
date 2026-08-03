@@ -8,38 +8,34 @@ const CREST_SRCSET = [
 ].join(', ')
 
 /**
- * Верх фермы — «печать» как panel-brand в админке:
- * круглая марка + иерархия текста, без лишнего хлама.
+ * Главный экран фермы — полноценный герб + мягкая типографика.
  */
 export default function FarmHeader({ isPreview }) {
   const { season } = useSettings()
   const seasonName = seasonLabel(season)
 
   return (
-    <header className="farm-brand">
-      <div className="farm-brand-seal" aria-hidden>
-        <div className="farm-brand-halo" />
-        <div className="farm-brand-ring" />
-        <div className="farm-brand-mark">
-          <img
-            src={CREST_SRC}
-            srcSet={CREST_SRCSET}
-            sizes="72px"
-            width={72}
-            height={58}
-            alt=""
-            draggable={false}
-            decoding="async"
-            fetchPriority="high"
-            className="farm-brand-crest"
-          />
-        </div>
+    <header className="farm-header">
+      <div className="farm-header-crest-wrap">
+        <div className="farm-header-crest-glow" aria-hidden />
+        <img
+          src={CREST_SRC}
+          srcSet={CREST_SRCSET}
+          sizes="(min-width: 640px) 200px, 168px"
+          width={230}
+          height={187}
+          alt="Cute Farming"
+          draggable={false}
+          decoding="async"
+          fetchPriority="high"
+          className="farm-header-crest-img"
+        />
       </div>
 
-      <div className="farm-brand-meta">
-        <p className="farm-brand-kicker">Cute Farming</p>
-        <h1 className="farm-brand-title farm-title-serif">Ферма</h1>
-        <p className="farm-brand-tag">{seasonName} · сезон открыт</p>
+      <div className="farm-header-titles">
+        <p className="farm-header-cute farm-title-serif">Cute</p>
+        <h1 className="farm-header-title farm-title-serif">Фермерство</h1>
+        <p className="farm-header-season">{seasonName} · сезон открыт</p>
       </div>
 
       {isPreview && (

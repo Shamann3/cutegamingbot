@@ -624,46 +624,28 @@
 .tab-theme-chests .chest-hero-eyebrow::before {
   content: '';
   display: inline-block;
-  width: 0.55rem;
-  height: 0.55rem;
-  margin-right: 0.4rem;
-  border-radius: 0 70% 40% 70%;
-  background: linear-gradient(135deg, #7ef0b4 0%, #1f7a4d 100%);
-  box-shadow: 0 0 6px rgba(61, 214, 140, 0.35);
-  vertical-align: 0.05em;
-  transform: rotate(-28deg);
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-right: 0.35rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tab-accent, #6aaf70) 70%, #fff);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--tab-accent, #6aaf70) 35%, transparent);
+  vertical-align: 0.08em;
 }
 
-/* === Баланс КУТ внутри вкладки === */
-
-.tab-theme-farm .kut-balance-frame,
-.tab-theme-inventory .kut-balance-frame,
-.tab-theme-craft .kut-balance-frame,
-.tab-theme-shop .kut-balance-frame,
-.tab-theme-market .kut-balance-frame {
-  background: var(--tab-balance-frame);
-}
+/* === Баланс КУТ — мягкое стекло (рамка из theme.css) === */
 
 .tab-theme-farm .kut-balance-inner,
 .tab-theme-inventory .kut-balance-inner,
 .tab-theme-craft .kut-balance-inner,
 .tab-theme-shop .kut-balance-inner,
-.tab-theme-market .kut-balance-inner {
+.tab-theme-market .kut-balance-inner,
+.tab-theme-profile .kut-balance-inner,
+.tab-theme-quests .kut-balance-inner {
   background:
-    radial-gradient(circle at 18% 50%, var(--tab-accent-soft) 0%, transparent 52%),
-    linear-gradient(180deg, var(--tab-surface) 0%, var(--tab-surface-alt) 100%);
-  border-color: var(--tab-frame-border);
-}
-
-.tab-theme-farm .kut-donate-btn,
-.tab-theme-inventory .kut-donate-btn,
-.tab-theme-craft .kut-donate-btn,
-.tab-theme-shop .kut-donate-btn,
-.tab-theme-market .kut-donate-btn {
-  background: var(--tab-balance-frame);
-  box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.34),
-    0 0 20px var(--tab-accent-glow);
+    linear-gradient(165deg, rgba(255, 255, 255, 0.1) 0%, transparent 48%),
+    color-mix(in srgb, var(--tab-surface, rgba(8, 16, 12, 0.55)) 88%, transparent);
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
 /* === Рюкзак === */

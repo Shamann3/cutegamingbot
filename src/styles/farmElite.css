@@ -30,11 +30,11 @@
   }
 }
 
-.tab-theme-farm .farm-brand-halo {
+.tab-theme-farm .farm-header-crest-glow {
   background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--season-accent, #6aaf70) 32%, transparent) 0%,
-    transparent 70%
+    ellipse at center,
+    color-mix(in srgb, var(--season-accent, #6aaf70) 40%, transparent) 0%,
+    transparent 72%
   );
 }
 
@@ -379,11 +379,11 @@
 @media (prefers-reduced-motion: reduce) {
   .tab-theme-farm .farm-shell--enter,
   .tab-theme-farm.farm-module--revealed .farm-plots-grid > *,
-  .farm-brand-halo,
-  .farm-brand-crest,
-  .farm-brand-kicker,
-  .farm-brand-title,
-  .farm-brand-tag {
+  .farm-header-crest-glow,
+  .farm-header-crest-img,
+  .farm-header-cute,
+  .farm-header-title,
+  .farm-header-season {
     animation: none !important;
   }
 
