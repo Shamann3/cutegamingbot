@@ -24,7 +24,7 @@ export default function Onboarding() {
           <div className="farm-header-crest-wrap onboarding-welcome-crest-wrap">
             <div className="farm-header-crest-glow" aria-hidden />
             <img
-              src="/assets/cute-crest.png?v=4"
+              src="/assets/cute-crest-2x.png?v=6"
               alt=""
               draggable={false}
               className="farm-header-crest-img"

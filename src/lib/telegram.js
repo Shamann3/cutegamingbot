@@ -1,19 +1,102 @@
 /**
- * Telegram Mini App user_id и initData приходят автоматически из Telegram.
- * Ничего вручную в .env для обычного запуска не нужно.
+ * Telegram Mini App: auth + viewport / fullscreen / safe-area sync.
  */
+
+function setCssVar(name, value) {
+  document.documentElement.style.setProperty(name, value)
+}
+
+function syncTelegramViewport(tg) {
+  if (!tg) return
+
+  const h = Number(tg.viewportStableHeight || tg.viewportHeight || window.innerHeight) || window.innerHeight
+  setCssVar('--app-vh', `${Math.round(h)}px`)
+
+  // contentSafeAreaInset учитывает кнопки Telegram (✕ / ⋯)
+  const content = tg.contentSafeAreaInset || {}
+  const safe = tg.safeAreaInset || {}
+
+  const top = Number(content.top ?? safe.top ?? 0) || 0
+  const bottom = Number(content.bottom ?? safe.bottom ?? 0) || 0
+  const left = Number(content.left ?? safe.left ?? 0) || 0
+  const right = Number(content.right ?? safe.right ?? 0) || 0
+
+  setCssVar('--tg-safe-top', `${top}px`)
+  setCssVar('--tg-safe-bottom', `${bottom}px`)
+  setCssVar('--tg-safe-left', `${left}px`)
+  setCssVar('--tg-safe-right', `${right}px`)
+
+  // CSS env() fallbacks still work; these override when TG reports insets
+  document.documentElement.dataset.tgViewport = '1'
+}
+
+function bindViewportSync(tg) {
+  const sync = () => syncTelegramViewport(tg)
+  sync()
+
+  try {
+    tg.onEvent?.('viewportChanged', sync)
+    tg.onEvent?.('safeAreaChanged', sync)
+    tg.onEvent?.('contentSafeAreaChanged', sync)
+    tg.onEvent?.('fullscreenChanged', sync)
+  } catch {
+    // older clients
+  }
+
+  window.addEventListener('resize', sync)
+  window.visualViewport?.addEventListener('resize', sync)
+}
 
 export function initTelegramWebApp() {
   const tg = window.Telegram?.WebApp
-  if (!tg) return null
+  if (!tg) {
+    // Browser / preview: fill window
+    setCssVar('--app-vh', `${window.innerHeight}px`)
+    const sync = () => setCssVar('--app-vh', `${window.innerHeight}px`)
+    window.addEventListener('resize', sync)
+    window.visualViewport?.addEventListener('resize', sync)
+    return null
+  }
 
   tg.ready()
   tg.expand()
 
-  if (tg.themeParams?.bg_color) {
-    document.documentElement.style.setProperty('--tg-bg', tg.themeParams.bg_color)
+  try {
+    tg.disableVerticalSwipes?.()
+  } catch {
+    // ignore
   }
 
+  try {
+    tg.setHeaderColor?.('#050806')
+    tg.setBackgroundColor?.('#050806')
+  } catch {
+    // ignore
+  }
+
+  const requestFull = () => {
+    try {
+      tg.expand()
+      if (typeof tg.requestFullscreen === 'function' && !tg.isFullscreen) {
+        tg.requestFullscreen()
+      }
+    } catch {
+      // not supported / user denied
+    }
+    syncTelegramViewport(tg)
+  }
+
+  // Bot API 8+: fullscreen; повтор через кадр — клиент иногда не готов сразу
+  requestFull()
+  requestAnimationFrame(requestFull)
+  setTimeout(requestFull, 350)
+  setTimeout(requestFull, 1200)
+
+  if (tg.themeParams?.bg_color) {
+    setCssVar('--tg-bg', tg.themeParams.bg_color)
+  }
+
+  bindViewportSync(tg)
   return tg
 }
 
@@ -66,7 +149,6 @@ export function openTelegramBotLink(url) {
   const href = String(url || '').trim()
   if (!href) return false
 
-  // openTelegramLink принимает только https://t.me/...
   if (href.startsWith('https://t.me/') && tg?.openTelegramLink) {
     tg.openTelegramLink(href)
     return true

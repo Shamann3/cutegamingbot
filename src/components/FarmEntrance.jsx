@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import '../styles/farmEntrance.css'
 
 const SESSION_KEY = 'cute_farm_entrance_v8'
-const CREST_SRC = '/assets/cute-crest.png?v=4'
+const CREST_SRC = '/assets/cute-crest-2x.png?v=6'
 /** Как админская печать: ~6.0с ритуал + выход. */
 const HOLD_MS = 5550
 const OUT_MS = 450

@@ -9,6 +9,7 @@ import './index.css'
 import './styles/tabThemes.css'
 import './styles/glass.css'
 import './styles/season.css'
+import './styles/theme.css'
 
 initTelegramWebApp()
 

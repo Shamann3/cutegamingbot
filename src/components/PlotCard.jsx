@@ -232,18 +232,18 @@ function PlotCard({
         isOnboardingSpotlight
           ? 'onboarding-plot-highlight'
           : isHighlighted
-            ? 'ring-2 ring-amber-300/70 scale-[1.02] z-10'
+            ? 'ring-2 ring-emerald-300/60 scale-[1.02] z-10'
             : ''
       } ${needsWaterPulse ? 'plot-needs-water-pulse' : ''} ${
         tutorialDimmed ? 'onboarding-plot-dimmed' : ''
       }`}
     >
       <article className="relative flex flex-col">
-      <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded-lg bg-black/50 border border-amber-500/40 text-amber-100 text-xs font-bold">
+      <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded-lg bg-black/45 border border-emerald-400/35 text-emerald-50 text-xs font-bold backdrop-blur-[2px]">
         #{plot.id}
       </div>
 
-      <div className="farm-soil-panel p-2 border-b border-amber-500/15">
+      <div className="farm-soil-panel p-2 border-b border-emerald-500/15">
         <div
           className={`farm-soil-inner relative h-36 flex items-end justify-center pb-2 transition-colors duration-500${
             autowaterActive ? ' farm-soil-autowater-active' : ''
@@ -278,7 +278,7 @@ function PlotCard({
       </div>
 
       <div className="p-3 space-y-2 farm-panel-body">
-        <p className="text-center text-xs font-bold text-amber-100/90 uppercase tracking-widest plot-crop-label">
+        <p className="text-center text-xs font-bold text-emerald-50/90 uppercase tracking-widest plot-crop-label">
           {status === PlotStatus.GROWING || status === PlotStatus.READY
             ? cropLabel
             : STATUS_LABELS[status]}
@@ -293,7 +293,7 @@ function PlotCard({
             />
 
             {drySoon && !isDry && (
-              <p className="text-center text-[10px] font-bold text-amber-300/90 bg-black/30 rounded-lg py-1 px-2 border border-amber-500/20 animate-pulse-soft">
+              <p className="text-center text-[10px] font-bold text-amber-200/90 bg-black/30 rounded-lg py-1 px-2 border border-amber-400/25 animate-pulse-soft">
                 ⚠ Скоро засохнет. Полейте грядку
               </p>
             )}
@@ -345,7 +345,7 @@ function PlotCard({
               {waterBlocked && (
                 <button
                   type="button"
-                  className="text-center text-[10px] font-bold text-amber-200/90 bg-black/25 rounded-lg py-1 px-2 border border-amber-400/40 w-full active:opacity-70 transition-opacity cursor-pointer"
+                  className="text-center text-[10px] font-bold text-emerald-100/90 bg-black/25 rounded-lg py-1 px-2 border border-emerald-400/35 w-full active:opacity-70 transition-opacity cursor-pointer"
                   disabled={actionBusy}
                   onClick={() => {
                     runPurchaseGuide({
@@ -382,7 +382,7 @@ function PlotCard({
                 {harvestBlockedByTool ? harvestShopLabel : harvestLabel}
               </button>
               {harvestTool?.owned && (
-                <p className="text-center text-[10px] text-amber-200/70">
+                <p className="text-center text-[10px] text-emerald-100/65">
                   {harvestTool.emoji} −{harvestTool.costPerHarvest} · осталось {harvestTool.count}
                 </p>
               )}

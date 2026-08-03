@@ -17,8 +17,8 @@
   inset: 0;
   background:
     radial-gradient(ellipse 90% 55% at 50% 115%, rgba(61, 214, 140, 0.12) 0%, transparent 55%),
-    radial-gradient(circle at 30% 35%, rgba(232, 197, 106, 0.08) 0%, transparent 40%),
-    linear-gradient(180deg, #1a140c 0%, #120e0a 48%, #080604 100%);
+    radial-gradient(circle at 30% 35%, rgba(61, 214, 140, 0.08) 0%, transparent 40%),
+    linear-gradient(180deg, #121816 0%, #0c100e 48%, #060806 100%);
 }
 
 .soil-field-furrows {
@@ -66,8 +66,8 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 70% 55% at 50% 70%, rgba(232, 197, 106, 0.22) 0%, transparent 65%),
-    radial-gradient(ellipse 45% 35% at 50% 40%, rgba(61, 214, 140, 0.1) 0%, transparent 70%);
+    radial-gradient(ellipse 70% 55% at 50% 70%, rgba(61, 214, 140, 0.22) 0%, transparent 65%),
+    radial-gradient(ellipse 45% 35% at 50% 40%, rgba(110, 231, 183, 0.12) 0%, transparent 70%);
   animation: soilReadyPulse 2.6s ease-in-out infinite;
 }
 
@@ -86,7 +86,7 @@
   inset: 0;
   border-radius: inherit;
   box-shadow:
-    inset 0 0 0 1px rgba(232, 197, 106, 0.22),
+    inset 0 0 0 1px rgba(61, 214, 140, 0.22),
     inset 0 -16px 24px rgba(0, 0, 0, 0.25);
   z-index: 4;
 }
