@@ -176,9 +176,9 @@
   width: 100%;
   margin: 0.15rem 0 0.2rem;
   font-size: 0.58rem !important;
-  font-weight: 800 !important;
-  color: #9fd9b4 !important;
-  border-bottom-color: rgba(61, 214, 140, 0.4) !important;
+  font-weight: 650 !important;
+  color: rgba(238, 243, 234, 0.72) !important;
+  border-bottom: none !important;
   text-align: center;
 }
 

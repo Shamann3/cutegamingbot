@@ -1,38 +1,38 @@
 /* === Общие переменные тем вкладок === */
 
 .tab-theme-farm {
-  /* Прозрачно-зелёно-чёрный; золото sparingly */
-  --tab-accent: #3dd68c;
-  --tab-accent-strong: #3dd68c;
-  --tab-accent-muted: rgba(61, 214, 140, 0.62);
-  --tab-accent-soft: rgba(61, 214, 140, 0.14);
-  --tab-accent-glow: rgba(61, 214, 140, 0.28);
-  --tab-surface: rgba(8, 14, 11, 0.72);
-  --tab-surface-alt: rgba(5, 10, 8, 0.68);
-  --tab-frame-border: rgba(61, 214, 140, 0.28);
-  --tab-title-color: #e8f5ee;
-  --tab-chip-border: rgba(61, 214, 140, 0.26);
-  --tab-balance-frame: linear-gradient(135deg, #2f9e64 0%, #3dd68c 38%, #1f7a4d 68%, #0b1a12 100%);
-  --farm-ink: #e8f5ee;
-  --farm-gold: #e8c56a;
-  --farm-gold-deep: #b8892d;
-  --farm-green: #3dd68c;
-  --farm-green-deep: #1f7a4d;
+  /* Лесной шалфей; сезонные переменные перекрывают */
+  --tab-accent: var(--season-accent, #7aa86a);
+  --tab-accent-strong: var(--season-accent, #7aa86a);
+  --tab-accent-muted: color-mix(in srgb, var(--season-accent, #7aa86a) 62%, transparent);
+  --tab-accent-soft: var(--season-accent-soft, rgba(122, 168, 106, 0.14));
+  --tab-accent-glow: var(--season-accent-glow, rgba(122, 168, 106, 0.26));
+  --tab-surface: rgba(8, 14, 11, 0.62);
+  --tab-surface-alt: rgba(5, 10, 8, 0.58);
+  --tab-frame-border: var(--brand-border, rgba(122, 168, 106, 0.28));
+  --tab-title-color: #eef3ea;
+  --tab-chip-border: var(--season-chip, rgba(122, 168, 106, 0.26));
+  --tab-balance-frame: linear-gradient(135deg, #3f6a3a 0%, #7aa86a 38%, #3f6a3a 68%, #0b1a12 100%);
+  --farm-ink: #eef3ea;
+  --farm-gold: #c4a35a;
+  --farm-gold-deep: #8a6a28;
+  --farm-green: var(--season-accent, #7aa86a);
+  --farm-green-deep: var(--season-accent-deep, #3f6a3a);
   --farm-void: #050806;
 }
 
 .tab-theme-inventory {
-  --tab-accent: #3dd68c;
-  --tab-accent-strong: #2f9e64;
-  --tab-accent-muted: rgba(61, 214, 140, 0.62);
-  --tab-accent-soft: rgba(61, 214, 140, 0.14);
-  --tab-accent-glow: rgba(61, 214, 140, 0.28);
-  --tab-surface: rgba(8, 16, 12, 0.72);
-  --tab-surface-alt: rgba(6, 12, 9, 0.68);
-  --tab-frame-border: rgba(61, 214, 140, 0.3);
-  --tab-title-color: #e8f5ee;
-  --tab-chip-border: rgba(61, 214, 140, 0.28);
-  --tab-balance-frame: linear-gradient(135deg, #2f9e64 0%, #3dd68c 45%, #0b1a12 100%);
+  --tab-accent: var(--season-accent, #7aa86a);
+  --tab-accent-strong: var(--season-accent-deep, #3f6a3a);
+  --tab-accent-muted: color-mix(in srgb, var(--season-accent, #7aa86a) 62%, transparent);
+  --tab-accent-soft: var(--season-accent-soft, rgba(122, 168, 106, 0.14));
+  --tab-accent-glow: var(--season-accent-glow, rgba(122, 168, 106, 0.26));
+  --tab-surface: rgba(8, 16, 12, 0.62);
+  --tab-surface-alt: rgba(6, 12, 9, 0.58);
+  --tab-frame-border: var(--brand-border, rgba(122, 168, 106, 0.3));
+  --tab-title-color: #eef3ea;
+  --tab-chip-border: var(--season-chip, rgba(122, 168, 106, 0.28));
+  --tab-balance-frame: linear-gradient(135deg, #3f6a3a 0%, #7aa86a 45%, #0b1a12 100%);
 }
 
 .tab-theme-craft {
@@ -50,31 +50,31 @@
 }
 
 .tab-theme-shop {
-  --tab-accent: #3dd68c;
-  --tab-accent-strong: #2f9e64;
-  --tab-accent-muted: rgba(61, 214, 140, 0.62);
-  --tab-accent-soft: rgba(61, 214, 140, 0.14);
-  --tab-accent-glow: rgba(61, 214, 140, 0.28);
-  --tab-surface: rgba(8, 16, 12, 0.72);
-  --tab-surface-alt: rgba(6, 12, 9, 0.68);
-  --tab-frame-border: rgba(61, 214, 140, 0.32);
-  --tab-title-color: #e8f5ee;
-  --tab-chip-border: rgba(61, 214, 140, 0.28);
-  --tab-balance-frame: linear-gradient(135deg, #2f9e64 0%, #3dd68c 40%, #0b1a12 100%);
+  --tab-accent: var(--season-accent, #7aa86a);
+  --tab-accent-strong: var(--season-accent-deep, #3f6a3a);
+  --tab-accent-muted: color-mix(in srgb, var(--season-accent, #7aa86a) 62%, transparent);
+  --tab-accent-soft: var(--season-accent-soft, rgba(122, 168, 106, 0.14));
+  --tab-accent-glow: var(--season-accent-glow, rgba(122, 168, 106, 0.26));
+  --tab-surface: rgba(8, 16, 12, 0.62);
+  --tab-surface-alt: rgba(6, 12, 9, 0.58);
+  --tab-frame-border: var(--brand-border, rgba(122, 168, 106, 0.32));
+  --tab-title-color: #eef3ea;
+  --tab-chip-border: var(--season-chip, rgba(122, 168, 106, 0.28));
+  --tab-balance-frame: linear-gradient(135deg, #3f6a3a 0%, #7aa86a 40%, #0b1a12 100%);
 }
 
 .tab-theme-market {
-  --tab-accent: #6ee7b7;
-  --tab-accent-strong: #3dd68c;
-  --tab-accent-muted: rgba(110, 231, 183, 0.62);
-  --tab-accent-soft: rgba(61, 214, 140, 0.14);
-  --tab-accent-glow: rgba(61, 214, 140, 0.28);
-  --tab-surface: rgba(8, 16, 12, 0.72);
-  --tab-surface-alt: rgba(6, 12, 9, 0.68);
-  --tab-frame-border: rgba(61, 214, 140, 0.3);
-  --tab-title-color: #e8f5ee;
-  --tab-chip-border: rgba(61, 214, 140, 0.28);
-  --tab-balance-frame: linear-gradient(135deg, #1f7a4d 0%, #3dd68c 45%, #0b1a12 100%);
+  --tab-accent: var(--season-accent, #8fbf8a);
+  --tab-accent-strong: var(--season-accent-deep, #3f6a3a);
+  --tab-accent-muted: color-mix(in srgb, var(--season-accent, #8fbf8a) 62%, transparent);
+  --tab-accent-soft: var(--season-accent-soft, rgba(122, 168, 106, 0.14));
+  --tab-accent-glow: var(--season-accent-glow, rgba(122, 168, 106, 0.26));
+  --tab-surface: rgba(8, 16, 12, 0.62);
+  --tab-surface-alt: rgba(6, 12, 9, 0.58);
+  --tab-frame-border: var(--brand-border, rgba(122, 168, 106, 0.3));
+  --tab-title-color: #eef3ea;
+  --tab-chip-border: var(--season-chip, rgba(122, 168, 106, 0.28));
+  --tab-balance-frame: linear-gradient(135deg, #3f6a3a 0%, #8fbf8a 45%, #0b1a12 100%);
 }
 
 .tab-theme-settings {

@@ -27,6 +27,7 @@ import { syncSession } from './lib/sessionClient'
 import { canAuthenticate, getStartTab } from './lib/telegram'
 import { resolveStartTab } from './utils/tradeNav'
 import { fetchAppStatus } from './lib/apiClient'
+import GlobalSeasonLayer from './components/decor/GlobalSeasonLayer'
 
 export default function App() {
   const [maintenance, setMaintenance] = useState(false)
@@ -197,6 +198,7 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment, farmSegment, set
   return (
     <div className={`app-shell${equipped.background ? ' app-has-bg' : ''}`} data-active-tab={tab}>
       <BackgroundMusic />
+      <GlobalSeasonLayer />
       <Onboarding />
       <SaleNotificationLayer />
       <ShopPurchaseGuideLayer onNavigateShop={handleGuideNavigateShop} />

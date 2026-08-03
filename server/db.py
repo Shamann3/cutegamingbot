@@ -3703,28 +3703,52 @@ class Database:
             raise ValueError("Профиль не найден")
         await self.ensure_user(viewer_id)
         await self.ensure_user(target_user_id)
+
+        # Те же публичные поля, что видны в своём профиле (без лимитов/бана/донатов).
+        sql_candidates = [
+            """
+            SELECT u.user_id, u.username, u.first_name, u.last_name, u.display_name, u.photo_url,
+                   u.balance, u.harvest_count, u.craft_count,
+                   u.market_items_sold, u.market_sales_count, u.created_at,
+                   u.refferals, u.xpp, u.country, u.refferer_id,
+                   u.wins, u.loose, u.winamount,
+                   u.rep_plus, u.rep_minus,
+                   ref.first_name AS referer_name
+            FROM users u
+            LEFT JOIN users ref ON ref.user_id = u.refferer_id
+            WHERE u.user_id = $1
+            """,
+            """
+            SELECT user_id, username, first_name, last_name, display_name, photo_url,
+                   balance, harvest_count, craft_count,
+                   market_items_sold, market_sales_count, created_at,
+                   refferals, xpp, country, wins, loose, winamount, rep_plus, rep_minus
+            FROM users
+            WHERE user_id = $1
+            """,
+            """
+            SELECT user_id, username, first_name, last_name, display_name, photo_url,
+                   market_sales_count, market_items_sold,
+                   harvest_count, craft_count, country, created_at
+            FROM users
+            WHERE user_id = $1
+            """,
+            """
+            SELECT user_id, username, first_name, last_name, display_name, photo_url,
+                   market_sales_count, market_items_sold
+            FROM users
+            WHERE user_id = $1
+            """,
+        ]
+
         async with self.pool.acquire() as conn:
-            try:
-                row = await conn.fetchrow(
-                    """
-                    SELECT user_id, username, first_name, last_name, display_name, photo_url,
-                           market_sales_count, market_items_sold,
-                           harvest_count, craft_count, country, created_at
-                    FROM users
-                    WHERE user_id = $1
-                    """,
-                    target_user_id,
-                )
-            except Exception:
-                row = await conn.fetchrow(
-                    """
-                    SELECT user_id, username, first_name, last_name, display_name, photo_url,
-                           market_sales_count, market_items_sold
-                    FROM users
-                    WHERE user_id = $1
-                    """,
-                    target_user_id,
-                )
+            row = None
+            for sql in sql_candidates:
+                try:
+                    row = await conn.fetchrow(sql, target_user_id)
+                    break
+                except Exception:
+                    row = None
             active_listings = await conn.fetchval(
                 """
                 SELECT COUNT(*)::int

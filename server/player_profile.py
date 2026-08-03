@@ -102,6 +102,17 @@ def profile_from_telegram_user(user: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _iso_date(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return str(value)
+    except Exception:
+        return None
+
+
 def profile_row_to_client(
     row: dict[str, Any] | None,
     *,
@@ -115,6 +126,18 @@ def profile_row_to_client(
     craft_count = 0
     days_in_game = 0
     country = None
+    balance = 0
+    experience = 0
+    referrals = 0
+    wins = 0
+    losses = 0
+    win_amount = 0
+    rep_plus = 0
+    rep_minus = 0
+    registered_at = None
+    referer_name = None
+    referer_user_id = None
+
     if row:
         sales_count = int(_row_get(row, "market_sales_count", 0) or 0)
         items_sold = int(_row_get(row, "market_items_sold", 0) or 0)
@@ -123,26 +146,62 @@ def profile_row_to_client(
         days_in_game = int(_row_get(row, "days_in_game", 0) or 0)
         country_raw = _row_get(row, "country")
         country = str(country_raw).strip() if country_raw else None
+        balance = int(_row_get(row, "balance", 0) or 0)
+        experience = int(_row_get(row, "xpp", _row_get(row, "experience", 0)) or 0)
+        referrals = int(_row_get(row, "refferals", _row_get(row, "referrals", 0)) or 0)
+        wins = int(_row_get(row, "wins", 0) or 0)
+        losses = int(_row_get(row, "loose", _row_get(row, "losses", 0)) or 0)
+        win_amount = int(_row_get(row, "winamount", _row_get(row, "win_amount", 0)) or 0)
+        rep_plus = int(_row_get(row, "rep_plus", 0) or 0)
+        rep_minus = int(_row_get(row, "rep_minus", 0) or 0)
+        registered_at = _iso_date(_row_get(row, "created_at"))
+        referer_raw = _row_get(row, "referer_name")
+        referer_name = str(referer_raw).strip() if referer_raw else None
+        ref_id = _row_get(row, "refferer_id") or _row_get(row, "referer_user_id")
+        if ref_id:
+            try:
+                referer_user_id = int(ref_id)
+            except (TypeError, ValueError):
+                referer_user_id = None
 
     rank = seller_rank(sales_count)
+    is_self = viewer_id is not None and int(viewer_id) == int(user_id)
+
+    base = {
+        "userId": int(user_id),
+        "activeListings": int(active_listings),
+        "salesCount": sales_count,
+        "itemsSold": items_sold,
+        "harvestCount": harvest_count,
+        "craftCount": craft_count,
+        "daysInGame": days_in_game,
+        "countryEmoji": country,
+        "sellerRank": rank,
+        "isSelf": is_self,
+        # Публичная часть как в /api/me (без лимитов/бана/донатов)
+        "balance": balance,
+        "experience": experience,
+        "referrals": referrals,
+        "wins": wins,
+        "losses": losses,
+        "winAmount": win_amount,
+        "repPlus": rep_plus,
+        "repMinus": rep_minus,
+        "registeredAt": registered_at,
+        "refererName": referer_name,
+        "refererUserId": referer_user_id,
+        "marketSalesCount": sales_count,
+        "marketItemsSold": items_sold,
+    }
 
     if not row:
         display = format_display_name(user_id=user_id)
         return {
-            "userId": int(user_id),
+            **base,
             "displayName": display,
             "sellerLabel": display,
             "username": None,
             "photoUrl": None,
-            "activeListings": int(active_listings),
-            "salesCount": sales_count,
-            "itemsSold": items_sold,
-            "harvestCount": harvest_count,
-            "craftCount": craft_count,
-            "daysInGame": days_in_game,
-            "countryEmoji": country,
-            "sellerRank": rank,
-            "isSelf": viewer_id is not None and int(viewer_id) == int(user_id),
         }
 
     uid = int(_row_get(row, "user_id", user_id) or user_id)
@@ -159,19 +218,12 @@ def profile_row_to_client(
     uname = (username or "").strip().lstrip("@") or None
     photo = (_row_get(row, "photo_url") or "").strip() or None
     return {
+        **base,
         "userId": uid,
         "displayName": display,
         "sellerLabel": display,
         "username": uname,
         "photoUrl": photo,
-        "activeListings": int(active_listings),
-        "salesCount": sales_count,
-        "itemsSold": items_sold,
-        "harvestCount": harvest_count,
-        "craftCount": craft_count,
-        "daysInGame": days_in_game,
-        "countryEmoji": country,
-        "sellerRank": rank,
         "isSelf": viewer_id is not None and int(viewer_id) == int(uid),
     }
 

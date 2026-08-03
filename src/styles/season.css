@@ -12,50 +12,63 @@
 :root,
 html.cute-season-summer,
 html[data-season='summer'] {
-  --season-accent: #3dd68c;
-  --season-accent-deep: #1f7a4d;
-  --season-accent-soft: rgba(61, 214, 140, 0.14);
-  --season-accent-glow: rgba(61, 214, 140, 0.28);
-  --season-mist: rgba(61, 214, 140, 0.1);
-  --season-ink-on-accent: #04140c;
-  --season-soil-cool: rgba(61, 214, 140, 0.12);
-  --season-chip: rgba(61, 214, 140, 0.22);
+  /* Тёплый лесной зелёный (шалфей), не неон */
+  --season-accent: #7aa86a;
+  --season-accent-deep: #3f6a3a;
+  --season-accent-soft: rgba(122, 168, 106, 0.16);
+  --season-accent-glow: rgba(196, 168, 90, 0.22);
+  --season-mist: rgba(122, 168, 106, 0.12);
+  --season-ink-on-accent: #10180e;
+  --season-soil-cool: rgba(122, 168, 106, 0.12);
+  --season-chip: rgba(122, 168, 106, 0.24);
+  --brand-green: #7aa86a;
+  --brand-green-deep: #3f6a3a;
+  --brand-border: rgba(122, 168, 106, 0.3);
 }
 
 html.cute-season-spring,
 html[data-season='spring'] {
-  --season-accent: #7fd9a8;
-  --season-accent-deep: #2f8f62;
-  --season-accent-soft: rgba(127, 217, 168, 0.16);
-  --season-accent-glow: rgba(255, 182, 193, 0.22);
-  --season-mist: rgba(180, 230, 200, 0.14);
-  --season-ink-on-accent: #0a1810;
-  --season-soil-cool: rgba(127, 217, 168, 0.14);
-  --season-chip: rgba(255, 182, 193, 0.28);
+  --season-accent: #8fbf8a;
+  --season-accent-deep: #4a7a4f;
+  --season-accent-soft: rgba(255, 182, 193, 0.16);
+  --season-accent-glow: rgba(255, 182, 193, 0.28);
+  --season-mist: rgba(200, 230, 200, 0.14);
+  --season-ink-on-accent: #122016;
+  --season-soil-cool: rgba(143, 191, 138, 0.14);
+  --season-chip: rgba(255, 182, 193, 0.3);
+  --brand-green: #8fbf8a;
+  --brand-green-deep: #4a7a4f;
+  --brand-border: rgba(255, 182, 193, 0.32);
 }
 
 html.cute-season-autumn,
 html[data-season='autumn'] {
-  --season-accent: #e0a04a;
-  --season-accent-deep: #9a5a18;
-  --season-accent-soft: rgba(224, 160, 74, 0.16);
-  --season-accent-glow: rgba(196, 92, 48, 0.24);
-  --season-mist: rgba(180, 100, 40, 0.12);
+  --season-accent: #d4924a;
+  --season-accent-deep: #8a4a18;
+  --season-accent-soft: rgba(212, 146, 74, 0.16);
+  --season-accent-glow: rgba(180, 80, 40, 0.26);
+  --season-mist: rgba(180, 100, 40, 0.14);
   --season-ink-on-accent: #1a1006;
-  --season-soil-cool: rgba(196, 92, 48, 0.12);
-  --season-chip: rgba(224, 160, 74, 0.28);
+  --season-soil-cool: rgba(196, 92, 48, 0.14);
+  --season-chip: rgba(212, 146, 74, 0.3);
+  --brand-green: #d4924a;
+  --brand-green-deep: #8a4a18;
+  --brand-border: rgba(212, 146, 74, 0.34);
 }
 
 html.cute-season-winter,
 html[data-season='winter'] {
-  --season-accent: #9ec9e8;
-  --season-accent-deep: #4a7fa3;
-  --season-accent-soft: rgba(158, 201, 232, 0.16);
-  --season-accent-glow: rgba(158, 201, 232, 0.3);
-  --season-mist: rgba(186, 214, 232, 0.12);
+  --season-accent: #8eb4d4;
+  --season-accent-deep: #3f6a8a;
+  --season-accent-soft: rgba(142, 180, 212, 0.16);
+  --season-accent-glow: rgba(142, 180, 212, 0.28);
+  --season-mist: rgba(186, 214, 232, 0.14);
   --season-ink-on-accent: #0a1620;
-  --season-soil-cool: rgba(158, 201, 232, 0.14);
-  --season-chip: rgba(158, 201, 232, 0.24);
+  --season-soil-cool: rgba(142, 180, 212, 0.14);
+  --season-chip: rgba(142, 180, 212, 0.26);
+  --brand-green: #8eb4d4;
+  --brand-green-deep: #3f6a8a;
+  --brand-border: rgba(142, 180, 212, 0.34);
 }
 
 /* --- Turbo gradients --- */
@@ -890,14 +903,14 @@ html[data-season='spring'] .tab-theme-farm .segment-tab-active {
 html[data-season='summer'] .farm-vine-frame {
   background: linear-gradient(
     155deg,
-    rgba(255, 220, 120, 0.4) 0%,
-    rgba(8, 24, 14, 0.92) 48%,
-    rgba(61, 214, 140, 0.42) 100%
+    rgba(200, 170, 90, 0.38) 0%,
+    rgba(8, 24, 14, 0.9) 48%,
+    rgba(122, 168, 106, 0.42) 100%
   ) !important;
 }
 
 html[data-season='summer'] .farm-header-title {
-  background: linear-gradient(to bottom, #fff8e0, #e8c56a 38%, #3dd68c) !important;
+  background: linear-gradient(to bottom, #fff8e0, #c4a35a 38%, #7aa86a) !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
   color: transparent !important;
@@ -907,7 +920,7 @@ html[data-season='summer'] .app-shell[data-active-tab='farm'] .app-tab-bar-inner
 html[data-season='summer'] .app-shell[data-active-tab='inventory'] .app-tab-bar-inner,
 html[data-season='summer'] .app-shell[data-active-tab='trade'] .app-tab-bar-inner,
 html[data-season='summer'] .app-shell[data-active-tab='profile'] .app-tab-bar-inner {
-  background: linear-gradient(135deg, #c9a227 0%, #1f7a4d 38%, #3dd68c 70%, #0b1a12 100%) !important;
+  background: linear-gradient(135deg, #a8904a 0%, #3f6a3a 38%, #7aa86a 70%, #0b1a12 100%) !important;
 }
 
 /* Осень — янтарь / медь */

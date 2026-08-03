@@ -283,24 +283,29 @@
 .user-name-link,
 .market-seller-link {
   appearance: none;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
+  background: transparent;
   border: none;
-  border-bottom: 1px dashed rgba(61, 214, 140, 0.45);
-  border-radius: 6px;
-  padding: 0 0.1rem;
+  border-bottom: none;
+  border-radius: 0;
+  padding: 0;
   margin: 0;
-  color: #9fd9b4;
+  color: inherit;
   font: inherit;
-  font-weight: 800;
+  font-weight: inherit;
+  opacity: 0.92;
   cursor: pointer;
-  transition: color 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+  text-decoration: none;
+  transition: opacity 0.2s ease, color 0.2s ease;
 }
 
 .user-name-link:hover,
 .market-seller-link:hover {
-  color: #e8fff3;
-  border-bottom-color: rgba(110, 231, 183, 0.75);
-  background: rgba(61, 214, 140, 0.1);
+  opacity: 1;
+  color: inherit;
+  background: transparent;
+  text-decoration: underline;
+  text-decoration-color: rgba(238, 243, 234, 0.28);
+  text-underline-offset: 2px;
 }
 
 /* Modals */

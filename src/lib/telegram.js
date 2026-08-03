@@ -96,12 +96,12 @@ export function initTelegramWebApp() {
 
   const syncView = () => syncTelegramViewport(tg)
 
-  // На Desktop Telegram requestFullscreen даёт «чёрную пустоту» и странные пропорции.
-  // На мобиле — expand + fullscreen.
+  // Заполняем доступное окно Mini App на любом клиенте.
+  // На Desktop TG «полноэкран» = expand + requestFullscreen (если клиент умеет).
   const requestFull = () => {
     try {
       tg.expand()
-      if (!desktop && typeof tg.requestFullscreen === 'function' && !tg.isFullscreen) {
+      if (typeof tg.requestFullscreen === 'function' && !tg.isFullscreen) {
         tg.requestFullscreen()
       }
     } catch {
@@ -112,9 +112,11 @@ export function initTelegramWebApp() {
 
   requestFull()
   requestAnimationFrame(requestFull)
-  if (!desktop) {
-    setTimeout(requestFull, 350)
-    setTimeout(requestFull, 1200)
+  setTimeout(requestFull, 350)
+  setTimeout(requestFull, 1200)
+  if (desktop) {
+    // Desktop иногда применяет fullscreen только после повторного expand
+    setTimeout(requestFull, 2200)
   }
 
   if (tg.themeParams?.bg_color) {

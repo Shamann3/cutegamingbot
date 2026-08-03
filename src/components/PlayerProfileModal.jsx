@@ -5,10 +5,22 @@ import { openTelegramBotLink } from '../lib/telegram'
 import { useEscapeClose } from '../hooks/useEscapeClose'
 import { EMPTY_VALUE } from '../utils/displayText'
 import Portal from './Portal'
+import UserNameLink from './UserNameLink'
 
 function formatCount(value) {
   const n = Number(value) || 0
   return new Intl.NumberFormat('ru-RU').format(n)
+}
+
+function formatRegDate(iso) {
+  if (!iso) return null
+  try {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return null
+    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+  } catch {
+    return null
+  }
 }
 
 function ProfileAvatar({ photoUrl, displayName, rank }) {
@@ -37,7 +49,7 @@ function ProfileAvatar({ photoUrl, displayName, rank }) {
   )
 }
 
-function StatCard({ emoji, label, value, accent = 'gold' }) {
+function StatCard({ emoji, label, value, accent = 'green' }) {
   return (
     <div className={`player-profile-stat-card player-profile-stat-card--${accent}`}>
       <span className="player-profile-stat-emoji" aria-hidden>{emoji}</span>
@@ -45,6 +57,16 @@ function StatCard({ emoji, label, value, accent = 'gold' }) {
         <span className="player-profile-stat-value">{value}</span>
         <span className="player-profile-stat-label">{label}</span>
       </div>
+    </div>
+  )
+}
+
+function MetaRow({ label, value }) {
+  if (value == null || value === '' || value === EMPTY_VALUE) return null
+  return (
+    <div className="player-profile-meta-row">
+      <span className="player-profile-meta-label">{label}</span>
+      <strong className="player-profile-meta-value">{value}</strong>
     </div>
   )
 }
@@ -89,10 +111,14 @@ export default function PlayerProfileModal({ userId, isOpen, onClose }) {
   const tgUrl = telegramProfileUrl(profile?.username, profile?.userId || userId)
   const rank = profile?.sellerRank
   const progressPct = Math.round((rank?.progress ?? 0) * 100)
+  const sales = profile?.salesCount ?? profile?.marketSalesCount ?? 0
   const nextRankText = rank?.nextAt
-    ? `До следующего ранга: ${formatCount(rank.nextAt - (profile?.salesCount ?? 0))} продаж`
+    ? `До следующего ранга: ${formatCount(rank.nextAt - sales)} продаж`
     : 'Максимальный ранг на бирже'
   const canOpenTg = Boolean(tgUrl) && !profile?.isSelf
+  const regDate = formatRegDate(profile?.registeredAt)
+  const referer = profile?.refererName
+  const refererId = profile?.refererUserId
 
   return (
     <Portal lockScroll>
@@ -160,7 +186,7 @@ export default function PlayerProfileModal({ userId, isOpen, onClose }) {
                       {rank?.emoji} {rank?.label}
                     </span>
                     <span className="player-profile-rank-count">
-                      {formatCount(profile?.salesCount ?? 0)} продаж
+                      {formatCount(sales)} продаж
                     </span>
                   </div>
                   <div className="player-profile-rank-bar" aria-hidden>
@@ -172,16 +198,29 @@ export default function PlayerProfileModal({ userId, isOpen, onClose }) {
                   <p className="player-profile-rank-hint">{nextRankText}</p>
                 </div>
 
-                {(profile?.countryEmoji || profile?.daysInGame > 0) && (
+                {(profile?.countryEmoji || profile?.daysInGame > 0 || regDate) && (
                   <p className="player-profile-meta">
                     {profile?.countryEmoji ? `${profile.countryEmoji} ` : ''}
                     {profile?.daysInGame > 0
                       ? `${formatCount(profile.daysInGame)} дн. в игре`
                       : 'Новый игрок'}
+                    {regDate ? ` · с ${regDate}` : ''}
                   </p>
                 )}
 
                 <div className="player-profile-stats-grid">
+                  <StatCard
+                    emoji="💰"
+                    label="Баланс"
+                    value={`${formatCount(profile?.balance ?? 0)} КУТ`}
+                    accent="green"
+                  />
+                  <StatCard
+                    emoji="⭐"
+                    label="Опыт"
+                    value={formatCount(profile?.experience ?? 0)}
+                    accent="violet"
+                  />
                   <StatCard
                     emoji="🌾"
                     label="Урожаи"
@@ -197,13 +236,13 @@ export default function PlayerProfileModal({ userId, isOpen, onClose }) {
                   <StatCard
                     emoji="🤝"
                     label="Сделок"
-                    value={formatCount(profile?.salesCount ?? 0)}
+                    value={formatCount(sales)}
                     accent="gold"
                   />
                   <StatCard
                     emoji="📦"
                     label="Продано"
-                    value={formatCount(profile?.itemsSold ?? 0)}
+                    value={formatCount(profile?.itemsSold ?? profile?.marketItemsSold ?? 0)}
                     accent="gold"
                   />
                   <StatCard
@@ -213,11 +252,37 @@ export default function PlayerProfileModal({ userId, isOpen, onClose }) {
                     accent="violet"
                   />
                   <StatCard
-                    emoji="⭐"
-                    label="Ранг"
-                    value={rank?.label ?? EMPTY_VALUE}
-                    accent="violet"
+                    emoji="👥"
+                    label="Рефералы"
+                    value={formatCount(profile?.referrals ?? 0)}
+                    accent="sky"
                   />
+                </div>
+
+                <div className="player-profile-extra">
+                  <MetaRow
+                    label="Игры"
+                    value={`${formatCount(profile?.wins ?? 0)} / ${formatCount(profile?.losses ?? 0)}`}
+                  />
+                  {(profile?.winAmount ?? 0) > 0 && (
+                    <MetaRow label="Выиграно" value={`${formatCount(profile.winAmount)} КУТ`} />
+                  )}
+                  <MetaRow
+                    label="Репутация"
+                    value={`+${formatCount(profile?.repPlus ?? 0)} / −${formatCount(profile?.repMinus ?? 0)}`}
+                  />
+                  {referer && (
+                    <div className="player-profile-meta-row">
+                      <span className="player-profile-meta-label">Пригласил</span>
+                      <strong className="player-profile-meta-value">
+                        {refererId ? (
+                          <UserNameLink userId={refererId} name={referer} />
+                        ) : (
+                          referer
+                        )}
+                      </strong>
+                    </div>
+                  )}
                 </div>
               </>
             )}
