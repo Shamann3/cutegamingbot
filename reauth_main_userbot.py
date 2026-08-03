@@ -24,7 +24,11 @@ Telegram может заблокировать вход ("код сообщён"
 закоммитит и запушит (git add -f мимо .gitignore).
 """
 
+from __future__ import annotations
+
 import asyncio
+import warnings
+from pathlib import Path
 
 from telethon import TelegramClient
 
@@ -34,23 +38,90 @@ MAIN_API_HASH = "a8de6a89ea1236962103eac13cd45d95"
 MAIN_SESSION_NEW = "main_userbot_session_new"
 
 
-async def main() -> None:
+def _session_path(name: str) -> Path:
+    return Path(f"{name}.session")
+
+
+async def _authorize(session_name: str, api_id: int, api_hash: str) -> None:
+    """
+    Логин без receive_updates: иначе Telethon 1.40.0 может упасть в
+    update-loop (reset_deadline) сразу после успешного Signed in и
+    отменить get_me() через CancelledError.
+    """
+    session_file = _session_path(session_name)
+    journal = Path(f"{session_name}.session-journal")
+
+    if session_file.exists() and session_file.stat().st_size == 0:
+        session_file.unlink(missing_ok=True)
+    if journal.exists():
+        journal.unlink(missing_ok=True)
+
+    warnings.filterwarnings(
+        "ignore",
+        message="Using async sessions support is an experimental feature",
+        category=UserWarning,
+    )
+
     client = TelegramClient(
-        MAIN_SESSION_NEW,
-        MAIN_API_ID,
-        MAIN_API_HASH,
+        session_name,
+        api_id,
+        api_hash,
+        receive_updates=False,
         device_model="CuteGaming Main Userbot",
         system_version="Windows",
         app_version="1.0",
         lang_code="ru",
         system_lang_code="ru",
     )
-    await client.start()
-    me = await client.get_me()
-    print(f"✅ Авторизован: id={me.id} username={me.username!r} phone={me.phone!r}")
-    print(f"✅ Новая сессия сохранена в файл: {MAIN_SESSION_NEW}.session")
-    await client.disconnect()
+
+    me = None
+    try:
+        await client.start()
+
+        if not await client.is_user_authorized():
+            raise RuntimeError("Клиент не авторизован после start()")
+
+        if hasattr(client.session, "save"):
+            client.session.save()
+
+        try:
+            me = await client.get_me()
+        except (asyncio.CancelledError, Exception) as exc:
+            print(f"[warn] get_me() не удался ({type(exc).__name__}): {exc}")
+            print("[warn] Сессия всё равно сохранена — проверяем файл…")
+
+        if not session_file.exists() or session_file.stat().st_size < 64:
+            raise RuntimeError(
+                f"Файл сессии не создан или пуст: {session_file.resolve()}"
+            )
+
+        if me is not None:
+            print(
+                f"✅ Авторизован: id={me.id} username={me.username!r} "
+                f"phone={me.phone!r}"
+            )
+        else:
+            print("✅ Авторизован (профиль не прочитан, сессия на диске есть)")
+
+        print(f"✅ Новая сессия сохранена в файл: {session_file.name}")
+    finally:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+
+async def main() -> int:
+    try:
+        await _authorize(MAIN_SESSION_NEW, MAIN_API_ID, MAIN_API_HASH)
+        return 0
+    except KeyboardInterrupt:
+        print("\n[ERROR] Прервано пользователем.")
+        return 130
+    except Exception as exc:
+        print(f"\n[ERROR] Логин не удался: {type(exc).__name__}: {exc}")
+        return 1
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(asyncio.run(main()))

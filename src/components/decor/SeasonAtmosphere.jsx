@@ -152,9 +152,21 @@ function AutumnDecor({ dense }) {
   )
 }
 
+function SummerDecor() {
+  return (
+    <>
+      <div className="season-summer-sun" aria-hidden />
+      <div className="season-summer-haze" aria-hidden />
+      <div className="season-summer-canopy season-summer-canopy--left" aria-hidden />
+      <div className="season-summer-canopy season-summer-canopy--right" aria-hidden />
+    </>
+  )
+}
+
 export default function SeasonAtmosphere({ season, dense = true }) {
   if (season === SEASON_MODES.WINTER) return <WinterDecor dense={dense} />
   if (season === SEASON_MODES.SPRING) return <SpringDecor dense={dense} />
   if (season === SEASON_MODES.AUTUMN) return <AutumnDecor dense={dense} />
+  if (season === SEASON_MODES.SUMMER) return <SummerDecor />
   return null
 }

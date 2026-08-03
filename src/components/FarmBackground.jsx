@@ -6,8 +6,8 @@ import { SEASON_MODES } from '../constants/season'
 import SeasonAtmosphere from './decor/SeasonAtmosphere'
 
 /**
- * Фон: сезонный лес + лёгкие частицы.
- * По умолчанию — мало DOM/анимаций, чтобы не лагало даже на Full.
+ * Фон: сезонный лес + частицы. z-index 0 — иначе на Desktop TG фон уходит
+ * под непрозрачный body и остаётся чёрная пустота.
  */
 
 function srcSet(prefix, ext) {
@@ -25,17 +25,9 @@ const BG = {
     fallback: '/assets/forest-bg-spring.png',
   },
   [SEASON_MODES.SUMMER]: {
-    webp: [
-      '/assets/forest-bg.webp 768w',
-      '/assets/forest-bg-2x.webp 1536w',
-      '/assets/forest-bg-3x.webp 2304w',
-    ].join(', '),
-    png: [
-      '/assets/forest-bg.png 768w',
-      '/assets/forest-bg-2x.png 1536w',
-      '/assets/forest-bg-3x.png 2304w',
-    ].join(', '),
-    fallback: '/assets/forest-bg.svg',
+    webp: srcSet('forest-bg', 'webp'),
+    png: srcSet('forest-bg', 'png'),
+    fallback: '/assets/forest-bg.png',
   },
   [SEASON_MODES.AUTUMN]: {
     webp: srcSet('forest-bg-autumn', 'webp'),
@@ -49,27 +41,37 @@ const BG = {
   },
 }
 
-const FIREFLIES = Array.from({ length: 6 }, (_, i) => ({
+const FIREFLIES = Array.from({ length: 8 }, (_, i) => ({
   id: i,
-  left: 10 + ((i * 23) % 78),
-  top: 10 + ((i * 17) % 60),
-  size: i % 3 === 0 ? 2.5 : 2,
-  delay: (i * 0.7) % 4,
-  duration: 5.5 + (i % 3) * 0.8,
+  left: 8 + ((i * 21) % 84),
+  top: 12 + ((i * 17) % 58),
+  size: i % 3 === 0 ? 2.8 : 2.1,
+  delay: (i * 0.65) % 4.2,
+  duration: 5.2 + (i % 3) * 0.9,
   variant: i % 3,
 }))
 
-const SNOWFLAKES = Array.from({ length: 10 }, (_, i) => ({
+const POLLEN = Array.from({ length: 9 }, (_, i) => ({
   id: i,
-  left: 4 + ((i * 19) % 92),
-  size: 1.6 + (i % 3) * 0.6,
-  delay: (i * 0.65) % 6,
-  duration: 8 + (i % 4) * 1.2,
-  drift: -10 + (i % 5) * 4,
+  left: 6 + ((i * 18) % 88),
+  top: 8 + ((i * 13) % 55),
+  size: 1.8 + (i % 3) * 0.5,
+  delay: (i * 0.7) % 5,
+  duration: 7 + (i % 4) * 1.1,
 }))
 
-const MOBILE_FIREFLY_LIMIT = 3
-const MOBILE_SNOW_LIMIT = 5
+const SNOWFLAKES = Array.from({ length: 14 }, (_, i) => ({
+  id: i,
+  left: 3 + ((i * 17) % 94),
+  size: 1.5 + (i % 4) * 0.55,
+  delay: (i * 0.55) % 7,
+  duration: 7.5 + (i % 4) * 1.3,
+  drift: -12 + (i % 6) * 4,
+}))
+
+const MOBILE_FIREFLY_LIMIT = 4
+const MOBILE_SNOW_LIMIT = 7
+const MOBILE_POLLEN_LIMIT = 4
 
 export default function FarmBackground({ variant = null }) {
   const { turboMode, season, liteMode } = useSettings()
@@ -107,7 +109,7 @@ export default function FarmBackground({ variant = null }) {
   if (turboMode) {
     return (
       <div
-        className={`farm-bg-root farm-bg-root--turbo fixed inset-0 -z-10 overflow-hidden ${seasonClass}${v ? ` farm-bg--${v}` : ''}`}
+        className={`farm-bg-root farm-bg-root--turbo fixed inset-0 z-0 overflow-hidden ${seasonClass}${v ? ` farm-bg--${v}` : ''}`}
         aria-hidden
       >
         <div className="farm-bg-cosmetic-overlay" aria-hidden />
@@ -117,13 +119,14 @@ export default function FarmBackground({ variant = null }) {
 
   const fireflies = mobilePerf ? FIREFLIES.slice(0, MOBILE_FIREFLY_LIMIT) : FIREFLIES
   const snow = mobilePerf ? SNOWFLAKES.slice(0, MOBILE_SNOW_LIMIT) : SNOWFLAKES
+  const pollen = mobilePerf ? POLLEN.slice(0, MOBILE_POLLEN_LIMIT) : POLLEN
   const showParticles = !liteMode && !pageHidden
-  const showDecor = !liteMode && !mobilePerf && !pageHidden
+  const showDecor = !liteMode && !pageHidden
 
   return (
     <div
       className={[
-        'farm-bg-root fixed inset-0 -z-10 overflow-hidden bg-[#061008]',
+        'farm-bg-root fixed inset-0 z-0 overflow-hidden',
         mobilePerf ? 'farm-bg-root--mobile' : '',
         seasonClass,
         v ? `farm-bg--${v}` : '',
@@ -135,7 +138,7 @@ export default function FarmBackground({ variant = null }) {
           <source type="image/webp" srcSet={assets.webp} sizes="100vw" />
           <img
             src={assets.fallback}
-            srcSet={`${assets.png}${summer ? ', /assets/forest-bg.svg 1200w' : ''}`}
+            srcSet={assets.png}
             sizes="100vw"
             alt=""
             draggable={false}
@@ -146,6 +149,7 @@ export default function FarmBackground({ variant = null }) {
         </picture>
       </div>
 
+      {summer && <div className="farm-bg-summer-veil" />}
       {summer && !mobilePerf && <div className="farm-bg-rays" />}
       {spring && <div className="farm-bg-spring-veil" />}
       {autumn && <div className="farm-bg-autumn-veil" />}
@@ -155,41 +159,52 @@ export default function FarmBackground({ variant = null }) {
 
       {showParticles && (
         <div className="farm-bg-particles">
-          {winter
-            ? snow.map((f) => (
-              <span
-                key={f.id}
-                className="farm-bg-snow"
-                style={{
-                  left: `${f.left}%`,
-                  width: f.size,
-                  height: f.size,
-                  '--snow-dur': `${f.duration}s`,
-                  '--snow-drift': `${f.drift}px`,
-                  animationDelay: `${f.delay}s`,
-                }}
-              />
-            ))
-            : summer
-              ? fireflies.map((f) => (
-                <span
-                  key={f.id}
-                  className={`farm-bg-firefly farm-bg-firefly-${f.variant}`}
-                  style={{
-                    left: `${f.left}%`,
-                    top: `${f.top}%`,
-                    width: f.size,
-                    height: f.size,
-                    '--ff-dur': `${f.duration}s`,
-                    animationDelay: `${f.delay}s`,
-                  }}
-                />
-              ))
-              : null}
+          {winter && snow.map((f) => (
+            <span
+              key={f.id}
+              className="farm-bg-snow"
+              style={{
+                left: `${f.left}%`,
+                width: f.size,
+                height: f.size,
+                '--snow-dur': `${f.duration}s`,
+                '--snow-drift': `${f.drift}px`,
+                animationDelay: `${f.delay}s`,
+              }}
+            />
+          ))}
+          {summer && fireflies.map((f) => (
+            <span
+              key={f.id}
+              className={`farm-bg-firefly farm-bg-firefly-${f.variant}`}
+              style={{
+                left: `${f.left}%`,
+                top: `${f.top}%`,
+                width: f.size,
+                height: f.size,
+                '--ff-dur': `${f.duration}s`,
+                animationDelay: `${f.delay}s`,
+              }}
+            />
+          ))}
+          {spring && pollen.map((f) => (
+            <span
+              key={f.id}
+              className="farm-bg-pollen"
+              style={{
+                left: `${f.left}%`,
+                top: `${f.top}%`,
+                width: f.size,
+                height: f.size,
+                '--ff-dur': `${f.duration}s`,
+                animationDelay: `${f.delay}s`,
+              }}
+            />
+          ))}
         </div>
       )}
 
-      {showDecor && <SeasonAtmosphere season={season} dense={false} />}
+      {showDecor && <SeasonAtmosphere season={season} dense={!mobilePerf} />}
 
       <div className="farm-bg-shade-top" />
       <div className="farm-bg-shade-bottom" />

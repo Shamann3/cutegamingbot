@@ -47,6 +47,21 @@ function bindViewportSync(tg) {
   window.visualViewport?.addEventListener('resize', sync)
 }
 
+function isDesktopTelegram(tg) {
+  const platform = String(tg?.platform || '').toLowerCase()
+  if (platform === 'tdesktop' || platform === 'web' || platform === 'weba' || platform === 'macos' || platform === 'linux' || platform === 'windows') {
+    return true
+  }
+  // Широкий viewport без coarse pointer — почти всегда Desktop Mini App
+  try {
+    const wide = window.innerWidth >= 820
+    const fine = window.matchMedia?.('(pointer: fine)').matches
+    return wide && fine
+  } catch {
+    return false
+  }
+}
+
 export function initTelegramWebApp() {
   const tg = window.Telegram?.WebApp
   if (!tg) {
@@ -55,11 +70,16 @@ export function initTelegramWebApp() {
     const sync = () => setCssVar('--app-vh', `${window.innerHeight}px`)
     window.addEventListener('resize', sync)
     window.visualViewport?.addEventListener('resize', sync)
+    document.documentElement.dataset.tgDesktop = window.innerWidth >= 820 ? '1' : '0'
     return null
   }
 
   tg.ready()
   tg.expand()
+
+  const desktop = isDesktopTelegram(tg)
+  document.documentElement.dataset.tgDesktop = desktop ? '1' : '0'
+  document.documentElement.dataset.tgPlatform = String(tg.platform || 'unknown')
 
   try {
     tg.disableVerticalSwipes?.()
@@ -74,23 +94,28 @@ export function initTelegramWebApp() {
     // ignore
   }
 
+  const syncView = () => syncTelegramViewport(tg)
+
+  // На Desktop Telegram requestFullscreen даёт «чёрную пустоту» и странные пропорции.
+  // На мобиле — expand + fullscreen.
   const requestFull = () => {
     try {
       tg.expand()
-      if (typeof tg.requestFullscreen === 'function' && !tg.isFullscreen) {
+      if (!desktop && typeof tg.requestFullscreen === 'function' && !tg.isFullscreen) {
         tg.requestFullscreen()
       }
     } catch {
       // not supported / user denied
     }
-    syncTelegramViewport(tg)
+    syncView()
   }
 
-  // Bot API 8+: fullscreen; повтор через кадр — клиент иногда не готов сразу
   requestFull()
   requestAnimationFrame(requestFull)
-  setTimeout(requestFull, 350)
-  setTimeout(requestFull, 1200)
+  if (!desktop) {
+    setTimeout(requestFull, 350)
+    setTimeout(requestFull, 1200)
+  }
 
   if (tg.themeParams?.bg_color) {
     setCssVar('--tg-bg', tg.themeParams.bg_color)

@@ -38,12 +38,16 @@ body,
 }
 
 .app-shell {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-height: var(--app-vh, 100dvh);
   max-width: 100%;
 }
 
 .app-main {
+  position: relative;
+  z-index: 2;
   width: 100%;
   max-width: 100%;
   /* Запас под ✕ / ⋯ Telegram, даже если API ещё не отдал insets */
@@ -54,17 +58,7 @@ body,
   box-sizing: border-box;
 }
 
-html,
-body,
-#root {
-  min-height: var(--app-vh, 100dvh);
-}
-
-.app-shell {
-  min-height: var(--app-vh, 100dvh);
-}
-
-/* Контент на всю доступную ширину (без узкой «таблетки» на больших экранах) */
+/* Мобильный каркас: удобная ширина, фон леса остаётся на весь экран */
 .farm-shell,
 .inventory-shell,
 .shop-exchange-shell,
@@ -76,7 +70,7 @@ body,
 .settings-shell,
 .giveaways-shell {
   width: 100% !important;
-  max-width: min(100%, 48rem) !important;
+  max-width: min(100%, 28.5rem) !important;
   margin-left: auto !important;
   margin-right: auto !important;
   padding-left: max(0.75rem, var(--tg-safe-left)) !important;
@@ -84,7 +78,37 @@ body,
   box-sizing: border-box;
 }
 
-@media (min-width: 700px) {
+/* Desktop Telegram / широкий экран: колонка как на телефоне + живой фон по бокам */
+html[data-tg-desktop='1'] .app-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+html[data-tg-desktop='1'] .farm-shell,
+html[data-tg-desktop='1'] .inventory-shell,
+html[data-tg-desktop='1'] .shop-exchange-shell,
+html[data-tg-desktop='1'] .market-shell,
+html[data-tg-desktop='1'] .trade-shell,
+html[data-tg-desktop='1'] .craft-module-shell,
+html[data-tg-desktop='1'] .quests-shell,
+html[data-tg-desktop='1'] .profile-shell,
+html[data-tg-desktop='1'] .settings-shell,
+html[data-tg-desktop='1'] .giveaways-shell {
+  max-width: min(100%, 26.5rem) !important;
+}
+
+html[data-tg-desktop='1'] .farm-plots-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+@media (min-width: 900px) {
+  .app-main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
   .farm-shell,
   .inventory-shell,
   .shop-exchange-shell,
@@ -95,43 +119,52 @@ body,
   .profile-shell,
   .settings-shell,
   .giveaways-shell {
-    max-width: min(100%, 64rem) !important;
-  }
-}
-
-@media (min-width: 1100px) {
-  .farm-shell,
-  .inventory-shell,
-  .shop-exchange-shell,
-  .market-shell,
-  .trade-shell,
-  .craft-module-shell,
-  .quests-shell,
-  .profile-shell,
-  .settings-shell,
-  .giveaways-shell {
-    max-width: min(100%, 80rem) !important;
+    max-width: min(100%, 26.5rem) !important;
   }
 
   .farm-plots-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  }
-}
-
-@media (min-width: 1400px) {
-  .farm-plots-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 
 .app-tab-bar-inner {
-  max-width: min(100%, 48rem) !important;
+  max-width: min(100%, 28.5rem) !important;
   background:
-    linear-gradient(135deg, #1a3d2a 0%, #3dd68c 38%, #1f7a4d 68%, #0b1a12 100%) !important;
+    linear-gradient(
+      135deg,
+      var(--season-accent-deep, #1f7a4d) 0%,
+      var(--season-accent, #3dd68c) 42%,
+      var(--season-accent-deep, #1f7a4d) 72%,
+      #0b1a12 100%
+    ) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 0 0 1px rgba(61, 214, 140, 0.22),
+    0 0 0 1px color-mix(in srgb, var(--season-accent, #3dd68c) 28%, transparent),
     0 -6px 28px rgba(0, 0, 0, 0.55) !important;
+}
+
+html[data-tg-desktop='1'] .app-tab-bar-inner {
+  max-width: min(100%, 26.5rem) !important;
+}
+
+/* Фон должен быть виден сквозь shell */
+html,
+body,
+#root {
+  background: transparent;
+}
+
+body {
+  background: #050806;
+}
+
+.app-shell,
+.tab-theme-farm,
+.tab-theme-inventory,
+.tab-theme-shop,
+.tab-theme-market,
+.tab-theme-profile {
+  background: transparent !important;
 }
 
 /* Хедер: не пересекаться с ✕ / ⋯ Telegram */
@@ -202,18 +235,28 @@ body,
 }
 
 .farm-header-cute {
-  background: linear-gradient(to bottom, #e8fff3, #3dd68c 70%, #1f7a4d) !important;
-  -webkit-background-clip: text !important;
-  background-clip: text !important;
-  color: transparent !important;
+  background: linear-gradient(
+    to bottom,
+    #f4fff8,
+    var(--season-accent, #3dd68c) 70%,
+    var(--season-accent-deep, #1f7a4d)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .farm-header-title {
-  background: linear-gradient(to bottom, #f4fff8, #9fd9b4 45%, #3dd68c) !important;
-  -webkit-background-clip: text !important;
-  background-clip: text !important;
-  color: transparent !important;
-  filter: drop-shadow(0 2px 12px rgba(61, 214, 140, 0.2)) !important;
+  background: linear-gradient(
+    to bottom,
+    #f8fff9,
+    var(--season-accent, #9fd9b4) 45%,
+    var(--season-accent-deep, #3dd68c)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 12px var(--season-accent-glow, rgba(61, 214, 140, 0.2)));
 }
 
 /* Глобально: меньше золота на рамках */
@@ -438,9 +481,4 @@ body,
   --tab-balance-frame: linear-gradient(135deg, #2f9e64 0%, #3dd68c 40%, #1f7a4d 70%, #0b1a12 100%) !important;
 }
 
-.app-shell[data-active-tab='farm'] .app-tab-bar-inner,
-.app-shell[data-active-tab='inventory'] .app-tab-bar-inner,
-.app-shell[data-active-tab='trade'] .app-tab-bar-inner,
-.app-shell[data-active-tab='profile'] .app-tab-bar-inner {
-  background: linear-gradient(135deg, #1a3d2a 0%, #3dd68c 38%, #1f7a4d 68%, #0b1a12 100%) !important;
-}
+/* Таббар по сезону задаётся в season.css — здесь только базовый fallback */

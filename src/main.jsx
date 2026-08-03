@@ -8,8 +8,9 @@ import App from './App'
 import './index.css'
 import './styles/tabThemes.css'
 import './styles/glass.css'
-import './styles/season.css'
 import './styles/theme.css'
+/* season.css ПОСЛЕ theme — иначе зелёный theme перекрывает весну/осень/зиму */
+import './styles/season.css'
 
 initTelegramWebApp()
 

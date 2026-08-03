@@ -1,7 +1,7 @@
-const CREST_SRC = '/assets/cute-crest-2x.png?v=6'
+const CREST_SRC = '/assets/cute-crest-2x.png?v=7'
 const CREST_SRCSET = [
-  '/assets/cute-crest-2x.png?v=6 460w',
-  '/assets/cute-crest-3x.png?v=6 690w',
+  '/assets/cute-crest-2x.png?v=7 460w',
+  '/assets/cute-crest-3x.png?v=7 690w',
 ].join(', ')
 
 export default function FarmHeader({ isPreview }) {
