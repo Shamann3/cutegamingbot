@@ -96,8 +96,11 @@ export function initTelegramWebApp() {
 
   const syncView = () => syncTelegramViewport(tg)
 
-  // Заполняем доступное окно Mini App на любом клиенте.
-  // На Desktop TG «полноэкран» = expand + requestFullscreen (если клиент умеет).
+  const syncFullscreenClass = () => {
+    document.documentElement.classList.toggle('tg-fullscreen', Boolean(tg.isFullscreen))
+  }
+
+  // Как в админке: expand + requestFullscreen и повтор, пока клиент не развернёт.
   const requestFull = () => {
     try {
       tg.expand()
@@ -107,16 +110,30 @@ export function initTelegramWebApp() {
     } catch {
       // not supported / user denied
     }
+    syncFullscreenClass()
     syncView()
   }
 
   requestFull()
   requestAnimationFrame(requestFull)
+  setTimeout(requestFull, 120)
   setTimeout(requestFull, 350)
   setTimeout(requestFull, 1200)
   if (desktop) {
-    // Desktop иногда применяет fullscreen только после повторного expand
     setTimeout(requestFull, 2200)
+  }
+
+  try {
+    tg.onEvent?.('fullscreenChanged', () => {
+      syncFullscreenClass()
+      syncView()
+    })
+    tg.onEvent?.('viewportChanged', () => {
+      if (!tg.isFullscreen) requestFull()
+      else syncView()
+    })
+  } catch {
+    // older clients
   }
 
   if (tg.themeParams?.bg_color) {
@@ -125,6 +142,22 @@ export function initTelegramWebApp() {
 
   bindViewportSync(tg)
   return tg
+}
+
+/** Повторно развернуть Mini App (на печати входа / после смены viewport). */
+export function ensureTelegramFullscreen() {
+  const tg = window.Telegram?.WebApp
+  if (!tg) return
+  try {
+    tg.expand()
+    if (typeof tg.requestFullscreen === 'function' && !tg.isFullscreen) {
+      tg.requestFullscreen()
+    }
+  } catch {
+    // ignore
+  }
+  document.documentElement.classList.toggle('tg-fullscreen', Boolean(tg.isFullscreen))
+  syncTelegramViewport(tg)
 }
 
 export function isTelegramWebApp() {

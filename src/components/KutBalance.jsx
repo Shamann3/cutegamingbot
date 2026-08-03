@@ -1,5 +1,4 @@
 import { formatKut } from '../utils/formatKut'
-import { APP_VERSION } from '../constants/version'
 
 function balanceAmountStyle(formatted) {
   const len = formatted.length
@@ -27,9 +26,6 @@ export default function KutBalance({ value, className = '', onDonate }) {
               <span className="kut-balance-amount" style={amountStyle}>{formatted}</span>
             </div>
             <div className="kut-balance-side">
-              <span className="kut-balance-version" aria-label={`Версия приложения ${APP_VERSION}`}>
-                {APP_VERSION}
-              </span>
               <span className="kut-balance-unit">КУТ</span>
             </div>
           </div>

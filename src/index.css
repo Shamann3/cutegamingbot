@@ -5407,18 +5407,8 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.18rem;
+    justify-content: center;
     flex-shrink: 0;
-  }
-
-  .kut-balance-version {
-    font-size: 0.5rem;
-    font-weight: 800;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    line-height: 1;
-    color: #fde68a;
-    text-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
   }
 
   .kut-balance-unit {

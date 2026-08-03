@@ -30,27 +30,12 @@
   }
 }
 
-.tab-theme-farm .farm-header-crest-glow {
+.tab-theme-farm .farm-brand-halo {
   background: radial-gradient(
-    ellipse at center,
-    rgba(61, 214, 140, 0.32) 0%,
-    rgba(31, 122, 77, 0.12) 42%,
-    transparent 72%
+    circle,
+    color-mix(in srgb, var(--season-accent, #6aaf70) 32%, transparent) 0%,
+    transparent 70%
   );
-  animation: farmCrestBreathe 5.5s ease-in-out infinite;
-}
-
-@keyframes farmCrestBreathe {
-  0%, 100% { opacity: 0.28; transform: translateY(-50%) scale(0.97); }
-  50% { opacity: 0.48; transform: translateY(-50%) scale(1.03); }
-}
-
-.tab-theme-farm .farm-header-cute {
-  letter-spacing: 0.38em;
-}
-
-.tab-theme-farm .farm-header-title {
-  /* цвет из theme.css */
 }
 
 /* --- Кнопки: база + shimmer + press --- */
@@ -336,19 +321,6 @@
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
-.tab-theme-farm .farm-header-titles {
-  position: relative;
-}
-
-.tab-theme-farm .farm-header-titles::after {
-  content: '';
-  display: block;
-  width: 4.5rem;
-  height: 1px;
-  margin: 0.45rem auto 0;
-  background: linear-gradient(90deg, transparent, rgba(61, 214, 140, 0.55), rgba(110, 231, 183, 0.35), transparent);
-}
-
 .tab-theme-farm .segment-tabs {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 40%),
@@ -407,7 +379,11 @@
 @media (prefers-reduced-motion: reduce) {
   .tab-theme-farm .farm-shell--enter,
   .tab-theme-farm.farm-module--revealed .farm-plots-grid > *,
-  .tab-theme-farm .farm-header-crest-glow {
+  .farm-brand-halo,
+  .farm-brand-crest,
+  .farm-brand-kicker,
+  .farm-brand-title,
+  .farm-brand-tag {
     animation: none !important;
   }
 

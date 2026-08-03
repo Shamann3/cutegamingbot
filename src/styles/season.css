@@ -561,7 +561,8 @@ html[data-season='autumn'] .tab-theme-farm .segment-tab-active {
   color: #1a1006;
 }
 
-html[data-season='winter'] .tab-theme-farm .farm-header-title {
+html[data-season='winter'] .tab-theme-farm .farm-header-title,
+html[data-season='winter'] .farm-brand-title {
   background: linear-gradient(to bottom, #f8f4e8, #e8c56a 50%, #9ec9e8);
   -webkit-background-clip: text;
   background-clip: text;
@@ -569,14 +570,16 @@ html[data-season='winter'] .tab-theme-farm .farm-header-title {
   filter: drop-shadow(0 2px 16px rgba(158, 201, 232, 0.2));
 }
 
-html[data-season='spring'] .tab-theme-farm .farm-header-title {
+html[data-season='spring'] .tab-theme-farm .farm-header-title,
+html[data-season='spring'] .farm-brand-title {
   background: linear-gradient(to bottom, #f8f4e8, #e8c56a 45%, #7fd9a8);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-html[data-season='autumn'] .tab-theme-farm .farm-header-title {
+html[data-season='autumn'] .tab-theme-farm .farm-header-title,
+html[data-season='autumn'] .farm-brand-title {
   background: linear-gradient(to bottom, #f8f4e8, #e8c56a 40%, #e0a04a);
   -webkit-background-clip: text;
   background-clip: text;
@@ -896,11 +899,16 @@ html[data-season='spring'] .farm-vine-frame {
   ) !important;
 }
 
-html[data-season='spring'] .farm-header-title {
+html[data-season='spring'] .farm-header-title,
+html[data-season='spring'] .farm-brand-title {
   background: linear-gradient(to bottom, #fff5f7, #ffb6c1 40%, #7fd9a8) !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
   color: transparent !important;
+}
+
+html[data-season='spring'] .farm-brand-kicker {
+  color: color-mix(in srgb, #ffb6c1 70%, #7fd9a8) !important;
 }
 
 html[data-season='spring'] .app-shell[data-active-tab='farm'] .app-tab-bar-inner,
@@ -925,7 +933,8 @@ html[data-season='summer'] .farm-vine-frame {
   ) !important;
 }
 
-html[data-season='summer'] .farm-header-title {
+html[data-season='summer'] .farm-header-title,
+html[data-season='summer'] .farm-brand-title {
   background: linear-gradient(to bottom, #f0f8ec, #8fc48a 42%, #3d7a48) !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
@@ -937,6 +946,10 @@ html[data-season='summer'] .farm-header-cute {
   -webkit-background-clip: text !important;
   background-clip: text !important;
   color: transparent !important;
+}
+
+html[data-season='summer'] .farm-brand-kicker {
+  color: #8fc48a !important;
 }
 
 html[data-season='summer'] .app-shell[data-active-tab='farm'] .app-tab-bar-inner,
@@ -990,11 +1003,16 @@ html[data-season='autumn'] .farm-vine-frame {
   ) !important;
 }
 
-html[data-season='autumn'] .farm-header-title {
+html[data-season='autumn'] .farm-header-title,
+html[data-season='autumn'] .farm-brand-title {
   background: linear-gradient(to bottom, #fff4e0, #e0a04a 42%, #c45c30) !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
   color: transparent !important;
+}
+
+html[data-season='autumn'] .farm-brand-kicker {
+  color: #e0a04a !important;
 }
 
 html[data-season='autumn'] .app-shell[data-active-tab='farm'] .app-tab-bar-inner,
@@ -1029,11 +1047,16 @@ html[data-season='winter'] .farm-vine-frame {
   ) !important;
 }
 
-html[data-season='winter'] .farm-header-title {
+html[data-season='winter'] .farm-header-title,
+html[data-season='winter'] .farm-brand-title {
   background: linear-gradient(to bottom, #f4f8fc, #9ec9e8 45%, #e8c56a) !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
   color: transparent !important;
+}
+
+html[data-season='winter'] .farm-brand-kicker {
+  color: #9ec9e8 !important;
 }
 
 html[data-season='winter'] .app-shell[data-active-tab='farm'] .app-tab-bar-inner,

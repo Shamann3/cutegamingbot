@@ -16,11 +16,14 @@
   --fe-ease-out: cubic-bezier(0.4, 0, 0.2, 1);
   --fe-gold: #e8c56a;
   --fe-gold-soft: rgba(232, 197, 106, 0.55);
-  --fe-green: #5a9a62;
+  --fe-green: #6aaf70;
   --fe-ink: #f4efe2;
 
   position: fixed;
   inset: 0;
+  width: 100%;
+  height: var(--app-vh, 100dvh);
+  min-height: 100%;
   z-index: 12000;
   display: grid;
   place-items: center;
@@ -29,31 +32,19 @@
   color: var(--fe-ink);
   pointer-events: auto;
   touch-action: none;
+  contain: strict;
   isolation: isolate;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
 
-/* Во время печати входа — только анимация (портал на body). UI/декор скрыты. */
-html.cute-entrance-playing .app-shell,
-html.cute-entrance-playing .gsl-root,
-html.cute-entrance-playing .tab-atmosphere,
-html.cute-entrance-playing .app-tab-bar,
-html.cute-entrance-playing .farm-balance-bar,
-html.cute-entrance-playing .farm-balance-bar--fixed,
-html.cute-entrance-playing .onboarding-welcome-root,
-html.cute-entrance-playing .onboarding-spotlight,
-html.cute-entrance-playing .sale-toast-stack,
-html.cute-entrance-playing .item-guide-toast-layer {
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-
+/* Печать — единственный экран (как admin Splash). */
 html.cute-entrance-playing,
-html.cute-entrance-playing body {
+html.cute-entrance-playing body,
+html.cute-entrance-playing #root {
   overflow: hidden !important;
   background: #000 !important;
+  height: var(--app-vh, 100dvh);
 }
 
 .farm-ent-root--out {
@@ -130,10 +121,10 @@ html.cute-entrance-playing body {
   gap: clamp(1.1rem, 3.4vh, 1.9rem);
   width: min(92vw, 30rem);
   padding:
-    max(1.25rem, env(safe-area-inset-top, 0px))
-    max(1rem, env(safe-area-inset-right, 0px))
-    max(1.25rem, env(safe-area-inset-bottom, 0px))
-    max(1rem, env(safe-area-inset-left, 0px));
+    max(1.25rem, var(--tg-safe-top, env(safe-area-inset-top, 0px)))
+    max(1rem, var(--tg-safe-right, env(safe-area-inset-right, 0px)))
+    max(1.25rem, var(--tg-safe-bottom, env(safe-area-inset-bottom, 0px)))
+    max(1rem, var(--tg-safe-left, env(safe-area-inset-left, 0px)));
 }
 
 /* --- Кольца + щит --- */
@@ -329,7 +320,7 @@ html.cute-entrance-playing body {
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  background: linear-gradient(180deg, #f0d78a 0%, #3dd68c 100%);
+  background: linear-gradient(180deg, #f4faf0 0%, #a8d4a0 42%, #6aaf70 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -357,14 +348,27 @@ html.cute-entrance-playing body {
 }
 
 .farm-ent-meta {
-  margin: 0.1rem 0 0;
-  font-size: 0.62rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.45rem;
+  margin: 0.15rem 0 0;
+  font-size: 0.6rem;
   font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(61, 214, 140, 0.55);
+  color: rgba(168, 212, 160, 0.58);
   opacity: 0;
   animation: farmEntCopyIn 0.5s 3.58s var(--fe-ease-soft) both;
+}
+
+.farm-ent-meta-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(232, 197, 106, 0.45);
+  flex: 0 0 auto;
 }
 
 @keyframes farmEntCopyIn {

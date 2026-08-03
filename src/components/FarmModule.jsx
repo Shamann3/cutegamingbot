@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ITEM_IDS } from '../types/farm'
 import { getPerfClockMs } from '../utils/devicePerf'
 import { useSettings } from '../context/SettingsContext'
@@ -11,7 +11,6 @@ import { canPerformAction, getEffectivePlotStatus, isPlotDry } from '../utils/pl
 import { buildFarmSlots } from '../utils/farmSlots'
 import { WATER_ANIM_MS } from '../utils/farmTiming'
 import FarmBackground from './FarmBackground'
-import FarmEntrance from './FarmEntrance'
 import FarmPet from './FarmPet'
 import FarmHeader from './FarmHeader'
 import FarmToastLayer from './FarmToastLayer'
@@ -70,6 +69,7 @@ export default function FarmModule({ isActive = true, farmSegment, onFarmSegment
   const [waterAnimPlots, setWaterAnimPlots] = useState(() => new Map())
   const [busyPlotId, setBusyPlotId] = useState(null)
   const [buyingPlot, setBuyingPlot] = useState(false)
+  /* Печать входа — на уровне App (как admin Splash); здесь только reveal shell. */
   const [farmRevealed, setFarmRevealed] = useState(false)
   const actionLockRef = useRef(new Set())
   const waterTimeoutsRef = useRef(new Map())
@@ -80,8 +80,9 @@ export default function FarmModule({ isActive = true, farmSegment, onFarmSegment
     closeDonate,
   } = useContextualDonate()
 
-  const handleEntranceDone = useCallback(() => {
-    setFarmRevealed(true)
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => setFarmRevealed(true))
+    return () => window.cancelAnimationFrame(id)
   }, [])
 
   const slots = buildFarmSlots({
@@ -253,7 +254,6 @@ export default function FarmModule({ isActive = true, farmSegment, onFarmSegment
         farmRevealed ? 'farm-module--revealed' : '',
       ].filter(Boolean).join(' ')}
     >
-      <FarmEntrance active={isActive} onDone={handleEntranceDone} />
       <FarmBackground />
       <TabAtmosphere variant="farm" />
       <FarmToastLayer gainToasts={gainToasts} spendToasts={spendToasts} />
