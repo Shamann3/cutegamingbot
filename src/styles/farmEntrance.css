@@ -16,12 +16,12 @@
   --fe-ease-out: cubic-bezier(0.4, 0, 0.2, 1);
   --fe-gold: #e8c56a;
   --fe-gold-soft: rgba(232, 197, 106, 0.55);
-  --fe-green: #3dd68c;
+  --fe-green: #5a9a62;
   --fe-ink: #f4efe2;
 
   position: fixed;
   inset: 0;
-  z-index: 240;
+  z-index: 12000;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -30,9 +30,30 @@
   pointer-events: auto;
   touch-action: none;
   isolation: isolate;
-  contain: strict;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+}
+
+/* Во время печати входа — только анимация (портал на body). UI/декор скрыты. */
+html.cute-entrance-playing .app-shell,
+html.cute-entrance-playing .gsl-root,
+html.cute-entrance-playing .tab-atmosphere,
+html.cute-entrance-playing .app-tab-bar,
+html.cute-entrance-playing .farm-balance-bar,
+html.cute-entrance-playing .farm-balance-bar--fixed,
+html.cute-entrance-playing .onboarding-welcome-root,
+html.cute-entrance-playing .onboarding-spotlight,
+html.cute-entrance-playing .sale-toast-stack,
+html.cute-entrance-playing .item-guide-toast-layer {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+html.cute-entrance-playing,
+html.cute-entrance-playing body {
+  overflow: hidden !important;
+  background: #000 !important;
 }
 
 .farm-ent-root--out {

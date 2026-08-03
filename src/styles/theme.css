@@ -7,15 +7,15 @@
   --brand-void: #050806;
   --brand-ink: #eef3ea;
   --brand-ink-muted: rgba(238, 243, 234, 0.62);
-  /* Тёмно-зелёный лес (лето по умолчанию) */
-  --brand-green: #3d6b45;
-  --brand-green-deep: #1a3320;
-  --brand-green-soft: rgba(61, 107, 69, 0.16);
-  --brand-green-glow: rgba(45, 90, 55, 0.26);
+  /* Лесной зелёный (лето по умолчанию) */
+  --brand-green: #5a9a62;
+  --brand-green-deep: #2d5a38;
+  --brand-green-soft: rgba(90, 154, 98, 0.16);
+  --brand-green-glow: rgba(120, 180, 110, 0.26);
   --brand-glass: rgba(6, 14, 10, 0.48);
   --brand-glass-strong: rgba(6, 12, 9, 0.68);
-  --brand-border: rgba(61, 107, 69, 0.32);
-  --brand-border-soft: rgba(70, 120, 80, 0.2);
+  --brand-border: rgba(90, 154, 98, 0.32);
+  --brand-border-soft: rgba(120, 180, 110, 0.2);
   --brand-gold: #e8c56a;
   --brand-gold-soft: rgba(232, 197, 106, 0.22);
 

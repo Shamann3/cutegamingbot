@@ -57,14 +57,14 @@
   }
 }
 
-/* --- Лето (тёмно-зелёный) --- */
+/* --- Лето (живой лесной) --- */
 .gsl-summer-heat {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 70% 45% at 78% 0%, rgba(40, 80, 50, 0.22) 0%, transparent 55%),
-    radial-gradient(ellipse 50% 40% at 12% 90%, rgba(25, 60, 35, 0.18) 0%, transparent 55%),
-    linear-gradient(180deg, rgba(20, 50, 30, 0.08) 0%, transparent 40%);
+    radial-gradient(ellipse 70% 45% at 78% 0%, rgba(120, 180, 110, 0.18) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 12% 90%, rgba(70, 140, 90, 0.14) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(90, 154, 98, 0.08) 0%, transparent 40%);
 }
 
 .gsl-summer-sunburst {
@@ -75,7 +75,7 @@
   height: 46vmin;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 40% 40%, rgba(90, 140, 80, 0.35) 0%, rgba(35, 70, 45, 0.14) 42%, transparent 70%);
+    radial-gradient(circle at 40% 40%, rgba(160, 210, 120, 0.32) 0%, rgba(90, 154, 98, 0.14) 42%, transparent 70%);
   animation: gslSun 9s ease-in-out infinite;
 }
 
@@ -85,8 +85,8 @@
   top: 0;
   width: 28%;
   height: 26%;
-  background: radial-gradient(ellipse at 50% 0%, rgba(18, 48, 28, 0.55) 0%, transparent 70%);
-  opacity: 0.85;
+  background: radial-gradient(ellipse at 50% 0%, rgba(30, 80, 42, 0.45) 0%, transparent 70%);
+  opacity: 0.8;
 }
 
 .gsl-summer-canopy-l { left: 0; }
@@ -97,9 +97,13 @@
   width: 2.5px;
   height: 2.5px;
   border-radius: 50%;
-  background: rgba(140, 180, 120, 0.55);
-  box-shadow: 0 0 6px rgba(80, 130, 90, 0.4);
+  background: rgba(180, 230, 140, 0.6);
+  box-shadow: 0 0 6px rgba(120, 180, 100, 0.45);
   animation: gslMote 6s ease-in-out infinite;
+}
+
+.gsl-summer-leaf {
+  opacity: 0.92;
 }
 
 @keyframes gslSun {
@@ -209,9 +213,41 @@
   50% { opacity: 1; filter: brightness(1.25); }
 }
 
+.gsl-snowflake {
+  position: absolute;
+  top: -6%;
+  animation: gslSnowFall var(--snow-dur, 9s) linear infinite;
+  filter: drop-shadow(0 0 3px rgba(220, 236, 248, 0.45));
+}
+
+.gsl-snowflake--soft {
+  border-radius: 50%;
+  background: rgba(244, 248, 252, 0.75);
+  box-shadow: 0 0 4px rgba(220, 236, 248, 0.5);
+}
+
+.gsl-snow-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+@keyframes gslSnowFall {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  8% { opacity: 0.9; }
+  100% {
+    opacity: 0.2;
+    transform: translate3d(var(--snow-drift, 0px), 112vh, 0) rotate(180deg);
+  }
+}
+
 .cute-lite-mode .gsl-fall-leaf,
 .cute-lite-mode .gsl-spring-petal,
 .cute-lite-mode .gsl-summer-mote,
+.cute-lite-mode .gsl-snowflake,
 .cute-lite-mode .gsl-bulb {
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
@@ -221,6 +257,7 @@
   .gsl-fall-leaf,
   .gsl-spring-petal,
   .gsl-summer-mote,
+  .gsl-snowflake,
   .gsl-bulb,
   .gsl-summer-sunburst {
     animation: none !important;

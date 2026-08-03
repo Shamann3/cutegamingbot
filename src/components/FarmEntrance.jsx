@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import Portal from './Portal'
 import '../styles/farmEntrance.css'
 
 const SESSION_KEY = 'cute_farm_entrance_v8'
@@ -51,11 +52,13 @@ export default function FarmEntrance({ active = false, onDone }) {
   useEffect(() => {
     const finish = ({ skipped = false, persist = true } = {}) => {
       if (finishedRef.current) {
+        document.documentElement.classList.remove('cute-entrance-playing')
         onDoneRef.current?.({ skipped: true })
         return
       }
       finishedRef.current = true
       playingRef.current = false
+      document.documentElement.classList.remove('cute-entrance-playing')
       if (persist) markEntranceSeen()
       setPhase('done')
       onDoneRef.current?.({ skipped })
@@ -92,6 +95,7 @@ export default function FarmEntrance({ active = false, onDone }) {
     const hold = reduce ? 700 : (lite ? LITE_HOLD_MS : HOLD_MS)
     const out = reduce ? 200 : OUT_MS
 
+    document.documentElement.classList.add('cute-entrance-playing')
     setPhase('play')
     const outTimer = window.setTimeout(() => {
       if (!cancelled) setPhase('out')
@@ -102,66 +106,75 @@ export default function FarmEntrance({ active = false, onDone }) {
 
     return () => {
       cancelled = true
+      document.documentElement.classList.remove('cute-entrance-playing')
       window.clearTimeout(outTimer)
       window.clearTimeout(doneTimer)
     }
   }, [active, lite])
 
+  useEffect(() => {
+    if (phase === 'done' || phase === 'idle') {
+      document.documentElement.classList.remove('cute-entrance-playing')
+    }
+  }, [phase])
+
   if (phase === 'idle' || phase === 'done') return null
 
   return (
-    <div
-      className={`farm-ent-root${lite ? ' farm-ent-root--lite' : ''}${phase === 'out' ? ' farm-ent-root--out' : ''}`}
-      role="status"
-      aria-live="polite"
-      aria-label="Вход на ферму Cute Farming"
-    >
-      <div className="farm-ent-void" aria-hidden />
-      <div className="farm-ent-vignette" aria-hidden />
-      <div className="farm-ent-grid" aria-hidden />
-      <div className="farm-ent-aurora" aria-hidden />
+    <Portal>
+      <div
+        className={`farm-ent-root${lite ? ' farm-ent-root--lite' : ''}${phase === 'out' ? ' farm-ent-root--out' : ''}`}
+        role="status"
+        aria-live="polite"
+        aria-label="Вход на ферму Cute Farming"
+      >
+        <div className="farm-ent-void" aria-hidden />
+        <div className="farm-ent-vignette" aria-hidden />
+        <div className="farm-ent-grid" aria-hidden />
+        <div className="farm-ent-aurora" aria-hidden />
 
-      <div className="farm-ent-stage">
-        <svg className="farm-ent-rings" viewBox="0 0 200 200" aria-hidden>
-          <circle className="farm-ent-ring farm-ent-ring--a" cx="100" cy="100" r="94" />
-          <circle className="farm-ent-ring farm-ent-ring--b" cx="100" cy="100" r="80" />
-          <path
-            className="farm-ent-ring farm-ent-ring--shield"
-            d="M100 18 L162 40 V96 C162 136 134 164 100 178 C66 164 38 136 38 96 V40 Z"
-          />
-          <circle className="farm-ent-ring farm-ent-ring--c" cx="100" cy="100" r="56" />
-        </svg>
-
-        <div className="farm-ent-brackets" aria-hidden>
-          <span className="farm-ent-bracket farm-ent-bracket--tl" />
-          <span className="farm-ent-bracket farm-ent-bracket--tr" />
-          <span className="farm-ent-bracket farm-ent-bracket--bl" />
-          <span className="farm-ent-bracket farm-ent-bracket--br" />
-        </div>
-
-        <div className="farm-ent-mark">
-          <div className="farm-ent-stamp" aria-hidden />
-          <div className="farm-ent-crest">
-            <img
-              src={CREST_SRC}
-              alt=""
-              draggable={false}
-              decoding="async"
-              className="farm-ent-crest-img"
+        <div className="farm-ent-stage">
+          <svg className="farm-ent-rings" viewBox="0 0 200 200" aria-hidden>
+            <circle className="farm-ent-ring farm-ent-ring--a" cx="100" cy="100" r="94" />
+            <circle className="farm-ent-ring farm-ent-ring--b" cx="100" cy="100" r="80" />
+            <path
+              className="farm-ent-ring farm-ent-ring--shield"
+              d="M100 18 L162 40 V96 C162 136 134 164 100 178 C66 164 38 136 38 96 V40 Z"
             />
+            <circle className="farm-ent-ring farm-ent-ring--c" cx="100" cy="100" r="56" />
+          </svg>
+
+          <div className="farm-ent-brackets" aria-hidden>
+            <span className="farm-ent-bracket farm-ent-bracket--tl" />
+            <span className="farm-ent-bracket farm-ent-bracket--tr" />
+            <span className="farm-ent-bracket farm-ent-bracket--bl" />
+            <span className="farm-ent-bracket farm-ent-bracket--br" />
+          </div>
+
+          <div className="farm-ent-mark">
+            <div className="farm-ent-stamp" aria-hidden />
+            <div className="farm-ent-crest">
+              <img
+                src={CREST_SRC}
+                alt=""
+                draggable={false}
+                decoding="async"
+                className="farm-ent-crest-img"
+              />
+            </div>
+          </div>
+
+          <div className="farm-ent-copy">
+            <p className="farm-ent-kicker">CUTE FARMING</p>
+            <p className="farm-ent-title">Ферма</p>
+            <p className="farm-ent-sub">выращивай · торгуй · побеждай</p>
+            <p className="farm-ent-rule" aria-hidden />
+            <p className="farm-ent-meta">печать входа · сезон открыт</p>
           </div>
         </div>
 
-        <div className="farm-ent-copy">
-          <p className="farm-ent-kicker">CUTE FARMING</p>
-          <p className="farm-ent-title">Ферма</p>
-          <p className="farm-ent-sub">выращивай · торгуй · побеждай</p>
-          <p className="farm-ent-rule" aria-hidden />
-          <p className="farm-ent-meta">печать входа · сезон открыт</p>
-        </div>
+        <div className="farm-ent-flash" aria-hidden />
       </div>
-
-      <div className="farm-ent-flash" aria-hidden />
-    </div>
+    </Portal>
   )
 }

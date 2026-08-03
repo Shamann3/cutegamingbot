@@ -127,15 +127,15 @@ export const TAB_ICONS = {
 // Те же значения, что в src/styles/tabThemes.css (--tab-accent-strong / --tab-accent-glow)
 // держать в синхроне, если поменяются там.
 export const TAB_ACCENTS = {
-  farm: { strong: '#3d6b45', glow: 'rgba(61, 107, 69, 0.34)' },
-  inventory: { strong: '#3d6b45', glow: 'rgba(61, 107, 69, 0.3)' },
+  farm: { strong: '#5a9a62', glow: 'rgba(90, 154, 98, 0.34)' },
+  inventory: { strong: '#5a9a62', glow: 'rgba(90, 154, 98, 0.3)' },
   craft: { strong: '#a78bfa', glow: 'rgba(167, 139, 250, 0.3)' },
   quests: { strong: '#d4924a', glow: 'rgba(212, 146, 74, 0.32)' },
-  shop: { strong: '#3d6b45', glow: 'rgba(61, 107, 69, 0.28)' },
-  market: { strong: '#4a7a52', glow: 'rgba(74, 122, 82, 0.3)' },
+  shop: { strong: '#5a9a62', glow: 'rgba(90, 154, 98, 0.28)' },
+  market: { strong: '#6aaf70', glow: 'rgba(106, 175, 112, 0.3)' },
   chests: { strong: '#c9a24a', glow: 'rgba(201, 162, 74, 0.28)' },
-  profile: { strong: '#3d6b45', glow: 'rgba(61, 107, 69, 0.32)' },
+  profile: { strong: '#5a9a62', glow: 'rgba(90, 154, 98, 0.32)' },
   settings: { strong: '#9ca89a', glow: 'rgba(156, 168, 154, 0.28)' },
-  trade: { strong: '#3d6b45', glow: 'rgba(61, 107, 69, 0.3)' },
+  trade: { strong: '#5a9a62', glow: 'rgba(90, 154, 98, 0.3)' },
   giveaways: { strong: '#f472b6', glow: 'rgba(244, 114, 182, 0.3)' },
 }
