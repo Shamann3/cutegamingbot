@@ -11,7 +11,12 @@ import {
   seasonModeLabel,
 } from '../constants/season'
 import { useSettings } from '../context/SettingsContext'
-import { apiRequest, getSupportBotUrl } from '../lib/apiClient'
+import {
+  apiRequest,
+  getSupportBotUrl,
+  subscribeSupportBotUrl,
+} from '../lib/apiClient'
+import { openTelegramBotLink } from '../lib/telegram'
 
 const SEASON_OPTIONS = [
   { id: SEASON_MODES.AUTO, emoji: '🗓️', label: 'Авто' },
@@ -81,18 +86,17 @@ export default function SettingsModule({ embedded = false }) {
     }
   }
 
+  const [supportUrl, setSupportUrl] = useState(() => getSupportBotUrl())
+
+  useEffect(() => {
+    setSupportUrl(getSupportBotUrl())
+    return subscribeSupportBotUrl((url) => setSupportUrl(url || getSupportBotUrl()))
+  }, [])
+
   const openSupport = () => {
-    const url = getSupportBotUrl()
+    const url = supportUrl || getSupportBotUrl()
     if (!url) return
-    try {
-      if (window.Telegram?.WebApp?.openTelegramLink) {
-        window.Telegram.WebApp.openTelegramLink(url)
-      } else {
-        window.open(url, '_blank', 'noopener')
-      }
-    } catch {
-      window.open(url, '_blank', 'noopener')
-    }
+    openTelegramBotLink(url)
   }
 
   return (
@@ -293,9 +297,9 @@ export default function SettingsModule({ embedded = false }) {
             </p>
             <button
               type="button"
-              className="settings-complaint-btn"
+              className="settings-support-btn"
               onClick={openSupport}
-              disabled={!getSupportBotUrl()}
+              disabled={!supportUrl}
             >
               💬 Написать в поддержку
             </button>

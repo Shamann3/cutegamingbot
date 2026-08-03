@@ -1,7 +1,8 @@
-const SUPPORT_BOT_URL = import.meta.env.VITE_SUPPORT_BOT_URL || 'https://t.me/cutegamingsupportbot'
+import { getSupportBotUrl } from '../lib/apiClient'
 
 export default function BannedScreen({ message }) {
   const isMute = message && message.includes('замучены')
+  const supportUrl = getSupportBotUrl()
 
   return (
     <div className="banned-screen">
@@ -29,7 +30,7 @@ export default function BannedScreen({ message }) {
         {!isMute && (
           <a
             className="banned-appeal-btn"
-            href={`${SUPPORT_BOT_URL}?start=appeal`}
+            href={`${supportUrl}?start=appeal`}
             target="_blank"
             rel="noreferrer"
           >
@@ -41,7 +42,7 @@ export default function BannedScreen({ message }) {
           <span className="banned-support-label">Поддержка:</span>
           <a
             className="banned-support-link"
-            href={SUPPORT_BOT_URL}
+            href={supportUrl}
             target="_blank"
             rel="noreferrer"
           >

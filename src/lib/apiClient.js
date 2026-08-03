@@ -153,10 +153,30 @@ export async function submitComplaint({ reason, subject = '' }) {
   })
 }
 
-let _supportBotUrl = import.meta.env.VITE_SUPPORT_BOT_URL || ''
+/** Fallback совпадает с BannedScreen / SUPPORT_BOT_URL в .env */
+export const DEFAULT_SUPPORT_BOT_URL = 'https://t.me/cutegamingsupportbot'
+
+let _supportBotUrl = String(import.meta.env.VITE_SUPPORT_BOT_URL || '').trim()
+const _supportUrlListeners = new Set()
+
+function _setSupportBotUrl(next) {
+  const url = String(next || '').trim()
+  if (!url || url === _supportBotUrl) return
+  _supportBotUrl = url
+  _supportUrlListeners.forEach((fn) => {
+    try { fn(_supportBotUrl) } catch { /* ignore */ }
+  })
+}
 
 export function getSupportBotUrl() {
-  return _supportBotUrl
+  return _supportBotUrl || DEFAULT_SUPPORT_BOT_URL
+}
+
+/** Подписка на обновление URL с /api/status (для кнопок, смонтированных до ответа). */
+export function subscribeSupportBotUrl(listener) {
+  if (typeof listener !== 'function') return () => {}
+  _supportUrlListeners.add(listener)
+  return () => _supportUrlListeners.delete(listener)
 }
 
 export async function fetchAppStatus() {
@@ -176,7 +196,7 @@ export async function fetchAppStatus() {
       return { ok: false, maintenance: false }
     }
     const data = await response.json()
-    if (data.supportBotUrl) _supportBotUrl = data.supportBotUrl
+    if (data.supportBotUrl) _setSupportBotUrl(data.supportBotUrl)
     return data
   } catch {
     return { ok: false, maintenance: false }

@@ -10696,18 +10696,29 @@ body.onboarding-content-lock .app-tab-bar {
   color: rgba(255, 237, 213, 0.45);
 }
 
-/* Жалоба на модерацию (настройки игрока) */
+/* Поддержка / жалоба (настройки игрока) */
+.settings-support-btn,
 .settings-complaint-btn {
   width: 100%;
-  border: 1px solid rgba(248, 113, 113, 0.5);
+  border: 1px solid rgba(106, 175, 112, 0.45);
   border-radius: 0.85rem;
-  background: rgba(248, 113, 113, 0.12);
-  color: #fecaca;
+  background: rgba(106, 175, 112, 0.14);
+  color: #d8f2c8;
   font: inherit;
   font-weight: 700;
   font-size: 0.85rem;
   padding: 0.7rem 1rem;
   cursor: pointer;
+}
+.settings-support-btn:disabled,
+.settings-complaint-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.settings-complaint-btn {
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
 }
 .settings-complaint-btn-ghost {
   border-color: rgba(148, 163, 184, 0.4);
