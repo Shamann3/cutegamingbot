@@ -125,27 +125,63 @@
 
 .soil-vine-stem {
   stroke: var(--sf-leaf);
-  stroke-width: 1.8;
-  opacity: 0.9;
+  stroke-width: 1.9;
+  opacity: 0.95;
+  stroke-linecap: round;
 }
 
 .soil-vine-stem--thin {
-  stroke-width: 1.1;
-  opacity: 0.55;
+  stroke-width: 1.15;
+  opacity: 0.6;
   stroke: var(--sf-green);
 }
 
+.soil-vine-tendril {
+  stroke: #6ee7b7;
+  stroke-width: 0.9;
+  opacity: 0.65;
+  stroke-linecap: round;
+}
+
 .soil-vine-leaf {
-  fill: var(--sf-green);
   stroke: none;
-  opacity: 0.88;
-  filter: drop-shadow(0 0 2px rgba(61, 214, 140, 0.35));
+  opacity: 0.92;
+  filter: drop-shadow(0 0 2.5px rgba(61, 214, 140, 0.4));
+}
+
+.soil-vine-bud {
+  fill: var(--sf-gold);
+  opacity: 0.85;
+  filter: drop-shadow(0 0 3px rgba(232, 197, 106, 0.55));
 }
 
 .soil-vine--tl { animation: soilVineSway 4.2s 0.1s ease-in-out infinite; transform-origin: 4px 28px; }
 .soil-vine--tr { animation: soilVineSway 4.6s 0.4s ease-in-out infinite; transform-origin: 156px 30px; }
 .soil-vine--bl { animation: soilVineSway 5s 0.2s ease-in-out infinite; transform-origin: 6px 96px; }
 .soil-vine--br { animation: soilVineSway 4.8s 0.55s ease-in-out infinite; transform-origin: 154px 96px; }
+.soil-vine--side-l { animation: soilVineSway 5.2s 0.3s ease-in-out infinite; transform-origin: 0 70px; }
+.soil-vine--side-r { animation: soilVineSway 5.4s 0.5s ease-in-out infinite; transform-origin: 160px 70px; }
+
+.soil-field-corner-glow {
+  position: absolute;
+  width: 38%;
+  height: 38%;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.45;
+}
+
+.soil-field-corner-glow--tl {
+  top: -6%;
+  left: -6%;
+  background: radial-gradient(circle at 30% 30%, rgba(61, 214, 140, 0.28) 0%, transparent 68%);
+}
+
+.soil-field-corner-glow--tr {
+  top: -6%;
+  right: -6%;
+  background: radial-gradient(circle at 70% 30%, rgba(232, 197, 106, 0.18) 0%, transparent 68%);
+}
 
 .soil-field-grass {
   position: absolute;
@@ -181,6 +217,8 @@
 .soil-blade--10 { height: 66%; animation: soilBlade 3.15s 0.18s ease-in-out infinite; }
 .soil-blade--11 { height: 38%; animation: soilBlade 2.75s 0.48s ease-in-out infinite; }
 .soil-blade--12 { height: 54%; animation: soilBlade 3.05s 0.3s ease-in-out infinite; }
+.soil-blade--13 { height: 60%; animation: soilBlade 3.25s 0.38s ease-in-out infinite; }
+.soil-blade--14 { height: 44%; animation: soilBlade 2.95s 0.52s ease-in-out infinite; }
 
 .soil-field-spores {
   position: absolute;
@@ -207,6 +245,8 @@
 .soil-spore--6 { left: 54%; top: 48%; animation-delay: 3.8s; background: var(--sf-green); }
 .soil-spore--7 { left: 12%; top: 42%; animation-delay: 4.4s; }
 .soil-spore--8 { left: 86%; top: 62%; animation-delay: 5s; }
+.soil-spore--9 { left: 60%; top: 22%; animation-delay: 5.5s; background: var(--sf-green); }
+.soil-spore--10 { left: 24%; top: 72%; animation-delay: 6s; }
 
 .soil-field-rim {
   position: absolute;

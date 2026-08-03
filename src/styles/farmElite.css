@@ -279,6 +279,47 @@
     inset 0 1px 0 rgba(167, 243, 208, 0.12);
 }
 
+.tab-theme-farm .farm-panel-body,
+.tab-theme-farm .farm-batch-bar {
+  position: relative;
+}
+
+.tab-theme-farm .farm-panel-body::before,
+.tab-theme-farm .farm-batch-bar::before {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(61, 214, 140, 0.35), rgba(232, 197, 106, 0.35), transparent);
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.tab-theme-farm .farm-btn-primary,
+.tab-theme-farm .farm-btn-harvest,
+.tab-theme-farm .farm-btn-seed,
+.tab-theme-farm .farm-btn-buy,
+.tab-theme-farm .farm-btn-water,
+.tab-theme-farm .farm-btn-autowater {
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.tab-theme-farm .farm-header-titles {
+  position: relative;
+}
+
+.tab-theme-farm .farm-header-titles::after {
+  content: '';
+  display: block;
+  width: 4.5rem;
+  height: 1px;
+  margin: 0.45rem auto 0;
+  background: linear-gradient(90deg, transparent, rgba(232, 197, 106, 0.55), rgba(61, 214, 140, 0.45), transparent);
+}
+
 .tab-theme-farm .segment-tabs {
   background: linear-gradient(180deg, rgba(8, 14, 11, 0.88) 0%, rgba(4, 8, 6, 0.94) 100%);
   border: 1px solid rgba(232, 197, 106, 0.16);

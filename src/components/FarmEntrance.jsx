@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import EntranceFlora from './decor/EntranceFlora'
 import '../styles/farmEntrance.css'
 
-const SESSION_KEY = 'cute_farm_entrance_v5'
+const SESSION_KEY = 'cute_farm_entrance_v6'
 const CREST_SRC = '/assets/cute-crest.png?v=4'
 /** Как админская печать: ~6.0с ритуал + выход. */
 const HOLD_MS = 5550
@@ -121,39 +122,7 @@ export default function FarmEntrance({ active = false, onDone }) {
       <div className="farm-ent-grid" aria-hidden />
       <div className="farm-ent-aurora" aria-hidden />
 
-      {/* Доп. слой растительности — оплетает сцену, не заменяет печать */}
-      <svg className="farm-ent-flora" viewBox="0 0 360 640" preserveAspectRatio="xMidYMid slice" aria-hidden>
-        <g className="farm-ent-flora-branch farm-ent-flora-branch--l" fill="none" strokeLinecap="round">
-          <path className="farm-ent-flora-stem" d="M8 520 C40 420, 28 300, 62 210 C88 145, 70 90, 96 40" />
-          <path className="farm-ent-flora-stem farm-ent-flora-stem--soft" d="M22 540 C54 450, 48 340, 78 250" />
-          <path className="farm-ent-flora-leaf" d="M54 250 C68 232, 88 236, 90 252 C76 258, 64 260, 54 250Z" />
-          <path className="farm-ent-flora-leaf" d="M70 190 C86 168, 108 174, 108 192 C92 198, 80 200, 70 190Z" />
-          <path className="farm-ent-flora-leaf" d="M82 130 C98 108, 120 116, 118 134 C102 138, 90 140, 82 130Z" />
-          <path className="farm-ent-flora-leaf" d="M90 78 C104 58, 124 66, 122 84 C108 88, 96 88, 90 78Z" />
-        </g>
-        <g className="farm-ent-flora-branch farm-ent-flora-branch--r" fill="none" strokeLinecap="round">
-          <path className="farm-ent-flora-stem" d="M352 520 C320 420, 332 300, 298 210 C272 145, 290 90, 264 40" />
-          <path className="farm-ent-flora-stem farm-ent-flora-stem--soft" d="M338 540 C306 450, 312 340, 282 250" />
-          <path className="farm-ent-flora-leaf" d="M306 250 C292 232, 272 236, 270 252 C284 258, 296 260, 306 250Z" />
-          <path className="farm-ent-flora-leaf" d="M290 190 C274 168, 252 174, 252 192 C268 198, 280 200, 290 190Z" />
-          <path className="farm-ent-flora-leaf" d="M278 130 C262 108, 240 116, 242 134 C258 138, 270 140, 278 130Z" />
-          <path className="farm-ent-flora-leaf" d="M270 78 C256 58, 236 66, 238 84 C252 88, 264 88, 270 78Z" />
-        </g>
-        <g className="farm-ent-flora-ground" fill="none">
-          <path className="farm-ent-flora-stem farm-ent-flora-stem--ground" d="M40 600 C120 575, 240 575, 320 600" />
-          <path className="farm-ent-flora-blade" d="M70 598 C74 560, 66 540, 72 520" />
-          <path className="farm-ent-flora-blade" d="M110 600 C118 555, 104 535, 112 510" />
-          <path className="farm-ent-flora-blade" d="M180 602 C176 560, 186 540, 178 515" />
-          <path className="farm-ent-flora-blade" d="M250 600 C258 555, 246 535, 254 512" />
-          <path className="farm-ent-flora-blade" d="M300 598 C294 562, 304 542, 296 522" />
-        </g>
-        <g className="farm-ent-flora-spores">
-          <circle className="farm-ent-flora-spore farm-ent-flora-spore--1" cx="90" cy="300" r="2.2" />
-          <circle className="farm-ent-flora-spore farm-ent-flora-spore--2" cx="270" cy="260" r="1.8" />
-          <circle className="farm-ent-flora-spore farm-ent-flora-spore--3" cx="140" cy="420" r="2" />
-          <circle className="farm-ent-flora-spore farm-ent-flora-spore--4" cx="220" cy="380" r="1.6" />
-        </g>
-      </svg>
+      <EntranceFlora />
 
       <div className="farm-ent-stage">
         <svg className="farm-ent-rings" viewBox="0 0 200 200" aria-hidden>

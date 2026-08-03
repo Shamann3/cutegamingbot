@@ -2,21 +2,48 @@
 import { useId } from 'react'
 
 export function VineLeaf({ className = '', flip = false }) {
+  const gradId = `vl-${useId().replace(/:/g, '')}`
   return (
     <svg
-      viewBox="0 0 32 20"
+      viewBox="0 0 32 22"
       className={`${flip ? 'scale-x-[-1]' : ''} ${className}`}
       aria-hidden
     >
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#7ef0b4" />
+          <stop offset="55%" stopColor="#2f9e64" />
+          <stop offset="100%" stopColor="#14532d" />
+        </linearGradient>
+      </defs>
       <path
-        d="M2 18 C6 12 10 8 16 6 C22 8 26 12 30 18 C24 16 20 14 16 12 C12 14 8 16 2 18 Z"
-        fill="#3d8f52"
+        d="M2 18
+           C6 10, 12 5, 18 4
+           C22 2, 26 4, 28 8
+           C30 12, 28 16, 24 18
+           C20 20, 14 19, 10 17
+           C6 19, 3 20, 2 18 Z"
+        fill={`url(#${gradId})`}
+        opacity="0.95"
       />
       <path
-        d="M8 14 C10 11 13 9 16 8 C19 9 22 11 24 14 C21 13 18 12 16 11 C14 12 11 13 8 14 Z"
-        fill="#5cb86a"
+        d="M8 14 C12 9, 18 7, 22 9 C18 10, 14 12, 10 14 Z"
+        fill="rgba(244,239,226,0.18)"
       />
-      <path d="M15 11 L16 4 L17 11 Z" fill="#2e6b3a" />
+      <path
+        d="M6 16 C12 12, 18 8, 24 10"
+        fill="none"
+        stroke="rgba(4,20,12,0.4)"
+        strokeWidth="0.7"
+        strokeLinecap="round"
+      />
+      <path
+        d="M10 14 C14 12, 18 11, 20 9 M12 16 C16 14, 20 14, 22 12"
+        fill="none"
+        stroke="rgba(4,20,12,0.25)"
+        strokeWidth="0.45"
+        strokeLinecap="round"
+      />
     </svg>
   )
 }

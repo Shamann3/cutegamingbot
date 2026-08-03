@@ -388,7 +388,7 @@
   background: radial-gradient(ellipse at center, transparent 42%, rgba(2, 6, 4, 0.42) 100%);
 }
 
-/* Растительность на всех вкладках — тонкая отсылка к ферме */
+/* Растительность на всех вкладках — плющ по краям */
 .tab-atmosphere-vines {
   position: absolute;
   inset: 0;
@@ -396,22 +396,39 @@
   height: 100%;
   pointer-events: none;
   z-index: 1;
-  opacity: 0.55;
+  opacity: 0.62;
 }
 
 .tab-vine-stem {
-  stroke: rgba(61, 214, 140, 0.38);
-  stroke-width: 1.15;
+  stroke: rgba(61, 214, 140, 0.42);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+
+.tab-vine-stem--soft {
+  stroke: rgba(110, 231, 183, 0.28);
+  stroke-width: 0.75;
 }
 
 .tab-vine-stem--floor {
-  stroke: rgba(232, 197, 106, 0.22);
+  stroke: rgba(232, 197, 106, 0.28);
   stroke-width: 1;
 }
 
+.tab-vine-tendril {
+  stroke: rgba(110, 231, 183, 0.45);
+  stroke-width: 0.7;
+  stroke-linecap: round;
+}
+
 .tab-vine-leaf {
-  fill: rgba(61, 214, 140, 0.28);
   stroke: none;
+  filter: drop-shadow(0 0 2px rgba(61, 214, 140, 0.25));
+}
+
+.tab-vine-bud {
+  fill: rgba(232, 197, 106, 0.75);
+  filter: drop-shadow(0 0 2px rgba(232, 197, 106, 0.45));
 }
 
 .tab-vine--l {
@@ -434,34 +451,59 @@
   50% { transform: rotate(-1.2deg); }
 }
 
+.tab-atmosphere-dust {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.35;
+  background:
+    radial-gradient(circle at 18% 72%, rgba(232, 197, 106, 0.12) 0 1px, transparent 2px),
+    radial-gradient(circle at 78% 28%, rgba(61, 214, 140, 0.1) 0 1px, transparent 2px),
+    radial-gradient(circle at 42% 18%, rgba(232, 197, 106, 0.08) 0 1px, transparent 2px),
+    radial-gradient(circle at 64% 82%, rgba(61, 214, 140, 0.09) 0 1px, transparent 2px);
+  animation: tabDustDrift 12s ease-in-out infinite alternate;
+}
+
+@keyframes tabDustDrift {
+  from { transform: translateY(0); opacity: 0.28; }
+  to { transform: translateY(-1.2%); opacity: 0.42; }
+}
+
 .tab-atmosphere--shop .tab-vine-stem,
 .tab-atmosphere--market .tab-vine-stem,
 .tab-atmosphere--chests .tab-vine-stem {
-  stroke: rgba(232, 197, 106, 0.32);
+  stroke: rgba(232, 197, 106, 0.38);
 }
 
-.tab-atmosphere--shop .tab-vine-leaf,
-.tab-atmosphere--market .tab-vine-leaf,
-.tab-atmosphere--chests .tab-vine-leaf {
-  fill: rgba(232, 197, 106, 0.22);
+.tab-atmosphere--shop .tab-vine-stem--soft,
+.tab-atmosphere--market .tab-vine-stem--soft,
+.tab-atmosphere--chests .tab-vine-stem--soft {
+  stroke: rgba(247, 231, 176, 0.28);
 }
 
 .tab-atmosphere--quests .tab-vine-stem {
-  stroke: rgba(61, 214, 140, 0.34);
+  stroke: rgba(61, 214, 140, 0.4);
 }
 
 .cute-turbo-mode .tab-atmosphere-texture,
-.cute-turbo-mode .tab-atmosphere-vines {
+.cute-turbo-mode .tab-atmosphere-vines,
+.cute-turbo-mode .tab-atmosphere-dust {
   display: none;
 }
 
 .cute-lite-mode .tab-vine--l,
-.cute-lite-mode .tab-vine--r {
+.cute-lite-mode .tab-vine--r,
+.cute-lite-mode .tab-atmosphere-dust {
   animation: none !important;
 }
 
 .cute-lite-mode .tab-atmosphere-vines {
-  opacity: 0.38;
+  opacity: 0.4;
+}
+
+.cute-lite-mode .tab-atmosphere-dust {
+  opacity: 0.18;
 }
 
 /* === Заголовки вкладок === */
@@ -498,13 +540,47 @@
 .tab-theme-shop .farm-vine-frame-inner,
 .tab-theme-market .farm-vine-frame-inner,
 .tab-theme-settings .farm-vine-frame-inner,
-.tab-theme-chests .farm-vine-frame-inner {
+.tab-theme-chests .farm-vine-frame-inner,
+.tab-theme-quests .farm-vine-frame-inner,
+.tab-theme-profile .farm-vine-frame-inner {
   border-color: var(--tab-frame-border);
   background: linear-gradient(180deg, var(--tab-surface) 0%, var(--tab-surface-alt) 100%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 8px 24px rgba(0, 0, 0, 0.28),
     0 0 20px var(--tab-accent-soft);
+}
+
+/* Мелкие «живые» акценты на заголовках вкладок */
+.tab-theme-inventory .inventory-hero-title,
+.tab-theme-shop .shop-exchange-title,
+.tab-theme-market .market-hero-title,
+.tab-theme-craft .craft-module-title,
+.tab-theme-quests .quests-hero-title,
+.tab-theme-profile .profile-module-title,
+.tab-theme-settings .settings-hero-title,
+.tab-theme-chests .chest-hero-title {
+  position: relative;
+}
+
+.tab-theme-inventory .inventory-hero-eyebrow::before,
+.tab-theme-shop .shop-exchange-eyebrow::before,
+.tab-theme-market .market-hero-eyebrow::before,
+.tab-theme-craft .craft-module-eyebrow::before,
+.tab-theme-quests .quests-hero-eyebrow::before,
+.tab-theme-profile .profile-module-eyebrow::before,
+.tab-theme-settings .settings-hero-eyebrow::before,
+.tab-theme-chests .chest-hero-eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.4rem;
+  border-radius: 0 70% 40% 70%;
+  background: linear-gradient(135deg, #7ef0b4 0%, #1f7a4d 100%);
+  box-shadow: 0 0 6px rgba(61, 214, 140, 0.35);
+  vertical-align: 0.05em;
+  transform: rotate(-28deg);
 }
 
 /* === Баланс КУТ внутри вкладки === */
