@@ -166,18 +166,25 @@
 }
 
 .tab-atmosphere--farm .tab-atmosphere-base {
+  /* Как у других вкладок: лёгкий тинт, виден forest-bg */
   background:
-    radial-gradient(ellipse 110% 65% at 50% -8%, rgba(232, 197, 106, 0.14) 0%, transparent 55%),
-    radial-gradient(ellipse 90% 50% at 80% 100%, rgba(61, 214, 140, 0.12) 0%, transparent 50%),
-    linear-gradient(180deg, rgba(8, 16, 12, 0.55) 0%, rgba(3, 7, 5, 0.78) 100%);
+    radial-gradient(ellipse 100% 55% at 50% -8%, rgba(232, 197, 106, 0.16) 0%, transparent 58%),
+    radial-gradient(ellipse 80% 45% at 85% 100%, rgba(61, 214, 140, 0.1) 0%, transparent 52%),
+    linear-gradient(180deg, rgba(8, 16, 12, 0.2) 0%, rgba(3, 7, 5, 0.42) 100%);
 }
 
 .tab-atmosphere--farm .tab-atmosphere-glow-a {
-  background: radial-gradient(circle at 14% 78%, rgba(61, 214, 140, 0.14) 0%, transparent 42%);
+  background: radial-gradient(circle at 14% 78%, rgba(61, 214, 140, 0.1) 0%, transparent 42%);
 }
 
 .tab-atmosphere--farm .tab-atmosphere-glow-b {
-  background: radial-gradient(circle at 88% 22%, rgba(232, 197, 106, 0.12) 0%, transparent 38%);
+  background: radial-gradient(circle at 88% 22%, rgba(232, 197, 106, 0.1) 0%, transparent 38%);
+}
+
+/* На ферме без SVG-веточек — только фото-фон + чистый UI */
+.tab-atmosphere--farm .tab-atmosphere-vines,
+.tab-atmosphere--farm .tab-atmosphere-dust {
+  display: none;
 }
 
 .tab-atmosphere--inventory .tab-atmosphere-base {

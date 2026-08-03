@@ -1,0 +1,272 @@
+/* ============================================================
+   SEASON — лето / зима
+   Нейтральный каркас: золото всегда; акцент зелёный ↔ ледяной.
+   ============================================================ */
+
+:root,
+html.cute-season-summer,
+html[data-season='summer'] {
+  --season-accent: #3dd68c;
+  --season-accent-deep: #1f7a4d;
+  --season-accent-soft: rgba(61, 214, 140, 0.14);
+  --season-accent-glow: rgba(61, 214, 140, 0.28);
+  --season-mist: rgba(61, 214, 140, 0.1);
+  --season-ink-on-accent: #04140c;
+  --season-soil-cool: rgba(61, 214, 140, 0.12);
+  --season-chip: rgba(61, 214, 140, 0.22);
+}
+
+html.cute-season-winter,
+html[data-season='winter'] {
+  --season-accent: #9ec9e8;
+  --season-accent-deep: #4a7fa3;
+  --season-accent-soft: rgba(158, 201, 232, 0.16);
+  --season-accent-glow: rgba(158, 201, 232, 0.3);
+  --season-mist: rgba(186, 214, 232, 0.12);
+  --season-ink-on-accent: #0a1620;
+  --season-soil-cool: rgba(158, 201, 232, 0.14);
+  --season-chip: rgba(158, 201, 232, 0.24);
+}
+
+/* Золото — круглый год (нейтральный якорь бренда) */
+:root {
+  --season-gold: #e8c56a;
+  --season-gold-deep: #b8892d;
+  --season-gold-soft: rgba(232, 197, 106, 0.16);
+}
+
+/* --- Фон --- */
+
+.farm-bg-root--winter {
+  background: #050a10 !important;
+}
+
+.farm-bg-root--winter.farm-bg-root--turbo {
+  background: linear-gradient(180deg, #0e1a24 0%, #071018 55%, #04080c 100%) !important;
+}
+
+.farm-bg-root--summer.farm-bg-root--turbo {
+  background: linear-gradient(180deg, #0c2216 0%, #061008 55%, #040a06 100%) !important;
+}
+
+.farm-bg-frost {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 80% 45% at 50% -5%, rgba(220, 236, 248, 0.18) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 35% at 20% 100%, rgba(158, 201, 232, 0.1) 0%, transparent 50%),
+    linear-gradient(180deg, rgba(180, 210, 230, 0.08) 0%, transparent 40%);
+  z-index: 2;
+}
+
+.farm-bg-frost--edge {
+  background:
+    linear-gradient(90deg, rgba(210, 230, 245, 0.12) 0%, transparent 18%, transparent 82%, rgba(210, 230, 245, 0.12) 100%),
+    linear-gradient(180deg, transparent 55%, rgba(200, 220, 240, 0.1) 100%);
+  mix-blend-mode: soft-light;
+}
+
+.farm-bg-snow {
+  position: absolute;
+  top: -4%;
+  border-radius: 50%;
+  background: rgba(244, 248, 252, 0.85);
+  box-shadow: 0 0 4px rgba(220, 236, 248, 0.45);
+  opacity: 0;
+  animation: farmSnowFall var(--snow-dur, 8s) linear infinite;
+}
+
+@keyframes farmSnowFall {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  8% { opacity: 0.85; }
+  100% {
+    opacity: 0.15;
+    transform: translate3d(var(--snow-drift, 0px), 110vh, 0);
+  }
+}
+
+.farm-bg-root--winter .farm-bg-mist-a {
+  background: radial-gradient(ellipse 70% 40% at 40% 70%, rgba(186, 214, 232, 0.14) 0%, transparent 60%);
+}
+
+.farm-bg-root--winter .farm-bg-vignette {
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(4, 10, 16, 0.55) 100%);
+}
+
+.cute-lite-mode .farm-bg-snow,
+.cute-turbo-mode .farm-bg-snow,
+.cute-lite-mode .farm-bg-frost,
+.cute-turbo-mode .farm-bg-frost {
+  display: none !important;
+}
+
+/* --- Ферма: акценты сезона --- */
+
+html[data-season='winter'] .tab-theme-farm {
+  --farm-green: var(--season-accent);
+  --farm-green-deep: var(--season-accent-deep);
+  --tab-accent-strong: var(--season-accent);
+  --tab-accent-soft: var(--season-accent-soft);
+  --tab-accent-glow: var(--season-accent-glow);
+  --tab-chip-border: var(--season-chip);
+}
+
+html[data-season='winter'] .tab-atmosphere--farm .tab-atmosphere-base {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -8%, rgba(232, 197, 106, 0.12) 0%, transparent 58%),
+    radial-gradient(ellipse 80% 45% at 85% 100%, rgba(158, 201, 232, 0.12) 0%, transparent 52%),
+    linear-gradient(180deg, rgba(8, 14, 20, 0.22) 0%, rgba(4, 8, 12, 0.44) 100%);
+}
+
+html[data-season='winter'] .tab-theme-farm .farm-btn-primary,
+html[data-season='winter'] .tab-theme-farm .farm-btn-harvest,
+html[data-season='winter'] .tab-theme-farm .farm-btn-seed {
+  color: var(--season-ink-on-accent);
+  background: linear-gradient(180deg, #d7ebf7 0%, #9ec9e8 42%, #4a7fa3 100%);
+  border-color: rgba(232, 197, 106, 0.4);
+  box-shadow:
+    0 4px 16px rgba(74, 127, 163, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+html[data-season='winter'] .tab-theme-farm .farm-btn-water {
+  background: linear-gradient(180deg, #2a4a62 0%, #1a3348 50%, #0f2230 100%);
+  border-color: rgba(158, 201, 232, 0.35);
+  color: #e8f4fc;
+}
+
+html[data-season='winter'] .tab-theme-farm .farm-batch-btn--harvest {
+  background: linear-gradient(135deg, #1a3348 0%, #4a7fa3 45%, #9ec9e8 100%);
+  color: var(--season-ink-on-accent);
+}
+
+html[data-season='winter'] .tab-theme-farm .segment-tab-active {
+  background: linear-gradient(180deg, #e8c56a 0%, #9ec9e8 100%);
+  color: #0a1620;
+}
+
+html[data-season='winter'] .tab-theme-farm .farm-header-title {
+  background: linear-gradient(to bottom, #f8f4e8, #e8c56a 50%, #9ec9e8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 16px rgba(158, 201, 232, 0.2));
+}
+
+html[data-season='winter'] .tab-theme-farm .farm-vine-frame {
+  border-color: rgba(232, 197, 106, 0.3);
+  background: rgba(6, 12, 18, 0.58);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(158, 201, 232, 0.08);
+}
+
+/* Почва зимой — холоднее */
+html[data-season='winter'] .soil-field-earth {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 115%, var(--season-soil-cool) 0%, transparent 55%),
+    radial-gradient(circle at 30% 35%, rgba(232, 197, 106, 0.07) 0%, transparent 40%),
+    linear-gradient(180deg, #141820 0%, #0c1016 48%, #06080c 100%);
+}
+
+html[data-season='winter'] .soil-field--moist .soil-field-earth {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 115%, rgba(158, 201, 232, 0.2) 0%, transparent 55%),
+    linear-gradient(180deg, #152028 0%, #0c141c 50%, #060a10 100%);
+}
+
+html[data-season='winter'] .soil-field--ready .soil-field-ready-glow {
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 70%, rgba(232, 197, 106, 0.2) 0%, transparent 65%),
+    radial-gradient(ellipse 45% 35% at 50% 40%, rgba(158, 201, 232, 0.14) 0%, transparent 70%);
+}
+
+html[data-season='winter'] .soil-field-rim {
+  box-shadow:
+    inset 0 0 0 1px rgba(232, 197, 106, 0.24),
+    inset 0 -16px 24px rgba(158, 201, 232, 0.06);
+}
+
+/* Вход: зимой плющ → иней / серебро */
+html[data-season='winter'] .farm-ent-flora-leaf path[fill^='url'],
+html[data-season='winter'] .farm-ent-flora-fern-lobe {
+  filter: saturate(0.25) hue-rotate(175deg) brightness(1.25);
+}
+
+html[data-season='winter'] .farm-ent-flora-stem--main,
+html[data-season='winter'] .farm-ent-flora-stem--soft,
+html[data-season='winter'] .farm-ent-flora-stem--ground,
+html[data-season='winter'] .farm-ent-flora-blade,
+html[data-season='winter'] .farm-ent-flora-tendril {
+  filter: saturate(0.2) hue-rotate(180deg) brightness(1.35);
+}
+
+html[data-season='winter'] .farm-ent-title {
+  background: linear-gradient(180deg, #f0d78a 0%, #9ec9e8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+html[data-season='winter'] .farm-ent-meta {
+  color: rgba(158, 201, 232, 0.6);
+}
+
+html[data-season='winter'] .farm-ent-ring {
+  stroke: rgba(158, 201, 232, 0.45);
+}
+
+html[data-season='winter'] .farm-ent-ring--shield,
+html[data-season='winter'] .farm-ent-ring--a,
+html[data-season='winter'] .farm-ent-ring--c {
+  stroke: rgba(232, 197, 106, 0.65);
+}
+
+/* Таб-бар зимой */
+html[data-season='winter'] .app-shell[data-active-tab='farm'] .app-tab-bar-inner {
+  background: linear-gradient(135deg, #f0d78a 0%, #4a7fa3 32%, #e8c56a 68%, #0a1420 100%);
+}
+
+/* Eyebrow-лист зимой — ледяной */
+html[data-season='winter'] .tab-theme-inventory .inventory-hero-eyebrow::before,
+html[data-season='winter'] .tab-theme-shop .shop-exchange-eyebrow::before,
+html[data-season='winter'] .tab-theme-market .market-hero-eyebrow::before,
+html[data-season='winter'] .tab-theme-craft .craft-module-eyebrow::before,
+html[data-season='winter'] .tab-theme-quests .quests-hero-eyebrow::before,
+html[data-season='winter'] .tab-theme-profile .profile-module-eyebrow::before,
+html[data-season='winter'] .tab-theme-settings .settings-hero-eyebrow::before,
+html[data-season='winter'] .tab-theme-chests .chest-hero-eyebrow::before {
+  background: linear-gradient(135deg, #e8f4fc 0%, #4a7fa3 100%);
+  box-shadow: 0 0 6px rgba(158, 201, 232, 0.4);
+}
+
+html[data-season='winter'] .tab-vine-leaf {
+  filter: saturate(0.2) hue-rotate(180deg) brightness(1.3) drop-shadow(0 0 2px rgba(158, 201, 232, 0.3));
+}
+
+html[data-season='winter'] .tab-vine-stem {
+  stroke: rgba(158, 201, 232, 0.4);
+}
+
+/* Настройки — карточки сезона */
+.settings-season-options {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.settings-season-option-meta {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.68rem;
+  color: rgba(244, 239, 226, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .farm-bg-snow {
+    animation: none !important;
+    opacity: 0.35;
+  }
+}

@@ -2,23 +2,39 @@ import { useEffect, useState } from 'react'
 import { useSettings } from '../context/SettingsContext'
 import { isMobilePerfDevice } from '../utils/devicePerf'
 import { useEquippedCosmetics } from '../hooks/useEquippedCosmetics'
+import { SEASON_MODES } from '../constants/season'
 
 /**
- * Фон: SVG/арт леса + лёгкие анимации.
- * В турбо - только плоский градиент без картинки и частиц.
+ * Фон: летний / зимний лес + сезонные частицы.
+ * В турбо — плоский градиент без картинки.
  */
-const WEBP_SRCSET = [
+
+const SUMMER_WEBP = [
   '/assets/forest-bg.webp 768w',
   '/assets/forest-bg-2x.webp 1536w',
   '/assets/forest-bg-3x.webp 2304w',
   '/assets/forest-bg-4k.webp 2880w',
 ].join(', ')
 
-const PNG_SRCSET = [
+const SUMMER_PNG = [
   '/assets/forest-bg.png 768w',
   '/assets/forest-bg-2x.png 1536w',
   '/assets/forest-bg-3x.png 2304w',
   '/assets/forest-bg-4k.png 2880w',
+].join(', ')
+
+const WINTER_WEBP = [
+  '/assets/forest-bg-winter.webp 768w',
+  '/assets/forest-bg-winter-2x.webp 1536w',
+  '/assets/forest-bg-winter-3x.webp 2304w',
+  '/assets/forest-bg-winter-4k.webp 2880w',
+].join(', ')
+
+const WINTER_PNG = [
+  '/assets/forest-bg-winter.png 768w',
+  '/assets/forest-bg-winter-2x.png 1536w',
+  '/assets/forest-bg-winter-3x.png 2304w',
+  '/assets/forest-bg-winter-4k.png 2880w',
 ].join(', ')
 
 const FIREFLIES = Array.from({ length: 18 }, (_, i) => ({
@@ -29,6 +45,15 @@ const FIREFLIES = Array.from({ length: 18 }, (_, i) => ({
   delay: (i * 0.42) % 5,
   duration: 4 + (i % 5) * 0.8,
   variant: i % 3,
+}))
+
+const SNOWFLAKES = Array.from({ length: 22 }, (_, i) => ({
+  id: i,
+  left: 4 + ((i * 17.3) % 92),
+  size: 1.5 + (i % 4) * 0.7,
+  delay: (i * 0.55) % 7,
+  duration: 7 + (i % 6) * 1.1,
+  drift: -12 + (i % 7) * 4,
 }))
 
 const SPARKS = Array.from({ length: 5 }, (_, i) => ({
@@ -47,15 +72,15 @@ const MUSHROOM_GLOWS = [
 ]
 
 const MOBILE_FIREFLY_LIMIT = 6
+const MOBILE_SNOW_LIMIT = 10
 const MOBILE_SPARK_LIMIT = 2
 const MOBILE_GLOW_LIMIT = 2
 
 export default function FarmBackground({ variant = null }) {
-  const { turboMode } = useSettings()
+  const { turboMode, season } = useSettings()
   const { equipped } = useEquippedCosmetics()
-  // Equipped background applies on EVERY tab (each tab renders FarmBackground).
-  // An explicit `variant` prop still overrides, if ever passed.
   const v = variant ?? equipped.background?.code ?? null
+  const winter = season === SEASON_MODES.WINTER
   const [mobilePerf, setMobilePerf] = useState(isMobilePerfDevice)
 
   useEffect(() => {
@@ -72,7 +97,7 @@ export default function FarmBackground({ variant = null }) {
   if (turboMode) {
     return (
       <div
-        className={`farm-bg-root farm-bg-root--turbo fixed inset-0 -z-10 overflow-hidden${v ? ` farm-bg--${v}` : ''}`}
+        className={`farm-bg-root farm-bg-root--turbo fixed inset-0 -z-10 overflow-hidden${winter ? ' farm-bg-root--winter' : ' farm-bg-root--summer'}${v ? ` farm-bg--${v}` : ''}`}
         aria-hidden
       >
         <div className="farm-bg-cosmetic-overlay" aria-hidden />
@@ -81,20 +106,30 @@ export default function FarmBackground({ variant = null }) {
   }
 
   const fireflies = mobilePerf ? FIREFLIES.slice(0, MOBILE_FIREFLY_LIMIT) : FIREFLIES
+  const snow = mobilePerf ? SNOWFLAKES.slice(0, MOBILE_SNOW_LIMIT) : SNOWFLAKES
   const sparks = mobilePerf ? SPARKS.slice(0, MOBILE_SPARK_LIMIT) : SPARKS
   const glows = mobilePerf ? MUSHROOM_GLOWS.slice(0, MOBILE_GLOW_LIMIT) : MUSHROOM_GLOWS
 
+  const webp = winter ? WINTER_WEBP : SUMMER_WEBP
+  const png = winter ? WINTER_PNG : SUMMER_PNG
+  const fallback = winter ? '/assets/forest-bg-winter.png' : '/assets/forest-bg.svg'
+
   return (
     <div
-      className={`farm-bg-root fixed inset-0 -z-10 overflow-hidden bg-[#061008]${mobilePerf ? ' farm-bg-root--mobile' : ''}${v ? ` farm-bg--${v}` : ''}`}
+      className={[
+        'farm-bg-root fixed inset-0 -z-10 overflow-hidden bg-[#061008]',
+        mobilePerf ? 'farm-bg-root--mobile' : '',
+        winter ? 'farm-bg-root--winter' : 'farm-bg-root--summer',
+        v ? `farm-bg--${v}` : '',
+      ].filter(Boolean).join(' ')}
       aria-hidden
     >
       <div className="farm-bg-image-wrap">
         <picture className="farm-bg-picture">
-          <source type="image/webp" srcSet={WEBP_SRCSET} sizes="100vw" />
+          <source type="image/webp" srcSet={webp} sizes="100vw" />
           <img
-            src="/assets/forest-bg.svg"
-            srcSet={`${PNG_SRCSET}, /assets/forest-bg.svg 1200w`}
+            src={fallback}
+            srcSet={`${png}${winter ? '' : ', /assets/forest-bg.svg 1200w'}`}
             sizes="100vw"
             alt=""
             draggable={false}
@@ -105,11 +140,14 @@ export default function FarmBackground({ variant = null }) {
         </picture>
       </div>
 
-      <div className="farm-bg-rays" />
+      {!winter && <div className="farm-bg-rays" />}
+      {winter && <div className="farm-bg-frost" />}
+      {winter && <div className="farm-bg-frost farm-bg-frost--edge" />}
+
       <div className="farm-bg-mist farm-bg-mist-a" />
       {!mobilePerf && <div className="farm-bg-mist farm-bg-mist-b" />}
 
-      {glows.map((g, i) => (
+      {!winter && glows.map((g, i) => (
         <div
           key={i}
           className="farm-bg-glow"
@@ -123,7 +161,7 @@ export default function FarmBackground({ variant = null }) {
         />
       ))}
 
-      {sparks.map((s) => (
+      {!winter && sparks.map((s) => (
         <div
           key={s.id}
           className="farm-bg-spark"
@@ -138,20 +176,35 @@ export default function FarmBackground({ variant = null }) {
       ))}
 
       <div className="farm-bg-particles">
-        {fireflies.map((f) => (
-          <span
-            key={f.id}
-            className={`farm-bg-firefly farm-bg-firefly-${f.variant}`}
-            style={{
-              left: `${f.left}%`,
-              top: `${f.top}%`,
-              width: f.size,
-              height: f.size,
-              '--ff-dur': `${f.duration}s`,
-              animationDelay: `${f.delay}s`,
-            }}
-          />
-        ))}
+        {winter
+          ? snow.map((f) => (
+            <span
+              key={f.id}
+              className="farm-bg-snow"
+              style={{
+                left: `${f.left}%`,
+                width: f.size,
+                height: f.size,
+                '--snow-dur': `${f.duration}s`,
+                '--snow-drift': `${f.drift}px`,
+                animationDelay: `${f.delay}s`,
+              }}
+            />
+          ))
+          : fireflies.map((f) => (
+            <span
+              key={f.id}
+              className={`farm-bg-firefly farm-bg-firefly-${f.variant}`}
+              style={{
+                left: `${f.left}%`,
+                top: `${f.top}%`,
+                width: f.size,
+                height: f.size,
+                '--ff-dur': `${f.duration}s`,
+                animationDelay: `${f.delay}s`,
+              }}
+            />
+          ))}
       </div>
 
       <div className="farm-bg-shade-top" />

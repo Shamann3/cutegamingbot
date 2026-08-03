@@ -8966,32 +8966,8 @@ body {
   display: none !important;
 }
 
-/* Lite: грядка остаётся красивой, но без тяжёлых анимаций */
-.cute-lite-mode .soil-field-moss,
-.cute-lite-mode .soil-field-mist,
-.cute-lite-mode .soil-field-canopy,
-.cute-lite-mode .soil-vine--tl,
-.cute-lite-mode .soil-vine--tr,
-.cute-lite-mode .soil-vine--bl,
-.cute-lite-mode .soil-vine--br,
-.cute-lite-mode .soil-vine--side-l,
-.cute-lite-mode .soil-vine--side-r,
-.cute-lite-mode .soil-blade,
-.cute-lite-mode .soil-spore,
-.cute-lite-mode .soil-field-ready-glow,
-.cute-lite-mode .soil-field-dew,
-.cute-lite-mode .soil-field-rim {
+.cute-lite-mode .soil-field-ready-glow {
   animation: none !important;
-}
-
-.cute-lite-mode .soil-field-spores {
-  display: none !important;
-}
-
-.cute-lite-mode .soil-field-mist,
-.cute-lite-mode .soil-field-canopy {
-  opacity: 0.22 !important;
-  filter: none !important;
 }
 
 .cute-lite-mode .farm-ent-flora,

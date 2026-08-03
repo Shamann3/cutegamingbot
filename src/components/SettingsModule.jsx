@@ -4,8 +4,19 @@ import TabAtmosphere from './TabAtmosphere'
 import VineFrame from './VineFrame'
 import { musicVolumeLabel } from '../constants/musicVolume'
 import { PERF_MODES } from '../constants/performance'
+import {
+  SEASON_MODES,
+  seasonModeDesc,
+  seasonModeLabel,
+} from '../constants/season'
 import { useSettings } from '../context/SettingsContext'
 import { apiRequest, getSupportBotUrl } from '../lib/apiClient'
+
+const SEASON_OPTIONS = [
+  { id: SEASON_MODES.AUTO, emoji: '🗓️', label: 'Авто' },
+  { id: SEASON_MODES.SUMMER, emoji: '☀️', label: 'Лето' },
+  { id: SEASON_MODES.WINTER, emoji: '❄️', label: 'Зима' },
+]
 
 const PERF_OPTIONS = [
   {
@@ -36,6 +47,9 @@ export default function SettingsModule({ embedded = false }) {
     setMusicVolume,
     performanceMode,
     setPerformanceMode,
+    seasonMode,
+    season,
+    setSeasonMode,
   } = useSettings()
 
   const [harvestNotify, setHarvestNotify] = useState(false)
@@ -184,6 +198,47 @@ export default function SettingsModule({ embedded = false }) {
                   <span className="shop-sheet-switch-thumb" aria-hidden />
                 </button>
               </div>
+            </div>
+          </section>
+
+          <section className="settings-section" aria-labelledby="settings-season-title">
+            <h2 id="settings-season-title" className="settings-section-title">
+              <span className="settings-section-icon" aria-hidden>🌤️</span>
+              Сезон фермы
+            </h2>
+            <p className="settings-section-hint">
+              Фон и атмосфера подстраиваются под лето или зиму. Авто — по дате (зима: ноя–фев).
+            </p>
+            <div className="shop-sheet-options settings-season-options" role="radiogroup" aria-label="Сезон фермы">
+              {SEASON_OPTIONS.map((option) => {
+                const selected = seasonMode === option.id
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    className={`shop-sheet-option ${selected ? 'shop-sheet-option-selected' : ''}`}
+                    onClick={() => setSeasonMode(option.id)}
+                  >
+                    <span
+                      className={`shop-sheet-radio-dot ${selected ? 'shop-sheet-radio-dot-selected' : ''}`}
+                      aria-hidden
+                    />
+                    <span className="settings-perf-option-body">
+                      <span className="settings-perf-option-head">
+                        <span className="settings-perf-option-emoji" aria-hidden>{option.emoji}</span>
+                        <span className="shop-sheet-option-label">
+                          {option.label === 'Авто' ? seasonModeLabel(option.id) : option.label}
+                        </span>
+                      </span>
+                      <span className="settings-season-option-meta">
+                        {seasonModeDesc(option.id, season)}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           </section>
 
