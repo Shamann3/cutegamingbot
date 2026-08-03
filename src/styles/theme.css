@@ -7,15 +7,15 @@
   --brand-void: #050806;
   --brand-ink: #eef3ea;
   --brand-ink-muted: rgba(238, 243, 234, 0.62);
-  /* Лесной шалфей — не «медицинский» неон */
-  --brand-green: #7aa86a;
-  --brand-green-deep: #3f6a3a;
-  --brand-green-soft: rgba(122, 168, 106, 0.16);
-  --brand-green-glow: rgba(122, 168, 106, 0.26);
+  /* Тёмно-зелёный лес (лето по умолчанию) */
+  --brand-green: #3d6b45;
+  --brand-green-deep: #1a3320;
+  --brand-green-soft: rgba(61, 107, 69, 0.16);
+  --brand-green-glow: rgba(45, 90, 55, 0.26);
   --brand-glass: rgba(6, 14, 10, 0.48);
   --brand-glass-strong: rgba(6, 12, 9, 0.68);
-  --brand-border: rgba(122, 168, 106, 0.28);
-  --brand-border-soft: rgba(154, 186, 140, 0.18);
+  --brand-border: rgba(61, 107, 69, 0.32);
+  --brand-border-soft: rgba(70, 120, 80, 0.2);
   --brand-gold: #e8c56a;
   --brand-gold-soft: rgba(232, 197, 106, 0.22);
 

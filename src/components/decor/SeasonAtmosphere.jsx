@@ -8,11 +8,6 @@ const GARLAND_LIGHTS = Array.from({ length: 8 }, (_, i) => ({
   delay: (i * 0.35) % 2.4,
 }))
 
-const TREES = [
-  { id: 0, side: 'left', scale: 0.9, bottom: '2%', left: '1%' },
-  { id: 2, side: 'right', scale: 0.85, bottom: '1%', right: '2%' },
-]
-
 const PETALS = Array.from({ length: 7 }, (_, i) => ({
   id: i,
   left: 8 + ((i * 22) % 84),
@@ -37,7 +32,6 @@ const LEAVES = Array.from({ length: 8 }, (_, i) => ({
 
 function WinterDecor({ dense }) {
   const lights = dense ? GARLAND_LIGHTS : GARLAND_LIGHTS.slice(0, 5)
-  const trees = TREES
 
   return (
     <>
@@ -69,30 +63,6 @@ function WinterDecor({ dense }) {
           ))}
         </div>
       </div>
-
-      <div className="season-trees" aria-hidden>
-        {trees.map((t) => (
-          <span
-            key={t.id}
-            className={`season-tree season-tree--${t.side}`}
-            style={{
-              bottom: t.bottom,
-              left: t.left,
-              right: t.right,
-              transform: `scale(${t.scale})`,
-            }}
-          >
-            <span className="season-tree-trunk" />
-            <span className="season-tree-cone season-tree-cone--a" />
-            <span className="season-tree-cone season-tree-cone--b" />
-            <span className="season-tree-cone season-tree-cone--c" />
-            <span className="season-tree-star" />
-            <span className="season-tree-snow" />
-          </span>
-        ))}
-      </div>
-
-      <div className="season-winter-ground" aria-hidden />
     </>
   )
 }
