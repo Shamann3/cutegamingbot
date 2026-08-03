@@ -69,7 +69,9 @@ export function SettingsProvider({ children }) {
 
   useEffect(() => {
     document.documentElement.dataset.season = season
+    document.documentElement.classList.toggle('cute-season-spring', season === 'spring')
     document.documentElement.classList.toggle('cute-season-summer', season === 'summer')
+    document.documentElement.classList.toggle('cute-season-autumn', season === 'autumn')
     document.documentElement.classList.toggle('cute-season-winter', season === 'winter')
   }, [season])
 

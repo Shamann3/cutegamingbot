@@ -6,6 +6,7 @@ import { musicVolumeLabel } from '../constants/musicVolume'
 import { PERF_MODES } from '../constants/performance'
 import {
   SEASON_MODES,
+  seasonAutoHint,
   seasonModeDesc,
   seasonModeLabel,
 } from '../constants/season'
@@ -14,7 +15,9 @@ import { apiRequest, getSupportBotUrl } from '../lib/apiClient'
 
 const SEASON_OPTIONS = [
   { id: SEASON_MODES.AUTO, emoji: '🗓️', label: 'Авто' },
+  { id: SEASON_MODES.SPRING, emoji: '🌸', label: 'Весна' },
   { id: SEASON_MODES.SUMMER, emoji: '☀️', label: 'Лето' },
+  { id: SEASON_MODES.AUTUMN, emoji: '🍂', label: 'Осень' },
   { id: SEASON_MODES.WINTER, emoji: '❄️', label: 'Зима' },
 ]
 
@@ -207,7 +210,7 @@ export default function SettingsModule({ embedded = false }) {
               Сезон фермы
             </h2>
             <p className="settings-section-hint">
-              Фон и атмосфера подстраиваются под лето или зиму. Авто — по дате (зима: ноя–фев).
+              Фон, частицы и декор под сезон. {seasonAutoHint()}.
             </p>
             <div className="shop-sheet-options settings-season-options" role="radiogroup" aria-label="Сезон фермы">
               {SEASON_OPTIONS.map((option) => {

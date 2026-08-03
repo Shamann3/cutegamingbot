@@ -5,8 +5,11 @@ import VineFrame from './VineFrame'
 import KutBalance from './KutBalance'
 import { fetchMyProfile } from '../lib/profileClient'
 import { fetchCollection } from '../lib/chestClient'
+import { fetchFarmState } from '../lib/farmClient'
 import { useEquippedCosmetics } from '../hooks/useEquippedCosmetics'
 import { RARITY_ACCENT } from '../constants/chests'
+import { PlotStatus } from '../types/farm'
+import { isPlotDry } from '../utils/plotActions'
 import SettingsModule from './SettingsModule'
 import ProfileAnalytics from './ProfileAnalytics'
 import '../styles/chests.css'
@@ -66,6 +69,7 @@ export default function ProfileModule({ isActive = true }) {
   const [error, setError] = useState(null)
   const [board, setBoard] = useState('balance')
   const [showcase, setShowcase] = useState([])
+  const [farmLive, setFarmLive] = useState(null)
   const [profileSegment, setProfileSegment] = useState('profile')
   const { equipped } = useEquippedCosmetics()
 
@@ -82,10 +86,44 @@ export default function ProfileModule({ isActive = true }) {
     if (!isActive) return
     fetchCollection()
       .then((c) => {
-        const equipped = [...c.sets.flatMap((s) => s.items), ...c.loose].filter((i) => i.equipped)
-        setShowcase(equipped.slice(0, 3))
+        const equippedItems = [...c.sets.flatMap((s) => s.items), ...c.loose].filter((i) => i.equipped)
+        setShowcase(equippedItems.slice(0, 6))
       })
       .catch(() => {})
+  }, [isActive])
+
+  useEffect(() => {
+    if (!isActive) return
+    let cancelled = false
+    fetchFarmState()
+      .then((state) => {
+        if (cancelled) return
+        const plots = state?.plots || []
+        const now = Date.now()
+        let ready = 0
+        let dry = 0
+        let planted = 0
+        let empty = 0
+        for (const p of plots) {
+          if (p?.status === PlotStatus.READY) ready += 1
+          else if (p?.status === PlotStatus.EMPTY) empty += 1
+          else if (p?.status === PlotStatus.GROWING && isPlotDry(p, now)) dry += 1
+          else if (p?.status === PlotStatus.GROWING || p?.status === PlotStatus.WITHERED) planted += 1
+          else empty += 1
+        }
+        setFarmLive({
+          plots,
+          trees: state?.trees || [],
+          ready,
+          dry,
+          planted,
+          empty,
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setFarmLive(null)
+      })
+    return () => { cancelled = true }
   }, [isActive])
 
   const profile = data?.profile
@@ -148,11 +186,16 @@ export default function ProfileModule({ isActive = true }) {
                   )}
                 </div>
                 <div className="profile-card-info">
-                  <p className="profile-card-name">{profile.displayName}</p>
+                  <p className="profile-card-name">
+                    {profile.countryEmoji ? `${profile.countryEmoji} ` : ''}
+                    {profile.displayName}
+                  </p>
                   {profile.username && (
                     <p className="profile-card-username">@{profile.username}</p>
                   )}
                   <p className="profile-card-days">
+                    ID {profile.userId}
+                    {' · '}
                     В игре {profile.daysInGame === 0 ? 'менее дня' : `${profile.daysInGame} ${pluralDays(profile.daysInGame)}`}
                   </p>
                   {equipped.title && (
@@ -173,13 +216,14 @@ export default function ProfileModule({ isActive = true }) {
                   {showcase.map((i) => (
                     <div key={i.cosmeticId} className="profile-showcase-slot" style={{ '--rar': RARITY_ACCENT[i.rarity] }}>
                       <span className="profile-showcase-glyph">{i.emoji}</span>
+                      <span className="profile-showcase-name">{i.name}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            <ProfileAnalytics profile={profile} leaderboard={leaderboard} />
+            <ProfileAnalytics profile={profile} leaderboard={leaderboard} farmLive={farmLive} />
 
             {/* Лидерборд */}
             <VineFrame className="profile-leaderboard-frame">

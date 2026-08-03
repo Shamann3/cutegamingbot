@@ -513,8 +513,7 @@
 .farm-ent-root--lite .farm-ent-brackets,
 .farm-ent-root--lite .farm-ent-aurora,
 .farm-ent-root--lite .farm-ent-grid,
-.farm-ent-root--lite .farm-ent-flash,
-.farm-ent-root--lite .farm-ent-flora {
+.farm-ent-root--lite .farm-ent-flash {
   display: none;
 }
 

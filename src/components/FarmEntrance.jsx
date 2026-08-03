@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import EntranceFlora from './decor/EntranceFlora'
 import '../styles/farmEntrance.css'
 
-const SESSION_KEY = 'cute_farm_entrance_v7'
+const SESSION_KEY = 'cute_farm_entrance_v8'
 const CREST_SRC = '/assets/cute-crest.png?v=4'
 /** Как админская печать: ~6.0с ритуал + выход. */
 const HOLD_MS = 5550
@@ -121,8 +120,6 @@ export default function FarmEntrance({ active = false, onDone }) {
       <div className="farm-ent-vignette" aria-hidden />
       <div className="farm-ent-grid" aria-hidden />
       <div className="farm-ent-aurora" aria-hidden />
-
-      <EntranceFlora />
 
       <div className="farm-ent-stage">
         <svg className="farm-ent-rings" viewBox="0 0 200 200" aria-hidden>

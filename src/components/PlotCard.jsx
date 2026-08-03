@@ -19,18 +19,11 @@ import {
   resolveHarvestTool,
 } from '../utils/harvestTool'
 import { guideToItemPurchase } from '../utils/itemPurchaseGuide'
+import { formatDurationRu, formatDurationRuLong } from '../utils/formatDuration'
 import GrowthProgressBar from './GrowthProgressBar'
 import PlantSprite from './sprites/PlantSprite'
 import WaterEffect from './WaterEffect'
 import AutoWaterEffect from './AutoWaterEffect'
-
-function formatCountdown(ms) {
-  if (ms <= 0) return '0:00'
-  const totalSec = Math.ceil(ms / 1000)
-  const min = Math.floor(totalSec / 60)
-  const sec = totalSec % 60
-  return `${min}:${sec.toString().padStart(2, '0')}`
-}
 
 
 const STATUS_LABELS = {
@@ -145,10 +138,12 @@ function PlotCard({
       ? getGrowthProgress(plot.plantedAt, plot.ripeAt, now)
       : 0
 
-  const countdown =
+  const remainMs =
     status === PlotStatus.GROWING && plot.ripeAt
-      ? formatCountdown(plot.ripeAt - now)
+      ? plot.ripeAt - now
       : null
+  const countdown = remainMs != null ? formatDurationRu(remainMs) : null
+  const countdownLong = remainMs != null ? formatDurationRuLong(remainMs) : null
 
   const seedCtx = { seedCounts, items, farmItemIds, grantPlantSeed, balanceBar, itemCatalog }
   const plantableCrops = listPlantableCrops(farmCrops, seedCtx)
@@ -291,7 +286,11 @@ function PlotCard({
 
         {status === PlotStatus.GROWING && (
           <>
-            <GrowthProgressBar progress={growthProgress} label={countdown ? `⏱ ${countdown}` : '⏱ …'} />
+            <GrowthProgressBar
+              progress={growthProgress}
+              label={countdown ? `до урожая: ${countdown}` : 'считаем…'}
+              labelTitle={countdownLong ? `Осталось ${countdownLong}` : undefined}
+            />
 
             {drySoon && !isDry && (
               <p className="text-center text-[10px] font-bold text-amber-300/90 bg-black/30 rounded-lg py-1 px-2 border border-amber-500/20 animate-pulse-soft">

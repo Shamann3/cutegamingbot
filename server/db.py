@@ -3777,16 +3777,63 @@ class Database:
             "sales": "market_items_sold",
         }
         leaderboard = {"total": 0, "myRank": {}, "myValue": {}}
+
+        # Полный профиль как в bot/funcs/profile.py (+ farm-поля Mini App).
+        # Прогрессивный fallback, если legacy-колонок/таблиц нет.
+        profile_sql_candidates = [
+            """
+            SELECT u.user_id, u.username, u.first_name, u.last_name, u.display_name, u.photo_url,
+                   u.balance, u.harvest_count, u.craft_count,
+                   u.market_items_sold, u.market_sales_count, u.created_at,
+                   u.data AS reg_data,
+                   u.refferals, u.xpp, u.country,
+                   u.wins, u.loose, u.winamount, u.donate, u.canwithdrawal, u.give,
+                   u.rep_plus, u.rep_minus,
+                   ref.first_name AS referer_name,
+                   (b.user_id IS NOT NULL) AS is_banned
+            FROM users u
+            LEFT JOIN users ref ON ref.user_id = u.refferer_id
+            LEFT JOIN banusers b ON b.user_id = u.user_id
+            WHERE u.user_id = $1
+            """,
+            """
+            SELECT u.user_id, u.username, u.first_name, u.last_name, u.display_name, u.photo_url,
+                   u.balance, u.harvest_count, u.craft_count,
+                   u.market_items_sold, u.market_sales_count, u.created_at,
+                   u.data AS reg_data,
+                   u.refferals, u.xpp, u.country,
+                   u.wins, u.loose, u.winamount, u.donate, u.canwithdrawal, u.give,
+                   u.rep_plus, u.rep_minus
+            FROM users u
+            WHERE u.user_id = $1
+            """,
+            """
+            SELECT user_id, username, first_name, last_name, display_name, photo_url,
+                   balance, harvest_count, craft_count,
+                   market_items_sold, market_sales_count, created_at
+            FROM users WHERE user_id = $1
+            """,
+        ]
+
         async with self.pool.acquire() as conn:
-            me = await conn.fetchrow(
-                """
-                SELECT user_id, username, first_name, last_name, display_name, photo_url,
-                       balance, harvest_count, craft_count,
-                       market_items_sold, market_sales_count, created_at
-                FROM users WHERE user_id = $1
-                """,
-                user_id,
-            )
+            me = None
+            for sql in profile_sql_candidates:
+                try:
+                    me = await conn.fetchrow(sql, user_id)
+                    break
+                except Exception:
+                    me = None
+            if me is None:
+                me = await conn.fetchrow(
+                    """
+                    SELECT user_id, username, first_name, last_name, display_name, photo_url,
+                           balance, harvest_count, craft_count,
+                           market_items_sold, market_sales_count, created_at
+                    FROM users WHERE user_id = $1
+                    """,
+                    user_id,
+                )
+
             total = await conn.fetchval("SELECT COUNT(*)::int FROM users")
             leaderboard["total"] = int(total or 0)
             for board_id, column in boards.items():
@@ -3831,6 +3878,25 @@ class Database:
                 else:
                     leaderboard["myRank"][board_id] = 0
 
+        def _gi(key, default=0):
+            if not me:
+                return default
+            try:
+                return int(me[key] or 0)
+            except Exception:
+                return default
+
+        def _gs(key, default=""):
+            if not me:
+                return default
+            try:
+                val = me[key]
+            except Exception:
+                return default
+            if val is None:
+                return default
+            return str(val).strip()
+
         uid = int(me["user_id"]) if me else int(user_id)
         display = format_display_name(
             first_name=me["first_name"] if me else None,
@@ -3842,20 +3908,56 @@ class Database:
         username = ((me["username"] if me else None) or "").strip().lstrip("@") or None
         photo = ((me["photo_url"] if me else None) or "").strip() or None
         created_at = me["created_at"] if me else None
+        reg_data = None
+        try:
+            reg_data = me["reg_data"] if me else None
+        except Exception:
+            reg_data = None
+
+        registered_at = None
         days_in_game = 0
         if created_at is not None:
             days_in_game = max(0, (now() - created_at).days)
+            try:
+                registered_at = created_at.isoformat()
+            except Exception:
+                registered_at = str(created_at)
+        elif reg_data is not None:
+            registered_at = str(reg_data)
+
+        referer = _gs("referer_name") or None
+        country = _gs("country") or None
+        try:
+            banned = bool(me["is_banned"]) if me else False
+        except Exception:
+            banned = False
+
         profile = {
             "userId": uid,
             "displayName": display,
             "username": username,
             "photoUrl": photo,
-            "balance": int((me["balance"] if me else 0) or 0),
+            "balance": _gi("balance"),
             "daysInGame": days_in_game,
-            "harvestCount": int((me["harvest_count"] if me else 0) or 0),
-            "craftCount": int((me["craft_count"] if me else 0) or 0),
-            "marketItemsSold": int((me["market_items_sold"] if me else 0) or 0),
-            "marketSalesCount": int((me["market_sales_count"] if me else 0) or 0),
+            "registeredAt": registered_at,
+            "harvestCount": _gi("harvest_count"),
+            "craftCount": _gi("craft_count"),
+            "marketItemsSold": _gi("market_items_sold"),
+            "marketSalesCount": _gi("market_sales_count"),
+            # bot/funcs/profile.py fields
+            "referrals": _gi("refferals"),
+            "experience": _gi("xpp"),
+            "countryEmoji": country,
+            "refererName": referer,
+            "transferLimit": _gi("give"),
+            "repPlus": _gi("rep_plus"),
+            "repMinus": _gi("rep_minus"),
+            "wins": _gi("wins"),
+            "losses": _gi("loose"),
+            "winAmount": _gi("winamount"),
+            "donated": _gi("donate"),
+            "withdrawLimit": _gi("canwithdrawal"),
+            "isBanned": banned,
         }
         return {"profile": profile, "leaderboard": leaderboard}
 

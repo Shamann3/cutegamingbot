@@ -1,7 +1,13 @@
 /* ============================================================
-   SEASON — лето / зима
-   Нейтральный каркас: золото всегда; акцент зелёный ↔ ледяной.
+   SEASON — весна / лето / осень / зима
+   Золото всегда; сезонный акцент меняет атмосферу.
    ============================================================ */
+
+:root {
+  --season-gold: #e8c56a;
+  --season-gold-deep: #b8892d;
+  --season-gold-soft: rgba(232, 197, 106, 0.16);
+}
 
 :root,
 html.cute-season-summer,
@@ -16,6 +22,30 @@ html[data-season='summer'] {
   --season-chip: rgba(61, 214, 140, 0.22);
 }
 
+html.cute-season-spring,
+html[data-season='spring'] {
+  --season-accent: #7fd9a8;
+  --season-accent-deep: #2f8f62;
+  --season-accent-soft: rgba(127, 217, 168, 0.16);
+  --season-accent-glow: rgba(255, 182, 193, 0.22);
+  --season-mist: rgba(180, 230, 200, 0.14);
+  --season-ink-on-accent: #0a1810;
+  --season-soil-cool: rgba(127, 217, 168, 0.14);
+  --season-chip: rgba(255, 182, 193, 0.28);
+}
+
+html.cute-season-autumn,
+html[data-season='autumn'] {
+  --season-accent: #e0a04a;
+  --season-accent-deep: #9a5a18;
+  --season-accent-soft: rgba(224, 160, 74, 0.16);
+  --season-accent-glow: rgba(196, 92, 48, 0.24);
+  --season-mist: rgba(180, 100, 40, 0.12);
+  --season-ink-on-accent: #1a1006;
+  --season-soil-cool: rgba(196, 92, 48, 0.12);
+  --season-chip: rgba(224, 160, 74, 0.28);
+}
+
 html.cute-season-winter,
 html[data-season='winter'] {
   --season-accent: #9ec9e8;
@@ -28,14 +58,19 @@ html[data-season='winter'] {
   --season-chip: rgba(158, 201, 232, 0.24);
 }
 
-/* Золото — круглый год (нейтральный якорь бренда) */
-:root {
-  --season-gold: #e8c56a;
-  --season-gold-deep: #b8892d;
-  --season-gold-soft: rgba(232, 197, 106, 0.16);
+/* --- Turbo gradients --- */
+
+.farm-bg-root--summer.farm-bg-root--turbo {
+  background: linear-gradient(180deg, #0c2216 0%, #061008 55%, #040a06 100%) !important;
 }
 
-/* --- Фон --- */
+.farm-bg-root--spring.farm-bg-root--turbo {
+  background: linear-gradient(180deg, #163024 0%, #0a1812 55%, #06100c 100%) !important;
+}
+
+.farm-bg-root--autumn.farm-bg-root--turbo {
+  background: linear-gradient(180deg, #2a180c 0%, #140c08 55%, #0a0604 100%) !important;
+}
 
 .farm-bg-root--winter {
   background: #050a10 !important;
@@ -45,8 +80,36 @@ html[data-season='winter'] {
   background: linear-gradient(180deg, #0e1a24 0%, #071018 55%, #04080c 100%) !important;
 }
 
-.farm-bg-root--summer.farm-bg-root--turbo {
-  background: linear-gradient(180deg, #0c2216 0%, #061008 55%, #040a06 100%) !important;
+.farm-bg-root--spring {
+  background: #07140e !important;
+}
+
+.farm-bg-root--autumn {
+  background: #120a06 !important;
+}
+
+/* --- Veils / frost --- */
+
+.farm-bg-spring-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background:
+    radial-gradient(ellipse 70% 40% at 20% 10%, rgba(255, 182, 193, 0.14) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 35% at 80% 20%, rgba(180, 230, 200, 0.12) 0%, transparent 50%),
+    linear-gradient(180deg, rgba(200, 240, 210, 0.08) 0%, transparent 45%);
+}
+
+.farm-bg-autumn-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background:
+    radial-gradient(ellipse 80% 45% at 70% -5%, rgba(224, 160, 74, 0.16) 0%, transparent 55%),
+    radial-gradient(ellipse 55% 40% at 15% 90%, rgba(140, 50, 20, 0.14) 0%, transparent 50%),
+    linear-gradient(180deg, rgba(80, 40, 12, 0.12) 0%, transparent 40%);
 }
 
 .farm-bg-frost {
@@ -71,10 +134,16 @@ html[data-season='winter'] {
   position: absolute;
   top: -4%;
   border-radius: 50%;
-  background: rgba(244, 248, 252, 0.85);
+  background: rgba(244, 248, 252, 0.88);
   box-shadow: 0 0 4px rgba(220, 236, 248, 0.45);
   opacity: 0;
   animation: farmSnowFall var(--snow-dur, 8s) linear infinite;
+}
+
+.farm-bg-snow--soft {
+  background: rgba(230, 240, 250, 0.55);
+  filter: blur(0.6px);
+  box-shadow: none;
 }
 
 @keyframes farmSnowFall {
@@ -93,20 +162,283 @@ html[data-season='winter'] {
   background: radial-gradient(ellipse 70% 40% at 40% 70%, rgba(186, 214, 232, 0.14) 0%, transparent 60%);
 }
 
+.farm-bg-root--spring .farm-bg-mist-a {
+  background: radial-gradient(ellipse 70% 40% at 50% 65%, rgba(180, 230, 200, 0.16) 0%, transparent 60%);
+}
+
+.farm-bg-root--autumn .farm-bg-mist-a {
+  background: radial-gradient(ellipse 75% 42% at 45% 70%, rgba(160, 80, 30, 0.16) 0%, transparent 60%);
+}
+
 .farm-bg-root--winter .farm-bg-vignette {
   background: radial-gradient(ellipse at center, transparent 40%, rgba(4, 10, 16, 0.55) 100%);
 }
 
+.farm-bg-root--autumn .farm-bg-vignette {
+  background: radial-gradient(ellipse at center, transparent 42%, rgba(12, 6, 2, 0.58) 100%);
+}
+
+/* --- Season atmosphere decor --- */
+
+.season-garland {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.season-garland-wire {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.season-garland-lights {
+  position: absolute;
+  inset: 10% 2% auto;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4%;
+}
+
+.season-garland-bulb {
+  width: 7px;
+  height: 9px;
+  border-radius: 40% 40% 50% 50%;
+  background: hsl(var(--bulb-hue, 40) 85% 62%);
+  box-shadow:
+    0 0 6px hsl(var(--bulb-hue, 40) 90% 55% / 0.85),
+    0 0 14px hsl(var(--bulb-hue, 40) 80% 50% / 0.45);
+  animation: seasonBulbPulse 2.2s ease-in-out infinite;
+}
+
+@keyframes seasonBulbPulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+.season-trees {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.season-tree {
+  position: absolute;
+  width: 42px;
+  height: 56px;
+  transform-origin: bottom center;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
+}
+
+.season-tree-trunk {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 5px;
+  height: 12px;
+  margin-left: -2.5px;
+  background: linear-gradient(180deg, #5a3a22, #2a180c);
+  border-radius: 1px;
+}
+
+.season-tree-cone {
+  position: absolute;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-color: transparent;
+  transform: translateX(-50%);
+}
+
+.season-tree-cone--a {
+  bottom: 28px;
+  border-width: 0 11px 16px;
+  border-bottom-color: #1a4a32;
+}
+
+.season-tree-cone--b {
+  bottom: 18px;
+  border-width: 0 15px 18px;
+  border-bottom-color: #163d2a;
+}
+
+.season-tree-cone--c {
+  bottom: 8px;
+  border-width: 0 19px 20px;
+  border-bottom-color: #123424;
+}
+
+.season-tree-star {
+  position: absolute;
+  left: 50%;
+  bottom: 42px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  background: #e8c56a;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  box-shadow: 0 0 8px rgba(232, 197, 106, 0.7);
+  animation: seasonStarTwinkle 2.8s ease-in-out infinite;
+}
+
+.season-tree-snow {
+  position: absolute;
+  left: 50%;
+  bottom: 30px;
+  width: 22px;
+  height: 6px;
+  margin-left: -11px;
+  background: radial-gradient(ellipse, rgba(240, 248, 255, 0.55) 0%, transparent 70%);
+  filter: blur(0.5px);
+}
+
+@keyframes seasonStarTwinkle {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+
+.season-winter-ground {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 18%;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 0%, rgba(220, 236, 248, 0.08) 40%, rgba(200, 220, 240, 0.16) 100%);
+}
+
+.season-bloom-haze,
+.season-autumn-haze {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.season-bloom-haze {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(255, 192, 203, 0.16) 0%, transparent 28%),
+    radial-gradient(circle at 88% 22%, rgba(255, 220, 230, 0.12) 0%, transparent 30%);
+}
+
+.season-autumn-haze {
+  background:
+    radial-gradient(circle at 75% 15%, rgba(224, 160, 74, 0.14) 0%, transparent 32%),
+    radial-gradient(circle at 20% 80%, rgba(140, 50, 20, 0.1) 0%, transparent 35%);
+}
+
+.season-harvest-glow {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: 0;
+  height: 22%;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(ellipse 70% 80% at 50% 100%, rgba(224, 160, 74, 0.12) 0%, transparent 70%);
+}
+
+.season-particles {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.season-petal,
+.season-leaf {
+  position: absolute;
+  top: -6%;
+  opacity: 0;
+  border-radius: 60% 40% 60% 40%;
+  animation: seasonFall var(--fall-dur, 10s) linear infinite;
+}
+
+.season-petal--0 { background: rgba(255, 182, 193, 0.85); }
+.season-petal--1 { background: rgba(255, 220, 230, 0.8); }
+.season-petal--2 { background: rgba(255, 160, 180, 0.75); }
+
+.season-leaf--0 { background: rgba(224, 160, 74, 0.88); }
+.season-leaf--1 { background: rgba(196, 92, 48, 0.85); }
+.season-leaf--2 { background: rgba(180, 120, 40, 0.82); }
+.season-leaf--3 { background: rgba(140, 60, 28, 0.8); }
+
+.season-leaf {
+  border-radius: 2px 70% 2px 70%;
+}
+
+@keyframes seasonFall {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  10% { opacity: 0.9; }
+  100% {
+    opacity: 0.2;
+    transform: translate3d(var(--fall-drift, 20px), 110vh, 0)
+      rotate(var(--fall-spin, var(--fall-rot, 180deg)));
+  }
+}
+
+.season-branch {
+  position: absolute;
+  top: 0;
+  width: 28%;
+  height: 70px;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0.55;
+  background:
+    radial-gradient(ellipse 40% 50% at 30% 20%, rgba(255, 182, 193, 0.35) 0%, transparent 60%),
+    radial-gradient(ellipse 35% 45% at 60% 40%, rgba(127, 217, 168, 0.28) 0%, transparent 55%);
+  filter: blur(0.5px);
+}
+
+.season-branch--left { left: 0; }
+.season-branch--right { right: 0; transform: scaleX(-1); }
+
 .cute-lite-mode .farm-bg-snow,
 .cute-turbo-mode .farm-bg-snow,
 .cute-lite-mode .farm-bg-frost,
-.cute-turbo-mode .farm-bg-frost {
+.cute-turbo-mode .farm-bg-frost,
+.cute-lite-mode .season-garland,
+.cute-turbo-mode .season-garland,
+.cute-lite-mode .season-trees,
+.cute-turbo-mode .season-trees,
+.cute-lite-mode .season-particles,
+.cute-turbo-mode .season-particles,
+.cute-lite-mode .season-branch,
+.cute-turbo-mode .season-branch,
+.cute-lite-mode .season-bloom-haze,
+.cute-turbo-mode .season-bloom-haze,
+.cute-lite-mode .season-autumn-haze,
+.cute-turbo-mode .season-autumn-haze,
+.cute-lite-mode .season-winter-ground,
+.cute-turbo-mode .season-winter-ground,
+.cute-lite-mode .season-harvest-glow,
+.cute-turbo-mode .season-harvest-glow,
+.cute-lite-mode .farm-bg-spring-veil,
+.cute-turbo-mode .farm-bg-spring-veil,
+.cute-lite-mode .farm-bg-autumn-veil,
+.cute-turbo-mode .farm-bg-autumn-veil {
   display: none !important;
 }
 
-/* --- Ферма: акценты сезона --- */
+/* --- Farm accents by season --- */
 
-html[data-season='winter'] .tab-theme-farm {
+html[data-season='winter'] .tab-theme-farm,
+html[data-season='spring'] .tab-theme-farm,
+html[data-season='autumn'] .tab-theme-farm {
   --farm-green: var(--season-accent);
   --farm-green-deep: var(--season-accent-deep);
   --tab-accent-strong: var(--season-accent);
@@ -122,6 +454,20 @@ html[data-season='winter'] .tab-atmosphere--farm .tab-atmosphere-base {
     linear-gradient(180deg, rgba(8, 14, 20, 0.22) 0%, rgba(4, 8, 12, 0.44) 100%);
 }
 
+html[data-season='spring'] .tab-atmosphere--farm .tab-atmosphere-base {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -8%, rgba(255, 182, 193, 0.1) 0%, transparent 58%),
+    radial-gradient(ellipse 80% 45% at 20% 100%, rgba(127, 217, 168, 0.12) 0%, transparent 52%),
+    linear-gradient(180deg, rgba(8, 20, 14, 0.2) 0%, rgba(4, 12, 8, 0.42) 100%);
+}
+
+html[data-season='autumn'] .tab-atmosphere--farm .tab-atmosphere-base {
+  background:
+    radial-gradient(ellipse 100% 55% at 50% -8%, rgba(224, 160, 74, 0.14) 0%, transparent 58%),
+    radial-gradient(ellipse 80% 45% at 80% 100%, rgba(140, 50, 20, 0.12) 0%, transparent 52%),
+    linear-gradient(180deg, rgba(20, 12, 6, 0.22) 0%, rgba(10, 6, 3, 0.46) 100%);
+}
+
 html[data-season='winter'] .tab-theme-farm .farm-btn-primary,
 html[data-season='winter'] .tab-theme-farm .farm-btn-harvest,
 html[data-season='winter'] .tab-theme-farm .farm-btn-seed {
@@ -131,6 +477,22 @@ html[data-season='winter'] .tab-theme-farm .farm-btn-seed {
   box-shadow:
     0 4px 16px rgba(74, 127, 163, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+html[data-season='spring'] .tab-theme-farm .farm-btn-primary,
+html[data-season='spring'] .tab-theme-farm .farm-btn-harvest,
+html[data-season='spring'] .tab-theme-farm .farm-btn-seed {
+  color: var(--season-ink-on-accent);
+  background: linear-gradient(180deg, #c8f0d8 0%, #7fd9a8 45%, #2f8f62 100%);
+  border-color: rgba(255, 182, 193, 0.35);
+}
+
+html[data-season='autumn'] .tab-theme-farm .farm-btn-primary,
+html[data-season='autumn'] .tab-theme-farm .farm-btn-harvest,
+html[data-season='autumn'] .tab-theme-farm .farm-btn-seed {
+  color: var(--season-ink-on-accent);
+  background: linear-gradient(180deg, #f0d090 0%, #e0a04a 45%, #9a5a18 100%);
+  border-color: rgba(232, 197, 106, 0.4);
 }
 
 html[data-season='winter'] .tab-theme-farm .farm-btn-water {
@@ -149,12 +511,36 @@ html[data-season='winter'] .tab-theme-farm .segment-tab-active {
   color: #0a1620;
 }
 
+html[data-season='spring'] .tab-theme-farm .segment-tab-active {
+  background: linear-gradient(180deg, #e8c56a 0%, #7fd9a8 100%);
+  color: #0a1810;
+}
+
+html[data-season='autumn'] .tab-theme-farm .segment-tab-active {
+  background: linear-gradient(180deg, #e8c56a 0%, #e0a04a 100%);
+  color: #1a1006;
+}
+
 html[data-season='winter'] .tab-theme-farm .farm-header-title {
   background: linear-gradient(to bottom, #f8f4e8, #e8c56a 50%, #9ec9e8);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   filter: drop-shadow(0 2px 16px rgba(158, 201, 232, 0.2));
+}
+
+html[data-season='spring'] .tab-theme-farm .farm-header-title {
+  background: linear-gradient(to bottom, #f8f4e8, #e8c56a 45%, #7fd9a8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+html[data-season='autumn'] .tab-theme-farm .farm-header-title {
+  background: linear-gradient(to bottom, #f8f4e8, #e8c56a 40%, #e0a04a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 html[data-season='winter'] .tab-theme-farm .farm-vine-frame {
@@ -165,7 +551,12 @@ html[data-season='winter'] .tab-theme-farm .farm-vine-frame {
     0 0 0 1px rgba(158, 201, 232, 0.08);
 }
 
-/* Почва зимой — холоднее */
+html[data-season='autumn'] .tab-theme-farm .farm-vine-frame {
+  border-color: rgba(224, 160, 74, 0.32);
+  background: rgba(14, 8, 4, 0.58);
+}
+
+/* Soil */
 html[data-season='winter'] .soil-field-earth {
   background:
     radial-gradient(ellipse 90% 55% at 50% 115%, var(--season-soil-cool) 0%, transparent 55%),
@@ -191,7 +582,19 @@ html[data-season='winter'] .soil-field-rim {
     inset 0 -16px 24px rgba(158, 201, 232, 0.06);
 }
 
-/* Вход: зимой плющ → иней / серебро */
+html[data-season='autumn'] .soil-field-earth {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 115%, rgba(196, 92, 48, 0.14) 0%, transparent 55%),
+    linear-gradient(180deg, #1c1410 0%, #120c08 48%, #0a0604 100%);
+}
+
+html[data-season='spring'] .soil-field-earth {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 115%, rgba(127, 217, 168, 0.14) 0%, transparent 55%),
+    linear-gradient(180deg, #142018 0%, #0c1410 48%, #060a08 100%);
+}
+
+/* Entrance / chrome */
 html[data-season='winter'] .farm-ent-flora-leaf path[fill^='url'],
 html[data-season='winter'] .farm-ent-flora-fern-lobe {
   filter: saturate(0.25) hue-rotate(175deg) brightness(1.25);
@@ -225,12 +628,18 @@ html[data-season='winter'] .farm-ent-ring--c {
   stroke: rgba(232, 197, 106, 0.65);
 }
 
-/* Таб-бар зимой */
 html[data-season='winter'] .app-shell[data-active-tab='farm'] .app-tab-bar-inner {
   background: linear-gradient(135deg, #f0d78a 0%, #4a7fa3 32%, #e8c56a 68%, #0a1420 100%);
 }
 
-/* Eyebrow-лист зимой — ледяной */
+html[data-season='spring'] .app-shell[data-active-tab='farm'] .app-tab-bar-inner {
+  background: linear-gradient(135deg, #f0d78a 0%, #2f8f62 32%, #e8c56a 68%, #ffb6c1 100%);
+}
+
+html[data-season='autumn'] .app-shell[data-active-tab='farm'] .app-tab-bar-inner {
+  background: linear-gradient(135deg, #f0d78a 0%, #9a5a18 32%, #e8c56a 68%, #c45c30 100%);
+}
+
 html[data-season='winter'] .tab-theme-inventory .inventory-hero-eyebrow::before,
 html[data-season='winter'] .tab-theme-shop .shop-exchange-eyebrow::before,
 html[data-season='winter'] .tab-theme-market .market-hero-eyebrow::before,
@@ -243,6 +652,30 @@ html[data-season='winter'] .tab-theme-chests .chest-hero-eyebrow::before {
   box-shadow: 0 0 6px rgba(158, 201, 232, 0.4);
 }
 
+html[data-season='spring'] .tab-theme-inventory .inventory-hero-eyebrow::before,
+html[data-season='spring'] .tab-theme-shop .shop-exchange-eyebrow::before,
+html[data-season='spring'] .tab-theme-market .market-hero-eyebrow::before,
+html[data-season='spring'] .tab-theme-craft .craft-module-eyebrow::before,
+html[data-season='spring'] .tab-theme-quests .quests-hero-eyebrow::before,
+html[data-season='spring'] .tab-theme-profile .profile-module-eyebrow::before,
+html[data-season='spring'] .tab-theme-settings .settings-hero-eyebrow::before,
+html[data-season='spring'] .tab-theme-chests .chest-hero-eyebrow::before {
+  background: linear-gradient(135deg, #ffb6c1 0%, #7fd9a8 100%);
+  box-shadow: 0 0 6px rgba(127, 217, 168, 0.35);
+}
+
+html[data-season='autumn'] .tab-theme-inventory .inventory-hero-eyebrow::before,
+html[data-season='autumn'] .tab-theme-shop .shop-exchange-eyebrow::before,
+html[data-season='autumn'] .tab-theme-market .market-hero-eyebrow::before,
+html[data-season='autumn'] .tab-theme-craft .craft-module-eyebrow::before,
+html[data-season='autumn'] .tab-theme-quests .quests-hero-eyebrow::before,
+html[data-season='autumn'] .tab-theme-profile .profile-module-eyebrow::before,
+html[data-season='autumn'] .tab-theme-settings .settings-hero-eyebrow::before,
+html[data-season='autumn'] .tab-theme-chests .chest-hero-eyebrow::before {
+  background: linear-gradient(135deg, #e0a04a 0%, #c45c30 100%);
+  box-shadow: 0 0 6px rgba(224, 160, 74, 0.4);
+}
+
 html[data-season='winter'] .tab-vine-leaf {
   filter: saturate(0.2) hue-rotate(180deg) brightness(1.3) drop-shadow(0 0 2px rgba(158, 201, 232, 0.3));
 }
@@ -251,7 +684,15 @@ html[data-season='winter'] .tab-vine-stem {
   stroke: rgba(158, 201, 232, 0.4);
 }
 
-/* Настройки — карточки сезона */
+html[data-season='autumn'] .tab-vine-leaf {
+  filter: saturate(1.1) hue-rotate(-25deg) brightness(1.05);
+}
+
+html[data-season='spring'] .tab-vine-leaf {
+  filter: saturate(1.15) brightness(1.08);
+}
+
+/* Settings season */
 .settings-season-options {
   display: grid;
   gap: 0.45rem;
@@ -265,8 +706,12 @@ html[data-season='winter'] .tab-vine-stem {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .farm-bg-snow {
+  .farm-bg-snow,
+  .season-garland-bulb,
+  .season-tree-star,
+  .season-petal,
+  .season-leaf {
     animation: none !important;
-    opacity: 0.35;
+    opacity: 0.4;
   }
 }

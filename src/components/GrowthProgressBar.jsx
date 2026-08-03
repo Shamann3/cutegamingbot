@@ -1,4 +1,4 @@
-export default function GrowthProgressBar({ progress, label }) {
+export default function GrowthProgressBar({ progress, label, labelTitle }) {
   const pct = Math.round(progress * 100)
 
   return (
@@ -14,7 +14,10 @@ export default function GrowthProgressBar({ progress, label }) {
         />
       </div>
       {label && (
-        <p className="text-center text-[10px] font-semibold text-amber-200/80 tabular-nums">
+        <p
+          className="text-center text-[10px] font-semibold text-amber-200/80"
+          title={labelTitle || undefined}
+        >
           {label}
         </p>
       )}
