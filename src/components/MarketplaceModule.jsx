@@ -11,8 +11,8 @@ import DonateModal from './DonateModal'
 import MarketShelfTile from './MarketShelfTile'
 import MarketListingModal from './MarketListingModal'
 import MarketSellModal from './MarketSellModal'
-import PlayerProfileModal from './PlayerProfileModal'
 import { useMarketplace } from '../hooks/useMarketplace'
+import { useOpenPlayerProfile } from '../context/PlayerProfileContext'
 import { useContextualDonate } from '../hooks/useContextualDonate'
 import TabAtmosphere from './TabAtmosphere'
 
@@ -88,7 +88,7 @@ export default function MarketplaceModule({
     closeDonate,
   } = useContextualDonate()
   const [listingBusy, setListingBusy] = useState(false)
-  const [profileUserId, setProfileUserId] = useState(null)
+  const openPlayerProfile = useOpenPlayerProfile()
 
   const emptyCatalog = !initialLoading && items.length === 0
   const catalogBusy = refreshing || Boolean(busyListingId) || listingBusy
@@ -271,7 +271,7 @@ export default function MarketplaceModule({
                       item={item}
                       kut={kut}
                       onSelect={setSelectedItem}
-                      onOpenSellerProfile={setProfileUserId}
+                      onOpenSellerProfile={openPlayerProfile}
                       isBusy={busyListingId === item.id}
                       disabled={catalogBusy && busyListingId !== item.id}
                       isHighlighted={highlightItemId != null && String(highlightItemId) === String(item.itemId)}
@@ -309,17 +309,11 @@ export default function MarketplaceModule({
         onClose={() => setSelectedItem(null)}
         onConfirmBuy={handleBuy}
         onCancelListing={handleCancel}
-        onOpenSellerProfile={setProfileUserId}
+        onOpenSellerProfile={openPlayerProfile}
         onContextualDonate={(payload) => {
           openContextualDonate(payload)
           setSelectedItem(null)
         }}
-      />
-
-      <PlayerProfileModal
-        userId={profileUserId}
-        isOpen={Boolean(profileUserId)}
-        onClose={() => setProfileUserId(null)}
       />
 
       <MarketSellModal

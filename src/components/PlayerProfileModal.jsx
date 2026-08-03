@@ -86,12 +86,13 @@ export default function PlayerProfileModal({ userId, isOpen, onClose }) {
 
   if (!isOpen || !userId) return null
 
-  const tgUrl = telegramProfileUrl(profile?.username)
+  const tgUrl = telegramProfileUrl(profile?.username, profile?.userId || userId)
   const rank = profile?.sellerRank
   const progressPct = Math.round((rank?.progress ?? 0) * 100)
   const nextRankText = rank?.nextAt
     ? `До следующего ранга: ${formatCount(rank.nextAt - (profile?.salesCount ?? 0))} продаж`
     : 'Максимальный ранг на бирже'
+  const canOpenTg = Boolean(tgUrl) && !profile?.isSelf
 
   return (
     <Portal lockScroll>
@@ -109,7 +110,7 @@ export default function PlayerProfileModal({ userId, isOpen, onClose }) {
 
           <div className="player-profile-header">
             <div className="player-profile-header-glow" aria-hidden />
-            <p className="player-profile-header-eyebrow">Профиль торговца</p>
+            <p className="player-profile-header-eyebrow">Профиль игрока</p>
           </div>
 
           <div className="player-profile-hero">
@@ -202,13 +203,13 @@ export default function PlayerProfileModal({ userId, isOpen, onClose }) {
           </div>
 
           <div className="shop-modal-actions player-profile-actions">
-            {tgUrl && !profile?.isSelf ? (
+            {canOpenTg ? (
               <button
                 type="button"
                 className="farm-btn-primary shop-modal-confirm player-profile-tg-btn"
                 onClick={() => openTelegramBotLink(tgUrl)}
               >
-                Написать в Telegram
+                Открыть в Telegram
               </button>
             ) : null}
             <button type="button" className="shop-modal-cancel" onClick={onClose}>

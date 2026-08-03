@@ -4,6 +4,7 @@ import { fetchGiveaway } from '../lib/giveawaysClient'
 import { formatGiveawayDeadlineTime, formatGiveawayPrize } from '../constants/giveaways'
 import { openTelegramBotLink, getTelegramUser } from '../lib/telegram'
 import AnimatedPrizeIcon from './AnimatedPrizeIcon'
+import UserNameLink from './UserNameLink'
 
 const BOT_USERNAME = 'CuteGamingBot'
 
@@ -189,7 +190,12 @@ export default function GiveawayDetailModal({
                     <div className="giveaway-winner-inner">
                       <div className="giveaway-winner-crown" aria-hidden>👑</div>
                       <p className="giveaway-winner-eyebrow">Победитель</p>
-                      <p className="giveaway-winner-name">{detail.winnerName}</p>
+                      <p className="giveaway-winner-name">
+                        <UserNameLink
+                          userId={detail.winnerUserId || detail.winnerId}
+                          name={detail.winnerName}
+                        />
+                      </p>
                       <div className="giveaway-winner-laurel" aria-hidden>
                         <span className="giveaway-winner-laurel-line" />
                         <span>🌿</span>

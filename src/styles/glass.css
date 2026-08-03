@@ -1,0 +1,361 @@
+/* ============================================================
+   GLASS — iOS-style liquid glass across the Mini App
+   Читаемость: полупрозрачность + лёгкий blur + тёмный scrim под текстом
+   ============================================================ */
+
+:root {
+  --glass-bg: rgba(10, 16, 14, 0.52);
+  --glass-bg-strong: rgba(8, 12, 10, 0.72);
+  --glass-bg-soft: rgba(16, 22, 18, 0.38);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-border-gold: rgba(232, 197, 106, 0.32);
+  --glass-highlight: rgba(255, 255, 255, 0.22);
+  --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  --glass-blur: 16px;
+  --glass-blur-soft: 10px;
+  --glass-radius: 18px;
+  --glass-radius-sm: 14px;
+  --glass-radius-pill: 999px;
+  --glass-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --glass-duration: 0.42s;
+  --glass-text: rgba(255, 248, 235, 0.96);
+  --glass-text-muted: rgba(255, 248, 235, 0.62);
+}
+
+/* --- Shared glass surface --- */
+
+.glass-surface,
+.farm-vine-frame-inner,
+.shop-modal,
+.player-profile-modal,
+.inventory-board .farm-vine-frame-inner {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.08) 0%, transparent 42%),
+    linear-gradient(180deg, var(--glass-bg-strong) 0%, var(--glass-bg) 100%) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.25);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.25);
+  border-color: var(--glass-border-gold) !important;
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 0 40px rgba(0, 0, 0, 0.22) !important;
+}
+
+.farm-vine-frame {
+  border-radius: calc(var(--glass-radius) + 4px) !important;
+  background:
+    linear-gradient(145deg, rgba(232, 197, 106, 0.55) 0%, rgba(61, 40, 12, 0.85) 45%, rgba(232, 197, 106, 0.4) 100%) !important;
+  padding: 3px !important;
+}
+
+.farm-vine-frame-inner {
+  border-radius: var(--glass-radius) !important;
+}
+
+/* --- Liquid glass buttons --- */
+
+.glass-btn,
+.farm-btn,
+.inventory-filter-chip,
+.shop-sheet-option,
+.app-tab-btn,
+.settings-perf-option,
+.profile-board-tab {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--glass-radius-pill) !important;
+  transition:
+    transform var(--glass-duration) var(--glass-ease),
+    background var(--glass-duration) var(--glass-ease),
+    border-color var(--glass-duration) var(--glass-ease),
+    box-shadow var(--glass-duration) var(--glass-ease),
+    color var(--glass-duration) var(--glass-ease),
+    opacity 0.25s ease !important;
+}
+
+.glass-btn::before,
+.farm-btn::before,
+.inventory-filter-chip::before,
+.app-tab-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.18) 42%,
+    transparent 68%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.7s var(--glass-ease);
+  pointer-events: none;
+}
+
+.glass-btn:hover::before,
+.farm-btn:hover::before,
+.inventory-filter-chip:hover::before,
+.app-tab-btn:hover::before {
+  transform: translateX(120%);
+}
+
+.farm-btn-primary,
+.farm-btn-harvest,
+.farm-btn-seed,
+.farm-btn-buy,
+.player-profile-tg-btn {
+  backdrop-filter: blur(8px) saturate(1.2);
+  -webkit-backdrop-filter: blur(8px) saturate(1.2);
+}
+
+.farm-btn:active,
+.inventory-filter-chip:active,
+.inventory-tile:active,
+.app-tab-btn:active,
+.segment-tab:active {
+  transform: scale(0.97);
+}
+
+/* --- Segment tabs with sliding water pill --- */
+
+.segment-tabs {
+  position: relative !important;
+  border-radius: var(--glass-radius-pill) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, transparent 40%),
+    rgba(4, 10, 8, 0.45) !important;
+  backdrop-filter: blur(var(--glass-blur-soft)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--glass-blur-soft)) saturate(1.2);
+  border: 1px solid var(--glass-border) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 2px 8px rgba(0, 0, 0, 0.35) !important;
+  overflow: hidden;
+}
+
+.segment-tabs-pill {
+  position: absolute;
+  top: 0.25rem;
+  bottom: 0.25rem;
+  left: 0.25rem;
+  z-index: 0;
+  width: calc(
+    (100% - 0.5rem - (var(--seg-count, 2) - 1) * 0.3rem) / var(--seg-count, 2)
+  );
+  border-radius: var(--glass-radius-pill);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, transparent 55%),
+    linear-gradient(
+      180deg,
+      var(--tab-accent-soft, rgba(61, 214, 140, 0.28)) 0%,
+      rgba(8, 18, 14, 0.55) 100%
+    );
+  border: 1px solid var(--tab-accent-strong, rgba(61, 214, 140, 0.45));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 4px 14px rgba(0, 0, 0, 0.28),
+    0 0 18px var(--tab-accent-glow, rgba(61, 214, 140, 0.18));
+  transform: translateX(
+    calc(var(--seg-index, 0) * (100% + 0.3rem))
+  );
+  transition: transform 0.48s var(--glass-ease), background 0.48s var(--glass-ease), border-color 0.48s ease;
+  pointer-events: none;
+}
+
+.segment-tab {
+  position: relative;
+  z-index: 1;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  color: var(--glass-text-muted) !important;
+  transition: color 0.35s var(--glass-ease) !important;
+}
+
+.segment-tab-active {
+  color: var(--glass-text) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* --- Chips / search / tiles --- */
+
+.inventory-summary-chip,
+.inventory-search-input,
+.inventory-filter-chip,
+.kut-balance-inner,
+.profile-board-tab,
+.pa-kpi,
+.pa-tip,
+.pa-rank-card,
+.pa-block,
+.pa-farm-live,
+.pa-reg,
+.pa-identity {
+  backdrop-filter: blur(var(--glass-blur-soft)) saturate(1.15);
+  -webkit-backdrop-filter: blur(var(--glass-blur-soft)) saturate(1.15);
+}
+
+.inventory-summary-chip {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.28rem;
+  border-radius: var(--glass-radius-pill) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, transparent 60%),
+    rgba(8, 14, 12, 0.55) !important;
+  border-color: var(--glass-border-gold) !important;
+  color: var(--glass-text) !important;
+}
+
+.inventory-summary-chip--soft {
+  opacity: 0.88;
+  border-color: rgba(61, 214, 140, 0.28) !important;
+}
+
+.inventory-search-input {
+  border-radius: var(--glass-radius-pill) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
+    rgba(6, 12, 10, 0.55) !important;
+  border-color: var(--glass-border-gold) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.inventory-filter-chip {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, transparent 55%),
+    rgba(8, 14, 12, 0.48) !important;
+  border-color: rgba(232, 197, 106, 0.22) !important;
+}
+
+.inventory-filter-chip-active {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, transparent 50%),
+    rgba(22, 48, 34, 0.62) !important;
+  border-color: rgba(232, 197, 106, 0.5) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 0 16px rgba(61, 214, 140, 0.15) !important;
+  color: var(--glass-text) !important;
+}
+
+.inventory-tile {
+  border-radius: var(--glass-radius-sm) !important;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.1) 0%, transparent 45%),
+    linear-gradient(180deg, rgba(14, 28, 20, 0.62) 0%, rgba(6, 12, 10, 0.72) 100%) !important;
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid rgba(232, 197, 106, 0.26) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 6px 18px rgba(0, 0, 0, 0.28) !important;
+  transition:
+    transform 0.28s var(--glass-ease),
+    border-color 0.28s ease,
+    box-shadow 0.28s ease,
+    background 0.28s ease !important;
+}
+
+.inventory-tile:hover {
+  border-color: rgba(232, 197, 106, 0.48) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 8px 22px rgba(0, 0, 0, 0.32),
+    0 0 18px rgba(232, 197, 106, 0.12) !important;
+}
+
+.inventory-tile-name {
+  color: var(--glass-text) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.inventory-tile-qty {
+  color: #f0d78a !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.inventory-tile-meta {
+  color: rgba(186, 230, 253, 0.85) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* App tab bar glass */
+.app-tab-bar-inner {
+  backdrop-filter: blur(18px) saturate(1.3) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.3) !important;
+  border-radius: 22px !important;
+}
+
+.app-tab-btn {
+  border-radius: 16px !important;
+}
+
+/* Username links */
+.user-name-link,
+.market-seller-link {
+  appearance: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
+  border: none;
+  border-bottom: 1px dashed rgba(232, 197, 106, 0.45);
+  border-radius: 6px;
+  padding: 0 0.1rem;
+  margin: 0;
+  color: #f0d78a;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition: color 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+}
+
+.user-name-link:hover,
+.market-seller-link:hover {
+  color: #fff6d6;
+  border-bottom-color: rgba(255, 246, 214, 0.7);
+  background: rgba(232, 197, 106, 0.1);
+}
+
+/* Modals */
+.shop-modal-root {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.shop-modal,
+.player-profile-modal {
+  border-radius: 24px !important;
+}
+
+/* Turbo / reduced glass */
+.cute-turbo-mode .farm-vine-frame-inner,
+.cute-turbo-mode .inventory-tile,
+.cute-turbo-mode .segment-tabs,
+.cute-turbo-mode .inventory-search-input,
+.cute-turbo-mode .inventory-filter-chip,
+.cute-turbo-mode .inventory-summary-chip {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.cute-turbo-mode .segment-tabs-pill {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segment-tabs-pill,
+  .farm-btn,
+  .inventory-filter-chip,
+  .inventory-tile,
+  .app-tab-btn {
+    transition: none !important;
+  }
+
+  .glass-btn::before,
+  .farm-btn::before,
+  .inventory-filter-chip::before,
+  .app-tab-btn::before {
+    display: none;
+  }
+}

@@ -82,11 +82,19 @@ export default function InventoryModule({ isActive = true, embedded = false }) {
 
         <div className="inventory-summary" role="status">
           <span className="inventory-summary-chip">
+            <span aria-hidden>📚</span>
             {formatKut(summary.totalKinds)} {summary.totalKinds === 1 ? 'вид' : summary.totalKinds < 5 ? 'вида' : 'видов'}
           </span>
           <span className="inventory-summary-chip">
+            <span aria-hidden>🎒</span>
             {formatKut(summary.totalCount)} шт всего
           </span>
+          {filterCounts.farm > 0 && (
+            <span className="inventory-summary-chip inventory-summary-chip--soft">
+              <span aria-hidden>🌾</span>
+              Ферма {filterCounts.farm}
+            </span>
+          )}
         </div>
 
         <label className="inventory-search">

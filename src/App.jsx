@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PlayerSyncProvider } from './context/PlayerSyncContext'
+import { PlayerProfileProvider } from './context/PlayerProfileContext'
 import { OnboardingProvider, useOnboardingOptional } from './context/OnboardingContext'
 import FarmModule from './components/FarmModule'
 import CraftModule from './components/CraftModule'
@@ -97,7 +98,9 @@ export default function App() {
 
   return (
     <PlayerSyncProvider>
-      <AppWithOnboarding />
+      <PlayerProfileProvider>
+        <AppWithOnboarding />
+      </PlayerProfileProvider>
     </PlayerSyncProvider>
   )
 }

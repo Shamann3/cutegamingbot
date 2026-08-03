@@ -1,4 +1,5 @@
 import { RARITY_ACCENT, formatGiveawayPrize } from '../constants/giveaways'
+import UserNameLink from './UserNameLink'
 
 export default function GiveawayHistoryCard({ giveaway, onOpenDetail }) {
   const accent = RARITY_ACCENT[giveaway.rarity] ?? RARITY_ACCENT.common
@@ -19,7 +20,15 @@ export default function GiveawayHistoryCard({ giveaway, onOpenDetail }) {
         <span className="giveaway-history-title">{giveaway.title}</span>
         <span className="giveaway-history-result">
           {giveaway.winnerName ? (
-            <>👑 <span className="giveaway-history-result-winner">{giveaway.winnerName}</span></>
+            <>
+              👑{' '}
+              <UserNameLink
+                userId={giveaway.winnerUserId}
+                name={giveaway.winnerName}
+                className="giveaway-history-result-winner"
+                stopPropagation
+              />
+            </>
           ) : (
             `🎁 ${giveaway.recipientsCount ?? 0} игроков получили приз`
           )}

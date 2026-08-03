@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useGiveawayWinnersFeed } from '../hooks/useGiveawayWinnersFeed'
 import { formatGiveawayPrize } from '../constants/giveaways'
+import UserNameLink from './UserNameLink'
 
 const ROTATE_MS = 4000
 
@@ -34,7 +35,11 @@ export default function GiveawayWinnersFeed() {
     <div className="giveaway-winners-feed" key={current.at}>
       <span className="giveaway-winners-feed-medal" aria-hidden>🏆</span>
       <span className="giveaway-winners-feed-text">
-        <span className="giveaway-winners-feed-name">{current.displayName}</span>
+        <UserNameLink
+          userId={current.userId}
+          name={current.displayName}
+          className="giveaway-winners-feed-name"
+        />
         {' выиграл '}{formatGiveawayPrize(current.prize)} в «{current.giveawayTitle}»
       </span>
       <span className="giveaway-winners-feed-time">{timeAgo(current.at)}</span>

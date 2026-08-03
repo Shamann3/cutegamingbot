@@ -181,10 +181,13 @@
   background: radial-gradient(circle at 88% 22%, rgba(232, 197, 106, 0.1) 0%, transparent 38%);
 }
 
-/* На ферме без SVG-веточек — только фото-фон + чистый UI */
-.tab-atmosphere--farm .tab-atmosphere-vines,
+/* На ферме щупальца тише, чтобы не мешать грядкам */
+.tab-atmosphere--farm .tab-atmosphere-vines {
+  opacity: 0.38;
+}
+
 .tab-atmosphere--farm .tab-atmosphere-dust {
-  display: none;
+  opacity: 0.22;
 }
 
 .tab-atmosphere--inventory .tab-atmosphere-base {
@@ -395,7 +398,7 @@
   background: radial-gradient(ellipse at center, transparent 42%, rgba(2, 6, 4, 0.42) 100%);
 }
 
-/* Растительность на всех вкладках — плющ по краям */
+/* Биолюминесцентные щупальца медузы */
 .tab-atmosphere-vines {
   position: absolute;
   inset: 0;
@@ -403,59 +406,126 @@
   height: 100%;
   pointer-events: none;
   z-index: 1;
-  opacity: 0.62;
+  opacity: 0.78;
+  --jelly-core-a: #7ef0b4;
+  --jelly-core-b: #e8c56a;
+  --jelly-glow: rgba(110, 231, 183, 0.75);
+  --jelly-filament: rgba(186, 255, 220, 0.45);
+  --jelly-orb: #f0d78a;
 }
 
-.tab-vine-stem {
-  stroke: rgba(61, 214, 140, 0.42);
-  stroke-width: 1.2;
+.tab-jelly-halo {
+  stroke-width: 3.2;
   stroke-linecap: round;
+  filter: url(#jellyBlur);
+  opacity: 0.55;
 }
 
-.tab-vine-stem--soft {
-  stroke: rgba(110, 231, 183, 0.28);
-  stroke-width: 0.75;
+.tab-jelly-halo--floor {
+  stroke: var(--jelly-glow);
+  stroke-width: 2.4;
 }
 
-.tab-vine-stem--floor {
-  stroke: rgba(232, 197, 106, 0.28);
+.tab-jelly-core {
+  stroke-width: 1.15;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px var(--jelly-glow));
+}
+
+.tab-jelly-core--floor {
+  stroke: var(--jelly-core-b);
   stroke-width: 1;
 }
 
-.tab-vine-tendril {
-  stroke: rgba(110, 231, 183, 0.45);
+.tab-jelly-filament {
+  stroke: var(--jelly-filament);
   stroke-width: 0.7;
+  stroke-linecap: round;
+  stroke-dasharray: 2 6;
+  animation: jellyDash 5.5s linear infinite;
+}
+
+.tab-jelly-filament--soft {
+  stroke-width: 0.45;
+  opacity: 0.65;
+  animation-duration: 7.5s;
+  animation-direction: reverse;
+}
+
+.tab-jelly-curl {
+  stroke: var(--jelly-core-b);
+  stroke-width: 0.65;
+  stroke-linecap: round;
+  opacity: 0.7;
+  filter: drop-shadow(0 0 2px var(--jelly-glow));
+}
+
+.tab-jelly-orb {
+  fill: var(--jelly-orb);
+  filter: drop-shadow(0 0 3px var(--jelly-orb));
+  animation: jellyOrbPulse 2.8s ease-in-out infinite;
+}
+
+.tab-jelly-orb--dim {
+  opacity: 0.55;
+  animation-duration: 3.6s;
+  animation-delay: 0.6s;
+}
+
+.tab-vine--l,
+.tab-jelly-arm--l {
+  animation: jellySwayL 8s ease-in-out infinite;
+  transform-origin: 6px 150px;
+}
+
+.tab-vine--r,
+.tab-jelly-arm--r {
+  animation: jellySwayR 8.6s ease-in-out infinite;
+  transform-origin: 94px 150px;
+}
+
+.tab-jelly-arm--floor {
+  animation: jellyFloorDrift 9s ease-in-out infinite;
+  transform-origin: 50px 156px;
+}
+
+@keyframes jellySwayL {
+  0%, 100% { transform: rotate(0deg) translateX(0); }
+  50% { transform: rotate(1.6deg) translateX(0.6px); }
+}
+
+@keyframes jellySwayR {
+  0%, 100% { transform: rotate(0deg) translateX(0); }
+  50% { transform: rotate(-1.6deg) translateX(-0.6px); }
+}
+
+@keyframes jellyFloorDrift {
+  0%, 100% { transform: translateY(0) scaleX(1); }
+  50% { transform: translateY(-0.6px) scaleX(1.02); }
+}
+
+@keyframes jellyDash {
+  to { stroke-dashoffset: -40; }
+}
+
+@keyframes jellyOrbPulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+/* legacy aliases (season.css may still target these) */
+.tab-vine-stem,
+.tab-vine-stem--soft,
+.tab-vine-stem--floor,
+.tab-vine-tendril {
+  stroke: var(--jelly-filament);
+  stroke-width: 0.8;
   stroke-linecap: round;
 }
 
-.tab-vine-leaf {
-  stroke: none;
-  filter: drop-shadow(0 0 2px rgba(61, 214, 140, 0.25));
-}
-
+.tab-vine-leaf,
 .tab-vine-bud {
-  fill: rgba(232, 197, 106, 0.75);
-  filter: drop-shadow(0 0 2px rgba(232, 197, 106, 0.45));
-}
-
-.tab-vine--l {
-  animation: tabVineSway 7s ease-in-out infinite;
-  transform-origin: 8px 140px;
-}
-
-.tab-vine--r {
-  animation: tabVineSwayRev 7.4s ease-in-out infinite;
-  transform-origin: 92px 140px;
-}
-
-@keyframes tabVineSway {
-  0%, 100% { transform: rotate(0deg); }
-  50% { transform: rotate(1.2deg); }
-}
-
-@keyframes tabVineSwayRev {
-  0%, 100% { transform: rotate(0deg); }
-  50% { transform: rotate(-1.2deg); }
+  display: none;
 }
 
 .tab-atmosphere-dust {
@@ -477,20 +547,20 @@
   to { transform: translateY(-1.2%); opacity: 0.42; }
 }
 
-.tab-atmosphere--shop .tab-vine-stem,
-.tab-atmosphere--market .tab-vine-stem,
-.tab-atmosphere--chests .tab-vine-stem {
-  stroke: rgba(232, 197, 106, 0.38);
+.tab-atmosphere--shop .tab-atmosphere-vines,
+.tab-atmosphere--market .tab-atmosphere-vines,
+.tab-atmosphere--chests .tab-atmosphere-vines {
+  --jelly-core-a: #f0d78a;
+  --jelly-core-b: #e8c56a;
+  --jelly-glow: rgba(232, 197, 106, 0.7);
+  --jelly-filament: rgba(255, 236, 180, 0.45);
+  --jelly-orb: #fff1c2;
 }
 
-.tab-atmosphere--shop .tab-vine-stem--soft,
-.tab-atmosphere--market .tab-vine-stem--soft,
-.tab-atmosphere--chests .tab-vine-stem--soft {
-  stroke: rgba(247, 231, 176, 0.28);
-}
-
-.tab-atmosphere--quests .tab-vine-stem {
-  stroke: rgba(61, 214, 140, 0.4);
+.tab-atmosphere--quests .tab-atmosphere-vines {
+  --jelly-core-a: #7ef0b4;
+  --jelly-core-b: #3dd68c;
+  --jelly-glow: rgba(61, 214, 140, 0.7);
 }
 
 .cute-turbo-mode .tab-atmosphere-texture,

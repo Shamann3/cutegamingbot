@@ -1643,27 +1643,33 @@ body {
 
   .inventory-filters {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.35rem;
-    margin-bottom: 0.65rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+  }
+
+  @media (min-width: 420px) {
+    .inventory-filters {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
   }
 
   .inventory-filter-chip {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.22rem;
+    gap: 0.28rem;
     min-width: 0;
     width: 100%;
-    padding: 0.4rem 0.35rem;
+    padding: 0.48rem 0.4rem;
     border-radius: 999px;
     border: 1px solid rgba(212, 175, 55, 0.24);
     background: rgba(6, 16, 10, 0.82);
     color: rgba(254, 243, 199, 0.72);
-    font-size: 0.58rem;
+    font-size: 0.62rem;
     font-weight: 800;
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s, color 0.15s;
+    transition: border-color 0.28s, background 0.28s, color 0.28s, transform 0.28s, box-shadow 0.28s;
   }
 
   .inventory-filter-chip > span:nth-child(2) {
@@ -1747,10 +1753,10 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    gap: 0.18rem;
-    min-height: 5.6rem;
-    padding: 0.5rem 0.35rem 0.42rem;
-    border-radius: 12px;
+    gap: 0.22rem;
+    min-height: 6.1rem;
+    padding: 0.58rem 0.4rem 0.5rem;
+    border-radius: 16px;
     border: 1px solid rgba(120, 83, 28, 0.35);
     background: linear-gradient(
       180deg,
@@ -1763,7 +1769,7 @@ body {
     box-shadow:
       inset 0 1px 0 rgba(255, 236, 170, 0.05),
       0 4px 12px rgba(0, 0, 0, 0.22);
-    transition: border-color 0.15s, transform 0.12s, box-shadow 0.15s;
+    transition: border-color 0.28s, transform 0.28s, box-shadow 0.28s;
   }
 
   .inventory-tile:active {
@@ -1771,14 +1777,15 @@ body {
   }
 
   .inventory-tile-emoji {
-    font-size: 1.45rem;
+    font-size: 1.65rem;
     line-height: 1;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+    margin-bottom: 0.1rem;
   }
 
   .inventory-tile-name {
     width: 100%;
-    font-size: 0.58rem;
+    font-size: 0.62rem;
     font-weight: 800;
     line-height: 1.2;
     color: rgba(254, 243, 199, 0.95);
@@ -1789,7 +1796,7 @@ body {
   }
 
   .inventory-tile-qty {
-    font-size: 0.56rem;
+    font-size: 0.6rem;
     font-weight: 800;
     color: rgba(253, 230, 138, 0.9);
     font-variant-numeric: tabular-nums;

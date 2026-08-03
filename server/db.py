@@ -2575,6 +2575,7 @@ class Database:
             "joined": bool(joined),
             "result": result,
             "winnerName": winner_name,
+            "winnerUserId": int(row["winner_user_id"]) if row.get("winner_user_id") is not None else None,
             "recipientsCount": recipients_count,
             "participantsCount": participants_count,
         }
@@ -2765,6 +2766,7 @@ class Database:
                 "prize": self._giveaway_prize_summary(row),
                 "drawType": row["draw_type"],
                 "winnerName": display_name(row["winner_username"], row["winner_first_name"]) if is_timer else None,
+                "winnerUserId": int(row["winner_user_id"]) if is_timer and row.get("winner_user_id") is not None else None,
                 "recipientsCount": None if is_timer else int(row["entries_count"] or 0),
                 "drawnAt": row["drawn_at"].isoformat() if row["drawn_at"] else None,
             })
@@ -2786,7 +2788,7 @@ class Database:
             """
             SELECT g.title, g.emoji, g.prize_type, g.prize_kut_amount, g.prize_title, g.prize_emoji, g.prize_description,
                    g.prize_animation_url, g.prize_animation_type,
-                   u.username, u.first_name, g.drawn_at AS at
+                   g.winner_user_id AS user_id, u.username, u.first_name, g.drawn_at AS at
             FROM giveaways g
             LEFT JOIN users u ON u.user_id = g.winner_user_id
             WHERE g.draw_type = 'timer' AND g.status = 'completed' AND g.winner_user_id IS NOT NULL AND g.enabled = TRUE
@@ -2799,7 +2801,7 @@ class Database:
             """
             SELECT g.title, g.emoji, g.prize_type, g.prize_kut_amount, g.prize_title, g.prize_emoji, g.prize_description,
                    g.prize_animation_url, g.prize_animation_type,
-                   u.username, u.first_name, e.joined_at AS at
+                   e.user_id AS user_id, u.username, u.first_name, e.joined_at AS at
             FROM giveaway_entries e
             JOIN giveaways g ON g.id = e.giveaway_id
             JOIN users u ON u.user_id = e.user_id
@@ -2816,6 +2818,7 @@ class Database:
         )[:limit]
         winners = [
             {
+                "userId": int(r["user_id"]) if r.get("user_id") is not None else None,
                 "displayName": display_name(r["username"], r["first_name"]),
                 "prize": self._giveaway_prize_summary(r),
                 "giveawayTitle": r["title"],

@@ -4,6 +4,7 @@ import KutBalance from './KutBalance'
 import DonateModal from './DonateModal'
 import ExchangeModule from './ExchangeModule'
 import MarketplaceModule from './MarketplaceModule'
+import SegmentTabs from './SegmentTabs'
 import { useContextualDonate } from '../hooks/useContextualDonate'
 import { usePlayerSync } from '../context/PlayerSyncContext'
 import '../styles/trade.css'
@@ -45,20 +46,12 @@ export default function TradeModule({
           <KutBalance value={kut ?? 0} className="trade-header-balance" onDonate={openDonate} />
         </header>
 
-        <div className="segment-tabs" role="tablist" aria-label="Разделы торговли">
-          {SEGMENTS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              role="tab"
-              aria-selected={segment === s.id}
-              className={`segment-tab${segment === s.id ? ' segment-tab-active' : ''}`}
-              onClick={() => onSegmentChange(s.id)}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+        <SegmentTabs
+          items={SEGMENTS}
+          value={segment}
+          onChange={onSegmentChange}
+          ariaLabel="Разделы торговли"
+        />
 
         {segment === 'shop' ? (
           <ExchangeModule

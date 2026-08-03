@@ -5,6 +5,7 @@ import GiveawayTicketCard from './GiveawayTicketCard'
 import GiveawayDetailModal from './GiveawayDetailModal'
 import GiveawayHistoryCard from './GiveawayHistoryCard'
 import GiveawayWinnersFeed from './GiveawayWinnersFeed'
+import SegmentTabs from './SegmentTabs'
 import { useGiveaways } from '../hooks/useGiveaways'
 import { useGiveawayHistory } from '../hooks/useGiveawayHistory'
 import { GIVEAWAYS_COMING_SOON, RARITY_ORDER } from '../constants/giveaways'
@@ -95,20 +96,15 @@ export default function GiveawaysModule({ isActive = true, onNavigateCondition }
           <h1 className="giveaways-header-title">Розыгрыши</h1>
         </header>
 
-        <div className="segment-tabs" role="tablist" aria-label="Разделы розыгрышей">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              className={`segment-tab${tab === t.id ? ' segment-tab-active' : ''}`}
-              onClick={() => handleTabChange(t.id)}
-            >
-              {t.label}{t.id === 'active' ? ` (${activeList.length})` : ''}
-            </button>
-          ))}
-        </div>
+        <SegmentTabs
+          items={TABS.map((t) => ({
+            id: t.id,
+            label: t.id === 'active' ? `${t.label} (${activeList.length})` : t.label,
+          }))}
+          value={tab}
+          onChange={handleTabChange}
+          ariaLabel="Разделы розыгрышей"
+        />
 
         {error && <p className="giveaways-empty">{error}</p>}
 

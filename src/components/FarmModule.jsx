@@ -22,6 +22,7 @@ import DonateModal from './DonateModal'
 import TabAtmosphere from './TabAtmosphere'
 import InventoryModule from './InventoryModule'
 import CraftModule from './CraftModule'
+import SegmentTabs from './SegmentTabs'
 import { useContextualDonate } from '../hooks/useContextualDonate'
 import '../styles/cosmetic-effects.css'
 import '../styles/farmElite.css'
@@ -280,20 +281,12 @@ export default function FarmModule({ isActive = true, farmSegment, onFarmSegment
       >
         <FarmHeader isPreview={isPreview} />
 
-        <div className="segment-tabs" role="tablist" aria-label="Разделы фермы">
-          {FARM_SEGMENTS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              role="tab"
-              aria-selected={farmSegment === s.id}
-              className={`segment-tab${farmSegment === s.id ? ' segment-tab-active' : ''}`}
-              onClick={() => onFarmSegmentChange(s.id)}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+        <SegmentTabs
+          items={FARM_SEGMENTS}
+          value={farmSegment}
+          onChange={onFarmSegmentChange}
+          ariaLabel="Разделы фермы"
+        />
 
         {farmSegment === 'inventory' && <InventoryModule embedded isActive={isActive} />}
         {farmSegment === 'craft' && <CraftModule embedded isActive={isActive} />}

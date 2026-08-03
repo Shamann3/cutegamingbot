@@ -60,17 +60,21 @@ export function getStartTab() {
   return VALID_TABS.has(param) ? param : null
 }
 
-/** Открывает t.me-ссылку на бота (выходит из Mini App в чат). */
+/** Открывает t.me / tg:// ссылку (чат с ботом или личка с пользователем). */
 export function openTelegramBotLink(url) {
   const tg = window.Telegram?.WebApp
-  if (tg?.openTelegramLink) {
-    tg.openTelegramLink(url)
+  const href = String(url || '').trim()
+  if (!href) return false
+
+  // openTelegramLink принимает только https://t.me/...
+  if (href.startsWith('https://t.me/') && tg?.openTelegramLink) {
+    tg.openTelegramLink(href)
     return true
   }
   if (tg?.openLink) {
-    tg.openLink(url)
+    tg.openLink(href, { try_instant_view: false })
     return true
   }
-  window.location.assign(url)
+  window.location.assign(href)
   return true
 }

@@ -12,6 +12,8 @@ import { PlotStatus } from '../types/farm'
 import { isPlotDry } from '../utils/plotActions'
 import SettingsModule from './SettingsModule'
 import ProfileAnalytics from './ProfileAnalytics'
+import UserNameLink from './UserNameLink'
+import SegmentTabs from './SegmentTabs'
 import '../styles/chests.css'
 import '../styles/cosmetic-effects.css'
 import '../styles/profileAnalytics.css'
@@ -57,7 +59,11 @@ function LeaderRow({ item, valueLabel }) {
         {medal ?? <span className="profile-leader-rank-num">{item.rank}</span>}
       </span>
       <Avatar photoUrl={item.photoUrl} name={item.name} size={32} />
-      <span className="profile-leader-name">{item.name}</span>
+      <UserNameLink
+        userId={item.isMe ? null : item.userId}
+        name={item.name}
+        className="profile-leader-name"
+      />
       <span className="profile-leader-value">{item.value?.toLocaleString('ru-RU')} {valueLabel}</span>
     </div>
   )
@@ -149,20 +155,12 @@ export default function ProfileModule({ isActive = true }) {
           {profile && <KutBalance value={profile.balance} className="profile-module-balance" />}
         </header>
 
-        <div className="segment-tabs" role="tablist" aria-label="Разделы профиля">
-          {PROFILE_SEGMENTS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              role="tab"
-              aria-selected={profileSegment === s.id}
-              className={`segment-tab${profileSegment === s.id ? ' segment-tab-active' : ''}`}
-              onClick={() => setProfileSegment(s.id)}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+        <SegmentTabs
+          items={PROFILE_SEGMENTS}
+          value={profileSegment}
+          onChange={setProfileSegment}
+          ariaLabel="Разделы профиля"
+        />
 
         {profileSegment === 'settings' && <SettingsModule embedded />}
 
