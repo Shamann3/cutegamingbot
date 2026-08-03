@@ -111,9 +111,18 @@ def profile_row_to_client(
 ) -> dict[str, Any]:
     sales_count = 0
     items_sold = 0
+    harvest_count = 0
+    craft_count = 0
+    days_in_game = 0
+    country = None
     if row:
         sales_count = int(_row_get(row, "market_sales_count", 0) or 0)
         items_sold = int(_row_get(row, "market_items_sold", 0) or 0)
+        harvest_count = int(_row_get(row, "harvest_count", 0) or 0)
+        craft_count = int(_row_get(row, "craft_count", 0) or 0)
+        days_in_game = int(_row_get(row, "days_in_game", 0) or 0)
+        country_raw = _row_get(row, "country")
+        country = str(country_raw).strip() if country_raw else None
 
     rank = seller_rank(sales_count)
 
@@ -128,6 +137,10 @@ def profile_row_to_client(
             "activeListings": int(active_listings),
             "salesCount": sales_count,
             "itemsSold": items_sold,
+            "harvestCount": harvest_count,
+            "craftCount": craft_count,
+            "daysInGame": days_in_game,
+            "countryEmoji": country,
             "sellerRank": rank,
             "isSelf": viewer_id is not None and int(viewer_id) == int(user_id),
         }
@@ -154,6 +167,10 @@ def profile_row_to_client(
         "activeListings": int(active_listings),
         "salesCount": sales_count,
         "itemsSold": items_sold,
+        "harvestCount": harvest_count,
+        "craftCount": craft_count,
+        "daysInGame": days_in_game,
+        "countryEmoji": country,
         "sellerRank": rank,
         "isSelf": viewer_id is not None and int(viewer_id) == int(uid),
     }

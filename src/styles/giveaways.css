@@ -947,6 +947,15 @@
 }
 .giveaway-participating-chance { color: #fde68a; }
 
+.giveaway-participants-preview {
+  margin: 0.55rem 0 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: rgba(245, 240, 224, 0.72);
+  text-align: center;
+}
+
 .giveaway-detail-error {
   text-align: center;
   font-size: 0.8rem;

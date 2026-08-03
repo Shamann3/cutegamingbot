@@ -2444,7 +2444,7 @@ class Database:
         )
         rows = await conn.fetch(
             """
-            SELECT u.username, u.first_name
+            SELECT u.user_id, u.username, u.first_name
             FROM giveaway_entries e
             JOIN users u ON u.user_id = e.user_id
             WHERE e.giveaway_id = $1
@@ -2453,7 +2453,13 @@ class Database:
             """,
             giveaway_id, limit,
         )
-        preview = [display_name(r["username"], r["first_name"]) for r in rows]
+        preview = [
+            {
+                "userId": int(r["user_id"]),
+                "name": display_name(r["username"], r["first_name"]),
+            }
+            for r in rows
+        ]
         return int(count or 0), preview
 
     async def get_giveaways_state(self, user_id):
@@ -2513,7 +2519,9 @@ class Database:
                 raise ValueError("Розыгрыш не найден")
             ctx = await self._giveaway_condition_ctx(conn, user_id)
             conditions = await self._giveaway_conditions(conn, giveaway_id)
-            participants_count, _ = await self._giveaway_participants(conn, giveaway_id, limit=0)
+            participants_count, participants_preview = await self._giveaway_participants(
+                conn, giveaway_id, limit=8,
+            )
             joined = await conn.fetchval(
                 "SELECT 1 FROM giveaway_entries WHERE giveaway_id = $1 AND user_id = $2",
                 giveaway_id, user_id,
@@ -2578,6 +2586,7 @@ class Database:
             "winnerUserId": int(row["winner_user_id"]) if row.get("winner_user_id") is not None else None,
             "recipientsCount": recipients_count,
             "participantsCount": participants_count,
+            "participantsPreview": participants_preview,
         }
 
     async def participate_in_giveaway(self, user_id, giveaway_id):
@@ -3695,15 +3704,27 @@ class Database:
         await self.ensure_user(viewer_id)
         await self.ensure_user(target_user_id)
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT user_id, username, first_name, last_name, display_name, photo_url,
-                       market_sales_count, market_items_sold
-                FROM users
-                WHERE user_id = $1
-                """,
-                target_user_id,
-            )
+            try:
+                row = await conn.fetchrow(
+                    """
+                    SELECT user_id, username, first_name, last_name, display_name, photo_url,
+                           market_sales_count, market_items_sold,
+                           harvest_count, craft_count, country, created_at
+                    FROM users
+                    WHERE user_id = $1
+                    """,
+                    target_user_id,
+                )
+            except Exception:
+                row = await conn.fetchrow(
+                    """
+                    SELECT user_id, username, first_name, last_name, display_name, photo_url,
+                           market_sales_count, market_items_sold
+                    FROM users
+                    WHERE user_id = $1
+                    """,
+                    target_user_id,
+                )
             active_listings = await conn.fetchval(
                 """
                 SELECT COUNT(*)::int
@@ -3712,8 +3733,14 @@ class Database:
                 """,
                 target_user_id,
             )
+        payload = dict(row) if row else None
+        if payload and payload.get("created_at") is not None:
+            try:
+                payload["days_in_game"] = max(0, (now() - payload["created_at"]).days)
+            except Exception:
+                payload["days_in_game"] = 0
         return profile_row_to_client(
-            dict(row) if row else None,
+            payload,
             user_id=target_user_id,
             active_listings=int(active_listings or 0),
             viewer_id=viewer_id,
@@ -3789,7 +3816,7 @@ class Database:
                    u.balance, u.harvest_count, u.craft_count,
                    u.market_items_sold, u.market_sales_count, u.created_at,
                    u.data AS reg_data,
-                   u.refferals, u.xpp, u.country,
+                   u.refferals, u.xpp, u.country, u.refferer_id,
                    u.wins, u.loose, u.winamount, u.donate, u.canwithdrawal, u.give,
                    u.rep_plus, u.rep_minus,
                    ref.first_name AS referer_name,
@@ -3804,7 +3831,7 @@ class Database:
                    u.balance, u.harvest_count, u.craft_count,
                    u.market_items_sold, u.market_sales_count, u.created_at,
                    u.data AS reg_data,
-                   u.refferals, u.xpp, u.country,
+                   u.refferals, u.xpp, u.country, u.refferer_id,
                    u.wins, u.loose, u.winamount, u.donate, u.canwithdrawal, u.give,
                    u.rep_plus, u.rep_minus
             FROM users u
@@ -3930,6 +3957,13 @@ class Database:
 
         referer = _gs("referer_name") or None
         country = _gs("country") or None
+        referer_id = None
+        try:
+            raw_ref = me["refferer_id"] if me else None
+            if raw_ref is not None:
+                referer_id = int(raw_ref)
+        except Exception:
+            referer_id = None
         try:
             banned = bool(me["is_banned"]) if me else False
         except Exception:
@@ -3952,6 +3986,7 @@ class Database:
             "experience": _gi("xpp"),
             "countryEmoji": country,
             "refererName": referer,
+            "refererUserId": referer_id,
             "transferLimit": _gi("give"),
             "repPlus": _gi("rep_plus"),
             "repMinus": _gi("rep_minus"),

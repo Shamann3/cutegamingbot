@@ -2,6 +2,8 @@
  * Полная сводка профиля: ферма Mini App + поля из bot/funcs/profile.py
  */
 
+import UserNameLink from './UserNameLink'
+
 const GOLD = '#e8c56a'
 const GREEN = '#3dd68c'
 const ICE = '#9ec9e8'
@@ -143,6 +145,7 @@ export default function ProfileAnalytics({ profile, leaderboard, farmLive }) {
   const repMinus = Number(profile?.repMinus || 0)
   const country = profile?.countryEmoji || ''
   const referer = profile?.refererName || ''
+  const refererUserId = profile?.refererUserId || null
   const banned = Boolean(profile?.isBanned)
   const regLabel = formatRegDate(profile?.registeredAt)
 
@@ -192,7 +195,10 @@ export default function ProfileAnalytics({ profile, leaderboard, farmLive }) {
           {referer && (
             <p className="pa-identity-line">
               <span aria-hidden>🪴</span>
-              <span>Приглашён: {referer}</span>
+              <span>
+                Приглашён:{' '}
+                <UserNameLink userId={refererUserId} name={referer} />
+              </span>
             </p>
           )}
         </div>

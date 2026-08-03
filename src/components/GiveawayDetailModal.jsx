@@ -328,6 +328,22 @@ export default function GiveawayDetailModal({
 
                   {/* Зона 3: действие */}
                   {error && <p className="giveaway-detail-error">{error}</p>}
+
+                  {!detail.joined
+                    && Array.isArray(detail.participantsPreview)
+                    && detail.participantsPreview.length > 0 && (
+                    <p className="giveaway-participants-preview">
+                      Участники:{' '}
+                      {detail.participantsPreview.map((p, idx) => (
+                        <span key={p.userId || idx}>
+                          {idx > 0 ? ', ' : ''}
+                          <UserNameLink userId={p.userId} name={p.name} />
+                        </span>
+                      ))}
+                      {(detail.participantsCount || 0) > detail.participantsPreview.length ? '…' : ''}
+                    </p>
+                  )}
+
                   {detail.joined ? (
                     detail.drawType === 'instant' ? (
                       <div className="giveaway-detail-joined">✅ Приз получен</div>
@@ -344,6 +360,17 @@ export default function GiveawayDetailModal({
                             </span>
                           )}
                         </div>
+                        {Array.isArray(detail.participantsPreview) && detail.participantsPreview.length > 0 && (
+                          <p className="giveaway-participants-preview">
+                            Недавно:{' '}
+                            {detail.participantsPreview.map((p, idx) => (
+                              <span key={p.userId || idx}>
+                                {idx > 0 ? ', ' : ''}
+                                <UserNameLink userId={p.userId} name={p.name} />
+                              </span>
+                            ))}
+                          </p>
+                        )}
                       </div>
                     )
                   ) : isUpcoming ? (

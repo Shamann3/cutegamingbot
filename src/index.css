@@ -5841,6 +5841,14 @@ body {
     padding: 0.1rem 0.65rem 0.45rem;
   }
 
+  .player-profile-meta {
+    margin: 0.15rem 0 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: rgba(244, 239, 226, 0.55);
+    text-align: center;
+  }
+
   .player-profile-name {
     margin: 0;
     font-size: 0.92rem;
@@ -11060,6 +11068,20 @@ body.onboarding-content-lock .app-tab-bar {
   padding: 1.5rem;
   color: rgba(255,255,255,0.35);
   font-size: 0.8rem;
+}
+
+.profile-leader-avatar-link {
+  border: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  line-height: 0;
+  display: inline-flex;
+}
+
+.profile-leader-avatar-link:hover {
+  background: transparent !important;
+  filter: brightness(1.08);
 }
 
 .profile-leader-row {

@@ -11,8 +11,8 @@
   --glass-border-gold: rgba(232, 197, 106, 0.32);
   --glass-highlight: rgba(255, 255, 255, 0.22);
   --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
-  --glass-blur: 16px;
-  --glass-blur-soft: 10px;
+  --glass-blur: 8px;
+  --glass-blur-soft: 6px;
   --glass-radius: 18px;
   --glass-radius-sm: 14px;
   --glass-radius-pill: 999px;
@@ -32,13 +32,19 @@
   background:
     linear-gradient(165deg, rgba(255, 255, 255, 0.08) 0%, transparent 42%),
     linear-gradient(180deg, var(--glass-bg-strong) 0%, var(--glass-bg) 100%) !important;
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.25);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.25);
   border-color: var(--glass-border-gold) !important;
   box-shadow:
     var(--glass-shadow),
     inset 0 1px 0 var(--glass-highlight),
     inset 0 0 40px rgba(0, 0, 0, 0.22) !important;
+}
+
+/* Blur только на крупных поверхностях — не на каждой плитке */
+.farm-vine-frame-inner,
+.shop-modal,
+.player-profile-modal {
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.15);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.15);
 }
 
 .farm-vine-frame {
@@ -123,9 +129,7 @@
   border-radius: var(--glass-radius-pill) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, transparent 40%),
-    rgba(4, 10, 8, 0.45) !important;
-  backdrop-filter: blur(var(--glass-blur-soft)) saturate(1.2);
-  -webkit-backdrop-filter: blur(var(--glass-blur-soft)) saturate(1.2);
+    rgba(4, 10, 8, 0.72) !important;
   border: 1px solid var(--glass-border) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
@@ -181,22 +185,6 @@
 
 /* --- Chips / search / tiles --- */
 
-.inventory-summary-chip,
-.inventory-search-input,
-.inventory-filter-chip,
-.kut-balance-inner,
-.profile-board-tab,
-.pa-kpi,
-.pa-tip,
-.pa-rank-card,
-.pa-block,
-.pa-farm-live,
-.pa-reg,
-.pa-identity {
-  backdrop-filter: blur(var(--glass-blur-soft)) saturate(1.15);
-  -webkit-backdrop-filter: blur(var(--glass-blur-soft)) saturate(1.15);
-}
-
 .inventory-summary-chip {
   display: inline-flex !important;
   align-items: center;
@@ -245,9 +233,7 @@
   border-radius: var(--glass-radius-sm) !important;
   background:
     linear-gradient(165deg, rgba(255, 255, 255, 0.1) 0%, transparent 45%),
-    linear-gradient(180deg, rgba(14, 28, 20, 0.62) 0%, rgba(6, 12, 10, 0.72) 100%) !important;
-  backdrop-filter: blur(12px) saturate(1.2);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    linear-gradient(180deg, rgba(14, 28, 20, 0.88) 0%, rgba(6, 12, 10, 0.94) 100%) !important;
   border: 1px solid rgba(232, 197, 106, 0.26) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
@@ -284,8 +270,8 @@
 
 /* App tab bar glass */
 .app-tab-bar-inner {
-  backdrop-filter: blur(18px) saturate(1.3) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(1.3) !important;
+  backdrop-filter: blur(8px) saturate(1.15) !important;
+  -webkit-backdrop-filter: blur(8px) saturate(1.15) !important;
   border-radius: 22px !important;
 }
 

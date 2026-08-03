@@ -172,24 +172,45 @@ export default function PlayerProfileModal({ userId, isOpen, onClose }) {
                   <p className="player-profile-rank-hint">{nextRankText}</p>
                 </div>
 
+                {(profile?.countryEmoji || profile?.daysInGame > 0) && (
+                  <p className="player-profile-meta">
+                    {profile?.countryEmoji ? `${profile.countryEmoji} ` : ''}
+                    {profile?.daysInGame > 0
+                      ? `${formatCount(profile.daysInGame)} дн. в игре`
+                      : 'Новый игрок'}
+                  </p>
+                )}
+
                 <div className="player-profile-stats-grid">
+                  <StatCard
+                    emoji="🌾"
+                    label="Урожаи"
+                    value={formatCount(profile?.harvestCount ?? 0)}
+                    accent="green"
+                  />
+                  <StatCard
+                    emoji="🔨"
+                    label="Крафт"
+                    value={formatCount(profile?.craftCount ?? 0)}
+                    accent="sky"
+                  />
                   <StatCard
                     emoji="🤝"
                     label="Сделок"
                     value={formatCount(profile?.salesCount ?? 0)}
-                    accent="green"
+                    accent="gold"
                   />
                   <StatCard
                     emoji="📦"
-                    label="Предметов продано"
+                    label="Продано"
                     value={formatCount(profile?.itemsSold ?? 0)}
                     accent="gold"
                   />
                   <StatCard
                     emoji="🏷️"
-                    label="Лотов сейчас"
+                    label="Лотов"
                     value={formatCount(profile?.activeListings ?? 0)}
-                    accent="sky"
+                    accent="violet"
                   />
                   <StatCard
                     emoji="⭐"

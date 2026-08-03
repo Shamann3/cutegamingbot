@@ -8,6 +8,7 @@ import SegmentTabs from './SegmentTabs'
 import { useContextualDonate } from '../hooks/useContextualDonate'
 import { usePlayerSync } from '../context/PlayerSyncContext'
 import '../styles/trade.css'
+import '../styles/tradeElite.css'
 
 const SEGMENTS = [
   { id: 'shop', label: 'Магазин' },

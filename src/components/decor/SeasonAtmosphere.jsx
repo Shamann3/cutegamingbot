@@ -2,44 +2,42 @@ import { SEASON_MODES } from '../../constants/season'
 
 /** Сезонный декор поверх фона леса (гирлянды, ёлки, лепестки, листья). */
 
-const GARLAND_LIGHTS = Array.from({ length: 14 }, (_, i) => ({
+const GARLAND_LIGHTS = Array.from({ length: 8 }, (_, i) => ({
   id: i,
   hue: [12, 48, 145, 200, 330][i % 5],
-  delay: (i * 0.28) % 2.4,
+  delay: (i * 0.35) % 2.4,
 }))
 
 const TREES = [
-  { id: 0, side: 'left', scale: 1, bottom: '2%', left: '1%' },
-  { id: 1, side: 'left', scale: 0.72, bottom: '0%', left: '9%' },
-  { id: 2, side: 'right', scale: 0.9, bottom: '1%', right: '2%' },
-  { id: 3, side: 'right', scale: 0.65, bottom: '0%', right: '11%' },
+  { id: 0, side: 'left', scale: 0.9, bottom: '2%', left: '1%' },
+  { id: 2, side: 'right', scale: 0.85, bottom: '1%', right: '2%' },
 ]
 
-const PETALS = Array.from({ length: 16 }, (_, i) => ({
+const PETALS = Array.from({ length: 7 }, (_, i) => ({
   id: i,
-  left: 5 + ((i * 19.7) % 90),
-  size: 5 + (i % 4) * 2,
-  delay: (i * 0.7) % 8,
-  duration: 9 + (i % 5) * 1.4,
-  drift: -30 + (i % 8) * 8,
-  rotate: (i * 37) % 360,
+  left: 8 + ((i * 22) % 84),
+  size: 5 + (i % 3) * 2,
+  delay: (i * 0.9) % 7,
+  duration: 10 + (i % 3) * 1.5,
+  drift: -24 + (i % 5) * 8,
+  rotate: (i * 40) % 360,
   tone: i % 3,
 }))
 
-const LEAVES = Array.from({ length: 18 }, (_, i) => ({
+const LEAVES = Array.from({ length: 8 }, (_, i) => ({
   id: i,
-  left: 3 + ((i * 17.1) % 94),
-  size: 6 + (i % 5) * 2,
-  delay: (i * 0.55) % 9,
-  duration: 8 + (i % 6) * 1.2,
-  drift: -40 + (i % 9) * 10,
-  spin: 180 + (i % 4) * 90,
+  left: 6 + ((i * 20) % 88),
+  size: 6 + (i % 3) * 2,
+  delay: (i * 0.8) % 8,
+  duration: 9 + (i % 3) * 1.3,
+  drift: -30 + (i % 5) * 10,
+  spin: 180 + (i % 3) * 90,
   tone: i % 4,
 }))
 
 function WinterDecor({ dense }) {
-  const lights = dense ? GARLAND_LIGHTS : GARLAND_LIGHTS.slice(0, 8)
-  const trees = dense ? TREES : TREES.filter((_, i) => i % 2 === 0)
+  const lights = dense ? GARLAND_LIGHTS : GARLAND_LIGHTS.slice(0, 5)
+  const trees = TREES
 
   return (
     <>
@@ -100,7 +98,7 @@ function WinterDecor({ dense }) {
 }
 
 function SpringDecor({ dense }) {
-  const petals = dense ? PETALS : PETALS.slice(0, 8)
+  const petals = dense ? PETALS : PETALS.slice(0, 4)
   return (
     <>
       <div className="season-bloom-haze" aria-hidden />
@@ -128,7 +126,7 @@ function SpringDecor({ dense }) {
 }
 
 function AutumnDecor({ dense }) {
-  const leaves = dense ? LEAVES : LEAVES.slice(0, 9)
+  const leaves = dense ? LEAVES : LEAVES.slice(0, 4)
   return (
     <>
       <div className="season-autumn-haze" aria-hidden />

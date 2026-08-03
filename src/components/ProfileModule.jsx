@@ -53,14 +53,21 @@ function Avatar({ photoUrl, name, size = 56 }) {
 function LeaderRow({ item, valueLabel }) {
   const medals = ['🥇', '🥈', '🥉']
   const medal = medals[item.rank - 1]
+  const openId = item.isMe ? null : item.userId
   return (
     <div className={`profile-leader-row ${item.isMe ? 'profile-leader-row--me' : ''}`}>
       <span className="profile-leader-rank">
         {medal ?? <span className="profile-leader-rank-num">{item.rank}</span>}
       </span>
-      <Avatar photoUrl={item.photoUrl} name={item.name} size={32} />
+      {openId ? (
+        <UserNameLink userId={openId} name={item.name} className="profile-leader-avatar-link">
+          <Avatar photoUrl={item.photoUrl} name={item.name} size={32} />
+        </UserNameLink>
+      ) : (
+        <Avatar photoUrl={item.photoUrl} name={item.name} size={32} />
+      )}
       <UserNameLink
-        userId={item.isMe ? null : item.userId}
+        userId={openId}
         name={item.name}
         className="profile-leader-name"
       />
