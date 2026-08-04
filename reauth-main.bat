@@ -1,91 +1,98 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal EnableExtensions EnableDelayedExpansion
 title Reauth MAIN userbot - push - DigitalOcean
 
-REM ============================================================
-REM  Reauth the MAIN (text) userbot session and deploy it.
-REM
-REM  Steps:
-REM    1. Log in a NEW session file main_userbot_session_new
-REM       (you type phone + Telegram code + 2FA manually).
-REM    2. Replace the old main_userbot_session with the new one.
-REM    3. git add -f the session, commit, push to main
-REM       -> DigitalOcean deploy_on_push rebuilds the bot.
-REM
-REM  The bot registers the MAIN userbot FIRST on startup; without
-REM  it the withdraw userbot never comes up either.
-REM
-REM  WARNING: do NOT run main.py locally with this session while
-REM  production uses it - one key from two IPs kills it.
-REM ============================================================
+REM ASCII-only bat. Russian prompts live in the .py scripts.
 
 cd /d "%~dp0"
 
-echo(
+echo.
 echo ============================================================
-echo   STEP 1/3 - log in the MAIN (UA) account (phone, code, 2FA)
+echo   MAIN REAUTH
 echo ============================================================
-echo(
+echo.
 
-py reauth_main_userbot.py
+call "%~dp0_reauth_env.bat"
 if errorlevel 1 (
-    echo(
-    echo [ERROR] Login script failed. Session NOT replaced, nothing pushed.
+    pause
+    exit /b 1
+)
+
+echo.
+echo ============================================================
+echo   STEP 1/3 - login MAIN account [phone/code/2FA]
+echo ============================================================
+echo.
+
+%PYTHON_CMD% reauth_main_userbot.py %*
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Login failed. Old session kept. Nothing pushed.
+    echo         Retry: reauth-main.bat --fresh
     pause
     exit /b 1
 )
 
 if not exist "main_userbot_session_new.session" (
-    echo(
-    echo [ERROR] New file main_userbot_session_new.session was not created. Abort.
+    echo.
+    echo [ERROR] main_userbot_session_new.session was not created.
     pause
     exit /b 1
 )
 
-echo(
+for %%A in ("main_userbot_session_new.session") do set "NEWSIZE=%%~zA"
+if !NEWSIZE! LSS 64 (
+    echo [ERROR] Session file too small: !NEWSIZE! bytes
+    pause
+    exit /b 1
+)
+echo   OK: new session !NEWSIZE! bytes
+
+echo.
 echo ============================================================
-echo   STEP 2/3 - replace the old session with the new one
+echo   STEP 2/3 - replace old session file
 echo ============================================================
 
 if exist "main_userbot_session.session"          del /f /q "main_userbot_session.session"
 if exist "main_userbot_session.session-journal"  del /f /q "main_userbot_session.session-journal"
+if exist "main_userbot_session.session-shm"      del /f /q "main_userbot_session.session-shm"
+if exist "main_userbot_session.session-wal"      del /f /q "main_userbot_session.session-wal"
 move /y "main_userbot_session_new.session" "main_userbot_session.session" >nul
 if errorlevel 1 (
-    echo [ERROR] Could not rename the new session file. Abort.
+    echo [ERROR] Could not rename session file.
     pause
     exit /b 1
 )
-echo   OK: main_userbot_session.session updated.
+echo   OK: main_userbot_session.session updated
 
-echo(
+echo.
 echo ============================================================
-echo   STEP 3/3 - commit and push to GitHub (triggers DO deploy)
+echo   STEP 3/3 - git commit + push [DigitalOcean deploy]
 echo ============================================================
-echo(
-set /p CONFIRM=Push MAIN session to hosting? (y/n):
-if /i not "%CONFIRM%"=="y" (
-    echo   Cancelled. Session updated LOCALLY but NOT pushed.
+echo.
+set /p CONFIRM=Push MAIN session to hosting? [y/n]: 
+if /i not "!CONFIRM!"=="y" (
+    echo   Cancelled. Session updated LOCALLY only.
     pause
     exit /b 0
 )
 
 git add -f "main_userbot_session.session"
+git status --short -- "main_userbot_session.session"
 git commit -m "chore: reauth main userbot session"
 if errorlevel 1 (
-    echo [WARN] git commit committed nothing (file may be unchanged).
+    echo [WARN] Empty commit - file may be unchanged for git.
 )
-git push origin main
+git push -u origin HEAD
 if errorlevel 1 (
-    echo [ERROR] git push failed. Check repository access.
+    echo [ERROR] git push failed.
     pause
     exit /b 1
 )
 
-echo(
+echo.
 echo ============================================================
-echo   DONE. Main session pushed, DigitalOcean will rebuild.
-echo   Reminder: do NOT run main.py locally with this session
-echo   while it runs in production.
+echo   DONE. MAIN session pushed. Wait for DigitalOcean rebuild.
 echo ============================================================
 pause
 endlocal

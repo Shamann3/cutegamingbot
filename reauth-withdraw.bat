@@ -1,92 +1,100 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal EnableExtensions EnableDelayedExpansion
 title Reauth withdraw userbot - push - DigitalOcean
 
-REM ============================================================
-REM  Reauth the withdraw userbot session and deploy it to DO.
-REM
-REM  Steps:
-REM    1. Log in a NEW session file withdraw_userbot_session_new
-REM       (you type phone + Telegram code + 2FA manually).
-REM    2. Replace the old dead session with the new one.
-REM    3. git add -f the session, commit, push to main
-REM       -> DigitalOcean deploy_on_push rebuilds the bot.
-REM
-REM  WARNING: do NOT run main.py locally with this session while
-REM  production on DO uses it - one key from two IPs kills it
-REM  (AuthKeyDuplicatedError).
-REM ============================================================
+REM ASCII-only bat. Russian prompts live in the .py scripts.
+REM Do NOT run main.py locally with this session while production uses it.
 
 cd /d "%~dp0"
 
-echo(
+echo.
 echo ============================================================
-echo   STEP 1/3 - log in the withdraw account (phone, code, 2FA)
+echo   WITHDRAW REAUTH
 echo ============================================================
-echo(
+echo.
 
-py reauth_withdraw_userbot.py
+call "%~dp0_reauth_env.bat"
 if errorlevel 1 (
-    echo(
-    echo [ERROR] Login script failed. Session NOT replaced, nothing pushed.
+    pause
+    exit /b 1
+)
+
+echo.
+echo ============================================================
+echo   STEP 1/3 - login withdraw account [phone/code/2FA]
+echo ============================================================
+echo.
+
+%PYTHON_CMD% reauth_withdraw_userbot.py %*
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Login failed. Old session kept. Nothing pushed.
+    echo         Retry: reauth-withdraw.bat --fresh
     pause
     exit /b 1
 )
 
 if not exist "withdraw_userbot_session_new.session" (
-    echo(
-    echo [ERROR] New file withdraw_userbot_session_new.session was not created. Abort.
+    echo.
+    echo [ERROR] withdraw_userbot_session_new.session was not created.
     pause
     exit /b 1
 )
 
-echo(
+for %%A in ("withdraw_userbot_session_new.session") do set "NEWSIZE=%%~zA"
+if !NEWSIZE! LSS 64 (
+    echo [ERROR] Session file too small: !NEWSIZE! bytes
+    pause
+    exit /b 1
+)
+echo   OK: new session !NEWSIZE! bytes
+
+echo.
 echo ============================================================
-echo   STEP 2/3 - replace the old session with the new one
+echo   STEP 2/3 - replace old session file
 echo ============================================================
 
 if exist "withdraw_userbot_session.session"          del /f /q "withdraw_userbot_session.session"
 if exist "withdraw_userbot_session.session-journal"  del /f /q "withdraw_userbot_session.session-journal"
+if exist "withdraw_userbot_session.session-shm"      del /f /q "withdraw_userbot_session.session-shm"
+if exist "withdraw_userbot_session.session-wal"      del /f /q "withdraw_userbot_session.session-wal"
 move /y "withdraw_userbot_session_new.session" "withdraw_userbot_session.session" >nul
 if errorlevel 1 (
-    echo [ERROR] Could not rename the new session file. Abort.
+    echo [ERROR] Could not rename session file.
     pause
     exit /b 1
 )
-echo   OK: withdraw_userbot_session.session updated.
+echo   OK: withdraw_userbot_session.session updated
 
-echo(
+echo.
 echo ============================================================
-echo   STEP 3/3 - commit and push to GitHub (triggers DO deploy)
+echo   STEP 3/3 - git commit + push [DigitalOcean deploy]
 echo ============================================================
-echo(
-echo   Will run: git add -f withdraw_userbot_session.session
-echo             git commit + git push origin main
-echo(
-set /p CONFIRM=Push session to hosting? (y/n):
-if /i not "%CONFIRM%"=="y" (
-    echo   Cancelled. Session updated LOCALLY but NOT pushed.
+echo.
+set /p CONFIRM=Push session to hosting? [y/n]: 
+if /i not "!CONFIRM!"=="y" (
+    echo   Cancelled. Session updated LOCALLY only.
     pause
     exit /b 0
 )
 
 git add -f "withdraw_userbot_session.session"
+git status --short -- "withdraw_userbot_session.session"
 git commit -m "chore: reauth withdraw userbot session"
 if errorlevel 1 (
-    echo [WARN] git commit committed nothing (file may be unchanged).
+    echo [WARN] Empty commit - file may be unchanged for git.
 )
-git push origin main
+git push -u origin HEAD
 if errorlevel 1 (
-    echo [ERROR] git push failed. Check repository access.
+    echo [ERROR] git push failed.
     pause
     exit /b 1
 )
 
-echo(
+echo.
 echo ============================================================
-echo   DONE. Session pushed, DigitalOcean will rebuild the bot.
-echo   Reminder: do NOT run main.py locally with this session
-echo   while it runs in production.
+echo   DONE. Session pushed. Wait for DigitalOcean rebuild.
+echo   Do NOT run main.py locally with this session in parallel.
 echo ============================================================
 pause
 endlocal

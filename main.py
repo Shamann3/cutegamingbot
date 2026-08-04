@@ -7775,7 +7775,8 @@ TECH_API_ID = 20558168
 TECH_API_HASH = "9abe2a15c04cf0e34024b04ca7653aa6"
 
 # Вариант 1: обычный session-файл
-TECH_SESSION_NAME = "tech_withdraw_userbot_4796751305"
+# Имя ДОЛЖНО совпадать с WITHDRAW_SESSION в run_bot и с reauth-withdraw.bat
+TECH_SESSION_NAME = "withdraw_userbot_session"
 
 # Вариант 2: string session (если захочешь хранить строкой)
 TECH_STRING_SESSION = ""
@@ -8327,12 +8328,13 @@ async def _wd_alert_userbot_unauthorized(reason: str = "") -> None:
         "🟥 <b>Юзербот для выводов НЕ авторизован</b>\n\n"
         "Все выводы (подарки/звёзды) сейчас недоступны пользователям.\n\n"
         f"Причина: {reason or 'сессия withdraw_userbot_session не авторизована'}\n\n"
-        "Что делать:\n"
-        "1. Запусти <code>reauth_withdraw_userbot.py</code> локально (не на сервере) "
-        "с доступом к телефону/аккаунту выводного юзербота.\n"
-        "2. Переименуй новый файл сессии поверх старого "
-        "(<code>withdraw_userbot_session.session</code>).\n"
-        "3. Закоммить и запушь файл сессии, задеплой заново.\n\n"
+        "Что делать (локально, не на сервере):\n"
+        "1. Запусти <code>reauth-withdraw.bat</code> "
+        "(или <code>reauth-all.bat</code> если нужен и MAIN).\n"
+        "2. Введи код из Telegram / 2FA для аккаунта <code>+4796751305</code>.\n"
+        "3. Подтверди push сессии — DigitalOcean задеплоит сам.\n\n"
+        "⚠️ Не запускай <code>main.py</code> локально с этой же сессией, "
+        "пока она работает на проде (AuthKeyDuplicated).\n\n"
         f"{interactive_hint}"
     )
 
@@ -14646,12 +14648,27 @@ def _bonus_safe_str(v: Any, default: str = "") -> str:
 # =========================================================
 # CALLBACK TOKEN STORES
 # =========================================================
-CALLBACK_TOKEN_MAX_AGE = 6 * 60 * 60  # 6 hours
+# App-level cleanup. GameStore TTL for these stores must be >= this
+# (see STORE_EXPIRY_OVERRIDES in bot/db_create/pklcode.py).
+CALLBACK_TOKEN_MAX_AGE = 24 * 60 * 60  # 24 hours
 
 GIFT_CALLBACK_ACTIONS: Dict[str, Dict[str, Any]] = LazyGameStore("GIFT_CALLBACK_ACTIONS")
 PREP_CALLBACK_ACTIONS: Dict[str, Dict[str, Any]] = LazyGameStore("PREP_CALLBACK_ACTIONS")
 SKIP_CALLBACK_ACTIONS: Dict[str, Dict[str, Any]] = LazyGameStore("SKIP_CALLBACK_ACTIONS")
 SPEEDCONC_CALLBACK_ACTIONS: Dict[str, Dict[str, Any]] = LazyGameStore("SPEEDCONC_CALLBACK_ACTIONS")
+
+try:
+    from bot.db_create.pklcode import register_store_expiry as _register_cb_store_expiry
+    for _cb_store_name in (
+        "PREP_CALLBACK_ACTIONS",
+        "GIFT_CALLBACK_ACTIONS",
+        "SKIP_CALLBACK_ACTIONS",
+        "SPEEDCONC_CALLBACK_ACTIONS",
+        "SEND_REQUEST_ACTIONS",
+    ):
+        _register_cb_store_expiry(_cb_store_name, 7 * 24 * 3600.0)
+except Exception as _cb_ttl_exc:
+    print(f"🟨[CALLBACK][TTL][WARN] register_store_expiry failed: {_cb_ttl_exc!r}")
 
 
 def _cleanup_callback_store(store: Dict[str, Dict[str, Any]], max_age_sec: int = CALLBACK_TOKEN_MAX_AGE) -> None:
@@ -14719,6 +14736,22 @@ def _build_gift_request_short_cb(
     back_signal: str,
     owner_id_for_back: int,
 ) -> str:
+    try:
+        durable = _build_gift_send_request_callback_smart(
+            nft_enabled=int(nft_enabled),
+            gift_name=str(gift_name or ""),
+            base_amount=int(base_amount),
+            upgrade_price=int(upgrade_price),
+            amount=int(amount),
+            gift_id=int(gift_id),
+            back_signal=str(back_signal or "-"),
+            owner_id_for_back=int(owner_id_for_back or 0),
+        )
+        if _cb_len(durable) <= 64:
+            return durable
+    except Exception as e:
+        print(f"🟨[GIFT][BUILD] durable callback failed, fallback to token: {e!r}")
+
     token = _register_callback_payload(GIFT_CALLBACK_ACTIONS, {
         "nft_enabled": int(nft_enabled),
         "gift_name": str(gift_name or ""),
@@ -14744,6 +14777,23 @@ def _build_prep_short_cb(
     back_signal: str,
     owner_id_for_back: int,
 ) -> str:
+    # Prefer self-describing callback (survives redeploy / Redis TTL).
+    # Opaque prep:* tokens are only a fallback when data does not fit in 64 bytes.
+    try:
+        durable = _build_preparationsend_callback_smart(
+            has_upgrade=int(has_upgrade),
+            gift_name=str(gift_name or ""),
+            base_amount=int(base_amount),
+            upgrade_price=int(upgrade_price),
+            gift_id=int(gift_id),
+            back_signal=str(back_signal or "-"),
+            owner_id_for_back=int(owner_id_for_back or 0),
+        )
+        if _cb_len(durable) <= 64:
+            return durable
+    except Exception as e:
+        print(f"🟨[PREP][BUILD] durable callback failed, fallback to token: {e!r}")
+
     token = _register_callback_payload(PREP_CALLBACK_ACTIONS, {
         "has_upgrade": int(has_upgrade),
         "gift_name": str(gift_name or ""),
@@ -15722,7 +15772,15 @@ async def gift_send_request(callback_query: types.CallbackQuery):
         resolved = _resolve_gift_request_data(original_data)
     except Exception as e:
         print(f"🟥[GIFT][PARSE][ERROR] uid={user_id} raw={original_data!r} err={e!r}")
-        await callback_query.answer("❌ Ошибка данных", show_alert=True)
+        err_text = str(e).lower()
+        if "expired" in err_text or "not found" in err_text:
+            await callback_query.answer(
+                "⏳ Кнопка устарела после перезапуска бота.\n"
+                "Откройте вывод заново из меню баланса.",
+                show_alert=True,
+            )
+        else:
+            await callback_query.answer("❌ Ошибка данных", show_alert=True)
         return
 
     src = str(resolved.get("src") or "")
@@ -16220,7 +16278,15 @@ async def send_request_callback(callback_query: types.CallbackQuery):
         resolved = _resolve_prep_request_data(original_data)
     except Exception as e:
         print(f"🟥[PREP][PARSE][ERROR] uid={user_id} raw={original_data!r} err={e!r}")
-        await callback_query.answer("❌ Ошибка данных", show_alert=True)
+        err_text = str(e).lower()
+        if "expired" in err_text or "not found" in err_text:
+            await callback_query.answer(
+                "⏳ Кнопка устарела после перезапуска бота.\n"
+                "Откройте вывод заново из меню баланса.",
+                show_alert=True,
+            )
+        else:
+            await callback_query.answer("❌ Ошибка данных", show_alert=True)
         return
 
     src = str(resolved.get("src") or "")

@@ -193,6 +193,13 @@ STORE_EXPIRY_OVERRIDES: Dict[str, float] = {
     "_KING_MENU_TARGET": 30 * 24 * 3600.0,
     "_KING_MENU_RENDER_STATE": 30 * 24 * 3600.0,
     "_KING_DM_LAST_MENU": 30 * 24 * 3600.0,
+    # Inline-кнопки вывода (prep:/greq:/srq:/skipcb:) живут в чате часами.
+    # Дефолтный TTL GameStore = 2ч убивал токены раньше app-cleanup → «Ошибка данных».
+    "PREP_CALLBACK_ACTIONS": 7 * 24 * 3600.0,
+    "GIFT_CALLBACK_ACTIONS": 7 * 24 * 3600.0,
+    "SKIP_CALLBACK_ACTIONS": 7 * 24 * 3600.0,
+    "SPEEDCONC_CALLBACK_ACTIONS": 7 * 24 * 3600.0,
+    "SEND_REQUEST_ACTIONS": 7 * 24 * 3600.0,
 }
 
 
