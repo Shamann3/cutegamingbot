@@ -38,4 +38,16 @@ redis-server \
   --dir /tmp
 echo "[bot] redis-server запущен на 127.0.0.1:6379 (кэш, без персистентности, maxmemory 512mb)"
 
+# Rolling deploy on DigitalOcean: old + new containers briefly overlap.
+# If both Telethon sessions connect from different IPs, Telegram kills the
+# auth key forever (AuthKeyDuplicatedError). Wait so the old worker can exit.
+USERBOT_CONNECT_DELAY_SEC="${USERBOT_CONNECT_DELAY_SEC:-30}"
+case "$USERBOT_CONNECT_DELAY_SEC" in
+  ''|*[!0-9]*) USERBOT_CONNECT_DELAY_SEC=30 ;;
+esac
+if [ "$USERBOT_CONNECT_DELAY_SEC" -gt 0 ]; then
+  echo "[bot] waiting ${USERBOT_CONNECT_DELAY_SEC}s before Telethon connect (avoid AuthKeyDuplicated on deploy)"
+  sleep "$USERBOT_CONNECT_DELAY_SEC"
+fi
+
 exec "$@"

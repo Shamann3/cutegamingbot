@@ -8365,12 +8365,30 @@ def _get_withdraw_request_lock(request_id: str) -> asyncio.Lock:
     return lock
 
 
+def _is_auth_key_duplicated_error(exc: BaseException) -> bool:
+    """Telegram убивает session, если один auth key открыт с двух IP сразу."""
+    name = type(exc).__name__
+    if name == "AuthKeyDuplicatedError":
+        return True
+    text = str(exc) or ""
+    return "AuthKeyDuplicated" in name or "authorization key" in text.lower() and "two different IP" in text.lower()
+
+
 async def _validate_withdraw_userbot_identity(tg_client) -> Any:
     """
     Проверяет, что выводной userbot авторизован именно под ожидаемым тех-аккаунтом.
     Возвращает объект me (Telethon User) или кидает RuntimeError при несоответствии.
     """
-    me = await tg_client.get_me()
+    try:
+        me = await tg_client.get_me()
+    except Exception as e:
+        if _is_auth_key_duplicated_error(e):
+            raise RuntimeError(
+                "AuthKeyDuplicatedError: session использовалась с двух IP "
+                "(обычно rolling-deploy DO или локальный main.py + прод). "
+                "Ключ мёртв — нужен reauth-withdraw.bat --fresh и push."
+            ) from e
+        raise
     if me is None:
         raise RuntimeError("get_me returned None")
 
@@ -8562,6 +8580,15 @@ async def get_withdraw_userbot_client() -> TelegramClient:
         await _validate_withdraw_userbot_identity(tg_client)
         print(f"🟩[WITHDRAW][USERBOT] identity validated | id={id(tg_client)}")
     except Exception as e:
+        if _is_auth_key_duplicated_error(e) or "AuthKeyDuplicated" in str(e):
+            WITHDRAW_USERBOT_READY = False
+            await _wd_alert_userbot_unauthorized(
+                reason="AuthKeyDuplicatedError: session killed (two IPs / rolling deploy)"
+            )
+            raise RuntimeError(
+                "Session выводного юзербота убита (AuthKeyDuplicated). "
+                "Запусти reauth-withdraw.bat --fresh, push, не открывай main.py локально."
+            ) from e
         raise RuntimeError(f"Ошибка проверки tech userbot identity: {e!r}") from e
 
     WITHDRAW_USERBOT_READY = True
@@ -27182,6 +27209,16 @@ async def _ensure_withdraw_userbot_connected_for_check():
             print("🟩[WITHDRAW][CHECK] identity validation passed")
     except Exception as e:
         print(f"🟥[WITHDRAW][CHECK] identity validation error: {type(e).__name__}: {e!r}")
+        if _is_auth_key_duplicated_error(e) or "AuthKeyDuplicated" in str(e):
+            global WITHDRAW_USERBOT_READY
+            WITHDRAW_USERBOT_READY = False
+            try:
+                await _wd_alert_userbot_unauthorized(
+                    reason="AuthKeyDuplicatedError: session killed (two IPs / rolling deploy)"
+                )
+            except Exception as alert_err:
+                print(f"🟨[WITHDRAW][CHECK] alert failed: {alert_err!r}")
+            return None, "client_auth_key_duplicated"
         return None, "client_identity_invalid"
 
     return client, ""
@@ -27296,6 +27333,11 @@ async def _check_withdraw_userbot_can_resolve_recipient(
             result["human"] = "Технический юзербот для выводов не авторизован"
         elif result["reason"] == "client_auth_check_error":
             result["human"] = "Не удалось проверить авторизацию технического юзербота"
+        elif result["reason"] == "client_auth_key_duplicated":
+            result["human"] = (
+                "Session выводного юзербота убита (AuthKeyDuplicated): "
+                "один ключ открыли с двух IP. Нужен reauth-withdraw.bat --fresh"
+            )
         elif result["reason"] == "client_identity_invalid":
             result["human"] = "Открыта неверная session технического юзербота"
         elif result["reason"] == "client_invalid_object":
@@ -38618,12 +38660,28 @@ async def run_bot():
                         print(f"🧪 [WITHDRAW] post-login is_user_authorized={is_auth}")
 
                 if is_auth:
-                    me = await withdraw_client.get_me()
-                    print(
-                        f"🍻 Юзербот для выводов подключен и ждёт вызовов | "
-                        f"id={getattr(me, 'id', 0)} username={getattr(me, 'username', '')!r}"
-                    )
-                    WITHDRAW_USERBOT_READY = True
+                    try:
+                        me = await withdraw_client.get_me()
+                    except Exception as me_err:
+                        if _is_auth_key_duplicated_error(me_err):
+                            print(
+                                "🟥 [WITHDRAW] AuthKeyDuplicatedError на старте — "
+                                "session убита (два IP / rolling deploy). "
+                                "Нужен reauth-withdraw.bat --fresh"
+                            )
+                            WITHDRAW_USERBOT_READY = False
+                            await _wd_alert_userbot_unauthorized(
+                                reason="AuthKeyDuplicatedError on startup get_me()"
+                            )
+                            me = None
+                        else:
+                            raise
+                    if me is not None:
+                        print(
+                            f"🍻 Юзербот для выводов подключен и ждёт вызовов | "
+                            f"id={getattr(me, 'id', 0)} username={getattr(me, 'username', '')!r}"
+                        )
+                        WITHDRAW_USERBOT_READY = True
                 else:
                     print("🟥 [WITHDRAW] session НЕ авторизована — выводы отключены, уведомляю админов")
                     if _withdraw_interactive_login_allowed():
