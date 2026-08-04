@@ -1511,14 +1511,6 @@ body {
     min-width: 0;
   }
 
-  .inventory-hero-balance .kut-balance-frame {
-    width: 100%;
-  }
-
-  .inventory-hero-balance .kut-balance-inner {
-    justify-content: space-between;
-  }
-
   .inventory-summary {
     display: flex;
     flex-wrap: wrap;
@@ -5245,248 +5237,177 @@ body {
     gap: 0.45rem;
   }
 
-  .shop-exchange-balance .kut-balance {
-    flex: 1 1 auto;
+  .shop-exchange-balance {
     width: 100%;
-    min-width: 0;
-  }
-
-  .shop-exchange-balance .kut-balance-frame {
-    width: 100%;
-    border-radius: 14px;
-  }
-
-  .shop-exchange-balance .kut-balance-inner {
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.45rem 0.6rem 0.45rem 0.5rem;
-    border-radius: 12px;
-  }
-
-  .shop-exchange-balance .kut-balance-copy {
-    flex: 1 1 auto;
     min-width: 0;
   }
 
   .shop-exchange-balance .kut-balance-amount {
     font-size: clamp(0.78rem, 3.8vw, 1.02rem);
-    max-width: 100%;
-    overflow: visible;
   }
 
-  .shop-exchange-balance .kut-donate-btn {
-    border-radius: 14px;
-  }
-
-  .kut-balance {
-    position: relative;
-    min-width: 0;
-  }
-
-  .kut-balance-frame {
-    padding: 2px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, #f5e6a8 0%, #8b6914 35%, #e2c35a 65%, #4a3018 100%);
-    box-shadow:
-      0 6px 18px rgba(0, 0, 0, 0.38),
-      0 0 16px rgba(212, 175, 55, 0.12);
-  }
-
-  .kut-balance-inner {
+  /* iOS toolbar: баланс + trailing «Пополнить» */
+  .kut-balance-wrap {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.45rem 0.6rem 0.45rem 0.5rem;
-    border-radius: 12px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .kut-balance-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    width: 100%;
+    padding: 0.28rem 0.32rem 0.28rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
     background:
-      radial-gradient(circle at 18% 50%, rgba(212, 175, 55, 0.14) 0%, transparent 52%),
-      linear-gradient(180deg, rgba(12, 28, 18, 0.97) 0%, rgba(6, 16, 10, 0.99) 100%);
-    border: 1px solid rgba(212, 175, 55, 0.34);
+      linear-gradient(165deg, rgba(255, 255, 255, 0.12) 0%, transparent 50%),
+      rgba(8, 16, 12, 0.48);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      0 8px 22px rgba(0, 0, 0, 0.22);
+    backdrop-filter: blur(16px) saturate(1.2);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  }
+
+  .kut-balance-main {
+    display: flex;
+    align-items: center;
+    gap: 0.42rem;
+    min-width: 0;
+    flex: 1 1 auto;
+    padding: 0.1rem 0.15rem;
   }
 
   .kut-balance-coin {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 999px;
-    background: radial-gradient(circle at 35% 30%, rgba(253, 230, 138, 0.35) 0%, rgba(120, 80, 20, 0.2) 100%);
-    border: 1px solid rgba(212, 175, 55, 0.28);
-    font-size: 1rem;
+    width: 1.85rem;
+    height: 1.85rem;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 0.95rem;
     line-height: 1;
     flex-shrink: 0;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
   }
 
   .kut-balance-copy {
     display: flex;
     flex-direction: column;
-    gap: 0.08rem;
+    gap: 0.06rem;
     min-width: 0;
   }
 
   .kut-balance-eyebrow {
-    font-size: 0.5rem;
-    font-weight: 800;
-    letter-spacing: 0.14em;
+    font-size: 0.48rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: rgba(251, 191, 36, 0.55);
+    color: rgba(220, 230, 214, 0.5);
     line-height: 1;
   }
 
+  .kut-balance-value-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.28rem;
+    min-width: 0;
+  }
+
   .kut-balance-amount {
-    font-size: 1.02rem;
+    font-size: 1.05rem;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
     line-height: 1.05;
-    background: linear-gradient(to bottom, #fff7d6 0%, #fde68a 45%, #d4a72c 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: #f2f7f3;
     white-space: nowrap;
-  }
-
-  .kut-balance-side {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
   }
 
   .kut-balance-unit {
     flex-shrink: 0;
-    padding: 0.2rem 0.42rem;
-    border-radius: 999px;
-    border: 1px solid rgba(212, 175, 55, 0.28);
-    background: rgba(4, 10, 7, 0.72);
-    color: rgba(253, 230, 138, 0.82);
-    font-size: 0.52rem;
-    font-weight: 800;
-    letter-spacing: 0.1em;
-    line-height: 1.2;
+    font-size: 0.58rem;
+    font-weight: 750;
+    letter-spacing: 0.06em;
+    color: rgba(210, 228, 214, 0.55);
+    line-height: 1;
   }
 
-  .kut-balance-wrap {
-    display: flex;
-    align-items: stretch;
-    gap: 0.45rem;
-    min-width: 0;
-  }
-
-  .kut-balance-wrap .kut-balance {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .kut-donate-btn {
-    position: relative;
+  .kut-topup-btn {
     flex-shrink: 0;
-    align-self: stretch;
-    padding: 2px;
-    border: none;
-    border-radius: 14px;
-    background: linear-gradient(135deg, #fff4c4 0%, #d4a72c 38%, #8b6914 68%, #f5e6a8 100%);
-    box-shadow:
-      0 6px 18px rgba(0, 0, 0, 0.34),
-      0 0 20px rgba(251, 191, 36, 0.18);
-    cursor: pointer;
-    overflow: hidden;
-    touch-action: manipulation;
-    transition: box-shadow 0.15s ease;
-  }
-
-  .kut-donate-btn-shine {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      105deg,
-      transparent 30%,
-      rgba(255, 255, 255, 0.42) 48%,
-      transparent 66%
-    );
-    transform: translateX(-120%);
-    animation: kut-donate-shine 3.6s ease-in-out infinite;
-    pointer-events: none;
-  }
-
-  @keyframes kut-donate-shine {
-    0%, 72%, 100% { transform: translateX(-120%); }
-    38% { transform: translateX(120%); }
-  }
-
-  .kut-donate-btn-frame {
-    display: flex;
-    flex-direction: row;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.3rem;
-    min-width: 0;
-    min-height: 100%;
-    padding: 0.4rem 0.55rem;
-    border-radius: 12px;
-    background:
-      radial-gradient(circle at 50% 0%, rgba(251, 191, 36, 0.22) 0%, transparent 58%),
-      linear-gradient(180deg, rgba(18, 36, 24, 0.98) 0%, rgba(8, 16, 11, 1) 100%);
-    border: 1px solid rgba(212, 175, 55, 0.34);
-    transition: filter 0.12s ease;
+    gap: 0.28rem;
+    min-height: 2.15rem;
+    padding: 0.35rem 0.7rem 0.35rem 0.45rem;
+    border: none;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #e8c56a 0%, #c4a035 55%, #9a7a22 100%);
+    color: #1a1408;
+    box-shadow:
+      0 4px 14px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform 0.16s cubic-bezier(0.34, 1.4, 0.64, 1), filter 0.16s ease;
   }
 
-  .kut-donate-btn-icon {
-    font-size: 0.82rem;
+  .kut-topup-plus {
+    display: grid;
+    place-items: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 50%;
+    background: rgba(26, 20, 8, 0.14);
+    font-size: 1.05rem;
+    font-weight: 600;
     line-height: 1;
-    flex-shrink: 0;
-    filter: drop-shadow(0 2px 6px rgba(251, 191, 36, 0.45));
   }
 
-  .kut-donate-btn-label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.06rem;
+  .kut-topup-label {
+    font-size: 0.68rem;
     font-weight: 800;
     letter-spacing: 0.01em;
-    color: #fde68a;
-    line-height: 1.05;
-    text-align: left;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
-  }
-
-  .kut-donate-btn-label-line {
-    font-size: 0.46rem;
     white-space: nowrap;
   }
 
-  .kut-donate-btn:hover {
-    box-shadow:
-      0 8px 22px rgba(0, 0, 0, 0.38),
-      0 0 26px rgba(251, 191, 36, 0.28);
+  .kut-topup-btn:active {
+    transform: scale(0.96);
+    filter: brightness(0.96);
   }
 
-  .kut-donate-btn:active .kut-donate-btn-frame {
-    filter: brightness(0.92);
+  @media (max-width: 360px) {
+    .kut-topup-label {
+      display: none;
+    }
+
+    .kut-topup-btn {
+      width: 2.15rem;
+      height: 2.15rem;
+      min-height: 2.15rem;
+      padding: 0;
+    }
+
+    .kut-topup-plus {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      font-size: 1.25rem;
+    }
   }
 
-  @media (max-width: 380px) {
-    .kut-balance-wrap {
-      flex-direction: column;
-      width: 100%;
-    }
-
-    .kut-donate-btn {
-      width: 100%;
-    }
-
-    .kut-donate-btn-frame {
-      flex-direction: row;
-      gap: 0.4rem;
-      min-height: 2.45rem;
-      padding: 0.5rem 0.75rem;
-    }
-
-    .kut-donate-btn-label-line {
-      font-size: 0.54rem;
-    }
+  .cute-lite-mode .kut-balance-bar,
+  .cute-turbo-mode .kut-balance-bar {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background:
+      linear-gradient(165deg, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
+      rgba(8, 16, 12, 0.78);
   }
 
   .shop-exchange-toast {
@@ -6174,24 +6095,20 @@ body {
   }
 
   .market-hero-balance {
-    flex-shrink: 0;
+    flex: 1 1 12rem;
+    max-width: min(100%, 20rem);
+    margin-left: auto;
   }
 
-  @media (max-width: 380px) {
+  @media (max-width: 420px) {
     .market-hero {
       flex-wrap: wrap;
     }
 
     .market-hero-balance {
-      width: 100%;
-    }
-
-    .market-hero-balance .kut-balance-frame {
-      width: 100%;
-    }
-
-    .market-hero-balance .kut-balance-inner {
-      justify-content: space-between;
+      flex-basis: 100%;
+      max-width: 100%;
+      margin-left: 0;
     }
   }
 
@@ -10079,9 +9996,9 @@ body.onboarding-content-lock .app-tab-bar {
 .quests-hero {
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  gap: 0.65rem;
   margin-bottom: 0.85rem;
-  padding: 0.85rem 0.95rem;
+  padding: 0.75rem 0.85rem;
   border-radius: 22px;
   background:
     linear-gradient(165deg, rgba(255, 255, 255, 0.1) 0%, transparent 46%),
@@ -10094,11 +10011,20 @@ body.onboarding-content-lock .app-tab-bar {
   -webkit-backdrop-filter: blur(16px) saturate(1.15);
 }
 
+.quests-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
 .quests-hero-identity {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.65rem;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .quests-hero-copy {
@@ -10148,20 +10074,7 @@ body.onboarding-content-lock .app-tab-bar {
   line-height: 1.4;
 }
 
-.quests-hero-wallet {
-  width: 100%;
-}
-
 .quests-hero-balance.kut-balance-wrap {
-  width: 100%;
-  align-items: stretch;
-}
-
-.quests-hero-balance .kut-balance {
-  width: 100%;
-}
-
-.quests-hero-balance .kut-donate-btn {
   width: 100%;
 }
 
@@ -10870,11 +10783,12 @@ body.onboarding-content-lock .app-tab-bar {
 
 .profile-module-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.65rem;
+  flex-wrap: wrap;
   margin: 0 0.75rem 0.65rem;
-  padding: 0.85rem 0.95rem;
+  padding: 0.75rem 0.85rem;
   border-radius: 22px;
   background:
     linear-gradient(165deg, rgba(255, 255, 255, 0.1) 0%, transparent 46%),
@@ -10892,7 +10806,7 @@ body.onboarding-content-lock .app-tab-bar {
   flex-direction: column;
   gap: 0.18rem;
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 1 1 7rem;
 }
 
 .profile-module-eyebrow {
@@ -10915,8 +10829,9 @@ body.onboarding-content-lock .app-tab-bar {
 }
 
 .profile-module-balance {
-  margin-top: 0;
-  flex-shrink: 0;
+  flex: 1 1 11rem;
+  max-width: min(100%, 18rem);
+  margin-left: auto;
 }
 
 .profile-shell .segment-tabs {

@@ -633,20 +633,7 @@
   vertical-align: 0.08em;
 }
 
-/* === Баланс КУТ — мягкое стекло (рамка из theme.css) === */
-
-.tab-theme-farm .kut-balance-inner,
-.tab-theme-inventory .kut-balance-inner,
-.tab-theme-craft .kut-balance-inner,
-.tab-theme-shop .kut-balance-inner,
-.tab-theme-market .kut-balance-inner,
-.tab-theme-profile .kut-balance-inner,
-.tab-theme-quests .kut-balance-inner {
-  background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.1) 0%, transparent 48%),
-    color-mix(in srgb, var(--tab-surface, rgba(8, 16, 12, 0.55)) 88%, transparent);
-  border-color: rgba(255, 255, 255, 0.06);
-}
+/* === Баланс КУТ — toolbar (стили в index/theme) === */
 
 /* === Рюкзак === */
 

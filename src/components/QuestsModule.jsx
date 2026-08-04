@@ -387,20 +387,20 @@ export default function QuestsModule({ isActive = true }) {
 
       <div className="relative z-10 quests-shell py-4 pb-2 animate-slide-up">
         <header className="quests-hero">
-          <div className="quests-hero-identity">
-            <div className="quests-npc-avatar" aria-hidden>{npcEmoji}</div>
-            <div className="quests-hero-copy">
-              <h1 className="quests-hero-title">{npcName}</h1>
+          <div className="quests-hero-top">
+            <div className="quests-hero-identity">
+              <div className="quests-npc-avatar" aria-hidden>{npcEmoji}</div>
+              <div className="quests-hero-copy">
+                <h1 className="quests-hero-title">{npcName}</h1>
+              </div>
             </div>
           </div>
 
-          <div className="quests-hero-wallet">
-            <KutBalance
-              value={kut}
-              className="quests-hero-balance"
-              onDonate={openDonate}
-            />
-          </div>
+          <KutBalance
+            value={kut}
+            className="quests-hero-balance"
+            onDonate={openDonate}
+          />
         </header>
 
         <div className="quests-summary" role="status">

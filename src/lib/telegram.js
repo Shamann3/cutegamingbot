@@ -1,5 +1,6 @@
 /**
- * Telegram Mini App: auth + viewport / fullscreen / safe-area sync.
+ * Telegram Mini App: auth + viewport / safe-area sync.
+ * ПК — обычный размер панели (без requestFullscreen), как дефолт Telegram.
  */
 
 function setCssVar(name, value) {
@@ -12,7 +13,6 @@ function syncTelegramViewport(tg) {
   const h = Number(tg.viewportStableHeight || tg.viewportHeight || window.innerHeight) || window.innerHeight
   setCssVar('--app-vh', `${Math.round(h)}px`)
 
-  // contentSafeAreaInset учитывает кнопки Telegram (✕ / ⋯)
   const content = tg.contentSafeAreaInset || {}
   const safe = tg.safeAreaInset || {}
 
@@ -26,7 +26,6 @@ function syncTelegramViewport(tg) {
   setCssVar('--tg-safe-left', `${left}px`)
   setCssVar('--tg-safe-right', `${right}px`)
 
-  // CSS env() fallbacks still work; these override when TG reports insets
   document.documentElement.dataset.tgViewport = '1'
 }
 
@@ -47,12 +46,11 @@ function bindViewportSync(tg) {
   window.visualViewport?.addEventListener('resize', sync)
 }
 
-function isDesktopTelegram(tg) {
+export function isDesktopTelegram(tg = window.Telegram?.WebApp) {
   const platform = String(tg?.platform || '').toLowerCase()
   if (platform === 'tdesktop' || platform === 'web' || platform === 'weba' || platform === 'macos' || platform === 'linux' || platform === 'windows') {
     return true
   }
-  // Широкий viewport без coarse pointer — почти всегда Desktop Mini App
   try {
     const wide = window.innerWidth >= 820
     const fine = window.matchMedia?.('(pointer: fine)').matches
@@ -62,10 +60,50 @@ function isDesktopTelegram(tg) {
   }
 }
 
+function syncFullscreenClass(tg) {
+  document.documentElement.classList.toggle('tg-fullscreen', Boolean(tg?.isFullscreen))
+}
+
+/**
+ * Заполнить доступную панель Mini App.
+ * На ПК — только expand (дефолтный размер Telegram), без fullscreen.
+ * На телефоне — expand + requestFullscreen для комфортного viewport.
+ */
+export function applyTelegramViewport(tg = window.Telegram?.WebApp) {
+  if (!tg) return
+
+  const desktop = isDesktopTelegram(tg)
+
+  try {
+    tg.expand()
+  } catch {
+    // ignore
+  }
+
+  if (desktop) {
+    // Вернуть обычный размер, если клиент уже в fullscreen
+    if (tg.isFullscreen && typeof tg.exitFullscreen === 'function') {
+      try {
+        tg.exitFullscreen()
+      } catch {
+        // ignore
+      }
+    }
+  } else if (typeof tg.requestFullscreen === 'function' && !tg.isFullscreen) {
+    try {
+      tg.requestFullscreen()
+    } catch {
+      // not supported / user denied
+    }
+  }
+
+  syncFullscreenClass(tg)
+  syncTelegramViewport(tg)
+}
+
 export function initTelegramWebApp() {
   const tg = window.Telegram?.WebApp
   if (!tg) {
-    // Browser / preview: fill window
     setCssVar('--app-vh', `${window.innerHeight}px`)
     const sync = () => setCssVar('--app-vh', `${window.innerHeight}px`)
     window.addEventListener('resize', sync)
@@ -75,7 +113,6 @@ export function initTelegramWebApp() {
   }
 
   tg.ready()
-  tg.expand()
 
   const desktop = isDesktopTelegram(tg)
   document.documentElement.dataset.tgDesktop = desktop ? '1' : '0'
@@ -94,46 +131,45 @@ export function initTelegramWebApp() {
     // ignore
   }
 
-  const syncView = () => syncTelegramViewport(tg)
+  applyTelegramViewport(tg)
+  requestAnimationFrame(() => applyTelegramViewport(tg))
+  setTimeout(() => applyTelegramViewport(tg), 120)
 
-  const syncFullscreenClass = () => {
-    document.documentElement.classList.toggle('tg-fullscreen', Boolean(tg.isFullscreen))
-  }
+  // На телефоне иногда fullscreen применяется с задержкой
+  if (!desktop) {
+    setTimeout(() => applyTelegramViewport(tg), 350)
+    setTimeout(() => applyTelegramViewport(tg), 1200)
 
-  // Как в админке: expand + requestFullscreen и повтор, пока клиент не развернёт.
-  const requestFull = () => {
     try {
-      tg.expand()
-      if (typeof tg.requestFullscreen === 'function' && !tg.isFullscreen) {
-        tg.requestFullscreen()
-      }
+      tg.onEvent?.('viewportChanged', () => {
+        if (!tg.isFullscreen) applyTelegramViewport(tg)
+        else syncTelegramViewport(tg)
+      })
     } catch {
-      // not supported / user denied
+      // older clients
     }
-    syncFullscreenClass()
-    syncView()
-  }
-
-  requestFull()
-  requestAnimationFrame(requestFull)
-  setTimeout(requestFull, 120)
-  setTimeout(requestFull, 350)
-  setTimeout(requestFull, 1200)
-  if (desktop) {
-    setTimeout(requestFull, 2200)
+  } else {
+    // ПК: если пользователь/клиент случайно ушёл в FS — вернуть обычный размер
+    try {
+      tg.onEvent?.('fullscreenChanged', () => {
+        if (tg.isFullscreen) applyTelegramViewport(tg)
+        else {
+          syncFullscreenClass(tg)
+          syncTelegramViewport(tg)
+        }
+      })
+    } catch {
+      // ignore
+    }
   }
 
   try {
     tg.onEvent?.('fullscreenChanged', () => {
-      syncFullscreenClass()
-      syncView()
-    })
-    tg.onEvent?.('viewportChanged', () => {
-      if (!tg.isFullscreen) requestFull()
-      else syncView()
+      syncFullscreenClass(tg)
+      syncTelegramViewport(tg)
     })
   } catch {
-    // older clients
+    // ignore
   }
 
   if (tg.themeParams?.bg_color) {
@@ -144,20 +180,9 @@ export function initTelegramWebApp() {
   return tg
 }
 
-/** Повторно развернуть Mini App (на печати входа / после смены viewport). */
+/** Синхронизация viewport при входе / смене экрана. */
 export function ensureTelegramFullscreen() {
-  const tg = window.Telegram?.WebApp
-  if (!tg) return
-  try {
-    tg.expand()
-    if (typeof tg.requestFullscreen === 'function' && !tg.isFullscreen) {
-      tg.requestFullscreen()
-    }
-  } catch {
-    // ignore
-  }
-  document.documentElement.classList.toggle('tg-fullscreen', Boolean(tg.isFullscreen))
-  syncTelegramViewport(tg)
+  applyTelegramViewport()
 }
 
 export function isTelegramWebApp() {
@@ -174,7 +199,6 @@ export function getTelegramInitData() {
   return window.Telegram?.WebApp?.initData ?? ''
 }
 
-/** Готовы ли заголовки для запросов к серверу */
 export function canAuthenticate() {
   if (getTelegramInitData()) return true
   if (import.meta.env.DEV && import.meta.env.VITE_DEV_USER_ID) return true
@@ -196,14 +220,12 @@ export function getAuthErrorMessage() {
 
 const VALID_TABS = new Set(['farm', 'inventory', 'craft', 'quests', 'shop', 'market', 'trade', 'giveaways', 'settings'])
 
-/** Читает вкладку из startapp-параметра Telegram (например ?startapp=market) */
 export function getStartTab() {
   const tg = window.Telegram?.WebApp
   const param = tg?.initDataUnsafe?.start_param ?? ''
   return VALID_TABS.has(param) ? param : null
 }
 
-/** Открывает t.me / tg:// ссылку (чат с ботом или личка с пользователем). */
 export function openTelegramBotLink(url) {
   const tg = window.Telegram?.WebApp
   const href = String(url || '').trim()

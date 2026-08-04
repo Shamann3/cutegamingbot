@@ -5,7 +5,7 @@
 .trade-module .trade-header {
   position: relative;
   margin-bottom: 0.85rem;
-  padding: 0.9rem 1rem;
+  padding: 0.75rem 0.85rem;
   border-radius: 22px;
   background:
     linear-gradient(165deg, rgba(255, 255, 255, 0.12) 0%, transparent 46%),
@@ -16,6 +16,12 @@
     0 12px 32px rgba(0, 0, 0, 0.24);
   backdrop-filter: blur(18px) saturate(1.2);
   -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.trade-module .trade-header .kut-balance-bar {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+    rgba(4, 10, 8, 0.35);
 }
 
 .trade-module .trade-header-eyebrow {
