@@ -93,8 +93,12 @@ html[data-tg-desktop='1'] .giveaways-shell {
   max-width: min(100%, 72rem) !important;
 }
 
-html[data-tg-desktop='1'] .farm-plots-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+/* ПК / широкий экран — всегда 2 грядки в ряд */
+html[data-tg-desktop='1'] .farm-plots-grid,
+html[data-tg-desktop='1'] .farm-plots-grid-cols-2,
+html[data-tg-desktop='1'] .farm-plots-grid-cols-3,
+html[data-tg-desktop='1'] .farm-plots-grid-cols-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
 }
 
 @media (min-width: 900px) {
@@ -111,8 +115,11 @@ html[data-tg-desktop='1'] .farm-plots-grid {
     max-width: min(100%, 64rem) !important;
   }
 
-  .farm-plots-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  .farm-plots-grid,
+  .farm-plots-grid-cols-2,
+  .farm-plots-grid-cols-3,
+  .farm-plots-grid-cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 
@@ -130,8 +137,11 @@ html[data-tg-desktop='1'] .farm-plots-grid {
     max-width: min(100%, 80rem) !important;
   }
 
-  .farm-plots-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  .farm-plots-grid,
+  .farm-plots-grid-cols-2,
+  .farm-plots-grid-cols-3,
+  .farm-plots-grid-cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 

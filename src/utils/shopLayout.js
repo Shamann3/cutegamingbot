@@ -21,8 +21,7 @@ export function shopGridClassForColumns(columns) {
   return 'shop-shelf-grid-cols-2'
 }
 
-export function farmGridClassForColumns(columns) {
-  if (columns >= 4) return 'farm-plots-grid-cols-4'
-  if (columns >= 3) return 'farm-plots-grid-cols-3'
+/** Грядки — всегда 2 в ряд (телефон и ПК). */
+export function farmGridClassForColumns(_columns) {
   return 'farm-plots-grid-cols-2'
 }
