@@ -1,38 +1,38 @@
 /* === Общие переменные тем вкладок === */
 
 .tab-theme-farm {
-  /* Живой лесной зелёный; сезонные переменные перекрывают */
-  --tab-accent: var(--season-accent, #6aaf70);
-  --tab-accent-strong: var(--season-accent, #6aaf70);
-  --tab-accent-muted: color-mix(in srgb, var(--season-accent, #6aaf70) 62%, transparent);
-  --tab-accent-soft: var(--season-accent-soft, rgba(106, 175, 112, 0.14));
-  --tab-accent-glow: var(--season-accent-glow, rgba(140, 200, 120, 0.26));
+  /* Тёмный лесной зелёный; сезонные переменные перекрывают */
+  --tab-accent: var(--season-accent, #3f6f48);
+  --tab-accent-strong: var(--season-accent, #3f6f48);
+  --tab-accent-muted: color-mix(in srgb, var(--season-accent, #3f6f48) 62%, transparent);
+  --tab-accent-soft: var(--season-accent-soft, rgba(63, 111, 72, 0.18));
+  --tab-accent-glow: var(--season-accent-glow, rgba(70, 120, 80, 0.22));
   --tab-surface: rgba(8, 14, 11, 0.62);
   --tab-surface-alt: rgba(5, 10, 8, 0.58);
-  --tab-frame-border: var(--brand-border, rgba(106, 175, 112, 0.32));
+  --tab-frame-border: var(--brand-border, rgba(80, 130, 90, 0.32));
   --tab-title-color: #eef3ea;
-  --tab-chip-border: var(--season-chip, rgba(106, 175, 112, 0.26));
-  --tab-balance-frame: linear-gradient(135deg, #3a7a48 0%, #6aaf70 38%, #3a7a48 68%, #0b1a12 100%);
+  --tab-chip-border: var(--season-chip, rgba(63, 111, 72, 0.28));
+  --tab-balance-frame: linear-gradient(135deg, #1e3d28 0%, #3f6f48 38%, #2d5a38 68%, #0b1a12 100%);
   --farm-ink: #eef3ea;
   --farm-gold: #c4a35a;
   --farm-gold-deep: #8a6a28;
-  --farm-green: var(--season-accent, #6aaf70);
-  --farm-green-deep: var(--season-accent-deep, #3a7a48);
+  --farm-green: var(--season-accent, #3f6f48);
+  --farm-green-deep: var(--season-accent-deep, #1e3d28);
   --farm-void: #050806;
 }
 
 .tab-theme-inventory {
-  --tab-accent: var(--season-accent, #6aaf70);
-  --tab-accent-strong: var(--season-accent-deep, #3a7a48);
-  --tab-accent-muted: color-mix(in srgb, var(--season-accent, #6aaf70) 62%, transparent);
-  --tab-accent-soft: var(--season-accent-soft, rgba(106, 175, 112, 0.14));
-  --tab-accent-glow: var(--season-accent-glow, rgba(140, 200, 120, 0.26));
+  --tab-accent: var(--season-accent, #3f6f48);
+  --tab-accent-strong: var(--season-accent-deep, #1e3d28);
+  --tab-accent-muted: color-mix(in srgb, var(--season-accent, #3f6f48) 62%, transparent);
+  --tab-accent-soft: var(--season-accent-soft, rgba(63, 111, 72, 0.18));
+  --tab-accent-glow: var(--season-accent-glow, rgba(70, 120, 80, 0.22));
   --tab-surface: rgba(8, 16, 12, 0.62);
   --tab-surface-alt: rgba(6, 12, 9, 0.58);
-  --tab-frame-border: var(--brand-border, rgba(106, 175, 112, 0.32));
+  --tab-frame-border: var(--brand-border, rgba(80, 130, 90, 0.32));
   --tab-title-color: #eef3ea;
-  --tab-chip-border: var(--season-chip, rgba(106, 175, 112, 0.28));
-  --tab-balance-frame: linear-gradient(135deg, #3a7a48 0%, #6aaf70 45%, #0b1a12 100%);
+  --tab-chip-border: var(--season-chip, rgba(63, 111, 72, 0.28));
+  --tab-balance-frame: linear-gradient(135deg, #1e3d28 0%, #3f6f48 45%, #0b1a12 100%);
 }
 
 .tab-theme-craft {

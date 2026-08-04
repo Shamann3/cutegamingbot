@@ -30,7 +30,7 @@
 }
 
 .trade-module .trade-header-title {
-  background: linear-gradient(180deg, #f7fbf7 0%, #c5e0c4 48%, #6aaf70 100%);
+  background: linear-gradient(180deg, #eef4ee 0%, #7aab82 48%, #2d5a38 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -122,7 +122,7 @@
     90deg,
     transparent 0%,
     #7c5cff 30%,
-    #6aaf70 50%,
+    #3f6f48 50%,
     #7c5cff 70%,
     transparent 100%
   ) !important;

@@ -4,20 +4,22 @@
    ============================================================ */
 
 :root {
-  --glass-bg: rgba(8, 16, 12, 0.38);
-  --glass-bg-strong: rgba(6, 14, 10, 0.55);
-  --glass-bg-soft: rgba(10, 18, 14, 0.28);
-  --glass-border: rgba(140, 190, 150, 0.18);
-  --glass-border-gold: rgba(160, 200, 160, 0.22);
-  --glass-highlight: rgba(255, 255, 255, 0.16);
-  --glass-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
-  --glass-blur: 18px;
-  --glass-blur-soft: 12px;
-  --glass-radius: 20px;
-  --glass-radius-sm: 16px;
+  --glass-bg: rgba(8, 16, 12, 0.42);
+  --glass-bg-strong: rgba(6, 14, 10, 0.58);
+  --glass-bg-soft: rgba(10, 18, 14, 0.3);
+  --glass-border: rgba(100, 150, 110, 0.2);
+  --glass-border-gold: rgba(120, 165, 130, 0.24);
+  --glass-highlight: rgba(255, 255, 255, 0.18);
+  --glass-shadow: 0 12px 40px rgba(0, 0, 0, 0.32);
+  --glass-blur: 24px;
+  --glass-blur-soft: 16px;
+  --glass-radius: 22px;
+  --glass-radius-sm: 17px;
   --glass-radius-pill: 999px;
-  --glass-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --glass-duration: 0.42s;
+  /* iOS-like spring: soft settle, no harsh snap */
+  --glass-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --glass-ease-spring: cubic-bezier(0.34, 1.15, 0.42, 1);
+  --glass-duration: 0.55s;
   --glass-text: rgba(255, 248, 235, 0.96);
   --glass-text-muted: rgba(255, 248, 235, 0.62);
 }
@@ -43,8 +45,13 @@
 .farm-vine-frame-inner,
 .shop-modal,
 .player-profile-modal {
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.15);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.15);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.35) brightness(1.02);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.35) brightness(1.02);
+  transition:
+    transform var(--glass-duration) var(--glass-ease-spring),
+    opacity 0.4s var(--glass-ease),
+    box-shadow var(--glass-duration) var(--glass-ease),
+    border-color var(--glass-duration) var(--glass-ease);
 }
 
 .farm-vine-frame {
@@ -52,9 +59,9 @@
   background:
     linear-gradient(
       145deg,
-      color-mix(in srgb, var(--season-accent, #6aaf70) 28%, transparent) 0%,
-      rgba(10, 24, 16, 0.72) 48%,
-      color-mix(in srgb, var(--season-accent, #6aaf70) 18%, transparent) 100%
+      color-mix(in srgb, var(--season-accent, #3f6f48) 26%, transparent) 0%,
+      rgba(8, 18, 12, 0.78) 48%,
+      color-mix(in srgb, var(--season-accent, #3f6f48) 16%, transparent) 100%
     ) !important;
   padding: 1px !important;
 }
@@ -153,22 +160,30 @@
   );
   border-radius: var(--glass-radius-pill);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, transparent 52%),
     linear-gradient(
       180deg,
-      var(--tab-accent-soft, rgba(61, 214, 140, 0.28)) 0%,
-      rgba(8, 18, 14, 0.55) 100%
+      color-mix(in srgb, var(--tab-accent-strong, #3f6f48) 55%, rgba(8, 18, 14, 0.9)) 0%,
+      rgba(6, 14, 10, 0.72) 100%
     );
-  border: 1px solid var(--tab-accent-strong, rgba(61, 214, 140, 0.45));
+  border: 1px solid color-mix(in srgb, var(--tab-accent-strong, #3f6f48) 55%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 4px 14px rgba(0, 0, 0, 0.28),
-    0 0 18px var(--tab-accent-glow, rgba(61, 214, 140, 0.18));
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2),
+    0 6px 18px rgba(0, 0, 0, 0.28),
+    0 0 20px var(--tab-accent-glow, rgba(70, 120, 80, 0.16));
+  backdrop-filter: blur(10px) saturate(1.3);
+  -webkit-backdrop-filter: blur(10px) saturate(1.3);
   transform: translateX(
     calc(var(--seg-index, 0) * (100% + 0.3rem))
   );
-  transition: transform 0.48s var(--glass-ease), background 0.48s var(--glass-ease), border-color 0.48s ease;
+  transition:
+    transform 0.62s var(--glass-ease-spring),
+    background 0.55s var(--glass-ease),
+    border-color 0.55s var(--glass-ease),
+    box-shadow 0.55s var(--glass-ease);
   pointer-events: none;
+  will-change: transform;
 }
 
 .segment-tab {
@@ -178,7 +193,9 @@
   border-color: transparent !important;
   box-shadow: none !important;
   color: var(--glass-text-muted) !important;
-  transition: color 0.35s var(--glass-ease) !important;
+  transition:
+    color 0.45s var(--glass-ease),
+    transform 0.35s var(--glass-ease) !important;
 }
 
 .segment-tab-active {
@@ -204,7 +221,7 @@
 
 .inventory-summary-chip--soft {
   opacity: 0.88;
-  border-color: rgba(61, 214, 140, 0.28) !important;
+  border-color: rgba(80, 130, 95, 0.3) !important;
 }
 
 .inventory-search-input {
@@ -220,17 +237,17 @@
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, transparent 55%),
     rgba(8, 14, 12, 0.42) !important;
-  border-color: rgba(61, 214, 140, 0.22) !important;
+  border-color: rgba(80, 130, 95, 0.24) !important;
 }
 
 .inventory-filter-chip-active {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, transparent 50%),
-    rgba(22, 48, 34, 0.62) !important;
-  border-color: rgba(61, 214, 140, 0.5) !important;
+    rgba(18, 40, 28, 0.68) !important;
+  border-color: rgba(90, 140, 100, 0.45) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 0 16px rgba(61, 214, 140, 0.15) !important;
+    0 0 16px rgba(60, 100, 70, 0.16) !important;
   color: var(--glass-text) !important;
 }
 
@@ -239,23 +256,23 @@
   background:
     linear-gradient(165deg, rgba(255, 255, 255, 0.08) 0%, transparent 45%),
     rgba(8, 18, 12, 0.52) !important;
-  border: 1px solid rgba(61, 214, 140, 0.26) !important;
+  border: 1px solid rgba(80, 130, 95, 0.26) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     0 6px 18px rgba(0, 0, 0, 0.28) !important;
   transition:
-    transform 0.28s var(--glass-ease),
-    border-color 0.28s ease,
-    box-shadow 0.28s ease,
-    background 0.28s ease !important;
+    transform 0.4s var(--glass-ease),
+    border-color 0.4s var(--glass-ease),
+    box-shadow 0.4s var(--glass-ease),
+    background 0.4s var(--glass-ease) !important;
 }
 
 .inventory-tile:hover {
-  border-color: rgba(61, 214, 140, 0.48) !important;
+  border-color: rgba(90, 140, 100, 0.42) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
     0 8px 22px rgba(0, 0, 0, 0.32),
-    0 0 18px rgba(61, 214, 140, 0.12) !important;
+    0 0 18px rgba(60, 100, 70, 0.12) !important;
 }
 
 .inventory-tile-name {
@@ -264,7 +281,7 @@
 }
 
 .inventory-tile-qty {
-  color: #9fd9b4 !important;
+  color: #8fbf98 !important;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 
@@ -275,8 +292,8 @@
 
 /* App tab bar glass */
 .app-tab-bar-inner {
-  backdrop-filter: blur(8px) saturate(1.15) !important;
-  -webkit-backdrop-filter: blur(8px) saturate(1.15) !important;
+  backdrop-filter: blur(16px) saturate(1.35) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.35) !important;
   border-radius: 22px !important;
 }
 
@@ -313,15 +330,17 @@
   text-underline-offset: 2px;
 }
 
-/* Modals */
+/* Modals — liquid glass sheet */
 .shop-modal-root {
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  transition: background 0.4s var(--glass-ease);
 }
 
 .shop-modal,
 .player-profile-modal {
-  border-radius: 24px !important;
+  border-radius: 26px !important;
+  isolation: isolate;
 }
 
 /* Turbo / reduced glass */

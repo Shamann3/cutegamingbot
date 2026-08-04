@@ -460,9 +460,9 @@ body {
 
 .shop-search-clear,
 .inventory-search-clear {
-  background: rgba(61, 214, 140, 0.14) !important;
+  background: rgba(63, 111, 72, 0.18) !important;
   color: rgba(232, 245, 238, 0.85) !important;
-  border: 1px solid rgba(61, 214, 140, 0.22);
+  border: 1px solid rgba(80, 130, 95, 0.28);
 }
 
 /* Прозрачные чипы / сегменты */
@@ -474,10 +474,10 @@ body {
 }
 
 .segment-tabs-pill {
-  border-color: rgba(61, 214, 140, 0.5) !important;
+  border-color: color-mix(in srgb, var(--season-accent, #3f6f48) 55%, transparent) !important;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, transparent 55%),
-    rgba(20, 56, 36, 0.72) !important;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, transparent 52%),
+    color-mix(in srgb, var(--season-accent-deep, #1e3d28) 70%, rgba(6, 14, 10, 0.9)) !important;
 }
 
 .inventory-summary-chip,
@@ -494,10 +494,10 @@ body {
 .inventory-filter-chip-active,
 .shop-toolbar-chip-active,
 .shop-nav-chip-active {
-  border-color: rgba(61, 214, 140, 0.5) !important;
+  border-color: rgba(90, 140, 100, 0.42) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
-    rgba(18, 48, 32, 0.65) !important;
+    rgba(14, 36, 22, 0.7) !important;
 }
 
 /* Баланс toolbar — финальный слой поверх index.css */
@@ -550,17 +550,13 @@ body {
   text-decoration-color: rgba(238, 243, 234, 0.3);
 }
 
-/* Сегменты — мягкий лесной акцент сезона */
+/* Сегменты — glass pill; активный таб прозрачный (без «больничного» крема) */
 .segment-tab-active,
 .tab-theme-farm .segment-tab-active {
-  color: var(--season-ink-on-accent, #10180e) !important;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--season-accent, #7aa86a) 78%, #f4efe2) 0%,
-    var(--season-accent, #7aa86a) 48%,
-    var(--season-accent-deep, #3f6a3a) 100%
-  ) !important;
-  box-shadow: 0 2px 12px var(--season-accent-soft, rgba(122, 168, 106, 0.28)) !important;
+  color: var(--season-ink-on-accent, #e8f0e6) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
 }
 
 .tab-theme-farm .segment-tabs {
@@ -609,17 +605,17 @@ body {
   letter-spacing: 0.14em;
 }
 
-/* Профиль — мягкий лесной акцент */
+/* Профиль — тёмный лесной акцент */
 .tab-theme-profile {
-  --tab-accent: #6aaf70 !important;
-  --tab-accent-muted: rgba(106, 175, 112, 0.55) !important;
-  --tab-accent-glow: rgba(106, 175, 112, 0.2) !important;
-  --tab-frame-border: rgba(140, 190, 150, 0.22) !important;
+  --tab-accent: var(--season-accent, #3f6f48) !important;
+  --tab-accent-muted: color-mix(in srgb, var(--season-accent, #3f6f48) 55%, transparent) !important;
+  --tab-accent-glow: var(--season-accent-glow, rgba(70, 120, 80, 0.2)) !important;
+  --tab-frame-border: var(--brand-border, rgba(80, 130, 90, 0.28)) !important;
   --tab-title-color: #eef3ea !important;
   --tab-balance-frame: linear-gradient(
     145deg,
-    rgba(255, 255, 255, 0.2) 0%,
-    rgba(106, 175, 112, 0.35) 50%,
+    rgba(255, 255, 255, 0.16) 0%,
+    color-mix(in srgb, var(--season-accent, #3f6f48) 40%, transparent) 50%,
     rgba(255, 255, 255, 0.06) 100%
   ) !important;
 }

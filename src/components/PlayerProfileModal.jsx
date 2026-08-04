@@ -130,10 +130,6 @@ export default function PlayerProfileModal({ userId, isOpen, onClose }) {
           aria-labelledby="player-profile-title"
           onClick={(event) => event.stopPropagation()}
         >
-          <button type="button" className="shop-modal-close player-profile-close" onClick={onClose} aria-label="Закрыть">
-            ✕
-          </button>
-
           <div className="player-profile-header">
             <div className="player-profile-header-glow" aria-hidden />
             <p className="player-profile-header-eyebrow">Профиль игрока</p>
@@ -302,6 +298,19 @@ export default function PlayerProfileModal({ userId, isOpen, onClose }) {
               Закрыть
             </button>
           </div>
+
+          <button
+            type="button"
+            className="shop-modal-close player-profile-close"
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              onClose?.()
+            }}
+            aria-label="Закрыть"
+          >
+            ✕
+          </button>
         </div>
       </div>
     </Portal>
