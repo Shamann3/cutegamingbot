@@ -40,8 +40,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local
+# Includes main_userbot_session.session + withdraw_userbot_session.session
+# (allowlisted in .dockerignore). Without them withdraw userbot stays unauthorized.
 COPY . .
-RUN chmod +x /app/entrypoint-bot.sh
+RUN chmod +x /app/entrypoint-bot.sh \
+    && test -f /app/main_userbot_session.session \
+    && test -f /app/withdraw_userbot_session.session \
+    && echo "[build] userbot sessions present in image"
 
 ENTRYPOINT ["/app/entrypoint-bot.sh"]
 CMD ["python", "-u", "main.py"]

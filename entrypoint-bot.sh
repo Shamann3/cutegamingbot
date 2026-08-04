@@ -12,6 +12,16 @@ else
   echo "[bot] WARNING: DOTENV_B64 не задан — main.py возьмёт дефолты (скорее всего неверные)"
 fi
 
+# Telethon userbot sessions must be baked into the image (see .dockerignore
+# exceptions). Without them withdrawals stay offline forever.
+for sess in main_userbot_session.session withdraw_userbot_session.session; do
+  if [ -f "/app/$sess" ]; then
+    echo "[bot] session OK: $sess ($(wc -c < "/app/$sess") bytes)"
+  else
+    echo "[bot] ERROR: missing /app/$sess — check .dockerignore allowlist + git force-add"
+  fi
+done
+
 # Локальный Redis в этом же контейнере — бот по умолчанию ждёт его на
 # 127.0.0.1:6379. Чистый кэш: без RDB/AOF (--save "" --appendonly no),
 # с потолком памяти и вытеснением, чтобы не съесть RAM контейнера.

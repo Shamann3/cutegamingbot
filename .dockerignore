@@ -32,13 +32,13 @@ server.js
 reviews/*
 !reviews/.gitkeep
 
-# --- Секреты: в образ не должны попасть ни при каких обстоятельствах.
-# В сборке DigitalOcean их и так нет (они в .gitignore), но локальный
-# `docker build` иначе запечёт в слой живые сессии Telethon и пароли.
+# --- Секреты: .env в образ не тащим. Telethon-сессии юзерботов — исключение:
+# main_userbot_session.session и withdraw_userbot_session.session ДОЛЖНЫ
+# попадать в образ cutebot (force-add в git + deploy_on_push). Без них
+# is_user_authorized=False и выводы мертвы. Остальные *.session режем.
 #
 # Префикс **/ обязателен: без него docker применяет шаблон ТОЛЬКО к корню
-# контекста, поэтому "*.session" не поймал бы server/*.session, а "__pycache__"
-# не поймал бы bot/__pycache__. ---
+# контекста. ---
 **/.env
 **/.env.*
 !.env.example
@@ -47,6 +47,8 @@ reviews/*
 **/*.session-shm
 **/*.session-wal
 **/*.session.corrupt-*
+!main_userbot_session.session
+!withdraw_userbot_session.session
 
 # --- Локальные данные и мусор (в git их нет, но локальный build их подхватит:
 # один только bot/db_create/*.db весит 58 МБ) ---
