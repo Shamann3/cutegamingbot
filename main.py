@@ -8346,8 +8346,17 @@ async def _wd_alert_userbot_unauthorized(reason: str = "") -> None:
 
 
 def set_withdraw_userbot_client(tg_client) -> None:
+    """Регистрирует client во всех загруженных копиях main/__main__ (dual-import)."""
     global _WITHDRAW_USERBOT_CLIENT
     _WITHDRAW_USERBOT_CLIENT = tg_client
+    for mod_name in ("__main__", "main"):
+        mod = sys.modules.get(mod_name)
+        if mod is None:
+            continue
+        try:
+            setattr(mod, "_WITHDRAW_USERBOT_CLIENT", tg_client)
+        except Exception:
+            pass
     print(f"🟩[WITHDRAW][USERBOT] client registered | id={id(tg_client)}")
 
 
@@ -8508,19 +8517,14 @@ async def _ensure_withdraw_userbot_connected() -> TelegramClient:
     global _WITHDRAW_USERBOT_CLIENT
 
     if _WITHDRAW_USERBOT_CLIENT is None:
-        # main.py бывает загружен дважды под разными именами модуля
-        # (__main__ при старте процесса и "main" из-за `from main import ...`
-        # в bot/*), из-за чего у каждой копии свой набор globals().
-        # Клиент, зарегистрированный в одной копии, не виден в другой -
-        # ищем его в уже загруженных модулях так же, как это делает
-        # диагностический CHECK, и кэшируем сюда, чтобы больше не искать.
+        # main.py бывает загружен дважды (__main__ + "main"). Client может
+        # жить в другой копии — silent-lookup читает только attrs, без getter'ов.
         recovered = await _get_registered_withdraw_userbot_client_silent()
         if recovered is not None:
+            set_withdraw_userbot_client(recovered)
             print(
-                f"🟨[WITHDRAW][USERBOT] client не найден в локальных globals(), "
-                f"восстановлен через cross-module lookup | id={id(recovered)}"
+                f"🟨[WITHDRAW][USERBOT] cross-module client restore | id={id(recovered)}"
             )
-            _WITHDRAW_USERBOT_CLIENT = recovered
 
     if _WITHDRAW_USERBOT_CLIENT is None:
         raise RuntimeError(
@@ -8535,9 +8539,12 @@ async def _ensure_withdraw_userbot_connected() -> TelegramClient:
             print(f"🔌[WITHDRAW][USERBOT] connect() | id={id(tg_client)}")
             await tg_client.connect()
             print(f"🟩[WITHDRAW][USERBOT] connected | id={id(tg_client)}")
-        else:
-            print(f"🟩[WITHDRAW][USERBOT] already connected | id={id(tg_client)}")
     except Exception as e:
+        if _is_auth_key_duplicated_error(e):
+            raise RuntimeError(
+                "Session выводного юзербота убита (AuthKeyDuplicated). "
+                "Запусти reauth-withdraw.bat --fresh, push, не открывай main.py локально."
+            ) from e
         raise RuntimeError(f"Не удалось подключить tech userbot: {e!r}") from e
 
     return tg_client
@@ -27021,44 +27028,48 @@ async def _try_call_maybe_async(func, *args, **kwargs):
         return res
 
 
+_CLIENT_ATTR_NAMES = (
+    "_WITHDRAW_USERBOT_CLIENT",
+    "withdraw_userbot_client",
+    "withdraw_client",
+    "WITHDRAW_USERBOT_CLIENT",
+)
+
+
+def _client_attr_from_mapping(mapping) -> Any:
+    """Достаёт уже созданный client из dict/module attrs. Без вызова getter'ов."""
+    if mapping is None:
+        return None
+    getter = mapping.get if hasattr(mapping, "get") else None
+    for attr_name in _CLIENT_ATTR_NAMES:
+        try:
+            if getter is not None:
+                client = getter(attr_name)
+            else:
+                client = getattr(mapping, attr_name, None)
+            if client is not None and hasattr(client, "is_connected"):
+                return client
+        except Exception:
+            continue
+    return None
+
+
 async def _get_registered_withdraw_userbot_client_silent():
     """
-    Ищет УЖЕ созданный и зарегистрированный withdraw-client.
-    Ничего не логинит и не стартует.
+    Ищет УЖЕ созданный withdraw-client только по атрибутам registry.
+
+    ВАЖНО: НИКОГДА не вызывать get_withdraw_userbot_client() отсюда —
+    он сам зовёт этот silent-lookup → RecursionError.
     """
-    print("🔎[WITHDRAW][CHECK] поиск уже зарегистрированного withdraw userbot client")
+    client = _client_attr_from_mapping(globals())
+    if client is not None:
+        return client
 
-    preferred_callable_names = (
-        "get_withdraw_userbot_client",
-        "_get_withdraw_userbot_client",
-        "get_registered_withdraw_userbot_client",
-        "get_withdraw_client",
-    )
-
-    for name in preferred_callable_names:
-        try:
-            func = globals().get(name)
-            if callable(func):
-                client = await _try_call_maybe_async(func)
-                if client is not None:
-                    print(f"🟩[WITHDRAW][CHECK] client obtained via current globals callable={name}")
-                    return client
-        except Exception as e:
-            print(f"🟨[WITHDRAW][CHECK] callable lookup err name={name}: {type(e).__name__}: {e!r}")
-
-    for attr_name in (
-        "_WITHDRAW_USERBOT_CLIENT",
-        "withdraw_userbot_client",
-        "withdraw_client",
-        "WITHDRAW_USERBOT_CLIENT",
-    ):
-        try:
-            client = globals().get(attr_name)
-            if client is not None:
-                print(f"🟩[WITHDRAW][CHECK] client found in current globals attr={attr_name}")
-                return client
-        except Exception as e:
-            print(f"🟨[WITHDRAW][CHECK] globals attr err={attr_name}: {type(e).__name__}: {e!r}")
+    for mod_name in ("__main__", "main"):
+        mod = sys.modules.get(mod_name)
+        client = _client_attr_from_mapping(mod)
+        if client is not None:
+            return client
 
     for mod_name in (
         "withdraw_userbot_runtime",
@@ -27066,105 +27077,31 @@ async def _get_registered_withdraw_userbot_client_silent():
         "withdraw_service",
         "gift_executor",
     ):
-        try:
-            mod = importlib.import_module(mod_name)
-
-            for callable_name in preferred_callable_names:
-                try:
-                    func = getattr(mod, callable_name, None)
-                    if callable(func):
-                        client = await _try_call_maybe_async(func)
-                        if client is not None:
-                            print(f"🟩[WITHDRAW][CHECK] client obtained via module callable module={mod_name} name={callable_name}")
-                            return client
-                except Exception as e:
-                    print(f"🟨[WITHDRAW][CHECK] module callable err module={mod_name} name={callable_name}: {type(e).__name__}: {e!r}")
-
-            runtime_obj = getattr(mod, "withdraw_userbot_runtime", None)
-            if runtime_obj is not None:
-                get_client = getattr(runtime_obj, "get_client", None)
-                if callable(get_client):
-                    try:
-                        client = await _try_call_maybe_async(get_client)
-                        if client is not None:
-                            print(f"🟩[WITHDRAW][CHECK] client found via runtime object from module={mod_name}")
-                            return client
-                    except Exception as e:
-                        print(f"🟨[WITHDRAW][CHECK] runtime object err module={mod_name}: {type(e).__name__}: {e!r}")
-
-            for attr_name in (
-                "WITHDRAW_USERBOT_CLIENT",
-                "_WITHDRAW_USERBOT_CLIENT",
-                "withdraw_userbot_client",
-                "withdraw_client",
-            ):
-                client = getattr(mod, attr_name, None)
-                if client is not None:
-                    print(f"🟩[WITHDRAW][CHECK] client found via module attr module={mod_name} attr={attr_name}")
-                    return client
-
-        except ModuleNotFoundError:
-            pass
-        except Exception as e:
-            print(f"🟨[WITHDRAW][CHECK] runtime module lookup err module={mod_name}: {type(e).__name__}: {e!r}")
-
-    for mod_name in ("__main__", "main"):
-        try:
-            mod = sys.modules.get(mod_name)
-            if mod is None:
-                continue
-
-            for callable_name in preferred_callable_names:
-                try:
-                    func = getattr(mod, callable_name, None)
-                    if callable(func):
-                        client = await _try_call_maybe_async(func)
-                        if client is not None:
-                            print(f"🟩[WITHDRAW][CHECK] client obtained via module={mod_name} callable={callable_name}")
-                            return client
-                except Exception as e:
-                    print(f"🟨[WITHDRAW][CHECK] main callable err module={mod_name} name={callable_name}: {type(e).__name__}: {e!r}")
-
-            for attr_name in (
-                "_WITHDRAW_USERBOT_CLIENT",
-                "withdraw_userbot_client",
-                "withdraw_client",
-                "WITHDRAW_USERBOT_CLIENT",
-            ):
-                client = getattr(mod, attr_name, None)
-                if client is not None:
-                    print(f"🟩[WITHDRAW][CHECK] client found in module={mod_name} attr={attr_name}")
-                    return client
-
-        except Exception as e:
-            print(f"🟨[WITHDRAW][CHECK] main module lookup err module={mod_name}: {type(e).__name__}: {e!r}")
+        mod = sys.modules.get(mod_name)
+        if mod is None:
+            continue
+        client = _client_attr_from_mapping(mod)
+        if client is not None:
+            return client
+        runtime_obj = getattr(mod, "withdraw_userbot_runtime", None)
+        if runtime_obj is not None:
+            cached = getattr(runtime_obj, "client", None) or getattr(runtime_obj, "_client", None)
+            if cached is not None and hasattr(cached, "is_connected"):
+                return cached
 
     try:
         for mod_name, mod in list(sys.modules.items()):
             if mod is None:
                 continue
-
             mod_name_l = str(mod_name).lower()
-            if not any(key in mod_name_l for key in ("withdraw", "gift", "bot", "main", "run")):
+            if not any(key in mod_name_l for key in ("withdraw", "main", "run_bot")):
                 continue
-
-            for attr_name in (
-                "_WITHDRAW_USERBOT_CLIENT",
-                "withdraw_userbot_client",
-                "withdraw_client",
-                "WITHDRAW_USERBOT_CLIENT",
-            ):
-                try:
-                    client = getattr(mod, attr_name, None)
-                    if client is not None:
-                        print(f"🟩[WITHDRAW][CHECK] client found in sys.modules module={mod_name} attr={attr_name}")
-                        return client
-                except Exception:
-                    continue
+            client = _client_attr_from_mapping(mod)
+            if client is not None:
+                return client
     except Exception as e:
         print(f"🟨[WITHDRAW][CHECK] sys.modules scan err={type(e).__name__}: {e!r}")
 
-    print("🟥[WITHDRAW][CHECK] выводной юзербот не найден ни через getter, ни через registry, ни в loaded modules")
     return None
 
 
