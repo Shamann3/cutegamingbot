@@ -87,10 +87,56 @@ html[data-tg-desktop='1'] .market-shell,
 html[data-tg-desktop='1'] .trade-shell,
 html[data-tg-desktop='1'] .craft-module-shell,
 html[data-tg-desktop='1'] .quests-shell,
-html[data-tg-desktop='1'] .profile-shell,
-html[data-tg-desktop='1'] .settings-shell,
 html[data-tg-desktop='1'] .giveaways-shell {
   max-width: min(100%, 72rem) !important;
+}
+
+/* Профиль / настройки на ПК: компактная колонка чуть правее центра,
+   без растягивания на 72rem (иначе текст и карточки визуально «режутся»). */
+html[data-tg-desktop='1'] .profile-shell,
+html[data-tg-desktop='1'] .settings-shell {
+  max-width: min(100%, 36rem) !important;
+  margin-left: max(1.25rem, calc(50% - 16rem + 1.35rem)) !important;
+  margin-right: auto !important;
+  padding-left: max(1rem, var(--tg-safe-left)) !important;
+  padding-right: max(1rem, var(--tg-safe-right)) !important;
+  box-sizing: border-box;
+}
+
+/* Embedded settings живут внутри profile-shell — без второго сдвига */
+html[data-tg-desktop='1'] .profile-shell .settings-shell {
+  max-width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+html[data-tg-desktop='1'] .profile-module-header {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+html[data-tg-desktop='1'] .profile-shell .segment-tabs {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+html[data-tg-desktop='1'] .profile-card-frame {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+html[data-tg-desktop='1'] .app-tab-btn[data-tab='profile'] {
+  margin-left: 0.45rem;
+}
+
+html[data-tg-desktop='1'] .app-main {
+  /* На десктопе TG chrome ниже, чем на телефоне, но карточке профиля
+     нужен воздух сверху — иначе шапка визуально «прилипает» к краю. */
+  padding-top: max(2.35rem, calc(var(--tg-safe-top) + 1.1rem));
+  padding-left: max(0.85rem, var(--tg-safe-left));
+  padding-right: max(0.85rem, var(--tg-safe-right));
 }
 
 /* ПК / широкий экран — всегда 2 грядки в ряд */
@@ -109,10 +155,21 @@ html[data-tg-desktop='1'] .farm-plots-grid-cols-4 {
   .trade-shell,
   .craft-module-shell,
   .quests-shell,
-  .profile-shell,
-  .settings-shell,
   .giveaways-shell {
     max-width: min(100%, 64rem) !important;
+  }
+
+  .profile-shell,
+  .settings-shell {
+    max-width: min(100%, 38rem) !important;
+    margin-left: max(1.5rem, calc(50% - 17rem + 1.5rem)) !important;
+    margin-right: auto !important;
+  }
+
+  .profile-shell .settings-shell {
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
   }
 
   .farm-plots-grid,
@@ -131,10 +188,21 @@ html[data-tg-desktop='1'] .farm-plots-grid-cols-4 {
   .trade-shell,
   .craft-module-shell,
   .quests-shell,
-  .profile-shell,
-  .settings-shell,
   .giveaways-shell {
     max-width: min(100%, 80rem) !important;
+  }
+
+  .profile-shell,
+  .settings-shell {
+    max-width: min(100%, 40rem) !important;
+    margin-left: max(2rem, calc(50% - 18rem + 1.75rem)) !important;
+    margin-right: auto !important;
+  }
+
+  .profile-shell .settings-shell {
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
   }
 
   .farm-plots-grid,

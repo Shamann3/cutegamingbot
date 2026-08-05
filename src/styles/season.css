@@ -819,6 +819,12 @@ html[data-season='spring'] .tab-vine-leaf {
 .settings-season-options {
   display: grid;
   gap: 0.45rem;
+  width: 100%;
+}
+
+.settings-season-options .shop-sheet-option {
+  max-width: 100%;
+  width: 100%;
 }
 
 .settings-season-option-meta {

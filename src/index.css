@@ -2006,11 +2006,21 @@ body {
     background: rgba(8, 18, 12, 0.92);
   }
 
+  /* shop-sheet-option по умолчанию max-width: 54% (под drag в магазине) —
+     в настройках опции должны занимать всю ширину, иначе «Весна/Осень» обрезаются. */
+  .settings-season-options .shop-sheet-option,
+  .settings-perf-options .shop-sheet-option,
   .settings-perf-options .settings-perf-option {
     max-width: 100%;
     align-items: flex-start;
     padding-top: 0.75rem;
     padding-bottom: 0.75rem;
+  }
+
+  .settings-season-options .shop-sheet-option-label {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
   }
 
   .settings-perf-option-body {
