@@ -54,9 +54,9 @@
 .farm-bg--bg_spring2 .farm-bg-cosmetic-overlay { opacity:1; background-image:url("/backgrounds/spring.png"); }
 .farm-bg--bg_spring2 .farm-bg-cosmetic-overlay::before {
   background-image:
-    radial-gradient(2.6px 2.6px at 40px 60px,rgba(255,150,190,.85),transparent),
-    radial-gradient(2px 2px at 120px 120px,rgba(255,190,215,.8),transparent),
-    radial-gradient(2.4px 2.4px at 190px 40px,rgba(255,170,205,.85),transparent);
+    radial-gradient(2.6px 2.6px at 40px 60px,rgba(242,93,138,.9),transparent),
+    radial-gradient(2px 2px at 120px 120px,rgba(62,160,216,.85),transparent),
+    radial-gradient(2.4px 2.4px at 190px 40px,rgba(86,208,138,.88),transparent);
   background-size:170px 230px,200px 260px,160px 220px; animation:bg-petals 12s linear infinite; }
 
 /* ══ ☄️ Звездопад ══  (то же ночное небо, что «Ночь», но с летящими метеорами две звезды со сдвигом) */
