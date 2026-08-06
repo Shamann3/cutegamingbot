@@ -388,11 +388,35 @@ function Test-TcpUp {
 function Ensure-LocalPostgres {
     param(
         [int]$Port = 5432,
-        [int]$TimeoutSec = 30,
+        [int]$TimeoutSec = 45,
         [string]$ServiceName = 'postgresql-x64-17',
         [string]$PgHome = 'C:\Program Files\PostgreSQL\17'
     )
     if (Test-TcpUp -Port $Port) { return $true }
+
+    try {
+        $free = (Get-PSDrive C).Free
+        if ($free -lt 3GB) {
+            Write-Warn ("C: has only {0:N2} GB free - Postgres may fail with 'No space left on device'" -f ($free / 1GB))
+        }
+    } catch { }
+
+    $data = Join-Path $PgHome 'data'
+    # After a crash Postgres leaves postmaster.pid; next start hangs/fails until removed.
+    $pidFile = Join-Path $data 'postmaster.pid'
+    if (Test-Path -LiteralPath $pidFile) {
+        try {
+            $oldPid = 0
+            [void][int]::TryParse(((Get-Content -LiteralPath $pidFile -TotalCount 1).Trim()), [ref]$oldPid)
+            $alive = if ($oldPid -gt 0) { Get-Process -Id $oldPid -ErrorAction SilentlyContinue } else { $null }
+            if (-not $alive) {
+                Remove-Item -LiteralPath $pidFile -Force -ErrorAction Stop
+                Write-Info "removed stale postmaster.pid (dead PID $oldPid)"
+            }
+        } catch {
+            Write-Info "could not clear postmaster.pid: $($_.Exception.Message)"
+        }
+    }
 
     # Best-effort: start the Windows service (instant if this window is elevated).
     # No UAC pop-up - if it needs admin we simply fall through to pg_ctl, which
@@ -418,7 +442,6 @@ function Ensure-LocalPostgres {
     # it survives the launcher window closing (unlike a `start /B postgres.exe`
     # child, which dies with 0xC000013A on Ctrl+C / window close).
     $pgctl = Join-Path $PgHome 'bin\pg_ctl.exe'
-    $data = Join-Path $PgHome 'data'
     if ((Test-Path -LiteralPath $pgctl) -and (Test-Path -LiteralPath (Join-Path $data 'postgresql.conf'))) {
         $logDir = Join-Path $data 'log'
         if (-not (Test-Path -LiteralPath $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }

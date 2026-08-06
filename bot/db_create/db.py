@@ -23124,8 +23124,44 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute(query , value , user_id)
 
+    async def ensure_bot_first_start(self, user_id: int) -> Optional[datetime]:
+        """Первый /start: пишет bot_first_start_at один раз (COALESCE)."""
+        query = """
+            UPDATE users
+            SET bot_first_start_at = COALESCE(bot_first_start_at, NOW())
+            WHERE user_id = $1
+            RETURNING bot_first_start_at
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, int(user_id))
+                return row[0] if row else None
+        except Exception as e:
+            # Колонки ещё нет — не роняем /start.
+            print(f"[DB] ensure_bot_first_start({user_id}): {e!r}")
+            return None
 
+    async def get_bot_first_start_at(self, user_id: int) -> Optional[datetime]:
+        query = "SELECT bot_first_start_at FROM users WHERE user_id = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, int(user_id))
+                return row[0] if row else None
+        except Exception:
+            return None
 
+    async def is_bot_newbie(self, user_id: int, days: int = 2) -> bool:
+        """True, если с первого /start прошло не больше `days` суток."""
+        started = await self.get_bot_first_start_at(user_id)
+        if started is None:
+            return False
+        try:
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            return (now - started) <= timedelta(days=max(0, int(days)))
+        except Exception:
+            return False
 
     async def get_welcome_back_count(self , user_id: int) -> int:
         query = "SELECT COALESCE(welcome_back_count, 0) FROM users WHERE user_id = $1"

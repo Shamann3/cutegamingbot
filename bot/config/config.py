@@ -1,6 +1,6 @@
 import os
 
-TOKEN = "7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM"
+TOKEN = "7357700583:AAHHA3jr6f38X6LwNvx9a2scXZHee3DJXTY"
 EDEN_TOKEN = "8784362237:AAFRZ_dQ281GO0YRX-oTL2UyRfISA7H6cP8"
 PWD = "legehdarg34123412cutegamingbot"
 
@@ -318,7 +318,8 @@ _RISK_MULT_DEFAULT = Decimal("1.0")
 # НАСТРОЙКИ СПРАВЕДЛИВОСТИ
 # =========================
 INCREMENT_MODE = "FAIR"                  # "FAIR" | "FIXED"
-HOUSE_EDGE = Decimal("0.00")             # 0.00 - честно; >0 бот в плюсе
+# 0.00 - казна работает в ноль и не растёт. 0.08 даёт возврат игроку 92%.
+HOUSE_EDGE = Decimal("0.08")
 FIXED_GAIN_PER_CLICK = Decimal("0.315")  # для INCREMENT_MODE="FIXED"
 
 # Остальные параметры игры / антиспама
@@ -405,7 +406,9 @@ DARTS_BAD_THROW_CHANCE = Decimal("0.15")
 
 kube_MIN_BET = 2
 kube_BASE_MAX_BET = 1000
-KUBE_MULTIPLIER = Decimal("6")
+# Угадать число - 1 шанс из 6. При множителе 6 казна работала в ноль.
+# 5 даёт возврат игроку 83% и перевес казны 17%.
+KUBE_MULTIPLIER = Decimal("5")
 
 # Скрытый исход "кубик потерялся"
 # 0.05 = 5% на бросок. Меняй здесь.
@@ -588,7 +591,10 @@ textadboutfreeanddefaultque = (
 
 bonusbet = 2
 itembonusbet = 5
-multiplier_soccer = 2
+# Гол засчитывается на 3 из 5 исходов дайса ⚽, то есть 60% ударов.
+# При множителе 2 казна теряла 20 кут с каждых 100 поставленных.
+# 1.5 даёт возврат игроку 90% и перевес казны 10%.
+multiplier_soccer = Decimal("1.5")
 multiplier_bowling = 4
 multiplier_basket = 2
 multiplier_darts = 4
@@ -784,6 +790,11 @@ CuteCoin = 37
 ref_coin = 1
 coinchat = 25
 
+# Ноль здесь осознанный: первые куты выдаёт не регистрация, а бесплатное
+# задание - оно ничего не стоит клубу, пока игрок не дошёл до цели.
+# Именно на этот ноль опирается онбординг, выбирая ветку «получить первые куты».
+# Значение должно совпадать с DEFAULT_BALANCE в server/config.py - кто первым
+# зарегистрировал игрока, тот и задаёт баланс.
 start_balance = 0
 
 sellktkhouse = 600

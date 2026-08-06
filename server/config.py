@@ -418,7 +418,8 @@ OWNER_USER_IDS = os.getenv("OWNER_USER_IDS", "").strip()
 ADMIN_JWT_SECRET = os.getenv("ADMIN_JWT_SECRET", "").strip()
 ADMIN_SESSION_MINUTES = int(os.getenv("ADMIN_SESSION_MINUTES", "60"))
 MAINTENANCE_MODE = os.getenv("MAINTENANCE_MODE", "false").lower() == "true"
-DEFAULT_BALANCE = int(os.getenv("DEFAULT_BALANCE", "100"))
+# Должно совпадать с start_balance в bot/config/config.py.
+DEFAULT_BALANCE = int(os.getenv("DEFAULT_BALANCE", "0"))
 
 # Онлайн: heartbeat + окно без пинга (сек), если leave не дошёл
 ONLINE_WINDOW_SECONDS = int(os.getenv("ONLINE_WINDOW_SECONDS", "30"))

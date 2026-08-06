@@ -7121,19 +7121,24 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
             print(f"Ошибка при получении статуса подписки для пользователя {user_id}: {e}")
             subscription_status = 0
 
-        markup_start = await create_start_inline_markup(subscription_status , user_id , db)
+        # Экран 1 онбординга: одно сообщение вместо двух пустых эмодзи.
+        # Верхняя кнопка зависит от того, есть ли чем играть: нет кут —
+        # ведём к бесплатному заданию, есть — сразу к выбору игры.
+        from bot.funcs.onboarding import EFFECT_START, start_screen
+
+        # Дата первого /start — окно обучающих подсказок (2 суток).
+        try:
+            await db.ensure_bot_first_start(user_id)
+        except Exception as e:
+            print(f"[START] ensure_bot_first_start({user_id}): {e!r}")
+
+        start_body , start_markup = await start_screen(user_id)
+
         sent_message = await bot1(
             SendMessage(
-                chat_id=message.chat.id , text="<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji>" ,
-                reply_markup=markup_start , message_effect_id="5107584321108051014" , parse_mode="HTML"))
-
-        markup1 = InlineKeyboardMarkup(
-            inline_keyboard=[ [ InlineKeyboardButton(
-                text="Играть" , switch_inline_query="игры" , icon_custom_emoji_id="5470088387048266598") ] ])
-        sent_message1 = await bot1(
-            SendMessage(
-                chat_id=message.chat.id , text="<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji>" ,
-                reply_markup=markup1 , message_effect_id="5046509860389126442" , parse_mode="HTML"))
+                chat_id=message.chat.id , text=start_body ,
+                reply_markup=start_markup , message_effect_id=EFFECT_START ,
+                parse_mode="HTML" , disable_web_page_preview=True))
         bns_add_request(user_id , sent_message.message_id , reason="print('🏉🏉🏉🏉🏉🏉 message_text : ', message.text)")
         message_state [ message.from_user.id ] = sent_message.message_id
 
@@ -19568,6 +19573,208 @@ async def gc_get_active_assignment(user_id: int) -> Optional[Dict[str, Any]]:
 #                                     ЗАГРУЗКА ШАБЛОНОВ GC
 # -------------------------------------------------------------------------------------------------
 
+# -------------------------------------------------------------------------------------------------
+#          ПРАВА БОТА В ГРУППЕ ЗАДАНИЯ (admin check + cache)
+# -------------------------------------------------------------------------------------------------
+# Задание привязано к группе → бот обязан быть администратором, иначе игры
+# не запустятся. Новичкам (онбординг) такие задания скрываем полностью.
+# Во вкладке «Челленджи» показываем как «Неисправно».
+
+_GC_BOT_VENUE_CACHE: Dict[str, Tuple[float, bool, str]] = {}
+_GC_BOT_VENUE_TTL = 120.0
+_GC_BOT_ID_CACHE: Optional[int] = None
+
+
+def gc_clear_bot_venue_cache() -> None:
+    _GC_BOT_VENUE_CACHE.clear()
+
+
+async def _gc_bot_id() -> Optional[int]:
+    global _GC_BOT_ID_CACHE
+    if _GC_BOT_ID_CACHE:
+        return _GC_BOT_ID_CACHE
+    try:
+        me = await bot1.get_me()
+        _GC_BOT_ID_CACHE = int(me.id)
+        return _GC_BOT_ID_CACHE
+    except Exception as e:
+        _qdbg_exc("[GC] _gc_bot_id: get_me fail", e)
+        try:
+            return int(getattr(bot1, "id", 0) or 0) or None
+        except Exception:
+            return None
+
+
+def _gc_venue_cache_key(
+    chat_id: Optional[int], chat_ref: Optional[str],
+) -> str:
+    if chat_id:
+        try:
+            return f"id:{int(chat_id)}"
+        except Exception:
+            pass
+    ref = str(chat_ref or "").strip().lower()
+    return f"ref:{ref}" if ref else "none"
+
+
+def _gc_api_ref(
+    chat_id: Optional[int], chat_ref: Optional[str],
+) -> Optional[Union[int, str]]:
+    if chat_id:
+        try:
+            return int(chat_id)
+        except Exception:
+            pass
+    ref = str(chat_ref or "").strip()
+    if not ref:
+        return None
+    if ref.lstrip("-").isdigit():
+        try:
+            return int(ref)
+        except Exception:
+            return ref
+    return ref if ref.startswith("@") else f"@{ref}"
+
+
+async def gc_bot_can_serve_venue(
+    chat_id: Optional[int] = None,
+    chat_ref: Optional[str] = None,
+) -> Tuple[bool, str]:
+    """Может ли бот проводить игры в целевой группе задания.
+
+    Returns: (ok, reason)
+      ok=True  - unrestricted / administrator / creator
+      ok=False - нет бота, не админ, чат недоступен, ошибка проверки
+    """
+    api_ref = _gc_api_ref(chat_id, chat_ref)
+    if api_ref is None:
+        # Нет жёсткой привязки к группе - можно играть в клубе.
+        return True, "unrestricted"
+
+    key = _gc_venue_cache_key(chat_id, chat_ref)
+    now = time.monotonic()
+    cached = _GC_BOT_VENUE_CACHE.get(key)
+    if cached and (now - cached[0]) < _GC_BOT_VENUE_TTL:
+        return cached[1], cached[2]
+
+    bot_id = await _gc_bot_id()
+    if not bot_id:
+        result = (False, "bot_id_unknown")
+        _GC_BOT_VENUE_CACHE[key] = (now, result[0], result[1])
+        return result
+
+    try:
+        member = await asyncio.wait_for(
+            bot1.get_chat_member(api_ref, bot_id),
+            timeout=5.0,
+        )
+        status = str(getattr(member, "status", "") or "").lower()
+        if status in ("administrator", "creator"):
+            result = (True, "admin")
+        elif status in ("member", "restricted"):
+            result = (False, "not_admin")
+        elif status in ("left", "kicked"):
+            result = (False, "missing")
+        else:
+            result = (False, f"status:{status or 'unknown'}")
+    except Exception as e:
+        err = str(e).lower()
+        if any(
+            x in err
+            for x in (
+                "forbidden",
+                "kicked",
+                "chat not found",
+                "chat_not_found",
+                "bot is not a member",
+                "have no rights",
+                "not enough rights",
+            )
+        ):
+            result = (False, "unreachable")
+        else:
+            # На сомнении не отдаём новичкам - считаем неисправным.
+            result = (False, f"error:{type(e).__name__}")
+        _qdbg_exc(f"[GC] gc_bot_can_serve_venue fail ref={api_ref!r}", e)
+
+    _GC_BOT_VENUE_CACHE[key] = (now, result[0], result[1])
+    _qdbg(
+        f"[GC] venue check ref={api_ref!r} -> ok={result[0]} reason={result[1]}"
+    )
+    return result
+
+
+async def gc_bot_can_serve_template(tpl: Dict[str, Any]) -> Tuple[bool, str]:
+    """Проверка шаблона челленджа по target_chat_*."""
+    if not isinstance(tpl, dict):
+        return False, "bad_template"
+    raw_id = tpl.get("target_chat_id")
+    chat_id: Optional[int] = None
+    if raw_id not in (None, "", 0, "0"):
+        try:
+            chat_id = int(raw_id)
+        except Exception:
+            chat_id = None
+    chat_ref = tpl.get("target_chat_ref") or tpl.get("chat_ref")
+    return await gc_bot_can_serve_venue(chat_id, chat_ref)
+
+
+async def gc_mark_templates_venue_status(
+    templates: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Помечает шаблоны: bot_venue_ok / bot_venue_broken / bot_venue_reason."""
+    rows = [dict(t) for t in (templates or []) if isinstance(t, dict)]
+    if not rows:
+        return []
+
+    venues: Dict[str, Tuple[Optional[int], Optional[str]]] = {}
+    for t in rows:
+        raw_id = t.get("target_chat_id")
+        chat_id: Optional[int] = None
+        if raw_id not in (None, "", 0, "0"):
+            try:
+                chat_id = int(raw_id)
+            except Exception:
+                chat_id = None
+        chat_ref = t.get("target_chat_ref") or t.get("chat_ref")
+        key = _gc_venue_cache_key(chat_id, chat_ref)
+        venues[key] = (chat_id, chat_ref)
+
+    async def _one(key: str, pair: Tuple[Optional[int], Optional[str]]):
+        ok, reason = await gc_bot_can_serve_venue(pair[0], pair[1])
+        return key, ok, reason
+
+    checked = await asyncio.gather(
+        *[_one(k, v) for k, v in venues.items()],
+        return_exceptions=True,
+    )
+    by_key: Dict[str, Tuple[bool, str]] = {}
+    for item in checked:
+        if isinstance(item, Exception):
+            _qdbg_exc("[GC] gc_mark_templates_venue_status gather item fail", item)
+            continue
+        key, ok, reason = item
+        by_key[key] = (ok, reason)
+
+    out: List[Dict[str, Any]] = []
+    for t in rows:
+        raw_id = t.get("target_chat_id")
+        chat_id = None
+        if raw_id not in (None, "", 0, "0"):
+            try:
+                chat_id = int(raw_id)
+            except Exception:
+                chat_id = None
+        chat_ref = t.get("target_chat_ref") or t.get("chat_ref")
+        key = _gc_venue_cache_key(chat_id, chat_ref)
+        ok, reason = by_key.get(key, (True, "unrestricted"))
+        t["bot_venue_ok"] = bool(ok)
+        t["bot_venue_broken"] = not bool(ok)
+        t["bot_venue_reason"] = reason
+        out.append(t)
+    return out
+
+
 async def gc_load_templates_for_user(user_id: int) -> List[Dict[str, Any]]:
     """
     GC-список доступных шаблонов.
@@ -20224,7 +20431,33 @@ async def gc_build_list_kb(
       поднять с A → B кут [+reward] | мин betlimit
 
     Если слоты заняты - помечаем соответствующим префиксом и делаем кнопку неактивной.
+    Если бот не админ в группе задания - «⚠️ Неисправно» (в конце списка).
     """
+    # Проверяем права бота в целевых группах и сортируем:
+    # рабочие сначала, неисправные внизу.
+    try:
+        templates = await gc_mark_templates_venue_status(list(templates or []))
+    except Exception as e:
+        _qdbg_exc("[GC] gc_build_list_kb: venue mark fail", e)
+        templates = list(templates or [])
+
+    def _tpl_sort_key(t: Dict[str, Any]):
+        broken = 1 if t.get("bot_venue_broken") else 0
+        try:
+            rw = -float(t.get("reward_amount") or 0)
+        except Exception:
+            rw = 0.0
+        try:
+            tid = int(t.get("id") or t.get("template_id") or 0)
+        except Exception:
+            tid = 0
+        return (broken, rw, tid)
+
+    try:
+        templates = sorted(templates, key=_tpl_sort_key)
+    except Exception as e:
+        _qdbg_exc("[GC] gc_build_list_kb: sort fail", e)
+
     total = len(templates or [])
 
     # --- расчёт страниц ---
@@ -20348,10 +20581,18 @@ async def gc_build_list_kb(
             if not label:
                 label = "Игровой челлендж"
 
-            # учитываем занятость слотов
+            # учитываем занятость слотов и права бота в группе
+            venue_broken = bool(t.get("bot_venue_broken"))
             if full_slots:
                 label = f"⚠️ {label} (слоты заняты)"
                 cb = "noop"
+            elif venue_broken:
+                # Коротко: новичок во вкладке заданий видит неисправность,
+                # но не может взять такое задание.
+                label = f"⚠️ Неисправно · {label}"
+                if len(label) > 64:
+                    label = label[:61] + "..."
+                cb = f"qst:gc_broken:{tid}"
             else:
                 cb = f"qst:gc_show:{tid}"
 
@@ -22037,6 +22278,74 @@ async def gc_page_callback(callback_query: types.CallbackQuery):
         await _gc_safe_answer(callback_query, "Ошибка.", True)
 
 
+@dp.callback_query(lambda c: c.data and c.data.startswith("qst:gc_broken:"))
+async def gc_broken_callback(callback_query: types.CallbackQuery):
+    """Карточка неисправного челленджа: бот не админ в целевой группе."""
+    user_id = callback_query.from_user.id
+    raw = (callback_query.data or "").split(":")
+    try:
+        template_id = int(raw[2]) if len(raw) > 2 else 0
+    except Exception:
+        template_id = 0
+
+    try:
+        await callback_query.answer()
+    except Exception:
+        pass
+
+    try:
+        tpl = await _try_db_call(["get_gc_template_by_id"], template_id, default=None)
+        ok, reason = (False, "unknown")
+        where = "целевой группе"
+        if isinstance(tpl, dict):
+            ok, reason = await gc_bot_can_serve_template(tpl)
+            ref = str(tpl.get("target_chat_ref") or "").strip()
+            if ref:
+                where = ref if ref.startswith("@") else f"@{ref.lstrip('@')}"
+            elif tpl.get("target_chat_id"):
+                where = f"чате {tpl.get('target_chat_id')}"
+
+        reason_human = {
+            "not_admin": "бот есть в группе, но без прав администратора",
+            "missing": "бот удалён из группы",
+            "unreachable": "группа недоступна боту",
+            "bot_id_unknown": "не удалось определить бота",
+            "unrestricted": "привязки к группе нет",
+            "admin": "бот - администратор",
+        }.get(reason, reason)
+
+        lines = [
+            "⚠️ <b>Задание временно неисправно</b>",
+            "",
+            f"Группа: <b>{html.escape(str(where))}</b>",
+            f"Причина: <b>{html.escape(str(reason_human))}</b>",
+            "",
+            "Чтобы задание снова заработало, бот должен быть "
+            "<b>администратором</b> в этой группе.",
+            "",
+            "Напишите админу группы или выберите другое задание.",
+        ]
+        kb = types.InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕 К списку челленджей", callback_data="qst:show_gc")],
+            [InlineKeyboardButton(text="🏝 В главное меню", callback_data="qst:menu_back")],
+        ])
+        if callback_query.message:
+            await _safe_edit_message_text(
+                chat_id=callback_query.message.chat.id,
+                message_id=callback_query.message.message_id,
+                text="\n".join(lines),
+                reply_markup=kb,
+                replacement_sticker=GC_STICKER_LIST,
+            )
+        _qdbg(
+            f"[GC] gc_broken_callback user={user_id} tid={template_id} "
+            f"ok={ok} reason={reason}"
+        )
+    except Exception as e:
+        _qdbg_exc("[GC] gc_broken_callback fail", e)
+        await _gc_safe_answer(callback_query, "Ошибка.", True)
+
+
 @dp.callback_query(lambda c: c.data and c.data.startswith("qst:gc_show:"))
 async def gc_show_one_callback(callback_query: types.CallbackQuery):
     """
@@ -22100,6 +22409,16 @@ async def gc_show_one_callback(callback_query: types.CallbackQuery):
             )
             await _gc_safe_answer(callback_query, "Это задание больше недоступно.", True)
             return await gc_show_menu(callback_query)
+
+        # --- бот должен быть админом в группе задания ---
+        venue_ok, venue_reason = await gc_bot_can_serve_template(tpl)
+        if not venue_ok:
+            _qdbg(
+                f"[GC] gc_show_one_callback: venue broken tid={template_id} "
+                f"reason={venue_reason}"
+            )
+            callback_query.data = f"qst:gc_broken:{template_id}"
+            return await gc_broken_callback(callback_query)
 
         # --- проверка статуса ---
         status = str(tpl.get("status") or "active").strip().lower()
@@ -22209,6 +22528,12 @@ async def gc_refresh_callback(callback_query: types.CallbackQuery):
     try:
         try:
             await callback_query.answer()
+        except Exception:
+            pass
+
+        # Свежая проверка прав бота в группах заданий.
+        try:
+            gc_clear_bot_venue_cache()
         except Exception:
             pass
 
@@ -22359,6 +22684,18 @@ async def gc_start_callback(callback_query: types.CallbackQuery):
 
         if _slots_exhausted():
             return await _safe_answer("Все слоты этого задания уже заняты.", True)
+
+        # Бот должен быть администратором в группе задания.
+        venue_ok, venue_reason = await gc_bot_can_serve_template(tpl)
+        if not venue_ok:
+            _qdbg(
+                f"gc_start_callback: venue broken tid={template_id} reason={venue_reason}"
+            )
+            return await _safe_answer(
+                "Это задание сейчас неисправно: бот должен быть администратором "
+                "в группе задания. Выберите другое.",
+                True,
+            )
 
         # --- проверяем, есть ли уже активный assignment у пользователя ---#
         existing = await _try_db_call(["get_active_gc_assignment"], user_id, default=None)
@@ -23350,22 +23687,71 @@ async def gc_process_bet(
                     progress_target=target_amount,
                     status="failed",
                 )
+                fail_text = emoji
+                fail_kb = kb
+
+                # Новичок (до 2 суток с первого /start): полное сообщение с упоминанием.
+                try:
+                    is_newbie = bool(await db.is_bot_newbie(int(uid), days=2))  # type: ignore[name-defined]
+                except Exception:
+                    is_newbie = False
+                if is_newbie:
+                    try:
+                        from bot.funcs.onboarding import (
+                            newbie_quest_failed_markup,
+                            newbie_quest_failed_text,
+                            _mention_html,
+                        )
+                        first_name = None
+                        try:
+                            first_name = await db.get_firstname_by_user_id(int(uid))  # type: ignore[name-defined]
+                        except Exception:
+                            first_name = None
+                        fail_text = newbie_quest_failed_text(
+                            mention=_mention_html(int(uid), first_name),
+                        )
+                        try:
+                            fail_kb = newbie_quest_failed_markup()
+                        except Exception:
+                            fail_kb = kb
+                    except Exception as e:
+                        _gc_log_exc("FAIL_MSG_NEWBIE", e)
+                        fail_text = emoji
+                        fail_kb = kb
 
                 _gc_log(
                     "FAIL_MSG",
-                    f"отправляю огонёк-провал в чат {event_chat_id!r}",
+                    f"отправляю провал в чат {event_chat_id!r} newbie={is_newbie}",
                 )
                 try:
                     await bot1.send_message(  # type: ignore[name-defined]
                         chat_id=event_chat_id,
-                        text=emoji,
-                        reply_markup=kb,
+                        text=fail_text,
+                        reply_markup=fail_kb,
                         parse_mode="HTML",
                         disable_web_page_preview=True,
                         reply_to_message_id=reply_to_message_id,
                     )
                 except Exception as e:
+                    # Fallback без premium emoji / без markup.
                     _gc_log_exc("FAIL_MSG", e)
+                    try:
+                        plain = fail_text
+                        try:
+                            from bot.funcs.onboarding import _html_plain as _ob_plain
+                            plain = _ob_plain(fail_text)
+                        except Exception:
+                            pass
+                        await bot1.send_message(  # type: ignore[name-defined]
+                            chat_id=event_chat_id,
+                            text=plain if is_newbie else emoji,
+                            reply_markup=kb,
+                            parse_mode="HTML",
+                            disable_web_page_preview=True,
+                            reply_to_message_id=reply_to_message_id,
+                        )
+                    except Exception as e2:
+                        _gc_log_exc("FAIL_MSG_FALLBACK", e2)
 
                 _gc_log("FAIL_DONE", f"failed, new_two={new_two_db}")
                 return {
@@ -38045,6 +38431,7 @@ async def handle_help_command(message: Message):
 
 
 import bot.funcs.help  # noqa: F401 — callback-хендлеры help
+import bot.funcs.onboarding  # noqa: F401 — экраны онбординга «три клика»
 from bot.funcs.other import *
 from bot.games.game import *
 from bot.funcs.marriage import *
