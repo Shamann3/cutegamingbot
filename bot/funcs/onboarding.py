@@ -282,112 +282,183 @@ def _label_for_button(label: str) -> Tuple[str, Optional[str]]:
 # ──────────────────────────────────────────────────────────────────────
 # Реестр одиночных игр
 # ──────────────────────────────────────────────────────────────────────
-# cmd      - шаблон команды, которую разбирает сама игра
-# rules    - одна строка: что делаешь и что бывает
-# variants - если игра требует выбор (число, направление, цвет),
-#            он становится последним кликом вместо «Начать играть»
+# Логика партии всегда в самой игре (slots.py, trade.py, …). Здесь только
+# то, что нужно онбордингу, чтобы довести новичка до её сообщения.
+#
+# Простая игра - это шесть строк: название, эмодзи, слово команды,
+# минимальная ставка, правило и адрес обработчика. Если игра требует выбор
+# (число, цвет, направление) - добавляются choose и options.
+# Шаблон команды и список быстрых игр выводятся сами, руками их не держим.
+
+
+def _game(
+    *,
+    title: str,
+    emoji: str,
+    command: str,
+    min_bet: int,
+    rules: str,
+    handler: str,
+    instant: bool = False,
+    choose: str = "",
+    options: Optional[Sequence[Tuple[str, str]]] = None,
+    choice_first: bool = False,
+) -> Dict[str, Any]:
+    """Одна строка реестра игр.
+
+    command      - слово, с которого игрок пишет команду в группе: «футбол 10».
+    handler      - «модуль:функция» игры, которая ведёт партию.
+    instant      - партия заканчивается сразу (кубик, слоты), а не живёт
+                   на кнопках (башня, бомбы). От этого зависит, слать ли
+                   итог в личку сразу после хода.
+    options      - если игре нужен выбор (число, цвет, направление), он
+                   становится последним кликом вместо «Начать играть».
+    choice_first - выбор идёт перед ставкой: «трейд вверх 10».
+    """
+    module, _, func = handler.partition(":")
+    if not module or not func:
+        raise ValueError(f"handler должен быть «модуль:функция», получено {handler!r}")
+
+    if options:
+        cmd = f"{command} {{v}} {{bet}}" if choice_first else f"{command} {{bet}} {{v}}"
+    else:
+        cmd = f"{command} {{bet}}"
+
+    game: Dict[str, Any] = {
+        "title": title,
+        "emoji": emoji,
+        "min": int(min_bet),
+        "command": command,
+        "cmd": cmd,
+        "rules": rules,
+        "module": module,
+        "func": func,
+        "instant": bool(instant),
+    }
+    if options:
+        game["variants"] = list(options)
+        game["variant_hint"] = choose or "Сделайте выбор"
+    return game
+
+
+# Правило пишем одинаково у всех: что делаете - что получаете - чем рискуете.
 GAMES: Dict[str, Dict[str, Any]] = {
-    "soccer": {
-        "title": "Футбол", "emoji": "<tg-emoji emoji-id='5373101763442255191'>⚽️</tg-emoji>", "min": 2,
-        "cmd": "футбол {bet}",
-        "rules": "Гол - забираете большой выигрыш. Мимо - теряете.",
-        "module": "bot.tggames.soccer", "func": "tgsoccer",
-    },
-    "slots": {
-        "title": "Слоты", "emoji": "<tg-emoji emoji-id='5891135206580031104'>🎉</tg-emoji>", "min": 2,
-        "cmd": "слоты {bet}",
-        "rules": "Три одинаковых символа - крупный выигрыш.",
-        "module": "bot.tggames.slots", "func": "tgslots",
-    },
-    "tank": {
-        "title": "Башня", "emoji": "<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji>", "min": 2,
-        "cmd": "башня {bet}",
-        "rules": "Этаж за этажом выигрыш растёт. Успейте забрать до обвала.",
-        "module": "bot.games.tank", "func": "game_filter_tank",
-    },
-    "darts": {
-        "title": "Дартс", "emoji": "<tg-emoji emoji-id='5890815115552362075'>🎯</tg-emoji>", "min": 2,
-        "cmd": "дартс {bet}",
-        "rules": "Попали в центр - забираете большой выигрыш",
-        "module": "bot.tggames.darts", "func": "tgdarts",
-    },
-    "basket": {
-        "title": "Баскетбол", "emoji": "<tg-emoji emoji-id='5891181665241271999'>🏀</tg-emoji>", "min": 2,
-        "cmd": "баскет {bet}",
-        "rules": "Попали в кольцо - выигрыш. Мимо - теряете ставку.",
-        "module": "bot.tggames.basket", "func": "tgbasket",
-    },
-    "bowling": {
-        "title": "Боулинг", "emoji": "<tg-emoji emoji-id='5891120371762990493'>🎳</tg-emoji>", "min": 2,
-        "cmd": "боулинг {bet}",
-        "rules": "Страйк - выигрыш. Всё остальное - нет.",
-        "module": "bot.tggames.bowling", "func": "tgbowling",
-    },
-    "kube": {
-        "title": "Кубик", "emoji": "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji>", "min": 2,
-        "cmd": "куб {bet} {v}",
-        "variants": [(str(n), str(n)) for n in range(1, 7)],
-        "variant_hint": "Выбери число",
-        "rules": "Угадал число на кубике - выигрыш в несколько ставок.",
-        "module": "bot.tggames.kube", "func": "tgkube",
-    },
-    "balls": {
-        "title": "Шарик", "emoji": "<tg-emoji emoji-id='5363877049863786071'>🎱</tg-emoji>", "min": 2,
-        "cmd": "шарик {bet}",
-        "rules": "Три стакана, под одним шарик. Угадал - выигрыш.",
-        "module": "bot.games.balls", "func": "balls",
-    },
-    "provoda": {
-        "title": "Провода", "emoji": "<tg-emoji emoji-id='5782990399672946716'>🎗</tg-emoji>", "min": 2,
-        "cmd": "провода {bet}",
-        "rules": "Перерезали верный провод - выигрыш. Ошиблись - теряете ставку.",
-        "module": "bot.games.provoda", "func": "provoda",
-    },
-    "bombs": {
-        "title": "Бомбы", "emoji": "<tg-emoji emoji-id='5469654973308476699'>💣</tg-emoji>", "min": 3,
-        "cmd": "бомбы {bet}",
-        "rules": "Открываете клетки, выигрыш растёт. Бомба - теряете всё.",
-        "module": "bot.games.bombs", "func": "bombs",
-    },
-    "plate": {
-        "title": "Плиты", "emoji": "<tg-emoji emoji-id='5246916607833304803'>💫</tg-emoji>", "min": 2,
-        "cmd": "плиты {bet}",
-        "rules": "Шагаете по плитам, выигрыш растёт. Провалились - теряете ставку.",
-        "module": "bot.games.plate", "func": "plate",
-    },
-    "risk": {
-        "title": "Риск", "emoji": "<tg-emoji emoji-id='5438449312893792440'>🌴</tg-emoji>", "min": 5,
-        "cmd": "риск {bet}",
-        "rules": "Каждый шаг умножает выигрыш. Забирайте, пока не сгорел.",
-        "module": "bot.games.risk", "func": "risk",
-    },
-    "trade": {
-        "title": "Трейд", "emoji": "<tg-emoji emoji-id='5296306038792808890'>📈</tg-emoji>", "min": 2,
-        "cmd": "трейд {v} {bet}",
-        "variants": [("<tg-emoji emoji-id='5339384049670593248'>↗️</tg-emoji> Вверх", "вверх"), ("<tg-emoji emoji-id='5339179750961224703'>📉</tg-emoji> Вниз", "вниз")],
-        "variant_hint": "Куда пойдёт график",
-        "rules": "Угадали направление - выигрыш. Иногда сделка срывается.",
-        "module": "bot.games.trade", "func": "trade",
-    },
-    "fortuna": {
-        "title": "Рулетка", "emoji": "<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji>", "min": 2,
-        "cmd": "рулетка {bet} {v}",
-        "variants": [("🔴 Красное", "красное"), ("⚫️ Чёрное", "черное")],
-        "variant_hint": "Выбери цвет",
-        "rules": "Угадали цвет - забираете больше ставки.",
-        "module": "bot.games.Fortuna", "func": "Fortuna",
-    },
+    "soccer": _game(
+        title="Футбол",
+        emoji="<tg-emoji emoji-id='5373101763442255191'>⚽️</tg-emoji>",
+        command="футбол", min_bet=2, instant=True,
+        rules="Забили гол - выигрыш. Промах - ставка сгорает.",
+        handler="bot.tggames.soccer:tgsoccer",
+    ),
+    "slots": _game(
+        title="Слоты",
+        emoji="<tg-emoji emoji-id='5891135206580031104'>🎉</tg-emoji>",
+        command="слоты", min_bet=2, instant=True,
+        rules="Три одинаковых символа - крупный выигрыш. Иначе ставка сгорает.",
+        handler="bot.tggames.slots:tgslots",
+    ),
+    "tank": _game(
+        title="Башня",
+        emoji="<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji>",
+        command="башня", min_bet=2,
+        rules="Поднимаетесь по этажам, выигрыш растёт. Успейте забрать до обвала.",
+        handler="bot.games.tank:game_filter_tank",
+    ),
+    "darts": _game(
+        title="Дартс",
+        emoji="<tg-emoji emoji-id='5890815115552362075'>🎯</tg-emoji>",
+        command="дартс", min_bet=2, instant=True,
+        rules="Попали в центр - крупный выигрыш. Мимо - ставка сгорает.",
+        handler="bot.tggames.darts:tgdarts",
+    ),
+    "basket": _game(
+        title="Баскетбол",
+        emoji="<tg-emoji emoji-id='5891181665241271999'>🏀</tg-emoji>",
+        command="баскет", min_bet=2, instant=True,
+        rules="Попали в кольцо - выигрыш. Мимо - ставка сгорает.",
+        handler="bot.tggames.basket:tgbasket",
+    ),
+    "bowling": _game(
+        title="Боулинг",
+        emoji="<tg-emoji emoji-id='5891120371762990493'>🎳</tg-emoji>",
+        command="боулинг", min_bet=2, instant=True,
+        rules="Выбили страйк - выигрыш. Иначе ставка сгорает.",
+        handler="bot.tggames.bowling:tgbowling",
+    ),
+    "kube": _game(
+        title="Кубик",
+        emoji="<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji>",
+        command="куб", min_bet=2, instant=True,
+        rules="Угадали число на кубике - выигрыш в несколько ставок. Нет - ставка сгорает.",
+        handler="bot.tggames.kube:tgkube",
+        choose="Выберите число",
+        options=[(str(n), str(n)) for n in range(1, 7)],
+    ),
+    "balls": _game(
+        title="Шарик",
+        emoji="<tg-emoji emoji-id='5363877049863786071'>🎱</tg-emoji>",
+        command="шарик", min_bet=2,
+        rules="Три стакана, шарик под одним. Угадали - выигрыш, нет - ставка сгорает.",
+        handler="bot.games.balls:balls",
+    ),
+    "provoda": _game(
+        title="Провода",
+        emoji="<tg-emoji emoji-id='5782990399672946716'>🎗</tg-emoji>",
+        command="провода", min_bet=2,
+        rules="Перерезали верный провод - выигрыш. Ошиблись - ставка сгорает.",
+        handler="bot.games.provoda:provoda",
+    ),
+    "bombs": _game(
+        title="Бомбы",
+        emoji="<tg-emoji emoji-id='5469654973308476699'>💣</tg-emoji>",
+        command="бомбы", min_bet=3,
+        rules="Открываете клетки, выигрыш растёт. Нашли бомбу - теряете всё.",
+        handler="bot.games.bombs:bombs",
+    ),
+    "plate": _game(
+        title="Плиты",
+        emoji="<tg-emoji emoji-id='5246916607833304803'>💫</tg-emoji>",
+        command="плиты", min_bet=2,
+        rules="Шагаете по плитам, выигрыш растёт. Провалились - ставка сгорает.",
+        handler="bot.games.plate:plate",
+    ),
+    "risk": _game(
+        title="Риск",
+        emoji="<tg-emoji emoji-id='5438449312893792440'>🌴</tg-emoji>",
+        command="риск", min_bet=5,
+        rules="Каждый шаг умножает выигрыш. Забирайте, пока волна не накрыла.",
+        handler="bot.games.risk:risk",
+    ),
+    "trade": _game(
+        title="Трейд",
+        emoji="<tg-emoji emoji-id='5296306038792808890'>📈</tg-emoji>",
+        command="трейд", min_bet=2, instant=True,
+        rules="Угадали, куда пойдёт график - выигрыш. Нет - ставка сгорает.",
+        handler="bot.games.trade:trade",
+        choose="Выберите направление",
+        choice_first=True,
+        options=[
+            ("<tg-emoji emoji-id='5339384049670593248'>↗️</tg-emoji> Вверх", "вверх"),
+            ("<tg-emoji emoji-id='5339179750961224703'>📉</tg-emoji> Вниз", "вниз"),
+        ],
+    ),
+    "fortuna": _game(
+        title="Рулетка",
+        emoji="<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji>",
+        command="рулетка", min_bet=2, instant=True,
+        rules="Угадали цвет - забираете больше ставки. Нет - ставка сгорает.",
+        handler="bot.games.Fortuna:Fortuna",
+        choose="Выберите цвет",
+        options=[("🔴 Красное", "красное"), ("⚫️ Чёрное", "черное")],
+    ),
 }
 
 # Порядок кнопок - порядок словаря: сверху самые быстрые и понятные.
 SOLO_ORDER: Tuple[str, ...] = tuple(GAMES)
 
-# Игры, которые заканчиваются внутри первого handler'а (dice / one-shot).
-# Для них шлём прогресс в личку сразу после партии.
-# Сессионные (башня, бомбы…) - только кнопка «Играть ещё» на экране готовности.
-INSTANT_GAMES = frozenset({
-    "soccer", "slots", "darts", "basket", "bowling", "kube", "fortuna", "trade",
-})
+# Быстрые игры: партия кончается сразу, поэтому итог летит в личку следом.
+# Остальные живут на кнопках, там прогресс обновляет «Играть ещё».
+INSTANT_GAMES = frozenset(k for k, g in GAMES.items() if g["instant"])
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -1882,6 +1953,8 @@ async def _run_game_and_notify(
             play_chat_ref=play_chat_ref,
             anchor_message_id=anchor_message_id,
             free_quest=free_quest,
+            game_key=game_key,
+            bet=bet,
         )
     except Exception as e:
         print(f"[ONBOARDING] newbie tip {user_id}: {e!r}")
@@ -1914,6 +1987,8 @@ async def _maybe_send_newbie_help_tip(
     play_chat_ref: Optional[str],
     anchor_message_id: int,
     free_quest: bool,
+    game_key: str = "",
+    bet: int = 0,
 ) -> None:
     if not await _is_newbie(user.id):
         return
@@ -1927,6 +2002,8 @@ async def _maybe_send_newbie_help_tip(
         mention=_mention_html(user.id, user.first_name),
         free_quest=free_quest,
         venue_label=str(venue),
+        game_key=game_key,
+        bet=bet,
     )
     await _send_html_chat(
         play_chat_id,
@@ -2503,18 +2580,60 @@ async def _send_html_chat(
     return None
 
 
+def _example_command(game: Dict[str, Any], bet: int) -> Tuple[str, str]:
+    """Готовая строка команды и выбранный вариант, если игра его требует.
+
+    Собираем из того же шаблона, что уходит в саму игру, - тогда пример
+    в подсказке гарантированно рабочий, а не «трейд 25» без направления.
+    """
+    template = str(game.get("cmd") or "")
+    if not template:
+        return "", ""
+    options: Sequence[Tuple[str, str]] = game.get("variants") or ()
+    pick = str(options[0][1]) if options else ""
+    text = template.format(bet=bet, v=pick)
+    return " ".join(text.split()), pick
+
+
 def newbie_help_tip_text(
     *,
     mention: str,
     free_quest: bool,
     venue_label: str,
+    game_key: str = "",
+    bet: int = 0,
 ) -> str:
-    """Подсказка в группе после игры из онбординга (только новичкам)."""
-    card = _bq(
-        f"<tg-emoji emoji-id='5318892863780579996'>📖</tg-emoji> Напишите в чат : <code>хелп игры</code>",
-        f"<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> Здесь все команды и мини-игры клуба",
-        f"<tg-emoji emoji-id='5436339947080548936'>🌟</tg-emoji> Продолжайте играть в {venue_label} до цели задания",
+    """Подсказка в группе после игры из онбординга (только новичкам).
+
+    Главное здесь - показать команду этой самой игры готовой строкой:
+    новичок видит, что повтор - это одно сообщение в чат.
+    """
+    game = GAMES.get(game_key) or {}
+    again = max(int(bet or 0), int(game.get("min") or 2))
+    example, pick = _example_command(game, again)
+
+    lines = []
+    if example:
+        lines.append(
+            f"<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> "
+            f"Сыграть ещё : <code>{example}</code>"
+        )
+        explain = (
+            f"{pick} - ваш выбор, {again} - ставка" if pick
+            else f"{again} - это ставка, поставьте любую свою"
+        )
+        lines.append(
+            f"<tg-emoji emoji-id='5303547422373349738'>💰</tg-emoji> {explain}"
+        )
+    lines.append(
+        f"<tg-emoji emoji-id='5318892863780579996'>📖</tg-emoji> "
+        f"Все игры клуба : <code>хелп игры</code>"
     )
+    lines.append(
+        f"<tg-emoji emoji-id='5436339947080548936'>🌟</tg-emoji> "
+        f"Продолжайте играть в {venue_label} до цели задания"
+    )
+    card = _bq(*lines)
     extra = (
         f"<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> <b>Свои куты не тратятся - ставка идёт с баланса задания.</b>"
         if free_quest else
