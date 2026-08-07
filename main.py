@@ -7158,7 +7158,8 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
         # Экран 1 онбординга: одно сообщение вместо двух пустых эмодзи.
         # Верхняя кнопка зависит от того, есть ли чем играть: нет кут —
         # ведём к бесплатному заданию, есть — сразу к выбору игры.
-        from bot.funcs.onboarding import start_screen
+        # Deep /start earn — сразу к списку бесплатных заданий.
+        from bot.funcs.onboarding import start_screen, start_payload_screen
 
         # Дата первого /start — окно обучающих подсказок (2 суток).
         try:
@@ -7166,7 +7167,11 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
         except Exception as e:
             print(f"[START] ensure_bot_first_start({user_id}): {e!r}")
 
-        start_body , start_markup = await start_screen(user_id)
+        payload_screen = await start_payload_screen(user_id, deep)
+        if payload_screen is not None:
+            start_body, start_markup = payload_screen
+        else:
+            start_body, start_markup = await start_screen(user_id)
 
         sent_message = await bot1(
             SendMessage(

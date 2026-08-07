@@ -79,14 +79,41 @@ _QUIET_PATTERNS = (
     "chat not found",
     "have no rights to send a message",
     "not enough rights",
+    "document_invalid",
+    "can't parse entities",
 )
+
+# Edit уже в нужном виде: для Telegram это BadRequest, для нас - успех.
+# Возвращаем True (как у aiogram при частичных edit), без ❌ FAIL и без traceback.
+_IDEMPOTENT_EDIT_METHODS = {
+    "EditMessageText",
+    "EditMessageCaption",
+    "EditMessageReplyMarkup",
+    "EditMessageMedia",
+}
+_IDEMPOTENT_OK_PATTERNS = (
+    "message is not modified",
+)
+
+
+def _error_text(error: Exception) -> str:
+    return str(error).lower()
 
 
 def _is_quiet_error(error: Exception) -> bool:
     if not isinstance(error, (TelegramBadRequest, TelegramForbiddenError)):
         return False
-    text = str(error).lower()
+    text = _error_text(error)
     return any(pattern in text for pattern in _QUIET_PATTERNS)
+
+
+def _is_idempotent_edit_ok(method_name: str, error: Exception) -> bool:
+    if method_name not in _IDEMPOTENT_EDIT_METHODS:
+        return False
+    if not isinstance(error, TelegramBadRequest):
+        return False
+    text = _error_text(error)
+    return any(pattern in text for pattern in _IDEMPOTENT_OK_PATTERNS)
 
 
 def _is_softfail_exception(method_name: str, error: Exception) -> bool:
@@ -162,8 +189,18 @@ class TelegramApiLogger(BaseRequestMiddleware):
                     )
                 return True
 
+            # Экран уже такой, какой нужен - это не ошибка.
+            if _is_idempotent_edit_ok(method_name, e):
+                if _should_log_softfail_once(f"same|{method_name}"):
+                    logger.info(
+                        "↩ SAME  %-28s %.2f ms already current",
+                        method_name,
+                        elapsed,
+                    )
+                return True
+
             if _is_softfail_exception(method_name, e):
-                signature = f"{method_name}|{type(e).__name__}|{str(e).lower()}"
+                signature = f"{method_name}|{type(e).__name__}|{_error_text(e)}"
                 if _should_log_softfail_once(signature):
                     logger.warning(
                         "⚠ SOFTFAIL %-28s %.2f ms %s",
@@ -174,7 +211,7 @@ class TelegramApiLogger(BaseRequestMiddleware):
                 raise
 
             if _is_quiet_error(e):
-                signature = f"quiet|{method_name}|{str(e).lower()}"
+                signature = f"quiet|{method_name}|{_error_text(e)}"
                 if _should_log_softfail_once(signature):
                     logger.warning(
                         "⚠ EXPECTED %-27s %.2f ms %s",
