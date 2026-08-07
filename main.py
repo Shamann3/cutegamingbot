@@ -37,7 +37,18 @@ import copy
 from telethon import TelegramClient, functions, types as telethon_types
 from aiogram.types import User, Message, InlineKeyboardButton, InlineKeyboardMarkup
 
-from aiogram.exceptions import TelegramRetryAfter, TelegramAPIError, TelegramNetworkError
+from aiogram.exceptions import (
+    TelegramRetryAfter,
+    TelegramAPIError,
+    TelegramNetworkError,
+)
+
+try:
+    from aiogram.exceptions import TelegramConflictError  # aiogram ≥3.4
+except ImportError:  # pragma: no cover
+    class TelegramConflictError(TelegramAPIError):  # type: ignore[no-redef]
+        """Fallback, если в установленной aiogram ещё нет этого класса."""
+        pass
 from urllib.parse import quote
 from langdetect import detect
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -39630,6 +39641,20 @@ async def botmain():
     # Запускаем фоновые задачи основного бота
     # (прогрев списка предметов уже запущен ранее, сразу после подключения к БД)
     asyncio.create_task(_after_polling_started())
+    async def _claim_get_updates(*, reason: str = "start") -> None:
+        """Снимаем webhook и готовим очередь к единственному getUpdates.
+
+        Conflict появляется, когда второй процесс (часто DigitalOcean) уже
+        поллит тот же токен. Перед стартом и при Conflict чистим webhook —
+        это не убивает чужой poller, но даёт шанс перехватить очередь после
+        паузы. На локальной разработке поставьте BOT_KILL_SWITCH=true на DO.
+        """
+        try:
+            await bot1.delete_webhook(drop_pending_updates=True)
+            print(f"[MAIN] webhook снят, очередь очищена ({reason})")
+        except Exception as e:
+            print(f"[MAIN] delete_webhook ({reason}): {e!r}")
+
     async def _resilient_polling(label, coro_factory, max_hard_failures=5):
         """Устойчивый polling.
 
@@ -39640,6 +39665,7 @@ async def botmain():
         """
         net_attempt = 0
         hard_failures = 0
+        conflict_attempt = 0
         while True:
             try:
                 await coro_factory()
@@ -39648,6 +39674,19 @@ async def botmain():
             except asyncio.CancelledError:
                 print(f"[{label}] polling отменён (штатная остановка)")
                 raise
+            except TelegramConflictError as e:
+                conflict_attempt += 1
+                delay = min(60.0, 8.0 + 2.0 * min(conflict_attempt, 10))
+                print(
+                    f"[{label}][CONFLICT] другой процесс держит getUpdates "
+                    f"(попытка {conflict_attempt}). "
+                    f"Локально: остановите второй main.py / поставьте "
+                    f"BOT_KILL_SWITCH=true на DigitalOcean. "
+                    f"Повтор через {delay:.0f}s. ({e})"
+                )
+                if label == "MAIN":
+                    await _claim_get_updates(reason=f"conflict-{conflict_attempt}")
+                await asyncio.sleep(delay)
             except TelegramRetryAfter as e:
                 net_attempt = 0
                 delay = float(getattr(e, "retry_after", 5)) + 1.0
@@ -39659,6 +39698,18 @@ async def botmain():
                 print(f"[{label}][NET] {type(e).__name__}: {e} → перезапуск polling через {delay:.0f}s (сетевая попытка {net_attempt})")
                 await asyncio.sleep(delay)
             except Exception as e:
+                # aiogram иногда оборачивает Conflict иначе — ловим по тексту.
+                if "terminated by other getUpdates" in str(e).lower() or "conflict" in type(e).__name__.lower():
+                    conflict_attempt += 1
+                    delay = min(60.0, 8.0 + 2.0 * min(conflict_attempt, 10))
+                    print(
+                        f"[{label}][CONFLICT] {type(e).__name__}: {e} → "
+                        f"повтор через {delay:.0f}s (попытка {conflict_attempt})"
+                    )
+                    if label == "MAIN":
+                        await _claim_get_updates(reason=f"conflict-{conflict_attempt}")
+                    await asyncio.sleep(delay)
+                    continue
                 hard_failures += 1
                 if hard_failures >= max_hard_failures:
                     print(f"[{label}][FATAL] {type(e).__name__}: {e} — {hard_failures} серьёзных сбоев подряд, останавливаю {label}")
@@ -39681,6 +39732,18 @@ async def botmain():
     # короткий, и терять сообщения людей нельзя.
     _cold_start = {"main": True}
 
+    # Пауза перед первым getUpdates: отдаёт очередь предыдущему инстансу
+    # (деплой / второй терминал). Локально по умолчанию 3с, на DO можно
+    # задать BOT_POLLING_START_DELAY.
+    try:
+        _poll_delay = float(os.getenv("BOT_POLLING_START_DELAY", "3") or "3")
+    except ValueError:
+        _poll_delay = 3.0
+    if _poll_delay > 0:
+        print(f"[MAIN] жду {_poll_delay:.0f}s перед polling (отпускаем другой инстанс)")
+        await asyncio.sleep(_poll_delay)
+    await _claim_get_updates(reason="cold-start")
+
     def _main_polling():
         drop = _cold_start["main"]
         _cold_start["main"] = False
@@ -39699,30 +39762,16 @@ async def botmain():
             ],
         )
 
-    first_polling_tasks = [
+    polling_tasks = [
         _resilient_polling("MAIN", _main_polling),
     ]
     if cp is not None:
-        first_polling_tasks.append(
+        polling_tasks.append(
             _resilient_polling("PAYMENT", lambda: cp.start_polling())
         )
 
-    await asyncio.gather(*first_polling_tasks)
-
-
-
-
-
     try:
-        print("[🚀] Запускаем основной и платёжный боты...")
-        second_polling_tasks = [
-            _resilient_polling("MAIN", _main_polling),
-        ]
-        if cp is not None:
-            second_polling_tasks.append(
-                _resilient_polling("PAYMENT", lambda: cp.start_polling())
-            )
-        await asyncio.gather(*second_polling_tasks)
+        await asyncio.gather(*polling_tasks)
     except asyncio.CancelledError:
         print("[SYSTEM] Получен CancelledError (остановка).")
         raise

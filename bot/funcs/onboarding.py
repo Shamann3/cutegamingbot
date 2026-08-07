@@ -197,35 +197,54 @@ def _bq(*parts: str) -> str:
 
 
 
+def _progress_pct(current: int, target: int) -> int:
+    if target <= 0:
+        return 0
+    return int(max(0, min(100, (current * 100) // target)))
+
+
+def _progress_bar(current: int, target: int) -> str:
+    pct = _progress_pct(current, target)
+    filled = int(round(pct * PROGRESS_SEGMENTS / 100))
+    filled = max(0, min(PROGRESS_SEGMENTS, filled))
+    return "■" * filled + "□" * (PROGRESS_SEGMENTS - filled)
+
+
 def _progress_line(current: int, target: int) -> str:
     """Живой прогресс до цели задания: [■■■□□□□□□□] 30%."""
-    if target <= 0:
-        pct = 0
-        filled = 0
-    else:
-        pct = int(max(0, min(100, (current * 100) // target)))
-        filled = int(round(pct * PROGRESS_SEGMENTS / 100))
-        filled = max(0, min(PROGRESS_SEGMENTS, filled))
-    bar = "■" * filled + "□" * (PROGRESS_SEGMENTS - filled)
-    return f"<tg-emoji emoji-id='5321021153219732362'>⚡️</tg-emoji> [{bar}] {pct}%"
-
-
-def _quest_stats(wallet: "Wallet") -> str:
-    """Короткий прогресс задания - по одной мысли в строке."""
-    left = max(0, wallet.target - wallet.amount)
-    return _lines(
-        _progress_line(wallet.amount, wallet.target),
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут",
-        f"<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> Цель : {wallet.target} кут",
-        f"<tg-emoji emoji-id='5321021153219732362'>⚡️</tg-emoji> До цели : {left} кут",
-        f"<tg-emoji emoji-id='5294001020039363545'>🏆</tg-emoji> Награда : +{wallet.reward} кут",
+    return (
+        f"<tg-emoji emoji-id='5321021153219732362'>⚡️</tg-emoji> "
+        f"[{_progress_bar(current, target)}] {_progress_pct(current, target)}%"
     )
 
 
+def _quest_stats(wallet: "Wallet") -> str:
+    """Прогресс задания — полный видимый текст с premium emoji.
+
+    Меняйте строки и <tg-emoji …> прямо здесь.
+    """
+    left = max(0, wallet.target - wallet.amount)
+    return (
+        f"<tg-emoji emoji-id='5321021153219732362'>⚡️</tg-emoji> [{_progress_bar(wallet.amount, wallet.target)}] {_progress_pct(wallet.amount, wallet.target)}%\n"
+        f"<tg-emoji emoji-id='5303547422373349738'>💰</tg-emoji> Баланс : {wallet.amount} кут\n"
+        f"<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> Цель : {wallet.target} кут\n"
+        f"<tg-emoji emoji-id='5321021153219732362'>⚡️</tg-emoji> До цели : {left} кут\n"
+        f"<tg-emoji emoji-id='5294001020039363545'>🏆</tg-emoji> Награда : +{wallet.reward} кут"
+    )
+
+
+# Telegram принимает только эти style у InlineKeyboardButton.
+# «default» в API нет — из‑за него весь reply_markup мог отвергаться,
+# и _swap откатывался к тексту без premium emoji.
+_BTN_STYLES = frozenset({"primary", "success", "danger"})
+
+
 def _btn(text: str, *, data: str = None, url: str = None, web_app: str = None,
-         icon: str = None, style: str = "default") -> InlineKeyboardButton:
-    """Кнопка в оформлении проекта: style + иконка кастомным эмодзи."""
-    kwargs: Dict[str, Any] = {"text": text, "style": style}
+         icon: str = None, style: Optional[str] = None) -> InlineKeyboardButton:
+    """Кнопка: опционально style (primary/success/danger) + premium-иконка."""
+    kwargs: Dict[str, Any] = {"text": text}
+    if style and str(style) in _BTN_STYLES:
+        kwargs["style"] = str(style)
     if icon:
         kwargs["icon_custom_emoji_id"] = icon
     if web_app:
@@ -1220,21 +1239,29 @@ async def show_home(message: Message, user_id: int, *, as_new: bool = False) -> 
 
     _bump_notify_token(user_id)
     send = message.answer if as_new else message.edit_text
-    for body, kb in (
-        (text, markup),
-        (text, _markup_without_icons(markup)),
-        (_html_plain(text), _markup_without_icons(markup)),
+    last_err: Optional[BaseException] = None
+    for name, body, kb in (
+        ("full", text, markup),
+        ("no_icons", text, _rebuild_markup(markup, keep_icons=False, keep_styles=True)),
+        ("bare_kb", text, _rebuild_markup(markup, keep_icons=False, keep_styles=False)),
+        ("plain", _html_plain(text), _rebuild_markup(markup, keep_icons=False, keep_styles=False)),
     ):
         try:
             await send(
                 body, reply_markup=kb,
                 parse_mode="HTML", disable_web_page_preview=True,
             )
+            if name != "full":
+                print(f"[ONBOARDING] show_home fallback={name} err={last_err!r}")
             return True
         except Exception as e:
+            last_err = e
             if "message is not modified" in str(e).lower():
                 return True
-    print(f"[ONBOARDING] show_home({user_id}): не удалось показать")
+            if not _can_downgrade_markup(e):
+                print(f"[ONBOARDING] show_home({user_id}) без даунгрейда: {e!r}")
+                break
+    print(f"[ONBOARDING] show_home({user_id}): не удалось показать ({last_err!r})")
     return False
 
 
@@ -1927,28 +1954,51 @@ def _quest_stuck_markup() -> InlineKeyboardMarkup:
 
 
 def _games_text(wallet: Wallet, *, accepted: bool = False) -> str:
+    """Витрина игр. Весь текст с <tg-emoji> виден здесь — правьте на месте."""
     if wallet.free_quest:
-        title = "Задание принято" if accepted else "Выберите игру"
-        hint = "Выберите игру - путь к награде открыт" if accepted else "Выберите игру"
-        return _lines(
-            f"<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>{title}</b>",
-            "",
-            _quest_stats(wallet),
-            "",
-            f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {_venue_where(wallet)}",
-            f"<tg-emoji emoji-id='5471954679250498498'>🛡</tg-emoji> Ставка ~{SAFE_BET_PERCENT}% баланса задания.",
-            "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тратятся.",
-            "",
-            f"<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>",
+        where = _venue_name(wallet)
+        stats = _quest_stats(wallet)
+        if accepted:
+            return (
+                f"{_path(2)}\n"
+                "\n"
+                "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>Задание принято</b>\n"
+                "\n"
+                "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Виртуальный баланс уже начислен.\n"
+                f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Игры засчитываются в {where}.\n"
+                "<tg-emoji emoji-id='5436339947080548936'>🌟</tg-emoji> Один клик - партия уже ждёт там.\n"
+                "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тратятся.\n"
+                "\n"
+                f"<blockquote>{stats}</blockquote>\n"
+                "\n"
+                f"<blockquote>"
+                f"<tg-emoji emoji-id='5471954679250498498'>🛡</tg-emoji> Рекомендуем ~{SAFE_BET_PERCENT}% баланса задания\n"
+                f"<tg-emoji emoji-id='5318892863780579996'>📖</tg-emoji> В группе потом напишите : <code>хелп игры</code>"
+                f"</blockquote>\n"
+                "\n"
+                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите игру и начните путь к награде</b>"
+            )
+        return (
+            f"{_path(2)}\n"
+            "\n"
+            "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>Выберите игру</b>\n"
+            "\n"
+            f"{stats}\n"
+            "\n"
+            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Площадка : {where}\n"
+            f"<tg-emoji emoji-id='5471954679250498498'>🛡</tg-emoji> Ставка ~{SAFE_BET_PERCENT}% баланса задания.\n"
+            "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тратятся.\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите игру</b>"
         )
-    return _lines(
-        "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>Выберите игру</b>",
-        "",
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут",
-        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {CLUB_WHERE}",
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Один клик - и партия уже ждёт.",
-        "",
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите на игру</b>",
+    return (
+        "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>Выберите игру</b>\n"
+        "\n"
+        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут\n"
+        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {CLUB_WHERE}\n"
+        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Один клик - и партия уже ждёт.\n"
+        "\n"
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите на игру</b>"
     )
 
 
@@ -2476,13 +2526,14 @@ async def _notify_after_game(
     if not _notify_token_alive(user_id, notify_token):
         return
 
-    variants: List[Tuple[str, InlineKeyboardMarkup]] = [
-        (text, markup),
-        (text, _markup_without_icons(markup)),
-        (_html_plain(text), _markup_without_icons(markup)),
+    variants: List[Tuple[str, str, InlineKeyboardMarkup]] = [
+        ("full", text, markup),
+        ("no_icons", text, _rebuild_markup(markup, keep_icons=False, keep_styles=True)),
+        ("bare_kb", text, _rebuild_markup(markup, keep_icons=False, keep_styles=False)),
+        ("plain", _html_plain(text), _rebuild_markup(markup, keep_icons=False, keep_styles=False)),
     ]
     last_err: Optional[BaseException] = None
-    for body, kb in variants:
+    for name, body, kb in variants:
         if not _notify_token_alive(user_id, notify_token):
             return
         try:
@@ -2494,13 +2545,17 @@ async def _notify_after_game(
                 parse_mode="HTML",
                 disable_web_page_preview=True,
             )
+            if name != "full":
+                print(f"[ONBOARDING] итог fallback={name} err={last_err!r}")
             return
         except Exception as e:
             last_err = e
             if "message is not modified" in str(e).lower():
                 return
+            if not _can_downgrade_markup(e):
+                break
 
-    for body, kb in variants:
+    for name, body, kb in variants:
         if not _notify_token_alive(user_id, notify_token):
             return
         try:
@@ -2511,6 +2566,8 @@ async def _notify_after_game(
                 parse_mode="HTML",
                 disable_web_page_preview=True,
             )
+            if name != "full":
+                print(f"[ONBOARDING] итог (send) fallback={name}")
             return
         except Exception as e:
             last_err = e
@@ -3167,7 +3224,13 @@ def _html_plain(text: str) -> str:
     return _TG_EMOJI_RE.sub(lambda m: (m.group(2) or "").strip(), text or "")
 
 
-def _markup_without_icons(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
+def _rebuild_markup(
+    markup: InlineKeyboardMarkup,
+    *,
+    keep_icons: bool = True,
+    keep_styles: bool = True,
+) -> InlineKeyboardMarkup:
+    """Копия клавиатуры без иконок и/или style — для мягкого отката."""
     rows: List[List[InlineKeyboardButton]] = []
     for row in markup.inline_keyboard or []:
         new_row: List[InlineKeyboardButton] = []
@@ -3179,16 +3242,48 @@ def _markup_without_icons(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
                 kwargs["url"] = btn.url
             elif btn.web_app:
                 kwargs["web_app"] = btn.web_app
-            style = getattr(btn, "style", None)
-            if style:
-                kwargs["style"] = style
+            if keep_icons:
+                icon = getattr(btn, "icon_custom_emoji_id", None)
+                if icon:
+                    kwargs["icon_custom_emoji_id"] = icon
+            if keep_styles:
+                style = getattr(btn, "style", None)
+                if style and str(style) in _BTN_STYLES:
+                    kwargs["style"] = str(style)
             try:
                 new_row.append(InlineKeyboardButton(**kwargs))
             except TypeError:
                 kwargs.pop("style", None)
+                kwargs.pop("icon_custom_emoji_id", None)
                 new_row.append(InlineKeyboardButton(**kwargs))
         rows.append(new_row)
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _markup_without_icons(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
+    return _rebuild_markup(markup, keep_icons=False, keep_styles=True)
+
+
+def _is_noop_edit_error(err: BaseException) -> bool:
+    return "message is not modified" in str(err).lower()
+
+
+def _can_downgrade_markup(err: BaseException) -> bool:
+    """Можно ли пробовать более простой reply_markup / текст без premium."""
+    text = str(err).lower()
+    needles = (
+        "document_invalid",
+        "can't parse entities",
+        "unsupported start tag",
+        "reply_markup",
+        "button",
+        "icon_custom_emoji",
+        "button_style",
+        "style",
+        "entity_text",
+        "custom emoji",
+    )
+    return any(n in text for n in needles)
 
 
 async def _ack(call: CallbackQuery, text: str = "", *, alert: bool = False) -> None:
@@ -3206,35 +3301,70 @@ async def _ack(call: CallbackQuery, text: str = "", *, alert: bool = False) -> N
 
 
 async def _swap(call: CallbackQuery, text: str, markup: InlineKeyboardMarkup) -> None:
-    """Меняет экран на месте. При DOCUMENT_INVALID откатывает эмодзи/иконки."""
-    variants: List[Tuple[str, InlineKeyboardMarkup]] = [
-        (text, markup),
-        (text, _markup_without_icons(markup)),
-        (_html_plain(text), _markup_without_icons(markup)),
+    """Меняет экран на месте. Premium emoji снимаем только при отказе Telegram.
+
+    Порядок:
+      1) полный текст + иконки кнопок
+      2) полный текст + кнопки без иконок
+      3) полный текст + кнопки без иконок/style
+      4) unicode-текст (последний резерв)
+    На сетевые/прочие ошибки не скатываемся сразу в plain — иначе пропадают
+    все <tg-emoji>.
+    """
+    variants: List[Tuple[str, str, InlineKeyboardMarkup]] = [
+        ("full", text, markup),
+        ("no_icons", text, _rebuild_markup(markup, keep_icons=False, keep_styles=True)),
+        ("bare_kb", text, _rebuild_markup(markup, keep_icons=False, keep_styles=False)),
+        ("plain", _html_plain(text), _rebuild_markup(markup, keep_icons=False, keep_styles=False)),
     ]
     last_err: Optional[BaseException] = None
 
-    for body, kb in variants:
+    async def _try_edit(body: str, kb: InlineKeyboardMarkup) -> bool:
+        nonlocal last_err
         try:
             await call.message.edit_text(
                 body, reply_markup=kb, parse_mode="HTML",
                 disable_web_page_preview=True,
             )
-            return
+            return True
         except Exception as e:
             last_err = e
-            if "message is not modified" in str(e).lower():
-                return
+            if _is_noop_edit_error(e):
+                return True
+            return False
 
-    for body, kb in variants:
+    async def _try_answer(body: str, kb: InlineKeyboardMarkup) -> bool:
+        nonlocal last_err
         try:
             await call.message.answer(
                 body, reply_markup=kb, parse_mode="HTML",
                 disable_web_page_preview=True,
             )
-            return
+            return True
         except Exception as e:
             last_err = e
+            return False
+
+    for name, body, kb in variants:
+        if await _try_edit(body, kb):
+            if name != "full":
+                print(f"[ONBOARDING] экран показан fallback={name} err={last_err!r}")
+            return
+        if not _can_downgrade_markup(last_err or Exception()):
+            # Не emoji/markup — пробуем новое сообщение с тем же телом,
+            # не прыгая сразу к plain.
+            if await _try_answer(body, kb):
+                if name != "full":
+                    print(f"[ONBOARDING] экран (answer) fallback={name} err={last_err!r}")
+                return
+            print(f"[ONBOARDING] edit/answer failed без даунгрейда ({name}): {last_err!r}")
+            break
+        print(f"[ONBOARDING] {name} отклонён, пробуем проще: {last_err!r}")
+
+    for name, body, kb in variants:
+        if await _try_answer(body, kb):
+            print(f"[ONBOARDING] экран (answer) fallback={name}")
+            return
 
     print(f"[ONBOARDING] Не удалось показать экран: {last_err!r}")
 

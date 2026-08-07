@@ -47,8 +47,12 @@ async def run_admin_bot() -> None:
         return
 
     from bot_polling import run_polling
+    from aiogram.client.session.aiohttp import AiohttpSession
 
-    bot = Bot(token=ADMIN_BOT_TOKEN)
+    # Локально на Windows часто ловим WinError 121 (таймаут семафора) —
+    # короткий timeout aiohttp убивает старт. Держим запас.
+    session = AiohttpSession(timeout=120.0)
+    bot = Bot(token=ADMIN_BOT_TOKEN, session=session)
     try:
         me = await bot.get_me()
         logger.info("Admin bot: @%s (id=%s)", me.username, me.id)

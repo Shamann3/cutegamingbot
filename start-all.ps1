@@ -669,6 +669,8 @@ if (-not $SkipVite) {
 # ---------- 7) main.py (main bot + payment bot) ----------
 if (-not $SkipMainBot) {
     Write-Step '7/9  Main bot (main.py: main + payment)'
+    Write-Warn 'Telegram allows only ONE getUpdates per bot token.'
+    Write-Warn 'If you see TelegramConflictError: stop the second main.py OR set BOT_KILL_SWITCH=true on DigitalOcean while developing locally.'
     $mainLog = Join-Path $LogDir 'main-bot.log'
     $mainPyArgs = ($script:RootPyArgs -join ' ')
     Start-LoggedWindow -Title 'CF Main bot (main.py)' -WorkingDirectory $Root `

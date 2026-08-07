@@ -28,6 +28,43 @@ def _boot(msg: str) -> None:
     logger.info(msg)
 
 
+async def _run_with_network_retry(label: str, factory, *, attempts: int = 6):
+    """Старт admin/support с повтором на сетевых таймаутах (Windows WinError 121)."""
+    last_exc: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            await factory()
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            last_exc = exc
+            name = type(exc).__name__
+            msg = str(exc)
+            transient = any(
+                needle in msg.lower()
+                for needle in (
+                    "timeout",
+                    "semaphore",
+                    "cannot connect",
+                    "clientconnector",
+                    "temporary failure",
+                    "name or service not known",
+                    "network",
+                )
+            ) or name in {"ClientConnectorError", "TelegramNetworkError", "TimeoutError"}
+            if not transient or attempt >= attempts:
+                raise
+            delay = min(30.0, 2.0 * attempt)
+            logger.warning(
+                "%s: сеть недоступна (%s: %s) — повтор %d/%d через %.0fs",
+                label, name, msg, attempt, attempts, delay,
+            )
+            await asyncio.sleep(delay)
+    if last_exc is not None:
+        raise last_exc
+
+
 async def main() -> None:
     # BOT_TOKEN == TOKEN у cutebot (main.py) — это один и тот же бот.
     # cutebot уже поллит и уже выставляет кнопку меню WebApp через
@@ -57,14 +94,17 @@ async def main() -> None:
                 pass
 
     coros = []
+    labels = []
     if ADMIN_ENABLED and ADMIN_BOT_TOKEN:
-        coros.append(run_admin_bot())
+        coros.append(lambda: _run_with_network_retry("admin-bot", run_admin_bot))
+        labels.append("admin")
     else:
         logger.warning(
             "Admin bot не запущен — задай ADMIN_ENABLED=true и ADMIN_BOT_TOKEN в .env"
         )
     if SUPPORT_BOT_TOKEN:
-        coros.append(run_support_bot())
+        coros.append(lambda: _run_with_network_retry("support-bot", run_support_bot))
+        labels.append("support")
     else:
         logger.warning("Support bot не запущен — задай SUPPORT_BOT_TOKEN в .env")
 
@@ -76,7 +116,10 @@ async def main() -> None:
         await db.close()
         return
 
-    tasks = [asyncio.create_task(c, name=f"bot-{i}") for i, c in enumerate(coros)]
+    tasks = [
+        asyncio.create_task(factory(), name=f"bot-{label}")
+        for factory, label in zip(coros, labels)
+    ]
     stopper = asyncio.create_task(stop.wait(), name="stop-waiter")
     _boot(f"pollers starting ({len(tasks)} bot(s))...")
 

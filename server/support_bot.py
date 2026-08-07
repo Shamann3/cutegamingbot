@@ -104,8 +104,14 @@ async def run_support_bot() -> None:
         logger.warning("SUPPORT_BOT_TOKEN не задан — support-бот не запускается")
         return
 
+    from aiogram.client.session.aiohttp import AiohttpSession
+
+    # Локально на Windows часто ловим WinError 121 (таймаут семафора) —
+    # короткий timeout aiohttp убивает старт. Держим запас.
+    session = AiohttpSession(timeout=120.0)
     bot = Bot(
         token=SUPPORT_BOT_TOKEN,
+        session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
