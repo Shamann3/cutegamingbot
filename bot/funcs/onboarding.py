@@ -165,10 +165,6 @@ def _path(step: int) -> str:
     return " · ".join(parts)
 
 
-def _hint(text: str) -> str:
-    return f"<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{text}</b>"
-
-
 def _lines(*parts: str) -> str:
     """Короткие строки экрана: пустые пропускаем, одна пустая = абзац."""
     out: List[str] = []
@@ -199,17 +195,6 @@ def _bq(*parts: str) -> str:
             lines.append(f"<b>{plain}</b>")
     return f"<blockquote>{chr(10).join(lines)}</blockquote>"
 
-
-def _stake_line(bet: int, *, free_quest: bool) -> str:
-    source = "с задания" if free_quest else "с баланса"
-    return (
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> "
-        f"Ставка : {bet} кут ({source})"
-    )
-
-
-def _place_line(where: str) -> str:
-    return f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}"
 
 
 def _progress_line(current: int, target: int) -> str:
@@ -297,13 +282,14 @@ def _label_for_button(label: str) -> Tuple[str, Optional[str]]:
 # ──────────────────────────────────────────────────────────────────────
 # Реестр одиночных игр
 # ──────────────────────────────────────────────────────────────────────
-# Логика партии всегда в самой игре (slots.py, trade.py, …). Здесь только
-# то, что нужно онбордингу, чтобы довести новичка до её сообщения.
+# Здесь вы ВИДИТЕ текст ровно так, как его увидит новичок.
+# Меняйте строки и <tg-emoji …> прямо на месте.
 #
-# Простая игра - это шесть строк: название, эмодзи, слово команды,
-# минимальная ставка, правило и адрес обработчика. Если игра требует выбор
-# (число, цвет, направление) - добавляются choose и options.
-# Шаблон команды и список быстрых игр выводятся сами, руками их не держим.
+# В шаблоне text подставляются только:
+#   {bet}    - сумма ставки
+#   {source} - «с задания» / «с баланса»
+#   {where}  - «группе клуба» / «клубе» / группа задания
+#   {hint}   - подсказка к кнопке внизу
 
 
 def _game(
@@ -312,8 +298,7 @@ def _game(
     emoji: str,
     command: str,
     min_bet: int,
-    win: str,
-    lose: str,
+    text: str,
     handler: str,
     instant: bool = False,
     choose: str = "",
@@ -321,15 +306,9 @@ def _game(
     rows: Optional[Sequence[int]] = None,
     choice_first: bool = False,
 ) -> Dict[str, Any]:
-    """Одна строка реестра игр.
+    """Реестр одной игры.
 
-    win / lose  - короткие строки с premium emoji (🤙 / 👋).
-    command     - слово команды в группе: «футбол 10».
-    handler     - «модуль:функция» игры.
-    instant     - партия кончается сразу (dice), а не на кнопках.
-    options     - выбор вместо «Начать играть».
-    rows        - раскладка кнопок выбора.
-    choice_first - выбор перед ставкой: «трейд вверх 10».
+    text - полный текст экрана игры (как увидит человек).
     """
     module, _, func = handler.partition(":")
     if not module or not func:
@@ -340,18 +319,13 @@ def _game(
     else:
         cmd = f"{command} {{bet}}"
 
-    win_line = str(win).strip()
-    lose_line = str(lose).strip()
     game: Dict[str, Any] = {
         "title": title,
         "emoji": emoji,
         "min": int(min_bet),
         "command": command,
         "cmd": cmd,
-        "win": win_line,
-        "lose": lose_line,
-        # Совместимость: старые места, где ждали одну строку rules.
-        "rules": f"{win_line}\n{lose_line}",
+        "text": str(text).strip("\n"),
         "module": module,
         "func": func,
         "instant": bool(instant),
@@ -362,6 +336,37 @@ def _game(
         if rows:
             game["variant_rows"] = [int(n) for n in rows]
     return game
+
+
+def _render_game_text(
+    game: Dict[str, Any],
+    *,
+    bet: int,
+    free_quest: bool,
+    where: str,
+    hint: str,
+    extra: str = "",
+) -> str:
+    """Собирает экран игры из видимого шаблона text в реестре.
+
+    Меняйте текст в GAMES[…].text — здесь только подстановка
+    {bet}/{source}/{where}/{hint} и опциональный блок extra перед подсказкой.
+    """
+    source = "с задания" if free_quest else "с баланса"
+    rendered = game["text"].format(
+        bet=int(bet),
+        source=source,
+        where=where,
+        hint=hint,
+    )
+    block = (extra or "").strip()
+    if not block:
+        return rendered
+    marker = "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>"
+    idx = rendered.rfind(marker)
+    if idx < 0:
+        return f"{rendered}\n\n{block}"
+    return f"{rendered[:idx].rstrip()}\n\n{block}\n\n{rendered[idx:]}"
 
 
 def _variant_button_rows(
@@ -394,118 +399,211 @@ def _variant_button_rows(
             i += width
         return out
 
-    # По умолчанию: 2 в ряд, а при 5+ вариантах - по 3 (кубик 1-6).
     per_row = 3 if len(buttons) > 4 else 2
     return [buttons[i:i + per_row] for i in range(0, len(buttons), per_row)]
 
 
-# Каждая игра: 🤙 выигрыш / 👋 проигрыш - коротко и с уважением.
+# ─── тексты игр: меняйте прямо здесь ─────────────────────────────────
 GAMES: Dict[str, Dict[str, Any]] = {
     "soccer": _game(
         title="Футбол",
         emoji="<tg-emoji emoji-id='5373101763442255191'>⚽️</tg-emoji>",
         command="футбол", min_bet=2, instant=True,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Гол - забираете большой выигрыш.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете.",
         handler="bot.tggames.soccer:tgsoccer",
+        text=(
+            "<tg-emoji emoji-id='5373101763442255191'>⚽️</tg-emoji> <b>Футбол</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Гол - забираете большой выигрыш.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "slots": _game(
         title="Слоты",
         emoji="<tg-emoji emoji-id='5891135206580031104'>🎉</tg-emoji>",
         command="слоты", min_bet=2, instant=True,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Три одинаковых - крупный выигрыш.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Иначе - теряете.",
         handler="bot.tggames.slots:tgslots",
+        text=(
+            "<tg-emoji emoji-id='5891135206580031104'>🎉</tg-emoji> <b>Слоты</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Три одинаковых - крупный выигрыш.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Иначе - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "tank": _game(
         title="Башня",
         emoji="<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji>",
         command="башня", min_bet=2,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Забираете до обвала - выигрыш растёт.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Обвал - теряете.",
         handler="bot.games.tank:game_filter_tank",
+        text=(
+            "<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji> <b>Башня</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Забираете до обвала - выигрыш растёт.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Обвал - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "darts": _game(
         title="Дартс",
         emoji="<tg-emoji emoji-id='5890815115552362075'>🎯</tg-emoji>",
         command="дартс", min_bet=2, instant=True,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> В центр - забираете большой выигрыш.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете.",
         handler="bot.tggames.darts:tgdarts",
+        text=(
+            "<tg-emoji emoji-id='5890815115552362075'>🎯</tg-emoji> <b>Дартс</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> В центр - забираете большой выигрыш.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "basket": _game(
         title="Баскетбол",
         emoji="<tg-emoji emoji-id='5891181665241271999'>🏀</tg-emoji>",
         command="баскет", min_bet=2, instant=True,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> В кольцо - забираете выигрыш.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете.",
         handler="bot.tggames.basket:tgbasket",
+        text=(
+            "<tg-emoji emoji-id='5891181665241271999'>🏀</tg-emoji> <b>Баскетбол</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> В кольцо - забираете выигрыш.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "bowling": _game(
         title="Боулинг",
         emoji="<tg-emoji emoji-id='5891120371762990493'>🎳</tg-emoji>",
         command="боулинг", min_bet=2, instant=True,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Страйк - забираете выигрыш.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Иначе - теряете.",
         handler="bot.tggames.bowling:tgbowling",
+        text=(
+            "<tg-emoji emoji-id='5891120371762990493'>🎳</tg-emoji> <b>Боулинг</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Страйк - забираете выигрыш.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Иначе - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "kube": _game(
         title="Кубик",
         emoji="<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji>",
         command="куб", min_bet=2, instant=True,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали число - забираете выигрыш.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете.",
         handler="bot.tggames.kube:tgkube",
         choose="Выберите число",
         options=[(str(n), str(n)) for n in range(1, 7)],
         rows=(3, 3),
+        text=(
+            "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> <b>Кубик</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали число - забираете выигрыш.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "balls": _game(
         title="Шарик",
         emoji="<tg-emoji emoji-id='5363877049863786071'>🎱</tg-emoji>",
         command="шарик", min_bet=2,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали стакан - забираете выигрыш.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете.",
         handler="bot.games.balls:balls",
+        text=(
+            "<tg-emoji emoji-id='5363877049863786071'>🎱</tg-emoji> <b>Шарик</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали стакан - забираете выигрыш.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "provoda": _game(
         title="Провода",
         emoji="<tg-emoji emoji-id='5782990399672946716'>🎗</tg-emoji>",
         command="провода", min_bet=2,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Верный провод - забираете выигрыш.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Ошибка - теряете.",
         handler="bot.games.provoda:provoda",
+        text=(
+            "<tg-emoji emoji-id='5782990399672946716'>🎗</tg-emoji> <b>Провода</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Верный провод - забираете выигрыш.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Ошибка - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "bombs": _game(
         title="Бомбы",
         emoji="<tg-emoji emoji-id='5469654973308476699'>💣</tg-emoji>",
         command="бомбы", min_bet=3,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Забираете до бомбы - выигрыш растёт.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Бомба - теряете всё.",
         handler="bot.games.bombs:bombs",
+        text=(
+            "<tg-emoji emoji-id='5469654973308476699'>💣</tg-emoji> <b>Бомбы</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Забираете до бомбы - выигрыш растёт.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Бомба - теряете всё.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "plate": _game(
         title="Плиты",
         emoji="<tg-emoji emoji-id='5246916607833304803'>💫</tg-emoji>",
         command="плиты", min_bet=2,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Забираете до провала - выигрыш растёт.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Провал - теряете.",
         handler="bot.games.plate:plate",
+        text=(
+            "<tg-emoji emoji-id='5246916607833304803'>💫</tg-emoji> <b>Плиты</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Забираете до провала - выигрыш растёт.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Провал - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "risk": _game(
         title="Риск",
         emoji="<tg-emoji emoji-id='5438449312893792440'>🌴</tg-emoji>",
         command="риск", min_bet=5,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Шаг умножает выигрыш - забираете вовремя.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Волна - теряете.",
         handler="bot.games.risk:risk",
+        text=(
+            "<tg-emoji emoji-id='5438449312893792440'>🌴</tg-emoji> <b>Риск</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Шаг умножает выигрыш - забираете вовремя.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Волна - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "trade": _game(
         title="Трейд",
         emoji="<tg-emoji emoji-id='5296306038792808890'>📈</tg-emoji>",
         command="трейд", min_bet=2, instant=True,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали направление - забираете выигрыш.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете.",
         handler="bot.games.trade:trade",
         choose="Выберите направление",
         choice_first=True,
@@ -514,14 +612,21 @@ GAMES: Dict[str, Dict[str, Any]] = {
             ("<tg-emoji emoji-id='5339384049670593248'>↗️</tg-emoji> Вверх", "вверх"),
             ("<tg-emoji emoji-id='5339179750961224703'>📉</tg-emoji> Вниз", "вниз"),
         ],
+        text=(
+            "<tg-emoji emoji-id='5296306038792808890'>📈</tg-emoji> <b>Трейд</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали направление - забираете выигрыш.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
     "fortuna": _game(
         title="Рулетка",
         emoji="<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji>",
-        # Совпадает с FORTUNA_MIN_BET в bot/config/config.py (там 3).
         command="рулетка", min_bet=3, instant=True,
-        win="<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали число, цвет или чёт - выигрыш.",
-        lose="<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете.",
         handler="bot.games.Fortuna:Fortuna",
         choose="Выберите число, цвет или чёт/нечет",
         rows=(2, 2, 1, 4, 4, 4),
@@ -535,6 +640,16 @@ GAMES: Dict[str, Dict[str, Any]] = {
             ("5", "5"), ("6", "6"), ("7", "7"), ("8", "8"),
             ("9", "9"), ("10", "10"), ("11", "11"), ("12", "12"),
         ],
+        text=(
+            "<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji> <b>Рулетка</b>\n"
+            "\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали число, цвет или чёт - выигрыш.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете.\n"
+            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
+            "\n"
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+        ),
     ),
 }
 
@@ -542,7 +657,6 @@ GAMES: Dict[str, Dict[str, Any]] = {
 SOLO_ORDER: Tuple[str, ...] = tuple(GAMES)
 
 # Быстрые игры: партия кончается сразу, поэтому итог летит в личку следом.
-# Остальные живут на кнопках, там прогресс обновляет «Играть ещё».
 INSTANT_GAMES = frozenset(k for k, g in GAMES.items() if g["instant"])
 
 
@@ -888,11 +1002,11 @@ async def start_screen(user_id: int) -> Tuple[str, InlineKeyboardMarkup]:
                 "",
                 _quest_stats(wallet),
                 "",
-                _place_line(where),
+                f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}",
                 "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Бот должен быть администратором.",
                 "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Можно взять другое задание.",
                 "",
-                _hint("Нажмите «Другое задание»"),
+                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другое задание»</b>",
             )
             markup = InlineKeyboardMarkup(inline_keyboard=[
                 [_btn("Другое задание", data="ob_earn", icon="5472401690793614752", style="success")],
@@ -942,7 +1056,7 @@ def _quest_stuck_text(wallet: Wallet) -> str:
         "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.",
         "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Другое задание даст новый баланс.",
         "",
-        _hint("Нажмите «Другое задание»"),
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другое задание»</b>",
     )
 
 
@@ -952,15 +1066,15 @@ def _cheapest_bet() -> int:
 
 def _start_text_newcomer() -> str:
     """Первый экран пустого баланса: бренд → выгода → одно действие."""
-    return _lines(
-        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Кут</b>",
-        "",
+    return (
+        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Кут</b>\n"
+        "\n"
         "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> 1 кут = 1 "
-        "<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji>",
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Первый баланс - бесплатно.",
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Выигрыш можно вывести в Stars.",
-        "",
-        _hint("Нажмите «Получить куты»"),
+        "<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji>\n"
+        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Первый баланс - бесплатно.\n"
+        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Выигрыш можно вывести в Stars.\n"
+        "\n"
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Получить куты»</b>"
     )
 
 
@@ -971,10 +1085,10 @@ def _start_text_player(wallet: Wallet) -> str:
             "",
             _quest_stats(wallet),
             "",
-            _place_line(_venue_where(wallet)),
+            f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {_venue_where(wallet)}",
             "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тратятся.",
             "",
-            _hint("Нажмите «Продолжить задание»"),
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Продолжить задание»</b>",
         )
     return _lines(
         "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Кут</b>",
@@ -982,9 +1096,9 @@ def _start_text_player(wallet: Wallet) -> str:
         f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут",
         "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> 1 кут = 1 "
         "<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji>",
-        _place_line(CLUB_WHERE),
+        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {CLUB_WHERE}",
         "",
-        _hint("Нажмите «Играть!»"),
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Играть!»</b>",
     )
 
 
@@ -1030,7 +1144,7 @@ async def _menu_text(user_id: int) -> str:
             "<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> Задание активно.",
             _quest_stats(wallet),
             "",
-            _hint("Выберите раздел"),
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите раздел</b>",
         )
     return _lines(
         "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Меню</b>",
@@ -1039,7 +1153,7 @@ async def _menu_text(user_id: int) -> str:
         "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> 1 кут = 1"
         "<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji>",
         "",
-        _hint("Выберите раздел"),
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите раздел</b>",
     )
 
 
@@ -1202,7 +1316,7 @@ def _finish_ask_text(wallet: Wallet) -> str:
         "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Прогресс задания сгорит.",
         "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Потом можно взять другое.",
         "",
-        _hint("Можно вернуться и доиграть"),
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Можно вернуться и доиграть</b>",
     )
 
 
@@ -1223,12 +1337,12 @@ def _finish_done_text(balance: int) -> str:
         "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Другое задание даст новый баланс.",
     ]
     if can_play:
-        parts.append(_place_line(CLUB_WHERE))
+        parts.append(f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {CLUB_WHERE}")
         parts.append(
             "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> Или играйте сами."
         )
     hint = "Выберите: другое задание или играть самому" if can_play else "Нажмите «Другое задание»"
-    return _lines(*parts, "", _hint(hint))
+    return _lines(*parts, "", f"<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>")
 
 
 def _finish_done_markup(balance: int) -> InlineKeyboardMarkup:
@@ -1242,12 +1356,12 @@ def _finish_done_markup(balance: int) -> InlineKeyboardMarkup:
 
 
 def _finish_none_text() -> str:
-    return _lines(
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Активного задания нет</b>",
-        "",
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Возьмите бесплатный баланс и сыграйте.",
-        "",
-        _hint("Нажмите «Получить куты»"),
+    return (
+        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Активного задания нет</b>\n"
+        "\n"
+        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Возьмите бесплатный баланс и сыграйте.\n"
+        "\n"
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Получить куты»</b>"
     )
 
 
@@ -1310,15 +1424,15 @@ async def _show_earn(call: CallbackQuery, page: int = 0) -> None:
 
 
 def _earn_list_text() -> str:
-    return _lines(
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> <b>Бесплатный баланс</b>",
-        "",
-        "<tg-emoji emoji-id='5359359620441726284'>1️⃣</tg-emoji> Берёте задание - получаете баланс.",
-        "<tg-emoji emoji-id='5361993882798153989'>2️⃣</tg-emoji> Играете и идёте к цели.",
-        "<tg-emoji emoji-id='5359322675133046736'>3️⃣</tg-emoji> Дошли - награда ваша.",
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не списываются.",
-        "",
-        _hint("Выберите задание"),
+    return (
+        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> <b>Бесплатный баланс</b>\n"
+        "\n"
+        "<tg-emoji emoji-id='5359359620441726284'>1️⃣</tg-emoji> Берёте задание - получаете баланс.\n"
+        "<tg-emoji emoji-id='5361993882798153989'>2️⃣</tg-emoji> Играете и идёте к цели.\n"
+        "<tg-emoji emoji-id='5359322675133046736'>3️⃣</tg-emoji> Дошли - награда ваша.\n"
+        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не списываются.\n"
+        "\n"
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите задание</b>"
     )
 
 
@@ -1380,7 +1494,7 @@ def _earn_card_text(quest: Dict[str, Any]) -> str:
         parts.append(
             f"<tg-emoji emoji-id='5471954679250498498'>🛡</tg-emoji> Ставка до : {limit} кут"
         )
-    return _lines(*parts, "", _hint("Нажмите «Взять задание»"))
+    return _lines(*parts, "", "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Взять задание»</b>")
 
 
 def _earn_card_markup(quest_id: int, page: int) -> InlineKeyboardMarkup:
@@ -1610,14 +1724,14 @@ def _enrich_assignment_from_template(
 
 
 def _take_failed_text() -> str:
-    return _lines(
-        "<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> <b>Задание принято</b>",
-        "",
-        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Баланс ещё подтягивается.",
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты в безопасности.",
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Откройте задания ещё раз.",
-        "",
-        _hint("Нажмите «К заданиям»"),
+    return (
+        "<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> <b>Задание принято</b>\n"
+        "\n"
+        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Баланс ещё подтягивается.\n"
+        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты в безопасности.\n"
+        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Откройте задания ещё раз.\n"
+        "\n"
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «К заданиям»</b>"
     )
 
 
@@ -1631,7 +1745,7 @@ def _take_error_text(reason: str) -> str:
         "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тронуты.",
         "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Рядом есть другие бесплатные задания.",
         "",
-        _hint("Нажмите «К заданиям»"),
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «К заданиям»</b>",
     )
 
 
@@ -1706,13 +1820,13 @@ def _quest_id(quest: Dict[str, Any]) -> int:
 
 
 def _no_quests_bridge_text() -> str:
-    return _lines(
-        "<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji> <b>Бесплатных заданий сейчас нет</b>",
-        "",
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Новые появляются регулярно.",
-        "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Пока куты можно взять через бонус.",
-        "",
-        _hint("Нажмите «Взять бонус»"),
+    return (
+        "<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji> <b>Бесплатных заданий сейчас нет</b>\n"
+        "\n"
+        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Новые появляются регулярно.\n"
+        "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Пока куты можно взять через бонус.\n"
+        "\n"
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Взять бонус»</b>"
     )
 
 
@@ -1725,13 +1839,13 @@ def _no_quests_bridge_markup() -> InlineKeyboardMarkup:
 
 def _no_quests_text() -> str:
     """Запасной текст, если бонус открыть не удалось."""
-    return _lines(
-        "<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji> <b>Бесплатных заданий сейчас нет</b>",
-        "",
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Новые появляются регулярно.",
-        "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Пока куты можно взять через бонус.",
-        "",
-        _hint("Нажмите «Бонус»"),
+    return (
+        "<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji> <b>Бесплатных заданий сейчас нет</b>\n"
+        "\n"
+        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Новые появляются регулярно.\n"
+        "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Пока куты можно взять через бонус.\n"
+        "\n"
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Бонус»</b>"
     )
 
 
@@ -1781,7 +1895,7 @@ async def ob_next(call: CallbackQuery):
                 "",
                 "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Награда уже ваша или скоро придёт.",
                 "",
-                _hint("Играйте дальше или закончите задание"),
+                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Играйте дальше или закончите задание</b>",
             )
             markup = InlineKeyboardMarkup(inline_keyboard=[
                 [_btn("Играть ещё", data="ob_games", icon="5472041540605975004", style="success")],
@@ -1797,7 +1911,7 @@ async def ob_next(call: CallbackQuery):
             "",
             "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тратятся.",
             "",
-            _hint("Выберите игру"),
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите игру</b>",
         )
         await _swap(call, text, _games_markup(wallet))
         return
@@ -1821,20 +1935,20 @@ def _games_text(wallet: Wallet, *, accepted: bool = False) -> str:
             "",
             _quest_stats(wallet),
             "",
-            _place_line(_venue_where(wallet)),
+            f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {_venue_where(wallet)}",
             f"<tg-emoji emoji-id='5471954679250498498'>🛡</tg-emoji> Ставка ~{SAFE_BET_PERCENT}% баланса задания.",
             "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тратятся.",
             "",
-            _hint(hint),
+            f"<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>",
         )
     return _lines(
         "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>Выберите игру</b>",
         "",
         f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут",
-        _place_line(CLUB_WHERE),
+        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {CLUB_WHERE}",
         "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Один клик - и партия уже ждёт.",
         "",
-        _hint("Нажмите на игру"),
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите на игру</b>",
     )
 
 
@@ -1886,22 +2000,20 @@ async def ob_game(call: CallbackQuery):
     variants: Sequence[Tuple[str, str]] = game.get("variants") or ()
     action = game.get("variant_hint") or "Нажмите «Начать играть»"
     where = _venue_where(wallet)
-    body = _lines(
-        f"{game['emoji']} <b>{game['title']}</b>",
-        "",
-        game["win"],
-        game["lose"],
-        _stake_line(bet, free_quest=wallet.free_quest),
-        _place_line(where),
-    )
+    extra = ""
     if wallet.free_quest:
-        body = _lines(
-            body,
-            "",
-            _quest_stats(wallet),
-            f"<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тратятся.",
+        extra = (
+            f"{_quest_stats(wallet)}\n"
+            "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тратятся."
         )
-    text = _lines(body, "", _hint(action if variants else "Нажмите «Начать играть»"))
+    text = _render_game_text(
+        game,
+        bet=bet,
+        free_quest=wallet.free_quest,
+        where=where,
+        hint=action if variants else "Нажмите «Начать играть»",
+        extra=extra,
+    )
 
     rows: List[List[InlineKeyboardButton]] = []
     if variants:
@@ -1971,12 +2083,30 @@ async def _try_launch(call: CallbackQuery, game_key: str, bet: int,
     # 0. Выбор обязателен, если у игры есть варианты (рулетка, куб, трейд).
     allowed = _allowed_variants(game)
     if allowed and (variant is None or str(variant) not in allowed):
-        await _swap(call, _choice_required_text(game), _choice_required_markup(game_key))
+        await _swap(
+            call,
+            _choice_required_text(
+                game,
+                bet=bet,
+                free_quest=wallet.free_quest,
+                where=_venue_where(wallet, venue_ref),
+            ),
+            _choice_required_markup(game_key),
+        )
         return
 
     # 1. Человек в чате, где задание засчитывается?
     if not await _in_chat(user.id, venue_chat_id):
-        await _swap(call, _join_text(game, venue_url), _join_markup(venue_url))
+        await _swap(
+            call,
+            _join_text(
+                game,
+                bet=bet,
+                free_quest=wallet.free_quest,
+                venue_url=venue_url,
+            ),
+            _join_markup(venue_url),
+        )
         return
 
     # 2. Есть чем платить ставку - своими кутами или балансом задания?
@@ -2413,8 +2543,11 @@ def _after_game_text(
     head = _lines(
         f"{emoji} <b>{title}</b>",
         "",
-        _stake_line(bet, free_quest=bool(free_quest or wallet.free_quest)),
-        _place_line(where),
+        (
+            f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут "
+            f"({'с задания' if bool(free_quest or wallet.free_quest) else 'с баланса'})"
+        ),
+        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}",
     )
 
     if free_quest and wallet.free_quest:
@@ -2430,7 +2563,7 @@ def _after_game_text(
                 "",
                 "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Награда уже ваша или скоро придёт.",
                 "",
-                _hint("Играйте дальше или закончите задание"),
+                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Играйте дальше или закончите задание</b>",
             )
         if wallet.amount <= 0:
             return _lines(
@@ -2442,7 +2575,7 @@ def _after_game_text(
                 "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.",
                 "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Возьмите другое задание.",
                 "",
-                _hint("Нажмите «Другое задание»"),
+                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другое задание»</b>",
             )
         tip = ""
         if is_newbie:
@@ -2459,7 +2592,7 @@ def _after_game_text(
             _quest_stats(wallet),
             tip,
             "",
-            _hint("Нажмите «Играть ещё»"),
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Играть ещё»</b>",
         )
 
     if free_quest and not wallet.free_quest:
@@ -2468,37 +2601,37 @@ def _after_game_text(
                 "<tg-emoji emoji-id='5294001020039363545'>🏆</tg-emoji> <b>Задание закрыто</b>",
                 "",
                 f"{emoji} <b>{title}</b>",
-                _stake_line(bet, free_quest=True),
+                f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут (с задания)",
                 f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут",
                 "",
                 "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Вы в клубе.",
                 "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> Дальше играйте сами.",
                 "",
-                _hint("Играйте сами или возьмите другое задание"),
+                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Играйте сами или возьмите другое задание</b>",
             )
         return _lines(
             "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> <b>Задание закрыто</b>",
             "",
             f"{emoji} <b>{title}</b>",
-            _stake_line(bet, free_quest=True),
+            f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут (с задания)",
             "",
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Так бывает.",
             "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.",
             "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Возьмите другое задание.",
             "",
-            _hint("Нажмите «Другое задание»"),
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другое задание»</b>",
         )
 
     return _lines(
         "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Партия сыграна</b>",
         "",
         f"{emoji} <b>{title}</b>",
-        _stake_line(bet, free_quest=False),
+        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут (с баланса)",
         _delta_line(balance_before, wallet.amount),
         f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут",
-        _place_line(where),
+        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}",
         "",
-        _hint("Выберите следующую игру"),
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите следующую игру</b>",
     )
 
 
@@ -2548,36 +2681,34 @@ def _ready_text(
     game_key: str = "",
     venue_ref: Optional[str] = None,
 ) -> str:
+    """Текст после запуска — тот же шаблон игры из GAMES[…].text."""
     where = _venue_where(wallet, venue_ref)
-    head = _lines(
-        f"{game['emoji']} <b>{game['title']}</b>",
-        "",
-        game.get("win") or "",
-        game.get("lose") or "",
-        _stake_line(bet, free_quest=wallet.free_quest),
-        _place_line(where),
-    )
     if wallet.free_quest:
         hint = (
             "Откройте игру - итог придёт сюда"
             if game_key in INSTANT_GAMES
             else "Откройте игру, затем «Играть ещё»"
         )
-        return _lines(
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Игра готова</b>",
-            "",
-            head,
-            "",
-            _quest_stats(wallet),
-            "",
-            _hint(hint),
+        card = _render_game_text(
+            game,
+            bet=bet,
+            free_quest=True,
+            where=where,
+            hint=hint,
+            extra=_quest_stats(wallet),
         )
-    return _lines(
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Игра готова</b>",
-        "",
-        head,
-        "",
-        _hint(f"Откройте игру в {where}"),
+    else:
+        card = _render_game_text(
+            game,
+            bet=bet,
+            free_quest=False,
+            where=where,
+            hint=f"Откройте игру в {where}",
+        )
+    return (
+        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Игра готова</b>\n"
+        "\n"
+        f"{card}"
     )
 
 
@@ -2594,17 +2725,25 @@ def _ready_markup(play_url: str, *, free_quest: bool = False) -> InlineKeyboardM
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _join_text(game: Dict[str, Any], venue_url: str = CLUB_URL) -> str:
+def _join_text(
+    game: Dict[str, Any],
+    *,
+    bet: int,
+    free_quest: bool,
+    venue_url: str = CLUB_URL,
+) -> str:
+    """Текст «войдите в группу» — шаблон игры из GAMES[…].text."""
     where = "группе задания" if venue_url != CLUB_URL else CLUB_WHERE
-    return _lines(
-        f"{game['emoji']} <b>{game['title']}</b>",
-        "",
-        game.get("win") or "",
-        game.get("lose") or "",
-        _place_line(where),
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Войдите и нажмите «Я вошёл».",
-        "",
-        _hint("Вступите и нажмите «Я вошёл»"),
+    return _render_game_text(
+        game,
+        bet=bet,
+        free_quest=free_quest,
+        where=where,
+        hint="Вступите и нажмите «Я вошёл»",
+        extra=(
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> "
+            "Войдите и нажмите «Я вошёл»."
+        ),
     )
 
 
@@ -2631,7 +2770,7 @@ def _no_funds_text(game: Dict[str, Any], wallet: Wallet) -> str:
                 "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Так бывает - это не конец.",
                 "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.",
                 "",
-                _hint("Нажмите «Другое задание»"),
+                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другое задание»</b>",
             )
         return _lines(
             "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> <b>На эту игру не хватает</b>",
@@ -2641,7 +2780,7 @@ def _no_funds_text(game: Dict[str, Any], wallet: Wallet) -> str:
             f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> На задании : {wallet.amount} кут",
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Возьмите игру полегче.",
             "",
-            _hint("Нажмите «Другая игра»"),
+            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другая игра»</b>",
         )
     return _lines(
         "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> <b>Не хватает на ставку</b>",
@@ -2651,7 +2790,7 @@ def _no_funds_text(game: Dict[str, Any], wallet: Wallet) -> str:
         f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут",
         "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Бесплатное задание даст баланс.",
         "",
-        _hint("Нажмите «Получить куты»"),
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Получить куты»</b>",
     )
 
 
@@ -2685,7 +2824,7 @@ def _bet_limit_text(game: Dict[str, Any], wallet: Wallet) -> str:
         f"<tg-emoji emoji-id='5471954679250498498'>🛡</tg-emoji> Лимит задания : до {wallet.max_bet} кут",
         "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Возьмите другую игру.",
         "",
-        _hint("Нажмите «Другая игра»"),
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другая игра»</b>",
     )
 
 
@@ -2697,13 +2836,13 @@ def _bet_limit_markup() -> InlineKeyboardMarkup:
 
 
 def _empty_treasury_text() -> str:
-    return _lines(
-        "<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji> <b>Клуб пополняет казну</b>",
-        "",
-        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Ставки на паузе - ненадолго.",
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> На ферме куты растут без ставок.",
-        "",
-        _hint("Загляните на ферму или попробуйте снова"),
+    return (
+        "<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji> <b>Клуб пополняет казну</b>\n"
+        "\n"
+        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Ставки на паузе - ненадолго.\n"
+        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> На ферме куты растут без ставок.\n"
+        "\n"
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Загляните на ферму или попробуйте снова</b>"
     )
 
 
@@ -2717,13 +2856,13 @@ def _empty_treasury_markup() -> InlineKeyboardMarkup:
 
 
 def _failed_text() -> str:
-    return _lines(
-        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Игра не открылась</b>",
-        "",
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Ставка не списана.",
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Попробуйте ещё раз - клуб уже ждёт.",
-        "",
-        _hint("Нажмите «Попробовать снова»"),
+    return (
+        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Игра не открылась</b>\n"
+        "\n"
+        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Ставка не списана.\n"
+        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Попробуйте ещё раз - клуб уже ждёт.\n"
+        "\n"
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Попробовать снова»</b>"
     )
 
 
@@ -2736,13 +2875,13 @@ def _failed_markup() -> InlineKeyboardMarkup:
 
 
 def _wait_text() -> str:
-    return _lines(
-        "<tg-emoji emoji-id='5253709334835128381'>⌚️</tg-emoji> <b>Секунду…</b>",
-        "",
-        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Прошлая игра ещё запускается.",
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Подождите пару секунд и нажмите снова.",
-        "",
-        _hint("Нажмите «Попробовать снова»"),
+    return (
+        "<tg-emoji emoji-id='5253709334835128381'>⌚️</tg-emoji> <b>Секунду…</b>\n"
+        "\n"
+        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Прошлая игра ещё запускается.\n"
+        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Подождите пару секунд и нажмите снова.\n"
+        "\n"
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Попробовать снова»</b>"
     )
 
 
@@ -2754,15 +2893,21 @@ def _wait_markup() -> InlineKeyboardMarkup:
     ])
 
 
-def _choice_required_text(game: Dict[str, Any]) -> str:
+def _choice_required_text(
+    game: Dict[str, Any],
+    *,
+    bet: int,
+    free_quest: bool,
+    where: str,
+) -> str:
+    """Текст «сначала выберите» — шаблон игры из GAMES[…].text."""
     hint = game.get("variant_hint") or "Сделайте выбор"
-    return _lines(
-        f"{game['emoji']} <b>{game['title']}</b>",
-        "",
-        game.get("win") or "",
-        game.get("lose") or "",
-        "",
-        _hint(hint),
+    return _render_game_text(
+        game,
+        bet=bet,
+        free_quest=free_quest,
+        where=where,
+        hint=hint,
     )
 
 
@@ -2949,7 +3094,7 @@ def newbie_quest_failed_text(*, mention: str) -> str:
         "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.",
         "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Возьмите другое задание.",
         "",
-        _hint("Нажмите «Другое задание»"),
+        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другое задание»</b>",
     )
 
 
