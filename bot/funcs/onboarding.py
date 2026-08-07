@@ -71,9 +71,22 @@ from main import (
 #   "auto" - по DATABASE_MODE из bot/config/config.py (test -> test, main -> prod)
 ONBOARDING_CLUB = "auto"  # <<< "auto" | "test" | "prod"
 
+# name  - именительный падеж: «Площадка : …»
+# where - предложный падеж:   «играть в …»
+# У группы с юзернеймом обе формы - сам юзернейм.
 _CLUB_PRESETS: Dict[str, Dict[str, Any]] = {
-    "prod": {"chat_id": -1001612636292, "username": "CuteGamingChat"},
-    "test": {"chat_id": -1002135149822, "username": ""},  # приватная, ссылки t.me/c/...
+    "prod": {
+        "chat_id": -1001612636292,
+        "username": "CuteGamingChat",
+        "name": "клуб",
+        "where": "клубе",
+    },
+    "test": {  # приватная группа: ссылки через t.me/c/...
+        "chat_id": -1002135149822,
+        "username": "",
+        "name": "тестовая группа",
+        "where": "тестовой группе",
+    },
 }
 
 
@@ -107,22 +120,22 @@ def _public_chat_url(chat_id: int, username: str = "") -> str:
     return f"https://t.me/c/{raw[4:]}" if raw.startswith("-100") else f"https://t.me/{raw}"
 
 
-def _club_from_mode(mode: str) -> Tuple[int, str, str]:
+def _club_from_mode(mode: str) -> Tuple[int, str, str, str, str]:
     preset = _CLUB_PRESETS.get(mode) or _CLUB_PRESETS["prod"]
     chat_id = int(preset["chat_id"])
     username = str(preset.get("username") or "").strip().lstrip("@")
-    return chat_id, username, _public_chat_url(chat_id, username)
+    if username:
+        name = where = f"@{username}"
+    else:
+        name = str(preset.get("name") or "клуб")
+        where = str(preset.get("where") or "клубе")
+    return chat_id, username, _public_chat_url(chat_id, username), name, where
 
 
 CLUB_MODE = _resolve_club_mode()
-CLUB_CHAT_ID, CLUB_USERNAME, CLUB_URL = _club_from_mode(CLUB_MODE)
+CLUB_CHAT_ID, CLUB_USERNAME, CLUB_URL, CLUB_NAME, CLUB_WHERE = _club_from_mode(CLUB_MODE)
 BOT_USERNAME = "CuteGamingBot"
 BOT_URL = f"https://t.me/{BOT_USERNAME}"
-
-
-def _club_label() -> str:
-    """Как называть клуб в текстах: @юзернейм или нейтрально."""
-    return f"@{CLUB_USERNAME}" if CLUB_USERNAME else "клубе"
 
 # Ставка по умолчанию для первой игры.
 FIRST_BET = 10
@@ -697,12 +710,11 @@ def _start_text_newcomer() -> str:
 
 def _start_text_player(wallet: Wallet) -> str:
     if wallet.free_quest:
-        where = _venue_label(wallet)
         return (
             f"{_path(2)}\n\n"
             f"<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> <b>Задание в работе</b>\n\n"
             f"{_quest_stats(wallet)}\n"
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Площадка : {where}</b>\n"
+            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Площадка : {_venue_name(wallet)}</b>\n"
             f"<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> <b>Свои куты не тратятся.</b>\n\n"
             f"{_hint('Нажмите «Продолжить задание»')}"
         )
@@ -919,7 +931,7 @@ def _finish_done_text(balance: int) -> str:
     ]
     if can_play:
         lines.append(
-            f"<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> Или играйте сами в {_club_label()}"
+            f"<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> Или играйте сами в {CLUB_WHERE}"
         )
     hint = "Выберите: другое задание или играть самому" if can_play else "Нажмите «Другое задание»"
     return (
@@ -1518,7 +1530,8 @@ def _quest_stuck_markup() -> InlineKeyboardMarkup:
 
 def _games_text(wallet: Wallet, *, accepted: bool = False) -> str:
     if wallet.free_quest:
-        where = _venue_label(wallet)
+        where = _venue_where(wallet)
+        venue = _venue_name(wallet)
         if accepted:
             title = "Задание принято"
             lead = (
@@ -1531,7 +1544,7 @@ def _games_text(wallet: Wallet, *, accepted: bool = False) -> str:
         else:
             title = "Игры клуба"
             lead = (
-                f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Площадка : {where}</b>\n"
+                f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Площадка : {venue}</b>\n"
                 f"<tg-emoji emoji-id='5436339947080548936'>🌟</tg-emoji> <b>Один клик - партия уже ждёт.</b>\n"
                 f"<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> <b>Свои куты не тратятся.</b>"
             )
@@ -1551,13 +1564,13 @@ def _games_text(wallet: Wallet, *, accepted: bool = False) -> str:
     card = _bq(
         f"<tg-emoji emoji-id='5303547422373349738'>💰</tg-emoji> Баланс : {wallet.amount} кут",
         f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> Курс : 1 кут = 1<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji>",
-        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Площадка : {_club_label()}",
+        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Площадка : {CLUB_NAME}",
     )
     return (
         f"{_path(2)}\n\n"
         f"<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>Игры клуба</b>\n\n"
         f"<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Элитный зал одиночных партий.</b>\n"
-        f"<tg-emoji emoji-id='5436339947080548936'>🌟</tg-emoji> <b>Один клик - и игра уже ждёт в {_club_label()}.</b>\n\n"
+        f"<tg-emoji emoji-id='5436339947080548936'>🌟</tg-emoji> <b>Один клик - и игра уже ждёт в {CLUB_WHERE}.</b>\n\n"
         f"{card}\n\n"
         f"{_hint('Выберите игру ниже')}"
     )
@@ -1751,7 +1764,7 @@ async def _try_launch(call: CallbackQuery, game_key: str, bet: int,
         _ready_text(
             game, bet, wallet,
             game_key=game_key,
-            venue_label=_venue_label(wallet, venue_ref),
+            venue_ref=venue_ref,
         ),
         _ready_markup(play_url, free_quest=wallet.free_quest),
     )
@@ -1905,7 +1918,7 @@ async def _maybe_send_newbie_help_tip(
     if not await _is_newbie(user.id):
         return
     venue = play_chat_ref or (
-        _club_label() if int(play_chat_id) == CLUB_CHAT_ID else "этой группе"
+        CLUB_WHERE if int(play_chat_id) == CLUB_CHAT_ID else "этой группе"
     )
     if venue and not str(venue).startswith("@") and not str(venue).startswith("http"):
         if str(venue).replace("_", "").isalnum():
@@ -1949,7 +1962,7 @@ async def _notify_after_game(
         balance_before=balance_before,
         free_quest=quest_mode,
         is_newbie=is_newbie,
-        venue_label=_venue_label(wallet, play_chat_ref),
+        venue_ref=play_chat_ref,
     )
     markup = _after_game_markup(wallet, free_quest=quest_mode)
 
@@ -2015,11 +2028,12 @@ def _after_game_text(
     balance_before: int,
     free_quest: bool,
     is_newbie: bool = False,
-    venue_label: str = "",
+    venue_ref: Optional[str] = None,
 ) -> str:
     title = game.get("title") or "Игра"
     emoji = game.get("emoji") or "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji>"
-    where = venue_label or _venue_label(wallet)
+    venue = _venue_name(wallet, venue_ref)
+    where = _venue_where(wallet, venue_ref)
     # Для закрытого задания delta по виртуальному балансу уже не сравнить -
     # показываем только если задание ещё активно.
     show_delta = wallet.free_quest
@@ -2027,10 +2041,10 @@ def _after_game_text(
     result_card = _bq(
         f"{emoji} {title} · ставка {bet} кут",
         delta,
-        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Площадка : {where}",
+        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Площадка : {venue}",
     ) if delta else _bq(
         f"{emoji} {title} · ставка {bet} кут",
-        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Площадка : {where}",
+        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Площадка : {venue}",
     )
 
     help_tip = ""
@@ -2120,7 +2134,7 @@ def _after_game_text(
         f"{emoji} {title} · ставка {bet} кут",
         _delta_line(balance_before, wallet.amount),
         f"<tg-emoji emoji-id='5303547422373349738'>💰</tg-emoji> Баланс : {wallet.amount} кут",
-        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Площадка : {where}",
+        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Площадка : {venue}",
     )
     return (
         f"{_path(2)}\n\n"
@@ -2174,14 +2188,15 @@ def _ready_text(
     wallet: Wallet,
     *,
     game_key: str = "",
-    venue_label: str = "",
+    venue_ref: Optional[str] = None,
 ) -> str:
     source = "с задания" if wallet.free_quest else "с баланса"
-    where = venue_label or _venue_label(wallet)
+    venue = _venue_name(wallet, venue_ref)
+    where = _venue_where(wallet, venue_ref)
     card = _bq(
         f"{game['emoji']} {game['title']}",
         f"Ставка : {bet} кут ({source})",
-        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Площадка : {where}",
+        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Площадка : {venue}",
     )
     lines = [
         f"{_path(2)}\n",
@@ -2218,7 +2233,7 @@ def _ready_markup(play_url: str, *, free_quest: bool = False) -> InlineKeyboardM
 
 def _join_text(game: Dict[str, Any], venue_url: str = CLUB_URL) -> str:
     waiting = _bq(f"{game['emoji']} {game['title']} уже ждёт.")
-    where = "группу задания" if venue_url != CLUB_URL else _club_label()
+    where = "группе задания" if venue_url != CLUB_URL else CLUB_WHERE
     why = _bq(
         "<tg-emoji emoji-id='5436339947080548936'>🌟</tg-emoji> Один клик - и вы в партии.",
         "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Без команд. Без доната на старте.",
@@ -2419,14 +2434,30 @@ async def _is_newbie(user_id: int) -> bool:
         return False
 
 
-def _venue_label(wallet: Wallet, venue_ref: Optional[str] = None) -> str:
-    """Короткое имя площадки для текстов."""
-    if wallet.free_quest and wallet.chat_id and int(wallet.chat_id) != CLUB_CHAT_ID:
-        ref = str(venue_ref or wallet.chat_ref or "").strip()
-        if ref:
-            return ref if ref.startswith("@") or ref.startswith("http") else f"@{ref.lstrip('@')}"
-        return "группе задания"
-    return _club_label()
+def _venue_ref_label(wallet: Wallet, venue_ref: Optional[str] = None) -> Optional[str]:
+    """@юзернейм площадки задания, если задание идёт не в клубе."""
+    if not (wallet.free_quest and wallet.chat_id and int(wallet.chat_id) != CLUB_CHAT_ID):
+        return None
+    ref = str(venue_ref or wallet.chat_ref or "").strip()
+    if not ref:
+        return ""
+    return ref if ref.startswith("@") or ref.startswith("http") else f"@{ref.lstrip('@')}"
+
+
+def _venue_name(wallet: Wallet, venue_ref: Optional[str] = None) -> str:
+    """Именительный падеж - для строк вида «Площадка : …»."""
+    ref = _venue_ref_label(wallet, venue_ref)
+    if ref is None:
+        return CLUB_NAME
+    return ref or "группа задания"
+
+
+def _venue_where(wallet: Wallet, venue_ref: Optional[str] = None) -> str:
+    """Предложный падеж - для строк вида «играть в …»."""
+    ref = _venue_ref_label(wallet, venue_ref)
+    if ref is None:
+        return CLUB_WHERE
+    return ref or "группе задания"
 
 
 def _play_venue(wallet: Wallet) -> Tuple[int, str, Optional[str]]:
