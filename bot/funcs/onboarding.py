@@ -301,60 +301,17 @@ def _label_for_button(label: str) -> Tuple[str, Optional[str]]:
 # ──────────────────────────────────────────────────────────────────────
 # Реестр одиночных игр
 # ──────────────────────────────────────────────────────────────────────
-# Здесь вы ВИДИТЕ текст ровно так, как его увидит новичок.
-# Меняйте строки и <tg-emoji …> прямо на месте.
+# Логика партии ВСЕГДА в module/func (trade.py, slots.py, …).
+# Онбординг только приводит новичка к сообщению и подсказывает команду.
 #
-# В шаблоне text подставляются только:
-#   {bet}    - сумма ставки
-#   {source} - «с задания» / «с баланса»
-#   {where}  - «группе клуба» / «клубе» / группа задания
-#   {hint}   - подсказка к кнопке внизу
-
-
-def _game(
-    *,
-    title: str,
-    emoji: str,
-    command: str,
-    min_bet: int,
-    text: str,
-    handler: str,
-    instant: bool = False,
-    choose: str = "",
-    options: Optional[Sequence[Tuple[str, str]]] = None,
-    rows: Optional[Sequence[int]] = None,
-    choice_first: bool = False,
-) -> Dict[str, Any]:
-    """Реестр одной игры.
-
-    text - полный текст экрана игры (как увидит человек).
-    """
-    module, _, func = handler.partition(":")
-    if not module or not func:
-        raise ValueError(f"handler должен быть «модуль:функция», получено {handler!r}")
-
-    if options:
-        cmd = f"{command} {{v}} {{bet}}" if choice_first else f"{command} {{bet}} {{v}}"
-    else:
-        cmd = f"{command} {{bet}}"
-
-    game: Dict[str, Any] = {
-        "title": title,
-        "emoji": emoji,
-        "min": int(min_bet),
-        "command": command,
-        "cmd": cmd,
-        "text": str(text).strip("\n"),
-        "module": module,
-        "func": func,
-        "instant": bool(instant),
-    }
-    if options:
-        game["variants"] = list(options)
-        game["variant_hint"] = choose or "Сделайте выбор"
-        if rows:
-            game["variant_rows"] = [int(n) for n in rows]
-    return game
+# ВСЕ тексты описания игры перед стартом живут ЗДЕСЬ:
+#   rules      — правила (🤙 / 👋), как увидит новичок
+#   board_lead — подсказка, если нужен выбор (куб / трейд / рулетка)
+#   tip_lead   — первая строка подсказки в группе после партии
+#   help_cmd / help_examples — как писать команду самому
+#
+# Меняйте <tg-emoji …> и фразы прямо в словаре. Экран перед игрой
+# собирается из emoji + title + rules + ставка/площадка + подсказка.
 
 
 def _render_game_text(
@@ -366,26 +323,51 @@ def _render_game_text(
     hint: str,
     extra: str = "",
 ) -> str:
-    """Собирает экран игры из видимого шаблона text в реестре.
+    """Экран описания игры — только из полей GAMES (emoji/title/rules).
 
-    Меняйте текст в GAMES[…].text — здесь только подстановка
-    {bet}/{source}/{where}/{hint} и опциональный блок extra перед подсказкой.
+    Ставка и площадка подставляются автоматически:
+      {bet} / с задания|с баланса / {where}
+    Подсказка внизу — hint (или board_lead / «Начать играть»).
     """
     source = "с задания" if free_quest else "с баланса"
-    rendered = game["text"].format(
-        bet=int(bet),
-        source=source,
-        where=where,
-        hint=hint,
+    emoji = str(game.get("emoji") or "").strip()
+    title = str(game.get("title") or "Игра").strip()
+    rules = str(game.get("rules") or "").strip("\n")
+
+    parts: List[str] = [
+        f"{emoji} <b>{title}</b>".strip(),
+        "",
+    ]
+    if rules:
+        parts.append(rules)
+        parts.append("")
+    parts.append(
+        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> "
+        f"Ставка : {int(bet)} кут ({source})"
+    )
+    parts.append(
+        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}"
     )
     block = (extra or "").strip()
-    if not block:
-        return rendered
-    marker = "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>"
-    idx = rendered.rfind(marker)
-    if idx < 0:
-        return f"{rendered}\n\n{block}"
-    return f"{rendered[:idx].rstrip()}\n\n{block}\n\n{rendered[idx:]}"
+    if block:
+        parts.extend(["", block])
+    hint_text = (hint or "").strip() or "Нажмите «Начать играть»"
+    parts.extend([
+        "",
+        f"<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint_text}</b>",
+    ])
+    return "\n".join(parts)
+
+
+def _game_action_hint(game: Dict[str, Any]) -> str:
+    """Подсказка на экране выбора: board_lead → variant_hint → старт."""
+    if game.get("variants"):
+        return (
+            str(game.get("board_lead") or "").strip()
+            or str(game.get("variant_hint") or "").strip()
+            or "Сделайте выбор"
+        )
+    return "Нажмите «Начать играть»"
 
 
 def _variant_button_rows(
@@ -422,234 +404,234 @@ def _variant_button_rows(
     return [buttons[i:i + per_row] for i in range(0, len(buttons), per_row)]
 
 
-# ─── тексты игр: меняйте прямо здесь ─────────────────────────────────
 GAMES: Dict[str, Dict[str, Any]] = {
-    "soccer": _game(
-        title="Футбол",
-        emoji="<tg-emoji emoji-id='5373101763442255191'>⚽️</tg-emoji>",
-        command="футбол", min_bet=2, instant=True,
-        handler="bot.tggames.soccer:tgsoccer",
-        text=(
-            "<tg-emoji emoji-id='5373101763442255191'>⚽️</tg-emoji> <b>Футбол</b>\n"
-            "\n"
+    "soccer": {
+        "title": "Футбол",
+        "emoji": "<tg-emoji emoji-id='5373101763442255191'>⚽️</tg-emoji>",
+        "min": 2,
+        "instant": True,
+        "cmd": "футбол {bet}",
+        "help_cmd": "футбол (ваша ставка)",
+        "help_examples": ("футбол 10",),
+        "tip_lead": (
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> "
+            "Ваша игра уже в нашей группе. Дальше - одной строкой."
+        ),
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Гол - забираете большой выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете."
         ),
-    ),
-    "slots": _game(
-        title="Слоты",
-        emoji="<tg-emoji emoji-id='5891135206580031104'>🎉</tg-emoji>",
-        command="слоты", min_bet=2, instant=True,
-        handler="bot.tggames.slots:tgslots",
-        text=(
-            "<tg-emoji emoji-id='5891135206580031104'>🎉</tg-emoji> <b>Слоты</b>\n"
-            "\n"
+        "module": "bot.tggames.soccer",
+        "func": "tgsoccer",
+    },
+    "slots": {
+        "title": "Слоты",
+        "emoji": "<tg-emoji emoji-id='5891135206580031104'>🎉</tg-emoji>",
+        "min": 2,
+        "instant": True,
+        "cmd": "слоты {bet}",
+        "help_cmd": "слоты (ваша ставка)",
+        "help_examples": ("слоты 10",),
+        "tip_lead": "Барабаны крутятся сами. Повтор - одной командой.",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Три одинаковых - крупный выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Иначе - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Иначе - теряете."
         ),
-    ),
-    "tank": _game(
-        title="Башня",
-        emoji="<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji>",
-        command="башня", min_bet=2,
-        handler="bot.games.tank:game_filter_tank",
-        text=(
-            "<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji> <b>Башня</b>\n"
-            "\n"
+        "module": "bot.tggames.slots",
+        "func": "tgslots",
+    },
+    "tank": {
+        "title": "Башня",
+        "emoji": "<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji>",
+        "min": 2,
+        "cmd": "башня {bet}",
+        "help_cmd": "башня (ваша ставка)",
+        "help_examples": ("башня 10",),
+        "tip_lead": "Этажи уже ждут. Забирайте вовремя - или пишите снова.",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Забираете до обвала - выигрыш растёт.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Обвал - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Обвал - теряете."
         ),
-    ),
-    "darts": _game(
-        title="Дартс",
-        emoji="<tg-emoji emoji-id='5890815115552362075'>🎯</tg-emoji>",
-        command="дартс", min_bet=2, instant=True,
-        handler="bot.tggames.darts:tgdarts",
-        text=(
-            "<tg-emoji emoji-id='5890815115552362075'>🎯</tg-emoji> <b>Дартс</b>\n"
-            "\n"
+        "module": "bot.games.tank",
+        "func": "game_filter_tank",
+    },
+    "darts": {
+        "title": "Дартс",
+        "emoji": "<tg-emoji emoji-id='5890815115552362075'>🎯</tg-emoji>",
+        "min": 2,
+        "instant": True,
+        "cmd": "дартс {bet}",
+        "help_cmd": "дартс (ваша ставка)",
+        "help_examples": ("дартс 10",),
+        "tip_lead": "Дротик улетел. Следующий бросок - одной строкой.",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> В центр - забираете большой выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете."
         ),
-    ),
-    "basket": _game(
-        title="Баскетбол",
-        emoji="<tg-emoji emoji-id='5891181665241271999'>🏀</tg-emoji>",
-        command="баскет", min_bet=2, instant=True,
-        handler="bot.tggames.basket:tgbasket",
-        text=(
-            "<tg-emoji emoji-id='5891181665241271999'>🏀</tg-emoji> <b>Баскетбол</b>\n"
-            "\n"
+        "module": "bot.tggames.darts",
+        "func": "tgdarts",
+    },
+    "basket": {
+        "title": "Баскетбол",
+        "emoji": "<tg-emoji emoji-id='5891181665241271999'>🏀</tg-emoji>",
+        "min": 2,
+        "instant": True,
+        "cmd": "баскет {bet}",
+        "help_cmd": "баскет (ваша ставка)",
+        "help_examples": ("баскет 10",),
+        "tip_lead": "Мяч в воздухе. Ещё бросок - одной командой.",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> В кольцо - забираете выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете."
         ),
-    ),
-    "bowling": _game(
-        title="Боулинг",
-        emoji="<tg-emoji emoji-id='5891120371762990493'>🎳</tg-emoji>",
-        command="боулинг", min_bet=2, instant=True,
-        handler="bot.tggames.bowling:tgbowling",
-        text=(
-            "<tg-emoji emoji-id='5891120371762990493'>🎳</tg-emoji> <b>Боулинг</b>\n"
-            "\n"
+        "module": "bot.tggames.basket",
+        "func": "tgbasket",
+    },
+    "bowling": {
+        "title": "Боулинг",
+        "emoji": "<tg-emoji emoji-id='5891120371762990493'>🎳</tg-emoji>",
+        "min": 2,
+        "instant": True,
+        "cmd": "боулинг {bet}",
+        "help_cmd": "боулинг (ваша ставка)",
+        "help_examples": ("боулинг 10",),
+        "tip_lead": "Кегли ждут. Следующий заход - одной строкой.",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Страйк - забираете выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Иначе - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Иначе - теряете."
         ),
-    ),
-    "kube": _game(
-        title="Кубик",
-        emoji="<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji>",
-        command="куб", min_bet=2, instant=True,
-        handler="bot.tggames.kube:tgkube",
-        choose="Выберите число",
-        options=[(str(n), str(n)) for n in range(1, 7)],
-        rows=(3, 3),
-        text=(
-            "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> <b>Кубик</b>\n"
-            "\n"
+        "module": "bot.tggames.bowling",
+        "func": "tgbowling",
+    },
+    "kube": {
+        "title": "Кубик",
+        "emoji": "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji>",
+        "min": 2,
+        "instant": True,
+        "cmd": "куб {bet} {v}",
+        "help_cmd": "куб (ваша ставка) (число)",
+        "help_examples": ("куб 10 4", "куб 10 6"),
+        "tip_lead": "Число выбрано. Дальше пишите ставку и число сами.",
+        "board_lead": "Выберите число на кубике - партия стартует сразу.",
+        "variants": [(str(n), str(n)) for n in range(1, 7)],
+        "variant_rows": (3, 3),
+        "variant_hint": "Выберите число",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали число - забираете выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете."
         ),
-    ),
-    "balls": _game(
-        title="Шарик",
-        emoji="<tg-emoji emoji-id='5363877049863786071'>🎱</tg-emoji>",
-        command="шарик", min_bet=2,
-        handler="bot.games.balls:balls",
-        text=(
-            "<tg-emoji emoji-id='5363877049863786071'>🎱</tg-emoji> <b>Шарик</b>\n"
-            "\n"
+        "module": "bot.tggames.kube",
+        "func": "tgkube",
+    },
+    "balls": {
+        "title": "Шарик",
+        "emoji": "<tg-emoji emoji-id='5363877049863786071'>🎱</tg-emoji>",
+        "min": 2,
+        "cmd": "шарик {bet}",
+        "help_cmd": "шарик (ваша ставка)",
+        "help_examples": ("шарик 10",),
+        "tip_lead": "Стаканы на столе. Новая партия - одной командой.",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали стакан - забираете выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете."
         ),
-    ),
-    "provoda": _game(
-        title="Провода",
-        emoji="<tg-emoji emoji-id='5782990399672946716'>🎗</tg-emoji>",
-        command="провода", min_bet=2,
-        handler="bot.games.provoda:provoda",
-        text=(
-            "<tg-emoji emoji-id='5782990399672946716'>🎗</tg-emoji> <b>Провода</b>\n"
-            "\n"
+        "module": "bot.games.balls",
+        "func": "balls",
+    },
+    "provoda": {
+        "title": "Провода",
+        "emoji": "<tg-emoji emoji-id='5782990399672946716'>🎗</tg-emoji>",
+        "min": 2,
+        "cmd": "провода {bet}",
+        "help_cmd": "провода (ваша ставка)",
+        "help_examples": ("провода 10",),
+        "tip_lead": "Режьте верный провод. Повтор - одной строкой.",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Верный провод - забираете выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Ошибка - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Ошибка - теряете."
         ),
-    ),
-    "bombs": _game(
-        title="Бомбы",
-        emoji="<tg-emoji emoji-id='5469654973308476699'>💣</tg-emoji>",
-        command="бомбы", min_bet=3,
-        handler="bot.games.bombs:bombs",
-        text=(
-            "<tg-emoji emoji-id='5469654973308476699'>💣</tg-emoji> <b>Бомбы</b>\n"
-            "\n"
+        "module": "bot.games.provoda",
+        "func": "provoda",
+    },
+    "bombs": {
+        "title": "Бомбы",
+        "emoji": "<tg-emoji emoji-id='5469654973308476699'>💣</tg-emoji>",
+        "min": 3,
+        "cmd": "бомбы {bet}",
+        "help_cmd": "бомбы (ваша ставка)",
+        "help_examples": ("бомбы 10",),
+        "tip_lead": "Поле уже открыто. Новая сетка - одной командой.",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Забираете до бомбы - выигрыш растёт.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Бомба - теряете всё.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Бомба - теряете всё."
         ),
-    ),
-    "plate": _game(
-        title="Плиты",
-        emoji="<tg-emoji emoji-id='5246916607833304803'>💫</tg-emoji>",
-        command="плиты", min_bet=2,
-        handler="bot.games.plate:plate",
-        text=(
-            "<tg-emoji emoji-id='5246916607833304803'>💫</tg-emoji> <b>Плиты</b>\n"
-            "\n"
+        "module": "bot.games.bombs",
+        "func": "bombs",
+    },
+    "plate": {
+        "title": "Плиты",
+        "emoji": "<tg-emoji emoji-id='5246916607833304803'>💫</tg-emoji>",
+        "min": 2,
+        "cmd": "плиты {bet}",
+        "help_cmd": "плиты (ваша ставка)",
+        "help_examples": ("плиты 10",),
+        "tip_lead": "Шаг за шагом. Следующий забег - одной строкой.",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Забираете до провала - выигрыш растёт.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Провал - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Провал - теряете."
         ),
-    ),
-    "risk": _game(
-        title="Риск",
-        emoji="<tg-emoji emoji-id='5438449312893792440'>🌴</tg-emoji>",
-        command="риск", min_bet=5,
-        handler="bot.games.risk:risk",
-        text=(
-            "<tg-emoji emoji-id='5438449312893792440'>🌴</tg-emoji> <b>Риск</b>\n"
-            "\n"
+        "module": "bot.games.plate",
+        "func": "plate",
+    },
+    "risk": {
+        "title": "Риск",
+        "emoji": "<tg-emoji emoji-id='5438449312893792440'>🌴</tg-emoji>",
+        "min": 5,
+        "cmd": "риск {bet}",
+        "help_cmd": "риск (ваша ставка)",
+        "help_examples": ("риск 10",),
+        "tip_lead": "Множитель растёт. Новая волна - одной командой.",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Шаг умножает выигрыш - забираете вовремя.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Волна - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Волна - теряете."
         ),
-    ),
-    "trade": _game(
-        title="Трейд",
-        emoji="<tg-emoji emoji-id='5296306038792808890'>📈</tg-emoji>",
-        command="трейд", min_bet=2, instant=True,
-        handler="bot.games.trade:trade",
-        choose="Выберите направление",
-        choice_first=True,
-        rows=(2,),
-        options=[
+        "module": "bot.games.risk",
+        "func": "risk",
+    },
+    "trade": {
+        "title": "Трейд",
+        "emoji": "<tg-emoji emoji-id='5296306038792808890'>📈</tg-emoji>",
+        "min": 2,
+        "instant": True,
+        "cmd": "трейд {v} {bet}",
+        "help_cmd": "трейд (направление) (ваша ставка)",
+        "help_examples": ("трейд вверх 10", "трейд вниз 10"),
+        "tip_lead": "Сделка закрыта. Дальше направление и ставку пишете сами.",
+        "board_lead": "Куда пойдёт график? Нажмите кнопку - и партия начнётся сразу.",
+        "variants": [
             ("<tg-emoji emoji-id='5339384049670593248'>↗️</tg-emoji> Вверх", "вверх"),
             ("<tg-emoji emoji-id='5339179750961224703'>📉</tg-emoji> Вниз", "вниз"),
         ],
-        text=(
-            "<tg-emoji emoji-id='5296306038792808890'>📈</tg-emoji> <b>Трейд</b>\n"
-            "\n"
+        "variant_rows": (2,),
+        "variant_hint": "Выберите направление",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали направление - забираете выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете."
         ),
-    ),
-    "fortuna": _game(
-        title="Рулетка",
-        emoji="<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji>",
-        command="рулетка", min_bet=3, instant=True,
-        handler="bot.games.Fortuna:Fortuna",
-        choose="Выберите число, цвет или чёт/нечет",
-        rows=(2, 2, 1, 4, 4, 4),
-        options=[
+        "module": "bot.games.trade",
+        "func": "trade",
+    },
+    "fortuna": {
+        "title": "Рулетка",
+        "emoji": "<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji>",
+        "min": 3,
+        "instant": True,
+        "cmd": "рулетка {bet} {v}",
+        "help_cmd": "рулетка (ваша ставка) (число / цвет / чёт)",
+        "help_examples": ("рулетка 10 красное", "рулетка 10 черное", "рулетка 10 7"),
+        "tip_lead": "Шарик остановился. Следующий спин - одной строкой.",
+        "board_lead": "Выберите число, цвет или чёт/нечет - партия начнётся сразу.",
+        "variants": [
             ("<tg-emoji emoji-id='5339546996434812675'>🔴</tg-emoji> Красное", "красное"),
             ("<tg-emoji emoji-id='5424616516018537963'>⚫️</tg-emoji> Чёрное", "черное"),
             ("Чётное", "чет"),
@@ -659,24 +641,22 @@ GAMES: Dict[str, Dict[str, Any]] = {
             ("5", "5"), ("6", "6"), ("7", "7"), ("8", "8"),
             ("9", "9"), ("10", "10"), ("11", "11"), ("12", "12"),
         ],
-        text=(
-            "<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji> <b>Рулетка</b>\n"
-            "\n"
+        "variant_rows": (2, 2, 1, 4, 4, 4),
+        "variant_hint": "Выберите число, цвет или чёт/нечет",
+        "rules": (
             "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали число, цвет или чёт - выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете.\n"
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут ({source})\n"
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете."
         ),
-    ),
+        "module": "bot.games.Fortuna",
+        "func": "Fortuna",
+    },
 }
 
 # Порядок кнопок - порядок словаря: сверху самые быстрые и понятные.
 SOLO_ORDER: Tuple[str, ...] = tuple(GAMES)
 
 # Быстрые игры: партия кончается сразу, поэтому итог летит в личку следом.
-INSTANT_GAMES = frozenset(k for k, g in GAMES.items() if g["instant"])
+INSTANT_GAMES = frozenset(k for k, g in GAMES.items() if g.get("instant"))
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -2048,7 +2028,6 @@ async def ob_game(call: CallbackQuery):
         return
 
     variants: Sequence[Tuple[str, str]] = game.get("variants") or ()
-    action = game.get("variant_hint") or "Нажмите «Начать играть»"
     where = _venue_where(wallet)
     extra = ""
     if wallet.free_quest:
@@ -2056,12 +2035,13 @@ async def ob_game(call: CallbackQuery):
             f"{_quest_stats(wallet)}\n"
             "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тратятся."
         )
+    # Описание = GAMES[…].rules (+ ставка/площадка). Подсказка = board_lead.
     text = _render_game_text(
         game,
         bet=bet,
         free_quest=wallet.free_quest,
         where=where,
-        hint=action if variants else "Нажмите «Начать играть»",
+        hint=_game_action_hint(game),
         extra=extra,
     )
 
@@ -2738,7 +2718,7 @@ def _ready_text(
     game_key: str = "",
     venue_ref: Optional[str] = None,
 ) -> str:
-    """Текст после запуска — тот же шаблон игры из GAMES[…].text."""
+    """Текст после запуска — описание из GAMES[…].rules."""
     where = _venue_where(wallet, venue_ref)
     if wallet.free_quest:
         hint = (
@@ -2789,7 +2769,7 @@ def _join_text(
     free_quest: bool,
     venue_url: str = CLUB_URL,
 ) -> str:
-    """Текст «войдите в группу» — шаблон игры из GAMES[…].text."""
+    """Текст «войдите в группу» — описание из GAMES[…].rules."""
     where = "группе задания" if venue_url != CLUB_URL else CLUB_WHERE
     return _render_game_text(
         game,
@@ -2957,14 +2937,13 @@ def _choice_required_text(
     free_quest: bool,
     where: str,
 ) -> str:
-    """Текст «сначала выберите» — шаблон игры из GAMES[…].text."""
-    hint = game.get("variant_hint") or "Сделайте выбор"
+    """Текст «сначала выберите» — описание из GAMES[…].rules."""
     return _render_game_text(
         game,
         bet=bet,
         free_quest=free_quest,
         where=where,
-        hint=hint,
+        hint=_game_action_hint(game),
     )
 
 
@@ -3088,16 +3067,27 @@ async def _send_html_chat(
 def _example_command(game: Dict[str, Any], bet: int) -> Tuple[str, str]:
     """Готовая строка команды и выбранный вариант, если игра его требует.
 
-    Собираем из того же шаблона, что уходит в саму игру, - тогда пример
-    в подсказке гарантированно рабочий, а не «трейд 25» без направления.
+    Берём cmd из GAMES (тот же шаблон, что уходит в игру). Ставку
+    подставляем актуальную; вариант — первый из variants / help_examples.
     """
-    template = str(game.get("cmd") or "")
-    if not template:
-        return "", ""
+    template = str(game.get("cmd") or "").strip()
     options: Sequence[Tuple[str, str]] = game.get("variants") or ()
     pick = str(options[0][1]) if options else ""
-    text = template.format(bet=bet, v=pick)
-    return " ".join(text.split()), pick
+    if template:
+        text = template.format(bet=int(bet), v=pick)
+        return " ".join(text.split()), pick
+
+    # Запасной путь: первый help_examples из реестра, с заменой числа ставки.
+    examples = tuple(game.get("help_examples") or ())
+    if not examples:
+        return "", pick
+    sample = str(examples[0])
+    # «футбол 10» / «трейд вверх 10» → подставить текущую ставку в хвост.
+    parts = sample.split()
+    if parts and parts[-1].isdigit():
+        parts[-1] = str(int(bet))
+        sample = " ".join(parts)
+    return sample, pick
 
 
 def newbie_help_tip_text(
@@ -3108,20 +3098,36 @@ def newbie_help_tip_text(
     game_key: str = "",
     bet: int = 0,
 ) -> str:
-    """Подсказка в группе после игры из онбординга (только новичкам)."""
+    """Подсказка в группе после игры из онбординга (только новичкам).
+
+    tip_lead / help_examples берутся из GAMES — правьте там.
+    """
     game = GAMES.get(game_key) or {}
     again = max(int(bet or 0), int(game.get("min") or 2))
     example, _pick = _example_command(game, again)
+    tip_lead = str(game.get("tip_lead") or "").strip()
 
     parts = [
         f"<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> {mention}",
         "",
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Партия запущена.</b>",
     ]
+    if tip_lead:
+        parts.append(tip_lead)
+    else:
+        parts.append(
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> "
+            "<b>Партия запущена.</b>"
+        )
     if example:
         parts.append(
             f"<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> "
             f"Сыграть ещё : <code>{example}</code>"
+        )
+    help_cmd = str(game.get("help_cmd") or "").strip()
+    if help_cmd:
+        parts.append(
+            f"<tg-emoji emoji-id='5318892863780579996'>📖</tg-emoji> "
+            f"Формат : <code>{help_cmd}</code>"
         )
     parts.append(
         f"<tg-emoji emoji-id='5318892863780579996'>📖</tg-emoji> "
