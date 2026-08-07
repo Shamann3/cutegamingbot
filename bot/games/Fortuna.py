@@ -143,11 +143,19 @@ async def _mark_user_game_activity(user_id: int, reason: str = "") -> None:
     except Exception as e:
         _fdbg("ACTIVITY", f"touch error user_id={user_id} reason={reason}: {e}")
 
-def _get_message_lock(mid: int) -> asyncio.Lock:
-    lock = _message_locks.get(mid)
+def _msg_key(chat_id: int, message_id: int) -> str:
+    """Ключ антидубля: message_id сам по себе пересекается между чатами."""
+    return f"{int(chat_id)}:{int(message_id)}"
+
+def _key_from_message(message: Message) -> str:
+    return _msg_key(int(message.chat.id), int(message.message_id))
+
+def _get_message_lock(message: Message) -> asyncio.Lock:
+    key = _key_from_message(message)
+    lock = _message_locks.get(key)
     if lock is None:
         lock = asyncio.Lock()
-        _message_locks[mid] = lock
+        _message_locks[key] = lock
     return lock
 
 def _get_user_lock(uid: int) -> asyncio.Lock:
@@ -167,9 +175,13 @@ async def _claim_settlement_once(event_key: str) -> bool:
         _settled_events[event_key] = time.time()
         return True
 
-def _mark_processed_message(message_id: int) -> None:
-    _processed_messages[int(message_id)] = time.time()
-    _processing_messages.pop(int(message_id), None)
+def _already_processed(message: Message) -> bool:
+    return _key_from_message(message) in _processed_messages
+
+def _mark_processed_message(message: Message) -> None:
+    key = _key_from_message(message)
+    _processed_messages[key] = time.time()
+    _processing_messages.pop(key, None)
 
 def _dec(v: Any) -> Decimal:
     try:
@@ -999,18 +1011,18 @@ async def _fortuna_free_game(
     gc_state: dict,
 ):
     ensure_cleanup_started()
-    msg_lock = _get_message_lock(message.message_id)
+    msg_lock = _get_message_lock(message)
     user_lock = _get_user_lock(user_id)
 
     async with msg_lock:
-        if message.message_id in _processed_messages:
+        if _already_processed(message):
             return
 
         async with user_lock:
-            if message.message_id in _processed_messages:
+            if _already_processed(message):
                 return
 
-            _processing_messages[message.message_id] = time.time()
+            _processing_messages[_key_from_message(message)] = time.time()
 
             try:
                 left = _cooldown_left(chat_id, user_id)
@@ -1024,7 +1036,7 @@ async def _fortuna_free_game(
                         )
                     except Exception:
                         pass
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 _cooldown_mark(chat_id, user_id)
@@ -1044,7 +1056,7 @@ async def _fortuna_free_game(
                         await bot1.send_message(chat_id, "😓", reply_to_message_id=message.message_id, reply_markup=kb)
                     except Exception:
                         pass
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 parsed = _parse_roulette_choice(parts)
@@ -1053,7 +1065,7 @@ async def _fortuna_free_game(
                         await bot1.send_message(chat_id, parsed["error"], reply_to_message_id=message.message_id, parse_mode="HTML")
                     except Exception:
                         pass
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 streaks = _get_streaks(user_id)
@@ -1074,7 +1086,7 @@ async def _fortuna_free_game(
                     await _mark_user_game_activity(user_id, reason="free_zero_win")
                     await _safe_add_xp(user_id)
                     await _send_result_visual(message, random_num=0, kind="win", amount=profit, coef=mult)
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 # 0 и НЕ ставка на 0 => HOME
@@ -1087,7 +1099,7 @@ async def _fortuna_free_game(
                     await _mark_user_game_activity(user_id, reason="free_home_zero")
                     await _safe_add_xp(user_id)
                     await _send_result_visual(message, random_num=0, kind="home", amount=0, coef=0.0)
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 if parsed["mode"] == "number":
@@ -1112,7 +1124,7 @@ async def _fortuna_free_game(
                         await _safe_add_xp(user_id)
                         await _send_result_visual(message, random_num=random_num, kind="loss", amount=0, coef=mult)
 
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 if parsed["mode"] == "color":
@@ -1141,7 +1153,7 @@ async def _fortuna_free_game(
                         await _safe_add_xp(user_id)
                         await _send_result_visual(message, random_num=random_num, kind="loss", amount=0, coef=mult)
 
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 if parsed["mode"] == "parity":
@@ -1170,7 +1182,7 @@ async def _fortuna_free_game(
                         await _safe_add_xp(user_id)
                         await _send_result_visual(message, random_num=random_num, kind="loss", amount=0, coef=mult)
 
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 if parsed["mode"] == "range":
@@ -1196,15 +1208,15 @@ async def _fortuna_free_game(
                         await _safe_add_xp(user_id)
                         await _send_result_visual(message, random_num=random_num, kind="loss", amount=0, coef=mult)
 
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
-                _mark_processed_message(message.message_id)
+                _mark_processed_message(message)
                 return
 
             except Exception:
                 _fdbg("FREE", traceback.format_exc())
-                _mark_processed_message(message.message_id)
+                _mark_processed_message(message)
                 return
 
 # ===================== PAID GAME (основной режим с Jericho) =====================
@@ -1219,19 +1231,19 @@ async def _fortuna_paid_game(
     using_0demo: bool = False,
 ):
     ensure_cleanup_started()
-    msg_lock = _get_message_lock(message.message_id)
+    msg_lock = _get_message_lock(message)
     user_lock = _get_user_lock(user_id)
     event_key = _event_key(chat_id, message.message_id)
 
     async with msg_lock:
-        if message.message_id in _processed_messages:
+        if _already_processed(message):
             return
 
         async with user_lock:
-            if message.message_id in _processed_messages:
+            if _already_processed(message):
                 return
 
-            _processing_messages[message.message_id] = time.time()
+            _processing_messages[_key_from_message(message)] = time.time()
 
             try:
                 left = _cooldown_left(chat_id, user_id)
@@ -1245,7 +1257,7 @@ async def _fortuna_paid_game(
                         )
                     except Exception:
                         pass
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 _cooldown_mark(chat_id, user_id)
@@ -1256,7 +1268,7 @@ async def _fortuna_paid_game(
                         await bot1.send_message(chat_id, parsed["error"], reply_to_message_id=message.message_id, parse_mode="HTML")
                     except Exception:
                         pass
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 balance, chat_balance = await _safe_get_balances(user_id, chat_id)
@@ -1305,7 +1317,7 @@ async def _fortuna_paid_game(
                             _fdbg("DONATE", traceback.format_exc())
 
                     asyncio.create_task(_send_invoice_later())
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 # --- Проверка баланса группы ---
@@ -1320,7 +1332,7 @@ async def _fortuna_paid_game(
                         await bot1.send_message(chat_id, text_err, reply_to_message_id=message.message_id, reply_markup=kb, parse_mode="HTML")
                     except Exception:
                         pass
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 # --- Проверка максимальной ставки ---
@@ -1333,7 +1345,7 @@ async def _fortuna_paid_game(
                         await bot1.send_message(chat_id, f"<b>{selected_phrase}</b>", reply_to_message_id=message.message_id, parse_mode="HTML")
                     except Exception:
                         pass
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 # --- Загружаем серии ---
@@ -1380,7 +1392,7 @@ async def _fortuna_paid_game(
                         _update_streaks(user_id, is_win=True)
 
                         await _send_result_visual(message, random_num=random_num, kind="win", amount=actual_profit, coef=mult)
-                        _mark_processed_message(message.message_id)
+                        _mark_processed_message(message)
                         return
 
                     # Реальный проигрыш (0demo) – списываем 0demo, гасим долг
@@ -1403,7 +1415,7 @@ async def _fortuna_paid_game(
                     if random_num == 0:
                         # HOME
                         if not await _claim_settlement_once(event_key):
-                            _mark_processed_message(message.message_id)
+                            _mark_processed_message(message)
                             return
                         await _user_minus(user_id, bet_int)
                         if has_assignment:
@@ -1425,7 +1437,7 @@ async def _fortuna_paid_game(
                     else:
                         # LOSS
                         if not await _claim_settlement_once(event_key):
-                            _mark_processed_message(message.message_id)
+                            _mark_processed_message(message)
                             return
                         await _user_minus(user_id, bet_int)
                         await _chat_plus(chat_id, bet_int)
@@ -1446,7 +1458,7 @@ async def _fortuna_paid_game(
                         mult = float(parsed["multiplier"] or 0.0)
                         await _send_result_visual(message, random_num=random_num, kind="loss", amount=0, coef=mult)
 
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 if using_demo:
@@ -1496,7 +1508,7 @@ async def _fortuna_paid_game(
                         if random_num == 0:
                             # HOME
                             if not await _claim_settlement_once(event_key):
-                                _mark_processed_message(message.message_id)
+                                _mark_processed_message(message)
                                 return
                             if has_assignment:
                                 await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=bet_int, outcome="-")
@@ -1518,7 +1530,7 @@ async def _fortuna_paid_game(
                         else:
                             # LOSS
                             if not await _claim_settlement_once(event_key):
-                                _mark_processed_message(message.message_id)
+                                _mark_processed_message(message)
                                 return
                             if has_assignment:
                                 await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=bet_int, outcome="-")
@@ -1538,7 +1550,7 @@ async def _fortuna_paid_game(
                             _update_streaks(user_id, is_win=False)
                             await _send_result_visual(message, random_num=random_num, kind="loss", amount=0, coef=mult)
 
-                        _mark_processed_message(message.message_id)
+                        _mark_processed_message(message)
                         return
 
                     # Обычный выигрыш demo – списываем demo
@@ -1555,7 +1567,7 @@ async def _fortuna_paid_game(
                     actual_profit = min(profit, int(chat_balance or 0))
 
                     if not await _claim_settlement_once(event_key):
-                        _mark_processed_message(message.message_id)
+                        _mark_processed_message(message)
                         return
                     if actual_profit > 0:
                         await _user_plus(user_id, actual_profit)
@@ -1575,7 +1587,7 @@ async def _fortuna_paid_game(
                     _update_streaks(user_id, is_win=True)
 
                     await _send_result_visual(message, random_num=random_num, kind="win", amount=actual_profit, coef=mult)
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 # ========== ОБЫЧНЫЙ РЕЖИМ (без demo/0demo) ==========
@@ -1658,12 +1670,12 @@ async def _fortuna_paid_game(
                 # разбор режимов ставки
                 if parsed["mode"] == "number" and int(parsed["selected_number"]) == 0 and random_num == 0:
                     await apply_win(0, mult, "ZERO_NUMBER")
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 if random_num == 0:
                     await apply_home_zero()
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 if parsed["mode"] == "number":
@@ -1672,7 +1684,7 @@ async def _fortuna_paid_game(
                         await apply_win(random_num, mult, "NUMBER")
                     else:
                         await apply_loss(random_num, mult, "NUMBER")
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 if parsed["mode"] == "color":
@@ -1684,7 +1696,7 @@ async def _fortuna_paid_game(
                         await apply_win(random_num, mult, "COLOR")
                     else:
                         await apply_loss(random_num, mult, "COLOR")
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 if parsed["mode"] == "parity":
@@ -1696,7 +1708,7 @@ async def _fortuna_paid_game(
                         await apply_win(random_num, mult, "PARITY")
                     else:
                         await apply_loss(random_num, mult, "PARITY")
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
                 if parsed["mode"] == "range":
@@ -1706,14 +1718,14 @@ async def _fortuna_paid_game(
                         await apply_win(random_num, mult, "RANGE")
                     else:
                         await apply_loss(random_num, mult, "RANGE")
-                    _mark_processed_message(message.message_id)
+                    _mark_processed_message(message)
                     return
 
-                _mark_processed_message(message.message_id)
+                _mark_processed_message(message)
 
             except Exception:
                 _fdbg("PAID", traceback.format_exc())
-                _mark_processed_message(message.message_id)
+                _mark_processed_message(message)
 
 # ===================== MAIN HANDLER =====================
 @dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("рул", "рулетка"))
@@ -1721,7 +1733,7 @@ async def Fortuna(message: Message):
     ensure_cleanup_started()
 
     try:
-        if message.message_id in _processed_messages:
+        if _already_processed(message):
             return
 
         if message.chat.type == "private":
@@ -1734,7 +1746,7 @@ async def Fortuna(message: Message):
                 )
             except Exception:
                 pass
-            _mark_processed_message(message.message_id)
+            _mark_processed_message(message)
             return
 
         parts = (message.text or "").strip().split()
@@ -1749,7 +1761,7 @@ async def Fortuna(message: Message):
                 )
             except Exception:
                 pass
-            _mark_processed_message(message.message_id)
+            _mark_processed_message(message)
             return
 
         bet_int = _parse_bet_to_int(parts[1])
@@ -1764,7 +1776,7 @@ async def Fortuna(message: Message):
                 )
             except Exception:
                 pass
-            _mark_processed_message(message.message_id)
+            _mark_processed_message(message)
             return
 
         if bet_int < FORTUNA_MIN_BET:
@@ -1777,7 +1789,7 @@ async def Fortuna(message: Message):
                 )
             except Exception:
                 pass
-            _mark_processed_message(message.message_id)
+            _mark_processed_message(message)
             return
 
         if bet_int > FORTUNA_MAXIMUM_BET_AMOUNT:
@@ -1790,13 +1802,13 @@ async def Fortuna(message: Message):
                 )
             except Exception:
                 pass
-            _mark_processed_message(message.message_id)
+            _mark_processed_message(message)
             return
 
         user_id = int(message.from_user.id)
         chat_id = int(message.chat.id)
 
-        _processing_messages[message.message_id] = time.time()
+        _processing_messages[_key_from_message(message)] = time.time()
         _fdbg("START", f"user={user_id} chat={chat_id} bet={bet_int} text={message.text!r}")
 
         # Инициализация новичка и welcome_back_gift
@@ -1825,7 +1837,7 @@ async def Fortuna(message: Message):
                 )
             except Exception:
                 pass
-            _mark_processed_message(message.message_id)
+            _mark_processed_message(message)
             return
 
         # ---------- DEMO / 0DEMO с Jericho ----------
@@ -1889,7 +1901,7 @@ async def Fortuna(message: Message):
     except Exception:
         _fdbg("MAIN", traceback.format_exc())
         try:
-            _mark_processed_message(message.message_id)
+            _mark_processed_message(message)
         except Exception:
             pass
 

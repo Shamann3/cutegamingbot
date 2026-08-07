@@ -37,13 +37,16 @@ import os
 import random
 import re
 import time
+import traceback
+from datetime import datetime, timezone
 from importlib import import_module
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from aiogram import F
 from aiogram.types import (
     BotCommand,
     CallbackQuery,
+    Chat,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
@@ -486,7 +489,8 @@ GAMES: Dict[str, Dict[str, Any]] = {
     "fortuna": _game(
         title="Рулетка",
         emoji="<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji>",
-        command="рулетка", min_bet=2, instant=True,
+        # Совпадает с FORTUNA_MIN_BET в bot/config/config.py (там 3).
+        command="рулетка", min_bet=3, instant=True,
         rules="Число, цвет или чёт/нечет. Угадали — выигрыш.",
         handler="bot.games.Fortuna:Fortuna",
         choose="Выберите число, цвет или чёт/нечет",
@@ -520,6 +524,9 @@ _pending: Dict[int, Tuple[str, int, Optional[str], float]] = {}
 _launch_lock: Dict[int, float] = {}
 # Токен запуска: не перетираем личку, если человек уже ушёл с экрана готовности.
 _notify_token: Dict[int, int] = {}
+# Сильные ссылки на фоновые запуски: иначе asyncio может тихо отменить задачу.
+_bg_tasks: Set[asyncio.Task] = set()
+_handler_cache: Dict[str, Any] = {}
 _PENDING_TTL = 3600.0
 _LAUNCH_COOLDOWN = 3.0
 
@@ -556,6 +563,106 @@ def _bump_notify_token(user_id: int) -> int:
 
 def _notify_token_alive(user_id: int, token: int) -> bool:
     return _notify_token.get(user_id) == token
+
+
+def _spawn_bg(coro, *, label: str) -> asyncio.Task:
+    """create_task с сильной ссылкой - иначе партия может исчезнуть до dice."""
+    task = asyncio.create_task(coro, name=f"onboarding:{label}")
+    _bg_tasks.add(task)
+
+    def _done(done: asyncio.Task) -> None:
+        _bg_tasks.discard(done)
+        try:
+            exc = done.exception()
+        except asyncio.CancelledError:
+            print(f"[ONBOARDING] фон отменён: {label}")
+            return
+        if exc is not None:
+            print(f"[ONBOARDING] фон упал ({label}): {exc!r}")
+            print(traceback.format_exc())
+
+    task.add_done_callback(_done)
+    return task
+
+
+def _resolve_handler(game: Dict[str, Any]):
+    """Обработчик игры: module:func, с кэшем после первого импорта."""
+    module = str(game.get("module") or "")
+    func = str(game.get("func") or "")
+    key = f"{module}:{func}"
+    cached = _handler_cache.get(key)
+    if cached is not None:
+        return cached
+    if not module or not func:
+        raise RuntimeError(f"у игры нет handler: {game.get('title')!r}")
+    mod = import_module(module)
+    handler = getattr(mod, func, None)
+    if handler is None or not callable(handler):
+        raise RuntimeError(f"handler не найден: {key}")
+    _handler_cache[key] = handler
+    return handler
+
+
+def _allowed_variants(game: Dict[str, Any]) -> Dict[str, str]:
+    """value → label для проверки выбора перед запуском."""
+    out: Dict[str, str] = {}
+    for label, value in (game.get("variants") or ()):
+        out[str(value)] = str(label)
+    return out
+
+
+def _build_launch_command(game: Dict[str, Any], bet: int, variant: Optional[str]) -> str:
+    """Рабочая команда для синтетического сообщения в группе."""
+    template = str(game.get("cmd") or "").strip()
+    if not template:
+        raise ValueError(f"пустой шаблон команды у {game.get('title')!r}")
+
+    allowed = _allowed_variants(game)
+    if allowed:
+        pick = "" if variant is None else str(variant)
+        if pick not in allowed:
+            raise ValueError(
+                f"нужен выбор для {game.get('title')!r}, получено {variant!r}"
+            )
+        text = template.format(bet=int(bet), v=pick)
+    else:
+        text = template.format(bet=int(bet), v="")
+
+    command = " ".join(str(text).split())
+    if not command:
+        raise ValueError(f"команда пустая после сборки у {game.get('title')!r}")
+    return command
+
+
+def _synthetic_command_message(anchor: Message, user: User, command: str) -> Message:
+    """Сообщение «как от игрока»: тот же якорь в чате, текст - игровая команда.
+
+    Не копируем HTML-entities якоря - у команды свой чистый текст.
+    """
+    chat = anchor.chat
+    if not isinstance(chat, Chat):
+        raise RuntimeError("у якоря нет chat")
+
+    thread_id = getattr(anchor, "message_thread_id", None)
+    date = anchor.date or datetime.now(timezone.utc)
+    try:
+        synthetic = Message(
+            message_id=int(anchor.message_id),
+            date=date,
+            chat=chat,
+            from_user=user,
+            text=command,
+            message_thread_id=thread_id,
+        )
+    except Exception:
+        # Старые/новые версии aiogram могут отличаться набором полей.
+        synthetic = anchor.model_copy(update={
+            "text": command,
+            "from_user": user,
+            "entities": None,
+            "caption_entities": None,
+        })
+    return synthetic.as_(bot1)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -1836,6 +1943,12 @@ async def _try_launch(call: CallbackQuery, game_key: str, bet: int,
     wallet = await _wallet(user.id)
     venue_chat_id, venue_url, venue_ref = _play_venue(wallet)
 
+    # 0. Выбор обязателен, если у игры есть варианты (рулетка, куб, трейд).
+    allowed = _allowed_variants(game)
+    if allowed and (variant is None or str(variant) not in allowed):
+        await _swap(call, _choice_required_text(game), _choice_required_markup(game_key))
+        return
+
     # 1. Человек в чате, где задание засчитывается?
     if not await _in_chat(user.id, venue_chat_id):
         await _swap(call, _join_text(game, venue_url), _join_markup(venue_url))
@@ -1851,9 +1964,16 @@ async def _try_launch(call: CallbackQuery, game_key: str, bet: int,
         await _swap(call, _empty_treasury_text(), _empty_treasury_markup())
         return
 
-    # 4. Запуск. Защита от двойного нажатия стоит здесь, чтобы повторный
-    #    вход или проверка баланса не глотались кулдауном.
+    # 4. Защита от двойного нажатия - с понятным экраном, не молча.
     if _too_fast(user.id):
+        await _swap(call, _wait_text(), _wait_markup())
+        return
+
+    try:
+        command = _build_launch_command(game, bet, variant)
+    except Exception as e:
+        print(f"[ONBOARDING] команда {game_key}/{user.id}: {e!r}")
+        await _swap(call, _failed_text(), _failed_markup())
         return
 
     dm_chat_id = call.message.chat.id
@@ -1862,7 +1982,7 @@ async def _try_launch(call: CallbackQuery, game_key: str, bet: int,
     token = _bump_notify_token(user.id)
 
     anchor = await _launch(
-        user, game_key, bet, variant,
+        user, game_key, bet, variant, command,
         play_chat_id=venue_chat_id,
         play_chat_ref=venue_ref,
         dm_chat_id=dm_chat_id,
@@ -1892,6 +2012,7 @@ async def _launch(
     game_key: str,
     bet: int,
     variant: Optional[str],
+    command: str,
     *,
     play_chat_id: int,
     play_chat_ref: Optional[str],
@@ -1905,67 +2026,81 @@ async def _launch(
     game = GAMES[game_key]
     anchor = None
     try:
-        try:
-            anchor = await bot1.send_message(
-                chat_id=play_chat_id,
-                text=(
-                    f"{game['emoji']} <b>{_name(user)}</b> начинает "
-                    f"<b>{game['title']}</b> · ставка {bet} кут"
-                ),
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-        except Exception as e:
-            # Если премиум-эмодзи в якоре не принялись - шлём unicode.
-            if "DOCUMENT_INVALID" in str(e).upper() or "document_invalid" in str(e).lower():
-                anchor = await bot1.send_message(
-                    chat_id=play_chat_id,
-                    text=(
-                        f"{_plain_emoji(game['emoji'])} <b>{_name(user)}</b> начинает "
-                        f"<b>{game['title']}</b> · ставка {bet} кут"
-                    ),
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                )
-            else:
-                raise
+        handler = _resolve_handler(game)
+        anchor = await _send_anchor(play_chat_id, user, game, bet)
+        synthetic = _synthetic_command_message(anchor, user, command)
 
-        handler = getattr(import_module(game["module"]), game["func"])
+        print(
+            f"[ONBOARDING] launch {game_key} user={user.id} chat={play_chat_id} "
+            f"bet={bet} variant={variant!r} cmd={command!r} "
+            f"anchor={anchor.message_id}",
+            flush=True,
+        )
 
-        # Синтетическое сообщение: чат и якорь - от бота, автор - игрок,
-        # текст - обычная игровая команда. Игра отвечает на якорь.
-        synthetic = anchor.model_copy(update={
-            "text": game["cmd"].format(bet=bet, v=variant or ""),
-            "from_user": user,
-        }).as_(bot1)
-
-        # Игры длятся секунды (анимация дайса, паузы), поэтому не держим
-        # колбэк - ссылку в личку отдаём сразу. После финиша one-shot игр
-        # обновляем личку с прогрессом.
-        asyncio.create_task(_run_game_and_notify(
-            handler, synthetic,
-            user=user,
-            user_id=user.id,
-            game_key=game_key,
-            bet=bet,
-            play_chat_id=play_chat_id,
-            play_chat_ref=play_chat_ref,
-            anchor_message_id=anchor.message_id,
-            dm_chat_id=dm_chat_id,
-            dm_message_id=dm_message_id,
-            balance_before=balance_before,
-            free_quest=free_quest,
-            notify_token=notify_token,
-        ))
+        # Партия может длиться секунды (dice / анимация). Ссылку в личку
+        # отдаём сразу; задачу держим в _bg_tasks, иначе asyncio её съест.
+        _spawn_bg(
+            _run_game_and_notify(
+                handler, synthetic,
+                user=user,
+                user_id=user.id,
+                game_key=game_key,
+                bet=bet,
+                play_chat_id=play_chat_id,
+                play_chat_ref=play_chat_ref,
+                anchor_message_id=anchor.message_id,
+                dm_chat_id=dm_chat_id,
+                dm_message_id=dm_message_id,
+                balance_before=balance_before,
+                free_quest=free_quest,
+                notify_token=notify_token,
+            ),
+            label=f"{game_key}:{user.id}:{anchor.message_id}",
+        )
         return anchor
     except Exception as e:
         print(f"[ONBOARDING] Не удалось запустить {game_key} для {user.id}: {e!r}")
+        print(traceback.format_exc())
         if anchor is not None:
             try:
                 await bot1.delete_message(play_chat_id, anchor.message_id)
             except Exception:
                 pass
         return None
+
+
+async def _send_anchor(
+    play_chat_id: int,
+    user: User,
+    game: Dict[str, Any],
+    bet: int,
+) -> Message:
+    """Якорь в группе: сначала с premium emoji, при отказе - unicode."""
+    rich = (
+        f"{game['emoji']} <b>{_name(user)}</b> начинает "
+        f"<b>{game['title']}</b> · ставка {bet} кут"
+    )
+    plain = (
+        f"{_plain_emoji(game['emoji'])} <b>{_name(user)}</b> начинает "
+        f"<b>{game['title']}</b> · ставка {bet} кут"
+    )
+    try:
+        return await bot1.send_message(
+            chat_id=play_chat_id,
+            text=rich,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        err = str(e).lower()
+        if "document_invalid" in err or "can't parse entities" in err:
+            return await bot1.send_message(
+                chat_id=play_chat_id,
+                text=plain,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        raise
 
 
 async def _run_game_and_notify(
@@ -1987,9 +2122,44 @@ async def _run_game_and_notify(
 ) -> None:
     try:
         await handler(synthetic)
+    except asyncio.CancelledError:
+        print(
+            f"[ONBOARDING] Игра {game_key} отменена у {user_id} "
+            f"(chat={play_chat_id} anchor={anchor_message_id})",
+            flush=True,
+        )
+        await _notify_launch_failed(
+            user_id=user_id,
+            dm_chat_id=dm_chat_id,
+            dm_message_id=dm_message_id,
+            notify_token=notify_token,
+            play_chat_id=play_chat_id,
+            anchor_message_id=anchor_message_id,
+        )
+        raise
     except Exception as e:
-        print(f"[ONBOARDING] Игра {game_key} упала у {user_id}: {e!r}")
+        print(
+            f"[ONBOARDING] Игра {game_key} упала у {user_id}: {e!r} "
+            f"(chat={play_chat_id} anchor={anchor_message_id} "
+            f"text={getattr(synthetic, 'text', None)!r})",
+            flush=True,
+        )
+        print(traceback.format_exc())
+        await _notify_launch_failed(
+            user_id=user_id,
+            dm_chat_id=dm_chat_id,
+            dm_message_id=dm_message_id,
+            notify_token=notify_token,
+            play_chat_id=play_chat_id,
+            anchor_message_id=anchor_message_id,
+        )
         return
+
+    print(
+        f"[ONBOARDING] game done {game_key} user={user_id} "
+        f"chat={play_chat_id} anchor={anchor_message_id}",
+        flush=True,
+    )
 
     # Подсказка в группе для новичка - после каждой onboarding-игры.
     try:
@@ -2024,6 +2194,65 @@ async def _run_game_and_notify(
         )
     except Exception as e:
         print(f"[ONBOARDING] Уведомление после игры {game_key}/{user_id}: {e!r}")
+
+
+async def _notify_launch_failed(
+    *,
+    user_id: int,
+    dm_chat_id: int,
+    dm_message_id: int,
+    notify_token: int,
+    play_chat_id: int,
+    anchor_message_id: int,
+) -> None:
+    """Если партия не стартовала - не оставляем новичка на пустом «готово»."""
+    if not _notify_token_alive(user_id, notify_token):
+        return
+
+    text = _failed_text()
+    markup = _failed_markup()
+    variants: List[Tuple[str, InlineKeyboardMarkup]] = [
+        (text, markup),
+        (text, _markup_without_icons(markup)),
+        (_html_plain(text), _markup_without_icons(markup)),
+    ]
+    for body, kb in variants:
+        if not _notify_token_alive(user_id, notify_token):
+            return
+        try:
+            await bot1.edit_message_text(
+                chat_id=dm_chat_id,
+                message_id=dm_message_id,
+                text=body,
+                reply_markup=kb,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            break
+        except Exception as e:
+            if "message is not modified" in str(e).lower():
+                break
+    else:
+        for body, kb in variants:
+            if not _notify_token_alive(user_id, notify_token):
+                break
+            try:
+                await bot1.send_message(
+                    chat_id=dm_chat_id,
+                    text=body,
+                    reply_markup=kb,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+                break
+            except Exception:
+                continue
+
+    # Якорь без партии только путает - убираем, если ещё висит.
+    try:
+        await bot1.delete_message(play_chat_id, anchor_message_id)
+    except Exception:
+        pass
 
 
 async def _maybe_send_newbie_help_tip(
@@ -2513,6 +2742,39 @@ def _failed_text() -> str:
 def _failed_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [_btn("Попробовать снова", data="ob_retry", icon="5472041540605975004", style="success")],
+        [_btn("Другая игра", data="ob_games", icon="5472041540605975004")],
+        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+    ])
+
+
+def _wait_text() -> str:
+    return (
+        f"<tg-emoji emoji-id='5253709334835128381'>⌚️</tg-emoji> <b>Секунду…</b>\n\n"
+        f"{_bq('Прошлая игра ещё запускается.', 'Подождите пару секунд и нажмите снова.')}\n\n"
+        f"{_hint('Нажмите «Попробовать снова»')}"
+    )
+
+
+def _wait_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Попробовать снова", data="ob_retry", icon="5472041540605975004", style="success")],
+        [_btn("Другая игра", data="ob_games", icon="5472041540605975004")],
+        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+    ])
+
+
+def _choice_required_text(game: Dict[str, Any]) -> str:
+    hint = game.get("variant_hint") or "Сделайте выбор"
+    return (
+        f"{game['emoji']} <b>{game['title']}</b>\n\n"
+        f"{_bq(game['rules'])}\n\n"
+        f"{_hint(hint)}"
+    )
+
+
+def _choice_required_markup(game_key: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Выбрать снова", data=f"ob_game:{game_key}", icon="5472041540605975004", style="success")],
         [_btn("Другая игра", data="ob_games", icon="5472041540605975004")],
         [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
     ])
