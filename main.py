@@ -7124,7 +7124,7 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
         # Экран 1 онбординга: одно сообщение вместо двух пустых эмодзи.
         # Верхняя кнопка зависит от того, есть ли чем играть: нет кут —
         # ведём к бесплатному заданию, есть — сразу к выбору игры.
-        from bot.funcs.onboarding import EFFECT_START, start_screen
+        from bot.funcs.onboarding import start_screen
 
         # Дата первого /start — окно обучающих подсказок (2 суток).
         try:
@@ -7137,7 +7137,7 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
         sent_message = await bot1(
             SendMessage(
                 chat_id=message.chat.id , text=start_body ,
-                reply_markup=start_markup , message_effect_id=EFFECT_START ,
+                reply_markup=start_markup , message_effect_id="5107584321108051014" ,
                 parse_mode="HTML" , disable_web_page_preview=True))
         bns_add_request(user_id , sent_message.message_id , reason="print('🏉🏉🏉🏉🏉🏉 message_text : ', message.text)")
         message_state [ message.from_user.id ] = sent_message.message_id
