@@ -821,7 +821,7 @@ async def show_home(message: Message, user_id: int, *, as_new: bool = False) -> 
 
 @dp.callback_query(F.data == "ob_start")
 async def ob_start(call: CallbackQuery):
-    await call.answer()
+    await _ack(call)
     _bump_notify_token(call.from_user.id)
     text, markup = await start_screen(call.from_user.id)
     await _swap(call, text, markup)
@@ -829,7 +829,7 @@ async def ob_start(call: CallbackQuery):
 
 @dp.callback_query(F.data == "ob_menu")
 async def ob_menu(call: CallbackQuery):
-    await call.answer()
+    await _ack(call)
     _bump_notify_token(call.from_user.id)
     text = await _menu_text(call.from_user.id)
     markup = InlineKeyboardMarkup(inline_keyboard=await _menu_rows(call.from_user.id))
@@ -842,7 +842,7 @@ async def ob_menu(call: CallbackQuery):
 @dp.callback_query(F.data == "ob_finish")
 async def ob_finish(call: CallbackQuery):
     """Спрашиваем подтверждение - досрочный выход обнуляет прогресс."""
-    await call.answer()
+    await _ack(call)
     _bump_notify_token(call.from_user.id)
     wallet = await _wallet(call.from_user.id)
     if not wallet.free_quest:
@@ -854,14 +854,14 @@ async def ob_finish(call: CallbackQuery):
 @dp.callback_query(F.data == "ob_finish_no")
 async def ob_finish_no(call: CallbackQuery):
     """Передумал - возвращаем на главный экран задания."""
-    await call.answer()
+    await _ack(call)
     text, markup = await start_screen(call.from_user.id)
     await _swap(call, text, markup)
 
 
 @dp.callback_query(F.data == "ob_finish_yes")
 async def ob_finish_yes(call: CallbackQuery):
-    await call.answer()
+    await _ack(call)
     _bump_notify_token(call.from_user.id)
     user_id = call.from_user.id
 
@@ -878,7 +878,7 @@ async def ob_finish_yes(call: CallbackQuery):
 
     if not ok:
         # Задание осталось активным - не бросаем человека на пустом экране.
-        await call.answer("Не получилось закончить задание. Попробуйте ещё раз.", show_alert=True)
+        await _ack(call, "Не получилось закончить задание. Попробуйте ещё раз.", alert=True)
         text, markup = await start_screen(user_id)
         await _swap(call, text, markup)
         return
@@ -965,7 +965,7 @@ def _finish_none_markup() -> InlineKeyboardMarkup:
 # ──────────────────────────────────────────────────────────────────────
 @dp.callback_query(F.data == "ob_earn")
 async def ob_earn(call: CallbackQuery):
-    await call.answer()
+    await _ack(call)
     await _show_earn(call, page=0)
 
 
@@ -976,7 +976,7 @@ async def ob_earn_page(call: CallbackQuery):
         page = int(call.data.split(":", 1)[1])
     except (ValueError, IndexError):
         page = 0
-    await call.answer()
+    await _ack(call)
     await _show_earn(call, page=max(0, page))
 
 
@@ -1040,7 +1040,7 @@ def _earn_nav(page: int, pages: int) -> List[InlineKeyboardButton]:
 
 @dp.callback_query(F.data == "ob_noop")
 async def ob_noop(call: CallbackQuery):
-    await call.answer()
+    await _ack(call)
 
 
 @dp.callback_query(F.data.startswith("ob_quest:"))
@@ -1051,10 +1051,10 @@ async def ob_quest(call: CallbackQuery):
         quest_id = int(parts[1])
         page = int(parts[2]) if len(parts) > 2 else 0
     except (ValueError, IndexError):
-        await call.answer("Задание не открылось", show_alert=True)
+        await _ack(call, "Задание не открылось", alert=True)
         return
 
-    await call.answer()
+    await _ack(call)
 
     quest = next(
         (q for q in await _free_quests(call.from_user.id) if _quest_id(q) == quest_id),
@@ -1105,12 +1105,12 @@ async def ob_take(call: CallbackQuery):
     try:
         quest_id = int(parts[1])
     except (ValueError, IndexError):
-        await call.answer("Задание не открылось", show_alert=True)
+        await _ack(call, "Задание не открылось", alert=True)
         return
 
     # Отвечаем до похода в базу: выдача задания - несколько запросов подряд,
     # и на медленной связи ответ на нажатие успел бы просрочиться.
-    await call.answer("Беру задание…", show_alert=False)
+    await _ack(call, "Беру задание…")
 
     ok, msg, created = await _activate_quest(call.from_user.id, quest_id)
     if not ok:
@@ -1362,7 +1362,7 @@ async def _open_bonus(call: CallbackQuery) -> None:
 
 @dp.callback_query(F.data == "ob_bonus")
 async def ob_bonus(call: CallbackQuery):
-    await call.answer()
+    await _ack(call)
     try:
         from main import process_bonus_request
         await process_bonus_request(
@@ -1460,7 +1460,7 @@ def _no_quests_markup() -> InlineKeyboardMarkup:
 # ──────────────────────────────────────────────────────────────────────
 @dp.callback_query(F.data == "ob_games")
 async def ob_games(call: CallbackQuery):
-    await call.answer()
+    await _ack(call)
     _bump_notify_token(call.from_user.id)
     wallet = await _wallet(call.from_user.id)
     if wallet.free_quest and wallet.amount < _cheapest_bet():
@@ -1473,7 +1473,7 @@ async def ob_games(call: CallbackQuery):
 @dp.callback_query(F.data == "ob_next")
 async def ob_next(call: CallbackQuery):
     """После игры: обновить прогресс задания и снова предложить игру."""
-    await call.answer()
+    await _ack(call)
     _bump_notify_token(call.from_user.id)
     wallet = await _wallet(call.from_user.id)
     if wallet.free_quest:
@@ -1591,10 +1591,10 @@ async def ob_game(call: CallbackQuery):
     """Короткое описание игры и кнопка, которая её запускает."""
     game_key = call.data.split(":", 1)[1] if ":" in call.data else ""
     if game_key not in GAMES:
-        await call.answer("Такой игры нет", show_alert=True)
+        await _ack(call, "Такой игры нет", alert=True)
         return
 
-    await call.answer()
+    await _ack(call)
     game = GAMES[game_key]
     wallet = await _wallet(call.from_user.id)
     floor = int(game["min"])
@@ -1666,7 +1666,7 @@ async def ob_game(call: CallbackQuery):
 async def ob_play(call: CallbackQuery):
     parts = (call.data or "").split(":")
     if len(parts) < 3:
-        await call.answer("Не удалось разобрать игру", show_alert=True)
+        await _ack(call, "Не удалось разобрать игру", alert=True)
         return
 
     game_key = parts[1]
@@ -1674,14 +1674,14 @@ async def ob_play(call: CallbackQuery):
     try:
         bet = int(parts[2])
     except ValueError:
-        await call.answer("Не удалось разобрать ставку", show_alert=True)
+        await _ack(call, "Не удалось разобрать ставку", alert=True)
         return
 
     if game_key not in GAMES:
-        await call.answer("Такой игры нет", show_alert=True)
+        await _ack(call, "Такой игры нет", alert=True)
         return
 
-    await call.answer()
+    await _ack(call)
     _remember(call.from_user.id, game_key, bet, variant)
     await _try_launch(call, game_key, bet, variant)
 
@@ -1689,7 +1689,7 @@ async def ob_play(call: CallbackQuery):
 @dp.callback_query(F.data.in_({"ob_joined", "ob_retry"}))
 async def ob_resume(call: CallbackQuery):
     """«Я вошёл» и «Попробовать снова» - продолжаем с выбранной игрой."""
-    await call.answer()
+    await _ack(call)
     saved = _recall(call.from_user.id)
     if not saved:
         wallet = await _wallet(call.from_user.id)
@@ -2599,6 +2599,20 @@ def _markup_without_icons(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
                 new_row.append(InlineKeyboardButton(**kwargs))
         rows.append(new_row)
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _ack(call: CallbackQuery, text: str = "", *, alert: bool = False) -> None:
+    """Снять «часики» с кнопки. Никогда не бросает исключение.
+
+    Ответ на нажатие живёт у Telegram считанные секунды. Если он не прошёл
+    (очередь после рестарта, клик по старому сообщению, повторный ответ),
+    экран всё равно обязан смениться - иначе человек жмёт кнопку, и ничего
+    не происходит. Поэтому ack - всегда best-effort.
+    """
+    try:
+        await call.answer(text, show_alert=alert)
+    except Exception as e:
+        print(f"[ONBOARDING] ответ на нажатие не прошёл ({call.data!r}): {e!r}")
 
 
 async def _swap(call: CallbackQuery, text: str, markup: InlineKeyboardMarkup) -> None:
