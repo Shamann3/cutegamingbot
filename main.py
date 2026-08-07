@@ -7252,15 +7252,21 @@ async def callback_top(call: types.CallbackQuery):
                 #await call.answer(randommessagehelp1)
                 #return
 
-        # Получаем вторую клавиатуру, например, для статуса подписки
-        # Отправляем обе клавиатуры, одну за другой
+        # Дом один на весь бот: возвращаем на экран онбординга, где видны
+        # прогресс задания и следующий шаг.
+        from bot.funcs.onboarding import show_home
+        if await show_home(call.message, user_id):
+            bns_add_request(user_id , call.message.message_id , reason="# Возврат на главный экран")
+            message_state [ call.message.from_user.id ] = call.message.message_id
+            return
+
+        # Запасной вариант: старое стартовое меню.
         try:
             subscription_status = await db.get_user_subscription(user_id)
         except Exception as e:
             print(f"Ошибка при получении статуса подписки для пользователя {user_id}: {e}")
             subscription_status = 0  # Устанавливаем значение по умолчанию в случае ошибки
 
-        # Создаем клавиатуру на основе статуса подписки
         markup_start = await create_start_inline_markup(subscription_status, user_id, db)
         sent_message = await call.message.edit_text("<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji>" , reply_markup=markup_start, parse_mode="HTML")
 
@@ -10763,16 +10769,24 @@ async def close_bonus_callback(callback_query: types.CallbackQuery):
     # Извлекаем сумму ставки (без "_+")
 
     user_id = callback_query.from_user.id
+
+    # Закрыли бонус - возвращаем на тот же главный экран, что и /start.
+    from bot.funcs.onboarding import show_home
+    if is_plus:
+        await callback_query.message.delete()
+    if await show_home(callback_query.message, user_id, as_new=is_plus):
+        message_state [ callback_query.message.from_user.id ] = callback_query.message.message_id
+        return
+
     try:
         subscription_status = await db.get_user_subscription(user_id)
     except Exception as e:
         print(f"Ошибка при получении статуса подписки для пользователя {user_id}: {e}")
         subscription_status = 0  # Устанавливаем значение по умолчанию в случае ошибки
 
-    # Создаем клавиатуру на основе статуса подписки
+    # Запасной вариант: старое стартовое меню.
     markup_start = await create_start_inline_markup(subscription_status, user_id, db)
     if is_plus:
-        await callback_query.message.delete()
         sent_message = await callback_query.message.answer("<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji>" , reply_markup=markup_start, parse_mode="HTML")
     else:
         try:
@@ -12292,6 +12306,14 @@ async def waiting_close_bonus_callback(callback_query: CallbackQuery):
 
     if msg.message_id in cancel_timers:
         cancel_timers[msg.message_id] = True
+
+    # Тот же главный экран, что и на /start - новичок не теряет задание из виду.
+    from bot.funcs.onboarding import show_home
+    if await show_home(msg, user_id):
+        cancel_timers[callback_query.message.message_id] = True
+        message_state[user_id] = msg.message_id
+        bns_add_request(user_id, msg.message_id, reason="возврат в меню после бонуса")
+        return
 
     try:
         subscription_status = await db.get_user_subscription(user_id)
