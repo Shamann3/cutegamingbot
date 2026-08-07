@@ -302,6 +302,7 @@ def _game(
     instant: bool = False,
     choose: str = "",
     options: Optional[Sequence[Tuple[str, str]]] = None,
+    rows: Optional[Sequence[int]] = None,
     choice_first: bool = False,
 ) -> Dict[str, Any]:
     """Одна строка реестра игр.
@@ -313,6 +314,7 @@ def _game(
                    итог в личку сразу после хода.
     options      - если игре нужен выбор (число, цвет, направление), он
                    становится последним кликом вместо «Начать играть».
+    rows         - сколько кнопок в каждом ряду (иначе сетка сама).
     choice_first - выбор идёт перед ставкой: «трейд вверх 10».
     """
     module, _, func = handler.partition(":")
@@ -338,105 +340,144 @@ def _game(
     if options:
         game["variants"] = list(options)
         game["variant_hint"] = choose or "Сделайте выбор"
+        if rows:
+            game["variant_rows"] = [int(n) for n in rows]
     return game
 
 
-# Правило пишем одинаково у всех: что делаете - что получаете - чем рискуете.
+def _variant_button_rows(
+    variants: Sequence[Tuple[str, str]],
+    *,
+    bet: int,
+    game_key: str,
+    rows: Optional[Sequence[int]] = None,
+) -> List[List[InlineKeyboardButton]]:
+    """Кнопки выбора: либо явная раскладка рядов, либо аккуратная сетка."""
+    buttons: List[InlineKeyboardButton] = []
+    for label, value in variants:
+        text, icon = _label_for_button(label)
+        buttons.append(_btn(
+            text,
+            data=f"ob_play:{game_key}:{bet}:{value}",
+            icon=icon,
+            style="success",
+        ))
+
+    if not buttons:
+        return []
+
+    layout = [int(n) for n in (rows or ()) if int(n) > 0]
+    if layout and sum(layout) == len(buttons):
+        out: List[List[InlineKeyboardButton]] = []
+        i = 0
+        for width in layout:
+            out.append(buttons[i:i + width])
+            i += width
+        return out
+
+    # По умолчанию: 2 в ряд, а при 5+ вариантах - по 3 (кубик 1-6).
+    per_row = 3 if len(buttons) > 4 else 2
+    return [buttons[i:i + per_row] for i in range(0, len(buttons), per_row)]
+
+
+# Правило короткое: суть хода + что будет со ставкой.
 GAMES: Dict[str, Dict[str, Any]] = {
     "soccer": _game(
         title="Футбол",
         emoji="<tg-emoji emoji-id='5373101763442255191'>⚽️</tg-emoji>",
         command="футбол", min_bet=2, instant=True,
-        rules="Забили гол - выигрыш. Промах - ставка сгорает.",
+        rules="Гол — выигрыш. Мимо — ставка сгорает.",
         handler="bot.tggames.soccer:tgsoccer",
     ),
     "slots": _game(
         title="Слоты",
         emoji="<tg-emoji emoji-id='5891135206580031104'>🎉</tg-emoji>",
         command="слоты", min_bet=2, instant=True,
-        rules="Три одинаковых символа - крупный выигрыш. Иначе ставка сгорает.",
+        rules="Три одинаковых — выигрыш. Иначе — ставка сгорает.",
         handler="bot.tggames.slots:tgslots",
     ),
     "tank": _game(
         title="Башня",
         emoji="<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji>",
         command="башня", min_bet=2,
-        rules="Поднимаетесь по этажам, выигрыш растёт. Успейте забрать до обвала.",
+        rules="Поднимайтесь выше и забирайте до обвала.",
         handler="bot.games.tank:game_filter_tank",
     ),
     "darts": _game(
         title="Дартс",
         emoji="<tg-emoji emoji-id='5890815115552362075'>🎯</tg-emoji>",
         command="дартс", min_bet=2, instant=True,
-        rules="Попали в центр - крупный выигрыш. Мимо - ставка сгорает.",
+        rules="В центр — выигрыш. Мимо — ставка сгорает.",
         handler="bot.tggames.darts:tgdarts",
     ),
     "basket": _game(
         title="Баскетбол",
         emoji="<tg-emoji emoji-id='5891181665241271999'>🏀</tg-emoji>",
         command="баскет", min_bet=2, instant=True,
-        rules="Попали в кольцо - выигрыш. Мимо - ставка сгорает.",
+        rules="В кольцо — выигрыш. Мимо — ставка сгорает.",
         handler="bot.tggames.basket:tgbasket",
     ),
     "bowling": _game(
         title="Боулинг",
         emoji="<tg-emoji emoji-id='5891120371762990493'>🎳</tg-emoji>",
         command="боулинг", min_bet=2, instant=True,
-        rules="Выбили страйк - выигрыш. Иначе ставка сгорает.",
+        rules="Страйк — выигрыш. Иначе — ставка сгорает.",
         handler="bot.tggames.bowling:tgbowling",
     ),
     "kube": _game(
         title="Кубик",
         emoji="<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji>",
         command="куб", min_bet=2, instant=True,
-        rules="Угадали число на кубике - выигрыш в несколько ставок. Нет - ставка сгорает.",
+        rules="Угадали число — выигрыш. Нет — ставка сгорает.",
         handler="bot.tggames.kube:tgkube",
         choose="Выберите число",
         options=[(str(n), str(n)) for n in range(1, 7)],
+        rows=(3, 3),
     ),
     "balls": _game(
         title="Шарик",
         emoji="<tg-emoji emoji-id='5363877049863786071'>🎱</tg-emoji>",
         command="шарик", min_bet=2,
-        rules="Три стакана, шарик под одним. Угадали - выигрыш, нет - ставка сгорает.",
+        rules="Угадали стакан — выигрыш. Нет — ставка сгорает.",
         handler="bot.games.balls:balls",
     ),
     "provoda": _game(
         title="Провода",
         emoji="<tg-emoji emoji-id='5782990399672946716'>🎗</tg-emoji>",
         command="провода", min_bet=2,
-        rules="Перерезали верный провод - выигрыш. Ошиблись - ставка сгорает.",
+        rules="Верный провод — выигрыш. Ошибка — ставка сгорает.",
         handler="bot.games.provoda:provoda",
     ),
     "bombs": _game(
         title="Бомбы",
         emoji="<tg-emoji emoji-id='5469654973308476699'>💣</tg-emoji>",
         command="бомбы", min_bet=3,
-        rules="Открываете клетки, выигрыш растёт. Нашли бомбу - теряете всё.",
+        rules="Открывайте клетки. Бомба — всё сгорает.",
         handler="bot.games.bombs:bombs",
     ),
     "plate": _game(
         title="Плиты",
         emoji="<tg-emoji emoji-id='5246916607833304803'>💫</tg-emoji>",
         command="плиты", min_bet=2,
-        rules="Шагаете по плитам, выигрыш растёт. Провалились - ставка сгорает.",
+        rules="Шагайте по плитам. Провал — ставка сгорает.",
         handler="bot.games.plate:plate",
     ),
     "risk": _game(
         title="Риск",
         emoji="<tg-emoji emoji-id='5438449312893792440'>🌴</tg-emoji>",
         command="риск", min_bet=5,
-        rules="Каждый шаг умножает выигрыш. Забирайте, пока волна не накрыла.",
+        rules="Шаг умножает выигрыш. Заберите вовремя.",
         handler="bot.games.risk:risk",
     ),
     "trade": _game(
         title="Трейд",
         emoji="<tg-emoji emoji-id='5296306038792808890'>📈</tg-emoji>",
         command="трейд", min_bet=2, instant=True,
-        rules="Угадали, куда пойдёт график - выигрыш. Нет - ставка сгорает.",
+        rules="Угадали направление — выигрыш. Нет — ставка сгорает.",
         handler="bot.games.trade:trade",
         choose="Выберите направление",
         choice_first=True,
+        rows=(2,),
         options=[
             ("<tg-emoji emoji-id='5339384049670593248'>↗️</tg-emoji> Вверх", "вверх"),
             ("<tg-emoji emoji-id='5339179750961224703'>📉</tg-emoji> Вниз", "вниз"),
@@ -446,10 +487,21 @@ GAMES: Dict[str, Dict[str, Any]] = {
         title="Рулетка",
         emoji="<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji>",
         command="рулетка", min_bet=2, instant=True,
-        rules="Угадали цвет - забираете больше ставки. Нет - ставка сгорает.",
+        rules="Число, цвет или чёт/нечет. Угадали — выигрыш.",
         handler="bot.games.Fortuna:Fortuna",
-        choose="Выберите цвет",
-        options=[("🔴 Красное", "красное"), ("⚫️ Чёрное", "черное")],
+        choose="Выберите число, цвет или чёт/нечет",
+        # Цвета → чёт/нечет → зеро → числа 1–12 по четыре в ряд.
+        rows=(2, 2, 1, 4, 4, 4),
+        options=[
+            ("🔴 Красное", "красное"),
+            ("⚫️ Чёрное", "черное"),
+            ("Чётное", "чет"),
+            ("Нечётное", "нечет"),
+            ("💚 0", "0"),
+            ("1", "1"), ("2", "2"), ("3", "3"), ("4", "4"),
+            ("5", "5"), ("6", "6"), ("7", "7"), ("8", "8"),
+            ("9", "9"), ("10", "10"), ("11", "11"), ("12", "12"),
+        ],
     ),
 }
 
@@ -1722,18 +1774,12 @@ async def ob_game(call: CallbackQuery):
     rows: List[List[InlineKeyboardButton]] = []
     if variants:
         # Выбор и есть третий клик: отдельной кнопки «Начать» не нужно.
-        per_row = 3 if len(variants) > 4 else 2
-        for i in range(0, len(variants), per_row):
-            chunk = []
-            for label, value in variants[i:i + per_row]:
-                text, icon = _label_for_button(label)
-                chunk.append(_btn(
-                    text,
-                    data=f"ob_play:{game_key}:{bet}:{value}",
-                    icon=icon,
-                    style="success",
-                ))
-            rows.append(chunk)
+        rows.extend(_variant_button_rows(
+            variants,
+            bet=bet,
+            game_key=game_key,
+            rows=game.get("variant_rows"),
+        ))
     else:
         rows.append([_btn(
             "Начать играть",
