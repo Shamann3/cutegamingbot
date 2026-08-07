@@ -47,6 +47,47 @@ _SOFTFAIL_PATTERNS = (
 _SOFTFAIL_DEBOUNCE_SEC = 180.0
 _softfail_last_logged = {}
 
+# Ответ на callback живёт у Telegram считанные секунды. Просрочка - не сбой
+# бота: так бывает при рестарте (в очереди лежат старые нажатия), при клике
+# по давнему сообщению и при двойном ответе на один и тот же query.
+#
+# Ронять на этом обработчик нельзя: `await call.answer()` обычно стоит первой
+# строкой, и исключение обрывает всю обработку - человек жмёт кнопку, а экран
+# не меняется. Поэтому такую ошибку гасим и возвращаем True, как если бы
+# ответ прошёл. Оплату (AnswerPreCheckoutQuery) не трогаем - там ошибка важна.
+_STALE_QUERY_METHODS = {"AnswerCallbackQuery", "AnswerInlineQuery"}
+_STALE_QUERY_PATTERNS = (
+    "query is too old",
+    "query id is invalid",
+    "query_id_invalid",
+)
+_stale_query_count = 0
+
+# Ожидаемые ответы Telegram, которые вызывающий код уже умеет разбирать
+# (например, «экран и так нужный» или «сообщение успели удалить»).
+# Их пробрасываем как обычно, но печатаем одной строкой без traceback -
+# иначе штатная ситуация выглядит в логах как авария.
+_QUIET_PATTERNS = (
+    "message is not modified",
+    "message to edit not found",
+    "message to delete not found",
+    "message can't be deleted",
+    "message to be replied not found",
+    "message identifier is not specified",
+    "bot was blocked by the user",
+    "user is deactivated",
+    "chat not found",
+    "have no rights to send a message",
+    "not enough rights",
+)
+
+
+def _is_quiet_error(error: Exception) -> bool:
+    if not isinstance(error, (TelegramBadRequest, TelegramForbiddenError)):
+        return False
+    text = str(error).lower()
+    return any(pattern in text for pattern in _QUIET_PATTERNS)
+
 
 def _is_softfail_exception(method_name: str, error: Exception) -> bool:
     if method_name not in _SOFTFAIL_METHODS:
@@ -57,6 +98,15 @@ def _is_softfail_exception(method_name: str, error: Exception) -> bool:
 
     text = str(error).lower()
     return any(pattern in text for pattern in _SOFTFAIL_PATTERNS)
+
+
+def _is_stale_query(method_name: str, error: Exception) -> bool:
+    if method_name not in _STALE_QUERY_METHODS:
+        return False
+    if not isinstance(error, TelegramBadRequest):
+        return False
+    text = str(error).lower()
+    return any(pattern in text for pattern in _STALE_QUERY_PATTERNS)
 
 
 def _should_log_softfail_once(signature: str) -> bool:
@@ -99,6 +149,19 @@ class TelegramApiLogger(BaseRequestMiddleware):
         except Exception as e:
             elapsed = (time.perf_counter() - started) * 1000
 
+            if _is_stale_query(method_name, e):
+                global _stale_query_count
+                _stale_query_count += 1
+                if _should_log_softfail_once(f"stale|{method_name}"):
+                    logger.warning(
+                        "⌛ STALE %-28s %.2f ms просрочен ответ на нажатие "
+                        "(всего с запуска: %d)",
+                        method_name,
+                        elapsed,
+                        _stale_query_count,
+                    )
+                return True
+
             if _is_softfail_exception(method_name, e):
                 signature = f"{method_name}|{type(e).__name__}|{str(e).lower()}"
                 if _should_log_softfail_once(signature):
@@ -107,6 +170,17 @@ class TelegramApiLogger(BaseRequestMiddleware):
                         method_name,
                         elapsed,
                         repr(e)
+                    )
+                raise
+
+            if _is_quiet_error(e):
+                signature = f"quiet|{method_name}|{str(e).lower()}"
+                if _should_log_softfail_once(signature):
+                    logger.warning(
+                        "⚠ EXPECTED %-27s %.2f ms %s",
+                        method_name,
+                        elapsed,
+                        str(e),
                     )
                 raise
 

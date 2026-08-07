@@ -177,6 +177,33 @@ bot1.session.middleware(TelegramApiLogger())
 dp = Dispatcher()
 router = Router()
 
+
+@dp.error()
+async def _on_unhandled_error(event) -> bool:
+    """Общая страховка: ошибка в обработчике не должна вешать кнопку.
+
+    Без этого при любом сбое нажатие остаётся с «часиками», а человек не
+    понимает, услышал его бот или нет. Логируем полный traceback сами -
+    возврат True гасит стандартный вывод aiogram, а не саму ошибку.
+    """
+    error = getattr(event, "exception", None)
+    update = getattr(event, "update", None)
+    query = getattr(update, "callback_query", None)
+
+    where = "callback" if query is not None else "update"
+    data = getattr(query, "data", None)
+    print(f"[DP][ERROR] {where} data={data!r}: {type(error).__name__}: {error}")
+    traceback.print_exc()
+
+    if query is not None:
+        # Ответ на просроченное нажатие гасится в TelegramApiLogger.
+        try:
+            await query.answer("Что-то пошло не так. Попробуйте ещё раз.", show_alert=False)
+        except Exception:
+            pass
+    return True
+
+
 @dp.callback_query(lambda c: isinstance(c.data, str) and c.data.startswith("kingm:"))
 async def king_stats_menu_callback(call: types.CallbackQuery):
     from bot.funcs.king_stats import handle_king_stats_callback
@@ -1293,6 +1320,13 @@ def _fmt_int123(n: int) -> str:
 async def blackshop_main(callback: CallbackQuery):
     """Главное меню Чёрного рынка: удаляем старое сообщение и отправляем стикер с кнопками."""
     user_id = callback.from_user.id
+
+    # Снимаем «часики» до запросов в базу: иначе кнопка крутится всё это
+    # время, а само нажатие успевает просрочиться.
+    try:
+        await callback.answer()
+    except Exception:
+        pass
 
     # Получаем актуальные данные
     total_black_market = await db.get_chat_balance(bot1, -1003855337972)
@@ -7244,6 +7278,9 @@ async def callback_top(call: types.CallbackQuery):
             await call.message.delete()
             return
 
+        # Снимаем «часики» с кнопки до сборки экрана - иначе она крутится
+        # всё время, пока идут запросы, и нажатие успевает просрочиться.
+        await call.answer()
 
         randommessagehelp1 = random.choice(randommessagehelp)
 
@@ -18800,6 +18837,13 @@ async def qst_broken_details_ref(callback_query: types.CallbackQuery):
     Удаляет исходное сообщение (best-effort).
     """
     try:
+        # Сначала снимаем «часики»: ниже несколько запросов подряд, и без
+        # раннего ответа нажатие успевает просрочиться.
+        try:
+            await callback_query.answer()
+        except Exception:
+            pass
+
         parts = callback_query.data.split(":", 2)
         raw_enc = parts[2] if len(parts) > 2 else ""
         try:
@@ -39625,21 +39669,33 @@ async def botmain():
 
     print("[🚀] Запускаем основной и платёжный боты...")
 
+    # Очередь, накопившаяся за простой, состоит в основном из просроченных
+    # нажатий: ответить на них Telegram уже не даст, а игры они запускают
+    # задним числом. Поэтому при холодном старте очередь сбрасываем.
+    # На авто-перезапусках после сетевого сбоя очередь сохраняем - там простой
+    # короткий, и терять сообщения людей нельзя.
+    _cold_start = {"main": True}
+
+    def _main_polling():
+        drop = _cold_start["main"]
+        _cold_start["main"] = False
+        if drop:
+            print("[MAIN] Холодный старт: сбрасываю очередь старых апдейтов")
+        return dp.start_polling(
+            bot1,
+            drop_pending_updates=drop,
+            allowed_updates=[
+                "message",
+                "edited_message",
+                "callback_query",
+                "inline_query",
+                "chosen_inline_result",
+                "pre_checkout_query"
+            ],
+        )
+
     first_polling_tasks = [
-        _resilient_polling(
-            "MAIN",
-            lambda: dp.start_polling(
-                bot1,
-                allowed_updates=[
-                    "message",
-                    "edited_message",
-                    "callback_query",
-                    "inline_query",
-                    "chosen_inline_result",
-                    "pre_checkout_query"
-                ],
-            ),
-        ),
+        _resilient_polling("MAIN", _main_polling),
     ]
     if cp is not None:
         first_polling_tasks.append(
@@ -39655,16 +39711,7 @@ async def botmain():
     try:
         print("[🚀] Запускаем основной и платёжный боты...")
         second_polling_tasks = [
-            _resilient_polling(
-                "MAIN",
-                lambda: dp.start_polling(
-                    bot1,
-                    allowed_updates=[
-                        "message", "edited_message", "callback_query",
-                        "inline_query", "chosen_inline_result", "pre_checkout_query"
-                    ],
-                ),
-            ),
+            _resilient_polling("MAIN", _main_polling),
         ]
         if cp is not None:
             second_polling_tasks.append(

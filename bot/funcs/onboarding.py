@@ -1108,12 +1108,14 @@ async def ob_take(call: CallbackQuery):
         await call.answer("Задание не открылось", show_alert=True)
         return
 
+    # Отвечаем до похода в базу: выдача задания - несколько запросов подряд,
+    # и на медленной связи ответ на нажатие успел бы просрочиться.
+    await call.answer("Беру задание…", show_alert=False)
+
     ok, msg, created = await _activate_quest(call.from_user.id, quest_id)
     if not ok:
-        await call.answer(msg, show_alert=True)
+        await _swap(call, _take_error_text(msg), _take_error_markup())
         return
-
-    await call.answer(msg, show_alert=False)
 
     wallet = await _wallet(call.from_user.id)
     # Если кэш/реплика ещё не отдала free - собираем кошелёк из созданной строки.
@@ -1325,6 +1327,32 @@ def _take_failed_text() -> str:
         f"{body}\n\n"
         f"{_hint('Нажмите «К заданиям»')}"
     )
+
+
+def _take_error_text(reason: str) -> str:
+    """Задание взять не вышло: показываем экраном, а не всплывашкой.
+
+    Всплывашка исчезает и не оставляет новичку следующего шага, а на
+    просроченном нажатии её вообще может не быть.
+    """
+    body = _bq(
+        f"<tg-emoji emoji-id='5436339947080548936'>🌟</tg-emoji> {reason or 'Это задание сейчас недоступно.'}",
+        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тронуты.",
+        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Рядом есть другие бесплатные задания.",
+    )
+    return (
+        f"{_path(1)}\n\n"
+        f"<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> <b>Задание не открылось</b>\n\n"
+        f"{body}\n\n"
+        f"{_hint('Нажмите «К заданиям»')}"
+    )
+
+
+def _take_error_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("К заданиям", data="ob_earn", icon="5472401690793614752", style="success")],
+        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+    ])
 
 
 async def _open_bonus(call: CallbackQuery) -> None:
