@@ -376,15 +376,21 @@ def _variant_button_rows(
     game_key: str,
     rows: Optional[Sequence[int]] = None,
 ) -> List[List[InlineKeyboardButton]]:
-    """Кнопки выбора: либо явная раскладка рядов, либо аккуратная сетка."""
+    """Кнопки выбора: явная раскладка рядов (как в GAMES.variant_rows).
+
+    Числа без style (чтобы сетка 6×2 стабильно проходила в Telegram).
+    Цвет / чёт / направление — success.
+    """
     buttons: List[InlineKeyboardButton] = []
     for label, value in variants:
         text, icon = _label_for_button(label)
+        # Голые числа (1…12) — без style; остальное подсвечиваем.
+        style = None if (text or "").isdigit() else "success"
         buttons.append(_btn(
             text,
             data=f"ob_play:{game_key}:{bet}:{value}",
             icon=icon,
-            style="success",
+            style=style,
         ))
 
     if not buttons:
@@ -398,6 +404,14 @@ def _variant_button_rows(
             out.append(buttons[i:i + width])
             i += width
         return out
+
+    # Если rows забыли или сумма не совпала — не молчим в логе.
+    if layout:
+        print(
+            f"[ONBOARDING] variant_rows={layout} sum={sum(layout)} "
+            f"!= buttons={len(buttons)} (game={game_key}) — сетка 3/2",
+            flush=True,
+        )
 
     per_row = 3 if len(buttons) > 4 else 2
     return [buttons[i:i + per_row] for i in range(0, len(buttons), per_row)]
@@ -632,7 +646,7 @@ GAMES: Dict[str, Dict[str, Any]] = {
             "<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji> "
             "<b>Шарик остановился.</b> Следующий спин - одной строкой."
         ),
-        "board_lead": "Число, цвет или чёт - нажмите и играйте.",
+        "board_lead": "Нажмите число, цвет или чёт/нечет - и партия стартует",
         # Ряды: 1–6 · 7–12 · красное/чёрное · чёт/нечет
         "variants": [
             ("1", "1"), ("2", "2"), ("3", "3"), ("4", "4"), ("5", "5"), ("6", "6"),
@@ -644,9 +658,17 @@ GAMES: Dict[str, Dict[str, Any]] = {
         ],
         "variant_rows": (6, 6, 2, 2),
         "variant_hint": "Выберите число, цвет или чёт/нечет",
+        # Текст карточки перед стартом — правьте здесь.
         "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали число, цвет или чёт - выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете."
+            "<blockquote>"
+            "<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji> <b>На что ставите</b>\n"
+            "<tg-emoji emoji-id='5359359620441726284'>1️⃣</tg-emoji> Число <b>1–12</b> — самый крупный выигрыш\n"
+            "<tg-emoji emoji-id='5339546996434812675'>🔴</tg-emoji> <b>Красное</b> или "
+            "<tg-emoji emoji-id='5424616516018537963'>⚫️</tg-emoji> <b>Чёрное</b>\n"
+            "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> <b>Чётное</b> или <b>Нечётное</b>"
+            "</blockquote>\n"
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали - забираете больше ставки.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете."
         ),
         "module": "bot.games.Fortuna",
         "func": "Fortuna",
