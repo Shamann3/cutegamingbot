@@ -19774,10 +19774,13 @@ async def gc_bot_can_serve_venue(
             )
         ):
             result = (False, "unreachable")
+            # Штатная ситуация (удалённый/неверный чат задания) —
+            # без traceback, чтобы не пугать при «Открыть бонус» / списке заданий.
+            _qdbg(f"[GC] venue unreachable ref={api_ref!r}: {e}")
         else:
             # На сомнении не отдаём новичкам - считаем неисправным.
             result = (False, f"error:{type(e).__name__}")
-        _qdbg_exc(f"[GC] gc_bot_can_serve_venue fail ref={api_ref!r}", e)
+            _qdbg_exc(f"[GC] gc_bot_can_serve_venue fail ref={api_ref!r}", e)
 
     _GC_BOT_VENUE_CACHE[key] = (now, result[0], result[1])
     _qdbg(
