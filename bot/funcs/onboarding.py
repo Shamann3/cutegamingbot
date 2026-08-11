@@ -65,7 +65,7 @@ from main import (
 #   "test" → -1002135149822 (тестовая группа)
 #   "prod" → -1001612636292 (@CuteGamingChat)
 #   "auto" → как DATABASE_MODE / APP_MODE (test→test, main→prod)
-ONBOARDING_CLUB = "auto"  # <<< "auto" | "test" | "prod"
+ONBOARDING_CLUB = "test"  # <<< "auto" | "test" | "prod"
 
 _CLUB_PRESETS: Dict[str, Dict[str, Any]] = {
     "prod": {
