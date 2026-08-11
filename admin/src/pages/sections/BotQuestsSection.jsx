@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
+import BotChallengeSuggestModal from './BotChallengeSuggestModal'
 import {
   fetchBotQuestsOverview,
   fetchBotQuestPayouts,
@@ -14,34 +15,9 @@ import {
   patchBotChallenge,
   deleteBotChallenge,
   disableBotChallenge,
-  seedBotQuestsPack,
 } from '../../lib/adminClient'
 
 const DEFAULT_CHAT = '@CuteGamingChat'
-
-/** Скромные награды: ~2–3% от пути (1 кут = 1 Stars). Пути длиннее. */
-const PACK_CHALLENGES = [
-  { startAmount: 30, targetAmount: 150, rewardAmount: 4, maxUsers: 50, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 50, targetAmount: 250, rewardAmount: 6, maxUsers: 40, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 100, targetAmount: 500, rewardAmount: 12, maxUsers: 25, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 25, targetAmount: 120, rewardAmount: 3, maxBet: 12, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 50, targetAmount: 250, rewardAmount: 6, maxBet: 25, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 80, targetAmount: 400, rewardAmount: 10, maxBet: 40, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 100, targetAmount: 600, rewardAmount: 15, maxBet: 50, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 150, targetAmount: 800, rewardAmount: 20, maxBet: 75, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 200, targetAmount: 1200, rewardAmount: 30, maxBet: 100, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 300, targetAmount: 1800, rewardAmount: 40, maxBet: 150, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 100, targetAmount: 650, rewardAmount: 14, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 120, targetAmount: 750, rewardAmount: 16, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 400, targetAmount: 2200, rewardAmount: 50, maxBet: 200, maxUsers: 10, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 500, targetAmount: 3000, rewardAmount: 60, maxBet: 250, maxUsers: 8, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 800, targetAmount: 4500, rewardAmount: 90, maxBet: 350, maxUsers: 6, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 1000, targetAmount: 5000, rewardAmount: 100, maxBet: 400, maxUsers: 5, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 2000, targetAmount: 10000, rewardAmount: 180, maxBet: 800, maxUsers: 3, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 25, targetAmount: 150, rewardAmount: 4, maxUsers: 40, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 40, targetAmount: 220, rewardAmount: 5, maxUsers: 35, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 60, targetAmount: 350, rewardAmount: 8, free: '+', chatRef: DEFAULT_CHAT },
-]
 
 const START_PRESETS = [
   { label: 'Сейчас', minutes: 0 },
@@ -224,7 +200,6 @@ export default function BotQuestsSection() {
   const [composerOpen, setComposerOpen] = useState(true)
   const [busyId, setBusyId] = useState(null)
   const [editTarget, setEditTarget] = useState(null)
-  const [packing, setPacking] = useState(false)
   const [payoutKind, setPayoutKind] = useState('all')
   const [payoutQuery, setPayoutQuery] = useState('')
   const [payoutItems, setPayoutItems] = useState([])
@@ -232,7 +207,7 @@ export default function BotQuestsSection() {
   const [payoutHasMore, setPayoutHasMore] = useState(false)
   const [payoutLoading, setPayoutLoading] = useState(false)
   const [payoutLoadingMore, setPayoutLoadingMore] = useState(false)
-  const seededRef = useRef(false)
+  const [suggestOpen, setSuggestOpen] = useState(false)
   const payoutReqRef = useRef(0)
 
   const load = useCallback(async () => {
@@ -296,40 +271,9 @@ export default function BotQuestsSection() {
     return () => window.clearTimeout(t)
   }, [mode, payoutKind, payoutQuery, loadPayouts])
 
-  /** Создаёт пакет тем же API, что и обычное «Создать челлендж». */
-  const ensureRecommendedPack = useCallback(async () => {
-    setPacking(true)
-    try {
-      try {
-        await seedBotQuestsPack()
-      } catch {
-        // fallback: прямой bulk как из конструктора
-        await createBotSubTask({
-          chatRef: DEFAULT_CHAT,
-          reward: 1,
-          limitMode: 'unlimited',
-          active: true,
-        }).catch(() => {})
-        await bulkCreateBotChallenges(PACK_CHALLENGES).catch(() => {})
-      }
-      setMode('gc')
-      setFilter('all')
-      await load()
-    } finally {
-      setPacking(false)
-    }
-  }, [load])
-
   useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      if (!seededRef.current) {
-        seededRef.current = true
-        if (!cancelled) await ensureRecommendedPack()
-      }
-    })()
-    return () => { cancelled = true }
-  }, [ensureRecommendedPack])
+    load()
+  }, [load])
 
   const applySharedStart = (value, presetMinutes = null) => {
     setSharedStart(value)
@@ -381,6 +325,19 @@ export default function BotQuestsSection() {
     if (editTarget) cancelEdit()
     setMode(next)
     if (next === 'payouts') setComposerOpen(false)
+  }
+
+  const createSuggestedChallenges = async (payload) => {
+    const res = await bulkCreateBotChallenges(payload)
+    const created = res?.created?.length || 0
+    const errors = res?.errors?.length || 0
+    if (!created && errors) {
+      const first = res.errors[0]?.error || 'ошибка'
+      throw new Error(`Не создано. Пример: ${first}`)
+    }
+    setMode('gc')
+    setFilter('all')
+    await load()
   }
 
   const beginEditSub = (item) => {
@@ -640,17 +597,20 @@ export default function BotQuestsSection() {
             Можно сразу много штук и с временем старта.
           </p>
           <div className="bq-hero-actions">
-            <button type="button" className="bq-btn bq-btn-ghost" onClick={load} disabled={loading || packing}>
+            <button type="button" className="bq-btn bq-btn-ghost" onClick={load} disabled={loading}>
               <IconRefresh />
               {loading ? 'Обновляю…' : 'Обновить'}
             </button>
             <button
               type="button"
               className="bq-btn bq-btn-primary"
-              disabled={packing || loading}
-              onClick={ensureRecommendedPack}
+              onClick={() => {
+                if (editTarget) cancelEdit()
+                setSuggestOpen(true)
+              }}
             >
-              {packing ? 'Добавляю пакет…' : `Пакет в ${DEFAULT_CHAT}`}
+              <IconGc />
+              Создание челленджей автоматически
             </button>
             {mode !== 'payouts' && (
               <button
@@ -1411,6 +1371,13 @@ export default function BotQuestsSection() {
         loading={false}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      <BotChallengeSuggestModal
+        open={suggestOpen}
+        existing={gcs}
+        onClose={() => setSuggestOpen(false)}
+        onCreate={createSuggestedChallenges}
       />
     </div>
   )
