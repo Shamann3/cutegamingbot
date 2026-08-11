@@ -22,6 +22,7 @@ from bot.db_create.db import *
 from bot.config.config import *
 from bot.funcs.func import *
 
+from bot.games.group_only import reject_if_private_game
 from main import (
     games_tictactoe,
     _format_hms,
@@ -463,6 +464,9 @@ async def tic_tac_toe(message: Message):
         if bet < 0:
             return
 
+        if await reject_if_private_game(message):
+            return
+
         creator_id = message.from_user.id
 
         if bet > 0:
@@ -581,7 +585,7 @@ async def set_board_size(callback: types.CallbackQuery):
         game["board_size"] = board_size
         game["board"] = [" "] * (49 if board_size == "7x7" else 25 if board_size == "5x5" else 9)
 
-        await callback.answer(f"❕ Формат игры изменён на {board_size}")
+        await callback.answer(f"❕ Формат игры изменён на {board_size}", show_alert=True)
 
         keyboard = build_ttt_keyboard(game_id)
         button_games_tictactoe[game_id]["keyboard_124125"] = keyboard
@@ -613,13 +617,13 @@ async def set_board_start_size(callback: types.CallbackQuery):
             return
 
         if game["board_size"] == board_size:
-            await callback.answer(f"❕ Формат {board_size} уже установлен")
+            await callback.answer(f"❕ Формат {board_size} уже установлен", show_alert=True)
             return
 
         game["board_size"] = board_size
         game["board"] = [" "] * (49 if board_size == "7x7" else 25 if board_size == "5x5" else 9)
 
-        await callback.answer(f"❕ Формат игры изменён на {board_size}")
+        await callback.answer(f"❕ Формат игры изменён на {board_size}", show_alert=True)
 
         keyboard = build_ttt_keyboard(game_id)
         button_games_tictactoe[game_id]["keyboard_safda"] = keyboard
@@ -674,12 +678,12 @@ async def tictactoe_join_game_callback(callback_query: types.CallbackQuery):
         return
 
     if game_id not in games_tictactoe:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     inflight_key = (game_id, user_id)
     if inflight_key in _ttt_inflight:
-        await callback_query.answer("⏳ Обрабатываю ваше присоединение…")
+        await callback_query.answer("⏳ Обрабатываю ваше присоединение…", show_alert=True)
         return
     _ttt_inflight.add(inflight_key)
 
@@ -687,28 +691,28 @@ async def tictactoe_join_game_callback(callback_query: types.CallbackQuery):
         lock = _get_ttt_lock(game_id)
         async with lock:
             if game_id not in games_tictactoe:
-                await callback_query.answer("🛠 Эта игра больше не существует.")
+                await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
                 return
 
             game = games_tictactoe[game_id]
 
             if await db.is_user_banned(user_id):
-                await callback_query.answer("❗️ Вы заблокированы в боте")
+                await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
                 return
 
             if user_id == int(game.get("creator")):
-                await callback_query.answer("❗️ Вы не можете присоединиться к своей игре.")
+                await callback_query.answer("❗️ Вы не можете присоединиться к своей игре.", show_alert=True)
                 return
 
             participants = _dedupe_preserve_order([int(x) for x in game.get("participants", [])])
             game["participants"] = participants
 
             if len(participants) >= MAX_TTT_PLAYERS:
-                await callback_query.answer("💭 В игре нет мест")
+                await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
             if user_id in participants:
-                await callback_query.answer("❗️ Вы уже участвуете в этой игре.")
+                await callback_query.answer("❗️ Вы уже участвуете в этой игре.", show_alert=True)
                 return
 
             bet = int(game.get("bet", 0) or 0)
@@ -719,7 +723,7 @@ async def tictactoe_join_game_callback(callback_query: types.CallbackQuery):
                 enough = False
 
             if not enough:
-                await callback_query.answer("💭 У вас недостаточно средств для участия.")
+                await callback_query.answer("💭 У вас недостаточно средств для участия.", show_alert=True)
                 return
 
             parts_set = set(game["participants"])
@@ -761,7 +765,7 @@ async def tictactoe_join_game_callback(callback_query: types.CallbackQuery):
                 return
 
             if len(game["participants"]) >= MAX_TTT_PLAYERS:
-                await callback_query.answer("💭 В игре нет мест")
+                await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
             game["participants"].append(user_id)
@@ -799,7 +803,7 @@ async def tictactoe_join_game_callback(callback_query: types.CallbackQuery):
                 if "message is not modified" not in str(e).lower():
                     print(f"[TTT] edit_message_text error: {e}")
 
-            await callback_query.answer("❕ Вы присоединились к игре!")
+            await callback_query.answer("❕ Вы присоединились к игре!", show_alert=True)
 
     except Exception as e:
         print(f"[TTT] join error: {e}")
@@ -826,7 +830,7 @@ async def start_game_callback(callback_query: types.CallbackQuery):
         user_id = callback_query.from_user.id
 
         if game_id not in games_tictactoe:
-            await callback_query.answer("🛠 Эта игра больше не существует.")
+            await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
             return
 
         game = games_tictactoe[game_id]
@@ -834,17 +838,17 @@ async def start_game_callback(callback_query: types.CallbackQuery):
         message_id = game["message_id"]
 
         if user_id != game["creator"]:
-            await callback_query.answer("❗️ Только создатель игры может начать её.")
+            await callback_query.answer("❗️ Только создатель игры может начать её.", show_alert=True)
             return
 
         if len(game["participants"]) < 2:
-            await callback_query.answer("❗️ Недостаточно участников для начала игры.")
+            await callback_query.answer("❗️ Недостаточно участников для начала игры.", show_alert=True)
             return
 
         bet = int(game["bet"])
         current_balance = await db.get_user_balance(user_id)
         if current_balance is None or current_balance < bet:
-            await callback_query.answer("💭 У вас недостаточно средств для игры.")
+            await callback_query.answer("💭 У вас недостаточно средств для игры.", show_alert=True)
             return
 
         await callback_query.answer()
@@ -936,7 +940,7 @@ async def make_move_callback(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in games_tictactoe:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     game = games_tictactoe[game_id]
@@ -989,16 +993,16 @@ async def make_move_callback(callback_query: types.CallbackQuery):
         return
 
     if user_id not in game["participants"]:
-        await callback_query.answer("❗️ Вы не участвуете в этой игре.")
+        await callback_query.answer("❗️ Вы не участвуете в этой игре.", show_alert=True)
         return
 
     if user_id != game["turn"]:
-        await callback_query.answer("❗️ Сейчас не ваш ход.")
+        await callback_query.answer("❗️ Сейчас не ваш ход.", show_alert=True)
         return
 
     board = game["board"]
     if board[move_index] != " ":
-        await callback_query.answer("❗️ Эта ячейка уже занята.")
+        await callback_query.answer("❗️ Эта ячейка уже занята.", show_alert=True)
         return
 
     await callback_query.answer()
@@ -1193,7 +1197,7 @@ async def surrender_callback(callback_query: types.CallbackQuery):
 
         if user_id not in game.get("participants", []):
             try:
-                await callback_query.answer("❗️ Вы не участвуете в этой игре.")
+                await callback_query.answer("❗️ Вы не участвуете в этой игре.", show_alert=True)
             except Exception:
                 pass
             game["surrender_processed"] = False
@@ -1209,7 +1213,7 @@ async def surrender_callback(callback_query: types.CallbackQuery):
         surrenderer_balance = await db.get_user_balance(user_id)
         if surrenderer_balance is None:
             try:
-                await callback_query.answer("🛠 Ошибка при получении вашего баланса.")
+                await callback_query.answer("🛠 Ошибка при получении вашего баланса.", show_alert=True)
             except Exception:
                 pass
             game["surrender_processed"] = False
@@ -1217,7 +1221,7 @@ async def surrender_callback(callback_query: types.CallbackQuery):
 
         if bet > 0 and surrenderer_balance < bet:
             try:
-                await callback_query.answer("❗️ У вас недостаточно средств для сдачи.")
+                await callback_query.answer("❗️ У вас недостаточно средств для сдачи.", show_alert=True)
             except Exception:
                 pass
             game["surrender_processed"] = False

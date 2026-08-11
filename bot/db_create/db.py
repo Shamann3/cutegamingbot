@@ -4835,10 +4835,12 @@ class Database:
                             target_chat_ref,
                             free,
                             status,
+                            starts_at,
                             created_at,
                             TO_CHAR(created_at AT TIME ZONE 'Europe/Oslo','HH24:MI | DD.MM.YYYY') AS created_pretty
                         FROM z_game_challenge_templates
                         WHERE status = 'active'
+                          AND (starts_at IS NULL OR starts_at <= now())
                           AND (max_users IS NULL OR completed_users < max_users)
                         ORDER BY id DESC
                         LIMIT $1
@@ -4857,6 +4859,7 @@ class Database:
                             target_chat_ref,
                             free,
                             status,
+                            starts_at,
                             created_at,
                             TO_CHAR(created_at AT TIME ZONE 'Europe/Oslo','HH24:MI | DD.MM.YYYY') AS created_pretty
                         FROM z_game_challenge_templates
@@ -5032,6 +5035,14 @@ class Database:
                     ALTER TABLE z_game_challenge_templates
                     ADD COLUMN IF NOT EXISTS free TEXT
                     """)
+                await connection.execute(
+                    """
+                    ALTER TABLE z_game_challenge_templates
+                    ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ
+                    """)
+                await connection.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_gc_templates_starts_at ON z_game_challenge_templates (starts_at)"
+                )
         except Exception as e:
             _log_err(
                 f"create_gc_template_record: ensure table/column failed: {e}\n{traceback.format_exc()}")
@@ -5662,11 +5673,13 @@ class Database:
           active          BOOLEAN NOT NULL DEFAULT TRUE,
           total_cap       INTEGER,
           ttl_expires_at  TIMESTAMPTZ,
+          starts_at       TIMESTAMPTZ,
           created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
           updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
         );
         CREATE UNIQUE INDEX IF NOT EXISTS uq_quest_tasks_chat_ref ON quest_tasks (chat_ref);
         CREATE INDEX  IF NOT EXISTS ix_quest_tasks_ttl_expires_at ON quest_tasks (ttl_expires_at);
+        CREATE INDEX  IF NOT EXISTS ix_quest_tasks_starts_at ON quest_tasks (starts_at);
 
         CREATE TABLE IF NOT EXISTS quest_done (
           id          BIGSERIAL PRIMARY KEY,
@@ -5688,6 +5701,16 @@ class Database:
         """
         async with self.pool.acquire() as c:
             await c.execute(sql)
+            await c.execute("ALTER TABLE quest_tasks ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ")
+            await c.execute(
+                "CREATE INDEX IF NOT EXISTS ix_quest_tasks_starts_at ON quest_tasks (starts_at)")
+            try:
+                await c.execute(
+                    "ALTER TABLE z_game_challenge_templates ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ")
+                await c.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_gc_templates_starts_at ON z_game_challenge_templates (starts_at)")
+            except Exception as e:
+                print(f"[WARN] ensure_quest_schema gc starts_at: {e}")
 
     async def _ensure_caps_columns(self) -> None:
         try:
@@ -5696,10 +5719,13 @@ class Database:
                     """
                     ALTER TABLE quest_tasks
                       ADD COLUMN IF NOT EXISTS total_cap INTEGER,
-                      ADD COLUMN IF NOT EXISTS ttl_expires_at TIMESTAMPTZ
+                      ADD COLUMN IF NOT EXISTS ttl_expires_at TIMESTAMPTZ,
+                      ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ
                 """)
                 await c.execute(
                     "CREATE INDEX IF NOT EXISTS ix_quest_tasks_ttl_expires_at ON quest_tasks (ttl_expires_at)")
+                await c.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_quest_tasks_starts_at ON quest_tasks (starts_at)")
         except Exception as e:
             print(f"[WARN] _ensure_caps_columns: {e}")
     # ================== QUEBALANCE (TEXT) ==================
@@ -5923,9 +5949,11 @@ class Database:
                 if active_only:
                     rows = await c.fetch(
                         """
-                        SELECT qt.id, qt.chat_ref, qt.reward, qt.active, qt.total_cap, qt.ttl_expires_at, qt.created_at
+                        SELECT qt.id, qt.chat_ref, qt.reward, qt.active, qt.total_cap,
+                               qt.ttl_expires_at, qt.starts_at, qt.created_at
                           FROM quest_tasks qt
                          WHERE qt.active = TRUE
+                           AND (qt.starts_at IS NULL OR qt.starts_at <= now())
                            AND (qt.ttl_expires_at IS NULL OR qt.ttl_expires_at > now())
                            AND (
                              qt.total_cap IS NULL
@@ -5939,7 +5967,7 @@ class Database:
                 else:
                     rows = await c.fetch(
                         """
-                        SELECT id, chat_ref, reward, active, total_cap, ttl_expires_at, created_at
+                        SELECT id, chat_ref, reward, active, total_cap, ttl_expires_at, starts_at, created_at
                           FROM quest_tasks
                          ORDER BY id
                         """)
@@ -6262,12 +6290,16 @@ class Database:
             async with self.pool.acquire() as c:
                 async with c.transaction():
                     q = await c.fetchrow(
-                        "SELECT id, active, total_cap, ttl_expires_at FROM quest_tasks WHERE chat_ref=$1 FOR UPDATE" ,
+                        "SELECT id, active, total_cap, ttl_expires_at, starts_at FROM quest_tasks WHERE chat_ref=$1 FOR UPDATE" ,
                         cref)
                     if not q or not q [ "active" ]:
                         return (False , "not_active")
 
                     now = dt.datetime.now(dt.timezone.utc)
+                    starts = q [ "starts_at" ]
+                    if starts is not None and starts > now:
+                        return (False , "not_active")
+
                     exp = q [ "ttl_expires_at" ]
                     if exp is not None and exp <= now:
                         await c.execute(

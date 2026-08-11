@@ -173,6 +173,19 @@ from admin_giveaways import (
     list_giveaways_admin,
     update_giveaway,
 )
+from admin_bot_quests import (
+    bulk_create_challenges,
+    bulk_upsert_sub_tasks,
+    create_challenge,
+    delete_sub_task,
+    disable_challenge,
+    get_overview as bot_quests_overview,
+    list_challenges,
+    list_sub_tasks,
+    patch_challenge,
+    patch_sub_task,
+    upsert_sub_task,
+)
 from admin_content import (
     create_craft_recipe,
     create_crop,
@@ -762,6 +775,70 @@ class GiveawayUpdateBody(BaseModel):
     endsAt: str | None = Field(default=None, max_length=64)
     conditions: list[GiveawayConditionBody] | None = Field(default=None, max_length=10)
     enabled: bool | None = None
+    model_config = {"extra": "forbid"}
+
+
+class BotSubTaskBody(BaseModel):
+    chatRef: str = Field(min_length=1, max_length=200)
+    reward: float | str | int
+    limitMode: str = Field(default="unlimited", max_length=16)
+    totalCap: int | None = Field(default=None, ge=1)
+    ttlValue: int | None = Field(default=None, ge=1)
+    ttlUnit: str = Field(default="h", max_length=4)
+    ttlExpiresAt: str | None = Field(default=None, max_length=64)
+    startsAt: str | None = Field(default=None, max_length=64)
+    active: bool = True
+    model_config = {"extra": "forbid"}
+
+
+class BotSubTaskBulkBody(BaseModel):
+    items: list[BotSubTaskBody] = Field(min_length=1, max_length=100)
+    model_config = {"extra": "forbid"}
+
+
+class BotSubTaskPatchBody(BaseModel):
+    chatRef: str | None = Field(default=None, max_length=200)
+    reward: float | str | int | None = None
+    limitMode: str | None = Field(default=None, max_length=16)
+    totalCap: int | None = Field(default=None, ge=1)
+    ttlValue: int | None = Field(default=None, ge=1)
+    ttlUnit: str | None = Field(default=None, max_length=4)
+    ttlExpiresAt: str | None = Field(default=None, max_length=64)
+    startsAt: str | None = Field(default=None, max_length=64)
+    active: bool | None = None
+    activateNow: bool | None = None
+    model_config = {"extra": "forbid"}
+
+
+class BotChallengeBody(BaseModel):
+    startAmount: int = Field(ge=1)
+    targetAmount: int = Field(ge=1)
+    rewardAmount: int = Field(ge=1)
+    maxBet: int | None = Field(default=None, ge=0)
+    chatRef: str | None = Field(default=None, max_length=200)
+    maxUsers: int | None = Field(default=None, ge=0)
+    free: str = Field(default="-", max_length=2)
+    startsAt: str | None = Field(default=None, max_length=64)
+    model_config = {"extra": "forbid"}
+
+
+class BotChallengeBulkBody(BaseModel):
+    items: list[BotChallengeBody] = Field(min_length=1, max_length=100)
+    model_config = {"extra": "forbid"}
+
+
+class BotChallengePatchBody(BaseModel):
+    startAmount: int | None = Field(default=None, ge=1)
+    targetAmount: int | None = Field(default=None, ge=1)
+    rewardAmount: int | None = Field(default=None, ge=1)
+    maxBet: int | None = Field(default=None, ge=0)
+    chatRef: str | None = Field(default=None, max_length=200)
+    maxUsers: int | None = Field(default=None, ge=0)
+    free: str | None = Field(default=None, max_length=2)
+    status: str | None = Field(default=None, max_length=16)
+    startsAt: str | None = Field(default=None, max_length=64)
+    activateNow: bool | None = None
+    disable: bool | None = None
     model_config = {"extra": "forbid"}
 
 
@@ -4092,6 +4169,225 @@ async def admin_content_giveaway_complete(
             admin_id, "giveaway_complete",
             target_type="giveaway", target_id=str(giveaway_id),
             target_label=f"Розыгрыш #{giveaway_id}",
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ─── TG Bot quests (owner-only): +задание / +заданиеч ─────────────────────────
+
+
+@router.get("/bot-quests/overview")
+async def admin_bot_quests_overview(
+    _admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    return await bot_quests_overview()
+
+
+@router.get("/bot-quests/sub-tasks")
+async def admin_bot_sub_tasks_list(
+    _admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    return {"items": await list_sub_tasks()}
+
+
+@router.post("/bot-quests/sub-tasks")
+async def admin_bot_sub_tasks_create(
+    body: BotSubTaskBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    try:
+        result = await upsert_sub_task(
+            chat_ref=body.chatRef,
+            reward=body.reward,
+            limit_mode=body.limitMode,
+            total_cap=body.totalCap,
+            ttl_value=body.ttlValue,
+            ttl_unit=body.ttlUnit,
+            ttl_expires_at=_parse_dt(body.ttlExpiresAt),
+            starts_at=_parse_dt(body.startsAt),
+            active=body.active,
+        )
+        await log_admin_action(
+            admin_id, "bot_sub_task_upsert",
+            target_type="quest_task", target_id=str(result.get("id")),
+            target_label=body.chatRef,
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/bot-quests/sub-tasks/bulk")
+async def admin_bot_sub_tasks_bulk(
+    body: BotSubTaskBulkBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    items = []
+    for it in body.items:
+        items.append({
+            "chatRef": it.chatRef,
+            "reward": it.reward,
+            "limitMode": it.limitMode,
+            "totalCap": it.totalCap,
+            "ttlValue": it.ttlValue,
+            "ttlUnit": it.ttlUnit,
+            "ttlExpiresAt": _parse_dt(it.ttlExpiresAt),
+            "startsAt": _parse_dt(it.startsAt),
+            "active": it.active,
+        })
+    result = await bulk_upsert_sub_tasks(items)
+    await log_admin_action(
+        admin_id, "bot_sub_task_bulk",
+        target_type="quest_task",
+        target_label=f"ok={result['ok']} fail={result['failed']}",
+        ip=_get_client_ip(request),
+    )
+    return result
+
+
+@router.patch("/bot-quests/sub-tasks/{task_id}")
+async def admin_bot_sub_tasks_patch(
+    task_id: int,
+    body: BotSubTaskPatchBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    patch = body.model_dump(exclude_unset=True)
+    if "ttlExpiresAt" in patch:
+        patch["ttlExpiresAt"] = _parse_dt(patch.get("ttlExpiresAt"))
+    if "startsAt" in patch:
+        patch["startsAt"] = _parse_dt(patch.get("startsAt"))
+    try:
+        result = await patch_sub_task(task_id, patch)
+        await log_admin_action(
+            admin_id, "bot_sub_task_patch",
+            target_type="quest_task", target_id=str(task_id),
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/bot-quests/sub-tasks/{task_id}")
+async def admin_bot_sub_tasks_delete(
+    task_id: int,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    try:
+        result = await delete_sub_task(task_id)
+        await log_admin_action(
+            admin_id, "bot_sub_task_delete",
+            target_type="quest_task", target_id=str(task_id),
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/bot-quests/challenges")
+async def admin_bot_challenges_list(
+    _admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    return {"items": await list_challenges(include_disabled=True)}
+
+
+@router.post("/bot-quests/challenges")
+async def admin_bot_challenges_create(
+    body: BotChallengeBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    try:
+        result = await create_challenge(
+            start_amount=body.startAmount,
+            target_amount=body.targetAmount,
+            reward_amount=body.rewardAmount,
+            max_bet=body.maxBet,
+            chat_ref=body.chatRef,
+            max_users=body.maxUsers,
+            free=body.free,
+            starts_at=_parse_dt(body.startsAt),
+        )
+        await log_admin_action(
+            admin_id, "bot_challenge_create",
+            target_type="gc_template", target_id=str(result.get("id")),
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/bot-quests/challenges/bulk")
+async def admin_bot_challenges_bulk(
+    body: BotChallengeBulkBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    items = []
+    for it in body.items:
+        items.append({
+            "startAmount": it.startAmount,
+            "targetAmount": it.targetAmount,
+            "rewardAmount": it.rewardAmount,
+            "maxBet": it.maxBet,
+            "chatRef": it.chatRef,
+            "maxUsers": it.maxUsers,
+            "free": it.free,
+            "startsAt": _parse_dt(it.startsAt),
+        })
+    result = await bulk_create_challenges(items)
+    await log_admin_action(
+        admin_id, "bot_challenge_bulk",
+        target_type="gc_template",
+        target_label=f"ok={result['ok']} fail={result['failed']}",
+        ip=_get_client_ip(request),
+    )
+    return result
+
+
+@router.patch("/bot-quests/challenges/{template_id}")
+async def admin_bot_challenges_patch(
+    template_id: int,
+    body: BotChallengePatchBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    patch = body.model_dump(exclude_unset=True)
+    if "startsAt" in patch:
+        patch["startsAt"] = _parse_dt(patch.get("startsAt"))
+    try:
+        result = await patch_challenge(template_id, patch)
+        await log_admin_action(
+            admin_id, "bot_challenge_patch",
+            target_type="gc_template", target_id=str(template_id),
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/bot-quests/challenges/{template_id}")
+async def admin_bot_challenges_disable(
+    template_id: int,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    try:
+        result = await disable_challenge(template_id)
+        await log_admin_action(
+            admin_id, "bot_challenge_disable",
+            target_type="gc_template", target_id=str(template_id),
             ip=_get_client_ip(request),
         )
         return result

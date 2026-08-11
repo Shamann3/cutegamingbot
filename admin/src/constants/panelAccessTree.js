@@ -115,7 +115,7 @@ export function filterSectionTabs(sectionId, tabs, panelTabs) {
 /** Слайды для «Простой настройки»: каждый основной раздел. */
 export function wizardSlides() {
   return PANEL_SECTIONS
-    .filter((s) => s.id !== 'panelAccess')
+    .filter((s) => s.id !== 'panelAccess' && !s.ownerOnly)
     .map((s) => ({
       id: s.id,
       label: s.labelRu,

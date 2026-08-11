@@ -151,29 +151,23 @@ async def _acquire_with_timeout(lock: asyncio.Lock, timeout: float = LOCK_ACQUIR
     except asyncio.TimeoutError:
         return False
 
-async def safe_answer(cb: CallbackQuery, text: str = "", show_alert: bool = False) -> None:
-    try:
-        if text:
-            await cb.answer(text, show_alert=show_alert)
-        else:
-            await cb.answer()
-    except Exception:
-        pass
+try:
+    from bot.utils.callback_fast import safe_answer, fire_answer
+except Exception:
+    async def safe_answer(cb: CallbackQuery, text: str = "", show_alert: bool = False) -> None:
+        try:
+            if text:
+                await cb.answer(text, show_alert=show_alert)
+            else:
+                await cb.answer()
+        except Exception:
+            pass
 
-def fire_answer(cb: CallbackQuery, text: str = "", show_alert: bool = False) -> None:
-    """
-    AnswerCallbackQuery «в фоне», без ожидания ответа Telegram.
-
-    По логам AnswerCallbackQuery стоит ~150мс сетевого RTT. Раньше он
-    awaited-ился ПЕРЕД правкой доски, и EditMessageText уходил только после
-    него - т.е. пользователь ждал два round-trip'а подряд вместо одного.
-    Ждать ответ на answer нам незачем: крутилка на кнопке гаснет по факту
-    доставки запроса. Теперь answer и edit летят параллельно.
-    """
-    try:
-        asyncio.create_task(safe_answer(cb, text, show_alert))
-    except Exception:
-        pass
+    def fire_answer(cb: CallbackQuery, text: str = "", show_alert: bool = False) -> None:
+        try:
+            asyncio.create_task(safe_answer(cb, text, show_alert))
+        except Exception:
+            pass
 
 # ======== безопасные редакторы inline-сообщений ============
 async def _edit_inline_text_core(inline_message_id: str, text: str,
@@ -331,7 +325,7 @@ async def inline_memory_create_game_callback(cb: CallbackQuery):
     try:
         creator_id = cb.from_user.id
         if await db.is_user_banned(creator_id):
-            await cb.answer("❗️ Вы заблокированы в боте")
+            await cb.answer("❗️ Вы заблокированы в боте", show_alert=True)
             return
         await safe_answer(cb, "🎲 Создаю лобби…")
 
@@ -348,7 +342,7 @@ async def inline_memory_create_game_callback(cb: CallbackQuery):
             except Exception:
                 bal = 0
             if int(bal or 0) < bet_amount:
-                await safe_answer(cb, "❌ Недостаточно средств для такой ставки.", True)
+                await safe_answer(cb, "❌ Недостаточно средств для такой ставки.", True, show_alert=True)
                 return
 
         # профиль - мягко
@@ -362,13 +356,13 @@ async def inline_memory_create_game_callback(cb: CallbackQuery):
         game_style = random.randint(1, 5)
         board = await _create_board(game_style)
         if board is None:
-            await safe_answer(cb, "💭 Ошибка создания игры.", True)
+            await safe_answer(cb, "💭 Ошибка создания игры.", True, show_alert=True)
             return
 
         game_id = str(uuid.uuid4())
         inline_id = cb.inline_message_id  # якорь для правок
         if not inline_id:
-            await safe_answer(cb, "💭 Нет inline_message_id для правки.", True)
+            await safe_answer(cb, "💭 Нет inline_message_id для правки.", True, show_alert=True)
             return
 
         # первичное состояние игры
@@ -416,7 +410,7 @@ async def inline_memory_create_game_callback(cb: CallbackQuery):
         )
     except Exception as e:
         logger.exception("create error: %r", e)
-        await safe_answer(cb, "💭 Техническая ошибка при создании лобби.", True)
+        await safe_answer(cb, "💭 Техническая ошибка при создании лобби.", True, show_alert=True)
 
 # ======================= JOIN ===============================
 @dp.callback_query(lambda c: c.data.startswith("inlinememoryjoin:"))
@@ -425,14 +419,14 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
     try:
         game_id = cb.data.split(":", 1)[1]
     except Exception:
-        await safe_answer(cb, "⚠️ Неверные данные.", True)
+        await safe_answer(cb, "⚠️ Неверные данные.", True, show_alert=True)
         return
     if await db.is_user_banned(user_id):
-        await cb.answer("❗️ Вы заблокированы в боте")
+        await cb.answer("❗️ Вы заблокированы в боте", show_alert=True)
         return
     inflight_key = (game_id, user_id)
     if inflight_key in _inflight_memory_joins:
-        await safe_answer(cb, "⏳ Обрабатываю присоединение…")
+        await safe_answer(cb, "⏳ Обрабатываю присоединение…", show_alert=True)
         return
     _inflight_memory_joins.add(inflight_key)
 
@@ -454,7 +448,7 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
                 username = cb.from_user.username
 
             if user_id == game.get("creator"):
-                await safe_answer(cb, "❕ Вы создатель этой игры", True)
+                await safe_answer(cb, "❕ Вы создатель этой игры", True, show_alert=True)
                 return
 
             participants = _dedupe_preserve_order([int(x) for x in game.get("participants", [])])
@@ -476,7 +470,7 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
                 if inviter_id and inviter_id in parts_set:
                     secs = await _pair_seconds_left(db, user_id, inviter_id, now=None)
                     if secs > 0:
-                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш пригласитель.\n⏳ До снятия ограничения: {_format_hms(secs)}\n#AntiFarmSystem", True)
+                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш пригласитель.\n⏳ До снятия ограничения: {_format_hms(secs)}\n#AntiFarmSystem", True, show_alert=True)
                         return
 
                 invitees_here = await db.get_invitees_in(inviter_id=user_id, candidates=parts_set)
@@ -487,10 +481,10 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
                         if secs > 0:
                             min_secs = secs if min_secs is None else min(min_secs, secs)
                     if min_secs:
-                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш приглашённый.\n⏳ До снятия ограничения: {_format_hms(min_secs)}\n#AntiFarmSystem", True)
+                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш приглашённый.\n⏳ До снятия ограничения: {_format_hms(min_secs)}\n#AntiFarmSystem", True, show_alert=True)
                         return
             except Exception:
-                await safe_answer(cb, "💭 Техническая ошибка #1212471", True)
+                await safe_answer(cb, "💭 Техническая ошибка #1212471", True, show_alert=True)
                 return
 
             # ставка - проверка
@@ -502,12 +496,12 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
                     bal = 0
                 enough = (bal is not None) and int(bal) >= bet_amount
                 if not enough:
-                    await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", True)
+                    await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", True, show_alert=True)
                     return
 
             # бронь места без гонки
             if game.get("opponent_id") and game["opponent_id"] != user_id:
-                await safe_answer(cb, "❗️ Место уже занято.", True)
+                await safe_answer(cb, "❗️ Место уже занято.", True, show_alert=True)
                 return
 
             # добавление
@@ -552,7 +546,7 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
             await safe_answer(cb, _msg("joined"))
     except Exception as e:
         logger.exception("join error: %r", e)
-        await safe_answer(cb, "💭 Ошибка присоединения к лобби.", True)
+        await safe_answer(cb, "💭 Ошибка присоединения к лобби.", True, show_alert=True)
     finally:
         _inflight_memory_joins.discard(inflight_key)
 
@@ -566,13 +560,13 @@ async def inline_memory_start_game_callback(cb: CallbackQuery):
 
         game = games_memory_inline.get(game_id)
         if not game:
-            await safe_answer(cb, "💭 Эта игра больше не существует.", True)
+            await safe_answer(cb, "💭 Эта игра больше не существует.", True, show_alert=True)
             return
         if user_id != game['creator']:
             await safe_answer(cb, _msg("start_only_creator"), True)
             return
         if len(game['participants']) != 2:
-            await safe_answer(cb, "💭 В игре должны участвовать 2 игрока.", True)
+            await safe_answer(cb, "💭 В игре должны участвовать 2 игрока.", True, show_alert=True)
             return
 
         # проверка на ставку перед стартом (на всякий)
@@ -583,7 +577,7 @@ async def inline_memory_start_game_callback(cb: CallbackQuery):
             except Exception:
                 bal = 0
             if int(bal or 0) < bet_amount:
-                await safe_answer(cb, "💭 Недостаточно средств для игры.", True)
+                await safe_answer(cb, "💭 Недостаточно средств для игры.", True, show_alert=True)
                 return
 
         game["game_active"] = True
@@ -602,7 +596,7 @@ async def inline_memory_start_game_callback(cb: CallbackQuery):
         _save_inline()
     except Exception as e:
         logger.exception("start error: %r", e)
-        await safe_answer(cb, "💭 Ошибка запуска игры.", True)
+        await safe_answer(cb, "💭 Ошибка запуска игры.", True, show_alert=True)
 
 # ======================= ХОД (КЛЕТКА) ======================
 @dp.callback_query(lambda c: c.data.startswith("oinlinememory_open:"))
@@ -733,7 +727,7 @@ async def inline_memory_memory_open111(cb: CallbackQuery):
                 lock.release()
     except Exception as e:
         logger.exception("open error: %r", e)
-        await safe_answer(cb, "💭 Что-то пошло не так, уже чиним.", True)
+        await safe_answer(cb, "💭 Что-то пошло не так, уже чиним.", True, show_alert=True)
     finally:
         _inflight_memory_opens.discard(inflight_key)
 

@@ -17,8 +17,10 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
 from main import *
+from bot.games.group_only import reject_if_private_game
 from bot.config.config import TOKEN, timeoutdonate, donate_bet, ref_coin
 from bot.funcs.func import get_bot_username_by_token
+from bot.funcs.tech_home_log import safe_send_tech_log
 
 # Jericho, welcome_back_gift, newbie_safety_net, force_repay_debt уже импортированы из main
 
@@ -223,29 +225,21 @@ async def _home_take_and_log_tower_collapsed(*, bot, user_id: int, loss: int):
             ]
         )
 
-        # Основная отправка с premium-эмодзи и кнопками
-        try:
-            await bot.send_message(
-                TECH_CHAT_ID,
-                emoji_html,
-                reply_markup=inline_kb,
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-        except Exception:
-            # Fallback: обычный HTML-текст без кнопок, если premium-эмодзи не поддерживаются
-            fallback_text = (
-                f"<b>🍀 Башня [ Сделка не удалась ]</b>\n"
-                f"⭐️ {name_link}\n"
-                f"+ {_fmt_int(loss)} на чёрный рынок\n"
-                f"{_fmt_int(chat_balance)} кут доступно для выкупов"
-            )
-            await bot.send_message(
-                TECH_CHAT_ID,
-                fallback_text,
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
+        # Лог в TECH_CHAT: chat not found не должен ронять партию.
+        fallback_text = (
+            f"<b>🍀 Башня [ Сделка не удалась ]</b>\n"
+            f"⭐️ {name_link}\n"
+            f"+ {_fmt_int(loss)} на чёрный рынок\n"
+            f"{_fmt_int(chat_balance)} кут доступно для выкупов"
+        )
+        await safe_send_tech_log(
+            bot,
+            TECH_CHAT_ID,
+            html=emoji_html,
+            reply_markup=inline_kb,
+            fallback_html=fallback_text,
+            tag="TANK][HOME_LOG_SEND",
+        )
 
         print(f"[TANK] Дом получил: {loss} от {user_id}")
     except Exception as e:
@@ -345,9 +339,11 @@ async def game_filter_tank(message: Message):
     bet_amount = int(parts[1])
     if bet_amount < Tank_MIN_BET or bet_amount > Tank_MAX_BET: return
 
+    if await reject_if_private_game(message):
+        return
+
     user_id = message.from_user.id
     chat_id = message.chat.id
-    if message.chat.type == "private": return
 
     print(f"\n[TANK] 🆕 Новая игра: пользователь={user_id}, ставка={bet_amount}")
 
@@ -492,8 +488,8 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
         cb_rev = int(rev_s); row_idx = int(row_s); col_idx = int(col_s); owner_id = int(owner_s)
     except: return
 
-    if uid != owner_id: await call.answer("Не ваша игра", True); return
-    if user_messagetank.get(owner_id) != msg_id: await call.answer("Игра устарела"); return
+    if uid != owner_id: await call.answer("Не ваша игра", True, show_alert=True); return
+    if user_messagetank.get(owner_id) != msg_id: await call.answer("Игра устарела", show_alert=True); return
 
     inflight_key = (msg_id, uid)
     if inflight_key in _tank_inflight: await call.answer("⏳"); return
@@ -728,6 +724,15 @@ async def _finalize_game(owner_id, msg_id, game_data):
     user_messagetank.pop(owner_id, None)
     _tank_session_locks.pop(msg_id, None)
     await newbie_safety_net(owner_id)
+    try:
+        from bot.funcs.onboarding import onboarding_notify_game_finished
+        await onboarding_notify_game_finished(
+            owner_id,
+            message_id=msg_id,
+            chat_id=game_data.get("chat_id"),
+        )
+    except Exception as e:
+        print(f"[TANK] onboarding tip notify: {e!r}")
     print(f"[TANK] 🏁 Игра завершена для {owner_id}")
 
 # ========== ВЫВОД СРЕДСТВ (БЕЗ ДОЛГА) ==========
@@ -738,8 +743,8 @@ async def tank_process_withdraw(call: types.CallbackQuery):
         _, _, rev_s, owner_s = call.data.split("_")
         cb_rev = int(rev_s); owner_id = int(owner_s)
     except: return
-    if uid != owner_id: await call.answer("Не ваша игра", True); return
-    if user_messagetank.get(owner_id) != msg_id: await call.answer("Игра устарела"); return
+    if uid != owner_id: await call.answer("Не ваша игра", True, show_alert=True); return
+    if user_messagetank.get(owner_id) != msg_id: await call.answer("Игра устарела", show_alert=True); return
     lock = _get_session_lock(msg_id)
     async with lock:
         game_data = tank_active_games.get(owner_id)
@@ -804,6 +809,15 @@ async def tank_process_withdraw(call: types.CallbackQuery):
         user_messagetank.pop(owner_id, None)
         _tank_session_locks.pop(msg_id, None)
         await newbie_safety_net(owner_id)
+        try:
+            from bot.funcs.onboarding import onboarding_notify_game_finished
+            await onboarding_notify_game_finished(
+                owner_id,
+                message_id=msg_id,
+                chat_id=chat_id,
+            )
+        except Exception as e:
+            print(f"[TANK] onboarding tip notify: {e!r}")
         print(f"[TANK] 💸 Вывод завершён для {owner_id}")
 
 # Заглушки

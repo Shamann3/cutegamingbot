@@ -108,17 +108,17 @@ async def check_result(user_id, user_choice, callback_query):
     game = next((game for game in gamesblack if game['user_id'] == user_id), None)
 
     if not game:
-        await callback_query.answer("Это не ваша игра")
+        await callback_query.answer("Это не ваша игра", show_alert=True)
         return
 
     # Проверка на соответствие идентификатора пользователя
     if callback_query.from_user.id != user_id:
-        await callback_query.answer("Это не ваша игра")
+        await callback_query.answer("Это не ваша игра", show_alert=True)
         return
 
     # Проверка на соответствие идентификатора пользователя из списка gamesblack
     if game['user_id'] != user_id:
-        await callback_query.answer("Ошибка: идентификатор пользователя не совпадает с текущей игрой")
+        await callback_query.answer("Ошибка: идентификатор пользователя не совпадает с текущей игрой", show_alert=True)
         return
 
     random_number = game['random_number']
@@ -219,7 +219,7 @@ async def number_callback(callback_query: types.CallbackQuery):
         await update_keyboard(callback_query, f"number_{number}")
         await check_result(user_id, number, callback_query)
     else:
-        await callback_query.answer("Это не ваша игра")
+        await callback_query.answer("Это не ваша игра", show_alert=True)
 
 @dp.callback_query(lambda c: c.data in ['1st6', '2nd6', '3rd6', '1to9', 'EVEN', 'red', 'black', 'ODD', '9to18'])
 async def range_callback(callback_query: types.CallbackQuery):
@@ -232,4 +232,4 @@ async def range_callback(callback_query: types.CallbackQuery):
         await update_keyboard(callback_query, choice)
         await check_result(user_id, choice, callback_query)
     else:
-        await callback_query.answer("Это не ваша игра")
+        await callback_query.answer("Это не ваша игра", show_alert=True)

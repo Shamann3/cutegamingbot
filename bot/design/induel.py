@@ -43,7 +43,7 @@ async def induel_create_game_callback(callback_query: types.CallbackQuery):
     username = callback_query.from_user.username
     await inline_add_or_update_user_info(bot1 , user_id , first_name , username , db , start_balance)
     if await db.is_user_banned(user_id):
-        await callback_query.answer("❗️ Вы заблокированы в боте")
+        await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
         return
     # Если ставка больше 0, проверяем, достаточно ли у пользователя средств
     if bet_amount > 0:
@@ -110,13 +110,13 @@ async def induel_Roullet_process_join(callback_query: types.CallbackQuery):
 
     # есть ли игра
     if game_id not in games_roulettinduel:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     # анти-дребезг
     inflight_key = (game_id, user_id)
     if inflight_key in _roul_induel_inflight:
-        await callback_query.answer("⏳ Обрабатываю ваше присоединение…")
+        await callback_query.answer("⏳ Обрабатываю ваше присоединение…", show_alert=True)
         return
     _roul_induel_inflight.add(inflight_key)
 
@@ -126,7 +126,7 @@ async def induel_Roullet_process_join(callback_query: types.CallbackQuery):
             # актуальная игра внутри лока
             game = games_roulettinduel.get(game_id)
             if not game:
-                await callback_query.answer("🛠 Эта игра больше не существует.")
+                await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
                 return
 
             inline_message_id = game.get("inline_message_id")
@@ -143,11 +143,11 @@ async def induel_Roullet_process_join(callback_query: types.CallbackQuery):
             # базовые проверки
             creator_id = int(game.get("creator"))
             if user_id == creator_id:
-                await callback_query.answer("💭 Создатель не может присоединиться к своей игре!")
+                await callback_query.answer("💭 Создатель не может присоединиться к своей игре!", show_alert=True)
                 return
 
             if await db.is_user_banned(user_id):
-                await callback_query.answer("❗️ Вы заблокированы в боте")
+                await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
                 return
 
             # нормализуем участников и дедупим
@@ -155,11 +155,11 @@ async def induel_Roullet_process_join(callback_query: types.CallbackQuery):
             game["participants"] = participants
 
             if len(participants) >= MAX_ROUL_INDUEL_PLAYERS:
-                await callback_query.answer("💭 В игре нет мест")
+                await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
             if user_id in participants:
-                await callback_query.answer("❕ Вы уже участвуете в этой игре.")
+                await callback_query.answer("❕ Вы уже участвуете в этой игре.", show_alert=True)
                 return
 
             # баланс / ставка
@@ -170,7 +170,7 @@ async def induel_Roullet_process_join(callback_query: types.CallbackQuery):
             except Exception:
                 enough = False
             if not enough:
-                await callback_query.answer("💭 Недостаточно средств для игры.")
+                await callback_query.answer("💭 Недостаточно средств для игры.", show_alert=True)
                 return
 
             # ===== анти-реф защита (строго внутри лока) =====
@@ -222,7 +222,7 @@ async def induel_Roullet_process_join(callback_query: types.CallbackQuery):
 
             # ---- критическая точка: добавляем атомарно ----
             if len(game["participants"]) >= MAX_ROUL_INDUEL_PLAYERS:
-                await callback_query.answer("💭 В игре нет мест")
+                await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
             game["participants"].append(user_id)
@@ -260,7 +260,7 @@ async def induel_Roullet_process_join(callback_query: types.CallbackQuery):
                 if "message is not modified" not in str(e).lower():
                     print(f"[ROUL_INDUEL] edit_message_text error: {e}")
 
-            await callback_query.answer("❕ Вы присоединились к игре!")
+            await callback_query.answer("❕ Вы присоединились к игре!", show_alert=True)
             games_roulettinduel.save()
 
     except Exception as e:
@@ -284,13 +284,13 @@ async def induel_Roullet_process_start(callback_query: types.CallbackQuery):
 
     # Проверка существования игры
     if game_id not in games_roulettinduel:
-        await callback_query.answer("🛠 Игра не найдена!")
+        await callback_query.answer("🛠 Игра не найдена!", show_alert=True)
         return
 
     game111 = games_roulettinduel[game_id]
 
     if game111['creator'] != user_id:
-        await callback_query.answer("💭 Только создатель может начать игру!")
+        await callback_query.answer("💭 Только создатель может начать игру!", show_alert=True)
         return
     bet_amount = game111.get('bet' , 0)
 
@@ -324,13 +324,13 @@ async def induel_Roullet_process_start(callback_query: types.CallbackQuery):
     # Проверяем баланс создателя игры
     user_balance = await db.get_user_balance(user_id)
     if game111['bet'] > user_balance:
-        await callback_query.answer("💭 Недостаточно средств для старта игры")
+        await callback_query.answer("💭 Недостаточно средств для старта игры", show_alert=True)
         return
 
     participants = game111['participants']
 
     if len(participants) < 2:
-        await callback_query.answer("💭 Недостаточно участников для начала игры!")
+        await callback_query.answer("💭 Недостаточно участников для начала игры!", show_alert=True)
         return
 
     await callback_query.answer()
@@ -359,16 +359,16 @@ async def induel_Roullet_process_shoot(callback_query: types.CallbackQuery):
         game = games_roulettinduel[game_id]
         user_balance = await db.get_user_balance(user_id)
         if game['bet'] > user_balance:
-            await callback_query.answer("💭 Недостаточно средств для участия в игре")
+            await callback_query.answer("💭 Недостаточно средств для участия в игре", show_alert=True)
             return
 
         # Проверка наличия игры и участников
         if game_id not in games_roulettinduel or 'participants' not in games_roulettinduel[game_id]:
-            await callback_query.answer("🛠 Игра не найдена или еще не началась!")
+            await callback_query.answer("🛠 Игра не найдена или еще не началась!", show_alert=True)
             return
 
         if user_id not in games_roulettinduel[game_id]['participants']:
-            await callback_query.answer("💭 Вы не участвуете в этой игре!")
+            await callback_query.answer("💭 Вы не участвуете в этой игре!", show_alert=True)
             return
 
         # Инициализация структуры для хранения результатов выстрелов
@@ -378,7 +378,7 @@ async def induel_Roullet_process_shoot(callback_query: types.CallbackQuery):
 
         # Проверяем, был ли уже выстрел от текущего пользователя в этой игре
         if games_roulettinduel[game_id]['shots'][user_id] is not None:
-            await callback_query.answer("❕ Вы уже сделали выстрел в этой игре!")
+            await callback_query.answer("❕ Вы уже сделали выстрел в этой игре!", show_alert=True)
             return
 
         # Сохраняем результат выстрела текущего пользователя
@@ -532,7 +532,7 @@ async def induel_Roullet_process_shoot(callback_query: types.CallbackQuery):
             return
 
         # Сообщение для текущего пользователя о холостом выстреле
-        await callback_query.answer("❕ Холостой выстрел")
+        await callback_query.answer("❕ Холостой выстрел", show_alert=True)
 
         # Проверка результатов выстрелов обоих участников
         user1_id = games_roulettinduel[game_id]['participants'][0]

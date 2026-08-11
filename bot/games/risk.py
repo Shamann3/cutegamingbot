@@ -18,6 +18,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from aiogram.exceptions import TelegramBadRequest, TelegramAPIError, TelegramRetryAfter, TelegramNetworkError
 
+from bot.games.group_only import reject_if_private_game
 from main import (
     bot1, dp, db,
     TECH_CHAT_ID, create_user_link,
@@ -35,6 +36,8 @@ from main import (
     jericho_check, welcome_back_gift, newbie_safety_net, force_repay_debt
 )
 
+from bot.funcs.tech_home_log import safe_send_tech_log
+
 try:
     from bot.funcs.func import get_bot_username_by_token
 except Exception:
@@ -42,6 +45,25 @@ except Exception:
         return "CuteGamingBot"
 
 processed_actions_risk = LazyGameStore("processed_actions_risk")
+
+
+async def _after_risk_closed(owner_id: int, msg_id: Optional[int] = None, chat_id=None):
+    """Конец партии: safety-net + tip/личка онбординга."""
+    await newbie_safety_net(owner_id)
+    if chat_id is None:
+        st = active_games_risk.get(owner_id) or {}
+        if isinstance(st, dict):
+            chat_id = st.get("chat_id")
+            if msg_id is None:
+                try:
+                    msg_id = int(st.get("message_id") or 0) or None
+                except Exception:
+                    msg_id = None
+    try:
+        from bot.funcs.onboarding import onboarding_notify_game_finished
+        await onboarding_notify_game_finished(owner_id, message_id=msg_id, chat_id=chat_id)
+    except Exception as e:
+        print(f"[RISK] onboarding tip notify: {e!r}")
 
 try:
     from main import get_random_eagle_emoji_id
@@ -526,29 +548,21 @@ async def _home_log_risk_failed(*, bot, user_id: int, loss: int) -> None:
             ]
         )
 
-        # Попытка отправить компактное сообщение с кастомным эмодзи и кнопками
-        try:
-            await bot.send_message(
-                int(TECH_CHAT_ID),
-                emoji_html,
-                reply_markup=inline_kb,
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-        except Exception:
-            # Fallback: если premium-эмодзи не поддерживаются, шлём обычный HTML без кнопок
-            fallback_text = (
-                f"<b>🌴 Риск [ <i>Рискнуть не получилось</i> ]</b>\n"
-                f"<i>⭐️ {name_link1}</i>\n"
-                f"<blockquote><b>+ {_fmt_int(loss)} на чёрный рынок</b></blockquote>\n"
-                f"<blockquote><b>{_fmt_int(chat_balance)} кут доступно для выкупов</b></blockquote>"
-            )
-            await bot.send_message(
-                int(TECH_CHAT_ID),
-                fallback_text,
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
+        # Лог в TECH_CHAT: chat not found не должен ронять партию.
+        fallback_text = (
+            f"<b>🌴 Риск [ <i>Рискнуть не получилось</i> ]</b>\n"
+            f"<i>⭐️ {name_link1}</i>\n"
+            f"<blockquote><b>+ {_fmt_int(loss)} на чёрный рынок</b></blockquote>\n"
+            f"<blockquote><b>{_fmt_int(chat_balance)} кут доступно для выкупов</b></blockquote>"
+        )
+        await safe_send_tech_log(
+            bot,
+            int(TECH_CHAT_ID),
+            html=emoji_html,
+            reply_markup=inline_kb,
+            fallback_html=fallback_text,
+            tag="RISK][HOME_LOG_SEND",
+        )
 
     except Exception as e:
         dbg_err("HOME_LOG_ERR", e)
@@ -699,6 +713,7 @@ async def _session_ttl_watcher(chat_id: int, msg_id: int, owner_id: int, ttl: in
             pass
         _risk_session_locks.pop(int(msg_id), None)
         _dedup_gc()
+        await _after_risk_closed(owner_id, msg_id, chat_id)
     except Exception as e:
         dbg_err("TTL_ERR", e)
 
@@ -748,15 +763,12 @@ async def risk(message: Message):
         )
         return
 
+    if await reject_if_private_game(message):
+        return
+
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
 
-    if message.chat.type == "private":
-        await message.reply(
-            "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Играть можно только в публичных группах.</b>",
-            parse_mode="HTML"
-        )
-        return
 
     max_bet = int(RISK_MAX_BET)
     try:
@@ -1003,7 +1015,7 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
     now = _now_mono()
     if now - _last_click.get(uid, 0.0) < USER_CLICK_COOLDOWN:
         try:
-            await call.answer("⏳ Подожди чуть-чуть…")
+            await call.answer("⏳ Подожди чуть-чуть…", show_alert=True)
         except Exception:
             pass
         return
@@ -1040,7 +1052,7 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
     inflight_key = (msg_id, uid)
     if inflight_key in _risk_inflight:
         try:
-            await call.answer("⏳ Обрабатываю…")
+            await call.answer("⏳ Обрабатываю…", show_alert=True)
         except Exception:
             pass
         return
@@ -1154,7 +1166,7 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
                     pass
                 _risk_session_locks.pop(int(msg_id), None)
                 _dedup_gc()
-                await newbie_safety_net(owner_id)
+                await _after_risk_closed(owner_id, msg_id)
                 return
 
             # Обычная обработка (demo / обычная игра)
@@ -1288,7 +1300,7 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
 
                     _risk_session_locks.pop(int(msg_id), None)
                     _dedup_gc()
-                    await newbie_safety_net(owner_id)
+                    await _after_risk_closed(owner_id, msg_id)
                     return
 
                 game_data["current_row"] = current_row + 1
@@ -1354,7 +1366,7 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
 
                 _risk_session_locks.pop(int(msg_id), None)
                 _dedup_gc()
-                await newbie_safety_net(owner_id)
+                await _after_risk_closed(owner_id, msg_id)
                 return
 
             # ---------------- LOSE ----------------
@@ -1406,7 +1418,7 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
 
                 _risk_session_locks.pop(int(msg_id), None)
                 _dedup_gc()
-                await newbie_safety_net(owner_id)
+                await _after_risk_closed(owner_id, msg_id)
                 return
 
         except Exception as e:
@@ -1610,7 +1622,7 @@ async def risk_process_withdraw(call: types.CallbackQuery):
 
             _risk_session_locks.pop(int(msg_id), None)
             _dedup_gc()
-            await newbie_safety_net(owner_id)
+            await _after_risk_closed(owner_id, msg_id)
 
         except Exception as e:
             dbg_err("WITHDRAW_ERR", e)

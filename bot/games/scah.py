@@ -15,6 +15,7 @@ from bot.config.config import *
 from bot.design.buttons import *
 from bot.db_create.db import *
 from bot.funcs.func import *
+from bot.games.group_only import reject_if_private_game
 from main import button_gamessha, gamessha, db, bot1, dp, get_current_time_formatted, timehistorygames, \
     pending_context, send_invoice_to_user, _format_hms, _pair_seconds_left
 
@@ -482,6 +483,9 @@ async def sha(message: Message):
     if len(parts) > 2:
         return
 
+    if await reject_if_private_game(message):
+        return
+
     bet = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
     creator_id = message.from_user.id
 
@@ -542,7 +546,7 @@ async def select_mode_callback(callback: CallbackQuery):
     game_id = int(game_id_str)
     user_id = callback.from_user.id
     if game_id not in gamessha:
-        await safe_callback_answer(callback, "🛠 Игра уже не существует.")
+        await safe_callback_answer(callback, "🛠 Игра уже не существует.", show_alert=True)
         return
     game = gamessha[game_id]
     if user_id != game["creator"]:
@@ -584,7 +588,7 @@ async def select_mode_callback(callback: CallbackQuery):
         chat_id=game["chat_id"], message_id=game["message_id"],
         text=f"<tg-emoji emoji-id='5424687267014801006'>♟</tg-emoji> <b>Играем в Шашки</b>{win_text}{participants_text}",
         reply_markup=keyboard, parse_mode="HTML", callback_query=callback)
-    await safe_callback_answer(callback, f"Режим изменён на {mode_name}.")
+    await safe_callback_answer(callback, f"Режим изменён на {mode_name}.", show_alert=True)
     print(f"Игра {game_id}: режим изменён на {mode_name}")
 
 
@@ -599,12 +603,12 @@ async def scah_join_game_callback(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in gamessha:
-        await safe_callback_answer(callback_query, "🛠 Эта игра больше не существует.")
+        await safe_callback_answer(callback_query, "🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     inflight_key = (game_id, user_id)
     if inflight_key in _inflight_shajoin:
-        await safe_callback_answer(callback_query, "⏳ Обрабатываю ваше присоединение…")
+        await safe_callback_answer(callback_query, "⏳ Обрабатываю ваше присоединение…", show_alert=True)
         return
     _inflight_shajoin.add(inflight_key)
 
@@ -612,34 +616,34 @@ async def scah_join_game_callback(callback_query: CallbackQuery):
         lock = _get_sha_lock(game_id)
         async with lock:
             if game_id not in gamessha:
-                await safe_callback_answer(callback_query, "🛠 Эта игра больше не существует.")
+                await safe_callback_answer(callback_query, "🛠 Эта игра больше не существует.", show_alert=True)
                 return
 
             game = gamessha[game_id]
 
             if await db.is_user_banned(user_id):
-                await safe_callback_answer(callback_query, "❗️ Вы заблокированы в боте")
+                await safe_callback_answer(callback_query, "❗️ Вы заблокированы в боте", show_alert=True)
                 return
 
             if user_id == int(game.get("creator")):
-                await safe_callback_answer(callback_query, "❗️ Вы не можете присоединиться к своей игре.")
+                await safe_callback_answer(callback_query, "❗️ Вы не можете присоединиться к своей игре.", show_alert=True)
                 return
 
             participants = _dedupe_preserve_order([int(x) for x in game.get("participants", [])])
             game["participants"] = participants
 
             if len(participants) >= 2:
-                await safe_callback_answer(callback_query, "💭 В игре нет мест")
+                await safe_callback_answer(callback_query, "💭 В игре нет мест", show_alert=True)
                 return
 
             if user_id in participants:
-                await safe_callback_answer(callback_query, "❗️ Вы уже участвуете в этой игре.")
+                await safe_callback_answer(callback_query, "❗️ Вы уже участвуете в этой игре.", show_alert=True)
                 return
 
             bet = int(game.get("bet", 0) or 0)
             bal = await db.get_user_balance(user_id)
             if bal is None or bal < bet:
-                await safe_callback_answer(callback_query, "💭 У вас недостаточно средств для участия.")
+                await safe_callback_answer(callback_query, "💭 У вас недостаточно средств для участия.", show_alert=True)
                 return
 
             # АНТИФЕРМА (точная копия из TTT)
@@ -703,7 +707,7 @@ async def scah_join_game_callback(callback_query: CallbackQuery):
                 chat_id=game["chat_id"], message_id=game["message_id"],
                 text=f"<tg-emoji emoji-id='5424687267014801006'>♟</tg-emoji> <b>Играем в Шашки</b>{win_text}{participants_text}",
                 reply_markup=keyboard, parse_mode="HTML", callback_query=callback_query)
-            await safe_callback_answer(callback_query, "❕ Вы присоединились к игре!")
+            await safe_callback_answer(callback_query, "❕ Вы присоединились к игре!", show_alert=True)
             gamessha.save()
     except Exception as e:
         print(f"[SHA JOIN ERROR] {e}")
@@ -724,14 +728,14 @@ async def scah_start_game_callback(callback_query: types.CallbackQuery):
     game_id = int(callback_query.data.split(':')[1])
     user_id = callback_query.from_user.id
     if game_id not in gamessha:
-        await safe_callback_answer(callback_query, "🛠 Игра не существует.")
+        await safe_callback_answer(callback_query, "🛠 Игра не существует.", show_alert=True)
         return
     game = gamessha[game_id]
     if user_id != game['creator']:
-        await safe_callback_answer(callback_query, "❗️ Только создатель может начать.")
+        await safe_callback_answer(callback_query, "❗️ Только создатель может начать.", show_alert=True)
         return
     if len(game['participants']) != 2:
-        await safe_callback_answer(callback_query, "❗️ Нужно два участника.")
+        await safe_callback_answer(callback_query, "❗️ Нужно два участника.", show_alert=True)
         return
     creator_id = game['creator']
     opponent_id = game['participants'][1]
@@ -756,7 +760,7 @@ async def scah_start_game_callback(callback_query: types.CallbackQuery):
             parse_mode="HTML", callback_query=callback_query)
         del gamessha[game_id]
         return
-    await safe_callback_answer(callback_query, "❕ Игра началась! Белые ходят первыми.")
+    await safe_callback_answer(callback_query, "❕ Игра началась! Белые ходят первыми.", show_alert=True)
     print(f"Игра {game_id} начата, режим {game['mode']}")
     print_board_debug(game["board"], "Начальная доска")
     await show_board(game["chat_id"], game["message_id"], game_id, callback_query)
@@ -885,7 +889,7 @@ async def scah_select_piece_callback(callback_query: types.CallbackQuery):
     shah_cooldowns[user_id] = current_time
 
     if game_id not in gamessha:
-        await safe_callback_answer(callback_query, "🛠 Игра не существует.")
+        await safe_callback_answer(callback_query, "🛠 Игра не существует.", show_alert=True)
         return
     game = gamessha[game_id]
     mode = game.get("mode", "realistic")
@@ -913,7 +917,7 @@ async def scah_select_piece_callback(callback_query: types.CallbackQuery):
     turn = game["turn"]
     players = game["players"]
     if user_id != players[turn]:
-        await safe_callback_answer(callback_query, "❗️ Сейчас не ваш ход.")
+        await safe_callback_answer(callback_query, "❗️ Сейчас не ваш ход.", show_alert=True)
         return
 
     if game["selected_piece"] is None:
@@ -922,7 +926,7 @@ async def scah_select_piece_callback(callback_query: types.CallbackQuery):
         own_king = "👑" if turn == "white" else "🤴🏼"
         if piece not in (own, own_king):
             style_text = get_style_emoji_text(game, turn)
-            await safe_callback_answer(callback_query, f"❕ Выберите свою шашку ({style_text})")
+            await safe_callback_answer(callback_query, f"❕ Выберите свою шашку ({style_text})", show_alert=True)
             return
         is_king = piece in ("👑", "🤴🏼")
         if mode == "realistic":
@@ -930,16 +934,16 @@ async def scah_select_piece_callback(callback_query: types.CallbackQuery):
             valid = moves_dict.get((row, col), [])
             if must_capture and not valid:
                 await safe_callback_answer(
-                    callback_query, "⚠️ Обязательное взятие! Вы должны побить шашку противника.")
+                    callback_query, "⚠️ Обязательное взятие! Вы должны побить шашку противника.", show_alert=True)
                 return
         else:
             valid = get_valid_moves_arcade(row, col, turn, board, is_king)
         if not valid:
-            await safe_callback_answer(callback_query, "❕ У этой шашки нет ходов. Выберите другую.")
+            await safe_callback_answer(callback_query, "❕ У этой шашки нет ходов. Выберите другую.", show_alert=True)
             return
         game["selected_piece"] = (row, col)
         if mode == "realistic" and must_capture:
-            await safe_callback_answer(callback_query, "⚡ Обязательное взятие!")
+            await safe_callback_answer(callback_query, "⚡ Обязательное взятие!", show_alert=True)
         else:
             await safe_callback_answer(callback_query, "✅ Шашка выбрана.")
         await show_board(game["chat_id"], game["message_id"], game_id, callback_query)
@@ -965,7 +969,7 @@ async def scah_select_piece_callback(callback_query: types.CallbackQuery):
                 await safe_callback_answer(callback_query, "✅ Выбрана новая шашка. Теперь выберите клетку.")
                 await show_board(game["chat_id"], game["message_id"], game_id, callback_query)
             else:
-                await safe_callback_answer(callback_query, "❌ Недопустимый ход")
+                await safe_callback_answer(callback_query, "❌ Недопустимый ход", show_alert=True)
             return
 
         if mode == "realistic":
@@ -1051,7 +1055,7 @@ async def scah_draw_callback(callback_query: types.CallbackQuery):
     game_id = int(data[1])
     user_id = callback_query.from_user.id
     if game_id not in gamessha:
-        await safe_callback_answer(callback_query, "❗️ Игра не существует.")
+        await safe_callback_answer(callback_query, "❗️ Игра не существует.", show_alert=True)
         return
     game = gamessha[game_id]
     players = game["players"]
@@ -1061,18 +1065,18 @@ async def scah_draw_callback(callback_query: types.CallbackQuery):
 
     if user_id == players["white"]:
         if game.get("draw_white"):
-            await safe_callback_answer(callback_query, "❕ Вы уже запросили ничью.")
+            await safe_callback_answer(callback_query, "❕ Вы уже запросили ничью.", show_alert=True)
             return
         game["draw_white"] = True
         await safe_callback_answer(callback_query, "✅ Вы предложили ничью. Ожидайте ответа.", show_alert=True)
     elif user_id == players["black"]:
         if game.get("draw_black"):
-            await safe_callback_answer(callback_query, "❕ Вы уже запросили ничью.")
+            await safe_callback_answer(callback_query, "❕ Вы уже запросили ничью.", show_alert=True)
             return
         game["draw_black"] = True
         await safe_callback_answer(callback_query, "✅ Вы предложили ничью. Ожидайте ответа.", show_alert=True)
     else:
-        await safe_callback_answer(callback_query, "❗️ Вы не участник.")
+        await safe_callback_answer(callback_query, "❗️ Вы не участник.", show_alert=True)
         return
 
     if game.get("draw_white") and game.get("draw_black"):
@@ -1095,7 +1099,7 @@ async def scah_surrender_callback(callback_query: types.CallbackQuery):
     game_id = int(data[1])
     user_id = callback_query.from_user.id
     if game_id not in gamessha:
-        await safe_callback_answer(callback_query, "🛠 Игра не существует.")
+        await safe_callback_answer(callback_query, "🛠 Игра не существует.", show_alert=True)
         return
     game = gamessha[game_id]
     players = game["players"]
@@ -1111,7 +1115,7 @@ async def scah_surrender_callback(callback_query: types.CallbackQuery):
         winner_emoji = white_style
         await safe_callback_answer(callback_query, "❕ Вы сдались. Победа присуждена сопернику.", show_alert=True)
     else:
-        await safe_callback_answer(callback_query, "❗️ Вы не участник.")
+        await safe_callback_answer(callback_query, "❗️ Вы не участник.", show_alert=True)
         return
     stake = game["bet"]
     # Атомарный DELTA-режим (см. пояснение выше) — без гонки read-modify-write.

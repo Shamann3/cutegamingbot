@@ -123,6 +123,7 @@ import redis
 from telethon.tl.functions.messages import SendInlineBotResultRequest
 from bot.games.games import Cube122, Bowling34, Basketball34, Slots1, Trade,dart122,foot1
 from bot.funcs.func import *
+from bot.funcs.gc_emoji import gc_tg, gc_btn, gc_html_replace_known
 from aiogram.types import Message
 from datetime import datetime, timedelta
 from bot.config.config import *
@@ -187,6 +188,20 @@ bot1.session.middleware(TelegramApiLogger())
 
 dp = Dispatcher()
 router = Router()
+
+# ── Мэджик: единая цепь управления ВСЕМИ inline-кнопками ──
+try:
+    from bot.magic import install_magic
+
+    install_magic(dp, start_health=False)
+except Exception as _magic_err:
+    print(f"⚠️ [MAGIC] install failed, fallback FastCallback: {_magic_err!r}")
+    try:
+        from bot.utils.callback_fast import FastCallbackMiddleware
+
+        dp.callback_query.middleware(FastCallbackMiddleware())
+    except Exception as _cb_fast_err:
+        print(f"⚠️ [CALLBACK_FAST] middleware not attached: {_cb_fast_err!r}")
 
 
 @dp.error()
@@ -1446,7 +1461,6 @@ async def blackshop_main(callback: CallbackQuery):
             disable_web_page_preview=True
         )
 
-    await callback.answer()
 @dp.callback_query(F.data == "blackshop_what_is")
 async def blackshop_what_is(callback: CallbackQuery):
     text = (
@@ -3888,38 +3902,26 @@ request_count = 0
 
 
 class ButtonRegistry:
+    """Раньше плодил mega-handler на каждый callback_data и дублировал
+    уже существующие @dp.callback_query из модулей игр.
+
+    Это замедляло КАЖДОЕ нажатие (дорогие lambda-фильтры по всему dict).
+    Handlers уже зарегистрированы декораторами в bot/games, bot/funcs, bot/design —
+    поэтому регистрация здесь отключена.
+    """
+
     def __init__(self, dispatcher: Dispatcher):
         self.dp = dispatcher
         self.registered_callbacks = set()
-        print("[ButtonRegistry] Инициализирован.")
+        print("[ButtonRegistry] Инициализирован (no-op: без mega-handler).")
 
     def register_buttons_from_dict(self, data_dict: Dict[int, Dict[str, Any]]):
-        print("[ButtonRegistry] Регистрация кнопок из словаря...")
-
-        for game_id, game_data in data_dict.items():
-            print(f"  ▶ Обработка игры с ID: {game_id}")
-            keyboard = game_data.get('keyboard')
-
-            if not keyboard:
-
-                print(f"    ⚠️ Нет клавиатуры у игры {game_id}, пропускаю.")
-                print(keyboard)
-                continue
-
-            for row in keyboard.inline_keyboard:
-                for button in row:
-                    callback_data = button.callback_data
-                    if callback_data:
-                        if callback_data not in self.registered_callbacks:
-                            print(f"    ✅ Регистрирую callback: {callback_data}")
-                            self._register_handler(callback_data)  # Регистрируем обработчик для этой кнопки
-                            self.registered_callbacks.add(callback_data)
-                        else:
-                            print(f"    🔁 Callback уже зарегистрирован: {callback_data}")
-                    else:
-                        print(f"    ⚠️ У кнопки нет callback_data, пропускаю.")
-
-        print("[ButtonRegistry] Регистрация завершена.")
+        n = len(data_dict or {})
+        print(
+            f"[ButtonRegistry] SKIP регистрация ({n} игр) — "
+            "handlers уже в модулях, mega-handler отключён для скорости кнопок."
+        )
+        return
 
     def _register_handler(self , callback_data: str):
         from bot.funcs.orel import join_game_callback , start_game_callback , roll_callback
@@ -7184,11 +7186,48 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
         else:
             start_body, start_markup = await start_screen(user_id)
 
-        sent_message = await bot1(
-            SendMessage(
-                chat_id=message.chat.id , text=start_body ,
-                reply_markup=start_markup , message_effect_id="5107584321108051014" ,
-                parse_mode="HTML" , disable_web_page_preview=True))
+        # Сетевой обрыв до Telegram не должен ронять /start целиком.
+        # 1) с effect → 2) без effect → 3) тихий выход (человек нажмёт /start снова).
+        sent_message = None
+        send_attempts = (
+            dict(
+                chat_id=message.chat.id,
+                text=start_body,
+                reply_markup=start_markup,
+                message_effect_id="5107584321108051014",
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            ),
+            dict(
+                chat_id=message.chat.id,
+                text=start_body,
+                reply_markup=start_markup,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            ),
+        )
+        for attempt_i, kwargs in enumerate(send_attempts, start=1):
+            try:
+                sent_message = await bot1(SendMessage(**kwargs))
+                break
+            except TelegramNetworkError as e:
+                print(
+                    f"[START][NET] uid={user_id} attempt={attempt_i}/{len(send_attempts)} "
+                    f"{type(e).__name__}: {e}"
+                )
+                if attempt_i < len(send_attempts):
+                    await asyncio.sleep(0.35 * attempt_i)
+            except Exception as e:
+                print(f"[START][SEND] uid={user_id} attempt={attempt_i}: {type(e).__name__}: {e!r}")
+                if attempt_i < len(send_attempts):
+                    await asyncio.sleep(0.2)
+                else:
+                    return
+
+        if sent_message is None:
+            print(f"[START][NET] uid={user_id}: не удалось отправить стартовый экран")
+            return
+
         bns_add_request(user_id , sent_message.message_id , reason="print('🏉🏉🏉🏉🏉🏉 message_text : ', message.text)")
         message_state [ message.from_user.id ] = sent_message.message_id
 
@@ -16952,7 +16991,7 @@ def _build_no_tasks_kb() -> types.InlineKeyboardMarkup:
     return types.InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Заданий больше нет", callback_data="noop")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="qst:menu_back")],
+            [gc_btn("🔙 Назад", callback_data="qst:menu_back")],
         ]
     )
 
@@ -17161,14 +17200,10 @@ async def _build_after_take_kb(
                 ]
             )
     rows.append(
-        [
-            InlineKeyboardButton(
-                text="✅ Успешно выведено", callback_data="qst:withdraw_ok"
-            )
-        ]
+        [gc_btn("✅ Успешно выведено", callback_data="qst:withdraw_ok")]
     )
     rows.append(
-        [InlineKeyboardButton(text="🔙 Назад в меню", callback_data="qst:menu_back")]
+        [gc_btn("🔙 Назад в меню", callback_data="qst:menu_back")]
     )
     return types.InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -17206,7 +17241,7 @@ async def _render_sub_task_text(
             "Нажмите «Проверить подписку», если вы уже являетесь участником, "
             "или «Пропустить», чтобы потратить Virtual balance и пометить как пропущенное.",
         ]
-        return "\n".join(lines)
+        return gc_html_replace_known("\n".join(lines))
     except Exception as e:
         _qdbg_exc("_render_sub_task_text fail", e)
         return "<b>Задание</b>\n\nОписание временно недоступно."
@@ -17238,8 +17273,8 @@ async def _build_sub_list_kb(
 
     rows: List[List[types.InlineKeyboardButton]] = []
 
-    header_label = f"🐬 Задания с подпиской - {page+1}/{pages} стр."
-    rows.append([InlineKeyboardButton(text=header_label, callback_data="noop")])
+    header_label = f"Задания с подпиской - {page+1}/{pages} стр."
+    rows.append([InlineKeyboardButton(text=header_label, callback_data="noop", style="default", icon_custom_emoji_id="5362063083311214432")])
 
     try:
         queb = D(queb)
@@ -17276,15 +17311,11 @@ async def _build_sub_list_kb(
                 label = f"{display_cref} [+{fmt_amt(reward_dec)}]"
 
             cb = _task_cb("sub_show", cref_raw)
-            rows.append([InlineKeyboardButton(text=label, callback_data=cb)])
+            rows.append([gc_btn(label, callback_data=cb)])
         except Exception as e:
             _qdbg_exc("_build_sub_list_kb: add group button failed", e)
             rows.append(
-                [
-                    InlineKeyboardButton(
-                        text="⚠️ Неизвестная задача", callback_data="noop"
-                    )
-                ]
+                [gc_btn("⚠️ Неизвестная задача", callback_data="noop")]
             )
 
     # нижний разделитель
@@ -17295,22 +17326,18 @@ async def _build_sub_list_kb(
         nav_row: List[InlineKeyboardButton] = []
         if page > 0:
             nav_row.append(
-                InlineKeyboardButton(
-                    text="🔙 Назад", callback_data=f"qst:sub_page:{page-1}"
-                )
+                gc_btn("🔙 Назад", callback_data=f"qst:sub_page:{page-1}")
             )
         if start + SUBS_PAGE_SIZE < total:
             nav_row.append(
-                InlineKeyboardButton(
-                    text="🔜 Вперёд", callback_data=f"qst:sub_page:{page+1}"
-                )
+                gc_btn("🔜 Вперёд", callback_data=f"qst:sub_page:{page+1}")
             )
         if nav_row:
             rows.append(nav_row)
     except Exception as e:
         _qdbg_exc("_build_sub_list_kb: build nav row failed", e)
     bal_label = f"💰 Virtual balance : {fmt_amt(queb)} кут"
-    rows.append([ InlineKeyboardButton(text=bal_label , callback_data="qst:bal_info") ])
+    rows.append([gc_btn(bal_label, callback_data="qst:bal_info")])
 
     # Кнопка вывода, если есть >= 1 кут
     try:
@@ -17318,14 +17345,14 @@ async def _build_sub_list_kb(
             can_int = floor_int(queb)
             btn_text = f"⛵️ Вывести {can_int} кут"
             cb = _withdraw_cb(can_int)
-            rows.append([ InlineKeyboardButton(text=btn_text , callback_data=cb) ])
+            rows.append([gc_btn(btn_text, callback_data=cb)])
     except Exception as e:
-        _qdbg_exc("_build_sub_list_kb: withdraw button failed" , e)
+        _qdbg_exc("_build_sub_list_kb: withdraw button failed", e)
     rows.append(
-        [InlineKeyboardButton(text="♻️ Обновить список", callback_data="qst:sub_refresh")]
+        [gc_btn("♻️ Обновить список", callback_data="qst:sub_refresh")]
     )
     rows.append(
-        [InlineKeyboardButton(text="🏝 В главное меню", callback_data="qst:menu_back")]
+        [gc_btn("🏝 В главное меню", callback_data="qst:menu_back")]
     )
 
     try:
@@ -17334,11 +17361,7 @@ async def _build_sub_list_kb(
         _qdbg_exc("_build_sub_list_kb: InlineKeyboardMarkup build failed", e)
         return types.InlineKeyboardMarkup(
             inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="🔙 Назад в меню", callback_data="qst:menu_back"
-                    )
-                ]
+                [gc_btn("🔙 Назад в меню", callback_data="qst:menu_back")]
             ]
         )
 
@@ -17641,7 +17664,7 @@ async def qst_broken_details(callback_query: types.CallbackQuery):
                 "<b>📩 Шаблон для администратора (скопируйте):</b>"
             )
             full_lines.append(f"<code>{html.escape(sample_template)}</code>")
-            full_text = "\n".join(full_lines)
+            full_text = gc_html_replace_known("\n".join(full_lines))
             if len(full_text) > 3800:
                 full_text = (
                     full_text[:3790].rstrip()
@@ -17753,11 +17776,13 @@ async def _render_empty_text(queb: Decimal) -> str:
     except Exception:
         queb = D(0)
 
-    return (
+    return gc_html_replace_known(
         "<b>🏜 Активных заданий нет.</b>\n\n"
         f"🍹 <b>Virtual balance : {fmt_amt(queb)} кут</b>\n\n"
         "Вы можете вывести накопленные куты или вернуться в меню с помощью кнопок ниже."
     )
+
+
 async def _empty_kb(queb: Decimal) -> types.InlineKeyboardMarkup:
     """
     Клавиатура для экрана, когда заданий нет:
@@ -17766,36 +17791,27 @@ async def _empty_kb(queb: Decimal) -> types.InlineKeyboardMarkup:
     - кнопка вывода (если есть >= 1 кут)
     - кнопка 'Назад в меню'
     """
-    builder = InlineKeyboardBuilder()
     try:
         queb = D(queb)
     except Exception:
         queb = D(0)
 
     can_int = floor_int(queb)
-
-    # 1) Информационная "шапка"
-    builder.button(
-        text="🏜 Заданий больше нет…",
-        callback_data="noop",  # было "noon" - хэндлера нет, поэтому меняем на noop
-    )
-
-    # 2) Кнопка с текущим балансом (даже если 0 - чтобы человек видел своё значение)
-    builder.button(
-        text=f"💰 Virtual balance : {fmt_amt(queb)} кут",
-        callback_data="qst:bal_info",
-    )
-
-    # 3) Кнопка вывода, только если есть >= 1 кут
+    rows: List[List[InlineKeyboardButton]] = [
+        [gc_btn("🏜 Заданий больше нет…", callback_data="noop")],
+        [gc_btn(f"💰 Virtual balance : {fmt_amt(queb)} кут", callback_data="qst:bal_info")],
+    ]
     if can_int > 0:
-        btn_text = f"⛵️ Вывести {can_int} кут"
-        builder.button(text=btn_text, callback_data=f"qst:withdraw:{can_int}")
+        rows.append([
+            gc_btn(
+                f"⛵️ Вывести {can_int} кут",
+                callback_data=f"qst:withdraw:{can_int}",
+            )
+        ])
+    rows.append([gc_btn("🔙 Назад в меню", callback_data="qst:menu_back")])
+    return types.InlineKeyboardMarkup(inline_keyboard=rows)
 
-    # 4) Назад в меню
-    builder.button(text="🔙 Назад в меню", callback_data="qst:menu_back")
 
-    builder.adjust(1)
-    return builder.as_markup()
 @dp.callback_query(lambda c: c.data == "qst:menu_back")
 async def qst_menu_back(callback_query: types.CallbackQuery):
     try:
@@ -17825,8 +17841,8 @@ async def qst_menu_back(callback_query: types.CallbackQuery):
         # fallback-меню вручную, если основной хэндлер сломался
         try:
             kb = InlineKeyboardBuilder()
-            kb.button(text="🐬 Задания с подпиской", callback_data="qst:show_subs")
-            kb.button(text="🦋 Челленджи", callback_data="qst:show_gc")
+            kb.button(text="Задания с подпиской", callback_data="qst:show_subs", style="default", icon_custom_emoji_id="5362063083311214432")
+            kb.button(text="Челленджи", callback_data="qst:show_gc", style="default", icon_custom_emoji_id="5445096582238181549")
             kb.button(text="Закрыть", callback_data="9close_bonus_+")
             kb.adjust(1)
             compact_kb = kb.as_markup()
@@ -17982,7 +17998,7 @@ async def qst_show_subs_normal(callback_query: types.CallbackQuery):
     # --------- есть нормальные задания -> показываем список только из них ----------
     try:
         page = 0
-        header_text = (
+        header_text = gc_html_replace_known(
             "<b>📋 Обычные задания (без проблем с ботом)</b>\n\n"
             "Нажмите на любую кнопку ниже, чтобы открыть задание."
         )
@@ -18038,8 +18054,8 @@ async def questions_stars_menu(callback_query: types.CallbackQuery):
             _qdbg_exc("ensure_quest_schema fail", e)
 
         kb = InlineKeyboardBuilder()
-        kb.button(text="🐬 Задания с подпиской", callback_data="qst:show_subs")
-        kb.button(text="🦋 Челленджи", callback_data="qst:show_gc")
+        kb.button(text="Задания с подпиской", callback_data="qst:show_subs", style="default", icon_custom_emoji_id="5362063083311214432")
+        kb.button(text="Челленджи", callback_data="qst:show_gc", style="default", icon_custom_emoji_id="5445096582238181549")
         kb.button(text="Закрыть", callback_data="9close_bonus_+")
         kb.adjust(1)
         kb_markup = kb.as_markup()
@@ -18487,7 +18503,10 @@ async def _show_next_task(message: types.Message, user_id: int):
 
         # --- есть задания с подпиской ---
         if sub_available > 0:
-            txt = "<b>📋 Доступные задания с подпиской</b>\n\nВыберите задание из списка ниже."
+            txt = gc_html_replace_known(
+                "<b>📋 Доступные задания с подпиской</b>\n\n"
+                "Выберите задание из списка ниже."
+            )
             kb = await _build_sub_list_kb(sub_cands, page=0, queb=queb)
             await _safe_edit_message_text(
                 chat_id=chat_id,
@@ -18600,10 +18619,13 @@ async def _show_best_task_for_user(message: types.Message, user_id: int):
             kb.button(text=f"Инфо: {meta_ref}", callback_data=f"qst:group_info:{meta_ref}")
 
         # 5.3. Проверить подписку / Пропустить / Назад
-        kb.button(text="✅ Проверить подписку", callback_data=_task_cb("check", cref))
+        kb.row(gc_btn("✅ Проверить подписку", callback_data=_task_cb("check", cref)))
         if D(queb) >= SKIP_COST:
-            kb.button(text=f"🕊 Пропустить за {fmt_amt(SKIP_COST)}", callback_data=_task_cb("skip", cref))
-        kb.button(text="🏕 Назад к списку", callback_data="qst:show_subs")
+            kb.row(gc_btn(
+                f"🕊 Пропустить за {fmt_amt(SKIP_COST)}",
+                callback_data=_task_cb("skip", cref),
+            ))
+        kb.row(gc_btn("🏕 Назад к списку", callback_data="qst:show_subs"))
         kb.adjust(1)
 
         await _safe_edit_message_text(
@@ -18639,7 +18661,10 @@ async def qst_show_subs(callback_query: types.CallbackQuery):
             )
             return
         page = 0
-        header_text = "<b>📋 Доступные задания с подпиской</b>\n\nНажмите на любую кнопку ниже, чтобы открыть задание."
+        header_text = gc_html_replace_known(
+            "<b>📋 Доступные задания с подпиской</b>\n\n"
+            "Нажмите на любую кнопку ниже, чтобы открыть задание."
+        )
         kb = await _build_sub_list_kb(tasks, page, queb)
         try:
             await callback_query.answer()
@@ -18682,7 +18707,10 @@ async def qst_sub_page(callback_query: types.CallbackQuery):
             page = 0
         if page >= max_pages:
             page = max_pages - 1
-        header_text = "<b>📋 Доступные задания с подпиской</b>\n\nНажмите на любую кнопку ниже, чтобы открыть задание."
+        header_text = gc_html_replace_known(
+            "<b>📋 Доступные задания с подпиской</b>\n\n"
+            "Нажмите на любую кнопку ниже, чтобы открыть задание."
+        )
         kb = await _build_sub_list_kb(tasks, page, queb)
         try:
             await callback_query.answer()
@@ -18744,23 +18772,22 @@ async def qst_sub_show(callback_query: types.CallbackQuery):
 
         # ---------- СЛОМАННОЕ ЗАДАНИЕ ----------
         if broken:
-            txt_lines = [
-                f"⚠️ <b>Проблема с заданием</b>",
+            txt = gc_html_replace_known("\n".join([
+                "⚠️ <b>Проблема с заданием</b>",
                 "",
                 f"Мы не можем корректно обработать задание: <b>{html.escape(display_ref)}</b>.",
-                "Ничего страшного - ниже есть быстрые шаги, чтобы сообщить об этом администрации."
-            ]
-            txt = "\n".join(txt_lines)
+                "Ничего страшного - ниже есть быстрые шаги, чтобы сообщить об этом администрации.",
+            ]))
 
-            kb = InlineKeyboardBuilder()
-            kb.button(text="⚠️ Ошибка", callback_data="noop")
-            kb.button(
-                text="Подробно",
-                callback_data=f"qst:broken_details_ref:{_encode_cb_ref(str(task.get('chat_ref') or cref_norm))}"
-            )
-            kb.button(text="🔙 Показать обычные задания", callback_data="qst:show_subs_normal")
-            kb.button(text="🔙 Назад", callback_data="qst:show_subs")
-            kb.adjust(1)
+            broken_kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                [gc_btn("⚠️ Ошибка", callback_data="noop")],
+                [InlineKeyboardButton(
+                    text="Подробно",
+                    callback_data=f"qst:broken_details_ref:{_encode_cb_ref(str(task.get('chat_ref') or cref_norm))}",
+                )],
+                [gc_btn("🔙 Показать обычные задания", callback_data="qst:show_subs_normal")],
+                [gc_btn("🔙 Назад", callback_data="qst:show_subs")],
+            ])
 
             replacement_sticker = "CAACAgIAAxkBAnnkmGkkxNhXY0BXJn7aZ8Q6M3Yh5iyhAAIbkwACOm0hSewZ8PtUH6P-NgQ"
             try:
@@ -18773,7 +18800,7 @@ async def qst_sub_show(callback_query: types.CallbackQuery):
                     chat_id=callback_query.message.chat.id,
                     message_id=callback_query.message.message_id,
                     text=txt,
-                    reply_markup=kb.as_markup(),
+                    reply_markup=broken_kb,
                     replacement_sticker=replacement_sticker
                 )
             except Exception as e:
@@ -18783,7 +18810,7 @@ async def qst_sub_show(callback_query: types.CallbackQuery):
                         chat_id=callback_query.message.chat.id,
                         message_id=callback_query.message.message_id,
                         text=txt,
-                        reply_markup=kb.as_markup()
+                        reply_markup=broken_kb
                     )
                 except Exception as e2:
                     _qdbg_exc("qst_sub_show: fallback edit failed", e2)
@@ -18812,18 +18839,18 @@ async def qst_sub_show(callback_query: types.CallbackQuery):
                 callback_data=f"qst:group_info:{meta_ref}"
             )
 
-        kb.button(
-            text="✅ Проверить подписку",
-            callback_data=_task_cb("check", str(task.get("chat_ref") or cref_norm))
-        )
+        kb.row(gc_btn(
+            "✅ Проверить подписку",
+            callback_data=_task_cb("check", str(task.get("chat_ref") or cref_norm)),
+        ))
 
         if D(queb) >= SKIP_COST:
-            kb.button(
-                text=f"🕊 Пропустить за {fmt_amt(SKIP_COST)}",
-                callback_data=_task_cb("skip", str(task.get("chat_ref") or cref_norm))
-            )
+            kb.row(gc_btn(
+                f"🕊 Пропустить за {fmt_amt(SKIP_COST)}",
+                callback_data=_task_cb("skip", str(task.get("chat_ref") or cref_norm)),
+            ))
 
-        kb.button(text="🏕 Назад к списку", callback_data="qst:show_subs")
+        kb.row(gc_btn("🏕 Назад к списку", callback_data="qst:show_subs"))
         kb.adjust(1)
 
         try:
@@ -18971,7 +18998,7 @@ async def qst_broken_details_ref(callback_query: types.CallbackQuery):
         pm_lines.append("")
         pm_lines.append("<b>📩 Превью сообщения, которое подставится:</b>")
         pm_lines.append(f"<code>{html.escape(preview)}</code>")
-        pm_text = "\n".join(pm_lines)
+        pm_text = gc_html_replace_known("\n".join(pm_lines))
         if len(pm_text) > 3800:
             pm_text = pm_text[:3790].rstrip() + "\n\n… (текст обрезан)"
 
@@ -18986,7 +19013,10 @@ async def qst_broken_details_ref(callback_query: types.CallbackQuery):
             for uname in admins:
                 url = f"https://t.me/{uname}?text={pref}"
                 admin_buttons.append(InlineKeyboardButton(text=f"@{uname}", url=url))
-            pm_kb = types.InlineKeyboardMarkup(inline_keyboard=[admin_buttons, [InlineKeyboardButton(text="↩️ Назад", callback_data="qst:show_subs")]])
+            pm_kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                admin_buttons,
+                [gc_btn("↩️ Назад", callback_data="qst:show_subs")],
+            ])
         except Exception as e:
             _qdbg_exc("qst_broken_details_ref: build pm_kb failed", e)
             pm_kb = None
@@ -19013,7 +19043,7 @@ async def qst_broken_details_ref(callback_query: types.CallbackQuery):
                 except Exception as e:
                     _qdbg_exc("qst_broken_details_ref: delete original message failed", e)
 
-            top_row = [InlineKeyboardButton(text="☁️ Сообщите об ошибке Админу ☁️", callback_data="noop")]
+            top_row = [gc_btn("☁️ Сообщите об ошибке Админу", callback_data="noop")]
             compact_row = []
             for uname in admins:
                 try:
@@ -19021,7 +19051,7 @@ async def qst_broken_details_ref(callback_query: types.CallbackQuery):
                     compact_row.append(InlineKeyboardButton(text=f"@{uname}", url=url))
                 except Exception:
                     compact_row.append(InlineKeyboardButton(text=f"@{uname}", url=f"https://t.me/{uname}"))
-            back_row = [InlineKeyboardButton(text="Назад", callback_data="qst:show_subs")]
+            back_row = [gc_btn("↩️ Назад", callback_data="qst:show_subs")]
             compact_kb = types.InlineKeyboardMarkup(inline_keyboard=[top_row, compact_row, back_row])
 
             replacement_sticker = "CAACAgIAAxkBAnnkmGkkxNhXY0BXJn7aZ8Q6M3Yh5iyhAAIbkwACOm0hSewZ8PtUH6P-NgQ"
@@ -19032,7 +19062,15 @@ async def qst_broken_details_ref(callback_query: types.CallbackQuery):
             except Exception as e:
                 _qdbg_exc("qst_broken_details_ref: send_sticker failed, fallback to text", e)
                 try:
-                    await bot1.send_message(chat_id=target_chat, text="⚠️ Проблема с заданием - используйте кнопки ниже, чтобы связаться с админами.", reply_markup=compact_kb)
+                    await bot1.send_message(
+                        chat_id=target_chat,
+                        text=gc_html_replace_known(
+                            "⚠️ Проблема с заданием - используйте кнопки ниже, "
+                            "чтобы связаться с админами."
+                        ),
+                        reply_markup=compact_kb,
+                        parse_mode="HTML",
+                    )
                 except Exception as e2:
                     _qdbg_exc("qst_broken_details_ref: fallback send_message failed", e2)
                     if pm_sent:
@@ -19064,9 +19102,12 @@ async def qst_sub_check(callback_query: types.CallbackQuery):
     user_id = user.id
 
     # --------- маленький helper, чтобы не копировать try/except вокруг answer ----------
-    async def _safe_answer(text: str, alert: bool = True):
+    async def _safe_answer(text: str = "", alert: bool = False):
         try:
-            await callback_query.answer(text, show_alert=alert)
+            if text:
+                await callback_query.answer(text, show_alert=alert)
+            else:
+                await callback_query.answer()
         except Exception:
             pass
 
@@ -19086,7 +19127,7 @@ async def qst_sub_check(callback_query: types.CallbackQuery):
         done = await _try_db_call(["is_task_done", "has_done_task"], user_id, cref, default=False)
         if done:
             _qdbg("qst_sub_check: already done -> informing and moving on")
-            await _safe_answer("Это задание уже закрыто ✅")
+            await _safe_answer("Это задание уже закрыто ✅", alert=True)
             return await _show_next_task(callback_query.message, user_id)
 
         # 3) Пытаемся аккуратно получить саму задачу до проверки подписки
@@ -19312,9 +19353,12 @@ async def qst_sub_skip(callback_query: types.CallbackQuery):
     _qdbg(f"qst_sub_skip user={user_id} raw={raw} decoded={decoded} norm={cref}")
 
     # небольшой helper, чтобы не дублировать try/except
-    async def _safe_answer(text: str, alert: bool = True):
+    async def _safe_answer(text: str = "", alert: bool = False):
         try:
-            await callback_query.answer(text, show_alert=alert)
+            if text:
+                await callback_query.answer(text, show_alert=alert)
+            else:
+                await callback_query.answer()
         except Exception:
             pass
 
@@ -19605,10 +19649,16 @@ def _gc_task_cb_start(template_id: int) -> str:
     return f"qst:gcstart:{int(template_id)}"
 
 
-async def _gc_safe_answer(callback_query: types.CallbackQuery, text: str, alert: bool = True) -> None:
-    """Безопасный callback.answer с глушением ошибок."""
+async def _gc_safe_answer(callback_query: types.CallbackQuery, text: str = "", alert: bool = False) -> None:
+    """Безопасный callback.answer с глушением ошибок.
+
+    alert=False по умолчанию: полноэкранный alert только для реальных ошибок.
+    """
     try:
-        await callback_query.answer(text, show_alert=alert)
+        if text:
+            await callback_query.answer(text, show_alert=alert)
+        else:
+            await callback_query.answer()
     except Exception:
         pass
 
@@ -20024,7 +20074,7 @@ async def gc_render_empty_text(queb: Decimal) -> str:
     except Exception:
         queb = D(0)
 
-    return (
+    return gc_html_replace_known(
         "<b>🏜 Игровых челленджей сейчас нет.</b>\n\n"
         "Эти куты ты уже можешь вывести через кнопку вывода.\n\n"
         "Загляни позже или вернись в главное меню."
@@ -20038,7 +20088,7 @@ async def gc_empty_kb(user_id: int, queb: Decimal) -> types.InlineKeyboardMarkup
       - автоматически проверяет, есть ли у пользователя РЕАЛЬНО активное GC-задание;
       - если есть - добавляет кнопку «🎯 Моё задание».
     """
-    builder = InlineKeyboardBuilder()
+    rows: List[List[InlineKeyboardButton]] = []
 
     try:
         queb = D(queb)
@@ -20047,7 +20097,7 @@ async def gc_empty_kb(user_id: int, queb: Decimal) -> types.InlineKeyboardMarkup
 
     can_int = floor_int(queb)  # пока просто прогрев, пригодится, если добавишь кнопку вывода
 
-    builder.button(text="Челленджей больше нет…", callback_data="noop_gc_empty")
+    rows.append([gc_btn("Челленджей больше нет…", callback_data="noop_gc_empty")])
 
     has_active = False
     try:
@@ -20058,15 +20108,11 @@ async def gc_empty_kb(user_id: int, queb: Decimal) -> types.InlineKeyboardMarkup
         _qdbg_exc("gc_empty_kb: get_active_gc_assignment fail", e)
 
     if has_active:
-        builder.button(
-            text="🎯 Моё задание",
-            callback_data="qst:gc_my"
-        )
+        rows.append([gc_btn("🎯 Моё задание", callback_data="qst:gc_my")])
 
-    builder.button(text="🔙 Назад в меню", callback_data="qst:menu_back")
+    rows.append([gc_btn("🔙 Назад в меню", callback_data="qst:menu_back")])
 
-    builder.adjust(1)
-    return builder.as_markup()
+    return types.InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 @dp.callback_query(lambda c: c.data == "noop_gc_empty")
@@ -20152,7 +20198,7 @@ async def gc_render_task_text(
             "Нажмите «🎮 Взять это задание», чтобы получить стартовый виртуальный баланс "
             "и начать путь к цели."
         ]
-        return "\n".join(lines)
+        return gc_html_replace_known("\n".join(lines))
     except Exception as e:
         _qdbg_exc("gc_render_task_text fail", e)
         return "<b>Игровое задание</b>\n\nОписание временно недоступно."
@@ -20260,7 +20306,7 @@ async def gc_render_my_assignment_text(
             "Играй в игры бота - каждая ставка меняет этот баланс и приближает тебя к цели."
         )
 
-        text = "\n".join(lines)
+        text = gc_html_replace_known("\n".join(lines))
         _qdbg(f"[GC] gc_render_my_assignment_text: итоговый текст:\n{text}")
         return text
 
@@ -20343,13 +20389,10 @@ async def gc_build_my_assignment_kb(
         # в callback передаём именно '+' или '-'
         type_cb = f"qst:gc_free_info:{free_flag}"
 
-        builder = InlineKeyboardBuilder()
+        rows: List[List[InlineKeyboardButton]] = []
 
         # ── Кнопка типа задания (самая верхняя) ─────────────────────────────
-        builder.button(
-            text=type_label,
-            callback_data=type_cb,
-        )
+        rows.append([gc_btn(type_label, callback_data=type_cb)])
 
         # ── Кнопка «играть в чат» ───────────────────────────────────────────
         target_chat_username = assignment.get("target_chat_username")
@@ -20362,31 +20405,37 @@ async def gc_build_my_assignment_kb(
                     "[GC] gc_build_my_assignment_kb: добавляем кнопку группы -> "
                     f"text={label!r}, url={url!r}"
                 )
-                builder.button(text=label, url=url)
+                rows.append([gc_btn(label, url=url)])
 
         # ── Прогресс до цели (формат «осталось / цель») ─────────────────────
         if target_amount > 0 and remaining is not None:
             # формат «💦 Осталось: 9 / 10 кут»
-            builder.button(
-                text=f"💦 Осталось: {_fmt_dot(remaining)} / {_fmt_dot(target_amount)} кут",
-                callback_data="noop",
-            )
+            rows.append([
+                gc_btn(
+                    f"💦 Осталось: {_fmt_dot(remaining)} / {_fmt_dot(target_amount)} кут",
+                    callback_data="noop",
+                )
+            ])
 
         # ── Награда ──────────────────────────────────────────────────────────
-        builder.button(
-            text=f"💎 Награда: {_fmt_dot(reward_amount)} кут",
-            callback_data="noop",
-        )
+        rows.append([
+            gc_btn(
+                f"💎 Награда: {_fmt_dot(reward_amount)} кут",
+                callback_data="noop",
+            )
+        ])
 
         # ── Лимит ставки ────────────────────────────────────────────────────
         if betlimit:
             try:
                 betlimit_i = int(betlimit)
                 if betlimit_i > 0:
-                    builder.button(
-                        text=f"🐬 Макс. ставка: {_fmt_dot(betlimit_i)} кут",
-                        callback_data="noop",
-                    )
+                    rows.append([
+                        gc_btn(
+                            f"🐬 Макс. ставка: {_fmt_dot(betlimit_i)} кут",
+                            callback_data="noop",
+                        )
+                    ])
             except Exception as e:
                 _qdbg_exc(
                     "[GC] gc_build_my_assignment_kb: ошибка обработки betlimit",
@@ -20395,23 +20444,19 @@ async def gc_build_my_assignment_kb(
 
         # ── Кнопка прерывания челленджа ─────────────────────────────────────
         # Отсюда уходим в подтверждение, а не сразу в удаление
-        builder.button(
-            text="🥀 Прервать челлендж",
-            callback_data="qst:gc_abort_confirm",
-        )
+        rows.append([
+            gc_btn("🥀 Прервать челлендж", callback_data="qst:gc_abort_confirm")
+        ])
 
         # ── Навигация (челленджи и обратно в меню) ──────────────────────────
-        builder.button(
-            text="🏕 Открыть список челленджей",
-            callback_data="qst:show_gc",
-        )
-        builder.button(
-            text="🏝 В главное меню",
-            callback_data="qst:menu_back",
-        )
+        rows.append([
+            gc_btn("🏕 Открыть список челленджей", callback_data="qst:show_gc")
+        ])
+        rows.append([
+            gc_btn("🏝 В главное меню", callback_data="qst:menu_back")
+        ])
 
-        builder.adjust(1)
-        kb = builder.as_markup()
+        kb = types.InlineKeyboardMarkup(inline_keyboard=rows)
         _qdbg(
             "[GC] gc_build_my_assignment_kb: клавиатура сформирована: "
             f"{kb.inline_keyboard!r}"
@@ -20421,18 +20466,8 @@ async def gc_build_my_assignment_kb(
     except Exception as e:
         _qdbg_exc("[GC] gc_build_my_assignment_kb fail", e)
         rows = [
-            [
-                InlineKeyboardButton(
-                    text="🏕 Открыть список челленджей",
-                    callback_data="qst:show_gc",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🏝 В главное меню",
-                    callback_data="qst:menu_back",
-                )
-            ],
+            [gc_btn("🏕 Открыть список челленджей", callback_data="qst:show_gc")],
+            [gc_btn("🏝 В главное меню", callback_data="qst:menu_back")],
         ]
         return types.InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -20492,8 +20527,8 @@ async def gc_build_after_take_kb(target_chat_ref: Optional[str]) -> types.Inline
                 )
             ])
 
-    rows.append([InlineKeyboardButton(text="🎯 Моё задание", callback_data="qst:gc_my")])
-    rows.append([InlineKeyboardButton(text="🏕 К списку челленджей", callback_data="qst:show_gc")])
+    rows.append([gc_btn("🎯 Моё задание", callback_data="qst:gc_my")])
+    rows.append([gc_btn("🏕 К списку челленджей", callback_data="qst:show_gc")])
     return types.InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -20568,15 +20603,10 @@ async def gc_build_list_kb(
 
     # --- заголовок ---
     header_label = f"🦋 Игровые челленджи - {page + 1}/{pages} стр."
-    rows.append([InlineKeyboardButton(text=header_label, callback_data="noop")])
+    rows.append([gc_btn(header_label, callback_data="noop")])
 
     # помощь
-    rows.append([
-        InlineKeyboardButton(
-            text="❓ Что такое челлендж?",
-            callback_data="qst:gc_help",
-        )
-    ])
+    rows.append([gc_btn("❓ Что такое челлендж?", callback_data="qst:gc_help")])
 
     # разделитель сверху
     rows.append([InlineKeyboardButton(text="⎺⎺" * 19, callback_data="noop")])
@@ -20681,12 +20711,12 @@ async def gc_build_list_kb(
             else:
                 cb = f"qst:gc_show:{tid}"
 
-            rows.append([InlineKeyboardButton(text=label, callback_data=cb)])
+            rows.append([gc_btn(label, callback_data=cb)])
 
         except Exception as e:
             _qdbg_exc("gc_build_list_kb: add template button failed", e)
             rows.append(
-                [InlineKeyboardButton(text="⚠️ Неизвестный челлендж", callback_data="noop")]
+                [gc_btn("⚠️ Неизвестный челлендж", callback_data="noop")]
             )
 
     # разделитель снизу
@@ -20697,17 +20727,11 @@ async def gc_build_list_kb(
         nav_row: List[InlineKeyboardButton] = []
         if page > 0:
             nav_row.append(
-                InlineKeyboardButton(
-                    text="🔙 Назад",
-                    callback_data=f"qst:gc_page:{page - 1}",
-                )
+                gc_btn("🔙 Назад", callback_data=f"qst:gc_page:{page - 1}")
             )
         if (start + GC_PAGE_SIZE) < total:
             nav_row.append(
-                InlineKeyboardButton(
-                    text="Вперёд 🔜",
-                    callback_data=f"qst:gc_page:{page + 1}",
-                )
+                gc_btn("🔜 Вперёд", callback_data=f"qst:gc_page:{page + 1}")
             )
         if nav_row:
             rows.append(nav_row)
@@ -20717,15 +20741,14 @@ async def gc_build_list_kb(
     # кнопка «Моё задание», если есть активный assignment
     if has_active:
         rows.append(
-            [InlineKeyboardButton(text="🎯 Моё задание", callback_data="qst:gc_my")]
+            [gc_btn("🎯 Моё задание", callback_data="qst:gc_my")]
         )
 
-    # обновить / назад в меню
     rows.append(
-        [InlineKeyboardButton(text="♻️ Обновить список", callback_data="qst:gc_refresh")]
+        [gc_btn("♻️ Обновить список", callback_data="qst:gc_refresh")]
     )
     rows.append(
-        [InlineKeyboardButton(text="🏝 В главное меню", callback_data="qst:menu_back")]
+        [gc_btn("🏝 В главное меню", callback_data="qst:menu_back")]
     )
 
     try:
@@ -20734,7 +20757,7 @@ async def gc_build_list_kb(
         _qdbg_exc("gc_build_list_kb: InlineKeyboardMarkup build failed", e)
         return types.InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🏝 В главное меню", callback_data="qst:menu_back")]
+                [gc_btn("🏝 В главное меню", callback_data="qst:menu_back")]
             ]
         )
 
@@ -21281,7 +21304,7 @@ async def gc_build_task_kb(
 
     _qdbg(f"[GC] gc_build_task_kb: start, template_id={template_id}, meta={meta!r}")
 
-    builder = InlineKeyboardBuilder()
+    rows: List[List[InlineKeyboardButton]] = []
 
     # ---- Достаём числа из meta с защитой ----
     try:
@@ -21332,7 +21355,7 @@ async def gc_build_task_kb(
                 "[GC] gc_build_task_kb: добавляем кнопку группы -> "
                 f"text={label!r}, url={url!r}"
             )
-            builder.button(text=label, url=url)
+            rows.append([gc_btn(label, url=url)])
 
     # ---- Строим строку сводки ----
     summary_parts: List[str] = []
@@ -21364,18 +21387,14 @@ async def gc_build_task_kb(
     # ---- Кнопка сводки (по нажатию покажем alert с инфой) ----
     info_cb = f"qst:gc_info:{template_id}"
     _qdbg(f"[GC] gc_build_task_kb: info_cb={info_cb!r}")
-    builder.button(
-        text=summary,
-        callback_data=info_cb,
-    )
+    rows.append([gc_btn(summary, callback_data=info_cb)])
 
     # ---- Кнопка «🎮 Взять это задание» ----
     start_cb = _gc_task_cb_start(template_id)
     _qdbg(f"[GC] gc_build_task_kb: кнопка старта callback_data={start_cb!r}")
-    builder.button(
-        text="🎮 Взять это задание",
-        callback_data=start_cb,
-    )
+    rows.append([
+        gc_btn("🎮 Взять это задание", callback_data=start_cb)
+    ])
 
     # ---- (опционально) обработка queb, если нужна кнопка вывода ----
     if only_gc:
@@ -21386,11 +21405,9 @@ async def gc_build_task_kb(
         # при желании сюда можно добавить кнопку вывода виртуального баланса
 
     # ---- Навигация ----
-    builder.button(text="🏕 Вернуться к списку", callback_data="qst:show_gc")
+    rows.append([gc_btn("🏕 Вернуться к списку", callback_data="qst:show_gc")])
 
-    builder.adjust(1)
-
-    kb = builder.as_markup()
+    kb = types.InlineKeyboardMarkup(inline_keyboard=rows)
     _qdbg("[GC] gc_build_task_kb: клавиатура сформирована")
     return kb
 
@@ -21645,24 +21662,19 @@ async def gc_abort_confirm_callback(callback_query: types.CallbackQuery):
             return
 
         # Короткое меню: завершить челлендж / назад
-        kb_builder = InlineKeyboardBuilder()
-        kb_builder.button(
-            text="🌴 Завершить челлендж",
-            callback_data="qst:gc_abort_do_bal",  # второй шаг, только для баланса
+        kb = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [gc_btn("🌴 Завершить челлендж", callback_data="qst:gc_abort_do_bal")],
+                [gc_btn("🏕 Назад", callback_data=f"balance:{balance_owner_id}")],
+            ]
         )
-        kb_builder.button(
-            text="🏕 Назад",
-            callback_data=f"balance:{balance_owner_id}",
-        )
-        kb_builder.adjust(1)
-        kb = kb_builder.as_markup()
 
-        # В тексте оставляем "💰", просто меняем клавиатуру
+        # В тексте оставляем premium 💰, просто меняем клавиатуру
         try:
             await _safe_edit_message_text(
                 chat_id=msg.chat.id,
                 message_id=msg.message_id,
-                text="💰",
+                text=gc_tg("💰"),
                 reply_markup=kb,
                 replacement_sticker=None,
             )
@@ -21720,13 +21732,14 @@ async def gc_abort_confirm_callback(callback_query: types.CallbackQuery):
             "а задание больше не будет активным."
         )
 
-        text = "\n".join(lines)
+        text = gc_html_replace_known("\n".join(lines))
 
-        kb_builder = InlineKeyboardBuilder()
-        kb_builder.button(text="🌴 Завершить челлендж", callback_data="qst:gc_abort_do")
-        kb_builder.button(text="🏕 Назад", callback_data="qst:gc_my")
-        kb_builder.adjust(1)
-        kb = kb_builder.as_markup()
+        kb = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [gc_btn("🌴 Завершить челлендж", callback_data="qst:gc_abort_do")],
+                [gc_btn("🏕 Назад", callback_data="qst:gc_my")],
+            ]
+        )
 
         if callback_query.message:
             await _safe_edit_message_text(
@@ -21820,12 +21833,7 @@ async def gc_abort_do_from_balance_callback(callback_query: types.CallbackQuery)
     # Кнопка "Вернуться назад" → обратно к балансу
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🏕 Вернуться назад",
-                    callback_data=f"balance:{owner_id}",
-                )
-            ]
+            [gc_btn("🏕 Вернуться назад", callback_data=f"balance:{owner_id}")]
         ]
     )
 
@@ -21833,7 +21841,7 @@ async def gc_abort_do_from_balance_callback(callback_query: types.CallbackQuery)
         await _safe_edit_message_text(
             chat_id=chat_id,
             message_id=msg_id,
-            text="💰",
+            text=gc_tg("💰"),
             reply_markup=kb,
             replacement_sticker=None,
         )
@@ -21856,7 +21864,7 @@ async def gc_abort_do_callback(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     _qdbg(f"[GC] gc_abort_do_callback: пользователь={user_id}")
 
-    async def _ans(text: str, alert: bool = True):
+    async def _ans(text: str = "", alert: bool = False):
         await _gc_safe_answer(callback_query, text, alert)
 
     try:
@@ -21886,23 +21894,18 @@ async def gc_abort_do_callback(callback_query: types.CallbackQuery):
         # Успешно прервали
         await _ans("Челлендж прерван. Ты можешь выбрать новый челлендж.", False)
 
-        text = (
+        text = gc_html_replace_known(
             "⛱ <b>Челлендж остановлен.</b>\n\n"
             "Текущее игровое задание больше не активно.\n"
             "Когда будешь готов - выбери новый челлендж из списка."
         )
 
-        kb_builder = InlineKeyboardBuilder()
-        kb_builder.button(
-            text="🦋 К списку челленджей",
-            callback_data="qst:show_gc",
+        kb = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [gc_btn("🦋 К списку челленджей", callback_data="qst:show_gc")],
+                [gc_btn("🏝 В главное меню", callback_data="qst:menu_back")],
+            ]
         )
-        kb_builder.button(
-            text="🏝 В главное меню",
-            callback_data="qst:menu_back",
-        )
-        kb_builder.adjust(1)
-        kb = kb_builder.as_markup()
 
         if callback_query.message:
             _qdbg(
@@ -22288,7 +22291,7 @@ async def gc_show_menu(callback_query: types.CallbackQuery):
                 "Выберите челлендж из списка ниже.",
             ])
 
-        header_text = "\n".join(lines)
+        header_text = gc_html_replace_known("\n".join(lines))
         kb = await gc_build_list_kb(templates, page=0, queb=queb, has_active=has_active)
 
         if callback_query.message:
@@ -22343,7 +22346,7 @@ async def gc_page_callback(callback_query: types.CallbackQuery):
             _qdbg(f"gc_page_callback: no templates -> empty screen user={user_id}")
             return
 
-        header_text = (
+        header_text = gc_html_replace_known(
             "🦋 <b>Доступные игровые челленджи</b>\n\n"
             "Выберите челлендж из списка ниже."
         )
@@ -22411,14 +22414,14 @@ async def gc_broken_callback(callback_query: types.CallbackQuery):
             "Напишите админу группы или выберите другое задание.",
         ]
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏕 К списку челленджей", callback_data="qst:show_gc")],
-            [InlineKeyboardButton(text="🏝 В главное меню", callback_data="qst:menu_back")],
+            [gc_btn("🏕 К списку челленджей", callback_data="qst:show_gc")],
+            [gc_btn("🏝 В главное меню", callback_data="qst:menu_back")],
         ])
         if callback_query.message:
             await _safe_edit_message_text(
                 chat_id=callback_query.message.chat.id,
                 message_id=callback_query.message.message_id,
-                text="\n".join(lines),
+                text=gc_html_replace_known("\n".join(lines)),
                 reply_markup=kb,
                 replacement_sticker=GC_STICKER_LIST,
             )
@@ -22663,7 +22666,7 @@ async def gc_refresh_callback(callback_query: types.CallbackQuery):
             _qdbg(f"gc_refresh_callback: no templates -> empty UI for user={user_id}")
             return
 
-        text = (
+        text = gc_html_replace_known(
             "<b>🦋 Обновлён список игровых челленджей</b>\n"
             "Выберите задание ниже."
         )
@@ -22725,7 +22728,7 @@ async def gc_start_callback(callback_query: types.CallbackQuery):
     raw = (callback_query.data or "").split(":", 2)[2] if callback_query.data else ""
     _qdbg(f"gc_start_callback: user={user_id}, raw={raw}")
 
-    async def _safe_answer(text: str, alert: bool = True):
+    async def _safe_answer(text: str = "", alert: bool = False):
         await _gc_safe_answer(callback_query, text, alert)
 
     try:
@@ -22837,16 +22840,20 @@ async def gc_start_callback(callback_query: types.CallbackQuery):
                 "",
                 "Выберите, что сделать:",
             ]
-            txt = "\n".join(txt_lines)
+            txt = gc_html_replace_known("\n".join(txt_lines))
 
-            kb = InlineKeyboardBuilder()
-            kb.button(
-                text="✅ Заменить текущий челлендж" , callback_data=f"qst:gctake_force:{template_id}" , )
-            kb.button(
-                text="🏝 Показать текущее задание" , callback_data="qst:gc_my" , )
-            kb.button(
-                text="🏕 Вернуться к списку" , callback_data="qst:show_gc" , )
-            kb.adjust(1)
+            kb = types.InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="✅ Заменить текущий челлендж",
+                            callback_data=f"qst:gctake_force:{template_id}",
+                        )
+                    ],
+                    [gc_btn("🏝 Показать текущее задание", callback_data="qst:gc_my")],
+                    [gc_btn("🏕 Вернуться к списку", callback_data="qst:show_gc")],
+                ]
+            )
 
             if callback_query.message:
                 try:
@@ -22854,7 +22861,7 @@ async def gc_start_callback(callback_query: types.CallbackQuery):
                         chat_id=callback_query.message.chat.id,
                         message_id=callback_query.message.message_id,
                         text=txt,
-                        reply_markup=kb.as_markup(),
+                        reply_markup=kb,
                         replacement_sticker=GC_STICKER_DETAILS,
                     )
                 except Exception as e:
@@ -22956,7 +22963,7 @@ async def gc_start_callback(callback_query: types.CallbackQuery):
         if target_chat_ref:
             short_lines.append(f"• Играть в: <code>{html.escape(str(target_chat_ref))}</code>")
 
-        short_text = "\n".join(short_lines)
+        short_text = gc_html_replace_known("\n".join(short_lines))
         post_kb = await gc_build_after_take_kb(target_chat_ref)
 
         if callback_query.message:
@@ -22996,7 +23003,7 @@ async def gc_take_force_callback(callback_query: types.CallbackQuery):
         await _gc_safe_answer(callback_query, "Неверные данные.", True)
         return
 
-    async def _safe_answer(text: str, alert: bool = True):
+    async def _safe_answer(text: str = "", alert: bool = False):
         await _gc_safe_answer(callback_query, text, alert)
 
     try:
@@ -23160,7 +23167,7 @@ async def gc_take_force_callback(callback_query: types.CallbackQuery):
         if target_chat_ref:
             short_lines.append(f"• Играть в: <code>{html.escape(str(target_chat_ref))}</code>")
 
-        short_text = "\n".join(short_lines)
+        short_text = gc_html_replace_known("\n".join(short_lines))
         post_kb = await gc_build_after_take_kb(target_chat_ref)
 
         if callback_query.message:
@@ -23572,12 +23579,7 @@ async def gc_process_bet(
 
             if status == "completed":
                 rows.append(
-                    [
-                        InlineKeyboardButton(
-                            text="🌴 Выполнено",
-                            callback_data="gc_status_done",
-                        )
-                    ]
+                    [gc_btn("🌴 Выполнено", callback_data="gc_status_done")]
                 )
                 if reward and reward > 0:
                     reward_text = f"+ {reward} кут"
@@ -23591,12 +23593,7 @@ async def gc_process_bet(
                     )
             elif status == "failed":
                 rows.append(
-                    [
-                        InlineKeyboardButton(
-                            text="🔥 Провалено",
-                            callback_data="gc_status_fail",
-                        )
-                    ]
+                    [gc_btn("🔥 Провалено", callback_data="gc_status_fail")]
                 )
 
             kb_local = InlineKeyboardMarkup(inline_keyboard=rows)
@@ -38691,6 +38688,9 @@ class BalanceEngineWatcher:
         self._locks: Dict[int, asyncio.Lock] = {}
         self._last_seen: Dict[int, float] = {}
         self.HARD_MIN_GAP_SEC = 45.0
+        # Чтобы карты не росли бесконечно за сутки аптайма
+        self._TRIM_IDLE_SEC = 6 * 3600
+        self._TRIM_MAX_ENTRIES = 5000
 
     def _lock(self, uid: int) -> asyncio.Lock:
         lk = self._locks.get(uid)
@@ -38698,6 +38698,42 @@ class BalanceEngineWatcher:
             lk = asyncio.Lock()
             self._locks[uid] = lk
         return lk
+
+    def trim(self) -> Dict[str, int]:
+        """Удаляет устаревшие uid-записи (самолечение кнопок/пула БД)."""
+        now = time.monotonic()
+        idle_before = now - float(self._TRIM_IDLE_SEC)
+        removed = 0
+
+        for uid, ts in list(self._last_seen.items()):
+            lk = self._locks.get(uid)
+            if lk is not None and lk.locked():
+                continue
+            if ts < idle_before:
+                self._last_seen.pop(uid, None)
+                self._next_check_at.pop(uid, None)
+                self._locks.pop(uid, None)
+                removed += 1
+
+        # Жёсткий потолок на случай огромного трафика
+        if len(self._last_seen) > self._TRIM_MAX_ENTRIES:
+            oldest = sorted(self._last_seen.items(), key=lambda x: x[1])
+            overflow = len(self._last_seen) - self._TRIM_MAX_ENTRIES
+            for uid, _ in oldest[:overflow]:
+                lk = self._locks.get(uid)
+                if lk is not None and lk.locked():
+                    continue
+                self._last_seen.pop(uid, None)
+                self._next_check_at.pop(uid, None)
+                self._locks.pop(uid, None)
+                removed += 1
+
+        return {
+            "removed": removed,
+            "seen": len(self._last_seen),
+            "locks": len(self._locks),
+            "next": len(self._next_check_at),
+        }
 
     async def tick(self, user_id: int) -> None:
         uid = int(user_id)
@@ -38722,7 +38758,18 @@ class BalanceEngineWatcher:
             if nxt2 is not None and now2 < nxt2:
                 return
 
-            st, last_active, elapsed, remaining, played, needed, next_after = await self.db.ensure_balance_status_engine(uid)
+            # ensure_balance_status_engine → 8 значений (последнее burned_now)
+            (
+                st,
+                last_active,
+                elapsed,
+                remaining,
+                played,
+                needed,
+                next_after,
+                burned_now,
+            ) = await self.db.ensure_balance_status_engine(uid)
+            _ = (st, last_active, elapsed, remaining, played, needed, burned_now)
             self._next_check_at[uid] = time.monotonic() + float(next_after)
 
 
@@ -38740,10 +38787,10 @@ class BalanceEngineMiddleware(BaseMiddleware):
 
     async def __call__(self, handler, event, data):
         try:
+            # НЕ тикаем на callback_query: кнопки должны оставаться лёгкими.
+            # Движок баланса достаточно гонять по приватным сообщениям.
             uid = None
-            if isinstance(event, CallbackQuery) and event.from_user:
-                uid = event.from_user.id
-            elif isinstance(event, Message) and event.from_user:
+            if isinstance(event, Message) and event.from_user:
                 if event.chat and getattr(event.chat, "type", None) == ChatType.PRIVATE:
                     uid = event.from_user.id
 
@@ -39125,6 +39172,15 @@ async def run_bot():
             balance_engine_watcher = BalanceEngineWatcher(db)
             dp.update.middleware(BalanceEngineMiddleware(balance_engine_watcher))
             print("✅ [BALANCE] engine middleware подключен")
+            try:
+                from bot.magic.install import start_magic_health
+
+                # interval берётся из bot/magic/config.py (HEALTH_INTERVAL_SEC)
+                start_magic_health(
+                    balance_watcher=balance_engine_watcher,
+                )
+            except Exception as e_bh:
+                print(f"⚠️ [MAGIC] health не запущен: {e_bh!r}")
         except Exception as e:
             print(f"⚠️ [BALANCE] Ошибка подключения engine: {e!r}")
 

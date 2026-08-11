@@ -221,7 +221,7 @@ async def inline_tic_tac_create_game_callback(callback_query: types.CallbackQuer
         await _sync_inline_user(callback_query)
 
         if await db.is_user_banned(user_id):
-            await callback_query.answer("❗️ Вы заблокированы в боте")
+            await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
             return
 
         data_parts = callback_query.data.split(":")
@@ -289,7 +289,7 @@ async def inline_tic_tac_set_board_size(callback: types.CallbackQuery):
 
         user_id = callback.from_user.id
         if await db.is_user_banned(user_id):
-            await callback.answer("❗️ Вы заблокированы в боте")
+            await callback.answer("❗️ Вы заблокированы в боте", show_alert=True)
             return
 
         game = tic_tac_toe_games.get(game_id)
@@ -309,7 +309,7 @@ async def inline_tic_tac_set_board_size(callback: types.CallbackQuery):
         game["board"] = [" "] * (_board_size_to_int(board_size) ** 2)
 
         keyboard = _build_inline_lobby_keyboard(game_id, started=False)
-        await callback.answer(f"❕ Формат игры изменён на {board_size}")
+        await callback.answer(f"❕ Формат игры изменён на {board_size}", show_alert=True)
 
         if callback.inline_message_id:
             await bot1.edit_message_reply_markup(
@@ -346,14 +346,14 @@ async def inline_tic_tac_set_board_start_size(callback: types.CallbackQuery):
             return
 
         if game["board_size"] == board_size:
-            await callback.answer(f"❕ Формат {board_size} уже установлен")
+            await callback.answer(f"❕ Формат {board_size} уже установлен", show_alert=True)
             return
 
         game["board_size"] = board_size
         game["board"] = [" "] * (_board_size_to_int(board_size) ** 2)
 
         keyboard = _build_inline_lobby_keyboard(game_id, started=True)
-        await callback.answer(f"❕ Формат игры изменён на {board_size}")
+        await callback.answer(f"❕ Формат игры изменён на {board_size}", show_alert=True)
 
         if callback.inline_message_id:
             await bot1.edit_message_reply_markup(
@@ -409,7 +409,7 @@ async def inline_tic_tac_join_game_callback(callback_query: types.CallbackQuery)
 
         inflight_key = (game_id, user_id)
         if inflight_key in _ttt_inline_inflight:
-            await callback_query.answer("⏳ Обрабатываю ваше присоединение…")
+            await callback_query.answer("⏳ Обрабатываю ваше присоединение…", show_alert=True)
             return
         _ttt_inline_inflight.add(inflight_key)
 
@@ -543,7 +543,7 @@ async def inline_tic_tac_join_game_callback(callback_query: types.CallbackQuery)
                 if "message is not modified" not in str(e).lower():
                     print(f"[INLINE_TTT][JOIN][EDIT] {e}")
 
-            await callback_query.answer("❕ Вы присоединились к игре!")
+            await callback_query.answer("❕ Вы присоединились к игре!", show_alert=True)
 
     except Exception as e:
         print(f"[INLINE_TTT][JOIN] {e}")
@@ -624,7 +624,7 @@ async def inline_tic_tac_start_game_callback(callback_query: types.CallbackQuery
         }
 
         await display_board(game_id, game.get("inline_message_id"))
-        await callback_query.answer("❕ Игра началась!")
+        await callback_query.answer("❕ Игра началась!", show_alert=True)
 
     except Exception as e:
         print(f"[INLINE_TTT][START] {e}")
@@ -711,7 +711,7 @@ async def inline_tic_tac_make_move_callback(callback_query: types.CallbackQuery)
 
         game = tic_tac_toe_games.get(game_id)
         if game is None:
-            await callback_query.answer("🛠 Эта игра больше не существует.")
+            await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
             return
 
         inline_message_id = game.get("inline_message_id")
@@ -724,17 +724,17 @@ async def inline_tic_tac_make_move_callback(callback_query: types.CallbackQuery)
         inline_ttt_cooldowns[user_id] = now
 
         if user_id not in [int(game["creator"]), int(game["opponent"])]:
-            await callback_query.answer("❗️ Вы не участвуете в этой игре.")
+            await callback_query.answer("❗️ Вы не участвуете в этой игре.", show_alert=True)
             return
 
         if int(game["turn"]) != user_id:
-            await callback_query.answer("❗️ Это не ваш ход.")
+            await callback_query.answer("❗️ Это не ваш ход.", show_alert=True)
             return
 
         board_size = _board_size_to_int(game["board_size"])
 
         if game["board"][position] != " ":
-            await callback_query.answer("❗️ Это поле уже занято.")
+            await callback_query.answer("❗️ Это поле уже занято.", show_alert=True)
             return
 
         await callback_query.answer()
@@ -896,7 +896,7 @@ async def inline_tic_tac_make_move_callback(callback_query: types.CallbackQuery)
             )
 
             del tic_tac_toe_games[game_id]
-            await callback_query.answer("❕ Ничья!")
+            await callback_query.answer("❕ Ничья!", show_alert=True)
             return
 
         game["turn"] = int(game["creator"]) if int(game["turn"]) == int(game["opponent"]) else int(game["opponent"])
@@ -930,13 +930,13 @@ async def inline_tic_tac_surrender_callback(callback_query: types.CallbackQuery)
 
         game = tic_tac_toe_games.get(game_id)
         if game is None:
-            await callback_query.answer("🛠 Эта игра больше не существует.")
+            await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
             return
 
         inline_message_id = game.get("inline_message_id")
 
         if user_id not in [int(game["creator"]), int(game["opponent"])]:
-            await callback_query.answer("❗️ Вы не участвуете в этой игре.")
+            await callback_query.answer("❗️ Вы не участвуете в этой игре.", show_alert=True)
             return
 
         if user_id == int(game["creator"]):
@@ -1027,7 +1027,7 @@ async def inline_tic_tac_surrender_callback(callback_query: types.CallbackQuery)
         )
 
         del tic_tac_toe_games[game_id]
-        await callback_query.answer("❕ Вы сдались.")
+        await callback_query.answer("❕ Вы сдались.", show_alert=True)
 
     except Exception as e:
         print(f"[INLINE_TTT][SURRENDER] {e}")

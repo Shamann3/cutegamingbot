@@ -1421,6 +1421,50 @@ export async function completeGiveawayAdmin(giveawayId) {
   return adminFetch(`/content/giveaways/${giveawayId}/complete`, { method: 'POST' })
 }
 
+export async function fetchBotQuestsOverview() {
+  return adminFetch('/bot-quests/overview')
+}
+
+export async function fetchBotSubTasks() {
+  return adminFetch('/bot-quests/sub-tasks')
+}
+
+export async function createBotSubTask(payload) {
+  return adminFetch('/bot-quests/sub-tasks', { method: 'POST', body: payload })
+}
+
+export async function bulkCreateBotSubTasks(items) {
+  return adminFetch('/bot-quests/sub-tasks/bulk', { method: 'POST', body: { items } })
+}
+
+export async function patchBotSubTask(taskId, payload) {
+  return adminFetch(`/bot-quests/sub-tasks/${taskId}`, { method: 'PATCH', body: payload })
+}
+
+export async function deleteBotSubTask(taskId) {
+  return adminFetch(`/bot-quests/sub-tasks/${taskId}`, { method: 'DELETE' })
+}
+
+export async function fetchBotChallenges() {
+  return adminFetch('/bot-quests/challenges')
+}
+
+export async function createBotChallenge(payload) {
+  return adminFetch('/bot-quests/challenges', { method: 'POST', body: payload })
+}
+
+export async function bulkCreateBotChallenges(items) {
+  return adminFetch('/bot-quests/challenges/bulk', { method: 'POST', body: { items } })
+}
+
+export async function patchBotChallenge(templateId, payload) {
+  return adminFetch(`/bot-quests/challenges/${templateId}`, { method: 'PATCH', body: payload })
+}
+
+export async function disableBotChallenge(templateId) {
+  return adminFetch(`/bot-quests/challenges/${templateId}`, { method: 'DELETE' })
+}
+
 export async function fetchBroadcastOverview() {
   return adminFetch('/broadcast/overview')
 }

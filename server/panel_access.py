@@ -37,6 +37,13 @@ PANEL_SECTION_DEFS: list[dict] = [
     {"id": "farm", "label": "Ферма", "group": "economy", "permissions": ["manage_farm"]},
     {"id": "content", "label": "Контент", "group": "content", "permissions": ["manage_content"]},
     {"id": "giveaways", "label": "Розыгрыши", "group": "content", "permissions": ["manage_content"]},
+    {
+        "id": "botQuests",
+        "label": "Задания TG",
+        "group": "content",
+        "permissions": [],
+        "ownerOnly": True,
+    },
     {"id": "events", "label": "Ивенты", "group": "content", "permissions": ["manage_events"]},
     {"id": "broadcast", "label": "Рассылка", "group": "content", "permissions": ["manage_broadcast"]},
     {

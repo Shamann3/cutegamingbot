@@ -7,6 +7,7 @@ from bot.design.buttons import *
 from bot.db_create.db import *
 from bot.config.config import *
 from main import bot1, dp
+from bot.games.group_only import reject_if_private_game
 
 from aiogram.types import ReplyKeyboardMarkup
 from aiogram.enums import ParseMode, ChatType  # Импортируем ParseMode из aiogram.enums
@@ -76,6 +77,9 @@ async def mines(message: Message):
         bet_str = '0'  # Устанавливаем bet_str как строку '0'
     else:
         # Неправильный формат команды, выходим
+        return
+
+    if await reject_if_private_game(message):
         return
 
     try:
@@ -192,7 +196,7 @@ async def mines_join_game_callback(callback_query: CallbackQuery):
     inflight_key = (game_id, user_id)
     if inflight_key in _mines_inflight:
         try:
-            await callback_query.answer("⏳ Обрабатываю ваше присоединение…")
+            await callback_query.answer("⏳ Обрабатываю ваше присоединение…", show_alert=True)
         except Exception:
             pass
         return
@@ -398,7 +402,7 @@ async def mines_join_game_callback(callback_query: CallbackQuery):
                     print(f"[MINES] edit_message_text error: {e}")
 
             try:
-                await callback_query.answer("❕ Вы присоединились к игре!")
+                await callback_query.answer("❕ Вы присоединились к игре!", show_alert=True)
             except Exception:
                 pass
 
@@ -425,19 +429,19 @@ async def mines_start_game_callback(callback_query: CallbackQuery):
 
     if game_id not in gamesmine:
         print(f"Отладка: Игра с ID {game_id} не найдена в gamesmine.")
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     game = gamesmine[game_id]
 
     if user_id != game['creator']:
         print(f"Отладка: Пользователь с ID {user_id} пытается начать игру, но он не создатель.")
-        await callback_query.answer("💭 Только создатель игры может начать игру.")
+        await callback_query.answer("💭 Только создатель игры может начать игру.", show_alert=True)
         return
 
     if len(game['participants']) != 2:
         print(f"Отладка: В игре с ID {game_id} должно быть 2 игрока.")
-        await callback_query.answer("💭 В игре должны участвовать 2 игрока.")
+        await callback_query.answer("💭 В игре должны участвовать 2 игрока.", show_alert=True)
         return
     await callback_query.answer()
 
@@ -505,7 +509,7 @@ async def mines_mine_click_callback(callback_query: CallbackQuery):
 
     if game_id not in gamesmine:
         print(f"Отладка: Игра с ID {game_id} не найдена в gamesmine.")
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     game = gamesmine[game_id]
@@ -515,23 +519,23 @@ async def mines_mine_click_callback(callback_query: CallbackQuery):
     # запросов балансов.
     if not game['game_active']:
         print(f"Отладка: Игра с ID {game_id} уже завершена.")
-        await callback_query.answer("💭 Игра уже завершена.")
+        await callback_query.answer("💭 Игра уже завершена.", show_alert=True)
         return
 
     if user_id != game['turn']:
         print(f"Отладка: Ход пользователя с ID {user_id}, но это не его ход.")
-        await callback_query.answer("❕ Сейчас не ваш ход.")
+        await callback_query.answer("❕ Сейчас не ваш ход.", show_alert=True)
         return
 
     if x < 0 or x >= 25:
         print(f"Отладка: Некорректная позиция: {x}. Должно быть от 0 до 24.")
-        await callback_query.answer("💭 Некорректная позиция.")
+        await callback_query.answer("💭 Некорректная позиция.", show_alert=True)
         return
 
     # Проверка на разминирование
     if game['board'][x] in ['✔️', '✖️']:
         print(f"Отладка: Пользователь с ID {user_id} попытался нажать на уже разминированную клетку {x}.")
-        await callback_query.answer("❕ Эта клетка уже разминирована.")
+        await callback_query.answer("❕ Эта клетка уже разминирована.", show_alert=True)
         return
 
     # Гасим спиннер кнопки СРАЗУ, до сетевых/БД задержек - иначе кнопка «висит».

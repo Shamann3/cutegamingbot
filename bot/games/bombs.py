@@ -27,6 +27,8 @@ from bot.funcs.func import *     # noqa
 from bot.db_create.db import *   # noqa
 from bot.design.buttons import * # noqa
 
+from bot.games.group_only import reject_if_private_game
+from bot.funcs.tech_home_log import safe_send_tech_log
 from main import (
     bot1, dp, db,
     bombs_user_game_data, button_bombs_user_game_data,  # noqa
@@ -378,13 +380,20 @@ async def _home_take_and_log_bombs_nuke(*, user_id: int, loss: int, source_chat_
             ]
         )
 
-        # Отправка: только эмодзи бомбы + инлайн-клавиатура
-        await bot1.send_message(
-            chat_id=int(TECH_CHAT_ID),
-            text=bomb_emoji_html,
+        # Лог в TECH_CHAT: chat not found не должен ронять партию.
+        fallback_text = (
+            f"💣 Бомбы [Ядерный удар]\n"
+            f"⭐️ {name_link1}\n"
+            f"<blockquote><b>+ {_fmt_kut(loss)} на чёрный рынок</b></blockquote>\n"
+            f"<blockquote><b>{_fmt_kut(chat_balance)} кут доступно для выкупов</b></blockquote>"
+        )
+        await safe_send_tech_log(
+            bot1,
+            int(TECH_CHAT_ID),
+            html=bomb_emoji_html,
             reply_markup=inline_kb,
-            parse_mode="HTML",                     # нужно для tg-emoji
-            disable_web_page_preview=True          # на всякий случай
+            fallback_html=fallback_text,
+            tag="BOMBS][NUKE_LOG_SEND",
         )
     except Exception as e:
         dbg_err("NUKE_LOG_ERR", e)
@@ -487,7 +496,11 @@ async def _deactivate_previous_game_ui(user_id: int) -> None:
 
 
 def _finalize_game(uid: int, msg_id: Optional[int] = None) -> None:
+    tip_chat = None
     try:
+        st = bombs_user_game_data.get(uid) or {}
+        if isinstance(st, dict):
+            tip_chat = st.get("chat_id")
         if msg_id and bombs_user_game_data.get(uid, {}).get("message_id") == msg_id:
             bombs_user_game_data.pop(uid, None)
     except Exception:
@@ -505,6 +518,13 @@ def _finalize_game(uid: int, msg_id: Optional[int] = None) -> None:
     _store_save_safe(bombs_positions)
     _store_save_safe(user_message_bombss)
     asyncio.create_task(newbie_safety_net(uid))
+    async def _ob_done():
+        try:
+            from bot.funcs.onboarding import onboarding_notify_game_finished
+            await onboarding_notify_game_finished(uid, message_id=msg_id, chat_id=tip_chat)
+        except Exception:
+            pass
+    asyncio.create_task(_ob_done())
 
 
 async def _session_ttl_watcher(owner_id: int, msg_id: int, chat_id: int):
@@ -527,6 +547,8 @@ async def _session_ttl_watcher(owner_id: int, msg_id: int, chat_id: int):
 # ========================= СТАРТ ИГРЫ =========================
 @dp.message(lambda m: isinstance(m.text, str) and re.match(r"^\s*(бомбы|бомба)\b", m.text.strip().lower()))
 async def bombs(message: Message):
+    if await reject_if_private_game(message):
+        return
     text_raw = (message.text or "").strip()
     if not text_raw:
         return
@@ -572,13 +594,6 @@ async def bombs(message: Message):
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
 
-    if message.chat.type == "private":
-        await message.reply(
-            "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В эту игру можно играть только в публичных группах.</b>",
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
-        return
 
     max_bet = int(bomb_MAX_BET)
     try:

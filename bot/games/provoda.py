@@ -12,6 +12,7 @@
 """
 
 from main import *  # noqa
+from bot.games.group_only import reject_if_private_game
 import asyncio
 import random
 import time
@@ -24,6 +25,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
 from bot.funcs.func import get_bot_username_by_token
+from bot.funcs.tech_home_log import safe_send_tech_log
 
 # Jericho-функции
 from main import (
@@ -485,28 +487,20 @@ async def _home_take_and_log_wires_short(*, bot, user_id: int, loss: int) -> Non
             ]
         )
 
-        try:
-            # Попытка отправить красивое сообщение с кастомным эмодзи и кнопками
-            await bot.send_message(
-                TECH_CHAT_ID,
-                emoji_html,
-                reply_markup=inline_kb,
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-        except Exception:
-            # Fallback: если premium-эмодзи не прошли, шлём простой текст без кнопок
-            fallback_text = (
-                f"⚡️ Провода [Замыкание]\n"
-                f"<blockquote><b>+ {_fmt_int(loss)} на чёрный рынок</b></blockquote>\n"
-                f"<blockquote><b>{_fmt_int(chat_balance)} кут доступно для выкупов</b></blockquote>"
-            )
-            await bot.send_message(
-                TECH_CHAT_ID,
-                fallback_text,
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
+        # Лог в TECH_CHAT: chat not found не должен ронять партию.
+        fallback_text = (
+            f"⚡️ Провода [Замыкание]\n"
+            f"<blockquote><b>+ {_fmt_int(loss)} на чёрный рынок</b></blockquote>\n"
+            f"<blockquote><b>{_fmt_int(chat_balance)} кут доступно для выкупов</b></blockquote>"
+        )
+        await safe_send_tech_log(
+            bot,
+            TECH_CHAT_ID,
+            html=emoji_html,
+            reply_markup=inline_kb,
+            fallback_html=fallback_text,
+            tag="WIRES][SHORT_LOG_SEND",
+        )
     except Exception as e:
         dbg_err("SHORT_LOG_ERR", e)
 
@@ -604,8 +598,12 @@ async def _deactivate_previous_wires_ui(user_id: int):
 
 
 def _finalize_wires_game(user_id: int, result: str = ""):
+    tip_mid = None
+    tip_chat = None
     st = active_games_wires.get(user_id)
     if st:
+        tip_mid = st.get("message_id")
+        tip_chat = st.get("chat_id")
         st.update({
             "closed": True, "settled": True, "settling": False,
             "result": result or st.get("result", ""),
@@ -620,8 +618,16 @@ def _finalize_wires_game(user_id: int, result: str = ""):
         except Exception:
             pass
     if user_message_wires.get(user_id):
+        tip_mid = tip_mid or user_message_wires.get(user_id)
         user_message_wires.pop(user_id, None)
         _save_safe(user_message_wires)
+    async def _ob_done():
+        try:
+            from bot.funcs.onboarding import onboarding_notify_game_finished
+            await onboarding_notify_game_finished(user_id, message_id=tip_mid, chat_id=tip_chat)
+        except Exception:
+            pass
+    asyncio.create_task(_ob_done())
 
 
 async def _session_ttl_watcher(chat_id: int, msg_id: int, owner_id: int, ttl: int):
@@ -680,6 +686,8 @@ async def _session_ttl_watcher(chat_id: int, msg_id: int, owner_id: int, ttl: in
 # ======================================================================
 @dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("провода", "провод"))
 async def provoda(message: Message):
+    if await reject_if_private_game(message):
+        return
     txt = (message.text or "").strip()
     if not txt:
         return
@@ -709,12 +717,6 @@ async def provoda(message: Message):
         except Exception:
             selected_phrase = "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Ставка слишком большая."
         await message.reply(f"<b>{selected_phrase}</b>", parse_mode="HTML", disable_web_page_preview=True)
-        return
-    if message.chat.type == "private":
-        await message.reply(
-            "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В эту игру можно играть только в публичных группах.</b>",
-            parse_mode="HTML", disable_web_page_preview=True,
-        )
         return
 
     user_id = int(message.from_user.id)

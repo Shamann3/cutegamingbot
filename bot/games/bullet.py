@@ -3,6 +3,7 @@ from bot.design.buttons import *
 from bot.db_create.db import *
 from bot.config.config import *
 from main import bot1, dp
+from bot.games.group_only import reject_if_private_game
 
 from aiogram.types import ReplyKeyboardRemove, \
     ReplyKeyboardMarkup, KeyboardButton, \
@@ -66,6 +67,9 @@ async def bullet(message: Message):
     else:
         return  # Неправильный формат команды
 
+    if await reject_if_private_game(message):
+        return
+
     try:
         if bet_str.isdigit():
             bet = int(bet_str)
@@ -84,14 +88,6 @@ async def bullet(message: Message):
         return
 
     #if bet > chat_balance:
-        #if message.chat.type == "private":
-        #    await message.reply(
-        #        "💭 <b>В эту игру можно играть только в публичных группах.</b>" , parse_mode="HTML" ,
-        #        disable_web_page_preview=True)
-        #else:
-        #    await message.reply(
-        #        "💭 <b>В группе недостаточно средств для игры.</b>" , parse_mode="HTML" , disable_web_page_preview=True)
-        #return
 
     # Создаем уникальный идентификатор для игры
     game_id = str(uuid.uuid4())
@@ -127,21 +123,21 @@ async def join_game_callback(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in active_games_bullet:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     game = active_games_bullet [ game_id ]
 
     if user_id == game [ 'creator' ]:
-        await callback_query.answer("💭 Вы не можете присоединиться к своей игре.")
+        await callback_query.answer("💭 Вы не можете присоединиться к своей игре.", show_alert=True)
         return
 
     if len(game [ 'participants' ]) >= 2:
-        await callback_query.answer("❕ Игра заполнена")
+        await callback_query.answer("❕ Игра заполнена", show_alert=True)
         return
 
     if not await db.get_user_balance(user_id) >= game [ 'bet' ]:
-        await callback_query.answer("💭 Недостаточно средств для участия в игре.")
+        await callback_query.answer("💭 Недостаточно средств для участия в игре.", show_alert=True)
         return
 
     game [ 'participants' ].append(user_id)
@@ -176,7 +172,7 @@ async def join_game_callback(callback_query: CallbackQuery):
         text=(f"🎯 <b>Играем в русскую рулетку!\n"
               f"{bet_text}"  # Добавляем текст со ставкой, если она больше 0
               f"{participants_text}</b>") , reply_markup=keyboard , parse_mode="HTML", disable_web_page_preview=True)
-    await callback_query.answer("❕ Вы присоединились к игре!")
+    await callback_query.answer("❕ Вы присоединились к игре!", show_alert=True)
 
 @dp.callback_query(lambda c: c.data.startswith('bulletstart:'))
 async def start_game_callback(callback_query: CallbackQuery):
@@ -187,12 +183,12 @@ async def start_game_callback(callback_query: CallbackQuery):
     # Извлекаем информацию о игре
     game = active_games_bullet.get(game_id)
     if game is None:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     # Проверка на участие пользователя в игре
     if user_id not in game["participants"]:
-        await callback_query.answer("❗ Вы не участвуете в этой игре.")
+        await callback_query.answer("❗ Вы не участвуете в этой игре.", show_alert=True)
         return
 
     # Гасим спиннер сразу, до сетевых/БД запросов ниже.
@@ -240,7 +236,7 @@ async def start_game_callback(callback_query: CallbackQuery):
         reply_markup=keyboard
     )
 
-    await callback_query.answer("❕ Игра началась! Сделайте выбор.")
+    await callback_query.answer("❕ Игра началась! Сделайте выбор.", show_alert=True)
 
 @dp.callback_query(lambda c: c.data in ["shoot_bot", "shoot_self", "spin"])
 async def game_actions(call: types.CallbackQuery):
@@ -254,12 +250,12 @@ async def game_actions(call: types.CallbackQuery):
             break
 
     if game_info is None:
-        await call.answer("❗ Игра не активна. Начните новую игру с командой 'пуля <сумма>'.")
+        await call.answer("❗ Игра не активна. Начните новую игру с командой 'пуля <сумма>'.", show_alert=True)
         return
 
     # Проверка, что текущий игрок - это пользователь
     if game_info['current_player'] != user_id:
-        await call.answer("❗ Не ваш ход.")
+        await call.answer("❗ Не ваш ход.", show_alert=True)
         return
 
     # chat_id/message_id сообщения игры - для безопасного редактирования.

@@ -33,17 +33,17 @@ async def close_bonus_callback(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     user_sub = await db.get_user_subscription(user_id)  # Получаем значение подписки пользователя
     if await db.is_user_banned(user_id):
-        await callback_query.answer("❗️ Вы заблокированы в боте")
+        await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
         return
     if user_sub is None:
-        await callback_query.message.answer("Ошибка: Не удалось получить информацию о подписке.")
+        await callback_query.message.answer("Ошибка: Не удалось получить информацию о подписке.", show_alert=True)
         print("Ошибка: Не удалось получить информацию о подписке пользователя.")
         return
 
     if user_sub == 1:
         await callback_query.message.answer(
             "🛠 <b>Вы уже получили бесплатные куты за подписку.</b>" ,
-            parse_mode="HTML")
+            parse_mode="HTML", show_alert=True)
         print(f"Пользователь {user_id} не может использовать функцию, так как подписка = 1.")
         return
 

@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 from main import *  # noqa
+from bot.games.group_only import reject_if_private_game
+from bot.funcs.tech_home_log import safe_send_tech_log
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from typing import Optional, Tuple, Literal
 import time
@@ -154,12 +156,20 @@ async def _safe_tech_log_trade_broken(*, bot, user_id: int, loss: int) -> None:
             ]
         )
 
-        await bot.send_message(
+        # Лог в TECH_CHAT: chat not found не должен ронять партию.
+        fallback_text = (
+            f"<b>📈 Трейд [ Сделка сорвалась ]</b>\n"
+            f"⭐️ {name_link1}\n"
+            f"+ {_fmt(loss)} на чёрный рынок\n"
+            f"{_fmt(chat_balance)} кут доступно для выкупов"
+        )
+        await safe_send_tech_log(
+            bot,
             TECH_CHAT_ID,
-            emoji_html,
+            html=emoji_html,
             reply_markup=inline_kb,
-            parse_mode="HTML",
-            disable_web_page_preview=True
+            fallback_html=fallback_text,
+            tag="TRADE][BROKEN_LOG_SEND",
         )
     except Exception as e:
         print(f"[TRADE][BROKEN_LOG][EXC] {e}")
@@ -214,13 +224,9 @@ async def trade(message: Message):
         )
         return
 
-    if message.chat.type == "private":
-        await _reply_simple(
-            message,
-            "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
-            "<b>Играть можно только в публичных группах.</b>",
-        )
+    if await reject_if_private_game(message):
         return
+
 
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)

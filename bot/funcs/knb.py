@@ -7,6 +7,7 @@ from bot.design.buttons import *
 from bot.db_create.db import *
 from bot.config.config import *
 from main import bot1, dp
+from bot.games.group_only import reject_if_private_game
 
 from aiogram.types import ReplyKeyboardMarkup
 from aiogram.enums import ParseMode, ChatType  # Импортируем ParseMode из aiogram.enums
@@ -85,6 +86,9 @@ async def knb(message: Message):
             bet = 0
 
         if bet < 0:
+            return
+
+        if await reject_if_private_game(message):
             return
 
         creator_id = message.from_user.id
@@ -205,13 +209,13 @@ async def knb_join_game_callback(callback_query: types.CallbackQuery):
 
         # быстрый отбой, если игры нет
         if game_id not in gamesknb:
-            await callback_query.answer("🛠 Эта игра больше не существует.")
+            await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
             return
 
         # анти-дребезг: не пускаем повторы, пока идёт обработка
         inflight_key = (game_id, user_id)
         if inflight_key in _knb_inflight:
-            await callback_query.answer("⏳ Обрабатываю ваше присоединение…")
+            await callback_query.answer("⏳ Обрабатываю ваше присоединение…", show_alert=True)
             return
         _knb_inflight.add(inflight_key)
 
@@ -219,7 +223,7 @@ async def knb_join_game_callback(callback_query: types.CallbackQuery):
         async with lock:
             # актуальное состояние - внутри лока
             if game_id not in gamesknb:
-                await callback_query.answer("🛠 Эта игра больше не существует.")
+                await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
                 return
 
             game = gamesknb[game_id]
@@ -228,11 +232,11 @@ async def knb_join_game_callback(callback_query: types.CallbackQuery):
 
             # базовые проверки
             if await db.is_user_banned(user_id):
-                await callback_query.answer("❗️ Вы заблокированы в боте")
+                await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
                 return
 
             if user_id == int(game.get('creator')):
-                await callback_query.answer("❕ Вы не можете присоединиться к своей игре.")
+                await callback_query.answer("❕ Вы не можете присоединиться к своей игре.", show_alert=True)
                 return
 
             # нормализуем участников и убираем дубли
@@ -240,11 +244,11 @@ async def knb_join_game_callback(callback_query: types.CallbackQuery):
             game['participants'] = participants
 
             if len(participants) >= MAX_KNB_PLAYERS:
-                await callback_query.answer("💭 В игре нет мест")
+                await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
             if user_id in participants:
-                await callback_query.answer("❕ Вы уже участвуете в этой игре.")
+                await callback_query.answer("❕ Вы уже участвуете в этой игре.", show_alert=True)
                 return
 
             # баланс / ставка
@@ -255,7 +259,7 @@ async def knb_join_game_callback(callback_query: types.CallbackQuery):
             except Exception:
                 enough = False
             if not enough:
-                await callback_query.answer("💭 Недостаточно средств для участия в игре.")
+                await callback_query.answer("💭 Недостаточно средств для участия в игре.", show_alert=True)
                 return
 
             # === Анти-реф защита (строго внутри лока) ===
@@ -296,7 +300,7 @@ async def knb_join_game_callback(callback_query: types.CallbackQuery):
 
             # ---- КРИТИЧЕСКАЯ ТОЧКА: добавляем атомарно ----
             if len(game['participants']) >= MAX_KNB_PLAYERS:
-                await callback_query.answer("💭 В игре нет мест")
+                await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
             game['participants'].append(user_id)
@@ -335,7 +339,7 @@ async def knb_join_game_callback(callback_query: types.CallbackQuery):
                     if "message is not modified" not in str(e).lower():
                         print(f"[KNB] edit_message_text error: {e}")
 
-            await callback_query.answer("❕ Вы присоединились к игре!")
+            await callback_query.answer("❕ Вы присоединились к игре!", show_alert=True)
 
     except Exception as e:
         print(f"[KNB] join error: {e}")
@@ -358,23 +362,23 @@ async def knb_start_game_callback(callback_query: CallbackQuery):
         chat_id = gamesknb [ game_id ] [ "chat_id" ]
         message_id = gamesknb [ game_id ] [ "message_id" ]
         if game_id not in gamesknb:
-            await callback_query.answer("🛠 Эта игра больше не существует.")
+            await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
             return
 
         game = gamesknb[game_id]
 
         if user_id != game['creator']:
-            await callback_query.answer("💭 Только создатель игры может начать игру.")
+            await callback_query.answer("💭 Только создатель игры может начать игру.", show_alert=True)
             return
 
         if len(game['participants']) < 2:
-            await callback_query.answer("💭 Невозможно начать игру. Недостаточно участников.")
+            await callback_query.answer("💭 Невозможно начать игру. Недостаточно участников.", show_alert=True)
             return
 
         bet = game['bet']
         current_balance = await db.get_user_balance(user_id)
         if current_balance is None or current_balance < bet:
-            await callback_query.answer("💭 Недостаточно средств для старта игры.")
+            await callback_query.answer("💭 Недостаточно средств для старта игры.", show_alert=True)
             return
 
         await callback_query.answer()
@@ -427,17 +431,17 @@ async def knb_choose_callback(callback_query: CallbackQuery):
         chat_id = gamesknb [ game_id ] [ "chat_id" ]
         message_id = gamesknb [ game_id ] [ "message_id" ]
         if game_id not in gamesknb:
-            await callback_query.answer("🛠 Эта игра больше не существует.")
+            await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
             return
 
         game = gamesknb[game_id]
 
         if user_id not in game['participants']:
-            await callback_query.answer("💭 Вы не участвуете в этой игре.")
+            await callback_query.answer("💭 Вы не участвуете в этой игре.", show_alert=True)
             return
 
         if user_id in game['choices']:
-            await callback_query.answer("❕ Вы уже сделали свой выбор!")
+            await callback_query.answer("❕ Вы уже сделали свой выбор!", show_alert=True)
             return
 
         # Проверка текущего баланса пользователя
@@ -462,12 +466,12 @@ async def knb_choose_callback(callback_query: CallbackQuery):
 
         game['choices'][user_id] = choice
 
-        await callback_query.answer(f"{get_choice_text(choice)}")
+        await callback_query.answer(f"{get_choice_text(choice)}", show_alert=True)
 
         if len(game['choices']) == len(game['participants']):
             await declare_winner(chat_id, message_id, game_id)
         else:
-            await callback_query.answer("❕ Вы сделали свой выбор!")
+            await callback_query.answer("❕ Вы сделали свой выбор!", show_alert=True)
     except Exception as e:
         print(f"Ошибка в choose_callback: {e}")
     gamesknb.save()

@@ -65,6 +65,14 @@ async def run_admin_bot() -> None:
 
     dp = Dispatcher()
 
+    # Мэджик: все inline-кнопки admin-бота
+    try:
+        from bot.magic import install_magic
+
+        install_magic(dp, start_health=False)
+    except Exception as _magic_err:
+        logger.warning("Magic not attached to admin bot: %r", _magic_err)
+
     if ADMIN_WEBAPP_URL:
         await bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(

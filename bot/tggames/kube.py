@@ -13,6 +13,7 @@
 """
 
 from main import *  # noqa: F401,F403
+from bot.games.group_only import reject_if_private_game
 
 import asyncio
 import random
@@ -26,6 +27,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
 from bot.funcs.func import get_bot_username_by_token
+from bot.funcs.tech_home_log import safe_send_tech_log
 
 # Jericho
 from main import jericho_check, welcome_back_gift, newbie_safety_net, force_repay_debt
@@ -422,23 +424,18 @@ async def _home_take_and_log_kube_lost(*, user_id: int, loss: int) -> None:
             ]
         )
 
-        # Основная отправка с premium-эмодзи и кнопками
-        try:
-            await bot1.send_message(
-                int(TECH_CHAT_ID),
-                emoji_html,
-                reply_markup=inline_kb,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-        except Exception:
-            # Fallback: обычный HTML-текст без кнопок
-            await bot1.send_message(
-                int(TECH_CHAT_ID),
-                f"🎲 Куб [Кубик потерялся]\n<blockquote><b>+ {_fmt_int(loss)} на чёрный рынок</b></blockquote>\n<blockquote><b>{_fmt_int(chat_balance)} кут доступно для выкупов</b></blockquote>",
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
+        await safe_send_tech_log(
+            bot1,
+            int(TECH_CHAT_ID),
+            html=emoji_html,
+            reply_markup=inline_kb,
+            fallback_html=(
+                f"🎲 Куб [Кубик потерялся]\n"
+                f"<blockquote><b>+ {_fmt_int(loss)} на чёрный рынок</b></blockquote>\n"
+                f"<blockquote><b>{_fmt_int(chat_balance)} кут доступно для выкупов</b></blockquote>"
+            ),
+            tag="HOME_LOST_LOG_SEND",
+        )
 
     except Exception as e:
         _kdbg_err("HOME_LOST_LOG", e)
@@ -563,11 +560,9 @@ async def _tgkube_free_game(message: Message, user_id: int, chat_id: int, bet_in
 # ===================== ОСНОВНАЯ ИГРА КУБ =====================
 @dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("куб", "кубик"))
 async def tgkube(message: Message):
-    parts = (message.text or "").strip().split()
-    if message.chat.type == "private":
-        await message.reply("<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В эту игру можно играть только в публичных группах.</b>",
-                            parse_mode="HTML", disable_web_page_preview=True)
+    if await reject_if_private_game(message):
         return
+    parts = (message.text or "").strip().split()
     if len(parts) == 2:
         await message.reply(
             "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Не хватает числа!</b>\n"

@@ -25,6 +25,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 
 # --- твои реальные объекты / конфиг ---
+from bot.games.group_only import reject_if_private_game
 from main import (
     bot1, dp, db,
     gameskosti, button_kosti, temp_kosti_data,
@@ -354,6 +355,9 @@ async def kosti(message: Message):
     if parts[0].lower() != "кости":
         return
 
+    if await reject_if_private_game(message):
+        return
+
     if len(parts) == 1:
         bet = 0
     elif len(parts) == 2:
@@ -438,7 +442,7 @@ async def kosti(message: Message):
     # случайная наклейка - Optional
     try:
         if random.randint(1, 100) > 50:
-            await message.answer(f"<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji>", parse_mode="HTML")
+            await message.answer(f"<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji>", parse_mode="HTML", show_alert=True)
     except Exception:
         pass
 
@@ -459,40 +463,40 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in gameskosti:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     # анти-дребезг
     inflight_key = (game_id, user_id)
     if inflight_key in _inflight_joins:
-        await callback_query.answer("⏳ Обрабатываю присоединение...")
+        await callback_query.answer("⏳ Обрабатываю присоединение...", show_alert=True)
         return
     _inflight_joins.add(inflight_key)
 
     try:
         async with _get_lock(_join_locks, game_id):
             if game_id not in gameskosti:
-                await callback_query.answer("🛠 Эта игра больше не существует.")
+                await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
                 return
 
             game = gameskosti[game_id]
             if game.get("state") not in (STATE_CREATED, STATE_STARTED):
-                await callback_query.answer("💭 Присоединение уже закрыто.")
+                await callback_query.answer("💭 Присоединение уже закрыто.", show_alert=True)
                 return
 
             if await db.is_user_banned(user_id):
-                await callback_query.answer("❗️ Вы заблокированы в боте")
+                await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
                 return
 
             if user_id == game['creator']:
-                await callback_query.answer("❕ Нельзя присоединиться к своей игре.")
+                await callback_query.answer("❕ Нельзя присоединиться к своей игре.", show_alert=True)
                 return
 
             participants = _dedupe_preserve_order([int(x) for x in game.get('participants', [])])
             game['participants'] = participants
 
             if len(participants) >= MAX_PARTICIPANTS:
-                await callback_query.answer("💭 В игре нет мест.")
+                await callback_query.answer("💭 В игре нет мест.", show_alert=True)
                 return
 
             if not await _has_funds(user_id, game['bet']):
@@ -540,7 +544,7 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
                 return
 
             if user_id in game['participants']:
-                await callback_query.answer("❕ Вы уже участвуете.")
+                await callback_query.answer("❕ Вы уже участвуете.", show_alert=True)
                 return
 
             game['participants'].append(user_id)
@@ -591,17 +595,17 @@ async def kosti_start_game_callback(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in gameskosti:
-        await callback_query.answer("🛠 Игра не существует")
+        await callback_query.answer("🛠 Игра не существует", show_alert=True)
         return
 
     async with _get_lock(_game_locks, game_id):
         if game_id not in gameskosti:
-            await callback_query.answer("🛠 Игра не существует")
+            await callback_query.answer("🛠 Игра не существует", show_alert=True)
             return
 
         game = gameskosti[game_id]
         if game.get('game_started'):
-            await callback_query.answer("ℹ️ Игра уже запущена.")
+            await callback_query.answer("ℹ️ Игра уже запущена.", show_alert=True)
             return
         if user_id != game['creator']:
             await callback_query.answer("💭 Только создатель может начать.", show_alert=True)
@@ -656,13 +660,13 @@ async def kosti_roll_callback(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in gameskosti:
-        await callback_query.answer("🛠 Игра не существует.")
+        await callback_query.answer("🛠 Игра не существует.", show_alert=True)
         return
 
     # анти-дребезг на ролл
     inflight = (game_id, user_id)
     if inflight in _inflight_rolls:
-        await callback_query.answer("⏳ Обрабатываю ваш бросок...")
+        await callback_query.answer("⏳ Обрабатываю ваш бросок...", show_alert=True)
         return
     _inflight_rolls.add(inflight)
 
@@ -670,21 +674,21 @@ async def kosti_roll_callback(callback_query: CallbackQuery):
     try:
         async with _get_lock(_game_locks, game_id):
             if game_id not in gameskosti:
-                await callback_query.answer("🛠 Игра не существует.")
+                await callback_query.answer("🛠 Игра не существует.", show_alert=True)
                 return
 
             game = gameskosti[game_id]
             if game.get('finished'):
-                await callback_query.answer("ℹ️ Игра уже завершена.")
+                await callback_query.answer("ℹ️ Игра уже завершена.", show_alert=True)
                 return
             if game.get('state') not in (STATE_STARTED, STATE_ROLLING):
-                await callback_query.answer("💭 Броски сейчас недоступны.")
+                await callback_query.answer("💭 Броски сейчас недоступны.", show_alert=True)
                 return
             if user_id not in game['participants']:
-                await callback_query.answer("💭 Вы не участвуете.")
+                await callback_query.answer("💭 Вы не участвуете.", show_alert=True)
                 return
             if user_id in game['scores']:
-                await callback_query.answer(f"❕ Ваше число: {game['scores'][user_id]}")
+                await callback_query.answer(f"❕ Ваше число: {game['scores'][user_id]}", show_alert=True)
                 return
 
             # мягкая проверка
@@ -695,12 +699,12 @@ async def kosti_roll_callback(callback_query: CallbackQuery):
 
             val = _assign_unique_roll(game, user_id)
             if val is None:
-                await callback_query.answer("⚠ Нет доступных чисел!")
+                await callback_query.answer("⚠ Нет доступных чисел!", show_alert=True)
                 return
             game['state'] = STATE_ROLLING
             gameskosti.save()
 
-            await callback_query.answer(f"❕ Ваше число: {val}")
+            await callback_query.answer(f"❕ Ваше число: {val}", show_alert=True)
 
             # все кинули? - только отмечаем и выходим из лока
             if len(game['scores']) == len(game['participants']):

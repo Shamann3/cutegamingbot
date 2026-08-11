@@ -13,6 +13,7 @@
 """
 
 from main import *  # noqa: F401,F403
+from bot.games.group_only import reject_if_private_game
 
 import asyncio
 import random
@@ -26,6 +27,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
 from bot.funcs.func import get_bot_username_by_token
+from bot.funcs.tech_home_log import safe_send_tech_log
 
 # Jericho
 from main import jericho_check, welcome_back_gift, newbie_safety_net, force_repay_debt
@@ -450,23 +452,18 @@ async def _home_take_and_log_basket_flat(*, user_id: int, loss: int) -> None:
             ]
         )
 
-        # Основная отправка с premium-эмодзи и кнопками
-        try:
-            await bot1.send_message(
-                int(TECH_CHAT_ID),
-                emoji_html,
-                reply_markup=inline_kb,
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-        except Exception:
-            # Fallback: обычный HTML-текст без кнопок, если premium-эмодзи не поддерживаются
-            await bot1.send_message(
-                int(TECH_CHAT_ID),
-                f"🏀 Баскетбол [Мяч сдулся]\n<blockquote><b>+ {_fmt_int(loss)} на чёрный рынок</b></blockquote>\n<blockquote><b>{_fmt_int(chat_balance)} кут доступно для выкупов</b></blockquote>",
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
+        await safe_send_tech_log(
+            bot1,
+            int(TECH_CHAT_ID),
+            html=emoji_html,
+            reply_markup=inline_kb,
+            fallback_html=(
+                f"🏀 Баскетбол [Мяч сдулся]\n"
+                f"<blockquote><b>+ {_fmt_int(loss)} на чёрный рынок</b></blockquote>\n"
+                f"<blockquote><b>{_fmt_int(chat_balance)} кут доступно для выкупов</b></blockquote>"
+            ),
+            tag="HOME_FLAT_LOG_SEND",
+        )
 
     except Exception as e:
         _kdbg_err("HOME_FLAT_LOG", e)
@@ -643,6 +640,8 @@ async def _tgbasket_free_game(
 # ===================== ОСНОВНОЙ ХЭНДЛЕР =====================
 @dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("баскет", "баскетбал", "баскетбол", "баскетболл"))
 async def tgbasket(message: Message):
+    if await reject_if_private_game(message):
+        return
     text = (message.text or "").strip().lower()
     parts = (message.text or "").strip().split()
 
@@ -655,13 +654,6 @@ async def tgbasket(message: Message):
         _kdbg("FMT", f"bad format text={message.text!r}")
         return
 
-    if message.chat.type == "private":
-        await message.reply(
-            "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В эту игру можно играть только в публичных группах.</b>",
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
-        return
 
     try:
         bet_int = _parse_bet_to_int(parts[1])

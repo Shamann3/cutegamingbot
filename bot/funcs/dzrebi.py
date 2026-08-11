@@ -94,24 +94,24 @@ async def join_game_callback(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in gamesdzrebi:
-        await callback_query.answer("Эта игра больше не существует.1")
+        await callback_query.answer("Эта игра больше не существует.1", show_alert=True)
         return
 
     game = gamesdzrebi[game_id]
 
     if user_id == game['creator']:
-        await callback_query.answer("Вы не можете присоединиться к своей игре.")
+        await callback_query.answer("Вы не можете присоединиться к своей игре.", show_alert=True)
         return
 
     # Здесь должна быть проверка баланса пользователя перед присоединением
     bet = game['bet']
     current_balance = 1000  # Пример проверки баланса
     if current_balance < bet:
-        await callback_query.answer("У вас недостаточно средств для участия в игре.")
+        await callback_query.answer("У вас недостаточно средств для участия в игре.", show_alert=True)
         return
 
     if user_id in game['participants']:
-        await callback_query.answer("Вы уже участвуете в этой игре.")
+        await callback_query.answer("Вы уже участвуете в этой игре.", show_alert=True)
         return
 
     await callback_query.answer()
@@ -150,13 +150,13 @@ async def start_dzrebi_callback(callback_query: types.CallbackQuery):
     creator_id = callback_query.from_user.id
 
     if game_id not in gamesdzrebi:
-        await callback_query.answer("Эта игра больше не существует.10")
+        await callback_query.answer("Эта игра больше не существует.10", show_alert=True)
         return
 
     game = gamesdzrebi[game_id]
 
     if creator_id != game['creator']:
-        await callback_query.answer("Вы не создатель этой игры.")
+        await callback_query.answer("Вы не создатель этой игры.", show_alert=True)
         return
     await callback_query.answer()
 
@@ -208,16 +208,16 @@ async def choose_stick_callback(callback_query: CallbackQuery):
 
     game = gamesdzrebi.get(game_id)
     if not game or 'winner_stick_index' not in game:
-        await callback_query.answer("Ошибка: игра не найдена или состояние игры некорректно.")
+        await callback_query.answer("Ошибка: игра не найдена или состояние игры некорректно.", show_alert=True)
         return
 
     if stick_index < 1 or stick_index > len(game['participants']):
-        await callback_query.answer("Ошибка выбора палочки: некорректный номер палочки.")
+        await callback_query.answer("Ошибка выбора палочки: некорректный номер палочки.", show_alert=True)
         return
 
     # Проверяем, выбрал ли пользователь уже палочку
     if 'sticks' in game and user_id in game['sticks']:
-        await callback_query.answer("Вы уже выбрали палочку.")
+        await callback_query.answer("Вы уже выбрали палочку.", show_alert=True)
         return
 
     await callback_query.answer()

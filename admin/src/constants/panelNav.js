@@ -38,6 +38,10 @@ export const PANEL_SECTIONS = [
     blurb: 'Создание и контроль розыгрышей призов для игроков.',
   },
   {
+    id: 'botQuests', label: 'Bot Quests', labelRu: 'Задания TG', group: 'content', ownerOnly: true,
+    blurb: 'Мастер заданий Telegram-бота: подписки и челленджи — только для владельца.',
+  },
+  {
     id: 'events', label: 'Events', labelRu: 'Ивенты', group: 'content', permission: 'manage_events',
     blurb: 'Игровые ивенты: запуск, расписание и параметры активностей.',
   },
@@ -97,12 +101,13 @@ export const PANEL_GROUPS = [
 ]
 
 /** Секции, видимые с учётом прав и (опционально) матрицы panelSections с бэка. */
-export function visibleSections(permissions = [], panelSections = null) {
+export function visibleSections(permissions = [], panelSections = null, role = null) {
   const perms = new Set(permissions)
   const allowedIds = Array.isArray(panelSections) && panelSections.length > 0
     ? new Set(panelSections)
     : null
   return PANEL_SECTIONS.filter((s) => {
+    if (s.ownerOnly && role !== 'owner') return false
     if (allowedIds && !allowedIds.has(s.id)) return false
     if (s.permission && !perms.has(s.permission)) return false
     return true

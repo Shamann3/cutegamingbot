@@ -1,17 +1,20 @@
 import asyncio
 import socket
-import aiohttp
 from datetime import datetime
+
+import aiohttp
 
 
 async def network_monitor():
+    """Фоновый пинг Telegram. DNS только в thread — не блокирует event loop."""
     print("🌐 [NETWORK] monitor started")
 
     timeout = aiohttp.ClientTimeout(total=10)
 
     while True:
         try:
-            ip = socket.gethostbyname("api.telegram.org")
+            # gethostbyname синхронный и может «заморозить» loop на секунды.
+            ip = await asyncio.to_thread(socket.gethostbyname, "api.telegram.org")
 
             start = asyncio.get_running_loop().time()
 

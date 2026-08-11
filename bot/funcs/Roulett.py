@@ -6,6 +6,7 @@ from bot.design.buttons import *
 from bot.db_create.db import *
 from bot.config.config import *
 from main import bot1, dp
+from bot.games.group_only import reject_if_private_game
 
 from aiogram.types import ReplyKeyboardMarkup
 from aiogram.enums import ParseMode, ChatType  # Импортируем ParseMode из aiogram.enums
@@ -59,6 +60,9 @@ async def roulett(message: Message):
         return
 
     if bet < 0:
+        return
+
+    if await reject_if_private_game(message):
         return
 
     user_id = message.from_user.id
@@ -186,13 +190,13 @@ async def Roullet_process_join(callback_query: types.CallbackQuery):
 
     # Быстрая проверка существования игры
     if game_id not in games_roulett:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     # Анти-дребезг: не пускаем дубли, пока идёт обработка
     inflight_key = (game_id, user_id)
     if inflight_key in _roul_inflight:
-        await callback_query.answer("⏳ Обрабатываю ваше присоединение…")
+        await callback_query.answer("⏳ Обрабатываю ваше присоединение…", show_alert=True)
         return
     _roul_inflight.add(inflight_key)
 
@@ -201,7 +205,7 @@ async def Roullet_process_join(callback_query: types.CallbackQuery):
         async with lock:
             # Актуальная игра внутри лока
             if game_id not in games_roulett:
-                await callback_query.answer("🛠 Эта игра больше не существует.")
+                await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
                 return
 
             game = games_roulett[game_id]
@@ -209,11 +213,11 @@ async def Roullet_process_join(callback_query: types.CallbackQuery):
             # Базовые проверки
             creator_id = int(game.get('creator'))
             if creator_id == user_id:
-                await callback_query.answer("💭 Создатель не может присоединиться к своей игре!")
+                await callback_query.answer("💭 Создатель не может присоединиться к своей игре!", show_alert=True)
                 return
 
             if await db.is_user_banned(user_id):
-                await callback_query.answer("❗️ Вы заблокированы в боте")
+                await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
                 return
 
             # Участники - список user_id
@@ -223,12 +227,12 @@ async def Roullet_process_join(callback_query: types.CallbackQuery):
 
             # Лимит мест
             if len(participants) >= MAX_ROUL_PARTICIPANTS:
-                await callback_query.answer("💭 В игре нет мест")
+                await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
             # Уже в игре?
             if user_id in participants:
-                await callback_query.answer("❕ Вы уже участвуете в этой игре.")
+                await callback_query.answer("❕ Вы уже участвуете в этой игре.", show_alert=True)
                 return
 
             # Баланс / ставка
@@ -239,7 +243,7 @@ async def Roullet_process_join(callback_query: types.CallbackQuery):
             except Exception:
                 enough = False
             if not enough:
-                await callback_query.answer("💭 Недостаточно средств для присоединения к этой игре")
+                await callback_query.answer("💭 Недостаточно средств для присоединения к этой игре", show_alert=True)
                 return
 
             # ===== Анти-реф защита (строго внутри лока) =====
@@ -286,7 +290,7 @@ async def Roullet_process_join(callback_query: types.CallbackQuery):
             # ---- КРИТИЧЕСКАЯ ТОЧКА: добавляем атомарно ----
             # Повторно проверим лимит - вдруг другой присоединился
             if len(game['participants']) >= MAX_ROUL_PARTICIPANTS:
-                await callback_query.answer("💭 В игре нет мест")
+                await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
             game['participants'].append(user_id)
@@ -335,7 +339,7 @@ async def Roullet_process_join(callback_query: types.CallbackQuery):
                     if "message is not modified" not in str(e).lower():
                         print(f"[ROULETTE] edit_message_text error: {e}")
 
-            await callback_query.answer("❕ Вы присоединились к игре!")
+            await callback_query.answer("❕ Вы присоединились к игре!", show_alert=True)
             games_roulett.save()
     finally:
         _roul_inflight.discard(inflight_key)
@@ -349,13 +353,13 @@ async def Roullet_process_start(callback_query: types.CallbackQuery):
     message_id = games_roulett [ game_id ] [ "message_id" ]
     # Проверка существования игры
     if game_id not in games_roulett:
-        await callback_query.answer("🛠 Игра не найдена!")
+        await callback_query.answer("🛠 Игра не найдена!", show_alert=True)
         return
 
     game111 = games_roulett[game_id]
 
     if game111['creator'] != user_id:
-        await callback_query.answer("💭 Только создатель может начать игру!")
+        await callback_query.answer("💭 Только создатель может начать игру!", show_alert=True)
         return
 
     # Проверка баланса всех участников
@@ -383,13 +387,13 @@ async def Roullet_process_start(callback_query: types.CallbackQuery):
     # Проверяем баланс создателя игры
     user_balance = await db.get_user_balance(user_id)
     if game111['bet'] > user_balance:
-        await callback_query.answer("💭 Недостаточно средств для старта игры")
+        await callback_query.answer("💭 Недостаточно средств для старта игры", show_alert=True)
         return
 
     participants = game111['participants']
 
     if len(participants) < 2:
-        await callback_query.answer("💭 Недостаточно участников для начала игры!")
+        await callback_query.answer("💭 Недостаточно участников для начала игры!", show_alert=True)
         return
     await callback_query.answer()
 
@@ -412,16 +416,16 @@ async def Roullet_process_shoot(callback_query: types.CallbackQuery):
         game = games_roulett[game_id]
         user_balance = await db.get_user_balance(user_id)
         if game['bet'] > user_balance:
-            await callback_query.answer("💭 Недостаточно средств для участия в игре")
+            await callback_query.answer("💭 Недостаточно средств для участия в игре", show_alert=True)
             return
 
         # Проверка наличия игры и участников
         if game_id not in games_roulett or 'participants' not in games_roulett[game_id]:
-            await callback_query.answer("🛠 Игра не найдена или еще не началась!")
+            await callback_query.answer("🛠 Игра не найдена или еще не началась!", show_alert=True)
             return
 
         if user_id not in games_roulett[game_id]['participants']:
-            await callback_query.answer("💭 Вы не участвуете в этой игре!")
+            await callback_query.answer("💭 Вы не участвуете в этой игре!", show_alert=True)
             return
 
         # Инициализация структуры для хранения результатов выстрелов
@@ -431,7 +435,7 @@ async def Roullet_process_shoot(callback_query: types.CallbackQuery):
 
         # Проверяем, был ли уже выстрел от текущего пользователя в этой игре
         if games_roulett[game_id]['shots'][user_id] is not None:
-            await callback_query.answer("❕ Вы уже сделали выстрел в этой игре!")
+            await callback_query.answer("❕ Вы уже сделали выстрел в этой игре!", show_alert=True)
             return
         await callback_query.answer()
 

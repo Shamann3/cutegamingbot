@@ -218,7 +218,7 @@ async def process_adm_menu(call: types.CallbackQuery):
             if int(user [ 0 ]) == int(call.from_user.id):
                 # Проверяем, сделал ли пользователь хотя бы один ход
                 if len(user [ 3 ]) == 0:
-                    await call.message.answer("Вы не сделали ни одного хода в игре.")
+                    await call.message.answer("Вы не сделали ни одного хода в игре.", show_alert=True)
                     return
 
                 listt = json.loads(user [ 3 ])

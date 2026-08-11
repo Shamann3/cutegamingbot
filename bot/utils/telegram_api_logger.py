@@ -1,10 +1,20 @@
+import asyncio
 import logging
 import sys
 import time
 
 from aiogram.client.session.middlewares.base import BaseRequestMiddleware
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramNetworkError,
+)
 from aiogram.methods import TelegramMethod
+
+# Кратковременные обрывы до api.telegram.org (ClientConnectorError и т.п.).
+# GetUpdates сюда не попадают (_SKIP_METHODS) — у polling свой цикл перезапуска.
+_NETWORK_RETRY_ATTEMPTS = 3
+_NETWORK_RETRY_BASE_DELAY = 0.45
 
 logger = logging.getLogger("telegram_api")
 
@@ -46,6 +56,12 @@ _SOFTFAIL_PATTERNS = (
 )
 _SOFTFAIL_DEBOUNCE_SEC = 180.0
 _softfail_last_logged = {}
+_SOFTFAIL_MAX_ENTRIES = 2000
+
+# При лаге event loop самолечение глушит шумные START/END логи,
+# чтобы sync FileHandler не добивал кнопки.
+_quiet_mode = False
+_quiet_since = 0.0
 
 # Ответ на callback живёт у Telegram считанные секунды. Просрочка - не сбой
 # бота: так бывает при рестарте (в очереди лежат старые нажатия), при клике
@@ -60,7 +76,15 @@ _STALE_QUERY_PATTERNS = (
     "query is too old",
     "query id is invalid",
     "query_id_invalid",
+    "query is too old and response timeout expired",
+    "already answered",
+    "query_id_invalid",
 )
+
+# AnswerCallbackQuery на критическом пути UX: меньше ретраев и меньше логов.
+_FAST_METHODS = {"AnswerCallbackQuery"}
+_FAST_NETWORK_RETRY_ATTEMPTS = 2
+_FAST_NETWORK_RETRY_BASE_DELAY = 0.2
 _stale_query_count = 0
 
 # Ожидаемые ответы Telegram, которые вызывающий код уже умеет разбирать
@@ -142,7 +166,56 @@ def _should_log_softfail_once(signature: str) -> bool:
     if (now - last_ts) < _SOFTFAIL_DEBOUNCE_SEC:
         return False
     _softfail_last_logged[signature] = now
+    if len(_softfail_last_logged) > _SOFTFAIL_MAX_ENTRIES:
+        trim_softfail_cache(keep=_SOFTFAIL_MAX_ENTRIES // 2)
     return True
+
+
+def trim_softfail_cache(keep: int = 500) -> dict:
+    """Чистит разросшийся softfail-кэш (вызывается из button_health)."""
+    global _softfail_last_logged
+    before = len(_softfail_last_logged)
+    if before <= keep:
+        return {"before": before, "after": before, "removed": 0}
+    # оставляем самые свежие
+    newest = sorted(_softfail_last_logged.items(), key=lambda x: x[1], reverse=True)[:keep]
+    _softfail_last_logged = dict(newest)
+    after = len(_softfail_last_logged)
+    return {"before": before, "after": after, "removed": before - after}
+
+
+def set_quiet_mode(enabled: bool, reason: str = "") -> None:
+    """Включает/выключает тихий режим логов API (самолечение кнопок)."""
+    global _quiet_mode, _quiet_since
+    enabled = bool(enabled)
+    if enabled == _quiet_mode:
+        return
+    _quiet_mode = enabled
+    _quiet_since = time.monotonic() if enabled else 0.0
+    logger.warning(
+        "QUIET_MODE %s %s",
+        "ON" if enabled else "OFF",
+        f"({reason})" if reason else "",
+    )
+
+
+def is_quiet_mode() -> bool:
+    return bool(_quiet_mode)
+
+
+def _is_network_error(error: Exception) -> bool:
+    if isinstance(error, TelegramNetworkError):
+        return True
+    name = type(error).__name__
+    if name in ("ClientConnectorError", "ServerDisconnectedError", "ClientOSError"):
+        return True
+    text = str(error).lower()
+    return (
+        "cannot connect to host" in text
+        or "clientconnectorerror" in text
+        or "connection reset" in text
+        or "temporarily unavailable" in text
+    )
 
 
 class TelegramApiLogger(BaseRequestMiddleware):
@@ -153,79 +226,136 @@ class TelegramApiLogger(BaseRequestMiddleware):
         if method_name in _SKIP_METHODS:
             return await make_request(bot, method)
 
-        started = time.perf_counter()
-
-        logger.info(
-            "➡ START %-28s",
-            method_name
+        is_fast = method_name in _FAST_METHODS
+        max_attempts = (
+            _FAST_NETWORK_RETRY_ATTEMPTS if is_fast else _NETWORK_RETRY_ATTEMPTS
+        )
+        retry_base = (
+            _FAST_NETWORK_RETRY_BASE_DELAY if is_fast else _NETWORK_RETRY_BASE_DELAY
         )
 
-        try:
-            result = await make_request(bot, method)
+        started = time.perf_counter()
+        quiet = _quiet_mode
 
-            elapsed = (time.perf_counter() - started) * 1000
-
+        # В quiet / для fast-методов не пишем START (sync disk I/O тормозит loop)
+        if not is_fast and not quiet:
             logger.info(
-                "✅ END   %-28s %.2f ms",
-                method_name,
-                elapsed
+                "➡ START %-28s",
+                method_name
             )
 
-            return result
+        last_error: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                result = await make_request(bot, method)
 
-        except Exception as e:
-            elapsed = (time.perf_counter() - started) * 1000
-
-            if _is_stale_query(method_name, e):
-                global _stale_query_count
-                _stale_query_count += 1
-                if _should_log_softfail_once(f"stale|{method_name}"):
-                    logger.warning(
-                        "⌛ STALE %-28s %.2f ms просрочен ответ на нажатие "
-                        "(всего с запуска: %d)",
-                        method_name,
-                        elapsed,
-                        _stale_query_count,
-                    )
-                return True
-
-            # Экран уже такой, какой нужен - это не ошибка.
-            if _is_idempotent_edit_ok(method_name, e):
-                if _should_log_softfail_once(f"same|{method_name}"):
+                elapsed = (time.perf_counter() - started) * 1000
+                if is_fast:
+                    # AnswerCallbackQuery: лог только при ретрае/медленном ответе
+                    if attempt > 1 or elapsed >= 250:
+                        logger.info(
+                            "✅ END   %-28s %.2f ms%s",
+                            method_name,
+                            elapsed,
+                            f" (retry {attempt} ok)" if attempt > 1 else "",
+                        )
+                elif quiet:
+                    # В тихом режиме — только медленные/ретраи
+                    if attempt > 1 or elapsed >= 400:
+                        logger.info(
+                            "✅ END   %-28s %.2f ms%s",
+                            method_name,
+                            elapsed,
+                            f" (retry {attempt} ok)" if attempt > 1 else "",
+                        )
+                elif attempt > 1:
                     logger.info(
-                        "↩ SAME  %-28s %.2f ms already current",
+                        "✅ END   %-28s %.2f ms (retry %d ok)",
                         method_name,
                         elapsed,
+                        attempt,
                     )
-                return True
+                else:
+                    logger.info(
+                        "✅ END   %-28s %.2f ms",
+                        method_name,
+                        elapsed
+                    )
+                return result
 
-            if _is_softfail_exception(method_name, e):
-                signature = f"{method_name}|{type(e).__name__}|{_error_text(e)}"
-                if _should_log_softfail_once(signature):
+            except Exception as e:
+                last_error = e
+                elapsed = (time.perf_counter() - started) * 1000
+
+                # Сетевой обрыв — пробуем ещё раз, не роняем handler с первого раза.
+                if _is_network_error(e) and attempt < max_attempts:
+                    delay = retry_base * (2 ** (attempt - 1))
                     logger.warning(
-                        "⚠ SOFTFAIL %-28s %.2f ms %s",
+                        "↻ NET   %-28s %.2f ms attempt %d/%d → sleep %.1fs %s",
                         method_name,
                         elapsed,
-                        repr(e)
+                        attempt,
+                        max_attempts,
+                        delay,
+                        type(e).__name__,
                     )
+                    await asyncio.sleep(delay)
+                    continue
+
+                if _is_stale_query(method_name, e):
+                    global _stale_query_count
+                    _stale_query_count += 1
+                    if _should_log_softfail_once(f"stale|{method_name}"):
+                        logger.warning(
+                            "⌛ STALE %-28s %.2f ms просрочен/уже отвечен callback "
+                            "(всего с запуска: %d)",
+                            method_name,
+                            elapsed,
+                            _stale_query_count,
+                        )
+                    return True
+
+                # Экран уже такой, какой нужен - это не ошибка.
+                if _is_idempotent_edit_ok(method_name, e):
+                    if _should_log_softfail_once(f"same|{method_name}"):
+                        logger.info(
+                            "↩ SAME  %-28s %.2f ms already current",
+                            method_name,
+                            elapsed,
+                        )
+                    return True
+
+                if _is_softfail_exception(method_name, e):
+                    signature = f"{method_name}|{type(e).__name__}|{_error_text(e)}"
+                    if _should_log_softfail_once(signature):
+                        logger.warning(
+                            "⚠ SOFTFAIL %-28s %.2f ms %s",
+                            method_name,
+                            elapsed,
+                            repr(e)
+                        )
+                    raise
+
+                if _is_quiet_error(e):
+                    signature = f"quiet|{method_name}|{_error_text(e)}"
+                    if _should_log_softfail_once(signature):
+                        logger.warning(
+                            "⚠ EXPECTED %-27s %.2f ms %s",
+                            method_name,
+                            elapsed,
+                            str(e),
+                        )
+                    raise
+
+                logger.exception(
+                    "❌ FAIL  %-28s %.2f ms %s",
+                    method_name,
+                    elapsed,
+                    repr(e)
+                )
                 raise
 
-            if _is_quiet_error(e):
-                signature = f"quiet|{method_name}|{_error_text(e)}"
-                if _should_log_softfail_once(signature):
-                    logger.warning(
-                        "⚠ EXPECTED %-27s %.2f ms %s",
-                        method_name,
-                        elapsed,
-                        str(e),
-                    )
-                raise
-
-            logger.exception(
-                "❌ FAIL  %-28s %.2f ms %s",
-                method_name,
-                elapsed,
-                repr(e)
-            )
-
-            raise
+        # На практике недостижимо: цикл либо return, либо raise.
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError(f"telegram request failed: {method_name}")

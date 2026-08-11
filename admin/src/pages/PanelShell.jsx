@@ -16,6 +16,7 @@ import MarketSection from './sections/MarketSection'
 import FarmSection from './sections/FarmSection'
 import ContentSection from './sections/ContentSection'
 import GiveawaysSection from './sections/GiveawaysSection'
+import BotQuestsSection from './sections/BotQuestsSection'
 import BroadcastSection from './sections/BroadcastSection'
 import LogsSection from './sections/LogsSection'
 import AnalyticsSection from './sections/AnalyticsSection'
@@ -86,8 +87,8 @@ export default function PanelShell({ onLogout }) {
   }, [onLogout])
 
   const navSections = useMemo(
-    () => visibleSections(permissions, panelSections),
-    [permissions, panelSections],
+    () => visibleSections(permissions, panelSections, role),
+    [permissions, panelSections, role],
   )
 
   // Если текущий раздел закрыли в матрице — уводим на первую доступную вкладку.
@@ -151,6 +152,7 @@ export default function PanelShell({ onLogout }) {
   const isFarm = section === 'farm'
   const isContent = section === 'content'
   const isGiveaways = section === 'giveaways'
+  const isBotQuests = section === 'botQuests'
   const isBroadcast = section === 'broadcast'
   const isLogs = section === 'logs'
   const isAnalytics = section === 'analytics'
@@ -237,6 +239,10 @@ export default function PanelShell({ onLogout }) {
                       ? ' panel-layout-farm'
                       : isContent
                         ? ' panel-layout-content'
+                        : isGiveaways
+                        ? ' panel-layout-broadcast'
+                        : isBotQuests
+                          ? ' panel-layout-broadcast'
                         : isBroadcast
                         ? ' panel-layout-broadcast'
                         : isLogs
@@ -309,6 +315,7 @@ export default function PanelShell({ onLogout }) {
           {isFarm && <FarmSection />}
           {isContent && <ContentSection role={role} panelTabs={panelTabs} />}
           {isGiveaways && <GiveawaysSection />}
+          {isBotQuests && role === 'owner' && <BotQuestsSection />}
           {isBroadcast && <BroadcastSection panelTabs={panelTabs} />}
           {isLogs && <LogsSection panelTabs={panelTabs} />}
           {isAnalytics && <AnalyticsSection panelTabs={panelTabs} />}
@@ -320,7 +327,7 @@ export default function PanelShell({ onLogout }) {
           {isModeration && <ModerationSection role={role} permissions={permissions} panelTabs={panelTabs} />}
           {isChronicle && <ChronicleSection />}
           {isPanelAccess && <PanelAccessSection />}
-          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && (
+          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBotQuests && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

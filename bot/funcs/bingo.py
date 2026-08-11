@@ -31,6 +31,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 
 # ---- твои объекты/функции/хранилища ----
+from bot.games.group_only import reject_if_private_game
 from main import (
     bot1, dp, db,
     gamesbingo, button_bingo, temp_bingo_data,
@@ -44,8 +45,10 @@ MAX_PARTICIPANTS = 10
 FLOOD_EDIT_MAX_RETRIES = 4
 FLOOD_SLEEP_BUFFER_SEC = 1.0
 
-# ====== ГЛОБАЛЬНЫЕ ЗАЩИТЫ ======        # per-game (join/flow)
-_game_locks: Dict[int, asyncio.Lock] = LazyGameStore("_game_locks")        # per-game (state & settle)
+# ====== ГЛОБАЛЬНЫЕ ЗАЩИТЫ ======
+# join отдельно от state/settle — как в kosti/ruletka (иначе NameError на joinbingo)
+_join_locks: Dict[int, asyncio.Lock] = LazyGameStore("bingo_join_locks")   # per-game (join/flow)
+_game_locks: Dict[int, asyncio.Lock] = LazyGameStore("bingo_game_locks")   # per-game (state & settle)
 _inflight_joins: Set[Tuple[int, int]] = set()    # (game_id, user_id)
 
 def _get_lock(bucket: Dict[int, asyncio.Lock], key: int) -> asyncio.Lock:
@@ -424,6 +427,9 @@ async def bingo(message: Message):
     if bet < 0:
         return
 
+    if await reject_if_private_game(message):
+        return
+
     creator_id = message.from_user.id
 
     # Мягкая проверка средств у создателя - на старте не списываем ничего
@@ -526,13 +532,13 @@ async def bingo_join_game_callback(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in gamesbingo:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     # Анти-дребезг на уровне пары (game,user)
     inflight_key = (game_id, user_id)
     if inflight_key in _inflight_joins:
-        await callback_query.answer("⏳ Обрабатываю ваше присоединение...")
+        await callback_query.answer("⏳ Обрабатываю ваше присоединение...", show_alert=True)
         return
 
     _inflight_joins.add(inflight_key)
@@ -540,28 +546,28 @@ async def bingo_join_game_callback(callback_query: CallbackQuery):
         # Лок на игру (безопасная точка истины)
         async with _get_lock(_join_locks, game_id):
             if game_id not in gamesbingo:
-                await callback_query.answer("🛠 Эта игра больше не существует.")
+                await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
                 return
 
             game = gamesbingo[game_id]
 
             if game.get("state") not in (STATE_CREATED, STATE_STARTED):
-                await callback_query.answer("💭 Присоединение уже закрыто.")
+                await callback_query.answer("💭 Присоединение уже закрыто.", show_alert=True)
                 return
 
             if await db.is_user_banned(user_id):
-                await callback_query.answer("❗️ Вы заблокированы в боте")
+                await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
                 return
 
             if user_id == game['creator']:
-                await callback_query.answer("💭 Вы не можете присоединиться к своей игре.")
+                await callback_query.answer("💭 Вы не можете присоединиться к своей игре.", show_alert=True)
                 return
 
             participants = _dedupe_preserve_order([int(x) for x in game.get('participants', [])])
             game['participants'] = participants
 
             if len(participants) >= MAX_PARTICIPANTS:
-                await callback_query.answer("💭 В игре нет мест")
+                await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
             if not await _has_funds(user_id, game['bet']):
@@ -609,7 +615,7 @@ async def bingo_join_game_callback(callback_query: CallbackQuery):
                 return
 
             if user_id in game['participants']:
-                await callback_query.answer("❕ Вы уже участвуете.")
+                await callback_query.answer("❕ Вы уже участвуете.", show_alert=True)
                 return
 
             game['participants'].append(user_id)
@@ -693,7 +699,7 @@ async def bingo_start_game_callback(callback_query: CallbackQuery):
 
             # уже стартовала?
             if game.get('game_started'):
-                await callback_query.answer("ℹ️ Игра уже запущена.")
+                await callback_query.answer("ℹ️ Игра уже запущена.", show_alert=True)
                 return
 
             # есть минимум 2 участника?
@@ -768,31 +774,31 @@ async def bingo_roll_callback(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in gamesbingo:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     need_settle = False  # флаг, чтобы вызвать _show_and_settle ПОСЛЕ выхода из лока
 
     async with _get_lock(_game_locks, game_id):
         if game_id not in gamesbingo:
-            await callback_query.answer("🛠 Эта игра больше не существует.")
+            await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
             return
 
         game = gamesbingo[game_id]
         if game.get('finished'):
-            await callback_query.answer("💭 Игра уже завершена.")
+            await callback_query.answer("💭 Игра уже завершена.", show_alert=True)
             return
 
         if game.get('state') not in (STATE_STARTED, STATE_ROLLING):
-            await callback_query.answer("💭 Роллы сейчас недоступны.")
+            await callback_query.answer("💭 Роллы сейчас недоступны.", show_alert=True)
             return
 
         if user_id not in game['participants']:
-            await callback_query.answer("💭 Вы не участвуете.")
+            await callback_query.answer("💭 Вы не участвуете.", show_alert=True)
             return
 
         if user_id in game['scores']:
-            await callback_query.answer(f"❕ Ваше число: {game['scores'][user_id]}")
+            await callback_query.answer(f"❕ Ваше число: {game['scores'][user_id]}", show_alert=True)
             return
 
         # мягкая проверка баланса
@@ -807,7 +813,7 @@ async def bingo_roll_callback(callback_query: CallbackQuery):
         gamesbingo.save()
 
         # ответ пользователю - можно внутри лока
-        await callback_query.answer(f"❕ Ваше число: {game['scores'][user_id]}")
+        await callback_query.answer(f"❕ Ваше число: {game['scores'][user_id]}", show_alert=True)
 
         # если все получили числа - ЗАВЕРШИМ, но без вызова settle тут
         if len(game['scores']) == len(game['participants']):

@@ -1,4 +1,5 @@
 from main import *
+from bot.games.group_only import reject_if_private_game
 
 
 
@@ -15,7 +16,8 @@ async def word(message: Message):
 
     # Если сообщение начинается с "слово", это попытка создать новую игру
     if len(text_parts) >= 2 and text_parts[0].lower() in ['слово34123412','слова34123412']:
-        #print("[DEBUG] Обнаружено сообщение для создания новой игры. 💬")
+        if await reject_if_private_game(message):
+            return
 
         # Проверяем, что на 1 индексе есть хотя бы одно слово или ставка
         if len(text_parts) < 3 and text_parts[1].isdigit():
@@ -152,7 +154,7 @@ async def cancel_game(callback_query: types.CallbackQuery):
 
     randommessagebonus1 = random.choice(randommessagehelp)
     if user_id not in user_word or user_word [ user_id ] != message_id:
-        await callback_query.answer('🔒 Только создатель игры может её отменить.')
+        await callback_query.answer('🔒 Только создатель игры может её отменить.', show_alert=True)
         return
 
     # Удаляем игру из словаря, если она существует
@@ -161,4 +163,4 @@ async def cancel_game(callback_query: types.CallbackQuery):
         await callback_query.message.edit_text("✅ <b>Игра в слова была отменена.</b>",parse_mode="HTML")
         print("[DEBUG] Игра отменена пользователем.")
     else:
-        await callback_query.answer("❌ Нет активной игры для отмены.")
+        await callback_query.answer("❌ Нет активной игры для отмены.", show_alert=True)

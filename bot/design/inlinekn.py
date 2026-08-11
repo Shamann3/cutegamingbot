@@ -2030,7 +2030,7 @@ async def view_message(callback_query: types.CallbackQuery):
         else:
             await callback_query.answer("⏰ Срок действия сообщения истёк", show_alert=True)
     else:
-        await callback_query.answer("🤷🏽 Это сообщение не для вас")
+        await callback_query.answer("🤷🏽 Это сообщение не для вас", show_alert=True)
 
 @dp.callback_query(lambda c: c.data.startswith("accept_action"))
 async def accept_action_handler(callback_query: types.CallbackQuery):
@@ -2814,7 +2814,7 @@ async def inline_knb_create_game_callback(callback_query: types.CallbackQuery):
     data_parts = callback_query.data.split(":")
     bet_amount = int(data_parts [ 2 ]) if len(data_parts) > 2 else 0  # Ставка передается как 3-й параметр
     if await db.is_user_banned(user_id):
-        await callback_query.answer("❗️ Вы заблокированы в боте")
+        await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
         return
     # Если ставка больше 0, проверяем, достаточно ли у пользователя средств
     if bet_amount > 0:
@@ -2859,7 +2859,7 @@ async def inline_knb_create_game_callback(callback_query: types.CallbackQuery):
         reply_markup=keyboard,
         parse_mode='HTML'
     )
-    await callback_query.answer("❕ Игра создана!")
+    await callback_query.answer("❕ Игра создана!", show_alert=True)
     rps_games.save()
 
 _RPS_JOIN_LOCKS: Dict[str, asyncio.Lock] = {}
@@ -2893,15 +2893,15 @@ async def inline_knb_join_game_callback(callback_query: types.CallbackQuery):
 
     # быстрый отбой
     if game_id not in rps_games:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
     if await db.is_user_banned(user_id):
-        await callback_query.answer("❗️ Вы заблокированы в боте")
+        await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
         return
     # анти-дребезг
     inflight_key = (game_id, user_id)
     if inflight_key in _RPS_INFLIGHT:
-        await callback_query.answer("⏳ Обрабатываю ваше присоединение…")
+        await callback_query.answer("⏳ Обрабатываю ваше присоединение…", show_alert=True)
         return
     _RPS_INFLIGHT.add(inflight_key)
 
@@ -2911,7 +2911,7 @@ async def inline_knb_join_game_callback(callback_query: types.CallbackQuery):
             # актуальная игра внутри лока
             game = rps_games.get(game_id)
             if not game:
-                await callback_query.answer("🛠 Эта игра больше не существует.")
+                await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
                 return
 
             inline_message_id = game.get("inline_message_id")
@@ -2926,7 +2926,7 @@ async def inline_knb_join_game_callback(callback_query: types.CallbackQuery):
 
             creator_id = int(game.get('creator', creator_id_str or 0) or 0)
             if user_id == creator_id:
-                await callback_query.answer("❗️ Вы не можете присоединиться к своей игре.")
+                await callback_query.answer("❗️ Вы не можете присоединиться к своей игре.", show_alert=True)
                 return
 
             # нормализуем участников и уберём дубли
@@ -2934,11 +2934,11 @@ async def inline_knb_join_game_callback(callback_query: types.CallbackQuery):
             game['participants'] = participants
 
             if len(participants) >= MAX_RPS_PLAYERS:
-                await callback_query.answer("❗️ В игре нет мест.")
+                await callback_query.answer("❗️ В игре нет мест.", show_alert=True)
                 return
 
             if user_id in participants:
-                await callback_query.answer("❗️ Вы уже участвуете в этой игре.")
+                await callback_query.answer("❗️ Вы уже участвуете в этой игре.", show_alert=True)
                 return
 
             # ставка / баланс
@@ -2950,7 +2950,7 @@ async def inline_knb_join_game_callback(callback_query: types.CallbackQuery):
                 except Exception:
                     enough = False
                 if not enough:
-                    await callback_query.answer("💭 Недостаточно средств для игры.")
+                    await callback_query.answer("💭 Недостаточно средств для игры.", show_alert=True)
                     return
 
             # ===== анти-реф внутри лока =====
@@ -3002,7 +3002,7 @@ async def inline_knb_join_game_callback(callback_query: types.CallbackQuery):
 
             # ---- критическая точка: добавляем атомарно ----
             if len(game['participants']) >= MAX_RPS_PLAYERS:
-                await callback_query.answer("❗️ В игре нет мест.")
+                await callback_query.answer("❗️ В игре нет мест.", show_alert=True)
                 return
 
             game['participants'].append(user_id)
@@ -3037,7 +3037,7 @@ async def inline_knb_join_game_callback(callback_query: types.CallbackQuery):
                 if "message is not modified" not in str(e).lower():
                     print(f"[RPS] edit_message_text error: {e}")
 
-            await callback_query.answer("❕ Вы присоединились к игре!")
+            await callback_query.answer("❕ Вы присоединились к игре!", show_alert=True)
             rps_games.save()
 
     except Exception as e:
@@ -3063,17 +3063,17 @@ async def inline_knb_start_game_callback(callback_query: types.CallbackQuery):
         # Проверяем, существует ли игра
         game = rps_games.get(game_id)
         if game is None:
-            await callback_query.answer("🛠 Эта игра больше не существует.")
+            await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
             return
 
         # Проверяем, что только создатель может начать игру
         if user_id != game.get('creator'):
-            await callback_query.answer("❗️ Только создатель игры может начать игру.")
+            await callback_query.answer("❗️ Только создатель игры может начать игру.", show_alert=True)
             return
 
         # Проверяем, что есть хотя бы два участника
         if len(game.get('participants', [])) < 2:
-            await callback_query.answer("❗️ Невозможно начать игру. Недостаточно участников.")
+            await callback_query.answer("❗️ Невозможно начать игру. Недостаточно участников.", show_alert=True)
             return
 
         bet_amount = game.get('bet_amount' , 0)
@@ -3117,7 +3117,7 @@ async def inline_knb_start_game_callback(callback_query: types.CallbackQuery):
             parse_mode=ParseMode.HTML
         )
 
-        await callback_query.answer("❕ Игра началась!")
+        await callback_query.answer("❕ Игра началась!", show_alert=True)
 
     except Exception as e:
         print(f"Ошибка в start_game_callback: {e}")
@@ -3136,29 +3136,29 @@ async def inline_knb_choose_callback(callback_query: types.CallbackQuery):
         await inline_add_or_update_user_info(bot1 , user_id , first_name , username,db, start_balance)
         inline_message_id = rps_games [ game_id ] [ "inline_message_id" ]
         if game_id not in rps_games:
-            await callback_query.answer("🛠 Эта игра больше не существует.")
+            await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
             return
 
         game = rps_games[game_id]
 
         if user_id not in game['participants']:
-            await callback_query.answer("❗️ Вы не участвуете в этой игре.")
+            await callback_query.answer("❗️ Вы не участвуете в этой игре.", show_alert=True)
             return
 
         if user_id in game['choices']:
-            await callback_query.answer("❗️ Вы уже сделали свой выбор!")
+            await callback_query.answer("❗️ Вы уже сделали свой выбор!", show_alert=True)
             return
 
         # Сохраняем выбор игрока
         game['choices'][user_id] = choice
         print(game['choices'][user_id])
 
-        await callback_query.answer(f"{rps_get_choice_text(choice)}")
+        await callback_query.answer(f"{rps_get_choice_text(choice)}", show_alert=True)
 
         if len(game['choices']) == len(game['participants']):
             await rps_declare_winner(inline_message_id, game_id)
         else:
-            await callback_query.answer("Вы сделали свой выбор!")
+            await callback_query.answer("Вы сделали свой выбор!", show_alert=True)
     except Exception as e:
         print(f"Ошибка в choose_callback: {e}")
     rps_games.save()

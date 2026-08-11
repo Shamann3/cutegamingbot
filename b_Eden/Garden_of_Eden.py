@@ -61,6 +61,14 @@ from bot.config.config import EDEN_TOKEN
 bot2 = Bot(token=EDEN_TOKEN)
 dp2 = Dispatcher()
 
+# Мэджик на ВСЕ inline-кнопки Eden (отдельный Dispatcher)
+try:
+    from bot.magic import install_magic
+
+    install_magic(dp2, start_health=False)
+except Exception as _eden_magic_err:
+    print(f"⚠️ [MAGIC] Eden dp2: {_eden_magic_err!r}")
+
 # ------------------------------------------------------------
 # ОБРАБОТЧИКИ
 # ------------------------------------------------------------

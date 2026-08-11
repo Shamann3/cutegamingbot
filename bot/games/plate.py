@@ -19,6 +19,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
+from bot.games.group_only import reject_if_private_game
 from main import (
     bot1, dp, db,
     TECH_CHAT_ID, create_user_link,
@@ -35,6 +36,7 @@ from bot.config.config import (
     _PLATE_MULT_DEFAULT
 )
 from bot.funcs.func import get_bot_username_by_token
+from bot.funcs.tech_home_log import safe_send_tech_log
 
 # Импорт функций Jericho
 from main import (
@@ -42,6 +44,25 @@ from main import (
 )
 
 processed_actions_plate = LazyGameStore("processed_actions_plate")
+
+
+async def _after_plate_closed(owner_id: int, msg_id: Optional[int] = None, chat_id=None):
+    """Конец партии: safety-net + tip/личка онбординга."""
+    await newbie_safety_net(owner_id)
+    if chat_id is None:
+        st = active_games_plate.get(owner_id) or {}
+        if isinstance(st, dict):
+            chat_id = st.get("chat_id")
+            if msg_id is None:
+                try:
+                    msg_id = int(st.get("message_id") or 0) or None
+                except Exception:
+                    msg_id = None
+    try:
+        from bot.funcs.onboarding import onboarding_notify_game_finished
+        await onboarding_notify_game_finished(owner_id, message_id=msg_id, chat_id=chat_id)
+    except Exception as e:
+        print(f"[PLATE] onboarding tip notify: {e!r}")
 
 try:
     from main import get_random_eagle_emoji_id
@@ -273,8 +294,7 @@ async def _home_take_and_log_plate_collapsed(*, bot, user_id: int, loss: int) ->
         except Exception:
             receiver_username = None
 
-        # name_link больше не нужен для отображения, но оставляем вызов, чтобы не нарушить возможные сайд-эффекты
-        await create_user_link(user_id, receiver_name, receiver_username)
+        name_link = await create_user_link(user_id, receiver_name, receiver_username)
         await db.add_home_amount(user_id=user_id, amount=loss)
 
         chat_balance = await db.get_chat_balance(bot, -1003855337972)   # используем bot из параметров, не bot1
@@ -320,12 +340,20 @@ async def _home_take_and_log_plate_collapsed(*, bot, user_id: int, loss: int) ->
             ]
         )
 
-        await bot.send_message(
+        # Лог в TECH_CHAT: chat not found не должен ронять партию.
+        fallback_text = (
+            f"<b>💫 Плиты [ Плита рухнула ]</b>\n"
+            f"⭐️ {name_link}\n"
+            f"+ {_fmt_int(loss)} на чёрный рынок\n"
+            f"{_fmt_int(chat_balance)} кут доступно для выкупов"
+        )
+        await safe_send_tech_log(
+            bot,
             TECH_CHAT_ID,
-            emoji_html,
+            html=emoji_html,
             reply_markup=inline_kb,
-            parse_mode="HTML",
-            disable_web_page_preview=True
+            fallback_html=fallback_text,
+            tag="PLATE][HOME_LOG_SEND",
         )
     except:
         pass
@@ -421,6 +449,7 @@ async def _session_ttl_watcher(chat_id: int, msg_id: int, owner_id: int, ttl: in
         active_games_plate[owner_id] = st
         user_message_plate.pop(owner_id, None)
         _plate_session_locks.pop(int(msg_id), None)
+        await _after_plate_closed(owner_id, msg_id, chat_id)
 
 # Инвойс
 async def _send_invoice_later(message: Message, user_id: int, stars_amount: str, delay: float):
@@ -445,14 +474,13 @@ async def plate(message: Message):
     if len(parts) != 2: return
     if not parts[1].isdigit(): return
     bet_amount = int(parts[1])
+    if await reject_if_private_game(message):
+        return
     if bet_amount < PLATE_MIN_BET:
         await message.reply(f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Минимальная ставка {PLATE_MIN_BET} кут.</b>", parse_mode="HTML")
         return
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
-    if message.chat.type == "private":
-        await message.reply("<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Играть можно только в публичных группах.</b>", parse_mode="HTML")
-        return
     max_bet = PLATE_MAX_BET
     try:
         lim = await db.gc_get_bet_limit_for_user(user_id)
@@ -570,7 +598,7 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
         cb_rev = int(rev_s); row_index = int(row_s); col_index = int(col_s); owner_id = int(owner_s)
     except: return
     if uid != owner_id: await call.answer("Это не ваша игра.", show_alert=True); return
-    if user_message_plate.get(owner_id) != msg_id: await call.answer("Откройте вашу последнюю игру."); return
+    if user_message_plate.get(owner_id) != msg_id: await call.answer("Откройте вашу последнюю игру.", show_alert=True); return
     inflight_key = (msg_id, uid)
     if inflight_key in _plate_inflight: await call.answer("⏳"); return
     _plate_inflight.add(inflight_key)
@@ -663,7 +691,7 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                 active_games_plate[owner_id] = game_data
                 user_message_plate.pop(owner_id, None)
                 _plate_session_locks.pop(msg_id, None)
-                await newbie_safety_net(owner_id)
+                await _after_plate_closed(owner_id, msg_id)
                 return
 
             # ======================== DEMO ========================
@@ -692,7 +720,7 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                     active_games_plate[owner_id] = game_data
                     user_message_plate.pop(owner_id, None)
                     _plate_session_locks.pop(msg_id, None)
-                    await newbie_safety_net(owner_id)
+                    await _after_plate_closed(owner_id, msg_id)
                     return
 
                 # SAFE – выигрыш с визуальной обманкой
@@ -733,7 +761,7 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                 active_games_plate[owner_id] = game_data
                 user_message_plate.pop(owner_id, None)
                 _plate_session_locks.pop(msg_id, None)
-                await newbie_safety_net(owner_id)
+                await _after_plate_closed(owner_id, msg_id)
                 return
 
             # ======================== ОБЫЧНЫЙ РЕЖИМ ========================
@@ -778,7 +806,7 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                 active_games_plate[owner_id] = game_data
                 user_message_plate.pop(owner_id, None)
                 _plate_session_locks.pop(msg_id, None)
-                await newbie_safety_net(owner_id)
+                await _after_plate_closed(owner_id, msg_id)
                 return
 
             elif secret_val == CELL_COLLAPSE:
@@ -804,7 +832,7 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                 active_games_plate[owner_id] = game_data
                 user_message_plate.pop(owner_id, None)
                 _plate_session_locks.pop(msg_id, None)
-                await newbie_safety_net(owner_id)
+                await _after_plate_closed(owner_id, msg_id)
                 return
 
             elif secret_val == CELL_TRAP:
@@ -829,7 +857,7 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                 active_games_plate[owner_id] = game_data
                 user_message_plate.pop(owner_id, None)
                 _plate_session_locks.pop(msg_id, None)
-                await newbie_safety_net(owner_id)
+                await _after_plate_closed(owner_id, msg_id)
                 return
 
         except Exception as e:
@@ -853,7 +881,7 @@ async def plate_process_withdraw(call: types.CallbackQuery):
         cb_rev = int(rev_s); owner_id = int(owner_s)
     except: return
     if uid != owner_id: await call.answer("Это не ваша игра.", show_alert=True); return
-    if user_message_plate.get(owner_id) != msg_id: await call.answer("Откройте вашу последнюю игру."); return
+    if user_message_plate.get(owner_id) != msg_id: await call.answer("Откройте вашу последнюю игру.", show_alert=True); return
     lock = _get_session_lock(msg_id)
     async with lock:
         game_data = active_games_plate.get(owner_id)
@@ -910,7 +938,7 @@ async def plate_process_withdraw(call: types.CallbackQuery):
         active_games_plate[owner_id] = game_data
         user_message_plate.pop(owner_id, None)
         _plate_session_locks.pop(msg_id, None)
-        await newbie_safety_net(owner_id)
+        await _after_plate_closed(owner_id, msg_id)
 
 
 # ------------------------- Заглушки -------------------------
@@ -919,4 +947,4 @@ async def plate_msg_stub(call): await call.answer("💬")
 @dp.callback_query(lambda c: c.data.startswith("plate_paid_stub"))
 async def plate_paid_stub(call): await call.answer("✅")
 @dp.callback_query(lambda c: c.data.startswith("plate_end_stub"))
-async def plate_end_stub(call): await call.answer("Игра завершена.")
+async def plate_end_stub(call): await call.answer("Игра завершена.", show_alert=True)

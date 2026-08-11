@@ -146,25 +146,25 @@ async def join_game_callback(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in gamesgild:
-        await callback_query.answer("Эта игра больше не существует.")
+        await callback_query.answer("Эта игра больше не существует.", show_alert=True)
         return
 
     game = gamesgild[game_id]
 
     if user_id == game['creator']:
-        await callback_query.answer("Вы не можете присоединиться к своей игре.")
+        await callback_query.answer("Вы не можете присоединиться к своей игре.", show_alert=True)
         return
 
     if len(game['participants']) >= 2:
-        await callback_query.answer("Игра заполнена")
+        await callback_query.answer("Игра заполнена", show_alert=True)
         return
 
     if not await check_balance_gild(user_id, game['bet']):
-        await callback_query.answer("Недостаточно средств для участия в игре.")
+        await callback_query.answer("Недостаточно средств для участия в игре.", show_alert=True)
         return
 
     if user_id in game['participants']:
-        await callback_query.answer("Вы уже участвуете в этой игре.")
+        await callback_query.answer("Вы уже участвуете в этой игре.", show_alert=True)
         return
 
     game['participants'].append(user_id)
@@ -193,7 +193,7 @@ async def join_game_callback(callback_query: types.CallbackQuery):
         reply_markup=keyboard,
         parse_mode="HTML")
 
-    await callback_query.answer("Вы присоединились к игре!")
+    await callback_query.answer("Вы присоединились к игре!", show_alert=True)
 
 @dp.callback_query(lambda c: c.data.startswith('gildstart:'))
 async def start_game_callback(callback_query: types.CallbackQuery):
@@ -201,17 +201,17 @@ async def start_game_callback(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in gamesgild:
-        await callback_query.answer("Эта игра больше не существует.")
+        await callback_query.answer("Эта игра больше не существует.", show_alert=True)
         return
 
     game = gamesgild[game_id]
 
     if user_id != game['creator']:
-        await callback_query.answer("Только создатель игры может начать игру.")
+        await callback_query.answer("Только создатель игры может начать игру.", show_alert=True)
         return
 
     if len(game['participants']) != 2:
-        await callback_query.answer("В игре должны участвовать 2 игрока.")
+        await callback_query.answer("В игре должны участвовать 2 игрока.", show_alert=True)
         return
 
     # Гасим спиннер сразу, до сетевых/БД запросов.
@@ -237,17 +237,17 @@ async def board_click_callback(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in gamesgild:
-        await callback_query.answer("Эта игра больше не существует.")
+        await callback_query.answer("Эта игра больше не существует.", show_alert=True)
         return
 
     game = gamesgild[game_id]
 
     if not game['game_active']:
-        await callback_query.answer("Игра завершена.")
+        await callback_query.answer("Игра завершена.", show_alert=True)
         return
 
     if user_id != game['turn']:
-        await callback_query.answer("Сейчас не ваш ход.")
+        await callback_query.answer("Сейчас не ваш ход.", show_alert=True)
         return
 
     current_player_symbol = '🔴' if user_id == game['creator'] else '❤️'
@@ -255,7 +255,7 @@ async def board_click_callback(callback_query: types.CallbackQuery):
 
     # Убедитесь, что шашка размещается правильно
     if game['board'][pos] != 'ㅤ':
-        await callback_query.answer("На этом месте уже стоит шашка.")
+        await callback_query.answer("На этом месте уже стоит шашка.", show_alert=True)
         return
 
     # Гасим спиннер сразу - иначе на победном ходу (ниже return без answer)

@@ -4221,6 +4221,8 @@ async def _build_gc_buttons(
         gc:<user_id>:<cur>:<target>:<reward>
     Этот формат должен совпадать с gc_info_callback.
     """
+    from bot.funcs.gc_emoji import gc_btn
+
     gc_button_row: Optional[List[InlineKeyboardButton]] = None
     gc_group_button: Optional[InlineKeyboardButton] = None
 
@@ -4278,12 +4280,13 @@ async def _build_gc_buttons(
         except Exception:
             gc_is_free = False  # подстраховка
 
-        emoji_prefix = "🍻 " if gc_is_free else ""
-
         if gc_target_amount > 0:
-            gc_text = f"{emoji_prefix}Челлендж: {gc_current_two}/{gc_target_amount} кут"
+            gc_label = f"Челлендж: {gc_current_two}/{gc_target_amount} кут"
         else:
-            gc_text = f"{emoji_prefix}Челлендж: {gc_current_two} кут"
+            gc_label = f"Челлендж: {gc_current_two} кут"
+
+        # 🍻 только как premium-icon через gc_btn (не в тексте)
+        gc_text = f"🍻 {gc_label}" if gc_is_free else gc_label
 
         # ---- 1.1. callback_data в формате, который понимает gc_info_callback ----
         cb_data = f"gc:{owner_id}:{gc_current_two}:{gc_target_amount}:{reward_amount}"
@@ -4300,12 +4303,7 @@ async def _build_gc_buttons(
             f" target={gc_target_amount}, reward={reward_amount}, callback={cb_data!r}"
         )
 
-        gc_button_row = [
-            InlineKeyboardButton(
-                text=gc_text,
-                callback_data=cb_data,
-            )
-        ]
+        gc_button_row = [gc_btn(gc_text, callback_data=cb_data)]
 
         # ---- 2. Привязка к группе ----
         target_chat_id = gc_assignment.get("target_chat_id")
@@ -4434,10 +4432,7 @@ async def _build_gc_buttons(
                         print(traceback.format_exc())
 
             if group_url:
-                gc_group_button = InlineKeyboardButton(
-                    text=group_label,
-                    url=group_url,
-                )
+                gc_group_button = gc_btn(group_label, url=group_url)
                 print(
                     f"🎯 [GC_GROUP] Итоговая кнопка перехода в группу: "
                     f"text={group_label!r}, url={group_url!r}"
@@ -4604,27 +4599,17 @@ async def cb_gc_abort_menu_handler(callback_query: types.CallbackQuery):
         return
 
     # 4. Собираем клавиатуру (Завершить / Назад)
+    from bot.funcs.gc_emoji import gc_btn, gc_tg
+
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Завершить челлендж",
-                    callback_data="cb_gc_abort_finish", style="default" ,
-                    icon_custom_emoji_id="5449372007432985754",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Назад",
-                    callback_data=f"balance:{owner_id}", style="default" ,
-                    icon_custom_emoji_id="5359636199155704118",
-                )
-            ],
+            [gc_btn("🌴 Завершить челлендж", callback_data="cb_gc_abort_finish")],
+            [gc_btn("🏕 Назад", callback_data=f"balance:{owner_id}")],
         ]
     )
 
-    # 5. Меняем текст сообщения на «💰»
-    await _safe_edit_gc_msg(msg, "<tg-emoji emoji-id='6023728560768818964'>💰</tg-emoji>", reply_markup=kb)
+    # 5. Меняем текст сообщения на mapped 💰
+    await _safe_edit_gc_msg(msg, gc_tg("💰"), reply_markup=kb)
     _dbg_gc_simple("cb_gc_abort_menu: сообщение заменено на 💰 (меню завершения)")
 
 
@@ -4702,18 +4687,14 @@ async def cb_gc_abort_finish_handler(callback_query: types.CallbackQuery):
         return
 
     # 4. Успешно завершили: показываем 💰 + кнопку «Вернуться назад»
+    from bot.funcs.gc_emoji import gc_btn, gc_tg
+
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🏕 Вернуться назад",
-                    callback_data=f"balance:{owner_id}",
-                )
-            ]
+            [gc_btn("🏕 Вернуться назад", callback_data=f"balance:{owner_id}")]
         ]
     )
-    emoji_id = get_random_emoji_id()
-    await _safe_edit_gc_msg(msg, f"<tg-emoji emoji-id='{emoji_id}'>💰</tg-emoji>", reply_markup=kb, parse_mode="HTML")
+    await _safe_edit_gc_msg(msg, gc_tg("💰"), reply_markup=kb)
 
     try:
         await callback_query.answer(

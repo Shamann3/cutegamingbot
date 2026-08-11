@@ -20,6 +20,7 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
 # ==== твое окружение (как у тебя) ====
+from bot.games.group_only import reject_if_private_game
 from main import (
     button_memory, _format_hms, _pair_seconds_left, games_memory, check_bet_and_set_item,
     db, bot1, dp, get_current_time_formatted, timehistorygames, pending_context, send_invoice_to_user
@@ -472,6 +473,9 @@ async def memory(message: Message):
         if bet_str is None or not bet_str.isdigit():
             return
 
+        if await reject_if_private_game(message):
+            return
+
         bet = int(bet_str)
         creator_id = message.from_user.id
 
@@ -597,7 +601,7 @@ async def memory_join_game(cb: CallbackQuery):
     try:
         game_id = cb.data.split(":", 1)[1]
     except Exception:
-        await safe_answer(cb, "⚠️ Неверные данные.", True);
+        await safe_answer(cb, "⚠️ Неверные данные.", True, show_alert=True);
         return
 
     key = (game_id, user_id)
@@ -612,18 +616,18 @@ async def memory_join_game(cb: CallbackQuery):
         async with lock:
             g = games_memory.get(game_id)
             if not g or not g.get("game_active"):
-                await safe_answer(cb, "💭 Эта игра больше не существует.", True);
+                await safe_answer(cb, "💭 Эта игра больше не существует.", True, show_alert=True);
                 return
 
             if await db.is_user_banned(user_id):
-                await safe_answer(cb, "❗️ Вы заблокированы в боте", True);
+                await safe_answer(cb, "❗️ Вы заблокированы в боте", True, show_alert=True);
                 return
 
             participants = list(dict.fromkeys([int(x) for x in g.get("participants", [])]))
             g["participants"] = participants
 
             if user_id == g.get("creator"):
-                await safe_answer(cb, "❕ Вы создатель этой игры", True);
+                await safe_answer(cb, "❕ Вы создатель этой игры", True, show_alert=True);
                 return
             if len(participants) >= 2:
                 await safe_answer(cb, msg("game_full"), True);
@@ -634,10 +638,10 @@ async def memory_join_game(cb: CallbackQuery):
                 try:
                     bal = await db.get_user_balance(user_id)
                     if not (bal is not None and int(bal) >= bet):
-                        await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", True);
+                        await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", True, show_alert=True);
                         return
                 except Exception:
-                    await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", True);
+                    await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", True, show_alert=True);
                     return
 
             if user_id in participants:
@@ -654,7 +658,7 @@ async def memory_join_game(cb: CallbackQuery):
                 if inviter_id and inviter_id in parts_set:
                     secs = await _pair_seconds_left(db, user_id, inviter_id, now=None)
                     if secs > 0:
-                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш пригласитель.\n⏳ До снятия ограничения: {_format_hms(secs)}\n#AntiFarmSystem", True);
+                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш пригласитель.\n⏳ До снятия ограничения: {_format_hms(secs)}\n#AntiFarmSystem", True, show_alert=True);
                         return
                 invitees_here = await db.get_invitees_in(inviter_id=user_id, candidates=parts_set)
                 if invitees_here:
@@ -664,10 +668,10 @@ async def memory_join_game(cb: CallbackQuery):
                         if secs > 0:
                             min_secs = secs if min_secs is None else min(min_secs, secs)
                     if min_secs:
-                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш приглашённый.\n⏳ До снятия ограничения: {_format_hms(min_secs)}\n#AntiFarmSystem", True);
+                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш приглашённый.\n⏳ До снятия ограничения: {_format_hms(min_secs)}\n#AntiFarmSystem", True, show_alert=True);
                         return
             except Exception:
-                await safe_answer(cb, "💭 Техническая ошибка #1212471", True);
+                await safe_answer(cb, "💭 Техническая ошибка #1212471", True, show_alert=True);
                 return
 
             # атомарно
@@ -706,7 +710,7 @@ async def memory_join_game(cb: CallbackQuery):
             await safe_answer(cb, msg("joined"))
     except Exception as e:
         logger.exception("join error: %r", e)
-        await safe_answer(cb, "💭 Ошибка присоединения. Повторите позже.", True)
+        await safe_answer(cb, "💭 Ошибка присоединения. Повторите позже.", True, show_alert=True)
     finally:
         _inflight_joins.discard(key)
 
@@ -721,13 +725,13 @@ async def memory_start_game_callback(cb: CallbackQuery):
         await heal_if_needed(game_id, cb.message)
         g = games_memory.get(game_id)
         if not g:
-            await safe_answer(cb, "💭 Эта игра больше не существует.", True);
+            await safe_answer(cb, "💭 Эта игра больше не существует.", True, show_alert=True);
             return
         if user_id != g['creator']:
             await safe_answer(cb, msg("start_only_creator"), True);
             return
         if len(g['participants']) != 2:
-            await safe_answer(cb, "💭 В игре должны участвовать 2 игрока.", True);
+            await safe_answer(cb, "💭 В игре должны участвовать 2 игрока.", True, show_alert=True);
             return
 
         g["game_active"] = True
@@ -746,7 +750,7 @@ async def memory_start_game_callback(cb: CallbackQuery):
         _ensure_watchdog(game_id)
     except Exception as e:
         logger.exception("start error: %r", e)
-        await safe_answer(cb, "💭 Ошибка запуска. Повторите позже.", True)
+        await safe_answer(cb, "💭 Ошибка запуска. Повторите позже.", True, show_alert=True)
 
 # ======================== ХОД (КЛИК) =======================
 @dp.callback_query(lambda c: c.data.startswith("memory_open:"))
@@ -876,7 +880,7 @@ async def memory_open(cb: CallbackQuery):
     except Exception as e:
         logger.exception("open error: %r", e)
         try:
-            await safe_answer(cb, "💭 Что-то пошло не так, уже чиним.", True)
+            await safe_answer(cb, "💭 Что-то пошло не так, уже чиним.", True, show_alert=True)
         except Exception:
             pass
     finally:

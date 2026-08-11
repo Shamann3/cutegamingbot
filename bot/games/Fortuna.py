@@ -3,25 +3,44 @@
 🎡 Рулетка 0..12 с Jericho, маскировкой, сериями и корректным demo/0demo.
 """
 from main import *  # noqa: F401,F403
+from bot.games.group_only import reject_if_private_game
+from bot.funcs.tech_home_log import safe_send_tech_log
 
 import asyncio
 import random
+import re
 import time
 import traceback
+from contextlib import asynccontextmanager
 from decimal import Decimal, ROUND_HALF_UP, ROUND_DOWN, getcontext
-from typing import Dict, Optional, List, Union, Any, Tuple
+from typing import Dict, Optional, List, Union, Any, Tuple, AsyncIterator, Callable, Awaitable, TypeVar
+
+T = TypeVar("T")
 
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 try:
-    from aiogram.exceptions import TelegramAPIError, RetryAfter
+    # aiogram 3.7+: TelegramRetryAfter (старого RetryAfter уже нет)
+    from aiogram.exceptions import (
+        TelegramAPIError,
+        TelegramBadRequest,
+        TelegramRetryAfter,
+    )
+    RetryAfter = TelegramRetryAfter  # noqa: N816
 except Exception:
-    class TelegramAPIError(Exception):
-        pass
-    class RetryAfter(TelegramAPIError):
-        def __init__(self, retry_after: float = 1.0):
-            super().__init__("Too many requests")
-            self.retry_after = retry_after
+    try:
+        from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, RetryAfter  # type: ignore
+    except Exception:
+        class TelegramAPIError(Exception):
+            pass
+
+        class TelegramBadRequest(TelegramAPIError):
+            pass
+
+        class RetryAfter(TelegramAPIError):
+            def __init__(self, retry_after: float = 1.0):
+                super().__init__("Too many requests")
+                self.retry_after = retry_after
 
 # Jericho
 from main import jericho_check, welcome_back_gift, newbie_safety_net, force_repay_debt
@@ -79,10 +98,13 @@ FORTUNA_MIN_NATURAL_SHARE = 0.52
 FORTUNA_MAX_NATURAL_SHARE = 0.90
 
 # ===================== ХРАНИЛИЩА / БЛОКИРОВКИ =====================
-_message_locks: Dict[int, asyncio.Lock] = LazyGameStore("_message_locks")
-_user_locks: Dict[int, asyncio.Lock] = LazyGameStore("_user_locks")
-_processing_messages: Dict[int, float] = LazyGameStore("_processing_messages")
-_processed_messages: Dict[int, float] = LazyGameStore("_processed_messages")
+# ВАЖНО: asyncio.Lock нельзя класть в LazyGameStore/Redis.
+# После pickle/unpickle лок «мертвый» или чужого event loop →
+# партия зависает на `async with lock` и в чат ничего не уходит.
+_message_locks: Dict[str, asyncio.Lock] = {}
+_user_locks: Dict[int, asyncio.Lock] = {}
+_processing_messages: Dict[str, float] = LazyGameStore("_processing_messages")
+_processed_messages: Dict[str, float] = LazyGameStore("_processed_messages")
 _settled_events: Dict[str, float] = LazyGameStore("_settled_events")
 _settled_events_lock = asyncio.Lock()
 _roulette_streaks: Dict[int, Dict[str, int]] = LazyGameStore("_roulette_streaks")
@@ -150,20 +172,86 @@ def _msg_key(chat_id: int, message_id: int) -> str:
 def _key_from_message(message: Message) -> str:
     return _msg_key(int(message.chat.id), int(message.message_id))
 
+def _fresh_lock() -> asyncio.Lock:
+    return asyncio.Lock()
+
 def _get_message_lock(message: Message) -> asyncio.Lock:
     key = _key_from_message(message)
     lock = _message_locks.get(key)
-    if lock is None:
-        lock = asyncio.Lock()
+    if lock is None or not isinstance(lock, asyncio.Lock):
+        lock = _fresh_lock()
+        _message_locks[key] = lock
+        return lock
+    try:
+        # Lock из другого loop нельзя использовать — создаём новый.
+        loop = asyncio.get_running_loop()
+        lock_loop = getattr(lock, "_loop", None)
+        if lock_loop is not None and lock_loop is not loop:
+            lock = _fresh_lock()
+            _message_locks[key] = lock
+    except Exception:
+        lock = _fresh_lock()
         _message_locks[key] = lock
     return lock
 
 def _get_user_lock(uid: int) -> asyncio.Lock:
-    lock = _user_locks.get(uid)
-    if lock is None:
-        lock = asyncio.Lock()
-        _user_locks[uid] = lock
+    key = int(uid)
+    lock = _user_locks.get(key)
+    if lock is None or not isinstance(lock, asyncio.Lock):
+        lock = _fresh_lock()
+        _user_locks[key] = lock
+        return lock
+    try:
+        loop = asyncio.get_running_loop()
+        lock_loop = getattr(lock, "_loop", None)
+        if lock_loop is not None and lock_loop is not loop:
+            lock = _fresh_lock()
+            _user_locks[key] = lock
+    except Exception:
+        lock = _fresh_lock()
+        _user_locks[key] = lock
     return lock
+
+async def _acquire_lock_safe(
+    lock: asyncio.Lock,
+    *,
+    key: Any,
+    store: dict,
+    timeout: float = 12.0,
+    name: str = "lock",
+) -> asyncio.Lock:
+    """Берём лок с таймаутом; при зависании — новый лок, чтобы партия не молчала."""
+    try:
+        await asyncio.wait_for(lock.acquire(), timeout=timeout)
+        return lock
+    except asyncio.TimeoutError:
+        print(f"[ROULETTE][LOCK] {name} timeout key={key!r} — recreate", flush=True)
+        fresh = _fresh_lock()
+        store[key] = fresh
+        await asyncio.wait_for(fresh.acquire(), timeout=timeout)
+        return fresh
+
+
+@asynccontextmanager
+async def _roulette_lock(
+    store: dict,
+    key: Any,
+    *,
+    name: str,
+    timeout: float = 12.0,
+) -> AsyncIterator[None]:
+    lock = store.get(key)
+    if not isinstance(lock, asyncio.Lock):
+        lock = _fresh_lock()
+        store[key] = lock
+    held = await _acquire_lock_safe(lock, key=key, store=store, timeout=timeout, name=name)
+    try:
+        yield
+    finally:
+        try:
+            held.release()
+        except Exception:
+            pass
 
 def _event_key(chat_id: int, message_id: int) -> str:
     return f"roulette:{int(chat_id)}:{int(message_id)}"
@@ -423,14 +511,14 @@ def _roulette_help_text() -> str:
     return (
         "💭 <b>Неверный формат команды!</b>\n"
         "<blockquote><i><b>Примеры:</b>\n"
-        "<code>рулетка 10 0</code>\n"
-        "<code>рулетка 10 7</code>\n"
         "<code>рулетка 10 красное</code>\n"
         "<code>рулетка 10 черное</code>\n"
-        "<code>рулетка 10 пар</code>\n"
         "<code>рулетка 10 чет</code>\n"
         "<code>рулетка 10 нечет</code>\n"
-        "<code>рулетка 10 3 7</code></i></blockquote>"
+        "<code>рулетка 10 7</code>\n"
+        "<code>рулетка 10 0</code>\n"
+        "<code>рулетка 10 1 6</code>\n"
+        "<code>рулетка 10 6 12</code></i></blockquote>"
     )
 
 # ===================== БАЛАНСЫ =====================
@@ -537,19 +625,26 @@ async def _safe_get_balances(user_id: int, chat_id: int) -> Tuple[int, int]:
     return balance, chat_balance
 
 # ===================== СТИКЕРЫ =====================
+# Принцип как в bot/funcs/ruletka.py:
+#   sticker_id = stickers[number]
+#   await bot1.send_sticker(chat_id, sticker_id)  (+ flood-retry)
+# Пак: cutegamingbotroulet_by_TgEmojiBot (1..12)
+FLOOD_STICKER_MAX_RETRIES = 4
+FLOOD_SLEEP_BUFFER_SEC = 1.0
+
 stickers: Dict[int, str] = {
-    1: "CAACAgIAAxkBAe4AAZVn_CXxaeKjD9sGS7wFBB1aoUKvbwAClWQAAiom6EsQVwbONN40eTYE",
-    2: "CAACAgIAAxkBAe4AAaNn_CZYrfhdltGDD0faNKUq0a-fzgACvWMAAlB34EuRGbUtfZK2JzYE",
-    3: "CAACAgIAAxkBAe4AAaZn_CZg0BXPw964yMNa6AOHhItVXgACKYUAAlbq4EukPZPXfHXAszYE",
-    4: "CAACAgIAAxkBAe4AAatn_CZnpK2u4FGJY_zQPjhPSbjAjAACiXAAAmiS4EtaWJbwV7z9zzYE",
-    5: "CAACAgIAAxkBAe4AAa1n_CZuHHPHsg2gUf3PvzmpeJXb_wACRnoAAg2B4UvmsRd_OoJ4UTYE",
-    6: "CAACAgIAAxkBAe4AAbFn_CZ1yL6K9FINnkoQA6aegTaDCwACw2MAAkCW6Usgy6qhJGU2VDYE",
-    7: "CAACAgIAAxkBAe4AAbdn_CZ-FYQ_0RH31x8mgNerHFflhAACS3EAAjdR4Uvjh6J8JO5nvzYE",
-    8: "CAACAgIAAxkBAe4AAchn_CaM9rk6B6aOYJfNwtscnwMBYAACRncAAgk74UtfP-DDrr7q6jYE",
-    9: "CAACAgIAAxkBAe4AAeZn_CaTXSTe6dn7qhsSDHW8NhGnkAACLHcAAkbN4UvNFHeZ4I-3ujYE",
-    10: "CAACAgIAAxkBAe4AAehn_CaXQTOpQwctGPegoDu5Eka-dAACpoIAAonK4UsTjHDLPao6vjYE",
-    11: "CAACAgIAAxkBAe4AAetn_CadSD_UyzWBKUG59XAZqgABc-EAAspoAAJj2-BLudsPT85boew2BA",
-    12: "CAACAgIAAxkBAe4AAfFn_Cai_fnvjHDpU85JRxum-0BQZQACgWgAAuHy6EuB0W7lp65CqzYE",
+    1: "CAACAgIAAx0Ef0PM_gABAqV7anisO2qBmenNqBab8Si-XX0M3YoAApVkAAIqJuhLEFcGzjTeNHk9BA",
+    2: "CAACAgIAAx0Ef0PM_gABAqV9anisUA-kBhacCQam0R94bW6lcD4AAr1jAAJQd-BLkRm1LX2Stic9BA",
+    3: "CAACAgIAAx0Ef0PM_gABAqV-anisUbwc8HNuGN_yjY3Cq2tC844AAimFAAJW6uBLpD2T13x1wLM9BA",
+    4: "CAACAgIAAx0Ef0PM_gABAqPPanZN9d7bBhz4pQNBbAXEfL4IJrgAAolwAAJokuBLWliW8Fe8_c89BA",
+    5: "CAACAgIAAx0Ef0PM_gABAqRIanejPsGc1URaP6rsnNYUqbTsxzgAAkZ6AAINgeFL5rEXfzqCeFE9BA",
+    6: "CAACAgIAAx0EYB7ghAABKxgfanSzz7EIJUn8ttK_imdxM7e87iIAAsNjAAJAlulLIMuqoSRlNlQ9BA",
+    7: "CAACAgIAAx0Ef0PM_gABAqWCanisVodlSQP8VJih6Ep-Ubh7B8IAAktxAAI3UeFL44eifCTuZ789BA",
+    8: "CAACAgIAAxUAAWp4rF2-dtAZsfe-tNqOno-QXZ1CAAJGdwACyTvhS18_4MOuvurqPQQ",
+    9: "CAACAgIAAx0Ef0PM_gABAqPGanZGGnKEO6da4H9AIMnCTmszCe0AAix3AAJGzeFLzRR3meCPt7o9BA",
+    10: "CAACAgIAAx0Ef0PM_gABAqP1and8Zg-Lr6v6z09sIgd9rjd-tQ0AAqaCAAKJyuFLE4xwyz2qOr49BA",
+    11: "CAACAgIAAx0Ef0PM_gABAqWFanisW5iMGfxOuXjB-EqMh_RFv-4AAspoAAJj2-BLudsPT85boew9BA",
+    12: "CAACAgIAAx0Ef0PM_gABAqWGanisXI47L_ajq2Dne8Td6f27PxsAAoFoAALh8uhLgdFu5aeuQqs9BA",
 }
 
 LOSE_PHRASES: List[str] = [
@@ -653,64 +748,71 @@ def _build_result_kb(
 
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
-_PERMANENT_MEDIA_ERRORS = (
-    "wrong file identifier",
-    "wrong remote file id",
-    "sticker_id_invalid",
-    "file reference expired",
-    "wrong type of the web page content",
-    "failed to get http url content",
-)
-
-def _is_permanent_media_error(e: Exception) -> bool:
-    """Ошибка file_id, которую ретрай не исправит - нужен фолбэк, а не повтор."""
-    s = str(e).lower()
-    return any(marker in s for marker in _PERMANENT_MEDIA_ERRORS)
+def _is_flood_error(exc: Exception) -> bool:
+    """Как в ruletka.py — flood / RetryAfter."""
+    if isinstance(exc, RetryAfter):
+        return True
+    low = str(exc).lower()
+    return (
+        "flood control" in low
+        or "too many requests" in low
+        or "retry after" in low
+        or "retry in" in low
+    )
 
 
-async def _send_sticker_with_kb(message: Message, sticker_id: str, kb: InlineKeyboardMarkup, max_tries: int = 5) -> bool:
-    chat_id = message.chat.id
-    reply_to = message.message_id
-    tries = 0
-    delay = 0.25
-
-    while tries < max_tries:
+def _extract_retry_after(exc: Exception) -> int:
+    ra = getattr(exc, "retry_after", None)
+    if ra is not None:
         try:
-            st_msg = await bot1.send_sticker(chat_id, sticker_id, reply_to_message_id=reply_to)
-
-            try:
-                await bot1.edit_message_reply_markup(chat_id=chat_id, message_id=st_msg.message_id, reply_markup=kb)
-            except TelegramAPIError as e:
-                if "message is not modified" not in str(e).lower():
-                    _fdbg("KB", f"edit_message_reply_markup error: {e}")
-            except Exception:
-                _fdbg("KB", traceback.format_exc())
-
-            return True
-
-        except RetryAfter as e:
-            wait = getattr(e, "retry_after", 1.0) or 1.0
-            await asyncio.sleep(wait + 0.2)
-        except TelegramAPIError as e:
-            # Битый/протухший file_id - ошибка ПОСТОЯННАЯ, ретраи бессмысленны.
-            # Раньше такой стикер долбился все 5 раз с backoff 0.25→0.5→1→2→2.5:
-            # ~6 секунд на пустом месте, и всё это время расходовался общий
-            # лимит Telegram на токен (см. лог: пять FAIL SendSticker подряд,
-            # последний 3041мс). Сразу уходим на текстовый фолбэк.
-            if _is_permanent_media_error(e):
-                _fdbg("STICKER", f"permanent error, no retry: {e}")
-                return False
-            tries += 1
-            await asyncio.sleep(delay + random.random() * 0.2)
-            delay = min(2.5, delay * 2)
+            return max(1, int(float(ra)))
         except Exception:
-            tries += 1
-            await asyncio.sleep(delay + random.random() * 0.2)
-            delay = min(2.5, delay * 2)
+            pass
+    for pattern in (r"retry in (\d+)", r"retry after (\d+)"):
+        m = re.search(pattern, str(exc), re.IGNORECASE)
+        if m:
+            return max(1, int(m.group(1)))
+    return 5
 
-    return False
 
-async def _send_result_visual(message: Message, *, random_num: int, kind: str, amount: int = 0, coef: float = 0.0) -> None:
+async def _call_with_flood_retry(
+    factory: Callable[[], Awaitable[T]],
+    *,
+    tag: str,
+    max_tries: int = FLOOD_STICKER_MAX_RETRIES,
+) -> Optional[T]:
+    """Строго тот же принцип, что в bot/funcs/ruletka.py."""
+    for attempt in range(1, max_tries + 1):
+        try:
+            return await factory()
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e).lower():
+                return None
+            raise
+        except Exception as e:
+            if not _is_flood_error(e):
+                raise
+            wait_sec = _extract_retry_after(e)
+            print(
+                f"[ROULETTE][flood][{tag}] wait={wait_sec}s "
+                f"attempt={attempt}/{max_tries}",
+                flush=True,
+            )
+            if attempt >= max_tries:
+                raise
+            await asyncio.sleep(wait_sec + FLOOD_SLEEP_BUFFER_SEC)
+    return None
+
+
+async def _send_result_visual(
+    message: Message,
+    *,
+    random_num: int,
+    kind: str,
+    amount: int = 0,
+    coef: float = 0.0,
+) -> None:
+    """Результат рулетки: TG-стикер + кнопки (принцип ruletka.py)."""
     kb = _build_result_kb(
         random_num=int(random_num),
         kind=str(kind),
@@ -718,23 +820,76 @@ async def _send_result_visual(message: Message, *, random_num: int, kind: str, a
         coef=float(coef),
     )
 
-    sticker_id = ZERO_STICKER_ID if int(random_num) == 0 else stickers.get(int(random_num))
+    chat_id = int(message.chat.id)
+    reply_to = int(message.message_id)
+    num = int(random_num)
 
+    # 0 зеро — отдельный стикер, если задан; иначе орёл с клавиатурой (как раньше).
+    if num == 0:
+        sticker_id = ZERO_STICKER_ID
+    else:
+        sticker_id = stickers.get(num)
+
+    sticker_message = None
     if sticker_id:
-        ok = await _send_sticker_with_kb(message, sticker_id, kb)
-        if ok:
-            return
+        try:
+            async def _send_sticker():
+                return await bot1.send_sticker(
+                    chat_id,
+                    sticker_id,
+                    reply_to_message_id=reply_to,
+                )
 
+            sticker_message = await _call_with_flood_retry(_send_sticker, tag="sticker")
+        except Exception as e:
+            # Якорь мог пропасть — один раз без reply (как flood-safe повтор).
+            err = str(e).lower()
+            if "reply" in err and "not found" in err:
+                try:
+                    async def _send_sticker_noreply():
+                        return await bot1.send_sticker(chat_id, sticker_id)
+
+                    sticker_message = await _call_with_flood_retry(
+                        _send_sticker_noreply, tag="sticker_noreply",
+                    )
+                except Exception as e2:
+                    print(f"[ROULETTE] send_sticker error: {e2}", flush=True)
+            else:
+                print(f"[ROULETTE] send_sticker error: {e}", flush=True)
+
+    if sticker_message is not None:
+        try:
+            async def _edit_kb():
+                return await bot1.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=sticker_message.message_id,
+                    reply_markup=kb,
+                )
+
+            await _call_with_flood_retry(_edit_kb, tag="sticker_kb")
+        except Exception as e:
+            if "message is not modified" not in str(e).lower():
+                print(f"[ROULETTE] sticker kb error: {e}", flush=True)
+        return
+
+    # Крайний случай (нет file_id / 0 без ZERO_STICKER): сообщение с той же клавиатурой.
     try:
-        await bot1.send_message(
-            message.chat.id,
-            "<tg-emoji emoji-id='5193099950354898372'>🦅</tg-emoji>",
-            reply_to_message_id=message.message_id,
-            reply_markup=kb,
-            parse_mode="HTML",
-        )
-    except Exception:
-        _fdbg("SEND", f"fallback send failed chat={message.chat.id} msg={message.message_id}")
+        async def _send_fallback():
+            return await bot1.send_message(
+                chat_id,
+                "<tg-emoji emoji-id='5193099950354898372'>🦅</tg-emoji>",
+                reply_to_message_id=reply_to,
+                reply_markup=kb,
+                parse_mode="HTML",
+            )
+
+        await _call_with_flood_retry(_send_fallback, tag="result_fallback")
+    except Exception as e:
+        print(f"[ROULETTE] send_message fallback error: {e}", flush=True)
+        try:
+            await bot1.send_message(chat_id, "🦅", reply_markup=kb)
+        except Exception as e2:
+            print(f"[ROULETTE] send_message plain error: {e2}", flush=True)
 
 # ===================== CLEANUP =====================
 async def _processed_cleanup_loop():
@@ -856,22 +1011,20 @@ async def _home_take_and_log_roulette_zero(*, user_id: int, loss: int) -> None:
             ]
         )
 
-        try:
-            await bot1.send_message(
-                int(TECH_CHAT_ID),
-                emoji_html,
-                reply_markup=inline_kb,
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-        except Exception:
-            # Fallback: если premium-эмодзи не поддерживаются, шлём обычный текст без кнопок
-            await bot1.send_message(
-                int(TECH_CHAT_ID),
-                f"🎡 Рулетка [Выпал 0]\n+ {fmt_int(loss)} на чёрный рынок\n<blockquote><b>{fmt_int(chat_balance)} кут доступно для выкупов</b></blockquote>",
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
+        # Лог в TECH_CHAT: chat not found не должен ронять партию.
+        fallback_text = (
+            f"🎡 Рулетка [Выпал 0]\n"
+            f"+ {fmt_int(loss)} на чёрный рынок\n"
+            f"<blockquote><b>{fmt_int(chat_balance)} кут доступно для выкупов</b></blockquote>"
+        )
+        await safe_send_tech_log(
+            bot1,
+            int(TECH_CHAT_ID),
+            html=emoji_html,
+            reply_markup=inline_kb,
+            fallback_html=fallback_text,
+            tag="FORTUNA][HOME_ZERO_LOG_SEND",
+        )
 
     except Exception as e:
         _fdbg_err("HOME_ZERO_LOG", e)
@@ -1011,18 +1164,20 @@ async def _fortuna_free_game(
     gc_state: dict,
 ):
     ensure_cleanup_started()
-    msg_lock = _get_message_lock(message)
-    user_lock = _get_user_lock(user_id)
+    msg_key = _key_from_message(message)
+    # гарантируем наличие локов в in-memory dict
+    _get_message_lock(message)
+    _get_user_lock(user_id)
 
-    async with msg_lock:
+    async with _roulette_lock(_message_locks, msg_key, name="msg"):
         if _already_processed(message):
             return
 
-        async with user_lock:
+        async with _roulette_lock(_user_locks, int(user_id), name="user"):
             if _already_processed(message):
                 return
 
-            _processing_messages[_key_from_message(message)] = time.time()
+            _processing_messages[msg_key] = time.time()
 
             try:
                 left = _cooldown_left(chat_id, user_id)
@@ -1215,7 +1370,17 @@ async def _fortuna_free_game(
                 return
 
             except Exception:
-                _fdbg("FREE", traceback.format_exc())
+                print(f"[ROULETTE][FREE] {traceback.format_exc()}", flush=True)
+                try:
+                    await bot1.send_message(
+                        chat_id,
+                        "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
+                        "<b>Не удалось завершить спин. Попробуйте ещё раз.</b>",
+                        reply_to_message_id=message.message_id,
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
                 _mark_processed_message(message)
                 return
 
@@ -1231,19 +1396,20 @@ async def _fortuna_paid_game(
     using_0demo: bool = False,
 ):
     ensure_cleanup_started()
-    msg_lock = _get_message_lock(message)
-    user_lock = _get_user_lock(user_id)
+    msg_key = _key_from_message(message)
+    _get_message_lock(message)
+    _get_user_lock(user_id)
     event_key = _event_key(chat_id, message.message_id)
 
-    async with msg_lock:
+    async with _roulette_lock(_message_locks, msg_key, name="msg"):
         if _already_processed(message):
             return
 
-        async with user_lock:
+        async with _roulette_lock(_user_locks, int(user_id), name="user"):
             if _already_processed(message):
                 return
 
-            _processing_messages[_key_from_message(message)] = time.time()
+            _processing_messages[msg_key] = time.time()
 
             try:
                 left = _cooldown_left(chat_id, user_id)
@@ -1724,7 +1890,24 @@ async def _fortuna_paid_game(
                 _mark_processed_message(message)
 
             except Exception:
-                _fdbg("PAID", traceback.format_exc())
+                print(f"[ROULETTE][PAID] {traceback.format_exc()}", flush=True)
+                try:
+                    await bot1.send_message(
+                        chat_id,
+                        "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
+                        "<b>Не удалось завершить спин. Попробуйте ещё раз.</b>",
+                        reply_to_message_id=message.message_id,
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    try:
+                        await bot1.send_message(
+                            chat_id,
+                            "☁️ <b>Не удалось завершить спин. Попробуйте ещё раз.</b>",
+                            parse_mode="HTML",
+                        )
+                    except Exception:
+                        pass
                 _mark_processed_message(message)
 
 # ===================== MAIN HANDLER =====================
@@ -1736,17 +1919,7 @@ async def Fortuna(message: Message):
         if _already_processed(message):
             return
 
-        if message.chat.type == "private":
-            try:
-                await bot1.send_message(
-                    message.chat.id,
-                    "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В эту игру можно играть только в публичных группах.</b>",
-                    reply_to_message_id=message.message_id,
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
-            _mark_processed_message(message)
+        if await reject_if_private_game(message):
             return
 
         parts = (message.text or "").strip().split()
@@ -1888,9 +2061,15 @@ async def Fortuna(message: Message):
             _fdbg("MODE", f"final: demo={using_demo} 0demo={using_0demo}")
 
         if has_assignment and is_free:
+            print(f"[ROULETTE][ENTER] free user={user_id} chat={chat_id} bet={bet_int}", flush=True)
             await _fortuna_free_game(message, user_id, chat_id, bet_int, parts, gc_state)
             return
 
+        print(
+            f"[ROULETTE][ENTER] paid user={user_id} chat={chat_id} bet={bet_int} "
+            f"demo={using_demo} 0demo={using_0demo}",
+            flush=True,
+        )
         await _fortuna_paid_game(
             message, user_id, chat_id, bet_int, parts,
             has_assignment,
@@ -1899,7 +2078,25 @@ async def Fortuna(message: Message):
         )
 
     except Exception:
-        _fdbg("MAIN", traceback.format_exc())
+        # Всегда в лог — иначе онбординг «молчит» при падении партии.
+        print(f"[ROULETTE][MAIN] {traceback.format_exc()}", flush=True)
+        try:
+            await bot1.send_message(
+                int(message.chat.id),
+                "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
+                "<b>Не удалось завершить спин. Попробуйте ещё раз.</b>",
+                reply_to_message_id=getattr(message, "message_id", None),
+                parse_mode="HTML",
+            )
+        except Exception:
+            try:
+                await bot1.send_message(
+                    int(message.chat.id),
+                    "☁️ <b>Не удалось завершить спин. Попробуйте ещё раз.</b>",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
         try:
             _mark_processed_message(message)
         except Exception:

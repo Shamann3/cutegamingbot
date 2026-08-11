@@ -9,6 +9,7 @@ from aiogram import types
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 
+from bot.games.group_only import reject_if_private_game
 from main import (
     gamesorel, button_gamesorel,  # если button_gamesorel нужен тебе где-то ещё - оставляем
     db, bot1, dp,
@@ -203,6 +204,9 @@ async def orel(message: Message):
         else:
             return
 
+        if await reject_if_private_game(message):
+            return
+
         if bet_str is not None:
             bet = int(bet_str)
             # как у тебя: ставка должна быть > 0, иначе отвечаем
@@ -327,12 +331,12 @@ async def join_game_callback(callback_query: CallbackQuery):
         return
 
     if game_id not in gamesorel:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     inflight_key = (game_id, user_id)
     if inflight_key in _inflight_orel:
-        await callback_query.answer("⏳ Обрабатываю ваше присоединение...")
+        await callback_query.answer("⏳ Обрабатываю ваше присоединение...", show_alert=True)
         return
 
     _inflight_orel.add(inflight_key)
@@ -341,37 +345,37 @@ async def join_game_callback(callback_query: CallbackQuery):
         async with lock:
             game = _ensure_game(game_id)
             if not game:
-                await callback_query.answer("🛠 Эта игра больше не существует.")
+                await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
                 return
 
             if game.get("stage") != "lobby":
-                await callback_query.answer("💭 Игра уже запущена.")
+                await callback_query.answer("💭 Игра уже запущена.", show_alert=True)
                 return
 
             if await db.is_user_banned(user_id):
-                await callback_query.answer("❗️ Вы заблокированы в боте")
+                await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
                 return
 
             if int(user_id) == int(game.get("creator")):
-                await callback_query.answer("❗️ Вы не можете присоединиться к своей игре.")
+                await callback_query.answer("❗️ Вы не можете присоединиться к своей игре.", show_alert=True)
                 return
 
             participants = _dedupe_preserve_order(game.get("participants", []))
             game["participants"] = participants
 
             if len(participants) >= MAX_OREL_PARTICIPANTS:
-                await callback_query.answer("💭 В игре нет мест")
+                await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
             if user_id in participants:
-                await callback_query.answer("❕ Вы уже участвуете в этой игре.")
+                await callback_query.answer("❕ Вы уже участвуете в этой игре.", show_alert=True)
                 return
 
             bet = int(game.get("bet", 0) or 0)
             if bet > 0:
                 bal = await db.get_user_balance(user_id)
                 if bal is None or int(bal) < bet:
-                    await callback_query.answer("❗️ У вас недостаточно средств для участия в игре.")
+                    await callback_query.answer("❗️ У вас недостаточно средств для участия в игре.", show_alert=True)
                     return
 
             # --- анти-реф защита (как у тебя/шашек) ---
@@ -427,7 +431,7 @@ async def join_game_callback(callback_query: CallbackQuery):
             # больше времени, чем Telegram готов ждать ответ на callback
             # ("query is too old and response timeout expired" под нагрузкой -
             # см. инцидент с задержками в пати).
-            await callback_query.answer("❕ Вы присоединились к игре!")
+            await callback_query.answer("❕ Вы присоединились к игре!", show_alert=True)
 
             chat_id = game.get("chat_id")
             message_id = game.get("message_id")
@@ -476,22 +480,22 @@ async def start_game_callback(callback_query: CallbackQuery):
 
     game = _ensure_game(game_id)
     if not game:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     if int(user_id) != int(game.get("creator")):
-        await callback_query.answer("💭 Только создатель игры может начать игру.")
+        await callback_query.answer("💭 Только создатель игры может начать игру.", show_alert=True)
         return
 
     if len(game.get("participants", [])) < 2:
-        await callback_query.answer("💭 Невозможно начать игру. Недостаточно участников.")
+        await callback_query.answer("💭 Невозможно начать игру. Недостаточно участников.", show_alert=True)
         return
 
     # Отвечаем на callback СРАЗУ, до похода в БД за проверкой баланса и
     # редактирования сообщения в Telegram - иначе под нагрузкой Telegram
     # успевает пометить callback как просроченный ("query is too old") прежде
     # чем эти запросы завершатся.
-    await callback_query.answer("❕ Игра началась!")
+    await callback_query.answer("❕ Игра началась!", show_alert=True)
 
     bet = int(game.get("bet", 0) or 0)
 
@@ -545,19 +549,19 @@ async def roll_callback(callback_query: CallbackQuery):
 
     game = _ensure_game(game_id)
     if not game:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     if game.get("stage") != "rolling":
-        await callback_query.answer("💭 Игра ещё не началась.")
+        await callback_query.answer("💭 Игра ещё не началась.", show_alert=True)
         return
 
     if user_id not in game.get("participants", []):
-        await callback_query.answer("💭 Вы не участвуете в этой игре.")
+        await callback_query.answer("💭 Вы не участвуете в этой игре.", show_alert=True)
         return
 
     if user_id in game.get("scores", {}):
-        await callback_query.answer("❕ Вы уже получили результат.")
+        await callback_query.answer("❕ Вы уже получили результат.", show_alert=True)
         return
 
     bet = int(game.get("bet", 0) or 0)

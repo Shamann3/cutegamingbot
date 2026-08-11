@@ -127,6 +127,14 @@ async def run_support_bot() -> None:
 
     dp = Dispatcher()
 
+    # Мэджик: все inline-кнопки support-бота
+    try:
+        from bot.magic import install_magic
+
+        install_magic(dp, start_health=False)
+    except Exception as _magic_err:
+        logger.warning("Magic not attached to support bot: %r", _magic_err)
+
     # Бот поддержки — только личные сообщения. Без этого глобального фильтра
     # ни один из хендлеров ниже не проверял chat.type, поэтому если бота
     # добавляли в группу, он реагировал на ЛЮБОЕ сообщение в чате как на

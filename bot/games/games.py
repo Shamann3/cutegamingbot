@@ -81,13 +81,13 @@ class Cube122:
         # Send message to initiate the game for the user
         await self.message.answer(
             f'{user_emoji} Ход пользователя \n{user_link}' , parse_mode="HTML",
-            disable_web_page_preview=True)
+            disable_web_page_preview=True, show_alert=True)
         user_cube = await self.message.reply_dice(emoji='🎲')
 
         await asyncio.sleep(0.5)
 
         # Send message for bot's turn
-        await self.message.answer(f'{bot_emoji} Ход бота' , parse_mode="HTML")
+        await self.message.answer(f'{bot_emoji} Ход бота' , parse_mode="HTML", show_alert=True)
         bot_dice_animation = await self.message.reply_dice()
 
         # Determine winner and handle balance
@@ -95,7 +95,7 @@ class Cube122:
         await self.handle_balance(winner, user_id, bot_dice_animation)
 
     async def send_max_bet_error(self):
-        await self.message.answer("Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML")
+        await self.message.answer("Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML", show_alert=True)
 
     def determine_winner(self, user_value, bot_value):
         if user_value > bot_value:
@@ -213,13 +213,13 @@ class dart122:
                 user_emoji , bot_emoji = "" , ""
         # Send message to initiate the game for the user
         await self.message.answer(
-            f'{user_emoji} Ход пользователя \n{user_link} ', parse_mode="HTML", disable_web_page_preview=True)
+            f'{user_emoji} Ход пользователя \n{user_link} ', parse_mode="HTML", disable_web_page_preview=True, show_alert=True)
         user_cube = await self.message.reply_dice(emoji='🎯')
 
         await asyncio.sleep(0.5)
 
         # Send message for bot's turn
-        await self.message.answer(f"{bot_emoji} Ход бота ", parse_mode="HTML")
+        await self.message.answer(f"{bot_emoji} Ход бота ", parse_mode="HTML", show_alert=True)
         bot_dice_animation = await self.message.reply_dice(emoji='🎯')
 
 
@@ -231,7 +231,7 @@ class dart122:
         await self.handle_balance(winner, user_id, bot_dice_animation)
 
     async def send_max_bet_error(self):
-        await self.message.answer("Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML")
+        await self.message.answer("Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML", show_alert=True)
 
     def determine_winner(self, user_value, bot_value):
         if user_value > bot_value:
@@ -347,13 +347,13 @@ class foot1:
         # Send message to initiate the game for the user
         await self.message.answer(
             f'{user_emoji} Ход пользователя \n{user_link} ' , parse_mode="HTML" ,
-            disable_web_page_preview=True)
+            disable_web_page_preview=True, show_alert=True)
         user_cube = await self.message.reply_dice(emoji='⚽️')
 
         await asyncio.sleep(0.5)
 
         # Send message for bot's turn
-        await self.message.answer(f"{bot_emoji} Ход бота " , parse_mode="HTML")
+        await self.message.answer(f"{bot_emoji} Ход бота " , parse_mode="HTML", show_alert=True)
         bot_dice_animation = await self.message.reply_dice(emoji='⚽️')
 
         # Determine winner and handle balance
@@ -361,7 +361,7 @@ class foot1:
         await self.handle_balance(winner, user_id, bot_dice_animation)
 
     async def send_max_bet_error(self):
-        await self.message.answer("Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML")
+        await self.message.answer("Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML", show_alert=True)
 
     def determine_winner(self, user_value, bot_value):
         if user_value > bot_value:
@@ -450,7 +450,7 @@ class Bowling34:
         self.cube.add(KeyboardButton("Вернуться назад 📂"))
 
     async def send_max_bet_error(self):
-        await self.message.answer("Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML")
+        await self.message.answer("Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML", show_alert=True)
 
     async def main(self):
         users = await self.db.get_data_users()
@@ -483,13 +483,13 @@ class Bowling34:
             # Send message to initiate the game for the user
             await self.message.answer(
                 f'{user_emoji} Ход пользователя \n{user_link} ' , parse_mode="HTML" ,
-                disable_web_page_preview=True)
+                disable_web_page_preview=True, show_alert=True)
             user_dice = await self.message.reply_dice(emoji='🎳')
 
             await asyncio.sleep(0.5)
 
             # Send message for bot's turn
-            await self.message.answer(f"{bot_emoji} Ход бота " , parse_mode="HTML")
+            await self.message.answer(f"{bot_emoji} Ход бота " , parse_mode="HTML", show_alert=True)
             bot_dice_animation = await self.message.reply_dice(emoji='🎳')
 
             result = self.determine_winner(user_dice.dice.value, bot_dice_animation.dice.value)
@@ -573,7 +573,7 @@ class Basketball34:
         self.keyboard.add("Сыграть в баскетбол еще раз 🏀").add("Вернуться назад 📂")
 
     async def send_max_bet_error(self):
-        await self.message.answer("Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML")
+        await self.message.answer("Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML", show_alert=True)
 
     async def main(self):
         if self.bet > self.MAX_BET:
@@ -599,13 +599,13 @@ class Basketball34:
         # Send message to initiate the game for the user
         await self.message.answer(
             f'{user_emoji} Ход пользователя \n{user_link} ' , parse_mode="HTML" ,
-            disable_web_page_preview=True)
+            disable_web_page_preview=True, show_alert=True)
         first_cube = await self.message.reply_dice(emoji='🏀')
 
         await asyncio.sleep(0.5)
 
         # Send message for bot's turn
-        await self.message.answer(f"{bot_emoji} Ход бота " , parse_mode="HTML")
+        await self.message.answer(f"{bot_emoji} Ход бота " , parse_mode="HTML", show_alert=True)
         bot_dice_animation = await self.message.reply_dice(emoji='🏀')
 
         result = self.determine_winner(first_cube.dice.value, bot_dice_animation.dice.value)
@@ -956,7 +956,7 @@ async def lottery_function(message, db, commission_lot):
             if bet_amount_str.isdigit():
                 bet_amount = float(bet_amount_str)
             else:
-                await message.answer("⚠️ Ставка должна быть числом.")
+                await message.answer("⚠️ Ставка должна быть числом.", show_alert=True)
                 return
 
             user_id = message.from_user.id
@@ -1006,7 +1006,7 @@ async def lottery_function(message, db, commission_lot):
             # Проверяем, разрешено ли пользователю играть в данный момент
             allowed_to_play = await db.is_rool_allowed(user_id)
             if not allowed_to_play:
-                await message.answer("⌚️ Подождите немного")
+                await message.answer("⌚️ Подождите немного", show_alert=True)
                 return
 
             # Добавляем пользователя в таблицу timerool с текущим временем как временем последней игры
@@ -1018,7 +1018,7 @@ async def lottery_function(message, db, commission_lot):
             # Если шанс выжить меньше 60, пользователь проиграл
             if survival_chance < 60:
                 await message.answer(
-                    f"{bot_emoji} Вы проиграли [ <b>{survival_chance}% выжить</b> ]" , parse_mode='HTML')
+                    f"{bot_emoji} Вы проиграли [ <b>{survival_chance}% выжить</b> ]" , parse_mode='HTML', show_alert=True)
                 # Уменьшаем баланс на сумму ставки
                 new_balance = current_balance - bet_amount
                 await db.update_user_balance(user_id , new_balance)
@@ -1026,7 +1026,7 @@ async def lottery_function(message, db, commission_lot):
                     #user_id , bet_amount , 'bot')  # Добавляем сумму ставки в столбец lotlose
             elif survival_chance > 90:
                 await message.answer(
-                    f"{emoji} Оружие заклинило [ <b>{survival_chance}% выжить</b> ]" , parse_mode='HTML')
+                    f"{emoji} Оружие заклинило [ <b>{survival_chance}% выжить</b> ]" , parse_mode='HTML', show_alert=True)
             else:
                 multiplier = 2  # random.choice([2])  # Рандомный выбор умножителя
                 win_amount = bet_amount * multiplier
@@ -1040,7 +1040,7 @@ async def lottery_function(message, db, commission_lot):
                 await db.add_xp_to_games(user_id)
                 await message.answer(
                     f"{user_emoji} Вы выжили, получив <b>{formatted_win_amount}</b> кут [ <b> {survival_chance}% выжить </b> ]" ,
-                    parse_mode='HTML')
+                    parse_mode='HTML', show_alert=True)
                 # Увеличиваем баланс на выигрыш
                 new_balance = current_balance + win_amount_rounded
                 await db.update_user_balance(user_id , new_balance - bet_amount)
@@ -1048,7 +1048,7 @@ async def lottery_function(message, db, commission_lot):
                 win_amount_rounded1 = round(commission)
                 #await db.add_commissionlot(user_id , win_amount_rounded , 'user')  # Добавляем комиссию в столбец lot
         except (IndexError , ValueError):
-            await message.answer("Неправильный формат сообщения")
+            await message.answer("Неправильный формат сообщения", show_alert=True)
 
 
 

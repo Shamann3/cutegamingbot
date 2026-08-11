@@ -1,15 +1,28 @@
-"""Онбординг новичка: три клика, один следующий шаг на каждом экране.
+"""Онбординг: три клика, две ветки.
 
-Ветка «пусто»:
-    /start → бесплатный баланс → игра в группе
+Ветка «пусто» - у человека нет кут:
+    клик 1 - /start ........... на что нужны куты и как получить первые бесплатно
+    клик 2 - бесплатное задание, оно даёт виртуальный баланс
+    клик 3 - игра в группе задания (или дефолт-клуб, если группы нет)
 
 Ветка «есть куты»:
-    /start → выбор игры → запуск
+    клик 1 - /start
+    клик 2 - выбор игры → сразу доска в группе (без «Начать играть» в личке)
+    клик 3 - ОДНО сообщение в личке: карточка + «Открыть мою игру» (url)
+             + в группе доска «Начать игру» / выбор
+             (без второго одинакового экрана, только edit)
 
-Описание игры перед стартом — только из словаря GAMES:
-    rules / board_lead / tip_lead / help_cmd — правьте там, с <tg-emoji …>.
+Любая игра без вариантов (футбол, башня, шарик, …): в группе сначала
+текст + кнопка «Начать игру»; партия стартует только после клика.
+Игры с выбором (куб / трейд / рулетка): доска выбора в группе.
 
-Дом один: show_home(). Площадка: ONBOARDING_CLUB = auto|test|prod.
+После каждой onboarding-партии в группе — tip «Ещё шаг?» + пример команды
++ «хелп игры» (для сессий — строго после конца партии, не при старте UI).
+Личка («Открыть мою игру») после партии меняется на итог + «Играть ещё».
+
+При проигрыше задания - мягкое сообщение.
+
+Дефолт-клуб: ONBOARDING_CLUB = auto|test|prod (константа / env).
 """
 
 from __future__ import annotations
@@ -19,8 +32,6 @@ import os
 import random
 import re
 import time
-import traceback
-from datetime import datetime, timezone
 from importlib import import_module
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -28,7 +39,6 @@ from aiogram import F
 from aiogram.types import (
     BotCommand,
     CallbackQuery,
-    Chat,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
@@ -36,6 +46,7 @@ from aiogram.types import (
     WebAppInfo,
 )
 
+from bot.db_create.pklcode import LazyGameStore
 from main import (
     bot1,
     db,
@@ -48,77 +59,66 @@ from main import (
 )
 
 # ──────────────────────────────────────────────────────────────────────
-# Клуб - площадка, куда онбординг ведёт играть по умолчанию
+# Клуб (дефолтная площадка онбординга)
 # ──────────────────────────────────────────────────────────────────────
-# Меняется одной строкой здесь или переменной окружения ONBOARDING_CLUB:
-#   "prod" - боевая группа -1001612636292 (@CuteGamingChat)
-#   "test" - тестовая группа -1002135149822
-#   "auto" - по DATABASE_MODE из bot/config/config.py (test -> test, main -> prod)
+# Одна строка. Меняй здесь или через env ONBOARDING_CLUB.
+#   "test" → -1002135149822 (тестовая группа)
+#   "prod" → -1001612636292 (@CuteGamingChat)
+#   "auto" → как DATABASE_MODE / APP_MODE (test→test, main→prod)
 ONBOARDING_CLUB = "auto"  # <<< "auto" | "test" | "prod"
 
-# name  - именительный падеж: «Площадка : …»
-# where - предложный падеж:   «играть в …»
-# У группы с юзернеймом обе формы - сам юзернейм.
 _CLUB_PRESETS: Dict[str, Dict[str, Any]] = {
     "prod": {
         "chat_id": -1001612636292,
         "username": "CuteGamingChat",
-        "name": "клуб",
-        "where": "клубе",
     },
-    "test": {  # приватная группа: ссылки через t.me/c/...
+    "test": {
         "chat_id": -1002135149822,
-        "username": "",
-        "name": "тестовая группа",
-        "where": "тестовой группе",
+        "username": "",  # приватная группа — ссылки через t.me/c/...
     },
 }
 
 
 def _resolve_club_mode() -> str:
-    """Какой пресет клуба: env ONBOARDING_CLUB > константа > режим базы."""
+    """Приоритет: env ONBOARDING_CLUB → константа → auto по DATABASE_MODE."""
     raw = (os.getenv("ONBOARDING_CLUB") or "").strip().lower()
     if not raw:
         raw = str(ONBOARDING_CLUB or "auto").strip().lower()
-    if raw in ("prod", "main", "production"):
+    if raw in ("main", "prod", "production"):
         return "prod"
     if raw in ("test", "sandbox"):
         return "test"
-
-    mode = ""
+    # auto / пусто — как база
     try:
         from bot.config.config import DATABASE_MODE
         mode = str(DATABASE_MODE or "").strip().lower()
-    except Exception as e:
-        print(f"[ONBOARDING] DATABASE_MODE недоступен: {e!r}")
+    except Exception:
+        mode = ""
     if not mode:
         mode = (os.getenv("APP_MODE") or "").strip().lower()
-    return "test" if mode in ("test", "sandbox") else "prod"
+    if mode in ("test", "sandbox"):
+        return "test"
+    return "prod"
 
 
-def _public_chat_url(chat_id: int, username: str = "") -> str:
-    """Ссылка на чат: по юзернейму, иначе внутренняя t.me/c/..."""
+def _club_open_url(chat_id: int, username: str = "") -> str:
     name = str(username or "").strip().lstrip("@")
     if name and name.replace("_", "").isalnum():
         return f"https://t.me/{name}"
-    raw = str(int(chat_id))
-    return f"https://t.me/c/{raw[4:]}" if raw.startswith("-100") else f"https://t.me/{raw}"
+    s = str(int(chat_id))
+    if s.startswith("-100"):
+        return f"https://t.me/c/{s[4:]}"
+    return f"https://t.me/{s}"
 
 
-def _club_from_mode(mode: str) -> Tuple[int, str, str, str, str]:
+def _club_from_mode(mode: str) -> Tuple[int, str, str]:
     preset = _CLUB_PRESETS.get(mode) or _CLUB_PRESETS["prod"]
     chat_id = int(preset["chat_id"])
     username = str(preset.get("username") or "").strip().lstrip("@")
-    if username:
-        name = where = f"@{username}"
-    else:
-        name = str(preset.get("name") or "клуб")
-        where = str(preset.get("where") or "клубе")
-    return chat_id, username, _public_chat_url(chat_id, username), name, where
+    return chat_id, username, _club_open_url(chat_id, username)
 
 
-CLUB_MODE = _resolve_club_mode()
-CLUB_CHAT_ID, CLUB_USERNAME, CLUB_URL, CLUB_NAME, CLUB_WHERE = _club_from_mode(CLUB_MODE)
+CLUB_CHAT_ID, CLUB_USERNAME, CLUB_URL = _club_from_mode(_resolve_club_mode())
 BOT_USERNAME = "CuteGamingBot"
 BOT_URL = f"https://t.me/{BOT_USERNAME}"
 
@@ -139,15 +139,61 @@ def _farm_url() -> str:
     return url
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Shared emoji для хелперов (_quest_stats). Тексты экранов - прямо в функциях с <tg-emoji>
+# ──────────────────────────────────────────────────────────────────────
+E_HAT = "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji>"
+E_STAR = "<tg-emoji emoji-id='5436339947080548936'>🌟</tg-emoji>"
+E_TGSTAR = "<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji>"
+E_GAME = "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji>"
+E_BOLT = "<tg-emoji emoji-id='5258466470676940666'>✈️</tg-emoji>"
+E_CUP = "<tg-emoji emoji-id='5294001020039363545'>🏆</tg-emoji>"
+E_GIFT = "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji>"
+E_LEAF = "<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji>"
+E_DOWN = "<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji>"
+# Площадка / «куда играть» — премиум 🛬
+E_PLANE = "<tg-emoji emoji-id='5398017375532498315'>🛬</tg-emoji>"
+# Баланс — премиум ✨
+E_COIN = "<tg-emoji emoji-id='5397981293512243749'>✨</tg-emoji>"
+# Итог партии — премиум ⚡️
+E_RESULT = "<tg-emoji emoji-id='5397976749436842796'>⚡️</tg-emoji>"
+E_TARGET = "<tg-emoji emoji-id='5418238674267556907'>⭐</tg-emoji>"
+E_BAR = "<tg-emoji emoji-id='5397976749436842796'>⚡️</tg-emoji>"      # прогресс / итог
+E_SAFE = "<tg-emoji emoji-id='5471954679250498498'>🛡</tg-emoji>"     # рекомендуемая ставка
+# «Партия сыграна» / следующий шаг — премиум 🤩
+E_NEXT = "<tg-emoji emoji-id='5348423147647414077'>🤩</tg-emoji>"
+E_HELP = "<tg-emoji emoji-id='5318892863780579996'>📖</tg-emoji>"     # хелп / справка
+E_FIRE = "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji>"     # хук / огонь
+E_OK = "<tg-emoji emoji-id='5206607081334906820'>✅</tg-emoji>"       # спокойно, не страшно
+
+# Эффект применяется только к новым сообщениям, поэтому нужен один - на /start.
+EFFECT_START = "5107584321108051014"   # 👍
+
+ICON_PLAY = "5425094988260188065"
+ICON_ABOUT = "5436339947080548936"
+ICON_PROFILE = "5192951739623447936"
+ICON_CLOSE = "5226660202035554522"
+ICON_GIFT = "5317000922096769303"
+ICON_FARM = "5208464835079082371"
+ICON_GROUP = "5264737672684907396"
+ICON_TASKS = "5318892863780579996"
+ICON_WITHDRAW = "5848021027782661221"
+ICON_DONATE = "5848259999763011021"
+ICON_MARKET = "5438440765908874600"
+ICON_BONUS = "5224257782013769471"
+ICON_US = "6037421444789440735"
+ICON_MENU = "5318892863780579996"
+ICON_FINISH = "5305629674058061875"  # закончить задание (как в балансе)
+# Стрелки как в магазине.
+ICON_PREV = "5805509901048356965"
+ICON_NEXT = "5807453545548487345"
+
 # Сколько бесплатных заданий на одной странице.
 # Навигация появляется только если заданий больше этого числа.
 FREE_QUESTS_PER_PAGE = 10
 
 # Безопасная ставка: доля от баланса задания (10% = не сжечь всё сразу).
 SAFE_BET_PERCENT = 10
-
-# Быстрый выбор первой ставки на экране игры (инлайн-кнопки).
-STAKE_PRESETS: Tuple[int, ...] = (2, 3, 5, 10, 15, 25, 50, 100)
 
 # Длина текстового прогресс-бара.
 PROGRESS_SEGMENTS = 10
@@ -164,86 +210,87 @@ def _path(step: int) -> str:
     return " · ".join(parts)
 
 
-def _lines(*parts: str) -> str:
-    """Короткие строки экрана: пустые пропускаем, одна пустая = абзац."""
-    out: List[str] = []
-    blank_pending = False
-    for part in parts:
-        if part is None:
-            continue
-        raw = str(part)
-        if not raw.strip():
-            blank_pending = True
-            continue
-        if blank_pending and out:
-            out.append("")
-            blank_pending = False
-        out.append(raw.rstrip())
-    return "\n".join(out)
+def _hint(text: str) -> str:
+    return f"<tg-emoji emoji-id='5418238674267556907'>⭐</tg-emoji> <b>{text}</b>"
+
+
+_TG_EMOJI_RE = re.compile(
+    r"<tg-emoji[^>]*emoji-id=['\"]([0-9]+)['\"][^>]*>(.*?)</tg-emoji>",
+    re.DOTALL,
+)
+
+
+def _bold_html_line(line: str) -> str:
+    """Жирная строка: premium <tg-emoji> снаружи <b>, иначе клиент рвёт bold."""
+    plain = (line or "").replace("<b>", "").replace("</b>", "")
+    if not plain.strip():
+        return plain
+    if "<tg-emoji" not in plain:
+        return f"<b>{plain}</b>"
+    parts: List[str] = []
+    last = 0
+    for m in _TG_EMOJI_RE.finditer(plain):
+        before = plain[last:m.start()]
+        if before:
+            parts.append(f"<b>{before}</b>" if before.strip() else before)
+        parts.append(m.group(0))
+        last = m.end()
+    after = plain[last:]
+    if after:
+        parts.append(f"<b>{after}</b>" if after.strip() else after)
+    return "".join(parts) if parts else f"<b>{plain}</b>"
 
 
 def _bq(*parts: str) -> str:
-    """blockquote: каждая строка жирная. Для плотных карточек цифр."""
+    """blockquote, где каждая непустая строка целиком в <b>.
+
+    Так цифры, хвосты и эмодзи внутри цитаты всегда жирные -
+    даже если в исходной строке <b> стоял только на подписи.
+    """
     chunks = [str(p) for p in parts if p is not None and str(p).strip()]
     lines: List[str] = []
     for chunk in chunks:
         for line in chunk.split("\n"):
             if not line.strip():
                 continue
-            plain = line.replace("<b>", "").replace("</b>", "")
-            lines.append(f"<b>{plain}</b>")
+            lines.append(_bold_html_line(line))
     return f"<blockquote>{chr(10).join(lines)}</blockquote>"
-
-
-
-def _progress_pct(current: int, target: int) -> int:
-    if target <= 0:
-        return 0
-    return int(max(0, min(100, (current * 100) // target)))
-
-
-def _progress_bar(current: int, target: int) -> str:
-    pct = _progress_pct(current, target)
-    filled = int(round(pct * PROGRESS_SEGMENTS / 100))
-    filled = max(0, min(PROGRESS_SEGMENTS, filled))
-    return "■" * filled + "□" * (PROGRESS_SEGMENTS - filled)
 
 
 def _progress_line(current: int, target: int) -> str:
     """Живой прогресс до цели задания: [■■■□□□□□□□] 30%."""
-    return (
-        f"<tg-emoji emoji-id='5321021153219732362'>⚡️</tg-emoji> "
-        f"[{_progress_bar(current, target)}] {_progress_pct(current, target)}%"
-    )
+    if target <= 0:
+        pct = 0
+        filled = 0
+    else:
+        pct = int(max(0, min(100, (current * 100) // target)))
+        filled = int(round(pct * PROGRESS_SEGMENTS / 100))
+        filled = max(0, min(PROGRESS_SEGMENTS, filled))
+    bar = "■" * filled + "□" * (PROGRESS_SEGMENTS - filled)
+    return f"<tg-emoji emoji-id='5350835008007324644'>🌟</tg-emoji> [{bar}] {pct}%"
 
 
 def _quest_stats(wallet: "Wallet") -> str:
-    """Прогресс задания — полный видимый текст с premium emoji.
-
-    Меняйте строки и <tg-emoji …> прямо здесь.
-    """
+    """Карточка прогресса задания - цифры + прогресс-бар."""
     left = max(0, wallet.target - wallet.amount)
-    return (
-        f"<tg-emoji emoji-id='5321021153219732362'>⚡️</tg-emoji> [{_progress_bar(wallet.amount, wallet.target)}] {_progress_pct(wallet.amount, wallet.target)}%\n"
-        f"<tg-emoji emoji-id='5303547422373349738'>💰</tg-emoji> Баланс : {wallet.amount} кут\n"
-        f"<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> Цель : {wallet.target} кут\n"
-        f"<tg-emoji emoji-id='5321021153219732362'>⚡️</tg-emoji> До цели : {left} кут\n"
-        f"<tg-emoji emoji-id='5294001020039363545'>🏆</tg-emoji> Награда : +{wallet.reward} кут"
+    return _bq(
+        _progress_line(wallet.amount, wallet.target),
+        f"<tg-emoji emoji-id='5348418461838098123'>💰</tg-emoji> Баланс : {wallet.amount} кут",
+        f"<tg-emoji emoji-id='5348054995935706813'>💡</tg-emoji> Цель : {wallet.target} кут",
+        f"<tg-emoji emoji-id='5348103735224581633'>🕺</tg-emoji> До цели : {left} кут",
+        f"<tg-emoji emoji-id='5348582551063641258'>😌</tg-emoji> Награда : +{wallet.reward} кут",
     )
 
 
-# Telegram принимает только эти style у InlineKeyboardButton.
-# «default» в API нет — из‑за него весь reply_markup мог отвергаться,
-# и _swap откатывался к тексту без premium emoji.
-_BTN_STYLES = frozenset({"primary", "success", "danger"})
-
-
 def _btn(text: str, *, data: str = None, url: str = None, web_app: str = None,
-         icon: str = None, style: Optional[str] = None) -> InlineKeyboardButton:
-    """Кнопка: опционально style (primary/success/danger) + premium-иконка."""
+         icon: str = None, style: Optional[str] = "default") -> InlineKeyboardButton:
+    """Кнопка в оформлении проекта: style + иконка кастомным эмодзи.
+
+    style=None - без цветного стиля (нужно для плотных сеток чисел рулетки).
+    """
     kwargs: Dict[str, Any] = {"text": text}
-    if style and str(style) in _BTN_STYLES:
-        kwargs["style"] = str(style)
+    if style:
+        kwargs["style"] = style
     if icon:
         kwargs["icon_custom_emoji_id"] = icon
     if web_app:
@@ -255,16 +302,13 @@ def _btn(text: str, *, data: str = None, url: str = None, web_app: str = None,
     try:
         return InlineKeyboardButton(**kwargs)
     except TypeError:
-        # На случай сборки aiogram без style/icon - не роняем меню.
+        # Сначала снимаем style, icon оставляем (цифры кубика = только premium).
         kwargs.pop("style", None)
-        kwargs.pop("icon_custom_emoji_id", None)
-        return InlineKeyboardButton(**kwargs)
-
-
-_TG_EMOJI_RE = re.compile(
-    r"<tg-emoji[^>]*emoji-id=['\"]([0-9]+)['\"][^>]*>(.*?)</tg-emoji>",
-    re.DOTALL,
-)
+        try:
+            return InlineKeyboardButton(**kwargs)
+        except TypeError:
+            kwargs.pop("icon_custom_emoji_id", None)
+            return InlineKeyboardButton(**kwargs)
 
 
 def _emoji_id(value: str) -> Optional[str]:
@@ -286,15 +330,38 @@ def _plain_emoji(value: str) -> str:
 
 
 def _label_for_button(label: str) -> Tuple[str, Optional[str]]:
-    """Текст кнопки + icon id. HTML в text не попадает."""
+    """Текст кнопки + icon id.
+
+    Если есть premium icon - в text только подпись (без unicode),
+    иначе иконка и обычный эмодзи дублируются на кнопке.
+    """
     icon = _emoji_id(label)
     text = _plain_emoji(label) or "·"
     if icon:
-        # Иконку рисует Telegram - ведущий unicode не дублируем.
         parts = text.split(None, 1)
         if len(parts) == 2 and not parts[0][:1].isalnum():
             text = parts[1]
     return text, icon
+
+
+# Icon id для кнопок меню игр (анимированный premium на кнопке).
+# В text кнопки - только название, без обычного эмодзи.
+GAME_ICON_IDS: Dict[str, str] = {
+    "soccer": "5373101763442255191",
+    "slots": "5891135206580031104",
+    "tank": "5204467307153234577",
+    "darts": "5890815115552362075",
+    "basket": "5891181665241271999",
+    "bowling": "5891120371762990493",
+    "kube": "5890971177484029249",
+    "balls": "5363877049863786071",
+    "provoda": "5782990399672946716",
+    "bombs": "5469654973308476699",
+    "plate": "5246916607833304803",
+    "risk": "5438449312893792440",
+    "trade": "5296306038792808890",
+    "fortuna": "5321499578216769477",
+}
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -302,402 +369,352 @@ def _label_for_button(label: str) -> Tuple[str, Optional[str]]:
 # ──────────────────────────────────────────────────────────────────────
 # Логика партии ВСЕГДА в module/func (trade.py, slots.py, …).
 # Онбординг только приводит новичка к сообщению и подсказывает команду.
-#
-# ВСЕ тексты описания игры перед стартом живут ЗДЕСЬ:
-#   rules      — правила (🤙 / 👋), как увидит новичок
-#   board_lead — подсказка, если нужен выбор (куб / трейд / рулетка)
-#   tip_lead   — первая строка подсказки в группе после партии
-#   help_cmd / help_examples — как писать команду самому
-#
-# Меняйте <tg-emoji …> и фразы прямо в словаре. Экран перед игрой
-# собирается из emoji + title + rules + ставка/площадка + подсказка.
-
-
-def _render_game_text(
-    game: Dict[str, Any],
-    *,
-    bet: int,
-    free_quest: bool,
-    where: str,
-    hint: str,
-    extra: str = "",
-) -> str:
-    """Экран описания игры — только из полей GAMES (emoji/title/rules).
-
-    Ставка и площадка подставляются автоматически:
-      {bet} / с задания|с баланса / {where}
-    Подсказка внизу — hint (или board_lead / «Начать играть»).
-    """
-    source = "с задания" if free_quest else "с баланса"
-    emoji = str(game.get("emoji") or "").strip()
-    title = str(game.get("title") or "Игра").strip()
-    rules = str(game.get("rules") or "").strip("\n")
-
-    parts: List[str] = [
-        f"{emoji} <b>{title}</b>".strip(),
-        "",
-    ]
-    if rules:
-        parts.append(rules)
-        parts.append("")
-    parts.append(
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> "
-        f"Ставка : {int(bet)} кут ({source})"
-    )
-    parts.append(
-        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}"
-    )
-    block = (extra or "").strip()
-    if block:
-        parts.extend(["", block])
-    hint_text = (hint or "").strip() or "Нажмите «Начать играть»"
-    parts.extend([
-        "",
-        f"<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint_text}</b>",
-    ])
-    return "\n".join(parts)
-
-
-def _game_action_hint(game: Dict[str, Any]) -> str:
-    """Подсказка на экране выбора: board_lead → variant_hint → старт."""
-    if game.get("variants"):
-        return (
-            str(game.get("board_lead") or "").strip()
-            or str(game.get("variant_hint") or "").strip()
-            or "Сделайте выбор"
-        )
-    return "Нажмите «Начать играть»"
-
-
-def _variant_button_rows(
-    variants: Sequence[Tuple[str, str]],
-    *,
-    bet: int,
-    game_key: str,
-    rows: Optional[Sequence[int]] = None,
-) -> List[List[InlineKeyboardButton]]:
-    """Кнопки выбора: явная раскладка рядов (как в GAMES.variant_rows).
-
-    Числа без style (чтобы сетка 6×2 стабильно проходила в Telegram).
-    Цвет / чёт / направление — success.
-    """
-    buttons: List[InlineKeyboardButton] = []
-    for label, value in variants:
-        text, icon = _label_for_button(label)
-        # Голые числа (1…12) — без style; остальное подсвечиваем.
-        style = None if (text or "").isdigit() else "success"
-        buttons.append(_btn(
-            text,
-            data=f"ob_play:{game_key}:{bet}:{value}",
-            icon=icon,
-            style=style,
-        ))
-
-    if not buttons:
-        return []
-
-    layout = [int(n) for n in (rows or ()) if int(n) > 0]
-    if layout and sum(layout) == len(buttons):
-        out: List[List[InlineKeyboardButton]] = []
-        i = 0
-        for width in layout:
-            out.append(buttons[i:i + width])
-            i += width
-        return out
-
-    # Если rows забыли или сумма не совпала — не молчим в логе.
-    if layout:
-        print(
-            f"[ONBOARDING] variant_rows={layout} sum={sum(layout)} "
-            f"!= buttons={len(buttons)} (game={game_key}) — сетка 3/2",
-            flush=True,
-        )
-
-    per_row = 3 if len(buttons) > 4 else 2
-    return [buttons[i:i + per_row] for i in range(0, len(buttons), per_row)]
-
-
 GAMES: Dict[str, Dict[str, Any]] = {
     "soccer": {
-        "title": "Футбол",
-        "emoji": "<tg-emoji emoji-id='5373101763442255191'>⚽️</tg-emoji>",
-        "min": 2,
-        "instant": True,
+        "title": "Футбол", "emoji": "<tg-emoji emoji-id='5373101763442255191'>⚽️</tg-emoji>", "min": 2,
         "cmd": "футбол {bet}",
         "help_cmd": "футбол (ваша ставка)",
         "help_examples": ("футбол 10",),
-        "tip_lead": (
-            "<tg-emoji emoji-id='5373101763442255191'>⚽️</tg-emoji> "
-            "<b>Гол или мимо.</b> Дальше - одной строкой."
-        ),
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Гол - забираете большой выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете."
-        ),
-        "module": "bot.tggames.soccer",
-        "func": "tgsoccer",
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> Ещё удар?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Нажмите кнопку - и партия стартует.",
+        "rules": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Гол - забираете выигрыш. \n<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - проигрыш.",
+        "module": "bot.tggames.soccer", "func": "tgsoccer",
     },
     "slots": {
-        "title": "Слоты",
-        "emoji": "<tg-emoji emoji-id='5891135206580031104'>🎉</tg-emoji>",
-        "min": 2,
-        "instant": True,
+        "title": "Слоты", "emoji": "<tg-emoji emoji-id='5891135206580031104'>🎉</tg-emoji>", "min": 2,
         "cmd": "слоты {bet}",
         "help_cmd": "слоты (ваша ставка)",
         "help_examples": ("слоты 10",),
-        "tip_lead": "<tg-emoji emoji-id='5891135206580031104'>🎉</tg-emoji> <b>Барабаны ждут.</b> Повтор - одной командой.",
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Три одинаковых - крупный выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Иначе - теряете."
-        ),
-        "module": "bot.tggames.slots",
-        "func": "tgslots",
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> Крутим снова?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Нажмите кнопку - и партия стартует.",
+        "rules": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Три одинаковых символа - крупный выигрыш.",
+        "module": "bot.tggames.slots", "func": "tgslots",
     },
     "tank": {
-        "title": "Башня",
-        "emoji": "<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji>",
-        "min": 2,
+        "title": "Башня", "emoji": "<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji>", "min": 2,
         "cmd": "башня {bet}",
         "help_cmd": "башня (ваша ставка)",
         "help_examples": ("башня 10",),
-        "tip_lead": "<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji> <b>Этажи ждут.</b> Забирайте вовремя.",
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Забираете до обвала - выигрыш растёт.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Обвал - теряете."
-        ),
-        "module": "bot.games.tank",
-        "func": "game_filter_tank",
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> Ещё этаж?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Нажмите кнопку - и партия стартует.",
+        "rules": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Этаж за этажом выигрыш растёт. Успейте забрать до обвала.",
+        "module": "bot.games.tank", "func": "game_filter_tank",
     },
     "darts": {
-        "title": "Дартс",
-        "emoji": "<tg-emoji emoji-id='5890815115552362075'>🎯</tg-emoji>",
-        "min": 2,
-        "instant": True,
+        "title": "Дартс", "emoji": "<tg-emoji emoji-id='5890815115552362075'>🎯</tg-emoji>", "min": 2,
         "cmd": "дартс {bet}",
         "help_cmd": "дартс (ваша ставка)",
         "help_examples": ("дартс 10",),
-        "tip_lead": "<tg-emoji emoji-id='5890815115552362075'>🎯</tg-emoji> <b>Дротик улетел.</b> Ещё бросок - одной строкой.",
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> В центр - забираете большой выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете."
-        ),
-        "module": "bot.tggames.darts",
-        "func": "tgdarts",
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> В яблочко ещё раз?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Нажмите кнопку - и партия стартует.",
+        "rules": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Попали в центр - забираете большой выигрыш",
+        "module": "bot.tggames.darts", "func": "tgdarts",
     },
     "basket": {
-        "title": "Баскетбол",
-        "emoji": "<tg-emoji emoji-id='5891181665241271999'>🏀</tg-emoji>",
-        "min": 2,
-        "instant": True,
+        "title": "Баскетбол", "emoji": "<tg-emoji emoji-id='5891181665241271999'>🏀</tg-emoji>", "min": 2,
         "cmd": "баскет {bet}",
         "help_cmd": "баскет (ваша ставка)",
         "help_examples": ("баскет 10",),
-        "tip_lead": "<tg-emoji emoji-id='5891181665241271999'>🏀</tg-emoji> <b>Мяч в воздухе.</b> Ещё - одной командой.",
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> В кольцо - забираете выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете."
-        ),
-        "module": "bot.tggames.basket",
-        "func": "tgbasket",
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> Ещё бросок?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Нажмите кнопку - и партия стартует.",
+        "rules": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Попали в кольцо - выигрыш. \n<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете ставку.",
+        "module": "bot.tggames.basket", "func": "tgbasket",
     },
     "bowling": {
-        "title": "Боулинг",
-        "emoji": "<tg-emoji emoji-id='5891120371762990493'>🎳</tg-emoji>",
-        "min": 2,
-        "instant": True,
+        "title": "Боулинг", "emoji": "<tg-emoji emoji-id='5891120371762990493'>🎳</tg-emoji>", "min": 2,
         "cmd": "боулинг {bet}",
         "help_cmd": "боулинг (ваша ставка)",
         "help_examples": ("боулинг 10",),
-        "tip_lead": "<tg-emoji emoji-id='5891120371762990493'>🎳</tg-emoji> <b>Кегли ждут.</b> Ещё заход - одной строкой.",
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Страйк - забираете выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Иначе - теряете."
-        ),
-        "module": "bot.tggames.bowling",
-        "func": "tgbowling",
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> Ещё страйк?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Нажмите кнопку - и партия стартует.",
+        "rules": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Страйк - выигрыш. \n<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Всё остальное - нет.",
+        "module": "bot.tggames.bowling", "func": "tgbowling",
     },
     "kube": {
-        "title": "Кубик",
-        "emoji": "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji>",
-        "min": 2,
-        "instant": True,
+        "title": "Кубик", "emoji": "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji>", "min": 2,
         "cmd": "куб {bet} {v}",
         "help_cmd": "куб (ваша ставка) (число)",
         "help_examples": ("куб 10 4", "куб 10 6"),
-        "tip_lead": "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> <b>Число выбрано.</b> Дальше - сами.",
-        "board_lead": "Выберите число на кубике - партия стартует сразу.",
-        "variants": [(str(n), str(n)) for n in range(1, 7)],
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> Угадаете число?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Выберите число на кубике - партия стартует сразу.",
+        # Premium-иконки 1–6: в text кнопки цифр нет — только icon_custom_emoji_id.
+        "variants": [
+            ("<tg-emoji emoji-id='5348324054161967894'>\u200b</tg-emoji>", "1"),
+            ("<tg-emoji emoji-id='5350559846632537457'>\u200b</tg-emoji>", "2"),
+            ("<tg-emoji emoji-id='5350719542106540014'>\u200b</tg-emoji>", "3"),
+            ("<tg-emoji emoji-id='5350505304842846481'>\u200b</tg-emoji>", "4"),
+            ("<tg-emoji emoji-id='5348566874433011485'>\u200b</tg-emoji>", "5"),
+            ("<tg-emoji emoji-id='5348527025726439836'>\u200b</tg-emoji>", "6"),
+        ],
         "variant_rows": (3, 3),
-        "variant_hint": "Выберите число",
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали число - забираете выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете."
-        ),
-        "module": "bot.tggames.kube",
-        "func": "tgkube",
+        "variant_hint": "Число выбирается в группе",
+        "rules": "<tg-emoji emoji-id='5397976749436842796'>⚡</tg-emoji> Угадал число на кубике - выигрыш в несколько ставок.",
+        "module": "bot.tggames.kube", "func": "tgkube",
     },
     "balls": {
-        "title": "Шарик",
-        "emoji": "<tg-emoji emoji-id='5363877049863786071'>🎱</tg-emoji>",
-        "min": 2,
+        "title": "Шарик", "emoji": "<tg-emoji emoji-id='5363877049863786071'>🎱</tg-emoji>", "min": 2,
         "cmd": "шарик {bet}",
         "help_cmd": "шарик (ваша ставка)",
         "help_examples": ("шарик 10",),
-        "tip_lead": "<tg-emoji emoji-id='5363877049863786071'>🎱</tg-emoji> <b>Стаканы на столе.</b> Ещё - одной командой.",
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали стакан - забираете выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете."
-        ),
-        "module": "bot.games.balls",
-        "func": "balls",
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> Хотите ещё раз?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Нажмите кнопку - и партия стартует.",
+        "rules": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Три стакана, под одним шарик. Угадали - выигрыш.",
+        "module": "bot.games.balls", "func": "balls",
     },
     "provoda": {
-        "title": "Провода",
-        "emoji": "<tg-emoji emoji-id='5782990399672946716'>🎗</tg-emoji>",
-        "min": 2,
+        "title": "Провода", "emoji": "<tg-emoji emoji-id='5782990399672946716'>🎗</tg-emoji>", "min": 2,
         "cmd": "провода {bet}",
         "help_cmd": "провода (ваша ставка)",
         "help_examples": ("провода 10",),
-        "tip_lead": "<tg-emoji emoji-id='5782990399672946716'>🎗</tg-emoji> <b>Верный провод.</b> Повтор - одной строкой.",
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Верный провод - забираете выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Ошибка - теряете."
-        ),
-        "module": "bot.games.provoda",
-        "func": "provoda",
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> Какой провод режем?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Нажмите кнопку - и партия стартует.",
+        "rules": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Перерезали верный провод - выигрыш. \n<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Ошиблись - теряете ставку.",
+        "module": "bot.games.provoda", "func": "provoda",
     },
     "bombs": {
-        "title": "Бомбы",
-        "emoji": "<tg-emoji emoji-id='5469654973308476699'>💣</tg-emoji>",
-        "min": 3,
+        "title": "Бомбы", "emoji": "<tg-emoji emoji-id='5469654973308476699'>💣</tg-emoji>", "min": 3,
         "cmd": "бомбы {bet}",
         "help_cmd": "бомбы (ваша ставка)",
         "help_examples": ("бомбы 10",),
-        "tip_lead": "<tg-emoji emoji-id='5469654973308476699'>💣</tg-emoji> <b>Поле открыто.</b> Новая сетка - одной командой.",
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Забираете до бомбы - выигрыш растёт.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Бомба - теряете всё."
-        ),
-        "module": "bot.games.bombs",
-        "func": "bombs",
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> Попробовать еще раз?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Нажмите кнопку - и партия стартует.",
+        "rules": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Открываете клетки, выигрыш растёт. \n<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Бомба - теряете всё.",
+        "module": "bot.games.bombs", "func": "bombs",
     },
     "plate": {
-        "title": "Плиты",
-        "emoji": "<tg-emoji emoji-id='5246916607833304803'>💫</tg-emoji>",
-        "min": 2,
+        "title": "Плиты", "emoji": "<tg-emoji emoji-id='5246916607833304803'>💫</tg-emoji>", "min": 2,
         "cmd": "плиты {bet}",
         "help_cmd": "плиты (ваша ставка)",
         "help_examples": ("плиты 10",),
-        "tip_lead": "<tg-emoji emoji-id='5246916607833304803'>💫</tg-emoji> <b>Шаг за шагом.</b> Ещё забег - одной строкой.",
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Забираете до провала - выигрыш растёт.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Провал - теряете."
-        ),
-        "module": "bot.games.plate",
-        "func": "plate",
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> Ещё шаг?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Нажмите кнопку - и партия стартует.",
+        "rules": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Шагаете по плитам, выигрыш растёт. \n<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Провалились - теряете ставку.",
+        "module": "bot.games.plate", "func": "plate",
     },
     "risk": {
-        "title": "Риск",
-        "emoji": "<tg-emoji emoji-id='5438449312893792440'>🌴</tg-emoji>",
-        "min": 5,
+        "title": "Риск", "emoji": "<tg-emoji emoji-id='5438449312893792440'>🌴</tg-emoji>", "min": 5,
         "cmd": "риск {bet}",
         "help_cmd": "риск (ваша ставка)",
         "help_examples": ("риск 10",),
-        "tip_lead": "<tg-emoji emoji-id='5438449312893792440'>🌴</tg-emoji> <b>Множитель растёт.</b> Новая волна - одной командой.",
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Шаг умножает выигрыш - забираете вовремя.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Волна - теряете."
-        ),
-        "module": "bot.games.risk",
-        "func": "risk",
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> Рискнём ещё?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Нажмите кнопку - и партия стартует.",
+        "rules": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Каждый шаг умножает выигрыш. Забирайте, пока не сгорел.",
+        "module": "bot.games.risk", "func": "risk",
     },
     "trade": {
-        "title": "Трейд",
-        "emoji": "<tg-emoji emoji-id='5296306038792808890'>📈</tg-emoji>",
-        "min": 2,
-        "instant": True,
+        "title": "Трейд", "emoji": "<tg-emoji emoji-id='5296306038792808890'>📈</tg-emoji>", "min": 2,
         "cmd": "трейд {v} {bet}",
-        "help_cmd": "трейд (направление) (ваша ставка)",
+        "help_cmd": "трейд (ваша ставка)",
         "help_examples": ("трейд вверх 10", "трейд вниз 10"),
-        "tip_lead": "<tg-emoji emoji-id='5296306038792808890'>📈</tg-emoji> <b>Сделка закрыта.</b> Дальше - сами.",
-        "board_lead": "Куда пойдёт график? Нажмите кнопку - и партия начнётся сразу.",
+        "tip_lead": "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> Куда график в этот раз?",
+        "board_lead": "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Куда пойдёт график? Нажмите кнопку - и партия начнётся сразу.",
         "variants": [
             ("<tg-emoji emoji-id='5339384049670593248'>↗️</tg-emoji> Вверх", "вверх"),
             ("<tg-emoji emoji-id='5339179750961224703'>📉</tg-emoji> Вниз", "вниз"),
         ],
-        "variant_rows": (2,),
-        "variant_hint": "Выберите направление",
-        "rules": (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали направление - забираете выигрыш.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Нет - теряете."
-        ),
-        "module": "bot.games.trade",
-        "func": "trade",
+        # Вверх = рост (зелёный), вниз = падение (красный).
+        "variant_styles": {"вверх": "success", "вниз": "danger"},
+        "variant_hint": "Направление выбирается в группе",
+        "rules": "<tg-emoji emoji-id='5397976749436842796'>⚡</tg-emoji> Угадали направление - выигрыш. Иногда сделка срывается.",
+        "module": "bot.games.trade", "func": "trade",
     },
     "fortuna": {
         "title": "Рулетка",
         "emoji": "<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji>",
         "min": 3,
-        "instant": True,
         "cmd": "рулетка {bet} {v}",
-        "help_cmd": "рулетка (ваша ставка) (число / цвет / чёт)",
-        "help_examples": ("рулетка 10 красное", "рулетка 10 черное", "рулетка 10 7"),
-        "tip_lead": (
-            "<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji> "
-            "<b>Шарик остановился.</b> Следующий спин - одной строкой."
+        "help_cmd": "рулетка (ставка) (цвет / число / чёт / диапазон)",
+        # Tip после партии: 4 принципа (цвет · чёт · число · диапазон).
+        "help_examples": (
+            "рулетка 10 красное/черное",
+            "рулетка 10 четное/нечётное",
+            "рулетка 10 7",
+            "рулетка 10 1 6",
+            "рулетка 10 6 12",
         ),
-        "board_lead": "Нажмите число, цвет или чёт/нечет - и партия стартует",
-        # Ряды: 1–6 · 7–12 · красное/чёрное · чёт/нечет
+        # В tip после партии показываем несколько примеров, не одну строку.
+        "tip_show_examples": True,
+        "tip_lead": (
+            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> "
+            "Попробовать ещё раз?"
+        ),
+        "board_lead": (
+            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> "
+            "Выберите цвет, чёт, число или диапазон — и крутим."
+        ),
+        # Ряды: числа · диапазоны · цвет · чёт/нечет
+        # Диапазоны: кнопка 1–6 → «рулетка 10 1 6», кнопка 6–12 → «рулетка 10 6 12».
+        # В callback — «1-6»/«6-12» (без пробела); в команду нормализуем в «1 6»/«6 12».
         "variants": [
             ("1", "1"), ("2", "2"), ("3", "3"), ("4", "4"), ("5", "5"), ("6", "6"),
             ("7", "7"), ("8", "8"), ("9", "9"), ("10", "10"), ("11", "11"), ("12", "12"),
-            ("<tg-emoji emoji-id='5339546996434812675'>🔴</tg-emoji> Красное", "красное"),
-            ("<tg-emoji emoji-id='5424616516018537963'>⚫️</tg-emoji> Чёрное", "черное"),
+            ("1–6", "1-6"),
+            ("6–12", "6-12"),
+            ("<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji> Красное", "красное"),
+            ("<tg-emoji emoji-id='5449692618151695997'>🖤</tg-emoji> Чёрное", "черное"),
             ("Чётное", "чет"),
             ("Нечётное", "нечет"),
         ],
-        "variant_rows": (6, 6, 2, 2),
-        "variant_hint": "Выберите число, цвет или чёт/нечет",
-        # Текст карточки перед стартом — правьте здесь.
+        "variant_rows": (6, 6, 2, 2, 2),
+        # None = без цветного style (серая кнопка Telegram).
+        "variant_styles": {
+            "1-6": "primary",
+            "6-12": "primary",
+            "1 6": "primary",
+            "6 12": "primary",
+            "красное": None,
+            "черное": None,
+            "чет": None,
+            "нечет": None,
+        },
+        "variant_hint": "Цвет, чёт, число или диапазон",
         "rules": (
-            "<blockquote>"
-            "<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji> <b>На что ставите</b>\n"
-            "<tg-emoji emoji-id='5359359620441726284'>1️⃣</tg-emoji> Число <b>1–12</b> — самый крупный выигрыш\n"
-            "<tg-emoji emoji-id='5339546996434812675'>🔴</tg-emoji> <b>Красное</b> или "
-            "<tg-emoji emoji-id='5424616516018537963'>⚫️</tg-emoji> <b>Чёрное</b>\n"
-            "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> <b>Чётное</b> или <b>Нечётное</b>"
-            "</blockquote>\n"
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Угадали - забираете больше ставки.\n"
-            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо - теряете."
+            "<tg-emoji emoji-id='5296372434692234934'>❤️</tg-emoji> "
+            "<b>Цвет</b> · \n"
+            "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> "
+            "<b>Чёт / нечет</b> · \n"
+            "<tg-emoji emoji-id='5188307557126524632'>1️⃣</tg-emoji> "
+            "<b>Число 0–12</b> · \n"
+            "<tg-emoji emoji-id='5386629944057026256'>🔢</tg-emoji> "
+            "<b>Диапазон</b> \n"
+            "<code>1 6</code> / <code>6 12</code>\n\n"
+            "<tg-emoji emoji-id='5397976749436842796'>⚡</tg-emoji> Угадали — выигрыш.\n"
+            "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Мимо — ставка сгорает."
         ),
-        "module": "bot.games.Fortuna",
-        "func": "Fortuna",
+        "module": "bot.games.Fortuna", "func": "Fortuna",
     },
 }
 
 # Порядок кнопок - порядок словаря: сверху самые быстрые и понятные.
 SOLO_ORDER: Tuple[str, ...] = tuple(GAMES)
 
-# Быстрые игры: партия кончается сразу, поэтому итог летит в личку следом.
-INSTANT_GAMES = frozenset(k for k, g in GAMES.items() if g.get("instant"))
+# Игры, которые заканчиваются внутри первого handler'а (dice / one-shot).
+INSTANT_GAMES = frozenset({
+    "soccer", "slots", "darts", "basket", "bowling", "kube", "fortuna", "trade",
+})
+
+# Игры без вариантов: в группе сначала текст + «Начать игру» (как футбол),
+# потом handler. Сюда входят и dice, и сессии (башня / шарик / …).
+CONFIRM_START_GAMES = frozenset(
+    k for k, g in GAMES.items() if not g.get("variants")
+)
+
+# Сессионные: handler возвращается при старте UI, а не после конца партии.
+# Подсказка «Ещё этаж?» — только после закрытия сессии.
+SESSION_GAMES = frozenset(k for k in GAMES if k not in INSTANT_GAMES)
+
+# uid→message_id активной доски в main (LazyGameStore).
+_SESSION_MSG_STORES: Dict[str, str] = {
+    "tank": "user_messagetank",
+    "balls": "user_message_ball",
+    "bombs": "user_message_bombss",
+    "plate": "user_message_plate",
+    "risk": "user_message_risk",
+    "provoda": "user_message_wires",
+}
+
+# Активное состояние сессии (флаг closed), если есть.
+_SESSION_ACTIVE_STORES: Dict[str, str] = {
+    "tank": "tank_active_games",
+    "balls": "active_games_ball",
+    "bombs": "bombs_user_game_data",
+    "plate": "active_games_plate",
+    "risk": "active_games_risk",
+    "provoda": "active_games_wires",
+}
+
+# Макс. ожидание конца сессии для tip (чуть дольше типичного SESSION_TTL).
+_SESSION_TIP_WAIT = 21 * 60.0
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Состояние: что человек выбрал до вступления в клуб
+# Состояние онбординга (всё runtime — только LazyGameStore)
 # ──────────────────────────────────────────────────────────────────────
-_pending: Dict[int, Tuple[str, int, Optional[str], float]] = {}
-_launch_lock: Dict[int, float] = {}
+# Каждый стор — ОТДЕЛЬНОЕ имя. Одно имя = один GameStore на весь процесс;
+# шарить нельзя (иначе dict’ы сливаются и ещё могут пересечься с играми).
+# Статические конфиги (GAMES, пресеты клуба и т.п.) сюда не кладём.
+_pending: Dict[int, Tuple[str, int, Optional[str], float]] = LazyGameStore(
+    "onboarding_pending"
+)
+_launch_lock: Dict[Tuple[int, str], float] = LazyGameStore("onboarding_launch_lock")
 # Токен запуска: не перетираем личку, если человек уже ушёл с экрана готовности.
-_notify_token: Dict[int, int] = {}
-# Сильные ссылки на фоновые запуски: иначе asyncio может тихо отменить задачу.
-_bg_tasks: Set[asyncio.Task] = set()
-_handler_cache: Dict[str, Any] = {}
+_notify_token: Dict[int, int] = LazyGameStore("onboarding_notify_token")
+# Ожидающие итог после сессии: (user_id, notify_token) → payload.
+# Ключ по токену — старый watcher не сносит pending новой партии.
+_pending_session_tips: Dict[Tuple[int, int], Dict[str, Any]] = LazyGameStore(
+    "onboarding_pending_session_tips"
+)
+# Флаги «уже отправили» — dict[key]=True (API как у set: in / assign / pop / clear).
+_session_finish_sent: Dict[Tuple[int, int], bool] = LazyGameStore(
+    "onboarding_session_finish_sent"
+)
+# Один tip на токен запуска (сессия или instant).
+_tip_sent_tokens: Dict[Tuple[int, int], bool] = LazyGameStore(
+    "onboarding_tip_sent_tokens"
+)
+# Доски выбора/старта, которые уже забрали (защита от двойного клика).
+_consumed_boards: Dict[Tuple[int, int], bool] = LazyGameStore(
+    "onboarding_consumed_boards"
+)
+# Короткоживущая сессия UI онбординга (uid → payload), переживает рестарт.
+_ob_session: Dict[int, Dict[str, Any]] = LazyGameStore("onboarding_ob_session")
+
+
+def _pending_tip_key(user_id: int, notify_token: int) -> Tuple[int, int]:
+    return (int(user_id), int(notify_token))
+
+
+def _pick_pending_for_finish(
+    user_id: int,
+    *,
+    message_id: Optional[int] = None,
+) -> Optional[Tuple[Tuple[int, int], Dict[str, Any]]]:
+    """Находит pending именно той партии, которая только что закончилась."""
+    uid = int(user_id)
+    items = [(k, v) for k, v in _pending_session_tips.items() if k[0] == uid]
+    if not items:
+        return None
+    if message_id:
+        mid = int(message_id)
+        for k, v in items:
+            try:
+                if int(v.get("board_mid") or 0) == mid:
+                    return k, v
+                if int(v.get("anchor_message_id") or 0) == mid:
+                    return k, v
+            except Exception:
+                continue
+    finished: List[Tuple[Tuple[int, int], Dict[str, Any]]] = []
+    for k, v in items:
+        gk = str(v.get("game_key") or "")
+        if gk not in SESSION_GAMES:
+            continue
+        exp = v.get("board_mid")
+        try:
+            exp_mid = int(exp) if exp else None
+        except Exception:
+            exp_mid = None
+        if _session_is_finished(gk, uid, exp_mid):
+            finished.append((k, v))
+    if finished:
+        return max(finished, key=lambda x: x[0][1])
+    if len(items) == 1:
+        return items[0]
+    live = _notify_token.get(uid)
+    if live:
+        key = _pending_tip_key(uid, int(live))
+        hit = _pending_session_tips.get(key)
+        if hit is not None:
+            return key, hit
+    return max(items, key=lambda x: x[0][1])
+
+
 _PENDING_TTL = 3600.0
 _LAUNCH_COOLDOWN = 3.0
 
 
 def _remember(user_id: int, game_key: str, bet: int, variant: Optional[str]) -> None:
-    _pending[user_id] = (game_key, bet, variant, time.monotonic())
+    _pending[user_id] = (game_key, bet, variant, time.time())
 
 
 def _recall(user_id: int) -> Optional[Tuple[str, int, Optional[str]]]:
@@ -705,23 +722,41 @@ def _recall(user_id: int) -> Optional[Tuple[str, int, Optional[str]]]:
     if not item:
         return None
     game_key, bet, variant, born = item
-    if time.monotonic() - born > _PENDING_TTL:
+    # wall-clock: после рестарта monotonic ломает TTL у LazyGameStore
+    if time.time() - float(born or 0) > _PENDING_TTL:
         _pending.pop(user_id, None)
         return None
     return game_key, bet, variant
 
 
-def _too_fast(user_id: int) -> bool:
-    now = time.monotonic()
-    last = _launch_lock.get(user_id, 0.0)
-    if now - last < _LAUNCH_COOLDOWN:
+def _too_fast(
+    user_id: int,
+    *,
+    bucket: str = "launch",
+    cooldown: Optional[float] = None,
+) -> bool:
+    """Антиспам по корзинам: board (лишка) и start (группа) не мешают друг другу.
+
+    Раньше общий кулдаун после выбора игры блокировал «Начать игру» → «Секунду…».
+    """
+    now = time.time()
+    window = float(_LAUNCH_COOLDOWN if cooldown is None else cooldown)
+    key = (int(user_id), str(bucket or "launch"))
+    last = float(_launch_lock.get(key, 0.0) or 0.0)
+    if now - last < window:
         return True
-    _launch_lock[user_id] = now
+    _launch_lock[key] = now
+    if len(_launch_lock) > 5000:
+        # Простая уборка устаревших ключей.
+        cutoff = now - max(_LAUNCH_COOLDOWN, window) * 4
+        for k, ts in list(_launch_lock.items()):
+            if float(ts or 0) < cutoff:
+                _launch_lock.pop(k, None)
     return False
 
 
 def _bump_notify_token(user_id: int) -> int:
-    token = int(time.monotonic() * 1000)
+    token = int(time.time() * 1000)
     _notify_token[user_id] = token
     return token
 
@@ -730,104 +765,25 @@ def _notify_token_alive(user_id: int, token: int) -> bool:
     return _notify_token.get(user_id) == token
 
 
-def _spawn_bg(coro, *, label: str) -> asyncio.Task:
-    """create_task с сильной ссылкой - иначе партия может исчезнуть до dice."""
-    task = asyncio.create_task(coro, name=f"onboarding:{label}")
-    _bg_tasks.add(task)
-
-    def _done(done: asyncio.Task) -> None:
-        _bg_tasks.discard(done)
-        try:
-            exc = done.exception()
-        except asyncio.CancelledError:
-            print(f"[ONBOARDING] фон отменён: {label}")
-            return
-        if exc is not None:
-            print(f"[ONBOARDING] фон упал ({label}): {exc!r}")
-            print(traceback.format_exc())
-
-    task.add_done_callback(_done)
-    return task
+def _session_set(user_id: int, **kwargs: Any) -> None:
+    cur = dict(_ob_session.get(user_id) or {})
+    cur.update(kwargs)
+    cur["ts"] = time.time()
+    _ob_session[user_id] = cur
 
 
-def _resolve_handler(game: Dict[str, Any]):
-    """Обработчик игры: module:func, с кэшем после первого импорта."""
-    module = str(game.get("module") or "")
-    func = str(game.get("func") or "")
-    key = f"{module}:{func}"
-    cached = _handler_cache.get(key)
-    if cached is not None:
-        return cached
-    if not module or not func:
-        raise RuntimeError(f"у игры нет handler: {game.get('title')!r}")
-    mod = import_module(module)
-    handler = getattr(mod, func, None)
-    if handler is None or not callable(handler):
-        raise RuntimeError(f"handler не найден: {key}")
-    _handler_cache[key] = handler
-    return handler
+def _session_get(user_id: int) -> Dict[str, Any]:
+    cur = _ob_session.get(user_id) or {}
+    ts = float(cur.get("ts") or 0)
+    if ts and time.time() - ts > _PENDING_TTL:
+        _ob_session.pop(user_id, None)
+        return {}
+    return cur
 
 
-def _allowed_variants(game: Dict[str, Any]) -> Dict[str, str]:
-    """value → label для проверки выбора перед запуском."""
-    out: Dict[str, str] = {}
-    for label, value in (game.get("variants") or ()):
-        out[str(value)] = str(label)
-    return out
-
-
-def _build_launch_command(game: Dict[str, Any], bet: int, variant: Optional[str]) -> str:
-    """Рабочая команда для синтетического сообщения в группе."""
-    template = str(game.get("cmd") or "").strip()
-    if not template:
-        raise ValueError(f"пустой шаблон команды у {game.get('title')!r}")
-
-    allowed = _allowed_variants(game)
-    if allowed:
-        pick = "" if variant is None else str(variant)
-        if pick not in allowed:
-            raise ValueError(
-                f"нужен выбор для {game.get('title')!r}, получено {variant!r}"
-            )
-        text = template.format(bet=int(bet), v=pick)
-    else:
-        text = template.format(bet=int(bet), v="")
-
-    command = " ".join(str(text).split())
-    if not command:
-        raise ValueError(f"команда пустая после сборки у {game.get('title')!r}")
-    return command
-
-
-def _synthetic_command_message(anchor: Message, user: User, command: str) -> Message:
-    """Сообщение «как от игрока»: тот же якорь в чате, текст - игровая команда.
-
-    Не копируем HTML-entities якоря - у команды свой чистый текст.
-    """
-    chat = anchor.chat
-    if not isinstance(chat, Chat):
-        raise RuntimeError("у якоря нет chat")
-
-    thread_id = getattr(anchor, "message_thread_id", None)
-    date = anchor.date or datetime.now(timezone.utc)
-    try:
-        synthetic = Message(
-            message_id=int(anchor.message_id),
-            date=date,
-            chat=chat,
-            from_user=user,
-            text=command,
-            message_thread_id=thread_id,
-        )
-    except Exception:
-        # Старые/новые версии aiogram могут отличаться набором полей.
-        synthetic = anchor.model_copy(update={
-            "text": command,
-            "from_user": user,
-            "entities": None,
-            "caption_entities": None,
-        })
-    return synthetic.as_(bot1)
+def _needs_group_choice(game_key: str, variant: Optional[str]) -> bool:
+    game = GAMES.get(game_key) or {}
+    return bool(game.get("variants")) and not variant
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -859,7 +815,7 @@ class Wallet:
             return True
         if self.chat_id and int(self.chat_id) == CLUB_CHAT_ID:
             return True
-        if CLUB_USERNAME and self.chat_ref and CLUB_USERNAME.lower() in str(self.chat_ref).lower():
+        if self.chat_ref and CLUB_USERNAME.lower() in str(self.chat_ref).lower():
             return True
         return not self.chat_id and not self.chat_ref
 
@@ -975,74 +931,29 @@ def _wallet_from_assignment(assignment: Dict[str, Any], *, is_free: bool) -> Wal
     )
 
 
-def _bet_cap(game: Dict[str, Any], wallet: Wallet) -> int:
-    """Максимум, который можно поставить сейчас."""
-    cap = int(wallet.amount)
-    if wallet.max_bet is not None:
-        cap = min(cap, int(wallet.max_bet))
-    return max(0, cap)
-
-
 def _bet_for(game: Dict[str, Any], wallet: Wallet) -> int:
-    """Ставка по умолчанию (если человек не выбрал кнопку).
+    """Ставка для запуска.
 
     На задании берём ~10% виртуального баланса - новичок реже сжигает всё.
     Иначе - обычная первая ставка, но не ниже минимума игры.
     """
     floor = int(game["min"])
-    cap = _bet_cap(game, wallet)
-    if cap < floor:
+    if wallet.amount < floor:
         return 0
 
     if wallet.free_quest:
+        # Безопасная доля виртуального баланса, не «все куты сразу».
         safe = max(floor, (wallet.amount * SAFE_BET_PERCENT) // 100)
-        bet = min(safe, cap)
+        bet = min(safe, wallet.amount)
     else:
-        bet = min(max(FIRST_BET, floor), cap)
+        bet = max(FIRST_BET, floor)
+        bet = min(bet, wallet.amount)
 
-    return bet if bet >= floor else 0
-
-
-def _stake_choices(game: Dict[str, Any], wallet: Wallet) -> List[int]:
-    """Суммы для инлайн-кнопок выбора ставки."""
-    floor = int(game["min"])
-    cap = _bet_cap(game, wallet)
-    if cap < floor:
-        return []
-
-    picks: List[int] = []
-    for n in STAKE_PRESETS:
-        if floor <= int(n) <= cap:
-            picks.append(int(n))
-
-    # Рекомендуемая (~10%) и «все, что можно» - если ещё не в списке.
-    recommended = min(cap, max(floor, (wallet.amount * SAFE_BET_PERCENT) // 100))
-    for n in (floor, recommended, cap):
-        n = int(n)
-        if floor <= n <= cap and n not in picks:
-            picks.append(n)
-
-    picks.sort()
-    # Не больше 12 кнопок: минимум, середина, максимум.
-    if len(picks) > 12:
-        head = picks[:4]
-        mid = picks[len(picks) // 2 - 2: len(picks) // 2 + 2]
-        tail = picks[-4:]
-        merged: List[int] = []
-        for n in head + mid + tail:
-            if n not in merged:
-                merged.append(n)
-        picks = sorted(merged)[:12]
-    return picks
-
-
-def _stake_button_rows(game_key: str, stakes: Sequence[int]) -> List[List[InlineKeyboardButton]]:
-    """Кнопки ставки: по 4 в ряд."""
-    buttons = [
-        _btn(str(n), data=f"ob_stake:{game_key}:{n}", style="success")
-        for n in stakes
-    ]
-    return [buttons[i:i + 4] for i in range(0, len(buttons), 4)]
+    if wallet.max_bet is not None:
+        bet = min(bet, wallet.max_bet)
+    if bet < floor:
+        return 0
+    return bet
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -1063,177 +974,47 @@ async def start_screen(user_id: int) -> Tuple[str, InlineKeyboardMarkup]:
             print(f"[ONBOARDING] start venue check: {e!r}")
             venue_ok = False
         if not venue_ok:
-            where = str(wallet.chat_ref or "").strip() or "группе задания"
-            text = _lines(
-                "<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> <b>Задание на паузе</b>",
-                "",
-                _quest_stats(wallet),
-                "",
-                f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}",
-                "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Бот должен быть администратором.",
-                "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Можно взять другое задание.",
-                "",
-                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другое задание»</b>",
+            where = str(wallet.chat_ref or "").strip() or "в группе задания"
+            pause = _bq(
+                f"Группа : {where}",
+                "Бот должен быть администратором, чтобы игры засчитывались.",
+                "Можно взять другое доступное задание.",
+            )
+            text = (
+                f"{_path(1)}\n\n"
+                f"{E_TARGET} <b>Задание на паузе</b>\n\n"
+                f"{_quest_stats(wallet)}\n\n"
+                f"{pause}\n\n"
+                f"{_hint('Нажмите «Другое задание»')}"
             )
             markup = InlineKeyboardMarkup(inline_keyboard=[
-                [_btn("Другое задание", data="ob_earn", icon="5472401690793614752", style="success")],
-                [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+                [_btn("Другое задание", data="ob_earn", icon="5346141321717363100", style="success")],
+                [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
             ])
             return text, markup
 
     ready = wallet.amount >= _cheapest_bet()
 
-    if wallet.free_quest:
-        # На задании всегда видно три пути: играть дальше, сменить, закончить.
-        text = _start_text_player(wallet) if ready else _quest_stuck_text(wallet)
-        first = (
-            _btn("Продолжить задание", data="ob_games", icon="5472041540605975004", style="success")
-            if ready else
-            _btn("Другое задание", data="ob_earn", icon="5472401690793614752", style="success")
-        )
-        rows = [[first]]
-        if ready:
-            rows.append([_btn("Другое задание", data="ob_earn", icon="5472401690793614752")])
-        rows.append([_btn("Закончить задание", data="ob_finish", icon="5449372007432985754")])
-        rows.append([_btn("Меню", data="ob_menu", icon="5318892863780579996")])
-        return text, InlineKeyboardMarkup(inline_keyboard=rows)
-
     if ready:
         text = _start_text_player(wallet)
-        cta = _btn("Играть!", data="ob_games", icon="5472041540605975004", style="success")
+        if wallet.free_quest:
+            rows: List[List[InlineKeyboardButton]] = [
+                [_btn("Продолжить задание", data="ob_games", icon="5346028458566759465", style="success")],
+                [_btn("Другое задание", data="ob_earn", icon=ICON_GIFT, style="success")],
+                [_btn("Закончить задание", data="ob_finish", icon=ICON_FINISH, style="danger")],
+                [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
+            ]
+            return text, InlineKeyboardMarkup(inline_keyboard=rows)
+        cta = _btn("Играть!", data="ob_games", icon="5348423147647414077", style="success")
     else:
         text = _start_text_newcomer()
-        cta = _btn("Получить куты", data="ob_earn", icon="5472401690793614752", style="success")
+        cta = _btn("Получить куты", data="ob_earn", icon="5346141321717363100", style="success")
 
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [cta],
-        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+        [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
     ])
     return text, markup
-
-
-def _quest_stuck_text(wallet: Wallet) -> str:
-    """Задание активно, но виртуального баланса не хватает даже на минимум."""
-    return _lines(
-        "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> <b>Баланс задания закончился</b>",
-        "",
-        _quest_stats(wallet),
-        "",
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Так бывает - это не конец.",
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.",
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Другое задание даст новый баланс.",
-        "",
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другое задание»</b>",
-    )
-
-
-def _cheapest_bet() -> int:
-    return min(int(g["min"]) for g in GAMES.values())
-
-
-def _start_text_newcomer() -> str:
-    """Первый экран пустого баланса: бренд → выгода → одно действие."""
-    return (
-        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Кут</b>\n"
-        "\n"
-        "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> 1 кут = 1 "
-        "<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji>\n"
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Первый баланс - бесплатно.\n"
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Выигрыш можно вывести в Stars.\n"
-        "\n"
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Получить куты»</b>"
-    )
-
-
-def _start_text_player(wallet: Wallet) -> str:
-    if wallet.free_quest:
-        return _lines(
-            "<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> <b>Задание в работе</b>",
-            "",
-            _quest_stats(wallet),
-            "",
-            f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {_venue_where(wallet)}",
-            "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тратятся.",
-            "",
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Продолжить задание»</b>",
-        )
-    return _lines(
-        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Кут</b>",
-        "",
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут",
-        "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> 1 кут = 1 "
-        "<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji>",
-        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {CLUB_WHERE}",
-        "",
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Играть!»</b>",
-    )
-
-
-async def _menu_rows(user_id: Optional[int] = None) -> List[List[InlineKeyboardButton]]:
-    """Полное меню - только по кнопке «Меню», не на первом экране."""
-    rows: List[List[InlineKeyboardButton]] = []
-
-    bonus = _bonus_button()
-    if bonus:
-        rows.append([bonus])
-
-    free_quest = False
-    if user_id is not None:
-        try:
-            free_quest = bool((await _wallet(user_id)).free_quest)
-        except Exception as e:
-            print(f"[ONBOARDING] menu wallet {user_id}: {e!r}")
-
-    rows.extend([
-        [_btn("О Куте", data="3412helpstarthelp", icon="5436339947080548936")],
-        [_btn("Профиль", data="9back_to_menu1", icon="5192951739623447936")],
-        [_btn("Вывод", data="conc_stars", icon="5848021027782661221"),
-         _btn("Донат", data="insert_stars", icon="5848259999763011021")],
-        [_btn("Задания", data="questions_stars", icon="5318892863780579996")],
-    ])
-    if free_quest:
-        rows.append([_btn("Закончить задание", data="ob_finish", icon="5449372007432985754")])
-    rows.extend([
-        [_btn("Ферма", web_app=_farm_url(), icon="5208464835079082371")],
-        [_btn("Чёрный рынок", data="blackshop", icon="5438440765908874600")],
-        [_btn("О нас", data="about_start", icon="6037421444789440735")],
-        [_btn("Назад", data="ob_start", icon="5226660202035554522")],
-    ])
-    return rows
-
-
-async def _menu_text(user_id: int) -> str:
-    wallet = await _wallet(user_id)
-    if wallet.free_quest:
-        return _lines(
-            "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Меню</b>",
-            "",
-            "<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> Задание активно.",
-            _quest_stats(wallet),
-            "",
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите раздел</b>",
-        )
-    return _lines(
-        "<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Меню</b>",
-        "",
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут",
-        "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> 1 кут = 1"
-        "<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji>",
-        "",
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите раздел</b>",
-    )
-
-
-def _bonus_button() -> Optional[InlineKeyboardButton]:
-    """Тот же callback, что у бонуса в старом меню: случайное число + '_+'."""
-    try:
-        from bot.config.config import bonusbet, enabled_bonus
-        if not enabled_bonus:
-            return None
-        return _btn("Бонус", data=f"{random.randint(1, bonusbet)}_+", icon="5294001020039363545")
-    except Exception as e:
-        print(f"[ONBOARDING] Кнопка бонуса недоступна: {e!r}")
-        return None
 
 
 async def start_payload_screen(
@@ -1266,7 +1047,7 @@ async def start_payload_screen(
     if len(free) > FREE_QUESTS_PER_PAGE:
         pages = max(1, (len(free) + FREE_QUESTS_PER_PAGE - 1) // FREE_QUESTS_PER_PAGE)
         rows.append(_earn_nav(0, pages))
-    rows.append([_btn("Назад", data="ob_start", icon="5226660202035554522")])
+    rows.append([_btn("Назад", data="ob_start", icon=ICON_CLOSE)])
     return _earn_list_text(), InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -1274,10 +1055,7 @@ async def show_home(message: Message, user_id: int, *, as_new: bool = False) -> 
     """Показать главный экран онбординга в этом сообщении.
 
     Дом у бота один: и /start, и возвраты из «О Куте», бонуса и прочих
-    разделов приводят сюда, иначе новичок теряет прогресс задания из виду.
-    as_new=True - отправить новым сообщением вместо перерисовки.
-    Возвращает False, если показать не вышло: вызывающий код покажет
-    свой запасной экран.
+    разделов приводят сюда. as_new=True - отправить новым сообщением.
     """
     try:
         text, markup = await start_screen(user_id)
@@ -1290,9 +1068,8 @@ async def show_home(message: Message, user_id: int, *, as_new: bool = False) -> 
     last_err: Optional[BaseException] = None
     for name, body, kb in (
         ("full", text, markup),
-        ("no_icons", text, _rebuild_markup(markup, keep_icons=False, keep_styles=True)),
-        ("bare_kb", text, _rebuild_markup(markup, keep_icons=False, keep_styles=False)),
-        ("plain", _html_plain(text), _rebuild_markup(markup, keep_icons=False, keep_styles=False)),
+        ("no_icons", text, _markup_without_icons(markup)),
+        ("plain", _html_plain(text), _markup_without_icons(markup)),
     ):
         try:
             await send(
@@ -1306,16 +1083,112 @@ async def show_home(message: Message, user_id: int, *, as_new: bool = False) -> 
             last_err = e
             if "message is not modified" in str(e).lower():
                 return True
-            if not _can_downgrade_markup(e):
-                print(f"[ONBOARDING] show_home({user_id}) без даунгрейда: {e!r}")
-                break
     print(f"[ONBOARDING] show_home({user_id}): не удалось показать ({last_err!r})")
     return False
 
 
+def _cheapest_bet() -> int:
+    return min(int(g["min"]) for g in GAMES.values())
+
+
+def _start_text_newcomer() -> str:
+    """Первый экран. Правь текст прямо здесь."""
+    return (
+        f"<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Кут - Элитный игровой клуб</b>\n\n"
+        f"<blockquote>"
+        f"<b>1 кут = 1 <tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji></b>\n"
+        f"<b>Старт без доната</b>"
+        f"</blockquote>\n\n"
+        f"<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> <b>Получите куты</b>"
+    )
+
+
+def _start_text_player(wallet: Wallet) -> str:
+    """Стартовый экран игрока. Правь текст прямо здесь."""
+    if wallet.free_quest:
+        where = _venue_label(wallet)
+        return (
+            f"<tg-emoji emoji-id='5418238674267556907'>⭐</tg-emoji> <b>Задание</b>\n\n"
+            f"{_quest_stats(wallet)}\n\n"
+            f"<blockquote>"
+            f"<b>Играть {where}</b>\n"
+            f"<b>Свои куты не трогаем</b>\n"
+            f"<b>Можно взять другое или закончить</b>"
+            f"</blockquote>\n\n"
+            f"<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> <b>Продолжить</b>"
+        )
+    return (
+        f"<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Кут - элитный игровой клуб</b>\n\n"
+        f"<blockquote>"
+        f"<b>{wallet.amount} кут</b>\n"
+        f"<b>1 кут = 1 <tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji></b>"
+        f"</blockquote>"
+    )
+
+async def _menu_rows(user_id: Optional[int] = None) -> List[List[InlineKeyboardButton]]:
+    """Полное меню - только по кнопке «Меню», не на первом экране.
+
+    user_id оставлен в сигнатуре для совместимости вызовов.
+    """
+    _ = user_id
+    rows: List[List[InlineKeyboardButton]] = []
+
+    bonus = _bonus_button()
+    if bonus:
+        rows.append([bonus])
+
+    rows.extend([
+        [_btn("О Куте", data="3412helpstarthelp", icon=ICON_ABOUT)],
+        [_btn("Профиль", data="9back_to_menu1", icon=ICON_PROFILE)],
+        [_btn("Вывод", data="conc_stars", icon=ICON_WITHDRAW),
+         _btn("Донат", data="insert_stars", icon=ICON_DONATE)],
+        [_btn("Задания", data="questions_stars", icon=ICON_TASKS)],
+        [_btn("Ферма", web_app=_farm_url(), icon=ICON_FARM)],
+        [_btn("Чёрный рынок", data="blackshop", icon=ICON_MARKET)],
+        [_btn("О нас", data="about_start", icon=ICON_US)],
+        [_btn("Назад", data="ob_start", icon=ICON_CLOSE)],
+    ])
+    return rows
+
+
+async def _menu_text(user_id: int) -> str:
+    """Меню. Правь текст прямо здесь."""
+    wallet = await _wallet(user_id)
+    if wallet.free_quest:
+        body = (
+            f"<b>Задание активно</b>\n\n"
+            f"{_quest_stats(wallet)}\n\n"
+            f"<blockquote><b>Свои куты не трогаем</b></blockquote>\n"
+            f"<blockquote><b>Можно играть самостоятельно</b></blockquote>"
+        )
+    else:
+        body = (
+            f"<blockquote>"
+            f"<b>{wallet.amount} кут</b>\n"
+            f"<b>1 кут = 1 <tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji></b>"
+            f"</blockquote>"
+        )
+    return (
+        f"<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Главное меню</b>\n\n"
+        f"{body}\n\n"
+        f"<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> <b>Выберите раздел</b>"
+    )
+
+def _bonus_button() -> Optional[InlineKeyboardButton]:
+    """Тот же callback, что у бонуса в старом меню: случайное число + '_+'."""
+    try:
+        from bot.config.config import bonusbet, enabled_bonus
+        if not enabled_bonus:
+            return None
+        return _btn("Бонус", data=f"{random.randint(1, bonusbet)}_+", icon=ICON_BONUS)
+    except Exception as e:
+        print(f"[ONBOARDING] Кнопка бонуса недоступна: {e!r}")
+        return None
+
+
 @dp.callback_query(F.data == "ob_start")
 async def ob_start(call: CallbackQuery):
-    await _ack(call)
+    await call.answer()
     _bump_notify_token(call.from_user.id)
     text, markup = await start_screen(call.from_user.id)
     await _swap(call, text, markup)
@@ -1323,7 +1196,7 @@ async def ob_start(call: CallbackQuery):
 
 @dp.callback_query(F.data == "ob_menu")
 async def ob_menu(call: CallbackQuery):
-    await _ack(call)
+    await call.answer()
     _bump_notify_token(call.from_user.id)
     text = await _menu_text(call.from_user.id)
     markup = InlineKeyboardMarkup(inline_keyboard=await _menu_rows(call.from_user.id))
@@ -1331,12 +1204,12 @@ async def ob_menu(call: CallbackQuery):
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Закончить задание: подтверждение -> развилка «другое» / «играть сам»
+# Закончить задание → подтверждение → мост «другое / сам»
 # ──────────────────────────────────────────────────────────────────────
 @dp.callback_query(F.data == "ob_finish")
 async def ob_finish(call: CallbackQuery):
-    """Спрашиваем подтверждение - досрочный выход обнуляет прогресс."""
-    await _ack(call)
+    """Подтверждение досрочного выхода из бесплатного задания."""
+    await call.answer()
     _bump_notify_token(call.from_user.id)
     wallet = await _wallet(call.from_user.id)
     if not wallet.free_quest:
@@ -1347,23 +1220,23 @@ async def ob_finish(call: CallbackQuery):
 
 @dp.callback_query(F.data == "ob_finish_no")
 async def ob_finish_no(call: CallbackQuery):
-    """Передумал - возвращаем на главный экран задания."""
-    await _ack(call)
+    await call.answer()
     text, markup = await start_screen(call.from_user.id)
     await _swap(call, text, markup)
 
 
 @dp.callback_query(F.data == "ob_finish_yes")
 async def ob_finish_yes(call: CallbackQuery):
-    await _ack(call)
+    """Снимаем активное задание и ведём новичка к следующему шагу."""
+    await call.answer()
     _bump_notify_token(call.from_user.id)
     user_id = call.from_user.id
-
     wallet = await _wallet(user_id)
     if not wallet.free_quest:
         await _swap(call, _finish_none_text(), _finish_none_markup())
         return
 
+    ok = False
     try:
         ok = bool(await db.cancel_gc_assignment(user_id))
     except Exception as e:
@@ -1371,8 +1244,7 @@ async def ob_finish_yes(call: CallbackQuery):
         ok = False
 
     if not ok:
-        # Задание осталось активным - не бросаем человека на пустом экране.
-        await _ack(call, "Не получилось закончить задание. Попробуйте ещё раз.", alert=True)
+        await call.answer("Не удалось закончить задание. Попробуйте ещё раз.", show_alert=True)
         text, markup = await start_screen(user_id)
         await _swap(call, text, markup)
         return
@@ -1382,68 +1254,68 @@ async def ob_finish_yes(call: CallbackQuery):
 
 
 def _finish_ask_text(wallet: Wallet) -> str:
-    return _lines(
-        "<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> <b>Закончить задание?</b>",
-        "",
-        _quest_stats(wallet),
-        "",
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.",
-        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Прогресс задания сгорит.",
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Потом можно взять другое.",
-        "",
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Можно вернуться и доиграть</b>",
+    where = _venue_label(wallet)
+    card = _bq(
+        f"{E_OK} <b>Свои куты целы - их не трогаем</b>",
+        f"{E_FIRE} Прогресс задания сбросится",
+        f"{E_CUP} Награда за цель при досрочном выходе не выдаётся",
+        f"{E_STAR} Дальше: другое задание или играть самому в {where}",
+    )
+    return (
+        f"{_path(1)}\n\n"
+        f"{E_TARGET} <b>Закончить задание?</b>\n\n"
+        f"{_quest_stats(wallet)}\n\n"
+        f"{card}\n\n"
+        f"{_hint('Подтвердите или вернитесь')}"
     )
 
 
 def _finish_ask_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Вернуться к заданию", data="ob_finish_no", icon="5472041540605975004", style="success")],
-        [_btn("Да, закончить", data="ob_finish_yes", icon="5449372007432985754")],
+        [_btn("Да, закончить", data="ob_finish_yes", icon=ICON_FINISH, style="danger")],
+        [_btn("Продолжить задание", data="ob_finish_no", icon=ICON_PLAY, style="success")],
     ])
 
 
 def _finish_done_text(balance: int) -> str:
-    can_play = balance >= _cheapest_bet()
-    parts = [
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Задание закончено</b>",
-        "",
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.",
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {balance} кут",
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Другое задание даст новый баланс.",
-    ]
-    if can_play:
-        parts.append(f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {CLUB_WHERE}")
-        parts.append(
-            "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> Или играйте сами."
-        )
-    hint = "Выберите: другое задание или играть самому" if can_play else "Нажмите «Другое задание»"
-    return _lines(*parts, "", f"<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>{hint}</b>")
+    club = f"@{CLUB_USERNAME}" if CLUB_USERNAME else "в группе клуба"
+    card = _bq(
+        f"{E_OK} Задание закрыто - свои куты целы",
+        f"{E_COIN} Баланс : {balance} кут",
+        f"{E_GIFT} Можно взять другое задание",
+        f"{E_GAME} Или играть самому в {club}",
+    )
+    return (
+        f"{_path(0)}\n\n"
+        f"{E_OK} <b>Задание закончено</b>\n\n"
+        f"{card}\n\n"
+        f"{_hint('Выберите, что дальше')}"
+    )
 
 
 def _finish_done_markup(balance: int) -> InlineKeyboardMarkup:
     rows: List[List[InlineKeyboardButton]] = [
-        [_btn("Другое задание", data="ob_earn", icon="5472401690793614752", style="success")],
+        [_btn("Другое задание", data="ob_earn", icon=ICON_GIFT, style="success")],
     ]
     if balance >= _cheapest_bet():
-        rows.append([_btn("Играть сам", data="ob_games", icon="5472041540605975004", style="success")])
-    rows.append([_btn("Меню", data="ob_menu", icon="5318892863780579996")])
+        rows.append([_btn("Играть сам", data="ob_games", icon=ICON_PLAY, style="success")])
+    rows.append([_btn("Меню", data="ob_menu", icon=ICON_MENU)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _finish_none_text() -> str:
     return (
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Активного задания нет</b>\n"
-        "\n"
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Возьмите бесплатный баланс и сыграйте.\n"
-        "\n"
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Получить куты»</b>"
+        f"{E_OK} <b>Активного задания нет</b>\n\n"
+        f"{_bq(f'{E_GIFT} Можно взять бесплатное задание', f'{E_GAME} Или играть на своём балансе')}\n\n"
+        f"{_hint('Выберите следующий шаг')}"
     )
 
 
 def _finish_none_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Получить куты", data="ob_earn", icon="5472401690793614752", style="success")],
-        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+        [_btn("Получить куты", data="ob_earn", icon=ICON_GIFT, style="success")],
+        [_btn("Играть!", data="ob_games", icon=ICON_PLAY)],
+        [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
     ])
 
 
@@ -1452,7 +1324,7 @@ def _finish_none_markup() -> InlineKeyboardMarkup:
 # ──────────────────────────────────────────────────────────────────────
 @dp.callback_query(F.data == "ob_earn")
 async def ob_earn(call: CallbackQuery):
-    await _ack(call)
+    await call.answer()
     await _show_earn(call, page=0)
 
 
@@ -1463,7 +1335,7 @@ async def ob_earn_page(call: CallbackQuery):
         page = int(call.data.split(":", 1)[1])
     except (ValueError, IndexError):
         page = 0
-    await _ack(call)
+    await call.answer()
     await _show_earn(call, page=max(0, page))
 
 
@@ -1485,7 +1357,7 @@ async def _show_earn(call: CallbackQuery, page: int = 0) -> None:
             f"{_int(q.get('start_amount'))} → {_int(q.get('target_amount'))}"
             f" · +{_int(q.get('reward_amount'))}",
             data=f"ob_quest:{_quest_id(q)}:{page}",
-            icon="5472401690793614752",
+            icon=ICON_GIFT,
             style="success",
         )]
         for q in chunk
@@ -1494,37 +1366,36 @@ async def _show_earn(call: CallbackQuery, page: int = 0) -> None:
     if total > FREE_QUESTS_PER_PAGE:
         rows.append(_earn_nav(page, pages))
 
-    rows.append([_btn("Назад", data="ob_start", icon="5226660202035554522")])
+    rows.append([_btn("Назад", data="ob_start", icon=ICON_CLOSE)])
     await _swap(call, _earn_list_text(), InlineKeyboardMarkup(inline_keyboard=rows))
 
 
 def _earn_list_text() -> str:
+    """Список заданий. Правь текст прямо здесь."""
     return (
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> <b>Бесплатный баланс</b>\n"
-        "\n"
-        "<blockquote>"
-        "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Берёте задание - играете к цели.\n"
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> <b>Свои куты не списываются.</b>"
-        "</blockquote>\n"
-        "\n"
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите задание</b>"
+        f"<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> <b>Куты без доната</b>\n\n"
+        f"<blockquote>"
+        f"<b>Играете на баланс задания</b>\n"
+        f"<b>Дошли до цели - награда ваша</b>\n"
+        f"<b>Свои куты не трогаем</b>"
+        f"</blockquote>\n\n"
+        f"<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> <b>Выберите задание</b>"
     )
-
 
 def _earn_nav(page: int, pages: int) -> List[InlineKeyboardButton]:
     """Стрелки как в магазине: назад · N/M · вперёд."""
     row: List[InlineKeyboardButton] = []
     prev_page = page - 1 if page > 0 else pages - 1
     next_page = page + 1 if page < pages - 1 else 0
-    row.append(_btn(" ", data=f"ob_earn:{prev_page}", icon="5805509901048356965"))
+    row.append(_btn(" ", data=f"ob_earn:{prev_page}", icon=ICON_PREV))
     row.append(_btn(f"{page + 1}/{pages}", data="ob_noop"))
-    row.append(_btn(" ", data=f"ob_earn:{next_page}", icon="5807453545548487345"))
+    row.append(_btn(" ", data=f"ob_earn:{next_page}", icon=ICON_NEXT))
     return row
 
 
 @dp.callback_query(F.data == "ob_noop")
 async def ob_noop(call: CallbackQuery):
-    await _ack(call)
+    await call.answer()
 
 
 @dp.callback_query(F.data.startswith("ob_quest:"))
@@ -1535,52 +1406,49 @@ async def ob_quest(call: CallbackQuery):
         quest_id = int(parts[1])
         page = int(parts[2]) if len(parts) > 2 else 0
     except (ValueError, IndexError):
-        await _ack(call, "Задание не открылось", alert=True)
+        await call.answer("Задание не открылось", show_alert=True)
         return
 
-    await _ack(call)
+    await call.answer()
 
     quest = next(
         (q for q in await _free_quests(call.from_user.id) if _quest_id(q) == quest_id),
         None,
     )
     if quest is None:
-        # Задание исчезло из списка - не уводим в бонус, а обратно к выбору.
-        await _show_earn(call, page=page)
+        await _open_bonus(call)
         return
 
     await _swap(call, _earn_card_text(quest), _earn_card_markup(quest_id, page))
 
 
 def _earn_card_text(quest: Dict[str, Any]) -> str:
+    """Карточка задания. Правь текст прямо здесь."""
     start = _int(quest.get("start_amount"))
     target = _int(quest.get("target_amount"))
     reward = _int(quest.get("reward_amount"))
     limit = _int(quest.get("betlimit"))
+
     card = (
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> <b>{start} → {target} кут</b>\n"
-        f"<tg-emoji emoji-id='5294001020039363545'>🏆</tg-emoji> Награда : <b>+{reward} кут</b>"
+        f"<blockquote>"
+        f"<b>Старт : {start} кут</b>\n"
+        f"<b>Цель : {target} кут</b>\n"
+        f"<b>Награда : +{reward} кут</b>"
     )
     if limit:
-        card += (
-            f"\n<tg-emoji emoji-id='5471954679250498498'>🛡</tg-emoji> "
-            f"Ставка до : {limit} кут"
-        )
-    return (
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> <b>Бесплатный вход</b>\n"
-        "\n"
-        f"<blockquote>{card}</blockquote>\n"
-        "\n"
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.\n"
-        "\n"
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Взять задание»</b>"
-    )
+        card += f"\n<b>Ставка до : {limit} кут</b>"
+    card += "</blockquote>"
 
+    return (
+        f"<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> <b>Задание</b>\n\n"
+        f"{card}\n\n"
+        f"<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> <b>Взять и играть</b>"
+    )
 
 def _earn_card_markup(quest_id: int, page: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Взять задание", data=f"ob_take:{quest_id}:{page}", icon="5472041540605975004", style="success")],
-        [_btn("Назад", data=f"ob_earn:{page}", icon="5226660202035554522")],
+        [_btn("Взять задание", data=f"ob_take:{quest_id}:{page}", icon=ICON_PLAY, style="success")],
+        [_btn("Назад", data=f"ob_earn:{page}", icon=ICON_CLOSE)],
     ])
 
 
@@ -1591,17 +1459,15 @@ async def ob_take(call: CallbackQuery):
     try:
         quest_id = int(parts[1])
     except (ValueError, IndexError):
-        await _ack(call, "Задание не открылось", alert=True)
+        await call.answer("Задание не открылось", show_alert=True)
         return
-
-    # Отвечаем до похода в базу: выдача задания - несколько запросов подряд,
-    # и на медленной связи ответ на нажатие успел бы просрочиться.
-    await _ack(call, "Беру задание…")
 
     ok, msg, created = await _activate_quest(call.from_user.id, quest_id)
     if not ok:
-        await _swap(call, _take_error_text(msg), _take_error_markup())
+        await call.answer(msg, show_alert=True)
         return
+
+    await call.answer(msg, show_alert=False)
 
     wallet = await _wallet(call.from_user.id)
     # Если кэш/реплика ещё не отдала free - собираем кошелёк из созданной строки.
@@ -1617,8 +1483,8 @@ async def ob_take(call: CallbackQuery):
             call,
             _take_failed_text(),
             InlineKeyboardMarkup(inline_keyboard=[
-                [_btn("К заданиям", data="ob_earn", icon="5472401690793614752", style="success")],
-                [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+                [_btn("К заданиям", data="ob_earn", icon=ICON_GIFT, style="success")],
+                [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
             ]),
         )
         return
@@ -1804,36 +1670,15 @@ def _enrich_assignment_from_template(
 
 
 def _take_failed_text() -> str:
+    body = _bq(
+        f"{E_BOLT} Свои куты в безопасности.",
+        f"{E_STAR} Откройте задания ещё раз - виртуальный баланс уже там.",
+    )
     return (
-        "<tg-emoji emoji-id='5292275525518127278'>🎁</tg-emoji> <b>Задание принято</b>\n"
-        "\n"
-        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Баланс ещё подтягивается.\n"
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты в безопасности.\n"
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Откройте задания ещё раз.\n"
-        "\n"
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «К заданиям»</b>"
+        f"{E_TARGET} <b>Задание принято, но баланс ещё не подтянулся</b>\n\n"
+        f"{body}\n\n"
+        f"{_hint('Нажмите «К заданиям»')}"
     )
-
-
-def _take_error_text(reason: str) -> str:
-    """Задание взять не вышло: показываем экраном, а не всплывашкой."""
-    why = reason or "Это задание сейчас недоступно."
-    return _lines(
-        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Задание не открылось</b>",
-        "",
-        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> {why}",
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тронуты.",
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Рядом есть другие бесплатные задания.",
-        "",
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «К заданиям»</b>",
-    )
-
-
-def _take_error_markup() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("К заданиям", data="ob_earn", icon="5472401690793614752", style="success")],
-        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
-    ])
 
 
 async def _open_bonus(call: CallbackQuery) -> None:
@@ -1843,7 +1688,7 @@ async def _open_bonus(call: CallbackQuery) -> None:
 
 @dp.callback_query(F.data == "ob_bonus")
 async def ob_bonus(call: CallbackQuery):
-    await _ack(call)
+    await call.answer()
     try:
         from main import process_bonus_request
         await process_bonus_request(
@@ -1901,31 +1746,26 @@ def _quest_id(quest: Dict[str, Any]) -> int:
 
 def _no_quests_bridge_text() -> str:
     return (
-        "<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji> <b>Бесплатных заданий сейчас нет</b>\n"
-        "\n"
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Новые появляются регулярно.\n"
-        "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Пока куты можно взять через бонус.\n"
-        "\n"
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Взять бонус»</b>"
+        f"{_path(1)}\n\n"
+        f"{E_LEAF} <b>Бесплатных заданий сейчас нет.</b>\n\n"
+        f"{_bq('Новые появляются регулярно.', 'Пока куты можно взять через бонус.')}\n\n"
+        f"{_hint('Нажмите «Взять бонус»')}"
     )
 
 
 def _no_quests_bridge_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Взять бонус", data="ob_bonus", icon="5294001020039363545", style="success")],
-        [_btn("Назад", data="ob_start", icon="5226660202035554522")],
+        [_btn("Взять бонус", data="ob_bonus", icon=ICON_BONUS, style="success")],
+        [_btn("Назад", data="ob_start", icon=ICON_CLOSE)],
     ])
 
 
 def _no_quests_text() -> str:
     """Запасной текст, если бонус открыть не удалось."""
     return (
-        "<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji> <b>Бесплатных заданий сейчас нет</b>\n"
-        "\n"
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Новые появляются регулярно.\n"
-        "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Пока куты можно взять через бонус.\n"
-        "\n"
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Бонус»</b>"
+        f"{E_LEAF} <b>Бесплатных заданий сейчас нет.</b>\n\n"
+        f"{_bq('Новые появляются регулярно.', 'Пока куты можно взять через бонус.')}\n\n"
+        f"{_hint('Нажмите «Бонус»')}"
     )
 
 
@@ -1936,8 +1776,8 @@ def _no_quests_markup() -> InlineKeyboardMarkup:
     except Exception:
         n = 2
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Бонус", data=f"{random.randint(1, n)}_+", icon="5294001020039363545", style="success")],
-        [_btn("Назад", data="ob_start", icon="5226660202035554522")],
+        [_btn("Бонус", data=f"{random.randint(1, n)}_+", icon=ICON_BONUS, style="success")],
+        [_btn("Назад", data="ob_start", icon=ICON_CLOSE)],
     ])
 
 
@@ -1946,223 +1786,129 @@ def _no_quests_markup() -> InlineKeyboardMarkup:
 # ──────────────────────────────────────────────────────────────────────
 @dp.callback_query(F.data == "ob_games")
 async def ob_games(call: CallbackQuery):
-    await _ack(call)
+    await call.answer()
     _bump_notify_token(call.from_user.id)
+    _session_set(
+        call.from_user.id,
+        board_message_id=0,
+        play_url="",
+        ready_card=False,
+        game_key="",
+    )
     wallet = await _wallet(call.from_user.id)
-    if wallet.free_quest and wallet.amount < _cheapest_bet():
-        # Ставить нечем - вместо витрины игр показываем реальный выход.
-        await _swap(call, _quest_stuck_text(wallet), _quest_stuck_markup())
-        return
     await _swap(call, _games_text(wallet), _games_markup(wallet))
 
 
 @dp.callback_query(F.data == "ob_next")
 async def ob_next(call: CallbackQuery):
     """После игры: обновить прогресс задания и снова предложить игру."""
-    await _ack(call)
+    await call.answer()
     _bump_notify_token(call.from_user.id)
     wallet = await _wallet(call.from_user.id)
     if wallet.free_quest:
-        if wallet.amount < _cheapest_bet():
-            await _swap(call, _quest_stuck_text(wallet), _quest_stuck_markup())
-            return
         left = max(0, wallet.target - wallet.amount)
         if left <= 0 or wallet.amount >= wallet.target:
-            text = _lines(
-                "<tg-emoji emoji-id='5294001020039363545'>🏆</tg-emoji> <b>Цель достигнута</b>",
-                "",
-                _quest_stats(wallet),
-                "",
-                "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Награда уже ваша или скоро придёт.",
-                "",
-                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Играйте дальше или закончите задание</b>",
+            text = (
+                f"{_path(2)}\n\n"
+                f"{E_CUP} <b>Цель достигнута</b>\n\n"
+                f"{_quest_stats(wallet)}\n\n"
+                f"{_bq('Награда уже на балансе или скоро придёт.', 'Можно играть дальше или закончить задание.')}\n\n"
+                f"{_hint('Можно играть дальше или открыть меню')}"
             )
             markup = InlineKeyboardMarkup(inline_keyboard=[
-                [_btn("Играть ещё", data="ob_games", icon="5472041540605975004", style="success")],
-                [_btn("Закончить задание", data="ob_finish", icon="5449372007432985754")],
-                [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+                [_btn("Играть!", data="ob_games", icon=ICON_PLAY, style="success")],
+                [_btn("Закончить задание", data="ob_finish", icon=ICON_FINISH, style="danger")],
+                [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
             ])
             await _swap(call, text, markup)
             return
-        text = _lines(
-            "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>Продолжайте</b>",
-            "",
-            _quest_stats(wallet),
-            "",
-            "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тратятся.",
-            "",
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите игру</b>",
+        text = (
+            f"{_path(2)}\n\n"
+            f"{E_NEXT} <b>Что дальше</b>\n\n"
+            f"{_quest_stats(wallet)}\n\n"
+            f"{_bq(f'{E_BOLT} Свои куты не трогаем', f'{E_STAR} Можно взять другое или закончить и играть сам')}\n\n"
+            f"{_hint('Выберите игру и продолжайте')}"
         )
         await _swap(call, text, _games_markup(wallet))
         return
     await _swap(call, _games_text(wallet), _games_markup(wallet))
 
 
-def _quest_stuck_markup() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Другое задание", data="ob_earn", icon="5472401690793614752", style="success")],
-        [_btn("Закончить задание", data="ob_finish", icon="5449372007432985754")],
-        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
-    ])
-
-
 def _games_text(wallet: Wallet, *, accepted: bool = False) -> str:
-    """Витрина игр — короткие тексты, правьте здесь."""
+    """Экран выбора игр. Правь текст прямо здесь."""
     if wallet.free_quest:
-        where = _venue_name(wallet)
+        where = _venue_label(wallet)
         stats = _quest_stats(wallet)
-        title = "Задание принято" if accepted else "Выберите игру"
+        if accepted:
+            return (
+                f"<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> <b>Баланс задания готов</b>\n\n"
+                f"{stats}\n\n"
+                f"<blockquote>"
+                f"<b>Играть в {where}</b>\n"
+                f"<b>1 кут = 1 <tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji></b>\n"
+                f"<b>Свои куты не трогаем</b>\n"
+                f"<b>Можно закончить и играть сам</b>"
+                f"</blockquote>\n\n"
+                f"<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> <b>Выберите игру</b>"
+            )
         return (
-            f"<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>{title}</b>\n"
-            "\n"
-            f"<blockquote>{stats}</blockquote>\n"
-            "\n"
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> в <b>{where}</b>\n"
-            "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.\n"
-            "\n"
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите игру</b>"
+            f"<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>Ваш ход</b>\n\n"
+            f"{stats}\n\n"
+            f"<blockquote>"
+            f"<b>{where}</b>\n"
+            f"<b>Ставка ~{SAFE_BET_PERCENT}% баланса</b>\n"
+            f"<b>Свои куты не трогаем</b>\n"
+            f"<b>Можно закончить и играть сам</b>"
+            f"</blockquote>\n\n"
+            f"<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> <b>Выберите игру</b>"
         )
+    club = f"@{CLUB_USERNAME}" if CLUB_USERNAME else "в группе клуба"
     return (
-        "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>Выберите игру</b>\n"
-        "\n"
-        "<blockquote>"
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : <b>{wallet.amount} кут</b>\n"
-        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в <b>{CLUB_WHERE}</b>"
-        "</blockquote>\n"
-        "\n"
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите на игру</b>"
+        f"<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>Игры</b>\n\n"
+        f"<blockquote>"
+        f"<b>{wallet.amount} кут</b>\n"
+        f"<b>1 кут = 1 <tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji></b>\n"
+        f"<b>Ставка с баланса · {club}</b>"
+        f"</blockquote>\n\n"
+        f"<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> <b>Выберите игру</b>"
     )
 
 
 def _games_markup(wallet: Optional[Wallet] = None) -> InlineKeyboardMarkup:
-    # Premium icon_custom_emoji_id из emoji-id игры.
-    # При DOCUMENT_INVALID _swap откатит экран без иконок.
+    # Premium icon = эмодзи на кнопке. В text только название,
+    # иначе Telegram рисует два эмодзи подряд.
     rows: List[List[InlineKeyboardButton]] = []
     for i in range(0, len(SOLO_ORDER), 2):
         row = []
         for k in SOLO_ORDER[i:i + 2]:
             game = GAMES[k]
-            text, icon = _label_for_button(f"{game['emoji']} {game['title']}")
-            row.append(_btn(text, data=f"ob_game:{k}", icon=icon))
+            icon = GAME_ICON_IDS.get(k) or _emoji_id(game["emoji"])
+            row.append(_btn(game["title"], data=f"ob_game:{k}", icon=icon))
         rows.append(row)
     if wallet is not None and wallet.free_quest:
         rows.append([
-            _btn("Другое задание", data="ob_earn", icon="5472401690793614752"),
-            _btn("Закончить", data="ob_finish", icon="5449372007432985754"),
+            _btn("Другое задание", data="ob_earn", icon=ICON_GIFT, style="success"),
+            _btn("Закончить задание", data="ob_finish", icon="5305629674058061875", style="danger"),
         ])
-    rows.append([_btn("Назад", data="ob_start", icon="5226660202035554522")])
+    rows.append([_btn("Назад", data="ob_start", icon=ICON_CLOSE)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-
 # ──────────────────────────────────────────────────────────────────────
-# Клик 3 - правила → ставка → (выбор) → запуск
+# Клик 3 - правила и запуск
 # ──────────────────────────────────────────────────────────────────────
-def _game_screen_extra(wallet: Wallet) -> str:
-    if not wallet.free_quest:
-        return ""
-    return (
-        f"{_quest_stats(wallet)}\n"
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты не тратятся."
-    )
-
-
-async def _show_stake_picker(
-    call: CallbackQuery,
-    *,
-    game_key: str,
-    game: Dict[str, Any],
-    wallet: Wallet,
-) -> None:
-    """Описание игры + инлайн-кнопки суммы первой ставки."""
-    stakes = _stake_choices(game, wallet)
-    if not stakes:
-        await _swap(call, _no_funds_text(game, wallet), _no_funds_markup(wallet))
-        return
-
-    suggested = _bet_for(game, wallet) or stakes[0]
-    text = _render_game_text(
-        game,
-        bet=suggested,
-        free_quest=wallet.free_quest,
-        where=_venue_where(wallet),
-        hint="Выберите сумму ставки",
-        extra=_game_screen_extra(wallet),
-    )
-    rows = _stake_button_rows(game_key, stakes)
-    rows.append([_btn("Другая игра", data="ob_games", icon="5472041540605975004")])
-    await _swap(call, text, InlineKeyboardMarkup(inline_keyboard=rows))
-
-
-async def _show_variant_board(
-    call: CallbackQuery,
-    *,
-    game_key: str,
-    game: Dict[str, Any],
-    wallet: Wallet,
-    bet: int,
-) -> None:
-    """После выбора ставки — варианты (рулетка / куб / трейд)."""
-    variants: Sequence[Tuple[str, str]] = game.get("variants") or ()
-    text = _render_game_text(
-        game,
-        bet=bet,
-        free_quest=wallet.free_quest,
-        where=_venue_where(wallet),
-        hint=_game_action_hint(game),
-        extra=_game_screen_extra(wallet),
-    )
-    rows = _variant_button_rows(
-        variants,
-        bet=bet,
-        game_key=game_key,
-        rows=game.get("variant_rows"),
-    )
-    rows.append([
-        _btn("Другая ставка", data=f"ob_game:{game_key}", icon="5472041540605975004"),
-    ])
-    rows.append([_btn("Другая игра", data="ob_games", icon="5472041540605975004")])
-    await _swap(call, text, InlineKeyboardMarkup(inline_keyboard=rows))
-
-
-async def _show_confirm_play(
-    call: CallbackQuery,
-    *,
-    game_key: str,
-    game: Dict[str, Any],
-    wallet: Wallet,
-    bet: int,
-) -> None:
-    """Игры без вариантов: подтверждение ставки → старт."""
-    text = _render_game_text(
-        game,
-        bet=bet,
-        free_quest=wallet.free_quest,
-        where=_venue_where(wallet),
-        hint="Нажмите «Начать играть»",
-        extra=_game_screen_extra(wallet),
-    )
-    rows = [
-        [_btn(
-            "Начать играть",
-            data=f"ob_play:{game_key}:{bet}",
-            icon="5472041540605975004",
-            style="success",
-        )],
-        [_btn("Другая ставка", data=f"ob_game:{game_key}", icon="5472041540605975004")],
-        [_btn("Другая игра", data="ob_games", icon="5472041540605975004")],
-    ]
-    await _swap(call, text, InlineKeyboardMarkup(inline_keyboard=rows))
-
-
 @dp.callback_query(F.data.startswith("ob_game:"))
 async def ob_game(call: CallbackQuery):
-    """Описание игры и выбор суммы ставки кнопками."""
+    """Выбор игры → сразу доска в группе + одна карточка в личке.
+
+    Как футбол: без «Начать играть» в личке. В группе — текст и
+    «Начать игру» (или выбор), в личке — «Открыть мою игру».
+    """
     game_key = call.data.split(":", 1)[1] if ":" in call.data else ""
     if game_key not in GAMES:
-        await _ack(call, "Такой игры нет", alert=True)
+        await call.answer("Такой игры нет", show_alert=True)
         return
 
-    await _ack(call)
+    await call.answer()
     game = GAMES[game_key]
     wallet = await _wallet(call.from_user.id)
     floor = int(game["min"])
@@ -2171,57 +1917,32 @@ async def ob_game(call: CallbackQuery):
         await _swap(call, _bet_limit_text(game, wallet), _bet_limit_markup())
         return
 
-    if _bet_cap(game, wallet) < floor:
+    bet = _bet_for(game, wallet)
+    if bet < floor:
         await _swap(call, _no_funds_text(game, wallet), _no_funds_markup(wallet))
         return
 
-    await _show_stake_picker(call, game_key=game_key, game=game, wallet=wallet)
-
-
-@dp.callback_query(F.data.startswith("ob_stake:"))
-async def ob_stake(call: CallbackQuery):
-    """Выбрана сумма ставки → варианты или подтверждение старта."""
-    parts = (call.data or "").split(":")
-    if len(parts) < 3:
-        await _ack(call, "Не удалось разобрать ставку", alert=True)
-        return
-    game_key = parts[1]
-    try:
-        bet = int(parts[2])
-    except ValueError:
-        await _ack(call, "Не удалось разобрать ставку", alert=True)
-        return
-
-    if game_key not in GAMES:
-        await _ack(call, "Такой игры нет", alert=True)
-        return
-
-    await _ack(call)
-    game = GAMES[game_key]
-    wallet = await _wallet(call.from_user.id)
-    floor = int(game["min"])
-    cap = _bet_cap(game, wallet)
-
-    if bet < floor or bet > cap:
-        await _swap(call, _no_funds_text(game, wallet), _no_funds_markup(wallet))
-        return
-
-    if game.get("variants"):
-        await _show_variant_board(
-            call, game_key=game_key, game=game, wallet=wallet, bet=bet,
-        )
-        return
-
-    await _show_confirm_play(
-        call, game_key=game_key, game=game, wallet=wallet, bet=bet,
+    # Старая ссылка больше не действует.
+    _bump_notify_token(call.from_user.id)
+    _session_set(
+        call.from_user.id,
+        game_key=game_key,
+        bet=bet,
+        board_message_id=0,
+        play_url="",
+        ready_card=False,
     )
+    _remember(call.from_user.id, game_key, bet, None)
+
+    # Все игры — один принцип: выбор → сразу сообщение в группе + ссылка в личке.
+    await _try_launch(call, game_key, bet, None)
 
 
 @dp.callback_query(F.data.startswith("ob_play:"))
 async def ob_play(call: CallbackQuery):
     parts = (call.data or "").split(":")
     if len(parts) < 3:
-        await _ack(call, "Не удалось разобрать игру", alert=True)
+        await call.answer("Не удалось разобрать игру", show_alert=True)
         return
 
     game_key = parts[1]
@@ -2229,22 +1950,25 @@ async def ob_play(call: CallbackQuery):
     try:
         bet = int(parts[2])
     except ValueError:
-        await _ack(call, "Не удалось разобрать ставку", alert=True)
+        await call.answer("Не удалось разобрать ставку", show_alert=True)
         return
 
     if game_key not in GAMES:
-        await _ack(call, "Такой игры нет", alert=True)
+        await call.answer("Такой игры нет", show_alert=True)
         return
 
-    await _ack(call)
+    await call.answer()
+    # Для choice-игр выбор должен быть в группе.
+    if (GAMES[game_key].get("variants")) and call.message and call.message.chat.type == "private":
+        variant = None
     _remember(call.from_user.id, game_key, bet, variant)
     await _try_launch(call, game_key, bet, variant)
 
 
 @dp.callback_query(F.data.in_({"ob_joined", "ob_retry"}))
 async def ob_resume(call: CallbackQuery):
-    """«Я вошёл» и «Попробовать снова» - продолжаем с выбранной игрой."""
-    await _ack(call)
+    """«Открыть игру» / «Попробовать снова» - продолжаем с выбранной игрой."""
+    await call.answer()
     saved = _recall(call.from_user.id)
     if not saved:
         wallet = await _wallet(call.from_user.id)
@@ -2253,63 +1977,141 @@ async def ob_resume(call: CallbackQuery):
     await _try_launch(call, saved[0], saved[1], saved[2])
 
 
+async def _edit_only(
+    call: CallbackQuery,
+    text: str,
+    markup: InlineKeyboardMarkup,
+) -> bool:
+    """Только edit текущего сообщения. Никогда не шлёт второе в личку."""
+    if call.message is None:
+        return False
+    variants: List[Tuple[str, InlineKeyboardMarkup]] = [
+        (text, markup),
+        (text, _markup_without_icons(markup)),
+        (_html_plain(text), _markup_without_icons(markup)),
+    ]
+    for body, kb in variants:
+        try:
+            await call.message.edit_text(
+                body, reply_markup=kb, parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            return True
+        except Exception as e:
+            if "message is not modified" in str(e).lower():
+                return await _swap_markup(call, markup)
+    # Текст тот же / edit текста не приняли — пробуем хотя бы кнопки.
+    return await _swap_markup(call, markup)
+
+
+async def _show_ready_link(
+    call: CallbackQuery,
+    *,
+    game: Dict[str, Any],
+    game_key: str,
+    bet: int,
+    wallet: Wallet,
+    play_url: str,
+    venue_ref: Optional[str] = None,
+) -> None:
+    """Одно сообщение в личке: карточка + «Открыть мою игру» (url на доску в группе).
+
+    Никогда не создаёт второе сообщение — только edit того, что уже на экране.
+    """
+    venue_label = _venue_label(wallet, venue_ref)
+    card = _game_card_text(
+        game, bet, wallet,
+        game_key=game_key,
+        venue_label=venue_label,
+    )
+    kb = _ready_markup(play_url, free_quest=wallet.free_quest)
+    _session_set(
+        call.from_user.id,
+        play_url=play_url,
+        ready_card=True,
+        game_key=game_key,
+        bet=bet,
+    )
+
+    current = ""
+    if call.message is not None:
+        current = (
+            getattr(call.message, "html_text", None)
+            or call.message.text
+            or ""
+        )
+    # Уже эта карточка — меняем только кнопки (без мигания текста).
+    same_card = bool(current) and (
+        str(game.get("title") or "") in current
+        and "Ставка" in current
+    )
+    if same_card and await _swap_markup(call, kb):
+        return
+
+    if not await _edit_only(call, card, kb):
+        print(
+            f"[ONBOARDING] Не удалось обновить личку со ссылкой "
+            f"{game_key}/{call.from_user.id} → {play_url}"
+        )
+
+
 async def _try_launch(call: CallbackQuery, game_key: str, bet: int,
                       variant: Optional[str]) -> None:
-    """Проверки → запуск в чате задания/клуба → ссылка в личку."""
+    """Проверки → доска выбора или партия в группе → ссылка в личку.
+
+    Логика партии всегда из module/func игры (trade.py, slots.py, …).
+    """
     user = call.from_user
     game = GAMES[game_key]
     wallet = await _wallet(user.id)
     venue_chat_id, venue_url, venue_ref = _play_venue(wallet)
 
-    # 0. Выбор обязателен, если у игры есть варианты (рулетка, куб, трейд).
-    allowed = _allowed_variants(game)
-    if allowed and (variant is None or str(variant) not in allowed):
-        await _swap(
-            call,
-            _choice_required_text(
-                game,
-                bet=bet,
-                free_quest=wallet.free_quest,
-                where=_venue_where(wallet, venue_ref),
-            ),
-            _choice_required_markup(game_key),
-        )
-        return
-
-    # 1. Человек в чате, где задание засчитывается?
     if not await _in_chat(user.id, venue_chat_id):
-        await _swap(
-            call,
-            _join_text(
-                game,
-                bet=bet,
-                free_quest=wallet.free_quest,
-                venue_url=venue_url,
-            ),
-            _join_markup(venue_url),
-        )
+        await _swap(call, _join_text(game, venue_url), _join_markup(venue_url))
         return
 
-    # 2. Есть чем платить ставку - своими кутами или балансом задания?
     if wallet.amount < bet or bet < int(game["min"]):
         await _swap(call, _no_funds_text(game, wallet), _no_funds_markup(wallet))
         return
 
-    # 3. Хватает ли казны чата на выплату?
     if not await _chat_can_pay(venue_chat_id, bet):
         await _swap(call, _empty_treasury_text(), _empty_treasury_markup())
         return
 
-    # 4. Защита от двойного нажатия - с понятным экраном, не молча.
-    if _too_fast(user.id):
-        await _swap(call, _wait_text(), _wait_markup())
+    # Повтор «Открыть игру»: партия уже ждёт — не плодим вторую доску,
+    # а снова даём ссылку на ту же.
+    sess = _session_get(user.id)
+    existing_board = int(sess.get("board_message_id") or 0)
+    existing_chat = int(sess.get("play_chat_id") or 0)
+    if (
+        existing_board
+        and existing_chat == int(venue_chat_id)
+        and sess.get("game_key") == game_key
+        and int(sess.get("bet") or 0) == int(bet)
+        and (
+            game_key in CONFIRM_START_GAMES
+            or _needs_group_choice(game_key, variant)
+        )
+    ):
+        play_url = str(sess.get("play_url") or "").strip() or _message_url(
+            venue_chat_id, existing_board, venue_ref,
+        )
+        await _show_ready_link(
+            call,
+            game=game,
+            game_key=game_key,
+            bet=bet,
+            wallet=wallet,
+            play_url=play_url,
+            venue_ref=venue_ref,
+        )
         return
 
-    try:
-        command = _build_launch_command(game, bet, variant)
-    except Exception as e:
-        print(f"[ONBOARDING] команда {game_key}/{user.id}: {e!r}")
-        await _swap(call, _failed_text(), _failed_markup())
+    if _too_fast(user.id, bucket="board", cooldown=1.5):
+        try:
+            await call.answer("Секунду…", show_alert=False)
+        except Exception:
+            pass
         return
 
     dm_chat_id = call.message.chat.id
@@ -2317,8 +2119,69 @@ async def _try_launch(call: CallbackQuery, game_key: str, bet: int,
     balance_before = wallet.amount
     token = _bump_notify_token(user.id)
 
+    _session_set(
+        user.id,
+        game_key=game_key,
+        bet=bet,
+        play_chat_id=venue_chat_id,
+        play_chat_ref=venue_ref,
+        dm_chat_id=dm_chat_id,
+        dm_message_id=dm_message_id,
+        balance_before=balance_before,
+        free_quest=wallet.free_quest,
+        notify_token=token,
+        board_message_id=0,
+        play_url="",
+        ready_card=False,
+    )
+
+    if _needs_group_choice(game_key, variant):
+        board = await _launch_choice_board(
+            user, game_key, bet,
+            play_chat_id=venue_chat_id,
+            play_chat_ref=venue_ref,
+        )
+        if board is None:
+            await _swap(call, _failed_text(), _failed_markup())
+            return
+        play_url = _message_url(venue_chat_id, board.message_id, venue_ref)
+        _session_set(user.id, board_message_id=board.message_id, play_url=play_url)
+        await _show_ready_link(
+            call,
+            game=game,
+            game_key=game_key,
+            bet=bet,
+            wallet=wallet,
+            play_url=play_url,
+            venue_ref=venue_ref,
+        )
+        return
+
+    if game_key in CONFIRM_START_GAMES:
+        board = await _launch_confirm_board(
+            user, game_key, bet,
+            play_chat_id=venue_chat_id,
+            play_chat_ref=venue_ref,
+        )
+        if board is None:
+            await _swap(call, _failed_text(), _failed_markup())
+            return
+        play_url = _message_url(venue_chat_id, board.message_id, venue_ref)
+        _session_set(user.id, board_message_id=board.message_id, play_url=play_url)
+        # Та же карточка (фото 1), кнопка → URL на доску «Начать игру» в группе.
+        await _show_ready_link(
+            call,
+            game=game,
+            game_key=game_key,
+            bet=bet,
+            wallet=wallet,
+            play_url=play_url,
+            venue_ref=venue_ref,
+        )
+        return
+
     anchor = await _launch(
-        user, game_key, bet, variant, command,
+        user, game_key, bet, variant,
         play_chat_id=venue_chat_id,
         play_chat_ref=venue_ref,
         dm_chat_id=dm_chat_id,
@@ -2332,15 +2195,543 @@ async def _try_launch(call: CallbackQuery, game_key: str, bet: int,
         return
 
     play_url = _message_url(venue_chat_id, anchor.message_id, venue_ref)
-    await _swap(
+    _session_set(user.id, board_message_id=anchor.message_id, play_url=play_url)
+    await _show_ready_link(
         call,
-        _ready_text(
-            game, bet, wallet,
-            game_key=game_key,
-            venue_ref=venue_ref,
-        ),
-        _ready_markup(play_url, free_quest=wallet.free_quest),
+        game=game,
+        game_key=game_key,
+        bet=bet,
+        wallet=wallet,
+        play_url=play_url,
+        venue_ref=venue_ref,
     )
+
+
+def _choice_board_text(user: User, game_key: str, bet: int) -> str:
+    """Доска выбора в группе: весь текст жирным, включая имя."""
+    game = GAMES[game_key]
+    lead = game.get("board_lead") or "Сделайте выбор - партия начнётся сразу."
+    hint = game.get("variant_hint") or "Ваш ход"
+    title_line = f"{game['title']} · ставка {bet} кут"
+    return (
+        f"{game['emoji']} {_mention_html(user.id, user.first_name)}\n\n"
+        f"{_bold_html_line(title_line)}\n\n"
+        f"{_bq(lead, game.get('rules') or '')}\n\n"
+        f"{E_DOWN} {_bold_html_line(str(hint))}"
+    )
+
+
+def _variant_button_style(
+    game: Dict[str, Any],
+    *,
+    value_s: str,
+    text: str,
+    icon: Optional[str],
+) -> Optional[str]:
+    """Style кнопки выбора: digit → None; иначе variant_styles или success.
+
+    В variant_styles можно явно указать None (без цветного style) —
+    так у рулетки «чёрное / чёт / нечет» остаются нейтральными.
+    """
+    if (icon and value_s.isdigit()) or (text or "").isdigit():
+        return None
+    style_map = game.get("variant_styles") or {}
+    if value_s in style_map:
+        style = style_map[value_s]
+    else:
+        style = "success"
+    if style is None:
+        return None
+    if style not in ("success", "danger", "primary", "default"):
+        return "success"
+    return style
+
+
+def _choice_board_markup(game_key: str, bet: int, owner_id: int) -> InlineKeyboardMarkup:
+    """Кнопки выбора в группе. Раскладка из GAMES.variant_rows, если задана."""
+    game = GAMES[game_key]
+    variants: Sequence[Tuple[str, str]] = game.get("variants") or ()
+    buttons: List[InlineKeyboardButton] = []
+    for label, value in variants:
+        text, icon = _label_for_button(label)
+        value_s = str(value or "").strip()
+        # Premium-цифры (кубик): на кнопке только icon, без обычного «1»…«6».
+        if icon and value_s.isdigit():
+            text = "\u200b"
+        else:
+            if not (text or "").strip():
+                text = value_s or "·"
+            elif (text or "").isdigit():
+                pass
+            elif (
+                not any(ch.isalpha() for ch in text)
+                and not any(ch.isdigit() for ch in text)
+            ):
+                # Только символы/эмодзи без букв и цифр — дописываем value.
+                # Важно: не трогаем «1–6» / «6–12».
+                text = f"{text} {value_s}".strip()
+        style = _variant_button_style(game, value_s=value_s, text=text, icon=icon)
+        buttons.append(_btn(
+            text,
+            data=f"ob_gpick:{owner_id}:{game_key}:{bet}:{value}",
+            icon=icon,
+            style=style,
+        ))
+
+    rows: List[List[InlineKeyboardButton]] = []
+    layout = [int(n) for n in (game.get("variant_rows") or ()) if int(n) > 0]
+    if layout and sum(layout) == len(buttons):
+        i = 0
+        for width in layout:
+            rows.append(buttons[i:i + width])
+            i += width
+    else:
+        per_row = 3 if len(buttons) > 4 else 2
+        for i in range(0, len(buttons), per_row):
+            rows.append(buttons[i:i + per_row])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _launch_choice_board(
+    user: User,
+    game_key: str,
+    bet: int,
+    *,
+    play_chat_id: int,
+    play_chat_ref: Optional[str],
+) -> Optional[Message]:
+    """Сообщение в группе с кнопками выбора. Партия ещё не начата."""
+    text = _choice_board_text(user, game_key, bet)
+    markup = _choice_board_markup(game_key, bet, user.id)
+    try:
+        return await _send_html_chat(play_chat_id, text, reply_markup=markup)
+    except Exception as e:
+        print(f"[ONBOARDING] choice board {game_key}/{user.id}: {e!r}")
+        return None
+
+
+def _confirm_board_text(user: User, game_key: str, bet: int) -> str:
+    """Сообщение в группе: весь текст жирным, включая имя."""
+    game = GAMES[game_key]
+    lead = game.get("board_lead") or game.get("rules") or (
+        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> "
+        "Нажмите кнопку - и партия стартует."
+    )
+    title_line = f"{game['title']} · ставка {bet} кут"
+    return (
+        f"{game['emoji']} {_mention_html(user.id, user.first_name)}\n\n"
+        f"{_bold_html_line(title_line)}\n\n"
+        f"{_bq(lead)}\n\n"
+        f"{E_DOWN} {_bold_html_line('Нажмите «Начать игру»')}"
+    )
+
+
+def _confirm_board_markup(owner_id: int, game_key: str, bet: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        _btn(
+            "Начать игру",
+            data=f"ob_gstart:{owner_id}:{game_key}:{bet}",
+            icon="5425094988260188065",
+            style="primary",
+        ),
+    ]])
+
+
+async def _launch_confirm_board(
+    user: User,
+    game_key: str,
+    bet: int,
+    *,
+    play_chat_id: int,
+    play_chat_ref: Optional[str],
+) -> Optional[Message]:
+    """Сообщение в группе с кнопкой старта. Партия ещё не начата."""
+    text = _confirm_board_text(user, game_key, bet)
+    markup = _confirm_board_markup(user.id, game_key, bet)
+    try:
+        return await _send_html_chat(play_chat_id, text, reply_markup=markup)
+    except Exception as e:
+        print(f"[ONBOARDING] confirm board {game_key}/{user.id}: {e!r}")
+        return None
+
+
+@dp.callback_query(F.data.startswith("ob_gpick:"))
+async def ob_gpick(call: CallbackQuery):
+    """Клик выбора в группе → настоящий handler из файла игры."""
+    parts = (call.data or "").split(":")
+    # ob_gpick:{owner}:{game}:{bet}:{variant...}
+    # variant может содержать пробелы (диапазон «1 6»).
+    if len(parts) < 5:
+        await call.answer("Не удалось разобрать выбор", show_alert=True)
+        return
+
+    try:
+        owner_id = int(parts[1])
+    except ValueError:
+        await call.answer("Не удалось разобрать игрока", show_alert=True)
+        return
+    game_key, bet_raw = parts[2], parts[3]
+    variant_raw = ":".join(parts[4:]).strip()
+    if game_key not in GAMES:
+        await call.answer("Такой игры нет", show_alert=True)
+        return
+    try:
+        bet = int(bet_raw)
+    except ValueError:
+        await call.answer("Не удалось разобрать ставку", show_alert=True)
+        return
+
+    user = call.from_user
+    if int(user.id) != owner_id:
+        await call.answer("Это партия другого игрока", show_alert=True)
+        return
+
+    game = GAMES[game_key]
+    # «1-6» → «1 6», «6-12» → «6 12» (команда рулетки всегда с пробелом).
+    variant = _variant_to_cmd_arg(variant_raw)
+    allowed = _allowed_variant_values(game)
+    if not variant or (variant_raw not in allowed and variant not in allowed):
+        await call.answer("Такого выбора нет", show_alert=True)
+        return
+
+    sess = _session_get(user.id)
+    wallet = await _wallet(user.id)
+    if wallet.amount < bet or bet < int(game["min"]):
+        await call.answer("Не хватает на ставку", show_alert=True)
+        return
+
+    if _too_fast(user.id, bucket="start", cooldown=0.8):
+        await call.answer("Секунду…", show_alert=False)
+        return
+
+    await call.answer()
+
+    play_chat_id = call.message.chat.id if call.message else int(sess.get("play_chat_id") or 0)
+    play_chat_ref = sess.get("play_chat_ref")
+    dm_chat_id = int(sess.get("dm_chat_id") or user.id)
+    dm_message_id = int(sess.get("dm_message_id") or 0)
+    balance_before = int(sess.get("balance_before") or wallet.amount)
+    free_quest = bool(sess.get("free_quest")) if "free_quest" in sess else wallet.free_quest
+    token = int(sess.get("notify_token") or _bump_notify_token(user.id))
+
+    _remember(user.id, game_key, bet, variant)
+    _session_set(user.id, last_variant=variant)
+    # Доску с цифрами/выбором удаляем сразу; партия идёт от короткого якоря.
+    anchor = await _consume_start_board(
+        call.message, user=user, game_key=game_key, bet=bet,
+        play_chat_ref=play_chat_ref,
+    )
+    if anchor is None:
+        try:
+            await bot1.send_message(
+                play_chat_id,
+                "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
+                "<b>Не удалось стартовать. Нажмите игру ещё раз.</b>",
+                parse_mode="HTML",
+            )
+        except Exception:
+            try:
+                await call.answer("Не удалось стартовать — попробуйте ещё раз", show_alert=True)
+            except Exception:
+                pass
+        return
+    try:
+        handler = getattr(import_module(game["module"]), game["func"])
+        # 1–6 → «рулетка 10 1 6», 6–12 → «рулетка 10 6 12»
+        cmd_text = " ".join(str(game["cmd"]).format(bet=bet, v=variant).split())
+        synthetic = anchor.model_copy(update={
+            "text": cmd_text,
+            "from_user": user,
+        }).as_(bot1)
+        print(
+            f"[ONBOARDING] gpick launch {game_key} uid={user.id} "
+            f"raw={variant_raw!r} cmd={cmd_text!r} anchor={anchor.message_id}",
+            flush=True,
+        )
+        asyncio.create_task(_run_game_and_notify(
+            handler, synthetic,
+            user=user,
+            user_id=user.id,
+            game_key=game_key,
+            bet=bet,
+            play_chat_id=play_chat_id,
+            play_chat_ref=play_chat_ref,
+            anchor_message_id=anchor.message_id,
+            dm_chat_id=dm_chat_id,
+            dm_message_id=dm_message_id or anchor.message_id,
+            balance_before=balance_before,
+            free_quest=free_quest,
+            notify_token=token,
+            variant=variant,
+        ))
+    except Exception as e:
+        print(f"[ONBOARDING] gpick launch {game_key}/{user.id}: {e!r}", flush=True)
+        try:
+            await bot1.send_message(
+                play_chat_id,
+                "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
+                "<b>Не удалось запустить игру. Попробуйте ещё раз.</b>",
+                reply_to_message_id=getattr(anchor, "message_id", None),
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+        return
+
+
+@dp.callback_query(F.data.startswith("ob_gstart:"))
+async def ob_gstart(call: CallbackQuery):
+    """Кнопка «Начать игру» в группе → handler игры (футбол, башня, …)."""
+    parts = (call.data or "").split(":")
+    # ob_gstart:{owner}:{game}:{bet}
+    if len(parts) < 4:
+        await call.answer("Не удалось разобрать игру", show_alert=True)
+        return
+
+    try:
+        owner_id = int(parts[1])
+    except ValueError:
+        await call.answer("Не удалось разобрать игрока", show_alert=True)
+        return
+    game_key, bet_raw = parts[2], parts[3]
+    if game_key not in GAMES or game_key not in CONFIRM_START_GAMES:
+        await call.answer("Такой игры нет", show_alert=True)
+        return
+    try:
+        bet = int(bet_raw)
+    except ValueError:
+        await call.answer("Не удалось разобрать ставку", show_alert=True)
+        return
+
+    user = call.from_user
+    if int(user.id) != owner_id:
+        await call.answer("Это партия другого игрока", show_alert=True)
+        return
+
+    game = GAMES[game_key]
+    sess = _session_get(user.id)
+    wallet = await _wallet(user.id)
+    if wallet.amount < bet or bet < int(game["min"]):
+        await call.answer("Не хватает на ставку", show_alert=True)
+        return
+
+    if _too_fast(user.id, bucket="start", cooldown=0.8):
+        await call.answer("Секунду…", show_alert=False)
+        return
+
+    await call.answer()
+
+    play_chat_id = call.message.chat.id if call.message else int(sess.get("play_chat_id") or 0)
+    play_chat_ref = sess.get("play_chat_ref")
+    dm_chat_id = int(sess.get("dm_chat_id") or user.id)
+    dm_message_id = int(sess.get("dm_message_id") or 0)
+    balance_before = int(sess.get("balance_before") or wallet.amount)
+    free_quest = bool(sess.get("free_quest")) if "free_quest" in sess else wallet.free_quest
+    token = int(sess.get("notify_token") or _bump_notify_token(user.id))
+
+    _remember(user.id, game_key, bet, None)
+    # Сообщение «Начать игру» удаляем сразу после клика.
+    anchor = await _consume_start_board(
+        call.message, user=user, game_key=game_key, bet=bet,
+        play_chat_ref=play_chat_ref,
+    )
+    if anchor is None:
+        return
+    try:
+        handler = getattr(import_module(game["module"]), game["func"])
+        synthetic = anchor.model_copy(update={
+            "text": game["cmd"].format(bet=bet, v=""),
+            "from_user": user,
+        }).as_(bot1)
+        asyncio.create_task(_run_game_and_notify(
+            handler, synthetic,
+            user=user,
+            user_id=user.id,
+            game_key=game_key,
+            bet=bet,
+            play_chat_id=play_chat_id,
+            play_chat_ref=play_chat_ref,
+            anchor_message_id=anchor.message_id,
+            dm_chat_id=dm_chat_id,
+            dm_message_id=dm_message_id or anchor.message_id,
+            balance_before=balance_before,
+            free_quest=free_quest,
+            notify_token=token,
+        ))
+    except Exception as e:
+        print(f"[ONBOARDING] gstart launch {game_key}/{user.id}: {e!r}")
+        try:
+            await call.answer("Не удалось запустить игру", show_alert=True)
+        except Exception:
+            pass
+
+
+async def _consume_start_board(
+    board: Optional[Message],
+    *,
+    user: User,
+    game_key: str,
+    bet: int,
+    play_chat_ref: Optional[str] = None,
+) -> Optional[Message]:
+    """Сразу убирает доску выбора/старта и ставит короткий якорь партии.
+
+    Порядок важен для UX:
+      1) снять кнопки (нельзя кликнуть дважды)
+      2) удалить сообщение с доской
+      3) отправить компактный якорь под dice/сессию
+    Работает для куба, рулетки, трейда, футбола, башни и любой другой игры.
+    """
+    if board is None:
+        return None
+
+    chat_id = int(board.chat.id)
+    mid = int(board.message_id)
+    key = (chat_id, mid)
+    if key in _consumed_boards:
+        return None
+    _consumed_boards[key] = True
+    if len(_consumed_boards) > 4000:
+        _consumed_boards.clear()
+        _consumed_boards[key] = True
+
+    game = GAMES.get(game_key) or {}
+    opener = (
+        f"{game.get('emoji') or E_GAME} {_mention_html(user.id, user.first_name)}"
+        f" <b>· {game.get('title') or 'Игра'} · {bet} кут</b>"
+    )
+
+    # 1) Мгновенно убираем кнопки — доска больше не кликабельна.
+    try:
+        await bot1.edit_message_reply_markup(
+            chat_id=chat_id, message_id=mid, reply_markup=None,
+        )
+    except Exception:
+        try:
+            await board.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+
+    # 2) Удаляем само сообщение с выбором / «Начать игру».
+    deleted = False
+    try:
+        await bot1.delete_message(chat_id=chat_id, message_id=mid)
+        deleted = True
+    except Exception as e:
+        print(f"[ONBOARDING] delete start board: {e!r}")
+        try:
+            await board.delete()
+            deleted = True
+        except Exception as e2:
+            print(f"[ONBOARDING] delete start board retry: {e2!r}")
+
+    # 3) Якорь, на который ответит игра.
+    anchor = await _send_html_chat(chat_id, opener)
+    if anchor is None:
+        # Жёсткий фолбэк: plain text — иначе доска уже удалена и чат «молчит».
+        try:
+            plain = (
+                f"{_safe_display_name(user.first_name)} · "
+                f"{game.get('title') or 'Игра'} · {bet} кут"
+            )
+            anchor = await bot1.send_message(chat_id=chat_id, text=plain)
+        except Exception as e:
+            print(f"[ONBOARDING] consume plain anchor fail: {e!r}", flush=True)
+    if anchor is None and not deleted:
+        # Удалить не вышло и якорь не создался — превращаем доску в якорь.
+        for body in (opener, _html_plain(opener)):
+            try:
+                edited = await bot1.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=mid,
+                    text=body,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                    reply_markup=None,
+                )
+                anchor = edited or board
+                break
+            except Exception as e:
+                print(f"[ONBOARDING] consume edit fallback: {e!r}")
+        if anchor is None:
+            return None
+    if anchor is None:
+        return None
+
+    play_url = _message_url(chat_id, anchor.message_id, play_chat_ref)
+    _session_set(
+        user.id,
+        board_message_id=anchor.message_id,
+        play_url=play_url,
+        play_chat_id=chat_id,
+    )
+
+    # В личке «Открыть мою игру» ведёт на живой якорь, не на удалённую доску.
+    sess = _session_get(user.id)
+    dm_chat_id = int(sess.get("dm_chat_id") or 0)
+    dm_message_id = int(sess.get("dm_message_id") or 0)
+    if dm_chat_id and dm_message_id:
+        try:
+            await bot1.edit_message_reply_markup(
+                chat_id=dm_chat_id,
+                message_id=dm_message_id,
+                reply_markup=_ready_markup(
+                    play_url,
+                    free_quest=bool(sess.get("free_quest")),
+                ),
+            )
+        except Exception:
+            try:
+                await bot1.edit_message_reply_markup(
+                    chat_id=dm_chat_id,
+                    message_id=dm_message_id,
+                    reply_markup=_markup_without_icons(_ready_markup(
+                        play_url,
+                        free_quest=bool(sess.get("free_quest")),
+                    )),
+                )
+            except Exception:
+                pass
+    return anchor
+
+
+def _game_card_text(
+    game: Dict[str, Any],
+    bet: int,
+    wallet: Wallet,
+    *,
+    game_key: str = "",
+    venue_label: str = "",
+) -> str:
+    """Единая карточка в личке для шага 1 и шага 2 (фото 1 ↔ фото 2).
+
+    Меняются только кнопки: «Открыть игру» → «Открыть мою игру» (url).
+    Текст правил/ставки/подсказки один и тот же — из GAMES.rules.
+    """
+    source = "с задания" if wallet.free_quest else "с баланса"
+    where = venue_label or _venue_label(wallet)
+    has_choice = bool(game.get("variants"))
+    body = (
+        f"{game['emoji']} <b>{game['title']}</b>\n\n"
+        f"<blockquote>"
+        f"<b>{game['rules']}</b>\n"
+        f"<b><tg-emoji emoji-id='5453900977432188793'>⭐</tg-emoji> Ставка : {bet} кут ({source})</b>\n"
+        f"<b>{where}</b>"
+    )
+    if wallet.free_quest:
+        body += "\n<b>Свои куты не трогаем</b>"
+    body += "</blockquote>\n\n"
+    if has_choice:
+        body += (
+            "<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> "
+            "<b>Откройте игру — выбор кнопками в группе</b>"
+        )
+    else:
+        body += (
+            "<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> "
+            "<b>Откройте игру — старт кнопкой в группе</b>"
+        )
+    return body
 
 
 async def _launch(
@@ -2348,7 +2739,6 @@ async def _launch(
     game_key: str,
     bet: int,
     variant: Optional[str],
-    command: str,
     *,
     play_chat_id: int,
     play_chat_ref: Optional[str],
@@ -2362,97 +2752,67 @@ async def _launch(
     game = GAMES[game_key]
     anchor = None
     try:
-        handler = _resolve_handler(game)
-        anchor = await _send_anchor(play_chat_id, user, game, bet)
-        synthetic = _synthetic_command_message(anchor, user, command)
-
-        print(
-            f"[ONBOARDING] launch {game_key} user={user.id} chat={play_chat_id} "
-            f"bet={bet} variant={variant!r} cmd={command!r} "
-            f"anchor={anchor.message_id}",
-            flush=True,
+        opener = (
+            f"{game['emoji']} {_mention_html(user.id, user.first_name)}"
+            f" <b>· {game['title']} · {bet} кут</b>"
         )
+        try:
+            anchor = await bot1.send_message(
+                chat_id=play_chat_id,
+                text=opener,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        except Exception as e:
+            # Если премиум-эмодзи в якоре не принялись - шлём unicode.
+            if "DOCUMENT_INVALID" in str(e).upper() or "document_invalid" in str(e).lower():
+                anchor = await bot1.send_message(
+                    chat_id=play_chat_id,
+                    text=(
+                        f"{_plain_emoji(game['emoji'])} {_mention_html(user.id, user.first_name)}"
+                        f" <b>· {game['title']} · {bet} кут</b>"
+                    ),
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+            else:
+                raise
 
-        # Партия может длиться секунды (dice / анимация). Ссылку в личку
-        # отдаём сразу; задачу держим в _bg_tasks, иначе asyncio её съест.
-        _spawn_bg(
-            _run_game_and_notify(
-                handler, synthetic,
-                user=user,
-                user_id=user.id,
-                game_key=game_key,
-                bet=bet,
-                play_chat_id=play_chat_id,
-                play_chat_ref=play_chat_ref,
-                anchor_message_id=anchor.message_id,
-                dm_chat_id=dm_chat_id,
-                dm_message_id=dm_message_id,
-                balance_before=balance_before,
-                free_quest=free_quest,
-                notify_token=notify_token,
-            ),
-            label=f"{game_key}:{user.id}:{anchor.message_id}",
-        )
+        handler = getattr(import_module(game["module"]), game["func"])
+
+        # Синтетическое сообщение: чат и якорь - от бота, автор - игрок,
+        # текст - обычная игровая команда. Игра отвечает на якорь.
+        synthetic = anchor.model_copy(update={
+            "text": game["cmd"].format(bet=bet, v=variant or ""),
+            "from_user": user,
+        }).as_(bot1)
+
+        # Не держим колбэк — ссылку в личку отдаём сразу.
+        asyncio.create_task(_run_game_and_notify(
+            handler, synthetic,
+            user=user,
+            user_id=user.id,
+            game_key=game_key,
+            bet=bet,
+            play_chat_id=play_chat_id,
+            play_chat_ref=play_chat_ref,
+            anchor_message_id=anchor.message_id,
+            dm_chat_id=dm_chat_id,
+            dm_message_id=dm_message_id,
+            balance_before=balance_before,
+            free_quest=free_quest,
+            notify_token=notify_token,
+            variant=variant,
+        ))
         return anchor
     except Exception as e:
         print(f"[ONBOARDING] Не удалось запустить {game_key} для {user.id}: {e!r}")
-        print(traceback.format_exc())
         if anchor is not None:
             try:
                 await bot1.delete_message(play_chat_id, anchor.message_id)
             except Exception:
                 pass
         return None
-
-
-def _group_launch_text(user: User, game: Dict[str, Any], bet: int, *, plain: bool = False) -> str:
-    """Минималистичный якорь в группе — маркетинг + premium emoji."""
-    emoji = _plain_emoji(game["emoji"]) if plain else str(game.get("emoji") or "")
-    name = _name(user)
-    title = str(game.get("title") or "Игра")
-    return (
-        "<blockquote>"
-        f"{emoji} <b>{name}</b>\n"
-        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> "
-        f"<b>{title}</b> · <b>{int(bet)} кут</b>\n"
-        f"<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> "
-        f"<b>Партия уже здесь.</b>"
-        "</blockquote>"
-        if not plain else
-        "<blockquote>"
-        f"{emoji} <b>{name}</b>\n"
-        f"🔥 <b>{title}</b> · <b>{int(bet)} кут</b>\n"
-        f"🤙 <b>Партия уже здесь.</b>"
-        "</blockquote>"
-    )
-
-
-async def _send_anchor(
-    play_chat_id: int,
-    user: User,
-    game: Dict[str, Any],
-    bet: int,
-) -> Message:
-    """Якорь в группе: сначала с premium emoji, при отказе - unicode."""
-    rich = _group_launch_text(user, game, bet, plain=False)
-    plain = _group_launch_text(user, game, bet, plain=True)
-    try:
-        return await bot1.send_message(
-            chat_id=play_chat_id,
-            text=rich,
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
-    except Exception as e:
-        err = str(e).lower()
-        if "document_invalid" in err or "can't parse entities" in err:
-            return await bot1.send_message(
-                chat_id=play_chat_id,
-                text=plain,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-        raise
 
 
 async def _run_game_and_notify(
@@ -2471,66 +2831,72 @@ async def _run_game_and_notify(
     balance_before: int,
     free_quest: bool,
     notify_token: int,
+    variant: Optional[str] = None,
 ) -> None:
+    tip_key = _pending_tip_key(user_id, notify_token)
+    last_variant = (variant or "").strip() or None
+    # Сессионные: регистрируем pending ДО handler, чтобы notify с конца партии
+    # не потерялся, если UI закроется очень быстро.
+    if game_key in SESSION_GAMES:
+        _pending_session_tips[tip_key] = {
+            "user": user,
+            "game_key": game_key,
+            "bet": bet,
+            "play_chat_id": play_chat_id,
+            "play_chat_ref": play_chat_ref,
+            "anchor_message_id": anchor_message_id,
+            "dm_chat_id": dm_chat_id,
+            "dm_message_id": dm_message_id,
+            "balance_before": balance_before,
+            "free_quest": free_quest,
+            "notify_token": notify_token,
+            "board_mid": 0,
+            "variant": last_variant,
+        }
+
     try:
         await handler(synthetic)
-    except asyncio.CancelledError:
-        print(
-            f"[ONBOARDING] Игра {game_key} отменена у {user_id} "
-            f"(chat={play_chat_id} anchor={anchor_message_id})",
-            flush=True,
-        )
-        await _notify_launch_failed(
-            user_id=user_id,
-            dm_chat_id=dm_chat_id,
-            dm_message_id=dm_message_id,
-            notify_token=notify_token,
-            play_chat_id=play_chat_id,
-            anchor_message_id=anchor_message_id,
-        )
-        raise
     except Exception as e:
-        print(
-            f"[ONBOARDING] Игра {game_key} упала у {user_id}: {e!r} "
-            f"(chat={play_chat_id} anchor={anchor_message_id} "
-            f"text={getattr(synthetic, 'text', None)!r})",
-            flush=True,
-        )
-        print(traceback.format_exc())
-        await _notify_launch_failed(
-            user_id=user_id,
-            dm_chat_id=dm_chat_id,
-            dm_message_id=dm_message_id,
-            notify_token=notify_token,
-            play_chat_id=play_chat_id,
-            anchor_message_id=anchor_message_id,
-        )
+        print(f"[ONBOARDING] Игра {game_key} упала у {user_id}: {e!r}")
+        if game_key in SESSION_GAMES:
+            _pending_session_tips.pop(tip_key, None)
         return
 
-    print(
-        f"[ONBOARDING] game done {game_key} user={user_id} "
-        f"chat={play_chat_id} anchor={anchor_message_id}",
-        flush=True,
-    )
+    # Сессионные (башня и т.п.): tip + личка — строго после конца партии.
+    if game_key in SESSION_GAMES:
+        asyncio.create_task(_watch_session_and_finish(user_id=user_id, notify_token=notify_token))
+        return
 
-    # Подсказка в группе для новичка - после каждой onboarding-игры.
+    # Instant: handler = конец партии → tip сразу (любая onboarding-игра).
     try:
-        await _maybe_send_newbie_help_tip(
-            user=user,
+        tip_ok = await _send_onboarding_replay_tip(
+            user_id=user_id,
+            first_name=getattr(user, "first_name", None),
             play_chat_id=play_chat_id,
             play_chat_ref=play_chat_ref,
-            anchor_message_id=anchor_message_id,
+            reply_to_message_id=anchor_message_id,
             free_quest=free_quest,
             game_key=game_key,
             bet=bet,
+            notify_token=notify_token,
+            variant=last_variant,
         )
+        if not tip_ok:
+            await asyncio.sleep(0.25)
+            await _send_onboarding_replay_tip(
+                user_id=user_id,
+                first_name=getattr(user, "first_name", None),
+                play_chat_id=play_chat_id,
+                play_chat_ref=play_chat_ref,
+                reply_to_message_id=0,
+                free_quest=free_quest,
+                game_key=game_key,
+                bet=bet,
+                notify_token=notify_token,
+                variant=last_variant,
+            )
     except Exception as e:
-        print(f"[ONBOARDING] newbie tip {user_id}: {e!r}")
-
-    # Сессионные игры живут на колбэках - прогресс после партии
-    # человек обновляет кнопкой «Играть ещё».
-    if game_key not in INSTANT_GAMES:
-        return
+        print(f"[ONBOARDING] replay tip {user_id}: {e!r}")
 
     try:
         await _notify_after_game(
@@ -2548,63 +2914,332 @@ async def _run_game_and_notify(
         print(f"[ONBOARDING] Уведомление после игры {game_key}/{user_id}: {e!r}")
 
 
-async def _notify_launch_failed(
+def _session_store_get(attr: str, user_id: int) -> Any:
+    try:
+        import main as main_mod
+        store = getattr(main_mod, attr, None)
+        if store is None:
+            return None
+        return store.get(user_id)
+    except Exception:
+        return None
+
+
+def _session_board_mid(game_key: str, user_id: int) -> Optional[int]:
+    attr = _SESSION_MSG_STORES.get(game_key)
+    if not attr:
+        return None
+    mid = _session_store_get(attr, user_id)
+    try:
+        return int(mid) if mid else None
+    except Exception:
+        return None
+
+
+def _session_is_finished(game_key: str, user_id: int, expected_mid: Optional[int]) -> bool:
+    """True, когда активная доска снята или сессия помечена closed."""
+    msg_attr = _SESSION_MSG_STORES.get(game_key)
+    if not msg_attr:
+        return False
+    cur = _session_store_get(msg_attr, user_id)
+    if cur is None:
+        return True
+    try:
+        cur_mid = int(cur)
+    except Exception:
+        return True
+    if expected_mid and cur_mid != int(expected_mid):
+        # Другая партия того же типа — старую считаем завершённой.
+        return True
+
+    active_attr = _SESSION_ACTIVE_STORES.get(game_key)
+    if not active_attr:
+        return False
+    st = _session_store_get(active_attr, user_id)
+    if isinstance(st, dict) and st.get("closed"):
+        return True
+    return False
+
+
+async def _emit_session_finished_once(
     *,
     user_id: int,
-    dm_chat_id: int,
-    dm_message_id: int,
     notify_token: int,
-    play_chat_id: int,
-    anchor_message_id: int,
-) -> None:
-    """Если партия не стартовала - не оставляем новичка на пустом «готово»."""
-    if not _notify_token_alive(user_id, notify_token):
+    reply_message_id: Optional[int] = None,
+) -> bool:
+    """Один раз на запуск: tip в группе сразу, итог в личке фоном."""
+    key = _pending_tip_key(user_id, notify_token)
+    if key in _session_finish_sent:
+        return False
+
+    pending = _pending_session_tips.get(key)
+    if not pending or int(pending.get("notify_token") or 0) != int(notify_token):
+        return False
+
+    _session_finish_sent[key] = True
+    _pending_session_tips.pop(key, None)
+    if len(_session_finish_sent) > 2000:
+        _session_finish_sent.clear()
+
+    game_key = str(pending.get("game_key") or "")
+    bet = int(pending.get("bet") or 10)
+    free_quest = bool(pending.get("free_quest"))
+    play_chat_ref = pending.get("play_chat_ref")
+    reply_to = (
+        int(reply_message_id or 0)
+        or int(pending.get("board_mid") or 0)
+        or int(pending.get("anchor_message_id") or 0)
+    )
+
+    # Tip в группе — сразу после партии (для каждой onboarding-игры).
+    # Не завязан на «живой» notify_token: tip нужен даже если в личке уже другая карточка.
+    last_variant = str(pending.get("variant") or "").strip() or None
+    try:
+        u = pending.get("user")
+        tip_ok = await _send_onboarding_replay_tip(
+            user_id=user_id,
+            first_name=getattr(u, "first_name", None) if u is not None else None,
+            play_chat_id=int(pending["play_chat_id"]),
+            play_chat_ref=play_chat_ref,
+            reply_to_message_id=reply_to,
+            free_quest=free_quest,
+            game_key=game_key,
+            bet=bet,
+            notify_token=notify_token,
+            variant=last_variant,
+        )
+        if not tip_ok:
+            await asyncio.sleep(0.25)
+            await _send_onboarding_replay_tip(
+                user_id=user_id,
+                first_name=getattr(u, "first_name", None) if u is not None else None,
+                play_chat_id=int(pending["play_chat_id"]),
+                play_chat_ref=play_chat_ref,
+                reply_to_message_id=0,
+                free_quest=free_quest,
+                game_key=game_key,
+                bet=bet,
+                notify_token=notify_token,
+                variant=last_variant,
+            )
+    except Exception as e:
+        print(f"[ONBOARDING] session tip {user_id}: {e!r}")
+
+    dm_chat_id = int(pending.get("dm_chat_id") or 0)
+    dm_message_id = int(pending.get("dm_message_id") or 0)
+    if not dm_chat_id or not dm_message_id:
+        sess = _session_get(user_id)
+        dm_chat_id = dm_chat_id or int(sess.get("dm_chat_id") or 0)
+        dm_message_id = dm_message_id or int(sess.get("dm_message_id") or 0)
+    balance_before = int(pending.get("balance_before") or 0)
+    if not balance_before:
+        balance_before = int(_session_get(user_id).get("balance_before") or 0)
+
+    # Личку обновляем только если токен ещё актуален (не перетёрли новой карточкой).
+    if dm_chat_id and dm_message_id and _notify_token_alive(user_id, notify_token):
+        asyncio.create_task(_notify_after_game(
+            user_id=user_id,
+            game_key=game_key,
+            bet=bet,
+            dm_chat_id=dm_chat_id,
+            dm_message_id=dm_message_id,
+            balance_before=balance_before,
+            free_quest=free_quest,
+            notify_token=notify_token,
+            play_chat_ref=play_chat_ref,
+        ))
+    elif not (dm_chat_id and dm_message_id):
+        print(f"[ONBOARDING] session finish без dm для {user_id}/{game_key}")
+    return True
+
+
+async def _watch_session_and_finish(*, user_id: int, notify_token: int) -> None:
+    """Ждёт конца сессионной партии → tip + обновление лички."""
+    tip_key = _pending_tip_key(user_id, notify_token)
+    pending = _pending_session_tips.get(tip_key)
+    if not pending or int(pending.get("notify_token") or 0) != int(notify_token):
+        return
+    game_key = str(pending.get("game_key") or "")
+    if game_key not in SESSION_GAMES:
         return
 
-    text = _failed_text()
-    markup = _failed_markup()
-    variants: List[Tuple[str, InlineKeyboardMarkup]] = [
-        (text, markup),
-        (text, _markup_without_icons(markup)),
-        (_html_plain(text), _markup_without_icons(markup)),
-    ]
-    for body, kb in variants:
-        if not _notify_token_alive(user_id, notify_token):
+    # Доска появляется сразу после handler — без неё итог не шлём
+    # (иначе «нет mid» ошибочно выглядит как конец партии).
+    board_mid: Optional[int] = None
+    for _ in range(40):
+        pending = _pending_session_tips.get(tip_key)
+        if not pending:
             return
-        try:
-            await bot1.edit_message_text(
-                chat_id=dm_chat_id,
-                message_id=dm_message_id,
-                text=body,
-                reply_markup=kb,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
+        board_mid = _session_board_mid(game_key, user_id)
+        if board_mid:
+            pending["board_mid"] = int(board_mid)
             break
-        except Exception as e:
-            if "message is not modified" in str(e).lower():
-                break
-    else:
-        for body, kb in variants:
-            if not _notify_token_alive(user_id, notify_token):
-                break
-            try:
-                await bot1.send_message(
-                    chat_id=dm_chat_id,
-                    text=body,
-                    reply_markup=kb,
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                )
-                break
-            except Exception:
-                continue
+        await asyncio.sleep(0.08)
+    if not board_mid:
+        # Доску не увидели — не трогаем pending: notify из игры / fallback дошлют tip.
+        print(f"[ONBOARDING] session board mid miss uid={user_id} game={game_key}")
+        return
 
-    # Якорь без партии только путает - убираем, если ещё висит.
+    deadline = time.monotonic() + _SESSION_TIP_WAIT
+    while time.monotonic() < deadline:
+        if tip_key not in _pending_session_tips:
+            return
+        if tip_key in _session_finish_sent:
+            return
+        if _session_is_finished(game_key, user_id, board_mid):
+            # Короткая пауза: UI «Игра завершена» успеет отрисоваться.
+            await asyncio.sleep(0.15)
+            if not _session_is_finished(game_key, user_id, board_mid):
+                await asyncio.sleep(0.35)
+                continue
+            reply_to = board_mid or int(pending.get("anchor_message_id") or 0)
+            await _emit_session_finished_once(
+                user_id=user_id,
+                notify_token=notify_token,
+                reply_message_id=reply_to,
+            )
+            return
+        await asyncio.sleep(0.35)
+
+    # Таймаут — pending оставляем: onboarding_notify / fallback ещё могут сработать.
+    print(f"[ONBOARDING] session tip wait timeout uid={user_id} game={game_key}")
+
+
+async def onboarding_notify_game_finished(
+    user_id: int,
+    *,
+    message_id: Optional[int] = None,
+    chat_id: Optional[int] = None,
+) -> None:
+    """Вызывать из игр в момент реального конца партии (башня / риск / плиты / …).
+
+    Не блокирует колбэк игры: tip + личка уходят фоновой задачей.
+    Если pending пропал (рестарт) — всё равно шлём tip из _ob_session.
+    """
+    uid = int(user_id)
+    picked = _pick_pending_for_finish(uid, message_id=message_id)
+    if picked:
+        tip_key, pending = picked
+        token = int(pending.get("notify_token") or tip_key[1] or 0)
+        if token:
+            if chat_id is not None:
+                try:
+                    want = int(pending.get("play_chat_id") or 0)
+                    got = int(chat_id)
+                    if want and got and want != got:
+                        print(
+                            f"[ONBOARDING] finish chat mismatch "
+                            f"uid={uid} want={want} got={got} — tip всё равно"
+                        )
+                except Exception:
+                    pass
+            asyncio.create_task(_emit_session_finished_once(
+                user_id=uid,
+                notify_token=token,
+                reply_message_id=message_id,
+            ))
+            return
+
+    # Fallback: сессия онбординга ещё жива, pending уже съели / пропал.
+    sess = _session_get(uid)
+    game_key = str(sess.get("game_key") or "")
+    if not game_key or game_key not in GAMES:
+        return
+    token = int(sess.get("notify_token") or 0) or int(time.time() * 1000)
+    play_chat_id = int(sess.get("play_chat_id") or chat_id or 0)
+    if not play_chat_id:
+        return
+    first_name = None
     try:
-        await bot1.delete_message(play_chat_id, anchor_message_id)
+        first_name = await db.get_user_first_name(uid)
     except Exception:
         pass
+    asyncio.create_task(_send_onboarding_replay_tip(
+        user_id=uid,
+        first_name=first_name,
+        play_chat_id=play_chat_id,
+        play_chat_ref=sess.get("play_chat_ref"),
+        reply_to_message_id=int(message_id or sess.get("board_message_id") or 0),
+        free_quest=bool(sess.get("free_quest")),
+        game_key=game_key,
+        bet=int(sess.get("bet") or 10),
+        notify_token=token,
+        variant=str(sess.get("last_variant") or "").strip() or None,
+    ))
+    # Личку тоже попробуем обновить, если есть dm ids.
+    dm_chat_id = int(sess.get("dm_chat_id") or 0)
+    dm_message_id = int(sess.get("dm_message_id") or 0)
+    if dm_chat_id and dm_message_id and token and _notify_token_alive(uid, token):
+        asyncio.create_task(_notify_after_game(
+            user_id=uid,
+            game_key=game_key,
+            bet=int(sess.get("bet") or 10),
+            dm_chat_id=dm_chat_id,
+            dm_message_id=dm_message_id,
+            balance_before=int(sess.get("balance_before") or 0),
+            free_quest=bool(sess.get("free_quest")),
+            notify_token=token,
+            play_chat_ref=sess.get("play_chat_ref"),
+        ))
+
+
+async def _send_onboarding_replay_tip(
+    *,
+    user_id: int,
+    first_name: Optional[str],
+    play_chat_id: int,
+    play_chat_ref: Optional[str],
+    reply_to_message_id: int,
+    free_quest: bool,
+    game_key: str,
+    bet: int,
+    notify_token: int,
+    variant: Optional[str] = None,
+) -> bool:
+    """Tip «Ещё шаг?» в группе после каждой onboarding-партии.
+
+    Для любого игрока (новичок или нет). Один tip на токен запуска.
+    """
+    key = (int(user_id), int(notify_token or 0))
+    if key[1] and key in _tip_sent_tokens:
+        return False
+    if key[1]:
+        _tip_sent_tokens[key] = True
+        if len(_tip_sent_tokens) > 3000:
+            _tip_sent_tokens.clear()
+
+    if play_chat_ref:
+        venue = play_chat_ref
+    elif int(play_chat_id) == CLUB_CHAT_ID and CLUB_USERNAME:
+        venue = f"@{CLUB_USERNAME}"
+    else:
+        venue = "в группе клуба"
+    if venue and not str(venue).startswith("@") and not str(venue).startswith("http"):
+        if str(venue).replace("_", "").isalnum():
+            venue = f"@{venue}"
+
+    text = newbie_help_tip_text(
+        mention=_mention_html(int(user_id), first_name),
+        free_quest=free_quest,
+        venue_label=str(venue),
+        game_key=game_key,
+        bet=bet,
+        variant=variant,
+    )
+    sent = await _send_html_chat(
+        int(play_chat_id),
+        text,
+        reply_to_message_id=int(reply_to_message_id or 0) or None,
+    )
+    if sent is None:
+        print(
+            f"[ONBOARDING] replay tip FAIL uid={user_id} game={game_key} "
+            f"chat={play_chat_id} reply={reply_to_message_id}"
+        )
+        # Разрешаем повтор, если отправка не прошла.
+        _tip_sent_tokens.pop(key, None)
+        return False
+    return True
 
 
 async def _maybe_send_newbie_help_tip(
@@ -2615,27 +3250,20 @@ async def _maybe_send_newbie_help_tip(
     anchor_message_id: int,
     free_quest: bool,
     game_key: str = "",
-    bet: int = 0,
+    bet: int = 10,
+    notify_token: int = 0,
 ) -> None:
-    if not await _is_newbie(user.id):
-        return
-    venue = play_chat_ref or (
-        CLUB_WHERE if int(play_chat_id) == CLUB_CHAT_ID else "этой группе"
-    )
-    if venue and not str(venue).startswith("@") and not str(venue).startswith("http"):
-        if str(venue).replace("_", "").isalnum():
-            venue = f"@{venue}"
-    text = newbie_help_tip_text(
-        mention=_mention_html(user.id, user.first_name),
+    """Совместимость: tip после onboarding-партии (без гейта newbie)."""
+    await _send_onboarding_replay_tip(
+        user_id=int(user.id),
+        first_name=getattr(user, "first_name", None),
+        play_chat_id=play_chat_id,
+        play_chat_ref=play_chat_ref,
+        reply_to_message_id=anchor_message_id,
         free_quest=free_quest,
-        venue_label=str(venue),
         game_key=game_key,
         bet=bet,
-    )
-    await _send_html_chat(
-        play_chat_id,
-        text,
-        reply_to_message_id=anchor_message_id,
+        notify_token=notify_token or int(time.time() * 1000),
     )
 
 
@@ -2652,35 +3280,34 @@ async def _notify_after_game(
     play_chat_ref: Optional[str] = None,
 ) -> None:
     """После партии в клубе - свежий прогресс в личку + «Играть ещё»."""
-    # Даём БД дописать баланс задания после выплаты/списания.
-    await asyncio.sleep(1.2)
+    # Короткая пауза: БД успевает дописать баланс, UI не тормозит.
+    await asyncio.sleep(0.35)
     if not _notify_token_alive(user_id, notify_token):
         return
 
     wallet = await _wallet(user_id)
     game = GAMES.get(game_key) or {}
     quest_mode = free_quest or wallet.free_quest
-    is_newbie = await _is_newbie(user_id)
+    last_variant = str(_session_get(user_id).get("last_variant") or "").strip() or None
     text = _after_game_text(
         game, bet, wallet,
         balance_before=balance_before,
         free_quest=quest_mode,
-        is_newbie=is_newbie,
-        venue_ref=play_chat_ref,
+        venue_label=_venue_label(wallet, play_chat_ref),
+        variant=last_variant,
     )
     markup = _after_game_markup(wallet, free_quest=quest_mode)
 
     if not _notify_token_alive(user_id, notify_token):
         return
 
-    variants: List[Tuple[str, str, InlineKeyboardMarkup]] = [
-        ("full", text, markup),
-        ("no_icons", text, _rebuild_markup(markup, keep_icons=False, keep_styles=True)),
-        ("bare_kb", text, _rebuild_markup(markup, keep_icons=False, keep_styles=False)),
-        ("plain", _html_plain(text), _rebuild_markup(markup, keep_icons=False, keep_styles=False)),
+    variants: List[Tuple[str, InlineKeyboardMarkup]] = [
+        (text, markup),
+        (text, _markup_without_icons(markup)),
+        (_html_plain(text), _markup_without_icons(markup)),
     ]
     last_err: Optional[BaseException] = None
-    for name, body, kb in variants:
+    for body, kb in variants:
         if not _notify_token_alive(user_id, notify_token):
             return
         try:
@@ -2692,17 +3319,13 @@ async def _notify_after_game(
                 parse_mode="HTML",
                 disable_web_page_preview=True,
             )
-            if name != "full":
-                print(f"[ONBOARDING] итог fallback={name} err={last_err!r}")
             return
         except Exception as e:
             last_err = e
             if "message is not modified" in str(e).lower():
                 return
-            if not _can_downgrade_markup(e):
-                break
 
-    for name, body, kb in variants:
+    for body, kb in variants:
         if not _notify_token_alive(user_id, notify_token):
             return
         try:
@@ -2713,8 +3336,6 @@ async def _notify_after_game(
                 parse_mode="HTML",
                 disable_web_page_preview=True,
             )
-            if name != "full":
-                print(f"[ONBOARDING] итог (send) fallback={name}")
             return
         except Exception as e:
             last_err = e
@@ -2725,10 +3346,10 @@ async def _notify_after_game(
 def _delta_line(before: int, after: int) -> str:
     delta = after - before
     if delta > 0:
-        return f"<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Итог : +{delta} кут"
+        return f"{E_RESULT} Итог : +{delta} кут"
     if delta < 0:
-        return f"<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Итог : {delta} кут"
-    return f"<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Итог : без изменений"
+        return f"{E_RESULT} Итог : {delta} кут"
+    return f"{E_RESULT} Итог : без изменений"
 
 
 def _after_game_text(
@@ -2738,139 +3359,146 @@ def _after_game_text(
     *,
     balance_before: int,
     free_quest: bool,
-    is_newbie: bool = False,
-    venue_ref: Optional[str] = None,
+    venue_label: str = "",
+    variant: Optional[str] = None,
 ) -> str:
     title = game.get("title") or "Игра"
-    emoji = game.get("emoji") or "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji>"
-    where = _venue_where(wallet, venue_ref)
-    head = _lines(
-        f"{emoji} <b>{title}</b>",
-        "",
-        (
-            f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут "
-            f"({'с задания' if bool(free_quest or wallet.free_quest) else 'с баланса'})"
-        ),
-        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}",
+    emoji = game.get("emoji") or E_GAME
+    where = venue_label or _venue_label(wallet)
+    # Для закрытого задания delta по виртуальному балансу уже не сравнить -
+    # показываем только если задание ещё активно.
+    show_delta = wallet.free_quest
+    delta = _delta_line(balance_before, wallet.amount) if show_delta else ""
+    result_card = _bq(
+        f"{emoji} {title} · ставка {bet} кут",
+        delta,
+        f"{E_PLANE} Площадка : {where}",
+    ) if delta else _bq(
+        f"{emoji} {title} · ставка {bet} кут",
+        f"{E_PLANE} Площадка : {where}",
     )
+
+    # Tip с командой и «хелп игры» — всем, не только новичкам.
+    help_tip = f"\n{_newbie_replay_tip(game, bet, variant=variant)}\n"
 
     if free_quest and wallet.free_quest:
         reached = wallet.target > 0 and wallet.amount >= wallet.target
         if reached:
-            return _lines(
-                "<tg-emoji emoji-id='5294001020039363545'>🏆</tg-emoji> <b>Цель достигнута</b>",
-                "",
-                head,
-                _delta_line(balance_before, wallet.amount),
-                "",
-                _quest_stats(wallet),
-                "",
-                "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Награда уже ваша или скоро придёт.",
-                "",
-                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Играйте дальше или закончите задание</b>",
+            next_steps = _bq(
+                f"{E_CUP} Награда уже на балансе или скоро придёт",
+                f"{E_GAME} Дальше - задания, ферма и топ клуба",
+                f"{E_STAR} Вы уже в игре - выбирайте следующий ход",
+            )
+            return (
+                f"{_path(2)}\n\n"
+                f"{E_CUP} <b>Цель достигнута</b>\n\n"
+                f"{result_card}\n\n"
+                f"{_quest_stats(wallet)}\n\n"
+                f"{next_steps}\n\n"
+                f"{_hint('Можно играть дальше или открыть меню')}"
             )
         if wallet.amount <= 0:
-            return _lines(
-                "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> <b>Баланс задания закончился</b>",
-                "",
-                head,
-                "",
-                "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Так бывает - это не конец.",
-                "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.",
-                "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Возьмите другое задание.",
-                "",
-                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другое задание»</b>",
+            lose = _bq(
+                f"{E_OK} Это не конец - так бывает",
+                f"{E_BOLT} Свои куты целы",
+                f"{E_GIFT} Возьмите другое задание или бонус",
+                f"{E_STAR} Первый вход в клуб - за счёт площадки",
             )
-        tip = ""
-        if is_newbie:
-            tip = (
-                f"<tg-emoji emoji-id='5318892863780579996'>📖</tg-emoji> "
-                f"В {where} можно писать : <code>хелп игры</code>"
+            return (
+                f"{_path(2)}\n\n"
+                f"{E_FIRE} <b>Задание проиграно - и это нормально</b>\n\n"
+                f"{result_card}\n\n"
+                f"{_quest_stats(wallet)}\n\n"
+                f"{lose}\n\n"
+                f"{_hint('Нажмите «Другое задание»')}"
             )
-        return _lines(
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Партия сыграна</b>",
-            "",
-            head,
-            _delta_line(balance_before, wallet.amount),
-            "",
-            _quest_stats(wallet),
-            tip,
-            "",
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Играть ещё»</b>",
+        return (
+            f"{_path(2)}\n\n"
+            f"{E_NEXT} <b>Партия сыграна</b>\n\n"
+            f"{result_card}\n\n"
+            f"{_quest_stats(wallet)}\n"
+            f"{E_BOLT} <b>Свои куты не тратятся.</b>\n"
+            f"{help_tip}\n"
+            f"{_hint('Играть ещё · другая игра · или закончить задание')}"
         )
 
     if free_quest and not wallet.free_quest:
+        # Задание закрылось во время/после партии.
+        closed = _bq(
+            f"{emoji} {title} · ставка {bet} кут",
+            f"{E_COIN} Баланс : {wallet.amount} кут",
+        )
         if wallet.amount >= _cheapest_bet():
-            return _lines(
-                "<tg-emoji emoji-id='5294001020039363545'>🏆</tg-emoji> <b>Задание закрыто</b>",
-                "",
-                f"{emoji} <b>{title}</b>",
-                f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут (с задания)",
-                f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут",
-                "",
-                "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Вы в клубе.",
-                "<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> Дальше играйте сами.",
-                "",
-                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Играйте сами или возьмите другое задание</b>",
+            next_steps = _bq(
+                f"{E_CUP} Задание закрыто - вы в клубе",
+                f"{E_GAME} Можно играть самому или взять другое задание",
+                f"{E_STAR} Дальше: игры, ферма, топ",
             )
-        return _lines(
-            "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> <b>Задание закрыто</b>",
-            "",
-            f"{emoji} <b>{title}</b>",
-            f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут (с задания)",
-            "",
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Так бывает.",
-            "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.",
-            "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Возьмите другое задание.",
-            "",
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другое задание»</b>",
+            return (
+                f"{_path(2)}\n\n"
+                f"{E_CUP} <b>Задание закрыто</b>\n\n"
+                f"{closed}\n"
+                f"{E_BOLT} <b>Свои куты целы.</b>\n\n"
+                f"{next_steps}\n\n"
+                f"{_hint('Играть сам или взять другое задание')}"
+            )
+        lose = _bq(
+            f"{E_OK} Проигрыш - часть игры",
+            f"{E_BOLT} Свои куты целы",
+            f"{E_GIFT} Возьмите другое задание или бонус",
+        )
+        return (
+            f"{_path(2)}\n\n"
+            f"{E_FIRE} <b>Задание закрыто</b>\n\n"
+            f"{closed}\n\n"
+            f"{lose}\n\n"
+            f"{_hint('Возьмите новое задание')}"
         )
 
-    return _lines(
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Партия сыграна</b>",
-        "",
-        f"{emoji} <b>{title}</b>",
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Ставка : {bet} кут (с баланса)",
+    played = _bq(
+        f"{emoji} {title} · ставка {bet} кут",
         _delta_line(balance_before, wallet.amount),
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут",
-        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> в {where}",
-        "",
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Выберите следующую игру</b>",
+        f"{E_COIN} Баланс : {wallet.amount} кут",
+        f"{E_PLANE} Площадка : {where}",
     )
-
+    return (
+        f"{_path(2)}\n\n"
+        f"{E_NEXT} <b>Партия сыграна</b>\n\n"
+        f"{played}\n"
+        f"{help_tip}\n"
+        f"{_hint('Выберите следующую игру')}"
+    )
 
 
 def _after_game_markup(wallet: Wallet, *, free_quest: bool) -> InlineKeyboardMarkup:
     if wallet.free_quest and wallet.amount > 0:
-        # Задание живо: играть дальше, сменить игру или выйти - всё под рукой.
         return InlineKeyboardMarkup(inline_keyboard=[
-            [_btn("Играть ещё", data="ob_next", icon="5472041540605975004", style="success")],
-            [_btn("Другая игра", data="ob_games", icon="5472041540605975004")],
-            [_btn("Закончить задание", data="ob_finish", icon="5449372007432985754")],
-            [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+            [_btn("Играть ещё", data="ob_next", icon="5348423147647414077", style="success")],
+            [_btn("Другая игра", data="ob_games", icon="5425094988260188065", style="primary")],
+            [_btn("Закончить задание", data="ob_finish", icon=ICON_FINISH, style="danger")],
+            [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
         ])
-    if wallet.free_quest:
-        # Баланс задания сгорел, но задание ещё активно.
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [_btn("Другое задание", data="ob_earn", icon="5472401690793614752", style="success")],
-            [_btn("Закончить задание", data="ob_finish", icon="5449372007432985754")],
-            [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
-        ])
-    if free_quest:
+    if free_quest and not wallet.free_quest:
         # Задание закрылось: цель взята или виртуальный баланс сгорел.
         if wallet.amount >= _cheapest_bet():
             return InlineKeyboardMarkup(inline_keyboard=[
-                [_btn("Играть сам", data="ob_games", icon="5472041540605975004", style="success")],
-                [_btn("Другое задание", data="ob_earn", icon="5472401690793614752")],
-                [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+                [_btn("Играть одному", data="ob_games", icon="5425094988260188065", style="primary")],
+                [_btn("Другое задание", data="ob_earn", icon="5424939755257208778")],
+                [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
             ])
         return InlineKeyboardMarkup(inline_keyboard=[
-            [_btn("Другое задание", data="ob_earn", icon="5472401690793614752", style="success")],
-            [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+            [_btn("Другое задание", data="ob_earn", icon="5345878375229568510", style="success")],
+            [_btn("Получить куты", data="ob_earn", icon="5415777271459891913")],
+            [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
+        ])
+    if free_quest and wallet.free_quest and wallet.amount <= 0:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [_btn("Другое задание", data="ob_earn", icon="5345878375229568510", style="success")],
+            [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
         ])
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Играть ещё", data="ob_games", icon="5472041540605975004", style="success")],
-        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+        [_btn("Играть ещё", data="ob_games", icon="5348423147647414077", style="success")],
+        [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
     ])
 
 
@@ -2883,243 +3511,180 @@ def _ready_text(
     wallet: Wallet,
     *,
     game_key: str = "",
-    venue_ref: Optional[str] = None,
+    venue_label: str = "",
 ) -> str:
-    """Текст после запуска — описание из GAMES[…].rules."""
-    where = _venue_where(wallet, venue_ref)
-    if wallet.free_quest:
-        hint = (
-            "Откройте игру - итог придёт сюда"
-            if game_key in INSTANT_GAMES
-            else "Откройте игру, затем «Играть ещё»"
-        )
-        card = _render_game_text(
-            game,
-            bet=bet,
-            free_quest=True,
-            where=where,
-            hint=hint,
-            extra=_quest_stats(wallet),
-        )
-    else:
-        card = _render_game_text(
-            game,
-            bet=bet,
-            free_quest=False,
-            where=where,
-            hint=f"Откройте игру в {where}",
-        )
-    return (
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Игра готова</b>\n"
-        "\n"
-        f"{card}"
+    """Алиас: шаг 2 использует ту же карточку, что и шаг 1."""
+    return _game_card_text(
+        game, bet, wallet,
+        game_key=game_key,
+        venue_label=venue_label,
     )
 
 
 def _ready_markup(play_url: str, *, free_quest: bool = False) -> InlineKeyboardMarkup:
+    """Кнопки шага 2: ссылка на партию в группе + навигация."""
     rows = [
-        [_btn("Открыть мою игру", url=play_url, icon="5472041540605975004", style="success")],
+        [_btn("Открыть мою игру", url=play_url, icon="5317000922096769303", style="success")],
     ]
     if free_quest:
-        rows.append([_btn("Играть ещё", data="ob_next", icon="5472041540605975004", style="success")])
-        rows.append([_btn("Закончить задание", data="ob_finish", icon="5449372007432985754")])
+        rows.append([_btn("Играть ещё", data="ob_next", icon="5348423147647414077", style="success")])
+        rows.append([_btn("Закончить задание", data="ob_finish", icon=ICON_FINISH, style="danger")])
+        rows.append([_btn("Меню", data="ob_menu", icon=ICON_MENU)])
     else:
-        rows.append([_btn("Другая игра", data="ob_games", icon="5472041540605975004")])
-    rows.append([_btn("Меню", data="ob_menu", icon="5318892863780579996")])
+        rows.append([_btn("Другая игра", data="ob_games", icon=ICON_PLAY, style="primary")])
+        rows.append([_btn("Меню", data="ob_menu", icon=ICON_MENU)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _join_text(
-    game: Dict[str, Any],
-    *,
-    bet: int,
-    free_quest: bool,
-    venue_url: str = CLUB_URL,
-) -> str:
-    """Текст «войдите в группу» — описание из GAMES[…].rules."""
-    where = "группе задания" if venue_url != CLUB_URL else CLUB_WHERE
-    return _render_game_text(
-        game,
-        bet=bet,
-        free_quest=free_quest,
-        where=where,
-        hint="Вступите и нажмите «Я вошёл»",
-        extra=(
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> "
-            "Войдите и нажмите «Я вошёл»."
-        ),
+def _join_text(game: Dict[str, Any], venue_url: str = CLUB_URL) -> str:
+    """Вход в группу. Правь текст прямо здесь."""
+    if venue_url != CLUB_URL:
+        where = "группу задания"
+    elif CLUB_USERNAME:
+        where = f"@{CLUB_USERNAME}"
+    else:
+        where = "группу клуба"
+    return (
+        f"{game['emoji']} <b>{game['title']}</b>\n\n"
+        f"<blockquote>"
+        f"<b>Зайдите в {where}</b>\n"
+        f"<b>Потом нажмите кнопку ниже</b>"
+        f"</blockquote>"
     )
 
 
 def _join_markup(venue_url: str = CLUB_URL) -> InlineKeyboardMarkup:
-    label = "Войти в группу" if venue_url != CLUB_URL else "Войти в клуб"
+    if venue_url != CLUB_URL:
+        enter = "Зайти в группу"
+    elif CLUB_USERNAME:
+        enter = f"Зайти в @{CLUB_USERNAME}"
+    else:
+        enter = "Зайти в группу"
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn(label, url=venue_url, icon="5264737672684907396", style="success")],
-        [_btn("Я вошёл", data="ob_joined", icon="5472041540605975004", style="success")],
-        [_btn("Другая игра", data="ob_games", icon="5472041540605975004")],
-        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+        [_btn(enter, url=venue_url, icon=ICON_GROUP, style="success")],
+        [_btn("Открыть игру", data="ob_joined", icon="5251252690851225502", style="success")],
     ])
+
+def _other_chat_text(wallet: Wallet) -> str:
+    where = str(wallet.chat_ref or "").strip() or "своей группе"
+    return (
+        f"{E_TARGET} <b>Задание в другой группе</b>\n\n"
+        f"{_bq(f'Ставки идут в зачёт только в {where}.')}"
+    )
+
+
+def _other_chat_markup(wallet: Wallet) -> InlineKeyboardMarkup:
+    rows: List[List[InlineKeyboardButton]] = []
+    ref = str(wallet.chat_ref or "").strip().lstrip("@")
+    if ref and ref.replace("_", "").isalnum():
+        rows.append([_btn("Открыть группу", url=f"https://t.me/{ref}", icon="5454039464357682228", style="success")])
+    rows.append([_btn("Моё задание", data="qst:gc_my", icon=ICON_TASKS)])
+    rows.append([_btn("Назад", data="ob_start", icon=ICON_CLOSE)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _no_funds_text(game: Dict[str, Any], wallet: Wallet) -> str:
     need = int(game["min"])
     if wallet.free_quest:
         if wallet.amount <= 0:
-            return _lines(
-                "<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> <b>Баланс задания закончился</b>",
-                "",
-                f"{game['emoji']} <b>{game['title']}</b>",
-                f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Нужно от {need} кут",
-                "",
-                "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Так бывает - это не конец.",
-                "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.",
-                "",
-                "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другое задание»</b>",
+            card = _bq(
+                f"{game['emoji']} {game['title']} просит {need} кут",
+                f"{E_COIN} На задании : 0 кут",
             )
-        return _lines(
-            "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> <b>На эту игру не хватает</b>",
-            "",
-            f"{game['emoji']} <b>{game['title']}</b>",
-            f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Нужно от {need} кут",
-            f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> На задании : {wallet.amount} кут",
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Возьмите игру полегче.",
-            "",
-            "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другая игра»</b>",
+            return (
+                f"{E_FIRE} <b>Баланс задания закончился</b>\n\n"
+                f"{card}\n"
+                f"{_bq(f'{E_OK} Это не конец - так бывает', f'{E_BOLT} Свои куты целы', f'{E_GIFT} Возьмите другое задание или бонус')}\n\n"
+                f"{_hint('Нажмите «Другое задание»')}"
+            )
+        card = _bq(
+            f"{game['emoji']} {game['title']} : от {need} кут",
+            f"На задании : {wallet.amount} кут",
         )
-    return _lines(
-        "<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> <b>Не хватает на ставку</b>",
-        "",
-        f"{game['emoji']} <b>{game['title']}</b>",
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Нужно от {need} кут",
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Баланс : {wallet.amount} кут",
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Бесплатное задание даст баланс.",
-        "",
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Получить куты»</b>",
+        return (
+            f"{E_COIN} <b>На эту игру не хватает</b>\n\n"
+            f"{card}\n"
+            f"{E_STAR} <b>Выберите игру полегче - прогресс сохранится.</b>\n"
+            f"{E_BOLT} <b>Свои куты не тратятся.</b>\n\n"
+            f"{_hint('Нажмите «Другая игра»')}"
+        )
+    card = _bq(
+        f"{game['emoji']} {game['title']} : от {need} кут",
+        f"Баланс : {wallet.amount} кут",
+    )
+    return (
+        f"{E_COIN} <b>Не хватает на ставку</b>\n\n"
+        f"{card}\n"
+        f"{E_GIFT} <b>Бесплатное задание даёт свой баланс для игры.</b>\n\n"
+        f"{_hint('Нажмите «Получить куты»')}"
     )
 
 
 def _no_funds_markup(wallet: Wallet) -> InlineKeyboardMarkup:
     if wallet.free_quest and wallet.amount > 0:
         return InlineKeyboardMarkup(inline_keyboard=[
-            [_btn("Другая игра", data="ob_games", icon="5472041540605975004", style="success")],
-            [_btn("Закончить задание", data="ob_finish", icon="5449372007432985754")],
-            [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+            [_btn("Другая игра", data="ob_games", icon=ICON_PLAY, style="success")],
+            [_btn("Закончить задание", data="ob_finish", icon=ICON_FINISH, style="danger")],
+            [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
         ])
     if wallet.free_quest:
         return InlineKeyboardMarkup(inline_keyboard=[
-            [_btn("Другое задание", data="ob_earn", icon="5472401690793614752", style="success")],
-            [_btn("Ферма", web_app=_farm_url(), icon="5208464835079082371")],
-            [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+            [_btn("Другое задание", data="ob_earn", icon=ICON_GIFT, style="success")],
+            [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
         ])
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Получить куты", data="ob_earn", icon="5472401690793614752", style="success")],
-        [_btn("Ферма", web_app=_farm_url(), icon="5208464835079082371")],
-        [_btn("Другая игра", data="ob_games", icon="5472041540605975004")],
-        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+        [_btn("Получить куты", data="ob_earn", icon=ICON_GIFT, style="success")],
+        [_btn("Ферма", web_app=_farm_url(), icon=ICON_FARM)],
+        [_btn("Другая игра", data="ob_games", icon=ICON_PLAY)],
     ])
 
 
 def _bet_limit_text(game: Dict[str, Any], wallet: Wallet) -> str:
-    return _lines(
-        "<tg-emoji emoji-id='5471954679250498498'>🛡</tg-emoji> <b>Лимит ставки задания</b>",
-        "",
-        f"{game['emoji']} <b>{game['title']}</b>",
-        f"<tg-emoji emoji-id='5453900977432188793'>⭐️</tg-emoji> Нужно от {int(game['min'])} кут",
-        f"<tg-emoji emoji-id='5471954679250498498'>🛡</tg-emoji> Лимит задания : до {wallet.max_bet} кут",
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Возьмите другую игру.",
-        "",
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другая игра»</b>",
+    card = _bq(
+        f"{game['emoji']} {game['title']} : от {int(game['min'])} кут",
+        f"Лимит задания : до {wallet.max_bet} кут",
+    )
+    return (
+        f"{E_SAFE} <b>Лимит ставки задания</b>\n\n"
+        f"{card}\n"
+        f"{E_STAR} <b>Эта игра не подходит под лимит - возьмите другую.</b>\n"
+        f"{E_BOLT} <b>Свои куты не тратятся.</b>\n\n"
+        f"{_hint('Нажмите «Другая игра»')}"
     )
 
 
 def _bet_limit_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Другая игра", data="ob_games", icon="5472041540605975004", style="success")],
-        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+        [_btn("Другая игра", data="ob_games", icon=ICON_PLAY, style="primary")],
+        [_btn("Меню", data="ob_menu", icon=ICON_MENU)],
     ])
 
 
 def _empty_treasury_text() -> str:
     return (
-        "<tg-emoji emoji-id='5208464835079082371'>🌿</tg-emoji> <b>Клуб пополняет казну</b>\n"
-        "\n"
-        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Ставки на паузе - ненадолго.\n"
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> На ферме куты растут без ставок.\n"
-        "\n"
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Загляните на ферму или попробуйте снова</b>"
+        f"{E_LEAF} <b>Клуб пополняет казну</b>\n\n"
+        f"{_bq('Ставки на паузе.', 'На ферме куты растут без ставок.')}"
     )
 
 
 def _empty_treasury_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Ферма", web_app=_farm_url(), icon="5208464835079082371", style="success")],
-        [_btn("Попробовать снова", data="ob_retry", icon="5472041540605975004")],
-        [_btn("Другая игра", data="ob_games", icon="5472041540605975004")],
-        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+        [_btn("Ферма", web_app=_farm_url(), icon=ICON_FARM)],
+        [_btn("Попробовать снова", data="ob_retry", icon=ICON_PLAY)],
     ])
 
 
 def _failed_text() -> str:
     return (
-        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Игра не открылась</b>\n"
-        "\n"
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Ставка не списана.\n"
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Попробуйте ещё раз - клуб уже ждёт.\n"
-        "\n"
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Попробовать снова»</b>"
+        f"{E_PLANE} <b>Игра не открылась.</b>\n\n"
+        f"{_bq('Попробуйте ещё раз - клуб уже ждёт.')}"
     )
 
 
 def _failed_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Попробовать снова", data="ob_retry", icon="5472041540605975004", style="success")],
-        [_btn("Другая игра", data="ob_games", icon="5472041540605975004")],
-        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
-    ])
-
-
-def _wait_text() -> str:
-    return (
-        "<tg-emoji emoji-id='5253709334835128381'>⌚️</tg-emoji> <b>Секунду…</b>\n"
-        "\n"
-        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> Прошлая игра ещё запускается.\n"
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Подождите пару секунд и нажмите снова.\n"
-        "\n"
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Попробовать снова»</b>"
-    )
-
-
-def _wait_markup() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Попробовать снова", data="ob_retry", icon="5472041540605975004", style="success")],
-        [_btn("Другая игра", data="ob_games", icon="5472041540605975004")],
-        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
-    ])
-
-
-def _choice_required_text(
-    game: Dict[str, Any],
-    *,
-    bet: int,
-    free_quest: bool,
-    where: str,
-) -> str:
-    """Текст «сначала выберите» — описание из GAMES[…].rules."""
-    return _render_game_text(
-        game,
-        bet=bet,
-        free_quest=free_quest,
-        where=where,
-        hint=_game_action_hint(game),
-    )
-
-
-
-def _choice_required_markup(game_key: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Выбрать снова", data=f"ob_game:{game_key}", icon="5472041540605975004", style="success")],
-        [_btn("Другая игра", data="ob_games", icon="5472041540605975004")],
-        [_btn("Меню", data="ob_menu", icon="5318892863780579996")],
+        [_btn("Попробовать снова", data="ob_retry", icon=ICON_PLAY)],
+        [_btn("Другая игра", data="ob_games", icon=ICON_PLAY, style="primary")],
     ])
 
 
@@ -3134,12 +3699,12 @@ def _int(value: Any) -> int:
 
 
 def _mention_html(user_id: int, first_name: Optional[str] = None) -> str:
-    """Упоминание игрока в HTML (для группы)."""
+    """Упоминание игрока в HTML — всегда жирным (ссылка внутри <b>)."""
     raw = (first_name or "Игрок")
     for ch in "<>&":
         raw = raw.replace(ch, "")
     safe = raw[:32] or "Игрок"
-    return f'<a href="tg://user?id={int(user_id)}">{safe}</a>'
+    return f'<b><a href="tg://user?id={int(user_id)}">{safe}</a></b>'
 
 
 def _safe_display_name(first_name: Optional[str] = None) -> str:
@@ -3162,44 +3727,31 @@ async def _is_newbie(user_id: int) -> bool:
         return False
 
 
-def _venue_ref_label(wallet: Wallet, venue_ref: Optional[str] = None) -> Optional[str]:
-    """@юзернейм площадки задания, если задание идёт не в клубе."""
-    if not (wallet.free_quest and wallet.chat_id and int(wallet.chat_id) != CLUB_CHAT_ID):
-        return None
-    ref = str(venue_ref or wallet.chat_ref or "").strip()
-    if not ref:
-        return ""
-    return ref if ref.startswith("@") or ref.startswith("http") else f"@{ref.lstrip('@')}"
-
-
-def _venue_name(wallet: Wallet, venue_ref: Optional[str] = None) -> str:
-    """Именительный падеж - для строк вида «Площадка : …»."""
-    ref = _venue_ref_label(wallet, venue_ref)
-    if ref is None:
-        return CLUB_NAME
-    return ref or "группа задания"
-
-
-def _venue_where(wallet: Wallet, venue_ref: Optional[str] = None) -> str:
-    """Предложный падеж - для строк вида «играть в …»."""
-    ref = _venue_ref_label(wallet, venue_ref)
-    if ref is None:
-        return CLUB_WHERE
-    return ref or "группе задания"
+def _venue_label(wallet: Wallet, venue_ref: Optional[str] = None) -> str:
+    """Короткое имя площадки для текстов."""
+    if wallet.free_quest and wallet.chat_id and int(wallet.chat_id) != CLUB_CHAT_ID:
+        ref = str(venue_ref or wallet.chat_ref or "").strip()
+        if ref:
+            return ref if ref.startswith("@") or ref.startswith("http") else f"@{ref.lstrip('@')}"
+        return "в группе задания"
+    if CLUB_USERNAME:
+        return f"@{CLUB_USERNAME}"
+    return "в группе клуба"
 
 
 def _play_venue(wallet: Wallet) -> Tuple[int, str, Optional[str]]:
     """Куда запускать игру: чат задания или клуб.
 
     Если в бесплатном задании указана группа - играем там.
-    Если группы нет - дефолтный клуб (см. ONBOARDING_CLUB).
+    Если группы нет - дефолтный клуб (test/prod через ONBOARDING_CLUB).
 
     Returns: (chat_id, open_url, chat_ref)
     """
     if wallet.free_quest and wallet.chat_id:
         ref = str(wallet.chat_ref or "").strip()
         return wallet.chat_id, _chat_open_url(wallet.chat_id, ref), ref or None
-    return CLUB_CHAT_ID, CLUB_URL, (f"@{CLUB_USERNAME}" if CLUB_USERNAME else None)
+    club_ref = f"@{CLUB_USERNAME}" if CLUB_USERNAME else None
+    return CLUB_CHAT_ID, CLUB_URL, club_ref
 
 
 async def _send_html_chat(
@@ -3209,9 +3761,10 @@ async def _send_html_chat(
     reply_to_message_id: Optional[int] = None,
     reply_markup: Optional[InlineKeyboardMarkup] = None,
 ) -> Optional[Message]:
-    """Отправка HTML в чат с откатом без premium emoji."""
+    """Отправка HTML в чат с откатом без premium emoji и без reply."""
     variants = (text, _html_plain(text))
     last_err: Optional[BaseException] = None
+    reply_id = reply_to_message_id
     for body in variants:
         try:
             return await bot1.send_message(
@@ -3220,41 +3773,207 @@ async def _send_html_chat(
                 reply_markup=reply_markup,
                 parse_mode="HTML",
                 disable_web_page_preview=True,
-                reply_to_message_id=reply_to_message_id,
+                reply_to_message_id=reply_id,
             )
         except Exception as e:
             last_err = e
-            if "message to be replied not found" in str(e).lower():
-                reply_to_message_id = None
-                continue
+            err = str(e).lower()
+            # Удалённый якорь / thread — пробуем без reply, не теряем tip.
+            if reply_id and (
+                "message to be replied not found" in err
+                or "replied message not found" in err
+                or "reply message not found" in err
+                or "thread not found" in err
+            ):
+                reply_id = None
+                try:
+                    return await bot1.send_message(
+                        chat_id=chat_id,
+                        text=body,
+                        reply_markup=reply_markup,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                except Exception as e2:
+                    last_err = e2
+                    continue
     print(f"[ONBOARDING] send_html_chat({chat_id}): {last_err!r}")
     return None
 
 
-def _example_command(game: Dict[str, Any], bet: int) -> Tuple[str, str]:
-    """Готовая строка команды и выбранный вариант, если игра его требует.
+def _example_with_bet(example: str, bet: int) -> str:
+    """Подставляет актуальную ставку в пример команды (первое число)."""
+    parts = str(example or "").split()
+    if not parts:
+        return str(example or "")
+    bet_s = str(max(1, int(bet or 10)))
+    for i, p in enumerate(parts):
+        if p.isdigit():
+            parts[i] = bet_s
+            break
+    return " ".join(parts)
 
-    Берём cmd из GAMES (тот же шаблон, что уходит в игру). Ставку
-    подставляем актуальную; вариант — первый из variants / help_examples.
+
+def _variant_to_cmd_arg(variant: str) -> str:
+    """Value кнопки → аргумент команды для игры.
+
+    Диапазоны рулетки:
+      «1-6» / «1–6» / «1 6»  → «1 6»   → рулетка 10 1 6
+      «6-12» / «6–12» / «6 12» → «6 12» → рулетка 10 6 12
+    Остальное (цвет, чёт, число) — как есть.
     """
-    template = str(game.get("cmd") or "").strip()
-    options: Sequence[Tuple[str, str]] = game.get("variants") or ()
-    pick = str(options[0][1]) if options else ""
-    if template:
-        text = template.format(bet=int(bet), v=pick)
-        return " ".join(text.split()), pick
+    v = str(variant or "").strip()
+    if not v:
+        return ""
+    # Унифицируем тире/дефисы и схлопываем пробелы.
+    compact = " ".join(v.replace("–", "-").replace("—", "-").split())
+    m = re.fullmatch(r"(\d+)\s*-\s*(\d+)", compact)
+    if m:
+        return f"{int(m.group(1))} {int(m.group(2))}"
+    parts = compact.split()
+    if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+        return f"{int(parts[0])} {int(parts[1])}"
+    return compact
 
-    # Запасной путь: первый help_examples из реестра, с заменой числа ставки.
-    examples = tuple(game.get("help_examples") or ())
+
+def _allowed_variant_values(game: Dict[str, Any]) -> Set[str]:
+    """Допустимые value с доски + нормализованные формы диапазонов."""
+    allowed: Set[str] = set()
+    for _, v in (game.get("variants") or ()):
+        raw = str(v or "").strip()
+        if not raw:
+            continue
+        allowed.add(raw)
+        norm = _variant_to_cmd_arg(raw)
+        if norm:
+            allowed.add(norm)
+        # Старые доски могли слать «1 6» / «7 12».
+        dash = raw.replace(" ", "-")
+        allowed.add(dash)
+    return allowed
+
+
+def _cmd_from_variant(game: Dict[str, Any], bet: int, variant: Optional[str]) -> Optional[str]:
+    """Собирает реальную команду из cmd + variant (в т.ч. диапазон «1 6»)."""
+    v = _variant_to_cmd_arg(str(variant or "").strip())
+    if not v:
+        return None
+    tmpl = str(game.get("cmd") or "").strip()
+    if not tmpl:
+        return None
+    try:
+        return " ".join(tmpl.format(bet=int(bet), v=v).split())
+    except Exception:
+        return None
+
+
+def _norm_tip_cmd(cmd: str) -> str:
+    """Нормализация команды для сравнения дублей в tip."""
+    return " ".join(str(cmd or "").lower().replace("ё", "е").split())
+
+
+def _cmd_family(cmd: str) -> str:
+    """Грубый тип ставки для tip: color / parity / number / range / other."""
+    parts = _norm_tip_cmd(cmd).split()
+    if len(parts) >= 4 and parts[-2].isdigit() and parts[-1].isdigit():
+        return "range"
+    if not parts:
+        return "other"
+    # «красное/черное», «четное/нечетное» — один принцип, без дублей.
+    tokens = [t.strip() for t in parts[-1].split("/") if t.strip()]
+    color = {"красное", "красный", "черное", "черный", "red", "black"}
+    parity = {"чет", "четное", "четный", "нечет", "нечетное", "нечетный", "пар"}
+    if any(t in color for t in tokens):
+        return "color"
+    if any(t in parity for t in tokens):
+        return "parity"
+    if parts[-1].isdigit():
+        return "number"
+    return "other"
+
+
+def _dedupe_tip_examples(examples: List[str]) -> List[str]:
+    """Убирает повторные строки tip, сохраняя порядок."""
+    seen: Set[str] = set()
+    out: List[str] = []
+    for ex in examples:
+        text = str(ex or "").strip()
+        if not text:
+            continue
+        key = _norm_tip_cmd(text)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+    return out
+
+
+def _tip_command_examples(
+    game: Dict[str, Any],
+    bet: int,
+    *,
+    variant: Optional[str] = None,
+) -> List[str]:
+    """Примеры команд для tip: принципы игры без дублей.
+
+    Для рулетки в help_examples уже стоят обучающие строки
+    («красное/черное», «четное/нечётное», число, диапазоны).
+    Сыгранный вариант поднимаем первым; точные повторы вычищаем.
+    """
+    bet_i = max(1, int(bet or 10))
+    raw = [str(x).strip() for x in (game.get("help_examples") or ()) if str(x).strip()]
+    examples = _dedupe_tip_examples([_example_with_bet(x, bet_i) for x in raw])
+    primary = _cmd_from_variant(game, bet_i, variant)
     if not examples:
-        return "", pick
-    sample = str(examples[0])
-    # «футбол 10» / «трейд вверх 10» → подставить текущую ставку в хвост.
-    parts = sample.split()
-    if parts and parts[-1].isdigit():
-        parts[-1] = str(int(bet))
-        sample = " ".join(parts)
-    return sample, pick
+        title = _plain_emoji(str(game.get("title") or "игра")).lower() or "игра"
+        examples = [primary or f"{title} {bet_i}"]
+    elif primary:
+        fam = _cmd_family(primary)
+        primary_n = _norm_tip_cmd(primary)
+        if fam in ("number", "range"):
+            # Сыгранное — первым. Другой диапазон (1 6 vs 6 12) оставляем.
+            # Точный дубль primary и лишние number-слоты убираем.
+            kept: List[str] = []
+            for ex in examples:
+                if _norm_tip_cmd(ex) == primary_n:
+                    continue
+                if fam == "number" and _cmd_family(ex) == "number":
+                    continue
+                kept.append(ex)
+            examples = [primary] + kept
+        else:
+            # Цвет/чёт — обучающая форма со слэшем, primary не дублируем.
+            hit = next((i for i, ex in enumerate(examples) if _cmd_family(ex) == fam), None)
+            if hit is not None:
+                chosen = examples[hit]
+                examples = [chosen] + [x for j, x in enumerate(examples) if j != hit]
+    examples = _dedupe_tip_examples(examples)
+    if game.get("tip_show_examples"):
+        # Рулетка: цвет · чёт · число · 1–6 · 6–12
+        return examples[:5]
+    return examples[:1]
+
+
+def _newbie_replay_tip(
+    game: Dict[str, Any],
+    bet: int,
+    *,
+    variant: Optional[str] = None,
+) -> str:
+    """Хук + пример(ы) команды в blockquote + список игр. Весь текст жирный."""
+    title = game.get("title") or "Игра"
+    tip_lead = game.get("tip_lead") or f"{E_FIRE} Ещё раунд?"
+    plain_lead = _plain_emoji(str(tip_lead))
+    if "одной строкой" in plain_lead or "уже в нашей группе" in plain_lead:
+        tip_lead = f"{E_FIRE} Ещё раунд в «{title}»?"
+    examples = _tip_command_examples(game, bet, variant=variant)
+    codes = "\n".join(f"<code>{ex}</code>" for ex in examples)
+    # Premium <tg-emoji> снаружи <b> — иначе клиент Telegram часто рвёт разметку.
+    return (
+        f"{_bold_html_line(str(tip_lead))}\n"
+        f"<blockquote><b>{codes}</b></blockquote>\n"
+        f"{_bold_html_line(f'{E_GAME} Все игры → <code>хелп игры</code>')}"
+    )
 
 
 def newbie_help_tip_text(
@@ -3263,67 +3982,44 @@ def newbie_help_tip_text(
     free_quest: bool,
     venue_label: str,
     game_key: str = "",
-    bet: int = 0,
+    bet: int = 10,
+    variant: Optional[str] = None,
 ) -> str:
-    """Короткая подсказка в группе после onboarding-игры.
+    """Короткая подсказка в группе после партии — всем игрокам.
 
-    tip_lead / cmd — из GAMES. Минимум строк, маркетинг в blockquote.
+    Формат: имя → хук → команда-пример → список игр.
     """
     game = GAMES.get(game_key) or {}
-    again = max(int(bet or 0), int(game.get("min") or 2))
-    example, _pick = _example_command(game, again)
-    tip_lead = str(game.get("tip_lead") or "").strip()
-    if not tip_lead:
-        tip_lead = (
-            "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> "
-            "<b>Партия сыграна.</b>"
-        )
-
-    body_lines = [tip_lead]
-    if example:
-        body_lines.append(
-            f"<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> "
-            f"Ещё : <code>{example}</code>"
-        )
-    body_lines.append(
-        f"<tg-emoji emoji-id='5318892863780579996'>📖</tg-emoji> "
-        f"<code>хелп игры</code>"
+    emoji = game.get("emoji") or E_GAME
+    body = (
+        f"{emoji} {mention}\n\n"
+        f"{_newbie_replay_tip(game, bet, variant=variant)}"
     )
     if free_quest:
-        body_lines.append(
-            "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> "
-            "<b>Софт с задания.</b>"
+        body += (
+            f"\n"
+            f"<b>{E_GIFT} Ставка с задания · {venue_label}</b>"
         )
-
-    return (
-        f"{mention}\n"
-        f"<blockquote>{chr(10).join(body_lines)}</blockquote>"
-    )
+    return body
 
 
 def newbie_quest_failed_text(*, mention: str) -> str:
-    """Провал бесплатного задания - спокойный маркетинг для новичка."""
-    return _lines(
-        f"<tg-emoji emoji-id='5222148368955877900'>🔥</tg-emoji> {mention}",
-        "",
-        "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Баланс задания закончился.</b>",
-        "",
-        "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> Так бывает - это не конец.",
-        "<tg-emoji emoji-id='5461094635336139106'>🐸</tg-emoji> Свои куты целы.",
-        "<tg-emoji emoji-id='5190517223311059564'>🎁</tg-emoji> Возьмите другое задание.",
-        "",
-        "<tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji> <b>Нажмите «Другое задание»</b>",
+    """Провал задания. Правь текст прямо здесь."""
+    # mention уже приходит жирным из _mention_html.
+    return (
+        f"{E_FIRE} {mention}\n\n"
+        f"<b>Задание закрыто</b>\n\n"
+        f"<blockquote>"
+        f"<b>Свои куты целы</b>\n"
+        f"<b>Можно взять другое</b>"
+        f"</blockquote>\n\n"
+        f"<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> "
+        f"<b>Откройте бота</b>"
     )
-
 
 def newbie_quest_failed_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn(
-            "Другое задание",
-            url=f"{BOT_URL}?start=earn",
-            icon="5472401690793614752",
-            style="success",
-        )],
+        [_btn("Взять другое задание", url=BOT_URL, icon=ICON_GIFT, style="success")],
     ])
 
 
@@ -3385,147 +4081,96 @@ def _html_plain(text: str) -> str:
     return _TG_EMOJI_RE.sub(lambda m: (m.group(2) or "").strip(), text or "")
 
 
-def _rebuild_markup(
-    markup: InlineKeyboardMarkup,
-    *,
-    keep_icons: bool = True,
-    keep_styles: bool = True,
-) -> InlineKeyboardMarkup:
-    """Копия клавиатуры без иконок и/или style — для мягкого отката."""
+def _markup_without_icons(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
+    """Fallback без icon_custom_emoji_id.
+
+    Для меню игр возвращаем unicode в text, чтобы кнопка не осталась голой.
+    """
     rows: List[List[InlineKeyboardButton]] = []
     for row in markup.inline_keyboard or []:
         new_row: List[InlineKeyboardButton] = []
         for btn in row:
-            kwargs: Dict[str, Any] = {"text": btn.text or "·"}
-            if btn.callback_data is not None:
-                kwargs["callback_data"] = btn.callback_data
+            text = btn.text or "·"
+            data = btn.callback_data
+            if data and str(data).startswith("ob_game:"):
+                key = str(data).split(":", 1)[1]
+                game = GAMES.get(key)
+                if game:
+                    text = f"{_plain_emoji(game['emoji'])} {game['title']}"
+            kwargs: Dict[str, Any] = {"text": text}
+            if data is not None:
+                kwargs["callback_data"] = data
             elif btn.url:
                 kwargs["url"] = btn.url
             elif btn.web_app:
                 kwargs["web_app"] = btn.web_app
-            if keep_icons:
-                icon = getattr(btn, "icon_custom_emoji_id", None)
-                if icon:
-                    kwargs["icon_custom_emoji_id"] = icon
-            if keep_styles:
-                style = getattr(btn, "style", None)
-                if style and str(style) in _BTN_STYLES:
-                    kwargs["style"] = str(style)
+            style = getattr(btn, "style", None)
+            if style:
+                kwargs["style"] = style
             try:
                 new_row.append(InlineKeyboardButton(**kwargs))
             except TypeError:
                 kwargs.pop("style", None)
-                kwargs.pop("icon_custom_emoji_id", None)
                 new_row.append(InlineKeyboardButton(**kwargs))
         rows.append(new_row)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
+async def _swap_markup(call: CallbackQuery, markup: InlineKeyboardMarkup) -> bool:
+    """Обновляет только кнопки текущего сообщения — без нового текста и без дубля.
 
-def _markup_without_icons(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
-    return _rebuild_markup(markup, keep_icons=False, keep_styles=True)
-
-
-def _is_noop_edit_error(err: BaseException) -> bool:
-    return "message is not modified" in str(err).lower()
-
-
-def _can_downgrade_markup(err: BaseException) -> bool:
-    """Можно ли пробовать более простой reply_markup / текст без premium."""
-    text = str(err).lower()
-    needles = (
-        "document_invalid",
-        "can't parse entities",
-        "unsupported start tag",
-        "reply_markup",
-        "button",
-        "icon_custom_emoji",
-        "button_style",
-        "style",
-        "entity_text",
-        "custom emoji",
-    )
-    return any(n in text for n in needles)
-
-
-async def _ack(call: CallbackQuery, text: str = "", *, alert: bool = False) -> None:
-    """Снять «часики» с кнопки. Никогда не бросает исключение.
-
-    Ответ на нажатие живёт у Telegram считанные секунды. Если он не прошёл
-    (очередь после рестарта, клик по старому сообщению, повторный ответ),
-    экран всё равно обязан смениться - иначе человек жмёт кнопку, и ничего
-    не происходит. Поэтому ack - всегда best-effort.
+    True, если кнопки на месте (в т.ч. «message is not modified»).
     """
-    try:
-        await call.answer(text, show_alert=alert)
-    except Exception as e:
-        print(f"[ONBOARDING] ответ на нажатие не прошёл ({call.data!r}): {e!r}")
+    if call.message is None:
+        return False
+    variants = (
+        markup,
+        _markup_without_icons(markup),
+    )
+    last_err: Optional[BaseException] = None
+    for kb in variants:
+        try:
+            await call.message.edit_reply_markup(reply_markup=kb)
+            return True
+        except Exception as e:
+            last_err = e
+            if "message is not modified" in str(e).lower():
+                return True
+    print(f"[ONBOARDING] Не удалось обновить кнопки: {last_err!r}")
+    return False
 
 
 async def _swap(call: CallbackQuery, text: str, markup: InlineKeyboardMarkup) -> None:
-    """Меняет экран на месте. Premium emoji снимаем только при отказе Telegram.
-
-    Порядок:
-      1) полный текст + иконки кнопок
-      2) полный текст + кнопки без иконок
-      3) полный текст + кнопки без иконок/style
-      4) unicode-текст (последний резерв)
-    На сетевые/прочие ошибки не скатываемся сразу в plain — иначе пропадают
-    все <tg-emoji>.
-    """
-    variants: List[Tuple[str, str, InlineKeyboardMarkup]] = [
-        ("full", text, markup),
-        ("no_icons", text, _rebuild_markup(markup, keep_icons=False, keep_styles=True)),
-        ("bare_kb", text, _rebuild_markup(markup, keep_icons=False, keep_styles=False)),
-        ("plain", _html_plain(text), _rebuild_markup(markup, keep_icons=False, keep_styles=False)),
+    """Меняет экран на месте. При DOCUMENT_INVALID откатывает эмодзи/иконки."""
+    variants: List[Tuple[str, InlineKeyboardMarkup]] = [
+        (text, markup),
+        (text, _markup_without_icons(markup)),
+        (_html_plain(text), _markup_without_icons(markup)),
     ]
     last_err: Optional[BaseException] = None
 
-    async def _try_edit(body: str, kb: InlineKeyboardMarkup) -> bool:
-        nonlocal last_err
+    for body, kb in variants:
         try:
             await call.message.edit_text(
                 body, reply_markup=kb, parse_mode="HTML",
                 disable_web_page_preview=True,
             )
-            return True
+            return
         except Exception as e:
             last_err = e
-            if _is_noop_edit_error(e):
-                return True
-            return False
+            if "message is not modified" in str(e).lower():
+                # Текст тот же — пробуем хотя бы обновить кнопки, не шлём новое сообщение.
+                await _swap_markup(call, markup)
+                return
 
-    async def _try_answer(body: str, kb: InlineKeyboardMarkup) -> bool:
-        nonlocal last_err
+    for body, kb in variants:
         try:
             await call.message.answer(
                 body, reply_markup=kb, parse_mode="HTML",
                 disable_web_page_preview=True,
             )
-            return True
+            return
         except Exception as e:
             last_err = e
-            return False
-
-    for name, body, kb in variants:
-        if await _try_edit(body, kb):
-            if name != "full":
-                print(f"[ONBOARDING] экран показан fallback={name} err={last_err!r}")
-            return
-        if not _can_downgrade_markup(last_err or Exception()):
-            # Не emoji/markup — пробуем новое сообщение с тем же телом,
-            # не прыгая сразу к plain.
-            if await _try_answer(body, kb):
-                if name != "full":
-                    print(f"[ONBOARDING] экран (answer) fallback={name} err={last_err!r}")
-                return
-            print(f"[ONBOARDING] edit/answer failed без даунгрейда ({name}): {last_err!r}")
-            break
-        print(f"[ONBOARDING] {name} отклонён, пробуем проще: {last_err!r}")
-
-    for name, body, kb in variants:
-        if await _try_answer(body, kb):
-            print(f"[ONBOARDING] экран (answer) fallback={name}")
-            return
 
     print(f"[ONBOARDING] Не удалось показать экран: {last_err!r}")
 

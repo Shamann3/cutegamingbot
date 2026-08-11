@@ -285,7 +285,7 @@ async def callback_main(call: CallbackQuery):
     print("Обработчик callback_main запущен.")
     try:
         # Отправляем ответ на callback, чтобы избежать ошибки timeout
-        await call.answer("♻️ Сообщение было удалено.")
+        await call.answer("♻️ Сообщение было удалено.", show_alert=True)
 
         # Удаляем сообщение путем редактирования инлайн-сообщения на пустое
         await bot1.edit_message_text(

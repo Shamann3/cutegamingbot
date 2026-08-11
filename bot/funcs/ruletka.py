@@ -645,29 +645,29 @@ async def ruletka_join_game_callback(callback_query: types.CallbackQuery):
 
     # быстрый отбой, если игры нет
     if game_id not in gamesruletka:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     inflight_key = (game_id, user_id)
     if inflight_key in _inflight_ruletka_joins:
-        await callback_query.answer("⏳ Обрабатываю ваше присоединение…")
+        await callback_query.answer("⏳ Обрабатываю ваше присоединение…", show_alert=True)
         return
 
     _inflight_ruletka_joins.add(inflight_key)
     try:
         async with _get_lock(_join_locks, game_id):
             if game_id not in gamesruletka:
-                await callback_query.answer("🛠 Эта игра больше не существует.")
+                await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
                 return
 
             game = gamesruletka[game_id]
 
             if game.get("state") != STATE_CREATED:
-                await callback_query.answer("💭 Присоединение уже закрыто.")
+                await callback_query.answer("💭 Присоединение уже закрыто.", show_alert=True)
                 return
 
             if await db.is_user_banned(user_id):
-                await callback_query.answer("❗️ Вы заблокированы в боте")
+                await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
                 return
 
             participants_list = _dedupe_participants_ruletka([
@@ -676,11 +676,11 @@ async def ruletka_join_game_callback(callback_query: types.CallbackQuery):
             game["participants"] = participants_list
 
             if len(participants_list) >= MAX_PARTICIPANTS:
-                await callback_query.answer("💭 В игре нет мест")
+                await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
             if user_id == int(game.get("creator")):
-                await callback_query.answer("💭 Вы не можете присоединиться к своей игре.")
+                await callback_query.answer("💭 Вы не можете присоединиться к своей игре.", show_alert=True)
                 return
 
             bet = int(game.get("bet", 0) or 0)
@@ -689,7 +689,7 @@ async def ruletka_join_game_callback(callback_query: types.CallbackQuery):
                 return
 
             if any(uid == user_id for uid, _ in participants_list):
-                await callback_query.answer("❕ Вы уже участвуете в этой игре.")
+                await callback_query.answer("❕ Вы уже участвуете в этой игре.", show_alert=True)
                 return
 
             try:
@@ -754,7 +754,7 @@ async def ruletka_join_game_callback(callback_query: types.CallbackQuery):
                 return
 
             if len(game["participants"]) >= MAX_PARTICIPANTS:
-                await callback_query.answer("💭 В игре нет мест")
+                await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
             idx = len(game["participants"])
@@ -763,7 +763,7 @@ async def ruletka_join_game_callback(callback_query: types.CallbackQuery):
             game["participants"] = _dedupe_participants_ruletka(game["participants"])
             gamesruletka.save()
 
-            await callback_query.answer("❕ Вы присоединились к игре!")
+            await callback_query.answer("❕ Вы присоединились к игре!", show_alert=True)
 
             participants_text = await _build_participants_text(game["participants"])
             keyboard = _lobby_keyboard(game_id, len(game["participants"]))
@@ -794,34 +794,34 @@ async def ruletka_start_game_callback(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
 
     if game_id not in gamesruletka:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     if game_id in _inflight_ruletka_starts:
-        await callback_query.answer("⏳ Игра уже запускается…")
+        await callback_query.answer("⏳ Игра уже запускается…", show_alert=True)
         return
 
     _inflight_ruletka_starts.add(game_id)
     try:
         async with _get_lock(_game_locks, game_id):
             if game_id not in gamesruletka:
-                await callback_query.answer("🛠 Эта игра больше не существует.")
+                await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
                 return
 
             game = gamesruletka[game_id]
 
             if game.get("state") in (STATE_SETTLING, STATE_SETTLED):
-                await callback_query.answer("⏳ Игра уже запускается…")
+                await callback_query.answer("⏳ Игра уже запускается…", show_alert=True)
                 return
 
             if user_id != int(game.get("creator")):
-                await callback_query.answer("💭 Вы не являетесь создателем этой игры.")
+                await callback_query.answer("💭 Вы не являетесь создателем этой игры.", show_alert=True)
                 return
 
             participants = _dedupe_participants_ruletka(list(game.get("participants", [])))
             game["participants"] = participants
             if len(participants) < 2:
-                await callback_query.answer("💭 Для начала игры нужно минимум два участника.")
+                await callback_query.answer("💭 Для начала игры нужно минимум два участника.", show_alert=True)
                 return
 
             bet_amount = int(game.get("bet", 0) or 0)
@@ -870,7 +870,7 @@ async def ruletka_start_game_callback(callback_query: types.CallbackQuery):
                 if "message to delete not found" not in low and "message can't be deleted" not in low:
                     print(f"[RULETKA] delete_message error: {e}")
 
-            await callback_query.answer("❕ Игра начата")
+            await callback_query.answer("❕ Игра начата", show_alert=True)
             asyncio.create_task(show_game_results_safe(chat_id, game_id))
     finally:
         _inflight_ruletka_starts.discard(game_id)

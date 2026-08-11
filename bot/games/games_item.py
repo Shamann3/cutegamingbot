@@ -142,7 +142,8 @@ class Bowling:
     async def send_max_bet_error(self):
         """Отправка ошибки при превышении максимальной ставки."""
         await self.message.answer(
-            "Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML"
+            "Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML",
+        show_alert=True,
         )
 
     async def main(self):
@@ -212,7 +213,8 @@ class Dart:
     async def send_max_bet_error(self):
         """Отправка ошибки при превышении максимальной ставки."""
         await self.message.answer(
-            "Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML"
+            "Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML",
+        show_alert=True,
         )
 
     async def main(self):
@@ -278,7 +280,8 @@ class FootGame:
     async def send_max_bet_error(self):
         """Отправка ошибки при превышении максимальной ставки."""
         await self.message.answer(
-            "Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML"
+            "Максимальная ставка <b>500.000 кут</b>", parse_mode="HTML",
+        show_alert=True,
         )
 
     async def main(self):
@@ -346,7 +349,7 @@ class Basketball:
     async def send_max_bet_error(self):
         """Отправка ошибки при превышении максимальной ставки."""
         await self.message.answer(
-            "Максимальная ставка <b>500.000 кут</b>" , parse_mode="HTML")
+            "Максимальная ставка <b>500.000 кут</b>" , parse_mode="HTML", show_alert=True)
 
     async def main(self):
         """Основная логика игры в баскетбол."""

@@ -89,6 +89,14 @@ const Giveaways = () => (
   </Icon>
 )
 
+const BotQuests = () => (
+  <Icon>
+    <path d="M9 4.5h6a2 2 0 0 1 2 2V19l-5-2.4L7 19V6.5a2 2 0 0 1 2-2z" />
+    <path d="M10 9h4" />
+    <path d="M10 12h2.5" />
+  </Icon>
+)
+
 const Broadcast = () => (
   <Icon>
     <circle cx="12" cy="18" r="1.4" />
@@ -193,6 +201,7 @@ export const NAV_ICONS = {
   farm: Farm,
   content: Content,
   giveaways: Giveaways,
+  botQuests: BotQuests,
   broadcast: Broadcast,
   logs: Logs,
   analytics: Analytics,

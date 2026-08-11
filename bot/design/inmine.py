@@ -76,7 +76,7 @@ async def inline_mine_create_game_callback(callback_query: types.CallbackQuery):
     username = callback_query.from_user.username
     await inline_add_or_update_user_info(bot1 , user_id , first_name , username , db , start_balance)
     if await db.is_user_banned(user_id):
-        await callback_query.answer("❗️ Вы заблокированы в боте")
+        await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
         return
     # Если ставка больше 0, проверяем, достаточно ли у пользователя средств
     if bet_amount > 0:
@@ -143,17 +143,17 @@ async def inline_mine_join_game_callback(callback_query: types.CallbackQuery):
 
     user_id = callback_query.from_user.id
     if await db.is_user_banned(user_id):
-        await callback_query.answer("❗️ Вы заблокированы в боте")
+        await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
         return
     # быстрый отбой: игра существует?
     if game_id not in gamesmine_inmine:
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     # анти-дребезг: не запускаем параллельные попытки для одного (игра, пользователь)
     inflight_key = (game_id, user_id)
     if inflight_key in _inline_mines_inflight:
-        await callback_query.answer("⏳ Обрабатываю ваше присоединение…")
+        await callback_query.answer("⏳ Обрабатываю ваше присоединение…", show_alert=True)
         return
     _inline_mines_inflight.add(inflight_key)
 
@@ -163,7 +163,7 @@ async def inline_mine_join_game_callback(callback_query: types.CallbackQuery):
             # ещё раз получаем игру внутри лока
             game = gamesmine_inmine.get(game_id)
             if not game:
-                await callback_query.answer("🛠 Эта игра больше не существует.")
+                await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
                 return
 
             inline_message_id = game.get("inline_message_id")
@@ -301,7 +301,7 @@ async def inline_mine_join_game_callback(callback_query: types.CallbackQuery):
                     print(f"[MINES_INLINE] edit_message_text error: {e}")
 
             try:
-                await callback_query.answer("❕ Вы присоединились к игре!")
+                await callback_query.answer("❕ Вы присоединились к игре!", show_alert=True)
             except Exception:
                 pass
 
@@ -333,19 +333,19 @@ async def inline_mine_start_game_callback(callback_query: CallbackQuery):
 
     if game_id not in gamesmine_inmine:
         print(f"Отладка: Игра с ID {game_id} не найдена в gamesmine.")
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     game = gamesmine_inmine[game_id]
 
     if user_id != game['creator']:
         print(f"Отладка: Пользователь с ID {user_id} пытается начать игру, но он не создатель.")
-        await callback_query.answer("💭 Только создатель игры может начать игру.")
+        await callback_query.answer("💭 Только создатель игры может начать игру.", show_alert=True)
         return
 
     if len(game['participants']) != 2:
         print(f"Отладка: В игре с ID {game_id} должно быть 2 игрока.")
-        await callback_query.answer("💭 В игре должны участвовать 2 игрока.")
+        await callback_query.answer("💭 В игре должны участвовать 2 игрока.", show_alert=True)
         return
 
     bet_amount = game.get('bet' , 0)
@@ -421,7 +421,7 @@ async def inline_mine_mine_click_callback(callback_query: CallbackQuery):
 
     if game_id not in gamesmine_inmine:
         print(f"Отладка: Игра с ID {game_id} не найдена в gamesmine.")
-        await callback_query.answer("🛠 Эта игра больше не существует.")
+        await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
     game = gamesmine_inmine[game_id]
@@ -451,23 +451,23 @@ async def inline_mine_mine_click_callback(callback_query: CallbackQuery):
 
     if not game['game_active']:
         print(f"Отладка: Игра с ID {game_id} уже завершена.")
-        await callback_query.answer("💭 Игра уже завершена.")
+        await callback_query.answer("💭 Игра уже завершена.", show_alert=True)
         return
 
     if user_id != game['turn']:
         print(f"Отладка: Ход пользователя с ID {user_id}, но это не его ход.")
-        await callback_query.answer("❕ Сейчас не ваш ход.")
+        await callback_query.answer("❕ Сейчас не ваш ход.", show_alert=True)
         return
 
     if x < 0 or x >= 25:
         print(f"Отладка: Некорректная позиция: {x}. Должно быть от 0 до 24.")
-        await callback_query.answer("💭 Некорректная позиция.")
+        await callback_query.answer("💭 Некорректная позиция.", show_alert=True)
         return
 
     # Проверка на разминирование
     if game['board'][x] in ['✔️', '✖️']:
         print(f"Отладка: Пользователь с ID {user_id} попытался нажать на уже разминированную клетку {x}.")
-        await callback_query.answer("❕ Эта клетка уже разминирована.")
+        await callback_query.answer("❕ Эта клетка уже разминирована.", show_alert=True)
         return
 
     if x in game['mines']:

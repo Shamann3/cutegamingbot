@@ -528,7 +528,7 @@ async def create_checkers_game_callback(callback_query: types.CallbackQuery):
         callback_query=callback_query
     )
     _save_games_silent()
-    await safe_callback_answer(callback_query, "❕ Лобби создано!")
+    await safe_callback_answer(callback_query, "❕ Лобби создано!", show_alert=True)
 
 # =====================================================================
 # ✅ ИЗМЕНЕНИЕ РЕЖИМА (checkers_mode)
@@ -593,7 +593,7 @@ async def change_mode_callback(callback_query: types.CallbackQuery):
         callback_query=callback_query
     )
     mode_name = "Реализм" if mode == "realistic" else "Аркаду"
-    await safe_callback_answer(callback_query, f"Режим изменён на {mode_name}.")
+    await safe_callback_answer(callback_query, f"Режим изменён на {mode_name}.", show_alert=True)
 
 # =====================================================================
 # ✅ JOIN GAME (unique_join_game) – ИСПРАВЛЕНА АНТИФЕРМА
@@ -912,7 +912,7 @@ async def select_piece_callback(callback_query: types.CallbackQuery):
         own_king = "👑" if turn == "white" else "🤴🏼"
         if piece not in (own, own_king):
             style_text = get_style_emoji_text(game, turn)
-            await safe_callback_answer(callback_query, f"❕ Выберите свою шашку ({style_text})")
+            await safe_callback_answer(callback_query, f"❕ Выберите свою шашку ({style_text})", show_alert=True)
             return
 
         is_king = piece in ("👑", "🤴🏼")
@@ -920,18 +920,18 @@ async def select_piece_callback(callback_query: types.CallbackQuery):
             moves_dict, must_capture, _ = get_all_moves_realistic(board, turn)
             valid = moves_dict.get((row, col), [])
             if must_capture and not valid:
-                await safe_callback_answer(callback_query, "⚠️ Обязательное взятие! Вы должны побить шашку противника.")
+                await safe_callback_answer(callback_query, "⚠️ Обязательное взятие! Вы должны побить шашку противника.", show_alert=True)
                 return
         else:
             valid = get_valid_moves_arcade(row, col, turn, board, is_king)
 
         if not valid:
-            await safe_callback_answer(callback_query, "❕ У этой шашки нет ходов. Выберите другую.")
+            await safe_callback_answer(callback_query, "❕ У этой шашки нет ходов. Выберите другую.", show_alert=True)
             return
 
         game["selected_piece"] = (row, col)
         if mode == "realistic" and must_capture:
-            await safe_callback_answer(callback_query, "⚡ Обязательное взятие!")
+            await safe_callback_answer(callback_query, "⚡ Обязательное взятие!", show_alert=True)
         else:
             await safe_callback_answer(callback_query, "✅ Шашка выбрана.")
         await inline_show_board(callback_query, game_id)
@@ -962,19 +962,19 @@ async def select_piece_callback(callback_query: types.CallbackQuery):
                 moves_dict2, must_capture2, _ = get_all_moves_realistic(board, turn)
                 new_valid = moves_dict2.get((row, col), [])
                 if must_capture2 and not new_valid:
-                    await safe_callback_answer(callback_query, "⚠️ Обязательное взятие! Вы должны бить.")
+                    await safe_callback_answer(callback_query, "⚠️ Обязательное взятие! Вы должны бить.", show_alert=True)
                     return
             else:
                 new_valid = get_valid_moves_arcade(row, col, turn, board, new_is_king)
             if not new_valid:
-                await safe_callback_answer(callback_query, "❕ У этой шашки нет ходов. Выберите другую.")
+                await safe_callback_answer(callback_query, "❕ У этой шашки нет ходов. Выберите другую.", show_alert=True)
                 return
             game["selected_piece"] = (row, col)
             await safe_callback_answer(callback_query, "✅ Выбрана новая шашка. Теперь выберите клетку.")
             await inline_show_board(callback_query, game_id)
             _save_games_silent()
         else:
-            await safe_callback_answer(callback_query, "❌ Недопустимый ход")
+            await safe_callback_answer(callback_query, "❌ Недопустимый ход", show_alert=True)
         return
 
     if mode == "realistic":
@@ -1156,7 +1156,7 @@ async def change_piece_callback(callback_query: types.CallbackQuery):
     own_king = "👑" if turn == "white" else "🤴🏼"
     if piece not in (own, own_king):
         style_text = get_style_emoji_text(game, turn)
-        await safe_callback_answer(callback_query, f"❕ Выберите свою шашку ({style_text})")
+        await safe_callback_answer(callback_query, f"❕ Выберите свою шашку ({style_text})", show_alert=True)
         return
 
     is_king = piece in ("👑", "🤴🏼")
@@ -1164,13 +1164,13 @@ async def change_piece_callback(callback_query: types.CallbackQuery):
         moves_dict, must_capture, _ = get_all_moves_realistic(board, turn)
         valid_moves = moves_dict.get((row, col), [])
         if must_capture and not valid_moves:
-            await safe_callback_answer(callback_query, "⚠️ Обязательное взятие! Вы должны побить шашку противника.")
+            await safe_callback_answer(callback_query, "⚠️ Обязательное взятие! Вы должны побить шашку противника.", show_alert=True)
             return
     else:
         valid_moves = get_valid_moves_arcade(row, col, turn, board, is_king)
 
     if not valid_moves:
-        await safe_callback_answer(callback_query, "❕ У этой шашки нет ходов. Выберите другую.")
+        await safe_callback_answer(callback_query, "❕ У этой шашки нет ходов. Выберите другую.", show_alert=True)
         return
 
     for r in range(8):

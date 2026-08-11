@@ -20,7 +20,9 @@ from aiogram.types import (
 from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
 from main import *
+from bot.games.group_only import reject_if_private_game
 from bot.funcs.func import get_bot_username_by_token
+from bot.funcs.tech_home_log import safe_send_tech_log
 
 _ball_session_locks: Dict[int, asyncio.Lock] = {}
 _ball_inflight: Set[Tuple[int, int]] = set()
@@ -69,13 +71,18 @@ async def _finalize_ball_game(uid: int):
     """Завершает игру, очищает состояние и гасит долг, если он был накоплен."""
     gs = active_games_ball.get(uid)
     repay = 0
+    tip_mid = None
+    tip_chat = None
     if isinstance(gs, dict):
         repay = int(gs.get("repay_amount", 0))
+        tip_mid = gs.get("message_id")
+        tip_chat = gs.get("chat_id")
         gs["closed"] = True
         active_games_ball[uid] = gs
         _save_safe(active_games_ball)
     try:
         if user_message_ball.get(uid):
+            tip_mid = tip_mid or user_message_ball.get(uid)
             user_message_ball.pop(uid, None)
             _save_safe(user_message_ball)
     except: pass
@@ -83,6 +90,11 @@ async def _finalize_ball_game(uid: int):
         print(f"[BALL][DEBT] Гасим долг {repay}")
         await force_repay_debt(uid, repay)
     await newbie_safety_net(uid)
+    try:
+        from bot.funcs.onboarding import onboarding_notify_game_finished
+        await onboarding_notify_game_finished(uid, message_id=tip_mid, chat_id=tip_chat)
+    except Exception:
+        pass
 
 async def _deactivate_previous_ball_ui(uid: int):
     st = active_games_ball.get(uid) or {}
@@ -173,7 +185,10 @@ def _append_regular_assignment_info_rows(rows: list, has_assignment: bool, is_fr
         rows.append([InlineKeyboardButton(text="У вас обычное задание", callback_data="gc_regular_info")])
         rows.append([InlineKeyboardButton(text="В чём разница?", callback_data="gc_diff_types")])
 
-async def _safe_tech_log_pop(*, bot, uid: int, loss: int) -> None:
+async def _safe_tech_log_pop(*, bot, loss: int, uid: int = None, user_id: int = None) -> None:
+    uid = uid if uid is not None else user_id
+    if uid is None:
+        return
     try:
         await db.update_chat_balance(bot, TECH_CHAT_ID, int(loss))
         receiver_name = await db.get_user_first_name(uid)
@@ -223,29 +238,21 @@ async def _safe_tech_log_pop(*, bot, uid: int, loss: int) -> None:
             ]
         )
 
-        # Основная отправка с premium-эмодзи и кнопками
-        try:
-            await bot.send_message(
-                TECH_CHAT_ID,
-                emoji_html,
-                reply_markup=inline_kb,
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-        except Exception:
-            # Fallback: обычный HTML-текст без кнопок, если premium-эмодзи не поддерживаются
-            fallback_text = (
-                f"<b>🎱 Шарик [ Шар исчез ]</b>\n"
-                f"⭐️ {name_link}\n"
-                f"+ {_fmt_int(loss)} на чёрный рынок\n"
-                f"{_fmt_int(chat_balance)} кут доступно для выкупов"
-            )
-            await bot.send_message(
-                TECH_CHAT_ID,
-                fallback_text,
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
+        # Лог в TECH_CHAT: chat not found не должен ронять партию.
+        fallback_text = (
+            f"<b>🎱 Шарик [ Шар исчез ]</b>\n"
+            f"⭐️ {name_link}\n"
+            f"+ {_fmt_int(loss)} на чёрный рынок\n"
+            f"{_fmt_int(chat_balance)} кут доступно для выкупов"
+        )
+        await safe_send_tech_log(
+            bot,
+            TECH_CHAT_ID,
+            html=emoji_html,
+            reply_markup=inline_kb,
+            fallback_html=fallback_text,
+            tag="BALL][POP_LOG_SEND",
+        )
 
     except Exception as e:
         import traceback; print(f"[BALL][POP_LOG] {e}"); traceback.print_exc()
@@ -262,15 +269,15 @@ async def balls(message: Message):
     bet_token = (parts[1] or "").strip()
     if not bet_token.isdigit(): return
     bet_amount = int(bet_token)
+    if await reject_if_private_game(message):
+        return
+
     if bet_amount <= 0 or bet_amount < Balls_MIN_BET:
         await message.reply(f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Минимальная ставка {Balls_MIN_BET} кут.</b>", parse_mode="HTML")
         return
 
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
-    if message.chat.type == "private":
-        await message.reply("<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В эту игру можно играть только в публичных группах.</b>", parse_mode="HTML")
-        return
 
     gc_state = await _load_gc_state_for_user(user_id)
     has_assignment = bool(gc_state["has_assignment"])
@@ -485,7 +492,7 @@ async def process_callback_ball(callback_query: CallbackQuery):
                     cur_main = int(await db.get_user_balance(clicker_id) or 0)
                     await db.update_user_balance(clicker_id, max(0, cur_main - loss))
                     await db.cutehistory_minus(clicker_id, loss, "- шарик (pop)")
-                    await _safe_tech_log_pop(bot=bot1, user_id=clicker_id, loss=loss)
+                    await _safe_tech_log_pop(bot=bot1, uid=clicker_id, loss=loss)
                     await db.update_user_loose(clicker_id, 1, bot1, ref_coin)
                     await _mark_user_game_activity(clicker_id, reason="pop")
 
