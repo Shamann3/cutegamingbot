@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
-import { notifyAdmin } from '../../lib/notify'
 import {
   fetchBotQuestsOverview,
   fetchBotSubTasks,
@@ -157,8 +156,8 @@ export default function BotQuestsSection() {
       setOverview(ov)
       setSubs(s.items || [])
       setGcs(c.items || [])
-    } catch (e) {
-      notifyAdmin(e?.message || 'Не удалось загрузить задания', { error: true })
+    } catch {
+      /* silent */
     } finally {
       setLoading(false)
     }
@@ -211,24 +210,18 @@ export default function BotQuestsSection() {
         startsAt: r.startsAt ? new Date(r.startsAt).toISOString() : null,
         active: true,
       }))
-    if (!payload.length) {
-      notifyAdmin('Добавьте хотя бы один канал', { error: true })
-      return
-    }
+    if (!payload.length) return
     setSaving(true)
     try {
       if (payload.length === 1 && !bulkMode) {
         await createBotSubTask(payload[0])
-        notifyAdmin('Задание на подписку сохранено')
       } else {
-        const res = await bulkCreateBotSubTasks(payload)
-        notifyAdmin(`Создано: ${res.ok}${res.failed ? `, ошибок: ${res.failed}` : ''}`)
-        if (res.errors?.length) notifyAdmin(res.errors[0].error, { error: true })
+        await bulkCreateBotSubTasks(payload)
       }
       setSubRows([emptySubRow(sharedStart)])
       await load()
-    } catch (e) {
-      notifyAdmin(e?.message || 'Ошибка сохранения', { error: true })
+    } catch {
+      /* silent */
     } finally {
       setSaving(false)
     }
@@ -247,25 +240,19 @@ export default function BotQuestsSection() {
     }))
     if (!payload.length) return
     for (const p of payload) {
-      if (!(p.startAmount > 0 && p.targetAmount > p.startAmount && p.rewardAmount > 0)) {
-        notifyAdmin('Проверьте старт / цель / награду (цель > старт)', { error: true })
-        return
-      }
+      if (!(p.startAmount > 0 && p.targetAmount > p.startAmount && p.rewardAmount > 0)) return
     }
     setSaving(true)
     try {
       if (payload.length === 1 && !bulkMode) {
         await createBotChallenge(payload[0])
-        notifyAdmin('Челлендж создан')
       } else {
-        const res = await bulkCreateBotChallenges(payload)
-        notifyAdmin(`Создано: ${res.ok}${res.failed ? `, ошибок: ${res.failed}` : ''}`)
-        if (res.errors?.length) notifyAdmin(res.errors[0].error, { error: true })
+        await bulkCreateBotChallenges(payload)
       }
       setGcRows([emptyGcRow(sharedStart)])
       await load()
-    } catch (e) {
-      notifyAdmin(e?.message || 'Ошибка создания', { error: true })
+    } catch {
+      /* silent */
     } finally {
       setSaving(false)
     }
@@ -294,7 +281,7 @@ export default function BotQuestsSection() {
     fetchBotQuestsOverview().then(setOverview).catch(() => {})
   }, [])
 
-  const runCardAction = async (id, fn, okMsg, patchLocal) => {
+  const runCardAction = async (id, fn, patchLocal) => {
     setBusyId(id)
     const prevSubs = subs
     const prevGcs = gcs
@@ -303,12 +290,10 @@ export default function BotQuestsSection() {
     }
     try {
       await fn()
-      if (okMsg) notifyAdmin(okMsg)
       refreshOverview()
-    } catch (e) {
+    } catch {
       setSubs(prevSubs)
       setGcs(prevGcs)
-      notifyAdmin(e?.message || 'Ошибка', { error: true })
     } finally {
       setBusyId(null)
     }
@@ -347,9 +332,8 @@ export default function BotQuestsSection() {
       } else {
         await deleteBotChallenge(target.id)
       }
-      notifyAdmin('Задание удалено')
       refreshOverview()
-    } catch (e) {
+    } catch {
       window.clearTimeout(removeTimer)
       setRemovingKeys((prev) => {
         const next = new Set(prev)
@@ -358,7 +342,6 @@ export default function BotQuestsSection() {
       })
       setSubs(prevSubs)
       setGcs(prevGcs)
-      notifyAdmin(e?.message || 'Не удалось удалить', { error: true })
     }
   }
 
@@ -772,13 +755,8 @@ export default function BotQuestsSection() {
                 <button
                   type="button"
                   className="bq-link"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(cmdPreview)
-                      notifyAdmin('Команда скопирована')
-                    } catch {
-                      notifyAdmin('Не удалось скопировать', { error: true })
-                    }
+                  onClick={() => {
+                    navigator.clipboard.writeText(cmdPreview).catch(() => {})
                   }}
                 >
                   Копировать
@@ -865,7 +843,6 @@ export default function BotQuestsSection() {
                             onClick={() => runCardAction(
                               item.id,
                               () => patchBotSubTask(item.id, { activateNow: true }),
-                              'Запущено сейчас',
                               () => setSubs((list) => list.map((x) => (x.id === item.id ? { ...x, startsAt: null, scheduled: false, started: true, effectiveActive: true, active: true } : x))),
                             )}
                           >
@@ -879,7 +856,6 @@ export default function BotQuestsSection() {
                           onClick={() => runCardAction(
                             item.id,
                             () => patchBotSubTask(item.id, { active: !item.active }),
-                            item.active ? 'На паузе' : 'Включено',
                             () => setSubs((list) => list.map((x) => {
                               if (x.id !== item.id) return x
                               const active = !item.active
@@ -933,7 +909,6 @@ export default function BotQuestsSection() {
                           onClick={() => runCardAction(
                             item.id,
                             () => patchBotChallenge(item.id, { activateNow: true }),
-                            'Челлендж в эфире',
                             () => setGcs((list) => list.map((x) => (x.id === item.id ? { ...x, startsAt: null, scheduled: false, started: true, effectiveActive: x.status !== 'disabled', status: 'active' } : x))),
                           )}
                         >
@@ -951,7 +926,6 @@ export default function BotQuestsSection() {
                           onClick={() => runCardAction(
                             item.id,
                             () => disableBotChallenge(item.id),
-                            'Челлендж выключен',
                             () => setGcs((list) => list.map((x) => (x.id === item.id ? { ...x, status: 'disabled', effectiveActive: false } : x))),
                           )}
                         >
@@ -965,7 +939,6 @@ export default function BotQuestsSection() {
                           onClick={() => runCardAction(
                             item.id,
                             () => patchBotChallenge(item.id, { status: 'active' }),
-                            'Включено',
                             () => setGcs((list) => list.map((x) => (x.id === item.id ? { ...x, status: 'active', effectiveActive: !x.scheduled } : x))),
                           )}
                         >
