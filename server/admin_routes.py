@@ -177,8 +177,8 @@ from admin_bot_quests import (
     bulk_create_challenges,
     bulk_upsert_sub_tasks,
     create_challenge,
+    delete_challenge,
     delete_sub_task,
-    disable_challenge,
     get_overview as bot_quests_overview,
     list_challenges,
     list_sub_tasks,
@@ -4378,15 +4378,15 @@ async def admin_bot_challenges_patch(
 
 
 @router.delete("/bot-quests/challenges/{template_id}")
-async def admin_bot_challenges_disable(
+async def admin_bot_challenges_delete(
     template_id: int,
     request: Request,
     admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
 ):
     try:
-        result = await disable_challenge(template_id)
+        result = await delete_challenge(template_id)
         await log_admin_action(
-            admin_id, "bot_challenge_disable",
+            admin_id, "bot_challenge_delete",
             target_type="gc_template", target_id=str(template_id),
             ip=_get_client_ip(request),
         )

@@ -12,6 +12,7 @@ import {
   createBotChallenge,
   bulkCreateBotChallenges,
   patchBotChallenge,
+  deleteBotChallenge,
   disableBotChallenge,
 } from '../../lib/adminClient'
 
@@ -91,9 +92,9 @@ function IconSpark() {
       <ellipse cx="12" cy="13" rx="6.2" ry="5.4" fill="currentColor" opacity="0.95" />
       <path d="M7.2 8.2c-1.8-2.4-4.2-2.8-4.6-1.2-.5 2.1 1.6 4.4 4.1 5.2" fill="currentColor" opacity="0.85" />
       <path d="M16.8 8.2c1.8-2.4 4.2-2.8 4.6-1.2.5 2.1-1.6 4.4-4.1 5.2" fill="currentColor" opacity="0.85" />
-      <circle cx="10.2" cy="12.4" r="1.05" fill="#0b1b33" />
-      <circle cx="13.8" cy="12.4" r="1.05" fill="#0b1b33" />
-      <path d="M10.6 15.1c.8.7 2 .7 2.8 0" stroke="#0b1b33" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+      <circle cx="10.2" cy="12.4" r="1.05" fill="#050505" />
+      <circle cx="13.8" cy="12.4" r="1.05" fill="#050505" />
+      <path d="M10.6 15.1c.8.7 2 .7 2.8 0" stroke="#050505" strokeWidth="1.2" fill="none" strokeLinecap="round" />
     </svg>
   )
 }
@@ -309,8 +310,8 @@ export default function BotQuestsSection() {
         await deleteBotSubTask(deleteTarget.id)
         notifyAdmin('Задание удалено')
       } else {
-        await disableBotChallenge(deleteTarget.id)
-        notifyAdmin('Челлендж отключён')
+        await deleteBotChallenge(deleteTarget.id)
+        notifyAdmin('Задание удалено')
       }
       setDeleteTarget(null)
       await load()
@@ -347,7 +348,7 @@ export default function BotQuestsSection() {
         <div className="bq-hero-main">
           <div className="bq-badge">
             <IconSpark />
-            <span>Ohana · только создатель</span>
+            <span>Только создатель</span>
           </div>
           <h2 className="bq-title">Студия заданий</h2>
           <p className="bq-lead">
@@ -799,7 +800,7 @@ export default function BotQuestsSection() {
                           {item.active ? 'Пауза' : 'Включить'}
                         </button>
                         <button type="button" className="bq-btn-mini is-danger" disabled={busy} onClick={() => setDeleteTarget({ kind: 'sub', id: item.id, label: item.chatRef })}>
-                          Удалить
+                          Удалить задание
                         </button>
                       </div>
                     </article>
@@ -843,14 +844,27 @@ export default function BotQuestsSection() {
                         Дублировать
                       </button>
                       {item.status !== 'disabled' ? (
-                        <button type="button" className="bq-btn-mini is-danger" disabled={busy} onClick={() => setDeleteTarget({ kind: 'gc', id: item.id, label: `#${item.id} ${item.startAmount}→${item.targetAmount}` })}>
-                          Отключить
+                        <button
+                          type="button"
+                          className="bq-btn-mini"
+                          disabled={busy}
+                          onClick={() => runCardAction(item.id, () => disableBotChallenge(item.id), 'Челлендж выключен')}
+                        >
+                          Выключить
                         </button>
                       ) : (
                         <button type="button" className="bq-btn-mini is-accent" disabled={busy} onClick={() => runCardAction(item.id, () => patchBotChallenge(item.id, { status: 'active' }), 'Включено')}>
                           Включить
                         </button>
                       )}
+                      <button
+                        type="button"
+                        className="bq-btn-mini is-danger"
+                        disabled={busy}
+                        onClick={() => setDeleteTarget({ kind: 'gc', id: item.id, label: `#${item.id} ${item.startAmount}→${item.targetAmount}` })}
+                      >
+                        Удалить задание
+                      </button>
                     </div>
                   </article>
                 )
@@ -862,13 +876,9 @@ export default function BotQuestsSection() {
 
       <AdminActionModal
         open={Boolean(deleteTarget)}
-        title={deleteTarget?.kind === 'sub' ? 'Удалить задание?' : 'Отключить челлендж?'}
-        description={
-          deleteTarget?.kind === 'sub'
-            ? `«${deleteTarget?.label}» будет удалено. История выполнений сохранится.`
-            : `«${deleteTarget?.label}» станет недоступен игрокам (как −заданиеч).`
-        }
-        confirmText={deleteTarget?.kind === 'sub' ? 'Удалить' : 'Отключить'}
+        title="Удалить задание?"
+        description={`«${deleteTarget?.label || ''}» будет удалено навсегда. Это действие нельзя отменить.`}
+        confirmText="Удалить задание"
         danger
         loading={saving}
         onConfirm={confirmDelete}

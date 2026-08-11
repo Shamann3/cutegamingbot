@@ -744,3 +744,17 @@ async def patch_challenge(template_id: int, patch: dict) -> dict:
 
 async def disable_challenge(template_id: int) -> dict:
     return await patch_challenge(template_id, {"disable": True})
+
+
+async def delete_challenge(template_id: int) -> dict:
+    await ensure_bot_quest_schema()
+    async with db.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM z_game_challenge_templates WHERE id = $1", int(template_id)
+        )
+        if not row:
+            raise ValueError("Челлендж не найден")
+        await conn.execute(
+            "DELETE FROM z_game_challenge_templates WHERE id = $1", int(template_id)
+        )
+        return {"ok": True, "deleted": _gc_to_dict(dict(row), _utcnow())}

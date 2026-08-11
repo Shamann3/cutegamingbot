@@ -1461,8 +1461,15 @@ export async function patchBotChallenge(templateId, payload) {
   return adminFetch(`/bot-quests/challenges/${templateId}`, { method: 'PATCH', body: payload })
 }
 
-export async function disableBotChallenge(templateId) {
+export async function deleteBotChallenge(templateId) {
   return adminFetch(`/bot-quests/challenges/${templateId}`, { method: 'DELETE' })
+}
+
+export async function disableBotChallenge(templateId) {
+  return adminFetch(`/bot-quests/challenges/${templateId}`, {
+    method: 'PATCH',
+    body: { disable: true },
+  })
 }
 
 export async function fetchBroadcastOverview() {
