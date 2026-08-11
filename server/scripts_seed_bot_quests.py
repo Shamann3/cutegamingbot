@@ -32,6 +32,7 @@ async def main() -> None:
         print(
             "created:", result.get("ok"),
             "updated:", result.get("updatedCount"),
+            "disabled:", result.get("disabledCount"),
             "errors:", result.get("failed"),
         )
         for row in result.get("created") or []:

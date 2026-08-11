@@ -768,36 +768,63 @@ async def delete_challenge(template_id: int) -> dict:
 
 
 # ─── Recommended pack (@CuteGamingChat) ──────────────────────────────────────
-# Создание идёт ТЕМ ЖЕ путём, что админ-форма / команда +заданиеч:
-# create_challenge → тот же INSERT + resolve чата, что у бота.
+# 1 кут = 1 Stars → награды очень скромные (~2–3% от пути цель−старт).
+# Пути длиннее: задание должно чувствоваться как работа, а не раздача.
 
 DEFAULT_QUEST_CHAT = "@CuteGamingChat"
 
-# Сегменты: нулевые / мелкие / средние / крупные / спящие
-# Награда ≈ 25–35% от (цель − старт) — чуть скромнее, без разгона экономики.
+# Старые «жирные» варианты — выключаем при сиде, чтобы не висели в эфире.
+LEGACY_CHALLENGE_SIGNATURES: list[dict[str, Any]] = [
+    {"startAmount": 50, "targetAmount": 150, "free": "+"},
+    {"startAmount": 100, "targetAmount": 300, "free": "+"},
+    {"startAmount": 100, "targetAmount": 400, "free": "+"},
+    {"startAmount": 20, "targetAmount": 80, "free": "-"},
+    {"startAmount": 100, "targetAmount": 500, "free": "-"},
+    {"startAmount": 200, "targetAmount": 800, "free": "-"},
+    {"startAmount": 100, "targetAmount": 500, "free": "+"},
+    {"startAmount": 500, "targetAmount": 2000, "free": "-"},
+    {"startAmount": 1000, "targetAmount": 5000, "free": "-"},
+    {"startAmount": 50, "targetAmount": 200, "free": "+"},
+    {"startAmount": 30, "targetAmount": 100, "free": "+"},
+    {"startAmount": 75, "targetAmount": 225, "free": "+"},
+    {"startAmount": 40, "targetAmount": 140, "free": "-"},
+    {"startAmount": 60, "targetAmount": 200, "free": "-"},
+    {"startAmount": 120, "targetAmount": 400, "free": "+"},
+    {"startAmount": 150, "targetAmount": 550, "free": "-"},
+    {"startAmount": 250, "targetAmount": 900, "free": "-"},
+    {"startAmount": 400, "targetAmount": 1500, "free": "-"},
+    {"startAmount": 800, "targetAmount": 3500, "free": "-"},
+    {"startAmount": 25, "targetAmount": 80, "free": "+"},
+]
+
+# Актуальный пакет: сложнее путь, награда ≈ 2–3% от (цель − старт)
 RECOMMENDED_CHALLENGES: list[dict[str, Any]] = [
-    # —— базовый пакет (награды снижены) ——
-    {"startAmount": 50, "targetAmount": 150, "rewardAmount": 28, "maxUsers": 40, "free": "+", "label": "zero-a"},
-    {"startAmount": 100, "targetAmount": 300, "rewardAmount": 50, "maxUsers": 20, "free": "+", "label": "zero-b"},
-    {"startAmount": 100, "targetAmount": 400, "rewardAmount": 55, "free": "+", "label": "small-free"},
-    {"startAmount": 20, "targetAmount": 80, "rewardAmount": 18, "maxBet": 15, "free": "-", "label": "small-paid"},
-    {"startAmount": 100, "targetAmount": 500, "rewardAmount": 65, "maxBet": 50, "free": "-", "label": "mid-paid-a"},
-    {"startAmount": 200, "targetAmount": 800, "rewardAmount": 110, "maxBet": 100, "free": "-", "label": "mid-paid-b"},
-    {"startAmount": 100, "targetAmount": 500, "rewardAmount": 50, "free": "+", "label": "mid-free"},
-    {"startAmount": 500, "targetAmount": 2000, "rewardAmount": 280, "maxBet": 300, "maxUsers": 8, "free": "-", "label": "whale-a"},
-    {"startAmount": 1000, "targetAmount": 5000, "rewardAmount": 700, "maxUsers": 5, "free": "-", "label": "whale-b"},
-    {"startAmount": 50, "targetAmount": 200, "rewardAmount": 38, "free": "+", "label": "sleep"},
-    # —— +10 новых (скромные награды) ——
-    {"startAmount": 30, "targetAmount": 100, "rewardAmount": 18, "maxUsers": 50, "free": "+", "label": "zero-micro"},
-    {"startAmount": 75, "targetAmount": 225, "rewardAmount": 35, "maxUsers": 30, "free": "+", "label": "zero-plus"},
-    {"startAmount": 40, "targetAmount": 140, "rewardAmount": 22, "maxBet": 20, "free": "-", "label": "small-paid-b"},
-    {"startAmount": 60, "targetAmount": 200, "rewardAmount": 28, "maxBet": 30, "free": "-", "label": "small-paid-c"},
-    {"startAmount": 120, "targetAmount": 400, "rewardAmount": 55, "free": "+", "label": "mid-free-b"},
-    {"startAmount": 150, "targetAmount": 550, "rewardAmount": 70, "maxBet": 60, "free": "-", "label": "mid-paid-c"},
-    {"startAmount": 250, "targetAmount": 900, "rewardAmount": 100, "maxBet": 120, "free": "-", "label": "mid-paid-d"},
-    {"startAmount": 400, "targetAmount": 1500, "rewardAmount": 180, "maxBet": 200, "maxUsers": 10, "free": "-", "label": "upper-mid"},
-    {"startAmount": 800, "targetAmount": 3500, "rewardAmount": 450, "maxBet": 350, "maxUsers": 6, "free": "-", "label": "whale-mid"},
-    {"startAmount": 25, "targetAmount": 80, "rewardAmount": 15, "maxUsers": 40, "free": "+", "label": "sleep-micro"},
+    # Нулевые / вход (бесплатные)
+    {"startAmount": 30, "targetAmount": 150, "rewardAmount": 4, "maxUsers": 50, "free": "+", "label": "zero-micro"},
+    {"startAmount": 50, "targetAmount": 250, "rewardAmount": 6, "maxUsers": 40, "free": "+", "label": "zero-a"},
+    {"startAmount": 100, "targetAmount": 500, "rewardAmount": 12, "maxUsers": 25, "free": "+", "label": "zero-b"},
+    # Мелкие платные
+    {"startAmount": 25, "targetAmount": 120, "rewardAmount": 3, "maxBet": 12, "free": "-", "label": "small-paid-a"},
+    {"startAmount": 50, "targetAmount": 250, "rewardAmount": 6, "maxBet": 25, "free": "-", "label": "small-paid-b"},
+    {"startAmount": 80, "targetAmount": 400, "rewardAmount": 10, "maxBet": 40, "free": "-", "label": "small-paid-c"},
+    # Средние
+    {"startAmount": 100, "targetAmount": 600, "rewardAmount": 15, "maxBet": 50, "free": "-", "label": "mid-paid-a"},
+    {"startAmount": 150, "targetAmount": 800, "rewardAmount": 20, "maxBet": 75, "free": "-", "label": "mid-paid-b"},
+    {"startAmount": 200, "targetAmount": 1200, "rewardAmount": 30, "maxBet": 100, "free": "-", "label": "mid-paid-c"},
+    {"startAmount": 300, "targetAmount": 1800, "rewardAmount": 40, "maxBet": 150, "free": "-", "label": "mid-paid-d"},
+    # Средние бесплатные (разгрузка, но путь длинный)
+    {"startAmount": 100, "targetAmount": 650, "rewardAmount": 14, "free": "+", "label": "mid-free-a"},
+    {"startAmount": 120, "targetAmount": 750, "rewardAmount": 16, "free": "+", "label": "mid-free-b"},
+    # Крупные
+    {"startAmount": 400, "targetAmount": 2200, "rewardAmount": 50, "maxBet": 200, "maxUsers": 10, "free": "-", "label": "upper-mid"},
+    {"startAmount": 500, "targetAmount": 3000, "rewardAmount": 60, "maxBet": 250, "maxUsers": 8, "free": "-", "label": "whale-a"},
+    {"startAmount": 800, "targetAmount": 4500, "rewardAmount": 90, "maxBet": 350, "maxUsers": 6, "free": "-", "label": "whale-mid"},
+    {"startAmount": 1000, "targetAmount": 5000, "rewardAmount": 100, "maxBet": 400, "maxUsers": 5, "free": "-", "label": "whale-b"},
+    {"startAmount": 2000, "targetAmount": 10000, "rewardAmount": 180, "maxBet": 800, "maxUsers": 3, "free": "-", "label": "whale-hard"},
+    # Спящие
+    {"startAmount": 25, "targetAmount": 150, "rewardAmount": 4, "maxUsers": 40, "free": "+", "label": "sleep-micro"},
+    {"startAmount": 40, "targetAmount": 220, "rewardAmount": 5, "maxUsers": 35, "free": "+", "label": "sleep"},
+    {"startAmount": 60, "targetAmount": 350, "rewardAmount": 8, "free": "+", "label": "sleep-plus"},
 ]
 
 
@@ -825,18 +852,19 @@ async def _find_similar_challenge(
     start_amount: int,
     target_amount: int,
     free: str,
+    include_disabled: bool = False,
 ) -> Optional[dict]:
     free_norm = "+" if str(free).strip() == "+" else "-"
-    chat_id, chat_canon = await _resolve_gc_chat(chat_ref)
-    del chat_id
+    _chat_id, chat_canon = await _resolve_gc_chat(chat_ref)
+    status_sql = "TRUE" if include_disabled else "status = 'active'"
     async with db.pool.acquire() as conn:
         row = await conn.fetchrow(
-            """
+            f"""
             SELECT id, start_amount, target_amount, reward_amount, betlimit,
                    max_users, completed_users, target_chat_id, target_chat_ref,
                    free, status, starts_at, created_at
               FROM z_game_challenge_templates
-             WHERE status = 'active'
+             WHERE {status_sql}
                AND COALESCE(target_chat_ref, '') = COALESCE($1, '')
                AND start_amount = $2
                AND target_amount = $3
@@ -854,16 +882,39 @@ async def _find_similar_challenge(
 
 async def seed_recommended_pack() -> dict[str, Any]:
     """
-    Создаёт пакет через тот же create_challenge / upsert_sub_task,
-    что и обычная кнопка «Создать» в админке (и по сути +заданиеч).
-
-    Если челлендж уже есть — синхронизирует награду/ставку/слоты/чат.
+    1) Выключает старые жирные челленджи пакета.
+    2) Создаёт/синхронизирует новый скромный пакет через create_challenge.
     """
     await ensure_bot_quest_schema()
 
+    disabled: list[dict] = []
+    for sig in LEGACY_CHALLENGE_SIGNATURES:
+        # Не трогаем сигнатуры, которые совпадают с новым пакетом
+        keep = any(
+            int(n["startAmount"]) == int(sig["startAmount"])
+            and int(n["targetAmount"]) == int(sig["targetAmount"])
+            and (("+" if n.get("free") == "+" else "-") == ("+" if sig.get("free") == "+" else "-"))
+            for n in RECOMMENDED_CHALLENGES
+        )
+        if keep:
+            continue
+        existing = await _find_similar_challenge(
+            chat_ref=DEFAULT_QUEST_CHAT,
+            start_amount=sig["startAmount"],
+            target_amount=sig["targetAmount"],
+            free=sig["free"],
+        )
+        if not existing:
+            continue
+        try:
+            row = await patch_challenge(int(existing["id"]), {"disable": True})
+            disabled.append(row)
+        except Exception:
+            pass
+
     sub = await upsert_sub_task(
         chat_ref=DEFAULT_QUEST_CHAT,
-        reward=2,
+        reward=1,
         limit_mode="unlimited",
         active=True,
         starts_at=None,
@@ -926,9 +977,11 @@ async def seed_recommended_pack() -> dict[str, Any]:
         "subTask": sub,
         "created": created,
         "updated": updated,
+        "disabled": disabled,
         "errors": errors,
         "ok": len(created),
         "updatedCount": len(updated),
+        "disabledCount": len(disabled),
         "failed": len(errors),
         "skippedCount": 0,
     }

@@ -18,29 +18,28 @@ import {
 
 const DEFAULT_CHAT = '@CuteGamingChat'
 
-/** Тот же формат тела, что у кнопки «Создать челлендж» / bulkCreateBotChallenges.
- *  Награды ≈ 25–35% от пути (цель − старт). */
+/** Скромные награды: ~2–3% от пути (1 кут = 1 Stars). Пути длиннее. */
 const PACK_CHALLENGES = [
-  { startAmount: 50, targetAmount: 150, rewardAmount: 28, maxUsers: 40, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 100, targetAmount: 300, rewardAmount: 50, maxUsers: 20, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 100, targetAmount: 400, rewardAmount: 55, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 20, targetAmount: 80, rewardAmount: 18, maxBet: 15, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 100, targetAmount: 500, rewardAmount: 65, maxBet: 50, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 200, targetAmount: 800, rewardAmount: 110, maxBet: 100, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 100, targetAmount: 500, rewardAmount: 50, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 500, targetAmount: 2000, rewardAmount: 280, maxBet: 300, maxUsers: 8, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 1000, targetAmount: 5000, rewardAmount: 700, maxUsers: 5, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 50, targetAmount: 200, rewardAmount: 38, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 30, targetAmount: 100, rewardAmount: 18, maxUsers: 50, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 75, targetAmount: 225, rewardAmount: 35, maxUsers: 30, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 40, targetAmount: 140, rewardAmount: 22, maxBet: 20, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 60, targetAmount: 200, rewardAmount: 28, maxBet: 30, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 120, targetAmount: 400, rewardAmount: 55, free: '+', chatRef: DEFAULT_CHAT },
-  { startAmount: 150, targetAmount: 550, rewardAmount: 70, maxBet: 60, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 250, targetAmount: 900, rewardAmount: 100, maxBet: 120, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 400, targetAmount: 1500, rewardAmount: 180, maxBet: 200, maxUsers: 10, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 800, targetAmount: 3500, rewardAmount: 450, maxBet: 350, maxUsers: 6, free: '-', chatRef: DEFAULT_CHAT },
-  { startAmount: 25, targetAmount: 80, rewardAmount: 15, maxUsers: 40, free: '+', chatRef: DEFAULT_CHAT },
+  { startAmount: 30, targetAmount: 150, rewardAmount: 4, maxUsers: 50, free: '+', chatRef: DEFAULT_CHAT },
+  { startAmount: 50, targetAmount: 250, rewardAmount: 6, maxUsers: 40, free: '+', chatRef: DEFAULT_CHAT },
+  { startAmount: 100, targetAmount: 500, rewardAmount: 12, maxUsers: 25, free: '+', chatRef: DEFAULT_CHAT },
+  { startAmount: 25, targetAmount: 120, rewardAmount: 3, maxBet: 12, free: '-', chatRef: DEFAULT_CHAT },
+  { startAmount: 50, targetAmount: 250, rewardAmount: 6, maxBet: 25, free: '-', chatRef: DEFAULT_CHAT },
+  { startAmount: 80, targetAmount: 400, rewardAmount: 10, maxBet: 40, free: '-', chatRef: DEFAULT_CHAT },
+  { startAmount: 100, targetAmount: 600, rewardAmount: 15, maxBet: 50, free: '-', chatRef: DEFAULT_CHAT },
+  { startAmount: 150, targetAmount: 800, rewardAmount: 20, maxBet: 75, free: '-', chatRef: DEFAULT_CHAT },
+  { startAmount: 200, targetAmount: 1200, rewardAmount: 30, maxBet: 100, free: '-', chatRef: DEFAULT_CHAT },
+  { startAmount: 300, targetAmount: 1800, rewardAmount: 40, maxBet: 150, free: '-', chatRef: DEFAULT_CHAT },
+  { startAmount: 100, targetAmount: 650, rewardAmount: 14, free: '+', chatRef: DEFAULT_CHAT },
+  { startAmount: 120, targetAmount: 750, rewardAmount: 16, free: '+', chatRef: DEFAULT_CHAT },
+  { startAmount: 400, targetAmount: 2200, rewardAmount: 50, maxBet: 200, maxUsers: 10, free: '-', chatRef: DEFAULT_CHAT },
+  { startAmount: 500, targetAmount: 3000, rewardAmount: 60, maxBet: 250, maxUsers: 8, free: '-', chatRef: DEFAULT_CHAT },
+  { startAmount: 800, targetAmount: 4500, rewardAmount: 90, maxBet: 350, maxUsers: 6, free: '-', chatRef: DEFAULT_CHAT },
+  { startAmount: 1000, targetAmount: 5000, rewardAmount: 100, maxBet: 400, maxUsers: 5, free: '-', chatRef: DEFAULT_CHAT },
+  { startAmount: 2000, targetAmount: 10000, rewardAmount: 180, maxBet: 800, maxUsers: 3, free: '-', chatRef: DEFAULT_CHAT },
+  { startAmount: 25, targetAmount: 150, rewardAmount: 4, maxUsers: 40, free: '+', chatRef: DEFAULT_CHAT },
+  { startAmount: 40, targetAmount: 220, rewardAmount: 5, maxUsers: 35, free: '+', chatRef: DEFAULT_CHAT },
+  { startAmount: 60, targetAmount: 350, rewardAmount: 8, free: '+', chatRef: DEFAULT_CHAT },
 ]
 
 const START_PRESETS = [
@@ -91,7 +90,7 @@ function emptySubRow(sharedStart = '') {
   return {
     key: Math.random().toString(36).slice(2),
     chatRef: DEFAULT_CHAT,
-    reward: '2',
+    reward: '1',
     limitMode: 'unlimited',
     totalCap: '30',
     ttlValue: '12',
@@ -213,7 +212,7 @@ export default function BotQuestsSection() {
         // fallback: прямой bulk как из конструктора
         await createBotSubTask({
           chatRef: DEFAULT_CHAT,
-          reward: 2,
+          reward: 1,
           limitMode: 'unlimited',
           active: true,
         }).catch(() => {})
@@ -285,7 +284,7 @@ export default function BotQuestsSection() {
     setSubRows([{
       key: `edit-sub-${item.id}`,
       chatRef: item.chatRef || DEFAULT_CHAT,
-      reward: String(item.reward ?? '2'),
+      reward: String(item.reward ?? '1'),
       limitMode: item.totalCap != null ? 'cap' : item.ttlExpiresAt ? 'ttl' : 'unlimited',
       totalCap: String(item.totalCap || 30),
       ttlValue: '12',
