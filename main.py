@@ -20562,16 +20562,61 @@ async def gc_build_list_kb(
         templates = list(templates or [])
 
     def _tpl_sort_key(t: Dict[str, Any]):
+        """
+        Порядок в списке для игрока:
+          1) рабочие / со слотами
+          2) бесплатные (+) раньше платных
+          3) самые прибыльные относительно сложности (награда / путь)
+          4) более простые (короткий путь, меньший старт)
+        """
         broken = 1 if t.get("bot_venue_broken") else 0
+
+        free_val = (t.get("free") or "-").strip()
+        is_paid = 0 if free_val == "+" else 1
+
         try:
-            rw = -float(t.get("reward_amount") or 0)
+            start_amt = float(t.get("start_amount") or 0)
         except Exception:
-            rw = 0.0
+            start_amt = 0.0
+        try:
+            target_amt = float(t.get("target_amount") or 0)
+        except Exception:
+            target_amt = 0.0
+        try:
+            reward = float(t.get("reward_amount") or 0)
+        except Exception:
+            reward = 0.0
+
+        gap = target_amt - start_amt
+        if gap <= 0:
+            gap = 1.0
+        # Чем выше награда на единицу пути — тем «прибыльнее» задание.
+        profit_ratio = reward / gap
+
+        full_slots = 0
+        max_users = t.get("max_users")
+        if max_users is not None:
+            try:
+                if int(t.get("completed_users") or 0) >= int(max_users):
+                    full_slots = 1
+            except Exception:
+                full_slots = 0
+
         try:
             tid = int(t.get("id") or t.get("template_id") or 0)
         except Exception:
             tid = 0
-        return (broken, rw, tid)
+
+        return (
+            broken,          # неисправные вниз
+            full_slots,      # занятые слоты вниз
+            is_paid,         # бесплатные вверх
+            -profit_ratio,   # выгоднее относительно пути — выше
+            gap,             # короче путь — выше
+            start_amt,       # ниже старт — проще войти
+            -reward,         # при равенстве — больше награда
+            tid,
+        )
 
     try:
         templates = sorted(templates, key=_tpl_sort_key)
