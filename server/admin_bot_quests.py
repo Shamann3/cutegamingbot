@@ -77,6 +77,28 @@ async def ensure_bot_quest_schema() -> None:
             ALTER TABLE quest_tasks ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ;
             CREATE INDEX IF NOT EXISTS ix_quest_tasks_starts_at ON quest_tasks (starts_at);
 
+            CREATE TABLE IF NOT EXISTS quest_done (
+              id          BIGSERIAL PRIMARY KEY,
+              user_id     BIGINT NOT NULL,
+              chat_ref    TEXT   NOT NULL,
+              action      TEXT   NOT NULL,
+              reward      NUMERIC(18,2) NOT NULL DEFAULT 0,
+              created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            -- Старые БД: таблица могла быть без id / created_at
+            ALTER TABLE quest_done ADD COLUMN IF NOT EXISTS id BIGINT;
+            ALTER TABLE quest_done ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+            CREATE SEQUENCE IF NOT EXISTS quest_done_id_seq;
+            ALTER TABLE quest_done ALTER COLUMN id SET DEFAULT nextval('quest_done_id_seq');
+            UPDATE quest_done SET id = nextval('quest_done_id_seq') WHERE id IS NULL;
+            SELECT setval(
+              'quest_done_id_seq',
+              GREATEST(1, COALESCE((SELECT MAX(id) FROM quest_done), 1))
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_quest_done_user_chat ON quest_done (user_id, chat_ref);
+            CREATE INDEX IF NOT EXISTS ix_quest_done_action_created
+              ON quest_done (action, created_at DESC NULLS LAST);
+
             CREATE TABLE IF NOT EXISTS z_game_challenge_templates (
                 id BIGSERIAL PRIMARY KEY,
                 start_amount BIGINT NOT NULL,
@@ -241,44 +263,83 @@ _GC_REWARD_CAUSES = (
 )
 
 
-async def _sum_gc_rewards_paid(conn) -> Any:
-    """Сумма реально выданных кут за челленджи (cutehistory / user_balance_log)."""
-    total = 0
-    try:
-        val = await conn.fetchval(
-            """
-            SELECT COALESCE(SUM("+"), 0)
-              FROM cutehistory
-             WHERE cause = ANY($1::text[])
-            """,
-            list(_GC_REWARD_CAUSES),
-        )
-        total = val or 0
-    except Exception:
-        total = 0
-    try:
-        exists = await conn.fetchval(
+def _gc_cause_match_sql(alias: str = "") -> str:
+    col = f'{alias}."cause"' if alias else "cause"
+    return f"({col} = ANY($1::text[]) OR {col} ILIKE '%награда%задани%')"
+
+
+async def _table_exists(conn, name: str) -> bool:
+    return bool(
+        await conn.fetchval(
             """
             SELECT EXISTS (
               SELECT 1 FROM information_schema.tables
-               WHERE table_schema = 'public' AND table_name = 'user_balance_log'
+               WHERE table_schema = 'public' AND table_name = $1
             )
-            """
+            """,
+            name,
         )
-        if exists:
-            # Если логов больше/новее — берём max, чтобы не недосчитать
-            log_sum = await conn.fetchval(
+    )
+
+
+async def _sum_gc_rewards_paid(conn) -> Decimal:
+    """Сумма выданных кут за челленджи: берём максимум из источников (без двойного сложения)."""
+    hist = Decimal("0")
+    log_sum = Decimal("0")
+    try:
+        val = await conn.fetchval(
+            f"""
+            SELECT COALESCE(SUM("+"), 0)
+              FROM cutehistory
+             WHERE {_gc_cause_match_sql()}
+            """,
+            list(_GC_REWARD_CAUSES),
+        )
+        hist = Decimal(str(val or 0))
+    except Exception:
+        hist = Decimal("0")
+    try:
+        if await _table_exists(conn, "user_balance_log"):
+            val = await conn.fetchval(
                 """
                 SELECT COALESCE(SUM(amount), 0)
                   FROM user_balance_log
                  WHERE note = 'gc_task_reward'
                 """
             )
-            if log_sum is not None and Decimal(str(log_sum)) > Decimal(str(total or 0)):
-                total = log_sum
+            log_sum = Decimal(str(val or 0))
     except Exception:
-        pass
-    return total
+        log_sum = Decimal("0")
+    return hist if hist >= log_sum else log_sum
+
+
+async def _count_gc_rewards_paid(conn) -> int:
+    hist_n = 0
+    log_n = 0
+    try:
+        hist_n = int(
+            await conn.fetchval(
+                f"""
+                SELECT COUNT(*)::int FROM cutehistory
+                 WHERE {_gc_cause_match_sql()}
+                """,
+                list(_GC_REWARD_CAUSES),
+            )
+            or 0
+        )
+    except Exception:
+        hist_n = 0
+    try:
+        if await _table_exists(conn, "user_balance_log"):
+            log_n = int(
+                await conn.fetchval(
+                    "SELECT COUNT(*)::int FROM user_balance_log WHERE note = 'gc_task_reward'"
+                )
+                or 0
+            )
+    except Exception:
+        log_n = 0
+    return max(hist_n, log_n)
 
 
 async def get_overview() -> dict[str, Any]:
@@ -298,33 +359,7 @@ async def get_overview() -> dict[str, Any]:
         sub_count = await conn.fetchval(
             "SELECT COUNT(*)::int FROM quest_done WHERE action = 'sub'"
         )
-        gc_count = 0
-        try:
-            exists = await conn.fetchval(
-                """
-                SELECT EXISTS (
-                  SELECT 1 FROM information_schema.tables
-                   WHERE table_schema = 'public' AND table_name = 'user_balance_log'
-                )
-                """
-            )
-            if exists:
-                gc_count = await conn.fetchval(
-                    "SELECT COUNT(*)::int FROM user_balance_log WHERE note = 'gc_task_reward'"
-                )
-        except Exception:
-            gc_count = 0
-        if not gc_count:
-            try:
-                gc_count = await conn.fetchval(
-                    """
-                    SELECT COUNT(*)::int FROM cutehistory
-                     WHERE cause = ANY($1::text[])
-                    """,
-                    list(_GC_REWARD_CAUSES),
-                )
-            except Exception:
-                gc_count = 0
+        gc_count = await _count_gc_rewards_paid(conn)
 
     sub_active = sub_scheduled = 0
     for r in sub_rows:
@@ -389,6 +424,35 @@ def _parse_cutehistory_dt(raw: Optional[str]) -> Optional[datetime]:
     return None
 
 
+def _aware(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _dedupe_gc_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Если есть и log, и cutehistory — не дублируем одну выплату."""
+    preferred = sorted(
+        items,
+        key=lambda it: (
+            0 if str(it.get("id", "")).startswith("gc-log-") else 1,
+            it.get("createdAt") or "",
+        ),
+    )
+    seen: set[tuple] = set()
+    out: list[dict[str, Any]] = []
+    for it in preferred:
+        day = (it.get("createdAt") or it.get("createdAtLabel") or "")[:16]
+        key = (int(it.get("userId") or 0), str(it.get("reward") or "0"), day)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(it)
+    return out
+
+
 async def list_quest_payouts(
     *,
     kind: str = "all",
@@ -402,6 +466,8 @@ async def list_quest_payouts(
     if kind_n not in ("all", "sub", "gc"):
         kind_n = "all"
     q = (query or "").strip()
+    q_like = f"%{q.lstrip('@')}%" if q else None
+    q_id = int(q.lstrip("@")) if q and q.lstrip("@").isdigit() else None
     try:
         limit_i = max(1, min(200, int(limit)))
     except Exception:
@@ -413,15 +479,21 @@ async def list_quest_payouts(
 
     items: list[dict[str, Any]] = []
     async with db.pool.acquire() as conn:
+        has_qd_id = await conn.fetchval(
+            """
+            SELECT EXISTS (
+              SELECT 1 FROM information_schema.columns
+               WHERE table_schema='public' AND table_name='quest_done' AND column_name='id'
+            )
+            """
+        )
+
         if kind_n in ("all", "sub"):
-            if q:
-                q_like = f"%{q.lstrip('@')}%"
-                q_id = None
-                if q.lstrip("@").isdigit():
-                    q_id = int(q.lstrip("@"))
+            id_expr = "qd.id::text" if has_qd_id else "qd.ctid::text"
+            if q_like is not None:
                 sub_rows = await conn.fetch(
-                    """
-                    SELECT qd.id, qd.user_id, qd.chat_ref, qd.reward, qd.created_at,
+                    f"""
+                    SELECT {id_expr} AS rid, qd.user_id, qd.chat_ref, qd.reward, qd.created_at,
                            COALESCE(u.username, '') AS username,
                            COALESCE(u.first_name, '') AS first_name
                       FROM quest_done qd
@@ -433,28 +505,29 @@ async def list_quest_payouts(
                          OR COALESCE(u.first_name, '') ILIKE $1
                          OR ($2::bigint IS NOT NULL AND qd.user_id = $2)
                        )
-                     ORDER BY qd.created_at DESC
-                     LIMIT 500
+                     ORDER BY qd.created_at DESC NULLS LAST
+                     LIMIT 2000
                     """,
                     q_like,
                     q_id,
                 )
             else:
                 sub_rows = await conn.fetch(
-                    """
-                    SELECT qd.id, qd.user_id, qd.chat_ref, qd.reward, qd.created_at,
+                    f"""
+                    SELECT {id_expr} AS rid, qd.user_id, qd.chat_ref, qd.reward, qd.created_at,
                            COALESCE(u.username, '') AS username,
                            COALESCE(u.first_name, '') AS first_name
                       FROM quest_done qd
                       LEFT JOIN users u ON u.user_id = qd.user_id
                      WHERE qd.action = 'sub'
-                     ORDER BY qd.created_at DESC
-                     LIMIT 500
+                     ORDER BY qd.created_at DESC NULLS LAST
+                     LIMIT 2000
                     """
                 )
             for r in sub_rows:
+                created = _aware(r["created_at"])
                 items.append({
-                    "id": f"sub-{r['id']}",
+                    "id": f"sub-{r['rid']}",
                     "kind": "sub",
                     "userId": int(r["user_id"]),
                     "username": r["username"] or None,
@@ -462,158 +535,174 @@ async def list_quest_payouts(
                     "reward": str(r["reward"] or 0),
                     "title": r["chat_ref"],
                     "detail": f"Подписка · {r['chat_ref']}",
-                    "createdAt": _iso(r["created_at"]),
+                    "createdAt": _iso(created),
                     "createdAtLabel": None,
                     "wallet": "quebalance",
+                    "sortTs": created.timestamp() if created else 0,
                 })
 
         if kind_n in ("all", "gc"):
-            gc_from_log = False
-            try:
-                log_exists = await conn.fetchval(
-                    """
-                    SELECT EXISTS (
-                      SELECT 1 FROM information_schema.tables
-                       WHERE table_schema = 'public' AND table_name = 'user_balance_log'
-                    )
-                    """
-                )
-                if log_exists:
-                    log_n = await conn.fetchval(
-                        "SELECT COUNT(*)::int FROM user_balance_log WHERE note = 'gc_task_reward'"
-                    )
-                    if int(log_n or 0) > 0:
-                        gc_from_log = True
-                        if q:
-                            q_like = f"%{q.lstrip('@')}%"
-                            q_id = None
-                            if q.lstrip("@").isdigit():
-                                q_id = int(q.lstrip("@"))
-                            log_rows = await conn.fetch(
-                                """
-                                SELECT l.id, l.user_id, l.amount, l.created_at,
-                                       COALESCE(u.username, '') AS username,
-                                       COALESCE(u.first_name, '') AS first_name
-                                  FROM user_balance_log l
-                                  LEFT JOIN users u ON u.user_id = l.user_id
-                                 WHERE l.note = 'gc_task_reward'
-                                   AND (
-                                     COALESCE(u.username, '') ILIKE $1
-                                     OR COALESCE(u.first_name, '') ILIKE $1
-                                     OR ($2::bigint IS NOT NULL AND l.user_id = $2)
-                                   )
-                                 ORDER BY l.created_at DESC
-                                 LIMIT 500
-                                """,
-                                q_like,
-                                q_id,
-                            )
-                        else:
-                            log_rows = await conn.fetch(
-                                """
-                                SELECT l.id, l.user_id, l.amount, l.created_at,
-                                       COALESCE(u.username, '') AS username,
-                                       COALESCE(u.first_name, '') AS first_name
-                                  FROM user_balance_log l
-                                  LEFT JOIN users u ON u.user_id = l.user_id
-                                 WHERE l.note = 'gc_task_reward'
-                                 ORDER BY l.created_at DESC
-                                 LIMIT 500
-                                """
-                            )
-                        for r in log_rows:
-                            items.append({
-                                "id": f"gc-log-{r['id']}",
-                                "kind": "gc",
-                                "userId": int(r["user_id"]),
-                                "username": r["username"] or None,
-                                "firstName": r["first_name"] or None,
-                                "reward": str(r["amount"] or 0),
-                                "title": "Челлендж",
-                                "detail": "Награда за челлендж → основной баланс",
-                                "createdAt": _iso(r["created_at"]),
-                                "createdAtLabel": None,
-                                "wallet": "balance",
-                            })
-            except Exception:
-                gc_from_log = False
+            gc_items: list[dict[str, Any]] = []
 
-            if not gc_from_log:
-                try:
-                    if q:
-                        q_like = f"%{q.lstrip('@')}%"
-                        q_id = None
-                        if q.lstrip("@").isdigit():
-                            q_id = int(q.lstrip("@"))
-                        gc_rows = await conn.fetch(
+            # 1) user_balance_log — точные timestamps
+            try:
+                if await _table_exists(conn, "user_balance_log"):
+                    if q_like is not None:
+                        log_rows = await conn.fetch(
                             """
-                            SELECT ctid::text AS rid, user_id, username, first_name,
-                                   "+" AS reward, cause, data
-                              FROM cutehistory
-                             WHERE cause = ANY($1::text[])
+                            SELECT l.id, l.user_id, l.amount, l.created_at,
+                                   COALESCE(u.username, '') AS username,
+                                   COALESCE(u.first_name, '') AS first_name
+                              FROM user_balance_log l
+                              LEFT JOIN users u ON u.user_id = l.user_id
+                             WHERE l.note = 'gc_task_reward'
                                AND (
-                                 COALESCE(username, '') ILIKE $2
-                                 OR COALESCE(first_name, '') ILIKE $2
-                                 OR cause ILIKE $2
-                                 OR ($3::bigint IS NOT NULL AND user_id = $3)
+                                 COALESCE(u.username, '') ILIKE $1
+                                 OR COALESCE(u.first_name, '') ILIKE $1
+                                 OR ($2::bigint IS NOT NULL AND l.user_id = $2)
                                )
-                             ORDER BY COALESCE(
-                               to_timestamp(data, 'HH24:MI DD.MM.YYYY'),
-                               '1970-01-01'::timestamptz
-                             ) DESC
-                             LIMIT 500
+                             ORDER BY l.created_at DESC
+                             LIMIT 2000
                             """,
-                            list(_GC_REWARD_CAUSES),
                             q_like,
                             q_id,
                         )
                     else:
-                        gc_rows = await conn.fetch(
+                        log_rows = await conn.fetch(
                             """
-                            SELECT ctid::text AS rid, user_id, username, first_name,
-                                   "+" AS reward, cause, data
-                              FROM cutehistory
-                             WHERE cause = ANY($1::text[])
-                             ORDER BY COALESCE(
-                               to_timestamp(data, 'HH24:MI DD.MM.YYYY'),
-                               '1970-01-01'::timestamptz
-                             ) DESC
-                             LIMIT 500
-                            """,
-                            list(_GC_REWARD_CAUSES),
+                            SELECT l.id, l.user_id, l.amount, l.created_at,
+                                   COALESCE(u.username, '') AS username,
+                                   COALESCE(u.first_name, '') AS first_name
+                              FROM user_balance_log l
+                              LEFT JOIN users u ON u.user_id = l.user_id
+                             WHERE l.note = 'gc_task_reward'
+                             ORDER BY l.created_at DESC
+                             LIMIT 2000
+                            """
                         )
-                except Exception:
-                    gc_rows = []
+                    for r in log_rows:
+                        created = _aware(r["created_at"])
+                        gc_items.append({
+                            "id": f"gc-log-{r['id']}",
+                            "kind": "gc",
+                            "userId": int(r["user_id"]),
+                            "username": r["username"] or None,
+                            "firstName": r["first_name"] or None,
+                            "reward": str(r["amount"] or 0),
+                            "title": "Челлендж",
+                            "detail": "Награда за челлендж → основной баланс",
+                            "createdAt": _iso(created),
+                            "createdAtLabel": None,
+                            "wallet": "balance",
+                            "free": None,
+                            "sortTs": created.timestamp() if created else 0,
+                        })
+            except Exception:
+                pass
 
-                for r in gc_rows:
-                    cause = (r["cause"] or "").strip()
-                    is_free = "бесплатн" in cause.lower()
-                    parsed = _parse_cutehistory_dt(r["data"])
-                    items.append({
-                        "id": f"gc-{r['rid']}",
-                        "kind": "gc",
-                        "userId": int(r["user_id"]) if r["user_id"] is not None else 0,
-                        "username": r["username"] or None,
-                        "firstName": r["first_name"] or None,
-                        "reward": str(r["reward"] or 0),
-                        "title": "Бесплатный челлендж" if is_free else "Обычный челлендж",
-                        "detail": cause.lstrip("+ ").strip() or "Награда за челлендж",
-                        "createdAt": _iso(parsed) if parsed else None,
-                        "createdAtLabel": r["data"],
-                        "free": "+" if is_free else "-",
-                        "wallet": "balance",
-                    })
+            # 2) cutehistory — полный журнал наград за задания
+            try:
+                if q_like is not None:
+                    hist_rows = await conn.fetch(
+                        f"""
+                        SELECT c.ctid::text AS rid, c.user_id, c.username, c.first_name,
+                               c."+" AS reward, c.cause, c.data,
+                               COALESCE(u.username, c.username, '') AS u_username,
+                               COALESCE(u.first_name, c.first_name, '') AS u_first_name
+                          FROM cutehistory c
+                          LEFT JOIN users u ON u.user_id = c.user_id
+                         WHERE {_gc_cause_match_sql('c')}
+                           AND (
+                             COALESCE(c.username, '') ILIKE $2
+                             OR COALESCE(c.first_name, '') ILIKE $2
+                             OR COALESCE(u.username, '') ILIKE $2
+                             OR COALESCE(u.first_name, '') ILIKE $2
+                             OR c.cause ILIKE $2
+                             OR ($3::bigint IS NOT NULL AND c.user_id = $3)
+                           )
+                         ORDER BY COALESCE(
+                           to_timestamp(c.data, 'HH24:MI DD.MM.YYYY'),
+                           '1970-01-01'::timestamptz
+                         ) DESC
+                         LIMIT 2000
+                        """,
+                        list(_GC_REWARD_CAUSES),
+                        q_like,
+                        q_id,
+                    )
+                else:
+                    hist_rows = await conn.fetch(
+                        f"""
+                        SELECT c.ctid::text AS rid, c.user_id, c.username, c.first_name,
+                               c."+" AS reward, c.cause, c.data,
+                               COALESCE(u.username, c.username, '') AS u_username,
+                               COALESCE(u.first_name, c.first_name, '') AS u_first_name
+                          FROM cutehistory c
+                          LEFT JOIN users u ON u.user_id = c.user_id
+                         WHERE {_gc_cause_match_sql('c')}
+                         ORDER BY COALESCE(
+                           to_timestamp(c.data, 'HH24:MI DD.MM.YYYY'),
+                           '1970-01-01'::timestamptz
+                         ) DESC
+                         LIMIT 2000
+                        """,
+                        list(_GC_REWARD_CAUSES),
+                    )
+            except Exception:
+                hist_rows = []
 
-    # newest first; без даты — в конец
-    items.sort(key=lambda it: it.get("createdAt") or "", reverse=True)
+            for r in hist_rows:
+                cause = (r["cause"] or "").strip()
+                is_free = "бесплатн" in cause.lower()
+                parsed = _parse_cutehistory_dt(r["data"])
+                uname = (r["u_username"] or r["username"] or "").strip() or None
+                fname = (r["u_first_name"] or r["first_name"] or "").strip() or None
+                gc_items.append({
+                    "id": f"gc-hist-{r['rid']}",
+                    "kind": "gc",
+                    "userId": int(r["user_id"]) if r["user_id"] is not None else 0,
+                    "username": uname,
+                    "firstName": fname,
+                    "reward": str(r["reward"] or 0),
+                    "title": "Бесплатный челлендж" if is_free else "Обычный челлендж",
+                    "detail": (cause[1:].strip() if cause.startswith("+") else cause) or "Награда за челлендж",
+                    "createdAt": _iso(parsed) if parsed else None,
+                    "createdAtLabel": r["data"],
+                    "free": "+" if is_free else "-",
+                    "wallet": "balance",
+                    "sortTs": parsed.timestamp() if parsed else 0,
+                })
+
+            items.extend(_dedupe_gc_items(gc_items))
+
+    items.sort(key=lambda it: (it.get("sortTs") or 0, it.get("createdAt") or ""), reverse=True)
+    for it in items:
+        it.pop("sortTs", None)
+
     total = len(items)
     page = items[offset_i: offset_i + limit_i]
+
+    page_sum = Decimal("0")
+    for it in page:
+        try:
+            page_sum += Decimal(str(it.get("reward") or 0))
+        except Exception:
+            pass
+    all_sum = Decimal("0")
+    for it in items:
+        try:
+            all_sum += Decimal(str(it.get("reward") or 0))
+        except Exception:
+            pass
+
     return {
         "items": page,
         "total": total,
         "limit": limit_i,
         "offset": offset_i,
         "hasMore": offset_i + limit_i < total,
+        "filteredSum": str(all_sum),
+        "pageSum": str(page_sum),
     }
 
 

@@ -74,7 +74,53 @@ function fmtPayoutTime(iso, label) {
       /* fallthrough */
     }
   }
-  return label || '—'
+  if (label) return String(label)
+  return 'дата неизвестна'
+}
+
+function payoutDayKey(item) {
+  if (item.createdAt) {
+    try {
+      const d = new Date(item.createdAt)
+      if (!Number.isNaN(d.getTime())) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (item.createdAtLabel) {
+    const m = String(item.createdAtLabel).match(/(\d{2})\.(\d{2})\.(\d{4})/)
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`
+  }
+  return 'unknown'
+}
+
+function payoutDayLabel(key) {
+  if (key === 'unknown') return 'Без даты'
+  try {
+    const [y, m, d] = key.split('-').map(Number)
+    const dt = new Date(y, m - 1, d)
+    const today = new Date()
+    const yday = new Date()
+    yday.setDate(today.getDate() - 1)
+    const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+    if (same(dt, today)) return 'Сегодня'
+    if (same(dt, yday)) return 'Вчера'
+    return dt.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+  } catch {
+    return key
+  }
+}
+
+function groupPayoutsByDay(items) {
+  const map = new Map()
+  for (const item of items) {
+    const key = payoutDayKey(item)
+    if (!map.has(key)) map.set(key, [])
+    map.get(key).push(item)
+  }
+  return [...map.entries()].map(([key, rows]) => ({ key, label: payoutDayLabel(key), rows }))
 }
 
 function payoutDisplayName(item) {
@@ -207,6 +253,8 @@ export default function BotQuestsSection() {
   const [payoutHasMore, setPayoutHasMore] = useState(false)
   const [payoutLoading, setPayoutLoading] = useState(false)
   const [payoutLoadingMore, setPayoutLoadingMore] = useState(false)
+  const [payoutFilteredSum, setPayoutFilteredSum] = useState('0')
+  const [payoutError, setPayoutError] = useState('')
   const [suggestOpen, setSuggestOpen] = useState(false)
   const payoutReqRef = useRef(0)
 
@@ -232,6 +280,7 @@ export default function BotQuestsSection() {
     const reqId = ++payoutReqRef.current
     if (append) setPayoutLoadingMore(true)
     else setPayoutLoading(true)
+    setPayoutError('')
     try {
       const [data, ov] = await Promise.all([
         fetchBotQuestPayouts({
@@ -247,14 +296,17 @@ export default function BotQuestsSection() {
       setPayoutItems((prev) => (append ? [...prev, ...next] : next))
       setPayoutTotal(data.total || 0)
       setPayoutHasMore(Boolean(data.hasMore))
+      setPayoutFilteredSum(data.filteredSum != null ? String(data.filteredSum) : '0')
       if (ov) setOverview(ov)
-    } catch {
+    } catch (e) {
       if (reqId !== payoutReqRef.current) return
       if (!append) {
         setPayoutItems([])
         setPayoutTotal(0)
         setPayoutHasMore(false)
+        setPayoutFilteredSum('0')
       }
+      setPayoutError(e?.message || 'Не удалось загрузить выплаты')
     } finally {
       if (reqId === payoutReqRef.current) {
         setPayoutLoading(false)
@@ -262,6 +314,8 @@ export default function BotQuestsSection() {
       }
     }
   }, [payoutKind, payoutQuery])
+
+  const payoutGroups = useMemo(() => groupPayoutsByDay(payoutItems), [payoutItems])
 
   useEffect(() => {
     if (mode !== 'payouts') return undefined
@@ -286,7 +340,7 @@ export default function BotQuestsSection() {
   const filtered = useMemo(() => {
     if (mode === 'payouts') return []
     const q = query.trim().toLowerCase()
-    return list.filter((item) => {
+    const rows = list.filter((item) => {
       if (filter === 'live' && !item.effectiveActive) return false
       if (filter === 'soon' && !item.scheduled) return false
       if (filter === 'off') {
@@ -298,6 +352,19 @@ export default function BotQuestsSection() {
         ? `${item.chatRef} ${item.id} ${item.reward}`
         : `${item.id} ${item.startAmount} ${item.targetAmount} ${item.rewardAmount} ${item.targetChatRef || ''} ${item.free}`
       return hay.toLowerCase().includes(q)
+    })
+    if (mode !== 'gc') return rows
+    // Челленджи: бесплатные → самые большие награды → прибыльность пути
+    return [...rows].sort((a, b) => {
+      const aFree = a.free === '+' ? 0 : 1
+      const bFree = b.free === '+' ? 0 : 1
+      if (aFree !== bFree) return aFree - bFree
+      const ar = Number(a.rewardAmount) || 0
+      const br = Number(b.rewardAmount) || 0
+      if (br !== ar) return br - ar
+      const ag = Math.max(1, (Number(a.targetAmount) || 0) - (Number(a.startAmount) || 0))
+      const bg = Math.max(1, (Number(b.targetAmount) || 0) - (Number(b.startAmount) || 0))
+      return (br / bg) - (ar / ag)
     })
   }, [list, filter, query, mode])
 
@@ -1095,25 +1162,44 @@ export default function BotQuestsSection() {
                   <h3>Журнал выплат кут</h3>
                   <p className="bq-list-sub">Кто получил награду, за какое задание и когда</p>
                 </div>
-                <span>
-                  {payoutLoading ? 'Загрузка…' : `${payoutItems.length} из ${payoutTotal}`}
-                </span>
+                <div className="bq-pay-head-right">
+                  <span>
+                    {payoutLoading
+                      ? 'Загрузка…'
+                      : `${payoutItems.length} из ${payoutTotal}${payoutQuery.trim() || payoutKind !== 'all' ? ` · в фильтре ${fmtMoney(payoutFilteredSum)}` : ''}`}
+                  </span>
+                  <button
+                    type="button"
+                    className="bq-btn bq-btn-ghost"
+                    disabled={payoutLoading}
+                    onClick={() => loadPayouts({ append: false, offset: 0 })}
+                  >
+                    <IconRefresh />
+                    Обновить
+                  </button>
+                </div>
               </div>
 
               <div className="bq-pay-summary">
                 <div>
                   <em>{fmtMoney(ov.subRewardPaidTotal)}</em>
-                  <span>подписки · quebalance</span>
+                  <span>подписки · quebalance · {ov.subPayoutCount || 0} выплат</span>
                 </div>
                 <div>
                   <em>{fmtMoney(ov.gcRewardPaidTotal)}</em>
-                  <span>челленджи · баланс</span>
+                  <span>челленджи · баланс · {ov.gcPayoutCount || 0} выплат</span>
                 </div>
                 <div>
                   <em>{fmtMoney(paidTotal)}</em>
-                  <span>всего выдано</span>
+                  <span>всего выдано · {payoutCount} записей</span>
                 </div>
               </div>
+
+              {payoutError && (
+                <div className="bq-pay-error" role="alert">
+                  {payoutError}
+                </div>
+              )}
 
               {payoutLoading && payoutItems.length === 0 ? (
                 <div className="bq-empty">
@@ -1122,44 +1208,56 @@ export default function BotQuestsSection() {
                 </div>
               ) : payoutItems.length === 0 ? (
                 <div className="bq-empty">
-                  <strong>Выплат пока нет</strong>
-                  <p>Как только игрок получит куты за подписку или челлендж — запись появится здесь.</p>
+                  <strong>{payoutError ? 'Не удалось загрузить' : 'Выплат пока нет'}</strong>
+                  <p>
+                    {payoutError
+                      ? 'Нажми «Обновить» или проверь доступ к API.'
+                      : 'Как только игрок получит куты за подписку или челлендж — запись появится здесь.'}
+                  </p>
                 </div>
               ) : (
                 <div className="bq-pay-feed">
-                  {payoutItems.map((item, idx) => {
-                    const who = payoutDisplayName(item)
-                    const isSub = item.kind === 'sub'
-                    return (
-                      <article
-                        key={item.id}
-                        className={`bq-pay-row is-${item.kind}`}
-                        style={{ '--i': idx % 12 }}
-                      >
-                        <div className={`bq-pay-avatar is-${item.kind}`} aria-hidden="true">
-                          {(who.title.replace('@', '').trim()[0] || '?').toUpperCase()}
-                        </div>
-                        <div className="bq-pay-main">
-                          <div className="bq-pay-top">
-                            <strong>{who.title}</strong>
-                            <span className={`bq-pay-kind is-${item.kind}`}>
-                              {isSub ? 'Подписка' : 'Челлендж'}
-                            </span>
-                          </div>
-                          <p className="bq-pay-detail">{item.detail || item.title}</p>
-                          <div className="bq-pay-meta">
-                            <span>{who.sub}</span>
-                            <span>{fmtPayoutTime(item.createdAt, item.createdAtLabel)}</span>
-                            <span>{isSub ? 'quebalance' : 'основной баланс'}</span>
-                          </div>
-                        </div>
-                        <div className="bq-pay-amount">
-                          <strong>+{fmtMoney(item.reward)}</strong>
-                          <span>кут</span>
-                        </div>
-                      </article>
-                    )
-                  })}
+                  {payoutGroups.map((group) => (
+                    <div key={group.key} className="bq-pay-day">
+                      <div className="bq-pay-day-label">
+                        <span>{group.label}</span>
+                        <em>{group.rows.length}</em>
+                      </div>
+                      {group.rows.map((item, idx) => {
+                        const who = payoutDisplayName(item)
+                        const isSub = item.kind === 'sub'
+                        return (
+                          <article
+                            key={item.id}
+                            className={`bq-pay-row is-${item.kind}`}
+                            style={{ '--i': idx % 12 }}
+                          >
+                            <div className={`bq-pay-avatar is-${item.kind}`} aria-hidden="true">
+                              {(who.title.replace('@', '').trim()[0] || '?').toUpperCase()}
+                            </div>
+                            <div className="bq-pay-main">
+                              <div className="bq-pay-top">
+                                <strong>{who.title}</strong>
+                                <span className={`bq-pay-kind is-${item.kind}`}>
+                                  {isSub ? 'Подписка' : 'Челлендж'}
+                                </span>
+                              </div>
+                              <p className="bq-pay-detail">{item.detail || item.title}</p>
+                              <div className="bq-pay-meta">
+                                <span>{who.sub}</span>
+                                <span>{fmtPayoutTime(item.createdAt, item.createdAtLabel)}</span>
+                                <span>{isSub ? 'quebalance' : 'основной баланс'}</span>
+                              </div>
+                            </div>
+                            <div className="bq-pay-amount">
+                              <strong>+{fmtMoney(item.reward)}</strong>
+                              <span>кут</span>
+                            </div>
+                          </article>
+                        )
+                      })}
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -1180,7 +1278,11 @@ export default function BotQuestsSection() {
             <>
           <div className="bq-list-head">
             <h3>{mode === 'subs' ? 'Список заданий на подписку' : 'Список челленджей'}</h3>
-            <span>Показано {filtered.length} из {list.length}</span>
+            <span>
+              {mode === 'gc'
+                ? `Сначала free и топ-награды · ${filtered.length} из ${list.length}`
+                : `Показано ${filtered.length} из ${list.length}`}
+            </span>
           </div>
 
           {loading ? (
@@ -1280,7 +1382,16 @@ export default function BotQuestsSection() {
                           {item.targetAmount}
                           <span className="bq-reward">+{item.rewardAmount}</span>
                         </h4>
-                        <p>Номер <b>#{item.id}</b> · {item.targetChatRef || 'любой чат'} · {item.free === '+' ? 'бесплатный' : 'обычный'}</p>
+                        <p>
+                          Номер <b>#{item.id}</b> · {item.targetChatRef || 'любой чат'} ·{' '}
+                          {item.free === '+' ? 'бесплатный' : 'обычный'}
+                          {item.free === '+' ? ' · приоритет' : ''}
+                          {(() => {
+                            const gap = Math.max(1, Number(item.targetAmount) - Number(item.startAmount))
+                            const pct = ((Number(item.rewardAmount) || 0) / gap) * 100
+                            return ` · ${pct.toFixed(1)}% пути`
+                          })()}
+                        </p>
                       </div>
                       <span className={`bq-status is-${st.cls}${st.pulse ? ' is-pulse' : ''}`}>{st.text}</span>
                     </div>

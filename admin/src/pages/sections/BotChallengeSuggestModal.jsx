@@ -3,108 +3,79 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 const DEFAULT_CHAT = '@CuteGamingChat'
 
 /**
- * Тиры лестницы: ищем свободные (start, target), которых ещё нет.
+ * Тиры: упор на бесплатные и крупные награды.
  * want — сколько новых предложений на тир.
  */
 const TIERS = [
   {
-    id: 'micro-free',
+    id: 'free-juicy-a',
     free: '+',
-    tag: 'Микро',
-    blurb: 'Лёгкий бесплатный вход',
-    want: 2,
-    starts: [20, 25, 28, 30, 35, 40, 45],
-    mults: [4, 4.5, 5, 5.5, 6],
+    tag: 'Топ free',
+    blurb: 'Бесплатный · высокая награда',
+    want: 3,
+    preferHighReward: true,
+    starts: [100, 120, 150, 180, 200, 220, 250],
+    mults: [6, 6.5, 7, 7.5, 8],
   },
   {
-    id: 'easy-free',
+    id: 'free-juicy-b',
     free: '+',
-    tag: 'Лёгкий',
-    blurb: 'Комфортный бесплатный путь',
+    tag: 'Топ free+',
+    blurb: 'Бесплатный · ещё крупнее',
     want: 2,
-    starts: [50, 55, 60, 70, 75, 80, 90],
-    mults: [4, 4.5, 5, 5.5, 6],
+    preferHighReward: true,
+    starts: [280, 300, 350, 400, 450, 500],
+    mults: [5.5, 6, 6.5, 7, 7.5],
   },
   {
-    id: 'base-free',
-    free: '+',
-    tag: 'Базовый',
-    blurb: 'Классическая бесплатная зона',
-    want: 2,
-    starts: [100, 110, 120, 130, 140, 150],
-    mults: [4.5, 5, 5.5, 6, 6.5],
-  },
-  {
-    id: 'mid-free',
+    id: 'free-mid',
     free: '+',
     tag: 'Средний free',
-    blurb: 'Длиннее обычного бесплатного',
-    want: 1,
-    starts: [160, 180, 200, 220, 250],
+    blurb: 'Бесплатный · сильная награда',
+    want: 2,
+    preferHighReward: true,
+    starts: [60, 70, 80, 90, 100, 110],
+    mults: [5.5, 6, 6.5, 7],
+  },
+  {
+    id: 'micro-free',
+    free: '+',
+    tag: 'Микро free',
+    blurb: 'Бесплатный лёгкий вход',
+    want: 2,
+    preferHighReward: true,
+    starts: [25, 30, 35, 40, 45, 50],
     mults: [5, 5.5, 6, 6.5, 7],
   },
   {
-    id: 'micro-paid',
+    id: 'paid-juicy',
     free: '-',
-    tag: 'Микро платный',
-    blurb: 'Малый депозит, быстрый цикл',
+    tag: 'Крупная награда',
+    blurb: 'Обычный · большая выплата',
     want: 2,
-    starts: [20, 25, 30, 35, 40, 45],
-    mults: [4, 4.5, 5, 5.5],
+    preferHighReward: true,
+    starts: [150, 200, 250, 300, 400],
+    mults: [6, 6.5, 7, 7.5],
   },
   {
-    id: 'easy-paid',
+    id: 'paid-whale',
     free: '-',
-    tag: 'Лёгкий платный',
-    blurb: 'Недорогой обычный челлендж',
+    tag: 'Макс. награда',
+    blurb: 'Обычный · максимальный приз',
     want: 2,
-    starts: [50, 60, 70, 80, 90],
-    mults: [4, 4.5, 5, 5.5, 6],
+    preferHighReward: true,
+    starts: [500, 600, 800, 1000, 1200],
+    mults: [5.5, 6, 6.5, 7],
   },
   {
-    id: 'mid-paid',
+    id: 'paid-mid',
     free: '-',
     tag: 'Средний',
-    blurb: 'Основной платный сегмент',
-    want: 2,
-    starts: [100, 120, 140, 150, 160, 180],
-    mults: [5, 5.5, 6, 6.5, 7],
-  },
-  {
-    id: 'pro-paid',
-    free: '-',
-    tag: 'Профи',
-    blurb: 'Для уверенных игроков',
-    want: 2,
-    starts: [200, 220, 250, 280, 300, 350],
-    mults: [5, 5.5, 6, 6.5, 7],
-  },
-  {
-    id: 'upper-paid',
-    free: '-',
-    tag: 'Верхний',
-    blurb: 'Высокий старт',
+    blurb: 'Обычный · достойная награда',
     want: 1,
-    starts: [400, 450, 500, 550, 600],
-    mults: [5, 5.5, 6, 6.5],
-  },
-  {
-    id: 'whale-paid',
-    free: '-',
-    tag: 'Кит',
-    blurb: 'Крупный сегмент',
-    want: 1,
-    starts: [700, 800, 900, 1000, 1200],
-    mults: [4.5, 5, 5.5, 6],
-  },
-  {
-    id: 'hard-paid',
-    free: '-',
-    tag: 'Хард',
-    blurb: 'Редкий сложный путь',
-    want: 1,
-    starts: [1500, 1800, 2000, 2500],
-    mults: [4.5, 5, 5.5, 6],
+    preferHighReward: true,
+    starts: [80, 100, 120, 140],
+    mults: [5.5, 6, 6.5],
   },
 ]
 
@@ -118,19 +89,19 @@ function roundNice(n) {
   return Math.round(x / 50) * 50
 }
 
-/** ~2.4–2.8% от пути (цель − старт), с разумными границами. */
+/** Бесплатные чуть щедрее; платные — скромнее. Крупный путь → крупная награда. */
 export function calcChallengeReward(start, target, free = '-') {
   const s = Math.max(0, Number(start) || 0)
   const t = Math.max(0, Number(target) || 0)
   const gap = Math.max(0, t - s)
   if (gap <= 0) return 1
-  const rate = free === '+' ? 0.028 : 0.024
+  const rate = free === '+' ? 0.032 : 0.026
   let reward = roundNice(gap * rate)
-  if (gap <= 100) reward = Math.max(2, Math.min(reward, 8))
-  else if (gap <= 500) reward = Math.max(5, Math.min(reward, 40))
-  else if (gap <= 2000) reward = Math.max(12, Math.min(reward, 120))
-  else reward = Math.max(40, reward)
-  const hardCap = Math.max(1, Math.floor(gap * 0.08))
+  if (gap <= 100) reward = Math.max(3, Math.min(reward, 10))
+  else if (gap <= 500) reward = Math.max(8, Math.min(reward, 55))
+  else if (gap <= 2000) reward = Math.max(20, Math.min(reward, 160))
+  else reward = Math.max(50, reward)
+  const hardCap = Math.max(1, Math.floor(gap * (free === '+' ? 0.09 : 0.08)))
   return Math.max(1, Math.min(reward, hardCap))
 }
 
@@ -258,8 +229,20 @@ function reserve(start, target, free, chat, exact, paths) {
   paths.push({ start, target, free: free === '+' ? '+' : '-', chat: normChat(chat) })
 }
 
+function profitScore(start, target, reward, free) {
+  const s = Number(start) || 0
+  const t = Number(target) || 0
+  const r = Number(reward) || 0
+  const gap = Math.max(1, t - s)
+  const ratio = r / gap
+  // Бесплатные сильно приоритетнее; внутри — крупная награда + хороший %
+  const freeBoost = free === '+' ? 1_000_000 : 0
+  return freeBoost + r * 1000 + ratio * 100
+}
+
 function buildRowFromPath({ start, target, free, tag, blurb, chatRef, startsAt, fresh }) {
   const f = free === '+' ? '+' : '-'
+  const reward = calcChallengeReward(start, target, f)
   return {
     key: uid(),
     selected: true,
@@ -270,18 +253,18 @@ function buildRowFromPath({ start, target, free, tag, blurb, chatRef, startsAt, 
     fresh: Boolean(fresh),
     startAmount: String(start),
     targetAmount: String(target),
-    rewardAmount: String(calcChallengeReward(start, target, f)),
+    rewardAmount: String(reward),
     maxBet: calcChallengeMaxBet(start, f),
     maxUsers: calcChallengeMaxUsers(start, target, f),
     free: f,
     chatRef: chatRef || DEFAULT_CHAT,
     startsAt: startsAt || '',
+    profitScore: profitScore(start, target, reward, f),
   }
 }
 
 /**
- * Подбирает полностью новые челленджи под уже существующие.
- * Никогда не возвращает точный дубль и избегает слишком похожих путей.
+ * Подбирает полностью новые челленджи: бесплатные + самые большие награды.
  */
 export function buildSuggestedChallenges({
   existing = [],
@@ -295,62 +278,81 @@ export function buildSuggestedChallenges({
   const { exact, paths } = buildOccupied(existing, chat)
   const out = []
 
-  const tiers = shuffle(TIERS, rand)
+  // Сначала free-тиры, внутри — с упором на крупные награды
+  const tiers = [
+    ...TIERS.filter((t) => t.free === '+'),
+    ...TIERS.filter((t) => t.free !== '+'),
+  ]
+
   for (const tier of tiers) {
     if (out.length >= limit) break
     const free = tier.free === '+' ? '+' : '-'
     let made = 0
     const starts = shuffle(tier.starts, rand)
-    const mults = shuffle(tier.mults, rand)
+    // Для «сочных» тиров берём более длинные пути → больше награда
+    const mults = tier.preferHighReward
+      ? [...tier.mults].sort((a, b) => b - a)
+      : shuffle(tier.mults, rand)
 
+    const candidates = []
     for (const startRaw of starts) {
-      if (made >= tier.want || out.length >= limit) break
       for (const mult of mults) {
-        if (made >= tier.want || out.length >= limit) break
         const start = roundNice(startRaw)
         let target = roundNice(start * mult)
         if (target <= start) target = roundNice(start + Math.max(40, start * 2))
-
-        // Небольшие сдвиги цели, если близко к занятому
-        const targetTweaks = [0, 10, -10, 20, -20, 30, 40, 50, -30, 75, 100]
-        let placed = false
+        const targetTweaks = tier.preferHighReward
+          ? [50, 100, 75, 30, 0, 20, -10]
+          : [0, 10, -10, 20, -20, 30, 40, 50]
         for (const tw of targetTweaks) {
           const t = roundNice(Math.max(start + 10, target + tw))
           if (!candidateOk(start, t, free, chat, exact, paths)) continue
-          reserve(start, t, free, chat, exact, paths)
-          out.push(buildRowFromPath({
+          const reward = calcChallengeReward(start, t, free)
+          candidates.push({
             start,
             target: t,
             free,
+            reward,
+            score: profitScore(start, t, reward, free),
             tag: tier.tag,
-            blurb: `${tier.blurb} · новый путь`,
-            chatRef: chat,
-            startsAt,
-            fresh: true,
-          }))
-          made += 1
-          placed = true
-          break
+            blurb: tier.blurb,
+          })
         }
-        if (placed) break
       }
     }
 
-    // Если тир всё ещё пуст — сдвиг старта
+    candidates.sort((a, b) => b.score - a.score || b.reward - a.reward)
+    for (const c of candidates) {
+      if (made >= tier.want || out.length >= limit) break
+      if (!candidateOk(c.start, c.target, c.free, chat, exact, paths)) continue
+      reserve(c.start, c.target, c.free, chat, exact, paths)
+      out.push(buildRowFromPath({
+        start: c.start,
+        target: c.target,
+        free: c.free,
+        tag: c.tag,
+        blurb: `${c.blurb} · +${c.reward} кут`,
+        chatRef: chat,
+        startsAt,
+        fresh: true,
+      }))
+      made += 1
+    }
+
     if (made < tier.want && out.length < limit) {
-      for (let step = 1; step <= 40 && made < tier.want && out.length < limit; step += 1) {
+      for (let step = 1; step <= 50 && made < tier.want && out.length < limit; step += 1) {
         const base = tier.starts[step % tier.starts.length]
-        const start = roundNice(base + step * (free === '+' ? 3 : 5))
-        const mult = tier.mults[step % tier.mults.length]
+        const start = roundNice(base + step * (free === '+' ? 4 : 6))
+        const mult = Math.max(...tier.mults)
         const target = roundNice(start * mult)
         if (!candidateOk(start, target, free, chat, exact, paths)) continue
+        const reward = calcChallengeReward(start, target, free)
         reserve(start, target, free, chat, exact, paths)
         out.push(buildRowFromPath({
           start,
           target,
           free,
           tag: tier.tag,
-          blurb: `${tier.blurb} · новый путь`,
+          blurb: `${tier.blurb} · +${reward} кут`,
           chatRef: chat,
           startsAt,
           fresh: true,
@@ -360,11 +362,31 @@ export function buildSuggestedChallenges({
     }
   }
 
-  // Сортируем: бесплатные и меньший старт выше — удобнее смотреть
+  // Финальный порядок: бесплатные → крупнейшие награды → прибыльность
   out.sort((a, b) => {
     if (a.free !== b.free) return a.free === '+' ? -1 : 1
-    return num(a.startAmount) - num(b.startAmount) || num(a.targetAmount) - num(b.targetAmount)
+    const ra = num(a.rewardAmount)
+    const rb = num(b.rewardAmount)
+    if (rb !== ra) return rb - ra
+    return (b.profitScore || 0) - (a.profitScore || 0)
   })
+
+  // По умолчанию отмечаем: все free + топ-3 платных по награде
+  const topPaid = out.filter((r) => r.free !== '+').slice(0, 3).map((r) => r.key)
+  const topPaidSet = new Set(topPaid)
+  for (const row of out) {
+    row.selected = row.free === '+' || topPaidSet.has(row.key)
+    row.topReward = false
+  }
+  // Бейдж «топ награда» у лидеров по reward внутри free и paid
+  const markTop = (list, n = 3) => {
+    [...list]
+      .sort((a, b) => num(b.rewardAmount) - num(a.rewardAmount))
+      .slice(0, n)
+      .forEach((r) => { r.topReward = true })
+  }
+  markTop(out.filter((r) => r.free === '+'), 4)
+  markTop(out.filter((r) => r.free !== '+'), 3)
 
   return out
 }
@@ -599,11 +621,11 @@ export default function BotChallengeSuggestModal({
       >
         <header className="bq-auto-head">
           <div>
-            <p className="bq-kicker">Только новые пути</p>
+            <p className="bq-kicker">Бесплатные · топ награды</p>
             <h3 id={titleId}>Создание челленджей автоматически</h3>
             <p className="bq-auto-lead">
-              Подбор смотрит на уже существующие задания и предлагает только свободные пути:
-              другой старт/цель, награда ~2–3% от пути, ставка и слоты. Дубликаты и почти копии не показываются.
+              Подбор ставит вверх бесплатные задания и пути с самыми большими наградами.
+              Дубликаты и почти копии не показываются — только новые сильные варианты.
             </p>
           </div>
           <div className="bq-auto-head-actions">
@@ -713,6 +735,8 @@ export default function BotChallengeSuggestModal({
                       {row.free === '+' ? 'Бесплатный' : 'Обычный'}
                     </span>
                     {row.fresh && !dup && !near && <span className="bq-auto-flag is-new">Новый</span>}
+                    {row.topReward && !dup && <span className="bq-auto-flag is-top">Топ награда</span>}
+                    {row.free === '+' && !dup && <span className="bq-auto-flag is-new">Free</span>}
                     {dup && <span className="bq-auto-flag is-err">Уже существует</span>}
                     {near && <span className="bq-auto-flag">Слишком похож</span>}
                     {err && row.selected && <span className="bq-auto-flag is-err">{err}</span>}
@@ -817,8 +841,8 @@ export default function BotChallengeSuggestModal({
           <div className="bq-auto-foot-msg">
             {error ? <span className="bq-auto-error">{error}</span> : (
               <span>
-                В списке только свободные пути относительно текущих челленджей.
-                Если нужно ещё — жми «Другие предложения».
+                В списке сверху — бесплатные и задания с самыми большими наградами.
+                По умолчанию отмечены все free и топ платных. Нужно ещё — «Другие предложения».
               </span>
             )}
           </div>
