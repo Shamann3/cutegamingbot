@@ -577,9 +577,11 @@ async def create_challenge(
         if mu > 0:
             slots = mu
 
+    # Тот же контракт, что create_gc_template_record в боте (+заданиеч)
     free_norm = "+" if str(free).strip() == "+" else "-"
-    chat_id, chat_canon = await _resolve_gc_chat(chat_ref)
-    dup_ref = chat_canon
+    chat_ref_raw = (chat_ref or "").strip() or None
+    chat_id, chat_canon = await _resolve_gc_chat(chat_ref_raw)
+    dup_ref = chat_canon or chat_ref_raw
 
     if starts_at and starts_at.tzinfo is None:
         starts_at = starts_at.replace(tzinfo=timezone.utc)
@@ -603,6 +605,7 @@ async def create_challenge(
         if similar:
             raise ValueError(f"Дубликат: уже есть челлендж #{similar['id']} с такими параметрами")
 
+        # INSERT как у бота (+ starts_at из админки)
         row = await conn.fetchrow(
             """
             INSERT INTO z_game_challenge_templates
@@ -765,83 +768,167 @@ async def delete_challenge(template_id: int) -> dict:
 
 
 # ─── Recommended pack (@CuteGamingChat) ──────────────────────────────────────
+# Создание идёт ТЕМ ЖЕ путём, что админ-форма / команда +заданиеч:
+# create_challenge → тот же INSERT + resolve чата, что у бота.
 
 DEFAULT_QUEST_CHAT = "@CuteGamingChat"
 
 # Сегменты: нулевые / мелкие / средние / крупные / спящие
+# Награда ≈ 25–35% от (цель − старт) — чуть скромнее, без разгона экономики.
 RECOMMENDED_CHALLENGES: list[dict[str, Any]] = [
-    # Нулевые
-    {"startAmount": 50, "targetAmount": 150, "rewardAmount": 40, "maxUsers": 40, "free": "+", "label": "zero-a"},
-    {"startAmount": 100, "targetAmount": 300, "rewardAmount": 70, "maxUsers": 20, "free": "+", "label": "zero-b"},
-    # Маленькие
-    {"startAmount": 100, "targetAmount": 400, "rewardAmount": 80, "free": "+", "label": "small-free"},
-    {"startAmount": 20, "targetAmount": 80, "rewardAmount": 30, "maxBet": 15, "free": "-", "label": "small-paid"},
-    # Средние
-    {"startAmount": 100, "targetAmount": 500, "rewardAmount": 100, "maxBet": 50, "free": "-", "label": "mid-paid-a"},
-    {"startAmount": 200, "targetAmount": 800, "rewardAmount": 180, "maxBet": 100, "free": "-", "label": "mid-paid-b"},
-    {"startAmount": 100, "targetAmount": 500, "rewardAmount": 80, "free": "+", "label": "mid-free"},
-    # Крупные
-    {"startAmount": 500, "targetAmount": 2000, "rewardAmount": 400, "maxBet": 300, "maxUsers": 8, "free": "-", "label": "whale-a"},
-    {"startAmount": 1000, "targetAmount": 5000, "rewardAmount": 1000, "maxUsers": 5, "free": "-", "label": "whale-b"},
-    # Спящие
-    {"startAmount": 50, "targetAmount": 200, "rewardAmount": 60, "free": "+", "label": "sleep"},
+    # —— базовый пакет (награды снижены) ——
+    {"startAmount": 50, "targetAmount": 150, "rewardAmount": 28, "maxUsers": 40, "free": "+", "label": "zero-a"},
+    {"startAmount": 100, "targetAmount": 300, "rewardAmount": 50, "maxUsers": 20, "free": "+", "label": "zero-b"},
+    {"startAmount": 100, "targetAmount": 400, "rewardAmount": 55, "free": "+", "label": "small-free"},
+    {"startAmount": 20, "targetAmount": 80, "rewardAmount": 18, "maxBet": 15, "free": "-", "label": "small-paid"},
+    {"startAmount": 100, "targetAmount": 500, "rewardAmount": 65, "maxBet": 50, "free": "-", "label": "mid-paid-a"},
+    {"startAmount": 200, "targetAmount": 800, "rewardAmount": 110, "maxBet": 100, "free": "-", "label": "mid-paid-b"},
+    {"startAmount": 100, "targetAmount": 500, "rewardAmount": 50, "free": "+", "label": "mid-free"},
+    {"startAmount": 500, "targetAmount": 2000, "rewardAmount": 280, "maxBet": 300, "maxUsers": 8, "free": "-", "label": "whale-a"},
+    {"startAmount": 1000, "targetAmount": 5000, "rewardAmount": 700, "maxUsers": 5, "free": "-", "label": "whale-b"},
+    {"startAmount": 50, "targetAmount": 200, "rewardAmount": 38, "free": "+", "label": "sleep"},
+    # —— +10 новых (скромные награды) ——
+    {"startAmount": 30, "targetAmount": 100, "rewardAmount": 18, "maxUsers": 50, "free": "+", "label": "zero-micro"},
+    {"startAmount": 75, "targetAmount": 225, "rewardAmount": 35, "maxUsers": 30, "free": "+", "label": "zero-plus"},
+    {"startAmount": 40, "targetAmount": 140, "rewardAmount": 22, "maxBet": 20, "free": "-", "label": "small-paid-b"},
+    {"startAmount": 60, "targetAmount": 200, "rewardAmount": 28, "maxBet": 30, "free": "-", "label": "small-paid-c"},
+    {"startAmount": 120, "targetAmount": 400, "rewardAmount": 55, "free": "+", "label": "mid-free-b"},
+    {"startAmount": 150, "targetAmount": 550, "rewardAmount": 70, "maxBet": 60, "free": "-", "label": "mid-paid-c"},
+    {"startAmount": 250, "targetAmount": 900, "rewardAmount": 100, "maxBet": 120, "free": "-", "label": "mid-paid-d"},
+    {"startAmount": 400, "targetAmount": 1500, "rewardAmount": 180, "maxBet": 200, "maxUsers": 10, "free": "-", "label": "upper-mid"},
+    {"startAmount": 800, "targetAmount": 3500, "rewardAmount": 450, "maxBet": 350, "maxUsers": 6, "free": "-", "label": "whale-mid"},
+    {"startAmount": 25, "targetAmount": 80, "rewardAmount": 15, "maxUsers": 40, "free": "+", "label": "sleep-micro"},
 ]
 
 
+def recommended_challenge_payloads() -> list[dict[str, Any]]:
+    """Тела как у обычного POST /bot-quests/challenges (форма админки)."""
+    out = []
+    for item in RECOMMENDED_CHALLENGES:
+        out.append({
+            "startAmount": int(item["startAmount"]),
+            "targetAmount": int(item["targetAmount"]),
+            "rewardAmount": int(item["rewardAmount"]),
+            "maxBet": item.get("maxBet"),
+            "maxUsers": item.get("maxUsers"),
+            "free": "+" if item.get("free") == "+" else "-",
+            "chatRef": DEFAULT_QUEST_CHAT,
+            "startsAt": None,
+            "label": item.get("label"),
+        })
+    return out
+
+
+async def _find_similar_challenge(
+    *,
+    chat_ref: Optional[str],
+    start_amount: int,
+    target_amount: int,
+    free: str,
+) -> Optional[dict]:
+    free_norm = "+" if str(free).strip() == "+" else "-"
+    chat_id, chat_canon = await _resolve_gc_chat(chat_ref)
+    del chat_id
+    async with db.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, start_amount, target_amount, reward_amount, betlimit,
+                   max_users, completed_users, target_chat_id, target_chat_ref,
+                   free, status, starts_at, created_at
+              FROM z_game_challenge_templates
+             WHERE status = 'active'
+               AND COALESCE(target_chat_ref, '') = COALESCE($1, '')
+               AND start_amount = $2
+               AND target_amount = $3
+               AND COALESCE(free, '-') = $4
+             ORDER BY id DESC
+             LIMIT 1
+            """,
+            chat_canon,
+            int(start_amount),
+            int(target_amount),
+            free_norm,
+        )
+    return _gc_to_dict(dict(row), _utcnow()) if row else None
+
+
 async def seed_recommended_pack() -> dict[str, Any]:
-    """Idempotent: создаёт пакет заданий для @CuteGamingChat, дубликаты пропускает."""
+    """
+    Создаёт пакет через тот же create_challenge / upsert_sub_task,
+    что и обычная кнопка «Создать» в админке (и по сути +заданиеч).
+
+    Если челлендж уже есть — синхронизирует награду/ставку/слоты/чат.
+    """
     await ensure_bot_quest_schema()
 
     sub = await upsert_sub_task(
         chat_ref=DEFAULT_QUEST_CHAT,
-        reward=3,
+        reward=2,
         limit_mode="unlimited",
         active=True,
         starts_at=None,
     )
 
     created: list[dict] = []
-    skipped: list[dict] = []
+    updated: list[dict] = []
     errors: list[dict] = []
 
-    for item in RECOMMENDED_CHALLENGES:
-        payload = {
-            "startAmount": item["startAmount"],
-            "targetAmount": item["targetAmount"],
-            "rewardAmount": item["rewardAmount"],
-            "maxBet": item.get("maxBet"),
-            "maxUsers": item.get("maxUsers"),
-            "free": item.get("free") or "-",
-            "chatRef": DEFAULT_QUEST_CHAT,
-        }
+    for payload in recommended_challenge_payloads():
+        label = payload.pop("label", None)
         try:
             row = await create_challenge(
                 start_amount=payload["startAmount"],
                 target_amount=payload["targetAmount"],
                 reward_amount=payload["rewardAmount"],
                 max_bet=payload.get("maxBet"),
-                chat_ref=DEFAULT_QUEST_CHAT,
+                chat_ref=payload["chatRef"],
                 max_users=payload.get("maxUsers"),
                 free=payload["free"],
                 starts_at=None,
             )
-            created.append({**row, "label": item.get("label")})
+            created.append({**row, "label": label})
         except ValueError as e:
             msg = str(e)
-            if "Дубликат" in msg:
-                skipped.append({"label": item.get("label"), "reason": msg, **payload})
-            else:
-                errors.append({"label": item.get("label"), "error": msg, **payload})
+            if "Дубликат" not in msg:
+                errors.append({"label": label, "error": msg, **payload})
+                continue
+            existing = await _find_similar_challenge(
+                chat_ref=payload["chatRef"],
+                start_amount=payload["startAmount"],
+                target_amount=payload["targetAmount"],
+                free=payload["free"],
+            )
+            if not existing:
+                errors.append({"label": label, "error": msg, **payload})
+                continue
+            try:
+                synced = await patch_challenge(
+                    int(existing["id"]),
+                    {
+                        "rewardAmount": payload["rewardAmount"],
+                        "maxBet": payload.get("maxBet"),
+                        "maxUsers": payload.get("maxUsers"),
+                        "chatRef": DEFAULT_QUEST_CHAT,
+                        "free": payload["free"],
+                        "status": "active",
+                        "startsAt": None,
+                        "activateNow": True,
+                    },
+                )
+                updated.append({**synced, "label": label})
+            except Exception as patch_err:
+                errors.append({"label": label, "error": str(patch_err), **payload})
         except Exception as e:
-            errors.append({"label": item.get("label"), "error": str(e), **payload})
+            errors.append({"label": label, "error": str(e), **payload})
 
     return {
         "chat": DEFAULT_QUEST_CHAT,
         "subTask": sub,
         "created": created,
-        "skipped": skipped,
+        "updated": updated,
         "errors": errors,
         "ok": len(created),
+        "updatedCount": len(updated),
         "failed": len(errors),
-        "skippedCount": len(skipped),
+        "skippedCount": 0,
     }
