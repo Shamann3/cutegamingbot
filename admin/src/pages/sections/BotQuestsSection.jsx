@@ -523,6 +523,7 @@ export default function BotQuestsSection() {
               </button>
             </div>
 
+            <div className="bq-composer-body">
             <div className="bq-panel bq-schedule">
               <div className="bq-panel-title">
                 <span>Когда показать игрокам</span>
@@ -785,7 +786,9 @@ export default function BotQuestsSection() {
               </div>
               <code>{cmdPreview}</code>
             </div>
+            </div>
 
+            <div className="bq-composer-foot">
             <button
               type="button"
               className="bq-btn bq-btn-primary bq-btn-block bq-save"
@@ -800,6 +803,7 @@ export default function BotQuestsSection() {
                     ? 'Создать задание'
                     : 'Создать челлендж'}
             </button>
+            </div>
           </aside>
         )}
 
