@@ -142,6 +142,7 @@ export default function BotQuestsSection() {
   const [subRows, setSubRows] = useState([emptySubRow()])
   const [gcRows, setGcRows] = useState([emptyGcRow()])
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [removingKeys, setRemovingKeys] = useState(() => new Set())
   const [composerOpen, setComposerOpen] = useState(true)
   const [busyId, setBusyId] = useState(null)
 
@@ -289,13 +290,24 @@ export default function BotQuestsSection() {
     ])
   }
 
-  const runCardAction = async (id, fn, okMsg) => {
+  const refreshOverview = useCallback(() => {
+    fetchBotQuestsOverview().then(setOverview).catch(() => {})
+  }, [])
+
+  const runCardAction = async (id, fn, okMsg, patchLocal) => {
     setBusyId(id)
+    const prevSubs = subs
+    const prevGcs = gcs
+    if (typeof patchLocal === 'function') {
+      patchLocal()
+    }
     try {
       await fn()
       if (okMsg) notifyAdmin(okMsg)
-      await load()
+      refreshOverview()
     } catch (e) {
+      setSubs(prevSubs)
+      setGcs(prevGcs)
       notifyAdmin(e?.message || 'Ошибка', { error: true })
     } finally {
       setBusyId(null)
@@ -304,21 +316,49 @@ export default function BotQuestsSection() {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return
-    setSaving(true)
-    try {
-      if (deleteTarget.kind === 'sub') {
-        await deleteBotSubTask(deleteTarget.id)
-        notifyAdmin('Задание удалено')
+    const target = deleteTarget
+    const key = `${target.kind}:${target.id}`
+    setDeleteTarget(null)
+
+    const prevSubs = subs
+    const prevGcs = gcs
+    setRemovingKeys((prev) => {
+      const next = new Set(prev)
+      next.add(key)
+      return next
+    })
+
+    const removeTimer = window.setTimeout(() => {
+      if (target.kind === 'sub') {
+        setSubs((list) => list.filter((x) => x.id !== target.id))
       } else {
-        await deleteBotChallenge(deleteTarget.id)
-        notifyAdmin('Задание удалено')
+        setGcs((list) => list.filter((x) => x.id !== target.id))
       }
-      setDeleteTarget(null)
-      await load()
+      setRemovingKeys((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+    }, 200)
+
+    try {
+      if (target.kind === 'sub') {
+        await deleteBotSubTask(target.id)
+      } else {
+        await deleteBotChallenge(target.id)
+      }
+      notifyAdmin('Задание удалено')
+      refreshOverview()
     } catch (e) {
-      notifyAdmin(e?.message || 'Ошибка', { error: true })
-    } finally {
-      setSaving(false)
+      window.clearTimeout(removeTimer)
+      setRemovingKeys((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+      setSubs(prevSubs)
+      setGcs(prevGcs)
+      notifyAdmin(e?.message || 'Не удалось удалить', { error: true })
     }
   }
 
@@ -663,14 +703,34 @@ export default function BotQuestsSection() {
                       <span>Чат (опционально)</span>
                       <input className="bq-input" placeholder="@CuteGamingChat" value={row.chatRef} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, chatRef: e.target.value } : r)))} />
                     </label>
-                    <div className="bq-grid-2">
+                    <div className="bq-start-block">
                       <label className="bq-field">
                         <span>Старт</span>
-                        <input className="bq-input" type="datetime-local" value={row.startsAt} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, startsAt: e.target.value } : r)))} />
+                        <input
+                          className="bq-input"
+                          type="datetime-local"
+                          value={row.startsAt}
+                          onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, startsAt: e.target.value } : r)))}
+                        />
                       </label>
-                      <div className="bq-seg bq-seg-end">
-                        <button type="button" className={row.free === '-' ? 'is-active' : ''} onClick={() => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, free: '-' } : r)))}>Обычный</button>
-                        <button type="button" className={row.free === '+' ? 'is-active' : ''} onClick={() => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, free: '+' } : r)))}>Бесплатный</button>
+                      <div className="bq-field bq-kind-field">
+                        <span>Тип</span>
+                        <div className="bq-kind-switch" role="group" aria-label="Тип челленджа">
+                          <button
+                            type="button"
+                            className={row.free === '-' ? 'is-active' : ''}
+                            onClick={() => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, free: '-' } : r)))}
+                          >
+                            Обычный
+                          </button>
+                          <button
+                            type="button"
+                            className={row.free === '+' ? 'is-active' : ''}
+                            onClick={() => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, free: '+' } : r)))}
+                          >
+                            Бесплатный
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -764,9 +824,11 @@ export default function BotQuestsSection() {
               {filtered.map((item, idx) => {
                 const st = statusMeta(item)
                 const busy = busyId === item.id
+                const removeKey = `${mode === 'subs' ? 'sub' : 'gc'}:${item.id}`
+                const isRemoving = removingKeys.has(removeKey)
                 if (mode === 'subs') {
                   return (
-                    <article key={item.id} className={`bq-card bq-card-sub is-${st.cls}`} style={{ '--i': idx }}>
+                    <article key={item.id} className={`bq-card bq-card-sub is-${st.cls}${isRemoving ? ' is-removing' : ''}`} style={{ '--i': idx }}>
                       <div className="bq-card-top">
                         <div>
                         <h4>{item.chatRef}</h4>
@@ -792,11 +854,35 @@ export default function BotQuestsSection() {
                       </div>
                       <div className="bq-card-actions">
                         {item.scheduled && (
-                          <button type="button" className="bq-btn-mini is-accent" disabled={busy} onClick={() => runCardAction(item.id, () => patchBotSubTask(item.id, { activateNow: true }), 'Запущено сейчас')}>
+                          <button
+                            type="button"
+                            className="bq-btn-mini is-accent"
+                            disabled={busy}
+                            onClick={() => runCardAction(
+                              item.id,
+                              () => patchBotSubTask(item.id, { activateNow: true }),
+                              'Запущено сейчас',
+                              () => setSubs((list) => list.map((x) => (x.id === item.id ? { ...x, startsAt: null, scheduled: false, started: true, effectiveActive: true, active: true } : x))),
+                            )}
+                          >
                             Запустить
                           </button>
                         )}
-                        <button type="button" className="bq-btn-mini" disabled={busy} onClick={() => runCardAction(item.id, () => patchBotSubTask(item.id, { active: !item.active }))}>
+                        <button
+                          type="button"
+                          className="bq-btn-mini"
+                          disabled={busy}
+                          onClick={() => runCardAction(
+                            item.id,
+                            () => patchBotSubTask(item.id, { active: !item.active }),
+                            item.active ? 'На паузе' : 'Включено',
+                            () => setSubs((list) => list.map((x) => {
+                              if (x.id !== item.id) return x
+                              const active = !item.active
+                              return { ...x, active, effectiveActive: active && x.started !== false && !x.scheduled }
+                            })),
+                          )}
+                        >
                           {item.active ? 'Пауза' : 'Включить'}
                         </button>
                         <button type="button" className="bq-btn-mini is-danger" disabled={busy} onClick={() => setDeleteTarget({ kind: 'sub', id: item.id, label: item.chatRef })}>
@@ -810,7 +896,7 @@ export default function BotQuestsSection() {
                   ? Math.min(100, Math.round((item.completedUsers / item.maxUsers) * 100))
                   : 0
                 return (
-                  <article key={item.id} className={`bq-card bq-card-gc is-${st.cls}`} style={{ '--i': idx }}>
+                  <article key={item.id} className={`bq-card bq-card-gc is-${st.cls}${isRemoving ? ' is-removing' : ''}`} style={{ '--i': idx }}>
                     <div className="bq-card-top">
                       <div>
                         <h4>
@@ -836,7 +922,17 @@ export default function BotQuestsSection() {
                     </div>
                     <div className="bq-card-actions">
                       {item.scheduled && (
-                        <button type="button" className="bq-btn-mini is-accent" disabled={busy} onClick={() => runCardAction(item.id, () => patchBotChallenge(item.id, { activateNow: true }), 'Челлендж в эфире')}>
+                        <button
+                          type="button"
+                          className="bq-btn-mini is-accent"
+                          disabled={busy}
+                          onClick={() => runCardAction(
+                            item.id,
+                            () => patchBotChallenge(item.id, { activateNow: true }),
+                            'Челлендж в эфире',
+                            () => setGcs((list) => list.map((x) => (x.id === item.id ? { ...x, startsAt: null, scheduled: false, started: true, effectiveActive: x.status !== 'disabled', status: 'active' } : x))),
+                          )}
+                        >
                           Запустить
                         </button>
                       )}
@@ -848,12 +944,27 @@ export default function BotQuestsSection() {
                           type="button"
                           className="bq-btn-mini"
                           disabled={busy}
-                          onClick={() => runCardAction(item.id, () => disableBotChallenge(item.id), 'Челлендж выключен')}
+                          onClick={() => runCardAction(
+                            item.id,
+                            () => disableBotChallenge(item.id),
+                            'Челлендж выключен',
+                            () => setGcs((list) => list.map((x) => (x.id === item.id ? { ...x, status: 'disabled', effectiveActive: false } : x))),
+                          )}
                         >
                           Выключить
                         </button>
                       ) : (
-                        <button type="button" className="bq-btn-mini is-accent" disabled={busy} onClick={() => runCardAction(item.id, () => patchBotChallenge(item.id, { status: 'active' }), 'Включено')}>
+                        <button
+                          type="button"
+                          className="bq-btn-mini is-accent"
+                          disabled={busy}
+                          onClick={() => runCardAction(
+                            item.id,
+                            () => patchBotChallenge(item.id, { status: 'active' }),
+                            'Включено',
+                            () => setGcs((list) => list.map((x) => (x.id === item.id ? { ...x, status: 'active', effectiveActive: !x.scheduled } : x))),
+                          )}
+                        >
                           Включить
                         </button>
                       )}
@@ -880,7 +991,7 @@ export default function BotQuestsSection() {
         description={`«${deleteTarget?.label || ''}» будет удалено навсегда. Это действие нельзя отменить.`}
         confirmText="Удалить задание"
         danger
-        loading={saving}
+        loading={false}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
       />

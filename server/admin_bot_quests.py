@@ -9,6 +9,7 @@ from typing import Any, Optional
 from db import db
 
 _USERNAME_RE = re.compile(r"(?:https?://)?t\.me/([A-Za-z0-9_]+)", re.IGNORECASE)
+_schema_ready = False
 
 
 def _utcnow() -> datetime:
@@ -55,6 +56,9 @@ def normalize_chat_ref(raw: Optional[str]) -> str:
 
 
 async def ensure_bot_quest_schema() -> None:
+    global _schema_ready
+    if _schema_ready:
+        return
     async with db.pool.acquire() as conn:
         await conn.execute(
             """
@@ -93,6 +97,7 @@ async def ensure_bot_quest_schema() -> None:
             CREATE INDEX IF NOT EXISTS ix_gc_templates_starts_at ON z_game_challenge_templates (starts_at);
             """
         )
+    _schema_ready = True
 
 
 async def _resolve_gc_chat(raw_ref: Optional[str]) -> tuple[Optional[int], Optional[str]]:
@@ -500,12 +505,13 @@ async def patch_sub_task(task_id: int, patch: dict) -> dict:
 async def delete_sub_task(task_id: int) -> dict:
     await ensure_bot_quest_schema()
     async with db.pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM quest_tasks WHERE id = $1", int(task_id))
+        row = await conn.fetchrow(
+            "DELETE FROM quest_tasks WHERE id = $1 RETURNING id, chat_ref",
+            int(task_id),
+        )
         if not row:
             raise ValueError("Задание не найдено")
-        stats = await _stats_for_task(conn, row["chat_ref"])
-        await conn.execute("DELETE FROM quest_tasks WHERE id = $1", int(task_id))
-        return {"ok": True, "deleted": _task_to_dict(dict(row), stats, _utcnow())}
+        return {"ok": True, "deletedId": int(row["id"]), "chatRef": row["chat_ref"]}
 
 
 # ─── Game challenges ────────────────────────────────────────────────────────
@@ -750,11 +756,9 @@ async def delete_challenge(template_id: int) -> dict:
     await ensure_bot_quest_schema()
     async with db.pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM z_game_challenge_templates WHERE id = $1", int(template_id)
+            "DELETE FROM z_game_challenge_templates WHERE id = $1 RETURNING id",
+            int(template_id),
         )
         if not row:
             raise ValueError("Челлендж не найден")
-        await conn.execute(
-            "DELETE FROM z_game_challenge_templates WHERE id = $1", int(template_id)
-        )
-        return {"ok": True, "deleted": _gc_to_dict(dict(row), _utcnow())}
+        return {"ok": True, "deletedId": int(row["id"])}
