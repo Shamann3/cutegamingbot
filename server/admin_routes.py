@@ -181,6 +181,7 @@ from admin_bot_quests import (
     delete_sub_task,
     get_overview as bot_quests_overview,
     list_challenges,
+    list_quest_payouts,
     list_sub_tasks,
     patch_challenge,
     patch_sub_task,
@@ -4185,6 +4186,17 @@ async def admin_bot_quests_overview(
     _admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
 ):
     return await bot_quests_overview()
+
+
+@router.get("/bot-quests/payouts")
+async def admin_bot_quests_payouts(
+    kind: str = Query("all", pattern=r"^(all|sub|gc)$"),
+    q: str = Query("", max_length=128),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    _admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    return await list_quest_payouts(kind=kind, query=q, limit=limit, offset=offset)
 
 
 @router.get("/bot-quests/sub-tasks")

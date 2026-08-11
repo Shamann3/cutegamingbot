@@ -1425,6 +1425,16 @@ export async function fetchBotQuestsOverview() {
   return adminFetch('/bot-quests/overview')
 }
 
+export async function fetchBotQuestPayouts({ kind = 'all', q = '', limit = 50, offset = 0 } = {}) {
+  const params = new URLSearchParams({
+    kind: String(kind || 'all'),
+    limit: String(limit),
+    offset: String(offset),
+  })
+  if (q) params.set('q', q)
+  return adminFetch(`/bot-quests/payouts?${params}`)
+}
+
 export async function fetchBotSubTasks() {
   return adminFetch('/bot-quests/sub-tasks')
 }

@@ -4527,6 +4527,29 @@ body,
   line-height: 1.35;
 }
 
+.bq-metric-btn {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.bq-metric-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.bq-metric-link {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: #fff;
+  opacity: 0.72;
+}
+
 .bq-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -4548,6 +4571,11 @@ body,
   background: #000;
   border: 1px solid var(--bq-line);
   min-width: min(100%, 22rem);
+}
+
+.bq-tabs-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+  min-width: min(100%, 34rem);
 }
 
 .bq-tab {
@@ -4599,8 +4627,16 @@ body,
   pointer-events: none;
 }
 
+.bq-tabs-3 .bq-tab-glider {
+  width: calc(33.333% - 0.18rem);
+}
+
 .bq-tab-glider[data-mode="gc"] {
   transform: translateX(100%);
+}
+
+.bq-tabs-3 .bq-tab-glider[data-mode="payouts"] {
+  transform: translateX(200%);
 }
 
 .bq-filters { display: flex; flex-wrap: wrap; gap: 0.35rem; }
@@ -5469,6 +5505,161 @@ body,
   .bq-hero { grid-template-columns: 1fr; }
 }
 
+.bq-list-sub {
+  margin: 0.2rem 0 0;
+  color: var(--bq-faint);
+  font-size: 0.86rem;
+}
+
+.bq-pay-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.9rem;
+}
+
+.bq-pay-summary > div {
+  padding: 0.85rem 0.95rem;
+  border-radius: 14px;
+  border: 1px solid var(--bq-line);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.bq-pay-summary em {
+  display: block;
+  font-style: normal;
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.bq-pay-summary span {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  color: var(--bq-faint);
+}
+
+.bq-pay-feed {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.bq-pay-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  border: 1px solid var(--bq-line);
+  background: rgba(0, 0, 0, 0.42);
+  animation: bq-rise 0.45s var(--bq-ease) both;
+  animation-delay: calc(0.03s * var(--i, 0));
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.bq-pay-row:hover {
+  border-color: var(--bq-line-strong);
+  transform: translateY(-1px);
+}
+
+.bq-pay-avatar {
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #111;
+  background: #fff;
+}
+
+.bq-pay-avatar.is-gc {
+  background: #d9d9d9;
+}
+
+.bq-pay-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.6rem;
+}
+
+.bq-pay-top strong {
+  font-size: 1rem;
+  color: #fff;
+}
+
+.bq-pay-kind {
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 0.22rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--bq-line);
+  color: var(--bq-muted);
+}
+
+.bq-pay-kind.is-sub {
+  color: #111;
+  background: #fff;
+  border-color: #fff;
+}
+
+.bq-pay-kind.is-gc {
+  color: #fff;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.bq-pay-detail {
+  margin: 0.28rem 0 0;
+  font-size: 0.88rem;
+  color: var(--bq-muted);
+  line-height: 1.35;
+}
+
+.bq-pay-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--bq-faint);
+}
+
+.bq-pay-amount {
+  text-align: right;
+  min-width: 4.5rem;
+}
+
+.bq-pay-amount strong {
+  display: block;
+  font-size: 1.2rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.bq-pay-amount span {
+  font-size: 0.75rem;
+  color: var(--bq-faint);
+}
+
+.bq-pay-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.bq-theme-pay .bq-kicker {
+  color: #fff;
+}
+
 @media (max-width: 980px) {
   .bq-layout { grid-template-columns: 1fr; }
   .bq-composer {
@@ -5479,6 +5670,13 @@ body,
   .bq-tabs { width: 100%; }
   .bq-grid-3 { grid-template-columns: 1fr; }
   .bq-card-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bq-pay-summary { grid-template-columns: 1fr; }
+  .bq-pay-row { grid-template-columns: auto 1fr; }
+  .bq-pay-amount {
+    grid-column: 2;
+    text-align: left;
+    margin-top: -0.2rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -5487,6 +5685,7 @@ body,
   .bq-composer,
   .bq-row,
   .bq-card,
+  .bq-pay-row,
   .bq-empty,
   .bq-orb,
   .bq-status.is-pulse,

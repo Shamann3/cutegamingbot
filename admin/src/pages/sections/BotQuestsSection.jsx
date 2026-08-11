@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
 import {
   fetchBotQuestsOverview,
+  fetchBotQuestPayouts,
   fetchBotSubTasks,
   createBotSubTask,
   bulkCreateBotSubTasks,
@@ -75,6 +76,38 @@ function fmtDt(iso) {
   } catch {
     return iso
   }
+}
+
+function fmtMoney(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return String(v ?? '0')
+  return n.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+}
+
+function fmtPayoutTime(iso, label) {
+  if (iso) {
+    try {
+      return new Date(iso).toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    } catch {
+      /* fallthrough */
+    }
+  }
+  return label || '—'
+}
+
+function payoutDisplayName(item) {
+  const name = (item.firstName || '').trim()
+  const un = (item.username || '').trim().replace(/^@/, '')
+  if (name && un) return { title: name, sub: `@${un}` }
+  if (un) return { title: `@${un}`, sub: `id ${item.userId}` }
+  if (name) return { title: name, sub: `id ${item.userId}` }
+  return { title: `Игрок ${item.userId}`, sub: 'без username' }
 }
 
 function isoToLocalInput(iso) {
@@ -162,6 +195,16 @@ function IconRefresh() {
   )
 }
 
+function IconPay() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+      <path d="M4 7.5h16v9H4z" />
+      <path d="M4 10.5h16" />
+      <path d="M8 14h3" />
+    </svg>
+  )
+}
+
 export default function BotQuestsSection() {
   const [mode, setMode] = useState('subs')
   const [overview, setOverview] = useState(null)
@@ -182,7 +225,15 @@ export default function BotQuestsSection() {
   const [busyId, setBusyId] = useState(null)
   const [editTarget, setEditTarget] = useState(null)
   const [packing, setPacking] = useState(false)
+  const [payoutKind, setPayoutKind] = useState('all')
+  const [payoutQuery, setPayoutQuery] = useState('')
+  const [payoutItems, setPayoutItems] = useState([])
+  const [payoutTotal, setPayoutTotal] = useState(0)
+  const [payoutHasMore, setPayoutHasMore] = useState(false)
+  const [payoutLoading, setPayoutLoading] = useState(false)
+  const [payoutLoadingMore, setPayoutLoadingMore] = useState(false)
   const seededRef = useRef(false)
+  const payoutReqRef = useRef(0)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -201,6 +252,49 @@ export default function BotQuestsSection() {
       setLoading(false)
     }
   }, [])
+
+  const loadPayouts = useCallback(async ({ append = false, offset = 0 } = {}) => {
+    const reqId = ++payoutReqRef.current
+    if (append) setPayoutLoadingMore(true)
+    else setPayoutLoading(true)
+    try {
+      const [data, ov] = await Promise.all([
+        fetchBotQuestPayouts({
+          kind: payoutKind,
+          q: payoutQuery.trim(),
+          limit: 40,
+          offset,
+        }),
+        append ? Promise.resolve(null) : fetchBotQuestsOverview().catch(() => null),
+      ])
+      if (reqId !== payoutReqRef.current) return
+      const next = data.items || []
+      setPayoutItems((prev) => (append ? [...prev, ...next] : next))
+      setPayoutTotal(data.total || 0)
+      setPayoutHasMore(Boolean(data.hasMore))
+      if (ov) setOverview(ov)
+    } catch {
+      if (reqId !== payoutReqRef.current) return
+      if (!append) {
+        setPayoutItems([])
+        setPayoutTotal(0)
+        setPayoutHasMore(false)
+      }
+    } finally {
+      if (reqId === payoutReqRef.current) {
+        setPayoutLoading(false)
+        setPayoutLoadingMore(false)
+      }
+    }
+  }, [payoutKind, payoutQuery])
+
+  useEffect(() => {
+    if (mode !== 'payouts') return undefined
+    const t = window.setTimeout(() => {
+      loadPayouts({ append: false, offset: 0 })
+    }, 180)
+    return () => window.clearTimeout(t)
+  }, [mode, payoutKind, payoutQuery, loadPayouts])
 
   /** Создаёт пакет тем же API, что и обычное «Создать челлендж». */
   const ensureRecommendedPack = useCallback(async () => {
@@ -244,8 +338,9 @@ export default function BotQuestsSection() {
     setGcRows((rows) => rows.map((r) => ({ ...r, startsAt: value })))
   }
 
-  const list = mode === 'subs' ? subs : gcs
+  const list = mode === 'subs' ? subs : mode === 'gc' ? gcs : []
   const filtered = useMemo(() => {
+    if (mode === 'payouts') return []
     const q = query.trim().toLowerCase()
     return list.filter((item) => {
       if (filter === 'live' && !item.effectiveActive) return false
@@ -274,6 +369,18 @@ export default function BotQuestsSection() {
     setBulkMode(false)
     setSubRows([emptySubRow(sharedStart)])
     setGcRows([emptyGcRow(sharedStart)])
+  }
+
+  const openPayouts = () => {
+    if (editTarget) cancelEdit()
+    setMode('payouts')
+    setComposerOpen(false)
+  }
+
+  const switchMode = (next) => {
+    if (editTarget) cancelEdit()
+    setMode(next)
+    if (next === 'payouts') setComposerOpen(false)
   }
 
   const beginEditSub = (item) => {
@@ -492,7 +599,15 @@ export default function BotQuestsSection() {
     subTasks: { total: 0, active: 0, scheduled: 0 },
     challenges: { total: 0, active: 0, scheduled: 0, disabled: 0 },
     subRewardPaidTotal: '0',
+    gcRewardPaidTotal: '0',
+    rewardPaidTotal: '0',
+    subPayoutCount: 0,
+    gcPayoutCount: 0,
   }
+  const paidTotal = ov.rewardPaidTotal ?? (
+    Number(ov.subRewardPaidTotal || 0) + Number(ov.gcRewardPaidTotal || 0)
+  )
+  const payoutCount = (ov.subPayoutCount || 0) + (ov.gcPayoutCount || 0)
 
   const cmdPreview = mode === 'subs'
     ? `+задание ${(subRows[0]?.chatRef || '@channel').trim() || '@channel'} ${subRows[0]?.reward || '2'}${subRows[0]?.limitMode === 'cap' ? ` ${subRows[0].totalCap}ч` : ''}${subRows[0]?.limitMode === 'ttl' ? ` ${subRows[0].ttlValue}${subRows[0].ttlUnit}` : ''}`
@@ -502,8 +617,10 @@ export default function BotQuestsSection() {
     ? subRows.filter((r) => r.chatRef.trim()).length
     : gcRows.length
 
+  const showComposer = composerOpen && mode !== 'payouts'
+
   return (
-    <div className={`panel-content bq-root bq-theme-${mode}`}>
+    <div className={`panel-content bq-root bq-theme-${mode === 'payouts' ? 'pay' : mode}`}>
       <div className="bq-atmosphere" aria-hidden="true">
         <span className="bq-orb bq-orb-a" />
         <span className="bq-orb bq-orb-b" />
@@ -535,12 +652,18 @@ export default function BotQuestsSection() {
             >
               {packing ? 'Добавляю пакет…' : `Пакет в ${DEFAULT_CHAT}`}
             </button>
-            <button
-              type="button"
-              className="bq-btn bq-btn-ghost"
-              onClick={() => setComposerOpen((v) => !v)}
-            >
-              {composerOpen ? 'Скрыть конструктор' : 'Открыть конструктор'}
+            {mode !== 'payouts' && (
+              <button
+                type="button"
+                className="bq-btn bq-btn-ghost"
+                onClick={() => setComposerOpen((v) => !v)}
+              >
+                {composerOpen ? 'Скрыть конструктор' : 'Открыть конструктор'}
+              </button>
+            )}
+            <button type="button" className="bq-btn bq-btn-ghost" onClick={openPayouts}>
+              <IconPay />
+              История выплат
             </button>
           </div>
         </div>
@@ -562,7 +685,12 @@ export default function BotQuestsSection() {
               <span className="bq-metric-sub">скоро {ov.challenges.scheduled} · выкл {ov.challenges.disabled}</span>
             </div>
           </div>
-          <div className="bq-metric" style={{ '--i': 2 }}>
+          <button
+            type="button"
+            className="bq-metric bq-metric-btn"
+            style={{ '--i': 2 }}
+            onClick={openPayouts}
+          >
             <div className="bq-metric-icon bq-metric-blue">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
                 <ellipse cx="12" cy="7" rx="7" ry="2.6" />
@@ -572,21 +700,24 @@ export default function BotQuestsSection() {
             </div>
             <div>
               <span className="bq-metric-label">Всего выдано игрокам</span>
-              <strong className="bq-metric-value">{ov.subRewardPaidTotal}</strong>
-              <span className="bq-metric-sub">награда за подписки (quebalance)</span>
+              <strong className="bq-metric-value">{fmtMoney(paidTotal)}</strong>
+              <span className="bq-metric-sub">
+                подписки {fmtMoney(ov.subRewardPaidTotal)} · челленджи {fmtMoney(ov.gcRewardPaidTotal)}
+              </span>
+              <span className="bq-metric-link">{payoutCount} выплат · открыть журнал →</span>
             </div>
-          </div>
+          </button>
         </div>
       </header>
 
       <div className="bq-toolbar">
-        <div className="bq-tabs" role="tablist">
+        <div className="bq-tabs bq-tabs-3" role="tablist">
           <button
             type="button"
             role="tab"
             aria-selected={mode === 'subs'}
             className={`bq-tab${mode === 'subs' ? ' is-active' : ''}`}
-            onClick={() => { if (editTarget) cancelEdit(); setMode('subs') }}
+            onClick={() => switchMode('subs')}
           >
             <IconSub />
             Подписки
@@ -597,49 +728,93 @@ export default function BotQuestsSection() {
             role="tab"
             aria-selected={mode === 'gc'}
             className={`bq-tab${mode === 'gc' ? ' is-active' : ''}`}
-            onClick={() => { if (editTarget) cancelEdit(); setMode('gc') }}
+            onClick={() => switchMode('gc')}
           >
             <IconGc />
             Челленджи
             <span className="bq-tab-count">{gcs.length}</span>
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'payouts'}
+            className={`bq-tab${mode === 'payouts' ? ' is-active' : ''}`}
+            onClick={() => switchMode('payouts')}
+          >
+            <IconPay />
+            Выплаты
+            <span className="bq-tab-count">{payoutCount}</span>
+          </button>
           <span className="bq-tab-glider" data-mode={mode} aria-hidden="true" />
         </div>
 
-        <div className="bq-filters">
-          {[
-            ['all', 'Все', counts.all],
-            ['live', 'В эфире', counts.live],
-            ['soon', 'Ждут старта', counts.soon],
-            ['off', 'Выключены', counts.off],
-          ].map(([id, label, n]) => (
-            <button
-              key={id}
-              type="button"
-              className={`bq-pill${filter === id ? ' is-active' : ''}`}
-              onClick={() => setFilter(id)}
-            >
-              {label}
-              <em>{n}</em>
-            </button>
-          ))}
-        </div>
-
-        <label className="bq-search">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-            <circle cx="11" cy="11" r="6.5" />
-            <path d="M16.2 16.2L21 21" />
-          </svg>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={mode === 'subs' ? 'Поиск по каналу, id…' : 'Поиск по цели, чату, id…'}
-          />
-        </label>
+        {mode === 'payouts' ? (
+          <>
+            <div className="bq-filters">
+              {[
+                ['all', 'Все'],
+                ['sub', 'Подписки'],
+                ['gc', 'Челленджи'],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`bq-pill${payoutKind === id ? ' is-active' : ''}`}
+                  onClick={() => setPayoutKind(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label className="bq-search">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <circle cx="11" cy="11" r="6.5" />
+                <path d="M16.2 16.2L21 21" />
+              </svg>
+              <input
+                value={payoutQuery}
+                onChange={(e) => setPayoutQuery(e.target.value)}
+                placeholder="Игрок, @username или id…"
+              />
+            </label>
+          </>
+        ) : (
+          <>
+            <div className="bq-filters">
+              {[
+                ['all', 'Все', counts.all],
+                ['live', 'В эфире', counts.live],
+                ['soon', 'Ждут старта', counts.soon],
+                ['off', 'Выключены', counts.off],
+              ].map(([id, label, n]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`bq-pill${filter === id ? ' is-active' : ''}`}
+                  onClick={() => setFilter(id)}
+                >
+                  {label}
+                  <em>{n}</em>
+                </button>
+              ))}
+            </div>
+            <label className="bq-search">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <circle cx="11" cy="11" r="6.5" />
+                <path d="M16.2 16.2L21 21" />
+              </svg>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={mode === 'subs' ? 'Поиск по каналу, id…' : 'Поиск по цели, чату, id…'}
+              />
+            </label>
+          </>
+        )}
       </div>
 
-      <div className={`bq-layout${composerOpen ? '' : ' is-wide'}`}>
-        {composerOpen && (
+      <div className={`bq-layout${showComposer ? '' : ' is-wide'}`}>
+        {showComposer && (
           <aside className="bq-composer">
             <div className="bq-composer-head">
               <div>
@@ -953,6 +1128,96 @@ export default function BotQuestsSection() {
         )}
 
         <section className="bq-list">
+          {mode === 'payouts' ? (
+            <>
+              <div className="bq-list-head">
+                <div>
+                  <h3>Журнал выплат кут</h3>
+                  <p className="bq-list-sub">Кто получил награду, за какое задание и когда</p>
+                </div>
+                <span>
+                  {payoutLoading ? 'Загрузка…' : `${payoutItems.length} из ${payoutTotal}`}
+                </span>
+              </div>
+
+              <div className="bq-pay-summary">
+                <div>
+                  <em>{fmtMoney(ov.subRewardPaidTotal)}</em>
+                  <span>подписки · quebalance</span>
+                </div>
+                <div>
+                  <em>{fmtMoney(ov.gcRewardPaidTotal)}</em>
+                  <span>челленджи · баланс</span>
+                </div>
+                <div>
+                  <em>{fmtMoney(paidTotal)}</em>
+                  <span>всего выдано</span>
+                </div>
+              </div>
+
+              {payoutLoading && payoutItems.length === 0 ? (
+                <div className="bq-empty">
+                  <div className="bq-loader" />
+                  <strong>Собираю историю выплат…</strong>
+                </div>
+              ) : payoutItems.length === 0 ? (
+                <div className="bq-empty">
+                  <strong>Выплат пока нет</strong>
+                  <p>Как только игрок получит куты за подписку или челлендж — запись появится здесь.</p>
+                </div>
+              ) : (
+                <div className="bq-pay-feed">
+                  {payoutItems.map((item, idx) => {
+                    const who = payoutDisplayName(item)
+                    const isSub = item.kind === 'sub'
+                    return (
+                      <article
+                        key={item.id}
+                        className={`bq-pay-row is-${item.kind}`}
+                        style={{ '--i': idx % 12 }}
+                      >
+                        <div className={`bq-pay-avatar is-${item.kind}`} aria-hidden="true">
+                          {(who.title.replace('@', '').trim()[0] || '?').toUpperCase()}
+                        </div>
+                        <div className="bq-pay-main">
+                          <div className="bq-pay-top">
+                            <strong>{who.title}</strong>
+                            <span className={`bq-pay-kind is-${item.kind}`}>
+                              {isSub ? 'Подписка' : 'Челлендж'}
+                            </span>
+                          </div>
+                          <p className="bq-pay-detail">{item.detail || item.title}</p>
+                          <div className="bq-pay-meta">
+                            <span>{who.sub}</span>
+                            <span>{fmtPayoutTime(item.createdAt, item.createdAtLabel)}</span>
+                            <span>{isSub ? 'quebalance' : 'основной баланс'}</span>
+                          </div>
+                        </div>
+                        <div className="bq-pay-amount">
+                          <strong>+{fmtMoney(item.reward)}</strong>
+                          <span>кут</span>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              )}
+
+              {payoutHasMore && (
+                <div className="bq-pay-more">
+                  <button
+                    type="button"
+                    className="bq-btn bq-btn-ghost"
+                    disabled={payoutLoadingMore}
+                    onClick={() => loadPayouts({ append: true, offset: payoutItems.length })}
+                  >
+                    {payoutLoadingMore ? 'Загружаю…' : 'Показать ещё'}
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
           <div className="bq-list-head">
             <h3>{mode === 'subs' ? 'Список заданий на подписку' : 'Список челленджей'}</h3>
             <span>Показано {filtered.length} из {list.length}</span>
@@ -1131,6 +1396,8 @@ export default function BotQuestsSection() {
                 )
               })}
             </div>
+          )}
+            </>
           )}
         </section>
       </div>
