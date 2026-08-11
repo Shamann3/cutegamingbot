@@ -184,6 +184,7 @@ from admin_bot_quests import (
     list_sub_tasks,
     patch_challenge,
     patch_sub_task,
+    seed_recommended_pack,
     upsert_sub_task,
 )
 from admin_content import (
@@ -4393,6 +4394,22 @@ async def admin_bot_challenges_delete(
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/bot-quests/seed-pack")
+async def admin_bot_quests_seed_pack(
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    """Создаёт рекомендованный пакет заданий для @CuteGamingChat (идемпотентно)."""
+    result = await seed_recommended_pack()
+    await log_admin_action(
+        admin_id, "bot_quests_seed_pack",
+        target_type="bot_quests",
+        target_label=f"ok={result.get('ok')} skip={result.get('skippedCount')}",
+        ip=_get_client_ip(request),
+    )
+    return result
 
 
 @router.get("/broadcast/overview")

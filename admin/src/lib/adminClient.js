@@ -1472,6 +1472,10 @@ export async function disableBotChallenge(templateId) {
   })
 }
 
+export async function seedBotQuestsPack() {
+  return adminFetch('/bot-quests/seed-pack', { method: 'POST' })
+}
+
 export async function fetchBroadcastOverview() {
   return adminFetch('/broadcast/overview')
 }

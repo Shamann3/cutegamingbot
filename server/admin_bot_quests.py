@@ -762,3 +762,86 @@ async def delete_challenge(template_id: int) -> dict:
         if not row:
             raise ValueError("Челлендж не найден")
         return {"ok": True, "deletedId": int(row["id"])}
+
+
+# ─── Recommended pack (@CuteGamingChat) ──────────────────────────────────────
+
+DEFAULT_QUEST_CHAT = "@CuteGamingChat"
+
+# Сегменты: нулевые / мелкие / средние / крупные / спящие
+RECOMMENDED_CHALLENGES: list[dict[str, Any]] = [
+    # Нулевые
+    {"startAmount": 50, "targetAmount": 150, "rewardAmount": 40, "maxUsers": 40, "free": "+", "label": "zero-a"},
+    {"startAmount": 100, "targetAmount": 300, "rewardAmount": 70, "maxUsers": 20, "free": "+", "label": "zero-b"},
+    # Маленькие
+    {"startAmount": 100, "targetAmount": 400, "rewardAmount": 80, "free": "+", "label": "small-free"},
+    {"startAmount": 20, "targetAmount": 80, "rewardAmount": 30, "maxBet": 15, "free": "-", "label": "small-paid"},
+    # Средние
+    {"startAmount": 100, "targetAmount": 500, "rewardAmount": 100, "maxBet": 50, "free": "-", "label": "mid-paid-a"},
+    {"startAmount": 200, "targetAmount": 800, "rewardAmount": 180, "maxBet": 100, "free": "-", "label": "mid-paid-b"},
+    {"startAmount": 100, "targetAmount": 500, "rewardAmount": 80, "free": "+", "label": "mid-free"},
+    # Крупные
+    {"startAmount": 500, "targetAmount": 2000, "rewardAmount": 400, "maxBet": 300, "maxUsers": 8, "free": "-", "label": "whale-a"},
+    {"startAmount": 1000, "targetAmount": 5000, "rewardAmount": 1000, "maxUsers": 5, "free": "-", "label": "whale-b"},
+    # Спящие
+    {"startAmount": 50, "targetAmount": 200, "rewardAmount": 60, "free": "+", "label": "sleep"},
+]
+
+
+async def seed_recommended_pack() -> dict[str, Any]:
+    """Idempotent: создаёт пакет заданий для @CuteGamingChat, дубликаты пропускает."""
+    await ensure_bot_quest_schema()
+
+    sub = await upsert_sub_task(
+        chat_ref=DEFAULT_QUEST_CHAT,
+        reward=3,
+        limit_mode="unlimited",
+        active=True,
+        starts_at=None,
+    )
+
+    created: list[dict] = []
+    skipped: list[dict] = []
+    errors: list[dict] = []
+
+    for item in RECOMMENDED_CHALLENGES:
+        payload = {
+            "startAmount": item["startAmount"],
+            "targetAmount": item["targetAmount"],
+            "rewardAmount": item["rewardAmount"],
+            "maxBet": item.get("maxBet"),
+            "maxUsers": item.get("maxUsers"),
+            "free": item.get("free") or "-",
+            "chatRef": DEFAULT_QUEST_CHAT,
+        }
+        try:
+            row = await create_challenge(
+                start_amount=payload["startAmount"],
+                target_amount=payload["targetAmount"],
+                reward_amount=payload["rewardAmount"],
+                max_bet=payload.get("maxBet"),
+                chat_ref=DEFAULT_QUEST_CHAT,
+                max_users=payload.get("maxUsers"),
+                free=payload["free"],
+                starts_at=None,
+            )
+            created.append({**row, "label": item.get("label")})
+        except ValueError as e:
+            msg = str(e)
+            if "Дубликат" in msg:
+                skipped.append({"label": item.get("label"), "reason": msg, **payload})
+            else:
+                errors.append({"label": item.get("label"), "error": msg, **payload})
+        except Exception as e:
+            errors.append({"label": item.get("label"), "error": str(e), **payload})
+
+    return {
+        "chat": DEFAULT_QUEST_CHAT,
+        "subTask": sub,
+        "created": created,
+        "skipped": skipped,
+        "errors": errors,
+        "ok": len(created),
+        "failed": len(errors),
+        "skippedCount": len(skipped),
+    }

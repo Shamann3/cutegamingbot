@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
 import {
   fetchBotQuestsOverview,
@@ -13,7 +13,10 @@ import {
   patchBotChallenge,
   deleteBotChallenge,
   disableBotChallenge,
+  seedBotQuestsPack,
 } from '../../lib/adminClient'
+
+const DEFAULT_CHAT = '@CuteGamingChat'
 
 const START_PRESETS = [
   { label: 'Сейчас', minutes: 0 },
@@ -50,11 +53,20 @@ function fmtDt(iso) {
   }
 }
 
+function isoToLocalInput(iso) {
+  if (!iso) return ''
+  try {
+    return toLocalInput(new Date(iso))
+  } catch {
+    return ''
+  }
+}
+
 function emptySubRow(sharedStart = '') {
   return {
     key: Math.random().toString(36).slice(2),
-    chatRef: '',
-    reward: '2',
+    chatRef: DEFAULT_CHAT,
+    reward: '3',
     limitMode: 'unlimited',
     totalCap: '30',
     ttlValue: '12',
@@ -70,7 +82,7 @@ function emptyGcRow(sharedStart = '') {
     targetAmount: '500',
     rewardAmount: '100',
     maxBet: '',
-    chatRef: '',
+    chatRef: DEFAULT_CHAT,
     maxUsers: '',
     free: '-',
     startsAt: sharedStart,
@@ -144,6 +156,8 @@ export default function BotQuestsSection() {
   const [removingKeys, setRemovingKeys] = useState(() => new Set())
   const [composerOpen, setComposerOpen] = useState(true)
   const [busyId, setBusyId] = useState(null)
+  const [editTarget, setEditTarget] = useState(null)
+  const seededRef = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -163,7 +177,21 @@ export default function BotQuestsSection() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!seededRef.current) {
+        seededRef.current = true
+        try {
+          await seedBotQuestsPack()
+        } catch {
+          /* silent — pack may already exist or API restarting */
+        }
+      }
+      if (!cancelled) await load()
+    })()
+    return () => { cancelled = true }
+  }, [load])
 
   const applySharedStart = (value, presetMinutes = null) => {
     setSharedStart(value)
@@ -197,11 +225,53 @@ export default function BotQuestsSection() {
     off: list.filter((i) => i.status === 'disabled' || i.active === false || (!i.effectiveActive && !i.scheduled)).length,
   }), [list])
 
+  const cancelEdit = () => {
+    setEditTarget(null)
+    setBulkMode(false)
+    setSubRows([emptySubRow(sharedStart)])
+    setGcRows([emptyGcRow(sharedStart)])
+  }
+
+  const beginEditSub = (item) => {
+    setMode('subs')
+    setComposerOpen(true)
+    setBulkMode(false)
+    setEditTarget({ kind: 'sub', id: item.id })
+    setSubRows([{
+      key: `edit-sub-${item.id}`,
+      chatRef: item.chatRef || DEFAULT_CHAT,
+      reward: String(item.reward ?? '3'),
+      limitMode: item.totalCap != null ? 'cap' : item.ttlExpiresAt ? 'ttl' : 'unlimited',
+      totalCap: String(item.totalCap || 30),
+      ttlValue: '12',
+      ttlUnit: 'h',
+      startsAt: isoToLocalInput(item.startsAt),
+    }])
+  }
+
+  const beginEditGc = (item) => {
+    setMode('gc')
+    setComposerOpen(true)
+    setBulkMode(false)
+    setEditTarget({ kind: 'gc', id: item.id })
+    setGcRows([{
+      key: `edit-gc-${item.id}`,
+      startAmount: String(item.startAmount),
+      targetAmount: String(item.targetAmount),
+      rewardAmount: String(item.rewardAmount),
+      maxBet: item.betLimit != null ? String(item.betLimit) : '',
+      chatRef: item.targetChatRef || DEFAULT_CHAT,
+      maxUsers: item.maxUsers != null ? String(item.maxUsers) : '',
+      free: item.free === '+' ? '+' : '-',
+      startsAt: isoToLocalInput(item.startsAt),
+    }])
+  }
+
   const saveSubs = async () => {
     const payload = subRows
       .filter((r) => (r.chatRef || '').trim())
       .map((r) => ({
-        chatRef: r.chatRef.trim(),
+        chatRef: (r.chatRef || '').trim() || DEFAULT_CHAT,
         reward: r.reward,
         limitMode: r.limitMode,
         totalCap: r.limitMode === 'cap' ? Number(r.totalCap) : null,
@@ -213,12 +283,26 @@ export default function BotQuestsSection() {
     if (!payload.length) return
     setSaving(true)
     try {
-      if (payload.length === 1 && !bulkMode) {
+      if (editTarget?.kind === 'sub') {
+        const p = payload[0]
+        await patchBotSubTask(editTarget.id, {
+          chatRef: p.chatRef,
+          reward: p.reward,
+          limitMode: p.limitMode,
+          totalCap: p.totalCap,
+          ttlValue: p.ttlValue,
+          ttlUnit: p.ttlUnit,
+          startsAt: p.startsAt,
+          active: true,
+        })
+        cancelEdit()
+      } else if (payload.length === 1 && !bulkMode) {
         await createBotSubTask(payload[0])
+        setSubRows([emptySubRow(sharedStart)])
       } else {
         await bulkCreateBotSubTasks(payload)
+        setSubRows([emptySubRow(sharedStart)])
       }
-      setSubRows([emptySubRow(sharedStart)])
       await load()
     } catch {
       /* silent */
@@ -233,7 +317,7 @@ export default function BotQuestsSection() {
       targetAmount: Number(r.targetAmount),
       rewardAmount: Number(r.rewardAmount),
       maxBet: r.maxBet === '' || r.maxBet == null ? null : Number(r.maxBet),
-      chatRef: (r.chatRef || '').trim() || null,
+      chatRef: (r.chatRef || '').trim() || DEFAULT_CHAT,
       maxUsers: r.maxUsers === '' || r.maxUsers == null ? null : Number(r.maxUsers),
       free: r.free === '+' ? '+' : '-',
       startsAt: r.startsAt ? new Date(r.startsAt).toISOString() : null,
@@ -244,12 +328,26 @@ export default function BotQuestsSection() {
     }
     setSaving(true)
     try {
-      if (payload.length === 1 && !bulkMode) {
+      if (editTarget?.kind === 'gc') {
+        const p = payload[0]
+        await patchBotChallenge(editTarget.id, {
+          startAmount: p.startAmount,
+          targetAmount: p.targetAmount,
+          rewardAmount: p.rewardAmount,
+          maxBet: p.maxBet,
+          chatRef: p.chatRef,
+          maxUsers: p.maxUsers,
+          free: p.free,
+          startsAt: p.startsAt,
+        })
+        cancelEdit()
+      } else if (payload.length === 1 && !bulkMode) {
         await createBotChallenge(payload[0])
+        setGcRows([emptyGcRow(sharedStart)])
       } else {
         await bulkCreateBotChallenges(payload)
+        setGcRows([emptyGcRow(sharedStart)])
       }
-      setGcRows([emptyGcRow(sharedStart)])
       await load()
     } catch {
       /* silent */
@@ -259,6 +357,7 @@ export default function BotQuestsSection() {
   }
 
   const duplicateGc = (item) => {
+    setEditTarget(null)
     setMode('gc')
     setComposerOpen(true)
     setBulkMode(true)
@@ -269,7 +368,7 @@ export default function BotQuestsSection() {
         targetAmount: String(item.targetAmount),
         rewardAmount: String(item.rewardAmount),
         maxBet: item.betLimit != null ? String(item.betLimit) : '',
-        chatRef: item.targetChatRef || '',
+        chatRef: item.targetChatRef || DEFAULT_CHAT,
         maxUsers: item.maxUsers != null ? String(item.maxUsers) : '',
         free: item.free || '-',
       },
@@ -435,7 +534,7 @@ export default function BotQuestsSection() {
             role="tab"
             aria-selected={mode === 'subs'}
             className={`bq-tab${mode === 'subs' ? ' is-active' : ''}`}
-            onClick={() => setMode('subs')}
+            onClick={() => { if (editTarget) cancelEdit(); setMode('subs') }}
           >
             <IconSub />
             Подписки
@@ -446,7 +545,7 @@ export default function BotQuestsSection() {
             role="tab"
             aria-selected={mode === 'gc'}
             className={`bq-tab${mode === 'gc' ? ' is-active' : ''}`}
-            onClick={() => setMode('gc')}
+            onClick={() => { if (editTarget) cancelEdit(); setMode('gc') }}
           >
             <IconGc />
             Челленджи
@@ -492,18 +591,32 @@ export default function BotQuestsSection() {
           <aside className="bq-composer">
             <div className="bq-composer-head">
               <div>
-                <p className="bq-kicker">{mode === 'subs' ? 'Создание заданий' : 'Создание челленджей'}</p>
-                <h3>{mode === 'subs' ? 'Новые задания на подписку' : 'Новые игровые челленджи'}</h3>
+                <p className="bq-kicker">
+                  {editTarget
+                    ? (editTarget.kind === 'sub' ? `Редактирование #${editTarget.id}` : `Редактирование челленджа #${editTarget.id}`)
+                    : (mode === 'subs' ? 'Создание заданий' : 'Создание челленджей')}
+                </p>
+                <h3>
+                  {editTarget
+                    ? 'Изменить условия'
+                    : (mode === 'subs' ? 'Новые задания на подписку' : 'Новые игровые челленджи')}
+                </h3>
               </div>
-              <button
-                type="button"
-                className={`bq-toggle${bulkMode ? ' is-on' : ''}`}
-                onClick={() => setBulkMode((v) => !v)}
-                aria-pressed={bulkMode}
-              >
-                <span className="bq-toggle-knob" />
-                <span>Пакетный режим</span>
-              </button>
+              {editTarget ? (
+                <button type="button" className="bq-btn bq-btn-ghost" onClick={cancelEdit}>
+                  Отмена
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={`bq-toggle${bulkMode ? ' is-on' : ''}`}
+                  onClick={() => setBulkMode((v) => !v)}
+                  aria-pressed={bulkMode}
+                >
+                  <span className="bq-toggle-knob" />
+                  <span>Пакетный режим</span>
+                </button>
+              )}
             </div>
 
             <div className="bq-composer-body">
@@ -546,10 +659,10 @@ export default function BotQuestsSection() {
                       )}
                     </div>
                     <label className="bq-field">
-                      <span>Канал или чат (@username / ссылка)</span>
+                      <span>Канал / группа для подписки</span>
                       <input
                         className="bq-input"
-                        placeholder="@CuteGamingNews или t.me/…"
+                        placeholder={DEFAULT_CHAT}
                         value={row.chatRef}
                         onChange={(e) => setSubRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, chatRef: e.target.value } : r)))}
                       />
@@ -684,8 +797,8 @@ export default function BotQuestsSection() {
                       </label>
                     </div>
                     <label className="bq-field">
-                      <span>Чат (опционально)</span>
-                      <input className="bq-input" placeholder="@CuteGamingChat" value={row.chatRef} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, chatRef: e.target.value } : r)))} />
+                      <span>Группа (где играют)</span>
+                      <input className="bq-input" placeholder={DEFAULT_CHAT} value={row.chatRef} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, chatRef: e.target.value } : r)))} />
                     </label>
                     <div className="bq-start-block">
                       <label className="bq-field">
@@ -775,11 +888,13 @@ export default function BotQuestsSection() {
             >
               {saving
                 ? 'Сохраняю…'
-                : bulkMode
-                  ? `Создать ${readyCount} ${mode === 'subs' ? 'заданий' : 'челленджей'}`
-                  : mode === 'subs'
-                    ? 'Создать задание'
-                    : 'Создать челлендж'}
+                : editTarget
+                  ? 'Сохранить изменения'
+                  : bulkMode
+                    ? `Создать ${readyCount} ${mode === 'subs' ? 'заданий' : 'челленджей'}`
+                    : mode === 'subs'
+                      ? 'Создать задание'
+                      : 'Создать челлендж'}
             </button>
             </div>
           </aside>
@@ -865,6 +980,9 @@ export default function BotQuestsSection() {
                         >
                           {item.active ? 'Пауза' : 'Включить'}
                         </button>
+                        <button type="button" className="bq-btn-mini is-accent" disabled={busy} onClick={() => beginEditSub(item)}>
+                          Изменить
+                        </button>
                         <button type="button" className="bq-btn-mini is-danger" disabled={busy} onClick={() => setDeleteTarget({ kind: 'sub', id: item.id, label: item.chatRef })}>
                           Удалить задание
                         </button>
@@ -915,6 +1033,9 @@ export default function BotQuestsSection() {
                           Запустить
                         </button>
                       )}
+                      <button type="button" className="bq-btn-mini is-accent" disabled={busy} onClick={() => beginEditGc(item)}>
+                        Изменить
+                      </button>
                       <button type="button" className="bq-btn-mini" disabled={busy} onClick={() => duplicateGc(item)}>
                         Дублировать
                       </button>
