@@ -5695,6 +5695,13 @@ body,
   border-bottom: 1px solid var(--bq-line);
 }
 
+.bq-auto-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
 .bq-auto-head h3 {
   margin: 0.15rem 0 0;
   font-size: 1.25rem;
@@ -5839,6 +5846,12 @@ body,
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.25);
   color: var(--bq-muted);
+}
+
+.bq-auto-flag.is-new {
+  border-color: rgba(255, 255, 255, 0.55);
+  color: #111;
+  background: #fff;
 }
 
 .bq-auto-flag.is-err {
