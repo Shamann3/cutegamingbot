@@ -17,11 +17,11 @@ import {
 
 const START_PRESETS = [
   { label: 'Сейчас', minutes: 0 },
-  { label: '+15 мин', minutes: 15 },
-  { label: '+1 час', minutes: 60 },
-  { label: '+3 часа', minutes: 180 },
-  { label: '+1 день', minutes: 1440 },
-  { label: '+3 дня', minutes: 4320 },
+  { label: '+15м', minutes: 15 },
+  { label: '+1ч', minutes: 60 },
+  { label: '+3ч', minutes: 180 },
+  { label: '+1д', minutes: 1440 },
+  { label: '+3д', minutes: 4320 },
 ]
 
 function pad(n) {
@@ -77,28 +77,68 @@ function emptyGcRow(sharedStart = '') {
   }
 }
 
-function statusChip(item) {
-  if (item.status === 'disabled') return { cls: 'bq-chip-off', text: 'Выкл' }
-  if (item.scheduled) return { cls: 'bq-chip-soon', text: 'Скоро' }
-  if (item.effectiveActive) return { cls: 'bq-chip-live', text: 'В эфире' }
-  if (item.active === false) return { cls: 'bq-chip-off', text: 'Пауза' }
-  return { cls: 'bq-chip-muted', text: 'Неактивно' }
+function statusMeta(item) {
+  if (item.status === 'disabled') return { cls: 'off', text: 'Выкл', pulse: false }
+  if (item.scheduled) return { cls: 'soon', text: 'Скоро', pulse: true }
+  if (item.effectiveActive) return { cls: 'live', text: 'В эфире', pulse: true }
+  if (item.active === false) return { cls: 'off', text: 'Пауза', pulse: false }
+  return { cls: 'mute', text: 'Неактивно', pulse: false }
+}
+
+function IconSpark() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2.5l1.6 5.2L19 9.3l-5.2 1.6L12 16l-1.6-5.1L5 9.3l5.4-1.6L12 2.5z" fill="currentColor" opacity="0.9" />
+      <path d="M18.5 14.2l.7 2.2 2.2.7-2.2.7-.7 2.2-.7-2.2-2.2-.7 2.2-.7.7-2.2z" fill="currentColor" opacity="0.55" />
+    </svg>
+  )
+}
+
+function IconSub() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+      <path d="M8 7.5h8a3 3 0 0 1 3 3V17a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6.5a3 3 0 0 1 3-3z" />
+      <path d="M9 7.5V6.2A3.2 3.2 0 0 1 12.2 3h0A3.2 3.2 0 0 1 15.4 6.2V7.5" />
+      <path d="M9.5 13h5" />
+    </svg>
+  )
+}
+
+function IconGc() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+      <path d="M12 3l7 4v5c0 4.2-2.8 7.8-7 9-4.2-1.2-7-4.8-7-9V7l7-4z" />
+      <path d="M9.2 12.2l1.8 1.8 3.8-3.8" />
+    </svg>
+  )
+}
+
+function IconRefresh() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M20 12a8 8 0 1 1-2.2-5.5" />
+      <path d="M20 4.5V9h-4.5" />
+    </svg>
+  )
 }
 
 export default function BotQuestsSection() {
-  const [mode, setMode] = useState('subs') // subs | gc
+  const [mode, setMode] = useState('subs')
   const [overview, setOverview] = useState(null)
   const [subs, setSubs] = useState([])
   const [gcs, setGcs] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [filter, setFilter] = useState('all') // all | live | soon | off
+  const [filter, setFilter] = useState('all')
+  const [query, setQuery] = useState('')
   const [bulkMode, setBulkMode] = useState(false)
   const [sharedStart, setSharedStart] = useState('')
+  const [activePreset, setActivePreset] = useState(0)
   const [subRows, setSubRows] = useState([emptySubRow()])
   const [gcRows, setGcRows] = useState([emptyGcRow()])
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [composerOpen, setComposerOpen] = useState(true)
+  const [busyId, setBusyId] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -120,21 +160,37 @@ export default function BotQuestsSection() {
 
   useEffect(() => { load() }, [load])
 
-  const applySharedStart = (value) => {
+  const applySharedStart = (value, presetMinutes = null) => {
     setSharedStart(value)
+    setActivePreset(presetMinutes)
     setSubRows((rows) => rows.map((r) => ({ ...r, startsAt: value })))
     setGcRows((rows) => rows.map((r) => ({ ...r, startsAt: value })))
   }
 
   const list = mode === 'subs' ? subs : gcs
   const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
     return list.filter((item) => {
-      if (filter === 'live') return item.effectiveActive
-      if (filter === 'soon') return item.scheduled
-      if (filter === 'off') return item.status === 'disabled' || item.active === false || (!item.effectiveActive && !item.scheduled)
-      return true
+      if (filter === 'live' && !item.effectiveActive) return false
+      if (filter === 'soon' && !item.scheduled) return false
+      if (filter === 'off') {
+        const off = item.status === 'disabled' || item.active === false || (!item.effectiveActive && !item.scheduled)
+        if (!off) return false
+      }
+      if (!q) return true
+      const hay = mode === 'subs'
+        ? `${item.chatRef} ${item.id} ${item.reward}`
+        : `${item.id} ${item.startAmount} ${item.targetAmount} ${item.rewardAmount} ${item.targetChatRef || ''} ${item.free}`
+      return hay.toLowerCase().includes(q)
     })
-  }, [list, filter])
+  }, [list, filter, query, mode])
+
+  const counts = useMemo(() => ({
+    all: list.length,
+    live: list.filter((i) => i.effectiveActive).length,
+    soon: list.filter((i) => i.scheduled).length,
+    off: list.filter((i) => i.status === 'disabled' || i.active === false || (!i.effectiveActive && !i.scheduled)).length,
+  }), [list])
 
   const saveSubs = async () => {
     const payload = subRows
@@ -161,9 +217,7 @@ export default function BotQuestsSection() {
       } else {
         const res = await bulkCreateBotSubTasks(payload)
         notifyAdmin(`Создано: ${res.ok}${res.failed ? `, ошибок: ${res.failed}` : ''}`)
-        if (res.errors?.length) {
-          notifyAdmin(res.errors[0].error, { error: true })
-        }
+        if (res.errors?.length) notifyAdmin(res.errors[0].error, { error: true })
       }
       setSubRows([emptySubRow(sharedStart)])
       await load()
@@ -200,9 +254,7 @@ export default function BotQuestsSection() {
       } else {
         const res = await bulkCreateBotChallenges(payload)
         notifyAdmin(`Создано: ${res.ok}${res.failed ? `, ошибок: ${res.failed}` : ''}`)
-        if (res.errors?.length) {
-          notifyAdmin(res.errors[0].error, { error: true })
-        }
+        if (res.errors?.length) notifyAdmin(res.errors[0].error, { error: true })
       }
       setGcRows([emptyGcRow(sharedStart)])
       await load()
@@ -232,6 +284,19 @@ export default function BotQuestsSection() {
     ])
   }
 
+  const runCardAction = async (id, fn, okMsg) => {
+    setBusyId(id)
+    try {
+      await fn()
+      if (okMsg) notifyAdmin(okMsg)
+      await load()
+    } catch (e) {
+      notifyAdmin(e?.message || 'Ошибка', { error: true })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const confirmDelete = async () => {
     if (!deleteTarget) return
     setSaving(true)
@@ -258,33 +323,79 @@ export default function BotQuestsSection() {
     subRewardPaidTotal: '0',
   }
 
+  const cmdPreview = mode === 'subs'
+    ? `+задание ${(subRows[0]?.chatRef || '@channel').trim() || '@channel'} ${subRows[0]?.reward || '2'}${subRows[0]?.limitMode === 'cap' ? ` ${subRows[0].totalCap}ч` : ''}${subRows[0]?.limitMode === 'ttl' ? ` ${subRows[0].ttlValue}${subRows[0].ttlUnit}` : ''}`
+    : `+заданиеч ${gcRows[0]?.startAmount || 100} ${gcRows[0]?.targetAmount || 500} ${gcRows[0]?.rewardAmount || 100}${gcRows[0]?.maxBet ? ` ${gcRows[0].maxBet}` : ''}${gcRows[0]?.chatRef ? ` ${gcRows[0].chatRef}` : ''}${gcRows[0]?.maxUsers ? ` 0/${gcRows[0].maxUsers}` : ''} ${gcRows[0]?.free || '-'}`
+
+  const readyCount = mode === 'subs'
+    ? subRows.filter((r) => r.chatRef.trim()).length
+    : gcRows.length
+
   return (
-    <div className="panel-content bq-root">
+    <div className={`panel-content bq-root bq-theme-${mode}`}>
+      <div className="bq-atmosphere" aria-hidden="true">
+        <span className="bq-orb bq-orb-a" />
+        <span className="bq-orb bq-orb-b" />
+        <span className="bq-grid" />
+      </div>
+
       <header className="bq-hero">
-        <div className="bq-hero-glow" aria-hidden="true" />
-        <div className="bq-hero-copy">
-          <p className="bq-kicker">Owner · Telegram Bot</p>
-          <h2 className="bq-title">Мастер заданий</h2>
+        <div className="bq-hero-main">
+          <div className="bq-badge">
+            <IconSpark />
+            <span>Owner Studio</span>
+          </div>
+          <h2 className="bq-title">Мастер заданий Telegram</h2>
           <p className="bq-lead">
-            Создавайте задания на подписку и игровые челленджи так же, как команды
-            <code> +задание </code> и <code> +заданиеч </code> — но быстрее, пачками и с отложенным стартом.
+            Красивый и быстрый конструктор вместо команд
+            <code>+задание</code> и <code>+заданиеч</code>.
+            Пакеты, отложенный старт, живой статус и мгновенный запуск.
           </p>
+          <div className="bq-hero-actions">
+            <button type="button" className="bq-btn bq-btn-ghost" onClick={load} disabled={loading}>
+              <IconRefresh />
+              {loading ? 'Обновляю…' : 'Обновить'}
+            </button>
+            <button
+              type="button"
+              className="bq-btn bq-btn-primary"
+              onClick={() => setComposerOpen((v) => !v)}
+            >
+              {composerOpen ? 'Скрыть конструктор' : 'Открыть конструктор'}
+            </button>
+          </div>
         </div>
+
         <div className="bq-metrics">
           <div className="bq-metric" style={{ '--i': 0 }}>
-            <span className="bq-metric-label">Подписки в эфире</span>
-            <strong className="bq-metric-value">{ov.subTasks.active}</strong>
-            <span className="bq-metric-sub">из {ov.subTasks.total} · скоро {ov.subTasks.scheduled}</span>
+            <div className="bq-metric-icon bq-metric-cyan"><IconSub /></div>
+            <div>
+              <span className="bq-metric-label">Подписки</span>
+              <strong className="bq-metric-value">{ov.subTasks.active}</strong>
+              <span className="bq-metric-sub">в эфире · {ov.subTasks.scheduled} скоро · всего {ov.subTasks.total}</span>
+            </div>
           </div>
           <div className="bq-metric" style={{ '--i': 1 }}>
-            <span className="bq-metric-label">Челленджи в эфире</span>
-            <strong className="bq-metric-value">{ov.challenges.active}</strong>
-            <span className="bq-metric-sub">скоро {ov.challenges.scheduled} · выкл {ov.challenges.disabled}</span>
+            <div className="bq-metric-icon bq-metric-violet"><IconGc /></div>
+            <div>
+              <span className="bq-metric-label">Челленджи</span>
+              <strong className="bq-metric-value">{ov.challenges.active}</strong>
+              <span className="bq-metric-sub">{ov.challenges.scheduled} скоро · {ov.challenges.disabled} выкл</span>
+            </div>
           </div>
           <div className="bq-metric" style={{ '--i': 2 }}>
-            <span className="bq-metric-label">Выдано за подписки</span>
-            <strong className="bq-metric-value">{ov.subRewardPaidTotal}</strong>
-            <span className="bq-metric-sub">quebalance · всего</span>
+            <div className="bq-metric-icon bq-metric-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+                <ellipse cx="12" cy="7" rx="7" ry="2.6" />
+                <path d="M5 7v10c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V7" />
+                <path d="M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6" />
+              </svg>
+            </div>
+            <div>
+              <span className="bq-metric-label">Выдано</span>
+              <strong className="bq-metric-value">{ov.subRewardPaidTotal}</strong>
+              <span className="bq-metric-sub">quebalance за подписки</span>
+            </div>
           </div>
         </div>
       </header>
@@ -295,9 +406,10 @@ export default function BotQuestsSection() {
             type="button"
             role="tab"
             aria-selected={mode === 'subs'}
-            className={`bq-tab${mode === 'subs' ? ' bq-tab-active' : ''}`}
+            className={`bq-tab${mode === 'subs' ? ' is-active' : ''}`}
             onClick={() => setMode('subs')}
           >
+            <IconSub />
             Подписки
             <span className="bq-tab-count">{subs.length}</span>
           </button>
@@ -305,128 +417,143 @@ export default function BotQuestsSection() {
             type="button"
             role="tab"
             aria-selected={mode === 'gc'}
-            className={`bq-tab${mode === 'gc' ? ' bq-tab-active' : ''}`}
+            className={`bq-tab${mode === 'gc' ? ' is-active' : ''}`}
             onClick={() => setMode('gc')}
           >
+            <IconGc />
             Челленджи
             <span className="bq-tab-count">{gcs.length}</span>
           </button>
+          <span className="bq-tab-glider" data-mode={mode} aria-hidden="true" />
         </div>
 
         <div className="bq-filters">
           {[
-            ['all', 'Все'],
-            ['live', 'В эфире'],
-            ['soon', 'Скоро'],
-            ['off', 'Выкл'],
-          ].map(([id, label]) => (
+            ['all', 'Все', counts.all],
+            ['live', 'В эфире', counts.live],
+            ['soon', 'Скоро', counts.soon],
+            ['off', 'Выкл', counts.off],
+          ].map(([id, label, n]) => (
             <button
               key={id}
               type="button"
-              className={`bq-pill${filter === id ? ' bq-pill-active' : ''}`}
+              className={`bq-pill${filter === id ? ' is-active' : ''}`}
               onClick={() => setFilter(id)}
             >
               {label}
+              <em>{n}</em>
             </button>
           ))}
         </div>
 
-        <div className="bq-toolbar-actions">
-          <button type="button" className="panel-users-btn" onClick={load} disabled={loading}>
-            Обновить
-          </button>
-          <button
-            type="button"
-            className="panel-users-btn panel-users-btn-primary"
-            onClick={() => setComposerOpen((v) => !v)}
-          >
-            {composerOpen ? 'Скрыть мастер' : 'Открыть мастер'}
-          </button>
-        </div>
+        <label className="bq-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="M16.2 16.2L21 21" />
+          </svg>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={mode === 'subs' ? 'Поиск по каналу, id…' : 'Поиск по цели, чату, id…'}
+          />
+        </label>
       </div>
 
-      <div className={`bq-layout${composerOpen ? '' : ' bq-layout-wide'}`}>
+      <div className={`bq-layout${composerOpen ? '' : ' is-wide'}`}>
         {composerOpen && (
-          <aside className="bq-composer panel-shelf">
+          <aside className="bq-composer">
             <div className="bq-composer-head">
-              <h3>{mode === 'subs' ? 'Новые подписки' : 'Новые челленджи'}</h3>
-              <label className="bq-switch">
-                <input
-                  type="checkbox"
-                  checked={bulkMode}
-                  onChange={(e) => setBulkMode(e.target.checked)}
-                />
-                <span>Пакетный режим</span>
-              </label>
+              <div>
+                <p className="bq-kicker">{mode === 'subs' ? 'Subscription builder' : 'Challenge builder'}</p>
+                <h3>{mode === 'subs' ? 'Новые подписки' : 'Новые челленджи'}</h3>
+              </div>
+              <button
+                type="button"
+                className={`bq-toggle${bulkMode ? ' is-on' : ''}`}
+                onClick={() => setBulkMode((v) => !v)}
+                aria-pressed={bulkMode}
+              >
+                <span className="bq-toggle-knob" />
+                <span>Пакет</span>
+              </button>
             </div>
 
-            <div className="bq-schedule">
-              <span className="bq-field-label">Общий старт для пакета</span>
+            <div className="bq-panel bq-schedule">
+              <div className="bq-panel-title">
+                <span>Общий старт пакета</span>
+                {sharedStart ? <em>{fmtDt(new Date(sharedStart).toISOString())}</em> : <em>сразу</em>}
+              </div>
               <input
-                className="panel-users-input"
+                className="bq-input"
                 type="datetime-local"
                 value={sharedStart}
-                onChange={(e) => applySharedStart(e.target.value)}
+                onChange={(e) => applySharedStart(e.target.value, null)}
               />
-              <div className="bq-preset-row">
+              <div className="bq-chip-row">
                 {START_PRESETS.map((p) => (
                   <button
                     key={p.label}
                     type="button"
-                    className="bq-mini"
-                    onClick={() => applySharedStart(presetStart(p.minutes))}
+                    className={`bq-chip-btn${activePreset === p.minutes ? ' is-active' : ''}`}
+                    onClick={() => applySharedStart(presetStart(p.minutes), p.minutes)}
                   >
                     {p.label}
                   </button>
                 ))}
               </div>
-              <p className="bq-hint">
-                Пусто = сразу в меню «Задания». Будущая дата — игроки увидят задание только после старта.
-              </p>
+              <p className="bq-hint">Пустое поле = сразу в меню «Задания». Будущая дата скрывает задание до старта.</p>
             </div>
 
             {mode === 'subs' ? (
               <div className="bq-rows">
                 {(bulkMode ? subRows : subRows.slice(0, 1)).map((row, idx) => (
                   <div key={row.key} className="bq-row" style={{ '--i': idx }}>
-                    <label>
+                    <div className="bq-row-head">
+                      <span>Карточка {idx + 1}</span>
+                      {bulkMode && subRows.length > 1 && (
+                        <button type="button" className="bq-link-danger" onClick={() => setSubRows((rows) => rows.filter((r) => r.key !== row.key))}>
+                          Убрать
+                        </button>
+                      )}
+                    </div>
+                    <label className="bq-field">
                       <span>Канал / чат</span>
                       <input
-                        className="panel-users-input"
-                        placeholder="@CuteGamingNews или https://t.me/…"
+                        className="bq-input"
+                        placeholder="@CuteGamingNews или t.me/…"
                         value={row.chatRef}
                         onChange={(e) => setSubRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, chatRef: e.target.value } : r)))}
                       />
                     </label>
                     <div className="bq-grid-2">
-                      <label>
+                      <label className="bq-field">
                         <span>Награда</span>
                         <input
-                          className="panel-users-input"
+                          className="bq-input"
                           value={row.reward}
                           onChange={(e) => setSubRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, reward: e.target.value } : r)))}
                         />
                       </label>
-                      <label>
+                      <label className="bq-field">
                         <span>Старт</span>
                         <input
-                          className="panel-users-input"
+                          className="bq-input"
                           type="datetime-local"
                           value={row.startsAt}
                           onChange={(e) => setSubRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, startsAt: e.target.value } : r)))}
                         />
                       </label>
                     </div>
-                    <div className="bq-limit-modes">
+                    <div className="bq-seg">
                       {[
                         ['unlimited', 'Безлимит'],
-                        ['cap', 'Лимит людей'],
+                        ['cap', 'Люди'],
                         ['ttl', 'TTL'],
                       ].map(([id, label]) => (
                         <button
                           key={id}
                           type="button"
-                          className={`bq-mini${row.limitMode === id ? ' bq-mini-active' : ''}`}
+                          className={row.limitMode === id ? 'is-active' : ''}
                           onClick={() => setSubRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, limitMode: id } : r)))}
                         >
                           {label}
@@ -434,10 +561,10 @@ export default function BotQuestsSection() {
                       ))}
                     </div>
                     {row.limitMode === 'cap' && (
-                      <label>
-                        <span>Макс. людей (как 30ч)</span>
+                      <label className="bq-field">
+                        <span>Макс. людей</span>
                         <input
-                          className="panel-users-input"
+                          className="bq-input"
                           type="number"
                           min={1}
                           value={row.totalCap}
@@ -447,20 +574,20 @@ export default function BotQuestsSection() {
                     )}
                     {row.limitMode === 'ttl' && (
                       <div className="bq-grid-2">
-                        <label>
+                        <label className="bq-field">
                           <span>TTL</span>
                           <input
-                            className="panel-users-input"
+                            className="bq-input"
                             type="number"
                             min={1}
                             value={row.ttlValue}
                             onChange={(e) => setSubRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, ttlValue: e.target.value } : r)))}
                           />
                         </label>
-                        <label>
+                        <label className="bq-field">
                           <span>Единица</span>
                           <select
-                            className="panel-users-input"
+                            className="bq-input"
                             value={row.ttlUnit}
                             onChange={(e) => setSubRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, ttlUnit: e.target.value } : r)))}
                           >
@@ -472,161 +599,83 @@ export default function BotQuestsSection() {
                         </label>
                       </div>
                     )}
-                    {bulkMode && subRows.length > 1 && (
-                      <button
-                        type="button"
-                        className="bq-row-remove"
-                        onClick={() => setSubRows((rows) => rows.filter((r) => r.key !== row.key))}
-                      >
-                        Убрать строку
-                      </button>
-                    )}
                   </div>
                 ))}
                 {bulkMode && (
-                  <button
-                    type="button"
-                    className="panel-users-btn"
-                    onClick={() => setSubRows((rows) => [...rows, emptySubRow(sharedStart)])}
-                  >
+                  <button type="button" className="bq-btn bq-btn-ghost bq-btn-block" onClick={() => setSubRows((rows) => [...rows, emptySubRow(sharedStart)])}>
                     + Ещё канал
                   </button>
                 )}
-                <div className="bq-preview">
-                  <span className="bq-preview-label">Эквивалент команды</span>
-                  <code>
-                    +задание {(subRows[0]?.chatRef || '@channel').trim() || '@channel'} {subRows[0]?.reward || '2'}
-                    {subRows[0]?.limitMode === 'cap' ? ` ${subRows[0].totalCap}ч` : ''}
-                    {subRows[0]?.limitMode === 'ttl' ? ` ${subRows[0].ttlValue}${subRows[0].ttlUnit}` : ''}
-                  </code>
-                </div>
-                <button
-                  type="button"
-                  className="panel-users-btn panel-users-btn-primary bq-save"
-                  disabled={saving}
-                  onClick={saveSubs}
-                >
-                  {saving ? 'Сохраняю…' : bulkMode ? `Создать ${subRows.filter((r) => r.chatRef.trim()).length || 0} заданий` : 'Создать задание'}
-                </button>
               </div>
             ) : (
               <div className="bq-rows">
                 {(bulkMode ? gcRows : gcRows.slice(0, 1)).map((row, idx) => (
                   <div key={row.key} className="bq-row" style={{ '--i': idx }}>
+                    <div className="bq-row-head">
+                      <span>Челлендж {idx + 1}</span>
+                      {bulkMode && gcRows.length > 1 && (
+                        <button type="button" className="bq-link-danger" onClick={() => setGcRows((rows) => rows.filter((r) => r.key !== row.key))}>
+                          Убрать
+                        </button>
+                      )}
+                    </div>
                     <div className="bq-grid-3">
-                      <label>
-                        <span>Старт КУТ</span>
-                        <input
-                          className="panel-users-input"
-                          type="number"
-                          min={1}
-                          value={row.startAmount}
-                          onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, startAmount: e.target.value } : r)))}
-                        />
+                      <label className="bq-field">
+                        <span>Старт</span>
+                        <input className="bq-input" type="number" min={1} value={row.startAmount} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, startAmount: e.target.value } : r)))} />
                       </label>
-                      <label>
-                        <span>Цель КУТ</span>
-                        <input
-                          className="panel-users-input"
-                          type="number"
-                          min={1}
-                          value={row.targetAmount}
-                          onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, targetAmount: e.target.value } : r)))}
-                        />
+                      <label className="bq-field">
+                        <span>Цель</span>
+                        <input className="bq-input" type="number" min={1} value={row.targetAmount} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, targetAmount: e.target.value } : r)))} />
                       </label>
-                      <label>
+                      <label className="bq-field">
                         <span>Награда</span>
-                        <input
-                          className="panel-users-input"
-                          type="number"
-                          min={1}
-                          value={row.rewardAmount}
-                          onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, rewardAmount: e.target.value } : r)))}
-                        />
+                        <input className="bq-input" type="number" min={1} value={row.rewardAmount} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, rewardAmount: e.target.value } : r)))} />
                       </label>
+                    </div>
+                    <div className="bq-progress-preview" aria-hidden="true">
+                      <div className="bq-progress-track">
+                        <div
+                          className="bq-progress-fill"
+                          style={{
+                            width: `${Math.min(100, Math.max(8, (Number(row.startAmount) / Math.max(Number(row.targetAmount) || 1, 1)) * 100))}%`,
+                          }}
+                        />
+                      </div>
+                      <span>{row.startAmount || 0} → {row.targetAmount || 0}</span>
                     </div>
                     <div className="bq-grid-2">
-                      <label>
-                        <span>Макс. ставка (0 = нет)</span>
-                        <input
-                          className="panel-users-input"
-                          type="number"
-                          min={0}
-                          value={row.maxBet}
-                          onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, maxBet: e.target.value } : r)))}
-                        />
+                      <label className="bq-field">
+                        <span>Макс. ставка</span>
+                        <input className="bq-input" type="number" min={0} placeholder="0 = нет" value={row.maxBet} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, maxBet: e.target.value } : r)))} />
                       </label>
-                      <label>
-                        <span>Слоты (пусто = ∞)</span>
-                        <input
-                          className="panel-users-input"
-                          type="number"
-                          min={0}
-                          placeholder="10"
-                          value={row.maxUsers}
-                          onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, maxUsers: e.target.value } : r)))}
-                        />
+                      <label className="bq-field">
+                        <span>Слоты</span>
+                        <input className="bq-input" type="number" min={0} placeholder="∞" value={row.maxUsers} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, maxUsers: e.target.value } : r)))} />
                       </label>
                     </div>
-                    <label>
+                    <label className="bq-field">
                       <span>Чат (опционально)</span>
-                      <input
-                        className="panel-users-input"
-                        placeholder="@CuteGamingChat или любой чат"
-                        value={row.chatRef}
-                        onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, chatRef: e.target.value } : r)))}
-                      />
+                      <input className="bq-input" placeholder="@CuteGamingChat" value={row.chatRef} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, chatRef: e.target.value } : r)))} />
                     </label>
                     <div className="bq-grid-2">
-                      <label>
+                      <label className="bq-field">
                         <span>Старт</span>
-                        <input
-                          className="panel-users-input"
-                          type="datetime-local"
-                          value={row.startsAt}
-                          onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, startsAt: e.target.value } : r)))}
-                        />
+                        <input className="bq-input" type="datetime-local" value={row.startsAt} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, startsAt: e.target.value } : r)))} />
                       </label>
-                      <div className="bq-limit-modes" style={{ alignSelf: 'end' }}>
-                        <button
-                          type="button"
-                          className={`bq-mini${row.free === '-' ? ' bq-mini-active' : ''}`}
-                          onClick={() => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, free: '-' } : r)))}
-                        >
-                          Обычный −
-                        </button>
-                        <button
-                          type="button"
-                          className={`bq-mini${row.free === '+' ? ' bq-mini-active' : ''}`}
-                          onClick={() => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, free: '+' } : r)))}
-                        >
-                          Бесплатный +
-                        </button>
+                      <div className="bq-seg bq-seg-end">
+                        <button type="button" className={row.free === '-' ? 'is-active' : ''} onClick={() => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, free: '-' } : r)))}>Обычный</button>
+                        <button type="button" className={row.free === '+' ? 'is-active' : ''} onClick={() => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, free: '+' } : r)))}>Free +</button>
                       </div>
                     </div>
-                    {bulkMode && gcRows.length > 1 && (
-                      <button
-                        type="button"
-                        className="bq-row-remove"
-                        onClick={() => setGcRows((rows) => rows.filter((r) => r.key !== row.key))}
-                      >
-                        Убрать строку
-                      </button>
-                    )}
                   </div>
                 ))}
                 {bulkMode && (
                   <div className="bq-bulk-actions">
+                    <button type="button" className="bq-btn bq-btn-ghost" onClick={() => setGcRows((rows) => [...rows, emptyGcRow(sharedStart)])}>+ Ещё</button>
                     <button
                       type="button"
-                      className="panel-users-btn"
-                      onClick={() => setGcRows((rows) => [...rows, emptyGcRow(sharedStart)])}
-                    >
-                      + Ещё челлендж
-                    </button>
-                    <button
-                      type="button"
-                      className="panel-users-btn"
+                      className="bq-btn bq-btn-ghost"
                       onClick={() => {
                         const base = gcRows[0] || emptyGcRow(sharedStart)
                         setGcRows((rows) => [
@@ -644,186 +693,158 @@ export default function BotQuestsSection() {
                         ])
                       }}
                     >
-                      + Клон с целью +100
+                      Клон +100 цели
                     </button>
                   </div>
                 )}
-                <div className="bq-preview">
-                  <span className="bq-preview-label">Эквивалент команды</span>
-                  <code>
-                    +заданиеч {gcRows[0]?.startAmount || 100} {gcRows[0]?.targetAmount || 500} {gcRows[0]?.rewardAmount || 100}
-                    {gcRows[0]?.maxBet ? ` ${gcRows[0].maxBet}` : ''}
-                    {gcRows[0]?.chatRef ? ` ${gcRows[0].chatRef}` : ''}
-                    {gcRows[0]?.maxUsers ? ` 0/${gcRows[0].maxUsers}` : ''}
-                    {` ${gcRows[0]?.free || '-'}`}
-                  </code>
-                </div>
-                <button
-                  type="button"
-                  className="panel-users-btn panel-users-btn-primary bq-save"
-                  disabled={saving}
-                  onClick={saveGcs}
-                >
-                  {saving ? 'Создаю…' : bulkMode ? `Создать ${gcRows.length} челленджей` : 'Создать челлендж'}
-                </button>
               </div>
             )}
+
+            <div className="bq-preview">
+              <div className="bq-preview-top">
+                <span>Эквивалент команды</span>
+                <button
+                  type="button"
+                  className="bq-link"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(cmdPreview)
+                      notifyAdmin('Команда скопирована')
+                    } catch {
+                      notifyAdmin('Не удалось скопировать', { error: true })
+                    }
+                  }}
+                >
+                  Копировать
+                </button>
+              </div>
+              <code>{cmdPreview}</code>
+            </div>
+
+            <button
+              type="button"
+              className="bq-btn bq-btn-primary bq-btn-block bq-save"
+              disabled={saving}
+              onClick={mode === 'subs' ? saveSubs : saveGcs}
+            >
+              {saving
+                ? 'Сохраняю…'
+                : bulkMode
+                  ? `Создать ${readyCount} ${mode === 'subs' ? 'заданий' : 'челленджей'}`
+                  : mode === 'subs'
+                    ? 'Создать задание'
+                    : 'Создать челлендж'}
+            </button>
           </aside>
         )}
 
         <section className="bq-list">
+          <div className="bq-list-head">
+            <h3>{mode === 'subs' ? 'Лента подписок' : 'Лента челленджей'}</h3>
+            <span>{filtered.length} из {list.length}</span>
+          </div>
+
           {loading ? (
-            <div className="bq-empty">Загрузка…</div>
+            <div className="bq-empty">
+              <div className="bq-loader" />
+              <strong>Загружаю задания…</strong>
+            </div>
           ) : filtered.length === 0 ? (
             <div className="bq-empty">
               <strong>Пока пусто</strong>
-              <p>Создайте первое задание в мастере слева — или снимите фильтр.</p>
-            </div>
-          ) : mode === 'subs' ? (
-            <div className="bq-cards">
-              {filtered.map((item, idx) => {
-                const chip = statusChip(item)
-                return (
-                  <article key={item.id} className="bq-card" style={{ '--i': idx }}>
-                    <div className="bq-card-top">
-                      <div>
-                        <h4 className="bq-card-title">{item.chatRef}</h4>
-                        <p className="bq-card-sub">#{item.id} · награда {item.reward}</p>
-                      </div>
-                      <span className={`bq-chip ${chip.cls}`}>{chip.text}</span>
-                    </div>
-                    <div className="bq-card-stats">
-                      <div><em>{item.stats?.clicks ?? 0}</em><span>клики</span></div>
-                      <div><em>{item.stats?.subs ?? 0}</em><span>подписки</span></div>
-                      <div><em>{item.stats?.skips ?? 0}</em><span>скипы</span></div>
-                      <div><em>{item.stats?.rewardTotal ?? 0}</em><span>выдано</span></div>
-                    </div>
-                    <div className="bq-card-meta">
-                      <span>Старт: {fmtDt(item.startsAt)}</span>
-                      <span>
-                        {item.totalCap != null
-                          ? `Лимит: ${item.stats?.subs ?? 0}/${item.totalCap}`
-                          : item.ttlExpiresAt
-                            ? `До: ${fmtDt(item.ttlExpiresAt)}`
-                            : 'Безлимит'}
-                      </span>
-                    </div>
-                    <div className="bq-card-actions">
-                      {item.scheduled && (
-                        <button
-                          type="button"
-                          className="bq-mini bq-mini-active"
-                          onClick={async () => {
-                            try {
-                              await patchBotSubTask(item.id, { activateNow: true })
-                              notifyAdmin('Запущено сейчас')
-                              await load()
-                            } catch (e) {
-                              notifyAdmin(e?.message || 'Ошибка', { error: true })
-                            }
-                          }}
-                        >
-                          Запустить сейчас
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="bq-mini"
-                        onClick={async () => {
-                          try {
-                            await patchBotSubTask(item.id, { active: !item.active })
-                            await load()
-                          } catch (e) {
-                            notifyAdmin(e?.message || 'Ошибка', { error: true })
-                          }
-                        }}
-                      >
-                        {item.active ? 'Пауза' : 'Включить'}
-                      </button>
-                      <button
-                        type="button"
-                        className="bq-mini bq-mini-danger"
-                        onClick={() => setDeleteTarget({ kind: 'sub', id: item.id, label: item.chatRef })}
-                      >
-                        Удалить
-                      </button>
-                    </div>
-                  </article>
-                )
-              })}
+              <p>Создайте задание в конструкторе или снимите фильтр / поиск.</p>
             </div>
           ) : (
             <div className="bq-cards">
               {filtered.map((item, idx) => {
-                const chip = statusChip(item)
+                const st = statusMeta(item)
+                const busy = busyId === item.id
+                if (mode === 'subs') {
+                  return (
+                    <article key={item.id} className={`bq-card bq-card-sub is-${st.cls}`} style={{ '--i': idx }}>
+                      <div className="bq-card-top">
+                        <div>
+                          <h4>{item.chatRef}</h4>
+                          <p>#{item.id} · награда <b>{item.reward}</b></p>
+                        </div>
+                        <span className={`bq-status is-${st.cls}${st.pulse ? ' is-pulse' : ''}`}>{st.text}</span>
+                      </div>
+                      <div className="bq-card-stats">
+                        <div><em>{item.stats?.clicks ?? 0}</em><span>клики</span></div>
+                        <div><em>{item.stats?.subs ?? 0}</em><span>подписки</span></div>
+                        <div><em>{item.stats?.skips ?? 0}</em><span>скипы</span></div>
+                        <div><em>{item.stats?.rewardTotal ?? 0}</em><span>выдано</span></div>
+                      </div>
+                      <div className="bq-card-meta">
+                        <span>Старт · {fmtDt(item.startsAt)}</span>
+                        <span>
+                          {item.totalCap != null
+                            ? `Лимит · ${item.stats?.subs ?? 0}/${item.totalCap}`
+                            : item.ttlExpiresAt
+                              ? `До · ${fmtDt(item.ttlExpiresAt)}`
+                              : 'Безлимит'}
+                        </span>
+                      </div>
+                      <div className="bq-card-actions">
+                        {item.scheduled && (
+                          <button type="button" className="bq-btn-mini is-accent" disabled={busy} onClick={() => runCardAction(item.id, () => patchBotSubTask(item.id, { activateNow: true }), 'Запущено сейчас')}>
+                            Запустить
+                          </button>
+                        )}
+                        <button type="button" className="bq-btn-mini" disabled={busy} onClick={() => runCardAction(item.id, () => patchBotSubTask(item.id, { active: !item.active }))}>
+                          {item.active ? 'Пауза' : 'Включить'}
+                        </button>
+                        <button type="button" className="bq-btn-mini is-danger" disabled={busy} onClick={() => setDeleteTarget({ kind: 'sub', id: item.id, label: item.chatRef })}>
+                          Удалить
+                        </button>
+                      </div>
+                    </article>
+                  )
+                }
+                const slotPct = item.maxUsers
+                  ? Math.min(100, Math.round((item.completedUsers / item.maxUsers) * 100))
+                  : 0
                 return (
-                  <article key={item.id} className="bq-card bq-card-gc" style={{ '--i': idx }}>
+                  <article key={item.id} className={`bq-card bq-card-gc is-${st.cls}`} style={{ '--i': idx }}>
                     <div className="bq-card-top">
                       <div>
-                        <h4 className="bq-card-title">
-                          {item.startAmount} → {item.targetAmount}
-                          <span className="bq-reward"> +{item.rewardAmount}</span>
+                        <h4>
+                          {item.startAmount}
+                          <span className="bq-arrow">→</span>
+                          {item.targetAmount}
+                          <span className="bq-reward">+{item.rewardAmount}</span>
                         </h4>
-                        <p className="bq-card-sub">
-                          #{item.id} · {item.targetChatRef || 'любой чат'} · {item.free === '+' ? 'бесплатный' : 'обычный'}
-                        </p>
+                        <p>#{item.id} · {item.targetChatRef || 'любой чат'} · {item.free === '+' ? 'free' : 'обычный'}</p>
                       </div>
-                      <span className={`bq-chip ${chip.cls}`}>{chip.text}</span>
+                      <span className={`bq-status is-${st.cls}${st.pulse ? ' is-pulse' : ''}`}>{st.text}</span>
                     </div>
-                    <div className="bq-card-stats">
+                    <div className="bq-card-stats bq-card-stats-3">
                       <div>
-                        <em>
-                          {item.completedUsers}
-                          {item.maxUsers != null ? `/${item.maxUsers}` : ''}
-                        </em>
+                        <em>{item.completedUsers}{item.maxUsers != null ? `/${item.maxUsers}` : ''}</em>
                         <span>слоты</span>
+                        {item.maxUsers != null && (
+                          <div className="bq-mini-bar"><i style={{ width: `${slotPct}%` }} /></div>
+                        )}
                       </div>
-                      <div><em>{item.betLimit ?? '∞'}</em><span>макс. ставка</span></div>
+                      <div><em>{item.betLimit ?? '∞'}</em><span>ставка</span></div>
                       <div><em>{fmtDt(item.startsAt)}</em><span>старт</span></div>
                     </div>
                     <div className="bq-card-actions">
                       {item.scheduled && (
-                        <button
-                          type="button"
-                          className="bq-mini bq-mini-active"
-                          onClick={async () => {
-                            try {
-                              await patchBotChallenge(item.id, { activateNow: true })
-                              notifyAdmin('Челлендж в эфире')
-                              await load()
-                            } catch (e) {
-                              notifyAdmin(e?.message || 'Ошибка', { error: true })
-                            }
-                          }}
-                        >
-                          Запустить сейчас
+                        <button type="button" className="bq-btn-mini is-accent" disabled={busy} onClick={() => runCardAction(item.id, () => patchBotChallenge(item.id, { activateNow: true }), 'Челлендж в эфире')}>
+                          Запустить
                         </button>
                       )}
-                      <button type="button" className="bq-mini" onClick={() => duplicateGc(item)}>
-                        Дублировать
+                      <button type="button" className="bq-btn-mini" disabled={busy} onClick={() => duplicateGc(item)}>
+                        Дубль
                       </button>
                       {item.status !== 'disabled' ? (
-                        <button
-                          type="button"
-                          className="bq-mini bq-mini-danger"
-                          onClick={() => setDeleteTarget({ kind: 'gc', id: item.id, label: `#${item.id} ${item.startAmount}→${item.targetAmount}` })}
-                        >
-                          Отключить
+                        <button type="button" className="bq-btn-mini is-danger" disabled={busy} onClick={() => setDeleteTarget({ kind: 'gc', id: item.id, label: `#${item.id} ${item.startAmount}→${item.targetAmount}` })}>
+                          Выкл
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          className="bq-mini"
-                          onClick={async () => {
-                            try {
-                              await patchBotChallenge(item.id, { status: 'active' })
-                              await load()
-                            } catch (e) {
-                              notifyAdmin(e?.message || 'Ошибка', { error: true })
-                            }
-                          }}
-                        >
-                          Включить
+                        <button type="button" className="bq-btn-mini is-accent" disabled={busy} onClick={() => runCardAction(item.id, () => patchBotChallenge(item.id, { status: 'active' }), 'Включено')}>
+                          Вкл
                         </button>
                       )}
                     </div>
@@ -840,8 +861,8 @@ export default function BotQuestsSection() {
         title={deleteTarget?.kind === 'sub' ? 'Удалить задание?' : 'Отключить челлендж?'}
         description={
           deleteTarget?.kind === 'sub'
-            ? `«${deleteTarget?.label}» будет удалено вместе с привязкой. Статистика подписок сохранится в истории done.`
-            : `«${deleteTarget?.label}» станет недоступен игрокам (soft-disable, как −заданиеч).`
+            ? `«${deleteTarget?.label}» будет удалено. История выполнений сохранится.`
+            : `«${deleteTarget?.label}» станет недоступен игрокам (как −заданиеч).`
         }
         confirmText={deleteTarget?.kind === 'sub' ? 'Удалить' : 'Отключить'}
         danger
