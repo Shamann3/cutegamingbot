@@ -118,6 +118,17 @@ workers:
       # Пауза перед polling: старый worker успевает закрыть сессию после SIGTERM.
       - key: BOT_POLLING_START_DELAY
         value: "8"
+      # Мягкий перезапуск (см. блок в корневом .env): сначала TEST, потом ENABLED=1.
+      - key: BOT_SOFT_RESTART_ENABLED
+        value: "0"
+      - key: BOT_SOFT_RESTART_TEST
+        value: "1"
+      - key: BOT_SOFT_RESTART_INTERVAL_SEC
+        value: "3600"
+      - key: BOT_SOFT_RESTART_INITIAL_DELAY_SEC
+        value: "3600"
+      - key: BOT_SOFT_RESTART_GRACE_SEC
+        value: "3"
       - key: BOT_TOKEN
         value: REPLACE_ME
       - key: ADMIN_BOT_TOKEN

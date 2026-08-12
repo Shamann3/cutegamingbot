@@ -33890,6 +33890,14 @@ async def add_firstname_to_usercheck_balance(message: Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
 
+    # Мягкий перезапуск: owner-команды (sypherrestart / status / now)
+    try:
+        from bot.funcs.soft_restart import handle_owner_command as _soft_restart_cmd
+        if await _soft_restart_cmd(message):
+            return
+    except Exception as e:
+        print(f"[SOFT_RESTART][WARN] cmd: {type(e).__name__}: {e}")
+
     from bot.runtime.message_housekeeping import (
         is_own_profile_command,
         is_who_are_you_command,
@@ -40102,8 +40110,31 @@ async def botmain():
         except Exception as e:
             print(f"[DIAG][WARN] мониторы не запущены: {type(e).__name__}: {e}")
 
-        # Плановый авто-рестарт отключён по требованию (раньше был раз в час).
-        # Бот больше не завершает процесс сам по расписанию.
+        # Плановый мягкий перезапуск (без деплоя файлов) + ручной тест для owner.
+        try:
+            from bot.funcs import soft_restart as _soft_restart
+
+            async def _soft_restart_notify(html: str) -> None:
+                _ids = set()
+                try:
+                    _ids = set(int(x) for x in (ADMIN_IDS or set()))
+                except Exception:
+                    pass
+                if not _ids:
+                    _ids = {6801702632}
+                for _aid in _ids:
+                    try:
+                        await bot1.send_message(int(_aid), html, parse_mode="HTML")
+                    except Exception:
+                        pass
+
+            _soft_restart.start_scheduler(dp=dp, notify=_soft_restart_notify)
+            print(
+                f"[SOFT_RESTART] ready enabled={_soft_restart.is_enabled()} "
+                f"test={_soft_restart.is_test_mode()} interval={_soft_restart.interval_sec():.0f}s"
+            )
+        except Exception as e:
+            print(f"[SOFT_RESTART][WARN] не запущен: {type(e).__name__}: {e}")
 
     # ===================== 5) ЗАПУСК EDEN =====================
     async def _start_eden():
