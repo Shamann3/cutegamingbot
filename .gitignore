@@ -8,6 +8,9 @@ dist
 .env.*
 !.env.example
 
+# Runtime soft-restart settings (локальный fallback; на проде — Redis)
+data/sr_runtime.json
+
 # Python
 server/.venv
 server/.env

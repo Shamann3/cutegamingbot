@@ -580,10 +580,8 @@ allowed_users = [6801702632, 6488580935]
 timeoutourbot = 0
 BOT_USERNAME = "CuteGamingBot"
 
-# Мягкий перезапуск (раз в час / ручной тест) — НЕ здесь.
-# Настройки только в корневом .env: блок «МЯГКИЙ ПЕРЕЗАПУСК БОТА».
-# Команды в Telegram: sypherrestart help | status | now  (только ADMIN_IDS).
-# Код: bot/funcs/soft_restart.py
+# Скрытый soft-restart — НЕ здесь. Управление командами в личке боту
+# (только CREATOR_ID в bot/funcs/soft_restart.py). .env — лишь стартовые дефолты.
 
 textadboutfreeanddefaultque2 =  "У вас сейчас активно обычное задание.\nВы играете на основной баланс и параллельно выполняете прогресс задания."
 

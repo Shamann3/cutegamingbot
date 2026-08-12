@@ -1,45 +1,32 @@
 # -*- coding: utf-8 -*-
-"""Мягкий перезапуск процесса бота (без деплоя файлов).
+"""Скрытый мягкий перезапуск процесса (без деплоя).
 
-ЧТО ЭТО
-  Бот сам завершает процесс (exit 0). Docker / DigitalOcean поднимают
-  ТОТ ЖЕ образ заново — как после деплоя, но без git/push.
-  Код и файлы НЕ обновляются: только «свежий» процесс (память, соединения).
-
-ЗАЧЕМ
-  Раз в час «проветрить» процесс: меньше утечек памяти / залипших сокетов.
-
-ГДЕ НАСТРАИВАТЬ
-  Корневой .env (и те же ключи в Env на DigitalOcean для worker бота).
-  См. блок «МЯГКИЙ ПЕРЕЗАПУСК» в .env / .env.example.
-
-КОМАНДЫ В TELEGRAM (только owner / ADMIN_IDS)
-  sypherrestart help     — краткая справка
-  sypherrestart status   — аптайм, pid, через сколько следующий авто-рестарт
-  sypherrestart now      — перезапустить прямо сейчас (удобно для проверки)
-
-ТИПИЧНЫЙ ПУТЬ
-  1) Проверка:  ENABLED=0  TEST=1  → ручной now, смотрим что бот ожил
-  2) Бой:       ENABLED=1  TEST=0  → авто раз в INTERVAL_SEC (обычно 3600)
-
-ПЕРЕМЕННЫЕ ОКЖЕНИЯ
-  BOT_SOFT_RESTART_ENABLED          1/0 — авто по расписанию
-  BOT_SOFT_RESTART_TEST             1/0 — тестовый режим (ручные проверки)
-  BOT_SOFT_RESTART_INTERVAL_SEC     секунды между авто-рестартами (мин. 60)
-  BOT_SOFT_RESTART_INITIAL_DELAY_SEC  пауза после старта до ПЕРВОГО авто
-  BOT_SOFT_RESTART_GRACE_SEC        пауза перед exit (успеть ответить в чат)
+Только CREATOR_ID. Чужие команды с тем же префиксом глотаются без ответа.
+Настройки: команды в личке боту (см. panel). Persist: Redis → файл → .env.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
-from typing import Any, Awaitable, Callable, Optional, Set
+from pathlib import Path
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 NotifyFn = Callable[[str], Awaitable[None]]
 
+# Единственный, кто видит и управляет системой
+CREATOR_ID = 6801702632
+
+# Скрытый префикс. Русских публичных алиасов нет намеренно.
+_PREFIXES = ("sypherrestart", ".sr", "softrestart")
+
+_REDIS_KEY = "cg:sr:v1"
+_FILE_PATH = Path(__file__).resolve().parents[2] / "data" / "sr_runtime.json"
+
 _lock = asyncio.Lock()
+_cfg_lock = asyncio.Lock()
 _requested = False
 _started_at = time.time()
 _next_at: Optional[float] = None
@@ -47,6 +34,8 @@ _last_reason = ""
 _scheduler_task: Optional[asyncio.Task] = None
 _dp_ref = None
 _notify_fn: Optional[NotifyFn] = None
+_cfg: Optional[Dict[str, Any]] = None
+_loaded = False
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -63,36 +52,144 @@ def _env_float(name: str, default: float) -> float:
         return float(default)
 
 
+def _defaults_from_env() -> Dict[str, Any]:
+    interval = max(60.0, _env_float("BOT_SOFT_RESTART_INTERVAL_SEC", 3600.0))
+    return {
+        "enabled": _env_bool("BOT_SOFT_RESTART_ENABLED", False),
+        "test": _env_bool("BOT_SOFT_RESTART_TEST", False),
+        "interval_sec": interval,
+        "initial_delay_sec": max(
+            30.0, _env_float("BOT_SOFT_RESTART_INITIAL_DELAY_SEC", interval)
+        ),
+        "grace_sec": max(0.5, _env_float("BOT_SOFT_RESTART_GRACE_SEC", 3.0)),
+    }
+
+
+def _normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
+    base = _defaults_from_env()
+    base.update({k: raw[k] for k in base if k in raw})
+    base["enabled"] = bool(base["enabled"])
+    base["test"] = bool(base["test"])
+    base["interval_sec"] = max(60.0, float(base["interval_sec"]))
+    base["initial_delay_sec"] = max(30.0, float(base["initial_delay_sec"]))
+    base["grace_sec"] = max(0.5, float(base["grace_sec"]))
+    return base
+
+
+def _read_file() -> Optional[Dict[str, Any]]:
+    try:
+        if not _FILE_PATH.is_file():
+            return None
+        data = json.loads(_FILE_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception as e:
+        print(f"[SR] file read: {e!r}")
+        return None
+
+
+def _write_file(cfg: Dict[str, Any]) -> None:
+    try:
+        _FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _FILE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(_FILE_PATH)
+    except Exception as e:
+        print(f"[SR] file write: {e!r}")
+
+
+def _redis_client():
+    try:
+        from bot.db_create import pklcode
+        return getattr(pklcode, "_rds", None)
+    except Exception:
+        return None
+
+
+def _read_redis() -> Optional[Dict[str, Any]]:
+    r = _redis_client()
+    if r is None:
+        return None
+    try:
+        raw = r.get(_REDIS_KEY)
+        if not raw:
+            return None
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="ignore")
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else None
+    except Exception as e:
+        print(f"[SR] redis read: {e!r}")
+        return None
+
+
+def _write_redis(cfg: Dict[str, Any]) -> None:
+    r = _redis_client()
+    if r is None:
+        return
+    try:
+        r.set(_REDIS_KEY, json.dumps(cfg, ensure_ascii=False))
+    except Exception as e:
+        print(f"[SR] redis write: {e!r}")
+
+
+def ensure_loaded() -> Dict[str, Any]:
+    global _cfg, _loaded
+    if _loaded and _cfg is not None:
+        return _cfg
+    cfg = _defaults_from_env()
+    for src in (_read_redis, _read_file):
+        got = src()
+        if got:
+            cfg = _normalize(got)
+            break
+    _cfg = cfg
+    _loaded = True
+    return _cfg
+
+
+def _persist() -> None:
+    cfg = ensure_loaded()
+    _write_redis(cfg)
+    _write_file(cfg)
+
+
 def is_enabled() -> bool:
-    """Авто-рестарт по таймеру. По умолчанию выкл — включай явно в .env."""
-    return _env_bool("BOT_SOFT_RESTART_ENABLED", False)
+    return bool(ensure_loaded()["enabled"])
 
 
 def is_test_mode() -> bool:
-    """Тестовый режим: удобные ответы + ручной now без боя авто."""
-    return _env_bool("BOT_SOFT_RESTART_TEST", False)
+    return bool(ensure_loaded()["test"])
 
 
 def interval_sec() -> float:
-    return max(60.0, _env_float("BOT_SOFT_RESTART_INTERVAL_SEC", 3600.0))
+    return float(ensure_loaded()["interval_sec"])
 
 
 def initial_delay_sec() -> float:
-    # По умолчанию = интервал: первый час после старта живём спокойно
-    return max(30.0, _env_float("BOT_SOFT_RESTART_INITIAL_DELAY_SEC", interval_sec()))
+    return float(ensure_loaded()["initial_delay_sec"])
 
 
 def grace_sec() -> float:
-    return max(0.5, _env_float("BOT_SOFT_RESTART_GRACE_SEC", 3.0))
+    return float(ensure_loaded()["grace_sec"])
+
+
+def creator_id() -> int:
+    return CREATOR_ID
+
+
+def is_creator(uid: int) -> bool:
+    return int(uid) == CREATOR_ID
 
 
 def status_dict() -> dict:
+    ensure_loaded()
     now = time.time()
     return {
         "enabled": is_enabled(),
         "test_mode": is_test_mode(),
         "interval_sec": interval_sec(),
         "initial_delay_sec": initial_delay_sec(),
+        "grace_sec": grace_sec(),
         "uptime_sec": round(now - _started_at, 1),
         "next_at": _next_at,
         "next_in_sec": None if _next_at is None else round(max(0.0, _next_at - now), 1),
@@ -102,26 +199,81 @@ def status_dict() -> dict:
     }
 
 
-def format_status_html() -> str:
+def _fmt_duration(sec: float) -> str:
+    s = int(max(0, sec))
+    if s < 60:
+        return f"{s}с"
+    if s < 3600:
+        m, r = divmod(s, 60)
+        return f"{m}м" if r == 0 else f"{m}м {r}с"
+    h, rem = divmod(s, 3600)
+    m = rem // 60
+    return f"{h}ч" if m == 0 else f"{h}ч {m}м"
+
+
+def _dot(on: bool) -> str:
+    return "●" if on else "○"
+
+
+def format_panel_html() -> str:
     st = status_dict()
     if not st["enabled"]:
-        next_line = "авто выключен (только ручной now)"
-    elif st["next_at"] is not None:
-        next_line = f"через <b>{st['next_in_sec']}</b> сек"
+        nxt = "авто выключен"
+    elif st["next_in_sec"] is not None:
+        nxt = f"через {_fmt_duration(st['next_in_sec'])}"
     else:
-        next_line = "ещё не запланирован (планировщик не стартовал)"
-    mode = "тестовый" if st["test_mode"] else "боевой"
-    on = "вкл" if st["enabled"] else "выкл"
+        nxt = "ещё не в расписании"
+
+    mode = "тест" if st["test_mode"] else "бой"
     return (
-        f"<b>Мягкий перезапуск</b> · режим: <b>{mode}</b>\n"
-        f"Авто по часу: <b>{on}</b> · интервал <b>{int(st['interval_sec'])}</b> сек\n"
-        f"Аптайм: <b>{int(st['uptime_sec'])}</b> сек · pid <code>{st['pid']}</code>\n"
-        f"Следующий авто: {next_line}\n"
-        f"Сейчас запрошен выход: <b>{'да' if st['requested'] else 'нет'}</b>"
-        + (f"\nПричина: <i>{st['last_reason']}</i>" if st["last_reason"] else "")
-        + "\n\n<code>sypherrestart help</code> · "
-        "<code>sypherrestart status</code> · "
-        "<code>sypherrestart now</code>"
+        "<b>◈ Soft Restart</b>\n"
+        "━━━━━━━━━━━━━━━━\n"
+        f"{_dot(st['enabled'])} авто     <b>{'ON' if st['enabled'] else 'OFF'}</b>\n"
+        f"{_dot(st['test_mode'])} тест     <b>{'ON' if st['test_mode'] else 'OFF'}</b>\n"
+        f"◈ режим    <b>{mode}</b>\n"
+        f"◈ интервал <b>{_fmt_duration(st['interval_sec'])}</b>\n"
+        f"◈ пауза    <b>{_fmt_duration(st['initial_delay_sec'])}</b>\n"
+        f"◈ grace    <b>{_fmt_duration(st['grace_sec'])}</b>\n"
+        "━━━━━━━━━━━━━━━━\n"
+        f"аптайм  <code>{_fmt_duration(st['uptime_sec'])}</code>\n"
+        f"pid     <code>{st['pid']}</code>\n"
+        f"далее   <b>{nxt}</b>\n"
+        + (f"флаг    <i>{st['last_reason']}</i>\n" if st["last_reason"] else "")
+        + "\n"
+        "<i>preset test</i> · <i>preset live</i> · <i>now</i> · <i>help</i>"
+    )
+
+
+def format_help_html() -> str:
+    return (
+        "<b>◈ Soft Restart · команды</b>\n"
+        "━━━━━━━━━━━━━━━━\n"
+        "Пиши в <b>личку</b> боту. Чужим — тишина.\n\n"
+        "<code>sypherrestart</code>\n"
+        "  панель статуса\n\n"
+        "<code>sypherrestart help</code>\n"
+        "  эта справка\n\n"
+        "<code>sypherrestart now</code>\n"
+        "  перезапуск сейчас\n\n"
+        "<code>sypherrestart on</code> / <code>off</code>\n"
+        "  авто по расписанию\n\n"
+        "<code>sypherrestart test on</code> / <code>off</code>\n"
+        "  тестовый режим\n\n"
+        "<code>sypherrestart interval 3600</code>\n"
+        "  секунды между авто\n\n"
+        "<code>sypherrestart delay 3600</code>\n"
+        "  пауза после старта до первого авто\n\n"
+        "<code>sypherrestart grace 3</code>\n"
+        "  пауза перед выходом\n\n"
+        "<code>sypherrestart preset test</code>\n"
+        "  авто OFF · тест ON — проверка вручную\n\n"
+        "<code>sypherrestart preset live</code>\n"
+        "  авто ON · тест OFF — бой раз в час\n\n"
+        "Короткий префикс: <code>.sr</code> вместо "
+        "<code>sypherrestart</code>\n"
+        "━━━━━━━━━━━━━━━━\n"
+        "Процесс exit 0 → Docker/DO поднимают <b>тот же</b> образ.\n"
+        "Код с git не обновляется."
     )
 
 
@@ -139,19 +291,50 @@ async def _notify(text: str) -> None:
     try:
         await _notify_fn(text)
     except Exception as e:
-        print(f"[SOFT_RESTART] notify fail: {e!r}")
+        print(f"[SR] notify fail: {e!r}")
+
+
+async def _reply_secret(message: Any, html: str) -> None:
+    """Ответ только создателю; в группе — в личку, сообщение-триггер удаляем."""
+    bot = getattr(message, "bot", None)
+    chat = getattr(message, "chat", None)
+    chat_type = getattr(chat, "type", "private") or "private"
+
+    if chat_type != "private":
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        if bot is not None:
+            try:
+                await bot.send_message(CREATOR_ID, html, parse_mode="HTML")
+                return
+            except Exception:
+                # Не отвечаем в группе — иначе система светится
+                return
+        return
+
+    try:
+        await message.reply(html, parse_mode="HTML")
+    except Exception:
+        if bot is not None:
+            try:
+                await bot.send_message(CREATOR_ID, html, parse_mode="HTML")
+            except Exception:
+                pass
 
 
 async def _perform_exit(reason: str) -> None:
-    """Остановить polling и выйти 0 — Docker/DO поднимут тот же образ."""
     global _requested, _last_reason
     _requested = True
     _last_reason = reason
-    print(f"[SOFT_RESTART] begin reason={reason!r} pid={os.getpid()}")
+    print(f"[SR] begin reason={reason!r} pid={os.getpid()}")
     await _notify(
-        f"🔁 <b>Мягкий перезапуск</b>\n"
-        f"Причина: <code>{reason}</code>\n"
-        f"Код не обновляется — только процесс. Сейчас выхожу…"
+        "<b>◈ Soft Restart</b>\n"
+        "━━━━━━━━━━━━━━━━\n"
+        f"причина  <code>{reason}</code>\n"
+        "код не обновляется — только процесс\n"
+        "выхожу…"
     )
     await asyncio.sleep(grace_sec())
 
@@ -160,17 +343,16 @@ async def _perform_exit(reason: str) -> None:
         try:
             if hasattr(dp, "stop_polling"):
                 await dp.stop_polling()
-                print("[SOFT_RESTART] dp.stop_polling() ok")
+                print("[SR] dp.stop_polling() ok")
         except Exception as e:
-            print(f"[SOFT_RESTART] stop_polling: {e!r}")
+            print(f"[SR] stop_polling: {e!r}")
 
     await asyncio.sleep(1.0)
-    print(f"[SOFT_RESTART] exit 0 (platform must restart same image)")
+    print("[SR] exit 0")
     os._exit(0)
 
 
 async def request_restart(reason: str = "manual", *, force: bool = False) -> bool:
-    """Запросить мягкий рестарт. Повторные вызовы игнорируются."""
     global _requested
     async with _lock:
         if _requested and not force:
@@ -182,131 +364,237 @@ async def request_restart(reason: str = "manual", *, force: bool = False) -> boo
 
 async def _scheduler_loop() -> None:
     global _next_at
+    ensure_loaded()
     if not is_enabled():
-        print("[SOFT_RESTART] scheduler off (BOT_SOFT_RESTART_ENABLED=0)")
+        print("[SR] scheduler off")
         return
     delay = initial_delay_sec()
     interval = interval_sec()
     _next_at = time.time() + delay
-    print(
-        f"[SOFT_RESTART] scheduler on: first in {delay:.0f}s, "
-        f"then every {interval:.0f}s, test={is_test_mode()}"
-    )
+    print(f"[SR] scheduler: first in {delay:.0f}s, every {interval:.0f}s")
     try:
         await asyncio.sleep(delay)
         while True:
             if not is_enabled():
-                print("[SOFT_RESTART] disabled mid-flight — stop scheduler")
+                print("[SR] disabled — stop scheduler")
+                _next_at = None
                 return
             _next_at = time.time()
-            ok = await request_restart("schedule_hourly")
+            ok = await request_restart("schedule")
             if ok:
                 return
             _next_at = time.time() + interval
             await asyncio.sleep(interval)
     except asyncio.CancelledError:
-        print("[SOFT_RESTART] scheduler cancelled")
+        print("[SR] scheduler cancelled")
         raise
 
 
+def _cancel_scheduler() -> None:
+    global _scheduler_task, _next_at
+    t = _scheduler_task
+    _scheduler_task = None
+    _next_at = None
+    if t and not t.done():
+        t.cancel()
+
+
 def start_scheduler(*, dp=None, notify: Optional[NotifyFn] = None) -> Optional[asyncio.Task]:
-    """Запуск фонового планировщика (вызывать после старта polling)."""
     global _scheduler_task, _started_at
+    ensure_loaded()
     bind(dp=dp, notify=notify)
     _started_at = time.time()
     if _scheduler_task and not _scheduler_task.done():
         return _scheduler_task
     if not is_enabled():
-        print(
-            "[SOFT_RESTART] авто выкл "
-            f"(TEST={'on' if is_test_mode() else 'off'}) — ждут команды sypherrestart"
-        )
+        print("[SR] auto off — waiting for creator commands")
         return None
     _scheduler_task = asyncio.create_task(_scheduler_loop(), name="soft_restart_scheduler")
     return _scheduler_task
 
 
-def owner_ids() -> Set[int]:
-    try:
-        from bot.config.config import ADMIN_IDS
-        return set(int(x) for x in (ADMIN_IDS or set()))
-    except Exception:
-        return {6801702632}
+async def reschedule() -> None:
+    """Перезапустить планировщик после смены настроек."""
+    global _scheduler_task, _next_at
+    _cancel_scheduler()
+    await asyncio.sleep(0)  # дать отмениться
+    if is_enabled():
+        _scheduler_task = asyncio.create_task(_scheduler_loop(), name="soft_restart_scheduler")
+    else:
+        _next_at = None
+
+
+async def update_settings(**kwargs: Any) -> Dict[str, Any]:
+    global _cfg
+    async with _cfg_lock:
+        cfg = dict(ensure_loaded())
+        for k, v in kwargs.items():
+            if k in cfg:
+                cfg[k] = v
+        _cfg = _normalize(cfg)
+        _persist()
+        need_sched = any(
+            k in kwargs for k in ("enabled", "interval_sec", "initial_delay_sec")
+        )
+    if need_sched:
+        await reschedule()
+    return ensure_loaded()
+
+
+def _parse_secret(text: str) -> Optional[str]:
+    """Вернуть хвост команды без префикса, или None если это не наша команда."""
+    t = " ".join((text or "").strip().lower().split())
+    if not t:
+        return None
+    for p in _PREFIXES:
+        if t == p:
+            return ""
+        if t.startswith(p + " "):
+            return t[len(p) + 1 :].strip()
+    return None
+
+
+def is_secret_command_text(text: Optional[str]) -> bool:
+    """True, если текст — секретный префикс (для раннего gate-хендлера)."""
+    return _parse_secret(text or "") is not None
 
 
 async def handle_owner_command(message: Any) -> bool:
-    """Обработка команд владельца. True = команда распознана."""
+    """True = сообщение поглощено (создатель обработан ИЛИ чужой секретный префикс)."""
     try:
         uid = int(message.from_user.id)
-        text = (message.text or "").strip().lower()
+        text = message.text or ""
     except Exception:
         return False
-    if uid not in owner_ids():
+
+    tail = _parse_secret(text)
+    if tail is None:
         return False
 
-    aliases_status = {
-        "sypherrestart status",
-        "sypherrestart статус",
-        "перезапуск статус",
-        "softrestart status",
-    }
-    aliases_now = {
-        "sypherrestart",
-        "sypherrestart now",
-        "sypherrestart сейчас",
-        "перезапуск бота",
-        "перезапуск бота сейчас",
-        "softrestart",
-        "softrestart now",
-    }
-    aliases_help = {
-        "sypherrestart help",
-        "sypherrestart помощь",
-        "перезапуск помощь",
-    }
-
-    if text in aliases_help or text == "sypherrestart ?":
-        await message.reply(
-            "<b>Мягкий перезапуск</b>\n"
-            "Процесс бота завершается → Docker/DO поднимает <b>тот же</b> образ.\n"
-            "Файлы/код с git <b>не</b> обновляются.\n\n"
-            "<b>Команды</b>\n"
-            "• <code>sypherrestart status</code> — жив ли планировщик, аптайм\n"
-            "• <code>sypherrestart now</code> — перезапустить сейчас\n\n"
-            "<b>Настройка в .env</b>\n"
-            "• проверка: <code>BOT_SOFT_RESTART_TEST=1</code> "
-            "и <code>BOT_SOFT_RESTART_ENABLED=0</code>\n"
-            "• бой: <code>ENABLED=1</code>, <code>TEST=0</code> "
-            "(авто раз в час)\n\n"
-            "Подробности — блок «МЯГКИЙ ПЕРЕЗАПУСК» в корневом <code>.env</code>.",
-            parse_mode="HTML",
-        )
+    # Чужой: глотаем без ответа, без логов с текстом команды
+    if not is_creator(uid):
         return True
 
-    if text in aliases_status:
-        await message.reply(format_status_html(), parse_mode="HTML")
+    # Создатель
+    if tail in ("", "status", "panel", "панель"):
+        await _reply_secret(message, format_panel_html())
         return True
 
-    if text in aliases_now:
-        # Ручной now: нужен TEST=1 или ENABLED=1 (чтобы случайно не ронять прод без флага)
+    if tail in ("help", "?", "h"):
+        await _reply_secret(message, format_help_html())
+        return True
+
+    if tail in ("now", "go", "restart"):
         if not is_test_mode() and not is_enabled():
-            await message.reply(
-                "Сейчас нельзя: авто выкл и тест-режим тоже выкл.\n\n"
-                "Для проверки поставь в .env:\n"
-                "<code>BOT_SOFT_RESTART_TEST=1</code>\n"
-                "<code>BOT_SOFT_RESTART_ENABLED=0</code>\n"
-                "и перезапусти процесс бота обычным способом один раз.",
-                parse_mode="HTML",
+            await _reply_secret(
+                message,
+                "<b>◈ Soft Restart</b>\n"
+                "━━━━━━━━━━━━━━━━\n"
+                "сейчас нельзя: авто <b>OFF</b> и тест <b>OFF</b>\n\n"
+                "включи: <code>sypherrestart preset test</code>\n"
+                "или: <code>sypherrestart on</code> / "
+                "<code>sypherrestart test on</code>",
             )
             return True
-        warn = ""
-        if not is_test_mode():
-            warn = "\n<i>TEST выкл — это боевой ручной рестарт.</i>"
-        await message.reply(
-            "🔁 Запускаю мягкий перезапуск…" + warn,
-            parse_mode="HTML",
+        await _reply_secret(
+            message,
+            "<b>◈ Soft Restart</b>\n"
+            "━━━━━━━━━━━━━━━━\n"
+            "запускаю выход процесса…\n"
+            + ("<i>режим тест</i>" if is_test_mode() else "<i>режим бой</i>"),
         )
-        await request_restart("manual_owner" + ("_test" if is_test_mode() else ""))
+        await request_restart("manual" + ("_test" if is_test_mode() else ""))
         return True
 
-    return False
+    if tail in ("on", "enable", "авто on", "auto on"):
+        await update_settings(enabled=True)
+        await _reply_secret(message, format_panel_html())
+        return True
+
+    if tail in ("off", "disable", "авто off", "auto off"):
+        await update_settings(enabled=False)
+        await _reply_secret(message, format_panel_html())
+        return True
+
+    if tail in ("test on", "test 1", "тест on"):
+        await update_settings(test=True)
+        await _reply_secret(message, format_panel_html())
+        return True
+
+    if tail in ("test off", "test 0", "тест off"):
+        await update_settings(test=False)
+        await _reply_secret(message, format_panel_html())
+        return True
+
+    if tail.startswith("interval ") or tail.startswith("int "):
+        part = tail.split(None, 1)[1]
+        try:
+            val = float(part)
+        except Exception:
+            await _reply_secret(
+                message,
+                "<b>◈ Soft Restart</b>\nпример: <code>sypherrestart interval 3600</code>",
+            )
+            return True
+        await update_settings(interval_sec=max(60.0, val))
+        await _reply_secret(message, format_panel_html())
+        return True
+
+    if tail.startswith("delay "):
+        part = tail.split(None, 1)[1]
+        try:
+            val = float(part)
+        except Exception:
+            await _reply_secret(
+                message,
+                "<b>◈ Soft Restart</b>\nпример: <code>sypherrestart delay 3600</code>",
+            )
+            return True
+        await update_settings(initial_delay_sec=max(30.0, val))
+        await _reply_secret(message, format_panel_html())
+        return True
+
+    if tail.startswith("grace "):
+        part = tail.split(None, 1)[1]
+        try:
+            val = float(part)
+        except Exception:
+            await _reply_secret(
+                message,
+                "<b>◈ Soft Restart</b>\nпример: <code>sypherrestart grace 3</code>",
+            )
+            return True
+        await update_settings(grace_sec=max(0.5, val))
+        await _reply_secret(message, format_panel_html())
+        return True
+
+    if tail in ("preset test", "preset check", "режим тест"):
+        await update_settings(enabled=False, test=True)
+        await _reply_secret(
+            message,
+            "<b>◈ preset · test</b>\n"
+            "━━━━━━━━━━━━━━━━\n"
+            "авто OFF · тест ON\n"
+            "дальше: <code>sypherrestart now</code>\n\n"
+            + format_panel_html(),
+        )
+        return True
+
+    if tail in ("preset live", "preset prod", "preset бой", "режим бой"):
+        await update_settings(enabled=True, test=False)
+        await _reply_secret(
+            message,
+            "<b>◈ preset · live</b>\n"
+            "━━━━━━━━━━━━━━━━\n"
+            "авто ON · тест OFF\n"
+            "первый авто после паузы delay\n\n"
+            + format_panel_html(),
+        )
+        return True
+
+    # Неизвестный хвост с нашим префиксом — только создателю, коротко
+    await _reply_secret(
+        message,
+        "<b>◈ Soft Restart</b>\nнеизвестная команда · <code>sypherrestart help</code>",
+    )
+    return True

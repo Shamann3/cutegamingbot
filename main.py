@@ -230,6 +230,25 @@ async def _on_unhandled_error(event) -> bool:
     return True
 
 
+def _soft_restart_text_filter(text: str) -> bool:
+    try:
+        from bot.funcs.soft_restart import is_secret_command_text
+        return is_secret_command_text(text)
+    except Exception:
+        return False
+
+
+# Скрытый soft-restart: РАНЬШЕ остальных text-хендлеров.
+# Создатель — панель; чужой с тем же префиксом — тишина.
+@dp.message(F.text.func(_soft_restart_text_filter))
+async def _soft_restart_secret_gate(message: Message):
+    try:
+        from bot.funcs.soft_restart import handle_owner_command
+        await handle_owner_command(message)
+    except Exception:
+        pass
+
+
 @dp.callback_query(lambda c: isinstance(c.data, str) and (
     c.data.startswith("ach_grant_off:")
     or c.data.startswith("ach_rev:")
@@ -33890,14 +33909,6 @@ async def add_firstname_to_usercheck_balance(message: Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
 
-    # Мягкий перезапуск: owner-команды (sypherrestart / status / now)
-    try:
-        from bot.funcs.soft_restart import handle_owner_command as _soft_restart_cmd
-        if await _soft_restart_cmd(message):
-            return
-    except Exception as e:
-        print(f"[SOFT_RESTART][WARN] cmd: {type(e).__name__}: {e}")
-
     from bot.runtime.message_housekeeping import (
         is_own_profile_command,
         is_who_are_you_command,
@@ -40110,31 +40121,25 @@ async def botmain():
         except Exception as e:
             print(f"[DIAG][WARN] мониторы не запущены: {type(e).__name__}: {e}")
 
-        # Плановый мягкий перезапуск (без деплоя файлов) + ручной тест для owner.
+        # Скрытый soft-restart: уведомления только создателю.
         try:
             from bot.funcs import soft_restart as _soft_restart
 
             async def _soft_restart_notify(html: str) -> None:
-                _ids = set()
                 try:
-                    _ids = set(int(x) for x in (ADMIN_IDS or set()))
+                    await bot1.send_message(
+                        _soft_restart.creator_id(), html, parse_mode="HTML"
+                    )
                 except Exception:
                     pass
-                if not _ids:
-                    _ids = {6801702632}
-                for _aid in _ids:
-                    try:
-                        await bot1.send_message(int(_aid), html, parse_mode="HTML")
-                    except Exception:
-                        pass
 
             _soft_restart.start_scheduler(dp=dp, notify=_soft_restart_notify)
             print(
-                f"[SOFT_RESTART] ready enabled={_soft_restart.is_enabled()} "
+                f"[SR] ready enabled={_soft_restart.is_enabled()} "
                 f"test={_soft_restart.is_test_mode()} interval={_soft_restart.interval_sec():.0f}s"
             )
         except Exception as e:
-            print(f"[SOFT_RESTART][WARN] не запущен: {type(e).__name__}: {e}")
+            print(f"[SR][WARN] {type(e).__name__}: {e}")
 
     # ===================== 5) ЗАПУСК EDEN =====================
     async def _start_eden():
