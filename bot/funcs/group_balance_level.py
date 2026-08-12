@@ -62,10 +62,11 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
 }
 
 # Premium custom emoji на кнопках бч (icon_custom_emoji_id)
+ICON_HERO_BEACH = "5251344521546965676"        # большой эмодзи на главном «бч»
 ICON_BALANCE_KUT = "6028338546736107668"       # ★ на сумме баланса группы
 ICON_RAISE_LEVEL = "5404534885324988233"       # ★ на «Поднять уровень…»
 ICON_BACK = "5226660202035554522"              # назад к балансу
-# «Как это работает» — без icon_custom_emoji (только текст ★☆)
+ICON_DETAILS = "5472146462362048818"           # «Подробнее» / условия
 
 _ROOT = Path(__file__).resolve().parents[2]
 _DATA_DIR = _ROOT / "data" / "group_balance_level"
@@ -513,8 +514,29 @@ def raise_cta_label(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Optio
     return str(cfg.get("raise_button_text") or "Поднять уровень группы")
 
 
+def _ru_users_word(n: int) -> str:
+    """1 пользователь, 2 пользователя, 5 пользователей."""
+    n = abs(int(n or 0))
+    n10, n100 = n % 10, n % 100
+    if n10 == 1 and n100 != 11:
+        return "пользователь"
+    if 2 <= n10 <= 4 and not (12 <= n100 <= 14):
+        return "пользователя"
+    return "пользователей"
+
+
+def _ru_donors_word(n: int) -> str:
+    n = abs(int(n or 0))
+    n10, n100 = n % 10, n % 100
+    if n10 == 1 and n100 != 11:
+        return "донатер"
+    if 2 <= n10 <= 4 and not (12 <= n100 <= 14):
+        return "донатера"
+    return "донатеров"
+
+
 def _society_pulse_lines(report: Dict[str, Any], *, cfg: Optional[Dict[str, Any]] = None) -> str:
-    """Маркетинговый разбор силы группы для экрана условий."""
+    """Короткий разбор силы группы — понятно новичку."""
     cfg = cfg or get_settings()
     act = report.get("activity") if isinstance(report.get("activity"), dict) else {}
     don = report.get("donors") if isinstance(report.get("donors"), dict) else {}
@@ -526,39 +548,57 @@ def _society_pulse_lines(report: Dict[str, Any], *, cfg: Optional[Dict[str, Any]
     d = _as_float(don.get("score"), 0.0)
     pct = _as_float(report.get("pct"), 0.0)
     max_pct = _as_int(cfg.get("atmosphere_max_bonus_pct"), 40)
+    members_fmt = f"{members:,}".replace(",", ".") if members > 0 else "0"
 
     if a >= 0.75:
-        pulse = "чат дышит полной грудью"
+        pulse = "группа очень живая"
     elif a >= 0.4:
-        pulse = "чат в хорошем тонусе"
+        pulse = "группа в хорошем ритме"
     elif a >= 0.15:
-        pulse = "чат ещё разогревается"
+        pulse = "группа постепенно оживает"
     else:
-        pulse = "чат пока тихий"
+        pulse = "группа пока тихая"
 
     if d >= 0.7:
-        donor_line = "донатерское ядро сильное — группа на особом счету"
+        donor_line = "сильная поддержка донатерами"
     elif d >= 0.35:
         donor_line = "есть заметная поддержка донатерами"
     elif donators >= 1:
-        donor_line = "поддержка есть, но ядро ещё формируется"
+        donor_line = "донаты уже есть, ядро ещё растёт"
     else:
-        donor_line = "донатерского ядра пока нет — рост идёт через общение"
+        donor_line = "рост идёт через общение в чате"
 
-    people = f"{writers} писали за месяц" if writers else "за месяц почти никто не писал"
+    lines = [
+        f"<b>Пульс группы</b>",
+        f"{pulse}.",
+    ]
     if members > 0:
-        people = f"из ~{members} в группе · {people}"
-    if qualified > 0:
-        people += f" · {qualified} в ритме чата"
-
-    return (
-        f"<b>Пульс группы</b>\n"
-        f"{pulse}. {people}.\n"
-        f"{donor_line}"
-        + (f" · учтено донатеров: {donators}" if donators else "")
-        + f".\n"
-        f"Бонус к макс. ставке сейчас: <b>+{pct:g}%</b> из возможных +{max_pct}%."
+        if writers > 0:
+            lines.append(
+                f"Из ~<b>{members_fmt}</b> {_ru_users_word(members)} в группе "
+                f"за месяц писали <b>{writers}</b>."
+            )
+        else:
+            lines.append(
+                f"Из ~<b>{members_fmt}</b> {_ru_users_word(members)} в группе "
+                f"за месяц почти никто не писал."
+            )
+    elif writers > 0:
+        lines.append(f"За месяц писали <b>{writers}</b>.")
+    if qualified > 0 and qualified != writers:
+        lines.append(f"В устойчивом ритме чата: <b>{qualified}</b>.")
+    if donators > 0:
+        lines.append(
+            f"{donor_line} · в расчёте <b>{donators}</b> {_ru_donors_word(donators)} "
+            f"(кто писал и поддерживал проект)."
+        )
+    else:
+        lines.append(f"{donor_line}.")
+    lines.append(
+        f"Бонус к потолку ставки сейчас: <b>+{pct:g}%</b> "
+        f"(максимум в проекте +{max_pct}%)."
     )
+    return "\n".join(lines)
 
 
 def build_details_html(
@@ -569,7 +609,7 @@ def build_details_html(
     atmosphere_report: Optional[Dict[str, Any]] = None,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Условия при текущем уровне + разбор группы (маркетинг + ясность)."""
+    """«Подробнее»: все детали коротко и ясно для новичка."""
     cfg = cfg or get_settings()
     level = get_chat_level(chat_id)
     bal = max(0, int(float(chat_balance or 0)))
@@ -580,7 +620,7 @@ def build_details_html(
         bal, chat_id=chat_id, atmosphere_pct=atmo_now, cfg=cfg,
     )
     cap = effective_stake_cap(chat_id, atmosphere_pct=atmo_now, cfg=cfg)
-    base_cap = stake_cap_for_level(level, cfg) if level > 0 else _as_int(cfg.get("level_0_cap"), 30)
+    base_cap = stake_cap_for_level(level, cfg)
     if level >= 5:
         base_cap = None
     atmo_on = bool(cfg.get("atmosphere_enabled", True))
@@ -596,72 +636,78 @@ def build_details_html(
         return str(v) if v is not None else "—"
 
     if cap is None:
-        now_lim = "ставки <b>без лимита уровня</b>"
-        lim_explain = "Вершина открыта: потолок уровня вас больше не держит."
+        lim_block = (
+            f"Сейчас можно ставить <b>без лимита уровня</b>.\n"
+            f"Группа на вершине — потолок уровня вас не ограничивает."
+        )
     else:
-        now_lim = f"ставки <b>до {cap} кут</b>"
+        lim_block = f"Сейчас в обычных играх группы ставки <b>до {cap} кут</b>."
         if atmo_on and atmo_now > 0.05 and base_cap is not None:
-            lim_explain = (
-                f"База уровня {level}: <b>{base_cap}</b> кут → "
-                f"с живой группой <b>+{atmo_now:g}%</b> = <b>{cap}</b> кут."
+            lim_block += (
+                f"\nКак получилось: база уровня {level} — <b>{base_cap}</b> кут, "
+                f"живая группа дала <b>+{atmo_now:g}%</b> → итого <b>{cap}</b>."
             )
         elif base_cap is not None:
-            lim_explain = f"Базовый потолок уровня {level}: <b>{base_cap}</b> кут."
-        else:
-            lim_explain = f"Текущий потолок: <b>{cap}</b> кут."
+            lim_block += f"\nЭто базовый потолок уровня <b>{level}</b>."
 
     if level >= 5:
         finale = (
             f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
             f"<b>Вершина открыта</b>\n"
-            f"{stars_label(5)} · группа на максимуме статуса."
+            f"{stars_label(5)} · выше поднимать некуда."
         )
     elif teaser:
         finale = (
             f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
-            f"<b>Следующий шаг статуса</b>\n"
+            f"<b>Как поднять потолок</b>\n"
             f"{teaser}\n"
-            f"<i>Вы поднимаете группу — и свою метку в проекте.</i>"
+            f"<i>Оплата открывает всем в чате больший лимит — "
+            f"и метку вам в профиле.</i>"
         )
     else:
         finale = (
             f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
-            f"<b>Скоро новый уровень</b>\n"
-            f"Загляните чуть позже — откроется новый шаг роста."
+            f"<b>Следующий уровень скоро</b>\n"
+            f"Загляните чуть позже."
         )
 
     if atmo_on:
         pulse = _society_pulse_lines(report if report else {"pct": atmo_now}, cfg=cfg)
-        live_howto = (
-            f"Живая группа может поднять потолок ещё до <b>+{atmo_max}%</b> "
-            f"за счёт общения и поддержки донатерами (учитываем тех, кто пишет в чате). "
-            f"Пример: база 100 и +20% → ставки до 120."
+        bonus_how = (
+            f"Чем активнее чат и заметнее поддержка донатерами "
+            f"(считаем тех, кто <b>пишет</b> в группе), "
+            f"тем выше может быть потолок — до <b>+{atmo_max}%</b> к базе уровня.\n"
+            f"Пример: база 100 и +20% → ставки до 120 кут."
         )
     else:
-        pulse = "Бонус живой группы сейчас выключен."
-        live_howto = "Администратор проекта отключил бонус к макс. ставке от силы чата."
+        pulse = "<b>Пульс группы</b>\nБонус от живой группы сейчас выключен."
+        bonus_how = "Бонус к потолку от активности чата отключён администратором."
 
     return (
         f"<tg-emoji emoji-id='5472146462362048818'>💡</tg-emoji> "
-        f"<b>Условия группы сейчас</b>\n\n"
+        f"<b>Баланс группы — коротко</b>\n\n"
+        f"<tg-emoji emoji-id='{ICON_BALANCE_KUT}'>⭐️</tg-emoji> "
+        f"На балансе группы: <b>{bal_fmt}</b> кут\n"
+        f"<i>Общая касса чата: выигрыши платятся отсюда, проигрыши возвращаются сюда.</i>\n\n"
         f"<tg-emoji emoji-id='5267229058659264159'>🟢</tg-emoji> "
-        f"<b>{bal_fmt}</b> кут · уровень <b>{level}</b> · {stars_label(level)}\n"
-        f"{now_lim}\n"
-        f"{lim_explain}\n"
+        f"Уровень группы: <b>{level}</b> · {stars_label(level)}\n"
+        f"{lim_block}\n"
         f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji> "
-        f"Комфортная ставка ≈ <b>{rec}</b> кут\n\n"
+        f"Комфортная ставка сейчас ≈ <b>{rec}</b> кут "
+        f"<i>(ориентир, не обязанность)</i>\n\n"
         f"<blockquote>"
         f"{pulse}\n\n"
-        f"<b>Что это значит для игры</b>\n"
-        f"• потолок обычных ставок в группе\n"
-        f"• рекомендуемую ставку\n"
-        f"• вес группы в проекте\n\n"
-        f"<b>Что не меняет</b>\n"
+        f"<b>Зачем это новичку</b>\n"
+        f"• <b>Баланс</b> — сколько кут у чата на игры\n"
+        f"• <b>Уровень</b> — какой базовый потолок ставки открыт всем\n"
+        f"• <b>Живая группа</b> — активность может чуть поднять этот потолок\n"
+        f"• <b>Поднять уровень</b> — вклад звёздами → выше лимит для всех + метка вам\n\n"
+        f"<b>Что бонус не меняет</b>\n"
         f"• сумму на балансе группы\n"
         f"• ваши личные куты\n"
         f"• бесплатные задания\n\n"
-        f"<b>Как устроен бонус</b>\n"
-        f"{live_howto}"
+        f"<b>Как считается бонус</b>\n"
+        f"{bonus_how}"
         f"</blockquote>\n\n"
         f"{finale}\n\n"
         f"<b>Базовые потолки по уровням</b>\n"
@@ -715,14 +761,9 @@ def build_main_screen_html(
     atmosphere_report: Optional[Dict[str, Any]] = None,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Первый экран «бч»: только сумма баланса + premium emoji. Дальше — кнопки."""
-    del chat_id, atmosphere_pct, atmosphere_report, cfg  # детали на следующих экранах
-    bal = max(0, int(float(chat_balance or 0)))
-    bal_fmt = f"{bal:,}".replace(",", ".")
-    return (
-        f"<tg-emoji emoji-id='{ICON_BALANCE_KUT}'>⭐️</tg-emoji> "
-        f"<b>{bal_fmt}</b> кут"
-    )
+    """Главный «бч» как раньше: только hero premium-эмодзи. Сумма — на кнопке."""
+    del chat_id, chat_balance, atmosphere_pct, atmosphere_report, cfg
+    return f"<tg-emoji emoji-id='{ICON_HERO_BEACH}'>🏖</tg-emoji>"
 
 
 def build_main_keyboard(
@@ -732,11 +773,12 @@ def build_main_keyboard(
     atmosphere_pct: float = 0.0,
     cfg: Optional[Dict[str, Any]] = None,
 ):
-    """Кнопки с главного «бч»: условия → апгрейд."""
+    """Как раньше: сумма на кнопке → апгрейд → Подробнее."""
     from aiogram.types import InlineKeyboardMarkup
 
     cfg = cfg or get_settings()
     bal = max(0, int(float(chat_balance or 0)))
+    bal_fmt = f"{bal:,}".replace(",", ".")
     style = balance_health_style(
         bal, chat_id=chat_id, atmosphere_pct=atmosphere_pct, cfg=cfg,
     )
@@ -744,8 +786,8 @@ def build_main_keyboard(
 
     rows = [
         [_btn(
-            text="Статус и условия",
-            callback_data=f"group_balance_details:{bal}",
+            text=f"{bal_fmt} кут",
+            callback_data="group_balance_overview",
             style=style,
             icon_custom_emoji_id=ICON_BALANCE_KUT,
         )],
@@ -757,6 +799,12 @@ def build_main_keyboard(
             style="primary",
             icon_custom_emoji_id=ICON_RAISE_LEVEL,
         )])
+    rows.append([_btn(
+        text="Подробнее",
+        callback_data=f"group_balance_details:{bal}",
+        style="default",
+        icon_custom_emoji_id=ICON_DETAILS,
+    )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
