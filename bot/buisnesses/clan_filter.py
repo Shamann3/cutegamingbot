@@ -15,18 +15,19 @@ from aiogram.enums import ParseMode  # Для ParseMode из aiogram.enums
 from aiogram.types import CallbackQuery
 from aiogram.types import Message
 
-user_clan_control = {}
-user_message_rename = {}
-user_message_createclan = {}
-user_message_deleteclan = {}
-user_message_joinclan = {}
-user_message_attackclan = {}
-user_message_moiclan = {}
-user_message_vusenie = {}
-user_message_ponizenie = {}
-user_bebebe = {}
-user_cooldowns = {}
-user_ras = {}
+from bot.db_create.pklcode import LazyGameStore
+user_clan_control = LazyGameStore("user_clan_control")
+user_message_rename = LazyGameStore("user_message_rename")
+user_message_createclan = LazyGameStore("user_message_createclan")
+user_message_deleteclan = LazyGameStore("user_message_deleteclan")
+user_message_joinclan = LazyGameStore("user_message_joinclan")
+user_message_attackclan = LazyGameStore("user_message_attackclan")
+user_message_moiclan = LazyGameStore("user_message_moiclan")
+user_message_vusenie = LazyGameStore("user_message_vusenie")
+user_message_ponizenie = LazyGameStore("user_message_ponizenie")
+user_bebebe = LazyGameStore("user_bebebe")
+user_cooldowns = LazyGameStore("user_cooldowns_clan")
+user_ras = LazyGameStore("user_ras")
 
 ITEMS_PER_PAGE = 10
 

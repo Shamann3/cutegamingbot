@@ -28,6 +28,7 @@ _FILES = (
     "child_go",
     "release_old",
     "old_released",
+    "pkl_flushed",
 )
 
 
@@ -119,18 +120,20 @@ def _do_handoff(old: subprocess.Popen, cmd: list[str]) -> subprocess.Popen:
         _clear("handoff_request", "child_ready", "child_go", "release_old", "old_released")
         return old
 
-    _log("handoff: child ready → release old")
+    _log("handoff: child ready → release old (old will flush pkl first)")
     _touch("release_old")
-    # Старый сам гасит polling; если завис — SIGTERM
-    if not _wait_file("old_released", old, timeout=40.0):
+    # Старый: flush pkl → stop polling → old_released. Без flush кнопки умрут.
+    if not _wait_file("old_released", old, timeout=60.0):
         _log("handoff: old_released timeout — SIGTERM")
+    if not _exists("pkl_flushed"):
+        _log("handoff: WARN pkl_flushed missing — buttons may be stale")
     _stop_proc(old, timeout=20.0)
 
-    # Короткая пауза: Telethon session file / TCP
-    time.sleep(1.0)
+    # Пауза: Redis settle + Telethon session file / TCP
+    time.sleep(1.2)
     _touch("child_go")
-    _clear("handoff_request", "release_old", "old_released")
-    _log("handoff: child_go — new instance takes traffic")
+    _clear("handoff_request", "release_old", "old_released", "pkl_flushed")
+    _log("handoff: child_go — new instance adopts Redis and takes traffic")
     return warm
 
 

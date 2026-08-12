@@ -1,5 +1,6 @@
 from main import *
-user_message_crash = {}
+from bot.db_create.pklcode import LazyGameStore
+user_message_crash = LazyGameStore("user_message_crash")
 @dp.message()
 async def crash(message: Message):
     if message.text [ :4 ] in [ "/cra" , "краш34123412" , "Краш34123412" , "/краш34123412" , "🚀 Краш34123412" ]:

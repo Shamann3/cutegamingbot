@@ -14,13 +14,14 @@ translator = Translator('ru')  # Указываем целевой язык, н�
 
 
 
-user_message_craftl = {}
-pagecraft_cooldowns = {}
-slots_cooldowns = {}
-bask_cooldowns = {}
-bowling_cooldowns = {}
-dart_cooldowns = {}
-foot_cooldowns = {}
+from bot.db_create.pklcode import LazyGameStore
+user_message_craftl = LazyGameStore("user_message_craftl")
+pagecraft_cooldowns = LazyGameStore("pagecraft_cooldowns")
+slots_cooldowns = LazyGameStore("slots_cooldowns_useitems")
+bask_cooldowns = LazyGameStore("bask_cooldowns")
+bowling_cooldowns = LazyGameStore("bowling_cooldowns")
+dart_cooldowns = LazyGameStore("dart_cooldowns")
+foot_cooldowns = LazyGameStore("foot_cooldowns")
 
 REST = 1.5
 def get_crafting_navigation_buttons(page, total_pages):

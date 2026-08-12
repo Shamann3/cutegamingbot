@@ -202,6 +202,21 @@ STORE_EXPIRY_OVERRIDES: Dict[str, float] = {
     "SEND_REQUEST_ACTIONS": 7 * 24 * 3600.0,
 }
 
+# Сторы, которые пишутся в Redis СРАЗУ (без debounce) — защита кнопок от рестарта.
+STORE_WRITE_THROUGH: Set[str] = {
+    "PREP_CALLBACK_ACTIONS",
+    "GIFT_CALLBACK_ACTIONS",
+    "SKIP_CALLBACK_ACTIONS",
+    "SPEEDCONC_CALLBACK_ACTIONS",
+    "SEND_REQUEST_ACTIONS",
+    "gamesorelinline",
+    "button_inlinegamesorel",
+    "gamesmine_inmine",
+    "games_memory_inline",
+    "rps_games",
+    "inline_game_scah",
+}
+
 
 def register_store_expiry(name: str, seconds: float) -> None:
     """
@@ -216,8 +231,20 @@ def register_store_expiry(name: str, seconds: float) -> None:
         inst.expiry_seconds = float(seconds)
 
 
+def register_store_write_through(name: str, enabled: bool = True) -> None:
+    """Включить/выключить немедленный flush в Redis после каждой мутации."""
+    if enabled:
+        STORE_WRITE_THROUGH.add(str(name))
+    else:
+        STORE_WRITE_THROUGH.discard(str(name))
+
+
 def _expiry_for(name: str) -> float:
     return float(STORE_EXPIRY_OVERRIDES.get(name, DEFAULT_EXPIRY_SECONDS))
+
+
+def _is_write_through(name: str) -> bool:
+    return str(name) in STORE_WRITE_THROUGH
 # ============================================================
 
 COMPRESS_ZLIB = bool(int(os.getenv("PKL_COMPRESS", "1")))
@@ -1794,7 +1821,10 @@ class GameStore(dict):
             self._in_bulk -= 1
             if self._in_bulk == 0 and (self._bulk_dirty or self._pending_dirty):
                 self._bulk_dirty = False
-                self._schedule_save()
+                if _is_write_through(self.name):
+                    self._persist_after_mutation()
+                else:
+                    self._schedule_save()
 
     def bulk_load(self, mapping: Dict[Any, Any]) -> None:
         """Быстрая пакетная загрузка: один initial_sync + один save вместо N×__setitem__."""
@@ -2182,7 +2212,19 @@ class GameStore(dict):
             if self._in_bulk > 0:
                 self._bulk_dirty = True
             else:
-                self.save()
+                self._persist_after_mutation()
+
+    def _persist_after_mutation(self) -> None:
+        """save(); для write-through сторов — сразу flush в Redis (кнопки)."""
+        self.save()
+        if not _is_write_through(self.name):
+            return
+        if self._in_bulk > 0:
+            return
+        try:
+            self.flush()
+        except Exception as e:
+            self._log_err("write-through flush()", e)
 
     def __delitem__(self, key: Any) -> None:
         self._initial_sync_if_needed()
@@ -2225,7 +2267,7 @@ class GameStore(dict):
             if self._in_bulk > 0:
                 self._bulk_dirty = True
             else:
-                self.save()
+                self._persist_after_mutation()
 
 
 # ========================== LazyGameStore ==========================
@@ -2360,6 +2402,126 @@ def _flush_all_stores_on_exit():
                 pass
     except Exception:
         pass
+
+
+def flush_all_stores_for_handoff(*, wait_timeout: float = 12.0) -> Dict[str, Any]:
+    """Принудительно записать ВСЕ GameStore в Redis перед soft-restart / handoff.
+
+    Без этого os._exit(0) обходит atexit → токены кнопок (greq/prep/игры)
+    остаются только в памяти → после рестарта кнопки «живые» в Telegram,
+    но handler не находит сессию («устарела после перезапуска»).
+    """
+    out: Dict[str, Any] = {"flushed": 0, "failed": 0, "names": []}
+    stores = list(getattr(GameStore, "_instances", {}).values())
+    # Также догружаем LazyGameStore, которые уже материализованы
+    try:
+        for gs in list(getattr(LazyGameStore, "_loaded_instances", {}).values()):
+            if gs is not None and gs not in stores:
+                stores.append(gs)
+    except Exception:
+        pass
+
+    for s in stores:
+        name = getattr(s, "name", "?")
+        try:
+            s.flush()
+            try:
+                _io_wait_store(name, timeout=float(wait_timeout))
+            except Exception:
+                pass
+            out["flushed"] += 1
+            out["names"].append(name)
+        except Exception as e:
+            out["failed"] += 1
+            _warn(f"[pklcode] handoff flush '{name}': {type(e).__name__}: {e}")
+    _ok(
+        f"[pklcode] handoff flush done: ok={out['flushed']} fail={out['failed']} "
+        f"stores={len(stores)}"
+    )
+    return out
+
+
+def GameStore_reload_from_redis_forced(store: "GameStore") -> bool:
+    """Handoff-child: Redis = истина (игнор PKL_SINGLE_PROCESS / hot-path)."""
+    try:
+        rc = _raw_client()
+        if rc is None:
+            _try_bind_redis_from_env()
+            rc = _raw_client()
+        if rc is None:
+            return False
+
+        # Сбрасываем локальный dirty, чтобы не перезатереть свежий Redis
+        with store._lock:
+            store._hash_dirty_keys.clear()
+            store._touch_keys.clear()
+            store._pending_dirty = False
+            store._dirty_since_boot = False
+            store._touch_dirty = False
+
+        if store._is_hash_mode():
+            ok = bool(hash_backend.hash_load_all(store, rc))
+        else:
+            raw_bytes = store._load_payload()
+            if raw_bytes is None:
+                with store._lock:
+                    store.clear()
+                    store.timestamps.clear()
+                ok = True
+            else:
+                data_dict, ts_dict = store._unpack_bytes(raw_bytes)
+                with store._lock:
+                    store.clear()
+                    store.timestamps.clear()
+                    for k, v in (data_dict or {}).items():
+                        dict.__setitem__(store, k, v)
+                    store.timestamps.update(ts_dict or {})
+                ok = True
+
+        store._need_initial_sync = False
+        store._heal_last_reload_ts = time.time()
+        return bool(ok)
+    except Exception as e:
+        _warn(
+            f"[pklcode] forced reload '{getattr(store, 'name', '?')}': "
+            f"{type(e).__name__}: {e}"
+        )
+        return False
+
+
+def adopt_stores_after_handoff() -> Dict[str, Any]:
+    """Новый процесс после child_go: перечитать все сторы из Redis.
+
+    Старый уже сделал flush_all_stores_for_handoff. Без этого child
+    продолжает жить на снимке, который загрузил во время warmup
+    (до финального flush) — кнопки/игры выглядят мёртвыми.
+    """
+    out: Dict[str, Any] = {"reloaded": 0, "failed": 0, "names": []}
+    stores = list(getattr(GameStore, "_instances", {}).values())
+    try:
+        for gs in list(getattr(LazyGameStore, "_loaded_instances", {}).values()):
+            if gs is not None and gs not in stores:
+                stores.append(gs)
+    except Exception:
+        pass
+
+    for s in stores:
+        name = getattr(s, "name", "?")
+        try:
+            if GameStore_reload_from_redis_forced(s):
+                out["reloaded"] += 1
+                out["names"].append(name)
+            else:
+                out["failed"] += 1
+        except Exception as e:
+            out["failed"] += 1
+            _warn(f"[pklcode] adopt '{name}': {type(e).__name__}: {e}")
+
+    _ok(
+        f"[pklcode] handoff adopt done: ok={out['reloaded']} fail={out['failed']} "
+        f"stores={len(stores)}"
+    )
+    return out
 
 
 def _print_summary():

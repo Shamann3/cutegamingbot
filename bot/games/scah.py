@@ -22,7 +22,8 @@ from main import button_gamessha, gamessha, db, bot1, dp, get_current_time_forma
 # ---------------------- ЗАЩИТНЫЕ СТРУКТУРЫ (как в TTT) ----------------------
 _join_locks_sha: Dict[int, asyncio.Lock] = {}
 _inflight_shajoin: Set[Tuple[int, int]] = set()
-shah_cooldowns = {}
+from bot.db_create.pklcode import LazyGameStore as _LazyGS_shah
+shah_cooldowns = _LazyGS_shah("shah_cooldowns")
 REST = 2.2
 
 

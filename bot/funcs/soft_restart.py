@@ -421,16 +421,43 @@ async def _stop_polling_graceful() -> None:
         print(f"[SR] stop_polling: {e!r}", flush=True)
 
 
+def _flush_pkl_for_buttons() -> dict:
+    """Сбросить все GameStore в Redis — иначе кнопки умрут после os._exit."""
+    try:
+        from bot.runtime.button_survival import protect_before_restart
+
+        return protect_before_restart(wait_timeout=12.0) or {}
+    except Exception as e:
+        print(f"[SR][PKL] flush fail: {type(e).__name__}: {e}", flush=True)
+        return {"error": repr(e)}
+
+
 async def _release_and_exit(reason: str) -> None:
-    """Старый процесс: отпустить очередь и выйти (после warmup нового)."""
+    """Старый процесс: flush pkl → отпустить очередь → выйти.
+
+    Критично: os._exit обходит atexit. Без flush токены greq/prep/игры
+    не попадут в Redis → новый процесс не увидит сессии кнопок.
+    """
     global _requested, _last_reason
     _requested = True
     _last_reason = reason
     print(f"[SR] release_and_exit reason={reason!r} pid={os.getpid()}", flush=True)
+
+    # 1) Первый flush — пока ещё можем дописать in-flight
+    flush1 = await asyncio.to_thread(_flush_pkl_for_buttons)
+    print(f"[SR][PKL] pre-stop flush: {flush1}", flush=True)
+
+    # 2) Стоп polling — новых кликов больше нет
     await _stop_polling_graceful()
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(0.4)
+
+    # 3) Финальный flush — добрать хвост handler'ов
+    flush2 = await asyncio.to_thread(_flush_pkl_for_buttons)
+    print(f"[SR][PKL] final flush: {flush2}", flush=True)
+    _write_flag("pkl_flushed", "1")
+
     _write_flag("old_released")
-    await asyncio.sleep(0.3)
+    await asyncio.sleep(0.35)
     print("[SR] old_released → exit 0", flush=True)
     os._exit(0)
 
@@ -454,6 +481,7 @@ async def _perform_handoff_request(reason: str) -> None:
     _clear_flag("child_go")
     _clear_flag("release_old")
     _clear_flag("old_released")
+    _clear_flag("pkl_flushed")
     _write_flag("handoff_request", reason)
 
 
@@ -473,8 +501,13 @@ async def _perform_hard_exit(reason: str) -> None:
         )
     )
     await asyncio.sleep(grace_sec())
+    flush1 = await asyncio.to_thread(_flush_pkl_for_buttons)
+    print(f"[SR][PKL] hard pre-stop flush: {flush1}", flush=True)
     await _stop_polling_graceful()
-    await asyncio.sleep(1.0)
+    await asyncio.sleep(0.4)
+    flush2 = await asyncio.to_thread(_flush_pkl_for_buttons)
+    print(f"[SR][PKL] hard final flush: {flush2}", flush=True)
+    await asyncio.sleep(0.3)
     os._exit(0)
 
 

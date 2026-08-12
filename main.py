@@ -4197,14 +4197,22 @@ from bot.db_create.pklcode import GameStore, LazyGameStore
 
 # ---------- корректное завершение ----------
 def _save_all_stores(reason: str = ""):
+    """Flush всех pkl-сторов в Redis (кнопки/игры/токены callback)."""
+    try:
+        from bot.db_create.pklcode import flush_all_stores_for_handoff
+        out = flush_all_stores_for_handoff(wait_timeout=10.0)
+        print(f"[Redis] flush ({reason}): {out}")
+        return
+    except Exception:
+        pass
     try:
         stores = dict(getattr(GameStore, "_instances", {}))
         for _, store in stores.items():
             try:
-                store.save()
+                store.flush()
             except Exception as e:
                 if BOOT_VERBOSE:
-                    print(f"[Redis] ⚠️ save() ошибка: {e}")
+                    print(f"[Redis] ⚠️ flush() ошибка: {e}")
     except Exception:
         pass
 
@@ -4599,7 +4607,7 @@ games_memory_inline = LazyGameStore("games_memory_inline")
 inline_game_scah = LazyGameStore("inline_game_scah")
 
 gamesorelinline = LazyGameStore("gamesorelinline")
-button_inlinegamesorel = {}#GameStore("button_inlinegamesorel")
+button_inlinegamesorel = LazyGameStore("button_inlinegamesorel")
 
 rps_games = LazyGameStore("rps_games")
 
@@ -15249,6 +15257,18 @@ def _register_callback_payload(store: Dict[str, Dict[str, Any]], payload: Dict[s
         **dict(payload or {}),
         "ts": time.time(),
     }
+    # Сразу в Redis — иначе soft-restart убьёт кнопку до debounce
+    try:
+        from bot.runtime.button_survival import persist_callback_store
+        persist_callback_store(store)
+    except Exception:
+        try:
+            if hasattr(store, "flush"):
+                store.flush()
+            elif hasattr(store, "save"):
+                store.save()
+        except Exception:
+            pass
     return token
 
 
@@ -39290,14 +39310,26 @@ async def on_bot_started() -> None:
     if not bot_started_event.is_set():
         print("🟩 [BOT] polling started, bot is ready")
         bot_started_event.set()
-    # Мэджик: поднять ВСЕ inline-кнопки сразу с polling (не ждать Telethon).
-    # После рестарта/handoff иначе кнопки «отмирают», пока run_bot не дойдёт.
+    # Максимальная защита кнопок: pkl write-through + adopt + Мэджик
+    # (text-бот и inline-режим; сессии в Redis, цепь кликов — Мэджик).
     try:
-        from bot.magic.install import revive_magic_system
+        from bot.runtime.button_survival import protect_after_start_async
 
-        await revive_magic_system(dp=dp, reason="boot", hard=True, run_audit=True)
+        # cold start: Redis уже подтянут initial_sync; полный adopt не нужен
+        # (handoff делает adopt=True отдельно после child_go).
+        await protect_after_start_async(
+            reason="boot",
+            adopt=False,
+            revive_magic=True,
+            dp=dp,
+        )
     except Exception as e_mag:
-        print(f"⚠️ [MAGIC] boot revive: {type(e_mag).__name__}: {e_mag}")
+        print(f"⚠️ [BTN-SURVIVE] boot: {type(e_mag).__name__}: {e_mag}")
+        try:
+            from bot.magic.install import revive_magic_system
+            await revive_magic_system(dp=dp, reason="boot_fallback", hard=True, run_audit=True)
+        except Exception as e2:
+            print(f"⚠️ [MAGIC] boot revive: {type(e2).__name__}: {e2}")
 
 
 # =========================================================
@@ -40038,6 +40070,21 @@ async def botmain():
             if not ok:
                 print("[MAIN][SR] child_go timeout — не стартую polling")
                 return
+
+            # КРИТИЧНО: старый уже flush'нул pkl. Adopt + write-through + Мэджик.
+            try:
+                from bot.runtime.button_survival import protect_after_start_async
+
+                adopt = await protect_after_start_async(
+                    reason="handoff",
+                    adopt=True,
+                    revive_magic=True,
+                    dp=dp,
+                )
+                print(f"[MAIN][SR][BTN] after handoff: {adopt}")
+            except Exception as e_adopt:
+                print(f"[MAIN][SR][BTN][WARN] adopt: {type(e_adopt).__name__}: {e_adopt}")
+
             # После go — воркеры, которые откладывали на время overlap
             try:
                 from bot.runtime.message_housekeeping import start_global_housekeeping_loop

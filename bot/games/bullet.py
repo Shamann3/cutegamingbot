@@ -15,11 +15,10 @@ from main import *
 import uuid
 from bot.funcs.func import *
 from bot.games.safe_game_edit import safe_game_edit
-user_message_bullet = {}
-user_messagebullet = {}
-
-
-active_games_bullet = {}
+from bot.db_create.pklcode import LazyGameStore
+user_message_bullet = LazyGameStore("user_message_bullet")
+user_messagebullet = LazyGameStore("user_messagebullet")
+active_games_bullet = LazyGameStore("active_games_bullet")
 
 
 def initialize_game_field_roulette():

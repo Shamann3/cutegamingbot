@@ -18,7 +18,8 @@ from bot.funcs.func import *
 
 last_user_id1 = None
 last_sell_user_id1 = None
-user_message_house = {}
+from bot.db_create.pklcode import LazyGameStore
+user_message_house = LazyGameStore("user_message_house")
 # Глобальная переменная для хранения последнего идентификатора пользователя
 
 @dp.message()

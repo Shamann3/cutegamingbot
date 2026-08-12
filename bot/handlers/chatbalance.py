@@ -1,5 +1,6 @@
 from main import *
-user_message_balance_chat = {}
+from bot.db_create.pklcode import LazyGameStore
+user_message_balance_chat = LazyGameStore("user_message_balance_chat")
 @dp.message()
 async def chatbalance(message: Message):
     def _extract_group_deposit_amount(text: str) -> Optional[int]:

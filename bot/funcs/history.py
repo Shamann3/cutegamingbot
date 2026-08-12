@@ -1,6 +1,7 @@
 from main import *
+from bot.db_create.pklcode import LazyGameStore
 
-user_message_history1 = {}
+user_message_history1 = LazyGameStore("user_message_history1")
 async def generate_buttons_moneyhistorygame(page_number , num_pages):
     navigation_buttons = [ ]
 

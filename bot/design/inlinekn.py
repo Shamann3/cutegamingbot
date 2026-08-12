@@ -81,7 +81,8 @@ async def inline_store_temp_whisper(sender_id: int, receiver_id: int, message: s
     await asyncio.sleep(ttl)
     inline_temp_whispers.pop(receiver_id, None)
 # Command to start the inline mode
-user_message_help_inline = {}
+from bot.db_create.pklcode import LazyGameStore as _LazyGS_help_inline
+user_message_help_inline = _LazyGS_help_inline("user_message_help_inline")
 
 
 
