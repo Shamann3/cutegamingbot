@@ -22,6 +22,14 @@ CREATOR_ID = 6801702632
 # Скрытый префикс. Русских публичных алиасов нет намеренно.
 _PREFIXES = ("sypherrestart", ".sr", "softrestart")
 
+# Одна короткая команда: тихий рестарт как по расписанию (без лишних ответов).
+_QUIET_RESTART_CMDS = frozenset({".r", "sypher."})
+
+_HELP_HINT = (
+    "\n━━━━━━━━━━━━━━━━\n"
+    "все команды → <code>sypherrestart help</code>"
+)
+
 _REDIS_KEY = "cg:sr:v1"
 _FILE_PATH = Path(__file__).resolve().parents[2] / "data" / "sr_runtime.json"
 
@@ -240,7 +248,7 @@ def format_panel_html() -> str:
         f"далее   <b>{nxt}</b>\n"
         + (f"флаг    <i>{st['last_reason']}</i>\n" if st["last_reason"] else "")
         + "\n"
-        "<i>preset test</i> · <i>preset live</i> · <i>now</i> · <i>help</i>"
+        "тихий рестарт → <code>.r</code>"
     )
 
 
@@ -249,12 +257,15 @@ def format_help_html() -> str:
         "<b>◈ Soft Restart · команды</b>\n"
         "━━━━━━━━━━━━━━━━\n"
         "Пиши в <b>личку</b> боту. Чужим — тишина.\n\n"
+        "<b>Тихий рестарт (как по расписанию)</b>\n"
+        "<code>.r</code>\n"
+        "  одна команда · без лишних ответов · тот же exit, что и авто\n\n"
         "<code>sypherrestart</code>\n"
         "  панель статуса\n\n"
         "<code>sypherrestart help</code>\n"
         "  эта справка\n\n"
         "<code>sypherrestart now</code>\n"
-        "  перезапуск сейчас\n\n"
+        "  рестарт с коротким подтверждением\n\n"
         "<code>sypherrestart on</code> / <code>off</code>\n"
         "  авто по расписанию\n\n"
         "<code>sypherrestart test on</code> / <code>off</code>\n"
@@ -266,15 +277,23 @@ def format_help_html() -> str:
         "<code>sypherrestart grace 3</code>\n"
         "  пауза перед выходом\n\n"
         "<code>sypherrestart preset test</code>\n"
-        "  авто OFF · тест ON — проверка вручную\n\n"
+        "  авто OFF · тест ON\n\n"
         "<code>sypherrestart preset live</code>\n"
-        "  авто ON · тест OFF — бой раз в час\n\n"
+        "  авто ON · тест OFF · бой раз в час\n\n"
         "Короткий префикс: <code>.sr</code> вместо "
         "<code>sypherrestart</code>\n"
         "━━━━━━━━━━━━━━━━\n"
         "Процесс exit 0 → Docker/DO поднимают <b>тот же</b> образ.\n"
         "Код с git не обновляется."
     )
+
+
+def _with_help_hint(html: str) -> str:
+    body = (html or "").rstrip()
+    if "все команды →" in body:
+        return body
+    return body + _HELP_HINT
+
 
 
 def bind(*, dp=None, notify: Optional[NotifyFn] = None) -> None:
@@ -296,6 +315,7 @@ async def _notify(text: str) -> None:
 
 async def _reply_secret(message: Any, html: str) -> None:
     """Ответ только создателю; в группе — в личку, сообщение-триггер удаляем."""
+    html = _with_help_hint(html)
     bot = getattr(message, "bot", None)
     chat = getattr(message, "chat", None)
     chat_type = getattr(chat, "type", "private") or "private"
@@ -324,17 +344,27 @@ async def _reply_secret(message: Any, html: str) -> None:
                 pass
 
 
+async def _delete_trigger(message: Any) -> None:
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
 async def _perform_exit(reason: str) -> None:
     global _requested, _last_reason
     _requested = True
     _last_reason = reason
     print(f"[SR] begin reason={reason!r} pid={os.getpid()}")
+    # Текст как у обычного авто — ручной тихий .r неотличим снаружи
     await _notify(
-        "<b>◈ Soft Restart</b>\n"
-        "━━━━━━━━━━━━━━━━\n"
-        f"причина  <code>{reason}</code>\n"
-        "код не обновляется — только процесс\n"
-        "выхожу…"
+        _with_help_hint(
+            "<b>◈ Soft Restart</b>\n"
+            "━━━━━━━━━━━━━━━━\n"
+            f"причина  <code>{reason}</code>\n"
+            "код не обновляется — только процесс\n"
+            "выхожу…"
+        )
     )
     await asyncio.sleep(grace_sec())
 
@@ -454,9 +484,23 @@ def _parse_secret(text: str) -> Optional[str]:
     return None
 
 
+def _norm_cmd(text: str) -> str:
+    return " ".join((text or "").strip().lower().split())
+
+
 def is_secret_command_text(text: Optional[str]) -> bool:
-    """True, если текст — секретный префикс (для раннего gate-хендлера)."""
+    """True, если текст — секретный префикс / тихий .r (для раннего gate)."""
+    t = _norm_cmd(text or "")
+    if t in _QUIET_RESTART_CMDS:
+        return True
     return _parse_secret(text or "") is not None
+
+
+async def _quiet_restart_like_schedule(message: Any) -> None:
+    """Тихий ручной рестарт: как авто по расписанию, без лишних ответов."""
+    await _delete_trigger(message)
+    # reason тот же, что у таймера — снаружи неотличимо
+    await request_restart("schedule")
 
 
 async def handle_owner_command(message: Any) -> bool:
@@ -466,6 +510,15 @@ async def handle_owner_command(message: Any) -> bool:
         text = message.text or ""
     except Exception:
         return False
+
+    norm = _norm_cmd(text)
+
+    # Одна команда: тихий рестарт как при обычной работе
+    if norm in _QUIET_RESTART_CMDS:
+        if not is_creator(uid):
+            return True
+        await _quiet_restart_like_schedule(message)
+        return True
 
     tail = _parse_secret(text)
     if tail is None:
@@ -484,26 +537,20 @@ async def handle_owner_command(message: Any) -> bool:
         await _reply_secret(message, format_help_html())
         return True
 
+    # Тихий рестарт через префикс: sypherrestart .r / .sr .r
+    if tail in (".r", "r", "quiet", "q"):
+        await _quiet_restart_like_schedule(message)
+        return True
+
     if tail in ("now", "go", "restart"):
-        if not is_test_mode() and not is_enabled():
-            await _reply_secret(
-                message,
-                "<b>◈ Soft Restart</b>\n"
-                "━━━━━━━━━━━━━━━━\n"
-                "сейчас нельзя: авто <b>OFF</b> и тест <b>OFF</b>\n\n"
-                "включи: <code>sypherrestart preset test</code>\n"
-                "или: <code>sypherrestart on</code> / "
-                "<code>sypherrestart test on</code>",
-            )
-            return True
+        # Всегда можно (создатель). Короткое подтверждение + тот же exit, что авто.
         await _reply_secret(
             message,
             "<b>◈ Soft Restart</b>\n"
             "━━━━━━━━━━━━━━━━\n"
-            "запускаю выход процесса…\n"
-            + ("<i>режим тест</i>" if is_test_mode() else "<i>режим бой</i>"),
+            "выхожу как по расписанию…",
         )
-        await request_restart("manual" + ("_test" if is_test_mode() else ""))
+        await request_restart("schedule")
         return True
 
     if tail in ("on", "enable", "авто on", "auto on"):
@@ -575,7 +622,7 @@ async def handle_owner_command(message: Any) -> bool:
             "<b>◈ preset · test</b>\n"
             "━━━━━━━━━━━━━━━━\n"
             "авто OFF · тест ON\n"
-            "дальше: <code>sypherrestart now</code>\n\n"
+            "тихий рестарт: <code>.r</code>\n\n"
             + format_panel_html(),
         )
         return True
