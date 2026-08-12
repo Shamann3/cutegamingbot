@@ -15455,6 +15455,62 @@ def _resolve_skip_callback_chain(raw_data: str) -> Tuple[str, bool]:
     return data, skip_subscription
 
 
+def _peek_skip_chain_prefix(raw_data: str) -> Optional[str]:
+    """Для фильтров: куда ведёт skipcb:* (или сама data). None = токен пропал."""
+    data = str(raw_data or "")
+    if not data.startswith("skipcb:"):
+        return data
+    try:
+        resolved, _ = _resolve_skip_callback_chain(data)
+        return str(resolved or "")
+    except Exception:
+        return None
+
+
+def _cb_is_gift_request(c: types.CallbackQuery) -> bool:
+    data = getattr(c, "data", None)
+    if not isinstance(data, str):
+        return False
+    if data.startswith(("gift_send_request_", "sts:gr:", "greq:")):
+        return True
+    if data.startswith("skipcb:"):
+        peeked = _peek_skip_chain_prefix(data)
+        if peeked is None:
+            # просроченный skip — этот handler покажет «устарела»
+            return True
+        return peeked.startswith(("gift_send_request_", "sts:gr:", "greq:"))
+    return False
+
+
+def _cb_is_prep_request(c: types.CallbackQuery) -> bool:
+    data = getattr(c, "data", None)
+    if not isinstance(data, str):
+        return False
+    if data.startswith(("preparationsend_", "sts:ps:", "prep:")):
+        return True
+    if data.startswith("skipcb:"):
+        peeked = _peek_skip_chain_prefix(data)
+        if peeked is None:
+            # expired обрабатывает gift-handler (он раньше по регистрации)
+            return False
+        return peeked.startswith(("preparationsend_", "sts:ps:", "prep:"))
+    return False
+
+
+def _cb_is_speedconc_request(c: types.CallbackQuery) -> bool:
+    data = getattr(c, "data", None)
+    if not isinstance(data, str):
+        return False
+    if data.startswith(("speedconc_", "spd:")):
+        return True
+    if data.startswith("skipcb:"):
+        peeked = _peek_skip_chain_prefix(data)
+        if peeked is None:
+            return False
+        return peeked.startswith(("speedconc_", "spd:"))
+    return False
+
+
 def _resolve_gift_request_data(raw_data: str) -> Dict[str, Any]:
     """
     Универсально понимает:
@@ -16317,7 +16373,7 @@ async def btnstars_callback(callback_query: types.CallbackQuery):
 # =========================================================
 # GIFT SEND REQUEST HANDLER
 # =========================================================
-@dp.callback_query(lambda c: isinstance(c.data, str) and c.data.startswith(("gift_send_request_", "sts:gr:", "greq:", "skipcb:")))
+@dp.callback_query(_cb_is_gift_request)
 async def gift_send_request(callback_query: types.CallbackQuery):
     user_id = int(getattr(callback_query.from_user, "id", 0) or 0)
     original_data = str(getattr(callback_query, "data", "") or "")
@@ -16830,21 +16886,12 @@ async def send_removed_gift_styles(callback_query: types.CallbackQuery):
 # ✅ PREPARE SEND REQUEST
 # ============================================================
 
-@dp.callback_query(lambda c: isinstance(c.data, str) and c.data.startswith(("preparationsend_", "sts:ps:", "prep:", "skipcb:")))
+@dp.callback_query(_cb_is_prep_request)
 async def send_request_callback(callback_query: types.CallbackQuery):
     user_id = int(getattr(callback_query.from_user, "id", 0) or 0)
     original_data = str(getattr(callback_query, "data", "") or "")
 
     print(f"🧩[PREP][START] uid={user_id} data={original_data[:80]!r}")
-
-    try:
-        resolved_chain_data, _skip_subscription_peek = _resolve_skip_callback_chain(original_data)
-    except Exception as e:
-        print(f"🟥[PREP][CHAIN][ERROR] uid={user_id} raw={original_data!r} err={e!r}")
-        return
-
-    if not str(resolved_chain_data).startswith(("preparationsend_", "sts:ps:", "prep:")):
-        return
 
     username = getattr(callback_query.from_user, "username", None)
     if not username:
@@ -25775,11 +25822,10 @@ async def gift_reset_desc_callback(c: types.CallbackQuery):
             raise
 
     await c.answer("Описание сброшено")
-@dp.callback_query(lambda c: c.data.startswith('speedconc_'))
+@dp.callback_query(_cb_is_speedconc_request)
 async def send_request_callback(callback_query: types.CallbackQuery):
-    parts = callback_query.data.split("_")
     user_id = callback_query.from_user.id
-    user_gift_id = int(parts[6]) if len(parts) > 6 and parts[6].isdigit() else None
+    raw_data = str(getattr(callback_query, "data", "") or "")
 
     # Таймаут между кликами
     now = time.time()
@@ -25798,14 +25844,32 @@ async def send_request_callback(callback_query: types.CallbackQuery):
             "⚠️ Установите username в настройках Telegram.", show_alert=True
         )
 
-    # Парсинг параметров подарка
+    # Парсинг: speedconc_* | spd:* | skipcb:*→spd:*
     try:
-        has_upgrade   = int(parts[1])
-        gift_name     = parts[2]
-        amount        = int(parts[3])
-        upgrade_price = int(parts[4])
-        gift_id       = parts[5]
-    except Exception:
+        if raw_data.startswith("spd:") or raw_data.startswith("skipcb:"):
+            resolved = _resolve_speedconc_request_data(raw_data)
+            has_upgrade = int(resolved.get("has_upgrade") or 0)
+            gift_name = str(resolved.get("gift_emoji") or "🎁")
+            amount = int(resolved.get("used_base") or 0)
+            upgrade_price = int(resolved.get("upgrade_price") or 0)
+            gift_id = resolved.get("gift_id")
+            user_gift_id = None
+        else:
+            parts = raw_data.split("_")
+            user_gift_id = int(parts[6]) if len(parts) > 6 and parts[6].isdigit() else None
+            has_upgrade = int(parts[1])
+            gift_name = parts[2]
+            amount = int(parts[3])
+            upgrade_price = int(parts[4])
+            gift_id = parts[5]
+    except Exception as e:
+        err_text = str(e).lower()
+        if "expired" in err_text or "not found" in err_text:
+            return await callback_query.answer(
+                "⏳ Кнопка устарела после перезапуска бота.\n"
+                "Откройте вывод заново из меню баланса.",
+                show_alert=True,
+            )
         return await callback_query.answer(
             "❌ Не удалось распознать параметры подарка.", show_alert=True
         )

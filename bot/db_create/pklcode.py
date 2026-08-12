@@ -209,6 +209,8 @@ STORE_WRITE_THROUGH: Set[str] = {
     "SKIP_CALLBACK_ACTIONS",
     "SPEEDCONC_CALLBACK_ACTIONS",
     "SEND_REQUEST_ACTIONS",
+    "session_data",
+    "user_to_session",
     "gamesorelinline",
     "button_inlinegamesorel",
     "gamesmine_inmine",
@@ -2214,17 +2216,36 @@ class GameStore(dict):
             else:
                 self._persist_after_mutation()
 
+    def _write_through_save(self) -> None:
+        """Немедленная запись dirty в Redis (безопасно из IO-потока).
+
+        Нельзя вызывать self.flush() через _io_submit: flush ждёт futures
+        своего же стора → deadlock на worker'е (кнопки «зависают»).
+        """
+        try:
+            if self._debounce_timer and self._debounce_timer.is_alive():
+                self._debounce_timer.cancel()
+        except Exception:
+            pass
+        try:
+            self._save_now()
+        except Exception as e:
+            self._log_err("write-through _save_now", e)
+
     def _persist_after_mutation(self) -> None:
-        """save(); для write-through сторов — сразу flush в Redis (кнопки)."""
+        """save(); write-through — запись в IO-потоке (НЕ блокировать event-loop!).
+
+        Раньше sync flush() на каждый клик вешал бота → все кнопки «умирали».
+        """
         self.save()
         if not _is_write_through(self.name):
             return
         if self._in_bulk > 0:
             return
         try:
-            self.flush()
+            _io_submit(self.name, self._write_through_save, wait=False)
         except Exception as e:
-            self._log_err("write-through flush()", e)
+            self._log_err("write-through schedule", e)
 
     def __delitem__(self, key: Any) -> None:
         self._initial_sync_if_needed()
