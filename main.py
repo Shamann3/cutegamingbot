@@ -39290,6 +39290,14 @@ async def on_bot_started() -> None:
     if not bot_started_event.is_set():
         print("🟩 [BOT] polling started, bot is ready")
         bot_started_event.set()
+    # Мэджик: поднять ВСЕ inline-кнопки сразу с polling (не ждать Telethon).
+    # После рестарта/handoff иначе кнопки «отмирают», пока run_bot не дойдёт.
+    try:
+        from bot.magic.install import revive_magic_system
+
+        await revive_magic_system(dp=dp, reason="boot", hard=True, run_audit=True)
+    except Exception as e_mag:
+        print(f"⚠️ [MAGIC] boot revive: {type(e_mag).__name__}: {e_mag}")
 
 
 # =========================================================
@@ -39569,14 +39577,20 @@ async def run_bot():
             dp.update.middleware(BalanceEngineMiddleware(balance_engine_watcher))
             print("✅ [BALANCE] engine middleware подключен")
             try:
-                from bot.magic.install import start_magic_health
+                from bot.magic.install import revive_magic_system
+                from bot.magic.core import magic as _magic
 
-                # interval берётся из bot/magic/config.py (HEALTH_INTERVAL_SEC)
-                start_magic_health(
+                # Health уже должен быть с boot-revive; здесь только watcher + лёгкий revive.
+                _magic.attach_balance_watcher(balance_engine_watcher)
+                await revive_magic_system(
+                    dp=dp,
                     balance_watcher=balance_engine_watcher,
+                    reason="balance_ready",
+                    hard=False,
+                    run_audit=False,
                 )
             except Exception as e_bh:
-                print(f"⚠️ [MAGIC] health не запущен: {e_bh!r}")
+                print(f"⚠️ [MAGIC] balance attach: {e_bh!r}")
         except Exception as e:
             print(f"⚠️ [BALANCE] Ошибка подключения engine: {e!r}")
 
@@ -40358,6 +40372,14 @@ if __name__ == "__main__":
         print(f"[MODERATION][WIRE][ERROR] {type(_wire_err).__name__}: {_wire_err}")
 
     dp.include_router(router)
+
+    # Мэджик: orphan-callback ПОСЛЕДНИМ — гасит часики у кнопок без handler
+    # (после рестарта старые игровые кнопки часто уже без сессии в памяти).
+    try:
+        from bot.magic.install import attach_magic_fallback
+        attach_magic_fallback(dp)
+    except Exception as _fb_err:
+        print(f"⚠️ [MAGIC] fallback attach: {_fb_err!r}")
 
     try:
         asyncio.run(botmain())

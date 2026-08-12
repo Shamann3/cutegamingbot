@@ -15,10 +15,11 @@
     dp = Dispatcher()
     install_magic(dp, start_health=False)
 
-В on_startup:
-    start_magic_health(balance_watcher=...)
+Когда polling уже жив (on_bot_started / _after_polling_started):
+    await revive_magic_system(dp=dp, reason="boot")
 
-Настройки: bot/magic/config.py
+НЕ привязывай revive к Telethon/run_bot — иначе после рестарта
+кнопки «отмирают», пока юзербот не подключится.
 """
 from __future__ import annotations
 
@@ -37,6 +38,10 @@ logger = logging.getLogger("magic")
 
 # id() Dispatcher'ов, на которые уже повесили middleware
 _ATTACHED_DP_IDS: Set[int] = set()
+_FALLBACK_ATTACHED_DP_IDS: Set[int] = set()
+_AUDIT_DONE = False
+_REVIVE_LOCK = asyncio.Lock()
+_LAST_REVIVE_MONO: float = 0.0
 
 
 def _attach_middleware(dp: Dispatcher) -> bool:
@@ -83,6 +88,23 @@ def _attach_middleware(dp: Dispatcher) -> bool:
     _ATTACHED_DP_IDS.add(dp_id)
     print(f"✅ [MAGIC] middleware на Dispatcher (id={dp_id})")
     return True
+
+
+def attach_magic_fallback(dp: Dispatcher) -> bool:
+    """Подключить orphan-callback router ПОСЛЕДНИМ (гасит часики без handler)."""
+    dp_id = id(dp)
+    if dp_id in _FALLBACK_ATTACHED_DP_IDS:
+        return False
+    try:
+        from bot.magic.fallback import fallback_router
+
+        dp.include_router(fallback_router)
+        _FALLBACK_ATTACHED_DP_IDS.add(dp_id)
+        print("✅ [MAGIC] fallback orphan-callback router подключён")
+        return True
+    except Exception as e:
+        print(f"⚠️ [MAGIC] fallback router: {e!r}")
+        return False
 
 
 def install_magic(
@@ -146,6 +168,8 @@ def install_magic(
                     from bot.magic.audit import run_magic_audit
 
                     run_magic_audit(dp=dp, import_missing=False, verbose=True)
+                    global _AUDIT_DONE
+                    _AUDIT_DONE = True
                 except Exception as e_aud:
                     print(f"⚠️ [MAGIC] primary audit: {e_aud!r}")
         except Exception as e:
@@ -182,42 +206,65 @@ def install_magic(
     return True
 
 
+def _sync_bind_and_rebind(dp: Any = None) -> dict:
+    """Тяжёлый sync-путь — вызывать через asyncio.to_thread."""
+    out: dict = {}
+    global _AUDIT_DONE
+    try:
+        from bot.magic.patch import patch_aiogram_keyboards
+
+        patch_aiogram_keyboards()
+        out["patched"] = True
+    except Exception as e:
+        out["patch_err"] = repr(e)
+
+    if RUN_FULL_AUDIT_ON_START and not _AUDIT_DONE:
+        try:
+            from bot.magic.audit import run_magic_audit
+
+            report = run_magic_audit(dp=dp, import_missing=True, verbose=True)
+            magic.last_audit = report
+            _AUDIT_DONE = True
+            out["audit"] = {
+                "files": getattr(report, "files_with_inline", None),
+                "attrs": getattr(report, "attrs_rebound", None),
+                "ok": getattr(report, "modules_verified_ok", None),
+            }
+        except Exception as e:
+            out["audit_err"] = repr(e)
+            try:
+                from bot.magic.patch import rebind_project_modules
+
+                out["fallback_rebind"] = rebind_project_modules()
+            except Exception as e2:
+                out["fallback_err"] = repr(e2)
+    else:
+        try:
+            from bot.magic.audit import rebind_all_inline_refs
+
+            mods, attrs = rebind_all_inline_refs()
+            out["rebind"] = {"modules": mods, "attrs": attrs}
+        except Exception as e:
+            out["rebind_err"] = repr(e)
+    return out
+
+
 def start_magic_health(
     *,
     balance_watcher: Any = None,
     interval_sec: Optional[float] = None,
+    dp: Any = None,
 ) -> Optional[asyncio.Task]:
     """
     Запустить health-loop, когда event loop уже работает.
 
-    interval_sec=None → берётся из config.HEALTH_INTERVAL_SEC
+    Тяжёлый audit лучше делать через revive_magic_system (в thread).
+    Здесь — только loop + лёгкий rebind, без блокировки на минуты.
     """
     if balance_watcher is not None:
         magic.attach_balance_watcher(balance_watcher)
 
-    # Полный цикл аудита: каждый файл с InlineKeyboard* → под Мэджик
-    if RUN_FULL_AUDIT_ON_START:
-        try:
-            from bot.magic.audit import run_magic_audit
-
-            report = run_magic_audit(dp=None, import_missing=True, verbose=True)
-            print(
-                f"✅ [MAGIC] audit: inline-файлов={report.files_with_inline}, "
-                f"rebound_attrs={report.attrs_rebound}, "
-                f"verified_ok={report.modules_verified_ok}"
-            )
-        except Exception as e:
-            print(f"⚠️ [MAGIC] full audit: {e!r}")
-            if CFG.patch_keyboards:
-                try:
-                    from bot.magic.patch import patch_aiogram_keyboards, rebind_project_modules
-
-                    patch_aiogram_keyboards()
-                    n = rebind_project_modules()
-                    print(f"✅ [MAGIC] fallback rebind клавиатур: {n} модулей")
-                except Exception as e2:
-                    print(f"⚠️ [MAGIC] late rebind: {e2!r}")
-    elif CFG.patch_keyboards:
+    if CFG.patch_keyboards:
         try:
             from bot.magic.patch import patch_aiogram_keyboards, rebind_project_modules
 
@@ -226,6 +273,10 @@ def start_magic_health(
             print(f"✅ [MAGIC] rebind клавиатур: {n} модулей")
         except Exception as e2:
             print(f"⚠️ [MAGIC] late rebind: {e2!r}")
+
+    if magic._health_started:
+        print("✅ [MAGIC] health уже запущен")
+        return None
 
     try:
         from bot.magic.health import magic_health_loop
@@ -241,6 +292,68 @@ def start_magic_health(
     except Exception as e:
         print(f"⚠️ [MAGIC] health start err: {e!r}")
         return None
+
+
+async def revive_magic_system(
+    *,
+    dp: Any = None,
+    balance_watcher: Any = None,
+    reason: str = "boot",
+    hard: bool = True,
+    run_audit: bool = True,
+) -> dict:
+    """Главная точка: поднять ВСЕ inline-кнопки после рестарта/handoff.
+
+    Вызывать сразу когда polling готов — НЕ ждать Telethon.
+    """
+    global _LAST_REVIVE_MONO
+    import time
+
+    async with _REVIVE_LOCK:
+        now = time.monotonic()
+        # антидребезг: два revive подряд (boot + run_bot) не долбят loop
+        if now - _LAST_REVIVE_MONO < 2.0 and reason != "manual":
+            print(f"⏭️ [MAGIC] revive skip (debounce) reason={reason}")
+            return {"skipped": True, "reason": reason}
+        _LAST_REVIVE_MONO = now
+
+        if not CFG.enabled:
+            return {"enabled": False}
+
+        if dp is not None:
+            try:
+                _attach_middleware(dp)
+            except Exception as e:
+                print(f"⚠️ [MAGIC] revive attach: {e!r}")
+            try:
+                attach_magic_fallback(dp)
+            except Exception as e:
+                print(f"⚠️ [MAGIC] revive fallback: {e!r}")
+
+        if balance_watcher is not None:
+            magic.attach_balance_watcher(balance_watcher)
+
+        # Быстрый сброс состояния — кнопки снова кликабельны сразу.
+        # Rebind/audit — ниже в thread (не блокируем polling).
+        out = magic.revive_buttons(reason=reason, hard=hard, do_rebind=False)
+
+        # Тяжёлый rebind/audit — в thread, чтобы не убить event loop
+        if run_audit and CFG.patch_keyboards:
+            try:
+                bind_out = await asyncio.to_thread(_sync_bind_and_rebind, dp)
+                out["bind"] = bind_out
+            except Exception as e:
+                out["bind_err"] = repr(e)
+                print(f"⚠️ [MAGIC] revive bind: {e!r}")
+
+        start_magic_health(balance_watcher=balance_watcher)
+        out["health"] = bool(magic._health_started)
+        out["dispatchers"] = len(_ATTACHED_DP_IDS)
+        print(
+            f"✅ [MAGIC] система кнопок поднята reason={reason} "
+            f"dp={len(_ATTACHED_DP_IDS)} health={magic._health_started}"
+        )
+        return out
 
 
 def attached_dispatcher_count() -> int:

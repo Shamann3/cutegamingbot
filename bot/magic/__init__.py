@@ -25,7 +25,11 @@
   magic.tune(debounce_sec=0.5)
   magic.add_priority_prefix("mygame_")
   magic.force_recover()   # если кнопки «залипли» после долгого аптайма
+  magic.revive_buttons()  # полный подъём цепи после рестарта
   print(magic.show_config())
+
+  # После старта polling (не ждать Telethon!):
+  #   await revive_magic_system(dp=dp, reason="boot")
 
 Что даёт Мэджик каждому callback_query:
   • ранний/идемпотентный answer (без залипающих «часиков»)
@@ -34,6 +38,7 @@
   • приоритет игр и магазина
   • тихое гашение спиннера при блоке
   • самолечение при долгом аптайме (stale inflight + редкий rebind)
+  • revive после рестарта: сброс лимитов + rebind + orphan-fallback
 """
 from __future__ import annotations
 
@@ -41,7 +46,13 @@ from bot.magic.config import CFG, MagicConfig, get_config
 from bot.magic.core import Magic, magic
 from bot.magic.buttons import btn, markup, row, simple_kb
 from bot.magic.answer import fire_answer, safe_answer
-from bot.magic.install import install_magic, start_magic_health, attached_dispatcher_count
+from bot.magic.install import (
+    install_magic,
+    start_magic_health,
+    revive_magic_system,
+    attach_magic_fallback,
+    attached_dispatcher_count,
+)
 from bot.magic.limits import is_priority
 from bot.magic.audit import run_magic_audit
 
@@ -59,6 +70,8 @@ __all__ = [
     "safe_answer",
     "install_magic",
     "start_magic_health",
+    "revive_magic_system",
+    "attach_magic_fallback",
     "attached_dispatcher_count",
     "is_priority",
     "run_magic_audit",

@@ -268,6 +268,33 @@ class MagicLimits:
             "inflight_now": self._inflight,
         }
 
+    def reset_runtime_state(self) -> Dict[str, int]:
+        """Полный сброс кликов/cooldown/inflight — после рестарта процесса.
+
+        Нужен, чтобы кнопки не «отмирали» из‑за залипшего состояния лимитов
+        и чтобы новый процесс стартовал с чистой цепью Мэджик.
+        """
+        self._stats_force_recover += 1
+        before = {
+            "users": len(self._clicks) + len(self._prio_clicks),
+            "inflight": self._inflight,
+            "cooldowns": len(self._cooldown_until) + len(self._prio_cooldown_until),
+        }
+        self._clicks.clear()
+        self._prio_clicks.clear()
+        self._last_data.clear()
+        self._strikes.clear()
+        self._cooldown_until.clear()
+        self._prio_cooldown_until.clear()
+        hard = len(self._active)
+        self._active.clear()
+        return {
+            "cleared_users": before["users"],
+            "cleared_inflight": hard,
+            "cleared_cooldowns": before["cooldowns"],
+            "inflight_now": 0,
+        }
+
     def trim(self) -> Dict[str, int]:
         """Почистить idle-пользователей и просроченные cooldown."""
         now = time.monotonic()

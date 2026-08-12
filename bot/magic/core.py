@@ -236,6 +236,45 @@ class Magic:
         print(f"🛠️ [MAGIC] force_recover → {out}")
         return out
 
+    def revive_buttons(
+        self,
+        *,
+        reason: str = "manual",
+        hard: bool = True,
+        do_rebind: bool = True,
+    ) -> dict:
+        """Поднять всю цепь inline-кнопок (после рестарта / залипания).
+
+        hard=True  — полный сброс runtime-лимитов
+        do_rebind  — sync rebind (для ручного вызова). В async revive
+                     лучше do_rebind=False и audit в thread.
+        """
+        out: dict = {"reason": reason, "hard": hard}
+        try:
+            self.apply_config()
+        except Exception as e:
+            out["apply_err"] = repr(e)
+        try:
+            if hard:
+                out["reset"] = self.limits.reset_runtime_state()
+            out["recover"] = self.limits.force_recover()
+            out["trim"] = self.limits.trim()
+        except Exception as e:
+            out["limits_err"] = repr(e)
+        if do_rebind and hard and self.cfg.patch_keyboards:
+            try:
+                from bot.magic.patch import patch_aiogram_keyboards
+                from bot.magic.audit import rebind_all_inline_refs
+
+                patch_aiogram_keyboards()
+                mods, attrs = rebind_all_inline_refs()
+                out["rebind"] = {"modules": mods, "attrs": attrs}
+            except Exception as e:
+                out["rebind_err"] = repr(e)
+        out["snapshot"] = self.snapshot()
+        print(f"🛠️ [MAGIC] revive_buttons ({reason}) → {out}")
+        return out
+
 
 # Глобальный синглтон Мэджик — одна цепь на весь процесс
 magic = Magic(CFG)
