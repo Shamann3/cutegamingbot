@@ -602,64 +602,61 @@ def build_main_screen_html(
     atmosphere_pct: float = 0.0,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Главный экран «бч»: хук → статус → 3 шага → тизер следующего ★."""
+    """Главный экран «бч»: касса → ★ → условия → следующий шаг (минимум текста)."""
     cfg = cfg or get_settings()
     bal = max(0, int(float(chat_balance or 0)))
     bal_fmt = f"{bal:,}".replace(",", ".")
     level = get_chat_level(chat_id)
     rec = recommended_bet(bal, cfg)
     cap = effective_stake_cap(chat_id, atmosphere_pct=atmosphere_pct, cfg=cfg)
+    atmo_on = bool(cfg.get("atmosphere_enabled", True))
+    atmo_max = _as_int(cfg.get("atmosphere_max_bonus_pct"), 40)
     teaser = _next_level_teaser(chat_id, cfg)
 
     if cap is None:
-        now_line = f"{stars_label(level)} · ставки <b>без лимита</b>"
-        hook = "Касса на максимуме — играйте свободно"
-    elif level <= 0:
-        now_line = f"{stars_label(level)} · ставки пока <b>до {cap} кут</b>"
-        hook = "Откройте крупные ставки для всей группы"
+        stake_line = "ставки <b>без лимита уровня</b>"
     else:
-        now_line = f"{stars_label(level)} · ставки <b>до {cap} кут</b>"
-        hook = "Следующий ★ — ещё выше потолок для всех"
+        stake_line = f"ставки <b>до {cap} кут</b>"
+
+    title = str(cfg.get("system_title") or "Баланс группы")
+
+    factors = (
+        f"<blockquote>"
+        f"<b>Что влияет на ставки</b>\n"
+        f"★ уровень группы — потолок ставки\n"
+        f"касса — устойчивость выплат\n"
+        + (
+            f"атмосфера — до +{atmo_max}% к лимиту"
+            if atmo_on else
+            "атмосфера сейчас выключена"
+        )
+        + f"</blockquote>"
+    )
 
     if level >= 5:
-        steps = (
-            f"<blockquote>"
-            f"<b>Вы прошли все 3 шага</b>\n"
-            f"Касса сильна · уровень на пике · ставки без потолка ★\n"
-            f"Комфортная ставка сейчас ≈ <b>{rec}</b> кут"
-            f"</blockquote>"
-        )
         closer = (
             f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
-            f"<b>Вершина вашей группы</b> — спасибо, что усиливаете атмосферу."
+            f"<b>Максимум открыт</b> · комфорт ≈ <b>{rec}</b>"
+        )
+    elif teaser:
+        closer = (
+            f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
+            f"<b>Дальше:</b> {teaser}"
         )
     else:
-        steps = (
-            f"<blockquote>"
-            f"<b>Всего 3 шага</b>\n"
-            f"<b>1.</b> Смотрите кассу группы\n"
-            f"<b>2.</b> Поднимаете уровень ★\n"
-            f"<b>3.</b> Играете на крупные ставки всей группой"
-            f"</blockquote>"
+        closer = (
+            f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji> "
+            f"Комфорт ≈ <b>{rec}</b> кут"
         )
-        if teaser:
-            closer = (
-                f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
-                f"<b>Следующий шаг:</b> {teaser}"
-            )
-        else:
-            closer = (
-                f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji> "
-                f"Комфортная ставка ≈ <b>{rec}</b> кут"
-            )
 
     return (
         f"<tg-emoji emoji-id='5251344521546965676'>🏖</tg-emoji> "
-        f"<b>{hook}</b>\n\n"
+        f"<b>{title}</b>\n\n"
         f"<tg-emoji emoji-id='{ICON_BALANCE_KUT}'>⭐️</tg-emoji> "
         f"<b>{bal_fmt}</b> кут\n"
-        f"{now_line}\n\n"
-        f"{steps}\n\n"
+        f"<b>{stars_label(level)}</b>\n"
+        f"{stake_line}\n\n"
+        f"{factors}\n\n"
         f"{closer}"
     )
 
@@ -698,7 +695,7 @@ def build_main_keyboard(
             icon_custom_emoji_id=ICON_RAISE_LEVEL,
         )])
     rows.append([_btn(
-        text="Как это работает · 3 шага",
+        text="Как это работает",
         callback_data=f"group_balance_details:{bal}",
         style="default",
     )])

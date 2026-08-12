@@ -6114,6 +6114,31 @@ body,
   border-radius: 10px;
   padding: 0.55rem 0.65rem;
 }
+.gbl-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.gbl-range {
+  flex: 1;
+  width: 100%;
+  accent-color: #f0f0f0;
+  min-height: 1.4rem;
+}
+.gbl-empty-btn {
+  flex-shrink: 0;
+  border: 1px solid var(--e-line);
+  background: #111;
+  color: #bbb;
+  border-radius: 8px;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.gbl-empty-btn-on {
+  color: #fff;
+  border-color: rgba(255,255,255,.35);
+}
 .gbl-note { grid-column: 1 / -1; color: var(--e-text-3, #777); font-size: 0.8rem; line-height: 1.45; }
 .gbl-inline-actions { display: flex; gap: 0.5rem; align-items: end; }
 .gbl-pre {
@@ -6227,6 +6252,17 @@ body,
   border: 1px solid rgba(255,255,255,.08); background: #0a0a0a;
   transition: transform .16s ease, border-color .16s ease, background .16s ease;
 }
+.ach-card-move {
+  display: flex; flex-direction: column; justify-content: center; gap: .15rem;
+  padding: .35rem .2rem .35rem .45rem;
+}
+.ach-move-btn {
+  border: 1px solid rgba(255,255,255,.12); background: #111; color: #ddd;
+  width: 1.55rem; height: 1.35rem; border-radius: 6px; cursor: pointer; font-size: .75rem;
+  line-height: 1; padding: 0;
+}
+.ach-move-btn:hover:not(:disabled) { border-color: rgba(255,255,255,.35); color: #fff; }
+.ach-move-btn:disabled { opacity: .4; cursor: wait; }
 .ach-card:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.2); }
 .ach-card-active { border-color: rgba(255,255,255,.4); background: #121212; }
 .ach-card-off { opacity: .55; }

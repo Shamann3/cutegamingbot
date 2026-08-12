@@ -25,6 +25,51 @@ function Field({ label, help, children }) {
   )
 }
 
+function SliderField({
+  label,
+  help,
+  value,
+  min,
+  max,
+  step = 1,
+  onChange,
+  suffix = '',
+  allowEmpty = false,
+  emptyLabel = 'без лимита',
+}) {
+  const raw = value
+  const isEmpty = allowEmpty && (raw === '' || raw === null || raw === undefined)
+  const num = isEmpty ? min : Number(raw)
+  const safe = Number.isFinite(num) ? Math.min(max, Math.max(min, num)) : min
+  return (
+    <Field
+      label={isEmpty ? `${label}: ${emptyLabel}` : `${label}: ${safe}${suffix}`}
+      help={help}
+    >
+      <div className="gbl-slider-row">
+        <input
+          className="gbl-range"
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={isEmpty ? min : safe}
+          onChange={(e) => onChange(Number(e.target.value))}
+        />
+        {allowEmpty ? (
+          <button
+            type="button"
+            className={`gbl-empty-btn${isEmpty ? ' gbl-empty-btn-on' : ''}`}
+            onClick={() => onChange(isEmpty ? min : '')}
+          >
+            {isEmpty ? 'лимит' : '∞'}
+          </button>
+        ) : null}
+      </div>
+    </Field>
+  )
+}
+
 export default function GroupBalanceLevelSection() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -166,8 +211,7 @@ export default function GroupBalanceLevelSection() {
         <p className="panel-shelf-label">Owner only · ч/б студия</p>
         <h2 className="panel-page-title">Уровни баланса группы</h2>
         <p className="panel-page-lead">
-          Студия ★1–★5: цены шагов, потолки ставок, здоровье кнопки «бч», именные метки.
-          В игровых текстах везде «баланс группы» — уважительно и без слова «стол».
+          Числа крутите ползунками. Уровни ★1–★5: цены, лимиты, здоровье кнопки «бч».
         </p>
         <div className="gbl-hero-actions">
           <button type="button" className="elite-btn elite-btn-primary" disabled={saving} onClick={onSave}>
@@ -212,24 +256,26 @@ export default function GroupBalanceLevelSection() {
                 onChange={(e) => patchLocal('enabled', e.target.checked)}
               />
             </Field>
-            <Field label="Лимит при ★0" help={help.level_0_cap}>
-              <input
-                type="number"
-                min={0}
-                value={settings.level_0_cap ?? 30}
-                onChange={(e) => patchLocal('level_0_cap', e.target.value)}
-              />
-            </Field>
-            <Field label="Рекомендуемая ставка, %" help={help.recommend_pct}>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step={0.5}
-                value={settings.recommend_pct ?? 15}
-                onChange={(e) => patchLocal('recommend_pct', e.target.value)}
-              />
-            </Field>
+            <SliderField
+              label="Лимит при ★0"
+              help={help.level_0_cap}
+              value={settings.level_0_cap ?? 30}
+              min={0}
+              max={500}
+              step={1}
+              suffix=" кут"
+              onChange={(n) => patchLocal('level_0_cap', n)}
+            />
+            <SliderField
+              label="Рекомендуемая ставка"
+              help={help.recommend_pct}
+              value={settings.recommend_pct ?? 15}
+              min={0}
+              max={100}
+              step={0.5}
+              suffix="%"
+              onChange={(n) => patchLocal('recommend_pct', n)}
+            />
             <Field label="Текст кнопки апгрейда" help={help.raise_button_text}>
               <input
                 type="text"
@@ -245,15 +291,16 @@ export default function GroupBalanceLevelSection() {
                 onChange={(e) => patchLocal('atmosphere_enabled', e.target.checked)}
               />
             </Field>
-            <Field label="Макс. бонус атмосферы %" help={help.atmosphere_max_bonus_pct}>
-              <input
-                type="number"
-                min={0}
-                max={200}
-                value={settings.atmosphere_max_bonus_pct ?? 40}
-                onChange={(e) => patchLocal('atmosphere_max_bonus_pct', e.target.value)}
-              />
-            </Field>
+            <SliderField
+              label="Макс. бонус атмосферы"
+              help={help.atmosphere_max_bonus_pct}
+              value={settings.atmosphere_max_bonus_pct ?? 40}
+              min={0}
+              max={200}
+              step={1}
+              suffix="%"
+              onChange={(n) => patchLocal('atmosphere_max_bonus_pct', n)}
+            />
           </div>
         )}
 
@@ -262,26 +309,28 @@ export default function GroupBalanceLevelSection() {
             {LEVELS.map((n) => (
               <div key={n} className="gbl-level-card">
                 <div className="gbl-level-head">{stars(n)} · уровень {n}</div>
-                <Field label="Цена шага (★)" help={help.prices}>
-                  <input
-                    type="number"
-                    min={0}
-                    value={prices[String(n)] ?? ''}
-                    onChange={(e) => patchMap('prices', n, e.target.value)}
-                  />
-                </Field>
-                <Field
-                  label={n === 5 ? 'Лимит ставки (пусто = без лимита)' : 'Лимит ставки'}
+                <SliderField
+                  label="Цена шага"
+                  help={help.prices}
+                  value={prices[String(n)] ?? 0}
+                  min={0}
+                  max={5000}
+                  step={10}
+                  suffix="★"
+                  onChange={(v) => patchMap('prices', n, v)}
+                />
+                <SliderField
+                  label="Лимит ставки"
                   help={help.stake_caps}
-                >
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder={n === 5 ? 'без лимита' : ''}
-                    value={caps[String(n)] ?? ''}
-                    onChange={(e) => patchMap('stake_caps', n, e.target.value === '' ? '' : e.target.value)}
-                  />
-                </Field>
+                  value={caps[String(n)] ?? (n === 5 ? '' : 0)}
+                  min={0}
+                  max={2000}
+                  step={5}
+                  suffix=" кут"
+                  allowEmpty={n === 5}
+                  emptyLabel="без лимита"
+                  onChange={(v) => patchMap('stake_caps', n, v)}
+                />
               </div>
             ))}
           </div>
@@ -289,24 +338,24 @@ export default function GroupBalanceLevelSection() {
 
         {tab === 'health' && (
           <div className="gbl-grid">
-            <Field label="Success порог (ratio)" help={help.health_success_min}>
-              <input
-                type="number"
-                min={0}
-                step={0.05}
-                value={settings.health_success_min ?? 1}
-                onChange={(e) => patchLocal('health_success_min', e.target.value)}
-              />
-            </Field>
-            <Field label="Primary порог (ratio)" help={help.health_primary_min}>
-              <input
-                type="number"
-                min={0}
-                step={0.05}
-                value={settings.health_primary_min ?? 0.4}
-                onChange={(e) => patchLocal('health_primary_min', e.target.value)}
-              />
-            </Field>
+            <SliderField
+              label="Success порог"
+              help={help.health_success_min}
+              value={settings.health_success_min ?? 1}
+              min={0}
+              max={3}
+              step={0.05}
+              onChange={(n) => patchLocal('health_success_min', n)}
+            />
+            <SliderField
+              label="Primary порог"
+              help={help.health_primary_min}
+              value={settings.health_primary_min ?? 0.4}
+              min={0}
+              max={3}
+              step={0.05}
+              onChange={(n) => patchLocal('health_primary_min', n)}
+            />
             <p className="gbl-note">
               ratio = (бч × recommend_pct / 100) / лимит_уровня.
               Выше success → зелёная кнопка бч; между primary и success → primary; ниже → danger.
@@ -340,15 +389,14 @@ export default function GroupBalanceLevelSection() {
             <div className="gbl-inline-actions">
               <button type="button" className="elite-btn" onClick={onLookupChat}>Смотреть</button>
             </div>
-            <Field label="Уровень 0…5">
-              <input
-                type="number"
-                min={0}
-                max={5}
-                value={chatLevel}
-                onChange={(e) => setChatLevel(Number(e.target.value) || 0)}
-              />
-            </Field>
+            <SliderField
+              label={`Уровень ${stars(chatLevel)}`}
+              value={chatLevel}
+              min={0}
+              max={5}
+              step={1}
+              onChange={(n) => setChatLevel(n)}
+            />
             <div className="gbl-inline-actions">
               <button type="button" className="elite-btn elite-btn-primary" onClick={onSetChat}>
                 Выставить уровень
