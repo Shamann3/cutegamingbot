@@ -329,21 +329,16 @@ async def _load_gc_state_for_user(user_id: int) -> dict:
     is_free = False
     current_two = 0
     target_amount = 0
-    provoda_max_bet = provoda_MAX_BET
+    gc_bet_limit = None
 
     try:
-        gc_bet_limit = await db.gc_get_bet_limit_for_user(user_id)
+        raw = await db.gc_get_bet_limit_for_user(user_id)
+        if raw is not None:
+            lim = int(raw)
+            if lim > 0:
+                gc_bet_limit = lim
     except Exception as e:
-        gc_bet_limit = None
         print(f"[WIRES][GC_BET_LIMIT] Ошибка: {e}")
-
-    if gc_bet_limit is not None:
-        try:
-            gc_bet_limit_int = int(gc_bet_limit)
-            if gc_bet_limit_int > 0:
-                provoda_max_bet = min(provoda_MAX_BET, gc_bet_limit_int)
-        except Exception as e:
-            print(f"[WIRES][GC_BET_LIMIT] Ошибка преобразования: {e}")
 
     try:
         assignment = await db.get_active_gc_assignment(user_id)
@@ -376,7 +371,8 @@ async def _load_gc_state_for_user(user_id: int) -> dict:
         "is_free": is_free,
         "current_two": current_two,
         "target_amount": target_amount,
-        "max_bet": provoda_max_bet,
+        "gc_bet_limit": gc_bet_limit,
+        "max_bet": provoda_MAX_BET,
     }
 
 
@@ -738,14 +734,21 @@ async def provoda(message: Message):
     is_free = gc_state["is_free"]
     current_two = gc_state["current_two"]
     target_amount = gc_state["target_amount"]
-    max_bet_gc = gc_state["max_bet"]
-
-    if bet_amount > max_bet_gc:
+    from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
+    gate = decide_gc_play_mode(
+        bet=bet_amount,
+        game_max_bet=provoda_MAX_BET,
+        has_assignment=has_assignment,
+        is_free=is_free,
+        gc_bet_limit=gc_state.get("gc_bet_limit"),
+    )
+    if gate.get("mode") == "reject":
         await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка в этой игре: {_fmt_int(max_bet_gc)} кут.</b>",
+            format_game_max_bet_html(gate.get("max") or provoda_MAX_BET),
             parse_mode="HTML", disable_web_page_preview=True,
         )
         return
+    is_free_play = gate.get("mode") == "free"
 
     # ----- Получение балансов demo/0demo -----
     demo_balance = int(await db.get_user_demo(user_id) or 0)
@@ -813,7 +816,7 @@ async def provoda(message: Message):
     print(f"[WIRES] Итоговый режим: demo={using_demo}, 0demo={using_0demo}")
 
     # ----- ПРОВЕРКА БАЛАНСА ПОЛЬЗОВАТЕЛЯ (ОБЯЗАТЕЛЬНАЯ) -----
-    if has_assignment and is_free:
+    if is_free_play:
         if bet_amount > current_two:
             progress = f"{current_two}/{target_amount}" if target_amount and target_amount > 0 else f"{current_two}"
             kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -851,17 +854,24 @@ async def provoda(message: Message):
             asyncio.create_task(_send_invoice_later(message, user_id, stars_amount, delay=timeoutdonate))
             return
 
-    # ----- ПРОВЕРКА БАЛАНСА ГРУППЫ -----
-    chat_balance_now = await _chat_get_balance(chat_id)
-    max_win = int(bet_amount * PAYOUT_MULTIPLIER)
-    if chat_balance_now < max_win:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В группе недостаточно средств для выплаты возможного выигрыша.</b>\n"
-            f"💸 Баланс группы: {_fmt_int(chat_balance_now)} кут\n"
-            f"📌 Нужно минимум: {_fmt_int(max_win)} кут",
-            parse_mode="HTML", disable_web_page_preview=True,
-        )
-        return
+        # ----- ПРОВЕРКА БАЛАНСА ГРУППЫ (не для free) -----
+        chat_balance_now = await _chat_get_balance(chat_id)
+        max_win = int(bet_amount * PAYOUT_MULTIPLIER)
+        if chat_balance_now < max_win:
+            await message.reply(
+                f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В группе недостаточно средств для выплаты возможного выигрыша.</b>\n"
+                f"💸 Баланс группы: {_fmt_int(chat_balance_now)} кут\n"
+                f"📌 Нужно минимум: {_fmt_int(max_win)} кут",
+                parse_mode="HTML", disable_web_page_preview=True,
+            )
+            return
+
+    try:
+        from bot.funcs.group_balance_level import reject_if_bet_over_group_level
+        if await reject_if_bet_over_group_level(message, bet_amount, is_free_play=is_free_play):
+            return
+    except Exception as _gbl_e:
+        print(f"[GBL] provoda check skip: {_gbl_e!r}")
 
     # ----- Антиспам -----
     now = time.time()
@@ -938,7 +948,7 @@ async def provoda(message: Message):
             "win_mask": win_mask,
             "multiplier": str(PAYOUT_MULTIPLIER),
             "has_assignment": has_assignment,
-            "is_free": is_free,
+            "is_free": is_free_play,
             "using_demo": using_demo,
             "using_0demo": using_0demo,
             "win_streak": 0,

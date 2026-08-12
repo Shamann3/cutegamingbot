@@ -595,31 +595,18 @@ async def bombs(message: Message):
     chat_id = int(message.chat.id)
 
 
-    max_bet = int(bomb_MAX_BET)
-    try:
-        gc_bet_limit = await db.gc_get_bet_limit_for_user(user_id)
-        if gc_bet_limit is not None:
-            try:
-                lim = int(gc_bet_limit)
-                if lim > 0:
-                    max_bet = min(max_bet, lim)
-            except Exception:
-                pass
-    except Exception as e:
-        dbg_err("BET_LIMIT_ERR", e)
-
-    if bet_int > int(max_bet):
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка в этой игре {_fmt_kut(max_bet)} кут</b>",
-            parse_mode="HTML", disable_web_page_preview=True
-        )
-        return
-
     # ---------- ЧЕЛЛЕНДЖ ----------
     has_assignment = False
     is_free = False
     current_two = 0
     target_amount = 0
+    gc_bet_limit = None
+
+    try:
+        gc_bet_limit = await db.gc_get_bet_limit_for_user(user_id)
+    except Exception as e:
+        dbg_err("BET_LIMIT_ERR", e)
+        gc_bet_limit = None
 
     try:
         assignment = await db.get_active_gc_assignment(user_id)
@@ -639,6 +626,22 @@ async def bombs(message: Message):
                 target_amount = 0
     except Exception as e:
         dbg_err("GC_ASSIGN_READ_ERR", e)
+
+    from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
+    gate = decide_gc_play_mode(
+        bet=bet_int,
+        game_max_bet=int(bomb_MAX_BET),
+        has_assignment=has_assignment,
+        is_free=is_free,
+        gc_bet_limit=gc_bet_limit,
+    )
+    if gate.get("mode") == "reject":
+        await message.reply(
+            format_game_max_bet_html(gate.get("max") or bomb_MAX_BET),
+            parse_mode="HTML", disable_web_page_preview=True
+        )
+        return
+    is_free_play = gate.get("mode") == "free"
 
     # ---------- НОВИЧОК И WELCOME BACK ----------
     try:
@@ -688,7 +691,7 @@ async def bombs(message: Message):
                 print("[BOMBS] Режим: обычный")
 
     # ---------- ПРОВЕРКА БАЛАНСА ПОЛЬЗОВАТЕЛЯ (ОБЯЗАТЕЛЬНАЯ) ----------
-    if has_assignment and is_free:
+    if is_free_play:
         if bet_int > current_two:
             progress_text = f"{current_two}/{target_amount}" if target_amount > 0 else f"{current_two}"
             keyboard = InlineKeyboardMarkup(
@@ -743,21 +746,28 @@ async def bombs(message: Message):
             asyncio.create_task(_bg_invoice())
             return
 
-    # ---------- ПРОВЕРКА БАЛАНСА ГРУППЫ ----------
-    chat_balance = await _chat_get_balance(chat_id)
-    if bet_dec > chat_balance:
-        rows = []
-        if has_assignment and not is_free:
-            rows.append([InlineKeyboardButton(text="У вас обычное задание", callback_data="gc_regular_info")])
-            rows.append([InlineKeyboardButton(text="В чём разница?", callback_data="gc_diff_types")])
+        # ---------- ПРОВЕРКА БАЛАНСА ГРУППЫ (не для free) ----------
+        chat_balance = await _chat_get_balance(chat_id)
+        if bet_dec > chat_balance:
+            rows = []
+            if has_assignment and not is_free:
+                rows.append([InlineKeyboardButton(text="У вас обычное задание", callback_data="gc_regular_info")])
+                rows.append([InlineKeyboardButton(text="В чём разница?", callback_data="gc_diff_types")])
 
-        await message.reply(
-            "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В группе недостаточно средств для игры.</b>",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=rows) if rows else None,
-            parse_mode="HTML",
-            disable_web_page_preview=True
-        )
-        return
+            await message.reply(
+                "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В группе недостаточно средств для игры.</b>",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=rows) if rows else None,
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
+            return
+
+    try:
+        from bot.funcs.group_balance_level import reject_if_bet_over_group_level
+        if await reject_if_bet_over_group_level(message, bet_int, is_free_play=is_free_play):
+            return
+    except Exception as _gbl_e:
+        print(f"[GBL] bombs check skip: {_gbl_e!r}")
 
     lock = _get_game_lock(user_id)
     async with lock:
@@ -809,7 +819,7 @@ async def bombs(message: Message):
             "withdraw_locked": False,
             "payout_done": False,
             "has_assignment": has_assignment,
-            "is_free": is_free,
+            "is_free": is_free_play,
             "nuke_count": int(nuke_count),
             "using_demo": using_demo,
             "using_0demo": using_0demo,

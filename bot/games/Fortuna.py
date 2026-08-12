@@ -1034,21 +1034,16 @@ async def _load_gc_state_for_user_fortuna(user_id: int) -> dict:
     is_free = False
     current_two = 0
     target_amount = 0
-    max_bet = 10**12
+    gc_bet_limit = None
 
     try:
-        gc_bet_limit = await db.gc_get_bet_limit_for_user(user_id)
+        raw = await db.gc_get_bet_limit_for_user(user_id)
+        if raw is not None:
+            lim = int(raw)
+            if lim > 0:
+                gc_bet_limit = lim
     except Exception as e:
-        gc_bet_limit = None
         _fdbg("GC_LIMIT", f"Ошибка gc_get_bet_limit_for_user({user_id}): {e}")
-
-    if gc_bet_limit is not None:
-        try:
-            gc_bet_limit_int = int(gc_bet_limit)
-            if gc_bet_limit_int > 0:
-                max_bet = min(max_bet, gc_bet_limit_int)
-        except Exception:
-            pass
 
     try:
         assignment = await db.get_active_gc_assignment(user_id)
@@ -1080,7 +1075,8 @@ async def _load_gc_state_for_user_fortuna(user_id: int) -> dict:
         "is_free": is_free,
         "current_two": current_two,
         "target_amount": target_amount,
-        "max_bet": max_bet,
+        "gc_bet_limit": gc_bet_limit,
+        "max_bet": FORTUNA_MAXIMUM_BET_AMOUNT,
     }
 
 # ===================== ПАРСИНГ СТАВКИ =====================
@@ -1998,13 +1994,19 @@ async def Fortuna(message: Message):
         gc_state = await _load_gc_state_for_user_fortuna(user_id)
         has_assignment = bool(gc_state["has_assignment"])
         is_free = bool(gc_state["is_free"])
-        max_bet_gc = int(gc_state["max_bet"] or (10**12))
-
-        if bet_int > max_bet_gc:
+        from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
+        gate = decide_gc_play_mode(
+            bet=bet_int,
+            game_max_bet=FORTUNA_MAXIMUM_BET_AMOUNT,
+            has_assignment=has_assignment,
+            is_free=is_free,
+            gc_bet_limit=gc_state.get("gc_bet_limit"),
+        )
+        if gate.get("mode") == "reject":
             try:
                 await bot1.send_message(
                     chat_id,
-                    f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка для этой игры: {fmt_int(max_bet_gc)} кут.</b>",
+                    format_game_max_bet_html(gate.get("max") or FORTUNA_MAXIMUM_BET_AMOUNT),
                     reply_to_message_id=message.message_id,
                     parse_mode="HTML",
                 )
@@ -2012,6 +2014,7 @@ async def Fortuna(message: Message):
                 pass
             _mark_processed_message(message)
             return
+        is_free_play = gate.get("mode") == "free"
 
         # ---------- DEMO / 0DEMO с Jericho ----------
         using_demo = False
@@ -2060,10 +2063,18 @@ async def Fortuna(message: Message):
 
             _fdbg("MODE", f"final: demo={using_demo} 0demo={using_0demo}")
 
-        if has_assignment and is_free:
+        if is_free_play:
             print(f"[ROULETTE][ENTER] free user={user_id} chat={chat_id} bet={bet_int}", flush=True)
             await _fortuna_free_game(message, user_id, chat_id, bet_int, parts, gc_state)
             return
+
+        try:
+            from bot.funcs.group_balance_level import reject_if_bet_over_group_level
+            if await reject_if_bet_over_group_level(message, bet_int, is_free_play=False):
+                _mark_processed_message(message)
+                return
+        except Exception as _gbl_e:
+            print(f"[GBL] fortuna check skip: {_gbl_e!r}")
 
         print(
             f"[ROULETTE][ENTER] paid user={user_id} chat={chat_id} bet={bet_int} "

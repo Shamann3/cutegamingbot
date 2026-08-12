@@ -481,19 +481,14 @@ async def plate(message: Message):
         return
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
-    max_bet = PLATE_MAX_BET
-    try:
-        lim = await db.gc_get_bet_limit_for_user(user_id)
-        if lim is not None:
-            lim_i = _safe_int(lim, 0)
-            if lim_i > 0: max_bet = lim_i
-    except: pass
-    if bet_amount > max_bet:
-        await message.reply(f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка в этой игре {_fmt_int(max_bet)} кут</b>", parse_mode="HTML")
-        return
 
-    # Челленджи
+    # Челленджи + режим ставки (free / paid)
     has_assignment = False; is_free = False; current_two = 0; target_amount = 0
+    gc_bet_limit = None
+    try:
+        gc_bet_limit = await db.gc_get_bet_limit_for_user(user_id)
+    except Exception:
+        gc_bet_limit = None
     try:
         assignment = await db.get_active_gc_assignment(user_id)
         if assignment and str(assignment.get("status","")).lower() == "active":
@@ -501,7 +496,21 @@ async def plate(message: Message):
             is_free = bool(await db.gc_active_is_free(user_id))
             current_two = int(await db.gc_get_current_two_balance(user_id) or 0)
             target_amount = int(assignment.get("target_amount", 0))
-    except: pass
+    except Exception:
+        pass
+
+    from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
+    gate = decide_gc_play_mode(
+        bet=bet_amount,
+        game_max_bet=PLATE_MAX_BET,
+        has_assignment=has_assignment,
+        is_free=is_free,
+        gc_bet_limit=gc_bet_limit,
+    )
+    if gate.get("mode") == "reject":
+        await message.reply(format_game_max_bet_html(gate.get("max") or PLATE_MAX_BET), parse_mode="HTML")
+        return
+    is_free_play = gate.get("mode") == "free"
 
     # Инициализация новичка
     try:
@@ -538,7 +547,7 @@ async def plate(message: Message):
             elif zero_demo_balance >= bet_amount: using_0demo = True
 
     # Проверка доступности ставки
-    if has_assignment and is_free:
+    if is_free_play:
         if bet_amount > current_two:
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"Баланс челленджа : {current_two}/{target_amount} кут", callback_data="noop")], [InlineKeyboardButton(text="Недостаточно кут", callback_data="noop")]])
             await message.reply("😓", reply_markup=kb, parse_mode="HTML")
@@ -558,6 +567,13 @@ async def plate(message: Message):
             await message.reply("<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В группе недостаточно средств.</b>", parse_mode="HTML")
             return
 
+    try:
+        from bot.funcs.group_balance_level import reject_if_bet_over_group_level
+        if await reject_if_bet_over_group_level(message, bet_amount, is_free_play=is_free_play):
+            return
+    except Exception as _gbl_e:
+        print(f"[GBL] plate check skip: {_gbl_e!r}")
+
     async with _get_user_lock(user_id):
         await _deactivate_previous_plate_ui(user_id)
         prev_state = active_games_plate.get(user_id) or {}
@@ -572,7 +588,7 @@ async def plate(message: Message):
             "bet": bet_amount, "win_amount": _str_dec(_dec(bet_amount)),
             "owner_id": user_id, "chat_id": chat_id, "message_id": None,
             "first_success": False, "closed": False, "withdraw_locked": False, "payout_done": False,
-            "session_rev": new_rev, "has_assignment": has_assignment, "is_free": is_free,
+            "session_rev": new_rev, "has_assignment": has_assignment, "is_free": is_free_play,
             "using_demo": using_demo, "using_0demo": using_0demo,
             "win_streak": 0, "lose_streak": 0,
         }

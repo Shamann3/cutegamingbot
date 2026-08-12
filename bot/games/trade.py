@@ -244,31 +244,6 @@ async def trade(message: Message):
     except Exception as e:
         print(f"[TRADE] Ошибка инициализации newbie_expires_at: {e}")
 
-    # -------- ЛИМИТ СТАВКИ ОТ ЧЕЛЛЕНДЖА --------
-    max_bet = int(BASE_MAX_BET)
-    try:
-        gc_bet_limit = await db.gc_get_bet_limit_for_user(user_id)
-        if gc_bet_limit is not None:
-            try:
-                gc_bet_limit_int = int(gc_bet_limit)
-            except Exception as e:
-                print(f"[TRADE][BET_LIMIT] Ошибка приведения betlimit={gc_bet_limit!r} к int: {e}")
-                gc_bet_limit_int = None
-
-            if gc_bet_limit_int is not None and gc_bet_limit_int > 0:
-                max_bet = gc_bet_limit_int
-    except Exception as e:
-        print(f"[TRADE][BET_LIMIT] Ошибка gc_get_bet_limit_for_user({user_id}): {e}")
-        traceback.print_exc()
-
-    if bet_amount > max_bet:
-        await _reply_simple(
-            message,
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
-            f"<b>Максимальная ставка в этой игре {_fmt(max_bet)} кут</b>",
-        )
-        return
-
     # --- балансы (первичное чтение) ---
     current_balance = int(await db.get_user_balance(user_id) or 0)
     chat_total_balance = int(await db.get_chat_balance(bot1, chat_id) or 0)
@@ -281,6 +256,14 @@ async def trade(message: Message):
     is_free = False
     current_two: int = 0
     target_amount: int = 0
+    gc_bet_limit = None
+
+    try:
+        gc_bet_limit = await db.gc_get_bet_limit_for_user(user_id)
+    except Exception as e:
+        print(f"[TRADE][BET_LIMIT] Ошибка gc_get_bet_limit_for_user({user_id}): {e}")
+        traceback.print_exc()
+        gc_bet_limit = None
 
     try:
         assignment = await db.get_active_gc_assignment(user_id)
@@ -309,9 +292,26 @@ async def trade(message: Message):
         current_two = 0
         target_amount = 0
 
-    # === ПРОВЕРКА ДОСТУПНОСТИ СТАВКИ (с учётом требования: всегда проверять основной баланс) ===
-    if _gc_free_mode(has_assignment, is_free):
-        # Бесплатный челлендж: баланс отдельный, демо/0демо не влияют
+    from bot.funcs.group_balance_level import (
+        decide_gc_play_mode,
+        format_game_max_bet_html,
+        reject_if_bet_over_group_level,
+    )
+    gate = decide_gc_play_mode(
+        bet=bet_amount,
+        game_max_bet=int(BASE_MAX_BET),
+        has_assignment=has_assignment,
+        is_free=is_free,
+        gc_bet_limit=gc_bet_limit,
+    )
+    if gate.get("mode") == "reject":
+        await _reply_simple(message, format_game_max_bet_html(gate.get("max") or BASE_MAX_BET))
+        return
+    is_free_play = gate.get("mode") == "free"
+
+    # === ПРОВЕРКА ДОСТУПНОСТИ СТАВКИ ===
+    if is_free_play:
+        # Бесплатный челлендж: без БЧ и без ★
         if bet_amount > current_two:
             progress_text = f"{current_two}/{target_amount}" if target_amount > 0 else f"{current_two}"
             keyboard = InlineKeyboardMarkup(
@@ -367,6 +367,12 @@ async def trade(message: Message):
             )
             return
 
+        try:
+            if await reject_if_bet_over_group_level(message, bet_amount, is_free_play=False):
+                return
+        except Exception as _gbl_e:
+            print(f"[GBL] trade check skip: {_gbl_e!r}")
+
     # =====================
     # АНТИСПАМ
     # =====================
@@ -386,7 +392,7 @@ async def trade(message: Message):
         last_trade_time[chat_id][user_id] = now
 
     # ⏳ Welcome Back – только вне бесплатного челленджа (там нет реального баланса)
-    if not _gc_free_mode(has_assignment, is_free):
+    if not is_free_play:
         await welcome_back_gift(user_id)
 
     using_demo = False
@@ -455,7 +461,7 @@ async def trade(message: Message):
     # --------------------------------------------
     try:
         gc_outcome = "+" if is_win else "-"
-        gc_free_mode = _gc_free_mode(has_assignment, is_free)
+        gc_free_mode = bool(is_free_play)
 
         if has_assignment:
             try:

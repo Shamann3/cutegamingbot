@@ -24,6 +24,7 @@
   magic.set_mode("strict")
   magic.tune(debounce_sec=0.5)
   magic.add_priority_prefix("mygame_")
+  magic.force_recover()   # если кнопки «залипли» после долгого аптайма
   print(magic.show_config())
 
 Что даёт Мэджик каждому callback_query:
@@ -32,7 +33,7 @@
   • debounce одинаковых кликов
   • приоритет игр и магазина
   • тихое гашение спиннера при блоке
-  • самолечение при долгом аптайме
+  • самолечение при долгом аптайме (stale inflight + редкий rebind)
 """
 from __future__ import annotations
 

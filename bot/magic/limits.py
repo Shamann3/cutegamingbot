@@ -12,6 +12,7 @@
   2) если нельзя — middleware тихо гасит «часики» (без toast)
   3) игры/магазин идут по priority-каналу (быстрее)
   4) после серии блоков — тихий cooldown (эскалация)
+  5) inflight — по токенам; stale-слоты чистятся (защита от «залипания» кнопок)
 """
 from __future__ import annotations
 
@@ -69,6 +70,8 @@ class MagicLimits:
 
     trim_idle_sec: float = 300.0
     trim_max_users: int = 80_000
+    # handler дольше этого = «осиротевший» inflight (кнопки начинали «зависать»)
+    inflight_stale_sec: float = 45.0
 
     _clicks: Dict[int, Deque[float]] = field(default_factory=dict)
     _prio_clicks: Dict[int, Deque[float]] = field(default_factory=dict)
@@ -76,13 +79,21 @@ class MagicLimits:
     _strikes: Dict[int, Deque[float]] = field(default_factory=dict)
     _cooldown_until: Dict[int, float] = field(default_factory=dict)
     _prio_cooldown_until: Dict[int, float] = field(default_factory=dict)
-    _inflight: int = 0
+    # token -> monotonic start; leave(token) обязателен
+    _active: Dict[int, float] = field(default_factory=dict)
+    _token_seq: int = 0
     _stats_blocked_user: int = 0
     _stats_blocked_debounce: int = 0
     _stats_blocked_global: int = 0
     _stats_blocked_cooldown: int = 0
     _stats_passed: int = 0
     _stats_prio_passed: int = 0
+    _stats_stale_inflight: int = 0
+    _stats_force_recover: int = 0
+
+    @property
+    def _inflight(self) -> int:
+        return len(self._active)
 
     @classmethod
     def from_config(cls, cfg: Optional["MagicConfig"] = None) -> "MagicLimits":
@@ -129,6 +140,10 @@ class MagicLimits:
         now = time.monotonic()
         data = str(data or "")
         prio = is_priority(data)
+
+        # лёгкая очистка stale inflight на горячем пути (дёшево, раз в N вызовов)
+        if (self._token_seq & 31) == 0 and self._active:
+            self.trim_stale_inflight()
 
         until = self._cooldown_until.get(uid)
         if until is not None and now >= until:
@@ -183,34 +198,98 @@ class MagicLimits:
         q.append(now)
 
         if self._inflight >= gmax:
-            self._stats_blocked_global += 1
-            self._note_block(uid, now)
-            return False, "global_busy"
+            # перед блокировкой — ещё раз снять протухшие слоты
+            dropped = self.trim_stale_inflight()
+            if not dropped or self._inflight >= gmax:
+                self._stats_blocked_global += 1
+                self._note_block(uid, now)
+                return False, "global_busy"
 
         if prio:
             self._stats_prio_passed += 1
         self._stats_passed += 1
         return True, ""
 
-    def enter(self) -> None:
-        self._inflight += 1
+    def enter(self) -> int:
+        """Зарегистрировать handler в полёте. Вернуть token для leave()."""
+        self._token_seq += 1
+        tok = self._token_seq
+        self._active[tok] = time.monotonic()
+        return tok
 
-    def leave(self) -> None:
-        if self._inflight > 0:
-            self._inflight -= 1
+    def leave(self, token: Optional[int] = None) -> None:
+        """Снять handler из полёта (по token; без token — безопасный no-op)."""
+        if token is None:
+            return
+        self._active.pop(int(token), None)
+
+    def trim_stale_inflight(self, max_age_sec: Optional[float] = None) -> int:
+        """Убрать осиротевшие inflight-слоты (handler завис / leave не вызвали)."""
+        age = float(
+            self.inflight_stale_sec if max_age_sec is None else max_age_sec
+        )
+        if age <= 0 or not self._active:
+            return 0
+        now = time.monotonic()
+        cutoff = now - age
+        stale = [tok for tok, started in self._active.items() if started < cutoff]
+        for tok in stale:
+            self._active.pop(tok, None)
+        n = len(stale)
+        if n:
+            self._stats_stale_inflight += n
+        return n
+
+    def force_recover(self) -> Dict[str, int]:
+        """
+        Аварийное восстановление при «залипших» кнопках:
+        сброс stale inflight + просроченных cooldown.
+        """
+        self._stats_force_recover += 1
+        dropped = self.trim_stale_inflight(
+            max_age_sec=min(15.0, float(self.inflight_stale_sec) or 15.0)
+        )
+        hard = 0
+        soft_cap = max(int(self.global_inflight_soft), int(self.prio_global_inflight_soft))
+        if self._inflight >= soft_cap:
+            hard = len(self._active)
+            self._active.clear()
+        now = time.monotonic()
+        cd = 0
+        for store_cd in (self._cooldown_until, self._prio_cooldown_until):
+            for uid, until in list(store_cd.items()):
+                if until < now:
+                    store_cd.pop(uid, None)
+                    cd += 1
+        return {
+            "stale_dropped": dropped,
+            "hard_inflight_cleared": hard,
+            "cooldowns_cleared": cd,
+            "inflight_now": self._inflight,
+        }
 
     def trim(self) -> Dict[str, int]:
         """Почистить idle-пользователей и просроченные cooldown."""
         now = time.monotonic()
         idle_before = now - self.trim_idle_sec
         removed = 0
+        stale_inf = self.trim_stale_inflight()
 
-        for store in (self._clicks, self._prio_clicks, self._strikes):
+        for store in (self._clicks, self._prio_clicks):
             for uid, q in list(store.items()):
                 if not q or q[-1] < idle_before:
                     store.pop(uid, None)
-                    self._last_data.pop(uid, None)
                     removed += 1
+
+        for uid, q in list(self._strikes.items()):
+            if not q or q[-1] < idle_before:
+                self._strikes.pop(uid, None)
+                removed += 1
+
+        for uid, (_data, ts) in list(self._last_data.items()):
+            if ts < idle_before:
+                self._last_data.pop(uid, None)
+                removed += 1
 
         for store_cd in (self._cooldown_until, self._prio_cooldown_until):
             for uid, until in list(store_cd.items()):
@@ -240,6 +319,7 @@ class MagicLimits:
 
         return {
             "removed": removed,
+            "stale_inflight": stale_inf,
             "users": len(self._clicks),
             "prio_users": len(self._prio_clicks),
             "inflight": self._inflight,
@@ -250,6 +330,8 @@ class MagicLimits:
             "blocked_cooldown": self._stats_blocked_cooldown,
             "passed": self._stats_passed,
             "prio_passed": self._stats_prio_passed,
+            "stale_inflight_total": self._stats_stale_inflight,
+            "force_recover_total": self._stats_force_recover,
         }
 
     def snapshot(self) -> Dict[str, int]:
@@ -264,4 +346,6 @@ class MagicLimits:
             "blocked_cooldown": self._stats_blocked_cooldown,
             "passed": self._stats_passed,
             "prio_passed": self._stats_prio_passed,
+            "stale_inflight_total": self._stats_stale_inflight,
+            "force_recover_total": self._stats_force_recover,
         }

@@ -301,7 +301,7 @@ async def chatbalance(message: Message):
                 f"reason={publicResult_CheckpublickGroup.reason_CheckpublickGroup}")
             await message.reply(
                 "<tg-emoji emoji-id='5447644880824181073'>⚠️</tg-emoji> "
-                "<b>Баланс группы доступен только в публичных группах (у группы должен быть @username).</b>" ,
+                "<b>Баланс группы доступен в публичных чатах — у группы должен быть открытый @username.</b>" ,
                 parse_mode="HTML")
             return
 
@@ -467,7 +467,7 @@ async def chatbalance(message: Message):
                 f"reason={publicResult_CheckpublickGroup.reason_CheckpublickGroup}")
             await message.reply(
                 "<tg-emoji emoji-id='5447644880824181073'>⚠️</tg-emoji> "
-                "<b>Баланс группы доступен только в публичных группах (у группы должен быть @username).</b>" ,
+                "<b>Баланс группы доступен в публичных чатах — у группы должен быть открытый @username.</b>" ,
                 parse_mode="HTML")
             return
 
@@ -611,7 +611,7 @@ async def chatbalance(message: Message):
         if not publicResult_CheckpublickGroup.is_public_CheckpublickGroup:
             await message.reply(
                 "<tg-emoji emoji-id='5447644880824181073'>⚠️</tg-emoji> "
-                "<b>Баланс группы доступен только в публичных группах (у группы должен быть @username).</b>" ,
+                "<b>Баланс группы доступен в публичных чатах — у группы должен быть открытый @username.</b>" ,
                 parse_mode="HTML")
             return
 
@@ -638,19 +638,23 @@ async def chatbalance(message: Message):
             chat_balance_formatted = "{:,.0f}".format(chat_balance).replace("," , ".")
             total_balance_formatted = "{:,.0f}".format(total_balance).replace("," , ".")
 
-            balance_button = InlineKeyboardButton(
-                text=f"{total_balance_formatted} кут" , callback_data="group_balance_overview" , style="default" ,
-                icon_custom_emoji_id="6028338546736107668")
-
-            details_button = InlineKeyboardButton(
-                text="Подробнее" , callback_data=f"group_balance_details:{chat_balance}" ,
-                style="default" , icon_custom_emoji_id="6028346797368283073")
-
-            keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[ [ balance_button ] , [ details_button ] ])
-
-            sent_message = await message.reply(
-                "<tg-emoji emoji-id='5251344521546965676'>🏖</tg-emoji>" , reply_markup=keyboard , parse_mode="HTML")
+            from bot.funcs.group_balance_level import (
+                build_main_keyboard,
+                build_main_screen_html,
+                strip_tg_emoji,
+            )
+            keyboard = build_main_keyboard(chat_id=chat_id, chat_balance=chat_balance)
+            screen = build_main_screen_html(chat_id=chat_id, chat_balance=chat_balance)
+            try:
+                sent_message = await message.reply(
+                    screen, reply_markup=keyboard, parse_mode="HTML")
+            except Exception as e:
+                err = str(e)
+                if "DOCUMENT_INVALID" in err or "can't parse" in err.lower():
+                    sent_message = await message.reply(
+                        strip_tg_emoji(screen), reply_markup=keyboard, parse_mode="HTML")
+                else:
+                    raise
 
             user_message_balance_chat [ user_id ] = sent_message.message_id
             print(f"[БАЛАНС ЧАТА] ✅ Сообщение отправлено, message_id={sent_message.message_id}")
@@ -689,37 +693,36 @@ async def show_balance_details(callback_query: CallbackQuery):
     if len(data) == 2:
         _ , chat_balance_str = data
 
-        # Преобразуем балансы из строк в числа
         chat_balance = float(chat_balance_str)
+        chat_id = int(callback_query.message.chat.id)
 
-        # Считаем общий баланс
-        total_balance = chat_balance
+        from bot.funcs.group_balance_level import (
+            build_details_html,
+            build_details_keyboard,
+            strip_tg_emoji,
+        )
 
-        # Форматируем балансы для вывода
-        chat_balance_formatted = "{:,.0f}".format(chat_balance).replace("," , ".")
-        total_balance_formatted = "{:,.0f}".format(total_balance).replace("," , ".")
-
-        back_button = InlineKeyboardButton(text="Вернуться к балансу" , callback_data="back_to_balance")
-
-        # Создаём клавиатуру с этой кнопкой
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[ [ back_button ]  # Кнопка "Вернуться к балансу" в первой строке
-            ])
-        # Отправляем подробное сообщение с расчетом
-        await callback_query.message.edit_text(
-            f"<tg-emoji emoji-id='5472146462362048818'>💡</tg-emoji> <b>Как устроен баланс группы</b>\n\n"
-
-            f"<tg-emoji emoji-id='5267229058659264159'>🟢</tg-emoji> <b>Общий баланс группы - {chat_balance_formatted} кут</b>\n"
-            f"<pre>Это основной игровой баланс. Когда кто-то выигрывает в игре, куты берутся отсюда. "
-            f"Если кто-то проигрывает - его ставка возвращается обратно в этот баланс, пополняя его.</pre>\n\n"
-
-            f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji> <b>Доход владельца группы :</b>\n"
-            f"<pre>Если участники активно играют и часть из них проигрывает, обычный баланс группы постепенно растёт. "
-            f"Владелец группы может снимать куты только с обычного баланса, тем самым зарабатывая на активности игроков, "
-            f"при этом игры остаются честными и прозрачными.</pre>", parse_mode="HTML" , reply_markup=keyboard)
-
+        text = build_details_html(chat_balance=chat_balance, chat_id=chat_id)
+        keyboard = build_details_keyboard(chat_id=chat_id)
+        try:
+            await callback_query.message.edit_text(
+                text, parse_mode="HTML", reply_markup=keyboard)
+        except Exception as e:
+            err = str(e)
+            if "DOCUMENT_INVALID" in err or "can't parse" in err.lower():
+                await callback_query.message.edit_text(
+                    strip_tg_emoji(text), parse_mode="HTML", reply_markup=keyboard)
+            else:
+                raise
+        try:
+            await callback_query.answer()
+        except Exception:
+            pass
     else:
-        await callback_query.answer("⚠️ Ошибка: некорректные данные." , show_alert=True)
+        await callback_query.answer(
+            "Не удалось открыть подробности. Вернитесь к балансу и попробуйте снова.",
+            show_alert=True,
+        )
 
 @dp.callback_query(lambda c: c.data == "back_to_balance")
 async def back_to_balance(callback_query: CallbackQuery):
@@ -731,37 +734,195 @@ async def back_to_balance(callback_query: CallbackQuery):
         await callback_query.answer(randommessagebonus1)
         return
 
-    # Получаем балансы
     chat_id = callback_query.message.chat.id
     chat_balance = await db.get_chat_balancebalance(bot1,chat_id)
-
-    # Преобразуем балансы в числа
     chat_balance = float(chat_balance) if chat_balance else 0.0
 
-    # Считаем общий баланс
-    total_balance = chat_balance
+    from bot.funcs.group_balance_level import (
+        build_main_keyboard,
+        build_main_screen_html,
+        strip_tg_emoji,
+    )
+    keyboard = build_main_keyboard(chat_id=int(chat_id), chat_balance=chat_balance)
+    screen = build_main_screen_html(chat_id=int(chat_id), chat_balance=chat_balance)
+    try:
+        await callback_query.message.edit_text(
+            screen, reply_markup=keyboard, parse_mode="HTML")
+    except Exception as e:
+        err = str(e)
+        if "DOCUMENT_INVALID" in err or "can't parse" in err.lower():
+            await callback_query.message.edit_text(
+                strip_tg_emoji(screen), reply_markup=keyboard, parse_mode="HTML")
+        else:
+            raise
 
-    # Форматируем балансы для красивого вывода
-    chat_balance_formatted = "{:,.0f}".format(chat_balance).replace(",", ".")
-    total_balance_formatted = "{:,.0f}".format(total_balance).replace(",", ".")
 
-    # Создаем клавиатуру с кнопкой "Подробнее"
-    balance_button = InlineKeyboardButton(
-        text=f"{total_balance_formatted} кут" , callback_data="group_balance_overview")
+@dp.callback_query(lambda c: c.data == "gbl_raise")
+async def gbl_raise_handler(callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    message_id = callback_query.message.message_id
+    randommessagebonus1 = random.choice(randommessagehelp)
+    if user_id not in user_message_balance_chat or user_message_balance_chat[user_id] != message_id:
+        await callback_query.answer(randommessagebonus1)
+        return
 
-    # Создаём кнопку "Подробнее"
-    details_button = InlineKeyboardButton(
-        text="Подробнее" , callback_data=f"group_balance_details:{chat_balance}")
+    chat_id = int(callback_query.message.chat.id)
+    from bot.funcs.group_balance_level import (
+        build_raise_keyboard, build_raise_screen_html, get_settings, get_chat_level,
+        strip_tg_emoji,
+    )
+    cfg = get_settings()
+    if not cfg.get("enabled", True):
+        await callback_query.answer(
+            "Уровни баланса группы временно недоступны. Загляните чуть позже.",
+            show_alert=True,
+        )
+        return
+    if get_chat_level(chat_id) >= 5:
+        await callback_query.answer(
+            "Группа уже на максимальном уровне — спасибо!",
+            show_alert=True,
+        )
+        return
 
-    # Создаём клавиатуру с кнопками
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[ [ balance_button ] ,  # Кнопка баланса в первой строке
-            [ details_button ]  # Кнопка "Подробнее" во второй строке
-        ])
+    text = build_raise_screen_html(chat_id=chat_id, cfg=cfg)
+    kb = build_raise_keyboard(chat_id=chat_id, cfg=cfg)
+    try:
+        await callback_query.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception as e:
+        if "DOCUMENT_INVALID" in str(e):
+            await callback_query.message.edit_text(
+                strip_tg_emoji(text), reply_markup=kb, parse_mode="HTML")
+        else:
+            raise
+    await callback_query.answer()
 
-    # Изменяем сообщение на актуальный баланс группы
-    await callback_query.message.edit_text(
-        f"<tg-emoji emoji-id='5251344521546965676'>🏖</tg-emoji>",
-        reply_markup=keyboard,
-        parse_mode="HTML"
+
+@dp.callback_query(lambda c: c.data and str(c.data).startswith("gbl_pay:"))
+async def gbl_pay_handler(callback_query: CallbackQuery):
+    """Оплата уровня: тот же UX, что донат — Stars pay + сетка crypto."""
+    user_id = callback_query.from_user.id
+    message_id = callback_query.message.message_id
+    randommessagebonus1 = random.choice(randommessagehelp)
+    if user_id not in user_message_balance_chat or user_message_balance_chat[user_id] != message_id:
+        await callback_query.answer(randommessagebonus1)
+        return
+
+    parts = str(callback_query.data).split(":")
+    if len(parts) != 4:
+        await callback_query.answer(
+            "Не удалось подготовить оплату. Откройте экран ещё раз.",
+            show_alert=True,
+        )
+        return
+    try:
+        chat_id = int(parts[1])
+        to_level = int(parts[2])
+        price = int(parts[3])
+    except ValueError:
+        await callback_query.answer(
+            "Не удалось подготовить оплату. Откройте экран ещё раз.",
+            show_alert=True,
+        )
+        return
+
+    from bot.funcs.group_balance_level import (
+        get_settings, next_level_price, stars_label,
+    )
+    cfg = get_settings()
+    if not cfg.get("enabled", True):
+        await callback_query.answer(
+            "Уровни баланса группы временно недоступны. Загляните чуть позже.",
+            show_alert=True,
+        )
+        return
+
+    nxt = next_level_price(chat_id, cfg)
+    if not nxt or nxt[0] != to_level or int(nxt[1]) != int(price):
+        await callback_query.answer(
+            "Уровень уже обновился. Вернитесь к балансу и откройте экран снова.",
+            show_alert=True,
+        )
+        return
+
+    payload = f"gblevel_{chat_id}_{to_level}_{price}"
+    title = f"Уровень {stars_label(to_level)}"
+    description = f"Открыть новый уровень баланса группы · {price}★"
+    prices = [LabeledPrice(label=title[:32], amount=int(price))]
+    kb = get_crypto_keyboard(int(price), gbl_chat_id=int(chat_id), gbl_level=int(to_level))
+
+    try:
+        await bot1.send_invoice(
+            chat_id=user_id,
+            title=title[:32],
+            description=description[:255],
+            payload=payload[:128],
+            currency="XTR",
+            prices=prices,
+            provider_token="",
+            start_parameter="gblevel",
+            reply_markup=kb,
+        )
+        try:
+            user_bonus_requests.setdefault(user_id, []).append(0)
+            message_state[user_id] = 0
+        except Exception:
+            pass
+        await callback_query.answer(
+            "Счёт отправлен вам в личные сообщения.",
+            show_alert=True,
+        )
+    except Exception as e:
+        print(f"[GBL] invoice error: {e!r}")
+        try:
+            tokernasd = await get_bot_username_by_token(TOKEN)
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="Открыть бота",
+                        url=f"https://t.me/{tokernasd}?start=start",
+                    )
+                ]]
+            )
+            await bot1.send_message(
+                callback_query.message.chat.id,
+                "<tg-emoji emoji-id='5420323339723881652'>⚠️</tg-emoji> "
+                "<b>Не удалось отправить счёт в личные сообщения.</b>\n"
+                "Откройте диалог с ботом и нажмите /start — после этого повторите оплату.",
+                parse_mode="HTML",
+                reply_markup=keyboard,
+            )
+        except Exception:
+            pass
+        await callback_query.answer(
+            "Откройте личные сообщения с ботом и нажмите /start",
+            show_alert=True,
+        )
+
+
+@dp.callback_query(lambda c: c.data == "group_balance_overview")
+async def group_balance_overview(callback_query: CallbackQuery):
+    """Тап по кнопке баланса — короткий статус уровня."""
+    user_id = callback_query.from_user.id
+    message_id = callback_query.message.message_id
+    randommessagebonus1 = random.choice(randommessagehelp)
+    if user_id not in user_message_balance_chat or user_message_balance_chat[user_id] != message_id:
+        await callback_query.answer(randommessagebonus1)
+        return
+    chat_id = int(callback_query.message.chat.id)
+    from bot.funcs.group_balance_level import (
+        get_chat_level, stars_label, recommended_bet, effective_stake_cap, get_settings,
+    )
+    cfg = get_settings()
+    level = get_chat_level(chat_id)
+    try:
+        bal = float(await db.get_chat_balancebalance(bot1, chat_id) or 0)
+    except Exception:
+        bal = 0.0
+    rec = recommended_bet(bal, cfg)
+    cap = effective_stake_cap(chat_id, cfg=cfg)
+    lim = "без лимита" if cap is None else f"до {cap} кут"
+    await callback_query.answer(
+        f"Касса жива · {stars_label(level)}\nСтавки {lim} · комфорт ≈ {rec}",
+        show_alert=True,
     )

@@ -151,16 +151,20 @@ def _build_keyboard_ball(session_rev: int, bet: int, uid: int) -> InlineKeyboard
 
 async def _load_gc_state_for_user(uid: int) -> dict:
     has_assignment = False; is_free = False; current_two = 0; target_amount = 0
-    max_bet = Balls_MAX_BET
+    gc_bet_limit = None
     try:
         gc_bet_limit = await db.gc_get_bet_limit_for_user(uid)
     except Exception as e:
         print(f"[BALL][GC] Лимит ошибка: {e}"); gc_bet_limit = None
-    if gc_bet_limit is not None:
-        try:
-            lim = int(gc_bet_limit)
-            if lim > 0: max_bet = min(Balls_MAX_BET, lim)
-        except Exception as e: print(f"[BALL][GC] Преобразование лимита: {e}")
+    try:
+        lim = int(gc_bet_limit) if gc_bet_limit is not None else 0
+        if lim <= 0:
+            gc_bet_limit = None
+        else:
+            gc_bet_limit = lim
+    except Exception as e:
+        print(f"[BALL][GC] Преобразование лимита: {e}")
+        gc_bet_limit = None
     try:
         assignment = await db.get_active_gc_assignment(uid)
     except Exception as e:
@@ -177,7 +181,8 @@ async def _load_gc_state_for_user(uid: int) -> dict:
     return {
         "has_assignment": has_assignment, "is_free": is_free,
         "current_two": int(current_two), "target_amount": int(target_amount),
-        "max_bet": int(max_bet),
+        "gc_bet_limit": gc_bet_limit,
+        "max_bet": int(Balls_MAX_BET),
     }
 
 def _append_regular_assignment_info_rows(rows: list, has_assignment: bool, is_free: bool) -> None:
@@ -284,11 +289,18 @@ async def balls(message: Message):
     is_free = bool(gc_state["is_free"])
     current_two = int(gc_state["current_two"])
     target_amount = int(gc_state["target_amount"])
-    max_bet_gc = int(gc_state["max_bet"])
-
-    if bet_amount > max_bet_gc:
-        await message.reply(f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка {_fmt_int(max_bet_gc)} кут.</b>", parse_mode="HTML")
+    from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
+    gate = decide_gc_play_mode(
+        bet=bet_amount,
+        game_max_bet=Balls_MAX_BET,
+        has_assignment=has_assignment,
+        is_free=is_free,
+        gc_bet_limit=gc_state.get("gc_bet_limit"),
+    )
+    if gate.get("mode") == "reject":
+        await message.reply(format_game_max_bet_html(gate.get("max") or Balls_MAX_BET), parse_mode="HTML")
         return
+    is_free_play = gate.get("mode") == "free"
 
     # Новичок + welcome back
     try:
@@ -341,8 +353,8 @@ async def balls(message: Message):
                 print("[BALL] Режим: обычный")
 
     # ----- ПРОВЕРКА БАЛАНСА ПОЛЬЗОВАТЕЛЯ (ОБЯЗАТЕЛЬНАЯ, даже при demo/0demo) -----
-    if has_assignment and is_free:
-        # Бесплатный челлендж: используем баланс челленджа
+    if is_free_play:
+        # Бесплатный челлендж: используем баланс челленджа (без БЧ и без ★)
         if bet_amount > current_two:
             progress_text = f"{current_two}/{target_amount}" if target_amount > 0 else f"{current_two}"
             kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -369,14 +381,21 @@ async def balls(message: Message):
             asyncio.create_task(_send_invoice_later(message, user_id, stars_amount, delay=timeoutdonate))
             return
 
-    # ----- ПРОВЕРКА БАЛАНСА ГРУППЫ -----
-    chat_balance = int(await db.get_chat_balance(bot1, chat_id) or 0)
-    if bet_amount > chat_balance:
-        rows = []
-        _append_regular_assignment_info_rows(rows, has_assignment, is_free)
-        kb = InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
-        await message.reply("<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В группе недостаточно средств для игры.</b>", reply_markup=kb, parse_mode="HTML")
-        return
+        # ----- ПРОВЕРКА БАЛАНСА ГРУППЫ (не для free) -----
+        chat_balance = int(await db.get_chat_balance(bot1, chat_id) or 0)
+        if bet_amount > chat_balance:
+            rows = []
+            _append_regular_assignment_info_rows(rows, has_assignment, is_free)
+            kb = InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+            await message.reply("<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В группе недостаточно средств для игры.</b>", reply_markup=kb, parse_mode="HTML")
+            return
+
+    try:
+        from bot.funcs.group_balance_level import reject_if_bet_over_group_level
+        if await reject_if_bet_over_group_level(message, bet_amount, is_free_play=is_free_play):
+            return
+    except Exception as _gbl_e:
+        print(f"[GBL] balls check skip: {_gbl_e!r}")
 
     # ----- АНТИСПАМ -----
     now = time.time()
@@ -406,7 +425,7 @@ async def balls(message: Message):
             "owner_id": user_id, "chat_id": chat_id,
             "message_id": msg.message_id, "bet": bet_amount,
             "session_rev": session_rev, "closed": False, "ts": now,
-            "has_assignment": has_assignment, "is_free": is_free,
+            "has_assignment": has_assignment, "is_free": is_free_play,
             "using_demo": using_demo, "using_0demo": using_0demo,
             "repay_amount": 0
         }

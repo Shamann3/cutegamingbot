@@ -447,19 +447,15 @@ async def _load_gc_state_for_user_kube(user_id: int) -> dict:
     is_free = False
     current_two = 0
     target_amount = 0
-    max_bet = kube_BASE_MAX_BET
+    gc_bet_limit = None
     try:
-        gc_bet_limit = await db.gc_get_bet_limit_for_user(user_id)
+        raw = await db.gc_get_bet_limit_for_user(user_id)
+        if raw is not None:
+            lim = int(raw)
+            if lim > 0:
+                gc_bet_limit = lim
     except Exception as e:
-        gc_bet_limit = None
         _kdbg("GC_LIMIT", f"Ошибка gc_get_bet_limit_for_user({user_id}): {e}")
-    if gc_bet_limit is not None:
-        try:
-            gc_bet_limit_int = int(gc_bet_limit)
-            if gc_bet_limit_int > 0:
-                max_bet = min(max_bet, gc_bet_limit_int)
-        except Exception as e:
-            _kdbg("GC_LIMIT", f"Ошибка конвертации лимита {gc_bet_limit!r}: {e}")
     try:
         assignment = await db.get_active_gc_assignment(user_id)
     except Exception as e:
@@ -482,7 +478,7 @@ async def _load_gc_state_for_user_kube(user_id: int) -> dict:
             target_amount = int(assignment.get("target_amount") or 0)
         except Exception:
             target_amount = 0
-        _kdbg("GC_STATE", f"ACTIVE=1 FREE={is_free} TWO={current_two} TARGET={target_amount} MAX_BET={max_bet}")
+        _kdbg("GC_STATE", f"ACTIVE=1 FREE={is_free} TWO={current_two} TARGET={target_amount} GC_LIM={gc_bet_limit}")
     else:
         _kdbg("GC_STATE", "ACTIVE=0 (нет активного задания)")
     return {
@@ -490,7 +486,8 @@ async def _load_gc_state_for_user_kube(user_id: int) -> dict:
         "is_free": is_free,
         "current_two": current_two,
         "target_amount": target_amount,
-        "max_bet": max_bet,
+        "gc_bet_limit": gc_bet_limit,
+        "max_bet": kube_BASE_MAX_BET,
     }
 
 
@@ -607,14 +604,18 @@ async def tgkube(message: Message):
     gc_state = await _load_gc_state_for_user_kube(user_id)
     has_assignment = bool(gc_state.get("has_assignment"))
     is_free = bool(gc_state.get("is_free"))
-    max_bet_gc = int(gc_state.get("max_bet") or kube_BASE_MAX_BET)
-
-    if bet_int > kube_BASE_MAX_BET:
-        await message.reply(f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка {_fmt_int(kube_BASE_MAX_BET)} кут.</b>", parse_mode="HTML")
+    from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
+    gate = decide_gc_play_mode(
+        bet=bet_int,
+        game_max_bet=kube_BASE_MAX_BET,
+        has_assignment=has_assignment,
+        is_free=is_free,
+        gc_bet_limit=gc_state.get("gc_bet_limit"),
+    )
+    if gate.get("mode") == "reject":
+        await message.reply(format_game_max_bet_html(gate.get("max") or kube_BASE_MAX_BET), parse_mode="HTML")
         return
-    if bet_int > max_bet_gc:
-        await message.reply(f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка для этой игры: {_fmt_int(max_bet_gc)} кут.</b>", parse_mode="HTML")
-        return
+    is_free_play = gate.get("mode") == "free"
 
     # ---------- DEMO / 0DEMO с Jericho ----------
     using_demo = False
@@ -665,7 +666,7 @@ async def tgkube(message: Message):
 
         _kdbg("MODE", f"final: demo={using_demo} 0demo={using_0demo}")
 
-    if has_assignment and is_free:
+    if is_free_play:
         await _tgkube_free_game(message, user_id, chat_id, bet_int, guess, gc_state)
         return
 
@@ -710,6 +711,13 @@ async def tgkube(message: Message):
                             reply_markup=InlineKeyboardMarkup(inline_keyboard=rows) if rows else None,
                             parse_mode="HTML", disable_web_page_preview=True)
         return
+
+    try:
+        from bot.funcs.group_balance_level import reject_if_bet_over_group_level
+        if await reject_if_bet_over_group_level(message, bet_int, is_free_play=False):
+            return
+    except Exception as _gbl_e:
+        print(f"[GBL] kube check skip: {_gbl_e!r}")
 
     # Загружаем серии
     streaks = _get_streaks(user_id)

@@ -42,6 +42,14 @@ export const PANEL_SECTIONS = [
     blurb: 'Мастер заданий Telegram-бота: подписки и челленджи — только для владельца.',
   },
   {
+    id: 'groupBalanceLevel', label: 'Group Levels', labelRu: 'Уровни бч', group: 'economy', ownerOnly: true,
+    blurb: 'Уровни баланса группы ★1–★5: цены, лимиты, здоровье бч, метки спонсоров — только создатель.',
+  },
+  {
+    id: 'achievements', label: 'Achievements', labelRu: 'Достижения', group: 'content', permission: 'manage_achievements',
+    blurb: 'Официальные достижения профиля: каталог, редкость, иконки и права выдачи для команды.',
+  },
+  {
     id: 'events', label: 'Events', labelRu: 'Ивенты', group: 'content', permission: 'manage_events',
     blurb: 'Игровые ивенты: запуск, расписание и параметры активностей.',
   },

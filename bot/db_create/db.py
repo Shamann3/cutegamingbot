@@ -1147,6 +1147,11 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute(sql)
 
+    async def ensure_profile_achievements_schema(self) -> None:
+        """Столбец users.profile_achievements + каталог official_achievements."""
+        from bot.funcs.achievements import ensure_achievements_schema
+        await ensure_achievements_schema(self)
+
     def _king_place_column(self, place: int) -> str:
         mapping = {1: "reward_p1", 2: "reward_p2", 3: "reward_p3"}
         key = int(place)

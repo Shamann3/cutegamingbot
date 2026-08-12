@@ -3,9 +3,11 @@
 Самолечение Мэджик при долгом аптайме и наплыве.
 
 Что делает каждые HEALTH_INTERVAL_SEC (см. config.py):
-  • trim() лимитов — чистит idle-пользователей и cooldown
+  • trim() лимитов — idle-пользователи, cooldown, stale inflight
+  • force_recover при лаге / переполнении inflight
   • trim balance_watcher (если привязан)
   • trim softfail-кэша TG-логгера
+  • редкий rebind InlineKeyboard* (не каждый цикл — иначе loop «замирает»)
   • при лаге loop — включает quiet_mode у TG-логгера
 
 Интервал и пороги lag читаются из magic.cfg на каждом круге,
@@ -54,7 +56,13 @@ async def magic_health_loop(
     start_interval = float(
         interval_sec if interval_sec is not None else cfg.health_interval_sec
     )
-    logger.info("HEALTH START interval=%.0fs mode=%s", start_interval, cfg.mode)
+    logger.info(
+        "HEALTH START interval=%.0fs mode=%s rebind_every=%s stale=%.0fs",
+        start_interval,
+        cfg.mode,
+        getattr(cfg, "health_rebind_every_n", 20),
+        getattr(cfg, "inflight_stale_sec", 45.0),
+    )
 
     while True:
         # каждый круг читаем актуальный конфиг (tune на лету)
@@ -81,11 +89,25 @@ async def magic_health_loop(
         except Exception:
             lag = -1.0
 
+        snap_before = magic.snapshot()
+        need_force = (
+            lag >= warn
+            or snap_before.get("inflight", 0) > int(cfg.health_inflight_warn)
+        )
+
         healed = {}
         try:
-            healed = magic.heal_once()
+            # rebind решим внутри heal_once по счётчику тиков
+            healed = magic.heal_once(force=need_force)
         except Exception as e:
             logger.warning("heal err: %r", e)
+
+        # при сильном лаге — ещё раз жёстко восстановить (кнопки)
+        if need_force:
+            try:
+                healed["force2"] = magic.force_recover()
+            except Exception as e:
+                healed["force2_err"] = repr(e)
 
         try:
             from bot.utils import telegram_api_logger as tg_log
@@ -117,13 +139,14 @@ async def magic_health_loop(
             )
         else:
             logger.info(
-                "OK lag=%.3fs pending=%s mode=%s callbacks=%s blocked=%s inflight=%s",
+                "OK lag=%.3fs pending=%s mode=%s callbacks=%s blocked=%s inflight=%s stale=%s",
                 lag,
                 pending,
                 cfg.mode,
                 snap.get("callbacks"),
                 snap.get("blocked_total"),
                 snap.get("inflight"),
+                snap.get("stale_inflight_total"),
             )
 
 

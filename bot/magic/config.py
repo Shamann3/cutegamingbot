@@ -73,13 +73,20 @@ AUTO_ANSWER_DELAY_SEC: float = 0.0
 STUCK_ANSWER_DELAY_SEC: float = 8.0
 
 # Как часто самолечение чистит память/кэши (секунды)
-HEALTH_INTERVAL_SEC: float = 300.0
+HEALTH_INTERVAL_SEC: float = 180.0
 
 # Порог лагов event-loop, после которого включается тихий режим TG-логгера
 HEALTH_LAG_SAMPLE_SEC: float = 0.25
 HEALTH_LAG_WARN_SEC: float = 0.35
 HEALTH_PENDING_WARN: int = 800
 HEALTH_INFLIGHT_WARN: int = 300
+
+# Полный rebind InlineKeyboard* — НЕ каждый heal (тормозит loop на долгом аптайме).
+# Раз в N циклов health (~180с * 20 = ~1 час). 0 = никогда в heal (только на старте).
+HEALTH_REBIND_EVERY_N: int = 20
+
+# Handler дольше N сек без leave() = осиротевший inflight → кнопки «зависают»
+INFLIGHT_STALE_SEC: float = 45.0
 
 
 # ─── Ручные оверрайды поверх режима ───────────────────────────────────────
@@ -107,6 +114,8 @@ OVERRIDE_PRIO_COOLDOWN_SEC: Optional[float] = None
 
 OVERRIDE_TRIM_IDLE_SEC: Optional[float] = None
 OVERRIDE_TRIM_MAX_USERS: Optional[int] = None
+OVERRIDE_INFLIGHT_STALE_SEC: Optional[float] = None
+OVERRIDE_HEALTH_REBIND_EVERY_N: Optional[int] = None
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -140,6 +149,7 @@ PRESETS: Dict[str, Dict[str, Any]] = {
         "prio_cooldown_sec": 4.0,
         "trim_idle_sec": 240.0,
         "trim_max_users": 60_000,
+        "inflight_stale_sec": 40.0,
     },
     # Баланс (по умолчанию) — то, что стоит в проде сейчас
     "balanced": {
@@ -155,8 +165,9 @@ PRESETS: Dict[str, Dict[str, Any]] = {
         "strike_limit": 10,
         "cooldown_sec": 12.0,
         "prio_cooldown_sec": 3.0,
-        "trim_idle_sec": 300.0,
+        "trim_idle_sec": 240.0,
         "trim_max_users": 80_000,
+        "inflight_stale_sec": 45.0,
     },
     # Быстрее для игроков (защита чуть мягче)
     "fast": {
@@ -172,8 +183,9 @@ PRESETS: Dict[str, Dict[str, Any]] = {
         "strike_limit": 14,
         "cooldown_sec": 8.0,
         "prio_cooldown_sec": 2.0,
-        "trim_idle_sec": 360.0,
+        "trim_idle_sec": 300.0,
         "trim_max_users": 100_000,
+        "inflight_stale_sec": 50.0,
     },
 }
 
@@ -197,11 +209,12 @@ class MagicConfig:
     inline_query_protect: bool = True
     inline_query_timeout_sec: float = 4.5
 
-    health_interval_sec: float = 300.0
+    health_interval_sec: float = 180.0
     health_lag_sample_sec: float = 0.25
     health_lag_warn_sec: float = 0.35
     health_pending_warn: int = 800
     health_inflight_warn: int = 300
+    health_rebind_every_n: int = 20
 
     # лимиты (копия активных значений)
     user_max_clicks: int = 6
@@ -216,8 +229,9 @@ class MagicConfig:
     strike_limit: int = 10
     cooldown_sec: float = 12.0
     prio_cooldown_sec: float = 3.0
-    trim_idle_sec: float = 300.0
+    trim_idle_sec: float = 240.0
     trim_max_users: int = 80_000
+    inflight_stale_sec: float = 45.0
 
     # приоритеты (mutable — можно дополнять на лету)
     priority_exact: Set[str] = field(default_factory=set)
@@ -248,6 +262,7 @@ class MagicConfig:
             health_lag_warn_sec=float(HEALTH_LAG_WARN_SEC),
             health_pending_warn=int(HEALTH_PENDING_WARN),
             health_inflight_warn=int(HEALTH_INFLIGHT_WARN),
+            health_rebind_every_n=int(HEALTH_REBIND_EVERY_N),
             priority_exact=set(PRIORITY_EXACT),
             priority_prefixes=list(PRIORITY_PREFIXES),
         )
@@ -288,6 +303,8 @@ class MagicConfig:
             "prio_cooldown_sec": OVERRIDE_PRIO_COOLDOWN_SEC,
             "trim_idle_sec": OVERRIDE_TRIM_IDLE_SEC,
             "trim_max_users": OVERRIDE_TRIM_MAX_USERS,
+            "inflight_stale_sec": OVERRIDE_INFLIGHT_STALE_SEC,
+            "health_rebind_every_n": OVERRIDE_HEALTH_REBIND_EVERY_N,
         }
         for key, value in mapping.items():
             if value is not None:
@@ -374,6 +391,7 @@ class MagicConfig:
             "prio_cooldown_sec": float(self.prio_cooldown_sec),
             "trim_idle_sec": float(self.trim_idle_sec),
             "trim_max_users": int(self.trim_max_users),
+            "inflight_stale_sec": float(self.inflight_stale_sec),
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -397,6 +415,8 @@ class MagicConfig:
             f"inline_query_protect  = {self.inline_query_protect}",
             f"inline_query_timeout  = {self.inline_query_timeout_sec}s",
             f"health_interval_sec   = {self.health_interval_sec}",
+            f"health_rebind_every_n = {self.health_rebind_every_n}",
+            f"inflight_stale_sec    = {self.inflight_stale_sec}",
             "── обычные кнопки ──",
             f"  max_clicks/window   = {self.user_max_clicks} / {self.user_window_sec}s",
             f"  debounce            = {self.debounce_sec}s",

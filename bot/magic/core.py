@@ -50,6 +50,7 @@ class Magic:
         self.stats_inline_timeouts = 0
         self.stats_inline_blocked = 0
         self.last_audit: Any = None
+        self._heal_ticks: int = 0
 
     # ── состояние установки ───────────────────────────────────────────────
 
@@ -181,9 +182,24 @@ class Magic:
         )
         return snap
 
-    def heal_once(self) -> dict:
+    def heal_once(self, *, do_rebind: bool | None = None, force: bool = False) -> dict:
         """Один проход самолечения (вызывается health-loop)."""
-        out = {"limits": self.limits.trim(), "mode": self.cfg.mode}
+        self._heal_ticks += 1
+        out: dict = {"limits": self.limits.trim(), "mode": self.cfg.mode, "tick": self._heal_ticks}
+
+        # при перегрузе / по запросу — аварийно снять залипший inflight
+        try:
+            soft = max(
+                int(self.cfg.global_inflight_soft),
+                int(self.cfg.prio_global_inflight_soft),
+            )
+            if force or self.limits._inflight >= int(self.cfg.health_inflight_warn) or (
+                self.limits._inflight >= soft
+            ):
+                out["recover"] = self.limits.force_recover()
+        except Exception as e:
+            out["recover_err"] = repr(e)
+
         try:
             if self.balance_watcher is not None and hasattr(self.balance_watcher, "trim"):
                 out["balance"] = self.balance_watcher.trim()
@@ -196,16 +212,28 @@ class Magic:
                 out["tg_softfail"] = tg_log.trim_softfail_cache()
         except Exception as e:
             out["tg_err"] = repr(e)
-        # Подхватить модули, которые импортировали ПОСЛЕ старта
-        # (новые ссылки InlineKeyboard* → снова под Мэджик)
-        try:
-            if self.cfg.patch_keyboards:
+
+        # Полный rebind — редко: каждый проход на большом проекте подвешивает event loop.
+        every_n = int(getattr(self.cfg, "health_rebind_every_n", 20) or 0)
+        should_rebind = bool(do_rebind) if do_rebind is not None else (
+            every_n > 0 and (self._heal_ticks % every_n == 0)
+        )
+        if should_rebind and self.cfg.patch_keyboards:
+            try:
                 from bot.magic.audit import rebind_all_inline_refs
 
                 mods, attrs = rebind_all_inline_refs()
                 out["rebind"] = {"modules": mods, "attrs": attrs}
-        except Exception as e:
-            out["rebind_err"] = repr(e)
+            except Exception as e:
+                out["rebind_err"] = repr(e)
+        else:
+            out["rebind"] = "skipped"
+        return out
+
+    def force_recover(self) -> dict:
+        """Ручное/аварийное восстановление «залипших» кнопок без рестарта."""
+        out = {"recover": self.limits.force_recover(), "trim": self.limits.trim()}
+        print(f"🛠️ [MAGIC] force_recover → {out}")
         return out
 
 

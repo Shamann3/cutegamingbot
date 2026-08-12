@@ -91,6 +91,9 @@ PRIORITY_PREFIXES: List[str] = [
     # покрывает ob_games, ob_gpick, ob_gstart, ob_game, ob_next, ob_retry, ...
     "ob_",
 
+    # --- достижения профиля ---
+    "ach_", "achm_",
+
     # --- орёл / шахматы / memory / bingo / рулетка / кости ---
     "joinorel", "startorel", "rollorel",
     "inorel_create", "joinorelinline", "startorelinline", "rollorelinline",
@@ -137,13 +140,15 @@ PRIORITY_PREFIXES: List[str] = [
     "errorbasket_", "errorslot_",
 
     # --- магазин / инвентарь / крафт / дома / машины / гелик ---
-    "shop", "store_", "store", "blackshop_",
+    "shop", "store_", "store", "blackshop", "blackshop_",
+    "help_market", "help_store",
     "inv_page_", "filter_", "sorting",
     "craft_", "craftpage_", "inventory", "item_",
     "useitem", "use_item",
     "confirmdell",
     "buy_car_", "sell_car_", "confirm_buy_", "confirm_sell_", "view_car_",
     "buy_house_", "sell_house_", "confirm_house_", "confirmhouse_sell_", "view_house_",
+    "buy_gelicopter_", "confirm_gelicopter_",
     "next_page_", "prev_page_", "user_next_page_", "user_prev_page_",
     "next1_page_", "prev1_page_", "user_next1_page_", "user_prev1_page_",
     "view_gelicopter_", "sell_gelicopter_",

@@ -46,7 +46,7 @@ KING_STATS_INTERVAL_FORCE_NEW_ROUND = True
 
 
 
-withdraw_disabled = False # true - отключение вывыдов
+withdraw_disabled = True # true - отключение вывыдов
 MESSAGE_CHECK_WITHDRAWAL = 200   # минимальное число сообщений в офиц. группе за сегодня
 MESSAGE_MIN_WORDS = 2
 

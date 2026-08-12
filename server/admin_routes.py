@@ -188,6 +188,19 @@ from admin_bot_quests import (
     seed_recommended_pack,
     upsert_sub_task,
 )
+from admin_group_balance_level import (
+    get_chat_level as gbl_get_chat_level,
+    get_overview as gbl_overview,
+    reset_settings as gbl_reset_settings,
+    save_settings as gbl_save_settings,
+    set_chat_level as gbl_set_chat_level,
+)
+from admin_achievements import (
+    list_catalog as ach_list_catalog,
+    overview as ach_overview,
+    remove_item as ach_remove_item,
+    save_item as ach_save_item,
+)
 from admin_content import (
     create_craft_recipe,
     create_crop,
@@ -4179,6 +4192,171 @@ async def admin_content_giveaway_complete(
 
 
 # ─── TG Bot quests (owner-only): +задание / +заданиеч ─────────────────────────
+
+
+@router.get("/group-balance-level/overview")
+async def admin_gbl_overview(
+    _admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    return gbl_overview()
+
+
+class GroupBalanceLevelSettingsBody(BaseModel):
+    enabled: bool | None = None
+    level_0_cap: int | None = Field(default=None, ge=0, le=1_000_000)
+    recommend_pct: float | None = Field(default=None, ge=0, le=100)
+    health_success_min: float | None = Field(default=None, ge=0, le=10)
+    health_primary_min: float | None = Field(default=None, ge=0, le=10)
+    atmosphere_enabled: bool | None = None
+    atmosphere_max_bonus_pct: float | None = Field(default=None, ge=0, le=200)
+    raise_button_text: str | None = Field(default=None, max_length=64)
+    system_title: str | None = Field(default=None, max_length=128)
+    prices: dict[str, int] | None = None
+    stake_caps: dict[str, int | None] | None = None
+    badge_titles: dict[str, str] | None = None
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/group-balance-level/settings")
+async def admin_gbl_save_settings(
+    body: GroupBalanceLevelSettingsBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    result = gbl_save_settings(patch)
+    try:
+        await log_admin_action(
+            admin_id, "gbl_save_settings",
+            target_type="group_balance_level",
+            details={"keys": list(patch.keys())},
+        )
+    except Exception:
+        pass
+    return {"ok": True, "settings": result}
+
+
+@router.post("/group-balance-level/settings/reset")
+async def admin_gbl_reset_settings(
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    result = gbl_reset_settings()
+    try:
+        await log_admin_action(
+            admin_id, "gbl_reset_settings",
+            target_type="group_balance_level",
+        )
+    except Exception:
+        pass
+    return {"ok": True, "settings": result}
+
+
+class GroupBalanceLevelSetBody(BaseModel):
+    chat_id: int
+    level: int = Field(ge=0, le=5)
+    model_config = {"extra": "forbid"}
+
+
+@router.get("/group-balance-level/chat/{chat_id}")
+async def admin_gbl_get_chat(
+    chat_id: int,
+    _admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    return gbl_get_chat_level(chat_id)
+
+
+@router.post("/group-balance-level/chat")
+async def admin_gbl_set_chat(
+    body: GroupBalanceLevelSetBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    result = gbl_set_chat_level(body.chat_id, body.level)
+    try:
+        await log_admin_action(
+            admin_id, "gbl_set_chat_level",
+            target_type="chat",
+            target_id=str(body.chat_id),
+            details={"level": body.level},
+        )
+    except Exception:
+        pass
+    return {"ok": True, **result}
+
+
+@router.get("/achievements/overview")
+async def admin_achievements_overview(
+    _admin_id: int = Depends(require_admin_permission("manage_achievements")),
+):
+    return await ach_overview()
+
+
+@router.get("/achievements/list")
+async def admin_achievements_list(
+    q: str = Query("", max_length=128),
+    enabled_only: bool = Query(False),
+    _admin_id: int = Depends(require_admin_permission("manage_achievements")),
+):
+    items = await ach_list_catalog(enabled_only=enabled_only, q=q or None)
+    return {"items": items}
+
+
+class AchievementBody(BaseModel):
+    id: int | None = None
+    code: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=80)
+    title_html: str | None = Field(default=None, max_length=500)
+    icon_emoji_id: str | None = Field(default=None, max_length=64)
+    icon_fallback: str | None = Field(default=None, max_length=8)
+    description: str | None = Field(default=None, max_length=400)
+    rarity: int = Field(default=1, ge=1, le=5)
+    sort: int = Field(default=0, ge=-10000, le=10000)
+    enabled: bool = True
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/achievements/save")
+async def admin_achievements_save(
+    body: AchievementBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_achievements")),
+):
+    try:
+        item = await ach_save_item(body.model_dump(), actor_id=admin_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        await log_admin_action(
+            admin_id, "achievement_save",
+            target_type="achievement",
+            target_id=str(item.get("id")),
+            details={"code": item.get("code")},
+        )
+    except Exception:
+        pass
+    return {"ok": True, "item": item}
+
+
+@router.post("/achievements/delete")
+async def admin_achievements_delete(
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("manage_achievements")),
+):
+    data = await request.json()
+    oid = int((data or {}).get("id") or 0)
+    if oid <= 0:
+        raise HTTPException(status_code=400, detail="id required")
+    ok = await ach_remove_item(oid)
+    try:
+        await log_admin_action(
+            admin_id, "achievement_delete",
+            target_type="achievement",
+            target_id=str(oid),
+        )
+    except Exception:
+        pass
+    return {"ok": ok}
 
 
 @router.get("/bot-quests/overview")

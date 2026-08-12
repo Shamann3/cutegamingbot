@@ -30,6 +30,11 @@ export const PANEL_SECTION_TABS = {
     { id: 'map', label: 'Карта', blurb: 'Визуальная карта крафта (обычно только владелец).', ownerOnly: true },
     { id: 'quests', label: 'Задания', blurb: 'Игровые квесты и награды.' },
   ],
+  achievements: [
+    { id: 'catalog', label: 'Каталог', blurb: 'Создание и правка официальных достижений.' },
+    { id: 'grantOfficial', label: 'Выдача офиц.', blurb: 'Право выдавать официальные достижения в боте.' },
+    { id: 'grantFree', label: 'Выдача свободных', blurb: 'Право выдавать и снимать свободные достижения в боте.' },
+  ],
   moderation: [
     { id: 'archive', label: 'Архив', blurb: 'Архив модерационных действий.' },
     { id: 'appeals', label: 'Апелляции', blurb: 'Разбор апелляций по банам.' },

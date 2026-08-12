@@ -17,6 +17,8 @@ import FarmSection from './sections/FarmSection'
 import ContentSection from './sections/ContentSection'
 import GiveawaysSection from './sections/GiveawaysSection'
 import BotQuestsSection from './sections/BotQuestsSection'
+import GroupBalanceLevelSection from './sections/GroupBalanceLevelSection'
+import AchievementsSection from './sections/AchievementsSection'
 import BroadcastSection from './sections/BroadcastSection'
 import LogsSection from './sections/LogsSection'
 import AnalyticsSection from './sections/AnalyticsSection'
@@ -153,6 +155,8 @@ export default function PanelShell({ onLogout }) {
   const isContent = section === 'content'
   const isGiveaways = section === 'giveaways'
   const isBotQuests = section === 'botQuests'
+  const isGroupBalanceLevel = section === 'groupBalanceLevel'
+  const isAchievements = section === 'achievements'
   const isBroadcast = section === 'broadcast'
   const isLogs = section === 'logs'
   const isAnalytics = section === 'analytics'
@@ -243,6 +247,8 @@ export default function PanelShell({ onLogout }) {
                         ? ' panel-layout-broadcast'
                         : isBotQuests
                           ? ' panel-layout-broadcast'
+                        : isGroupBalanceLevel
+                          ? ' panel-layout-broadcast'
                         : isBroadcast
                         ? ' panel-layout-broadcast'
                         : isLogs
@@ -316,6 +322,8 @@ export default function PanelShell({ onLogout }) {
           {isContent && <ContentSection role={role} panelTabs={panelTabs} />}
           {isGiveaways && <GiveawaysSection />}
           {isBotQuests && role === 'owner' && <BotQuestsSection />}
+          {isGroupBalanceLevel && role === 'owner' && <GroupBalanceLevelSection />}
+          {isAchievements && <AchievementsSection />}
           {isBroadcast && <BroadcastSection panelTabs={panelTabs} />}
           {isLogs && <LogsSection panelTabs={panelTabs} />}
           {isAnalytics && <AnalyticsSection panelTabs={panelTabs} />}
@@ -327,7 +335,7 @@ export default function PanelShell({ onLogout }) {
           {isModeration && <ModerationSection role={role} permissions={permissions} panelTabs={panelTabs} />}
           {isChronicle && <ChronicleSection />}
           {isPanelAccess && <PanelAccessSection />}
-          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBotQuests && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && (
+          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBotQuests && !isGroupBalanceLevel && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

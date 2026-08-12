@@ -67,6 +67,10 @@ ALL_PERMISSIONS = {
     "pay_salary",              # выплачивать зарплату (owner)
     "manage_appeals",          # апелляции банов (owner + senior)
     "manage_panel_access",     # матрица доступов к вкладкам (только owner)
+    # Достижения профиля
+    "manage_achievements",           # каталог официальных в панели
+    "grant_official_achievements",   # выдача официальных в боте
+    "grant_free_achievements",       # выдача/снятие свободных в боте
 }
 
 PERMISSIONS_BY_ROLE = {

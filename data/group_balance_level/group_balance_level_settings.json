@@ -1,0 +1,34 @@
+{
+  "_cfg": {
+    "enabled": true,
+    "level_0_cap": 30,
+    "prices": {
+      "1": 50,
+      "2": 100,
+      "3": 250,
+      "4": 600,
+      "5": 1000
+    },
+    "stake_caps": {
+      "1": 50,
+      "2": 100,
+      "3": 200,
+      "4": 350,
+      "5": null
+    },
+    "recommend_pct": 15,
+    "health_success_min": 1.0,
+    "health_primary_min": 0.4,
+    "atmosphere_enabled": true,
+    "atmosphere_max_bonus_pct": 40,
+    "badge_titles": {
+      "1": "Спонсор группы",
+      "2": "Меценат сообщества",
+      "3": "Архитектор баланса",
+      "4": "Покровитель круга",
+      "5": "Легенда баланса"
+    },
+    "raise_button_text": "Поднять уровень группы",
+    "system_title": "Баланс группы"
+  }
+}

@@ -1486,6 +1486,41 @@ export async function seedBotQuestsPack() {
   return adminFetch('/bot-quests/seed-pack', { method: 'POST' })
 }
 
+export async function fetchGroupBalanceLevelOverview() {
+  return adminFetch('/group-balance-level/overview')
+}
+
+export async function saveGroupBalanceLevelSettings(payload) {
+  return adminFetch('/group-balance-level/settings', { method: 'POST', body: payload })
+}
+
+export async function resetGroupBalanceLevelSettings() {
+  return adminFetch('/group-balance-level/settings/reset', { method: 'POST', body: {} })
+}
+
+export async function fetchGroupBalanceLevelChat(chatId) {
+  return adminFetch(`/group-balance-level/chat/${chatId}`)
+}
+
+export async function setGroupBalanceLevelChat(chatId, level) {
+  return adminFetch('/group-balance-level/chat', {
+    method: 'POST',
+    body: { chat_id: Number(chatId), level: Number(level) },
+  })
+}
+
+export async function fetchAchievementsOverview() {
+  return adminFetch('/achievements/overview')
+}
+
+export async function saveOfficialAchievement(payload) {
+  return adminFetch('/achievements/save', { method: 'POST', body: payload })
+}
+
+export async function deleteOfficialAchievement(id) {
+  return adminFetch('/achievements/delete', { method: 'POST', body: { id: Number(id) } })
+}
+
 export async function fetchBroadcastOverview() {
   return adminFetch('/broadcast/overview')
 }

@@ -478,22 +478,17 @@ async def _load_gc_state_for_user_darts(user_id: int) -> dict:
     is_free = False
     current_two = 0
     target_amount = 0
-    max_bet = darts_BASE_MAX_BET
+    gc_bet_limit = None
 
     try:
-        gc_bet_limit = await db.gc_get_bet_limit_for_user(user_id)
-        _ddbg("GC_LIMIT", f"gc_get_bet_limit_for_user -> {gc_bet_limit!r}")
+        raw = await db.gc_get_bet_limit_for_user(user_id)
+        if raw is not None:
+            lim = int(raw)
+            if lim > 0:
+                gc_bet_limit = lim
     except Exception as e:
         gc_bet_limit = None
-        _ddbg("GC_LIMIT", f"error: {e}")
-
-    if gc_bet_limit is not None:
-        try:
-            gc_bet_limit_int = int(gc_bet_limit)
-            if gc_bet_limit_int > 0:
-                max_bet = min(max_bet, gc_bet_limit_int)
-        except Exception as e:
-            _ddbg("GC_LIMIT", f"convert error {gc_bet_limit!r}: {e}")
+        print(f"[GBL][darts] gc limit: {e!r}")
 
     try:
         assignment = await db.get_active_gc_assignment(user_id)
@@ -523,16 +518,17 @@ async def _load_gc_state_for_user_darts(user_id: int) -> dict:
         except Exception:
             target_amount = 0
 
-        _ddbg("GC_STATE", f"user={user_id} active=1 free={is_free} two={current_two} target={target_amount} max_bet={max_bet}")
+        _ddbg("GC_STATE", f"user={user_id} active=1 free={is_free} two={current_two} target={target_amount} gc_lim={gc_bet_limit}")
     else:
-        _ddbg("GC_STATE", f"user={user_id} no active assignment max_bet={max_bet}")
+        _ddbg("GC_STATE", f"user={user_id} no active assignment gc_lim={gc_bet_limit}")
 
     return {
         "has_assignment": has_assignment,
         "is_free": is_free,
         "current_two": current_two,
         "target_amount": target_amount,
-        "max_bet": max_bet,
+        "gc_bet_limit": gc_bet_limit,
+        "max_bet": darts_BASE_MAX_BET,
     }
 
 
@@ -708,14 +704,18 @@ async def tgdarts(message: Message):
     gc_state = await _load_gc_state_for_user_darts(user_id)
     has_assignment = bool(gc_state.get("has_assignment"))
     is_free = bool(gc_state.get("is_free"))
-    max_bet_gc = int(gc_state.get("max_bet") or darts_BASE_MAX_BET)
-
-    if bet_int > max_bet_gc:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка для этой игры: {_fmt_int(max_bet_gc)} кут.</b>",
-            parse_mode="HTML",
-        )
+    from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
+    gate = decide_gc_play_mode(
+        bet=bet_int,
+        game_max_bet=darts_BASE_MAX_BET,
+        has_assignment=has_assignment,
+        is_free=is_free,
+        gc_bet_limit=gc_state.get("gc_bet_limit"),
+    )
+    if gate.get("mode") == "reject":
+        await message.reply(format_game_max_bet_html(gate.get("max") or darts_BASE_MAX_BET), parse_mode="HTML")
         return
+    is_free_play = gate.get("mode") == "free"
 
     # ----- Логика выбора режима (demo/0demo) с Jericho -----
     using_demo = False
@@ -784,7 +784,7 @@ async def tgdarts(message: Message):
         _ddbg("MODE", f"final: demo={using_demo} 0demo={using_0demo}")
 
     # FREE-режим
-    if has_assignment and is_free:
+    if is_free_play:
         _ddbg("MODE", "FREE challenge mode")
         await _tgdarts_free_game(message, user_id, chat_id, bet_int, gc_state)
         return
@@ -853,6 +853,13 @@ async def tgdarts(message: Message):
         )
         _ddbg("BANK", f"not enough chat bank bet={bet_int} chat_balance={chat_balance}")
         return
+
+    try:
+        from bot.funcs.group_balance_level import reject_if_bet_over_group_level
+        if await reject_if_bet_over_group_level(message, bet_int, is_free_play=False):
+            return
+    except Exception as _gbl_e:
+        print(f"[GBL] darts check skip: {_gbl_e!r}")
 
     # Кулдаун
     left = _cooldown_left(chat_id, user_id)

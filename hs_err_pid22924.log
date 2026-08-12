@@ -1,0 +1,308 @@
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  EXCEPTION_IN_PAGE_ERROR (0xc0000006) at pc=0x00007ff8482628a0, pid=22924, tid=2696
+#
+# JRE version:  (25.0.2+1) (build )
+# Java VM: OpenJDK 64-Bit Server VM (25.0.2+1-b329.72, mixed mode, sharing, tiered, compressed oops, compressed class ptrs, g1 gc, windows-amd64)
+# Problematic frame:
+# C  [VCRUNTIME140.dll+0x128a0]
+#
+# No core dump will be written. Minidumps are not enabled by default on client versions of Windows
+#
+#
+
+---------------  S U M M A R Y ------------
+
+Command Line: git4idea.http.GitAskPassApp Username for 'https://github.com': 
+
+Host: AMD Ryzen 7 4800H with Radeon Graphics         , 16 cores, 23G,  Windows 10 , 64 bit Build 19041 (10.0.19041.5915)
+Time: Wed Aug 12 00:42:25 2026 elapsed time: 0.014209 seconds (0d 0h 0m 0s)
+
+---------------  T H R E A D  ---------------
+
+Current thread is native thread
+
+Stack: [0x0000003f4d000000,0x0000003f4d100000],  sp=0x0000003f4d0feae8,  free space=1018k
+Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)
+C  [VCRUNTIME140.dll+0x128a0]  (no source info available)
+V  [jvm.dll+0x7e40e5]  (no source info available)
+V  [jvm.dll+0x7e2e25]  (no source info available)
+V  [jvm.dll+0x7e29a1]  (no source info available)
+V  [jvm.dll+0x466dc2]  (no source info available)
+V  [jvm.dll+0x9b7f00]  (no source info available)
+V  [jvm.dll+0x508951]  (no source info available)
+V  [jvm.dll+0x50a2c1]  (no source info available)
+C  [jli.dll+0x541a]  (no source info available)
+C  [ucrtbase.dll+0x21bb2]  (no source info available)
+C  [KERNEL32.DLL+0x17374]  (no source info available)
+C  [ntdll.dll+0x4cc91]  (no source info available)
+
+
+siginfo: EXCEPTION_IN_PAGE_ERROR (0xc0000006), writing address 0x000001f525c60020
+
+
+Registers:
+RAX=0x000001f525c60000, RBX=0x000001f525c60000, RCX=0x000001f525c60020, RDX=0x0000000000000020
+RSP=0x0000003f4d0feae8, RBP=0x000001f527a1d900, RSI=0x000001f527a1d330, RDI=0x0000000000000214
+R8 =0x000000000000ffe0, R9 =0xffffffffffffffe0, R10=0x00007ff848250000, R11=0x0000000000000000
+R12=0x0000000000000001, R13=0x0000000000000001, R14=0x0000000000010000, R15=0x0000003f4d0ff978
+RIP=0x00007ff8482628a0, EFLAGS=0x0000000000010283
+
+XMM[0]=0x0000000000000000 0x0000000000000000
+XMM[1]=0x0000000000000000 0x0000000000000000
+XMM[2]=0x0000000000000000 0x0000000000000000
+XMM[3]=0x0000000000000000 0x0000000000000000
+XMM[4]=0x0000000000000000 0x0000000000000000
+XMM[5]=0x0000000000000000 0x0000000000000000
+XMM[6]=0x0000000000000000 0x0000000000000000
+XMM[7]=0x0000000000000000 0x0000000000000000
+XMM[8]=0x0000000000000000 0x0000000000000000
+XMM[9]=0x0000000000000000 0x0000000000000000
+XMM[10]=0x0000000000000000 0x0000000000000000
+XMM[11]=0x0000000000000000 0x0000000000000000
+XMM[12]=0x0000000000000000 0x0000000000000000
+XMM[13]=0x0000000000000000 0x0000000000000000
+XMM[14]=0x0000000000000000 0x0000000000000000
+XMM[15]=0x0000000000000000 0x0000000000000000
+  MXCSR=0x00001f80
+
+
+Top of Stack: (sp=0x0000003f4d0feae8)
+0x0000003f4d0feae8:   00007fffef4740e5 000001f527a1d900   .@G........'....
+0x0000003f4d0feaf8:   000001f500000000 000001f527a1d330   ........0..'....
+0x0000003f4d0feb08:   0000000000000214 0000000000010000   ................
+0x0000003f4d0feb18:   0000003f4d0feb30 0000003f4d0fedb0   0..M?......M?...
+0x0000003f4d0feb28:   0000000000000104 0000000000000103   ................
+0x0000003f4d0feb38:   000001f527a1d905 0000000000000101   ...'............
+0x0000003f4d0feb48:   0000000000000004 000001f525960000   ...........%....
+0x0000003f4d0feb58:   0000003f4d0fec19 0000000000000002   ...M?...........
+0x0000003f4d0feb68:   00007ff879bdb3c7 000001f525b30000   ...y.......%....
+0x0000003f4d0feb78:   0000003f00000000 0000000000000014   ....?...........
+0x0000003f4d0feb88:   00007ff800000000 000001f5005c3a43   ........C:\.....
+0x0000003f4d0feb98:   00007ff800000000 0000000200000080   ................
+0x0000003f4d0feba8:   00007ff800000000 da96b1a500000000   ................
+0x0000003f4d0febb8:   000001f525960150 0000000200000000   P..%............
+0x0000003f4d0febc8:   0000000000000000 da96b1a500000000   ................
+0x0000003f4d0febd8:   00007ff879bba36f 0000000000000000   o..y............
+0x0000003f4d0febe8:   0000000000000000 0000000000240001   ..........$.....
+0x0000003f4d0febf8:   0000000000000086 000001f52596d790   ...........%....
+0x0000003f4d0fec08:   00007ff879bd0b31 0000000100000009   1..y............
+0x0000003f4d0fec18:   00007ff879bdb86b 0000000000000000   k..y............
+0x0000003f4d0fec28:   000001f525b31140 0000000000020002   @..%............
+0x0000003f4d0fec38:   000001f525b30000 0000003f4d0ff978   ...%....x..M?...
+0x0000003f4d0fec48:   0000003f4d0ffa58 0000000000000001   X..M?...........
+0x0000003f4d0fec58:   0000000000000001 0000003f4d0fedb0   ...........M?...
+0x0000003f4d0fec68:   0000000000000009 0000003f4d0fed20   ........ ..M?...
+0x0000003f4d0fec78:   00007ff87783fde6 0000000000000000   ...w............
+0x0000003f4d0fec88:   0000000000000014 0000003f4d0fed50   ........P..M?...
+0x0000003f4d0fec98:   00007ff877830000 0000003f4d0fedb0   ...w.......M?...
+0x0000003f4d0feca8:   00007fffef440f72 0000000000000014   r.D.............
+0x0000003f4d0fecb8:   0000000000000000 0000000000000000   ................
+0x0000003f4d0fecc8:   00007fffef440f72 0000000000000013   r.D.............
+0x0000003f4d0fecd8:   00007fffef443712 0000003f4d0fedb0   .7D........M?...
+
+Instructions: (pc=0x00007ff8482628a0)
+  0x00007ff8482627a0:   49 03 c8 47 8b 8c 82 70 5f 01 00 4d 03 ca 41 ff
+  0x00007ff8482627b0:   e1 4c 89 59 f1 44 89 59 f9 66 44 89 59 fd 44 88
+  0x00007ff8482627c0:   59 ff c3 4c 89 59 f2 44 89 59 fa 66 44 89 59 fe
+  0x00007ff8482627d0:   c3 66 66 66 66 66 66 66 0f 1f 84 00 00 00 00 00
+  0x00007ff8482627e0:   4c 89 59 f3 44 89 59 fb 44 88 59 ff c3 0f 1f 00
+  0x00007ff8482627f0:   4c 89 59 f4 44 89 59 fc c3 4c 89 59 f5 66 44 89
+  0x00007ff848262800:   59 fd 44 88 59 ff c3 4c 89 59 f7 44 88 59 ff c3
+  0x00007ff848262810:   4c 89 59 f6 66 44 89 59 fe c3 4c 89 59 f8 c3 90
+  0x00007ff848262820:   66 0f 6c c0 49 83 f8 20 77 0c f3 0f 7f 01 f3 42
+  0x00007ff848262830:   0f 7f 44 01 f0 c3 83 3d 53 68 00 00 03 0f 82 dd
+  0x00007ff848262840:   01 00 00 4c 3b 05 4e 68 00 00 76 16 4c 3b 05 4d
+  0x00007ff848262850:   68 00 00 77 0d f6 05 5c 6b 00 00 02 0f 85 fe fe
+  0x00007ff848262860:   ff ff c4 e3 7d 18 c0 01 4c 8b c9 49 83 e1 1f 49
+  0x00007ff848262870:   83 e9 20 49 2b c9 49 2b d1 4d 03 c1 49 81 f8 00
+  0x00007ff848262880:   01 00 00 76 65 4c 3b 05 14 68 00 00 0f 87 ce 00
+  0x00007ff848262890:   00 00 66 66 66 66 66 66 0f 1f 84 00 00 00 00 00
+=>0x00007ff8482628a0:   c5 fd 7f 01 c5 fd 7f 41 20 c5 fd 7f 41 40 c5 fd
+  0x00007ff8482628b0:   7f 41 60 c5 fd 7f 81 80 00 00 00 c5 fd 7f 81 a0
+  0x00007ff8482628c0:   00 00 00 c5 fd 7f 81 c0 00 00 00 c5 fd 7f 81 e0
+  0x00007ff8482628d0:   00 00 00 48 81 c1 00 01 00 00 49 81 e8 00 01 00
+  0x00007ff8482628e0:   00 49 81 f8 00 01 00 00 73 b6 4d 8d 48 1f 49 83
+  0x00007ff8482628f0:   e1 e0 4d 8b d9 49 c1 eb 05 47 8b 9c 9a b0 5f 01
+  0x00007ff848262900:   00 4d 03 da 41 ff e3 c4 a1 7e 7f 84 09 00 ff ff
+  0x00007ff848262910:   ff c4 a1 7e 7f 84 09 20 ff ff ff c4 a1 7e 7f 84
+  0x00007ff848262920:   09 40 ff ff ff c4 a1 7e 7f 84 09 60 ff ff ff c4
+  0x00007ff848262930:   a1 7e 7f 44 09 80 c4 a1 7e 7f 44 09 a0 c4 a1 7e
+  0x00007ff848262940:   7f 44 09 c0 c4 a1 7e 7f 44 01 e0 c5 fe 7f 00 c5
+  0x00007ff848262950:   f8 77 c3 66 66 66 66 66 0f 1f 84 00 00 00 00 00
+  0x00007ff848262960:   c5 fd e7 01 c5 fd e7 41 20 c5 fd e7 41 40 c5 fd
+  0x00007ff848262970:   e7 41 60 c5 fd e7 81 80 00 00 00 c5 fd e7 81 a0
+  0x00007ff848262980:   00 00 00 c5 fd e7 81 c0 00 00 00 c5 fd e7 81 e0
+  0x00007ff848262990:   00 00 00 48 81 c1 00 01 00 00 49 81 e8 00 01 00
+
+
+
+---------------  P R O C E S S  ---------------
+
+VM state: not at safepoint (not fully initialized)
+
+VM Mutex/Monitor currently owned by a thread: None
+
+Heap address: 0x0000000000000000, size: 0 MB, Compressed Oops mode: 32-bit
+
+CDS archive(s) mapped at: [0x0000000000000000-0x0000000000000000-0x0000000000000000), size 0, SharedBaseAddress: 0x0000000800000000, ArchiveRelocationMode: 1.
+UseCompressedClassPointers 1, UseCompactObjectHeaders 0
+Narrow klass pointer bits 32, Max shift 3
+Narrow klass base: 0xffffffffffffffff, Narrow klass shift: -1
+Encoding Range: [0xffffffffffffffff - 0x000000007fffffff), (2147483648 bytes)
+Klass Range:    [0x0000000000000000 - 0x0000000000000000), (0 bytes)
+Klass ID Range:  [4294967295 - 0) (1)
+No protection zone.
+
+GC Precious Log:
+<Not initialized>
+
+Dll operation events (0 events):
+No events
+
+Deoptimization events (0 events):
+No events
+
+Classes loaded (0 events):
+No events
+
+Classes unloaded (0 events):
+No events
+
+Classes redefined (0 events):
+No events
+
+Internal exceptions (0 events):
+No events
+
+VM Operations (0 events):
+No events
+
+Memory protections (0 events):
+No events
+
+Nmethod flushes (0 events):
+No events
+
+Events (0 events):
+No events
+
+
+Dynamic libraries:
+0x00007ff725900000 - 0x00007ff72590a000 	D:\Program Files\JetBrains\PyCharm 2026.1\jbr\bin\java.exe
+0x00007ff879bb0000 - 0x00007ff879da8000 	C:\Windows\SYSTEM32\ntdll.dll
+0x00007ff845010000 - 0x00007ff845031000 	C:\Program Files\Avast Software\Avast\aswhook.dll
+0x00007ff8788f0000 - 0x00007ff8789b2000 	C:\Windows\System32\KERNEL32.DLL
+0x00007ff8773d0000 - 0x00007ff8776c6000 	C:\Windows\System32\KERNELBASE.dll
+0x00007ff877830000 - 0x00007ff877930000 	C:\Windows\System32\ucrtbase.dll
+0x00007ff873650000 - 0x00007ff873667000 	D:\Program Files\JetBrains\PyCharm 2026.1\jbr\bin\jli.dll
+0x00007ff848250000 - 0x00007ff84826e000 	D:\Program Files\JetBrains\PyCharm 2026.1\jbr\bin\VCRUNTIME140.dll
+0x00007ff879940000 - 0x00007ff879ae1000 	C:\Windows\System32\USER32.dll
+0x00007ff877a00000 - 0x00007ff877a22000 	C:\Windows\System32\win32u.dll
+0x00007ff877d80000 - 0x00007ff877dab000 	C:\Windows\System32\GDI32.dll
+0x00007ff865b80000 - 0x00007ff865e1b000 	C:\Windows\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.19041.6456_none_60b8a6cb71f64256\COMCTL32.dll
+0x00007ff877a30000 - 0x00007ff877b49000 	C:\Windows\System32\gdi32full.dll
+0x00007ff879270000 - 0x00007ff87930e000 	C:\Windows\System32\msvcrt.dll
+0x00007ff877930000 - 0x00007ff8779cd000 	C:\Windows\System32\msvcp_win.dll
+0x00007ff8793d0000 - 0x00007ff8793ff000 	C:\Windows\System32\IMM32.DLL
+0x00000000646b0000 - 0x00000000646bd000 	D:\Program Files (x86)\360\Total Security\safemon\SafeWrapper.dll
+0x00007ff878cd0000 - 0x00007ff878d81000 	C:\Windows\System32\ADVAPI32.dll
+0x00007ff877db0000 - 0x00007ff877e4f000 	C:\Windows\System32\sechost.dll
+0x00007ff877ec0000 - 0x00007ff877fe0000 	C:\Windows\System32\RPCRT4.dll
+0x00007ff8779d0000 - 0x00007ff8779f7000 	C:\Windows\System32\bcrypt.dll
+0x00007ff871320000 - 0x00007ff871425000 	D:\Program Files (x86)\360\Total Security\safemon\libzdtp64.dll
+0x00007ff878180000 - 0x00007ff8788f0000 	C:\Windows\System32\SHELL32.dll
+0x00007ff878ae0000 - 0x00007ff878b3b000 	C:\Windows\System32\SHLWAPI.dll
+0x00007ff876d50000 - 0x00007ff876d5a000 	C:\Windows\SYSTEM32\VERSION.dll
+0x00007ff86bbc0000 - 0x00007ff86bbcc000 	D:\Program Files\JetBrains\PyCharm 2026.1\jbr\bin\vcruntime140_1.dll
+0x00007fffee960000 - 0x00007fffee9e9000 	D:\Program Files\JetBrains\PyCharm 2026.1\jbr\bin\msvcp140.dll
+0x00007fffeec90000 - 0x00007fffefbe2000 	D:\Program Files\JetBrains\PyCharm 2026.1\jbr\bin\server\jvm.dll
+0x00007ff878a70000 - 0x00007ff878adb000 	C:\Windows\System32\WS2_32.dll
+0x00007ff86d5e0000 - 0x00007ff86d607000 	C:\Windows\SYSTEM32\WINMM.dll
+0x00007ff876fa0000 - 0x00007ff876feb000 	C:\Windows\SYSTEM32\POWRPROF.dll
+0x00007ff876f80000 - 0x00007ff876f92000 	C:\Windows\SYSTEM32\UMPDC.dll
+0x00007ff8759a0000 - 0x00007ff8759b2000 	C:\Windows\SYSTEM32\kernel.appcore.dll
+0x00007ff86bbb0000 - 0x00007ff86bbba000 	D:\Program Files\JetBrains\PyCharm 2026.1\jbr\bin\jimage.dll
+0x00007ff875700000 - 0x00007ff875901000 	C:\Windows\SYSTEM32\DBGHELP.DLL
+0x00007ff86f9e0000 - 0x00007ff86fa14000 	C:\Windows\SYSTEM32\dbgcore.DLL
+0x00007ff877290000 - 0x00007ff877312000 	C:\Windows\System32\bcryptPrimitives.dll
+
+JVMTI agents: none
+
+dbghelp: loaded successfully - version: 4.0.5 - missing functions: none
+symbol engine: initialized successfully - sym options: 0x614 - pdb path: .;D:\Program Files\JetBrains\PyCharm 2026.1\jbr\bin;C:\Windows\SYSTEM32;C:\Program Files\Avast Software\Avast;C:\Windows\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.19041.6456_none_60b8a6cb71f64256;D:\Program Files (x86)\360\Total Security\safemon;D:\Program Files\JetBrains\PyCharm 2026.1\jbr\bin\server
+
+VM Arguments:
+java_command: git4idea.http.GitAskPassApp Username for 'https://github.com': 
+java_class_path (initial): D:/Program Files/JetBrains/PyCharm 2026.1/plugins/vcs-git/lib/git4idea-rt.jar;D:/Program Files/JetBrains/PyCharm 2026.1/lib/externalProcess-rt.jar
+Launcher Type: SUN_STANDARD
+
+[Global flags]
+     uint ConcGCThreads                            = 3                                         {product} {ergonomic}
+     uint G1ConcRefinementThreads                  = 13                                        {product} {ergonomic}
+   size_t InitialHeapSize                          = 392940544                                 {product} {ergonomic}
+   size_t MarkStackSize                            = 4194304                                   {product} {ergonomic}
+   size_t MaxHeapSize                              = 6287048704                                {product} {ergonomic}
+   size_t MinHeapSize                              = 6815736                                   {product} {ergonomic}
+    uintx ReservedCodeCacheSize                    = 251658240                              {pd product} {ergonomic}
+     bool SegmentedCodeCache                       = true                                      {product} {ergonomic}
+     bool UseCompressedOops                        = true                           {product lp64_product} {ergonomic}
+     bool UseG1GC                                  = true                                      {product} {ergonomic}
+     bool UseLargePagesIndividualAllocation        = false                                  {pd product} {ergonomic}
+
+Logging:
+Log output configuration:
+ #0: stdout all=warning uptime,level,tags foldmultilines=false
+ #1: stderr all=off uptime,level,tags foldmultilines=false
+
+Release file:
+<release file has not been read>
+Environment Variables:
+PATH=C:/Program Files/Git/mingw64/libexec/git-core;C:/Program Files/Git/mingw64/libexec/git-core;C:\Program Files\Git\mingw64\bin;C:\Program Files\Git\usr\bin;C:\Users\Asus\bin;C:\Program Files (x86)\Common Files\Oracle\Java\java8path;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\ProgramData\Oracle\Java\javapath;C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;D:\WorldPainter;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Program Files\dotnet\;C:\Program Files\Git\cmd;C:\Program Files\PuTTY\;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\nodejs\;C:\Program Files\Cloudflare\Cloudflare WARP\;C:\Users\Asus\.cargo\bin;C:\Users\Asus\AppData\Local\Programs\Python\Python312\Scripts\;C:\Users\Asus\AppData\Local\Programs\Python\Python312\;D:\Scripts\;D:\;C:\Users\Asus\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\Asus\AppData\Local\Programs\Python\Python311\;C:\Users\Asus\AppData\Local\Microsoft\WindowsApps;D:\PyCharm 2023.2.2\bin;D:\heroku\bin;C:\Users\Asus\AppData\Roaming\npm;D:\cursor\resources\app\bin
+USERNAME=Asus
+DISPLAY=:0.0
+LC_ALL=en_US.UTF-8
+TERM=xterm-256color
+TMPDIR=C:\Temp
+OS=Windows_NT
+PROCESSOR_IDENTIFIER=AMD64 Family 23 Model 96 Stepping 1, AuthenticAMD
+TMP=C:\Temp
+TEMP=C:\Temp
+
+
+
+
+Compilation memory statistics disabled.
+
+Periodic native trim disabled
+
+JNI global refs:
+JNI global refs: 0, weak refs: 0
+
+JNI global refs memory usage: 0, weak refs: 0
+
+Process memory usage:
+Resident Set Size: 10352K (0% of 24558784K total physical memory with 7643172K free physical memory)
+
+OOME stack traces (most recent first):
+Classloader memory used:
+Not available (crashed in non-Java thread)
+---------------  S Y S T E M  ---------------
+
+OS:
+ Windows 10 , 64 bit Build 19041 (10.0.19041.5915)
+OS uptime: 0 days 3:07 hours
+
+CPU: total 16 (initial active 16) 
+Processor Information for the first 16 processors :
+  Max Mhz: 2901, Current Mhz: 2901, Mhz Limit: 2901
+
+Memory: 4k page, system-wide physical 23983M (7464M free)
+TotalPageFile size 53983M (AvailPageFile size 31466M)
+current process WorkingSet (physical memory assigned to process): 10M, peak: 10M
+current process commit charge ("private bytes"): 4M, peak: 4M
+
+vm_info: OpenJDK 64-Bit Server VM (25.0.2+1-b329.72) for windows-amd64 JRE (25.0.2+1-b329.72), built on 2026-03-02 with MS VC++ 17.14 (VS2022)
+
+END.

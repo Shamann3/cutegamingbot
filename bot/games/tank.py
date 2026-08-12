@@ -361,6 +361,11 @@ async def game_filter_tank(message: Message):
     has_assignment, is_free = False, False
     current_two = 0
     target_amount = 0
+    gc_bet_limit = None
+    try:
+        gc_bet_limit = await db.gc_get_bet_limit_for_user(user_id)
+    except Exception:
+        gc_bet_limit = None
     try:
         assignment = await db.get_active_gc_assignment(user_id)
         if assignment and str(assignment.get("status","")).lower() == "active":
@@ -372,6 +377,19 @@ async def game_filter_tank(message: Message):
             print(f"[TANK] Активное задание: бесплатное={is_free}, баланс челленджа={current_two}")
     except Exception as e:
         print(f"[TANK] Ошибка проверки задания: {e}")
+
+    from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
+    gate = decide_gc_play_mode(
+        bet=bet_amount,
+        game_max_bet=Tank_MAX_BET,
+        has_assignment=has_assignment,
+        is_free=is_free,
+        gc_bet_limit=gc_bet_limit,
+    )
+    if gate.get("mode") == "reject":
+        await message.reply(format_game_max_bet_html(gate.get("max") or Tank_MAX_BET), parse_mode="HTML")
+        return
+    is_free_play = gate.get("mode") == "free"
 
     # ----- Вызов Jericho (только для определения режима, не для обхода баланса) -----
     print(f"[TANK] 🔮 Вызов Jericho (диагностика долга и режима)")
@@ -410,10 +428,9 @@ async def game_filter_tank(message: Message):
             print("[TANK] Режим: обычный")
 
     # ----- ПРОВЕРКА БАЛАНСА ПОЛЬЗОВАТЕЛЯ (ОБЯЗАТЕЛЬНО, даже при demo/0demo) -----
-    if has_assignment and is_free:
-        # Бесплатный челлендж: используем баланс current_two
+    if is_free_play:
+        # Бесплатный челлендж: без БЧ и без ★
         if bet_amount > current_two:
-            # Недостаточно валюты челленджа – игра невозможна
             progress_text = f"{current_two}/{target_amount}" if target_amount > 0 else f"{current_two}"
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
@@ -439,11 +456,18 @@ async def game_filter_tank(message: Message):
             asyncio.create_task(_send_invoice_later(message, user_id, bet_str, delay=timeoutdonate))
             return
 
-    # ----- Проверка баланса группы -----
-    chat_balance = await _chat_get_balance(chat_id)
-    if bet_amount > chat_balance:
-        await message.reply("<b><tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> В группе недостаточно средств для игры.</b>", parse_mode="HTML")
-        return
+        # ----- Проверка баланса группы (не для free) -----
+        chat_balance = await _chat_get_balance(chat_id)
+        if bet_amount > chat_balance:
+            await message.reply("<b><tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> В группе недостаточно средств для игры.</b>", parse_mode="HTML")
+            return
+
+    try:
+        from bot.funcs.group_balance_level import reject_if_bet_over_group_level
+        if await reject_if_bet_over_group_level(message, bet_amount, is_free_play=is_free_play):
+            return
+    except Exception as _gbl_e:
+        print(f"[GBL] tank check skip: {_gbl_e!r}")
 
     # ----- Запуск игры -----
     async with _get_user_lock(user_id):
@@ -462,7 +486,7 @@ async def game_filter_tank(message: Message):
             "owner_id": user_id, "chat_id": chat_id,
             "first_success": False, "closed": False, "payout_done": False,
             "session_rev": new_rev, "has_assignment": has_assignment,
-            "is_free": is_free, "using_demo": using_demo, "using_0demo": using_0demo,
+            "is_free": is_free_play, "using_demo": using_demo, "using_0demo": using_0demo,
         }
         sent = await message.reply(
             f"<tg-emoji emoji-id='5291960442422325139'>{random.choice(RAN_EMOJIS)}</tg-emoji>",

@@ -44,6 +44,23 @@ PANEL_SECTION_DEFS: list[dict] = [
         "permissions": [],
         "ownerOnly": True,
     },
+    {
+        "id": "groupBalanceLevel",
+        "label": "Уровни бч",
+        "group": "economy",
+        "permissions": [],
+        "ownerOnly": True,
+    },
+    {
+        "id": "achievements",
+        "label": "Достижения",
+        "group": "content",
+        "permissions": [
+            "manage_achievements",
+            "grant_official_achievements",
+            "grant_free_achievements",
+        ],
+    },
     {"id": "events", "label": "Ивенты", "group": "content", "permissions": ["manage_events"]},
     {"id": "broadcast", "label": "Рассылка", "group": "content", "permissions": ["manage_broadcast"]},
     {
@@ -103,6 +120,11 @@ SECTION_TABS: dict[str, list[dict]] = {
         {"id": "craft", "label": "Крафт"},
         {"id": "map", "label": "Карта", "ownerOnly": True},
         {"id": "quests", "label": "Задания"},
+    ],
+    "achievements": [
+        {"id": "catalog", "label": "Каталог", "perm": "manage_achievements"},
+        {"id": "grantOfficial", "label": "Выдача офиц.", "perm": "grant_official_achievements"},
+        {"id": "grantFree", "label": "Выдача свободных", "perm": "grant_free_achievements"},
     ],
     "moderation": [
         {"id": "archive", "label": "Архив"},

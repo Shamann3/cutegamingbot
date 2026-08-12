@@ -146,19 +146,18 @@ class MagicCallbackMiddleware(BaseMiddleware):
         if delay > 0:
             auto_task = asyncio.create_task(_delayed_empty_answer(delay))
 
-        entered = False
+        inflight_token: int | None = None
         try:
             try:
-                m.limits.enter()
-                entered = True
+                inflight_token = m.limits.enter()
             except Exception:
-                entered = False
+                inflight_token = None
             data["magic"] = m
             return await handler(event, data)
         finally:
-            if entered:
+            if inflight_token is not None:
                 try:
-                    m.limits.leave()
+                    m.limits.leave(inflight_token)
                 except Exception:
                     pass
             try:
@@ -178,3 +177,9 @@ class MagicCallbackMiddleware(BaseMiddleware):
                     auto_task.cancel()
             except Exception:
                 pass
+            # не копить отменённые tasks на долгом аптайме
+            if auto_task is not None and auto_task.done():
+                try:
+                    auto_task.exception()
+                except (asyncio.CancelledError, Exception):
+                    pass

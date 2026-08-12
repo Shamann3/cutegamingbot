@@ -230,6 +230,23 @@ async def _on_unhandled_error(event) -> bool:
     return True
 
 
+@dp.callback_query(lambda c: isinstance(c.data, str) and (
+    c.data.startswith("ach_grant_off:")
+    or c.data.startswith("ach_rev:")
+    or c.data.startswith("achm_")
+))
+async def achievements_callbacks(callback: CallbackQuery):
+    from bot.handlers.achievements_admin import handle_achievements_callback
+    try:
+        await handle_achievements_callback(callback, db)
+    except Exception as e:
+        print(f"[ACH] callback fail: {e!r}")
+        try:
+            await callback.answer("Ошибка", show_alert=True)
+        except Exception:
+            pass
+
+
 @dp.callback_query(lambda c: isinstance(c.data, str) and c.data.startswith("kingm:"))
 async def king_stats_menu_callback(call: types.CallbackQuery):
     from bot.funcs.king_stats import handle_king_stats_callback
@@ -265,15 +282,34 @@ def _is_local_test_sandbox() -> bool:
     return mode == "test" and location == "local"
 
 
-def _build_cryptopay_client() -> Optional[CryptoPay]:
-    force_enable = str(os.getenv("CRYPTOPAY_FORCE_ENABLE", "0")).strip().lower() in {"1", "true", "yes", "on"}
-    force_disable = str(os.getenv("CRYPTOPAY_FORCE_DISABLE", "0")).strip().lower() in {"1", "true", "yes", "on"}
-    if force_disable and not force_enable:
+_cp_router_attached = False
+import threading as _threading_cp
+_cp_thread_lock = _threading_cp.Lock()
+
+
+def _cryptopay_env_force_enable() -> bool:
+    return str(os.getenv("CRYPTOPAY_FORCE_ENABLE", "0")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _cryptopay_env_force_disable() -> bool:
+    return str(os.getenv("CRYPTOPAY_FORCE_DISABLE", "0")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_cryptopay_client(*, eager: bool = True) -> Optional[CryptoPay]:
+    """Создаёт CryptoPay-клиент.
+
+    eager=True  — при старте бота (в local-test sandbox пропускаем, чтобы не тормозить boot)
+    eager=False — по первому крипто-платежу (кнопки crypto уже показаны)
+    """
+    if _cryptopay_env_force_disable() and not _cryptopay_env_force_enable():
         print("[PAYMENT] CryptoPay disabled by CRYPTOPAY_FORCE_DISABLE.")
         return None
 
-    if _is_local_test_sandbox() and not force_enable:
-        print("[PAYMENT] CryptoPay disabled in local test sandbox.")
+    if eager and _is_local_test_sandbox() and not _cryptopay_env_force_enable():
+        print(
+            "[PAYMENT] CryptoPay deferred in local test sandbox "
+            "(кнопки crypto будут, клиент поднимется при первой оплате)."
+        )
         return None
 
     try:
@@ -283,9 +319,48 @@ def _build_cryptopay_client() -> Optional[CryptoPay]:
         return None
 
 
-cp: Optional[CryptoPay] = _build_cryptopay_client()
+cp: Optional[CryptoPay] = _build_cryptopay_client(eager=True)
 
 payment_router = PollingRouter()
+
+
+def ensure_cryptopay() -> Optional[CryptoPay]:
+    """Гарантирует живой CryptoPay-клиент + polling router.
+
+    Кнопки crypto всегда показываем; клиент может подняться лениво
+    (в т.ч. в local-test sandbox).
+    """
+    global cp, _cp_router_attached
+    with _cp_thread_lock:
+        if cp is not None:
+            if not _cp_router_attached:
+                try:
+                    cp.include_router(payment_router)
+                    _cp_router_attached = True
+                    print("[PAYMENT] CryptoPay polling attached.")
+                except Exception as e:
+                    print(f"[PAYMENT][WARN] router attach: {type(e).__name__}: {e}")
+            return cp
+
+        if _cryptopay_env_force_disable() and not _cryptopay_env_force_enable():
+            return None
+
+        try:
+            client = CryptoPay(token=CRYPTOPAY_TOKEN, network=NETWORK)
+        except Exception as e:
+            print(f"[PAYMENT][WARN] CryptoPay lazy init failed: {type(e).__name__}: {e}")
+            return None
+
+        cp = client
+        try:
+            cp.include_router(payment_router)
+            _cp_router_attached = True
+            print("[PAYMENT] CryptoPay polling enabled (lazy).")
+        except Exception as e:
+            print(f"[PAYMENT][WARN] lazy router attach: {type(e).__name__}: {e}")
+        return cp
+
+
 from bot.config.config import PWD
 
 
@@ -2107,10 +2182,11 @@ def get_currency_display(currency: str, for_text: bool = False) -> str:
         return currency
 
 async def get_available_currencies() -> List[str]:
-    if cp is None:
-        return []
+    client = ensure_cryptopay()
+    if client is None:
+        return list(CRYPTO_CURRENCIES_FOR_PAYMENT)
     try:
-        currencies = await cp.get_currencies()
+        currencies = await client.get_currencies()
         all_codes = [c.code for c in currencies]
         return [c for c in all_codes if c in PREFERRED_CURRENCIES]
     except Exception as e:
@@ -2247,28 +2323,40 @@ for curr in CRYPTO_CURRENCIES_FOR_PAYMENT:
 from functools import lru_cache
 
 @lru_cache(maxsize=256)
-def get_crypto_keyboard(stars_whole: int, is_buyback: bool = False, kut_amount: Optional[int] = None) -> InlineKeyboardMarkup:
-    """Клавиатура выбора криптовалюты. Для выкупа добавляет _buyback_<kut> в callback_data."""
-    crypto_buttons = []
-    if cp is not None:
-        for curr, text, emoji_id, has_custom in _CRYPTO_BUTTON_TEMPLATES:
-            if is_buyback and kut_amount is not None:
-                cb_data = f"crypto_{curr}_{stars_whole}_buyback_{kut_amount}"
-            else:
-                cb_data = f"crypto_{curr}_{stars_whole}"
+def get_crypto_keyboard(
+    stars_whole: int,
+    is_buyback: bool = False,
+    kut_amount: Optional[int] = None,
+    gbl_chat_id: Optional[int] = None,
+    gbl_level: Optional[int] = None,
+) -> InlineKeyboardMarkup:
+    """Клавиатура оплаты: Stars pay + сетка crypto (всегда), как в проде.
 
-            if has_custom:
-                btn = InlineKeyboardButton(
-                    text=text,
-                    callback_data=cb_data,
-                    icon_custom_emoji_id=emoji_id
-                )
-            else:
-                btn = InlineKeyboardButton(
-                    text=text,
-                    callback_data=cb_data
-                )
-            crypto_buttons.append(btn)
+    Crypto-кнопки показываем всегда. CryptoPay-клиент поднимается лениво
+    в ensure_cryptopay() при клике — иначе в local-test кнопки пропадали
+    из-за cp is None.
+    """
+    crypto_buttons = []
+    for curr, text, emoji_id, has_custom in _CRYPTO_BUTTON_TEMPLATES:
+        if is_buyback and kut_amount is not None:
+            cb_data = f"crypto_{curr}_{stars_whole}_buyback_{kut_amount}"
+        elif gbl_chat_id is not None and gbl_level is not None:
+            cb_data = f"crypto_{curr}_{stars_whole}_gblevel_{int(gbl_chat_id)}_{int(gbl_level)}"
+        else:
+            cb_data = f"crypto_{curr}_{stars_whole}"
+
+        if has_custom:
+            btn = InlineKeyboardButton(
+                text=text,
+                callback_data=cb_data,
+                icon_custom_emoji_id=emoji_id
+            )
+        else:
+            btn = InlineKeyboardButton(
+                text=text,
+                callback_data=cb_data
+            )
+        crypto_buttons.append(btn)
 
     crypto_rows = [crypto_buttons[i:i+2] for i in range(0, len(crypto_buttons), 2)]
     stars_view = format(stars_whole, ',d').replace(',', ' ')
@@ -2588,6 +2676,7 @@ async def crypto_choice_handler(callback: CallbackQuery):
     parts = callback.data.split("_")
     # Формат: crypto_<currency>_<stars>               → донат
     #         crypto_<currency>_<stars>_buyback_<kut>  → выкуп
+    #         crypto_<currency>_<stars>_gblevel_<chat>_<lvl> → уровень бч
     if len(parts) < 3:
         await callback.answer("❌ Ошибка данных", show_alert=True)
         return
@@ -2601,6 +2690,9 @@ async def crypto_choice_handler(callback: CallbackQuery):
 
     is_buyback = False
     buyback_kut = None
+    is_gblevel = False
+    gbl_chat_id = None
+    gbl_to_level = None
     if len(parts) >= 5 and parts[3] == "buyback":
         is_buyback = True
         try:
@@ -2608,15 +2700,31 @@ async def crypto_choice_handler(callback: CallbackQuery):
         except ValueError:
             await callback.answer("❌ Ошибка данных выкупа", show_alert=True)
             return
+    elif len(parts) >= 6 and parts[3] == "gblevel":
+        is_gblevel = True
+        try:
+            gbl_chat_id = int(parts[4])
+            gbl_to_level = int(parts[5])
+        except ValueError:
+            await callback.answer("❌ Ошибка данных уровня", show_alert=True)
+            return
 
-    if cp is None:
+    if ensure_cryptopay() is None:
         await callback.answer("Крипто-платежи временно недоступны.", show_alert=True)
         return
 
     await callback.answer("🔄 Создаём счёт...")
     chat_id = callback.message.chat.id
     user_id = callback.from_user.id
-    debug_print(f"crypto_choice: {currency} {stars_whole} is_buyback={is_buyback} kut={buyback_kut}")
+    debug_print(
+        f"crypto_choice: {currency} {stars_whole} is_buyback={is_buyback} "
+        f"kut={buyback_kut} gbl={is_gblevel}:{gbl_chat_id}:{gbl_to_level}"
+    )
+
+    client = ensure_cryptopay()
+    if client is None:
+        await bot1.send_message(chat_id, "❌ Крипто-платежи временно недоступны.")
+        return
 
     # --- 1. Расчёт суммы крипты ---
     try:
@@ -2640,6 +2748,9 @@ async def crypto_choice_handler(callback: CallbackQuery):
             # Для выкупа переводим звёзды в куты с учётом скидки 20%
             min_kuts_needed = int((Decimal(min_stars_int) / Decimal(str(MULTIPLIER_BUYBACK))).to_integral_value(rounding=ROUND_CEILING))
             action = "выкупать"
+        elif is_gblevel:
+            min_kuts_needed = min_stars_int
+            action = "открыть уровень на"
         else:
             min_kuts_needed = await calculate_min_kuts_for_currency(currency, min_crypto, crypto_usd_rate)
             action = "купить"
@@ -2647,14 +2758,21 @@ async def crypto_choice_handler(callback: CallbackQuery):
         await bot1.send_message(
             chat_id,
             f"<b><tg-emoji emoji-id='5454409660473827001'>💱</tg-emoji> Минимальная сумма для оплаты в {currency} :</b> <code>{_fmt_crypto_amount(min_crypto)} {currency}</code>\n"
-            f"<b>Чтобы пройти порог, необходимо {action} минимум <code>{min_kuts_needed} кут</code></b>",
+            f"<b>Чтобы пройти порог, необходимо {action} минимум <code>{min_kuts_needed} {'★' if is_gblevel else 'кут'}</code></b>",
             parse_mode="HTML"
         )
         return
 
     # --- 3. Базовое количество кутов ---
-    if is_buyback and buyback_kut is not None:
+    if is_gblevel:
+        # Для уровня бч куты НЕ выдаём — в payload кладём price_stars
+        base_kut_int = int(stars_whole)
+        bonus_kut_int = 0
+        total_kut_int = 0
+    elif is_buyback and buyback_kut is not None:
         base_kut_int = buyback_kut
+        bonus_kut_int = 0
+        total_kut_int = base_kut_int
     else:
         try:
             bet = Decimal(str(donate_bet))
@@ -2666,9 +2784,8 @@ async def crypto_choice_handler(callback: CallbackQuery):
             await bot1.send_message(chat_id, "<b><tg-emoji emoji-id='5454409660473827001'>💱</tg-emoji> Ошибка расчёта кут.</b>", parse_mode="HTML")
             return
 
-    # --- 4. Бонусные куты (только для доната) ---
-    bonus_kut_int = 0
-    if not is_buyback:
+        # --- 4. Бонусные куты (только для доната) ---
+        bonus_kut_int = 0
         try:
             star_usd_rate = Decimal("0.015")
             stars_price_usd = Decimal(stars_whole) * star_usd_rate
@@ -2690,18 +2807,21 @@ async def crypto_choice_handler(callback: CallbackQuery):
         if MIN_GUARANTEED_BONUS_KUTS > 0 and bonus_kut_int < MIN_GUARANTEED_BONUS_KUTS:
             bonus_kut_int = MIN_GUARANTEED_BONUS_KUTS
 
-    # При выкупе bonus_kut_int гарантированно 0
-    total_kut_int = base_kut_int + bonus_kut_int
+        total_kut_int = base_kut_int + bonus_kut_int
 
     # --- 5. Создание инвойса CryptoBot ---
-    # Для выкупа передаём 0 как бонус и флаг :buyback
-    if is_buyback:
+    if is_gblevel:
+        payload = (
+            f"{user_id}:{base_kut_int}:0:{currency}:{crypto_amount}"
+            f":gblevel:{int(gbl_chat_id)}:{int(gbl_to_level)}"
+        )
+    elif is_buyback:
         payload = f"{user_id}:{base_kut_int}:0:{currency}:{crypto_amount}:buyback"
     else:
         payload = f"{user_id}:{base_kut_int}:{bonus_kut_int}:{currency}:{crypto_amount}"
 
     try:
-        invoice = await cp.create_invoice(
+        invoice = await client.create_invoice(
             amount=float(crypto_amount),
             asset=currency,
             payload=payload
@@ -2726,20 +2846,42 @@ async def crypto_choice_handler(callback: CallbackQuery):
     emoji_html = get_custom_emoji_html(currency)
     bonus_line = f"<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>Бонус +{_fmt_int1(bonus_kut_int)} кут за оплату криптовалютой!</b>\n" if bonus_kut_int > 0 else "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> Спасибо за оплату криптовалютой!\n"
 
-    if is_buyback:
+    if is_gblevel:
+        from bot.funcs.group_balance_level import stars_label as _gbl_stars
+        buyback_line = (
+            f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
+            f"<b>Новый уровень баланса группы {_gbl_stars(int(gbl_to_level))}</b>\n"
+        )
+        operation_title = f"{emoji_html} <b>Уровень группы · {currency}</b>"
+        bonus_line = (
+            "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> "
+            "Куты на личный баланс не начисляются — оплата целиком идёт на уровень группы.\n"
+        )
+        amount_line = (
+            f"<b><tg-emoji emoji-id='5346309121794659890'>⭐️</tg-emoji> {stars_view}★</b>\n"
+        )
+    elif is_buyback:
         buyback_line = f"<tg-emoji emoji-id='5424783865124258527'>✅</tg-emoji> <b>Выкуп потерянных {_fmt_int1(buyback_kut)} кут</b>\n"
         operation_title = f"{emoji_html} <b>Выкуп через {currency}</b>"
         # при выкупе бонус не показываем
         bonus_line = ""
+        amount_line = (
+            f"<b><tg-emoji emoji-id='5278467510604160626'>💰</tg-emoji> {kuts_view} кут | "
+            f"<tg-emoji emoji-id='5346309121794659890'>⭐️</tg-emoji> {stars_view}</b>\n"
+        )
     else:
         buyback_line = ""
         operation_title = f"{emoji_html} <b>{currency}</b>"
+        amount_line = (
+            f"<b><tg-emoji emoji-id='5278467510604160626'>💰</tg-emoji> {kuts_view} кут | "
+            f"<tg-emoji emoji-id='5346309121794659890'>⭐️</tg-emoji> {stars_view}</b>\n"
+        )
 
     text = (
         f"{operation_title}\n"
         f"━━━━━━━━━━━━━\n"
         f"{buyback_line}"
-        f"<b><tg-emoji emoji-id='5278467510604160626'>💰</tg-emoji> {kuts_view} кут | <tg-emoji emoji-id='5346309121794659890'>⭐️</tg-emoji> {stars_view}</b>\n"
+        f"{amount_line}"
         f"━━━━━━━━━━━━━\n\n"
         f"{bonus_line}"
         f"<tg-emoji emoji-id='5253741302276713999'>⌚️</tg-emoji><b> Счёт действителен 15 мин</b>\n\n"
@@ -2982,6 +3124,133 @@ async def successful_payment_handler(message: Message):
         return
 
     # ==============================
+    # 1b. УРОВЕНЬ БАЛАНСА ГРУППЫ (Stars)
+    # ==============================
+    if payload.startswith("gblevel_"):
+        print(f"🔵 [PAYMENT] Group balance level for user_id={user_id} payload={payload}")
+        try:
+            _, chat_id_s, to_level_s, price_s = payload.split("_", 3)
+            pay_chat_id = int(chat_id_s)
+            to_level = int(to_level_s)
+            price = int(price_s)
+        except Exception:
+            await message.answer(
+                "Не удалось распознать платёж уровня. Напишите в поддержку — поможем вручную.",
+                parse_mode="HTML",
+            )
+            return
+
+        if int(total_amount) != int(price):
+            await message.answer(
+                "Сумма звёзд не совпала с шагом уровня. Напишите в поддержку — разберёмся.",
+                parse_mode="HTML",
+            )
+            return
+
+        from bot.funcs.group_balance_level import (
+            apply_level_purchase,
+            build_gift_announcement_html,
+            get_settings,
+            next_level_price,
+            stars_label,
+        )
+
+        cfg = get_settings()
+        # Мягкая проверка актуальности цены (если админ успел сменить — всё равно принимаем оплаченный шаг)
+        res = apply_level_purchase(
+            chat_id=pay_chat_id,
+            user_id=user_id,
+            to_level=to_level,
+            price_stars=price,
+        )
+        if not res.get("ok"):
+            await message.answer(
+                "<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
+                "<b>Оплата прошла успешно</b>\n"
+                "Уровень ещё не применился автоматически. Напишите в поддержку — "
+                "мы всё оформим вручную и с благодарностью.",
+                parse_mode="HTML",
+            )
+            print(f"❌ [PAYMENT][GBL] apply failed: {res}")
+            return
+
+        try:
+            from bot.funcs.achievements import grant_gbl_level_achievement
+            from bot.funcs.group_balance_level import badge_title_for_level
+            await grant_gbl_level_achievement(
+                db,
+                user_id=int(user_id),
+                level=int(to_level),
+                title_override=badge_title_for_level(int(to_level), cfg),
+            )
+        except Exception as _ach_e:
+            print(f"⚠️ [PAYMENT][GBL] achievement grant: {_ach_e!r}")
+
+        # Донат-учёт: звёзды считаются донатом проекта (лимит вывода растёт), куты НЕ выдаём
+        try:
+            BONUS_PERCENT = Decimal("0.03")
+            bonus = (Decimal(price) * BONUS_PERCENT).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            await db.add_donation(user_id, price, bonus=bonus)
+            await db.cutehistory_plus(user_id, 0, f"уровень баланса группы ★{to_level} (-{pay_chat_id})")
+        except Exception as e:
+            print(f"⚠️ [PAYMENT][GBL] donation bookkeeping: {e!r}")
+
+        # Имя спонсора
+        try:
+            first_name = message.from_user.first_name or str(user_id)
+            sponsor_html = await create_user_link(user_id, first_name, message.from_user.username)
+        except Exception:
+            first_name = message.from_user.first_name or str(user_id)
+            sponsor_html = f"<a href='tg://user?id={user_id}'>{_html(first_name)}</a>"
+
+        gift_html = build_gift_announcement_html(
+            sponsor_name_html=sponsor_html,
+            to_level=to_level,
+            price_stars=price,
+            chat_id=pay_chat_id,
+        )
+
+        # Анонс в группу
+        try:
+            await bot1.send_message(
+                chat_id=pay_chat_id,
+                text=gift_html,
+                parse_mode="HTML",
+                message_effect_id="5046509860389126442",
+            )
+        except Exception as e:
+            print(f"⚠️ [PAYMENT][GBL] group announce fail: {e!r}")
+            try:
+                await bot1.send_message(chat_id=pay_chat_id, text=gift_html, parse_mode="HTML")
+            except Exception as e2:
+                print(f"❌ [PAYMENT][GBL] group announce fail2: {e2!r}")
+
+        # Подтверждение плательщику
+        try:
+            await message.answer(
+                f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
+                f"<b>Уровень группы поднят до {stars_label(to_level)}</b>\n"
+                f"Благодарим вас. Именная метка уже ждёт в достижениях профиля.",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+        # Уведомление владельцу
+        try:
+            await bot1.send_message(
+                6801702632,
+                f"⭐ <b>Уровень баланса группы</b>\n"
+                f"chat=<code>{pay_chat_id}</code> → ★{to_level}\n"
+                f"user=<code>{user_id}</code> · {price}★",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+        print(f"🏁 [PAYMENT][GBL] done user={user_id} chat={pay_chat_id} level={to_level}")
+        return
+
+    # ==============================
     # 2. ОБЫЧНЫЙ ДОНАТ
     # ==============================
     print(f"🟢 [PAYMENT] Обычный донат для user_id={user_id}")
@@ -3108,10 +3377,11 @@ async def crypto_payment_handler(invoice: Invoice):
 
     # === 2. Парсинг payload ===
     # Формат: user_id:base_kuts:bonus_kuts:currency:crypto_amount[:buyback]
+    #      или user_id:price_stars:0:currency:crypto_amount:gblevel:chat_id:to_level
     try:
         parts = invoice.payload.split(":")
-        if len(parts) not in (5, 6):
-            debug_print(f"Неверный payload (ожидалось 5 или 6 частей): {invoice.payload}")
+        if len(parts) not in (5, 6, 8):
+            debug_print(f"Неверный payload (ожидалось 5/6/8 частей): {invoice.payload}")
             return
 
         user_id = int(parts[0])
@@ -3120,8 +3390,10 @@ async def crypto_payment_handler(invoice: Invoice):
         currency = parts[3]
         crypto_amount = Decimal(parts[4])
 
-        # Определяем выкуп
         is_buyback = (len(parts) == 6 and parts[5] == "buyback")
+        is_gblevel = (len(parts) == 8 and parts[5] == "gblevel")
+        gbl_chat_id = int(parts[6]) if is_gblevel else None
+        gbl_to_level = int(parts[7]) if is_gblevel else None
 
         if base_kuts < 0 or bonus_kuts < 0:
             debug_print(f"Отрицательные значения: base={base_kuts}, bonus={bonus_kuts}")
@@ -3129,6 +3401,97 @@ async def crypto_payment_handler(invoice: Invoice):
 
     except Exception as e:
         logging.error(f"Ошибка парсинга payload инвойса {invoice.invoice_id}: {e}")
+        return
+
+    # Уровень бч: куты не выдаём, применяем уровень
+    if is_gblevel:
+        price_stars = int(base_kuts)
+        try:
+            from bot.funcs.group_balance_level import (
+                apply_level_purchase,
+                build_gift_announcement_html,
+                stars_label,
+            )
+            res = apply_level_purchase(
+                chat_id=int(gbl_chat_id),
+                user_id=int(user_id),
+                to_level=int(gbl_to_level),
+                price_stars=price_stars,
+            )
+            if not res.get("ok"):
+                debug_print(f"[GBL][CRYPTO] apply failed: {res}")
+            else:
+                try:
+                    from bot.funcs.achievements import grant_gbl_level_achievement
+                    from bot.funcs.group_balance_level import badge_title_for_level
+                    await grant_gbl_level_achievement(
+                        db,
+                        user_id=int(user_id),
+                        level=int(gbl_to_level),
+                        title_override=badge_title_for_level(int(gbl_to_level)),
+                    )
+                except Exception as _ach_e:
+                    debug_print(f"[GBL][CRYPTO] achievement grant: {_ach_e!r}")
+            try:
+                BONUS_PERCENT = Decimal("0.03")
+                bonus = (Decimal(price_stars) * BONUS_PERCENT).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                await db.add_donation(user_id, price_stars, bonus=bonus)
+                await db.cutehistory_plus(
+                    user_id, 0,
+                    f"уровень баланса группы ★{gbl_to_level} crypto (-{gbl_chat_id})",
+                )
+            except Exception as e:
+                debug_print(f"[GBL][CRYPTO] donation bookkeeping: {e}")
+
+            try:
+                u = await bot1.get_chat(user_id)
+                first_name = getattr(u, "first_name", None) or str(user_id)
+                uname = getattr(u, "username", None)
+                sponsor_html = await create_user_link(user_id, first_name, uname)
+            except Exception:
+                sponsor_html = f"<a href='tg://user?id={user_id}'>{user_id}</a>"
+
+            gift_html = build_gift_announcement_html(
+                sponsor_name_html=sponsor_html,
+                to_level=int(gbl_to_level),
+                price_stars=price_stars,
+                chat_id=int(gbl_chat_id),
+            )
+            try:
+                await bot1.send_message(
+                    chat_id=int(gbl_chat_id),
+                    text=gift_html,
+                    parse_mode="HTML",
+                    message_effect_id="5046509860389126442",
+                )
+            except Exception:
+                try:
+                    await bot1.send_message(int(gbl_chat_id), gift_html, parse_mode="HTML")
+                except Exception as e2:
+                    debug_print(f"[GBL][CRYPTO] announce fail: {e2}")
+
+            try:
+                await bot1.send_message(
+                    user_id,
+                    f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
+                    f"<b>Уровень группы поднят до {stars_label(int(gbl_to_level))}</b>\n"
+                    f"Благодарим вас. Именная метка уже ждёт в достижениях профиля.",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+            try:
+                await bot1.send_message(
+                    6801702632,
+                    f"⭐ <b>Уровень баланса группы (crypto {currency})</b>\n"
+                    f"chat=<code>{gbl_chat_id}</code> → ★{gbl_to_level}\n"
+                    f"user=<code>{user_id}</code> · {price_stars}★",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            logging.error(f"[GBL][CRYPTO] fatal: {e}")
         return
 
     # При выкупе бонус всегда 0 (даже если в payload что-то другое)
@@ -33554,6 +33917,31 @@ async def add_firstname_to_usercheck_balance(message: Message):
         schedule_message_housekeeping(db, message, start_balance=start_balance, bot=bot1)
         return
 
+    # Достижения: наградить / снять / помощь
+    try:
+        from bot.handlers.achievements_admin import handle_achievements_admin_message
+        _t = " ".join((message.text or "").lower().split())
+        if (
+            _t.startswith("наградить")
+            or _t.startswith("выдать достижение")
+            or _t.startswith("дать ачивку")
+            or _t.startswith("дать достижение")
+            or _t.startswith("снять достижение")
+            or _t.startswith("забрать ачивку")
+            or _t.startswith("забрать достижение")
+            or _t.startswith("снять ачивку")
+            or _t.startswith("достижения админ")
+            or _t.startswith("помощь наградить")
+            or _t.startswith("наградить помощь")
+            or _t.startswith("хелп наградить")
+        ):
+            handled = await handle_achievements_admin_message(message, db)
+            if handled:
+                schedule_message_housekeeping(db, message, start_balance=start_balance, bot=bot1)
+                return
+    except Exception as _ach_e:
+        print(f"[ACH] admin msg skip: {_ach_e!r}")
+
     schedule_message_housekeeping(db, message, start_balance=start_balance, bot=bot1)
 
     _help_cmd_early = _normalize_command_text(message.text or "")
@@ -39621,6 +40009,12 @@ async def botmain():
         print(f"[KING][WARN] ensure schema: {type(e).__name__}: {e}")
 
     try:
+        if hasattr(db, "ensure_profile_achievements_schema"):
+            await db.ensure_profile_achievements_schema()
+    except Exception as e:
+        print(f"[ACH][WARN] ensure schema: {type(e).__name__}: {e}")
+
+    try:
         from bot.runtime.king_stats_worker import start_king_stats_worker
         start_king_stats_worker(
             db,
@@ -39732,11 +40126,16 @@ async def botmain():
                 print(f"[🌱][WARN] Eden-бот: ошибка закрытия сессии: {type(e).__name__}: {e}")
 
     # ===================== 6) Основной запуск =====================
+    # Не форсим lazy-init на старте в sandbox — иначе снова тянем сеть при boot.
+    # Кнопки crypto уже всегда в get_crypto_keyboard; клиент поднимется по клику.
     if cp is not None:
-        cp.include_router(payment_router)
+        ensure_cryptopay()
         print("[PAYMENT] CryptoPay polling enabled.")
     else:
-        print("[PAYMENT] CryptoPay polling skipped.")
+        print(
+            "[PAYMENT] CryptoPay polling deferred "
+            "(кнопки crypto на месте; клиент поднимется при первой оплате)."
+        )
 
     # Запускаем Eden как отдельную задачу
     #eden_task = asyncio.create_task(_start_eden())

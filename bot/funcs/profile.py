@@ -1141,6 +1141,14 @@ async def _build_profile_caption_for_target(
 
     statistic_lines = {"title": ""}
 
+    achievements_block = ""
+    try:
+        from bot.funcs import achievements as ach_mod
+        doc = await ach_mod.get_user_achievements_doc(db, int(user_id))
+        achievements_block = ach_mod.format_showcase_blockquote(doc) or ""
+    except Exception:
+        achievements_block = ""
+
     caption_parts = [
         banned_line,
         nationality_line,
@@ -1157,6 +1165,7 @@ async def _build_profile_caption_for_target(
         rep_line,
         invite_message,
         *statistic_lines.values(),
+        achievements_block or None,
         (
             f"<blockquote><tg-emoji emoji-id='5255937074242020424'>⛵️</tg-emoji> "
             f"{formatted_registration_date}\n"
@@ -1304,6 +1313,12 @@ def _profile_build_who_markup(
 
     inline_keyboard: List[List[InlineKeyboardButton]] = []
 
+    try:
+        from bot.handlers.achievements_admin import build_achievements_profile_button
+        inline_keyboard.append([build_achievements_profile_button(viewer_id, target_user_id)])
+    except Exception:
+        pass
+
     if has_warns:
         inline_keyboard.append([
             InlineKeyboardButton(
@@ -1342,6 +1357,23 @@ def _profile_build_own_profile_markup(
 
     if not getattr(kb, "inline_keyboard", None):
         kb.inline_keyboard = []
+
+    try:
+        from bot.handlers.achievements_admin import build_achievements_profile_button
+        ach_btn = build_achievements_profile_button(viewer_id, viewer_id)
+        ach_cb = getattr(ach_btn, "callback_data", None)
+        has_ach = False
+        for row in kb.inline_keyboard:
+            for btn in row:
+                if getattr(btn, "callback_data", None) == ach_cb:
+                    has_ach = True
+                    break
+            if has_ach:
+                break
+        if not has_ach:
+            kb.inline_keyboard.insert(0, [ach_btn])
+    except Exception:
+        pass
 
     refresh_cb = _profile_make_refresh_cb(
         viewer_id=viewer_id,

@@ -202,6 +202,8 @@ export const NAV_ICONS = {
   content: Content,
   giveaways: Giveaways,
   botQuests: BotQuests,
+  groupBalanceLevel: Economy,
+  achievements: Giveaways,
   broadcast: Broadcast,
   logs: Logs,
   analytics: Analytics,

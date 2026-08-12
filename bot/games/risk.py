@@ -770,27 +770,16 @@ async def risk(message: Message):
     chat_id = int(message.chat.id)
 
 
-    max_bet = int(RISK_MAX_BET)
-    try:
-        lim = await db.gc_get_bet_limit_for_user(user_id)
-        if lim is not None:
-            lim_i = _safe_int(lim, 0)
-            if lim_i > 0:
-                max_bet = lim_i
-    except Exception:
-        pass
-
-    if bet_amount > max_bet:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка в этой игре {_fmt_int(max_bet)} кут</b>",
-            parse_mode="HTML"
-        )
-        return
-
     has_assignment = False
     is_free = False
     current_two = 0
     target_amount = 0
+    gc_bet_limit = None
+
+    try:
+        gc_bet_limit = await db.gc_get_bet_limit_for_user(user_id)
+    except Exception:
+        gc_bet_limit = None
 
     try:
         assignment = await db.get_active_gc_assignment(user_id)
@@ -810,6 +799,22 @@ async def risk(message: Message):
                 target_amount = 0
     except Exception:
         pass
+
+    from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
+    gate = decide_gc_play_mode(
+        bet=bet_amount,
+        game_max_bet=int(RISK_MAX_BET),
+        has_assignment=has_assignment,
+        is_free=is_free,
+        gc_bet_limit=gc_bet_limit,
+    )
+    if gate.get("mode") == "reject":
+        await message.reply(
+            format_game_max_bet_html(gate.get("max") or RISK_MAX_BET),
+            parse_mode="HTML"
+        )
+        return
+    is_free_play = gate.get("mode") == "free"
 
     # ─── ИНИЦИАЛИЗАЦИЯ НОВИЧКА ───
     try:
@@ -870,8 +875,8 @@ async def risk(message: Message):
                 print("[RISK] Режим: обычный")
 
     # ─── ПРОВЕРКА БАЛАНСА ПОЛЬЗОВАТЕЛЯ (ОБЯЗАТЕЛЬНА, даже при demo/0demo) ───
-    if has_assignment and is_free:
-        # Бесплатный челлендж: проверяем balance челленджа
+    if is_free_play:
+        # Бесплатный челлендж: без БЧ и без ★
         if bet_amount > current_two:
             progress_text = f"{current_two}/{target_amount}" if target_amount > 0 else f"{current_two}"
             kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -911,25 +916,30 @@ async def risk(message: Message):
             asyncio.create_task(_send_invoice_later(message, user_id, stars_amount, delay=timeoutdonate))
             return
 
-    # ─── ПРОВЕРКА БАЛАНСА ГРУППЫ (всегда, кроме бесплатного челленджа? даже для челленджа нужен баланс группы) ───
-    # Баланс группы нужен и для бесплатного челленджа, т.к. выигрыш берётся из группы
-    if bet_amount > chat_balance:  # минимально необходимо
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В группе недостаточно средств для игры.</b>\n"
-            f"💸 Баланс группы: {_fmt_int(chat_balance)} кут",
-            parse_mode="HTML"
-        )
-        return
+        # ─── ПРОВЕРКА БАЛАНСА ГРУППЫ (не для free) ───
+        if bet_amount > chat_balance:
+            await message.reply(
+                f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В группе недостаточно средств для игры.</b>\n"
+                f"💸 Баланс группы: {_fmt_int(chat_balance)} кут",
+                parse_mode="HTML"
+            )
+            return
 
-    # Дополнительная проверка: достаточно ли баланса группы на максимальный выигрыш
-    if max_profit > chat_balance:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В группе недостаточно средств для возможного выигрыша.</b>\n"
-            f"💸 Баланс группы: {_fmt_int(chat_balance)} кут\n"
-            f"📌 Нужно минимум: {_fmt_int(max_profit)} кут",
-            parse_mode="HTML"
-        )
-        return
+        if max_profit > chat_balance:
+            await message.reply(
+                f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В группе недостаточно средств для возможного выигрыша.</b>\n"
+                f"💸 Баланс группы: {_fmt_int(chat_balance)} кут\n"
+                f"📌 Нужно минимум: {_fmt_int(max_profit)} кут",
+                parse_mode="HTML"
+            )
+            return
+
+    try:
+        from bot.funcs.group_balance_level import reject_if_bet_over_group_level
+        if await reject_if_bet_over_group_level(message, bet_amount, is_free_play=is_free_play):
+            return
+    except Exception as _gbl_e:
+        print(f"[GBL] risk check skip: {_gbl_e!r}")
 
     async with _get_user_lock(user_id):
         await _deactivate_previous_risk_ui(user_id)
@@ -960,7 +970,7 @@ async def risk(message: Message):
             "payout_done": False,
             "session_rev": new_rev,
             "has_assignment": has_assignment,
-            "is_free": is_free,
+            "is_free": is_free_play,
             "using_demo": using_demo,
             "using_0demo": using_0demo,
             "rng_seed": rng_seed,
