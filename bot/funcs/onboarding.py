@@ -193,6 +193,7 @@ ICON_NEXT = "5807453545548487345"
 FREE_QUESTS_PER_PAGE = 10
 
 # Безопасная ставка: доля от баланса задания (10% = не сжечь всё сразу).
+# Итоговая ставка ещё ограничивается рекомендуемой долей баланса группы.
 SAFE_BET_PERCENT = 10
 
 # Длина текстового прогресс-бара.
@@ -931,29 +932,74 @@ def _wallet_from_assignment(assignment: Dict[str, Any], *, is_free: bool) -> Wal
     )
 
 
-def _bet_for(game: Dict[str, Any], wallet: Wallet) -> int:
+async def _group_balance_for_wallet(wallet: Wallet) -> Optional[float]:
+    """Баланс группы для умного расчёта ставки новичка."""
+    chat_id = int(wallet.chat_id or 0)
+    if chat_id <= 0:
+        chat_id = int(CLUB_CHAT_ID or 0)
+    if chat_id <= 0:
+        return None
+    try:
+        raw = await db.get_chat_balancebalance(bot1, chat_id)
+        if raw in (None, ""):
+            return 0.0
+        return float(raw)
+    except Exception as e:
+        print(f"[ONBOARDING] group balance for bet: {e!r}")
+        return None
+
+
+def _bet_for(
+    game: Dict[str, Any],
+    wallet: Wallet,
+    *,
+    group_balance: Optional[float] = None,
+) -> int:
     """Ставка для запуска.
 
-    На задании берём ~10% виртуального баланса - новичок реже сжигает всё.
-    Иначе - обычная первая ставка, но не ниже минимума игры.
+    На задании: ~10% виртуального баланса и не выше рекомендуемой ставки
+    по балансу группы — новичок реже сжигает всё и не давит на бч.
+    Иначе — обычная первая ставка, тоже с учётом бч (если известен).
     """
     floor = int(game["min"])
     if wallet.amount < floor:
         return 0
 
     if wallet.free_quest:
-        # Безопасная доля виртуального баланса, не «все куты сразу».
-        safe = max(floor, (wallet.amount * SAFE_BET_PERCENT) // 100)
-        bet = min(safe, wallet.amount)
+        from_user = max(floor, (wallet.amount * SAFE_BET_PERCENT) // 100)
     else:
-        bet = max(FIRST_BET, floor)
-        bet = min(bet, wallet.amount)
+        from_user = max(FIRST_BET, floor)
+
+    bet = min(int(from_user), int(wallet.amount))
+
+    if group_balance is not None:
+        try:
+            from bot.funcs.group_balance_level import (
+                recommended_bet,
+                effective_stake_cap,
+                get_settings,
+            )
+            cfg = get_settings()
+            from_group = int(recommended_bet(group_balance, cfg) or 0)
+            # Учитываем бч только если рекомендуемая ставка покрывает минимум игры —
+            # иначе новичок застрял бы на старте.
+            if from_group >= floor:
+                bet = min(bet, from_group)
+            # Для обычной (не free) игры учитываем потолок ★ группы.
+            if not wallet.free_quest:
+                cap_chat = int(wallet.chat_id or 0) or int(CLUB_CHAT_ID or 0)
+                if cap_chat:
+                    cap = effective_stake_cap(cap_chat, cfg=cfg)
+                    if cap is not None:
+                        bet = min(bet, int(cap))
+        except Exception as e:
+            print(f"[ONBOARDING] group-aware bet fail: {e!r}")
 
     if wallet.max_bet is not None:
         bet = min(bet, wallet.max_bet)
     if bet < floor:
         return 0
-    return bet
+    return int(bet)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -1856,7 +1902,7 @@ def _games_text(wallet: Wallet, *, accepted: bool = False) -> str:
             f"{stats}\n\n"
             f"<blockquote>"
             f"<b>{where}</b>\n"
-            f"<b>Ставка ~{SAFE_BET_PERCENT}% баланса</b>\n"
+            f"<b>Ставка бережная: ваш баланс + баланс группы</b>\n"
             f"<b>Свои куты не трогаем</b>\n"
             f"<b>Можно закончить и играть сам</b>"
             f"</blockquote>\n\n"
@@ -1917,7 +1963,8 @@ async def ob_game(call: CallbackQuery):
         await _swap(call, _bet_limit_text(game, wallet), _bet_limit_markup())
         return
 
-    bet = _bet_for(game, wallet)
+    group_bal = await _group_balance_for_wallet(wallet)
+    bet = _bet_for(game, wallet, group_balance=group_bal)
     if bet < floor:
         await _swap(call, _no_funds_text(game, wallet), _no_funds_markup(wallet))
         return

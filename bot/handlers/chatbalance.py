@@ -641,10 +641,16 @@ async def chatbalance(message: Message):
             from bot.funcs.group_balance_level import (
                 build_main_keyboard,
                 build_main_screen_html,
+                resolve_atmosphere_pct,
                 strip_tg_emoji,
             )
-            keyboard = build_main_keyboard(chat_id=chat_id, chat_balance=chat_balance)
-            screen = build_main_screen_html(chat_id=chat_id, chat_balance=chat_balance)
+            atmo = await resolve_atmosphere_pct(chat_id, db=db)
+            keyboard = build_main_keyboard(
+                chat_id=chat_id, chat_balance=chat_balance, atmosphere_pct=atmo,
+            )
+            screen = build_main_screen_html(
+                chat_id=chat_id, chat_balance=chat_balance, atmosphere_pct=atmo,
+            )
             try:
                 sent_message = await message.reply(
                     screen, reply_markup=keyboard, parse_mode="HTML")
@@ -699,10 +705,14 @@ async def show_balance_details(callback_query: CallbackQuery):
         from bot.funcs.group_balance_level import (
             build_details_html,
             build_details_keyboard,
+            resolve_atmosphere_pct,
             strip_tg_emoji,
         )
 
-        text = build_details_html(chat_balance=chat_balance, chat_id=chat_id)
+        atmo = await resolve_atmosphere_pct(chat_id, db=db)
+        text = build_details_html(
+            chat_balance=chat_balance, chat_id=chat_id, atmosphere_pct=atmo,
+        )
         keyboard = build_details_keyboard(chat_id=chat_id)
         try:
             await callback_query.message.edit_text(
@@ -741,10 +751,16 @@ async def back_to_balance(callback_query: CallbackQuery):
     from bot.funcs.group_balance_level import (
         build_main_keyboard,
         build_main_screen_html,
+        resolve_atmosphere_pct,
         strip_tg_emoji,
     )
-    keyboard = build_main_keyboard(chat_id=int(chat_id), chat_balance=chat_balance)
-    screen = build_main_screen_html(chat_id=int(chat_id), chat_balance=chat_balance)
+    atmo = await resolve_atmosphere_pct(int(chat_id), db=db)
+    keyboard = build_main_keyboard(
+        chat_id=int(chat_id), chat_balance=chat_balance, atmosphere_pct=atmo,
+    )
+    screen = build_main_screen_html(
+        chat_id=int(chat_id), chat_balance=chat_balance, atmosphere_pct=atmo,
+    )
     try:
         await callback_query.message.edit_text(
             screen, reply_markup=keyboard, parse_mode="HTML")
@@ -911,7 +927,8 @@ async def group_balance_overview(callback_query: CallbackQuery):
         return
     chat_id = int(callback_query.message.chat.id)
     from bot.funcs.group_balance_level import (
-        get_chat_level, stars_label, recommended_bet, effective_stake_cap, get_settings,
+        get_chat_level, stars_label, recommended_play_bet, effective_stake_cap,
+        get_settings, resolve_atmosphere_pct,
     )
     cfg = get_settings()
     level = get_chat_level(chat_id)
@@ -919,10 +936,12 @@ async def group_balance_overview(callback_query: CallbackQuery):
         bal = float(await db.get_chat_balancebalance(bot1, chat_id) or 0)
     except Exception:
         bal = 0.0
-    rec = recommended_bet(bal, cfg)
-    cap = effective_stake_cap(chat_id, cfg=cfg)
-    lim = "без лимита" if cap is None else f"до {cap} кут"
+    atmo = await resolve_atmosphere_pct(chat_id, db=db)
+    rec = recommended_play_bet(bal, chat_id=chat_id, atmosphere_pct=atmo, cfg=cfg)
+    cap = effective_stake_cap(chat_id, atmosphere_pct=atmo, cfg=cfg)
+    lim = "без лимита" if cap is None else f"до {cap}"
     await callback_query.answer(
-        f"Касса жива · {stars_label(level)}\nСтавки {lim} · комфорт ≈ {rec}",
+        f"Баланс группы · {stars_label(level)}\n"
+        f"Ставки {lim} · рекомендуем ≈ {rec}",
         show_alert=True,
     )

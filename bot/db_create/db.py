@@ -20103,6 +20103,29 @@ class Database:
             print("Произошла ошибка [get_total_messages_7d]:", e)
             return 0
 
+    async def get_active_chat_users_7d(self, chat_id: int) -> int:
+        """Сколько уникальных авторов писали в чате за последние 7 дней."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT COUNT(DISTINCT user_id)::BIGINT AS cnt
+                    FROM chatchange
+                    WHERE chat_id = $1
+                      AND user_id IS NOT NULL
+                      AND (date)::date BETWEEN CURRENT_DATE - INTERVAL '6 days' AND CURRENT_DATE
+                      AND COALESCE(CAST(text AS BIGINT), 0) > 0
+                    """,
+                    chat_id,
+                )
+                return int(row["cnt"]) if row and row["cnt"] is not None else 0
+        except asyncpg.exceptions.PostgresError as e:
+            print("Ошибка PostgreSQL [get_active_chat_users_7d]:", e)
+            return 0
+        except Exception as e:
+            print("Произошла ошибка [get_active_chat_users_7d]:", e)
+            return 0
+
     async def get_user_message_count_7d(self, chat_id: int, user_id: int) -> int:
         """
         Сколько конкретный пользователь написал за последние 7 дней (chatchange).

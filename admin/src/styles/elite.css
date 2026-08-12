@@ -131,6 +131,9 @@ body,
 .support-messages,
 .panel-sidebar-nav,
 .admin-modal,
+.ach-page,
+.gbl-page,
+.gbl-scroll,
 .panel-layout > .panel-content,
 .panel-layout > .panel-economy,
 .panel-layout > .panel-settings,
@@ -1278,6 +1281,8 @@ body,
 .panel-layout > .support-section,
 .panel-layout > .chs-root,
 .panel-layout > .arc-shell,
+.panel-layout > .ach-page,
+.panel-layout > .gbl-page,
 .panel-layout-analytics > .analytics-section {
   grid-column: 2 !important;
   grid-row: 2 !important;
@@ -6181,10 +6186,27 @@ body,
 }
 
 /* ── Achievements catalog (B/W) ── */
-.ach-page { display: flex; flex-direction: column; gap: 1.1rem; min-height: 0; animation: ach-in .45s ease both; }
+.ach-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  min-height: 0 !important;
+  height: 100%;
+  max-height: 100%;
+  overflow-x: hidden !important;
+  overflow-y: scroll !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+  padding-right: 0.35rem;
+  padding-bottom: 2rem;
+  animation: ach-in .45s ease both;
+  box-sizing: border-box;
+}
 .ach-loading { color: var(--e-text-3, #777); padding: 2rem; }
 .ach-hero {
   position: relative; overflow: hidden;
+  flex-shrink: 0;
   padding: 1.25rem 1.35rem; border-radius: 18px;
   border: 1px solid rgba(255,255,255,.08);
   background:
@@ -6211,10 +6233,25 @@ body,
 .ach-btn:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.28); }
 .ach-btn-primary { background: #f2f2f2; color: #111; border-color: #f2f2f2; font-weight: 650; }
 .ach-btn-primary:disabled { opacity: .55; cursor: wait; }
-.ach-layout { display: grid; grid-template-columns: 1.1fr .9fr; gap: 1rem; min-height: 0; }
+.ach-layout {
+  display: grid;
+  grid-template-columns: 1.1fr .9fr;
+  gap: 1rem;
+  min-height: 0;
+  align-items: start;
+  flex: 0 0 auto;
+}
 .ach-panel {
-  border: 1px solid rgba(255,255,255,.08); border-radius: 16px; background: #0c0c0c;
-  padding: 1rem; min-height: 0; animation: ach-in .5s ease both;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 16px;
+  background: #0c0c0c;
+  padding: 1rem;
+  min-height: 0;
+  animation: ach-in .5s ease both;
+  overflow: visible;
+}
+.ach-editor {
+  max-height: none;
 }
 .ach-panel-title { margin: 0 0 .85rem; font-size: .95rem; color: #eee; font-weight: 650; }
 .ach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }

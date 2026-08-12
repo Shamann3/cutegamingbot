@@ -3152,6 +3152,7 @@ async def successful_payment_handler(message: Message):
             build_gift_announcement_html,
             get_settings,
             next_level_price,
+            resolve_atmosphere_pct,
             stars_label,
         )
 
@@ -3208,6 +3209,7 @@ async def successful_payment_handler(message: Message):
             to_level=to_level,
             price_stars=price,
             chat_id=pay_chat_id,
+            atmosphere_pct=await resolve_atmosphere_pct(pay_chat_id, db=db),
         )
 
         # Анонс в группу
@@ -3410,6 +3412,7 @@ async def crypto_payment_handler(invoice: Invoice):
             from bot.funcs.group_balance_level import (
                 apply_level_purchase,
                 build_gift_announcement_html,
+                resolve_atmosphere_pct,
                 stars_label,
             )
             res = apply_level_purchase(
@@ -3456,6 +3459,7 @@ async def crypto_payment_handler(invoice: Invoice):
                 to_level=int(gbl_to_level),
                 price_stars=price_stars,
                 chat_id=int(gbl_chat_id),
+                atmosphere_pct=await resolve_atmosphere_pct(int(gbl_chat_id), db=db),
             )
             try:
                 await bot1.send_message(
