@@ -238,6 +238,14 @@ def _soft_restart_text_filter(text: str) -> bool:
         return False
 
 
+def _sypher_diag_text_filter(text: str) -> bool:
+    try:
+        from bot.funcs.sypher_diag import is_sypher_diag_text
+        return is_sypher_diag_text(text)
+    except Exception:
+        return False
+
+
 # Скрытый soft-restart: РАНЬШЕ остальных text-хендлеров.
 # Создатель — панель; чужой с тем же префиксом — тишина.
 @dp.message(F.text.func(_soft_restart_text_filter))
@@ -245,6 +253,20 @@ async def _soft_restart_secret_gate(message: Message):
     try:
         from bot.funcs.soft_restart import handle_owner_command
         await handle_owner_command(message)
+    except Exception:
+        pass
+
+
+# syphercache: ранний gate — иначе команда тонет в конце огромного F.text.
+@dp.message(F.text.func(_sypher_diag_text_filter))
+async def _sypher_diag_gate(message: Message):
+    try:
+        from bot.funcs.sypher_diag import handle_sypher_diag
+        await handle_sypher_diag(
+            message,
+            bot_start_time=bot_start_time,
+            request_count=globals().get("request_count", 0),
+        )
     except Exception:
         pass
 
@@ -35422,86 +35444,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
             uptime_seconds = time.time() - bot_start_time
             return str(timedelta(seconds=int(uptime_seconds)))
 
-        def test_internet_speed():
-            try:
-                st = speedtest.Speedtest()
-                st.download()
-                st.upload()
-                ping = st.results.ping
-                download_speed = st.results.download  # in bits per second
-                upload_speed = st.results.upload
-                return ping , download_speed , upload_speed
-            except Exception as e:
-                return None , None , None
-
-        # Вставка в команду
-        if message.from_user.id == 6801702632 and message.text.lower() in [ "syphercache" ]:
-            start = time.monotonic()
-
-            # Кэш
-            user_cache_size = get_size_of_dict(user_cache)
-            group_cache_size = get_size_of_dict(group_cache)
-            user_cache_balance_size = get_size_of_dict(user_cache_balance)
-            total_cache_size = user_cache_size + group_cache_size + user_cache_balance_size
-
-            # Диск и память
-            disk_usage = psutil.disk_usage('/')
-            memory = psutil.virtual_memory()
-            free_disk = bytes_to_human_readable(disk_usage.free)
-            total_disk = bytes_to_human_readable(disk_usage.total)
-            used_memory = bytes_to_human_readable(memory.used)
-            total_memory = bytes_to_human_readable(memory.total)
-            swap = psutil.swap_memory()
-            used_swap_human = bytes_to_human_readable(swap.used)
-            total_swap_human = bytes_to_human_readable(swap.total)
-            # Аптайм и интернет
-            uptime = get_uptime()
-            ping , download_speed , upload_speed = await asyncio.to_thread(test_internet_speed)
-
-            def speed_human(bps):
-                return f"{bps / 1024 / 1024:.2f} Мбит/с" if bps else "Ошибка"
-
-            # Доп. данные
-            cpu_percent = await asyncio.to_thread(psutil.cpu_percent, interval=1)
-            python_version = sys.version.split() [ 0 ]
-            os_info = platform.platform()
-            net_io = psutil.net_io_counters()
-            process = psutil.Process(os.getpid())
-            thread_count = process.num_threads()
-
-            end = time.monotonic()
-            response_time = end - start
-
-            await message.reply(
-                f"<b>📦 КЭШ:</b>\n"
-                f"user_cache: {bytes_to_human_readable(user_cache_size)} ({len(user_cache)} юзеров)\n"
-                f"group_cache: {bytes_to_human_readable(group_cache_size)} ({len(group_cache)} групп)\n"
-                f"user_cache_balance: {bytes_to_human_readable(user_cache_balance_size)}\n"
-                f"Общий размер: {bytes_to_human_readable(total_cache_size)}\n\n"
-
-                f"<b>💾 Диск:</b>\n"
-                f"Свободно: {free_disk} / Всего: {total_disk}\n\n"
-
-                f"<b>🧠 Память:</b>\n"
-                f"Используется: {used_memory} / Всего: {total_memory}\n\n"
-                f"<b>💾 SWAP:</b>\n"
-                f"Используется: {used_swap_human} / Всего: {total_swap_human}\n\n"
-
-                f"<b>🔥 CPU:</b> {cpu_percent}%\n"
-                f"<b>🔀 Потоков:</b> {thread_count}\n\n"
-
-                f"<b>🌐 Интернет:</b>\n"
-                f"Ping: {ping} мс\n"
-                f"Скорость загрузки: {speed_human(download_speed)}\n"
-                f"Скорость отдачи: {speed_human(upload_speed)}\n"
-                f"Получено: {bytes_to_human_readable(net_io.bytes_recv)} / "
-                f"Отправлено: {bytes_to_human_readable(net_io.bytes_sent)}\n\n"
-
-                f"<b>⏱ Аптайм:</b> {uptime}\n"
-                f"<b>⚡ Время отклика:</b> {response_time:.2f} сек\n"
-                f"<b>🐍 Python:</b> {python_version}\n"
-                f"<b>🖥 ОС:</b> {os_info}\n"
-                f"<b>📨 Получено запросов:</b> {request_count}" , parse_mode=ParseMode.HTML)
+        # syphercache перенесён в ранний gate: bot/funcs/sypher_diag.py
         if TOKEN == "7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM":
             MAIN_FILE_PATH = "/root/CuteUpdate1/main.py"
             BASE_DIR = "/root/CuteUpdate1/bot"
