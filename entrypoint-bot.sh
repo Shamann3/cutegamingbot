@@ -50,4 +50,10 @@ if [ "$USERBOT_CONNECT_DELAY_SEC" -gt 0 ]; then
   sleep "$USERBOT_CONNECT_DELAY_SEC"
 fi
 
-exec "$@"
+# PID-1 = супервизор: soft-restart делает rolling handoff внутри контейнера
+# (новый прогревается, старый ещё отвечает — как при деплое на DO).
+# Без супервизора exit 0 ронял бы весь контейнер → долгий простой.
+export SR_SUPERVISOR=1
+export SR_DIR="${SR_DIR:-/tmp/cg_sr}"
+echo "[bot] soft-restart supervisor → $*"
+exec python -u /app/bot/runtime/sr_supervisor.py "$@"

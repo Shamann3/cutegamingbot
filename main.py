@@ -40001,6 +40001,15 @@ async def botmain():
     # задач (userbot/pklcode/снапшоты), которые надолго занимают event loop
     # синхронной работой. Иначе лёгкий SELECT из dex (261 строка) простаивает
     # десятки секунд, ожидая, пока цикл событий освободится.
+    # Handoff-child: лёгкий прогрев без фоновых воркеров/Telethon/polling,
+    # пока старый процесс ещё обслуживает людей (как rolling-деплой на DO).
+    _sr_handoff_child = False
+    try:
+        from bot.funcs.soft_restart import is_handoff_child as _sr_is_handoff
+        _sr_handoff_child = bool(_sr_is_handoff())
+    except Exception:
+        _sr_handoff_child = False
+
     asyncio.create_task(_warm_full_items_cache())
 
     async def _warm_caches_background():
@@ -40015,12 +40024,13 @@ async def botmain():
 
     asyncio.create_task(_warm_caches_background())
 
-    try:
-        from bot.runtime.message_housekeeping import start_global_housekeeping_loop
-        start_global_housekeeping_loop(db)
-        db.start_message_counter_flush_loop()
-    except Exception as e:
-        print(f"[HOUSEKEEPING][WARN] loop start: {type(e).__name__}: {e}")
+    if not _sr_handoff_child:
+        try:
+            from bot.runtime.message_housekeeping import start_global_housekeeping_loop
+            start_global_housekeeping_loop(db)
+            db.start_message_counter_flush_loop()
+        except Exception as e:
+            print(f"[HOUSEKEEPING][WARN] loop start: {type(e).__name__}: {e}")
 
     try:
         if hasattr(db, "ensure_king_stats_schema"):
@@ -40034,18 +40044,19 @@ async def botmain():
     except Exception as e:
         print(f"[ACH][WARN] ensure schema: {type(e).__name__}: {e}")
 
-    try:
-        from bot.runtime.king_stats_worker import start_king_stats_worker
-        start_king_stats_worker(
-            db,
-            bot1,
-            interval_sec=KING_STATS_WORKER_INTERVAL_SEC,
-            payout_mode=KING_STATS_PAYOUT_MODE,
-            period_kind=KING_STATS_PERIOD_KIND,
-            interval_force_new_round=KING_STATS_INTERVAL_FORCE_NEW_ROUND,
-        )
-    except Exception as e:
-        print(f"[KING][WARN] worker start: {type(e).__name__}: {e}")
+    if not _sr_handoff_child:
+        try:
+            from bot.runtime.king_stats_worker import start_king_stats_worker
+            start_king_stats_worker(
+                db,
+                bot1,
+                interval_sec=KING_STATS_WORKER_INTERVAL_SEC,
+                payout_mode=KING_STATS_PAYOUT_MODE,
+                period_kind=KING_STATS_PERIOD_KIND,
+                interval_force_new_round=KING_STATS_INTERVAL_FORCE_NEW_ROUND,
+            )
+        except Exception as e:
+            print(f"[KING][WARN] worker start: {type(e).__name__}: {e}")
 
     # ===================== 3) Регистрация кнопок =====================
     try:
@@ -40060,6 +40071,38 @@ async def botmain():
     prepare_elapsed_time_ms = (prepare_end_time - prepare_start_time) * 1000
     prepare_elapsed_time_sec = prepare_end_time - prepare_start_time
     print(f"✅ Подготовка завершена за {prepare_elapsed_time_ms:.2f} мс | {prepare_elapsed_time_sec:.2f} сек")
+
+    # Rolling soft-restart gate: готовы принять трафик → ждём отпускания старого.
+    if _sr_handoff_child:
+        try:
+            from bot.funcs import soft_restart as _sr_gate
+            _sr_gate.mark_child_ready()
+            ok = await _sr_gate.wait_child_go(timeout=180.0)
+            if not ok:
+                print("[MAIN][SR] child_go timeout — не стартую polling")
+                return
+            # После go — воркеры, которые откладывали на время overlap
+            try:
+                from bot.runtime.message_housekeeping import start_global_housekeeping_loop
+                start_global_housekeeping_loop(db)
+                db.start_message_counter_flush_loop()
+            except Exception as e:
+                print(f"[HOUSEKEEPING][WARN] loop start: {type(e).__name__}: {e}")
+            try:
+                from bot.runtime.king_stats_worker import start_king_stats_worker
+                start_king_stats_worker(
+                    db,
+                    bot1,
+                    interval_sec=KING_STATS_WORKER_INTERVAL_SEC,
+                    payout_mode=KING_STATS_PAYOUT_MODE,
+                    period_kind=KING_STATS_PERIOD_KIND,
+                    interval_force_new_round=KING_STATS_INTERVAL_FORCE_NEW_ROUND,
+                )
+            except Exception as e:
+                print(f"[KING][WARN] worker start: {type(e).__name__}: {e}")
+        except Exception as _sr_gate_err:
+            print(f"[MAIN][SR][WARN] handoff gate: {type(_sr_gate_err).__name__}: {_sr_gate_err}")
+            return
 
     polling_start_time = time.time()
     now = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
@@ -40273,8 +40316,7 @@ async def botmain():
     _cold_start = {"main": True}
 
     # Пауза перед первым getUpdates: отдаёт очередь предыдущему инстансу
-    # (деплой / второй терминал). Локально по умолчанию 3с, на DO можно
-    # задать BOT_POLLING_START_DELAY.
+    # (деплой / второй терминал). Handoff-child: обычно 0 (уже ждали child_go).
     try:
         _poll_delay = float(os.getenv("BOT_POLLING_START_DELAY", "3") or "3")
     except ValueError:

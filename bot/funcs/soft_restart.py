@@ -32,6 +32,7 @@ _HELP_HINT = (
 
 _REDIS_KEY = "cg:sr:v1"
 _FILE_PATH = Path(__file__).resolve().parents[2] / "data" / "sr_runtime.json"
+_SR_DIR = Path(os.environ.get("SR_DIR", "/tmp/cg_sr"))
 
 _lock = asyncio.Lock()
 _cfg_lock = asyncio.Lock()
@@ -40,10 +41,64 @@ _started_at = time.time()
 _next_at: Optional[float] = None
 _last_reason = ""
 _scheduler_task: Optional[asyncio.Task] = None
+_release_watch_task: Optional[asyncio.Task] = None
 _dp_ref = None
 _notify_fn: Optional[NotifyFn] = None
 _cfg: Optional[Dict[str, Any]] = None
 _loaded = False
+
+
+def sr_dir() -> Path:
+    return _SR_DIR
+
+
+def supervisor_active() -> bool:
+    """True, если нас запустил sr_supervisor (rolling handoff доступен)."""
+    if (os.getenv("SR_SUPERVISOR") or "").strip() in ("1", "true", "yes", "on"):
+        return True
+    return (_SR_DIR / "supervisor_alive").exists()
+
+
+def is_handoff_child() -> bool:
+    return (os.getenv("SR_HANDOFF_CHILD") or "").strip() in ("1", "true", "yes", "on")
+
+
+def _flag_path(name: str) -> Path:
+    return _SR_DIR / name
+
+
+def _write_flag(name: str, text: str = "1") -> None:
+    _SR_DIR.mkdir(parents=True, exist_ok=True)
+    _flag_path(name).write_text(text, encoding="utf-8")
+
+
+def _clear_flag(name: str) -> None:
+    try:
+        _flag_path(name).unlink()
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+
+def mark_child_ready() -> None:
+    """Warmup закончен — можно отпускать старый процесс."""
+    _write_flag("child_ready")
+    print("[SR] child_ready", flush=True)
+
+
+async def wait_child_go(*, timeout: float = 180.0) -> bool:
+    """Ждём сигнал супервизора, что старый отпустил очередь."""
+    path = _flag_path("child_go")
+    t0 = time.time()
+    print("[SR] handoff child: waiting for child_go…", flush=True)
+    while time.time() - t0 < timeout:
+        if path.exists():
+            print("[SR] child_go received — starting traffic", flush=True)
+            return True
+        await asyncio.sleep(0.15)
+    print("[SR] child_go TIMEOUT", flush=True)
+    return False
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -248,7 +303,8 @@ def format_panel_html() -> str:
         f"далее   <b>{nxt}</b>\n"
         + (f"флаг    <i>{st['last_reason']}</i>\n" if st["last_reason"] else "")
         + "\n"
-        "тихий рестарт → <code>.r</code>"
+        "тихий рестарт → <code>.r</code>\n"
+        f"handoff  <b>{'ON' if supervisor_active() else 'OFF'}</b>"
     )
 
 
@@ -257,9 +313,11 @@ def format_help_html() -> str:
         "<b>◈ Soft Restart · команды</b>\n"
         "━━━━━━━━━━━━━━━━\n"
         "Пиши в <b>личку</b> боту. Чужим — тишина.\n\n"
-        "<b>Тихий рестарт (как по расписанию)</b>\n"
+        "<b>Тихий рестарт (rolling, как деплой)</b>\n"
         "<code>.r</code>\n"
-        "  одна команда · без лишних ответов · тот же exit, что и авто\n\n"
+        "  новый процесс греется · старый ещё отвечает ·\n"
+        "  потом короткий обмен · люди почти не ждут\n\n"
+
         "<code>sypherrestart</code>\n"
         "  панель статуса\n\n"
         "<code>sypherrestart help</code>\n"
@@ -283,8 +341,8 @@ def format_help_html() -> str:
         "Короткий префикс: <code>.sr</code> вместо "
         "<code>sypherrestart</code>\n"
         "━━━━━━━━━━━━━━━━\n"
-        "Процесс exit 0 → Docker/DO поднимают <b>тот же</b> образ.\n"
-        "Код с git не обновляется."
+        "Rolling handoff: новый греется → старый отпускает → новый принимает.\n"
+        "Код с git не обновляется (тот же образ)."
     )
 
 
@@ -351,34 +409,72 @@ async def _delete_trigger(message: Any) -> None:
         pass
 
 
-async def _perform_exit(reason: str) -> None:
+async def _stop_polling_graceful() -> None:
+    dp = _dp_ref
+    if dp is None:
+        return
+    try:
+        if hasattr(dp, "stop_polling"):
+            await dp.stop_polling()
+            print("[SR] dp.stop_polling() ok", flush=True)
+    except Exception as e:
+        print(f"[SR] stop_polling: {e!r}", flush=True)
+
+
+async def _release_and_exit(reason: str) -> None:
+    """Старый процесс: отпустить очередь и выйти (после warmup нового)."""
     global _requested, _last_reason
     _requested = True
     _last_reason = reason
-    print(f"[SR] begin reason={reason!r} pid={os.getpid()}")
-    # Текст как у обычного авто — ручной тихий .r неотличим снаружи
+    print(f"[SR] release_and_exit reason={reason!r} pid={os.getpid()}", flush=True)
+    await _stop_polling_graceful()
+    await asyncio.sleep(0.5)
+    _write_flag("old_released")
+    await asyncio.sleep(0.3)
+    print("[SR] old_released → exit 0", flush=True)
+    os._exit(0)
+
+
+async def _perform_handoff_request(reason: str) -> None:
+    """Rolling handoff через супервизор (новый сначала, потом старый)."""
+    global _requested, _last_reason
+    _requested = True
+    _last_reason = reason
+    print(f"[SR] handoff_request reason={reason!r}", flush=True)
     await _notify(
         _with_help_hint(
             "<b>◈ Soft Restart</b>\n"
             "━━━━━━━━━━━━━━━━\n"
             f"причина  <code>{reason}</code>\n"
-            "код не обновляется — только процесс\n"
+            "режим: <b>rolling handoff</b>\n"
+            "новый процесс греется · старый ещё отвечает…"
+        )
+    )
+    _clear_flag("child_ready")
+    _clear_flag("child_go")
+    _clear_flag("release_old")
+    _clear_flag("old_released")
+    _write_flag("handoff_request", reason)
+
+
+async def _perform_hard_exit(reason: str) -> None:
+    """Fallback без супервизора: stop + exit (будет простой до нового старта)."""
+    global _requested, _last_reason
+    _requested = True
+    _last_reason = reason
+    print(f"[SR] hard exit (no supervisor) reason={reason!r}", flush=True)
+    await _notify(
+        _with_help_hint(
+            "<b>◈ Soft Restart</b>\n"
+            "━━━━━━━━━━━━━━━━\n"
+            f"причина  <code>{reason}</code>\n"
+            "супервизор не найден — обычный выход\n"
             "выхожу…"
         )
     )
     await asyncio.sleep(grace_sec())
-
-    dp = _dp_ref
-    if dp is not None:
-        try:
-            if hasattr(dp, "stop_polling"):
-                await dp.stop_polling()
-                print("[SR] dp.stop_polling() ok")
-        except Exception as e:
-            print(f"[SR] stop_polling: {e!r}")
-
+    await _stop_polling_graceful()
     await asyncio.sleep(1.0)
-    print("[SR] exit 0")
     os._exit(0)
 
 
@@ -388,8 +484,24 @@ async def request_restart(reason: str = "manual", *, force: bool = False) -> boo
         if _requested and not force:
             return False
         _requested = True
-    asyncio.create_task(_perform_exit(reason))
+    if supervisor_active():
+        asyncio.create_task(_perform_handoff_request(reason))
+    else:
+        asyncio.create_task(_perform_hard_exit(reason))
     return True
+
+
+async def _watch_release_old() -> None:
+    """Супервизор просит отпустить очередь — новый уже готов."""
+    path = _flag_path("release_old")
+    try:
+        while True:
+            if path.exists():
+                await _release_and_exit(_last_reason or "handoff")
+                return
+            await asyncio.sleep(0.15)
+    except asyncio.CancelledError:
+        raise
 
 
 async def _scheduler_loop() -> None:
@@ -430,10 +542,23 @@ def _cancel_scheduler() -> None:
 
 
 def start_scheduler(*, dp=None, notify: Optional[NotifyFn] = None) -> Optional[asyncio.Task]:
-    global _scheduler_task, _started_at
+    global _scheduler_task, _release_watch_task, _started_at
     ensure_loaded()
     bind(dp=dp, notify=notify)
     _started_at = time.time()
+
+    # release_old смотрит только «старый» процесс. Handoff-child — нет,
+    # иначе оба выйдут одновременно.
+    if (
+        supervisor_active()
+        and not is_handoff_child()
+        and (_release_watch_task is None or _release_watch_task.done())
+    ):
+        _release_watch_task = asyncio.create_task(
+            _watch_release_old(), name="soft_restart_release_watch"
+        )
+        print("[SR] release_old watcher on (rolling handoff)", flush=True)
+
     if _scheduler_task and not _scheduler_task.done():
         return _scheduler_task
     if not is_enabled():
