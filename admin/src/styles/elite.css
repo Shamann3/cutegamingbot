@@ -6030,6 +6030,10 @@ body,
 
 /* ── Group Balance Levels (owner studio, B/W) ───────────────────────── */
 .gbl-page { display: flex; flex-direction: column; gap: 1rem; min-height: 0; }
+.gbl-guide { display: flex; flex-direction: column; gap: 0.55rem; }
+.gbl-guide-title { margin: 0; font-size: 1.05rem; color: var(--e-text, #eee); }
+.gbl-guide-list { margin: 0.35rem 0 0; padding-left: 1.15rem; color: var(--e-text-2, #bbb); line-height: 1.45; font-size: 0.86rem; }
+.gbl-guide-list li { margin-bottom: 0.35rem; }
 .gbl-hero {
   position: relative;
   overflow: hidden;

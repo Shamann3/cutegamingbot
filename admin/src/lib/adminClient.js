@@ -1521,6 +1521,22 @@ export async function deleteOfficialAchievement(id) {
   return adminFetch('/achievements/delete', { method: 'POST', body: { id: Number(id) } })
 }
 
+export async function grantOfficialAchievement(payload) {
+  return adminFetch('/achievements/grant-official', { method: 'POST', body: payload })
+}
+
+export async function grantFreeAchievement(payload) {
+  return adminFetch('/achievements/grant-free', { method: 'POST', body: payload })
+}
+
+export async function fetchUserAchievements(userId) {
+  return adminFetch(`/achievements/user/${Number(userId)}`)
+}
+
+export async function revokeAchievement(payload) {
+  return adminFetch('/achievements/revoke', { method: 'POST', body: payload })
+}
+
 export async function fetchBroadcastOverview() {
   return adminFetch('/broadcast/overview')
 }

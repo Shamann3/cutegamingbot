@@ -197,6 +197,27 @@ def require_admin_permission(permission: str):
     return dependency
 
 
+def require_any_admin_permission(*permissions: str):
+    needed = set(permissions)
+
+    async def dependency(
+        request: Request,
+        user_id: int = Depends(require_active_admin),
+    ) -> int:
+        account = getattr(request.state, "admin_account", None)
+        if not account:
+            account = await get_admin_account_security(user_id)
+            request.state.admin_account = account
+
+        have = set(account.get("permissions") or [])
+        if not (needed & have):
+            raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+        return user_id
+
+    return dependency
+
+
 def require_admin_role(*roles: str):
     allowed = set(roles)
 

@@ -2850,7 +2850,8 @@ async def crypto_choice_handler(callback: CallbackQuery):
         from bot.funcs.group_balance_level import stars_label as _gbl_stars
         buyback_line = (
             f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
-            f"<b>Новый уровень баланса группы {_gbl_stars(int(gbl_to_level))}</b>\n"
+            f"<b>Новый уровень баланса группы · до уровня {int(gbl_to_level)}</b>\n"
+            f"{_gbl_stars(int(gbl_to_level))}\n"
         )
         operation_title = f"{emoji_html} <b>Уровень группы · {currency}</b>"
         bonus_line = (
@@ -2858,7 +2859,7 @@ async def crypto_choice_handler(callback: CallbackQuery):
             "Куты на личный баланс не начисляются — оплата целиком идёт на уровень группы.\n"
         )
         amount_line = (
-            f"<b><tg-emoji emoji-id='5346309121794659890'>⭐️</tg-emoji> {stars_view}★</b>\n"
+            f"<b><tg-emoji emoji-id='5346309121794659890'>⭐️</tg-emoji> {stars_view} звёзд</b>\n"
         )
     elif is_buyback:
         buyback_line = f"<tg-emoji emoji-id='5424783865124258527'>✅</tg-emoji> <b>Выкуп потерянных {_fmt_int1(buyback_kut)} кут</b>\n"
@@ -3177,12 +3178,10 @@ async def successful_payment_handler(message: Message):
 
         try:
             from bot.funcs.achievements import grant_gbl_level_achievement
-            from bot.funcs.group_balance_level import badge_title_for_level
             await grant_gbl_level_achievement(
                 db,
                 user_id=int(user_id),
                 level=int(to_level),
-                title_override=badge_title_for_level(int(to_level), cfg),
             )
         except Exception as _ach_e:
             print(f"⚠️ [PAYMENT][GBL] achievement grant: {_ach_e!r}")
@@ -3192,7 +3191,7 @@ async def successful_payment_handler(message: Message):
             BONUS_PERCENT = Decimal("0.03")
             bonus = (Decimal(price) * BONUS_PERCENT).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             await db.add_donation(user_id, price, bonus=bonus)
-            await db.cutehistory_plus(user_id, 0, f"уровень баланса группы ★{to_level} (-{pay_chat_id})")
+            await db.cutehistory_plus(user_id, 0, f"уровень баланса группы · ур.{to_level} (-{pay_chat_id})")
         except Exception as e:
             print(f"⚠️ [PAYMENT][GBL] donation bookkeeping: {e!r}")
 
@@ -3243,8 +3242,8 @@ async def successful_payment_handler(message: Message):
             await bot1.send_message(
                 6801702632,
                 f"⭐ <b>Уровень баланса группы</b>\n"
-                f"chat=<code>{pay_chat_id}</code> → ★{to_level}\n"
-                f"user=<code>{user_id}</code> · {price}★",
+                f"chat=<code>{pay_chat_id}</code> → уровень {to_level}\n"
+                f"user=<code>{user_id}</code> · {price} звёзд",
                 parse_mode="HTML",
             )
         except Exception:
@@ -3426,12 +3425,10 @@ async def crypto_payment_handler(invoice: Invoice):
             else:
                 try:
                     from bot.funcs.achievements import grant_gbl_level_achievement
-                    from bot.funcs.group_balance_level import badge_title_for_level
                     await grant_gbl_level_achievement(
                         db,
                         user_id=int(user_id),
                         level=int(gbl_to_level),
-                        title_override=badge_title_for_level(int(gbl_to_level)),
                     )
                 except Exception as _ach_e:
                     debug_print(f"[GBL][CRYPTO] achievement grant: {_ach_e!r}")
@@ -3441,7 +3438,7 @@ async def crypto_payment_handler(invoice: Invoice):
                 await db.add_donation(user_id, price_stars, bonus=bonus)
                 await db.cutehistory_plus(
                     user_id, 0,
-                    f"уровень баланса группы ★{gbl_to_level} crypto (-{gbl_chat_id})",
+                    f"уровень баланса группы · ур.{gbl_to_level} crypto (-{gbl_chat_id})",
                 )
             except Exception as e:
                 debug_print(f"[GBL][CRYPTO] donation bookkeeping: {e}")
@@ -3488,8 +3485,8 @@ async def crypto_payment_handler(invoice: Invoice):
                 await bot1.send_message(
                     6801702632,
                     f"⭐ <b>Уровень баланса группы (crypto {currency})</b>\n"
-                    f"chat=<code>{gbl_chat_id}</code> → ★{gbl_to_level}\n"
-                    f"user=<code>{user_id}</code> · {price_stars}★",
+                    f"chat=<code>{gbl_chat_id}</code> → уровень {gbl_to_level}\n"
+                    f"user=<code>{user_id}</code> · {price_stars} звёзд",
                     parse_mode="HTML",
                 )
             except Exception:

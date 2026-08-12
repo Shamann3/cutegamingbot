@@ -641,15 +641,19 @@ async def chatbalance(message: Message):
             from bot.funcs.group_balance_level import (
                 build_main_keyboard,
                 build_main_screen_html,
-                resolve_atmosphere_pct,
+                ensure_society_snapshot,
                 strip_tg_emoji,
             )
-            atmo = await resolve_atmosphere_pct(chat_id, db=db)
+            atmo_report = await ensure_society_snapshot(chat_id, db=db)
+            atmo = float(atmo_report.get("pct") or 0)
             keyboard = build_main_keyboard(
                 chat_id=chat_id, chat_balance=chat_balance, atmosphere_pct=atmo,
             )
             screen = build_main_screen_html(
-                chat_id=chat_id, chat_balance=chat_balance, atmosphere_pct=atmo,
+                chat_id=chat_id,
+                chat_balance=chat_balance,
+                atmosphere_pct=atmo,
+                atmosphere_report=atmo_report,
             )
             try:
                 sent_message = await message.reply(
@@ -705,13 +709,17 @@ async def show_balance_details(callback_query: CallbackQuery):
         from bot.funcs.group_balance_level import (
             build_details_html,
             build_details_keyboard,
-            resolve_atmosphere_pct,
+            ensure_society_snapshot,
             strip_tg_emoji,
         )
 
-        atmo = await resolve_atmosphere_pct(chat_id, db=db)
+        atmo_report = await ensure_society_snapshot(chat_id, db=db)
+        atmo = float(atmo_report.get("pct") or 0)
         text = build_details_html(
-            chat_balance=chat_balance, chat_id=chat_id, atmosphere_pct=atmo,
+            chat_balance=chat_balance,
+            chat_id=chat_id,
+            atmosphere_pct=atmo,
+            atmosphere_report=atmo_report,
         )
         keyboard = build_details_keyboard(chat_id=chat_id)
         try:
@@ -751,15 +759,19 @@ async def back_to_balance(callback_query: CallbackQuery):
     from bot.funcs.group_balance_level import (
         build_main_keyboard,
         build_main_screen_html,
-        resolve_atmosphere_pct,
+        ensure_society_snapshot,
         strip_tg_emoji,
     )
-    atmo = await resolve_atmosphere_pct(int(chat_id), db=db)
+    atmo_report = await ensure_society_snapshot(int(chat_id), db=db)
+    atmo = float(atmo_report.get("pct") or 0)
     keyboard = build_main_keyboard(
         chat_id=int(chat_id), chat_balance=chat_balance, atmosphere_pct=atmo,
     )
     screen = build_main_screen_html(
-        chat_id=int(chat_id), chat_balance=chat_balance, atmosphere_pct=atmo,
+        chat_id=int(chat_id),
+        chat_balance=chat_balance,
+        atmosphere_pct=atmo,
+        atmosphere_report=atmo_report,
     )
     try:
         await callback_query.message.edit_text(
@@ -785,7 +797,7 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
     chat_id = int(callback_query.message.chat.id)
     from bot.funcs.group_balance_level import (
         build_raise_keyboard, build_raise_screen_html, get_settings, get_chat_level,
-        strip_tg_emoji,
+        ensure_society_snapshot, next_level_price, strip_tg_emoji,
     )
     cfg = get_settings()
     if not cfg.get("enabled", True):
@@ -801,7 +813,18 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
         )
         return
 
-    text = build_raise_screen_html(chat_id=chat_id, cfg=cfg)
+    await ensure_society_snapshot(chat_id, db=db)
+    badge_title = None
+    nxt = next_level_price(chat_id, cfg)
+    if nxt:
+        try:
+            from bot.funcs.achievements import get_official_by_code
+            row = await get_official_by_code(db, f"gbl_level_{nxt[0]}")
+            if row and row.get("title"):
+                badge_title = str(row["title"])
+        except Exception:
+            badge_title = None
+    text = build_raise_screen_html(chat_id=chat_id, cfg=cfg, badge_title=badge_title)
     kb = build_raise_keyboard(chat_id=chat_id, cfg=cfg)
     try:
         await callback_query.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
@@ -843,7 +866,7 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
         return
 
     from bot.funcs.group_balance_level import (
-        get_settings, next_level_price, stars_label,
+        get_settings, next_level_price, stars_label, ensure_society_snapshot,
     )
     cfg = get_settings()
     if not cfg.get("enabled", True):
@@ -853,6 +876,7 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
         )
         return
 
+    await ensure_society_snapshot(chat_id, db=db)
     nxt = next_level_price(chat_id, cfg)
     if not nxt or nxt[0] != to_level or int(nxt[1]) != int(price):
         await callback_query.answer(
@@ -862,8 +886,10 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
         return
 
     payload = f"gblevel_{chat_id}_{to_level}_{price}"
-    title = f"Уровень {stars_label(to_level)}"
-    description = f"Открыть новый уровень баланса группы · {price}★"
+    title = f"Статус {stars_label(to_level)}"
+    description = (
+        f"Поднять статус группы · ставки шире · метка в профиле · {price} звёзд"
+    )
     prices = [LabeledPrice(label=title[:32], amount=int(price))]
     kb = get_crypto_keyboard(int(price), gbl_chat_id=int(chat_id), gbl_level=int(to_level))
 
@@ -928,7 +954,7 @@ async def group_balance_overview(callback_query: CallbackQuery):
     chat_id = int(callback_query.message.chat.id)
     from bot.funcs.group_balance_level import (
         get_chat_level, stars_label, recommended_play_bet, effective_stake_cap,
-        get_settings, resolve_atmosphere_pct,
+        get_settings, ensure_society_snapshot,
     )
     cfg = get_settings()
     level = get_chat_level(chat_id)
@@ -936,12 +962,15 @@ async def group_balance_overview(callback_query: CallbackQuery):
         bal = float(await db.get_chat_balancebalance(bot1, chat_id) or 0)
     except Exception:
         bal = 0.0
-    atmo = await resolve_atmosphere_pct(chat_id, db=db)
+    atmo_report = await ensure_society_snapshot(chat_id, db=db)
+    atmo = float(atmo_report.get("pct") or 0)
     rec = recommended_play_bet(bal, chat_id=chat_id, atmosphere_pct=atmo, cfg=cfg)
     cap = effective_stake_cap(chat_id, atmosphere_pct=atmo, cfg=cfg)
     lim = "без лимита" if cap is None else f"до {cap}"
     await callback_query.answer(
         f"Баланс группы · {stars_label(level)}\n"
-        f"Ставки {lim} · рекомендуем ≈ {rec}",
+        f"Ставки {lim}"
+        + (f" · +{atmo:g}%" if atmo > 0.05 else "")
+        + f"\nРекомендуем ≈ {rec}",
         show_alert=True,
     )

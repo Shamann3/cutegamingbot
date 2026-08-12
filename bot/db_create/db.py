@@ -20126,6 +20126,346 @@ class Database:
             print("Произошла ошибка [get_active_chat_users_7d]:", e)
             return 0
 
+    async def get_chat_user_message_counts_7d(self, chat_id: int) -> list:
+        """Список (user_id, messages) за 7 дней по чату — для умной атмосферы."""
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT user_id,
+                           COALESCE(SUM(CAST(text AS BIGINT)), 0)::BIGINT AS total
+                    FROM chatchange
+                    WHERE chat_id = $1
+                      AND user_id IS NOT NULL
+                      AND (date)::date BETWEEN CURRENT_DATE - INTERVAL '6 days' AND CURRENT_DATE
+                    GROUP BY user_id
+                    HAVING COALESCE(SUM(CAST(text AS BIGINT)), 0) > 0
+                    ORDER BY total DESC
+                    """,
+                    chat_id,
+                )
+                out = []
+                for r in rows or []:
+                    try:
+                        uid = int(r["user_id"])
+                        total = int(r["total"] or 0)
+                    except Exception:
+                        continue
+                    if uid and total > 0:
+                        out.append((uid, total))
+                return out
+        except asyncpg.exceptions.PostgresError as e:
+            print("Ошибка PostgreSQL [get_chat_user_message_counts_7d]:", e)
+            return []
+        except Exception as e:
+            print("Произошла ошибка [get_chat_user_message_counts_7d]:", e)
+            return []
+
+    async def get_chat_user_message_counts_30d(self, chat_id: int, *, limit: int = 500) -> list:
+        """Топ авторов (user_id, messages) за 30 дней — для силы группы.
+
+        date в chatchange — тип date (без ::date cast, чтобы работал индекс).
+        LIMIT — только топ писавших (для донат-смеси и актива этого достаточно).
+        """
+        lim = max(50, min(2000, int(limit or 500)))
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT user_id,
+                           COALESCE(SUM(text::bigint), 0)::bigint AS total
+                    FROM chatchange
+                    WHERE chat_id = $1
+                      AND user_id IS NOT NULL
+                      AND date >= (CURRENT_DATE - 29)
+                      AND date <= CURRENT_DATE
+                    GROUP BY user_id
+                    HAVING COALESCE(SUM(text::bigint), 0) > 0
+                    ORDER BY total DESC
+                    LIMIT $2
+                    """,
+                    int(chat_id),
+                    lim,
+                )
+                out = []
+                for r in rows or []:
+                    try:
+                        uid = int(r["user_id"])
+                        total = int(r["total"] or 0)
+                    except Exception:
+                        continue
+                    if uid and total > 0:
+                        out.append((uid, total))
+                return out
+        except asyncpg.exceptions.PostgresError as e:
+            print("Ошибка PostgreSQL [get_chat_user_message_counts_30d]:", e)
+            return []
+        except Exception as e:
+            print("Произошла ошибка [get_chat_user_message_counts_30d]:", e)
+            return []
+
+    async def ensure_society_indexes(self) -> None:
+        """Индексы под силу группы — один раз на процесс."""
+        if getattr(self, "_society_idx_ok", False):
+            return
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_chatchange_chat_date
+                    ON chatchange (chat_id, date DESC)
+                    """
+                )
+                await conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_donate_user_data
+                    ON public.donate (user_id, data DESC)
+                    """
+                )
+            self._society_idx_ok = True
+            self._donate_idx_ok = True
+        except Exception as e:
+            print(f"[DB] ensure_society_indexes: {e!r}")
+            self._society_idx_ok = True
+
+    async def fetch_society_bundle(
+        self,
+        chat_id: int,
+        *,
+        life_weight: float = 0.6,
+        month_weight: float = 0.4,
+        month_days: int = 30,
+        writer_limit: int = 500,
+    ) -> dict:
+        """Один пакет для силы группы: member + топ писавших + донат-смесь.
+
+        members/messages идут параллельно; донаты — сразу после списка uid.
+        """
+        import asyncio as _aio
+
+        cid = int(chat_id)
+        await self.ensure_society_indexes()
+
+        async def _member() -> int:
+            try:
+                async with self.pool.acquire() as conn:
+                    raw = await conn.fetchval(
+                        "SELECT member FROM chat WHERE chat_id = $1",
+                        cid,
+                    )
+                if raw is None or raw == "":
+                    return 0
+                return int(raw)
+            except Exception:
+                return 0
+
+        async def _msgs():
+            return await self.get_chat_user_message_counts_30d(
+                cid, limit=writer_limit
+            )
+
+        members, user_messages = await _aio.gather(_member(), _msgs())
+        uids = [u for u, _ in (user_messages or [])]
+        if uids and hasattr(self, "get_users_donate_blend_map"):
+            donate = await self.get_users_donate_blend_map(
+                uids,
+                life_weight=life_weight,
+                month_weight=month_weight,
+                month_days=month_days,
+            )
+        else:
+            donate = {
+                "blend": {},
+                "life": {},
+                "month": {},
+                "weights": {"life": life_weight, "month": month_weight},
+                "month_days": month_days,
+            }
+        return {
+            "members": int(members or 0),
+            "user_messages": list(user_messages or []),
+            "donate": donate,
+        }
+    async def get_users_donate_map(self, user_ids) -> dict:
+        """user_id → donate (float) для списка пользователей (только lifetime users.donate)."""
+        ids = []
+        for x in user_ids or []:
+            try:
+                uid = int(x)
+            except Exception:
+                continue
+            if uid > 0:
+                ids.append(uid)
+        if not ids:
+            return {}
+        # уникальные, лимит на безопасность
+        ids = list(dict.fromkeys(ids))[:500]
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT user_id, COALESCE(donate, 0) AS donate
+                    FROM users
+                    WHERE user_id = ANY($1::bigint[])
+                    """,
+                    ids,
+                )
+                out = {}
+                for r in rows or []:
+                    try:
+                        uid = int(r["user_id"])
+                        raw = r["donate"]
+                        if raw is None:
+                            val = 0.0
+                        else:
+                            val = float(raw)
+                    except Exception:
+                        continue
+                    if uid > 0 and val > 0:
+                        out[uid] = val
+                return out
+        except asyncpg.exceptions.PostgresError as e:
+            print("Ошибка PostgreSQL [get_users_donate_map]:", e)
+            return {}
+        except Exception as e:
+            print("Произошла ошибка [get_users_donate_map]:", e)
+            return {}
+
+    async def ensure_donate_query_index(self) -> None:
+        """Индекс для быстрых сумм донатов за месяц (идемпотентно)."""
+        if getattr(self, "_donate_idx_ok", False):
+            return
+        await self.ensure_society_indexes()
+
+    async def get_users_donate_blend_map(
+        self,
+        user_ids,
+        *,
+        life_weight: float = 0.6,
+        month_weight: float = 0.4,
+        month_days: int = 30,
+    ) -> dict:
+        """Смесь донатов: 60% lifetime + 40% месяц (два быстрых запроса параллельно)."""
+        import asyncio as _aio
+
+        empty = {
+            "blend": {},
+            "life": {},
+            "month": {},
+            "weights": {
+                "life": float(life_weight),
+                "month": float(month_weight),
+            },
+            "month_days": int(month_days),
+        }
+        ids = []
+        for x in user_ids or []:
+            try:
+                uid = int(x)
+            except Exception:
+                continue
+            if uid > 0:
+                ids.append(uid)
+        if not ids:
+            return empty
+        ids = list(dict.fromkeys(ids))[:500]
+
+        w_life = max(0.0, float(life_weight))
+        w_month = max(0.0, float(month_weight))
+        w_sum = w_life + w_month
+        if w_sum <= 0:
+            w_life, w_month, w_sum = 0.6, 0.4, 1.0
+        w_life /= w_sum
+        w_month /= w_sum
+        days = max(1, int(month_days or 30))
+
+        try:
+            await self.ensure_donate_query_index()
+
+            async def _life():
+                async with self.pool.acquire() as conn:
+                    return await conn.fetch(
+                        """
+                        SELECT user_id, COALESCE(donate, 0)::float8 AS life
+                        FROM users
+                        WHERE user_id = ANY($1::bigint[])
+                          AND COALESCE(donate, 0) > 0
+                        """,
+                        ids,
+                    )
+
+            async def _month():
+                async with self.pool.acquire() as conn:
+                    return await conn.fetch(
+                        """
+                        SELECT user_id, SUM(count)::float8 AS month
+                        FROM public.donate
+                        WHERE user_id = ANY($1::bigint[])
+                          AND data >= (NOW() - ($2::int * INTERVAL '1 day'))
+                        GROUP BY user_id
+                        HAVING SUM(count) > 0
+                        """,
+                        ids,
+                        days,
+                    )
+
+            life_rows, month_rows = await _aio.gather(_life(), _month())
+
+            life_map: dict = {}
+            month_map: dict = {}
+            for r in life_rows or []:
+                try:
+                    uid = int(r["user_id"])
+                    life = float(r["life"] or 0)
+                except Exception:
+                    continue
+                if uid > 0 and life > 0:
+                    life_map[uid] = life
+            for r in month_rows or []:
+                try:
+                    uid = int(r["user_id"])
+                    month = float(r["month"] or 0)
+                except Exception:
+                    continue
+                if uid > 0 and month > 0:
+                    month_map[uid] = month
+
+            blend_map: dict = {}
+            for uid in set(life_map) | set(month_map):
+                life = float(life_map.get(uid) or 0)
+                month = float(month_map.get(uid) or 0)
+                blend = (w_life * life) + (w_month * month)
+                if blend > 0:
+                    blend_map[uid] = round(blend, 4)
+            return {
+                "blend": blend_map,
+                "life": life_map,
+                "month": month_map,
+                "weights": {"life": round(w_life, 4), "month": round(w_month, 4)},
+                "month_days": days,
+            }
+        except asyncpg.exceptions.PostgresError as e:
+            print("Ошибка PostgreSQL [get_users_donate_blend_map]:", e)
+            life_only = await self.get_users_donate_map(ids)
+            return {
+                "blend": dict(life_only),
+                "life": dict(life_only),
+                "month": {},
+                "weights": {"life": 1.0, "month": 0.0},
+                "month_days": days,
+                "fallback": "life_only",
+            }
+        except Exception as e:
+            print("Произошла ошибка [get_users_donate_blend_map]:", e)
+            life_only = await self.get_users_donate_map(ids)
+            return {
+                "blend": dict(life_only),
+                "life": dict(life_only),
+                "month": {},
+                "weights": {"life": 1.0, "month": 0.0},
+                "month_days": days,
+                "fallback": "life_only",
+            }
     async def get_user_message_count_7d(self, chat_id: int, user_id: int) -> int:
         """
         Сколько конкретный пользователь написал за последние 7 дней (chatchange).

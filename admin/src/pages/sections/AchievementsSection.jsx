@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   deleteOfficialAchievement,
   fetchAchievementsOverview,
+  fetchUserAchievements,
+  grantFreeAchievement,
+  grantOfficialAchievement,
+  revokeAchievement,
   saveOfficialAchievement,
 } from '../../lib/adminClient'
 import { notifyAdmin } from '../../lib/notify'
@@ -61,6 +65,15 @@ export default function AchievementsSection() {
   const [help, setHelp] = useState({})
   const [draft, setDraft] = useState({ ...EMPTY })
   const [q, setQ] = useState('')
+  const [granting, setGranting] = useState(false)
+  const [grantUserId, setGrantUserId] = useState('')
+  const [grantMode, setGrantMode] = useState('official') // official | free
+  const [grantOfficialId, setGrantOfficialId] = useState('')
+  const [grantFreeTitle, setGrantFreeTitle] = useState('')
+  const [grantFreeEmoji, setGrantFreeEmoji] = useState('⭐')
+  const [userItems, setUserItems] = useState([])
+  const [loadingUser, setLoadingUser] = useState(false)
+  const [revokingId, setRevokingId] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -185,6 +198,90 @@ export default function AchievementsSection() {
     }
   }
 
+  const onGrant = async () => {
+    const uid = Number(String(grantUserId).trim())
+    if (!Number.isFinite(uid) || uid <= 0) {
+      notifyAdmin('Укажите user_id игрока', { error: true })
+      return
+    }
+    setGranting(true)
+    try {
+      if (grantMode === 'official') {
+        const oid = Number(grantOfficialId || draft.id || 0)
+        const code = !oid ? String(draft.code || '').trim() : ''
+        if (!oid && !code) {
+          notifyAdmin('Выберите официальное достижение в каталоге или укажите id', { error: true })
+          return
+        }
+        const res = await grantOfficialAchievement({
+          user_id: uid,
+          official_id: oid || undefined,
+          code: code || undefined,
+        })
+        notifyAdmin(
+          res.already
+            ? `Уже есть: ${res.title || res.code} → ${uid}`
+            : `Выдано: ${res.title || res.code} → ${uid}`,
+        )
+      } else {
+        const title = String(grantFreeTitle || '').trim()
+        if (!title) {
+          notifyAdmin('Введите текст свободной награды', { error: true })
+          return
+        }
+        const res = await grantFreeAchievement({
+          user_id: uid,
+          title,
+          icon_fallback: String(grantFreeEmoji || '⭐').slice(0, 8),
+        })
+        notifyAdmin(`Свободная награда выдана → ${uid}: ${res.title || title}`)
+        setGrantFreeTitle('')
+      }
+      await onLoadUser()
+    } catch (e) {
+      notifyAdmin(String(e?.message || e), { error: true })
+    } finally {
+      setGranting(false)
+    }
+  }
+
+  const onLoadUser = async () => {
+    const uid = Number(String(grantUserId).trim())
+    if (!Number.isFinite(uid) || uid <= 0) {
+      notifyAdmin('Укажите user_id игрока', { error: true })
+      return
+    }
+    setLoadingUser(true)
+    try {
+      const data = await fetchUserAchievements(uid)
+      setUserItems(Array.isArray(data.items) ? data.items : [])
+    } catch (e) {
+      notifyAdmin(String(e?.message || e), { error: true })
+      setUserItems([])
+    } finally {
+      setLoadingUser(false)
+    }
+  }
+
+  const onRevoke = async (instanceId) => {
+    const uid = Number(String(grantUserId).trim())
+    if (!Number.isFinite(uid) || uid <= 0 || !instanceId) return
+    if (!window.confirm('Снять это достижение у игрока?')) return
+    setRevokingId(String(instanceId))
+    try {
+      const res = await revokeAchievement({
+        user_id: uid,
+        instance_id: String(instanceId),
+      })
+      notifyAdmin(`Снято: ${res.title || instanceId} ← ${uid}`)
+      await onLoadUser()
+    } catch (e) {
+      notifyAdmin(String(e?.message || e), { error: true })
+    } finally {
+      setRevokingId('')
+    }
+  }
+
   if (loading && !items.length) {
     return <div className="ach-page ach-loading">Загрузка каталога…</div>
   }
@@ -196,8 +293,10 @@ export default function AchievementsSection() {
           <p className="ach-kicker">Official catalog</p>
           <h1 className="ach-title">Достижения</h1>
           <p className="ach-sub">
-            Официальные награды профиля. Ползунки — редкость и позиция в каталоге;
-            стрелки в списке — быстрый сдвиг вверх / вниз.
+            Официальные награды (коды <code>gbl_level_1…5</code> — метки уровней баланса группы)
+            и свободные — через панель или команды в боте.
+            Названия официальных меняйте здесь: при покупке уровня группы подтянется новый текст.
+            Выдача и снятие из панели пишутся в журнал с админом; красивые уведомления игроку подключим отдельно.
           </p>
         </div>
         <div className="ach-hero-actions">
@@ -297,6 +396,101 @@ export default function AchievementsSection() {
           </div>
         </section>
       </div>
+
+      <section className="ach-panel ach-grant" style={{ marginTop: '1rem' }}>
+        <h2 className="ach-panel-title">Выдать игроку</h2>
+        <p className="ach-field-help" style={{ marginBottom: '0.75rem' }}>
+          Официальные — из каталога (в т.ч. <code>gbl_level_1…5</code>).
+          Свободные — свой текст. Нужны права выдачи в доступе панели.
+        </p>
+        <div className="ach-grid">
+          <Field label="User ID" help={help.grant_user_id || 'Telegram user_id игрока'}>
+            <input
+              value={grantUserId}
+              onChange={(e) => setGrantUserId(e.target.value)}
+              placeholder="123456789"
+              inputMode="numeric"
+            />
+          </Field>
+          <Field label="Тип выдачи">
+            <select value={grantMode} onChange={(e) => setGrantMode(e.target.value)}>
+              <option value="official">Официальное</option>
+              <option value="free">Свободное</option>
+            </select>
+          </Field>
+          {grantMode === 'official' ? (
+            <Field label="Официальное из каталога" help="Или откройте карточку слева — подставится выбранное.">
+              <select
+                value={grantOfficialId || (draft.id ? String(draft.id) : '')}
+                onChange={(e) => setGrantOfficialId(e.target.value)}
+              >
+                <option value="">— выбрать —</option>
+                {sortedItems.filter((x) => x.enabled).map((it) => (
+                  <option key={it.id} value={it.id}>
+                    {it.title} ({it.code})
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : (
+            <>
+              <Field label="Текст награды" help={help.grant_free_title || 'Без ссылок'}>
+                <input
+                  value={grantFreeTitle}
+                  onChange={(e) => setGrantFreeTitle(e.target.value)}
+                  placeholder="За вклад в атмосферу клуба"
+                />
+              </Field>
+              <Field label="Emoji">
+                <input
+                  value={grantFreeEmoji}
+                  onChange={(e) => setGrantFreeEmoji(e.target.value)}
+                  maxLength={8}
+                />
+              </Field>
+            </>
+          )}
+        </div>
+        <div className="ach-hero-actions" style={{ marginTop: '0.85rem' }}>
+          <button type="button" className="ach-btn ach-btn-primary" disabled={granting} onClick={onGrant}>
+            {granting ? 'Выдача…' : 'Выдать достижение'}
+          </button>
+          <button type="button" className="ach-btn" disabled={loadingUser} onClick={onLoadUser}>
+            {loadingUser ? 'Загрузка…' : 'Показать у игрока'}
+          </button>
+        </div>
+        {userItems.length > 0 || loadingUser ? (
+          <div className="ach-list-scroll" style={{ marginTop: '0.85rem', maxHeight: 220 }}>
+            {userItems.map((it) => (
+              <article key={it.instance_id} className="ach-card">
+                <div className="ach-card-main" style={{ cursor: 'default' }}>
+                  <span className="ach-card-icon">{it.icon_fallback || '⭐'}</span>
+                  <span className="ach-card-body">
+                    <strong>{it.title}</strong>
+                    <span className="ach-card-code">
+                      {it.kind === 'official' ? 'офиц.' : 'своб.'}
+                      {it.unique_code ? ` · ${it.unique_code}` : ''}
+                      {it.granted_by_name ? ` · выдал: ${it.granted_by_name}` : ''}
+                    </span>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="ach-card-del"
+                  disabled={revokingId === it.instance_id}
+                  onClick={() => onRevoke(it.instance_id)}
+                  title="Снять"
+                >
+                  {revokingId === it.instance_id ? '…' : '×'}
+                </button>
+              </article>
+            ))}
+            {!userItems.length && !loadingUser ? (
+              <p className="ach-empty">У игрока пока нет достижений профиля.</p>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
     </div>
   )
 }

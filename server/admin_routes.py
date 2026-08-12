@@ -116,6 +116,7 @@ from admin_permissions import (
     require_active_admin,
     require_admin_permission,
     require_admin_role,
+    require_any_admin_permission,
 )
 from config import ADMIN_BOT_TOKEN, ADMIN_ENABLED, ADMIN_JWT_SECRET, ADMIN_SESSION_MINUTES, INTERNAL_API_KEY
 from admin_appeals import (
@@ -200,6 +201,10 @@ from admin_achievements import (
     overview as ach_overview,
     remove_item as ach_remove_item,
     save_item as ach_save_item,
+    grant_official_to_user as ach_grant_official,
+    grant_free_to_user as ach_grant_free,
+    list_user_achievements as ach_list_user,
+    revoke_from_user as ach_revoke,
 )
 from admin_content import (
     create_craft_recipe,
@@ -4209,6 +4214,14 @@ class GroupBalanceLevelSettingsBody(BaseModel):
     health_primary_min: float | None = Field(default=None, ge=0, le=10)
     atmosphere_enabled: bool | None = None
     atmosphere_max_bonus_pct: float | None = Field(default=None, ge=0, le=200)
+    society_snapshot_ttl_sec: float | None = Field(default=None, ge=60, le=86400)
+    society_price_max_mult: float | None = Field(default=None, ge=1, le=10)
+    donor_life_weight: float | None = Field(default=None, ge=0, le=1)
+    donor_month_weight: float | None = Field(default=None, ge=0, le=1)
+    society_activity_share: float | None = Field(default=None, ge=0, le=1)
+    society_donor_share: float | None = Field(default=None, ge=0, le=1)
+    society_synergy_share: float | None = Field(default=None, ge=0, le=1)
+    society_activity_curve: float | None = Field(default=None, ge=0.5, le=3)
     raise_button_text: str | None = Field(default=None, max_length=64)
     system_title: str | None = Field(default=None, max_length=128)
     prices: dict[str, int] | None = None
@@ -4357,6 +4370,157 @@ async def admin_achievements_delete(
     except Exception:
         pass
     return {"ok": ok}
+
+
+class AchievementGrantOfficialBody(BaseModel):
+    user_id: int = Field(gt=0)
+    official_id: int | None = None
+    code: str | None = Field(default=None, max_length=64)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/achievements/grant-official")
+async def admin_achievements_grant_official(
+    body: AchievementGrantOfficialBody,
+    admin_id: int = Depends(require_admin_permission("grant_official_achievements")),
+):
+    if not body.official_id and not (body.code or "").strip():
+        raise HTTPException(status_code=400, detail="official_id or code required")
+    try:
+        result = await ach_grant_official(
+            user_id=int(body.user_id),
+            official_id=int(body.official_id) if body.official_id else None,
+            code=(body.code or "").strip() or None,
+            actor_id=int(admin_id),
+            actor_name="Админ-панель",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        await log_admin_action(
+            admin_id, "achievement_grant_official",
+            target_type="user",
+            target_id=str(body.user_id),
+            details={"code": result.get("code"), "already": result.get("already")},
+        )
+    except Exception:
+        pass
+    return result
+
+
+class AchievementGrantFreeBody(BaseModel):
+    user_id: int = Field(gt=0)
+    title: str = Field(min_length=1, max_length=200)
+    icon_emoji_id: str | None = Field(default=None, max_length=64)
+    icon_fallback: str | None = Field(default="⭐", max_length=8)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/achievements/grant-free")
+async def admin_achievements_grant_free(
+    body: AchievementGrantFreeBody,
+    admin_id: int = Depends(require_admin_permission("grant_free_achievements")),
+):
+    try:
+        result = await ach_grant_free(
+            user_id=int(body.user_id),
+            title=body.title,
+            icon_emoji_id=body.icon_emoji_id,
+            icon_fallback=body.icon_fallback or "⭐",
+            actor_id=int(admin_id),
+            actor_name="Админ-панель",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        await log_admin_action(
+            admin_id, "achievement_grant_free",
+            target_type="user",
+            target_id=str(body.user_id),
+            details={"title": result.get("title")},
+        )
+    except Exception:
+        pass
+    return result
+
+
+@router.get("/achievements/user/{user_id}")
+async def admin_achievements_user_list(
+    user_id: int,
+    _admin_id: int = Depends(require_any_admin_permission(
+        "grant_official_achievements",
+        "grant_free_achievements",
+    )),
+):
+    try:
+        return await ach_list_user(int(user_id))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class AchievementRevokeBody(BaseModel):
+    user_id: int = Field(gt=0)
+    instance_id: str = Field(min_length=1, max_length=64)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/achievements/revoke")
+async def admin_achievements_revoke(
+    request: Request,
+    body: AchievementRevokeBody,
+    admin_id: int = Depends(require_any_admin_permission(
+        "grant_official_achievements",
+        "grant_free_achievements",
+    )),
+):
+    # Сначала смотрим kind — право зависит от типа награды
+    try:
+        preview = await ach_list_user(int(body.user_id))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    target = next(
+        (x for x in preview.get("items") or [] if x.get("instance_id") == body.instance_id),
+        None,
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="not_found")
+    account = getattr(request.state, "admin_account", None)
+    if not account:
+        account = await get_admin_account_security(admin_id)
+        request.state.admin_account = account
+    perms = set(account.get("permissions") or [])
+    kind = str(target.get("kind") or "free")
+    need = (
+        "grant_official_achievements"
+        if kind == "official"
+        else "grant_free_achievements"
+    )
+    if need not in perms:
+        raise HTTPException(status_code=403, detail="Недостаточно прав для этого типа")
+    try:
+        result = await ach_revoke(
+            user_id=int(body.user_id),
+            instance_id=str(body.instance_id),
+            actor_id=int(admin_id),
+            actor_name="Админ-панель",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        await log_admin_action(
+            admin_id, "achievement_revoke",
+            target_type="user",
+            target_id=str(body.user_id),
+            details={
+                "kind": result.get("kind"),
+                "title": result.get("title"),
+                "code": result.get("unique_code"),
+                "instance_id": result.get("instance_id"),
+            },
+        )
+    except Exception:
+        pass
+    return result
 
 
 @router.get("/bot-quests/overview")
