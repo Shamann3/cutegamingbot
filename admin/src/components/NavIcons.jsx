@@ -192,6 +192,20 @@ const PanelAccess = () => (
   </Icon>
 )
 
+const SoftRestart = () => (
+  <Icon>
+    <path d="M12 3.5v3.2" />
+    <path d="M12 17.3v3.2" />
+    <path d="M4.8 7.2l2.3 2.3" />
+    <path d="M16.9 14.5l2.3 2.3" />
+    <path d="M3.5 12h3.2" />
+    <path d="M17.3 12h3.2" />
+    <path d="M4.8 16.8l2.3-2.3" />
+    <path d="M16.9 9.5l2.3-2.3" />
+    <circle cx="12" cy="12" r="3.2" />
+  </Icon>
+)
+
 export const NAV_ICONS = {
   dashboard: Dashboard,
   users: Players,
@@ -215,4 +229,5 @@ export const NAV_ICONS = {
   moderation: Moderation,
   chronicle: Chronicle,
   panelAccess: PanelAccess,
+  softRestart: SoftRestart,
 }

@@ -18,6 +18,7 @@ import ContentSection from './sections/ContentSection'
 import GiveawaysSection from './sections/GiveawaysSection'
 import BotQuestsSection from './sections/BotQuestsSection'
 import GroupBalanceLevelSection from './sections/GroupBalanceLevelSection'
+import SoftRestartSection from './sections/SoftRestartSection'
 import AchievementsSection from './sections/AchievementsSection'
 import BroadcastSection from './sections/BroadcastSection'
 import LogsSection from './sections/LogsSection'
@@ -57,6 +58,8 @@ export default function PanelShell({ onLogout }) {
   const [myUserId, setMyUserId] = useState(null)
   const [needsRules, setNeedsRules] = useState(false)
   const [godMode, setGodMode] = useState(false)
+  const [projectCreatorId, setProjectCreatorId] = useState(null)
+  const [isProjectCreator, setIsProjectCreator] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -68,6 +71,8 @@ export default function PanelShell({ onLogout }) {
         setPanelTabs(me.panelTabs && typeof me.panelTabs === 'object' ? me.panelTabs : null)
         setRole(me.role || null)
         setMyUserId(me.userId || null)
+        setProjectCreatorId(me.projectCreatorId ?? null)
+        setIsProjectCreator(!!me.isProjectCreator)
         // Окно правил при первом входе - кроме владельца.
         if (me.role !== 'owner' && !me.rulesAcceptedAt) {
           setNeedsRules(true)
@@ -89,8 +94,12 @@ export default function PanelShell({ onLogout }) {
   }, [onLogout])
 
   const navSections = useMemo(
-    () => visibleSections(permissions, panelSections, role),
-    [permissions, panelSections, role],
+    () => visibleSections(permissions, panelSections, role, {
+      myUserId,
+      projectCreatorId,
+      isProjectCreator,
+    }),
+    [permissions, panelSections, role, myUserId, projectCreatorId, isProjectCreator],
   )
 
   // Если текущий раздел закрыли в матрице — уводим на первую доступную вкладку.
@@ -168,6 +177,7 @@ export default function PanelShell({ onLogout }) {
   const isModeration = section === 'moderation'
   const isChronicle  = section === 'chronicle'
   const isPanelAccess = section === 'panelAccess'
+  const isSoftRestart = section === 'softRestart'
 
   return (
     <div className="panel-shell">
@@ -267,7 +277,7 @@ export default function PanelShell({ onLogout }) {
                                       ? ' panel-layout-support'
                                       : isChronicle
                                         ? ' panel-layout-chronicle'
-                                        : isPanelAccess
+                                        : isPanelAccess || isSoftRestart
                                           ? ' panel-layout-security'
                                           : ' panel-layout-page'
           }`}
@@ -335,7 +345,8 @@ export default function PanelShell({ onLogout }) {
           {isModeration && <ModerationSection role={role} permissions={permissions} panelTabs={panelTabs} />}
           {isChronicle && <ChronicleSection />}
           {isPanelAccess && <PanelAccessSection />}
-          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBotQuests && !isGroupBalanceLevel && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && (
+          {isSoftRestart && isProjectCreator && <SoftRestartSection />}
+          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBotQuests && !isGroupBalanceLevel && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

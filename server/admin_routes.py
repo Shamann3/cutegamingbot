@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, field_validator
 
-from config import ADMIN_TOTP_VALID_WINDOW, owner_user_ids
+from config import ADMIN_TOTP_VALID_WINDOW, PROJECT_CREATOR_ID, owner_user_ids
 from admin_auth import (
     build_otpauth_uri,
     create_setup_token,
@@ -195,6 +195,13 @@ from admin_group_balance_level import (
     reset_settings as gbl_reset_settings,
     save_settings as gbl_save_settings,
     set_chat_level as gbl_set_chat_level,
+)
+from admin_soft_restart import (
+    apply_preset as sr_apply_preset,
+    is_project_creator as sr_is_creator,
+    overview as sr_overview,
+    queue_restart as sr_queue_restart,
+    save_settings as sr_save_settings,
 )
 from admin_achievements import (
     list_catalog as ach_list_catalog,
@@ -1320,6 +1327,8 @@ async def admin_me(user_id: int = Depends(require_active_admin)):
     account = await get_admin_account_security(user_id)
     if not account:
         raise HTTPException(status_code=403, detail="Админ-аккаунт не найден")
+    account["projectCreatorId"] = int(PROJECT_CREATOR_ID)
+    account["isProjectCreator"] = sr_is_creator(user_id)
     return account
 
 
@@ -4204,6 +4213,102 @@ async def admin_gbl_overview(
     _admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
 ):
     return gbl_overview()
+
+
+# ─── Soft Restart (только создатель проекта) ─────────────────────────────────
+
+
+def _require_project_creator(admin_id: int) -> None:
+    if not sr_is_creator(admin_id):
+        raise HTTPException(status_code=403, detail="Только создатель проекта")
+
+
+@router.get("/soft-restart/overview")
+async def admin_sr_overview(
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    return await sr_overview()
+
+
+class SoftRestartSettingsBody(BaseModel):
+    enabled: bool | None = None
+    test: bool | None = None
+    interval_sec: float | None = Field(default=None, ge=60, le=86400 * 7)
+    initial_delay_sec: float | None = Field(default=None, ge=30, le=86400 * 7)
+    grace_sec: float | None = Field(default=None, ge=0.5, le=120)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/soft-restart/settings")
+async def admin_sr_save_settings(
+    body: SoftRestartSettingsBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    cfg = await sr_save_settings(patch)
+    try:
+        await log_admin_action(
+            admin_id, "soft_restart_settings",
+            target_type="soft_restart",
+            details={"keys": list(patch.keys())},
+        )
+    except Exception:
+        pass
+    return {"ok": True, "config": cfg, "status": (await sr_overview())["status"]}
+
+
+class SoftRestartPresetBody(BaseModel):
+    name: str = Field(min_length=2, max_length=32)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/soft-restart/preset")
+async def admin_sr_preset(
+    body: SoftRestartPresetBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    try:
+        cfg = await sr_apply_preset(body.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        await log_admin_action(
+            admin_id, "soft_restart_preset",
+            target_type="soft_restart",
+            details={"name": body.name},
+        )
+    except Exception:
+        pass
+    return {"ok": True, "config": cfg, "status": (await sr_overview())["status"]}
+
+
+class SoftRestartNowBody(BaseModel):
+    reason: str | None = Field(default="panel", max_length=64)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/soft-restart/restart")
+async def admin_sr_restart(
+    body: SoftRestartNowBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    result = await sr_queue_restart(body.reason or "panel")
+    try:
+        await log_admin_action(
+            admin_id, "soft_restart_now",
+            target_type="soft_restart",
+            details={"reason": body.reason or "panel"},
+        )
+    except Exception:
+        pass
+    return result
 
 
 class GroupBalanceLevelSettingsBody(BaseModel):

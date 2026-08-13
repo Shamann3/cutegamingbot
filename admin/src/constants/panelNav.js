@@ -89,6 +89,11 @@ export const PANEL_SECTIONS = [
     id: 'panelAccess', label: 'Admin Panel', labelRu: 'Админ панель', group: 'system', permission: 'manage_panel_access',
     blurb: 'Матрица доступов к вкладкам панели — только для владельца.',
   },
+  {
+    id: 'softRestart', label: 'Sypher', labelRu: 'Sypher', group: 'system',
+    ownerOnly: true, creatorOnly: true,
+    blurb: 'Скрытый soft restart процесса: таймеры, пресеты, живой отсчёт — только создатель.',
+  },
 ]
 
 /** Короткое описание раздела для матрицы доступов. */
@@ -109,13 +114,25 @@ export const PANEL_GROUPS = [
 ]
 
 /** Секции, видимые с учётом прав и (опционально) матрицы panelSections с бэка. */
-export function visibleSections(permissions = [], panelSections = null, role = null) {
+export function visibleSections(
+  permissions = [],
+  panelSections = null,
+  role = null,
+  { myUserId = null, projectCreatorId = null, isProjectCreator = null } = {},
+) {
   const perms = new Set(permissions)
   const allowedIds = Array.isArray(panelSections) && panelSections.length > 0
     ? new Set(panelSections)
     : null
+  const creatorOk = isProjectCreator === true
+    || (
+      myUserId != null
+      && projectCreatorId != null
+      && Number(myUserId) === Number(projectCreatorId)
+    )
   return PANEL_SECTIONS.filter((s) => {
     if (s.ownerOnly && role !== 'owner') return false
+    if (s.creatorOnly && !creatorOk) return false
     if (allowedIds && !allowedIds.has(s.id)) return false
     if (s.permission && !perms.has(s.permission)) return false
     return true

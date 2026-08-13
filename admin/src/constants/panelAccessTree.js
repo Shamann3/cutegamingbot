@@ -89,6 +89,7 @@ export function allConfigurableKeys(includeOwnerOnlyParents = false) {
   const keys = []
   for (const s of PANEL_SECTIONS) {
     if (s.id === 'panelAccess' && !includeOwnerOnlyParents) continue
+    if ((s.ownerOnly || s.creatorOnly) && !includeOwnerOnlyParents) continue
     keys.push(s.id)
     const tabs = PANEL_SECTION_TABS[s.id] || []
     for (const t of tabs) {

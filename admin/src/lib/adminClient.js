@@ -1509,6 +1509,25 @@ export async function setGroupBalanceLevelChat(chatId, level) {
   })
 }
 
+export async function fetchSoftRestartOverview() {
+  return adminFetch('/soft-restart/overview')
+}
+
+export async function saveSoftRestartSettings(payload) {
+  return adminFetch('/soft-restart/settings', { method: 'POST', body: payload })
+}
+
+export async function saveSoftRestartPreset(name) {
+  return adminFetch('/soft-restart/preset', { method: 'POST', body: { name } })
+}
+
+export async function queueSoftRestartNow(reason = 'panel') {
+  return adminFetch('/soft-restart/restart', {
+    method: 'POST',
+    body: { reason: String(reason || 'panel') },
+  })
+}
+
 export async function fetchAchievementsOverview() {
   return adminFetch('/achievements/overview')
 }

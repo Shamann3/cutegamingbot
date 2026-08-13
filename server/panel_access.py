@@ -52,6 +52,14 @@ PANEL_SECTION_DEFS: list[dict] = [
         "ownerOnly": True,
     },
     {
+        "id": "softRestart",
+        "label": "Sypher",
+        "group": "system",
+        "permissions": [],
+        "ownerOnly": True,
+        "creatorOnly": True,
+    },
+    {
         "id": "achievements",
         "label": "Достижения",
         "group": "content",
@@ -452,6 +460,19 @@ async def resolve_account_access(
         return [], [], {}
     if role == ROLE_OWNER:
         sections = list(ALL_SECTION_IDS)
+        try:
+            from config import PROJECT_CREATOR_ID
+
+            if int(user_id) != int(PROJECT_CREATOR_ID):
+                sections = [
+                    sid for sid in sections
+                    if not SECTION_BY_ID.get(sid, {}).get("creatorOnly")
+                ]
+        except Exception:
+            sections = [
+                sid for sid in sections
+                if not SECTION_BY_ID.get(sid, {}).get("creatorOnly")
+            ]
         tabs = effective_tabs_from_maps(role, {}, {}, sections)
         return sorted(ALL_PERMISSIONS), sections, tabs
     defaults = await get_role_defaults_map()

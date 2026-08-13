@@ -31,7 +31,10 @@ _HELP_HINT = (
 )
 
 _REDIS_KEY = "cg:sr:v1"
-_FILE_PATH = Path(__file__).resolve().parents[2] / "data" / "sr_runtime.json"
+_DATA_DIR = Path(os.environ.get("SR_DATA_DIR") or (Path(__file__).resolve().parents[2] / "data"))
+_FILE_PATH = _DATA_DIR / "sr_runtime.json"
+_STATUS_PATH = _DATA_DIR / "sr_status.json"
+_CMD_PATH = _DATA_DIR / "sr_cmd.json"
 _SR_DIR = Path(os.environ.get("SR_DIR", "/tmp/cg_sr"))
 
 _lock = asyncio.Lock()
@@ -42,10 +45,15 @@ _next_at: Optional[float] = None
 _last_reason = ""
 _scheduler_task: Optional[asyncio.Task] = None
 _release_watch_task: Optional[asyncio.Task] = None
+_bridge_task: Optional[asyncio.Task] = None
 _dp_ref = None
 _notify_fn: Optional[NotifyFn] = None
 _cfg: Optional[Dict[str, Any]] = None
 _loaded = False
+_last_cmd_ts: float = 0.0
+_last_cfg_rev: int = -1
+_bridge_table_ready = False
+_boot_notified = False
 
 
 def sr_dir() -> Path:
@@ -214,6 +222,10 @@ def _persist() -> None:
     cfg = ensure_loaded()
     _write_redis(cfg)
     _write_file(cfg)
+    try:
+        _publish_status_sync()
+    except Exception:
+        pass
 
 
 def is_enabled() -> bool:
@@ -259,7 +271,220 @@ def status_dict() -> dict:
         "requested": _requested,
         "last_reason": _last_reason or None,
         "pid": os.getpid(),
+        "handoff": supervisor_active(),
+        "supervisor": supervisor_active(),
+        "published_at": now,
     }
+
+
+def _publish_status_sync() -> None:
+    """Снимок для админ-панели (файл; PG — из async bridge)."""
+    st = status_dict()
+    try:
+        _STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _STATUS_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(st, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(_STATUS_PATH)
+    except Exception as e:
+        print(f"[SR] status file: {e!r}")
+
+
+async def _bridge_ensure_table() -> bool:
+    global _bridge_table_ready
+    if _bridge_table_ready:
+        return True
+    try:
+        from bot.db_create.db import db
+
+        if getattr(db, "pool", None) is None:
+            return False
+        await db.pool.execute(
+            """
+            CREATE TABLE IF NOT EXISTS soft_restart_bridge (
+                id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+                config JSONB NOT NULL DEFAULT '{}'::jsonb,
+                status JSONB NOT NULL DEFAULT '{}'::jsonb,
+                cmd JSONB,
+                config_rev BIGINT NOT NULL DEFAULT 0,
+                cmd_rev BIGINT NOT NULL DEFAULT 0,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            INSERT INTO soft_restart_bridge (id) VALUES (1)
+            ON CONFLICT (id) DO NOTHING;
+            """
+        )
+        _bridge_table_ready = True
+        return True
+    except Exception as e:
+        print(f"[SR] bridge table: {e!r}")
+        return False
+
+
+async def _bridge_publish_status() -> None:
+    st = status_dict()
+    _publish_status_sync()
+    try:
+        if not await _bridge_ensure_table():
+            return
+        from bot.db_create.db import db
+
+        await db.pool.execute(
+            """
+            UPDATE soft_restart_bridge
+            SET status = $1::jsonb, updated_at = NOW()
+            WHERE id = 1
+            """,
+            json.dumps(st, ensure_ascii=False),
+        )
+    except Exception as e:
+        print(f"[SR] bridge status: {e!r}")
+
+
+async def _bridge_push_config() -> None:
+    cfg = ensure_loaded()
+    try:
+        if not await _bridge_ensure_table():
+            return
+        from bot.db_create.db import db
+
+        await db.pool.execute(
+            """
+            UPDATE soft_restart_bridge
+            SET config = $1::jsonb, updated_at = NOW()
+            WHERE id = 1
+            """,
+            json.dumps(cfg, ensure_ascii=False),
+        )
+    except Exception as e:
+        print(f"[SR] bridge config push: {e!r}")
+
+
+async def notify_restart_alive(reason: str = "ok") -> None:
+    """Одно короткое ЛС создателю: процесс реально поднялся после рестарта."""
+    global _boot_notified
+    if _boot_notified:
+        return
+    _boot_notified = True
+    reason = (reason or "ok").strip()[:48] or "ok"
+    await _notify(
+        f"◈ soft restart · <code>{reason}</code> · pid <code>{os.getpid()}</code> · ок"
+    )
+
+
+async def maybe_notify_boot() -> None:
+    """Пинг только если это handoff-child или есть флаг после hard-exit."""
+    path = _flag_path("notify_on_boot")
+    reason = ""
+    if path.exists():
+        try:
+            reason = path.read_text(encoding="utf-8").strip() or "restart"
+        except Exception:
+            reason = "restart"
+        _clear_flag("notify_on_boot")
+        await notify_restart_alive(reason)
+        return
+    if is_handoff_child():
+        await notify_restart_alive(_last_reason or "handoff")
+
+
+async def apply_external_config(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Применить конфиг из админ-панели (файл/PG cmd)."""
+    global _cfg, _loaded
+    async with _cfg_lock:
+        _cfg = _normalize(raw if isinstance(raw, dict) else {})
+        _loaded = True
+        _persist()
+    await reschedule()
+    await _bridge_publish_status()
+    return ensure_loaded()
+
+
+async def _consume_cmd(cmd: Dict[str, Any]) -> None:
+    global _last_cmd_ts
+    if not isinstance(cmd, dict):
+        return
+    ts = float(cmd.get("ts") or 0)
+    if ts and ts <= _last_cmd_ts:
+        return
+    if ts:
+        _last_cmd_ts = ts
+    op = str(cmd.get("op") or "").strip().lower()
+    if op == "apply":
+        cfg = cmd.get("config")
+        if isinstance(cfg, dict):
+            await apply_external_config(cfg)
+            print("[SR] panel apply config", flush=True)
+        return
+    if op == "restart":
+        reason = str(cmd.get("reason") or "panel")[:64]
+        print(f"[SR] panel restart reason={reason!r}", flush=True)
+        await request_restart(reason)
+        return
+
+
+async def _poll_bridge_once() -> None:
+    global _last_cfg_rev
+    # 1) файл команды
+    file_cmd = None
+    try:
+        if _CMD_PATH.is_file():
+            file_cmd = json.loads(_CMD_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        file_cmd = None
+    if isinstance(file_cmd, dict):
+        await _consume_cmd(file_cmd)
+        try:
+            _CMD_PATH.unlink()
+        except Exception:
+            pass
+
+    # 2) Postgres
+    try:
+        if not await _bridge_ensure_table():
+            return
+        from bot.db_create.db import db
+
+        row = await db.pool.fetchrow(
+            "SELECT config, cmd, config_rev, cmd_rev FROM soft_restart_bridge WHERE id = 1"
+        )
+        if not row:
+            return
+        crev = int(row["config_rev"] or 0)
+        if crev > _last_cfg_rev:
+            _last_cfg_rev = crev
+            cfg = row["config"]
+            if isinstance(cfg, dict) and cfg:
+                # Не дублируем, если только что применили тот же cmd
+                cur = ensure_loaded()
+                norm = _normalize(cfg)
+                if any(cur.get(k) != norm.get(k) for k in norm):
+                    await apply_external_config(norm)
+                    print(f"[SR] bridge config_rev={crev}", flush=True)
+        cmd = row["cmd"]
+        if isinstance(cmd, dict):
+            await _consume_cmd(cmd)
+            # очистить cmd после обработки
+            await db.pool.execute(
+                "UPDATE soft_restart_bridge SET cmd = NULL WHERE id = 1"
+            )
+    except Exception as e:
+        print(f"[SR] bridge poll: {e!r}")
+
+
+async def _bridge_loop() -> None:
+    try:
+        await _bridge_push_config()
+        while True:
+            try:
+                await _poll_bridge_once()
+                await _bridge_publish_status()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(f"[SR] bridge loop: {e!r}")
+            await asyncio.sleep(1.0)
+    except asyncio.CancelledError:
+        raise
 
 
 def _fmt_duration(sec: float) -> str:
@@ -312,7 +537,9 @@ def format_help_html() -> str:
     return (
         "<b>◈ Soft Restart · команды</b>\n"
         "━━━━━━━━━━━━━━━━\n"
-        "Пиши в <b>личку</b> боту. Чужим — тишина.\n\n"
+        "Основная настройка — вкладка <b>Sypher</b> в админ-панели (только создатель).\n"
+        "Пиши в <b>личку</b> боту. Чужим — тишина.\n"
+        "После рестарта — одно короткое ЛС <code>◈ soft restart · … · ок</code>.\n\n"
         "<b>Тихий рестарт (rolling, как деплой)</b>\n"
         "<code>.r</code>\n"
         "  новый процесс греется · старый ещё отвечает ·\n"
@@ -468,15 +695,8 @@ async def _perform_handoff_request(reason: str) -> None:
     _requested = True
     _last_reason = reason
     print(f"[SR] handoff_request reason={reason!r}", flush=True)
-    await _notify(
-        _with_help_hint(
-            "<b>◈ Soft Restart</b>\n"
-            "━━━━━━━━━━━━━━━━\n"
-            f"причина  <code>{reason}</code>\n"
-            "режим: <b>rolling handoff</b>\n"
-            "новый процесс греется · старый ещё отвечает…"
-        )
-    )
+    # Без спама: короткое «ок» пришлёт уже новый процесс (maybe_notify_boot).
+    _write_flag("notify_on_boot", reason)
     _clear_flag("child_ready")
     _clear_flag("child_go")
     _clear_flag("release_old")
@@ -491,15 +711,7 @@ async def _perform_hard_exit(reason: str) -> None:
     _requested = True
     _last_reason = reason
     print(f"[SR] hard exit (no supervisor) reason={reason!r}", flush=True)
-    await _notify(
-        _with_help_hint(
-            "<b>◈ Soft Restart</b>\n"
-            "━━━━━━━━━━━━━━━━\n"
-            f"причина  <code>{reason}</code>\n"
-            "супервизор не найден — обычный выход\n"
-            "выхожу…"
-        )
-    )
+    _write_flag("notify_on_boot", reason)
     await asyncio.sleep(grace_sec())
     flush1 = await asyncio.to_thread(_flush_pkl_for_buttons)
     print(f"[SR][PKL] hard pre-stop flush: {flush1}", flush=True)
@@ -544,6 +756,10 @@ def _arm_next_at(delay: Optional[float] = None) -> float:
     d = float(delay if delay is not None else initial_delay_sec())
     d = max(0.0, d)
     _next_at = time.time() + d
+    try:
+        _publish_status_sync()
+    except Exception:
+        pass
     return d
 
 
@@ -585,7 +801,7 @@ def _cancel_scheduler() -> None:
 
 
 def start_scheduler(*, dp=None, notify: Optional[NotifyFn] = None) -> Optional[asyncio.Task]:
-    global _scheduler_task, _release_watch_task, _started_at
+    global _scheduler_task, _release_watch_task, _bridge_task, _started_at
     ensure_loaded()
     bind(dp=dp, notify=notify)
     _started_at = time.time()
@@ -602,10 +818,18 @@ def start_scheduler(*, dp=None, notify: Optional[NotifyFn] = None) -> Optional[a
         )
         print("[SR] release_old watcher on (rolling handoff)", flush=True)
 
+    if _bridge_task is None or _bridge_task.done():
+        _bridge_task = asyncio.create_task(_bridge_loop(), name="soft_restart_bridge")
+        print("[SR] panel bridge on", flush=True)
+
+    # Короткий пинг создателю только после реального рестарта
+    asyncio.create_task(maybe_notify_boot(), name="soft_restart_boot_notify")
+
     if _scheduler_task and not _scheduler_task.done():
         return _scheduler_task
     if not is_enabled():
-        print("[SR] auto off — waiting for creator commands")
+        print("[SR] auto off — waiting for creator commands / panel")
+        _publish_status_sync()
         return None
     _arm_next_at(initial_delay_sec())
     _scheduler_task = asyncio.create_task(_scheduler_loop(), name="soft_restart_scheduler")
@@ -639,6 +863,11 @@ async def update_settings(**kwargs: Any) -> Dict[str, Any]:
         )
     if need_sched:
         await reschedule()
+    try:
+        await _bridge_push_config()
+        await _bridge_publish_status()
+    except Exception:
+        pass
     return ensure_loaded()
 
 
@@ -714,13 +943,8 @@ async def handle_owner_command(message: Any) -> bool:
         return True
 
     if tail in ("now", "go", "restart"):
-        # Всегда можно (создатель). Короткое подтверждение + тот же exit, что авто.
-        await _reply_secret(
-            message,
-            "<b>◈ Soft Restart</b>\n"
-            "━━━━━━━━━━━━━━━━\n"
-            "выхожу как по расписанию…",
-        )
+        # Тихо: подтверждение — одно короткое ЛС после подъёма нового процесса.
+        await _delete_trigger(message)
         await request_restart("schedule")
         return True
 

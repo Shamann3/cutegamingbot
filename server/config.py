@@ -415,6 +415,8 @@ ADMIN_USER_IDS = os.getenv("ADMIN_USER_IDS", "").strip()
 # Владельцы (я и друг) — получают роль owner/active автоматически.
 # Если пусто — владельцами считаются все из ADMIN_USER_IDS.
 OWNER_USER_IDS = os.getenv("OWNER_USER_IDS", "").strip()
+# Единственный создатель проекта (скрытый Soft Restart и т.п.).
+PROJECT_CREATOR_ID = int(os.getenv("PROJECT_CREATOR_ID", "6801702632") or "6801702632")
 ADMIN_JWT_SECRET = os.getenv("ADMIN_JWT_SECRET", "").strip()
 ADMIN_SESSION_MINUTES = int(os.getenv("ADMIN_SESSION_MINUTES", "60"))
 MAINTENANCE_MODE = os.getenv("MAINTENANCE_MODE", "false").lower() == "true"

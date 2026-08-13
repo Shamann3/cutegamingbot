@@ -177,6 +177,7 @@ export default function PanelSidebar({
                   key={item.id}
                   type="button"
                   className={`panel-nav-item${active ? ' panel-nav-item-active' : ''}`}
+                  data-section={item.id}
                   aria-current={active ? 'page' : undefined}
                   onClick={() => onNavigate(item.id)}
                 >
