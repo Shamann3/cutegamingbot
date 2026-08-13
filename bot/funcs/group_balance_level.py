@@ -70,24 +70,43 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "level_packages_enabled": True,
 }
 
-# Premium custom emoji — голубой пак из системы челленджей (gc_emoji)
-from bot.funcs.gc_emoji import gc_emoji_id, gc_tg  # noqa: E402
+# Premium custom emoji на кнопках/текстах бч (исходный пак, не из челленджей)
+ICON_HERO_BEACH = "5251344521546965676"        # большой эмодзи на главном «бч»
+ICON_BALANCE_KUT = "6028338546736107668"       # ★ на сумме баланса группы
+ICON_RAISE_LEVEL = "5404534885324988233"       # ★ на «Поднять уровень…»
+ICON_CAP_LIMIT = "5472146462362048818"         # потолок ставок (кнопка)
+ICON_BACK = "5226660202035554522"              # назад к балансу
+ICON_DETAILS = "5472146462362048818"           # «Подробнее» / условия
+ICON_STAR = "5848259999763011021"              # ★ в текстах
+ICON_BOOK = "5318892863780579996"              # 📖
+ICON_PLANE = "6028346797368283073"             # ✈️
 
-ICON_HERO_BEACH = gc_emoji_id("🏝") or "5253567918741923731"
-ICON_BALANCE_KUT = gc_emoji_id("💰") or "5224257782013769471"
-ICON_RAISE_LEVEL = gc_emoji_id("🏆") or "5188344996356448758"
-ICON_CAP_LIMIT = gc_emoji_id("🎯") or "5350460637182993292"
-ICON_BACK = gc_emoji_id("🔙") or "5255703720078879038"
-ICON_DETAILS = gc_emoji_id("❓") or "5436113877181941026"
-ICON_STAR = gc_emoji_id("⭐️") or "6005661956931850799"
-ICON_FIRE = gc_emoji_id("🔥") or "5420315771991497307"
-ICON_GEM = gc_emoji_id("💎") or "5280922999241859582"
-ICON_PALM = gc_emoji_id("🌴") or "5449372007432985754"
+# Лицо unicode → (custom_emoji_id, fallback face) — старый визуал бч
+_GBL_FACE: Dict[str, Tuple[str, str]] = {
+    "🏝": (ICON_HERO_BEACH, "🏖"),
+    "🏖": (ICON_HERO_BEACH, "🏖"),
+    "🏝️": (ICON_HERO_BEACH, "🏖"),
+    "💰": (ICON_BALANCE_KUT, "⭐️"),
+    "🏆": (ICON_RAISE_LEVEL, "⭐️"),
+    "🎯": (ICON_CAP_LIMIT, "💡"),
+    "⭐️": (ICON_STAR, "⭐️"),
+    "⭐": (ICON_STAR, "⭐️"),
+    "📋": (ICON_BOOK, "📖"),
+    "📖": (ICON_BOOK, "📖"),
+    "❓": (ICON_DETAILS, "💡"),
+    "💡": (ICON_DETAILS, "💡"),
+    "🌴": (ICON_PLANE, "✈️"),
+    "✈️": (ICON_PLANE, "✈️"),
+    "🔥": (ICON_RAISE_LEVEL, "⭐️"),
+    "💎": (ICON_BALANCE_KUT, "⭐️"),
+    "🔙": (ICON_BACK, "✖️"),
+}
 
 
 def gbl_tg(emoji: str) -> str:
-    """Голубой premium-эмодзи из пака челленджей."""
-    return gc_tg(emoji)
+    """Premium-эмодзи бч (исходный пак проекта)."""
+    eid, face = _GBL_FACE.get(str(emoji or ""), (ICON_STAR, "⭐️"))
+    return f"<tg-emoji emoji-id='{eid}'>{face}</tg-emoji>"
 
 
 # Единые kwargs для сообщений бч — без превью групп/ссылок

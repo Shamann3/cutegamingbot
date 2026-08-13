@@ -3333,7 +3333,7 @@ async def successful_payment_handler(message: Message):
             print(f"⚠️ [PAYMENT][GBL] buyer hero fail: {e!r}")
             try:
                 await message.answer(
-                    f"<tg-emoji emoji-id='6005661956931850799'>⭐</tg-emoji> "
+                    f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
                     f"<b>Уровень повышен · {stars_label(to_level)}</b>\n"
                     f"Метка уже в профиле.",
                     parse_mode="HTML",
@@ -7562,18 +7562,18 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
             try:
                 from bot.funcs.group_balance_level import gbl_tg as _gbl_tg
                 await message.answer(
-                    f"{_gbl_tg('🏆')} "
+                    f"{_gbl_tg('⭐️')} "
                     f"<b>Оплата со скидкой</b>\n"
                     f"<i>счёт готов — ниже всё простыми словами</i>\n\n"
-                    f"{_gbl_tg('🎯')} <b>Что вы покупаете</b>\n"
+                    f"{_gbl_tg('💡')} <b>Что вы покупаете</b>\n"
                     f"{explain_package_plain(pkg)}\n"
                     f"группа: {group_html_dm}\n"
                     f"<i>нажмите на название — откроется группа</i>\n\n"
-                    f"{_gbl_tg('🔥')} <b>Что изменится</b>\n"
+                    f"{_gbl_tg('⭐️')} <b>Что изменится</b>\n"
                     f"раньше: <b>{gain['old_lim']}</b>\n"
                     f"станет: <b>{gain['new_lim']}</b>{delta_line}\n"
                     f"подарок вам: метка «<b>{badge}</b>»\n\n"
-                    f"{_gbl_tg('💎')} <b>Счёт</b>\n"
+                    f"{_gbl_tg('💰')} <b>Счёт</b>\n"
                     f"{format_package_price_line(pkg)}\n"
                     f"<i>{social_proof_line()}</i>\n"
                     f"<i>куты на личный баланс не придут — вы усиливаете общую игру</i>",
