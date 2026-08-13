@@ -196,9 +196,55 @@ def _persist_store(store: Any) -> None:
 # Markup helpers
 # ══════════════════════════════════════════════════════════
 
-def markup_to_spec(markup: Any) -> Optional[List[List[Dict[str, Any]]]]:
-    """Сериализуемый снимок inline-клавиатуры (без Magic-классов)."""
+def _btn_has_web_app(btn: Any) -> bool:
+    """WebApp / Mini App кнопки — НЕ трогаем (они и так работают)."""
+    if btn is None:
+        return False
+    try:
+        if isinstance(btn, dict):
+            return bool(btn.get("web_app"))
+        return bool(getattr(btn, "web_app", None))
+    except Exception:
+        return False
+
+
+def markup_has_web_app(markup: Any) -> bool:
     if markup is None:
+        return False
+    try:
+        rows = getattr(markup, "inline_keyboard", None)
+        if rows is None and isinstance(markup, dict):
+            rows = markup.get("inline_keyboard")
+        for row in rows or []:
+            for btn in row or []:
+                if _btn_has_web_app(btn):
+                    return True
+    except Exception:
+        return False
+    return False
+
+
+def spec_has_web_app(spec: Any) -> bool:
+    if not spec:
+        return False
+    try:
+        for row in spec:
+            for btn in row or []:
+                if isinstance(btn, dict) and btn.get("web_app"):
+                    return True
+    except Exception:
+        return False
+    return False
+
+
+def markup_to_spec(markup: Any) -> Optional[List[List[Dict[str, Any]]]]:
+    """Сериализуемый снимок inline-клавиатуры (без Magic-классов).
+
+    Клавиатуры с WebApp намеренно НЕ сохраняем — raise мог бы их сломать.
+    """
+    if markup is None:
+        return None
+    if markup_has_web_app(markup):
         return None
     try:
         rows = getattr(markup, "inline_keyboard", None)
@@ -212,6 +258,8 @@ def markup_to_spec(markup: Any) -> Optional[List[List[Dict[str, Any]]]]:
             for btn in row:
                 if btn is None:
                     continue
+                if _btn_has_web_app(btn):
+                    return None  # смешанная клавиатура с WebApp — не трогаем
                 if hasattr(btn, "model_dump"):
                     d = btn.model_dump(mode="python", exclude_none=True)
                 elif isinstance(btn, dict):
@@ -228,7 +276,8 @@ def markup_to_spec(markup: Any) -> Optional[List[List[Dict[str, Any]]]]:
                         "style": getattr(btn, "style", None),
                         "icon_custom_emoji_id": getattr(btn, "icon_custom_emoji_id", None),
                     }
-                # оставляем только полезное
+                # WebApp никогда не кладём в spec
+                d.pop("web_app", None)
                 clean = {k: v for k, v in d.items() if v is not None and k != "pay"}
                 if clean.get("text") is not None or clean.get("callback_data"):
                     out_row.append(clean)
@@ -244,6 +293,9 @@ def spec_to_markup(spec: Any):
     """Собрать InlineKeyboardMarkup из spec."""
     if not spec:
         return None
+    # Не восстанавливаем клавиатуры с WebApp — Mini App не трогаем
+    if spec_has_web_app(spec):
+        return None
     try:
         from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -253,15 +305,17 @@ def spec_to_markup(spec: Any):
             for d in row:
                 if not isinstance(d, dict):
                     continue
+                if d.get("web_app"):
+                    return None
                 kwargs = {k: v for k, v in d.items() if v is not None}
-                # убрать поля, которые ломают конструктор на старых aiogram
-                for bad in ("copy_text", "login_url", "web_app", "callback_game"):
+                # WebApp / служебное — выкидываем всегда
+                kwargs.pop("web_app", None)
+                for bad in ("copy_text", "login_url", "callback_game"):
                     if bad in kwargs and not kwargs[bad]:
                         kwargs.pop(bad, None)
                 try:
                     btns.append(InlineKeyboardButton(**kwargs))
                 except Exception:
-                    # минимальный fallback
                     cd = kwargs.get("callback_data")
                     url = kwargs.get("url")
                     text = str(kwargs.get("text") or "·")
@@ -879,6 +933,10 @@ async def raise_buttons_after_restart(
 
             for _, _k, rec in items:
                 try:
+                    # WebApp / Mini App — пропуск (не edit_reply_markup)
+                    if spec_has_web_app(rec.get("markup_spec")):
+                        out["skipped"] += 1
+                        continue
                     ok = await refresh_message_markup(bot, rec=rec)
                     if ok:
                         out["raised"] += 1
@@ -986,7 +1044,9 @@ async def protect_after_start_async(
     reason: str = "boot",
     adopt: bool = True,
     revive_magic: bool = True,
-    raise_markups: bool = True,
+    # По умолчанию НЕ спамим editReplyMarkup по старым сообщениям:
+    # handlers + pkl достаточно; raise только по явному запросу / handoff.
+    raise_markups: bool = False,
 ) -> Dict[str, Any]:
     out = await asyncio.to_thread(protect_after_start, reason=reason, adopt=adopt)
 

@@ -30,7 +30,7 @@ async def protect_after_start_async(
     revive_magic: bool = True,
     dp: Any = None,
     bot: Any = None,
-    raise_markups: bool = True,
+    raise_markups: bool = False,
 ) -> Dict[str, Any]:
     from bot.runtime.button_lifecycle import protect_after_start_async as _p
 

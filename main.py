@@ -25846,7 +25846,8 @@ async def gift_reset_desc_callback(c: types.CallbackQuery):
 
     await c.answer("Описание сброшено")
 @dp.callback_query(_cb_is_speedconc_request)
-async def send_request_callback(callback_query: types.CallbackQuery):
+async def speedconc_request_callback(callback_query: types.CallbackQuery):
+    """Вывод «От бота» / speedconc / spd: (имя отдельно от prep send_request_callback)."""
     user_id = callback_query.from_user.id
     raw_data = str(getattr(callback_query, "data", "") or "")
 
@@ -39415,7 +39416,8 @@ async def on_bot_started() -> None:
             revive_magic=True,
             dp=dp,
             bot=bot1,
-            raise_markups=True,
+            # не массово editReplyMarkup — WebApp не трогаем; хватает handlers+pkl
+            raise_markups=False,
         )
         print(f"✅ [BLC] boot: {boot_out}")
     except Exception as e_mag:
@@ -40183,7 +40185,8 @@ async def botmain():
                     revive_magic=True,
                     dp=dp,
                     bot=bot1,
-                    raise_markups=True,
+                    # WebApp не перезапускаем/не перерисовываем массово
+                    raise_markups=False,
                 )
                 print(f"[MAIN][SR][BLC] after handoff: {adopt}")
             except Exception as e_adopt:
