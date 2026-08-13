@@ -718,7 +718,7 @@ async def show_balance_details(callback_query: CallbackQuery):
         )
 
         try:
-            await callback_query.answer("Собираем пульс группы…")
+            await callback_query.answer("Считаем показатели…")
         except Exception:
             pass
         visit_n = bump_gbl_visit(user_id, chat_id)
@@ -744,7 +744,7 @@ async def show_balance_details(callback_query: CallbackQuery):
                 raise
     else:
         await callback_query.answer(
-            "Картина не собралась. Вернитесь к кассе и откройте снова.",
+            "Не удалось открыть обзор. Вернитесь к балансу.",
             show_alert=True,
         )
 
@@ -808,19 +808,19 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
     cfg = get_settings()
     if not cfg.get("enabled", True):
         await callback_query.answer(
-            "Система уровней на паузе. Загляните чуть позже — потолок ещё вернётся.",
+            "Уровни временно недоступны. Загляните позже.",
             show_alert=True,
         )
         return
     if get_chat_level(chat_id) >= 5:
         await callback_query.answer(
-            "Потолок уже снят до вершины — этому чату шире некуда.",
+            "Группа уже на максимальном уровне.",
             show_alert=True,
         )
         return
 
     try:
-        await callback_query.answer("Готовим решение по потолку…")
+        await callback_query.answer("Готовим экран…")
     except Exception:
         pass
     visit_n = bump_gbl_visit(user_id, chat_id)
@@ -888,7 +888,7 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
     cfg = get_settings()
     if not cfg.get("enabled", True):
         await callback_query.answer(
-            "Система уровней на паузе. Загляните чуть позже — потолок ещё вернётся.",
+            "Уровни временно недоступны. Загляните позже.",
             show_alert=True,
         )
         return
@@ -897,13 +897,13 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
     nxt = next_level_price(chat_id, cfg)
     if not nxt or nxt[0] != to_level or int(nxt[1]) != int(price):
         await callback_query.answer(
-            "Шаг уже неактуален. Вернитесь к кассе и откройте решение снова.",
+            "Шаг устарел. Откройте повышение ещё раз.",
             show_alert=True,
         )
         return
 
     try:
-        await callback_query.answer("Открываем финишную прямую…")
+        await callback_query.answer("Готовим оплату…")
     except Exception:
         pass
 
@@ -943,7 +943,7 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
             print(f"[GBL] pay bridge edit error: {e!r}")
             try:
                 await callback_query.answer(
-                    "Финишная прямая не открылась. Нажмите ещё раз.",
+                    "Не удалось открыть оплату. Нажмите ещё раз.",
                     show_alert=True,
                 )
             except Exception:

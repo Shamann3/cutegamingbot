@@ -3287,14 +3287,11 @@ async def successful_payment_handler(message: Message):
         try:
             await message.answer(
                 f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
-                f"<b>Потолок снят · {stars_label(to_level)}</b>\n\n"
+                f"<b>Уровень повышен</b>\n\n"
                 f"<blockquote>"
-                f"узкий лимит для чата — в прошлом.\n"
-                f"метка уже в достижениях профиля · группа уже играет шире."
-                f"</blockquote>\n"
-                f"<blockquote>"
-                f"<b>Что дальше?</b>\n"
-                f"вернитесь в группу — или напишите <b>бч</b>, чтобы увидеть новый пульс."
+                f"<b>Готово</b>\n"
+                f"{stars_label(to_level)} · метка в профиле\n"
+                f"<i>напишите бч в группе — чтобы увидеть новый потолок</i>"
                 f"</blockquote>",
                 parse_mode="HTML",
             )
@@ -7461,17 +7458,13 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
             try:
                 await message.answer(
                     f"<tg-emoji emoji-id='5404534885324988233'>⭐️</tg-emoji> "
-                    f"<b>Оплата · счёт уже у вас</b>\n"
-                    f"<i>финишная прямая — осталось подтвердить</i>\n\n"
+                    f"<b>Оплата</b>\n"
+                    f"<i>счёт готов</i>\n\n"
                     f"<blockquote>"
-                    f"<b>уровень {to_level}</b> · вклад <b>{price} звёзд</b>\n"
-                    f"метка «<b>{badge}</b>» · потолок вырастет <b>для всего чата</b>\n"
-                    f"<tg-spoiler>куты на личный баланс не начисляются — вы снимаете лимит всем</tg-spoiler>"
-                    f"</blockquote>\n"
-                    f"<blockquote>"
-                    f"<b>Анти-рекомендация</b>\n"
-                    f"не оплачивайте, если ждали куты себе — их здесь нет.\n"
-                    f"<b>Что дальше?</b> оплатите ниже — и узкий потолок исчезнет в группе."
+                    f"<b>Условия</b>\n"
+                    f"уровень <b>{to_level}</b> · вклад <b>{price} звёзд</b>\n"
+                    f"метка «<b>{badge}</b>» · лимит для всего чата\n"
+                    f"<i>личные куты не начисляются</i>"
                     f"</blockquote>",
                     parse_mode="HTML",
                 )
@@ -7498,8 +7491,8 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
                 print(f"❌ [START][GBL] invoice error: {e!r}")
                 return await message.answer(
                     "<tg-emoji emoji-id='5420323339723881652'>⚠️</tg-emoji> "
-                    "<b>Счёт не дошёл — почти готово сорвалось.</b>\n"
-                    "Напишите /start и откройте зелёную кнопку из группы ещё раз.",
+                    "<b>Не удалось отправить счёт.</b>\n"
+                    "Напишите /start и откройте оплату из группы ещё раз.",
                     parse_mode="HTML",
                 )
         # ---------- Очистка pending_context (если был) ----------

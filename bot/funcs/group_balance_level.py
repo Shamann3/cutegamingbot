@@ -57,7 +57,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "5": "Легенда баланса",
     },
     # Тексты / UX
-    "raise_button_text": "Снять потолок ставок для всех",
+    "raise_button_text": "Открыть ставки шире",
     "system_title": "Баланс группы",
 }
 
@@ -205,23 +205,23 @@ def bump_gbl_visit(user_id: int, chat_id: int = 0) -> int:
 
 
 def visit_hook_line(visit_n: int) -> str:
-    """Персонализация по действию: 1-й визит ≠ 5-й."""
+    """Короткая персонализация по визиту — без сленга."""
     n = max(1, int(visit_n or 1))
     if n <= 1:
-        return "вы впервые у кассы чата — дальше <b>~40 секунд</b> ясности"
+        return "первый просмотр"
     if n <= 3:
-        return "вы снова здесь · значит, потолок уже касался вашей ставки"
+        return "вы уже смотрели этот экран"
     if n <= 7:
-        return "с возвращением · пульс группы мог измениться с прошлого раза"
-    return "вы уже в теме · проверьте, не вырос ли умный потолок"
+        return "с возвращением"
+    return "показатели могли обновиться"
 
 
 def journey_step_label(step: str) -> str:
-    """Прогресс-нарратив вместо «шаг 2 из 4»."""
+    """Короткие названия этапов воронки."""
     labels = {
-        "meet": "Знакомство",
-        "decide": "Решение",
-        "finish": "Финишная прямая",
+        "meet": "Обзор",
+        "decide": "Повышение",
+        "finish": "Подтверждение",
         "pay": "Оплата",
     }
     return labels.get(step, step)
@@ -467,7 +467,7 @@ def format_achievements_blockquote(user_id: int) -> str:
     return (
         f"<blockquote>"
         f"<tg-emoji emoji-id='5318892863780579996'>📖</tg-emoji> "
-        f"<b>Вы снимали потолки у групп</b>\n{body}"
+        f"<b>Уровни групп</b>\n{body}"
         f"</blockquote>"
     )
 
@@ -531,7 +531,7 @@ def _next_level_teaser(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Op
 
 
 def raise_cta_label(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Optional[str]:
-    """Навигация-предсказание: что получит после клика, не «перейти»."""
+    """Кнопка повышения — результат после нажатия."""
     cfg = cfg or get_settings()
     if not cfg.get("enabled", True):
         return None
@@ -540,15 +540,15 @@ def raise_cta_label(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Optio
         return None
     nxt = next_level_price(chat_id, cfg)
     if not nxt:
-        return str(cfg.get("raise_button_text") or "Снять потолок ставок для всех")
+        return str(cfg.get("raise_button_text") or "Открыть ставки шире")
     to_level, _price = nxt
     caps = cfg.get("stake_caps") or {}
     if to_level >= 5:
-        return "Забыть про потолок · открыть вершину"
+        return "Открыть вершину · без лимита"
     cap = caps.get(str(to_level))
     if cap is not None:
-        return f"Снять потолок · ставки до {cap} для всех"
-    return str(cfg.get("raise_button_text") or "Снять потолок ставок для всех")
+        return f"Открыть ставки до {cap}"
+    return str(cfg.get("raise_button_text") or "Открыть ставки шире")
 
 
 def _ru_users_word(n: int) -> str:
@@ -610,16 +610,16 @@ def _society_pulse_lines(
         donor_bit = "рост через общение"
 
     if compact:
-        bits = [f"группа <b>{pulse}</b>", f"бонус к потолку <b>+{pct:g}%</b> из {max_pct}%"]
+        bits = [f"<b>{pulse}</b>", f"<b>+{pct:g}%</b> / {max_pct}%"]
         if writers > 0 and members > 0:
-            bits.append(f"писали <b>{writers}</b> из ~{members_fmt}")
+            bits.append(f"<b>{writers}</b> из ~{members_fmt}")
         elif writers > 0:
             bits.append(f"писали <b>{writers}</b>")
         if donators > 0:
-            bits.append(f"<b>{donators}</b> {_ru_donors_word(donators)} в расчёте")
+            bits.append(f"<b>{donators}</b> {_ru_donors_word(donators)}")
         else:
             bits.append(donor_bit)
-        return "<b>Пульс</b>\n" + " · ".join(bits)
+        return " · ".join(bits)
 
     lines = [
         "<b>Пульс группы</b>",
@@ -659,7 +659,7 @@ def build_details_html(
     cfg: Optional[Dict[str, Any]] = None,
     visit_n: int = 1,
 ) -> str:
-    """«Подробнее»: маркетинг + ясность за ~40 секунд."""
+    """Короткий обзор: главы в цитатах, минимум текста."""
     cfg = cfg or get_settings()
     level = get_chat_level(chat_id)
     bal = max(0, int(float(chat_balance or 0)))
@@ -679,7 +679,6 @@ def build_details_html(
     p0 = _as_int(cfg.get("level_0_cap"), 30)
     teaser = _next_level_teaser(chat_id, cfg)
     hook = visit_hook_line(visit_n)
-    meet = journey_step_label("meet")
 
     def _cap(n: int) -> str:
         if n >= 5:
@@ -688,139 +687,84 @@ def build_details_html(
         return str(v) if v is not None else "—"
 
     if cap is None:
-        lim_line = "ставки <b>без лимита уровня</b> — узкий потолок уже в прошлом"
-        how_line = ""
+        level_body = f"{stars_label(level)}\nставки <b>без лимита уровня</b>"
     else:
-        lim_line = f"в обычных играх ставки <b>до {cap} кут</b>"
+        level_body = f"{stars_label(level)}\nставки <b>до {cap} кут</b>"
         if atmo_on and atmo_now > 0.05 and base_cap is not None:
-            how_line = (
-                f"<blockquote>"
-                f"база уровня <b>{level}</b> — <b>{base_cap}</b> · "
-                f"живая группа <b>+{atmo_now:g}%</b> → итог <b>{cap}</b>\n"
-                f"<tg-spoiler>как лифт: база этажа + бонус от «людей в кабине»</tg-spoiler>"
-                f"</blockquote>\n"
+            level_body += (
+                f"\nбаза <b>{base_cap}</b> · живость <b>+{atmo_now:g}%</b> → <b>{cap}</b>"
             )
-        elif base_cap is not None:
-            how_line = (
-                f"<blockquote>"
-                f"базовый потолок уровня <b>{level}</b> · "
-                f"<i>пока без бонуса живости</i>"
-                f"</blockquote>\n"
-            )
-        else:
-            how_line = ""
+        level_body += f"\nкомфорт ≈ <b>{rec}</b> кут"
 
     if atmo_on:
         pulse = _society_pulse_lines(
             report if report else {"pct": atmo_now}, cfg=cfg, compact=True,
         )
-        smart = (
-            f"<blockquote>"
-            f"<b>Как считается бонус</b>\n"
-            f"Чем активнее чат и заметнее поддержка донатерами "
-            f"(считаем тех, кто <b>пишет</b>), тем выше потолок — "
-            f"до <b>+{atmo_max}%</b> к базе.\n"
-            f"<i>Пример:</i> база 100 и +20% → ставки до <b>120</b> кут."
-            f"</blockquote>"
+        bonus_line = (
+            f"активность и поддержка донатеров "
+            f"(кто <b>пишет</b> в группе) · до <b>+{atmo_max}%</b>"
         )
     else:
-        pulse = "<b>Пульс</b>\nбонус живой группы сейчас выключен"
-        smart = (
-            f"<blockquote>"
-            f"<b>Как считается бонус</b>\n"
-            f"Бонус от активности чата сейчас отключён."
-            f"</blockquote>"
-        )
+        pulse = "бонус активности выключен"
+        bonus_line = "бонус активности сейчас выключен"
 
     if level >= 5:
-        finale = (
-            f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
-            f"<b>Вершина открыта</b>\n"
-            f"{stars_label(5)} · «старый узкий потолок» сюда уже не дотягивается"
-        )
-        swiss = (
+        next_block = (
             f"<blockquote>"
-            f"<b>Что дальше?</b>\n"
-            f"останьтесь у кассы — или вернитесь играть на широком лимите"
+            f"<b>Следующий шаг</b>\n"
+            f"{stars_label(5)} · выше поднимать некуда"
             f"</blockquote>"
         )
     elif teaser:
-        finale = (
-            f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
-            f"<b>Как снять потолок</b>\n"
+        next_block = (
+            f"<blockquote>"
+            f"<b>Следующий шаг</b>\n"
             f"{teaser}\n"
-            f"<blockquote>"
-            f"платите <b>вы</b> — лимит растёт <b>для всех</b> · метка остаётся <b>вам</b>\n"
-            f"<tg-spoiler>звёзды ≠ личные куты — вы усиливаете общую игру</tg-spoiler>"
-            f"</blockquote>"
-        )
-        swiss = (
-            f"<blockquote>"
-            f"<b>Что дальше?</b>\n"
-            f"хотите <b>сразу шире ставки</b> — зелёная кнопка ниже.\n"
-            f"хотите только понять кассу — вернитесь к балансу."
+            f"<i>платите вы — лимит растёт для всех</i>"
             f"</blockquote>"
         )
     else:
-        finale = (
-            f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
-            f"<b>Следующий шаг скоро</b>\n"
-            f"загляните чуть позже — потолок ещё готовится"
-        )
-        swiss = (
+        next_block = (
             f"<blockquote>"
-            f"<b>Что дальше?</b>\n"
-            f"вернитесь к кассе и следите за пульсом группы"
+            f"<b>Следующий шаг</b>\n"
+            f"скоро будет доступен"
             f"</blockquote>"
         )
 
     return (
         f"<tg-emoji emoji-id='5472146462362048818'>💡</tg-emoji> "
-        f"<b>Баланс группы — коротко</b>\n"
-        f"<i>{meet} · прочитаете за ~40 секунд</i>\n\n"
+        f"<b>Баланс группы</b>\n"
+        f"<i>{journey_step_label('meet')} · ~20 секунд · {hook}</i>\n\n"
         f"<blockquote>"
-        f"<b>Вы сейчас в чате</b> и либо только смотрите кассу — "
-        f"либо уже ловили отказ «ставка слишком большая».\n"
-        f"<i>{hook}</i>"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
+        f"<b>Касса</b>\n"
         f"<tg-emoji emoji-id='{ICON_BALANCE_KUT}'>⭐️</tg-emoji> "
-        f"на балансе <b>{bal_fmt} кут</b>\n"
-        f"<i>это общий сейф чата: выигрыши — отсюда, проигрыши — сюда</i>"
-        f"</blockquote>\n\n"
-        f"<tg-emoji emoji-id='5267229058659264159'>🟢</tg-emoji> "
-        f"<b>Уровень {level}</b> · {stars_label(level)}\n"
-        f"{lim_line}\n"
-        f"{how_line}"
-        f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji> "
-        f"комфортная ставка ≈ <b>{rec}</b> кут "
-        f"<i>(ориентир, не обязанность)</i>\n\n"
-        f"<blockquote>{pulse}</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Злодей — «старый узкий потолок»</b>\n"
-        f"ставка готова · настроение есть · а лимит душит весь чат.\n"
-        f"<b>Герой — умный баланс группы:</b> уровень + живость чата "
-        f"открывают пространство <b>всем</b>, не только вам."
+        f"<b>{bal_fmt} кут</b>\n"
+        f"<i>выигрыши — отсюда · проигрыши — сюда</i>"
         f"</blockquote>\n\n"
         f"<blockquote>"
-        f"<b>Зачем это новичку</b>\n"
-        f"• <b>баланс</b> — сколько кут у чата на игры\n"
-        f"• <b>уровень</b> — какой базовый потолок открыт всем\n"
-        f"• <b>живая группа</b> — активность может чуть поднять потолок\n"
-        f"• <b>вклад звёздами</b> — выше лимит + метка вам"
+        f"<b>Уровень {level}</b>\n"
+        f"{level_body}"
         f"</blockquote>\n\n"
         f"<blockquote>"
-        f"<b>Анти-рекомендация</b>\n"
-        f"не поднимайте уровень, если хотите куты <b>себе на баланс</b> — "
-        f"здесь усиливают общую игру.\n"
-        f"бонус живости <b>не меняет</b>: сумму на кассе · личные куты · "
-        f"бесплатные задания"
+        f"<b>Пульс</b>\n"
+        f"{pulse}"
         f"</blockquote>\n\n"
-        f"{smart}\n\n"
-        f"{finale}\n\n"
-        f"{swiss}\n\n"
         f"<blockquote>"
-        f"<b>Базовые потолки</b>\n"
+        f"<b>Смысл</b>\n"
+        f"• <b>касса</b> — запас чата на игры\n"
+        f"• <b>уровень</b> — базовый потолок всем\n"
+        f"• <b>живость</b> — может поднять потолок\n"
+        f"• <b>вклад</b> — выше лимит + метка вам"
+        f"</blockquote>\n\n"
+        f"<blockquote>"
+        f"<b>Важно</b>\n"
+        f"вклад не даёт личные куты\n"
+        f"бонус не меняет кассу и бесплатные задания\n"
+        f"<i>{bonus_line}</i>"
+        f"</blockquote>\n\n"
+        f"{next_block}\n\n"
+        f"<blockquote>"
+        f"<b>Потолки</b>\n"
         f"<code>"
         f"0→{p0} · 1→{_cap(1)} · 2→{_cap(2)} · 3→{_cap(3)} · 4→{_cap(4)} · 5→{_cap(5)}"
         f"</code>"
@@ -829,7 +773,7 @@ def build_details_html(
 
 
 def build_details_keyboard(*, chat_id: int, cfg: Optional[Dict[str, Any]] = None):
-    """Клавиатура экрана условий: путь к повышению + назад."""
+    """Клавиатура обзора: повышение + назад."""
     from aiogram.types import InlineKeyboardMarkup
 
     cfg = cfg or get_settings()
@@ -843,7 +787,7 @@ def build_details_keyboard(*, chat_id: int, cfg: Optional[Dict[str, Any]] = None
             icon_custom_emoji_id=ICON_RAISE_LEVEL,
         )])
     rows.append([_btn(
-        text="Вернуться к кассе группы",
+        text="К балансу группы",
         callback_data="back_to_balance",
         style="default",
         icon_custom_emoji_id=ICON_BACK,
@@ -883,7 +827,7 @@ def build_main_keyboard(
     atmosphere_pct: float = 0.0,
     cfg: Optional[Dict[str, Any]] = None,
 ):
-    """Касса → снять потолок → понять систему (навигация-предсказание)."""
+    """Касса → повышение → обзор."""
     from aiogram.types import InlineKeyboardMarkup
 
     cfg = cfg or get_settings()
@@ -896,7 +840,7 @@ def build_main_keyboard(
 
     rows = [
         [_btn(
-            text=f"{bal_fmt} кут · пульс кассы",
+            text=f"{bal_fmt} кут",
             callback_data="group_balance_overview",
             style=style,
             icon_custom_emoji_id=ICON_BALANCE_KUT,
@@ -910,7 +854,7 @@ def build_main_keyboard(
             icon_custom_emoji_id=ICON_RAISE_LEVEL,
         )])
     rows.append([_btn(
-        text="Понять систему за 40 сек",
+        text="Как это устроено",
         callback_data=f"group_balance_details:{bal}",
         style="default",
         icon_custom_emoji_id=ICON_DETAILS,
@@ -928,7 +872,7 @@ def build_raise_keyboard(*, chat_id: int, cfg: Optional[Dict[str, Any]] = None):
         to_level, price = nxt
         caps = cfg.get("stake_caps") or {}
         if to_level >= 5:
-            pay_txt = f"Забыть про потолок · {price} звёзд"
+            pay_txt = f"Открыть вершину · {price} звёзд"
         else:
             pay_txt = (
                 f"Открыть ставки до {caps.get(str(to_level), '?')} · {price} звёзд"
@@ -940,7 +884,7 @@ def build_raise_keyboard(*, chat_id: int, cfg: Optional[Dict[str, Any]] = None):
             icon_custom_emoji_id=ICON_RAISE_LEVEL,
         )])
     rows.append([_btn(
-        text="Вернуться к кассе группы",
+        text="К балансу группы",
         callback_data="back_to_balance",
         style="default",
         icon_custom_emoji_id=ICON_BACK,
@@ -955,67 +899,49 @@ def build_raise_screen_html(
     badge_title: Optional[str] = None,
     visit_n: int = 1,
 ) -> str:
-    """Экран апгрейда: инверсия боли + решение + анти-рекомендация."""
+    """Экран повышения — коротко, главами."""
     cfg = cfg or get_settings()
     cur = get_chat_level(chat_id)
     nxt = next_level_price(chat_id, cfg)
     decide = journey_step_label("decide")
+    hook = visit_hook_line(visit_n)
     if not nxt:
         return (
             f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
-            f"<b>Вершина уже ваша</b>\n"
-            f"<i>{decide} · потолок больше не душит чат</i>\n\n"
+            f"<b>Вершина</b>\n"
+            f"<i>{decide} · {hook}</i>\n\n"
             f"<blockquote>"
-            f"{stars_label(5)} · ставки <b>без лимита уровня</b>\n"
-            f"«старый узкий потолок» здесь уже не живёт"
+            f"<b>Статус</b>\n"
+            f"{stars_label(5)} · ставки <b>без лимита уровня</b>"
             f"</blockquote>"
         )
     to_level, price = nxt
     caps = cfg.get("stake_caps") or {}
-    cur_base = stake_cap_for_level(cur, cfg)
     if to_level >= 5:
         new_lim = "ставки <b>без лимита уровня</b>"
-        pain_gone = "забыть про отказ «ставка слишком большая» навсегда"
     else:
         new_lim = f"ставки <b>до {caps.get(str(to_level), '?')} кут</b>"
-        from_bit = f"<b>{cur_base}</b>" if cur_base is not None else "текущего"
-        pain_gone = (
-            f"забыть про потолок {from_bit} и открыть пространство до "
-            f"<b>{caps.get(str(to_level), '?')}</b>"
-        )
     title = (badge_title or "").strip() or badge_title_for_level(to_level, cfg)
-    hook = visit_hook_line(visit_n)
     return (
         f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
-        f"<b>Снимите потолок со всей группы</b>\n"
-        f"<i>{decide} · {stars_label(cur)} → {stars_label(to_level)}</i>\n\n"
+        f"<b>Повышение уровня</b>\n"
+        f"<i>{decide} · {stars_label(cur)} → {stars_label(to_level)} · {hook}</i>\n\n"
         f"<blockquote>"
-        f"<b>Боль, которая исчезнет</b>\n"
-        f"{pain_gone}.\n"
-        f"<i>{hook}</i>"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
+        f"<b>Изменение</b>\n"
         f"<b>Сейчас</b> · уровень <b>{cur}</b>\n"
         f"<b>Станет</b> · уровень <b>{to_level}</b> · {new_lim}"
         f"</blockquote>\n\n"
         f"<blockquote>"
-        f"<b>Злодей</b> — узкий лимит, который режет игру в самый момент ставки.\n"
-        f"<b>Вы</b> — человек, который снимает его <b>для всех</b> и оставляет метку себе."
+        f"<b>Вы получаете</b>\n"
+        f"• новый потолок <b>для всех</b>\n"
+        f"• анонс в группе\n"
+        f"• метку «<b>{title}</b>»"
         f"</blockquote>\n\n"
-        f"<tg-emoji emoji-id='5318892863780579996'>🎩</tg-emoji> "
-        f"вам — метка «<b>{title}</b>» в профиле\n"
+        f"<blockquote>"
+        f"<b>Вклад</b>\n"
         f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji> "
-        f"вклад шага: <b>{price} звёзд</b>\n"
-        f"<blockquote>"
-        f"<b>Анти-рекомендация</b>\n"
-        f"не берите этот шаг, если ждёте куты на личный баланс — "
-        f"здесь усиливают общую игру.\n"
-        f"<tg-spoiler>анонс в чат + метка в профиле · личные куты не начисляются</tg-spoiler>"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Что дальше?</b>\n"
-        f"готовы снять потолок — зелёная кнопка.\n"
-        f"ещё думаете — вернитесь к кассе."
+        f"<b>{price} звёзд</b>\n"
+        f"<i>личные куты не начисляются</i>"
         f"</blockquote>"
     )
 
@@ -1032,44 +958,29 @@ def build_pay_dm_bridge_html(
     price: int,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Финишная прямая: один тап в личку — без лишних мыслей."""
+    """Подтверждение: одно нажатие — личные сообщения и счёт."""
     cfg = cfg or get_settings()
     del chat_id
     caps = cfg.get("stake_caps") or {}
     finish = journey_step_label("finish")
     if to_level >= 5:
         benefit = "ставки <b>без лимита уровня</b>"
-        outcome = f"забыть про потолок · <b>{price} звёзд</b>"
     else:
         benefit = f"ставки <b>до {caps.get(str(to_level), '?')} кут</b>"
-        outcome = (
-            f"открыть ставки до <b>{caps.get(str(to_level), '?')}</b> · "
-            f"<b>{price} звёзд</b>"
-        )
     title = badge_title_for_level(to_level, cfg)
     return (
         f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
         f"<b>{finish}</b>\n"
-        f"<i>вы уже решили — осталось только подтвердить</i>\n\n"
+        f"<i>осталось подтвердить оплату</i>\n\n"
         f"<blockquote>"
-        f"<b>уровень {to_level}</b> · {benefit}\n"
+        f"<b>Условия</b>\n"
+        f"уровень <b>{to_level}</b> · {benefit}\n"
         f"вклад <b>{price} звёзд</b> · метка «<b>{title}</b>»"
         f"</blockquote>\n\n"
         f"<blockquote>"
-        f"<b>Что произойдёт после клика</b>\n"
-        f"откроется личка с ботом → сразу придёт счёт → "
-        f"лимит вырастет <b>для всего чата</b>.\n"
-        f"<tg-spoiler>как пропуск в широкую комнату: платите вы — ходят все</tg-spoiler>"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Анти-рекомендация</b>\n"
-        f"не жмите дальше, если хотите куты себе — их здесь нет.\n"
-        f"<i>{outcome}</i>"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Что дальше?</b>\n"
-        f"готовы — зелёная кнопка в личку.\n"
-        f"передумали — вернитесь к решению."
+        f"<b>После нажатия</b>\n"
+        f"откроются личные сообщения с ботом — счёт придёт сразу\n"
+        f"<i>лимит вырастет для всего чата · личные куты не начисляются</i>"
         f"</blockquote>"
     )
 
@@ -1082,7 +993,7 @@ def build_pay_dm_bridge_keyboard(
     price: int,
     cfg: Optional[Dict[str, Any]] = None,
 ):
-    """URL в ЛС с deep-link — CTA про результат после клика."""
+    """URL в ЛС — тот же результат, что на экране повышения."""
     from aiogram.types import InlineKeyboardMarkup
 
     cfg = cfg or get_settings()
@@ -1090,19 +1001,13 @@ def build_pay_dm_bridge_keyboard(
     uname = (bot_username or "").lstrip("@").strip() or "CuteGamingBot"
     payload = gbl_start_payload(chat_id, to_level, price)
     if to_level >= 5:
-        pay_txt = f"Получить счёт · забыть про потолок · {price}⭐"
+        pay_txt = f"Оплатить в сообщениях · {price} звёзд"
     else:
         pay_txt = (
-            f"Получить счёт · ставки до {caps.get(str(to_level), '?')} · {price}⭐"
+            f"Оплатить · до {caps.get(str(to_level), '?')} · {price} звёзд"
         )
-    # Telegram limit ~64 символа на кнопку
     if len(pay_txt) > 64:
-        if to_level >= 5:
-            pay_txt = f"Получить счёт · {price} звёзд"
-        else:
-            pay_txt = (
-                f"Получить счёт · до {caps.get(str(to_level), '?')} · {price}⭐"
-            )
+        pay_txt = f"Оплатить в сообщениях · {price} звёзд"
     rows = [
         [_btn(
             text=pay_txt,
@@ -1111,7 +1016,7 @@ def build_pay_dm_bridge_keyboard(
             icon_custom_emoji_id=ICON_RAISE_LEVEL,
         )],
         [_btn(
-            text="Вернуться к решению",
+            text="Назад",
             callback_data="gbl_raise",
             style="default",
             icon_custom_emoji_id=ICON_BACK,
@@ -1234,26 +1139,25 @@ async def reject_if_bet_over_group_level(
         if int(bet) <= int(cap):
             return False
         level = get_chat_level(chat_id)
-        cta = raise_cta_label(chat_id, cfg) or "Снять потолок ставок для всех"
+        cta = raise_cta_label(chat_id, cfg) or "Открыть ставки шире"
         text = (
             f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
-            f"<b>Потолок остановил ставку</b>\n\n"
+            f"<b>Лимит ставки</b>\n\n"
             f"<blockquote>"
-            f"вы уже готовы играть — а «старый узкий лимит» режет момент.\n"
-            f"сейчас в чате ставки <b>до {cap} кут</b> · "
-            f"уровень {stars_label(level)}"
-            f"</blockquote>\n"
+            f"<b>Сейчас</b>\n"
+            f"ставки <b>до {cap} кут</b> · {stars_label(level)}"
+            f"</blockquote>\n\n"
             f"<blockquote>"
-            f"<b>Что дальше?</b>\n"
-            f"напишите <b>бч</b> → «{cta}» — и откройте шире <b>для всех</b>.\n"
-            f"<tg-spoiler>бесплатные задания этот потолок не трогает</tg-spoiler>"
+            f"<b>Как открыть шире</b>\n"
+            f"напишите <b>бч</b> → «{cta}»\n"
+            f"<tg-spoiler>бесплатные задания этот лимит не затрагивает</tg-spoiler>"
             f"</blockquote>"
         )
         try:
             await message.reply(text, parse_mode="HTML")
         except Exception:
             await message.reply(
-                f"⭐ Потолок: ставки до {cap} кут.\n"
+                f"⭐ Сейчас ставки до {cap} кут.\n"
                 f"Напишите «бч» → «{cta}».",
             )
         return True
@@ -1270,7 +1174,7 @@ def build_overview_alert(
     cfg: Optional[Dict[str, Any]] = None,
     visit_n: int = 1,
 ) -> str:
-    """Короткий alert по кассе — state + якорь в будущем (лимит TG ~200)."""
+    """Короткий alert по кассе (лимит Telegram ~200)."""
     cfg = cfg or get_settings()
     level = get_chat_level(chat_id)
     rec = recommended_play_bet(
@@ -1279,12 +1183,12 @@ def build_overview_alert(
     cap = effective_stake_cap(chat_id, atmosphere_pct=atmosphere_pct, cfg=cfg)
     lim = "без лимита" if cap is None else f"до {cap}"
     atmo = float(atmosphere_pct or 0)
-    head = "Касса на пульсе" if visit_n <= 1 else "С возвращением к кассе"
+    head = "Баланс группы" if visit_n <= 1 else "С возвращением"
     line = (
         f"{head}\n"
         f"{stars_label(level)} · ставки {lim}"
         + (f" · +{atmo:g}%" if atmo > 0.05 else "")
-        + f"\nКомфорт ≈ {rec} кут"
+        + f"\nКомфорт ≈ {rec}"
     )
     return line[:190]
 
@@ -1299,29 +1203,22 @@ def build_gift_announcement_html(
 ) -> str:
     cfg = get_settings()
     cap = effective_stake_cap(chat_id, atmosphere_pct=atmosphere_pct, cfg=cfg)
-    if to_level >= 5:
+    if to_level >= 5 or cap is None:
         lim = "без лимита уровня"
-        pain = "узкий потолок для этого чата — в прошлом"
-    elif cap is None:
-        lim = "без лимита уровня"
-        pain = "узкий потолок для этого чата — в прошлом"
     else:
         lim = f"до {cap} кут"
-        pain = f"ставки шире: теперь <b>{lim}</b> для всех"
     title = badge_title_for_level(to_level, cfg)
     return (
         f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
-        f"<b>Потолок снят</b>\n\n"
-        f"{sponsor_name_html} усиливает чат до "
-        f"<b>{stars_label(to_level)}</b>\n"
-        f"{pain}\n\n"
+        f"<b>Новый уровень группы</b>\n\n"
         f"<blockquote>"
-        f"<b>{title}</b> · вклад <b>{int(price_stars)} звёзд</b>\n"
-        f"платит один — играют все.\n"
-        f"<i>как расширили дверь в общей комнате: войти может каждый</i>"
-        f"</blockquote>\n"
+        f"<b>Статус</b>\n"
+        f"{sponsor_name_html} · {stars_label(to_level)}\n"
+        f"ставки <b>{lim}</b>"
+        f"</blockquote>\n\n"
         f"<blockquote>"
-        f"<b>Что дальше?</b>\n"
-        f"напишите <b>бч</b> — увидите новый потолок и пульс группы"
+        f"<b>Вклад</b>\n"
+        f"«<b>{title}</b>» · <b>{int(price_stars)} звёзд</b>\n"
+        f"<i>напишите бч — чтобы увидеть новый потолок</i>"
         f"</blockquote>"
     )

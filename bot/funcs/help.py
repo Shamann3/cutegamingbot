@@ -438,13 +438,13 @@ ffunc = f'''
 <blockquote><b><i>+задержка (число)</i></b></blockquote>
 <blockquote><b><i>-задержка (число)</i></b></blockquote>
 
-<tg-emoji emoji-id='5251344521546965676'>🏖</tg-emoji> <b><i>Узнать кассу и умный потолок ставок</i></b>
+<tg-emoji emoji-id='5251344521546965676'>🏖</tg-emoji> <b><i>Баланс группы</i></b>
 <blockquote><code>Бч</code></blockquote>
 
-<tg-emoji emoji-id='5472178859300363509'>🏖</tg-emoji> <b><i>Пополнить общую кассу чата</i></b>
+<tg-emoji emoji-id='5472178859300363509'>🏖</tg-emoji> <b><i>Пополнить баланс группы</i></b>
 <blockquote><code>Положить [сумма пополнения]</code></blockquote>
 
-<tg-emoji emoji-id='5199790590279033017'>🏖</tg-emoji> <b><i>Снять куты с кассы группы</i></b>
+<tg-emoji emoji-id='5199790590279033017'>🏖</tg-emoji> <b><i>Снять с баланса группы</i></b>
 <blockquote><code>Снять [сумма снятия]</code></blockquote>
 '''
 
