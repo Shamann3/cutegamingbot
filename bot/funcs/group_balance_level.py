@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import os
 import threading
 import time
@@ -59,6 +60,13 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     # Тексты / UX
     "raise_button_text": "Открыть ставки шире",
     "system_title": "Баланс группы",
+    # Визуальная скидка: list > pay, к оплате всегда pay (= нужда проекта)
+    # Проект не уходит в минус: invoice = sum(реальных цен шагов).
+    "visual_discount_enabled": True,
+    "visual_markup_min": 1.14,
+    "visual_markup_max": 1.34,
+    # Пакеты уровней «наперёд» (1 / 2 / все оставшиеся)
+    "level_packages_enabled": True,
 }
 
 # Premium custom emoji на кнопках бч (icon_custom_emoji_id)
@@ -304,21 +312,202 @@ from bot.funcs.group_society import (  # noqa: E402
 
 
 def next_level_price(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Optional[Tuple[int, int]]:
-    """(next_level, price_stars) или None если уже ★5.
-
-    Цена = база из настроек × умный множитель силы группы (снимок).
-    Перед оплатой/экраном вызывайте ensure_society_snapshot.
-    """
+    """(next_level, pay_stars) — реальная цена одного следующего шага для проекта."""
     cfg = cfg or get_settings()
     cur = get_chat_level(chat_id)
     if cur >= 5:
         return None
     nxt = cur + 1
-    base = price_to_reach(nxt, cfg)
-    price = _society_effective_level_price(
-        nxt, chat_id=int(chat_id), base_price=base, cfg=cfg,
+    return nxt, int(step_real_price(chat_id, nxt, cfg))
+
+
+def step_real_price(
+    chat_id: int,
+    to_level: int,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> int:
+    """Реальная цена одного шага (то, что нужно проекту)."""
+    cfg = cfg or get_settings()
+    base = price_to_reach(to_level, cfg)
+    return int(_society_effective_level_price(
+        int(to_level), chat_id=int(chat_id), base_price=base, cfg=cfg,
+    ))
+
+
+def package_pay_price(
+    chat_id: int,
+    to_level: int,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> int:
+    """Сумма реальных цен шагов cur+1…to_level — минимум, который должен получить проект."""
+    cfg = cfg or get_settings()
+    cur = get_chat_level(chat_id)
+    to_level = max(1, min(5, int(to_level)))
+    if to_level <= cur:
+        return 0
+    return sum(
+        step_real_price(chat_id, lvl, cfg)
+        for lvl in range(cur + 1, to_level + 1)
     )
-    return nxt, int(price)
+
+
+def visual_markup_for_chat(
+    chat_id: int,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> float:
+    """Множитель «было» под силу группы: сильнее чат → ярче якорь скидки."""
+    cfg = cfg or get_settings()
+    lo = max(1.01, _as_float(cfg.get("visual_markup_min"), 1.14))
+    hi = max(lo, _as_float(cfg.get("visual_markup_max"), 1.34))
+    snap = peek_society_snapshot(int(chat_id)) or {}
+    strength = max(
+        _as_float(snap.get("society_score"), 0.0),
+        _as_float(snap.get("effective_price_pressure"), 0.0),
+        min(1.0, _as_float(snap.get("pct"), 0.0) / max(1.0, _as_float(cfg.get("atmosphere_max_bonus_pct"), 40.0))),
+    )
+    strength = max(0.0, min(1.0, strength))
+    return round(lo + (hi - lo) * strength, 4)
+
+
+def visual_list_price(
+    pay_price: int,
+    chat_id: int,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> int:
+    """Визуальная цена «до скидки». К оплате всегда pay_price (≥ нужды проекта)."""
+    cfg = cfg or get_settings()
+    pay = max(0, int(pay_price or 0))
+    if pay <= 0:
+        return 0
+    if not cfg.get("visual_discount_enabled", True):
+        return pay
+    listed = int(math.ceil(pay * visual_markup_for_chat(chat_id, cfg)))
+    return max(pay + 1, listed)
+
+
+def build_level_packages(
+    chat_id: int,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Пакеты: +1 / +2 / все оставшиеся. pay = нужда проекта, list = якорь."""
+    cfg = cfg or get_settings()
+    if not cfg.get("enabled", True):
+        return []
+    cur = get_chat_level(chat_id)
+    if cur >= 5:
+        return []
+    remaining = list(range(cur + 1, 6))
+    if not remaining:
+        return []
+
+    if not cfg.get("level_packages_enabled", True) or len(remaining) == 1:
+        targets = [remaining[0]]
+    elif len(remaining) == 2:
+        targets = [remaining[0], remaining[-1]]
+    else:
+        # золотая середина: шаг / +2 уровня / вершина
+        targets = [remaining[0], remaining[1], remaining[-1]]
+
+    role_map = {
+        1: ("базовый", False),
+        2: ("стандарт", True),
+        3: ("премиум", False),
+    }
+    packages: List[Dict[str, Any]] = []
+    n_targets = len(targets)
+    for idx, to_level in enumerate(targets):
+        steps = list(range(cur + 1, to_level + 1))
+        step_pays = [step_real_price(chat_id, lvl, cfg) for lvl in steps]
+        step_lists = [visual_list_price(p, chat_id, cfg) for p in step_pays]
+        pay = int(sum(step_pays))
+        listed = int(sum(step_lists))
+        # Пакет «все уровни» — чуть выше якорь, скидка выглядит жирнее
+        if to_level == remaining[-1] and len(steps) >= 2:
+            listed = max(listed, int(math.ceil(listed * 1.08)))
+        listed = max(listed, pay + max(1, len(steps)))
+        save = max(0, listed - pay)
+        save_pct = int(round(100.0 * save / listed)) if listed > 0 else 0
+        if n_targets == 1:
+            role, recommended = "ваш шаг", True
+        elif n_targets == 2:
+            role, recommended = (("ваш шаг", False) if idx == 0 else ("весь путь", True))
+        else:
+            role, recommended = role_map.get(idx + 1, ("пакет", False))
+            if idx == 1:
+                recommended = True
+        cap = stake_cap_for_level(to_level, cfg)
+        packages.append({
+            "code": f"to_{to_level}",
+            "from_level": cur,
+            "to_level": int(to_level),
+            "steps": len(steps),
+            "step_levels": steps,
+            "pay": pay,
+            "list": listed,
+            "save": save,
+            "save_pct": save_pct,
+            "role": role,
+            "recommended": bool(recommended),
+            "cap": cap,
+            "cap_label": "∞" if (cap is None or to_level >= 5) else str(cap),
+            "badge_title": badge_title_for_level(to_level, cfg),
+        })
+    return packages
+
+
+def find_level_package(
+    chat_id: int,
+    to_level: int,
+    pay_price: int,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Найти пакет по целевому уровню и сумме к оплате (защита от подмены)."""
+    cfg = cfg or get_settings()
+    to_level = int(to_level)
+    pay_price = int(pay_price)
+    for pkg in build_level_packages(chat_id, cfg):
+        if int(pkg["to_level"]) == to_level and int(pkg["pay"]) == pay_price:
+            return pkg
+    # Допуск: точная нужда проекта на произвольный to_level (не только витрина)
+    cur = get_chat_level(chat_id)
+    if to_level <= cur or to_level > 5:
+        return None
+    expected = package_pay_price(chat_id, to_level, cfg)
+    if expected > 0 and expected == pay_price:
+        listed = visual_list_price(expected, chat_id, cfg)
+        if to_level - cur >= 2:
+            listed = max(listed, int(math.ceil(listed * 1.08)))
+        listed = max(listed, expected + 1)
+        return {
+            "code": f"to_{to_level}",
+            "from_level": cur,
+            "to_level": to_level,
+            "steps": to_level - cur,
+            "step_levels": list(range(cur + 1, to_level + 1)),
+            "pay": expected,
+            "list": listed,
+            "save": listed - expected,
+            "save_pct": int(round(100.0 * (listed - expected) / listed)) if listed else 0,
+            "role": "пакет",
+            "recommended": False,
+            "cap": stake_cap_for_level(to_level, cfg),
+            "cap_label": (
+                "∞" if to_level >= 5 or stake_cap_for_level(to_level, cfg) is None
+                else str(stake_cap_for_level(to_level, cfg))
+            ),
+            "badge_title": badge_title_for_level(to_level, cfg),
+        }
+    return None
+
+
+def format_package_price_line(pkg: Dict[str, Any]) -> str:
+    """Короткая строка цены со скидкой."""
+    pay = int(pkg.get("pay") or 0)
+    listed = int(pkg.get("list") or pay)
+    pct = int(pkg.get("save_pct") or 0)
+    if listed > pay and pct > 0:
+        return f"<s>{listed}</s> → <b>{pay}</b>⭐ (−{pct}%)"
+    return f"<b>{pay}</b>⭐"
 
 
 def stake_cap_for_level(level: int, cfg: Optional[Dict[str, Any]] = None) -> Optional[int]:
@@ -483,6 +672,112 @@ def list_recent_purchases(limit: int = 50) -> List[Dict[str, Any]]:
     return list(reversed(events[-max(1, int(limit)):]))
 
 
+def count_purchases_since(seconds: float = 7 * 86400) -> int:
+    """Сколько покупок уровней за окно времени (соц. доказательство)."""
+    cutoff = time.time() - max(0.0, float(seconds))
+    events = list(_purchase_log.get(_LOG_KEY) or [])
+    n = 0
+    for ev in events:
+        try:
+            if float(ev.get("ts") or 0) >= cutoff:
+                n += 1
+        except Exception:
+            continue
+    return n
+
+
+def total_purchase_count() -> int:
+    return len(list(_purchase_log.get(_LOG_KEY) or []))
+
+
+def social_proof_line() -> str:
+    """Короткая строка соцдоказательства — только реальные цифры."""
+    week = count_purchases_since(7 * 86400)
+    total = total_purchase_count()
+    if week >= 3:
+        return f"за неделю уровни подняли уже <b>{week}</b> раз"
+    if total >= 1:
+        return f"в проекте уже <b>{total}</b> вкладов в уровни групп"
+    return "вы можете открыть путь для этой группы первыми"
+
+
+def _cap_with_atmosphere(
+    base: Optional[int],
+    atmosphere_pct: float,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Optional[int]:
+    cfg = cfg or get_settings()
+    if base is None:
+        return None
+    if not cfg.get("atmosphere_enabled", True):
+        return max(0, int(base))
+    bonus = max(0.0, min(100.0, float(atmosphere_pct or 0)))
+    return max(0, int(int(base) * (1.0 + bonus / 100.0)))
+
+
+def _fmt_lim(cap: Optional[int]) -> str:
+    if cap is None:
+        return "без лимита уровня"
+    return f"до {int(cap)} кут"
+
+
+def stake_delta_for_step(
+    *,
+    from_level: int,
+    to_level: int,
+    atmosphere_pct: float = 0.0,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Личная выгода шага: было → станет → прирост потолка."""
+    cfg = cfg or get_settings()
+    old_base = stake_cap_for_level(from_level, cfg)
+    new_base = stake_cap_for_level(to_level, cfg)
+    if to_level >= 5:
+        new_base = None
+    old_cap = _cap_with_atmosphere(old_base, atmosphere_pct, cfg)
+    new_cap = _cap_with_atmosphere(new_base, atmosphere_pct, cfg)
+    delta: Optional[int] = None
+    if old_cap is not None and new_cap is not None:
+        delta = max(0, int(new_cap) - int(old_cap))
+    return {
+        "old_cap": old_cap,
+        "new_cap": new_cap,
+        "delta": delta,
+        "old_lim": _fmt_lim(old_cap),
+        "new_lim": _fmt_lim(new_cap),
+    }
+
+
+def build_price_ladder_html(
+    *,
+    chat_id: int,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Витрина пакетов со визуальной скидкой (к оплате — нужда проекта)."""
+    cfg = cfg or get_settings()
+    packages = build_level_packages(chat_id, cfg)
+    if not packages:
+        return ""
+    lines: List[str] = []
+    for pkg in packages:
+        mark = " ← выбор большинства" if pkg.get("recommended") else ""
+        steps = int(pkg.get("steps") or 1)
+        step_bit = "1 шаг" if steps == 1 else f"{steps} шага" if steps < 5 else f"{steps} шагов"
+        lines.append(
+            f"• <b>{pkg['role']}</b> · ур.<b>{pkg['to_level']}</b> · "
+            f"до <b>{pkg['cap_label']}</b> · {step_bit}\n"
+            f"  {format_package_price_line(pkg)}{mark}"
+        )
+    return (
+        f"<blockquote>"
+        f"<b>Пакеты уровней</b>\n"
+        + "\n".join(lines)
+        + "\n"
+        f"<i>к оплате — цена со скидкой · можно взять сразу несколько уровней</i>"
+        f"</blockquote>"
+    )
+
+
 def apply_level_purchase(
     *,
     chat_id: int,
@@ -490,43 +785,66 @@ def apply_level_purchase(
     to_level: int,
     price_stars: int,
 ) -> Dict[str, Any]:
-    """Применяет покупку уровня после успешной оплаты."""
+    """Применяет покупку одного или нескольких уровней после оплаты.
+
+    to_level может быть прыжком (0→3). price_stars должен покрывать
+    сумму реальных цен шагов (проект не в минусе).
+    """
+    cfg = get_settings()
     to_level = max(1, min(5, int(to_level)))
     cur = get_chat_level(chat_id)
-    if to_level != cur + 1:
-        # Идемпотентность: если уже на этом или выше — ок, бейдж всё равно можно обновить
-        if to_level <= cur:
-            remember_sponsor_badge(user_id, level=to_level, chat_id=chat_id, price_stars=price_stars)
-            return {"ok": True, "level": cur, "already": True}
-        return {"ok": False, "error": "level_mismatch", "current": cur, "wanted": to_level}
+    if to_level <= cur:
+        remember_sponsor_badge(
+            user_id, level=to_level, chat_id=chat_id, price_stars=price_stars,
+        )
+        return {"ok": True, "level": cur, "from_level": cur, "already": True}
 
+    expected = package_pay_price(chat_id, to_level, cfg)
+    # После успешной оплаты Stars/crypto применяем уровень всегда.
+    # Недоплата возможна только если сила группы выросла между счётом и оплатой —
+    # тогда всё равно выдаём купленный пакет (деньги уже получены).
+    underpaid = bool(expected > 0 and int(price_stars) < int(expected))
+
+    from_level = cur
     set_chat_level(chat_id, to_level, sponsor_id=user_id)
-    remember_sponsor_badge(user_id, level=to_level, chat_id=chat_id, price_stars=price_stars)
+    for lvl in range(from_level + 1, to_level + 1):
+        remember_sponsor_badge(
+            user_id, level=lvl, chat_id=chat_id, price_stars=price_stars,
+        )
     log_purchase({
         "chat_id": int(chat_id),
         "user_id": int(user_id),
         "level": int(to_level),
+        "from_level": int(from_level),
+        "steps": int(to_level - from_level),
         "price_stars": int(price_stars),
+        "expected_pay": int(expected),
+        "underpaid": underpaid,
     })
-    return {"ok": True, "level": to_level, "already": False}
+    return {
+        "ok": True,
+        "level": to_level,
+        "from_level": from_level,
+        "already": False,
+        "steps": to_level - from_level,
+        "underpaid": underpaid,
+        "expected": expected,
+    }
 
 
 def _next_level_teaser(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Optional[str]:
-    """Тизер следующего шага — результат после клика, одна цена."""
+    """Тизер: рекомендуемый пакет со визуальной скидкой."""
     cfg = cfg or get_settings()
     if not cfg.get("enabled", True):
         return None
-    nxt = next_level_price(chat_id, cfg)
-    if not nxt:
+    packages = build_level_packages(chat_id, cfg)
+    if not packages:
         return None
-    to_level, price = nxt
-    caps = cfg.get("stake_caps") or {}
-    if to_level >= 5:
-        benefit = "ставки <b>без лимита</b>"
-    else:
-        benefit = f"ставки <b>до {caps.get(str(to_level), '?')} кут</b>"
+    pkg = next((p for p in packages if p.get("recommended")), packages[0])
     return (
-        f"<b>уровень {to_level}</b> · {benefit} · вклад <b>{price} звёзд</b>"
+        f"<b>{pkg['role']}</b> · уровень <b>{pkg['to_level']}</b> · "
+        f"ставки до <b>{pkg['cap_label']}</b>\n"
+        f"{format_package_price_line(pkg)}"
     )
 
 
@@ -866,21 +1184,27 @@ def build_raise_keyboard(*, chat_id: int, cfg: Optional[Dict[str, Any]] = None):
     from aiogram.types import InlineKeyboardMarkup
 
     cfg = cfg or get_settings()
-    nxt = next_level_price(chat_id, cfg)
+    packages = build_level_packages(chat_id, cfg)
     rows = []
-    if nxt:
-        to_level, price = nxt
-        caps = cfg.get("stake_caps") or {}
+    for pkg in packages:
+        to_level = int(pkg["to_level"])
+        pay = int(pkg["pay"])
+        pct = int(pkg.get("save_pct") or 0)
         if to_level >= 5:
-            pay_txt = f"Открыть вершину · {price} звёзд"
+            base_txt = f"Вершина · {pay}⭐"
         else:
-            pay_txt = (
-                f"Открыть ставки до {caps.get(str(to_level), '?')} · {price} звёзд"
-            )
+            base_txt = f"До {pkg['cap_label']} · {pay}⭐"
+        if pct > 0:
+            base_txt = f"{base_txt} (−{pct}%)"
+        if pkg.get("recommended"):
+            base_txt = f"★ {base_txt}"
+        if len(base_txt) > 64:
+            base_txt = f"Ур.{to_level} · {pay}⭐" + (f" (−{pct}%)" if pct else "")
+        style = "success" if pkg.get("recommended") else "primary"
         rows.append([_btn(
-            text=pay_txt,
-            callback_data=f"gbl_pay:{chat_id}:{to_level}:{price}",
-            style="success",
+            text=base_txt,
+            callback_data=f"gbl_pay:{chat_id}:{to_level}:{pay}",
+            style=style,
             icon_custom_emoji_id=ICON_RAISE_LEVEL,
         )])
     rows.append([_btn(
@@ -898,14 +1222,15 @@ def build_raise_screen_html(
     cfg: Optional[Dict[str, Any]] = None,
     badge_title: Optional[str] = None,
     visit_n: int = 1,
+    atmosphere_pct: float = 0.0,
 ) -> str:
-    """Экран повышения — коротко, главами."""
+    """Экран повышения: пакеты, визуальная скидка, выгода, подарок."""
     cfg = cfg or get_settings()
     cur = get_chat_level(chat_id)
-    nxt = next_level_price(chat_id, cfg)
+    packages = build_level_packages(chat_id, cfg)
     decide = journey_step_label("decide")
     hook = visit_hook_line(visit_n)
-    if not nxt:
+    if not packages:
         return (
             f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
             f"<b>Вершина</b>\n"
@@ -915,32 +1240,60 @@ def build_raise_screen_html(
             f"{stars_label(5)} · ставки <b>без лимита уровня</b>"
             f"</blockquote>"
         )
-    to_level, price = nxt
-    caps = cfg.get("stake_caps") or {}
-    if to_level >= 5:
-        new_lim = "ставки <b>без лимита уровня</b>"
+    rec = next((p for p in packages if p.get("recommended")), packages[0])
+    max_pkg = packages[-1]
+    title = (
+        (badge_title or "").strip()
+        or str(rec.get("badge_title") or badge_title_for_level(rec["to_level"], cfg))
+    )
+    gain = stake_delta_for_step(
+        from_level=cur,
+        to_level=int(rec["to_level"]),
+        atmosphere_pct=atmosphere_pct,
+        cfg=cfg,
+    )
+    gain_max = stake_delta_for_step(
+        from_level=cur,
+        to_level=int(max_pkg["to_level"]),
+        atmosphere_pct=atmosphere_pct,
+        cfg=cfg,
+    )
+    if gain.get("delta"):
+        benefit = (
+            f"стандарт: {gain['old_lim']} → <b>{gain['new_lim']}</b> "
+            f"(<b>+{gain['delta']}</b> кут)\n"
+        )
     else:
-        new_lim = f"ставки <b>до {caps.get(str(to_level), '?')} кут</b>"
-    title = (badge_title or "").strip() or badge_title_for_level(to_level, cfg)
+        benefit = f"стандарт: {gain['old_lim']} → <b>{gain['new_lim']}</b>\n"
+    if max_pkg["to_level"] != rec["to_level"]:
+        if gain_max.get("delta"):
+            benefit += (
+                f"премиум: сразу до <b>{gain_max['new_lim']}</b> "
+                f"(<b>+{gain_max['delta']}</b> кут всей группе)"
+            )
+        else:
+            benefit += f"премиум: сразу до <b>{gain_max['new_lim']}</b>"
+    ladder = build_price_ladder_html(chat_id=chat_id, cfg=cfg)
+    proof = social_proof_line()
     return (
         f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
         f"<b>Повышение уровня</b>\n"
-        f"<i>{decide} · {stars_label(cur)} → {stars_label(to_level)} · {hook}</i>\n\n"
+        f"<i>{decide} · {stars_label(cur)} → пакеты · {hook}</i>\n\n"
         f"<blockquote>"
-        f"<b>Изменение</b>\n"
-        f"<b>Сейчас</b> · уровень <b>{cur}</b>\n"
-        f"<b>Станет</b> · уровень <b>{to_level}</b> · {new_lim}"
+        f"<b>Выгода группе</b>\n"
+        f"{benefit}"
+        f"</blockquote>\n\n"
+        f"{ladder}\n\n"
+        f"<blockquote>"
+        f"<b>Подарок за вклад</b>\n"
+        f"метка «<b>{title}</b>» и выше по пути · именной анонс"
         f"</blockquote>\n\n"
         f"<blockquote>"
-        f"<b>Вы получаете</b>\n"
-        f"• новый потолок <b>для всех</b>\n"
-        f"• анонс в группе\n"
-        f"• метку «<b>{title}</b>»"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Вклад</b>\n"
-        f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji> "
-        f"<b>{price} звёзд</b>\n"
+        f"<b>Скидка группы</b>\n"
+        f"рекомендуем «<b>{rec['role']}</b>»: "
+        f"{format_package_price_line(rec)}\n"
+        f"<i>{proof}</i>\n"
+        f"<i>цена пакета подстраивается под силу этой группы</i>\n"
         f"<i>личные куты не начисляются</i>"
         f"</blockquote>"
     )
@@ -957,31 +1310,73 @@ def build_pay_dm_bridge_html(
     to_level: int,
     price: int,
     cfg: Optional[Dict[str, Any]] = None,
+    atmosphere_pct: float = 0.0,
+    chat_title: Optional[str] = None,
 ) -> str:
-    """Подтверждение: одно нажатие — личные сообщения и счёт."""
+    """Подтверждение перед ЛС — пакет, скидка, выгода."""
     cfg = cfg or get_settings()
-    del chat_id
-    caps = cfg.get("stake_caps") or {}
     finish = journey_step_label("finish")
-    if to_level >= 5:
-        benefit = "ставки <b>без лимита уровня</b>"
-    else:
-        benefit = f"ставки <b>до {caps.get(str(to_level), '?')} кут</b>"
-    title = badge_title_for_level(to_level, cfg)
+    pkg = find_level_package(chat_id, to_level, price, cfg)
+    from_level = int(pkg["from_level"]) if pkg else get_chat_level(chat_id)
+    gain = stake_delta_for_step(
+        from_level=from_level,
+        to_level=to_level,
+        atmosphere_pct=atmosphere_pct,
+        cfg=cfg,
+    )
+    title = (
+        str(pkg.get("badge_title")) if pkg
+        else badge_title_for_level(to_level, cfg)
+    )
+    group_bit = ""
+    if (chat_title or "").strip():
+        group_bit = f"группа «<b>{_html_escape(chat_title.strip())}</b>»\n"
+    delta_bit = (
+        f"\nгруппа получит <b>+{gain['delta']} кут</b> к потолку"
+        if gain.get("delta") else ""
+    )
+    steps = int(pkg["steps"]) if pkg else max(1, int(to_level) - from_level)
+    price_line = format_package_price_line(pkg) if pkg else f"<b>{price}</b>⭐"
+    role = str(pkg.get("role") or "пакет") if pkg else "пакет"
     return (
         f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
         f"<b>{finish}</b>\n"
-        f"<i>осталось подтвердить оплату</i>\n\n"
+        f"<i>осталось подтвердить оплату со скидкой</i>\n\n"
         f"<blockquote>"
-        f"<b>Условия</b>\n"
-        f"уровень <b>{to_level}</b> · {benefit}\n"
-        f"вклад <b>{price} звёзд</b> · метка «<b>{title}</b>»"
+        f"<b>Пакет «{role}»</b>\n"
+        f"{group_bit}"
+        f"уровень <b>{from_level}</b> → <b>{to_level}</b> · "
+        f"{steps} {_ru_steps_word(steps)}\n"
+        f"{gain['old_lim']} → <b>{gain['new_lim']}</b>{delta_bit}"
+        f"</blockquote>\n\n"
+        f"<blockquote>"
+        f"<b>Ваша цена</b>\n"
+        f"{price_line}\n"
+        f"метка «<b>{title}</b>» · {social_proof_line()}"
         f"</blockquote>\n\n"
         f"<blockquote>"
         f"<b>После нажатия</b>\n"
-        f"откроются личные сообщения с ботом — счёт придёт сразу\n"
-        f"<i>лимит вырастет для всего чата · личные куты не начисляются</i>"
+        f"откроются личные сообщения — счёт на <b>{int(price)} звёзд</b>"
         f"</blockquote>"
+    )
+
+
+def _ru_steps_word(n: int) -> str:
+    n = abs(int(n or 0))
+    n10, n100 = n % 10, n % 100
+    if n10 == 1 and n100 != 11:
+        return "шаг"
+    if 2 <= n10 <= 4 and not (12 <= n100 <= 14):
+        return "шага"
+    return "шагов"
+
+
+def _html_escape(text: str) -> str:
+    return (
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
     )
 
 
@@ -993,21 +1388,19 @@ def build_pay_dm_bridge_keyboard(
     price: int,
     cfg: Optional[Dict[str, Any]] = None,
 ):
-    """URL в ЛС — тот же результат, что на экране повышения."""
+    """URL в ЛС — оплата по цене со скидкой (pay = нужда проекта)."""
     from aiogram.types import InlineKeyboardMarkup
 
     cfg = cfg or get_settings()
-    caps = cfg.get("stake_caps") or {}
     uname = (bot_username or "").lstrip("@").strip() or "CuteGamingBot"
     payload = gbl_start_payload(chat_id, to_level, price)
-    if to_level >= 5:
-        pay_txt = f"Оплатить в сообщениях · {price} звёзд"
-    else:
-        pay_txt = (
-            f"Оплатить · до {caps.get(str(to_level), '?')} · {price} звёзд"
-        )
+    pkg = find_level_package(chat_id, to_level, price, cfg)
+    pct = int((pkg or {}).get("save_pct") or 0)
+    pay_txt = f"Оплатить {price}⭐"
+    if pct > 0:
+        pay_txt = f"Оплатить {price}⭐ (−{pct}%)"
     if len(pay_txt) > 64:
-        pay_txt = f"Оплатить в сообщениях · {price} звёзд"
+        pay_txt = f"Оплатить {price} звёзд"
     rows = [
         [_btn(
             text=pay_txt,
@@ -1016,7 +1409,7 @@ def build_pay_dm_bridge_keyboard(
             icon_custom_emoji_id=ICON_RAISE_LEVEL,
         )],
         [_btn(
-            text="Назад",
+            text="К пакетам",
             callback_data="gbl_raise",
             style="default",
             icon_custom_emoji_id=ICON_BACK,
@@ -1200,25 +1593,122 @@ def build_gift_announcement_html(
     price_stars: int,
     chat_id: int,
     atmosphere_pct: float = 0.0,
+    chat_title: Optional[str] = None,
+    from_level: Optional[int] = None,
 ) -> str:
+    """Анонс в группу: кто, куда, за сколько, что открылось."""
     cfg = get_settings()
-    cap = effective_stake_cap(chat_id, atmosphere_pct=atmosphere_pct, cfg=cfg)
-    if to_level >= 5 or cap is None:
-        lim = "без лимита уровня"
-    else:
-        lim = f"до {cap} кут"
+    prev = int(from_level) if from_level is not None else max(0, int(to_level) - 1)
+    gain = stake_delta_for_step(
+        from_level=prev,
+        to_level=to_level,
+        atmosphere_pct=atmosphere_pct,
+        cfg=cfg,
+    )
+    new_lim = gain["new_lim"]
     title = badge_title_for_level(to_level, cfg)
+    group_name = (chat_title or "").strip() or f"чат {chat_id}"
+    delta_line = ""
+    if gain.get("delta"):
+        delta_line = f"\nприрост потолка · <b>+{gain['delta']} кут</b> для всех"
+    week = count_purchases_since(7 * 86400)
+    proof = (
+        f"за неделю таких вкладов уже <b>{week}</b>"
+        if week >= 2
+        else social_proof_line()
+    )
     return (
         f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
-        f"<b>Новый уровень группы</b>\n\n"
+        f"<b>Группу усилили</b>\n\n"
         f"<blockquote>"
-        f"<b>Статус</b>\n"
-        f"{sponsor_name_html} · {stars_label(to_level)}\n"
-        f"ставки <b>{lim}</b>"
+        f"<b>Герой</b>\n"
+        f"{sponsor_name_html}"
+        f"</blockquote>\n\n"
+        f"<blockquote>"
+        f"<b>Где</b>\n"
+        f"«<b>{_html_escape(group_name)}</b>»\n"
+        f"{stars_label(prev)} → <b>{stars_label(to_level)}</b>"
+        f"</blockquote>\n\n"
+        f"<blockquote>"
+        f"<b>Что открылось</b>\n"
+        f"{gain['old_lim']} → <b>{new_lim}</b>{delta_line}"
         f"</blockquote>\n\n"
         f"<blockquote>"
         f"<b>Вклад</b>\n"
-        f"«<b>{title}</b>» · <b>{int(price_stars)} звёзд</b>\n"
-        f"<i>напишите бч — чтобы увидеть новый потолок</i>"
+        f"<b>{int(price_stars)} звёзд</b> · метка «<b>{title}</b>»\n"
+        f"<i>{proof}</i>\n"
+        f"<i>напишите бч — новый потолок уже действует</i>"
+        f"</blockquote>"
+    )
+
+
+def build_buyer_hero_html(
+    *,
+    to_level: int,
+    price_stars: int,
+    chat_id: int,
+    atmosphere_pct: float = 0.0,
+    chat_title: Optional[str] = None,
+    from_level: Optional[int] = None,
+    badge_title: Optional[str] = None,
+) -> str:
+    """ЛС покупателю: вы герой, факты покупки, скидка, подарок."""
+    cfg = get_settings()
+    prev = int(from_level) if from_level is not None else max(0, int(to_level) - 1)
+    steps = max(1, int(to_level) - prev)
+    gain = stake_delta_for_step(
+        from_level=prev,
+        to_level=to_level,
+        atmosphere_pct=atmosphere_pct,
+        cfg=cfg,
+    )
+    title = (badge_title or "").strip() or badge_title_for_level(to_level, cfg)
+    group_name = (chat_title or "").strip() or f"чат {chat_id}"
+    listed = visual_list_price(int(price_stars), chat_id, cfg)
+    if steps >= 2:
+        listed = max(listed, int(math.ceil(listed * 1.08)))
+    listed = max(listed, int(price_stars) + 1)
+    save = max(0, listed - int(price_stars))
+    save_pct = int(round(100.0 * save / listed)) if listed else 0
+    if gain.get("delta"):
+        benefit = (
+            f"вы открыли группе <b>+{gain['delta']} кут</b> к потолку ставки\n"
+            f"{gain['old_lim']} → <b>{gain['new_lim']}</b>"
+        )
+    else:
+        benefit = (
+            f"вы открыли группе ставки <b>{gain['new_lim']}</b>\n"
+            f"было: {gain['old_lim']}"
+        )
+    price_bit = f"оплачено · <b>{int(price_stars)} звёзд</b>"
+    if save_pct > 0:
+        price_bit += f"\nскидка группы · <s>{listed}</s> → <b>{int(price_stars)}</b> (−{save_pct}%)"
+    return (
+        f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
+        f"<b>Вы усилили группу</b>\n"
+        f"<i>этот вклад меняет игру для всех</i>\n\n"
+        f"<blockquote>"
+        f"<b>Ваш вклад</b>\n"
+        f"группа «<b>{_html_escape(group_name)}</b>»\n"
+        f"уровень <b>{prev}</b> → <b>{to_level}</b> · {stars_label(to_level)}\n"
+        f"{steps} {_ru_steps_word(steps)}\n"
+        f"{price_bit}"
+        f"</blockquote>\n\n"
+        f"<blockquote>"
+        f"<b>Что получила группа</b>\n"
+        f"{benefit}"
+        f"</blockquote>\n\n"
+        f"<blockquote>"
+        f"<b>Ваш подарок</b>\n"
+        f"метка «<b>{title}</b>» в профиле"
+        + (f" и метки пути" if steps > 1 else "")
+        + "\n"
+        f"именной анонс уже ушёл в группу\n"
+        f"<i>{social_proof_line()}</i>"
+        f"</blockquote>\n\n"
+        f"<blockquote>"
+        f"<b>Дальше</b>\n"
+        f"вернитесь в группу или напишите <b>бч</b> — "
+        f"новый потолок уже действует"
         f"</blockquote>"
     )

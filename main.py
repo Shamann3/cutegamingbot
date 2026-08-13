@@ -3207,15 +3207,16 @@ async def successful_payment_handler(message: Message):
 
         from bot.funcs.group_balance_level import (
             apply_level_purchase,
+            build_buyer_hero_html,
             build_gift_announcement_html,
             get_settings,
-            next_level_price,
             resolve_atmosphere_pct,
             stars_label,
+            badge_title_for_level,
         )
 
         cfg = get_settings()
-        # Мягкая проверка актуальности цены (если админ успел сменить — всё равно принимаем оплаченный шаг)
+        # Принимаем оплаченный пакет даже если сила группы успела сменить цену
         res = apply_level_purchase(
             chat_id=pay_chat_id,
             user_id=user_id,
@@ -3233,13 +3234,15 @@ async def successful_payment_handler(message: Message):
             print(f"❌ [PAYMENT][GBL] apply failed: {res}")
             return
 
+        from_level = int(res.get("from_level") or max(0, int(to_level) - 1))
         try:
             from bot.funcs.achievements import grant_gbl_level_achievement
-            await grant_gbl_level_achievement(
-                db,
-                user_id=int(user_id),
-                level=int(to_level),
-            )
+            for _lvl in range(from_level + 1, int(to_level) + 1):
+                await grant_gbl_level_achievement(
+                    db,
+                    user_id=int(user_id),
+                    level=int(_lvl),
+                )
         except Exception as _ach_e:
             print(f"⚠️ [PAYMENT][GBL] achievement grant: {_ach_e!r}")
 
@@ -3252,7 +3255,7 @@ async def successful_payment_handler(message: Message):
         except Exception as e:
             print(f"⚠️ [PAYMENT][GBL] donation bookkeeping: {e!r}")
 
-        # Имя спонсора
+        # Имя спонсора + название группы
         try:
             first_name = message.from_user.first_name or str(user_id)
             sponsor_html = await create_user_link(user_id, first_name, message.from_user.username)
@@ -3260,12 +3263,45 @@ async def successful_payment_handler(message: Message):
             first_name = message.from_user.first_name or str(user_id)
             sponsor_html = f"<a href='tg://user?id={user_id}'>{_html(first_name)}</a>"
 
+        chat_title = None
+        try:
+            chat_obj = await bot1.get_chat(pay_chat_id)
+            chat_title = getattr(chat_obj, "title", None) or getattr(chat_obj, "full_name", None)
+        except Exception as _ct_e:
+            print(f"⚠️ [PAYMENT][GBL] chat title: {_ct_e!r}")
+
+        atmo = 0.0
+        try:
+            atmo = float(await resolve_atmosphere_pct(pay_chat_id, db=db) or 0)
+        except Exception:
+            atmo = 0.0
+
+        badge_title = badge_title_for_level(to_level, cfg)
+        try:
+            from bot.funcs.achievements import get_official_by_code
+            row = await get_official_by_code(db, f"gbl_level_{to_level}")
+            if row and row.get("title"):
+                badge_title = str(row["title"])
+        except Exception:
+            pass
+
         gift_html = build_gift_announcement_html(
             sponsor_name_html=sponsor_html,
             to_level=to_level,
             price_stars=price,
             chat_id=pay_chat_id,
-            atmosphere_pct=await resolve_atmosphere_pct(pay_chat_id, db=db),
+            atmosphere_pct=atmo,
+            chat_title=chat_title,
+            from_level=from_level,
+        )
+        buyer_html = build_buyer_hero_html(
+            to_level=to_level,
+            price_stars=price,
+            chat_id=pay_chat_id,
+            atmosphere_pct=atmo,
+            chat_title=chat_title,
+            from_level=from_level,
+            badge_title=badge_title,
         )
 
         # Анонс в группу
@@ -3283,27 +3319,28 @@ async def successful_payment_handler(message: Message):
             except Exception as e2:
                 print(f"❌ [PAYMENT][GBL] group announce fail2: {e2!r}")
 
-        # Подтверждение плательщику
+        # Подтверждение плательщику — «пакет героя»
         try:
-            await message.answer(
-                f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
-                f"<b>Уровень повышен</b>\n\n"
-                f"<blockquote>"
-                f"<b>Готово</b>\n"
-                f"{stars_label(to_level)} · метка в профиле\n"
-                f"<i>напишите бч в группе — чтобы увидеть новый потолок</i>"
-                f"</blockquote>",
-                parse_mode="HTML",
-            )
-        except Exception:
-            pass
+            await message.answer(buyer_html, parse_mode="HTML")
+        except Exception as e:
+            print(f"⚠️ [PAYMENT][GBL] buyer hero fail: {e!r}")
+            try:
+                await message.answer(
+                    f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
+                    f"<b>Уровень повышен · {stars_label(to_level)}</b>\n"
+                    f"Метка уже в профиле.",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
 
         # Уведомление владельцу
         try:
             await bot1.send_message(
                 6801702632,
                 f"⭐ <b>Уровень баланса группы</b>\n"
-                f"chat=<code>{pay_chat_id}</code> → уровень {to_level}\n"
+                f"группа: {_html(chat_title or '')} <code>{pay_chat_id}</code>\n"
+                f"уровень {from_level} → {to_level} · {stars_label(to_level)}\n"
                 f"user=<code>{user_id}</code> · {price} звёзд",
                 parse_mode="HTML",
             )
@@ -3481,16 +3518,18 @@ async def crypto_payment_handler(invoice: Invoice):
                 to_level=int(gbl_to_level),
                 price_stars=price_stars,
             )
+            from_lvl_crypto = int(res.get("from_level") or max(0, int(gbl_to_level) - 1))
             if not res.get("ok"):
                 debug_print(f"[GBL][CRYPTO] apply failed: {res}")
             else:
                 try:
                     from bot.funcs.achievements import grant_gbl_level_achievement
-                    await grant_gbl_level_achievement(
-                        db,
-                        user_id=int(user_id),
-                        level=int(gbl_to_level),
-                    )
+                    for _lvl in range(from_lvl_crypto + 1, int(gbl_to_level) + 1):
+                        await grant_gbl_level_achievement(
+                            db,
+                            user_id=int(user_id),
+                            level=int(_lvl),
+                        )
                 except Exception as _ach_e:
                     debug_print(f"[GBL][CRYPTO] achievement grant: {_ach_e!r}")
             try:
@@ -3512,12 +3551,19 @@ async def crypto_payment_handler(invoice: Invoice):
             except Exception:
                 sponsor_html = f"<a href='tg://user?id={user_id}'>{user_id}</a>"
 
+            chat_title_crypto = None
+            try:
+                chat_title_crypto = getattr(await bot1.get_chat(int(gbl_chat_id)), "title", None)
+            except Exception:
+                chat_title_crypto = None
             gift_html = build_gift_announcement_html(
                 sponsor_name_html=sponsor_html,
                 to_level=int(gbl_to_level),
                 price_stars=price_stars,
                 chat_id=int(gbl_chat_id),
                 atmosphere_pct=await resolve_atmosphere_pct(int(gbl_chat_id), db=db),
+                chat_title=chat_title_crypto,
+                from_level=from_lvl_crypto,
             )
             try:
                 await bot1.send_message(
@@ -7416,10 +7462,13 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
 
             from bot.funcs.group_balance_level import (
                 get_settings,
-                next_level_price,
+                find_level_package,
                 ensure_society_snapshot,
                 stars_label,
                 badge_title_for_level,
+                stake_delta_for_step,
+                social_proof_line,
+                format_package_price_line,
             )
 
             cfg = get_settings()
@@ -7431,39 +7480,71 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
                     parse_mode="HTML",
                 )
 
+            atmo = 0.0
             try:
-                await ensure_society_snapshot(pay_chat_id, db=db)
+                snap = await ensure_society_snapshot(pay_chat_id, db=db)
+                atmo = float((snap or {}).get("pct") or 0)
             except Exception as _snap_e:
                 print(f"⚠️ [START][GBL] society snapshot: {_snap_e!r}")
 
-            nxt = next_level_price(pay_chat_id, cfg)
-            if not nxt or int(nxt[0]) != int(to_level) or int(nxt[1]) != int(price):
+            pkg = find_level_package(pay_chat_id, to_level, price, cfg)
+            if not pkg:
                 return await message.answer(
                     "<tg-emoji emoji-id='5420323339723881652'>⚠️</tg-emoji> "
-                    "<b>Этот шаг уже неактуален.</b>\n"
-                    "Вернитесь в группу → баланс → поднять уровень — и откройте оплату снова.",
+                    "<b>Этот пакет уже неактуален.</b>\n"
+                    "Вернитесь в группу → баланс → повышение — и выберите пакет снова.",
                     parse_mode="HTML",
                 )
 
-            badge = badge_title_for_level(to_level, cfg)
+            badge = str(pkg.get("badge_title") or badge_title_for_level(to_level, cfg))
             title = f"Статус {stars_label(to_level)}"
             description = (
-                f"Уровень группы {to_level} · метка «{badge}» · {price} звёзд"
+                f"Уровень группы → {to_level} · {pkg.get('role', 'пакет')} · "
+                f"{price} звёзд (−{int(pkg.get('save_pct') or 0)}%)"
             )
             prices = [LabeledPrice(label=title[:32], amount=int(price))]
             kb = get_crypto_keyboard(
                 int(price), gbl_chat_id=int(pay_chat_id), gbl_level=int(to_level),
             )
             payload = f"gblevel_{pay_chat_id}_{to_level}_{price}"
+            from_lvl = int(pkg.get("from_level") or max(0, int(to_level) - 1))
+            gain = stake_delta_for_step(
+                from_level=from_lvl,
+                to_level=to_level,
+                atmosphere_pct=atmo,
+                cfg=cfg,
+            )
+            chat_title_dm = None
+            try:
+                chat_obj = await bot1.get_chat(pay_chat_id)
+                chat_title_dm = getattr(chat_obj, "title", None)
+            except Exception:
+                chat_title_dm = None
+            group_line = (
+                f"группа «<b>{_html(chat_title_dm)}</b>»\n"
+                if chat_title_dm else ""
+            )
+            delta_line = (
+                f"\nгруппа получит <b>+{gain['delta']} кут</b> к потолку"
+                if gain.get("delta") else ""
+            )
             try:
                 await message.answer(
                     f"<tg-emoji emoji-id='5404534885324988233'>⭐️</tg-emoji> "
-                    f"<b>Оплата</b>\n"
-                    f"<i>счёт готов</i>\n\n"
+                    f"<b>Оплата со скидкой</b>\n"
+                    f"<i>счёт готов — вы усиливаете всю группу</i>\n\n"
                     f"<blockquote>"
-                    f"<b>Условия</b>\n"
-                    f"уровень <b>{to_level}</b> · вклад <b>{price} звёзд</b>\n"
-                    f"метка «<b>{badge}</b>» · лимит для всего чата\n"
+                    f"<b>Пакет «{pkg.get('role', 'пакет')}»</b>\n"
+                    f"{group_line}"
+                    f"уровень <b>{from_lvl}</b> → <b>{to_level}</b> · "
+                    f"{int(pkg.get('steps') or 1)} шаг(а)\n"
+                    f"{gain['old_lim']} → <b>{gain['new_lim']}</b>{delta_line}"
+                    f"</blockquote>\n\n"
+                    f"<blockquote>"
+                    f"<b>Ваша цена</b>\n"
+                    f"{format_package_price_line(pkg)}\n"
+                    f"метка «<b>{badge}</b>»\n"
+                    f"<i>{social_proof_line()}</i>\n"
                     f"<i>личные куты не начисляются</i>"
                     f"</blockquote>",
                     parse_mode="HTML",

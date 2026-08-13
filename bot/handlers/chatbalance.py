@@ -824,7 +824,12 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
     except Exception:
         pass
     visit_n = bump_gbl_visit(user_id, chat_id)
-    await ensure_society_snapshot(chat_id, db=db)
+    atmo = 0.0
+    try:
+        snap = await ensure_society_snapshot(chat_id, db=db)
+        atmo = float((snap or {}).get("pct") or 0)
+    except Exception:
+        atmo = 0.0
     badge_title = None
     nxt = next_level_price(chat_id, cfg)
     if nxt:
@@ -836,7 +841,11 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
         except Exception:
             badge_title = None
     text = build_raise_screen_html(
-        chat_id=chat_id, cfg=cfg, badge_title=badge_title, visit_n=visit_n,
+        chat_id=chat_id,
+        cfg=cfg,
+        badge_title=badge_title,
+        visit_n=visit_n,
+        atmosphere_pct=atmo,
     )
     kb = build_raise_keyboard(chat_id=chat_id, cfg=cfg)
     try:
@@ -879,7 +888,7 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
 
     from bot.funcs.group_balance_level import (
         get_settings,
-        next_level_price,
+        find_level_package,
         ensure_society_snapshot,
         build_pay_dm_bridge_html,
         build_pay_dm_bridge_keyboard,
@@ -894,10 +903,10 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
         return
 
     await ensure_society_snapshot(chat_id, db=db)
-    nxt = next_level_price(chat_id, cfg)
-    if not nxt or nxt[0] != to_level or int(nxt[1]) != int(price):
+    pkg = find_level_package(chat_id, to_level, price, cfg)
+    if not pkg:
         await callback_query.answer(
-            "Шаг устарел. Откройте повышение ещё раз.",
+            "Пакет устарел. Откройте повышение ещё раз.",
             show_alert=True,
         )
         return
@@ -919,8 +928,24 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
         except Exception:
             bot_username = "CuteGamingBot"
 
+    chat_title = None
+    try:
+        chat_title = getattr(callback_query.message.chat, "title", None)
+    except Exception:
+        chat_title = None
+    atmo = 0.0
+    try:
+        snap = await ensure_society_snapshot(chat_id, db=db)
+        atmo = float((snap or {}).get("pct") or 0)
+    except Exception:
+        atmo = 0.0
     text = build_pay_dm_bridge_html(
-        chat_id=chat_id, to_level=to_level, price=price, cfg=cfg,
+        chat_id=chat_id,
+        to_level=to_level,
+        price=price,
+        cfg=cfg,
+        atmosphere_pct=atmo,
+        chat_title=chat_title,
     )
     kb = build_pay_dm_bridge_keyboard(
         bot_username=bot_username,
