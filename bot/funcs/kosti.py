@@ -455,7 +455,12 @@ async def kosti(message: Message):
     )
     gameskosti[game_id]["chat_id"] = msg.chat.id
     gameskosti[game_id]["message_id"] = msg.message_id
-    gameskosti.save()
+    # touch: in-place поля chat_id/message_id → Redis (hash dirty)
+    try:
+        gameskosti.touch(game_id)
+    except Exception:
+        gameskosti[game_id] = gameskosti[game_id]
+        gameskosti.save()
 
 # ====== Присоединение ======
 @dp.callback_query(lambda c: c.data.startswith('kostijoin:'))
@@ -550,7 +555,11 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
 
             game['participants'].append(user_id)
             game['participants'] = _dedupe_preserve_order(game['participants'])
-            gameskosti.save()
+            # КРИТИЧНО: append in-place → без touch hash-Redis не узнает об игроке
+            try:
+                gameskosti.touch(game_id)
+            except Exception:
+                gameskosti[game_id] = game
 
             # отрисовка
             names = []
@@ -578,13 +587,23 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
                     ]
                 )
 
-            button_kosti[game_id]['keyboard_join2'] = keyboard
+            try:
+                if game_id not in button_kosti:
+                    button_kosti[game_id] = {}
+                button_kosti[game_id]['keyboard_join2'] = keyboard
+                button_kosti.touch(game_id)
+            except Exception:
+                button_kosti[game_id] = {"keyboard_join2": keyboard}
+
             await _safe_edit_game(
                 game,
                 f"<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> <b>Играем в кости</b>{win_text}\n{participants_text}",
                 keyboard,
             )
-            gameskosti.save()
+            try:
+                gameskosti.touch(game_id)
+            except Exception:
+                gameskosti[game_id] = game
 
     finally:
         _inflight_joins.discard(inflight_key)
@@ -615,8 +634,22 @@ async def kosti_start_game_callback(callback_query: CallbackQuery):
         parts = _dedupe_preserve_order([int(x) for x in game.get('participants', [])])
         game['participants'] = parts
         if len(parts) < 2:
-            await callback_query.answer("💭 Недостаточно участников (нужно ≥ 2).", show_alert=True)
-            return
+            # После рестарта иногда в RAM устаревший снимок — один forced reload
+            try:
+                if hasattr(gameskosti, "_load"):
+                    inner = gameskosti._load()
+                else:
+                    inner = gameskosti
+                from bot.db_create.pklcode import GameStore_reload_from_redis_forced
+                GameStore_reload_from_redis_forced(inner)
+                game = gameskosti[game_id]
+                parts = _dedupe_preserve_order([int(x) for x in game.get('participants', [])])
+                game['participants'] = parts
+            except Exception:
+                pass
+            if len(parts) < 2:
+                await callback_query.answer("💭 Недостаточно участников (нужно ≥ 2).", show_alert=True)
+                return
 
         # финальная мягкая проверка
         bet = int(game['bet'])
@@ -639,12 +672,21 @@ async def kosti_start_game_callback(callback_query: CallbackQuery):
 
         game['state'] = STATE_STARTED
         game['game_started'] = True
-        gameskosti.save()
+        try:
+            gameskosti.touch(game_id)
+        except Exception:
+            gameskosti[game_id] = game
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="5", callback_data=f"kostiroll:{game_id}")]]
         )
-        button_kosti[game_id]['keyboard_roll'] = keyboard
+        try:
+            if game_id not in button_kosti:
+                button_kosti[game_id] = {}
+            button_kosti[game_id]['keyboard_roll'] = keyboard
+            button_kosti.touch(game_id)
+        except Exception:
+            button_kosti[game_id] = {"keyboard_roll": keyboard}
         await _safe_edit_game(
             game,
             "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> <b>Нажмите, чтобы получить случайное число</b>",

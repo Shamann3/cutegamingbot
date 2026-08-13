@@ -1781,16 +1781,82 @@ class GameStore(dict):
             self._next_retry_ts = time.time() + self._retry_backoff
             self._dirty_since_boot = True
 
-    def save(self) -> None:
+    def touch(self, key: Any) -> None:
+        """Пометить ключ dirty после in-place правки value (list/dict внутри).
+
+        Типичный баг игр:
+          game = store[gid]; game['participants'].append(uid); store.save()
+        В hash-режиме без touch/__setitem__ ключ НЕ пишется в Redis →
+        после soft-restart участники «пропадают», а текст в Telegram остаётся.
+        """
         self._initial_sync_if_needed()
+        sk = self._canon_key(key)
+        with self._lock:
+            if not dict.__contains__(self, sk):
+                try:
+                    if isinstance(key, int):
+                        sk2 = str(key)
+                    elif isinstance(key, str) and key.isdigit():
+                        sk2 = str(int(key))
+                    else:
+                        sk2 = None
+                    if sk2 is not None and dict.__contains__(self, sk2):
+                        sk = sk2
+                    else:
+                        return
+                except Exception:
+                    return
+        if self._is_hash_mode():
+            self._hash_mark_dirty(sk)
+        else:
+            self._pending_dirty = True
+            self._dirty_since_boot = True
+        self._persist_after_mutation()
+
+    def _hash_mark_all_dirty_unlocked(self) -> int:
+        """Пометить все ключи dirty (вызывать под self._lock)."""
+        n = 0
+        for k in dict.keys(self):
+            self._hash_dirty_keys.add(str(k))
+            n += 1
+        if n:
+            self._pending_dirty = True
+            self._dirty_since_boot = True
+        return n
+
+    def save(self) -> None:
+        """Запланировать запись в Redis.
+
+        Важно (hash): если dirty пуст, но в RAM есть данные — считаем, что
+        были in-place мутации и нужно сохранить ВСЕ ключи (для небольших сторов).
+        Крупные сторы (>PKL_HASH_SAVE_ALL_MAX) не трогаем — только touch(key).
+        """
+        self._initial_sync_if_needed()
+        if self._is_hash_mode():
+            try:
+                max_all = int(os.getenv("PKL_HASH_SAVE_ALL_MAX", "8000"))
+            except Exception:
+                max_all = 8000
+            with self._lock:
+                if not self._hash_dirty_keys:
+                    n = dict.__len__(self)
+                    if 0 < n <= max_all:
+                        self._hash_mark_all_dirty_unlocked()
         self._schedule_save()
 
     def flush(self) -> None:
+        """Синхронно сбросить стор в Redis (handoff / exit).
+
+        В hash-режиме, если dirty пуст — всё равно пишем ВСЕ ключи из RAM.
+        Иначе soft-restart теряет in-place обновления игр (кости, орёл, …).
+        """
         self._initial_sync_if_needed()
         with self._sync_lock:
             if self._is_hash_mode():
                 _io_wait_store(self.name, timeout=10.0)
                 with self._lock:
+                    if not self._hash_dirty_keys and dict.__len__(self) > 0:
+                        self._hash_mark_all_dirty_unlocked()
                     keys = set(self._hash_dirty_keys)
                     self._hash_dirty_keys.clear()
                 rc = _raw_client()
