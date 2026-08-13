@@ -48,14 +48,15 @@ STATE_SETTLING = "SETTLING"
 STATE_SETTLED  = "SETTLED"
 
 # ====== Локальные защиты ======
-_join_locks: Dict[int, asyncio.Lock] = LazyGameStore("kosti_join_locks")
-_game_locks: Dict[int, asyncio.Lock] = LazyGameStore("kosti_game_locks")
-_inflight_joins: Set[Tuple[int, int]] = set() # (game_id, user_id)
-_inflight_rolls: Set[Tuple[int, int]] = set() # (game_id, user_id)
+# asyncio.Lock нельзя класть в LazyGameStore/Redis — после рестарта ломается.
+_join_locks: Dict[int, asyncio.Lock] = {}
+_game_locks: Dict[int, asyncio.Lock] = {}
+_inflight_joins: Set[Tuple[int, int]] = set()  # (game_id, user_id)
+_inflight_rolls: Set[Tuple[int, int]] = set()  # (game_id, user_id)
 
 def _get_lock(bucket: Dict[int, asyncio.Lock], key: int) -> asyncio.Lock:
     lock = bucket.get(key)
-    if lock is None:
+    if not isinstance(lock, asyncio.Lock):
         lock = asyncio.Lock()
         bucket[key] = lock
     return lock

@@ -204,11 +204,15 @@ STORE_EXPIRY_OVERRIDES: Dict[str, float] = {
 
 # Сторы, которые пишутся в Redis СРАЗУ (без debounce) — защита кнопок от рестарта.
 STORE_WRITE_THROUGH: Set[str] = {
+    "blc_messages",
+    "blc_payloads",
+    "blc_token_index",
     "PREP_CALLBACK_ACTIONS",
     "GIFT_CALLBACK_ACTIONS",
     "SKIP_CALLBACK_ACTIONS",
     "SPEEDCONC_CALLBACK_ACTIONS",
     "SEND_REQUEST_ACTIONS",
+    "GIFTGIFT_SEND_REQUEST_ACTIONS",
     "session_data",
     "user_to_session",
     "gamesorelinline",

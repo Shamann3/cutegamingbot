@@ -46,14 +46,14 @@ FLOOD_EDIT_MAX_RETRIES = 4
 FLOOD_SLEEP_BUFFER_SEC = 1.0
 
 # ====== ГЛОБАЛЬНЫЕ ЗАЩИТЫ ======
-# join отдельно от state/settle — как в kosti/ruletka (иначе NameError на joinbingo)
-_join_locks: Dict[int, asyncio.Lock] = LazyGameStore("bingo_join_locks")   # per-game (join/flow)
-_game_locks: Dict[int, asyncio.Lock] = LazyGameStore("bingo_game_locks")   # per-game (state & settle)
-_inflight_joins: Set[Tuple[int, int]] = set()    # (game_id, user_id)
+# asyncio.Lock только в RAM — не в Redis/pkl (после рестарта иначе ломается)
+_join_locks: Dict[int, asyncio.Lock] = {}
+_game_locks: Dict[int, asyncio.Lock] = {}
+_inflight_joins: Set[Tuple[int, int]] = set()  # (game_id, user_id)
 
 def _get_lock(bucket: Dict[int, asyncio.Lock], key: int) -> asyncio.Lock:
     lock = bucket.get(key)
-    if lock is None:
+    if not isinstance(lock, asyncio.Lock):
         lock = asyncio.Lock()
         bucket[key] = lock
     return lock

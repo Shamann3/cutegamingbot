@@ -91,8 +91,21 @@ def _attach_middleware(dp: Dispatcher) -> bool:
 
 
 def attach_magic_fallback(dp: Dispatcher) -> bool:
-    """Подключить orphan-callback router ПОСЛЕДНИМ (гасит часики без handler)."""
+    """Подключить orphan-callback router ПОСЛЕДНИМ (гасит часики без handler).
+
+    Перед orphan — обязательно bootstrap handlers + hot-router, иначе
+    kostijoin/joinorel после рестарта никогда не дойдут до игровых handler'ов.
+    """
     dp_id = id(dp)
+
+    # Сначала живые handlers (на dp и hot-router), потом catch-all orphan
+    try:
+        from bot.runtime.callback_bootstrap import ensure_handlers_for_dispatcher
+
+        ensure_handlers_for_dispatcher(dp)
+    except Exception as e:
+        print(f"⚠️ [MAGIC] ensure handlers before fallback: {e!r}")
+
     if dp_id in _FALLBACK_ATTACHED_DP_IDS:
         return False
     try:
@@ -325,6 +338,13 @@ async def revive_magic_system(
                 _attach_middleware(dp)
             except Exception as e:
                 print(f"⚠️ [MAGIC] revive attach: {e!r}")
+            # Сначала handlers игр, потом orphan (внутри attach_magic_fallback)
+            try:
+                from bot.runtime.callback_bootstrap import ensure_handlers_for_dispatcher
+
+                ensure_handlers_for_dispatcher(dp)
+            except Exception as e:
+                print(f"⚠️ [MAGIC] revive ensure handlers: {e!r}")
             try:
                 attach_magic_fallback(dp)
             except Exception as e:

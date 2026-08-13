@@ -276,6 +276,9 @@ WIN_CAUSES = (
     "куб угадайка", "рулетка", "слова",
 )
 from typing import Dict, Any, List
+
+# Важно: не держать в обычном {} — после рестарта кнопки giftgift умрут.
+# Подменяется на LazyGameStore в main.py сразу после импорта pklcode.
 GIFTGIFT_SEND_REQUEST_ACTIONS: Dict[str, Dict[str, Any]] = {}
 GIFTGIFT_SEND_REQUEST_ACTION_TTL = 60 * 60 * 6  # 6 часов
 

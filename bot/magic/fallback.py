@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Последний шанс для callback: гасим «часики», если никто не обработал.
+"""Последний шанс для callback.
 
-После рестарта люди жмут старые кнопки (сессии игр уже нет) —
-без fallback спиннер крутится вечно. Этот handler должен быть
-подключён ПОСЛЕДНИМ роутером.
+Порядок:
+  1) HOT DISPATCH — известный префикс (kostijoin и т.п.), модуль мог не
+     быть импортирован после рестарта → import + вызов handler.
+  2) BLC — hydrate opaque-токенов / refresh markup через Telegram.
+  3) Честный alert «устарела», без вечного спиннера.
 """
 
 from __future__ import annotations
@@ -20,17 +22,37 @@ fallback_router = Router(name="magic_fallback")
 
 @fallback_router.callback_query()
 async def _magic_orphan_callback(query: CallbackQuery) -> None:
-    """Любой callback без своего handler'а — тихо гасим спиннер."""
+    data = (query.data or "")[:80]
+
+    # 1) Hot-dispatch игровых/меню префиксов (кости, орёл, …)
     try:
-        await query.answer()
+        from bot.runtime.callback_bootstrap import try_hot_dispatch
+
+        if await try_hot_dispatch(query):
+            logger.info("orphan hot-dispatched data=%r", data)
+            return
+    except Exception as e:
+        logger.warning("hot-dispatch: %r", e)
+
+    # 2) BLC resurrect (opaque tokens + markup refresh)
+    try:
+        from bot.runtime.button_lifecycle import handle_orphan_callback
+
+        if await handle_orphan_callback(query):
+            logger.info("orphan BLC-handled data=%r", data)
+            return
+    except Exception as e:
+        logger.warning("BLC orphan: %r", e)
+
+    # 3) Последний ответ
+    try:
+        await query.answer(
+            "⏳ Кнопка устарела после перезапуска.\nОткройте меню заново.",
+            show_alert=True,
+        )
     except Exception:
         try:
-            # просроченный callback после рестарта — тоже ок
-            pass
+            await query.answer()
         except Exception:
             pass
-    try:
-        data = (query.data or "")[:80]
-        logger.info("orphan callback answered data=%r", data)
-    except Exception:
-        pass
+    logger.info("orphan callback answered data=%r", data)

@@ -203,6 +203,22 @@ except Exception as _magic_err:
     except Exception as _cb_fast_err:
         print(f"⚠️ [CALLBACK_FAST] middleware not attached: {_cb_fast_err!r}")
 
+# ── Button Lifecycle: память кнопок + pkl + подъём после рестарта ──
+try:
+    from bot.runtime.button_lifecycle import install as _blc_install
+
+    _blc_install(bot=bot1, dp=dp)
+except Exception as _blc_err:
+    print(f"⚠️ [BLC] install failed: {_blc_err!r}")
+
+# Durable giftgift tokens (раньше был обычный dict → смерть после рестарта)
+try:
+    GIFTGIFT_SEND_REQUEST_ACTIONS = LazyGameStore("GIFTGIFT_SEND_REQUEST_ACTIONS")
+    import bot.config.config as _cfg_giftgift
+    _cfg_giftgift.GIFTGIFT_SEND_REQUEST_ACTIONS = GIFTGIFT_SEND_REQUEST_ACTIONS
+except Exception as _gg_err:
+    print(f"⚠️ [BLC] GIFTGIFT store: {_gg_err!r}")
+
 
 @dp.error()
 async def _on_unhandled_error(event) -> bool:
@@ -4315,24 +4331,22 @@ request_count = 0
 
 
 class ButtonRegistry:
-    """Раньше плодил mega-handler на каждый callback_data и дублировал
-    уже существующие @dp.callback_query из модулей игр.
+    """Раньше плодил mega-handler на каждый callback_data.
 
-    Это замедляло КАЖДОЕ нажатие (дорогие lambda-фильтры по всему dict).
-    Handlers уже зарегистрированы декораторами в bot/games, bot/funcs, bot/design —
-    поэтому регистрация здесь отключена.
+    Сейчас handlers регистрируются через callback_bootstrap
+    (eager import модулей с @dp.callback_query) — без N lambda на клик.
     """
 
     def __init__(self, dispatcher: Dispatcher):
         self.dp = dispatcher
         self.registered_callbacks = set()
-        print("[ButtonRegistry] Инициализирован (no-op: без mega-handler).")
+        print("[ButtonRegistry] Инициализирован (bootstrap handles registration).")
 
     def register_buttons_from_dict(self, data_dict: Dict[int, Dict[str, Any]]):
         n = len(data_dict or {})
         print(
-            f"[ButtonRegistry] SKIP регистрация ({n} игр) — "
-            "handlers уже в модулях, mega-handler отключён для скорости кнопок."
+            f"[ButtonRegistry] SKIP mega-handler ({n} игр) — "
+            "см. bot.runtime.callback_bootstrap"
         )
         return
 
@@ -8584,13 +8598,19 @@ def _register_send_request_action(payload: Dict[str, Any]) -> str:
     _cleanup_send_request_actions()
     token = uuid.uuid4().hex[:24]
     now = _wd_now_ts()
-    SEND_REQUEST_ACTIONS[token] = {
+    row = {
         **dict(payload or {}),
         "token": token,
         "status": "pending",
         "created_at": now,
         "updated_at": now,
     }
+    SEND_REQUEST_ACTIONS[token] = row
+    try:
+        from bot.runtime.button_lifecycle import bind_registered_token
+        bind_registered_token(SEND_REQUEST_ACTIONS, token, row, prefix="srq")
+    except Exception:
+        pass
     return token
 
 
@@ -15253,22 +15273,25 @@ def _cleanup_callback_store(store: Dict[str, Dict[str, Any]], max_age_sec: int =
 def _register_callback_payload(store: Dict[str, Dict[str, Any]], payload: Dict[str, Any]) -> str:
     _cleanup_callback_store(store)
     token = uuid.uuid4().hex[:16]
-    store[token] = {
+    row = {
         **dict(payload or {}),
         "ts": time.time(),
     }
-    # Сразу в Redis — иначе soft-restart убьёт кнопку до debounce
+    store[token] = row
+    # BLC: durable копия токена + write-through в Redis
     try:
-        from bot.runtime.button_survival import persist_callback_store
-        persist_callback_store(store)
+        from bot.runtime.button_lifecycle import bind_registered_token
+        bind_registered_token(store, token, row)
     except Exception:
         try:
-            if hasattr(store, "flush"):
-                store.flush()
-            elif hasattr(store, "save"):
-                store.save()
+            from bot.runtime.button_survival import persist_callback_store
+            persist_callback_store(store)
         except Exception:
-            pass
+            try:
+                if hasattr(store, "save"):
+                    store.save()
+            except Exception:
+                pass
     return token
 
 
@@ -27780,10 +27803,16 @@ def _cleanup_giftgift_send_request_actions() -> None:
 def _register_giftgift_send_request_action(payload: Dict[str, Any]) -> str:
     _cleanup_giftgift_send_request_actions()
     token = uuid.uuid4().hex[:12]
-    GIFTGIFT_SEND_REQUEST_ACTIONS[token] = {
+    row = {
         **dict(payload or {}),
         "ts": time.time(),
     }
+    GIFTGIFT_SEND_REQUEST_ACTIONS[token] = row
+    try:
+        from bot.runtime.button_lifecycle import bind_registered_token
+        bind_registered_token(GIFTGIFT_SEND_REQUEST_ACTIONS, token, row, prefix="ggsr")
+    except Exception:
+        pass
     return token
 
 
@@ -39374,21 +39403,23 @@ async def on_bot_started() -> None:
     if not bot_started_event.is_set():
         print("🟩 [BOT] polling started, bot is ready")
         bot_started_event.set()
-    # Максимальная защита кнопок: pkl write-through + adopt + Мэджик
-    # (text-бот и inline-режим; сессии в Redis, цепь кликов — Мэджик).
+    # BLC: pkl policy + Мэджик + подъём клавиатур через Telegram
     try:
         from bot.runtime.button_survival import protect_after_start_async
 
         # cold start: Redis уже подтянут initial_sync; полный adopt не нужен
         # (handoff делает adopt=True отдельно после child_go).
-        await protect_after_start_async(
+        boot_out = await protect_after_start_async(
             reason="boot",
             adopt=False,
             revive_magic=True,
             dp=dp,
+            bot=bot1,
+            raise_markups=True,
         )
+        print(f"✅ [BLC] boot: {boot_out}")
     except Exception as e_mag:
-        print(f"⚠️ [BTN-SURVIVE] boot: {type(e_mag).__name__}: {e_mag}")
+        print(f"⚠️ [BLC] boot: {type(e_mag).__name__}: {e_mag}")
         try:
             from bot.magic.install import revive_magic_system
             await revive_magic_system(dp=dp, reason="boot_fallback", hard=True, run_audit=True)
@@ -40129,13 +40160,20 @@ async def botmain():
     if _sr_handoff_child:
         try:
             from bot.funcs import soft_restart as _sr_gate
+            # Ещё до child_ready — поднять handlers (кости/орёл/…),
+            # иначе первые клики после go уйдут в orphan.
+            try:
+                from bot.runtime.callback_bootstrap import ensure_handlers_for_dispatcher
+                print(f"[MAIN][SR] pre-ready handlers: {ensure_handlers_for_dispatcher(dp)}")
+            except Exception as _pre_h:
+                print(f"[MAIN][SR][WARN] pre-ready handlers: {_pre_h!r}")
             _sr_gate.mark_child_ready()
             ok = await _sr_gate.wait_child_go(timeout=180.0)
             if not ok:
                 print("[MAIN][SR] child_go timeout — не стартую polling")
                 return
 
-            # КРИТИЧНО: старый уже flush'нул pkl. Adopt + write-through + Мэджик.
+            # КРИТИЧНО: старый flush'нул pkl → adopt + handlers + raise через Telegram.
             try:
                 from bot.runtime.button_survival import protect_after_start_async
 
@@ -40144,10 +40182,12 @@ async def botmain():
                     adopt=True,
                     revive_magic=True,
                     dp=dp,
+                    bot=bot1,
+                    raise_markups=True,
                 )
-                print(f"[MAIN][SR][BTN] after handoff: {adopt}")
+                print(f"[MAIN][SR][BLC] after handoff: {adopt}")
             except Exception as e_adopt:
-                print(f"[MAIN][SR][BTN][WARN] adopt: {type(e_adopt).__name__}: {e_adopt}")
+                print(f"[MAIN][SR][BLC][WARN] adopt: {type(e_adopt).__name__}: {e_adopt}")
 
             # После go — воркеры, которые откладывали на время overlap
             try:
@@ -40484,8 +40524,18 @@ if __name__ == "__main__":
 
     dp.include_router(router)
 
-    # Мэджик: orphan-callback ПОСЛЕДНИМ — гасит часики у кнопок без handler
-    # (после рестарта старые игровые кнопки часто уже без сессии в памяти).
+    # КРИТИЧНО: зарегистрировать ВСЕ @dp.callback_query до polling.
+    # Иначе после рестарта kostijoin/joinorel/… уходят в orphan
+    # (модули игр импортировались лениво только по тексту «кости»).
+    try:
+        from bot.runtime.callback_bootstrap import bootstrap_callback_handlers
+
+        _cb_boot = bootstrap_callback_handlers()
+        print(f"[MAIN] callback bootstrap: {_cb_boot}")
+    except Exception as _cb_boot_err:
+        print(f"⚠️ [CB-BOOT] {_cb_boot_err!r}")
+
+    # Мэджик: orphan ПОСЛЕДНИМ — hot-dispatch + BLC + alert
     try:
         from bot.magic.install import attach_magic_fallback
         attach_magic_fallback(dp)

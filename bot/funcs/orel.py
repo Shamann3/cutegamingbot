@@ -26,12 +26,13 @@ from main import get_bot_username_by_token,create_user_link,LazyGameStore  # у 
 MAX_OREL_PARTICIPANTS = 2
 
 # ====== Глобальные защитные структуры (как в шашках) ======
-_join_locks_orel: Dict[int, asyncio.Lock] = LazyGameStore("_join_locks_orel")
+# asyncio.Lock только в RAM — не в Redis/pkl
+_join_locks_orel: Dict[int, asyncio.Lock] = {}
 _inflight_orel: Set[Tuple[int, int]] = set()
 
 def _get_orel_lock(game_id: int) -> asyncio.Lock:
     lock = _join_locks_orel.get(game_id)
-    if lock is None:
+    if not isinstance(lock, asyncio.Lock):
         lock = asyncio.Lock()
         _join_locks_orel[game_id] = lock
     return lock
