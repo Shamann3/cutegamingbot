@@ -4257,7 +4257,13 @@ async def admin_sr_save_settings(
         )
     except Exception:
         pass
-    return {"ok": True, "config": cfg, "status": (await sr_overview())["status"]}
+    ov = await sr_overview()
+    return {
+        "ok": True,
+        "config": cfg,
+        "status": ov["status"],
+        "diagnostics": ov.get("diagnostics"),
+    }
 
 
 class SoftRestartPresetBody(BaseModel):
@@ -4284,7 +4290,13 @@ async def admin_sr_preset(
         )
     except Exception:
         pass
-    return {"ok": True, "config": cfg, "status": (await sr_overview())["status"]}
+    ov = await sr_overview()
+    return {
+        "ok": True,
+        "config": cfg,
+        "status": ov["status"],
+        "diagnostics": ov.get("diagnostics"),
+    }
 
 
 class SoftRestartNowBody(BaseModel):

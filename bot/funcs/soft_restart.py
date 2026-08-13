@@ -31,11 +31,36 @@ _HELP_HINT = (
 )
 
 _REDIS_KEY = "cg:sr:v1"
-_DATA_DIR = Path(os.environ.get("SR_DATA_DIR") or (Path(__file__).resolve().parents[2] / "data"))
+_REDIS_STATUS_KEY = "cg:sr:status"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DATA_DIR = Path(os.environ.get("SR_DATA_DIR") or (_REPO_ROOT / "data"))
 _FILE_PATH = _DATA_DIR / "sr_runtime.json"
 _STATUS_PATH = _DATA_DIR / "sr_status.json"
 _CMD_PATH = _DATA_DIR / "sr_cmd.json"
 _SR_DIR = Path(os.environ.get("SR_DIR", "/tmp/cg_sr"))
+_bridge_last_error: str = ""
+
+
+def _data_roots() -> list:
+    roots = []
+    env = (os.environ.get("SR_DATA_DIR") or "").strip()
+    if env:
+        roots.append(Path(env))
+    roots.append(_REPO_ROOT / "data")
+    roots.append(_REPO_ROOT / "server" / "data")
+    uniq = []
+    seen = set()
+    for r in roots:
+        key = str(r)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(r)
+    return uniq
+
+
+def _paths(name: str) -> list:
+    return [root / name for root in _data_roots()]
 
 _lock = asyncio.Lock()
 _cfg_lock = asyncio.Lock()
@@ -159,13 +184,15 @@ def _read_file() -> Optional[Dict[str, Any]]:
 
 
 def _write_file(cfg: Dict[str, Any]) -> None:
-    try:
-        _FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        tmp = _FILE_PATH.with_suffix(".tmp")
-        tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(_FILE_PATH)
-    except Exception as e:
-        print(f"[SR] file write: {e!r}")
+    payload = json.dumps(cfg, ensure_ascii=False, indent=2)
+    for path in _paths("sr_runtime.json"):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            tmp.replace(path)
+        except Exception as e:
+            print(f"[SR] file write {path}: {e!r}")
 
 
 def _redis_client():
@@ -203,12 +230,25 @@ def _write_redis(cfg: Dict[str, Any]) -> None:
         print(f"[SR] redis write: {e!r}")
 
 
+def _read_any_runtime_file() -> Optional[Dict[str, Any]]:
+    for path in _paths("sr_runtime.json"):
+        try:
+            if not path.is_file():
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            continue
+    return _read_file()
+
+
 def ensure_loaded() -> Dict[str, Any]:
     global _cfg, _loaded
     if _loaded and _cfg is not None:
         return _cfg
     cfg = _defaults_from_env()
-    for src in (_read_redis, _read_file):
+    for src in (_read_redis, _read_any_runtime_file):
         got = src()
         if got:
             cfg = _normalize(got)
@@ -259,6 +299,7 @@ def is_creator(uid: int) -> bool:
 def status_dict() -> dict:
     ensure_loaded()
     now = time.time()
+    cfg = ensure_loaded()
     return {
         "enabled": is_enabled(),
         "test_mode": is_test_mode(),
@@ -274,29 +315,47 @@ def status_dict() -> dict:
         "handoff": supervisor_active(),
         "supervisor": supervisor_active(),
         "published_at": now,
+        "bridge_ok": True,
+        "bridge_error": _bridge_last_error or None,
+        "applied": {
+            "enabled": bool(cfg.get("enabled")),
+            "test": bool(cfg.get("test")),
+            "interval_sec": float(cfg.get("interval_sec")),
+            "initial_delay_sec": float(cfg.get("initial_delay_sec")),
+            "grace_sec": float(cfg.get("grace_sec")),
+        },
     }
 
 
 def _publish_status_sync() -> None:
-    """Снимок для админ-панели (файл; PG — из async bridge)."""
+    """Снимок для админ-панели во все известные data/ + Redis."""
     st = status_dict()
+    payload = json.dumps(st, ensure_ascii=False)
+    for path in _paths("sr_status.json"):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            tmp.replace(path)
+        except Exception as e:
+            print(f"[SR] status file {path}: {e!r}")
     try:
-        _STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        tmp = _STATUS_PATH.with_suffix(".tmp")
-        tmp.write_text(json.dumps(st, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(_STATUS_PATH)
+        r = _redis_client()
+        if r is not None:
+            r.set(_REDIS_STATUS_KEY, payload)
     except Exception as e:
-        print(f"[SR] status file: {e!r}")
+        print(f"[SR] status redis: {e!r}")
 
 
 async def _bridge_ensure_table() -> bool:
-    global _bridge_table_ready
+    global _bridge_table_ready, _bridge_last_error
     if _bridge_table_ready:
         return True
     try:
         from bot.db_create.db import db
 
         if getattr(db, "pool", None) is None:
+            _bridge_last_error = "db.pool is None"
             return False
         await db.pool.execute(
             """
@@ -314,13 +373,16 @@ async def _bridge_ensure_table() -> bool:
             """
         )
         _bridge_table_ready = True
+        _bridge_last_error = ""
         return True
     except Exception as e:
+        _bridge_last_error = repr(e)
         print(f"[SR] bridge table: {e!r}")
         return False
 
 
 async def _bridge_publish_status() -> None:
+    global _bridge_last_error
     st = status_dict()
     _publish_status_sync()
     try:
@@ -336,12 +398,25 @@ async def _bridge_publish_status() -> None:
             """,
             json.dumps(st, ensure_ascii=False),
         )
+        _bridge_last_error = ""
     except Exception as e:
+        _bridge_last_error = repr(e)
         print(f"[SR] bridge status: {e!r}")
 
 
 async def _bridge_push_config() -> None:
+    global _bridge_last_error
     cfg = ensure_loaded()
+    # Дублируем runtime-файл во все корни — панель читает server/data и repo/data
+    payload = json.dumps(cfg, ensure_ascii=False, indent=2)
+    for path in _paths("sr_runtime.json"):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            tmp.replace(path)
+        except Exception as e:
+            print(f"[SR] runtime file {path}: {e!r}")
     try:
         if not await _bridge_ensure_table():
             return
@@ -355,7 +430,9 @@ async def _bridge_push_config() -> None:
             """,
             json.dumps(cfg, ensure_ascii=False),
         )
+        _bridge_last_error = ""
     except Exception as e:
+        _bridge_last_error = repr(e)
         print(f"[SR] bridge config push: {e!r}")
 
 
@@ -422,21 +499,39 @@ async def _consume_cmd(cmd: Dict[str, Any]) -> None:
         return
 
 
-async def _poll_bridge_once() -> None:
-    global _last_cfg_rev
-    # 1) файл команды
-    file_cmd = None
-    try:
-        if _CMD_PATH.is_file():
-            file_cmd = json.loads(_CMD_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        file_cmd = None
-    if isinstance(file_cmd, dict):
-        await _consume_cmd(file_cmd)
+def _cmd_as_dict(raw) -> Optional[Dict[str, Any]]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, (bytes, bytearray)):
         try:
-            _CMD_PATH.unlink()
+            raw = raw.decode("utf-8", errors="ignore")
         except Exception:
-            pass
+            return None
+    if isinstance(raw, str) and raw.strip():
+        try:
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
+    return None
+
+
+async def _poll_bridge_once() -> None:
+    global _last_cfg_rev, _bridge_last_error
+    # 1) файлы команды во всех корнях
+    for path in _paths("sr_cmd.json"):
+        file_cmd = None
+        try:
+            if path.is_file():
+                file_cmd = _cmd_as_dict(path.read_text(encoding="utf-8"))
+        except Exception:
+            file_cmd = None
+        if isinstance(file_cmd, dict):
+            await _consume_cmd(file_cmd)
+            try:
+                path.unlink()
+            except Exception:
+                pass
 
     # 2) Postgres
     try:
@@ -453,21 +548,23 @@ async def _poll_bridge_once() -> None:
         if crev > _last_cfg_rev:
             _last_cfg_rev = crev
             cfg = row["config"]
+            if isinstance(cfg, str):
+                cfg = _cmd_as_dict(cfg)
             if isinstance(cfg, dict) and cfg:
-                # Не дублируем, если только что применили тот же cmd
                 cur = ensure_loaded()
                 norm = _normalize(cfg)
                 if any(cur.get(k) != norm.get(k) for k in norm):
                     await apply_external_config(norm)
                     print(f"[SR] bridge config_rev={crev}", flush=True)
-        cmd = row["cmd"]
+        cmd = _cmd_as_dict(row["cmd"])
         if isinstance(cmd, dict):
             await _consume_cmd(cmd)
-            # очистить cmd после обработки
             await db.pool.execute(
                 "UPDATE soft_restart_bridge SET cmd = NULL WHERE id = 1"
             )
+        _bridge_last_error = ""
     except Exception as e:
+        _bridge_last_error = repr(e)
         print(f"[SR] bridge poll: {e!r}")
 
 

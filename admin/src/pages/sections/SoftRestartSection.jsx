@@ -30,16 +30,7 @@ function fmtHuman(sec) {
   return m ? `${h}ч ${m}м` : `${h}ч`
 }
 
-function SliderRow({
-  label,
-  help,
-  value,
-  min,
-  max,
-  step = 1,
-  onChange,
-  display,
-}) {
+function SliderRow({ label, help, value, min, max, step = 1, onChange, display }) {
   const safe = Number.isFinite(Number(value))
     ? Math.min(max, Math.max(min, Number(value)))
     : min
@@ -90,27 +81,55 @@ function Toggle({ on, label, sub, onToggle }) {
   )
 }
 
+function DocCard({ doc }) {
+  if (!doc) return null
+  return (
+    <article className="sr-doc">
+      <header className="sr-doc-head">
+        <h4>{doc.title}</h4>
+        <p>{doc.short}</p>
+      </header>
+      <p className="sr-doc-detail">{doc.detail}</p>
+      {Array.isArray(doc.affects) && doc.affects.length > 0 && (
+        <div className="sr-doc-block">
+          <span className="sr-doc-label">Что меняется в рантайме</span>
+          <ul>
+            {doc.affects.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {doc.code ? (
+        <div className="sr-doc-block">
+          <span className="sr-doc-label">Код</span>
+          <code className="sr-doc-code">{doc.code}</code>
+        </div>
+      ) : null}
+    </article>
+  )
+}
+
 export default function SoftRestartSection() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [cfg, setCfg] = useState(null)
   const [status, setStatus] = useState(null)
+  const [diagnostics, setDiagnostics] = useState(null)
   const [help, setHelp] = useState({})
+  const [docs, setDocs] = useState({})
   const [guide, setGuide] = useState(null)
   const [tab, setTab] = useState('control')
   const [remain, setRemain] = useState(null)
+  const [diagOpen, setDiagOpen] = useState(false)
   const nextAtRef = useRef(null)
   const skewRef = useRef(0)
 
-  const applyPayload = useCallback((data) => {
-    setCfg(data.config || {})
-    setStatus(data.status || {})
-    setHelp(data.paramHelp || {})
-    setGuide(data.guide || null)
-    const st = data.status || {}
-    const serverNow = Number(st.server_now) || Date.now() / 1000
+  const syncStatusClock = useCallback((st) => {
+    setStatus(st || {})
+    const serverNow = Number(st?.server_now) || Date.now() / 1000
     skewRef.current = serverNow - Date.now() / 1000
-    if (st.next_at != null) {
+    if (st?.next_at != null) {
       nextAtRef.current = Number(st.next_at)
       setRemain(Math.max(0, Number(st.next_at) - serverNow))
     } else {
@@ -118,6 +137,15 @@ export default function SoftRestartSection() {
       setRemain(null)
     }
   }, [])
+
+  const applyPayload = useCallback((data) => {
+    setCfg(data.config || {})
+    setHelp(data.paramHelp || {})
+    setDocs(data.paramDocs || {})
+    setGuide(data.guide || null)
+    setDiagnostics(data.diagnostics || null)
+    syncStatusClock(data.status || {})
+  }, [syncStatusClock])
 
   const load = useCallback(async () => {
     try {
@@ -132,7 +160,6 @@ export default function SoftRestartSection() {
 
   useEffect(() => { load() }, [load])
 
-  // Поллинг только статуса — локальные несохранённые правки cfg не затираем
   useEffect(() => {
     let cancelled = false
     const tick = async () => {
@@ -140,26 +167,20 @@ export default function SoftRestartSection() {
       try {
         const data = await fetchSoftRestartOverview()
         if (cancelled) return
-        const st = data.status || {}
-        setStatus(st)
-        const serverNow = Number(st.server_now) || Date.now() / 1000
-        skewRef.current = serverNow - Date.now() / 1000
-        if (st.next_at != null) {
-          nextAtRef.current = Number(st.next_at)
-          setRemain(Math.max(0, Number(st.next_at) - serverNow))
-        } else {
-          nextAtRef.current = null
-          setRemain(null)
+        setDiagnostics(data.diagnostics || null)
+        syncStatusClock(data.status || {})
+        // подтянуть applied с бота, не затирая локальные несохранённые правки
+        if (data.config && !saving) {
+          // не трогаем cfg здесь
         }
       } catch {
         /* тихо */
       }
     }
-    const id = setInterval(tick, 1500)
+    const id = setInterval(tick, 1200)
     return () => { cancelled = true; clearInterval(id) }
-  }, [])
+  }, [syncStatusClock, saving])
 
-  // Живой отсчёт до секунды
   useEffect(() => {
     let raf = 0
     let last = 0
@@ -167,9 +188,8 @@ export default function SoftRestartSection() {
       if (t - last > 200) {
         last = t
         const nextAt = nextAtRef.current
-        if (nextAt == null) {
-          setRemain(null)
-        } else {
+        if (nextAt == null) setRemain(null)
+        else {
           const now = Date.now() / 1000 + skewRef.current
           setRemain(Math.max(0, nextAt - now))
         }
@@ -196,10 +216,9 @@ export default function SoftRestartSection() {
         grace_sec: Number(cfg.grace_sec),
       })
       if (res.config) setCfg(res.config)
-      if (res.status) {
-        applyPayload({ config: res.config || cfg, status: res.status, paramHelp: help, guide })
-      }
-      notifyAdmin('Настройки Soft Restart сохранены')
+      if (res.status) syncStatusClock(res.status)
+      notifyAdmin('Сохранено · бот подхватит за ~1с')
+      await load()
     } catch (e) {
       notifyAdmin(String(e?.message || e), { error: true })
     } finally {
@@ -210,12 +229,9 @@ export default function SoftRestartSection() {
   const onPreset = async (name) => {
     setSaving(true)
     try {
-      const res = await saveSoftRestartPreset(name)
-      if (res.config) setCfg(res.config)
-      if (res.status) {
-        applyPayload({ config: res.config || cfg, status: res.status, paramHelp: help, guide })
-      }
-      notifyAdmin(name === 'live' ? 'Пресет Live · авто ON' : 'Пресет Test · авто OFF')
+      await saveSoftRestartPreset(name)
+      notifyAdmin(name === 'live' ? 'Preset Live применён' : 'Preset Test применён')
+      await load()
     } catch (e) {
       notifyAdmin(String(e?.message || e), { error: true })
     } finally {
@@ -224,13 +240,18 @@ export default function SoftRestartSection() {
   }
 
   const onRestartNow = async () => {
-    if (!window.confirm('Запустить soft restart сейчас? В личку придёт короткое «ок», когда новый процесс встанет.')) {
+    if (!window.confirm('Запустить soft restart сейчас? В ЛС придёт короткое «ок», когда новый процесс встанет.')) {
       return
     }
     setSaving(true)
     try {
-      await queueSoftRestartNow('panel')
-      notifyAdmin('Рестарт поставлен в очередь')
+      const res = await queueSoftRestartNow('panel')
+      notifyAdmin(
+        res?.pg_ok || (res?.files || []).length
+          ? 'Команда рестарта отправлена боту'
+          : 'Команда записана, но bridge может быть недоступен — смотри диагностику',
+      )
+      await load()
     } catch (e) {
       notifyAdmin(String(e?.message || e), { error: true })
     } finally {
@@ -239,10 +260,22 @@ export default function SoftRestartSection() {
   }
 
   const pulse = useMemo(() => {
-    if (!status?.alive) return 'offline'
+    if (!status?.alive) return status?.stale ? 'stale' : 'offline'
     if (status.requested) return 'restarting'
     if (cfg?.enabled) return 'armed'
     return 'idle'
+  }, [status, cfg])
+
+  const synced = useMemo(() => {
+    const a = status?.applied
+    if (!a || !cfg) return false
+    return (
+      !!a.enabled === !!cfg.enabled
+      && !!a.test === !!cfg.test
+      && Number(a.interval_sec) === Number(cfg.interval_sec)
+      && Number(a.initial_delay_sec) === Number(cfg.initial_delay_sec)
+      && Number(a.grace_sec) === Number(cfg.grace_sec)
+    )
   }, [status, cfg])
 
   if (loading || !cfg) {
@@ -268,8 +301,26 @@ export default function SoftRestartSection() {
         <p className="sr-kicker">Creator only · hidden side</p>
         <h2 className="sr-title">Sypher</h2>
         <p className="sr-lead">
-          {guide?.subtitle || 'Мягкий перезапуск процесса без деплоя. Настройка здесь — в личку только короткое подтверждение.'}
+          {guide?.subtitle || 'Мягкий перезапуск процесса. Каждый параметр ниже описан: что делает и какой код крутит.'}
         </p>
+
+        {!status?.alive && (
+          <div className={`sr-banner${status?.stale ? ' sr-banner-stale' : ''}`}>
+            <strong>{status?.stale ? 'Heartbeat устарел' : 'Бот не в сети'}</strong>
+            <p>{diagnostics?.hint}</p>
+            <ol>
+              <li>Задеплой и перезапусти <b>игровой</b> процесс (<code>main.py</code> / entrypoint бота), не admin-bot.</li>
+              <li>API и бот должны смотреть в <b>одну Postgres</b> (таблица <code>soft_restart_bridge</code>) либо общий <code>data/sr_status.json</code>.</li>
+              <li>После старта пульс станет <b>armed/idle</b> за 1–2 секунды.</li>
+            </ol>
+            <button type="button" className="sr-btn sr-btn-ghost" onClick={() => setDiagOpen((v) => !v)}>
+              {diagOpen ? 'Скрыть диагностику' : 'Показать диагностику bridge'}
+            </button>
+            {diagOpen && diagnostics && (
+              <pre className="sr-diag">{JSON.stringify(diagnostics, null, 2)}</pre>
+            )}
+          </div>
+        )}
 
         <div className={`sr-countdown sr-countdown-${pulse}`}>
           <div className="sr-countdown-ring" aria-hidden="true">
@@ -278,7 +329,7 @@ export default function SoftRestartSection() {
           <div className="sr-countdown-body">
             <span className="sr-countdown-label">
               {!status?.alive
-                ? 'бот не в сети'
+                ? (status?.stale ? 'heartbeat устарел' : 'бот не в сети')
                 : !autoOn
                   ? 'авто выключен'
                   : status.requested
@@ -287,11 +338,15 @@ export default function SoftRestartSection() {
                       ? 'ещё не в расписании'
                       : 'до следующего рестарта'}
             </span>
-            <span className="sr-countdown-clock" key={countdownActive ? Math.floor(remain) : 'x'}>
+            <span className="sr-countdown-clock" key={countdownActive ? Math.floor(remain) : pulse}>
               {countdownActive ? fmtClock(remain) : '——:——'}
             </span>
             <span className="sr-countdown-meta">
-              {countdownActive ? fmtHuman(remain) : status?.alive ? 'ожидание команды' : 'нет heartbeat'}
+              {countdownActive
+                ? fmtHuman(remain)
+                : status?.alive
+                  ? (synced ? 'конфиг синхронизирован с ботом' : 'есть несохранённые/неприменённые правки')
+                  : (diagnostics?.hint || 'нет heartbeat')}
             </span>
           </div>
         </div>
@@ -320,6 +375,7 @@ export default function SoftRestartSection() {
         {[
           ['control', 'Управление'],
           ['timing', 'Таймеры'],
+          ['docs', 'Параметры и код'],
           ['guide', 'Как это работает'],
         ].map(([id, label]) => (
           <button
@@ -338,14 +394,14 @@ export default function SoftRestartSection() {
           <div className="sr-grid">
             <Toggle
               on={!!cfg.enabled}
-              label="Авто-рестарт"
-              sub={help.enabled}
+              label={docs.enabled?.title || 'Авто-рестарт'}
+              sub={docs.enabled?.short || help.enabled}
               onToggle={() => patch('enabled', !cfg.enabled)}
             />
             <Toggle
               on={!!cfg.test}
-              label="Тестовый режим"
-              sub={help.test}
+              label={docs.test?.title || 'Тестовый режим'}
+              sub={docs.test?.short || help.test}
               onToggle={() => patch('test', !cfg.test)}
             />
 
@@ -356,14 +412,14 @@ export default function SoftRestartSection() {
               <button type="button" className="sr-btn sr-btn-ghost" disabled={saving} onClick={() => onPreset('test')}>
                 Preset Test
               </button>
-              <button type="button" className="sr-btn sr-btn-danger" disabled={saving} onClick={onRestartNow}>
+              <button type="button" className="sr-btn sr-btn-danger" disabled={saving || !status?.alive} onClick={onRestartNow}>
                 Рестарт сейчас
               </button>
             </div>
 
             <div className="sr-actions">
               <button type="button" className="sr-btn sr-btn-primary" disabled={saving} onClick={onSave}>
-                {saving ? 'Сохраняю…' : 'Сохранить'}
+                {saving ? 'Сохраняю…' : 'Сохранить и применить'}
               </button>
               <button type="button" className="sr-btn sr-btn-ghost" disabled={saving} onClick={load}>
                 Обновить
@@ -371,8 +427,10 @@ export default function SoftRestartSection() {
             </div>
 
             <p className="sr-note">
-              После сохранения бот подхватывает настройки за ~1 секунду. В личку при рестарте —
-              одно короткое сообщение вида <code>◈ soft restart · … · ок</code>.
+              Live = авто ON + тест OFF. Test = авто OFF + тест ON.
+              После рестарта в личку бота придёт одно короткое
+              {' '}<code>◈ soft restart · … · ок</code>.
+              Подробности влияния на код — вкладка «Параметры и код».
             </p>
           </div>
         )}
@@ -380,8 +438,8 @@ export default function SoftRestartSection() {
         {tab === 'timing' && (
           <div className="sr-grid">
             <SliderRow
-              label="Пауза до первого рестарта"
-              help={help.initial_delay_sec}
+              label={docs.initial_delay_sec?.title || 'Пауза до первого рестарта'}
+              help={docs.initial_delay_sec?.detail || help.initial_delay_sec}
               value={cfg.initial_delay_sec}
               min={30}
               max={21600}
@@ -389,8 +447,8 @@ export default function SoftRestartSection() {
               onChange={(n) => patch('initial_delay_sec', n)}
             />
             <SliderRow
-              label="Интервал между рестартами"
-              help={help.interval_sec}
+              label={docs.interval_sec?.title || 'Интервал между рестартами'}
+              help={docs.interval_sec?.detail || help.interval_sec}
               value={cfg.interval_sec}
               min={60}
               max={21600}
@@ -398,8 +456,8 @@ export default function SoftRestartSection() {
               onChange={(n) => patch('interval_sec', n)}
             />
             <SliderRow
-              label="Grace (жёсткий выход)"
-              help={help.grace_sec}
+              label={docs.grace_sec?.title || 'Grace (жёсткий выход)'}
+              help={docs.grace_sec?.detail || help.grace_sec}
               value={cfg.grace_sec}
               min={0.5}
               max={30}
@@ -412,10 +470,17 @@ export default function SoftRestartSection() {
                 {saving ? 'Сохраняю…' : 'Применить таймеры'}
               </button>
             </div>
+          </div>
+        )}
+
+        {tab === 'docs' && (
+          <div className="sr-docs">
             <p className="sr-note">
-              Ползунки и кнопки ± двигают значения. Сохранение сразу пересобирает расписание —
-              отсчёт сверху обновится.
+              Ниже — каждый параметр: смысл, что меняется в рантайме и какой файл/функции это крутят.
             </p>
+            {['enabled', 'test', 'initial_delay_sec', 'interval_sec', 'grace_sec'].map((key) => (
+              <DocCard key={key} doc={docs[key]} />
+            ))}
           </div>
         )}
 
@@ -427,10 +492,18 @@ export default function SoftRestartSection() {
                 <li key={line}>{line}</li>
               ))}
             </ol>
-            <p className="sr-note">
-              Команды в личке бота по-прежнему работают (<code>.r</code>, <code>sypherrestart</code>),
-              но вся настройка удобнее здесь. Чужим эта вкладка не видна.
+            <p className="sr-note" style={{ marginTop: '0.85rem' }}>
+              Команды в личке (<code>.r</code>, <code>sypherrestart</code>) остаются как запасной канал.
+              Основная настройка — эта вкладка.
             </p>
+            {status?.alive && (
+              <button type="button" className="sr-btn sr-btn-ghost" style={{ marginTop: '0.75rem' }} onClick={() => setDiagOpen((v) => !v)}>
+                {diagOpen ? 'Скрыть диагностику' : 'Диагностика bridge'}
+              </button>
+            )}
+            {diagOpen && diagnostics && (
+              <pre className="sr-diag">{JSON.stringify(diagnostics, null, 2)}</pre>
+            )}
           </div>
         )}
       </div>
