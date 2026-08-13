@@ -642,9 +642,11 @@ async def chatbalance(message: Message):
             from bot.funcs.group_balance_level import (
                 build_main_keyboard,
                 build_main_screen_html,
+                bump_gbl_visit,
                 ensure_society_snapshot,
                 strip_tg_emoji,
             )
+            bump_gbl_visit(user_id, chat_id)
             atmo_report = await ensure_society_snapshot(chat_id, db=db)
             atmo = float(atmo_report.get("pct") or 0)
             keyboard = build_main_keyboard(
@@ -710,10 +712,16 @@ async def show_balance_details(callback_query: CallbackQuery):
         from bot.funcs.group_balance_level import (
             build_details_html,
             build_details_keyboard,
+            bump_gbl_visit,
             ensure_society_snapshot,
             strip_tg_emoji,
         )
 
+        try:
+            await callback_query.answer("Собираем пульс группы…")
+        except Exception:
+            pass
+        visit_n = bump_gbl_visit(user_id, chat_id)
         atmo_report = await ensure_society_snapshot(chat_id, db=db)
         atmo = float(atmo_report.get("pct") or 0)
         text = build_details_html(
@@ -721,6 +729,7 @@ async def show_balance_details(callback_query: CallbackQuery):
             chat_id=chat_id,
             atmosphere_pct=atmo,
             atmosphere_report=atmo_report,
+            visit_n=visit_n,
         )
         keyboard = build_details_keyboard(chat_id=chat_id)
         try:
@@ -733,13 +742,9 @@ async def show_balance_details(callback_query: CallbackQuery):
                     strip_tg_emoji(text), parse_mode="HTML", reply_markup=keyboard)
             else:
                 raise
-        try:
-            await callback_query.answer()
-        except Exception:
-            pass
     else:
         await callback_query.answer(
-            "Не удалось открыть подробности. Вернитесь к балансу и попробуйте снова.",
+            "Картина не собралась. Вернитесь к кассе и откройте снова.",
             show_alert=True,
         )
 
@@ -798,22 +803,27 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
     chat_id = int(callback_query.message.chat.id)
     from bot.funcs.group_balance_level import (
         build_raise_keyboard, build_raise_screen_html, get_settings, get_chat_level,
-        ensure_society_snapshot, next_level_price, strip_tg_emoji,
+        bump_gbl_visit, ensure_society_snapshot, next_level_price, strip_tg_emoji,
     )
     cfg = get_settings()
     if not cfg.get("enabled", True):
         await callback_query.answer(
-            "Уровни баланса группы временно недоступны. Загляните чуть позже.",
+            "Система уровней на паузе. Загляните чуть позже — потолок ещё вернётся.",
             show_alert=True,
         )
         return
     if get_chat_level(chat_id) >= 5:
         await callback_query.answer(
-            "Группа уже на максимальном уровне — спасибо!",
+            "Потолок уже снят до вершины — этому чату шире некуда.",
             show_alert=True,
         )
         return
 
+    try:
+        await callback_query.answer("Готовим решение по потолку…")
+    except Exception:
+        pass
+    visit_n = bump_gbl_visit(user_id, chat_id)
     await ensure_society_snapshot(chat_id, db=db)
     badge_title = None
     nxt = next_level_price(chat_id, cfg)
@@ -825,7 +835,9 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
                 badge_title = str(row["title"])
         except Exception:
             badge_title = None
-    text = build_raise_screen_html(chat_id=chat_id, cfg=cfg, badge_title=badge_title)
+    text = build_raise_screen_html(
+        chat_id=chat_id, cfg=cfg, badge_title=badge_title, visit_n=visit_n,
+    )
     kb = build_raise_keyboard(chat_id=chat_id, cfg=cfg)
     try:
         await callback_query.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
@@ -835,7 +847,6 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
                 strip_tg_emoji(text), reply_markup=kb, parse_mode="HTML")
         else:
             raise
-    await callback_query.answer()
 
 
 @dp.callback_query(lambda c: c.data and str(c.data).startswith("gbl_pay:"))
@@ -877,7 +888,7 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
     cfg = get_settings()
     if not cfg.get("enabled", True):
         await callback_query.answer(
-            "Уровни баланса группы временно недоступны. Загляните чуть позже.",
+            "Система уровней на паузе. Загляните чуть позже — потолок ещё вернётся.",
             show_alert=True,
         )
         return
@@ -886,10 +897,15 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
     nxt = next_level_price(chat_id, cfg)
     if not nxt or nxt[0] != to_level or int(nxt[1]) != int(price):
         await callback_query.answer(
-            "Уровень уже обновился. Вернитесь к балансу и откройте экран снова.",
+            "Шаг уже неактуален. Вернитесь к кассе и откройте решение снова.",
             show_alert=True,
         )
         return
+
+    try:
+        await callback_query.answer("Открываем финишную прямую…")
+    except Exception:
+        pass
 
     bot_username = None
     try:
@@ -925,12 +941,13 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
             )
         else:
             print(f"[GBL] pay bridge edit error: {e!r}")
-            await callback_query.answer(
-                "Не удалось открыть оплату. Попробуйте ещё раз.",
-                show_alert=True,
-            )
-            return
-    await callback_query.answer()
+            try:
+                await callback_query.answer(
+                    "Финишная прямая не открылась. Нажмите ещё раз.",
+                    show_alert=True,
+                )
+            except Exception:
+                pass
 
 
 @dp.callback_query(lambda c: c.data == "group_balance_overview")
@@ -944,24 +961,26 @@ async def group_balance_overview(callback_query: CallbackQuery):
         return
     chat_id = int(callback_query.message.chat.id)
     from bot.funcs.group_balance_level import (
-        get_chat_level, stars_label, recommended_play_bet, effective_stake_cap,
-        get_settings, ensure_society_snapshot,
+        bump_gbl_visit,
+        build_overview_alert,
+        get_settings,
+        ensure_society_snapshot,
     )
     cfg = get_settings()
-    level = get_chat_level(chat_id)
     try:
         bal = float(await db.get_chat_balancebalance(bot1, chat_id) or 0)
     except Exception:
         bal = 0.0
+    visit_n = bump_gbl_visit(user_id, chat_id)
     atmo_report = await ensure_society_snapshot(chat_id, db=db)
     atmo = float(atmo_report.get("pct") or 0)
-    rec = recommended_play_bet(bal, chat_id=chat_id, atmosphere_pct=atmo, cfg=cfg)
-    cap = effective_stake_cap(chat_id, atmosphere_pct=atmo, cfg=cfg)
-    lim = "без лимита" if cap is None else f"до {cap}"
     await callback_query.answer(
-        f"Баланс группы · {stars_label(level)}\n"
-        f"Ставки {lim}"
-        + (f" · +{atmo:g}%" if atmo > 0.05 else "")
-        + f"\nРекомендуем ≈ {rec}",
+        build_overview_alert(
+            chat_id=chat_id,
+            chat_balance=bal,
+            atmosphere_pct=atmo,
+            cfg=cfg,
+            visit_n=visit_n,
+        ),
         show_alert=True,
     )
