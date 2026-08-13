@@ -71,7 +71,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
 }
 
 # Premium custom emoji на кнопках/текстах бч (исходный пак, не из челленджей)
-ICON_HERO_BEACH = "5251344521546965676"        # большой эмодзи на главном «бч»
+ICON_HERO_BEACH = "5463081281048818043"        # большой эмодзи на главном «бч»
 ICON_BALANCE_KUT = "6028338546736107668"       # ★ на сумме баланса группы
 ICON_RAISE_LEVEL = "5404534885324988233"       # ★ на «Поднять уровень…»
 ICON_CAP_LIMIT = "5472146462362048818"         # потолок ставок (кнопка)
@@ -1113,7 +1113,7 @@ def _next_level_teaser(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Op
 
 
 def raise_cta_label(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Optional[str]:
-    """Кнопка повышения — результат после нажатия."""
+    """Кнопка повышения — короткий «+» в духе level-up / HP."""
     cfg = cfg or get_settings()
     if not cfg.get("enabled", True):
         return None
@@ -1122,15 +1122,15 @@ def raise_cta_label(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Optio
         return None
     nxt = next_level_price(chat_id, cfg)
     if not nxt:
-        return str(cfg.get("raise_button_text") or "Открыть ставки шире")
+        return str(cfg.get("raise_button_text") or "+ усилить группу")
     to_level, _price = nxt
     caps = cfg.get("stake_caps") or {}
     if to_level >= 5:
-        return "Открыть вершину · без лимита"
+        return "+ вершина · без лимита"
     cap = caps.get(str(to_level))
     if cap is not None:
-        return f"Открыть ставки до {cap}"
-    return str(cfg.get("raise_button_text") or "Открыть ставки шире")
+        return f"+ ставки до {cap}"
+    return str(cfg.get("raise_button_text") or "+ усилить группу")
 
 
 def _ru_users_word(n: int) -> str:
@@ -1511,55 +1511,63 @@ def build_main_keyboard(
     atmosphere_pct: float = 0.0,
     cfg: Optional[Dict[str, Any]] = None,
 ):
-    """Баланс → потолок ставок → повышение → обзор."""
+    """Главное меню бч: компактная панель + зелёный CTA (в меру)."""
     from aiogram.types import InlineKeyboardMarkup
 
     cfg = cfg or get_settings()
     bal = max(0, int(float(chat_balance or 0)))
     bal_fmt = f"{bal:,}".replace(",", ".")
     level = get_chat_level(chat_id)
-    style = balance_health_style(
+    bal_style = balance_health_style(
         bal, chat_id=chat_id, atmosphere_pct=atmosphere_pct, cfg=cfg,
     )
     cta = raise_cta_label(chat_id, cfg)
-    bal_btn = f"{bal_fmt} кут · {stars_label(level)}"
+
+    # Коротко, чтобы ряд из 2 кнопок не ломался визуально
+    bal_btn = f"{bal_fmt} · {stars_label(level)}"
+    if len(bal_btn) > 28:
+        bal_btn = f"{bal_fmt} · {level}★"
     if len(bal_btn) > 64:
-        bal_btn = f"{bal_fmt} кут · ур.{level}"
+        bal_btn = f"{bal_fmt} кут"
 
     cap = effective_stake_cap(chat_id, atmosphere_pct=atmosphere_pct, cfg=cfg)
     if cap is None:
-        cap_btn = "ставки без лимита"
+        cap_btn = "лимит ∞"
     else:
-        cap_btn = f"ставки до {cap} кут"
+        cap_btn = f"до {cap}"
     if len(cap_btn) > 64:
         cap_btn = cap_btn[:61] + "…"
 
-    rows = [
-        [_btn(
+    # Ряд статуса: баланс + потолок
+    rows = [[
+        _btn(
             text=bal_btn,
             callback_data="group_balance_overview",
-            style=style,
+            style=bal_style,
             icon_custom_emoji_id=ICON_BALANCE_KUT,
-        )],
-        [_btn(
+        ),
+        _btn(
             text=cap_btn,
             callback_data="gbl_cap_status",
             style="default",
             icon_custom_emoji_id=ICON_CAP_LIMIT,
-        )],
-    ]
+        ),
+    ]]
+
+    # Зелёный CTA на всю ширину — единственный яркий акцент
     if cta:
         rows.append([_btn(
             text=cta,
             callback_data="gbl_raise",
-            style="primary",
+            style="success",
             icon_custom_emoji_id=ICON_RAISE_LEVEL,
         )])
+
     rows.append([_btn(
-        text="Как это устроено",
+        text="Как работает",
         callback_data=f"group_balance_details:{bal}",
         style="default",
-        icon_custom_emoji_id="5283139309740765379",
+        icon_custom_emoji_id=ICON_DETAILS,
     )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

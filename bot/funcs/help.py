@@ -438,7 +438,7 @@ ffunc = f'''
 <blockquote><b><i>+задержка (число)</i></b></blockquote>
 <blockquote><b><i>-задержка (число)</i></b></blockquote>
 
-<tg-emoji emoji-id='5251344521546965676'>🏖</tg-emoji> <b><i>Баланс группы</i></b>
+<tg-emoji emoji-id='5463081281048818043'>🏖</tg-emoji> <b><i>Баланс группы</i></b>
 <blockquote><code>Бч</code></blockquote>
 
 <tg-emoji emoji-id='5472178859300363509'>🏖</tg-emoji> <b><i>Пополнить баланс группы</i></b>
