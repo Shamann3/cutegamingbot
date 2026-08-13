@@ -724,12 +724,14 @@ async def show_balance_details(callback_query: CallbackQuery):
         visit_n = bump_gbl_visit(user_id, chat_id)
         atmo_report = await ensure_society_snapshot(chat_id, db=db)
         atmo = float(atmo_report.get("pct") or 0)
+        chat_title = getattr(callback_query.message.chat, "title", None) or ""
         text = build_details_html(
             chat_balance=chat_balance,
             chat_id=chat_id,
             atmosphere_pct=atmo,
             atmosphere_report=atmo_report,
             visit_n=visit_n,
+            chat_title=chat_title,
         )
         keyboard = build_details_keyboard(chat_id=chat_id)
         try:
@@ -939,6 +941,11 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
         atmo = float((snap or {}).get("pct") or 0)
     except Exception:
         atmo = 0.0
+    from bot.funcs.group_balance_level import resolve_group_link_html
+    group_html, chat_title_resolved, _ = await resolve_group_link_html(
+        bot1, chat_id, chat_title=chat_title,
+    )
+    chat_title = chat_title_resolved or chat_title
     text = build_pay_dm_bridge_html(
         chat_id=chat_id,
         to_level=to_level,
@@ -946,6 +953,7 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
         cfg=cfg,
         atmosphere_pct=atmo,
         chat_title=chat_title,
+        group_html=group_html,
     )
     kb = build_pay_dm_bridge_keyboard(
         bot_username=bot_username,

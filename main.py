@@ -3255,20 +3255,16 @@ async def successful_payment_handler(message: Message):
         except Exception as e:
             print(f"⚠️ [PAYMENT][GBL] donation bookkeeping: {e!r}")
 
-        # Имя спонсора + название группы
-        try:
-            first_name = message.from_user.first_name or str(user_id)
-            sponsor_html = await create_user_link(user_id, first_name, message.from_user.username)
-        except Exception:
-            first_name = message.from_user.first_name or str(user_id)
-            sponsor_html = f"<a href='tg://user?id={user_id}'>{_html(first_name)}</a>"
-
-        chat_title = None
-        try:
-            chat_obj = await bot1.get_chat(pay_chat_id)
-            chat_title = getattr(chat_obj, "title", None) or getattr(chat_obj, "full_name", None)
-        except Exception as _ct_e:
-            print(f"⚠️ [PAYMENT][GBL] chat title: {_ct_e!r}")
+        # Имя спонсора (клик → профиль) + группа (клик → чат)
+        from bot.funcs.group_balance_level import (
+            format_profile_link_html,
+            resolve_group_link_html,
+        )
+        first_name = message.from_user.first_name or str(user_id)
+        sponsor_html = format_profile_link_html(user_id, first_name)
+        group_html, chat_title, _group_url = await resolve_group_link_html(
+            bot1, pay_chat_id,
+        )
 
         atmo = 0.0
         try:
@@ -3293,6 +3289,7 @@ async def successful_payment_handler(message: Message):
             atmosphere_pct=atmo,
             chat_title=chat_title,
             from_level=from_level,
+            group_html=group_html,
         )
         buyer_html = build_buyer_hero_html(
             to_level=to_level,
@@ -3302,6 +3299,7 @@ async def successful_payment_handler(message: Message):
             chat_title=chat_title,
             from_level=from_level,
             badge_title=badge_title,
+            group_html=group_html,
         )
 
         # Анонс в группу
@@ -3543,28 +3541,44 @@ async def crypto_payment_handler(invoice: Invoice):
             except Exception as e:
                 debug_print(f"[GBL][CRYPTO] donation bookkeeping: {e}")
 
+            from bot.funcs.group_balance_level import (
+                format_profile_link_html,
+                resolve_group_link_html,
+                build_buyer_hero_html,
+            )
             try:
                 u = await bot1.get_chat(user_id)
                 first_name = getattr(u, "first_name", None) or str(user_id)
-                uname = getattr(u, "username", None)
-                sponsor_html = await create_user_link(user_id, first_name, uname)
             except Exception:
-                sponsor_html = f"<a href='tg://user?id={user_id}'>{user_id}</a>"
-
-            chat_title_crypto = None
-            try:
-                chat_title_crypto = getattr(await bot1.get_chat(int(gbl_chat_id)), "title", None)
-            except Exception:
-                chat_title_crypto = None
+                first_name = str(user_id)
+            sponsor_html = format_profile_link_html(int(user_id), first_name)
+            group_html_c, chat_title_crypto, _ = await resolve_group_link_html(
+                bot1, int(gbl_chat_id),
+            )
+            atmo_c = await resolve_atmosphere_pct(int(gbl_chat_id), db=db)
             gift_html = build_gift_announcement_html(
                 sponsor_name_html=sponsor_html,
                 to_level=int(gbl_to_level),
                 price_stars=price_stars,
                 chat_id=int(gbl_chat_id),
-                atmosphere_pct=await resolve_atmosphere_pct(int(gbl_chat_id), db=db),
+                atmosphere_pct=atmo_c,
                 chat_title=chat_title_crypto,
                 from_level=from_lvl_crypto,
+                group_html=group_html_c,
             )
+            try:
+                buyer_html_c = build_buyer_hero_html(
+                    to_level=int(gbl_to_level),
+                    price_stars=price_stars,
+                    chat_id=int(gbl_chat_id),
+                    atmosphere_pct=float(atmo_c or 0),
+                    chat_title=chat_title_crypto,
+                    from_level=from_lvl_crypto,
+                    group_html=group_html_c,
+                )
+                await bot1.send_message(int(user_id), buyer_html_c, parse_mode="HTML")
+            except Exception as _bh_e:
+                debug_print(f"[GBL][CRYPTO] buyer hero: {_bh_e!r}")
             try:
                 await bot1.send_message(
                     chat_id=int(gbl_chat_id),
@@ -7469,6 +7483,8 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
                 stake_delta_for_step,
                 social_proof_line,
                 format_package_price_line,
+                resolve_group_link_html,
+                explain_package_plain,
             )
 
             cfg = get_settings()
@@ -7514,38 +7530,35 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
                 atmosphere_pct=atmo,
                 cfg=cfg,
             )
-            chat_title_dm = None
-            try:
-                chat_obj = await bot1.get_chat(pay_chat_id)
-                chat_title_dm = getattr(chat_obj, "title", None)
-            except Exception:
-                chat_title_dm = None
-            group_line = (
-                f"группа «<b>{_html(chat_title_dm)}</b>»\n"
-                if chat_title_dm else ""
+            group_html_dm, chat_title_dm, _ = await resolve_group_link_html(
+                bot1, pay_chat_id,
             )
             delta_line = (
-                f"\nгруппа получит <b>+{gain['delta']} кут</b> к потолку"
+                f"\nвсем станет можно ставить на <b>+{gain['delta']} кут</b> больше"
                 if gain.get("delta") else ""
             )
             try:
                 await message.answer(
                     f"<tg-emoji emoji-id='5404534885324988233'>⭐️</tg-emoji> "
                     f"<b>Оплата со скидкой</b>\n"
-                    f"<i>счёт готов — вы усиливаете всю группу</i>\n\n"
+                    f"<i>счёт готов — ниже всё простыми словами</i>\n\n"
                     f"<blockquote>"
-                    f"<b>Пакет «{pkg.get('role', 'пакет')}»</b>\n"
-                    f"{group_line}"
-                    f"уровень <b>{from_lvl}</b> → <b>{to_level}</b> · "
-                    f"{int(pkg.get('steps') or 1)} шаг(а)\n"
-                    f"{gain['old_lim']} → <b>{gain['new_lim']}</b>{delta_line}"
+                    f"<b>Что вы покупаете</b>\n"
+                    f"{explain_package_plain(pkg)}\n"
+                    f"группа: {group_html_dm}\n"
+                    f"<i>нажмите на название — откроется группа</i>"
                     f"</blockquote>\n\n"
                     f"<blockquote>"
-                    f"<b>Ваша цена</b>\n"
+                    f"<b>Что изменится</b>\n"
+                    f"раньше: <b>{gain['old_lim']}</b>\n"
+                    f"станет: <b>{gain['new_lim']}</b>{delta_line}\n"
+                    f"подарок вам: метка «<b>{badge}</b>»"
+                    f"</blockquote>\n\n"
+                    f"<blockquote>"
+                    f"<b>Счёт</b>\n"
                     f"{format_package_price_line(pkg)}\n"
-                    f"метка «<b>{badge}</b>»\n"
                     f"<i>{social_proof_line()}</i>\n"
-                    f"<i>личные куты не начисляются</i>"
+                    f"<i>куты на личный баланс не придут — вы усиливаете общую игру</i>"
                     f"</blockquote>",
                     parse_mode="HTML",
                 )

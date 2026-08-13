@@ -2,5 +2,15 @@
   "-100": {
     "level": 1,
     "updated_at": 1786536949.53122
+  },
+  "-1001": {
+    "level": 2,
+    "updated_at": 1786639379.4918325,
+    "last_sponsor_id": null
+  },
+  "-424242": {
+    "level": 2,
+    "updated_at": 1786639397.4052148,
+    "last_sponsor_id": null
   }
 }
