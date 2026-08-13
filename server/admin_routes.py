@@ -4415,7 +4415,7 @@ async def admin_gbl_get_chat(
     chat_id: int,
     _admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
 ):
-    return gbl_get_chat_level(chat_id)
+    return await gbl_get_chat_level(chat_id)
 
 
 @router.post("/group-balance-level/chat")
@@ -4424,7 +4424,7 @@ async def admin_gbl_set_chat(
     request: Request,
     admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
 ):
-    result = gbl_set_chat_level(body.chat_id, body.level)
+    result = await gbl_set_chat_level(body.chat_id, body.level)
     try:
         await log_admin_action(
             admin_id, "gbl_set_chat_level",

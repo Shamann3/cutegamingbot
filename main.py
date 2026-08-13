@@ -3217,11 +3217,12 @@ async def successful_payment_handler(message: Message):
 
         cfg = get_settings()
         # Принимаем оплаченный пакет даже если сила группы успела сменить цену
-        res = apply_level_purchase(
+        res = await apply_level_purchase(
             chat_id=pay_chat_id,
             user_id=user_id,
             to_level=to_level,
             price_stars=price,
+            db=db,
         )
         if not res.get("ok"):
             await message.answer(
@@ -3510,11 +3511,12 @@ async def crypto_payment_handler(invoice: Invoice):
                 resolve_atmosphere_pct,
                 stars_label,
             )
-            res = apply_level_purchase(
+            res = await apply_level_purchase(
                 chat_id=int(gbl_chat_id),
                 user_id=int(user_id),
                 to_level=int(gbl_to_level),
                 price_stars=price_stars,
+                db=db,
             )
             from_lvl_crypto = int(res.get("from_level") or max(0, int(gbl_to_level) - 1))
             if not res.get("ok"):
@@ -40344,6 +40346,12 @@ async def botmain():
             await db.ensure_profile_achievements_schema()
     except Exception as e:
         print(f"[ACH][WARN] ensure schema: {type(e).__name__}: {e}")
+
+    try:
+        from bot.funcs.group_balance_level import sync_group_balance_levels_with_db
+        await sync_group_balance_levels_with_db(db)
+    except Exception as e:
+        print(f"[GBL][WARN] sync levels with chat: {type(e).__name__}: {e}")
 
     if not _sr_handoff_child:
         try:

@@ -186,6 +186,12 @@ async def lifespan(application: FastAPI):
         )
     await db.connect()
 
+    try:
+        if hasattr(db, "ensure_group_balance_level_schema"):
+            await db.ensure_group_balance_level_schema()
+    except Exception:
+        logger.warning("group_balance_level schema init failed — check DB permissions")
+
     from support_db import ensure_tables as ensure_support_tables
     try:
         await ensure_support_tables()

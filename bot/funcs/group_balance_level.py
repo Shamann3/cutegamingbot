@@ -4,12 +4,13 @@
 Не путать с «столом» в текстах для игроков — везде «баланс группы».
 Конфиг полностью настраивается (админка → creator-only).
 
-Хранение: JSON-файлы в data/group_balance_level/ (без Redis),
-чтобы и бот, и admin-сервер читали одно и то же без тяжёлых зависимостей.
+Хранение уровней: таблица chat, столбец group_balance_level (ключ chat_id).
+JSON в data/group_balance_level/ — быстрый зеркальный кэш + настройки/бейджи.
 """
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import math
@@ -270,9 +271,105 @@ def reset_settings_to_defaults() -> Dict[str, Any]:
     return copy.deepcopy(cfg)
 
 
+def _clamp_level(level: Any) -> int:
+    return max(0, min(5, _as_int(level, 0)))
+
+
+def _mirror_level_local(
+    chat_id: int,
+    level: int,
+    *,
+    sponsor_id: Optional[int] = None,
+) -> int:
+    """Зеркало в JSON-кэш (быстрые sync-чтения между запросами к БД)."""
+    level = _clamp_level(level)
+    prev = _chat_levels.get(str(int(chat_id))) or {}
+    prev_sponsor = prev.get("last_sponsor_id")
+    _chat_levels[str(int(chat_id))] = {
+        "level": level,
+        "updated_at": time.time(),
+        "last_sponsor_id": (
+            int(sponsor_id) if sponsor_id is not None
+            else (int(prev_sponsor) if prev_sponsor is not None else None)
+        ),
+        "source": "db",
+    }
+    return level
+
+
 def get_chat_level(chat_id: int) -> int:
+    """Sync-чтение уровня: JSON-зеркало (после старта синхронизировано с chat)."""
     row = _chat_levels.get(str(int(chat_id))) or {}
-    return max(0, min(5, _as_int(row.get("level"), 0)))
+    return _clamp_level(row.get("level"))
+
+
+async def _resolve_db():
+    try:
+        from main import db as _db
+        return _db
+    except Exception:
+        try:
+            from bot.db_create.db import db as _db
+            return _db
+        except Exception:
+            return None
+
+
+def _schedule_db_level_write(
+    chat_id: int,
+    level: int,
+    *,
+    sponsor_id: Optional[int] = None,
+) -> None:
+    """Фоновая запись в chat, если нет await-контекста."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    async def _run() -> None:
+        try:
+            db = await _resolve_db()
+            if db is None or not hasattr(db, "set_chat_group_balance_level"):
+                return
+            await db.set_chat_group_balance_level(
+                int(chat_id), int(level), sponsor_id=sponsor_id,
+            )
+        except Exception as e:
+            print(f"[GBL] background DB write fail chat={chat_id}: {e!r}")
+
+    try:
+        loop.create_task(_run())
+    except Exception as e:
+        print(f"[GBL] schedule DB write fail chat={chat_id}: {e!r}")
+
+
+async def get_chat_level_async(
+    chat_id: int,
+    *,
+    db=None,
+    mirror: bool = True,
+) -> int:
+    """Авторитетное чтение уровня из таблицы chat."""
+    cid = int(chat_id)
+    _db = db
+    if _db is None:
+        _db = await _resolve_db()
+    if _db is not None and hasattr(_db, "get_chat_group_balance_level"):
+        try:
+            sponsor_id = None
+            if hasattr(_db, "get_chat_group_balance_level_row"):
+                row = await _db.get_chat_group_balance_level_row(cid)
+                level = _clamp_level(row.get("level"))
+                sponsor_id = row.get("sponsor_id")
+            else:
+                level = _clamp_level(await _db.get_chat_group_balance_level(cid))
+            if mirror:
+                _mirror_level_local(cid, level, sponsor_id=sponsor_id)
+            return level
+        except Exception as e:
+            print(f"[GBL] get_chat_level_async DB fail chat={cid}: {e!r}")
+    return get_chat_level(cid)
 
 
 def set_chat_level(
@@ -281,14 +378,86 @@ def set_chat_level(
     *,
     sponsor_id: Optional[int] = None,
 ) -> int:
-    level = max(0, min(5, _as_int(level, 0)))
-    prev = _chat_levels.get(str(int(chat_id))) or {}
-    _chat_levels[str(int(chat_id))] = {
-        "level": level,
-        "updated_at": time.time(),
-        "last_sponsor_id": int(sponsor_id) if sponsor_id else prev.get("last_sponsor_id"),
-    }
+    """Пишет зеркало сразу и планирует запись в chat.group_balance_level."""
+    level = _mirror_level_local(chat_id, level, sponsor_id=sponsor_id)
+    _schedule_db_level_write(chat_id, level, sponsor_id=sponsor_id)
     return level
+
+
+async def set_chat_level_async(
+    chat_id: int,
+    level: int,
+    *,
+    sponsor_id: Optional[int] = None,
+    db=None,
+) -> int:
+    """Гарантированная запись уровня в таблицу chat (+ зеркало JSON)."""
+    level = _clamp_level(level)
+    cid = int(chat_id)
+    _mirror_level_local(cid, level, sponsor_id=sponsor_id)
+    _db = db
+    if _db is None:
+        _db = await _resolve_db()
+    if _db is None or not hasattr(_db, "set_chat_group_balance_level"):
+        raise RuntimeError("Database unavailable for group_balance_level write")
+    saved = await _db.set_chat_group_balance_level(
+        cid, level, sponsor_id=sponsor_id,
+    )
+    return _clamp_level(saved)
+
+
+async def sync_group_balance_levels_with_db(db=None) -> Dict[str, Any]:
+    """Старт бота: схема → JSON→chat → chat→JSON. Источник истины — таблица chat."""
+    _db = db
+    if _db is None:
+        _db = await _resolve_db()
+    if _db is None:
+        return {"ok": False, "error": "no_db"}
+
+    await _db.ensure_group_balance_level_schema()
+
+    # 1) миграция старого JSON-кэша → chat (GREATEST, чтобы не понизить)
+    push_rows: List[Tuple[int, int, Optional[int]]] = []
+    for key, raw in _chat_levels.items():
+        try:
+            cid = int(key)
+        except Exception:
+            continue
+        if not isinstance(raw, dict):
+            continue
+        lvl = _clamp_level(raw.get("level"))
+        if lvl <= 0:
+            continue
+        sid_raw = raw.get("last_sponsor_id")
+        sid = int(sid_raw) if sid_raw is not None else None
+        push_rows.append((cid, lvl, sid))
+
+    pushed = 0
+    if push_rows and hasattr(_db, "upsert_group_balance_levels_bulk"):
+        pushed = await _db.upsert_group_balance_levels_bulk(push_rows)
+
+    # 2) chat → JSON: после рестарта зеркало = БД
+    pulled = 0
+    if hasattr(_db, "list_chat_group_balance_levels"):
+        db_rows = await _db.list_chat_group_balance_levels(only_positive=True)
+        for row in db_rows:
+            _mirror_level_local(
+                int(row["chat_id"]),
+                int(row["level"]),
+                sponsor_id=row.get("sponsor_id"),
+            )
+            pulled += 1
+
+    print(
+        f"[GBL] levels synced with chat: pushed={pushed} "
+        f"json_candidates={len(push_rows)} pulled={pulled}"
+    )
+    return {
+        "ok": True,
+        "pushed": int(pushed),
+        "json_candidates": len(push_rows),
+        "pulled": int(pulled),
+    }
 
 
 def price_to_reach(level: int, cfg: Optional[Dict[str, Any]] = None) -> int:
@@ -821,21 +990,23 @@ def build_price_ladder_html(
     )
 
 
-def apply_level_purchase(
+async def apply_level_purchase(
     *,
     chat_id: int,
     user_id: int,
     to_level: int,
     price_stars: int,
+    db=None,
 ) -> Dict[str, Any]:
     """Применяет покупку одного или нескольких уровней после оплаты.
 
     to_level может быть прыжком (0→3). price_stars должен покрывать
     сумму реальных цен шагов (проект не в минусе).
+    Уровень сохраняется в таблицу chat по chat_id.
     """
     cfg = get_settings()
     to_level = max(1, min(5, int(to_level)))
-    cur = get_chat_level(chat_id)
+    cur = await get_chat_level_async(chat_id, db=db)
     if to_level <= cur:
         remember_sponsor_badge(
             user_id, level=to_level, chat_id=chat_id, price_stars=price_stars,
@@ -849,7 +1020,19 @@ def apply_level_purchase(
     underpaid = bool(expected > 0 and int(price_stars) < int(expected))
 
     from_level = cur
-    set_chat_level(chat_id, to_level, sponsor_id=user_id)
+    try:
+        await set_chat_level_async(
+            chat_id, to_level, sponsor_id=user_id, db=db,
+        )
+    except Exception as e:
+        print(f"[GBL] apply_level_purchase DB write fail: {e!r}")
+        return {
+            "ok": False,
+            "error": "db_write_failed",
+            "level": cur,
+            "from_level": from_level,
+            "detail": str(e),
+        }
     for lvl in range(from_level + 1, to_level + 1):
         remember_sponsor_badge(
             user_id, level=lvl, chat_id=chat_id, price_stars=price_stars,
@@ -1684,8 +1867,11 @@ async def reject_if_bet_over_group_level(
             return False
         chat_id = int(chat.id)
         atmo = 0.0
+        _db = None
         try:
             from main import db as _db
+            # подтягиваем актуальный уровень из chat перед проверкой лимита
+            await get_chat_level_async(chat_id, db=_db)
             atmo = await resolve_atmosphere_pct(chat_id, db=_db)
         except Exception:
             atmo = 0.0
@@ -1730,7 +1916,7 @@ def build_overview_alert(
     cfg: Optional[Dict[str, Any]] = None,
     visit_n: int = 1,
 ) -> str:
-    """Короткий alert по кассе (лимит Telegram ~200)."""
+    """Короткий alert по балансу группы (лимит Telegram ~200)."""
     cfg = cfg or get_settings()
     level = get_chat_level(chat_id)
     rec = recommended_play_bet(

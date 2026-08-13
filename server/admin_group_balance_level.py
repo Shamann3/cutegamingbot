@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Admin API helpers for group balance levels (server-only, no bot imports).
 
-Хранение: JSON в server/data/group_balance_level/.
+Уровни: таблица chat.group_balance_level (ключ chat_id).
+JSON в data/group_balance_level/ — зеркало/кэш + настройки.
 """
 
 from __future__ import annotations
@@ -261,8 +262,15 @@ def _write_level(chat_id: int, level: int, sponsor_id: Optional[int] = None) -> 
     row["updated_at"] = time.time()
     if sponsor_id is not None:
         row["sponsor_id"] = int(sponsor_id)
+        row["last_sponsor_id"] = int(sponsor_id)
+    row["source"] = "db"
     _chat_levels[str(int(chat_id))] = row
     return lvl
+
+
+async def _db():
+    from db import db
+    return db
 
 
 def next_level_price(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Optional[Tuple[int, int]]:
@@ -331,21 +339,44 @@ def get_overview() -> Dict[str, Any]:
     }
 
 
-def get_chat_level(chat_id: int) -> Dict[str, Any]:
-    """Admin payload (dict) — имя как в admin_routes."""
+async def get_chat_level(chat_id: int) -> Dict[str, Any]:
+    """Admin payload (dict) — уровень читается из таблицы chat."""
     cfg = get_settings()
-    level = _level_int(int(chat_id))
-    nxt = next_level_price(int(chat_id), cfg)
+    cid = int(chat_id)
+    level = _level_int(cid)
+    try:
+        db = await _db()
+        if hasattr(db, "ensure_group_balance_level_schema"):
+            await db.ensure_group_balance_level_schema()
+        if hasattr(db, "get_chat_group_balance_level"):
+            level = max(0, min(5, int(await db.get_chat_group_balance_level(cid))))
+            _write_level(cid, level, sponsor_id=None)
+    except Exception as e:
+        print(f"[GBL-ADMIN] get_chat_level DB fail chat={cid}: {e!r}")
+    # next_level_price читает зеркало — держим его в актуальном виде
+    _write_level(cid, level, sponsor_id=None)
+    nxt = next_level_price(cid, cfg)
     return {
-        "chat_id": int(chat_id),
+        "chat_id": cid,
         "level": level,
         "stars": stars_label(level),
-        "stake_cap": effective_stake_cap(int(chat_id), cfg=cfg),
+        "stake_cap": effective_stake_cap(cid, cfg=cfg),
         "next": {"level": nxt[0], "price": nxt[1]} if nxt else None,
+        "storage": "chat.group_balance_level",
     }
 
 
-def set_chat_level(chat_id: int, level: int) -> Dict[str, Any]:
-    """Admin setter — возвращает dict для admin_routes."""
-    lvl = _write_level(int(chat_id), int(level), sponsor_id=None)
-    return {"chat_id": int(chat_id), "level": int(lvl)}
+async def set_chat_level(chat_id: int, level: int) -> Dict[str, Any]:
+    """Admin setter — пишет в chat.group_balance_level по chat_id."""
+    cid = int(chat_id)
+    lvl = max(0, min(5, int(level)))
+    db = await _db()
+    if hasattr(db, "ensure_group_balance_level_schema"):
+        await db.ensure_group_balance_level_schema()
+    saved = await db.set_chat_group_balance_level(cid, lvl, sponsor_id=None)
+    _write_level(cid, int(saved), sponsor_id=None)
+    return {
+        "chat_id": cid,
+        "level": int(saved),
+        "storage": "chat.group_balance_level",
+    }

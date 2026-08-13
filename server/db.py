@@ -3553,6 +3553,176 @@ class Database:
         except Exception as e:
             logging.warning("ensure_chat_row error chat_id=%s: %s", chat_id, e)
 
+    async def ensure_group_balance_level_schema(self) -> None:
+        """Уровень баланса группы в chat.group_balance_level (ключ chat_id)."""
+        await self.ensure_connected()
+        sql = """
+        ALTER TABLE chat
+            ADD COLUMN IF NOT EXISTS group_balance_level INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE chat
+            ADD COLUMN IF NOT EXISTS group_balance_sponsor_id BIGINT;
+
+        UPDATE chat
+           SET group_balance_level = GREATEST(0, LEAST(5, COALESCE(group_balance_level, 0)))
+         WHERE group_balance_level IS NULL
+            OR group_balance_level < 0
+            OR group_balance_level > 5;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                  FROM pg_constraint
+                 WHERE conname = 'chat_group_balance_level_range'
+                   AND conrelid = 'chat'::regclass
+            ) THEN
+                ALTER TABLE chat
+                    ADD CONSTRAINT chat_group_balance_level_range
+                    CHECK (group_balance_level >= 0 AND group_balance_level <= 5);
+            END IF;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS idx_chat_group_balance_level_pos
+            ON chat (group_balance_level DESC, chat_id)
+            WHERE group_balance_level > 0;
+        """
+        async with self.pool.acquire() as conn:
+            await conn.execute(sql)
+
+    async def get_chat_group_balance_level(self, chat_id: int) -> int:
+        try:
+            chat_id = int(chat_id)
+        except Exception:
+            return 0
+        try:
+            await self.ensure_connected()
+            async with self.pool.acquire() as conn:
+                val = await conn.fetchval(
+                    """
+                    SELECT COALESCE(group_balance_level, 0)
+                      FROM chat
+                     WHERE chat_id = $1
+                     LIMIT 1
+                    """,
+                    chat_id,
+                )
+            if val is None:
+                return 0
+            return max(0, min(5, int(val)))
+        except Exception as e:
+            logging.warning("get_chat_group_balance_level error chat_id=%s: %s", chat_id, e)
+            return 0
+
+    async def set_chat_group_balance_level(
+        self,
+        chat_id: int,
+        level: int,
+        *,
+        sponsor_id=None,
+    ) -> int:
+        try:
+            chat_id = int(chat_id)
+        except Exception:
+            return 0
+        level = max(0, min(5, int(level)))
+        sid = int(sponsor_id) if sponsor_id is not None else None
+        await self.ensure_connected()
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(
+                        """
+                        INSERT INTO chat (chat_id, chatbalance, dexbalance, group_balance_level, group_balance_sponsor_id)
+                        VALUES ($1, 0, 0, $2, $3)
+                        ON CONFLICT (chat_id) DO NOTHING
+                        """,
+                        chat_id,
+                        level,
+                        sid,
+                    )
+                    row = await conn.fetchrow(
+                        """
+                        UPDATE chat
+                           SET group_balance_level = $2,
+                               group_balance_sponsor_id = COALESCE($3, group_balance_sponsor_id)
+                         WHERE chat_id = $1
+                     RETURNING COALESCE(group_balance_level, 0) AS level
+                        """,
+                        chat_id,
+                        level,
+                        sid,
+                    )
+            return max(0, min(5, int(row["level"] if row else level)))
+        except Exception as e:
+            logging.warning(
+                "set_chat_group_balance_level error chat_id=%s level=%s: %s",
+                chat_id, level, e,
+            )
+            raise
+
+    async def upsert_group_balance_levels_bulk(self, rows) -> int:
+        if not rows:
+            return 0
+        await self.ensure_connected()
+        written = 0
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                for chat_id, level, sponsor_id in rows:
+                    try:
+                        cid = int(chat_id)
+                        lvl = max(0, min(5, int(level)))
+                        sid = int(sponsor_id) if sponsor_id is not None else None
+                    except Exception:
+                        continue
+                    await conn.execute(
+                        """
+                        INSERT INTO chat (chat_id, chatbalance, dexbalance, group_balance_level, group_balance_sponsor_id)
+                        VALUES ($1, 0, 0, $2, $3)
+                        ON CONFLICT (chat_id) DO UPDATE
+                           SET group_balance_level = GREATEST(
+                                   COALESCE(chat.group_balance_level, 0),
+                                   EXCLUDED.group_balance_level
+                               ),
+                               group_balance_sponsor_id = COALESCE(
+                                   EXCLUDED.group_balance_sponsor_id,
+                                   chat.group_balance_sponsor_id
+                               )
+                        """,
+                        cid,
+                        lvl,
+                        sid,
+                    )
+                    written += 1
+        return written
+
+    async def list_chat_group_balance_levels(self, *, only_positive: bool = True):
+        await self.ensure_connected()
+        try:
+            where = "WHERE COALESCE(group_balance_level, 0) > 0" if only_positive else ""
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    f"""
+                    SELECT chat_id,
+                           COALESCE(group_balance_level, 0) AS level,
+                           group_balance_sponsor_id AS sponsor_id
+                      FROM chat
+                      {where}
+                     ORDER BY group_balance_level DESC, chat_id ASC
+                    """
+                )
+            out = []
+            for r in rows or []:
+                sid = r["sponsor_id"]
+                out.append({
+                    "chat_id": int(r["chat_id"]),
+                    "level": max(0, min(5, int(r["level"] or 0))),
+                    "sponsor_id": int(sid) if sid is not None else None,
+                })
+            return out
+        except Exception as e:
+            logging.warning("list_chat_group_balance_levels error: %s", e)
+            return []
+
     async def get_chat_balances(self, chat_id):
         """Возвращает (chatbalance, dexbalance). Создаёт строку если нет."""
         await self.ensure_chat_row(chat_id)

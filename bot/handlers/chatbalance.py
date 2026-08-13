@@ -644,9 +644,11 @@ async def chatbalance(message: Message):
                 build_main_screen_html,
                 bump_gbl_visit,
                 ensure_society_snapshot,
+                get_chat_level_async,
                 strip_tg_emoji,
             )
             bump_gbl_visit(user_id, chat_id)
+            await get_chat_level_async(chat_id, db=db)
             atmo_report = await ensure_society_snapshot(chat_id, db=db)
             atmo = float(atmo_report.get("pct") or 0)
             keyboard = build_main_keyboard(
@@ -714,6 +716,7 @@ async def show_balance_details(callback_query: CallbackQuery):
             build_details_keyboard,
             bump_gbl_visit,
             ensure_society_snapshot,
+            get_chat_level_async,
             strip_tg_emoji,
         )
 
@@ -722,6 +725,7 @@ async def show_balance_details(callback_query: CallbackQuery):
         except Exception:
             pass
         visit_n = bump_gbl_visit(user_id, chat_id)
+        await get_chat_level_async(chat_id, db=db)
         atmo_report = await ensure_society_snapshot(chat_id, db=db)
         atmo = float(atmo_report.get("pct") or 0)
         chat_title = getattr(callback_query.message.chat, "title", None) or ""
@@ -768,8 +772,10 @@ async def back_to_balance(callback_query: CallbackQuery):
         build_main_keyboard,
         build_main_screen_html,
         ensure_society_snapshot,
+        get_chat_level_async,
         strip_tg_emoji,
     )
+    await get_chat_level_async(int(chat_id), db=db)
     atmo_report = await ensure_society_snapshot(int(chat_id), db=db)
     atmo = float(atmo_report.get("pct") or 0)
     keyboard = build_main_keyboard(
@@ -805,7 +811,8 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
     chat_id = int(callback_query.message.chat.id)
     from bot.funcs.group_balance_level import (
         build_raise_keyboard, build_raise_screen_html, get_settings, get_chat_level,
-        bump_gbl_visit, ensure_society_snapshot, next_level_price, strip_tg_emoji,
+        bump_gbl_visit, ensure_society_snapshot, get_chat_level_async,
+        next_level_price, strip_tg_emoji,
     )
     cfg = get_settings()
     if not cfg.get("enabled", True):
@@ -814,6 +821,7 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
             show_alert=True,
         )
         return
+    await get_chat_level_async(chat_id, db=db)
     if get_chat_level(chat_id) >= 5:
         await callback_query.answer(
             "Группа уже на максимальном уровне.",
