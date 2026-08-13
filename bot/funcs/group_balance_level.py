@@ -70,12 +70,31 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "level_packages_enabled": True,
 }
 
-# Premium custom emoji на кнопках бч (icon_custom_emoji_id)
-ICON_HERO_BEACH = "5251344521546965676"        # большой эмодзи на главном «бч»
-ICON_BALANCE_KUT = "6028338546736107668"       # ★ на сумме баланса группы
-ICON_RAISE_LEVEL = "5404534885324988233"       # ★ на «Поднять уровень…»
-ICON_BACK = "5226660202035554522"              # назад к балансу
-ICON_DETAILS = "5472146462362048818"           # «Подробнее» / условия
+# Premium custom emoji — голубой пак из системы челленджей (gc_emoji)
+from bot.funcs.gc_emoji import gc_emoji_id, gc_tg  # noqa: E402
+
+ICON_HERO_BEACH = gc_emoji_id("🏝") or "5253567918741923731"
+ICON_BALANCE_KUT = gc_emoji_id("💰") or "5224257782013769471"
+ICON_RAISE_LEVEL = gc_emoji_id("🏆") or "5188344996356448758"
+ICON_CAP_LIMIT = gc_emoji_id("🎯") or "5350460637182993292"
+ICON_BACK = gc_emoji_id("🔙") or "5255703720078879038"
+ICON_DETAILS = gc_emoji_id("❓") or "5436113877181941026"
+ICON_STAR = gc_emoji_id("⭐️") or "6005661956931850799"
+ICON_FIRE = gc_emoji_id("🔥") or "5420315771991497307"
+ICON_GEM = gc_emoji_id("💎") or "5280922999241859582"
+ICON_PALM = gc_emoji_id("🌴") or "5449372007432985754"
+
+
+def gbl_tg(emoji: str) -> str:
+    """Голубой premium-эмодзи из пака челленджей."""
+    return gc_tg(emoji)
+
+
+# Единые kwargs для сообщений бч — без превью групп/ссылок
+GBL_MSG_KW: Dict[str, Any] = {
+    "parse_mode": "HTML",
+    "disable_web_page_preview": True,
+}
 
 _ROOT = Path(__file__).resolve().parents[2]
 _DATA_DIR = _ROOT / "data" / "group_balance_level"
@@ -868,13 +887,13 @@ def format_achievements_blockquote(user_id: int) -> str:
         lvl = _as_int(it.get("level"), 0)
         title = str(it.get("title") or badge_title_for_level(lvl))
         lines.append(
-            f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
+            f"{gbl_tg('⭐️')} "
             f"<b>{stars_label(lvl)}</b> · {title}"
         )
     body = "\n".join(lines)
     return (
         f"<blockquote>"
-        f"<tg-emoji emoji-id='5318892863780579996'>📖</tg-emoji> "
+        f"{gbl_tg('📋')} "
         f"<b>Уровни групп</b>\n{body}"
         f"</blockquote>"
     )
@@ -1367,12 +1386,12 @@ def build_details_html(
         )
 
     return (
-        f"<tg-emoji emoji-id='5472146462362048818'>💡</tg-emoji> "
+        f"{gbl_tg('❓')} "
         f"<b>Баланс группы</b>\n"
         f"<i>как всё устроено {where} · ~20 секунд · {hook}</i>\n\n"
         f"<blockquote>"
         f"<b>Баланс группы сейчас</b>\n"
-        f"<tg-emoji emoji-id='{ICON_BALANCE_KUT}'>⭐️</tg-emoji> "
+        f"{gbl_tg('💰')} "
         f"<b>{bal_fmt} кут</b>\n"
         f"{bal_hint}"
         f"</blockquote>\n\n"
@@ -1461,24 +1480,31 @@ def build_main_screen_html(
     atmosphere_report: Optional[Dict[str, Any]] = None,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Главный «бч»: hero + звёзды уровня группы (понятно с первого взгляда)."""
-    del chat_balance, atmosphere_report
+    """Главный «бч»: только hero + лёгкий статусный крючок (без цитат/блоков уровня)."""
+    del chat_balance, atmosphere_report, atmosphere_pct
     cfg = cfg or get_settings()
     level = get_chat_level(chat_id)
-    atmo = float(atmosphere_pct or 0)
-    cap = effective_stake_cap(chat_id, atmosphere_pct=atmo, cfg=cfg)
-    if cap is None:
-        lim = "ставки без лимита уровня"
+    if level >= 5:
+        hook = (
+            f"{gbl_tg('🏆')} <b>эта группа уже на вершине</b>\n"
+            f"<i>легенды здесь уже пишут историю</i>"
+        )
+    elif level >= 3:
+        hook = (
+            f"{gbl_tg('🔥')} <b>группа сильная — до легенды один шаг</b>\n"
+            f"<i>ваш вклад поднимает ставки для всех</i>"
+        )
+    elif level >= 1:
+        hook = (
+            f"{gbl_tg('💎')} <b>путь к легенде уже начат</b>\n"
+            f"<i>сильнее группа — шире ставки для всех</i>"
+        )
     else:
-        lim = f"ставки до {cap} кут"
-    return (
-        f"<tg-emoji emoji-id='{ICON_HERO_BEACH}'>🏖</tg-emoji>\n\n"
-        f"<blockquote>"
-        f"<b>Уровень группы</b>\n"
-        f"{stars_label(level)} · уровень <b>{level}</b> из 5\n"
-        f"<i>{lim}</i>"
-        f"</blockquote>"
-    )
+        hook = (
+            f"{gbl_tg('🏆')} <b>легенда этой группы ещё ждёт своё имя</b>\n"
+            f"<i>один вклад — выше лимит ставок для всего чата</i>"
+        )
+    return f"{gbl_tg('🏝')}\n\n{hook}"
 
 
 def build_main_keyboard(
@@ -1488,7 +1514,7 @@ def build_main_keyboard(
     atmosphere_pct: float = 0.0,
     cfg: Optional[Dict[str, Any]] = None,
 ):
-    """Баланс группы (с ★) → повышение → обзор."""
+    """Баланс → потолок ставок → повышение → обзор."""
     from aiogram.types import InlineKeyboardMarkup
 
     cfg = cfg or get_settings()
@@ -1503,12 +1529,26 @@ def build_main_keyboard(
     if len(bal_btn) > 64:
         bal_btn = f"{bal_fmt} кут · ур.{level}"
 
+    cap = effective_stake_cap(chat_id, atmosphere_pct=atmosphere_pct, cfg=cfg)
+    if cap is None:
+        cap_btn = "ставки без лимита"
+    else:
+        cap_btn = f"ставки до {cap} кут"
+    if len(cap_btn) > 64:
+        cap_btn = cap_btn[:61] + "…"
+
     rows = [
         [_btn(
             text=bal_btn,
             callback_data="group_balance_overview",
             style=style,
             icon_custom_emoji_id=ICON_BALANCE_KUT,
+        )],
+        [_btn(
+            text=cap_btn,
+            callback_data="gbl_cap_status",
+            style="default",
+            icon_custom_emoji_id=ICON_CAP_LIMIT,
         )],
     ]
     if cta:
@@ -1586,14 +1626,12 @@ def build_raise_screen_html(
     hook = visit_hook_line(visit_n)
     if not packages:
         return (
-            f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
+            f"{gbl_tg('🏆')} "
             f"<b>Вершина</b>\n"
             f"<i>{decide} · {hook}</i>\n\n"
-            f"<blockquote>"
-            f"<b>Сейчас</b>\n"
+            f"{gbl_tg('💎')} <b>Сейчас</b>\n"
             f"{stars_label(5)} · ставки <b>без лимита уровня</b>\n"
-            f"<i>выше поднимать уже некуда</i>"
-            f"</blockquote>"
+            f"<i>выше поднимать уже некуда — вы среди легенд</i>"
         )
     rec = next((p for p in packages if p.get("recommended")), packages[0])
     title = (
@@ -1605,30 +1643,25 @@ def build_raise_screen_html(
     ladder = build_price_ladder_html(chat_id=chat_id, cfg=cfg)
     proof = social_proof_line()
     return (
-        f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
+        f"{gbl_tg('🏆')} "
         f"<b>Поднять уровень группы</b>\n"
         f"<i>{decide} · {hook}</i>\n\n"
-        f"<blockquote>"
-        f"<b>Сейчас у группы</b>\n"
+        f"{gbl_tg('🎯')} <b>Сейчас у группы</b>\n"
         f"{stars_label(cur)} · уровень <b>{cur}</b> из 5\n"
         f"можно ставить <b>{cur_lim}</b>\n"
-        f"<i>уровень = насколько крупные ставки открыты всем в чате</i>"
-        f"</blockquote>\n\n"
+        f"<i>уровень = насколько крупные ставки открыты всем в чате</i>\n\n"
         f"{ladder}\n\n"
-        f"<blockquote>"
-        f"<b>Что вы получите</b>\n"
+        f"{gbl_tg('🔥')} <b>Что вы получите</b>\n"
         f"• выше лимит ставок <b>для всех</b> в группе\n"
         f"• метку «<b>{title}</b>» в профиле\n"
-        f"• сообщение в чат, что вклад сделали именно вы"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Важно простыми словами</b>\n"
+        f"• сообщение в чат, что вклад сделали именно вы\n"
+        f"• шанс стать <b>легендой</b> этой группы\n\n"
+        f"{gbl_tg('💎')} <b>Важно простыми словами</b>\n"
         f"платите <b>звёздами Telegram</b> — куты на личный баланс "
         f"<b>не приходят</b>\n"
         f"рекомендуем пакет «<b>{rec['role']}</b>»: "
         f"{format_package_price_line(rec)}\n"
         f"<i>{proof}</i>"
-        f"</blockquote>"
     )
 
 
@@ -1681,29 +1714,23 @@ def build_pay_dm_bridge_html(
     )
     role = str(pkg.get("role") or "пакет") if pkg else "пакет"
     return (
-        f"<tg-emoji emoji-id='{ICON_RAISE_LEVEL}'>⭐️</tg-emoji> "
+        f"{gbl_tg('🏆')} "
         f"<b>{finish}</b>\n"
         f"<i>остался один шаг — оплата</i>\n\n"
-        f"<blockquote>"
-        f"<b>Что вы покупаете</b>\n"
+        f"{gbl_tg('🎯')} <b>Что вы покупаете</b>\n"
         f"{group_bit}"
         f"пакет «<b>{role}</b>»: уровень <b>{from_level}</b> → <b>{to_level}</b>\n"
         f"это <b>{steps}</b> {_ru_steps_word(steps)}\n"
         f"сейчас можно: <b>{gain['old_lim']}</b>\n"
-        f"станет можно: <b>{gain['new_lim']}</b>{delta_bit}"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Сколько платите</b>\n"
+        f"станет можно: <b>{gain['new_lim']}</b>{delta_bit}\n\n"
+        f"{gbl_tg('💎')} <b>Сколько платите</b>\n"
         f"{price_line}\n"
         f"подарок вам: метка «<b>{title}</b>»\n"
-        f"<i>{social_proof_line()}</i>"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Что будет после нажатия</b>\n"
+        f"<i>{social_proof_line()}</i>\n\n"
+        f"{gbl_tg('🔥')} <b>Что будет после нажатия</b>\n"
         f"откроются личные сообщения с ботом\n"
         f"там придёт счёт на <b>{int(price)} звёзд</b>\n"
-        f"<i>куты на личный баланс не начисляются</i>"
-        f"</blockquote>"
+        f"<i>куты на личный баланс не начисляются — вы становитесь легендой группы</i>"
     )
 
 
@@ -1834,7 +1861,7 @@ def decide_gc_play_mode(
 def format_game_max_bet_html(max_bet: int) -> str:
     mb = max(0, int(max_bet))
     return (
-        f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
+        f"{gbl_tg('🌴')} "
         f"<b>Максимальная ставка в этой игре {_fmt_int_local(mb)} кут</b>"
     )
 
@@ -1883,24 +1910,21 @@ async def reject_if_bet_over_group_level(
         level = get_chat_level(chat_id)
         cta = raise_cta_label(chat_id, cfg) or "Открыть ставки шире"
         text = (
-            f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
+            f"{gbl_tg('⭐️')} "
             f"<b>Лимит ставки</b>\n\n"
-            f"<blockquote>"
-            f"<b>Сейчас</b>\n"
-            f"ставки <b>до {cap} кут</b> · {stars_label(level)}"
-            f"</blockquote>\n\n"
-            f"<blockquote>"
-            f"<b>Как открыть шире</b>\n"
+            f"{gbl_tg('🎯')} <b>Сейчас</b>\n"
+            f"ставки <b>до {cap} кут</b> · {stars_label(level)}\n\n"
+            f"{gbl_tg('🏆')} <b>Как открыть шире</b>\n"
             f"напишите <b>бч</b> → «{cta}»\n"
             f"<tg-spoiler>бесплатные задания этот лимит не затрагивает</tg-spoiler>"
-            f"</blockquote>"
         )
         try:
-            await message.reply(text, parse_mode="HTML")
+            await message.reply(text, **GBL_MSG_KW)
         except Exception:
             await message.reply(
-                f"⭐ Сейчас ставки до {cap} кут.\n"
+                f"Сейчас ставки до {cap} кут.\n"
                 f"Напишите «бч» → «{cta}».",
+                disable_web_page_preview=True,
             )
         return True
     except Exception as e:
@@ -1933,6 +1957,33 @@ def build_overview_alert(
         + (f" · +{atmo:g}%" if atmo > 0.05 else "")
         + f"\nКомфорт ≈ {rec} кут"
     )
+    return line[:190]
+
+
+def build_cap_status_alert(
+    *,
+    chat_id: int,
+    atmosphere_pct: float = 0.0,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Alert по кнопке «ставки до N» — статус + мягкий пуш к легенде."""
+    cfg = cfg or get_settings()
+    level = get_chat_level(chat_id)
+    cap = effective_stake_cap(chat_id, atmosphere_pct=atmosphere_pct, cfg=cfg)
+    lim = "без лимита уровня" if cap is None else f"до {cap} кут"
+    if level >= 5:
+        line = (
+            f"Ставки {lim}\n"
+            f"{stars_label(level)} · вершина\n"
+            f"Вы уже среди легенд этой группы"
+        )
+    else:
+        cta = raise_cta_label(chat_id, cfg) or "Открыть ставки шире"
+        line = (
+            f"Сейчас ставки {lim}\n"
+            f"{stars_label(level)} · уровень {level} из 5\n"
+            f"Станьте легендой: «{cta}»"
+        )
     return line[:190]
 
 
@@ -1978,33 +2029,25 @@ def build_gift_announcement_html(
         else social_proof_line()
     )
     return (
-        f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
-        f"<b>Группу усилили</b>\n\n"
-        f"<blockquote>"
-        f"<b>Кто</b>\n"
+        f"{gbl_tg('🏆')} "
+        f"<b>В группе появилась легенда</b>\n\n"
+        f"{gbl_tg('🔥')} <b>Кто</b>\n"
         f"{sponsor_name_html}\n"
-        f"<i>нажмите на имя — откроется профиль</i>"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Какая группа</b>\n"
+        f"<i>нажмите на имя — откроется профиль</i>\n\n"
+        f"{gbl_tg('🏝')} <b>Какая группа</b>\n"
         f"{where}\n"
         f"{stars_label(prev)} → <b>{stars_label(to_level)}</b> "
         f"(уровень <b>{prev}</b> → <b>{to_level}</b>)\n"
-        f"<i>нажмите на название — откроется группа</i>"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Что изменилось</b>\n"
+        f"<i>нажмите на название — откроется группа</i>\n\n"
+        f"{gbl_tg('🎯')} <b>Что изменилось</b>\n"
         f"раньше: <b>{gain['old_lim']}</b>\n"
         f"теперь: <b>{new_lim}</b>{delta_line}\n"
-        f"сделано за <b>{steps}</b> {_ru_steps_word(steps)}"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Сколько вложили</b>\n"
+        f"сделано за <b>{steps}</b> {_ru_steps_word(steps)}\n\n"
+        f"{gbl_tg('💎')} <b>Сколько вложили</b>\n"
         f"<b>{int(price_stars)} звёзд</b> Telegram\n"
         f"метка герою: «<b>{title}</b>»\n"
         f"<i>{proof}</i>\n"
         f"<i>напишите бч — чтобы увидеть новые ★ и лимит</i>"
-        f"</blockquote>"
     )
 
 
@@ -2061,34 +2104,26 @@ def build_buyer_hero_html(
             f"(−{save_pct}%)"
         )
     return (
-        f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
-        f"<b>Вы усилили группу</b>\n"
+        f"{gbl_tg('🏆')} "
+        f"<b>Вы стали ближе к легенде</b>\n"
         f"<i>из-за вас всем стало играть просторнее</i>\n\n"
-        f"<blockquote>"
-        f"<b>Куда вы вложили</b>\n"
+        f"{gbl_tg('🏝')} <b>Куда вы вложили</b>\n"
         f"{where}\n"
         f"уровень <b>{prev}</b> → <b>{to_level}</b> · {stars_label(to_level)}\n"
         f"это <b>{steps}</b> {_ru_steps_word(steps)}\n"
         f"{price_bit}\n"
-        f"<i>нажмите на название группы — откроется чат</i>"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Что получила группа</b>\n"
-        f"{benefit}"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Что получили вы</b>\n"
+        f"<i>нажмите на название группы — откроется чат</i>\n\n"
+        f"{gbl_tg('🎯')} <b>Что получила группа</b>\n"
+        f"{benefit}\n\n"
+        f"{gbl_tg('💎')} <b>Что получили вы</b>\n"
         f"метка «<b>{title}</b>» в профиле"
         + (" и метки за каждый уровень пути" if steps > 1 else "")
         + "\n"
         f"в группе уже есть сообщение с вашим именем\n"
-        f"<i>{social_proof_line()}</i>"
-        f"</blockquote>\n\n"
-        f"<blockquote>"
-        f"<b>Дальше</b>\n"
+        f"<i>{social_proof_line()}</i>\n\n"
+        f"{gbl_tg('🔥')} <b>Дальше</b>\n"
         f"вернитесь в группу или напишите <b>бч</b> — "
         f"там будут новые ★ и новый лимит"
-        f"</blockquote>"
     )
 
 

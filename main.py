@@ -3309,26 +3309,35 @@ async def successful_payment_handler(message: Message):
                 chat_id=pay_chat_id,
                 text=gift_html,
                 parse_mode="HTML",
+                disable_web_page_preview=True,
                 message_effect_id="5046509860389126442",
             )
         except Exception as e:
             print(f"⚠️ [PAYMENT][GBL] group announce fail: {e!r}")
             try:
-                await bot1.send_message(chat_id=pay_chat_id, text=gift_html, parse_mode="HTML")
+                await bot1.send_message(
+                    chat_id=pay_chat_id,
+                    text=gift_html,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
             except Exception as e2:
                 print(f"❌ [PAYMENT][GBL] group announce fail2: {e2!r}")
 
         # Подтверждение плательщику — «пакет героя»
         try:
-            await message.answer(buyer_html, parse_mode="HTML")
+            await message.answer(
+                buyer_html, parse_mode="HTML", disable_web_page_preview=True,
+            )
         except Exception as e:
             print(f"⚠️ [PAYMENT][GBL] buyer hero fail: {e!r}")
             try:
                 await message.answer(
-                    f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
+                    f"<tg-emoji emoji-id='6005661956931850799'>⭐</tg-emoji> "
                     f"<b>Уровень повышен · {stars_label(to_level)}</b>\n"
                     f"Метка уже в профиле.",
                     parse_mode="HTML",
+                    disable_web_page_preview=True,
                 )
             except Exception:
                 pass
@@ -3578,7 +3587,12 @@ async def crypto_payment_handler(invoice: Invoice):
                     from_level=from_lvl_crypto,
                     group_html=group_html_c,
                 )
-                await bot1.send_message(int(user_id), buyer_html_c, parse_mode="HTML")
+                await bot1.send_message(
+                    int(user_id),
+                    buyer_html_c,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
             except Exception as _bh_e:
                 debug_print(f"[GBL][CRYPTO] buyer hero: {_bh_e!r}")
             try:
@@ -3586,11 +3600,17 @@ async def crypto_payment_handler(invoice: Invoice):
                     chat_id=int(gbl_chat_id),
                     text=gift_html,
                     parse_mode="HTML",
+                    disable_web_page_preview=True,
                     message_effect_id="5046509860389126442",
                 )
             except Exception:
                 try:
-                    await bot1.send_message(int(gbl_chat_id), gift_html, parse_mode="HTML")
+                    await bot1.send_message(
+                        int(gbl_chat_id),
+                        gift_html,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
                 except Exception as e2:
                     debug_print(f"[GBL][CRYPTO] announce fail: {e2}")
 
@@ -7540,29 +7560,25 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
                 if gain.get("delta") else ""
             )
             try:
+                from bot.funcs.group_balance_level import gbl_tg as _gbl_tg
                 await message.answer(
-                    f"<tg-emoji emoji-id='5404534885324988233'>⭐️</tg-emoji> "
+                    f"{_gbl_tg('🏆')} "
                     f"<b>Оплата со скидкой</b>\n"
                     f"<i>счёт готов — ниже всё простыми словами</i>\n\n"
-                    f"<blockquote>"
-                    f"<b>Что вы покупаете</b>\n"
+                    f"{_gbl_tg('🎯')} <b>Что вы покупаете</b>\n"
                     f"{explain_package_plain(pkg)}\n"
                     f"группа: {group_html_dm}\n"
-                    f"<i>нажмите на название — откроется группа</i>"
-                    f"</blockquote>\n\n"
-                    f"<blockquote>"
-                    f"<b>Что изменится</b>\n"
+                    f"<i>нажмите на название — откроется группа</i>\n\n"
+                    f"{_gbl_tg('🔥')} <b>Что изменится</b>\n"
                     f"раньше: <b>{gain['old_lim']}</b>\n"
                     f"станет: <b>{gain['new_lim']}</b>{delta_line}\n"
-                    f"подарок вам: метка «<b>{badge}</b>»"
-                    f"</blockquote>\n\n"
-                    f"<blockquote>"
-                    f"<b>Счёт</b>\n"
+                    f"подарок вам: метка «<b>{badge}</b>»\n\n"
+                    f"{_gbl_tg('💎')} <b>Счёт</b>\n"
                     f"{format_package_price_line(pkg)}\n"
                     f"<i>{social_proof_line()}</i>\n"
-                    f"<i>куты на личный баланс не придут — вы усиливаете общую игру</i>"
-                    f"</blockquote>",
+                    f"<i>куты на личный баланс не придут — вы усиливаете общую игру</i>",
                     parse_mode="HTML",
+                    disable_web_page_preview=True,
                 )
             except Exception:
                 pass

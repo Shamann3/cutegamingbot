@@ -662,12 +662,14 @@ async def chatbalance(message: Message):
             )
             try:
                 sent_message = await message.reply(
-                    screen, reply_markup=keyboard, parse_mode="HTML")
+                    screen, reply_markup=keyboard, parse_mode="HTML",
+                    disable_web_page_preview=True)
             except Exception as e:
                 err = str(e)
                 if "DOCUMENT_INVALID" in err or "can't parse" in err.lower():
                     sent_message = await message.reply(
-                        strip_tg_emoji(screen), reply_markup=keyboard, parse_mode="HTML")
+                        strip_tg_emoji(screen), reply_markup=keyboard, parse_mode="HTML",
+                        disable_web_page_preview=True)
                 else:
                     raise
 
@@ -740,12 +742,14 @@ async def show_balance_details(callback_query: CallbackQuery):
         keyboard = build_details_keyboard(chat_id=chat_id)
         try:
             await callback_query.message.edit_text(
-                text, parse_mode="HTML", reply_markup=keyboard)
+                text, parse_mode="HTML", reply_markup=keyboard,
+                disable_web_page_preview=True)
         except Exception as e:
             err = str(e)
             if "DOCUMENT_INVALID" in err or "can't parse" in err.lower():
                 await callback_query.message.edit_text(
-                    strip_tg_emoji(text), parse_mode="HTML", reply_markup=keyboard)
+                    strip_tg_emoji(text), parse_mode="HTML", reply_markup=keyboard,
+                    disable_web_page_preview=True)
             else:
                 raise
     else:
@@ -789,12 +793,14 @@ async def back_to_balance(callback_query: CallbackQuery):
     )
     try:
         await callback_query.message.edit_text(
-            screen, reply_markup=keyboard, parse_mode="HTML")
+            screen, reply_markup=keyboard, parse_mode="HTML",
+            disable_web_page_preview=True)
     except Exception as e:
         err = str(e)
         if "DOCUMENT_INVALID" in err or "can't parse" in err.lower():
             await callback_query.message.edit_text(
-                strip_tg_emoji(screen), reply_markup=keyboard, parse_mode="HTML")
+                strip_tg_emoji(screen), reply_markup=keyboard, parse_mode="HTML",
+                disable_web_page_preview=True)
         else:
             raise
 
@@ -859,11 +865,14 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
     )
     kb = build_raise_keyboard(chat_id=chat_id, cfg=cfg)
     try:
-        await callback_query.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        await callback_query.message.edit_text(
+            text, reply_markup=kb, parse_mode="HTML",
+            disable_web_page_preview=True)
     except Exception as e:
         if "DOCUMENT_INVALID" in str(e):
             await callback_query.message.edit_text(
-                strip_tg_emoji(text), reply_markup=kb, parse_mode="HTML")
+                strip_tg_emoji(text), reply_markup=kb, parse_mode="HTML",
+                disable_web_page_preview=True)
         else:
             raise
 
@@ -973,12 +982,14 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
     try:
         await callback_query.message.edit_text(
             text, reply_markup=kb, parse_mode="HTML",
+            disable_web_page_preview=True,
         )
     except Exception as e:
         err = str(e)
         if "DOCUMENT_INVALID" in err or "can't parse" in err.lower():
             await callback_query.message.edit_text(
                 strip_tg_emoji(text), reply_markup=kb, parse_mode="HTML",
+                disable_web_page_preview=True,
             )
         else:
             print(f"[GBL] pay bridge edit error: {e!r}")
@@ -989,6 +1000,36 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
                 )
             except Exception:
                 pass
+
+
+@dp.callback_query(lambda c: c.data == "gbl_cap_status")
+async def gbl_cap_status(callback_query: CallbackQuery):
+    """Кнопка «ставки до N» — статус потолка + мягкий пуш к легенде."""
+    user_id = callback_query.from_user.id
+    message_id = callback_query.message.message_id
+    randommessagebonus1 = random.choice(randommessagehelp)
+    if user_id not in user_message_balance_chat or user_message_balance_chat[user_id] != message_id:
+        await callback_query.answer(randommessagebonus1)
+        return
+    chat_id = int(callback_query.message.chat.id)
+    from bot.funcs.group_balance_level import (
+        build_cap_status_alert,
+        ensure_society_snapshot,
+        get_chat_level_async,
+        get_settings,
+    )
+    cfg = get_settings()
+    await get_chat_level_async(chat_id, db=db)
+    atmo_report = await ensure_society_snapshot(chat_id, db=db)
+    atmo = float(atmo_report.get("pct") or 0)
+    await callback_query.answer(
+        build_cap_status_alert(
+            chat_id=chat_id,
+            atmosphere_pct=atmo,
+            cfg=cfg,
+        ),
+        show_alert=True,
+    )
 
 
 @dp.callback_query(lambda c: c.data == "group_balance_overview")
