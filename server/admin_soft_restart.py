@@ -1,10 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Soft Restart bridge for admin panel (creator-only).
-
-Связь с игровым ботом (берём самый свежий источник):
-  • Postgres soft_restart_bridge (если API и бот смотрят в одну БД)
-  • файлы data/sr_*.json в нескольких известных корнях репозитория
-"""
+"""Soft Restart bridge for admin panel (creator-only) + полное расписание."""
 
 from __future__ import annotations
 
@@ -15,114 +10,143 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from config import PROJECT_CREATOR_ID
+from sr_schedule import (
+    DEFAULT_CFG,
+    mode_label,
+    normalize_config,
+    preview_next_runs,
+)
 
 _ALIVE_WINDOW_SEC = 45.0
 _TABLE_READY = False
 _LAST_PG_ERROR: Optional[str] = None
 
-DEFAULT_CFG: Dict[str, Any] = {
-    "enabled": False,
-    "test": False,
-    "interval_sec": 3600.0,
-    "initial_delay_sec": 3600.0,
-    "grace_sec": 3.0,
-}
-
 GUIDE = {
-    "title": "Скрытый Soft Restart (Sypher)",
+    "title": "Sypher · полный контроль soft restart",
     "subtitle": "Тёмная сторона процесса · только создатель",
     "flow": [
-        "Авто — планировщик в игровом боте сам вызывает request_restart по таймеру.",
-        "Пауза (initial_delay) — первый sleep после старта процесса / после «Сохранить».",
-        "Интервал — sleep между следующими рестартами, если предыдущий не убил процесс.",
-        "Grace — sleep только в hard-exit (нет rolling-супервизора) перед stop_polling.",
-        "Live = enabled ON + test OFF. Test = enabled OFF + test ON (ручные проверки).",
-        "«Рестарт сейчас» пишет cmd в bridge → бот вызывает request_restart (как .r).",
-        "В личку — одно короткое «◈ soft restart · … · ок», когда новый pid реально жив.",
-        "Если пульс offline — игровой бот не публикует heartbeat (нужен рестарт/деплой main.py).",
+        "Режим interval — рестарт каждые N секунд после паузы с старта процесса.",
+        "Режим hourly — каждый час в выбранную минуту (:MM) по timezone.",
+        "Режим times — в конкретные HH:MM по выбранным дням недели.",
+        "Пауза (initial_delay) — защита: первый авто не раньше этого с момента старта pid.",
+        "Условия: мин. аптайм, тихие часы, лимит рестартов/день, только с супервизором.",
+        "Панель и игровой бот связаны через Postgres soft_restart_bridge + файлы data/sr_*.",
+        "В личку — одно короткое «ок» после реального подъёма нового процесса.",
     ],
 }
 
-# Подробно: что крутит тумблер/ползунок в коде.
 PARAM_DOCS: Dict[str, Dict[str, Any]] = {
     "enabled": {
         "title": "Авто-рестарт",
-        "short": "Главный выключатель планировщика мягкого рестарта.",
-        "detail": (
-            "ON — после старта бота крутится _scheduler_loop: сначала ждёт паузу, "
-            "потом периодически вызывает request_restart(\"schedule\"). "
-            "OFF — цикл не стартует / останавливается; остаются только ручные "
-            "«Рестарт сейчас», .r и sypherrestart now."
-        ),
-        "affects": [
-            "is_enabled() → bool из cfg[\"enabled\"]",
-            "start_scheduler() создаёт task soft_restart_scheduler только при ON",
-            "reschedule() после сохранения с панели пересоздаёт/гасит планировщик",
-            "в _scheduler_loop при OFF → выход и next_at = None",
-        ],
-        "code": "bot/funcs/soft_restart.py → is_enabled, start_scheduler, reschedule, _scheduler_loop",
+        "short": "Включает планировщик в игровом боте.",
+        "detail": "ON → task soft_restart_scheduler считает next_at и вызывает request_restart. OFF → только ручной рестарт.",
+        "affects": ["is_enabled()", "start_scheduler / reschedule", "_scheduler_loop"],
+        "code": "bot/funcs/soft_restart.py",
+    },
+    "mode": {
+        "title": "Режим расписания",
+        "short": "interval | hourly | times — как считать следующий рестарт.",
+        "detail": "Меняет формулу compute_next_at в sr_schedule.py. От этого зависит весь countdown.",
+        "affects": ["compute_next_at", "_arm_next_from_schedule", "upcoming preview"],
+        "code": "bot/funcs/sr_schedule.py → compute_next_at",
+    },
+    "interval_sec": {
+        "title": "Интервал (режим interval)",
+        "short": "Пауза между авто-рестартами после первого.",
+        "detail": "Только для mode=interval. После неудачного тика next = now + interval_sec.",
+        "affects": ["compute_next_at(mode=interval)"],
+        "code": "bot/funcs/sr_schedule.py",
+    },
+    "initial_delay_sec": {
+        "title": "Пауза после старта",
+        "short": "Минимальное время жизни процесса до первого авто.",
+        "detail": "earliest = started_at + initial_delay. Работает во всех режимах.",
+        "affects": ["compute_next_at earliest", "защита от рестарт-шторма"],
+        "code": "bot/funcs/sr_schedule.py",
+    },
+    "hourly_minute": {
+        "title": "Минута часа (hourly)",
+        "short": "Каждый час в :MM (например 0 = XX:00).",
+        "detail": "Только mode=hourly. Следующий слот HH:MM в timezone.",
+        "affects": ["compute_next_at(mode=hourly)"],
+        "code": "bot/funcs/sr_schedule.py",
+    },
+    "daily_times": {
+        "title": "Времена дня (times)",
+        "short": "Список HH:MM, когда разрешён авто-рестарт.",
+        "detail": "Только mode=times. Ближайший слот среди daily_times × weekdays.",
+        "affects": ["compute_next_at(mode=times)"],
+        "code": "bot/funcs/sr_schedule.py",
+    },
+    "weekdays": {
+        "title": "Дни недели",
+        "short": "Пн=0 … Вс=6 — в какие дни работают daily_times.",
+        "detail": "Фильтр для mode=times.",
+        "affects": ["compute_next_at weekdays filter"],
+        "code": "bot/funcs/sr_schedule.py",
+    },
+    "timezone": {
+        "title": "Часовой пояс",
+        "short": "IANA tz для hourly/times и тихих часов (по умолчанию Europe/Moscow).",
+        "detail": "ZoneInfo(timezone) при расчёте wall-clock.",
+        "affects": ["все wall-clock слоты", "quiet hours", "счётчик restarts_today"],
+        "code": "bot/funcs/sr_schedule.py → ZoneInfo",
+    },
+    "grace_sec": {
+        "title": "Grace",
+        "short": "Задержка перед hard-exit без супервизора.",
+        "detail": "Только _perform_hard_exit. На rolling handoff не влияет.",
+        "affects": ["_perform_hard_exit"],
+        "code": "bot/funcs/soft_restart.py",
+    },
+    "conditions.min_uptime_sec": {
+        "title": "Мин. аптайм",
+        "short": "Не рестартовать, пока процесс живёт меньше N секунд.",
+        "detail": "conditions_block_reason → skip tick, пересчёт next.",
+        "affects": ["_scheduler_loop skip"],
+        "code": "bot/funcs/sr_schedule.py → conditions_block_reason",
+    },
+    "conditions.quiet_start": {
+        "title": "Тихие часы (начало)",
+        "short": "С этого HH:MM авто-рестарты пропускаются.",
+        "detail": "Вместе с quiet_end образует окно (может через полночь).",
+        "affects": ["quiet_hours block"],
+        "code": "bot/funcs/sr_schedule.py",
+    },
+    "conditions.quiet_end": {
+        "title": "Тихие часы (конец)",
+        "short": "До этого HH:MM авто пропускаются.",
+        "detail": "Пусто + пустой start = окно выкл.",
+        "affects": ["quiet_hours block"],
+        "code": "bot/funcs/sr_schedule.py",
+    },
+    "conditions.max_restarts_per_day": {
+        "title": "Лимит рестартов/день",
+        "short": "Защита от шторма по календарному дню timezone.",
+        "detail": "Счётчик в sr_history.json / status.restarts_today.",
+        "affects": ["conditions_block_reason", "record_restart_event"],
+        "code": "bot/funcs/soft_restart.py",
+    },
+    "conditions.require_supervisor": {
+        "title": "Только с handoff",
+        "short": "Авто только если rolling-супервизор активен.",
+        "detail": "Иначе тик пропускается (ручной рестарт всё ещё можно).",
+        "affects": ["conditions_block_reason require_supervisor"],
+        "code": "bot/funcs/sr_schedule.py",
+    },
+    "notify_creator": {
+        "title": "ЛС после рестарта",
+        "short": "Короткое сообщение создателю, когда новый pid жив.",
+        "detail": "notify_restart_alive → bot.send_message(CREATOR_ID).",
+        "affects": ["maybe_notify_boot"],
+        "code": "bot/funcs/soft_restart.py",
     },
     "test": {
         "title": "Тестовый режим",
-        "short": "Метка режима для панели и пресетов (не меняет сам алгоритм handoff).",
-        "detail": (
-            "Флаг cfg[\"test\"] / is_test_mode(). Пресет Test включает его и гасит авто; "
-            "Live выключает. На rolling handoff и flush кнопок не влияет — только "
-            "отображение «режим бой/тест» и дисциплина настроек."
-        ),
-        "affects": [
-            "is_test_mode() и поле test_mode в status/panel",
-            "preset test → enabled=False, test=True",
-            "preset live → enabled=True, test=False",
-        ],
-        "code": "bot/funcs/soft_restart.py → is_test_mode, update_settings, preset handlers",
-    },
-    "initial_delay_sec": {
-        "title": "Пауза до первого рестарта",
-        "short": "Сколько секунд ждать после старта процесса (или после apply) до первого авто.",
-        "detail": (
-            "Попадает в cfg[\"initial_delay_sec\"] (мин. 30с). "
-            "_arm_next_at(initial_delay_sec()) выставляет next_at = now + pause. "
-            "_scheduler_loop делает await asyncio.sleep(delay) один раз, затем входит "
-            "в цикл интервалов. Именно это число ты видишь в живом отсчёте сразу после Live."
-        ),
-        "affects": [
-            "initial_delay_sec() / _arm_next_at / первый sleep в _scheduler_loop",
-            "status.next_at и countdown в вкладке Sypher",
-            "при каждом apply/reschedule отсчёт начинается заново с этой паузы",
-        ],
-        "code": "bot/funcs/soft_restart.py → initial_delay_sec, _arm_next_at, _scheduler_loop",
-    },
-    "interval_sec": {
-        "title": "Интервал между рестартами",
-        "short": "Пауза между попытками авто-рестарта после первой.",
-        "detail": (
-            "cfg[\"interval_sec\"] (мин. 60с). После неудачного/незавершённого request_restart "
-            "планировщик делает _arm_next_at(interval) и sleep(interval). "
-            "Если request_restart вернул True (рестарт принят), цикл завершается — "
-            "новый процесс снова стартует с initial_delay."
-        ),
-        "affects": [
-            "interval_sec() во втором и дальнейших тиках _scheduler_loop",
-            "частота schedule-рестартов в «бою»",
-            "не влияет на ручной .r / «Рестарт сейчас»",
-        ],
-        "code": "bot/funcs/soft_restart.py → interval_sec, _scheduler_loop",
-    },
-    "grace_sec": {
-        "title": "Grace (жёсткий выход)",
-        "short": "Задержка перед stop_polling, если нет rolling-супервизора.",
-        "detail": (
-            "Используется только в _perform_hard_exit (SR_SUPERVISOR выкл / нет флагов). "
-            "await asyncio.sleep(grace_sec()) → flush pkl → stop_polling → os._exit. "
-            "При rolling handoff grace не участвует: старый ждёт release_old от супервизора."
-        ),
-        "affects": [
-            "grace_sec() в _perform_hard_exit",
-            "как быстро оборвётся polling без handoff",
-            "не влияет на _perform_handoff_request",
-        ],
-        "code": "bot/funcs/soft_restart.py → grace_sec, _perform_hard_exit",
+        "short": "Метка режима (preset test/live).",
+        "detail": "Не меняет handoff; влияет на отображение и пресеты.",
+        "affects": ["is_test_mode", "presets"],
+        "code": "bot/funcs/soft_restart.py",
     },
 }
 
@@ -137,11 +161,9 @@ def _data_roots() -> List[Path]:
     if env:
         roots.append(Path(env))
     here = Path(__file__).resolve()
-    # server/admin_soft_restart.py → server/data и repo/data
     roots.append(here.parent / "data")
     roots.append(here.parents[1] / "data")
     roots.append(here.parents[1] / "server" / "data")
-    # cwd fallbacks
     cwd = Path.cwd()
     roots.append(cwd / "data")
     roots.append(cwd / "server" / "data")
@@ -161,20 +183,6 @@ def _data_roots() -> List[Path]:
 
 def _paths(name: str) -> List[Path]:
     return [root / name for root in _data_roots()]
-
-
-def _normalize(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    base = dict(DEFAULT_CFG)
-    if isinstance(raw, dict):
-        for k in base:
-            if k in raw:
-                base[k] = raw[k]
-    base["enabled"] = bool(base["enabled"])
-    base["test"] = bool(base["test"])
-    base["interval_sec"] = max(60.0, float(base["interval_sec"]))
-    base["initial_delay_sec"] = max(30.0, float(base["initial_delay_sec"]))
-    base["grace_sec"] = max(0.5, float(base["grace_sec"]))
-    return base
 
 
 def _as_dict(value: Any) -> Dict[str, Any]:
@@ -347,19 +355,26 @@ def _pick_freshest_status(candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
     return best
 
 
+def _read_history() -> Dict[str, Any]:
+    for path in _paths("sr_history.json"):
+        got = _read_json(path)
+        if got:
+            return got
+    return {}
+
+
 async def load_config() -> Dict[str, Any]:
     row = await _pg_row()
     if row and row.get("config"):
-        return _normalize(row["config"])
+        return normalize_config(row["config"], defaults=dict(DEFAULT_CFG))
     for path in _paths("sr_runtime.json"):
         got = _read_json(path)
         if got:
-            return _normalize(got)
-    return _normalize(None)
+            return normalize_config(got, defaults=dict(DEFAULT_CFG))
+    return normalize_config(None, defaults=dict(DEFAULT_CFG))
 
 
 async def load_status() -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Вернуть (status_for_ui, diagnostics)."""
     now = time.time()
     file_infos = []
     file_statuses: List[Dict[str, Any]] = []
@@ -374,13 +389,7 @@ async def load_status() -> Tuple[Dict[str, Any], Dict[str, Any]]:
                 age = round(max(0.0, now - pub), 1) if pub else None
             except Exception:
                 age = None
-        file_infos.append(
-            {
-                "path": str(path),
-                "exists": exists,
-                "age_sec": age,
-            }
-        )
+        file_infos.append({"path": str(path), "exists": exists, "age_sec": age})
 
     row = await _pg_row()
     pg_status = row.get("status") if row else {}
@@ -389,6 +398,14 @@ async def load_status() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     if pg_status:
         candidates.append(pg_status)
     st = _pick_freshest_status(candidates)
+    hist = _read_history()
+    if not st.get("last_restart_at") and hist.get("last_restart_at") is not None:
+        st = dict(st)
+        st["last_restart_at"] = hist.get("last_restart_at")
+        st["last_restart_reason"] = hist.get("last_restart_reason")
+        st["restarts_today"] = hist.get("restarts_today")
+        if isinstance(hist.get("events"), list) and not st.get("history"):
+            st["history"] = hist["events"][-12:]
 
     published = 0.0
     try:
@@ -407,21 +424,22 @@ async def load_status() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         except Exception:
             next_in = None
 
-    applied = _as_dict(st.get("applied"))
+    last_at = st.get("last_restart_at")
+    since_last = None
+    if last_at is not None:
+        try:
+            since_last = round(max(0.0, now - float(last_at)), 1)
+        except Exception:
+            since_last = None
 
     if alive:
         hint = "Игровой бот на связи · heartbeat свежий."
     elif stale:
-        hint = (
-            f"Последний heartbeat {age:.0f}с назад (окно {_ALIVE_WINDOW_SEC:.0f}с). "
-            "Бот завис, умер или ещё не обновлён новым soft_restart."
-        )
+        hint = f"Последний heartbeat {age:.0f}с назад. Бот завис или код bridge ещё не задеплоен."
     else:
         hint = (
-            "Нет heartbeat от игрового бота. "
-            "Нужен деплой/рестарт процесса main.py (не admin-bot) с кодом bridge. "
-            "API и бот должны видеть одну Postgres (таблица soft_restart_bridge) "
-            "или общие файлы data/sr_status.json."
+            "Нет heartbeat. Перезапусти игровой main.py с новым soft_restart. "
+            "API и бот — одна Postgres (soft_restart_bridge) или общие data/sr_status.json."
         )
 
     diagnostics = {
@@ -443,13 +461,23 @@ async def load_status() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "published_at": published or None,
         "pid": st.get("pid"),
         "uptime_sec": st.get("uptime_sec"),
+        "started_at": st.get("started_at"),
         "next_at": next_at,
         "next_in_sec": next_in,
+        "upcoming": st.get("upcoming") or [],
         "requested": bool(st.get("requested")),
         "last_reason": st.get("last_reason"),
+        "last_restart_at": last_at,
+        "last_restart_reason": st.get("last_restart_reason"),
+        "since_last_restart_sec": since_last if since_last is not None else st.get("since_last_restart_sec"),
+        "restarts_today": st.get("restarts_today"),
+        "history": st.get("history") or [],
+        "block_reason": st.get("block_reason"),
+        "mode": st.get("mode"),
+        "mode_label": st.get("mode_label"),
         "handoff": bool(st.get("handoff") or st.get("supervisor")),
         "supervisor": bool(st.get("supervisor")),
-        "applied": applied or None,
+        "applied": _as_dict(st.get("applied")) or None,
         "bridge_ok": bool(st.get("bridge_ok")),
         "server_now": now,
     }
@@ -459,6 +487,9 @@ async def load_status() -> Tuple[Dict[str, Any], Dict[str, Any]]:
 async def overview() -> Dict[str, Any]:
     cfg = await load_config()
     status, diagnostics = await load_status()
+    started = float(status.get("started_at") or (time.time() - float(status.get("uptime_sec") or 0)))
+    if not status.get("upcoming"):
+        status["upcoming"] = preview_next_runs(cfg, started_at=started, count=8)
     return {
         "config": cfg,
         "status": status,
@@ -467,48 +498,45 @@ async def overview() -> Dict[str, Any]:
         "creatorId": int(PROJECT_CREATOR_ID),
         "paramHelp": {k: v["short"] for k, v in PARAM_DOCS.items()},
         "paramDocs": PARAM_DOCS,
+        "modeLabel": mode_label(str(cfg.get("mode") or "interval")),
     }
 
 
 async def save_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
     cfg = await load_config()
     for k, v in patch.items():
-        if k in cfg and v is not None:
+        if v is None:
+            continue
+        if k == "conditions" and isinstance(v, dict):
+            cur = dict(cfg.get("conditions") or {})
+            cur.update(v)
+            cfg["conditions"] = cur
+        else:
             cfg[k] = v
-    cfg = _normalize(cfg)
+    cfg = normalize_config(cfg, defaults=dict(DEFAULT_CFG))
     _write_json_all("sr_runtime.json", cfg)
     await _pg_write_config(cfg)
-    cmd = {
-        "op": "apply",
-        "config": cfg,
-        "ts": time.time(),
-    }
+    cmd = {"op": "apply", "config": cfg, "ts": time.time()}
     _write_json_all("sr_cmd.json", cmd)
     await _pg_write_cmd(cmd)
     return cfg
 
 
 async def queue_restart(reason: str = "panel") -> Dict[str, Any]:
-    cmd = {
-        "op": "restart",
-        "reason": str(reason or "panel")[:64],
-        "ts": time.time(),
-    }
+    cmd = {"op": "restart", "reason": str(reason or "panel")[:64], "ts": time.time()}
     written = _write_json_all("sr_cmd.json", cmd)
     pg_ok = await _pg_write_cmd(cmd)
-    return {
-        "ok": True,
-        "queued": True,
-        "cmd": cmd,
-        "pg_ok": pg_ok,
-        "files": written,
-    }
+    return {"ok": True, "queued": True, "cmd": cmd, "pg_ok": pg_ok, "files": written}
 
 
 async def apply_preset(name: str) -> Dict[str, Any]:
     n = (name or "").strip().lower()
     if n in ("live", "prod", "бой"):
-        return await save_settings({"enabled": True, "test": False})
+        return await save_settings({"enabled": True, "test": False, "mode": "interval", "interval_sec": 3600, "initial_delay_sec": 3600})
+    if n in ("hourly", "час"):
+        return await save_settings({"enabled": True, "test": False, "mode": "hourly", "hourly_minute": 0, "initial_delay_sec": 120})
+    if n in ("night", "ночь"):
+        return await save_settings({"enabled": True, "test": False, "mode": "times", "daily_times": ["03:00"], "weekdays": [0, 1, 2, 3, 4, 5, 6], "initial_delay_sec": 120})
     if n in ("test", "check", "тест"):
         return await save_settings({"enabled": False, "test": True})
     raise ValueError("unknown preset")

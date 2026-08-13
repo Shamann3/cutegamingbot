@@ -4231,12 +4231,28 @@ async def admin_sr_overview(
     return await sr_overview()
 
 
+class SoftRestartConditionsBody(BaseModel):
+    min_uptime_sec: float | None = Field(default=None, ge=0, le=86400)
+    require_supervisor: bool | None = None
+    max_restarts_per_day: int | None = Field(default=None, ge=1, le=500)
+    quiet_start: str | None = Field(default=None, max_length=8)
+    quiet_end: str | None = Field(default=None, max_length=8)
+    model_config = {"extra": "forbid"}
+
+
 class SoftRestartSettingsBody(BaseModel):
     enabled: bool | None = None
     test: bool | None = None
+    mode: str | None = Field(default=None, max_length=16)
     interval_sec: float | None = Field(default=None, ge=60, le=86400 * 7)
     initial_delay_sec: float | None = Field(default=None, ge=30, le=86400 * 7)
     grace_sec: float | None = Field(default=None, ge=0.5, le=120)
+    timezone: str | None = Field(default=None, max_length=64)
+    hourly_minute: int | None = Field(default=None, ge=0, le=59)
+    daily_times: list[str] | None = None
+    weekdays: list[int] | None = None
+    conditions: SoftRestartConditionsBody | None = None
+    notify_creator: bool | None = None
     model_config = {"extra": "forbid"}
 
 
@@ -4247,7 +4263,13 @@ async def admin_sr_save_settings(
     admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
 ):
     _require_project_creator(admin_id)
-    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    patch = body.model_dump(exclude_none=True)
+    if isinstance(patch.get("conditions"), dict):
+        patch["conditions"] = {
+            k: v for k, v in patch["conditions"].items() if v is not None
+        }
+    if patch.get("mode") and patch["mode"] not in ("interval", "hourly", "times"):
+        raise HTTPException(status_code=400, detail="mode: interval|hourly|times")
     cfg = await sr_save_settings(patch)
     try:
         await log_admin_action(

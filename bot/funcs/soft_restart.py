@@ -12,7 +12,15 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
+
+from bot.funcs.sr_schedule import (
+    conditions_block_reason,
+    compute_next_at,
+    mode_label,
+    normalize_config,
+    preview_next_runs,
+)
 
 NotifyFn = Callable[[str], Awaitable[None]]
 
@@ -79,6 +87,14 @@ _last_cmd_ts: float = 0.0
 _last_cfg_rev: int = -1
 _bridge_table_ready = False
 _boot_notified = False
+_first_cycle = True
+_last_restart_at: Optional[float] = None
+_last_restart_reason: str = ""
+_restart_history: List[Dict[str, Any]] = []
+_restarts_today: int = 0
+_restarts_today_key: str = ""
+_HISTORY_PATH_NAME = "sr_history.json"
+_HISTORY_MAX = 30
 
 
 def sr_dir() -> Path:
@@ -153,23 +169,34 @@ def _defaults_from_env() -> Dict[str, Any]:
     return {
         "enabled": _env_bool("BOT_SOFT_RESTART_ENABLED", False),
         "test": _env_bool("BOT_SOFT_RESTART_TEST", False),
+        "mode": (os.getenv("BOT_SOFT_RESTART_MODE") or "interval").strip().lower() or "interval",
         "interval_sec": interval,
         "initial_delay_sec": max(
             30.0, _env_float("BOT_SOFT_RESTART_INITIAL_DELAY_SEC", interval)
         ),
         "grace_sec": max(0.5, _env_float("BOT_SOFT_RESTART_GRACE_SEC", 3.0)),
+        "timezone": (os.getenv("BOT_SOFT_RESTART_TZ") or "Europe/Moscow").strip()
+        or "Europe/Moscow",
+        "hourly_minute": int(_env_float("BOT_SOFT_RESTART_HOURLY_MINUTE", 0)),
+        "daily_times": [
+            p.strip()
+            for p in (os.getenv("BOT_SOFT_RESTART_DAILY_TIMES") or "03:00").split(",")
+            if p.strip()
+        ],
+        "weekdays": [0, 1, 2, 3, 4, 5, 6],
+        "conditions": {
+            "min_uptime_sec": max(0.0, _env_float("BOT_SOFT_RESTART_MIN_UPTIME_SEC", 120.0)),
+            "require_supervisor": _env_bool("BOT_SOFT_RESTART_REQUIRE_SUPERVISOR", False),
+            "max_restarts_per_day": int(_env_float("BOT_SOFT_RESTART_MAX_PER_DAY", 48)),
+            "quiet_start": (os.getenv("BOT_SOFT_RESTART_QUIET_START") or "").strip(),
+            "quiet_end": (os.getenv("BOT_SOFT_RESTART_QUIET_END") or "").strip(),
+        },
+        "notify_creator": _env_bool("BOT_SOFT_RESTART_NOTIFY", True),
     }
 
 
 def _normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
-    base = _defaults_from_env()
-    base.update({k: raw[k] for k in base if k in raw})
-    base["enabled"] = bool(base["enabled"])
-    base["test"] = bool(base["test"])
-    base["interval_sec"] = max(60.0, float(base["interval_sec"]))
-    base["initial_delay_sec"] = max(30.0, float(base["initial_delay_sec"]))
-    base["grace_sec"] = max(0.5, float(base["grace_sec"]))
-    return base
+    return normalize_config(raw if isinstance(raw, dict) else {}, defaults=_defaults_from_env())
 
 
 def _read_file() -> Optional[Dict[str, Any]]:
@@ -288,6 +315,10 @@ def grace_sec() -> float:
     return float(ensure_loaded()["grace_sec"])
 
 
+def schedule_mode() -> str:
+    return str(ensure_loaded().get("mode") or "interval")
+
+
 def creator_id() -> int:
     return CREATOR_ID
 
@@ -296,34 +327,127 @@ def is_creator(uid: int) -> bool:
     return int(uid) == CREATOR_ID
 
 
+def _load_history() -> None:
+    global _restart_history, _last_restart_at, _last_restart_reason, _restarts_today, _restarts_today_key
+    for path in _paths(_HISTORY_PATH_NAME):
+        try:
+            if not path.is_file():
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                continue
+            hist = data.get("events")
+            if isinstance(hist, list):
+                _restart_history = [h for h in hist if isinstance(h, dict)][-_HISTORY_MAX:]
+            if data.get("last_restart_at") is not None:
+                _last_restart_at = float(data["last_restart_at"])
+            _last_restart_reason = str(data.get("last_restart_reason") or "")
+            _restarts_today = int(data.get("restarts_today") or 0)
+            _restarts_today_key = str(data.get("restarts_today_key") or "")
+            return
+        except Exception:
+            continue
+
+
+def _persist_history() -> None:
+    payload = {
+        "last_restart_at": _last_restart_at,
+        "last_restart_reason": _last_restart_reason,
+        "restarts_today": _restarts_today,
+        "restarts_today_key": _restarts_today_key,
+        "events": _restart_history[-_HISTORY_MAX:],
+    }
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    for path in _paths(_HISTORY_PATH_NAME):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(text, encoding="utf-8")
+            tmp.replace(path)
+        except Exception as e:
+            print(f"[SR] history write {path}: {e!r}")
+
+
+def _roll_day_counter() -> None:
+    global _restarts_today, _restarts_today_key
+    cfg = ensure_loaded()
+    try:
+        from bot.funcs.sr_schedule import _now_tz
+
+        key = _now_tz(str(cfg.get("timezone") or "Europe/Moscow")).strftime("%Y-%m-%d")
+    except Exception:
+        key = time.strftime("%Y-%m-%d")
+    if key != _restarts_today_key:
+        _restarts_today_key = key
+        _restarts_today = 0
+
+
+def record_restart_event(reason: str, *, source: str = "schedule") -> None:
+    """Фиксируем факт рестарта (вызывать из нового процесса после boot)."""
+    global _last_restart_at, _last_restart_reason, _restarts_today, _restart_history
+    _roll_day_counter()
+    now = time.time()
+    _last_restart_at = now
+    _last_restart_reason = str(reason or source)[:64]
+    _restarts_today += 1
+    _restart_history.append(
+        {
+            "at": now,
+            "reason": _last_restart_reason,
+            "source": source,
+            "pid": os.getpid(),
+        }
+    )
+    _restart_history = _restart_history[-_HISTORY_MAX:]
+    _persist_history()
+
+
 def status_dict() -> dict:
     ensure_loaded()
     now = time.time()
     cfg = ensure_loaded()
+    uptime = round(now - _started_at, 1)
+    block = conditions_block_reason(
+        cfg,
+        uptime_sec=uptime,
+        supervisor=supervisor_active(),
+        restarts_today=_restarts_today,
+    )
+    since_last = None if _last_restart_at is None else round(max(0.0, now - _last_restart_at), 1)
+    upcoming = preview_next_runs(cfg, started_at=_started_at, count=6, now_ts=now)
     return {
         "enabled": is_enabled(),
         "test_mode": is_test_mode(),
+        "mode": schedule_mode(),
+        "mode_label": mode_label(schedule_mode()),
         "interval_sec": interval_sec(),
         "initial_delay_sec": initial_delay_sec(),
         "grace_sec": grace_sec(),
-        "uptime_sec": round(now - _started_at, 1),
+        "timezone": cfg.get("timezone"),
+        "hourly_minute": cfg.get("hourly_minute"),
+        "daily_times": cfg.get("daily_times"),
+        "weekdays": cfg.get("weekdays"),
+        "conditions": cfg.get("conditions"),
+        "uptime_sec": uptime,
+        "started_at": _started_at,
         "next_at": _next_at,
         "next_in_sec": None if _next_at is None else round(max(0.0, _next_at - now), 1),
+        "upcoming": upcoming,
         "requested": _requested,
         "last_reason": _last_reason or None,
+        "last_restart_at": _last_restart_at,
+        "last_restart_reason": _last_restart_reason or None,
+        "since_last_restart_sec": since_last,
+        "restarts_today": _restarts_today,
+        "history": list(_restart_history[-12:]),
+        "block_reason": block,
         "pid": os.getpid(),
         "handoff": supervisor_active(),
         "supervisor": supervisor_active(),
         "published_at": now,
         "bridge_ok": True,
         "bridge_error": _bridge_last_error or None,
-        "applied": {
-            "enabled": bool(cfg.get("enabled")),
-            "test": bool(cfg.get("test")),
-            "interval_sec": float(cfg.get("interval_sec")),
-            "initial_delay_sec": float(cfg.get("initial_delay_sec")),
-            "grace_sec": float(cfg.get("grace_sec")),
-        },
+        "applied": dict(cfg),
     }
 
 
@@ -443,6 +567,9 @@ async def notify_restart_alive(reason: str = "ok") -> None:
         return
     _boot_notified = True
     reason = (reason or "ok").strip()[:48] or "ok"
+    record_restart_event(reason, source="boot")
+    if not bool(ensure_loaded().get("notify_creator", True)):
+        return
     await _notify(
         f"◈ soft restart · <code>{reason}</code> · pid <code>{os.getpid()}</code> · ок"
     )
@@ -610,17 +737,22 @@ def format_panel_html() -> str:
         nxt = "ещё не в расписании"
 
     mode = "тест" if st["test_mode"] else "бой"
+    sched = st.get("mode_label") or st.get("mode") or "interval"
+    since = st.get("since_last_restart_sec")
+    since_s = _fmt_duration(since) if since is not None else "—"
     return (
         "<b>◈ Soft Restart</b>\n"
         "━━━━━━━━━━━━━━━━\n"
         f"{_dot(st['enabled'])} авто     <b>{'ON' if st['enabled'] else 'OFF'}</b>\n"
         f"{_dot(st['test_mode'])} тест     <b>{'ON' if st['test_mode'] else 'OFF'}</b>\n"
-        f"◈ режим    <b>{mode}</b>\n"
+        f"◈ бой/тест <b>{mode}</b>\n"
+        f"◈ расписание <b>{sched}</b>\n"
         f"◈ интервал <b>{_fmt_duration(st['interval_sec'])}</b>\n"
         f"◈ пауза    <b>{_fmt_duration(st['initial_delay_sec'])}</b>\n"
         f"◈ grace    <b>{_fmt_duration(st['grace_sec'])}</b>\n"
         "━━━━━━━━━━━━━━━━\n"
         f"аптайм  <code>{_fmt_duration(st['uptime_sec'])}</code>\n"
+        f"с рестарта <code>{since_s}</code>\n"
         f"pid     <code>{st['pid']}</code>\n"
         f"далее   <b>{nxt}</b>\n"
         + (f"флаг    <i>{st['last_reason']}</i>\n" if st["last_reason"] else "")
@@ -846,43 +978,94 @@ async def _watch_release_old() -> None:
         raise
 
 
-def _arm_next_at(delay: Optional[float] = None) -> float:
-    """Сразу выставить «далее через …» для панели (до первого тика task)."""
-    global _next_at
+def _arm_next_from_schedule(*, first_cycle: Optional[bool] = None) -> Optional[float]:
+    """Выставить _next_at по текущему режиму расписания."""
+    global _next_at, _first_cycle
     ensure_loaded()
-    d = float(delay if delay is not None else initial_delay_sec())
-    d = max(0.0, d)
-    _next_at = time.time() + d
+    if not is_enabled():
+        _next_at = None
+        return None
+    fc = _first_cycle if first_cycle is None else bool(first_cycle)
+    nxt = compute_next_at(
+        ensure_loaded(),
+        now_ts=time.time(),
+        started_at=_started_at,
+        first_cycle=fc,
+    )
+    _next_at = nxt
     try:
         _publish_status_sync()
     except Exception:
         pass
-    return d
+    return nxt
+
+
+async def _sleep_until(target: float) -> bool:
+    """Sleep до target мелкими шагами. False = отмена/выкл."""
+    while True:
+        if not is_enabled():
+            return False
+        now = time.time()
+        left = target - now
+        if left <= 0:
+            return True
+        # пересчёт next_at если конфиг поменяли через bridge
+        cur = _next_at
+        if cur is not None and abs(cur - target) > 1.5:
+            target = cur
+            continue
+        await asyncio.sleep(min(1.0, left))
 
 
 async def _scheduler_loop() -> None:
-    global _next_at
+    global _next_at, _first_cycle
     ensure_loaded()
     if not is_enabled():
         print("[SR] scheduler off")
         _next_at = None
         return
-    delay = _arm_next_at(initial_delay_sec())
-    interval = interval_sec()
-    print(f"[SR] scheduler: first in {delay:.0f}s, every {interval:.0f}s")
+    cfg0 = ensure_loaded()
+    print(
+        f"[SR] scheduler mode={cfg0.get('mode')} tz={cfg0.get('timezone')} "
+        f"delay={cfg0.get('initial_delay_sec')}s",
+        flush=True,
+    )
     try:
-        await asyncio.sleep(delay)
         while True:
             if not is_enabled():
                 print("[SR] disabled — stop scheduler")
                 _next_at = None
                 return
+            _roll_day_counter()
+            nxt = _arm_next_from_schedule()
+            if nxt is None:
+                _next_at = None
+                return
+            print(f"[SR] next at {nxt:.0f} (in {max(0, nxt - time.time()):.0f}s)", flush=True)
+            ok_wait = await _sleep_until(nxt)
+            if not ok_wait:
+                _next_at = None
+                return
+            cfg = ensure_loaded()
+            uptime = time.time() - _started_at
+            block = conditions_block_reason(
+                cfg,
+                uptime_sec=uptime,
+                supervisor=supervisor_active(),
+                restarts_today=_restarts_today,
+            )
+            if block:
+                print(f"[SR] skip tick: {block}", flush=True)
+                _first_cycle = False
+                # чуть отойти и пересчитать
+                await asyncio.sleep(5.0)
+                continue
             _next_at = time.time()
             ok = await request_restart("schedule")
             if ok:
                 return
-            _arm_next_at(interval)
-            await asyncio.sleep(interval)
+            _first_cycle = False
+            await asyncio.sleep(5.0)
     except asyncio.CancelledError:
         print("[SR] scheduler cancelled")
         raise
@@ -898,10 +1081,13 @@ def _cancel_scheduler() -> None:
 
 
 def start_scheduler(*, dp=None, notify: Optional[NotifyFn] = None) -> Optional[asyncio.Task]:
-    global _scheduler_task, _release_watch_task, _bridge_task, _started_at
+    global _scheduler_task, _release_watch_task, _bridge_task, _started_at, _first_cycle
     ensure_loaded()
+    _load_history()
+    _roll_day_counter()
     bind(dp=dp, notify=notify)
     _started_at = time.time()
+    _first_cycle = True
 
     # release_old смотрит только «старый» процесс. Handoff-child — нет,
     # иначе оба выйдут одновременно.
@@ -928,22 +1114,37 @@ def start_scheduler(*, dp=None, notify: Optional[NotifyFn] = None) -> Optional[a
         print("[SR] auto off — waiting for creator commands / panel")
         _publish_status_sync()
         return None
-    _arm_next_at(initial_delay_sec())
+    _arm_next_from_schedule(first_cycle=True)
     _scheduler_task = asyncio.create_task(_scheduler_loop(), name="soft_restart_scheduler")
     return _scheduler_task
 
 
 async def reschedule() -> None:
     """Перезапустить планировщик после смены настроек."""
-    global _scheduler_task, _next_at
+    global _scheduler_task, _next_at, _first_cycle
     _cancel_scheduler()
     await asyncio.sleep(0)  # дать отмениться
+    _first_cycle = True
     if is_enabled():
-        # Сразу для панели — иначе «ещё не в расписании» до тика loop
-        _arm_next_at(initial_delay_sec())
+        _arm_next_from_schedule(first_cycle=True)
         _scheduler_task = asyncio.create_task(_scheduler_loop(), name="soft_restart_scheduler")
     else:
         _next_at = None
+
+
+_SCHED_KEYS = frozenset(
+    {
+        "enabled",
+        "mode",
+        "interval_sec",
+        "initial_delay_sec",
+        "timezone",
+        "hourly_minute",
+        "daily_times",
+        "weekdays",
+        "conditions",
+    }
+)
 
 
 async def update_settings(**kwargs: Any) -> Dict[str, Any]:
@@ -951,13 +1152,23 @@ async def update_settings(**kwargs: Any) -> Dict[str, Any]:
     async with _cfg_lock:
         cfg = dict(ensure_loaded())
         for k, v in kwargs.items():
-            if k in cfg:
+            if k == "conditions" and isinstance(v, dict):
+                cur = dict(cfg.get("conditions") or {})
+                cur.update(v)
+                cfg["conditions"] = cur
+            elif k in cfg or k in (
+                "mode",
+                "timezone",
+                "hourly_minute",
+                "daily_times",
+                "weekdays",
+                "conditions",
+                "notify_creator",
+            ):
                 cfg[k] = v
         _cfg = _normalize(cfg)
         _persist()
-        need_sched = any(
-            k in kwargs for k in ("enabled", "interval_sec", "initial_delay_sec")
-        )
+        need_sched = any(k in _SCHED_KEYS for k in kwargs)
     if need_sched:
         await reschedule()
     try:
