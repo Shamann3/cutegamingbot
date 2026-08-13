@@ -840,7 +840,7 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data and str(c.data).startswith("gbl_pay:"))
 async def gbl_pay_handler(callback_query: CallbackQuery):
-    """Оплата уровня: тот же UX, что донат — Stars pay + сетка crypto."""
+    """Зелёная кнопка: правим сообщение → мост в ЛС с deep-link на оплату."""
     user_id = callback_query.from_user.id
     message_id = callback_query.message.message_id
     randommessagebonus1 = random.choice(randommessagehelp)
@@ -867,7 +867,12 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
         return
 
     from bot.funcs.group_balance_level import (
-        get_settings, next_level_price, stars_label, ensure_society_snapshot,
+        get_settings,
+        next_level_price,
+        ensure_society_snapshot,
+        build_pay_dm_bridge_html,
+        build_pay_dm_bridge_keyboard,
+        strip_tg_emoji,
     )
     cfg = get_settings()
     if not cfg.get("enabled", True):
@@ -886,61 +891,46 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
         )
         return
 
-    payload = f"gblevel_{chat_id}_{to_level}_{price}"
-    title = f"Статус {stars_label(to_level)}"
-    description = (
-        f"Поднять статус группы · ставки шире · метка в профиле · {price} звёзд"
-    )
-    prices = [LabeledPrice(label=title[:32], amount=int(price))]
-    kb = get_crypto_keyboard(int(price), gbl_chat_id=int(chat_id), gbl_level=int(to_level))
-
+    bot_username = None
     try:
-        await bot1.send_invoice(
-            chat_id=user_id,
-            title=title[:32],
-            description=description[:255],
-            payload=payload[:128],
-            currency="XTR",
-            prices=prices,
-            provider_token="",
-            start_parameter="gblevel",
-            reply_markup=kb,
-        )
+        bot_username = await get_bot_username_by_token(TOKEN)
+    except Exception:
+        bot_username = None
+    if not bot_username:
         try:
-            user_bonus_requests.setdefault(user_id, []).append(0)
-            message_state[user_id] = 0
+            me = await bot1.get_me()
+            bot_username = me.username
         except Exception:
-            pass
-        await callback_query.answer(
-            "Счёт отправлен вам в личные сообщения.",
-            show_alert=True,
+            bot_username = "CuteGamingBot"
+
+    text = build_pay_dm_bridge_html(
+        chat_id=chat_id, to_level=to_level, price=price, cfg=cfg,
+    )
+    kb = build_pay_dm_bridge_keyboard(
+        bot_username=bot_username,
+        chat_id=chat_id,
+        to_level=to_level,
+        price=price,
+        cfg=cfg,
+    )
+    try:
+        await callback_query.message.edit_text(
+            text, reply_markup=kb, parse_mode="HTML",
         )
     except Exception as e:
-        print(f"[GBL] invoice error: {e!r}")
-        try:
-            tokernasd = await get_bot_username_by_token(TOKEN)
-            keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[[
-                    InlineKeyboardButton(
-                        text="Открыть бота",
-                        url=f"https://t.me/{tokernasd}?start=start",
-                    )
-                ]]
+        err = str(e)
+        if "DOCUMENT_INVALID" in err or "can't parse" in err.lower():
+            await callback_query.message.edit_text(
+                strip_tg_emoji(text), reply_markup=kb, parse_mode="HTML",
             )
-            await bot1.send_message(
-                callback_query.message.chat.id,
-                "<tg-emoji emoji-id='5420323339723881652'>⚠️</tg-emoji> "
-                "<b>Не удалось отправить счёт в личные сообщения.</b>\n"
-                "Откройте диалог с ботом и нажмите /start — после этого повторите оплату.",
-                parse_mode="HTML",
-                reply_markup=keyboard,
+        else:
+            print(f"[GBL] pay bridge edit error: {e!r}")
+            await callback_query.answer(
+                "Не удалось открыть оплату. Попробуйте ещё раз.",
+                show_alert=True,
             )
-        except Exception:
-            pass
-        await callback_query.answer(
-            "Откройте личные сообщения с ботом и нажмите /start",
-            show_alert=True,
-        )
+            return
+    await callback_query.answer()
 
 
 @dp.callback_query(lambda c: c.data == "group_balance_overview")

@@ -7249,6 +7249,7 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
      - /start <digits>                        - реферальная ссылка
      - /start withdraw                        - вывод
      - /start insert_<n>_+                    - инвойс на <n> кут (а также insert_<n>, insert_<n>%2B и т.п.)
+     - /start gblevel_<chat>_<level>_<price>  - инвойс уровня баланса группы (из бч)
      - /start deep_conc_stars / deep_conc_stars+
     """
 
@@ -7328,7 +7329,7 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
     # ─────────────────────────────────────────────────────────────
     # Инвойс: автоматическое определение доната / выкупа
     # ─────────────────────────────────────────────────────────────
-    if deep.startswith("insert_") or deep.startswith("buyback_"):
+    if deep.startswith("insert_") or deep.startswith("buyback_") or deep.startswith("gblevel_"):
         # ---------- Извлечение данных ----------
         if deep.startswith("insert_"):
             operation = "donate"
@@ -7374,6 +7375,120 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
             # Отправка инвойса с явным указанием kut_amount и nonce
             await send_invoice_to_user(
                 message , stars_price_str , operation_type="buyback" , kut_amount=bet , nonce=nonce)
+        elif deep.startswith("gblevel_"):
+            # Формат: gblevel_<chat_id>_<to_level>_<price>
+            # Deep-link из группы → сразу счёт Stars + crypto в ЛС
+            if message.chat.type != ChatType.PRIVATE:
+                return await message.answer(
+                    "<tg-emoji emoji-id='5420323339723881652'>⚠️</tg-emoji> "
+                    "<b>Оплата уровня — только в личных сообщениях с ботом.</b>",
+                    parse_mode="HTML",
+                )
+            tail = deep[len("gblevel_"):].strip()
+            parts = tail.split("_")
+            if len(parts) != 3 or not all(p.lstrip("-").isdigit() for p in parts):
+                return await message.answer(
+                    "<tg-emoji emoji-id='4958526153955476488'>❌</tg-emoji> "
+                    "<b>Некорректная ссылка оплаты уровня.</b>\n"
+                    "Вернитесь в группу и откройте экран снова.",
+                    parse_mode="HTML",
+                )
+            try:
+                pay_chat_id = int(parts[0])
+                to_level = int(parts[1])
+                price = int(parts[2])
+            except Exception:
+                return await message.answer(
+                    "<tg-emoji emoji-id='4958526153955476488'>❌</tg-emoji> "
+                    "<b>Некорректная ссылка оплаты уровня.</b>",
+                    parse_mode="HTML",
+                )
+            if price <= 0 or to_level < 1 or to_level > 5:
+                return await message.answer(
+                    "<tg-emoji emoji-id='4958526153955476488'>❌</tg-emoji> "
+                    "<b>Некорректные параметры уровня.</b>",
+                    parse_mode="HTML",
+                )
+
+            from bot.funcs.group_balance_level import (
+                get_settings,
+                next_level_price,
+                ensure_society_snapshot,
+                stars_label,
+                badge_title_for_level,
+            )
+
+            cfg = get_settings()
+            if not cfg.get("enabled", True):
+                return await message.answer(
+                    "<tg-emoji emoji-id='5420323339723881652'>⚠️</tg-emoji> "
+                    "<b>Уровни баланса группы временно недоступны.</b>\n"
+                    "Загляните чуть позже.",
+                    parse_mode="HTML",
+                )
+
+            try:
+                await ensure_society_snapshot(pay_chat_id, db=db)
+            except Exception as _snap_e:
+                print(f"⚠️ [START][GBL] society snapshot: {_snap_e!r}")
+
+            nxt = next_level_price(pay_chat_id, cfg)
+            if not nxt or int(nxt[0]) != int(to_level) or int(nxt[1]) != int(price):
+                return await message.answer(
+                    "<tg-emoji emoji-id='5420323339723881652'>⚠️</tg-emoji> "
+                    "<b>Этот шаг уже неактуален.</b>\n"
+                    "Вернитесь в группу → баланс → поднять уровень — и откройте оплату снова.",
+                    parse_mode="HTML",
+                )
+
+            badge = badge_title_for_level(to_level, cfg)
+            title = f"Статус {stars_label(to_level)}"
+            description = (
+                f"Уровень группы {to_level} · метка «{badge}» · {price} звёзд"
+            )
+            prices = [LabeledPrice(label=title[:32], amount=int(price))]
+            kb = get_crypto_keyboard(
+                int(price), gbl_chat_id=int(pay_chat_id), gbl_level=int(to_level),
+            )
+            payload = f"gblevel_{pay_chat_id}_{to_level}_{price}"
+            try:
+                await message.answer(
+                    f"<tg-emoji emoji-id='5404534885324988233'>⭐️</tg-emoji> "
+                    f"<b>Счёт на уровень группы готов</b>\n\n"
+                    f"<blockquote>"
+                    f"<b>уровень {to_level}</b> · вклад <b>{price} звёзд</b>\n"
+                    f"метка «<b>{badge}</b>» · лимит растёт <b>для всего чата</b>"
+                    f"</blockquote>\n"
+                    f"<i>оплатите ниже — куты на личный баланс не начисляются</i>",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+            try:
+                await bot1.send_invoice(
+                    chat_id=user_id,
+                    title=title[:32],
+                    description=description[:255],
+                    payload=payload[:128],
+                    currency="XTR",
+                    prices=prices,
+                    provider_token="",
+                    start_parameter="gblevel",
+                    reply_markup=kb,
+                )
+                try:
+                    user_bonus_requests.setdefault(user_id, []).append(0)
+                    message_state[user_id] = 0
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"❌ [START][GBL] invoice error: {e!r}")
+                return await message.answer(
+                    "<tg-emoji emoji-id='5420323339723881652'>⚠️</tg-emoji> "
+                    "<b>Не удалось отправить счёт.</b>\n"
+                    "Напишите /start и откройте оплату из группы ещё раз.",
+                    parse_mode="HTML",
+                )
         # ---------- Очистка pending_context (если был) ----------
         try:
             ctx = pending_context.get(user_id)
