@@ -83,9 +83,9 @@ ICON_PLANE = "6028346797368283073"             # ✈️
 
 # Лицо unicode → (custom_emoji_id, fallback face) — старый визуал бч
 _GBL_FACE: Dict[str, Tuple[str, str]] = {
-    "🏝": (ICON_HERO_BEACH, "🏖"),
-    "🏖": (ICON_HERO_BEACH, "🏖"),
-    "🏝️": (ICON_HERO_BEACH, "🏖"),
+    "🏝": (ICON_HERO_BEACH, "🏝"),
+    "🏖": (ICON_HERO_BEACH, "🏝"),
+    "🏝️": (ICON_HERO_BEACH, "🏝"),
     "💰": (ICON_BALANCE_KUT, "⭐️"),
     "🏆": (ICON_RAISE_LEVEL, "⭐️"),
     "🎯": (ICON_CAP_LIMIT, "💡"),
@@ -1499,31 +1499,9 @@ def build_main_screen_html(
     atmosphere_report: Optional[Dict[str, Any]] = None,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Главный «бч»: только hero + лёгкий статусный крючок (без цитат/блоков уровня)."""
-    del chat_balance, atmosphere_report, atmosphere_pct
-    cfg = cfg or get_settings()
-    level = get_chat_level(chat_id)
-    if level >= 5:
-        hook = (
-            f"{gbl_tg('🏆')} <b>эта группа уже на вершине</b>\n"
-            f"<i>легенды здесь уже пишут историю</i>"
-        )
-    elif level >= 3:
-        hook = (
-            f"{gbl_tg('🔥')} <b>группа сильная — до легенды один шаг</b>\n"
-            f"<i>ваш вклад поднимает ставки для всех</i>"
-        )
-    elif level >= 1:
-        hook = (
-            f"{gbl_tg('💎')} <b>путь к легенде уже начат</b>\n"
-            f"<i>сильнее группа — шире ставки для всех</i>"
-        )
-    else:
-        hook = (
-            f"{gbl_tg('🏆')} <b>легенда этой группы ещё ждёт своё имя</b>\n"
-            f"<i>один вклад — выше лимит ставок для всего чата</i>"
-        )
-    return f"{gbl_tg('🏝')}\n\n{hook}"
+    """Главный «бч»: только hero-эмодзи 🏝."""
+    del chat_id, chat_balance, atmosphere_pct, atmosphere_report, cfg
+    return gbl_tg("🏝")
 
 
 def build_main_keyboard(
@@ -1581,7 +1559,7 @@ def build_main_keyboard(
         text="Как это устроено",
         callback_data=f"group_balance_details:{bal}",
         style="default",
-        icon_custom_emoji_id=ICON_DETAILS,
+        icon_custom_emoji_id="5283139309740765379",
     )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
