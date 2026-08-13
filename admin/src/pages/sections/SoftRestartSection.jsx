@@ -108,7 +108,7 @@ export default function SoftRestartSection() {
   const [diagnostics, setDiagnostics] = useState(null)
   const [docs, setDocs] = useState({})
   const [guide, setGuide] = useState(null)
-  const [tab, setTab] = useState('control')
+  const [tab, setTab] = useState('howto')
   const [remain, setRemain] = useState(null)
   const [sinceLast, setSinceLast] = useState(null)
   const [diagOpen, setDiagOpen] = useState(false)
@@ -313,10 +313,11 @@ export default function SoftRestartSection() {
       <div className="sr-veil" />
       <div className="sr-scan" />
 
+      <div className="sr-body">
       <header className="sr-hero">
         <p className="sr-kicker">Creator only · hidden side</p>
         <h2 className="sr-title">Sypher</h2>
-        <p className="sr-lead">Полный контроль soft restart: режимы, времена суток, условия и живая телеметрия игрового бота.</p>
+        <p className="sr-lead">Полный контроль soft restart: режимы, времена суток, условия и живая телеметрия игрового бота. Прокручивай вниз — все настройки и инструкция ниже.</p>
 
         {!status?.alive && (
           <div className={`sr-banner${status?.stale ? ' sr-banner-stale' : ''}`}>
@@ -368,18 +369,77 @@ export default function SoftRestartSection() {
 
       <div className="sr-tabs" role="tablist">
         {[
+          ['howto', 'Инструкция'],
           ['control', 'Управление'],
           ['schedule', 'Расписание'],
           ['conditions', 'Условия'],
           ['timeline', 'Таймлайн'],
           ['docs', 'Параметры и код'],
-          ['guide', 'Справка'],
         ].map(([id, label]) => (
           <button key={id} type="button" className={`sr-tab${tab === id ? ' sr-tab-active' : ''}`} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
 
       <div className="sr-scroll">
+        {tab === 'howto' && (
+          <div className="sr-howto">
+            <div className="sr-howto-card">
+              <h3>Перед любыми действиями</h3>
+              <ol>
+                <li>Пульс сверху должен быть <b>armed / idle / blocked</b> — не <b>offline</b>. Иначе бот не связан с панелью.</li>
+                <li>После правок всегда жми <b>Сохранить и применить</b> — иначе игровой бот не увидит настройки.</li>
+                <li>Смотри отсчёт сверху и вкладку <b>Таймлайн</b>: там ближайшие слоты и история.</li>
+              </ol>
+            </div>
+
+            <div className="sr-howto-card sr-howto-test">
+              <h3>Как тестировать (безопасно)</h3>
+              <p>Цель — убедиться, что рестарт проходит и в ЛС приходит короткое «ок», без боя по расписанию.</p>
+              <ol>
+                <li>Пресет <b>Test · авто OFF</b> (или тумблер «Авто» выкл).</li>
+                <li>Вкладка <b>Условия</b>: мин. аптайм поставь <b>30–60с</b>, чтобы не ждать зря.</li>
+                <li>Включи <b>ЛС после рестарта</b>.</li>
+                <li><b>Сохранить</b> → кнопка <b>Рестарт сейчас</b>.</li>
+                <li>Жди 10–40с: pid сменится, «с последнего» обнулится, в личку бота придёт <code>◈ soft restart · … · ок</code>.</li>
+                <li>Проверь игру/кнопки после рестарта (lobby не должны «умирать»).</li>
+              </ol>
+              <div className="sr-howto-check">
+                Быстрый тест по времени: Расписание → mode <b>interval</b>, интервал <b>120с</b>, пауза <b>60с</b>, мин. аптайм <b>30с</b> → Сохранить → смотри отсчёт. После проверки верни Live/Night.
+              </div>
+            </div>
+
+            <div className="sr-howto-card sr-howto-live">
+              <h3>Автоматические перезапуски (бой)</h3>
+              <p>Выбери один режим и сохрани. Первый авто всегда не раньше «паузы после старта».</p>
+              <ul>
+                <li><b>Каждые N сек</b> — пресет Live или Расписание → interval (например 3600 = каждый час от аптайма).</li>
+                <li><b>Каждый час по часам</b> — пресет Hourly или mode hourly, минута <code>:00</code> / <code>:15</code>…</li>
+                <li><b>В конкретное время</b> — пресет Night или mode «По времени»: добавь <code>03:00</code>, <code>15:00</code>… + дни недели.</li>
+              </ul>
+              <ol>
+                <li>Авто <b>ON</b>, тест <b>OFF</b>.</li>
+                <li>Timezone обычно <code>Europe/Moscow</code>.</li>
+                <li>Условия: мин. аптайм ≥ 120с, лимит/день с запасом, при необходимости тихие часы.</li>
+                <li><b>Сохранить</b> → проверь Таймлайн (ближайшие слоты).</li>
+                <li>После каждого авто в ЛС — одно короткое сообщение (если ЛС включено).</li>
+              </ol>
+              <div className="sr-howto-check">
+                Если пульс <b>blocked: min_uptime</b> — это не ошибка: подожди аптайм или снизь порог в Условиях. Offline — перезапусти игровой <code>main.py</code> после деплоя.
+              </div>
+            </div>
+
+            <div className="sr-howto-card">
+              <h3>Что смотреть, что всё ок</h3>
+              <ul>
+                <li><b>до следующего</b> — живой таймер до авто.</li>
+                <li><b>с последнего</b> / <b>последний рестарт</b> — факт, что рестарт был.</li>
+                <li><b>сегодня</b> — сколько раз за день (лимит в Условиях).</li>
+                <li><b>handoff ON</b> — rolling-рестарт без полного даунтайма.</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
         {tab === 'control' && (
           <div className="sr-grid">
             <Toggle on={!!cfg.enabled} label="Авто-рестарт" sub={docs.enabled?.short} onToggle={() => patch('enabled', !cfg.enabled)} />
@@ -397,6 +457,7 @@ export default function SoftRestartSection() {
               <button type="button" className="sr-btn sr-btn-primary" disabled={saving} onClick={onSave}>{saving ? 'Сохраняю…' : 'Сохранить и применить'}</button>
               <button type="button" className="sr-btn sr-btn-ghost" disabled={saving} onClick={load}>Обновить</button>
             </div>
+            <p className="sr-note">Не уверен с чего начать — открой вкладку <b>Инструкция</b> (тест и бой по шагам).</p>
           </div>
         )}
 
@@ -512,21 +573,21 @@ export default function SoftRestartSection() {
 
         {tab === 'docs' && (
           <div className="sr-docs">
-            <p className="sr-note">Каждый параметр: смысл и что крутит в коде игрового бота.</p>
+            <p className="sr-note">Каждый параметр: смысл и что крутит в коде игрового бота. Листай вниз.</p>
             {Object.keys(docs).map((key) => <DocCard key={key} doc={docs[key]} />)}
-          </div>
-        )}
-
-        {tab === 'guide' && (
-          <div className="sr-guide">
-            <h3>{guide?.title}</h3>
-            <ol>{(guide?.flow || []).map((line) => <li key={line}>{line}</li>)}</ol>
-            <button type="button" className="sr-btn sr-btn-ghost" style={{ marginTop: '0.75rem' }} onClick={() => setDiagOpen((v) => !v)}>
+            <button type="button" className="sr-btn sr-btn-ghost" onClick={() => setDiagOpen((v) => !v)}>
               {diagOpen ? 'Скрыть диагностику' : 'Диагностика bridge'}
             </button>
             {diagOpen && diagnostics && <pre className="sr-diag">{JSON.stringify(diagnostics, null, 2)}</pre>}
+            {guide?.flow?.length ? (
+              <div className="sr-howto-card" style={{ marginTop: '0.5rem' }}>
+                <h3>{guide.title || 'Кратко'}</h3>
+                <ol>{guide.flow.map((line) => <li key={line}>{line}</li>)}</ol>
+              </div>
+            ) : null}
           </div>
         )}
+      </div>
       </div>
     </article>
   )
