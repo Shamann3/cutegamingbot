@@ -537,15 +537,25 @@ async def _watch_release_old() -> None:
         raise
 
 
+def _arm_next_at(delay: Optional[float] = None) -> float:
+    """Сразу выставить «далее через …» для панели (до первого тика task)."""
+    global _next_at
+    ensure_loaded()
+    d = float(delay if delay is not None else initial_delay_sec())
+    d = max(0.0, d)
+    _next_at = time.time() + d
+    return d
+
+
 async def _scheduler_loop() -> None:
     global _next_at
     ensure_loaded()
     if not is_enabled():
         print("[SR] scheduler off")
+        _next_at = None
         return
-    delay = initial_delay_sec()
+    delay = _arm_next_at(initial_delay_sec())
     interval = interval_sec()
-    _next_at = time.time() + delay
     print(f"[SR] scheduler: first in {delay:.0f}s, every {interval:.0f}s")
     try:
         await asyncio.sleep(delay)
@@ -558,7 +568,7 @@ async def _scheduler_loop() -> None:
             ok = await request_restart("schedule")
             if ok:
                 return
-            _next_at = time.time() + interval
+            _arm_next_at(interval)
             await asyncio.sleep(interval)
     except asyncio.CancelledError:
         print("[SR] scheduler cancelled")
@@ -597,6 +607,7 @@ def start_scheduler(*, dp=None, notify: Optional[NotifyFn] = None) -> Optional[a
     if not is_enabled():
         print("[SR] auto off — waiting for creator commands")
         return None
+    _arm_next_at(initial_delay_sec())
     _scheduler_task = asyncio.create_task(_scheduler_loop(), name="soft_restart_scheduler")
     return _scheduler_task
 
@@ -607,6 +618,8 @@ async def reschedule() -> None:
     _cancel_scheduler()
     await asyncio.sleep(0)  # дать отмениться
     if is_enabled():
+        # Сразу для панели — иначе «ещё не в расписании» до тика loop
+        _arm_next_at(initial_delay_sec())
         _scheduler_task = asyncio.create_task(_scheduler_loop(), name="soft_restart_scheduler")
     else:
         _next_at = None
