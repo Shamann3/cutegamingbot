@@ -73,11 +73,11 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
 # Premium custom emoji — единый визуал бч под HP+
 ICON_HERO = "5463081281048818043"              # HP+ hero на главном экране
 ICON_HERO_BEACH = ICON_HERO                    # алиас (старое имя)
-ICON_BALANCE_KUT = "6028338546736107668"       # ★ баланс
-ICON_RAISE_LEVEL = ICON_HERO                   # CTA повышения = тот же HP+ (без чужого синего)
-ICON_CAP_LIMIT = "5350460637182993292"         # 🎯 лимит ставок
+ICON_BALANCE_KUT = "5224257782013769471"       # ★ баланс
+ICON_RAISE_LEVEL = "5397916757333654639"                   # CTA повышения = тот же HP+ (без чужого синего)
+ICON_CAP_LIMIT = "5364084406589863344"         # 🎯 лимит ставок
 ICON_BACK = "5226660202035554522"              # назад
-ICON_DETAILS = "5436113877181941026"           # ❓ как работает
+ICON_DETAILS = "5463139580934892960"           # ❓ как работает
 ICON_STAR = "5848259999763011021"              # ★ в текстах
 ICON_BOOK = "5318892863780579996"              # 📖
 ICON_PLANE = "6028346797368283073"             # ✈️
@@ -1099,8 +1099,13 @@ def _next_level_teaser(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Op
     )
 
 
-def raise_cta_label(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Optional[str]:
-    """Кнопка повышения — коротко и ясно: «+ до N»."""
+def raise_cta_label(
+    chat_id: int,
+    cfg: Optional[Dict[str, Any]] = None,
+    *,
+    atmosphere_pct: float = 0.0,
+) -> Optional[str]:
+    """Кнопка повышения: сколько кут прибавится к лимиту группы."""
     cfg = cfg or get_settings()
     if not cfg.get("enabled", True):
         return None
@@ -1109,15 +1114,19 @@ def raise_cta_label(chat_id: int, cfg: Optional[Dict[str, Any]] = None) -> Optio
         return None
     nxt = next_level_price(chat_id, cfg)
     if not nxt:
-        return str(cfg.get("raise_button_text") or "+ усилить")
+        return str(cfg.get("raise_button_text") or "+ к лимиту")
     to_level, _price = nxt
-    caps = cfg.get("stake_caps") or {}
-    if to_level >= 5:
-        return "+ вершина"
-    cap = caps.get(str(to_level))
-    if cap is not None:
-        return f"+ до {cap}"
-    return str(cfg.get("raise_button_text") or "+ усилить")
+    atmo = float(atmosphere_pct or 0)
+    cur_cap = effective_stake_cap(chat_id, atmosphere_pct=atmo, cfg=cfg)
+    new_base = stake_cap_for_level(to_level, cfg)
+    new_cap = _cap_with_atmosphere(new_base, atmo, cfg)
+    if to_level >= 5 or new_cap is None:
+        return "+ без лимита"
+    if cur_cap is not None:
+        delta = max(0, int(new_cap) - int(cur_cap))
+        if delta > 0:
+            return f"+{delta} к лимиту"
+    return f"+ до {int(new_cap)}"
 
 
 def _ru_users_word(n: int) -> str:
@@ -1360,46 +1369,48 @@ def build_main_keyboard(
     atmosphere_pct: float = 0.0,
     cfg: Optional[Dict[str, Any]] = None,
 ):
-    """Главное меню бч: серый статус + один зелёный CTA. Без цветовой каши."""
+    """Главное меню бч — 4 ряда: баланс · лимит · CTA · подробнее."""
     from aiogram.types import InlineKeyboardMarkup
 
     cfg = cfg or get_settings()
     bal = max(0, int(float(chat_balance or 0)))
     bal_fmt = f"{bal:,}".replace(",", ".")
     level = get_chat_level(chat_id)
-    cta = raise_cta_label(chat_id, cfg)
+    atmo = float(atmosphere_pct or 0)
+    cta = raise_cta_label(chat_id, cfg, atmosphere_pct=atmo)
 
-    # Понятные короткие подписи
+    # 1) баланс группы + ★ уровня
     bal_btn = f"{bal_fmt} кут · {stars_label(level)}"
-    if len(bal_btn) > 30:
+    if len(bal_btn) > 64:
         bal_btn = f"{bal_fmt} · {stars_label(level)}"
     if len(bal_btn) > 64:
-        bal_btn = f"{bal_fmt} · {level}/5"
+        bal_btn = f"{bal_fmt} кут · {level}/5"
 
-    cap = effective_stake_cap(chat_id, atmosphere_pct=atmosphere_pct, cfg=cfg)
+    # 2) текущий лимит ставок в группе
+    cap = effective_stake_cap(chat_id, atmosphere_pct=atmo, cfg=cfg)
     if cap is None:
-        cap_btn = "лимит ∞"
+        cap_btn = "лимит группы · ∞"
     else:
-        cap_btn = f"лимит {cap}"
+        cap_btn = f"лимит группы · {cap}"
     if len(cap_btn) > 64:
-        cap_btn = cap_btn[:61] + "…"
+        cap_btn = f"лимит · {cap if cap is not None else '∞'}"
 
-    # Правило цвета: статус = default, усиление = success (единственный зелёный)
-    rows = [[
-        _btn(
+    rows = [
+        [_btn(
             text=bal_btn,
             callback_data="group_balance_overview",
             style="default",
             icon_custom_emoji_id=ICON_BALANCE_KUT,
-        ),
-        _btn(
+        )],
+        [_btn(
             text=cap_btn,
             callback_data="gbl_cap_status",
             style="default",
             icon_custom_emoji_id=ICON_CAP_LIMIT,
-        ),
-    ]]
+        )],
+    ]
 
+    # 3) зелёный CTA — сколько прибавится к лимиту
     if cta:
         rows.append([_btn(
             text=cta,
@@ -1408,8 +1419,9 @@ def build_main_keyboard(
             icon_custom_emoji_id=ICON_RAISE_LEVEL,
         )])
 
+    # 4) подробнее
     rows.append([_btn(
-        text="Как это работает",
+        text="Подробнее",
         callback_data=f"group_balance_details:{bal}",
         style="default",
         icon_custom_emoji_id=ICON_DETAILS,
