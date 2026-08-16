@@ -7556,27 +7556,25 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
                 bot1, pay_chat_id,
             )
             delta_line = (
-                f"\nвсем станет можно ставить на <b>+{gain['delta']} кут</b> больше"
+                f" · +{gain['delta']}"
                 if gain.get("delta") else ""
             )
             try:
                 from bot.funcs.group_balance_level import gbl_tg as _gbl_tg
                 await message.answer(
-                    f"{_gbl_tg('⭐️')} "
-                    f"<b>Оплата со скидкой</b>\n"
-                    f"<i>счёт готов — ниже всё простыми словами</i>\n\n"
-                    f"{_gbl_tg('💡')} <b>Что вы покупаете</b>\n"
+                    f"{_gbl_tg('🏆')} <b>Счёт готов</b>\n"
+                    f"<i>один шаг — группа сильнее</i>\n\n"
+                    f"{_gbl_tg('🎯')} <b>Пакет</b>\n"
                     f"{explain_package_plain(pkg)}\n"
-                    f"группа: {group_html_dm}\n"
-                    f"<i>нажмите на название — откроется группа</i>\n\n"
-                    f"{_gbl_tg('⭐️')} <b>Что изменится</b>\n"
-                    f"раньше: <b>{gain['old_lim']}</b>\n"
-                    f"станет: <b>{gain['new_lim']}</b>{delta_line}\n"
-                    f"подарок вам: метка «<b>{badge}</b>»\n\n"
-                    f"{_gbl_tg('💰')} <b>Счёт</b>\n"
+                    f"{group_html_dm}\n\n"
+                    f"{_gbl_tg('🔥')} <b>Станет</b>\n"
+                    f"{gain['old_lim']} → <b>{gain['new_lim']}</b>"
+                    f"{delta_line}\n"
+                    f"метка «<b>{badge}</b>»\n\n"
+                    f"{_gbl_tg('💎')} <b>К оплате</b>\n"
                     f"{format_package_price_line(pkg)}\n"
                     f"<i>{social_proof_line()}</i>\n"
-                    f"<i>куты на личный баланс не придут — вы усиливаете общую игру</i>",
+                    f"<i>Stars ≠ личные куты</i>",
                     parse_mode="HTML",
                     disable_web_page_preview=True,
                 )
