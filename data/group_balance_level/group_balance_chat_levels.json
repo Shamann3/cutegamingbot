@@ -12,5 +12,11 @@
     "level": 2,
     "updated_at": 1786639397.4052148,
     "last_sponsor_id": null
+  },
+  "-999001": {
+    "level": 5,
+    "updated_at": 1787154204.3203628,
+    "last_sponsor_id": null,
+    "source": "db"
   }
 }

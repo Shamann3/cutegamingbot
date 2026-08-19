@@ -598,11 +598,58 @@ def visual_list_price(
     return max(pay + 1, listed)
 
 
+def _package_role_label(
+    *,
+    cur: int,
+    to_level: int,
+    steps: int,
+    idx: int,
+    n_targets: int,
+) -> Tuple[str, bool]:
+    """Подпись варианта ОТ текущего уровня группы — без «1 уровень» при ★2+.
+
+    Матрица витрины:
+      ★0–2 (осталось ≥3): следующий · выгоднее · до максимума
+      ★3   (осталось 2):   предпоследний · до максимума
+      ★4   (осталось 1):   до максимума
+    """
+    cur = max(0, min(5, int(cur)))
+    to_level = max(1, min(5, int(to_level)))
+    steps = max(1, int(steps))
+
+    # Один оставшийся шаг (обычно ★4 → ★5)
+    if n_targets == 1:
+        if to_level >= 5:
+            return "до максимума", True
+        return f"до ★{to_level}", True
+
+    # Два варианта: предпоследний и последний (★3 → ★4 / ★5)
+    if n_targets == 2:
+        if idx == 0:
+            # следующий по пути, но не финал
+            return f"предпоследний · ★{to_level}", False
+        return "до максимума", True
+
+    # Три варианта: следующий / выгоднее / максимум
+    if idx == 0:
+        # Важно: не «1 уровень» — это читается как «уровень 1»
+        return f"следующий · ★{to_level}", False
+    if idx == 1:
+        return f"выгоднее · ★{to_level}", True
+    if to_level >= 5:
+        return "до максимума", False
+    return f"до ★{to_level}", False
+
+
 def build_level_packages(
     chat_id: int,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
-    """Пакеты: +1 / +2 / все оставшиеся. pay = нужда проекта, list = якорь."""
+    """Пакеты от текущего уровня: +1 / середина / максимум.
+
+    cur=0..2 → до 3 вариантов; cur=3 → 2 (★4 и ★5); cur=4 → 1 (★5).
+    Подписи всегда относительно cur, без «1 уровень» при уже купленных ★.
+    """
     cfg = cfg or get_settings()
     if not cfg.get("enabled", True):
         return []
@@ -613,19 +660,25 @@ def build_level_packages(
     if not remaining:
         return []
 
+    # Сколько вариантов показать — строго от того, сколько уровней ещё впереди
     if not cfg.get("level_packages_enabled", True) or len(remaining) == 1:
         targets = [remaining[0]]
     elif len(remaining) == 2:
+        # ★3: только предпоследний (★4) и последний (★5)
         targets = [remaining[0], remaining[-1]]
     else:
-        # золотая середина: шаг / +2 уровня / вершина
-        targets = [remaining[0], remaining[1], remaining[-1]]
+        # ★0–2: следующий, +2 шага, максимум
+        mid = remaining[1] if len(remaining) > 2 else remaining[0]
+        targets = [remaining[0], mid, remaining[-1]]
+        # убрать дубликаты, порядок сохранить
+        seen = set()
+        uniq: List[int] = []
+        for t in targets:
+            if t not in seen:
+                seen.add(t)
+                uniq.append(t)
+        targets = uniq
 
-    role_map = {
-        1: ("1 уровень", False),
-        2: ("выгоднее", True),
-        3: ("до максимума", False),
-    }
     packages: List[Dict[str, Any]] = []
     n_targets = len(targets)
     for idx, to_level in enumerate(targets):
@@ -634,20 +687,19 @@ def build_level_packages(
         step_lists = [visual_list_price(p, chat_id, cfg) for p in step_pays]
         pay = int(sum(step_pays))
         listed = int(sum(step_lists))
-        # Пакет «все уровни» — чуть выше якорь, скидка выглядит жирнее
+        # Пакет до максимума — чуть выше якорь, скидка выглядит жирнее
         if to_level == remaining[-1] and len(steps) >= 2:
             listed = max(listed, int(math.ceil(listed * 1.08)))
         listed = max(listed, pay + max(1, len(steps)))
         save = max(0, listed - pay)
         save_pct = int(round(100.0 * save / listed)) if listed > 0 else 0
-        if n_targets == 1:
-            role, recommended = "следующий", True
-        elif n_targets == 2:
-            role, recommended = (("следующий", False) if idx == 0 else ("сразу выше", True))
-        else:
-            role, recommended = role_map.get(idx + 1, ("вариант", False))
-            if idx == 1:
-                recommended = True
+        role, recommended = _package_role_label(
+            cur=cur,
+            to_level=int(to_level),
+            steps=len(steps),
+            idx=idx,
+            n_targets=n_targets,
+        )
         cap = stake_cap_for_level(to_level, cfg)
         packages.append({
             "code": f"to_{to_level}",
@@ -691,17 +743,25 @@ def find_level_package(
         if to_level - cur >= 2:
             listed = max(listed, int(math.ceil(listed * 1.08)))
         listed = max(listed, expected + 1)
+        steps_n = to_level - cur
+        role, _rec = _package_role_label(
+            cur=cur,
+            to_level=to_level,
+            steps=steps_n,
+            idx=0,
+            n_targets=1,
+        )
         return {
             "code": f"to_{to_level}",
             "from_level": cur,
             "to_level": to_level,
-            "steps": to_level - cur,
+            "steps": steps_n,
             "step_levels": list(range(cur + 1, to_level + 1)),
             "pay": expected,
             "list": listed,
             "save": listed - expected,
             "save_pct": int(round(100.0 * (listed - expected) / listed)) if listed else 0,
-            "role": "вариант",
+            "role": role,
             "recommended": False,
             "cap": stake_cap_for_level(to_level, cfg),
             "cap_label": (
@@ -764,11 +824,16 @@ def explain_package_plain(
     lim_bit = gain["from_to_html"]
     if gain.get("delta"):
         lim_bit += f" · +{gain['delta']}"
+    # «чаще берут» — мягкий маркер у рекомендованного
     rec = " · <b>чаще берут</b>" if pkg.get("recommended") else ""
+    # Путь всегда от фактического уровня группы
     if steps == 1:
-        path = f"ур. {from_level} → {to_level}"
+        path = f"сейчас ★{from_level} → ★{to_level}"
     else:
-        path = f"ур. {from_level} → {to_level} · {steps} {_ru_steps_word(steps)}"
+        path = (
+            f"сейчас ★{from_level} → ★{to_level} · "
+            f"{steps} {_ru_steps_word(steps)}"
+        )
     why = _why_limit_formula_html(
         base=gain.get("new_base"),
         atmosphere_pct=float(atmosphere_pct or 0),
