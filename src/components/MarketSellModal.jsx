@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { formatKut } from '../utils/formatKut'
 import { calcMarketCommission, calcMarketSellerPayout } from '../lib/marketClient'
 import { useEscapeClose, useEnterConfirm } from '../hooks/useEscapeClose'
@@ -19,6 +19,7 @@ export default function MarketSellModal({
   const [quantityText, setQuantityText] = useState('1')
   const [priceText, setPriceText] = useState('10')
 
+  // Сбрасываем форму при открытии
   useEffect(() => {
     if (!isOpen) return
     setSelectedId('')
@@ -26,17 +27,38 @@ export default function MarketSellModal({
     setPriceText('10')
   }, [isOpen])
 
-  useEscapeClose(isOpen, onClose, { enabled: !isBusy })
+  // Отбираем только предметы с положительным количеством
+  const availableItems = useMemo(
+    () => items.filter((item) => item.count > 0),
+    [items]
+  )
 
-  const selected = items.find((item) => item.itemId === selectedId) ?? items[0] ?? null
+  // Если выбранный предмет пропал из доступных — выбираем первый доступный
+  useEffect(() => {
+    if (availableItems.length === 0) {
+      if (selectedId !== '') setSelectedId('')
+      return
+    }
+    const exists = availableItems.some((item) => item.itemId === selectedId)
+    if (!exists) {
+      setSelectedId(availableItems[0].itemId)
+    }
+  }, [availableItems, selectedId])
+
+  const selected =
+    availableItems.find((item) => item.itemId === selectedId) ??
+    availableItems[0] ??
+    null
   const maxQty = selected ? Math.min(selected.count, 99) : 0
 
+  // Ограничиваем количество при ручном вводе и при изменении предмета
   useEffect(() => {
     const n = Number.parseInt(quantityText, 10)
     if (maxQty > 0 && Number.isFinite(n) && n > maxQty) {
       setQuantityText(String(maxQty))
     }
   }, [selectedId, maxQty])
+
   const parsedQty = Number.parseInt(quantityText, 10)
   const parsedPrice = Number.parseInt(priceText, 10)
   const hasValidQty = Number.isFinite(parsedQty) && parsedQty >= 1
@@ -47,10 +69,21 @@ export default function MarketSellModal({
   const commission = calcMarketCommission(grossTotal, commissionPercent)
   const sellerPayout = calcMarketSellerPayout(grossTotal, commissionPercent)
 
-  const canSubmit = Boolean(selected) && maxQty > 0 && !isBusy && !isLoading && hasValidQty && hasValidPrice
+  const canSubmit =
+    Boolean(selected) &&
+    maxQty > 0 &&
+    !isBusy &&
+    !isLoading &&
+    hasValidQty &&
+    hasValidPrice
 
-  // Все переменные выше уже определены теперь можно безопасно вызвать хук
-  useEnterConfirm(isOpen, () => { if (canSubmit && selected) onConfirm(selected.itemId, price, quantity) }, { enabled: !isBusy })
+  useEnterConfirm(
+    isOpen,
+    () => {
+      if (canSubmit && selected) onConfirm(selected.itemId, price, quantity)
+    },
+    { enabled: !isBusy }
+  )
 
   if (!isOpen) return null
 
@@ -64,14 +97,22 @@ export default function MarketSellModal({
           aria-labelledby="market-sell-title"
           onClick={(event) => event.stopPropagation()}
         >
-          <button type="button" className="shop-modal-close" onClick={onClose} aria-label="Закрыть">
+          <button
+            type="button"
+            className="shop-modal-close"
+            onClick={onClose}
+            aria-label="Закрыть"
+          >
             ✕
           </button>
 
           <div className="shop-modal-content market-sell-content">
-            <h2 id="market-sell-title" className="shop-modal-title">Выставить на биржу</h2>
+            <h2 id="market-sell-title" className="shop-modal-title">
+              Выставить на биржу
+            </h2>
             <p className="market-sell-hint">
-              Саженцы и вода не продаются. Комиссия биржи {commissionPercent}% удерживается при продаже.
+              Вы можете выставить любые предметы из рюкзака, включая саженцы и воду.
+              Комиссия биржи {commissionPercent}% удерживается при продаже.
             </p>
 
             {isLoading ? (
@@ -80,12 +121,16 @@ export default function MarketSellModal({
               <div className="market-sell-error">
                 <p className="market-sell-empty">{error}</p>
                 {onRetry ? (
-                  <button type="button" className="farm-btn-primary market-sell-retry" onClick={onRetry}>
+                  <button
+                    type="button"
+                    className="farm-btn-primary market-sell-retry"
+                    onClick={onRetry}
+                  >
                     Повторить
                   </button>
                 ) : null}
               </div>
-            ) : items.length === 0 ? (
+            ) : availableItems.length === 0 ? (
               <p className="market-sell-empty">Нет предметов для продажи</p>
             ) : (
               <>
@@ -96,7 +141,7 @@ export default function MarketSellModal({
                     value={selected?.itemId ?? ''}
                     onChange={(e) => setSelectedId(e.target.value)}
                   >
-                    {items.map((item) => (
+                    {availableItems.map((item) => (
                       <option key={item.itemId} value={item.itemId}>
                         {item.emoji} {item.name} ({item.count} шт)
                       </option>
@@ -105,15 +150,27 @@ export default function MarketSellModal({
                 </label>
 
                 <label className="market-sell-field">
-                  <span>Количество <span className="market-sell-field-max">макс {formatKut(maxQty)} шт</span></span>
+                  <span>
+                    Количество{' '}
+                    <span className="market-sell-field-max">
+                      макс {formatKut(maxQty)} шт
+                    </span>
+                  </span>
                   <input
                     type="text"
                     inputMode="numeric"
-                    className={`market-sell-input${Number.parseInt(quantityText, 10) > maxQty ? ' market-sell-input--over' : ''}`}
+                    className={`market-sell-input${
+                      Number.parseInt(quantityText, 10) > maxQty
+                        ? ' market-sell-input--over'
+                        : ''
+                    }`}
                     value={quantityText}
                     onChange={(e) => {
                       const raw = e.target.value.replace(/\D/g, '')
-                      if (raw === '') { setQuantityText(''); return }
+                      if (raw === '') {
+                        setQuantityText('')
+                        return
+                      }
                       const n = Math.min(Number.parseInt(raw, 10), maxQty)
                       setQuantityText(String(n))
                     }}
@@ -127,7 +184,15 @@ export default function MarketSellModal({
                     inputMode="numeric"
                     className="market-sell-input"
                     value={priceText}
-                    onChange={(e) => setPriceText(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/\D/g, '')
+                      if (raw === '') {
+                        setPriceText('')
+                        return
+                      }
+                      const n = Math.min(Number.parseInt(raw, 10), 999_999)
+                      setPriceText(String(n))
+                    }}
                   />
                 </label>
 
@@ -150,14 +215,20 @@ export default function MarketSellModal({
           </div>
 
           <div className="shop-modal-actions">
-            <button type="button" className="shop-modal-cancel" onClick={onClose}>
+            <button
+              type="button"
+              className="shop-modal-cancel"
+              onClick={onClose}
+            >
               Отмена
             </button>
             <button
               type="button"
               className="farm-btn-primary shop-modal-confirm"
               disabled={!canSubmit}
-              onClick={() => selected && onConfirm(selected.itemId, price, quantity)}
+              onClick={() =>
+                selected && onConfirm(selected.itemId, price, quantity)
+              }
             >
               {isBusy ? 'Выставляем…' : 'Выставить'}
             </button>
