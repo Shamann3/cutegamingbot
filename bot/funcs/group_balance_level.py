@@ -809,7 +809,7 @@ def explain_package_plain(
     atmosphere_pct: float = 0.0,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Вариант в 2–3 строки: куда вырастет лимит → цена."""
+    """Короткий вариант: роль · лимит · цена (+ почему в одну строку)."""
     cfg = cfg or get_settings()
     steps = int(pkg.get("steps") or 1)
     to_level = int(pkg.get("to_level") or 1)
@@ -821,29 +821,21 @@ def explain_package_plain(
         atmosphere_pct=float(atmosphere_pct or 0),
         cfg=cfg,
     )
-    lim_bit = gain["from_to_html"]
-    if gain.get("delta"):
-        lim_bit += f" · +{gain['delta']}"
-    # «чаще берут» — мягкий маркер у рекомендованного
-    rec = " · <b>чаще берут</b>" if pkg.get("recommended") else ""
-    # Путь всегда от фактического уровня группы
-    if steps == 1:
-        path = f"сейчас ★{from_level} → ★{to_level}"
-    else:
-        path = (
-            f"сейчас ★{from_level} → ★{to_level} · "
-            f"{steps} {_ru_steps_word(steps)}"
-        )
+    rec = " · <b>хит</b>" if pkg.get("recommended") else ""
+    path = f"★{from_level}→★{to_level}"
+    if steps > 1:
+        path += f" · {steps} {_ru_steps_word(steps)}"
+    delta = f" · +{gain['delta']}" if gain.get("delta") else ""
     why = _why_limit_formula_html(
         base=gain.get("new_base"),
         atmosphere_pct=float(atmosphere_pct or 0),
         effective=gain.get("new_cap"),
         cfg=cfg,
+        compact=True,
     )
     return (
-        f"<b>{role}</b>{rec}\n"
-        f"{path}\n"
-        f"лимит {lim_bit}\n"
+        f"<b>{role}</b>{rec} · {path}\n"
+        f"лимит {gain['from_to_html']}{delta}\n"
         f"{why}\n"
         f"{format_package_price_line(pkg)}"
     )
@@ -1030,14 +1022,14 @@ def total_purchase_count() -> int:
 
 
 def social_proof_line() -> str:
-    """Короткое соцдоказательство — простыми словами."""
+    """Короткое соцдоказательство."""
     week = count_purchases_since(7 * 86400)
     total = total_purchase_count()
     if week >= 3:
-        return f"за неделю уже <b>{week}</b> раз подняли лимит"
+        return f"уже <b>{week}</b> поднятий за неделю"
     if total >= 1:
-        return f"уже <b>{total}</b> поднятий лимита"
-    return "можете открыть путь первыми"
+        return f"уже <b>{total}</b> поднятий"
+    return "можете быть первыми"
 
 
 def build_price_ladder_html(
@@ -1046,7 +1038,7 @@ def build_price_ladder_html(
     cfg: Optional[Dict[str, Any]] = None,
     atmosphere_pct: float = 0.0,
 ) -> str:
-    """Витрина вариантов: куда вырастет лимит и за сколько."""
+    """Короткая витрина: лимит с → до · цена."""
     cfg = cfg or get_settings()
     packages = build_level_packages(chat_id, cfg)
     if not packages:
@@ -1057,8 +1049,7 @@ def build_price_ladder_html(
         for pkg in packages
     ]
     return (
-        f"{gbl_tg('🟢')} <b>Варианты</b>\n"
-        f"<i>платите Stars — лимит растёт всем сразу</i>\n\n"
+        f"{gbl_tg('🟢')} <b>Выберите</b> · <i>Stars → лимит всем</i>\n\n"
         + "\n\n".join(blocks)
     )
 
@@ -1139,21 +1130,26 @@ def _why_limit_formula_html(
     atmosphere_pct: float,
     effective: Optional[int],
     cfg: Optional[Dict[str, Any]] = None,
+    compact: bool = False,
 ) -> str:
-    """Почему число именно такое: база уровня + бонус чата."""
+    """Почему число такое: база + бонус чата. compact — одна короткая строка."""
     cfg = cfg or get_settings()
     if effective is None:
-        return "<i>на этом уровне лимита ставки нет</i>"
+        return "<i>лимита ставки не будет</i>"
     atmo_on = bool(cfg.get("atmosphere_enabled", True))
     atmo = float(atmosphere_pct or 0)
     if base is None:
-        return f"<i>итоговый лимит: <b>{int(effective)}</b></i>"
+        return f"<i>лимит <b>{int(effective)}</b></i>"
     if atmo_on and atmo > 0.05:
+        if compact:
+            return f"<i>база {int(base)} + чат +{atmo:g}%</i>"
         return (
-            f"<i>почему {int(effective)}: база уровня <b>{int(base)}</b> "
-            f"+ бонус чата <b>+{atmo:g}%</b></i>"
+            f"<i>почему {int(effective)}: база <b>{int(base)}</b> "
+            f"+ чат <b>+{atmo:g}%</b></i>"
         )
-    return f"<i>это база уровня <b>{int(base)}</b> (бонус чата пока ~0%)</i>"
+    if compact:
+        return f"<i>база уровня {int(base)}</i>"
+    return f"<i>база уровня <b>{int(base)}</b></i>"
 
 
 def stake_delta_for_step(
@@ -1284,12 +1280,12 @@ def _next_level_teaser(
         atmosphere_pct=float(atmosphere_pct or 0),
         effective=gain.get("new_cap"),
         cfg=cfg,
+        compact=True,
     )
     return (
-        f"<b>{pkg['role']}</b>: лимит {gain['from_to_html']}{delta_bit}\n"
-        f"{why}\n"
-        f"{format_package_price_line(pkg)}\n"
-        f"<i>Stars — это не личные куты</i>"
+        f"<b>{pkg['role']}</b> · лимит {gain['from_to_html']}{delta_bit}\n"
+        f"{why} · {format_package_price_line(pkg)}\n"
+        f"<i>Stars ≠ личные куты</i>"
     )
 
 
@@ -1695,17 +1691,16 @@ def build_raise_screen_html(
     visit_n: int = 1,
     atmosphere_pct: float = 0.0,
 ) -> str:
-    """Экран покупки уровня — просто: сейчас → варианты → что получите."""
+    """Экран покупки — коротко: статус → варианты → один CTA-факт."""
     cfg = cfg or get_settings()
     cur = get_chat_level(chat_id)
     packages = build_level_packages(chat_id, cfg)
-    hook = visit_hook_line(visit_n)
     atmo = float(atmosphere_pct or 0)
     if not packages:
         return (
             f"{gbl_tg('🏆')} <b>Максимум</b>\n"
-            f"{stars_label(5)} · лимит ставок снят\n"
-            f"<i>дальше помогает только активность чата</i>"
+            f"{stars_label(5)} · лимит снят\n"
+            f"<i>дальше — только активность чата</i>"
         )
     rec = next((p for p in packages if p.get("recommended")), packages[0])
     title = (
@@ -1713,13 +1708,13 @@ def build_raise_screen_html(
         or str(rec.get("badge_title") or badge_title_for_level(rec["to_level"], cfg))
     )
     cur_cap = effective_stake_cap(chat_id, atmosphere_pct=atmo, cfg=cfg)
-    cur_lim = _fmt_lim(cur_cap)
     cur_base = stake_cap_for_level(cur, cfg)
     why_now = _why_limit_formula_html(
         base=cur_base,
         atmosphere_pct=atmo,
         effective=cur_cap,
         cfg=cfg,
+        compact=True,
     )
     ladder = build_price_ladder_html(chat_id=chat_id, cfg=cfg, atmosphere_pct=atmo)
     rec_gain = stake_delta_for_step(
@@ -1728,31 +1723,17 @@ def build_raise_screen_html(
         atmosphere_pct=atmo,
         cfg=cfg,
     )
-    why_next = _why_limit_formula_html(
-        base=rec_gain.get("new_base"),
-        atmosphere_pct=atmo,
-        effective=rec_gain.get("new_cap"),
-        cfg=cfg,
-    )
+    hook = visit_hook_line(visit_n)
     return (
         f"{gbl_tg('🏆')} <b>Поднять лимит</b>\n"
         f"<i>{hook}</i>\n\n"
-        f"{gbl_tg('🎯')} <b>Сейчас</b>\n"
-        f"{stars_label(cur)} · уровень <b>{cur}</b> из 5\n"
-        f"лимит ставки: <b>{cur_lim}</b>\n"
+        f"{stars_label(cur)} · ★{cur}/5 · сейчас <b>{_fmt_lim(cur_cap)}</b>\n"
         f"{why_now}\n\n"
         f"{ladder}\n\n"
-        f"{gbl_tg('🔥')} <b>Что получите</b>\n"
-        f"• лимит {rec_gain['from_to_html']} — <b>для всех</b>\n"
-        f"• метку «<b>{title}</b>» себе\n"
-        f"• имя в чате как у героя\n\n"
-        f"{gbl_tg('💎')} <b>Важно</b>\n"
-        f"платите <b>Stars</b> — личные куты не приходят\n"
-        f"частый выбор «<b>{rec['role']}</b>»: "
-        f"лимит {rec_gain['from_to_html']}\n"
-        f"{why_next}\n"
-        f"{format_package_price_line(rec)}\n"
-        f"<i>{social_proof_line()}</i>"
+        f"{gbl_tg('🔥')} <b>Хит</b> «{rec['role']}»: "
+        f"лимит {rec_gain['from_to_html']} · {format_package_price_line(rec)}\n"
+        f"для всех + метка «<b>{title}</b>»\n"
+        f"<i>Stars ≠ личные куты · {social_proof_line()}</i>"
     )
 
 
@@ -1771,7 +1752,7 @@ def build_pay_dm_bridge_html(
     chat_title: Optional[str] = None,
     group_html: Optional[str] = None,
 ) -> str:
-    """Подтверждение перед ЛС — коротко + скидка."""
+    """Подтверждение перед ЛС — коротко, ясно, со скидкой."""
     cfg = cfg or get_settings()
     pkg = find_level_package(chat_id, to_level, price, cfg)
     from_level = int(pkg["from_level"]) if pkg else get_chat_level(chat_id)
@@ -1804,22 +1785,19 @@ def build_pay_dm_bridge_html(
         atmosphere_pct=float(atmosphere_pct or 0),
         effective=gain.get("new_cap"),
         cfg=cfg,
+        compact=True,
     )
     return (
         f"{gbl_tg('🏆')} <b>Почти готово</b>\n"
-        f"<i>осталось оплатить — и лимит вырастет всем</i>\n\n"
-        f"{gbl_tg('🎯')} <b>Что покупаете</b>\n"
+        f"<i>оплата — и лимит выше для всех</i>\n\n"
         f"{group_bit}"
-        f"«<b>{role}</b>» · уровень {from_level} → <b>{to_level}</b>{steps_bit}\n"
+        f"«<b>{role}</b>» · ★{from_level}→★{to_level}{steps_bit}\n"
         f"лимит {gain['from_to_html']}{delta_bit}\n"
         f"{why}\n\n"
-        f"{gbl_tg('💎')} <b>К оплате</b>\n"
-        f"{price_line}\n"
-        f"метка «<b>{title}</b>»\n"
+        f"{price_line} · метка «<b>{title}</b>»\n"
         f"<i>{social_proof_line()}</i>\n\n"
-        f"{gbl_tg('🔥')} <b>Дальше</b>\n"
-        f"откроется ЛС со счётом на <b>{int(price)}⭐</b>\n"
-        f"<i>Stars ≠ личные куты — вы поднимаете лимит всем</i>"
+        f"дальше — ЛС на <b>{int(price)}⭐</b>\n"
+        f"<i>Stars ≠ личные куты</i>"
     )
 
 
@@ -2105,13 +2083,12 @@ def build_gift_announcement_html(
     )
     delta = f" · +{gain['delta']}" if gain.get("delta") else ""
     return (
-        f"{gbl_tg('🏆')} <b>Лимит подняли</b>\n\n"
+        f"{gbl_tg('🏆')} <b>Лимит подняли</b>\n"
         f"{sponsor_name_html} · {where}\n"
-        f"{stars_label(prev)} → <b>{stars_label(to_level)}</b> "
-        f"(уровень {prev}→{to_level})\n"
+        f"{stars_label(prev)} → <b>{stars_label(to_level)}</b> · "
         f"лимит {gain['from_to_html']}{delta}\n"
-        f"<b>{int(price_stars)}⭐</b> · метка «<b>{title}</b>»\n"
-        f"<i>{proof}</i> · напишите <b>бч</b>"
+        f"<b>{int(price_stars)}⭐</b> · «<b>{title}</b>»\n"
+        f"<i>{proof}</i> · <b>бч</b>"
     )
 
 
@@ -2155,14 +2132,12 @@ def build_buyer_hero_html(
         price_bit = f"<s>{listed}⭐</s> → {price_bit} (−{save_pct}%)"
     delta = f" · +{gain['delta']}" if gain.get("delta") else ""
     return (
-        f"{gbl_tg('🏆')} <b>Готово — лимит выше</b>\n"
-        f"<i>из-за вас всем можно ставить больше</i>\n\n"
+        f"{gbl_tg('🏆')} <b>Готово</b>\n"
+        f"<i>лимит выше — для всех</i>\n\n"
         f"{where}\n"
-        f"уровень {prev} → <b>{to_level}</b> · {stars_label(to_level)}\n"
-        f"лимит {gain['from_to_html']}{delta}\n"
-        f"{price_bit}\n"
-        f"метка «<b>{title}</b>» уже в профиле\n"
-        f"<i>{social_proof_line()}</i>\n\n"
+        f"★{prev}→★{to_level} · лимит {gain['from_to_html']}{delta}\n"
+        f"{price_bit} · «<b>{title}</b>»\n"
+        f"<i>{social_proof_line()}</i>\n"
         f"дальше: группа или <b>бч</b>"
     )
 
