@@ -825,7 +825,6 @@ def explain_package_plain(
     path = f"★{from_level}→★{to_level}"
     if steps > 1:
         path += f" · {steps} {_ru_steps_word(steps)}"
-    delta = f" · +{gain['delta']}" if gain.get("delta") else ""
     why = _why_limit_formula_html(
         base=gain.get("new_base"),
         atmosphere_pct=float(atmosphere_pct or 0),
@@ -835,7 +834,7 @@ def explain_package_plain(
     )
     return (
         f"<b>{role}</b>{rec} · {path}\n"
-        f"лимит {gain['from_to_html']}{delta}\n"
+        f"лимит {gain['from_to_delta_html']}\n"
         f"{why}\n"
         f"{format_package_price_line(pkg)}"
     )
@@ -1103,6 +1102,20 @@ def _lim_from_to(
     return f"с {old_s} до {new_s}"
 
 
+def _lim_from_to_delta(
+    old_cap: Optional[int],
+    new_cap: Optional[int],
+    delta: Optional[int],
+    *,
+    html_new: bool = False,
+) -> str:
+    """Единая строка: «с 115 до 231 | +116» (для каждого уровня)."""
+    base = _lim_from_to(old_cap, new_cap, html_new=html_new)
+    if delta is not None and int(delta) > 0:
+        return f"{base} | +{int(delta)}"
+    return base
+
+
 def _lim_arrow_label(old_cap: Optional[int], new_cap: Optional[int]) -> str:
     """Зелёная кнопка: «увеличить с 34 до 57»."""
     if new_cap is None:
@@ -1181,6 +1194,10 @@ def stake_delta_for_step(
         "new_lim": _fmt_lim(new_cap),
         "from_to": _lim_from_to(old_cap, new_cap),
         "from_to_html": _lim_from_to(old_cap, new_cap, html_new=True),
+        "from_to_delta": _lim_from_to_delta(old_cap, new_cap, delta),
+        "from_to_delta_html": _lim_from_to_delta(
+            old_cap, new_cap, delta, html_new=True,
+        ),
         "atmosphere_pct": atmo,
     }
 
@@ -1273,8 +1290,6 @@ def _next_level_teaser(
         atmosphere_pct=float(atmosphere_pct or 0),
         cfg=cfg,
     )
-    delta = gain.get("delta")
-    delta_bit = f" · +{delta}" if delta else ""
     why = _why_limit_formula_html(
         base=gain.get("new_base"),
         atmosphere_pct=float(atmosphere_pct or 0),
@@ -1283,7 +1298,7 @@ def _next_level_teaser(
         compact=True,
     )
     return (
-        f"<b>{pkg['role']}</b> · лимит {gain['from_to_html']}{delta_bit}\n"
+        f"<b>{pkg['role']}</b> · лимит {gain['from_to_delta_html']}\n"
         f"{why} · {format_package_price_line(pkg)}\n"
         f"<i>Stars ≠ личные куты</i>"
     )
@@ -1731,7 +1746,7 @@ def build_raise_screen_html(
         f"{why_now}\n\n"
         f"{ladder}\n\n"
         f"{gbl_tg('🔥')} <b>Хит</b> «{rec['role']}»: "
-        f"лимит {rec_gain['from_to_html']} · {format_package_price_line(rec)}\n"
+        f"лимит {rec_gain['from_to_delta_html']} · {format_package_price_line(rec)}\n"
         f"для всех + метка «<b>{title}</b>»\n"
         f"<i>Stars ≠ личные куты · {social_proof_line()}</i>"
     )
@@ -1778,7 +1793,6 @@ def build_pay_dm_bridge_html(
         else f"<b>{price}⭐</b>"
     )
     role = str(pkg.get("role") or "вариант") if pkg else "вариант"
-    delta_bit = f" · +{gain['delta']}" if gain.get("delta") else ""
     steps_bit = f" · {steps} {_ru_steps_word(steps)}" if steps > 1 else ""
     why = _why_limit_formula_html(
         base=gain.get("new_base"),
@@ -1792,7 +1806,7 @@ def build_pay_dm_bridge_html(
         f"<i>оплата — и лимит выше для всех</i>\n\n"
         f"{group_bit}"
         f"«<b>{role}</b>» · ★{from_level}→★{to_level}{steps_bit}\n"
-        f"лимит {gain['from_to_html']}{delta_bit}\n"
+        f"лимит {gain['from_to_delta_html']}\n"
         f"{why}\n\n"
         f"{price_line} · метка «<b>{title}</b>»\n"
         f"<i>{social_proof_line()}</i>\n\n"
@@ -2081,12 +2095,11 @@ def build_gift_announcement_html(
         if week >= 2
         else social_proof_line()
     )
-    delta = f" · +{gain['delta']}" if gain.get("delta") else ""
     return (
         f"{gbl_tg('🏆')} <b>Лимит подняли</b>\n"
         f"{sponsor_name_html} · {where}\n"
         f"{stars_label(prev)} → <b>{stars_label(to_level)}</b> · "
-        f"лимит {gain['from_to_html']}{delta}\n"
+        f"лимит {gain['from_to_delta_html']}\n"
         f"<b>{int(price_stars)}⭐</b> · «<b>{title}</b>»\n"
         f"<i>{proof}</i> · <b>бч</b>"
     )
@@ -2130,12 +2143,11 @@ def build_buyer_hero_html(
     price_bit = f"<b>{int(price_stars)}⭐</b>"
     if save_pct > 0:
         price_bit = f"<s>{listed}⭐</s> → {price_bit} (−{save_pct}%)"
-    delta = f" · +{gain['delta']}" if gain.get("delta") else ""
     return (
         f"{gbl_tg('🏆')} <b>Готово</b>\n"
         f"<i>лимит выше — для всех</i>\n\n"
         f"{where}\n"
-        f"★{prev}→★{to_level} · лимит {gain['from_to_html']}{delta}\n"
+        f"★{prev}→★{to_level} · лимит {gain['from_to_delta_html']}\n"
         f"{price_bit} · «<b>{title}</b>»\n"
         f"<i>{social_proof_line()}</i>\n"
         f"дальше: группа или <b>бч</b>"
