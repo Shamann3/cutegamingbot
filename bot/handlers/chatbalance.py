@@ -739,7 +739,7 @@ async def show_balance_details(callback_query: CallbackQuery):
             visit_n=visit_n,
             chat_title=chat_title,
         )
-        keyboard = build_details_keyboard(chat_id=chat_id)
+        keyboard = build_details_keyboard(chat_id=chat_id, atmosphere_pct=atmo)
         try:
             await callback_query.message.edit_text(
                 text, parse_mode="HTML", reply_markup=keyboard,
