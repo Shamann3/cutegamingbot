@@ -34,16 +34,13 @@ def normalize_market_item_id(item_id: str) -> str:
 
 def market_blocked_item_ids() -> frozenset[str]:
     blocked = set()
+    # Саженцы и вода теперь продаются.
+    # blocked.update(seed_item_ids())
+    # blocked.add(dex_catalog.canonical_key(WATER_ITEM_KEY))
     try:
-        blocked.update(seed_item_ids())
-    except Exception as exc:
-        # Реестр культур ещё не прогрет — не валим биржу.
-        print(f"[MARKET][RULES][WARN] seed_item_ids: {exc!r}")
-    try:
-        blocked.add(dex_catalog.canonical_key(WATER_ITEM_KEY))
         blocked.add(dex_catalog.canonical_key(AUTOWATER_ITEM_KEY))
     except Exception as exc:
-        print(f"[MARKET][RULES][WARN] water keys: {exc!r}")
+        print(f"[MARKET][RULES][WARN] autowater key: {exc!r}")
     return frozenset(blocked)
 
 

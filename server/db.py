@@ -68,7 +68,7 @@ from user_notify import (
     schedule_player_telegram_dm,
 )
 from item_catalog import items_for_display, merge_items_for_storage, normalize_items
-from user_items import (
+from user_items import (count_item_in_storage,
     add_item,
     add_shop_item_to_storage,
     can_craft,
@@ -918,7 +918,7 @@ class Database:
                     "SELECT items FROM users WHERE user_id = $1 FOR UPDATE", user_id
                 )
                 raw_items = parse_items(items_raw)
-                from user_items import count_seed_for_crop, take_seed_from_storage
+                from user_items import count_seed_for_crop, take_seed_from_storage,count_item_in_storage
 
                 if count_seed_for_crop(raw_items, crop) < 1:
                     entry = dex_catalog.get(seed_id)

@@ -213,7 +213,9 @@ export default function MarketplaceModule({
             <span className="market-sell-card-icon" aria-hidden>📤</span>
             <div className="market-sell-card-text">
               <p className="market-sell-card-title">Продать из рюкзака</p>
-              <p className="market-sell-card-sub">Комиссия {commissionPercent}% при продаже · саженцы и вода запрещены</p>
+              <p className="market-sell-card-sub">
+                Комиссия {commissionPercent}% при продаже · можно продавать саженцы и воду
+              </p>
             </div>
           </div>
           <button

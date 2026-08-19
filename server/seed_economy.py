@@ -148,6 +148,7 @@ def normalize_daily_seed_choice(seed_item_id: str | None) -> str:
     return canon
 
 
+
 def seed_economy_for_client(*, daily_seed_claimed_on: date | None) -> dict:
     today = local_today()
     claimed_today = daily_seed_claimed_on == today if daily_seed_claimed_on else False
