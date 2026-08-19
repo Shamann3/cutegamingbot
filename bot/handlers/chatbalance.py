@@ -823,14 +823,14 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
     cfg = get_settings()
     if not cfg.get("enabled", True):
         await callback_query.answer(
-            "Уровни временно недоступны. Загляните позже.",
+            "Сейчас поднять лимит нельзя. Загляните позже.",
             show_alert=True,
         )
         return
     await get_chat_level_async(chat_id, db=db)
     if get_chat_level(chat_id) >= 5:
         await callback_query.answer(
-            "Группа уже на максимальном уровне.",
+            "Лимит уже на максимуме.",
             show_alert=True,
         )
         return
@@ -863,7 +863,7 @@ async def gbl_raise_handler(callback_query: CallbackQuery):
         visit_n=visit_n,
         atmosphere_pct=atmo,
     )
-    kb = build_raise_keyboard(chat_id=chat_id, cfg=cfg)
+    kb = build_raise_keyboard(chat_id=chat_id, cfg=cfg, atmosphere_pct=atmo)
     try:
         await callback_query.message.edit_text(
             text, reply_markup=kb, parse_mode="HTML",
@@ -916,7 +916,7 @@ async def gbl_pay_handler(callback_query: CallbackQuery):
     cfg = get_settings()
     if not cfg.get("enabled", True):
         await callback_query.answer(
-            "Уровни временно недоступны. Загляните позже.",
+            "Сейчас поднять лимит нельзя. Загляните позже.",
             show_alert=True,
         )
         return
