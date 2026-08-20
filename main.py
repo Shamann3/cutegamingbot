@@ -4382,8 +4382,8 @@ async def _safe_is_user_banned(user_id: int) -> bool:
 
 
 bot_username = {
-    "7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM": "CuteGamingBot",
-    "7357700583:AAHHA3jr6f38X6LwNvx9a2scXZHee3DJXTY": "Cute3TestBot"
+    "7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM": "CuteGamingBot",
+    "7357700583:AAGIl0cCzzPHo_E_XSkxxVlaydpyaGeVOg8": "Cute3TestBot"
 }.get(TOKEN)
 
 
@@ -7681,8 +7681,8 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
                 pass
 
             if not bot_username:
-                bot_username = {"7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM": "CuteGamingBot" ,
-                    "7357700583:AAHHA3jr6f38X6LwNvx9a2scXZHee3DJXTY": "Cute3TestBot"}.get(message.bot.token)
+                bot_username = {"7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM": "CuteGamingBot" ,
+                    "7357700583:AAGIl0cCzzPHo_E_XSkxxVlaydpyaGeVOg8": "Cute3TestBot"}.get(message.bot.token)
 
             if not bot_username:
                 return await message.answer("❌ Ошибка: бот не определён.")
@@ -31705,8 +31705,8 @@ async def _start_deep_withdraw_flow(message: types.Message, *, deep: str, user_i
 
             if not bot_username:
                 bot_username = {
-                    "7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM": "CuteGamingBot",
-                    "7357700583:AAHHA3jr6f38X6LwNvx9a2scXZHee3DJXTY": "Cute3TestBot"
+                    "7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM": "CuteGamingBot",
+                    "7357700583:AAGIl0cCzzPHo_E_XSkxxVlaydpyaGeVOg8": "Cute3TestBot"
                 }.get(message.bot.token)
 
             if not bot_username:
@@ -35790,7 +35790,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
             return str(timedelta(seconds=int(uptime_seconds)))
 
         # syphercache перенесён в ранний gate: bot/funcs/sypher_diag.py
-        if TOKEN == "7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM":
+        if TOKEN == "7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM":
             MAIN_FILE_PATH = "/root/CuteUpdate1/main.py"
             BASE_DIR = "/root/CuteUpdate1/bot"
         else:

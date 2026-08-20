@@ -1,14 +1,14 @@
 import os
 
-TOKEN = "7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM"
+TOKEN = "7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM"
 EDEN_TOKEN = "8784362237:AAFRZ_dQ281GO0YRX-oTL2UyRfISA7H6cP8"
 PWD = "legehdarg34123412cutegamingbot"
 
 #тест бот
-#7357700583:AAHHA3jr6f38X6LwNvx9a2scXZHee3DJXTY
+#7357700583:AAGIl0cCzzPHo_E_XSkxxVlaydpyaGeVOg8
 
 #основной бот
-#7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM
+#7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM
 
 # ===== КОНСТАНТЫ =====
 MIN_WITHDRAW_STEP = 15  # шаг для "красивого" числа
@@ -195,10 +195,10 @@ INVENTORY_MAX_ROWS_PER_PAGE = 10
 
 
 #Кут :
-#7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM
+#7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM
 
 #тест бот :8
-#7357700583:AAHHA3jr6f38X6LwNvx9a2scXZHee3DJXTY
+#7357700583:AAGIl0cCzzPHo_E_XSkxxVlaydpyaGeVOg8
 
 
 
@@ -235,11 +235,11 @@ COUPON_DISCOUNTED_UNITS = 1
 # купить за 25%, и без этого ограничения цикл «купил-продал» печатал куты.
 SELL_PAYOUT_MIN_PERCENT = 25
 SELL_PAYOUT_MAX_PERCENT = 45
-TOKENtest = "7357700583:AAHHA3jr6f38X6LwNvx9a2scXZHee3DJXTY"
+TOKENtest = "7357700583:AAGIl0cCzzPHo_E_XSkxxVlaydpyaGeVOg8"
 async def get_bot_username_by_token(token: str):
     bot_usernames = {
-        "7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM": "CuteGamingBot",
-        "7357700583:AAHHA3jr6f38X6LwNvx9a2scXZHee3DJXTY": "Cute3TestBot"
+        "7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM": "CuteGamingBot",
+        "7357700583:AAGIl0cCzzPHo_E_XSkxxVlaydpyaGeVOg8": "Cute3TestBot"
     }
     return bot_usernames.get(token)
 from decimal import Decimal
@@ -614,7 +614,7 @@ emojisbonus = [  "<tg-emoji emoji-id='5321218545621706269'>🎈</tg-emoji>","<tg
 #1 off
 #2 on
 #6685494395:AAH1W4xBIIeHyJEfzjbZLKq9lHH-P6rHtG4
-#7683193125:AAHasdML6dkryk2QaRps96rytsvv2ucXxqM
+#7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM
 #-1002111833075 пробни
 #chat_id = -1001921925861 ориг
 #chat_link = "https://t.me/ChatCute3"
