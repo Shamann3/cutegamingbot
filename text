@@ -31,21 +31,12 @@ services:
   - key: PRODUCTION
     scope: RUN_AND_BUILD_TIME
     value: "true"
-  - key: SSH_TUNNEL_HOST
-    scope: RUN_AND_BUILD_TIME
-    value: "207.154.219.208"
-  - key: SSH_TUNNEL_USER
-    scope: RUN_AND_BUILD_TIME
-    value: "root"
-  - key: PRODUCTION
-    scope: RUN_AND_BUILD_TIME
-    value: "true"
   - key: ALLOW_DEV_AUTH
     scope: RUN_AND_BUILD_TIME
     value: "false"
   - key: DATABASE_URL
     scope: RUN_AND_BUILD_TIME
-    value: postgresql://postgres:%40CuteGamingBot34123412Password@127.0.0.1:15432/cutebase
+    value: "postgresql://postgres:%40CuteGamingBot34123412Password@127.0.0.1:15432/cutebase"
   - key: DB_SSL
     scope: RUN_AND_BUILD_TIME
     value: "false"
@@ -57,13 +48,13 @@ services:
     value: "false"
   - key: BOT_TOKEN
     scope: RUN_AND_BUILD_TIME
-    value: 8704531150:AAFDTyMgXNsOZ0nnWc4KB9SJMp4O1SJZRH8
+    value: "8704531150:AAFDTyMgXNsOZ0nnWc4KB9SJMp4O1SJZRH8"
   - key: ADMIN_BOT_TOKEN
     scope: RUN_AND_BUILD_TIME
-    value: 8630275843:AAHtfQQGB6w_zP3ft1Agk_z_q5CYiQhKIV8
+    value: "8630275843:AAHtfQQGB6w_zP3ft1Agk_z_q5CYiQhKIV8"
   - key: SUPPORT_BOT_TOKEN
     scope: RUN_AND_BUILD_TIME
-    value: 8646786299:AAGApOJP7srvSrU9BcDukr8nVRlxtfwDof8
+    value: "8646786299:AAGApOJP7srvSrU9BcDukr8nVRlxtfwDof8"
   - key: ADMIN_ENABLED
     scope: RUN_AND_BUILD_TIME
     value: "true"
@@ -72,26 +63,26 @@ services:
     value: "6801702632,999884389,6488580935"
   - key: ADMIN_JWT_SECRET
     scope: RUN_AND_BUILD_TIME
-    value: 628c9c46060450c08e880c1481dd0daf735ec0d28531f8be401b5dab1e573750
+    value: "628c9c46060450c08e880c1481dd0daf735ec0d28531f8be401b5dab1e573750"
   - key: ADMIN_LOGIN_KEY
     scope: RUN_AND_BUILD_TIME
-    value: cutegamingopopopadmin
+    value: "cutegamingopopopadmin"
   - key: WEBAPP_URL
     scope: RUN_AND_BUILD_TIME
-    value: https://cutegaming-mobet.ondigitalocean.app/
+    value: "https://cutegaming-mobet.ondigitalocean.app/"
   - key: ADMIN_WEBAPP_URL
     scope: RUN_AND_BUILD_TIME
-    value: https://cutegaming-mobet.ondigitalocean.app/panel/
+    value: "https://cutegaming-mobet.ondigitalocean.app/panel/"
   - key: FRONTEND_ORIGIN
     scope: RUN_AND_BUILD_TIME
-    value: https://cutegaming-mobet.ondigitalocean.app
+    value: "https://cutegaming-mobet.ondigitalocean.app"
   - key: ADMIN_FRONTEND_ORIGIN
     scope: RUN_AND_BUILD_TIME
-    value: https://cutegaming-mobet.ondigitalocean.app
+    value: "https://cutegaming-mobet.ondigitalocean.app"
   github:
     branch: main
     deploy_on_push: true
-    repo: oleksandrfunded-beep/cutegaming
+    repo: Shamann3/cutegamingbot
   health_check:
     http_path: /health
   http_port: 8080
@@ -106,11 +97,11 @@ services:
     scope: BUILD_TIME
   - key: VITE_ADMIN_API_PREFIX
     scope: BUILD_TIME
-    value: /admin/api
+    value: "/admin/api"
   github:
     branch: main
     deploy_on_push: true
-    repo: oleksandrfunded-beep/cutegaming
+    repo: Shamann3/cutegamingbot
   http_port: 8080
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-0.5gb
@@ -123,21 +114,18 @@ workers:
   - key: PRODUCTION
     scope: RUN_AND_BUILD_TIME
     value: "true"
-
   - key: SSH_TUNNEL_HOST
     scope: RUN_AND_BUILD_TIME
     value: "207.154.219.208"
-
   - key: SSH_TUNNEL_USER
     scope: RUN_AND_BUILD_TIME
     value: "root"
-
-- key: SSH_TUNNEL_PASSWORD
-  scope: RUN_AND_BUILD_TIME
-  value: "ТВОЙ_ПАРОЛЬ"
+  - key: SSH_TUNNEL_PASSWORD
+    scope: RUN_AND_BUILD_TIME
+    value: "legehdarg34123412"   # ← ЗАМЕНИТЕ НА РЕАЛЬНЫЙ ПАРОЛЬ
   - key: DATABASE_URL
     scope: RUN_AND_BUILD_TIME
-    value: postgresql://postgres:%40CuteGamingBot34123412Password@127.0.0.1:15432/cutebase
+    value: "postgresql://postgres:%40CuteGamingBot34123412Password@127.0.0.1:15432/cutebase"
   - key: DB_SSL
     scope: RUN_AND_BUILD_TIME
     value: "false"
@@ -146,26 +134,26 @@ workers:
     value: "false"
   - key: BOT_TOKEN
     scope: RUN_AND_BUILD_TIME
-    value: 8704531150:AAFDTyMgXNsOZ0nnWc4KB9SJMp4O1SJZRH8
+    value: "8704531150:AAFDTyMgXNsOZ0nnWc4KB9SJMp4O1SJZRH8"
   - key: ADMIN_BOT_TOKEN
     scope: RUN_AND_BUILD_TIME
-    value: 8630275843:AAHtfQQGB6w_zP3ft1Agk_z_q5CYiQhKIV8
+    value: "8630275843:AAHtfQQGB6w_zP3ft1Agk_z_q5CYiQhKIV8"
   - key: SUPPORT_BOT_TOKEN
     scope: RUN_AND_BUILD_TIME
-    value: 8646786299:AAGApOJP7srvSrU9BcDukr8nVRlxtfwDof8
+    value: "8646786299:AAGApOJP7srvSrU9BcDukr8nVRlxtfwDof8"
   - key: ADMIN_ENABLED
     scope: RUN_AND_BUILD_TIME
     value: "true"
   - key: ADMIN_USER_IDS
     scope: RUN_AND_BUILD_TIME
-    value: 6801702632,999884389,6488580935
+    value: "6801702632,999884389,6488580935"
   - key: WEBAPP_URL
     scope: RUN_AND_BUILD_TIME
-    value: https://cutegaming-mobet.ondigitalocean.app/
+    value: "https://cutegaming-mobet.ondigitalocean.app/"
   github:
     branch: main
     deploy_on_push: true
-    repo: oleksandrfunded-beep/cutegaming
+    repo: Shamann3/cutegamingbot
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-0.5gb
   name: bots

@@ -97,7 +97,7 @@ async def main() -> int:
             return 1
 
         print(f"OK: admin_accounts created user_id={uid} role={role} status={status}")
-        print("  Login: tab «Вход» → key cutegamingopopopadmin + code from Authenticator")
+        print("  Login: tab «Вход» → key @CuteGamingBot3412... + code from Authenticator")
         return 0
     finally:
         await db.close()

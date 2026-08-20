@@ -47,7 +47,7 @@ async def main() -> int:
 <p>Отсканируйте QR в Google Authenticator / Authy. Удалите старые записи «CuteFarming Panel».</p>
 <p><img src="{totp_qr_data_url(uri)}" alt="QR" style="background:#fff;padding:12px;border-radius:12px"/></p>
 <p>Ручной ключ: <code>{secret}</code></p>
-<p>Вход: admin-бот → панель → ключ <code>cutegamingopopopadmin</code> + 6 цифр из приложения.</p>
+<p>Вход: admin-бот → панель → ключ <code>@CuteGamingBot3412...</code> + 6 цифр из приложения.</p>
 </body></html>"""
         qr_path.write_text(html, encoding="utf-8")
         print(f"QR-страница: {qr_path}")

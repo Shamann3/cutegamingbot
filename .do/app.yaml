@@ -13,7 +13,7 @@ services:
   # ---------- FastAPI backend ----------
   - name: api
     github:
-      repo: oleksandrfunded-beep/cutegaming
+      repo: Shamann3/cutegamingbot
       branch: main
       deploy_on_push: true
     dockerfile_path: server/Dockerfile
@@ -70,7 +70,7 @@ services:
   # ---------- Frontend (игра + админка) ----------
   - name: frontend
     github:
-      repo: oleksandrfunded-beep/cutegaming
+      repo: Shamann3/cutegamingbot
       branch: main
       deploy_on_push: true
     environment_slug: node-js
@@ -98,7 +98,7 @@ workers:
   # ---------- Telegram-боты (admin + support) ----------
   - name: bots
     github:
-      repo: oleksandrfunded-beep/cutegaming
+      repo: Shamann3/cutegamingbot
       branch: main
       deploy_on_push: true
     dockerfile_path: server/Dockerfile
