@@ -1,0 +1,30 @@
+{
+  "enabled": false,
+  "test": false,
+  "mode": "interval",
+  "interval_sec": 3600.0,
+  "initial_delay_sec": 3600.0,
+  "grace_sec": 3.0,
+  "timezone": "Europe/Moscow",
+  "hourly_minute": 0,
+  "daily_times": [
+    "03:00"
+  ],
+  "weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "conditions": {
+    "min_uptime_sec": 120.0,
+    "require_supervisor": false,
+    "max_restarts_per_day": 48,
+    "quiet_start": "",
+    "quiet_end": ""
+  },
+  "notify_creator": true
+}
