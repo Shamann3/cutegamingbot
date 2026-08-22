@@ -1,20 +1,18 @@
-"""Единая, простая конфигурация базы данных для бота и WebApp.
-
-Один переключатель APP_MODE в .env:
-    APP_MODE=test  →  локальная cutebase   @ localhost:5432        (без SSH)
-    APP_MODE=main  →  боевая  cutebase      @ 127.0.0.1:15432      (SSH-туннель)
-
-Дополнительно:
-    MAIN_DB_TARGET=remote  →  main идёт через SSH-туннель на CuteHost (порт 15432)
-    MAIN_DB_TARGET=local   →  main идёт в локальный PostgreSQL (SSH не нужен)
-
-Значения для каждого профиля берутся из .env по суффиксу профиля:
-    DB_HOST_TEST / DB_PORT_TEST / DB_NAME_TEST / DB_USER_TEST / DB_PASSWORD_TEST / DB_SSL_TEST
-    DB_HOST_MAIN / DB_PORT_MAIN / DB_NAME_MAIN / DB_USER_MAIN / DB_PASSWORD_MAIN / DB_SSL_MAIN
-
-Этот модуль единственный источник правды. И бот, и WebApp, и скрипты
-импортируют настройки отсюда, поэтому все всегда смотрят в одну и ту же БД.
+# -*- coding: utf-8 -*-
 """
+Единая, простая конфигурация базы данных для бота и WebApp.
+
+Главный переключатель (в порядке убывания приоритета):
+1. Переменные окружения (из app.yaml или DigitalOcean UI).
+2. Переменные из DOTENV_B64 (декодированный .env).
+3. Файлы .env (server/.env и корневой .env) - для локальной разработки.
+4. Файл bot/config/config.py (DATABASE_MODE / DATABASE_LOCATION) - главный переключатель!
+
+Логика:
+- APP_MODE = "main" | "test"
+- DB_LOCATION = "remote" (SSH-туннель) | "local" (прямое подключение к DO)
+"""
+
 from __future__ import annotations
 
 import os
@@ -26,37 +24,18 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 # --------------------------------------------------------------------------- #
-#  Пути к .env
+#  Пути к .env (только для локальной разработки)
 # --------------------------------------------------------------------------- #
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ROOT_ENV_FILE = PROJECT_ROOT / ".env"
 SERVER_ENV_FILE = PROJECT_ROOT / "server" / ".env"
 
-# --------------------------------------------------------------------------- #
-#  Чтение DOTENV_B64 (НОВОЕ УЛУЧШЕНИЕ)
-# --------------------------------------------------------------------------- #
-def _load_dotenv_b64_into_env(env_dict: Dict[str, str]) -> None:
-    """Декодирует DOTENV_B64 и загружает ключи прямо в словарь env_dict."""
-    b64_val = os.environ.get("DOTENV_B64", "")
-    if not b64_val:
-        return  # Если переменной нет (например, локально) - пропускаем
-
-    try:
-        decoded_str = base64.b64decode(b64_val).decode("utf-8")
-        for line in decoded_str.splitlines():
-            line = line.strip().replace('\r', '')  # Защита от Windows
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            env_dict[key.strip()] = value.strip()
-    except Exception as e:
-        print(f"[DB_CONFIG][ERROR] Не удалось декодировать DOTENV_B64: {e}", file=sys.stderr)
 
 # --------------------------------------------------------------------------- #
-#  Парсер .env
+#  Парсер .env (без внешних зависимостей)
 # --------------------------------------------------------------------------- #
 def _parse_env_file(path: Path) -> Dict[str, str]:
-    """Мини-парсер .env без внешних зависимостей (KEY=VALUE, снимает кавычки)."""
+    """Мини-парсер .env (KEY=VALUE, снимает кавычки)."""
     data: Dict[str, str] = {}
     if not path.is_file():
         return data
@@ -78,28 +57,55 @@ def _parse_env_file(path: Path) -> Dict[str, str]:
     return data
 
 
-def _load_file_env() -> Dict[str, str]:
-    """server/.env читается первым, корневой .env перекрывает его (главный)."""
-    merged: Dict[str, str] = {}
-    merged.update(_parse_env_file(SERVER_ENV_FILE))
-    merged.update(_parse_env_file(ROOT_ENV_FILE))
-    # Добавляем DOTENV_B64 поверх всех файлов (высший приоритет)
-    _load_dotenv_b64_into_env(merged)
-    return merged
-
-
-_FILE_ENV: Dict[str, str] = _load_file_env()
+# --------------------------------------------------------------------------- #
+#  Загрузка DOTENV_B64 (код из переменной окружения DigitalOcean)
+# --------------------------------------------------------------------------- #
+def _load_dotenv_b64_into_env(env_dict: Dict[str, str]) -> None:
+    """Декодирует DOTENV_B64 и загружает ключи в словарь."""
+    b64_val = os.environ.get("DOTENV_B64", "")
+    if not b64_val:
+        return
+    try:
+        decoded_str = base64.b64decode(b64_val).decode("utf-8")
+        for line in decoded_str.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            env_dict[key.strip()] = value.strip()
+    except Exception as e:
+        print(f"[DB_CONFIG][ERROR] Ошибка декодирования DOTENV_B64: {e}", file=sys.stderr)
 
 
 def _file_env(key: str, default: str = "") -> str:
-    """Значение из .env (приоритет) или из окружения процесса."""
-    if key in _FILE_ENV and _FILE_ENV[key] != "":
-        return _FILE_ENV[key].strip()
-    return os.environ.get(key, default).strip()
+    """Значение из переменных окружения (высший приоритет), затем из DOTENV_B64, затем из файлов .env."""
+    value = os.environ.get(key)
+    if value:
+        return value.strip()
+
+    # Проверяем DOTENV_B64 (декодированный .env)
+    dotenv_b64 = os.environ.get("DOTENV_B64", "")
+    if dotenv_b64:
+        try:
+            decoded = base64.b64decode(dotenv_b64).decode("utf-8")
+            for line in decoded.splitlines():
+                line = line.strip()
+                if line.startswith(key + "="):
+                    return line.split("=", 1)[1].strip()
+        except Exception:
+            pass
+
+    # Проверяем локальные файлы (если код запускается вне DigitalOcean)
+    for env_path in (SERVER_ENV_FILE, ROOT_ENV_FILE):
+        env_data = _parse_env_file(env_path)
+        if key in env_data and env_data[key] != "":
+            return env_data[key].strip()
+
+    return default
 
 
 def _safe_log(msg: str) -> None:
-    """Печать без падений на Windows-консоли (эмодзи/кириллица)."""
+    """Печать без падений на Windows-консоли."""
     try:
         print(msg)
     except Exception:
@@ -120,7 +126,7 @@ def db_debug_log(msg: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
-#  Профиль (test / main) и цель main (local / remote)
+#  Профиль (test / main) и цель (local / remote)
 # --------------------------------------------------------------------------- #
 _APP_MODE_ALIASES = {
     "test": "test", "dev": "test", "local": "test",
@@ -132,8 +138,6 @@ _MAIN_TARGET_ALIASES = {
 }
 
 # Дефолты для матрицы 2×2: (профиль, расположение).
-#   local  → прямой локальный PostgreSQL (:5432) или прямое подключение к DigitalOcean
-#   remote → сервер CuteHost через SSH-туннель (:15432)
 _DB_DEFAULTS = {
     ("test", "local"):  {"host": "127.0.0.1", "port": "5432",  "name": "cutebase",
                           "user": "postgres", "password": "", "ssl": "false"},
@@ -146,17 +150,16 @@ _DB_DEFAULTS = {
 }
 
 
-# Поиск файла конфигурации (поддержка и db.py, и config.py)
-_CONFIG_PY_FILE = Path(__file__).resolve().parent / "db.py"
+# --------------------------------------------------------------------------- #
+#  Чтение config.py (высший приоритет для выбора базы)
+# --------------------------------------------------------------------------- #
+_CONFIG_PY_FILE = Path(__file__).resolve().parent / "config.py"
 if not _CONFIG_PY_FILE.is_file():
-    _CONFIG_PY_FILE = Path(__file__).resolve().parent / "config.py"
+    _CONFIG_PY_FILE = Path(__file__).resolve().parent / "db.py"
 
 
 def _read_config_var(name: str) -> str:
-    """Читает строковую переменную (DATABASE_MODE/DATABASE_LOCATION) из db.py или config.py
-    БЕЗ импорта модуля. Парсинг файла чтобы и бот, и сервер читали одно и то же
-    значение независимо от sys.path. Возвращает сырое значение (нижний регистр) или ''.
-    """
+    """Читает переменную из config.py без импорта модуля."""
     try:
         raw = _CONFIG_PY_FILE.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -167,57 +170,45 @@ def _read_config_var(name: str) -> str:
     return m.group(1).strip().lower()
 
 
-# Значения главных переключателей из config.py (высший приоритет).
 _CONFIG_PY_MODE: str = _APP_MODE_ALIASES.get(_read_config_var("DATABASE_MODE"), "")
 _CONFIG_PY_LOCATION: str = _MAIN_TARGET_ALIASES.get(_read_config_var("DATABASE_LOCATION"), "")
 
 
 def _resolve_app_mode() -> str:
-    # 1) Главный переключатель проекта: DATABASE_MODE в bot/config/db.py (или config.py).
+    # 1) Главный переключатель из config.py
     if _CONFIG_PY_MODE:
         return _CONFIG_PY_MODE
-    # 2) Запасной способ: APP_MODE в .env.
+    # 2) Запасной способ из переменных окружения/.env
     raw = _file_env("APP_MODE").lower()
     return _APP_MODE_ALIASES.get(raw, "test")
 
 
 def _resolve_location() -> str:
-    """Где база: local / remote. Применяется к ЛЮБОМУ профилю (main или test)."""
-    # 1) config.py DATABASE_LOCATION
+    """Где база: local / remote. Сначала config.py, потом переменные окружения."""
+    # 1) config.py
     if _CONFIG_PY_LOCATION:
         return _CONFIG_PY_LOCATION
-    # 2) .env DB_LOCATION
+    # 2) Переменные окружения/.env
     raw = _file_env("DB_LOCATION").lower()
     if raw in _MAIN_TARGET_ALIASES:
         return _MAIN_TARGET_ALIASES[raw]
-    # 3) .env MAIN_DB_TARGET (совместимость со старой схемой)
     raw = _file_env("MAIN_DB_TARGET").lower()
     if raw in _MAIN_TARGET_ALIASES:
         return _MAIN_TARGET_ALIASES[raw]
-    # 4) авто: main → сервер (remote), test → локально (local)
-    return "remote" if APP_MODE == "main" else "local"
+    # 3) Авто: main -> remote (SSH), test -> local
+    return "remote" if _resolve_app_mode() == "main" else "local"
 
 
-# host/port/ssl зависят от РАСПОЛОЖЕНИЯ (local:5432 / remote:15432 через туннель),
-# а name/user/password от ПРОФИЛЯ (это идентичность и креды самой базы).
-_LOCATION_KEYS = frozenset({"host", "port", "ssl"})
-
-
+# --------------------------------------------------------------------------- #
+#  Формирование параметров подключения
+# --------------------------------------------------------------------------- #
 def resolve_db_field(profile: str, location: str, key: str) -> str:
-    """Значение параметра БД для конкретной пары (профиль, расположение).
-
-    Точечный ключ DB_<KEY>_<PROFILE>_<LOCATION> всегда имеет высший приоритет.
-    Далее:
-      • host/port/ssl  →  DB_<KEY>_<LOCATION>  →  дефолт расположения
-      • name/user/pass →  DB_<KEY>_<PROFILE>   →  DB_<KEY>_<LOCATION>  →  дефолт
-    """
+    """Возвращает значение параметра БД. Приоритет: DB_<KEY>_<PROFILE>_<LOCATION> -> DB_<KEY>_<LOCATION> -> DB_<KEY>_<PROFILE> -> дефолт."""
     up = key.upper()
     prof = profile.upper()
     loc = location.upper()
-    if key in _LOCATION_KEYS:
-        order = (f"DB_{up}_{prof}_{loc}", f"DB_{up}_{loc}")
-    else:
-        order = (f"DB_{up}_{prof}_{loc}", f"DB_{up}_{prof}", f"DB_{up}_{loc}")
+
+    order = (f"DB_{up}_{prof}_{loc}", f"DB_{up}_{loc}", f"DB_{up}_{prof}")
     for env_key in order:
         value = _file_env(env_key)
         if value != "":
@@ -225,30 +216,24 @@ def resolve_db_field(profile: str, location: str, key: str) -> str:
     return _DB_DEFAULTS[(profile, location)][key]
 
 
-def _profile_value(key: str) -> str:
-    """Значение для АКТИВНОЙ пары (ACTIVE_DB_PROFILE, DB_LOCATION)."""
-    return resolve_db_field(ACTIVE_DB_PROFILE, DB_LOCATION, key)
-
-
 APP_MODE: str = _resolve_app_mode()
-APP_MODE_IS_EXPLICIT: bool = bool(_CONFIG_PY_MODE) or _file_env("APP_MODE") != ""
-ACTIVE_DB_PROFILE: str = APP_MODE  # профиль == режим (test/main)
+ACTIVE_DB_PROFILE: str = APP_MODE
 DB_LOCATION: str = _resolve_location()
-MAIN_DB_TARGET: str = DB_LOCATION  # обратная совместимость (старое имя = расположение)
+MAIN_DB_TARGET: str = DB_LOCATION  # Обратная совместимость
 
-DB_HOST: str = _profile_value("host")
-DB_PORT: int = int(_profile_value("port") or "5432")
-DB_NAME: str = _profile_value("name")
-DB_USER: str = _profile_value("user")
-DB_PASSWORD: str = _profile_value("password")
-DB_SSL: str = _profile_value("ssl").lower() or "auto"
+DB_HOST: str = resolve_db_field(ACTIVE_DB_PROFILE, DB_LOCATION, "host")
+DB_PORT: int = int(resolve_db_field(ACTIVE_DB_PROFILE, DB_LOCATION, "port") or "5432")
+DB_NAME: str = resolve_db_field(ACTIVE_DB_PROFILE, DB_LOCATION, "name")
+DB_USER: str = resolve_db_field(ACTIVE_DB_PROFILE, DB_LOCATION, "user")
+DB_PASSWORD: str = resolve_db_field(ACTIVE_DB_PROFILE, DB_LOCATION, "password")
+DB_SSL: str = resolve_db_field(ACTIVE_DB_PROFILE, DB_LOCATION, "ssl").lower() or "auto"
 
 
 # --------------------------------------------------------------------------- #
 #  SSL / пул
 # --------------------------------------------------------------------------- #
 def db_ssl_mode():
-    """False без SSL (локально), контекст для явного DB_SSL=true, иначе авто."""
+    """False без SSL, контекст для DB_SSL=true, иначе авто."""
     if DB_SSL == "true":
         ctx = _ssl.create_default_context()
         ctx.check_hostname = False
@@ -288,10 +273,10 @@ def build_db_settings() -> Dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-#  Человекочитаемые описания «куда подключаемся»
+#  Человекочитаемые описания
 # --------------------------------------------------------------------------- #
 def db_connect_target() -> str:
-    """Короткая цель подключения: main/cutebase@127.0.0.1:15432"""
+    """Короткая цель подключения: main/cutebase@host:port"""
     return f"{ACTIVE_DB_PROFILE}/{DB_NAME}@{DB_HOST}:{DB_PORT}"
 
 
@@ -309,12 +294,11 @@ def app_mode_summary() -> str:
             f"{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME} ({where}) | {passwd}")
 
 
-# Совместимое имя, которое ожидает bot/db_create/db.py
 db_mode_summary = app_mode_summary
 
 
 def validate_database_profile() -> List[str]:
-    """Мягкие предупреждения о подозрительной конфигурации (не роняют старт)."""
+    """Мягкие предупреждения (не роняют старт)."""
     warnings: List[str] = []
     name = DB_NAME.strip().lower()
     if APP_MODE == "main" and not DB_PASSWORD:
@@ -335,19 +319,14 @@ _BANNER_SHOWN = False
 
 
 def bootstrap_database_env() -> None:
-    """Готовит окружение и один раз печатает выбранную БД (идемпотентно)."""
+    """Готовит окружение и печатает выбранную БД (идемпотентно)."""
     global _BANNER_SHOWN
 
-    # Пробрасываем ключи .env в окружение процесса чтобы дочерние процессы
-    # (например, plink для SSH-туннеля) и сторонний код видели те же значения.
-    for key, value in _FILE_ENV.items():
-        os.environ.setdefault(key, value)
-
-    # Главный переключатель из config.py имеет приоритет: жёстко выставляем
-    # APP_MODE в окружении, чтобы дочерние процессы и любой сторонний код
-    # (SSH-туннель, скрипты) видели ровно ту же выбранную базу.
-    if _CONFIG_PY_MODE:
-        os.environ["APP_MODE"] = _CONFIG_PY_MODE
+    # Пробрасываем ключи в окружение
+    for key in ["APP_MODE", "DB_LOCATION", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_SSL"]:
+        value = globals().get(key, "")
+        if value:
+            os.environ.setdefault(key, str(value))
 
     if _BANNER_SHOWN:
         return
@@ -360,30 +339,14 @@ def bootstrap_database_env() -> None:
     else:
         headline = f">>> TEST ({loc_word}) тестовая песочница <<<"
 
-    # Крупный блок сверху переключатель базы невозможно не заметить.
     _safe_log("")
     _safe_log(bar)
     _safe_log(f"##  {headline}")
     _safe_log(f"##  {db_connect_target()}   (расположение={DB_LOCATION})")
-    src_mode = "config.py" if _CONFIG_PY_MODE else ".env"
-    src_loc = "config.py" if _CONFIG_PY_LOCATION else ".env/авто"
-    _safe_log(f"##  DATABASE_MODE={ACTIVE_DB_PROFILE} (из {src_mode}) | "
-              f"DATABASE_LOCATION={DB_LOCATION} (из {src_loc})")
+    _safe_log(f"##  DATABASE_MODE={ACTIVE_DB_PROFILE} | DATABASE_LOCATION={DB_LOCATION}")
     _safe_log(f"##  сменить: config.py -> DATABASE_MODE и DATABASE_LOCATION")
     _safe_log(bar)
 
-    # Матрица 2×2 видно все доступные комбинации и какая активна.
-    _safe_log("  БАЗА ДАННЫХ матрица профиль × расположение:")
-    for profile in ("test", "main"):
-        for location in ("local", "remote"):
-            active = (profile == ACTIVE_DB_PROFILE and location == DB_LOCATION)
-            marker = "  <== АКТИВНАЯ" if active else ""
-            host = resolve_db_field(profile, location, "host")
-            port = resolve_db_field(profile, location, "port")
-            name = resolve_db_field(profile, location, "name")
-            _safe_log(f"  {profile:4} + {location:6} : {host}:{port}/{name}{marker}")
-    _safe_log("")
-    _safe_log(f"  {app_mode_summary()}")
     for warn in validate_database_profile():
         _safe_log(f"  [ВНИМАНИЕ] {warn}")
     _safe_log(bar)
