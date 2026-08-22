@@ -69,16 +69,16 @@ services:
     value: "cutegamingopopopadmin"
   - key: WEBAPP_URL
     scope: RUN_AND_BUILD_TIME
-    value: "https://cutegaming-mobet.ondigitalocean.app/"
+    value: "https://cutegaming-ridbh.ondigitalocean.app/"
   - key: ADMIN_WEBAPP_URL
     scope: RUN_AND_BUILD_TIME
-    value: "https://cutegaming-mobet.ondigitalocean.app/panel/"
+    value: "https://cutegaming-ridbh.ondigitalocean.app/panel/"
   - key: FRONTEND_ORIGIN
     scope: RUN_AND_BUILD_TIME
-    value: "https://cutegaming-mobet.ondigitalocean.app"
+    value: "https://cutegaming-ridbh.ondigitalocean.app"
   - key: ADMIN_FRONTEND_ORIGIN
     scope: RUN_AND_BUILD_TIME
-    value: "https://cutegaming-mobet.ondigitalocean.app"
+    value: "https://cutegaming-ridbh.ondigitalocean.app"
   github:
     branch: main
     deploy_on_push: true
@@ -149,7 +149,7 @@ workers:
     value: "6801702632,999884389,6488580935"
   - key: WEBAPP_URL
     scope: RUN_AND_BUILD_TIME
-    value: "https://cutegaming-mobet.ondigitalocean.app/"
+    value: "https://cutegaming-ridbh.ondigitalocean.app/"
   github:
     branch: main
     deploy_on_push: true

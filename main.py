@@ -40289,7 +40289,7 @@ async def botmain():
     # ngrok/не-https URL. Если на хостинге WEBAPP_URL пуст или похож на
     # туннель — используем канонический хостинг-URL, чтобы кнопка всегда вела
     # на прод.
-    _PROD_WEBAPP_URL = "https://cutegaming-mobet.ondigitalocean.app/"
+    _PROD_WEBAPP_URL = "https://cutegaming-ridbh.ondigitalocean.app/"
     _is_production = os.getenv("PRODUCTION", "").strip().lower() == "true"
     _menu_url = (WEBAPP_URL or "").strip()
     if _menu_url and ("ngrok" in _menu_url.lower() or not _menu_url.startswith("https://")):

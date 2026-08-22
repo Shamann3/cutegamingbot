@@ -129,7 +129,7 @@ FIRST_BET = 10
 NEWBIE_HINT_DAYS = 2
 
 # Тот же адрес, что у кнопки меню «🌿 Ферма» в main.py.
-_PROD_WEBAPP_URL = "https://cutegaming-mobet.ondigitalocean.app/"
+_PROD_WEBAPP_URL = "https://cutegaming-ridbh.ondigitalocean.app/"
 
 
 def _farm_url() -> str:
