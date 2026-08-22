@@ -1,16 +1,10 @@
 #!/bin/sh
 # Точка входа для main.py-воркера на DO.
-# Конфигурация main.py живёт в корневом .env. Секреты не храним в образе —
-# передаём через переменную DOTENV_B64 (base64 от содержимого .env), а контейнер
-# при старте разворачивает её в /app/.env.
+# Секреты и настройки теперь передаются напрямую через переменные окружения (из app.yaml).
+# Файл .env создавать не нужно — всё уже в окружении контейнера.
 set -e
 
-if [ -n "$DOTENV_B64" ]; then
-  echo "$DOTENV_B64" | base64 -d > /app/.env
-  echo "[bot] .env создан из DOTENV_B64 ($(wc -l < /app/.env) строк)"
-else
-  echo "[bot] WARNING: DOTENV_B64 не задан — main.py возьмёт дефолты (скорее всего неверные)"
-fi
+# (Блок DOTENV_B64 удалён полностью)
 
 # Telethon userbot sessions must be baked into the image (see .dockerignore
 # exceptions). Without them withdrawals stay offline forever.
