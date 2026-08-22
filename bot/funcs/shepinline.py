@@ -53,7 +53,7 @@ def add_hidden_message(sender_id, receiver_id, message):
     })
 
 # Обработчик инлайн-запроса
-@dp.inline_handler()
+@dp.inline_query()
 async def shepinline(inline_query: types.InlineQuery) -> None:
     # Получаем текст инлайн-запроса или используем "Echo" по умолчанию
     text = inline_query.query or "Echo"

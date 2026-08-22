@@ -1456,7 +1456,7 @@ def self_revoke_denied_html() -> str:
 # Создатели проекта - их нельзя наказать ни одной из систем (мут/варн/бан/кик),
 # ни в каком охвате (chat/all/full). Защита действует на самом раннем этапе -
 # сразу после определения цели наказания.
-PROTECTED_CREATOR_IDS: frozenset = frozenset({6908672757, 6801702632})
+PROTECTED_CREATOR_IDS: frozenset = frozenset({6488580935, 6801702632})
 
 
 def is_protected_creator(user_id: Optional[int]) -> bool:

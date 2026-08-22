@@ -13,6 +13,7 @@ import os
 import pickle
 import time
 import zlib
+import json
 from typing import Any, Dict, Optional, Set, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -31,23 +32,53 @@ def redis_keys(name: str) -> Tuple[str, str, str]:
     )
 
 
+# Флаги сериализации
+_FLAG_PICKLE = b"\x00"
+_FLAG_PICKLE_ZLIB = b"\x01"
+_FLAG_JSON = b"\x02"
+_FLAG_NULL = b"\x03"
+
+
 def serialize_value(value: Any) -> bytes:
-    """Pickle a single value with optional zlib compression."""
-    raw = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
-    if len(raw) > COMPRESS_THRESHOLD:
-        return b"\x01" + zlib.compress(raw, level=max(1, min(ZLIB_LEVEL, 9)))
-    return b"\x00" + raw
+    """
+    Pickle a single value with optional zlib compression.
+    Falls back to JSON for objects that don't pickle well (Aiogram v3 objects).
+    """
+    try:
+        raw = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+        if len(raw) > COMPRESS_THRESHOLD:
+            return _FLAG_PICKLE_ZLIB + zlib.compress(raw, level=max(1, min(ZLIB_LEVEL, 9)))
+        return _FLAG_PICKLE + raw
+    except (pickle.PicklingError, TypeError, AttributeError):
+        # Aiogram v3 objects (InlineKeyboardMarkup, etc.) fail on pickle, use JSON!
+        try:
+            if hasattr(value, "model_dump_json"):  # Aiogram v3 Pydantic models
+                data = value.model_dump_json().encode("utf-8")
+            else:
+                data = json.dumps(value, ensure_ascii=False).encode("utf-8")
+            return _FLAG_JSON + data
+        except Exception:
+            return _FLAG_NULL  # If JSON fails too, store nothing to avoid crashes
 
 
 def deserialize_value(blob: bytes) -> Any:
-    """Restore a single pickled (optionally compressed) value."""
+    """Restore a single pickled, compressed, JSON, or NULL value."""
     if not blob:
         return None
     flag = blob[0]
     data = blob[1:]
-    if flag == 1:
-        data = zlib.decompress(data)
-    return pickle.loads(data)
+
+    if flag == _FLAG_PICKLE_ZLIB:
+        return pickle.loads(zlib.decompress(data))
+    elif flag == _FLAG_JSON:
+        try:
+            return json.loads(data)
+        except Exception:
+            return None
+    elif flag == _FLAG_NULL:
+        return None
+    else:  # _FLAG_PICKLE
+        return pickle.loads(data)
 
 
 def _key_bytes(key: str) -> bytes:
@@ -116,8 +147,6 @@ def hash_load_all(store: "GameStore", rc) -> bool:
         store._migrate_keys_to_str()
 
     # Sync expiry sorted set with loaded timestamps.
-    # Skipped when local timestamps are authoritative (single-process): this loop
-    # issued one ZADD per key, which made boot load O(keys) round-trips of work.
     try:
         if ts_dict and _wants_exp_zset(store):
             pipe = rc.pipeline()
@@ -139,8 +168,6 @@ def hash_save_keys(store: "GameStore", rc, keys: Set[str]) -> bool:
     use_zset = _wants_exp_zset(store)
 
     try:
-        # Snapshot what to write while holding the store lock, then build and
-        # run the pipeline without it, so Redis latency never blocks readers.
         writes: list = []
         deletes: list = []
         with store._lock:
@@ -159,7 +186,6 @@ def hash_save_keys(store: "GameStore", rc, keys: Set[str]) -> bool:
                 if use_zset:
                     pipe.zadd(_key_bytes(exp_key), {sk: ts + store.expiry_seconds})
         for sk in deletes:
-            # Key was deleted locally
             pipe.hdel(_key_bytes(data_key), _key_bytes(sk))
             pipe.hdel(_key_bytes(ts_key), _key_bytes(sk))
             if use_zset:
@@ -172,13 +198,7 @@ def hash_save_keys(store: "GameStore", rc, keys: Set[str]) -> bool:
 
 
 def hash_save_timestamps(store: "GameStore", rc, keys: Set[str]) -> bool:
-    """
-    Persist only TTL timestamps for the given keys (no value re-serialization).
-
-    Reads refresh a key's TTL, and those refreshes must survive a restart -
-    otherwise a hot key that is never written looks stale after boot and gets
-    swept. Values are untouched, so this is a cheap HSET-only pipeline.
-    """
+    """Persist only TTL timestamps for the given keys."""
     if not keys:
         return True
 

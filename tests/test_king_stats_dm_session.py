@@ -3,7 +3,7 @@ import io, sys, time
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 import bot.funcs.king_stats as ks
 
-USER, GROUP = 6908672757, -1004203778966
+USER, GROUP = 6801702632, -1004203778966
 ks._KING_DM_SESSIONS._load().clear()
 
 # 1. Нет записи -> НЕ блокируем (состояние могло потеряться)

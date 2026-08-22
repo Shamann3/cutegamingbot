@@ -221,7 +221,7 @@ Scratch `server/_scratch_preview.py`:
 import asyncio, db, chest_db
 async def main():
     await db.db.connect()
-    st = await chest_db.get_chest_state(6908672757)
+    st = await chest_db.get_chest_state(6801702632)
     print("preview count:", len(st["preview"]))
     print("sample:", st["preview"][:5])
     await db.db.close()
@@ -293,7 +293,7 @@ async def cosmetics_equipped(request: Request, user_id: int = Depends(rate_limit
 Start the API (`cd server && .venv/Scripts/python.exe -m uvicorn app:app --port 8000`). Then, with a dev user that has something equipped (equip via the UI or set `user_cosmetics.equipped=true` for one row):
 
 ```bash
-curl -s http://127.0.0.1:8000/api/cosmetics/equipped -H "X-Dev-User-Id: 6908672757"
+curl -s http://127.0.0.1:8000/api/cosmetics/equipped -H "X-Dev-User-Id: 6801702632"
 ```
 
 Expected: JSON with keys `background,pet,plot,frame,title`, each `null` or `{code,emoji,name}`. Stop the server.

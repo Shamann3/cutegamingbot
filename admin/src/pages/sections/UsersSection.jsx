@@ -917,7 +917,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
             className="panel-users-input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="6908672757 или @username"
+            placeholder="6801702632 или @username"
             disabled={loading}
           />
           <button type="submit" className="panel-users-btn panel-users-btn-primary" disabled={loading}>
