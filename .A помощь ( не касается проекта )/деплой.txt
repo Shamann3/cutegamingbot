@@ -1,3 +1,6 @@
+
+git pull -X ours origin main
+
 # 1. Добавить все измененные файлы (Dockerfile, конфиги и т.д.) в индекс
 git add .
 
