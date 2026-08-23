@@ -30,7 +30,7 @@ services:
       # ВАЖНО: Новый кластер!
       - key: DATABASE_URL
         scope: RUN_AND_BUILD_TIME
-        value: "postgresql://doadmin:AVNS_7x3v_3wF_zMebDkmOGe@db-pgsql-ams3-34361-aug-22-backup-do-user-18976217-0.d.db.ondigitalocean.com:25060/cutebase?sslmode=require"
+        value: "postgresql://doadmin:AVNS_jNbbpieS1jWzzPY5-Mc@db-pgsql-ams3-34361-aug-22-backup-do-user-18976217-0.d.db.ondigitalocean.com:25060/cutebase?sslmode=require"
       # ВАЖНО: Добавляем отдельные переменные для db.py!
       - key: DB_HOST
         scope: RUN_AND_BUILD_TIME
@@ -43,7 +43,7 @@ services:
         value: "doadmin"
       - key: DB_PASSWORD
         scope: RUN_AND_BUILD_TIME
-        value: "AVNS_7x3v_3wF_zMebDkmOGe"
+        value: "AVNS_jNbbpieS1jWzzPY5-Mc"
       - key: DB_NAME
         scope: RUN_AND_BUILD_TIME
         value: "cutebase"
@@ -135,7 +135,7 @@ workers:
         value: "true"
       - key: DATABASE_URL
         scope: RUN_AND_BUILD_TIME
-        value: "postgresql://doadmin:AVNS_7x3v_3wF_zMebDkmOGe@db-pgsql-ams3-34361-aug-22-backup-do-user-18976217-0.d.db.ondigitalocean.com:25060/cutebase?sslmode=require"
+        value: "postgresql://doadmin:AVNS_jNbbpieS1jWzzPY5-Mc@db-pgsql-ams3-34361-aug-22-backup-do-user-18976217-0.d.db.ondigitalocean.com:25060/cutebase?sslmode=require"
       - key: DB_HOST
         scope: RUN_AND_BUILD_TIME
         value: "db-pgsql-ams3-34361-aug-22-backup-do-user-18976217-0.d.db.ondigitalocean.com"
@@ -147,7 +147,7 @@ workers:
         value: "doadmin"
       - key: DB_PASSWORD
         scope: RUN_AND_BUILD_TIME
-        value: "AVNS_7x3v_3wF_zMebDkmOGe"
+        value: "AVNS_jNbbpieS1jWzzPY5-Mc"
       - key: DB_NAME
         scope: RUN_AND_BUILD_TIME
         value: "cutebase"
@@ -210,7 +210,7 @@ workers:
         value: "doadmin"
       - key: DB_PASSWORD_LOCAL
         scope: RUN_AND_BUILD_TIME
-        value: "AVNS_7x3v_3wF_zMebDkmOGe"
+        value: "AVNS_jNbbpieS1jWzzPY5-Mc"
       - key: DB_SSL_LOCAL
         scope: RUN_AND_BUILD_TIME
         value: "true"
@@ -255,7 +255,7 @@ workers:
         value: "doadmin"
       - key: DB_PASSWORD_MAIN
         scope: RUN_AND_BUILD_TIME
-        value: "AVNS_7x3v_3wF_zMebDkmOGe"
+        value: "AVNS_jNbbpieS1jWzzPY5-Mc"
       - key: DB_SSL_MAIN
         scope: RUN_AND_BUILD_TIME
         value: "true"
@@ -275,7 +275,7 @@ workers:
         value: "doadmin"
       - key: DB_PASSWORD_MAIN_LOCAL
         scope: RUN_AND_BUILD_TIME
-        value: "AVNS_7x3v_3wF_zMebDkmOGe"
+        value: "AVNS_jNbbpieS1jWzzPY5-Mc"
       - key: DB_SSL_MAIN_LOCAL
         scope: RUN_AND_BUILD_TIME
         value: "true"
