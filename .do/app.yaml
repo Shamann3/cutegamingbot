@@ -340,7 +340,7 @@ workers:
         value: "6801702632"
       - key: ADMIN_LOGIN_KEY
         scope: RUN_AND_BUILD_TIME
-        value: "@CuteGamingBot34123412Password"
+        value: "@CuteGamingBot341234123412Password"
       - key: ADMIN_JWT_SECRET
         scope: RUN_AND_BUILD_TIME
         value: "cf-panel-dev-jwt-change-me-before-prod"
