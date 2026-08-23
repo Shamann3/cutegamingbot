@@ -66,7 +66,7 @@ services:
     value: "628c9c46060450c08e880c1481dd0daf735ec0d28531f8be401b5dab1e573750"
   - key: ADMIN_LOGIN_KEY
     scope: RUN_AND_BUILD_TIME
-    value: "cutegamingopopopadmin"
+    value: "CuteGamingBot341234123412AdminPassword"
   - key: WEBAPP_URL
     scope: RUN_AND_BUILD_TIME
     value: "https://cutegaming-ridbh.ondigitalocean.app/"
