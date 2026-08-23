@@ -71,10 +71,10 @@ services:
         value: "6801702632,999884389,6488580935"
       - key: ADMIN_JWT_SECRET
         scope: RUN_AND_BUILD_TIME
-        value: "JerichoLegehdarg341234123412Code"
+        value: "mK8vR3xQ9pZ2sL6cN4hF7dJ1wT5yB0eA"
       - key: ADMIN_LOGIN_KEY
         scope: RUN_AND_BUILD_TIME
-        value: "JerichoLegehdarg341234123412Code"
+        value: "7Hq2vZ9xKp4mR8tW3cY6bN1sQ5dJ0fL"
       - key: WEBAPP_URL
         scope: RUN_AND_BUILD_TIME
         value: "https://cutegaming-ridbh.ondigitalocean.app"
@@ -318,10 +318,10 @@ workers:
         value: "6801702632"
       - key: ADMIN_LOGIN_KEY
         scope: RUN_AND_BUILD_TIME
-        value: "JerichoLegehdarg341234123412Code"
+        value: "7Hq2vZ9xKp4mR8tW3cY6bN1sQ5dJ0fL"
       - key: ADMIN_JWT_SECRET
         scope: RUN_AND_BUILD_TIME
-        value: "JerichoLegehdarg341234123412Code"
+        value: "mK8vR3xQ9pZ2sL6cN4hF7dJ1wT5yB0eA"
       - key: ADMIN_SESSION_MINUTES
         scope: RUN_AND_BUILD_TIME
         value: "60"
