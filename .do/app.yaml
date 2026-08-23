@@ -27,11 +27,9 @@ services:
       - key: ALLOW_DEV_AUTH
         scope: RUN_AND_BUILD_TIME
         value: "false"
-      # ВАЖНО: Новый кластер!
       - key: DATABASE_URL
         scope: RUN_AND_BUILD_TIME
         value: "postgresql://doadmin:AVNS_jNbbpieS1jWzzPY5-Mc@db-pgsql-ams3-34361-aug-22-backup-do-user-18976217-0.d.db.ondigitalocean.com:25060/cutebase?sslmode=require"
-      # ВАЖНО: Добавляем отдельные переменные для db.py!
       - key: DB_HOST
         scope: RUN_AND_BUILD_TIME
         value: "db-pgsql-ams3-34361-aug-22-backup-do-user-18976217-0.d.db.ondigitalocean.com"
@@ -58,37 +56,37 @@ services:
         value: "false"
       - key: BOT_TOKEN
         scope: RUN_AND_BUILD_TIME
-        value: 7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM
+        value: "7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM"
       - key: ADMIN_BOT_TOKEN
         scope: RUN_AND_BUILD_TIME
-        value: 8848086058:AAGXElw_fZrpcEzBioyeiDjU6G1C1qsVz04
+        value: "8848086058:AAGXElw_fZrpcEzBioyeiDjU6G1C1qsVz04"
       - key: SUPPORT_BOT_TOKEN
         scope: RUN_AND_BUILD_TIME
-        value: 8645116418:AAGb2Syduj9qbXbTeieXBKkL0Fnr3dChXMA
+        value: "8645116418:AAGb2Syduj9qbXbTeieXBKkL0Fnr3dChXMA"
       - key: ADMIN_ENABLED
         scope: RUN_AND_BUILD_TIME
         value: "true"
       - key: ADMIN_USER_IDS
         scope: RUN_AND_BUILD_TIME
-        value: 6801702632,999884389,6488580935
+        value: "6801702632,999884389,6488580935"
       - key: ADMIN_JWT_SECRET
         scope: RUN_AND_BUILD_TIME
-        value: 628c9c46060450c08e880c1481dd0daf735ec0d28531f8be401b5dab1e573750
+        value: "JerichoLegehdarg341234123412Code"
       - key: ADMIN_LOGIN_KEY
         scope: RUN_AND_BUILD_TIME
-        value: cutegamingopopopadmin
+        value: "JerichoLegehdarg341234123412Code"
       - key: WEBAPP_URL
         scope: RUN_AND_BUILD_TIME
-        value: https://cutegaming-ridbh.ondigitalocean.app
+        value: "https://cutegaming-ridbh.ondigitalocean.app"
       - key: ADMIN_WEBAPP_URL
         scope: RUN_AND_BUILD_TIME
-        value: https://cutegaming-ridbh.ondigitalocean.app/panel/
+        value: "https://cutegaming-ridbh.ondigitalocean.app/panel/"
       - key: FRONTEND_ORIGIN
         scope: RUN_AND_BUILD_TIME
-        value: https://cutegaming-ridbh.ondigitalocean.app
+        value: "https://cutegaming-ridbh.ondigitalocean.app"
       - key: ADMIN_FRONTEND_ORIGIN
         scope: RUN_AND_BUILD_TIME
-        value: https://cutegaming-ridbh.ondigitalocean.app
+        value: "https://cutegaming-ridbh.ondigitalocean.app"
 
   # ---------- Frontend (игра + админка) ----------
   - name: frontend
@@ -109,8 +107,7 @@ services:
         value: ""
       - key: VITE_ADMIN_API_PREFIX
         scope: BUILD_TIME
-        value: /admin/api
-      # КРИТИЧЕСКИ ВАЖНО ДЛЯ ЗАПУСКА ВЕБАПП
+        value: "/admin/api"
       - key: HOST
         scope: RUN_AND_BUILD_TIME
         value: "0.0.0.0"
@@ -159,22 +156,22 @@ workers:
         value: "false"
       - key: BOT_TOKEN
         scope: RUN_AND_BUILD_TIME
-        value: 7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM
+        value: "7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM"
       - key: ADMIN_BOT_TOKEN
         scope: RUN_AND_BUILD_TIME
-        value: 8848086058:AAGXElw_fZrpcEzBioyeiDjU6G1C1qsVz04
+        value: "8848086058:AAGXElw_fZrpcEzBioyeiDjU6G1C1qsVz04"
       - key: SUPPORT_BOT_TOKEN
         scope: RUN_AND_BUILD_TIME
-        value: 8645116418:AAGb2Syduj9qbXbTeieXBKkL0Fnr3dChXMA
+        value: "8645116418:AAGb2Syduj9qbXbTeieXBKkL0Fnr3dChXMA"
       - key: ADMIN_ENABLED
         scope: RUN_AND_BUILD_TIME
         value: "true"
       - key: ADMIN_USER_IDS
         scope: RUN_AND_BUILD_TIME
-        value: 6801702632,999884389,6488580935
+        value: "6801702632,999884389,6488580935"
       - key: WEBAPP_URL
         scope: RUN_AND_BUILD_TIME
-        value: https://cutegaming-ridbh.ondigitalocean.app/
+        value: "https://cutegaming-ridbh.ondigitalocean.app"
 
   # ---------- Основной бот (cutebot) ----------
   - name: cutebot
@@ -187,15 +184,12 @@ workers:
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-2gb
     envs:
-      # --- Переменные из .env ---
       - key: APP_MODE
         scope: RUN_AND_BUILD_TIME
         value: "main"
       - key: DB_LOCATION
         scope: RUN_AND_BUILD_TIME
         value: "local"
-
-      # LOCAL
       - key: DB_HOST_LOCAL
         scope: RUN_AND_BUILD_TIME
         value: "db-pgsql-ams3-34361-aug-22-backup-do-user-18976217-0.d.db.ondigitalocean.com"
@@ -214,8 +208,6 @@ workers:
       - key: DB_SSL_LOCAL
         scope: RUN_AND_BUILD_TIME
         value: "true"
-
-      # REMOTE
       - key: DB_HOST_REMOTE
         scope: RUN_AND_BUILD_TIME
         value: "127.0.0.1"
@@ -231,8 +223,6 @@ workers:
       - key: DB_SSL_REMOTE
         scope: RUN_AND_BUILD_TIME
         value: "false"
-
-      # TEST
       - key: DB_NAME_TEST
         scope: RUN_AND_BUILD_TIME
         value: "postgres"
@@ -245,8 +235,6 @@ workers:
       - key: DB_SSL_TEST
         scope: RUN_AND_BUILD_TIME
         value: "false"
-
-      # MAIN
       - key: DB_NAME_MAIN
         scope: RUN_AND_BUILD_TIME
         value: "cutebase"
@@ -259,8 +247,6 @@ workers:
       - key: DB_SSL_MAIN
         scope: RUN_AND_BUILD_TIME
         value: "true"
-
-      # MAIN + LOCAL (специфичные)
       - key: DB_HOST_MAIN_LOCAL
         scope: RUN_AND_BUILD_TIME
         value: "db-pgsql-ams3-34361-aug-22-backup-do-user-18976217-0.d.db.ondigitalocean.com"
@@ -279,8 +265,6 @@ workers:
       - key: DB_SSL_MAIN_LOCAL
         scope: RUN_AND_BUILD_TIME
         value: "true"
-
-      # REDIS
       - key: REDIS_HOST
         scope: RUN_AND_BUILD_TIME
         value: "127.0.0.1"
@@ -293,8 +277,6 @@ workers:
       - key: REDIS_REQUIRED
         scope: RUN_AND_BUILD_TIME
         value: "false"
-
-      # PKL
       - key: PKL_STORAGE_MODE
         scope: RUN_AND_BUILD_TIME
         value: "hash"
@@ -319,8 +301,6 @@ workers:
       - key: PKL_WRITE_DEBOUNCE_MS
         scope: RUN_AND_BUILD_TIME
         value: "200"
-
-      # TELEGRAM TOKENS
       - key: BOT_TOKEN
         scope: RUN_AND_BUILD_TIME
         value: "7683193125:AAEJQqugZ_5quUV92dNXiONdgEBsTwF3mEM"
@@ -330,8 +310,6 @@ workers:
       - key: SUPPORT_BOT_TOKEN
         scope: RUN_AND_BUILD_TIME
         value: "8645116418:AAGb2Syduj9qbXbTeieXBKkL0Fnr3dChXMA"
-
-      # ADMIN
       - key: ADMIN_ENABLED
         scope: RUN_AND_BUILD_TIME
         value: "true"
@@ -340,10 +318,10 @@ workers:
         value: "6801702632"
       - key: ADMIN_LOGIN_KEY
         scope: RUN_AND_BUILD_TIME
-        value: "@CuteGamingBot341234123412Password"
+        value: "JerichoLegehdarg341234123412Code"
       - key: ADMIN_JWT_SECRET
         scope: RUN_AND_BUILD_TIME
-        value: "cf-panel-dev-jwt-change-me-before-prod"
+        value: "JerichoLegehdarg341234123412Code"
       - key: ADMIN_SESSION_MINUTES
         scope: RUN_AND_BUILD_TIME
         value: "60"
@@ -359,8 +337,6 @@ workers:
       - key: ADMIN_WEBAPP_URL
         scope: RUN_AND_BUILD_TIME
         value: "https://cutegaming-ridbh.ondigitalocean.app/panel/"
-
-      # LINKS
       - key: SUPPORT_BOT_URL
         scope: RUN_AND_BUILD_TIME
         value: "https://t.me/cutegamingsupportbot"
@@ -373,8 +349,6 @@ workers:
       - key: ADMIN_FRONTEND_ORIGIN
         scope: RUN_AND_BUILD_TIME
         value: "https://cutegaming-ridbh.ondigitalocean.app"
-
-      # HTTP
       - key: PORT
         scope: RUN_AND_BUILD_TIME
         value: "8000"
@@ -393,8 +367,6 @@ workers:
       - key: RATE_LIMIT_MAX
         scope: RUN_AND_BUILD_TIME
         value: "80"
-
-      # LOGS
       - key: AUDIT_LOG_ENABLED
         scope: RUN_AND_BUILD_TIME
         value: "false"
@@ -413,8 +385,6 @@ workers:
       - key: ERROR_TELEGRAM_THREAD_ID
         scope: RUN_AND_BUILD_TIME
         value: "3"
-
-      # SOFT RESTART
       - key: BOT_SOFT_RESTART_ENABLED
         scope: RUN_AND_BUILD_TIME
         value: "0"
@@ -430,8 +400,6 @@ workers:
       - key: BOT_SOFT_RESTART_GRACE_SEC
         scope: RUN_AND_BUILD_TIME
         value: "3"
-
-      # MISC
       - key: PRIVATE_MODE
         scope: RUN_AND_BUILD_TIME
         value: ""
