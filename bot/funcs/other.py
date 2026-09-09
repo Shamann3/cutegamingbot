@@ -1303,7 +1303,7 @@ async def other(message: Message):
 
 
 
-# Пример функции форматирования числа
+    # Пример функции форматирования числа
 
     # -------------------- НАСТРОЙКИ --------------------
     wikipedia.set_lang("ru")
@@ -1493,7 +1493,7 @@ async def other(message: Message):
         original_term = _safe_term(original_term , max_len=80)
         if not original_term:
             await message.answer(
-                "🛠 <b>Напиши слово или термин, чтобы я нашёл определение.</b>" , parse_mode="HTML")
+                "<tg-emoji emoji-id='6021401276904905698'>🛠</tg-emoji> <b>Напиши слово или термин, чтобы я нашёл определение.</b>" , parse_mode="HTML")
             return
 
         detected_language = _detect_lang_safe(original_term)
@@ -1501,7 +1501,7 @@ async def other(message: Message):
         # 1) Русская Википедия
         ru_def = getwiki_ru(original_term)
         if ru_def:
-            answer_text = f"🌐 <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{ru_def}</i>"
+            answer_text = f"<tg-emoji emoji-id='5224450179368767019'>🌎</tg-emoji> <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{ru_def}</i>"
             for part in _split_long_message(answer_text):
                 await message.answer(part , parse_mode="HTML")
             return
@@ -1520,7 +1520,7 @@ async def other(message: Message):
                 translated = _translate_safe(en_def , "ru")
             else:
                 translated = en_def
-            answer_text = f"🌐 <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{translated}</i>"
+            answer_text = f"<tg-emoji emoji-id='5224450179368767019'>🌎</tg-emoji> <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{translated}</i>"
             for part in _split_long_message(answer_text):
                 await message.answer(part , parse_mode="HTML")
             return
@@ -1532,65 +1532,21 @@ async def other(message: Message):
                 translated = _translate_safe(ddg_def , "ru")
             else:
                 translated = ddg_def
-            answer_text = f"🌐 <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{translated}</i>"
+            answer_text = f"<tg-emoji emoji-id='6021401276904905698'>🛠</tg-emoji> <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{translated}</i>"
             for part in _split_long_message(answer_text):
                 await message.answer(part , parse_mode="HTML")
             return
 
         # Ничего не найдено
         await message.answer(
-            f"🛠 <b>Не удалось найти информацию о «{original_term}».</b>\n\n"
+            f"<tg-emoji emoji-id='6021401276904905698'>🛠</tg-emoji> <b>Не удалось найти информацию о «{original_term}».</b>\n\n"
             f"Попробуйте переформулировать запрос или проверьте орфографию." , parse_mode="HTML")
 
     # -------------------- УЛУЧШЕННОЕ РАСПОЗНАВАНИЕ ЗАПРОСОВ (вставьте в ваш обработчик) --------------------
     # Этот блок нужно поместить внутрь вашего @dp.message() обработчика,
     # заменив существующую логику извлечения термина.
 
-    def extract_term_from_text(text: str) -> str:
-        """
-        Извлекает термин из пользовательского сообщения, поддерживая различные шаблоны.
-        Возвращает строку с термином или None.
-        """
-        text = text.strip()
-        if not text:
-            return None
-        words = text.split()
-        if not words:
-            return None
 
-        # Список ключевых слов-триггеров
-        triggers = {"кут" , "кут," , "что" , "кто" , "расскажи" , "расскажите" , "определение"}
-
-        # 1) Проверяем стандартные конструкции: "что такое X", "кто такой X", "расскажи о X" и т.п.
-        #    Используем регулярное выражение для гибкости.
-        patterns = [ r'^(?:кут|что|кто|расскажи(?:те)?)\s+(?:такое|такой|такая|о|про)\s+(.+)$' ,  # что такое ...
-            r'^определение\s+(.+)$' ,  # определение ...
-            r'^(.+?)\s+[-—]?\s*это\s+' ,  # X это ... (берём X)
-            r'^(.+?)\s+[-—]?\s*это\s+' ,  # X - это ...
-        ]
-        for pattern in patterns:
-            match = re.search(pattern , text , re.IGNORECASE)
-            if match:
-                term = match.group(1).strip().rstrip('?')
-                if term:
-                    return term
-
-        # 2) Если первое слово – триггер, а второе – не ключевое, то берём всё после первого слова
-        first_word = words [ 0 ].lower()
-        if first_word in triggers:
-            if len(words) > 1:
-                term = ' '.join(words [ 1: ]).strip().rstrip('?')
-                if term:
-                    return term
-            # Если только одно слово-триггер – игнорируем
-            return None
-
-        # 3) Если сообщение состоит из одного слова – это и есть термин
-        if len(words) == 1:
-            return words [ 0 ].strip().rstrip('?')
-
-        # 4) Если ничего не подошло – возвращаем весь текст как термин (пользователь мог просто написать слово или фразу)
-        return text.strip().rstrip('?')
     if len(words) > 1 and words [ 0 ].lower() in [ "кут","кут," , "что" , "кто" , "расскажи" ]:
         if words [ 1 ].lower() in [ "такое" , "такой" , "такая" , "о" ]:
             original_term = ' '.join(words [ 2: ]).rstrip('?')  # Удаляем вопросительный знак, если он есть
