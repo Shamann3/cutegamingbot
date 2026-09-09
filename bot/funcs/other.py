@@ -1309,31 +1309,29 @@ async def other(message: Message):
     wikipedia.set_lang("ru")
     DetectorFactory.seed = 0
 
-    # -------------------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (улучшены) --------------------
+    # -------------------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ --------------------
 
     def _safe_term(raw: str , max_len: int = 80) -> str:
-        """Нормализует ввод: обрезает пробелы, заменяет множественные пробелы, удаляет управляющие символы."""
-        text = (raw or "").strip()
-        text = re.sub(r"\s+" , " " , text)
+        """Нормализует ввод: удаляет лишние пробелы, управляющие символы."""
+        if not raw:
+            return ""
+        text = re.sub(r"\s+" , " " , raw.strip())
         text = re.sub(r"[\x00-\x1f\x7f]" , "" , text)
         return text [ :max_len ].strip()
 
     def _detect_lang_safe(text: str) -> str:
-        """Определяет язык текста, при ошибке возвращает 'ru'."""
+        """Определяет язык, при ошибке возвращает 'ru'."""
         try:
             t = (text or "").strip()
-            if not t:
-                return "ru"
-            return detect(t)
+            return detect(t) if t else "ru"
         except Exception as e:
             print(f"⚠️ Ошибка определения языка: {e}")
             return "ru"
 
     def translate_text(text , dest_language='en'):
-        """Перевод текста (исходная функция, сохранена)."""
+        """Перевод текста (сохранена оригинальная сигнатура)."""
         try:
-            translated = GoogleTranslator(source='auto' , target=dest_language).translate(text)
-            return translated
+            return GoogleTranslator(source='auto' , target=dest_language).translate(text) or text
         except Exception as e:
             print(f"Ошибка при переводе текста: {e}")
             return text
@@ -1347,39 +1345,56 @@ async def other(message: Message):
             print(f"⚠️ Ошибка перевода на {target_lang}: {e}")
             return (text or "").strip()
 
-    # -------------------- ПОИСК В РУССКОЙ ВИКИПЕДИИ (новая функция) --------------------
+    def _clean_wiki_text(text: str) -> str:
+        """Очищает вики-текст от скобок, ссылок и лишних символов."""
+        # Удаляем фигурные скобки (включая вложенные)
+        text = re.sub(r'\{[^{}]*\}' , '' , text)
+        # Удаляем круглые скобки с содержимым (сноски, примечания)
+        text = re.sub(r'\([^()]*\)' , '' , text)
+        # Удаляем вики-ссылки [[...]]
+        text = re.sub(r'\[\[[^\]]*\]\]' , '' , text)
+        # Удаляем HTML-теги (если вдруг попали)
+        text = re.sub(r'<[^>]+>' , '' , text)
+        # Заменяем множественные пробелы на один
+        text = re.sub(r'\s+' , ' ' , text).strip()
+        return text
+
+    def _split_long_message(text: str , max_len: int = 4096) -> list:
+        """Разбивает длинный текст на части, не разрывая слова."""
+        if len(text) <= max_len:
+            return [ text ]
+        parts = [ ]
+        while text:
+            if len(text) <= max_len:
+                parts.append(text)
+                break
+            # Ищем последний пробел в пределах max_len
+            split_at = text.rfind(' ' , 0 , max_len)
+            if split_at == -1:
+                split_at = max_len
+            parts.append(text [ :split_at ].strip())
+            text = text [ split_at: ].strip()
+        return parts
+
+    # -------------------- ПОИСК В РУССКОЙ ВИКИПЕДИИ --------------------
 
     def getwiki_ru(term: str) -> str:
-        """
-        Ищет статью в русской Википедии, возвращает первые ~1000 символов,
-        очищенные от служебных блоков, скобок и лишних пробелов.
-        """
+        """Возвращает краткое определение из русской Википедии."""
         try:
             page = wikipedia.page(term)
             wikitext = page.content [ :1200 ]
-
-            # Разбиваем на предложения, отбрасываем последнее (может быть оборвано)
             sentences = wikitext.split('.')
             if len(sentences) > 1:
-                sentences = sentences [ :-1 ]
-
+                sentences = sentences [ :-1 ]  # удаляем последнее неполное предложение
             clean_text = ''
             for s in sentences:
                 if not ('=' in s) and len(s.strip()) > 5:
                     clean_text += s + '.'
-
-            # Убираем фигурные скобки {...} и круглые скобки (сноски, примечания)
-            clean_text = re.sub(r'\{[^{}]*\}' , '' , clean_text)
-            clean_text = re.sub(r'\([^()]*\)' , '' , clean_text)
-            clean_text = re.sub(r'\s+' , ' ' , clean_text).strip()
-
-            # Обрезаем до 1000 символов, не разрывая слово
+            clean_text = _clean_wiki_text(clean_text)
+            # Обрезаем до 1000 символов, но не разрывая слово
             if len(clean_text) > 1000:
                 clean_text = clean_text [ :1000 ].rsplit(' ' , 1) [ 0 ] + '...'
-
-            if clean_text:
-                return clean_text
-            return None
+            return clean_text if clean_text else None
         except Exception as e:
             print(f"ℹ️ Русская Википедия не выдала результат для '{term}': {e}")
             return None
@@ -1389,37 +1404,41 @@ async def other(message: Message):
     _HTTP_TIMEOUT = 6.0
     _HTTP_UA = "Mozilla/5.0 (compatible; CuteBot/1.0; +https://t.me/)"
 
+    def _request_with_retries(url , headers , timeout=_HTTP_TIMEOUT , retries=2):
+        """Выполняет HTTP-запрос с повторами при ошибках."""
+        for attempt in range(retries + 1):
+            try:
+                resp = requests.get(url , headers=headers , timeout=timeout)
+                if resp.status_code == 200:
+                    return resp
+                # Если статус не 200, пробуем ещё раз (кроме 404)
+                if resp.status_code != 404:
+                    time.sleep(0.5)
+            except Exception as e:
+                print(f"⚠️ Попытка {attempt + 1} запроса к {url} не удалась: {e}")
+                time.sleep(0.5)
+        return None
+
     def get_definition_from_wikipedia(term: str) -> str:
-        """Получает краткое определение из англоязычной Википедии через REST API."""
+        """Получает определение из английской Википедии через REST API."""
         term = _safe_term(term , max_len=120)
         if not term:
             return None
-
         url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(term)}"
         headers = {"User-Agent": _HTTP_UA , "Accept": "application/json"}
-
-        try:
-            resp = requests.get(url , headers=headers , timeout=_HTTP_TIMEOUT)
-        except Exception as e:
-            print(f"⚠️ Ошибка запроса к англ. Википедии: {e}")
+        resp = _request_with_retries(url , headers)
+        if not resp:
             return None
-
-        if resp.status_code != 200:
-            return None
-
         try:
             data = resp.json()
         except:
             return None
-
         extract = (data.get("extract") or "").strip()
         if not extract:
             return None
-
         if str(data.get("type" , "")).lower() == "disambiguation":
             return None
-
-        return extract
+        return _clean_wiki_text(extract)
 
     # -------------------- ПОИСК В DUCKDUCKGO (API) --------------------
 
@@ -1428,125 +1447,165 @@ async def other(message: Message):
         term = _safe_term(term , max_len=120)
         if not term:
             return None
-
         url = f"https://api.duckduckgo.com/?q={quote(term)}&format=json&no_html=1&skip_disambig=1"
         headers = {"User-Agent": _HTTP_UA , "Accept": "application/json"}
-
-        try:
-            resp = requests.get(url , headers=headers , timeout=_HTTP_TIMEOUT)
-        except Exception as e:
-            print(f"⚠️ Ошибка запроса к DuckDuckGo: {e}")
+        resp = _request_with_retries(url , headers)
+        if not resp:
             return None
-
-        if resp.status_code != 200:
-            return None
-
         try:
             data = resp.json()
         except:
             return None
-
-        # 1) AbstractText
+        # Проверяем разные поля
         abstract = (data.get("AbstractText") or "").strip()
         if abstract:
-            return abstract
-
-        # 2) Definition
+            return _clean_wiki_text(abstract)
         definition = (data.get("Definition") or "").strip()
         if definition:
-            return definition
-
-        # 3) RelatedTopics
+            return _clean_wiki_text(definition)
+        # Поиск в RelatedTopics
         rel = data.get("RelatedTopics") or [ ]
         try:
             for item in rel:
                 if isinstance(item , dict) and "Text" in item:
                     txt = (item.get("Text") or "").strip()
                     if txt:
-                        return txt
+                        return _clean_wiki_text(txt)
                 if isinstance(item , dict) and isinstance(item.get("Topics") , list):
                     for sub in item [ "Topics" ]:
                         if isinstance(sub , dict) and "Text" in sub:
                             txt = (sub.get("Text") or "").strip()
                             if txt:
-                                return txt
+                                return _clean_wiki_text(txt)
         except:
             pass
-
         return None
 
-    # -------------------- ОСНОВНАЯ ФУНКЦИЯ ПОИСКА (СОХРАНЯЕТ СИГНАТУРУ) --------------------
+    # -------------------- ОСНОВНАЯ ФУНКЦИЯ (СОХРАНЯЕТ СИГНАТУРУ) --------------------
 
     async def textrazzzz(message: types.Message , original_term: str):
         """
         Ищет определение для термина, используя:
-          1) русскую Википедию (уже на русском)
-          2) английскую Википедию (переводит на русский, если нужно)
-          3) DuckDuckGo (переводит на русский, если нужно)
+          1) русскую Википедию
+          2) английскую Википедию (с переводом на русский при необходимости)
+          3) DuckDuckGo (с переводом на русский при необходимости)
         """
         original_term = _safe_term(original_term , max_len=80)
         if not original_term:
             await message.answer(
-                "<tg-emoji emoji-id='6021401276904905698'>🛠</tg-emoji> <b>Напиши слово/термин, чтобы я нашёл определение.</b>" , parse_mode="HTML")
+                "🛠 <b>Напиши слово или термин, чтобы я нашёл определение.</b>" , parse_mode="HTML")
             return
 
         detected_language = _detect_lang_safe(original_term)
 
-        # 1) Пробуем русскую Википедию
+        # 1) Русская Википедия
         ru_def = getwiki_ru(original_term)
         if ru_def:
-            await message.answer(
-                f'<tg-emoji emoji-id="5282843764451195532">🖥</tg-emoji> <b>Вот что я нашёл о "{original_term}"</b>:\n\n<i>{ru_def}</i>' , parse_mode="HTML")
+            answer_text = f"🌐 <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{ru_def}</i>"
+            for part in _split_long_message(answer_text):
+                await message.answer(part , parse_mode="HTML")
             return
 
-        # Для английских источников – переводим термин на английский (если надо)
+        # Переводим термин на английский, если нужно
         if detected_language != "en":
             term_en = _translate_safe(original_term , "en")
         else:
             term_en = original_term
         term_en = _safe_term(term_en , max_len=120)
 
-        # 2) Пробуем английскую Википедию
+        # 2) Английская Википедия
         en_def = get_definition_from_wikipedia(term_en)
         if en_def:
             if detected_language != "en":
                 translated = _translate_safe(en_def , "ru")
             else:
                 translated = en_def
-            await message.answer(
-                f'<tg-emoji emoji-id="5282843764451195532">🖥</tg-emoji> <b>Вот что я нашёл о "{original_term}"</b>:\n\n<i>{translated}</i>' , parse_mode="HTML")
+            answer_text = f"🌐 <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{translated}</i>"
+            for part in _split_long_message(answer_text):
+                await message.answer(part , parse_mode="HTML")
             return
 
-        # 3) Пробуем DuckDuckGo
+        # 3) DuckDuckGo
         ddg_def = get_definition_from_duckduckgo(term_en)
         if ddg_def:
             if detected_language != "en":
                 translated = _translate_safe(ddg_def , "ru")
             else:
                 translated = ddg_def
-            await message.answer(
-                f'<tg-emoji emoji-id="5282843764451195532">🖥</tg-emoji> <b>Вот что я нашёл о "{original_term}"</b>:\n\n<i>{translated}</i>' , parse_mode="HTML")
+            answer_text = f"🌐 <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{translated}</i>"
+            for part in _split_long_message(answer_text):
+                await message.answer(part , parse_mode="HTML")
             return
 
-        # Если ничего не найдено
+        # Ничего не найдено
         await message.answer(
-            f'<tg-emoji emoji-id="6021401276904905698">🛠</tg-emoji> Не удалось найти информацию о "{original_term}".\n\n'
-            f'Попробуйте переформулировать запрос или проверьте орфографию.' , parse_mode="HTML")
+            f"🛠 <b>Не удалось найти информацию о «{original_term}».</b>\n\n"
+            f"Попробуйте переформулировать запрос или проверьте орфографию." , parse_mode="HTML")
 
-    if len(words) > 1 and words [ 0 ].lower() in [ "кут","кут," , "что" , "кто" , "расскажи" ]:
-        if words [ 1 ].lower() in [ "такое" , "такой" , "такая" , "о" ]:
-            original_term = ' '.join(words [ 2: ]).rstrip('?')  # Удаляем вопросительный знак, если он есть
-            await textrazzzz(message , original_term)  # Вызов функции с передачей аргументов
+    # -------------------- УЛУЧШЕННОЕ РАСПОЗНАВАНИЕ ЗАПРОСОВ (вставьте в ваш обработчик) --------------------
+    # Этот блок нужно поместить внутрь вашего @dp.message() обработчика,
+    # заменив существующую логику извлечения термина.
 
-        elif len(words) > 2 and words [ 1 ].lower() in [ "такое" , "такой" , "такая" , "о" , "что" , "кто" ,
-                                                         "расскажи" ] and words [ 2 ].lower() in [ "такое" , "такая" ,
-                                                                                                   "такой" , "о" ]:
-            original_term = ' '.join(words [ 3: ]).rstrip('?')  # Удаляем вопросительный знак, если он есть
-            await textrazzzz(message , original_term)  # Вызов функции с передачей аргументов
+    def extract_term_from_text(text: str) -> str:
+        """
+        Извлекает термин из пользовательского сообщения, поддерживая различные шаблоны.
+        Возвращает строку с термином или None.
+        """
+        text = text.strip()
+        if not text:
+            return None
+        words = text.split()
+        if not words:
+            return None
 
+        # Список ключевых слов-триггеров
+        triggers = {"кут" , "кут," , "что" , "кто" , "расскажи" , "расскажите" , "определение"}
 
+        # 1) Проверяем стандартные конструкции: "что такое X", "кто такой X", "расскажи о X" и т.п.
+        #    Используем регулярное выражение для гибкости.
+        patterns = [ r'^(?:кут|что|кто|расскажи(?:те)?)\s+(?:такое|такой|такая|о|про)\s+(.+)$' ,  # что такое ...
+            r'^определение\s+(.+)$' ,  # определение ...
+            r'^(.+?)\s+[-—]?\s*это\s+' ,  # X это ... (берём X)
+            r'^(.+?)\s+[-—]?\s*это\s+' ,  # X - это ...
+        ]
+        for pattern in patterns:
+            match = re.search(pattern , text , re.IGNORECASE)
+            if match:
+                term = match.group(1).strip().rstrip('?')
+                if term:
+                    return term
 
+        # 2) Если первое слово – триггер, а второе – не ключевое, то берём всё после первого слова
+        first_word = words [ 0 ].lower()
+        if first_word in triggers:
+            if len(words) > 1:
+                term = ' '.join(words [ 1: ]).strip().rstrip('?')
+                if term:
+                    return term
+            # Если только одно слово-триггер – игнорируем
+            return None
 
+        # 3) Если сообщение состоит из одного слова – это и есть термин
+        if len(words) == 1:
+            return words [ 0 ].strip().rstrip('?')
+
+        # 4) Если ничего не подошло – возвращаем весь текст как термин (пользователь мог просто написать слово или фразу)
+        return text.strip().rstrip('?')
+    #if len(words) > 1 and words [ 0 ].lower() in [ "кут","кут," , "что" , "кто" , "расскажи" ]:
+    #    if words [ 1 ].lower() in [ "такое" , "такой" , "такая" , "о" ]:
+    #        original_term = ' '.join(words [ 2: ]).rstrip('?')  # Удаляем вопросительный знак, если он есть
+    #        await textrazzzz(message , original_term)  # Вызов функции с передачей аргументов
+
+    #    elif len(words) > 2 and words [ 1 ].lower() in [ "такое" , "такой" , "такая" , "о" , "что" , "кто" ,
+    #                                                     "расскажи" ] and words [ 2 ].lower() in [ "такое" , "такая" ,
+    #                                                                                               "такой" , "о" ]:
+    #        original_term = ' '.join(words [ 3: ]).rstrip('?')  # Удаляем вопросительный знак, если он есть
+    #        await textrazzzz(message , original_term)  # Вызов функции с передачей аргументов
+
+    term = extract_term_from_text(message.text)
+    if not term or len(term) < 2:
+        return
+    await textrazzzz(message , term)
 
 
 
