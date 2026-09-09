@@ -1591,21 +1591,20 @@ async def other(message: Message):
 
         # 4) Если ничего не подошло – возвращаем весь текст как термин (пользователь мог просто написать слово или фразу)
         return text.strip().rstrip('?')
-    #if len(words) > 1 and words [ 0 ].lower() in [ "кут","кут," , "что" , "кто" , "расскажи" ]:
-    #    if words [ 1 ].lower() in [ "такое" , "такой" , "такая" , "о" ]:
-    #        original_term = ' '.join(words [ 2: ]).rstrip('?')  # Удаляем вопросительный знак, если он есть
-    #        await textrazzzz(message , original_term)  # Вызов функции с передачей аргументов
+    if len(words) > 1 and words [ 0 ].lower() in [ "кут","кут," , "что" , "кто" , "расскажи" ]:
+        if words [ 1 ].lower() in [ "такое" , "такой" , "такая" , "о" ]:
+            original_term = ' '.join(words [ 2: ]).rstrip('?')  # Удаляем вопросительный знак, если он есть
+            await textrazzzz(message , original_term)  # Вызов функции с передачей аргументов
 
-    #    elif len(words) > 2 and words [ 1 ].lower() in [ "такое" , "такой" , "такая" , "о" , "что" , "кто" ,
-    #                                                     "расскажи" ] and words [ 2 ].lower() in [ "такое" , "такая" ,
-    #                                                                                               "такой" , "о" ]:
-    #        original_term = ' '.join(words [ 3: ]).rstrip('?')  # Удаляем вопросительный знак, если он есть
-    #        await textrazzzz(message , original_term)  # Вызов функции с передачей аргументов
+        elif len(words) > 2 and words [ 1 ].lower() in [ "такое" , "такой" , "такая" , "о" , "что" , "кто" ,
+                                                         "расскажи" ] and words [ 2 ].lower() in [ "такое" , "такая" ,
+                                                                                                   "такой" , "о" ]:
+            original_term = ' '.join(words [ 3: ]).rstrip('?')  # Удаляем вопросительный знак, если он есть
+            await textrazzzz(message , original_term)  # Вызов функции с передачей аргументов
 
-    term = extract_term_from_text(message.text)
-    if not term or len(term) < 2:
-        return
-    await textrazzzz(message , term)
+
+
+
 
 
 
