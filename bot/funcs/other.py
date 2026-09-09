@@ -1347,15 +1347,10 @@ async def other(message: Message):
 
     def _clean_wiki_text(text: str) -> str:
         """Очищает вики-текст от скобок, ссылок и лишних символов."""
-        # Удаляем фигурные скобки (включая вложенные)
         text = re.sub(r'\{[^{}]*\}' , '' , text)
-        # Удаляем круглые скобки с содержимым (сноски, примечания)
         text = re.sub(r'\([^()]*\)' , '' , text)
-        # Удаляем вики-ссылки [[...]]
         text = re.sub(r'\[\[[^\]]*\]\]' , '' , text)
-        # Удаляем HTML-теги (если вдруг попали)
         text = re.sub(r'<[^>]+>' , '' , text)
-        # Заменяем множественные пробелы на один
         text = re.sub(r'\s+' , ' ' , text).strip()
         return text
 
@@ -1368,7 +1363,6 @@ async def other(message: Message):
             if len(text) <= max_len:
                 parts.append(text)
                 break
-            # Ищем последний пробел в пределах max_len
             split_at = text.rfind(' ' , 0 , max_len)
             if split_at == -1:
                 split_at = max_len
@@ -1385,13 +1379,12 @@ async def other(message: Message):
             wikitext = page.content [ :1200 ]
             sentences = wikitext.split('.')
             if len(sentences) > 1:
-                sentences = sentences [ :-1 ]  # удаляем последнее неполное предложение
+                sentences = sentences [ :-1 ]
             clean_text = ''
             for s in sentences:
                 if not ('=' in s) and len(s.strip()) > 5:
                     clean_text += s + '.'
             clean_text = _clean_wiki_text(clean_text)
-            # Обрезаем до 1000 символов, но не разрывая слово
             if len(clean_text) > 1000:
                 clean_text = clean_text [ :1000 ].rsplit(' ' , 1) [ 0 ] + '...'
             return clean_text if clean_text else None
@@ -1401,22 +1394,21 @@ async def other(message: Message):
 
     # -------------------- ПОИСК В АНГЛИЙСКОЙ ВИКИПЕДИИ (REST API) --------------------
 
-    _HTTP_TIMEOUT = 6.0
+    _HTTP_TIMEOUT = 4.0
     _HTTP_UA = "Mozilla/5.0 (compatible; CuteBot/1.0; +https://t.me/)"
 
-    def _request_with_retries(url , headers , timeout=_HTTP_TIMEOUT , retries=2):
-        """Выполняет HTTP-запрос с повторами при ошибках."""
+    def _request_with_retries(url , headers , timeout=_HTTP_TIMEOUT , retries=1):
+        """Выполняет HTTP-запрос с повторами (максимум 1 повтор)."""
         for attempt in range(retries + 1):
             try:
                 resp = requests.get(url , headers=headers , timeout=timeout)
                 if resp.status_code == 200:
                     return resp
-                # Если статус не 200, пробуем ещё раз (кроме 404)
                 if resp.status_code != 404:
-                    time.sleep(0.5)
+                    time.sleep(0.3)
             except Exception as e:
                 print(f"⚠️ Попытка {attempt + 1} запроса к {url} не удалась: {e}")
-                time.sleep(0.5)
+                time.sleep(0.3)
         return None
 
     def get_definition_from_wikipedia(term: str) -> str:
@@ -1456,14 +1448,12 @@ async def other(message: Message):
             data = resp.json()
         except:
             return None
-        # Проверяем разные поля
         abstract = (data.get("AbstractText") or "").strip()
         if abstract:
             return _clean_wiki_text(abstract)
         definition = (data.get("Definition") or "").strip()
         if definition:
             return _clean_wiki_text(definition)
-        # Поиск в RelatedTopics
         rel = data.get("RelatedTopics") or [ ]
         try:
             for item in rel:
@@ -1485,28 +1475,31 @@ async def other(message: Message):
 
     async def textrazzzz(message: types.Message , original_term: str):
         """
-        Ищет определение для термина, используя:
-          1) русскую Википедию
-          2) английскую Википедию (с переводом на русский при необходимости)
-          3) DuckDuckGo (с переводом на русский при необходимости)
+        Ищет определение для термина.
+        - Если запрос на русском – сначала пробует русскую Википедию.
+        - Иначе или если не найдено – переводит термин на английский,
+          ищет в английской Википедии и DuckDuckGo,
+          затем переводит ответ на язык исходного запроса.
         """
         original_term = _safe_term(original_term , max_len=80)
         if not original_term:
             await message.answer(
-                "<tg-emoji emoji-id='6021401276904905698'>🛠</tg-emoji> <b>Напиши слово или термин, чтобы я нашёл определение.</b>" , parse_mode="HTML")
+                "<tg-emoji emoji-id='6021401276904905698'>🛠</tg-emoji> <b>Напиши слово или термин, чтобы я нашёл определение.</b>" ,
+                parse_mode="HTML")
             return
 
         detected_language = _detect_lang_safe(original_term)
 
-        # 1) Русская Википедия
-        ru_def = getwiki_ru(original_term)
-        if ru_def:
-            answer_text = f"<tg-emoji emoji-id='5224450179368767019'>🌎</tg-emoji> <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{ru_def}</i>"
-            for part in _split_long_message(answer_text):
-                await message.answer(part , parse_mode="HTML")
-            return
+        # Если язык запроса русский – пробуем русскую Википедию
+        if detected_language == "ru":
+            ru_def = getwiki_ru(original_term)
+            if ru_def:
+                answer_text = f"<tg-emoji emoji-id='5224450179368767019'>🌎</tg-emoji> <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{ru_def}</i>"
+                for part in _split_long_message(answer_text):
+                    await message.answer(part , parse_mode="HTML")
+                return
 
-        # Переводим термин на английский, если нужно
+        # Переводим термин на английский для поиска (если он не английский)
         if detected_language != "en":
             term_en = _translate_safe(original_term , "en")
         else:
@@ -1517,7 +1510,7 @@ async def other(message: Message):
         en_def = get_definition_from_wikipedia(term_en)
         if en_def:
             if detected_language != "en":
-                translated = _translate_safe(en_def , "ru")
+                translated = _translate_safe(en_def , detected_language)
             else:
                 translated = en_def
             answer_text = f"<tg-emoji emoji-id='5224450179368767019'>🌎</tg-emoji> <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{translated}</i>"
@@ -1529,7 +1522,7 @@ async def other(message: Message):
         ddg_def = get_definition_from_duckduckgo(term_en)
         if ddg_def:
             if detected_language != "en":
-                translated = _translate_safe(ddg_def , "ru")
+                translated = _translate_safe(ddg_def , detected_language)
             else:
                 translated = ddg_def
             answer_text = f"<tg-emoji emoji-id='6021401276904905698'>🛠</tg-emoji> <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{translated}</i>"
@@ -1541,10 +1534,6 @@ async def other(message: Message):
         await message.answer(
             f"<tg-emoji emoji-id='6021401276904905698'>🛠</tg-emoji> <b>Не удалось найти информацию о «{original_term}».</b>\n\n"
             f"Попробуйте переформулировать запрос или проверьте орфографию." , parse_mode="HTML")
-
-    # -------------------- УЛУЧШЕННОЕ РАСПОЗНАВАНИЕ ЗАПРОСОВ (вставьте в ваш обработчик) --------------------
-    # Этот блок нужно поместить внутрь вашего @dp.message() обработчика,
-    # заменив существующую логику извлечения термина.
 
 
     if len(words) > 1 and words [ 0 ].lower() in [ "кут","кут," , "что" , "кто" , "расскажи" ]:
