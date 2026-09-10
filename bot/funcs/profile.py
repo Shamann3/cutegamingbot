@@ -939,6 +939,16 @@ async def _send_multiple_found_users(message: Message, db, users_dict: dict):
 # =========================================================
 # PROFILE STATE / RENDER HELPERS
 # =========================================================
+async def _profile_get_growth_fund_contributed(db, user_id: int) -> int:
+    """Сколько кутов игрок внёс в комиссию игры за всё время (для профиля)."""
+    try:
+        from bot.funcs.growth_fund import get_user_lifetime_contribution
+        return await get_user_lifetime_contribution(db, user_id)
+    except Exception as e:
+        _p_err("PROFILE", "growth_fund_contributed fetch failed", e, uid=user_id, level=2)
+        return 0
+
+
 async def _profile_collect_state_for_render(
     *,
     user_id: int,
@@ -949,11 +959,13 @@ async def _profile_collect_state_for_render(
     bundle = await db.fetch_profile_render_bundle(user_id)
     if bundle:
         country_text = country_dict.get(bundle.get("country_emoji", ""), "Неизвестная страна")
+        growth_fund_contributed = await _profile_get_growth_fund_contributed(db, user_id)
         return {
             **bundle,
             "viewer_id": int(viewer_id),
             "chat_id": int(chat_id),
             "country_text": country_text,
+            "growth_fund_contributed": growth_fund_contributed,
         }
 
     async def _safe_db_call(fn, default=None, tag: str = "PROFILE-STATE"):
@@ -1002,6 +1014,7 @@ async def _profile_collect_state_for_render(
     donated = await _safe_db_call(lambda: db.get_user_donate(user_id), 0, "PROFILE-STATE")
     canwithdrawalunt = await _safe_db_call(lambda: db.get_canwithdrawal(user_id), 0, "PROFILE-STATE")
     is_banned = await _safe_db_call(lambda: db.is_user_banned(user_id), False, "PROFILE-STATE")
+    growth_fund_contributed = await _profile_get_growth_fund_contributed(db, user_id)
 
     return {
         "user_id": int(user_id),
@@ -1036,6 +1049,7 @@ async def _profile_collect_state_for_render(
         "winamount": _profile_safe_int(winamount, 0),
         "donated": _profile_safe_int(donated, 0),
         "canwithdrawalunt": _profile_safe_int(canwithdrawalunt, 0),
+        "growth_fund_contributed": growth_fund_contributed,
         "is_banned": bool(is_banned),
     }
 
@@ -1117,6 +1131,18 @@ async def _build_profile_caption_for_target(
     if state["winamount"] > 0:
         winamount_line = f"<b>{state['winamount_emoji']} Выиграно : {_profile_fmt_int(state['winamount'])} кут</b>"
 
+    # Общий Фонд Роста: сколько кутов игрок лично внёс комиссией игры за всё
+    # время. Показываем только если уже есть что показать (как donated_line
+    # и winamount_line выше) - у новых игроков строки просто нет.
+    # state['growth_fund_contributed'] заполняется в загрузчике профиля
+    # отдельным запросом к таблице учёта комиссии игры (Общий Фонд Роста).
+    growth_fund_line = ""
+    if state.get("growth_fund_contributed", 0) > 0:
+        growth_fund_line = (
+            f"<b><tg-emoji emoji-id='5474417568053745249'>🌱</tg-emoji> "
+            f"Внесено в Фонд Роста : {_profile_fmt_int(state['growth_fund_contributed'])} кут</b>"
+        )
+
     donated_line = ""
     if state["donated"] > 0:
         donated_line = (
@@ -1156,6 +1182,7 @@ async def _build_profile_caption_for_target(
         username_line,
         f"{state['id_emoji']} <code>{user_id}</code>\n",
         f"{state['balance_emoji']} <b>{formatted_balance} кут</b>\n",
+        growth_fund_line,
         donated_line,
         winamount_line,
         wins_line,

@@ -1223,6 +1223,11 @@ async def bombs_stop_game(callback_query: CallbackQuery):
                 await _chat_minus(chat_id, pay_int)
                 await _user_plus(uid, pay_int)
                 try:
+                    await db.zero_demo_amount(owner_id)
+                    print("[BOMBS][DEMO] demo обнулён после вывода (домой с прибылью)")
+                except Exception as e:
+                    print(f"[BOMBS][DEMO] Ошибка обнуления demo: {e}")
+                try:
                     await db.cutehistory_plus(uid, pay_int, "+ бомбы")
                 except Exception as e:
                     dbg_err("HISTORY_PLUS_WITHDRAW_DEMO", e)

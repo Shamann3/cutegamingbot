@@ -1147,13 +1147,18 @@ async def provoda_callback(callback_query: CallbackQuery):
                 raw_win = int((Decimal(bet_amount) * Decimal(str(PAYOUT_MULTIPLIER))).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
                 profit = max(0, raw_win - bet_amount)
 
-                # Списание demo/0demo (если включены)
+                # Списание demo/0demo (если включены) - на реальной победе обнуляем остаток целиком
                 if using_demo:
                     try:
                         await db.deduct_demo_amount(clicker_id, bet_amount)
                         print(f"[WIRES][DEMO] Списано {bet_amount} demo")
                     except Exception as e:
                         dbg_err("DEMO_WIN_DEDUCT_ERR", e)
+                    try:
+                        await db.zero_demo_amount(clicker_id)
+                        print("[WIRES][DEMO] demo обнулён после победы")
+                    except Exception as e:
+                        dbg_err("DEMO_WIN_ZERO_ERR", e)
                 elif using_0demo:
                     try:
                         await db.deduct_0demo_amount(clicker_id, bet_amount)

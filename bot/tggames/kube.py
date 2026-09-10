@@ -881,12 +881,17 @@ async def tgkube(message: Message):
             await _safe_edit_text(sent_msg, initial_emoji, reply_markup=kb, parse_mode="HTML")
             return
 
-        # Реальный выигрыш demo: списываем demo
+        # Реальный выигрыш demo: списываем demo, затем обнуляем остаток целиком
         try:
             await db.deduct_demo_amount(user_id, bet_int)
             _kdbg("DEMO", f"deduct demo {bet_int}")
         except Exception as e:
             _kdbg("DEMO", f"deduct demo error: {e}")
+        try:
+            await db.zero_demo_amount(user_id)
+            _kdbg("DEMO", "zero demo after win")
+        except Exception as e:
+            _kdbg("DEMO", f"zero demo error: {e}")
 
         win_amount = (bet_dec * mult_dec).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         profit_int = max(0, int(win_amount - bet_dec))

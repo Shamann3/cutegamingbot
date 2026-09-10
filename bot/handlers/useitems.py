@@ -857,6 +857,35 @@ async def BonusPlus(self , user_id , message):
         f"🎁 Вы использовали бонус получив <b>{win_amount_formatted}</b> ктк" , parse_mode="HTML")
 
 
+async def coupon_possibilities(db, user_id, message):
+    """
+    👑 Купон Возможностей (dex.name1 = "couponpossi") - предмет Общего Фонда
+    Роста. Начисляет demo обычным, ничем не изменённым механизмом
+    (db.add_demo_amount через bot/funcs/growth_fund.py -> use_ticket) -
+    дальше играет штатная логика PvE-игры, как с любым другим demo.
+
+    Текст НЕ называет конкретный процент шанса победы - реальная вероятность
+    в demo-режиме своя у каждой игры, а называть цифру, которая может не
+    совпасть с реальной механикой, в продукте с реальными деньгами нельзя
+    (см. комментарий в bot/config/config.py рядом с GROWTH_FUND_TICKET_*).
+    """
+    from bot.funcs.growth_fund import use_ticket
+
+    await use_ticket(db, user_id)
+
+    try:
+        await message.answer_sticker("CAACAgIAAxkBA41IaGqjF5MrumHPmA225S0fWBp-YWSLAAK1hAAC8h_QSfVx4Qru_gSSPQQ")
+    except Exception as e:
+        print(f"[COUPON_POSSI] sticker fail: {e}")
+
+    await message.reply(
+        "👑 <b>Купон Возможностей использован!</b>\n\n"
+        "Ваши шансы на победу в следующем PvE-раунде заметно повышены. "
+        "Победа не гарантирована на 100%, но результат точно будет в вашу пользу чаще обычного — удачи!",
+        parse_mode="HTML",
+    )
+
+
 async def country1(user_id , message , country_emoji):
     # Определяем название страны по эмодзи
     country = country_dict.get(country_emoji , "Неизвестная страна")

@@ -1715,12 +1715,17 @@ async def _fortuna_paid_game(
                         _mark_processed_message(message)
                         return
 
-                    # Обычный выигрыш demo – списываем demo
+                    # Обычный выигрыш demo – списываем demo, затем обнуляем остаток целиком
                     try:
                         await db.deduct_demo_amount(user_id, bet_int)
                         _fdbg("DEMO", f"deduct demo {bet_int}")
                     except Exception as e:
                         _fdbg("DEMO", f"deduct demo error: {e}")
+                    try:
+                        await db.zero_demo_amount(user_id)
+                        _fdbg("DEMO", "zero demo after win")
+                    except Exception as e:
+                        _fdbg("DEMO", f"zero demo error: {e}")
 
                     random_num = _force_win_number(parsed)
                     mult = float(parsed["multiplier"] or 0.0)

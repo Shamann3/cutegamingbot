@@ -40362,6 +40362,12 @@ async def botmain():
         print(f"[ACH][WARN] ensure schema: {type(e).__name__}: {e}")
 
     try:
+        if hasattr(db, "ensure_growth_fund_schema"):
+            await db.ensure_growth_fund_schema()
+    except Exception as e:
+        print(f"[GFUND][WARN] ensure schema: {type(e).__name__}: {e}")
+
+    try:
         from bot.funcs.group_balance_level import sync_group_balance_levels_with_db
         await sync_group_balance_levels_with_db(db)
     except Exception as e:

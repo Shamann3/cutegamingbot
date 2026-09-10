@@ -765,6 +765,12 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                         await db.cutehistory_plus(owner_id, pay, "+ плиты")
                         await db.update_user_winamount(owner_id, pay)
                         await db.update_user_wins(owner_id, 1, bot1, ref_coin)
+                        if using_demo:
+                            try:
+                                await db.zero_demo_amount(owner_id)
+                                print("[PLATE][DEMO] demo обнулён после полной победы (10-й ряд)")
+                            except Exception as e:
+                                print(f"[PLATE][DEMO][EXC] Ошибка обнуления demo: {e}")
                     await _safe_edit_text(call.message, f"<b>{visual_emoji} 10-й ряд | {_fmt_int(pay)} кут</b>")
                     game_data["closed"] = True; game_data["payout_done"] = True
                 else:
@@ -932,6 +938,11 @@ async def plate_process_withdraw(call: types.CallbackQuery):
                 await db.cutehistory_plus(owner_id, pay, "+ плиты")
                 await db.update_user_winamount(owner_id, pay)
                 await db.update_user_wins(owner_id, 1, bot1, ref_coin)
+                try:
+                    await db.zero_demo_amount(owner_id)
+                    print("[PLATE][DEMO] demo обнулён после вывода (домой с прибылью)")
+                except Exception as e:
+                    print(f"[PLATE][DEMO][EXC] Ошибка обнуления demo: {e}")
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"{_fmt_int(pay)} кут", callback_data="plate_paid_stub")], [InlineKeyboardButton(text="Выплата", callback_data="plate_msg_stub")]])
             await _safe_edit_text(call.message, "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji>", reply_markup=kb)
         elif has_assignment and is_free:

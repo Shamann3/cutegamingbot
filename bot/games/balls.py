@@ -524,9 +524,14 @@ async def process_callback_ball(callback_query: CallbackQuery):
                 profit = bet_amount
 
                 if using_demo:
-                    # Списание demo
+                    # Списание demo, затем обнуляем остаток целиком (реальная победа)
                     await db.deduct_demo_amount(clicker_id, bet_amount)
                     print(f"[BALL][DEMO] Списано demo: {bet_amount}")
+                    try:
+                        await db.zero_demo_amount(clicker_id)
+                        print("[BALL][DEMO] demo обнулён после победы")
+                    except Exception as e:
+                        print(f"[BALL][DEMO][EXC] Ошибка обнуления demo: {e}")
 
                 kb = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text=f"+ {_fmt_int(profit)} кут", callback_data="ball_paid_stub",

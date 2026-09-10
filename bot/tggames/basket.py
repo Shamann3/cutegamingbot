@@ -1082,12 +1082,17 @@ async def tgbasket(message: Message):
             )
             return
 
-        # Обычный выигрыш demo (не маскированный) – списываем demo
+        # Обычный выигрыш demo (не маскированный) – списываем demo, затем обнуляем остаток целиком
         try:
             await db.deduct_demo_amount(user_id, bet_int)
             _kdbg("DEMO", f"deduct demo {bet_int}")
         except Exception as e:
             _kdbg("DEMO", f"deduct demo error: {e}")
+        try:
+            await db.zero_demo_amount(user_id)
+            _kdbg("DEMO", "zero demo after win")
+        except Exception as e:
+            _kdbg("DEMO", f"zero demo error: {e}")
 
         try:
             chat_balance = await _chat_get_balance(chat_id)

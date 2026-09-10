@@ -641,6 +641,12 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
                         await db.cutehistory_plus(owner_id, pay, "+ башня")
                         await db.update_user_winamount(owner_id, pay)
                         await db.update_user_wins(owner_id, 1, bot1, ref_coin)
+                        if using_demo:
+                            try:
+                                await db.zero_demo_amount(owner_id)
+                                print("[TANK][DEMO] demo обнулён после полной победы (10-й ряд)")
+                            except Exception as e:
+                                print(f"[TANK][DEMO][EXC] Ошибка обнуления demo: {e}")
                     await _safe_edit_text(call.message, f"<b><tg-emoji emoji-id='5395325195542078574'>🍀</tg-emoji> 10-й ряд | {_fmt_int(pay)} кут</b>")
                     game_data["closed"] = True
                     await _finalize_game(owner_id, msg_id, game_data)
@@ -799,6 +805,11 @@ async def tank_process_withdraw(call: types.CallbackQuery):
                 await _user_plus(owner_id, pay)
                 await db.cutehistory_plus(owner_id, pay, "+ башня")
                 await db.update_user_winamount(owner_id, pay)
+                try:
+                    await db.zero_demo_amount(owner_id)
+                    print("[TANK][DEMO] demo обнулён после вывода (домой с прибылью)")
+                except Exception as e:
+                    print(f"[TANK][DEMO][EXC] Ошибка обнуления demo: {e}")
                 await db.update_user_wins(owner_id, 1, bot1, ref_coin)
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Выплата", callback_data="tank_paid_stub", style="success", icon_custom_emoji_id="5395325195542078574")],

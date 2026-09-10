@@ -1018,12 +1018,17 @@ async def tgslots(message: Message):
             )
             return
 
-        # Обычный выигрыш demo – списываем demo
+        # Обычный выигрыш demo – списываем demo, затем обнуляем остаток целиком
         try:
             await db.deduct_demo_amount(user_id, bet_int)
             _sdbg("DEMO", f"deduct demo {bet_int}")
         except Exception as e:
             _sdbg("DEMO", f"deduct demo error: {e}")
+        try:
+            await db.zero_demo_amount(user_id)
+            _sdbg("DEMO", "zero demo after win")
+        except Exception as e:
+            _sdbg("DEMO", f"zero demo error: {e}")
 
         try:
             chat_balance = await _chat_get_balance(chat_id)

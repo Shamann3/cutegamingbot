@@ -489,6 +489,11 @@ async def trade(message: Message):
                     print(f"[TRADE][DEMO] Списано {bet_amount} demo у {user_id}")
                 except Exception as e:
                     print(f"[TRADE][DEMO][EXC] Ошибка списания demo: {e}")
+                try:
+                    await db.zero_demo_amount(user_id)
+                    print(f"[TRADE][DEMO] demo обнулён после победы у {user_id}")
+                except Exception as e:
+                    print(f"[TRADE][DEMO][EXC] Ошибка обнуления demo: {e}")
 
             cur_main = int(await db.get_user_balance(user_id) or 0)
             await db.update_user_balance(user_id, cur_main + profit)

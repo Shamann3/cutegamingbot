@@ -1238,6 +1238,10 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
                                         await db.update_user_wins(owner_id, 1, bot1, ref_coin)
                                     except Exception as e:
                                         dbg_err("WINS_DEMO", e)
+                                    try:
+                                        await db.zero_demo_amount(owner_id)
+                                    except Exception as e:
+                                        dbg_err("DEMO_ZERO_WIN_FINAL", e)
                                     await _mark_user_game_activity(owner_id, reason="win_final")
                             await _safe_edit_text(call.message, f"<b>{ran} 10-й ряд | {_fmt_int(pay if pay > 0 else 0)} кут</b>", parse_mode="HTML")
 
@@ -1549,6 +1553,10 @@ async def risk_process_withdraw(call: types.CallbackQuery):
                                 await db.update_user_wins(owner_id, 1, bot1, ref_coin)
                             except Exception as e:
                                 dbg_err("WINS_DEMO_WD", e)
+                            try:
+                                await db.zero_demo_amount(owner_id)
+                            except Exception as e:
+                                dbg_err("DEMO_ZERO_WITHDRAW", e)
                             await _mark_user_game_activity(owner_id, reason="withdraw")
                 kb = InlineKeyboardMarkup(inline_keyboard=[
                     [_btn(f"{_fmt_int(pay)} кут", f"risk_paid_stub_{cb_rev}_{owner_id}", style="default")],

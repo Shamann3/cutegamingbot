@@ -10586,6 +10586,105 @@ class Database:
                     _vdbg(f"[ЛИМИТЫ][SCHEMA][WARN] uq withdraw_log пропущен: {e!r}")
 
         _vdbg("[ЛИМИТЫ][SCHEMA] ✅ OK")
+
+    async def ensure_growth_fund_schema(self) -> None:
+        """
+        Схема «Общего Фонда Роста» (комиссия игры).
+        Запусти 1 раз на старте (после connect). НИЧЕГО НЕ ДРОПАЕТ.
+
+        Таблицы:
+          • growth_fund_ledger      - журнал КАЖДОГО события комиссии (аудит,
+                                        ничего не удаляем, храним вечно).
+          • growth_fund_user_stats  - быстрый агрегат "сколько игрок внёс за
+                                        всё время" (профиль, экран статистики) -
+                                        без SUM() по ledger на каждый рендер.
+          • growth_fund_pool        - накопленный остаток фонда на КАЖДУЮ группу
+                                        (эти куты отдельно от chat.chatbalance,
+                                        они зарезервированы под будущие дивиденды
+                                        игрокам, а не под выплаты в играх).
+          • growth_fund_dividend_log - журнал выплат дивидендов из фонда игрокам
+                                        (когда/кому/сколько) - для истории и
+                                        будущего экрана "мои дивиденды".
+        """
+        if not getattr(self, "pool", None):
+            _vdbg("[ФОНД РОСТА][SCHEMA][ERROR] pool is None")
+            return
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                # 1) growth_fund_ledger - журнал событий комиссии
+                await conn.execute(
+                    """
+                CREATE TABLE IF NOT EXISTS growth_fund_ledger (
+                    id BIGSERIAL PRIMARY KEY,
+                    chat_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    game TEXT NOT NULL,
+                    round_id TEXT,
+                    pot BIGINT NOT NULL,
+                    level SMALLINT NOT NULL,
+                    rate DOUBLE PRECISION NOT NULL,
+                    commission BIGINT NOT NULL,
+                    to_chat_balance BIGINT NOT NULL,
+                    to_growth_fund BIGINT NOT NULL,
+                    to_project BIGINT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                """)
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_gf_ledger_user ON growth_fund_ledger(user_id);")
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_gf_ledger_chat ON growth_fund_ledger(chat_id);")
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_gf_ledger_created ON growth_fund_ledger(created_at);")
+
+                # 2) growth_fund_user_stats - агрегат по игроку (для профиля)
+                await conn.execute(
+                    """
+                CREATE TABLE IF NOT EXISTS growth_fund_user_stats (
+                    user_id BIGINT PRIMARY KEY,
+                    total_contributed BIGINT NOT NULL DEFAULT 0,
+                    total_to_chat_balance BIGINT NOT NULL DEFAULT 0,
+                    total_to_growth_fund BIGINT NOT NULL DEFAULT 0,
+                    total_dividends_received BIGINT NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                """)
+
+                # 3) growth_fund_pool - остаток фонда на группу (под дивиденды)
+                await conn.execute(
+                    """
+                CREATE TABLE IF NOT EXISTS growth_fund_pool (
+                    chat_id BIGINT PRIMARY KEY,
+                    balance BIGINT NOT NULL DEFAULT 0,
+                    total_ever_added BIGINT NOT NULL DEFAULT 0,
+                    total_ever_paid_out BIGINT NOT NULL DEFAULT 0,
+                    last_dividend_at TIMESTAMPTZ,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                """)
+
+                # 4) growth_fund_dividend_log - журнал выплат дивидендов
+                await conn.execute(
+                    """
+                CREATE TABLE IF NOT EXISTS growth_fund_dividend_log (
+                    id BIGSERIAL PRIMARY KEY,
+                    chat_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    period_start TIMESTAMPTZ NOT NULL,
+                    period_end TIMESTAMPTZ NOT NULL,
+                    contributed_in_period BIGINT NOT NULL,
+                    payout BIGINT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                """)
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_gf_div_user ON growth_fund_dividend_log(user_id);")
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_gf_div_chat ON growth_fund_dividend_log(chat_id);")
+
+        _vdbg("[ФОНД РОСТА][SCHEMA] ✅ OK")
+
     async def add_withdraw_usage(self , user_id: int , amount: int) -> Dict [ str , Any ]:
         """
         ВАЖНО: это то, что должно вызываться при успешном выводе,
@@ -23318,6 +23417,29 @@ class Database:
             print(f"Ошибка PostgreSQL при списании demo для пользователя {user_id}: {e}")
         except Exception as e:
             print(f"Неизвестная ошибка при списании demo для пользователя {user_id}: {e}")
+
+    async def zero_demo_amount(self , user_id: int):
+        """
+        Полностью обнуляет колонку demo пользователя (SET demo = 0), а не
+        частично списывает. Используется в играх ПОСЛЕ реального выигрыша
+        (или вывода/«домой» с прибылью) при using_demo - чтобы весь остаток
+        demo (в т.ч. от «Купона Возможностей») сгорал за одну победу целиком,
+        а не тратился по частям на много раундов подряд.
+        Вызывается ДОПОЛНИТЕЛЬНО к обычному db.deduct_demo_amount(...) - сам
+        deduct_demo_amount нигде не убирается и не меняется.
+        """
+        query = """
+            UPDATE users
+            SET demo = 0
+            WHERE user_id = $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(query , user_id)
+        except asyncpg.exceptions.PostgresError as e:
+            print(f"Ошибка PostgreSQL при обнулении demo для пользователя {user_id}: {e}")
+        except Exception as e:
+            print(f"Неизвестная ошибка при обнулении demo для пользователя {user_id}: {e}")
 
     async def get_user_0demo(self , user_id: int) -> int:
         """

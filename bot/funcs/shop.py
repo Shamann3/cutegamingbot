@@ -2863,6 +2863,10 @@ async def shop_op(message: Message):
             await marix(db , user_id , message)
             await db.delete_user_inventory1(user_id , item_name)
 
+        elif "couponpossi" in str(second_name):
+            await coupon_possibilities(db , user_id , message)
+            await db.delete_user_inventory1(user_id , item_name)
+
 
 
 
