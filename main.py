@@ -40429,8 +40429,20 @@ async def botmain():
         # handoff в одном и том же процессе - без флага хендлер задвоился бы
         # и на 1 клик обрабатывался бы N раз (N сообщений-разъяснений подряд).
         if not getattr(dp, "_gfund_commission_handler_registered", False):
-            from bot.funcs.growth_fund import handle_commission_callback, COMMISSION_CALLBACK_PREFIX
-            dp.callback_query(F.data.startswith(COMMISSION_CALLBACK_PREFIX + "|"))(handle_commission_callback)
+            from bot.funcs.growth_fund import (
+                handle_commission_callback,
+                handle_commission_hide_callback,
+                COMMISSION_CALLBACK_PREFIX,
+                HIDE_CALLBACK_PREFIX,
+            )
+
+            async def _gfund_commission_callback_entry(call):
+                await handle_commission_callback(call, db)
+
+            dp.callback_query(F.data.startswith(COMMISSION_CALLBACK_PREFIX + "|"))(_gfund_commission_callback_entry)
+            # Кнопка "✖️ Скрыть" на панели-разъяснении - убирает панель из
+            # чата (не требует db, просто удаляет своё же сообщение).
+            dp.callback_query(F.data == HIDE_CALLBACK_PREFIX)(handle_commission_hide_callback)
             dp._gfund_commission_handler_registered = True
     except Exception as e:
         print(f"[GFUND][WARN] register commission callback: {type(e).__name__}: {e}")

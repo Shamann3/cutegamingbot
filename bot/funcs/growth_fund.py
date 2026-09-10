@@ -143,17 +143,20 @@ async def _advance_milestone(db, bot, user_id: int, *, tier: int, progress: int,
             try:
                 next_target = get_milestone_target(new_tier)
                 times_word = "раз" if crossed == 1 else "раза"
+                coupon_word = "купон" if qty_per_cross * crossed == 1 else "купона"
+                bar = format_milestone_bar(new_progress, next_target)
                 await bot.send_message(
                     int(user_id),
                     (
-                        "🌱 <b>Ваш вклад в Фонд Роста достиг новой отметки!</b>\n\n"
-                        f"Шкала личного вклада пройдена {crossed} {times_word} подряд — "
-                        f"в награду начислен «👑 Купон Возможностей» "
-                        f"(×{qty_per_cross * crossed}) прямо в Ваш инвентарь.\n\n"
-                        f"Следующая награда — при {_fmt(next_target)} Kut личного вклада "
-                        f"(сейчас {_fmt(new_progress)}/{_fmt(next_target)}).\n\n"
-                        "Использовать купон можно командой «использовать 💸», "
-                        "а можно продать или передать другому игроку — он такой же предмет, как любой другой."
+                        "🎉 <b>Новая отметка на шкале Фонда Роста!</b>\n\n"
+                        f"Вы прошли шкалу личного вклада {crossed} {times_word} подряд — "
+                        f"прямо в инвентарь начислено <b>{qty_per_cross * crossed} «👑 Купон "
+                        f"Возможностей»</b> ({coupon_word}).\n\n"
+                        f"{bar} <code>{_fmt(new_progress)}/{_fmt(next_target)} Kut</code>\n"
+                        "<i>Каждая победа с комиссией двигает эту шкалу — следующая награда "
+                        "уже ближе, чем кажется.</i>\n\n"
+                        "<blockquote>💸 Использовать — команда «использовать»\n"
+                        "🎁 Подарить или продать — обычный предмет инвентаря, как любой другой</blockquote>"
                     ),
                     parse_mode="HTML",
                 )
@@ -173,6 +176,50 @@ def _fmt(n: int) -> str:
         return f"{int(n):,}".replace(",", " ")
     except Exception:
         return str(n)
+
+
+# Красивые человеческие названия игр для текстов (панель комиссии игроку,
+# уведомления и статистика владельцу) - вместо сырых внутренних идентификаторов
+# типа "tic_tac_toe" или "fortuna_lobby". Ключи - те же строки, что в
+# GROWTH_FUND_GAME_MULTIPLIER (bot/config/config.py); если игру когда-то
+# добавят без обновления этого словаря - _game_display() красиво откатится
+# на исходное имя, ничего не сломается.
+GAME_DISPLAY_NAMES: Dict[str, str] = {
+    # --- PvP ---
+    "kosti": "🎲 Кости",
+    "orel": "🪙 Орёл или решка",
+    "knb": "✊ Камень-ножницы-бумага",
+    "duel": "🔫 Дуэль",
+    "scah": "♟ Шашки",
+    "mines": "💣 Мины",
+    "memory": "🧠 Мемори",
+    "tic_tac_toe": "❌⭕ Крестики-нолики",
+    "words": "🔤 Слова",
+    "fortuna_lobby": "🎡 Фортуна",
+    "bingo": "🔢 Бинго",
+    # --- PvE ---
+    "trade": "📈 Трейд",
+    "balls": "🔮 Шарик",
+    "risk": "🎯 Риск",
+    "tank": "🛡 Башня",
+    "plate": "🧱 Плиты",
+    "bombs": "💥 Бомбы",
+    "provoda": "🔌 Провода",
+    "fortuna_solo": "🎡 Рулетка",
+    "slots": "🎰 Слоты",
+    "kube": "🎲 Куб",
+    "darts": "🎯 Дартс",
+    "basket": "🏀 Баскетбол",
+    "bowling": "🎳 Боулинг",
+    "soccer": "⚽ Футбол",
+}
+
+
+def _game_display(game: Optional[str]) -> str:
+    """Красивое имя игры для текста; неизвестным именам - честный fallback."""
+    if not game:
+        return "🎮 Игра"
+    return GAME_DISPLAY_NAMES.get(str(game), f"🎮 {str(game).capitalize()}")
 
 
 async def get_user_milestone_state(db, user_id: int) -> Dict[str, Any]:
@@ -515,27 +562,38 @@ async def _notify_owner_commission(
     if not owner_id or bot is None:
         return
 
-    lines = ["💠 <b>Комиссия собрана</b>", f"Игра: <b>{game}</b>"]
+    pot = int(result.get("pot", 0))
+    commission = int(result.get("commission", 0))
+    pct = (commission / pot * 100.0) if pot > 0 else 0.0
+    pct_str = f"{pct:.1f}".rstrip("0").rstrip(".") if pct else "0"
+
+    lines = [f"💠 <b>Комиссия собрана</b> · {_game_display(game)}"]
 
     if is_pvp:
         try:
             loser_list = [int(u) for u in (loser_ids or [])]
         except Exception:
             loser_list = []
-        losers_str = ", ".join(str(u) for u in loser_list) if loser_list else "—"
+        losers_str = ", ".join(f"<code>{u}</code>" for u in loser_list) if loser_list else "—"
         label = "Проигравший" if len(loser_list) == 1 else "Проигравшие"
-        lines.append("Тип: <b>PvP</b>")
-        lines.append(f"Победитель: <code>{int(winner_id if winner_id is not None else user_id)}</code>")
-        lines.append(f"{label}: <code>{losers_str}</code>")
+        lines.append(
+            f"⚔️ <b>PvP</b> · Победитель <code>{int(winner_id if winner_id is not None else user_id)}</code> "
+            f"→ {label.lower()} {losers_str}"
+        )
     else:
-        lines.append("Тип: <b>PvE</b>")
-        lines.append(f"Игрок: <code>{int(user_id)}</code>")
+        lines.append(f"🎮 <b>PvE</b> · Игрок <code>{int(user_id)}</code>")
 
-    lines.append(f"Банк раунда: {_fmt(result.get('pot', 0))} Kut")
-    lines.append(f"Комиссия: {_fmt(result.get('commission', 0))} Kut")
-    lines.append(f"→ резерв проекта: {_fmt(result.get('to_chat_balance', 0))} Kut")
-    lines.append(f"→ Фонд Роста: {_fmt(result.get('to_growth_fund', 0))} Kut")
-    lines.append(f"→ развитие проекта: {_fmt(result.get('to_project', 0))} Kut")
+    lines.append("")
+    lines.append(f"Банк раунда: <b>{_fmt(pot)} Kut</b>")
+    lines.append(f"Комиссия: <b>{_fmt(commission)} Kut</b> <i>({pct_str}%)</i>")
+    lines.append("")
+    lines.append(
+        "<blockquote>"
+        f"💠 Резерв проекта: <b>{_fmt(result.get('to_chat_balance', 0))} Kut</b>\n"
+        f"🌱 Фонд Роста: <b>{_fmt(result.get('to_growth_fund', 0))} Kut</b>\n"
+        f"🚀 Развитие проекта: <b>{_fmt(result.get('to_project', 0))} Kut</b>"
+        "</blockquote>"
+    )
 
     lifetime_total = result.get("lifetime_total_commission")
     lifetime_events = result.get("lifetime_total_events")
@@ -545,11 +603,20 @@ async def _notify_owner_commission(
         lifetime_events = totals["total_events"]
 
     lines.append("")
-    lines.append(f"♾ <b>Собрано всего с начала работы: {_fmt(lifetime_total)} Kut</b> ({_fmt(lifetime_events)} событий)")
-    lines.append('Полная статистика по периодам - командой "статистика комиссий".')
+    lines.append(f"♾ <b>Всего с начала работы: {_fmt(lifetime_total)} Kut</b> <i>({_fmt(lifetime_events)} событий)</i>")
+
+    kb = None
+    try:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="📊 Открыть статистику", callback_data=f"{STATS_CALLBACK_PREFIX}|day"),
+        ]])
+    except Exception:
+        kb = None
 
     try:
-        await bot.send_message(owner_id, "\n".join(lines), parse_mode="HTML")
+        await bot.send_message(owner_id, "\n".join(lines), parse_mode="HTML", reply_markup=kb)
     except Exception as e:
         _vdbg(f"[ФОНД РОСТА][УВЕДОМЛЕНИЕ] send_message owner fail: {e!r}")
 
@@ -686,52 +753,146 @@ def build_commission_button(result: Dict[str, Any], *, callback_data: Optional[s
 
 
 def format_commission_explainer(
-    *, pot: int, commission: int, to_chat: int, to_fund: int, to_project: int, is_pvp: bool = False,
+    *,
+    pot: int,
+    commission: int,
+    to_chat: int,
+    to_fund: int,
+    to_project: int,
+    is_pvp: bool = False,
+    game: Optional[str] = None,
+    milestone: Optional[Dict[str, Any]] = None,
+    lifetime_contrib: Optional[int] = None,
 ) -> str:
     """
-    Полный, честный разбор комиссии этого раунда - текст экрана-разъяснения.
-    Доля "chat_balance" ВСЕХ комиссий (и PvE, и PvP) уходит в единый
-    технический резерв проекта, а не в баланс группы, где сыграли раунд -
-    поэтому текст одинаково честен для обоих случаев (см. apply_commission()
-    и apply_commission_pvp() в этом же файле).
+    Полный, честный разбор комиссии этого раунда - текст экрана-разъяснения
+    под кнопкой "Комиссия игры". Доля "chat_balance" ВСЕХ комиссий (и PvE, и
+    PvP) уходит в единый технический резерв проекта, а не в баланс группы,
+    где сыграли раунд - поэтому текст одинаково честен для обоих случаев
+    (см. apply_commission() и apply_commission_pvp() в этом же файле).
+
+    milestone / lifetime_contrib - если переданы (см. handle_commission_callback,
+    подтягивает live из БД по нажавшему кнопку), в текст добавляется блок
+    личного прогресса до "Купона Возможностей" - это то, что реально мотивирует
+    играть дальше: наглядная, честная шкала без всякой "магии".
     """
     pot = int(pot); commission = int(commission)
     pct = (commission / pot * 100.0) if pot > 0 else 0.0
     pct_str = f"{pct:.1f}".rstrip("0").rstrip(".") if pct else "0"
 
-    chat_line = f"→ Общий резерв проекта: <b>{_fmt(to_chat)} Kut</b>"
     if is_pvp:
         level_note = (
-            "Процент комиссии в PvP не привязан к конкретной группе (банк формируют сами "
-            "игроки) - единый тариф для всех PvP-раундов."
+            "Ставки в этом раунде сделали сами игроки — тариф комиссии в PvP единый "
+            "для всех, независимо от группы."
         )
     else:
         level_note = (
-            "Процент комиссии зависит от ★ уровня группы, где сыграли (чем выше уровень — "
-            "тем ниже комиссия для всех в ней) и никогда не меняется скрыто. Куда именно "
-            "уходят куты - не зависит от группы: единый резерв для всего проекта."
+            "Процент комиссии зависит от ★ уровня группы, где сыграли — чем выше "
+            "уровень, тем ниже комиссия для всех в ней. Куда уходят куты - не зависит "
+            "от группы: один резерв для всего проекта."
         )
 
-    return (
-        "🌱 <b>Комиссия игры — как это работает</b>\n\n"
-        f"Банк этого раунда: <b>{_fmt(pot)} Kut</b>\n"
-        f"Удержанная комиссия: <b>{_fmt(commission)} Kut</b> ({pct_str}%)\n\n"
-        "Куда именно ушла комиссия:\n"
-        f"{chat_line}\n"
-        f"→ Общий Фонд Роста: <b>{_fmt(to_fund)} Kut</b>\n"
-        f"→ Развитие проекта: <b>{_fmt(to_project)} Kut</b>\n\n"
-        f"{level_note} "
-        "Из Общего Фонда Роста Вам начисляется личный прогресс на шкале в профиле — "
-        "она открыта, у неё нет случайных множителей."
-    )
+    header = f"🌱 <b>Комиссия раунда — {_game_display(game)}</b>" if game else "🌱 <b>Комиссия раунда — открытый разбор</b>"
+
+    parts = [
+        header,
+        "",
+        f"Банк раунда: <b>{_fmt(pot)} Kut</b>",
+        f"Удержано: <b>−{_fmt(commission)} Kut</b> <i>({pct_str}% от банка)</i>",
+        "",
+        "<blockquote>"
+        f"💠 Резерв проекта — <b>{_fmt(to_chat)} Kut</b>\n"
+        f"🌱 Общий Фонд Роста — <b>{_fmt(to_fund)} Kut</b>\n"
+        f"🚀 Развитие проекта — <b>{_fmt(to_project)} Kut</b>"
+        "</blockquote>",
+        "",
+        f"<i>{level_note}</i>",
+    ]
+
+    if milestone:
+        bar = milestone.get("bar") or format_milestone_bar(milestone.get("progress", 0), milestone.get("target", 1))
+        progress = int(milestone.get("progress", 0))
+        target = int(milestone.get("target", 1))
+        parts += [
+            "",
+            "━━━━━━━━━━━━━━━━━━",
+            "🏆 <b>Ваш путь к «Купону Возможностей»</b>",
+            f"{bar} <code>{_fmt(progress)}/{_fmt(target)} Kut</code>",
+            "<i>Комиссия, которую Вы платите победами, засчитывается в эту шкалу — "
+            "дойдёте до отметки, и купон окажется прямо в инвентаре.</i>",
+        ]
+
+    if lifetime_contrib is not None and int(lifetime_contrib) > 0:
+        parts += [
+            "",
+            f"За всё время Ваш вклад в Фонд Роста: <b>{_fmt(int(lifetime_contrib))} Kut</b>.",
+        ]
+
+    parts += [
+        "",
+        "<i>Никаких скрытых процентов и «случайных» множителей — всё видно здесь, "
+        "в один клик, при каждом раунде. Продолжайте играть: следующая награда уже "
+        "ближе, чем кажется.</i>",
+    ]
+
+    return "\n".join(parts)
 
 
-async def handle_commission_callback(call) -> None:
+# Клик по кнопке "Комиссия игры" много раз подряд НЕ должен заваливать чат
+# одинаковыми сообщениями - первый клик открывает панель-разъяснение, а
+# каждый следующий клик по ТОЙ ЖЕ кнопке редактирует уже открытую панель
+# (данные раунда неизменны, поэтому "редактирование" по сути просто не даёт
+# плодиться дублям). Ключ - результат раунда (сообщение с игрой или клиент
+# inline-режима), значение - куда именно редактировать. Память процесса,
+# без БД - это чисто визуальный UX-момент, переживать перезапуск бота не
+# обязан (после перезапуска просто откроется новая панель на следующий клик).
+_EXPLAINER_MSG_CACHE: Dict[str, tuple] = {}
+_EXPLAINER_MSG_CACHE_MAX = 5000
+
+HIDE_CALLBACK_PREFIX = "gfundhide"
+
+
+def _commission_explainer_cache_key(call) -> str:
+    """Ключ кэша панели-разъяснения: привязан к сообщению с результатом
+    раунда И к нажавшему пользователю (панель личная - показывает ЕГО
+    прогресс шкалы, поэтому если по одной кнопке в общем чате кликнут
+    разные игроки, у каждого должна открыться/редактироваться СВОЯ панель,
+    а не перезатирать чужую). Для inline-режима (нет call.message) - тот же
+    принцип на паре пользователь+inline-сообщение."""
+    from_user = getattr(call, "from_user", None)
+    uid = getattr(from_user, "id", 0) if from_user else 0
+
+    msg = getattr(call, "message", None)
+    if msg is not None:
+        try:
+            return f"m:{msg.chat.id}:{msg.message_id}:{uid}"
+        except Exception:
+            pass
+    inline_id = getattr(call, "inline_message_id", None)
+    return f"i:{uid}:{inline_id or call.data}"
+
+
+def _build_explainer_keyboard():
+    """Клавиатура панели-разъяснения - одна кнопка, чтобы аккуратно её
+    скрыть, когда всё понятно (см. handle_commission_hide_callback)."""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✖️ Скрыть", callback_data=HIDE_CALLBACK_PREFIX),
+    ]])
+
+
+async def handle_commission_callback(call, db=None) -> None:
     """
     Обработчик клика по кнопке «Комиссия игры: −N Kut» - показывает полный,
-    честный разбор комиссии именно этого раунда. Регистрируется в main.py:
+    честный разбор комиссии именно этого раунда + (если передан db) живой
+    прогресс личной шкалы игрока до "Купона Возможностей". Регистрируется
+    в main.py (через обёртку, передающую db):
 
-        dp.callback_query(F.data.startswith(COMMISSION_CALLBACK_PREFIX + "|"))(handle_commission_callback)
+        dp.callback_query(F.data.startswith(COMMISSION_CALLBACK_PREFIX + "|"))(...)
+
+    Повторные клики по той же кнопке РЕДАКТИРУЮТ уже открытую панель, а не
+    плодят одинаковые сообщения - см. _EXPLAINER_MSG_CACHE выше.
     """
     try:
         parts = (call.data or "").split("|")
@@ -746,23 +907,98 @@ async def handle_commission_callback(call) -> None:
             pass
         return
 
+    from_user = getattr(call, "from_user", None)
+    clicker_id = getattr(from_user, "id", None) if from_user else None
+
+    milestone = None
+    lifetime_contrib = None
+    if db is not None and clicker_id:
+        try:
+            milestone = await get_user_milestone_state(db, clicker_id)
+        except Exception as e:
+            _vdbg(f"[ФОНД РОСТА][КНОПКА] milestone fetch fail: {e!r}")
+        try:
+            lifetime_contrib = await get_user_lifetime_contribution(db, clicker_id)
+        except Exception as e:
+            _vdbg(f"[ФОНД РОСТА][КНОПКА] lifetime fetch fail: {e!r}")
+
+    text = format_commission_explainer(
+        pot=pot, commission=commission, to_chat=to_chat, to_fund=to_fund, to_project=to_project,
+        is_pvp=is_pvp, milestone=milestone, lifetime_contrib=lifetime_contrib,
+    )
+    kb = _build_explainer_keyboard()
+
     try:
         await call.answer()
     except Exception:
         pass
 
-    text = format_commission_explainer(
-        pot=pot, commission=commission, to_chat=to_chat, to_fund=to_fund, to_project=to_project, is_pvp=is_pvp,
-    )
+    key = _commission_explainer_cache_key(call)
+    cached = _EXPLAINER_MSG_CACHE.get(key)
+
+    if cached:
+        cached_chat_id, cached_msg_id = cached
+        try:
+            await call.bot.edit_message_text(
+                chat_id=cached_chat_id, message_id=cached_msg_id,
+                text=text, parse_mode="HTML", reply_markup=kb,
+            )
+            return
+        except Exception as e:
+            if "not modified" in str(e).lower():
+                # Панель уже показывает ровно эти данные - и так всё видно,
+                # повторно слать/редактировать нечего.
+                return
+            _vdbg(f"[ФОНД РОСТА][КНОПКА] edit fail, отправим заново: {e!r}")
+            _EXPLAINER_MSG_CACHE.pop(key, None)
+
+    # Первый клик (или прежняя панель стала недоступна) - открываем новую.
     # У inline-сообщений (Telegram inline mode) нет call.message - отвечать
     # "reply" некуда, поэтому шлём разбор личным сообщением тому, кто нажал.
     try:
         if getattr(call, "message", None) is not None:
-            await call.message.reply(text, parse_mode="HTML")
+            sent = await call.message.reply(text, parse_mode="HTML", reply_markup=kb)
         else:
-            await call.bot.send_message(call.from_user.id, text, parse_mode="HTML")
+            sent = await call.bot.send_message(clicker_id or (call.from_user.id if from_user else 0), text, parse_mode="HTML", reply_markup=kb)
+        _EXPLAINER_MSG_CACHE[key] = (sent.chat.id, sent.message_id)
+        if len(_EXPLAINER_MSG_CACHE) > _EXPLAINER_MSG_CACHE_MAX:
+            try:
+                _EXPLAINER_MSG_CACHE.pop(next(iter(_EXPLAINER_MSG_CACHE)))
+            except Exception:
+                pass
     except Exception as e:
-        _vdbg(f"[ФОНД РОСТА][КНОПКА] reply fail: {e!r}")
+        _vdbg(f"[ФОНД РОСТА][КНОПКА] send fail: {e!r}")
+
+
+async def handle_commission_hide_callback(call) -> None:
+    """
+    Обработчик кнопки "✖️ Скрыть" на панели-разъяснении - аккуратно убирает
+    панель из чата и чистит кэш, чтобы следующий клик по "Комиссия игры"
+    открыл свежую панель, а не пытался редактировать удалённое сообщение.
+    Регистрируется в main.py:
+
+        dp.callback_query(F.data == HIDE_CALLBACK_PREFIX)(handle_commission_hide_callback)
+    """
+    try:
+        await call.answer()
+    except Exception:
+        pass
+
+    msg = getattr(call, "message", None)
+    if msg is None:
+        return
+
+    try:
+        for k, v in list(_EXPLAINER_MSG_CACHE.items()):
+            if v == (msg.chat.id, msg.message_id):
+                _EXPLAINER_MSG_CACHE.pop(k, None)
+    except Exception:
+        pass
+
+    try:
+        await msg.delete()
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][СКРЫТЬ] delete fail: {e!r}")
 
 
 # ============================================================================
@@ -833,6 +1069,7 @@ async def get_commission_period_stats(db, *, period: str = "day") -> Dict[str, A
     empty: Dict[str, Any] = {
         "period": period, "events": 0, "commission": 0, "to_chat": 0, "to_fund": 0, "to_project": 0,
         "pve_commission": 0, "pve_events": 0, "pvp_commission": 0, "pvp_events": 0,
+        "prev_commission": None, "top_game": None, "top_game_commission": 0,
     }
     if not getattr(db, "pool", None):
         return empty
@@ -861,6 +1098,32 @@ async def get_commission_period_stats(db, *, period: str = "day") -> Dict[str, A
                 """,
                 house_chat_id,
             )
+
+            # "Топ игра" периода - какая игра принесла больше всего комиссии
+            # (мелкий, но приятный аналитический штрих для владельца).
+            top_row = await conn.fetchrow(
+                f"""
+                SELECT game, COALESCE(SUM(commission), 0) AS c
+                FROM growth_fund_ledger
+                {where_sql}
+                GROUP BY game
+                ORDER BY c DESC
+                LIMIT 1
+                """
+            )
+
+            # Сравнение с ПРЕДЫДУЩИМ равным по длине периодом (тренд ▲/▼) -
+            # не считаем для "всё время", там сравнивать не с чем.
+            prev_row = None
+            if interval:
+                prev_row = await conn.fetchrow(
+                    f"""
+                    SELECT COALESCE(SUM(commission), 0) AS commission
+                    FROM growth_fund_ledger
+                    WHERE created_at >= NOW() - INTERVAL '{interval}' - INTERVAL '{interval}'
+                      AND created_at < NOW() - INTERVAL '{interval}'
+                    """
+                )
     except Exception as e:
         _vdbg(f"[ФОНД РОСТА][СТАТИСТИКА] query fail period={period}: {e!r}")
         return empty
@@ -879,6 +1142,9 @@ async def get_commission_period_stats(db, *, period: str = "day") -> Dict[str, A
         "pve_events": int(row["pve_events"] or 0),
         "pvp_commission": int(row["pvp_commission"] or 0),
         "pvp_events": int(row["pvp_events"] or 0),
+        "top_game": str(top_row["game"]) if top_row and top_row["game"] else None,
+        "top_game_commission": int(top_row["c"]) if top_row and top_row["c"] else 0,
+        "prev_commission": int(prev_row["commission"]) if prev_row is not None else None,
     }
 
 
@@ -899,7 +1165,18 @@ def build_commission_stats_keyboard(period: str):
 
 
 def format_commission_stats_text(stats: Dict[str, Any]) -> str:
-    """Текст экрана статистики комиссии за выбранный период."""
+    """
+    Текст экрана статистики комиссии за выбранный период - полноценная
+    аналитическая панель для владельца: итоги, разбивка по адресам и типу
+    игр, топ-игра периода и тренд к предыдущему равному периоду (▲/▼).
+
+    В конец добавлена метка времени обновления - помимо чисто косметической
+    пользы, это гарантирует, что текст меняется при каждом клике даже если
+    цифры совпали с прошлым разом (иначе Telegram отвечает ошибкой "message
+    is not modified" на повторное редактирование одинакового текста).
+    """
+    import datetime as _dt
+
     period = stats.get("period", "day")
     label = _STATS_PERIOD_LABELS.get(period, period)
 
@@ -912,19 +1189,41 @@ def format_commission_stats_text(stats: Dict[str, Any]) -> str:
     pve_n = stats.get("pve_events", 0)
     pvp_c = stats.get("pvp_commission", 0)
     pvp_n = stats.get("pvp_events", 0)
+    avg = (commission // events) if events > 0 else 0
+
+    prev_commission = stats.get("prev_commission")
+    trend_line = ""
+    if prev_commission is not None:
+        if prev_commission > 0:
+            change_pct = (commission - prev_commission) / prev_commission * 100.0
+            arrow = "▲" if change_pct >= 0 else "▼"
+            trend_line = f" <i>({arrow} {abs(change_pct):.0f}% к прошлому такому же периоду)</i>"
+        elif commission > 0:
+            trend_line = " <i>(▲ прошлый такой же период был пустым)</i>"
+
+    top_game = stats.get("top_game")
+    top_game_line = ""
+    if top_game:
+        top_game_commission = stats.get("top_game_commission", 0)
+        top_game_line = f"\n🏅 Лидер периода: {_game_display(top_game)} — <b>{_fmt(top_game_commission)} Kut</b>"
+
+    now_str = _dt.datetime.now().strftime("%H:%M:%S")
 
     return (
-        f"📊 <b>Статистика комиссии — {label}</b>\n\n"
+        f"📊 <b>Статистика комиссии — {label}</b>\n"
+        f"<i>Обновлено {now_str}</i>\n\n"
         f"Событий с комиссией: <b>{_fmt(events)}</b>\n"
-        f"Собрано всего за период: <b>{_fmt(commission)} Kut</b>\n\n"
-        "Куда ушло:\n"
-        f"→ Резерв проекта: {_fmt(to_chat)} Kut\n"
-        f"→ Фонд Роста: {_fmt(to_fund)} Kut\n"
-        f"→ Развитие проекта: {_fmt(to_project)} Kut\n\n"
+        f"Собрано за период: <b>{_fmt(commission)} Kut</b>{trend_line}\n"
+        f"Среднее за событие: <b>{_fmt(avg)} Kut</b>{top_game_line}\n\n"
+        "<blockquote>"
+        f"💠 Резерв проекта — <b>{_fmt(to_chat)} Kut</b>\n"
+        f"🌱 Фонд Роста — <b>{_fmt(to_fund)} Kut</b>\n"
+        f"🚀 Развитие проекта — <b>{_fmt(to_project)} Kut</b>"
+        "</blockquote>\n\n"
         "Разбивка по типу игр:\n"
-        f"🎮 PvE: <b>{_fmt(pve_c)} Kut</b> ({_fmt(pve_n)} раунд.)\n"
-        f"⚔️ PvP: <b>{_fmt(pvp_c)} Kut</b> ({_fmt(pvp_n)} раунд.)\n\n"
-        "Навигация по периодам — кнопками ниже."
+        f"🎮 PvE: <b>{_fmt(pve_c)} Kut</b> <i>({_fmt(pve_n)} раунд.)</i>\n"
+        f"⚔️ PvP: <b>{_fmt(pvp_c)} Kut</b> <i>({_fmt(pvp_n)} раунд.)</i>\n\n"
+        "<i>Навигация по периодам — кнопками ниже.</i>"
     )
 
 
