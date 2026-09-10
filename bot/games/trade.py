@@ -433,14 +433,31 @@ async def trade(message: Message):
     # Заранее готовим клавиатуру (зависит от win/loss)
     if is_win:
         profit = bet_amount
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text=f"+ {_fmt(profit)} кут", callback_data="trade_stub",
-                                      style="success", icon_custom_emoji_id="5206284048254670148")],
-                [InlineKeyboardButton(text=outcome_text, callback_data="trade_stub",
-                                      style="default", icon_custom_emoji_id="6041720006973067267")],
-            ]
-        )
+
+        # Комиссия игры считается ДО показа результата - пользователь сразу
+        # видит ту сумму, которую реально получит (без обмана "показали одно,
+        # начислили другое").
+        gfund_result = None
+        try:
+            from bot.funcs.growth_fund import apply_commission
+            gfund_result = await apply_commission(
+                db, bot1, chat_id=chat_id, user_id=user_id, game="trade", pot=profit,
+            )
+            if gfund_result:
+                profit = max(0, profit - gfund_result["commission"])
+        except Exception as e:
+            print(f"[TRADE][GFUND][EXC] apply_commission error: {e}")
+
+        kb_rows = [
+            [InlineKeyboardButton(text=f"+ {_fmt(profit)} кут", callback_data="trade_stub",
+                                  style="success", icon_custom_emoji_id="5206284048254670148")],
+            [InlineKeyboardButton(text=outcome_text, callback_data="trade_stub",
+                                  style="default", icon_custom_emoji_id="6041720006973067267")],
+        ]
+        if gfund_result:
+            from bot.funcs.growth_fund import build_commission_button
+            kb_rows.append([build_commission_button(gfund_result)])
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     else:
         loss = bet_amount
         direction_text_ui = "Сделка сорвалась" if is_broken else (outcome_text if outcome_text else "Не угадал")

@@ -522,6 +522,7 @@ async def process_callback_ball(callback_query: CallbackQuery):
             # ---------- BALL (WIN) ----------
             if kind == "ball":
                 profit = bet_amount
+                is_free_real = has_assignment and is_free  # бесплатный челлендж - реальных кутов не двигаем
 
                 if using_demo:
                     # Списание demo, затем обнуляем остаток целиком (реальная победа)
@@ -533,17 +534,36 @@ async def process_callback_ball(callback_query: CallbackQuery):
                     except Exception as e:
                         print(f"[BALL][DEMO][EXC] Ошибка обнуления demo: {e}")
 
-                kb = InlineKeyboardMarkup(inline_keyboard=[
+                # Комиссия игры - считаем ДО показа результата, чтобы кнопка сразу
+                # отражала реально начисленную сумму. Не применяется в бесплатном
+                # челлендже (там нет реального банка/выплаты).
+                gfund_result = None
+                if not is_free_real and profit > 0:
+                    try:
+                        from bot.funcs.growth_fund import apply_commission
+                        gfund_result = await apply_commission(
+                            db, bot1, chat_id=chat_id, user_id=clicker_id, game="balls", pot=profit,
+                        )
+                        if gfund_result:
+                            profit = max(0, profit - gfund_result["commission"])
+                    except Exception as e:
+                        print(f"[BALL][GFUND][EXC] apply_commission error: {e}")
+
+                kb_rows = [
                     [InlineKeyboardButton(text=f"+ {_fmt_int(profit)} кут", callback_data="ball_paid_stub",
                                           style="success", icon_custom_emoji_id="5451814216031809603")],
                     [InlineKeyboardButton(text="Победа", callback_data="ball_paid_stub",
                                           style="default", icon_custom_emoji_id="6041720006973067267")],
-                ])
+                ]
+                if gfund_result:
+                    from bot.funcs.growth_fund import build_commission_button
+                    kb_rows.append([build_commission_button(gfund_result)])
+                kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
                 await _safe_edit_text(msg, "<tg-emoji emoji-id='5206284048254670148'>🎁</tg-emoji>", reply_markup=kb)
 
                 if has_assignment:
                     await gc_process_bet(user_id=clicker_id, event_chat_id=chat_id, bet=profit, outcome="+")
-                if has_assignment and is_free:
+                if is_free_real:
                     await _mark_user_game_activity(clicker_id, reason="win_free")
                 else:
                     cur_main = int(await db.get_user_balance(clicker_id) or 0)

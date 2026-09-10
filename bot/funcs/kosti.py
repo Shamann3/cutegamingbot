@@ -943,6 +943,19 @@ async def _settle_saga(game_id: int):
             gameskosti.save()
 
         if not game.get('winner_applied', False):
+            gfund_result = None
+            if gain > 0:
+                try:
+                    from bot.funcs.growth_fund import apply_commission_pvp
+                    gfund_result = await apply_commission_pvp(
+                        db, bot1, game="kosti", pot=int(gain),
+                        winner_id=winner_id, loser_ids=losers,
+                    )
+                    if gfund_result:
+                        gain = max(0, gain - gfund_result["commission"])
+                except Exception as e:
+                    print(f"[KOSTI][GFUND] apply_commission_pvp err={e!r}")
+
             try:
                 ok_new_w = await db.update_user_balance(winner_id, f"+{gain}")
                 await db.touch_balance_last_active(winner_id, set_active_status=True)
@@ -960,6 +973,27 @@ async def _settle_saga(game_id: int):
 
             game['winner_applied'] = True
             gameskosti.save()
+
+            # Обновляем итоговое сообщение реальной (после комиссии) суммой выигрыша.
+            try:
+                w_link = await create_user_link(
+                    winner_id,
+                    await db.get_firstname_by_user_id(winner_id),
+                    await db.get_username_by_user_id(winner_id)
+                )
+                winf = "{:,.0f}".format(gain).replace(",", ".")
+                text = f"<tg-emoji emoji-id='5262924479226473498'>🏆</tg-emoji> <b>{w_link}</b>"
+                if gain >= 1:
+                    text += f"\n<tg-emoji emoji-id='5294026527850132517'>💲</tg-emoji> <b>Выигрыш {winf} кут</b>"
+                kb_rows = [[InlineKeyboardButton(text="Подробнее", callback_data=f"podrobneekostihui_{game_id}")]]
+                if gfund_result:
+                    from bot.funcs.growth_fund import build_commission_button
+                    kb_rows.append([build_commission_button(gfund_result)])
+                kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+                button_kosti[game_id]['keyboard_result'] = kb
+                await _safe_edit_game(game, text, kb)
+            except Exception as e:
+                print(f"[KOSTI][result edit final] {e!r}")
 
         try:
             last_open_time, data_open = await db.get_historygames_times(winner_id)

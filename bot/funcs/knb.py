@@ -561,7 +561,26 @@ async def declare_winner(chat_id , message_id , game_id):
                 total_pot = game [ 'bet' ] * len(game [ 'participants' ])
                 win_amount = total_pot
                 results_text = "\n".join(results)
-                win_amount_formatted = "{:,.0f}".format(total_pot - game [ 'bet' ]).replace("," , ".")
+
+                # Комиссия игры считается ДО показа результата - пользователь
+                # сразу видит ту сумму, которую реально получит.
+                gross_gain = total_pot - game['bet']
+                net_gain = gross_gain
+                gfund_result = None
+                if gross_gain > 0:
+                    try:
+                        from bot.funcs.growth_fund import apply_commission_pvp
+                        loser_ids_all = [uid for uid in choices.keys() if uid != winner_id]
+                        gfund_result = await apply_commission_pvp(
+                            db, bot1, game="knb", pot=int(gross_gain),
+                            winner_id=winner_id, loser_ids=loser_ids_all,
+                        )
+                        if gfund_result:
+                            net_gain = max(0, gross_gain - gfund_result["commission"])
+                    except Exception as e:
+                        print(f"[KNB][GFUND] apply_commission_pvp err={e!r}")
+
+                win_amount_formatted = "{:,.0f}".format(net_gain).replace("," , ".")
                 first_name = await db.get_firstname_by_user_id(winner_id)
                 username = await db.get_username_by_user_id(winner_id)
 
@@ -657,9 +676,9 @@ async def declare_winner(chat_id , message_id , game_id):
                                             f"Ошибка при отправке сообщения владельцу победившего клана {winner_clan_owner}: {e}")
                     if user_id == winner_id:
                         balance = await db.get_user_balance(user_id)
-                        await db.update_user_balance(user_id ,balance + win_amount - game [ 'bet' ])
+                        await db.update_user_balance(user_id ,balance + net_gain)
                         await db.touch_balance_last_active(user_id , set_active_status=True)
-                        await db.cutehistory_plus(user_id , win_amount - game [ 'bet' ] , "+ кнб")
+                        await db.cutehistory_plus(user_id , net_gain , "+ кнб")
                         #await db.add_commissionknb(user_id , win_amount - game [ 'bet' ] , 'user')
 
                     else:
@@ -671,7 +690,7 @@ async def declare_winner(chat_id , message_id , game_id):
 
 
                 await db.update_user_wins(winner_id , 1, bot1, ref_coin)
-                await db.update_user_winamount(winner_id , win_amount - game [ 'bet' ])#
+                await db.update_user_winamount(winner_id , net_gain)#
                 await db.update_user_loose(user_id , 1, bot1, ref_coin)#
                 await db.update_game_last_activity(winner_id)
                 await db.update_game_last_activity(user_id)
@@ -758,10 +777,14 @@ async def declare_winner(chat_id , message_id , game_id):
                 win_text = f"\n<tg-emoji emoji-id='5195369389599265575'>💰</tg-emoji> <b>Выигрыш {win_amount_formatted} кут</b>" if total_pot > 0 else ""
                 from main import check_bet_and_set_item
                 await check_bet_and_set_item(winner_id , game [ 'bet' ])
+                gfund_kb = None
+                if gfund_result:
+                    from bot.funcs.growth_fund import build_commission_button
+                    gfund_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
                 await bot1.edit_message_text(
                     chat_id=chat_id , message_id=message_id ,
                     text=f"<b>{win_description}\n\n<tg-emoji emoji-id='5262906070996642883'>🏆</tg-emoji> {winner_link}{win_text}\n\n{results_text}</b>" ,
-                    parse_mode="HTML",disable_web_page_preview=True)
+                    parse_mode="HTML",disable_web_page_preview=True, reply_markup=gfund_kb)
                 del gamesknb [ game_id ]
             except Exception as e:
                 print(f"Ошибка при отображении результатов игры: {e}")

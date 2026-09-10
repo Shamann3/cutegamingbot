@@ -609,6 +609,8 @@ async def roll_callback(callback_query: CallbackQuery):
     loser_id = int([uid for uid in game["participants"] if int(uid) != winner_id][0])
 
     # выплаты
+    gfund_result = None
+    net_bet = bet
     if bet > 0:
         winner_balance = await db.get_user_balance(winner_id)
         loser_balance = await db.get_user_balance(loser_id)
@@ -630,16 +632,27 @@ async def roll_callback(callback_query: CallbackQuery):
                 pass
             return
 
-        await db.update_user_balance(winner_id, int(winner_balance) + bet)
+        try:
+            from bot.funcs.growth_fund import apply_commission_pvp
+            gfund_result = await apply_commission_pvp(
+                db, bot1, game="orel", pot=bet,
+                winner_id=winner_id, loser_ids=[loser_id],
+            )
+            if gfund_result:
+                net_bet = max(0, bet - gfund_result["commission"])
+        except Exception as e:
+            print(f"[OREL][GFUND] apply_commission_pvp err={e!r}")
+
+        await db.update_user_balance(winner_id, int(winner_balance) + net_bet)
         await db.update_user_balance(loser_id, int(loser_balance) - bet)
         await db.touch_balance_last_active(winner_id , set_active_status=True)
         await db.touch_balance_last_active(loser_id , set_active_status=True)
 
-        await db.cutehistory_plus(winner_id, bet, "+ орел или решка")
+        await db.cutehistory_plus(winner_id, net_bet, "+ орел или решка")
         await db.cutehistory_minus(loser_id, bet, "- орел или решка")
 
     total_pot = bet * len(game["participants"])
-    win_amount = max(total_pot - bet, 0)
+    win_amount = net_bet if bet > 0 else max(total_pot - bet, 0)
     win_amount_formatted = _fmt_kut(win_amount)
 
     # стата
@@ -682,10 +695,15 @@ async def roll_callback(callback_query: CallbackQuery):
     win_text = f"\n<tg-emoji emoji-id='5292275525518127278'>💰</tg-emoji> <b>Выигрыш {win_amount_formatted} кут</b>" if total_pot > 0 else ""
     results_text = f"<tg-emoji emoji-id='5262924479226473498'>🏆</tg-emoji> <b>{name_link} [{game['scores'].get(winner_id)}]</b>{win_text}"
 
+    result_kb = None
+    if gfund_result:
+        from bot.funcs.growth_fund import build_commission_button
+        result_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
+
     chat_id = game.get("chat_id")
     message_id = game.get("message_id")
     if chat_id and message_id:
-        await _safe_edit(int(chat_id), int(message_id), results_text, reply_markup=None)
+        await _safe_edit(int(chat_id), int(message_id), results_text, reply_markup=result_kb)
 
     # чистим игру
     try:

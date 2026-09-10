@@ -1219,6 +1219,19 @@ async def bombs_stop_game(callback_query: CallbackQuery):
             group_balance = await _chat_get_balance(chat_id)
             pay = min(net_win, group_balance.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
             pay_int = int(max(Decimal(0), pay))
+
+            gfund_result = None
+            if pay_int > 0:
+                try:
+                    from bot.funcs.growth_fund import apply_commission
+                    gfund_result = await apply_commission(
+                        db, bot1, chat_id=chat_id, user_id=owner_id, game="bombs", pot=pay_int,
+                    )
+                    if gfund_result:
+                        pay_int = max(0, pay_int - gfund_result["commission"])
+                except Exception as e:
+                    dbg_err("GFUND_DEMO_WD", e)
+
             if pay_int > 0:
                 await _chat_minus(chat_id, pay_int)
                 await _user_plus(uid, pay_int)
@@ -1242,9 +1255,11 @@ async def bombs_stop_game(callback_query: CallbackQuery):
                     dbg_err("WINS_WITHDRAW_DEMO", e)
                 await _mark_user_game_activity(uid, reason="withdraw_demo")
 
-            final_kb = InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text=f"{_fmt_kut(pay_int)} кут", callback_data="win_amount_callback")]]
-            )
+            final_kb_rows = [[InlineKeyboardButton(text=f"{_fmt_kut(pay_int)} кут", callback_data="win_amount_callback")]]
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                final_kb_rows.append([build_commission_button(gfund_result)])
+            final_kb = InlineKeyboardMarkup(inline_keyboard=final_kb_rows)
             await _safe_edit_text(
                 callback_query.message,
                 "<tg-emoji emoji-id='5294026527850132517'>🚀</tg-emoji>",
@@ -1283,6 +1298,17 @@ async def bombs_stop_game(callback_query: CallbackQuery):
                 _finalize_game(uid, msg_id)
                 return
 
+            gfund_result = None
+            try:
+                from bot.funcs.growth_fund import apply_commission
+                gfund_result = await apply_commission(
+                    db, bot1, chat_id=chat_id, user_id=owner_id, game="bombs", pot=pay_int,
+                )
+                if gfund_result:
+                    pay_int = max(0, pay_int - gfund_result["commission"])
+            except Exception as e:
+                dbg_err("GFUND_WITHDRAW", e)
+
             await _chat_minus(chat_id, pay_int)
             await _user_plus(uid, pay_int)
 
@@ -1307,9 +1333,11 @@ async def bombs_stop_game(callback_query: CallbackQuery):
 
             await _mark_user_game_activity(uid, reason="withdraw")
 
-            final_kb = InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text=f"{_fmt_kut(pay_int)} кут", callback_data="win_amount_callback")]]
-            )
+            final_kb_rows = [[InlineKeyboardButton(text=f"{_fmt_kut(pay_int)} кут", callback_data="win_amount_callback")]]
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                final_kb_rows.append([build_commission_button(gfund_result)])
+            final_kb = InlineKeyboardMarkup(inline_keyboard=final_kb_rows)
             await _safe_edit_text(
                 callback_query.message,
                 "<tg-emoji emoji-id='5294026527850132517'>🚀</tg-emoji>",

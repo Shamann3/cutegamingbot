@@ -759,6 +759,19 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                     profit = int(profit_now)
                     await db.deduct_demo_amount(owner_id, bet_amount)
                     pay = min(profit, await _chat_get_balance(chat_id))
+
+                    gfund_result = None
+                    if pay > 0:
+                        try:
+                            from bot.funcs.growth_fund import apply_commission
+                            gfund_result = await apply_commission(
+                                db, bot1, chat_id=chat_id, user_id=owner_id, game="plate", pot=pay,
+                            )
+                            if gfund_result:
+                                pay = max(0, pay - gfund_result["commission"])
+                        except Exception as e:
+                            print(f"[PLATE][GFUND][EXC] apply_commission(full) error: {e}")
+
                     if pay > 0:
                         await _chat_debit_best_effort(chat_id, pay)
                         await _user_delta(owner_id, +pay)
@@ -771,7 +784,12 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                                 print("[PLATE][DEMO] demo обнулён после полной победы (10-й ряд)")
                             except Exception as e:
                                 print(f"[PLATE][DEMO][EXC] Ошибка обнуления demo: {e}")
-                    await _safe_edit_text(call.message, f"<b>{visual_emoji} 10-й ряд | {_fmt_int(pay)} кут</b>")
+
+                    gfund_kb = None
+                    if gfund_result:
+                        from bot.funcs.growth_fund import build_commission_button
+                        gfund_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
+                    await _safe_edit_text(call.message, f"<b>{visual_emoji} 10-й ряд | {_fmt_int(pay)} кут</b>", reply_markup=gfund_kb)
                     game_data["closed"] = True; game_data["payout_done"] = True
                 else:
                     game_data["current_row"] = current_row + 1
@@ -932,6 +950,19 @@ async def plate_process_withdraw(call: types.CallbackQuery):
         if using_demo:
             await db.deduct_demo_amount(owner_id, int(game_data["bet"]))
             pay = min(int(profit), await _chat_get_balance(chat_id))
+
+            gfund_result = None
+            if pay > 0:
+                try:
+                    from bot.funcs.growth_fund import apply_commission
+                    gfund_result = await apply_commission(
+                        db, bot1, chat_id=chat_id, user_id=owner_id, game="plate", pot=pay,
+                    )
+                    if gfund_result:
+                        pay = max(0, pay - gfund_result["commission"])
+                except Exception as e:
+                    print(f"[PLATE][GFUND][EXC] apply_commission(demo_withdraw) error: {e}")
+
             if pay > 0:
                 await _chat_debit_best_effort(chat_id, pay)
                 await _user_delta(owner_id, +pay)
@@ -943,7 +974,11 @@ async def plate_process_withdraw(call: types.CallbackQuery):
                     print("[PLATE][DEMO] demo обнулён после вывода (домой с прибылью)")
                 except Exception as e:
                     print(f"[PLATE][DEMO][EXC] Ошибка обнуления demo: {e}")
-            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"{_fmt_int(pay)} кут", callback_data="plate_paid_stub")], [InlineKeyboardButton(text="Выплата", callback_data="plate_msg_stub")]])
+            kb_rows = [[InlineKeyboardButton(text=f"{_fmt_int(pay)} кут", callback_data="plate_paid_stub")], [InlineKeyboardButton(text="Выплата", callback_data="plate_msg_stub")]]
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                kb_rows.append([build_commission_button(gfund_result)])
+            kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
             await _safe_edit_text(call.message, "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji>", reply_markup=kb)
         elif has_assignment and is_free:
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"{_fmt_int(profit)} кут", callback_data="plate_paid_stub")], [InlineKeyboardButton(text="Выплата (челлендж)", callback_data="plate_msg_stub")]])
@@ -951,6 +986,19 @@ async def plate_process_withdraw(call: types.CallbackQuery):
             if profit > 0: await _gc_call(owner_id, chat_id, profit, "+", "WITHDRAW_FREE")
         else:
             pay = min(int(profit), await _chat_get_balance(chat_id))
+
+            gfund_result = None
+            if pay > 0:
+                try:
+                    from bot.funcs.growth_fund import apply_commission
+                    gfund_result = await apply_commission(
+                        db, bot1, chat_id=chat_id, user_id=owner_id, game="plate", pot=pay,
+                    )
+                    if gfund_result:
+                        pay = max(0, pay - gfund_result["commission"])
+                except Exception as e:
+                    print(f"[PLATE][GFUND][EXC] apply_commission(withdraw) error: {e}")
+
             if pay > 0:
                 await _chat_debit_best_effort(chat_id, pay)
                 await _user_delta(owner_id, +pay)
@@ -958,7 +1006,11 @@ async def plate_process_withdraw(call: types.CallbackQuery):
                 await db.cutehistory_plus(owner_id, pay, "+ плиты")
                 await db.update_user_winamount(owner_id, pay)
                 await db.update_user_wins(owner_id, 1, bot1, ref_coin)
-            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"{_fmt_int(pay)} кут", callback_data="plate_paid_stub")], [InlineKeyboardButton(text="Выплата", callback_data="plate_msg_stub")]])
+            kb_rows = [[InlineKeyboardButton(text=f"{_fmt_int(pay)} кут", callback_data="plate_paid_stub")], [InlineKeyboardButton(text="Выплата", callback_data="plate_msg_stub")]]
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                kb_rows.append([build_commission_button(gfund_result)])
+            kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
             await _safe_edit_text(call.message, "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji>", reply_markup=kb)
 
         game_data["payout_done"] = True; game_data["closed"] = True

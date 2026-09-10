@@ -1088,6 +1088,19 @@ async def _settle_saga(game_id: int):
 
         # --- ШАГ B: единичное начисление победителю ---
         if not game.get('winner_applied', False):
+            gfund_result = None
+            if gain > 0:
+                try:
+                    from bot.funcs.growth_fund import apply_commission_pvp
+                    gfund_result = await apply_commission_pvp(
+                        db, bot1, game="bingo", pot=int(gain),
+                        winner_id=winner_id, loser_ids=losers,
+                    )
+                    if gfund_result:
+                        gain = max(0, gain - gfund_result["commission"])
+                except Exception as e:
+                    print(f"[BINGO][GFUND] apply_commission_pvp err={e!r}")
+
             try:
                 ok_new_w = await db.update_user_balance(winner_id, f"+{gain}")
                 await db.touch_balance_last_active(winner_id, set_active_status=True)
@@ -1118,6 +1131,32 @@ async def _settle_saga(game_id: int):
 
             game['winner_applied'] = True
             gamesbingo.save()
+
+            # Обновляем итоговое сообщение реальной (после комиссии) суммой выигрыша.
+            try:
+                win_num = game.get('win_num')
+                winner_link = await create_user_link(
+                    winner_id,
+                    await db.get_firstname_by_user_id(winner_id),
+                    await db.get_username_by_user_id(winner_id)
+                )
+                winf = "{:,.0f}".format(gain).replace(",", ".")
+                text = (f"<tg-emoji emoji-id='5262924479226473498'>🏆</tg-emoji> <b>{winner_link}</b>\n"
+                        f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji> <b>Победное число : {win_num}</b>")
+                if gain >= 1:
+                    text += (f"\n<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> "
+                             f"<b>Выигрыш {winf} кут</b>")
+                kb_rows = [[InlineKeyboardButton(text="Подробнее", callback_data=f"podrobneebingohui_{win_num}_{game_id}")]]
+                if gfund_result:
+                    from bot.funcs.growth_fund import build_commission_button
+                    kb_rows.append([build_commission_button(gfund_result)])
+                kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+                button_bingo[game_id]['keyboard_result'] = kb
+                await safe_edit_text_and_markup(
+                    game, chat_id=game["chat_id"], message_id=game["message_id"],
+                    text=text, reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
+            except Exception as e:
+                print(f"[BINGO][result edit after commission] {e}")
 
         # История «last_open_time»
         try:

@@ -1202,6 +1202,19 @@ async def provoda_callback(callback_query: CallbackQuery):
                         _finalize_wires_game(user_id, "nowin")
                     return
 
+                # Комиссия игры - считаем ДО показа результата, чтобы кнопка
+                # сразу отражала реально начисленную сумму.
+                gfund_result = None
+                try:
+                    from bot.funcs.growth_fund import apply_commission
+                    gfund_result = await apply_commission(
+                        db, bot1, chat_id=chat_id, user_id=clicker_id, game="provoda", pot=pay,
+                    )
+                    if gfund_result:
+                        pay = max(0, pay - gfund_result["commission"])
+                except Exception as e:
+                    dbg_err("GFUND_WIN_ERR", e)
+
                 await _chat_minus(chat_id, int(pay))
                 await _user_plus(clicker_id, int(pay))
                 try:
@@ -1222,7 +1235,11 @@ async def provoda_callback(callback_query: CallbackQuery):
                 except Exception:
                     pass
                 await _mark_user_game_activity(clicker_id, reason="win")
-                btn_kb = _kb_paid(f"{_fmt_int(pay)} кут")
+                btn_kb_rows = list(_kb_paid(f"{_fmt_int(pay)} кут").inline_keyboard)
+                if gfund_result:
+                    from bot.funcs.growth_fund import build_commission_button
+                    btn_kb_rows.append([build_commission_button(gfund_result)])
+                btn_kb = InlineKeyboardMarkup(inline_keyboard=btn_kb_rows)
                 await _safe_render_final_state(msg, html_text="<tg-emoji emoji-id='5235942712988961539'>😎</tg-emoji>", plain_text="⚡️", reply_markup=btn_kb)
                 if state_available:
                     game.update({"settled": True, "closed": True, "settling": False, "result": "win", "win_streak": new_win_streak, "lose_streak": new_lose_streak})

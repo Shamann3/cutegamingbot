@@ -1100,6 +1100,19 @@ async def tgbasket(message: Message):
             chat_balance = 0
 
         pay = min(profit_int, max(0, chat_balance))
+
+        gfund_result = None
+        if pay > 0:
+            try:
+                from bot.funcs.growth_fund import apply_commission
+                gfund_result = await apply_commission(
+                    db, bot1, chat_id=chat_id, user_id=user_id, game="basket", pot=pay,
+                )
+                if gfund_result:
+                    pay = max(0, pay - gfund_result["commission"])
+            except Exception as e:
+                _kdbg("GFUND", f"apply_commission(demo) error: {e}")
+
         if pay > 0:
             await _chat_minus(chat_id, pay)
             await _user_plus(user_id, pay)
@@ -1112,10 +1125,10 @@ async def tgbasket(message: Message):
             except Exception as e:
                 _kdbg("STATS", f"update_user_wins(demo) error: {e}")
 
-        if has_assignment and profit_int > 0:
+        if has_assignment and pay > 0:
             try:
-                await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=profit_int, outcome="+")
-                _kdbg("GC", f"DEMO WIN gc +{profit_int}")
+                await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=pay, outcome="+")
+                _kdbg("GC", f"DEMO WIN gc +{pay}")
             except Exception as e:
                 _kdbg("GC", f"DEMO WIN gc error: {e}")
 
@@ -1130,10 +1143,14 @@ async def tgbasket(message: Message):
             style="default",
             icon_custom_emoji_id="5384088040677319401"
         )
+        kb_rows = [[button]]
+        if gfund_result:
+            from bot.funcs.growth_fund import build_commission_button
+            kb_rows.append([build_commission_button(gfund_result)])
         await _safe_edit_text(
             sent_msg,
             "<tg-emoji emoji-id='5888994487505536067'>🏀</tg-emoji>",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[button]]),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
             parse_mode="HTML",
         )
         return
@@ -1216,6 +1233,19 @@ async def tgbasket(message: Message):
 
         if chat_balance < win_amount_int:
             pay = max(0, int(chat_balance))
+
+            gfund_result = None
+            if pay > 0:
+                try:
+                    from bot.funcs.growth_fund import apply_commission
+                    gfund_result = await apply_commission(
+                        db, bot1, chat_id=chat_id, user_id=user_id, game="basket", pot=pay,
+                    )
+                    if gfund_result:
+                        pay = max(0, pay - gfund_result["commission"])
+                except Exception as e:
+                    _kdbg("GFUND", f"apply_commission(partial) error: {e}")
+
             effective_profit = max(0, pay - bet_int)
 
             if has_assignment and effective_profit > 0:
@@ -1237,33 +1267,54 @@ async def tgbasket(message: Message):
                 style="default",
                 icon_custom_emoji_id="6028346797368283073"
             )
-            await _safe_edit_reply_markup(basketball, InlineKeyboardMarkup(inline_keyboard=[[btn]]))
+            kb_rows = [[btn]]
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                kb_rows.append([build_commission_button(gfund_result)])
+            await _safe_edit_reply_markup(basketball, InlineKeyboardMarkup(inline_keyboard=kb_rows))
             return
 
         # полная выплата
-        if has_assignment and profit_int > 0:
+        gfund_result = None
+        net_profit = profit_int
+        if profit_int > 0:
             try:
-                await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=profit_int, outcome="+")
-                _kdbg("GC", f"WIN gc +{profit_int}")
+                from bot.funcs.growth_fund import apply_commission
+                gfund_result = await apply_commission(
+                    db, bot1, chat_id=chat_id, user_id=user_id, game="basket", pot=profit_int,
+                )
+                if gfund_result:
+                    net_profit = max(0, profit_int - gfund_result["commission"])
+            except Exception as e:
+                _kdbg("GFUND", f"apply_commission(full) error: {e}")
+
+        if has_assignment and net_profit > 0:
+            try:
+                await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=net_profit, outcome="+")
+                _kdbg("GC", f"WIN gc +{net_profit}")
             except Exception as e:
                 _kdbg("GC", f"WIN gc error: {e}\n{traceback.format_exc()}")
 
-        await _user_plus(user_id, win_amount_int - bet_int)
-        await _chat_minus(chat_id, win_amount_int - bet_int)
+        await _user_plus(user_id, net_profit)
+        await _chat_minus(chat_id, net_profit)
         await db.update_user_wins(user_id, 1, bot1, ref_coin)
-        await db.cutehistory_plus(user_id, float(win_amount_int), "+ баскетбол")
+        await db.cutehistory_plus(user_id, float(bet_int + net_profit), "+ баскетбол")
 
         await _mark_user_game_activity(user_id, reason="win")
         await _safe_add_xp(user_id)
         _update_streaks(user_id, is_win=True)
 
         button = InlineKeyboardButton(
-            text=f"{_fmt_int(profit_int)} кут | {mult_dec:.1f}x",
+            text=f"{_fmt_int(net_profit)} кут | {mult_dec:.1f}x",
             callback_data="money_won",
             style="default",
             icon_custom_emoji_id="5384088040677319401"
         )
-        await _safe_edit_reply_markup(basketball, InlineKeyboardMarkup(inline_keyboard=[[button]]))
+        kb_rows = [[button]]
+        if gfund_result:
+            from bot.funcs.growth_fund import build_commission_button
+            kb_rows.append([build_commission_button(gfund_result)])
+        await _safe_edit_reply_markup(basketball, InlineKeyboardMarkup(inline_keyboard=kb_rows))
         return
 
     # LOSS

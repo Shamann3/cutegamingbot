@@ -574,9 +574,23 @@ async def mines_mine_click_callback(callback_query: CallbackQuery):
 
         bet = game [ 'bet' ]
 
+        gfund_result = None
+        net_bet = bet
+        if bet > 0:
+            try:
+                from bot.funcs.growth_fund import apply_commission_pvp
+                gfund_result = await apply_commission_pvp(
+                    db, bot1, game="mines", pot=int(bet),
+                    winner_id=winner_id, loser_ids=[user_id],
+                )
+                if gfund_result:
+                    net_bet = max(0, bet - gfund_result["commission"])
+            except Exception as e:
+                print(f"[MINES][GFUND] apply_commission_pvp err={e!r}")
+
         winner_balance = await db.get_user_balance(winner_id)
         loser_balance = await db.get_user_balance(user_id)
-        new_winner_balance = winner_balance + bet
+        new_winner_balance = winner_balance + net_bet
         new_loser_balance = loser_balance - bet
 
         await db.update_user_balance(winner_id, new_winner_balance)
@@ -586,7 +600,7 @@ async def mines_mine_click_callback(callback_query: CallbackQuery):
         await db.touch_balance_last_active(user_id , set_active_status=True)
 
 
-        await db.cutehistory_plus(winner_id , bet , "+ мины")
+        await db.cutehistory_plus(winner_id , net_bet , "+ мины")
         await db.cutehistory_minus(user_id , bet , "- мины")
         winner_clan_emoji = await db.get_clan_emoji3(winner_id)
         loser_clan_emoji = await db.get_clan_emoji3(user_id)
@@ -669,9 +683,7 @@ async def mines_mine_click_callback(callback_query: CallbackQuery):
         #await db.add_commissionmine(user_id, bet, 'bot')
         bum = random.choice(["БУМ!","ВЗРЫВ!","БАБАХ!","БУМ..БУМ..БУМ!"])
 
-        total_pot = game [ 'bet' ] * len(game [ 'participants' ])
-
-        win_amount_formatted2 = "{:,.0f}".format(total_pot - game [ 'bet' ]).replace("," , ".")
+        win_amount_formatted2 = "{:,.0f}".format(net_bet).replace("," , ".")
 
         total_pot = game [ 'bet' ] #* len(game [ 'participants' ])
         win_text = f"{win_amount_formatted2} кут" if total_pot > 0 else ""
@@ -761,7 +773,7 @@ async def mines_mine_click_callback(callback_query: CallbackQuery):
             except Exception as e:
                 print(f"Ошибка при проверке или обновлении бонуса: {e}")
                 return
-        await db.update_user_winamount(winner_id , bet)#
+        await db.update_user_winamount(winner_id , net_bet)#
         await db.update_user_loose(user_id , 1, bot1, ref_coin)#
         await db.update_game_last_activity(winner_id)
         await db.update_game_last_activity(user_id)
@@ -773,7 +785,11 @@ async def mines_mine_click_callback(callback_query: CallbackQuery):
             button = InlineKeyboardButton(text=f"{bum}" , callback_data="hsudshjskfpuoaoisd")
             button2 = InlineKeyboardButton(text=f"{win_text}" , callback_data="minesbetchechtextanswer")
             button3 = InlineKeyboardButton(text=f"🏆 {first_name} " , callback_data="winnerminesanswertext")
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[ [ button ] , [ button3 ], [ button2 ] ])
+            keyboard_rows = [ [ button ] , [ button3 ], [ button2 ] ]
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                keyboard_rows.append([build_commission_button(gfund_result)])
+            keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
         else:
             button = InlineKeyboardButton(text=f"{bum}" , callback_data="hsudshjskfpuoaoisd")
             button2 = InlineKeyboardButton(text=f"🏆 {first_name}" , callback_data="winnerminesanswertext")

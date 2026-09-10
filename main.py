@@ -5394,8 +5394,24 @@ async def check_word_guess(message: Message):
                 await check_bet_and_set_item(user_id, game['bet'])
                 await message.reply(f"🏆 <b>Поздравляю, вы угадали правильное слово!</b>", parse_mode="HTML")
 
+                # Комиссия рассчитывается ДО формирования текста, чтобы отображаемая
+                # сумма всегда совпадала с фактически начисленной (принцип честности).
+                gfund_result = None
+                net_bet = int(game['bet'])
+                if game['bet'] > 0:
+                    try:
+                        from bot.funcs.growth_fund import apply_commission_pvp
+                        gfund_result = await apply_commission_pvp(
+                            db, bot1, game="words", pot=int(game['bet']),
+                            winner_id=user_id, loser_ids=[game['creator_id']],
+                        )
+                        if gfund_result:
+                            net_bet = max(0, int(game['bet']) - gfund_result["commission"])
+                    except Exception as e:
+                        print(f"[WORDS][GFUND] apply_commission_pvp err={e!r}")
+
                 # Изменяем сообщение о начале игры
-                win_amount_formatted = "{:,.0f}".format(game['bet']).replace(",", ".")
+                win_amount_formatted = "{:,.0f}".format(net_bet).replace(",", ".")
                 win_name = await db.get_firstname_by_user_id(user_id)
 
                 # Формируем сообщение о завершении игры
@@ -5405,7 +5421,12 @@ async def check_word_guess(message: Message):
                 if game['bet'] > 0:
                     end_response += f"\n💰 <b>Выигрыш {win_amount_formatted} кут</b>"
 
-                await bot1.edit_message_text(end_response, chat_id=group_id, message_id=user_word[game['creator_id']], parse_mode="HTML")
+                end_kb = None
+                if gfund_result:
+                    from bot.funcs.growth_fund import build_commission_button
+                    end_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
+
+                await bot1.edit_message_text(end_response, chat_id=group_id, message_id=user_word[game['creator_id']], parse_mode="HTML", reply_markup=end_kb)
 
                 # Если есть ставка, раздаем приз
                 if game['bet'] > 0:
@@ -5414,13 +5435,13 @@ async def check_word_guess(message: Message):
                     winner_balance = await db.get_user_balance(winner_id)  # Получаем текущий баланс победителя
                     loser_balance = await db.get_user_balance(loser_id)  # Получаем текущий баланс проигравшего
 
-                    new_winner_balance = winner_balance + game['bet']
+                    new_winner_balance = winner_balance + net_bet
                     new_loser_balance = loser_balance - game['bet']
 
                     await db.update_user_balance(winner_id, new_winner_balance)  # Обновляем баланс победителя
                     await db.update_user_balance(loser_id, new_loser_balance)  # Обновляем баланс проигравшего
                     await db.cutehistory_plus(
-                        winner_id , game['bet'] , "игра в слова main начало")
+                        winner_id , net_bet , "игра в слова main начало")
                     await db.cutehistory_minus(
                         loser_id , game['bet'] , "игра в слова main начало")
                     randommessagebonus1 = random.choice(["Есть", "Отлично", "Найс", "Опа, отлично"])
@@ -36115,6 +36136,18 @@ async def add_firstname_to_usercheck_balance(message: Message):
         if message.from_user.id == 6801702632 and message.text.lower() in [ "sypherpool" ]:
             print("[INFO] Условие сработало, вызываем функцию для вывода статистики.")
             await db.print_connection_stats(message)  # Вызов вашей функции из класса Database
+
+        # Статистика комиссии Фонда Роста (PvE + PvP) - только владельцу
+        # проекта. Триггер-фразы: "статистика комиссий" и т.п. (полный список
+        # в bot/funcs/growth_fund.py -> STATS_TEXT_TRIGGERS). Навигация по
+        # периодам (день/неделя/месяц/год/всё время) - инлайн-кнопками.
+        try:
+            from bot.funcs.growth_fund import handle_commission_stats_command
+            if await handle_commission_stats_command(message, db):
+                return True
+        except Exception as e:
+            print(f"[GFUND][STATS][WARN] {type(e).__name__}: {e}")
+
         if message.text.lower() in  ["sypherdie"]:
 
 
@@ -36995,22 +37028,35 @@ async def add_firstname_to_usercheck_balance(message: Message):
             header_mid = int(g.get("message_id"))
 
             # 5) выплаты
+            gfund_result = None
+            net_bet_val = bet_val
             try:
                 if bet_val > 0:
+                    try:
+                        from bot.funcs.growth_fund import apply_commission_pvp
+                        gfund_result = await apply_commission_pvp(
+                            db, bot1, game="words", pot=int(bet_val),
+                            winner_id=uid, loser_ids=[creator_id],
+                        )
+                        if gfund_result:
+                            net_bet_val = max(0, bet_val - gfund_result["commission"])
+                    except Exception as e:
+                        print(f"[WORDS][GFUND] apply_commission_pvp err={e!r}")
+
                     winner_balance = await db.get_user_balance(uid)
                     loser_balance = await db.get_user_balance(creator_id)
 
-                    await db.update_user_balance(uid , winner_balance + bet_val)
+                    await db.update_user_balance(uid , winner_balance + net_bet_val)
                     await db.touch_balance_last_active(uid , set_active_status=True)
                     await db.update_user_wins(uid , 1 , bot1 , ref_coin)
-                    await db.update_user_winamount(uid , bet_val)#
+                    await db.update_user_winamount(uid , net_bet_val)#
                     await db.update_game_last_activity(uid)
                     from main import check_bet_and_set_item
                     await check_bet_and_set_item(uid , bet_val)
 
                     await db.update_user_balance(creator_id , max(0 , loser_balance - bet_val))
                     await db.touch_balance_last_active(creator_id , set_active_status=True)
-                    await db.cutehistory_plus(uid , bet_val , "+ слова")
+                    await db.cutehistory_plus(uid , net_bet_val , "+ слова")
                     await db.cutehistory_minus(creator_id , bet_val , "- слова")
                 g [ "payout_done" ] = True
             except Exception as pay_err:
@@ -37022,7 +37068,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
                         message.from_user.first_name or "Победитель")
                 creator_name = (await db.get_firstname_by_user_id(creator_id)) or "Создатель"
                 hint_text = g.get("hint") or ""
-                user_message_count_f123124ormatted = "{:,.0f}".format(bet_val).replace("," , ".")
+                user_message_count_f123124ormatted = "{:,.0f}".format(net_bet_val).replace("," , ".")
                 word_orig_clean = words_clean(g.get("word_orig") or "")
 
                 end_text = ("<tg-emoji emoji-id='5463289097336405244'>⭐️</tg-emoji> <b>Игра в слова закончена!</b> <tg-emoji emoji-id='5463289097336405244'>⭐️</tg-emoji>\n\n"
@@ -37037,9 +37083,17 @@ async def add_firstname_to_usercheck_balance(message: Message):
                 if hint_text:
                     end_text += f"\n\n<blockquote><b><tg-emoji emoji-id='5237799019329105246'>🧠</tg-emoji> Подсказка :\n<tg-emoji emoji-id='5472273030753295910'>🎀</tg-emoji> «{words_clean(hint_text)}»</b></blockquote>"
 
+                closed_kb = words_build_closed_kb()
+                if gfund_result:
+                    try:
+                        from bot.funcs.growth_fund import build_commission_button
+                        closed_kb.inline_keyboard.append([build_commission_button(gfund_result)])
+                    except Exception:
+                        pass
+
                 await bot1.edit_message_text(
                     end_text , chat_id=chat_id , message_id=header_mid , parse_mode="HTML" ,
-                    reply_markup=words_build_closed_kb() , disable_web_page_preview=True , )
+                    reply_markup=closed_kb , disable_web_page_preview=True , )
             except Exception as e:
                 print(f"[WORDS][HEADER_EDIT_ERR] {e!r}")
 
@@ -37050,7 +37104,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
                 # ─── финальное сообщение ───
                 if bet_val > 0:
                     win_msg = "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji>"
-                    user_message_count_formatted = "{:,.0f}".format(bet_val).replace("," , ".")
+                    user_message_count_formatted = "{:,.0f}".format(net_bet_val).replace("," , ".")
                     btn_texts = [ ("🥇 Правильный ответ! 🥇" , "wordswin_ok") ,
                                   (f"{user_message_count_formatted} кут" , f"wordswin_amount_{bet_val}") ]
                 else:
@@ -37067,6 +37121,9 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
                 # размещаем кнопки построчно
                 button_rows = [ [ btn ] for btn in buttons ]
+                if gfund_result:
+                    from bot.funcs.growth_fund import build_commission_button
+                    button_rows.append([build_commission_button(gfund_result)])
                 kb = InlineKeyboardMarkup(inline_keyboard=button_rows)
 
                 # отправляем сообщение
@@ -40366,6 +40423,33 @@ async def botmain():
             await db.ensure_growth_fund_schema()
     except Exception as e:
         print(f"[GFUND][WARN] ensure schema: {type(e).__name__}: {e}")
+
+    try:
+        # Guard: эта функция может выполниться повторно при soft-restart
+        # handoff в одном и том же процессе - без флага хендлер задвоился бы
+        # и на 1 клик обрабатывался бы N раз (N сообщений-разъяснений подряд).
+        if not getattr(dp, "_gfund_commission_handler_registered", False):
+            from bot.funcs.growth_fund import handle_commission_callback, COMMISSION_CALLBACK_PREFIX
+            dp.callback_query(F.data.startswith(COMMISSION_CALLBACK_PREFIX + "|"))(handle_commission_callback)
+            dp._gfund_commission_handler_registered = True
+    except Exception as e:
+        print(f"[GFUND][WARN] register commission callback: {type(e).__name__}: {e}")
+
+    try:
+        # Навигационные кнопки экрана "статистика комиссий" (день/неделя/
+        # месяц/год/всё время) - отдельный callback-префикс от кнопки
+        # "Комиссия игры" выше, доступ внутри самого хендлера ограничен
+        # владельцем проекта (GROWTH_FUND_OWNER_NOTIFY_USER_ID).
+        if not getattr(dp, "_gfund_stats_handler_registered", False):
+            from bot.funcs.growth_fund import handle_commission_stats_callback, STATS_CALLBACK_PREFIX
+
+            async def _gfund_stats_callback_entry(call):
+                await handle_commission_stats_callback(call, db)
+
+            dp.callback_query(F.data.startswith(STATS_CALLBACK_PREFIX + "|"))(_gfund_stats_callback_entry)
+            dp._gfund_stats_handler_registered = True
+    except Exception as e:
+        print(f"[GFUND][WARN] register stats callback: {type(e).__name__}: {e}")
 
     try:
         from bot.funcs.group_balance_level import sync_group_balance_levels_with_db

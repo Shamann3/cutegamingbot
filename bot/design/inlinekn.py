@@ -3228,16 +3228,29 @@ async def rps_declare_winner(inline_message_id, game_id):
             await db.update_user_wins(user_id , 1 , bot1 , ref_coin)
             await db.update_user_loose(user_id , 1 , bot1 , ref_coin)#
             await db.update_game_last_activity(user_id)
+            gfund_result = None
             if bet_amount > 0:
                 if loser_balance >= bet_amount:
+                    net_bet_amount = int(bet_amount)
+                    try:
+                        from bot.funcs.growth_fund import apply_commission_pvp
+                        gfund_result = await apply_commission_pvp(
+                            db, bot1, game="knb", pot=int(bet_amount),
+                            winner_id=winner_id, loser_ids=[loser_id],
+                        )
+                        if gfund_result:
+                            net_bet_amount = max(0, int(bet_amount) - gfund_result["commission"])
+                    except Exception as e:
+                        print(f"[KNB_INLINE][GFUND] apply_commission_pvp err={e!r}")
+
                     # Обновляем балансы
-                    await db.update_user_balance(winner_id , winner_balance + bet_amount)
+                    await db.update_user_balance(winner_id , winner_balance + net_bet_amount)
                     await db.update_user_balance(loser_id , loser_balance - bet_amount)
 
-                    await db.cutehistory_plus(winner_id , bet_amount , "инлайн кнб")
+                    await db.cutehistory_plus(winner_id , net_bet_amount , "инлайн кнб")
                     await db.cutehistory_minus(loser_id , bet_amount , "инлайн кнб ")
                     # Форматируем сумму выигрыша
-                    win_amount_formatted = "{:,.0f}".format(bet_amount).replace("," , ".")
+                    win_amount_formatted = "{:,.0f}".format(net_bet_amount).replace("," , ".")
                     results_text = (f"<b>{win_description}</b>\n"
                                     f"<tg-emoji emoji-id='5262906070996642883'>🏆</tg-emoji> <b>{user_names [ winner_id ]} победитель!</b>\n"
                                     f"<tg-emoji emoji-id='5195369389599265575'>💰</tg-emoji> <b>Выигрыш: {win_amount_formatted} кут.</b>")
@@ -3339,8 +3352,11 @@ async def rps_declare_winner(inline_message_id, game_id):
                     print(f"Ошибка при проверке или обновлении бонуса: {e}")
                     return
             # Создаем клавиатуру с кнопкой для новой игры
-            rps_keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[ [ btn_create_game ] ])
+            rps_kb_rows = [ [ btn_create_game ] ]
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                rps_kb_rows.append([build_commission_button(gfund_result)])
+            rps_keyboard = InlineKeyboardMarkup(inline_keyboard=rps_kb_rows)
             # Отправляем результаты и кнопку для новой игры
             await bot1.edit_message_text(
                 text=results_text , inline_message_id=inline_message_id , reply_markup=rps_keyboard ,

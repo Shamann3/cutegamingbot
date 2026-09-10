@@ -10651,6 +10651,25 @@ class Database:
                 );
                 """)
 
+                # 2а) Шкала прогресса до "Купона Возможностей" (100→200→350→500→
+                # 750→1000→+250...). milestone_progress копится с каждой
+                # уплаченной комиссией и СБРАСЫВАЕТСЯ при пересечении порога
+                # (в отличие от total_contributed выше, который лайфтайм и
+                # никогда не уменьшается). milestone_tier - номер текущего
+                # порога (0 = первый порог 100, 1 = второй 200, и т.д.).
+                await conn.execute(
+                    "ALTER TABLE growth_fund_user_stats "
+                    "ADD COLUMN IF NOT EXISTS milestone_tier INTEGER NOT NULL DEFAULT 0;"
+                )
+                await conn.execute(
+                    "ALTER TABLE growth_fund_user_stats "
+                    "ADD COLUMN IF NOT EXISTS milestone_progress BIGINT NOT NULL DEFAULT 0;"
+                )
+                await conn.execute(
+                    "ALTER TABLE growth_fund_user_stats "
+                    "ADD COLUMN IF NOT EXISTS milestone_coupons_earned BIGINT NOT NULL DEFAULT 0;"
+                )
+
                 # 3) growth_fund_pool - остаток фонда на группу (под дивиденды)
                 await conn.execute(
                     """
@@ -10682,6 +10701,26 @@ class Database:
                     "CREATE INDEX IF NOT EXISTS idx_gf_div_user ON growth_fund_dividend_log(user_id);")
                 await conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_gf_div_chat ON growth_fund_dividend_log(chat_id);")
+
+                # 5) growth_fund_global_totals - лайфтайм-итоги по ВСЕМ комиссиям
+                # (PvE + PvP) одной строкой (id=1). Обновляется атомарно В ТОЙ ЖЕ
+                # транзакции, что и growth_fund_ledger/growth_fund_pool - чтобы
+                # владельцу проекта можно было мгновенно показать "собрано всего"
+                # (в уведомлении и на экране статистики) без дорогого SUM() по
+                # растущему journal-у на каждый показ.
+                await conn.execute(
+                    """
+                CREATE TABLE IF NOT EXISTS growth_fund_global_totals (
+                    id SMALLINT PRIMARY KEY DEFAULT 1,
+                    total_commission BIGINT NOT NULL DEFAULT 0,
+                    total_to_chat_balance BIGINT NOT NULL DEFAULT 0,
+                    total_to_growth_fund BIGINT NOT NULL DEFAULT 0,
+                    total_to_project BIGINT NOT NULL DEFAULT 0,
+                    total_events BIGINT NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    CHECK (id = 1)
+                );
+                """)
 
         _vdbg("[ФОНД РОСТА][SCHEMA] ✅ OK")
 
@@ -17888,6 +17927,33 @@ class Database:
                 print(f"Инвентарь пользователя {user_id} успешно обновлён.")
             except Exception as e:
                 print(f"Ошибка при обновлении инвентаря пользователя {user_id}: {e}")
+
+    async def add_item_to_inventory(self , user_id , item_name , qty: int = 1):
+        """
+        Начисляет qty штук предмета item_name в инвентарь пользователя
+        (по названию из dex.name, например "Купон возможностей").
+        Используется для автовыдачи наград (например, Фонд Роста при
+        пересечении порога шкалы) - по тому же принципу read/modify/write,
+        что и остальной инвентарный код в этом классе (get_user_inventorycutecoin
+        + set_user_items).
+        """
+        try:
+            qty = int(qty)
+        except Exception:
+            qty = 1
+        if qty <= 0:
+            return
+        async with self.pool.acquire() as connection:
+            try:
+                result = await connection.fetchrow(
+                    "SELECT items FROM users WHERE user_id = $1" , user_id)
+                inventory = decode_items(result [ 'items' ]) if result else {}
+                inventory [ item_name ] = int(inventory.get(item_name , 0)) + qty
+                await connection.execute(
+                    "UPDATE users SET items = $1 WHERE user_id = $2" , encode_items(inventory) , user_id)
+                print(f"[ФОНД РОСТА] +{qty} «{item_name}» пользователю {user_id}")
+            except Exception as e:
+                print(f"Ошибка при начислении предмета «{item_name}» пользователю {user_id}: {e}")
 
     async def send_item(self , sender_id , receiver_id , item_index):
         try:

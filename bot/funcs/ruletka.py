@@ -969,7 +969,15 @@ async def show_game_results(chat_id: int, game_id: int):
                 kwargs["reply_to_message_id"] = sticker_message_id
             return await bot1.send_message(**kwargs)
 
-        await _call_with_flood_retry(_send_result, tag="result")
+        result_message = await _call_with_flood_retry(_send_result, tag="result")
+        if result_message is not None:
+            try:
+                g = gamesruletka.get(game_id)
+                if g:
+                    g["result_message_id"] = result_message.message_id
+                    gamesruletka.save()
+            except Exception as e:
+                print(f"[RULETKA] save result_message_id error: {e}")
     except Exception as e:
         print(f"[RULETKA] send_message error: {e}")
 
@@ -1055,6 +1063,19 @@ async def _settle_saga(game_id: int):
             gamesruletka.save()
 
         if not game.get("winner_applied", False):
+            gfund_result = None
+            if gain > 0:
+                try:
+                    from bot.funcs.growth_fund import apply_commission_pvp
+                    gfund_result = await apply_commission_pvp(
+                        db, bot1, game="fortuna_lobby", pot=int(gain),
+                        winner_id=winner_id, loser_ids=losers,
+                    )
+                    if gfund_result:
+                        gain = max(0, gain - gfund_result["commission"])
+                except Exception as e:
+                    print(f"[RULETKA][GFUND] apply_commission_pvp err={e!r}")
+
             try:
                 ok_w = await db.update_user_balance(winner_id, f"+{gain}")
                 await db.touch_balance_last_active(winner_id, set_active_status=True)
@@ -1062,6 +1083,7 @@ async def _settle_saga(game_id: int):
                     raise RuntimeError(f"credit failed uid={winner_id}")
                 await db.cutehistory_plus(winner_id, gain, "+ фортуна")
                 await db.update_user_wins(winner_id, 1, bot1, ref_coin)
+                await db.update_user_winamount(winner_id, gain)
                 await db.update_game_last_activity(winner_id)
                 await _process_historygames_bonus(winner_id, chat_id)
             except Exception as e:
@@ -1075,6 +1097,36 @@ async def _settle_saga(game_id: int):
 
             game["winner_applied"] = True
             gamesruletka.save()
+
+            # Обновляем итоговое сообщение реальной (после комиссии) суммой выигрыша.
+            try:
+                result_message_id = game.get("result_message_id")
+                if result_message_id:
+                    winner_color = game.get("winner_color", "")
+                    first_name, username = await asyncio.gather(
+                        db.get_firstname_by_user_id(winner_id),
+                        db.get_username_by_user_id(winner_id),
+                    )
+                    name_link = await create_user_link(winner_id, first_name, username)
+                    win_text = (
+                        f"\n<tg-emoji emoji-id='5292064127227818330'>💰</tg-emoji> "
+                        f"<b>Выигрыш {'{:,.0f}'.format(gain).replace(',', '.')} кут</b>"
+                    ) if gain > 0 else ""
+                    result_text = (
+                        f"<tg-emoji emoji-id='5262906070996642883'>🏆</tg-emoji> "
+                        f"<b>{name_link}</b> {winner_color}{win_text}"
+                    )
+                    result_kb = None
+                    if gfund_result:
+                        from bot.funcs.growth_fund import build_commission_button
+                        result_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
+                    await bot1.edit_message_text(
+                        chat_id=chat_id, message_id=result_message_id,
+                        text=result_text, parse_mode="HTML",
+                        disable_web_page_preview=True, reply_markup=result_kb,
+                    )
+            except Exception as e:
+                print(f"[RULETKA] edit result message error: {e}")
 
         game["state"] = STATE_SETTLED
         game["settling"] = False

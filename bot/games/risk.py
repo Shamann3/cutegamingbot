@@ -1208,6 +1208,7 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
 
                 if current_row == 9:
                     profit = _profit_now(game_data)
+                    gfund_result = None
 
                     if using_demo:
                         try:
@@ -1221,6 +1222,16 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
                         async with _get_chat_lock(chat_id):
                             chat_bal = await _chat_get_balance(chat_id)
                             pay = min(int(profit), max(0, chat_bal))
+                            if pay > 0:
+                                try:
+                                    from bot.funcs.growth_fund import apply_commission
+                                    gfund_result = await apply_commission(
+                                        db, bot1, chat_id=chat_id, user_id=owner_id, game="risk", pot=pay,
+                                    )
+                                    if gfund_result:
+                                        pay = max(0, pay - gfund_result["commission"])
+                                except Exception as e:
+                                    dbg_err("GFUND_DEMO_FINAL", e)
                             if pay > 0:
                                 ok_debit = await _chat_debit_best_effort(chat_id, pay)
                                 if ok_debit:
@@ -1258,6 +1269,16 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
                         async with _get_chat_lock(chat_id):
                             chat_bal = await _chat_get_balance(chat_id)
                             pay = min(int(profit), max(0, chat_bal))
+                            if pay > 0:
+                                try:
+                                    from bot.funcs.growth_fund import apply_commission
+                                    gfund_result = await apply_commission(
+                                        db, bot1, chat_id=chat_id, user_id=owner_id, game="risk", pot=pay,
+                                    )
+                                    if gfund_result:
+                                        pay = max(0, pay - gfund_result["commission"])
+                                except Exception as e:
+                                    dbg_err("GFUND_WIN_FINAL", e)
                             if pay <= 0:
                                 await _safe_edit_text(
                                     call.message,
@@ -1297,7 +1318,11 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
                                         parse_mode="HTML"
                                     )
 
-                    end_kb = InlineKeyboardMarkup(inline_keyboard=[[_btn("Игра завершена", "risk_end_stub", style="default")]])
+                    end_kb_rows = [[_btn("Игра завершена", "risk_end_stub", style="default")]]
+                    if gfund_result:
+                        from bot.funcs.growth_fund import build_commission_button
+                        end_kb_rows.append([build_commission_button(gfund_result)])
+                    end_kb = InlineKeyboardMarkup(inline_keyboard=end_kb_rows)
                     await _safe_edit_text(call.message, EMOJI_END(), reply_markup=end_kb, parse_mode="HTML")
 
                     game_data["closed"] = True
@@ -1533,9 +1558,20 @@ async def risk_process_withdraw(call: types.CallbackQuery):
                     print(f"[RISK][DEMO][EXC] Ошибка списания demo: {e}")
                     traceback.print_exc()
 
+                gfund_result = None
                 async with _get_chat_lock(chat_id):
                     chat_bal = await _chat_get_balance(chat_id)
                     pay = min(int(profit), max(0, chat_bal))
+                    if pay > 0:
+                        try:
+                            from bot.funcs.growth_fund import apply_commission
+                            gfund_result = await apply_commission(
+                                db, bot1, chat_id=chat_id, user_id=owner_id, game="risk", pot=pay,
+                            )
+                            if gfund_result:
+                                pay = max(0, pay - gfund_result["commission"])
+                        except Exception as e:
+                            dbg_err("GFUND_DEMO_WD", e)
                     if pay > 0:
                         ok_debit = await _chat_debit_best_effort(chat_id, pay)
                         if ok_debit:
@@ -1558,10 +1594,14 @@ async def risk_process_withdraw(call: types.CallbackQuery):
                             except Exception as e:
                                 dbg_err("DEMO_ZERO_WITHDRAW", e)
                             await _mark_user_game_activity(owner_id, reason="withdraw")
-                kb = InlineKeyboardMarkup(inline_keyboard=[
+                kb_rows = [
                     [_btn(f"{_fmt_int(pay)} кут", f"risk_paid_stub_{cb_rev}_{owner_id}", style="default")],
                     [_btn("Выплата", f"risk_msg_stub_{cb_rev}_{owner_id}", style="default")],
-                ])
+                ]
+                if gfund_result:
+                    from bot.funcs.growth_fund import build_commission_button
+                    kb_rows.append([build_commission_button(gfund_result)])
+                kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
                 await _safe_edit_text(call.message, "<tg-emoji emoji-id='5435866680339233166'>🌴</tg-emoji>", reply_markup=kb, parse_mode="HTML")
 
             elif has_assignment and is_free:
@@ -1583,6 +1623,19 @@ async def risk_process_withdraw(call: types.CallbackQuery):
                 async with _get_chat_lock(chat_id):
                     chat_bal = await _chat_get_balance(chat_id)
                     pay = min(int(profit), max(0, chat_bal))
+
+                    gfund_result = None
+                    if pay > 0:
+                        try:
+                            from bot.funcs.growth_fund import apply_commission
+                            gfund_result = await apply_commission(
+                                db, bot1, chat_id=chat_id, user_id=owner_id, game="risk", pot=pay,
+                            )
+                            if gfund_result:
+                                pay = max(0, pay - gfund_result["commission"])
+                        except Exception as e:
+                            dbg_err("GFUND_WITHDRAW", e)
+
                     if pay <= 0:
                         await _safe_edit_text(
                             call.message,
@@ -1616,10 +1669,14 @@ async def risk_process_withdraw(call: types.CallbackQuery):
                             except Exception as e:
                                 dbg_err("WINS_WITHDRAW", e)
                             await _mark_user_game_activity(owner_id, reason="withdraw")
-                            kb = InlineKeyboardMarkup(inline_keyboard=[
+                            kb_rows = [
                                 [_btn(f"{_fmt_int(pay)} кут", f"risk_paid_stub_{cb_rev}_{owner_id}", style="default")],
                                 [_btn("Выплата", f"risk_msg_stub_{cb_rev}_{owner_id}", style="default")],
-                            ])
+                            ]
+                            if gfund_result:
+                                from bot.funcs.growth_fund import build_commission_button
+                                kb_rows.append([build_commission_button(gfund_result)])
+                            kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
                             await _safe_edit_text(
                                 call.message,
                                 "<tg-emoji emoji-id='5435866680339233166'>🌴</tg-emoji>",

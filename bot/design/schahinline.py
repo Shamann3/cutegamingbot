@@ -1049,18 +1049,31 @@ async def end_game(game_id: str, callback_query: types.CallbackQuery):
     bet_amount = int(game.get("bet_amount", 0) or 0)
     results_text = f"🏆 {winner_piece} <b>{_escape_html(fn)} Победитель!</b>"
 
+    gfund_result = None
+    net_bet_amount = bet_amount
     if bet_amount > 0:
         try:
             winner_balance = await db.get_user_balance(winner_id) or 0
             loser_balance = await db.get_user_balance(loser_id) or 0
             if loser_balance >= bet_amount:
-                await db.update_user_balance(winner_id, winner_balance + bet_amount)
+                try:
+                    from bot.funcs.growth_fund import apply_commission_pvp
+                    gfund_result = await apply_commission_pvp(
+                        db, bot1, game="scah", pot=int(bet_amount),
+                        winner_id=winner_id, loser_ids=[loser_id],
+                    )
+                    if gfund_result:
+                        net_bet_amount = max(0, bet_amount - gfund_result["commission"])
+                except Exception as e:
+                    print(f"[SCAH_INLINE][GFUND] apply_commission_pvp err={e!r}")
+
+                await db.update_user_balance(winner_id, winner_balance + net_bet_amount)
                 await db.update_user_balance(loser_id, loser_balance - bet_amount)
                 await db.touch_balance_last_active(winner_id, set_active_status=True)
                 await db.touch_balance_last_active(loser_id, set_active_status=True)
-                await db.cutehistory_plus(winner_id, bet_amount, "+ шашки инлайн")
+                await db.cutehistory_plus(winner_id, net_bet_amount, "+ шашки инлайн")
                 await db.cutehistory_minus(loser_id, bet_amount, "- шашки инлайн")
-                results_text = f"🏆 {winner_piece} <b>{_escape_html(fn)} Победитель!\n</b><tg-emoji emoji-id='5425117176061261659'>💰</tg-emoji> <b>Выигрыш {_fmt_kut(bet_amount)} кут</b>"
+                results_text = f"🏆 {winner_piece} <b>{_escape_html(fn)} Победитель!\n</b><tg-emoji emoji-id='5425117176061261659'>💰</tg-emoji> <b>Выигрыш {_fmt_kut(net_bet_amount)} кут</b>"
             else:
                 results_text = f"🏆 {winner_piece} <b>{_escape_html(fn)} Победитель!\n</b>❌ <b>У проигравшего нет средств для выплаты выигрыша</b>"
         except Exception:
@@ -1069,7 +1082,7 @@ async def end_game(game_id: str, callback_query: types.CallbackQuery):
     # Правильная статистика
     try:
         await db.update_user_wins(winner_id, 1, bot1, ref_coin)
-        await db.update_user_winamount(winner_id, bet_amount)#
+        await db.update_user_winamount(winner_id, net_bet_amount)#
         await db.update_user_loose(loser_id, 1, bot1, ref_coin)#
         await db.update_game_last_activity(winner_id)
         await db.update_game_last_activity(loser_id)
@@ -1083,7 +1096,11 @@ async def end_game(game_id: str, callback_query: types.CallbackQuery):
         btn = InlineKeyboardButton(text="Создать новую игру", callback_data=f"checkers_create:{winner_id}:{bet_amount}")
     else:
         btn = InlineKeyboardButton(text="Создать новую игру", callback_data="checkers_create")
-    kb = InlineKeyboardMarkup(inline_keyboard=[[btn]])
+    kb_rows = [[btn]]
+    if gfund_result:
+        from bot.funcs.growth_fund import build_commission_button
+        kb_rows.append([build_commission_button(gfund_result)])
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
     await safe_inline_edit(
         inline_message_id=game["inline_message_id"],
@@ -1302,16 +1319,29 @@ async def surrender_callback(callback_query: types.CallbackQuery):
     bet_amount = int(game.get("bet_amount", 0) or 0)
     results_text = f"🏳️ {winner_piece} <b>{_escape_html(fn)} победил(-а) - соперник сдался!</b>"
 
+    gfund_result = None
+    net_bet_amount = bet_amount
     if bet_amount > 0:
         try:
             winner_balance = await db.get_user_balance(winner_id) or 0
             loser_balance = await db.get_user_balance(loser_id) or 0
             if loser_balance >= bet_amount:
-                await db.update_user_balance(winner_id, winner_balance + bet_amount)
+                try:
+                    from bot.funcs.growth_fund import apply_commission_pvp
+                    gfund_result = await apply_commission_pvp(
+                        db, bot1, game="scah", pot=int(bet_amount),
+                        winner_id=winner_id, loser_ids=[loser_id],
+                    )
+                    if gfund_result:
+                        net_bet_amount = max(0, bet_amount - gfund_result["commission"])
+                except Exception as e:
+                    print(f"[SCAH_INLINE][GFUND] apply_commission_pvp err={e!r}")
+
+                await db.update_user_balance(winner_id, winner_balance + net_bet_amount)
                 await db.update_user_balance(loser_id, loser_balance - bet_amount)
-                await db.cutehistory_plus(winner_id, bet_amount, "инлайн шашки сдача")
+                await db.cutehistory_plus(winner_id, net_bet_amount, "инлайн шашки сдача")
                 await db.cutehistory_minus(loser_id, bet_amount, "инлайн шашки сдача")
-                results_text = f"🏳️ {winner_piece} <b>{_escape_html(fn)} победил(-а) - соперник сдался!\n</b><tg-emoji emoji-id='5425117176061261659'>💰</tg-emoji> <b>Выигрыш {_fmt_kut(bet_amount)} кут</b>"
+                results_text = f"🏳️ {winner_piece} <b>{_escape_html(fn)} победил(-а) - соперник сдался!\n</b><tg-emoji emoji-id='5425117176061261659'>💰</tg-emoji> <b>Выигрыш {_fmt_kut(net_bet_amount)} кут</b>"
             else:
                 results_text = f"🏳️ {winner_piece} <b>{_escape_html(fn)} победил(-а) - соперник сдался!\n</b>❌ <b>У проигравшего нет средств для выплаты выигрыша</b>"
         except Exception:
@@ -1320,7 +1350,7 @@ async def surrender_callback(callback_query: types.CallbackQuery):
     # Правильная статистика
     try:
         await db.update_user_wins(winner_id, 1, bot1, ref_coin)
-        await db.update_user_winamount(winner_id, bet_amount)#
+        await db.update_user_winamount(winner_id, net_bet_amount)#
         await db.update_user_loose(loser_id, 1, bot1, ref_coin)#
         await db.update_game_last_activity(winner_id)
         await db.update_game_last_activity(loser_id)
@@ -1335,7 +1365,11 @@ async def surrender_callback(callback_query: types.CallbackQuery):
         btn = InlineKeyboardButton(text="Создать новую игру", callback_data=f"checkers_create:{winner_id}:{bet_amount}")
     else:
         btn = InlineKeyboardButton(text="Создать новую игру", callback_data="checkers_create")
-    kb = InlineKeyboardMarkup(inline_keyboard=[[btn]])
+    kb_rows = [[btn]]
+    if gfund_result:
+        from bot.funcs.growth_fund import build_commission_button
+        kb_rows.append([build_commission_button(gfund_result)])
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
     await safe_inline_edit(
         inline_message_id=game["inline_message_id"],

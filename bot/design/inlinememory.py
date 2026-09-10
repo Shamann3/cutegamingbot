@@ -800,20 +800,33 @@ async def _inline_finish_game(game_id: str) -> None:
         text = (f"<b>{icon} Победитель : {winner_link}</b>\n"
                 f"<b>{p3} Счёт : {scores_map[winner_id]} / {scores_map.get(loser_id, 0)}</b>")
 
-        # выплаты (честные, без комиссий)
+        # выплаты (честные, комиссия применяется прозрачно)
         bet_amount = int(game.get("bet_amount", 0) or 0)
+        gfund_result = None
+        net_bet_amount = bet_amount
         if bet_amount > 0:
             try:
                 loser_balance  = int(await db.get_user_balance(loser_id)  or 0)
                 winner_balance = int(await db.get_user_balance(winner_id) or 0)
                 if loser_balance >= bet_amount:
+                    try:
+                        from bot.funcs.growth_fund import apply_commission_pvp
+                        gfund_result = await apply_commission_pvp(
+                            db, bot1, game="memory", pot=int(bet_amount),
+                            winner_id=winner_id, loser_ids=[loser_id],
+                        )
+                        if gfund_result:
+                            net_bet_amount = max(0, bet_amount - gfund_result["commission"])
+                    except Exception as e:
+                        print(f"[MEMORY_INLINE][GFUND] apply_commission_pvp err={e!r}")
+
                     await db.update_user_balance(loser_id,  loser_balance  - bet_amount)
-                    await db.update_user_balance(winner_id, winner_balance + bet_amount)
+                    await db.update_user_balance(winner_id, winner_balance + net_bet_amount)
                     await db.touch_balance_last_active(winner_id , set_active_status=True)
                     await db.touch_balance_last_active(loser_id , set_active_status=True)
-                    await db.cutehistory_plus(winner_id, bet_amount, "+ мемори инлайн")
+                    await db.cutehistory_plus(winner_id, net_bet_amount, "+ мемори инлайн")
                     await db.cutehistory_minus(loser_id, bet_amount, "- мемори инлайн")
-                    text += f"\n<b>💰 Выигрыш {bet_amount:,.0f} кут</b>".replace(",", ".")
+                    text += f"\n<b>💰 Выигрыш {net_bet_amount:,.0f} кут</b>".replace(",", ".")
                 else:
                     text += "\n<b>❌ У проигравшего нет средств для выплаты выигрыша.</b>"
             except Exception as e:
@@ -865,6 +878,9 @@ async def _inline_finish_game(game_id: str) -> None:
             btn_create = InlineKeyboardButton(text="Создать новую игру", callback_data="1tmemory_create")
         kb = _build_keyboard_from_state(game)
         kb.inline_keyboard.append([btn_create])
+        if gfund_result:
+            from bot.funcs.growth_fund import build_commission_button
+            kb.inline_keyboard.append([build_commission_button(gfund_result)])
 
         await safe_edit_inline_text(game["inline_message_id"], text, kb)
         game["game_active"] = False

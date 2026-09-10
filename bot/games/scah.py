@@ -1015,17 +1015,32 @@ async def scah_select_piece_callback(callback_query: types.CallbackQuery):
             winner_id = game["players"][winner]
             loser_id = game["players"]["white" if winner == "black" else "black"]
             stake = game["bet"]
+
+            gfund_result = None
+            net_stake = stake
+            if stake > 0:
+                try:
+                    from bot.funcs.growth_fund import apply_commission_pvp
+                    gfund_result = await apply_commission_pvp(
+                        db, bot1, game="scah", pot=int(stake),
+                        winner_id=winner_id, loser_ids=[loser_id],
+                    )
+                    if gfund_result:
+                        net_stake = max(0, stake - gfund_result["commission"])
+                except Exception as e:
+                    print(f"[SCAH][GFUND] apply_commission_pvp err={e!r}")
+
             # Атомарный DELTA-режим: SET balance = balance + $2 под Redis-локом.
             # Раньше здесь был read-modify-write (get + SET абсолютного значения),
             # который затирал параллельные изменения баланса и кут «пропадал».
-            await db.update_user_balance(winner_id, f"+{int(stake)}")
+            await db.update_user_balance(winner_id, f"+{int(net_stake)}")
             await db.update_user_balance(loser_id, f"-{int(stake)}")
-            await db.update_user_winamount(winner_id, stake)#
+            await db.update_user_winamount(winner_id, net_stake)#
             await db.update_user_wins(winner_id, 1, bot1, ref_coin)
             await db.update_user_loose(loser_id, 1, bot1, ref_coin)#
             await db.update_game_last_activity(winner_id)
             await db.update_game_last_activity(loser_id)
-            await db.cutehistory_plus(winner_id, stake, "+ шашки")
+            await db.cutehistory_plus(winner_id, net_stake, "+ шашки")
             await db.cutehistory_minus(loser_id, stake, "- шашки")
             await db.set_items(winner_id, "Фигурка шашки", 1)
             from main import check_bet_and_set_item
@@ -1039,12 +1054,16 @@ async def scah_select_piece_callback(callback_query: types.CallbackQuery):
 
             win_text = ""
             if stake > 0:
-                win_amount = "{:,.0f}".format(stake).replace(",", ".")
+                win_amount = "{:,.0f}".format(net_stake).replace(",", ".")
                 win_text = f"\n💰 <b>Выигрыш {win_amount} кут</b>"
 
+            gfund_kb = None
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                gfund_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
             await safe_edit_message_text(
                 chat_id=game["chat_id"], message_id=game["message_id"],
-                text=f"{winner_emoji} <b>{winner_link} Победитель!</b>{win_text}", reply_markup=None,
+                text=f"{winner_emoji} <b>{winner_link} Победитель!</b>{win_text}", reply_markup=gfund_kb,
                 parse_mode="HTML", callback_query=callback_query)
             del gamessha[game_id]
     gamessha.save()
@@ -1119,15 +1138,30 @@ async def scah_surrender_callback(callback_query: types.CallbackQuery):
         await safe_callback_answer(callback_query, "❗️ Вы не участник.", show_alert=True)
         return
     stake = game["bet"]
+
+    gfund_result = None
+    net_stake = stake
+    if stake > 0:
+        try:
+            from bot.funcs.growth_fund import apply_commission_pvp
+            gfund_result = await apply_commission_pvp(
+                db, bot1, game="scah", pot=int(stake),
+                winner_id=winner_id, loser_ids=[loser_id],
+            )
+            if gfund_result:
+                net_stake = max(0, stake - gfund_result["commission"])
+        except Exception as e:
+            print(f"[SCAH][GFUND] apply_commission_pvp err={e!r}")
+
     # Атомарный DELTA-режим (см. пояснение выше) — без гонки read-modify-write.
-    await db.update_user_balance(winner_id, f"+{int(stake)}")
+    await db.update_user_balance(winner_id, f"+{int(net_stake)}")
     await db.update_user_balance(loser_id, f"-{int(stake)}")
-    await db.update_user_winamount(winner_id, stake)#
+    await db.update_user_winamount(winner_id, net_stake)#
     await db.update_user_wins(winner_id, 1, bot1, ref_coin)
     await db.update_user_loose(loser_id, 1, bot1, ref_coin)#
     await db.update_game_last_activity(winner_id)
     await db.update_game_last_activity(loser_id)
-    await db.cutehistory_plus(winner_id, stake, "+ шашки сдача")
+    await db.cutehistory_plus(winner_id, net_stake, "+ шашки сдача")
     await db.cutehistory_minus(loser_id, stake, "- шашки сдача")
     await db.set_items(winner_id, "Фигурка шашки", 1)
     from main import check_bet_and_set_item
@@ -1139,12 +1173,16 @@ async def scah_surrender_callback(callback_query: types.CallbackQuery):
 
     win_text = ""
     if stake > 0:
-        win_amount = "{:,.0f}".format(stake).replace(",", ".")
+        win_amount = "{:,.0f}".format(net_stake).replace(",", ".")
         win_text = f"\n💰 <b>Выигрыш {win_amount} кут</b>"
 
+    gfund_kb = None
+    if gfund_result:
+        from bot.funcs.growth_fund import build_commission_button
+        gfund_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
     await safe_edit_message_text(
         chat_id=game["chat_id"], message_id=game["message_id"],
-        text=f"{winner_emoji} <b>{winner_link} победил(-а) - соперник сдался!</b>{win_text}", reply_markup=None,
+        text=f"{winner_emoji} <b>{winner_link} победил(-а) - соперник сдался!</b>{win_text}", reply_markup=gfund_kb,
         parse_mode="HTML", callback_query=callback_query)
     del gamessha[game_id]
     gamessha.save()

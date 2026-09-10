@@ -745,6 +745,8 @@ async def inline_roll_callback(callback_query: CallbackQuery):
                 return
 
             # выплаты
+            gfund_result = None
+            net_bet = int(bet)
             if bet > 0:
                 try:
                     wbal = await db.get_user_balance(winner_id)
@@ -756,7 +758,18 @@ async def inline_roll_callback(callback_query: CallbackQuery):
                     lbal = 0
 
                 try:
-                    await db.update_user_balance(winner_id, int(wbal) + int(bet))
+                    from bot.funcs.growth_fund import apply_commission_pvp
+                    gfund_result = await apply_commission_pvp(
+                        db, bot1, game="orel", pot=int(bet),
+                        winner_id=winner_id, loser_ids=[loser_id],
+                    )
+                    if gfund_result:
+                        net_bet = max(0, int(bet) - gfund_result["commission"])
+                except Exception as e:
+                    print(f"[OREL_INLINE][GFUND] apply_commission_pvp err={e!r}")
+
+                try:
+                    await db.update_user_balance(winner_id, int(wbal) + int(net_bet))
                     await db.update_user_balance(loser_id, int(lbal) - int(bet))
 
                     await db.touch_balance_last_active(winner_id , set_active_status=True)
@@ -766,7 +779,7 @@ async def inline_roll_callback(callback_query: CallbackQuery):
                     pass
 
                 try:
-                    await db.cutehistory_plus(winner_id, bet, "инлайн орел")
+                    await db.cutehistory_plus(winner_id, net_bet, "инлайн орел")
                     await db.cutehistory_minus(loser_id, bet, "инлайн орел")
                 except Exception:
                     pass
@@ -784,8 +797,7 @@ async def inline_roll_callback(callback_query: CallbackQuery):
 
             # бонусы historygames - твой блок (не трогаю смысл, только защищаю)
             try:
-                total_pot = int(bet) * len(participants)
-                await db.update_user_winamount(winner_id, int(total_pot) - int(bet))#
+                await db.update_user_winamount(winner_id, int(net_bet))#
                 await db.update_game_last_activity(winner_id)
             except Exception:
                 pass
@@ -798,14 +810,9 @@ async def inline_roll_callback(callback_query: CallbackQuery):
                 pass
 
             # рендер результата
-            try:
-                total_pot = int(bet) * len(participants)
-            except Exception:
-                total_pot = 0
-
             win_amount = 0
             try:
-                win_amount = int(total_pot) - int(bet)
+                win_amount = int(net_bet)
             except Exception:
                 win_amount = 0
 
@@ -921,7 +928,11 @@ async def inline_roll_callback(callback_query: CallbackQuery):
             else:
                 btn_create = InlineKeyboardButton(text="Создать новую игру", callback_data="inorel_create")
 
-            kb = InlineKeyboardMarkup(inline_keyboard=[[btn_create]])
+            kb_rows = [[btn_create]]
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                kb_rows.append([build_commission_button(gfund_result)])
+            kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
             try:
                 await bot1.edit_message_text(

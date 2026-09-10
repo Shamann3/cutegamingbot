@@ -688,6 +688,7 @@ def _build_result_kb(
     kind: str,      # "win" / "loss" / "home"
     amount: int = 0,
     coef: float = 0.0,
+    gfund_result: Optional[dict] = None,
 ) -> InlineKeyboardMarkup:
     color = resolve_color(random_num)
 
@@ -745,6 +746,10 @@ def _build_result_kb(
             callback_data="callbroulletanswermultiplier",
         )
         inline_keyboard = [[btn_status], [btn_result], [btn_coef]]
+
+    if kind == "win" and gfund_result:
+        from bot.funcs.growth_fund import build_commission_button
+        inline_keyboard.append([build_commission_button(gfund_result)])
 
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
@@ -811,6 +816,7 @@ async def _send_result_visual(
     kind: str,
     amount: int = 0,
     coef: float = 0.0,
+    gfund_result: Optional[dict] = None,
 ) -> None:
     """Результат рулетки: TG-стикер + кнопки (принцип ruletka.py)."""
     kb = _build_result_kb(
@@ -818,6 +824,7 @@ async def _send_result_visual(
         kind=str(kind),
         amount=int(amount),
         coef=float(coef),
+        gfund_result=gfund_result,
     )
 
     chat_id = int(message.chat.id)
@@ -1535,6 +1542,18 @@ async def _fortuna_paid_game(
                         if profit < 0: profit = 0
                         actual_profit = min(profit, int(chat_balance or 0))
 
+                        gfund_result = None
+                        if actual_profit > 0:
+                            try:
+                                from bot.funcs.growth_fund import apply_commission
+                                gfund_result = await apply_commission(
+                                    db, bot1, chat_id=chat_id, user_id=user_id, game="fortuna_solo", pot=actual_profit,
+                                )
+                                if gfund_result:
+                                    actual_profit = max(0, actual_profit - gfund_result["commission"])
+                            except Exception as e:
+                                _fdbg("GFUND", f"apply_commission(0demo_mask) error: {e}")
+
                         # зачисляем выигрыш
                         if actual_profit > 0:
                             await _user_plus(user_id, actual_profit)
@@ -1553,7 +1572,7 @@ async def _fortuna_paid_game(
                         await _safe_add_xp(user_id)
                         _update_streaks(user_id, is_win=True)
 
-                        await _send_result_visual(message, random_num=random_num, kind="win", amount=actual_profit, coef=mult)
+                        await _send_result_visual(message, random_num=random_num, kind="win", amount=actual_profit, coef=mult, gfund_result=gfund_result)
                         _mark_processed_message(message)
                         return
 
@@ -1736,6 +1755,19 @@ async def _fortuna_paid_game(
                     if not await _claim_settlement_once(event_key):
                         _mark_processed_message(message)
                         return
+
+                    gfund_result = None
+                    if actual_profit > 0:
+                        try:
+                            from bot.funcs.growth_fund import apply_commission
+                            gfund_result = await apply_commission(
+                                db, bot1, chat_id=chat_id, user_id=user_id, game="fortuna_solo", pot=actual_profit,
+                            )
+                            if gfund_result:
+                                actual_profit = max(0, actual_profit - gfund_result["commission"])
+                        except Exception as e:
+                            _fdbg("GFUND", f"apply_commission(demo) error: {e}")
+
                     if actual_profit > 0:
                         await _user_plus(user_id, actual_profit)
                         await _chat_minus(chat_id, actual_profit)
@@ -1753,7 +1785,7 @@ async def _fortuna_paid_game(
                     await _safe_add_xp(user_id)
                     _update_streaks(user_id, is_win=True)
 
-                    await _send_result_visual(message, random_num=random_num, kind="win", amount=actual_profit, coef=mult)
+                    await _send_result_visual(message, random_num=random_num, kind="win", amount=actual_profit, coef=mult, gfund_result=gfund_result)
                     _mark_processed_message(message)
                     return
 
@@ -1793,6 +1825,19 @@ async def _fortuna_paid_game(
                     actual_profit = min(profit, int(current_chat_balance or 0))
                     if actual_profit < 0:
                         actual_profit = 0
+
+                    gfund_result = None
+                    if actual_profit > 0:
+                        try:
+                            from bot.funcs.growth_fund import apply_commission
+                            gfund_result = await apply_commission(
+                                db, bot1, chat_id=chat_id, user_id=user_id, game="fortuna_solo", pot=actual_profit,
+                            )
+                            if gfund_result:
+                                actual_profit = max(0, actual_profit - gfund_result["commission"])
+                        except Exception as e:
+                            _fdbg("GFUND", f"apply_commission(win_{gc_tag}) error: {e}")
+
                     if actual_profit > 0:
                         await _user_plus(user_id, actual_profit)
                         await _mark_user_game_activity(user_id, reason=f"win_{gc_tag.lower()}")
@@ -1811,7 +1856,7 @@ async def _fortuna_paid_game(
                         await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=actual_profit, outcome="+")
                     await _safe_add_xp(user_id)
                     _update_streaks(user_id, is_win=True)
-                    await _send_result_visual(message, random_num=random_num_value, kind="win", amount=actual_profit, coef=multiplier)
+                    await _send_result_visual(message, random_num=random_num_value, kind="win", amount=actual_profit, coef=multiplier, gfund_result=gfund_result)
 
                 async def apply_loss(random_num_value: int, multiplier_for_view: float, gc_tag: str):
                     if not await _claim_settlement_once(event_key):

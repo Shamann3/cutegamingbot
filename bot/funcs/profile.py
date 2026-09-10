@@ -949,6 +949,19 @@ async def _profile_get_growth_fund_contributed(db, user_id: int) -> int:
         return 0
 
 
+async def _profile_get_growth_fund_milestone(db, user_id: int) -> Dict[str, Any]:
+    """Текущее состояние шкалы до «Купона Возможностей» (для профиля)."""
+    try:
+        import bot.config.config as cfg
+        if not getattr(cfg, "GROWTH_FUND_ENABLED", False):
+            return {}
+        from bot.funcs.growth_fund import get_user_milestone_state
+        return await get_user_milestone_state(db, user_id)
+    except Exception as e:
+        _p_err("PROFILE", "growth_fund_milestone fetch failed", e, uid=user_id, level=2)
+        return {}
+
+
 async def _profile_collect_state_for_render(
     *,
     user_id: int,
@@ -960,12 +973,14 @@ async def _profile_collect_state_for_render(
     if bundle:
         country_text = country_dict.get(bundle.get("country_emoji", ""), "Неизвестная страна")
         growth_fund_contributed = await _profile_get_growth_fund_contributed(db, user_id)
+        growth_fund_milestone = await _profile_get_growth_fund_milestone(db, user_id)
         return {
             **bundle,
             "viewer_id": int(viewer_id),
             "chat_id": int(chat_id),
             "country_text": country_text,
             "growth_fund_contributed": growth_fund_contributed,
+            "growth_fund_milestone": growth_fund_milestone,
         }
 
     async def _safe_db_call(fn, default=None, tag: str = "PROFILE-STATE"):
@@ -1015,6 +1030,7 @@ async def _profile_collect_state_for_render(
     canwithdrawalunt = await _safe_db_call(lambda: db.get_canwithdrawal(user_id), 0, "PROFILE-STATE")
     is_banned = await _safe_db_call(lambda: db.is_user_banned(user_id), False, "PROFILE-STATE")
     growth_fund_contributed = await _profile_get_growth_fund_contributed(db, user_id)
+    growth_fund_milestone = await _profile_get_growth_fund_milestone(db, user_id)
 
     return {
         "user_id": int(user_id),
@@ -1050,6 +1066,7 @@ async def _profile_collect_state_for_render(
         "donated": _profile_safe_int(donated, 0),
         "canwithdrawalunt": _profile_safe_int(canwithdrawalunt, 0),
         "growth_fund_contributed": growth_fund_contributed,
+        "growth_fund_milestone": growth_fund_milestone,
         "is_banned": bool(is_banned),
     }
 
@@ -1143,6 +1160,22 @@ async def _build_profile_caption_for_target(
             f"Внесено в Фонд Роста : {_profile_fmt_int(state['growth_fund_contributed'])} кут</b>"
         )
 
+    # Шкала до следующего "Купона Возможностей" - показываем ВСЕГДА (даже на
+    # 0/100), в отличие от строки выше, чтобы механика была видна и понятна
+    # с самого начала, а не только когда уже что-то накопилось.
+    # state['growth_fund_milestone'] заполняется в загрузчике профиля
+    # (bot/funcs/growth_fund.py -> get_user_milestone_state); пустой dict,
+    # если GROWTH_FUND_ENABLED = False или запрос не удался - тогда строку
+    # просто не показываем (fail-safe, не ломаем профиль).
+    growth_fund_milestone_line = ""
+    _gfm = state.get("growth_fund_milestone") or {}
+    if _gfm:
+        growth_fund_milestone_line = (
+            f"<b><tg-emoji emoji-id='5474417568053745249'>🌱</tg-emoji> "
+            f"Шкала Фонда Роста : {_profile_fmt_int(_gfm['progress'])}/{_profile_fmt_int(_gfm['target'])} кут</b>\n"
+            f"<code>{_gfm['bar']}</code> → 👑 Купон Возможностей"
+        )
+
     donated_line = ""
     if state["donated"] > 0:
         donated_line = (
@@ -1183,6 +1216,7 @@ async def _build_profile_caption_for_target(
         f"{state['id_emoji']} <code>{user_id}</code>\n",
         f"{state['balance_emoji']} <b>{formatted_balance} кут</b>\n",
         growth_fund_line,
+        growth_fund_milestone_line,
         donated_line,
         winamount_line,
         wins_line,

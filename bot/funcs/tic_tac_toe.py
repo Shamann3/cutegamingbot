@@ -1019,24 +1019,38 @@ async def make_move_callback(callback_query: types.CallbackQuery):
         bet = int(game["bet"])
         await check_bet_and_set_item(winner_id, bet)
 
+        gfund_result = None
+        net_bet = bet
+        if bet > 0:
+            try:
+                from bot.funcs.growth_fund import apply_commission_pvp
+                gfund_result = await apply_commission_pvp(
+                    db, bot1, game="tic_tac_toe", pot=int(bet),
+                    winner_id=winner_id, loser_ids=[loser_id],
+                )
+                if gfund_result:
+                    net_bet = max(0, bet - gfund_result["commission"])
+            except Exception as e:
+                print(f"[TICTACTOE][GFUND] apply_commission_pvp err={e!r}")
+
         loser_balance = await db.get_user_balance(loser_id)
         winner_balance = await db.get_user_balance(winner_id)
 
         await db.update_user_balance(loser_id, loser_balance - bet)
-        await db.update_user_balance(winner_id, winner_balance + bet)
+        await db.update_user_balance(winner_id, winner_balance + net_bet)
         await db.touch_balance_last_active(winner_id, set_active_status=True)
         await db.touch_balance_last_active(loser_id, set_active_status=True)
 
         await db.cutehistory_minus(loser_id, bet, "- Крестики нолики")
-        await db.cutehistory_plus(winner_id, bet, "+ Крестики нолики")
+        await db.cutehistory_plus(winner_id, net_bet, "+ Крестики нолики")
 
         await db.update_user_wins(winner_id, 1, bot1, ref_coin)
-        await db.update_user_winamount(winner_id, bet)#
+        await db.update_user_winamount(winner_id, net_bet)#
         await db.update_user_loose(loser_id, 1, bot1, ref_coin)#
         await db.update_game_last_activity(winner_id)
         await db.update_game_last_activity(loser_id)
 
-        user_message_count_formatted = "{:,.0f}".format(bet).replace(",", ".")
+        user_message_count_formatted = "{:,.0f}".format(net_bet).replace(",", ".")
         win_text = (
             f"\n<tg-emoji emoji-id='5292146637844543370'>💰</tg-emoji> <b>Выигрыш {user_message_count_formatted} кут</b>"
             if bet > 0 else ""
@@ -1047,6 +1061,9 @@ async def make_move_callback(callback_query: types.CallbackQuery):
         name_link = await create_user_link(winner_id, first_name, username)
 
         choices_keyboard = _build_board_keyboard(game_id, with_surrender=False, freeze_board=True)
+        if gfund_result:
+            from bot.funcs.growth_fund import build_commission_button
+            choices_keyboard.inline_keyboard.append([build_commission_button(gfund_result)])
         button_games_tictactoe[game_id]["keyboard_ewqr"] = choices_keyboard
 
         chat_name = "1"
@@ -1236,14 +1253,28 @@ async def surrender_callback(callback_query: types.CallbackQuery):
         except Exception:
             pass
 
+        gfund_result = None
+        net_bet = bet
+        if bet > 0:
+            try:
+                from bot.funcs.growth_fund import apply_commission_pvp
+                gfund_result = await apply_commission_pvp(
+                    db, bot1, game="tic_tac_toe", pot=int(bet),
+                    winner_id=opponent_id, loser_ids=[user_id],
+                )
+                if gfund_result:
+                    net_bet = max(0, bet - gfund_result["commission"])
+            except Exception as e:
+                print(f"[TICTACTOE][GFUND] apply_commission_pvp err={e!r}")
+
         if bet > 0:
             await db.update_user_balance(user_id, surrenderer_balance - bet)
-            await db.update_user_balance(opponent_id, winner_balance_before + bet)
-            await db.cutehistory_plus(opponent_id, bet, "+ Крестики нолики сдача")
+            await db.update_user_balance(opponent_id, winner_balance_before + net_bet)
+            await db.cutehistory_plus(opponent_id, net_bet, "+ Крестики нолики сдача")
             await db.cutehistory_minus(user_id, bet, "- Крестики нолики сдача")
 
         if bet > 0:
-            await db.update_user_winamount(opponent_id, bet)#
+            await db.update_user_winamount(opponent_id, net_bet)#
             await db.update_game_last_activity(opponent_id)
 
         await db.update_user_wins(opponent_id, 1, bot1, ref_coin)
@@ -1269,10 +1300,13 @@ async def surrender_callback(callback_query: types.CallbackQuery):
         name_link_loser = await create_user_link(user_id, surrenderer_firstname, surrenderer_username)
 
         choices_keyboard = _build_board_keyboard(game_id, with_surrender=False, freeze_board=True)
+        if gfund_result:
+            from bot.funcs.growth_fund import build_commission_button
+            choices_keyboard.inline_keyboard.append([build_commission_button(gfund_result)])
         button_games_tictactoe[game_id]["keybotyiubnard_join"] = choices_keyboard
 
         if bet > 0:
-            user_message_count_formatted = "{:,.0f}".format(bet).replace(",", ".")
+            user_message_count_formatted = "{:,.0f}".format(net_bet).replace(",", ".")
             win_text = f"\n<tg-emoji emoji-id='5292146637844543370'>💰</tg-emoji> <b>Выигрыш {user_message_count_formatted} кут</b>"
         else:
             win_text = ""

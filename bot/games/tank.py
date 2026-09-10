@@ -635,6 +635,19 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
                 if row_idx == 9:
                     profit = int(_withdrawable_now(game_data))
                     pay = min(profit, await _chat_get_balance(chat_id))
+
+                    gfund_result = None
+                    if pay > 0:
+                        try:
+                            from bot.funcs.growth_fund import apply_commission
+                            gfund_result = await apply_commission(
+                                db, bot1, chat_id=chat_id, user_id=owner_id, game="tank", pot=pay,
+                            )
+                            if gfund_result:
+                                pay = max(0, pay - gfund_result["commission"])
+                        except Exception as e:
+                            print(f"[TANK][GFUND][EXC] apply_commission(full) error: {e}")
+
                     if pay > 0:
                         await _chat_minus(chat_id, pay)
                         await _user_plus(owner_id, pay)
@@ -647,7 +660,16 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
                                 print("[TANK][DEMO] demo обнулён после полной победы (10-й ряд)")
                             except Exception as e:
                                 print(f"[TANK][DEMO][EXC] Ошибка обнуления demo: {e}")
-                    await _safe_edit_text(call.message, f"<b><tg-emoji emoji-id='5395325195542078574'>🍀</tg-emoji> 10-й ряд | {_fmt_int(pay)} кут</b>")
+
+                    gfund_kb = None
+                    if gfund_result:
+                        from bot.funcs.growth_fund import build_commission_button
+                        gfund_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
+                    await _safe_edit_text(
+                        call.message,
+                        f"<b><tg-emoji emoji-id='5395325195542078574'>🍀</tg-emoji> 10-й ряд | {_fmt_int(pay)} кут</b>",
+                        reply_markup=gfund_kb,
+                    )
                     game_data["closed"] = True
                     await _finalize_game(owner_id, msg_id, game_data)
                     return
@@ -800,6 +822,19 @@ async def tank_process_withdraw(call: types.CallbackQuery):
         if using_demo:
             await db.deduct_demo_amount(owner_id, int(bet))
             pay = min(profit, await _chat_get_balance(chat_id))
+
+            gfund_result = None
+            if pay > 0:
+                try:
+                    from bot.funcs.growth_fund import apply_commission
+                    gfund_result = await apply_commission(
+                        db, bot1, chat_id=chat_id, user_id=owner_id, game="tank", pot=pay,
+                    )
+                    if gfund_result:
+                        pay = max(0, pay - gfund_result["commission"])
+                except Exception as e:
+                    print(f"[TANK][GFUND][EXC] apply_commission(demo_withdraw) error: {e}")
+
             if pay > 0:
                 await _chat_minus(chat_id, pay)
                 await _user_plus(owner_id, pay)
@@ -811,10 +846,14 @@ async def tank_process_withdraw(call: types.CallbackQuery):
                 except Exception as e:
                     print(f"[TANK][DEMO][EXC] Ошибка обнуления demo: {e}")
                 await db.update_user_wins(owner_id, 1, bot1, ref_coin)
-            kb = InlineKeyboardMarkup(inline_keyboard=[
+            kb_rows = [
                 [InlineKeyboardButton(text="Выплата", callback_data="tank_paid_stub", style="success", icon_custom_emoji_id="5395325195542078574")],
                 [InlineKeyboardButton(text=f"{_fmt_int(pay)} кут", callback_data="tank_paid_stub")],
-            ])
+            ]
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                kb_rows.append([build_commission_button(gfund_result)])
+            kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
             await _safe_edit_text(call.message, "<tg-emoji emoji-id='5291960442422325139'>🍀</tg-emoji>", reply_markup=kb)
         elif has_assignment and is_free:
             kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -826,6 +865,19 @@ async def tank_process_withdraw(call: types.CallbackQuery):
         else:
             chat_bal = await _chat_get_balance(chat_id)
             pay = min(profit, max(0, chat_bal))
+
+            gfund_result = None
+            if pay > 0:
+                try:
+                    from bot.funcs.growth_fund import apply_commission
+                    gfund_result = await apply_commission(
+                        db, bot1, chat_id=chat_id, user_id=owner_id, game="tank", pot=pay,
+                    )
+                    if gfund_result:
+                        pay = max(0, pay - gfund_result["commission"])
+                except Exception as e:
+                    print(f"[TANK][GFUND][EXC] apply_commission(withdraw) error: {e}")
+
             if pay > 0:
                 await _chat_minus(chat_id, pay)
                 await _user_plus(owner_id, pay)
@@ -833,10 +885,14 @@ async def tank_process_withdraw(call: types.CallbackQuery):
                 await db.cutehistory_plus(owner_id, pay, "+ башня")
                 await db.update_user_winamount(owner_id, pay)
                 await db.update_user_wins(owner_id, 1, bot1, ref_coin)
-            kb = InlineKeyboardMarkup(inline_keyboard=[
+            kb_rows = [
                 [InlineKeyboardButton(text="Выплата", callback_data="tank_paid_stub", style="success", icon_custom_emoji_id="5395325195542078574")],
                 [InlineKeyboardButton(text=f"{_fmt_int(pay)} кут", callback_data="tank_paid_stub")],
-            ])
+            ]
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                kb_rows.append([build_commission_button(gfund_result)])
+            kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
             await _safe_edit_text(call.message, "<tg-emoji emoji-id='5291960442422325139'>🍀</tg-emoji>", reply_markup=kb)
 
         game_data["closed"] = True

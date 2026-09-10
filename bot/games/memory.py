@@ -1020,9 +1020,24 @@ async def finish_game(message: types.Message, game_id: str) -> None:
             g.setdefault("user_links", {})[winner] = winner_link
 
         bet = int(g['bet'])
+
+        gfund_result = None
+        net_bet = bet
+        if bet > 0:
+            try:
+                from bot.funcs.growth_fund import apply_commission_pvp
+                gfund_result = await apply_commission_pvp(
+                    db, bot1, game="memory", pot=int(bet),
+                    winner_id=winner, loser_ids=[opponent_id],
+                )
+                if gfund_result:
+                    net_bet = max(0, bet - gfund_result["commission"])
+            except Exception as e:
+                print(f"[MEMORY][GFUND] apply_commission_pvp err={e!r}")
+
         txt = (f"<b>{(p1 if winner == g['creator'] else p2)} Победитель : {winner_link}</b>\n"
                f"<b>{p3} Счёт : {user_scores[winner]} / {user_scores.get(opponent_id, 0)}</b>")
-        txt += (f"\n<b><tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Выигрыш {format(bet, ',').replace(',', '.')} кут</b>"
+        txt += (f"\n<b><tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Выигрыш {format(net_bet, ',').replace(',', '.')} кут</b>"
                 if bet > 0 else "\n<b>Поздравляем с победой!</b>")
 
         # выплаты
@@ -1030,10 +1045,10 @@ async def finish_game(message: types.Message, game_id: str) -> None:
             cur_w = await db.get_user_balance(winner) or 0
             cur_l = await db.get_user_balance(opponent_id) or 0
             await db.update_user_balance(opponent_id, round(cur_l - bet))
-            await db.update_user_balance(winner, round(cur_w + bet))
-            await db.cutehistory_plus(winner, bet, "+ мемори")
+            await db.update_user_balance(winner, round(cur_w + net_bet))
+            await db.cutehistory_plus(winner, net_bet, "+ мемори")
             await db.cutehistory_minus(opponent_id, bet, "- мемори")
-            await db.update_user_winamount(winner, bet)#
+            await db.update_user_winamount(winner, net_bet)#
             await db.update_user_wins(winner, 1, bot1, ref_coin)
             await db.update_user_loose(opponent_id, 1, bot1, ref_coin)#
             await db.update_game_last_activity(winner)
@@ -1074,7 +1089,11 @@ async def finish_game(message: types.Message, game_id: str) -> None:
         except Exception:
             pass
 
-        await safe_edit_text(message, txt, build_keyboard(game_id, g["texts"]))
+        finish_kb = build_keyboard(game_id, g["texts"])
+        if gfund_result:
+            from bot.funcs.growth_fund import build_commission_button
+            finish_kb.inline_keyboard.append([build_commission_button(gfund_result)])
+        await safe_edit_text(message, txt, finish_kb)
         g["game_active"] = False
         g["pending_hide"] = None
         g["locked"] = False

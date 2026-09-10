@@ -398,17 +398,31 @@ async def induel_Roullet_process_shoot(callback_query: types.CallbackQuery):
             loser_balance = await db.get_user_balance(loser_id)
 
             if winner_balance is not None and loser_balance is not None:
-                new_winner_balance = winner_balance + bet
+                gfund_result = None
+                net_bet = bet
+                if bet > 0:
+                    try:
+                        from bot.funcs.growth_fund import apply_commission_pvp
+                        gfund_result = await apply_commission_pvp(
+                            db, bot1, game="duel", pot=int(bet),
+                            winner_id=winner_id, loser_ids=[loser_id],
+                        )
+                        if gfund_result:
+                            net_bet = max(0, bet - gfund_result["commission"])
+                    except Exception as e:
+                        print(f"[DUEL_INLINE][GFUND] apply_commission_pvp err={e!r}")
+
+                new_winner_balance = winner_balance + net_bet
                 new_loser_balance = loser_balance - bet
 
                 await db.update_user_balance(winner_id, new_winner_balance)
                 await db.update_user_balance(loser_id, new_loser_balance)
                 await db.touch_balance_last_active(winner_id , set_active_status=True)
                 await db.touch_balance_last_active(loser_id , set_active_status=True)
-                await db.cutehistory_plus(winner_id , bet , "инлайн дуэль")
+                await db.cutehistory_plus(winner_id , net_bet , "инлайн дуэль")
                 await db.cutehistory_minus(loser_id , bet , "инлайн дуэль")
                 await db.update_user_wins(winner_id , 1, bot1, ref_coin)
-                await db.update_user_winamount(winner_id , bet)#
+                await db.update_user_winamount(winner_id , net_bet)#
                 await db.update_user_loose(loser_id , 1, bot1, ref_coin)#
                 await db.update_game_last_activity(winner_id)
                 await db.update_game_last_activity(loser_id)
@@ -416,7 +430,7 @@ async def induel_Roullet_process_shoot(callback_query: types.CallbackQuery):
                 #await db.add_commissiondue(loser_id, bet, 'bot')
 
                 winner_name = await db.get_firstname_by_user_id(winner_id)
-                win_amount_formatted = "{:,.0f}".format(bet).replace(",", ".")
+                win_amount_formatted = "{:,.0f}".format(net_bet).replace(",", ".")
 
                 win_text = f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> <b>Выигрыш {win_amount_formatted} кут</b>" if bet > 0 else ""
 
@@ -520,8 +534,11 @@ async def induel_Roullet_process_shoot(callback_query: types.CallbackQuery):
                         callback_data=f"induel_create:{callback_query.from_user.id}:{bet_amount}")
                 else:
                     btn_create_inmine = InlineKeyboardButton(text="Создать новую игру" , callback_data="induel_create")
-                keyboard = InlineKeyboardMarkup(
-                    inline_keyboard=[ [ btn_create_inmine ] ])
+                keyboard_rows = [ [ btn_create_inmine ] ]
+                if gfund_result:
+                    from bot.funcs.growth_fund import build_commission_button
+                    keyboard_rows.append([build_commission_button(gfund_result)])
+                keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
                 await bot1.edit_message_text(
                     new_message_text , inline_message_id=inline_message_id ,reply_markup=keyboard,
                     parse_mode=ParseMode.HTML , disable_web_page_preview=True)

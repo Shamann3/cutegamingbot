@@ -3,14 +3,17 @@
 Общий Фонд Роста - комиссия игры и её честное распределение.
 
 Идея одной фразой: небольшой процент с ХОДА игры (не с баланса "просто так")
-уходит на 3 адреса - обратно в баланс группы, в Фонд Роста (копится на будущие
-дивиденды активным игрокам) и на развитие проекта. Всё открыто: игрок в любой
-момент видит сумму, процент и куда именно она делась (кнопка "Комиссия игры").
+уходит на 3 адреса - в единый технический резерв проекта (GROWTH_FUND_HOUSE_CHAT_ID,
+одинаково для PvE и PvP), в Фонд Роста (копится на будущие дивиденды активным
+игрокам) и на развитие проекта. Всё открыто: игрок в любой момент видит сумму,
+процент и куда именно она делась (кнопка "Комиссия игры"), а владелец проекта
+получает личное уведомление о КАЖДОМ событии + может открыть полную статистику
+по периодам (команда "статистика комиссий" - день/неделя/месяц/год/всё время).
 
 Все проценты и переключатели - в bot/config/config.py (GROWTH_FUND_*).
 Здесь - только расчёт и запись, без завязки на конкретную игру.
 
-Как этим пользоваться из файла игры (пример):
+Как этим пользоваться из файла игры (пример, PvE - против баланса группы):
 
     from bot.funcs.growth_fund import apply_commission
 
@@ -24,8 +27,12 @@
     # result сохрани в состояние игры, чтобы при показе результата добавить
     # кнопку "Комиссия игры: −{result['commission']} Kut" (см. build_commission_button).
 
+Для PvP (банк формируют сами игроки, есть проигравшие) - используй
+apply_commission_pvp() вместо apply_commission() (см. её докстринг ниже).
+
 apply_commission() ничего не платит игроку и не трогает bot-логику самой игры -
-только считает комиссию, списывает её долю в баланс группы/фонд и пишет аудит.
+только считает комиссию, списывает её долю в единый резерв/фонд и пишет аудит
+(плюс шлёт владельцу личное уведомление - см. _notify_owner_commission).
 Вычитание из пота/payout остаётся на стороне вызывающей игры (в каждой игре
 свой порядок раздачи денег, лезть туда отсюда нельзя).
 """
@@ -51,6 +58,150 @@ def _clamp_level(level: Any) -> int:
     except Exception:
         lvl = 0
     return max(0, min(5, lvl))
+
+
+# ============================================================================
+# ШКАЛА ФОНДА РОСТА (прогресс до "Купона Возможностей")
+# ============================================================================
+
+def get_milestone_target(tier: int) -> int:
+    """
+    Порог (в Kut личного вклада), который нужно набрать на текущем "круге"
+    шкалы, чтобы получить награду. tier - 0-based номер круга (0 = первый
+    порог из GROWTH_FUND_MILESTONE_THRESHOLDS, и так далее по списку, а после
+    списка - шаг GROWTH_FUND_MILESTONE_STEP_AFTER_CAP за каждый следующий круг).
+    """
+    import bot.config.config as cfg
+
+    thresholds = getattr(cfg, "GROWTH_FUND_MILESTONE_THRESHOLDS", [100, 200, 350, 500, 750, 1000]) or [1000]
+    step = int(getattr(cfg, "GROWTH_FUND_MILESTONE_STEP_AFTER_CAP", 250) or 250)
+
+    tier = max(0, int(tier))
+    if tier < len(thresholds):
+        return int(thresholds[tier])
+    extra_steps = tier - len(thresholds) + 1
+    return int(thresholds[-1]) + step * extra_steps
+
+
+def format_milestone_bar(progress: int, target: int, *, width: int = 10) -> str:
+    """Текстовый прогресс-бар '▓▓▓▓▓░░░░░' для показа в профиле."""
+    progress = max(0, int(progress))
+    target = max(1, int(target))
+    ratio = min(1.0, progress / target)
+    filled = int(round(ratio * width))
+    filled = max(0, min(width, filled))
+    return "▓" * filled + "░" * (width - filled)
+
+
+async def _advance_milestone(db, bot, user_id: int, *, tier: int, progress: int, gained: int) -> Dict[str, Any]:
+    """
+    Добавляет gained (личный вклад за этот раунд) к прогрессу шкалы и
+    пересекает столько порогов, сколько наберётся (обычно 0 или 1 за раз -
+    комиссия одного раунда почти всегда меньше порога, но цикл защищает и
+    от редкого случая огромной ставки за один раз).
+
+    За КАЖДОЕ пересечение выдаёт 1 "Купон Возможностей" в инвентарь и
+    отправляет игроку честное уведомление личным сообщением от бота.
+
+    Возвращает новое состояние: {"tier", "progress", "crossed", "target"}.
+    """
+    import bot.config.config as cfg
+
+    crossed = 0
+    new_tier = int(tier)
+    new_progress = int(progress) + int(gained)
+
+    while new_progress >= get_milestone_target(new_tier):
+        new_progress -= get_milestone_target(new_tier)
+        new_tier += 1
+        crossed += 1
+
+    if crossed > 0:
+        try:
+            await db.pool.execute(
+                """
+                UPDATE growth_fund_user_stats
+                SET milestone_tier = $2,
+                    milestone_progress = $3,
+                    milestone_coupons_earned = milestone_coupons_earned + $4,
+                    updated_at = NOW()
+                WHERE user_id = $1
+                """,
+                int(user_id), new_tier, new_progress, crossed,
+            )
+        except Exception as e:
+            _vdbg(f"[ФОНД РОСТА][ШКАЛА] update fail user={user_id}: {e!r}")
+
+        item_name = getattr(cfg, "GROWTH_FUND_MILESTONE_REWARD_ITEM", "Купон возможностей")
+        qty_per_cross = int(getattr(cfg, "GROWTH_FUND_MILESTONE_REWARD_QTY", 1) or 1)
+        try:
+            await db.add_item_to_inventory(int(user_id), item_name, qty=qty_per_cross * crossed)
+        except Exception as e:
+            _vdbg(f"[ФОНД РОСТА][ШКАЛА] add_item_to_inventory fail user={user_id}: {e!r}")
+
+        if bot is not None:
+            try:
+                next_target = get_milestone_target(new_tier)
+                times_word = "раз" if crossed == 1 else "раза"
+                await bot.send_message(
+                    int(user_id),
+                    (
+                        "🌱 <b>Ваш вклад в Фонд Роста достиг новой отметки!</b>\n\n"
+                        f"Шкала личного вклада пройдена {crossed} {times_word} подряд — "
+                        f"в награду начислен «👑 Купон Возможностей» "
+                        f"(×{qty_per_cross * crossed}) прямо в Ваш инвентарь.\n\n"
+                        f"Следующая награда — при {_fmt(next_target)} Kut личного вклада "
+                        f"(сейчас {_fmt(new_progress)}/{_fmt(next_target)}).\n\n"
+                        "Использовать купон можно командой «использовать 💸», "
+                        "а можно продать или передать другому игроку — он такой же предмет, как любой другой."
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                _vdbg(f"[ФОНД РОСТА][ШКАЛА] notify fail user={user_id}: {e!r}")
+
+    return {
+        "tier": new_tier,
+        "progress": new_progress,
+        "crossed": crossed,
+        "target": get_milestone_target(new_tier),
+    }
+
+
+def _fmt(n: int) -> str:
+    try:
+        return f"{int(n):,}".replace(",", " ")
+    except Exception:
+        return str(n)
+
+
+async def get_user_milestone_state(db, user_id: int) -> Dict[str, Any]:
+    """
+    Для профиля: текущее состояние шкалы игрока -
+    {"tier", "progress", "target", "bar"}. Если строки ещё нет (игрок ни
+    разу не платил комиссию) - возвращает самый первый порог, progress=0.
+    """
+    tier, progress = 0, 0
+    if getattr(db, "pool", None):
+        try:
+            async with db.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT milestone_tier, milestone_progress FROM growth_fund_user_stats WHERE user_id = $1",
+                    int(user_id),
+                )
+            if row:
+                tier = int(row["milestone_tier"] or 0)
+                progress = int(row["milestone_progress"] or 0)
+        except Exception as e:
+            _vdbg(f"[ФОНД РОСТА][ШКАЛА] get_user_milestone_state fail user={user_id}: {e!r}")
+
+    target = get_milestone_target(tier)
+    return {
+        "tier": tier,
+        "progress": progress,
+        "target": target,
+        "bar": format_milestone_bar(progress, target),
+    }
 
 
 def compute_commission(
@@ -113,6 +264,17 @@ def compute_commission(
     }
 
 
+def _get_house_chat_id() -> int:
+    """Единый технический резерв (см. GROWTH_FUND_HOUSE_CHAT_ID в config.py) -
+    сюда уходит доля "chat_balance" ВСЕХ комиссий, PvE и PvP одинаково."""
+    import bot.config.config as cfg
+
+    house = int(getattr(cfg, "GROWTH_FUND_HOUSE_CHAT_ID", 0) or 0)
+    if house:
+        return house
+    return int(getattr(cfg, "GROWTH_FUND_PVP_HOUSE_CHAT_ID", 0) or 0)
+
+
 async def apply_commission(
     db,
     bot,
@@ -123,15 +285,33 @@ async def apply_commission(
     pot: int,
     round_id: Optional[str] = None,
     level: Optional[int] = None,
+    notify_owner: bool = True,
 ) -> Optional[Dict[str, Any]]:
     """
     Считает и ПРИМЕНЯЕТ комиссию игры за один раунд:
-      1) баланс группы (chat.chatbalance)   - через db.add_to_chatbalance (кэш/фастлейн не трогаем сами)
-      2) Фонд Роста этой группы (growth_fund_pool) - копится на будущие дивиденды
+      1) единый технический резерв проекта (GROWTH_FUND_HOUSE_CHAT_ID) - через
+         db.add_to_chatbalance (кэш/фастлейн не трогаем сами). Раньше эта доля
+         возвращалась в баланс ТОЙ группы, где сыграли; теперь - по решению
+         владельца проекта - ВСЕ комиссии (PvE и PvP) собираются в одном месте.
+      2) Фонд Роста (growth_fund_pool, тот же единый резерв) - копится на
+         будущие дивиденды активным игрокам
       3) доля проекта - только фиксируется в журнале (growth_fund_ledger), отдельного кошелька нет
     плюс пишет:
-      • growth_fund_ledger        - 1 строка на каждое событие (аудит)
-      • growth_fund_user_stats    - обновляет лайфтайм-сумму игрока (для профиля/экрана статистики)
+      • growth_fund_ledger         - 1 строка на каждое событие (аудит; chat_id
+                                      в строке - НАСТОЯЩАЯ группа, где сыграли,
+                                      это отдельно от того, куда ушли деньги)
+      • growth_fund_user_stats     - обновляет лайфтайм-сумму игрока (для профиля/экрана статистики)
+      • growth_fund_global_totals  - лайфтайм-итог по ВСЕМ комиссиям сразу (для
+                                      уведомления владельцу и экрана статистики)
+
+    ★-уровень группы (chat_id), где реально сыграли раунд, всё так же
+    определяет % комиссии (GROWTH_FUND_RATE_BY_LEVEL) - меняется только адрес,
+    куда физически уходят куты, а не сама ставка комиссии.
+
+    notify_owner=True (по умолчанию) - шлёт владельцу проекта личное
+    уведомление об этом событии (см. _notify_owner_commission). PvP-обёртка
+    apply_commission_pvp() сама делает более подробное PvP-уведомление и
+    передаёт сюда notify_owner=False, чтобы не дублировать сообщение.
 
     Ничего не возвращает игроку деньгами - это делает вызывающая игра, используя
     result["net_pot"] / result["commission"] по своей обычной логике выплат.
@@ -165,16 +345,23 @@ async def apply_commission(
     to_fund = result["to_growth_fund"]
     to_project = result["to_project"]
 
-    # 1) Баланс группы - через существующую защищённую функцию (кэш/фастлейн внутри неё).
+    # Единый резерв - и для "баланса группы", и для пула Фонда Роста. Если
+    # конфиг вдруг не задан (0/None) - fail-safe откат на настоящий chat_id,
+    # чтобы куты не терялись в никуда.
+    money_chat_id = _get_house_chat_id() or chat_id
+
+    # 1) Резерв проекта - через существующую защищённую функцию (кэш/фастлейн внутри неё).
     if to_chat > 0:
         try:
-            await db.add_to_chatbalance(bot, chat_id, to_chat)
+            await db.add_to_chatbalance(bot, money_chat_id, to_chat)
         except Exception as e:
-            _vdbg(f"[ФОНД РОСТА] add_to_chatbalance fail chat={chat_id} amount={to_chat}: {e!r}")
+            _vdbg(f"[ФОНД РОСТА] add_to_chatbalance fail chat={money_chat_id} amount={to_chat}: {e!r}")
 
-    # 2) Пул Фонда Роста этой группы + 3) журнал + 4) лайфтайм-статистика игрока.
+    # 2) Пул Фонда Роста (единый резерв) + 3) журнал (настоящий chat_id - аудит)
+    # + 4) лайфтайм-статистика игрока + 5) лайфтайм-итог по ВСЕМ комиссиям.
     # Всё в одной транзакции - это НАШИ собственные новые таблицы, тут атомарность
     # обязательна (деньги не должны "потеряться" при обрыве соединения).
+    lifetime_totals: Optional[Dict[str, int]] = None
     try:
         async with db.pool.acquire() as conn:
             async with conn.transaction():
@@ -187,7 +374,7 @@ async def apply_commission(
                         total_ever_added = growth_fund_pool.total_ever_added + $2,
                         updated_at = NOW()
                     """,
-                    chat_id, to_fund,
+                    money_chat_id, to_fund,
                 )
 
                 await conn.execute(
@@ -215,12 +402,211 @@ async def apply_commission(
                     """,
                     user_id, result["commission"], to_chat, to_fund,
                 )
+
+                totals_row = await conn.fetchrow(
+                    """
+                    INSERT INTO growth_fund_global_totals
+                        (id, total_commission, total_to_chat_balance, total_to_growth_fund, total_to_project, total_events, updated_at)
+                    VALUES (1, $1, $2, $3, $4, 1, NOW())
+                    ON CONFLICT (id) DO UPDATE SET
+                        total_commission = growth_fund_global_totals.total_commission + $1,
+                        total_to_chat_balance = growth_fund_global_totals.total_to_chat_balance + $2,
+                        total_to_growth_fund = growth_fund_global_totals.total_to_growth_fund + $3,
+                        total_to_project = growth_fund_global_totals.total_to_project + $4,
+                        total_events = growth_fund_global_totals.total_events + 1,
+                        updated_at = NOW()
+                    RETURNING total_commission, total_events
+                    """,
+                    result["commission"], to_chat, to_fund, to_project,
+                )
+                if totals_row:
+                    lifetime_totals = {
+                        "total_commission": int(totals_row["total_commission"]),
+                        "total_events": int(totals_row["total_events"]),
+                    }
     except Exception as e:
         _vdbg(f"[ФОНД РОСТА] запись ledger/pool/stats fail chat={chat_id} user={user_id}: {e!r}")
-        # Баланс группы уже пополнен (шаг 1) - это единственная часть, которая
+        # Баланс резерва уже пополнен (шаг 1) - это единственная часть, которая
         # может "не совпасть" при сбое именно здесь. Осознанный компромисс:
-        # лучше группа получит чуть больше, чем застрять с недоплаченной игрой.
+        # лучше резерв получит чуть больше, чем застрять с недоплаченной игрой.
 
+    if lifetime_totals:
+        result["lifetime_total_commission"] = lifetime_totals["total_commission"]
+        result["lifetime_total_events"] = lifetime_totals["total_events"]
+
+    # 6) Шкала до "Купона Возможностей" - двигаем ПОСЛЕ основной транзакции
+    # (независимый шаг: даже если тут что-то пойдёт не так, деньги уже
+    # честно распределены выше - шкала это только "надстройка"-награда).
+    try:
+        milestone_before = await get_user_milestone_state(db, user_id)
+        milestone = await _advance_milestone(
+            db, bot, user_id,
+            tier=milestone_before["tier"],
+            progress=milestone_before["progress"],
+            gained=result["commission"],
+        )
+        result["milestone"] = milestone
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][ШКАЛА] advance fail user={user_id}: {e!r}")
+
+    # 7) Личное уведомление владельцу проекта - о КАЖДОЙ комиссии (PvE и PvP).
+    if notify_owner:
+        try:
+            await _notify_owner_commission(db, bot, game=game, user_id=user_id, result=result, is_pvp=False)
+        except Exception as e:
+            _vdbg(f"[ФОНД РОСТА][УВЕДОМЛЕНИЕ] notify fail user={user_id}: {e!r}")
+
+    return result
+
+
+async def get_global_totals(db) -> Dict[str, int]:
+    """
+    Лайфтайм-итоги по ВСЕМ комиссиям сразу (PvE + PvP), одной строкой из
+    growth_fund_global_totals - для уведомления владельцу и экрана
+    статистики "за всё время", без дорогого SUM() по growth_fund_ledger.
+    """
+    empty = {
+        "total_commission": 0, "total_to_chat_balance": 0,
+        "total_to_growth_fund": 0, "total_to_project": 0, "total_events": 0,
+    }
+    if not getattr(db, "pool", None):
+        return empty
+    try:
+        async with db.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT total_commission, total_to_chat_balance, total_to_growth_fund, "
+                "total_to_project, total_events FROM growth_fund_global_totals WHERE id = 1"
+            )
+        if row:
+            return {
+                "total_commission": int(row["total_commission"] or 0),
+                "total_to_chat_balance": int(row["total_to_chat_balance"] or 0),
+                "total_to_growth_fund": int(row["total_to_growth_fund"] or 0),
+                "total_to_project": int(row["total_to_project"] or 0),
+                "total_events": int(row["total_events"] or 0),
+            }
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][ИТОГИ] get_global_totals fail: {e!r}")
+    return empty
+
+
+async def _notify_owner_commission(
+    db,
+    bot,
+    *,
+    game: str,
+    user_id: int,
+    result: Dict[str, Any],
+    is_pvp: bool = False,
+    winner_id: Optional[int] = None,
+    loser_ids: Any = None,
+) -> None:
+    """
+    Личное уведомление владельцу проекта о КАЖДОЙ собранной комиссии - и PvE,
+    и PvP, единым форматом (открытый аудит-лог). Показывает разбор ЭТОГО
+    раунда + лайфтайм-итог "собрано всего с начала работы" - владельцу не
+    обязательно открывать отдельный экран статистики, чтобы видеть рост.
+    Чисто информационный хук - ошибки никогда не влияют на игру (вызывающие
+    функции оборачивают вызов в try/except).
+    """
+    import bot.config.config as cfg
+
+    owner_id = int(getattr(cfg, "GROWTH_FUND_OWNER_NOTIFY_USER_ID", 0) or 0)
+    if not owner_id or bot is None:
+        return
+
+    lines = ["💠 <b>Комиссия собрана</b>", f"Игра: <b>{game}</b>"]
+
+    if is_pvp:
+        try:
+            loser_list = [int(u) for u in (loser_ids or [])]
+        except Exception:
+            loser_list = []
+        losers_str = ", ".join(str(u) for u in loser_list) if loser_list else "—"
+        label = "Проигравший" if len(loser_list) == 1 else "Проигравшие"
+        lines.append("Тип: <b>PvP</b>")
+        lines.append(f"Победитель: <code>{int(winner_id if winner_id is not None else user_id)}</code>")
+        lines.append(f"{label}: <code>{losers_str}</code>")
+    else:
+        lines.append("Тип: <b>PvE</b>")
+        lines.append(f"Игрок: <code>{int(user_id)}</code>")
+
+    lines.append(f"Банк раунда: {_fmt(result.get('pot', 0))} Kut")
+    lines.append(f"Комиссия: {_fmt(result.get('commission', 0))} Kut")
+    lines.append(f"→ резерв проекта: {_fmt(result.get('to_chat_balance', 0))} Kut")
+    lines.append(f"→ Фонд Роста: {_fmt(result.get('to_growth_fund', 0))} Kut")
+    lines.append(f"→ развитие проекта: {_fmt(result.get('to_project', 0))} Kut")
+
+    lifetime_total = result.get("lifetime_total_commission")
+    lifetime_events = result.get("lifetime_total_events")
+    if lifetime_total is None:
+        totals = await get_global_totals(db)
+        lifetime_total = totals["total_commission"]
+        lifetime_events = totals["total_events"]
+
+    lines.append("")
+    lines.append(f"♾ <b>Собрано всего с начала работы: {_fmt(lifetime_total)} Kut</b> ({_fmt(lifetime_events)} событий)")
+    lines.append('Полная статистика по периодам - командой "статистика комиссий".')
+
+    try:
+        await bot.send_message(owner_id, "\n".join(lines), parse_mode="HTML")
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][УВЕДОМЛЕНИЕ] send_message owner fail: {e!r}")
+
+
+async def apply_commission_pvp(
+    db,
+    bot,
+    *,
+    game: str,
+    pot: int,
+    winner_id: int,
+    loser_ids: Optional[list] = None,
+    round_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    PvP-версия apply_commission(). В PvP банк формируют САМИ игроки (не
+    баланс группы), а часть PvP-игр работает в inline-режиме, где у бота
+    физически нет chat_id переписки (Telegram inline API его не сообщает).
+
+    Поэтому здесь: доля "chat_balance" из комиссии всегда уходит в единый
+    технический резерв GROWTH_FUND_HOUSE_CHAT_ID (см. config.py) вместо
+    группы, где сыграли, - одинаково для чат-версий и inline-версий игр.
+    Уровень ★ для расчёта ставки комиссии тоже берётся у этого резерва
+    (единый тариф для всех PvP-раундов, не зависящий от конкретной группы).
+    (С недавних пор туда же, в тот же резерв, уходит и доля "chat_balance"
+    ВСЕХ PvE-комиссий - см. apply_commission() - резерв теперь общий.)
+
+    Дополнительно шлёт владельцу проекта личное уведомление о раунде (со
+    списком победителя/проигравших - см. _notify_owner_commission) - вместо
+    generic-уведомления из apply_commission() (notify_owner=False ниже).
+
+    Возвращает тот же формат, что apply_commission(), плюс result["is_pvp"]=True
+    (используется build_commission_button/format_commission_explainer, чтобы
+    честно показать игроку разбор комиссии).
+    """
+    house_chat_id = _get_house_chat_id()
+    if not house_chat_id:
+        return None
+
+    result = await apply_commission(
+        db, bot,
+        chat_id=house_chat_id,
+        user_id=int(winner_id),
+        game=game,
+        pot=pot,
+        round_id=round_id,
+        notify_owner=False,
+    )
+    if result:
+        result["is_pvp"] = True
+        try:
+            await _notify_owner_commission(
+                db, bot, game=game, user_id=int(winner_id), result=result,
+                is_pvp=True, winner_id=winner_id, loser_ids=loser_ids,
+            )
+        except Exception as e:
+            _vdbg(f"[ФОНД РОСТА][PVP] owner notify fail: {e!r}")
     return result
 
 
@@ -261,14 +647,356 @@ async def get_user_lifetime_contribution(db, user_id: int) -> int:
         return 0
 
 
-def build_commission_button(result: Dict[str, Any], *, callback_data: str):
-    """Готовая инлайн-кнопка «Комиссия игры: −N Kut» под результатом раунда."""
+COMMISSION_CALLBACK_PREFIX = "gfund"
+
+
+def build_commission_callback_data(result: Dict[str, Any]) -> str:
+    """
+    Кодирует разбивку комиссии этого конкретного раунда прямо в callback_data
+    (без похода в БД при клике - раунд уже посчитан и применён, тут только
+    показ). Формат: gfund|pot|commission|to_chat|to_fund|to_project|is_pvp
+    Все значения - целые Kut, укладываются далеко в лимит 64 байта Telegram.
+    is_pvp (0/1) - PvP-раунды показывают другой честный текст про долю
+    "группы" (см. format_commission_explainer), т.к. она уходит не в
+    группу, где сыграли, а в общий технический резерв (apply_commission_pvp).
+    """
+    is_pvp = 1 if result.get("is_pvp") else 0
+    return (
+        f"{COMMISSION_CALLBACK_PREFIX}|{int(result['pot'])}|{int(result['commission'])}|"
+        f"{int(result['to_chat_balance'])}|{int(result['to_growth_fund'])}|{int(result['to_project'])}|{is_pvp}"
+    )
+
+
+def build_commission_button(result: Dict[str, Any], *, callback_data: Optional[str] = None):
+    """
+    Готовая инлайн-кнопка «Комиссия игры: −N Kut» под результатом раунда.
+    callback_data можно не передавать - тогда соберётся автоматически через
+    build_commission_callback_data (рекомендуемый способ, чтобы не собирать
+    руками одну и ту же строку в каждом файле игры).
+    """
     from aiogram.types import InlineKeyboardButton
 
     amount = result["commission"]
     return InlineKeyboardButton(
         text=f"Комиссия игры: −{amount} Kut",
-        callback_data=callback_data,
+        callback_data=callback_data or build_commission_callback_data(result),
         style="primary",
         icon_custom_emoji_id=COMMISSION_BUTTON_ICON_ID,
     )
+
+
+def format_commission_explainer(
+    *, pot: int, commission: int, to_chat: int, to_fund: int, to_project: int, is_pvp: bool = False,
+) -> str:
+    """
+    Полный, честный разбор комиссии этого раунда - текст экрана-разъяснения.
+    Доля "chat_balance" ВСЕХ комиссий (и PvE, и PvP) уходит в единый
+    технический резерв проекта, а не в баланс группы, где сыграли раунд -
+    поэтому текст одинаково честен для обоих случаев (см. apply_commission()
+    и apply_commission_pvp() в этом же файле).
+    """
+    pot = int(pot); commission = int(commission)
+    pct = (commission / pot * 100.0) if pot > 0 else 0.0
+    pct_str = f"{pct:.1f}".rstrip("0").rstrip(".") if pct else "0"
+
+    chat_line = f"→ Общий резерв проекта: <b>{_fmt(to_chat)} Kut</b>"
+    if is_pvp:
+        level_note = (
+            "Процент комиссии в PvP не привязан к конкретной группе (банк формируют сами "
+            "игроки) - единый тариф для всех PvP-раундов."
+        )
+    else:
+        level_note = (
+            "Процент комиссии зависит от ★ уровня группы, где сыграли (чем выше уровень — "
+            "тем ниже комиссия для всех в ней) и никогда не меняется скрыто. Куда именно "
+            "уходят куты - не зависит от группы: единый резерв для всего проекта."
+        )
+
+    return (
+        "🌱 <b>Комиссия игры — как это работает</b>\n\n"
+        f"Банк этого раунда: <b>{_fmt(pot)} Kut</b>\n"
+        f"Удержанная комиссия: <b>{_fmt(commission)} Kut</b> ({pct_str}%)\n\n"
+        "Куда именно ушла комиссия:\n"
+        f"{chat_line}\n"
+        f"→ Общий Фонд Роста: <b>{_fmt(to_fund)} Kut</b>\n"
+        f"→ Развитие проекта: <b>{_fmt(to_project)} Kut</b>\n\n"
+        f"{level_note} "
+        "Из Общего Фонда Роста Вам начисляется личный прогресс на шкале в профиле — "
+        "она открыта, у неё нет случайных множителей."
+    )
+
+
+async def handle_commission_callback(call) -> None:
+    """
+    Обработчик клика по кнопке «Комиссия игры: −N Kut» - показывает полный,
+    честный разбор комиссии именно этого раунда. Регистрируется в main.py:
+
+        dp.callback_query(F.data.startswith(COMMISSION_CALLBACK_PREFIX + "|"))(handle_commission_callback)
+    """
+    try:
+        parts = (call.data or "").split("|")
+        # parts[0] == "gfund"
+        pot, commission, to_chat, to_fund, to_project = (int(x) for x in parts[1:6])
+        is_pvp = bool(int(parts[6])) if len(parts) > 6 else False
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][КНОПКА] bad callback_data {call.data!r}: {e!r}")
+        try:
+            await call.answer("Не удалось показать разбор комиссии.", show_alert=True)
+        except Exception:
+            pass
+        return
+
+    try:
+        await call.answer()
+    except Exception:
+        pass
+
+    text = format_commission_explainer(
+        pot=pot, commission=commission, to_chat=to_chat, to_fund=to_fund, to_project=to_project, is_pvp=is_pvp,
+    )
+    # У inline-сообщений (Telegram inline mode) нет call.message - отвечать
+    # "reply" некуда, поэтому шлём разбор личным сообщением тому, кто нажал.
+    try:
+        if getattr(call, "message", None) is not None:
+            await call.message.reply(text, parse_mode="HTML")
+        else:
+            await call.bot.send_message(call.from_user.id, text, parse_mode="HTML")
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][КНОПКА] reply fail: {e!r}")
+
+
+# ============================================================================
+# СТАТИСТИКА КОМИССИИ ДЛЯ ВЛАДЕЛЬЦА ПРОЕКТА (день / неделя / месяц / год)
+# ============================================================================
+# Доступ только владельцу (GROWTH_FUND_OWNER_NOTIFY_USER_ID). Точка входа -
+# текстовая команда (см. handle_commission_stats_command, регистрируется в
+# main.py в общем текстовом роутере), дальше навигация - инлайн-кнопками
+# периода (см. handle_commission_stats_callback, регистрируется в main.py
+# рядом с обработчиком кнопки "Комиссия игры").
+
+STATS_CALLBACK_PREFIX = "gfundstats"
+
+STATS_TEXT_TRIGGERS = {
+    "статистика комиссий",
+    "статистика комиссии",
+    "комиссии статистика",
+    "статистика фонда роста",
+    "gfund stats",
+    "gfundstats",
+    "/gfundstats",
+}
+
+_STATS_PERIOD_INTERVAL_SQL = {
+    "day": "1 day",
+    "week": "7 days",
+    "month": "30 days",
+    "year": "365 days",
+    # "all" - без WHERE (весь growth_fund_ledger)
+}
+
+_STATS_PERIOD_LABELS = {
+    "day": "📅 За день",
+    "week": "🗓 За неделю",
+    "month": "🗓 За месяц",
+    "year": "🗓 За год",
+    "all": "♾ За всё время",
+}
+
+_STATS_PERIOD_ORDER = ["day", "week", "month", "year", "all"]
+
+
+def _is_commission_stats_owner(user_id: Any) -> bool:
+    import bot.config.config as cfg
+
+    owner_id = int(getattr(cfg, "GROWTH_FUND_OWNER_NOTIFY_USER_ID", 0) or 0)
+    try:
+        return bool(owner_id) and int(user_id) == owner_id
+    except Exception:
+        return False
+
+
+async def get_commission_period_stats(db, *, period: str = "day") -> Dict[str, Any]:
+    """
+    Агрегаты по growth_fund_ledger за период (day/week/month/year/all) - для
+    экрана статистики владельцу проекта.
+
+    PvE и PvP различаем по chat_id самой записи в ledger: у PvP комиссия
+    ВСЕГДА записывается с chat_id = единый резерв (см. apply_commission_pvp -
+    туда передаётся house_chat_id как chat_id), а у PvE - с chat_id
+    настоящей группы, где играли (см. apply_commission - ledger хранит
+    настоящий chat_id, даже если деньги ушли в единый резерв). Поэтому
+    "chat_id = резерв" однозначно значит PvP-раунд.
+    """
+    period = period if period in _STATS_PERIOD_LABELS else "day"
+    house_chat_id = _get_house_chat_id()
+
+    empty: Dict[str, Any] = {
+        "period": period, "events": 0, "commission": 0, "to_chat": 0, "to_fund": 0, "to_project": 0,
+        "pve_commission": 0, "pve_events": 0, "pvp_commission": 0, "pvp_events": 0,
+    }
+    if not getattr(db, "pool", None):
+        return empty
+
+    where_sql = ""
+    interval = _STATS_PERIOD_INTERVAL_SQL.get(period)
+    if interval:
+        where_sql = f"WHERE created_at >= NOW() - INTERVAL '{interval}'"
+
+    try:
+        async with db.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT
+                    COUNT(*) AS events,
+                    COALESCE(SUM(commission), 0) AS commission,
+                    COALESCE(SUM(to_chat_balance), 0) AS to_chat,
+                    COALESCE(SUM(to_growth_fund), 0) AS to_fund,
+                    COALESCE(SUM(to_project), 0) AS to_project,
+                    COALESCE(SUM(commission) FILTER (WHERE chat_id = $1), 0) AS pvp_commission,
+                    COUNT(*) FILTER (WHERE chat_id = $1) AS pvp_events,
+                    COALESCE(SUM(commission) FILTER (WHERE chat_id != $1), 0) AS pve_commission,
+                    COUNT(*) FILTER (WHERE chat_id != $1) AS pve_events
+                FROM growth_fund_ledger
+                {where_sql}
+                """,
+                house_chat_id,
+            )
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][СТАТИСТИКА] query fail period={period}: {e!r}")
+        return empty
+
+    if not row:
+        return empty
+
+    return {
+        "period": period,
+        "events": int(row["events"] or 0),
+        "commission": int(row["commission"] or 0),
+        "to_chat": int(row["to_chat"] or 0),
+        "to_fund": int(row["to_fund"] or 0),
+        "to_project": int(row["to_project"] or 0),
+        "pve_commission": int(row["pve_commission"] or 0),
+        "pve_events": int(row["pve_events"] or 0),
+        "pvp_commission": int(row["pvp_commission"] or 0),
+        "pvp_events": int(row["pvp_events"] or 0),
+    }
+
+
+def build_commission_stats_keyboard(period: str):
+    """Навигационные кнопки периода (День/Неделя/Месяц/Год/Всё время) -
+    текущий период отмечен точками, клик переключает и обновляет тот же
+    экран (см. handle_commission_stats_callback)."""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    period = period if period in _STATS_PERIOD_LABELS else "day"
+    buttons = []
+    for p in _STATS_PERIOD_ORDER:
+        label = _STATS_PERIOD_LABELS[p]
+        text = f"• {label} •" if p == period else label
+        buttons.append(InlineKeyboardButton(text=text, callback_data=f"{STATS_CALLBACK_PREFIX}|{p}"))
+
+    return InlineKeyboardMarkup(inline_keyboard=[buttons[:3], buttons[3:]])
+
+
+def format_commission_stats_text(stats: Dict[str, Any]) -> str:
+    """Текст экрана статистики комиссии за выбранный период."""
+    period = stats.get("period", "day")
+    label = _STATS_PERIOD_LABELS.get(period, period)
+
+    events = stats.get("events", 0)
+    commission = stats.get("commission", 0)
+    to_chat = stats.get("to_chat", 0)
+    to_fund = stats.get("to_fund", 0)
+    to_project = stats.get("to_project", 0)
+    pve_c = stats.get("pve_commission", 0)
+    pve_n = stats.get("pve_events", 0)
+    pvp_c = stats.get("pvp_commission", 0)
+    pvp_n = stats.get("pvp_events", 0)
+
+    return (
+        f"📊 <b>Статистика комиссии — {label}</b>\n\n"
+        f"Событий с комиссией: <b>{_fmt(events)}</b>\n"
+        f"Собрано всего за период: <b>{_fmt(commission)} Kut</b>\n\n"
+        "Куда ушло:\n"
+        f"→ Резерв проекта: {_fmt(to_chat)} Kut\n"
+        f"→ Фонд Роста: {_fmt(to_fund)} Kut\n"
+        f"→ Развитие проекта: {_fmt(to_project)} Kut\n\n"
+        "Разбивка по типу игр:\n"
+        f"🎮 PvE: <b>{_fmt(pve_c)} Kut</b> ({_fmt(pve_n)} раунд.)\n"
+        f"⚔️ PvP: <b>{_fmt(pvp_c)} Kut</b> ({_fmt(pvp_n)} раунд.)\n\n"
+        "Навигация по периодам — кнопками ниже."
+    )
+
+
+async def handle_commission_stats_command(message, db) -> bool:
+    """
+    Точка входа: владелец проекта пишет боту одну из фраз из
+    STATS_TEXT_TRIGGERS ("статистика комиссий" и т.п.) - получает экран
+    статистики (по умолчанию - за день) с навигацией по периодам.
+
+    Регистрируется вызовом из общего текстового роутера в main.py, например:
+
+        if await handle_commission_stats_command(message, db):
+            return True
+
+    Возвращает True, если сообщение обработано (не наше - False, чтобы
+    роутер продолжил искать другие совпадения).
+    """
+    try:
+        from_user = getattr(message, "from_user", None)
+        if not from_user or not _is_commission_stats_owner(from_user.id):
+            return False
+
+        text_low = (message.text or "").strip().lower()
+        if text_low not in STATS_TEXT_TRIGGERS:
+            return False
+
+        stats = await get_commission_period_stats(db, period="day")
+        await message.answer(
+            format_commission_stats_text(stats),
+            parse_mode="HTML",
+            reply_markup=build_commission_stats_keyboard("day"),
+        )
+        return True
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][СТАТИСТИКА] command fail: {e!r}")
+        return False
+
+
+async def handle_commission_stats_callback(call, db) -> None:
+    """
+    Обработчик клика по навигационным кнопкам экрана статистики комиссии
+    (День/Неделя/Месяц/Год/Всё время) - пересчитывает и редактирует то же
+    сообщение под выбранный период. Регистрируется в main.py:
+
+        dp.callback_query(F.data.startswith(STATS_CALLBACK_PREFIX + "|"))(...)
+    """
+    from_user = getattr(call, "from_user", None)
+    if not from_user or not _is_commission_stats_owner(from_user.id):
+        try:
+            await call.answer("Недоступно.", show_alert=True)
+        except Exception:
+            pass
+        return
+
+    try:
+        period = (call.data or "").split("|", 1)[1]
+    except Exception:
+        period = "day"
+    if period not in _STATS_PERIOD_LABELS:
+        period = "day"
+
+    try:
+        await call.answer()
+    except Exception:
+        pass
+
+    try:
+        stats = await get_commission_period_stats(db, period=period)
+        await call.message.edit_text(
+            format_commission_stats_text(stats),
+            parse_mode="HTML",
+            reply_markup=build_commission_stats_keyboard(period),
+        )
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][СТАТИСТИКА] callback fail: {e!r}")

@@ -897,6 +897,19 @@ async def tgkube(message: Message):
         profit_int = max(0, int(win_amount - bet_dec))
         chat_balance_now = await _chat_get_balance(chat_id)
         pay = min(profit_int, max(0, chat_balance_now))
+
+        gfund_result = None
+        if pay > 0:
+            try:
+                from bot.funcs.growth_fund import apply_commission
+                gfund_result = await apply_commission(
+                    db, bot1, chat_id=chat_id, user_id=user_id, game="kube", pot=pay,
+                )
+                if gfund_result:
+                    pay = max(0, pay - gfund_result["commission"])
+            except Exception as e:
+                _kdbg("GFUND", f"apply_commission(demo) error: {e}")
+
         if pay > 0:
             await _chat_minus(chat_id, pay)
             await _user_plus(user_id, pay)
@@ -908,17 +921,21 @@ async def tgkube(message: Message):
                 await db.update_user_wins(user_id, 1, bot1, ref_coin)
             except Exception as e:
                 _kdbg("STATS", f"update_user_wins(demo) error: {e}")
-        if has_assignment and profit_int > 0:
-            await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=profit_int, outcome="+")
+        if has_assignment and pay > 0:
+            await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=pay, outcome="+")
         await _mark_user_game_activity(user_id, reason="demo_win")
         await _safe_add_xp(user_id)
         _update_streaks(user_id, is_win=True)
 
         btn_text = f"+{_fmt_int(pay)} кут | {mult_dec:.1f}x"
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
+        kb_rows = [[
             InlineKeyboardButton(text=btn_text, callback_data="win", style="default",
                                   icon_custom_emoji_id=KUBE_WIN_EMOJI_ID)
-        ]])
+        ]]
+        if gfund_result:
+            from bot.funcs.growth_fund import build_commission_button
+            kb_rows.append([build_commission_button(gfund_result)])
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
         await _safe_edit_text(sent_msg, initial_emoji, reply_markup=kb, parse_mode="HTML")
         return
 
@@ -937,24 +954,55 @@ async def tgkube(message: Message):
         profit_int = max(0, win_amount_int - bet_int)
         if chat_balance < profit_int:
             pay = max(0, int(chat_balance))
+
+            gfund_result = None
+            if pay > 0:
+                try:
+                    from bot.funcs.growth_fund import apply_commission
+                    gfund_result = await apply_commission(
+                        db, bot1, chat_id=chat_id, user_id=user_id, game="kube", pot=pay,
+                    )
+                    if gfund_result:
+                        pay = max(0, pay - gfund_result["commission"])
+                except Exception as e:
+                    _kdbg("GFUND", f"apply_commission(partial) error: {e}")
+
             if has_assignment and pay > 0:
                 await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=pay, outcome="+")
             await _chat_minus(chat_id, pay)
             await _user_plus(user_id, pay)
             await _mark_user_game_activity(user_id, reason="win_partial")
             await _safe_add_xp(user_id)
-            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+            kb_rows = [[InlineKeyboardButton(
                 text="Нажми на меня", callback_data=f"errorkube_{pay}", style="default",
-                icon_custom_emoji_id="6028346797368283073")]])
+                icon_custom_emoji_id="6028346797368283073")]]
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                kb_rows.append([build_commission_button(gfund_result)])
+            kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
             await _safe_edit_reply_markup(dice_msg, kb)
             _update_streaks(user_id, is_win=True)
             return
-        if has_assignment and profit_int > 0:
-            await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=profit_int, outcome="+")
-        await _user_plus(user_id, win_amount_int - bet_int)
-        await _chat_minus(chat_id, win_amount_int - bet_int)
+
+        gfund_result = None
+        net_profit = profit_int
+        if profit_int > 0:
+            try:
+                from bot.funcs.growth_fund import apply_commission
+                gfund_result = await apply_commission(
+                    db, bot1, chat_id=chat_id, user_id=user_id, game="kube", pot=profit_int,
+                )
+                if gfund_result:
+                    net_profit = max(0, profit_int - gfund_result["commission"])
+            except Exception as e:
+                _kdbg("GFUND", f"apply_commission(full) error: {e}")
+
+        if has_assignment and net_profit > 0:
+            await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=net_profit, outcome="+")
+        await _user_plus(user_id, net_profit)
+        await _chat_minus(chat_id, net_profit)
         try:
-            await db.cutehistory_plus(user_id, float(win_amount_int), "+ куб угадайка")
+            await db.cutehistory_plus(user_id, float(bet_int + net_profit), "+ куб угадайка")
         except Exception:
             pass
         try:
@@ -964,11 +1012,15 @@ async def tgkube(message: Message):
         await _mark_user_game_activity(user_id, reason="win")
         await _safe_add_xp(user_id)
         _update_streaks(user_id, is_win=True)
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=f"+{_fmt_int(profit_int)} кут | {mult_dec:.1f}x",
+        kb_rows = [[
+            InlineKeyboardButton(text=f"+{_fmt_int(net_profit)} кут | {mult_dec:.1f}x",
                                   callback_data="win", style="default",
                                   icon_custom_emoji_id=KUBE_WIN_EMOJI_ID)
-        ]])
+        ]]
+        if gfund_result:
+            from bot.funcs.growth_fund import build_commission_button
+            kb_rows.append([build_commission_button(gfund_result)])
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
         await _safe_edit_reply_markup(dice_msg, kb)
         return
 

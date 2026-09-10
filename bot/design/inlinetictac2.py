@@ -794,20 +794,33 @@ async def inline_tic_tac_make_move_callback(callback_query: types.CallbackQuery)
             await db.update_game_last_activity(loser_id)
             await db.update_game_last_activity(winner_id)
 
+            gfund_result = None
             if bet_amount > 0:
                 if loser_balance is not None and int(loser_balance) >= bet_amount:
-                    await db.update_user_balance(winner_id, int(winner_balance or 0) + bet_amount)
+                    net_bet_amount = bet_amount
+                    try:
+                        from bot.funcs.growth_fund import apply_commission_pvp
+                        gfund_result = await apply_commission_pvp(
+                            db, bot1, game="tic_tac_toe", pot=int(bet_amount),
+                            winner_id=winner_id, loser_ids=[loser_id],
+                        )
+                        if gfund_result:
+                            net_bet_amount = max(0, bet_amount - gfund_result["commission"])
+                    except Exception as e:
+                        print(f"[TICTACTOE_INLINE][GFUND] apply_commission_pvp err={e!r}")
+
+                    await db.update_user_balance(winner_id, int(winner_balance or 0) + net_bet_amount)
                     await db.update_user_balance(loser_id, int(loser_balance) - bet_amount)
                     await db.touch_balance_last_active(winner_id, set_active_status=True)
                     await db.touch_balance_last_active(loser_id, set_active_status=True)
-                    await db.cutehistory_plus(winner_id, bet_amount, "инлайн кн")
+                    await db.cutehistory_plus(winner_id, net_bet_amount, "инлайн кн")
                     await db.cutehistory_minus(loser_id, bet_amount, "инлайн кн")
 
                     results_text = (
                         f"<tg-emoji emoji-id='5262688775716234060'>🏆</tg-emoji> "
                         f"<b>Победа для {winner_link}!</b>\n"
                         f"<tg-emoji emoji-id='5292146637844543370'>💰</tg-emoji> "
-                        f"<b>Выигрыш {_fmt_int(bet_amount)} кут</b>"
+                        f"<b>Выигрыш {_fmt_int(net_bet_amount)} кут</b>"
                     )
                 else:
                     results_text = (
@@ -848,6 +861,9 @@ async def inline_tic_tac_make_move_callback(callback_query: types.CallbackQuery)
                 for i in range(board_size_int)
             ]
             buttons.append([btn_create_game])
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                buttons.append([build_commission_button(gfund_result)])
 
             keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -960,6 +976,7 @@ async def inline_tic_tac_surrender_callback(callback_query: types.CallbackQuery)
         await db.update_game_last_activity(winner_id)
         await db.update_game_last_activity(loser_id)
 
+        gfund_result = None
         if bet_amount > 0:
             winner_balance = await db.get_user_balance(winner_id)
             loser_balance = await db.get_user_balance(loser_id)
@@ -968,9 +985,21 @@ async def inline_tic_tac_surrender_callback(callback_query: types.CallbackQuery)
                 await callback_query.answer("❌ Недостаточно средств для выплаты выигрыша победителю", show_alert=True)
                 return
 
-            await db.update_user_balance(winner_id, int(winner_balance or 0) + bet_amount)
+            net_bet_amount = bet_amount
+            try:
+                from bot.funcs.growth_fund import apply_commission_pvp
+                gfund_result = await apply_commission_pvp(
+                    db, bot1, game="tic_tac_toe", pot=int(bet_amount),
+                    winner_id=winner_id, loser_ids=[loser_id],
+                )
+                if gfund_result:
+                    net_bet_amount = max(0, bet_amount - gfund_result["commission"])
+            except Exception as e:
+                print(f"[TICTACTOE_INLINE][GFUND] apply_commission_pvp err={e!r}")
+
+            await db.update_user_balance(winner_id, int(winner_balance or 0) + net_bet_amount)
             await db.update_user_balance(loser_id, int(loser_balance) - bet_amount)
-            await db.cutehistory_plus(winner_id, bet_amount, "инлайн кн сдача")
+            await db.cutehistory_plus(winner_id, net_bet_amount, "инлайн кн сдача")
             await db.cutehistory_minus(loser_id, bet_amount, "инлайн кн сдача")
 
             results_text = (
@@ -979,7 +1008,7 @@ async def inline_tic_tac_surrender_callback(callback_query: types.CallbackQuery)
                 f"<tg-emoji emoji-id='5262688775716234060'>🏆</tg-emoji> "
                 f"<b>{winner_link}</b>\n"
                 f"<tg-emoji emoji-id='5292146637844543370'>💰</tg-emoji> "
-                f"<b>Выигрыш {_fmt_int(bet_amount)} кут</b>"
+                f"<b>Выигрыш {_fmt_int(net_bet_amount)} кут</b>"
             )
 
             btn_create_game = _make_text_btn(
@@ -1015,6 +1044,9 @@ async def inline_tic_tac_surrender_callback(callback_query: types.CallbackQuery)
             for i in range(board_size_int)
         ]
         buttons.append([btn_create_game])
+        if gfund_result:
+            from bot.funcs.growth_fund import build_commission_button
+            buttons.append([build_commission_button(gfund_result)])
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
