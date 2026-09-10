@@ -81,5 +81,6 @@ update-checker==0.18.0
 urllib3==2.3.0
 wcwidth==0.2.13
 websocket-client==1.8.0
+wikipedia==1.4.0
 yandex-translater==6.0
 yarl==1.18.3
