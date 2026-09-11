@@ -1277,6 +1277,16 @@ class Database:
                         level,
                         sid,
                     )
+                    old_row = await conn.fetchrow(
+                        """
+                        SELECT coalesce(group_balance_level, 0) AS level,
+                               creator_id
+                          FROM chat WHERE chat_id = $1
+                        """,
+                        chat_id,
+                    )
+                    old_level = int(old_row["level"]) if old_row else 0
+                    creator_id = int(old_row["creator_id"]) if old_row and old_row["creator_id"] else None
                     row = await conn.fetchrow(
                         """
                         UPDATE chat
@@ -1289,7 +1299,42 @@ class Database:
                         level,
                         sid,
                     )
-            return max(0, min(5, int(row["level"] if row else level)))
+                    new_level = max(0, min(5, int(row["level"] if row else level)))
+                    if new_level != old_level:
+                        try:
+                            await conn.execute(
+                                """
+                                CREATE TABLE IF NOT EXISTS group_balance_level_events (
+                                    id BIGSERIAL PRIMARY KEY,
+                                    chat_id BIGINT NOT NULL,
+                                    old_level INT NOT NULL,
+                                    new_level INT NOT NULL,
+                                    actor_user_id BIGINT,
+                                    actor_role TEXT,
+                                    source TEXT,
+                                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                                )
+                                """
+                            )
+                            actor_role = "member"
+                            if sid and creator_id and int(sid) == int(creator_id):
+                                actor_role = "creator"
+                            await conn.execute(
+                                """
+                                INSERT INTO group_balance_level_events
+                                  (chat_id, old_level, new_level, actor_user_id, actor_role, source)
+                                VALUES ($1, $2, $3, $4, $5, $6)
+                                """,
+                                chat_id,
+                                old_level,
+                                new_level,
+                                sid,
+                                actor_role,
+                                "purchase" if sid else "system",
+                            )
+                        except Exception:
+                            pass
+            return new_level
         except Exception as e:
             print(f"[GBL][DB] set_chat_group_balance_level({chat_id}, {level}) fail: {e!r}")
             raise

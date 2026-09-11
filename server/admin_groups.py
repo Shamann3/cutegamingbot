@@ -306,6 +306,12 @@ async def _fund_stats(chat_id: int) -> Dict[str, Any]:
     })
     out["last_7d"] = await _period(datetime.now() - timedelta(days=7))
     out["last_30d"] = await _period(datetime.now() - timedelta(days=30))
+    out["empty"] = life["events"] == 0
+    out["empty_hint"] = (
+        "В этой группе ещё не было игровых комиссий (growth_fund_ledger пуст). "
+        "Цифры появляются после игр с комиссией в этом чате."
+        if life["events"] == 0 else None
+    )
 
     try:
         rows = await db.pool.fetch(
@@ -703,6 +709,96 @@ async def _gbl_limits(level: int, chat_id: Optional[int] = None) -> Dict[str, An
         return {}
 
 
+async def _ensure_level_events_table() -> None:
+    try:
+        await db.pool.execute(
+            """
+            CREATE TABLE IF NOT EXISTS group_balance_level_events (
+              id BIGSERIAL PRIMARY KEY,
+              chat_id BIGINT NOT NULL,
+              old_level SMALLINT,
+              new_level SMALLINT NOT NULL,
+              actor_user_id BIGINT,
+              actor_role TEXT,
+              source TEXT,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        await db.pool.execute(
+            "CREATE INDEX IF NOT EXISTS idx_gbl_events_chat ON group_balance_level_events(chat_id, created_at DESC)"
+        )
+    except Exception:
+        pass
+
+
+async def _level_events(chat_id: int) -> List[Dict[str, Any]]:
+    await _ensure_level_events_table()
+    out: List[Dict[str, Any]] = []
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT e.created_at, e.old_level, e.new_level, e.actor_user_id, e.actor_role, e.source,
+                   u.first_name, u.username
+            FROM group_balance_level_events e
+            LEFT JOIN users u ON u.user_id = e.actor_user_id
+            WHERE e.chat_id = $1
+            ORDER BY e.created_at DESC
+            LIMIT 25
+            """,
+            int(chat_id),
+        )
+        role_labels = {
+            "creator": "создатель группы",
+            "admin": "администратор группы",
+            "member": "обычный участник",
+            "panel": "из админ-панели",
+        }
+        for r in rows:
+            out.append({
+                "at": r["created_at"].isoformat() if r["created_at"] else None,
+                "old_level": _iint(r["old_level"]),
+                "new_level": _iint(r["new_level"]),
+                "actor_user_id": _iint(r["actor_user_id"]) or None,
+                "actor_name": r["first_name"] or (str(r["actor_user_id"]) if r["actor_user_id"] else "—"),
+                "username": r["username"],
+                "actor_role": r["actor_role"],
+                "actor_role_label": role_labels.get(r["actor_role"] or "", r["actor_role"] or "—"),
+                "source": r["source"],
+            })
+    except Exception:
+        pass
+    return out
+
+
+async def log_level_event(
+    chat_id: int,
+    *,
+    old_level: int,
+    new_level: int,
+    actor_user_id: Optional[int] = None,
+    actor_role: str = "panel",
+    source: str = "panel",
+) -> None:
+    await _ensure_level_events_table()
+    try:
+        await db.pool.execute(
+            """
+            INSERT INTO group_balance_level_events
+              (chat_id, old_level, new_level, actor_user_id, actor_role, source)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            """,
+            int(chat_id),
+            int(old_level),
+            int(new_level),
+            int(actor_user_id) if actor_user_id else None,
+            actor_role,
+            source,
+        )
+    except Exception:
+        pass
+
+
 async def get_group_detail(chat_id: int) -> Dict[str, Any]:
     brief = await get_group_brief(chat_id)
     if not brief:
@@ -829,6 +925,41 @@ async def get_group_detail(chat_id: int) -> Dict[str, Any]:
         except Exception:
             creator = {"user_id": int(brief["creator_id"]), "name": str(brief["creator_id"])}
 
+    sponsor_role = None
+    if sponsor and sponsor.get("user_id"):
+        sid = int(sponsor["user_id"])
+        if creator and int(creator.get("user_id") or 0) == sid:
+            sponsor_role = "creator"
+        elif any(int(a.get("user_id") or 0) == sid and not a.get("is_bot") for a in (admins or [])):
+            sponsor_role = "admin"
+        else:
+            sponsor_role = "member"
+        sponsor["role"] = sponsor_role
+        sponsor["role_label"] = {
+            "creator": "создатель группы",
+            "admin": "администратор группы",
+            "member": "обычный участник",
+        }.get(sponsor_role, "участник")
+
+    level_events = await _level_events(chat_id)
+    # уточняем роль улучшавшего по текущим данным чата (создатель / админ / участник)
+    for ev in level_events:
+        aid = int(ev.get("actor_user_id") or 0)
+        if not aid:
+            continue
+        if creator and int(creator.get("user_id") or 0) == aid:
+            ev["actor_role"] = "creator"
+            ev["actor_role_label"] = "создатель группы"
+        elif any(int(a.get("user_id") or 0) == aid and not a.get("is_bot") for a in (admins or [])):
+            ev["actor_role"] = "admin"
+            ev["actor_role_label"] = "администратор группы"
+        elif (ev.get("actor_role") or "") in ("", "member", "panel"):
+            if (ev.get("source") or "") == "panel" and not ev.get("actor_role_label"):
+                ev["actor_role_label"] = "из админ-панели"
+            elif ev.get("actor_role") == "member" or not ev.get("actor_role"):
+                ev["actor_role"] = "member"
+                ev["actor_role_label"] = "обычный участник"
+
     scale = (
         math.log10(max(1.0, brief["chatbalance"] + 1)) * 18
         + math.log10(max(1.0, fund["commission_sum"] + 1)) * 22
@@ -862,6 +993,8 @@ async def get_group_detail(chat_id: int) -> Dict[str, Any]:
         "black_market": bm,
         "gbl": gbl,
         "sponsor": sponsor,
+        "sponsor_role": sponsor_role,
+        "level_events": level_events,
         "creator": creator,
         "scale_score": round(scale, 1),
         "stars": "★" * brief["level"] + "☆" * (5 - brief["level"]),
@@ -900,6 +1033,30 @@ async def overview() -> Dict[str, Any]:
             global_totals = {k: _num(row[k]) if k != "events" else _iint(row[k]) for k in global_totals}
     except Exception:
         pass
+
+    # Если глобальный кэш пуст/не обновлялся — считаем напрямую из проводок
+    if not any(global_totals.get(k) for k in ("commission", "to_project", "events")):
+        try:
+            row = await db.pool.fetchrow(
+                """
+                SELECT coalesce(sum(commission), 0) AS commission,
+                       coalesce(sum(to_project), 0) AS to_project,
+                       coalesce(sum(to_chat_balance), 0) AS to_chat,
+                       coalesce(sum(to_growth_fund), 0) AS to_fund,
+                       count(*)::int AS events
+                FROM growth_fund_ledger
+                """
+            )
+            if row:
+                global_totals = {
+                    "commission": _num(row["commission"]),
+                    "to_project": _num(row["to_project"]),
+                    "to_chat": _num(row["to_chat"]),
+                    "to_fund": _num(row["to_fund"]),
+                    "events": _iint(row["events"]),
+                }
+        except Exception:
+            pass
 
     top_commission: List[Dict[str, Any]] = []
     try:
@@ -1021,8 +1178,15 @@ async def set_chat_balance(chat_id: int, balance: float) -> Dict[str, Any]:
     return {"chat_id": int(chat_id), "chatbalance": bal}
 
 
-async def set_chat_level(chat_id: int, level: int, *, sponsor_id: Optional[int] = None) -> Dict[str, Any]:
+async def set_chat_level(chat_id: int, level: int, *, sponsor_id: Optional[int] = None, actor_id: Optional[int] = None) -> Dict[str, Any]:
     lvl = max(0, min(5, int(level)))
+    old = 0
+    try:
+        old = _iint(await db.pool.fetchval(
+            "SELECT coalesce(group_balance_level, 0) FROM chat WHERE chat_id = $1", int(chat_id),
+        ))
+    except Exception:
+        pass
     try:
         from admin_group_balance_level import set_chat_level as gbl_set
         result = await gbl_set(int(chat_id), lvl)
@@ -1035,6 +1199,14 @@ async def set_chat_level(chat_id: int, level: int, *, sponsor_id: Optional[int] 
                 )
             except Exception:
                 pass
+        await log_level_event(
+            int(chat_id),
+            old_level=old,
+            new_level=int(result.get("level", lvl)),
+            actor_user_id=actor_id or sponsor_id,
+            actor_role="panel",
+            source="panel",
+        )
         return {"chat_id": int(chat_id), "level": int(result.get("level", lvl))}
     except Exception:
         await db.pool.execute(
@@ -1048,6 +1220,14 @@ async def set_chat_level(chat_id: int, level: int, *, sponsor_id: Optional[int] 
             lvl,
             int(sponsor_id) if sponsor_id else None,
         )
+        await log_level_event(
+            int(chat_id),
+            old_level=old,
+            new_level=lvl,
+            actor_user_id=actor_id or sponsor_id,
+            actor_role="panel",
+            source="panel",
+        )
         return {"chat_id": int(chat_id), "level": lvl}
 
 
@@ -1058,74 +1238,249 @@ async def moderate_action(
     action: str,
     until_sec: Optional[int] = None,
     reason: str = "",
+    admin_id: int = 0,
 ) -> Dict[str, Any]:
-    """Модерация через игровой BOT_TOKEN: mute / unmute / kick / ban / unban."""
-    action = (action or "").strip().lower()
+    """Модерация через игровой BOT_TOKEN + зеркало в БД наказаний.
+
+    Действия:
+      mute / muteall / unmute
+      kick
+      warn / warnall / warnfull
+      ban / banall / banfull / unban
+      bot_ban / bot_unban  — блокировка только в боте (users.banned)
+    """
+    action = (action or "").strip().lower().replace("ё", "е")
+    # алиасы
+    aliases = {
+        "mutall": "muteall",
+        "муталл": "muteall",
+        "варналл": "warnall",
+        "варнфулл": "warnfull",
+        "варнфул": "warnfull",
+        "баналл": "banall",
+        "банфулл": "banfull",
+        "банфул": "banfull",
+        "ботбан": "bot_ban",
+        "botban": "bot_ban",
+    }
+    action = aliases.get(action, action)
     cid, uid = int(chat_id), int(user_id)
     reason = (reason or "")[:200]
+    until = int(until_sec) if until_sec and int(until_sec) > 0 else 0
+    until_date = int(datetime.now().timestamp()) + max(35, until) if until > 0 else None
 
-    if action == "mute":
-        until_date = None
-        if until_sec and until_sec > 0:
-            until_date = int(datetime.now().timestamp()) + max(35, int(until_sec))
-        perms = {
-            "can_send_messages": False,
-            "can_send_audios": False,
-            "can_send_documents": False,
-            "can_send_photos": False,
-            "can_send_videos": False,
-            "can_send_video_notes": False,
-            "can_send_voice_notes": False,
-            "can_send_polls": False,
-            "can_send_other_messages": False,
-            "can_add_web_page_previews": False,
-        }
-        params: Dict[str, Any] = {
-            "chat_id": cid,
-            "user_id": uid,
-            "permissions": perms,
-        }
+    async def _restrict(target_chat: int, muted: bool) -> Dict[str, Any]:
+        if muted:
+            perms = {
+                "can_send_messages": False,
+                "can_send_audios": False,
+                "can_send_documents": False,
+                "can_send_photos": False,
+                "can_send_videos": False,
+                "can_send_video_notes": False,
+                "can_send_voice_notes": False,
+                "can_send_polls": False,
+                "can_send_other_messages": False,
+                "can_add_web_page_previews": False,
+            }
+        else:
+            perms = {
+                "can_send_messages": True,
+                "can_send_audios": True,
+                "can_send_documents": True,
+                "can_send_photos": True,
+                "can_send_videos": True,
+                "can_send_video_notes": True,
+                "can_send_voice_notes": True,
+                "can_send_polls": True,
+                "can_send_other_messages": True,
+                "can_add_web_page_previews": True,
+            }
+        params: Dict[str, Any] = {"chat_id": int(target_chat), "user_id": uid, "permissions": perms}
+        if muted and until_date:
+            params["until_date"] = until_date
+        return await _tg_api("restrictChatMember", **params)
+
+    async def _ban_chat(target_chat: int) -> Dict[str, Any]:
+        params: Dict[str, Any] = {"chat_id": int(target_chat), "user_id": uid}
         if until_date:
             params["until_date"] = until_date
-        res = await _tg_api("restrictChatMember", **params)
+        return await _tg_api("banChatMember", **params)
+
+    async def _record_mute(target_chat: int, scope: str) -> None:
+        try:
+            until_dt = datetime.now() + timedelta(seconds=max(35, until)) if until > 0 else datetime.now() + timedelta(days=3650)
+            await db.pool.execute(
+                """
+                INSERT INTO active_mutes
+                  (user_id, chat_id, mute_until, target_name, admin_user_id, admin_name, reason, scope)
+                VALUES ($1, $2, $3, $4, $5, 'Админ-панель', $6, $7)
+                ON CONFLICT (user_id, chat_id) DO UPDATE SET
+                  mute_until = EXCLUDED.mute_until,
+                  reason = EXCLUDED.reason,
+                  scope = EXCLUDED.scope
+                """,
+                uid, int(target_chat), until_dt, str(uid), int(admin_id or 0), reason or action, scope,
+            )
+        except Exception:
+            pass
+
+    async def _record_ban(target_chat: int, scope: str, mode: str) -> None:
+        try:
+            until_dt = datetime.now() + timedelta(seconds=max(35, until)) if until > 0 else datetime.now() + timedelta(days=3650)
+            await db.pool.execute(
+                """
+                INSERT INTO active_bans
+                  (user_id, chat_id, ban_until, target_name, admin_user_id, admin_name, reason, scope, mode)
+                VALUES ($1, $2, $3, $4, $5, 'Админ-панель', $6, $7, $8)
+                ON CONFLICT (user_id, chat_id) DO UPDATE SET
+                  ban_until = EXCLUDED.ban_until,
+                  reason = EXCLUDED.reason,
+                  scope = EXCLUDED.scope,
+                  mode = EXCLUDED.mode
+                """,
+                uid, int(target_chat), until_dt, str(uid), int(admin_id or 0), reason or action, scope, mode,
+            )
+        except Exception:
+            pass
+
+    async def _record_warn(mode: str, scope: str) -> None:
+        try:
+            exp = datetime.now() + timedelta(seconds=max(35, until)) if until > 0 else None
+            await db.pool.execute(
+                """
+                INSERT INTO active_warns
+                  (user_id, chat_id, admin_user_id, admin_name, reason, expires_at, scope, mode)
+                VALUES ($1, $2, $3, 'Админ-панель', $4, $5, $6, $7)
+                """,
+                uid, cid if mode == "chat" else None, int(admin_id or 0), reason or action, exp, scope, mode,
+            )
+        except Exception:
+            pass
+
+    results: List[Dict[str, Any]] = []
+    ok = False
+    detail = ""
+
+    if action == "mute":
+        res = await _restrict(cid, True)
+        ok = bool(res.get("ok"))
+        detail = res.get("description") or ""
+        if ok:
+            await _record_mute(cid, "chat")
+        results.append(res)
+    elif action == "muteall":
+        ok_any = False
+        for tc in _staff_chat_ids():
+            res = await _restrict(tc, True)
+            results.append({"chat_id": tc, **res})
+            if res.get("ok"):
+                ok_any = True
+                await _record_mute(tc, "all")
+        ok = ok_any
+        detail = "muteall"
     elif action == "unmute":
-        perms = {
-            "can_send_messages": True,
-            "can_send_audios": True,
-            "can_send_documents": True,
-            "can_send_photos": True,
-            "can_send_videos": True,
-            "can_send_video_notes": True,
-            "can_send_voice_notes": True,
-            "can_send_polls": True,
-            "can_send_other_messages": True,
-            "can_add_web_page_previews": True,
-        }
-        res = await _tg_api("restrictChatMember", chat_id=cid, user_id=uid, permissions=perms)
+        res = await _restrict(cid, False)
+        ok = bool(res.get("ok"))
+        detail = res.get("description") or ""
+        if ok:
+            try:
+                await db.pool.execute(
+                    "DELETE FROM active_mutes WHERE user_id = $1 AND chat_id IN ($2, 0)",
+                    uid, cid,
+                )
+            except Exception:
+                pass
+        results.append(res)
     elif action == "kick":
         res = await _tg_api("banChatMember", chat_id=cid, user_id=uid)
         if res.get("ok"):
             await _tg_api("unbanChatMember", chat_id=cid, user_id=uid, only_if_banned=True)
+        ok = bool(res.get("ok"))
+        detail = res.get("description") or ""
+        results.append(res)
+    elif action == "warn":
+        await _record_warn("chat", "chat")
+        ok = True
+        detail = "warn recorded"
+    elif action == "warnall":
+        await _record_warn("all", "all")
+        ok = True
+        detail = "warnall recorded"
+    elif action == "warnfull":
+        await _record_warn("full", "all")
+        ok = True
+        detail = "warnfull recorded"
     elif action == "ban":
-        params = {"chat_id": cid, "user_id": uid}
-        if until_sec and until_sec > 0:
-            params["until_date"] = int(datetime.now().timestamp()) + max(35, int(until_sec))
-        res = await _tg_api("banChatMember", **params)
+        res = await _ban_chat(cid)
+        ok = bool(res.get("ok"))
+        detail = res.get("description") or ""
+        if ok:
+            await _record_ban(cid, "chat", "chat")
+        results.append(res)
+    elif action == "banall":
+        ok_any = False
+        for tc in _staff_chat_ids():
+            res = await _ban_chat(tc)
+            results.append({"chat_id": tc, **res})
+            if res.get("ok"):
+                ok_any = True
+                await _record_ban(tc, "all", "all")
+        ok = ok_any
+        detail = "banall"
+    elif action == "banfull":
+        ok_any = False
+        for tc in _staff_chat_ids():
+            res = await _ban_chat(tc)
+            results.append({"chat_id": tc, **res})
+            if res.get("ok"):
+                ok_any = True
+                await _record_ban(tc, "all", "full")
+        try:
+            from admin_users import admin_set_banned
+            await admin_set_banned(uid, True, admin_user_id=int(admin_id or 0), reason=reason or "banfull", notify=True)
+            ok_any = True
+        except Exception as e:
+            detail = str(e)
+        ok = ok_any
+        if not detail:
+            detail = "banfull"
     elif action == "unban":
         res = await _tg_api("unbanChatMember", chat_id=cid, user_id=uid, only_if_banned=True)
+        ok = bool(res.get("ok"))
+        detail = res.get("description") or ""
+        try:
+            await db.pool.execute("DELETE FROM active_bans WHERE user_id = $1 AND chat_id = $2", uid, cid)
+        except Exception:
+            pass
+        results.append(res)
+    elif action in ("bot_ban", "bot_unban"):
+        try:
+            from admin_users import admin_set_banned
+            await admin_set_banned(
+                uid,
+                action == "bot_ban",
+                admin_user_id=int(admin_id or 0),
+                reason=reason or action,
+                notify=True,
+            )
+            ok = True
+            detail = action
+        except Exception as e:
+            ok = False
+            detail = str(e)
     else:
         return {"ok": False, "error": f"Неизвестное действие: {action}"}
 
-    ok = bool(res.get("ok"))
-    # audit (best-effort)
     if ok:
         try:
             await db.pool.execute(
                 """
                 INSERT INTO staff_actions
                   (admin_user_id, admin_name, target_player_id, action_type, reason, chat_id, created_at)
-                VALUES (0, 'Админ-панель', $1, $2, $3, $4, NOW())
+                VALUES ($1, 'Админ-панель', $2, $3, $4, $5, NOW())
                 """,
+                int(admin_id or 0),
                 uid,
                 action,
                 reason or f"panel:{action}",
@@ -1133,11 +1488,27 @@ async def moderate_action(
             )
         except Exception:
             pass
+
     return {
         "ok": ok,
         "action": action,
         "chat_id": cid,
         "user_id": uid,
-        "telegram": res.get("description") if not ok else "ok",
+        "until_sec": until or None,
+        "telegram": detail if not ok else "ok",
+        "results": results[:20],
         "reason": reason,
     }
+
+
+def _staff_chat_ids() -> List[int]:
+    """Официальные чаты проекта (как в MuteConfig), без импорта тяжёлого бота."""
+    try:
+        from bot.admins.mute import MuteConfig  # type: ignore
+        ids = list(getattr(MuteConfig, "STAFF_CHAT_IDS", ()) or ())
+        if ids:
+            return [int(x) for x in ids]
+    except Exception:
+        pass
+    # fallback — актуальный список из MuteConfig (синхронизировать при смене)
+    return [-1001612636292, -1001921925861]

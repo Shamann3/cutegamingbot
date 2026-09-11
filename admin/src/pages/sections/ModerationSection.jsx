@@ -7,6 +7,7 @@ import {
   takeAppeal, uploadAppealPhoto,
 } from '../../lib/adminClient'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
+import UserLookupPreview from '../../components/UserLookupPreview'
 
 const API_PREFIX = import.meta.env.VITE_ADMIN_API_PREFIX || '/admin/api'
 
@@ -811,7 +812,7 @@ function AppealsTab({ role }) {
   )
 }
 
-export default function ModerationSection({ role, permissions = [], panelTabs = null }) {
+export default function ModerationSection({ role, permissions = [], panelTabs = null, onOpenUser } = {}) {
   const perms = new Set(permissions)
   const mainTabs = useMemo(() => filterSectionTabs('moderation', MAIN_TABS, panelTabs), [panelTabs])
   const [mainTab, setMainTab] = useState(mainTabs[0]?.id || 'archive')
@@ -926,9 +927,19 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
               <button className={`arc-sort-btn${sortBy==='type'?' arc-sort-on':''}`} onClick={() => applySort('type')}>По типу</button>
             </div>
             <div className="arc-search">
-              <input className="arc-input" placeholder="Telegram ID игрока..."
-                value={playerInput} onChange={e => setPlayerInput(e.target.value)}
-                onKeyDown={e => e.key==='Enter' && applyPlayerFilter()} />
+              <UserLookupPreview
+                label="Игрок"
+                value={playerInput}
+                onChange={setPlayerInput}
+                onResolved={(u) => {
+                  if (u?.userId || u?.user_id) {
+                    const id = String(u.userId || u.user_id)
+                    setPlayerInput(id)
+                  }
+                }}
+                onOpenUser={(id) => onOpenUser?.(id)}
+                placeholder="ID, @username или имя"
+              />
               <button className="arc-search-btn" onClick={applyPlayerFilter}>Найти</button>
               {filterPlayer && <button className="arc-clear-btn" onClick={clearPlayer}>✕</button>}
             </div>

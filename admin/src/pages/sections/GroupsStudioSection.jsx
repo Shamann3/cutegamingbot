@@ -8,6 +8,30 @@ import {
   groupsStudioModerate,
 } from '../../lib/adminClient'
 import { notifyAdmin } from '../../lib/notify'
+import UserLookupPreview from '../../components/UserLookupPreview'
+import DurationUntil from '../../components/DurationUntil'
+
+const PUNISH_ACTIONS = [
+  { group: 'В этой группе', items: [
+    { id: 'mute', label: '🔇 Мут', needsUntil: true },
+    { id: 'unmute', label: '🔊 Размут', needsUntil: false },
+    { id: 'kick', label: '👋 Кик', needsUntil: false },
+    { id: 'warn', label: '⚠️ Варн', needsUntil: true },
+    { id: 'ban', label: '🚫 Бан', needsUntil: true },
+    { id: 'unban', label: '✅ Разбан', needsUntil: false },
+  ]},
+  { group: 'Во всех официальных группах', items: [
+    { id: 'muteall', label: '🔇 Муталл', needsUntil: true },
+    { id: 'warnall', label: '⚠️ Варналл', needsUntil: true },
+    { id: 'banall', label: '🚫 Баналл', needsUntil: true },
+  ]},
+  { group: 'Весь проект', items: [
+    { id: 'warnfull', label: '⚠️ Варнфулл', needsUntil: true },
+    { id: 'banfull', label: '🤩 Банфулл', needsUntil: true },
+    { id: 'bot_ban', label: '🤖 Бан в боте', needsUntil: false },
+    { id: 'bot_unban', label: '🤖 Разбан в боте', needsUntil: false },
+  ]},
+]
 
 function fmt(n, digits = 0) {
   const v = Number(n) || 0
@@ -92,14 +116,22 @@ function Chip({ children, onClick, tone }) {
   )
 }
 
-function PersonLine({ title, person }) {
+function PersonLine({ title, person, onOpen }) {
   if (!person) return <p className="grp-help">{title}: —</p>
   const uname = person.username ? `@${String(person.username).replace(/^@/, '')}` : null
+  const role = person.role_label || person.role || null
   return (
     <div className="grp-person">
       <span className="grp-person-role">{title}</span>
-      <strong>{person.name}</strong>
+      <strong
+        className={onOpen && person.user_id ? 'grp-person-link' : undefined}
+        onClick={() => person.user_id && onOpen?.(person.user_id)}
+        role={onOpen && person.user_id ? 'button' : undefined}
+      >
+        {person.name}
+      </strong>
       <span>{uname || person.user_id}</span>
+      {role ? <em className="grp-person-tag">{role}</em> : null}
       <Chip onClick={() => copyText(person.user_id)}>id</Chip>
     </div>
   )
@@ -148,16 +180,8 @@ function MiniTable({ columns, rows, empty = 'Пусто' }) {
 }
 
 const BALANCE_MAX = 500_000
-const MUTE_PRESETS = [
-  { label: '1ч', h: 1 },
-  { label: '6ч', h: 6 },
-  { label: '24ч', h: 24 },
-  { label: '3д', h: 72 },
-  { label: '7д', h: 168 },
-  { label: 'навсегда', h: 0 },
-]
 
-export default function GroupsStudioSection() {
+export default function GroupsStudioSection({ onOpenUser } = {}) {
   const [tab, setTab] = useState('lookup')
   const [sub, setSub] = useState('overview')
   const [overview, setOverview] = useState(null)
@@ -171,8 +195,9 @@ export default function GroupsStudioSection() {
   const [levelDraft, setLevelDraft] = useState(0)
   const [saving, setSaving] = useState(false)
   const [modUser, setModUser] = useState('')
+  const [modUserId, setModUserId] = useState(null)
   const [modAction, setModAction] = useState('mute')
-  const [modHours, setModHours] = useState(24)
+  const [modUntilSec, setModUntilSec] = useState(3600)
   const [modReason, setModReason] = useState('')
   const [modding, setModding] = useState(false)
   const [rawOpen, setRawOpen] = useState(false)
@@ -254,16 +279,19 @@ export default function GroupsStudioSection() {
   }
 
   const onModerate = async () => {
-    if (!detail?.chat?.chat_id || !modUser.trim()) return
+    if (!detail?.chat?.chat_id) return
+    const uid = modUserId || Number(String(modUser).replace(/^@/, ''))
+    if (!uid || !Number.isFinite(uid)) {
+      notifyAdmin('Укажите игрока', { error: true })
+      return
+    }
     setModding(true)
     try {
-      const hours = Number(modHours)
-      const untilSec = ['mute', 'ban'].includes(modAction) && Number.isFinite(hours) && hours > 0
-        ? Math.round(hours * 3600)
-        : null
+      const needsUntil = ['mute', 'muteall', 'ban', 'banall', 'banfull', 'warn', 'warnall', 'warnfull'].includes(modAction)
+      const untilSec = needsUntil && Number(modUntilSec) > 0 ? Math.round(Number(modUntilSec)) : null
       await groupsStudioModerate({
         chat_id: detail.chat.chat_id,
-        user_id: Number(modUser),
+        user_id: Number(uid),
         action: modAction,
         until_sec: untilSec,
         reason: modReason || undefined,
@@ -376,11 +404,11 @@ export default function GroupsStudioSection() {
               <>
                 <div className="grp-detail-head">
                   <div>
-                    <h2 className="grp-detail-title">{chat.name}</h2>
+                    <h2 className="grp-detail-title">{chat.name || `Чат ${chat.chat_id}`}</h2>
                     <p className="grp-help" style={{ marginBottom: '.45rem' }}>
-                      {detail.stars}
+                      Уровень {stars(chat.level)}
                       {detail.gbl?.badge_title ? ` · ${detail.gbl.badge_title}` : ''}
-                      {detail.scale_score != null ? ` · сила ${detail.scale_score}` : ''}
+                      {detail.gbl?.stars_label ? ` · ${detail.gbl.stars_label}` : ''}
                     </p>
                     <div className="grp-id-row">
                       <code>{chat.chat_id}</code>
@@ -521,6 +549,15 @@ export default function GroupsStudioSection() {
 
                   {sub === 'economy' && (
                     <>
+                      {fund?.empty ? (
+                        <div className="grp-card grp-empty-card">
+                          <h3 className="grp-card-title">Проводок пока нет</h3>
+                          <p className="grp-help" style={{ marginBottom: 0 }}>
+                            {fund.empty_hint
+                              || 'В этой группе ещё не было игровых комиссий. Цифры появятся после первых игр.'}
+                          </p>
+                        </div>
+                      ) : null}
                       <div className="grp-stat-grid">
                         <Stat label="Вернулось в баланс группы" value={fmt(fund?.to_chat_sum)} hint="за всё время" />
                         <Stat label="Ушло в фонд роста" value={fmt(fund?.to_fund_sum)} hint="за всё время" />
@@ -533,23 +570,36 @@ export default function GroupsStudioSection() {
                           columns={[
                             { key: 'game', label: 'Игра' },
                             { key: 'commission', label: 'Комиссия', render: (r) => fmt(r.commission) },
-                            { key: 'to_project', label: 'Дом', render: (r) => fmt(r.to_project) },
+                            { key: 'to_project', label: 'Дом проекта', render: (r) => fmt(r.to_project) },
                             { key: 'events', label: 'Событий', render: (r) => fmt(r.events) },
                           ]}
                           rows={fund?.by_game || []}
-                          empty="Нет проводок"
+                          empty="Нет игровых проводок — после первых партий здесь появятся суммы"
                         />
                       </div>
                       <div className="grp-card">
                         <h3 className="grp-card-title">Топ плательщиков комиссий</h3>
                         <MiniTable
                           columns={[
-                            { key: 'name', label: 'Игрок', render: (r) => `${r.name}${r.username ? ` @${r.username}` : ''}` },
+                            {
+                              key: 'name',
+                              label: 'Игрок',
+                              render: (r) => (
+                                <button
+                                  type="button"
+                                  className="grp-inline-link"
+                                  onClick={() => r.user_id && onOpenUser?.(r.user_id)}
+                                >
+                                  {`${r.name || 'Игрок'}${r.username ? ` @${r.username}` : ''}`}
+                                </button>
+                              ),
+                            },
                             { key: 'commission', label: 'Комиссия', render: (r) => fmt(r.commission) },
                             { key: 'events', label: 'Игр', render: (r) => fmt(r.events) },
                             { key: 'user_id', label: 'ID' },
                           ]}
                           rows={fund?.top_payers || []}
+                          empty="Пока никто не платил комиссии в этой группе"
                         />
                       </div>
                       <div className="grp-card">
@@ -559,10 +609,23 @@ export default function GroupsStudioSection() {
                             { key: 'at', label: 'Когда', render: (r) => shortWhen(r.at) },
                             { key: 'game', label: 'Игра' },
                             { key: 'commission', label: 'Комиссия', render: (r) => fmt(r.commission) },
-                            { key: 'to_project', label: 'Дом', render: (r) => fmt(r.to_project) },
-                            { key: 'user_id', label: 'User' },
+                            { key: 'to_project', label: 'Дом проекта', render: (r) => fmt(r.to_project) },
+                            {
+                              key: 'user_id',
+                              label: 'Игрок',
+                              render: (r) => (
+                                <button
+                                  type="button"
+                                  className="grp-inline-link"
+                                  onClick={() => r.user_id && onOpenUser?.(r.user_id)}
+                                >
+                                  {r.user_id || '—'}
+                                </button>
+                              ),
+                            },
                           ]}
                           rows={fund?.recent || []}
+                          empty="Проводок ещё не было"
                         />
                       </div>
                     </>
@@ -572,14 +635,51 @@ export default function GroupsStudioSection() {
                     <>
                       <div className="grp-card">
                         <h3 className="grp-card-title">Роли</h3>
-                        <PersonLine title="Создатель группы" person={detail.creator} />
-                        <PersonLine title="Спонсор уровня" person={detail.sponsor} />
+                        <PersonLine title="Создатель группы" person={detail.creator} onOpen={onOpenUser} />
+                        <PersonLine title="Кто улучшил уровень" person={detail.sponsor} onOpen={onOpenUser} />
                         <div className="grp-mini-stats">
-                          <span>в memberchat: {fmt(detail.activity?.members_tracked)}</span>
+                          <span>в учёте: {fmt(detail.activity?.members_tracked)}</span>
                           <span>писатели 30д: {fmt(detail.activity?.writers_30d)}</span>
                           <span>сообщения 30д: {fmt(detail.activity?.messages_30d)}</span>
-                          <span>источник: {detail.activity?.source || '—'}</span>
                         </div>
+                      </div>
+                      <div className="grp-card">
+                        <h3 className="grp-card-title">История улучшений уровня</h3>
+                        <MiniTable
+                          columns={[
+                            { key: 'at', label: 'Когда', render: (r) => shortWhen(r.at) },
+                            {
+                              key: 'levels',
+                              label: 'Уровень',
+                              render: (r) => `★${r.old_level} → ★${r.new_level}`,
+                            },
+                            {
+                              key: 'actor_name',
+                              label: 'Кто',
+                              render: (r) => (
+                                <button
+                                  type="button"
+                                  className="grp-inline-link"
+                                  onClick={() => r.actor_user_id && onOpenUser?.(r.actor_user_id)}
+                                >
+                                  {`${r.actor_name || '—'}${r.username ? ` @${r.username}` : ''}`}
+                                </button>
+                              ),
+                            },
+                            { key: 'actor_role_label', label: 'Роль' },
+                            {
+                              key: 'source',
+                              label: 'Источник',
+                              render: (r) => ({
+                                purchase: 'покупка',
+                                panel: 'панель',
+                                system: 'система',
+                              }[r.source] || r.source || '—'),
+                            },
+                          ]}
+                          rows={detail.level_events || []}
+                          empty="Пока никто не улучшал уровень этой группы"
+                        />
                       </div>
                       <div className="grp-card">
                         <h3 className="grp-card-title">Админы Telegram ({(detail.admins || []).length})</h3>
@@ -588,7 +688,19 @@ export default function GroupsStudioSection() {
                             { key: 'name', label: 'Имя', render: (r) => `${r.name}${r.is_bot ? ' 🤖' : ''}` },
                             { key: 'status', label: 'Статус' },
                             { key: 'username', label: 'Username', render: (r) => r.username ? `@${r.username}` : '—' },
-                            { key: 'user_id', label: 'ID' },
+                            {
+                              key: 'user_id',
+                              label: 'ID',
+                              render: (r) => (
+                                <button
+                                  type="button"
+                                  className="grp-inline-link"
+                                  onClick={() => !r.is_bot && r.user_id && onOpenUser?.(r.user_id)}
+                                >
+                                  {r.user_id}
+                                </button>
+                              ),
+                            },
                           ]}
                           rows={detail.admins || []}
                           empty="Не удалось получить админов (бот не в чате?)"
@@ -596,10 +708,10 @@ export default function GroupsStudioSection() {
                         {detail.bot?.status ? (
                           <p className="grp-help" style={{ marginTop: '.65rem', marginBottom: 0 }}>
                             Бот: {detail.bot.status}
-                            {detail.bot.can_restrict ? ' · restrict' : ''}
-                            {detail.bot.can_delete ? ' · delete' : ''}
-                            {detail.bot.can_invite ? ' · invite' : ''}
-                            {detail.bot.can_promote ? ' · promote' : ''}
+                            {detail.bot.can_restrict ? ' · может ограничивать' : ''}
+                            {detail.bot.can_delete ? ' · может удалять' : ''}
+                            {detail.bot.can_invite ? ' · может приглашать' : ''}
+                            {detail.bot.can_promote ? ' · может назначать' : ''}
                           </p>
                         ) : null}
                       </div>
@@ -607,7 +719,19 @@ export default function GroupsStudioSection() {
                         <h3 className="grp-card-title">Топ писателей 30д</h3>
                         <MiniTable
                           columns={[
-                            { key: 'name', label: 'Имя', render: (r) => `${r.name}${r.username ? ` @${r.username}` : ''}` },
+                            {
+                              key: 'name',
+                              label: 'Имя',
+                              render: (r) => (
+                                <button
+                                  type="button"
+                                  className="grp-inline-link"
+                                  onClick={() => r.user_id && onOpenUser?.(r.user_id)}
+                                >
+                                  {`${r.name}${r.username ? ` @${r.username}` : ''}`}
+                                </button>
+                              ),
+                            },
                             { key: 'messages', label: 'Сообщ.', render: (r) => fmt(r.messages) },
                             { key: 'user_id', label: 'ID' },
                           ]}
@@ -746,41 +870,40 @@ export default function GroupsStudioSection() {
 
                       <div className="grp-card grp-card-control">
                         <h3 className="grp-card-title">Модерация</h3>
-                        <p className="grp-help">Через игрового бота. Нужны права админа бота в чате.</p>
-                        <label className="grp-field">
-                          <span>ID игрока</span>
-                          <input value={modUser} onChange={(e) => setModUser(e.target.value)} placeholder="123456789" inputMode="numeric" />
-                        </label>
-                        <label className="grp-field">
-                          <span>Действие</span>
-                          <select value={modAction} onChange={(e) => setModAction(e.target.value)}>
-                            <option value="mute">Мут</option>
-                            <option value="unmute">Размут</option>
-                            <option value="kick">Кик</option>
-                            <option value="ban">Бан</option>
-                            <option value="unban">Разбан</option>
-                          </select>
-                        </label>
-                        {['mute', 'ban'].includes(modAction) ? (
-                          <>
-                            <RangeField
-                              label="Срок (часы)"
-                              value={modHours}
-                              min={0}
-                              max={720}
-                              step={1}
-                              onChange={setModHours}
-                              display={modHours === 0 ? 'навсегда' : `${modHours} ч`}
-                            />
-                            <div className="grp-chip-row">
-                              {MUTE_PRESETS.map((p) => (
-                                <Chip key={p.label} tone={modHours === p.h ? 'on' : undefined} onClick={() => setModHours(p.h)}>
-                                  {p.label}
-                                </Chip>
-                              ))}
+                        <p className="grp-help">Через игрового бота. Для муталл/баналл — официальные группы проекта. Бан в боте блокирует только игрока в боте.</p>
+
+                        <UserLookupPreview
+                          label="Игрок"
+                          value={modUser}
+                          onChange={(v) => { setModUser(v); setModUserId(null) }}
+                          onResolved={(u) => setModUserId(u ? Number(u.userId || u.user_id) : null)}
+                          onOpenUser={(id) => onOpenUser?.(id)}
+                        />
+
+                        <div className="punish-groups">
+                          {PUNISH_ACTIONS.map((g) => (
+                            <div key={g.group} className="punish-group">
+                              <span className="punish-group-label">{g.group}</span>
+                              <div className="punish-actions">
+                                {g.items.map((a) => (
+                                  <button
+                                    key={a.id}
+                                    type="button"
+                                    className={`punish-action${modAction === a.id ? ' is-on' : ''}`}
+                                    onClick={() => setModAction(a.id)}
+                                  >
+                                    {a.label}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
-                          </>
+                          ))}
+                        </div>
+
+                        {['mute', 'muteall', 'ban', 'banall', 'banfull', 'warn', 'warnall', 'warnfull'].includes(modAction) ? (
+                          <DurationUntil valueSec={modUntilSec} onChange={setModUntilSec} />
                         ) : null}
+
                         <label className="grp-field">
                           <span>Причина</span>
                           <input value={modReason} onChange={(e) => setModReason(e.target.value)} placeholder="панель" />

@@ -366,8 +366,22 @@ export default function PanelShell({ onLogout }) {
           {isGiveaways && <GiveawaysSection />}
           {isBotQuests && role === 'owner' && <BotQuestsSection />}
           {isGroupBalanceLevel && role === 'owner' && <GroupBalanceLevelSection />}
-          {isGroupsStudio && isProjectCreator && <GroupsStudioSection />}
-          {isAchievements && <AchievementsSection />}
+          {isGroupsStudio && isProjectCreator && (
+            <GroupsStudioSection
+              onOpenUser={(userId) => {
+                setUsersInitialId(userId)
+                setSection('users')
+              }}
+            />
+          )}
+          {isAchievements && (
+            <AchievementsSection
+              onOpenUser={(userId) => {
+                setUsersInitialId(userId)
+                setSection('users')
+              }}
+            />
+          )}
           {isBroadcast && <BroadcastSection panelTabs={panelTabs} />}
           {isLogs && <LogsSection panelTabs={panelTabs} />}
           {isAnalytics && <AnalyticsSection panelTabs={panelTabs} />}
@@ -376,7 +390,17 @@ export default function PanelShell({ onLogout }) {
           {isSecurity && <SecuritySection panelTabs={panelTabs} />}
           {isStaff && <StaffSection role={role} permissions={permissions} myUserId={myUserId} panelTabs={panelTabs} />}
           {isSupport && <SupportSection />}
-          {isModeration && <ModerationSection role={role} permissions={permissions} panelTabs={panelTabs} />}
+          {isModeration && (
+            <ModerationSection
+              role={role}
+              permissions={permissions}
+              panelTabs={panelTabs}
+              onOpenUser={(userId) => {
+                setUsersInitialId(userId)
+                setSection('users')
+              }}
+            />
+          )}
           {isChronicle && <ChronicleSection />}
           {isPanelAccess && <PanelAccessSection />}
           {isSoftRestart && isProjectCreator && <SoftRestartSection />}

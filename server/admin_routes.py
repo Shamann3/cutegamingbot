@@ -4515,7 +4515,7 @@ async def admin_groups_studio_level(
 ):
     _require_project_creator(admin_id)
     from admin_groups import set_chat_level as groups_set_level
-    result = await groups_set_level(body.chat_id, body.level)
+    result = await groups_set_level(body.chat_id, body.level, actor_id=admin_id)
     try:
         await log_admin_action(
             admin_id, "groups_set_level",
@@ -4531,8 +4531,8 @@ async def admin_groups_studio_level(
 class GroupsStudioModerateBody(BaseModel):
     chat_id: int
     user_id: int
-    action: str = Field(min_length=2, max_length=16)
-    until_sec: int | None = Field(default=None, ge=0, le=366 * 24 * 3600)
+    action: str = Field(min_length=2, max_length=24)
+    until_sec: int | None = Field(default=None, ge=0, le=10 * 365 * 24 * 3600)
     reason: str | None = Field(default=None, max_length=200)
     model_config = {"extra": "forbid"}
 
@@ -4550,6 +4550,7 @@ async def admin_groups_studio_moderate(
         action=body.action,
         until_sec=body.until_sec,
         reason=body.reason or "",
+        admin_id=admin_id,
     )
     try:
         await log_admin_action(
@@ -4561,7 +4562,7 @@ async def admin_groups_studio_moderate(
     except Exception:
         pass
     if not result.get("ok"):
-        raise HTTPException(status_code=400, detail=result.get("telegram") or "Telegram отказал")
+        raise HTTPException(status_code=400, detail=result.get("telegram") or result.get("error") or "Отказ")
     return result
 
 

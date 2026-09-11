@@ -9,6 +9,7 @@ import {
   saveOfficialAchievement,
 } from '../../lib/adminClient'
 import { notifyAdmin } from '../../lib/notify'
+import UserLookupPreview from '../../components/UserLookupPreview'
 
 const EMPTY = {
   id: null,
@@ -58,7 +59,7 @@ function rarityDots(n) {
   return '●'.repeat(v) + '○'.repeat(5 - v)
 }
 
-export default function AchievementsSection() {
+export default function AchievementsSection({ onOpenUser } = {}) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [items, setItems] = useState([])
@@ -67,6 +68,7 @@ export default function AchievementsSection() {
   const [q, setQ] = useState('')
   const [granting, setGranting] = useState(false)
   const [grantUserId, setGrantUserId] = useState('')
+  const [grantResolvedId, setGrantResolvedId] = useState(null)
   const [grantMode, setGrantMode] = useState('official') // official | free
   const [grantOfficialId, setGrantOfficialId] = useState('')
   const [grantFreeTitle, setGrantFreeTitle] = useState('')
@@ -199,7 +201,7 @@ export default function AchievementsSection() {
   }
 
   const onGrant = async () => {
-    const uid = Number(String(grantUserId).trim())
+    const uid = grantResolvedId || Number(String(grantUserId).trim())
     if (!Number.isFinite(uid) || uid <= 0) {
       notifyAdmin('Укажите user_id игрока', { error: true })
       return
@@ -246,7 +248,7 @@ export default function AchievementsSection() {
   }
 
   const onLoadUser = async () => {
-    const uid = Number(String(grantUserId).trim())
+    const uid = grantResolvedId || Number(String(grantUserId).trim())
     if (!Number.isFinite(uid) || uid <= 0) {
       notifyAdmin('Укажите user_id игрока', { error: true })
       return
@@ -264,7 +266,7 @@ export default function AchievementsSection() {
   }
 
   const onRevoke = async (instanceId) => {
-    const uid = Number(String(grantUserId).trim())
+    const uid = grantResolvedId || Number(String(grantUserId).trim())
     if (!Number.isFinite(uid) || uid <= 0 || !instanceId) return
     if (!window.confirm('Снять это достижение у игрока?')) return
     setRevokingId(String(instanceId))
@@ -426,14 +428,14 @@ export default function AchievementsSection() {
         </div>
 
         <div className="ach-grant-grid">
-          <Field label="User ID" help={help.grant_user_id || 'Telegram user_id игрока'}>
-            <input
-              value={grantUserId}
-              onChange={(e) => setGrantUserId(e.target.value)}
-              placeholder="123456789"
-              inputMode="numeric"
-            />
-          </Field>
+          <UserLookupPreview
+            label="Игрок"
+            value={grantUserId}
+            onChange={(v) => { setGrantUserId(v); setGrantResolvedId(null) }}
+            onResolved={(u) => setGrantResolvedId(u ? Number(u.userId || u.user_id) : null)}
+            onOpenUser={(id) => onOpenUser?.(id)}
+            placeholder="ID, @username или имя"
+          />
         </div>
 
         {grantMode === 'official' ? (
