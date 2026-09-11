@@ -14,11 +14,11 @@ MAX_TITLE_HTML_LEN = 500
 MAX_DESCRIPTION_LEN = 400
 
 GBL_OFFICIAL_SEEDS: List[Dict[str, Any]] = [
-    {"code": "gbl_level_1", "title": "Спонсор группы", "description": "Открыл 1-й уровень баланса группы", "rarity": 1, "sort": 10},
-    {"code": "gbl_level_2", "title": "Меценат сообщества", "description": "Открыл 2-й уровень баланса группы", "rarity": 2, "sort": 20},
-    {"code": "gbl_level_3", "title": "Архитектор баланса", "description": "Открыл 3-й уровень баланса группы", "rarity": 3, "sort": 30},
-    {"code": "gbl_level_4", "title": "Покровитель круга", "description": "Открыл 4-й уровень баланса группы", "rarity": 4, "sort": 40},
-    {"code": "gbl_level_5", "title": "Легенда баланса", "description": "Открыл 5-й уровень баланса группы", "rarity": 5, "sort": 50},
+    {"code": "gbl_level_1", "title": "Спонсор группы", "description": "Открыл ★1 баланса группы. В профиле — название группы (можно нажать).", "rarity": 1, "sort": 10},
+    {"code": "gbl_level_2", "title": "Опора группы", "description": "Открыл ★2 баланса группы. Можно получить снова за другую группу.", "rarity": 2, "sort": 20},
+    {"code": "gbl_level_3", "title": "Сила группы", "description": "Открыл ★3 баланса группы. Отдельная награда за каждую группу.", "rarity": 3, "sort": 30},
+    {"code": "gbl_level_4", "title": "Герой группы", "description": "Открыл ★4 баланса группы. Клик по названию открывает чат.", "rarity": 4, "sort": 40},
+    {"code": "gbl_level_5", "title": "Легенда группы", "description": "Открыл ★5 баланса группы — максимум лимита в этой группе.", "rarity": 5, "sort": 50},
 ]
 
 ENSURE_SQL = """

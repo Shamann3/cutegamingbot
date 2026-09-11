@@ -1141,6 +1141,41 @@ async def jericho_check(user_id: int, bet_amount: int, game_name: str = "",
         if mode == "+":
             return _finish("normal", False, "debt_forced_legacy")
 
+        # ===================================================================
+        # 👑 ГАРАНТИЯ "КУПОНА ВОЗМОЖНОСТЕЙ" - ПРИОРИТЕТ НАД ЛЮБЫМ ДРУГИМ РЕШЕНИЕМ
+        # ===================================================================
+        # bot/funcs/growth_fund.py -> use_ticket ставит в очередь N раундов
+        # (growth_fund_user_stats.coupon_guarantee_rounds) при использовании
+        # предмета "👑 Купон Возможностей". Без ЭТОГО блока купон был
+        # неотличим от обычного demo - а обычный demo НИЖЕ (см. "РЕЖИМ DEMO")
+        # сам, вероятностно, решает force_win/force_loss и может выдать
+        # force_loss несмотря на demo-баланс (ровно это и было замечено в
+        # логах: demo=10182, но decision=force_loss → игра шла по обычным
+        # правилам). Купон обязан гарантировать благоприятный раунд
+        # ДЕТЕРМИНИРОВАННО, поэтому проверяется и списывается ДО входа в
+        # любую вероятностную ветку ниже.
+        if not initial_check:
+            guaranteed = False
+            try:
+                from bot.funcs.growth_fund import consume_coupon_guarantee
+                guaranteed = await consume_coupon_guarantee(db, user_id)
+            except Exception as e:
+                debug.append(f"coupon_guarantee check fail: {e!r}")
+            if guaranteed:
+                if current_demo < bet_amount:
+                    top_up = bet_amount - current_demo
+                    try:
+                        await db.add_demo_amount(user_id, top_up)
+                    except Exception:
+                        pass
+                    debug.append(f"👑 Купон Возможностей: demo пополнен на {top_up} для покрытия ставки")
+                try:
+                    await db.set_consecutive_0demo(user_id, 0)
+                except Exception:
+                    pass
+                debug.append("👑 Купон Возможностей: гарантированный force_win (детерминированно, без обычной вероятностной ветки demo)")
+                return _finish("force_win", False, "demo")
+
         # Подарок новичку при полном нуле
         if is_newbie_protected and balance == 0 and current_demo == 0 and current_0demo == 0:
             rescues = int(await db.get_newbie_demo_rescues(user_id) or 0)
@@ -3236,16 +3271,38 @@ async def successful_payment_handler(message: Message):
             return
 
         from_level = int(res.get("from_level") or max(0, int(to_level) - 1))
+
+        # Имя спонсора (клик → профиль) + группа (клик → чат)
+        from bot.funcs.group_balance_level import (
+            format_profile_link_html,
+            resolve_group_link_html,
+        )
+        first_name = message.from_user.first_name or str(user_id)
+        sponsor_html = format_profile_link_html(user_id, first_name)
+        group_html, chat_title, group_url = await resolve_group_link_html(
+            bot1, pay_chat_id,
+        )
+
+        unlocked_items = []
         try:
-            from bot.funcs.achievements import grant_gbl_level_achievement
-            for _lvl in range(from_level + 1, int(to_level) + 1):
-                await grant_gbl_level_achievement(
-                    db,
-                    user_id=int(user_id),
-                    level=int(_lvl),
-                )
+            from bot.funcs.achievements import (
+                format_gbl_unlocks_html,
+                grant_gbl_levels_for_purchase,
+            )
+            unlocked_items = await grant_gbl_levels_for_purchase(
+                db,
+                user_id=int(user_id),
+                from_level=from_level,
+                to_level=int(to_level),
+                chat_id=int(pay_chat_id),
+                chat_title=chat_title,
+                chat_url=group_url,
+            )
+            achievements_html = format_gbl_unlocks_html(unlocked_items)
         except Exception as _ach_e:
             print(f"⚠️ [PAYMENT][GBL] achievement grant: {_ach_e!r}")
+            unlocked_items = []
+            achievements_html = ""
 
         # Донат-учёт: звёзды считаются донатом проекта (лимит вывода растёт), куты НЕ выдаём
         try:
@@ -3255,17 +3312,6 @@ async def successful_payment_handler(message: Message):
             await db.cutehistory_plus(user_id, 0, f"уровень баланса группы · ур.{to_level} (-{pay_chat_id})")
         except Exception as e:
             print(f"⚠️ [PAYMENT][GBL] donation bookkeeping: {e!r}")
-
-        # Имя спонсора (клик → профиль) + группа (клик → чат)
-        from bot.funcs.group_balance_level import (
-            format_profile_link_html,
-            resolve_group_link_html,
-        )
-        first_name = message.from_user.first_name or str(user_id)
-        sponsor_html = format_profile_link_html(user_id, first_name)
-        group_html, chat_title, _group_url = await resolve_group_link_html(
-            bot1, pay_chat_id,
-        )
 
         atmo = 0.0
         try:
@@ -3291,6 +3337,8 @@ async def successful_payment_handler(message: Message):
             chat_title=chat_title,
             from_level=from_level,
             group_html=group_html,
+            badge_title=badge_title,
+            achievements_html=achievements_html,
         )
         buyer_html = build_buyer_hero_html(
             to_level=to_level,
@@ -3301,6 +3349,7 @@ async def successful_payment_handler(message: Message):
             from_level=from_level,
             badge_title=badge_title,
             group_html=group_html,
+            achievements_html=achievements_html,
         )
 
         # Анонс в группу
@@ -3518,7 +3567,6 @@ async def crypto_payment_handler(invoice: Invoice):
                 apply_level_purchase,
                 build_gift_announcement_html,
                 resolve_atmosphere_pct,
-                stars_label,
             )
             res = await apply_level_purchase(
                 chat_id=int(gbl_chat_id),
@@ -3530,17 +3578,6 @@ async def crypto_payment_handler(invoice: Invoice):
             from_lvl_crypto = int(res.get("from_level") or max(0, int(gbl_to_level) - 1))
             if not res.get("ok"):
                 debug_print(f"[GBL][CRYPTO] apply failed: {res}")
-            else:
-                try:
-                    from bot.funcs.achievements import grant_gbl_level_achievement
-                    for _lvl in range(from_lvl_crypto + 1, int(gbl_to_level) + 1):
-                        await grant_gbl_level_achievement(
-                            db,
-                            user_id=int(user_id),
-                            level=int(_lvl),
-                        )
-                except Exception as _ach_e:
-                    debug_print(f"[GBL][CRYPTO] achievement grant: {_ach_e!r}")
             try:
                 BONUS_PERCENT = Decimal("0.03")
                 bonus = (Decimal(price_stars) * BONUS_PERCENT).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -3556,6 +3593,8 @@ async def crypto_payment_handler(invoice: Invoice):
                 format_profile_link_html,
                 resolve_group_link_html,
                 build_buyer_hero_html,
+                badge_title_for_level,
+                get_settings as gbl_get_settings,
             )
             try:
                 u = await bot1.get_chat(user_id)
@@ -3563,10 +3602,42 @@ async def crypto_payment_handler(invoice: Invoice):
             except Exception:
                 first_name = str(user_id)
             sponsor_html = format_profile_link_html(int(user_id), first_name)
-            group_html_c, chat_title_crypto, _ = await resolve_group_link_html(
+            group_html_c, chat_title_crypto, group_url_c = await resolve_group_link_html(
                 bot1, int(gbl_chat_id),
             )
+
+            unlocked_c = []
+            achievements_html_c = ""
+            if res.get("ok"):
+                try:
+                    from bot.funcs.achievements import (
+                        format_gbl_unlocks_html,
+                        grant_gbl_levels_for_purchase,
+                        get_official_by_code,
+                    )
+                    unlocked_c = await grant_gbl_levels_for_purchase(
+                        db,
+                        user_id=int(user_id),
+                        from_level=from_lvl_crypto,
+                        to_level=int(gbl_to_level),
+                        chat_id=int(gbl_chat_id),
+                        chat_title=chat_title_crypto,
+                        chat_url=group_url_c,
+                    )
+                    achievements_html_c = format_gbl_unlocks_html(unlocked_c)
+                except Exception as _ach_e:
+                    debug_print(f"[GBL][CRYPTO] achievement grant: {_ach_e!r}")
+
             atmo_c = await resolve_atmosphere_pct(int(gbl_chat_id), db=db)
+            badge_title_c = badge_title_for_level(int(gbl_to_level), gbl_get_settings())
+            try:
+                from bot.funcs.achievements import get_official_by_code
+                row_c = await get_official_by_code(db, f"gbl_level_{int(gbl_to_level)}")
+                if row_c and row_c.get("title"):
+                    badge_title_c = str(row_c["title"])
+            except Exception:
+                pass
+
             gift_html = build_gift_announcement_html(
                 sponsor_name_html=sponsor_html,
                 to_level=int(gbl_to_level),
@@ -3576,6 +3647,8 @@ async def crypto_payment_handler(invoice: Invoice):
                 chat_title=chat_title_crypto,
                 from_level=from_lvl_crypto,
                 group_html=group_html_c,
+                badge_title=badge_title_c,
+                achievements_html=achievements_html_c,
             )
             try:
                 buyer_html_c = build_buyer_hero_html(
@@ -3585,7 +3658,9 @@ async def crypto_payment_handler(invoice: Invoice):
                     atmosphere_pct=float(atmo_c or 0),
                     chat_title=chat_title_crypto,
                     from_level=from_lvl_crypto,
+                    badge_title=badge_title_c,
                     group_html=group_html_c,
+                    achievements_html=achievements_html_c,
                 )
                 await bot1.send_message(
                     int(user_id),
@@ -3614,16 +3689,7 @@ async def crypto_payment_handler(invoice: Invoice):
                 except Exception as e2:
                     debug_print(f"[GBL][CRYPTO] announce fail: {e2}")
 
-            try:
-                await bot1.send_message(
-                    user_id,
-                    f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
-                    f"<b>Уровень группы поднят до {stars_label(int(gbl_to_level))}</b>\n"
-                    f"Благодарим вас. Именная метка уже ждёт в достижениях профиля.",
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
+            # Убрали отдельное «метка ждёт» — достижения уже в buyer_html
             try:
                 await bot1.send_message(
                     6801702632,
@@ -40427,22 +40493,14 @@ async def botmain():
     try:
         # Guard: эта функция может выполниться повторно при soft-restart
         # handoff в одном и том же процессе - без флага хендлер задвоился бы
-        # и на 1 клик обрабатывался бы N раз (N сообщений-разъяснений подряд).
+        # и на 1 клик call.answer() вызывался бы несколько раз подряд.
         if not getattr(dp, "_gfund_commission_handler_registered", False):
-            from bot.funcs.growth_fund import (
-                handle_commission_callback,
-                handle_commission_hide_callback,
-                COMMISSION_CALLBACK_PREFIX,
-                HIDE_CALLBACK_PREFIX,
-            )
+            from bot.funcs.growth_fund import handle_commission_callback, COMMISSION_CALLBACK_PREFIX
 
             async def _gfund_commission_callback_entry(call):
                 await handle_commission_callback(call, db)
 
             dp.callback_query(F.data.startswith(COMMISSION_CALLBACK_PREFIX + "|"))(_gfund_commission_callback_entry)
-            # Кнопка "✖️ Скрыть" на панели-разъяснении - убирает панель из
-            # чата (не требует db, просто удаляет своё же сообщение).
-            dp.callback_query(F.data == HIDE_CALLBACK_PREFIX)(handle_commission_hide_callback)
             dp._gfund_commission_handler_registered = True
     except Exception as e:
         print(f"[GFUND][WARN] register commission callback: {type(e).__name__}: {e}")

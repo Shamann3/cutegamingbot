@@ -2071,8 +2071,10 @@ def build_gift_announcement_html(
     chat_title: Optional[str] = None,
     from_level: Optional[int] = None,
     group_html: Optional[str] = None,
+    badge_title: Optional[str] = None,
+    achievements_html: Optional[str] = None,
 ) -> str:
-    """Анонс в группу — коротко и цепляюще."""
+    """Анонс в группу — коротко + достижения спонсора."""
     cfg = get_settings()
     prev = int(from_level) if from_level is not None else max(0, int(to_level) - 1)
     gain = stake_delta_for_step(
@@ -2081,7 +2083,7 @@ def build_gift_announcement_html(
         atmosphere_pct=atmosphere_pct,
         cfg=cfg,
     )
-    title = badge_title_for_level(to_level, cfg)
+    title = (badge_title or "").strip() or badge_title_for_level(to_level, cfg)
     if group_html:
         where = group_html
     else:
@@ -2095,12 +2097,15 @@ def build_gift_announcement_html(
         if week >= 2
         else social_proof_line()
     )
+    ach = (achievements_html or "").strip()
+    ach_bit = f"\n{ach}" if ach else ""
     return (
         f"{gbl_tg('🏆')} <b>Лимит подняли</b>\n"
         f"{sponsor_name_html} · {where}\n"
         f"{stars_label(prev)} → <b>{stars_label(to_level)}</b> · "
         f"лимит {gain['from_to_delta_html']}\n"
-        f"<b>{int(price_stars)}⭐</b> · «<b>{title}</b>»\n"
+        f"<b>{int(price_stars)}⭐</b> · «<b>{_html_escape(title)}</b>»"
+        f"{ach_bit}\n"
         f"<i>{proof}</i> · <b>бч</b>"
     )
 
@@ -2115,8 +2120,9 @@ def build_buyer_hero_html(
     from_level: Optional[int] = None,
     badge_title: Optional[str] = None,
     group_html: Optional[str] = None,
+    achievements_html: Optional[str] = None,
 ) -> str:
-    """ЛС покупателю — коротко: герой + факты."""
+    """ЛС покупателю — факты покупки + блок новых достижений."""
     cfg = get_settings()
     prev = int(from_level) if from_level is not None else max(0, int(to_level) - 1)
     steps = max(1, int(to_level) - prev)
@@ -2143,14 +2149,17 @@ def build_buyer_hero_html(
     price_bit = f"<b>{int(price_stars)}⭐</b>"
     if save_pct > 0:
         price_bit = f"<s>{listed}⭐</s> → {price_bit} (−{save_pct}%)"
+    ach = (achievements_html or "").strip()
+    ach_bit = f"\n\n{ach}" if ach else ""
     return (
         f"{gbl_tg('🏆')} <b>Готово</b>\n"
         f"<i>лимит выше — для всех</i>\n\n"
         f"{where}\n"
         f"★{prev}→★{to_level} · лимит {gain['from_to_delta_html']}\n"
-        f"{price_bit} · «<b>{title}</b>»\n"
+        f"{price_bit} · «<b>{_html_escape(title)}</b>»"
+        f"{ach_bit}\n\n"
         f"<i>{social_proof_line()}</i>\n"
-        f"дальше: группа или <b>бч</b>"
+        f"профиль → достижения · или <b>бч</b>"
     )
 
 

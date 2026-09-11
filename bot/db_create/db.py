@@ -10670,6 +10670,19 @@ class Database:
                     "ADD COLUMN IF NOT EXISTS milestone_coupons_earned BIGINT NOT NULL DEFAULT 0;"
                 )
 
+                # 2б) Гарантия "Купона Возможностей" - сколько ближайших PvE-раундов
+                # ОБЯЗАНЫ пройти детерминированным force_win (см. jericho_check
+                # в main.py и use_ticket/consume_coupon_guarantee в
+                # bot/funcs/growth_fund.py). Это ОТДЕЛЬНЫЙ счётчик от обычного
+                # demo - обычный demo у Jericho сам, вероятностно, может решить
+                # force_loss (см. "РЕЖИМ DEMO" в jericho_check), а купон обязан
+                # гарантировать благоприятный исход, а не "просто чуть более
+                # вероятный".
+                await conn.execute(
+                    "ALTER TABLE growth_fund_user_stats "
+                    "ADD COLUMN IF NOT EXISTS coupon_guarantee_rounds INTEGER NOT NULL DEFAULT 0;"
+                )
+
                 # 3) growth_fund_pool - остаток фонда на группу (под дивиденды)
                 await conn.execute(
                     """

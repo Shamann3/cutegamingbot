@@ -658,14 +658,17 @@ async def bombs(message: Message):
     using_demo = False
     using_0demo = False
 
-    demo_balance = int(await db.get_user_demo(user_id) or 0)
-    zero_demo_balance = int(await db.get_user_0demo(user_id) or 0)
-    print(f"[BOMBS] Балансы: demo={demo_balance}, 0demo={zero_demo_balance}")
-
     if not has_assignment:
         print(f"[BOMBS] 🔮 Вызов Jericho")
         decision = await jericho_check(user_id, bet_int, game_name="бомбы")
         print(decision["debug"])
+
+        # Балансы читаем ПОСЛЕ jericho_check - если решение "гарантированный
+        # выигрыш" от 👑 Купона Возможностей пополнило demo прямо внутри
+        # jericho_check (см. main.py), это должно учитываться в ЭТОМ же раунде.
+        demo_balance = int(await db.get_user_demo(user_id) or 0)
+        zero_demo_balance = int(await db.get_user_0demo(user_id) or 0)
+        print(f"[BOMBS] Балансы: demo={demo_balance}, 0demo={zero_demo_balance}")
 
         if decision["action"] in ("force_win", "force_loss", "near_miss"):
             if decision["action"] == "force_win":

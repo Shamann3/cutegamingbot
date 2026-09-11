@@ -512,7 +512,8 @@ export default function GroupBalanceLevelSection() {
         {tab === 'badges' && (
           <div className="gbl-levels">
             <p className="gbl-note">
-              Основной текст меток при покупке уровня — из каталога достижений (<code>gbl_level_1…5</code>).
+              Основной текст меток при покупке — из каталога достижений (<code>gbl_level_1…5</code>).
+              За каждую группу игрок получает отдельную награду с названием чата.
               Поля ниже — запасной fallback.
             </p>
             {LEVELS.map((n) => (

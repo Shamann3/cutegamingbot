@@ -156,13 +156,12 @@ async def _advance_milestone(db, bot, user_id: int, *, tier: int, progress: int,
                 await bot.send_message(
                     int(user_id),
                     (
-                        "🎉 <b>Новая отметка на шкале Фонда Роста!</b>\n\n"
-                        f"Начислено <b>{qty_per_cross * crossed} «👑 Купон Возможностей»</b> "
-                        f"({coupon_word}) — повышает шансы на победу в следующем раунде.\n\n"
-                        f"🌱 Шкала Фонда Роста : {_fmt(new_progress)}/{_fmt(next_target)} кут\n"
-                        f"<code>{bar}</code> → 👑 Купон Возможностей\n\n"
-                        "<blockquote>💸 Использовать — команда «использовать»\n"
-                        "🎁 Подарить или продать — обычный предмет инвентаря, как любой другой</blockquote>"
+                        "<tg-emoji emoji-id='5438262026549876196'>🥳</tg-emoji> <b>Новая отметка на шкале Фонда Роста!</b>\n\n"
+                        f"<b>Вы получили «👑 Купон Возможностей»</b>\n"
+                        f"⤷ Он повышает шансы на победу в следующей игре!\n\n"
+                        f"<tg-emoji emoji-id='5474417568053745249'>🌱</tg-emoji> <b>Шкала Фонда Роста : {_fmt(new_progress)}/{_fmt(next_target)} кут</b>\n"
+                        f"<b><code>{bar}</code> → 👑 Купон Возможностей</b>\n\n"
+                        '<blockquote><b>Для использования купона, напишите "<code>Использовать 💸</code>"</b></blockquote>'
                     ),
                     parse_mode="HTML",
                 )
@@ -771,112 +770,62 @@ def format_commission_explainer(
     lifetime_contrib: Optional[int] = None,
 ) -> str:
     """
-    Короткий, понятный разбор комиссии ЭТОГО раунда - текст экрана-разъяснения
-    под кнопкой "Комиссия игры". Показывает игроку то, что касается лично
-    его: сколько удержано и его личный прогресс к "Купону Возможностей".
-    Внутреннюю разбивку (куда именно уходит комиссия внутри проекта) здесь
-    сознательно не показываем - игроку она не нужна, а для владельца проекта
-    та же информация есть в _notify_owner_commission и в экране статистики.
+    Короткий разбор комиссии ЭТОГО раунда для всплывающего окна Telegram
+    (call.answer(text, show_alert=True)) по кнопке "Комиссия игры" - по
+    решению владельца проекта клик НИКОГДА не создаёт и не редактирует
+    отдельное сообщение в чате, только всплывающее окно.
 
-    to_chat / to_fund / to_project / is_pvp приняты для обратной совместимости
-    вызова (build_commission_callback_data кодирует именно эти поля) - в
-    тексте сейчас не используются.
+    ВАЖНО (ограничения Telegram alert'ов, answerCallbackQuery.text):
+      • НИКАКОГО HTML/Markdown - alert показывает чистый текст как есть,
+        теги вроде <b> отрисуются буквально, поэтому здесь их нет вовсе;
+      • жёсткий лимит 200 символов - текст ниже собран компактно и всё
+        равно подрезается функцией-safety на случай очень больших чисел.
 
-    milestone / lifetime_contrib - если переданы (см. handle_commission_callback,
-    подтягивает live из БД по нажавшему кнопку), в текст добавляется блок
-    личного прогресса до "Купона Возможностей" - это то, что реально мотивирует
-    играть дальше: наглядная, честная шкала без всякой "магии".
+    Показывает игроку то, что касается лично его: сколько удержано и его
+    личный прогресс к "Купону Возможностей". Внутреннюю разбивку (куда
+    именно уходит комиссия внутри проекта) не показываем - игроку она не
+    нужна, а для владельца та же информация есть в _notify_owner_commission
+    и в экране статистики.
+
+    to_chat / to_fund / to_project / is_pvp / game приняты для обратной
+    совместимости вызова - в коротком тексте сейчас не используются.
     """
     pot = int(pot); commission = int(commission)
     pct = (commission / pot * 100.0) if pot > 0 else 0.0
     pct_str = f"{pct:.1f}".rstrip("0").rstrip(".") if pct else "0"
 
-    header = f"🌱 <b>Комиссия раунда — {_game_display(game)}</b>" if game else "🌱 <b>Комиссия раунда</b>"
-
-    parts = [
-        header,
-        "",
-        f"Банк раунда: <b>{_fmt(pot)} кут</b>",
-        f"Удержано: <b>−{_fmt(commission)} кут</b> <i>({pct_str}% от банка)</i>",
-    ]
+    lines = [f"🌱 Комиссия : −{_fmt(commission)} кут ({pct_str}% от {_fmt(pot)})"]
 
     if milestone:
         bar = milestone.get("bar") or format_milestone_bar(milestone.get("progress", 0), milestone.get("target", 1))
         progress = int(milestone.get("progress", 0))
         target = int(milestone.get("target", 1))
-        parts += [
-            "",
-            f"🌱 Шкала Фонда Роста : {_fmt(progress)}/{_fmt(target)} кут",
-            f"<code>{bar}</code> → 👑 Купон Возможностей",
-            "",
-            "<i>Купон повышает шансы на победу в следующем раунде — продолжайте "
-            "играть, следующая награда всё ближе.</i>",
-        ]
+        lines.append("")
+        lines.append(f"Шкала : {_fmt(progress)}/{_fmt(target)} кут")
+        lines.append(f"{bar} → 👑 Купон")
 
     if lifetime_contrib is not None and int(lifetime_contrib) > 0:
-        parts += [
-            "",
-            f"За всё время внесено в Фонд Роста: <b>{_fmt(int(lifetime_contrib))} кут</b>.",
-        ]
+        lines.append("")
+        lines.append(f"Внесено всего : {_fmt(int(lifetime_contrib))} кут")
 
-    return "\n".join(parts)
-
-
-# Клик по кнопке "Комиссия игры" много раз подряд НЕ должен заваливать чат
-# одинаковыми сообщениями - первый клик открывает панель-разъяснение, а
-# каждый следующий клик по ТОЙ ЖЕ кнопке редактирует уже открытую панель
-# (данные раунда неизменны, поэтому "редактирование" по сути просто не даёт
-# плодиться дублям). Ключ - результат раунда (сообщение с игрой или клиент
-# inline-режима), значение - куда именно редактировать. Память процесса,
-# без БД - это чисто визуальный UX-момент, переживать перезапуск бота не
-# обязан (после перезапуска просто откроется новая панель на следующий клик).
-_EXPLAINER_MSG_CACHE: Dict[str, tuple] = {}
-_EXPLAINER_MSG_CACHE_MAX = 5000
-
-HIDE_CALLBACK_PREFIX = "gfundhide"
-
-
-def _commission_explainer_cache_key(call) -> str:
-    """Ключ кэша панели-разъяснения: привязан к сообщению с результатом
-    раунда И к нажавшему пользователю (панель личная - показывает ЕГО
-    прогресс шкалы, поэтому если по одной кнопке в общем чате кликнут
-    разные игроки, у каждого должна открыться/редактироваться СВОЯ панель,
-    а не перезатирать чужую). Для inline-режима (нет call.message) - тот же
-    принцип на паре пользователь+inline-сообщение."""
-    from_user = getattr(call, "from_user", None)
-    uid = getattr(from_user, "id", 0) if from_user else 0
-
-    msg = getattr(call, "message", None)
-    if msg is not None:
-        try:
-            return f"m:{msg.chat.id}:{msg.message_id}:{uid}"
-        except Exception:
-            pass
-    inline_id = getattr(call, "inline_message_id", None)
-    return f"i:{uid}:{inline_id or call.data}"
-
-
-def _build_explainer_keyboard():
-    """Клавиатура панели-разъяснения - одна кнопка, чтобы аккуратно её
-    скрыть, когда всё понятно (см. handle_commission_hide_callback)."""
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✖️ Скрыть", callback_data=HIDE_CALLBACK_PREFIX),
-    ]])
+    text = "\n".join(lines)
+    # Жёсткая защита от лимита Telegram (200 символов у answerCallbackQuery.text) -
+    # на случай очень больших чисел с разделителями тысяч.
+    if len(text) > 200:
+        text = text[:197] + "..."
+    return text
 
 
 async def handle_commission_callback(call, db=None) -> None:
     """
-    Обработчик клика по кнопке «Комиссия игры: −N кут» - показывает полный,
-    честный разбор комиссии именно этого раунда + (если передан db) живой
-    прогресс личной шкалы игрока до "Купона Возможностей". Регистрируется
-    в main.py (через обёртку, передающую db):
+    Обработчик клика по кнопке «Комиссия игры: −N кут» - показывает разбор
+    ЭТОГО раунда ТОЛЬКО всплывающим окном Telegram (call.answer(text,
+    show_alert=True)) - по явному решению владельца проекта клик НИКОГДА
+    не отправляет и не редактирует отдельное сообщение в чате, при любом
+    количестве повторных нажатий. Регистрируется в main.py (через обёртку,
+    передающую db):
 
         dp.callback_query(F.data.startswith(COMMISSION_CALLBACK_PREFIX + "|"))(...)
-
-    Повторные клики по той же кнопке РЕДАКТИРУЮТ уже открытую панель, а не
-    плодят одинаковые сообщения - см. _EXPLAINER_MSG_CACHE выше.
     """
     try:
         parts = (call.data or "").split("|")
@@ -910,79 +859,11 @@ async def handle_commission_callback(call, db=None) -> None:
         pot=pot, commission=commission, to_chat=to_chat, to_fund=to_fund, to_project=to_project,
         is_pvp=is_pvp, milestone=milestone, lifetime_contrib=lifetime_contrib,
     )
-    kb = _build_explainer_keyboard()
 
     try:
-        await call.answer()
-    except Exception:
-        pass
-
-    key = _commission_explainer_cache_key(call)
-    cached = _EXPLAINER_MSG_CACHE.get(key)
-
-    if cached:
-        cached_chat_id, cached_msg_id = cached
-        try:
-            await call.bot.edit_message_text(
-                chat_id=cached_chat_id, message_id=cached_msg_id,
-                text=text, parse_mode="HTML", reply_markup=kb,
-            )
-            return
-        except Exception as e:
-            if "not modified" in str(e).lower():
-                # Панель уже показывает ровно эти данные - и так всё видно,
-                # повторно слать/редактировать нечего.
-                return
-            _vdbg(f"[ФОНД РОСТА][КНОПКА] edit fail, отправим заново: {e!r}")
-            _EXPLAINER_MSG_CACHE.pop(key, None)
-
-    # Первый клик (или прежняя панель стала недоступна) - открываем новую.
-    # У inline-сообщений (Telegram inline mode) нет call.message - отвечать
-    # "reply" некуда, поэтому шлём разбор личным сообщением тому, кто нажал.
-    try:
-        if getattr(call, "message", None) is not None:
-            sent = await call.message.reply(text, parse_mode="HTML", reply_markup=kb)
-        else:
-            sent = await call.bot.send_message(clicker_id or (call.from_user.id if from_user else 0), text, parse_mode="HTML", reply_markup=kb)
-        _EXPLAINER_MSG_CACHE[key] = (sent.chat.id, sent.message_id)
-        if len(_EXPLAINER_MSG_CACHE) > _EXPLAINER_MSG_CACHE_MAX:
-            try:
-                _EXPLAINER_MSG_CACHE.pop(next(iter(_EXPLAINER_MSG_CACHE)))
-            except Exception:
-                pass
+        await call.answer(text, show_alert=True)
     except Exception as e:
-        _vdbg(f"[ФОНД РОСТА][КНОПКА] send fail: {e!r}")
-
-
-async def handle_commission_hide_callback(call) -> None:
-    """
-    Обработчик кнопки "✖️ Скрыть" на панели-разъяснении - аккуратно убирает
-    панель из чата и чистит кэш, чтобы следующий клик по "Комиссия игры"
-    открыл свежую панель, а не пытался редактировать удалённое сообщение.
-    Регистрируется в main.py:
-
-        dp.callback_query(F.data == HIDE_CALLBACK_PREFIX)(handle_commission_hide_callback)
-    """
-    try:
-        await call.answer()
-    except Exception:
-        pass
-
-    msg = getattr(call, "message", None)
-    if msg is None:
-        return
-
-    try:
-        for k, v in list(_EXPLAINER_MSG_CACHE.items()):
-            if v == (msg.chat.id, msg.message_id):
-                _EXPLAINER_MSG_CACHE.pop(k, None)
-    except Exception:
-        pass
-
-    try:
-        await msg.delete()
-    except Exception as e:
-        _vdbg(f"[ФОНД РОСТА][СКРЫТЬ] delete fail: {e!r}")
+        _vdbg(f"[ФОНД РОСТА][КНОПКА] answer fail: {e!r}")
 
 
 # ============================================================================

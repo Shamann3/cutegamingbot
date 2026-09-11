@@ -40,43 +40,43 @@ GBL_OFFICIAL_SEEDS: List[Dict[str, Any]] = [
         "title": "Спонсор группы",
         "icon_emoji_id": DEFAULT_ICON_EMOJI_ID,
         "icon_fallback": "⭐",
-        "description": "Открыл 1-й уровень баланса группы",
+        "description": "Открыл ★1 баланса группы. В профиле — название группы (можно нажать).",
         "rarity": 1,
         "sort": 10,
     },
     {
         "code": "gbl_level_2",
-        "title": "Меценат сообщества",
+        "title": "Опора группы",
         "icon_emoji_id": DEFAULT_ICON_EMOJI_ID,
         "icon_fallback": "⭐",
-        "description": "Открыл 2-й уровень баланса группы",
+        "description": "Открыл ★2 баланса группы. Можно получить снова за другую группу.",
         "rarity": 2,
         "sort": 20,
     },
     {
         "code": "gbl_level_3",
-        "title": "Архитектор баланса",
+        "title": "Сила группы",
         "icon_emoji_id": DEFAULT_ICON_EMOJI_ID,
         "icon_fallback": "⭐",
-        "description": "Открыл 3-й уровень баланса группы",
+        "description": "Открыл ★3 баланса группы. Отдельная награда за каждую группу.",
         "rarity": 3,
         "sort": 30,
     },
     {
         "code": "gbl_level_4",
-        "title": "Покровитель круга",
+        "title": "Герой группы",
         "icon_emoji_id": DEFAULT_ICON_EMOJI_ID,
         "icon_fallback": "⭐",
-        "description": "Открыл 4-й уровень баланса группы",
+        "description": "Открыл ★4 баланса группы. Клик по названию открывает чат.",
         "rarity": 4,
         "sort": 40,
     },
     {
         "code": "gbl_level_5",
-        "title": "Легенда баланса",
+        "title": "Легенда группы",
         "icon_emoji_id": DEFAULT_ICON_EMOJI_ID,
         "icon_fallback": "⭐",
-        "description": "Открыл 5-й уровень баланса группы",
+        "description": "Открыл ★5 баланса группы — максимум лимита в этой группе.",
         "rarity": 5,
         "sort": 50,
     },
@@ -326,6 +326,64 @@ def granter_link_html(user_id: Optional[int], name: str) -> str:
     return safe
 
 
+def gbl_unique_code(level: int, chat_id: int) -> str:
+    """Уникальный код: уровень + группа → можно копить награды за разные чаты."""
+    return f"gbl_level_{int(level)}_{int(chat_id)}"
+
+
+def format_group_ref_html(
+    *,
+    chat_id: Optional[int] = None,
+    chat_title: Optional[str] = None,
+    chat_url: Optional[str] = None,
+) -> str:
+    """Кликабельное название группы для карточки достижения."""
+    name = (chat_title or "").strip() or (
+        f"чат {int(chat_id)}" if chat_id is not None else "группа"
+    )
+    safe = html.escape(name)
+    url = (chat_url or "").strip()
+    if url.startswith("http://") or url.startswith("https://") or url.startswith("tg://"):
+        return f'<a href="{html.escape(url)}">{safe}</a>'
+    return f"<b>{safe}</b>"
+
+
+def build_gbl_title_html(
+    base_title: str,
+    *,
+    chat_id: Optional[int] = None,
+    chat_title: Optional[str] = None,
+    chat_url: Optional[str] = None,
+) -> str:
+    """«Спонсор группы · Название» — название кликабельно."""
+    title = html.escape((base_title or "Достижение").strip() or "Достижение")
+    group = format_group_ref_html(
+        chat_id=chat_id, chat_title=chat_title, chat_url=chat_url,
+    )
+    return f"{title} · {group}"
+
+
+def achievement_line_html(it: Dict[str, Any]) -> str:
+    """Одна строка витрины / разблокировки."""
+    ic = icon_html(it.get("icon_emoji_id"), it.get("icon_fallback") or DEFAULT_ICON_FALLBACK)
+    title = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
+    return f"{ic} {title}"
+
+
+def format_gbl_unlocks_html(items: Sequence[Dict[str, Any]]) -> str:
+    """Блок «новые достижения» после покупки уровня (1+ штук)."""
+    rows = [it for it in (items or []) if isinstance(it, dict)]
+    if not rows:
+        return ""
+    header = "Новое достижение" if len(rows) == 1 else f"Новые достижения · {len(rows)}"
+    lines = [achievement_line_html(it) for it in rows]
+    return (
+        f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
+        f"<b>{header}</b>\n"
+        + "\n".join(lines)
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────
 # JSONB document helpers
 # ──────────────────────────────────────────────────────────────────────
@@ -383,11 +441,7 @@ def format_showcase_blockquote(doc: Dict[str, Any]) -> str:
     rows = showcase_items(doc, SHOWCASE_LIMIT)
     if not rows:
         return ""
-    lines = []
-    for _iid, it in rows:
-        ic = icon_html(it.get("icon_emoji_id"), it.get("icon_fallback") or DEFAULT_ICON_FALLBACK)
-        title = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
-        lines.append(f"{ic} {title}")
+    lines = [achievement_line_html(it) for _iid, it in rows]
     body = "\n".join(lines)
     return (
         f"<blockquote>"
@@ -419,12 +473,18 @@ def format_full_achievements_html(
     free = [(i, x) for i, x in rows if x.get("kind") != "official"]
 
     def _card(iid: str, it: Dict[str, Any]) -> str:
-        ic = icon_html(it.get("icon_emoji_id"), it.get("icon_fallback") or DEFAULT_ICON_FALLBACK)
-        title = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
+        line = achievement_line_html(it)
         when = format_granted_at(it.get("granted_at") or time.time())
         who = granter_link_html(it.get("granted_by"), str(it.get("granted_by_name") or "Система"))
+        meta = it.get("meta") if isinstance(it.get("meta"), dict) else {}
+        extra = ""
+        if meta.get("chat_id") is not None or meta.get("chat_title"):
+            # Название уже в title_html; дублируем кратко только уровень ★
+            lvl = meta.get("level")
+            if lvl:
+                extra = f"\n★{int(lvl)} баланса группы"
         return (
-            f"{ic} {title}\n"
+            f"{line}{extra}\n"
             f"<blockquote>"
             f"{when}\n"
             f"Выдал(-а): {who}"
@@ -519,10 +579,14 @@ def grant_official(
     granted_by_name: str,
     source: str = "admin",
     unique_code: Optional[str] = None,
+    meta: Optional[Dict[str, Any]] = None,
+    pin_front: bool = False,
 ) -> Tuple[Dict[str, Any], str, bool]:
     """Returns (doc, instance_id, already_had).
 
-    unique_code: если задан — не дублируем (например gbl_level_3).
+    unique_code: если задан — не дублируем.
+    Для бч: gbl_level_{N}_{chat_id} — отдельная награда за каждую группу.
+    pin_front: новое достижение в начало витрины профиля.
     """
     doc = _normalize_doc(doc)
     if unique_code:
@@ -532,7 +596,7 @@ def grant_official(
     if len(doc["items"]) >= MAX_ITEMS_PER_USER:
         raise ValueError("limit")
     iid = _new_instance_id()
-    item = {
+    item: Dict[str, Any] = {
         "kind": "official",
         "official_id": int(official_id),
         "title_html": (title_html or "")[:MAX_TITLE_HTML_LEN],
@@ -545,13 +609,36 @@ def grant_official(
     }
     if unique_code:
         item["unique_code"] = str(unique_code)
+    if isinstance(meta, dict) and meta:
+        # компактные метаданные (чат бч и т.п.)
+        clean: Dict[str, Any] = {}
+        if meta.get("chat_id") is not None:
+            try:
+                clean["chat_id"] = int(meta["chat_id"])
+            except Exception:
+                pass
+        if meta.get("chat_title"):
+            clean["chat_title"] = str(meta["chat_title"])[:120]
+        if meta.get("chat_url"):
+            clean["chat_url"] = str(meta["chat_url"])[:256]
+        if meta.get("level") is not None:
+            try:
+                clean["level"] = int(meta["level"])
+            except Exception:
+                pass
+        if meta.get("code"):
+            clean["code"] = str(meta["code"])[:64]
+        if clean:
+            item["meta"] = clean
     doc["items"][iid] = item
-    # Вставить после последних official в order
-    insert_at = 0
-    for i, existing in enumerate(doc["order"]):
-        if doc["items"].get(existing, {}).get("kind") == "official":
-            insert_at = i + 1
-    doc["order"].insert(insert_at, iid)
+    if pin_front:
+        doc["order"].insert(0, iid)
+    else:
+        insert_at = 0
+        for i, existing in enumerate(doc["order"]):
+            if doc["items"].get(existing, {}).get("kind") == "official":
+                insert_at = i + 1
+        doc["order"].insert(insert_at, iid)
     return doc, iid, False
 
 
@@ -620,8 +707,17 @@ async def migrate_legacy_gbl_badges(db) -> None:
             if lvl < 1 or lvl > 5:
                 continue
             title = str((badge or {}).get("title") or badge_title_for_level(lvl))
+            chat_id = (badge or {}).get("chat_id")
+            try:
+                chat_id_i = int(chat_id) if chat_id is not None else None
+            except Exception:
+                chat_id_i = None
             await grant_gbl_level_achievement(
-                db, user_id=uid, level=lvl, title_override=title,
+                db,
+                user_id=uid,
+                level=lvl,
+                chat_id=chat_id_i,
+                title_override=title,
             )
 
 
@@ -909,9 +1005,16 @@ async def grant_official_to_user(
     granted_by_name: str,
     source: str = "admin",
     unique_code: Optional[str] = None,
+    title_html_override: Optional[str] = None,
+    meta: Optional[Dict[str, Any]] = None,
+    pin_front: bool = False,
 ) -> Dict[str, Any]:
     doc = await get_user_achievements_doc(db, target_user_id)
-    title_html = official.get("title_html") or html.escape(str(official.get("title") or ""))
+    title_html = (
+        title_html_override
+        or official.get("title_html")
+        or html.escape(str(official.get("title") or ""))
+    )
     doc, iid, already = grant_official(
         doc,
         official_id=int(official["id"]),
@@ -922,9 +1025,18 @@ async def grant_official_to_user(
         granted_by_name=granted_by_name,
         source=source,
         unique_code=unique_code or official.get("code"),
+        meta=meta,
+        pin_front=pin_front,
     )
     await save_user_achievements_doc(db, target_user_id, doc)
-    return {"ok": True, "instance_id": iid, "already": already, "doc": doc}
+    item = doc["items"].get(iid) or {}
+    return {
+        "ok": True,
+        "instance_id": iid,
+        "already": already,
+        "doc": doc,
+        "item": item,
+    }
 
 
 async def grant_free_to_user(
@@ -955,32 +1067,94 @@ async def grant_gbl_level_achievement(
     *,
     user_id: int,
     level: int,
+    chat_id: Optional[int] = None,
+    chat_title: Optional[str] = None,
+    chat_url: Optional[str] = None,
     title_override: Optional[str] = None,
-) -> None:
+) -> Dict[str, Any]:
+    """Выдать официальное достижение бч за уровень в конкретной группе.
+
+    unique_code = gbl_level_{N}_{chat_id} → одна награда на пару (уровень, группа).
+    Без chat_id — legacy-код gbl_level_{N} (миграция / старые выдачи).
+    """
     level = max(1, min(5, int(level)))
-    code = f"gbl_level_{level}"
-    official = await get_official_by_code(db, code)
+    catalog_code = f"gbl_level_{level}"
+    official = await get_official_by_code(db, catalog_code)
     if not official:
         await seed_gbl_official_if_needed(db)
-        official = await get_official_by_code(db, code)
+        official = await get_official_by_code(db, catalog_code)
     if not official:
-        return
-    if title_override:
-        official = dict(official)
-        official["title"] = title_override
-        official["title_html"] = html.escape(title_override)
+        return {"ok": False, "reason": "no_catalog"}
+
+    base_title = (
+        (title_override or "").strip()
+        or str(official.get("title") or catalog_code)
+    )
+    if chat_id is not None:
+        unique = gbl_unique_code(level, int(chat_id))
+        title_html = build_gbl_title_html(
+            base_title,
+            chat_id=int(chat_id),
+            chat_title=chat_title,
+            chat_url=chat_url,
+        )
+        meta = {
+            "chat_id": int(chat_id),
+            "chat_title": (chat_title or "").strip() or None,
+            "chat_url": (chat_url or "").strip() or None,
+            "level": level,
+            "code": catalog_code,
+        }
+    else:
+        unique = catalog_code
+        title_html = html.escape(base_title)
+        meta = {"level": level, "code": catalog_code}
+
     try:
-        await grant_official_to_user(
+        res = await grant_official_to_user(
             db,
             target_user_id=int(user_id),
             official=official,
             granted_by=None,
             granted_by_name="Баланс группы",
             source="gbl",
-            unique_code=code,
+            unique_code=unique,
+            title_html_override=title_html,
+            meta=meta,
+            pin_front=True,
         )
+        return res
     except Exception as e:
         print(f"[ACH] gbl grant fail: {e!r}")
+        return {"ok": False, "reason": str(e)}
+
+
+async def grant_gbl_levels_for_purchase(
+    db,
+    *,
+    user_id: int,
+    from_level: int,
+    to_level: int,
+    chat_id: int,
+    chat_title: Optional[str] = None,
+    chat_url: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Выдать все уровни from+1…to для группы; вернуть только новые (не already)."""
+    unlocked: List[Dict[str, Any]] = []
+    lo = max(0, int(from_level))
+    hi = max(1, min(5, int(to_level)))
+    for lvl in range(lo + 1, hi + 1):
+        res = await grant_gbl_level_achievement(
+            db,
+            user_id=int(user_id),
+            level=int(lvl),
+            chat_id=int(chat_id),
+            chat_title=chat_title,
+            chat_url=chat_url,
+        )
+        if res.get("ok") and not res.get("already") and res.get("item"):
+            unlocked.append(res["item"])
+    return unlocked
 
 
 def help_admin_html() -> str:
