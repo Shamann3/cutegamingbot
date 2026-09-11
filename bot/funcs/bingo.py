@@ -971,30 +971,11 @@ async def _show_and_settle(game_id: int):
                 await _abort_game_unlocked(game, game_id, "У кого-то из участников недостаточно средств.")
                 return
 
-        # Оформление результата (без денег) - сбой отображения не блокирует расчёт
-        total_pot = bet * len(participants)
-        win_amount_formatted = "{:,.0f}".format(total_pot - bet).replace(",", ".")
-
-        winner_link = await create_user_link(
-            winner_id,
-            await db.get_firstname_by_user_id(winner_id),
-            await db.get_username_by_user_id(winner_id)
-        )
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Подробнее", callback_data=f"podrobneebingohui_{win_num}_{game_id}")]]
-        )
-        button_bingo[game_id]['keyboard_result'] = keyboard
-
-        try:
-            await safe_edit_text_and_markup(
-                game, chat_id=game["chat_id"], message_id=game["message_id"],
-                text=(f"<tg-emoji emoji-id='5262924479226473498'>🏆</tg-emoji> <b>{winner_link}</b>\n"
-                      f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji> <b>Победное число : {win_num}</b>\n" + (
-                          f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> "
-                          f"<b>Выигрыш {win_amount_formatted} кут</b>" if total_pot >= 1 else "")),
-                reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True)
-        except Exception as e:
-            print(f"[BINGO][result edit] {e}")
+        # Итоговое сообщение НЕ показываем здесь заранее - иначе игрок сначала
+        # увидел бы сумму выигрыша ДО комиссии и без кнопки "Комиссия игры",
+        # а через долю секунды сообщение "мигнуло" бы на правильную сумму с
+        # кнопкой (см. _settle_saga ниже). Вместо этого всё считаем сразу и
+        # показываем результат ОДНИМ готовым сообщением - см. _settle_saga.
 
         # Сохраним данные для попапа
         asyncio.create_task(store_temp_bingo_data(str(win_num), participants, chosen_numbers, str(game_id)))

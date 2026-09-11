@@ -1209,6 +1209,12 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
                 if current_row == 9:
                     profit = _profit_now(game_data)
                     gfund_result = None
+                    # Собираем текст итоговой суммы, но НЕ редактируем сообщение
+                    # прямо в ветке ниже - иначе игрок сначала увидел бы сумму
+                    # без кнопки комиссии, а через миг сообщение "мигнуло" бы на
+                    # декоративную иконку с кнопкой (см. итоговый edit ниже).
+                    # Показываем сумму и кнопку комиссии ОДНИМ готовым сообщением.
+                    final_row_text = None
 
                     if using_demo:
                         try:
@@ -1254,14 +1260,10 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
                                     except Exception as e:
                                         dbg_err("DEMO_ZERO_WIN_FINAL", e)
                                     await _mark_user_game_activity(owner_id, reason="win_final")
-                            await _safe_edit_text(call.message, f"<b>{ran} 10-й ряд | {_fmt_int(pay if pay > 0 else 0)} кут</b>", parse_mode="HTML")
+                            final_row_text = f"<b>{ran} 10-й ряд | {_fmt_int(pay if pay > 0 else 0)} кут</b>"
 
                     elif has_assignment and is_free:
-                        await _safe_edit_text(
-                            call.message,
-                            f"<b>{ran} 10-й ряд | {_fmt_int(int(profit))} кут (челлендж)</b>",
-                            parse_mode="HTML"
-                        )
+                        final_row_text = f"<b>{ran} 10-й ряд | {_fmt_int(int(profit))} кут (челлендж)</b>"
                         if int(profit) > 0:
                             await _gc_call(owner_id, chat_id, int(profit), "+", "WIN_FINAL_FREE")
                         await _mark_user_game_activity(owner_id, reason="win_final_free")
@@ -1312,18 +1314,21 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
                                     except Exception as e:
                                         dbg_err("WINS_WIN_FINAL", e)
                                     await _mark_user_game_activity(owner_id, reason="win_final")
-                                    await _safe_edit_text(
-                                        call.message,
-                                        f"<b>{ran} 10-й ряд | {_fmt_int(pay)} кут</b>",
-                                        parse_mode="HTML"
-                                    )
+                                    final_row_text = f"<b>{ran} 10-й ряд | {_fmt_int(pay)} кут</b>"
 
                     end_kb_rows = [[_btn("Игра завершена", "risk_end_stub", style="default")]]
                     if gfund_result:
                         from bot.funcs.growth_fund import build_commission_button
                         end_kb_rows.append([build_commission_button(gfund_result)])
                     end_kb = InlineKeyboardMarkup(inline_keyboard=end_kb_rows)
-                    await _safe_edit_text(call.message, EMOJI_END(), reply_markup=end_kb, parse_mode="HTML")
+                    # Один готовый edit - сумма выигрыша (если раунд был выигрышным)
+                    # и кнопка комиссии показываются игроку одновременно, без "мигания".
+                    await _safe_edit_text(
+                        call.message,
+                        final_row_text if final_row_text else EMOJI_END(),
+                        reply_markup=end_kb,
+                        parse_mode="HTML",
+                    )
 
                     game_data["closed"] = True
                     game_data["payout_done"] = True

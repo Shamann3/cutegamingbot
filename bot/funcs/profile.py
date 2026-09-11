@@ -1173,7 +1173,7 @@ async def _build_profile_caption_for_target(
         growth_fund_milestone_line = (
             f"<b><tg-emoji emoji-id='5474417568053745249'>🌱</tg-emoji> "
             f"Шкала Фонда Роста : {_profile_fmt_int(_gfm['progress'])}/{_profile_fmt_int(_gfm['target'])} кут</b>\n"
-            f"<code>{_gfm['bar']}</code> → 👑 Купон Возможностей"
+            f"<code>{_gfm['bar']}</code> → 👑 Купон Возможностей\n"
         )
 
     donated_line = ""

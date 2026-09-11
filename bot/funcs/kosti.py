@@ -851,34 +851,17 @@ async def _show_and_settle(game_id: int):
 
         winner_id = _pick_winner({int(k): int(v) for k, v in scores.items()})
         game['winner_id'] = winner_id
-        total_pot = bet * len(participants)
-        gain = total_pot - bet
 
         for uid in participants:
             if not await _has_funds(int(uid), bet):
                 await _abort_game_unlocked(game, game_id, "У кого-то из участников недостаточно средств.")
                 return
 
-        winf = "{:,.0f}".format(gain).replace(",", ".")
-        w_link = await create_user_link(
-            winner_id,
-            await db.get_firstname_by_user_id(winner_id),
-            await db.get_username_by_user_id(winner_id)
-        )
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Подробнее", callback_data=f"podrobneekostihui_{game_id}")]]
-        )
-        button_kosti[game_id]['keyboard_result'] = kb
-
-        text = f"<tg-emoji emoji-id='5262924479226473498'>🏆</tg-emoji> <b>{w_link}</b>"
-        if total_pot >= 1:
-            text += f"\n<tg-emoji emoji-id='5294026527850132517'>💲</tg-emoji> <b>Выигрыш {winf} кут</b>"
-
-        try:
-            await _safe_edit_game(game, text, kb)
-        except Exception as e:
-            print(f"[KOSTI][result edit] {e!r}")
-
+        # Итоговое сообщение НЕ показываем здесь заранее - иначе игрок сначала
+        # увидел бы сумму выигрыша ДО комиссии и без кнопки "Комиссия игры",
+        # а через долю секунды сообщение "мигнуло" бы на правильную сумму с
+        # кнопкой (см. _settle_saga ниже). Вместо этого всё считаем сразу и
+        # показываем результат ОДНИМ готовым сообщением - см. _settle_saga.
         asyncio.create_task(store_temp_game_data(str(game_id), participants, scores, winner_id))
 
         game['state'] = STATE_SETTLING

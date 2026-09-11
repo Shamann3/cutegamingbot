@@ -935,51 +935,23 @@ async def show_game_results(chat_id: int, game_id: int):
         sticker_message = await _call_with_flood_retry(_send_sticker, tag="sticker")
         if sticker_message is not None:
             sticker_message_id = sticker_message.message_id
-    except Exception as e:
-        print(f"[RULETKA] send_sticker error: {e}")
-
-    await asyncio.sleep(2)
-
-    total_pot = bet * len(participants)
-    formatted_total_pot = "{:,.0f}".format(max(total_pot - bet, 0)).replace(",", ".")
-    win_text = (
-        f"\n<tg-emoji emoji-id='5292064127227818330'>💰</tg-emoji> "
-        f"<b>Выигрыш {formatted_total_pot} кут</b>"
-    ) if total_pot > 0 else ""
-
-    first_name, username = await asyncio.gather(
-        db.get_firstname_by_user_id(winner_id),
-        db.get_username_by_user_id(winner_id),
-    )
-    name_link = await create_user_link(winner_id, first_name, username)
-    result_text = (
-        f"<tg-emoji emoji-id='5262906070996642883'>🏆</tg-emoji> "
-        f"<b>{name_link}</b> {winner_color}{win_text}"
-    )
-
-    try:
-        async def _send_result():
-            kwargs = dict(
-                chat_id=chat_id,
-                text=result_text,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-            if sticker_message_id:
-                kwargs["reply_to_message_id"] = sticker_message_id
-            return await bot1.send_message(**kwargs)
-
-        result_message = await _call_with_flood_retry(_send_result, tag="result")
-        if result_message is not None:
             try:
                 g = gamesruletka.get(game_id)
                 if g:
-                    g["result_message_id"] = result_message.message_id
+                    g["sticker_message_id"] = sticker_message_id
                     gamesruletka.save()
             except Exception as e:
-                print(f"[RULETKA] save result_message_id error: {e}")
+                print(f"[RULETKA] save sticker_message_id error: {e}")
     except Exception as e:
-        print(f"[RULETKA] send_message error: {e}")
+        print(f"[RULETKA] send_sticker error: {e}")
+
+    # Небольшая пауза после стикера - для драматургии. Текстовое сообщение с
+    # результатом здесь НЕ отправляем: иначе игрок сначала увидел бы сумму
+    # выигрыша ДО комиссии и без кнопки "Комиссия игры", а через долю секунды
+    # сообщение "мигнуло" бы на правильную сумму с кнопкой (см. _settle_saga
+    # ниже). Вместо этого всё считаем сразу и показываем результат ОДНИМ
+    # готовым сообщением - см. _settle_saga.
+    await asyncio.sleep(2)
 
 
 async def _settle_saga(game_id: int):
@@ -1098,35 +1070,45 @@ async def _settle_saga(game_id: int):
             game["winner_applied"] = True
             gamesruletka.save()
 
-            # Обновляем итоговое сообщение реальной (после комиссии) суммой выигрыша.
+            # Итоговое сообщение с результатом отправляется ОДИН раз - уже с
+            # финальной (после комиссии) суммой и кнопкой "Комиссия игры",
+            # без промежуточного "мигания".
             try:
-                result_message_id = game.get("result_message_id")
-                if result_message_id:
-                    winner_color = game.get("winner_color", "")
-                    first_name, username = await asyncio.gather(
-                        db.get_firstname_by_user_id(winner_id),
-                        db.get_username_by_user_id(winner_id),
+                sticker_message_id = game.get("sticker_message_id")
+                winner_color = game.get("winner_color", "")
+                first_name, username = await asyncio.gather(
+                    db.get_firstname_by_user_id(winner_id),
+                    db.get_username_by_user_id(winner_id),
+                )
+                name_link = await create_user_link(winner_id, first_name, username)
+                win_text = (
+                    f"\n<tg-emoji emoji-id='5292064127227818330'>💰</tg-emoji> "
+                    f"<b>Выигрыш {'{:,.0f}'.format(gain).replace(',', '.')} кут</b>"
+                ) if gain > 0 else ""
+                result_text = (
+                    f"<tg-emoji emoji-id='5262906070996642883'>🏆</tg-emoji> "
+                    f"<b>{name_link}</b> {winner_color}{win_text}"
+                )
+                result_kb = None
+                if gfund_result:
+                    from bot.funcs.growth_fund import build_commission_button
+                    result_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
+
+                async def _send_final_result():
+                    kwargs = dict(
+                        chat_id=chat_id,
+                        text=result_text,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                        reply_markup=result_kb,
                     )
-                    name_link = await create_user_link(winner_id, first_name, username)
-                    win_text = (
-                        f"\n<tg-emoji emoji-id='5292064127227818330'>💰</tg-emoji> "
-                        f"<b>Выигрыш {'{:,.0f}'.format(gain).replace(',', '.')} кут</b>"
-                    ) if gain > 0 else ""
-                    result_text = (
-                        f"<tg-emoji emoji-id='5262906070996642883'>🏆</tg-emoji> "
-                        f"<b>{name_link}</b> {winner_color}{win_text}"
-                    )
-                    result_kb = None
-                    if gfund_result:
-                        from bot.funcs.growth_fund import build_commission_button
-                        result_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
-                    await bot1.edit_message_text(
-                        chat_id=chat_id, message_id=result_message_id,
-                        text=result_text, parse_mode="HTML",
-                        disable_web_page_preview=True, reply_markup=result_kb,
-                    )
+                    if sticker_message_id:
+                        kwargs["reply_to_message_id"] = sticker_message_id
+                    return await bot1.send_message(**kwargs)
+
+                await _call_with_flood_retry(_send_final_result, tag="result")
             except Exception as e:
-                print(f"[RULETKA] edit result message error: {e}")
+                print(f"[RULETKA] send final result message error: {e}")
 
         game["state"] = STATE_SETTLED
         game["settling"] = False

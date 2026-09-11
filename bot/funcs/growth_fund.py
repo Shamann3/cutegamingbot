@@ -25,7 +25,7 @@
     payout = total_pot - (result["commission"] if result else 0)
     # ...обычная выплата payout победителю...
     # result сохрани в состояние игры, чтобы при показе результата добавить
-    # кнопку "Комиссия игры: −{result['commission']} Kut" (см. build_commission_button).
+    # кнопку "Комиссия игры: −{result['commission']} кут" (см. build_commission_button).
 
 Для PvP (банк формируют сами игроки, есть проигравшие) - используй
 apply_commission_pvp() вместо apply_commission() (см. её докстринг ниже).
@@ -66,7 +66,7 @@ def _clamp_level(level: Any) -> int:
 
 def get_milestone_target(tier: int) -> int:
     """
-    Порог (в Kut личного вклада), который нужно набрать на текущем "круге"
+    Порог (в кут личного вклада), который нужно набрать на текущем "круге"
     шкалы, чтобы получить награду. tier - 0-based номер круга (0 = первый
     порог из GROWTH_FUND_MILESTONE_THRESHOLDS, и так далее по списку, а после
     списка - шаг GROWTH_FUND_MILESTONE_STEP_AFTER_CAP за каждый следующий круг).
@@ -116,22 +116,30 @@ async def _advance_milestone(db, bot, user_id: int, *, tier: int, progress: int,
         new_tier += 1
         crossed += 1
 
-    if crossed > 0:
-        try:
-            await db.pool.execute(
-                """
-                UPDATE growth_fund_user_stats
-                SET milestone_tier = $2,
-                    milestone_progress = $3,
-                    milestone_coupons_earned = milestone_coupons_earned + $4,
-                    updated_at = NOW()
-                WHERE user_id = $1
-                """,
-                int(user_id), new_tier, new_progress, crossed,
-            )
-        except Exception as e:
-            _vdbg(f"[ФОНД РОСТА][ШКАЛА] update fail user={user_id}: {e!r}")
+    # ВАЖНО: прогресс сохраняем в БД ВСЕГДА, а не только когда порог
+    # пересечён - раньше (баг) запись обновлялась только при crossed > 0,
+    # из-за чего вся комиссия, которая НЕ дотягивала до пересечения порога
+    # за один раз, просто пропадала - шкала в профиле навсегда оставалась
+    # на 0, сколько бы игрок ни платил комиссии. UPSERT (а не UPDATE) - на
+    # случай, если строки в growth_fund_user_stats ещё вообще не было.
+    try:
+        await db.pool.execute(
+            """
+            INSERT INTO growth_fund_user_stats
+                (user_id, milestone_tier, milestone_progress, milestone_coupons_earned, updated_at)
+            VALUES ($1, $2, $3, $4, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                milestone_tier = $2,
+                milestone_progress = $3,
+                milestone_coupons_earned = growth_fund_user_stats.milestone_coupons_earned + $4,
+                updated_at = NOW()
+            """,
+            int(user_id), new_tier, new_progress, crossed,
+        )
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][ШКАЛА] update fail user={user_id}: {e!r}")
 
+    if crossed > 0:
         item_name = getattr(cfg, "GROWTH_FUND_MILESTONE_REWARD_ITEM", "Купон возможностей")
         qty_per_cross = int(getattr(cfg, "GROWTH_FUND_MILESTONE_REWARD_QTY", 1) or 1)
         try:
@@ -149,12 +157,10 @@ async def _advance_milestone(db, bot, user_id: int, *, tier: int, progress: int,
                     int(user_id),
                     (
                         "🎉 <b>Новая отметка на шкале Фонда Роста!</b>\n\n"
-                        f"Вы прошли шкалу личного вклада {crossed} {times_word} подряд — "
-                        f"прямо в инвентарь начислено <b>{qty_per_cross * crossed} «👑 Купон "
-                        f"Возможностей»</b> ({coupon_word}).\n\n"
-                        f"{bar} <code>{_fmt(new_progress)}/{_fmt(next_target)} Kut</code>\n"
-                        "<i>Каждая победа с комиссией двигает эту шкалу — следующая награда "
-                        "уже ближе, чем кажется.</i>\n\n"
+                        f"Начислено <b>{qty_per_cross * crossed} «👑 Купон Возможностей»</b> "
+                        f"({coupon_word}) — повышает шансы на победу в следующем раунде.\n\n"
+                        f"🌱 Шкала Фонда Роста : {_fmt(new_progress)}/{_fmt(next_target)} кут\n"
+                        f"<code>{bar}</code> → 👑 Купон Возможностей\n\n"
                         "<blockquote>💸 Использовать — команда «использовать»\n"
                         "🎁 Подарить или продать — обычный предмет инвентаря, как любой другой</blockquote>"
                     ),
@@ -584,14 +590,14 @@ async def _notify_owner_commission(
         lines.append(f"🎮 <b>PvE</b> · Игрок <code>{int(user_id)}</code>")
 
     lines.append("")
-    lines.append(f"Банк раунда: <b>{_fmt(pot)} Kut</b>")
-    lines.append(f"Комиссия: <b>{_fmt(commission)} Kut</b> <i>({pct_str}%)</i>")
+    lines.append(f"Банк раунда: <b>{_fmt(pot)} кут</b>")
+    lines.append(f"Комиссия: <b>{_fmt(commission)} кут</b> <i>({pct_str}%)</i>")
     lines.append("")
     lines.append(
         "<blockquote>"
-        f"💠 Резерв проекта: <b>{_fmt(result.get('to_chat_balance', 0))} Kut</b>\n"
-        f"🌱 Фонд Роста: <b>{_fmt(result.get('to_growth_fund', 0))} Kut</b>\n"
-        f"🚀 Развитие проекта: <b>{_fmt(result.get('to_project', 0))} Kut</b>"
+        f"💠 Резерв проекта: <b>{_fmt(result.get('to_chat_balance', 0))} кут</b>\n"
+        f"🌱 Фонд Роста: <b>{_fmt(result.get('to_growth_fund', 0))} кут</b>\n"
+        f"🚀 Развитие проекта: <b>{_fmt(result.get('to_project', 0))} кут</b>"
         "</blockquote>"
     )
 
@@ -603,7 +609,7 @@ async def _notify_owner_commission(
         lifetime_events = totals["total_events"]
 
     lines.append("")
-    lines.append(f"♾ <b>Всего с начала работы: {_fmt(lifetime_total)} Kut</b> <i>({_fmt(lifetime_events)} событий)</i>")
+    lines.append(f"♾ <b>Всего с начала работы: {_fmt(lifetime_total)} кут</b> <i>({_fmt(lifetime_events)} событий)</i>")
 
     kb = None
     try:
@@ -722,7 +728,7 @@ def build_commission_callback_data(result: Dict[str, Any]) -> str:
     Кодирует разбивку комиссии этого конкретного раунда прямо в callback_data
     (без похода в БД при клике - раунд уже посчитан и применён, тут только
     показ). Формат: gfund|pot|commission|to_chat|to_fund|to_project|is_pvp
-    Все значения - целые Kut, укладываются далеко в лимит 64 байта Telegram.
+    Все значения - целые кут, укладываются далеко в лимит 64 байта Telegram.
     is_pvp (0/1) - PvP-раунды показывают другой честный текст про долю
     "группы" (см. format_commission_explainer), т.к. она уходит не в
     группу, где сыграли, а в общий технический резерв (apply_commission_pvp).
@@ -736,7 +742,7 @@ def build_commission_callback_data(result: Dict[str, Any]) -> str:
 
 def build_commission_button(result: Dict[str, Any], *, callback_data: Optional[str] = None):
     """
-    Готовая инлайн-кнопка «Комиссия игры: −N Kut» под результатом раунда.
+    Готовая инлайн-кнопка «Комиссия игры: −N кут» под результатом раунда.
     callback_data можно не передавать - тогда соберётся автоматически через
     build_commission_callback_data (рекомендуемый способ, чтобы не собирать
     руками одну и ту же строку в каждом файле игры).
@@ -745,7 +751,7 @@ def build_commission_button(result: Dict[str, Any], *, callback_data: Optional[s
 
     amount = result["commission"]
     return InlineKeyboardButton(
-        text=f"Комиссия игры: −{amount} Kut",
+        text=f"Комиссия игры: −{amount} кут",
         callback_data=callback_data or build_commission_callback_data(result),
         style="primary",
         icon_custom_emoji_id=COMMISSION_BUTTON_ICON_ID,
@@ -765,11 +771,16 @@ def format_commission_explainer(
     lifetime_contrib: Optional[int] = None,
 ) -> str:
     """
-    Полный, честный разбор комиссии этого раунда - текст экрана-разъяснения
-    под кнопкой "Комиссия игры". Доля "chat_balance" ВСЕХ комиссий (и PvE, и
-    PvP) уходит в единый технический резерв проекта, а не в баланс группы,
-    где сыграли раунд - поэтому текст одинаково честен для обоих случаев
-    (см. apply_commission() и apply_commission_pvp() в этом же файле).
+    Короткий, понятный разбор комиссии ЭТОГО раунда - текст экрана-разъяснения
+    под кнопкой "Комиссия игры". Показывает игроку то, что касается лично
+    его: сколько удержано и его личный прогресс к "Купону Возможностей".
+    Внутреннюю разбивку (куда именно уходит комиссия внутри проекта) здесь
+    сознательно не показываем - игроку она не нужна, а для владельца проекта
+    та же информация есть в _notify_owner_commission и в экране статистики.
+
+    to_chat / to_fund / to_project / is_pvp приняты для обратной совместимости
+    вызова (build_commission_callback_data кодирует именно эти поля) - в
+    тексте сейчас не используются.
 
     milestone / lifetime_contrib - если переданы (см. handle_commission_callback,
     подтягивает live из БД по нажавшему кнопку), в текст добавляется блок
@@ -780,33 +791,13 @@ def format_commission_explainer(
     pct = (commission / pot * 100.0) if pot > 0 else 0.0
     pct_str = f"{pct:.1f}".rstrip("0").rstrip(".") if pct else "0"
 
-    if is_pvp:
-        level_note = (
-            "Ставки в этом раунде сделали сами игроки — тариф комиссии в PvP единый "
-            "для всех, независимо от группы."
-        )
-    else:
-        level_note = (
-            "Процент комиссии зависит от ★ уровня группы, где сыграли — чем выше "
-            "уровень, тем ниже комиссия для всех в ней. Куда уходят куты - не зависит "
-            "от группы: один резерв для всего проекта."
-        )
-
-    header = f"🌱 <b>Комиссия раунда — {_game_display(game)}</b>" if game else "🌱 <b>Комиссия раунда — открытый разбор</b>"
+    header = f"🌱 <b>Комиссия раунда — {_game_display(game)}</b>" if game else "🌱 <b>Комиссия раунда</b>"
 
     parts = [
         header,
         "",
-        f"Банк раунда: <b>{_fmt(pot)} Kut</b>",
-        f"Удержано: <b>−{_fmt(commission)} Kut</b> <i>({pct_str}% от банка)</i>",
-        "",
-        "<blockquote>"
-        f"💠 Резерв проекта — <b>{_fmt(to_chat)} Kut</b>\n"
-        f"🌱 Общий Фонд Роста — <b>{_fmt(to_fund)} Kut</b>\n"
-        f"🚀 Развитие проекта — <b>{_fmt(to_project)} Kut</b>"
-        "</blockquote>",
-        "",
-        f"<i>{level_note}</i>",
+        f"Банк раунда: <b>{_fmt(pot)} кут</b>",
+        f"Удержано: <b>−{_fmt(commission)} кут</b> <i>({pct_str}% от банка)</i>",
     ]
 
     if milestone:
@@ -815,25 +806,18 @@ def format_commission_explainer(
         target = int(milestone.get("target", 1))
         parts += [
             "",
-            "━━━━━━━━━━━━━━━━━━",
-            "🏆 <b>Ваш путь к «Купону Возможностей»</b>",
-            f"{bar} <code>{_fmt(progress)}/{_fmt(target)} Kut</code>",
-            "<i>Комиссия, которую Вы платите победами, засчитывается в эту шкалу — "
-            "дойдёте до отметки, и купон окажется прямо в инвентаре.</i>",
+            f"🌱 Шкала Фонда Роста : {_fmt(progress)}/{_fmt(target)} кут",
+            f"<code>{bar}</code> → 👑 Купон Возможностей",
+            "",
+            "<i>Купон повышает шансы на победу в следующем раунде — продолжайте "
+            "играть, следующая награда всё ближе.</i>",
         ]
 
     if lifetime_contrib is not None and int(lifetime_contrib) > 0:
         parts += [
             "",
-            f"За всё время Ваш вклад в Фонд Роста: <b>{_fmt(int(lifetime_contrib))} Kut</b>.",
+            f"За всё время внесено в Фонд Роста: <b>{_fmt(int(lifetime_contrib))} кут</b>.",
         ]
-
-    parts += [
-        "",
-        "<i>Никаких скрытых процентов и «случайных» множителей — всё видно здесь, "
-        "в один клик, при каждом раунде. Продолжайте играть: следующая награда уже "
-        "ближе, чем кажется.</i>",
-    ]
 
     return "\n".join(parts)
 
@@ -884,7 +868,7 @@ def _build_explainer_keyboard():
 
 async def handle_commission_callback(call, db=None) -> None:
     """
-    Обработчик клика по кнопке «Комиссия игры: −N Kut» - показывает полный,
+    Обработчик клика по кнопке «Комиссия игры: −N кут» - показывает полный,
     честный разбор комиссии именно этого раунда + (если передан db) живой
     прогресс личной шкалы игрока до "Купона Возможностей". Регистрируется
     в main.py (через обёртку, передающую db):
@@ -1205,7 +1189,7 @@ def format_commission_stats_text(stats: Dict[str, Any]) -> str:
     top_game_line = ""
     if top_game:
         top_game_commission = stats.get("top_game_commission", 0)
-        top_game_line = f"\n🏅 Лидер периода: {_game_display(top_game)} — <b>{_fmt(top_game_commission)} Kut</b>"
+        top_game_line = f"\n🏅 Лидер периода: {_game_display(top_game)} — <b>{_fmt(top_game_commission)} кут</b>"
 
     now_str = _dt.datetime.now().strftime("%H:%M:%S")
 
@@ -1213,16 +1197,16 @@ def format_commission_stats_text(stats: Dict[str, Any]) -> str:
         f"📊 <b>Статистика комиссии — {label}</b>\n"
         f"<i>Обновлено {now_str}</i>\n\n"
         f"Событий с комиссией: <b>{_fmt(events)}</b>\n"
-        f"Собрано за период: <b>{_fmt(commission)} Kut</b>{trend_line}\n"
-        f"Среднее за событие: <b>{_fmt(avg)} Kut</b>{top_game_line}\n\n"
+        f"Собрано за период: <b>{_fmt(commission)} кут</b>{trend_line}\n"
+        f"Среднее за событие: <b>{_fmt(avg)} кут</b>{top_game_line}\n\n"
         "<blockquote>"
-        f"💠 Резерв проекта — <b>{_fmt(to_chat)} Kut</b>\n"
-        f"🌱 Фонд Роста — <b>{_fmt(to_fund)} Kut</b>\n"
-        f"🚀 Развитие проекта — <b>{_fmt(to_project)} Kut</b>"
+        f"💠 Резерв проекта — <b>{_fmt(to_chat)} кут</b>\n"
+        f"🌱 Фонд Роста — <b>{_fmt(to_fund)} кут</b>\n"
+        f"🚀 Развитие проекта — <b>{_fmt(to_project)} кут</b>"
         "</blockquote>\n\n"
         "Разбивка по типу игр:\n"
-        f"🎮 PvE: <b>{_fmt(pve_c)} Kut</b> <i>({_fmt(pve_n)} раунд.)</i>\n"
-        f"⚔️ PvP: <b>{_fmt(pvp_c)} Kut</b> <i>({_fmt(pvp_n)} раунд.)</i>\n\n"
+        f"🎮 PvE: <b>{_fmt(pve_c)} кут</b> <i>({_fmt(pve_n)} раунд.)</i>\n"
+        f"⚔️ PvP: <b>{_fmt(pvp_c)} кут</b> <i>({_fmt(pvp_n)} раунд.)</i>\n\n"
         "<i>Навигация по периодам — кнопками ниже.</i>"
     )
 
