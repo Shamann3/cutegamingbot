@@ -874,6 +874,23 @@ async def tgslots(message: Message):
                 chat_balance = 0
 
             pay = min(profit_int, max(0, chat_balance))
+
+            # ВАЖНО: комиссия обязана списываться с ЛЮБОГО реального выигрыша,
+            # включая маскировочный выигрыш в 0demo-режиме - раньше здесь её
+            # не было (тот же баг, что был в bot/games/tank.py), хотя у
+            # обычного demo-выигрыша ниже она уже применялась.
+            gfund_result = None
+            if pay > 0:
+                try:
+                    from bot.funcs.growth_fund import apply_commission
+                    gfund_result = await apply_commission(
+                        db, bot1, chat_id=chat_id, user_id=user_id, game="slots", pot=pay,
+                    )
+                    if gfund_result:
+                        pay = max(0, pay - gfund_result["commission"])
+                except Exception as e:
+                    _sdbg("GFUND", f"apply_commission(0demo_mask) error: {e}")
+
             if pay > 0:
                 await _chat_minus(chat_id, pay)
                 await _user_plus(user_id, pay)
@@ -904,10 +921,14 @@ async def tgslots(message: Message):
                 style="default",
                 icon_custom_emoji_id="5453884647966524953",
             )
+            keyboard_rows = [[button]]
+            if gfund_result:
+                from bot.funcs.growth_fund import build_commission_button
+                keyboard_rows.append([build_commission_button(gfund_result)])
             await _safe_edit_text(
                 msg_sent,
                 initial_emoji,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[button]]),
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_rows),
                 parse_mode="HTML",
             )
             return

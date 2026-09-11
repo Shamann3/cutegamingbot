@@ -827,6 +827,24 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                     else:
                         chat_bal = await _chat_get_balance(chat_id)
                         pay = min(profit, max(0, chat_bal))
+
+                        # ВАЖНО: комиссия обязана списываться с ЛЮБОГО реального
+                        # выигрыша, включая полное прохождение (10-й ряд) в обычном
+                        # режиме - раньше здесь её не было (тот же баг, что был в
+                        # bot/games/tank.py), хотя у демо-режима выше и у ручного
+                        # вывода она уже применялась.
+                        gfund_result = None
+                        if pay > 0:
+                            try:
+                                from bot.funcs.growth_fund import apply_commission
+                                gfund_result = await apply_commission(
+                                    db, bot1, chat_id=chat_id, user_id=owner_id, game="plate", pot=pay,
+                                )
+                                if gfund_result:
+                                    pay = max(0, pay - gfund_result["commission"])
+                            except Exception as e:
+                                print(f"[PLATE][GFUND][EXC] apply_commission(full_normal) error: {e}")
+
                         if pay > 0:
                             await _chat_debit_best_effort(chat_id, pay)
                             await _user_delta(owner_id, +pay)
@@ -834,7 +852,12 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                             await db.cutehistory_plus(owner_id, pay, "+ плиты")
                             await db.update_user_winamount(owner_id, pay)
                             await db.update_user_wins(owner_id, 1, bot1, ref_coin)
-                        await _safe_edit_text(call.message, f"<b>{visual_emoji} 10-й ряд | {_fmt_int(pay)} кут</b>")
+
+                        gfund_kb = None
+                        if gfund_result:
+                            from bot.funcs.growth_fund import build_commission_button
+                            gfund_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
+                        await _safe_edit_text(call.message, f"<b>{visual_emoji} 10-й ряд | {_fmt_int(pay)} кут</b>", reply_markup=gfund_kb)
                     game_data["closed"] = True; game_data["payout_done"] = True
                 else:
                     game_data["current_row"] = current_row + 1

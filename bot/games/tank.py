@@ -704,6 +704,25 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
                     else:
                         chat_bal = await _chat_get_balance(chat_id)
                         pay = min(profit, max(0, chat_bal))
+
+                        # ВАЖНО: комиссия игры должна списываться с ЛЮБОГО реального
+                        # выигрыша, включая полное прохождение (10-й ряд) в обычном
+                        # режиме - раньше здесь её не было (см. отчёт пользователя:
+                        # "🍀 10-й ряд | 210 кут" без кнопки "Комиссия игры"), хотя
+                        # у демо-режима и ручного вывода ("Закончить игру") она уже
+                        # применялась. Логика 1-в-1 как там.
+                        gfund_result = None
+                        if pay > 0:
+                            try:
+                                from bot.funcs.growth_fund import apply_commission
+                                gfund_result = await apply_commission(
+                                    db, bot1, chat_id=chat_id, user_id=owner_id, game="tank", pot=pay,
+                                )
+                                if gfund_result:
+                                    pay = max(0, pay - gfund_result["commission"])
+                            except Exception as e:
+                                print(f"[TANK][GFUND][EXC] apply_commission(full_normal) error: {e}")
+
                         if pay > 0:
                             await _chat_minus(chat_id, pay)
                             await _user_plus(owner_id, pay)
@@ -711,7 +730,16 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
                             await db.cutehistory_plus(owner_id, pay, "+ башня")
                             await db.update_user_winamount(owner_id, pay)
                             await db.update_user_wins(owner_id, 1, bot1, ref_coin)
-                        await _safe_edit_text(call.message, f"<b><tg-emoji emoji-id='5395325195542078574'>🍀</tg-emoji> 10-й ряд | {_fmt_int(pay)} кут</b>")
+
+                        gfund_kb = None
+                        if gfund_result:
+                            from bot.funcs.growth_fund import build_commission_button
+                            gfund_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
+                        await _safe_edit_text(
+                            call.message,
+                            f"<b><tg-emoji emoji-id='5395325195542078574'>🍀</tg-emoji> 10-й ряд | {_fmt_int(pay)} кут</b>",
+                            reply_markup=gfund_kb,
+                        )
                     game_data["closed"] = True
                     await _finalize_game(owner_id, msg_id, game_data)
                     return
