@@ -1,0 +1,674 @@
+/* ============================================================================
+   ATELIER — единый визуальный мир админ-панели
+   ----------------------------------------------------------------------------
+   Референс: тёмный premium-dashboard, мягкие карточки, акцент-подсветка
+   из палитры сайдбара, пружинящее движение как на iOS.
+   Подключается ПОСЛЕ elite.css и дотягивает ВСЕ вкладки одним каскадом.
+   ============================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --e-void: #000000;
+  --e-surface-0: #0e0e0e;
+  --e-surface-1: #141414;
+  --e-surface-2: #1a1a1a;
+  --e-surface-3: #222222;
+
+  --e-line: rgba(255, 255, 255, 0.07);
+  --e-line-strong: rgba(255, 255, 255, 0.12);
+  --e-line-focus: rgba(var(--e-accent-rgb), 0.55);
+
+  --e-text: #f5f5f5;
+  --e-text-2: #c4c4c8;
+  --e-text-3: #8a8a92;
+  --e-text-4: #5c5c66;
+
+  --e-r-card: 18px;
+  --e-r-block: 14px;
+  --e-r-input: 12px;
+
+  --e-shadow-card:
+    0 1px 0 0 rgba(255, 255, 255, 0.045) inset,
+    0 18px 40px -18px rgba(0, 0, 0, 0.85);
+  --e-shadow-raised:
+    0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+    0 24px 50px -16px rgba(0, 0, 0, 0.92),
+    0 0 0 1px rgba(var(--e-accent-rgb), 0.08);
+
+  --e-font: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --e-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --e-ease-spring: cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+
+/* ---------- База ---------- */
+
+html,
+body,
+#root,
+.panel-shell,
+.auth-screen {
+  font-family: var(--e-font) !important;
+  background: var(--e-void) !important;
+  color: var(--e-text-2);
+}
+
+::selection {
+  background: rgba(var(--e-accent-rgb), 0.35);
+  color: #fff;
+}
+
+.panel-shell::before {
+  background:
+    radial-gradient(ellipse 50% 42% at 6% 96%, rgba(var(--e-accent-rgb), 0.14), transparent 72%),
+    radial-gradient(ellipse 36% 28% at 94% 4%, rgba(var(--e-accent-rgb), 0.07), transparent 68%) !important;
+}
+
+/* ---------- Карточки и поверхности всех вкладок ---------- */
+
+.panel-shelf,
+.auth-card,
+.admin-modal,
+.elite-block,
+.grp-panel,
+.grp-card,
+.ach-page > section,
+.gbl-page > section,
+.panel-users .panel-users-card,
+.support-section .support-card,
+.analytics-section .analytics-card,
+.chs-root .chs-card,
+.arc-shell .arc-card,
+.panel-content .content-card,
+.panel-economy .eco-card,
+.panel-market .market-card,
+.panel-farm .farm-card,
+.panel-logs .logs-card,
+.panel-settings .settings-card,
+.panel-events .events-card,
+.panel-security .sec-card,
+.staff-section .staff-card,
+article.panel-shelf,
+.panel-broadcast-wrap > section,
+.panel-broadcast > section {
+  border: 1px solid var(--e-line) !important;
+  border-radius: var(--e-r-card) !important;
+  background: linear-gradient(180deg, #121212 0%, #0c0c0c 100%) !important;
+  box-shadow: var(--e-shadow-card) !important;
+  transition:
+    border-color var(--e-med) var(--e-ease),
+    box-shadow var(--e-med) var(--e-ease),
+    transform var(--e-med) var(--e-ease-spring);
+}
+
+.panel-shelf:hover,
+.grp-card:hover,
+.elite-block:hover {
+  border-color: rgba(var(--e-accent-rgb), 0.22) !important;
+}
+
+/* Quiet KPI — тоже карточки, как на референсе */
+.panel-shelf-quiet {
+  border: 1px solid var(--e-line) !important;
+  border-radius: var(--e-r-card) !important;
+  background: linear-gradient(165deg, #121212 0%, #0b0b0b 100%) !important;
+  box-shadow: var(--e-shadow-card) !important;
+  padding: 1rem 1.05rem !important;
+}
+
+.panel-shelf-sidebar {
+  background:
+    linear-gradient(180deg, rgba(var(--e-accent-rgb), 0.05), transparent 28%),
+    #0a0a0a !important;
+  border: 1px solid var(--e-line) !important;
+  box-shadow: var(--e-shadow-raised) !important;
+  padding: 1rem 0.75rem 0.75rem !important;
+}
+
+/* ---------- Типографика ---------- */
+
+.sec-title,
+.auth-title,
+.panel-profile-name,
+.elite-greeting-title,
+.admin-modal-title,
+.rules-gate-title,
+.panel-page-title,
+.grp-title,
+.ach-title,
+.gbl-title,
+.panel-brand-name {
+  font-family: var(--e-font) !important;
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: var(--e-text) !important;
+  letter-spacing: -0.03em !important;
+  font-weight: 700 !important;
+}
+
+.sec-title,
+.panel-page-title,
+.grp-title {
+  font-size: clamp(1.35rem, 1.1rem + 0.6vw, 1.7rem) !important;
+  line-height: 1.15 !important;
+}
+
+.sec-subtitle,
+.panel-page-lead,
+.grp-sub,
+.elite-greeting-sub {
+  color: var(--e-text-3) !important;
+  font-size: 0.9rem !important;
+  line-height: 1.45 !important;
+}
+
+.panel-shelf-label,
+.elite-eyebrow,
+.grp-stat-label,
+.grp-kicker,
+.panel-nav-group-label {
+  font-size: 0.68rem !important;
+  font-weight: 650 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: var(--e-text-3) !important;
+}
+
+.panel-stat-value,
+.elite-metric,
+.grp-stat-value {
+  font-family: var(--e-font) !important;
+  font-weight: 750 !important;
+  font-variant-numeric: tabular-nums !important;
+  letter-spacing: -0.035em !important;
+  color: var(--e-text) !important;
+  font-size: clamp(1.35rem, 1.1rem + 0.8vw, 1.85rem) !important;
+}
+
+/* ---------- Навигация ---------- */
+
+.panel-nav-item {
+  border-radius: 12px !important;
+  transition:
+    background var(--e-fast) var(--e-ease),
+    color var(--e-fast) var(--e-ease),
+    box-shadow var(--e-med) var(--e-ease),
+    transform var(--e-fast) var(--e-ease-spring) !important;
+}
+
+.panel-nav-item:hover:not(.panel-nav-item-active) {
+  background: var(--e-surface-2) !important;
+  transform: translateX(2px);
+}
+
+.panel-nav-item-active {
+  background: var(--e-accent-soft) !important;
+  box-shadow:
+    0 0 0 1px var(--e-accent-line),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 24px -10px rgba(var(--e-accent-rgb), 0.45) !important;
+}
+
+.panel-nav-item-active .panel-nav-label,
+.panel-nav-item-active .panel-nav-icon {
+  color: var(--e-accent-bright) !important;
+}
+
+.panel-nav-item:active {
+  transform: scale(0.97);
+}
+
+/* ---------- Кнопки ---------- */
+
+.elite-btn,
+button.elite-btn,
+.panel-logout-btn,
+.panel-perf-btn {
+  border-radius: 999px !important;
+  font-family: var(--e-font) !important;
+  font-weight: 600 !important;
+  transition:
+    transform var(--e-fast) var(--e-ease-spring),
+    background var(--e-fast) var(--e-ease),
+    border-color var(--e-fast) var(--e-ease),
+    box-shadow var(--e-med) var(--e-ease) !important;
+}
+
+.elite-btn:hover:not(:disabled),
+.panel-perf-btn:hover {
+  transform: translateY(-1px);
+}
+
+.elite-btn:active:not(:disabled),
+.panel-logout-btn:active,
+.panel-perf-btn:active {
+  transform: scale(0.96) !important;
+}
+
+.elite-btn-primary,
+button.elite-btn-primary {
+  background: var(--e-accent) !important;
+  color: #0a0a0a !important;
+  border-color: transparent !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.25) inset,
+    0 10px 28px -12px rgba(var(--e-accent-rgb), 0.65) !important;
+}
+
+.elite-btn-primary:hover:not(:disabled) {
+  background: var(--e-accent-bright) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.3) inset,
+    0 14px 32px -10px rgba(var(--e-accent-rgb), 0.75) !important;
+}
+
+/* ---------- Поля ввода ---------- */
+
+input:not([type='range']):not([type='checkbox']):not([type='radio']),
+select,
+textarea,
+.grp-search input,
+.grp-field input,
+.grp-field select {
+  border-radius: var(--e-r-input) !important;
+  border: 1px solid var(--e-line-strong) !important;
+  background: #0a0a0a !important;
+  color: var(--e-text) !important;
+  font-family: var(--e-font) !important;
+  transition:
+    border-color var(--e-fast) var(--e-ease),
+    box-shadow var(--e-fast) var(--e-ease) !important;
+}
+
+input:not([type='range']):focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: var(--e-accent-line) !important;
+  box-shadow: 0 0 0 3px var(--e-accent-soft) !important;
+}
+
+/* ---------- Таблицы ---------- */
+
+table,
+.grp-table,
+.elite-table,
+.users-table,
+.logs-table,
+.staff-table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  font-family: var(--e-font) !important;
+}
+
+th {
+  color: var(--e-text-3) !important;
+  font-weight: 600 !important;
+  font-size: 0.72rem !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  background: #101010 !important;
+  border-bottom: 1px solid var(--e-line) !important;
+}
+
+td {
+  color: var(--e-text-2) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+tr {
+  transition: background var(--e-fast) var(--e-ease);
+}
+
+tr:hover td {
+  background: rgba(var(--e-accent-rgb), 0.04) !important;
+}
+
+/* ---------- Табы / пилюли ---------- */
+
+.grp-tab,
+.grp-subtab,
+.elite-tab,
+.panel-tab,
+.ach-tab,
+.gbl-tab,
+.sec-tab,
+.sr-tab,
+.pu-tab,
+.sys-tab,
+.analytics-tab,
+.panel-content-tab,
+.panel-logs-tab,
+.panel-broadcast-tab,
+.bq-tab,
+.arc-tab,
+.case-tab,
+.auth-tab,
+.pa-role-tab {
+  border-radius: 999px !important;
+  transition:
+    background var(--e-fast) var(--e-ease),
+    color var(--e-fast) var(--e-ease),
+    border-color var(--e-fast) var(--e-ease),
+    transform var(--e-fast) var(--e-ease-spring),
+    box-shadow var(--e-med) var(--e-ease) !important;
+}
+
+.grp-tab-active,
+.grp-subtab-active,
+.elite-tab-active,
+.panel-tab-active,
+.ach-tab-active,
+.gbl-tab-active,
+.sec-tab-active,
+.sr-tab-active,
+.pu-tab-active,
+.sys-tab-active,
+.analytics-tab-active,
+.panel-content-tab-active,
+.panel-logs-tab-active,
+.panel-broadcast-tab-active,
+.bq-tab-active,
+.arc-tab-active,
+.case-tab-active,
+.auth-tab-active,
+.pa-role-tab-active {
+  background: var(--e-accent-soft) !important;
+  color: var(--e-accent-bright) !important;
+  border-color: var(--e-accent-line) !important;
+  box-shadow: 0 0 20px -8px rgba(var(--e-accent-rgb), 0.5) !important;
+}
+
+/* Контейнеры табов */
+.grp-tabs,
+.sec-tabs,
+.sys-tabs,
+.analytics-tabs,
+.panel-content-tabs,
+.panel-logs-tabs,
+.panel-broadcast-tabs,
+.bq-tabs,
+.gbl-tabs,
+.sr-tabs,
+.pu-tabs,
+.arc-main-tabs,
+.arc-tabs,
+.case-tabs,
+.auth-tabs {
+  gap: 0.4rem !important;
+}
+
+/* Статус-пилюли */
+.status-pill,
+.pu-status,
+.badge,
+.tag-pill,
+.case-status,
+.support-status {
+  border-radius: 999px !important;
+  border: 1px solid var(--e-line) !important;
+  background: var(--e-surface-1) !important;
+  font-weight: 600 !important;
+}
+
+/* Иконки шапки */
+.elite-icon-btn {
+  border-radius: 12px !important;
+  border: 1px solid var(--e-line) !important;
+  background: #0a0a0a !important;
+  transition:
+    transform var(--e-fast) var(--e-ease-spring),
+    border-color var(--e-fast) var(--e-ease),
+    box-shadow var(--e-med) var(--e-ease) !important;
+}
+.elite-icon-btn:hover {
+  border-color: var(--e-accent-line) !important;
+  box-shadow: 0 0 18px -6px rgba(var(--e-accent-rgb), 0.45) !important;
+  transform: translateY(-1px);
+}
+.elite-bell-dot {
+  background: var(--e-accent) !important;
+  box-shadow: 0 0 10px rgba(var(--e-accent-rgb), 0.85) !important;
+}
+
+/* Поиск в шапке */
+.elite-search {
+  border-radius: 999px !important;
+  border: 1px solid var(--e-line) !important;
+  background: #0a0a0a !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+.elite-search:focus-within {
+  border-color: var(--e-accent-line) !important;
+  box-shadow: 0 0 0 3px var(--e-accent-soft) !important;
+}
+.elite-search-results {
+  border-radius: var(--e-r-block) !important;
+  border: 1px solid var(--e-line) !important;
+  background: #0e0e0e !important;
+  box-shadow: var(--e-shadow-raised) !important;
+  animation: atelier-modal-in 0.28s var(--e-ease) both;
+}
+
+/* Бренд-слот в шапке */
+.elite-brand-slot-ring {
+  border-color: rgba(var(--e-accent-rgb), 0.35) !important;
+  box-shadow: 0 0 20px rgba(var(--e-accent-rgb), 0.25) !important;
+}
+
+/* ---------- Topbar ---------- */
+
+.elite-topbar,
+.panel-topbar {
+  border-radius: var(--e-r-card) !important;
+  border: 1px solid var(--e-line) !important;
+  background: linear-gradient(180deg, #121212, #0c0c0c) !important;
+  box-shadow: var(--e-shadow-card) !important;
+}
+
+.elite-search input,
+.panel-search input {
+  border-radius: 999px !important;
+  background: #0a0a0a !important;
+}
+
+/* ---------- Скролл контента вкладок ---------- */
+
+.panel-layout > .panel-shelf-page,
+.panel-layout > .panel-security,
+.panel-layout > .panel-users,
+.panel-layout > .panel-accounts,
+.panel-layout > .panel-economy,
+.panel-layout > .panel-market,
+.panel-layout > .panel-farm,
+.panel-layout > .panel-content,
+.panel-layout > .panel-broadcast,
+.panel-layout > .panel-broadcast-wrap,
+.panel-layout > .panel-logs,
+.panel-layout > .panel-settings,
+.panel-layout > .panel-events,
+.panel-layout > .analytics-section,
+.panel-layout > .support-section,
+.panel-layout > .chs-root,
+.panel-layout > .arc-shell,
+.panel-layout > .ach-page,
+.panel-layout > .gbl-page,
+.panel-layout > .grp-page {
+  animation: atelier-page-in 0.42s var(--e-ease) both;
+}
+
+@keyframes atelier-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* ---------- Dashboard KPI / pulse ---------- */
+
+.panel-stat-hint {
+  color: var(--e-text-4) !important;
+  font-size: 0.75rem !important;
+}
+
+.panel-live-dot {
+  background: var(--e-accent) !important;
+  box-shadow: 0 0 10px rgba(var(--e-accent-rgb), 0.8) !important;
+}
+
+.panel-server-ok {
+  color: var(--e-accent-bright) !important;
+}
+
+/* ---------- Mobile bottom bar ---------- */
+
+.panel-mobile-bottombar {
+  border-top: 1px solid var(--e-line) !important;
+  background: rgba(8, 8, 8, 0.92) !important;
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.panel-mobile-tab-active {
+  color: var(--e-accent-bright) !important;
+}
+
+.panel-mobile-tab-active .panel-mobile-tab-icon {
+  color: var(--e-accent-bright) !important;
+  filter: drop-shadow(0 0 10px rgba(var(--e-accent-rgb), 0.6));
+}
+
+.panel-mobile-overlay {
+  background: rgba(0, 0, 0, 0.55) !important;
+  backdrop-filter: blur(4px);
+}
+
+.panel-sidebar-mobile-open {
+  box-shadow:
+    0 -8px 40px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(var(--e-accent-rgb), 0.15) !important;
+}
+
+/* ---------- Модалки ---------- */
+
+.admin-modal {
+  border: 1px solid rgba(var(--e-accent-rgb), 0.2) !important;
+  box-shadow:
+    var(--e-shadow-raised),
+    0 0 60px rgba(var(--e-accent-rgb), 0.12) !important;
+  animation: atelier-modal-in 0.35s var(--e-ease-spring) both;
+}
+
+@keyframes atelier-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- Скроллбары ---------- */
+
+* {
+  scrollbar-color: rgba(var(--e-accent-rgb), 0.45) rgba(255, 255, 255, 0.04) !important;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(var(--e-accent-rgb), 0.4) !important;
+  border-radius: 999px;
+}
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-layout > .panel-shelf-page,
+  .panel-layout > .panel-security,
+  .panel-layout > .panel-users,
+  .panel-layout > .panel-accounts,
+  .panel-layout > .panel-economy,
+  .panel-layout > .panel-market,
+  .panel-layout > .panel-farm,
+  .panel-layout > .panel-content,
+  .panel-layout > .panel-broadcast,
+  .panel-layout > .panel-broadcast-wrap,
+  .panel-layout > .panel-logs,
+  .panel-layout > .panel-settings,
+  .panel-layout > .panel-events,
+  .panel-layout > .analytics-section,
+  .panel-layout > .support-section,
+  .panel-layout > .chs-root,
+  .panel-layout > .arc-shell,
+  .panel-layout > .ach-page,
+  .panel-layout > .gbl-page,
+  .panel-layout > .grp-page,
+  .admin-modal {
+    animation: none !important;
+  }
+}
+
+/* ---------- Dashboard pulse ---------- */
+
+.panel-pulse-hero {
+  background:
+    radial-gradient(ellipse 70% 80% at 85% 50%, rgba(var(--e-accent-rgb), 0.12), transparent 60%),
+    linear-gradient(180deg, #121212 0%, #0c0c0c 100%) !important;
+  border-color: rgba(var(--e-accent-rgb), 0.18) !important;
+}
+
+.pulse-hero-value {
+  color: var(--e-text) !important;
+  font-family: var(--e-font) !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.04em !important;
+}
+
+.pulse-hero-wave-trace {
+  stroke: var(--e-accent) !important;
+  filter: drop-shadow(0 0 6px rgba(var(--e-accent-rgb), 0.65));
+}
+
+.pulse-hero-eyebrow {
+  color: var(--e-accent-bright) !important;
+}
+
+/* ---------- Page layout breathing room ---------- */
+
+.panel-layout {
+  gap: 0.75rem !important;
+}
+
+.panel-layout-dashboard {
+  gap: 0.75rem !important;
+}
+
+/* Charts / canvases stay dark */
+canvas,
+.recharts-wrapper,
+.online-analytics-chart {
+  filter: none;
+}
+
+@media (max-width: 860px) {
+  .panel-shelf-quiet,
+  .panel-shelf,
+  .grp-panel,
+  .grp-card {
+    border-radius: 16px !important;
+  }
+
+  .sec-title,
+  .panel-page-title,
+  .grp-title {
+    font-size: 1.28rem !important;
+  }
+}

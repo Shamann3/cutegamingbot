@@ -132,7 +132,6 @@ export default function EliteTopbar({
             <span className="elite-greeting-kicker">{greeting}, {firstName}</span>
             <h1 className="elite-greeting-title">
               С возвращением
-              <span className="elite-wave" aria-hidden="true">👋</span>
             </h1>
           </>
         )}

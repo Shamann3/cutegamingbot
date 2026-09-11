@@ -48,14 +48,15 @@ function Stat({ label, value, hint, delay = 0 }) {
   )
 }
 
-function Meter({ label, value = 0, tone = 'mint' }) {
-  const v = Math.max(0, Math.min(100, Number(value) || 0))
+function Meter({ label, display, hint, fill = 0, tone = 'mint' }) {
+  const v = Math.max(0, Math.min(100, Number(fill) || 0))
   return (
     <div className="grp-meter">
       <div className="grp-meter-head">
         <span>{label}</span>
-        <strong>{Math.round(v)}%</strong>
+        <strong>{display}</strong>
       </div>
+      {hint ? <div className="grp-meter-hint">{hint}</div> : null}
       <div className="grp-meter-track">
         <div className={`grp-meter-fill grp-meter-${tone}`} style={{ width: `${v}%` }} />
       </div>
@@ -153,7 +154,7 @@ const MUTE_PRESETS = [
   { label: '24ч', h: 24 },
   { label: '3д', h: 72 },
   { label: '7д', h: 168 },
-  { label: '∞', h: 0 },
+  { label: 'навсегда', h: 0 },
 ]
 
 export default function GroupsStudioSection() {
@@ -305,10 +306,9 @@ export default function GroupsStudioSection() {
     <div className="grp-page">
       <header className="grp-hero">
         <div className="grp-hero-glow" aria-hidden />
-        <p className="grp-kicker">Creator studio</p>
         <h1 className="grp-title">Группы</h1>
         <p className="grp-sub">
-          Полные данные чата, экономика бч, дом проекта, активность и модерация — в одной карточке.
+          Полные данные чата: баланс, участники, комиссии, дом проекта, активность и модерация.
         </p>
         <div className="grp-hero-stats">
           <Stat label="Чатов в базе" value={fmt(overview?.chats_total)} delay={0} />
@@ -376,11 +376,12 @@ export default function GroupsStudioSection() {
               <>
                 <div className="grp-detail-head">
                   <div>
-                    <p className="grp-kicker">
-                      {detail.stars} · scale {detail.scale_score}
-                      {detail.gbl?.badge_title ? ` · ${detail.gbl.badge_title}` : ''}
-                    </p>
                     <h2 className="grp-detail-title">{chat.name}</h2>
+                    <p className="grp-help" style={{ marginBottom: '.45rem' }}>
+                      {detail.stars}
+                      {detail.gbl?.badge_title ? ` · ${detail.gbl.badge_title}` : ''}
+                      {detail.scale_score != null ? ` · сила ${detail.scale_score}` : ''}
+                    </p>
                     <div className="grp-id-row">
                       <code>{chat.chat_id}</code>
                       <Chip onClick={() => copyText(chat.chat_id)}>копировать id</Chip>
@@ -410,12 +411,48 @@ export default function GroupsStudioSection() {
                 </div>
 
                 <div className="grp-meters">
-                  <Meter label="Баланс" value={bars.balance} tone="mint" />
-                  <Meter label="Комиссии" value={bars.commission} tone="gold" />
-                  <Meter label="Дом" value={bars.project} tone="rose" />
-                  <Meter label="Активность" value={bars.activity} tone="sky" />
-                  <Meter label="Участники" value={bars.members} tone="violet" />
-                  <Meter label="Уровень" value={bars.level} tone="star" />
+                  <Meter
+                    label="Баланс группы"
+                    display={`${fmt(chat.chatbalance)} кут`}
+                    hint="бч"
+                    fill={bars.balance}
+                    tone="mint"
+                  />
+                  <Meter
+                    label="Комиссии"
+                    display={`${fmt(fund?.commission_sum)} кут`}
+                    hint="за всё время"
+                    fill={bars.commission}
+                    tone="gold"
+                  />
+                  <Meter
+                    label="Дом проекта"
+                    display={`${fmt(fund?.to_project_sum)} кут`}
+                    hint="с этой группы"
+                    fill={bars.project}
+                    tone="rose"
+                  />
+                  <Meter
+                    label="Активность"
+                    display={detail.activity?.messages_30d != null ? `${fmt(detail.activity.messages_30d)} сообщ.` : '—'}
+                    hint="за 30 дней"
+                    fill={bars.activity}
+                    tone="sky"
+                  />
+                  <Meter
+                    label="Участники"
+                    display={detail.members != null ? fmt(detail.members) : '—'}
+                    hint="в Telegram"
+                    fill={bars.members}
+                    tone="violet"
+                  />
+                  <Meter
+                    label="Уровень"
+                    display={stars(chat.level)}
+                    hint={detail.gbl?.badge_title || `★${chat.level}`}
+                    fill={bars.level}
+                    tone="star"
+                  />
                 </div>
 
                 <nav className="grp-subtabs">
@@ -435,18 +472,18 @@ export default function GroupsStudioSection() {
                   {sub === 'overview' && (
                     <>
                       <div className="grp-stat-grid">
-                        <Stat label="Баланс группы" value={fmt(chat.chatbalance)} hint="бч" />
+                        <Stat label="Баланс группы" value={fmt(chat.chatbalance)} hint="кут" />
                         <Stat label="Уровень" value={stars(chat.level)} hint={detail.gbl?.stars_label || ''} />
-                        <Stat label="Комиссии ∞" value={fmt(fund?.commission_sum)} />
-                        <Stat label="Дом проекта ∞" value={fmt(fund?.to_project_sum)} />
-                        <Stat label="Комиссии 7д" value={fmt(fund?.last_7d?.commission)} />
-                        <Stat label="Дом 7д" value={fmt(fund?.last_7d?.to_project)} />
-                        <Stat label="Комиссии 30д" value={fmt(fund?.last_30d?.commission)} />
-                        <Stat label="Дом 30д" value={fmt(fund?.last_30d?.to_project)} />
-                        <Stat label="Фонд роста" value={fmt(fund?.pool_balance)} hint={`+${fmt(fund?.pool_total_ever)} ever`} />
-                        <Stat label="В бч из комиссий" value={fmt(fund?.to_chat_sum)} />
-                        <Stat label="Ср. комиссия" value={fmt(fund?.avg_commission, 2)} />
-                        <Stat label="Событий ledger" value={fmt(fund?.events)} />
+                        <Stat label="Комиссии за всё время" value={fmt(fund?.commission_sum)} hint="кут" />
+                        <Stat label="В дом проекта" value={fmt(fund?.to_project_sum)} hint="за всё время" />
+                        <Stat label="Комиссии за 7 дней" value={fmt(fund?.last_7d?.commission)} />
+                        <Stat label="В дом за 7 дней" value={fmt(fund?.last_7d?.to_project)} />
+                        <Stat label="Комиссии за 30 дней" value={fmt(fund?.last_30d?.commission)} />
+                        <Stat label="В дом за 30 дней" value={fmt(fund?.last_30d?.to_project)} />
+                        <Stat label="Фонд роста" value={fmt(fund?.pool_balance)} hint={`всего накоплено ${fmt(fund?.pool_total_ever)}`} />
+                        <Stat label="Вернулось в баланс группы" value={fmt(fund?.to_chat_sum)} />
+                        <Stat label="Средняя комиссия" value={fmt(fund?.avg_commission, 2)} />
+                        <Stat label="Игровых событий" value={fmt(fund?.events)} />
                       </div>
                       {detail.telegram?.description ? (
                         <div className="grp-card">
@@ -456,22 +493,22 @@ export default function GroupsStudioSection() {
                       ) : null}
                       <div className="grp-two">
                         <div className="grp-card">
-                          <h3 className="grp-card-title">GBL / ставки</h3>
+                          <h3 className="grp-card-title">Уровень и ставки</h3>
                           <p className="grp-help">
-                            Кап: {detail.gbl?.stake_cap_effective ?? detail.gbl?.stake_cap_base ?? '∞'}
-                            {detail.gbl?.next_price != null ? ` · след. ★ = ${fmt(detail.gbl.next_price)} ⭐` : ''}
-                            {detail.gbl?.enabled === false ? ' · выключено' : ''}
+                            Лимит ставки: {detail.gbl?.stake_cap_effective ?? detail.gbl?.stake_cap_base ?? 'без лимита'}
+                            {detail.gbl?.next_price != null ? ` · следующий уровень = ${fmt(detail.gbl.next_price)} ⭐` : ''}
+                            {detail.gbl?.enabled === false ? ' · система выключена' : ''}
                           </p>
                           <div className="grp-mini-stats">
-                            <span>dex: {fmt(chat.dexbalance)}</span>
+                            <span>dex-баланс: {fmt(chat.dexbalance)}</span>
                             <span>создана: {shortWhen(chat.created_at)}</span>
                           </div>
                         </div>
                         <div className="grp-card">
-                          <h3 className="grp-card-title">Царь чата / ЧМ</h3>
+                          <h3 className="grp-card-title">Царь чата и чёрный рынок</h3>
                           <p className="grp-help">
                             {detail.king?.configured
-                              ? `${detail.king.enabled ? 'вкл' : 'выкл'} · ${detail.king.period_kind || '—'} · min ${detail.king.min_messages || 0} · награды ${detail.king.reward_p1}/${detail.king.reward_p2}/${detail.king.reward_p3}`
+                              ? `${detail.king.enabled ? 'включён' : 'выключен'} · период ${detail.king.period_kind || '—'} · минимум ${detail.king.min_messages || 0} сообщ. · награды ${detail.king.reward_p1}/${detail.king.reward_p2}/${detail.king.reward_p3}`
                               : 'не настроено'}
                           </p>
                           <p className="grp-help" style={{ marginBottom: 0 }}>
@@ -485,10 +522,10 @@ export default function GroupsStudioSection() {
                   {sub === 'economy' && (
                     <>
                       <div className="grp-stat-grid">
-                        <Stat label="to_chat ∞" value={fmt(fund?.to_chat_sum)} />
-                        <Stat label="to_fund ∞" value={fmt(fund?.to_fund_sum)} />
-                        <Stat label="to_project ∞" value={fmt(fund?.to_project_sum)} />
-                        <Stat label="pool updated" value={shortWhen(fund?.pool_updated_at)} />
+                        <Stat label="Вернулось в баланс группы" value={fmt(fund?.to_chat_sum)} hint="за всё время" />
+                        <Stat label="Ушло в фонд роста" value={fmt(fund?.to_fund_sum)} hint="за всё время" />
+                        <Stat label="Ушло в дом проекта" value={fmt(fund?.to_project_sum)} hint="за всё время" />
+                        <Stat label="Фонд обновлялся" value={shortWhen(fund?.pool_updated_at)} />
                       </div>
                       <div className="grp-card">
                         <h3 className="grp-card-title">По играм</h3>
@@ -629,7 +666,7 @@ export default function GroupsStudioSection() {
                         />
                       </div>
                       <div className="grp-card">
-                        <h3 className="grp-card-title">Последние staff_actions</h3>
+                        <h3 className="grp-card-title">Последние действия модерации</h3>
                         <MiniTable
                           columns={[
                             { key: 'at', label: 'Когда', render: (r) => shortWhen(r.at) },
@@ -711,7 +748,7 @@ export default function GroupsStudioSection() {
                         <h3 className="grp-card-title">Модерация</h3>
                         <p className="grp-help">Через игрового бота. Нужны права админа бота в чате.</p>
                         <label className="grp-field">
-                          <span>User ID</span>
+                          <span>ID игрока</span>
                           <input value={modUser} onChange={(e) => setModUser(e.target.value)} placeholder="123456789" inputMode="numeric" />
                         </label>
                         <label className="grp-field">
@@ -758,7 +795,7 @@ export default function GroupsStudioSection() {
                   {sub === 'raw' && (
                     <div className="grp-card">
                       <div className="grp-detail-head" style={{ marginBottom: '.5rem' }}>
-                        <h3 className="grp-card-title" style={{ margin: 0 }}>Все поля из БД + Telegram</h3>
+                        <h3 className="grp-card-title">Все поля из базы и Telegram</h3>
                         <button type="button" className="elite-btn" onClick={() => setRawOpen((v) => !v)}>
                           {rawOpen ? 'Свернуть JSON' : 'Показать JSON'}
                         </button>

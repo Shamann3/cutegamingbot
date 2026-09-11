@@ -39,10 +39,26 @@ import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import { usePerfMode } from '../lib/perfMode'
 import { useMusicMode } from '../lib/musicMode'
 import { useGlobalKeys } from '../lib/useGlobalKeys'
+import {
+  applyAccentToDocument,
+  loadStoredAccent,
+  persistAccent,
+} from '../lib/accentTheme'
 
 export default function PanelShell({ onLogout }) {
   const { lightMode, setLightMode } = usePerfMode()
   const { volume: musicVolume, setVolume: setMusicVolume, toggleMute: toggleMusicMute } = useMusicMode()
+  const [accent, setAccent] = useState(() => loadStoredAccent())
+
+  useEffect(() => {
+    applyAccentToDocument(accent)
+  }, [accent])
+
+  const handleAccentChange = useCallback((next) => {
+    const saved = persistAccent(next)
+    setAccent(saved)
+    applyAccentToDocument(saved)
+  }, [])
 
   // Глобальные горячие клавиши
   useGlobalKeys({
@@ -300,6 +316,8 @@ export default function PanelShell({ onLogout }) {
             onToggleMusic={toggleMusicMute}
             onEnterGodMode={() => setGodMode(true)}
             badges={{ support: openTickets }}
+            accent={accent}
+            onAccentChange={handleAccentChange}
           />
 
           <EliteTopbar

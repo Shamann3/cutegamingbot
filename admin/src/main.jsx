@@ -5,7 +5,12 @@ import AdminErrorBoundary from './components/AdminErrorBoundary'
 import './index.css'
 // Финальный слой каскада — перебивает исторические !important из index.css.
 import './styles/elite.css'
+import './styles/atelier.css'
 import './styles/entrance.css'
+import { applyAccentToDocument, loadStoredAccent } from './lib/accentTheme'
+
+// Подсветка до первого кадра — без вспышки дефолтного цвета
+applyAccentToDocument(loadStoredAccent())
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

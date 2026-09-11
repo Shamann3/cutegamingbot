@@ -4,6 +4,7 @@ import { groupSections } from '../constants/panelNav'
 import { NAV_ICONS } from './NavIcons'
 import SessionTimer from './SessionTimer'
 import EpsilonLogo from './EpsilonLogo'
+import AccentPalette from './AccentPalette'
 
 function SpeakerIcon({ muted }) {
   return (
@@ -49,6 +50,8 @@ export default function PanelSidebar({
   onMusicVolumeChange,
   onToggleMusic,
   badges = {},
+  accent = null,
+  onAccentChange,
 }) {
   const { displayName, username, photoUrl } = getAdminProfile()
   const initials = getAdminInitials(displayName)
@@ -203,6 +206,8 @@ export default function PanelSidebar({
       </nav>
 
       <div className="panel-sidebar-footer">
+        <AccentPalette value={accent} onChange={onAccentChange} />
+
         <div className="panel-sidebar-account">
           <div className="panel-profile-avatar" aria-hidden="true">
             {photoUrl ? (

@@ -42,6 +42,15 @@
   --e-invert-bg: #f4f4f5;
   --e-invert-text: #0a0a0a;
 
+  /* --- Акцент подсветки (меняется палитрой в сайдбаре) --- */
+  --e-accent: #7EB89A;
+  --e-accent-rgb: 126, 184, 154;
+  --e-accent-soft: rgba(126, 184, 154, 0.16);
+  --e-accent-soft-2: rgba(126, 184, 154, 0.28);
+  --e-accent-line: rgba(126, 184, 154, 0.42);
+  --e-accent-glow: 0 0 40px rgba(126, 184, 154, 0.22);
+  --e-accent-bright: #a8d4bc;
+
   /* --- Радиусы --- */
   --e-r-card: 22px;
   --e-r-block: 16px;
@@ -57,15 +66,19 @@
     0 28px 60px -14px rgba(0, 0, 0, 0.95);
   --e-glow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 8px 26px -6px rgba(255, 255, 255, 0.12);
 
-  /* --- Движение: одна кривая на всю систему + физика нажатия --- */
-  --e-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* --- Движение: пружина как на iOS --- */
+  --e-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --e-ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
   --e-ease-press: cubic-bezier(0.4, 0, 0.2, 1);
-  --e-fast: 0.16s;
-  --e-med: 0.28s;
-  --e-slow: 0.5s;
+  --e-fast: 0.18s;
+  --e-med: 0.32s;
+  --e-slow: 0.55s;
 
   /* --- Сетка --- */
   --e-gap: 0.85rem;
+
+  /* --- Шрифт --- */
+  --e-font: 'Manrope', ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Уважаем системную настройку «меньше движения» */
@@ -89,6 +102,21 @@ body,
   background: var(--e-void) !important;
   color: var(--e-text-2);
   letter-spacing: -0.011em;
+}
+
+.panel-shell {
+  position: relative;
+}
+.panel-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 55% 40% at 8% 92%, rgba(var(--e-accent-rgb), 0.11), transparent 70%),
+    radial-gradient(ellipse 40% 30% at 92% 8%, rgba(var(--e-accent-rgb), 0.06), transparent 65%);
+  transition: background var(--e-slow) var(--e-ease);
 }
 
 /* Скроллбары — заметные там, где есть overflow (Стафф, чаты, модалки…).
@@ -213,7 +241,7 @@ body,
 .staff-salary-card-amount {
   /* Перебиваем Cormorant Garamond из index.css — в элитной системе
      UI-заголовки только Inter, без serif и без градиентной заливки. */
-  font-family: Inter, system-ui, sans-serif !important;
+  font-family: var(--e-font), Manrope, ui-sans-serif, system-ui, sans-serif !important;
   background: none !important;
   -webkit-background-clip: border-box !important;
   background-clip: border-box !important;
@@ -682,15 +710,22 @@ body,
 /* Активный пункт — заполненная плашка. Полоску-маркер справа из
    index.css убираем: в сгруппированном меню она ломала ритм. */
 .panel-nav-item-active {
-  background: var(--e-surface-3) !important;
+  background: var(--e-accent-soft) !important;
   border-right: none !important;
   border-radius: var(--e-r-block) !important;
   color: var(--e-text) !important;
-  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.05) inset !important;
+  box-shadow:
+    0 0 0 1px var(--e-accent-line),
+    0 1px 0 0 rgba(255, 255, 255, 0.05) inset,
+    var(--e-accent-glow) !important;
+  transition:
+    background var(--e-med) var(--e-ease),
+    box-shadow var(--e-med) var(--e-ease),
+    transform var(--e-fast) var(--e-ease-spring);
 }
 
 .panel-nav-item-active .panel-nav-label {
-  color: var(--e-text) !important;
+  color: var(--e-accent-bright) !important;
   font-weight: 600;
 }
 
@@ -707,6 +742,7 @@ body,
 
 .panel-nav-item-active .panel-nav-icon {
   opacity: 1;
+  color: var(--e-accent-bright);
 }
 
 .panel-nav-text {
@@ -748,8 +784,9 @@ body,
   flex: 0 0 auto;
   padding: 0 0.32rem;
   border-radius: var(--e-r-pill);
-  background: var(--e-invert-bg);
-  color: var(--e-invert-text);
+  background: var(--e-accent);
+  color: #0a0a0a;
+  box-shadow: 0 0 16px rgba(var(--e-accent-rgb), 0.35);
   font-size: 0.66rem;
   font-weight: 680;
   font-variant-numeric: tabular-nums;
@@ -838,6 +875,108 @@ body,
   gap: 0.4rem;
   padding: 0.6rem 0.15rem 0;
   border-top: 1px solid var(--e-line);
+}
+
+/* Палитра цвета подсветки — снизу слева в сайдбаре */
+.accent-palette {
+  padding: 0.55rem 0.5rem 0.65rem;
+  border-radius: var(--e-r-block);
+  border: 1px solid var(--e-line);
+  background:
+    linear-gradient(160deg, var(--e-accent-soft), transparent 55%),
+    var(--e-surface-0);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  animation: accent-palette-in var(--e-slow) var(--e-ease) both;
+}
+@keyframes accent-palette-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+.accent-palette-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.accent-palette-title {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--e-text-3);
+}
+.accent-palette-current {
+  font-size: 0.72rem;
+  color: var(--e-accent-bright);
+  font-weight: 560;
+}
+.accent-palette-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+}
+.accent-swatch {
+  position: relative;
+  aspect-ratio: 1;
+  border: 0;
+  padding: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--e-med) var(--e-ease-spring);
+}
+.accent-swatch-core {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 11px;
+  background: var(--swatch);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 4px 12px rgba(0, 0, 0, 0.35);
+  transition:
+    box-shadow var(--e-med) var(--e-ease),
+    transform var(--e-med) var(--e-ease-spring);
+}
+.accent-swatch:hover .accent-swatch-core {
+  transform: scale(1.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 8px 18px rgba(0, 0, 0, 0.4);
+}
+.accent-swatch:active {
+  transform: scale(0.94);
+}
+.accent-swatch-on .accent-swatch-core {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 0 2px var(--e-void),
+    0 0 0 3.5px var(--swatch),
+    0 0 22px color-mix(in srgb, var(--swatch) 55%, transparent);
+}
+.accent-swatch-on {
+  transform: scale(1.04);
+}
+
+/* Курсорное свечение — в цвете выбранной подсветки */
+.cursor-glow {
+  background: radial-gradient(
+    circle at center,
+    rgba(var(--e-accent-rgb), 0.14) 0%,
+    rgba(var(--e-accent-rgb), 0.05) 38%,
+    transparent 70%
+  ) !important;
+}
+
+/* Мобильные вкладки — акцент на активной */
+.panel-mobile-tab-active {
+  color: var(--e-accent-bright) !important;
+}
+.panel-mobile-tab-active .panel-mobile-tab-icon {
+  color: var(--e-accent-bright);
+  filter: drop-shadow(0 0 8px rgba(var(--e-accent-rgb), 0.55));
 }
 
 /* Служебные переключатели внизу — приглушены, они не часть основного потока */
@@ -7000,7 +7139,7 @@ body,
 }
 .grp-hero-glow {
   position: absolute; inset: -40% auto auto 55%; width: 42%; height: 120%; pointer-events: none;
-  background: radial-gradient(circle, rgba(120,160,140,.14), transparent 68%);
+  background: radial-gradient(circle, rgba(var(--e-accent-rgb), .18), transparent 68%);
   animation: grp-glow-drift 9s ease-in-out infinite alternate;
 }
 @keyframes grp-glow-drift {
@@ -7033,7 +7172,7 @@ body,
 .grp-tab-active { background: #f2f2f2; color: #111; border-color: #f2f2f2; font-weight: 650; }
 .grp-subtab { padding: .38rem .75rem; font-size: .78rem; background: #0a0a0a; }
 .grp-subtab-active {
-  background: rgba(180, 210, 190, .16); color: #e8f2ea; border-color: rgba(180, 210, 190, .35);
+  background: var(--e-accent-soft); color: var(--e-accent-bright); border-color: var(--e-accent-line);
 }
 .grp-scroll { display: flex; flex-direction: column; gap: .85rem; min-height: 0; }
 .grp-panel, .grp-card {
@@ -7104,14 +7243,16 @@ body,
   padding: .65rem .75rem; border-radius: 12px; border: 1px solid rgba(255,255,255,.07); background: #0d0d0d;
 }
 .grp-meter-head { display: flex; justify-content: space-between; gap: .5rem; font-size: .72rem; color: #888; margin-bottom: .4rem; }
-.grp-meter-head strong { color: #ddd; font-variant-numeric: tabular-nums; }
+.grp-meter-head strong { color: #f2f2f2; font-size: .92rem; font-variant-numeric: tabular-nums; font-weight: 650; }
+.grp-meter-hint { font-size: .68rem; color: #666; margin: -.15rem 0 .35rem; }
 .grp-meter-track {
   height: 7px; border-radius: 999px; background: rgba(255,255,255,.06); overflow: hidden;
 }
 .grp-meter-fill {
   height: 100%; border-radius: inherit; width: 0;
   transition: width .7s cubic-bezier(.22,1,.36,1);
-  background: linear-gradient(90deg, #6f9e7a, #b7d7c0);
+  background: linear-gradient(90deg, var(--e-accent), var(--e-accent-bright));
+  box-shadow: 0 0 12px rgba(var(--e-accent-rgb), .35);
 }
 .grp-meter-gold { background: linear-gradient(90deg, #8a7340, #d4b56a); }
 .grp-meter-rose { background: linear-gradient(90deg, #8a4a55, #d48a96); }
@@ -7127,13 +7268,13 @@ body,
 .grp-range-head strong { color: #f0f0f0; font-size: .95rem; font-variant-numeric: tabular-nums; }
 .grp-range input[type="range"] {
   -webkit-appearance: none; appearance: none; width: 100%; height: 8px; border-radius: 999px;
-  background: linear-gradient(90deg, rgba(180,210,190,.25), rgba(255,255,255,.08));
+  background: linear-gradient(90deg, var(--e-accent-soft-2), rgba(255,255,255,.08));
   outline: none; cursor: pointer;
 }
 .grp-range input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%;
-  background: #e8f2ea; border: 2px solid #6f9e7a; box-shadow: 0 2px 10px rgba(0,0,0,.35);
-  transition: transform .15s ease, box-shadow .2s ease;
+  background: var(--e-accent-bright); border: 2px solid var(--e-accent); box-shadow: 0 2px 10px rgba(0,0,0,.35);
+  transition: transform .15s var(--e-ease-spring), box-shadow .2s ease;
 }
 .grp-range input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.08); }
 .grp-range input[type="range"]::-moz-range-thumb {
