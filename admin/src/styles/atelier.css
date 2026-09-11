@@ -658,6 +658,123 @@ canvas,
   filter: none;
 }
 
+/* ---------- Таблицы в цвете подсветки ---------- */
+
+th {
+  border-bottom-color: rgba(var(--e-accent-rgb), 0.22) !important;
+}
+
+tr:hover td {
+  background: rgba(var(--e-accent-rgb), 0.06) !important;
+}
+
+.grp-table th,
+.users-table th,
+.logs-table th,
+.staff-table th,
+.elite-table th,
+table thead th {
+  color: var(--e-accent-bright) !important;
+  background: linear-gradient(180deg, rgba(var(--e-accent-rgb), 0.1), #101010) !important;
+}
+
+.grp-table-wrap,
+.pu-table-wrap,
+.logs-table-wrap {
+  border-color: rgba(var(--e-accent-rgb), 0.14) !important;
+}
+
+/* ---------- Онлайн-график ---------- */
+
+.online-chart-avg-line {
+  stroke: rgba(var(--e-accent-rgb), 0.45) !important;
+}
+.online-chart-dot,
+.online-chart-dot-active,
+.online-chart-crosshair-dot {
+  fill: var(--e-accent) !important;
+  stroke: #fff !important;
+}
+.online-chart-crosshair {
+  stroke: rgba(var(--e-accent-rgb), 0.55) !important;
+}
+.online-chart-tooltip {
+  border-color: var(--e-accent-line) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45), var(--e-accent-glow) !important;
+}
+.online-chart-legend-line-peak,
+.online-chart-minimap-line {
+  stroke: var(--e-accent) !important;
+  background: var(--e-accent) !important;
+}
+.online-chart-minimap-window {
+  fill: rgba(var(--e-accent-rgb), 0.12) !important;
+  stroke: rgba(var(--e-accent-rgb), 0.55) !important;
+}
+.online-chart-zoom-btn:hover,
+.online-chart-reset:hover {
+  border-color: var(--e-accent-line) !important;
+  color: var(--e-accent-bright) !important;
+}
+
+/* ---------- Аналитика: тултипы ---------- */
+
+.analytics-chart-wrap {
+  position: relative;
+}
+.analytics-chart-interactive {
+  width: 100%;
+  height: auto;
+}
+.analytics-chart-tooltip {
+  position: absolute;
+  right: 0.5rem;
+  top: 0.35rem;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 7.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid var(--e-accent-line);
+  background: rgba(10, 10, 10, 0.92);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), var(--e-accent-glow);
+  pointer-events: none;
+  animation: atelier-modal-in 0.2s var(--e-ease) both;
+}
+.analytics-chart-tooltip strong {
+  color: var(--e-text);
+  font-size: 0.78rem;
+}
+.analytics-chart-tooltip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--e-text-2);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.analytics-chart-tooltip i {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+/* ---------- Ч/Б лёгкий режим ---------- */
+
+body.perf-light .panel-shell::before,
+body.perf-light .cursor-glow,
+body.perf-light .grp-hero-glow {
+  opacity: 0.35 !important;
+}
+body.perf-light .elite-btn-primary {
+  background: #e8e8e8 !important;
+  color: #111 !important;
+  box-shadow: none !important;
+}
+
 @media (max-width: 860px) {
   .panel-shelf-quiet,
   .panel-shelf,

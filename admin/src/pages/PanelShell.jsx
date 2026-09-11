@@ -51,13 +51,26 @@ export default function PanelShell({ onLogout }) {
   const [accent, setAccent] = useState(() => loadStoredAccent())
 
   useEffect(() => {
-    applyAccentToDocument(accent)
-  }, [accent])
+    if (lightMode) {
+      // Лёгкий / чёрно-белый режим — монохром, без цветной подсветки
+      applyAccentToDocument({
+        id: 'mono',
+        label: 'Ч/Б',
+        hex: '#C8C8C8',
+        h: 0,
+        s: 0,
+        v: 0.78,
+        glow: 28,
+      })
+    } else {
+      // HD — цвет пользователя
+      applyAccentToDocument(accent)
+    }
+  }, [accent, lightMode])
 
   const handleAccentChange = useCallback((next) => {
     const saved = persistAccent(next)
     setAccent(saved)
-    applyAccentToDocument(saved)
   }, [])
 
   // Глобальные горячие клавиши

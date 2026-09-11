@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { hasTelegramInitData, isAdminSessionValid } from '../lib/adminClient'
 import { vivoEpsilonLogo } from './EpsilonLogo'
+import { applyAccentToDocument, loadStoredAccent } from '../lib/accentTheme'
 
 /**
  * Жёсткий таймлайн на 6.0с:
@@ -43,6 +44,10 @@ export default function EntranceSeal({
     : variant === 'login'
       ? ENTRANCE_LOGIN_HOLD_MS
       : ENTRANCE_HOLD_MS
+
+  useEffect(() => {
+    applyAccentToDocument(loadStoredAccent())
+  }, [])
 
   useEffect(() => {
     const warm = new Image()

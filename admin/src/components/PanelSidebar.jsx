@@ -257,10 +257,10 @@ export default function PanelSidebar({
           type="button"
           className={`panel-perf-btn${lightMode ? ' panel-perf-btn-active' : ''}`}
           onClick={onTogglePerf}
-          title={lightMode ? 'Режим HD — включить эффекты' : 'Лёгкий режим — убрать нагрузку'}
+          title={lightMode ? 'Чёрно-белый лёгкий режим' : 'Цветной HD — подсветка из палитры'}
         >
           <span aria-hidden="true">{lightMode ? '◈' : '⬡'}</span>
-          {lightMode ? 'Лёгкий режим' : 'Режим HD'}
+          {lightMode ? 'Ч/Б · лёгкий' : 'HD · цвет'}
         </button>
         <button type="button" className="panel-logout-btn" onClick={onLogout}>
           Выйти

@@ -355,13 +355,13 @@ export default function OnlineAnalyticsChart({
         >
           <defs>
             <linearGradient id="onlineChartArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="rgba(229, 229, 229, 0.32)" />
-              <stop offset="100%" stopColor="rgba(229, 229, 229, 0.02)" />
+              <stop offset="0%" stopColor="rgb(var(--e-accent-rgb))" stopOpacity="0.38" />
+              <stop offset="100%" stopColor="rgb(var(--e-accent-rgb))" stopOpacity="0.02" />
             </linearGradient>
             <linearGradient id="onlineChartLine" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#f5f5f5" />
-              <stop offset="50%" stopColor="#d4d4d4" />
-              <stop offset="100%" stopColor="#a3a3a3" />
+              <stop offset="0%" stopColor="var(--e-accent-bright)" />
+              <stop offset="50%" stopColor="var(--e-accent)" />
+              <stop offset="100%" stopColor="var(--e-accent-bright)" />
             </linearGradient>
           </defs>
 

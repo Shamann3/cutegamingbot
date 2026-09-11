@@ -59,79 +59,127 @@ function scaleY(v, min, max) {
 }
 
 function LineChart({ data, series, colors, yLabel = '' }) {
+  const [hover, setHover] = useState(null)
   if (!data || data.length === 0) return <EmptyChart />
   const allVals = series.flatMap((s) => data.map((d) => d[s] ?? 0))
   const yMax = Math.max(...allVals, 1)
-  const xLabels = data.filter((_, i) => i === 0 || i === Math.floor(data.length / 2) || i === data.length - 1)
   const xLabelIdxs = new Set(
-    [0, Math.floor(data.length / 2), data.length - 1].filter((i) => i >= 0 && i < data.length)
+    [0, Math.floor(data.length / 2), data.length - 1].filter((i) => i >= 0 && i < data.length),
+  )
+  const accentColors = (colors?.length ? colors : ['var(--e-accent)', '#6BA3C9', '#D4B56A']).map(
+    (c, i) => (i === 0 ? 'var(--e-accent)' : c),
   )
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="analytics-chart" aria-label={yLabel}>
-      {/* grid */}
-      {[0, 0.25, 0.5, 0.75, 1].map((t) => {
-        const y = PAD.top + CH * (1 - t)
-        return (
-          <g key={t}>
-            <line x1={PAD.left} y1={y} x2={W - PAD.right} y2={y} stroke="#ffffff14" strokeWidth={1} />
-            <text x={PAD.left - 4} y={y + 4} textAnchor="end" fontSize={9} fill="#6b7280">
-              {fmtNum(Math.round(yMax * t))}
+    <div className="analytics-chart-wrap">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="analytics-chart analytics-chart-interactive"
+        aria-label={yLabel}
+        onMouseLeave={() => setHover(null)}
+      >
+        {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+          const y = PAD.top + CH * (1 - t)
+          return (
+            <g key={t}>
+              <line x1={PAD.left} y1={y} x2={W - PAD.right} y2={y} stroke="rgba(255,255,255,0.08)" strokeWidth={1} />
+              <text x={PAD.left - 4} y={y + 4} textAnchor="end" fontSize={9} fill="#6b7280">
+                {fmtNum(Math.round(yMax * t))}
+              </text>
+            </g>
+          )
+        })}
+        {series.map((s, si) =>
+          data.length > 1 ? (
+            <polyline
+              key={s}
+              points={data.map((d, i) => `${scaleX(i, data.length)},${scaleY(d[s] ?? 0, 0, yMax)}`).join(' ')}
+              fill="none"
+              stroke={accentColors[si % accentColors.length]}
+              strokeWidth={2.25}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          ) : null,
+        )}
+        {data.map((d, i) => {
+          const x = scaleX(i, data.length)
+          return (
+            <rect
+              key={`hit-${i}`}
+              x={x - CW / data.length / 2}
+              y={PAD.top}
+              width={Math.max(CW / data.length, 8)}
+              height={CH}
+              fill="transparent"
+              onMouseEnter={() => setHover(i)}
+              onFocus={() => setHover(i)}
+              style={{ cursor: 'crosshair' }}
+            />
+          )
+        })}
+        {series.map((s, si) =>
+          data.map((d, i) => {
+            const active = hover === i
+            return (
+              <circle
+                key={`${s}-${i}`}
+                cx={scaleX(i, data.length)}
+                cy={scaleY(d[s] ?? 0, 0, yMax)}
+                r={active ? 5 : 2.5}
+                fill={accentColors[si % accentColors.length]}
+                stroke={active ? '#fff' : 'none'}
+                strokeWidth={active ? 1.5 : 0}
+                style={{ pointerEvents: 'none', transition: 'r 0.15s ease' }}
+              />
+            )
+          }),
+        )}
+        {hover != null && (
+          <line
+            x1={scaleX(hover, data.length)}
+            y1={PAD.top}
+            x2={scaleX(hover, data.length)}
+            y2={PAD.top + CH}
+            stroke="rgba(var(--e-accent-rgb), 0.55)"
+            strokeWidth={1}
+            strokeDasharray="3 3"
+            style={{ pointerEvents: 'none' }}
+          />
+        )}
+        {data.map((d, i) =>
+          xLabelIdxs.has(i) ? (
+            <text key={i} x={scaleX(i, data.length)} y={H - 4} textAnchor="middle" fontSize={9} fill="#6b7280">
+              {fmtDate(d.day || d.week)}
             </text>
-          </g>
-        )
-      })}
-      {/* lines */}
-      {series.map((s, si) =>
-        data.length > 1 ? (
-          <polyline
-            key={s}
-            points={data.map((d, i) => `${scaleX(i, data.length)},${scaleY(d[s] ?? 0, 0, yMax)}`).join(' ')}
-            fill="none"
-            stroke={colors[si]}
-            strokeWidth={2}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-        ) : null
+          ) : null,
+        )}
+      </svg>
+      {hover != null && data[hover] && (
+        <div className="analytics-chart-tooltip">
+          <strong>{fmtDate(data[hover].day || data[hover].week)}</strong>
+          {series.map((s, si) => (
+            <span key={s}>
+              <i style={{ background: accentColors[si % accentColors.length] }} />
+              {s}: {fmtNum(data[hover][s])}
+            </span>
+          ))}
+        </div>
       )}
-      {/* dots */}
-      {series.map((s, si) =>
-        data.map((d, i) => (
-          <circle
-            key={`${s}-${i}`}
-            cx={scaleX(i, data.length)}
-            cy={scaleY(d[s] ?? 0, 0, yMax)}
-            r={3}
-            fill={colors[si]}
-          />
-        ))
-      )}
-      {/* x labels */}
-      {data.map((d, i) =>
-        xLabelIdxs.has(i) ? (
-          <text
-            key={i}
-            x={scaleX(i, data.length)}
-            y={H - 4}
-            textAnchor="middle"
-            fontSize={9}
-            fill="#6b7280"
-          >
-            {fmtDate(d.day || d.week)}
-          </text>
-        ) : null
-      )}
-    </svg>
+    </div>
   )
 }
 
 function BarChart({ data, valueKey, labelKey, colors, horizontal = false }) {
+  const [hover, setHover] = useState(null)
   if (!data || data.length === 0) return <EmptyChart />
   const max = Math.max(...data.map((d) => d[valueKey] ?? 0), 1)
   const barH = horizontal ? 18 : null
   const gapH = horizontal ? 6 : null
   const totalH = horizontal ? data.length * (barH + gapH) + PAD.top + PAD.bottom : H
+  const palette = (Array.isArray(colors) ? colors : [colors || 'var(--e-accent)']).map(
+    (c, i) => (i === 0 || !c ? 'var(--e-accent)' : c),
+  )
 
   if (horizontal) {
     const hw = 600
@@ -140,49 +188,84 @@ function BarChart({ data, valueKey, labelKey, colors, horizontal = false }) {
     const htop = PAD.top
     const barW = hw - hleft - hright
     return (
-      <svg viewBox={`0 0 ${hw} ${totalH}`} className="analytics-chart">
-        {data.map((d, i) => {
-          const val = d[valueKey] ?? 0
-          const w = (val / max) * barW
-          const y = htop + i * (barH + gapH)
-          const color = Array.isArray(colors) ? colors[i % colors.length] : colors
-          return (
-            <g key={i}>
-              <text x={hleft - 6} y={y + barH / 2 + 4} textAnchor="end" fontSize={10} fill="#9ca3af">
-                {String(d[labelKey] || '').slice(0, 16)}
-              </text>
-              <rect x={hleft} y={y} width={Math.max(w, 2)} height={barH} rx={3} fill={color} opacity={0.85} />
-              <text x={hleft + Math.max(w, 2) + 4} y={y + barH / 2 + 4} fontSize={10} fill="#d1d5db">
-                {fmtNum(val)}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
+      <div className="analytics-chart-wrap">
+        <svg viewBox={`0 0 ${hw} ${totalH}`} className="analytics-chart analytics-chart-interactive">
+          {data.map((d, i) => {
+            const val = d[valueKey] ?? 0
+            const w = (val / max) * barW
+            const y = htop + i * (barH + gapH)
+            const color = palette[i % palette.length]
+            const active = hover === i
+            return (
+              <g
+                key={i}
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover(null)}
+                style={{ cursor: 'pointer' }}
+              >
+                <text x={hleft - 6} y={y + barH / 2 + 4} textAnchor="end" fontSize={10} fill="#9ca3af">
+                  {String(d[labelKey] || '').slice(0, 16)}
+                </text>
+                <rect
+                  x={hleft}
+                  y={y}
+                  width={Math.max(w, 2)}
+                  height={barH}
+                  rx={3}
+                  fill={color}
+                  opacity={active ? 1 : 0.82}
+                />
+                <text x={hleft + Math.max(w, 2) + 4} y={y + barH / 2 + 4} fontSize={10} fill="#d1d5db">
+                  {fmtNum(val)}
+                </text>
+              </g>
+            )
+          })}
+        </svg>
+        {hover != null && data[hover] && (
+          <div className="analytics-chart-tooltip">
+            <strong>{String(data[hover][labelKey] || '')}</strong>
+            <span>{fmtNum(data[hover][valueKey])}</span>
+          </div>
+        )}
+      </div>
     )
   }
 
   const barW = CW / data.length - 4
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="analytics-chart">
-      {data.map((d, i) => {
-        const val = d[valueKey] ?? 0
-        const bh = (val / max) * CH
-        const x = PAD.left + i * (CW / data.length) + 2
-        const y = PAD.top + CH - bh
-        const color = Array.isArray(colors) ? colors[i % colors.length] : colors
-        return (
-          <g key={i}>
-            <rect x={x} y={y} width={barW} height={bh} rx={2} fill={color} opacity={0.8} />
-            {data.length <= 12 && (
-              <text x={x + barW / 2} y={H - 4} textAnchor="middle" fontSize={9} fill="#6b7280">
-                {fmtDate(d[labelKey])}
-              </text>
-            )}
-          </g>
-        )
-      })}
-    </svg>
+    <div className="analytics-chart-wrap">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="analytics-chart analytics-chart-interactive"
+        onMouseLeave={() => setHover(null)}
+      >
+        {data.map((d, i) => {
+          const val = d[valueKey] ?? 0
+          const bh = (val / max) * CH
+          const x = PAD.left + i * (CW / data.length) + 2
+          const y = PAD.top + CH - bh
+          const color = palette[i % palette.length]
+          const active = hover === i
+          return (
+            <g key={i} onMouseEnter={() => setHover(i)} style={{ cursor: 'pointer' }}>
+              <rect x={x} y={y} width={barW} height={bh} rx={3} fill={color} opacity={active ? 1 : 0.8} />
+              {data.length <= 12 && (
+                <text x={x + barW / 2} y={H - 4} textAnchor="middle" fontSize={9} fill="#6b7280">
+                  {fmtDate(d[labelKey])}
+                </text>
+              )}
+            </g>
+          )
+        })}
+      </svg>
+      {hover != null && data[hover] && (
+        <div className="analytics-chart-tooltip">
+          <strong>{fmtDate(data[hover][labelKey])}</strong>
+          <span>{fmtNum(data[hover][valueKey])}</span>
+        </div>
+      )}
+    </div>
   )
 }
 
