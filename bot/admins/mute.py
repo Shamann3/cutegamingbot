@@ -1319,15 +1319,35 @@ def _utc_now() -> datetime:
   return datetime.now(timezone.utc)
 
 
+def _as_naive_wall(dt: Optional[datetime]) -> Optional[datetime]:
+  """Наивные локальные часы — как datetime.now() при выдаче наказания.
+
+  Aware (Telegram) → локальная стена; naive из БД оставляем как есть.
+  """
+  if dt is None:
+    return None
+  if dt.tzinfo is not None:
+    return dt.astimezone().replace(tzinfo=None)
+  return dt
+
+
+def _local_tzinfo():
+  return datetime.now().astimezone().tzinfo or timezone.utc
+
+
 def _to_utc(dt: datetime) -> datetime:
-  """Приводит datetime к UTC-aware - для сравнения naive (БД) и aware (Telegram)."""
+  """В UTC: naive из БД = локальная стена; aware → UTC."""
   if dt.tzinfo is None:
-    return dt.replace(tzinfo=timezone.utc)
+    return dt.replace(tzinfo=_local_tzinfo()).astimezone(timezone.utc)
   return dt.astimezone(timezone.utc)
 
 
 def _is_datetime_active(until: datetime, *, now: Optional[datetime] = None) -> bool:
-  return _to_utc(until) > _to_utc(now or _utc_now())
+  """Срок ещё действует? Сравниваем локальными часами (как у банов/варнов)."""
+  wall = _as_naive_wall(until)
+  if wall is None:
+    return False
+  return wall > (now or datetime.now())
 
 
 # ---------------------------------------------------------------------------
@@ -2581,7 +2601,7 @@ async def _resolve_mute_scope(user_id: int) -> Tuple [ bool , List [ int ] ]:
             chats.append(cid)
         urow = await conn.fetchrow(
           "SELECT mute_until FROM users WHERE user_id = $1" , user_id , )
-        if urow and urow [ "mute_until" ] is not None:
+        if urow and urow [ "mute_until" ] is not None and _is_datetime_active(urow["mute_until"]):
           global_scope = True
     except Exception as e:
       MuteDebug.log("AUTO" , "resolve scope skip" , err=str(e) , user=user_id)
@@ -2624,10 +2644,16 @@ async def _expire_mute(
   отправить повторное сообщение.
   """
   global_scope, chats = await _resolve_mute_scope(user_id)
-  if known_chats:
-    for c in known_chats:
-      if _is_staff_chat(c) and c not in chats:
-        chats.append(c)
+  if known_chats is not None:
+    # Точный набор от фоновой очистки: снимаем ТОЛЬКО эти чаты,
+    # чтобы не задеть ещё активный мут в другой группе.
+    exact = [c for c in known_chats if _is_staff_chat(c)]
+    if not global_scope:
+      chats = exact
+    else:
+      for c in exact:
+        if c not in chats:
+          chats.append(c)
   if not chats:
     if global_scope:
       chats = [c for c in cfg.STAFF_CHAT_IDS if _is_staff_chat(c)]
@@ -2638,8 +2664,10 @@ async def _expire_mute(
     _clear_mute_all_staff_chats(user_id)
     try:
       async with _db().pool.acquire() as conn:
+        # Чистим безусловно: срок уже истёк по Python-часам, SQL NOW()
+        # может расходиться с локальным временем выдачи.
         await conn.execute(
-          "UPDATE users SET mute_until = NULL WHERE user_id = $1 AND mute_until <= NOW()",
+          "UPDATE users SET mute_until = NULL WHERE user_id = $1 AND mute_until IS NOT NULL",
           user_id,
         )
     except Exception as e:
@@ -2717,12 +2745,13 @@ async def _sync_user_mute_status(chat_id: int, user_id: int) -> bool:
   Проверяет актуальность мута. Если срок истёк - размучивает.
   Возвращает True, если пользователь сейчас в муте в этом чате.
   """
-  now = _utc_now()
+  now = datetime.now()
   key = (chat_id, user_id)
   until_mem = _chat_mutes.get(key)
 
   if until_mem:
-    if _to_utc(until_mem) > now:
+    wall = _as_naive_wall(until_mem)
+    if wall is not None and wall > now:
       return True
     name = await _db().get_firstname_by_user_id(user_id) or str(user_id)
     await _release_expired_chat_mute(chat_id, user_id, notify=True)
@@ -2753,7 +2782,7 @@ async def _sync_user_mute_status(chat_id: int, user_id: int) -> bool:
 
 
 async def _scan_expired_mutes_from_db() -> None:
-  """Размут по БД (после рестарта бота или без записи в кэше)."""
+  """Размут глобальных мутов (users.mute_until) по локальным часам Python."""
   db = _db()
   if not await db.ensure_pool():
     return
@@ -2761,10 +2790,11 @@ async def _scan_expired_mutes_from_db() -> None:
     async with _db_acquire() as conn:
       rows = await conn.fetch(
         """
-        SELECT user_id, first_name
+        SELECT user_id, first_name, mute_until
         FROM users
-        WHERE mute_until IS NOT NULL AND mute_until <= NOW()
-        LIMIT 50
+        WHERE mute_until IS NOT NULL
+        ORDER BY mute_until
+        LIMIT 200
         """,
       )
   except DbUnavailableError:
@@ -2774,12 +2804,82 @@ async def _scan_expired_mutes_from_db() -> None:
       MuteDebug.error("AUTO", "db scan", e)
     return
 
+  now = datetime.now()
   for row in rows:
+    until = _as_naive_wall(row["mute_until"])
+    if until is None or until > now:
+      continue
     user_id = row["user_id"]
     name = row["first_name"] or str(user_id)
-    # Охват и затронутые группы определяются внутри _expire_mute; для записи в
-    # users.mute_until это всегда глобальный мут → уведомление во все группы.
     await _expire_mute(user_id, name, 0, notify=True)
+
+
+async def scan_expired_active_mutes_from_db() -> int:
+  """Запасной путь: снять истёкшие ряды active_mutes (chat / all).
+
+  Вызывается из punish_timers._db_safety_scan. PostgreSQL — источник истины,
+  если Redis-таймер потерялся. Сравнение срока — datetime.now(), как у банов.
+  """
+  if not await _db().ensure_pool():
+    return 0
+  await _ensure_mute_schema()
+  if not _schema_ready:
+    return 0
+  try:
+    async with _db_acquire() as conn:
+      rows = await conn.fetch(
+        """
+        SELECT user_id, chat_id, mute_until, target_name, target_username, scope
+        FROM active_mutes
+        ORDER BY mute_until
+        LIMIT 500
+        """,
+      )
+  except DbUnavailableError:
+    return 0
+  except Exception as e:
+    if _is_transient_db_error(e):
+      MuteDebug.error("AUTO", "active_mutes scan", e)
+    return 0
+
+  now = datetime.now()
+  due = [
+    r for r in rows
+    if (_as_naive_wall(r["mute_until"]) or now) <= now
+  ]
+  if not due:
+    return 0
+
+  per_user: Dict[int, Dict[str, Any]] = {}
+  for row in due:
+    uid = int(row["user_id"])
+    cid = int(row["chat_id"] or 0)
+    entry = per_user.setdefault(uid, {
+      "name": row["target_name"] or str(uid),
+      "chats": [],
+      "scope_all": False,
+    })
+    if (row["scope"] or "") == "all" or cid == 0:
+      entry["scope_all"] = True
+    if _is_staff_chat(cid) and cid not in entry["chats"]:
+      entry["chats"].append(cid)
+
+  lifted = 0
+  for uid, info in per_user.items():
+    try:
+      await _expire_mute(
+        uid,
+        info["name"],
+        info["chats"][0] if info["chats"] else 0,
+        notify=True,
+        known_chats=info["chats"] or None,
+      )
+      lifted += 1
+    except Exception as e:
+      MuteDebug.error("AUTO", "expire active_mute", e, user_id=uid)
+  if lifted:
+    MuteDebug.log("AUTO", "active_mutes safety scan lifted", count=lifted)
+  return lifted
 
 
 async def _mute_expiry_loop() -> None:
@@ -2789,6 +2889,7 @@ async def _mute_expiry_loop() -> None:
       await asyncio.sleep(cfg.WORKER_INTERVAL_SEC)
       await _cleanup_expired_chat_mutes_async()
       await _scan_expired_mutes_from_db()
+      await scan_expired_active_mutes_from_db()
     except asyncio.CancelledError:
       break
     except Exception as e:
@@ -4222,7 +4323,8 @@ async def list_active_mutes_for_user(user_id: int) -> List[Dict[str, Any]]:
 def _format_until_or_forever(until: datetime) -> str:
   """Дата окончания или «навсегда» для очень больших сроков."""
   try:
-    remaining = (_to_utc(until) - _utc_now()).total_seconds()
+    wall = _as_naive_wall(until)
+    remaining = (wall - datetime.now()).total_seconds() if wall else 0
   except Exception:
     remaining = 0
   if remaining >= _FOREVER_THRESHOLD_SEC:
@@ -4232,12 +4334,15 @@ def _format_until_or_forever(until: datetime) -> str:
 
 def _memory_mute_until(user_id: int) -> Optional[datetime]:
   """Самый поздний срок мута из оперативного кэша по группам проекта."""
-  now = _utc_now()
+  now = datetime.now()
   best: Optional[datetime] = None
+  best_wall: Optional[datetime] = None
   for cid in cfg.STAFF_CHAT_IDS:
     until = _chat_mutes.get((cid, user_id))
-    if until and _to_utc(until) > now and (best is None or _to_utc(until) > _to_utc(best)):
+    wall = _as_naive_wall(until) if until else None
+    if wall and wall > now and (best_wall is None or wall > best_wall):
       best = until
+      best_wall = wall
   return best
 
 
@@ -4378,8 +4483,10 @@ def _until_to_telegram_date(until: Optional[datetime]) -> Optional[Union[int, da
   remaining = (until - datetime.now()).total_seconds()
   if remaining >= _FOREVER_THRESHOLD_SEC or remaining > _TELEGRAM_MAX_TIMED_SEC:
     return None
+  # Telegram: until_date < 30с трактуется как навсегда — не отдаём None для срочных.
   if remaining < 30:
-    return None
+    from datetime import timedelta as _td
+    return _safe_unix_timestamp(datetime.now() + _td(seconds=35))
   return _safe_unix_timestamp(until)
 
 

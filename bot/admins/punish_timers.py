@@ -21,6 +21,9 @@ from bot.db_create.pklcode import GameStore
 _STORE_NAME = "mod_punish_timers"
 _FOREVER_THRESHOLD_SEC = 365 * 24 * 3600 * 100
 _WORKER_INTERVAL_SEC = 5.0
+# Раз в N тиков — страховка из PostgreSQL (если таймер в Redis потерялся).
+_DB_SAFETY_EVERY_TICKS = 12  # ~60 сек при интервале 5с
+_RECONCILE_EVERY_TICKS = 720  # ~1 час: пересобрать таймеры из БД
 
 _store: Optional[GameStore] = None
 _worker_started = False
@@ -212,14 +215,39 @@ async def _dispatch_entry(key: str, entry: Dict[str, Any]) -> bool:
   return False
 
 
+async def _db_safety_scan() -> None:
+  """Снять истёкшие наказания напрямую из PostgreSQL (запасной путь)."""
+  try:
+    from bot.admins.warn import scan_and_expire_timed_warns
+    await scan_and_expire_timed_warns()
+  except Exception:
+    traceback.print_exc()
+  try:
+    from bot.admins.mute import scan_expired_active_mutes_from_db
+    await scan_expired_active_mutes_from_db()
+  except Exception:
+    traceback.print_exc()
+  try:
+    from bot.admins.ban import _scan_expired_bans
+    await _scan_expired_bans()
+  except Exception:
+    traceback.print_exc()
+
+
 async def _expiry_loop() -> None:
+  ticks = 0
   while True:
     try:
       await asyncio.sleep(_WORKER_INTERVAL_SEC)
+      ticks += 1
       for key, entry in iter_due():
         ok = await _dispatch_entry(key, entry)
         if ok:
           cancel(key)
+      if ticks % _DB_SAFETY_EVERY_TICKS == 0:
+        await _db_safety_scan()
+      if ticks % _RECONCILE_EVERY_TICKS == 0:
+        await reconcile_from_db()
     except asyncio.CancelledError:
       break
     except Exception:
@@ -259,16 +287,24 @@ async def reconcile_from_db() -> None:
         """
         SELECT user_id, mute_until, first_name, username
         FROM users
-        WHERE mute_until IS NOT NULL AND mute_until > NOW()
+        WHERE mute_until IS NOT NULL
         """,
       )
+    now = datetime.now()
     for row in rows:
+      until = row["mute_until"]
+      if until is None:
+        continue
+      wall = until.replace(tzinfo=None) if getattr(until, "tzinfo", None) else until
+      if wall <= now:
+        continue
       uid = int(row["user_id"])
       register_mute(
         uid,
-        row["mute_until"],
+        until,
         target_name=row["first_name"] or str(uid),
         target_username=row["username"],
+        scope="all",
       )
   except DbUnavailableError:
     pass
@@ -286,14 +322,20 @@ async def reconcile_from_db() -> None:
         """
         SELECT user_id, chat_id, mute_until, target_name, target_username, scope
         FROM active_mutes
-        WHERE mute_until > NOW()
         ORDER BY mute_until
         """,
       )
+    now = datetime.now()
     # Мут на пользователя один (ключ mute:{uid}); если рядов несколько,
     # берём с самым поздним сроком и предпочитаем конкретную группу нулевой.
     best: Dict[int, Dict[str, Any]] = {}
     for row in rows:
+      until = row["mute_until"]
+      if until is None:
+        continue
+      wall = until.replace(tzinfo=None) if getattr(until, "tzinfo", None) else until
+      if wall <= now:
+        continue
       uid = int(row["user_id"])
       cur = best.get(uid)
       if cur is None:
@@ -325,18 +367,25 @@ async def reconcile_from_db() -> None:
       async with _db_acquire() as conn:
         rows = await conn.fetch(
           """
-          SELECT user_id,
-                 MAX(ban_until) AS ban_until,
-                 MAX(target_name) AS target_name,
-                 MAX(target_username) AS target_username,
-                 MAX(scope) AS scope
+          SELECT user_id, ban_until, target_name, target_username, scope
           FROM active_bans
-          WHERE ban_until > NOW()
-          GROUP BY user_id
+          ORDER BY ban_until
           """,
         )
+      now = datetime.now()
+      best_ban: Dict[int, Dict[str, Any]] = {}
       for row in rows:
+        until = row["ban_until"]
+        if until is None:
+          continue
+        wall = until.replace(tzinfo=None) if getattr(until, "tzinfo", None) else until
+        if wall <= now:
+          continue
         uid = int(row["user_id"])
+        cur = best_ban.get(uid)
+        if cur is None or row["ban_until"] > cur["ban_until"]:
+          best_ban[uid] = dict(row)
+      for uid, row in best_ban.items():
         register_ban(
           uid,
           row["ban_until"],
@@ -362,10 +411,17 @@ async def reconcile_from_db() -> None:
                  u.first_name, u.username
           FROM active_warns w
           LEFT JOIN users u ON u.user_id = w.user_id
-          WHERE w.expires_at IS NOT NULL AND w.expires_at > NOW()
+          WHERE w.expires_at IS NOT NULL
           """,
         )
+      now = datetime.now()
       for row in rows:
+        until = row["expires_at"]
+        if until is None:
+          continue
+        wall = until.replace(tzinfo=None) if getattr(until, "tzinfo", None) else until
+        if wall <= now:
+          continue
         wid = int(row["id"])
         uid = int(row["user_id"])
         register_warn(

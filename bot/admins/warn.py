@@ -1017,14 +1017,24 @@ async def _ensure_warn_schema() -> None:
 
 
 async def _count_warns(user_id: int) -> int:
-  """Всего активных предупреждений у пользователя (сумма по всем режимам)."""
+  """Всего активных предупреждений у пользователя (сумма по всем режимам).
+
+  Истёкшие по сроку не считаются (их снимает scan_and_expire_timed_warns).
+  """
   await _ensure_warn_schema()
   if not _warn_schema_ready:
     return 0
   try:
+    now = datetime.now()
     async with _db_acquire() as conn:
       row = await conn.fetchrow(
-        "SELECT COUNT(*) AS c FROM active_warns WHERE user_id = $1", user_id,
+        """
+        SELECT COUNT(*) AS c FROM active_warns
+        WHERE user_id = $1
+          AND (expires_at IS NULL OR expires_at > $2)
+        """,
+        user_id,
+        now,
       )
     return int(row["c"]) if row else 0
   except Exception as e:
@@ -1040,24 +1050,30 @@ def _typed_count_query(mode: Mode, chat_id: int) -> Tuple[str, Tuple[Any, ...]]:
   • full - единая копилка «во всём проекте».
 
   Это делает варн / варналл / варнфулл независимыми видами предупреждений.
+  Истёкшие срочные варны в счётчик не входят.
   """
+  now = datetime.now()
+  active = "AND (expires_at IS NULL OR expires_at > ${n})"
   if mode == "chat":
     return (
       "SELECT COUNT(*) AS c FROM active_warns "
-      "WHERE user_id = $1 AND mode = 'chat' AND chat_id = $2",
-      (chat_id,),
+      "WHERE user_id = $1 AND mode = 'chat' AND chat_id = $2 "
+      "AND (expires_at IS NULL OR expires_at > $3)",
+      (chat_id, now),
     )
   if mode == "full":
     return (
       "SELECT COUNT(*) AS c FROM active_warns "
-      "WHERE user_id = $1 AND mode = 'full'",
-      (),
+      "WHERE user_id = $1 AND mode = 'full' "
+      "AND (expires_at IS NULL OR expires_at > $2)",
+      (now,),
     )
   # all
   return (
     "SELECT COUNT(*) AS c FROM active_warns "
-    "WHERE user_id = $1 AND mode = 'all'",
-    (),
+    "WHERE user_id = $1 AND mode = 'all' "
+    "AND (expires_at IS NULL OR expires_at > $2)",
+    (now,),
   )
 
 
@@ -2198,6 +2214,88 @@ async def expire_timed_warn(warn_id: int, payload: Dict[str, Any]) -> None:
       WarnDebug.log("NOTIFY", "warn expire group skip", chat_id=group_chat_id, err=str(e))
 
   WarnDebug.log("AUTO", "timed warn expired", warn_id=warn_id, user=user_id, count=count)
+
+
+def _as_naive_dt(dt: Optional[datetime]) -> Optional[datetime]:
+  """Сравнение срока с datetime.now() — как у банов (без рассинхрона SQL NOW())."""
+  if dt is None:
+    return None
+  if getattr(dt, "tzinfo", None) is not None:
+    return dt.replace(tzinfo=None)
+  return dt
+
+
+def _warn_row_still_active(expires_at: Any, *, now: Optional[datetime] = None) -> bool:
+  """True, если варн постоянный или срок ещё не вышел."""
+  if expires_at is None:
+    return True
+  exp = _as_naive_dt(expires_at)
+  if exp is None:
+    return True
+  return exp > (now or datetime.now())
+
+
+async def scan_and_expire_timed_warns(*, limit: int = 100) -> int:
+  """Запасной путь: снять из БД все варны с истёкшим expires_at.
+
+  Раньше снятие зависело только от Redis-таймера. Если таймер терялся —
+  варн висел днями. Теперь PostgreSQL — источник истины, как у банов.
+  """
+  await _ensure_warn_schema()
+  if not _warn_schema_ready:
+    return 0
+  if not await _db().ensure_pool():
+    return 0
+  try:
+    async with _db_acquire() as conn:
+      rows = await conn.fetch(
+        """
+        SELECT w.id, w.user_id, w.expires_at, w.chat_id, w.admin_name,
+               w.admin_role, w.reason, w.scope, w.mode,
+               u.first_name, u.username
+        FROM active_warns w
+        LEFT JOIN users u ON u.user_id = w.user_id
+        WHERE w.expires_at IS NOT NULL
+          AND w.expires_at <= $1
+        ORDER BY w.expires_at
+        LIMIT $2
+        """,
+        datetime.now(),
+        int(limit),
+      )
+  except Exception as e:
+    WarnDebug.log("AUTO", "db scan skip", err=str(e))
+    return 0
+
+  now = datetime.now()
+  due = [r for r in rows if not _warn_row_still_active(r["expires_at"], now=now)]
+  if not due:
+    return 0
+
+  lifted = 0
+  for row in due:
+    wid = int(row["id"])
+    payload = {
+      "kind": "warn",
+      "warn_id": wid,
+      "user_id": int(row["user_id"]),
+      "target_name": row["first_name"] or str(row["user_id"]),
+      "target_username": row["username"],
+      "source_chat_id": int(row["chat_id"] or 0),
+      "scope": row["scope"] or "chat",
+      "mode": row["mode"] or ("all" if (row["scope"] or "chat") == "all" else "chat"),
+      "admin_name": row["admin_name"],
+      "admin_role": row["admin_role"],
+      "reason": row["reason"],
+    }
+    try:
+      await expire_timed_warn(wid, payload)
+      lifted += 1
+    except Exception as e:
+      WarnDebug.error("AUTO", "expire from db", e, warn_id=wid)
+  if lifted:
+    WarnDebug.log("AUTO", "db safety scan lifted", count=lifted)
+  return lifted
 
 
 async def _trigger_auto_ban(
