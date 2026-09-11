@@ -1066,3 +1066,152 @@ async def group_balance_overview(callback_query: CallbackQuery):
         ),
         show_alert=True,
     )
+
+
+@dp.callback_query(lambda c: c.data and str(c.data).startswith("gbl_more:"))
+async def gbl_more_handler(callback_query: CallbackQuery):
+    """«Ещё сильнее» из анонса / ЛС — открывает пакеты в личке (без чужого message_id)."""
+    user_id = int(callback_query.from_user.id)
+    parts = str(callback_query.data or "").split(":")
+    if len(parts) != 2:
+        await callback_query.answer("Откройте бч в группе ещё раз.", show_alert=True)
+        return
+    try:
+        chat_id = int(parts[1])
+    except ValueError:
+        await callback_query.answer("Группа не найдена.", show_alert=True)
+        return
+
+    from bot.funcs.group_balance_level import (
+        build_raise_keyboard,
+        build_raise_screen_html,
+        bump_gbl_visit,
+        ensure_society_snapshot,
+        get_chat_level,
+        get_chat_level_async,
+        get_settings,
+        next_level_price,
+        strip_tg_emoji,
+    )
+
+    cfg = get_settings()
+    if not cfg.get("enabled", True):
+        await callback_query.answer(
+            "Сейчас поднять лимит нельзя. Загляните позже.",
+            show_alert=True,
+        )
+        return
+
+    await get_chat_level_async(chat_id, db=db)
+    if get_chat_level(chat_id) >= 5:
+        await callback_query.answer("Лимит уже на максимуме.", show_alert=True)
+        return
+
+    try:
+        await callback_query.answer("Открываю варианты…")
+    except Exception:
+        pass
+
+    visit_n = bump_gbl_visit(user_id, chat_id)
+    atmo = 0.0
+    try:
+        snap = await ensure_society_snapshot(chat_id, db=db)
+        atmo = float((snap or {}).get("pct") or 0)
+    except Exception:
+        atmo = 0.0
+
+    badge_title = None
+    nxt = next_level_price(chat_id, cfg)
+    if nxt:
+        try:
+            from bot.funcs.achievements import get_official_by_code
+            row = await get_official_by_code(db, f"gbl_level_{nxt[0]}")
+            if row and row.get("title"):
+                badge_title = str(row["title"])
+        except Exception:
+            badge_title = None
+
+    text = build_raise_screen_html(
+        chat_id=chat_id,
+        cfg=cfg,
+        badge_title=badge_title,
+        visit_n=visit_n,
+        atmosphere_pct=atmo,
+    )
+    kb = build_raise_keyboard(
+        chat_id=chat_id,
+        cfg=cfg,
+        atmosphere_pct=atmo,
+        back_callback="gbl_more_close",
+    )
+
+    msg = callback_query.message
+    is_private = bool(msg and getattr(msg.chat, "type", "") == "private")
+
+    if is_private and msg:
+        try:
+            await msg.edit_text(
+                text, reply_markup=kb, parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            user_message_balance_chat[user_id] = msg.message_id
+            return
+        except Exception as e:
+            if "DOCUMENT_INVALID" in str(e) or "can't parse" in str(e).lower():
+                try:
+                    await msg.edit_text(
+                        strip_tg_emoji(text), reply_markup=kb, parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                    user_message_balance_chat[user_id] = msg.message_id
+                    return
+                except Exception:
+                    pass
+            # message not editable → fall through to new DM
+
+    try:
+        sent = await bot1.send_message(
+            chat_id=user_id,
+            text=text,
+            reply_markup=kb,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        user_message_balance_chat[user_id] = sent.message_id
+    except Exception as e:
+        print(f"[GBL] gbl_more DM fail: {e!r}")
+        try:
+            await callback_query.answer(
+                "Напишите боту /start в личке — и нажмите снова.",
+                show_alert=True,
+            )
+        except Exception:
+            pass
+
+
+@dp.callback_query(lambda c: c.data == "gbl_more_close")
+async def gbl_more_close_handler(callback_query: CallbackQuery):
+    """Закрыть экран пакетов, открытый через «Ещё сильнее»."""
+    user_id = int(callback_query.from_user.id)
+    message_id = callback_query.message.message_id if callback_query.message else None
+    if (
+        message_id is None
+        or user_id not in user_message_balance_chat
+        or user_message_balance_chat[user_id] != message_id
+    ):
+        await callback_query.answer()
+        return
+    try:
+        await callback_query.message.edit_text(
+            f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
+            f"<b>Готово</b>\n"
+            f"<i>открыть снова — «Ещё сильнее» или бч в группе</i>",
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        try:
+            await callback_query.message.delete()
+        except Exception:
+            pass
+    await callback_query.answer()

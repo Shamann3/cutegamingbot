@@ -136,8 +136,10 @@ GROWTH_FUND_MIN_POT_FOR_COMMISSION = 10
 # Доля "chat_balance" из GROWTH_FUND_SPLIT (см. выше) для КАЖДОЙ комиссии -
 # и PvE (kube, slots, darts, bowling, soccer, basket, fortuna_solo, trade,
 # balls, provoda, tank, plate, risk, bombs), и PvP (kosti, orel, knb, duel,
-# scah, mines, memory, tic_tac_toe, words, fortuna_lobby, bingo - и их
-# inline-версии) - уходит в ОДНУ фиксированную группу-резерв ниже, а не в
+# scah, mines, memory, tic_tac_toe, fortuna_lobby, bingo - и их
+# inline-версии; "words"/Слова - НАМЕРЕННО без комиссии вообще, см.
+# GROWTH_FUND_GAME_MULTIPLIER выше) - уходит в ОДНУ фиксированную
+# группу-резерв ниже, а не в
 # баланс группы, где физически сыграли раунд.
 #
 # Причины:

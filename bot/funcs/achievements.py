@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-SHOWCASE_LIMIT = 3
+SHOWCASE_LIMIT = 5
 MAX_ITEMS_PER_USER = 200
 MAX_TITLE_HTML_LEN = 500
 MAX_DESCRIPTION_LEN = 400
@@ -337,12 +337,13 @@ def format_group_ref_html(
     chat_title: Optional[str] = None,
     chat_url: Optional[str] = None,
 ) -> str:
-    """Кликабельное название группы для карточки достижения."""
+    """Кликабельное название группы. Превью отключается на стороне сообщения."""
     name = (chat_title or "").strip() or (
         f"чат {int(chat_id)}" if chat_id is not None else "группа"
     )
     safe = html.escape(name)
     url = (chat_url or "").strip()
+    # t.me/username без лишнего — клик работает; invite тоже
     if url.startswith("http://") or url.startswith("https://") or url.startswith("tg://"):
         return f'<a href="{html.escape(url)}">{safe}</a>'
     return f"<b>{safe}</b>"
@@ -363,19 +364,46 @@ def build_gbl_title_html(
     return f"{title} · {group}"
 
 
-def achievement_line_html(it: Dict[str, Any]) -> str:
-    """Одна строка витрины / разблокировки."""
+def rarity_label(rarity: Any) -> str:
+    """Короткая подпись редкости (1–5)."""
+    try:
+        r = max(1, min(5, int(rarity or 1)))
+    except Exception:
+        r = 1
+    names = {
+        1: "обычно",
+        2: "заметно",
+        3: "редко",
+        4: "очень редко",
+        5: "легенда",
+    }
+    return f"{'★' * r}{'☆' * (5 - r)} · {names[r]}"
+
+
+def achievement_rarity(it: Dict[str, Any]) -> int:
+    meta = it.get("meta") if isinstance(it.get("meta"), dict) else {}
+    raw = meta.get("rarity", it.get("rarity"))
+    try:
+        return max(1, min(5, int(raw or 1)))
+    except Exception:
+        return 1
+
+
+def achievement_line_html(it: Dict[str, Any], *, with_rarity: bool = True) -> str:
+    """Минимализм: иконка · название · редкость."""
     ic = icon_html(it.get("icon_emoji_id"), it.get("icon_fallback") or DEFAULT_ICON_FALLBACK)
     title = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
+    if with_rarity:
+        return f"{ic} {title}\n{rarity_label(achievement_rarity(it))}"
     return f"{ic} {title}"
 
 
 def format_gbl_unlocks_html(items: Sequence[Dict[str, Any]]) -> str:
-    """Блок «новые достижения» после покупки уровня (1+ штук)."""
+    """Блок разблокировок — коротко и спокойно-премиум."""
     rows = [it for it in (items or []) if isinstance(it, dict)]
     if not rows:
         return ""
-    header = "Новое достижение" if len(rows) == 1 else f"Новые достижения · {len(rows)}"
+    header = "Новая награда" if len(rows) == 1 else f"Новые награды · {len(rows)}"
     lines = [achievement_line_html(it) for it in rows]
     return (
         f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
@@ -441,12 +469,13 @@ def format_showcase_blockquote(doc: Dict[str, Any]) -> str:
     rows = showcase_items(doc, SHOWCASE_LIMIT)
     if not rows:
         return ""
-    lines = [achievement_line_html(it) for _iid, it in rows]
+    # На витрине — компактно, без редкости в каждой строке (воздух)
+    lines = [achievement_line_html(it, with_rarity=False) for _iid, it in rows]
     body = "\n".join(lines)
     return (
         f"<blockquote>"
         f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-        f"<b>Достижения</b>\n{body}"
+        f"<b>Витрина</b> · {len(rows)}/{SHOWCASE_LIMIT}\n{body}"
         f"</blockquote>"
     )
 
@@ -461,35 +490,32 @@ def format_full_achievements_html(
         return (
             f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
             f"<b>Достижения</b>\n\n"
-            f"Пока пусто — скоро здесь появится первая награда."
+            f"Пока пусто.\n"
+            f"<i>Поднимите уровень группы — и здесь появится первая награда.</i>"
         )
+    showcase_ids = {iid for iid, _ in showcase_items(doc, SHOWCASE_LIMIT)}
     parts = [
         f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-        f"<b>Все достижения</b>"
+        f"<b>Достижения</b>"
         + (f"\n{html.escape(owner_name)}" if owner_name else ""),
+        f"<i>на витрине профиля — первые {SHOWCASE_LIMIT} · редкость видна ниже</i>",
         "",
     ]
     official = [(i, x) for i, x in rows if x.get("kind") == "official"]
     free = [(i, x) for i, x in rows if x.get("kind") != "official"]
 
     def _card(iid: str, it: Dict[str, Any]) -> str:
-        line = achievement_line_html(it)
+        line = achievement_line_html(it, with_rarity=True)
+        showcase_list = [x for x, _ in showcase_items(doc, SHOWCASE_LIMIT)]
+        pin = ""
+        if iid in showcase_ids:
+            try:
+                slot_n = showcase_list.index(iid) + 1
+                pin = f" · <b>витрина {slot_n}</b>"
+            except ValueError:
+                pin = " · <b>витрина</b>"
         when = format_granted_at(it.get("granted_at") or time.time())
-        who = granter_link_html(it.get("granted_by"), str(it.get("granted_by_name") or "Система"))
-        meta = it.get("meta") if isinstance(it.get("meta"), dict) else {}
-        extra = ""
-        if meta.get("chat_id") is not None or meta.get("chat_title"):
-            # Название уже в title_html; дублируем кратко только уровень ★
-            lvl = meta.get("level")
-            if lvl:
-                extra = f"\n★{int(lvl)} баланса группы"
-        return (
-            f"{line}{extra}\n"
-            f"<blockquote>"
-            f"{when}\n"
-            f"Выдал(-а): {who}"
-            f"</blockquote>"
-        )
+        return f"{line}{pin}\n<blockquote>{when}</blockquote>"
 
     if official:
         parts.append("<b>Официальные</b>")
@@ -502,6 +528,29 @@ def format_full_achievements_html(
             parts.append(_card(iid, it))
             parts.append("")
     return "\n".join(parts).strip()
+
+
+def pin_item_to_front(doc: Dict[str, Any], instance_id: str) -> Dict[str, Any]:
+    """Поставить достижение первым на витрине."""
+    return pin_item_to_slot(doc, instance_id, 0)
+
+
+def pin_item_to_slot(
+    doc: Dict[str, Any],
+    instance_id: str,
+    slot: int = 0,
+) -> Dict[str, Any]:
+    """Поставить достижение в слот витрины (0…SHOWCASE_LIMIT-1)."""
+    doc = _normalize_doc(doc)
+    iid = str(instance_id)
+    if iid not in doc["items"]:
+        return doc
+    order = [x for x in doc["order"] if x != iid]
+    max_slot = min(SHOWCASE_LIMIT - 1, max(0, len(order)))
+    slot_i = max(0, min(int(slot), max_slot))
+    order.insert(slot_i, iid)
+    doc["order"] = order
+    return doc
 
 
 def move_item(doc: Dict[str, Any], instance_id: str, direction: int) -> Dict[str, Any]:
@@ -628,6 +677,11 @@ def grant_official(
                 pass
         if meta.get("code"):
             clean["code"] = str(meta["code"])[:64]
+        if meta.get("rarity") is not None:
+            try:
+                clean["rarity"] = max(1, min(5, int(meta["rarity"])))
+            except Exception:
+                pass
         if clean:
             item["meta"] = clean
     doc["items"][iid] = item
@@ -1104,11 +1158,16 @@ async def grant_gbl_level_achievement(
             "chat_url": (chat_url or "").strip() or None,
             "level": level,
             "code": catalog_code,
+            "rarity": int(official.get("rarity") or level),
         }
     else:
         unique = catalog_code
         title_html = html.escape(base_title)
-        meta = {"level": level, "code": catalog_code}
+        meta = {
+            "level": level,
+            "code": catalog_code,
+            "rarity": int(official.get("rarity") or level),
+        }
 
     try:
         res = await grant_official_to_user(

@@ -1270,6 +1270,29 @@ async def apply_level_purchase(
     }
 
 
+def recommended_package(
+    chat_id: int,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    ЕДИНЫЙ источник правды: какой именно пакет сейчас продвигается игроку.
+
+    ВАЖНО: и текст-тизер ("Следующий шаг" на экране "Как работает лимит"),
+    и зелёная CTA-кнопка под ним ОБЯЗАНЫ смотреть на один и тот же пакет -
+    иначе получается ситуация из бага "текст рекламирует ★2 (лимит →104,
+    159⭐), а кнопка ведёт на ★1 (лимит →52)": игрок читает одно предложение,
+    а купить может только другое. Обе функции ниже (_next_level_teaser,
+    raise_cta_label/raise_cta_pkg) ОБЯЗАНЫ брать пакет только отсюда.
+    """
+    cfg = cfg or get_settings()
+    if not cfg.get("enabled", True):
+        return None
+    packages = build_level_packages(chat_id, cfg)
+    if not packages:
+        return None
+    return next((p for p in packages if p.get("recommended")), packages[0])
+
+
 def _next_level_teaser(
     chat_id: int,
     cfg: Optional[Dict[str, Any]] = None,
@@ -1278,12 +1301,9 @@ def _next_level_teaser(
 ) -> Optional[str]:
     """Тизер: какой лимит станет и за сколько Stars."""
     cfg = cfg or get_settings()
-    if not cfg.get("enabled", True):
+    pkg = recommended_package(chat_id, cfg)
+    if not pkg:
         return None
-    packages = build_level_packages(chat_id, cfg)
-    if not packages:
-        return None
-    pkg = next((p for p in packages if p.get("recommended")), packages[0])
     gain = stake_delta_for_step(
         from_level=int(pkg["from_level"]),
         to_level=int(pkg["to_level"]),
@@ -1304,30 +1324,46 @@ def _next_level_teaser(
     )
 
 
+def raise_cta_pkg(
+    chat_id: int,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Пакет, на который ОБЯЗАНА вести зелёная CTA-кнопка - тот же самый,
+    что рекламирует текст над ней (см. recommended_package)."""
+    cfg = cfg or get_settings()
+    if not cfg.get("enabled", True):
+        return None
+    if get_chat_level(chat_id) >= 5:
+        return None
+    return recommended_package(chat_id, cfg)
+
+
 def raise_cta_label(
     chat_id: int,
     cfg: Optional[Dict[str, Any]] = None,
     *,
     atmosphere_pct: float = 0.0,
 ) -> Optional[str]:
-    """Зелёная кнопка: какой лимит будет после следующего уровня."""
+    """Зелёная кнопка: лимит ровно того пакета, что показан в тексте выше
+    («Следующий шаг» / «Хит») - НЕ обязательно +1 уровень, а именно тот,
+    что сейчас рекомендован (см. recommended_package)."""
     cfg = cfg or get_settings()
     if not cfg.get("enabled", True):
         return None
     level = get_chat_level(chat_id)
     if level >= 5:
         return None
-    nxt = next_level_price(chat_id, cfg)
-    if not nxt:
+    pkg = raise_cta_pkg(chat_id, cfg)
+    if not pkg:
         return str(cfg.get("raise_button_text") or "Поднять лимит")
-    to_level, _price = nxt
     atmo = float(atmosphere_pct or 0)
-    cur_cap = effective_stake_cap(chat_id, atmosphere_pct=atmo, cfg=cfg)
-    new_base = stake_cap_for_level(to_level, cfg)
-    if to_level >= 5:
-        new_base = None
-    new_cap = _cap_with_atmosphere(new_base, atmo, cfg)
-    return _lim_arrow_label(cur_cap, new_cap)
+    gain = stake_delta_for_step(
+        from_level=int(pkg["from_level"]),
+        to_level=int(pkg["to_level"]),
+        atmosphere_pct=atmo,
+        cfg=cfg,
+    )
+    return _lim_arrow_label(gain.get("old_cap"), gain.get("new_cap"))
 
 
 def _ru_users_word(n: int) -> str:
@@ -1529,19 +1565,44 @@ def build_details_keyboard(
     atmosphere_pct: float = 0.0,
     cfg: Optional[Dict[str, Any]] = None,
 ):
-    """Клавиатура обзора: повышение + назад."""
+    """
+    Клавиатура обзора: повышение + назад.
+
+    ВАЖНО: кнопка ведёт НЕ на общее меню вариантов (gbl_raise), а СРАЗУ на
+    оплату ТОГО ЖЕ пакета, который только что описан в тексте экрана
+    ("Следующий шаг") - см. recommended_package(). Раньше кнопка всегда
+    вела на generic "gbl_raise" с подписью для +1 уровня (next_level_price),
+    а текст выше рекламировал другой (рекомендованный) пакет - игрок видел
+    одно предложение, а после клика попадал на меню с другим набором цен.
+    Теперь текст и кнопка гарантированно про один и тот же пакет, и клик
+    сразу ведёт к оплате именно того, что было показано - без лишнего шага
+    выбора.
+    """
     from aiogram.types import InlineKeyboardMarkup
 
     cfg = cfg or get_settings()
     rows = []
-    cta = raise_cta_label(chat_id, cfg, atmosphere_pct=float(atmosphere_pct or 0))
-    if cta:
-        rows.append([_btn(
-            text=cta,
-            callback_data="gbl_raise",
-            style="success",
-            icon_custom_emoji_id=ICON_RAISE_LEVEL,
-        )])
+    pkg = raise_cta_pkg(chat_id, cfg)
+    if pkg:
+        cta = raise_cta_label(chat_id, cfg, atmosphere_pct=float(atmosphere_pct or 0))
+        if cta:
+            rows.append([_btn(
+                text=cta,
+                callback_data=f"gbl_pay:{int(chat_id)}:{int(pkg['to_level'])}:{int(pkg['pay'])}",
+                style="success",
+                icon_custom_emoji_id=ICON_RAISE_LEVEL,
+            )])
+    else:
+        # Пакетов нет (например, уровень уже максимум) - fallback на старое
+        # generic-меню, чтобы кнопка хотя бы честно открывала актуальный экран.
+        cta = raise_cta_label(chat_id, cfg, atmosphere_pct=float(atmosphere_pct or 0))
+        if cta:
+            rows.append([_btn(
+                text=cta,
+                callback_data="gbl_raise",
+                style="success",
+                icon_custom_emoji_id=ICON_RAISE_LEVEL,
+            )])
     rows.append([_btn(
         text="Назад",
         callback_data="back_to_balance",
@@ -1648,6 +1709,7 @@ def build_raise_keyboard(
     chat_id: int,
     cfg: Optional[Dict[str, Any]] = None,
     atmosphere_pct: float = 0.0,
+    back_callback: str = "back_to_balance",
 ):
     """Кнопки вариантов: лимит до N · цена (с учётом бонуса чата)."""
     from aiogram.types import InlineKeyboardMarkup
@@ -1689,12 +1751,13 @@ def build_raise_keyboard(
             style=style,
             icon_custom_emoji_id=ICON_RAISE_LEVEL,
         )])
-    rows.append([_btn(
-        text="Назад",
-        callback_data="back_to_balance",
-        style="default",
-        icon_custom_emoji_id=ICON_BACK,
-    )])
+    if back_callback:
+        rows.append([_btn(
+            text="Назад",
+            callback_data=back_callback,
+            style="default",
+            icon_custom_emoji_id=ICON_BACK,
+        )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -2074,7 +2137,7 @@ def build_gift_announcement_html(
     badge_title: Optional[str] = None,
     achievements_html: Optional[str] = None,
 ) -> str:
-    """Анонс в группу — коротко + достижения спонсора."""
+    """Ритуал в группу: герой · новый лимит · награда (спокойно-премиум)."""
     cfg = get_settings()
     prev = int(from_level) if from_level is not None else max(0, int(to_level) - 1)
     gain = stake_delta_for_step(
@@ -2098,16 +2161,64 @@ def build_gift_announcement_html(
         else social_proof_line()
     )
     ach = (achievements_html or "").strip()
-    ach_bit = f"\n{ach}" if ach else ""
+    ach_bit = f"\n\n{ach}" if ach else ""
     return (
-        f"{gbl_tg('🏆')} <b>Лимит подняли</b>\n"
-        f"{sponsor_name_html} · {where}\n"
-        f"{stars_label(prev)} → <b>{stars_label(to_level)}</b> · "
+        f"{gbl_tg('🏆')} <b>Группа стала сильнее</b>\n"
+        f"{sponsor_name_html} открыл новый лимит для всех\n"
+        f"{where}\n\n"
+        f"{stars_label(prev)} → <b>{stars_label(to_level)}</b>\n"
         f"лимит {gain['from_to_delta_html']}\n"
         f"<b>{int(price_stars)}⭐</b> · «<b>{_html_escape(title)}</b>»"
-        f"{ach_bit}\n"
-        f"<i>{proof}</i> · <b>бч</b>"
+        f"{ach_bit}\n\n"
+        f"<i>{proof}</i>"
     )
+
+
+def build_who_next_html(
+    *,
+    chat_id: int,
+    to_level: int,
+    atmosphere_pct: float = 0.0,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Отдельный короткий пост: кто следующий может поднять дальше."""
+    cfg = cfg or get_settings()
+    level = max(0, min(5, int(to_level)))
+    if level >= 5:
+        return (
+            f"{gbl_tg('🏆')} <b>Лимит на максимуме</b>\n"
+            f"{stars_label(5)} · дальше только живой чат\n"
+            f"<i>ставки без потолка уровня</i>"
+        )
+    nxt = level + 1
+    gain = stake_delta_for_step(
+        from_level=level,
+        to_level=nxt,
+        atmosphere_pct=float(atmosphere_pct or 0),
+        cfg=cfg,
+    )
+    title = badge_title_for_level(nxt, cfg)
+    return (
+        f"{gbl_tg('🔥')} <b>Кто следующий?</b>\n"
+        f"Лимит можно поднять ещё — любой.\n"
+        f"следующий шаг · ★{level}→★{nxt}\n"
+        f"лимит {gain['from_to_delta_html']}\n"
+        f"метка «<b>{_html_escape(title)}</b>»"
+    )
+
+
+def build_who_next_keyboard(*, chat_id: int, to_level: int):
+    """Зелёная CTA в группе — без «в профиль»."""
+    from aiogram.types import InlineKeyboardMarkup
+
+    if int(to_level) >= 5:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[_btn(
+        text="Ещё сильнее",
+        callback_data=f"gbl_more:{int(chat_id)}",
+        style="success",
+        icon_custom_emoji_id=ICON_RAISE_LEVEL,
+    )]])
 
 
 def build_buyer_hero_html(
@@ -2122,7 +2233,7 @@ def build_buyer_hero_html(
     group_html: Optional[str] = None,
     achievements_html: Optional[str] = None,
 ) -> str:
-    """ЛС покупателю — факты покупки + блок новых достижений."""
+    """ЛС покупателю — факты + награды. Кнопка «Ещё сильнее» отдельно."""
     cfg = get_settings()
     prev = int(from_level) if from_level is not None else max(0, int(to_level) - 1)
     steps = max(1, int(to_level) - prev)
@@ -2151,16 +2262,88 @@ def build_buyer_hero_html(
         price_bit = f"<s>{listed}⭐</s> → {price_bit} (−{save_pct}%)"
     ach = (achievements_html or "").strip()
     ach_bit = f"\n\n{ach}" if ach else ""
+    more = ""
+    if int(to_level) < 5:
+        more = "\n\n<i>хотите выше — кнопка ниже</i>"
     return (
         f"{gbl_tg('🏆')} <b>Готово</b>\n"
-        f"<i>лимит выше — для всех</i>\n\n"
+        f"<i>лимит выше — для всех в группе</i>\n\n"
         f"{where}\n"
         f"★{prev}→★{to_level} · лимит {gain['from_to_delta_html']}\n"
         f"{price_bit} · «<b>{_html_escape(title)}</b>»"
-        f"{ach_bit}\n\n"
-        f"<i>{social_proof_line()}</i>\n"
-        f"профиль → достижения · или <b>бч</b>"
+        f"{ach_bit}"
+        f"{more}"
     )
+
+
+def build_buyer_success_keyboard(*, chat_id: int, to_level: int):
+    """Только зелёная «Ещё сильнее» — без «В профиль»."""
+    from aiogram.types import InlineKeyboardMarkup
+
+    if int(to_level) >= 5:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[_btn(
+        text="Ещё сильнее",
+        callback_data=f"gbl_more:{int(chat_id)}",
+        style="success",
+        icon_custom_emoji_id=ICON_RAISE_LEVEL,
+    )]])
+
+
+def build_creator_notify_html(
+    *,
+    sponsor_name_html: str,
+    to_level: int,
+    price_stars: int,
+    chat_id: int,
+    atmosphere_pct: float = 0.0,
+    chat_title: Optional[str] = None,
+    from_level: Optional[int] = None,
+    group_html: Optional[str] = None,
+    badge_title: Optional[str] = None,
+) -> str:
+    """ЛС создателю группы — на каждую покупку."""
+    cfg = get_settings()
+    prev = int(from_level) if from_level is not None else max(0, int(to_level) - 1)
+    gain = stake_delta_for_step(
+        from_level=prev,
+        to_level=to_level,
+        atmosphere_pct=atmosphere_pct,
+        cfg=cfg,
+    )
+    title = (badge_title or "").strip() or badge_title_for_level(to_level, cfg)
+    if group_html:
+        where = group_html
+    else:
+        where = format_group_link_html(
+            (chat_title or "").strip() or f"чат {chat_id}",
+            chat_id=chat_id,
+        )
+    return (
+        f"{gbl_tg('🏆')} <b>Вашу группу поддержали</b>\n"
+        f"{sponsor_name_html} поднял лимит\n\n"
+        f"{where}\n"
+        f"{stars_label(prev)} → <b>{stars_label(to_level)}</b>\n"
+        f"лимит {gain['from_to_delta_html']}\n"
+        f"<b>{int(price_stars)}⭐</b> · «<b>{_html_escape(title)}</b>»\n\n"
+        f"<i>это подарок всей группе</i>"
+    )
+
+
+def build_creator_notify_keyboard(*, chat_id: int, to_level: int):
+    from aiogram.types import InlineKeyboardMarkup
+
+    rows = []
+    if int(to_level) < 5:
+        rows.append([_btn(
+            text="Ещё сильнее",
+            callback_data=f"gbl_more:{int(chat_id)}",
+            style="success",
+            icon_custom_emoji_id=ICON_RAISE_LEVEL,
+        )])
+    if not rows:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def resolve_group_link_html(
@@ -2169,7 +2352,7 @@ async def resolve_group_link_html(
     *,
     chat_title: Optional[str] = None,
 ) -> Tuple[str, Optional[str], Optional[str]]:
-    """(html_link, title, url) — для кликабельного названия группы."""
+    """(html_link, title, url) — кликабельное имя; превью гасит вызывающий код."""
     title = (chat_title or "").strip() or None
     url: Optional[str] = None
     try:
@@ -2195,3 +2378,188 @@ async def resolve_group_link_html(
         title = title or f"чат {chat_id}"
     html_link = format_group_link_html(title or str(chat_id), url=url, chat_id=chat_id)
     return html_link, title, url
+
+
+async def resolve_group_creator(
+    bot,
+    chat_id: int,
+    *,
+    db=None,
+) -> Tuple[Optional[int], Optional[str]]:
+    """(creator_id, display_name) — БД, затем Telegram admins."""
+    cid: Optional[int] = None
+    name: Optional[str] = None
+    if db is not None:
+        try:
+            raw = await db.get_creator_id(int(chat_id))
+            if raw:
+                cid = int(raw)
+        except Exception:
+            cid = None
+    if cid:
+        try:
+            u = await bot.get_chat(int(cid))
+            name = (
+                getattr(u, "full_name", None)
+                or getattr(u, "first_name", None)
+                or str(cid)
+            )
+        except Exception:
+            name = str(cid)
+        return cid, name
+    try:
+        admins = await bot.get_chat_administrators(int(chat_id))
+        for adm in admins or []:
+            if getattr(adm, "status", None) == "creator":
+                user = getattr(adm, "user", None)
+                if user and getattr(user, "id", None):
+                    cid = int(user.id)
+                    name = (
+                        getattr(user, "full_name", None)
+                        or getattr(user, "first_name", None)
+                        or str(cid)
+                    )
+                    return cid, name
+    except Exception:
+        pass
+    return None, None
+
+
+async def deliver_gbl_purchase_messages(
+    bot,
+    *,
+    chat_id: int,
+    buyer_id: int,
+    sponsor_name_html: str,
+    to_level: int,
+    price_stars: int,
+    from_level: int,
+    atmosphere_pct: float = 0.0,
+    chat_title: Optional[str] = None,
+    group_html: Optional[str] = None,
+    badge_title: Optional[str] = None,
+    achievements_html: Optional[str] = None,
+    db=None,
+    buyer_message=None,
+) -> None:
+    """Герой-пост + «кто следующий?» + ЛС покупателю + ЛС создателю."""
+    gift_html = build_gift_announcement_html(
+        sponsor_name_html=sponsor_name_html,
+        to_level=to_level,
+        price_stars=price_stars,
+        chat_id=chat_id,
+        atmosphere_pct=atmosphere_pct,
+        chat_title=chat_title,
+        from_level=from_level,
+        group_html=group_html,
+        badge_title=badge_title,
+        achievements_html=achievements_html,
+    )
+    who_html = build_who_next_html(
+        chat_id=chat_id,
+        to_level=to_level,
+        atmosphere_pct=atmosphere_pct,
+    )
+    who_kb = build_who_next_keyboard(chat_id=chat_id, to_level=to_level)
+    buyer_html = build_buyer_hero_html(
+        to_level=to_level,
+        price_stars=price_stars,
+        chat_id=chat_id,
+        atmosphere_pct=atmosphere_pct,
+        chat_title=chat_title,
+        from_level=from_level,
+        badge_title=badge_title,
+        group_html=group_html,
+        achievements_html=achievements_html,
+    )
+    buyer_kb = build_buyer_success_keyboard(chat_id=chat_id, to_level=to_level)
+
+    # 1) Ритуал в группу
+    try:
+        await bot.send_message(
+            chat_id=int(chat_id),
+            text=gift_html,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            message_effect_id="5046509860389126442",
+        )
+    except Exception as e:
+        print(f"⚠️ [GBL] gift announce: {e!r}")
+        try:
+            await bot.send_message(
+                chat_id=int(chat_id),
+                text=gift_html,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        except Exception as e2:
+            print(f"❌ [GBL] gift announce2: {e2!r}")
+
+    # 2) Отдельный «кто следующий?»
+    try:
+        await bot.send_message(
+            chat_id=int(chat_id),
+            text=who_html,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=who_kb,
+        )
+    except Exception as e:
+        print(f"⚠️ [GBL] who-next: {e!r}")
+
+    # 3) Покупателю
+    try:
+        if buyer_message is not None:
+            await buyer_message.answer(
+                buyer_html,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=buyer_kb,
+            )
+        else:
+            await bot.send_message(
+                int(buyer_id),
+                buyer_html,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=buyer_kb,
+            )
+    except Exception as e:
+        print(f"⚠️ [GBL] buyer hero: {e!r}")
+        try:
+            await bot.send_message(
+                int(buyer_id),
+                f"{gbl_tg('🏆')} <b>Уровень повышен · {stars_label(to_level)}</b>",
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            pass
+
+    # 4) Создателю (каждая покупка; себя не дублируем)
+    try:
+        creator_id, _cname = await resolve_group_creator(bot, int(chat_id), db=db)
+        if creator_id and int(creator_id) != int(buyer_id):
+            creator_html = build_creator_notify_html(
+                sponsor_name_html=sponsor_name_html,
+                to_level=to_level,
+                price_stars=price_stars,
+                chat_id=chat_id,
+                atmosphere_pct=atmosphere_pct,
+                chat_title=chat_title,
+                from_level=from_level,
+                group_html=group_html,
+                badge_title=badge_title,
+            )
+            creator_kb = build_creator_notify_keyboard(
+                chat_id=chat_id, to_level=to_level,
+            )
+            await bot.send_message(
+                int(creator_id),
+                creator_html,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=creator_kb,
+            )
+    except Exception as e:
+        print(f"⚠️ [GBL] creator notify: {e!r}")

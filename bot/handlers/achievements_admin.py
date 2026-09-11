@@ -405,6 +405,7 @@ async def handle_achievements_callback(callback: CallbackQuery, db) -> bool:
                 f"<b>Выдано{already}</b>\n"
                 f"{official.get('title_html') or html.escape(official.get('title') or '')}",
                 parse_mode="HTML",
+                disable_web_page_preview=True,
             )
         except Exception:
             pass
@@ -440,6 +441,7 @@ async def handle_achievements_callback(callback: CallbackQuery, db) -> bool:
             await callback.message.edit_text(
                 f"<b>{'Достижение снято' if ok else 'Не удалось снять'}</b>",
                 parse_mode="HTML",
+                disable_web_page_preview=True,
             )
         except Exception:
             pass
@@ -452,16 +454,10 @@ async def handle_achievements_callback(callback: CallbackQuery, db) -> bool:
 async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
     from bot.funcs.profile import (
         user_message_mappingprofile,
-        _profile_safe_edit_message,
     )
 
     data = str(callback.data or "")
-    # achm_all:viewer:target
-    # achm_up:viewer:target:iid
-    # achm_dn:viewer:target:iid
-    # achm_del:viewer:target:iid
-    # achm_delok:viewer:target:iid
-    # achm_back:viewer:target
+    # achm_all / achm_back / achm_up / achm_dn / achm_pin / achm_slot / achm_del / achm_delok
     parts = data.split(":")
     if len(parts) < 3:
         return False
@@ -480,36 +476,59 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
 
     mid = callback.message.message_id if callback.message else None
     if mid and (viewer not in user_message_mappingprofile or user_message_mappingprofile[viewer] != mid):
-        # still allow if mapped differently - soft check
         pass
 
     is_owner = clicker == target
 
+    async def _edit(text: str, kb: InlineKeyboardMarkup) -> bool:
+        try:
+            await callback.message.edit_caption(
+                caption=text, parse_mode="HTML", reply_markup=kb,
+                disable_web_page_preview=True,
+            )
+            return True
+        except TypeError:
+            try:
+                await callback.message.edit_caption(
+                    caption=text, parse_mode="HTML", reply_markup=kb,
+                )
+                return True
+            except Exception:
+                pass
+        except Exception:
+            pass
+        try:
+            await callback.message.edit_text(
+                text, parse_mode="HTML", reply_markup=kb,
+                disable_web_page_preview=True,
+            )
+            return True
+        except Exception as e:
+            if "DOCUMENT_INVALID" in str(e) or "can't parse" in str(e).lower():
+                plain = ach.strip_tg_emoji(text)
+                try:
+                    await callback.message.edit_caption(
+                        caption=plain, parse_mode="HTML", reply_markup=kb,
+                    )
+                    return True
+                except Exception:
+                    try:
+                        await callback.message.edit_text(
+                            plain, parse_mode="HTML", reply_markup=kb,
+                            disable_web_page_preview=True,
+                        )
+                        return True
+                    except Exception:
+                        return False
+            return False
+
     if action == "achm_all":
         doc = await ach.get_user_achievements_doc(db, target)
-        name = callback.message.chat.first_name if False else ""
-        try:
-            # try get display name from caption — skip
-            name = ""
-        except Exception:
-            name = ""
-        text = ach.format_full_achievements_html(doc, owner_name=name)
+        text = ach.format_full_achievements_html(doc)
         kb = _build_manage_keyboard(viewer, target, doc, is_owner=is_owner)
-        try:
-            await callback.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=kb)
-        except Exception:
-            try:
-                await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
-            except Exception as e:
-                if "DOCUMENT_INVALID" in str(e) or "can't parse" in str(e).lower():
-                    plain = ach.strip_tg_emoji(text)
-                    try:
-                        await callback.message.edit_caption(caption=plain, parse_mode="HTML", reply_markup=kb)
-                    except Exception:
-                        await callback.message.edit_text(plain, parse_mode="HTML", reply_markup=kb)
-                else:
-                    await callback.answer("Не удалось открыть", show_alert=True)
-                    return True
+        if not await _edit(text, kb):
+            await callback.answer("Не удалось открыть", show_alert=True)
+            return True
         await callback.answer()
         return True
 
@@ -541,9 +560,23 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
     if action == "achm_up":
         doc = ach.move_item(doc, iid, -1)
         await ach.save_user_achievements_doc(db, target, doc)
+        await callback.answer("Выше")
     elif action == "achm_dn":
         doc = ach.move_item(doc, iid, 1)
         await ach.save_user_achievements_doc(db, target, doc)
+        await callback.answer("Ниже")
+    elif action == "achm_pin":
+        doc = ach.pin_item_to_front(doc, iid)
+        await ach.save_user_achievements_doc(db, target, doc)
+        await callback.answer("На витрине · 1")
+    elif action == "achm_slot":
+        try:
+            slot = int(parts[4]) if len(parts) > 4 else 0
+        except Exception:
+            slot = 0
+        doc = ach.pin_item_to_slot(doc, iid, slot)
+        await ach.save_user_achievements_doc(db, target, doc)
+        await callback.answer(f"Витрина · {slot + 1}")
     elif action == "achm_del":
         it = doc.get("items", {}).get(iid)
         if not it or it.get("kind") != "free":
@@ -568,35 +601,61 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
 
     text = ach.format_full_achievements_html(doc)
     kb = _build_manage_keyboard(viewer, target, doc, is_owner=True)
-    try:
-        await callback.message.edit_caption(caption=text, parse_mode="HTML", reply_markup=kb)
-    except Exception:
-        try:
-            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
-        except Exception:
-            pass
-    await callback.answer()
+    await _edit(text, kb)
     return True
 
 
 def _build_manage_keyboard(viewer: int, target: int, doc: dict, *, is_owner: bool) -> InlineKeyboardMarkup:
     rows = []
-    items = list(ach.showcase_items(doc, 99))  # use user order for manage
-    # Actually manage should use full order
     doc_n = ach._normalize_doc(doc)
     ordered = [(iid, doc_n["items"][iid]) for iid in doc_n["order"] if iid in doc_n["items"]]
+    showcase_ids = [iid for iid, _ in ach.showcase_items(doc_n, ach.SHOWCASE_LIMIT)]
+
+    if is_owner and ordered:
+        rows.append([_btn(
+            text=f"Витрина · {min(len(ordered), ach.SHOWCASE_LIMIT)}/{ach.SHOWCASE_LIMIT}",
+            callback_data=f"achm_all:{viewer}:{target}",
+        )])
+
     if is_owner:
         for iid, it in ordered[:12]:
-            title = ach.strip_tg_emoji(it.get("title_html") or "…")[:18]
-            row = [
+            title = ach.strip_tg_emoji(it.get("title_html") or "…")[:14]
+            on_v = iid in showcase_ids
+            slot_mark = ""
+            if on_v:
+                try:
+                    slot_mark = f"{showcase_ids.index(iid) + 1}·"
+                except ValueError:
+                    slot_mark = "·"
+            rows.append([
+                _btn(
+                    text=f"{'📌' if on_v else '○'}{slot_mark}{title}"[:64],
+                    callback_data=f"achm_pin:{viewer}:{target}:{iid}",
+                ),
                 _btn(text="↑", callback_data=f"achm_up:{viewer}:{target}:{iid}"),
                 _btn(text="↓", callback_data=f"achm_dn:{viewer}:{target}:{iid}"),
-            ]
+            ])
+            slot_row = []
+            for s in range(ach.SHOWCASE_LIMIT):
+                mark = str(s + 1)
+                if on_v:
+                    try:
+                        if showcase_ids.index(iid) == s:
+                            mark = "●"
+                    except ValueError:
+                        pass
+                slot_row.append(_btn(
+                    text=mark,
+                    callback_data=f"achm_slot:{viewer}:{target}:{iid}:{s}",
+                ))
             if it.get("kind") == "free":
-                row.append(_btn(text="Удалить", callback_data=f"achm_del:{viewer}:{target}:{iid}", style="danger"))
-            else:
-                row.append(_btn(text=title, callback_data=f"achm_all:{viewer}:{target}"))
-            rows.append(row)
+                slot_row.append(_btn(
+                    text="Удал.",
+                    callback_data=f"achm_del:{viewer}:{target}:{iid}",
+                    style="danger",
+                ))
+            rows.append(slot_row)
+
     rows.append([_btn(
         text="К профилю",
         callback_data=f"achm_back:{viewer}:{target}",

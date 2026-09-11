@@ -3242,8 +3242,7 @@ async def successful_payment_handler(message: Message):
 
         from bot.funcs.group_balance_level import (
             apply_level_purchase,
-            build_buyer_hero_html,
-            build_gift_announcement_html,
+            deliver_gbl_purchase_messages,
             get_settings,
             resolve_atmosphere_pct,
             stars_label,
@@ -3328,68 +3327,22 @@ async def successful_payment_handler(message: Message):
         except Exception:
             pass
 
-        gift_html = build_gift_announcement_html(
+        await deliver_gbl_purchase_messages(
+            bot1,
+            chat_id=int(pay_chat_id),
+            buyer_id=int(user_id),
             sponsor_name_html=sponsor_html,
-            to_level=to_level,
-            price_stars=price,
-            chat_id=pay_chat_id,
+            to_level=int(to_level),
+            price_stars=int(price),
+            from_level=from_level,
             atmosphere_pct=atmo,
             chat_title=chat_title,
-            from_level=from_level,
             group_html=group_html,
             badge_title=badge_title,
             achievements_html=achievements_html,
+            db=db,
+            buyer_message=message,
         )
-        buyer_html = build_buyer_hero_html(
-            to_level=to_level,
-            price_stars=price,
-            chat_id=pay_chat_id,
-            atmosphere_pct=atmo,
-            chat_title=chat_title,
-            from_level=from_level,
-            badge_title=badge_title,
-            group_html=group_html,
-            achievements_html=achievements_html,
-        )
-
-        # Анонс в группу
-        try:
-            await bot1.send_message(
-                chat_id=pay_chat_id,
-                text=gift_html,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-                message_effect_id="5046509860389126442",
-            )
-        except Exception as e:
-            print(f"⚠️ [PAYMENT][GBL] group announce fail: {e!r}")
-            try:
-                await bot1.send_message(
-                    chat_id=pay_chat_id,
-                    text=gift_html,
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                )
-            except Exception as e2:
-                print(f"❌ [PAYMENT][GBL] group announce fail2: {e2!r}")
-
-        # Подтверждение плательщику — «пакет героя»
-        try:
-            await message.answer(
-                buyer_html, parse_mode="HTML", disable_web_page_preview=True,
-            )
-        except Exception as e:
-            print(f"⚠️ [PAYMENT][GBL] buyer hero fail: {e!r}")
-            try:
-                await message.answer(
-                    f"<tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji> "
-                    f"<b>Уровень повышен · {stars_label(to_level)}</b>\n"
-                    f"Метка уже в профиле.",
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                )
-            except Exception:
-                pass
 
         # Уведомление владельцу
         try:
@@ -3565,7 +3518,7 @@ async def crypto_payment_handler(invoice: Invoice):
         try:
             from bot.funcs.group_balance_level import (
                 apply_level_purchase,
-                build_gift_announcement_html,
+                deliver_gbl_purchase_messages,
                 resolve_atmosphere_pct,
             )
             res = await apply_level_purchase(
@@ -3592,9 +3545,9 @@ async def crypto_payment_handler(invoice: Invoice):
             from bot.funcs.group_balance_level import (
                 format_profile_link_html,
                 resolve_group_link_html,
-                build_buyer_hero_html,
                 badge_title_for_level,
                 get_settings as gbl_get_settings,
+                stars_label,
             )
             try:
                 u = await bot1.get_chat(user_id)
@@ -3613,7 +3566,6 @@ async def crypto_payment_handler(invoice: Invoice):
                     from bot.funcs.achievements import (
                         format_gbl_unlocks_html,
                         grant_gbl_levels_for_purchase,
-                        get_official_by_code,
                     )
                     unlocked_c = await grant_gbl_levels_for_purchase(
                         db,
@@ -3638,64 +3590,30 @@ async def crypto_payment_handler(invoice: Invoice):
             except Exception:
                 pass
 
-            gift_html = build_gift_announcement_html(
-                sponsor_name_html=sponsor_html,
-                to_level=int(gbl_to_level),
-                price_stars=price_stars,
-                chat_id=int(gbl_chat_id),
-                atmosphere_pct=atmo_c,
-                chat_title=chat_title_crypto,
-                from_level=from_lvl_crypto,
-                group_html=group_html_c,
-                badge_title=badge_title_c,
-                achievements_html=achievements_html_c,
-            )
-            try:
-                buyer_html_c = build_buyer_hero_html(
+            if res.get("ok"):
+                await deliver_gbl_purchase_messages(
+                    bot1,
+                    chat_id=int(gbl_chat_id),
+                    buyer_id=int(user_id),
+                    sponsor_name_html=sponsor_html,
                     to_level=int(gbl_to_level),
                     price_stars=price_stars,
-                    chat_id=int(gbl_chat_id),
+                    from_level=from_lvl_crypto,
                     atmosphere_pct=float(atmo_c or 0),
                     chat_title=chat_title_crypto,
-                    from_level=from_lvl_crypto,
-                    badge_title=badge_title_c,
                     group_html=group_html_c,
+                    badge_title=badge_title_c,
                     achievements_html=achievements_html_c,
+                    db=db,
+                    buyer_message=None,
                 )
-                await bot1.send_message(
-                    int(user_id),
-                    buyer_html_c,
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                )
-            except Exception as _bh_e:
-                debug_print(f"[GBL][CRYPTO] buyer hero: {_bh_e!r}")
-            try:
-                await bot1.send_message(
-                    chat_id=int(gbl_chat_id),
-                    text=gift_html,
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                    message_effect_id="5046509860389126442",
-                )
-            except Exception:
-                try:
-                    await bot1.send_message(
-                        int(gbl_chat_id),
-                        gift_html,
-                        parse_mode="HTML",
-                        disable_web_page_preview=True,
-                    )
-                except Exception as e2:
-                    debug_print(f"[GBL][CRYPTO] announce fail: {e2}")
 
-            # Убрали отдельное «метка ждёт» — достижения уже в buyer_html
             try:
                 await bot1.send_message(
                     6801702632,
                     f"⭐ <b>Уровень баланса группы (crypto {currency})</b>\n"
                     f"chat=<code>{gbl_chat_id}</code> → уровень {gbl_to_level}\n"
-                    f"user=<code>{user_id}</code> · {price_stars} звёзд",
+                    f"user=<code>{user_id}</code> · {price_stars} звёзд · {stars_label(int(gbl_to_level))}",
                     parse_mode="HTML",
                 )
             except Exception:

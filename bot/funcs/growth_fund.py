@@ -84,13 +84,17 @@ def get_milestone_target(tier: int) -> int:
 
 
 def format_milestone_bar(progress: int, target: int, *, width: int = 10) -> str:
-    """Текстовый прогресс-бар '▓▓▓▓▓░░░░░' для показа в профиле."""
+    """Текстовый прогресс-бар '███████░░░' для показа в профиле.
+
+    Рендерится жирным (<b>...</b>), БЕЗ <code></code> - так символы блоков
+    выглядят крупнее и аккуратнее, а не мелким моноширинным шрифтом.
+    """
     progress = max(0, int(progress))
     target = max(1, int(target))
     ratio = min(1.0, progress / target)
     filled = int(round(ratio * width))
     filled = max(0, min(width, filled))
-    return "▓" * filled + "░" * (width - filled)
+    return "█" * filled + "░" * (width - filled)
 
 
 async def _advance_milestone(db, bot, user_id: int, *, tier: int, progress: int, gained: int) -> Dict[str, Any]:
@@ -159,8 +163,8 @@ async def _advance_milestone(db, bot, user_id: int, *, tier: int, progress: int,
                         "<tg-emoji emoji-id='5438262026549876196'>🥳</tg-emoji> <b>Новая отметка на шкале Фонда Роста!</b>\n\n"
                         f"<b>Вы получили «👑 Купон Возможностей»</b>\n"
                         f"⤷ Он повышает шансы на победу в следующей игре!\n\n"
-                        f"<tg-emoji emoji-id='5474417568053745249'>🌱</tg-emoji> <b>Шкала Фонда Роста : {_fmt(new_progress)}/{_fmt(next_target)} кут</b>\n"
-                        f"<b><code>{bar}</code> → 👑 Купон Возможностей</b>\n\n"
+                        f"<tg-emoji emoji-id='5317000922096769303'>🎁</tg-emoji> <b>Шкала Фонда Роста : {_fmt(new_progress)}/{_fmt(next_target)} кут</b>\n"
+                        f"<b>{bar} → 👑 Купон Возможностей</b>\n\n"
                         '<blockquote><b>Для использования купона, напишите "<code>Использовать 💸</code>"</b></blockquote>'
                     ),
                     parse_mode="HTML",

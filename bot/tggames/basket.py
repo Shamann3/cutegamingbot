@@ -1252,8 +1252,17 @@ async def tgbasket(message: Message):
         profit_int = max(0, win_amount_int - bet_int)
         _kdbg("WIN", f"win_amount={win_amount_int} profit={profit_int}")
 
-        if chat_balance < win_amount_int:
-            pay = max(0, int(chat_balance))
+        if chat_balance < profit_int:
+            # ВАЖНО (финансовый фикс): ставка bet_int списывается с игрока
+            # ТОЛЬКО при проигрыше - при выигрыше она у игрока никогда не
+            # забиралась. Значит чат физически может быть должен максимум
+            # profit_int, а НЕ win_amount_int (bet+profit). Раньше порог
+            # сравнивался с win_amount_int, а pay = chat_balance без вычета
+            # bet_int - если баланс группы был между profit_int и
+            # win_amount_int, игрок получал ЗАВЫШЕННУЮ выплату (вплоть до
+            # лишних +bet_int «из воздуха», которых чат никогда не получал).
+            # Симметричный (уже верный) паттерн - bot/tggames/kube.py.
+            pay = max(0, min(profit_int, int(chat_balance)))
 
             gfund_result = None
             if pay > 0:
@@ -1267,12 +1276,10 @@ async def tgbasket(message: Message):
                 except Exception as e:
                     _kdbg("GFUND", f"apply_commission(partial) error: {e}")
 
-            effective_profit = max(0, pay - bet_int)
-
-            if has_assignment and effective_profit > 0:
+            if has_assignment and pay > 0:
                 try:
-                    await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=effective_profit, outcome="+")
-                    _kdbg("GC", f"WIN PARTIAL gc +{effective_profit}")
+                    await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=pay, outcome="+")
+                    _kdbg("GC", f"WIN PARTIAL gc +{pay}")
                 except Exception as e:
                     _kdbg("GC", f"WIN PARTIAL gc error: {e}\n{traceback.format_exc()}")
 
