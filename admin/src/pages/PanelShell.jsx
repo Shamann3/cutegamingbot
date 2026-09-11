@@ -18,6 +18,7 @@ import ContentSection from './sections/ContentSection'
 import GiveawaysSection from './sections/GiveawaysSection'
 import BotQuestsSection from './sections/BotQuestsSection'
 import GroupBalanceLevelSection from './sections/GroupBalanceLevelSection'
+import GroupsStudioSection from './sections/GroupsStudioSection'
 import SoftRestartSection from './sections/SoftRestartSection'
 import AchievementsSection from './sections/AchievementsSection'
 import BroadcastSection from './sections/BroadcastSection'
@@ -165,6 +166,7 @@ export default function PanelShell({ onLogout }) {
   const isGiveaways = section === 'giveaways'
   const isBotQuests = section === 'botQuests'
   const isGroupBalanceLevel = section === 'groupBalanceLevel'
+  const isGroupsStudio = section === 'groupsStudio'
   const isAchievements = section === 'achievements'
   const isBroadcast = section === 'broadcast'
   const isLogs = section === 'logs'
@@ -257,7 +259,7 @@ export default function PanelShell({ onLogout }) {
                         ? ' panel-layout-broadcast'
                         : isBotQuests
                           ? ' panel-layout-broadcast'
-                        : isGroupBalanceLevel
+                        : isGroupBalanceLevel || isGroupsStudio
                           ? ' panel-layout-broadcast'
                         : isBroadcast
                         ? ' panel-layout-broadcast'
@@ -277,7 +279,7 @@ export default function PanelShell({ onLogout }) {
                                       ? ' panel-layout-support'
                                       : isChronicle
                                         ? ' panel-layout-chronicle'
-                                        : isPanelAccess || isSoftRestart
+                                        : isPanelAccess || isSoftRestart || isGroupsStudio
                                           ? ' panel-layout-security'
                                           : ' panel-layout-page'
           }`}
@@ -333,6 +335,7 @@ export default function PanelShell({ onLogout }) {
           {isGiveaways && <GiveawaysSection />}
           {isBotQuests && role === 'owner' && <BotQuestsSection />}
           {isGroupBalanceLevel && role === 'owner' && <GroupBalanceLevelSection />}
+          {isGroupsStudio && isProjectCreator && <GroupsStudioSection />}
           {isAchievements && <AchievementsSection />}
           {isBroadcast && <BroadcastSection panelTabs={panelTabs} />}
           {isLogs && <LogsSection panelTabs={panelTabs} />}
@@ -346,7 +349,7 @@ export default function PanelShell({ onLogout }) {
           {isChronicle && <ChronicleSection />}
           {isPanelAccess && <PanelAccessSection />}
           {isSoftRestart && isProjectCreator && <SoftRestartSection />}
-          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBotQuests && !isGroupBalanceLevel && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isSoftRestart && (
+          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

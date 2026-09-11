@@ -46,6 +46,11 @@ export const PANEL_SECTIONS = [
     blurb: 'Уровни баланса группы ★1–★5: цены, лимиты, здоровье бч, метки спонсоров — только создатель.',
   },
   {
+    id: 'groupsStudio', label: 'Groups', labelRu: 'Группы', group: 'economy',
+    ownerOnly: true, creatorOnly: true,
+    blurb: 'Студия групп: поиск, бч, уровни, комиссии, топы и модерация — только создатель проекта.',
+  },
+  {
     id: 'achievements', label: 'Achievements', labelRu: 'Достижения', group: 'content', permission: 'manage_achievements',
     blurb: 'Официальные достижения профиля: каталог, редкость, иконки и права выдачи для команды.',
   },

@@ -4437,6 +4437,134 @@ async def admin_gbl_set_chat(
     return {"ok": True, **result}
 
 
+# ─── Groups Studio (только создатель проекта) ────────────────────────────────
+
+
+@router.get("/groups-studio/overview")
+async def admin_groups_studio_overview(
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_groups import overview as groups_overview
+    return await groups_overview()
+
+
+@router.get("/groups-studio/search")
+async def admin_groups_studio_search(
+    q: str = Query("", max_length=256),
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_groups import search_groups
+    items = await search_groups(q)
+    return {"items": items, "query": q}
+
+
+@router.get("/groups-studio/chat/{chat_id}")
+async def admin_groups_studio_detail(
+    chat_id: int,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_groups import get_group_detail
+    try:
+        return await get_group_detail(chat_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+class GroupsStudioBalanceBody(BaseModel):
+    chat_id: int
+    chatbalance: float = Field(ge=0, le=1_000_000_000)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/groups-studio/balance")
+async def admin_groups_studio_balance(
+    body: GroupsStudioBalanceBody,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_groups import set_chat_balance
+    try:
+        result = await set_chat_balance(body.chat_id, body.chatbalance)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    try:
+        await log_admin_action(
+            admin_id, "groups_set_balance",
+            target_type="chat",
+            target_id=str(body.chat_id),
+            details={"chatbalance": body.chatbalance},
+        )
+    except Exception:
+        pass
+    return {"ok": True, **result}
+
+
+class GroupsStudioLevelBody(BaseModel):
+    chat_id: int
+    level: int = Field(ge=0, le=5)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/groups-studio/level")
+async def admin_groups_studio_level(
+    body: GroupsStudioLevelBody,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_groups import set_chat_level as groups_set_level
+    result = await groups_set_level(body.chat_id, body.level)
+    try:
+        await log_admin_action(
+            admin_id, "groups_set_level",
+            target_type="chat",
+            target_id=str(body.chat_id),
+            details={"level": body.level},
+        )
+    except Exception:
+        pass
+    return {"ok": True, **result}
+
+
+class GroupsStudioModerateBody(BaseModel):
+    chat_id: int
+    user_id: int
+    action: str = Field(min_length=2, max_length=16)
+    until_sec: int | None = Field(default=None, ge=0, le=366 * 24 * 3600)
+    reason: str | None = Field(default=None, max_length=200)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/groups-studio/moderate")
+async def admin_groups_studio_moderate(
+    body: GroupsStudioModerateBody,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_groups import moderate_action
+    result = await moderate_action(
+        chat_id=body.chat_id,
+        user_id=body.user_id,
+        action=body.action,
+        until_sec=body.until_sec,
+        reason=body.reason or "",
+    )
+    try:
+        await log_admin_action(
+            admin_id, f"groups_{body.action}",
+            target_type="user",
+            target_id=str(body.user_id),
+            details={"chat_id": body.chat_id, "until_sec": body.until_sec, "ok": result.get("ok")},
+        )
+    except Exception:
+        pass
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("telegram") or "Telegram отказал")
+    return result
+
+
 @router.get("/achievements/overview")
 async def admin_achievements_overview(
     _admin_id: int = Depends(require_admin_permission("manage_achievements")),

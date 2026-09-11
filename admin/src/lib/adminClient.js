@@ -1509,6 +1509,40 @@ export async function setGroupBalanceLevelChat(chatId, level) {
   })
 }
 
+export async function fetchGroupsStudioOverview() {
+  return adminFetch('/groups-studio/overview')
+}
+
+export async function searchGroupsStudio(query) {
+  const params = new URLSearchParams({ q: String(query || '') })
+  return adminFetch(`/groups-studio/search?${params}`)
+}
+
+export async function fetchGroupsStudioDetail(chatId) {
+  return adminFetch(`/groups-studio/chat/${encodeURIComponent(chatId)}`)
+}
+
+export async function setGroupsStudioBalance(chatId, chatbalance) {
+  return adminFetch('/groups-studio/balance', {
+    method: 'POST',
+    body: { chat_id: Number(chatId), chatbalance: Number(chatbalance) },
+  })
+}
+
+export async function setGroupsStudioLevel(chatId, level) {
+  return adminFetch('/groups-studio/level', {
+    method: 'POST',
+    body: { chat_id: Number(chatId), level: Number(level) },
+  })
+}
+
+export async function groupsStudioModerate(payload) {
+  return adminFetch('/groups-studio/moderate', {
+    method: 'POST',
+    body: payload,
+  })
+}
+
 export async function fetchSoftRestartOverview() {
   return adminFetch('/soft-restart/overview')
 }

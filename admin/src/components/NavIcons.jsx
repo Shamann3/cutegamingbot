@@ -206,6 +206,16 @@ const SoftRestart = () => (
   </Icon>
 )
 
+const GroupsStudio = () => (
+  <Icon>
+    <circle cx="9" cy="10" r="3.2" />
+    <circle cx="16.5" cy="8.5" r="2.4" />
+    <path d="M3.5 19.5c0-3.4 2.5-5.6 5.5-5.6s5.5 2.2 5.5 5.6" />
+    <path d="M14.2 14.2c2.6.4 4.3 2.2 4.3 5.3" />
+    <path d="M4 7.2h4.2" />
+  </Icon>
+)
+
 export const NAV_ICONS = {
   dashboard: Dashboard,
   users: Players,
@@ -217,6 +227,7 @@ export const NAV_ICONS = {
   giveaways: Giveaways,
   botQuests: BotQuests,
   groupBalanceLevel: Economy,
+  groupsStudio: GroupsStudio,
   achievements: Giveaways,
   broadcast: Broadcast,
   logs: Logs,

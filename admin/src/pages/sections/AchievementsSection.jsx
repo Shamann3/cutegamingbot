@@ -398,13 +398,34 @@ export default function AchievementsSection() {
         </section>
       </div>
 
-      <section className="ach-panel ach-grant" style={{ marginTop: '1rem' }}>
-        <h2 className="ach-panel-title">Выдать игроку</h2>
-        <p className="ach-field-help" style={{ marginBottom: '0.75rem' }}>
-          Официальные — из каталога (в т.ч. <code>gbl_level_1…5</code>).
-          Свободные — свой текст. Нужны права выдачи в доступе панели.
-        </p>
-        <div className="ach-grid">
+      <section className="ach-panel ach-grant">
+        <div className="ach-grant-head">
+          <div>
+            <p className="ach-kicker">Award desk</p>
+            <h2 className="ach-panel-title" style={{ marginBottom: 0 }}>Выдать игроку</h2>
+            <p className="ach-field-help">
+              Официальные награды — карточками. Свободные — свой текст. Права выдачи — в доступе панели.
+            </p>
+          </div>
+          <div className="ach-grant-mode">
+            <button
+              type="button"
+              className={`ach-mode-btn${grantMode === 'official' ? ' ach-mode-btn-on' : ''}`}
+              onClick={() => setGrantMode('official')}
+            >
+              Официальное
+            </button>
+            <button
+              type="button"
+              className={`ach-mode-btn${grantMode === 'free' ? ' ach-mode-btn-on' : ''}`}
+              onClick={() => setGrantMode('free')}
+            >
+              Свободное
+            </button>
+          </div>
+        </div>
+
+        <div className="ach-grant-grid">
           <Field label="User ID" help={help.grant_user_id || 'Telegram user_id игрока'}>
             <input
               value={grantUserId}
@@ -413,46 +434,55 @@ export default function AchievementsSection() {
               inputMode="numeric"
             />
           </Field>
-          <Field label="Тип выдачи">
-            <select value={grantMode} onChange={(e) => setGrantMode(e.target.value)}>
-              <option value="official">Официальное</option>
-              <option value="free">Свободное</option>
-            </select>
-          </Field>
-          {grantMode === 'official' ? (
-            <Field label="Официальное из каталога" help="Или откройте карточку слева — подставится выбранное.">
-              <select
-                value={grantOfficialId || (draft.id ? String(draft.id) : '')}
-                onChange={(e) => setGrantOfficialId(e.target.value)}
-              >
-                <option value="">— выбрать —</option>
-                {sortedItems.filter((x) => x.enabled).map((it) => (
-                  <option key={it.id} value={it.id}>
-                    {it.title} ({it.code})
-                  </option>
-                ))}
-              </select>
-            </Field>
-          ) : (
-            <>
-              <Field label="Текст награды" help={help.grant_free_title || 'Без ссылок'}>
-                <input
-                  value={grantFreeTitle}
-                  onChange={(e) => setGrantFreeTitle(e.target.value)}
-                  placeholder="За вклад в атмосферу клуба"
-                />
-              </Field>
-              <Field label="Emoji">
-                <input
-                  value={grantFreeEmoji}
-                  onChange={(e) => setGrantFreeEmoji(e.target.value)}
-                  maxLength={8}
-                />
-              </Field>
-            </>
-          )}
         </div>
-        <div className="ach-hero-actions" style={{ marginTop: '0.85rem' }}>
+
+        {grantMode === 'official' ? (
+          <div className="ach-pick-grid">
+            {sortedItems.filter((x) => x.enabled).map((it) => {
+              const selected = String(grantOfficialId || draft.id || '') === String(it.id)
+              return (
+                <button
+                  key={it.id}
+                  type="button"
+                  className={`ach-pick-card ach-rarity-${Math.max(1, Math.min(5, Number(it.rarity) || 1))}${selected ? ' ach-pick-card-on' : ''}`}
+                  onClick={() => {
+                    setGrantOfficialId(String(it.id))
+                    edit(it)
+                  }}
+                >
+                  <span className="ach-pick-icon">{it.icon_fallback || '⭐'}</span>
+                  <span className="ach-pick-body">
+                    <strong>{it.title}</strong>
+                    <span>{rarityDots(it.rarity)} · {it.code}</span>
+                  </span>
+                  {selected ? <span className="ach-pick-check">выбрано</span> : null}
+                </button>
+              )
+            })}
+            {!sortedItems.filter((x) => x.enabled).length ? (
+              <p className="ach-empty">В каталоге нет включённых официальных наград.</p>
+            ) : null}
+          </div>
+        ) : (
+          <div className="ach-grid" style={{ marginTop: '0.75rem' }}>
+            <Field label="Текст награды" help={help.grant_free_title || 'Без ссылок'}>
+              <input
+                value={grantFreeTitle}
+                onChange={(e) => setGrantFreeTitle(e.target.value)}
+                placeholder="За вклад в атмосферу клуба"
+              />
+            </Field>
+            <Field label="Emoji">
+              <input
+                value={grantFreeEmoji}
+                onChange={(e) => setGrantFreeEmoji(e.target.value)}
+                maxLength={8}
+              />
+            </Field>
+          </div>
+        )}
+
+        <div className="ach-hero-actions" style={{ marginTop: '0.95rem' }}>
           <button type="button" className="ach-btn ach-btn-primary" disabled={granting} onClick={onGrant}>
             {granting ? 'Выдача…' : 'Выдать достижение'}
           </button>

@@ -52,6 +52,14 @@ PANEL_SECTION_DEFS: list[dict] = [
         "ownerOnly": True,
     },
     {
+        "id": "groupsStudio",
+        "label": "Группы",
+        "group": "economy",
+        "permissions": [],
+        "ownerOnly": True,
+        "creatorOnly": True,
+    },
+    {
         "id": "softRestart",
         "label": "Sypher",
         "group": "system",
