@@ -191,32 +191,33 @@ def _fmt(n: int) -> str:
 # на исходное имя, ничего не сломается.
 GAME_DISPLAY_NAMES: Dict[str, str] = {
     # --- PvP ---
-    "kosti": "🎲 Кости",
-    "orel": "🪙 Орёл или решка",
-    "knb": "✊ Камень-ножницы-бумага",
-    "duel": "🔫 Дуэль",
-    "scah": "♟ Шашки",
-    "mines": "💣 Мины",
-    "memory": "🧠 Мемори",
-    "tic_tac_toe": "❌⭕ Крестики-нолики",
-    "words": "🔤 Слова",
-    "fortuna_lobby": "🎡 Фортуна",
-    "bingo": "🔢 Бинго",
+    "kosti": "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> Кости",
+    "orel": "<tg-emoji emoji-id='5269254848703902904'>🦅</tg-emoji> Орёл или решка",
+    "knb": "<tg-emoji emoji-id='5237808360882977239'>✂️</tg-emoji> Камень-ножницы-бумага",
+    "duel": "<tg-emoji emoji-id='5222486447306602688'>🔫</tg-emoji> Дуэль",
+    "scah": "<tg-emoji emoji-id='5424687267014801006'>♟</tg-emoji> Шашки",
+    "mines": "<tg-emoji emoji-id='5469913852462242978'>🧨</tg-emoji> Мины",
+    "memory": "<tg-emoji emoji-id='5188239353045868629'>🪵</tg-emoji> Мемори",
+    "tic_tac_toe": "<tg-emoji emoji-id='5226660202035554522'>☑️</tg-emoji> Крестики-нолики",
+    # "words" (Слова) - НАМЕРЕННО без комиссии, игра осталась в исходном
+    # состоянии без Фонда Роста (по прямой просьбе владельца проекта).
+    "fortuna_lobby": "<tg-emoji emoji-id='5226711870492126219'>🎡</tg-emoji> Фортуна",
+    "bingo": "<tg-emoji emoji-id='5370783443175086955'>🍪</tg-emoji> Бинго",
     # --- PvE ---
-    "trade": "📈 Трейд",
-    "balls": "🔮 Шарик",
-    "risk": "🎯 Риск",
-    "tank": "🛡 Башня",
-    "plate": "🧱 Плиты",
-    "bombs": "💥 Бомбы",
-    "provoda": "🔌 Провода",
-    "fortuna_solo": "🎡 Рулетка",
-    "slots": "🎰 Слоты",
-    "kube": "🎲 Куб",
-    "darts": "🎯 Дартс",
-    "basket": "🏀 Баскетбол",
-    "bowling": "🎳 Боулинг",
-    "soccer": "⚽ Футбол",
+    "trade": "<tg-emoji emoji-id='5296306038792808890'>📈</tg-emoji> Трейд",
+    "balls": "<tg-emoji emoji-id='5363877049863786071'>🎱</tg-emoji> Шарик",
+    "risk": "<tg-emoji emoji-id='5438449312893792440'>🌴</tg-emoji> Риск",
+    "tank": "<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji> Башня",
+    "plate": "<tg-emoji emoji-id='5246916607833304803'>💫</tg-emoji> Плиты",
+    "bombs": "<tg-emoji emoji-id='5469654973308476699'>💣</tg-emoji> Бомбы",
+    "provoda": "<tg-emoji emoji-id='5782990399672946716'>🎗</tg-emoji>    Провода",
+    "fortuna_solo": "<tg-emoji emoji-id='5321499578216769477'>🎩</tg-emoji> Рулетка",
+    "slots": "<tg-emoji emoji-id='5891135206580031104'>🎰</tg-emoji> Слоты",
+    "kube": "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> Куб",
+    "darts": "<tg-emoji emoji-id='5890815115552362075'>🎯</tg-emoji> Дартс",
+    "basket": "<tg-emoji emoji-id='5891181665241271999'>🏀</tg-emoji> Баскетбол",
+    "bowling": "<tg-emoji emoji-id='5891120371762990493'>🎳</tg-emoji> Боулинг",
+    "soccer": "<tg-emoji emoji-id='5890787425898205095'>⚽️</tg-emoji> Футбол",
 }
 
 
@@ -572,7 +573,7 @@ async def _notify_owner_commission(
     pct = (commission / pot * 100.0) if pot > 0 else 0.0
     pct_str = f"{pct:.1f}".rstrip("0").rstrip(".") if pct else "0"
 
-    lines = [f"💠 <b>Комиссия собрана</b> · {_game_display(game)}"]
+    lines = [f"<tg-emoji emoji-id='5388581564311417657'>💠</tg-emoji> <b>Комиссия собрана · {_game_display(game)}</b>"]
 
     if is_pvp:
         try:
@@ -582,21 +583,21 @@ async def _notify_owner_commission(
         losers_str = ", ".join(f"<code>{u}</code>" for u in loser_list) if loser_list else "—"
         label = "Проигравший" if len(loser_list) == 1 else "Проигравшие"
         lines.append(
-            f"⚔️ <b>PvP</b> · Победитель <code>{int(winner_id if winner_id is not None else user_id)}</code> "
-            f"→ {label.lower()} {losers_str}"
+            f"<tg-emoji emoji-id='5408935401442267103'>⚔️</tg-emoji> <b>PvP · Победитель <code>{int(winner_id if winner_id is not None else user_id)}</code> </b>"
+            f"<b>→ {label.lower()} {losers_str}</b>"
         )
     else:
-        lines.append(f"🎮 <b>PvE</b> · Игрок <code>{int(user_id)}</code>")
+        lines.append(f"<tg-emoji emoji-id='5386473766161238258'>🎮</tg-emoji> <b>PvE · Игрок <code>{int(user_id)}</code></b>")
 
     lines.append("")
-    lines.append(f"Банк раунда: <b>{_fmt(pot)} кут</b>")
-    lines.append(f"Комиссия: <b>{_fmt(commission)} кут</b> <i>({pct_str}%)</i>")
+    lines.append(f"<b>Банк раунда : {_fmt(pot)} кут</b>")
+    lines.append(f"<b>Комиссия : {_fmt(commission)} кут <i>({pct_str}%)</i></b>")
     lines.append("")
     lines.append(
         "<blockquote>"
-        f"💠 Резерв проекта: <b>{_fmt(result.get('to_chat_balance', 0))} кут</b>\n"
-        f"🌱 Фонд Роста: <b>{_fmt(result.get('to_growth_fund', 0))} кут</b>\n"
-        f"🚀 Развитие проекта: <b>{_fmt(result.get('to_project', 0))} кут</b>"
+        f"<tg-emoji emoji-id='5388581564311417657'>💠</tg-emoji> <b>Резерв проекта : {_fmt(result.get('to_chat_balance', 0))} кут</b>\n"
+        f"<tg-emoji emoji-id='5235566774501525440'>🌱</tg-emoji> <b>Фонд Роста : {_fmt(result.get('to_growth_fund', 0))} кут</b>\n"
+        f"<tg-emoji emoji-id='5389057356493511934'>🚀</tg-emoji> <b>Развитие проекта : {_fmt(result.get('to_project', 0))} кут</b>"
         "</blockquote>"
     )
 
@@ -608,14 +609,14 @@ async def _notify_owner_commission(
         lifetime_events = totals["total_events"]
 
     lines.append("")
-    lines.append(f"♾ <b>Всего с начала работы: {_fmt(lifetime_total)} кут</b> <i>({_fmt(lifetime_events)} событий)</i>")
+    lines.append(f"<tg-emoji emoji-id='5386726696785295704'>♾️</tg-emoji> <b>Всего с начала работы : {_fmt(lifetime_total)} кут <i>({_fmt(lifetime_events)} событий)</i></b>")
 
     kb = None
     try:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="📊 Открыть статистику", callback_data=f"{STATS_CALLBACK_PREFIX}|day"),
+            InlineKeyboardButton(text="Открыть статистику", callback_data=f"{STATS_CALLBACK_PREFIX}|day", style="default" , icon_custom_emoji_id="5190806721286657692"),
         ]])
     except Exception:
         kb = None
@@ -684,14 +685,20 @@ async def apply_commission_pvp(
 
 async def use_ticket(db, user_id: int, *, amount: Optional[int] = None) -> int:
     """
-    «Купон Возможностей»: просто начисляет demo существующим, ничем не
-    изменённым механизмом (db.add_demo_amount). Дальше решает штатная логика
-    каждой игры - ровно так же, как для любого другого источника demo
-    (подарок новичку, «дать» и т.д.). Мы намеренно не вводим отдельную
-    вероятность и отдельное отслеживание купона - это цена того, что не
-    трогаем и не усложняем то, что уже проверено и работает.
+    «Купон Возможностей»: начисляет demo существующим, ничем не изменённым
+    механизмом (db.add_demo_amount) - ПОЛЕ/исход раунда решает та же самая
+    логика каждой игры, что и для любого другого источника demo.
 
-    Возвращает фактически начисленную сумму (для текста подтверждения).
+    ДОПОЛНИТЕЛЬНО ставит в очередь гарантированный раунд
+    (add_coupon_guarantee -> growth_fund_user_stats.coupon_guarantee_rounds).
+    Это важно: обычный demo сам, вероятностно, решает force_win/force_loss
+    (см. "РЕЖИМ DEMO" в jericho_check, main.py) и МОЖЕТ выдать force_loss
+    несмотря на demo-баланс - без явной гарантии купон был бы неотличим от
+    случайного подарка. Гарантия списывается детерминированно в
+    consume_coupon_guarantee() - именно там, в самом начале jericho_check,
+    ДО входа в любую вероятностную ветку ниже.
+
+    Возвращает фактически начисленную сумму demo (для текста подтверждения).
     """
     import bot.config.config as cfg
 
@@ -700,7 +707,95 @@ async def use_ticket(db, user_id: int, *, amount: Optional[int] = None) -> int:
         await db.add_demo_amount(user_id, amount)
     except Exception as e:
         _vdbg(f"[ФОНД РОСТА][КУПОН] add_demo_amount fail user={user_id}: {e!r}")
+
+    rounds = int(getattr(cfg, "GROWTH_FUND_TICKET_GUARANTEE_ROUNDS", 1) or 0)
+    if rounds > 0:
+        try:
+            await add_coupon_guarantee(db, user_id, rounds=rounds)
+        except Exception as e:
+            _vdbg(f"[ФОНД РОСТА][КУПОН] add_coupon_guarantee fail user={user_id}: {e!r}")
+
     return amount
+
+
+async def add_coupon_guarantee(db, user_id: int, *, rounds: int = 1) -> int:
+    """
+    Ставит в очередь `rounds` гарантированных PvE-раундов для user_id
+    (growth_fund_user_stats.coupon_guarantee_rounds += rounds). Вызывается
+    ИЗ use_ticket() при использовании «Купона Возможностей» - отдельная
+    прямая точка входа оставлена на случай, если в будущем гарантию нужно
+    будет выдавать не только за купон (например, отдельным предметом или
+    компенсацией поддержки).
+
+    UPSERT (а не UPDATE) - на случай, если строки в growth_fund_user_stats
+    для этого игрока ещё вообще не было (см. тот же паттерн в
+    _advance_milestone выше).
+
+    Возвращает итоговое количество гарантированных раундов в очереди после
+    начисления (для логов/отладки); при ошибке БД - возвращает 0 и пишет в
+    debug-лог, но НЕ бросает исключение дальше (начисление demo в
+    use_ticket не должно откатываться из-за сбоя этого дополнительного
+    счётчика).
+    """
+    rounds = int(rounds or 0)
+    if rounds <= 0 or not getattr(db, "pool", None):
+        return 0
+    try:
+        async with db.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO growth_fund_user_stats (user_id, coupon_guarantee_rounds, updated_at)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (user_id) DO UPDATE SET
+                    coupon_guarantee_rounds = growth_fund_user_stats.coupon_guarantee_rounds + $2,
+                    updated_at = NOW()
+                RETURNING coupon_guarantee_rounds
+                """,
+                int(user_id), rounds,
+            )
+        return int(row["coupon_guarantee_rounds"]) if row else rounds
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][КУПОН][ГАРАНТИЯ] add_coupon_guarantee fail user={user_id}: {e!r}")
+        return 0
+
+
+async def consume_coupon_guarantee(db, user_id: int) -> bool:
+    """
+    Проверяет и АТОМАРНО списывает один гарантированный раунд из очереди
+    (growth_fund_user_stats.coupon_guarantee_rounds), если он там есть.
+
+    Вызывается из jericho_check (main.py) В САМОМ НАЧАЛЕ, до любой
+    вероятностной ветки - если возвращает True, раунд ОБЯЗАН завершиться
+    force_win, независимо от того, что решила бы обычная demo/0demo логика.
+
+    Списание одним UPDATE ... WHERE coupon_guarantee_rounds > 0 RETURNING -
+    защищает от гонки двух параллельных раундов одного игрока (два разных
+    чата/callback почти одновременно): если раунд уже кем-то списан, вторая
+    попытка честно получит False, а не отрицательный счётчик.
+
+    Возвращает True, если гарантированный раунд был найден и списан (значит
+    ЭТОТ раунд обязан быть force_win); False, если очередь пуста (обычная
+    вероятностная логика решает раунд как всегда), либо при ошибке БД
+    (намеренно fail-safe - купон не должен ронять обработку раунда).
+    """
+    if not getattr(db, "pool", None):
+        return False
+    try:
+        async with db.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE growth_fund_user_stats
+                SET coupon_guarantee_rounds = coupon_guarantee_rounds - 1,
+                    updated_at = NOW()
+                WHERE user_id = $1 AND coupon_guarantee_rounds > 0
+                RETURNING coupon_guarantee_rounds
+                """,
+                int(user_id),
+            )
+        return row is not None
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][КУПОН][ГАРАНТИЯ] consume_coupon_guarantee fail user={user_id}: {e!r}")
+        return False
 
 
 async def get_user_lifetime_contribution(db, user_id: int) -> int:
@@ -750,7 +845,7 @@ def build_commission_button(result: Dict[str, Any], *, callback_data: Optional[s
 
     amount = result["commission"]
     return InlineKeyboardButton(
-        text=f"Комиссия игры: −{amount} кут",
+        text=f"Комиссия : −{amount} кут",
         callback_data=callback_data or build_commission_callback_data(result),
         style="primary",
         icon_custom_emoji_id=COMMISSION_BUTTON_ICON_ID,
@@ -1070,25 +1165,25 @@ def format_commission_stats_text(stats: Dict[str, Any]) -> str:
     top_game_line = ""
     if top_game:
         top_game_commission = stats.get("top_game_commission", 0)
-        top_game_line = f"\n🏅 Лидер периода: {_game_display(top_game)} — <b>{_fmt(top_game_commission)} кут</b>"
+        top_game_line = f"\n<tg-emoji emoji-id='5424746623462823358'>🏅</tg-emoji> <b>Лидер периода : {_game_display(top_game)} - {_fmt(top_game_commission)} кут</b>"
 
     now_str = _dt.datetime.now().strftime("%H:%M:%S")
 
     return (
-        f"📊 <b>Статистика комиссии — {label}</b>\n"
+        f"<tg-emoji emoji-id='5190806721286657692'>📊</tg-emoji> <b>Статистика комиссии - {label}</b>\n"
         f"<i>Обновлено {now_str}</i>\n\n"
-        f"Событий с комиссией: <b>{_fmt(events)}</b>\n"
-        f"Собрано за период: <b>{_fmt(commission)} кут</b>{trend_line}\n"
-        f"Среднее за событие: <b>{_fmt(avg)} кут</b>{top_game_line}\n\n"
+        f"<b>Событий с комиссией : {_fmt(events)}</b>\n"
+        f"<b>Собрано за период : {_fmt(commission)} кут {trend_line}</b>\n"
+        f"<b>Среднее за событие : {_fmt(avg)} кут {top_game_line}</b>\n\n"
         "<blockquote>"
-        f"💠 Резерв проекта — <b>{_fmt(to_chat)} кут</b>\n"
-        f"🌱 Фонд Роста — <b>{_fmt(to_fund)} кут</b>\n"
-        f"🚀 Развитие проекта — <b>{_fmt(to_project)} кут</b>"
+        f"<tg-emoji emoji-id='5388581564311417657'>💠</tg-emoji> <b>Резерв проекта - {_fmt(to_chat)} кут</b>\n"
+        f"<tg-emoji emoji-id='5235566774501525440'>🌱</tg-emoji> <b>Фонд Роста - {_fmt(to_fund)} кут</b>\n"
+        f"<tg-emoji emoji-id='5389057356493511934'>🚀</tg-emoji> <b>Развитие проекта - {_fmt(to_project)} кут</b>"
         "</blockquote>\n\n"
-        "Разбивка по типу игр:\n"
-        f"🎮 PvE: <b>{_fmt(pve_c)} кут</b> <i>({_fmt(pve_n)} раунд.)</i>\n"
-        f"⚔️ PvP: <b>{_fmt(pvp_c)} кут</b> <i>({_fmt(pvp_n)} раунд.)</i>\n\n"
-        "<i>Навигация по периодам — кнопками ниже.</i>"
+        "Разбивка по типу игр :\n"
+        f"<b><tg-emoji emoji-id='5408830063074365909'>🎮</tg-emoji> PvE : {_fmt(pve_c)} кут <i>({_fmt(pve_n)} раунд.)</i></b>\n"
+        f"<tg-emoji emoji-id='5454014806950429357'>⚔️</tg-emoji> <b>PvP : {_fmt(pvp_c)} кут <i>({_fmt(pvp_n)} раунд.)</i></b>\n\n"
+        "<b><i>Навигация по периодам - кнопками ниже.</i></b>"
     )
 
 

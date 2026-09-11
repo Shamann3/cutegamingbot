@@ -92,7 +92,8 @@ GROWTH_FUND_GAME_MULTIPLIER = {
     "mines": 1.0,          # Мины (PvP)
     "memory": 1.0,         # Мемори
     "tic_tac_toe": 1.0,    # Крестики-нолики
-    "words": 1.0,          # Слова
+    # "words" (Слова) - НАМЕРЕННО без комиссии, по прямой просьбе владельца
+    # проекта: игра в слова осталась в исходном состоянии, без Фонда Роста.
     "fortuna_lobby": 1.0,  # Фортуна (лобби, триггер "фортуна")
     "bingo": 1.0,          # Бинго
     # --- PvE (выплата из баланса группы / БЧ) ---
@@ -193,9 +194,12 @@ GROWTH_FUND_MILESTONE_REWARD_QTY = 1
 # личного вклада в Фонд Роста (dex.name1 = "couponpossi", смотри
 # bot/handlers/useitems.py -> coupon_possibilities и bot/funcs/shop.py диспетчер).
 #
-# Технически это просто начисление demo существующим механизмом
-# (db.add_demo_amount) - дальше решает штатная логика каждой игры, ничего
-# в самой механике demo не меняется и не подкручивается под купон.
+# Это начисление demo существующим механизмом (db.add_demo_amount) ПЛЮС
+# отдельная гарантия - см. GROWTH_FUND_TICKET_GUARANTEE_ROUNDS ниже и
+# bot/funcs/growth_fund.py -> use_ticket/add_coupon_guarantee/
+# consume_coupon_guarantee, а также jericho_check в main.py (там гарантия
+# проверяется и списывается ДЕТЕРМИНИРОВАННО, в самом начале, до любой
+# вероятностной ветки demo/0demo).
 #
 # ВАЖНО про текст игроку: сообщение при использовании НЕ называет конкретный
 # процент шанса победы (см. bot/handlers/useitems.py) - потому что реальная
@@ -205,6 +209,7 @@ GROWTH_FUND_MILESTONE_REWARD_QTY = 1
 # говорит честно и без чисел: «шансы заметно повышены, 100% не гарантированы».
 # ----------------------------------------------------------------------------
 GROWTH_FUND_TICKET_DEMO_AMOUNT = 10000  # сколько demo выдаём за один купон (хватает на ставку любого размера)
+GROWTH_FUND_TICKET_GUARANTEE_ROUNDS = 1  # сколько PvE-раундов подряд гарантированно force_win при использовании купона
 
 assert abs(sum(GROWTH_FUND_SPLIT.values()) - 1.0) < 1e-9, (
     "GROWTH_FUND_SPLIT должен суммироваться ровно в 1.0 - "

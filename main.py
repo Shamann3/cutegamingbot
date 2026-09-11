@@ -5460,24 +5460,8 @@ async def check_word_guess(message: Message):
                 await check_bet_and_set_item(user_id, game['bet'])
                 await message.reply(f"🏆 <b>Поздравляю, вы угадали правильное слово!</b>", parse_mode="HTML")
 
-                # Комиссия рассчитывается ДО формирования текста, чтобы отображаемая
-                # сумма всегда совпадала с фактически начисленной (принцип честности).
-                gfund_result = None
-                net_bet = int(game['bet'])
-                if game['bet'] > 0:
-                    try:
-                        from bot.funcs.growth_fund import apply_commission_pvp
-                        gfund_result = await apply_commission_pvp(
-                            db, bot1, game="words", pot=int(game['bet']),
-                            winner_id=user_id, loser_ids=[game['creator_id']],
-                        )
-                        if gfund_result:
-                            net_bet = max(0, int(game['bet']) - gfund_result["commission"])
-                    except Exception as e:
-                        print(f"[WORDS][GFUND] apply_commission_pvp err={e!r}")
-
                 # Изменяем сообщение о начале игры
-                win_amount_formatted = "{:,.0f}".format(net_bet).replace(",", ".")
+                win_amount_formatted = "{:,.0f}".format(game['bet']).replace(",", ".")
                 win_name = await db.get_firstname_by_user_id(user_id)
 
                 # Формируем сообщение о завершении игры
@@ -5487,12 +5471,7 @@ async def check_word_guess(message: Message):
                 if game['bet'] > 0:
                     end_response += f"\n💰 <b>Выигрыш {win_amount_formatted} кут</b>"
 
-                end_kb = None
-                if gfund_result:
-                    from bot.funcs.growth_fund import build_commission_button
-                    end_kb = InlineKeyboardMarkup(inline_keyboard=[[build_commission_button(gfund_result)]])
-
-                await bot1.edit_message_text(end_response, chat_id=group_id, message_id=user_word[game['creator_id']], parse_mode="HTML", reply_markup=end_kb)
+                await bot1.edit_message_text(end_response, chat_id=group_id, message_id=user_word[game['creator_id']], parse_mode="HTML")
 
                 # Если есть ставка, раздаем приз
                 if game['bet'] > 0:
@@ -37094,21 +37073,9 @@ async def add_firstname_to_usercheck_balance(message: Message):
             header_mid = int(g.get("message_id"))
 
             # 5) выплаты
-            gfund_result = None
             net_bet_val = bet_val
             try:
                 if bet_val > 0:
-                    try:
-                        from bot.funcs.growth_fund import apply_commission_pvp
-                        gfund_result = await apply_commission_pvp(
-                            db, bot1, game="words", pot=int(bet_val),
-                            winner_id=uid, loser_ids=[creator_id],
-                        )
-                        if gfund_result:
-                            net_bet_val = max(0, bet_val - gfund_result["commission"])
-                    except Exception as e:
-                        print(f"[WORDS][GFUND] apply_commission_pvp err={e!r}")
-
                     winner_balance = await db.get_user_balance(uid)
                     loser_balance = await db.get_user_balance(creator_id)
 
@@ -37150,12 +37117,6 @@ async def add_firstname_to_usercheck_balance(message: Message):
                     end_text += f"\n\n<blockquote><b><tg-emoji emoji-id='5237799019329105246'>🧠</tg-emoji> Подсказка :\n<tg-emoji emoji-id='5472273030753295910'>🎀</tg-emoji> «{words_clean(hint_text)}»</b></blockquote>"
 
                 closed_kb = words_build_closed_kb()
-                if gfund_result:
-                    try:
-                        from bot.funcs.growth_fund import build_commission_button
-                        closed_kb.inline_keyboard.append([build_commission_button(gfund_result)])
-                    except Exception:
-                        pass
 
                 await bot1.edit_message_text(
                     end_text , chat_id=chat_id , message_id=header_mid , parse_mode="HTML" ,
