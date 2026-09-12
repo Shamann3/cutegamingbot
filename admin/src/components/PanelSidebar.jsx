@@ -90,13 +90,10 @@ export default function PanelSidebar({
     <aside
       className={`panel-shelf panel-shelf-sidebar${mobileOpen ? ' panel-sidebar-mobile-open' : ''}`}
     >
-      {/* Drawer chrome — видимо только на mobile через CSS */}
+      {/* Mobile drawer chrome — на desktop скрыт */}
       <div className="panel-sidebar-grab">
         <div className="panel-sidebar-drawer-head">
-          <div className="panel-sidebar-drawer-titles">
-            <p className="panel-sidebar-drawer-kicker">Навигация</p>
-            <h2 className="panel-sidebar-drawer-title">Разделы</h2>
-          </div>
+          <h2 className="panel-sidebar-drawer-title">Меню</h2>
           <button
             type="button"
             className="panel-sidebar-close"
@@ -120,6 +117,7 @@ export default function PanelSidebar({
         </label>
       </div>
 
+      {/* Бренд — только desktop */}
       <div className="panel-brand" aria-label="Epsilon">
         <div className="panel-brand-crest" aria-hidden="true">
           <span className="panel-brand-halo" />
@@ -206,8 +204,6 @@ export default function PanelSidebar({
       </nav>
 
       <div className="panel-sidebar-footer">
-        <AccentPalette value={accent} onChange={onAccentChange} />
-
         <div className="panel-sidebar-account">
           <div className="panel-profile-avatar" aria-hidden="true">
             {photoUrl ? (
@@ -219,49 +215,64 @@ export default function PanelSidebar({
           <div className="panel-profile-meta">
             <p className="panel-profile-name">{displayName}</p>
             <p className="panel-profile-kicker">
-              {role === 'owner' ? '👑 Владелец' : username ? `@${username}` : 'Cute Epsilon'}
+              {role === 'owner' ? 'Владелец' : username ? `@${username}` : 'Cute Epsilon'}
             </p>
           </div>
         </div>
 
-        <SessionTimer compact onExpired={onSessionExpired} />
+        {/*
+          Desktop: тело настроек всегда видно (summary скрыт CSS).
+          Mobile: свёрнутый блок «Настройки».
+        */}
+        <details className="panel-sidebar-settings">
+          <summary className="panel-sidebar-settings-sum">
+            <span>Настройки</span>
+            <span className="panel-sidebar-settings-chevron" aria-hidden="true">▾</span>
+          </summary>
+          <div className="panel-sidebar-settings-body">
+            <AccentPalette value={accent} onChange={onAccentChange} />
 
-        <div className="panel-music-card">
-          <div className="panel-music-head">
+            <SessionTimer compact onExpired={onSessionExpired} />
+
+            <div className="panel-music-card">
+              <div className="panel-music-head">
+                <button
+                  type="button"
+                  className="panel-music-icon-btn"
+                  onClick={onToggleMusic}
+                  title={musicVolume > 0 ? 'Выключить музыку' : 'Включить музыку'}
+                  aria-pressed={musicVolume > 0}
+                >
+                  <SpeakerIcon muted={musicVolume <= 0} />
+                </button>
+                <span className="panel-music-label">Музыка</span>
+                <span className="panel-music-pct">{Math.round(musicVolume * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                className="panel-music-slider"
+                min={0}
+                max={100}
+                step={1}
+                value={Math.round(musicVolume * 100)}
+                onChange={(e) => onMusicVolumeChange(Number(e.target.value) / 100)}
+                style={{ '--vol-pct': `${Math.round(musicVolume * 100)}%` }}
+                aria-label="Громкость музыки"
+              />
+            </div>
+
             <button
               type="button"
-              className="panel-music-icon-btn"
-              onClick={onToggleMusic}
-              title={musicVolume > 0 ? 'Выключить музыку' : 'Включить музыку'}
-              aria-pressed={musicVolume > 0}
+              className={`panel-perf-btn${lightMode ? ' panel-perf-btn-active' : ''}`}
+              onClick={onTogglePerf}
+              title={lightMode ? 'Чёрно-белый лёгкий режим' : 'Цветной HD — подсветка из палитры'}
             >
-              <SpeakerIcon muted={musicVolume <= 0} />
+              <span aria-hidden="true">{lightMode ? '◈' : '⬡'}</span>
+              {lightMode ? 'Ч/Б · лёгкий' : 'HD · цвет'}
             </button>
-            <span className="panel-music-label">Музыка</span>
-            <span className="panel-music-pct">{Math.round(musicVolume * 100)}%</span>
           </div>
-          <input
-            type="range"
-            className="panel-music-slider"
-            min={0}
-            max={100}
-            step={1}
-            value={Math.round(musicVolume * 100)}
-            onChange={(e) => onMusicVolumeChange(Number(e.target.value) / 100)}
-            style={{ '--vol-pct': `${Math.round(musicVolume * 100)}%` }}
-            aria-label="Громкость музыки"
-          />
-        </div>
+        </details>
 
-        <button
-          type="button"
-          className={`panel-perf-btn${lightMode ? ' panel-perf-btn-active' : ''}`}
-          onClick={onTogglePerf}
-          title={lightMode ? 'Чёрно-белый лёгкий режим' : 'Цветной HD — подсветка из палитры'}
-        >
-          <span aria-hidden="true">{lightMode ? '◈' : '⬡'}</span>
-          {lightMode ? 'Ч/Б · лёгкий' : 'HD · цвет'}
-        </button>
         <button type="button" className="panel-logout-btn" onClick={onLogout}>
           Выйти
         </button>

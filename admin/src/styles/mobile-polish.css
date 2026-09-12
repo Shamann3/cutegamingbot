@@ -22,6 +22,24 @@
   box-sizing: border-box;
 }
 
+/* Пока открыт mobile drawer — фон не скроллится */
+html.panel-nav-open,
+html.panel-nav-open body {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+html.panel-nav-open .panel-shell {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  touch-action: none;
+}
+
+html.panel-nav-open .panel-shelf-sidebar {
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
 @media (max-width: 900px) {
   .panel-nav-recent {
     display: block;
@@ -148,6 +166,25 @@
   .panel-nav-recent-chip svg {
     width: 0.95rem;
     height: 0.95rem;
+  }
+
+  /* Option C drawer: плотный список, настройки свёрнуты */
+  .panel-brand {
+    display: none !important;
+  }
+
+  .panel-nav-sublabel {
+    display: none !important;
+  }
+
+  .panel-sidebar-settings-sum:active {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .panel-sidebar-settings .panel-music-card,
+  .panel-sidebar-settings .panel-perf-btn,
+  .panel-sidebar-settings .accent-picker-root {
+    min-height: 44px;
   }
 
   /* Shelf cards — чуть воздушнее */

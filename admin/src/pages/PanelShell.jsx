@@ -94,10 +94,27 @@ export default function PanelShell({ onLogout }) {
 
   useEffect(() => {
     if (!mobileNavOpen) return undefined
-    const prev = document.body.style.overflow
+    const shell = document.querySelector('.panel-shell')
+    const prevBody = document.body.style.overflow
+    const prevShell = shell instanceof HTMLElement ? shell.style.overflow : ''
+    const scrollY = shell instanceof HTMLElement ? shell.scrollTop : 0
+
     document.body.style.overflow = 'hidden'
+    if (shell instanceof HTMLElement) {
+      shell.style.overflow = 'hidden'
+      shell.dataset.navLockScroll = String(scrollY)
+    }
+    document.documentElement.classList.add('panel-nav-open')
+
     return () => {
-      document.body.style.overflow = prev
+      document.body.style.overflow = prevBody
+      document.documentElement.classList.remove('panel-nav-open')
+      if (shell instanceof HTMLElement) {
+        shell.style.overflow = prevShell
+        const y = Number(shell.dataset.navLockScroll || 0)
+        delete shell.dataset.navLockScroll
+        shell.scrollTop = y
+      }
     }
   }, [mobileNavOpen])
 

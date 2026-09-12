@@ -893,6 +893,34 @@ body,
   border-top: 1px solid var(--e-line);
 }
 
+/* Настройки: desktop всегда раскрыты; mobile — <details> */
+.panel-sidebar-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.panel-sidebar-settings-sum {
+  display: none;
+  list-style: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.panel-sidebar-settings-sum::-webkit-details-marker {
+  display: none;
+}
+
+.panel-sidebar-settings-body {
+  display: flex !important;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 /* Кнопка подсветки + окошко палитры справа */
 .accent-picker-root {
   position: relative;
@@ -3081,21 +3109,12 @@ body,
     gap: 0.75rem;
   }
 
-  .panel-sidebar-drawer-kicker {
-    margin: 0;
-    font-size: 0.62rem;
-    font-weight: 620;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: rgba(var(--e-accent-rgb, 255, 5, 36), 0.7);
-  }
-
   .panel-sidebar-drawer-title {
-    margin: 0.1rem 0 0;
+    margin: 0;
     font-family: "Cormorant Garamond", Georgia, serif;
-    font-size: 1.45rem;
+    font-size: 1.35rem;
     font-weight: 650;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
     color: var(--e-accent-bright, #ff6a7a);
     line-height: 1.1;
   }
@@ -3160,17 +3179,35 @@ body,
     font-size: 0.85rem;
   }
 
+  /* Option C: без логотипа, плотный список */
+  .panel-brand {
+    display: none !important;
+  }
+
   .panel-sidebar-nav {
     flex: 1 1 auto !important;
     min-height: 0 !important;
     overflow-y: auto !important;
-    padding: 0.15rem 0.15rem 0.5rem !important;
+    padding: 0.05rem 0.1rem 0.35rem !important;
+    gap: 0.15rem;
+  }
+
+  .panel-nav-group {
+    margin-bottom: 0.35rem;
+  }
+
+  .panel-nav-group-label {
+    margin: 0.15rem 0.55rem 0.2rem !important;
+    font-size: 0.58rem !important;
+    letter-spacing: 0.12em !important;
+    opacity: 0.72;
   }
 
   .panel-nav-item {
-    min-height: 3rem !important;
-    padding: 0.7rem 0.85rem !important;
-    border-radius: 12px !important;
+    min-height: 2.65rem !important;
+    padding: 0.45rem 0.7rem !important;
+    border-radius: 10px !important;
+    gap: 0.55rem !important;
   }
 
   .panel-nav-item-active {
@@ -3178,10 +3215,66 @@ body,
     border-color: rgba(var(--e-accent-rgb, 255, 5, 36), 0.28) !important;
   }
 
+  .panel-nav-icon {
+    width: 1.15rem !important;
+    height: 1.15rem !important;
+  }
+
+  .panel-nav-label {
+    font-size: 0.92rem !important;
+    line-height: 1.2 !important;
+  }
+
+  .panel-nav-sublabel {
+    display: none !important;
+  }
+
   .panel-sidebar-footer {
     flex-shrink: 0 !important;
     margin-top: auto !important;
     padding-top: 0.35rem !important;
+    gap: 0.35rem !important;
+  }
+
+  .panel-sidebar-settings {
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding-top: 0.25rem;
+  }
+
+  .panel-sidebar-settings-sum {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 2.55rem;
+    padding: 0.45rem 0.65rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .panel-sidebar-settings-chevron {
+    font-size: 0.75rem;
+    opacity: 0.55;
+    transition: transform 0.2s ease;
+  }
+
+  .panel-sidebar-settings[open] .panel-sidebar-settings-chevron {
+    transform: rotate(180deg);
+  }
+
+  .panel-sidebar-settings:not([open]) .panel-sidebar-settings-body {
+    display: none !important;
+  }
+
+  .panel-sidebar-settings[open] .panel-sidebar-settings-body {
+    display: flex !important;
+    gap: 0.35rem;
+    padding: 0.35rem 0.1rem 0.15rem;
   }
 
   .panel-security > .sec-tab-body {
@@ -3308,13 +3401,6 @@ body,
 
   .elite-greeting-title {
     font-size: 1.28rem;
-  }
-
-  /* В fullscreen drawer подзаголовки EN помогают сканировать длинный список */
-  .panel-nav-sublabel {
-    display: block;
-    color: var(--e-text-4);
-    font-size: 0.68rem;
   }
 
   .support-msg-bubble {
