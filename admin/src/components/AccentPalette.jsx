@@ -5,6 +5,7 @@ import {
   clamp,
   hsvToHex,
   normalizeAccent,
+  parseHexInput,
 } from '../lib/accentTheme'
 
 const WHEEL_SIZE = 196
@@ -235,12 +236,36 @@ export default function AccentPalette({ value, onChange }) {
           <input
             value={hexText}
             onChange={(e) => {
-              const raw = e.target.value.trim()
+              let raw = e.target.value.trim()
+              if (raw && !raw.startsWith('#')) raw = `#${raw}`
               setHexText(raw)
-              if (/^#[0-9A-Fa-f]{6}$/.test(raw)) commit({ hex: raw, id: 'custom', label: 'Свой' })
+              const parsed = parseHexInput(raw)
+              if (parsed) commit({ hex: parsed, id: 'custom', label: 'Свой' })
             }}
+            onBlur={() => {
+              const parsed = parseHexInput(hexText)
+              if (parsed) {
+                setHexText(parsed)
+                commit({ hex: parsed, id: 'custom', label: 'Свой' })
+              } else {
+                setHexText(draft.hex)
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              e.preventDefault()
+              const parsed = parseHexInput(hexText)
+              if (parsed) {
+                setHexText(parsed)
+                commit({ hex: parsed, id: 'custom', label: 'Свой' })
+              }
+            }}
+            placeholder="#7EB89A"
             spellCheck={false}
             maxLength={7}
+            inputMode="text"
+            autoCapitalize="off"
+            autoCorrect="off"
           />
         </label>
 

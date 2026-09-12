@@ -227,6 +227,11 @@ article.panel-shelf,
   color: var(--e-accent-bright) !important;
 }
 
+.panel-nav-item-active .panel-nav-label,
+.panel-nav-item-active .panel-nav-icon {
+  color: var(--e-accent-bright) !important;
+}
+
 .panel-nav-item:active {
   transform: scale(0.97);
 }
@@ -385,12 +390,13 @@ tr:hover td {
 .case-tab-active,
 .auth-tab-active,
 .pa-role-tab-active {
-  background: rgba(var(--e-accent-rgb), 0.14) !important;
-  color: var(--e-accent-bright) !important;
+  background: var(--e-accent) !important;
+  color: var(--e-accent-ink, #fff) !important;
+  -webkit-text-fill-color: var(--e-accent-ink, #fff) !important;
   border-color: transparent !important;
   box-shadow:
-    0 0 0 1.5px rgba(var(--e-accent-rgb), 0.48),
-    0 0 24px rgba(var(--e-accent-rgb), 0.2) !important;
+    0 4px 18px -6px rgba(var(--e-accent-rgb), 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
   transition:
     background 0.3s var(--e-ease),
     color 0.3s var(--e-ease),

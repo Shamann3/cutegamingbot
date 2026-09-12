@@ -3892,8 +3892,10 @@ body {
 .sec-audit-filters {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.55rem;
   flex-wrap: wrap;
+  padding: 0.2rem;
+  overflow: visible;
 }
 
 .sec-audit-count {
@@ -10209,6 +10211,8 @@ html { scroll-behavior: smooth; }
   flex-direction: column;
   gap: 0.6rem;
   min-height: 0;
+  padding: 0.15rem 0.2rem 0.35rem;
+  overflow: visible;
 }
 
 .support-ticket-list {

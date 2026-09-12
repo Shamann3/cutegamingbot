@@ -910,9 +910,9 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
         }}
       />
       <article className="panel-shelf panel-shelf-page panel-users-search">
-        <p className="panel-shelf-label">Users · Игроки</p>
+        <p className="panel-shelf-label">Игроки</p>
         <h2 className="panel-page-title">Поиск игрока</h2>
-        <p className="panel-page-lead">ID или @username (минимум 2 символа для имени)</p>
+        <p className="panel-page-lead">Введите ID, @username или имя — минимум 2 символа</p>
 
         <form
           className="panel-users-search-form"

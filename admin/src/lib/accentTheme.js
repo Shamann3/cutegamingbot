@@ -7,8 +7,6 @@ export const ACCENT_SWATCHES = [
   { id: 'rose', label: 'Роза', hex: '#D48A96' },
   { id: 'amber', label: 'Янтарь', hex: '#D4B56A' },
   { id: 'coral', label: 'Коралл', hex: '#E07A5F' },
-  { id: 'ice', label: 'Лёд', hex: '#A8C5D4' },
-  { id: 'pearl', label: 'Жемчуг', hex: '#E8E6E3' },
 ]
 
 const STORAGE_KEY = 'epsilon.panel.accent'
@@ -31,6 +29,30 @@ export function hexToRgb(hex) {
 export function rgbToHex(r, g, b) {
   const toHex = (n) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, '0')
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`
+}
+
+/** Нормализация ввода HEX: #abc / abc / #aabbcc */
+export function parseHexInput(raw) {
+  let s = String(raw || '').trim().replace(/^#/, '')
+  if (/^[0-9A-Fa-f]{3}$/.test(s)) {
+    s = `${s[0]}${s[0]}${s[1]}${s[1]}${s[2]}${s[2]}`
+  }
+  if (!/^[0-9A-Fa-f]{6}$/.test(s)) return null
+  return `#${s.toLowerCase()}`
+}
+
+export function relativeLuminance(hex) {
+  const { r, g, b } = hexToRgb(hex)
+  const lin = (c) => {
+    const x = c / 255
+    return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+}
+
+/** Чёрный текст на светлом акценте, белый — на тёмном */
+export function inkOnAccent(hex) {
+  return relativeLuminance(hex) > 0.58 ? '#111111' : '#ffffff'
 }
 
 export function rgbToHsv(r, g, b) {
@@ -111,26 +133,33 @@ export function normalizeAccent(input) {
       hex = sw.hex
       id = sw.id
       label = sw.label
-    } else if (/^#[0-9A-Fa-f]{6}$/.test(input)) {
-      hex = input
-      id = 'custom'
-      label = 'Свой'
+    } else {
+      const parsed = parseHexInput(input)
+      if (parsed) {
+        hex = parsed
+        id = 'custom'
+        label = 'Свой'
+      }
     }
   }
 
   if (!hex || !/^#[0-9A-Fa-f]{6}$/i.test(hex)) {
-    hex = ACCENT_SWATCHES[0].hex
-    id = ACCENT_SWATCHES[0].id
-    label = ACCENT_SWATCHES[0].label
+    const parsed = parseHexInput(hex)
+    if (parsed) hex = parsed
+    else {
+      hex = ACCENT_SWATCHES[0].hex
+      id = ACCENT_SWATCHES[0].id
+      label = ACCENT_SWATCHES[0].label
+    }
   }
 
   const rgb = hexToRgb(hex)
   const fromHex = rgbToHsv(rgb.r, rgb.g, rgb.b)
-  const h = Number.isFinite(input.h) ? clamp(input.h, 0, 360) : fromHex.h
-  const s = Number.isFinite(input.s) ? clamp(input.s, 0, 1) : fromHex.s
-  const v = Number.isFinite(input.v) ? clamp(input.v, 0, 1) : fromHex.v
+  const h = Number.isFinite(input?.h) ? clamp(input.h, 0, 360) : fromHex.h
+  const s = Number.isFinite(input?.s) ? clamp(input.s, 0, 1) : fromHex.s
+  const v = Number.isFinite(input?.v) ? clamp(input.v, 0, 1) : fromHex.v
   const finalHex = hsvToHex(h, s, v)
-  const glow = Number.isFinite(input.glow) ? clamp(input.glow, 0, 100) : DEFAULT_GLOW
+  const glow = Number.isFinite(input?.glow) ? clamp(input.glow, 0, 100) : DEFAULT_GLOW
 
   const known = ACCENT_SWATCHES.find((sw) => sw.hex.toLowerCase() === finalHex.toLowerCase())
   return {
@@ -159,6 +188,9 @@ export function applyAccentToDocument(accent) {
   const line = 0.28 + glow * 0.35
   const glowPx = 18 + glow * 48
   const glowAlpha = 0.08 + glow * 0.28
+  const ink = inkOnAccent(a.hex)
+  const brightToward = relativeLuminance(a.hex) > 0.58 ? '#000000' : '#ffffff'
+  const brightAmt = relativeLuminance(a.hex) > 0.58 ? 0.22 : 0.28
 
   const root = document.documentElement
   root.style.setProperty('--e-accent', a.hex)
@@ -167,11 +199,14 @@ export function applyAccentToDocument(accent) {
   root.style.setProperty('--e-accent-soft-2', `rgba(${r}, ${g}, ${b}, ${soft2.toFixed(3)})`)
   root.style.setProperty('--e-accent-line', `rgba(${r}, ${g}, ${b}, ${line.toFixed(3)})`)
   root.style.setProperty('--e-accent-glow', `0 0 ${glowPx.toFixed(0)}px rgba(${r}, ${g}, ${b}, ${glowAlpha.toFixed(3)})`)
-  root.style.setProperty('--e-accent-bright', mixToward(a.hex, '#ffffff', 0.28))
+  root.style.setProperty('--e-accent-bright', mixToward(a.hex, brightToward, brightAmt))
+  root.style.setProperty('--e-accent-ink', ink)
+  root.style.setProperty('--e-accent-on', ink)
   root.style.setProperty('--e-accent-glow-strength', String(glow))
   root.style.setProperty('--ent-accent', a.hex)
   root.style.setProperty('--ent-accent-rgb', `${r}, ${g}, ${b}`)
   root.dataset.accent = a.id
+  root.dataset.accentInk = ink === '#111111' ? 'dark' : 'light'
 }
 
 export function loadStoredAccent() {

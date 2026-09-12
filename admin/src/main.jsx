@@ -7,6 +7,7 @@ import './index.css'
 import './styles/elite.css'
 import './styles/atelier.css'
 import './styles/entrance.css'
+import './styles/users-ios.css'
 import { applyAccentToDocument, loadStoredAccent } from './lib/accentTheme'
 
 // Подсветка до первого кадра — без вспышки дефолтного цвета
