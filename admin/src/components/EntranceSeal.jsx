@@ -98,35 +98,34 @@ export default function EntranceSeal({
       <div className="ent-grid" aria-hidden="true" />
 
       <div className="ent-stage">
-        <svg className="ent-rings" viewBox="0 0 200 200" aria-hidden="true">
-          <circle className="ent-ring ent-ring--a" cx="100" cy="100" r="94" />
-          <circle className="ent-ring ent-ring--b" cx="100" cy="100" r="80" />
-          <path
-            className="ent-ring ent-ring--shield"
-            d="M100 18 L162 40 V96 C162 136 134 164 100 178 C66 164 38 136 38 96 V40 Z"
-          />
-          <circle className="ent-ring ent-ring--c" cx="100" cy="100" r="56" />
-        </svg>
+        <div className="ent-crest">
+          <svg className="ent-rings" viewBox="0 0 200 200" aria-hidden="true">
+            <circle className="ent-ring ent-ring--a" cx="100" cy="100" r="92" />
+            <circle className="ent-ring ent-ring--b" cx="100" cy="100" r="78" />
+            <circle className="ent-ring ent-ring--c" cx="100" cy="100" r="64" />
+          </svg>
 
-        <div className="ent-brackets" aria-hidden="true">
-          <span className="ent-bracket ent-bracket--tl" />
-          <span className="ent-bracket ent-bracket--tr" />
-          <span className="ent-bracket ent-bracket--bl" />
-          <span className="ent-bracket ent-bracket--br" />
-        </div>
-
-        <div className="ent-mark" aria-hidden="true">
-          <div
-            className="ent-logo"
-            style={{ '--ent-logo-url': `url(${vivoEpsilonLogo})` }}
-          >
-            <span className="ent-logo-glyph" />
+          <div className="ent-brackets" aria-hidden="true">
+            <span className="ent-bracket ent-bracket--tl" />
+            <span className="ent-bracket ent-bracket--tr" />
+            <span className="ent-bracket ent-bracket--bl" />
+            <span className="ent-bracket ent-bracket--br" />
           </div>
-          <div className="ent-stamp" />
+
+          <div className="ent-mark" aria-hidden="true">
+            <div className="ent-logo">
+              <img
+                src={vivoEpsilonLogo}
+                alt=""
+                draggable={false}
+                decoding="async"
+              />
+            </div>
+            <div className="ent-stamp" />
+          </div>
         </div>
 
         <div className="ent-copy">
-          <p className="ent-kicker">Cute Epsilon</p>
           <p className="ent-title">{title}</p>
           <p className="ent-sub">{greeting}</p>
           <div className="ent-rule" aria-hidden="true" />

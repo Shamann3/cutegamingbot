@@ -198,7 +198,7 @@ async def _admin_force_harvest(user_id: int, plot_id: int) -> tuple[list[dict], 
     import random
 
     from content_registry import get_crop_for_plot, roll_harvest_drops
-    from dex_catalog import canonical_key, merge_items_for_storage, normalize_items
+    from dex_catalog import dex_catalog, merge_items_for_storage, normalize_items
     from farm_notifications import notify_item
     from user_items import add_item, items_to_db, parse_items
 
@@ -227,7 +227,7 @@ async def _admin_force_harvest(user_id: int, plot_id: int) -> tuple[list[dict], 
             if not drops:
                 drops = [(crop.harvest_id, amount)] if crop.harvest_id else []
             for item_id, drop_amount in drops:
-                canon_item_id = canonical_key(item_id)
+                canon_item_id = dex_catalog.canonical_key(item_id)
                 game_items = add_item(game_items, canon_item_id, drop_amount)
                 gained_rows.append(notify_item(item_id, drop_amount))
             stored = merge_items_for_storage(raw_items, game_items)

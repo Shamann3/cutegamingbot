@@ -1148,7 +1148,7 @@ async def _build_engagement_stats(user_id: int, *, profile: dict | None = None) 
             "sessionCount30d": 0,
         },
         "farm": {"plants": 0, "waters": 0, "harvests": 0, "withers": 0, "efficiencyPct": None},
-        "gamesOpens": {"total": 0, "byChat": []},
+        "gameOpens": {"total": 0, "byChat": []},
         "signals": {
             "engagementScore": 0,
             "churnRisk": "low",
@@ -1441,18 +1441,18 @@ async def _build_engagement_stats(user_id: int, *, profile: dict | None = None) 
     out["signals"]["inactiveDays"] = inactive_days
 
     score = 0
-    score += min(25, out["activeDays"]["month"] * 2)
-    score += min(20, int(out["messages"]["month"] / 20))
-    score += min(15, int((out["sessions"]["estimatedMinutes30d"] or 0) / 30))
-    score += min(15, out["farm"]["harvests"])
-    score += min(10, out["streak"]["current"])
-    score += min(15, int((out["gameOpens"]["total"] or 0) / 50))
+    score += min(25, int(out.get("activeDays", {}).get("month") or 0) * 2)
+    score += min(20, int((out.get("messages", {}).get("month") or 0) / 20))
+    score += min(15, int((out.get("sessions", {}).get("estimatedMinutes30d") or 0) / 30))
+    score += min(15, int(out.get("farm", {}).get("harvests") or 0))
+    score += min(10, int(out.get("streak", {}).get("current") or 0))
+    score += min(15, int((out.get("gameOpens", {}).get("total") or 0) / 50))
     if inactive_days is not None:
         if inactive_days >= 14:
             score = max(0, score - 25)
         elif inactive_days >= 7:
             score = max(0, score - 12)
-    out["signals"]["engagementScore"] = min(100, score)
+    out.setdefault("signals", {})["engagementScore"] = min(100, score)
 
     if inactive_days is None:
         churn = "unknown"
@@ -1462,22 +1462,24 @@ async def _build_engagement_stats(user_id: int, *, profile: dict | None = None) 
         churn = "medium"
     else:
         churn = "low"
-    out["signals"]["churnRisk"] = churn
+    out.setdefault("signals", {})["churnRisk"] = churn
 
     labels = []
-    if out["streak"]["current"] >= 7:
+    if int(out.get("streak", {}).get("current") or 0) >= 7:
         labels.append("серия ≥7 дней")
-    if out["activeDays"]["month"] >= 20:
+    if int(out.get("activeDays", {}).get("month") or 0) >= 20:
         labels.append("ежедневный игрок")
-    if out["farm"]["efficiencyPct"] is not None and out["farm"]["efficiencyPct"] >= 70:
+    farm_eff = out.get("farm", {}).get("efficiencyPct")
+    if farm_eff is not None and farm_eff >= 70:
         labels.append("сильный фермер")
-    if out["messages"]["month"] >= 500:
+    if int(out.get("messages", {}).get("month") or 0) >= 500:
         labels.append("активен в чатах")
     if churn == "high":
         labels.append("риск оттока")
-    if out["topGroupsLifetime"]:
-        labels.append(f"дом: {out['topGroupsLifetime'][0]['chatName']}")
-    out["signals"]["labels"] = labels
+    top_life = out.get("topGroupsLifetime") or []
+    if top_life:
+        labels.append(f"дом: {top_life[0].get('chatName') or top_life[0].get('chatId')}")
+    out.setdefault("signals", {})["labels"] = labels
 
     return out
 
