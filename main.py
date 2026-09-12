@@ -289,8 +289,9 @@ async def _sypher_diag_gate(message: Message):
 
 @dp.callback_query(lambda c: isinstance(c.data, str) and (
     c.data.startswith("ach_grant_off:")
-    or c.data.startswith("ach_rev:")
+    or c.data.startswith("ach_rev")
     or c.data.startswith("achm_")
+    or c.data.startswith("achc_")
 ))
 async def achievements_callbacks(callback: CallbackQuery):
     from bot.handlers.achievements_admin import handle_achievements_callback
@@ -34288,9 +34289,16 @@ async def add_firstname_to_usercheck_balance(message: Message):
         schedule_message_housekeeping(db, message, start_balance=start_balance, bot=bot1)
         return
 
-    # Достижения: наградить / снять / помощь
+    # Достижения: мастер свободной награды (следующее сообщение админа)
+    # и команды наградить / снять / помощь
     try:
-        from bot.handlers.achievements_admin import handle_achievements_admin_message
+        from bot.handlers.achievements_admin import (
+            handle_achievements_admin_message,
+            handle_achievements_pending_message,
+        )
+        if await handle_achievements_pending_message(message, db):
+            schedule_message_housekeeping(db, message, start_balance=start_balance, bot=bot1)
+            return
         _t = " ".join((message.text or "").lower().split())
         if (
             _t.startswith("наградить")

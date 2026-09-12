@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   deleteOfficialAchievement,
   fetchAchievementsOverview,
@@ -25,6 +25,48 @@ const EMPTY = {
 
 const SORT_MIN = 0
 const SORT_MAX = 100
+const EMOJI_ID_RE = /^\d{5,32}$/
+const TG_EMOJI_TAG = /<tg-emoji[^>]*emoji-id=["'](\d{5,32})["'][^>]*>.*?<\/tg-emoji>/gi
+
+function htmlToTokens(s) {
+  return String(s || '')
+    .replace(TG_EMOJI_TAG, '{emoji:$1}')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+}
+
+function parseEmojiId(raw) {
+  const s = String(raw || '').trim()
+  if (!s) return ''
+  const tagged = s.match(/emoji-id\s*=\s*['"](\d{5,32})['"]/i)
+  if (tagged) return tagged[1]
+  const token = s.match(/\{emoji:(\d{5,32})\}/i)
+  if (token) return token[1]
+  const digits = s.replace(/\D/g, '')
+  return EMOJI_ID_RE.test(digits) ? digits : ''
+}
+
+function insertAtCursor(el, value, snippet) {
+  const cur = String(value || '')
+  if (!el || typeof el.selectionStart !== 'number') {
+    return `${cur}${cur && !cur.endsWith(' ') ? ' ' : ''}${snippet}`
+  }
+  const start = el.selectionStart
+  const end = el.selectionEnd
+  const next = `${cur.slice(0, start)}${snippet}${cur.slice(end)}`
+  requestAnimationFrame(() => {
+    try {
+      el.focus()
+      const pos = start + snippet.length
+      el.setSelectionRange(pos, pos)
+    } catch { /* ignore */ }
+  })
+  return next
+}
+
+function previewTitle(title) {
+  return String(title || 'Название достижения').replace(/\{emoji:(\d{5,32})\}/gi, '✦')
+}
 
 function Field({ label, help, children, className = '' }) {
   return (
@@ -87,7 +129,10 @@ export default function AchievementsSection({ onOpenUser } = {}) {
   const [grantOfficialId, setGrantOfficialId] = useState('')
   const [grantFreeTitle, setGrantFreeTitle] = useState('')
   const [grantFreeEmoji, setGrantFreeEmoji] = useState('⭐')
+  const [grantFreeEmojiId, setGrantFreeEmojiId] = useState('')
   const [userItems, setUserItems] = useState([])
+  const officialTitleRef = useRef(null)
+  const freeTitleRef = useRef(null)
   const [loadingUser, setLoadingUser] = useState(false)
   const [revokingId, setRevokingId] = useState('')
 
@@ -135,7 +180,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
     setDraft({
       id: it.id,
       code: it.code || '',
-      title: it.title || '',
+      title: htmlToTokens(it.title_html) || it.title || '',
       icon_emoji_id: it.icon_emoji_id || '',
       icon_fallback: it.icon_fallback || '⭐',
       description: it.description || '',
@@ -164,7 +209,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
         id: draft.id || undefined,
         code: String(draft.code || '').trim(),
         title: String(draft.title || '').trim(),
-        icon_emoji_id: String(draft.icon_emoji_id || '').trim() || null,
+        icon_emoji_id: parseEmojiId(draft.icon_emoji_id) || null,
         icon_fallback: String(draft.icon_fallback || '⭐').slice(0, 8),
         description: String(draft.description || '').slice(0, 400),
         rarity: Math.max(1, Math.min(5, Number(draft.rarity) || 1)),
@@ -266,10 +311,12 @@ export default function AchievementsSection({ onOpenUser } = {}) {
         const res = await grantFreeAchievement({
           user_id: uid,
           title,
+          icon_emoji_id: parseEmojiId(grantFreeEmojiId) || null,
           icon_fallback: String(grantFreeEmoji || '⭐').slice(0, 8),
         })
         notifyAdmin(`Свободная награда выдана → ${uid}: ${res.title || title}`)
         setGrantFreeTitle('')
+        setGrantFreeEmojiId('')
       }
       await onLoadUser()
     } catch (e) {
@@ -358,16 +405,44 @@ export default function AchievementsSection({ onOpenUser } = {}) {
             <Field label="Код" help={help.code}>
               <input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} placeholder="legend_spring" />
             </Field>
-            <Field label="Название" help={help.title}>
-              <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Легенда сезона" />
-            </Field>
-            <Field label="Premium emoji id" help={help.icon_emoji_id}>
+            <Field label="Название" help="Можно вставить premium-эмодзи токеном {emoji:ID} — кнопкой справа от id.">
               <input
-                className={iconConflict ? 'ach-input-error' : ''}
-                value={draft.icon_emoji_id}
-                onChange={(e) => setDraft({ ...draft, icon_emoji_id: e.target.value })}
-                placeholder="пусто = обычный emoji справа"
+                ref={officialTitleRef}
+                value={draft.title}
+                onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                placeholder="Легенда сезона  или  Легенда {emoji:5469967260380612012}"
               />
+            </Field>
+            <Field
+              label="Premium emoji id"
+              help="Числовой ID Telegram Premium emoji. Пусто — обычный emoji справа. Этот же id можно вставить в название."
+            >
+              <div className="ach-emoji-row">
+                <input
+                  className={iconConflict ? 'ach-input-error' : ''}
+                  value={draft.icon_emoji_id}
+                  onChange={(e) => setDraft({ ...draft, icon_emoji_id: e.target.value })}
+                  placeholder="5469967260380612012"
+                  inputMode="numeric"
+                />
+                <button
+                  type="button"
+                  className="ach-btn ach-btn-compact"
+                  onClick={() => {
+                    const id = parseEmojiId(draft.icon_emoji_id)
+                    if (!id) {
+                      notifyAdmin('Сначала введите numeric id premium-эмодзи', { error: true })
+                      return
+                    }
+                    setDraft((d) => ({
+                      ...d,
+                      title: insertAtCursor(officialTitleRef.current, d.title, `{emoji:${id}}`),
+                    }))
+                  }}
+                >
+                  В название
+                </button>
+              </div>
             </Field>
             <Field label="Fallback emoji" help={help.icon_fallback}>
               <input
@@ -417,7 +492,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
             <span className="ach-preview-label">Превью витрины</span>
             <div className="ach-preview-card">
               <span className="ach-preview-icon">{draft.icon_fallback || '⭐'}</span>
-              <span className="ach-preview-title">{draft.title || 'Название достижения'}</span>
+              <span className="ach-preview-title">{previewTitle(draft.title)}</span>
               {draft.icon_emoji_id ? <span className="ach-pro-badge" title="Premium-эмодзи Telegram">PRO</span> : null}
             </div>
             <div className="ach-preview-meta">
@@ -470,7 +545,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
             <p className="ach-kicker">Award desk</p>
             <h2 className="ach-panel-title" style={{ marginBottom: 0 }}>Выдать игроку</h2>
             <p className="ach-field-help">
-              Официальные награды — карточками. Свободные — свой текст. Права выдачи — в доступе панели.
+              Официальные — карточками из каталога. Свободные — свой текст и Telegram Premium эмодзи (id + вставка в название).
             </p>
           </div>
           <div className="ach-grant-mode">
@@ -535,21 +610,100 @@ export default function AchievementsSection({ onOpenUser } = {}) {
             ) : null}
           </div>
         ) : (
-          <div className="ach-grid" style={{ marginTop: '0.75rem' }}>
-            <Field label="Текст награды" help={help.grant_free_title || 'Без ссылок'}>
-              <input
-                value={grantFreeTitle}
-                onChange={(e) => setGrantFreeTitle(e.target.value)}
-                placeholder="За вклад в атмосферу клуба"
-              />
-            </Field>
-            <Field label="Emoji">
-              <input
-                value={grantFreeEmoji}
-                onChange={(e) => setGrantFreeEmoji(e.target.value)}
-                maxLength={8}
-              />
-            </Field>
+          <div className="ach-free-composer">
+            <div className="ach-grid">
+              <Field
+                className="ach-field-wide"
+                label="Текст награды"
+                help="Без ссылок. Premium-эмодзи в тексте: {emoji:ID} или кнопка «В название»."
+              >
+                <textarea
+                  ref={freeTitleRef}
+                  rows={3}
+                  value={grantFreeTitle}
+                  onChange={(e) => setGrantFreeTitle(e.target.value)}
+                  placeholder="За вклад в атмосферу клуба"
+                />
+              </Field>
+              <Field
+                label="Premium emoji id"
+                help="Числовой идентификатор Telegram Premium emoji — в значок и/или в само название."
+              >
+                <div className="ach-emoji-row">
+                  <input
+                    value={grantFreeEmojiId}
+                    onChange={(e) => setGrantFreeEmojiId(e.target.value)}
+                    placeholder="5469967260380612012"
+                    inputMode="numeric"
+                  />
+                </div>
+              </Field>
+              <Field label="Обычный emoji" help="Виден всем, если нет Premium. И fallback внутри тега.">
+                <input
+                  value={grantFreeEmoji}
+                  onChange={(e) => setGrantFreeEmoji(e.target.value)}
+                  maxLength={8}
+                />
+              </Field>
+            </div>
+            <div className="ach-emoji-actions">
+              <button
+                type="button"
+                className="ach-btn ach-btn-compact"
+                onClick={() => {
+                  const id = parseEmojiId(grantFreeEmojiId)
+                  if (!id) {
+                    notifyAdmin('Введите numeric id premium-эмодзи', { error: true })
+                    return
+                  }
+                  setGrantFreeEmojiId(id)
+                }}
+              >
+                В значок
+              </button>
+              <button
+                type="button"
+                className="ach-btn ach-btn-compact"
+                onClick={() => {
+                  const id = parseEmojiId(grantFreeEmojiId)
+                  if (!id) {
+                    notifyAdmin('Введите numeric id premium-эмодзи', { error: true })
+                    return
+                  }
+                  setGrantFreeTitle((t) => insertAtCursor(freeTitleRef.current, t, `{emoji:${id}}`))
+                }}
+              >
+                В название
+              </button>
+              <button
+                type="button"
+                className="ach-btn ach-btn-compact"
+                onClick={() => {
+                  const id = parseEmojiId(grantFreeEmojiId)
+                  if (!id) {
+                    notifyAdmin('Введите numeric id premium-эмодзи', { error: true })
+                    return
+                  }
+                  setGrantFreeEmojiId(id)
+                  setGrantFreeTitle((t) => insertAtCursor(freeTitleRef.current, t, `{emoji:${id}}`))
+                }}
+              >
+                И туда, и туда
+              </button>
+            </div>
+            <div className="ach-preview">
+              <span className="ach-preview-label">Превью свободной награды</span>
+              <div className="ach-preview-card">
+                <span className="ach-preview-icon">{grantFreeEmoji || '⭐'}</span>
+                <span className="ach-preview-title">{previewTitle(grantFreeTitle || 'Текст награды')}</span>
+                {parseEmojiId(grantFreeEmojiId) ? <span className="ach-pro-badge">PRO</span> : null}
+              </div>
+              <div className="ach-preview-meta">
+                {parseEmojiId(grantFreeEmojiId)
+                  ? `premium id ${parseEmojiId(grantFreeEmojiId)} · в Telegram будет живой значок`
+                  : 'без premium id — обычный emoji'}
+              </div>
+            </div>
           </div>
         )}
 
@@ -566,7 +720,10 @@ export default function AchievementsSection({ onOpenUser } = {}) {
             {userItems.map((it) => (
               <article key={it.instance_id} className="ach-card">
                 <div className="ach-card-main" style={{ cursor: 'default' }}>
-                  <span className="ach-card-icon">{it.icon_fallback || '⭐'}</span>
+                  <span className="ach-card-icon">
+                    {it.icon_fallback || '⭐'}
+                    {it.icon_emoji_id ? <span className="ach-pro-dot" title="Premium-эмодзи" /> : null}
+                  </span>
                   <span className="ach-card-body">
                     <strong>{it.title}</strong>
                     <span className="ach-card-code">

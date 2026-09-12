@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import html
 import re
+import time
 from typing import Any, Optional, Tuple
 
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -14,6 +15,10 @@ from bot.funcs import achievements as ach
 # Pending official pick: admin_id -> target_user_id
 _pending_official: dict[int, int] = {}
 _pending_revoke: dict[int, int] = {}
+# Interactive free-award wizard: admin_id -> state
+_pending_free: dict[int, dict] = {}
+
+_CANCEL_WORDS = frozenset({"отмена", "cancel", "стоп", "stop"})
 
 GRANT_TRIGGERS = (
     "наградить",
@@ -145,6 +150,167 @@ async def _refresh_profile(db, user_id: int) -> None:
         await update_profile_after_data_change(int(user_id), db=db)
     except Exception as e:
         print(f"[ACH] profile refresh skip: {e!r}")
+
+
+def _wizard_clear(admin_id: int) -> None:
+    _pending_free.pop(int(admin_id), None)
+
+
+def _wizard_kb_cancel() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        _btn(text="Отмена", callback_data="achc_x", style="danger",
+             icon_custom_emoji_id="5226660202035554522"),
+    ]])
+
+
+def _wizard_preview_html(state: dict) -> str:
+    title_html = state.get("title_html") or html.escape(state.get("title_plain") or "…")
+    ic = ach.icon_html(state.get("icon_emoji_id"), state.get("icon_fallback") or "⭐")
+    eid = state.get("icon_emoji_id")
+    eid_line = f"значок · <code>{html.escape(str(eid))}</code>" if eid else "значок · обычный emoji"
+    return (
+        f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
+        f"<b>Свободная награда — превью</b>\n\n"
+        f"{ic} {title_html}\n"
+        f"<blockquote>{eid_line}</blockquote>\n"
+        f"<i>Проверьте название и эмодзи, затем выдайте.</i>"
+    )
+
+
+def _wizard_confirm_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn(text="Выдать", callback_data="achc_ok", style="success")],
+        [
+            _btn(text="Другой текст", callback_data="achc_retitle", style="default"),
+            _btn(text="Emoji id", callback_data="achc_eid", style="default"),
+        ],
+        [
+            _btn(text="В значок", callback_data="achc_put:icon", style="default"),
+            _btn(text="В название", callback_data="achc_put:title", style="default"),
+        ],
+        [_btn(text="Отмена", callback_data="achc_x", style="danger",
+              icon_custom_emoji_id="5226660202035554522")],
+    ])
+
+
+async def _wizard_start_free(message: Message, db, admin_id: int, target_id: int) -> None:
+    _pending_official.pop(admin_id, None)
+    _pending_free[admin_id] = {
+        "target": int(target_id),
+        "step": "title",
+        "title_html": "",
+        "title_plain": "",
+        "icon_emoji_id": None,
+        "icon_fallback": "⭐",
+        "pending_eid": None,
+        "ts": time.time(),
+    }
+    await message.reply(
+        f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
+        f"<b>Свободная награда</b>\n"
+        f"Игрок: <code>{int(target_id)}</code>\n\n"
+        f"Следующим сообщением отправьте текст награды.\n"
+        f"Premium-эмодзи можно вставить прямо в текст.\n"
+        f"Или укажите numeric id кнопкой ниже, затем вставьте его в значок или в название.\n\n"
+        f"Токен вручную: <code>{{emoji:5469967260380612012}}</code>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [_btn(text="Указать emoji id", callback_data="achc_eid", style="primary")],
+            [_btn(text="Отмена", callback_data="achc_x", style="danger",
+                  icon_custom_emoji_id="5226660202035554522")],
+        ]),
+    )
+
+
+async def handle_achievements_pending_message(message: Message, db) -> bool:
+    """Ловит следующий текст админа в мастере свободной награды."""
+    if not message.from_user:
+        return False
+    admin_id = int(message.from_user.id)
+    state = _pending_free.get(admin_id)
+    if not state:
+        return False
+    if time.time() - float(state.get("ts") or 0) > 900:
+        _wizard_clear(admin_id)
+        return False
+    text = (message.text or message.caption or "").strip()
+    if not text:
+        return False
+    n = _norm(text)
+    if n in _CANCEL_WORDS:
+        _wizard_clear(admin_id)
+        await message.reply("Создание награды отменено.", parse_mode="HTML")
+        return True
+    if (
+        any(n == t or n.startswith(t + " ") for t in GRANT_TRIGGERS)
+        or any(n == t or n.startswith(t + " ") for t in REVOKE_TRIGGERS)
+        or any(n == t or n.startswith(t + " ") for t in HELP_TRIGGERS)
+    ):
+        _wizard_clear(admin_id)
+        return False
+
+    step = str(state.get("step") or "")
+    if step == "title":
+        ents = list(message.entities or message.caption_entities or [])
+        try:
+            title_html, emoji_id, fallback = ach.sanitize_achievement_html(text, ents)
+            if "{emoji:" in text.lower():
+                title_html = ach.compose_title_html(text, fallback=fallback or "⭐")
+        except ValueError:
+            await message.reply("<b>В тексте нельзя ссылки.</b> Отправьте название без URL.", parse_mode="HTML")
+            return True
+        if not (title_html or "").strip():
+            await message.reply("<b>Пустой текст.</b> Напишите название награды.", parse_mode="HTML")
+            return True
+        state["title_html"] = title_html
+        state["title_plain"] = ach.strip_tg_emoji(title_html) or text
+        if emoji_id and not state.get("icon_emoji_id"):
+            state["icon_emoji_id"] = emoji_id
+        if fallback:
+            state["icon_fallback"] = fallback
+        state["step"] = "confirm"
+        _pending_free[admin_id] = state
+        await message.reply(
+            _wizard_preview_html(state),
+            parse_mode="HTML",
+            reply_markup=_wizard_confirm_kb(),
+            disable_web_page_preview=True,
+        )
+        return True
+
+    if step == "emoji_id":
+        eid = ach.parse_custom_emoji_id(text)
+        if not eid:
+            await message.reply(
+                "<b>Не вижу id.</b> Пришлите число вида <code>5469967260380612012</code>.",
+                parse_mode="HTML",
+            )
+            return True
+        state["pending_eid"] = eid
+        state["step"] = "confirm" if state.get("title_html") else "title"
+        _pending_free[admin_id] = state
+        if state["step"] == "confirm":
+            await message.reply(
+                f"Id принят: <code>{eid}</code>\nКуда поставить?",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [
+                        _btn(text="В значок", callback_data="achc_put:icon", style="primary"),
+                        _btn(text="В название", callback_data="achc_put:title", style="primary"),
+                    ],
+                    [_btn(text="И туда, и туда", callback_data="achc_put:both", style="success")],
+                    [_btn(text="Отмена", callback_data="achc_x", style="danger")],
+                ]),
+            )
+        else:
+            await message.reply(
+                f"Id сохранён: <code>{eid}</code>\nТеперь отправьте текст награды.",
+                parse_mode="HTML",
+                reply_markup=_wizard_kb_cancel(),
+            )
+        return True
+
+    return False
 
 
 async def handle_achievements_admin_message(message: Message, db) -> bool:
@@ -279,23 +445,42 @@ async def _handle_grant(message: Message, db, prefix: str, rest: str) -> bool:
         )
         return True
 
-    # «наградить» / «наградить официально» без текста → пикер
-    if official_mode or not leftover:
-        if can_off and (official_mode or not leftover):
-            # если есть только право на офиц. или явно официально / пустое тело
-            if official_mode or (not leftover and can_off and not can_free):
-                return await _send_official_picker()
-            if official_mode or not leftover:
-                # пустой текст при наличии обоих прав → пикер официальных (удобнее)
-                if not leftover:
-                    return await _send_official_picker()
+    # «наградить» / «наградить официально» без текста → меню выбора
+    if official_mode and not leftover:
+        return await _send_official_picker()
 
-    # Free achievement
     if not leftover:
+        rows = []
+        if can_off:
+            rows.append([_btn(
+                text="Официальное",
+                callback_data=f"achc_kind:{int(target_id)}:off",
+                style="primary",
+                icon_custom_emoji_id=ach.ACHIEVEMENTS_HEADER_EMOJI,
+            )])
+        if can_free:
+            rows.append([_btn(
+                text="Свободное",
+                callback_data=f"achc_kind:{int(target_id)}:free",
+                style="success",
+            )])
+        rows.append([_btn(
+            text="Отмена",
+            callback_data="achc_x",
+            style="danger",
+            icon_custom_emoji_id="5226660202035554522",
+        )])
+        if not rows[:-1]:
+            await message.reply("<b>Нет права выдавать достижения.</b>", parse_mode="HTML")
+            return True
         await message.reply(
-            "<b>Добавьте текст награды</b> после команды "
-            "или напишите <code>наградить официально</code>.",
+            f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
+            f"<b>Какую награду выдать?</b>\n"
+            f"Игрок: <code>{int(target_id)}</code>\n\n"
+            f"<i>Свободное — своё название и premium-эмодзи.\n"
+            f"Официальное — карточка из каталога.</i>",
             parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
         )
         return True
 
@@ -305,6 +490,15 @@ async def _handle_grant(message: Message, db, prefix: str, rest: str) -> bool:
 
     rest_text, ents = _slice_entities_for_rest(message, prefix, leftover)
     title_html, emoji_id, fallback = ach.sanitize_achievement_html(rest_text, ents)
+    if "{emoji:" in leftover.lower():
+        try:
+            title_html = ach.compose_title_html(leftover, fallback=fallback or "⭐")
+            token_eid = ach.parse_custom_emoji_id(leftover)
+            if token_eid and not emoji_id:
+                emoji_id = token_eid
+        except ValueError:
+            await message.reply("<b>В тексте нельзя ссылки.</b>", parse_mode="HTML")
+            return True
     if not title_html.strip():
         await message.reply("<b>Пустой текст награды.</b>", parse_mode="HTML")
         return True
@@ -350,30 +544,274 @@ async def _handle_revoke(message: Message, db, rest: str) -> bool:
         return True
 
     _pending_revoke[admin_id] = int(target_id)
+    text, kb = _revoke_list_view(int(target_id), rows, page=0)
+    await message.reply(text, parse_mode="HTML", reply_markup=kb)
+    return True
+
+
+def _revoke_list_view(target_id: int, rows, page: int = 0) -> Tuple[str, InlineKeyboardMarkup]:
+    page_rows, page_i, pages, total = ach.paginate_items(rows, page, ach.PAGE_SIZE)
+    pager = f"стр. {page_i + 1}/{pages} · {total}" if pages > 1 else f"{total} наград"
     kb_rows = []
-    for iid, it in rows[:25]:
+    for iid, it in page_rows:
         kind = "★" if it.get("kind") == "official" else "✧"
-        title_plain = ach.strip_tg_emoji(it.get("title_html") or "")[:40]
+        title_plain = ach.strip_tg_emoji(it.get("title_html") or "")[:36]
         kb_rows.append([_btn(
-            text=f"{kind} {title_plain}",
-            callback_data=f"ach_rev:{target_id}:{iid}",
+            text=f"{kind} {title_plain}"[:64],
+            callback_data=f"ach_rev:{int(target_id)}:{iid}:{page_i}",
             style="danger",
         )])
-    await message.reply(
+    if pages > 1:
+        kb_rows.append([
+            _btn(text="◀", callback_data=f"ach_revp:{int(target_id)}:{max(0, page_i - 1)}"),
+            _btn(text=f"{page_i + 1}/{pages}", callback_data=f"ach_revp:{int(target_id)}:{page_i}"),
+            _btn(text="▶", callback_data=f"ach_revp:{int(target_id)}:{min(pages - 1, page_i + 1)}"),
+        ])
+    kb_rows.append([_btn(
+        text="Закрыть",
+        callback_data="achc_x",
+        style="default",
+        icon_custom_emoji_id="5226660202035554522",
+    )])
+    text = (
         f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-        f"<b>Что снять?</b>\nИгрок <code>{target_id}</code>",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
+        f"<b>Что снять?</b>\n"
+        f"Игрок <code>{int(target_id)}</code>\n"
+        f"<i>{pager} · сначала покажем карточку, потом подтверждение</i>"
     )
+    return text, InlineKeyboardMarkup(inline_keyboard=kb_rows)
+
+
+async def _handle_wizard_cb(callback: CallbackQuery, db, user_id: int, data: str) -> bool:
+    async def _ack(text: str = "", alert: bool = False) -> None:
+        try:
+            if text:
+                await callback.answer(text, show_alert=alert)
+            else:
+                await callback.answer()
+        except Exception:
+            pass
+
+    async def _show(text: str, kb: Optional[InlineKeyboardMarkup] = None) -> None:
+        try:
+            await callback.message.edit_text(
+                text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True,
+            )
+        except Exception:
+            try:
+                await callback.message.answer(text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True)
+            except Exception:
+                pass
+
+    if data == "achc_x":
+        _wizard_clear(user_id)
+        _pending_official.pop(user_id, None)
+        await _ack("Отменено")
+        await _show("Отменено.")
+        return True
+
+    if data.startswith("achc_kind:"):
+        parts = data.split(":")
+        if len(parts) < 3:
+            await _ack("Ошибка", True)
+            return True
+        target_id = int(parts[1])
+        kind = parts[2]
+        can_free = await ach.admin_has_perm(db, user_id, ach.PERM_GRANT_FREE)
+        can_off = await ach.admin_has_perm(db, user_id, ach.PERM_GRANT_OFFICIAL)
+        if kind == "off":
+            if not can_off:
+                await _ack("Нет права", True)
+                return True
+            await _ack()
+            _pending_official[user_id] = target_id
+            items = await ach.list_official(db, enabled_only=True, limit=30)
+            if not items:
+                await _show("<b>Каталог официальных пуст.</b>")
+                return True
+            clean_rows = []
+            for it in items[:20]:
+                kwargs = {
+                    "text": f"{it.get('icon_fallback') or '⭐'} {it.get('title')}",
+                    "callback_data": f"ach_grant_off:{target_id}:{it['id']}",
+                    "style": "primary",
+                }
+                eid = it.get("icon_emoji_id")
+                if eid:
+                    kwargs["icon_custom_emoji_id"] = str(eid)
+                clean_rows.append([_btn(**kwargs)])
+            clean_rows.append([_btn(text="Отмена", callback_data="achc_x", style="danger")])
+            await _show(
+                f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
+                f"<b>Выберите официальное достижение</b>\n"
+                f"Игрок: <code>{target_id}</code>",
+                InlineKeyboardMarkup(inline_keyboard=clean_rows),
+            )
+            return True
+        if kind == "free":
+            if not can_free:
+                await _ack("Нет права", True)
+                return True
+            await _ack()
+            _pending_official.pop(user_id, None)
+            _pending_free[user_id] = {
+                "target": int(target_id),
+                "step": "title",
+                "title_html": "",
+                "title_plain": "",
+                "icon_emoji_id": None,
+                "icon_fallback": "⭐",
+                "pending_eid": None,
+                "ts": time.time(),
+            }
+            await _show(
+                f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
+                f"<b>Свободная награда</b>\n"
+                f"Игрок: <code>{int(target_id)}</code>\n\n"
+                f"Следующим сообщением отправьте текст награды.\n"
+                f"Premium-эмодзи можно вставить прямо в текст.\n"
+                f"Токен: <code>{{emoji:5469967260380612012}}</code>",
+                InlineKeyboardMarkup(inline_keyboard=[
+                    [_btn(text="Указать emoji id", callback_data="achc_eid", style="primary")],
+                    [_btn(text="Отмена", callback_data="achc_x", style="danger",
+                          icon_custom_emoji_id="5226660202035554522")],
+                ]),
+            )
+            return True
+        await _ack("Ошибка", True)
+        return True
+
+    state = _pending_free.get(user_id)
+    if data == "achc_eid":
+        if not state:
+            await _ack("Сначала выберите «Свободное»", True)
+            return True
+        state["step"] = "emoji_id"
+        _pending_free[user_id] = state
+        await _ack()
+        await _show(
+            "<b>Идентификатор premium-эмодзи</b>\n"
+            "Отправьте следующим сообщением число, например\n"
+            "<code>5469967260380612012</code>\n\n"
+            "Его можно взять в @PremiumEmoji или из HTML <code>emoji-id</code>.",
+            InlineKeyboardMarkup(inline_keyboard=[
+                [_btn(text="Назад", callback_data="achc_back", style="default")],
+                [_btn(text="Отмена", callback_data="achc_x", style="danger")],
+            ]),
+        )
+        return True
+
+    if data == "achc_back":
+        if not state:
+            await _ack("Уже закрыто")
+            return True
+        await _ack()
+        if state.get("title_html"):
+            state["step"] = "confirm"
+            _pending_free[user_id] = state
+            await _show(_wizard_preview_html(state), _wizard_confirm_kb())
+        else:
+            state["step"] = "title"
+            _pending_free[user_id] = state
+            await _show(
+                f"<b>Отправьте текст награды</b> для <code>{state.get('target')}</code>.",
+                _wizard_kb_cancel(),
+            )
+        return True
+
+    if data == "achc_retitle":
+        if not state:
+            await _ack("Сначала откройте меню", True)
+            return True
+        state["step"] = "title"
+        _pending_free[user_id] = state
+        await _ack()
+        await _show(
+            "<b>Новый текст награды</b>\nОтправьте следующим сообщением.",
+            _wizard_kb_cancel(),
+        )
+        return True
+
+    if data.startswith("achc_put:"):
+        if not state:
+            await _ack("Сначала укажите emoji id", True)
+            return True
+        eid = state.get("pending_eid") or state.get("icon_emoji_id")
+        if not eid:
+            state["step"] = "emoji_id"
+            _pending_free[user_id] = state
+            await _ack("Сначала пришлите emoji id", True)
+            return True
+        where = data.split(":", 1)[1]
+        fb = state.get("icon_fallback") or "⭐"
+        if where in ("icon", "both"):
+            state["icon_emoji_id"] = eid
+        if where in ("title", "both"):
+            token = "{emoji:" + str(eid) + "}"
+            raw = ach.title_html_to_tokens(state.get("title_html") or "") or state.get("title_plain") or ""
+            if token not in raw:
+                raw = (raw + " " + token).strip()
+            try:
+                state["title_html"] = ach.compose_title_html(raw, fallback=fb)
+                state["title_plain"] = ach.strip_tg_emoji(state["title_html"])
+            except ValueError:
+                await _ack("Нельзя ссылки", True)
+                return True
+        state["step"] = "confirm" if state.get("title_html") else "title"
+        _pending_free[user_id] = state
+        await _ack("Поставил")
+        if state["step"] == "confirm":
+            await _show(_wizard_preview_html(state), _wizard_confirm_kb())
+        else:
+            await _show("Id в значке. Теперь отправьте текст награды.", _wizard_kb_cancel())
+        return True
+
+    if data == "achc_ok":
+        if not state or not state.get("title_html") or not state.get("target"):
+            await _ack("Нет превью — отправьте текст", True)
+            return True
+        if not await ach.admin_has_perm(db, user_id, ach.PERM_GRANT_FREE):
+            await _ack("Нет права", True)
+            return True
+        name = callback.from_user.full_name or callback.from_user.first_name or "Админ"
+        target_id = int(state["target"])
+        await ach.grant_free_to_user(
+            db,
+            target_user_id=target_id,
+            title_html=state["title_html"],
+            icon_emoji_id=state.get("icon_emoji_id"),
+            icon_fallback=state.get("icon_fallback") or "⭐",
+            granted_by=user_id,
+            granted_by_name=name,
+        )
+        await _refresh_profile(db, target_id)
+        _wizard_clear(user_id)
+        await _ack("Выдано")
+        ic = ach.icon_html(state.get("icon_emoji_id"), state.get("icon_fallback") or "⭐")
+        await _show(
+            f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
+            f"<b>Свободная награда выдана</b>\n{ic} {state['title_html']}"
+        )
+        return True
+
+    await _ack("Неизвестная кнопка", True)
     return True
 
 
 async def handle_achievements_callback(callback: CallbackQuery, db) -> bool:
     data = str(callback.data or "")
-    if not (data.startswith("ach_grant_off:") or data.startswith("ach_rev:") or data.startswith("achm_")):
+    if not (
+        data.startswith("ach_grant_off:")
+        or data.startswith("ach_rev")
+        or data.startswith("achm_")
+        or data.startswith("achc_")
+    ):
         return False
 
     user_id = int(callback.from_user.id)
+
+    if data.startswith("achc_"):
+        return await _handle_wizard_cb(callback, db, user_id, data)
 
     if data.startswith("ach_grant_off:"):
         parts = data.split(":")
@@ -412,13 +850,37 @@ async def handle_achievements_callback(callback: CallbackQuery, db) -> bool:
         await callback.answer("Готово")
         return True
 
-    if data.startswith("ach_rev:"):
+    if data.startswith("ach_revp:"):
         parts = data.split(":")
-        if len(parts) != 3:
+        try:
+            target_id = int(parts[1])
+            page = int(parts[2]) if len(parts) > 2 else 0
+        except Exception:
+            await callback.answer("Ошибка", show_alert=True)
+            return True
+        can_free = await ach.admin_has_perm(db, user_id, ach.PERM_GRANT_FREE)
+        can_off = await ach.admin_has_perm(db, user_id, ach.PERM_GRANT_OFFICIAL)
+        if not can_free and not can_off:
+            await callback.answer("Нет права", show_alert=True)
+            return True
+        doc = await ach.get_user_achievements_doc(db, target_id)
+        rows = ach.sorted_items_for_display(doc)
+        text, kb = _revoke_list_view(target_id, rows, page=page)
+        await callback.answer()
+        try:
+            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True)
+        except Exception:
+            pass
+        return True
+
+    if data.startswith("ach_revok:"):
+        parts = data.split(":")
+        if len(parts) < 3:
             await callback.answer("Ошибка", show_alert=True)
             return True
         target_id = int(parts[1])
         iid = parts[2]
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
         can_free = await ach.admin_has_perm(db, user_id, ach.PERM_GRANT_FREE)
         can_off = await ach.admin_has_perm(db, user_id, ach.PERM_GRANT_OFFICIAL)
         if not can_free and not can_off:
@@ -432,23 +894,173 @@ async def handle_achievements_callback(callback: CallbackQuery, db) -> bool:
         if it and it.get("kind") == "free" and not can_free:
             await callback.answer("Нужно право на свободные", show_alert=True)
             return True
+        title_line = ach.achievement_line_html(it, with_rarity=False) if it else "—"
         doc, ok = ach.admin_remove_item(doc, iid)
         if ok:
             await ach.save_user_achievements_doc(db, target_id, doc)
             await _refresh_profile(db, target_id)
         await callback.answer("Снято" if ok else "Не найдено", show_alert=not ok)
+        if ok:
+            rows = ach.sorted_items_for_display(doc)
+            if rows:
+                text, kb = _revoke_list_view(target_id, rows, page=page)
+                head = f"<b>Снято</b>\n{title_line}\n\n"
+                try:
+                    await callback.message.edit_text(head + text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True)
+                except Exception:
+                    pass
+            else:
+                try:
+                    await callback.message.edit_text(
+                        f"<b>Снято</b>\n{title_line}\n\nУ игрока больше нет достижений.",
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    pass
+        return True
+
+    if data.startswith("ach_rev:"):
+        parts = data.split(":")
+        if len(parts) < 3:
+            await callback.answer("Ошибка", show_alert=True)
+            return True
+        target_id = int(parts[1])
+        iid = parts[2]
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        can_free = await ach.admin_has_perm(db, user_id, ach.PERM_GRANT_FREE)
+        can_off = await ach.admin_has_perm(db, user_id, ach.PERM_GRANT_OFFICIAL)
+        if not can_free and not can_off:
+            await callback.answer("Нет права", show_alert=True)
+            return True
+        doc = await ach.get_user_achievements_doc(db, target_id)
+        it = (doc.get("items") or {}).get(iid)
+        if not it:
+            await callback.answer("Уже снято", show_alert=True)
+            return True
+        if it.get("kind") == "official" and not can_off:
+            await callback.answer("Нужно право на официальные", show_alert=True)
+            return True
+        if it.get("kind") == "free" and not can_free:
+            await callback.answer("Нужно право на свободные", show_alert=True)
+            return True
+        await callback.answer()
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [_btn(text="Да, снять", callback_data=f"ach_revok:{target_id}:{iid}:{page}", style="danger")],
+            [_btn(text="Нет, оставить", callback_data=f"ach_revp:{target_id}:{page}", style="primary")],
+        ])
         try:
             await callback.message.edit_text(
-                f"<b>{'Достижение снято' if ok else 'Не удалось снять'}</b>",
+                ach.format_delete_confirm_html(it),
                 parse_mode="HTML",
+                reply_markup=kb,
                 disable_web_page_preview=True,
             )
         except Exception:
-            pass
+            try:
+                await callback.message.edit_reply_markup(reply_markup=kb)
+            except Exception:
+                pass
         return True
 
     # Profile manage callbacks achm_
     return await _handle_profile_manage_cb(callback, db)
+
+
+async def _return_achievements_to_profile(
+    callback: CallbackQuery,
+    db,
+    viewer: int,
+    target: int,
+) -> bool:
+    """Вернуть экран достижений обратно в живой профиль.
+
+    `_profile_full_refresh_and_render` только собирает caption/markup и
+    ничего не редактирует — поэтому «К профилю» раньше «отвечала» и
+    оставляла список достижений на месте.
+    """
+    from bot.design.buttons import privates
+    from bot.funcs.profile import (
+        _build_profile_caption_for_target,
+        _profile_build_own_profile_markup,
+        _profile_build_who_markup,
+        _profile_get_message_meta,
+        _profile_safe_edit_message,
+        _profile_store_message_meta,
+        _profile_target_has_warns,
+        user_message_mappingprofile,
+    )
+
+    message = callback.message
+    if message is None:
+        return False
+
+    meta = _profile_get_message_meta(message.message_id)
+    mode = str(meta.get("mode") or "")
+    if mode not in ("own_profile", "who_are_you"):
+        mode = "own_profile" if int(viewer) == int(target) else "who_are_you"
+
+    try:
+        caption = await _build_profile_caption_for_target(
+            viewer_id=viewer,
+            target_user_id=target,
+            db=db,
+            chat_id=int(message.chat.id),
+        )
+        has_warns = await _profile_target_has_warns(target)
+    except Exception as e:
+        print(f"[ACH] back render: {e!r}")
+        return False
+
+    if mode == "own_profile" and int(viewer) == int(target):
+        markup = _profile_build_own_profile_markup(
+            privates,
+            viewer_id=viewer,
+            has_warns=has_warns,
+        )
+    else:
+        markup = _profile_build_who_markup(
+            viewer_id=viewer,
+            target_user_id=target,
+            has_warns=has_warns,
+        )
+
+    edit_mode = await _profile_safe_edit_message(
+        message, text=caption, reply_markup=markup, parse_mode="HTML",
+    )
+    if edit_mode == "failed":
+        plain = ach.strip_tg_emoji(caption)
+        edit_mode = await _profile_safe_edit_message(
+            message, text=plain, reply_markup=markup, parse_mode="HTML",
+        )
+
+    new_mid = message.message_id
+    if edit_mode == "failed":
+        try:
+            new_msg = await message.answer(
+                text=caption,
+                reply_markup=markup,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            new_mid = new_msg.message_id
+        except Exception as e:
+            print(f"[ACH] back fallback send: {e!r}")
+            return False
+
+    _profile_store_message_meta(
+        new_mid,
+        viewer_id=viewer,
+        target_user_id=target,
+        mode=mode,
+        chat_id=int(message.chat.id),
+        has_warns=has_warns,
+    )
+    try:
+        user_message_mappingprofile[int(viewer)] = int(new_mid)
+    except Exception:
+        pass
+    return True
 
 
 async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
@@ -457,7 +1069,7 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
     )
 
     data = str(callback.data or "")
-    # achm_all / achm_back / achm_up / achm_dn / achm_pin / achm_slot / achm_del / achm_delok
+    # achm_all / achm_pg / achm_back / achm_up / achm_dn / achm_pin / achm_slot / achm_del / achm_delok
     parts = data.split(":")
     if len(parts) < 3:
         return False
@@ -466,13 +1078,34 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
         viewer = int(parts[1])
         target = int(parts[2])
     except Exception:
-        await callback.answer("Ошибка", show_alert=True)
+        try:
+            await callback.answer("Ошибка", show_alert=True)
+        except Exception:
+            pass
         return True
 
     clicker = int(callback.from_user.id)
     if clicker != viewer:
-        await callback.answer("Это не ваше меню", show_alert=True)
+        try:
+            await callback.answer("Это не ваше меню", show_alert=True)
+        except Exception:
+            pass
         return True
+
+    def _page_at(idx: int, default: int = 0) -> int:
+        try:
+            return max(0, int(parts[idx]))
+        except Exception:
+            return default
+
+    if action == "achm_pg":
+        page = _page_at(3)
+    elif action == "achm_slot":
+        page = _page_at(5)
+    elif action in ("achm_up", "achm_dn", "achm_pin", "achm_del", "achm_delok", "achm_all"):
+        page = _page_at(3 if action == "achm_all" else 4)
+    else:
+        page = 0
 
     mid = callback.message.message_id if callback.message else None
     if mid and (viewer not in user_message_mappingprofile or user_message_mappingprofile[viewer] != mid):
@@ -480,92 +1113,66 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
 
     is_owner = clicker == target
 
+    async def _ack(text: str = "", *, alert: bool = False) -> None:
+        try:
+            if text:
+                await callback.answer(text, show_alert=alert)
+            else:
+                await callback.answer()
+        except Exception:
+            pass
+
     async def _edit(text: str, kb: InlineKeyboardMarkup) -> bool:
-        # ВАЖНО (скорость кнопок): меню достижений — это ОБЫЧНОЕ текстовое
-        # сообщение (не фото), поэтому edit_caption на нём гарантированно
-        # падает с "there is no caption in the message to edit" при КАЖДОМ
-        # нажатии. Раньше caption пробовался первым - лишний неудачный round-
-        # trip к Telegram на каждый клик (+ шум в логах). Порядок исправлен:
-        # сперва edit_text (обычный случай), caption - только как fallback
-        # для теоретического случая фото-сообщения.
-        try:
-            await callback.message.edit_text(
-                text, parse_mode="HTML", reply_markup=kb,
-                disable_web_page_preview=True,
-            )
-            return True
-        except Exception as e:
-            msg = str(e)
-            if "message is not modified" in msg.lower():
-                return True
-            if "DOCUMENT_INVALID" in msg or "can't parse" in msg.lower():
-                plain = ach.strip_tg_emoji(text)
-                try:
-                    await callback.message.edit_text(
-                        plain, parse_mode="HTML", reply_markup=kb,
-                        disable_web_page_preview=True,
-                    )
-                    return True
-                except Exception:
-                    pass
+        from bot.funcs.profile import _profile_safe_edit_message
 
-        try:
-            await callback.message.edit_caption(
-                caption=text, parse_mode="HTML", reply_markup=kb,
-                disable_web_page_preview=True,
-            )
+        mode = await _profile_safe_edit_message(
+            callback.message, text=text, reply_markup=kb, parse_mode="HTML",
+        )
+        if mode != "failed":
             return True
-        except Exception as e:
-            if "message is not modified" in str(e).lower():
+        plain = ach.strip_tg_emoji(text)
+        if plain != text:
+            mode = await _profile_safe_edit_message(
+                callback.message, text=plain, reply_markup=kb, parse_mode="HTML",
+            )
+            if mode != "failed":
                 return True
-            return False
+        return False
 
-    if action == "achm_all":
-        # ВАЖНО (скорость кнопок): отвечаем на нажатие СРАЗУ, не дожидаясь
-        # редактирования сообщения — иначе кнопка «висит» в состоянии
-        # загрузки на всё время сетевого запроса к Telegram.
-        await callback.answer()
+    if action in ("achm_all", "achm_pg"):
+        await _ack()
         doc = await ach.get_user_achievements_doc(db, target)
-        text = ach.format_full_achievements_html(doc)
-        kb = _build_manage_keyboard(viewer, target, doc, is_owner=is_owner)
+        rows = ach.sorted_items_for_display(doc)
+        _, page, pages, _ = ach.paginate_items(rows, page, ach.PAGE_SIZE)
+        text = ach.format_full_achievements_html(doc, page=page)
+        kb = _build_manage_keyboard(viewer, target, doc, is_owner=is_owner, page=page)
         await _edit(text, kb)
         return True
 
     if action == "achm_back":
-        await callback.answer()
-        try:
-            from bot.funcs.profile import _profile_full_refresh_and_render
-            await _profile_full_refresh_and_render(
-                viewer_id=viewer,
-                target_user_id=target,
-                db=db,
-                bot1=callback.bot,
-                chat_id=int(callback.message.chat.id),
-                message_obj=callback.message,
-            )
-        except Exception as e:
-            print(f"[ACH] back to profile: {e!r}")
-            await callback.answer("Обновите профиль", show_alert=True)
-            return True
+        await _ack()
+        ok = await _return_achievements_to_profile(callback, db, viewer, target)
+        if not ok:
+            print(f"[ACH] back to profile failed viewer={viewer} target={target}")
         return True
 
     if not is_owner:
-        await callback.answer("Только владелец профиля", show_alert=True)
+        await _ack("Только владелец профиля", alert=True)
         return True
 
     iid = parts[3] if len(parts) > 3 else ""
     doc = await ach.get_user_achievements_doc(db, target)
 
     if action == "achm_up":
-        await callback.answer("Выше")
+        await _ack("Выше")
         doc = ach.move_item(doc, iid, -1)
         await ach.save_user_achievements_doc(db, target, doc)
     elif action == "achm_dn":
-        await callback.answer("Ниже")
+        await _ack("Ниже")
         doc = ach.move_item(doc, iid, 1)
         await ach.save_user_achievements_doc(db, target, doc)
     elif action == "achm_pin":
-        await callback.answer("На витрине · 1")
+        await _ack("На витрине · 1")
         doc = ach.pin_item_to_front(doc, iid)
         await ach.save_user_achievements_doc(db, target, doc)
     elif action == "achm_slot":
@@ -573,94 +1180,135 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
             slot = int(parts[4]) if len(parts) > 4 else 0
         except Exception:
             slot = 0
-        await callback.answer(f"Витрина · {slot + 1}")
+        await _ack(f"Витрина · {slot + 1}")
         doc = ach.pin_item_to_slot(doc, iid, slot)
         await ach.save_user_achievements_doc(db, target, doc)
     elif action == "achm_del":
         it = doc.get("items", {}).get(iid)
         if not it or it.get("kind") != "free":
-            await callback.answer("Можно удалять только свободные", show_alert=True)
+            await _ack("Можно удалять только свободные", alert=True)
             return True
+        await _ack()
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [_btn(text="Да, удалить", callback_data=f"achm_delok:{viewer}:{target}:{iid}", style="danger")],
-            [_btn(text="Отмена", callback_data=f"achm_all:{viewer}:{target}", style="default")],
+            [_btn(
+                text="Да, удалить",
+                callback_data=f"achm_delok:{viewer}:{target}:{iid}:{page}",
+                style="danger",
+            )],
+            [_btn(
+                text="Нет, оставить",
+                callback_data=f"achm_all:{viewer}:{target}:{page}",
+                style="primary",
+            )],
         ])
-        await callback.message.edit_reply_markup(reply_markup=kb)
-        await callback.answer("Подтвердите удаление")
+        await _edit(ach.format_delete_confirm_html(it), kb)
         return True
     elif action == "achm_delok":
+        it = (doc.get("items") or {}).get(iid)
         doc, ok = ach.remove_free_item(doc, iid)
         if ok:
             await ach.save_user_achievements_doc(db, target, doc)
-            await callback.answer("Удалено")
+            await _ack("Удалено")
         else:
-            await callback.answer("Не удалось", show_alert=True)
+            await _ack("Не удалось", alert=True)
     else:
         return False
 
-    text = ach.format_full_achievements_html(doc)
-    kb = _build_manage_keyboard(viewer, target, doc, is_owner=True)
+    rows = ach.sorted_items_for_display(doc)
+    _, page, _, _ = ach.paginate_items(rows, page, ach.PAGE_SIZE)
+    text = ach.format_full_achievements_html(doc, page=page)
+    kb = _build_manage_keyboard(viewer, target, doc, is_owner=True, page=page)
     await _edit(text, kb)
     return True
 
 
-def _build_manage_keyboard(viewer: int, target: int, doc: dict, *, is_owner: bool) -> InlineKeyboardMarkup:
+def _profile_back_button(viewer: int, target: int) -> InlineKeyboardButton:
+    return _btn(
+        text="К профилю",
+        callback_data=f"achm_back:{int(viewer)}:{int(target)}",
+        style="primary",
+        icon_custom_emoji_id="5226660202035554522",
+    )
+
+
+def _build_manage_keyboard(
+    viewer: int,
+    target: int,
+    doc: dict,
+    *,
+    is_owner: bool,
+    page: int = 0,
+) -> InlineKeyboardMarkup:
     rows = []
     doc_n = ach._normalize_doc(doc)
-    ordered = [(iid, doc_n["items"][iid]) for iid in doc_n["order"] if iid in doc_n["items"]]
+    ordered = ach.sorted_items_for_display(doc_n)
+    page_rows, page_i, pages, total = ach.paginate_items(ordered, page, ach.PAGE_SIZE)
     showcase_ids = [iid for iid, _ in ach.showcase_items(doc_n, ach.SHOWCASE_LIMIT)]
+
+    rows.append([_profile_back_button(viewer, target)])
 
     if is_owner and ordered:
         rows.append([_btn(
-            text=f"Витрина · {min(len(ordered), ach.SHOWCASE_LIMIT)}/{ach.SHOWCASE_LIMIT}",
-            callback_data=f"achm_all:{viewer}:{target}",
+            text=f"Витрина · {min(total, ach.SHOWCASE_LIMIT)}/{ach.SHOWCASE_LIMIT}",
+            callback_data=f"achm_all:{viewer}:{target}:{page_i}",
         )])
 
     if is_owner:
-        for iid, it in ordered[:12]:
-            title = ach.strip_tg_emoji(it.get("title_html") or "…")[:14]
+        for iid, it in page_rows:
+            title = ach.strip_tg_emoji(it.get("title_html") or "…")[:18]
             on_v = iid in showcase_ids
-            slot_mark = ""
+            slot_n = 0
             if on_v:
                 try:
-                    slot_mark = f"{showcase_ids.index(iid) + 1}·"
+                    slot_n = showcase_ids.index(iid) + 1
                 except ValueError:
-                    slot_mark = "·"
+                    slot_n = 0
+            pin_label = f"📌 {slot_n}·{title}" if slot_n else f"○ {title}"
             rows.append([
                 _btn(
-                    text=f"{'📌' if on_v else '○'}{slot_mark}{title}"[:64],
-                    callback_data=f"achm_pin:{viewer}:{target}:{iid}",
+                    text=pin_label[:64],
+                    callback_data=f"achm_pin:{viewer}:{target}:{iid}:{page_i}",
+                    style="success" if on_v else "default",
                 ),
-                _btn(text="↑", callback_data=f"achm_up:{viewer}:{target}:{iid}"),
-                _btn(text="↓", callback_data=f"achm_dn:{viewer}:{target}:{iid}"),
+                _btn(text="↑", callback_data=f"achm_up:{viewer}:{target}:{iid}:{page_i}"),
+                _btn(text="↓", callback_data=f"achm_dn:{viewer}:{target}:{iid}:{page_i}"),
             ])
             slot_row = []
             for s in range(ach.SHOWCASE_LIMIT):
-                mark = str(s + 1)
-                if on_v:
-                    try:
-                        if showcase_ids.index(iid) == s:
-                            mark = "●"
-                    except ValueError:
-                        pass
+                selected = bool(slot_n and slot_n == s + 1)
                 slot_row.append(_btn(
-                    text=mark,
-                    callback_data=f"achm_slot:{viewer}:{target}:{iid}:{s}",
+                    text=f"●{s + 1}" if selected else f"{s + 1}",
+                    callback_data=f"achm_slot:{viewer}:{target}:{iid}:{s}:{page_i}",
+                    style="success" if selected else "default",
                 ))
             if it.get("kind") == "free":
                 slot_row.append(_btn(
                     text="Удал.",
-                    callback_data=f"achm_del:{viewer}:{target}:{iid}",
+                    callback_data=f"achm_del:{viewer}:{target}:{iid}:{page_i}",
                     style="danger",
                 ))
             rows.append(slot_row)
 
-    rows.append([_btn(
-        text="К профилю",
-        callback_data=f"achm_back:{viewer}:{target}",
-        style="default",
-        icon_custom_emoji_id="5226660202035554522",
-    )])
+    if pages > 1:
+        rows.append([
+            _btn(
+                text="◀ Назад",
+                callback_data=f"achm_pg:{viewer}:{target}:{max(0, page_i - 1)}",
+                style="default",
+            ),
+            _btn(
+                text=f"{page_i + 1} / {pages}",
+                callback_data=f"achm_all:{viewer}:{target}:{page_i}",
+                style="primary",
+            ),
+            _btn(
+                text="Вперёд ▶",
+                callback_data=f"achm_pg:{viewer}:{target}:{min(pages - 1, page_i + 1)}",
+                style="default",
+            ),
+        ])
+
+    rows.append([_profile_back_button(viewer, target)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

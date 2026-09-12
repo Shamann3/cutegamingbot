@@ -202,6 +202,8 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     '1tic_tac_join:': ('bot.design.inlinetictac2', 'inline_tic_tac_join_game_callback'),
     '9back_to_menu1': ('main', 'handle_back_to_menu'),
     'ach_grant_off:': ('main', 'achievements_callbacks'),
+    'ach_rev': ('main', 'achievements_callbacks'),
+    'achc_': ('main', 'achievements_callbacks'),
     'back_to_stars_': ('main', 'back_to_stars_handler'),
     'back_to_x2_req': ('main', 'back_to_x2_requirements_handler'),
     'checkers_mode:': ('bot.design.schahinline', 'change_mode_callback'),

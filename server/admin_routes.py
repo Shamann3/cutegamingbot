@@ -4818,7 +4818,7 @@ async def admin_achievements_grant_official(
 
 class AchievementGrantFreeBody(BaseModel):
     user_id: int = Field(gt=0)
-    title: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=400)
     icon_emoji_id: str | None = Field(default=None, max_length=64)
     icon_fallback: str | None = Field(default="⭐", max_length=8)
     model_config = {"extra": "forbid"}

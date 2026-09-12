@@ -4,7 +4,11 @@
 from __future__ import annotations
 
 import html
+import re
 from typing import Any, Dict, List, Optional
+
+EMOJI_TOKEN_RE = re.compile(r"\{emoji:(\d{5,32})\}", re.IGNORECASE)
+EMOJI_ID_RE = re.compile(r"^\d{5,32}$")
 
 from db import db
 
@@ -101,6 +105,47 @@ async def ensure() -> None:
     _SCHEMA_READY = True
 
 
+def parse_custom_emoji_id(raw: Any) -> Optional[str]:
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    tagged = re.search(r"emoji-id\s*=\s*['\"](\d{5,32})['\"]", s, flags=re.I)
+    if tagged:
+        return tagged.group(1)
+    token = EMOJI_TOKEN_RE.search(s)
+    if token:
+        return token.group(1)
+    digits = re.sub(r"\D", "", s)
+    if EMOJI_ID_RE.fullmatch(digits):
+        return digits
+    return None
+
+
+def compose_title_html(
+    text: str,
+    *,
+    fallback: str = DEFAULT_ICON_FALLBACK,
+    max_len: int = MAX_TITLE_HTML_LEN,
+) -> str:
+    raw = str(text or "")
+    low = raw.lower()
+    if "http://" in low or "https://" in low or "t.me/" in low or "<a " in low:
+        raise ValueError("links_forbidden")
+    fb = html.escape((fallback or DEFAULT_ICON_FALLBACK)[:8] or DEFAULT_ICON_FALLBACK)
+    parts: List[str] = []
+    last = 0
+    for m in EMOJI_TOKEN_RE.finditer(raw):
+        parts.append(html.escape(raw[last:m.start()]))
+        parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
+        last = m.end()
+    parts.append(html.escape(raw[last:]))
+    return "".join(parts)[:max_len]
+
+
+def title_plain_from_composed(text: str) -> str:
+    return EMOJI_TOKEN_RE.sub(" ", str(text or "")).strip() or str(text or "").strip()
+
+
 async def find_icon_conflict(
     *,
     icon_emoji_id: Optional[str],
@@ -168,14 +213,21 @@ async def save_item(data: Dict[str, Any], *, actor_id: int) -> Dict[str, Any]:
     code = str(data.get("code") or "").strip().lower().replace(" ", "_")
     if not code:
         raise ValueError("code_required")
-    title = str(data.get("title") or "").strip()[:80]
-    if not title:
+    title_raw = str(data.get("title") or "").strip()
+    if not title_raw:
         raise ValueError("title_required")
-    title_html = str(data.get("title_html") or html.escape(title))[:MAX_TITLE_HTML_LEN]
     icon_emoji_id = data.get("icon_emoji_id")
     if icon_emoji_id is not None:
-        icon_emoji_id = str(icon_emoji_id).strip() or None
+        icon_emoji_id = parse_custom_emoji_id(icon_emoji_id)
     icon_fallback = str(data.get("icon_fallback") or DEFAULT_ICON_FALLBACK)[:8]
+    title = title_plain_from_composed(title_raw)[:80]
+    if not title:
+        title = "Достижение"
+    incoming_html = str(data.get("title_html") or "").strip()
+    if incoming_html and "<tg-emoji" in incoming_html and "http" not in incoming_html.lower():
+        title_html = incoming_html[:MAX_TITLE_HTML_LEN]
+    else:
+        title_html = compose_title_html(title_raw, fallback=icon_fallback)
     description = str(data.get("description") or "")[:MAX_DESCRIPTION_LEN]
     rarity = max(1, min(5, int(data.get("rarity") or 1)))
     sort = int(data.get("sort") or 0)
@@ -265,7 +317,8 @@ async def overview() -> Dict[str, Any]:
             "rarity": "Редкость 1–5 — для сортировки и визуального веса.",
             "sort": "Порядок в каталоге выдачи (меньше = выше).",
             "grant_user_id": "Telegram user_id игрока, которому выдаём или снимаем награду.",
-            "grant_free_title": "Текст свободной награды (без ссылок).",
+            "grant_free_title": "Текст свободной награды. Premium-эмодзи: вставьте {emoji:ID} или кнопкой «В название». Без ссылок.",
+            "grant_free_emoji_id": "Числовой ID Telegram Premium emoji. Можно в значок награды и/или внутрь названия.",
             "revoke_instance": "instance_id из списка достижений игрока. Снятие пишется в журнал с админом.",
         },
     }
@@ -425,11 +478,11 @@ async def grant_free_to_user(
     title_plain = str(title or "").strip()
     if not title_plain:
         raise ValueError("title_required")
-    # Простая защита: без URL / HTML-ссылок
-    low = title_plain.lower()
-    if "http://" in low or "https://" in low or "t.me/" in low or "<a " in low:
-        raise ValueError("links_forbidden")
-    title_html = html.escape(title_plain)[:MAX_TITLE_GRANT]
+    fb = str(icon_fallback or DEFAULT_ICON_FALLBACK)[:8]
+    eid = parse_custom_emoji_id(icon_emoji_id) if icon_emoji_id else None
+    title_html = compose_title_html(title_plain, fallback=fb, max_len=MAX_TITLE_GRANT)
+    if not title_html.strip():
+        raise ValueError("title_required")
 
     doc = await _load_user_doc(uid)
     if len(doc["items"]) >= MAX_ITEMS_PER_USER:
@@ -438,8 +491,8 @@ async def grant_free_to_user(
     doc["items"][iid] = {
         "kind": "free",
         "title_html": title_html,
-        "icon_emoji_id": (str(icon_emoji_id).strip() or None) if icon_emoji_id else None,
-        "icon_fallback": str(icon_fallback or DEFAULT_ICON_FALLBACK)[:8],
+        "icon_emoji_id": eid,
+        "icon_fallback": fb,
         "granted_at": __import__("time").time(),
         "granted_by": int(actor_id),
         "granted_by_name": (actor_name or "Админ-панель")[:64],
@@ -475,6 +528,8 @@ async def list_user_achievements(user_id: int) -> Dict[str, Any]:
             "unique_code": it.get("unique_code"),
             "official_id": it.get("official_id"),
             "icon_fallback": it.get("icon_fallback") or DEFAULT_ICON_FALLBACK,
+            "icon_emoji_id": it.get("icon_emoji_id"),
+            "title_html": it.get("title_html") or "",
             "granted_at": it.get("granted_at"),
             "granted_by": it.get("granted_by"),
             "granted_by_name": it.get("granted_by_name"),

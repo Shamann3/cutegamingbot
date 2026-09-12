@@ -15,10 +15,13 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 SHOWCASE_LIMIT = 5
+PAGE_SIZE = 10
 MAX_ITEMS_PER_USER = 200
 MAX_TITLE_HTML_LEN = 500
 MAX_DESCRIPTION_LEN = 400
 JSONB_VERSION = 1
+EMOJI_ID_RE = re.compile(r"^\d{5,32}$")
+EMOJI_TOKEN_RE = re.compile(r"\{emoji:(\d{5,32})\}", re.IGNORECASE)
 
 # Premium fallback / default icons
 DEFAULT_ICON_EMOJI_ID = "5404534885324988233"
@@ -280,6 +283,89 @@ def strip_tg_emoji(html_text: str) -> str:
     )
 
 
+def parse_custom_emoji_id(raw: Any) -> Optional[str]:
+    """Достаёт numeric id premium-эмодзи из произвольной вставки."""
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    tagged = re.search(r"emoji-id\s*=\s*['\"](\d{5,32})['\"]", s, flags=re.I)
+    if tagged:
+        return tagged.group(1)
+    token = EMOJI_TOKEN_RE.search(s)
+    if token:
+        return token.group(1)
+    digits = re.sub(r"\D", "", s)
+    if EMOJI_ID_RE.fullmatch(digits):
+        return digits
+    return None
+
+
+def compose_title_html(
+    text: str,
+    *,
+    fallback: str = DEFAULT_ICON_FALLBACK,
+    max_len: int = MAX_TITLE_HTML_LEN,
+) -> str:
+    """Текст с токенами {emoji:ID} → HTML с <tg-emoji>. Ссылки запрещены."""
+    raw = str(text or "")
+    low = raw.lower()
+    if "http://" in low or "https://" in low or "t.me/" in low or "<a " in low:
+        raise ValueError("links_forbidden")
+    fb = html.escape((fallback or DEFAULT_ICON_FALLBACK)[:8] or DEFAULT_ICON_FALLBACK)
+    parts: List[str] = []
+    last = 0
+    for m in EMOJI_TOKEN_RE.finditer(raw):
+        parts.append(html.escape(raw[last:m.start()]))
+        parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
+        last = m.end()
+    parts.append(html.escape(raw[last:]))
+    return "".join(parts)[:max_len]
+
+
+def title_html_to_tokens(title_html: str) -> str:
+    def _repl(m: re.Match) -> str:
+        return "{emoji:" + m.group(1) + "}"
+
+    s = re.sub(
+        r"<tg-emoji[^>]*emoji-id=['\"](\d{5,32})['\"][^>]*>(.*?)</tg-emoji>",
+        _repl,
+        title_html or "",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return re.sub(r"<[^>]+>", "", s)
+
+
+def paginate_items(
+    items: Sequence[Any],
+    page: int = 0,
+    size: int = PAGE_SIZE,
+) -> Tuple[List[Any], int, int, int]:
+    rows = list(items or [])
+    total = len(rows)
+    pages = max(1, (total + size - 1) // size) if total else 1
+    try:
+        page_i = int(page)
+    except Exception:
+        page_i = 0
+    page_i = max(0, min(page_i, pages - 1))
+    start = page_i * size
+    return rows[start:start + size], page_i, pages, total
+
+
+def format_delete_confirm_html(it: Dict[str, Any]) -> str:
+    """Карточка «точно это удаляем?» — с иконкой и названием."""
+    line = achievement_line_html(it, with_rarity=True)
+    kind = "свободное" if it.get("kind") == "free" else "официальное"
+    when = format_granted_at(it.get("granted_at") or time.time())
+    return (
+        f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
+        f"<b>Удалить это достижение?</b>\n\n"
+        f"{line}\n"
+        f"<blockquote>{html.escape(kind)} · {when}</blockquote>\n"
+        f"<i>Нажмите «Да, удалить» только если это именно та награда.</i>"
+    )
+
+
 def icon_html(emoji_id: Optional[str], fallback: str = DEFAULT_ICON_FALLBACK) -> str:
     fb = html.escape(fallback or DEFAULT_ICON_FALLBACK)
     if emoji_id:
@@ -463,6 +549,8 @@ def format_full_achievements_html(
     doc: Dict[str, Any],
     *,
     owner_name: str = "",
+    page: int = 0,
+    page_size: int = PAGE_SIZE,
 ) -> str:
     rows = sorted_items_for_display(doc)
     if not rows:
@@ -472,20 +560,21 @@ def format_full_achievements_html(
             f"Пока пусто.\n"
             f"<i>Поднимите уровень группы — и здесь появится первая награда.</i>"
         )
+    page_rows, page_i, pages, total = paginate_items(rows, page, page_size)
     showcase_ids = {iid for iid, _ in showcase_items(doc, SHOWCASE_LIMIT)}
+    showcase_list = [x for x, _ in showcase_items(doc, SHOWCASE_LIMIT)]
+    pager = f"стр. {page_i + 1}/{pages} · {total} · по {page_size} на странице" if pages > 1 else f"{total} наград"
     parts = [
         f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
         f"<b>Достижения</b>"
         + (f"\n{html.escape(owner_name)}" if owner_name else ""),
-        f"<i>на витрине профиля — первые {SHOWCASE_LIMIT} · редкость видна ниже</i>",
+        f"<i>витрина профиля — первые {SHOWCASE_LIMIT}</i>",
+        f"<i>{pager}</i>",
         "",
     ]
-    official = [(i, x) for i, x in rows if x.get("kind") == "official"]
-    free = [(i, x) for i, x in rows if x.get("kind") != "official"]
 
     def _card(iid: str, it: Dict[str, Any]) -> str:
         line = achievement_line_html(it, with_rarity=True)
-        showcase_list = [x for x, _ in showcase_items(doc, SHOWCASE_LIMIT)]
         pin = ""
         if iid in showcase_ids:
             try:
@@ -494,18 +583,19 @@ def format_full_achievements_html(
             except ValueError:
                 pin = " · <b>витрина</b>"
         when = format_granted_at(it.get("granted_at") or time.time())
-        return f"{line}{pin}\n<blockquote>{when}</blockquote>"
+        kind = "офиц." if it.get("kind") == "official" else "своб."
+        return f"{line}{pin}\n<blockquote>{kind} · {when}</blockquote>"
 
-    if official:
-        parts.append("<b>Официальные</b>")
-        for iid, it in official:
-            parts.append(_card(iid, it))
-            parts.append("")
-    if free:
-        parts.append("<b>Свободные</b>")
-        for iid, it in free:
-            parts.append(_card(iid, it))
-            parts.append("")
+    last_kind = None
+    for iid, it in page_rows:
+        kind = "official" if it.get("kind") == "official" else "free"
+        if kind != last_kind:
+            parts.append("<b>Официальные</b>" if kind == "official" else "<b>Свободные</b>")
+            last_kind = kind
+        parts.append(_card(iid, it))
+        parts.append("")
+    if pages > 1:
+        parts.append(f"<i>листайте кнопками ниже — {page_i + 1} из {pages}</i>")
     return "\n".join(parts).strip()
 
 
@@ -1280,17 +1370,18 @@ def help_admin_html() -> str:
         f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
         f"<b>Достижения — гайд для команды</b>\n\n"
         f"<b>Свободная награда</b>\n"
-        f"1. Ответьте на сообщение игрока\n"
-        f"2. Напишите: <code>наградить ваш текст</code>\n"
-        f"Можно с premium-эмодзи и жирным/курсивом — всё сохранится.\n\n"
-        f"Или без реплая:\n"
+        f"1. Ответьте на сообщение игрока или укажите id / @username\n"
+        f"2. Напишите <code>наградить</code> — откроется меню\n"
+        f"3. Выберите «Свободное» и отправьте текст следующим сообщением\n"
+        f"Premium-эмодзи можно вставить прямо в текст или указать numeric id.\n\n"
+        f"Быстро одной строкой:\n"
         f"<code>наградить @user текст</code>\n"
-        f"<code>наградить 123456 текст</code>\n\n"
+        f"Токен в тексте: <code>{{emoji:5469967260380612012}}</code>\n\n"
         f"<b>Официальная награда</b>\n"
         f"<code>наградить официально код</code>\n"
-        f"или просто <code>наградить</code> → выберите из списка.\n\n"
+        f"или <code>наградить</code> → «Официальное».\n\n"
         f"<b>Снять</b>\n"
-        f"<code>снять достижение</code> (реплай) — список для снятия.\n\n"
-        f"<i>Ссылки и blockquote в тексте награды запрещены.</i>\n"
+        f"<code>снять достижение</code> — список, подтверждение, какая именно награда.\n\n"
+        f"<i>Ссылки в тексте награды запрещены.</i>\n"
         f"Синонимы: выдать достижение · дать ачивку · забрать ачивку"
     )
