@@ -41,16 +41,20 @@ html.panel-nav-open .panel-shelf-sidebar {
 }
 
 @media (max-width: 900px) {
-  .panel-nav-recent {
+  html:not([data-viewport="desktop"]) .panel-nav-recent {
     display: block;
   }
 }
 
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   /* ---------- Global QA ---------- */
-  html,
   body,
   .panel-shell {
+    overscroll-behavior-x: none;
+  }
+
+  & {
     overscroll-behavior-x: none;
   }
 
@@ -243,6 +247,8 @@ html.panel-nav-open .panel-shelf-sidebar {
     color: rgba(255, 255, 255, 0.5);
     font-size: 0.9rem;
     line-height: 1.45;
+  }
+
   }
 }
 
@@ -636,6 +642,7 @@ html[data-viewport="phone"] {
    ПОДДЕРЖКА — list ↔ thread
    ============================================================ */
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   .support-section {
     display: flex;
     flex-direction: column;
@@ -776,12 +783,15 @@ html[data-viewport="phone"] {
     flex: 1 1 auto;
     min-height: 44px;
   }
+
+  }
 }
 
 /* ============================================================
    СТАФФ / АРХИВ / СПИСКИ
    ============================================================ */
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   .staff-section,
   .panel-staff,
   .arc-shell,
@@ -829,12 +839,15 @@ html[data-viewport="phone"] {
   .sec-title {
     font-size: clamp(1.2rem, 5vw, 1.45rem) !important;
   }
+
+  }
 }
 
 /* ============================================================
    DASHBOARD / Общие секции
    ============================================================ */
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   .panel-layout-dashboard {
     gap: 0.65rem !important;
   }
@@ -850,14 +863,19 @@ html[data-viewport="phone"] {
   .panel-shelf-page {
     padding: 0.95rem 0.85rem !important;
   }
+
+  }
 }
 
 /* Reduced motion — сохранить читаемость, убрать лишнее */
 @media (max-width: 900px) and (prefers-reduced-motion: reduce) {
+  html:not([data-viewport="desktop"]) {
   .panel-users,
   .panel-shelf,
   .support-ticket-item {
     animation: none !important;
     transition: none !important;
+  }
+
   }
 }

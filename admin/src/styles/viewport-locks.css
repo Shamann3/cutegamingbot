@@ -1,29 +1,200 @@
 /**
- * Жёсткое разделение phone / desktop поверх width-media из elite.css.
- * html[data-viewport] ставится до первого paint (main.jsx).
+ * ПК / desktop: полная отмена телефонного chrome из @media.
+ * Загружается последним. Срабатывает только при data-viewport=desktop.
  */
 
-/* ПК / Telegram Desktop: не скатываться в «телефонный» shell из @media 900 */
 html[data-viewport="desktop"] .panel-shell {
   height: var(--tg-viewport-stable-height, 100dvh) !important;
   max-height: var(--tg-viewport-stable-height, 100dvh) !important;
   overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+html[data-viewport="desktop"] .panel-tg-chrome {
+  /* На ПК Telegram Desktop chrome-полоса обычно 0; не прячем если inset есть */
+  height: var(--tg-content-top, 0px);
+  min-height: var(--tg-content-top, 0px);
 }
 
 html[data-viewport="desktop"] .panel-shell-main {
+  flex: 1 1 auto !important;
   height: 100% !important;
   max-height: 100% !important;
+  min-height: 0 !important;
   overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
-html[data-viewport="desktop"] .panel-layout-users,
+html[data-viewport="desktop"] .panel-layout,
+html[data-viewport="desktop"] .panel-layout-dashboard,
 html[data-viewport="desktop"] .panel-layout-page,
 html[data-viewport="desktop"] .panel-layout-support,
 html[data-viewport="desktop"] .panel-layout-staff,
 html[data-viewport="desktop"] .panel-layout-security,
+html[data-viewport="desktop"] .panel-layout-users,
+html[data-viewport="desktop"] .panel-layout-accounts,
+html[data-viewport="desktop"] .panel-layout-economy,
+html[data-viewport="desktop"] .panel-layout-market,
+html[data-viewport="desktop"] .panel-layout-farm,
 html[data-viewport="desktop"] .panel-layout-content,
-html[data-viewport="desktop"] .panel-layout-broadcast {
+html[data-viewport="desktop"] .panel-layout-broadcast,
+html[data-viewport="desktop"] .panel-layout-logs,
+html[data-viewport="desktop"] .panel-layout-analytics,
+html[data-viewport="desktop"] .panel-layout-settings,
+html[data-viewport="desktop"] .panel-layout-events,
+html[data-viewport="desktop"] .panel-layout-chronicle {
+  display: grid !important;
+  grid-template-columns: minmax(14rem, 16.5rem) minmax(0, 1fr) !important;
   height: 100% !important;
   max-height: 100% !important;
+  min-height: 0 !important;
   overflow: hidden !important;
+  width: 100% !important;
+}
+
+html[data-viewport="desktop"] .panel-layout-page,
+html[data-viewport="desktop"] .panel-layout-support,
+html[data-viewport="desktop"] .panel-layout-staff,
+html[data-viewport="desktop"] .panel-layout-security,
+html[data-viewport="desktop"] .panel-layout-users,
+html[data-viewport="desktop"] .panel-layout-accounts,
+html[data-viewport="desktop"] .panel-layout-economy,
+html[data-viewport="desktop"] .panel-layout-market,
+html[data-viewport="desktop"] .panel-layout-farm,
+html[data-viewport="desktop"] .panel-layout-content,
+html[data-viewport="desktop"] .panel-layout-broadcast,
+html[data-viewport="desktop"] .panel-layout-logs,
+html[data-viewport="desktop"] .panel-layout-analytics,
+html[data-viewport="desktop"] .panel-layout-settings,
+html[data-viewport="desktop"] .panel-layout-events,
+html[data-viewport="desktop"] .panel-layout-chronicle {
+  grid-template-rows: auto minmax(0, 1fr) !important;
+}
+
+html[data-viewport="desktop"] .panel-shelf-sidebar {
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  height: 100% !important;
+  max-height: none !important;
+  grid-column: 1 !important;
+  grid-row: 1 / -1 !important;
+  transform: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: auto !important;
+  border-radius: var(--e-r-card, 18px) !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+html[data-viewport="desktop"] .panel-sidebar-grab {
+  display: none !important;
+}
+
+html[data-viewport="desktop"] .panel-sidebar-settings-sum {
+  display: none !important;
+}
+
+html[data-viewport="desktop"] .panel-sidebar-settings-body {
+  display: flex !important;
+}
+
+html[data-viewport="desktop"] .panel-mobile-overlay {
+  display: none !important;
+}
+
+html[data-viewport="desktop"] .elite-topbar,
+html[data-viewport="desktop"] .elite-topbar-compact {
+  grid-column: 2 / -1 !important;
+  grid-row: 1 !important;
+  position: relative !important;
+  top: auto !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  border-bottom: none !important;
+}
+
+html[data-viewport="desktop"] .elite-mobile-title {
+  display: none !important;
+}
+
+html[data-viewport="desktop"] .elite-greeting-desktop,
+html[data-viewport="desktop"] .elite-greeting {
+  display: flex !important;
+}
+
+html[data-viewport="desktop"] .elite-search-wrap {
+  display: flex !important;
+}
+
+html[data-viewport="desktop"] .elite-menu-btn {
+  display: none !important;
+}
+
+html[data-viewport="desktop"] .panel-layout > .panel-shelf-page,
+html[data-viewport="desktop"] .panel-layout > .panel-security,
+html[data-viewport="desktop"] .panel-layout > .panel-users,
+html[data-viewport="desktop"] .panel-layout > .panel-accounts,
+html[data-viewport="desktop"] .panel-layout > .panel-economy,
+html[data-viewport="desktop"] .panel-layout > .panel-market,
+html[data-viewport="desktop"] .panel-layout > .panel-farm,
+html[data-viewport="desktop"] .panel-layout > .panel-content,
+html[data-viewport="desktop"] .panel-layout > .panel-broadcast,
+html[data-viewport="desktop"] .panel-layout > .panel-broadcast-wrap,
+html[data-viewport="desktop"] .panel-layout > .panel-logs,
+html[data-viewport="desktop"] .panel-layout > .panel-settings,
+html[data-viewport="desktop"] .panel-layout > .panel-events,
+html[data-viewport="desktop"] .panel-layout > .analytics-section,
+html[data-viewport="desktop"] .panel-layout > .support-section,
+html[data-viewport="desktop"] .panel-layout > .chs-root,
+html[data-viewport="desktop"] .panel-layout > .arc-shell {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+}
+
+html[data-viewport="desktop"] .panel-layout > .panel-users,
+html[data-viewport="desktop"] .panel-layout > .support-section,
+html[data-viewport="desktop"] .panel-layout > .panel-security {
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+html[data-viewport="desktop"] .panel-users .panel-users-search {
+  position: relative !important;
+  top: auto !important;
+  flex: 0 0 auto !important;
+}
+
+html[data-viewport="desktop"] .panel-users-has-profile .panel-users-search .panel-shelf-label,
+html[data-viewport="desktop"] .panel-users-has-profile .panel-users-search .panel-page-title,
+html[data-viewport="desktop"] .panel-users-has-profile .panel-users-search .panel-page-lead {
+  display: revert !important;
+}
+
+html[data-viewport="desktop"] .panel-users .panel-users-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: auto !important;
+}
+
+html[data-viewport="desktop"] .bq-phone {
+  /* класс может остаться на кадр — стили phone только под data-viewport=phone */
+}
+
+html[data-viewport="desktop"] .bq-root {
+  gap: 1.05rem !important;
 }

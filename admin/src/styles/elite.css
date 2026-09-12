@@ -1930,6 +1930,7 @@ body,
 }
 
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   .craftmap-shell-fs {
     z-index: 850;
   }
@@ -1937,6 +1938,8 @@ body,
   .craftmap-fs-toggle {
     margin-left: 0;
     width: 100%;
+  }
+
   }
 }
 
@@ -2821,6 +2824,7 @@ body,
 }
 
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   /* Телефон / узкий планшет: полноэкранный drawer, без нижней tab-bar */
   .panel-mobile-bottombar {
     display: none !important;
@@ -3373,6 +3377,8 @@ body,
     margin-bottom: env(safe-area-inset-bottom, 0px);
     border-radius: 18px 18px 12px 12px;
   }
+
+  }
 }
 
 @media (max-width: 860px) {
@@ -3382,6 +3388,7 @@ body,
 }
 
 @media (max-width: 640px) {
+  html:not([data-viewport="desktop"]) {
   :root {
     --e-r-card: 18px;
     --e-r-block: 14px;
@@ -3463,6 +3470,8 @@ body,
 
   .support-msg-bubble {
     max-width: 88%;
+  }
+
   }
 }
 
@@ -3879,6 +3888,7 @@ body,
 
 /* Телефон / узкий планшет: select вместо длинного списка */
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   .pa-people-toolbar {
     grid-template-columns: 1fr;
   }
@@ -3916,9 +3926,12 @@ body,
   .pa-toggle {
     min-height: 2.45rem;
   }
+
+  }
 }
 
 @media (max-width: 640px) {
+  html:not([data-viewport="desktop"]) {
   .panel-panel-access .pa-refresh {
     width: 100%;
     margin-left: 0;
@@ -3927,6 +3940,8 @@ body,
   .pa-eff {
     width: 100%;
     text-align: right;
+  }
+
   }
 }
 
@@ -4587,6 +4602,7 @@ body,
 }
 
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   .pa-help-btn-text {
     display: none;
   }
@@ -4632,6 +4648,8 @@ body,
   .pa-cyber-cell {
     min-width: 3.2rem;
     min-height: 2.35rem;
+  }
+
   }
 }
 
@@ -6928,9 +6946,12 @@ body,
   to { opacity: 1; transform: none; }
 }
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   .gbl-grid { grid-template-columns: 1fr; }
   .gbl-log-row { grid-template-columns: 1fr 1fr; }
   .gbl-log-ts { text-align: left; }
+
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .gbl-hero, .gbl-scroll, .gbl-level-card { animation: none !important; transition: none !important; }
@@ -8028,7 +8049,10 @@ body,
   .grp-person-role { grid-column: 1 / -1; }
 }
 @media (max-width: 640px) {
+  html:not([data-viewport="desktop"]) {
   .grp-hero-stats, .grp-stat-grid, .grp-two, .grp-tops, .grp-meters, .grp-kv-grid { grid-template-columns: 1fr; }
+
+  }
 }
 
 /* --- User lookup preview --- */

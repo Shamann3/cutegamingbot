@@ -2713,9 +2713,11 @@ body {
 }
 
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   .panel-economy-stats,
   .panel-economy-grid-2 {
     grid-template-columns: 1fr;
+  }
   }
 }
 /* ============================================================
@@ -5576,12 +5578,14 @@ body {
 }
 
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   .panel-broadcast-history-details-grid {
     grid-template-columns: 1fr;
   }
 
   .panel-broadcast-run-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   }
 }
 /* ============================================================
@@ -8163,7 +8167,9 @@ body {
 .dex-form-col { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; min-width: 220px; }
 .dex-form-preview-col { display: flex; flex-direction: column; width: 260px; flex-shrink: 0; }
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   .dex-form-preview-col { display: none; }
+  }
 }
 .dex-textarea {
   resize: vertical;
@@ -11530,8 +11536,10 @@ html { scroll-behavior: smooth; }
 }
 
 @media (max-width: 900px) {
+  html:not([data-viewport="desktop"]) {
   .chs-nav { display: none; }
   .chs-scroll { padding: 1rem 1rem 4rem; }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

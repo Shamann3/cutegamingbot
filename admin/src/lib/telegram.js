@@ -6,6 +6,8 @@
  * шапка Telegram наезжает на topbar панели.
  */
 
+import { applyViewportModeToDocument } from './useIsDesktop'
+
 function setCssVar(name, value) {
   document.documentElement.style.setProperty(name, value)
 }
@@ -15,20 +17,30 @@ function n(v) {
   return Number.isFinite(x) && x > 0 ? x : 0
 }
 
+function syncAdminLayoutMode() {
+  try {
+    applyViewportModeToDocument()
+  } catch {
+    /* ignore */
+  }
+}
+
 function isDesktopTelegram(tg) {
   const platform = String(tg?.platform || '').toLowerCase()
   if (
     platform === 'tdesktop' ||
-    platform === 'web' ||
-    platform === 'weba' ||
     platform === 'macos' ||
     platform === 'linux' ||
     platform === 'windows'
   ) {
     return true
   }
+  if (platform === 'ios' || platform === 'android' || platform === 'android_x') {
+    return false
+  }
+  // web / unknown — по ширине, без pointer:coarse
   try {
-    return window.innerWidth >= 820 && window.matchMedia?.('(pointer: fine)').matches
+    return window.innerWidth >= 901
   } catch {
     return false
   }
@@ -86,6 +98,7 @@ function syncTelegramViewport(tg) {
   document.documentElement.dataset.tgInsetTop = String(Math.round(top))
   document.documentElement.classList.toggle('tg-fullscreen', Boolean(tg.isFullscreen))
   document.documentElement.classList.toggle('tg-webapp', true)
+  syncAdminLayoutMode()
 }
 
 function bindViewportSync(tg) {
@@ -152,6 +165,7 @@ export function initAdminTelegram() {
   const desktop = isDesktopTelegram(tg)
   document.documentElement.dataset.tgDesktop = desktop ? '1' : '0'
   document.documentElement.dataset.tgPlatform = String(tg.platform || 'unknown')
+  syncAdminLayoutMode()
 
   try {
     // Тот же тон, что panel-shell — зона под полупрозрачной шапкой TG выглядит цельно

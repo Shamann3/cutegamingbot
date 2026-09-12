@@ -1,26 +1,29 @@
 import { useEffect, useState } from 'react'
 
 /**
- * Режим вёрстки панели: phone | desktop.
+ * Режим вёрстки: phone | desktop.
  *
- * Приоритет:
- * 1) Платформа Telegram (ios/android → phone, tdesktop/web → desktop)
- * 2) Иначе ширина + pointer (браузер без TG / неизвестная платформа)
+ * Правила (жёстко):
+ * 1) Telegram ios/android → phone
+ * 2) Telegram tdesktop / windows / macos / linux → desktop
+ * 3) Иначе только по ширине: ≥901px → desktop, иначе phone
  *
- * Важно: узкое окно на ПК Telegram остаётся desktop-вёрсткой;
- * широкий iPhone в landscape остаётся phone-вёрсткой.
+ * НЕ используем pointer:coarse — на тачскрин-ноутбуках ПК
+ * ошибочно становился «телефоном».
  */
 
 const PHONE_PLATFORMS = new Set(['ios', 'android', 'android_x'])
 const DESKTOP_PLATFORMS = new Set([
   'tdesktop',
-  'web',
-  'weba',
-  'webk',
   'macos',
   'linux',
   'windows',
 ])
+
+/** web/weba/webk — неоднозначно (может быть и телефонный браузер TG) */
+const AMBIGUOUS_PLATFORMS = new Set(['web', 'weba', 'webk'])
+
+const DESKTOP_MIN_WIDTH = 901
 
 function telegramPlatform() {
   try {
@@ -30,22 +33,29 @@ function telegramPlatform() {
   }
 }
 
+function widthIsDesktop() {
+  try {
+    if (window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`).matches) return true
+  } catch {
+    /* ignore */
+  }
+  return window.innerWidth >= DESKTOP_MIN_WIDTH
+}
+
 export function detectViewportMode() {
   if (typeof window === 'undefined') return 'desktop'
 
   const platform = telegramPlatform()
+
   if (PHONE_PLATFORMS.has(platform)) return 'phone'
   if (DESKTOP_PLATFORMS.has(platform)) return 'desktop'
 
-  const narrow = window.matchMedia('(max-width: 900px)').matches
-  const coarse = window.matchMedia('(pointer: coarse)').matches
-  const fineWide =
-    window.matchMedia('(min-width: 901px)').matches &&
-    window.matchMedia('(pointer: fine)').matches
+  // web / неизвестно / без TG — только ширина
+  if (AMBIGUOUS_PLATFORMS.has(platform) || !platform) {
+    return widthIsDesktop() ? 'desktop' : 'phone'
+  }
 
-  if (fineWide) return 'desktop'
-  if (narrow || coarse) return 'phone'
-  return 'desktop'
+  return widthIsDesktop() ? 'desktop' : 'phone'
 }
 
 export function applyViewportModeToDocument(mode = detectViewportMode()) {
@@ -54,6 +64,11 @@ export function applyViewportModeToDocument(mode = detectViewportMode()) {
   root.dataset.viewport = mode
   root.classList.toggle('is-phone', mode === 'phone')
   root.classList.toggle('is-desktop', mode === 'desktop')
+  try {
+    window.dispatchEvent(new CustomEvent('admin-viewport-change', { detail: { mode } }))
+  } catch {
+    /* ignore */
+  }
   return mode
 }
 
@@ -64,30 +79,37 @@ export function useViewportMode() {
     const sync = () => setMode(applyViewportModeToDocument())
     sync()
 
-    const mqWidth = window.matchMedia('(max-width: 900px)')
-    const mqPointer = window.matchMedia('(pointer: coarse)')
+    const mqWidth = window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`)
     mqWidth.addEventListener?.('change', sync)
-    mqPointer.addEventListener?.('change', sync)
     window.addEventListener('resize', sync)
     window.addEventListener('orientationchange', sync)
+    window.addEventListener('admin-viewport-change', sync)
+
+    // Telegram.WebApp.platform часто появляется чуть позже первого paint
+    const t1 = window.setTimeout(sync, 50)
+    const t2 = window.setTimeout(sync, 200)
+    const t3 = window.setTimeout(sync, 600)
+    const t4 = window.setTimeout(sync, 1500)
 
     return () => {
       mqWidth.removeEventListener?.('change', sync)
-      mqPointer.removeEventListener?.('change', sync)
       window.removeEventListener('resize', sync)
       window.removeEventListener('orientationchange', sync)
+      window.removeEventListener('admin-viewport-change', sync)
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+      window.clearTimeout(t3)
+      window.clearTimeout(t4)
     }
   }, [])
 
   return mode
 }
 
-/** Live: true на desktop-вёрстке (ПК / Telegram Desktop / широкий fine-pointer). */
 export function useIsDesktop() {
   return useViewportMode() === 'desktop'
 }
 
-/** Live: true на phone-вёрстке (iOS/Android TG / узкий/тач). */
 export function useIsPhone() {
   return useViewportMode() === 'phone'
 }
