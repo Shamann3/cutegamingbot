@@ -1400,6 +1400,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
   const [peek, setPeek] = useState(null)
   // Стек «вернуться к исходному» после полного открытия другого игрока
   const [returnStack, setReturnStack] = useState([])
+  const peekCardRef = useRef(null)
 
   // dex items for picker
   const [dexItems, setDexItems] = useState([])
@@ -1424,12 +1425,23 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
     return ''
   }, [])
 
-  const loadUser = useCallback(async (userId, { syncQuery = true } = {}) => {
+  const pushReturnPoint = useCallback((user) => {
+    if (!user?.userId) return
+    const label = queryLabelForUser(user) || user.displayName || String(user.userId)
+    setReturnStack((stack) => {
+      const last = stack[stack.length - 1]
+      if (last && Number(last.userId) === Number(user.userId)) return stack
+      return [...stack, { userId: user.userId, label }]
+    })
+  }, [queryLabelForUser])
+
+  const loadUser = useCallback(async (userId, { syncQuery = true, clearStack = false } = {}) => {
     const reqId = ++loadReqRef.current
     setLoading(true)
     setResults([])
     setError('')
     setPeek(null)
+    if (clearStack) setReturnStack([])
     setProfileTab('profile')
     setIntel(null)
     try {
@@ -1497,7 +1509,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
       return
     }
 
-    loadUser(cp.userId)
+    loadUser(cp.userId, { clearStack: true })
   }, [profile, loadUser, queryLabelForUser])
 
   const dismissPeek = useCallback(() => {
@@ -1506,19 +1518,11 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
 
   const openPeekFull = useCallback(async () => {
     if (!peek?.userId) return
-    if (profile?.userId) {
-      setReturnStack((stack) => [
-        ...stack,
-        {
-          userId: profile.userId,
-          label: queryLabelForUser(profile) || profile.displayName || String(profile.userId),
-        },
-      ])
-    }
+    if (profile?.userId) pushReturnPoint(profile)
     const id = peek.userId
     setPeek(null)
     await loadUser(id)
-  }, [peek, profile, loadUser, queryLabelForUser])
+  }, [peek, profile, loadUser, pushReturnPoint])
 
   const returnToPreviousUser = useCallback(async () => {
     if (peek) {
@@ -1531,6 +1535,34 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
     if (prev.label) setQuery(prev.label)
     await loadUser(prev.userId, { syncQuery: !prev.label })
   }, [peek, returnStack, loadUser])
+
+  // Мини-карточка должна попасть в кадр (клик был внизу списка переводов)
+  useEffect(() => {
+    if (!peek) return undefined
+    const node = peekCardRef.current
+    if (!node) return undefined
+    const t = window.setTimeout(() => {
+      try {
+        node.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      } catch {
+        /* ignore */
+      }
+    }, 30)
+    return () => window.clearTimeout(t)
+  }, [peek?.userId])
+
+  // Escape закрывает peek; удобный выход без потери текущего профиля
+  useEffect(() => {
+    if (!peek) return undefined
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setPeek(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [peek])
 
   const handleLoadCompare = useCallback(async () => {
     const uid = compareResolvedId || (/^\d+$/.test(compareQuery.trim()) ? Number(compareQuery.trim()) : null)
@@ -1577,7 +1609,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
 
   useEffect(() => {
     if (!initialUserId) return
-    loadUser(initialUserId).finally(() => {
+    loadUser(initialUserId, { clearStack: true }).finally(() => {
       onInitialUserConsumed?.()
     })
   }, [initialUserId, loadUser, onInitialUserConsumed])
@@ -1724,7 +1756,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 <button
                   type="button"
                   className="panel-users-result-btn"
-                  onClick={() => loadUser(row.userId)}
+                  onClick={() => loadUser(row.userId, { clearStack: true })}
                 >
                   <span>
                     {row.displayName}
@@ -1744,7 +1776,13 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
         {info && <p className="panel-users-info">{info}</p>}
 
         {peek && (
-          <div className="pu-peek-card" role="dialog" aria-label="Мини-карточка игрока">
+          <div
+            className="pu-peek-card"
+            ref={peekCardRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Мини-карточка игрока"
+          >
             <div className="pu-peek-avatar" aria-hidden="true">
               {(peek.displayName || '?').slice(0, 1).toUpperCase()}
             </div>
@@ -1755,15 +1793,20 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 <em> · id {peek.userId}</em>
               </span>
               {peek.fromLabel && (
-                <span className="pu-peek-from">Из карточки {peek.fromLabel}</span>
+                <span className="pu-peek-from">Сейчас открыт профиль {peek.fromLabel}</span>
               )}
             </div>
             <div className="pu-peek-actions">
-              <button type="button" className="panel-users-btn panel-users-btn-primary" onClick={openPeekFull}>
+              <button
+                type="button"
+                className="panel-users-btn panel-users-btn-primary"
+                autoFocus
+                onClick={openPeekFull}
+              >
                 Больше информации
               </button>
               <button type="button" className="panel-users-btn" onClick={dismissPeek}>
-                {peek.fromLabel ? `К ${peek.fromLabel}` : 'Закрыть'}
+                {peek.fromLabel ? `Остаться на ${peek.fromLabel}` : 'Закрыть'}
               </button>
             </div>
           </div>
