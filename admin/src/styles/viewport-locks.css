@@ -185,6 +185,12 @@
     background: transparent !important;
     border-bottom: none !important;
     min-height: 2.85rem;
+    padding-right: max(0.55rem, env(safe-area-inset-right, 0px)) !important;
+  }
+
+  .elite-topbar-actions {
+    margin-left: auto !important;
+    margin-right: 0 !important;
   }
 
   .elite-greeting-desktop,

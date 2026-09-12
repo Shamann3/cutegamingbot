@@ -288,43 +288,104 @@ export default function PanelSidebar({
       </nav>
 
       <div className="panel-sidebar-footer">
-        <div className="panel-sidebar-account">
-          <div className="panel-profile-avatar" aria-hidden="true">
-            {photoUrl ? (
-              <img className="panel-profile-photo" src={photoUrl} alt="" />
-            ) : (
-              <span className="panel-profile-initials">{initials}</span>
-            )}
-          </div>
-          <div className="panel-profile-meta">
-            <p className="panel-profile-name">{displayName}</p>
-            <p className="panel-profile-kicker">
-              {role === 'owner' ? 'Владелец' : username ? `@${username}` : 'Cute Epsilon'}
-            </p>
-          </div>
-        </div>
-
         {isPhone ? (
-          <details ref={settingsRef} className="panel-sidebar-settings">
-            <summary className="panel-sidebar-settings-sum">
-              <span className="panel-sidebar-settings-label">Настройки</span>
-              <span className="panel-sidebar-settings-cue" aria-hidden="true">
-                <span className="panel-sidebar-settings-hint-closed">Открыть</span>
-                <span className="panel-sidebar-settings-hint-open">Свернуть</span>
-                <span className="panel-sidebar-settings-chevron">▾</span>
-              </span>
-            </summary>
-            <div className="panel-sidebar-settings-body">
-              <SettingsControls {...settingsProps} />
+          <>
+            <div className="panel-sidebar-account">
+              <div className="panel-profile-avatar" aria-hidden="true">
+                {photoUrl ? (
+                  <img className="panel-profile-photo" src={photoUrl} alt="" />
+                ) : (
+                  <span className="panel-profile-initials">{initials}</span>
+                )}
+              </div>
+              <div className="panel-profile-meta">
+                <p className="panel-profile-name">{displayName}</p>
+                <p className="panel-profile-kicker">
+                  {role === 'owner' ? 'Владелец' : username ? `@${username}` : 'Cute Epsilon'}
+                </p>
+              </div>
             </div>
-          </details>
+
+            <details ref={settingsRef} className="panel-sidebar-settings">
+              <summary className="panel-sidebar-settings-sum">
+                <span className="panel-sidebar-settings-label">Настройки</span>
+                <span className="panel-sidebar-settings-cue" aria-hidden="true">
+                  <span className="panel-sidebar-settings-hint-closed">Открыть</span>
+                  <span className="panel-sidebar-settings-hint-open">Свернуть</span>
+                  <span className="panel-sidebar-settings-chevron">▾</span>
+                </span>
+              </summary>
+              <div className="panel-sidebar-settings-body">
+                <SettingsControls {...settingsProps} />
+              </div>
+            </details>
+          </>
         ) : (
-          /* ПК как до телефонов: палитра + музыка всегда на виду */
-          <div className="panel-sidebar-settings panel-sidebar-settings-desktop">
-            <div className="panel-sidebar-settings-body">
-              <SettingsControls {...settingsProps} />
+          <>
+            {/* ПК: Подсветка выше профиля */}
+            <div className="panel-sidebar-settings panel-sidebar-settings-desktop">
+              <div className="panel-sidebar-settings-body">
+                <AccentPalette value={accent} onChange={onAccentChange} />
+              </div>
             </div>
-          </div>
+
+            <div className="panel-sidebar-account">
+              <div className="panel-profile-avatar" aria-hidden="true">
+                {photoUrl ? (
+                  <img className="panel-profile-photo" src={photoUrl} alt="" />
+                ) : (
+                  <span className="panel-profile-initials">{initials}</span>
+                )}
+              </div>
+              <div className="panel-profile-meta">
+                <p className="panel-profile-name">{displayName}</p>
+                <p className="panel-profile-kicker">
+                  {role === 'owner' ? 'Владелец' : username ? `@${username}` : 'Cute Epsilon'}
+                </p>
+              </div>
+            </div>
+
+            <div className="panel-sidebar-settings panel-sidebar-settings-desktop">
+              <div className="panel-sidebar-settings-body">
+                <SessionTimer compact onExpired={onSessionExpired} />
+                <div className="panel-music-card">
+                  <div className="panel-music-head">
+                    <button
+                      type="button"
+                      className="panel-music-icon-btn"
+                      onClick={onToggleMusic}
+                      title={musicVolume > 0 ? 'Выключить музыку' : 'Включить музыку'}
+                      aria-pressed={musicVolume > 0}
+                    >
+                      <SpeakerIcon muted={musicVolume <= 0} />
+                    </button>
+                    <span className="panel-music-label">Музыка</span>
+                    <span className="panel-music-pct">{Math.round(musicVolume * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    className="panel-music-slider"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={Math.round(musicVolume * 100)}
+                    onChange={(e) => onMusicVolumeChange(Number(e.target.value) / 100)}
+                    style={{ '--vol-pct': `${Math.round(musicVolume * 100)}%` }}
+                    aria-label="Громкость музыки"
+                  />
+                </div>
+                <button
+                  type="button"
+                  className={`panel-perf-btn${lightMode ? ' panel-perf-btn-active' : ''}`}
+                  onClick={onTogglePerf}
+                  title={lightMode ? 'Чёрно-белый лёгкий режим' : 'Цветной HD — подсветка из палитры'}
+                >
+                  <span aria-hidden="true">{lightMode ? '◈' : '⬡'}</span>
+                  {lightMode ? 'Ч/Б · лёгкий' : 'HD · цвет'}
+                </button>
+              </div>
+            </div>
+          </>
         )}
 
         <button type="button" className="panel-logout-btn" onClick={onLogout}>

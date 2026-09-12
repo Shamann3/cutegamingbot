@@ -1271,7 +1271,7 @@ body,
   overflow: visible;
   padding:
     max(0.45rem, env(safe-area-inset-top, 0px))
-    max(3.6rem, calc(env(safe-area-inset-right, 0px) + 3.1rem))
+    max(0.55rem, calc(env(safe-area-inset-right, 0px) + 0.35rem))
     0.45rem
     0.55rem;
 }
@@ -1280,7 +1280,7 @@ body,
 .elite-topbar-compact {
   padding:
     max(0.35rem, env(safe-area-inset-top, 0px))
-    max(3.6rem, calc(env(safe-area-inset-right, 0px) + 3.1rem))
+    max(0.55rem, calc(env(safe-area-inset-right, 0px) + 0.35rem))
     0.3rem
     0.55rem;
   min-height: 2.85rem;
@@ -1339,8 +1339,9 @@ body,
   align-items: center;
   gap: 0.45rem;
   flex: 0 0 auto;
+  margin-left: auto;
   padding: 0.28rem;
-  margin-right: 0.1rem;
+  margin-right: 0;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(0, 0, 0, 0.28);

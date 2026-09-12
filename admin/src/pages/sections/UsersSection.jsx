@@ -366,7 +366,7 @@ function PlayerIntelOverview({ intel, onOpenUser }) {
                 <button
                   type="button"
                   className="pu-cp-link"
-                  onClick={() => onOpenUser?.(t.counterparty?.userId)}
+                  onClick={() => onOpenUser?.(t.counterparty)}
                 >
                   {t.direction === 'out' ? '→' : '←'}{' '}
                   {t.counterparty?.username ? `@${t.counterparty.username}` : t.counterparty?.name}
@@ -456,7 +456,7 @@ function PlayerTransfersPanel({ userId, intel, onOpenUser }) {
         <ul className="pu-intel-transfers pu-intel-transfers-full">
           {items.map((t) => (
             <li key={t.id} className={`pu-level-${t.level || 'small'}`}>
-              <button type="button" className="pu-cp-link" onClick={() => onOpenUser?.(t.counterparty?.userId)}>
+              <button type="button" className="pu-cp-link" onClick={() => onOpenUser?.(t.counterparty)}>
                 {t.direction === 'out' ? 'Отправил' : 'Получил от'}{' '}
                 {t.counterparty?.username ? `@${t.counterparty.username}` : t.counterparty?.name}
                 <em> · id {t.counterparty?.userId}</em>
@@ -486,7 +486,7 @@ function PlayerTransfersPanel({ userId, intel, onOpenUser }) {
               </div>
               <p>{it.cause || '—'}</p>
               {it.counterparty && (
-                <button type="button" className="pu-cp-link" onClick={() => onOpenUser?.(it.counterparty.userId)}>
+                <button type="button" className="pu-cp-link" onClick={() => onOpenUser?.(it.counterparty)}>
                   {it.counterparty.username ? `@${it.counterparty.username}` : it.counterparty.name}
                 </button>
               )}
@@ -1192,17 +1192,28 @@ function DexItemQuickPicker({ dexItems, onSelect, disabled }) {
 // ---- Полная история кут (cutehistory + donate + переводы) ----
 const CUTE_PAGE = 50
 
-function CounterpartyLine({ direction, cp }) {
+function CounterpartyLine({ direction, cp, onOpenUser }) {
   const name = cp.username ? `@${cp.username}` : (cp.name || 'игрок')
   const arrow = direction === 'out' ? '→' : '←'
+  if (!onOpenUser || !cp?.userId) {
+    return (
+      <p className="panel-shelf-muted">
+        {arrow} {name} <span style={{ opacity: 0.6 }}>(id {cp.userId})</span>
+      </p>
+    )
+  }
   return (
     <p className="panel-shelf-muted">
-      {arrow} {name} <span style={{ opacity: 0.6 }}>(id {cp.userId})</span>
+      {arrow}{' '}
+      <button type="button" className="pu-cp-link" onClick={() => onOpenUser(cp)}>
+        {name}
+      </button>{' '}
+      <span style={{ opacity: 0.6 }}>(id {cp.userId})</span>
     </p>
   )
 }
 
-function CuteHistoryFeed({ userId }) {
+function CuteHistoryFeed({ userId, onOpenUser }) {
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
   const [donations, setDonations] = useState(null)
@@ -1303,7 +1314,7 @@ function CuteHistoryFeed({ userId }) {
               <p className="panel-shelf-muted">Баланс: {it.balance}</p>
             )}
             {it.counterparty && (
-              <CounterpartyLine direction={it.direction} cp={it.counterparty} />
+              <CounterpartyLine direction={it.direction} cp={it.counterparty} onOpenUser={onOpenUser} />
             )}
             {it.group && (
               <p className="panel-shelf-muted">
@@ -1385,6 +1396,11 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
   const [compareError, setCompareError] = useState('')
   const [showCompare, setShowCompare] = useState(false)
 
+  // Мини-карточка другого игрока (клик из переводов и т.п.) без полной подгрузки
+  const [peek, setPeek] = useState(null)
+  // Стек «вернуться к исходному» после полного открытия другого игрока
+  const [returnStack, setReturnStack] = useState([])
+
   // dex items for picker
   const [dexItems, setDexItems] = useState([])
   useEffect(() => {
@@ -1401,11 +1417,19 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
   // one resolves, the older result is discarded (no stale overwrites).
   const loadReqRef = useRef(0)
 
-  const loadUser = useCallback(async (userId) => {
+  const queryLabelForUser = useCallback((user) => {
+    if (!user) return ''
+    if (user.username) return `@${String(user.username).replace(/^@/, '')}`
+    if (user.userId != null) return String(user.userId)
+    return ''
+  }, [])
+
+  const loadUser = useCallback(async (userId, { syncQuery = true } = {}) => {
     const reqId = ++loadReqRef.current
     setLoading(true)
     setResults([])
     setError('')
+    setPeek(null)
     setProfileTab('profile')
     setIntel(null)
     try {
@@ -1419,6 +1443,12 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
       setResults([])
       setBanPhotoIds([])
       setUnbanPhotoIds([])
+      if (syncQuery) {
+        const label = userData?.username
+          ? `@${String(userData.username).replace(/^@/, '')}`
+          : String(userData?.userId ?? userId)
+        setQuery(label)
+      }
       setLoading(false)
 
       fetchAdminUserIntel(userId)
@@ -1439,6 +1469,68 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
       setLoading(false)
     }
   }, [])
+
+  const openRelatedUser = useCallback((raw) => {
+    if (raw == null) return
+    const cp = typeof raw === 'object'
+      ? {
+          userId: Number(raw.userId ?? raw.user_id),
+          username: raw.username ? String(raw.username).replace(/^@/, '') : null,
+          name: raw.name || raw.displayName || raw.firstName || null,
+        }
+      : { userId: Number(raw), username: null, name: null }
+    if (!Number.isFinite(cp.userId) || cp.userId <= 0) return
+    if (profile?.userId && Number(profile.userId) === cp.userId) {
+      setPeek(null)
+      return
+    }
+
+    // Уже смотрим полный профиль — сначала только мини-карточка
+    if (profile?.userId) {
+      setPeek({
+        userId: cp.userId,
+        username: cp.username,
+        displayName: cp.name || (cp.username ? `@${cp.username}` : `Игрок ${cp.userId}`),
+        fromUserId: profile.userId,
+        fromLabel: queryLabelForUser(profile) || profile.displayName || String(profile.userId),
+      })
+      return
+    }
+
+    loadUser(cp.userId)
+  }, [profile, loadUser, queryLabelForUser])
+
+  const dismissPeek = useCallback(() => {
+    setPeek(null)
+  }, [])
+
+  const openPeekFull = useCallback(async () => {
+    if (!peek?.userId) return
+    if (profile?.userId) {
+      setReturnStack((stack) => [
+        ...stack,
+        {
+          userId: profile.userId,
+          label: queryLabelForUser(profile) || profile.displayName || String(profile.userId),
+        },
+      ])
+    }
+    const id = peek.userId
+    setPeek(null)
+    await loadUser(id)
+  }, [peek, profile, loadUser, queryLabelForUser])
+
+  const returnToPreviousUser = useCallback(async () => {
+    if (peek) {
+      setPeek(null)
+      return
+    }
+    const prev = returnStack[returnStack.length - 1]
+    if (!prev?.userId) return
+    setReturnStack((stack) => stack.slice(0, -1))
+    if (prev.label) setQuery(prev.label)
+    await loadUser(prev.userId, { syncQuery: !prev.label })
+  }, [peek, returnStack, loadUser])
 
   const handleLoadCompare = useCallback(async () => {
     const uid = compareResolvedId || (/^\d+$/.test(compareQuery.trim()) ? Number(compareQuery.trim()) : null)
@@ -1497,6 +1589,8 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
     setLoading(true)
     setError('')
     setInfo('')
+    setPeek(null)
+    setReturnStack([])
 
     try {
       const data = await searchAdminUsers(q)
@@ -1648,12 +1742,44 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
 
         {error && <p className="panel-shelf-error">{error}</p>}
         {info && <p className="panel-users-info">{info}</p>}
+
+        {peek && (
+          <div className="pu-peek-card" role="dialog" aria-label="Мини-карточка игрока">
+            <div className="pu-peek-avatar" aria-hidden="true">
+              {(peek.displayName || '?').slice(0, 1).toUpperCase()}
+            </div>
+            <div className="pu-peek-meta">
+              <strong className="pu-peek-name">{peek.displayName}</strong>
+              <span className="pu-peek-sub">
+                {peek.username ? `@${peek.username}` : `id ${peek.userId}`}
+                <em> · id {peek.userId}</em>
+              </span>
+              {peek.fromLabel && (
+                <span className="pu-peek-from">Из карточки {peek.fromLabel}</span>
+              )}
+            </div>
+            <div className="pu-peek-actions">
+              <button type="button" className="panel-users-btn panel-users-btn-primary" onClick={openPeekFull}>
+                Больше информации
+              </button>
+              <button type="button" className="panel-users-btn" onClick={dismissPeek}>
+                {peek.fromLabel ? `К ${peek.fromLabel}` : 'Закрыть'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!peek && returnStack.length > 0 && hasProfile && (
+          <button type="button" className="pu-return-chip" onClick={returnToPreviousUser}>
+            ← Вернуться к {returnStack[returnStack.length - 1]?.label || 'предыдущему'}
+          </button>
+        )}
       </article>
 
-      <div className={`panel-users-body${loading && !hasProfile ? ' panel-users-body-loading' : ''}`}>
+      <div className={`panel-users-body${loading && !hasProfile ? ' panel-users-body-loading' : ''}${peek ? ' panel-users-body-peek' : ''}`}>
 
         {/* ── Шапка с вкладками — вся ширина ── */}
-        {hasProfile && (
+        {hasProfile && !peek && (
           <div className="panel-shelf pu-tabs-bar">
             <div className="pu-profile-header">
               <p className="panel-shelf-label">Профиль · {profile?.displayName}</p>
@@ -1675,12 +1801,12 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
         {/* ── Контент вкладок (кроме профиля) — только своё, без наложений ── */}
         {hasProfile && profileTab === 'transfers' && (
           <div className="pu-tab-pane">
-            <PlayerTransfersPanel userId={profile.userId} intel={intel} onOpenUser={(id) => id && loadUser(id)} />
+            <PlayerTransfersPanel userId={profile.userId} intel={intel} onOpenUser={openRelatedUser} />
           </div>
         )}
         {hasProfile && profileTab === 'intel' && (
           <div className="pu-tab-pane pu-tab-stack">
-            <PlayerIntelOverview intel={intel} onOpenUser={(id) => id && loadUser(id)} />
+            <PlayerIntelOverview intel={intel} onOpenUser={openRelatedUser} />
             <PlayerDossierPanel
               intel={intel}
               isOwner={isOwner}
@@ -1728,7 +1854,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
             )}
 
             {historySource === 'cute' && (
-              <CuteHistoryFeed userId={profile.userId} />
+              <CuteHistoryFeed userId={profile.userId} onOpenUser={openRelatedUser} />
             )}
 
             {historySource === 'audit' && (
@@ -2364,7 +2490,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   value={compareQuery}
                   onChange={(v) => { setCompareQuery(v); setCompareResolvedId(null) }}
                   onResolved={(u) => setCompareResolvedId(u ? Number(u.userId || u.user_id) : null)}
-                  onOpenUser={(id) => loadUser(id)}
+                  onOpenUser={(id) => openRelatedUser(id)}
                   placeholder="ID, @username или имя"
                 />
               </div>
