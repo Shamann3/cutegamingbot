@@ -16,6 +16,14 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 SHOWCASE_LIMIT = 5
 PAGE_SIZE = 10
+MAX_RARITY_RANK = 20
+DEFAULT_RARITY_NAMES = {
+    1: "обычно",
+    2: "заметно",
+    3: "редко",
+    4: "очень редко",
+    5: "легенда",
+}
 MAX_ITEMS_PER_USER = 200
 MAX_TITLE_HTML_LEN = 500
 MAX_DESCRIPTION_LEN = 400
@@ -426,38 +434,84 @@ def build_gbl_title_html(
     return f"{title} · {group}"
 
 
-def rarity_label(rarity: Any) -> str:
-    """Короткая подпись редкости (1–5)."""
+_RARITY_LEVELS_CACHE: List[Dict[str, Any]] = []
+_RARITY_LEVELS_TS: float = 0.0
+
+
+def clamp_rarity(raw: Any, *, max_rank: Optional[int] = None) -> int:
+    top = max(1, min(MAX_RARITY_RANK, int(max_rank or MAX_RARITY_RANK)))
     try:
-        r = max(1, min(5, int(rarity or 1)))
+        return max(1, min(top, int(raw or 1)))
     except Exception:
-        r = 1
-    names = {
-        1: "обычно",
-        2: "заметно",
-        3: "редко",
-        4: "очень редко",
-        5: "легенда",
-    }
-    return f"{'★' * r}{'☆' * (5 - r)} · {names[r]}"
+        return 1
+
+
+def rarity_levels_sync() -> List[Dict[str, Any]]:
+    if _RARITY_LEVELS_CACHE:
+        return list(_RARITY_LEVELS_CACHE)
+    return [{"rank": k, "name": v} for k, v in DEFAULT_RARITY_NAMES.items()]
+
+
+def rarity_name_for(rank: int, *, levels: Optional[Sequence[Dict[str, Any]]] = None) -> str:
+    r = clamp_rarity(rank)
+    for it in (levels or rarity_levels_sync()):
+        try:
+            if int(it.get("rank") or 0) == r:
+                name = str(it.get("name") or "").strip()
+                if name:
+                    return name
+        except Exception:
+            continue
+    return DEFAULT_RARITY_NAMES.get(r) or f"уровень {r}"
+
+
+def rarity_max_rank(levels: Optional[Sequence[Dict[str, Any]]] = None) -> int:
+    rows = list(levels or rarity_levels_sync())
+    best = 1
+    for it in rows:
+        try:
+            best = max(best, int(it.get("rank") or 0))
+        except Exception:
+            continue
+    return max(1, min(MAX_RARITY_RANK, best))
+
+
+def rarity_label(
+    rarity: Any,
+    *,
+    name: Optional[str] = None,
+    max_rank: Optional[int] = None,
+    levels: Optional[Sequence[Dict[str, Any]]] = None,
+) -> str:
+    rows = levels or rarity_levels_sync()
+    top = max_rank or rarity_max_rank(rows)
+    r = clamp_rarity(rarity, max_rank=top)
+    label = (name or "").strip() or rarity_name_for(r, levels=rows)
+    empty = max(0, top - r)
+    return f"{'★' * r}{'☆' * empty} · {html.escape(label)}"
 
 
 def achievement_rarity(it: Dict[str, Any]) -> int:
     meta = it.get("meta") if isinstance(it.get("meta"), dict) else {}
-    raw = meta.get("rarity", it.get("rarity"))
-    try:
-        return max(1, min(5, int(raw or 1)))
-    except Exception:
-        return 1
+    raw = it.get("rarity")
+    if raw is None:
+        raw = meta.get("rarity")
+    return clamp_rarity(raw, max_rank=rarity_max_rank())
 
 
 def achievement_line_html(it: Dict[str, Any], *, with_rarity: bool = True) -> str:
     """Минимализм: иконка · название · редкость."""
     ic = icon_html(it.get("icon_emoji_id"), it.get("icon_fallback") or DEFAULT_ICON_FALLBACK)
     title = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
-    if with_rarity:
-        return f"{ic} {title}\n{rarity_label(achievement_rarity(it))}"
-    return f"{ic} {title}"
+    if not with_rarity:
+        return f"{ic} {title}"
+    if it.get("kind") == "free" and it.get("rarity") is None and not (
+        isinstance(it.get("meta"), dict) and it["meta"].get("rarity") is not None
+    ):
+        return f"{ic} {title}"
+    r = achievement_rarity(it)
+    name = str(it.get("rarity_name") or "").strip() or None
+    return f"{ic} {title}\n{rarity_label(r, name=name)}"
 
 
 def format_gbl_unlocks_html(items: Sequence[Dict[str, Any]]) -> str:
@@ -699,6 +753,8 @@ def grant_official(
     unique_code: Optional[str] = None,
     meta: Optional[Dict[str, Any]] = None,
     pin_front: bool = False,
+    rarity: Optional[int] = None,
+    rarity_name: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], str, bool]:
     """Returns (doc, instance_id, already_had).
 
@@ -725,6 +781,15 @@ def grant_official(
         "granted_by_name": (granted_by_name or "Система")[:64],
         "source": source,
     }
+    rank = rarity
+    if rank is None and isinstance(meta, dict):
+        rank = meta.get("rarity")
+    if rank is not None:
+        item["rarity"] = clamp_rarity(rank)
+        nm = (rarity_name or "").strip()
+        if not nm and isinstance(meta, dict):
+            nm = str(meta.get("rarity_name") or "").strip()
+        item["rarity_name"] = (nm or rarity_name_for(item["rarity"]))[:40]
     if unique_code:
         item["unique_code"] = str(unique_code)
     if isinstance(meta, dict) and meta:
@@ -748,9 +813,11 @@ def grant_official(
             clean["code"] = str(meta["code"])[:64]
         if meta.get("rarity") is not None:
             try:
-                clean["rarity"] = max(1, min(5, int(meta["rarity"])))
+                clean["rarity"] = clamp_rarity(meta["rarity"])
             except Exception:
                 pass
+        if meta.get("rarity_name"):
+            clean["rarity_name"] = str(meta.get("rarity_name"))[:40]
         if clean:
             item["meta"] = clean
     doc["items"][iid] = item
@@ -781,7 +848,7 @@ CREATE TABLE IF NOT EXISTS official_achievements (
     icon_emoji_id TEXT,
     icon_fallback TEXT NOT NULL DEFAULT '⭐',
     description TEXT NOT NULL DEFAULT '',
-    rarity INT NOT NULL DEFAULT 1 CHECK (rarity >= 1 AND rarity <= 5),
+    rarity INT NOT NULL DEFAULT 1,
     sort INT NOT NULL DEFAULT 0,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_by BIGINT,
@@ -790,6 +857,11 @@ CREATE TABLE IF NOT EXISTS official_achievements (
 );
 CREATE INDEX IF NOT EXISTS official_achievements_enabled_sort_idx
     ON official_achievements (enabled, sort, id);
+CREATE TABLE IF NOT EXISTS achievement_rarity_levels (
+    rank INT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 
@@ -797,6 +869,13 @@ async def ensure_achievements_schema(db) -> None:
     if not await db.ensure_pool():
         raise RuntimeError("pool not ready")
     await db.pool.execute(ENSURE_SQL)
+    try:
+        await db.pool.execute(
+            "ALTER TABLE official_achievements DROP CONSTRAINT IF EXISTS official_achievements_rarity_check"
+        )
+    except Exception:
+        pass
+    await ensure_rarity_levels(db)
     await seed_gbl_official_if_needed(db)
     try:
         await migrate_legacy_gbl_badges(db)
@@ -888,6 +967,147 @@ async def seed_gbl_official_if_needed(db) -> None:
             print(f"[ACH] gbl icon backfill skip {seed['code']!r}: {e!r}")
 
 
+async def ensure_rarity_levels(db) -> List[Dict[str, Any]]:
+    global _RARITY_LEVELS_CACHE, _RARITY_LEVELS_TS
+    await db.pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS achievement_rarity_levels (
+            rank INT PRIMARY KEY,
+            name TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    for rank, name in DEFAULT_RARITY_NAMES.items():
+        await db.pool.execute(
+            """
+            INSERT INTO achievement_rarity_levels (rank, name)
+            VALUES ($1, $2)
+            ON CONFLICT (rank) DO NOTHING
+            """,
+            int(rank), name,
+        )
+    rows = await db.pool.fetch(
+        "SELECT rank, name FROM achievement_rarity_levels ORDER BY rank ASC"
+    )
+    _RARITY_LEVELS_CACHE = [dict(r) for r in rows] or [
+        {"rank": k, "name": v} for k, v in DEFAULT_RARITY_NAMES.items()
+    ]
+    _RARITY_LEVELS_TS = time.time()
+    return list(_RARITY_LEVELS_CACHE)
+
+
+async def list_rarity_levels(db) -> List[Dict[str, Any]]:
+    global _RARITY_LEVELS_CACHE, _RARITY_LEVELS_TS
+    if _RARITY_LEVELS_CACHE and (time.time() - _RARITY_LEVELS_TS) < 30:
+        return list(_RARITY_LEVELS_CACHE)
+    try:
+        return await ensure_rarity_levels(db)
+    except Exception:
+        return rarity_levels_sync()
+
+
+async def add_rarity_level(db, name: str) -> Dict[str, Any]:
+    label = " ".join(str(name or "").split())[:40]
+    if not label:
+        raise ValueError("rarity_name_required")
+    await ensure_rarity_levels(db)
+    row = await db.pool.fetchrow("SELECT COALESCE(MAX(rank), 0) AS m FROM achievement_rarity_levels")
+    nxt = int((row or {}).get("m") or 0) + 1
+    if nxt > MAX_RARITY_RANK:
+        raise ValueError("rarity_limit")
+    await db.pool.execute(
+        "INSERT INTO achievement_rarity_levels (rank, name) VALUES ($1, $2)",
+        nxt, label,
+    )
+    levels = await ensure_rarity_levels(db)
+    return {"rank": nxt, "name": label, "levels": levels}
+
+
+async def rename_rarity_level(db, rank: int, name: str) -> Dict[str, Any]:
+    label = " ".join(str(name or "").split())[:40]
+    if not label:
+        raise ValueError("rarity_name_required")
+    r = clamp_rarity(rank)
+    tag = await db.pool.execute(
+        "UPDATE achievement_rarity_levels SET name = $2 WHERE rank = $1",
+        r, label,
+    )
+    if not str(tag).endswith("1"):
+        raise ValueError("rarity_not_found")
+    levels = await ensure_rarity_levels(db)
+    return {"rank": r, "name": label, "levels": levels}
+
+
+async def enrich_doc_rarities(db, doc: Dict[str, Any]) -> None:
+    """Подставить rarity из каталога, если у старой выдачи её нет."""
+    levels = await list_rarity_levels(db)
+    items = doc.get("items") if isinstance(doc.get("items"), dict) else {}
+    official_ids = []
+    codes = []
+    for it in items.values():
+        if not isinstance(it, dict) or it.get("kind") != "official":
+            continue
+        if it.get("official_id") is not None:
+            try:
+                official_ids.append(int(it["official_id"]))
+            except Exception:
+                pass
+        code = str(it.get("unique_code") or "")
+        if code.startswith("gbl_level_"):
+            parts = code.split("_")
+            if len(parts) >= 3:
+                codes.append(f"gbl_level_{parts[2]}")
+        elif code:
+            codes.append(code)
+    by_id: Dict[int, Dict[str, Any]] = {}
+    by_code: Dict[str, Dict[str, Any]] = {}
+    if official_ids:
+        rows = await db.pool.fetch(
+            "SELECT id, code, rarity FROM official_achievements WHERE id = ANY($1::bigint[])",
+            official_ids,
+        )
+        for r in rows:
+            by_id[int(r["id"])] = dict(r)
+            if r["code"]:
+                by_code[str(r["code"])] = dict(r)
+    if codes:
+        rows = await db.pool.fetch(
+            "SELECT id, code, rarity FROM official_achievements WHERE code = ANY($1::text[])",
+            codes,
+        )
+        for r in rows:
+            by_code[str(r["code"])] = dict(r)
+    for it in items.values():
+        if not isinstance(it, dict):
+            continue
+        rank = it.get("rarity")
+        meta = it.get("meta") if isinstance(it.get("meta"), dict) else {}
+        if rank is None:
+            rank = meta.get("rarity")
+        if rank is None and it.get("official_id") is not None:
+            try:
+                off = by_id.get(int(it["official_id"]))
+                if off:
+                    rank = off.get("rarity")
+            except Exception:
+                pass
+        if rank is None:
+            code = str(it.get("unique_code") or "")
+            off = by_code.get(code)
+            if off is None and code.startswith("gbl_level_"):
+                parts = code.split("_")
+                if len(parts) >= 3:
+                    off = by_code.get(f"gbl_level_{parts[2]}")
+            if off:
+                rank = off.get("rarity")
+        if rank is None:
+            continue
+        it["rarity"] = clamp_rarity(rank, max_rank=rarity_max_rank(levels))
+        if not str(it.get("rarity_name") or "").strip():
+            it["rarity_name"] = rarity_name_for(it["rarity"], levels=levels)
+
+
 async def get_user_achievements_doc(db, user_id: int) -> Dict[str, Any]:
     row = await db.pool.fetchrow(
         "SELECT profile_achievements FROM users WHERE user_id = $1",
@@ -902,7 +1122,12 @@ async def get_user_achievements_doc(db, user_id: int) -> Dict[str, Any]:
             raw = json.loads(raw)
         except Exception:
             raw = {}
-    return _normalize_doc(raw)
+    doc = _normalize_doc(raw)
+    try:
+        await enrich_doc_rarities(db, doc)
+    except Exception as e:
+        print(f"[ACH] enrich rarity skip: {e!r}")
+    return doc
 
 
 async def save_user_achievements_doc(db, user_id: int, doc: Dict[str, Any]) -> None:
@@ -1053,7 +1278,7 @@ async def upsert_official(db, data: Dict[str, Any], *, actor_id: Optional[int] =
         icon_emoji_id = str(icon_emoji_id).strip() or None
     icon_fallback = str(data.get("icon_fallback") or DEFAULT_ICON_FALLBACK)[:8]
     description = str(data.get("description") or "")[:MAX_DESCRIPTION_LEN]
-    rarity = max(1, min(5, int(data.get("rarity") or 1)))
+    rarity = clamp_rarity(data.get("rarity") or 1)
     sort = int(data.get("sort") or 0)
     enabled = bool(data.get("enabled", True))
     oid = data.get("id")
@@ -1218,6 +1443,9 @@ async def grant_official_to_user(
         or official.get("title_html")
         or html.escape(str(official.get("title") or ""))
     )
+    official_rank = official.get("rarity")
+    if isinstance(meta, dict) and meta.get("rarity") is not None:
+        official_rank = meta.get("rarity")
     doc, iid, already = grant_official(
         doc,
         official_id=int(official["id"]),
@@ -1230,6 +1458,8 @@ async def grant_official_to_user(
         unique_code=unique_code or official.get("code"),
         meta=meta,
         pin_front=pin_front,
+        rarity=official_rank,
+        rarity_name=rarity_name_for(clamp_rarity(official_rank)),
     )
     await save_user_achievements_doc(db, target_user_id, doc)
     item = doc["items"].get(iid) or {}

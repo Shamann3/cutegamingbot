@@ -217,6 +217,8 @@ from admin_achievements import (
     grant_free_to_user as ach_grant_free,
     list_user_achievements as ach_list_user,
     revoke_from_user as ach_revoke,
+    add_rarity_level as ach_add_rarity_level,
+    rename_rarity_level as ach_rename_rarity_level,
 )
 from admin_content import (
     create_craft_recipe,
@@ -4731,10 +4733,41 @@ class AchievementBody(BaseModel):
     icon_emoji_id: str | None = Field(default=None, max_length=64)
     icon_fallback: str | None = Field(default=None, max_length=8)
     description: str | None = Field(default=None, max_length=400)
-    rarity: int = Field(default=1, ge=1, le=5)
+    rarity: int = Field(default=1, ge=1, le=20)
+    new_rarity_name: str | None = Field(default=None, max_length=40)
     sort: int = Field(default=0, ge=-10000, le=10000)
     enabled: bool = True
     model_config = {"extra": "forbid"}
+
+
+class AchievementRarityLevelBody(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    rank: int | None = Field(default=None, ge=1, le=20)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/achievements/rarity-level")
+async def admin_achievements_rarity_level(
+    body: AchievementRarityLevelBody,
+    admin_id: int = Depends(require_admin_permission("manage_achievements")),
+):
+    try:
+        if body.rank:
+            result = await ach_rename_rarity_level(int(body.rank), body.name)
+        else:
+            result = await ach_add_rarity_level(body.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        await log_admin_action(
+            admin_id, "achievement_rarity_level",
+            target_type="achievement",
+            target_id=str(result.get("rank")),
+            details={"name": result.get("name")},
+        )
+    except Exception:
+        pass
+    return result
 
 
 @router.post("/achievements/save")

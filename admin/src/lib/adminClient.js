@@ -1599,6 +1599,17 @@ export async function saveOfficialAchievement(payload) {
   return adminFetch('/achievements/save', { method: 'POST', body: payload })
 }
 
+export async function addAchievementRarityLevel(name) {
+  return adminFetch('/achievements/rarity-level', { method: 'POST', body: { name: String(name || '').trim() } })
+}
+
+export async function renameAchievementRarityLevel(rank, name) {
+  return adminFetch('/achievements/rarity-level', {
+    method: 'POST',
+    body: { rank: Number(rank), name: String(name || '').trim() },
+  })
+}
+
 export async function deleteOfficialAchievement(id) {
   return adminFetch('/achievements/delete', { method: 'POST', body: { id: Number(id) } })
 }

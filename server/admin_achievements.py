@@ -16,6 +16,14 @@ DEFAULT_ICON_EMOJI_ID = "5404534885324988233"
 DEFAULT_ICON_FALLBACK = "⭐"
 MAX_TITLE_HTML_LEN = 500
 MAX_DESCRIPTION_LEN = 400
+MAX_RARITY_RANK = 20
+DEFAULT_RARITY_NAMES = {
+    1: "обычно",
+    2: "заметно",
+    3: "редко",
+    4: "очень редко",
+    5: "легенда",
+}
 
 # Старый ОБЩИЙ значок пяти уровней бч (совпадал у всех) - только для
 # одноразового бэкфилла уже существующих строк, см. ensure() ниже.
@@ -45,7 +53,7 @@ CREATE TABLE IF NOT EXISTS official_achievements (
     icon_emoji_id TEXT,
     icon_fallback TEXT NOT NULL DEFAULT '⭐',
     description TEXT NOT NULL DEFAULT '',
-    rarity INT NOT NULL DEFAULT 1 CHECK (rarity >= 1 AND rarity <= 5),
+    rarity INT NOT NULL DEFAULT 1,
     sort INT NOT NULL DEFAULT 0,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_by BIGINT,
@@ -54,6 +62,11 @@ CREATE TABLE IF NOT EXISTS official_achievements (
 );
 CREATE INDEX IF NOT EXISTS official_achievements_enabled_sort_idx
     ON official_achievements (enabled, sort, id);
+CREATE TABLE IF NOT EXISTS achievement_rarity_levels (
+    rank INT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 _SCHEMA_READY = False
@@ -64,6 +77,13 @@ async def ensure() -> None:
     if _SCHEMA_READY:
         return
     await db.pool.execute(ENSURE_SQL)
+    try:
+        await db.pool.execute(
+            "ALTER TABLE official_achievements DROP CONSTRAINT IF EXISTS official_achievements_rarity_check"
+        )
+    except Exception:
+        pass
+    await ensure_rarity_levels()
     for seed in GBL_OFFICIAL_SEEDS:
         title = seed["title"]
         icon_emoji_id = seed.get("icon_emoji_id")
@@ -103,6 +123,55 @@ async def ensure() -> None:
         except Exception:
             pass
     _SCHEMA_READY = True
+
+
+async def ensure_rarity_levels() -> List[Dict[str, Any]]:
+    for rank, name in DEFAULT_RARITY_NAMES.items():
+        await db.pool.execute(
+            """
+            INSERT INTO achievement_rarity_levels (rank, name)
+            VALUES ($1, $2)
+            ON CONFLICT (rank) DO NOTHING
+            """,
+            int(rank), name,
+        )
+    rows = await db.pool.fetch(
+        "SELECT rank, name FROM achievement_rarity_levels ORDER BY rank ASC"
+    )
+    return [dict(r) for r in rows]
+
+
+async def add_rarity_level(name: str) -> Dict[str, Any]:
+    await ensure()
+    label = " ".join(str(name or "").split())[:40]
+    if not label:
+        raise ValueError("Укажите название уровня")
+    row = await db.pool.fetchrow("SELECT COALESCE(MAX(rank), 0) AS m FROM achievement_rarity_levels")
+    nxt = int((row or {}).get("m") or 0) + 1
+    if nxt > MAX_RARITY_RANK:
+        raise ValueError(f"Максимум {MAX_RARITY_RANK} уровней")
+    await db.pool.execute(
+        "INSERT INTO achievement_rarity_levels (rank, name) VALUES ($1, $2)",
+        nxt, label,
+    )
+    levels = await ensure_rarity_levels()
+    return {"rank": nxt, "name": label, "levels": levels}
+
+
+async def rename_rarity_level(rank: int, name: str) -> Dict[str, Any]:
+    await ensure()
+    label = " ".join(str(name or "").split())[:40]
+    if not label:
+        raise ValueError("Укажите название уровня")
+    r = max(1, min(MAX_RARITY_RANK, int(rank)))
+    tag = await db.pool.execute(
+        "UPDATE achievement_rarity_levels SET name = $2 WHERE rank = $1",
+        r, label,
+    )
+    if not str(tag).endswith("1"):
+        raise ValueError("Уровень не найден")
+    levels = await ensure_rarity_levels()
+    return {"rank": r, "name": label, "levels": levels}
 
 
 def parse_custom_emoji_id(raw: Any) -> Optional[str]:
@@ -229,7 +298,14 @@ async def save_item(data: Dict[str, Any], *, actor_id: int) -> Dict[str, Any]:
     else:
         title_html = compose_title_html(title_raw, fallback=icon_fallback)
     description = str(data.get("description") or "")[:MAX_DESCRIPTION_LEN]
-    rarity = max(1, min(5, int(data.get("rarity") or 1)))
+    new_level_name = str(data.get("new_rarity_name") or "").strip()
+    if new_level_name and not data.get("id"):
+        created = await add_rarity_level(new_level_name)
+        rarity = int(created["rank"])
+    else:
+        levels = await ensure_rarity_levels()
+        top = max((int(x.get("rank") or 1) for x in levels), default=5)
+        rarity = max(1, min(MAX_RARITY_RANK, min(top, int(data.get("rarity") or 1))))
     sort = int(data.get("sort") or 0)
     enabled = bool(data.get("enabled", True))
     oid = data.get("id")
@@ -300,8 +376,10 @@ async def remove_item(official_id: int) -> bool:
 async def overview() -> Dict[str, Any]:
     await ensure()
     items = await list_catalog(enabled_only=False)
+    rarity_levels = await ensure_rarity_levels()
     return {
         "items": items,
+        "rarity_levels": rarity_levels,
         "defaults": {
             "icon_emoji_id": DEFAULT_ICON_EMOJI_ID,
             "icon_fallback": DEFAULT_ICON_FALLBACK,
@@ -314,7 +392,7 @@ async def overview() -> Dict[str, Any]:
             "title": "Название на витрине профиля. Для gbl_level_* меняйте здесь — так и выдастся.",
             "icon_emoji_id": "ID Telegram Premium emoji. Пусто — используется обычный emoji ниже. Значок должен быть уникальным среди всех наград.",
             "icon_fallback": "Обычный emoji (виден всем, даже без Telegram Premium). Тоже должен быть уникальным.",
-            "rarity": "Редкость 1–5 — для сортировки и визуального веса.",
+            "rarity": "Уровень награды. Звёзды и подпись берутся из шкалы уровней. Новое достижение может добавить новый уровень со своим названием.",
             "sort": "Порядок в каталоге выдачи (меньше = выше).",
             "grant_user_id": "Telegram user_id игрока, которому выдаём или снимаем награду.",
             "grant_free_title": "Текст свободной награды. Premium-эмодзи: вставьте {emoji:ID} или кнопкой «В название». Без ссылок.",
@@ -445,6 +523,12 @@ async def grant_official_to_user(
         "granted_by_name": (actor_name or "Админ-панель")[:64],
         "source": "panel",
         "unique_code": unique,
+        "rarity": max(1, min(MAX_RARITY_RANK, int(row["rarity"] or 1))),
+        "rarity_name": next(
+            (str(x.get("name") or "") for x in await ensure_rarity_levels()
+             if int(x.get("rank") or 0) == max(1, min(MAX_RARITY_RANK, int(row["rarity"] or 1)))),
+            DEFAULT_RARITY_NAMES.get(int(row["rarity"] or 1)) or "",
+        ),
     }
     doc["items"][iid] = item
     insert_at = 0
@@ -530,6 +614,8 @@ async def list_user_achievements(user_id: int) -> Dict[str, Any]:
             "icon_fallback": it.get("icon_fallback") or DEFAULT_ICON_FALLBACK,
             "icon_emoji_id": it.get("icon_emoji_id"),
             "title_html": it.get("title_html") or "",
+            "rarity": it.get("rarity"),
+            "rarity_name": it.get("rarity_name"),
             "granted_at": it.get("granted_at"),
             "granted_by": it.get("granted_by"),
             "granted_by_name": it.get("granted_by_name"),

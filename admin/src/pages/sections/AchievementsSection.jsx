@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  addAchievementRarityLevel,
   deleteOfficialAchievement,
   fetchAchievementsOverview,
   fetchUserAchievements,
@@ -96,9 +97,16 @@ function SliderRow({ label, help, value, min, max, step = 1, onChange, suffix = 
   )
 }
 
-function rarityDots(n) {
-  const v = Math.max(1, Math.min(5, Number(n) || 1))
-  return '●'.repeat(v) + '○'.repeat(5 - v)
+function rarityDots(n, max = 5) {
+  const top = Math.max(1, Number(max) || 5)
+  const v = Math.max(1, Math.min(top, Number(n) || 1))
+  return '★'.repeat(v) + '☆'.repeat(Math.max(0, top - v))
+}
+
+function rarityName(levels, rank) {
+  const r = Number(rank) || 1
+  const hit = (levels || []).find((x) => Number(x.rank) === r)
+  return hit?.name || `уровень ${r}`
 }
 
 // Значок «занят» — тем же правилом, что и на бэкенде (find_icon_conflict):
@@ -119,6 +127,15 @@ export default function AchievementsSection({ onOpenUser } = {}) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [items, setItems] = useState([])
+  const [rarityLevels, setRarityLevels] = useState([
+    { rank: 1, name: 'обычно' },
+    { rank: 2, name: 'заметно' },
+    { rank: 3, name: 'редко' },
+    { rank: 4, name: 'очень редко' },
+    { rank: 5, name: 'легенда' },
+  ])
+  const [newLevelName, setNewLevelName] = useState('')
+  const [addingLevel, setAddingLevel] = useState(false)
   const [help, setHelp] = useState({})
   const [draft, setDraft] = useState({ ...EMPTY })
   const [q, setQ] = useState('')
@@ -141,6 +158,9 @@ export default function AchievementsSection({ onOpenUser } = {}) {
     try {
       const data = await fetchAchievementsOverview()
       setItems(Array.isArray(data.items) ? data.items : [])
+      if (Array.isArray(data.rarity_levels) && data.rarity_levels.length) {
+        setRarityLevels(data.rarity_levels)
+      }
       setHelp(data.help || {})
     } catch (e) {
       notifyAdmin(String(e?.message || e), { error: true })
@@ -190,7 +210,31 @@ export default function AchievementsSection({ onOpenUser } = {}) {
     })
   }
 
-  const resetDraft = () => setDraft({ ...EMPTY })
+  const rarityMax = Math.max(1, ...rarityLevels.map((x) => Number(x.rank) || 1))
+
+  const resetDraft = () => setDraft({ ...EMPTY, rarity: 1 })
+
+  const onAddLevel = async () => {
+    const name = String(newLevelName || '').trim()
+    if (!name) {
+      notifyAdmin('Введите название нового уровня — например «мифический»', { error: true })
+      return
+    }
+    setAddingLevel(true)
+    try {
+      const res = await addAchievementRarityLevel(name)
+      const levels = Array.isArray(res.levels) ? res.levels : []
+      if (levels.length) setRarityLevels(levels)
+      const rank = Number(res.rank) || levels.length
+      setDraft((d) => ({ ...d, rarity: rank }))
+      setNewLevelName('')
+      notifyAdmin(`Новый уровень ${rank}: ${name}`)
+    } catch (e) {
+      notifyAdmin(String(e?.message || e), { error: true })
+    } finally {
+      setAddingLevel(false)
+    }
+  }
 
   const persistItem = async (payload) => {
     const res = await saveOfficialAchievement(payload)
@@ -212,7 +256,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
         icon_emoji_id: parseEmojiId(draft.icon_emoji_id) || null,
         icon_fallback: String(draft.icon_fallback || '⭐').slice(0, 8),
         description: String(draft.description || '').slice(0, 400),
-        rarity: Math.max(1, Math.min(5, Number(draft.rarity) || 1)),
+        rarity: Math.max(1, Math.min(rarityMax, Number(draft.rarity) || 1)),
         sort: Math.max(SORT_MIN, Math.min(SORT_MAX, Number(draft.sort) || 0)),
         enabled: !!draft.enabled,
       }
@@ -459,13 +503,48 @@ export default function AchievementsSection({ onOpenUser } = {}) {
               </p>
             ) : null}
             <SliderRow
-              label={`Редкость ${rarityDots(draft.rarity)}`}
-              help={help.rarity}
-              value={draft.rarity}
+              label={`${rarityDots(draft.rarity, rarityMax)}  ${rarityName(rarityLevels, draft.rarity)}`}
+              help={help.rarity || 'Уровень из шкалы. Новое достижение может получить новый уровень со своим названием.'}
+              value={Math.min(rarityMax, Number(draft.rarity) || 1)}
               min={1}
-              max={5}
+              max={rarityMax}
               onChange={(n) => setDraft({ ...draft, rarity: n })}
             />
+            <div className="ach-levels">
+              <span className="ach-preview-label">Шкала уровней · {rarityLevels.length}</span>
+              <div className="ach-level-chips">
+                {rarityLevels.map((lv) => (
+                  <button
+                    key={lv.rank}
+                    type="button"
+                    className={`ach-level-chip${Number(draft.rarity) === Number(lv.rank) ? ' ach-level-chip-on' : ''}`}
+                    onClick={() => setDraft({ ...draft, rarity: Number(lv.rank) })}
+                  >
+                    <b>{lv.rank}</b>
+                    <span>{lv.name}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="ach-emoji-row" style={{ marginTop: '.65rem' }}>
+                <input
+                  value={newLevelName}
+                  onChange={(e) => setNewLevelName(e.target.value)}
+                  placeholder="Название нового уровня — необычный, мифический…"
+                  maxLength={40}
+                />
+                <button
+                  type="button"
+                  className="ach-btn ach-btn-compact"
+                  disabled={addingLevel}
+                  onClick={onAddLevel}
+                >
+                  {addingLevel ? '…' : 'Добавить уровень'}
+                </button>
+              </div>
+              <p className="ach-field-help">
+                По умолчанию 5 уровней. Новое официальное достижение может открыть следующий — со своим названием. В Telegram звёзды и подпись берутся отсюда.
+              </p>
+            </div>
             <SliderRow
               label="Позиция в каталоге"
               help="Меньше — выше в списке выдачи. Тяните ползунок или сдвигайте стрелками справа."
@@ -496,7 +575,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
               {draft.icon_emoji_id ? <span className="ach-pro-badge" title="Premium-эмодзи Telegram">PRO</span> : null}
             </div>
             <div className="ach-preview-meta">
-              rarity {draft.rarity}/5 · pos {draft.sort} · {draft.enabled ? 'on' : 'off'}
+              {rarityName(rarityLevels, draft.rarity)} · {draft.rarity}/{rarityMax} · pos {draft.sort} · {draft.enabled ? 'on' : 'off'}
               {draft.icon_emoji_id ? (
                 <span className="ach-preview-meta-note"> · превью показывает fallback-emoji — реальный premium-значок увидите в Telegram</span>
               ) : null}
@@ -528,7 +607,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
                   </span>
                   <span className="ach-card-body">
                     <strong>{it.title}</strong>
-                    <span className="ach-card-code">{it.code} · pos {it.sort} · {rarityDots(it.rarity)}</span>
+                    <span className="ach-card-code">{it.code} · pos {it.sort} · {rarityDots(it.rarity, rarityMax)} {rarityName(rarityLevels, it.rarity)}</span>
                   </span>
                 </button>
                 <button type="button" className="ach-card-del" onClick={() => onDelete(it.id)} title="Удалить">×</button>
@@ -599,7 +678,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
                   </span>
                   <span className="ach-pick-body">
                     <strong>{it.title}</strong>
-                    <span>{rarityDots(it.rarity)} · {it.code}</span>
+                    <span>{rarityDots(it.rarity, rarityMax)} {rarityName(rarityLevels, it.rarity)} · {it.code}</span>
                   </span>
                   {selected ? <span className="ach-pick-check">выбрано</span> : null}
                 </button>
