@@ -5,6 +5,7 @@ import { NAV_ICONS } from './NavIcons'
 import SessionTimer from './SessionTimer'
 import EpsilonLogo from './EpsilonLogo'
 import AccentPalette from './AccentPalette'
+import { useIsPhone } from '../lib/useIsDesktop'
 
 function SpeakerIcon({ muted }) {
   return (
@@ -35,6 +36,62 @@ function SpeakerIcon({ muted }) {
   )
 }
 
+function SettingsControls({
+  accent,
+  onAccentChange,
+  onSessionExpired,
+  musicVolume,
+  onToggleMusic,
+  onMusicVolumeChange,
+  lightMode,
+  onTogglePerf,
+}) {
+  return (
+    <>
+      <AccentPalette value={accent} onChange={onAccentChange} />
+
+      <SessionTimer compact onExpired={onSessionExpired} />
+
+      <div className="panel-music-card">
+        <div className="panel-music-head">
+          <button
+            type="button"
+            className="panel-music-icon-btn"
+            onClick={onToggleMusic}
+            title={musicVolume > 0 ? 'Выключить музыку' : 'Включить музыку'}
+            aria-pressed={musicVolume > 0}
+          >
+            <SpeakerIcon muted={musicVolume <= 0} />
+          </button>
+          <span className="panel-music-label">Музыка</span>
+          <span className="panel-music-pct">{Math.round(musicVolume * 100)}%</span>
+        </div>
+        <input
+          type="range"
+          className="panel-music-slider"
+          min={0}
+          max={100}
+          step={1}
+          value={Math.round(musicVolume * 100)}
+          onChange={(e) => onMusicVolumeChange(Number(e.target.value) / 100)}
+          style={{ '--vol-pct': `${Math.round(musicVolume * 100)}%` }}
+          aria-label="Громкость музыки"
+        />
+      </div>
+
+      <button
+        type="button"
+        className={`panel-perf-btn${lightMode ? ' panel-perf-btn-active' : ''}`}
+        onClick={onTogglePerf}
+        title={lightMode ? 'Чёрно-белый лёгкий режим' : 'Цветной HD — подсветка из палитры'}
+      >
+        <span aria-hidden="true">{lightMode ? '◈' : '⬡'}</span>
+        {lightMode ? 'Ч/Б · лёгкий' : 'HD · цвет'}
+      </button>
+    </>
+  )
+}
+
 export default function PanelSidebar({
   sections,
   activeSection,
@@ -54,13 +111,14 @@ export default function PanelSidebar({
   onAccentChange,
   recentSectionIds = [],
 }) {
+  const isPhone = useIsPhone()
   const { displayName, username, photoUrl } = getAdminProfile()
   const initials = getAdminInitials(displayName)
   const [navQuery, setNavQuery] = useState('')
   const settingsRef = useRef(null)
 
   const closeSettings = () => {
-    if (settingsRef.current?.open) settingsRef.current.open = false
+    if (isPhone && settingsRef.current?.open) settingsRef.current.open = false
   }
 
   const goTo = (id) => {
@@ -93,17 +151,30 @@ export default function PanelSidebar({
   }, [sections, recentSectionIds])
 
   useEffect(() => {
+    if (!isPhone) return undefined
     if (!mobileOpen) {
       setNavQuery('')
       closeSettings()
     }
-  }, [mobileOpen])
+    return undefined
+  }, [mobileOpen, isPhone])
+
+  const settingsProps = {
+    accent,
+    onAccentChange,
+    onSessionExpired,
+    musicVolume,
+    onToggleMusic,
+    onMusicVolumeChange,
+    lightMode,
+    onTogglePerf,
+  }
 
   return (
     <aside
       className={`panel-shelf panel-shelf-sidebar${mobileOpen ? ' panel-sidebar-mobile-open' : ''}`}
     >
-      {/* Mobile drawer chrome — на desktop скрыт */}
+      {/* Mobile drawer chrome — на desktop скрыт CSS */}
       <div className="panel-sidebar-grab">
         <div className="panel-sidebar-drawer-head">
           <h2 className="panel-sidebar-drawer-title">Меню</h2>
@@ -233,62 +304,28 @@ export default function PanelSidebar({
           </div>
         </div>
 
-        {/*
-          Desktop: тело настроек всегда видно (summary скрыт CSS).
-          Mobile: свёрнутый блок «Настройки» — при открытии явный «Свернуть ▲».
-        */}
-        <details ref={settingsRef} className="panel-sidebar-settings">
-          <summary className="panel-sidebar-settings-sum">
-            <span className="panel-sidebar-settings-label">Настройки</span>
-            <span className="panel-sidebar-settings-cue" aria-hidden="true">
-              <span className="panel-sidebar-settings-hint-closed">Открыть</span>
-              <span className="panel-sidebar-settings-hint-open">Свернуть</span>
-              <span className="panel-sidebar-settings-chevron">▾</span>
-            </span>
-          </summary>
-          <div className="panel-sidebar-settings-body">
-            <AccentPalette value={accent} onChange={onAccentChange} />
-
-            <SessionTimer compact onExpired={onSessionExpired} />
-
-            <div className="panel-music-card">
-              <div className="panel-music-head">
-                <button
-                  type="button"
-                  className="panel-music-icon-btn"
-                  onClick={onToggleMusic}
-                  title={musicVolume > 0 ? 'Выключить музыку' : 'Включить музыку'}
-                  aria-pressed={musicVolume > 0}
-                >
-                  <SpeakerIcon muted={musicVolume <= 0} />
-                </button>
-                <span className="panel-music-label">Музыка</span>
-                <span className="panel-music-pct">{Math.round(musicVolume * 100)}%</span>
-              </div>
-              <input
-                type="range"
-                className="panel-music-slider"
-                min={0}
-                max={100}
-                step={1}
-                value={Math.round(musicVolume * 100)}
-                onChange={(e) => onMusicVolumeChange(Number(e.target.value) / 100)}
-                style={{ '--vol-pct': `${Math.round(musicVolume * 100)}%` }}
-                aria-label="Громкость музыки"
-              />
+        {isPhone ? (
+          <details ref={settingsRef} className="panel-sidebar-settings">
+            <summary className="panel-sidebar-settings-sum">
+              <span className="panel-sidebar-settings-label">Настройки</span>
+              <span className="panel-sidebar-settings-cue" aria-hidden="true">
+                <span className="panel-sidebar-settings-hint-closed">Открыть</span>
+                <span className="panel-sidebar-settings-hint-open">Свернуть</span>
+                <span className="panel-sidebar-settings-chevron">▾</span>
+              </span>
+            </summary>
+            <div className="panel-sidebar-settings-body">
+              <SettingsControls {...settingsProps} />
             </div>
-
-            <button
-              type="button"
-              className={`panel-perf-btn${lightMode ? ' panel-perf-btn-active' : ''}`}
-              onClick={onTogglePerf}
-              title={lightMode ? 'Чёрно-белый лёгкий режим' : 'Цветной HD — подсветка из палитры'}
-            >
-              <span aria-hidden="true">{lightMode ? '◈' : '⬡'}</span>
-              {lightMode ? 'Ч/Б · лёгкий' : 'HD · цвет'}
-            </button>
+          </details>
+        ) : (
+          /* ПК как до телефонов: палитра + музыка всегда на виду */
+          <div className="panel-sidebar-settings panel-sidebar-settings-desktop">
+            <div className="panel-sidebar-settings-body">
+              <SettingsControls {...settingsProps} />
+            </div>
           </div>
-        </details>
+        )}
 
         <button type="button" className="panel-logout-btn" onClick={onLogout}>
           Выйти
