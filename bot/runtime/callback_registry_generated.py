@@ -449,6 +449,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'topic:': ('server.support_bot', 'cb_topic'),
     'wdact:': ('main', 'admin_withdraw_action_handler'),
     'achm_': ('main', 'achievements_callbacks'),
+    'achv_': ('main', 'achievements_callbacks'),
     'ball_': ('bot.games.balls', 'process_callback_ball'),
     'bomb_': ('bot.games.bombs', 'bombs_process_bomb_click'),
     'ffunc': ('bot.funcs.help', 'caakdoakscijllback_top'),

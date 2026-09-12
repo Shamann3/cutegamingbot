@@ -1041,10 +1041,15 @@ async def handle_achievements_callback(callback: CallbackQuery, db) -> bool:
         or data.startswith("ach_rev")
         or data.startswith("achm_")
         or data.startswith("achc_")
+        or data.startswith("achv_")
     ):
         return False
 
     user_id = int(callback.from_user.id)
+
+    if data.startswith("achv_"):
+        from bot.handlers.achievements_view import handle_achievements_view_callback
+        return await handle_achievements_view_callback(callback, db)
 
     if data.startswith("achc_"):
         return await _handle_wizard_cb(callback, db, user_id, data)
@@ -1348,10 +1353,8 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
 
     if action in ("achm_all", "achm_pg"):
         await _ack()
-        doc = await ach.get_user_achievements_doc(db, target)
-        rows = ach.sorted_items_for_display(doc)
-        _, page, _, _ = ach.paginate_items(rows, page, ach.PAGE_SIZE)
-        text = ach.format_full_achievements_html(doc, page=page)
+        from bot.handlers.achievements_view import render_achievements_page
+        doc, text = await render_achievements_page(db, target, page, manage=is_owner)
         kb = _build_manage_keyboard(viewer, target, doc, is_owner=is_owner, page=page)
         _schedule_achm_render(callback.message, text, kb)
         return True
@@ -1422,9 +1425,8 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
     else:
         return False
 
-    rows = ach.sorted_items_for_display(doc)
-    _, page, _, _ = ach.paginate_items(rows, page, ach.PAGE_SIZE)
-    text = ach.format_full_achievements_html(doc, page=page)
+    from bot.handlers.achievements_view import render_achievements_page
+    doc, text = await render_achievements_page(db, target, page, manage=True)
     kb = _build_manage_keyboard(viewer, target, doc, is_owner=True, page=page)
     _schedule_achm_render(callback.message, text, kb)
     return True
@@ -1453,7 +1455,15 @@ def _build_manage_keyboard(
     page_rows, page_i, pages, total = ach.paginate_items(ordered, page, ach.PAGE_SIZE)
     showcase_ids = [iid for iid, _ in ach.showcase_items(doc_n, ach.SHOWCASE_LIMIT)]
 
-    rows.append([_profile_back_button(viewer, target)])
+    if is_owner:
+        rows.append([_profile_back_button(viewer, target)])
+    else:
+        rows.append([_btn(
+            text="Профиль",
+            callback_data=f"achm_back:{int(viewer)}:{int(target)}",
+            style="primary",
+            icon_custom_emoji_id="5226660202035554522",
+        )])
 
     if is_owner and ordered:
         rows.append([_btn(
@@ -1506,7 +1516,22 @@ def _build_manage_keyboard(
     if nav:
         rows.append(nav)
 
-    rows.append([_profile_back_button(viewer, target)])
+    if is_owner:
+        rows.append([_profile_back_button(viewer, target)])
+    else:
+        rows.append([
+            _btn(
+                text="Профиль",
+                callback_data=f"achm_back:{int(viewer)}:{int(target)}",
+                style="primary",
+                icon_custom_emoji_id="5226660202035554522",
+            ),
+            _btn(
+                text="Закрыть",
+                callback_data=f"achv_x:{int(viewer)}:{int(target)}",
+                style="default",
+            ),
+        ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

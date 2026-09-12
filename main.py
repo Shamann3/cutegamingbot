@@ -292,6 +292,7 @@ async def _sypher_diag_gate(message: Message):
     or c.data.startswith("ach_rev")
     or c.data.startswith("achm_")
     or c.data.startswith("achc_")
+    or c.data.startswith("achv_")
 ))
 async def achievements_callbacks(callback: CallbackQuery):
     from bot.handlers.achievements_admin import handle_achievements_callback
@@ -34318,6 +34319,10 @@ async def add_firstname_to_usercheck_balance(message: Message):
             if handled:
                 schedule_message_housekeeping(db, message, start_balance=start_balance, bot=bot1)
                 return
+        from bot.handlers.achievements_view import handle_achievements_view_message
+        if await handle_achievements_view_message(message, db):
+            schedule_message_housekeeping(db, message, start_balance=start_balance, bot=bot1)
+            return
     except Exception as _ach_e:
         print(f"[ACH] admin msg skip: {_ach_e!r}")
 

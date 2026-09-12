@@ -92,7 +92,7 @@ PRIORITY_PREFIXES: List[str] = [
     "ob_",
 
     # --- достижения профиля ---
-    "ach_", "achm_",
+    "ach_", "achm_", "achv_",
 
     # --- орёл / шахматы / memory / bingo / рулетка / кости ---
     "joinorel", "startorel", "rollorel",

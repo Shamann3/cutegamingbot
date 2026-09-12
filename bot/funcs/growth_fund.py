@@ -3,12 +3,10 @@
 Общий Фонд Роста - комиссия игры и её честное распределение.
 
 Идея одной фразой: небольшой процент с ХОДА игры (не с баланса "просто так")
-уходит на 3 адреса - в единый технический резерв проекта (GROWTH_FUND_HOUSE_CHAT_ID,
-одинаково для PvE и PvP), в Фонд Роста (копится на будущие дивиденды активным
-игрокам) и на развитие проекта. Всё открыто: игрок в любой момент видит сумму,
-процент и куда именно она делась (кнопка "Комиссия игры"), а владелец проекта
-получает личное уведомление о КАЖДОМ событии + может открыть полную статистику
-по периодам (команда "статистика комиссий" - день/неделя/месяц/год/всё время).
+целиком зачисляется на баланс единой группы-резерва GROWTH_FUND_HOUSE_CHAT_ID
+(-1003855337972), одинаково для PvE и PvP. Всё открыто: игрок видит сумму
+и процент (кнопка "Комиссия игры"), владелец получает личное уведомление
+о КАЖДОМ событии + статистику по периодам (команда "статистика комиссий").
 
 Все проценты и переключатели - в bot/config/config.py (GROWTH_FUND_*).
 Здесь - только расчёт и запись, без завязки на конкретную игру.
@@ -31,7 +29,7 @@
 apply_commission_pvp() вместо apply_commission() (см. её докстринг ниже).
 
 apply_commission() ничего не платит игроку и не трогает bot-логику самой игры -
-только считает комиссию, списывает её долю в единый резерв/фонд и пишет аудит
+только считает комиссию, зачисляет её целиком в единый резерв и пишет аудит
 (плюс шлёт владельцу личное уведомление - см. _notify_owner_commission).
 Вычитание из пота/payout остаётся на стороне вызывающей игры (в каждой игре
 свой порядок раздачи денег, лезть туда отсюда нельзя).
@@ -323,13 +321,43 @@ def compute_commission(
 
 def _get_house_chat_id() -> int:
     """Единый технический резерв (см. GROWTH_FUND_HOUSE_CHAT_ID в config.py) -
-    сюда уходит доля "chat_balance" ВСЕХ комиссий, PvE и PvP одинаково."""
+    сюда уходит ВСЯ комиссия каждой игры, PvE и PvP одинаково."""
     import bot.config.config as cfg
 
     house = int(getattr(cfg, "GROWTH_FUND_HOUSE_CHAT_ID", 0) or 0)
     if house:
         return house
     return int(getattr(cfg, "GROWTH_FUND_PVP_HOUSE_CHAT_ID", 0) or 0)
+
+
+async def _credit_house_kuts(db, bot, amount: int, *, dest_chat_id: Optional[int] = None) -> bool:
+    """
+    Зачисляет amount кут на баланс группы-резерва через add_to_chatbalance.
+    Возвращает True только если баланс реально увеличен. При False комиссия
+    уже могла быть вычтена из выплаты игроку — это пишется в лог громко.
+    """
+    house = int(dest_chat_id or _get_house_chat_id() or 0)
+    try:
+        amount = int(amount or 0)
+    except Exception:
+        amount = 0
+    if not house or amount <= 0:
+        _vdbg(f"[ФОНД РОСТА] house credit skip chat={house} amount={amount}")
+        return False
+
+    last_err = None
+    for attempt in (1, 2):
+        try:
+            ok = await db.add_to_chatbalance(bot, house, amount)
+            if ok:
+                _vdbg(f"[ФОНД РОСТА] house credit ok chat={house} +{amount} attempt={attempt}")
+                return True
+            last_err = "add_to_chatbalance returned False"
+        except Exception as e:
+            last_err = e
+        _vdbg(f"[ФОНД РОСТА] house credit fail chat={house} +{amount} attempt={attempt}: {last_err!r}")
+
+    return False
 
 
 async def apply_commission(
@@ -346,13 +374,10 @@ async def apply_commission(
 ) -> Optional[Dict[str, Any]]:
     """
     Считает и ПРИМЕНЯЕТ комиссию игры за один раунд:
-      1) единый технический резерв проекта (GROWTH_FUND_HOUSE_CHAT_ID) - через
-         db.add_to_chatbalance (кэш/фастлейн не трогаем сами). Раньше эта доля
-         возвращалась в баланс ТОЙ группы, где сыграли; теперь - по решению
-         владельца проекта - ВСЕ комиссии (PvE и PvP) собираются в одном месте.
-      2) Фонд Роста (growth_fund_pool, тот же единый резерв) - копится на
-         будущие дивиденды активным игрокам
-      3) доля проекта - только фиксируется в журнале (growth_fund_ledger), отдельного кошелька нет
+      1) ВСЯ сумма commission зачисляется на баланс GROWTH_FUND_HOUSE_CHAT_ID
+         через db.add_to_chatbalance. Не доля, не сплит — вся удержанная сумма.
+      2) Журнал (growth_fund_ledger / pool / stats) пишет разметку из
+         GROWTH_FUND_SPLIT. При chat_balance=1.0 она совпадает с реальными кутами.
     плюс пишет:
       • growth_fund_ledger         - 1 строка на каждое событие (аудит; chat_id
                                       в строке - НАСТОЯЩАЯ группа, где сыграли,
@@ -402,17 +427,19 @@ async def apply_commission(
     to_fund = result["to_growth_fund"]
     to_project = result["to_project"]
 
-    # Единый резерв - и для "баланса группы", и для пула Фонда Роста. Если
-    # конфиг вдруг не задан (0/None) - fail-safe откат на настоящий chat_id,
-    # чтобы куты не терялись в никуда.
+    # Единый резерв: вся комиссия, не доля split. Если конфиг вдруг не задан
+    # (0/None) - fail-safe откат на настоящий chat_id, чтобы куты не терялись.
     money_chat_id = _get_house_chat_id() or chat_id
-
-    # 1) Резерв проекта - через существующую защищённую функцию (кэш/фастлейн внутри неё).
-    if to_chat > 0:
-        try:
-            await db.add_to_chatbalance(bot, money_chat_id, to_chat)
-        except Exception as e:
-            _vdbg(f"[ФОНД РОСТА] add_to_chatbalance fail chat={money_chat_id} amount={to_chat}: {e!r}")
+    credited = await _credit_house_kuts(
+        db, bot, result["commission"], dest_chat_id=money_chat_id,
+    )
+    result["house_chat_id"] = money_chat_id
+    result["house_credited"] = bool(credited)
+    if not credited:
+        _vdbg(
+            f"[ФОНД РОСТА] ВНИМАНИЕ: комиссия {result['commission']} кут удержана, "
+            f"но НЕ зачислена в группу {money_chat_id}"
+        )
 
     # 2) Пул Фонда Роста (единый резерв) + 3) журнал (настоящий chat_id - аудит)
     # + 4) лайфтайм-статистика игрока + 5) лайфтайм-итог по ВСЕМ комиссиям.
@@ -593,15 +620,18 @@ async def _notify_owner_commission(
     else:
         lines.append(f"<tg-emoji emoji-id='5386473766161238258'>🎮</tg-emoji> <b>PvE · Игрок <code>{int(user_id)}</code></b>")
 
+    house_id = int(result.get("house_chat_id") or _get_house_chat_id() or 0)
+    credited = result.get("house_credited")
+    credit_note = "зачислено" if credited else "НЕ зачислено — проверь лог"
+
     lines.append("")
     lines.append(f"<b>Банк раунда : {_fmt(pot)} кут</b>")
     lines.append(f"<b>Комиссия : {_fmt(commission)} кут <i>({pct_str}%)</i></b>")
     lines.append("")
     lines.append(
         "<blockquote>"
-        f"<tg-emoji emoji-id='5388581564311417657'>💠</tg-emoji> <b>Резерв проекта : {_fmt(result.get('to_chat_balance', 0))} кут</b>\n"
-        f"<tg-emoji emoji-id='5235566774501525440'>🌱</tg-emoji> <b>Фонд Роста : {_fmt(result.get('to_growth_fund', 0))} кут</b>\n"
-        f"<tg-emoji emoji-id='5389057356493511934'>🚀</tg-emoji> <b>Развитие проекта : {_fmt(result.get('to_project', 0))} кут</b>"
+        f"<tg-emoji emoji-id='5388581564311417657'>💠</tg-emoji> <b>В группу <code>{house_id}</code> : {_fmt(commission)} кут</b>\n"
+        f"<i>{credit_note}</i>"
         "</blockquote>"
     )
 
@@ -646,13 +676,11 @@ async def apply_commission_pvp(
     баланс группы), а часть PvP-игр работает в inline-режиме, где у бота
     физически нет chat_id переписки (Telegram inline API его не сообщает).
 
-    Поэтому здесь: доля "chat_balance" из комиссии всегда уходит в единый
-    технический резерв GROWTH_FUND_HOUSE_CHAT_ID (см. config.py) вместо
-    группы, где сыграли, - одинаково для чат-версий и inline-версий игр.
-    Уровень ★ для расчёта ставки комиссии тоже берётся у этого резерва
-    (единый тариф для всех PvP-раундов, не зависящий от конкретной группы).
-    (С недавних пор туда же, в тот же резерв, уходит и доля "chat_balance"
-    ВСЕХ PvE-комиссий - см. apply_commission() - резерв теперь общий.)
+    Поэтому здесь: ВСЯ комиссия уходит в единый технический резерв
+    GROWTH_FUND_HOUSE_CHAT_ID (см. config.py) вместо группы, где сыграли —
+    одинаково для чат-версий и inline-версий игр. Уровень ★ для ставки
+    комиссии тоже берётся у этого резерва (единый тариф для всех PvP).
+    Туда же целиком уходят и все PvE-комиссии — см. apply_commission().
 
     Дополнительно шлёт владельцу проекта личное уведомление о раунде (со
     списком победителя/проигравших - см. _notify_owner_commission) - вместо
@@ -1180,9 +1208,10 @@ def format_commission_stats_text(stats: Dict[str, Any]) -> str:
         f"<b>Собрано за период : {_fmt(commission)} кут {trend_line}</b>\n"
         f"<b>Среднее за событие : {_fmt(avg)} кут {top_game_line}</b>\n\n"
         "<blockquote>"
-        f"<tg-emoji emoji-id='5388581564311417657'>💠</tg-emoji> <b>Резерв проекта - {_fmt(to_chat)} кут</b>\n"
-        f"<tg-emoji emoji-id='5235566774501525440'>🌱</tg-emoji> <b>Фонд Роста - {_fmt(to_fund)} кут</b>\n"
-        f"<tg-emoji emoji-id='5389057356493511934'>🚀</tg-emoji> <b>Развитие проекта - {_fmt(to_project)} кут</b>"
+        f"<tg-emoji emoji-id='5388581564311417657'>💠</tg-emoji> <b>На баланс резерва : {_fmt(to_chat)} кут</b>\n"
+        f"<i>группа <code>{_get_house_chat_id()}</code></i>\n"
+        f"<tg-emoji emoji-id='5235566774501525440'>🌱</tg-emoji> <b>Фонд Роста (старые строки) : {_fmt(to_fund)} кут</b>\n"
+        f"<tg-emoji emoji-id='5389057356493511934'>🚀</tg-emoji> <b>Развитие (старые строки) : {_fmt(to_project)} кут</b>"
         "</blockquote>\n\n"
         "Разбивка по типу игр :\n"
         f"<b><tg-emoji emoji-id='5408830063074365909'>🎮</tg-emoji> PvE : {_fmt(pve_c)} кут <i>({_fmt(pve_n)} раунд.)</i></b>\n"

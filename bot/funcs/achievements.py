@@ -914,12 +914,26 @@ def format_full_achievements_html(
     owner_name: str = "",
     page: int = 0,
     page_size: int = PAGE_SIZE,
+    mode: str = "manage",
+    owner_html: str = "",
 ) -> str:
+    viewing = str(mode or "manage") == "view"
+    who = (owner_html or "").strip() or (
+        html.escape(owner_name) if owner_name else ""
+    )
     rows = sorted_items_for_display(doc)
     if not rows:
+        if viewing:
+            return (
+                f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
+                f"<b>Достижения</b>\n"
+                + (f"{who}\n\n" if who else "\n")
+                + "У игрока пока нет наград.\n"
+                f"<i>только просмотр</i>"
+            )
         return (
             f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-            f"<b>Достижения</b>\n\n"
+            f"<b>Ваши достижения</b>\n\n"
             f"Пока пусто.\n"
             f"<i>Поднимите уровень группы — и здесь появится первая награда.</i>"
         )
@@ -927,11 +941,17 @@ def format_full_achievements_html(
     showcase_ids = {iid for iid, _ in showcase_items(doc, SHOWCASE_LIMIT)}
     showcase_list = [x for x, _ in showcase_items(doc, SHOWCASE_LIMIT)]
     pager = f"{page_i + 1} из {pages} · {total} наград" if pages > 1 else f"{total} наград"
+    title = "Достижения" if viewing else "Ваши достижения"
+    subtitle = (
+        f"только просмотр · витрина в профиле — первые {SHOWCASE_LIMIT}"
+        if viewing
+        else "настройте витрину и порядок кнопками ниже"
+    )
     parts = [
         f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-        f"<b>Достижения</b>"
-        + (f"\n{html.escape(owner_name)}" if owner_name else ""),
-        f"<i>витрина профиля — первые {SHOWCASE_LIMIT}</i>",
+        f"<b>{title}</b>"
+        + (f"\n{who}" if who else ""),
+        f"<i>{subtitle}</i>",
         f"<i>{pager}</i>",
         "",
     ]
