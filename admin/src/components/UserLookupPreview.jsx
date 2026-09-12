@@ -7,9 +7,18 @@ function fmt(n) {
   return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(v)
 }
 
+function pickFields(u) {
+  if (!u) return null
+  const uid = Number(u.userId ?? u.user_id)
+  const name = u.displayName || u.firstName || u.first_name || u.name || (uid ? `Игрок ${uid}` : '')
+  const uname = u.username ? `@${String(u.username).replace(/^@/, '')}` : null
+  return { uid, name, uname, balance: u.balance, banned: u.banned, raw: u }
+}
+
 /**
  * Мини-превью игрока над полем ввода (id / @username / имя).
- * Клик → onOpenUser(userId).
+ * Клик по карточке → onOpenUser(userId).
+ * Можно выбрать из списка совпадений.
  */
 export default function UserLookupPreview({
   value,
@@ -41,9 +50,10 @@ export default function UserLookupPreview({
       try {
         const data = await searchAdminUsers(q)
         const items = Array.isArray(data?.results) ? data.results : Array.isArray(data?.items) ? data.items : []
-        setHits(items.slice(0, 5))
+        setHits(items.slice(0, 6))
         const asId = q.replace(/^@/, '')
         const exact = items.find((u) => String(u.userId || u.user_id) === asId)
+          || items.find((u) => String(u.username || '').toLowerCase() === asId.toLowerCase())
           || (items.length === 1 ? items[0] : null)
         if (exact) {
           setPicked(exact)
@@ -65,12 +75,19 @@ export default function UserLookupPreview({
     }
   }, [value])
 
-  const show = picked || (hits.length > 0 && String(value || '').trim().length >= 2)
+  const card = pickFields(picked)
+  const list = hits.map(pickFields).filter(Boolean)
+  const showList = !picked && list.length > 1
+  const showCard = Boolean(card)
 
-  const card = picked || hits[0]
-  const uid = card ? Number(card.userId ?? card.user_id) : null
-  const name = card?.displayName || card?.firstName || card?.first_name || card?.name || (uid ? `Игрок ${uid}` : '')
-  const uname = card?.username ? `@${String(card.username).replace(/^@/, '')}` : null
+  const choose = (u) => {
+    if (!u) return
+    setPicked(u)
+    onResolvedRef.current?.(u)
+    const id = String(u.userId ?? u.user_id ?? '')
+    const un = u.username ? `@${String(u.username).replace(/^@/, '')}` : id
+    onChange?.(un || id)
+  }
 
   return (
     <div className="ulp-wrap" ref={wrapRef}>
@@ -84,20 +101,20 @@ export default function UserLookupPreview({
         />
       </label>
 
-      {show && card && (
+      {showCard && (
         <button
           type="button"
           className="ulp-card"
-          onClick={() => uid && onOpenUser?.(uid)}
+          onClick={() => card.uid && onOpenUser?.(card.uid)}
           title="Открыть карточку игрока"
         >
           <span className="ulp-avatar" aria-hidden>
-            {(name || '?').slice(0, 1).toUpperCase()}
+            {(card.name || '?').slice(0, 1).toUpperCase()}
           </span>
           <span className="ulp-meta">
-            <strong>{name}</strong>
+            <strong>{card.name}</strong>
             <em>
-              {uname || `id ${uid}`}
+              {card.uname || `id ${card.uid}`}
               {card.balance != null ? ` · ${fmt(card.balance)} кут` : ''}
               {card.banned ? ' · бан в боте' : ''}
             </em>
@@ -106,6 +123,27 @@ export default function UserLookupPreview({
           {loading ? <span className="ulp-loading">…</span> : null}
         </button>
       )}
+
+      {showList && (
+        <div className="ulp-hits" role="listbox">
+          {list.map((h) => (
+            <button
+              key={h.uid}
+              type="button"
+              className="ulp-hit"
+              role="option"
+              onClick={() => choose(h.raw)}
+            >
+              <strong>{h.name}</strong>
+              <em>{h.uname || `id ${h.uid}`}{h.banned ? ' · бан' : ''}</em>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!showCard && !showList && loading ? (
+        <span className="ulp-loading-inline">Ищем…</span>
+      ) : null}
     </div>
   )
 }

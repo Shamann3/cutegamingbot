@@ -31,7 +31,16 @@ async def is_user_banned(user_id: int) -> bool:
         "SELECT banned FROM users WHERE user_id = $1",
         user_id,
     )
-    return bool(row) if row is not None else False
+    if bool(row):
+        return True
+    try:
+        in_banusers = await db.pool.fetchval(
+            "SELECT 1 FROM banusers WHERE user_id = $1",
+            user_id,
+        )
+        return bool(in_banusers)
+    except Exception:
+        return False
 
 
 async def search_users(query: str, *, limit: int = 20) -> list[dict]:
@@ -291,11 +300,14 @@ async def admin_set_banned(
     notify: bool = True,
 ) -> dict:
     async with db.pool.acquire() as conn:
-        exists = await conn.fetchval(
-            "SELECT user_id FROM users WHERE user_id = $1",
+        row = await conn.fetchrow(
+            """
+            SELECT user_id, username, first_name, display_name
+            FROM users WHERE user_id = $1
+            """,
             user_id,
         )
-        if exists is None:
+        if row is None:
             raise ValueError("Игрок не найден")
 
         reason_clean = reason.strip() or None
@@ -312,6 +324,40 @@ async def admin_set_banned(
             banned,
             reason_clean,
         )
+
+        # Зеркало в banusers — именно его проверяет игровой бот (is_user_banned)
+        try:
+            if banned:
+                uname = (row["username"] or "").lstrip("@") or None
+                name = (row["first_name"] or row["display_name"] or str(user_id))
+                exists_ban = await conn.fetchval(
+                    "SELECT 1 FROM banusers WHERE user_id = $1", user_id,
+                )
+                if exists_ban:
+                    await conn.execute(
+                        """
+                        UPDATE banusers
+                        SET username = COALESCE($2, username),
+                            name = COALESCE($3, name),
+                            data = NOW(),
+                            cause = COALESCE($4, cause)
+                        WHERE user_id = $1
+                        """,
+                        user_id, uname, name, reason_clean or "Бан в боте",
+                    )
+                else:
+                    await conn.execute(
+                        """
+                        INSERT INTO banusers (user_id, username, name, data, cause)
+                        VALUES ($1, $2, $3, NOW(), $4)
+                        """,
+                        user_id, uname, name, reason_clean or "Бан в боте",
+                    )
+            else:
+                await conn.execute("DELETE FROM banusers WHERE user_id = $1", user_id)
+        except Exception:
+            # Не откатываем users.banned — WebApp-блок уже выставлен
+            pass
 
     if notify:
         from admin_player_notify import notify_banned, notify_unbanned

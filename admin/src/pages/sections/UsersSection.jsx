@@ -20,6 +20,7 @@ import {
   upsertPlayerNote,
 } from '../../lib/adminClient'
 import { notifyAdmin } from '../../lib/notify'
+import UserLookupPreview from '../../components/UserLookupPreview'
 
 const EVENT_LABELS = {
   shop_buy: 'Покупка в магазине',
@@ -700,6 +701,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
 
   // compare mode
   const [compareQuery, setCompareQuery] = useState('')
+  const [compareResolvedId, setCompareResolvedId] = useState(null)
   const [compareProfile, setCompareProfile] = useState(null)
   const [compareLoading, setCompareLoading] = useState(false)
   const [compareError, setCompareError] = useState('')
@@ -749,23 +751,29 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
   }, [])
 
   const handleLoadCompare = useCallback(async () => {
-    const q = compareQuery.trim()
-    if (!q) return
+    const uid = compareResolvedId || (/^\d+$/.test(compareQuery.trim()) ? Number(compareQuery.trim()) : null)
     setCompareLoading(true)
     setCompareError('')
     try {
+      if (uid) {
+        const userData = await fetchAdminUser(Number(uid))
+        setCompareProfile(userData)
+        return
+      }
+      const q = compareQuery.trim()
+      if (!q) return
       const data = await searchAdminUsers(q)
       const list = data.results || []
       if (list.length === 0) { setCompareError('Никого не найдено'); return }
-      const first = list[0]
-      const userData = await fetchAdminUser(first.userId)
+      if (list.length > 1) { setCompareError('Найдено несколько — выберите в превью'); return }
+      const userData = await fetchAdminUser(list[0].userId)
       setCompareProfile(userData)
     } catch (e) {
       setCompareError(e.message || 'Ошибка')
     } finally {
       setCompareLoading(false)
     }
-  }, [compareQuery])
+  }, [compareQuery, compareResolvedId])
 
   const handleExport = useCallback(async () => {
     if (!profile?.userId) return
@@ -1072,13 +1080,16 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
               className="panel-users-search-form"
               onSubmit={(e) => { e.preventDefault(); handleLoadCompare() }}
             >
-              <input
-                className="panel-users-input"
-                value={compareQuery}
-                onChange={(e) => setCompareQuery(e.target.value)}
-                placeholder="ID или @username"
-                disabled={compareLoading}
-              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <UserLookupPreview
+                  label="Сравнить с"
+                  value={compareQuery}
+                  onChange={(v) => { setCompareQuery(v); setCompareResolvedId(null) }}
+                  onResolved={(u) => setCompareResolvedId(u ? Number(u.userId || u.user_id) : null)}
+                  onOpenUser={(id) => loadUser(id)}
+                  placeholder="ID, @username или имя"
+                />
+              </div>
               <button type="submit" className="panel-users-btn panel-users-btn-primary" disabled={compareLoading}>
                 {compareLoading ? '…' : 'Найти'}
               </button>

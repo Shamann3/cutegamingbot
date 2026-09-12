@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import AdminSelect from '../../components/AdminSelect'
 import { fetchAuditLogs, fetchLogsOverview, fetchSystemLogs, fetchTransferLogs } from '../../lib/adminClient'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
+import UserLookupPreview from '../../components/UserLookupPreview'
 
 const TABS = [
   { id: 'audit', label: 'Audit', hint: 'экономические события игроков' },
@@ -152,7 +153,7 @@ function SystemCard({ row, variant }) {
   )
 }
 
-export default function LogsSection({ panelTabs = null }) {
+export default function LogsSection({ panelTabs = null, onOpenUser } = {}) {
   const tabs = useMemo(() => filterSectionTabs('logs', TABS, panelTabs), [panelTabs])
   const [tab, setTab] = useState(tabs[0]?.id || 'audit')
   const activeTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0]?.id || 'audit')
@@ -183,7 +184,7 @@ export default function LogsSection({ panelTabs = null }) {
     setLoading(true)
     setError('')
     try {
-      const uid = userId.trim()
+      const uid = String(userId || '').replace(/\D/g, '').trim()
       const data = tab === 'audit'
         ? await fetchAuditLogs({
             userId: uid || undefined,
@@ -366,12 +367,15 @@ export default function LogsSection({ panelTabs = null }) {
           }}
         >
           <label className="panel-economy-field panel-logs-filter-user">
-            <span>{tab === 'transfers' ? 'User ID (отправитель или получатель)' : 'User ID'}</span>
-            <input
-              className="panel-users-input"
+            <UserLookupPreview
+              label={tab === 'transfers' ? 'Игрок (отправитель или получатель)' : 'Игрок'}
               value={userId}
-              onChange={(e) => setUserId(e.target.value.replace(/[^\d]/g, ''))}
-              placeholder="необязательно"
+              onChange={(v) => setUserId(String(v || '').replace(/[^\d@a-zA-Z_]/g, ''))}
+              onResolved={(u) => {
+                if (u?.userId || u?.user_id) setUserId(String(u.userId || u.user_id))
+              }}
+              onOpenUser={(id) => onOpenUser?.(id)}
+              placeholder="ID или @username"
             />
           </label>
           {tab !== 'transfers' && (

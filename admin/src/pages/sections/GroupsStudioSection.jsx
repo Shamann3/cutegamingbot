@@ -22,12 +22,14 @@ const PUNISH_ACTIONS = [
   ]},
   { group: 'Во всех официальных группах', items: [
     { id: 'muteall', label: '🔇 Муталл', needsUntil: true },
+    { id: 'unmuteall', label: '🔊 Размуталл', needsUntil: false },
     { id: 'warnall', label: '⚠️ Варналл', needsUntil: true },
     { id: 'banall', label: '🚫 Баналл', needsUntil: true },
+    { id: 'unbanall', label: '✅ Разбаналл', needsUntil: false },
   ]},
   { group: 'Весь проект', items: [
     { id: 'warnfull', label: '⚠️ Варнфулл', needsUntil: true },
-    { id: 'banfull', label: '🤩 Банфулл', needsUntil: true },
+    { id: 'banfull', label: '🚫 Банфулл', needsUntil: true },
     { id: 'bot_ban', label: '🤖 Бан в боте', needsUntil: false },
     { id: 'bot_unban', label: '🤖 Разбан в боте', needsUntil: false },
   ]},
@@ -758,7 +760,15 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                           <h3 className="grp-card-title">Активные муты</h3>
                           <MiniTable
                             columns={[
-                              { key: 'name', label: 'Кто', render: (r) => r.name || r.user_id },
+                              {
+                                key: 'name',
+                                label: 'Кто',
+                                render: (r) => (
+                                  <button type="button" className="grp-inline-link" onClick={() => r.user_id && onOpenUser?.(r.user_id)}>
+                                    {r.name || r.user_id}
+                                  </button>
+                                ),
+                              },
                               { key: 'until', label: 'До', render: (r) => shortWhen(r.until) },
                               { key: 'reason', label: 'Причина' },
                             ]}
@@ -769,7 +779,15 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                           <h3 className="grp-card-title">Активные баны</h3>
                           <MiniTable
                             columns={[
-                              { key: 'name', label: 'Кто', render: (r) => r.name || r.user_id },
+                              {
+                                key: 'name',
+                                label: 'Кто',
+                                render: (r) => (
+                                  <button type="button" className="grp-inline-link" onClick={() => r.user_id && onOpenUser?.(r.user_id)}>
+                                    {r.name || r.user_id}
+                                  </button>
+                                ),
+                              },
                               { key: 'until', label: 'До', render: (r) => shortWhen(r.until) },
                               { key: 'reason', label: 'Причина' },
                             ]}
@@ -781,7 +799,16 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                         <h3 className="grp-card-title">Активные варны</h3>
                         <MiniTable
                           columns={[
-                            { key: 'user_id', label: 'User' },
+                            {
+                              key: 'user_id',
+                              label: 'Игрок',
+                              render: (r) => (
+                                <button type="button" className="grp-inline-link" onClick={() => r.user_id && onOpenUser?.(r.user_id)}>
+                                  {r.user_id}
+                                </button>
+                              ),
+                            },
+                            { key: 'mode', label: 'Тип', render: (r) => ({ chat: 'варн', all: 'варналл', full: 'варнфулл' }[r.mode] || r.mode || '—') },
                             { key: 'expires_at', label: 'До', render: (r) => shortWhen(r.expires_at) },
                             { key: 'admin', label: 'Админ' },
                             { key: 'reason', label: 'Причина' },
@@ -795,7 +822,15 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                           columns={[
                             { key: 'at', label: 'Когда', render: (r) => shortWhen(r.at) },
                             { key: 'action', label: 'Действие' },
-                            { key: 'target_user_id', label: 'Цель' },
+                            {
+                              key: 'target_user_id',
+                              label: 'Цель',
+                              render: (r) => (
+                                <button type="button" className="grp-inline-link" onClick={() => r.target_user_id && onOpenUser?.(r.target_user_id)}>
+                                  {r.target_user_id || '—'}
+                                </button>
+                              ),
+                            },
                             { key: 'admin', label: 'Админ' },
                             { key: 'reason', label: 'Причина' },
                           ]}

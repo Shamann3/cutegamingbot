@@ -308,8 +308,8 @@ async def _fund_stats(chat_id: int) -> Dict[str, Any]:
     out["last_30d"] = await _period(datetime.now() - timedelta(days=30))
     out["empty"] = life["events"] == 0
     out["empty_hint"] = (
-        "В этой группе ещё не было игровых комиссий (growth_fund_ledger пуст). "
-        "Цифры появляются после игр с комиссией в этом чате."
+        "В этой группе ещё не было игровых комиссий. "
+        "Цифры появятся после первых партий с комиссией в этом чате."
         if life["events"] == 0 else None
     )
 
@@ -654,7 +654,11 @@ async def _active_punishments(chat_id: int) -> Dict[str, Any]:
             """
             SELECT id, user_id, expires_at, reason, mode, scope, admin_name
             FROM active_warns
-            WHERE chat_id = $1 AND (expires_at IS NULL OR expires_at > now())
+            WHERE (expires_at IS NULL OR expires_at > now())
+              AND (
+                chat_id = $1
+                OR (chat_id IS NULL AND mode IN ('all', 'full'))
+              )
             ORDER BY id DESC
             LIMIT 30
             """,
@@ -1156,8 +1160,9 @@ async def overview() -> Dict[str, Any]:
         "top_balance": top_balance,
         "top_project": top_project,
         "hint": (
-            "to_project — доля комиссий в дом проекта (из growth_fund_ledger). "
-            "commission — вся комиссия с игр группы. chatbalance — текущий бч."
+            "Комиссия — сумма с игр группы. "
+            "В дом проекта — доля комиссий проекта. "
+            "Баланс группы — текущий бч."
         ),
     }
 
@@ -1243,11 +1248,11 @@ async def moderate_action(
     """Модерация через игровой BOT_TOKEN + зеркало в БД наказаний.
 
     Действия:
-      mute / muteall / unmute
+      mute / muteall / unmute / unmuteall
       kick
       warn / warnall / warnfull
-      ban / banall / banfull / unban
-      bot_ban / bot_unban  — блокировка только в боте (users.banned)
+      ban / banall / banfull / unban / unbanall
+      bot_ban / bot_unban  — users.banned + banusers (бот и WebApp)
     """
     action = (action or "").strip().lower().replace("ё", "е")
     # алиасы
@@ -1347,13 +1352,14 @@ async def moderate_action(
     async def _record_warn(mode: str, scope: str) -> None:
         try:
             exp = datetime.now() + timedelta(seconds=max(35, until)) if until > 0 else None
+            # для all/full chat_id оставляем текущий чат как якорь видимости + mode/scope
             await db.pool.execute(
                 """
                 INSERT INTO active_warns
                   (user_id, chat_id, admin_user_id, admin_name, reason, expires_at, scope, mode)
                 VALUES ($1, $2, $3, 'Админ-панель', $4, $5, $6, $7)
                 """,
-                uid, cid if mode == "chat" else None, int(admin_id or 0), reason or action, exp, scope, mode,
+                uid, cid, int(admin_id or 0), reason or action, exp, scope, mode,
             )
         except Exception:
             pass
@@ -1386,12 +1392,27 @@ async def moderate_action(
         if ok:
             try:
                 await db.pool.execute(
-                    "DELETE FROM active_mutes WHERE user_id = $1 AND chat_id IN ($2, 0)",
+                    "DELETE FROM active_mutes WHERE user_id = $1 AND chat_id = $2",
                     uid, cid,
                 )
             except Exception:
                 pass
         results.append(res)
+    elif action == "unmuteall":
+        ok_any = False
+        staff = set(_staff_chat_ids()) | {cid}
+        for tc in staff:
+            res = await _restrict(tc, False)
+            results.append({"chat_id": tc, **res})
+            if res.get("ok"):
+                ok_any = True
+        try:
+            await db.pool.execute("DELETE FROM active_mutes WHERE user_id = $1", uid)
+            ok_any = True
+        except Exception:
+            pass
+        ok = ok_any
+        detail = "unmuteall"
     elif action == "kick":
         res = await _tg_api("banChatMember", chat_id=cid, user_id=uid)
         if res.get("ok"):
@@ -1454,6 +1475,21 @@ async def moderate_action(
         except Exception:
             pass
         results.append(res)
+    elif action == "unbanall":
+        ok_any = False
+        staff = set(_staff_chat_ids()) | {cid}
+        for tc in staff:
+            res = await _tg_api("unbanChatMember", chat_id=tc, user_id=uid, only_if_banned=True)
+            results.append({"chat_id": tc, **res})
+            if res.get("ok"):
+                ok_any = True
+        try:
+            await db.pool.execute("DELETE FROM active_bans WHERE user_id = $1", uid)
+            ok_any = True
+        except Exception:
+            pass
+        ok = ok_any
+        detail = "unbanall"
     elif action in ("bot_ban", "bot_unban"):
         try:
             from admin_users import admin_set_banned
@@ -1469,8 +1505,12 @@ async def moderate_action(
         except Exception as e:
             ok = False
             detail = str(e)
+            results.append({"ok": False, "description": detail})
     else:
-        return {"ok": False, "error": f"Неизвестное действие: {action}"}
+        raise ValueError(f"Неизвестное действие: {action}")
+
+    if not ok and not detail and results:
+        detail = (results[-1] or {}).get("description") or ""
 
     if ok:
         try:
@@ -1495,6 +1535,7 @@ async def moderate_action(
         "chat_id": cid,
         "user_id": uid,
         "until_sec": until or None,
+        "detail": detail,
         "telegram": detail if not ok else "ok",
         "results": results[:20],
         "reason": reason,

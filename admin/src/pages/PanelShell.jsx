@@ -361,7 +361,14 @@ export default function PanelShell({ onLogout }) {
           )}
           {isEconomy && <EconomySection />}
           {isMarket && <MarketSection />}
-          {isFarm && <FarmSection />}
+          {isFarm && (
+            <FarmSection
+              onOpenUser={(userId) => {
+                setUsersInitialId(userId)
+                setSection('users')
+              }}
+            />
+          )}
           {isContent && <ContentSection role={role} panelTabs={panelTabs} />}
           {isGiveaways && <GiveawaysSection />}
           {isBotQuests && role === 'owner' && <BotQuestsSection />}
@@ -383,7 +390,15 @@ export default function PanelShell({ onLogout }) {
             />
           )}
           {isBroadcast && <BroadcastSection panelTabs={panelTabs} />}
-          {isLogs && <LogsSection panelTabs={panelTabs} />}
+          {isLogs && (
+            <LogsSection
+              panelTabs={panelTabs}
+              onOpenUser={(userId) => {
+                setUsersInitialId(userId)
+                setSection('users')
+              }}
+            />
+          )}
           {isAnalytics && <AnalyticsSection panelTabs={panelTabs} />}
           {isSettings && <SystemSection panelTabs={panelTabs} />}
           {isEvents && <EventsSection panelTabs={panelTabs} />}

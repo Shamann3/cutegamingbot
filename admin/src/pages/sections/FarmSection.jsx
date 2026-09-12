@@ -10,6 +10,7 @@ import {
 } from '../../lib/adminClient'
 import { parseRequiredIntFields } from '../../lib/formNumbers'
 import { notifyAdmin } from '../../lib/notify'
+import UserLookupPreview from '../../components/UserLookupPreview'
 
 function formatSec(sec) {
   if (sec == null) return '-'
@@ -30,7 +31,7 @@ const PLOT_STATUS_LABEL = {
   WITHERED: 'Засохло',
 }
 
-export default function FarmSection() {
+export default function FarmSection({ onOpenUser } = {}) {
   const [overview, setOverview] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -46,6 +47,7 @@ export default function FarmSection() {
   const [waterCost, setWaterCost] = useState('')
 
   const [playerQuery, setPlayerQuery] = useState('')
+  const [playerResolvedId, setPlayerResolvedId] = useState(null)
   const [playerFarm, setPlayerFarm] = useState(null)
   const [playerLoading, setPlayerLoading] = useState(false)
   const [resetTarget, setResetTarget] = useState(null)
@@ -146,15 +148,24 @@ export default function FarmSection() {
 
   const handlePlayerSearch = async (e) => {
     e.preventDefault()
+    const uid = playerResolvedId || (/^\d+$/.test(playerQuery.trim()) ? Number(playerQuery.trim()) : null)
+    if (uid) {
+      setPlayerLoading(true)
+      setError('')
+      try {
+        await loadPlayer(Number(uid))
+      } catch (err) {
+        setError(err.message || 'Ошибка поиска')
+      } finally {
+        setPlayerLoading(false)
+      }
+      return
+    }
     const q = playerQuery.trim()
     if (!q) return
     setPlayerLoading(true)
     setError('')
     try {
-      if (/^\d+$/.test(q)) {
-        await loadPlayer(Number(q))
-        return
-      }
       const data = await searchAdminUsers(q)
       const list = data.results || []
       if (list.length === 1) {
@@ -164,7 +175,7 @@ export default function FarmSection() {
         setError('Никого не найдено')
       } else {
         setPlayerFarm(null)
-        setError(`Найдено ${list.length} - уточни ID`)
+        setError(`Найдено ${list.length} — выберите игрока в превью`)
       }
     } catch (err) {
       setError(err.message || 'Ошибка поиска')
@@ -390,7 +401,16 @@ export default function FarmSection() {
       <article className="panel-shelf">
         <p className="panel-shelf-label">Грядки игрока</p>
         <form className="panel-users-search-form" onSubmit={handlePlayerSearch}>
-          <input className="panel-users-input" value={playerQuery} onChange={(e) => setPlayerQuery(e.target.value)} placeholder="ID или @username" disabled={playerLoading} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <UserLookupPreview
+              label="Игрок"
+              value={playerQuery}
+              onChange={(v) => { setPlayerQuery(v); setPlayerResolvedId(null) }}
+              onResolved={(u) => setPlayerResolvedId(u ? Number(u.userId || u.user_id) : null)}
+              onOpenUser={(id) => onOpenUser?.(id)}
+              placeholder="ID, @username или имя"
+            />
+          </div>
           <button type="submit" className="panel-users-btn panel-users-btn-primary" disabled={playerLoading}>
             {playerLoading ? '…' : 'Найти'}
           </button>
