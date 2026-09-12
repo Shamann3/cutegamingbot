@@ -49,6 +49,8 @@ const PROFILE_TABS = [
   { id: 'profile', label: 'Профиль' },
   { id: 'intel', label: 'Аналитика' },
   { id: 'transfers', label: 'Переводы' },
+  { id: 'farm', label: 'Ферма' },
+  { id: 'history', label: 'История' },
   { id: 'quests', label: 'Квесты' },
   { id: 'bans', label: 'Баны' },
   { id: 'inventory', label: 'Инвентарь' },
@@ -1288,35 +1290,159 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
           </div>
         )}
 
-        {/* ── Вкладки не-профиль: контент на всю ширину ── */}
-        {hasProfile && profileTab !== 'profile' && (
-          <article className="panel-shelf panel-users-card pu-tab-content-full">
-            {profileTab === 'transfers' && (
-              <PlayerTransfersPanel userId={profile.userId} intel={intel} onOpenUser={(id) => id && loadUser(id)} />
-            )}
-            {profileTab === 'intel' && (
-              <>
-                <PlayerIntelOverview intel={intel} onOpenUser={(id) => id && loadUser(id)} />
-                <div style={{ marginTop: '0.85rem' }}>
-                  <PlayerDossierPanel
-                    intel={intel}
-                    isOwner={isOwner}
-                    canEdit={isOwner}
-                    onSaved={() => loadUser(profile.userId)}
-                  />
-                </div>
-              </>
-            )}
-            {profileTab === 'quests' && <QuestsTab userId={profile.userId} />}
-            {profileTab === 'bans' && <BansTab userId={profile.userId} />}
-            {profileTab === 'inventory' && <InventoryTab userId={profile.userId} />}
-            {profileTab === 'notes' && <NotesTab userId={profile.userId} />}
+        {/* ── Контент вкладок (кроме профиля) — только своё, без наложений ── */}
+        {hasProfile && profileTab === 'transfers' && (
+          <div className="pu-tab-pane">
+            <PlayerTransfersPanel userId={profile.userId} intel={intel} onOpenUser={(id) => id && loadUser(id)} />
+          </div>
+        )}
+        {hasProfile && profileTab === 'intel' && (
+          <div className="pu-tab-pane pu-tab-stack">
+            <PlayerIntelOverview intel={intel} onOpenUser={(id) => id && loadUser(id)} />
+            <PlayerDossierPanel
+              intel={intel}
+              isOwner={isOwner}
+              canEdit={isOwner}
+              onSaved={() => loadUser(profile.userId)}
+            />
+          </div>
+        )}
+        {hasProfile && profileTab === 'farm' && (
+          <article className="panel-shelf panel-users-card pu-tab-pane pu-farm-tab">
+            <div className="pu-bento-head">
+              <div>
+                <p className="panel-shelf-label">Ферма</p>
+                <h3 className="panel-users-subtitle">Грядки игрока</h3>
+              </div>
+              <span className="pu-bento-chip">{profile.ownedPlots}/{profile.maxPlots}</span>
+            </div>
+            <div className="panel-users-plot-grid pu-farm-grid">
+              {Array.from({ length: plotSlots }, (_, i) => {
+                const plotId = i + 1
+                const plot = plots.find((p) => p.id === plotId)
+                const status = plot ? String(plot.status || '').toUpperCase() : ''
+                const statusClass = !plot
+                  ? ' is-locked'
+                  : status === 'READY'
+                    ? ' is-ready'
+                    : status === 'EMPTY'
+                      ? ' is-empty'
+                      : ' is-busy'
+                return (
+                  <div
+                    key={plotId}
+                    className={`panel-users-plot${statusClass}`}
+                  >
+                    <span className="panel-users-plot-id">#{plotId}</span>
+                    <span className="panel-users-plot-status">
+                      {plot ? plot.status : '—'}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
           </article>
         )}
+        {hasProfile && profileTab === 'history' && (
+          <article className="panel-shelf panel-users-card pu-tab-pane pu-history-tab">
+            <div className="pu-bento-head">
+              <div>
+                <p className="panel-shelf-label">История</p>
+                <h3 className="panel-users-subtitle">
+                  {historySource === 'audit'
+                    ? `События (${audit?.total ?? 0})`
+                    : 'кут — полная история'}
+                </h3>
+              </div>
+            </div>
 
-        {/* ── Вкладка «Профиль»: карточка игрока в потоке ── */}
-        <article className={`panel-shelf panel-users-card panel-users-profile-card pu-hero-card${hasProfile && profileTab !== 'profile' ? ' pu-hidden' : ''}`}>
-          {(profileTab === 'profile' || !hasProfile) && (<>
+            {isOwner && (
+              <div className="pu-hist-switch">
+                <button
+                  type="button"
+                  className={`pu-hist-tab${historySource === 'audit' ? ' active' : ''}`}
+                  onClick={() => setHistorySource('audit')}
+                >Действия</button>
+                <button
+                  type="button"
+                  className={`pu-hist-tab${historySource === 'cute' ? ' active' : ''}`}
+                  onClick={() => setHistorySource('cute')}
+                >кут (полная)</button>
+              </div>
+            )}
+
+            {isOwner && historySource === 'cute' && (
+              <CuteHistoryFeed userId={profile.userId} />
+            )}
+
+            {historySource === 'audit' && (
+              <>
+                {(audit?.events || []).length === 0 && (
+                  <p className="panel-shelf-muted">Записей пока нет</p>
+                )}
+                {(audit?.events || []).length > 0 && (
+                  <ul className="panel-users-audit-list">
+                    {audit.events.map((ev) => (
+                      <li key={ev.id} className="panel-users-audit-item">
+                        <div className="panel-users-audit-head">
+                          <span className="panel-users-audit-type">
+                            {EVENT_LABELS[ev.eventType] || ev.eventType}
+                          </span>
+                          <time className="panel-users-audit-time">{formatDate(ev.createdAt)}</time>
+                        </div>
+                        {ev.amount != null && (
+                          <p className="panel-users-audit-amount">
+                            {ev.amount > 0 ? '+' : ''}
+                            {ev.amount} кут
+                          </p>
+                        )}
+                        {ev.balanceBefore != null && ev.balanceAfter != null && (
+                          <p className="panel-shelf-muted">
+                            Баланс: {ev.balanceBefore} → {ev.balanceAfter}
+                          </p>
+                        )}
+                        {ev.details?.item_id && (
+                          <p className="panel-shelf-muted">
+                            Предмет: {ev.details.item_id}
+                            {ev.details.count_after != null && ` (осталось ${ev.details.count_after})`}
+                          </p>
+                        )}
+                        {ev.details?.admin_user_id && (
+                          <p className="panel-shelf-muted">Admin ID: {ev.details.admin_user_id}</p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </article>
+        )}
+        {hasProfile && profileTab === 'quests' && (
+          <div className="pu-tab-pane panel-shelf panel-users-card">
+            <QuestsTab userId={profile.userId} />
+          </div>
+        )}
+        {hasProfile && profileTab === 'bans' && (
+          <div className="pu-tab-pane panel-shelf panel-users-card">
+            <BansTab userId={profile.userId} />
+          </div>
+        )}
+        {hasProfile && profileTab === 'inventory' && (
+          <div className="pu-tab-pane panel-shelf panel-users-card">
+            <InventoryTab userId={profile.userId} />
+          </div>
+        )}
+        {hasProfile && profileTab === 'notes' && (
+          <div className="pu-tab-pane panel-shelf panel-users-card">
+            <NotesTab userId={profile.userId} />
+          </div>
+        )}
+
+        {/* ── Вкладка «Профиль»: только карточка + инвентарь + действия ── */}
+        {(profileTab === 'profile' || !hasProfile) && (
+        <div className="pu-profile-layout">
+        <article className="panel-shelf panel-users-card panel-users-profile-card pu-hero-card">
           <div className="pu-hero-banner">
             <div className="pu-hero-banner-glow" aria-hidden />
             <div className="pu-hero-main">
@@ -1334,7 +1460,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
               </div>
 
               <div className="pu-hero-identity">
-                <p className="pu-hero-kicker">Карточка игрока</p>
+                <p className="pu-hero-kicker">Карточка пользователя</p>
                 <h3 className={`panel-users-name${!hasProfile ? ' panel-users-placeholder' : ''}`}>
                   {hasProfile ? profile.displayName : 'Игрок не выбран'}
                 </h3>
@@ -1351,9 +1477,16 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   {hasProfile && !profile.banned && (
                     <span className="pu-hero-chip pu-hero-chip-ok">активен</span>
                   )}
+                  {intel?.dossier?.country && (
+                    <span className="pu-hero-chip">{intel.dossier.country}</span>
+                  )}
                 </div>
-                {hasProfile && profile.lastSeenAt && (
-                  <p className="pu-hero-seen">Был в сети: {formatDate(profile.lastSeenAt)}</p>
+                {hasProfile && (
+                  <p className="pu-hero-seen">
+                    {profile.lastSeenAt ? `Был в сети: ${formatDate(profile.lastSeenAt)}` : 'Активность неизвестна'}
+                    {intel?.dossier?.registeredAtLabel ? ` · с ${intel.dossier.registeredAtLabel}` : ''}
+                    {intel?.dossier?.accountAge ? ` · ${intel.dossier.accountAge}` : ''}
+                  </p>
                 )}
               </div>
 
@@ -1362,11 +1495,15 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 <strong className={`pu-hero-balance-value${!hasProfile ? ' panel-users-placeholder' : ''}`}>
                   {hasProfile ? profile.balance?.toLocaleString('ru-RU') : '—'}
                 </strong>
-                <span className="pu-hero-balance-sub">игровой баланс</span>
+                <span className="pu-hero-balance-sub">
+                  {intel?.dossier?.donated
+                    ? `донат ${Number(intel.dossier.donated).toLocaleString('ru-RU')}`
+                    : 'игровой баланс'}
+                </span>
               </div>
             </div>
 
-            <div className="panel-users-stats">
+            <div className="panel-users-stats pu-hero-keystats">
               <div>
                 <span className="panel-users-stat-label">Грядки</span>
                 <strong className={!hasProfile ? 'panel-users-placeholder' : ''}>
@@ -1380,20 +1517,16 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 </strong>
               </div>
               <div>
-                <span className="panel-users-stat-label">Обучение</span>
-                <strong className={!hasProfile ? 'panel-users-placeholder' : ''}>
+                <span className="panel-users-stat-label">Wins / Losses</span>
+                <strong>
                   {hasProfile
-                    ? profile.onboarding?.done
-                      ? 'пройдено'
-                      : profile.onboarding?.active
-                        ? 'активно'
-                        : 'нет'
+                    ? `${Number(intel?.dossier?.wins ?? 0).toLocaleString('ru-RU')} / ${Number(intel?.dossier?.losses ?? 0).toLocaleString('ru-RU')}`
                     : '—'}
                 </strong>
               </div>
               <div>
                 <span className="panel-users-stat-label">Сообщения · 30д</span>
-                                <strong>
+                <strong>
                   {hasProfile
                     ? (intel?.activity30d?.totalMessages != null
                       ? Number(intel.activity30d.totalMessages).toLocaleString('ru-RU')
@@ -1413,10 +1546,12 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
 
             {hasProfile && intel && (
               <div className="pu-hero-dossier-wrap">
+                <p className="pu-hero-section-title">Основное о пользователе</p>
                 <PlayerDossierPanel
                   intel={intel}
                   isOwner={isOwner}
                   canEdit={false}
+                  compact
                 />
               </div>
             )}
@@ -1429,62 +1564,9 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
               <EmptyHint>Найди игрока — карточка заполнится здесь</EmptyHint>
             )}
           </div>
-          </>)}
         </article>
 
-        {/* Compare panel */}
-        {showCompare && hasProfile && (
-          <article className="panel-shelf panel-users-card pu-compare-card">
-            <div className="pu-compare-head">
-              <p className="panel-shelf-label">⚖️ Сравнение</p>
-              <button className="pu-close-btn" onClick={() => { setShowCompare(false); setCompareProfile(null) }}>✕</button>
-            </div>
-            <form
-              className="panel-users-search-form"
-              onSubmit={(e) => { e.preventDefault(); handleLoadCompare() }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <UserLookupPreview
-                  label="Сравнить с"
-                  value={compareQuery}
-                  onChange={(v) => { setCompareQuery(v); setCompareResolvedId(null) }}
-                  onResolved={(u) => setCompareResolvedId(u ? Number(u.userId || u.user_id) : null)}
-                  onOpenUser={(id) => loadUser(id)}
-                  placeholder="ID, @username или имя"
-                />
-              </div>
-              <button type="submit" className="panel-users-btn panel-users-btn-primary" disabled={compareLoading}>
-                {compareLoading ? '…' : 'Найти'}
-              </button>
-            </form>
-            {compareError && <p className="panel-shelf-error">{compareError}</p>}
-            {compareProfile && (
-              <div className="pu-compare-body">
-                <div className="pu-compare-col">
-                  <p className="pu-compare-name">{profile.displayName}</p>
-                  <p className="pu-compare-stat">💰 {profile.balance?.toLocaleString('ru-RU')}</p>
-                  <p className="pu-compare-stat">🌱 {profile.ownedPlots}/{profile.maxPlots}</p>
-                  <p className="pu-compare-stat">📦 {(profile.inventory || []).length} видов</p>
-                  <p className="pu-compare-stat">{profile.banned ? '🔴 Забанен' : '🟢 Активен'}</p>
-                </div>
-                <div className="pu-compare-vs">VS</div>
-                <div className="pu-compare-col">
-                  <p className="pu-compare-name">{compareProfile.displayName}</p>
-                  <p className="pu-compare-stat">💰 {compareProfile.balance?.toLocaleString('ru-RU')}</p>
-                  <p className="pu-compare-stat">🌱 {compareProfile.ownedPlots}/{compareProfile.maxPlots}</p>
-                  <p className="pu-compare-stat">📦 {(compareProfile.inventory || []).length} видов</p>
-                  <p className="pu-compare-stat">{compareProfile.banned ? '🔴 Забанен' : '🟢 Активен'}</p>
-                </div>
-              </div>
-            )}
-          </article>
-        )}
-
-        <div className={`panel-users-right${hasProfile && profileTab !== 'profile' ? ' pu-hidden' : ''}`}>
-          {hasProfile && (
-            <PlayerIntelOverview intel={intel} onOpenUser={(id) => id && loadUser(id)} />
-          )}
-
+        <div className="panel-users-right">
           <article className="panel-shelf panel-users-card panel-users-inventory-card pu-inv-card">
             <div className="pu-bento-head">
               <div>
@@ -1691,19 +1773,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
               )}
 
               {canItems && (
-              <form
-                className="panel-users-action-block pu-action-tile pu-action-tile-item"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  const delta = Number.parseInt(itemDelta, 10)
-                  if (!itemId.trim() || !Number.isFinite(delta) || delta === 0) return
-                  runAction(() =>
-                    adjustAdminUserItem(profile.userId, itemId.trim(), delta, itemNote.trim()),
-                  )
-                  setItemDelta('')
-                  setItemNote('')
-                }}
-              >
+              <div className="panel-users-action-block pu-action-tile pu-action-tile-item">
                 <div className="pu-action-tile-top">
                   <span className="pu-action-ico" aria-hidden>▣</span>
                   <div>
@@ -1735,8 +1805,8 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                     <input
                       className="panel-users-input pu-field-input"
                       value={itemDelta}
-                      onChange={(e) => setItemDelta(e.target.value.replace(/[^\d-]/g, ''))}
-                      placeholder="±1"
+                      onChange={(e) => setItemDelta(e.target.value.replace(/\D/g, ''))}
+                      placeholder="1"
                       inputMode="numeric"
                       disabled={!hasProfile || actionLoading}
                     />
@@ -1752,10 +1822,41 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                     disabled={!hasProfile || actionLoading}
                   />
                 </label>
-                <button type="submit" className="panel-users-btn pu-action-cta" disabled={!hasProfile || actionLoading}>
-                  Выдать / списать
-                </button>
-              </form>
+                <div className="pu-kut-actions">
+                  <button
+                    type="button"
+                    className="panel-users-btn panel-users-btn-success"
+                    disabled={!hasProfile || actionLoading || !itemId.trim() || !Number(itemDelta)}
+                    onClick={() => {
+                      const amount = Math.abs(Number.parseInt(itemDelta, 10))
+                      if (!itemId.trim() || !amount) return
+                      runAction(() =>
+                        adjustAdminUserItem(profile.userId, itemId.trim(), amount, itemNote.trim()),
+                      )
+                      setItemDelta('')
+                      setItemNote('')
+                    }}
+                  >
+                    Выдать
+                  </button>
+                  <button
+                    type="button"
+                    className="panel-users-btn panel-users-btn-danger"
+                    disabled={!hasProfile || actionLoading || !itemId.trim() || !Number(itemDelta)}
+                    onClick={() => {
+                      const amount = Math.abs(Number.parseInt(itemDelta, 10))
+                      if (!itemId.trim() || !amount) return
+                      runAction(() =>
+                        adjustAdminUserItem(profile.userId, itemId.trim(), -amount, itemNote.trim()),
+                      )
+                      setItemDelta('')
+                      setItemNote('')
+                    }}
+                  >
+                    Забрать
+                  </button>
+                </div>
+              </div>
               )}
 
               {canBan && (
@@ -1883,119 +1984,56 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
             </div>
           </article>
         </div>
+        </div>
+        )}
 
-        <article className="panel-shelf panel-users-card panel-users-bottom">
-          <div className="panel-users-bottom-grid">
-            <div className="panel-users-plots-block">
-              <p className="panel-shelf-label">Ферма</p>
-              <h3 className="panel-users-subtitle panel-users-subtitle-tight">Грядки</h3>
-              <div className="panel-users-plot-grid">
-                {Array.from({ length: plotSlots }, (_, i) => {
-                  const plotId = i + 1
-                  const plot = plots.find((p) => p.id === plotId)
-                  return (
-                    <div
-                      key={plotId}
-                      className={`panel-users-plot${plot ? '' : ' panel-users-plot-empty'}`}
-                    >
-                      <span className="panel-users-plot-id">{plotId}</span>
-                      <span className="panel-users-plot-status">
-                        {plot ? plot.status : '—'}
-                      </span>
-                    </div>
-                  )
-                })}
+        {/* Compare panel */}
+        {showCompare && hasProfile && profileTab === 'profile' && (
+          <article className="panel-shelf panel-users-card pu-compare-card">
+            <div className="pu-compare-head">
+              <p className="panel-shelf-label">⚖️ Сравнение</p>
+              <button className="pu-close-btn" onClick={() => { setShowCompare(false); setCompareProfile(null) }}>✕</button>
+            </div>
+            <form
+              className="panel-users-search-form"
+              onSubmit={(e) => { e.preventDefault(); handleLoadCompare() }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <UserLookupPreview
+                  label="Сравнить с"
+                  value={compareQuery}
+                  onChange={(v) => { setCompareQuery(v); setCompareResolvedId(null) }}
+                  onResolved={(u) => setCompareResolvedId(u ? Number(u.userId || u.user_id) : null)}
+                  onOpenUser={(id) => loadUser(id)}
+                  placeholder="ID, @username или имя"
+                />
               </div>
-            </div>
-
-            <div className="panel-users-audit-block">
-              <p className="panel-shelf-label">История</p>
-              <h3 className="panel-users-subtitle panel-users-subtitle-tight">
-                {historySource === 'audit'
-                  ? <>События {hasProfile ? `(${audit?.total ?? 0})` : ''}</>
-                  : 'Кут — полная история'}
-              </h3>
-
-              {hasProfile && isOwner && (
-                <div className="pu-hist-switch">
-                  <button
-                    className={`pu-hist-tab${historySource === 'audit' ? ' active' : ''}`}
-                    onClick={() => setHistorySource('audit')}
-                  >Действия</button>
-                  <button
-                    className={`pu-hist-tab${historySource === 'cute' ? ' active' : ''}`}
-                    onClick={() => setHistorySource('cute')}
-                  >Кут (полная)</button>
+              <button type="submit" className="panel-users-btn panel-users-btn-primary" disabled={compareLoading}>
+                {compareLoading ? '…' : 'Найти'}
+              </button>
+            </form>
+            {compareError && <p className="panel-shelf-error">{compareError}</p>}
+            {compareProfile && (
+              <div className="pu-compare-body">
+                <div className="pu-compare-col">
+                  <p className="pu-compare-name">{profile.displayName}</p>
+                  <p className="pu-compare-stat">💰 {profile.balance?.toLocaleString('ru-RU')}</p>
+                  <p className="pu-compare-stat">🌱 {profile.ownedPlots}/{profile.maxPlots}</p>
+                  <p className="pu-compare-stat">📦 {(profile.inventory || []).length} видов</p>
+                  <p className="pu-compare-stat">{profile.banned ? '🔴 Забанен' : '🟢 Активен'}</p>
                 </div>
-              )}
-
-              <style>{`
-                .pu-hist-switch { display: inline-flex; gap: 4px; margin: 6px 0 10px; }
-                .pu-hist-tab { font-size: 12px; padding: 4px 10px; border-radius: 8px; border: 1px solid #1c1c20; background: #0a0a0c; color: #aaa; cursor: pointer; }
-                .pu-hist-tab.active { background: #1c1c22; color: #fff; }
-              `}</style>
-
-              {hasProfile && isOwner && historySource === 'cute' && (
-                <CuteHistoryFeed userId={profile.userId} />
-              )}
-
-              {historySource === 'audit' && (<>
-                {!hasProfile && (
-                  <ul className="panel-users-audit-list panel-users-audit-list-empty">
-                    {[1, 2, 3].map((n) => (
-                      <li key={n} className="panel-users-audit-ghost">
-                        <span className="panel-users-ghost-bar panel-users-ghost-bar-wide" />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                {hasProfile && (audit?.events || []).length === 0 && (
-                  <p className="panel-shelf-muted">Записей пока нет</p>
-                )}
-
-                {hasProfile && (audit?.events || []).length > 0 && (
-                  <ul className="panel-users-audit-list">
-                    {audit.events.map((ev) => (
-                      <li key={ev.id} className="panel-users-audit-item">
-                        <div className="panel-users-audit-head">
-                          <span className="panel-users-audit-type">
-                            {EVENT_LABELS[ev.eventType] || ev.eventType}
-                          </span>
-                          <time className="panel-users-audit-time">{formatDate(ev.createdAt)}</time>
-                        </div>
-                        {ev.amount != null && (
-                          <p className="panel-users-audit-amount">
-                            {ev.amount > 0 ? '+' : ''}
-                            {ev.amount} кут
-                          </p>
-                        )}
-                        {ev.balanceBefore != null && ev.balanceAfter != null && (
-                          <p className="panel-shelf-muted">
-                            Баланс: {ev.balanceBefore} → {ev.balanceAfter}
-                          </p>
-                        )}
-                        {ev.details?.item_id && (
-                          <p className="panel-shelf-muted">
-                            Предмет: {ev.details.item_id}
-                            {ev.details.count_after != null && ` (осталось ${ev.details.count_after})`}
-                          </p>
-                        )}
-                        {ev.details?.admin_user_id && (
-                          <p className="panel-shelf-muted">Admin ID: {ev.details.admin_user_id}</p>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                {!hasProfile && !loading && (
-                  <EmptyHint>История действий игрока</EmptyHint>
-                )}
-              </>)}
-            </div>
-          </div>
-        </article>
+                <div className="pu-compare-vs">VS</div>
+                <div className="pu-compare-col">
+                  <p className="pu-compare-name">{compareProfile.displayName}</p>
+                  <p className="pu-compare-stat">💰 {compareProfile.balance?.toLocaleString('ru-RU')}</p>
+                  <p className="pu-compare-stat">🌱 {compareProfile.ownedPlots}/{compareProfile.maxPlots}</p>
+                  <p className="pu-compare-stat">📦 {(compareProfile.inventory || []).length} видов</p>
+                  <p className="pu-compare-stat">{compareProfile.banned ? '🔴 Забанен' : '🟢 Активен'}</p>
+                </div>
+              </div>
+            )}
+          </article>
+        )}
       </div>
     </div>
   )

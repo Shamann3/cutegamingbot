@@ -11,6 +11,7 @@ export default function PlayerDossierPanel({
   intel,
   isOwner = false,
   canEdit = false,
+  compact = false,
   onSaved,
 }) {
   const d = intel?.dossier || {}
@@ -64,7 +65,7 @@ export default function PlayerDossierPanel({
   const ms = d.growthFundMilestone
 
   return (
-    <div className="pu-dossier">
+    <div className={`pu-dossier${compact ? ' pu-dossier-compact' : ''}`}>
       <div className="pu-dossier-grid">
         <div className="pu-dossier-tile">
           <span>Фонд Роста</span>
@@ -126,7 +127,7 @@ export default function PlayerDossierPanel({
           <p className="panel-shelf-muted">Достижений нет</p>
         ) : (
           <ul>
-            {ach.map((a) => (
+            {(compact ? ach.slice(0, 6) : ach).map((a) => (
               <li key={a.instance_id}>
                 <span>{a.icon_fallback || '⭐'}</span>
                 <strong>{a.title || a.unique_code || a.instance_id}</strong>
@@ -134,6 +135,9 @@ export default function PlayerDossierPanel({
               </li>
             ))}
           </ul>
+        )}
+        {compact && ach.length > 6 && (
+          <p className="pu-dossier-more">и ещё {ach.length - 6} — вкладка «Аналитика»</p>
         )}
       </div>
 
