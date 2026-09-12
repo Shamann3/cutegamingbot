@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ACCENT_SWATCHES,
   clamp,
@@ -6,7 +7,7 @@ import {
   normalizeAccent,
 } from '../lib/accentTheme'
 
-const WHEEL_SIZE = 200
+const WHEEL_SIZE = 196
 const WHEEL_RADIUS = WHEEL_SIZE / 2
 
 function paintWheel(canvas) {
@@ -48,8 +49,10 @@ function paintWheel(canvas) {
 }
 
 function pointerToHsv(clientX, clientY, rect, value) {
-  const x = clientX - rect.left
-  const y = clientY - rect.top
+  const scaleX = WHEEL_SIZE / Math.max(1, rect.width)
+  const scaleY = WHEEL_SIZE / Math.max(1, rect.height)
+  const x = (clientX - rect.left) * scaleX
+  const y = (clientY - rect.top) * scaleY
   const dx = x - WHEEL_RADIUS
   const dy = y - WHEEL_RADIUS
   const dist = Math.sqrt(dx * dx + dy * dy)
@@ -65,9 +68,30 @@ export default function AccentPalette({ value, onChange }) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState(accent)
   const [hexText, setHexText] = useState(accent.hex)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
   const canvasRef = useRef(null)
   const dragging = useRef(false)
+  const rootRef = useRef(null)
   const panelRef = useRef(null)
+  const triggerRef = useRef(null)
+
+  const placePanel = useCallback(() => {
+    const btn = triggerRef.current
+    const panel = panelRef.current
+    if (!btn) return
+    const r = btn.getBoundingClientRect()
+    const gap = 10
+    const pw = panel?.offsetWidth || 236
+    const ph = panel?.offsetHeight || 420
+    let left = r.right + gap
+    let top = r.top + r.height / 2 - ph / 2
+
+    if (left + pw > window.innerWidth - 12) {
+      left = Math.max(12, r.left - gap - pw)
+    }
+    top = Math.max(12, Math.min(top, window.innerHeight - ph - 12))
+    setPos({ top, left })
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -75,6 +99,22 @@ export default function AccentPalette({ value, onChange }) {
     setDraft(next)
     setHexText(next.hex)
   }, [open, value])
+
+  useLayoutEffect(() => {
+    if (!open) return undefined
+    placePanel()
+    const id = window.requestAnimationFrame(() => {
+      placePanel()
+      window.requestAnimationFrame(placePanel)
+    })
+    window.addEventListener('resize', placePanel)
+    window.addEventListener('scroll', placePanel, true)
+    return () => {
+      window.cancelAnimationFrame(id)
+      window.removeEventListener('resize', placePanel)
+      window.removeEventListener('scroll', placePanel, true)
+    }
+  }, [open, placePanel])
 
   useEffect(() => {
     if (!open || !canvasRef.current) return
@@ -87,9 +127,8 @@ export default function AccentPalette({ value, onChange }) {
       if (e.key === 'Escape') setOpen(false)
     }
     const onDown = (e) => {
-      if (!panelRef.current?.contains(e.target) && !e.target.closest?.('.panel-accent-trigger')) {
-        setOpen(false)
-      }
+      if (rootRef.current?.contains(e.target) || panelRef.current?.contains(e.target)) return
+      setOpen(false)
     }
     window.addEventListener('keydown', onKey)
     window.addEventListener('mousedown', onDown)
@@ -144,9 +183,95 @@ export default function AccentPalette({ value, onChange }) {
     }
   })()
 
+  const panel = open
+    ? createPortal(
+      <div
+        ref={panelRef}
+        className="accent-picker-panel"
+        role="dialog"
+        aria-label="Палитра подсветки"
+        style={{ top: pos.top, left: pos.left }}
+      >
+        <div className="accent-wheel-wrap">
+          <canvas
+            ref={canvasRef}
+            className="accent-wheel"
+            onPointerDown={onWheelDown}
+            onPointerMove={onWheelMove}
+            onPointerUp={onWheelUp}
+            onPointerCancel={onWheelUp}
+          />
+          <span className="accent-wheel-knob" style={knobStyle} aria-hidden />
+        </div>
+
+        <label className="accent-slider">
+          <span>Яркость цвета</span>
+          <strong>{Math.round(draft.v * 100)}%</strong>
+          <input
+            type="range"
+            min={12}
+            max={100}
+            value={Math.round(draft.v * 100)}
+            onChange={(e) => commit({ v: Number(e.target.value) / 100 })}
+            style={{ '--fill': `${Math.round(draft.v * 100)}%`, '--thumb': draft.hex }}
+          />
+        </label>
+
+        <label className="accent-slider">
+          <span>Сила подсветки</span>
+          <strong>{Math.round(draft.glow)}%</strong>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(draft.glow)}
+            onChange={(e) => commit({ glow: Number(e.target.value) })}
+            style={{ '--fill': `${Math.round(draft.glow)}%`, '--thumb': draft.hex }}
+          />
+        </label>
+
+        <label className="accent-hex-field">
+          <span>HEX</span>
+          <input
+            value={hexText}
+            onChange={(e) => {
+              const raw = e.target.value.trim()
+              setHexText(raw)
+              if (/^#[0-9A-Fa-f]{6}$/.test(raw)) commit({ hex: raw, id: 'custom', label: 'Свой' })
+            }}
+            spellCheck={false}
+            maxLength={7}
+          />
+        </label>
+
+        <div className="accent-palette-grid accent-palette-grid-compact">
+          {ACCENT_SWATCHES.map((swatch) => {
+            const on = draft.hex.toLowerCase() === swatch.hex.toLowerCase()
+            return (
+              <button
+                key={swatch.id}
+                type="button"
+                className={`accent-swatch${on ? ' accent-swatch-on' : ''}`}
+                style={{ '--swatch': swatch.hex }}
+                title={swatch.label}
+                aria-label={swatch.label}
+                aria-pressed={on}
+                onClick={() => commit({ ...swatch, glow: draft.glow })}
+              >
+                <span className="accent-swatch-core" />
+              </button>
+            )
+          })}
+        </div>
+      </div>,
+      document.body,
+    )
+    : null
+
   return (
-    <div className="accent-picker-root" ref={panelRef}>
+    <div className="accent-picker-root" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="panel-accent-trigger"
         aria-expanded={open}
@@ -158,96 +283,9 @@ export default function AccentPalette({ value, onChange }) {
           <strong>Подсветка</strong>
           <em>{accent.label === 'Свой' ? accent.hex : accent.label}</em>
         </span>
-        <span className="panel-accent-trigger-chevron" aria-hidden>{open ? '▾' : '▸'}</span>
+        <span className="panel-accent-trigger-chevron" aria-hidden>{open ? '◂' : '▸'}</span>
       </button>
-
-      {open && (
-        <div className="accent-picker-panel" role="dialog" aria-label="Палитра подсветки">
-          <div className="accent-picker-preview" style={{ '--preview': draft.hex }}>
-            <div className="accent-picker-preview-orb" />
-            <div className="accent-picker-preview-meta">
-              <strong>{draft.hex.toUpperCase()}</strong>
-              <span>яркость свечения {Math.round(draft.glow)}%</span>
-            </div>
-          </div>
-
-          <div className="accent-wheel-wrap">
-            <canvas
-              ref={canvasRef}
-              className="accent-wheel"
-              onPointerDown={onWheelDown}
-              onPointerMove={onWheelMove}
-              onPointerUp={onWheelUp}
-              onPointerCancel={onWheelUp}
-            />
-            <span className="accent-wheel-knob" style={knobStyle} aria-hidden />
-          </div>
-
-          <label className="accent-slider">
-            <span>Яркость цвета</span>
-            <strong>{Math.round(draft.v * 100)}%</strong>
-            <input
-              type="range"
-              min={12}
-              max={100}
-              value={Math.round(draft.v * 100)}
-              onChange={(e) => commit({ v: Number(e.target.value) / 100 })}
-              style={{ '--fill': `${Math.round(draft.v * 100)}%`, '--thumb': draft.hex }}
-            />
-          </label>
-
-          <label className="accent-slider">
-            <span>Сила подсветки</span>
-            <strong>{Math.round(draft.glow)}%</strong>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={Math.round(draft.glow)}
-              onChange={(e) => commit({ glow: Number(e.target.value) })}
-              style={{ '--fill': `${Math.round(draft.glow)}%`, '--thumb': draft.hex }}
-            />
-          </label>
-
-          <label className="accent-hex-field">
-            <span>HEX</span>
-            <input
-              value={hexText}
-              onChange={(e) => {
-                const raw = e.target.value.trim()
-                setHexText(raw)
-                if (/^#[0-9A-Fa-f]{6}$/.test(raw)) commit({ hex: raw, id: 'custom', label: 'Свой' })
-              }}
-              spellCheck={false}
-              maxLength={7}
-            />
-          </label>
-
-          <div className="accent-palette-grid accent-palette-grid-compact">
-            {ACCENT_SWATCHES.map((swatch) => {
-              const on = draft.hex.toLowerCase() === swatch.hex.toLowerCase()
-              return (
-                <button
-                  key={swatch.id}
-                  type="button"
-                  className={`accent-swatch${on ? ' accent-swatch-on' : ''}`}
-                  style={{ '--swatch': swatch.hex }}
-                  title={swatch.label}
-                  aria-label={swatch.label}
-                  aria-pressed={on}
-                  onClick={() => commit({ ...swatch, glow: draft.glow })}
-                >
-                  <span className="accent-swatch-core" />
-                </button>
-              )
-            })}
-          </div>
-
-          <p className="accent-picker-hint">
-            Круг — оттенок и насыщенность. Ползунки — яркость цвета и сила свечения по всей панели.
-          </p>
-        </div>
-      )}
+      {panel}
     </div>
   )
 }

@@ -148,9 +148,11 @@ function RankRow({ item, metric, onOpen, index = 0 }) {
       onClick={() => onOpen(item.chat_id)}
     >
       <span className="grp-rank-idx">{index + 1}</span>
-      <span className="grp-rank-name">{item.name}</span>
-      <span className="grp-rank-meta">
-        {item.username ? `@${String(item.username).replace(/^@/, '')}` : item.chat_id}
+      <span className="grp-rank-body">
+        <span className="grp-rank-name">{item.name || `Чат ${item.chat_id}`}</span>
+        <span className="grp-rank-meta">
+          {item.username ? `@${String(item.username).replace(/^@/, '')}` : item.chat_id}
+        </span>
       </span>
       <span className="grp-rank-metric">{metric}</span>
     </button>
@@ -218,10 +220,12 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
 
   useEffect(() => { loadOverview() }, [loadOverview])
 
-  const openChat = useCallback(async (chatId) => {
+  const openChat = useCallback(async (chatId, { preserveView = false } = {}) => {
     setLoadingDetail(true)
-    setTab('detail')
-    setSub('overview')
+    if (!preserveView) {
+      setTab('detail')
+      setSub('overview')
+    }
     try {
       const data = await fetchGroupsStudioDetail(chatId)
       setDetail(data)
@@ -233,6 +237,10 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
       setLoadingDetail(false)
     }
   }, [])
+
+  const refreshChat = useCallback(async (chatId) => {
+    await openChat(chatId, { preserveView: true })
+  }, [openChat])
 
   const onSearch = async (e) => {
     e?.preventDefault?.()
@@ -257,7 +265,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
     try {
       await setGroupsStudioBalance(detail.chat.chat_id, Number(balanceDraft))
       notifyAdmin('Баланс группы обновлён')
-      await openChat(detail.chat.chat_id)
+      await refreshChat(detail.chat.chat_id)
       await loadOverview()
     } catch (e) {
       notifyAdmin(String(e?.message || e), { error: true })
@@ -272,7 +280,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
     try {
       await setGroupsStudioLevel(detail.chat.chat_id, Number(levelDraft))
       notifyAdmin(Number(levelDraft) === 0 ? 'Уровень сброшен' : `Уровень → ★${levelDraft}`)
-      await openChat(detail.chat.chat_id)
+      await refreshChat(detail.chat.chat_id)
     } catch (e) {
       notifyAdmin(String(e?.message || e), { error: true })
     } finally {
@@ -299,7 +307,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
         reason: modReason || undefined,
       })
       notifyAdmin(`Готово: ${modAction}`)
-      await openChat(detail.chat.chat_id)
+      await refreshChat(detail.chat.chat_id)
     } catch (e) {
       notifyAdmin(String(e?.message || e), { error: true })
     } finally {
@@ -434,7 +442,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                     </p>
                   </div>
                   <div className="grp-detail-actions">
-                    <button type="button" className="elite-btn" onClick={() => openChat(chat.chat_id)}>
+                    <button type="button" className="elite-btn" onClick={() => refreshChat(chat.chat_id)}>
                       Обновить
                     </button>
                   </div>

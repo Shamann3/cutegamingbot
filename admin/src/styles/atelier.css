@@ -175,14 +175,23 @@ article.panel-shelf,
 }
 
 .panel-stat-value,
-.elite-metric,
-.grp-stat-value {
+.elite-metric {
   font-family: var(--e-font) !important;
   font-weight: 750 !important;
   font-variant-numeric: tabular-nums !important;
   letter-spacing: -0.035em !important;
   color: var(--e-text) !important;
   font-size: clamp(1.35rem, 1.1rem + 0.8vw, 1.85rem) !important;
+}
+
+.grp-stat-value {
+  font-family: var(--e-font) !important;
+  font-weight: 750 !important;
+  font-variant-numeric: tabular-nums !important;
+  letter-spacing: -0.03em !important;
+  color: var(--e-text) !important;
+  font-size: 1.35rem !important;
+  line-height: 1.15 !important;
 }
 
 /* ---------- Навигация ---------- */
@@ -204,9 +213,13 @@ article.panel-shelf,
 .panel-nav-item-active {
   background: var(--e-accent-soft) !important;
   box-shadow:
-    0 0 0 1px var(--e-accent-line),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 24px -10px rgba(var(--e-accent-rgb), 0.45) !important;
+    0 0 0 1.5px rgba(var(--e-accent-rgb), 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 10px 28px -12px rgba(var(--e-accent-rgb), 0.4) !important;
+  transition:
+    background 0.28s var(--e-ease),
+    box-shadow 0.34s var(--e-ease),
+    transform 0.18s var(--e-ease-spring) !important;
 }
 
 .panel-nav-item-active .panel-nav-label,
@@ -335,7 +348,6 @@ tr:hover td {
 .gbl-tab,
 .sec-tab,
 .sr-tab,
-.pu-tab,
 .sys-tab,
 .analytics-tab,
 .panel-content-tab,
@@ -363,7 +375,6 @@ tr:hover td {
 .gbl-tab-active,
 .sec-tab-active,
 .sr-tab-active,
-.pu-tab-active,
 .sys-tab-active,
 .analytics-tab-active,
 .panel-content-tab-active,
@@ -374,10 +385,49 @@ tr:hover td {
 .case-tab-active,
 .auth-tab-active,
 .pa-role-tab-active {
-  background: var(--e-accent-soft) !important;
+  background: rgba(var(--e-accent-rgb), 0.14) !important;
   color: var(--e-accent-bright) !important;
-  border-color: var(--e-accent-line) !important;
-  box-shadow: 0 0 20px -8px rgba(var(--e-accent-rgb), 0.5) !important;
+  border-color: transparent !important;
+  box-shadow:
+    0 0 0 1.5px rgba(var(--e-accent-rgb), 0.48),
+    0 0 24px rgba(var(--e-accent-rgb), 0.2) !important;
+  transition:
+    background 0.3s var(--e-ease),
+    color 0.3s var(--e-ease),
+    border-color 0.3s var(--e-ease),
+    box-shadow 0.35s var(--e-ease),
+    transform 0.18s var(--e-ease-spring) !important;
+}
+
+/* Вкладки профиля игрока — линия снизу в цвете палитры */
+.pu-tab {
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  color: var(--e-text-3) !important;
+  padding: 0.55rem 1rem !important;
+  margin-bottom: -1px !important;
+  transition:
+    color 0.28s var(--e-ease),
+    border-color 0.28s var(--e-ease) !important;
+}
+.pu-tab:hover {
+  color: var(--e-text-2) !important;
+}
+.pu-tab.active,
+.pu-tab-active {
+  color: var(--e-accent-bright) !important;
+  border-bottom-color: var(--e-accent) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.pu-tabs {
+  border-bottom: 1px solid var(--e-line) !important;
+  gap: 0.15rem !important;
+  background: transparent !important;
+  padding: 0 !important;
 }
 
 /* Контейнеры табов */
@@ -780,7 +830,7 @@ body.perf-light .elite-btn-primary {
   .panel-shelf,
   .grp-panel,
   .grp-card {
-    border-radius: 16px !important;
+    border-radius: 18px !important;
   }
 
   .sec-title,
@@ -788,4 +838,36 @@ body.perf-light .elite-btn-primary {
   .grp-title {
     font-size: 1.28rem !important;
   }
+}
+
+/* ---------- Глобальное скругление ---------- */
+.panel-shell input:not([type='range']):not([type='checkbox']):not([type='radio']),
+.panel-shell select,
+.panel-shell textarea,
+.panel-shell .panel-users-input,
+.panel-shell .arc-input,
+.panel-shell .elite-input {
+  border-radius: var(--e-r-input) !important;
+}
+
+.panel-shell button:not(.panel-nav-item):not(.grp-tab):not(.grp-subtab),
+.panel-shell .panel-users-btn,
+.panel-shell .elite-btn {
+  border-radius: var(--e-r-pill) !important;
+}
+
+.panel-shell .grp-table-wrap,
+.panel-shell table.grp-table,
+.panel-shell .panel-users-plot,
+.panel-shell .ulp-card,
+.panel-shell .ulp-hits,
+.panel-shell .punish-action {
+  border-radius: 16px !important;
+}
+
+.panel-shell .grp-table th:first-child {
+  border-top-left-radius: 14px;
+}
+.panel-shell .grp-table th:last-child {
+  border-top-right-radius: 14px;
 }

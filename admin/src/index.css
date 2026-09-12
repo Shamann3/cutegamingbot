@@ -8061,6 +8061,7 @@ body {
   border-bottom: 1px solid #1c1c20;
 }
 .pu-tab {
+  position: relative;
   padding: 0.5rem 1rem;
   background: none;
   border: none;
@@ -8068,11 +8069,14 @@ body {
   color: #64748b;
   font-size: 0.85rem;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition: color 0.22s ease, border-color 0.22s ease;
   margin-bottom: -1px;
 }
 .pu-tab:hover { color: #94a3b8; }
-.pu-tab.active { color: #cccccc; border-bottom-color: #cccccc; }
+.pu-tab.active {
+  color: var(--e-accent-bright, #a8d4bc);
+  border-bottom-color: var(--e-accent, #7EB89A);
+}
 
 /* Section title inside tab */
 .pu-section-title {
