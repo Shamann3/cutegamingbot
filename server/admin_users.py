@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -1085,6 +1086,254 @@ async def get_user_intel(user_id: int, *, is_owner: bool = False) -> dict | None
         "notes": notes if isinstance(notes, list) else notes,
         "editable": editable,
         "viewer": {"isOwner": bool(is_owner)},
+    }
+
+
+_COMPARE_CHURN_RANK = {"low": 0, "medium": 1, "high": 2}
+_COMPARE_CHURN_LABEL = {"low": "низкий", "medium": "средний", "high": "высокий"}
+
+_COMPARE_CATEGORIES = [
+    {"key": "economy", "label": "Экономика", "icon": "💰", "tag": "выгоднее для экономики"},
+    {"key": "games", "label": "Игры", "icon": "🎮", "tag": "полезнее для игр"},
+    {"key": "activity", "label": "Активность", "icon": "⚡", "tag": "активнее в целом"},
+    {"key": "social", "label": "Группы", "icon": "👥", "tag": "ценнее для групп"},
+    {"key": "farm", "label": "Ферма и прогресс", "icon": "🌱", "tag": "дальше в прогрессе"},
+    {"key": "trust", "label": "Надёжность", "icon": "🛡️", "tag": "надёжнее"},
+]
+
+
+def _cmp_get(source: dict | None, *path: str, default: Any = 0) -> Any:
+    cur = source
+    for p in path:
+        if not isinstance(cur, dict):
+            return default
+        cur = cur.get(p)
+    return cur if cur is not None else default
+
+
+def _cmp_metric(
+    key: str,
+    label: str,
+    icon: str,
+    category: str,
+    a_val: Any,
+    b_val: Any,
+    *,
+    fmt: str = "int",
+    higher_is_better: bool = True,
+    true_label: str | None = None,
+    false_label: str | None = None,
+) -> dict:
+    a_num = a_val if isinstance(a_val, (int, float)) else 0
+    b_num = b_val if isinstance(b_val, (int, float)) else 0
+    if a_num == b_num:
+        winner = "tie"
+    elif (a_num > b_num) == higher_is_better:
+        winner = "a"
+    else:
+        winner = "b"
+    out = {
+        "key": key,
+        "label": label,
+        "icon": icon,
+        "category": category,
+        "a": a_val,
+        "b": b_val,
+        "format": fmt,
+        "higherIsBetter": higher_is_better,
+        "winner": winner,
+    }
+    if fmt == "bool":
+        out["trueLabel"] = true_label or "Да"
+        out["falseLabel"] = false_label or "Нет"
+    return out
+
+
+async def compare_users(user_id_a: int, user_id_b: int, *, is_owner: bool = False) -> dict | None:
+    """Полное сравнение двух игроков по КАЖДОМУ доступному параметру профиля,
+    экономики, активности, игр, групп, фермы и надёжности — плюс итоговый
+    вердикт: кто и в каких категориях полезнее для проекта."""
+    if int(user_id_a) == int(user_id_b):
+        return None
+
+    intel_a, intel_b = await asyncio.gather(
+        get_user_intel(int(user_id_a), is_owner=is_owner),
+        get_user_intel(int(user_id_b), is_owner=is_owner),
+    )
+    if not intel_a or not intel_b:
+        return None
+
+    pa, pb = intel_a["profile"], intel_b["profile"]
+    ea, eb = intel_a["economy"], intel_b["economy"]
+    enga, engb = intel_a.get("engagement") or {}, intel_b.get("engagement") or {}
+    p2pa, p2pb = intel_a.get("p2p") or {}, intel_b.get("p2p") or {}
+
+    metrics: list[dict] = []
+
+    # --- Экономика ---
+    metrics.append(_cmp_metric("balance", "Баланс КУТ", "💰", "economy", pa.get("balance", 0), pb.get("balance", 0), fmt="money"))
+    metrics.append(_cmp_metric("donateLifetime", "Донат (всего)", "💎", "economy", ea.get("donateLifetime", 0), eb.get("donateLifetime", 0), fmt="money"))
+    metrics.append(_cmp_metric("canWithdrawal", "Доступно к выводу", "🏦", "economy", ea.get("canWithdrawal", 0), eb.get("canWithdrawal", 0), fmt="money"))
+    da, db_ = intel_a.get("dossier") or {}, intel_b.get("dossier") or {}
+    metrics.append(_cmp_metric("p2pSent", "Переведено другим", "📤", "economy", p2pa.get("sentSum", 0), p2pb.get("sentSum", 0), fmt="money"))
+    metrics.append(_cmp_metric("p2pRecv", "Получено переводами", "📥", "economy", p2pa.get("recvSum", 0), p2pb.get("recvSum", 0), fmt="money"))
+    metrics.append(_cmp_metric("marketSales", "Продаж на бирже", "🏪", "economy", pa.get("marketSalesCount", 0), pb.get("marketSalesCount", 0)))
+    metrics.append(_cmp_metric("marketItemsSold", "Товаров продано", "📦", "economy", pa.get("marketItemsSold", 0), pb.get("marketItemsSold", 0)))
+    metrics.append(_cmp_metric("itemTrades", "Обменов предметами", "🔁", "economy", _cmp_get(intel_a, "itemTrades", "count"), _cmp_get(intel_b, "itemTrades", "count")))
+    metrics.append(_cmp_metric("inventory", "Предметов в инвентаре", "🎒", "economy", len(pa.get("inventory") or []), len(pb.get("inventory") or [])))
+    metrics.append(_cmp_metric("donateOps", "Операций доната", "💳", "economy", _cmp_get(ea, "donateJournal", "count"), _cmp_get(eb, "donateJournal", "count")))
+    tl_a, tl_b = ea.get("transferLimit"), eb.get("transferLimit")
+    if tl_a is not None or tl_b is not None:
+        metrics.append(_cmp_metric("transferLimit", "Лимит перевода", "🧾", "economy", tl_a or 0, tl_b or 0, fmt="money"))
+    metrics.append(_cmp_metric("growthFund", "Вклад в фонд роста", "🌱", "economy", da.get("growthFundContributed", 0), db_.get("growthFundContributed", 0), fmt="money"))
+
+    # --- Игры ---
+    wins_a, loss_a = int(ea.get("wins", 0) or 0), int(ea.get("losses", 0) or 0)
+    wins_b, loss_b = int(eb.get("wins", 0) or 0), int(eb.get("losses", 0) or 0)
+    total_a, total_b = wins_a + loss_a, wins_b + loss_b
+    rate_a = round(wins_a / total_a * 100, 1) if total_a else 0
+    rate_b = round(wins_b / total_b * 100, 1) if total_b else 0
+    metrics.append(_cmp_metric("gamesTotal", "Сыграно игр", "🎲", "games", total_a, total_b))
+    metrics.append(_cmp_metric("wins", "Победы", "🏆", "games", wins_a, wins_b))
+    metrics.append(_cmp_metric("losses", "Поражения", "💔", "games", loss_a, loss_b, higher_is_better=False))
+    metrics.append(_cmp_metric("winRate", "Процент побед", "📈", "games", rate_a, rate_b, fmt="percent"))
+    metrics.append(_cmp_metric("winAmount", "Выиграно КУТ", "🤑", "games", ea.get("winAmount", 0), eb.get("winAmount", 0), fmt="money"))
+    metrics.append(_cmp_metric("gameOpens", "Открытий игр в группах", "🕹️", "games", _cmp_get(enga, "gameOpens", "total"), _cmp_get(engb, "gameOpens", "total")))
+
+    # --- Активность ---
+    metrics.append(_cmp_metric("engagementScore", "Индекс активности", "⚡", "activity", _cmp_get(enga, "signals", "engagementScore"), _cmp_get(engb, "signals", "engagementScore")))
+    metrics.append(_cmp_metric("msgLifetime", "Сообщений всего", "💬", "activity", _cmp_get(enga, "messages", "lifetime"), _cmp_get(engb, "messages", "lifetime")))
+    metrics.append(_cmp_metric("msgMonth", "Сообщений за 30д", "💬", "activity", _cmp_get(enga, "messages", "month"), _cmp_get(engb, "messages", "month")))
+    metrics.append(_cmp_metric("msgWeek", "Сообщений за 7д", "💬", "activity", _cmp_get(enga, "messages", "week"), _cmp_get(engb, "messages", "week")))
+    metrics.append(_cmp_metric("activeDaysMonth", "Активных дней за 30д", "📅", "activity", _cmp_get(enga, "activeDays", "month"), _cmp_get(engb, "activeDays", "month")))
+    metrics.append(_cmp_metric("streakCurrent", "Текущий стрик", "🔥", "activity", _cmp_get(enga, "streak", "current"), _cmp_get(engb, "streak", "current")))
+    metrics.append(_cmp_metric("streakBest", "Лучший стрик", "🔥", "activity", _cmp_get(enga, "streak", "best"), _cmp_get(engb, "streak", "best")))
+    metrics.append(_cmp_metric("sessionMin30d", "Минут в Mini App · 30д", "⏱️", "activity", _cmp_get(enga, "sessions", "estimatedMinutes30d"), _cmp_get(engb, "sessions", "estimatedMinutes30d")))
+    metrics.append(_cmp_metric("logins30d", "Входов в Mini App · 30д", "📲", "activity", _cmp_get(enga, "sessions", "loginEvents30d"), _cmp_get(engb, "sessions", "loginEvents30d")))
+    churn_a_raw = _cmp_get(enga, "signals", "churnRisk", default="low")
+    churn_b_raw = _cmp_get(engb, "signals", "churnRisk", default="low")
+    churn_a_rank = _COMPARE_CHURN_RANK.get(churn_a_raw, 0)
+    churn_b_rank = _COMPARE_CHURN_RANK.get(churn_b_raw, 0)
+    churn_metric = _cmp_metric("churnRisk", "Риск ухода", "📉", "activity", churn_a_rank, churn_b_rank, higher_is_better=False)
+    churn_metric["format"] = "text"
+    churn_metric["a"] = _COMPARE_CHURN_LABEL.get(churn_a_raw, churn_a_raw)
+    churn_metric["b"] = _COMPARE_CHURN_LABEL.get(churn_b_raw, churn_b_raw)
+    metrics.append(churn_metric)
+
+    # --- Группы / соц. ценность ---
+    metrics.append(_cmp_metric("chatCount30d", "Активен в группах (30д)", "👥", "social", _cmp_get(intel_a, "activity30d", "chatCount"), _cmp_get(intel_b, "activity30d", "chatCount")))
+    metrics.append(_cmp_metric("topGroups", "Групп в топе активности", "🏘️", "social", len(_cmp_get(enga, "topGroupsLifetime", default=[]) or []), len(_cmp_get(engb, "topGroupsLifetime", default=[]) or [])))
+    metrics.append(_cmp_metric("p2pNetwork", "Переводов (получено+отдано)", "🤝", "social", int(p2pa.get("sentCount", 0) or 0) + int(p2pa.get("recvCount", 0) or 0), int(p2pb.get("sentCount", 0) or 0) + int(p2pb.get("recvCount", 0) or 0)))
+    metrics.append(_cmp_metric("sponsored", "Спонсор уровней бч", "⭐", "social", len(da.get("sponsoredChats") or []), len(db_.get("sponsoredChats") or [])))
+    metrics.append(_cmp_metric("referrals", "Рефералов", "🔗", "social", da.get("referrals", 0), db_.get("referrals", 0)))
+    rep_a = int(da.get("reputationPlus") or 0) - int(da.get("reputationMinus") or 0)
+    rep_b = int(db_.get("reputationPlus") or 0) - int(db_.get("reputationMinus") or 0)
+    metrics.append(_cmp_metric("reputation", "Репутация (+/−)", "🫶", "social", rep_a, rep_b))
+
+    # --- Ферма и прогресс ---
+    metrics.append(_cmp_metric("plots", "Грядок", "🌾", "farm", pa.get("ownedPlots", 0), pb.get("ownedPlots", 0)))
+    metrics.append(_cmp_metric("harvests", "Урожаев собрано", "🌻", "farm", _cmp_get(enga, "farm", "harvests"), _cmp_get(engb, "farm", "harvests")))
+    metrics.append(_cmp_metric("plants", "Посадок", "🪴", "farm", _cmp_get(enga, "farm", "plants"), _cmp_get(engb, "farm", "plants")))
+    metrics.append(_cmp_metric("waters", "Поливов", "💧", "farm", _cmp_get(enga, "farm", "waters"), _cmp_get(engb, "farm", "waters")))
+    qa, qb = intel_a.get("quests") or {}, intel_b.get("quests") or {}
+    qdone_a = qa.get("doneCount") if isinstance(qa, dict) else None
+    qdone_b = qb.get("doneCount") if isinstance(qb, dict) else None
+    if qdone_a is None and isinstance(qa, dict):
+        qdone_a = qa.get("completed") or qa.get("done") or 0
+    if qdone_b is None and isinstance(qb, dict):
+        qdone_b = qb.get("completed") or qb.get("done") or 0
+    metrics.append(_cmp_metric("quests", "Квестов закрыто", "🎯", "farm", int(qdone_a or 0), int(qdone_b or 0)))
+    eff_a = _cmp_get(enga, "farm", "efficiencyPct", default=None)
+    eff_b = _cmp_get(engb, "farm", "efficiencyPct", default=None)
+    if eff_a is not None or eff_b is not None:
+        metrics.append(_cmp_metric("farmEfficiency", "Эффективность фермы", "🌿", "farm", eff_a or 0, eff_b or 0, fmt="percent"))
+    metrics.append(_cmp_metric("achievements", "Достижений", "🏅", "farm", _cmp_get(intel_a, "achievements", "count"), _cmp_get(intel_b, "achievements", "count")))
+
+    # --- Надёжность ---
+    metrics.append(_cmp_metric(
+        "notBanned", "Статус аккаунта", "🛡️", "trust",
+        not pa.get("banned"), not pb.get("banned"),
+        fmt="bool", true_label="Активен", false_label="Забанен",
+    ))
+    bans_a = intel_a.get("bans")
+    bans_b = intel_b.get("bans")
+    metrics.append(_cmp_metric(
+        "banHistory", "Банов в истории", "⛔", "trust",
+        len(bans_a) if isinstance(bans_a, list) else 0,
+        len(bans_b) if isinstance(bans_b, list) else 0,
+        higher_is_better=False,
+    ))
+    metrics.append(_cmp_metric(
+        "onboardingDone", "Прошёл обучение", "✅", "trust",
+        bool(_cmp_get(pa, "onboarding", "done")), bool(_cmp_get(pb, "onboarding", "done")),
+        fmt="bool", true_label="Да", false_label="Нет",
+    ))
+
+    # --- Категории: подсчёт побед по каждой и общий вердикт ---
+    categories_out = []
+    total_wins_a = total_wins_b = 0
+    for cat in _COMPARE_CATEGORIES:
+        cat_metrics = [m for m in metrics if m["category"] == cat["key"]]
+        wins_a_cat = sum(1 for m in cat_metrics if m["winner"] == "a")
+        wins_b_cat = sum(1 for m in cat_metrics if m["winner"] == "b")
+        total_wins_a += wins_a_cat
+        total_wins_b += wins_b_cat
+        cat_winner = "tie" if wins_a_cat == wins_b_cat else ("a" if wins_a_cat > wins_b_cat else "b")
+        categories_out.append({
+            **cat,
+            "winsA": wins_a_cat,
+            "winsB": wins_b_cat,
+            "metricCount": len(cat_metrics),
+            "winner": cat_winner,
+        })
+
+    overall_winner = "tie" if total_wins_a == total_wins_b else ("a" if total_wins_a > total_wins_b else "b")
+    strengths_a = [c["tag"] for c in categories_out if c["winner"] == "a"]
+    strengths_b = [c["tag"] for c in categories_out if c["winner"] == "b"]
+
+    name_a = str(pa.get("displayName") or pa.get("username") or user_id_a)
+    name_b = str(pb.get("displayName") or pb.get("username") or user_id_b)
+    roles_a = [f"{c['icon']} {c['label']}" for c in categories_out if c["winner"] == "a"]
+    roles_b = [f"{c['icon']} {c['label']}" for c in categories_out if c["winner"] == "b"]
+
+    if overall_winner == "tie":
+        summary = (
+            f"{name_a} и {name_b} почти равны для проекта "
+            f"({total_wins_a}:{total_wins_b} по {len(metrics)} параметрам). "
+            "Смотрите категории ниже — у каждого своя польза."
+        )
+    else:
+        win_name = name_a if overall_winner == "a" else name_b
+        win_roles = roles_a if overall_winner == "a" else roles_b
+        other_name = name_b if overall_winner == "a" else name_a
+        other_roles = roles_b if overall_winner == "a" else roles_a
+        roles_bit = ", ".join(win_roles) if win_roles else "по сумме параметров"
+        other_bit = (
+            f" {other_name} сильнее в: {', '.join(other_roles)}."
+            if other_roles else ""
+        )
+        summary = (
+            f"{win_name} полезнее для проекта в целом "
+            f"({total_wins_a}:{total_wins_b} по {len(metrics)} параметрам) — "
+            f"особенно {roles_bit}.{other_bit}"
+        )
+
+    return {
+        "a": {"userId": int(user_id_a), "profile": pa},
+        "b": {"userId": int(user_id_b), "profile": pb},
+        "metrics": metrics,
+        "categories": categories_out,
+        "verdict": {
+            "winner": overall_winner,
+            "winsA": total_wins_a,
+            "winsB": total_wins_b,
+            "totalMetrics": len(metrics),
+            "strengthsA": strengths_a,
+            "strengthsB": strengths_b,
+            "rolesA": roles_a,
+            "rolesB": roles_b,
+            "summary": summary,
+        },
     }
 
 

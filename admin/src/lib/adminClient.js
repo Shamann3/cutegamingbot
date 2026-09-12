@@ -1734,6 +1734,10 @@ export async function exportPlayerProfile(userId) {
   return adminFetch(`/users/${userId}/export`)
 }
 
+export async function compareAdminUsers(userIdA, userIdB) {
+  return adminFetch(`/users/${userIdA}/compare/${userIdB}`)
+}
+
 // ---------------------------------------------------------------------------
 // Dex full CRUD
 // ---------------------------------------------------------------------------

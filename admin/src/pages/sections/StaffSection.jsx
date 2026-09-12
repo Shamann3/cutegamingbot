@@ -1001,7 +1001,7 @@ const PERIODS = [
   { value: 'all', label: 'Всё время' },
 ]
 
-function LedgerTab() {
+function LedgerTab({ isProjectCreator = false }) {
   const [period, setPeriod] = useState('month')
   const [data, setData] = useState(null)
   const [pending, setPending] = useState([])
@@ -1058,9 +1058,11 @@ function LedgerTab() {
       <div className="sec-audit-filters">
         <AdminSelect value={period} onChange={setPeriod} options={PERIODS} />
         <button className="sec-btn sec-btn-ghost" onClick={load}>Обновить</button>
-        <button className="sec-btn sec-btn-ghost" onClick={exportCsv} disabled={!data?.items?.length}>
-          Экспорт CSV
-        </button>
+        {isProjectCreator && (
+          <button className="sec-btn sec-btn-ghost" onClick={exportCsv} disabled={!data?.items?.length}>
+            Экспорт CSV
+          </button>
+        )}
       </div>
 
       {loading && <p className="sec-loading">Загрузка…</p>}
@@ -1545,7 +1547,7 @@ function InvitesTab() {
 // Main
 // ---------------------------------------------------------------------------
 
-export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null }) {
+export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null, isProjectCreator = false }) {
   const perms = useMemo(() => new Set(permissions), [permissions])
   const isOwner = role === 'owner'
 
@@ -1601,7 +1603,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
         <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} myUserId={myUserId} />
       )}
       {activeTab === 'bonuses' && <PayrollBonusesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
-      {activeTab === 'ledger' && <LedgerTab />}
+      {activeTab === 'ledger' && <LedgerTab isProjectCreator={isProjectCreator} />}
       {activeTab === 'payoutsettings' && <PayrollSettingsTab />}
       {activeTab === 'leaderboard' && <LeaderboardTab />}
       {activeTab === 'shifts' && <ShiftsTab />}

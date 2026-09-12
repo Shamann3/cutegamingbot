@@ -462,6 +462,7 @@ def remember_message(
         "message_id": int(message_id) if message_id is not None else None,
         "inline_message_id": str(inline_message_id) if inline_message_id else None,
         "kind": str(kind or "auto"),
+        "content_kind": None,
         "markup_spec": spec,
         "callbacks": callbacks[:64],
         "opaque": opaque,
@@ -470,6 +471,9 @@ def remember_message(
         "ts": time.time(),
     }
     try:
+        prev = _messages().get(key)
+        if isinstance(prev, dict) and prev.get("content_kind") in ("text", "caption"):
+            rec["content_kind"] = prev["content_kind"]
         _messages()[key] = rec
         _persist_store(_messages())
         _maybe_prune_messages()
@@ -829,7 +833,7 @@ def _capture_result(method: Any, result: Any) -> None:
     if not inline_message_id and chat_id is None:
         return
 
-    remember_message(
+    key = remember_message(
         chat_id=chat_id,
         message_id=message_id,
         inline_message_id=str(inline_message_id) if inline_message_id else None,
@@ -837,6 +841,88 @@ def _capture_result(method: Any, result: Any) -> None:
         kind="auto",
         raise_on_boot=True,
     )
+    ck = _content_kind_from_result(method, result)
+    if key and ck:
+        remember_content_kind(
+            chat_id=chat_id,
+            message_id=message_id,
+            inline_message_id=str(inline_message_id) if inline_message_id else None,
+            kind=ck,
+        )
+
+
+def _content_kind_from_result(method: Any, result: Any) -> Optional[str]:
+    src = result if result is not None and hasattr(result, "message_id") else None
+    if src is None:
+        return None
+    if (
+        getattr(src, "photo", None)
+        or getattr(src, "animation", None)
+        or getattr(src, "video", None)
+        or getattr(src, "document", None)
+        or getattr(src, "audio", None)
+        or getattr(src, "voice", None)
+    ):
+        return "caption"
+    if getattr(src, "text", None) is not None:
+        return "text"
+    if getattr(src, "caption", None) is not None:
+        return "caption"
+    name = method.__class__.__name__ if method is not None else ""
+    if name in ("SendPhoto", "SendAnimation", "SendVideo", "SendDocument", "EditMessageCaption"):
+        return "caption"
+    if name in ("SendMessage", "EditMessageText"):
+        return "text"
+    return None
+
+
+def lookup_content_kind(
+    *,
+    chat_id: Optional[int] = None,
+    message_id: Optional[int] = None,
+    inline_message_id: Optional[str] = None,
+) -> Optional[str]:
+    key = message_key(
+        chat_id=chat_id,
+        message_id=message_id,
+        inline_message_id=inline_message_id,
+    )
+    if not key:
+        return None
+    try:
+        rec = _messages().get(key)
+    except Exception:
+        rec = None
+    if not isinstance(rec, dict):
+        return None
+    kind = rec.get("content_kind")
+    return str(kind) if kind in ("text", "caption") else None
+
+
+def remember_content_kind(
+    *,
+    chat_id: Optional[int] = None,
+    message_id: Optional[int] = None,
+    inline_message_id: Optional[str] = None,
+    kind: str,
+) -> None:
+    if kind not in ("text", "caption"):
+        return
+    key = message_key(
+        chat_id=chat_id,
+        message_id=message_id,
+        inline_message_id=inline_message_id,
+    )
+    if not key:
+        return
+    try:
+        rec = _messages().get(key)
+        if isinstance(rec, dict):
+            rec = dict(rec)
+            rec["content_kind"] = kind
+            _messages()[key] = rec
+    except Exception:
+        pass
 
 
 try:

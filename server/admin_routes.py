@@ -136,6 +136,7 @@ from admin_users import (
     admin_adjust_item,
     admin_reset_onboarding,
     admin_set_banned,
+    compare_users,
     delete_player_note,
     export_player_profile,
     get_player_ban_history,
@@ -3293,6 +3294,32 @@ async def admin_user_intel(
     return intel
 
 
+@router.get("/users/{target_user_id}/compare/{other_user_id}")
+async def admin_user_compare(
+    target_user_id: int,
+    other_user_id: int,
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    """Полное сравнение двух игроков по всем параметрам + вердикт, кто и в
+    каких категориях (игры/группы/активность/экономика/ферма/надёжность)
+    полезнее для проекта."""
+    if int(target_user_id) == int(other_user_id):
+        raise HTTPException(status_code=400, detail="Нельзя сравнить игрока с самим собой")
+    account = getattr(request.state, "admin_account", None)
+    if not account:
+        try:
+            account = await get_admin_account_security(admin_id)
+            request.state.admin_account = account
+        except Exception:
+            account = {}
+    is_owner = (account or {}).get("role") == ROLE_OWNER
+    result = await compare_users(target_user_id, other_user_id, is_owner=bool(is_owner))
+    if not result:
+        raise HTTPException(status_code=404, detail="Один из игроков не найден")
+    return result
+
+
 @router.get("/users/{target_user_id}/transfers")
 async def admin_user_transfers(
     target_user_id: int,
@@ -5858,8 +5885,12 @@ async def admin_user_notes_delete(
 @router.get("/users/{user_id}/export")
 async def admin_user_export(
     user_id: int,
-    _admin_id: int = Depends(require_admin_permission("view_player_sensitive")),
+    admin_id: int = Depends(require_admin_permission("view_player_sensitive")),
 ):
+    # Экспорт полного досье игрока — самое чувствительное read-действие в
+    # разделе «Игроки», поэтому доступ только у ЕДИНСТВЕННОГО создателя
+    # проекта (PROJECT_CREATOR_ID), а не у любого owner-аккаунта.
+    _require_project_creator(admin_id)
     try:
         import datetime as _dt
         data = await export_player_profile(user_id)

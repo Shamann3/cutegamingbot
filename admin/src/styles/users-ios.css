@@ -204,6 +204,12 @@
     transform 0.2s var(--e-ease-spring) !important;
 }
 
+.panel-users .pu-action-btn-on {
+  border-color: var(--e-accent-line) !important;
+  background: var(--e-accent) !important;
+  color: var(--e-accent-ink) !important;
+}
+
 .panel-users .pu-action-btn:hover {
   border-color: var(--e-accent-line) !important;
   background: rgba(var(--e-accent-rgb), 0.12) !important;
@@ -1981,6 +1987,365 @@ button.pu-inv-item.is-active {
     position: relative !important;
     top: auto !important;
     z-index: auto !important;
+  }
+}
+
+/* ============================================================
+   ⚖️ Сравнение игроков — полный разбор по каждому параметру +
+   вердикт «кто полезнее для проекта» (вкладка pu-cmp).
+   ============================================================ */
+
+.pu-cmp-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.pu-cmp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pu-cmp-hint {
+  margin-top: 0.85rem;
+  line-height: 1.5;
+}
+
+.pu-cmp-heroes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  margin: 1.15rem 0 0.9rem;
+}
+
+.pu-cmp-hero {
+  position: relative;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
+  min-width: 0;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.25s var(--e-ease), background 0.25s var(--e-ease), transform 0.2s var(--e-ease-spring);
+}
+
+button.pu-cmp-hero:hover {
+  border-color: rgba(var(--e-accent-rgb), 0.4);
+  transform: translateY(-1px);
+}
+
+.pu-cmp-hero-win {
+  border-color: rgba(52, 211, 153, 0.5);
+  background: radial-gradient(ellipse at center, rgba(52, 211, 153, 0.16), rgba(255, 255, 255, 0.02));
+  box-shadow: 0 16px 34px -20px rgba(52, 211, 153, 0.55);
+  transform: translateY(-2px);
+}
+
+.pu-cmp-crown {
+  position: absolute;
+  top: -0.85rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.25rem;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.6));
+}
+
+.pu-cmp-hero-name {
+  margin: 0 0 0.15rem;
+  font-weight: 720;
+  font-size: 0.94rem;
+  color: var(--e-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pu-cmp-hero-id {
+  margin: 0;
+  font-size: 0.68rem;
+  color: var(--e-text-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.pu-cmp-vs {
+  font-size: 0.72rem;
+  font-weight: 780;
+  letter-spacing: 0.08em;
+  color: var(--e-text-4);
+  padding: 0 0.2rem;
+}
+
+.pu-cmp-verdict {
+  padding: 0.95rem 1.05rem;
+  border-radius: 18px;
+  border: 1px solid rgba(var(--e-accent-rgb), 0.32);
+  background: linear-gradient(160deg, rgba(var(--e-accent-rgb), 0.14), rgba(0, 0, 0, 0.4));
+  margin-bottom: 1.05rem;
+}
+
+.pu-cmp-verdict-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.98rem;
+  font-weight: 720;
+  color: var(--e-text);
+  line-height: 1.4;
+}
+
+.pu-cmp-verdict-score {
+  font-weight: 500;
+  color: var(--e-text-3);
+  font-size: 0.8rem;
+}
+
+.pu-cmp-verdict-summary {
+  margin: 0 0 0.75rem;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: var(--e-text-2);
+}
+
+.pu-cmp-roles,
+.pu-cmp-strengths {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.pu-cmp-roles-label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--e-text-4);
+  overflow-wrap: anywhere;
+}
+
+.pu-cmp-roles-col,
+.pu-cmp-strengths-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.pu-cmp-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.32rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 620;
+  width: fit-content;
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.pu-cmp-tag-a {
+  background: rgba(52, 211, 153, 0.14);
+  border: 1px solid rgba(52, 211, 153, 0.38);
+  color: #6ef0ad;
+}
+
+.pu-cmp-tag-b {
+  background: rgba(var(--e-accent-rgb), 0.16);
+  border: 1px solid rgba(var(--e-accent-rgb), 0.42);
+  color: var(--e-accent-bright);
+}
+
+.pu-cmp-tag-empty {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  color: var(--e-text-4);
+}
+
+.pu-cmp-categories {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1.15rem;
+}
+
+.pu-cmp-cat {
+  padding: 0.65rem 0.75rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.025);
+  min-width: 0;
+}
+
+.pu-cmp-cat-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+  color: var(--e-text-2);
+  margin-bottom: 0.45rem;
+  overflow: hidden;
+}
+
+.pu-cmp-cat-head > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pu-cmp-cat-score {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--e-text-4);
+}
+
+.pu-cmp-cat-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.pu-cmp-cat-bar-a {
+  height: 100%;
+  border-radius: 999px 0 0 999px;
+  background: linear-gradient(90deg, #34d399, #6ef0ad);
+  transition: width 0.4s var(--e-ease);
+}
+
+.pu-cmp-cat-tie .pu-cmp-cat-bar-a {
+  background: linear-gradient(90deg, #9aa0aa, #c6cad2);
+}
+
+.pu-cmp-cat-b .pu-cmp-cat-bar-a {
+  background: linear-gradient(90deg, rgba(var(--e-accent-rgb), 0.55), var(--e-accent-bright));
+}
+
+.pu-cmp-table {
+  display: flex;
+  flex-direction: column;
+  gap: 1.05rem;
+}
+
+.pu-cmp-group-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--e-text-4);
+}
+
+.pu-cmp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr);
+  grid-template-areas: "a label b";
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.15rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pu-cmp-row:last-child {
+  border-bottom: none;
+}
+
+.pu-cmp-cell {
+  font-size: 0.85rem;
+  font-weight: 640;
+  font-variant-numeric: tabular-nums;
+  color: var(--e-text-3);
+  padding: 0.28rem 0.4rem;
+  border-radius: 10px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pu-cmp-cell-a {
+  grid-area: a;
+  text-align: right;
+}
+
+.pu-cmp-cell-b {
+  grid-area: b;
+  text-align: left;
+}
+
+.pu-cmp-cell-win {
+  color: #6ef0ad;
+  background: rgba(52, 211, 153, 0.12);
+  font-weight: 760;
+}
+
+.pu-cmp-cell-label {
+  grid-area: label;
+  text-align: center;
+  font-size: 0.74rem;
+  color: var(--e-text-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 0.2rem;
+}
+
+@media (max-width: 900px) {
+  .pu-cmp-categories {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pu-cmp-roles,
+  .pu-cmp-strengths {
+    grid-template-columns: 1fr;
+  }
+
+  .pu-cmp-hero-name {
+    font-size: 0.84rem;
+  }
+
+  .pu-cmp-row {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "label label"
+      "a b";
+    gap: 0.35rem 0.45rem;
+    padding: 0.7rem 0.15rem;
+  }
+
+  .pu-cmp-cell {
+    font-size: 0.8rem;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: anywhere;
+  }
+
+  .pu-cmp-cell-label {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    font-size: 0.72rem;
+    text-align: left;
+  }
+
+  .pu-cmp-cell-a,
+  .pu-cmp-cell-b {
+    text-align: center;
+  }
+
+  .pu-cmp-toolbar {
+    flex-direction: column;
+    align-items: stretch !important;
   }
 }
 

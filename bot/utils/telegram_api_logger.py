@@ -105,6 +105,8 @@ _QUIET_PATTERNS = (
     "not enough rights",
     "document_invalid",
     "can't parse entities",
+    "there is no caption in the message to edit",
+    "there is no text in the message to edit",
 )
 
 # Edit уже в нужном виде: для Telegram это BadRequest, для нас - успех.
@@ -218,10 +220,77 @@ def _is_network_error(error: Exception) -> bool:
     )
 
 
+def _lookup_message_content_kind(method) -> str | None:
+    """text | caption | None — из BLC-индекса, если сообщение уже захватывали."""
+    try:
+        from bot.runtime.button_lifecycle import lookup_content_kind
+
+        return lookup_content_kind(
+            chat_id=getattr(method, "chat_id", None),
+            message_id=getattr(method, "message_id", None),
+            inline_message_id=getattr(method, "inline_message_id", None),
+        )
+    except Exception:
+        return None
+
+
+def _swap_edit_kind(method):
+    """EditMessageCaption ↔ EditMessageText с теми же chat/message/markup."""
+    try:
+        from aiogram.methods import EditMessageCaption, EditMessageText
+    except Exception:
+        return None
+    name = method.__class__.__name__
+    common = {
+        "chat_id": getattr(method, "chat_id", None),
+        "message_id": getattr(method, "message_id", None),
+        "inline_message_id": getattr(method, "inline_message_id", None),
+        "parse_mode": getattr(method, "parse_mode", None),
+        "reply_markup": getattr(method, "reply_markup", None),
+    }
+    common = {k: v for k, v in common.items() if v is not None}
+    try:
+        if name == "EditMessageCaption":
+            return EditMessageText(
+                text=getattr(method, "caption", None) or "",
+                disable_web_page_preview=True,
+                **common,
+            )
+        if name == "EditMessageText":
+            return EditMessageCaption(
+                caption=getattr(method, "text", None) or "",
+                **common,
+            )
+    except Exception:
+        return None
+    return None
+
+
+def _wrong_edit_alt(method_name: str, error: Exception) -> str | None:
+    text = str(error).lower()
+    if method_name == "EditMessageCaption" and "there is no caption" in text:
+        return "text"
+    if method_name == "EditMessageText" and "there is no text" in text:
+        return "caption"
+    return None
+
+
 class TelegramApiLogger(BaseRequestMiddleware):
 
     async def __call__(self, make_request, bot, method: TelegramMethod):
         method_name = method.__class__.__name__
+
+        # Инлайн-кнопки: не шлём EditMessageCaption в текстовое сообщение
+        # (и наоборот). Лишний 70–150 мс FAIL + спиннер на кнопке.
+        if method_name in ("EditMessageCaption", "EditMessageText"):
+            known = _lookup_message_content_kind(method)
+            want_text = method_name == "EditMessageCaption" and known == "text"
+            want_cap = method_name == "EditMessageText" and known == "caption"
+            if want_text or want_cap:
+                swapped = _swap_edit_kind(method)
+                if swapped is not None:
+                    method = swapped
+                    method_name = swapped.__class__.__name__
 
         if method_name in _SKIP_METHODS:
             return await make_request(bot, method)
@@ -245,6 +314,7 @@ class TelegramApiLogger(BaseRequestMiddleware):
             )
 
         last_error: Exception | None = None
+        swapped_once = False
         for attempt in range(1, max_attempts + 1):
             try:
                 result = await make_request(bot, method)
@@ -286,6 +356,33 @@ class TelegramApiLogger(BaseRequestMiddleware):
             except Exception as e:
                 last_error = e
                 elapsed = (time.perf_counter() - started) * 1000
+
+                alt = _wrong_edit_alt(method_name, e)
+                if alt and not swapped_once:
+                    swapped = _swap_edit_kind(method)
+                    if swapped is not None:
+                        swapped_once = True
+                        logger.info(
+                            "↩ SWAP  %-28s → %s (no %s, retry as %s)",
+                            method_name,
+                            swapped.__class__.__name__,
+                            "caption" if alt == "text" else "text",
+                            swapped.__class__.__name__,
+                        )
+                        method = swapped
+                        method_name = swapped.__class__.__name__
+                        try:
+                            from bot.runtime.button_lifecycle import remember_content_kind
+
+                            remember_content_kind(
+                                chat_id=getattr(method, "chat_id", None),
+                                message_id=getattr(method, "message_id", None),
+                                inline_message_id=getattr(method, "inline_message_id", None),
+                                kind=alt,
+                            )
+                        except Exception:
+                            pass
+                        continue
 
                 # Сетевой обрыв — пробуем ещё раз, не роняем handler с первого раза.
                 if _is_network_error(e) and attempt < max_attempts:

@@ -278,6 +278,12 @@ html[data-viewport="phone"] {
     overflow: hidden !important;
     display: flex !important;
     flex-direction: column !important;
+    /* Раньше слева/справа было 12px, а карточки внутри ещё раз добавляли
+       свой padding — итого заметные «поля», из-за которых вкладка выглядела
+       обрезанной, а не полноэкранной. На «Игроки» на телефоне ужимаем до
+       минимума (только safe-area notch'а), карточки сами дают воздух внутри. */
+    padding-left: max(4px, env(safe-area-inset-left, 0px), var(--tg-safe-left, 0px)) !important;
+    padding-right: max(4px, env(safe-area-inset-right, 0px), var(--tg-safe-right, 0px)) !important;
   }
 
   .panel-layout-users {
@@ -367,24 +373,28 @@ html[data-viewport="phone"] {
   }
 
   .panel-users-has-profile .panel-users-search-form {
-    flex-direction: row !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto auto !important;
     align-items: stretch !important;
-    gap: 0.4rem !important;
+    gap: 0.35rem !important;
     margin-top: 0 !important;
+    flex-wrap: nowrap !important;
   }
 
   .panel-users-has-profile .panel-users-search .panel-users-input {
-    flex: 1 1 auto !important;
+    flex: unset !important;
     min-height: 44px !important;
-    width: auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
   }
 
   .panel-users-has-profile .panel-users-search .panel-users-btn {
     width: auto !important;
     flex: 0 0 auto !important;
-    min-width: 5.5rem;
+    min-width: 4.4rem;
     min-height: 44px !important;
-    padding: 0 0.85rem !important;
+    padding: 0 0.7rem !important;
+    white-space: nowrap;
   }
 
   .panel-users-has-profile .panel-users-search .panel-users-results {
@@ -477,9 +487,15 @@ html[data-viewport="phone"] {
   }
 
   .panel-users .pu-profile-header-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-wrap: wrap;
     gap: 0.35rem;
+  }
+
+  .panel-users .pu-action-btn-on {
+    background: var(--e-accent) !important;
+    color: var(--e-accent-ink) !important;
+    border-color: transparent !important;
   }
 
   .panel-users .pu-action-btn {
@@ -487,7 +503,9 @@ html[data-viewport="phone"] {
     padding: 0.45rem 0.7rem !important;
     font-size: 0.8rem !important;
     justify-content: center;
-    width: 100%;
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   /* Профиль: строгий столбец, без наложений колонок */
@@ -523,13 +541,80 @@ html[data-viewport="phone"] {
     overflow: visible !important;
   }
 
+  .panel-users,
+  .panel-users .panel-users-card,
+  .panel-users .pu-intel-card,
+  .panel-users .pu-hero-card,
+  .panel-users .panel-users-actions-card,
+  .panel-users .panel-page-title,
+  .panel-users .panel-users-name,
+  .panel-users .pu-hero-chip,
+  .panel-users .pu-cmp-cell,
+  .panel-users .pu-cmp-hero-name {
+    font-family: Manrope, ui-sans-serif, system-ui, -apple-system, "SF Pro Text", Roboto, sans-serif !important;
+    letter-spacing: normal !important;
+  }
+
+  .panel-users .panel-users-card,
+  .panel-users .pu-intel-card,
+  .panel-users .pu-hero-card,
+  .panel-users .panel-users-actions-card,
+  .panel-users .pu-tabs-bar,
+  .panel-users .panel-users-search {
+    border-radius: 16px !important;
+    overflow-x: hidden !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
   .panel-users .panel-users-card,
   .panel-users .pu-intel-card,
   .panel-users .pu-hero-card,
   .panel-users .panel-users-actions-card {
-    border-radius: 16px !important;
-    padding: 0.85rem 0.8rem !important;
+    padding: 0.85rem 0.75rem !important;
     overflow: visible !important;
+  }
+
+  .pu-hero-main,
+  .pu-hero-meta-row,
+  .pu-hero-identity,
+  .panel-users .pu-hero-card .panel-users-stats,
+  .pu-cmp-row,
+  .pu-cmp-heroes {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .panel-users .pu-hero-card .panel-users-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .pu-hero-chip,
+  .pu-hero-balance-value,
+  .panel-users .panel-users-name {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal !important;
+  }
+
+  .pu-cmp-cell,
+  .pu-cmp-cell-label {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    overflow-wrap: anywhere;
+  }
+
+  .pu-cmp-categories {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .pu-cmp-row {
+    grid-template-columns: 1fr 1fr !important;
+    grid-template-areas:
+      "label label"
+      "a b" !important;
+    gap: 0.35rem 0.45rem !important;
   }
 
   /* Горизонтальные chip-табы */

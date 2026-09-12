@@ -352,6 +352,7 @@ export default function PanelShell({ onLogout }) {
               onInitialUserConsumed={() => setUsersInitialId(null)}
               permissions={permissions}
               role={role}
+              isProjectCreator={isProjectCreator}
             />
           )}
           {isAccounts && (
@@ -406,7 +407,7 @@ export default function PanelShell({ onLogout }) {
           {isSettings && <SystemSection panelTabs={panelTabs} />}
           {isEvents && <EventsSection panelTabs={panelTabs} />}
           {isSecurity && <SecuritySection panelTabs={panelTabs} />}
-          {isStaff && <StaffSection role={role} permissions={permissions} myUserId={myUserId} panelTabs={panelTabs} />}
+          {isStaff && <StaffSection role={role} permissions={permissions} myUserId={myUserId} panelTabs={panelTabs} isProjectCreator={isProjectCreator} />}
           {isSupport && <SupportSection />}
           {isModeration && (
             <ModerationSection

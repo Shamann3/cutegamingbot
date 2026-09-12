@@ -762,6 +762,7 @@ async def admin_help_callback(call: types.CallbackQuery):
         return
 
     try:
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
             text=text_admin_help,
             parse_mode="HTML",
@@ -770,7 +771,7 @@ async def admin_help_callback(call: types.CallbackQuery):
         )
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке", show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
 
 @dp.callback_query(lambda c: c.data.startswith('9help_editprofile'))
 async def qwehelp_editprofile(call: types.CallbackQuery):
@@ -787,11 +788,12 @@ async def qwehelp_editprofile(call: types.CallbackQuery):
     try:
 
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
             text=texteditprofile, parse_mode="HTML", disable_web_page_preview=True, reply_markup=btn_help9)
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
 @dp.callback_query(lambda c: c.data.startswith('help_editprofile'))
@@ -813,11 +815,12 @@ async def asundifcallback_main(call: types.CallbackQuery):
             await _help_reject_intruder(call)
             return
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
             text=texteditprofile, parse_mode="HTML", disable_web_page_preview=True, reply_markup=btn_help)
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 @dp.callback_query(lambda c: c.data.startswith('9help_btn1'))
 async def callbadfssgfafdsack_main(call: types.CallbackQuery):
@@ -834,6 +837,7 @@ async def callbadfssgfafdsack_main(call: types.CallbackQuery):
     try:
 
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
             text=textglobhelp, parse_mode="HTML", disable_web_page_preview=True, reply_markup=btn_help9)
 
@@ -841,7 +845,7 @@ async def callbadfssgfafdsack_main(call: types.CallbackQuery):
     except TelegramBadRequest as e:
 
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
 
         pass  # Игнорируем ошибку MessageNotModified
 
@@ -862,6 +866,7 @@ async def callbadfsDFGGQack_main(call: types.CallbackQuery):
             await _help_reject_intruder(call)
             return
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
             text=textglobhelp, parse_mode="HTML", disable_web_page_preview=True, reply_markup=btn_help)
 
@@ -869,7 +874,7 @@ async def callbadfsDFGGQack_main(call: types.CallbackQuery):
     except TelegramBadRequest as e:
 
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
 
         pass  # Игнорируем ошибку MessageNotModified
 @dp.callback_query(lambda c: c.data.startswith('9help_btn22'))
@@ -887,12 +892,13 @@ async def callbaYTRWEQck_main(call: types.CallbackQuery):
     try:
 
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
             text=textzabhelp, parse_mode="HTML", disable_web_page_preview=True, reply_markup=btn_help9)
 
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 @dp.callback_query(lambda c: c.data.startswith('help_btn22'))
 async def callback_erwqedsaCXZmain(call: types.CallbackQuery):
@@ -911,12 +917,13 @@ async def callback_erwqedsaCXZmain(call: types.CallbackQuery):
             await _help_reject_intruder(call)
             return
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
             text=textzabhelp, parse_mode="HTML", disable_web_page_preview=True, reply_markup=btn_help)
 
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
 #🚀 Краш <pre>краш [ставка] [коэфициэнт]</pre>
@@ -935,6 +942,7 @@ async def callQWRQWRQback_main(call: types.CallbackQuery):
 
     try:
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=gamehelp,
         parse_mode="HTML",
@@ -944,7 +952,7 @@ async def callQWRQWRQback_main(call: types.CallbackQuery):
 
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
 @dp.callback_query(lambda c: c.data.startswith('help_btn2'))
@@ -962,6 +970,7 @@ async def call12412512back_main(call: types.CallbackQuery):
         if not _help_owner_guard(user_id, message_id):
             await _help_reject_intruder(call)
             return
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=gamehelp,
         parse_mode="HTML",
@@ -971,7 +980,7 @@ async def call12412512back_main(call: types.CallbackQuery):
 
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
 #<b>🎡 Игры кута :</b>
@@ -1015,12 +1024,13 @@ async def callbacrvecek_main(call: types.CallbackQuery):
     try:
 
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=other , parse_mode="HTML" , disable_web_page_preview=True , reply_markup=btn_help9)
 
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
 @dp.callback_query(lambda c: c.data.startswith('help_btn3'))
@@ -1040,12 +1050,13 @@ async def call1dacadcaback_main(call: types.CallbackQuery):
             await _help_reject_intruder(call)
             return
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=other , parse_mode="HTML" , disable_web_page_preview=True , reply_markup=btn_help)
 
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 @dp.callback_query(lambda c: c.data.startswith('9help_btnfunk'))
 async def calybybybrvcrelback_main(call: types.CallbackQuery):
@@ -1061,11 +1072,12 @@ async def calybybybrvcrelback_main(call: types.CallbackQuery):
 
     try:
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=ffunc , parse_mode="HTML" , disable_web_page_preview=True , reply_markup=btn_help9)
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 @dp.callback_query(lambda c: c.data.startswith('help_btnfunk'))
 async def calltewdxwback_main(call: types.CallbackQuery):
@@ -1083,17 +1095,19 @@ async def calltewdxwback_main(call: types.CallbackQuery):
         if not _help_owner_guard(user_id, message_id):
             await _help_reject_intruder(call)
             return
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=ffunc , parse_mode="HTML" , disable_web_page_preview=True , reply_markup=btn_help)
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
 
 @dp.callback_query(lambda c: c.data.startswith('9help_btnking'))
 async def callback_help_king_9(call: types.CallbackQuery):
     try:
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
             text=kinghelp,
             parse_mode="HTML",
@@ -1102,7 +1116,7 @@ async def callback_help_king_9(call: types.CallbackQuery):
         )
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке", show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
 
 
 @dp.callback_query(lambda c: c.data.startswith('help_btnking'))
@@ -1113,6 +1127,7 @@ async def callback_help_king(call: types.CallbackQuery):
         if not _help_owner_guard(user_id, message_id):
             await _help_reject_intruder(call)
             return
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
             text=kinghelp,
             parse_mode="HTML",
@@ -1121,7 +1136,7 @@ async def callback_help_king(call: types.CallbackQuery):
         )
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке", show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
 
 @dp.callback_query(lambda c: c.data.startswith('9help_btn4'))
 async def caloakdaslpdlback_main(call: types.CallbackQuery):
@@ -1137,11 +1152,12 @@ async def caloakdaslpdlback_main(call: types.CallbackQuery):
     try:
 
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=brak , parse_mode="HTML" , disable_web_page_preview=True , reply_markup=btn_help9)
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
 @dp.callback_query(lambda c: c.data.startswith('help_btn4'))
@@ -1160,11 +1176,12 @@ async def callbacsqdqwdqk_main(call: types.CallbackQuery):
             await _help_reject_intruder(call)
             return
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=brak , parse_mode="HTML" , disable_web_page_preview=True , reply_markup=btn_help)
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 @dp.callback_query(lambda c: c.data.startswith('9help_btn5'))
 async def callback_aosdaslpdmain(call: types.CallbackQuery):
@@ -1181,11 +1198,12 @@ async def callback_aosdaslpdmain(call: types.CallbackQuery):
     try:
 
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=textstore , parse_mode="HTML" , disable_web_page_preview=True , reply_markup=btn_help9)
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
 @dp.callback_query(lambda c: c.data.startswith('help_btn5'))
@@ -1205,11 +1223,12 @@ async def capasldpalsdallback_main(call: types.CallbackQuery):
             await _help_reject_intruder(call)
             return
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=textstore , parse_mode="HTML" , disable_web_page_preview=True , reply_markup=btn_help)
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 @dp.callback_query(lambda c: c.data.startswith('9help_btn6'))
 async def callapsdlasdlback_main(call: types.CallbackQuery):
@@ -1226,11 +1245,12 @@ async def callapsdlasdlback_main(call: types.CallbackQuery):
     try:
 
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=clanss , parse_mode="HTML" , disable_web_page_preview=True , reply_markup=btn_help9)
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 @dp.callback_query(lambda c: c.data.startswith('help_btn6'))
 async def callback_mpaspdoasoain(call: types.CallbackQuery):
@@ -1249,11 +1269,12 @@ async def callback_mpaspdoasoain(call: types.CallbackQuery):
             await _help_reject_intruder(call)
             return
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=clanss , parse_mode="HTML" , disable_web_page_preview=True , reply_markup=btn_help)
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
 
@@ -1274,6 +1295,7 @@ async def caakodaklspdqlqsqllback_main(call: types.CallbackQuery):
             await _help_reject_intruder(call)
             return
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=f'''
 <b>🌳 Золотое дерево</b>
@@ -1296,7 +1318,7 @@ async def caakodaklspdqlqsqllback_main(call: types.CallbackQuery):
 
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
 @dp.callback_query(lambda c: c.data.startswith('help_btn8'))
@@ -1316,6 +1338,7 @@ async def calakdoaksdaslback_main(call: types.CallbackQuery):
             await _help_reject_intruder(call)
             return
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=f'''
 <b>🏡 Имущество</b>
@@ -1352,7 +1375,7 @@ async def calakdoaksdaslback_main(call: types.CallbackQuery):
 
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
 @dp.callback_query(lambda c: c.data.startswith('help_btn9'))
@@ -1372,6 +1395,7 @@ async def cadaspdlasaallback_main(call: types.CallbackQuery):
             await _help_reject_intruder(call)
             return
 
+        await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
         text=f'''
 <b>🧑🏼‍🌾 Фермерство</b>
@@ -1392,7 +1416,7 @@ async def cadaspdlasaallback_main(call: types.CallbackQuery):
 
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
+            pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
 @dp.callback_query(lambda c: c.data.startswith('help_deletehelp'))

@@ -5,6 +5,7 @@ import {
   adjustAdminUserItem,
   adminFarmPlotAction,
   deletePlayerNote,
+  compareAdminUsers,
   exportPlayerProfile,
   fetchAdminUser,
   fetchAdminUserAudit,
@@ -50,6 +51,7 @@ const PLOT_SLOTS_FALLBACK = 8
 
 const PROFILE_TABS = [
   { id: 'profile', label: 'Профиль' },
+  { id: 'compare', label: 'Сравнение' },
   { id: 'intel', label: 'Аналитика' },
   { id: 'transfers', label: 'Переводы' },
   { id: 'farm', label: 'Ферма' },
@@ -59,6 +61,28 @@ const PROFILE_TABS = [
   { id: 'inventory', label: 'Инвентарь' },
   { id: 'notes', label: 'Заметки' },
 ]
+
+// Категории полного сравнения — держим тег/метки в одном месте с backend'ом
+// (server/admin_users.py: _COMPARE_CATEGORIES), чтобы порядок карточек совпадал.
+const COMPARE_CATEGORY_ORDER = ['economy', 'games', 'activity', 'social', 'farm', 'trust']
+
+function formatCompareValue(metric, side) {
+  const value = metric[side]
+  if (metric.format === 'money') {
+    const n = Number(value) || 0
+    return `${n.toLocaleString('ru-RU')} кут`
+  }
+  if (metric.format === 'percent') {
+    return `${value}%`
+  }
+  if (metric.format === 'bool') {
+    return value ? (metric.trueLabel || 'Да') : (metric.falseLabel || 'Нет')
+  }
+  if (typeof value === 'number') {
+    return value.toLocaleString('ru-RU')
+  }
+  return String(value ?? '—')
+}
 
 const LEVEL_LABELS = {
   huge: 'огромная',
@@ -1350,8 +1374,12 @@ function CuteHistoryFeed({ userId, onOpenUser }) {
   )
 }
 
-export default function UsersSection({ initialUserId = null, onInitialUserConsumed, permissions = [], role = null }) {
+export default function UsersSection({ initialUserId = null, onInitialUserConsumed, permissions = [], role = null, isProjectCreator = false }) {
   const isOwner = role === 'owner'
+  // «Экспорт» и другие creator-only действия — не просто owner-роль (их может
+  // быть несколько), а именно ЕДИНСТВЕННЫЙ создатель проекта (PROJECT_CREATOR_ID
+  // на backend). Флаг приходит из /account через PanelShell.
+  const isCreator = !!isProjectCreator
   const perms = new Set(permissions)
   const canMutateEconomy = isOwner // обычные админы: всё видят, кут/предметы/ферму не меняют
   const canBan = perms.has('moderate_ban')
@@ -1388,13 +1416,13 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
   const [unbanPhotoIds, setUnbanPhotoIds] = useState([])
   const [pendingAction, setPendingAction] = useState(null)
 
-  // compare mode
+  // compare mode — полное сравнение по каждому параметру + вердикт (вкладка «⚖️ Сравнение»)
   const [compareQuery, setCompareQuery] = useState('')
   const [compareResolvedId, setCompareResolvedId] = useState(null)
   const [compareProfile, setCompareProfile] = useState(null)
+  const [compareData, setCompareData] = useState(null)
   const [compareLoading, setCompareLoading] = useState(false)
   const [compareError, setCompareError] = useState('')
-  const [showCompare, setShowCompare] = useState(false)
 
   // Мини-карточка другого игрока (клик из переводов и т.п.) без полной подгрузки
   const [peek, setPeek] = useState(null)
@@ -1565,29 +1593,38 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
   }, [peek])
 
   const handleLoadCompare = useCallback(async () => {
+    if (!profile?.userId) return
     const uid = compareResolvedId || (/^\d+$/.test(compareQuery.trim()) ? Number(compareQuery.trim()) : null)
     setCompareLoading(true)
     setCompareError('')
+    setCompareData(null)
     try {
-      if (uid) {
-        const userData = await fetchAdminUser(Number(uid))
-        setCompareProfile(userData)
+      let targetId = uid
+      if (!targetId) {
+        const q = compareQuery.trim()
+        if (!q) return
+        const data = await searchAdminUsers(q)
+        const list = data.results || []
+        if (list.length === 0) { setCompareError('Никого не найдено'); return }
+        if (list.length > 1) { setCompareError('Найдено несколько — выберите в превью'); return }
+        targetId = list[0].userId
+      }
+      if (Number(targetId) === Number(profile.userId)) {
+        setCompareError('Нельзя сравнить игрока с самим собой')
         return
       }
-      const q = compareQuery.trim()
-      if (!q) return
-      const data = await searchAdminUsers(q)
-      const list = data.results || []
-      if (list.length === 0) { setCompareError('Никого не найдено'); return }
-      if (list.length > 1) { setCompareError('Найдено несколько — выберите в превью'); return }
-      const userData = await fetchAdminUser(list[0].userId)
+      const [userData, full] = await Promise.all([
+        fetchAdminUser(Number(targetId)),
+        compareAdminUsers(profile.userId, Number(targetId)),
+      ])
       setCompareProfile(userData)
+      setCompareData(full)
     } catch (e) {
       setCompareError(e.message || 'Ошибка')
     } finally {
       setCompareLoading(false)
     }
-  }, [compareQuery, compareResolvedId])
+  }, [compareQuery, compareResolvedId, profile?.userId])
 
   const handleExport = useCallback(async () => {
     if (!profile?.userId) return
@@ -1846,8 +1883,18 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
             <div className="pu-profile-header">
               <p className="panel-shelf-label">Профиль · {profile?.displayName}</p>
               <div className="pu-profile-header-actions">
-                <button className="pu-action-btn" onClick={() => setShowCompare((v) => !v)}>⚖️ Сравнить</button>
-                <button className="pu-action-btn" onClick={handleExport}>📥 Экспорт</button>
+                <button
+                  type="button"
+                  className={`pu-action-btn${profileTab === 'compare' ? ' pu-action-btn-on' : ''}`}
+                  onClick={() => setProfileTab('compare')}
+                >
+                  Сравнить
+                </button>
+                {isCreator && (
+                  <button type="button" className="pu-action-btn" onClick={handleExport} title="Только создателю проекта">
+                    Экспорт
+                  </button>
+                )}
               </div>
             </div>
             <div className="pu-tabs">
@@ -2535,13 +2582,33 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
         </div>
         )}
 
-        {/* Compare panel */}
-        {showCompare && hasProfile && profileTab === 'profile' && (
-          <article className="panel-shelf panel-users-card pu-compare-card">
-            <div className="pu-compare-head">
-              <p className="panel-shelf-label">⚖️ Сравнение</p>
-              <button className="pu-close-btn" onClick={() => { setShowCompare(false); setCompareProfile(null) }}>✕</button>
+        {/* ── Полное сравнение двух игроков — отдельная вкладка ── */}
+        {hasProfile && profileTab === 'compare' && (
+          <article className="panel-shelf panel-users-card pu-tab-pane pu-cmp">
+            <div className="pu-cmp-head">
+              <div>
+                <p className="panel-shelf-label">Сравнение</p>
+                <h3 className="panel-users-subtitle">Кто полезнее для проекта — по каждому параметру</h3>
+              </div>
+              {compareData && (
+                <div className="pu-cmp-toolbar">
+                  <button
+                    type="button"
+                    className="panel-users-btn"
+                    onClick={() => {
+                      setCompareData(null)
+                      setCompareProfile(null)
+                      setCompareError('')
+                      setCompareQuery('')
+                      setCompareResolvedId(null)
+                    }}
+                  >
+                    Сбросить
+                  </button>
+                </div>
+              )}
             </div>
+
             <form
               className="panel-users-search-form"
               onSubmit={(e) => { e.preventDefault(); handleLoadCompare() }}
@@ -2553,32 +2620,128 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   onChange={(v) => { setCompareQuery(v); setCompareResolvedId(null) }}
                   onResolved={(u) => setCompareResolvedId(u ? Number(u.userId || u.user_id) : null)}
                   onOpenUser={(id) => openRelatedUser(id)}
-                  placeholder="ID, @username или имя"
+                  placeholder="ID, @username или имя второго игрока"
                 />
               </div>
               <button type="submit" className="panel-users-btn panel-users-btn-primary" disabled={compareLoading}>
-                {compareLoading ? '…' : 'Найти'}
+                {compareLoading ? '…' : 'Сравнить'}
               </button>
             </form>
             {compareError && <p className="panel-shelf-error">{compareError}</p>}
-            {compareProfile && (
-              <div className="pu-compare-body">
-                <div className="pu-compare-col">
-                  <p className="pu-compare-name">{profile.displayName}</p>
-                  <p className="pu-compare-stat">💰 {profile.balance?.toLocaleString('ru-RU')}</p>
-                  <p className="pu-compare-stat">🌱 {profile.ownedPlots}/{profile.maxPlots}</p>
-                  <p className="pu-compare-stat">📦 {(profile.inventory || []).length} видов</p>
-                  <p className="pu-compare-stat">{profile.banned ? '🔴 Забанен' : '🟢 Активен'}</p>
+
+            {compareData && compareProfile && (
+              <>
+                {/* Заголовки двух карточек-игроков */}
+                <div className="pu-cmp-heroes">
+                  <button
+                    type="button"
+                    className={`pu-cmp-hero${compareData.verdict.winner === 'a' ? ' pu-cmp-hero-win' : ''}`}
+                    onClick={() => setProfileTab('profile')}
+                    title="К профилю"
+                  >
+                    {compareData.verdict.winner === 'a' && <span className="pu-cmp-crown">👑</span>}
+                    <p className="pu-cmp-hero-name">{profile.displayName}</p>
+                    <p className="pu-cmp-hero-id">ID {profile.userId}</p>
+                  </button>
+                  <div className="pu-cmp-vs">VS</div>
+                  <button
+                    type="button"
+                    className={`pu-cmp-hero${compareData.verdict.winner === 'b' ? ' pu-cmp-hero-win' : ''}`}
+                    onClick={() => openRelatedUser(compareProfile.userId)}
+                    title="Открыть этого игрока"
+                  >
+                    {compareData.verdict.winner === 'b' && <span className="pu-cmp-crown">👑</span>}
+                    <p className="pu-cmp-hero-name">{compareProfile.displayName}</p>
+                    <p className="pu-cmp-hero-id">ID {compareProfile.userId} · открыть</p>
+                  </button>
                 </div>
-                <div className="pu-compare-vs">VS</div>
-                <div className="pu-compare-col">
-                  <p className="pu-compare-name">{compareProfile.displayName}</p>
-                  <p className="pu-compare-stat">💰 {compareProfile.balance?.toLocaleString('ru-RU')}</p>
-                  <p className="pu-compare-stat">🌱 {compareProfile.ownedPlots}/{compareProfile.maxPlots}</p>
-                  <p className="pu-compare-stat">📦 {(compareProfile.inventory || []).length} видов</p>
-                  <p className="pu-compare-stat">{compareProfile.banned ? '🔴 Забанен' : '🟢 Активен'}</p>
+
+                {/* Вердикт: кто лучше и почему */}
+                <div className="pu-cmp-verdict">
+                  <p className="pu-cmp-verdict-title">
+                    {compareData.verdict.winner === 'tie'
+                      ? 'Игроки примерно равны для проекта'
+                      : `${compareData.verdict.winner === 'a' ? profile.displayName : compareProfile.displayName} — полезнее для проекта`}
+                    <span className="pu-cmp-verdict-score">
+                      {' '}({compareData.verdict.winsA} : {compareData.verdict.winsB} из {compareData.verdict.totalMetrics || '—'})
+                    </span>
+                  </p>
+                  {compareData.verdict.summary ? (
+                    <p className="pu-cmp-verdict-summary">{compareData.verdict.summary}</p>
+                  ) : null}
+                  <div className="pu-cmp-roles">
+                    <div className="pu-cmp-roles-col">
+                      <span className="pu-cmp-roles-label">{profile.displayName}</span>
+                      {(compareData.verdict.rolesA || []).length === 0
+                        ? <span className="pu-cmp-tag pu-cmp-tag-empty">нет явной роли</span>
+                        : (compareData.verdict.rolesA || []).map((tag) => (
+                          <span key={tag} className="pu-cmp-tag pu-cmp-tag-a">{tag}</span>
+                        ))}
+                    </div>
+                    <div className="pu-cmp-roles-col">
+                      <span className="pu-cmp-roles-label">{compareProfile.displayName}</span>
+                      {(compareData.verdict.rolesB || []).length === 0
+                        ? <span className="pu-cmp-tag pu-cmp-tag-empty">нет явной роли</span>
+                        : (compareData.verdict.rolesB || []).map((tag) => (
+                          <span key={tag} className="pu-cmp-tag pu-cmp-tag-b">{tag}</span>
+                        ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
+
+                {/* Категории — карточки с прогресс-баром побед */}
+                <div className="pu-cmp-categories">
+                  {COMPARE_CATEGORY_ORDER.map((catKey) => {
+                    const cat = (compareData.categories || []).find((c) => c.key === catKey)
+                    if (!cat) return null
+                    const total = Math.max(1, cat.winsA + cat.winsB)
+                    const pctA = Math.round((cat.winsA / total) * 100)
+                    return (
+                      <div key={cat.key} className={`pu-cmp-cat pu-cmp-cat-${cat.winner}`}>
+                        <div className="pu-cmp-cat-head">
+                          <span>{cat.icon} {cat.label}</span>
+                          <span className="pu-cmp-cat-score">{cat.winsA} : {cat.winsB}</span>
+                        </div>
+                        <div className="pu-cmp-cat-bar">
+                          <div className="pu-cmp-cat-bar-a" style={{ width: `${pctA}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Полная таблица параметров */}
+                <div className="pu-cmp-table">
+                  {COMPARE_CATEGORY_ORDER.map((catKey) => {
+                    const cat = (compareData.categories || []).find((c) => c.key === catKey)
+                    const rows = (compareData.metrics || []).filter((m) => m.category === catKey)
+                    if (!cat || rows.length === 0) return null
+                    return (
+                      <div key={catKey} className="pu-cmp-group">
+                        <p className="pu-cmp-group-title">{cat.icon} {cat.label}</p>
+                        {rows.map((m) => (
+                          <div key={m.key} className="pu-cmp-row">
+                            <div className={`pu-cmp-cell pu-cmp-cell-a${m.winner === 'a' ? ' pu-cmp-cell-win' : ''}`}>
+                              {formatCompareValue(m, 'a')}
+                            </div>
+                            <div className="pu-cmp-cell-label">{m.icon} {m.label}</div>
+                            <div className={`pu-cmp-cell pu-cmp-cell-b${m.winner === 'b' ? ' pu-cmp-cell-win' : ''}`}>
+                              {formatCompareValue(m, 'b')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {!compareData && !compareLoading && !compareError && (
+              <p className="panel-shelf-muted pu-cmp-hint">
+                Укажите второго игрока — сравним абсолютно всё: экономику, игры, активность,
+                вклад в группы, ферму и надёжность, и покажем, кто полезнее для проекта.
+              </p>
             )}
           </article>
         )}

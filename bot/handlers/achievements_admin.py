@@ -481,22 +481,13 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
     is_owner = clicker == target
 
     async def _edit(text: str, kb: InlineKeyboardMarkup) -> bool:
-        try:
-            await callback.message.edit_caption(
-                caption=text, parse_mode="HTML", reply_markup=kb,
-                disable_web_page_preview=True,
-            )
-            return True
-        except TypeError:
-            try:
-                await callback.message.edit_caption(
-                    caption=text, parse_mode="HTML", reply_markup=kb,
-                )
-                return True
-            except Exception:
-                pass
-        except Exception:
-            pass
+        # ВАЖНО (скорость кнопок): меню достижений — это ОБЫЧНОЕ текстовое
+        # сообщение (не фото), поэтому edit_caption на нём гарантированно
+        # падает с "there is no caption in the message to edit" при КАЖДОМ
+        # нажатии. Раньше caption пробовался первым - лишний неудачный round-
+        # trip к Telegram на каждый клик (+ шум в логах). Порядок исправлен:
+        # сперва edit_text (обычный случай), caption - только как fallback
+        # для теоретического случая фото-сообщения.
         try:
             await callback.message.edit_text(
                 text, parse_mode="HTML", reply_markup=kb,
@@ -504,35 +495,44 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
             )
             return True
         except Exception as e:
-            if "DOCUMENT_INVALID" in str(e) or "can't parse" in str(e).lower():
+            msg = str(e)
+            if "message is not modified" in msg.lower():
+                return True
+            if "DOCUMENT_INVALID" in msg or "can't parse" in msg.lower():
                 plain = ach.strip_tg_emoji(text)
                 try:
-                    await callback.message.edit_caption(
-                        caption=plain, parse_mode="HTML", reply_markup=kb,
+                    await callback.message.edit_text(
+                        plain, parse_mode="HTML", reply_markup=kb,
+                        disable_web_page_preview=True,
                     )
                     return True
                 except Exception:
-                    try:
-                        await callback.message.edit_text(
-                            plain, parse_mode="HTML", reply_markup=kb,
-                            disable_web_page_preview=True,
-                        )
-                        return True
-                    except Exception:
-                        return False
+                    pass
+
+        try:
+            await callback.message.edit_caption(
+                caption=text, parse_mode="HTML", reply_markup=kb,
+                disable_web_page_preview=True,
+            )
+            return True
+        except Exception as e:
+            if "message is not modified" in str(e).lower():
+                return True
             return False
 
     if action == "achm_all":
+        # ВАЖНО (скорость кнопок): отвечаем на нажатие СРАЗУ, не дожидаясь
+        # редактирования сообщения — иначе кнопка «висит» в состоянии
+        # загрузки на всё время сетевого запроса к Telegram.
+        await callback.answer()
         doc = await ach.get_user_achievements_doc(db, target)
         text = ach.format_full_achievements_html(doc)
         kb = _build_manage_keyboard(viewer, target, doc, is_owner=is_owner)
-        if not await _edit(text, kb):
-            await callback.answer("Не удалось открыть", show_alert=True)
-            return True
-        await callback.answer()
+        await _edit(text, kb)
         return True
 
     if action == "achm_back":
+        await callback.answer()
         try:
             from bot.funcs.profile import _profile_full_refresh_and_render
             await _profile_full_refresh_and_render(
@@ -547,7 +547,6 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
             print(f"[ACH] back to profile: {e!r}")
             await callback.answer("Обновите профиль", show_alert=True)
             return True
-        await callback.answer()
         return True
 
     if not is_owner:
@@ -558,25 +557,25 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
     doc = await ach.get_user_achievements_doc(db, target)
 
     if action == "achm_up":
+        await callback.answer("Выше")
         doc = ach.move_item(doc, iid, -1)
         await ach.save_user_achievements_doc(db, target, doc)
-        await callback.answer("Выше")
     elif action == "achm_dn":
+        await callback.answer("Ниже")
         doc = ach.move_item(doc, iid, 1)
         await ach.save_user_achievements_doc(db, target, doc)
-        await callback.answer("Ниже")
     elif action == "achm_pin":
+        await callback.answer("На витрине · 1")
         doc = ach.pin_item_to_front(doc, iid)
         await ach.save_user_achievements_doc(db, target, doc)
-        await callback.answer("На витрине · 1")
     elif action == "achm_slot":
         try:
             slot = int(parts[4]) if len(parts) > 4 else 0
         except Exception:
             slot = 0
+        await callback.answer(f"Витрина · {slot + 1}")
         doc = ach.pin_item_to_slot(doc, iid, slot)
         await ach.save_user_achievements_doc(db, target, doc)
-        await callback.answer(f"Витрина · {slot + 1}")
     elif action == "achm_del":
         it = doc.get("items", {}).get(iid)
         if not it or it.get("kind") != "free":
