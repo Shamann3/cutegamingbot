@@ -1347,6 +1347,13 @@ export async function resetFarmUserPlots(userId, plotId = null) {
   return adminFetch(`/farm/users/${userId}/reset${params}`, { method: 'POST', body: {} })
 }
 
+export async function adminFarmPlotAction(userId, plotId, action, cropId = null) {
+  return adminFetch(`/farm/users/${userId}/plots/${plotId}/action`, {
+    method: 'POST',
+    body: { action, cropId: cropId || undefined },
+  })
+}
+
 export async function globalFarmReset() {
   return adminFetch('/farm/global-reset', { method: 'POST', body: {} })
 }

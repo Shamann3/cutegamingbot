@@ -164,6 +164,7 @@ from admin_market import (
     list_active_listings,
 )
 from admin_farm import (
+    admin_plot_action,
     get_farm_overview,
     get_user_farm_admin,
     global_farm_restart,
@@ -3395,8 +3396,8 @@ async def admin_user_cute_history(
     onlyTransfers: bool = Query(False),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    # История кут — только для владельцев (не для сотрудников с view_players)
-    _admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+    # История кут — чтение для всех админов; изменение баланса только у owner
+    _admin_id: int = Depends(require_active_admin),
 ):
     return await get_user_cute_history(
         target_user_id,
@@ -3415,7 +3416,7 @@ async def admin_user_balance(
     target_user_id: int,
     body: UserBalanceBody,
     request: Request,
-    admin_id: int = Depends(require_admin_permission("adjust_balance")),
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
 ):
     try:
         result = await admin_adjust_balance(
@@ -3441,7 +3442,7 @@ async def admin_user_items(
     target_user_id: int,
     body: UserItemBody,
     request: Request,
-    admin_id: int = Depends(require_admin_permission("give_items")),
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
 ):
     try:
         result = await admin_adjust_item(
@@ -3742,7 +3743,7 @@ async def admin_farm_users_search(
 @router.get("/farm/users/{target_user_id}")
 async def admin_farm_user(
     target_user_id: int,
-    _admin_id: int = Depends(require_admin_permission("manage_farm")),
+    _admin_id: int = Depends(require_active_admin),
 ):
     farm = await get_user_farm_admin(target_user_id)
     if not farm:
@@ -3755,7 +3756,7 @@ async def admin_farm_user_reset(
     target_user_id: int,
     request: Request,
     plotId: int | None = Query(None, ge=1, le=100),
-    admin_id: int = Depends(require_admin_permission("manage_farm")),
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
 ):
     try:
         result = await reset_user_plots(
@@ -3768,6 +3769,39 @@ async def admin_farm_user_reset(
             target_type="user", target_id=str(target_user_id),
             target_label=f"Игрок {target_user_id}",
             details={"plotId": plotId, "plotsReset": result.get("plotsReset")},
+            ip=_get_client_ip(request),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class FarmPlotActionBody(BaseModel):
+    action: str
+    cropId: str | None = None
+
+
+@router.post("/farm/users/{target_user_id}/plots/{plot_id}/action")
+async def admin_farm_plot_action(
+    target_user_id: int,
+    plot_id: int,
+    body: FarmPlotActionBody,
+    request: Request,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    try:
+        result = await admin_plot_action(
+            target_user_id,
+            plot_id,
+            body.action,
+            admin_user_id=admin_id,
+            crop_id=body.cropId,
+        )
+        await log_admin_action(
+            admin_id, f"farm_plot_{body.action}",
+            target_type="user", target_id=str(target_user_id),
+            target_label=f"Игрок {target_user_id}",
+            details={"plotId": plot_id, "action": body.action, "cropId": body.cropId, "gained": result.get("gained")},
             ip=_get_client_ip(request),
         )
         return result

@@ -3,6 +3,7 @@ import AdminActionModal from '../../components/AdminActionModal'
 import {
   adjustAdminUserBalance,
   adjustAdminUserItem,
+  adminFarmPlotAction,
   deletePlayerNote,
   exportPlayerProfile,
   fetchAdminUser,
@@ -11,11 +12,13 @@ import {
   fetchAdminUserIntel,
   fetchAdminUserTransfers,
   fetchContentDex,
+  fetchFarmUser,
   fetchPlayerBans,
   fetchPlayerInventory,
   fetchPlayerNotes,
   fetchPlayerQuests,
   resetAdminUserOnboarding,
+  resetFarmUserPlots,
   searchAdminUsers,
   setAdminUserBanned,
   uploadBanEvidence,
@@ -90,9 +93,98 @@ function PlayerIntelOverview({ intel, onOpenUser }) {
   const eco = intel.economy || {}
   const moves = intel.significantMoves || []
   const p2p = intel.p2p || {}
+  const eng = intel.engagement || {}
+  const msgs = eng.messages || {}
+  const days = eng.activeDays || {}
+  const sess = eng.sessions || {}
+  const farm = eng.farm || {}
+  const signals = eng.signals || {}
+  const hourly = eng.hourlyHeat || []
+  const maxHour = Math.max(1, ...hourly)
+  const topLife = eng.topGroupsLifetime || []
+  const score = Number(signals.engagementScore || 0)
+  const churn = signals.churnRisk || 'unknown'
+  const churnLabel = { low: 'низкий', medium: 'средний', high: 'высокий', unknown: 'н/д' }[churn] || churn
+
+  const fmtMin = (m) => {
+    const n = Number(m) || 0
+    if (n < 60) return `${n} мин`
+    const h = Math.floor(n / 60)
+    const mm = n % 60
+    return mm ? `${h} ч ${mm} мин` : `${h} ч`
+  }
 
   return (
     <div className="pu-intel-stack">
+      <article className="panel-shelf panel-users-card pu-intel-card">
+        <div className="pu-bento-head">
+          <div>
+            <p className="panel-shelf-label">Индекс вовлечённости</p>
+            <h3 className="panel-users-subtitle panel-users-subtitle-tight">Сводка поведения</h3>
+          </div>
+          <span className="pu-bento-chip">{score}/100</span>
+        </div>
+        <div className="pu-engage-score">
+          <div className="pu-engage-score-bar"><span style={{ width: `${score}%` }} /></div>
+          <div className="pu-engage-meta">
+            <span>Риск оттока: <strong data-risk={churn}>{churnLabel}</strong></span>
+            {signals.inactiveDays != null && (
+              <span>Неактивен: <strong>{signals.inactiveDays} дн.</strong></span>
+            )}
+            {eng.platform && <span>Клиент: <strong>{eng.platform}</strong></span>}
+            {eng.timezone && <span>TZ: <strong>{eng.timezone}</strong></span>}
+          </div>
+          {(signals.labels || []).length > 0 && (
+            <div className="pu-engage-labels">
+              {signals.labels.map((l) => <span key={l} className="pu-engage-pill">{l}</span>)}
+            </div>
+          )}
+        </div>
+      </article>
+
+      <article className="panel-shelf panel-users-card pu-intel-card">
+        <div className="pu-bento-head">
+          <div>
+            <p className="panel-shelf-label">Присутствие</p>
+            <h3 className="panel-users-subtitle panel-users-subtitle-tight">Сообщения и активные дни</h3>
+          </div>
+        </div>
+        <div className="pu-stat-grid">
+          <div><span>Сегодня</span><strong>{(msgs.day || 0).toLocaleString('ru-RU')}</strong></div>
+          <div><span>Неделя</span><strong>{(msgs.week || 0).toLocaleString('ru-RU')}</strong></div>
+          <div><span>Месяц</span><strong>{(msgs.month || 0).toLocaleString('ru-RU')}</strong></div>
+          <div><span>Год</span><strong>{(msgs.year || 0).toLocaleString('ru-RU')}</strong></div>
+          <div><span>Всего сообщ.</span><strong>{(msgs.lifetime || 0).toLocaleString('ru-RU')}</strong></div>
+          <div><span>Ср. / активный день</span><strong>{msgs.avgPerActiveDay ?? 0}</strong></div>
+          <div><span>Ср. / день · месяц</span><strong>{msgs.avgPerDayMonth ?? 0}</strong></div>
+          <div><span>Ср. / день · год</span><strong>{msgs.avgPerDayYear ?? 0}</strong></div>
+          <div><span>Активных дней · нед</span><strong>{days.week ?? 0}</strong></div>
+          <div><span>Активных дней · мес</span><strong>{days.month ?? 0}</strong></div>
+          <div><span>Серия сейчас</span><strong>{eng.streak?.current ?? 0}</strong></div>
+          <div><span>Лучшая серия</span><strong>{eng.streak?.best ?? 0}</strong></div>
+        </div>
+      </article>
+
+      <article className="panel-shelf panel-users-card pu-intel-card">
+        <div className="pu-bento-head">
+          <div>
+            <p className="panel-shelf-label">Оценка активного времени</p>
+            <h3 className="panel-users-subtitle panel-users-subtitle-tight">По сессиям входа в Mini App</h3>
+          </div>
+        </div>
+        <div className="pu-stat-grid">
+          <div><span>За 30 дней</span><strong>{fmtMin(sess.estimatedMinutes30d)}</strong></div>
+          <div><span>Всего (оценка)</span><strong>{fmtMin(sess.estimatedMinutesTotal)}</strong></div>
+          <div><span>Ср. / активный день</span><strong>{fmtMin(sess.avgMinutesPerActiveDay)}</strong></div>
+          <div><span>Ср. / день · месяц</span><strong>{fmtMin(sess.avgMinutesPerDayMonth)}</strong></div>
+          <div><span>Сессий · 30д</span><strong>{sess.sessionCount30d ?? 0}</strong></div>
+          <div><span>Входов · 30д</span><strong>{sess.loginEvents30d ?? 0}</strong></div>
+        </div>
+        <p className="pu-intel-note">
+          Точного таймера нет — время считается по цепочкам входов (пауза &gt;30 мин = новая сессия, до 3 ч на сессию).
+        </p>
+      </article>
+
       <article className="panel-shelf panel-users-card pu-intel-card">
         <div className="pu-bento-head">
           <div>
@@ -127,6 +219,66 @@ function PlayerIntelOverview({ intel, onOpenUser }) {
             ))}
           </ul>
         )}
+      </article>
+
+      {topLife.length > 0 && (
+        <article className="panel-shelf panel-users-card pu-intel-card">
+          <div className="pu-bento-head">
+            <div>
+              <p className="panel-shelf-label">Домашние группы</p>
+              <h3 className="panel-users-subtitle panel-users-subtitle-tight">Где играет чаще всего · всё время</h3>
+            </div>
+          </div>
+          <ul className="pu-intel-bars">
+            {topLife.slice(0, 8).map((c) => (
+              <li key={c.chatId}>
+                <div className="pu-intel-bar-meta">
+                  <span className="pu-intel-bar-name">{c.chatName}</span>
+                  <span className="pu-intel-bar-val">{c.messages.toLocaleString('ru-RU')} · {c.activeDays} дн.</span>
+                </div>
+                <div className="pu-intel-bar-track">
+                  <span style={{ width: `${Math.max(4, (c.messages / Math.max(1, topLife[0].messages)) * 100)}%` }} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </article>
+      )}
+
+      {hourly.some((v) => v > 0) && (
+        <article className="panel-shelf panel-users-card pu-intel-card">
+          <div className="pu-bento-head">
+            <div>
+              <p className="panel-shelf-label">Часы активности</p>
+              <h3 className="panel-users-subtitle panel-users-subtitle-tight">Когда чаще заходит · 90 дней (UTC)</h3>
+            </div>
+          </div>
+          <div className="pu-heat-hours" aria-hidden>
+            {hourly.map((v, h) => (
+              <div key={h} className="pu-heat-col" title={`${h}:00 — ${v}`}>
+                <span style={{ height: `${Math.max(8, (v / maxHour) * 100)}%` }} />
+                <em>{h}</em>
+              </div>
+            ))}
+          </div>
+        </article>
+      )}
+
+      <article className="panel-shelf panel-users-card pu-intel-card">
+        <div className="pu-bento-head">
+          <div>
+            <p className="panel-shelf-label">Ферма · события</p>
+            <h3 className="panel-users-subtitle panel-users-subtitle-tight">Посадки / поливы / сборы</h3>
+          </div>
+        </div>
+        <div className="pu-stat-grid">
+          <div><span>Посадил</span><strong>{farm.plants ?? 0}</strong></div>
+          <div><span>Полил</span><strong>{farm.waters ?? 0}</strong></div>
+          <div><span>Собрал</span><strong>{farm.harvests ?? 0}</strong></div>
+          <div><span>Засохло</span><strong>{farm.withers ?? 0}</strong></div>
+          <div><span>Эффективность</span><strong>{farm.efficiencyPct != null ? `${farm.efficiencyPct}%` : '—'}</strong></div>
+          <div><span>Открытий игр</span><strong>{(eng.gameOpens?.total || 0).toLocaleString('ru-RU')}</strong></div>
+        </div>
       </article>
 
       <article className="panel-shelf panel-users-card pu-intel-card">
@@ -596,12 +748,15 @@ function BansTab({ userId }) {
 }
 
 // ---- Inventory tab ----
-function InventoryTab({ userId }) {
+function InventoryTab({ userId, canMutate = false, onChanged }) {
   const [items, setItems] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [selected, setSelected] = useState(null)
+  const [qty, setQty] = useState('1')
+  const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     if (!userId) return
     setLoading(true)
     fetchPlayerInventory(userId)
@@ -610,35 +765,260 @@ function InventoryTab({ userId }) {
       .finally(() => setLoading(false))
   }, [userId])
 
+  useEffect(() => { reload() }, [reload])
+
+  const runDelta = async (sign) => {
+    if (!selected || !canMutate) return
+    const n = Math.abs(Number.parseInt(qty, 10) || 0)
+    if (!n) return
+    setBusy(true)
+    try {
+      await adjustAdminUserItem(userId, String(selected.itemId), sign * n, '')
+      notifyAdmin(sign > 0 ? `Выдано ×${n}` : `Забрано ×${n}`)
+      setSelected(null)
+      setQty('1')
+      reload()
+      onChanged?.()
+    } catch (e) {
+      notifyAdmin(e.message || 'Ошибка', { error: true })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (loading) return <p className="panel-shelf-muted">Загрузка…</p>
   if (error) return <p className="panel-shelf-error">{error}</p>
   if (!items || items.length === 0) return <p className="panel-shelf-muted">Инвентарь пуст</p>
 
   return (
     <div className="pu-inventory">
-      <h4 className="pu-section-title">Инвентарь ({items.length} позиций)</h4>
+      <div className="pu-bento-head">
+        <div>
+          <h4 className="pu-section-title" style={{ margin: 0 }}>Инвентарь ({items.length} позиций)</h4>
+          <p className="panel-shelf-muted" style={{ margin: '0.25rem 0 0' }}>
+            {canMutate ? 'Нажми на предмет — выдать или забрать' : 'Только просмотр'}
+          </p>
+        </div>
+      </div>
       <div className="pu-inventory-grid">
         {items.map((item) => (
-          <div key={item.itemId} className="pu-inv-item">
+          <button
+            type="button"
+            key={item.itemId}
+            className={`pu-inv-item${selected?.itemId === item.itemId ? ' is-active' : ''}${canMutate ? ' is-clickable' : ''}`}
+            disabled={!canMutate || busy}
+            onClick={() => {
+              if (!canMutate) return
+              setSelected(item)
+              setQty('1')
+            }}
+          >
             <span className="pu-inv-emoji">{item.emoji}</span>
             <span className="pu-inv-name">{item.name}</span>
             <span className="pu-inv-count">×{item.count}</span>
-          </div>
+          </button>
         ))}
       </div>
-      <style>{`
-        .pu-inventory { padding: 4px 0; }
-        .pu-inventory-grid { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
-        .pu-inv-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #0a0a0c; border: 1px solid #1c1c20; border-radius: 8px; }
-        .pu-inv-emoji { font-size: 18px; flex-shrink: 0; width: 24px; text-align: center; }
-        .pu-inv-name { flex: 1; font-size: 13px; color: #e5e5e5; }
-        .pu-inv-count { font-size: 13px; font-weight: 700; color: #cccccc; flex-shrink: 0; }
-      `}</style>
+
+      {selected && canMutate && (
+        <div className="pu-inv-popover pu-inv-popover-inline" role="dialog">
+          <div className="pu-inv-popover-head">
+            <strong>{selected.emoji} {selected.name}</strong>
+            <button type="button" className="pu-close-btn" onClick={() => setSelected(null)}>✕</button>
+          </div>
+          <p className="panel-shelf-muted">Сейчас ×{selected.count}</p>
+          <label className="pu-field">
+            <span className="pu-field-label">Количество</span>
+            <input
+              className="panel-users-input pu-field-input"
+              value={qty}
+              onChange={(e) => setQty(e.target.value.replace(/\D/g, ''))}
+              inputMode="numeric"
+              placeholder="1"
+            />
+          </label>
+          <div className="pu-kut-actions">
+            <button type="button" className="panel-users-btn panel-users-btn-success" disabled={busy || !Number(qty)} onClick={() => runDelta(1)}>
+              Выдать
+            </button>
+            <button type="button" className="panel-users-btn panel-users-btn-danger" disabled={busy || !Number(qty)} onClick={() => runDelta(-1)}>
+              Забрать
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-// ---- Admin notes tab ----
+// ---- Farm control tab ----
+function FarmControlTab({ userId, profile, canControl, onChanged }) {
+  const [farm, setFarm] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [selectedId, setSelectedId] = useState(null)
+  const [plantCrop, setPlantCrop] = useState('')
+
+  const reload = useCallback(() => {
+    if (!userId) return
+    setLoading(true)
+    fetchFarmUser(userId)
+      .then((d) => {
+        setFarm(d)
+        const crops = d.farmCrops || []
+        if (!plantCrop && crops[0]) setPlantCrop(String(crops[0].key || crops[0].id || ''))
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [userId, plantCrop])
+
+  useEffect(() => { reload() }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const plots = farm?.plots || profile?.plots || []
+  const plotSlots = Math.max(1, farm?.maxPlots ?? profile?.maxPlots ?? PLOT_SLOTS_FALLBACK)
+  const crops = farm?.farmCrops || []
+  const selected = plots.find((p) => Number(p.id) === Number(selectedId))
+
+  const run = async (action, cropId = null) => {
+    if (!canControl || !selectedId) return
+    setBusy(true)
+    setError('')
+    try {
+      const res = await adminFarmPlotAction(userId, selectedId, action, cropId)
+      notifyAdmin(res.message || 'Готово')
+      if (res.farm) setFarm(res.farm)
+      else reload()
+      onChanged?.()
+    } catch (e) {
+      setError(e.message || 'Ошибка')
+      notifyAdmin(e.message || 'Ошибка', { error: true })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const statusOf = (plot) => String(plot?.status || '').toUpperCase()
+
+  if (loading && !farm) return <p className="panel-shelf-muted">Загрузка фермы…</p>
+
+  return (
+    <div className="pu-farm-tab">
+      <div className="pu-bento-head">
+        <div>
+          <p className="panel-shelf-label">Ферма</p>
+          <h3 className="panel-users-subtitle">Грядки игрока</h3>
+        </div>
+        <span className="pu-bento-chip">{farm?.ownedPlots ?? profile?.ownedPlots}/{farm?.maxPlots ?? profile?.maxPlots}</span>
+      </div>
+      {!canControl && (
+        <p className="panel-shelf-muted">Просмотр. Управление грядками доступно только владельцу.</p>
+      )}
+      {error && <p className="panel-shelf-error">{error}</p>}
+
+      <div className="panel-users-plot-grid pu-farm-grid">
+        {Array.from({ length: plotSlots }, (_, i) => {
+          const plotId = i + 1
+          const plot = plots.find((p) => Number(p.id) === plotId)
+          const status = plot ? statusOf(plot) : ''
+          const statusClass = !plot
+            ? ' is-locked'
+            : status === 'READY'
+              ? ' is-ready'
+              : status === 'EMPTY'
+                ? ' is-empty'
+                : status === 'WITHERED'
+                  ? ' is-withered'
+                  : ' is-busy'
+          return (
+            <button
+              type="button"
+              key={plotId}
+              className={`panel-users-plot${statusClass}${selectedId === plotId ? ' is-selected' : ''}`}
+              onClick={() => setSelectedId(plotId)}
+            >
+              <span className="panel-users-plot-id">#{plotId}</span>
+              <span className="panel-users-plot-status">{plot ? plot.status : '—'}</span>
+              {plot?.cropLabel && <span className="pu-plot-crop">{plot.cropLabel}</span>}
+              {plot?.needsWater && <span className="pu-plot-water">нужен полив</span>}
+            </button>
+          )
+        })}
+      </div>
+
+      {selectedId && (
+        <div className="pu-farm-controls">
+          <div className="pu-farm-controls-head">
+            <strong>Грядка #{selectedId}</strong>
+            <span>{selected ? statusOf(selected) : '—'}</span>
+            {selected?.cropLabel && <em>{selected.cropLabel}</em>}
+          </div>
+          {canControl ? (
+            <>
+              <div className="pu-farm-actions">
+                <button type="button" className="panel-users-btn" disabled={busy || statusOf(selected) !== 'GROWING'} onClick={() => run('water')}>
+                  Полить
+                </button>
+                <button type="button" className="panel-users-btn" disabled={busy || !['GROWING', 'READY'].includes(statusOf(selected))} onClick={() => run('force_ripe')}>
+                  Дозреть
+                </button>
+                <button type="button" className="panel-users-btn panel-users-btn-success" disabled={busy || statusOf(selected) !== 'READY'} onClick={() => run('harvest')}>
+                  Собрать → инвентарь
+                </button>
+                <button type="button" className="panel-users-btn panel-users-btn-danger" disabled={busy} onClick={() => run('clear')}>
+                  Очистить
+                </button>
+              </div>
+              <div className="pu-farm-plant-row">
+                <select
+                  className="panel-users-input pu-field-input"
+                  value={plantCrop}
+                  onChange={(e) => setPlantCrop(e.target.value)}
+                  disabled={busy || !crops.length}
+                >
+                  {crops.length === 0 && <option value="">Нет культур</option>}
+                  {crops.map((c) => (
+                    <option key={c.key || c.id} value={c.key || c.id}>{c.displayName || c.name || c.key}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="panel-users-btn panel-users-btn-primary"
+                  disabled={busy || !plantCrop || !['EMPTY', 'WITHERED', ''].includes(statusOf(selected))}
+                  onClick={() => run('plant', plantCrop)}
+                >
+                  Посадить
+                </button>
+              </div>
+              <button
+                type="button"
+                className="panel-users-btn"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true)
+                  try {
+                    await resetFarmUserPlots(userId, null)
+                    notifyAdmin('Все грядки сброшены')
+                    reload()
+                    onChanged?.()
+                  } catch (e) {
+                    notifyAdmin(e.message, { error: true })
+                  } finally {
+                    setBusy(false)
+                  }
+                }}
+              >
+                Сбросить все грядки
+              </button>
+            </>
+          ) : (
+            <p className="panel-shelf-muted">Выберите грядку, чтобы увидеть статус. Изменения недоступны.</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 function NotesTab({ userId, adminId }) {
   const [notes, setNotes] = useState([])
   const [loading, setLoading] = useState(true)
@@ -731,7 +1111,7 @@ function NotesTab({ userId, adminId }) {
         {notes.map((n) => (
           <div key={n.id} className="pu-note-card">
             <div className="pu-note-head">
-              <span className="pu-note-admin">Admin {n.adminUserId}</span>
+              <span className="pu-note-admin">{n.adminName || `Admin ${n.adminUserId}`}</span>
               <time className="pu-note-time">{formatDate(n.createdAt)}</time>
               <div className="pu-note-actions">
                 <button
@@ -960,13 +1340,15 @@ function CuteHistoryFeed({ userId }) {
 }
 
 export default function UsersSection({ initialUserId = null, onInitialUserConsumed, permissions = [], role = null }) {
-  const isOwner = role === 'owner'  // история кут — только для владельцев
+  const isOwner = role === 'owner'
   const perms = new Set(permissions)
+  const canMutateEconomy = isOwner // обычные админы: всё видят, кут/предметы/ферму не меняют
   const canBan = perms.has('moderate_ban')
   const canUnban = perms.has('moderate_unban')
-  const canBalance = perms.has('adjust_balance')
-  const canItems = perms.has('give_items')
-  const canManageSettings = perms.has('manage_settings')
+  const canBalance = canMutateEconomy
+  const canItems = canMutateEconomy
+  const canFarmControl = canMutateEconomy
+  const canManageSettings = isOwner
 
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
@@ -1308,39 +1690,13 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
           </div>
         )}
         {hasProfile && profileTab === 'farm' && (
-          <article className="panel-shelf panel-users-card pu-tab-pane pu-farm-tab">
-            <div className="pu-bento-head">
-              <div>
-                <p className="panel-shelf-label">Ферма</p>
-                <h3 className="panel-users-subtitle">Грядки игрока</h3>
-              </div>
-              <span className="pu-bento-chip">{profile.ownedPlots}/{profile.maxPlots}</span>
-            </div>
-            <div className="panel-users-plot-grid pu-farm-grid">
-              {Array.from({ length: plotSlots }, (_, i) => {
-                const plotId = i + 1
-                const plot = plots.find((p) => p.id === plotId)
-                const status = plot ? String(plot.status || '').toUpperCase() : ''
-                const statusClass = !plot
-                  ? ' is-locked'
-                  : status === 'READY'
-                    ? ' is-ready'
-                    : status === 'EMPTY'
-                      ? ' is-empty'
-                      : ' is-busy'
-                return (
-                  <div
-                    key={plotId}
-                    className={`panel-users-plot${statusClass}`}
-                  >
-                    <span className="panel-users-plot-id">#{plotId}</span>
-                    <span className="panel-users-plot-status">
-                      {plot ? plot.status : '—'}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
+          <article className="panel-shelf panel-users-card pu-tab-pane">
+            <FarmControlTab
+              userId={profile.userId}
+              profile={profile}
+              canControl={canFarmControl}
+              onChanged={() => loadUser(profile.userId)}
+            />
           </article>
         )}
         {hasProfile && profileTab === 'history' && (
@@ -1356,7 +1712,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
               </div>
             </div>
 
-            {isOwner && (
+            {hasProfile && (
               <div className="pu-hist-switch">
                 <button
                   type="button"
@@ -1371,7 +1727,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
               </div>
             )}
 
-            {isOwner && historySource === 'cute' && (
+            {historySource === 'cute' && (
               <CuteHistoryFeed userId={profile.userId} />
             )}
 
@@ -1430,7 +1786,11 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
         )}
         {hasProfile && profileTab === 'inventory' && (
           <div className="pu-tab-pane panel-shelf panel-users-card">
-            <InventoryTab userId={profile.userId} />
+            <InventoryTab
+              userId={profile.userId}
+              canMutate={canItems}
+              onChanged={() => loadUser(profile.userId)}
+            />
           </div>
         )}
         {hasProfile && profileTab === 'notes' && (

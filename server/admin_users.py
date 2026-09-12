@@ -11,6 +11,7 @@ from typing import Any
 
 from db import db
 from user_items import items_to_db, parse_items
+from admin_db import get_admin_account
 
 
 def _safe_dict(value: Any) -> dict:
@@ -562,23 +563,52 @@ async def get_player_ban_history(user_id: int) -> list[dict]:
 async def list_player_notes(player_id: int) -> list[dict]:
     rows = await db.pool.fetch(
         """
-        SELECT id, admin_user_id, text, created_at, updated_at
-        FROM player_admin_notes
-        WHERE player_id = $1
-        ORDER BY created_at DESC
+        SELECT
+            n.id,
+            n.admin_user_id,
+            n.text,
+            n.created_at,
+            n.updated_at,
+            a.first_name AS admin_first_name,
+            a.username AS admin_username
+        FROM player_admin_notes n
+        LEFT JOIN LATERAL (
+            SELECT first_name, username
+            FROM admin_accounts
+            WHERE user_id = n.admin_user_id
+            ORDER BY registered_at DESC NULLS LAST
+            LIMIT 1
+        ) a ON TRUE
+        WHERE n.player_id = $1
+        ORDER BY n.created_at DESC
         """,
         player_id,
     )
-    return [
-        {
-            "id": int(r["id"]),
-            "adminUserId": int(r["admin_user_id"]),
-            "text": r["text"],
-            "createdAt": r["created_at"].isoformat(),
-            "updatedAt": r["updated_at"].isoformat(),
-        }
-        for r in rows
-    ]
+    return [_serialize_player_note(r) for r in rows]
+
+
+def _admin_display_name(first_name, username, user_id: int) -> str:
+    name = (first_name or "").strip()
+    if name:
+        return name
+    un = (username or "").strip().lstrip("@")
+    if un:
+        return f"@{un}"
+    return f"#{int(user_id)}"
+
+
+def _serialize_player_note(row) -> dict:
+    admin_id = int(row["admin_user_id"])
+    first_name = row["admin_first_name"] if "admin_first_name" in row.keys() else None
+    username = row["admin_username"] if "admin_username" in row.keys() else None
+    return {
+        "id": int(row["id"]),
+        "adminUserId": admin_id,
+        "adminName": _admin_display_name(first_name, username, admin_id),
+        "text": row["text"],
+        "createdAt": row["created_at"].isoformat(),
+        "updatedAt": row["updated_at"].isoformat(),
+    }
 
 
 async def upsert_player_note(
@@ -620,13 +650,11 @@ async def upsert_player_note(
             text,
         )
 
-    return {
-        "id": int(row["id"]),
-        "adminUserId": int(row["admin_user_id"]),
-        "text": row["text"],
-        "createdAt": row["created_at"].isoformat(),
-        "updatedAt": row["updated_at"].isoformat(),
-    }
+    acc = await get_admin_account(int(row["admin_user_id"]))
+    payload = dict(row)
+    payload["admin_first_name"] = (acc or {}).get("first_name")
+    payload["admin_username"] = (acc or {}).get("username")
+    return _serialize_player_note(payload)
 
 
 async def delete_player_note(player_id: int, note_id: int, *, admin_user_id: int) -> None:
@@ -858,6 +886,8 @@ async def get_user_intel(user_id: int, *, is_owner: bool = False) -> dict | None
 
     most_active = activity_by_chat[0] if activity_by_chat else None
 
+    engagement = await _build_engagement_stats(user_id, profile=profile)
+
     p2p = {
         "sentCount": 0,
         "sentSum": 0,
@@ -1023,13 +1053,13 @@ async def get_user_intel(user_id: int, *, is_owner: bool = False) -> dict | None
         achievements = {"items": [], "count": 0}
 
     editable = {
-        "balance": True,
-        "items": True,
+        "balance": bool(is_owner),
+        "items": bool(is_owner),
         "ban": True,
         "unban": True,
-        "onboardingReset": True,
+        "onboardingReset": bool(is_owner),
         "notes": True,
-        "farmReset": True,
+        "farmReset": bool(is_owner),
         "ownerFields": bool(is_owner),
     }
 
@@ -1045,6 +1075,7 @@ async def get_user_intel(user_id: int, *, is_owner: bool = False) -> dict | None
             "byChat": activity_by_chat,
             "mostActive": most_active,
         },
+        "engagement": engagement,
         "p2p": p2p,
         "significantMoves": significant_moves,
         "cuteRecent": cute_preview,
@@ -1082,6 +1113,373 @@ def _elapsed_ru(reg_dt) -> str | None:
         return ", ".join(parts) if parts else "менее часа"
     except Exception:
         return None
+
+
+async def _build_engagement_stats(user_id: int, *, profile: dict | None = None) -> dict:
+    """Полная аналитика присутствия: группы, частота, оценка активного времени."""
+    from datetime import date, datetime, timedelta, timezone
+
+    today = date.today()
+    out: dict[str, Any] = {
+        "lastSeenAt": (profile or {}).get("lastSeenAt"),
+        "accountAgeDays": None,
+        "messages": {
+            "day": 0,
+            "week": 0,
+            "month": 0,
+            "year": 0,
+            "lifetime": 0,
+            "avgPerActiveDay": 0,
+            "avgPerDayMonth": 0,
+            "avgPerDayYear": 0,
+        },
+        "activeDays": {"week": 0, "month": 0, "year": 0, "lifetime": 0},
+        "streak": {"current": 0, "best": 0},
+        "topGroupsLifetime": [],
+        "topGroups30d": [],
+        "hourlyHeat": [0] * 24,
+        "weekdayHeat": [0] * 7,
+        "sessions": {
+            "estimatedMinutesTotal": 0,
+            "estimatedMinutes30d": 0,
+            "avgMinutesPerActiveDay": 0,
+            "avgMinutesPerDayMonth": 0,
+            "loginEvents30d": 0,
+            "sessionCount30d": 0,
+        },
+        "farm": {"plants": 0, "waters": 0, "harvests": 0, "withers": 0, "efficiencyPct": None},
+        "gamesOpens": {"total": 0, "byChat": []},
+        "signals": {
+            "engagementScore": 0,
+            "churnRisk": "low",
+            "inactiveDays": None,
+            "labels": [],
+        },
+        "platform": None,
+        "timezone": None,
+    }
+
+    # lifetime + windows from chatchange
+    try:
+        agg = await db.pool.fetchrow(
+            """
+            SELECT
+              COALESCE(SUM(text::bigint), 0)::bigint AS lifetime,
+              COALESCE(SUM(text::bigint) FILTER (WHERE date = CURRENT_DATE), 0)::bigint AS day,
+              COALESCE(SUM(text::bigint) FILTER (WHERE date >= CURRENT_DATE - 6), 0)::bigint AS week,
+              COALESCE(SUM(text::bigint) FILTER (WHERE date >= CURRENT_DATE - 29), 0)::bigint AS month,
+              COALESCE(SUM(text::bigint) FILTER (WHERE date >= CURRENT_DATE - 364), 0)::bigint AS year,
+              COUNT(DISTINCT date)::int AS days_life,
+              COUNT(DISTINCT date) FILTER (WHERE date >= CURRENT_DATE - 6)::int AS days_week,
+              COUNT(DISTINCT date) FILTER (WHERE date >= CURRENT_DATE - 29)::int AS days_month,
+              COUNT(DISTINCT date) FILTER (WHERE date >= CURRENT_DATE - 364)::int AS days_year
+            FROM chatchange
+            WHERE user_id = $1
+            """,
+            user_id,
+        )
+        if agg:
+            out["messages"]["lifetime"] = int(agg["lifetime"] or 0)
+            out["messages"]["day"] = int(agg["day"] or 0)
+            out["messages"]["week"] = int(agg["week"] or 0)
+            out["messages"]["month"] = int(agg["month"] or 0)
+            out["messages"]["year"] = int(agg["year"] or 0)
+            out["activeDays"]["lifetime"] = int(agg["days_life"] or 0)
+            out["activeDays"]["week"] = int(agg["days_week"] or 0)
+            out["activeDays"]["month"] = int(agg["days_month"] or 0)
+            out["activeDays"]["year"] = int(agg["days_year"] or 0)
+            life_days = max(1, out["activeDays"]["lifetime"])
+            out["messages"]["avgPerActiveDay"] = round(out["messages"]["lifetime"] / life_days, 1)
+            out["messages"]["avgPerDayMonth"] = round(out["messages"]["month"] / 30, 1)
+            out["messages"]["avgPerDayYear"] = round(out["messages"]["year"] / 365, 1)
+    except Exception:
+        pass
+
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT c.chat_id,
+                   COALESCE(MAX(ch.namechat), MAX(c.chat_name), c.chat_id::text) AS chat_name,
+                   COALESCE(SUM(c.text::bigint), 0)::bigint AS messages,
+                   COUNT(DISTINCT c.date)::int AS active_days
+            FROM chatchange c
+            LEFT JOIN chat ch ON ch.chat_id = c.chat_id
+            WHERE c.user_id = $1
+            GROUP BY c.chat_id
+            ORDER BY messages DESC
+            LIMIT 12
+            """,
+            user_id,
+        )
+        out["topGroupsLifetime"] = [
+            {
+                "chatId": int(r["chat_id"]),
+                "chatName": r["chat_name"] or str(r["chat_id"]),
+                "messages": int(r["messages"] or 0),
+                "activeDays": int(r["active_days"] or 0),
+            }
+            for r in rows
+        ]
+    except Exception:
+        pass
+
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT c.chat_id,
+                   COALESCE(MAX(ch.namechat), MAX(c.chat_name), c.chat_id::text) AS chat_name,
+                   COALESCE(SUM(c.text::bigint), 0)::bigint AS messages
+            FROM chatchange c
+            LEFT JOIN chat ch ON ch.chat_id = c.chat_id
+            WHERE c.user_id = $1 AND c.date >= CURRENT_DATE - 29
+            GROUP BY c.chat_id
+            ORDER BY messages DESC
+            LIMIT 10
+            """,
+            user_id,
+        )
+        out["topGroups30d"] = [
+            {
+                "chatId": int(r["chat_id"]),
+                "chatName": r["chat_name"] or str(r["chat_id"]),
+                "messages": int(r["messages"] or 0),
+            }
+            for r in rows
+        ]
+    except Exception:
+        pass
+
+    # streak from daily activity dates
+    try:
+        days = await db.pool.fetch(
+            """
+            SELECT DISTINCT date AS d
+            FROM chatchange
+            WHERE user_id = $1
+            ORDER BY d DESC
+            LIMIT 800
+            """,
+            user_id,
+        )
+        day_set = {r["d"] for r in days if r["d"]}
+        best = 0
+        cur = 0
+        # current streak: walk back from today/yesterday
+        probe = today
+        if probe not in day_set and (today - timedelta(days=1)) in day_set:
+            probe = today - timedelta(days=1)
+        while probe in day_set:
+            cur += 1
+            probe -= timedelta(days=1)
+        out["streak"]["current"] = cur
+        # best streak
+        sorted_days = sorted(day_set)
+        run = 0
+        prev = None
+        for d in sorted_days:
+            if prev is not None and d == prev + timedelta(days=1):
+                run += 1
+            else:
+                run = 1
+            best = max(best, run)
+            prev = d
+        out["streak"]["best"] = best
+    except Exception:
+        pass
+
+    # heatmaps from game_events + login events
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'UTC')::int AS h,
+                   EXTRACT(DOW FROM created_at AT TIME ZONE 'UTC')::int AS dow,
+                   COUNT(*)::int AS n
+            FROM game_events
+            WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '90 days'
+            GROUP BY 1, 2
+            """,
+            user_id,
+        )
+        hourly = [0] * 24
+        weekday = [0] * 7
+        for r in rows:
+            h = int(r["h"] or 0)
+            dow = int(r["dow"] or 0)
+            n = int(r["n"] or 0)
+            if 0 <= h < 24:
+                hourly[h] += n
+            if 0 <= dow < 7:
+                weekday[dow] += n
+        out["hourlyHeat"] = hourly
+        out["weekdayHeat"] = weekday
+    except Exception:
+        pass
+
+    # farm events
+    try:
+        f = await db.pool.fetchrow(
+            """
+            SELECT
+              COUNT(*) FILTER (WHERE event_type = 'farm_plant')::int AS plants,
+              COUNT(*) FILTER (WHERE event_type = 'farm_water')::int AS waters,
+              COUNT(*) FILTER (WHERE event_type = 'farm_harvest')::int AS harvests,
+              COUNT(*) FILTER (WHERE event_type = 'farm_wither')::int AS withers
+            FROM game_events
+            WHERE user_id = $1
+            """,
+            user_id,
+        )
+        if f:
+            plants = int(f["plants"] or 0)
+            harvests = int(f["harvests"] or 0)
+            out["farm"] = {
+                "plants": plants,
+                "waters": int(f["waters"] or 0),
+                "harvests": harvests,
+                "withers": int(f["withers"] or 0),
+                "efficiencyPct": round(100 * harvests / plants, 1) if plants else None,
+            }
+    except Exception:
+        pass
+
+    # session estimate from user_login_events
+    try:
+        logins = await db.pool.fetch(
+            """
+            SELECT created_at, platform, timezone
+            FROM user_login_events
+            WHERE user_id = $1
+            ORDER BY created_at ASC
+            LIMIT 2000
+            """,
+            user_id,
+        )
+        if logins:
+            out["platform"] = logins[-1]["platform"]
+            out["timezone"] = logins[-1]["timezone"]
+            gap = timedelta(minutes=30)
+            sessions: list[tuple[datetime, datetime]] = []
+            start = end = None
+            for r in logins:
+                ts = r["created_at"]
+                if ts is None:
+                    continue
+                if getattr(ts, "tzinfo", None) is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if start is None:
+                    start = end = ts
+                    continue
+                if ts - end <= gap:
+                    end = ts
+                else:
+                    sessions.append((start, end))
+                    start = end = ts
+            if start is not None:
+                sessions.append((start, end))
+
+            def _mins(a, b):
+                raw = max(2, int((b - a).total_seconds() / 60) + 2)
+                return min(180, raw)
+
+            total_m = sum(_mins(a, b) for a, b in sessions)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+            s30 = [(a, b) for a, b in sessions if b >= cutoff]
+            m30 = sum(_mins(a, b) for a, b in s30)
+            out["sessions"]["estimatedMinutesTotal"] = total_m
+            out["sessions"]["estimatedMinutes30d"] = m30
+            out["sessions"]["sessionCount30d"] = len(s30)
+            out["sessions"]["loginEvents30d"] = sum(1 for r in logins if r["created_at"] and r["created_at"] >= cutoff)
+            ad_month = max(1, out["activeDays"]["month"] or 1)
+            out["sessions"]["avgMinutesPerActiveDay"] = round(m30 / ad_month, 1)
+            out["sessions"]["avgMinutesPerDayMonth"] = round(m30 / 30, 1)
+    except Exception:
+        pass
+
+    # historygames opens
+    try:
+        g = await db.pool.fetchrow(
+            "SELECT COALESCE(SUM(use1), 0)::bigint AS n FROM historygames WHERE user_id = $1",
+            user_id,
+        )
+        out["gameOpens"]["total"] = int((g or {}).get("n") or 0)
+        grows = await db.pool.fetch(
+            """
+            SELECT chat_id, COALESCE(MAX(chat_name), chat_id::text) AS chat_name,
+                   COALESCE(SUM(use1), 0)::bigint AS opens
+            FROM historygames
+            WHERE user_id = $1
+            GROUP BY chat_id
+            ORDER BY opens DESC
+            LIMIT 8
+            """,
+            user_id,
+        )
+        out["gameOpens"]["byChat"] = [
+            {
+                "chatId": int(r["chat_id"]) if r["chat_id"] is not None else None,
+                "chatName": r["chat_name"] or "—",
+                "opens": int(r["opens"] or 0),
+            }
+            for r in grows
+        ]
+    except Exception:
+        pass
+
+    # signals / score
+    inactive_days = None
+    last_seen_raw = (profile or {}).get("lastSeenAt")
+    try:
+        if last_seen_raw:
+            ls = last_seen_raw
+            if isinstance(ls, str):
+                ls = datetime.fromisoformat(ls.replace("Z", "+00:00"))
+            if getattr(ls, "tzinfo", None) is None:
+                ls = ls.replace(tzinfo=timezone.utc)
+            inactive_days = max(0, (datetime.now(timezone.utc) - ls).days)
+    except Exception:
+        inactive_days = None
+    out["signals"]["inactiveDays"] = inactive_days
+
+    score = 0
+    score += min(25, out["activeDays"]["month"] * 2)
+    score += min(20, int(out["messages"]["month"] / 20))
+    score += min(15, int((out["sessions"]["estimatedMinutes30d"] or 0) / 30))
+    score += min(15, out["farm"]["harvests"])
+    score += min(10, out["streak"]["current"])
+    score += min(15, int((out["gameOpens"]["total"] or 0) / 50))
+    if inactive_days is not None:
+        if inactive_days >= 14:
+            score = max(0, score - 25)
+        elif inactive_days >= 7:
+            score = max(0, score - 12)
+    out["signals"]["engagementScore"] = min(100, score)
+
+    if inactive_days is None:
+        churn = "unknown"
+    elif inactive_days >= 21:
+        churn = "high"
+    elif inactive_days >= 7:
+        churn = "medium"
+    else:
+        churn = "low"
+    out["signals"]["churnRisk"] = churn
+
+    labels = []
+    if out["streak"]["current"] >= 7:
+        labels.append("серия ≥7 дней")
+    if out["activeDays"]["month"] >= 20:
+        labels.append("ежедневный игрок")
+    if out["farm"]["efficiencyPct"] is not None and out["farm"]["efficiencyPct"] >= 70:
+        labels.append("сильный фермер")
+    if out["messages"]["month"] >= 500:
+        labels.append("активен в чатах")
+    if churn == "high":
+        labels.append("риск оттока")
+    if out["topGroupsLifetime"]:
+        labels.append(f"дом: {out['topGroupsLifetime'][0]['chatName']}")
+    out["signals"]["labels"] = labels
+
+    return out
 
 
 async def _build_user_dossier(user_id: int, *, is_owner: bool) -> dict:
