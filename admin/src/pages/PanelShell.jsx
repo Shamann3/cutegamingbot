@@ -44,10 +44,12 @@ import {
   persistAccent,
 } from '../lib/accentTheme'
 import { loadRecentSections, pushRecentSection } from '../lib/recentSections'
+import { useViewportMode } from '../lib/useIsDesktop'
 
 export default function PanelShell({ onLogout }) {
   const { lightMode, setLightMode } = usePerfMode()
   const { volume: musicVolume, setVolume: setMusicVolume, toggleMute: toggleMusicMute } = useMusicMode()
+  const viewport = useViewportMode()
   const [accent, setAccent] = useState(() => loadStoredAccent())
 
   useEffect(() => {
@@ -239,7 +241,7 @@ export default function PanelShell({ onLogout }) {
   const isSoftRestart = section === 'softRestart'
 
   return (
-    <div className="panel-shell">
+    <div className={`panel-shell panel-shell-${viewport}`} data-viewport={viewport}>
       {/* Зарезервированная полоса под ✕ / меню Telegram + Dynamic Island */}
       <div className="panel-tg-chrome" aria-hidden="true" />
 

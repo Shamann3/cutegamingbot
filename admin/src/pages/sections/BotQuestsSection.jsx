@@ -16,6 +16,7 @@ import {
   deleteBotChallenge,
   disableBotChallenge,
 } from '../../lib/adminClient'
+import { useIsPhone, detectViewportMode } from '../../lib/useIsDesktop'
 
 const DEFAULT_CHAT = '@CuteGamingChat'
 
@@ -228,6 +229,7 @@ function IconPay() {
 }
 
 export default function BotQuestsSection() {
+  const isPhone = useIsPhone()
   const [mode, setMode] = useState('subs')
   const [overview, setOverview] = useState(null)
   const [subs, setSubs] = useState([])
@@ -243,7 +245,7 @@ export default function BotQuestsSection() {
   const [gcRows, setGcRows] = useState([emptyGcRow()])
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [removingKeys, setRemovingKeys] = useState(() => new Set())
-  const [composerOpen, setComposerOpen] = useState(true)
+  const [composerOpen, setComposerOpen] = useState(() => detectViewportMode() !== 'phone')
   const [busyId, setBusyId] = useState(null)
   const [editTarget, setEditTarget] = useState(null)
   const [payoutKind, setPayoutKind] = useState('all')
@@ -644,7 +646,7 @@ export default function BotQuestsSection() {
   const showComposer = composerOpen && mode !== 'payouts'
 
   return (
-    <div className={`panel-content bq-root bq-theme-${mode === 'payouts' ? 'pay' : mode}`}>
+    <div className={`panel-content bq-root bq-theme-${mode === 'payouts' ? 'pay' : mode}${isPhone ? ' bq-phone' : ' bq-desktop'}`}>
       <div className="bq-atmosphere" aria-hidden="true">
         <span className="bq-orb bq-orb-a" />
         <span className="bq-orb bq-orb-b" />
@@ -655,13 +657,19 @@ export default function BotQuestsSection() {
         <div className="bq-hero-main">
           <div className="bq-badge">
             <IconSpark />
-            <span>Только создатель</span>
+            <span>{isPhone ? 'Создатель' : 'Только создатель'}</span>
           </div>
-          <h2 className="bq-title">Студия заданий</h2>
+          <h2 className="bq-title">{isPhone ? 'Задания TG' : 'Студия заданий'}</h2>
           <p className="bq-lead">
-            Создавай задания на подписку и челленджи вместо команд
-            <code>+задание</code> и <code>+заданиеч</code>.
-            Можно сразу много штук и с временем старта.
+            {isPhone ? (
+              <>Подписки и челленджи вместо команд <code>+задание</code> / <code>+заданиеч</code>.</>
+            ) : (
+              <>
+                Создавай задания на подписку и челленджи вместо команд
+                <code>+задание</code> и <code>+заданиеч</code>.
+                Можно сразу много штук и с временем старта.
+              </>
+            )}
           </p>
           <div className="bq-hero-actions">
             <button type="button" className="bq-btn bq-btn-ghost" onClick={load} disabled={loading}>
@@ -677,20 +685,20 @@ export default function BotQuestsSection() {
               }}
             >
               <IconGc />
-              Создание челленджей автоматически
+              {isPhone ? 'Авто-челленджи' : 'Создание челленджей автоматически'}
             </button>
             {mode !== 'payouts' && (
               <button
                 type="button"
-                className="bq-btn bq-btn-ghost"
+                className={`bq-btn ${composerOpen ? 'bq-btn-ghost' : 'bq-btn-primary'}`}
                 onClick={() => setComposerOpen((v) => !v)}
               >
-                {composerOpen ? 'Скрыть конструктор' : 'Открыть конструктор'}
+                {composerOpen ? 'Скрыть конструктор' : (isPhone ? '+ Новое задание' : 'Открыть конструктор')}
               </button>
             )}
             <button type="button" className="bq-btn bq-btn-ghost" onClick={openPayouts}>
               <IconPay />
-              История выплат
+              {isPhone ? 'Выплаты' : 'История выплат'}
             </button>
           </div>
         </div>
@@ -699,7 +707,7 @@ export default function BotQuestsSection() {
           <div className="bq-metric" style={{ '--i': 0 }}>
             <div className="bq-metric-icon bq-metric-cyan"><IconSub /></div>
             <div>
-              <span className="bq-metric-label">Подписки в эфире</span>
+              <span className="bq-metric-label">{isPhone ? 'Подписки' : 'Подписки в эфире'}</span>
               <strong className="bq-metric-value">{ov.subTasks.active}</strong>
               <span className="bq-metric-sub">скоро {ov.subTasks.scheduled} · всего {ov.subTasks.total}</span>
             </div>
@@ -707,7 +715,7 @@ export default function BotQuestsSection() {
           <div className="bq-metric" style={{ '--i': 1 }}>
             <div className="bq-metric-icon bq-metric-violet"><IconGc /></div>
             <div>
-              <span className="bq-metric-label">Челленджи в эфире</span>
+              <span className="bq-metric-label">{isPhone ? 'Челленджи' : 'Челленджи в эфире'}</span>
               <strong className="bq-metric-value">{ov.challenges.active}</strong>
               <span className="bq-metric-sub">скоро {ov.challenges.scheduled} · выкл {ov.challenges.disabled}</span>
             </div>
@@ -726,12 +734,16 @@ export default function BotQuestsSection() {
               </svg>
             </div>
             <div>
-              <span className="bq-metric-label">Всего выдано игрокам</span>
+              <span className="bq-metric-label">{isPhone ? 'Выдано' : 'Всего выдано игрокам'}</span>
               <strong className="bq-metric-value">{fmtMoney(paidTotal)}</strong>
-              <span className="bq-metric-sub">
-                подписки {fmtMoney(ov.subRewardPaidTotal)} · челленджи {fmtMoney(ov.gcRewardPaidTotal)}
+              {!isPhone && (
+                <span className="bq-metric-sub">
+                  подписки {fmtMoney(ov.subRewardPaidTotal)} · челленджи {fmtMoney(ov.gcRewardPaidTotal)}
+                </span>
+              )}
+              <span className="bq-metric-link">
+                {isPhone ? `${payoutCount} выплат →` : `${payoutCount} выплат · открыть журнал →`}
               </span>
-              <span className="bq-metric-link">{payoutCount} выплат · открыть журнал →</span>
             </div>
           </button>
         </div>

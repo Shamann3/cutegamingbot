@@ -247,11 +247,10 @@ html.panel-nav-open .panel-shelf-sidebar {
 }
 
 /* ============================================================
-   ИГРОКИ — phone craft
-   Поиск компактный и стоит на месте. Табы НЕ sticky.
-   Скролл только у .panel-users-body — ничего не «ползёт» поверх.
+   ИГРОКИ — phone craft (только data-viewport=phone)
+   ПК / Telegram Desktop сюда не попадают.
    ============================================================ */
-@media (max-width: 900px) {
+html[data-viewport="phone"] {
   /* Лочим viewport только на разделе Игроки */
   .panel-shell:has(.panel-layout-users) {
     height: var(--tg-viewport-stable-height, 100dvh) !important;
@@ -623,12 +622,12 @@ html.panel-nav-open .panel-shelf-sidebar {
 }
 
 @media (max-width: 400px) {
-  .panel-users-plot-grid,
-  .pu-farm-grid {
+  html[data-viewport="phone"] .panel-users-plot-grid,
+  html[data-viewport="phone"] .pu-farm-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
-  .pu-farm-actions {
+  html[data-viewport="phone"] .pu-farm-actions {
     grid-template-columns: 1fr !important;
   }
 }

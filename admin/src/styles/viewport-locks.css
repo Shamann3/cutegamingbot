@@ -1,0 +1,29 @@
+/**
+ * Жёсткое разделение phone / desktop поверх width-media из elite.css.
+ * html[data-viewport] ставится до первого paint (main.jsx).
+ */
+
+/* ПК / Telegram Desktop: не скатываться в «телефонный» shell из @media 900 */
+html[data-viewport="desktop"] .panel-shell {
+  height: var(--tg-viewport-stable-height, 100dvh) !important;
+  max-height: var(--tg-viewport-stable-height, 100dvh) !important;
+  overflow: hidden !important;
+}
+
+html[data-viewport="desktop"] .panel-shell-main {
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+html[data-viewport="desktop"] .panel-layout-users,
+html[data-viewport="desktop"] .panel-layout-page,
+html[data-viewport="desktop"] .panel-layout-support,
+html[data-viewport="desktop"] .panel-layout-staff,
+html[data-viewport="desktop"] .panel-layout-security,
+html[data-viewport="desktop"] .panel-layout-content,
+html[data-viewport="desktop"] .panel-layout-broadcast {
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}

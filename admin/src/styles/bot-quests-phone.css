@@ -1,0 +1,220 @@
+/* Задания TG — phone only. Desktop layout untouched. */
+html[data-viewport="phone"] .bq-root {
+  gap: 0.65rem !important;
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px)) !important;
+}
+
+html[data-viewport="phone"] .bq-atmosphere {
+  height: 12rem !important;
+  opacity: 0.55;
+}
+
+html[data-viewport="phone"] .bq-orb {
+  filter: blur(36px) !important;
+  opacity: 0.18 !important;
+}
+
+html[data-viewport="phone"] .bq-hero {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.75rem !important;
+  padding: 0.95rem 0.9rem 0.9rem !important;
+  border-radius: 18px !important;
+}
+
+html[data-viewport="phone"] .bq-title {
+  font-size: 1.45rem !important;
+  line-height: 1.15 !important;
+}
+
+html[data-viewport="phone"] .bq-lead {
+  margin-top: 0.4rem !important;
+  font-size: 0.86rem !important;
+  line-height: 1.4 !important;
+  max-width: none !important;
+}
+
+html[data-viewport="phone"] .bq-hero-actions {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 0.4rem !important;
+  margin-top: 0.75rem !important;
+}
+
+html[data-viewport="phone"] .bq-hero-actions .bq-btn {
+  min-height: 44px !important;
+  justify-content: center !important;
+  padding: 0.55rem 0.65rem !important;
+  font-size: 0.8rem !important;
+  border-radius: 12px !important;
+  width: 100%;
+}
+
+html[data-viewport="phone"] .bq-hero-actions .bq-btn-primary {
+  grid-column: 1 / -1;
+}
+
+html[data-viewport="phone"] .bq-metrics {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 0.45rem !important;
+}
+
+html[data-viewport="phone"] .bq-metric {
+  padding: 0.7rem !important;
+  border-radius: 14px !important;
+  gap: 0.55rem !important;
+  align-items: center !important;
+}
+
+html[data-viewport="phone"] .bq-metric:hover {
+  transform: none !important;
+}
+
+html[data-viewport="phone"] .bq-metric-btn {
+  grid-column: 1 / -1;
+}
+
+html[data-viewport="phone"] .bq-metric-value {
+  font-size: 1.25rem !important;
+}
+
+html[data-viewport="phone"] .bq-toolbar {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 0.55rem !important;
+  padding: 0.55rem !important;
+  border-radius: 16px !important;
+  background: rgba(8, 8, 8, 0.97) !important;
+}
+
+html[data-viewport="phone"] .bq-tabs,
+html[data-viewport="phone"] .bq-tabs-3 {
+  display: grid !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  grid-template-columns: 1fr 1fr 1fr !important;
+  border-radius: 14px !important;
+}
+
+html[data-viewport="phone"] .bq-tab {
+  min-height: 44px !important;
+  padding: 0.45rem 0.35rem !important;
+  font-size: 0.78rem !important;
+  flex-direction: column !important;
+  gap: 0.25rem !important;
+}
+
+html[data-viewport="phone"] .bq-tab-glider {
+  width: calc(33.333% - 0.2rem) !important;
+}
+
+html[data-viewport="phone"] .bq-tab-glider[data-mode="gc"] {
+  transform: translateX(calc(100% + 0.2rem)) !important;
+}
+
+html[data-viewport="phone"] .bq-tab-glider[data-mode="payouts"] {
+  transform: translateX(calc(200% + 0.4rem)) !important;
+}
+
+html[data-viewport="phone"] .bq-filters {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 0.35rem !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+html[data-viewport="phone"] .bq-filters::-webkit-scrollbar {
+  display: none;
+}
+
+html[data-viewport="phone"] .bq-pill {
+  flex: 0 0 auto !important;
+  min-height: 36px !important;
+  font-size: 0.76rem !important;
+}
+
+html[data-viewport="phone"] .bq-search {
+  width: 100% !important;
+  margin-left: 0 !important;
+  min-height: 44px !important;
+}
+
+html[data-viewport="phone"] .bq-search input {
+  font-size: 16px !important;
+}
+
+html[data-viewport="phone"] .bq-layout {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.65rem !important;
+}
+
+html[data-viewport="phone"] .bq-composer {
+  position: relative !important;
+  max-height: none !important;
+  border-radius: 16px !important;
+  order: -1;
+}
+
+html[data-viewport="phone"] .bq-cards {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.55rem !important;
+}
+
+html[data-viewport="phone"] .bq-card,
+html[data-viewport="phone"] .bq-card-gc {
+  border-radius: 16px !important;
+  padding: 0.85rem 0.8rem !important;
+  position: relative !important;
+  z-index: auto !important;
+}
+
+html[data-viewport="phone"] .bq-card-stats,
+html[data-viewport="phone"] .bq-card-stats-3 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+html[data-viewport="phone"] .bq-card-actions {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 0.4rem !important;
+}
+
+html[data-viewport="phone"] .bq-card-actions .bq-btn-mini {
+  min-height: 42px !important;
+  justify-content: center !important;
+  width: 100%;
+  font-size: 0.78rem !important;
+}
+
+html[data-viewport="phone"] .bq-card-actions .bq-btn-mini.is-danger {
+  grid-column: 1 / -1;
+}
+
+html[data-viewport="phone"] .bq-pay-summary {
+  grid-template-columns: 1fr !important;
+}
+
+html[data-viewport="phone"] .bq-pay-row {
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  gap: 0.55rem 0.65rem !important;
+  padding: 0.75rem !important;
+}
+
+html[data-viewport="phone"] .bq-pay-amount {
+  grid-column: 2 !important;
+  text-align: left !important;
+}
+
+html[data-viewport="phone"] .bq-input,
+html[data-viewport="phone"] .bq-composer input,
+html[data-viewport="phone"] .bq-composer select,
+html[data-viewport="phone"] .bq-composer textarea {
+  font-size: 16px !important;
+  min-height: 44px !important;
+}
