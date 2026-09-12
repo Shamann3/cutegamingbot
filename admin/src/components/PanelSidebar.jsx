@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getAdminInitials, getAdminProfile } from '../lib/adminProfile'
 import { groupSections } from '../constants/panelNav'
 import { NAV_ICONS } from './NavIcons'
@@ -57,6 +57,16 @@ export default function PanelSidebar({
   const { displayName, username, photoUrl } = getAdminProfile()
   const initials = getAdminInitials(displayName)
   const [navQuery, setNavQuery] = useState('')
+  const settingsRef = useRef(null)
+
+  const closeSettings = () => {
+    if (settingsRef.current?.open) settingsRef.current.open = false
+  }
+
+  const goTo = (id) => {
+    closeSettings()
+    onNavigate(id)
+  }
 
   const navGroups = useMemo(() => {
     const groups = groupSections(sections)
@@ -83,7 +93,10 @@ export default function PanelSidebar({
   }, [sections, recentSectionIds])
 
   useEffect(() => {
-    if (!mobileOpen) setNavQuery('')
+    if (!mobileOpen) {
+      setNavQuery('')
+      closeSettings()
+    }
   }, [mobileOpen])
 
   return (
@@ -148,7 +161,7 @@ export default function PanelSidebar({
                     type="button"
                     className="panel-nav-recent-chip"
                     aria-current={active ? 'page' : undefined}
-                    onClick={() => onNavigate(item.id)}
+                    onClick={() => goTo(item.id)}
                   >
                     {Icon && <Icon />}
                     {item.labelRu}
@@ -177,7 +190,7 @@ export default function PanelSidebar({
                   className={`panel-nav-item${active ? ' panel-nav-item-active' : ''}`}
                   data-section={item.id}
                   aria-current={active ? 'page' : undefined}
-                  onClick={() => onNavigate(item.id)}
+                  onClick={() => goTo(item.id)}
                 >
                   {NavIcon && (
                     <span className="panel-nav-icon">
@@ -222,12 +235,16 @@ export default function PanelSidebar({
 
         {/*
           Desktop: тело настроек всегда видно (summary скрыт CSS).
-          Mobile: свёрнутый блок «Настройки».
+          Mobile: свёрнутый блок «Настройки» — при открытии явный «Свернуть ▲».
         */}
-        <details className="panel-sidebar-settings">
+        <details ref={settingsRef} className="panel-sidebar-settings">
           <summary className="panel-sidebar-settings-sum">
-            <span>Настройки</span>
-            <span className="panel-sidebar-settings-chevron" aria-hidden="true">▾</span>
+            <span className="panel-sidebar-settings-label">Настройки</span>
+            <span className="panel-sidebar-settings-cue" aria-hidden="true">
+              <span className="panel-sidebar-settings-hint-closed">Открыть</span>
+              <span className="panel-sidebar-settings-hint-open">Свернуть</span>
+              <span className="panel-sidebar-settings-chevron">▾</span>
+            </span>
           </summary>
           <div className="panel-sidebar-settings-body">
             <AccentPalette value={accent} onChange={onAccentChange} />

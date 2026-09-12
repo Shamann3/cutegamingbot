@@ -181,6 +181,10 @@ html.panel-nav-open .panel-shelf-sidebar {
     background: rgba(255, 255, 255, 0.08);
   }
 
+  .panel-sidebar-settings[open] .panel-sidebar-settings-sum:active {
+    background: rgba(var(--e-accent-rgb, 255, 5, 36), 0.2);
+  }
+
   .panel-sidebar-settings .panel-music-card,
   .panel-sidebar-settings .panel-perf-btn,
   .panel-sidebar-settings .accent-picker-root {
@@ -244,28 +248,115 @@ html.panel-nav-open .panel-shelf-sidebar {
 
 /* ============================================================
    ИГРОКИ — phone craft
+   Поиск закреплён вверху; скролл только у .panel-users-body.
+   Нельзя sticky search+tabs с одним top — они наезжают друг на друга.
    ============================================================ */
 @media (max-width: 900px) {
-  .panel-users {
-    gap: 0.7rem !important;
+  /* Лочим viewport только на разделе Игроки */
+  .panel-shell:has(.panel-layout-users) {
+    height: var(--tg-viewport-stable-height, 100dvh) !important;
+    max-height: var(--tg-viewport-stable-height, 100dvh) !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .panel-shell:has(.panel-layout-users) .panel-tg-chrome {
+    flex-shrink: 0;
+  }
+
+  .panel-shell:has(.panel-layout-users) .panel-shell-main {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .panel-layout-users {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    gap: 0.55rem !important;
+    align-content: stretch !important;
+  }
+
+  /* Drawer не должен занимать отдельную строку сетки */
+  .panel-layout-users > .panel-shelf-sidebar {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    align-self: start !important;
+    justify-self: stretch !important;
+  }
+
+  .panel-layout-users > .panel-shelf-sidebar:not(.panel-sidebar-mobile-open) {
+    height: 0 !important;
+    max-height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
+
+  .panel-layout-users > .elite-topbar,
+  .panel-layout-users > .elite-topbar-compact {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    position: relative !important;
+    top: auto !important;
+    flex-shrink: 0;
+    z-index: 80;
+  }
+
+  .panel-layout-users > .panel-users {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.55rem !important;
+    /* transform/filter ломают sticky/contain — без page-in на телефоне */
+    animation: none !important;
+    filter: none !important;
+    transform: none !important;
   }
 
   .panel-users .panel-users-search {
-    position: sticky;
-    top: calc(3.35rem + max(0px, var(--tg-content-top, 0px)));
-    z-index: 40;
-    border-radius: 20px !important;
-    padding: 0.95rem 0.95rem 0.9rem !important;
+    position: relative !important;
+    top: auto !important;
+    z-index: 2;
+    flex: 0 0 auto !important;
+    border-radius: 18px !important;
+    padding: 0.85rem 0.9rem 0.8rem !important;
     margin: 0 !important;
+    box-shadow:
+      0 12px 28px -18px rgba(0, 0, 0, 0.75),
+      0 0 0 1px rgba(var(--e-accent-rgb, 255, 5, 36), 0.12) !important;
   }
 
   .panel-users .panel-page-title {
-    font-size: 1.35rem !important;
+    font-size: 1.28rem !important;
+    letter-spacing: -0.01em !important;
+    line-height: 1.2 !important;
+    white-space: normal !important;
   }
 
   .panel-users .panel-page-lead {
-    font-size: 0.82rem !important;
-    margin-bottom: 0.7rem !important;
+    font-size: 0.8rem !important;
+    margin-bottom: 0.65rem !important;
+    line-height: 1.4 !important;
   }
 
   .panel-users .panel-users-search-form {
@@ -287,26 +378,70 @@ html.panel-nav-open .panel-shelf-sidebar {
     border-radius: 14px !important;
   }
 
+  /* Единственный скролл-контейнер профиля */
+  .panel-layout-users > .panel-users .panel-users-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.65rem !important;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px)) !important;
+    animation: none !important;
+    filter: none !important;
+    transform: none !important;
+  }
+
+  /* Табы липнут внутри body (под поиском), не к окну */
   .panel-users .pu-tabs-bar {
-    position: sticky;
-    top: calc(3.35rem + var(--tg-content-top, 0px));
-    z-index: 39;
-    border-radius: 18px !important;
-    padding: 0.75rem 0.7rem 0.65rem !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 6;
+    flex-shrink: 0;
+    border-radius: 16px !important;
+    padding: 0.7rem 0.65rem 0.6rem !important;
+    margin: 0 !important;
+    background:
+      linear-gradient(180deg, rgba(14, 14, 18, 0.98), rgba(10, 10, 12, 0.98)) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.7);
     touch-action: pan-x pan-y;
   }
 
   .panel-users .pu-profile-header {
     flex-direction: column;
     align-items: stretch;
-    gap: 0.55rem;
+    gap: 0.5rem;
+    margin-bottom: 0.55rem !important;
+  }
+
+  .panel-users .pu-profile-header-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem;
   }
 
   .panel-users .pu-action-btn {
     min-height: 44px !important;
-    padding: 0.55rem 0.9rem !important;
+    padding: 0.55rem 0.75rem !important;
     font-size: 0.82rem !important;
     justify-content: center;
+    width: 100%;
+  }
+
+  .panel-users .pu-tab-pane,
+  .panel-users .pu-profile-layout,
+  .panel-users .pu-hero-card,
+  .panel-users .panel-users-card,
+  .panel-users .pu-intel-card {
+    position: relative !important;
+    top: auto !important;
+    z-index: auto !important;
+    margin-top: 0 !important;
   }
 
   /* Горизонтальные chip-табы — pan-x + pan-y, иначе iOS «залипает» жест */
@@ -321,7 +456,7 @@ html.panel-nav-open .panel-shelf-sidebar {
     scroll-snap-type: x proximity;
     gap: 0.3rem;
     padding: 0.22rem;
-    border-radius: 16px;
+    border-radius: 14px;
     scrollbar-width: none;
   }
 
@@ -343,8 +478,8 @@ html.panel-nav-open .panel-shelf-sidebar {
 
   .panel-users .panel-users-card,
   .panel-users .pu-intel-card {
-    border-radius: 18px !important;
-    padding: 0.95rem 0.9rem !important;
+    border-radius: 16px !important;
+    padding: 0.9rem 0.85rem !important;
   }
 
   .pu-stat-grid {
