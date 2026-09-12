@@ -215,8 +215,15 @@ def _flood_wait_sec(exc: BaseException) -> float:
     return 1.2
 
 
-def _nav_row(*, page_i: int, pages: int, prev_cb: str, next_cb: str):
-    """Первая страница — только «Вперёд». Последняя — только «Назад». Середина — обе."""
+def _nav_row(
+    *,
+    page_i: int,
+    pages: int,
+    prev_cb: str,
+    next_cb: str,
+    page_cb: Optional[str] = None,
+):
+    """Листание снизу: назад / номер / вперёд. Одна страница — без ряда."""
     if pages <= 1:
         return None
     row = []
@@ -226,6 +233,12 @@ def _nav_row(*, page_i: int, pages: int, prev_cb: str, next_cb: str):
             callback_data=prev_cb,
             style="default",
             icon_custom_emoji_id=NAV_PREV_EMOJI,
+        ))
+    if page_cb:
+        row.append(_btn(
+            text=f"{page_i + 1} / {pages}",
+            callback_data=page_cb,
+            style="primary",
         ))
     if page_i < pages - 1:
         row.append(_btn(
@@ -1454,22 +1467,7 @@ def _build_manage_keyboard(
     ordered = ach.sorted_items_for_display(doc_n)
     page_rows, page_i, pages, total = ach.paginate_items(ordered, page, ach.PAGE_SIZE)
     showcase_ids = [iid for iid, _ in ach.showcase_items(doc_n, ach.SHOWCASE_LIMIT)]
-
-    if is_owner:
-        rows.append([_profile_back_button(viewer, target)])
-    else:
-        rows.append([_btn(
-            text="Профиль",
-            callback_data=f"achm_back:{int(viewer)}:{int(target)}",
-            style="primary",
-            icon_custom_emoji_id="5226660202035554522",
-        )])
-
-    if is_owner and ordered:
-        rows.append([_btn(
-            text=f"Витрина · {min(total, ach.SHOWCASE_LIMIT)}/{ach.SHOWCASE_LIMIT}",
-            callback_data=f"achm_all:{viewer}:{target}:{page_i}",
-        )])
+    page_cb = f"achm_all:{viewer}:{target}:{page_i}"
 
     if is_owner:
         for iid, it in page_rows:
@@ -1512,6 +1510,7 @@ def _build_manage_keyboard(
         pages=pages,
         prev_cb=f"achm_pg:{viewer}:{target}:{page_i - 1}",
         next_cb=f"achm_pg:{viewer}:{target}:{page_i + 1}",
+        page_cb=page_cb,
     )
     if nav:
         rows.append(nav)
@@ -1519,19 +1518,12 @@ def _build_manage_keyboard(
     if is_owner:
         rows.append([_profile_back_button(viewer, target)])
     else:
-        rows.append([
-            _btn(
-                text="Профиль",
-                callback_data=f"achm_back:{int(viewer)}:{int(target)}",
-                style="primary",
-                icon_custom_emoji_id="5226660202035554522",
-            ),
-            _btn(
-                text="Закрыть",
-                callback_data=f"achv_x:{int(viewer)}:{int(target)}",
-                style="default",
-            ),
-        ])
+        rows.append([_btn(
+            text="Профиль",
+            callback_data=f"achm_back:{int(viewer)}:{int(target)}",
+            style="primary",
+            icon_custom_emoji_id="5226660202035554522",
+        )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

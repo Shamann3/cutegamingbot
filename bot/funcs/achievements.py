@@ -922,63 +922,71 @@ def format_full_achievements_html(
         html.escape(owner_name) if owner_name else ""
     )
     rows = sorted_items_for_display(doc)
+    title = "Достижения" if viewing else "Ваши достижения"
+    hat = (
+        f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
+        f"<b>{title}</b>"
+    )
+
     if not rows:
         if viewing:
-            return (
-                f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-                f"<b>Достижения</b>\n"
-                + (f"{who}\n\n" if who else "\n")
-                + "У игрока пока нет наград.\n"
-                f"<i>только просмотр</i>"
-            )
+            body = who + ("\n" if who else "") + "Пока нет наград"
+            return f"{hat}\n\n<blockquote>{body}</blockquote>"
         return (
-            f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-            f"<b>Ваши достижения</b>\n\n"
+            f"{hat}\n\n"
+            f"<blockquote>"
             f"Пока пусто.\n"
-            f"<i>Поднимите уровень группы — и здесь появится первая награда.</i>"
+            f"Поднимите уровень группы — здесь появится первая награда."
+            f"</blockquote>"
         )
+
     page_rows, page_i, pages, total = paginate_items(rows, page, page_size)
     showcase_ids = {iid for iid, _ in showcase_items(doc, SHOWCASE_LIMIT)}
     showcase_list = [x for x, _ in showcase_items(doc, SHOWCASE_LIMIT)]
-    pager = f"{page_i + 1} из {pages} · {total} наград" if pages > 1 else f"{total} наград"
-    title = "Достижения" if viewing else "Ваши достижения"
-    subtitle = (
-        f"только просмотр · витрина в профиле — первые {SHOWCASE_LIMIT}"
-        if viewing
-        else "настройте витрину и порядок кнопками ниже"
-    )
-    parts = [
-        f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-        f"<b>{title}</b>"
-        + (f"\n{who}" if who else ""),
-        f"<i>{subtitle}</i>",
-        f"<i>{pager}</i>",
-        "",
-    ]
+    pinned = min(len(showcase_list), SHOWCASE_LIMIT)
+    mod100 = total % 100
+    mod10 = total % 10
+    if mod100 in (11, 12, 13, 14):
+        awards = f"{total} наград"
+    elif mod10 == 1:
+        awards = f"{total} награда"
+    elif mod10 in (2, 3, 4):
+        awards = f"{total} награды"
+    else:
+        awards = f"{total} наград"
+    page_bit = f"{page_i + 1} из {pages} · " if pages > 1 else ""
+    if viewing:
+        meta = f"{who}\n" if who else ""
+        meta += f"витрина {pinned}/{SHOWCASE_LIMIT} · {page_bit}{awards}"
+    else:
+        meta = (f"{who}\n" if who else "")
+        meta += f"витрина {pinned}/{SHOWCASE_LIMIT} · {page_bit}{awards}\n"
+        meta += "кнопками ниже — порядок и слоты"
+
+    parts = [hat, "", f"<blockquote>{meta}</blockquote>", ""]
 
     def _card(iid: str, it: Dict[str, Any]) -> str:
         line = achievement_line_html(it, with_rarity=True)
-        pin = ""
+        facts = []
         if iid in showcase_ids:
             try:
                 slot_n = showcase_list.index(iid) + 1
-                pin = f" · <b>витрина {slot_n}</b>"
+                facts.append(f"витрина {slot_n}")
             except ValueError:
-                pin = " · <b>витрина</b>"
-        when = format_granted_at(it.get("granted_at") or time.time())
-        kind = "офиц." if it.get("kind") == "official" else "своб."
-        return f"{line}{pin}\n<blockquote>{kind} · {when}</blockquote>"
+                facts.append("витрина")
+        facts.append("официальная" if it.get("kind") == "official" else "свободная")
+        facts.append(format_granted_at(it.get("granted_at") or time.time()))
+        return f"{line}\n<blockquote>{' · '.join(facts)}</blockquote>"
 
     last_kind = None
     for iid, it in page_rows:
         kind = "official" if it.get("kind") == "official" else "free"
         if kind != last_kind:
+            if last_kind is not None:
+                parts.append("")
             parts.append("<b>Официальные</b>" if kind == "official" else "<b>Свободные</b>")
             last_kind = kind
         parts.append(_card(iid, it))
-        parts.append("")
-    if pages > 1:
-        parts.append(f"<i>листайте кнопками ниже — {page_i + 1} из {pages}</i>")
     return fit_telegram_html(
         "\n".join(parts).strip(),
         max_emojis=MAX_CUSTOM_EMOJI_PER_MESSAGE,

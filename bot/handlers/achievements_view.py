@@ -508,8 +508,11 @@ async def _send_picker(message: Message, viewer_id: int, rows: Sequence[Dict[str
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     await message.reply(
         f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-        f"<b>Нашёл несколько игроков</b>\n"
-        f"Выберите, чьи достижения открыть.{extra}",
+        f"<b>Достижения</b>\n\n"
+        f"<blockquote>"
+        f"Нашлось несколько игроков.\n"
+        f"Выберите, чей альбом открыть.{extra}"
+        f"</blockquote>",
         parse_mode="HTML",
         reply_markup=kb,
         disable_web_page_preview=True,
