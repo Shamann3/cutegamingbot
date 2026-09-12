@@ -1,6 +1,7 @@
 /** Тема подсветки: любой оттенок (HSV) + сила свечения. */
 
 export const ACCENT_SWATCHES = [
+  { id: 'snow', label: 'Снег', hex: '#FFFFFF' },
   { id: 'mint', label: 'Мята', hex: '#7EB89A' },
   { id: 'sky', label: 'Небо', hex: '#6BA3C9' },
   { id: 'violet', label: 'Фиалка', hex: '#9B8BC9' },
@@ -9,8 +10,9 @@ export const ACCENT_SWATCHES = [
   { id: 'coral', label: 'Коралл', hex: '#E07A5F' },
 ]
 
-const STORAGE_KEY = 'epsilon.panel.accent'
-const DEFAULT_GLOW = 70
+const STORAGE_KEY = 'epsilon.panel.accent.v2'
+const DEFAULT_GLOW = 55
+const DEFAULT_ACCENT = ACCENT_SWATCHES[0]
 
 export function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n))
@@ -18,7 +20,7 @@ export function clamp(n, min, max) {
 
 export function hexToRgb(hex) {
   const h = String(hex || '').replace('#', '').trim()
-  if (h.length !== 6) return { r: 126, g: 184, b: 154 }
+  if (h.length !== 6) return { r: 255, g: 255, b: 255 }
   return {
     r: parseInt(h.slice(0, 2), 16),
     g: parseInt(h.slice(2, 4), 16),
@@ -108,7 +110,7 @@ function mixToward(hex, toward = '#ffffff', amount = 0.35) {
 
 export function normalizeAccent(input) {
   if (!input) {
-    const base = ACCENT_SWATCHES[0]
+    const base = DEFAULT_ACCENT
     const rgb = hexToRgb(base.hex)
     const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
     return { ...base, ...hsv, glow: DEFAULT_GLOW }
@@ -147,9 +149,9 @@ export function normalizeAccent(input) {
     const parsed = parseHexInput(hex)
     if (parsed) hex = parsed
     else {
-      hex = ACCENT_SWATCHES[0].hex
-      id = ACCENT_SWATCHES[0].id
-      label = ACCENT_SWATCHES[0].label
+      hex = DEFAULT_ACCENT.hex
+      id = DEFAULT_ACCENT.id
+      label = DEFAULT_ACCENT.label
     }
   }
 
@@ -229,10 +231,10 @@ export function applyAccentToDocument(accent) {
 export function loadStoredAccent() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return normalizeAccent(ACCENT_SWATCHES[0])
+    if (!raw) return normalizeAccent(DEFAULT_ACCENT)
     return normalizeAccent(JSON.parse(raw))
   } catch {
-    return normalizeAccent(ACCENT_SWATCHES[0])
+    return normalizeAccent(DEFAULT_ACCENT)
   }
 }
 

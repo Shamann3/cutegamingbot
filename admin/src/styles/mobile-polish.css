@@ -131,11 +131,11 @@ html.panel-nav-open .panel-shelf-sidebar {
   .panel-nav-recent {
     margin-bottom: 0.55rem;
     padding-bottom: 0.55rem;
-    border-bottom: 1px solid rgba(var(--e-accent-rgb, 126, 184, 154), 0.18);
+    border-bottom: 1px solid rgba(var(--e-accent-rgb, 255, 255, 255), 0.18);
   }
 
   .panel-nav-recent .panel-nav-group-label {
-    color: rgba(var(--e-accent-rgb, 126, 184, 154), 0.85) !important;
+    color: rgba(var(--e-accent-rgb, 255, 255, 255), 0.85) !important;
   }
 
   .panel-nav-recent-row {
@@ -152,8 +152,8 @@ html.panel-nav-open .panel-shelf-sidebar {
     min-height: 2.35rem;
     padding: 0.35rem 0.75rem;
     border-radius: 999px;
-    border: 1px solid rgba(var(--e-accent-rgb, 126, 184, 154), 0.28);
-    background: rgba(var(--e-accent-rgb, 126, 184, 154), 0.1);
+    border: 1px solid rgba(var(--e-accent-rgb, 255, 255, 255), 0.28);
+    background: rgba(var(--e-accent-rgb, 255, 255, 255), 0.1);
     color: var(--e-accent-bright, #9ecbb4);
     font-size: 0.78rem;
     font-weight: 600;
@@ -162,7 +162,7 @@ html.panel-nav-open .panel-shelf-sidebar {
   }
 
   .panel-nav-recent-chip[aria-current="page"] {
-    background: var(--e-accent, #7EB89A);
+    background: var(--e-accent, #FFFFFF);
     color: var(--e-accent-ink, #111);
     border-color: transparent;
   }
@@ -719,7 +719,7 @@ html[data-viewport="phone"] {
     top: 0;
     z-index: 2;
     background: rgba(10, 10, 14, 0.96);
-    border-bottom: 1px solid rgba(var(--e-accent-rgb, 126, 184, 154), 0.18);
+    border-bottom: 1px solid rgba(var(--e-accent-rgb, 255, 255, 255), 0.18);
     padding: 0.65rem 0.25rem 0.75rem !important;
     gap: 0.5rem;
   }

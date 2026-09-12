@@ -42,14 +42,15 @@
   --e-invert-bg: #f4f4f5;
   --e-invert-text: #0a0a0a;
 
-  /* --- Акцент подсветки (меняется палитрой в сайдбаре) --- */
-  --e-accent: #7EB89A;
-  --e-accent-rgb: 126, 184, 154;
-  --e-accent-soft: rgba(126, 184, 154, 0.16);
-  --e-accent-soft-2: rgba(126, 184, 154, 0.28);
-  --e-accent-line: rgba(126, 184, 154, 0.42);
-  --e-accent-glow: 0 0 40px rgba(126, 184, 154, 0.22);
-  --e-accent-bright: #a8d4bc;
+  /* --- Акцент подсветки (меняется палитрой в сайдбаре; база — Снег) --- */
+  --e-accent: #FFFFFF;
+  --e-accent-rgb: 255, 255, 255;
+  --e-accent-soft: rgba(255, 255, 255, 0.12);
+  --e-accent-soft-2: rgba(255, 255, 255, 0.22);
+  --e-accent-line: rgba(255, 255, 255, 0.38);
+  --e-accent-glow: 0 0 40px rgba(255, 255, 255, 0.18);
+  --e-accent-bright: #d4d4d8;
+  --e-accent-ink: #111111;
 
   /* --- Радиусы --- */
   --e-r-card: 24px;

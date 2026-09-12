@@ -314,7 +314,7 @@ export default function AccentPalette({ value, onChange }) {
                   if (commitHex(hexText)) closePalette()
                 }
               }}
-              placeholder="#7EB89A"
+              placeholder="#FFFFFF"
               spellCheck={false}
               maxLength={7}
               inputMode="text"

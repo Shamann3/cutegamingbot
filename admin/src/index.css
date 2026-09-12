@@ -5904,7 +5904,7 @@ body {
   .auth-btn-primary,
   .panel-users-btn-primary,
   .support-reply-send-btn {
-    background: var(--e-accent, #7EB89A) !important;
+    background: var(--e-accent, #FFFFFF) !important;
     color: var(--e-accent-ink, #111) !important;
   }
 
@@ -7951,7 +7951,7 @@ body {
 .pu-tab:hover { color: #94a3b8; }
 .pu-tab.active {
   color: var(--e-accent-bright, #a8d4bc);
-  border-bottom-color: var(--e-accent, #7EB89A);
+  border-bottom-color: var(--e-accent, #FFFFFF);
 }
 
 /* Section title inside tab */
