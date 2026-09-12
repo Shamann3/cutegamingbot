@@ -180,6 +180,9 @@
     grid-row: 1 !important;
     position: relative !important;
     top: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    justify-self: stretch !important;
     border-radius: 0 !important;
     box-shadow: none !important;
     background: transparent !important;
@@ -188,7 +191,18 @@
     padding-right: max(0.55rem, env(safe-area-inset-right, 0px)) !important;
   }
 
+  .panel-layout-dashboard > .elite-topbar {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
   .elite-topbar-actions {
+    margin-left: auto !important;
+    margin-right: 0 !important;
+    flex: 0 0 auto !important;
+  }
+
+  .panel-layout-dashboard > .elite-topbar .elite-topbar-actions {
     margin-left: auto !important;
     margin-right: 0 !important;
   }
@@ -196,6 +210,8 @@
   .elite-greeting-desktop,
   .elite-greeting {
     display: flex !important;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
   }
 
   .elite-search-wrap {

@@ -523,6 +523,22 @@ tr:hover td {
   box-shadow: var(--e-shadow-card) !important;
 }
 
+/* ПК: шапка на всю ширину колонки, поиск у правого края (как на внутренних вкладках) */
+:is(html[data-viewport="desktop"], html.is-desktop) .elite-topbar,
+:is(html[data-viewport="desktop"], html.is-desktop) .elite-topbar-compact {
+  width: 100% !important;
+  max-width: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+:is(html[data-viewport="desktop"], html.is-desktop) .elite-topbar-actions {
+  margin-left: auto !important;
+  margin-right: 0 !important;
+}
+
 .elite-search input,
 .panel-search input {
   border: none !important;
