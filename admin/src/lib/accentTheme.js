@@ -153,12 +153,29 @@ export function normalizeAccent(input) {
     }
   }
 
-  const rgb = hexToRgb(hex)
+  const normalizedHex = parseHexInput(hex) || String(hex).toLowerCase()
+  const rgb = hexToRgb(normalizedHex)
   const fromHex = rgbToHsv(rgb.r, rgb.g, rgb.b)
-  const h = Number.isFinite(input?.h) ? clamp(input.h, 0, 360) : fromHex.h
-  const s = Number.isFinite(input?.s) ? clamp(input.s, 0, 1) : fromHex.s
-  const v = Number.isFinite(input?.v) ? clamp(input.v, 0, 1) : fromHex.v
-  const finalHex = hsvToHex(h, s, v)
+  const hasHsv =
+    Number.isFinite(input?.h) && Number.isFinite(input?.s) && Number.isFinite(input?.v)
+
+  // hexSource: HEX — источник истины (ручной ввод). Иначе HSV от колеса/слайдера.
+  let h
+  let s
+  let v
+  let finalHex
+  if (input?.hexSource || !hasHsv) {
+    h = fromHex.h
+    s = fromHex.s
+    v = fromHex.v
+    finalHex = normalizedHex
+  } else {
+    h = clamp(input.h, 0, 360)
+    s = clamp(input.s, 0, 1)
+    v = clamp(input.v, 0, 1)
+    finalHex = hsvToHex(h, s, v)
+  }
+
   const glow = Number.isFinite(input?.glow) ? clamp(input.glow, 0, 100) : DEFAULT_GLOW
 
   const known = ACCENT_SWATCHES.find((sw) => sw.hex.toLowerCase() === finalHex.toLowerCase())

@@ -486,7 +486,7 @@ function DexItemQuickPicker({ dexItems, onSelect, disabled }) {
     <div className="pu-dex-picker" ref={ref}>
       <input
         className="panel-users-input"
-        placeholder="🔍 Поиск предмета…"
+        placeholder="Поиск предмета…"
         value={search}
         onChange={(e) => { setSearch(e.target.value); setOpen(true) }}
         onFocus={() => setOpen(true)}
@@ -993,39 +993,43 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
         )}
 
         {/* ── Вкладка «Профиль»: двухколоночный лейаут ── */}
-        <article className={`panel-shelf panel-users-card panel-users-profile-card${hasProfile && profileTab !== 'profile' ? ' pu-hidden' : ''}`}>
+        <article className={`panel-shelf panel-users-card panel-users-profile-card pu-hero-card${hasProfile && profileTab !== 'profile' ? ' pu-hidden' : ''}`}>
           {(profileTab === 'profile' || !hasProfile) && (<>
-          <div className="panel-users-avatar-wrap">
-            {profile?.photoUrl ? (
-              <img className="panel-users-avatar" src={profile.photoUrl} alt="" />
-            ) : (
-              <div className="panel-users-avatar panel-users-avatar-fallback" aria-hidden="true">
-                {hasProfile ? initialsFromName(profile.displayName) : '?'}
-              </div>
-            )}
+          <div className="pu-hero-top">
+            <div className="panel-users-avatar-wrap">
+              {profile?.photoUrl ? (
+                <img className="panel-users-avatar" src={profile.photoUrl} alt="" />
+              ) : (
+                <div className="panel-users-avatar panel-users-avatar-fallback" aria-hidden="true">
+                  {hasProfile ? initialsFromName(profile.displayName) : '?'}
+                </div>
+              )}
+            </div>
+            <div className="pu-hero-identity">
+              <h3 className={`panel-users-name${!hasProfile ? ' panel-users-placeholder' : ''}`}>
+                {hasProfile ? profile.displayName : '-'}
+                {hasProfile && profile.username && (
+                  <span className="panel-users-handle"> @{profile.username}</span>
+                )}
+              </h3>
+              <p className="panel-users-id">
+                ID {hasProfile ? profile.userId : '-'}
+              </p>
+              {hasProfile && profile.banned && (
+                <span className="panel-users-badge panel-users-badge-ban">BAN</span>
+              )}
+            </div>
           </div>
 
-          <h3 className={`panel-users-name${!hasProfile ? ' panel-users-placeholder' : ''}`}>
-            {hasProfile ? profile.displayName : '-'}
-            {hasProfile && profile.username && (
-              <span className="panel-users-handle"> @{profile.username}</span>
-            )}
-          </h3>
-          <p className="panel-users-id">
-            ID {hasProfile ? profile.userId : '-'}
-          </p>
-
-          {hasProfile && profile.banned && (
-            <span className="panel-users-badge panel-users-badge-ban">BAN</span>
-          )}
+          <div className="pu-hero-balance">
+            <span className="pu-hero-balance-label">Баланс Kut</span>
+            <strong className={`pu-hero-balance-value${!hasProfile ? ' panel-users-placeholder' : ''}`}>
+              {hasProfile ? profile.balance?.toLocaleString('ru-RU') : '—'}
+            </strong>
+            <span className="pu-hero-balance-glow" aria-hidden />
+          </div>
 
           <div className="panel-users-stats">
-            <div>
-              <span className="panel-users-stat-label">Kut</span>
-              <strong className={!hasProfile ? 'panel-users-placeholder' : ''}>
-                {hasProfile ? profile.balance?.toLocaleString('ru-RU') : '-'}
-              </strong>
-            </div>
             <div>
               <span className="panel-users-stat-label">Грядки</span>
               <strong className={!hasProfile ? 'panel-users-placeholder' : ''}>
@@ -1050,14 +1054,13 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   : '-'}
               </strong>
             </div>
+            <div>
+              <span className="panel-users-stat-label">Активность</span>
+              <strong className={!hasProfile ? 'panel-users-placeholder' : ''}>
+                {hasProfile && profile.lastSeenAt ? formatDate(profile.lastSeenAt) : '-'}
+              </strong>
+            </div>
           </div>
-
-          <p className="panel-users-meta-line">
-            <span className="panel-users-stat-label">Последняя активность</span>
-            <span className={!hasProfile ? 'panel-users-placeholder' : ''}>
-              {hasProfile && profile.lastSeenAt ? formatDate(profile.lastSeenAt) : '-'}
-            </span>
-          </p>
 
           {hasProfile && profile.banned && profile.bannedReason && (
             <p className="panel-users-ban-reason">Причина: {profile.bannedReason}</p>
@@ -1118,9 +1121,16 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
         )}
 
         <div className={`panel-users-right${hasProfile && profileTab !== 'profile' ? ' pu-hidden' : ''}`}>
-          <article className="panel-shelf panel-users-card panel-users-inventory-card">
-            <p className="panel-shelf-label">Инвентарь</p>
-            <h3 className="panel-users-subtitle panel-users-subtitle-tight">Предметы</h3>
+          <article className="panel-shelf panel-users-card panel-users-inventory-card pu-inv-card">
+            <div className="pu-bento-head">
+              <div>
+                <p className="panel-shelf-label">Инвентарь</p>
+                <h3 className="panel-users-subtitle panel-users-subtitle-tight">Предметы</h3>
+              </div>
+              {hasProfile && (
+                <span className="pu-bento-chip">{(profile.inventory || []).length}</span>
+              )}
+            </div>
 
             {!hasProfile && (
               <ul className="panel-users-inv-list panel-users-inv-list-empty">
@@ -1139,8 +1149,10 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
             {hasProfile && (profile.inventory || []).length > 0 && (
               <ul className="panel-users-inv-list">
                 {profile.inventory.map((item) => (
-                  <li key={item.id}>
-                    {item.emoji} {item.name} ×{item.count}
+                  <li key={item.id} className="pu-inv-row">
+                    <span className="pu-inv-emoji">{item.emoji}</span>
+                    <span className="pu-inv-name">{item.name}</span>
+                    <span className="pu-inv-count">×{item.count}</span>
                   </li>
                 ))}
               </ul>
@@ -1152,13 +1164,18 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
           </article>
 
           <article className="panel-shelf panel-users-card panel-users-actions-card">
-            <p className="panel-shelf-label">Действия</p>
-            <h3 className="panel-users-subtitle panel-users-subtitle-tight">Выдача и модерация</h3>
+            <div className="pu-bento-head">
+              <div>
+                <p className="panel-shelf-label">Действия</p>
+                <h3 className="panel-users-subtitle panel-users-subtitle-tight">Выдача и модерация</h3>
+              </div>
+              <span className="pu-bento-chip">ops</span>
+            </div>
 
             <div className="panel-users-action-grid">
               {canBalance && (
               <form
-                className="panel-users-action-block"
+                className="panel-users-action-block pu-action-tile pu-action-tile-kut"
                 onSubmit={(e) => {
                   e.preventDefault()
                   const delta = Number.parseInt(kutDelta, 10)
@@ -1168,22 +1185,59 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   setKutNote('')
                 }}
               >
-                <p className="panel-users-action-title">Kut (+ / −)</p>
-                <input
-                  className="panel-users-input"
-                  value={kutDelta}
-                  onChange={(e) => setKutDelta(e.target.value.replace(/[^\d-]/g, ''))}
-                  placeholder="100 или -50"
-                  disabled={!hasProfile || actionLoading}
-                />
-                <input
-                  className="panel-users-input"
-                  value={kutNote}
-                  onChange={(e) => setKutNote(e.target.value)}
-                  placeholder="Сообщение в боте (необязательно)"
-                  disabled={!hasProfile || actionLoading}
-                />
-                <button type="submit" className="panel-users-btn" disabled={!hasProfile || actionLoading}>
+                <div className="pu-action-tile-top">
+                  <span className="pu-action-ico" aria-hidden>◈</span>
+                  <div>
+                    <p className="panel-users-action-title">Баланс Kut</p>
+                    <p className="pu-action-hint">Начислить или списать</p>
+                  </div>
+                </div>
+                <label className="pu-field">
+                  <span className="pu-field-label">Сумма</span>
+                  <div className="pu-stepper">
+                    <button
+                      type="button"
+                      className="pu-stepper-btn"
+                      disabled={!hasProfile || actionLoading}
+                      onClick={() => {
+                        const n = Number.parseInt(kutDelta, 10)
+                        const base = Number.isFinite(n) ? n : 0
+                        setKutDelta(String(base - 50))
+                      }}
+                      aria-label="Минус 50"
+                    >−</button>
+                    <input
+                      className="panel-users-input pu-field-input"
+                      value={kutDelta}
+                      onChange={(e) => setKutDelta(e.target.value.replace(/[^\d-]/g, ''))}
+                      placeholder="100"
+                      inputMode="numeric"
+                      disabled={!hasProfile || actionLoading}
+                    />
+                    <button
+                      type="button"
+                      className="pu-stepper-btn"
+                      disabled={!hasProfile || actionLoading}
+                      onClick={() => {
+                        const n = Number.parseInt(kutDelta, 10)
+                        const base = Number.isFinite(n) ? n : 0
+                        setKutDelta(String(base + 50))
+                      }}
+                      aria-label="Плюс 50"
+                    >+</button>
+                  </div>
+                </label>
+                <label className="pu-field">
+                  <span className="pu-field-label">Сообщение в боте</span>
+                  <input
+                    className="panel-users-input pu-field-input"
+                    value={kutNote}
+                    onChange={(e) => setKutNote(e.target.value)}
+                    placeholder="Необязательно"
+                    disabled={!hasProfile || actionLoading}
+                  />
+                </label>
+                <button type="submit" className="panel-users-btn pu-action-cta" disabled={!hasProfile || actionLoading}>
                   Применить
                 </button>
               </form>
@@ -1191,7 +1245,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
 
               {canItems && (
               <form
-                className="panel-users-action-block"
+                className="panel-users-action-block pu-action-tile pu-action-tile-item"
                 onSubmit={(e) => {
                   e.preventDefault()
                   const delta = Number.parseInt(itemDelta, 10)
@@ -1203,57 +1257,90 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   setItemNote('')
                 }}
               >
-                <p className="panel-users-action-title">Предмет</p>
-                <DexItemQuickPicker
-                  dexItems={dexItems}
-                  onSelect={(id) => setItemId(id)}
-                  disabled={!hasProfile || actionLoading}
-                />
-                <input
-                  className="panel-users-input"
-                  value={itemId}
-                  onChange={(e) => setItemId(e.target.value)}
-                  placeholder="item_id (или выбери выше)"
-                  disabled={!hasProfile || actionLoading}
-                />
-                <input
-                  className="panel-users-input"
-                  value={itemDelta}
-                  onChange={(e) => setItemDelta(e.target.value.replace(/[^\d-]/g, ''))}
-                  placeholder="± количество"
-                  disabled={!hasProfile || actionLoading}
-                />
-                <input
-                  className="panel-users-input"
-                  value={itemNote}
-                  onChange={(e) => setItemNote(e.target.value)}
-                  placeholder="Сообщение в боте (необязательно)"
-                  disabled={!hasProfile || actionLoading}
-                />
-                <button type="submit" className="panel-users-btn" disabled={!hasProfile || actionLoading}>
+                <div className="pu-action-tile-top">
+                  <span className="pu-action-ico" aria-hidden>▣</span>
+                  <div>
+                    <p className="panel-users-action-title">Предмет</p>
+                    <p className="pu-action-hint">Выдать или забрать</p>
+                  </div>
+                </div>
+                <div className="pu-field">
+                  <span className="pu-field-label">Поиск в дексе</span>
+                  <DexItemQuickPicker
+                    dexItems={dexItems}
+                    onSelect={(id) => setItemId(id)}
+                    disabled={!hasProfile || actionLoading}
+                  />
+                </div>
+                <div className="pu-field-row">
+                  <label className="pu-field">
+                    <span className="pu-field-label">ID</span>
+                    <input
+                      className="panel-users-input pu-field-input"
+                      value={itemId}
+                      onChange={(e) => setItemId(e.target.value)}
+                      placeholder="item_id"
+                      disabled={!hasProfile || actionLoading}
+                    />
+                  </label>
+                  <label className="pu-field">
+                    <span className="pu-field-label">Кол-во</span>
+                    <input
+                      className="panel-users-input pu-field-input"
+                      value={itemDelta}
+                      onChange={(e) => setItemDelta(e.target.value.replace(/[^\d-]/g, ''))}
+                      placeholder="±1"
+                      inputMode="numeric"
+                      disabled={!hasProfile || actionLoading}
+                    />
+                  </label>
+                </div>
+                <label className="pu-field">
+                  <span className="pu-field-label">Сообщение в боте</span>
+                  <input
+                    className="panel-users-input pu-field-input"
+                    value={itemNote}
+                    onChange={(e) => setItemNote(e.target.value)}
+                    placeholder="Необязательно"
+                    disabled={!hasProfile || actionLoading}
+                  />
+                </label>
+                <button type="submit" className="panel-users-btn pu-action-cta" disabled={!hasProfile || actionLoading}>
                   Выдать / списать
                 </button>
               </form>
               )}
 
               {canBan && (
-              <div className="panel-users-action-block">
-                <p className="panel-users-action-title">Бан</p>
-                <input
-                  className="panel-users-input"
-                  value={banReason}
-                  onChange={(e) => setBanReason(e.target.value)}
-                  placeholder="Причина (уйдёт в бот)"
-                  disabled={!hasProfile || actionLoading || (hasProfile && profile.banned)}
-                />
-                <textarea
-                  className="panel-users-input"
-                  rows={2}
-                  value={banEvidence}
-                  onChange={(e) => setBanEvidence(e.target.value)}
-                  placeholder="Доказательства"
-                  disabled={!hasProfile || actionLoading || (hasProfile && profile.banned)}
-                />
+              <div className="panel-users-action-block pu-action-tile pu-action-tile-ban">
+                <div className="pu-action-tile-top">
+                  <span className="pu-action-ico pu-action-ico-danger" aria-hidden>✕</span>
+                  <div>
+                    <p className="panel-users-action-title">Бан</p>
+                    <p className="pu-action-hint">Блокировка в боте</p>
+                  </div>
+                </div>
+                <label className="pu-field">
+                  <span className="pu-field-label">Причина</span>
+                  <input
+                    className="panel-users-input pu-field-input"
+                    value={banReason}
+                    onChange={(e) => setBanReason(e.target.value)}
+                    placeholder="Уйдёт игроку в бот"
+                    disabled={!hasProfile || actionLoading || (hasProfile && profile.banned)}
+                  />
+                </label>
+                <label className="pu-field">
+                  <span className="pu-field-label">Доказательства</span>
+                  <textarea
+                    className="panel-users-input pu-field-input pu-field-area"
+                    rows={2}
+                    value={banEvidence}
+                    onChange={(e) => setBanEvidence(e.target.value)}
+                    placeholder="Текст или ссылки"
+                    disabled={!hasProfile || actionLoading || (hasProfile && profile.banned)}
+                  />
+                </label>
                 <EvidencePhotoPicker
                   key={`ban-${profile?.userId ?? 'empty'}`}
                   fileIds={banPhotoIds}
@@ -1262,7 +1349,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 />
                 <button
                   type="button"
-                  className="panel-users-btn panel-users-btn-danger"
+                  className="panel-users-btn panel-users-btn-danger pu-action-cta"
                   disabled={
                     !hasProfile || actionLoading || (hasProfile && profile.banned) ||
                     !banReason.trim() || (!banEvidence.trim() && banPhotoIds.length === 0)
@@ -1275,26 +1362,38 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
               )}
 
               {canUnban && (
-              <div className="panel-users-action-block">
-                <p className="panel-users-action-title">Разбан</p>
+              <div className="panel-users-action-block pu-action-tile pu-action-tile-unban">
+                <div className="pu-action-tile-top">
+                  <span className="pu-action-ico pu-action-ico-ok" aria-hidden>✓</span>
+                  <div>
+                    <p className="panel-users-action-title">Разбан</p>
+                    <p className="pu-action-hint">Вернуть доступ</p>
+                  </div>
+                </div>
                 {hasProfile && profile.banned && profile.bannedReason && (
-                  <p className="panel-shelf-muted">Причина бана: {profile.bannedReason}</p>
+                  <p className="pu-ban-reason-pill">Был бан: {profile.bannedReason}</p>
                 )}
-                <input
-                  className="panel-users-input"
-                  value={unbanReason}
-                  onChange={(e) => setUnbanReason(e.target.value)}
-                  placeholder="Причина разбана"
-                  disabled={!hasProfile || actionLoading || (hasProfile && !profile.banned)}
-                />
-                <textarea
-                  className="panel-users-input"
-                  rows={2}
-                  value={unbanEvidence}
-                  onChange={(e) => setUnbanEvidence(e.target.value)}
-                  placeholder="Обоснование"
-                  disabled={!hasProfile || actionLoading || (hasProfile && !profile.banned)}
-                />
+                <label className="pu-field">
+                  <span className="pu-field-label">Причина</span>
+                  <input
+                    className="panel-users-input pu-field-input"
+                    value={unbanReason}
+                    onChange={(e) => setUnbanReason(e.target.value)}
+                    placeholder="Причина разбана"
+                    disabled={!hasProfile || actionLoading || (hasProfile && !profile.banned)}
+                  />
+                </label>
+                <label className="pu-field">
+                  <span className="pu-field-label">Обоснование</span>
+                  <textarea
+                    className="panel-users-input pu-field-input pu-field-area"
+                    rows={2}
+                    value={unbanEvidence}
+                    onChange={(e) => setUnbanEvidence(e.target.value)}
+                    placeholder="Кратко по делу"
+                    disabled={!hasProfile || actionLoading || (hasProfile && !profile.banned)}
+                  />
+                </label>
                 <EvidencePhotoPicker
                   key={`unban-${profile?.userId ?? 'empty'}`}
                   fileIds={unbanPhotoIds}
@@ -1303,7 +1402,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 />
                 <button
                   type="button"
-                  className="panel-users-btn panel-users-btn-success"
+                  className="panel-users-btn panel-users-btn-success pu-action-cta"
                   disabled={
                     !hasProfile || actionLoading || (hasProfile && !profile.banned) ||
                     !unbanReason.trim() || (!unbanEvidence.trim() && unbanPhotoIds.length === 0)
@@ -1316,16 +1415,21 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
               )}
 
               {canManageSettings && (
-              <div className="panel-users-action-block">
-                <p className="panel-users-action-title">Обучение</p>
-                <p className="panel-shelf-muted">Сброс + грядка №1</p>
+              <div className="panel-users-action-block pu-action-tile pu-action-tile-onboard">
+                <div className="pu-action-tile-top">
+                  <span className="pu-action-ico" aria-hidden>↻</span>
+                  <div>
+                    <p className="panel-users-action-title">Обучение</p>
+                    <p className="pu-action-hint">Сброс + грядка №1</p>
+                  </div>
+                </div>
                 <button
                   type="button"
-                  className="panel-users-btn"
+                  className="panel-users-btn pu-action-cta"
                   disabled={!hasProfile || actionLoading}
                   onClick={() => setPendingAction('onboarding')}
                 >
-                  Сбросить
+                  Сбросить обучение
                 </button>
               </div>
               )}

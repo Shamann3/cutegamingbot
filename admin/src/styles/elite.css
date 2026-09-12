@@ -1043,52 +1043,88 @@ body,
 .accent-hex-field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  margin-bottom: 0.65rem;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+  margin-bottom: 0;
   color: var(--e-text-3);
   font-size: 0.72rem;
 }
+.accent-hex-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.accent-hex-field-head em {
+  font-style: normal;
+  font-size: 0.65rem;
+  color: var(--e-text-4);
+  letter-spacing: 0.01em;
+}
+.accent-hex-field-bad .accent-hex-field-head em {
+  color: #ff7b7b;
+}
+.accent-hex-shell {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.42rem 0.55rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition:
+    border-color var(--e-fast) var(--e-ease),
+    box-shadow var(--e-med) var(--e-ease);
+}
+.accent-hex-shell:focus-within {
+  border-color: var(--e-accent-line);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 3px rgba(var(--e-accent-rgb), 0.16);
+}
+.accent-hex-field-bad .accent-hex-shell {
+  border-color: rgba(255, 90, 90, 0.45);
+}
+.accent-hex-preview {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 4px 12px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s ease;
+}
 .accent-hex-field input {
+  flex: 1;
+  min-width: 0;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0.15rem 0 !important;
+  color: var(--e-text) !important;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+  font-size: 0.92rem !important;
+  font-weight: 560;
+  letter-spacing: 0.06em;
+  border-radius: 0 !important;
+}
+.accent-hex-field input::placeholder {
+  color: var(--e-text-4);
   letter-spacing: 0.04em;
-  border-radius: 12px !important;
 }
 
 .accent-palette-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.45rem;
+  display: none;
 }
 .accent-palette-grid-compact {
-  margin-bottom: 0;
+  display: none;
 }
 .accent-swatch {
-  position: relative;
-  aspect-ratio: 1;
-  border: 0;
-  padding: 0;
-  border-radius: 14px;
-  background: transparent;
-  cursor: pointer;
-  transition: transform var(--e-med) var(--e-ease-spring);
-}
-.accent-swatch-core {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 13px;
-  background: var(--swatch);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    0 4px 12px rgba(0, 0, 0, 0.35);
-  transition: box-shadow var(--e-med) var(--e-ease);
-}
-.accent-swatch-on .accent-swatch-core {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 0 0 2px #000,
-    0 0 0 4px color-mix(in srgb, var(--swatch) 85%, #fff),
-    0 0 18px color-mix(in srgb, var(--swatch) 55%, transparent);
+  display: none;
 }
 
 @keyframes accent-palette-in {
@@ -1327,14 +1363,18 @@ body,
   font: inherit;
   font-size: 0.82rem;
   letter-spacing: -0.01em;
+  text-align: center;
 }
 
-.elite-search input:focus {
+.elite-search input:focus,
+.elite-search input:not(:placeholder-shown) {
   outline: none;
+  text-align: left;
 }
 
 .elite-search input::placeholder {
   color: var(--e-text-4);
+  text-align: center;
 }
 
 .elite-search-wrap {

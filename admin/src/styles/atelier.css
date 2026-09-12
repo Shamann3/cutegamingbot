@@ -525,8 +525,10 @@ tr:hover td {
 
 .elite-search input,
 .panel-search input {
-  border-radius: 999px !important;
-  background: #0a0a0a !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 /* ---------- Скролл контента вкладок ---------- */

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  ACCENT_SWATCHES,
   clamp,
+  hexToRgb,
   hsvToHex,
   normalizeAccent,
   parseHexInput,
+  rgbToHsv,
 } from '../lib/accentTheme'
 
 const WHEEL_SIZE = 196
@@ -64,17 +65,40 @@ function pointerToHsv(clientX, clientY, rect, value) {
   return { h: angle, s: sat, v: value }
 }
 
+function accentFromHex(hex, glow) {
+  const parsed = parseHexInput(hex)
+  if (!parsed) return null
+  const { r, g, b } = hexToRgb(parsed)
+  const hsv = rgbToHsv(r, g, b)
+  return normalizeAccent({
+    hex: parsed,
+    ...hsv,
+    glow,
+    id: 'custom',
+    label: 'Свой',
+    hexSource: true,
+  })
+}
+
 export default function AccentPalette({ value, onChange }) {
   const accent = normalizeAccent(value)
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState(accent)
   const [hexText, setHexText] = useState(accent.hex)
+  const [hexOk, setHexOk] = useState(true)
   const [pos, setPos] = useState({ top: 0, left: 0 })
   const canvasRef = useRef(null)
   const dragging = useRef(false)
   const rootRef = useRef(null)
   const panelRef = useRef(null)
   const triggerRef = useRef(null)
+  const draftRef = useRef(draft)
+  const hexTextRef = useRef(hexText)
+  const onChangeRef = useRef(onChange)
+
+  draftRef.current = draft
+  hexTextRef.current = hexText
+  onChangeRef.current = onChange
 
   const placePanel = useCallback(() => {
     const btn = triggerRef.current
@@ -83,7 +107,7 @@ export default function AccentPalette({ value, onChange }) {
     const r = btn.getBoundingClientRect()
     const gap = 10
     const pw = panel?.offsetWidth || 236
-    const ph = panel?.offsetHeight || 420
+    const ph = panel?.offsetHeight || 380
     let left = r.right + gap
     let top = r.top + r.height / 2 - ph / 2
 
@@ -94,11 +118,40 @@ export default function AccentPalette({ value, onChange }) {
     setPos({ top, left })
   }, [])
 
+  const pushAccent = useCallback((next) => {
+    setDraft(next)
+    setHexText(next.hex)
+    setHexOk(true)
+    onChangeRef.current?.(next)
+  }, [])
+
+  const commitHsv = useCallback((partial) => {
+    const next = normalizeAccent({ ...draftRef.current, ...partial, hexSource: false })
+    pushAccent(next)
+  }, [pushAccent])
+
+  const commitHex = useCallback((raw, { silentInvalid = false } = {}) => {
+    const next = accentFromHex(raw, draftRef.current.glow)
+    if (!next) {
+      setHexOk(false)
+      if (!silentInvalid) setHexText(draftRef.current.hex)
+      return false
+    }
+    pushAccent(next)
+    return true
+  }, [pushAccent])
+
+  const closePalette = useCallback(() => {
+    commitHex(hexTextRef.current, { silentInvalid: false })
+    setOpen(false)
+  }, [commitHex])
+
   useEffect(() => {
     if (!open) return
     const next = normalizeAccent(value)
     setDraft(next)
     setHexText(next.hex)
+    setHexOk(true)
   }, [open, value])
 
   useLayoutEffect(() => {
@@ -125,11 +178,11 @@ export default function AccentPalette({ value, onChange }) {
   useEffect(() => {
     if (!open) return undefined
     const onKey = (e) => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') closePalette()
     }
     const onDown = (e) => {
       if (rootRef.current?.contains(e.target) || panelRef.current?.contains(e.target)) return
-      setOpen(false)
+      closePalette()
     }
     window.addEventListener('keydown', onKey)
     window.addEventListener('mousedown', onDown)
@@ -137,21 +190,14 @@ export default function AccentPalette({ value, onChange }) {
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('mousedown', onDown)
     }
-  }, [open])
-
-  const commit = useCallback((partial) => {
-    const next = normalizeAccent({ ...draft, ...partial })
-    setDraft(next)
-    setHexText(next.hex)
-    onChange?.(next)
-  }, [draft, onChange])
+  }, [open, closePalette])
 
   const onWheelPointer = (e) => {
     const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
-    const hsv = pointerToHsv(e.clientX, e.clientY, rect, draft.v)
-    commit(hsv)
+    const hsv = pointerToHsv(e.clientX, e.clientY, rect, draftRef.current.v)
+    commitHsv(hsv)
   }
 
   const onWheelDown = (e) => {
@@ -184,6 +230,8 @@ export default function AccentPalette({ value, onChange }) {
     }
   })()
 
+  const previewHex = parseHexInput(hexText) || draft.hex
+
   const panel = open
     ? createPortal(
       <div
@@ -213,7 +261,7 @@ export default function AccentPalette({ value, onChange }) {
             min={12}
             max={100}
             value={Math.round(draft.v * 100)}
-            onChange={(e) => commit({ v: Number(e.target.value) / 100 })}
+            onChange={(e) => commitHsv({ v: Number(e.target.value) / 100 })}
             style={{ '--fill': `${Math.round(draft.v * 100)}%`, '--thumb': draft.hex }}
           />
         </label>
@@ -226,67 +274,56 @@ export default function AccentPalette({ value, onChange }) {
             min={0}
             max={100}
             value={Math.round(draft.glow)}
-            onChange={(e) => commit({ glow: Number(e.target.value) })}
+            onChange={(e) => commitHsv({ glow: Number(e.target.value) })}
             style={{ '--fill': `${Math.round(draft.glow)}%`, '--thumb': draft.hex }}
           />
         </label>
 
-        <label className="accent-hex-field">
-          <span>HEX</span>
-          <input
-            value={hexText}
-            onChange={(e) => {
-              let raw = e.target.value.trim()
-              if (raw && !raw.startsWith('#')) raw = `#${raw}`
-              setHexText(raw)
-              const parsed = parseHexInput(raw)
-              if (parsed) commit({ hex: parsed, id: 'custom', label: 'Свой' })
-            }}
-            onBlur={() => {
-              const parsed = parseHexInput(hexText)
-              if (parsed) {
-                setHexText(parsed)
-                commit({ hex: parsed, id: 'custom', label: 'Свой' })
-              } else {
-                setHexText(draft.hex)
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter') return
-              e.preventDefault()
-              const parsed = parseHexInput(hexText)
-              if (parsed) {
-                setHexText(parsed)
-                commit({ hex: parsed, id: 'custom', label: 'Свой' })
-              }
-            }}
-            placeholder="#7EB89A"
-            spellCheck={false}
-            maxLength={7}
-            inputMode="text"
-            autoCapitalize="off"
-            autoCorrect="off"
-          />
-        </label>
-
-        <div className="accent-palette-grid accent-palette-grid-compact">
-          {ACCENT_SWATCHES.map((swatch) => {
-            const on = draft.hex.toLowerCase() === swatch.hex.toLowerCase()
-            return (
-              <button
-                key={swatch.id}
-                type="button"
-                className={`accent-swatch${on ? ' accent-swatch-on' : ''}`}
-                style={{ '--swatch': swatch.hex }}
-                title={swatch.label}
-                aria-label={swatch.label}
-                aria-pressed={on}
-                onClick={() => commit({ ...swatch, glow: draft.glow })}
-              >
-                <span className="accent-swatch-core" />
-              </button>
-            )
-          })}
+        <div className={`accent-hex-field${hexOk ? '' : ' accent-hex-field-bad'}`}>
+          <div className="accent-hex-field-head">
+            <span>HEX</span>
+            <em>{hexOk ? 'свой цвет' : 'проверьте код'}</em>
+          </div>
+          <div className="accent-hex-shell">
+            <span
+              className="accent-hex-preview"
+              style={{ background: previewHex }}
+              aria-hidden
+            />
+            <input
+              value={hexText}
+              onChange={(e) => {
+                let raw = e.target.value.trim()
+                if (raw && !raw.startsWith('#')) raw = `#${raw}`
+                raw = raw.replace(/[^#0-9A-Fa-f]/g, '').slice(0, 7)
+                setHexText(raw)
+                const parsed = parseHexInput(raw)
+                if (parsed) {
+                  setHexOk(true)
+                  commitHex(parsed)
+                } else {
+                  setHexOk(raw.length < 4)
+                }
+              }}
+              onBlur={() => {
+                commitHex(hexText)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  if (commitHex(hexText)) closePalette()
+                }
+              }}
+              placeholder="#7EB89A"
+              spellCheck={false}
+              maxLength={7}
+              inputMode="text"
+              autoCapitalize="off"
+              autoCorrect="off"
+              aria-invalid={!hexOk}
+              aria-label="HEX-код цвета"
+            />
+          </div>
         </div>
       </div>,
       document.body,
@@ -301,7 +338,10 @@ export default function AccentPalette({ value, onChange }) {
         className="panel-accent-trigger"
         aria-expanded={open}
         aria-haspopup="dialog"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (open) closePalette()
+          else setOpen(true)
+        }}
       >
         <span className="panel-accent-trigger-swatch" style={{ background: accent.hex }} aria-hidden />
         <span className="panel-accent-trigger-meta">
