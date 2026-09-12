@@ -418,6 +418,19 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Невидимая (по цвету фона) полоса: удерживает контент НИЖЕ UI Telegram */
+.panel-tg-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  width: 100%;
+  height: var(--tg-content-top, 0px);
+  min-height: var(--tg-content-top, 0px);
+  flex-shrink: 0;
+  pointer-events: none;
+  background: #050508;
+}
+
 .panel-shell-main {
   position: relative;
   z-index: 2;
@@ -427,7 +440,7 @@ body {
   align-items: stretch;
   justify-content: center;
   padding:
-    max(1.15rem, env(safe-area-inset-top, 0px), var(--tg-content-top, 0px))
+    0.65rem
     max(1.35rem, env(safe-area-inset-right, 0px), var(--tg-safe-right, 0px))
     max(1.35rem, env(safe-area-inset-bottom, 0px), var(--tg-content-bottom, 0px))
     max(1.35rem, env(safe-area-inset-left, 0px), var(--tg-safe-left, 0px));
@@ -6001,7 +6014,10 @@ body {
   .panel-mobile-overlay {
     display: block;
     position: fixed;
-    inset: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: var(--tg-content-top, 0px) !important;
     z-index: 310;
     background: rgba(0, 0, 0, 0.62);
   }
@@ -6009,10 +6025,13 @@ body {
   /* Полноэкранный drawer — не перебиваем elite.css bottom-sheet-ом */
   .panel-shelf-sidebar {
     position: fixed !important;
-    inset: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    top: var(--tg-content-top, 0px) !important;
     width: 100% !important;
-    max-height: 100dvh !important;
-    height: 100dvh !important;
+    max-height: calc(100dvh - var(--tg-content-top, 0px)) !important;
+    height: calc(100dvh - var(--tg-content-top, 0px)) !important;
     z-index: 320 !important;
     grid-column: unset !important;
     grid-row: unset !important;

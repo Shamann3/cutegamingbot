@@ -3,6 +3,25 @@
   display: none;
 }
 
+.panel-tg-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  width: 100%;
+  height: var(--tg-content-top, 0px);
+  min-height: var(--tg-content-top, 0px);
+  pointer-events: none;
+  background: #050508;
+}
+
+/* Splash / auth / entrance — тот же отступ под шапку TG */
+.ent-root,
+.auth-screen,
+.splash-screen {
+  padding-top: var(--tg-content-top, 0px) !important;
+  box-sizing: border-box;
+}
+
 @media (max-width: 900px) {
   .panel-nav-recent {
     display: block;
@@ -56,22 +75,29 @@
     border-radius: 12px;
   }
 
-  /* Topbar: место под ✕ Telegram + contentSafeArea */
+  /* Topbar липнет под .panel-tg-chrome */
   .elite-topbar,
   .elite-topbar-compact {
-    top: max(0px, var(--tg-content-top, 0px)) !important;
+    top: var(--tg-content-top, 0px) !important;
     padding-right: max(
       0.85rem,
       calc(env(safe-area-inset-right, 0px) + 3.15rem),
       calc(var(--tg-safe-right, 0px) + 2.75rem)
     ) !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .panel-shell-main {
-    padding-top: max(0.35rem, var(--tg-content-top, 0px)) !important;
+    padding-top: 0.55rem !important;
     padding-left: max(12px, env(safe-area-inset-left, 0px), var(--tg-safe-left, 0px)) !important;
     padding-right: max(12px, env(safe-area-inset-right, 0px), var(--tg-safe-right, 0px)) !important;
     padding-bottom: max(16px, env(safe-area-inset-bottom, 0px), var(--tg-content-bottom, 0px)) !important;
+  }
+
+  .panel-tg-chrome {
+    display: block;
+    background: #050508;
   }
 
   /* Недавние в drawer */
@@ -405,7 +431,7 @@
     display: flex !important;
     flex-direction: column;
     position: fixed;
-    top: max(0px, var(--tg-content-top, 0px));
+    top: var(--tg-content-top, 0px);
     right: 0;
     bottom: 0;
     left: 0;
@@ -416,9 +442,9 @@
       max(0.75rem, env(safe-area-inset-right, 0px), var(--tg-safe-right, 0px))
       0
       max(0.75rem, env(safe-area-inset-left, 0px), var(--tg-safe-left, 0px));
-    min-height: calc(100dvh - max(0px, var(--tg-content-top, 0px)));
-    height: calc(100dvh - max(0px, var(--tg-content-top, 0px)));
-    max-height: calc(100dvh - max(0px, var(--tg-content-top, 0px)));
+    min-height: calc(100dvh - var(--tg-content-top, 0px));
+    height: calc(100dvh - var(--tg-content-top, 0px));
+    max-height: calc(100dvh - var(--tg-content-top, 0px));
   }
 
   .support-layout-thread-open .support-thread-header {

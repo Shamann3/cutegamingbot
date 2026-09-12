@@ -223,6 +223,9 @@ export default function PanelShell({ onLogout }) {
 
   return (
     <div className="panel-shell">
+      {/* Зарезервированная полоса под ✕ / меню Telegram + Dynamic Island */}
+      <div className="panel-tg-chrome" aria-hidden="true" />
+
       {godMode && role === 'owner' && (
         <CommandCenterSection onExit={() => setGodMode(false)} />
       )}
