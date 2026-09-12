@@ -59,7 +59,6 @@
   .support-reply-send-btn,
   .panel-logout-btn,
   .panel-perf-btn,
-  .pu-tab,
   .pu-action-btn,
   .pu-inv-item,
   .admin-modal button {
@@ -75,17 +74,23 @@
     border-radius: 12px;
   }
 
-  /* Topbar липнет под .panel-tg-chrome */
+  /* Topbar липнет под .panel-tg-chrome; actions у правого края */
   .elite-topbar,
   .elite-topbar-compact {
     top: var(--tg-content-top, 0px) !important;
     padding-right: max(
-      0.85rem,
-      calc(env(safe-area-inset-right, 0px) + 3.15rem),
-      calc(var(--tg-safe-right, 0px) + 2.75rem)
+      0.4rem,
+      env(safe-area-inset-right, 0px),
+      var(--tg-safe-right, 0px)
     ) !important;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+  }
+
+  .elite-topbar-actions {
+    margin-left: auto !important;
+    margin-right: 0 !important;
+    gap: 0.28rem !important;
   }
 
   .panel-shell-main {
@@ -247,10 +252,11 @@
 
   .panel-users .pu-tabs-bar {
     position: sticky;
-    top: calc(3.35rem + max(0px, var(--tg-content-top, 0px)));
+    top: calc(3.35rem + var(--tg-content-top, 0px));
     z-index: 39;
     border-radius: 18px !important;
     padding: 0.75rem 0.7rem 0.65rem !important;
+    touch-action: pan-x pan-y;
   }
 
   .panel-users .pu-profile-header {
@@ -266,12 +272,15 @@
     justify-content: center;
   }
 
-  /* Горизонтальные chip-табы */
-  .panel-users .pu-tabs {
+  /* Горизонтальные chip-табы — pan-x + pan-y, иначе iOS «залипает» жест */
+  .panel-users .pu-tabs,
+  .sec-tabs {
     flex-wrap: nowrap !important;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x pan-y;
     scroll-snap-type: x proximity;
     gap: 0.3rem;
     padding: 0.22rem;
@@ -279,17 +288,20 @@
     scrollbar-width: none;
   }
 
-  .panel-users .pu-tabs::-webkit-scrollbar {
+  .panel-users .pu-tabs::-webkit-scrollbar,
+  .sec-tabs::-webkit-scrollbar {
     display: none;
   }
 
-  .panel-users .pu-tab {
-    flex: 0 0 auto;
+  .panel-users .pu-tab,
+  .sec-tab {
+    flex: 0 0 auto !important;
     scroll-snap-align: start;
     min-height: 42px !important;
     padding: 0.55rem 0.95rem !important;
     font-size: 0.82rem !important;
     white-space: nowrap;
+    touch-action: pan-x pan-y;
   }
 
   .panel-users .panel-users-card,
@@ -546,8 +558,10 @@
 
   .sec-tabs {
     flex-wrap: nowrap !important;
-    overflow-x: auto;
+    overflow-x: auto !important;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x pan-y;
     scrollbar-width: none;
     gap: 0.3rem;
     padding-bottom: 0.15rem;
@@ -562,6 +576,7 @@
     white-space: nowrap;
     min-height: 44px !important;
     border-radius: 12px !important;
+    touch-action: pan-x pan-y;
   }
 
   .sec-title {
