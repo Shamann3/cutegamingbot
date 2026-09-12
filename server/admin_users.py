@@ -773,7 +773,7 @@ def _classify_amount(amount: int, thresholds: dict) -> str:
     return "small"
 
 
-async def get_user_intel(user_id: int) -> dict | None:
+async def get_user_intel(user_id: int, *, is_owner: bool = False) -> dict | None:
     """Полная аналитика игрока: активность в группах, переводы, крупные суммы."""
     profile = await get_user_admin_profile(user_id)
     if not profile:
@@ -1012,6 +1012,16 @@ async def get_user_intel(user_id: int) -> dict | None:
     except Exception:
         notes = []
 
+    dossier = await _build_user_dossier(user_id, is_owner=is_owner)
+
+    achievements = {"items": [], "count": 0}
+    try:
+        from admin_achievements import list_user_achievements
+
+        achievements = await list_user_achievements(user_id)
+    except Exception:
+        achievements = {"items": [], "count": 0}
+
     editable = {
         "balance": True,
         "items": True,
@@ -1020,11 +1030,14 @@ async def get_user_intel(user_id: int) -> dict | None:
         "onboardingReset": True,
         "notes": True,
         "farmReset": True,
+        "ownerFields": bool(is_owner),
     }
 
     return {
         "profile": profile,
         "economy": {**economy, "donateJournal": donate_journal},
+        "dossier": dossier,
+        "achievements": achievements,
         "thresholds": thresholds,
         "activity30d": {
             "totalMessages": total_messages,
@@ -1040,4 +1053,376 @@ async def get_user_intel(user_id: int) -> dict | None:
         "bans": bans if isinstance(bans, list) else bans,
         "notes": notes if isinstance(notes, list) else notes,
         "editable": editable,
+        "viewer": {"isOwner": bool(is_owner)},
     }
+
+
+def _elapsed_ru(reg_dt) -> str | None:
+    if not reg_dt:
+        return None
+    try:
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        if getattr(reg_dt, "tzinfo", None) is None:
+            from datetime import timezone as tz
+
+            reg_dt = reg_dt.replace(tzinfo=tz.utc)
+        delta = now - reg_dt
+        days = max(0, delta.days)
+        months, rem_days = divmod(days, 30)
+        hours = delta.seconds // 3600
+        parts = []
+        if months:
+            parts.append(f"{months} мес.")
+        if rem_days:
+            parts.append(f"{rem_days} дн.")
+        if hours and not months:
+            parts.append(f"{hours} ч.")
+        return ", ".join(parts) if parts else "менее часа"
+    except Exception:
+        return None
+
+
+async def _build_user_dossier(user_id: int, *, is_owner: bool) -> dict:
+    """Карточка как в боте: фонд, донаты, репутация, рефералы, дата и т.д."""
+    out: dict[str, Any] = {
+        "registeredAt": None,
+        "registeredAtLabel": None,
+        "accountAge": None,
+        "referrals": 0,
+        "referrerName": None,
+        "reputationPlus": 0,
+        "reputationMinus": 0,
+        "transferLimit": None,
+        "withdrawLimit": 0,
+        "donated": 0,
+        "wins": 0,
+        "losses": 0,
+        "winAmount": 0,
+        "growthFundContributed": 0,
+        "growthFundMilestone": None,
+        "country": None,
+        "sponsoredChats": [],
+    }
+    try:
+        row = await db.pool.fetchrow(
+            """
+            SELECT balance, donate, canwithdrawal, wins, loose, winamount, give,
+                   first_name, username
+            FROM users WHERE user_id = $1
+            """,
+            user_id,
+        )
+    except Exception:
+        row = None
+
+    if row:
+        keys = set(row.keys())
+        out["donated"] = int(row["donate"] or 0) if "donate" in keys else 0
+        out["withdrawLimit"] = int(row["canwithdrawal"] or 0) if "canwithdrawal" in keys else 0
+        out["wins"] = int(row["wins"] or 0) if "wins" in keys else 0
+        out["losses"] = int(row["loose"] or 0) if "loose" in keys else 0
+        out["winAmount"] = int(row["winamount"] or 0) if "winamount" in keys else 0
+        if "give" in keys and row["give"] is not None:
+            out["transferLimit"] = int(row["give"])
+
+    for col, dest, cast in (
+        ("referrals", "referrals", int),
+        ("date", "registeredAt", None),
+        ("country_emoji", "country", str),
+    ):
+        try:
+            val = await db.pool.fetchval(
+                f"SELECT {col} FROM users WHERE user_id = $1",
+                user_id,
+            )
+            if val is None:
+                continue
+            if col == "date":
+                out["registeredAt"] = val.isoformat() if hasattr(val, "isoformat") else str(val)
+                try:
+                    out["registeredAtLabel"] = val.strftime("%d.%m.%Y в %H:%M") if hasattr(val, "strftime") else str(val)
+                except Exception:
+                    out["registeredAtLabel"] = str(val)
+                out["accountAge"] = _elapsed_ru(val)
+            elif col == "country_emoji":
+                out["country"] = str(val)
+            else:
+                out[dest] = cast(val or 0)
+        except Exception:
+            pass
+
+    for plus_col, minus_col in (("rep_plus", "rep_minus"), ("reputation_plus", "reputation_minus")):
+        try:
+            r2 = await db.pool.fetchrow(
+                f"SELECT COALESCE({plus_col}, 0) AS rp, COALESCE({minus_col}, 0) AS rm FROM users WHERE user_id = $1",
+                user_id,
+            )
+            if r2:
+                out["reputationPlus"] = int(r2["rp"] or 0)
+                out["reputationMinus"] = int(r2["rm"] or 0)
+                break
+        except Exception:
+            continue
+
+    try:
+        ref = await db.pool.fetchval(
+            """
+            SELECT COALESCE(u.display_name, u.first_name, u.username)
+            FROM users me
+            JOIN users u ON u.user_id = me.referer_id
+            WHERE me.user_id = $1
+            """,
+            user_id,
+        )
+        if ref:
+            out["referrerName"] = str(ref)
+    except Exception:
+        try:
+            ref = await db.pool.fetchval(
+                """
+                SELECT COALESCE(u.display_name, u.first_name, u.username)
+                FROM users me
+                JOIN users u ON u.user_id = me.invited_by
+                WHERE me.user_id = $1
+                """,
+                user_id,
+            )
+            if ref:
+                out["referrerName"] = str(ref)
+        except Exception:
+            pass
+
+    try:
+        gf = await db.pool.fetchrow(
+            """
+            SELECT COALESCE(total_contributed, 0)::bigint AS contributed,
+                   COALESCE(milestone_tier, 0)::int AS tier,
+                   COALESCE(milestone_progress, 0)::bigint AS progress
+            FROM growth_fund_user_stats WHERE user_id = $1
+            """,
+            user_id,
+        )
+        if gf:
+            progress = int(gf["progress"] or 0)
+            target = 100
+            try:
+                from bot.funcs.growth_fund import get_milestone_target
+
+                target = int(get_milestone_target(int(gf["tier"] or 0)) or 100)
+            except Exception:
+                target = 100
+            filled = max(0, min(10, int(round((progress / max(1, target)) * 10))))
+            bar = ("█" * filled) + ("░" * (10 - filled))
+            out["growthFundContributed"] = int(gf["contributed"] or 0)
+            out["growthFundMilestone"] = {
+                "tier": int(gf["tier"] or 0),
+                "progress": progress,
+                "target": target,
+                "bar": bar,
+            }
+    except Exception:
+        pass
+
+    try:
+        chats = await db.pool.fetch(
+            """
+            SELECT chat_id, namechat, usernamechat, group_balance_level
+            FROM chat
+            WHERE group_balance_sponsor_id = $1
+            ORDER BY group_balance_level DESC NULLS LAST
+            LIMIT 20
+            """,
+            user_id,
+        )
+        out["sponsoredChats"] = [
+            {
+                "chatId": int(c["chat_id"]),
+                "name": c["namechat"] or str(c["chat_id"]),
+                "username": c["usernamechat"],
+                "level": int(c["group_balance_level"] or 0),
+            }
+            for c in chats
+        ]
+    except Exception:
+        out["sponsoredChats"] = []
+
+    if is_owner:
+        secrets: dict[str, Any] = {"demo": 0, "zeroDemo": 0}
+        try:
+            s = await db.pool.fetchrow(
+                """
+                SELECT COALESCE(demo, 0)::bigint AS demo,
+                       COALESCE("0demo", 0)::bigint AS zero_demo
+                FROM users WHERE user_id = $1
+                """,
+                user_id,
+            )
+            if s:
+                secrets["demo"] = int(s["demo"] or 0)
+                secrets["zeroDemo"] = int(s["zero_demo"] or 0)
+        except Exception:
+            pass
+        out["ownerSecrets"] = secrets
+
+    return out
+
+
+async def list_user_p2p_transfers(
+    user_id: int,
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    near: str | None = None,
+    limit: int = 50,
+) -> dict:
+    """P2P переводы с фильтром по дате / дате-времени."""
+    from datetime import datetime, timedelta
+
+    limit = max(1, min(int(limit), 200))
+    conds = ["(t.sender_id = $1 OR t.receiver_id = $1)"]
+    params: list[Any] = [user_id]
+    idx = 2
+
+    def _parse_dt(raw: str | None):
+        if not raw:
+            return None
+        s = str(raw).strip().replace("Z", "")
+        try:
+            if len(s) <= 10:
+                return datetime.fromisoformat(s[:10])
+            return datetime.fromisoformat(s[:19])
+        except ValueError:
+            return None
+
+    near_dt = _parse_dt(near)
+    if near_dt is not None:
+        window = timedelta(hours=12)
+        conds.append(f"t.created_at >= ${idx} AND t.created_at < ${idx + 1}")
+        params.extend([near_dt - window, near_dt + window])
+        idx += 2
+    else:
+        df = _parse_dt(date_from)
+        dt = _parse_dt(date_to)
+        if df is not None:
+            conds.append(f"t.created_at >= ${idx}")
+            params.append(df)
+            idx += 1
+        if dt is not None:
+            end = dt
+            if len(str(date_to or "").strip()) <= 10:
+                end = dt + timedelta(days=1)
+            conds.append(f"t.created_at < ${idx}")
+            params.append(end)
+            idx += 1
+
+    where = " AND ".join(conds)
+    total = int(
+        await db.pool.fetchval(
+            f"SELECT COUNT(*)::int FROM p2p_transfers t WHERE {where}",
+            *params,
+        )
+        or 0
+    )
+    rows = await db.pool.fetch(
+        f"""
+        SELECT t.id, t.sender_id, t.receiver_id, t.amount, t.cause, t.created_at,
+               su.username AS sender_username,
+               COALESCE(su.display_name, su.first_name) AS sender_name,
+               ru.username AS receiver_username,
+               COALESCE(ru.display_name, ru.first_name) AS receiver_name
+        FROM p2p_transfers t
+        LEFT JOIN users su ON su.user_id = t.sender_id
+        LEFT JOIN users ru ON ru.user_id = t.receiver_id
+        WHERE {where}
+        ORDER BY t.created_at DESC, t.id DESC
+        LIMIT ${idx}
+        """,
+        *params,
+        limit,
+    )
+    items = []
+    for t in rows:
+        direction = "out" if int(t["sender_id"]) == user_id else "in"
+        cp_id = int(t["receiver_id"] if direction == "out" else t["sender_id"])
+        items.append(
+            {
+                "id": int(t["id"]),
+                "direction": direction,
+                "amount": int(t["amount"] or 0),
+                "cause": t["cause"] or "",
+                "createdAt": t["created_at"].isoformat() if t["created_at"] else None,
+                "counterparty": {
+                    "userId": cp_id,
+                    "name": (t["receiver_name"] if direction == "out" else t["sender_name"])
+                    or str(cp_id),
+                    "username": t["receiver_username"]
+                    if direction == "out"
+                    else t["sender_username"],
+                },
+            }
+        )
+    return {"items": items, "total": total, "limit": limit}
+
+
+async def owner_update_user_fields(user_id: int, fields: dict) -> dict:
+    """Только владелец: правит произвольные безопасные поля игрока."""
+    from datetime import datetime
+
+    allowed = {
+        "balance": "balance",
+        "donate": "donate",
+        "canwithdrawal": "canwithdrawal",
+        "wins": "wins",
+        "loose": "loose",
+        "winamount": "winamount",
+        "give": "give",
+        "referrals": "referrals",
+        "demo": "demo",
+        "zeroDemo": '"0demo"',
+        "firstName": "first_name",
+        "username": "username",
+        "displayName": "display_name",
+        "banned": "banned",
+        "bannedReason": "banned_reason",
+    }
+    sets = []
+    params: list[Any] = []
+    idx = 1
+    for key, col in allowed.items():
+        if key not in fields:
+            continue
+        val = fields[key]
+        if key in ("balance", "donate", "canwithdrawal", "wins", "loose", "winamount", "give", "referrals", "demo", "zeroDemo"):
+            val = int(val)
+            if val < 0:
+                raise ValueError(f"{key} не может быть отрицательным")
+        elif key == "banned":
+            val = bool(val)
+        else:
+            val = None if val is None else str(val)[:255]
+        sets.append(f"{col} = ${idx}")
+        params.append(val)
+        idx += 1
+
+    if fields.get("registeredAt"):
+        raw = str(fields["registeredAt"]).strip()
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "")[:19])
+        except ValueError as e:
+            raise ValueError("Некорректная дата регистрации") from e
+        label = dt.strftime("%d.%m.%Y %H:%M")
+        sets.append(f"date = ${idx}")
+        params.append(label)
+        idx += 1
+
+    if not sets:
+        raise ValueError("Нет полей для обновления")
+
+    params.append(user_id)
+    sql = f"UPDATE users SET {', '.join(sets)} WHERE user_id = ${idx}"
+    result = await db.pool.execute(sql, *params)
+    if str(result).endswith("0"):
+        raise ValueError("Игрок не найден")
+    return {"ok": True, "userId": user_id}

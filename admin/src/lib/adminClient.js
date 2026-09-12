@@ -1159,6 +1159,24 @@ export async function fetchAdminUserIntel(userId) {
   return adminFetch(`/users/${userId}/intel`)
 }
 
+export async function fetchAdminUserTransfers(userId, {
+  dateFrom = '', dateTo = '', near = '', limit = 50,
+} = {}) {
+  const params = new URLSearchParams()
+  if (dateFrom) params.set('dateFrom', dateFrom)
+  if (dateTo) params.set('dateTo', dateTo)
+  if (near) params.set('near', near)
+  params.set('limit', String(limit))
+  return adminFetch(`/users/${userId}/transfers?${params}`)
+}
+
+export async function patchOwnerUserFields(userId, fields) {
+  return adminFetch(`/users/${userId}/owner-fields`, {
+    method: 'PATCH',
+    body: fields,
+  })
+}
+
 export async function fetchAdminUserAudit(userId, { limit = 50, offset = 0 } = {}) {
   const params = new URLSearchParams({
     limit: String(limit),

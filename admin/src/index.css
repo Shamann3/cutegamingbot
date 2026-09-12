@@ -1706,21 +1706,19 @@ body {
 
 .panel-users-body {
   display: grid;
-  grid-template-columns: minmax(10.5rem, 26%) minmax(0, 1fr);
-  grid-template-rows: auto auto auto;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto;
   gap: 0.75rem;
 }
 
 /* Шапка с вкладками — вся ширина */
 .pu-tabs-bar {
   grid-column: 1 / -1;
-  grid-row: 1;
 }
 
 /* Контент не-профильных вкладок — вся ширина */
 .pu-tab-content-full {
   grid-column: 1 / -1;
-  grid-row: 2;
 }
 
 /* Скрываем профиль-карточку когда активна другая вкладка */
@@ -1734,21 +1732,23 @@ body {
 }
 
 .panel-users-card {
-  min-height: 8rem;
+  min-height: 0;
 }
 
 .panel-users-profile-card {
-  grid-column: 1;
-  grid-row: 2;
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
+  position: relative;
+  top: auto;
+  z-index: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .panel-users-right {
-  grid-column: 2;
-  grid-row: 2;
+  grid-column: 1 / -1;
+  grid-row: auto;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -1757,7 +1757,7 @@ body {
 
 .panel-users-bottom {
   grid-column: 1 / -1;
-  grid-row: 3;
+  grid-row: auto;
 }
 
 .panel-users-avatar-wrap {

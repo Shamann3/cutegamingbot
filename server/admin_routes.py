@@ -145,6 +145,8 @@ from admin_users import (
     get_user_audit_history,
     get_user_intel,
     list_player_notes,
+    list_user_p2p_transfers,
+    owner_update_user_fields,
     search_users,
     upsert_player_note,
 )
@@ -3273,12 +3275,77 @@ async def admin_user_profile(
 @router.get("/users/{target_user_id}/intel")
 async def admin_user_intel(
     target_user_id: int,
-    _admin_id: int = Depends(require_admin_permission("view_players")),
+    request: Request,
+    admin_id: int = Depends(require_admin_permission("view_players")),
 ):
-    intel = await get_user_intel(target_user_id)
+    account = getattr(request.state, "admin_account", None)
+    if not account:
+        try:
+            account = await get_admin_account_security(admin_id)
+            request.state.admin_account = account
+        except Exception:
+            account = {}
+    is_owner = (account or {}).get("role") == ROLE_OWNER
+    intel = await get_user_intel(target_user_id, is_owner=bool(is_owner))
     if not intel:
         raise HTTPException(status_code=404, detail="Игрок не найден")
     return intel
+
+
+@router.get("/users/{target_user_id}/transfers")
+async def admin_user_transfers(
+    target_user_id: int,
+    dateFrom: str | None = Query(None, max_length=32),
+    dateTo: str | None = Query(None, max_length=32),
+    near: str | None = Query(None, max_length=32),
+    limit: int = Query(50, ge=1, le=200),
+    _admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    try:
+        return await list_user_p2p_transfers(
+            target_user_id,
+            date_from=dateFrom,
+            date_to=dateTo,
+            near=near,
+            limit=limit,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+class OwnerUserFieldsBody(BaseModel):
+    balance: int | None = None
+    donate: int | None = None
+    canwithdrawal: int | None = None
+    wins: int | None = None
+    loose: int | None = None
+    winamount: int | None = None
+    give: int | None = None
+    referrals: int | None = None
+    demo: int | None = None
+    zeroDemo: int | None = None
+    firstName: str | None = None
+    username: str | None = None
+    displayName: str | None = None
+    banned: bool | None = None
+    bannedReason: str | None = None
+    registeredAt: str | None = None
+    model_config = {"extra": "forbid"}
+
+
+@router.patch("/users/{target_user_id}/owner-fields")
+async def admin_user_owner_fields(
+    target_user_id: int,
+    body: OwnerUserFieldsBody,
+    _admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    payload = {k: v for k, v in body.model_dump().items() if v is not None}
+    try:
+        return await owner_update_user_fields(target_user_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/accounts/recent")
