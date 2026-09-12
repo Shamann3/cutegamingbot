@@ -40,7 +40,7 @@ function DexItemPreview({ item }) {
           {item.name1 && <div className="dex-preview-name1">{item.name1}</div>}
           {item.bio && <div className="dex-preview-bio">{item.bio}</div>}
           <div className="dex-preview-meta-row">
-            <span className="dex-preview-price">💰 {Number(item.price || 0).toLocaleString('ru-RU')} КУТ</span>
+            <span className="dex-preview-price">💰 {Number(item.price || 0).toLocaleString('ru-RU')} кут</span>
             {item.sorting && <span className="dex-preview-sorting">🏷 {item.sorting}</span>}
           </div>
           {item.use && <div className="dex-preview-field"><b>Использование:</b> {item.use}</div>}
@@ -858,7 +858,7 @@ export default function ContentSection({ role = null, panelTabs = null }) {
                     <span className="panel-content-dex-emoji">{item.emoji}</span>
                     <span className="panel-content-dex-name">{item.name}</span>
                     <span className="panel-shelf-muted">#{item.id}</span>
-                    <span className="panel-shelf-muted">{item.price} kut · {item.remains} шт.</span>
+                    <span className="panel-shelf-muted">{item.price} кут · {item.remains} шт.</span>
                     {item.sorting && <span className="panel-content-dex-tag">{item.sorting}</span>}
                     <div className="panel-content-dex-actions">
                       <button
@@ -1265,7 +1265,7 @@ export default function ContentSection({ role = null, panelTabs = null }) {
                             setQuestForm({ ...questForm, rewards })
                           }}
                           options={[
-                            { value: 'kut', label: 'КУТ' },
+                            { value: 'kut', label: 'кут' },
                             { value: 'item', label: 'Предмет dex' },
                           ]}
                         />

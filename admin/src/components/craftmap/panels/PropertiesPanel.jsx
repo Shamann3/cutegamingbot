@@ -18,7 +18,7 @@ export default function PropertiesPanel({ item, graph, onClose, onGoTo, canEdit 
       </div>
       <p className="panel-shelf-muted">#{item.id}{item.sorting ? ` · ${item.sorting}` : ''}</p>
       {item.name1 ? <p className="panel-shelf-muted">{item.name1}</p> : null}
-      {typeof item.price === 'number' && item.price > 0 ? <p>💰 {item.price.toLocaleString('ru-RU')} КУТ</p> : null}
+      {typeof item.price === 'number' && item.price > 0 ? <p>💰 {item.price.toLocaleString('ru-RU')} кут</p> : null}
       {item.bio ? <p><b>Описание:</b> {item.bio}</p> : null}
       {item.use ? <p><b>Использование:</b> {item.use}</p> : null}
       {item.bonus ? <p><b>Бонус:</b> {item.bonus}</p> : null}

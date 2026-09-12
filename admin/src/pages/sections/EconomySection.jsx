@@ -197,7 +197,7 @@ export default function EconomySection() {
   const handleGrant = () => {
     const delta = Number(grantDelta)
     if (!delta || Number.isNaN(delta)) {
-      const message = 'Укажите сумму kut (можно отрицательную для списания)'
+      const message = 'Укажите сумму кут (можно отрицательную для списания)'
       setError(message)
       notifyAdmin(message, { error: true })
       return
@@ -243,11 +243,11 @@ export default function EconomySection() {
     <div className="panel-economy">
       <AdminActionModal
         open={grantDialogOpen}
-        title="Массовая выдача kut?"
+        title="Массовая выдача кут?"
         description={
           grantTarget === 'online'
-            ? `Выдать ${grantDelta} kut онлайн-игрокам. Текст из поля «Комментарий» уйдёт в игрового бота.`
-            : `Выдать ${grantDelta} kut всем игрокам. Текст из поля «Комментарий» уйдёт в игрового бота.`
+            ? `Выдать ${grantDelta} кут онлайн-игрокам. Текст из поля «Комментарий» уйдёт в игрового бота.`
+            : `Выдать ${grantDelta} кут всем игрокам. Текст из поля «Комментарий» уйдёт в игрового бота.`
         }
         confirmText="Выдать"
         loading={granting}
@@ -259,14 +259,14 @@ export default function EconomySection() {
       <article className="panel-shelf panel-shelf-page panel-economy-head">
         <p className="panel-shelf-label">Economy · Экономика</p>
         <h2 className="panel-page-title">Экономика игры</h2>
-        <p className="panel-page-lead">Баланс kut, магазин dex, грядки и массовые ивенты</p>
+        <p className="panel-page-lead">Баланс кут, магазин dex, грядки и массовые ивенты</p>
         {error && <p className="panel-shelf-error">{error}</p>}
         {info && <p className="panel-users-info">{info}</p>}
       </article>
 
       <div className="panel-economy-stats">
         <article className="panel-shelf panel-economy-stat">
-          <p className="panel-shelf-label">Kut в системе</p>
+          <p className="panel-shelf-label">кут в системе</p>
           <p className="panel-economy-stat-value">{loading ? '…' : formatKut(stats?.totalKut)}</p>
           <p className="panel-shelf-muted">Сумма балансов всех игроков</p>
         </article>
@@ -332,11 +332,11 @@ export default function EconomySection() {
         </article>
 
         <article className="panel-shelf">
-          <p className="panel-shelf-label">Массовая выдача kut</p>
+          <p className="panel-shelf-label">Массовая выдача кут</p>
           <h3 className="panel-users-subtitle">Ивенты</h3>
           <div className="panel-economy-settings-form">
             <label className="panel-economy-field">
-              <span>Сумма (± kut)</span>
+              <span>Сумма (± кут)</span>
               <input
                 className="panel-users-input"
                 value={grantDelta}
@@ -396,7 +396,7 @@ export default function EconomySection() {
             {plots.map((row) => (
               <li key={row.plotId}>
                 <span>Грядка #{row.plotId}</span>
-                <strong>{formatKut(row.price)} kut</strong>
+                <strong>{formatKut(row.price)} кут</strong>
               </li>
             ))}
             {!loading && plots.length === 0 && (
@@ -440,7 +440,7 @@ export default function EconomySection() {
                 {row.username && ` @${row.username}`}
                 {row.banned && ' · ban'}
               </span>
-              <span className="panel-economy-rich-balance">{formatKut(row.balance)} kut</span>
+              <span className="panel-economy-rich-balance">{formatKut(row.balance)} кут</span>
             </li>
           ))}
           {!loading && !(stats?.topRich || []).length && (

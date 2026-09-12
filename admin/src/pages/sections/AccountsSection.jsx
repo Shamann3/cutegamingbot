@@ -361,7 +361,7 @@ export default function AccountsSection({ onOpenInUsers }) {
             </div>
             <div className="panel-account-hero-stats">
               <div>
-                <span className="panel-account-stat-label">КУТ</span>
+                <span className="panel-account-stat-label">кут</span>
                 <strong>{profile.balance?.toLocaleString('ru-RU')}</strong>
               </div>
               <div>

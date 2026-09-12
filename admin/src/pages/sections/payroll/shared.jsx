@@ -17,7 +17,7 @@ export const PERIOD_OPTIONS = [
 ]
 
 export const SALARY_PAYOUT_OPTIONS = [
-  { value: 'kut', label: 'Kut' },
+  { value: 'kut', label: 'кут' },
   { value: 'stars', label: 'Stars' },
   { value: 'crypto', label: 'Крипта' },
   { value: 'card', label: 'Карта' },

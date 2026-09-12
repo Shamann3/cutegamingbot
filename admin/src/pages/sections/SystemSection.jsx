@@ -18,7 +18,7 @@ import { filterSectionTabs } from '../../constants/panelAccessTree'
 // EXTRA_HISTORY_LABELS ниже, чтобы вкладка "История" продолжала показывать
 // человекочитаемые названия для старых и новых записей категорий economy/farm.
 const EXTRA_HISTORY_LABELS = {
-  defaultBalance: 'Стартовый баланс (kut)',
+  defaultBalance: 'Стартовый баланс (кут)',
   plotPriceStep: 'Шаг цены грядки',
   clearCost: 'Стоимость очистки грядки',
   treeGrowSeconds: 'Рост дерева (сек)',
@@ -88,7 +88,7 @@ function displayValue(key, value) {
   if (key === 'adminSessionMinutes') return `${value} мин`
   if (key.endsWith('Percent')) return `${value}%`
   if (key === 'defaultBalance' || key === 'plotPriceStep' || key === 'clearCost') {
-    return `${Number(value).toLocaleString('ru-RU')} kut`
+    return `${Number(value).toLocaleString('ru-RU')} кут`
   }
   return String(value)
 }

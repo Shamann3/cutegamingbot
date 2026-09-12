@@ -34,7 +34,7 @@ export const APPLICATION_QUESTIONS = [
 
 // Способы получения зарплаты для AdminSelect.
 export const PAYOUT_OPTIONS = [
-  { value: 'kut', label: 'Кут' },
+  { value: 'kut', label: 'кут' },
   { value: 'stars', label: 'Telegram Stars' },
   { value: 'crypto', label: 'Крипта' },
   { value: 'card', label: 'Карта / СБП' },

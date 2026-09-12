@@ -331,7 +331,7 @@ export default function FarmSection({ onOpenUser } = {}) {
               <span className="panel-shelf-muted">До 100 · #1 бесплатна</span>
             </label>
             <label className="panel-economy-field">
-              <span>Шаг цены грядки (kut)</span>
+              <span>Шаг цены грядки (кут)</span>
               <input className="panel-users-input" value={plotPriceStep} onChange={(e) => setPlotPriceStep(e.target.value.replace(/[^\d]/g, ''))} disabled={loading || saving} />
               <span className="panel-shelf-muted">#2 = 1×шаг, #3 = 2×шаг …</span>
             </label>
@@ -370,14 +370,14 @@ export default function FarmSection({ onOpenUser } = {}) {
           <h3 className="panel-users-subtitle">Предпросмотр</h3>
           <p className="panel-shelf-muted">
             {plotPreview.length
-              ? `Грядка #${plotPreview[plotPreview.length - 1].plotId} = ${plotPreview[plotPreview.length - 1].price.toLocaleString('ru-RU')} kut`
+              ? `Грядка #${plotPreview[plotPreview.length - 1].plotId} = ${plotPreview[plotPreview.length - 1].price.toLocaleString('ru-RU')} кут`
               : 'Укажите макс. грядок и шаг цены'}
           </p>
           <ul className="panel-economy-plot-list panel-farm-plot-preview">
             {plotPreview.map((row) => (
               <li key={row.plotId}>
                 <span>Грядка #{row.plotId}</span>
-                <strong>{row.price.toLocaleString('ru-RU')} kut</strong>
+                <strong>{row.price.toLocaleString('ru-RU')} кут</strong>
               </li>
             ))}
           </ul>

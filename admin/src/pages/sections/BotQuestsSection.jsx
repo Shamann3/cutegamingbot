@@ -1025,7 +1025,7 @@ export default function BotQuestsSection() {
                         <input className="bq-input" type="number" min={1} value={row.targetAmount} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, targetAmount: e.target.value } : r)))} />
                       </label>
                       <label className="bq-field">
-                        <span>Награда КУТ</span>
+                        <span>Награда кут</span>
                         <input className="bq-input" type="number" min={1} value={row.rewardAmount} onChange={(e) => setGcRows((rows) => rows.map((r) => (r.key === row.key ? { ...r, rewardAmount: e.target.value } : r)))} />
                       </label>
                     </div>

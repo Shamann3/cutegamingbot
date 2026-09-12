@@ -10,7 +10,7 @@ import {
 } from '../../../lib/adminClient'
 
 const THRESHOLD_FIELDS = [
-  ['cosignKut', 'Kut'],
+  ['cosignKut', 'кут'],
   ['cosignStars', 'Stars'],
   ['cosignCrypto', 'Крипта'],
   ['cosignCard', 'Карта'],

@@ -1155,6 +1155,10 @@ export async function fetchAdminUser(userId) {
   return adminFetch(`/users/${userId}`)
 }
 
+export async function fetchAdminUserIntel(userId) {
+  return adminFetch(`/users/${userId}/intel`)
+}
+
 export async function fetchAdminUserAudit(userId, { limit = 50, offset = 0 } = {}) {
   const params = new URLSearchParams({
     limit: String(limit),

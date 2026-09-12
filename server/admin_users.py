@@ -751,3 +751,293 @@ async def get_player_inventory(user_id: int) -> list[dict]:
                 "emoji": "📦",
             })
     return result
+
+
+def _amount_thresholds(balance: int, lifetime_in: int = 0) -> dict:
+    """Пороги «крупности» суммы относительно богатства игрока."""
+    wealth = max(int(balance or 0), int(lifetime_in or 0) // 8, 100)
+    notable = max(50, int(wealth * 0.05))
+    large = max(notable * 3, int(wealth * 0.12))
+    huge = max(large * 2, int(wealth * 0.25))
+    return {"notable": notable, "large": large, "huge": huge, "wealth": wealth}
+
+
+def _classify_amount(amount: int, thresholds: dict) -> str:
+    a = abs(int(amount or 0))
+    if a >= thresholds["huge"]:
+        return "huge"
+    if a >= thresholds["large"]:
+        return "large"
+    if a >= thresholds["notable"]:
+        return "notable"
+    return "small"
+
+
+async def get_user_intel(user_id: int) -> dict | None:
+    """Полная аналитика игрока: активность в группах, переводы, крупные суммы."""
+    profile = await get_user_admin_profile(user_id)
+    if not profile:
+        return None
+
+    balance = int(profile.get("balance") or 0)
+
+    economy = {
+        "balance": balance,
+        "donateLifetime": 0,
+        "canWithdrawal": 0,
+        "wins": 0,
+        "losses": 0,
+        "winAmount": 0,
+        "transferLimit": None,
+    }
+    try:
+        row = await db.pool.fetchrow(
+            """
+            SELECT donate, canwithdrawal, wins, loose, winamount, give
+            FROM users WHERE user_id = $1
+            """,
+            user_id,
+        )
+        if row:
+            economy["donateLifetime"] = int(row["donate"] or 0)
+            economy["canWithdrawal"] = int(row["canwithdrawal"] or 0)
+            economy["wins"] = int(row["wins"] or 0)
+            economy["losses"] = int(row["loose"] or 0)
+            economy["winAmount"] = int(row["winamount"] or 0)
+            economy["transferLimit"] = int(row["give"]) if row["give"] is not None else None
+    except Exception:
+        pass
+
+    donate_journal = {"count": 0, "total": 0}
+    try:
+        d = await db.pool.fetchrow(
+            """
+            SELECT COUNT(*)::int AS n, COALESCE(SUM(count), 0)::bigint AS total
+            FROM donate WHERE user_id = $1
+            """,
+            user_id,
+        )
+        if d:
+            donate_journal = {"count": int(d["n"] or 0), "total": int(d["total"] or 0)}
+    except Exception:
+        pass
+
+    activity_by_chat: list[dict] = []
+    total_messages = 0
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT c.chat_id,
+                   COALESCE(MAX(ch.namechat), c.chat_id::text) AS chat_name,
+                   COALESCE(MAX(ch.usernamechat), '') AS chat_username,
+                   COALESCE(SUM(c.text::bigint), 0)::bigint AS messages
+            FROM chatchange c
+            LEFT JOIN chat ch ON ch.chat_id = c.chat_id
+            WHERE c.user_id = $1
+              AND c.date >= (CURRENT_DATE - 29)
+            GROUP BY c.chat_id
+            ORDER BY messages DESC
+            LIMIT 40
+            """,
+            user_id,
+        )
+        for r in rows:
+            msgs = int(r["messages"] or 0)
+            total_messages += msgs
+            activity_by_chat.append(
+                {
+                    "chatId": int(r["chat_id"]),
+                    "chatName": r["chat_name"] or str(r["chat_id"]),
+                    "chatUsername": r["chat_username"] or None,
+                    "messages": msgs,
+                }
+            )
+    except Exception:
+        activity_by_chat = []
+        total_messages = 0
+
+    most_active = activity_by_chat[0] if activity_by_chat else None
+
+    p2p = {
+        "sentCount": 0,
+        "sentSum": 0,
+        "recvCount": 0,
+        "recvSum": 0,
+        "recent": [],
+    }
+    try:
+        agg = await db.pool.fetchrow(
+            """
+            SELECT
+              COUNT(*) FILTER (WHERE sender_id = $1)::int AS sent_n,
+              COALESCE(SUM(amount) FILTER (WHERE sender_id = $1), 0)::bigint AS sent_sum,
+              COUNT(*) FILTER (WHERE receiver_id = $1)::int AS recv_n,
+              COALESCE(SUM(amount) FILTER (WHERE receiver_id = $1), 0)::bigint AS recv_sum
+            FROM p2p_transfers
+            WHERE sender_id = $1 OR receiver_id = $1
+            """,
+            user_id,
+        )
+        if agg:
+            p2p["sentCount"] = int(agg["sent_n"] or 0)
+            p2p["sentSum"] = int(agg["sent_sum"] or 0)
+            p2p["recvCount"] = int(agg["recv_n"] or 0)
+            p2p["recvSum"] = int(agg["recv_sum"] or 0)
+
+        trows = await db.pool.fetch(
+            """
+            SELECT t.id, t.sender_id, t.receiver_id, t.amount, t.cause, t.created_at,
+                   su.username AS sender_username,
+                   COALESCE(su.display_name, su.first_name) AS sender_name,
+                   ru.username AS receiver_username,
+                   COALESCE(ru.display_name, ru.first_name) AS receiver_name
+            FROM p2p_transfers t
+            LEFT JOIN users su ON su.user_id = t.sender_id
+            LEFT JOIN users ru ON ru.user_id = t.receiver_id
+            WHERE t.sender_id = $1 OR t.receiver_id = $1
+            ORDER BY t.created_at DESC, t.id DESC
+            LIMIT 40
+            """,
+            user_id,
+        )
+        for t in trows:
+            direction = "out" if int(t["sender_id"]) == user_id else "in"
+            cp_id = int(t["receiver_id"] if direction == "out" else t["sender_id"])
+            p2p["recent"].append(
+                {
+                    "id": int(t["id"]),
+                    "direction": direction,
+                    "amount": int(t["amount"] or 0),
+                    "cause": t["cause"] or "",
+                    "createdAt": t["created_at"].isoformat() if t["created_at"] else None,
+                    "counterparty": {
+                        "userId": cp_id,
+                        "name": (t["receiver_name"] if direction == "out" else t["sender_name"])
+                        or str(cp_id),
+                        "username": t["receiver_username"]
+                        if direction == "out"
+                        else t["sender_username"],
+                    },
+                }
+            )
+    except Exception:
+        pass
+
+    lifetime_in = p2p["recvSum"] + donate_journal["total"] + economy["donateLifetime"]
+    thresholds = _amount_thresholds(balance, lifetime_in)
+
+    significant_moves: list[dict] = []
+    try:
+        crow = await db.pool.fetch(
+            """
+            SELECT id, "+" AS plus, "-" AS minus, cause, balance, transfer_id, chat_id, data
+            FROM cutehistory
+            WHERE user_id = $1
+            ORDER BY id DESC
+            LIMIT 120
+            """,
+            user_id,
+        )
+        for r in crow:
+            plus = int(r["plus"] or 0)
+            minus = int(r["minus"] or 0)
+            direction = "in" if plus else "out"
+            amount = plus if direction == "in" else minus
+            level = _classify_amount(amount, thresholds)
+            if level == "small":
+                continue
+            significant_moves.append(
+                {
+                    "id": int(r["id"]),
+                    "direction": direction,
+                    "amount": amount,
+                    "cause": r["cause"] or "",
+                    "balanceAfter": int(r["balance"]) if r["balance"] is not None else None,
+                    "level": level,
+                    "isTransfer": r["transfer_id"] is not None,
+                    "chatId": int(r["chat_id"]) if r["chat_id"] is not None else None,
+                    "when": r["data"],
+                }
+            )
+            if len(significant_moves) >= 25:
+                break
+    except Exception:
+        significant_moves = []
+
+    for item in p2p["recent"]:
+        item["level"] = _classify_amount(item["amount"], thresholds)
+
+    item_trades = 0
+    try:
+        item_trades = int(
+            await db.pool.fetchval(
+                """
+                SELECT COUNT(*)::int FROM cutehistory
+                WHERE user_id = $1 AND cause = 'передача предметов'
+                """,
+                user_id,
+            )
+            or 0
+        )
+    except Exception:
+        item_trades = 0
+
+    cute_preview = {"total": 0, "items": [], "donations": donate_journal}
+    try:
+        from admin_cute_history import get_user_cute_history
+
+        cute_preview = await get_user_cute_history(user_id, limit=25, offset=0)
+        if isinstance(cute_preview, dict):
+            cute_preview["donations"] = cute_preview.get("donations") or donate_journal
+            for it in cute_preview.get("items") or []:
+                it["level"] = _classify_amount(it.get("amount") or 0, thresholds)
+    except Exception:
+        cute_preview = {"total": 0, "items": [], "donations": donate_journal}
+
+    quests = None
+    try:
+        quests = await get_player_quest_info(user_id)
+    except Exception:
+        quests = None
+
+    bans = []
+    try:
+        bans = await get_player_ban_history(user_id)
+    except Exception:
+        bans = []
+
+    notes = []
+    try:
+        notes = await list_player_notes(user_id)
+    except Exception:
+        notes = []
+
+    editable = {
+        "balance": True,
+        "items": True,
+        "ban": True,
+        "unban": True,
+        "onboardingReset": True,
+        "notes": True,
+        "farmReset": True,
+    }
+
+    return {
+        "profile": profile,
+        "economy": {**economy, "donateJournal": donate_journal},
+        "thresholds": thresholds,
+        "activity30d": {
+            "totalMessages": total_messages,
+            "chatCount": len(activity_by_chat),
+            "byChat": activity_by_chat,
+            "mostActive": most_active,
+        },
+        "p2p": p2p,
+        "significantMoves": significant_moves,
+        "cuteRecent": cute_preview,
+        "itemTrades": {"count": item_trades},
+        "quests": quests,
+        "bans": bans if isinstance(bans, list) else bans,
+        "notes": notes if isinstance(notes, list) else notes,
+        "editable": editable,
+    }

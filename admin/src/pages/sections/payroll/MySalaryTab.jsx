@@ -102,7 +102,7 @@ export default function PayrollMySalaryTab() {
             </div>
 
             {current.status === 'paid' && current.txid === 'kut-self-claim' && (
-              <p className="payroll-hint">Получено в kut на игровой баланс</p>
+              <p className="payroll-hint">Получено в кут на игровой баланс</p>
             )}
             {current.status === 'paid' && current.txid && current.txid !== 'kut-self-claim' && (
               <p className="payroll-hint">Выплачено · TXID: {current.txid}</p>
@@ -118,7 +118,7 @@ export default function PayrollMySalaryTab() {
                   try {
                     const r = await claimKutSalary()
                     await load()
-                    alert(`Получено ${r.amount} kut`)
+                    alert(`Получено ${r.amount} кут`)
                   } catch (err) {
                     alert(err?.message || 'Ошибка')
                   } finally {
@@ -126,7 +126,7 @@ export default function PayrollMySalaryTab() {
                   }
                 }}
               >
-                Получить {remainingKut} kut
+                Получить {remainingKut} кут
               </button>
             )}
 
@@ -164,7 +164,7 @@ export default function PayrollMySalaryTab() {
                 try {
                   const r = await claimKutBonus()
                   await load()
-                  alert(`Премия ${r.amount} kut получена`)
+                  alert(`Премия ${r.amount} кут получена`)
                 } catch (e) {
                   alert(e?.message || 'Ошибка')
                 } finally {

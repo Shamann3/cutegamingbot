@@ -8,6 +8,7 @@ import {
   fetchAdminUser,
   fetchAdminUserAudit,
   fetchAdminUserCuteHistory,
+  fetchAdminUserIntel,
   fetchContentDex,
   fetchPlayerBans,
   fetchPlayerInventory,
@@ -44,11 +45,255 @@ const PLOT_SLOTS_FALLBACK = 8
 
 const PROFILE_TABS = [
   { id: 'profile', label: 'Профиль' },
+  { id: 'intel', label: 'Аналитика' },
+  { id: 'transfers', label: 'Переводы' },
   { id: 'quests', label: 'Квесты' },
   { id: 'bans', label: 'Баны' },
   { id: 'inventory', label: 'Инвентарь' },
   { id: 'notes', label: 'Заметки' },
 ]
+
+const LEVEL_LABELS = {
+  huge: 'огромная',
+  large: 'крупная',
+  notable: 'заметная',
+  small: 'обычная',
+}
+
+function formatKutAmount(n) {
+  const v = Number(n) || 0
+  return `${v.toLocaleString('ru-RU')} кут`
+}
+
+function EmptyHint({ children }) {
+  return <p className="panel-users-empty-hint">{children}</p>
+}
+
+function PlayerIntelOverview({ intel, onOpenUser }) {
+  if (!intel) {
+    return (
+      <article className="panel-shelf panel-users-card pu-intel-card pu-intel-loading">
+        <p className="panel-shelf-muted">Собираю аналитику игрока…</p>
+      </article>
+    )
+  }
+
+  const act = intel.activity30d || {}
+  const byChat = act.byChat || []
+  const most = act.mostActive
+  const maxMsg = Math.max(1, ...byChat.map((c) => c.messages || 0))
+  const thr = intel.thresholds || {}
+  const eco = intel.economy || {}
+  const moves = intel.significantMoves || []
+  const p2p = intel.p2p || {}
+
+  return (
+    <div className="pu-intel-stack">
+      <article className="panel-shelf panel-users-card pu-intel-card">
+        <div className="pu-bento-head">
+          <div>
+            <p className="panel-shelf-label">Активность · 30 дней</p>
+            <h3 className="panel-users-subtitle panel-users-subtitle-tight">Сообщения в группах</h3>
+          </div>
+          <span className="pu-bento-chip">{act.totalMessages?.toLocaleString('ru-RU') || 0}</span>
+        </div>
+
+        {most ? (
+          <div className="pu-intel-highlight">
+            <span className="pu-intel-highlight-kicker">Самая активная группа</span>
+            <strong>{most.chatName}</strong>
+            <em>{most.messages.toLocaleString('ru-RU')} сообщений</em>
+          </div>
+        ) : (
+          <p className="panel-shelf-muted">За 30 дней сообщений в группах нет</p>
+        )}
+
+        {byChat.length > 0 && (
+          <ul className="pu-intel-bars">
+            {byChat.slice(0, 8).map((c) => (
+              <li key={c.chatId}>
+                <div className="pu-intel-bar-meta">
+                  <span className="pu-intel-bar-name">{c.chatName}</span>
+                  <span className="pu-intel-bar-val">{c.messages.toLocaleString('ru-RU')}</span>
+                </div>
+                <div className="pu-intel-bar-track">
+                  <span style={{ width: `${Math.max(4, (c.messages / maxMsg) * 100)}%` }} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </article>
+
+      <article className="panel-shelf panel-users-card pu-intel-card">
+        <div className="pu-bento-head">
+          <div>
+            <p className="panel-shelf-label">Экономика под игрока</p>
+            <h3 className="panel-users-subtitle panel-users-subtitle-tight">Масштаб сумм</h3>
+          </div>
+        </div>
+        <div className="pu-intel-thresholds">
+          <div>
+            <span>Заметная</span>
+            <strong>≥ {formatKutAmount(thr.notable)}</strong>
+          </div>
+          <div>
+            <span>Крупная</span>
+            <strong>≥ {formatKutAmount(thr.large)}</strong>
+          </div>
+          <div>
+            <span>Огромная</span>
+            <strong>≥ {formatKutAmount(thr.huge)}</strong>
+          </div>
+        </div>
+        <p className="pu-intel-note">
+          Пороги считаются от богатства игрока (~{formatKutAmount(thr.wealth)}):
+          мелкие суммы для богатых не подсвечиваются.
+        </p>
+        <div className="pu-intel-eco-grid">
+          <div><span>Донаты</span><strong>{formatKutAmount(eco.donateLifetime || eco.donateJournal?.total || 0)}</strong></div>
+          <div><span>Побед</span><strong>{eco.wins ?? 0}</strong></div>
+          <div><span>Поражений</span><strong>{eco.losses ?? 0}</strong></div>
+          <div><span>Выиграно</span><strong>{formatKutAmount(eco.winAmount || 0)}</strong></div>
+        </div>
+      </article>
+
+      <article className="panel-shelf panel-users-card pu-intel-card">
+        <div className="pu-bento-head">
+          <div>
+            <p className="panel-shelf-label">Крупные движения</p>
+            <h3 className="panel-users-subtitle panel-users-subtitle-tight">Где много кут</h3>
+          </div>
+          <span className="pu-bento-chip">{moves.length}</span>
+        </div>
+        {moves.length === 0 ? (
+          <p className="panel-shelf-muted">Крупных операций относительно баланса нет</p>
+        ) : (
+          <ul className="pu-intel-moves">
+            {moves.slice(0, 12).map((m) => (
+              <li key={m.id} className={`pu-intel-move pu-level-${m.level}`}>
+                <div className="pu-intel-move-top">
+                  <span className={`pu-dir ${m.direction}`}>{m.direction === 'in' ? '+' : '−'}{m.amount.toLocaleString('ru-RU')}</span>
+                  <span className="pu-level-pill">{LEVEL_LABELS[m.level] || m.level}</span>
+                </div>
+                <p>{m.cause || 'без причины'}</p>
+                {m.when && <time>{m.when}</time>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </article>
+
+      <article className="panel-shelf panel-users-card pu-intel-card">
+        <div className="pu-bento-head">
+          <div>
+            <p className="panel-shelf-label">P2P переводы</p>
+            <h3 className="panel-users-subtitle panel-users-subtitle-tight">Кому и от кого</h3>
+          </div>
+        </div>
+        <div className="pu-intel-p2p-summary">
+          <div>
+            <span>Отправлено</span>
+            <strong>{formatKutAmount(p2p.sentSum)} · {p2p.sentCount || 0} шт</strong>
+          </div>
+          <div>
+            <span>Получено</span>
+            <strong>{formatKutAmount(p2p.recvSum)} · {p2p.recvCount || 0} шт</strong>
+          </div>
+        </div>
+        {(p2p.recent || []).length === 0 ? (
+          <p className="panel-shelf-muted">Переводов пока нет</p>
+        ) : (
+          <ul className="pu-intel-transfers">
+            {p2p.recent.slice(0, 10).map((t) => (
+              <li key={t.id} className={`pu-level-${t.level || 'small'}`}>
+                <button
+                  type="button"
+                  className="pu-cp-link"
+                  onClick={() => onOpenUser?.(t.counterparty?.userId)}
+                >
+                  {t.direction === 'out' ? '→' : '←'}{' '}
+                  {t.counterparty?.username ? `@${t.counterparty.username}` : t.counterparty?.name}
+                </button>
+                <strong className={t.direction === 'out' ? 'pu-out' : 'pu-in'}>
+                  {t.direction === 'out' ? '−' : '+'}{formatKutAmount(t.amount)}
+                </strong>
+                <span className="pu-cause">{t.cause || 'перевод'}</span>
+                <time>{t.createdAt ? formatDate(t.createdAt) : ''}</time>
+              </li>
+            ))}
+          </ul>
+        )}
+        {(intel.itemTrades?.count > 0) && (
+          <p className="pu-intel-note">Сделок с предметами (по истории): {intel.itemTrades.count}</p>
+        )}
+      </article>
+    </div>
+  )
+}
+
+function PlayerTransfersPanel({ intel, onOpenUser }) {
+  const recent = intel?.p2p?.recent || []
+  const cute = (intel?.cuteRecent?.items || []).filter((it) => it.kind === 'transfer' || it.cause === 'передача предметов')
+
+  return (
+    <div className="pu-transfers-panel">
+      <div className="pu-bento-head">
+        <div>
+          <p className="panel-shelf-label">История</p>
+          <h3 className="panel-users-subtitle">Переводы кут и предметов</h3>
+        </div>
+      </div>
+
+      <h4 className="pu-section-title">Переводы кут (P2P)</h4>
+      {recent.length === 0 ? (
+        <p className="panel-shelf-muted">Нет P2P-переводов</p>
+      ) : (
+        <ul className="pu-intel-transfers pu-intel-transfers-full">
+          {recent.map((t) => (
+            <li key={t.id} className={`pu-level-${t.level || 'small'}`}>
+              <button type="button" className="pu-cp-link" onClick={() => onOpenUser?.(t.counterparty?.userId)}>
+                {t.direction === 'out' ? 'Отправил' : 'Получил от'}{' '}
+                {t.counterparty?.username ? `@${t.counterparty.username}` : t.counterparty?.name}
+                <em> · id {t.counterparty?.userId}</em>
+              </button>
+              <strong className={t.direction === 'out' ? 'pu-out' : 'pu-in'}>
+                {t.direction === 'out' ? '−' : '+'}{formatKutAmount(t.amount)}
+              </strong>
+              <span className="pu-cause">{t.cause || 'без комментария'}</span>
+              <time>{t.createdAt ? formatDate(t.createdAt) : ''}</time>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h4 className="pu-section-title">Из истории кут (в т.ч. предметы)</h4>
+      {cute.length === 0 ? (
+        <p className="panel-shelf-muted">Нет связанных записей</p>
+      ) : (
+        <ul className="pu-intel-moves">
+          {cute.map((it, idx) => (
+            <li key={`${it.ts}-${idx}`} className={`pu-intel-move pu-level-${it.level || 'small'}`}>
+              <div className="pu-intel-move-top">
+                <span className={`pu-dir ${it.direction}`}>
+                  {it.direction === 'in' ? '+' : '−'}{Number(it.amount || 0).toLocaleString('ru-RU')} кут
+                </span>
+                <span className="pu-level-pill">{it.kind === 'transfer' ? 'перевод' : (LEVEL_LABELS[it.level] || 'запись')}</span>
+              </div>
+              <p>{it.cause || '—'}</p>
+              {it.counterparty && (
+                <button type="button" className="pu-cp-link" onClick={() => onOpenUser?.(it.counterparty.userId)}>
+                  {it.counterparty.username ? `@${it.counterparty.username}` : it.counterparty.name}
+                </button>
+              )}
+              {it.ts && <time>{formatDate(it.ts)}</time>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 const PERIOD_LABELS = { hourly: 'Часовые', daily: 'Дневные', weekly: 'Недельные' }
 
@@ -65,10 +310,6 @@ function initialsFromName(name) {
   const parts = String(name || '?').trim().split(/\s+/).filter(Boolean)
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
   return (parts[0]?.[0] || '?').toUpperCase()
-}
-
-function EmptyHint({ children }) {
-  return <p className="panel-users-empty-hint">{children}</p>
 }
 
 // ---------------------------------------------------------------------------
@@ -603,7 +844,7 @@ function CuteHistoryFeed({ userId }) {
 
       {donations && (
         <div className="pu-cute-donations">
-          💜 Донаты: {donations.count} шт · {donations.total.toLocaleString('ru-RU')} kut
+          💜 Донаты: {donations.count} шт · {donations.total.toLocaleString('ru-RU')} кут
           <span className="pu-cute-donations-hint"> (без дат — таблица их не хранит)</span>
         </div>
       )}
@@ -624,7 +865,7 @@ function CuteHistoryFeed({ userId }) {
               <time className="panel-users-audit-time">{formatDate(it.ts)}</time>
             </div>
             <p className={`panel-users-audit-amount ${it.direction === 'in' ? 'pu-cute-in' : 'pu-cute-out'}`}>
-              {it.direction === 'in' ? '+' : '−'}{Math.abs(it.amount)} kut
+              {it.direction === 'in' ? '+' : '−'}{Math.abs(it.amount)} кут
             </p>
             {it.balance != null && (
               <p className="panel-shelf-muted">Баланс: {it.balance}</p>
@@ -679,6 +920,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
   const [results, setResults] = useState([])
   const [profile, setProfile] = useState(null)
   const [audit, setAudit] = useState(null)
+  const [intel, setIntel] = useState(null)
   const [loading, setLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState('')
@@ -729,6 +971,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
     setResults([])
     setError('')
     setProfileTab('profile')
+    setIntel(null)
     try {
       const [userData, auditData] = await Promise.all([
         fetchAdminUser(userId),
@@ -740,13 +983,24 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
       setResults([])
       setBanPhotoIds([])
       setUnbanPhotoIds([])
+      setLoading(false)
+
+      fetchAdminUserIntel(userId)
+        .then((intelData) => {
+          if (reqId !== loadReqRef.current) return
+          setIntel(intelData)
+        })
+        .catch(() => {
+          if (reqId !== loadReqRef.current) return
+          setIntel(null)
+        })
     } catch (err) {
       if (reqId !== loadReqRef.current) return
       setError(err.message || 'Не удалось загрузить игрока')
       setProfile(null)
       setAudit(null)
-    } finally {
-      if (reqId === loadReqRef.current) setLoading(false)
+      setIntel(null)
+      setLoading(false)
     }
   }, [])
 
@@ -947,7 +1201,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                     {row.username && ` @${row.username}`}
                   </span>
                   <span className="panel-users-result-meta">
-                    ID {row.userId} · {row.balance} kut
+                    ID {row.userId} · {row.balance} кут
                     {row.banned && ' · забанен'}
                   </span>
                 </button>
@@ -985,6 +1239,12 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
         {/* ── Вкладки не-профиль: контент на всю ширину ── */}
         {hasProfile && profileTab !== 'profile' && (
           <article className="panel-shelf panel-users-card pu-tab-content-full">
+            {profileTab === 'intel' && (
+              <PlayerIntelOverview intel={intel} onOpenUser={(id) => id && loadUser(id)} />
+            )}
+            {profileTab === 'transfers' && (
+              <PlayerTransfersPanel intel={intel} onOpenUser={(id) => id && loadUser(id)} />
+            )}
             {profileTab === 'quests' && <QuestsTab userId={profile.userId} />}
             {profileTab === 'bans' && <BansTab userId={profile.userId} />}
             {profileTab === 'inventory' && <InventoryTab userId={profile.userId} />}
@@ -1022,7 +1282,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
           </div>
 
           <div className="pu-hero-balance">
-            <span className="pu-hero-balance-label">Баланс Kut</span>
+            <span className="pu-hero-balance-label">Баланс кут</span>
             <strong className={`pu-hero-balance-value${!hasProfile ? ' panel-users-placeholder' : ''}`}>
               {hasProfile ? profile.balance?.toLocaleString('ru-RU') : '—'}
             </strong>
@@ -1121,6 +1381,10 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
         )}
 
         <div className={`panel-users-right${hasProfile && profileTab !== 'profile' ? ' pu-hidden' : ''}`}>
+          {hasProfile && (
+            <PlayerIntelOverview intel={intel} onOpenUser={(id) => id && loadUser(id)} />
+          )}
+
           <article className="panel-shelf panel-users-card panel-users-inventory-card pu-inv-card">
             <div className="pu-bento-head">
               <div>
@@ -1188,7 +1452,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 <div className="pu-action-tile-top">
                   <span className="pu-action-ico" aria-hidden>◈</span>
                   <div>
-                    <p className="panel-users-action-title">Баланс Kut</p>
+                    <p className="panel-users-action-title">Баланс кут</p>
                     <p className="pu-action-hint">Начислить или списать</p>
                   </div>
                 </div>
@@ -1520,7 +1784,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                         {ev.amount != null && (
                           <p className="panel-users-audit-amount">
                             {ev.amount > 0 ? '+' : ''}
-                            {ev.amount} kut
+                            {ev.amount} кут
                           </p>
                         )}
                         {ev.balanceBefore != null && ev.balanceAfter != null && (

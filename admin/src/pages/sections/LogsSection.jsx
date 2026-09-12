@@ -70,7 +70,7 @@ function AuditCard({ row }) {
         <div className="panel-log-balance">
           {row.amount != null && row.amount !== 0 && (
             <span className={row.amount > 0 ? 'panel-log-delta-plus' : 'panel-log-delta-minus'}>
-              {row.amount > 0 ? '+' : ''}{formatKut(row.amount)} КУТ
+              {row.amount > 0 ? '+' : ''}{formatKut(row.amount)} кут
             </span>
           )}
           {row.balanceBefore != null && row.balanceAfter != null && (
@@ -93,7 +93,7 @@ function TransferCard({ row }) {
       </div>
 
       <p className="panel-log-summary">
-        ID {row.senderId} → ID {row.receiverId} · <strong>{formatKut(row.amount)} КУТ</strong>
+        ID {row.senderId} → ID {row.receiverId} · <strong>{formatKut(row.amount)} кут</strong>
       </p>
 
       <div className="panel-log-balance">

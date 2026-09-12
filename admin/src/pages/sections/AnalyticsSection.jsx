@@ -638,7 +638,7 @@ function MarketTab({ days, onDaysChange }) {
               <StatRow label="Сделок совершено" value={fmtNum(data.totals.soldCount)} />
               <StatRow label="Активных лотов" value={fmtNum(data.totals.activeCount)} />
               <StatRow label="Отменено" value={fmtNum(data.totals.cancelledCount)} />
-              <StatRow label="Общий объём" value={`${fmtNum(data.totals.totalVolume)} КУТ`} />
+              <StatRow label="Общий объём" value={`${fmtNum(data.totals.totalVolume)} кут`} />
             </div>
           </SectionCard>
 
@@ -665,7 +665,7 @@ function MarketTab({ days, onDaysChange }) {
             </SectionCard>
           )}
 
-          <SectionCard title="Топ предметов по объёму (КУТ)">
+          <SectionCard title="Топ предметов по объёму (кут)">
             <BarChart
               data={data.topItems.slice(0, 12)}
               valueKey="totalKut"
@@ -687,7 +687,7 @@ function MarketTab({ days, onDaysChange }) {
                       <tr key={r.sellerId}>
                         <td>{r.sellerId}</td>
                         <td>{fmtNum(r.transactions)}</td>
-                        <td>{fmtNum(r.totalKut)} КУТ</td>
+                        <td>{fmtNum(r.totalKut)} кут</td>
                       </tr>
                     ))}
                   </tbody>

@@ -399,9 +399,10 @@
   width: 55%;
   height: 120%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(var(--e-accent-rgb), 0.45), transparent 70%);
+  background: radial-gradient(circle, rgba(var(--e-accent-rgb), 0.4), transparent 70%);
   pointer-events: none;
-  animation: pu-glow-pulse 4.5s ease-in-out infinite;
+  opacity: 0.55;
+  animation: none;
 }
 
 .panel-users .panel-users-stats {
@@ -836,10 +837,17 @@
   }
 
   .panel-users .panel-users-profile-card {
-    grid-column: 1;
-    position: sticky;
-    top: 0.35rem;
-  }
+  grid-column: 1;
+  position: sticky !important;
+  top: 0.5rem !important;
+  z-index: 3;
+  align-self: start;
+  max-height: calc(100vh - 6.5rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  animation: none !important;
+  transform: none !important;
+}
 
   .panel-users .panel-users-right {
     grid-column: 2;
@@ -873,3 +881,273 @@
     animation: none !important;
   }
 }
+
+/* ---------- Intel / analytics ---------- */
+
+.pu-intel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  animation: pu-rise 0.42s var(--e-ease) both;
+}
+
+.pu-intel-card {
+  padding: 1rem 1.05rem !important;
+}
+
+.pu-intel-loading {
+  min-height: 4rem;
+  display: flex;
+  align-items: center;
+}
+
+.pu-intel-highlight {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.85rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid rgba(var(--e-accent-rgb), 0.35);
+  background:
+    radial-gradient(ellipse 80% 120% at 0% 0%, rgba(var(--e-accent-rgb), 0.28), transparent 55%),
+    rgba(0, 0, 0, 0.35);
+}
+
+.pu-intel-highlight-kicker {
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--e-text-4);
+}
+
+.pu-intel-highlight strong {
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  color: var(--e-text);
+}
+
+.pu-intel-highlight em {
+  font-style: normal;
+  font-size: 0.8rem;
+  color: var(--e-accent-bright);
+}
+
+.pu-intel-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.pu-intel-bar-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.2rem;
+  font-size: 0.78rem;
+}
+
+.pu-intel-bar-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--e-text-2);
+}
+
+.pu-intel-bar-val {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--e-text-3);
+}
+
+.pu-intel-bar-track {
+  height: 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.pu-intel-bar-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(var(--e-accent-rgb), 0.45), var(--e-accent));
+  transition: width 0.55s var(--e-ease);
+}
+
+.pu-intel-thresholds,
+.pu-intel-eco-grid,
+.pu-intel-p2p-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 0.65rem;
+}
+
+.pu-intel-eco-grid,
+.pu-intel-p2p-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pu-intel-thresholds > div,
+.pu-intel-eco-grid > div,
+.pu-intel-p2p-summary > div {
+  padding: 0.65rem 0.7rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pu-intel-thresholds span,
+.pu-intel-eco-grid span,
+.pu-intel-p2p-summary span {
+  display: block;
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--e-text-4);
+  margin-bottom: 0.2rem;
+}
+
+.pu-intel-thresholds strong,
+.pu-intel-eco-grid strong,
+.pu-intel-p2p-summary strong {
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--e-text);
+}
+
+.pu-intel-note {
+  margin: 0 0 0.7rem;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--e-text-4);
+}
+
+.pu-intel-moves,
+.pu-intel-transfers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.pu-intel-transfers-full {
+  max-height: none;
+}
+
+.pu-intel-move,
+.pu-intel-transfers > li {
+  padding: 0.65rem 0.75rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pu-intel-move-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.pu-dir {
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+}
+.pu-dir.in, .pu-in { color: #6ef0ad; }
+.pu-dir.out, .pu-out { color: #ff8a93; }
+
+.pu-level-pill {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--e-text-3);
+}
+
+.pu-level-huge {
+  border-color: rgba(255, 180, 70, 0.45) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 180, 70, 0.15);
+}
+.pu-level-large {
+  border-color: rgba(var(--e-accent-rgb), 0.4) !important;
+}
+.pu-level-notable {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.pu-intel-move p,
+.pu-cause {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--e-text-3);
+}
+
+.pu-intel-move time,
+.pu-intel-transfers time {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--e-text-4);
+}
+
+.pu-intel-transfers > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) auto;
+  gap: 0.2rem 0.6rem;
+  align-items: baseline;
+}
+
+.pu-intel-transfers .pu-cause,
+.pu-intel-transfers time {
+  grid-column: 1 / -1;
+}
+
+.pu-cp-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-align: left;
+  color: var(--e-accent-bright);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.pu-cp-link:hover {
+  text-decoration: underline;
+}
+
+.pu-cp-link em {
+  font-style: normal;
+  color: var(--e-text-4);
+  font-size: 0.72rem;
+}
+
+.pu-section-title {
+  margin: 1rem 0 0.55rem;
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--e-text-2);
+}
+
+.pu-transfers-panel {
+  animation: pu-rise 0.4s var(--e-ease) both;
+}
+
+@media (max-width: 720px) {
+  .pu-intel-thresholds {
+    grid-template-columns: 1fr;
+  }
+}
+

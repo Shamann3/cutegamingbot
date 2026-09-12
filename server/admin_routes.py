@@ -143,6 +143,7 @@ from admin_users import (
     get_player_quest_info,
     get_user_admin_profile,
     get_user_audit_history,
+    get_user_intel,
     list_player_notes,
     search_users,
     upsert_player_note,
@@ -3267,6 +3268,17 @@ async def admin_user_profile(
     if not profile:
         raise HTTPException(status_code=404, detail="Игрок не найден")
     return _strip_player_sensitive(request, profile)
+
+
+@router.get("/users/{target_user_id}/intel")
+async def admin_user_intel(
+    target_user_id: int,
+    _admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    intel = await get_user_intel(target_user_id)
+    if not intel:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+    return intel
 
 
 @router.get("/accounts/recent")

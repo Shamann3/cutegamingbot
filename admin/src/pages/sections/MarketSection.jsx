@@ -241,7 +241,7 @@ export default function MarketSection() {
             {suspicious.map((row) => (
               <li key={row.listingId}>
                 <span>
-                  #{row.listingId} {row.emoji} {row.itemName} - {formatKut(row.price)} kut
+                  #{row.listingId} {row.emoji} {row.itemName} - {formatKut(row.price)} кут
                 </span>
                 <span className={`panel-market-flag panel-market-flag-${row.suspiciousReason}`}>
                   {suspiciousLabel(row.suspiciousReason)}

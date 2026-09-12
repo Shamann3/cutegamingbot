@@ -17,7 +17,7 @@ const RARITY_OPTIONS = [
 ]
 
 const PRIZE_TYPE_OPTIONS = [
-  { value: 'kut', label: 'КУТ (автоначисление)' },
+  { value: 'kut', label: 'кут (автоначисление)' },
   { value: 'manual', label: 'NFT / подарок (вручную)' },
 ]
 
@@ -32,7 +32,7 @@ const DRAW_TYPE_OPTIONS = [
 ]
 
 const CONDITION_KIND_OPTIONS = [
-  { value: 'balance', label: 'Баланс КУТ ≥' },
+  { value: 'balance', label: 'Баланс кут ≥' },
   { value: 'harvest_count', label: 'Урожаев собрано ≥' },
   { value: 'item_count', label: 'Предмет в рюкзаке ≥' },
   { value: 'channel_sub', label: 'Подписка на Telegram-канал' },
@@ -324,7 +324,7 @@ export default function GiveawaysSection() {
             </label>
             {form.prizeType === 'kut' ? (
               <label className="admin-modal-field">
-                <span>Сумма КУТ</span>
+                <span>Сумма кут</span>
                 <input className="panel-users-input" type="number" min={1} value={form.prizeKutAmount} onChange={(e) => setForm({ ...form, prizeKutAmount: e.target.value })} />
               </label>
             ) : (

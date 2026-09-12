@@ -1001,7 +1001,7 @@ export default function BroadcastSection({ panelTabs = null }) {
                 Пример: {preview.sampleUser?.displayName}
                 {preview.sampleUser?.username && ` @${preview.sampleUser.username}`}
                 {' · '}
-                {preview.sampleUser?.balance} КУТ
+                {preview.sampleUser?.balance} кут
               </p>
               <div className="panel-broadcast-preview-web">
                 <p className="panel-broadcast-preview-title">{preview.webapp?.title}</p>
@@ -1037,11 +1037,11 @@ export default function BroadcastSection({ panelTabs = null }) {
               {audience === 'filtered' && (
                 <>
                   <label className="panel-economy-field">
-                    <span>Мин. баланс КУТ</span>
+                    <span>Мин. баланс кут</span>
                     <input className="panel-users-input" value={minBalance} onChange={(e) => setMinBalance(e.target.value.replace(/[^\d]/g, ''))} />
                   </label>
                   <label className="panel-economy-field">
-                    <span>Макс. баланс КУТ</span>
+                    <span>Макс. баланс кут</span>
                     <input className="panel-users-input" value={maxBalance} onChange={(e) => setMaxBalance(e.target.value.replace(/[^\d]/g, ''))} />
                   </label>
                   <label className="panel-market-check">
