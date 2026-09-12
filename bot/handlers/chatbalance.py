@@ -1169,6 +1169,45 @@ async def gbl_more_handler(callback_query: CallbackQuery):
                     pass
             # message not editable → fall through to new DM
 
+    # ГРУППА: предложение появляется СРАЗУ ЖЕ в группе (не улетает в ЛС) -
+    # ответом на анонс, адресованным конкретному нажавшему по имени.
+    # ВАЖНО (изоляция пользователей): это НОВОЕ отдельное сообщение со своим
+    # message_id, а не редактирование общего анонса на глазах у всей группы -
+    # поэтому нажатия разных людей никогда не путают и не перебивают друг
+    # друга. Дальнейшие кнопки на этом сообщении (gbl_pay/gbl_more_close)
+    # уже защищены тем же user_message_balance_chat[user_id] == message_id,
+    # которым проверяются все остальные gbl_*-хендлеры в этом файле - если
+    # кто-то другой в группе нажмёт по чужому "личному" сообщению, гейт его
+    # отклонит с обычной вежливой отговоркой, ничьё состояние не тронется.
+    if msg:
+        try:
+            clicker_name = html.escape(
+                (callback_query.from_user.full_name or "Игрок").strip() or "Игрок"
+            )
+            clicker_link = f"<a href='tg://user?id={user_id}'>{clicker_name}</a>"
+            personal_text = f"{clicker_link}, вот варианты для вас:\n\n{text}"
+            sent = await msg.reply(
+                personal_text, reply_markup=kb, parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            user_message_balance_chat[user_id] = sent.message_id
+            return
+        except Exception as e:
+            err = str(e)
+            if "DOCUMENT_INVALID" in err or "can't parse" in err.lower():
+                try:
+                    sent = await msg.reply(
+                        strip_tg_emoji(personal_text), reply_markup=kb, parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                    user_message_balance_chat[user_id] = sent.message_id
+                    return
+                except Exception as e2:
+                    print(f"[GBL] gbl_more group reply(strip) fail: {e2!r}")
+            else:
+                print(f"[GBL] gbl_more group reply fail: {e!r}")
+            # не получилось ответить в группе (нет прав и т.п.) → пробуем ЛС
+
     try:
         sent = await bot1.send_message(
             chat_id=user_id,

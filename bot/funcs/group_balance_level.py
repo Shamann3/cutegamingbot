@@ -1868,10 +1868,10 @@ def build_pay_dm_bridge_html(
         f"{gbl_tg('🏆')} <b>Почти готово</b>\n"
         f"<i>оплата — и лимит выше для всех</i>\n\n"
         f"{group_bit}"
-        f"«<b>{role}</b>» · ★{from_level}→★{to_level}{steps_bit}\n"
+        f"«<b>{role}</b>» · ★{from_level} → <b>★{to_level}</b>{steps_bit}\n"
         f"лимит {gain['from_to_delta_html']}\n"
         f"{why}\n\n"
-        f"{price_line} · метка «<b>{title}</b>»\n"
+        f"<blockquote>{price_line} · метка «<b>{title}</b>»</blockquote>\n"
         f"<i>{social_proof_line()}</i>\n\n"
         f"дальше — ЛС на <b>{int(price)}⭐</b>\n"
         f"<i>Stars ≠ личные куты</i>"
@@ -2161,14 +2161,16 @@ def build_gift_announcement_html(
         else social_proof_line()
     )
     ach = (achievements_html or "").strip()
-    ach_bit = f"\n\n{ach}" if ach else ""
+    ach_bit = f"\n{ach}" if ach else ""
+    # «Карточка награды» в blockquote — визуально выделяет цену/титул от
+    # фактов выше, премиальнее смотрится, чем сплошной текст в один столбик.
     return (
         f"{gbl_tg('🏆')} <b>Группа стала сильнее</b>\n"
         f"{sponsor_name_html} открыл новый лимит для всех\n"
         f"{where}\n\n"
         f"{stars_label(prev)} → <b>{stars_label(to_level)}</b>\n"
-        f"лимит {gain['from_to_delta_html']}\n"
-        f"<b>{int(price_stars)}⭐</b> · «<b>{_html_escape(title)}</b>»"
+        f"лимит {gain['from_to_delta_html']}\n\n"
+        f"<blockquote><b>{int(price_stars)}⭐</b> · «<b>{_html_escape(title)}</b>»</blockquote>"
         f"{ach_bit}\n\n"
         f"<i>{proof}</i>"
     )
@@ -2200,10 +2202,11 @@ def build_who_next_html(
     title = badge_title_for_level(nxt, cfg)
     return (
         f"{gbl_tg('🔥')} <b>Кто следующий?</b>\n"
-        f"Лимит можно поднять ещё — любой.\n"
-        f"следующий шаг · ★{level}→★{nxt}\n"
-        f"лимит {gain['from_to_delta_html']}\n"
+        f"Поднять лимит может любой — не только спонсор.\n\n"
+        f"<blockquote>"
+        f"★{level} → <b>★{nxt}</b> · лимит {gain['from_to_delta_html']}\n"
         f"метка «<b>{_html_escape(title)}</b>»"
+        f"</blockquote>"
     )
 
 
@@ -2261,7 +2264,7 @@ def build_buyer_hero_html(
     if save_pct > 0:
         price_bit = f"<s>{listed}⭐</s> → {price_bit} (−{save_pct}%)"
     ach = (achievements_html or "").strip()
-    ach_bit = f"\n\n{ach}" if ach else ""
+    ach_bit = f"\n{ach}" if ach else ""
     more = ""
     if int(to_level) < 5:
         more = "\n\n<i>хотите выше — кнопка ниже</i>"
@@ -2269,8 +2272,8 @@ def build_buyer_hero_html(
         f"{gbl_tg('🏆')} <b>Готово</b>\n"
         f"<i>лимит выше — для всех в группе</i>\n\n"
         f"{where}\n"
-        f"★{prev}→★{to_level} · лимит {gain['from_to_delta_html']}\n"
-        f"{price_bit} · «<b>{_html_escape(title)}</b>»"
+        f"★{prev} → <b>★{to_level}</b> · лимит {gain['from_to_delta_html']}\n\n"
+        f"<blockquote>{price_bit} · «<b>{_html_escape(title)}</b>»</blockquote>"
         f"{ach_bit}"
         f"{more}"
     )
@@ -2324,8 +2327,8 @@ def build_creator_notify_html(
         f"{sponsor_name_html} поднял лимит\n\n"
         f"{where}\n"
         f"{stars_label(prev)} → <b>{stars_label(to_level)}</b>\n"
-        f"лимит {gain['from_to_delta_html']}\n"
-        f"<b>{int(price_stars)}⭐</b> · «<b>{_html_escape(title)}</b>»\n\n"
+        f"лимит {gain['from_to_delta_html']}\n\n"
+        f"<blockquote><b>{int(price_stars)}⭐</b> · «<b>{_html_escape(title)}</b>»</blockquote>\n"
         f"<i>это подарок всей группе</i>"
     )
 

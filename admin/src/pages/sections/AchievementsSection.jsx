@@ -26,9 +26,9 @@ const EMPTY = {
 const SORT_MIN = 0
 const SORT_MAX = 100
 
-function Field({ label, help, children }) {
+function Field({ label, help, children, className = '' }) {
   return (
-    <label className="ach-field">
+    <label className={`ach-field ${className}`.trim()}>
       <span className="ach-field-label">{label}</span>
       {help ? <span className="ach-field-help">{help}</span> : null}
       <div className="ach-field-control">{children}</div>
@@ -57,6 +57,20 @@ function SliderRow({ label, help, value, min, max, step = 1, onChange, suffix = 
 function rarityDots(n) {
   const v = Math.max(1, Math.min(5, Number(n) || 1))
   return '●'.repeat(v) + '○'.repeat(5 - v)
+}
+
+// Значок «занят» — тем же правилом, что и на бэкенде (find_icon_conflict):
+// если задан premium emoji-id, сравниваем по нему; иначе — по обычному
+// fallback-смайлу. Считается вживую при вводе, до отправки на сервер.
+function findIconConflict(items, { id, icon_emoji_id, icon_fallback }) {
+  const eid = String(icon_emoji_id || '').trim()
+  const fb = String(icon_fallback || '⭐').trim()
+  return (items || []).find((it) => {
+    if (id && String(it.id) === String(id)) return false
+    if (eid) return String(it.icon_emoji_id || '').trim() === eid
+    if (it.icon_emoji_id) return false
+    return String(it.icon_fallback || '⭐').trim() === fb
+  }) || null
 }
 
 export default function AchievementsSection({ onOpenUser } = {}) {
@@ -109,6 +123,14 @@ export default function AchievementsSection({ onOpenUser } = {}) {
     )
   }, [sortedItems, q])
 
+  // Живая проверка «значок уже занят» — мгновенная подсказка до сохранения,
+  // тем же правилом, что и сервер (уникальность premium emoji-id ИЛИ
+  // обычного fallback-смайла среди всех официальных достижений).
+  const iconConflict = useMemo(
+    () => findIconConflict(items, draft),
+    [items, draft.id, draft.icon_emoji_id, draft.icon_fallback],
+  )
+
   const edit = (it) => {
     setDraft({
       id: it.id,
@@ -131,6 +153,10 @@ export default function AchievementsSection({ onOpenUser } = {}) {
   }
 
   const onSave = async () => {
+    if (iconConflict) {
+      notifyAdmin(`Значок уже занят достижением «${iconConflict.title}» — выберите другой`, { error: true })
+      return
+    }
     setSaving(true)
     try {
       const payload = {
@@ -297,14 +323,23 @@ export default function AchievementsSection({ onOpenUser } = {}) {
           <p className="ach-sub">
             Официальные награды (коды <code>gbl_level_1…5</code> — уровни баланса группы)
             и свободные — через панель или команды в боте.
-            Названия из этого каталога подтягиваются при покупке уровня.
+            Названия и значки из этого каталога подтягиваются при покупке уровня.
             За каждую группу выдаётся отдельный экземпляр с кликабельным названием чата
             (например «Спонсор группы · Cute»). Игрок может копить награды за разные группы.
+            <br />
+            <b>У каждой награды — свой уникальный значок</b> (premium-эмодзи или обычный emoji):
+            панель не даст сохранить две награды с одинаковым значком.
           </p>
         </div>
         <div className="ach-hero-actions">
           <button type="button" className="ach-btn" onClick={resetDraft}>Новое</button>
-          <button type="button" className="ach-btn ach-btn-primary" disabled={saving} onClick={onSave}>
+          <button
+            type="button"
+            className="ach-btn ach-btn-primary"
+            disabled={saving || !!iconConflict}
+            title={iconConflict ? 'Значок уже занят другим достижением' : undefined}
+            onClick={onSave}
+          >
             {saving ? 'Сохранение…' : 'Сохранить'}
           </button>
         </div>
@@ -321,11 +356,27 @@ export default function AchievementsSection({ onOpenUser } = {}) {
               <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Легенда сезона" />
             </Field>
             <Field label="Premium emoji id" help={help.icon_emoji_id}>
-              <input value={draft.icon_emoji_id} onChange={(e) => setDraft({ ...draft, icon_emoji_id: e.target.value })} />
+              <input
+                className={iconConflict ? 'ach-input-error' : ''}
+                value={draft.icon_emoji_id}
+                onChange={(e) => setDraft({ ...draft, icon_emoji_id: e.target.value })}
+                placeholder="пусто = обычный emoji справа"
+              />
             </Field>
-            <Field label="Fallback emoji">
-              <input value={draft.icon_fallback} onChange={(e) => setDraft({ ...draft, icon_fallback: e.target.value })} maxLength={8} />
+            <Field label="Fallback emoji" help={help.icon_fallback}>
+              <input
+                className={iconConflict ? 'ach-input-error' : ''}
+                value={draft.icon_fallback}
+                onChange={(e) => setDraft({ ...draft, icon_fallback: e.target.value })}
+                maxLength={8}
+              />
             </Field>
+            {iconConflict ? (
+              <p className="ach-icon-warning">
+                ⚠️ Этот значок уже занят достижением «{iconConflict.title}» — выберите другой,
+                чтобы награды не выглядели одинаково.
+              </p>
+            ) : null}
             <SliderRow
               label={`Редкость ${rarityDots(draft.rarity)}`}
               help={help.rarity}
@@ -342,7 +393,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
               max={SORT_MAX}
               onChange={(n) => setDraft({ ...draft, sort: n })}
             />
-            <Field label="Описание">
+            <Field label="Описание" className="ach-field-wide">
               <textarea
                 rows={3}
                 value={draft.description}
@@ -361,9 +412,13 @@ export default function AchievementsSection({ onOpenUser } = {}) {
             <div className="ach-preview-card">
               <span className="ach-preview-icon">{draft.icon_fallback || '⭐'}</span>
               <span className="ach-preview-title">{draft.title || 'Название достижения'}</span>
+              {draft.icon_emoji_id ? <span className="ach-pro-badge" title="Premium-эмодзи Telegram">PRO</span> : null}
             </div>
             <div className="ach-preview-meta">
               rarity {draft.rarity}/5 · pos {draft.sort} · {draft.enabled ? 'on' : 'off'}
+              {draft.icon_emoji_id ? (
+                <span className="ach-preview-meta-note"> · превью показывает fallback-emoji — реальный premium-значок увидите в Telegram</span>
+              ) : null}
             </div>
           </div>
         </section>
@@ -386,7 +441,10 @@ export default function AchievementsSection({ onOpenUser } = {}) {
                   <button type="button" className="ach-move-btn" disabled={saving} onClick={() => moveItem(it.id, 1)} title="Ниже">↓</button>
                 </div>
                 <button type="button" className="ach-card-main" onClick={() => edit(it)}>
-                  <span className="ach-card-icon">{it.icon_fallback || '⭐'}</span>
+                  <span className="ach-card-icon">
+                    {it.icon_fallback || '⭐'}
+                    {it.icon_emoji_id ? <span className="ach-pro-dot" title="Premium-эмодзи" /> : null}
+                  </span>
                   <span className="ach-card-body">
                     <strong>{it.title}</strong>
                     <span className="ach-card-code">{it.code} · pos {it.sort} · {rarityDots(it.rarity)}</span>
@@ -452,7 +510,10 @@ export default function AchievementsSection({ onOpenUser } = {}) {
                     edit(it)
                   }}
                 >
-                  <span className="ach-pick-icon">{it.icon_fallback || '⭐'}</span>
+                  <span className="ach-pick-icon">
+                    {it.icon_fallback || '⭐'}
+                    {it.icon_emoji_id ? <span className="ach-pro-dot" title="Premium-эмодзи" /> : null}
+                  </span>
                   <span className="ach-pick-body">
                     <strong>{it.title}</strong>
                     <span>{rarityDots(it.rarity)} · {it.code}</span>

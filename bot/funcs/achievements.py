@@ -23,7 +23,13 @@ JSONB_VERSION = 1
 # Premium fallback / default icons
 DEFAULT_ICON_EMOJI_ID = "5404534885324988233"
 DEFAULT_ICON_FALLBACK = "⭐"
-ACHIEVEMENTS_HEADER_EMOJI = "5318892863780579996"
+ACHIEVEMENTS_HEADER_EMOJI = "5469967260380612012"
+
+# Старый ОБЩИЙ значок пяти уровней бч (совпадал у всех - именно это и
+# просили исправить). Используется только для одноразового бэкфилла уже
+# существующих строк в БД - см. seed_gbl_official_if_needed().
+_LEGACY_GBL_SHARED_ICON_EMOJI_ID = "5404534885324988233"
+_LEGACY_GBL_SHARED_ICON_FALLBACK = "⭐"
 
 ALLOWED_ENTITY_TYPES = frozenset({
     "bold", "italic", "underline", "strikethrough", "spoiler",
@@ -34,12 +40,18 @@ DENIED_ENTITY_TYPES = frozenset({
     "mention", "hashtag", "cashtag", "bot_command", "email", "phone_number",
 })
 
+# Уровни бч раньше показывали ОДИН И ТОТ ЖЕ значок для всех 5 наград - визуально
+# было не отличить одно достижение от другого. Значки по умолчанию ниже -
+# обычные (не premium) эмодзи, гарантированно разные и видны абсолютно всем
+# независимо от Telegram Premium. Владелец может в любой момент заменить
+# любой из них на свой premium-эмодзи во вкладке «Достижения» админ-панели -
+# icon_emoji_id там не пустой = premium, пустой = обычный emoji ниже.
 GBL_OFFICIAL_SEEDS: List[Dict[str, Any]] = [
     {
         "code": "gbl_level_1",
         "title": "Спонсор группы",
-        "icon_emoji_id": DEFAULT_ICON_EMOJI_ID,
-        "icon_fallback": "⭐",
+        "icon_emoji_id": None,
+        "icon_fallback": "🥉",
         "description": "Открыл ★1 баланса группы. В профиле — название группы (можно нажать).",
         "rarity": 1,
         "sort": 10,
@@ -47,8 +59,8 @@ GBL_OFFICIAL_SEEDS: List[Dict[str, Any]] = [
     {
         "code": "gbl_level_2",
         "title": "Опора группы",
-        "icon_emoji_id": DEFAULT_ICON_EMOJI_ID,
-        "icon_fallback": "⭐",
+        "icon_emoji_id": None,
+        "icon_fallback": "🥈",
         "description": "Открыл ★2 баланса группы. Можно получить снова за другую группу.",
         "rarity": 2,
         "sort": 20,
@@ -56,8 +68,8 @@ GBL_OFFICIAL_SEEDS: List[Dict[str, Any]] = [
     {
         "code": "gbl_level_3",
         "title": "Сила группы",
-        "icon_emoji_id": DEFAULT_ICON_EMOJI_ID,
-        "icon_fallback": "⭐",
+        "icon_emoji_id": None,
+        "icon_fallback": "🥇",
         "description": "Открыл ★3 баланса группы. Отдельная награда за каждую группу.",
         "rarity": 3,
         "sort": 30,
@@ -65,8 +77,8 @@ GBL_OFFICIAL_SEEDS: List[Dict[str, Any]] = [
     {
         "code": "gbl_level_4",
         "title": "Герой группы",
-        "icon_emoji_id": DEFAULT_ICON_EMOJI_ID,
-        "icon_fallback": "⭐",
+        "icon_emoji_id": None,
+        "icon_fallback": "💎",
         "description": "Открыл ★4 баланса группы. Клик по названию открывает чат.",
         "rarity": 4,
         "sort": 40,
@@ -74,8 +86,8 @@ GBL_OFFICIAL_SEEDS: List[Dict[str, Any]] = [
     {
         "code": "gbl_level_5",
         "title": "Легенда группы",
-        "icon_emoji_id": DEFAULT_ICON_EMOJI_ID,
-        "icon_fallback": "⭐",
+        "icon_emoji_id": None,
+        "icon_fallback": "👑",
         "description": "Открыл ★5 баланса группы — максимум лимита в этой группе.",
         "rarity": 5,
         "sort": 50,
@@ -162,44 +174,8 @@ def sanitize_achievement_html(
         plain = html.escape(raw)[:max_len]
         return plain, primary_emoji_id, icon_fallback
 
-    # Build with nested entity stacking (UTF-16 aware)
-    u16 = raw.encode("utf-16-le")
-    n_units = len(u16) // 2
-
-    opens: Dict[int, List[Any]] = {}
-    closes: Dict[int, List[Any]] = {}
-    for ent in usable:
-        off = max(0, int(getattr(ent, "offset", 0) or 0))
-        length = max(0, int(getattr(ent, "length", 0) or 0))
-        end = min(n_units, off + length)
-        opens.setdefault(off, []).append(ent)
-        closes.setdefault(end, []).append(ent)
-
-    stack: List[Any] = []
-    out: List[str] = []
-    i = 0
-    while i <= n_units:
-        if i in closes:
-            for ent in reversed(closes[i]):
-                if stack and stack[-1] is ent:
-                    stack.pop()
-                    typ = _entity_type_name(ent)
-                    # close tag already applied when we wrapped chunks — use marker approach instead
-                    pass
-        if i == n_units:
-            break
-        if i in opens:
-            for ent in opens[i]:
-                stack.append(ent)
-        # emit one UTF-16 unit as char(s)
-        ch = u16[i * 2:(i + 1) * 2].decode("utf-16-le")
-        escaped = html.escape(ch)
-        # wrap with current stack from outside-in each char is expensive;
-        # better rebuild ranges. Fall through to simpler algorithm below.
-        out.append(escaped)
-        i += 1
-
-    # Simpler reliable algorithm: apply non-overlapping / nested via recursive ranges
+    # Собираем HTML с поддержкой вложенности через offset/length (UTF-16-aware,
+    # т.к. Telegram считает entity-смещения в UTF-16 code units) - см. ниже.
     title_html = _entities_to_html(raw, usable)
     if len(title_html) > max_len:
         title_html = title_html[:max_len]
@@ -399,16 +375,19 @@ def achievement_line_html(it: Dict[str, Any], *, with_rarity: bool = True) -> st
 
 
 def format_gbl_unlocks_html(items: Sequence[Dict[str, Any]]) -> str:
-    """Блок разблокировок — коротко и спокойно-премиум."""
+    """Блок разблокировок — отдельная «карточка награды» (blockquote),
+    визуально отделённая от фактов повышения выше (спокойно-премиум)."""
     rows = [it for it in (items or []) if isinstance(it, dict)]
     if not rows:
         return ""
     header = "Новая награда" if len(rows) == 1 else f"Новые награды · {len(rows)}"
     lines = [achievement_line_html(it) for it in rows]
+    body = "\n".join(lines)
     return (
+        f"<blockquote>"
         f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-        f"<b>{header}</b>\n"
-        + "\n".join(lines)
+        f"<b>{header}</b>\n{body}"
+        f"</blockquote>"
     )
 
 
@@ -795,6 +774,28 @@ async def seed_gbl_official_if_needed(db) -> None:
             int(seed.get("rarity") or 1),
             int(seed.get("sort") or 0),
         )
+        # Бэкфилл для баз, где эти 5 наград уже были созданы РАНЬШЕ (со старым
+        # общим значком, одинаковым у всех уровней) - подставляем новый
+        # уникальный значок по умолчанию. Если владелец уже назначил свой
+        # значок вручную в админ-панели, строка больше не совпадает со
+        # старым общим значком - и мы её не трогаем (условие в WHERE).
+        try:
+            await db.pool.execute(
+                """
+                UPDATE official_achievements
+                SET icon_emoji_id = $2, icon_fallback = $3, updated_at = NOW()
+                WHERE code = $1
+                  AND icon_fallback = $4
+                  AND (icon_emoji_id = $5 OR icon_emoji_id IS NULL)
+                """,
+                seed["code"],
+                seed.get("icon_emoji_id"),
+                seed.get("icon_fallback") or DEFAULT_ICON_FALLBACK,
+                _LEGACY_GBL_SHARED_ICON_FALLBACK,
+                _LEGACY_GBL_SHARED_ICON_EMOJI_ID,
+            )
+        except Exception as e:
+            print(f"[ACH] gbl icon backfill skip {seed['code']!r}: {e!r}")
 
 
 async def get_user_achievements_doc(db, user_id: int) -> Dict[str, Any]:
@@ -910,6 +911,45 @@ async def find_official(db, needle: str) -> Optional[Dict[str, Any]]:
     return dict(row) if row else None
 
 
+async def find_icon_conflict(
+    db,
+    *,
+    icon_emoji_id: Optional[str],
+    icon_fallback: str,
+    exclude_id: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    """Ищет ДРУГОЕ официальное достижение с тем же значком.
+
+    Правило уникальности: если задан premium icon_emoji_id - сравниваем
+    именно по нему (два premium-эмодзи с одним id выглядят одинаково,
+    даже если fallback-текст отличается). Если icon_emoji_id не задан -
+    сравниваем по обычному icon_fallback (тогда два одинаковых юникод-
+    смайла - и есть повтор). Возвращает конфликтующую строку или None.
+    """
+    fb = str(icon_fallback or DEFAULT_ICON_FALLBACK)[:8]
+    eid = str(icon_emoji_id).strip() if icon_emoji_id else None
+    if eid:
+        row = await db.pool.fetchrow(
+            """
+            SELECT * FROM official_achievements
+            WHERE icon_emoji_id = $1 AND ($2::bigint IS NULL OR id != $2)
+            ORDER BY id ASC LIMIT 1
+            """,
+            eid, exclude_id,
+        )
+    else:
+        row = await db.pool.fetchrow(
+            """
+            SELECT * FROM official_achievements
+            WHERE icon_emoji_id IS NULL AND icon_fallback = $1
+              AND ($2::bigint IS NULL OR id != $2)
+            ORDER BY id ASC LIMIT 1
+            """,
+            fb, exclude_id,
+        )
+    return dict(row) if row else None
+
+
 async def upsert_official(db, data: Dict[str, Any], *, actor_id: Optional[int] = None) -> Dict[str, Any]:
     code = str(data.get("code") or "").strip().lower().replace(" ", "_")
     if not code:
@@ -927,6 +967,25 @@ async def upsert_official(db, data: Dict[str, Any], *, actor_id: Optional[int] =
     sort = int(data.get("sort") or 0)
     enabled = bool(data.get("enabled", True))
     oid = data.get("id")
+
+    # Уникальность значка среди ВСЕХ официальных достижений - см. описание
+    # find_icon_conflict(). Не даём двум разным достижениям выглядеть
+    # одинаково - именно это просили гарантировать.
+    if not bool(data.get("allow_icon_conflict")):
+        conflict = await find_icon_conflict(
+            db,
+            icon_emoji_id=icon_emoji_id,
+            icon_fallback=icon_fallback,
+            exclude_id=int(oid) if oid else None,
+        )
+        if conflict:
+            err = ValueError(
+                f"Такой значок уже занят достижением «{conflict.get('title') or conflict.get('code')}» "
+                f"— выберите другой эмодзи."
+            )
+            err.conflict = conflict  # type: ignore[attr-defined]
+            raise err
+
     if oid:
         row = await db.pool.fetchrow(
             """

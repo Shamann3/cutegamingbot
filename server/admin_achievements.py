@@ -13,12 +13,20 @@ DEFAULT_ICON_FALLBACK = "⭐"
 MAX_TITLE_HTML_LEN = 500
 MAX_DESCRIPTION_LEN = 400
 
+# Старый ОБЩИЙ значок пяти уровней бч (совпадал у всех) - только для
+# одноразового бэкфилла уже существующих строк, см. ensure() ниже.
+_LEGACY_GBL_SHARED_ICON_EMOJI_ID = "5404534885324988233"
+_LEGACY_GBL_SHARED_ICON_FALLBACK = "⭐"
+
+# Каждому уровню - свой уникальный обычный эмодзи по умолчанию (не premium,
+# гарантированно виден всем). Владелец может заменить любой на свой
+# premium-эмодзи прямо в этой вкладке - см. save_item()/find_icon_conflict().
 GBL_OFFICIAL_SEEDS: List[Dict[str, Any]] = [
-    {"code": "gbl_level_1", "title": "Спонсор группы", "description": "Открыл ★1 баланса группы. В профиле — название группы (можно нажать).", "rarity": 1, "sort": 10},
-    {"code": "gbl_level_2", "title": "Опора группы", "description": "Открыл ★2 баланса группы. Можно получить снова за другую группу.", "rarity": 2, "sort": 20},
-    {"code": "gbl_level_3", "title": "Сила группы", "description": "Открыл ★3 баланса группы. Отдельная награда за каждую группу.", "rarity": 3, "sort": 30},
-    {"code": "gbl_level_4", "title": "Герой группы", "description": "Открыл ★4 баланса группы. Клик по названию открывает чат.", "rarity": 4, "sort": 40},
-    {"code": "gbl_level_5", "title": "Легенда группы", "description": "Открыл ★5 баланса группы — максимум лимита в этой группе.", "rarity": 5, "sort": 50},
+    {"code": "gbl_level_1", "title": "Спонсор группы", "icon_fallback": "🥉", "description": "Открыл ★1 баланса группы. В профиле — название группы (можно нажать).", "rarity": 1, "sort": 10},
+    {"code": "gbl_level_2", "title": "Опора группы", "icon_fallback": "🥈", "description": "Открыл ★2 баланса группы. Можно получить снова за другую группу.", "rarity": 2, "sort": 20},
+    {"code": "gbl_level_3", "title": "Сила группы", "icon_fallback": "🥇", "description": "Открыл ★3 баланса группы. Отдельная награда за каждую группу.", "rarity": 3, "sort": 30},
+    {"code": "gbl_level_4", "title": "Герой группы", "icon_fallback": "💎", "description": "Открыл ★4 баланса группы. Клик по названию открывает чат.", "rarity": 4, "sort": 40},
+    {"code": "gbl_level_5", "title": "Легенда группы", "icon_fallback": "👑", "description": "Открыл ★5 баланса группы — максимум лимита в этой группе.", "rarity": 5, "sort": 50},
 ]
 
 ENSURE_SQL = """
@@ -54,6 +62,8 @@ async def ensure() -> None:
     await db.pool.execute(ENSURE_SQL)
     for seed in GBL_OFFICIAL_SEEDS:
         title = seed["title"]
+        icon_emoji_id = seed.get("icon_emoji_id")
+        icon_fallback = seed.get("icon_fallback") or DEFAULT_ICON_FALLBACK
         await db.pool.execute(
             """
             INSERT INTO official_achievements
@@ -64,13 +74,62 @@ async def ensure() -> None:
             seed["code"],
             title,
             html.escape(title),
-            DEFAULT_ICON_EMOJI_ID,
-            DEFAULT_ICON_FALLBACK,
+            icon_emoji_id,
+            icon_fallback,
             seed.get("description") or "",
             int(seed.get("rarity") or 1),
             int(seed.get("sort") or 0),
         )
+        # Бэкфилл для баз, где эти 5 наград уже созданы раньше со старым
+        # ОБЩИМ значком (одинаковым у всех уровней) - подставляем новый
+        # уникальный. Ручные правки владельца через панель не трогаем -
+        # см. условие WHERE (строка уже не совпадает со старым дефолтом).
+        try:
+            await db.pool.execute(
+                """
+                UPDATE official_achievements
+                SET icon_emoji_id = $2, icon_fallback = $3, updated_at = NOW()
+                WHERE code = $1
+                  AND icon_fallback = $4
+                  AND (icon_emoji_id = $5 OR icon_emoji_id IS NULL)
+                """,
+                seed["code"], icon_emoji_id, icon_fallback,
+                _LEGACY_GBL_SHARED_ICON_FALLBACK, _LEGACY_GBL_SHARED_ICON_EMOJI_ID,
+            )
+        except Exception:
+            pass
     _SCHEMA_READY = True
+
+
+async def find_icon_conflict(
+    *,
+    icon_emoji_id: Optional[str],
+    icon_fallback: str,
+    exclude_id: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    """Другое официальное достижение с тем же значком (см. save_item())."""
+    fb = str(icon_fallback or DEFAULT_ICON_FALLBACK)[:8]
+    eid = str(icon_emoji_id).strip() if icon_emoji_id else None
+    if eid:
+        row = await db.pool.fetchrow(
+            """
+            SELECT * FROM official_achievements
+            WHERE icon_emoji_id = $1 AND ($2::bigint IS NULL OR id != $2)
+            ORDER BY id ASC LIMIT 1
+            """,
+            eid, exclude_id,
+        )
+    else:
+        row = await db.pool.fetchrow(
+            """
+            SELECT * FROM official_achievements
+            WHERE icon_emoji_id IS NULL AND icon_fallback = $1
+              AND ($2::bigint IS NULL OR id != $2)
+            ORDER BY id ASC LIMIT 1
+            """,
+            fb, exclude_id,
+        )
+    return dict(row) if row else None
 
 
 async def list_catalog(*, enabled_only: bool = False, q: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -122,6 +181,21 @@ async def save_item(data: Dict[str, Any], *, actor_id: int) -> Dict[str, Any]:
     sort = int(data.get("sort") or 0)
     enabled = bool(data.get("enabled", True))
     oid = data.get("id")
+
+    # Уникальность значка среди ВСЕХ официальных достижений - двум разным
+    # достижениям запрещено выглядеть одинаково (ни одинаковый premium
+    # emoji-id, ни одинаковый обычный fallback-смайл).
+    conflict = await find_icon_conflict(
+        icon_emoji_id=icon_emoji_id,
+        icon_fallback=icon_fallback,
+        exclude_id=int(oid) if oid else None,
+    )
+    if conflict:
+        raise ValueError(
+            f"Такой значок уже занят достижением «{conflict.get('title') or conflict.get('code')}» "
+            f"— выберите другой эмодзи."
+        )
+
     if oid:
         row = await db.pool.fetchrow(
             """
@@ -186,7 +260,8 @@ async def overview() -> Dict[str, Any]:
         "help": {
             "code": "Уникальный код (латиница), например legend_2026. Коды gbl_level_1…5 — метки уровней баланса группы.",
             "title": "Название на витрине профиля. Для gbl_level_* меняйте здесь — так и выдастся.",
-            "icon_emoji_id": "ID Telegram Premium emoji (кнопка в профиле).",
+            "icon_emoji_id": "ID Telegram Premium emoji. Пусто — используется обычный emoji ниже. Значок должен быть уникальным среди всех наград.",
+            "icon_fallback": "Обычный emoji (виден всем, даже без Telegram Premium). Тоже должен быть уникальным.",
             "rarity": "Редкость 1–5 — для сортировки и визуального веса.",
             "sort": "Порядок в каталоге выдачи (меньше = выше).",
             "grant_user_id": "Telegram user_id игрока, которому выдаём или снимаем награду.",

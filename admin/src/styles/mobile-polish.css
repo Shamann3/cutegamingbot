@@ -568,6 +568,24 @@ html[data-viewport="phone"] {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
+  /* Крупные числа (баланс, победы/поражения и т.п.) на узком экране раньше
+     обрезались через ellipsis ("1 234…") — теперь переносятся на 2 строки,
+     ничего не теряется. Именно на это жаловались — «информация обрезана». */
+  .panel-users .pu-hero-card .panel-users-stats strong,
+  .pu-stat-grid strong,
+  .pu-dossier-tile strong {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.18 !important;
+  }
+
+  .panel-users .pu-hero-card .panel-users-stats > div {
+    min-height: 3.6rem;
+  }
+
   .pu-heat-hours {
     grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
     height: 4.5rem;
