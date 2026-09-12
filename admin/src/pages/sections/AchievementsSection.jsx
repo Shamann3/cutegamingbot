@@ -32,8 +32,12 @@ const TG_EMOJI_TAG = /<tg-emoji[^>]*emoji-id=["'](\d{5,32})["'][^>]*>.*?<\/tg-em
 function htmlToTokens(s) {
   return String(s || '')
     .replace(TG_EMOJI_TAG, '{emoji:$1}')
-    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]+>/g, '')
+}
+
+function countEmojiTokens(s) {
+  return (String(s || '').match(/\{emoji:\d{5,32}\}/gi) || []).length
 }
 
 function parseEmojiId(raw) {
@@ -67,6 +71,10 @@ function insertAtCursor(el, value, snippet) {
 
 function previewTitle(title) {
   return String(title || 'Название достижения').replace(/\{emoji:(\d{5,32})\}/gi, '✦')
+}
+
+function insertSnippet(el, value, snippet) {
+  return insertAtCursor(el, value, snippet)
 }
 
 function Field({ label, help, children, className = '' }) {
@@ -246,13 +254,17 @@ export default function AchievementsSection({ onOpenUser } = {}) {
       notifyAdmin(`Значок уже занят достижением «${iconConflict.title}» — выберите другой`, { error: true })
       return
     }
+    if (!String(draft.title || '').trim()) {
+      notifyAdmin('Введите название достижения', { error: true })
+      return
+    }
     setSaving(true)
     try {
       const payload = {
         ...draft,
         id: draft.id || undefined,
         code: String(draft.code || '').trim(),
-        title: String(draft.title || '').trim(),
+        title: String(draft.title || '').replace(/\r\n/g, '\n'),
         icon_emoji_id: parseEmojiId(draft.icon_emoji_id) || null,
         icon_fallback: String(draft.icon_fallback || '⭐').slice(0, 8),
         description: String(draft.description || '').slice(0, 400),
@@ -347,8 +359,8 @@ export default function AchievementsSection({ onOpenUser } = {}) {
             : `Выдано: ${res.title || res.code} → ${uid}`,
         )
       } else {
-        const title = String(grantFreeTitle || '').trim()
-        if (!title) {
+        const title = String(grantFreeTitle || '').replace(/\r\n/g, '\n')
+        if (!title.trim()) {
           notifyAdmin('Введите текст свободной награды', { error: true })
           return
         }
@@ -449,13 +461,22 @@ export default function AchievementsSection({ onOpenUser } = {}) {
             <Field label="Код" help={help.code}>
               <input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} placeholder="legend_spring" />
             </Field>
-            <Field label="Название" help="Можно вставить premium-эмодзи токеном {emoji:ID} — кнопкой справа от id.">
-              <input
+            <Field
+              className="ach-field-wide"
+              label="Название / карточка"
+              help="Несколько строк, пробелы в начале строк и много {emoji:ID}. Telegram покажет это как живую карточку."
+            >
+              <textarea
                 ref={officialTitleRef}
+                rows={8}
+                spellCheck={false}
                 value={draft.title}
                 onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                placeholder="Легенда сезона  или  Легенда {emoji:5469967260380612012}"
+                placeholder={'Активность\n    {emoji:5469967260380612012} 10 дней\n    {emoji:5469967260380612012} без фола'}
               />
+              <span className="ach-field-help">
+                {countEmojiTokens(draft.title)} premium-эмодзи · {String(draft.title || '').length} символов
+              </span>
             </Field>
             <Field
               label="Premium emoji id"
@@ -485,6 +506,26 @@ export default function AchievementsSection({ onOpenUser } = {}) {
                   }}
                 >
                   В название
+                </button>
+                <button
+                  type="button"
+                  className="ach-btn ach-btn-compact"
+                  onClick={() => setDraft((d) => ({
+                    ...d,
+                    title: insertSnippet(officialTitleRef.current, d.title, '\n'),
+                  }))}
+                >
+                  ↵ строка
+                </button>
+                <button
+                  type="button"
+                  className="ach-btn ach-btn-compact"
+                  onClick={() => setDraft((d) => ({
+                    ...d,
+                    title: insertSnippet(officialTitleRef.current, d.title, '    '),
+                  }))}
+                >
+                  отступ
                 </button>
               </div>
             </Field>
@@ -694,15 +735,19 @@ export default function AchievementsSection({ onOpenUser } = {}) {
               <Field
                 className="ach-field-wide"
                 label="Текст награды"
-                help="Без ссылок. Premium-эмодзи в тексте: {emoji:ID} или кнопка «В название»."
+                help="Карточка как в Telegram: переносы, отступы в начале строк, много {emoji:ID}. Без ссылок."
               >
                 <textarea
                   ref={freeTitleRef}
-                  rows={3}
+                  rows={10}
+                  spellCheck={false}
                   value={grantFreeTitle}
                   onChange={(e) => setGrantFreeTitle(e.target.value)}
-                  placeholder="За вклад в атмосферу клуба"
+                  placeholder={'Активность\n    {emoji:5469967260380612012} 10 дней\n    {emoji:5469967260380612012} без фола'}
                 />
+                <span className="ach-field-help">
+                  {countEmojiTokens(grantFreeTitle)} premium-эмодзи · {String(grantFreeTitle || '').length} символов
+                </span>
               </Field>
               <Field
                 label="Premium emoji id"
@@ -768,6 +813,20 @@ export default function AchievementsSection({ onOpenUser } = {}) {
                 }}
               >
                 И туда, и туда
+              </button>
+              <button
+                type="button"
+                className="ach-btn ach-btn-compact"
+                onClick={() => setGrantFreeTitle((t) => insertSnippet(freeTitleRef.current, t, '\n'))}
+              >
+                ↵ строка
+              </button>
+              <button
+                type="button"
+                className="ach-btn ach-btn-compact"
+                onClick={() => setGrantFreeTitle((t) => insertSnippet(freeTitleRef.current, t, '    '))}
+              >
+                отступ
               </button>
             </div>
             <div className="ach-preview">

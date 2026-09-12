@@ -14,7 +14,8 @@ from db import db
 
 DEFAULT_ICON_EMOJI_ID = "5404534885324988233"
 DEFAULT_ICON_FALLBACK = "⭐"
-MAX_TITLE_HTML_LEN = 500
+MAX_TITLE_HTML_LEN = 2800
+MAX_CUSTOM_EMOJI_PER_TITLE = 40
 MAX_DESCRIPTION_LEN = 400
 MAX_RARITY_RANK = 20
 DEFAULT_RARITY_NAMES = {
@@ -190,29 +191,73 @@ def parse_custom_emoji_id(raw: Any) -> Optional[str]:
     return None
 
 
+def preserve_telegram_layout(text: str) -> str:
+    raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+    def _fix_line(line: str) -> str:
+        line = line.replace("\t", "    ")
+        i = 0
+        while i < len(line) and line[i] == " ":
+            i += 1
+        rest = re.sub(r" {2,}", lambda m: "\u00A0" * len(m.group(0)), line[i:])
+        return ("\u00A0" * i) + rest
+
+    return "\n".join(_fix_line(ln) for ln in raw.split("\n"))
+
+
+def safe_clip_html(html_text: str, max_len: int) -> str:
+    s = html_text or ""
+    if len(s) <= max_len:
+        return s
+    cut = s[:max_len]
+    last_lt = cut.rfind("<")
+    last_gt = cut.rfind(">")
+    if last_lt > last_gt:
+        cut = cut[:last_lt]
+    opened = []
+    for m in re.finditer(r"</?([a-z0-9-]+)([^>]*)>", cut, flags=re.I):
+        full = m.group(0)
+        name = m.group(1).lower()
+        if full.startswith("</"):
+            if opened and opened[-1] == name:
+                opened.pop()
+            continue
+        if full.endswith("/>"):
+            continue
+        opened.append(name)
+    for name in reversed(opened):
+        cut += f"</{name}>"
+    return cut
+
+
 def compose_title_html(
     text: str,
     *,
     fallback: str = DEFAULT_ICON_FALLBACK,
     max_len: int = MAX_TITLE_HTML_LEN,
 ) -> str:
-    raw = str(text or "")
+    raw = preserve_telegram_layout(text or "")
     low = raw.lower()
     if "http://" in low or "https://" in low or "t.me/" in low or "<a " in low:
         raise ValueError("links_forbidden")
     fb = html.escape((fallback or DEFAULT_ICON_FALLBACK)[:8] or DEFAULT_ICON_FALLBACK)
     parts: List[str] = []
     last = 0
+    n_emoji = 0
     for m in EMOJI_TOKEN_RE.finditer(raw):
         parts.append(html.escape(raw[last:m.start()]))
-        parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
+        if n_emoji < MAX_CUSTOM_EMOJI_PER_TITLE:
+            parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
+            n_emoji += 1
         last = m.end()
     parts.append(html.escape(raw[last:]))
-    return "".join(parts)[:max_len]
+    return safe_clip_html("".join(parts), max_len)
 
 
 def title_plain_from_composed(text: str) -> str:
-    return EMOJI_TOKEN_RE.sub(" ", str(text or "")).strip() or str(text or "").strip()
+    raw = EMOJI_TOKEN_RE.sub(" ", str(text or ""))
+    raw = raw.replace("\u00A0", " ").split("\n", 1)[0].strip()
+    return raw or "Достижение"
 
 
 async def find_icon_conflict(
@@ -282,19 +327,17 @@ async def save_item(data: Dict[str, Any], *, actor_id: int) -> Dict[str, Any]:
     code = str(data.get("code") or "").strip().lower().replace(" ", "_")
     if not code:
         raise ValueError("code_required")
-    title_raw = str(data.get("title") or "").strip()
-    if not title_raw:
+    title_raw = str(data.get("title") or "")
+    if not title_raw.strip():
         raise ValueError("title_required")
     icon_emoji_id = data.get("icon_emoji_id")
     if icon_emoji_id is not None:
         icon_emoji_id = parse_custom_emoji_id(icon_emoji_id)
     icon_fallback = str(data.get("icon_fallback") or DEFAULT_ICON_FALLBACK)[:8]
     title = title_plain_from_composed(title_raw)[:80]
-    if not title:
-        title = "Достижение"
-    incoming_html = str(data.get("title_html") or "").strip()
+    incoming_html = str(data.get("title_html") or "")
     if incoming_html and "<tg-emoji" in incoming_html and "http" not in incoming_html.lower():
-        title_html = incoming_html[:MAX_TITLE_HTML_LEN]
+        title_html = safe_clip_html(incoming_html, MAX_TITLE_HTML_LEN)
     else:
         title_html = compose_title_html(title_raw, fallback=icon_fallback)
     description = str(data.get("description") or "")[:MAX_DESCRIPTION_LEN]
@@ -389,13 +432,13 @@ async def overview() -> Dict[str, Any]:
         },
         "help": {
             "code": "Уникальный код (латиница), например legend_2026. Коды gbl_level_1…5 — метки уровней баланса группы.",
-            "title": "Название на витрине профиля. Для gbl_level_* меняйте здесь — так и выдастся.",
+            "title": "Карточка на витрине. Можно несколько строк, отступы и много {emoji:ID}. Для gbl_level_* меняйте здесь — так и выдастся.",
             "icon_emoji_id": "ID Telegram Premium emoji. Пусто — используется обычный emoji ниже. Значок должен быть уникальным среди всех наград.",
             "icon_fallback": "Обычный emoji (виден всем, даже без Telegram Premium). Тоже должен быть уникальным.",
             "rarity": "Уровень награды. Звёзды и подпись берутся из шкалы уровней. Новое достижение может добавить новый уровень со своим названием.",
             "sort": "Порядок в каталоге выдачи (меньше = выше).",
             "grant_user_id": "Telegram user_id игрока, которому выдаём или снимаем награду.",
-            "grant_free_title": "Текст свободной награды. Premium-эмодзи: вставьте {emoji:ID} или кнопкой «В название». Без ссылок.",
+            "grant_free_title": "Карточка свободной награды: несколько строк, пробелы в начале строк и много {emoji:ID}. Без ссылок.",
             "grant_free_emoji_id": "Числовой ID Telegram Premium emoji. Можно в значок награды и/или внутрь названия.",
             "revoke_instance": "instance_id из списка достижений игрока. Снятие пишется в журнал с админом.",
         },
@@ -405,7 +448,7 @@ async def overview() -> Dict[str, Any]:
 # ── Выдача игроку из панели ──────────────────────────────────────────
 
 MAX_ITEMS_PER_USER = 40
-MAX_TITLE_GRANT = 500
+MAX_TITLE_GRANT = 2800
 
 
 def _empty_doc() -> Dict[str, Any]:
@@ -511,11 +554,11 @@ async def grant_official_to_user(
         raise ValueError("user_limit")
 
     iid = _new_iid()
-    title_html = row["title_html"] or html.escape(str(row["title"] or ""))
+    title_html = safe_clip_html(row["title_html"] or html.escape(str(row["title"] or "")), MAX_TITLE_GRANT)
     item = {
         "kind": "official",
         "official_id": int(row["id"]),
-        "title_html": str(title_html)[:MAX_TITLE_GRANT],
+        "title_html": title_html,
         "icon_emoji_id": row["icon_emoji_id"],
         "icon_fallback": str(row["icon_fallback"] or DEFAULT_ICON_FALLBACK),
         "granted_at": __import__("time").time(),
@@ -559,14 +602,15 @@ async def grant_free_to_user(
     uid = int(user_id)
     if uid <= 0:
         raise ValueError("bad_user_id")
-    title_plain = str(title or "").strip()
-    if not title_plain:
+    title_raw = str(title or "")
+    if not title_raw.strip():
         raise ValueError("title_required")
     fb = str(icon_fallback or DEFAULT_ICON_FALLBACK)[:8]
     eid = parse_custom_emoji_id(icon_emoji_id) if icon_emoji_id else None
-    title_html = compose_title_html(title_plain, fallback=fb, max_len=MAX_TITLE_GRANT)
+    title_html = compose_title_html(title_raw, fallback=fb, max_len=MAX_TITLE_GRANT)
     if not title_html.strip():
         raise ValueError("title_required")
+    title_plain = title_plain_from_composed(title_raw)
 
     doc = await _load_user_doc(uid)
     if len(doc["items"]) >= MAX_ITEMS_PER_USER:
@@ -588,10 +632,9 @@ async def grant_free_to_user(
 
 
 def _plain_title(title_html: Any) -> str:
-    raw = str(title_html or "")
-    # лёгкий срез тегов для списка в панели
-    import re
-    return re.sub(r"<[^>]+>", "", raw).strip() or "—"
+    raw = re.sub(r"<[^>]+>", "", str(title_html or ""))
+    raw = raw.replace("\u00A0", " ").split("\n", 1)[0].strip()
+    return raw or "—"
 
 
 async def list_user_achievements(user_id: int) -> Dict[str, Any]:

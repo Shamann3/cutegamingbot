@@ -68,8 +68,8 @@ def _match_prefix(text: str, prefixes: Tuple[str, ...]) -> Optional[Tuple[str, s
         if n.startswith(p + " "):
             # preserve original casing/entities offset: use length of prefix in normalized space carefully
             # Fall back: strip from original with regex
-            m = re.match(rf"(?is)^\s*{re.escape(p)}\s*(.*)$", text.strip())
-            rest = (m.group(1) if m else "").strip()
+            m = re.match(rf"(?is)^\s*{re.escape(p)}(?:\s+)(.*)$", text)
+            rest = m.group(1) if m else ""
             return p, rest
     return None
 
@@ -80,13 +80,15 @@ async def _resolve_target_user_id(message: Message, db, rest: str) -> Tuple[Opti
     if message.reply_to_message and message.reply_to_message.from_user:
         return int(message.reply_to_message.from_user.id), rest
 
-    leftover = rest.strip()
-    if not leftover:
+    leftover = rest or ""
+    if not leftover.strip():
         return None, ""
 
-    parts = leftover.split(None, 1)
-    token = parts[0]
-    after = parts[1] if len(parts) > 1 else ""
+    m = re.match(r"^(\S+)(?:[ \t]+|[ \t]*\n)(.*)$", leftover, flags=re.S)
+    if m:
+        token, after = m.group(1), m.group(2)
+    else:
+        token, after = leftover.strip(), ""
 
     # numeric id
     if token.isdigit():
@@ -384,10 +386,11 @@ def _wizard_preview_html(state: dict) -> str:
     ic = ach.icon_html(state.get("icon_emoji_id"), state.get("icon_fallback") or "⭐")
     eid = state.get("icon_emoji_id")
     eid_line = f"значок · <code>{html.escape(str(eid))}</code>" if eid else "значок · обычный emoji"
+    body = title_html if ach.is_rich_title(title_html) else f"{ic} {title_html}"
     return (
         f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
         f"<b>Свободная награда — превью</b>\n\n"
-        f"{ic} {title_html}\n"
+        f"{body}\n"
         f"<blockquote>{eid_line}</blockquote>\n"
         f"<i>Проверьте название и эмодзи, затем выдайте.</i>"
     )
@@ -425,9 +428,10 @@ async def _wizard_start_free(message: Message, db, admin_id: int, target_id: int
         f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
         f"<b>Свободная награда</b>\n"
         f"Игрок: <code>{int(target_id)}</code>\n\n"
-        f"Следующим сообщением отправьте текст награды.\n"
-        f"Premium-эмодзи можно вставить прямо в текст.\n"
-        f"Или укажите numeric id кнопкой ниже, затем вставьте его в значок или в название.\n\n"
+        f"Следующим сообщением отправьте карточку награды.\n"
+        f"Premium-эмодзи вставляйте прямо в текст — все сохранятся.\n"
+        f"Переносы строк и пробелы в начале строк тоже сохранятся.\n"
+        f"Или укажите numeric id кнопкой ниже и вставьте в значок / название.\n\n"
         f"Токен вручную: <code>{{emoji:5469967260380612012}}</code>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -449,10 +453,11 @@ async def handle_achievements_pending_message(message: Message, db) -> bool:
     if time.time() - float(state.get("ts") or 0) > 900:
         _wizard_clear(admin_id)
         return False
-    text = (message.text or message.caption or "").strip()
-    if not text:
+    raw_text = message.text or message.caption or ""
+    if not raw_text.strip() and not (message.entities or message.caption_entities):
         return False
-    n = _norm(text)
+    text = raw_text
+    n = _norm(text.strip())
     if n in _CANCEL_WORDS:
         _wizard_clear(admin_id)
         await message.reply("Создание награды отменено.", parse_mode="HTML")
@@ -469,9 +474,7 @@ async def handle_achievements_pending_message(message: Message, db) -> bool:
     if step == "title":
         ents = list(message.entities or message.caption_entities or [])
         try:
-            title_html, emoji_id, fallback = ach.sanitize_achievement_html(text, ents)
-            if "{emoji:" in text.lower():
-                title_html = ach.compose_title_html(text, fallback=fallback or "⭐")
+            title_html, emoji_id, fallback = ach.prepare_title_from_message(text, ents)
         except ValueError:
             await message.reply("<b>В тексте нельзя ссылки.</b> Отправьте название без URL.", parse_mode="HTML")
             return True
@@ -705,16 +708,11 @@ async def _handle_grant(message: Message, db, prefix: str, rest: str) -> bool:
         return True
 
     rest_text, ents = _slice_entities_for_rest(message, prefix, leftover)
-    title_html, emoji_id, fallback = ach.sanitize_achievement_html(rest_text, ents)
-    if "{emoji:" in leftover.lower():
-        try:
-            title_html = ach.compose_title_html(leftover, fallback=fallback or "⭐")
-            token_eid = ach.parse_custom_emoji_id(leftover)
-            if token_eid and not emoji_id:
-                emoji_id = token_eid
-        except ValueError:
-            await message.reply("<b>В тексте нельзя ссылки.</b>", parse_mode="HTML")
-            return True
+    try:
+        title_html, emoji_id, fallback = ach.prepare_title_from_message(rest_text, ents)
+    except ValueError:
+        await message.reply("<b>В тексте нельзя ссылки.</b>", parse_mode="HTML")
+        return True
     if not title_html.strip():
         await message.reply("<b>Пустой текст награды.</b>", parse_mode="HTML")
         return True
@@ -771,7 +769,7 @@ def _revoke_list_view(target_id: int, rows, page: int = 0) -> Tuple[str, InlineK
     kb_rows = []
     for iid, it in page_rows:
         kind = "★" if it.get("kind") == "official" else "✧"
-        title_plain = ach.strip_tg_emoji(it.get("title_html") or "")[:36]
+        title_plain = ach.title_button_label(it, 36)
         kb_rows.append([_btn(
             text=f"{kind} {title_plain}"[:64],
             callback_data=f"ach_rev:{int(target_id)}:{iid}:{page_i}",
@@ -886,8 +884,8 @@ async def _handle_wizard_cb(callback: CallbackQuery, db, user_id: int, data: str
                 f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
                 f"<b>Свободная награда</b>\n"
                 f"Игрок: <code>{int(target_id)}</code>\n\n"
-                f"Следующим сообщением отправьте текст награды.\n"
-                f"Premium-эмодзи можно вставить прямо в текст.\n"
+                f"Следующим сообщением отправьте карточку награды.\n"
+                f"Premium-эмодзи, переносы и отступы сохранятся.\n"
                 f"Токен: <code>{{emoji:5469967260380612012}}</code>",
                 InlineKeyboardMarkup(inline_keyboard=[
                     [_btn(text="Указать emoji id", callback_data="achc_eid", style="primary")],
@@ -968,7 +966,8 @@ async def _handle_wizard_cb(callback: CallbackQuery, db, user_id: int, data: str
             token = "{emoji:" + str(eid) + "}"
             raw = ach.title_html_to_tokens(state.get("title_html") or "") or state.get("title_plain") or ""
             if token not in raw:
-                raw = (raw + " " + token).strip()
+                sep = "" if not raw or raw.endswith(("\n", " ", "\u00A0")) else " "
+                raw = raw + sep + token
             try:
                 state["title_html"] = ach.compose_title_html(raw, fallback=fb)
                 state["title_plain"] = ach.strip_tg_emoji(state["title_html"])
@@ -1005,10 +1004,12 @@ async def _handle_wizard_cb(callback: CallbackQuery, db, user_id: int, data: str
         await _refresh_profile(db, target_id)
         _wizard_clear(user_id)
         await _ack("Выдано")
-        ic = ach.icon_html(state.get("icon_emoji_id"), state.get("icon_fallback") or "⭐")
+        granted = state["title_html"]
+        if not ach.is_rich_title(granted):
+            granted = f"{ach.icon_html(state.get('icon_emoji_id'), state.get('icon_fallback') or '⭐')} {granted}"
         await _show(
             f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-            f"<b>Свободная награда выдана</b>\n{ic} {state['title_html']}"
+            f"<b>Свободная награда выдана</b>\n{granted}"
         )
         return True
 
@@ -1329,20 +1330,11 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
             pass
 
     if action in ("achm_all", "achm_pg"):
-        if action == "achm_pg" and not is_owner:
-            await _ack("Только владелец профиля", alert=True)
-            return True
         await _ack()
         doc = await ach.get_user_achievements_doc(db, target)
         rows = ach.sorted_items_for_display(doc)
-        if is_owner:
-            _, page, _, _ = ach.paginate_items(rows, page, ach.PAGE_SIZE)
-            text = ach.format_full_achievements_html(doc, page=page)
-        else:
-            page = 0
-            text = ach.format_full_achievements_html(
-                doc, page=0, page_size=max(len(rows), 1),
-            )
+        _, page, _, _ = ach.paginate_items(rows, page, ach.PAGE_SIZE)
+        text = ach.format_full_achievements_html(doc, page=page)
         kb = _build_manage_keyboard(viewer, target, doc, is_owner=is_owner, page=page)
         _schedule_achm_render(callback.message, text, kb)
         return True
@@ -1454,7 +1446,7 @@ def _build_manage_keyboard(
 
     if is_owner:
         for iid, it in page_rows:
-            title = ach.strip_tg_emoji(it.get("title_html") or "…")[:18]
+            title = ach.title_button_label(it, 18)
             on_v = iid in showcase_ids
             slot_n = 0
             if on_v:
@@ -1488,15 +1480,14 @@ def _build_manage_keyboard(
                 ))
             rows.append(slot_row)
 
-    if is_owner:
-        nav = _nav_row(
-            page_i=page_i,
-            pages=pages,
-            prev_cb=f"achm_pg:{viewer}:{target}:{page_i - 1}",
-            next_cb=f"achm_pg:{viewer}:{target}:{page_i + 1}",
-        )
-        if nav:
-            rows.append(nav)
+    nav = _nav_row(
+        page_i=page_i,
+        pages=pages,
+        prev_cb=f"achm_pg:{viewer}:{target}:{page_i - 1}",
+        next_cb=f"achm_pg:{viewer}:{target}:{page_i + 1}",
+    )
+    if nav:
+        rows.append(nav)
 
     rows.append([_profile_back_button(viewer, target)])
     return InlineKeyboardMarkup(inline_keyboard=rows)

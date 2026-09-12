@@ -7055,6 +7055,14 @@ body,
   background: #080808; color: #eee; padding: .55rem .7rem; font-size: .86rem;
   transition: border-color .18s ease, box-shadow .18s ease;
 }
+.ach-field-control textarea {
+  resize: vertical;
+  min-height: 8.5rem;
+  white-space: pre-wrap;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+  line-height: 1.45;
+  tab-size: 4;
+}
 .ach-field-control input:focus,
 .ach-field-control textarea:focus,
 .ach-search:focus { outline: none; border-color: rgba(255,255,255,.35); box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
@@ -7063,12 +7071,17 @@ body,
 .ach-preview { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,.07); }
 .ach-preview-label { font-size: .72rem; color: #777; text-transform: uppercase; letter-spacing: .08em; }
 .ach-preview-card {
-  margin-top: .55rem; display: flex; align-items: center; gap: .65rem;
+  margin-top: .55rem; display: flex; align-items: flex-start; gap: .65rem;
   padding: .8rem .9rem; border-radius: 12px; border: 1px solid rgba(255,255,255,.1);
   background: linear-gradient(90deg, #101010, #0a0a0a); animation: ach-pulse 3.2s ease-in-out infinite;
 }
 .ach-preview-icon { font-size: 1.25rem; }
-.ach-preview-title { color: #f5f5f5; font-weight: 600; flex: 1; }
+.ach-preview-title {
+  color: #f5f5f5; font-weight: 500; flex: 1;
+  white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+  line-height: 1.45;
+}
 .ach-preview-meta { margin-top: .45rem; font-size: .72rem; color: #777; }
 .ach-preview-meta-note { color: #6a6a6a; }
 .ach-pro-badge {

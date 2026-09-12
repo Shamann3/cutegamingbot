@@ -25,8 +25,12 @@ DEFAULT_RARITY_NAMES = {
     5: "легенда",
 }
 MAX_ITEMS_PER_USER = 200
-MAX_TITLE_HTML_LEN = 500
+# Карточка как на фото: много premium-эмодзи + переносы. 500 символов
+# резало теги посередине → Telegram DOCUMENT_INVALID → «код тупит».
+MAX_TITLE_HTML_LEN = 2800
+MAX_CUSTOM_EMOJI_PER_TITLE = 40
 MAX_DESCRIPTION_LEN = 400
+PAGE_PACK_WEIGHT = 52
 JSONB_VERSION = 1
 EMOJI_ID_RE = re.compile(r"^\d{5,32}$")
 EMOJI_TOKEN_RE = re.compile(r"\{emoji:(\d{5,32})\}", re.IGNORECASE)
@@ -142,6 +146,74 @@ def _wrap_entity(typ: str, inner: str, ent: Any) -> str:
     return inner
 
 
+def preserve_telegram_layout(text: str) -> str:
+    """Переносы и отступы, которые Telegram HTML не схлопнет.
+
+    Обычные пробелы в начале строки и серии пробелов Telegram сжимает.
+    NBSP той же ширины в UTF-16, что и обычный пробел — offsets
+    custom_emoji не съезжают.
+    """
+    raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+    def _fix_line(line: str) -> str:
+        line = line.replace("\t", "    ")
+        i = 0
+        while i < len(line) and line[i] == " ":
+            i += 1
+        rest = re.sub(r" {2,}", lambda m: "\u00A0" * len(m.group(0)), line[i:])
+        return ("\u00A0" * i) + rest
+
+    return "\n".join(_fix_line(ln) for ln in raw.split("\n"))
+
+
+def count_custom_emojis(html_text: str) -> int:
+    return len(re.findall(r"<tg-emoji\b", html_text or "", flags=re.I))
+
+
+def is_rich_title(html_text: str) -> bool:
+    raw = html_text or ""
+    return raw.count("\n") >= 1 or count_custom_emojis(raw) >= 3
+
+
+def title_first_line_html(html_text: str) -> str:
+    raw = html_text or ""
+    return raw.split("\n", 1)[0].strip() or raw[:80]
+
+
+def title_compact_html(html_text: str) -> str:
+    raw = html_text or ""
+    if not is_rich_title(raw):
+        return raw
+    first = title_first_line_html(raw)
+    return first if first.endswith("…") else f"{first}…"
+
+
+def safe_clip_html(html_text: str, max_len: int) -> str:
+    """Обрезать HTML, не разрывая <tg-emoji> — иначе Telegram падает."""
+    s = html_text or ""
+    if len(s) <= max_len:
+        return s
+    cut = s[:max_len]
+    last_lt = cut.rfind("<")
+    last_gt = cut.rfind(">")
+    if last_lt > last_gt:
+        cut = cut[:last_lt]
+    opened = []
+    for m in re.finditer(r"</?([a-z0-9-]+)([^>]*)>", cut, flags=re.I):
+        full = m.group(0)
+        name = m.group(1).lower()
+        if full.startswith("</"):
+            if opened and opened[-1] == name:
+                opened.pop()
+            continue
+        if full.endswith("/>"):
+            continue
+        opened.append(name)
+    for name in reversed(opened):
+        cut += f"</{name}>"
+    return cut
+
+
 def sanitize_achievement_html(
     text: str,
     entities: Optional[Sequence[Any]] = None,
@@ -152,9 +224,10 @@ def sanitize_achievement_html(
 
     Returns: (title_html, primary_custom_emoji_id, icon_fallback_char)
     Запрещены ссылки и blockquote; custom_emoji сохраняются с id.
+    Переносы и отступы не выкидываем — админ может собрать карточку как на фото.
     """
-    raw = (text or "").strip()
-    if not raw:
+    raw = preserve_telegram_layout(text or "")
+    if not raw.strip():
         return "", None, DEFAULT_ICON_FALLBACK
 
     ents = list(entities or [])
@@ -181,16 +254,74 @@ def sanitize_achievement_html(
                 except Exception:
                     icon_fallback = DEFAULT_ICON_FALLBACK
 
+    usable = _cap_custom_emoji_entities(usable)
+
     if not usable:
-        plain = html.escape(raw)[:max_len]
+        plain = safe_clip_html(html.escape(raw), max_len)
         return plain, primary_emoji_id, icon_fallback
 
     # Собираем HTML с поддержкой вложенности через offset/length (UTF-16-aware,
     # т.к. Telegram считает entity-смещения в UTF-16 code units) - см. ниже.
-    title_html = _entities_to_html(raw, usable)
-    if len(title_html) > max_len:
-        title_html = title_html[:max_len]
+    title_html = safe_clip_html(_entities_to_html(raw, usable), max_len)
     return title_html, primary_emoji_id, icon_fallback
+
+
+def _cap_custom_emoji_entities(entities: Sequence[Any]) -> List[Any]:
+    out: List[Any] = []
+    n = 0
+    for ent in entities:
+        if _entity_type_name(ent) == "custom_emoji":
+            if n >= MAX_CUSTOM_EMOJI_PER_TITLE:
+                continue
+            n += 1
+        out.append(ent)
+    return out
+
+
+def expand_tokens_in_html(
+    html_text: str,
+    fallback: str = DEFAULT_ICON_FALLBACK,
+    *,
+    max_len: int = MAX_TITLE_HTML_LEN,
+) -> str:
+    """Заменяет {emoji:ID} в уже собранном HTML, не экранируя готовые теги."""
+    raw = html_text or ""
+    if "{emoji:" not in raw.lower():
+        return safe_clip_html(raw, max_len)
+    fb = html.escape((fallback or DEFAULT_ICON_FALLBACK)[:8] or DEFAULT_ICON_FALLBACK)
+    already = count_custom_emojis(raw)
+    parts: List[str] = []
+    last = 0
+    n = already
+    for m in EMOJI_TOKEN_RE.finditer(raw):
+        parts.append(raw[last:m.start()])
+        if n < MAX_CUSTOM_EMOJI_PER_TITLE:
+            parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
+            n += 1
+        last = m.end()
+    parts.append(raw[last:])
+    return safe_clip_html("".join(parts), max_len)
+
+
+def prepare_title_from_message(
+    text: str,
+    entities: Optional[Sequence[Any]] = None,
+    *,
+    max_len: int = MAX_TITLE_HTML_LEN,
+) -> Tuple[str, Optional[str], str]:
+    """Entities + токены {emoji:ID} → один HTML без потери вёрстки."""
+    low = str(text or "").lower()
+    if "http://" in low or "https://" in low or "t.me/" in low:
+        raise ValueError("links_forbidden")
+    title_html, emoji_id, fallback = sanitize_achievement_html(
+        text, entities, max_len=max_len,
+    )
+    title_html = expand_tokens_in_html(
+        title_html, fallback or DEFAULT_ICON_FALLBACK, max_len=max_len,
+    )
+    if not emoji_id:
+        emoji_id = parse_custom_emoji_id(text)
+    return title_html, emoji_id, fallback
 
 
 def _utf16_slice(text: str, offset: int, length: int) -> str:
@@ -315,19 +446,22 @@ def compose_title_html(
     max_len: int = MAX_TITLE_HTML_LEN,
 ) -> str:
     """Текст с токенами {emoji:ID} → HTML с <tg-emoji>. Ссылки запрещены."""
-    raw = str(text or "")
+    raw = preserve_telegram_layout(text or "")
     low = raw.lower()
     if "http://" in low or "https://" in low or "t.me/" in low or "<a " in low:
         raise ValueError("links_forbidden")
     fb = html.escape((fallback or DEFAULT_ICON_FALLBACK)[:8] or DEFAULT_ICON_FALLBACK)
     parts: List[str] = []
     last = 0
+    n_emoji = 0
     for m in EMOJI_TOKEN_RE.finditer(raw):
         parts.append(html.escape(raw[last:m.start()]))
-        parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
+        if n_emoji < MAX_CUSTOM_EMOJI_PER_TITLE:
+            parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
+            n_emoji += 1
         last = m.end()
     parts.append(html.escape(raw[last:]))
-    return "".join(parts)[:max_len]
+    return safe_clip_html("".join(parts), max_len)
 
 
 def title_html_to_tokens(title_html: str) -> str:
@@ -343,21 +477,82 @@ def title_html_to_tokens(title_html: str) -> str:
     return re.sub(r"<[^>]+>", "", s)
 
 
+TG_MESSAGE_HTML_MAX = 3900
+MAX_CUSTOM_EMOJI_PER_MESSAGE = 88
+
+
+def _row_item(row: Any) -> Dict[str, Any]:
+    if isinstance(row, tuple) and len(row) >= 2 and isinstance(row[1], dict):
+        return row[1]
+    if isinstance(row, dict):
+        return row
+    return {}
+
+
+def item_pack_weight(it: Dict[str, Any]) -> int:
+    raw = str(it.get("title_html") or it.get("title") or "")
+    emojis = count_custom_emojis(raw)
+    lines = max(1, raw.count("\n") + 1)
+    return 3 + emojis + max(0, lines - 1) * 2
+
+
+def item_emoji_weight(it: Dict[str, Any]) -> int:
+    raw = str(it.get("title_html") or it.get("title") or "")
+    extra = 1 if it.get("icon_emoji_id") and not is_rich_title(raw) else 0
+    return count_custom_emojis(raw) + extra
+
+
+def title_button_label(it: Dict[str, Any], max_chars: int = 18) -> str:
+    raw = strip_tg_emoji(str(it.get("title_html") or it.get("title") or "…"))
+    raw = raw.replace("\u00A0", " ").split("\n", 1)[0].strip() or "…"
+    return raw[:max_chars]
+
+
 def paginate_items(
     items: Sequence[Any],
     page: int = 0,
     size: int = PAGE_SIZE,
 ) -> Tuple[List[Any], int, int, int]:
+    """Страницы по весу: богатая карточка занимает почти всю страницу.
+
+    Иначе 10 карточек с десятками premium-эмодзи рвут лимит Telegram
+    (~100 custom emoji и 4096 символов) — сообщение не рисуется.
+    """
     rows = list(items or [])
     total = len(rows)
-    pages = max(1, (total + size - 1) // size) if total else 1
+    if not rows:
+        return [], 0, 1, 0
+    max_items = max(1, int(size or PAGE_SIZE))
+    packed: List[List[Any]] = []
+    cur: List[Any] = []
+    weight = 0
+    emojis = 0
+    for row in rows:
+        it = _row_item(row)
+        iw = item_pack_weight(it)
+        ie = item_emoji_weight(it)
+        overflow = cur and (
+            len(cur) >= max_items
+            or weight + iw > PAGE_PACK_WEIGHT
+            or emojis + ie > MAX_CUSTOM_EMOJI_PER_MESSAGE
+        )
+        if overflow:
+            packed.append(cur)
+            cur = []
+            weight = 0
+            emojis = 0
+        cur.append(row)
+        weight += iw
+        emojis += ie
+    if cur:
+        packed.append(cur)
+    pages = max(1, len(packed))
     try:
         page_i = int(page)
     except Exception:
         page_i = 0
     page_i = max(0, min(page_i, pages - 1))
-    start = page_i * size
-    return rows[start:start + size], page_i, pages, total
+    return packed[page_i], page_i, pages, total
 
 
 def format_delete_confirm_html(it: Dict[str, Any]) -> str:
@@ -499,19 +694,28 @@ def achievement_rarity(it: Dict[str, Any]) -> int:
     return clamp_rarity(raw, max_rank=rarity_max_rank())
 
 
-def achievement_line_html(it: Dict[str, Any], *, with_rarity: bool = True) -> str:
-    """Минимализм: иконка · название · редкость."""
-    ic = icon_html(it.get("icon_emoji_id"), it.get("icon_fallback") or DEFAULT_ICON_FALLBACK)
+def achievement_line_html(
+    it: Dict[str, Any],
+    *,
+    with_rarity: bool = True,
+    compact: bool = False,
+) -> str:
+    """Карточка: богатый title рисуем как есть, без лишней иконки слева."""
     title = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
+    if compact:
+        title = title_compact_html(title)
+    rich = is_rich_title(title)
+    ic = icon_html(it.get("icon_emoji_id"), it.get("icon_fallback") or DEFAULT_ICON_FALLBACK)
+    head = title if rich else f"{ic} {title}"
     if not with_rarity:
-        return f"{ic} {title}"
+        return head
     if it.get("kind") == "free" and it.get("rarity") is None and not (
         isinstance(it.get("meta"), dict) and it["meta"].get("rarity") is not None
     ):
-        return f"{ic} {title}"
+        return head
     r = achievement_rarity(it)
     name = str(it.get("rarity_name") or "").strip() or None
-    return f"{ic} {title}\n{rarity_label(r, name=name)}"
+    return f"{head}\n{rarity_label(r, name=name)}"
 
 
 def format_gbl_unlocks_html(items: Sequence[Dict[str, Any]]) -> str:
@@ -588,8 +792,8 @@ def format_showcase_blockquote(doc: Dict[str, Any]) -> str:
     rows = showcase_items(doc, SHOWCASE_LIMIT)
     if not rows:
         return ""
-    # На витрине — компактно, без редкости в каждой строке (воздух)
-    lines = [achievement_line_html(it, with_rarity=False) for _iid, it in rows]
+    # На витрине — первая строка карточки, без редкости (воздух + лимит эмодзи)
+    lines = [achievement_line_html(it, with_rarity=False, compact=True) for _iid, it in rows]
     body = "\n".join(lines)
     return (
         f"<blockquote>"
@@ -650,7 +854,7 @@ def format_full_achievements_html(
         parts.append("")
     if pages > 1:
         parts.append(f"<i>листайте кнопками ниже — {page_i + 1} из {pages}</i>")
-    return "\n".join(parts).strip()
+    return safe_clip_html("\n".join(parts).strip(), TG_MESSAGE_HTML_MAX)
 
 
 def pin_item_to_front(doc: Dict[str, Any], instance_id: str) -> Dict[str, Any]:
@@ -728,7 +932,7 @@ def grant_free(
     iid = _new_instance_id()
     doc["items"][iid] = {
         "kind": "free",
-        "title_html": (title_html or "")[:MAX_TITLE_HTML_LEN],
+        "title_html": safe_clip_html(title_html or "", MAX_TITLE_HTML_LEN),
         "icon_emoji_id": icon_emoji_id,
         "icon_fallback": icon_fallback or DEFAULT_ICON_FALLBACK,
         "granted_at": time.time(),
@@ -773,7 +977,7 @@ def grant_official(
     item: Dict[str, Any] = {
         "kind": "official",
         "official_id": int(official_id),
-        "title_html": (title_html or "")[:MAX_TITLE_HTML_LEN],
+        "title_html": safe_clip_html(title_html or "", MAX_TITLE_HTML_LEN),
         "icon_emoji_id": icon_emoji_id,
         "icon_fallback": icon_fallback or DEFAULT_ICON_FALLBACK,
         "granted_at": time.time(),
@@ -1269,10 +1473,17 @@ async def upsert_official(db, data: Dict[str, Any], *, actor_id: Optional[int] =
     code = str(data.get("code") or "").strip().lower().replace(" ", "_")
     if not code:
         raise ValueError("code_required")
-    title = str(data.get("title") or "").strip()[:80]
-    if not title:
+    title_raw = str(data.get("title") or "")
+    if not title_raw.strip():
         raise ValueError("title_required")
-    title_html = str(data.get("title_html") or html.escape(title))[:MAX_TITLE_HTML_LEN]
+    title = (title_html_to_tokens(title_raw).split("\n", 1)[0].strip() or "Достижение")[:80]
+    incoming_html = str(data.get("title_html") or "")
+    if incoming_html and "<tg-emoji" in incoming_html:
+        title_html = safe_clip_html(incoming_html, MAX_TITLE_HTML_LEN)
+    elif "{emoji:" in title_raw.lower():
+        title_html = compose_title_html(title_raw)
+    else:
+        title_html = safe_clip_html(html.escape(preserve_telegram_layout(title_raw)), MAX_TITLE_HTML_LEN)
     icon_emoji_id = data.get("icon_emoji_id")
     if icon_emoji_id is not None:
         icon_emoji_id = str(icon_emoji_id).strip() or None
@@ -1602,8 +1813,9 @@ def help_admin_html() -> str:
         f"<b>Свободная награда</b>\n"
         f"1. Ответьте на сообщение игрока или укажите id / @username\n"
         f"2. Напишите <code>наградить</code> — откроется меню\n"
-        f"3. Выберите «Свободное» и отправьте текст следующим сообщением\n"
-        f"Premium-эмодзи можно вставить прямо в текст или указать numeric id.\n\n"
+        f"3. Выберите «Свободное» и следующим сообщением пришлите карточку\n"
+        f"Premium-эмодзи, переносы строк и пробелы в начале строк сохранятся.\n"
+        f"Можно также указать numeric id и вставить его в значок или в название.\n\n"
         f"Быстро одной строкой:\n"
         f"<code>наградить @user текст</code>\n"
         f"Токен в тексте: <code>{{emoji:5469967260380612012}}</code>\n\n"

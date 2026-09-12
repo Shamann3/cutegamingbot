@@ -4728,8 +4728,8 @@ async def admin_achievements_list(
 class AchievementBody(BaseModel):
     id: int | None = None
     code: str = Field(min_length=1, max_length=64)
-    title: str = Field(min_length=1, max_length=80)
-    title_html: str | None = Field(default=None, max_length=500)
+    title: str = Field(min_length=1, max_length=2000)
+    title_html: str | None = Field(default=None, max_length=2800)
     icon_emoji_id: str | None = Field(default=None, max_length=64)
     icon_fallback: str | None = Field(default=None, max_length=8)
     description: str | None = Field(default=None, max_length=400)
@@ -4851,7 +4851,7 @@ async def admin_achievements_grant_official(
 
 class AchievementGrantFreeBody(BaseModel):
     user_id: int = Field(gt=0)
-    title: str = Field(min_length=1, max_length=400)
+    title: str = Field(min_length=1, max_length=2000)
     icon_emoji_id: str | None = Field(default=None, max_length=64)
     icon_fallback: str | None = Field(default="⭐", max_length=8)
     model_config = {"extra": "forbid"}
