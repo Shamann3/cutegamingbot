@@ -56,9 +56,10 @@ export default function EliteTopbar({
   onOpenNotifications,
   onOpenMenu,
   menuOpen = false,
-  /** Полное «С возвращением» — только на Главной. На остальных разделах
-   *  компактная строка, иначе приветствие конкурирует с sec-title. */
-  compact = false,
+  /** Полное «С возвращением» — только на Главной.
+   *  Сама шапка всегда compact — поиск стоит как на «Игроки». */
+  compact = true,
+  welcome = false,
 }) {
   const { displayName } = getAdminProfile()
   const [query, setQuery] = useState('')
@@ -143,17 +144,17 @@ export default function EliteTopbar({
       </div>
 
       <div className="elite-greeting elite-greeting-desktop">
-        {compact ? (
-          <h1 className="elite-greeting-title elite-greeting-title-compact">
-            {greeting}, {firstName}
-          </h1>
-        ) : (
+        {welcome ? (
           <>
             <span className="elite-greeting-kicker">{greeting}, {firstName}</span>
             <h1 className="elite-greeting-title">
               С возвращением
             </h1>
           </>
+        ) : (
+          <h1 className="elite-greeting-title elite-greeting-title-compact">
+            {greeting}, {firstName}
+          </h1>
         )}
       </div>
 

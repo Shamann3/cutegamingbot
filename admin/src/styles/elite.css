@@ -1267,15 +1267,11 @@ body,
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  width: 100%;
-  max-width: none;
   min-width: 0;
-  justify-self: stretch;
-  box-sizing: border-box;
   overflow: visible;
   padding:
     max(0.45rem, env(safe-area-inset-top, 0px))
-    max(0.55rem, calc(env(safe-area-inset-right, 0px) + 0.35rem))
+    max(3.6rem, calc(env(safe-area-inset-right, 0px) + 3.1rem))
     0.45rem
     0.55rem;
 }
@@ -1284,7 +1280,7 @@ body,
 .elite-topbar-compact {
   padding:
     max(0.35rem, env(safe-area-inset-top, 0px))
-    max(0.55rem, calc(env(safe-area-inset-right, 0px) + 0.35rem))
+    max(3.6rem, calc(env(safe-area-inset-right, 0px) + 3.1rem))
     0.3rem
     0.55rem;
   min-height: 2.85rem;
@@ -1299,7 +1295,7 @@ body,
 
 .elite-greeting {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 0.05rem;
@@ -1345,24 +1341,12 @@ body,
   flex: 0 0 auto;
   margin-left: auto;
   padding: 0.28rem;
-  margin-right: 0;
+  margin-right: 0.1rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(0, 0, 0, 0.28);
   box-sizing: border-box;
   overflow: visible;
-}
-
-/* Главная: тот же правый край, что и на остальных вкладках */
-.panel-layout-dashboard > .elite-topbar {
-  width: 100% !important;
-  max-width: none !important;
-  justify-self: stretch !important;
-}
-
-.panel-layout-dashboard > .elite-topbar .elite-topbar-actions {
-  margin-left: auto !important;
-  margin-right: 0 !important;
 }
 
 /* Phone-only chrome — включается в @media ≤900px */
@@ -1611,11 +1595,11 @@ body,
   align-content: stretch;
 }
 
-.panel-pulse-hero        { grid-column: 2 / -1 !important; grid-row: 2 !important; }
+.panel-pulse-hero        { grid-row: 2; }
 .panel-shelf-players     { grid-row: 3; }
 .panel-shelf-server      { grid-row: 3; }
 .panel-shelf-maintenance { grid-row: 3; }
-.panel-shelf-online      { grid-column: 2 / -1 !important; grid-row: 4; min-height: 0; }
+.panel-shelf-online      { grid-row: 4; min-height: 0; }
 
 .panel-layout-page,
 .panel-layout-support,

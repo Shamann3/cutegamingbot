@@ -340,7 +340,9 @@ export default function PanelShell({ onLogout }) {
             onOpenNotifications={() => handleNavigate('support')}
             onOpenMenu={() => setMobileNavOpen((v) => !v)}
             menuOpen={mobileNavOpen}
-            compact={section !== 'dashboard'}
+            /* Та же компактная шапка/поиск, что на «Игроки» и остальных вкладках */
+            compact
+            welcome={isDashboard}
           />
 
           {isDashboard && <DashboardSection />}
