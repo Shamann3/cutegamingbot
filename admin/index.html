@@ -8,25 +8,22 @@
     <title>Cute Farming — Panel</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
-      /* До CSS/React: сразу phone|desktop, чтобы ПК не мигал телефонной вёрсткой */
+      /* До CSS/React: phone только ios/android — иначе ПК (даже в узком Mini App). */
       (function () {
         try {
           var p = String((window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.platform) || '').toLowerCase()
           var phone = p === 'ios' || p === 'android' || p === 'android_x'
-          var deskPlat = p === 'tdesktop' || p === 'macos' || p === 'linux' || p === 'windows'
-          var wide = window.innerWidth >= 901
-          // web/weba на широком экране = ПК (web.telegram.org)
-          var deskWeb = (p === 'web' || p === 'weba' || p === 'webk') && wide
           var mode = 'desktop'
           if (phone) mode = 'phone'
-          else if (deskPlat || deskWeb || wide) mode = 'desktop'
-          else mode = 'phone'
+          else if (!p && window.innerWidth < 901) mode = 'phone'
           document.documentElement.dataset.viewport = mode
           document.documentElement.classList.toggle('is-phone', mode === 'phone')
           document.documentElement.classList.toggle('is-desktop', mode === 'desktop')
+          document.documentElement.dataset.tgDesktop = mode === 'desktop' ? '1' : '0'
         } catch (e) {
           document.documentElement.dataset.viewport = 'desktop'
           document.documentElement.classList.add('is-desktop')
+          document.documentElement.dataset.tgDesktop = '1'
         }
       })()
     </script>

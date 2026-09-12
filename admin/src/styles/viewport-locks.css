@@ -1,10 +1,12 @@
 /**
- * ПК-оболочка «как до телефонов».
- * Грузится последней.
+ * ПК-оболочка «как до телефонов» (сайдбар, fullscreen shell).
+ * Грузится последней. Активна только при desktop viewport.
+ * Телефонная вёрстка (drawer / mobile-polish) сюда не лезет.
  */
 
 :is(html[data-viewport="desktop"], html.is-desktop) {
   --tg-content-top: 0px;
+  --tg-safe-top: 0px;
 
   .panel-shell {
     height: var(--tg-viewport-stable-height, 100dvh) !important;

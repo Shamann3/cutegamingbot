@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react'
 
 /**
- * phone | desktop — единая логика для CSS и React.
+ * phone | desktop
  *
- * 1) TG ios/android → phone
- * 2) TG tdesktop/windows/macos/linux → desktop
- * 3) TG web/weba/webk + ширина ≥901 → desktop
- * 4) иначе ширина ≥901 → desktop, иначе phone
+ * Phone ТОЛЬКО на реальных мобильных клиентах Telegram (ios / android).
+ * Всё остальное (tdesktop, windows, macos, linux, web, unknown) = desktop.
+ *
+ * Раньше web + узкое окно Mini App на ПК ошибочно давало phone —
+ * и ПК получал drawer/телефонную вёрстку вместо сайдбара.
  */
 
 const PHONE_PLATFORMS = new Set(['ios', 'android', 'android_x'])
-const DESKTOP_PLATFORMS = new Set(['tdesktop', 'macos', 'linux', 'windows'])
-const WEB_PLATFORMS = new Set(['web', 'weba', 'webk'])
 const DESKTOP_MIN_WIDTH = 901
 
 function telegramPlatform() {
@@ -35,30 +34,24 @@ export function detectViewportMode() {
 
   const platform = telegramPlatform()
 
+  // Явный телефон Telegram — только phone
   if (PHONE_PLATFORMS.has(platform)) return 'phone'
-  if (DESKTOP_PLATFORMS.has(platform)) return 'desktop'
 
-  try {
-    if (document.documentElement.dataset.tgDesktop === '1') return 'desktop'
-  } catch {
-    /* ignore */
-  }
+  // Любая другая TG-платформа (в т.ч. web/weba в Desktop) — desktop
+  if (platform) return 'desktop'
 
-  if (WEB_PLATFORMS.has(platform)) {
-    return widthIsDesktop() ? 'desktop' : 'phone'
-  }
-
+  // Без Telegram (локальный браузер): ширина
   return widthIsDesktop() ? 'desktop' : 'phone'
 }
 
 export function applyViewportModeToDocument(mode = detectViewportMode()) {
   if (typeof document === 'undefined') return mode
-  // Защита от битых значений (раньше из-за бага мог попасть boolean true)
   const safe = mode === 'phone' ? 'phone' : 'desktop'
   const root = document.documentElement
   root.dataset.viewport = safe
   root.classList.toggle('is-phone', safe === 'phone')
   root.classList.toggle('is-desktop', safe === 'desktop')
+  root.dataset.tgDesktop = safe === 'desktop' ? '1' : '0'
   return safe
 }
 

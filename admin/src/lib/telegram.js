@@ -30,17 +30,8 @@ function isPhoneTelegram(tg) {
 }
 
 function isDesktopTelegram(tg) {
-  const platform = String(tg?.platform || '').toLowerCase()
-  if (platform === 'tdesktop' || platform === 'macos' || platform === 'linux' || platform === 'windows') {
-    return true
-  }
-  if (isPhoneTelegram(tg)) return false
-  // web.telegram.org / unknown — широкий экран = ПК
-  try {
-    return window.innerWidth >= 901
-  } catch {
-    return true
-  }
+  // Phone только ios/android. Web/Desktop Mini App на ПК = desktop всегда.
+  return !isPhoneTelegram(tg)
 }
 
 function mobileChromeFallback(tg, computedTop) {
