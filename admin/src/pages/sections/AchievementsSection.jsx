@@ -189,6 +189,9 @@ export default function AchievementsSection({ onOpenUser } = {}) {
       await deleteOfficialAchievement(id)
       notifyAdmin('Удалено')
       if (draft.id === id) resetDraft()
+      // Если удалённое достижение было выбрано для выдачи — снимаем выбор,
+      // чтобы «Выдать достижение» не указывал на уже несуществующую награду.
+      if (String(grantOfficialId) === String(id)) setGrantOfficialId('')
       await load()
     } catch (e) {
       notifyAdmin(String(e?.message || e), { error: true })
@@ -235,16 +238,19 @@ export default function AchievementsSection({ onOpenUser } = {}) {
     setGranting(true)
     try {
       if (grantMode === 'official') {
-        const oid = Number(grantOfficialId || draft.id || 0)
-        const code = !oid ? String(draft.code || '').trim() : ''
-        if (!oid && !code) {
-          notifyAdmin('Выберите официальное достижение в каталоге или укажите id', { error: true })
+        // ВАЖНО: берём ТОЛЬКО явный выбор карточки в «Award desk» — раньше тут
+        // был неявный fallback на draft.id (то, что просто открыто в редакторе
+        // каталога выше). Это путало навигацию: достаточно было кликнуть
+        // достижение для редактирования — и выдача могла случайно уйти именно
+        // по нему, даже если админ его не выбирал для выдачи.
+        const oid = Number(grantOfficialId || 0)
+        if (!oid) {
+          notifyAdmin('Выберите карточку достижения ниже — «Официальное»', { error: true })
           return
         }
         const res = await grantOfficialAchievement({
           user_id: uid,
-          official_id: oid || undefined,
-          code: code || undefined,
+          official_id: oid,
         })
         notifyAdmin(
           res.already
@@ -499,16 +505,18 @@ export default function AchievementsSection({ onOpenUser } = {}) {
         {grantMode === 'official' ? (
           <div className="ach-pick-grid">
             {sortedItems.filter((x) => x.enabled).map((it) => {
-              const selected = String(grantOfficialId || draft.id || '') === String(it.id)
+              // Выбор карточки для ВЫДАЧИ — независим от того, что сейчас
+              // открыто в редакторе каталога выше (см. onGrant): один клик
+              // здесь только выбирает получателя награды, не переключает
+              // редактор на этот элемент, чтобы не путать два разных действия.
+              const selected = String(grantOfficialId || '') === String(it.id)
               return (
                 <button
                   key={it.id}
                   type="button"
                   className={`ach-pick-card ach-rarity-${Math.max(1, Math.min(5, Number(it.rarity) || 1))}${selected ? ' ach-pick-card-on' : ''}`}
-                  onClick={() => {
-                    setGrantOfficialId(String(it.id))
-                    edit(it)
-                  }}
+                  onClick={() => setGrantOfficialId(String(it.id))}
+                  title="Выбрать для выдачи (не открывает редактор выше)"
                 >
                   <span className="ach-pick-icon">
                     {it.icon_fallback || '⭐'}

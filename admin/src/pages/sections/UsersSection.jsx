@@ -1747,6 +1747,25 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
           <button type="submit" className="panel-users-btn panel-users-btn-primary" disabled={loading}>
             {loading ? '…' : 'Найти'}
           </button>
+          {hasProfile && (
+            <button
+              type="button"
+              className="panel-users-btn"
+              title="Закрыть профиль и вернуться к поиску"
+              onClick={() => {
+                setQuery('')
+                setResults([])
+                setProfile(null)
+                setAudit(null)
+                setError('')
+                setInfo('')
+                setPeek(null)
+                setReturnStack([])
+              }}
+            >
+              ✕ Закрыть
+            </button>
+          )}
         </form>
 
         {results.length > 1 && !hasProfile && (
