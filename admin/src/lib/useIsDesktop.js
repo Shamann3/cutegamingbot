@@ -1,28 +1,14 @@
 import { useEffect, useState } from 'react'
 
 /**
- * Режим вёрстки: phone | desktop.
- *
- * Правила (жёстко):
- * 1) Telegram ios/android → phone
- * 2) Telegram tdesktop / windows / macos / linux → desktop
- * 3) Иначе только по ширине: ≥901px → desktop, иначе phone
- *
- * НЕ используем pointer:coarse — на тачскрин-ноутбуках ПК
- * ошибочно становился «телефоном».
+ * phone | desktop
+ * 1) TG ios/android → phone
+ * 2) TG tdesktop/windows/macos/linux → desktop
+ * 3) иначе ширина ≥ 901 → desktop
  */
 
 const PHONE_PLATFORMS = new Set(['ios', 'android', 'android_x'])
-const DESKTOP_PLATFORMS = new Set([
-  'tdesktop',
-  'macos',
-  'linux',
-  'windows',
-])
-
-/** web/weba/webk — неоднозначно (может быть и телефонный браузер TG) */
-const AMBIGUOUS_PLATFORMS = new Set(['web', 'weba', 'webk'])
-
+const DESKTOP_PLATFORMS = new Set(['tdesktop', 'macos', 'linux', 'windows'])
 const DESKTOP_MIN_WIDTH = 901
 
 function telegramPlatform() {
@@ -33,29 +19,24 @@ function telegramPlatform() {
   }
 }
 
-function widthIsDesktop() {
-  try {
-    if (window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`).matches) return true
-  } catch {
-    /* ignore */
-  }
-  return window.innerWidth >= DESKTOP_MIN_WIDTH
-}
-
 export function detectViewportMode() {
   if (typeof window === 'undefined') return 'desktop'
 
   const platform = telegramPlatform()
-
   if (PHONE_PLATFORMS.has(platform)) return 'phone'
   if (DESKTOP_PLATFORMS.has(platform)) return 'desktop'
 
-  // web / неизвестно / без TG — только ширина
-  if (AMBIGUOUS_PLATFORMS.has(platform) || !platform) {
-    return widthIsDesktop() ? 'desktop' : 'phone'
+  // data-tg-desktop от telegram.js — дополнительный якорь
+  try {
+    if (document.documentElement.dataset.tgDesktop === '1') return 'desktop'
+    if (document.documentElement.dataset.tgDesktop === '0' && PHONE_PLATFORMS.has(platform)) {
+      return 'phone'
+    }
+  } catch {
+    /* ignore */
   }
 
-  return widthIsDesktop() ? 'desktop' : 'phone'
+  return window.innerWidth >= DESKTOP_MIN_WIDTH ? 'desktop' : 'phone'
 }
 
 export function applyViewportModeToDocument(mode = detectViewportMode()) {
@@ -64,11 +45,6 @@ export function applyViewportModeToDocument(mode = detectViewportMode()) {
   root.dataset.viewport = mode
   root.classList.toggle('is-phone', mode === 'phone')
   root.classList.toggle('is-desktop', mode === 'desktop')
-  try {
-    window.dispatchEvent(new CustomEvent('admin-viewport-change', { detail: { mode } }))
-  } catch {
-    /* ignore */
-  }
   return mode
 }
 
@@ -78,28 +54,16 @@ export function useViewportMode() {
   useEffect(() => {
     const sync = () => setMode(applyViewportModeToDocument())
     sync()
-
-    const mqWidth = window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`)
-    mqWidth.addEventListener?.('change', sync)
+    const mq = window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`)
+    mq.addEventListener?.('change', sync)
     window.addEventListener('resize', sync)
     window.addEventListener('orientationchange', sync)
-    window.addEventListener('admin-viewport-change', sync)
-
-    // Telegram.WebApp.platform часто появляется чуть позже первого paint
-    const t1 = window.setTimeout(sync, 50)
-    const t2 = window.setTimeout(sync, 200)
-    const t3 = window.setTimeout(sync, 600)
-    const t4 = window.setTimeout(sync, 1500)
-
+    const timers = [50, 200, 600, 1500].map((ms) => window.setTimeout(sync, ms))
     return () => {
-      mqWidth.removeEventListener?.('change', sync)
+      mq.removeEventListener?.('change', sync)
       window.removeEventListener('resize', sync)
       window.removeEventListener('orientationchange', sync)
-      window.removeEventListener('admin-viewport-change', sync)
-      window.clearTimeout(t1)
-      window.clearTimeout(t2)
-      window.clearTimeout(t3)
-      window.clearTimeout(t4)
+      timers.forEach((id) => window.clearTimeout(id))
     }
   }, [])
 

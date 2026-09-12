@@ -1,9 +1,8 @@
 /**
  * Telegram Mini App viewport + safe-area для admin-панели.
  *
- * Важно: safeAreaInset (Dynamic Island / home) и contentSafeAreaInset
- * (✕ / меню Telegram) — РАЗНЫЕ слои. Их нужно СКЛАДЫВАТЬ, иначе
- * шапка Telegram наезжает на topbar панели.
+ * ПК: как раньше — expand + requestFullscreen на весь экран.
+ * Телефон: то же + safe-area insets под шапку TG / notch.
  */
 
 import { applyViewportModeToDocument } from './useIsDesktop'
@@ -25,35 +24,31 @@ function syncAdminLayoutMode() {
   }
 }
 
+function isPhoneTelegram(tg) {
+  const platform = String(tg?.platform || '').toLowerCase()
+  return platform === 'ios' || platform === 'android' || platform === 'android_x'
+}
+
 function isDesktopTelegram(tg) {
   const platform = String(tg?.platform || '').toLowerCase()
-  if (
-    platform === 'tdesktop' ||
-    platform === 'macos' ||
-    platform === 'linux' ||
-    platform === 'windows'
-  ) {
+  if (platform === 'tdesktop' || platform === 'macos' || platform === 'linux' || platform === 'windows') {
     return true
   }
-  if (platform === 'ios' || platform === 'android' || platform === 'android_x') {
-    return false
-  }
-  // web / unknown — по ширине, без pointer:coarse
+  if (isPhoneTelegram(tg)) return false
   try {
     return window.innerWidth >= 901
   } catch {
-    return false
+    return true
   }
 }
 
 function mobileChromeFallback(tg, computedTop) {
-  if (isDesktopTelegram(tg)) return computedTop
-  // API ещё не отдал insets / старый клиент — запас под шапку TG + notch
+  // На ПК не раздуваем верхний inset — панель должна быть «в ноль»
+  if (!isPhoneTelegram(tg)) return computedTop
   if (computedTop >= 56) return computedTop
   const platform = String(tg?.platform || '').toLowerCase()
   if (platform === 'ios') return Math.max(computedTop, 96)
   if (platform === 'android') return Math.max(computedTop, 72)
-  // неизвестная мобильная платформа
   if (window.innerWidth < 820) return Math.max(computedTop, 88)
   return computedTop
 }
@@ -79,16 +74,21 @@ function syncTelegramViewport(tg) {
   const contentLeft = n(content.left)
   const contentRight = n(content.right)
 
-  // Сумма двух слоёв — канон для fullscreen Mini App
   let top = safeTop + contentTop
   let bottom = safeBottom + contentBottom
   let left = safeLeft + contentLeft
   let right = safeRight + contentRight
 
-  top = mobileChromeFallback(tg, top)
+  // На desktop Telegram insets часто шумят — обнуляем верх, чтобы не было «полосы телефона»
+  if (isDesktopTelegram(tg)) {
+    top = 0
+    // боковые/низ оставляем если клиент реально отдаёт
+  } else {
+    top = mobileChromeFallback(tg, top)
+  }
 
-  setCssVar('--tg-safe-top', `${safeTop}px`)
-  setCssVar('--tg-safe-bottom', `${safeBottom}px`)
+  setCssVar('--tg-safe-top', `${isDesktopTelegram(tg) ? 0 : safeTop}px`)
+  setCssVar('--tg-safe-bottom', `${bottom}px`)
   setCssVar('--tg-safe-left', `${left}px`)
   setCssVar('--tg-safe-right', `${right}px`)
   setCssVar('--tg-content-top', `${Math.round(top)}px`)
@@ -96,6 +96,8 @@ function syncTelegramViewport(tg) {
 
   document.documentElement.dataset.tgViewport = '1'
   document.documentElement.dataset.tgInsetTop = String(Math.round(top))
+  document.documentElement.dataset.tgDesktop = isDesktopTelegram(tg) ? '1' : '0'
+  document.documentElement.dataset.tgPlatform = String(tg.platform || 'unknown')
   document.documentElement.classList.toggle('tg-fullscreen', Boolean(tg.isFullscreen))
   document.documentElement.classList.toggle('tg-webapp', true)
   syncAdminLayoutMode()
@@ -111,16 +113,19 @@ function bindViewportSync(tg) {
     tg.onEvent?.('contentSafeAreaChanged', sync)
     tg.onEvent?.('fullscreenChanged', sync)
   } catch {
-    // older clients
+    /* older clients */
   }
 
   window.addEventListener('resize', sync)
   window.visualViewport?.addEventListener?.('resize', sync)
 }
 
+/**
+ * Как в исходной ПК-версии: expand + requestFullscreen всегда.
+ * НЕ вызываем exitFullscreen — из‑за него ПК переставал быть на весь экран.
+ */
 function applyTelegramViewport(tg) {
   if (!tg) return
-  const desktop = isDesktopTelegram(tg)
 
   try {
     tg.expand()
@@ -128,19 +133,11 @@ function applyTelegramViewport(tg) {
     /* ignore */
   }
 
-  if (desktop) {
-    if (tg.isFullscreen && typeof tg.exitFullscreen === 'function') {
-      try {
-        tg.exitFullscreen()
-      } catch {
-        /* ignore */
-      }
-    }
-  } else if (typeof tg.requestFullscreen === 'function' && !tg.isFullscreen) {
+  if (typeof tg.requestFullscreen === 'function' && !tg.isFullscreen) {
     try {
       tg.requestFullscreen()
     } catch {
-      /* ignore */
+      /* уже fullscreen или клиент отклонил */
     }
   }
 
@@ -157,6 +154,8 @@ export function initAdminTelegram() {
     setCssVar('--tg-content-top', '0px')
     setCssVar('--tg-content-bottom', '0px')
     setCssVar('--tg-viewport-stable-height', `${window.innerHeight}px`)
+    document.documentElement.dataset.tgDesktop = window.innerWidth >= 901 ? '1' : '0'
+    syncAdminLayoutMode()
     return null
   }
 
@@ -168,7 +167,6 @@ export function initAdminTelegram() {
   syncAdminLayoutMode()
 
   try {
-    // Тот же тон, что panel-shell — зона под полупрозрачной шапкой TG выглядит цельно
     tg.setHeaderColor?.('#050508')
     tg.setBackgroundColor?.('#050508')
   } catch {
@@ -181,16 +179,26 @@ export function initAdminTelegram() {
     /* ignore */
   }
 
+  // Как раньше на ПК: несколько попыток fullscreen при входе
   applyTelegramViewport(tg)
   requestAnimationFrame(() => applyTelegramViewport(tg))
-  window.setTimeout(() => applyTelegramViewport(tg), 80)
-  window.setTimeout(() => applyTelegramViewport(tg), 200)
+  window.setTimeout(() => applyTelegramViewport(tg), 120)
+  window.setTimeout(() => applyTelegramViewport(tg), 400)
   if (!desktop) {
-    window.setTimeout(() => applyTelegramViewport(tg), 450)
-    window.setTimeout(() => applyTelegramViewport(tg), 1200)
+    window.setTimeout(() => applyTelegramViewport(tg), 900)
   }
 
   bindViewportSync(tg)
+
+  // Если клиент вышел из fullscreen — снова просим (ПК-поведение)
+  try {
+    tg.onEvent?.('viewportChanged', () => {
+      if (!tg.isFullscreen) applyTelegramViewport(tg)
+    })
+  } catch {
+    /* ignore */
+  }
+
   return tg
 }
 

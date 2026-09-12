@@ -1,7 +1,11 @@
 /**
- * ПК / desktop: полная отмена телефонного chrome из @media.
- * Загружается последним. Срабатывает только при data-viewport=desktop.
+ * ПК-оболочка «как до телефонов».
+ * Грузится последней. Только html[data-viewport=desktop].
  */
+
+html[data-viewport="desktop"] {
+  --tg-content-top: 0px;
+}
 
 html[data-viewport="desktop"] .panel-shell {
   height: var(--tg-viewport-stable-height, 100dvh) !important;
@@ -12,9 +16,9 @@ html[data-viewport="desktop"] .panel-shell {
 }
 
 html[data-viewport="desktop"] .panel-tg-chrome {
-  /* На ПК Telegram Desktop chrome-полоса обычно 0; не прячем если inset есть */
-  height: var(--tg-content-top, 0px);
-  min-height: var(--tg-content-top, 0px);
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
 }
 
 html[data-viewport="desktop"] .panel-shell-main {
@@ -25,6 +29,11 @@ html[data-viewport="desktop"] .panel-shell-main {
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;
+  padding:
+    max(0.55rem, env(safe-area-inset-top, 0px))
+    max(0.65rem, env(safe-area-inset-right, 0px))
+    max(0.55rem, env(safe-area-inset-bottom, 0px))
+    max(0.65rem, env(safe-area-inset-left, 0px)) !important;
 }
 
 html[data-viewport="desktop"] .panel-layout,
@@ -52,6 +61,7 @@ html[data-viewport="desktop"] .panel-layout-chronicle {
   min-height: 0 !important;
   overflow: hidden !important;
   width: 100% !important;
+  gap: 0.55rem !important;
 }
 
 html[data-viewport="desktop"] .panel-layout-page,
@@ -73,8 +83,10 @@ html[data-viewport="desktop"] .panel-layout-chronicle {
   grid-template-rows: auto minmax(0, 1fr) !important;
 }
 
+/* Сайдбар — постоянная колонка, НЕ fullscreen-drawer */
 html[data-viewport="desktop"] .panel-shelf-sidebar {
   position: relative !important;
+  inset: auto !important;
   left: auto !important;
   right: auto !important;
   top: auto !important;
@@ -94,10 +106,19 @@ html[data-viewport="desktop"] .panel-shelf-sidebar {
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;
+  box-shadow: var(--e-shadow-raised, none) !important;
 }
 
-html[data-viewport="desktop"] .panel-sidebar-grab {
+html[data-viewport="desktop"] .panel-sidebar-grab,
+html[data-viewport="desktop"] .panel-sidebar-close,
+html[data-viewport="desktop"] .panel-mobile-overlay,
+html[data-viewport="desktop"] .elite-menu-btn,
+html[data-viewport="desktop"] .elite-mobile-title {
   display: none !important;
+}
+
+html[data-viewport="desktop"] .panel-brand {
+  display: flex !important;
 }
 
 html[data-viewport="desktop"] .panel-sidebar-settings-sum {
@@ -106,10 +127,7 @@ html[data-viewport="desktop"] .panel-sidebar-settings-sum {
 
 html[data-viewport="desktop"] .panel-sidebar-settings-body {
   display: flex !important;
-}
-
-html[data-viewport="desktop"] .panel-mobile-overlay {
-  display: none !important;
+  flex-direction: column !important;
 }
 
 html[data-viewport="desktop"] .elite-topbar,
@@ -122,10 +140,7 @@ html[data-viewport="desktop"] .elite-topbar-compact {
   box-shadow: none !important;
   background: transparent !important;
   border-bottom: none !important;
-}
-
-html[data-viewport="desktop"] .elite-mobile-title {
-  display: none !important;
+  min-height: 2.85rem;
 }
 
 html[data-viewport="desktop"] .elite-greeting-desktop,
@@ -135,10 +150,6 @@ html[data-viewport="desktop"] .elite-greeting {
 
 html[data-viewport="desktop"] .elite-search-wrap {
   display: flex !important;
-}
-
-html[data-viewport="desktop"] .elite-menu-btn {
-  display: none !important;
 }
 
 html[data-viewport="desktop"] .panel-layout > .panel-shelf-page,
@@ -157,7 +168,10 @@ html[data-viewport="desktop"] .panel-layout > .panel-events,
 html[data-viewport="desktop"] .panel-layout > .analytics-section,
 html[data-viewport="desktop"] .panel-layout > .support-section,
 html[data-viewport="desktop"] .panel-layout > .chs-root,
-html[data-viewport="desktop"] .panel-layout > .arc-shell {
+html[data-viewport="desktop"] .panel-layout > .arc-shell,
+html[data-viewport="desktop"] .panel-layout > .ach-page,
+html[data-viewport="desktop"] .panel-layout > .gbl-page,
+html[data-viewport="desktop"] .panel-layout > .grp-page {
   grid-column: 2 !important;
   grid-row: 2 !important;
   min-height: 0 !important;
@@ -173,16 +187,39 @@ html[data-viewport="desktop"] .panel-layout > .panel-security {
   flex-direction: column !important;
 }
 
+/* Игроки на ПК: обычный desktop-поиск, без compact-phone */
+html[data-viewport="desktop"] .panel-users {
+  gap: 0.85rem !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  animation: none !important;
+  filter: none !important;
+  transform: none !important;
+}
+
 html[data-viewport="desktop"] .panel-users .panel-users-search {
   position: relative !important;
   top: auto !important;
   flex: 0 0 auto !important;
+  padding: 1.2rem 1.25rem 1.15rem !important;
+  border-radius: 28px !important;
 }
 
 html[data-viewport="desktop"] .panel-users-has-profile .panel-users-search .panel-shelf-label,
 html[data-viewport="desktop"] .panel-users-has-profile .panel-users-search .panel-page-title,
 html[data-viewport="desktop"] .panel-users-has-profile .panel-users-search .panel-page-lead {
-  display: revert !important;
+  display: block !important;
+}
+
+html[data-viewport="desktop"] .panel-users-has-profile .panel-users-search-form {
+  flex-direction: row !important;
+}
+
+html[data-viewport="desktop"] .panel-users-has-profile .panel-users-search .panel-users-btn {
+  width: auto !important;
 }
 
 html[data-viewport="desktop"] .panel-users .panel-users-body {
@@ -191,10 +228,59 @@ html[data-viewport="desktop"] .panel-users .panel-users-body {
   overflow: auto !important;
 }
 
-html[data-viewport="desktop"] .bq-phone {
-  /* класс может остаться на кадр — стили phone только под data-viewport=phone */
+html[data-viewport="desktop"] .panel-users .pu-tabs-bar {
+  position: relative !important;
+  top: auto !important;
 }
 
+/* Задания TG на ПК — студийный layout, не phone-карточки */
 html[data-viewport="desktop"] .bq-root {
   gap: 1.05rem !important;
+  padding-bottom: 2.2rem !important;
+}
+
+html[data-viewport="desktop"] .bq-hero {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.95fr) !important;
+  gap: 1rem 1.25rem !important;
+  padding: 1.4rem 1.45rem 1.3rem !important;
+  border-radius: 24px !important;
+}
+
+html[data-viewport="desktop"] .bq-hero-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  grid-template-columns: none !important;
+}
+
+html[data-viewport="desktop"] .bq-hero-actions .bq-btn {
+  width: auto !important;
+  grid-column: auto !important;
+}
+
+html[data-viewport="desktop"] .bq-metrics {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+}
+
+html[data-viewport="desktop"] .bq-metric-btn {
+  grid-column: auto !important;
+}
+
+html[data-viewport="desktop"] .bq-toolbar {
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+}
+
+html[data-viewport="desktop"] .bq-tabs-3 {
+  min-width: min(100%, 34rem) !important;
+}
+
+html[data-viewport="desktop"] .bq-tab {
+  flex-direction: row !important;
+}
+
+html[data-viewport="desktop"] .bq-composer {
+  order: 0 !important;
 }
