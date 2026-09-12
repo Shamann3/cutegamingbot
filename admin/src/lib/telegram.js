@@ -35,6 +35,7 @@ function isDesktopTelegram(tg) {
     return true
   }
   if (isPhoneTelegram(tg)) return false
+  // web.telegram.org / unknown — широкий экран = ПК
   try {
     return window.innerWidth >= 901
   } catch {

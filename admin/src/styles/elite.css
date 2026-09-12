@@ -1930,7 +1930,7 @@ body,
 }
 
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .craftmap-shell-fs {
     z-index: 850;
   }
@@ -2824,7 +2824,7 @@ body,
 }
 
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   /* Телефон / узкий планшет: полноэкранный drawer, без нижней tab-bar */
   .panel-mobile-bottombar {
     display: none !important;
@@ -3388,7 +3388,7 @@ body,
 }
 
 @media (max-width: 640px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   :root {
     --e-r-card: 18px;
     --e-r-block: 14px;
@@ -3888,7 +3888,7 @@ body,
 
 /* Телефон / узкий планшет: select вместо длинного списка */
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .pa-people-toolbar {
     grid-template-columns: 1fr;
   }
@@ -3931,7 +3931,7 @@ body,
 }
 
 @media (max-width: 640px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .panel-panel-access .pa-refresh {
     width: 100%;
     margin-left: 0;
@@ -4602,7 +4602,7 @@ body,
 }
 
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .pa-help-btn-text {
     display: none;
   }
@@ -6946,7 +6946,7 @@ body,
   to { opacity: 1; transform: none; }
 }
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .gbl-grid { grid-template-columns: 1fr; }
   .gbl-log-row { grid-template-columns: 1fr 1fr; }
   .gbl-log-ts { text-align: left; }
@@ -8049,7 +8049,7 @@ body,
   .grp-person-role { grid-column: 1 / -1; }
 }
 @media (max-width: 640px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .grp-hero-stats, .grp-stat-grid, .grp-two, .grp-tops, .grp-meters, .grp-kv-grid { grid-template-columns: 1fr; }
 
   }

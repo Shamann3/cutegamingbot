@@ -1867,14 +1867,14 @@ button.pu-inv-item.is-active {
 }
 
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) .pu-profile-layout {
+  html:not([data-viewport="desktop"]):not(.is-desktop) .pu-profile-layout {
     display: flex !important;
     flex-direction: column !important;
     gap: 0.55rem !important;
   }
 
-  html:not([data-viewport="desktop"]) .panel-users .pu-tabs-bar,
-  html:not([data-viewport="desktop"]) .panel-users .panel-users-search {
+  html:not([data-viewport="desktop"]):not(.is-desktop) .panel-users .pu-tabs-bar,
+  html:not([data-viewport="desktop"]):not(.is-desktop) .panel-users .panel-users-search {
     position: relative !important;
     top: auto !important;
     z-index: auto !important;

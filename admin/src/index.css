@@ -2713,7 +2713,7 @@ body {
 }
 
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .panel-economy-stats,
   .panel-economy-grid-2 {
     grid-template-columns: 1fr;
@@ -5578,7 +5578,7 @@ body {
 }
 
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .panel-broadcast-history-details-grid {
     grid-template-columns: 1fr;
   }
@@ -8167,7 +8167,7 @@ body {
 .dex-form-col { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; min-width: 220px; }
 .dex-form-preview-col { display: flex; flex-direction: column; width: 260px; flex-shrink: 0; }
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .dex-form-preview-col { display: none; }
   }
 }
@@ -11536,7 +11536,7 @@ html { scroll-behavior: smooth; }
 }
 
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .chs-nav { display: none; }
   .chs-scroll { padding: 1rem 1rem 4rem; }
   }

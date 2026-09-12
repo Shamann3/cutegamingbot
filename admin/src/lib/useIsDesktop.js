@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 
 /**
- * phone | desktop
+ * phone | desktop — единая логика для CSS и React.
+ *
  * 1) TG ios/android → phone
  * 2) TG tdesktop/windows/macos/linux → desktop
- * 3) иначе ширина ≥ 901 → desktop
+ * 3) TG web/weba/webk + ширина ≥901 → desktop
+ * 4) иначе ширина ≥901 → desktop, иначе phone
  */
 
 const PHONE_PLATFORMS = new Set(['ios', 'android', 'android_x'])
 const DESKTOP_PLATFORMS = new Set(['tdesktop', 'macos', 'linux', 'windows'])
+const WEB_PLATFORMS = new Set(['web', 'weba', 'webk'])
 const DESKTOP_MIN_WIDTH = 901
 
 function telegramPlatform() {
@@ -19,33 +22,44 @@ function telegramPlatform() {
   }
 }
 
+function widthIsDesktop() {
+  try {
+    return window.innerWidth >= DESKTOP_MIN_WIDTH
+  } catch {
+    return true
+  }
+}
+
 export function detectViewportMode() {
   if (typeof window === 'undefined') return 'desktop'
 
   const platform = telegramPlatform()
+
   if (PHONE_PLATFORMS.has(platform)) return 'phone'
   if (DESKTOP_PLATFORMS.has(platform)) return 'desktop'
 
-  // data-tg-desktop от telegram.js — дополнительный якорь
   try {
     if (document.documentElement.dataset.tgDesktop === '1') return 'desktop'
-    if (document.documentElement.dataset.tgDesktop === '0' && PHONE_PLATFORMS.has(platform)) {
-      return 'phone'
-    }
   } catch {
     /* ignore */
   }
 
-  return window.innerWidth >= DESKTOP_MIN_WIDTH ? 'desktop' : 'phone'
+  if (WEB_PLATFORMS.has(platform)) {
+    return widthIsDesktop() ? 'desktop' : 'phone'
+  }
+
+  return widthIsDesktop() ? 'desktop' : 'phone'
 }
 
 export function applyViewportModeToDocument(mode = detectViewportMode()) {
   if (typeof document === 'undefined') return mode
+  // Защита от битых значений (раньше из-за бага мог попасть boolean true)
+  const safe = mode === 'phone' ? 'phone' : 'desktop'
   const root = document.documentElement
-  root.dataset.viewport = mode
-  root.classList.toggle('is-phone', mode === 'phone')
-  root.classList.toggle('is-desktop', mode === 'desktop')
-  return mode
+  root.dataset.viewport = safe
+  root.classList.toggle('is-phone', safe === 'phone')
+  root.classList.toggle('is-desktop', safe === 'desktop')
+  return safe
 }
 
 export function useViewportMode() {

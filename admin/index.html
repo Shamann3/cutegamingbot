@@ -13,8 +13,14 @@
         try {
           var p = String((window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.platform) || '').toLowerCase()
           var phone = p === 'ios' || p === 'android' || p === 'android_x'
-          var desk = p === 'tdesktop' || p === 'macos' || p === 'linux' || p === 'windows'
-          var mode = phone ? 'phone' : desk || window.innerWidth >= 901 ? 'desktop' : 'phone'
+          var deskPlat = p === 'tdesktop' || p === 'macos' || p === 'linux' || p === 'windows'
+          var wide = window.innerWidth >= 901
+          // web/weba на широком экране = ПК (web.telegram.org)
+          var deskWeb = (p === 'web' || p === 'weba' || p === 'webk') && wide
+          var mode = 'desktop'
+          if (phone) mode = 'phone'
+          else if (deskPlat || deskWeb || wide) mode = 'desktop'
+          else mode = 'phone'
           document.documentElement.dataset.viewport = mode
           document.documentElement.classList.toggle('is-phone', mode === 'phone')
           document.documentElement.classList.toggle('is-desktop', mode === 'desktop')

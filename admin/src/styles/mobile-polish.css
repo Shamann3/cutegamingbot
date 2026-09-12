@@ -41,13 +41,13 @@ html.panel-nav-open .panel-shelf-sidebar {
 }
 
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) .panel-nav-recent {
+  html:not([data-viewport="desktop"]):not(.is-desktop) .panel-nav-recent {
     display: block;
   }
 }
 
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   /* ---------- Global QA ---------- */
   body,
   .panel-shell {
@@ -642,7 +642,7 @@ html[data-viewport="phone"] {
    ПОДДЕРЖКА — list ↔ thread
    ============================================================ */
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .support-section {
     display: flex;
     flex-direction: column;
@@ -791,7 +791,7 @@ html[data-viewport="phone"] {
    СТАФФ / АРХИВ / СПИСКИ
    ============================================================ */
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .staff-section,
   .panel-staff,
   .arc-shell,
@@ -847,7 +847,7 @@ html[data-viewport="phone"] {
    DASHBOARD / Общие секции
    ============================================================ */
 @media (max-width: 900px) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .panel-layout-dashboard {
     gap: 0.65rem !important;
   }
@@ -869,7 +869,7 @@ html[data-viewport="phone"] {
 
 /* Reduced motion — сохранить читаемость, убрать лишнее */
 @media (max-width: 900px) and (prefers-reduced-motion: reduce) {
-  html:not([data-viewport="desktop"]) {
+  html:not([data-viewport="desktop"]):not(.is-desktop) {
   .panel-users,
   .panel-shelf,
   .support-ticket-item {
