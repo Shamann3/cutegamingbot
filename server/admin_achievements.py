@@ -15,7 +15,7 @@ from db import db
 DEFAULT_ICON_EMOJI_ID = "5404534885324988233"
 DEFAULT_ICON_FALLBACK = "⭐"
 MAX_TITLE_HTML_LEN = 2800
-MAX_CUSTOM_EMOJI_PER_TITLE = 40
+MAX_CUSTOM_EMOJI_PER_TITLE = 24
 MAX_DESCRIPTION_LEN = 400
 MAX_RARITY_RANK = 20
 DEFAULT_RARITY_NAMES = {
@@ -240,15 +240,18 @@ def compose_title_html(
     low = raw.lower()
     if "http://" in low or "https://" in low or "t.me/" in low or "<a " in low:
         raise ValueError("links_forbidden")
+    n_emoji = len(EMOJI_TOKEN_RE.findall(raw))
+    if n_emoji > MAX_CUSTOM_EMOJI_PER_TITLE:
+        raise ValueError(
+            f"В карточке {n_emoji} premium-эмодзи. Максимум {MAX_CUSTOM_EMOJI_PER_TITLE} — "
+            f"иначе Telegram не покажет награду."
+        )
     fb = html.escape((fallback or DEFAULT_ICON_FALLBACK)[:8] or DEFAULT_ICON_FALLBACK)
     parts: List[str] = []
     last = 0
-    n_emoji = 0
     for m in EMOJI_TOKEN_RE.finditer(raw):
         parts.append(html.escape(raw[last:m.start()]))
-        if n_emoji < MAX_CUSTOM_EMOJI_PER_TITLE:
-            parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
-            n_emoji += 1
+        parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
         last = m.end()
     parts.append(html.escape(raw[last:]))
     return safe_clip_html("".join(parts), max_len)
@@ -340,6 +343,12 @@ async def save_item(data: Dict[str, Any], *, actor_id: int) -> Dict[str, Any]:
         title_html = safe_clip_html(incoming_html, MAX_TITLE_HTML_LEN)
     else:
         title_html = compose_title_html(title_raw, fallback=icon_fallback)
+    got_emoji = len(re.findall(r"<tg-emoji\b", title_html or "", flags=re.I))
+    if got_emoji > MAX_CUSTOM_EMOJI_PER_TITLE:
+        raise ValueError(
+            f"В карточке {got_emoji} premium-эмодзи. Максимум {MAX_CUSTOM_EMOJI_PER_TITLE} — "
+            f"иначе Telegram не покажет награду."
+        )
     description = str(data.get("description") or "")[:MAX_DESCRIPTION_LEN]
     new_level_name = str(data.get("new_rarity_name") or "").strip()
     if new_level_name and not data.get("id"):
@@ -430,15 +439,19 @@ async def overview() -> Dict[str, Any]:
             "sort": 0,
             "enabled": True,
         },
+        "limits": {
+            "max_custom_emoji_per_title": MAX_CUSTOM_EMOJI_PER_TITLE,
+            "max_title_html_len": MAX_TITLE_HTML_LEN,
+        },
         "help": {
             "code": "Уникальный код (латиница), например legend_2026. Коды gbl_level_1…5 — метки уровней баланса группы.",
-            "title": "Карточка на витрине. Можно несколько строк, отступы и много {emoji:ID}. Для gbl_level_* меняйте здесь — так и выдастся.",
+            "title": f"Карточка: несколько строк, отступы и {{emoji:ID}}. Не больше {MAX_CUSTOM_EMOJI_PER_TITLE} premium-эмодзи — иначе Telegram не покажет награду.",
             "icon_emoji_id": "ID Telegram Premium emoji. Пусто — используется обычный emoji ниже. Значок должен быть уникальным среди всех наград.",
             "icon_fallback": "Обычный emoji (виден всем, даже без Telegram Premium). Тоже должен быть уникальным.",
             "rarity": "Уровень награды. Звёзды и подпись берутся из шкалы уровней. Новое достижение может добавить новый уровень со своим названием.",
             "sort": "Порядок в каталоге выдачи (меньше = выше).",
             "grant_user_id": "Telegram user_id игрока, которому выдаём или снимаем награду.",
-            "grant_free_title": "Карточка свободной награды: несколько строк, пробелы в начале строк и много {emoji:ID}. Без ссылок.",
+            "grant_free_title": f"Карточка: строки, отступы, {{emoji:ID}}. Максимум {MAX_CUSTOM_EMOJI_PER_TITLE} premium-эмодзи. Без ссылок.",
             "grant_free_emoji_id": "Числовой ID Telegram Premium emoji. Можно в значок награды и/или внутрь названия.",
             "revoke_instance": "instance_id из списка достижений игрока. Снятие пишется в журнал с админом.",
         },

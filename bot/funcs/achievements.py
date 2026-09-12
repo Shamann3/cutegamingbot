@@ -28,12 +28,61 @@ MAX_ITEMS_PER_USER = 200
 # Карточка как на фото: много premium-эмодзи + переносы. 500 символов
 # резало теги посередине → Telegram DOCUMENT_INVALID → «код тупит».
 MAX_TITLE_HTML_LEN = 2800
-MAX_CUSTOM_EMOJI_PER_TITLE = 40
+# Одна карточка должна целиком влезть в одно сообщение Telegram (~100
+# custom emoji на сообщение). 24 — достаточно для декора, как на фото,
+# и всегда открывается в «Все достижения».
+MAX_CUSTOM_EMOJI_PER_TITLE = 24
 MAX_DESCRIPTION_LEN = 400
 PAGE_PACK_WEIGHT = 52
+TG_MESSAGE_HTML_MAX = 3900
+MAX_CUSTOM_EMOJI_PER_MESSAGE = 88
+# Профиль уже несёт свои premium-эмодзи (имя, баланс, даты…).
+# Витрина не имеет права добить лимит — иначе Telegram не открывает профиль.
+PROFILE_CUSTOM_EMOJI_BUDGET = 80
+PROFILE_CAPTION_HTML_MAX = 3800
+SHOWCASE_PIN_TITLE_CHARS = 52
+_TG_EMOJI_TAG_RE = re.compile(
+    r"<tg-emoji\b[^>]*>(.*?)</tg-emoji>",
+    flags=re.IGNORECASE | re.DOTALL,
+)
 JSONB_VERSION = 1
 EMOJI_ID_RE = re.compile(r"^\d{5,32}$")
 EMOJI_TOKEN_RE = re.compile(r"\{emoji:(\d{5,32})\}", re.IGNORECASE)
+
+
+class TooManyCustomEmoji(ValueError):
+    def __init__(self, got: int, limit: int = MAX_CUSTOM_EMOJI_PER_TITLE):
+        self.got = int(got)
+        self.limit = int(limit)
+        super().__init__(f"too_many_custom_emoji:{self.got}/{self.limit}")
+
+
+def ensure_custom_emoji_limit(got: int, limit: int = MAX_CUSTOM_EMOJI_PER_TITLE) -> None:
+    if int(got) > int(limit):
+        raise TooManyCustomEmoji(got, limit)
+
+
+def count_title_custom_emojis(
+    text: str,
+    entities: Optional[Sequence[Any]] = None,
+) -> int:
+    n = 0
+    for ent in entities or []:
+        if _entity_type_name(ent) == "custom_emoji":
+            n += 1
+    n += len(EMOJI_TOKEN_RE.findall(text or ""))
+    return n
+
+
+def emoji_limit_message_html(got: int, limit: int = MAX_CUSTOM_EMOJI_PER_TITLE) -> str:
+    extra = max(0, int(got) - int(limit))
+    return (
+        f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
+        f"<b>Слишком много Premium-эмодзи</b>\n"
+        f"В карточке <b>{int(got)}</b>, можно не больше <b>{int(limit)}</b>.\n"
+        f"Иначе Telegram не откроет награду.\n"
+        f"<i>Уберите {extra} и отправьте снова.</i>"
+    )
 
 # Premium fallback / default icons
 DEFAULT_ICON_EMOJI_ID = "5404534885324988233"
@@ -188,6 +237,62 @@ def title_compact_html(html_text: str) -> str:
     return first if first.endswith("…") else f"{first}…"
 
 
+def first_custom_emoji_id(html_text: str) -> Optional[str]:
+    m = re.search(r"emoji-id\s*=\s*['\"](\d{5,32})['\"]", html_text or "", flags=re.I)
+    return m.group(1) if m else None
+
+
+def plain_title_preview(html_text: str, max_chars: int = SHOWCASE_PIN_TITLE_CHARS) -> str:
+    raw = strip_tg_emoji(html_text or "")
+    raw = raw.replace("\u00A0", " ").replace("\r", "")
+    raw = raw.split("\n", 1)[0]
+    raw = re.sub(r"[ \t]{2,}", " ", raw).strip() or "награда"
+    if len(raw) > max_chars:
+        raw = raw[: max(1, max_chars - 1)] + "…"
+    return html.escape(raw)
+
+
+def clip_custom_emojis(html_text: str, max_n: int) -> str:
+    """Оставляет первые max_n <tg-emoji>, остальные превращает в fallback-текст."""
+    if max_n < 0:
+        max_n = 0
+    n = 0
+
+    def _repl(m: re.Match) -> str:
+        nonlocal n
+        n += 1
+        if n <= max_n:
+            return m.group(0)
+        return m.group(1) or ""
+
+    return _TG_EMOJI_TAG_RE.sub(_repl, html_text or "")
+
+
+def fit_telegram_html(
+    html_text: str,
+    *,
+    max_emojis: int = MAX_CUSTOM_EMOJI_PER_MESSAGE,
+    max_len: int = TG_MESSAGE_HTML_MAX,
+) -> str:
+    """Гарантирует, что HTML влезет в одно сообщение Telegram."""
+    out = html_text or ""
+    if count_custom_emojis(out) > max_emojis:
+        out = clip_custom_emojis(out, max_emojis)
+    return safe_clip_html(out, max_len)
+
+
+def achievement_profile_pin_html(it: Dict[str, Any]) -> str:
+    """Лёгкая строка витрины: один значок + обычный текст первой строки.
+
+    Полная карточка с десятками premium-эмодзи живёт в «Все достижения».
+    В профиле она ломает лимит Telegram и профиль не открывается.
+    """
+    title_html = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
+    eid = it.get("icon_emoji_id") or first_custom_emoji_id(title_html)
+    ic = icon_html(eid, it.get("icon_fallback") or DEFAULT_ICON_FALLBACK)
+    return f"{ic} {plain_title_preview(title_html)}"
+
+
 def safe_clip_html(html_text: str, max_len: int) -> str:
     """Обрезать HTML, не разрывая <tg-emoji> — иначе Telegram падает."""
     s = html_text or ""
@@ -288,16 +393,13 @@ def expand_tokens_in_html(
     raw = html_text or ""
     if "{emoji:" not in raw.lower():
         return safe_clip_html(raw, max_len)
+    ensure_custom_emoji_limit(count_custom_emojis(raw) + len(EMOJI_TOKEN_RE.findall(raw)))
     fb = html.escape((fallback or DEFAULT_ICON_FALLBACK)[:8] or DEFAULT_ICON_FALLBACK)
-    already = count_custom_emojis(raw)
     parts: List[str] = []
     last = 0
-    n = already
     for m in EMOJI_TOKEN_RE.finditer(raw):
         parts.append(raw[last:m.start()])
-        if n < MAX_CUSTOM_EMOJI_PER_TITLE:
-            parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
-            n += 1
+        parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
         last = m.end()
     parts.append(raw[last:])
     return safe_clip_html("".join(parts), max_len)
@@ -313,6 +415,7 @@ def prepare_title_from_message(
     low = str(text or "").lower()
     if "http://" in low or "https://" in low or "t.me/" in low:
         raise ValueError("links_forbidden")
+    ensure_custom_emoji_limit(count_title_custom_emojis(text, entities))
     title_html, emoji_id, fallback = sanitize_achievement_html(
         text, entities, max_len=max_len,
     )
@@ -450,15 +553,13 @@ def compose_title_html(
     low = raw.lower()
     if "http://" in low or "https://" in low or "t.me/" in low or "<a " in low:
         raise ValueError("links_forbidden")
+    ensure_custom_emoji_limit(len(EMOJI_TOKEN_RE.findall(raw)))
     fb = html.escape((fallback or DEFAULT_ICON_FALLBACK)[:8] or DEFAULT_ICON_FALLBACK)
     parts: List[str] = []
     last = 0
-    n_emoji = 0
     for m in EMOJI_TOKEN_RE.finditer(raw):
         parts.append(html.escape(raw[last:m.start()]))
-        if n_emoji < MAX_CUSTOM_EMOJI_PER_TITLE:
-            parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
-            n_emoji += 1
+        parts.append(f"<tg-emoji emoji-id='{m.group(1)}'>{fb}</tg-emoji>")
         last = m.end()
     parts.append(html.escape(raw[last:]))
     return safe_clip_html("".join(parts), max_len)
@@ -475,10 +576,6 @@ def title_html_to_tokens(title_html: str) -> str:
         flags=re.IGNORECASE | re.DOTALL,
     )
     return re.sub(r"<[^>]+>", "", s)
-
-
-TG_MESSAGE_HTML_MAX = 3900
-MAX_CUSTOM_EMOJI_PER_MESSAGE = 88
 
 
 def _row_item(row: Any) -> Dict[str, Any]:
@@ -725,7 +822,12 @@ def format_gbl_unlocks_html(items: Sequence[Dict[str, Any]]) -> str:
     if not rows:
         return ""
     header = "Новая награда" if len(rows) == 1 else f"Новые награды · {len(rows)}"
-    lines = [achievement_line_html(it) for it in rows]
+    lines = [
+        achievement_profile_pin_html(it)
+        if is_rich_title(it.get("title_html") or "")
+        else achievement_line_html(it)
+        for it in rows
+    ]
     body = "\n".join(lines)
     return (
         f"<blockquote>"
@@ -792,13 +894,16 @@ def format_showcase_blockquote(doc: Dict[str, Any]) -> str:
     rows = showcase_items(doc, SHOWCASE_LIMIT)
     if not rows:
         return ""
-    # На витрине — первая строка карточки, без редкости (воздух + лимит эмодзи)
-    lines = [achievement_line_html(it, with_rarity=False, compact=True) for _iid, it in rows]
+    # В профиле — только пины. Полные карточки с десятками premium-эмодзи
+    # в одном сообщении с профилем превышают лимит Telegram.
+    lines = [achievement_profile_pin_html(it) for _iid, it in rows]
     body = "\n".join(lines)
     return (
         f"<blockquote>"
         f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-        f"<b>Витрина</b> · {len(rows)}/{SHOWCASE_LIMIT}\n{body}"
+        f"<b>Витрина</b> · {len(rows)}/{SHOWCASE_LIMIT}\n"
+        f"{body}\n"
+        f"<i>целиком — «Все достижения»</i>"
         f"</blockquote>"
     )
 
@@ -854,7 +959,11 @@ def format_full_achievements_html(
         parts.append("")
     if pages > 1:
         parts.append(f"<i>листайте кнопками ниже — {page_i + 1} из {pages}</i>")
-    return safe_clip_html("\n".join(parts).strip(), TG_MESSAGE_HTML_MAX)
+    return fit_telegram_html(
+        "\n".join(parts).strip(),
+        max_emojis=MAX_CUSTOM_EMOJI_PER_MESSAGE,
+        max_len=TG_MESSAGE_HTML_MAX,
+    )
 
 
 def pin_item_to_front(doc: Dict[str, Any], instance_id: str) -> Dict[str, Any]:
@@ -1815,6 +1924,7 @@ def help_admin_html() -> str:
         f"2. Напишите <code>наградить</code> — откроется меню\n"
         f"3. Выберите «Свободное» и следующим сообщением пришлите карточку\n"
         f"Premium-эмодзи, переносы строк и пробелы в начале строк сохранятся.\n"
+        f"Не больше <b>{MAX_CUSTOM_EMOJI_PER_TITLE}</b> premium-эмодзи в одной награде — иначе Telegram её не покажет.\n"
         f"Можно также указать numeric id и вставить его в значок или в название.\n\n"
         f"Быстро одной строкой:\n"
         f"<code>наградить @user текст</code>\n"

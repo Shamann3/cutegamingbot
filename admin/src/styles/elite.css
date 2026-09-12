@@ -7040,6 +7040,7 @@ body,
   color: #e8b09a; font-size: .78rem; line-height: 1.4;
 }
 .ach-field-label { font-size: .76rem; color: #bdbdbd; }
+.ach-emoji-over { color: #e07070 !important; }
 .ach-field-help {
   font-size: .7rem;
   color: #777;

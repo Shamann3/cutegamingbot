@@ -26,6 +26,7 @@ const EMPTY = {
 
 const SORT_MIN = 0
 const SORT_MAX = 100
+const DEFAULT_MAX_PREMIUM_EMOJI = 24
 const EMOJI_ID_RE = /^\d{5,32}$/
 const TG_EMOJI_TAG = /<tg-emoji[^>]*emoji-id=["'](\d{5,32})["'][^>]*>.*?<\/tg-emoji>/gi
 
@@ -38,6 +39,19 @@ function htmlToTokens(s) {
 
 function countEmojiTokens(s) {
   return (String(s || '').match(/\{emoji:\d{5,32}\}/gi) || []).length
+}
+
+function EmojiCount({ value, max }) {
+  const n = countEmojiTokens(value)
+  const over = n > max
+  const left = Math.max(0, max - n)
+  return (
+    <span className={`ach-field-help${over ? ' ach-emoji-over' : ''}`}>
+      {over
+        ? `${n} / ${max} premium-эмодзи — уберите ${n - max}, иначе Telegram не покажет карточку`
+        : `${n} / ${max} premium-эмодзи${n > 0 ? ` · ещё ${left}` : ''}`}
+    </span>
+  )
 }
 
 function parseEmojiId(raw) {
@@ -145,6 +159,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
   const [newLevelName, setNewLevelName] = useState('')
   const [addingLevel, setAddingLevel] = useState(false)
   const [help, setHelp] = useState({})
+  const [maxPremiumEmoji, setMaxPremiumEmoji] = useState(DEFAULT_MAX_PREMIUM_EMOJI)
   const [draft, setDraft] = useState({ ...EMPTY })
   const [q, setQ] = useState('')
   const [granting, setGranting] = useState(false)
@@ -170,6 +185,8 @@ export default function AchievementsSection({ onOpenUser } = {}) {
         setRarityLevels(data.rarity_levels)
       }
       setHelp(data.help || {})
+      const lim = Number(data?.limits?.max_custom_emoji_per_title)
+      if (Number.isFinite(lim) && lim > 0) setMaxPremiumEmoji(lim)
     } catch (e) {
       notifyAdmin(String(e?.message || e), { error: true })
     } finally {
@@ -256,6 +273,10 @@ export default function AchievementsSection({ onOpenUser } = {}) {
     }
     if (!String(draft.title || '').trim()) {
       notifyAdmin('Введите название достижения', { error: true })
+      return
+    }
+    if (countEmojiTokens(draft.title) > maxPremiumEmoji) {
+      notifyAdmin(`Максимум ${maxPremiumEmoji} premium-эмодзи в одной награде — иначе Telegram её не покажет`, { error: true })
       return
     }
     setSaving(true)
@@ -364,6 +385,10 @@ export default function AchievementsSection({ onOpenUser } = {}) {
           notifyAdmin('Введите текст свободной награды', { error: true })
           return
         }
+        if (countEmojiTokens(title) > maxPremiumEmoji) {
+          notifyAdmin(`Максимум ${maxPremiumEmoji} premium-эмодзи в одной награде — иначе Telegram её не покажет`, { error: true })
+          return
+        }
         const res = await grantFreeAchievement({
           user_id: uid,
           title,
@@ -464,7 +489,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
             <Field
               className="ach-field-wide"
               label="Название / карточка"
-              help="Несколько строк, пробелы в начале строк и много {emoji:ID}. Telegram покажет это как живую карточку."
+              help={`Несколько строк, отступы и {emoji:ID}. Не больше ${maxPremiumEmoji} premium-эмодзи — столько Telegram гарантированно покажет.`}
             >
               <textarea
                 ref={officialTitleRef}
@@ -474,9 +499,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
                 onChange={(e) => setDraft({ ...draft, title: e.target.value })}
                 placeholder={'Активность\n    {emoji:5469967260380612012} 10 дней\n    {emoji:5469967260380612012} без фола'}
               />
-              <span className="ach-field-help">
-                {countEmojiTokens(draft.title)} premium-эмодзи · {String(draft.title || '').length} символов
-              </span>
+              <EmojiCount value={draft.title} max={maxPremiumEmoji} />
             </Field>
             <Field
               label="Premium emoji id"
@@ -497,6 +520,10 @@ export default function AchievementsSection({ onOpenUser } = {}) {
                     const id = parseEmojiId(draft.icon_emoji_id)
                     if (!id) {
                       notifyAdmin('Сначала введите numeric id premium-эмодзи', { error: true })
+                      return
+                    }
+                    if (countEmojiTokens(draft.title) >= maxPremiumEmoji) {
+                      notifyAdmin(`Уже ${maxPremiumEmoji} — больше Telegram не покажет`, { error: true })
                       return
                     }
                     setDraft((d) => ({
@@ -735,7 +762,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
               <Field
                 className="ach-field-wide"
                 label="Текст награды"
-                help="Карточка как в Telegram: переносы, отступы в начале строк, много {emoji:ID}. Без ссылок."
+                help={`Карточка как в Telegram: переносы, отступы, {emoji:ID}. Максимум ${maxPremiumEmoji} premium-эмодзи. Без ссылок.`}
               >
                 <textarea
                   ref={freeTitleRef}
@@ -745,9 +772,7 @@ export default function AchievementsSection({ onOpenUser } = {}) {
                   onChange={(e) => setGrantFreeTitle(e.target.value)}
                   placeholder={'Активность\n    {emoji:5469967260380612012} 10 дней\n    {emoji:5469967260380612012} без фола'}
                 />
-                <span className="ach-field-help">
-                  {countEmojiTokens(grantFreeTitle)} premium-эмодзи · {String(grantFreeTitle || '').length} символов
-                </span>
+                <EmojiCount value={grantFreeTitle} max={maxPremiumEmoji} />
               </Field>
               <Field
                 label="Premium emoji id"
@@ -794,6 +819,10 @@ export default function AchievementsSection({ onOpenUser } = {}) {
                     notifyAdmin('Введите numeric id premium-эмодзи', { error: true })
                     return
                   }
+                  if (countEmojiTokens(grantFreeTitle) >= maxPremiumEmoji) {
+                    notifyAdmin(`Уже ${maxPremiumEmoji} — больше Telegram не покажет`, { error: true })
+                    return
+                  }
                   setGrantFreeTitle((t) => insertAtCursor(freeTitleRef.current, t, `{emoji:${id}}`))
                 }}
               >
@@ -806,6 +835,10 @@ export default function AchievementsSection({ onOpenUser } = {}) {
                   const id = parseEmojiId(grantFreeEmojiId)
                   if (!id) {
                     notifyAdmin('Введите numeric id premium-эмодзи', { error: true })
+                    return
+                  }
+                  if (countEmojiTokens(grantFreeTitle) >= maxPremiumEmoji) {
+                    notifyAdmin(`Уже ${maxPremiumEmoji} — больше Telegram не покажет`, { error: true })
                     return
                   }
                   setGrantFreeEmojiId(id)

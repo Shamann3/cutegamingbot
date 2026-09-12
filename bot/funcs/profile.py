@@ -1235,7 +1235,17 @@ async def _build_profile_caption_for_target(
         ),
     ]
 
-    return "\n".join(filter(None, caption_parts))
+    caption = "\n".join(filter(None, caption_parts))
+    try:
+        from bot.funcs import achievements as ach_fit
+        caption = ach_fit.fit_telegram_html(
+            caption,
+            max_emojis=ach_fit.PROFILE_CUSTOM_EMOJI_BUDGET,
+            max_len=ach_fit.PROFILE_CAPTION_HTML_MAX,
+        )
+    except Exception:
+        pass
+    return caption
 # =========================================================
 # FULL PROFILE REFRESH
 # =========================================================
@@ -1515,6 +1525,75 @@ def _profile_is_no_caption_error(e: Exception) -> bool:
         return False
 
 
+def _profile_is_html_limit_error(e: Exception) -> bool:
+    low = str(e).lower()
+    return any(x in low for x in (
+        "document_invalid",
+        "can't parse",
+        "cant parse",
+        "message is too long",
+        "caption is too long",
+        "too many entities",
+        "entity",
+        "custom emoji",
+        "message_too_long",
+        "text is too long",
+    ))
+
+
+def _profile_caption_fallbacks(caption: str) -> List[str]:
+    """Варианты подписи: полная → ужать → без витрины → без premium-тегов."""
+    out: List[str] = []
+    seen = set()
+
+    def _add(body: str) -> None:
+        s = body or ""
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+
+    _add(caption)
+    try:
+        from bot.funcs import achievements as ach_mod
+        _add(ach_mod.fit_telegram_html(
+            caption,
+            max_emojis=min(48, ach_mod.PROFILE_CUSTOM_EMOJI_BUDGET),
+            max_len=ach_mod.PROFILE_CAPTION_HTML_MAX,
+        ))
+        _add(ach_mod.fit_telegram_html(
+            caption,
+            max_emojis=24,
+            max_len=2800,
+        ))
+        stripped_block = re.sub(
+            r"<blockquote>\s*<tg-emoji[^>]*>.*?</tg-emoji>\s*<b>Витрина</b>.*?</blockquote>",
+            "",
+            caption or "",
+            flags=re.I | re.S,
+        )
+        _add(stripped_block.strip())
+        _add(ach_mod.strip_tg_emoji(caption))
+    except Exception:
+        _add(re.sub(r"<tg-emoji[^>]*>.*?</tg-emoji>", "", caption or "", flags=re.I | re.S))
+    return out
+
+
+async def _profile_send_caption(send_factory, caption: str, *, uid: Optional[int] = None):
+    """send_factory(text) -> message. Пробует облегчённые подписи, если Telegram отказ."""
+    last = None
+    for body in _profile_caption_fallbacks(caption):
+        try:
+            return await send_factory(body)
+        except Exception as e:
+            last = e
+            if not _profile_is_html_limit_error(e):
+                raise
+            _p_err("PROFILE", f"caption rejected, trying lighter: {e}", e, uid=uid, level=2)
+    if last:
+        raise last
+    raise RuntimeError("empty profile caption")
+
+
 async def _profile_safe_edit_message(
     message_obj,
     *,
@@ -1522,23 +1601,30 @@ async def _profile_safe_edit_message(
     reply_markup: Optional[InlineKeyboardMarkup],
     parse_mode: str = "HTML"
 ) -> str:
-    try:
-        await _profile_call(
-            lambda: message_obj.edit_text(
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode,
-                disable_web_page_preview=True
-            ),
-            timeout=PROFILE_EDIT_TIMEOUT
-        )
-        return "edit_text"
-
-    except Exception as e:
-        if _profile_is_not_modified_error(e):
-            _p_dbg("EDIT", "edit_text -> not_modified", level=2)
-            return "not_modified"
-        _p_err("EDIT", "edit_text failed", e, level=2)
+    last_html_err = None
+    for body in _profile_caption_fallbacks(text):
+        try:
+            await _profile_call(
+                lambda b=body: message_obj.edit_text(
+                    text=b,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode,
+                    disable_web_page_preview=True
+                ),
+                timeout=PROFILE_EDIT_TIMEOUT
+            )
+            return "edit_text"
+        except Exception as e:
+            if _profile_is_not_modified_error(e):
+                _p_dbg("EDIT", "edit_text -> not_modified", level=2)
+                return "not_modified"
+            if _profile_is_html_limit_error(e):
+                last_html_err = e
+                continue
+            _p_err("EDIT", "edit_text failed", e, level=2)
+            break
+    if last_html_err:
+        _p_err("EDIT", "edit_text html/limit exhausted", last_html_err, level=2)
 
     try:
         await _profile_call(
@@ -1592,24 +1678,32 @@ async def _profile_safe_edit_message_by_ids(
     Безопасно редактирует сообщение по chat_id и message_id.
     Возвращает 'edit_text', 'edit_caption', 'edit_reply_markup' или 'failed'.
     """
-    try:
-        await _profile_call(
-            lambda: bot.edit_message_text(
-                text=text,
-                chat_id=chat_id,
-                message_id=message_id,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode,
-                disable_web_page_preview=True
-            ),
-            timeout=PROFILE_EDIT_TIMEOUT
-        )
-        return "edit_text"
-    except Exception as e:
-        if _profile_is_not_modified_error(e):
-            _p_dbg("EDIT_IDS", "edit_text -> not_modified", level=2)
-            return "not_modified"
-        _p_dbg("EDIT_IDS", f"edit_text failed: {e}", level=2)
+    last_html_err = None
+    for body in _profile_caption_fallbacks(text):
+        try:
+            await _profile_call(
+                lambda b=body: bot.edit_message_text(
+                    text=b,
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode,
+                    disable_web_page_preview=True
+                ),
+                timeout=PROFILE_EDIT_TIMEOUT
+            )
+            return "edit_text"
+        except Exception as e:
+            if _profile_is_not_modified_error(e):
+                _p_dbg("EDIT_IDS", "edit_text -> not_modified", level=2)
+                return "not_modified"
+            if _profile_is_html_limit_error(e):
+                last_html_err = e
+                continue
+            _p_dbg("EDIT_IDS", f"edit_text failed: {e}", level=2)
+            break
+    if last_html_err:
+        _p_dbg("EDIT_IDS", f"edit_text html/limit exhausted: {last_html_err}", level=2)
 
     try:
         await _profile_call(
@@ -1908,12 +2002,20 @@ async def get_user_information_in_who_are_you(message: Message, db, target_group
         has_warns=has_warns,
     )
 
-    sent = await message.reply(
-        caption,
-        parse_mode="HTML",
-        disable_web_page_preview=True,
-        reply_markup=markup
-    )
+    async def _reply_who(body: str):
+        return await message.reply(
+            body,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=markup
+        )
+
+    try:
+        sent = await _profile_send_caption(_reply_who, caption, uid=user_id)
+    except Exception as e:
+        _who_info_dbg(f"Не удалось отправить профиль {user_id}: {e}")
+        await message.reply("<b>😔 Не удалось получить информацию о пользователе</b>", parse_mode="HTML")
+        return
 
     _profile_store_message_meta(
         sent.message_id,
@@ -2016,21 +2118,27 @@ async def handle_profile_command(
         )
 
     try:
-        sent_messageprofile = await message.reply(
-            text=caption,
-            reply_markup=profile_markup,
-            parse_mode="HTML",
-            disable_web_page_preview=True
-        )
-    except Exception as e:
-        _p_err("PROFILE", "message.reply failed; trying answer", e, uid=viewer_id, level=1)
-        try:
-            sent_messageprofile = await message.answer(
-                text=caption,
+        async def _reply(body: str):
+            return await message.reply(
+                text=body,
                 reply_markup=profile_markup,
                 parse_mode="HTML",
                 disable_web_page_preview=True
             )
+
+        sent_messageprofile = await _profile_send_caption(_reply, caption, uid=viewer_id)
+    except Exception as e:
+        _p_err("PROFILE", "message.reply failed; trying answer", e, uid=viewer_id, level=1)
+        try:
+            async def _answer(body: str):
+                return await message.answer(
+                    text=body,
+                    reply_markup=profile_markup,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True
+                )
+
+            sent_messageprofile = await _profile_send_caption(_answer, caption, uid=viewer_id)
         except Exception as e2:
             _p_err("PROFILE", "message.answer failed", e2, uid=viewer_id, level=1)
             return
@@ -2172,11 +2280,16 @@ async def profile_refresh_callback(callback_query: types.CallbackQuery):
 
         if edit_mode == "failed":
             try:
-                new_msg = await callback_query.message.answer(
-                    text=new_caption,
-                    reply_markup=new_markup,
-                    parse_mode="HTML",
-                    disable_web_page_preview=True
+                async def _fallback_send(body: str):
+                    return await callback_query.message.answer(
+                        text=body,
+                        reply_markup=new_markup,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True
+                    )
+
+                new_msg = await _profile_send_caption(
+                    _fallback_send, new_caption, uid=target_user_id,
                 )
 
                 try:
@@ -2462,11 +2575,11 @@ async def handle_back_to_menu(call: types.CallbackQuery):
         await call.answer("Не удалось вернуть профиль.", show_alert=True)
         return
 
-    await call.message.edit_text(
-        caption,
+    await _profile_safe_edit_message(
+        call.message,
+        text=caption,
         reply_markup=reply_markup,
-        disable_web_page_preview=True,
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
     _profile_store_message_meta(

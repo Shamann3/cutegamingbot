@@ -291,13 +291,19 @@ async def _achm_edit_now(message, text: str, kb: InlineKeyboardMarkup) -> bool:
                     return True
                 print(f"[ACH] edit flood retry fail: {e2!r}")
                 return False
-        if "DOCUMENT_INVALID" in str(e) or "can't parse" in low:
-            try:
-                await _send_text(ach.strip_tg_emoji(text))
-                _mark_ok()
-                return True
-            except Exception:
-                return False
+        if "DOCUMENT_INVALID" in str(e) or "can't parse" in low or "too long" in low or "too many" in low:
+            for body in (
+                ach.fit_telegram_html(text, max_emojis=60, max_len=3600),
+                ach.fit_telegram_html(text, max_emojis=24, max_len=2400),
+                ach.strip_tg_emoji(text),
+            ):
+                try:
+                    await _send_text(body)
+                    _mark_ok()
+                    return True
+                except Exception:
+                    continue
+            return False
         if "there is no text" in low or "message can't be edited" in low:
             try:
                 await _send_caption(text)
@@ -430,6 +436,7 @@ async def _wizard_start_free(message: Message, db, admin_id: int, target_id: int
         f"Игрок: <code>{int(target_id)}</code>\n\n"
         f"Следующим сообщением отправьте карточку награды.\n"
         f"Premium-эмодзи вставляйте прямо в текст — все сохранятся.\n"
+        f"Максимум <b>{ach.MAX_CUSTOM_EMOJI_PER_TITLE}</b> premium-эмодзи, иначе Telegram не покажет карточку.\n"
         f"Переносы строк и пробелы в начале строк тоже сохранятся.\n"
         f"Или укажите numeric id кнопкой ниже и вставьте в значок / название.\n\n"
         f"Токен вручную: <code>{{emoji:5469967260380612012}}</code>",
@@ -475,6 +482,9 @@ async def handle_achievements_pending_message(message: Message, db) -> bool:
         ents = list(message.entities or message.caption_entities or [])
         try:
             title_html, emoji_id, fallback = ach.prepare_title_from_message(text, ents)
+        except ach.TooManyCustomEmoji as e:
+            await message.reply(ach.emoji_limit_message_html(e.got, e.limit), parse_mode="HTML")
+            return True
         except ValueError:
             await message.reply("<b>В тексте нельзя ссылки.</b> Отправьте название без URL.", parse_mode="HTML")
             return True
@@ -710,6 +720,9 @@ async def _handle_grant(message: Message, db, prefix: str, rest: str) -> bool:
     rest_text, ents = _slice_entities_for_rest(message, prefix, leftover)
     try:
         title_html, emoji_id, fallback = ach.prepare_title_from_message(rest_text, ents)
+    except ach.TooManyCustomEmoji as e:
+        await message.reply(ach.emoji_limit_message_html(e.got, e.limit), parse_mode="HTML")
+        return True
     except ValueError:
         await message.reply("<b>В тексте нельзя ссылки.</b>", parse_mode="HTML")
         return True
@@ -886,6 +899,7 @@ async def _handle_wizard_cb(callback: CallbackQuery, db, user_id: int, data: str
                 f"Игрок: <code>{int(target_id)}</code>\n\n"
                 f"Следующим сообщением отправьте карточку награды.\n"
                 f"Premium-эмодзи, переносы и отступы сохранятся.\n"
+                f"Максимум <b>{ach.MAX_CUSTOM_EMOJI_PER_TITLE}</b> premium-эмодзи.\n"
                 f"Токен: <code>{{emoji:5469967260380612012}}</code>",
                 InlineKeyboardMarkup(inline_keyboard=[
                     [_btn(text="Указать emoji id", callback_data="achc_eid", style="primary")],
@@ -971,6 +985,9 @@ async def _handle_wizard_cb(callback: CallbackQuery, db, user_id: int, data: str
             try:
                 state["title_html"] = ach.compose_title_html(raw, fallback=fb)
                 state["title_plain"] = ach.strip_tg_emoji(state["title_html"])
+            except ach.TooManyCustomEmoji as e:
+                await _ack(f"Максимум {e.limit} premium-эмодзи", True)
+                return True
             except ValueError:
                 await _ack("Нельзя ссылки", True)
                 return True
