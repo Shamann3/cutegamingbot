@@ -207,7 +207,7 @@
   to   { opacity: 1; transform: scale(1); }
 }
 
-/* --- Полный оригинальный логотип в цвете палитры --- */
+/* --- Оригинальный белый логотип, перекрашенный в accent --- */
 
 .ent-mark {
   position: relative;
@@ -216,16 +216,23 @@
   max-width: 13.5rem;
   display: grid;
   place-items: center;
-  filter: drop-shadow(0 0 22px rgba(var(--ent-accent-rgb), 0.42));
+}
+
+.ent-logo-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .ent-logo {
   position: relative;
   z-index: 2;
   width: 100%;
-  isolation: isolate;
   opacity: 0;
   will-change: transform, opacity;
+  filter: drop-shadow(0 0 16px rgba(var(--ent-accent-rgb), 0.4));
   animation: entLogoIn 1.5s 1.1s var(--ent-ease-soft) both;
 }
 
@@ -237,22 +244,12 @@
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
-  /* Белый силуэт на чёрном → multiply с акцентом даёт чистый цвет палитры */
-  filter: contrast(1.06);
-}
-
-.ent-logo::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    165deg,
-    var(--ent-accent-bright) 0%,
-    var(--ent-accent) 48%,
-    color-mix(in srgb, var(--ent-accent) 72%, #120004) 100%
-  );
-  mix-blend-mode: multiply;
+  /*
+    VivoEpsilon.png = белый силуэт на чёрном.
+    luminanceToAlpha + feFlood → те же крылья/корона/глаз/текст,
+    залитые цветом палитры. Без multiply и без цветного квадрата.
+  */
+  filter: url(#entLogoTint);
 }
 
 @keyframes entLogoIn {

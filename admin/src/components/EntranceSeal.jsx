@@ -27,6 +27,16 @@ function detectLiteEntrance() {
   return prefersReduced || veryWeakCpu
 }
 
+/** Цвет заливки марки = bright из текущей палитры (форма PNG не трогаем). */
+function resolveEntranceLogoTint() {
+  if (typeof document === 'undefined') return '#9ecbb4'
+  applyAccentToDocument(loadStoredAccent())
+  const root = document.documentElement
+  const bright = getComputedStyle(root).getPropertyValue('--e-accent-bright').trim()
+  const base = getComputedStyle(root).getPropertyValue('--e-accent').trim()
+  return bright || base || '#9ecbb4'
+}
+
 /**
  * Печать входа (ровно 6с).
  * Только оригинальный полный логотип — без SVG-дорисовок.
@@ -38,6 +48,7 @@ export default function EntranceSeal({
 }) {
   const [phase, setPhase] = useState('in')
   const [lite] = useState(detectLiteEntrance)
+  const [logoTint] = useState(resolveEntranceLogoTint)
   const doneRef = useRef(false)
   const holdMs = lite
     ? ENTRANCE_LITE_HOLD_MS
@@ -113,6 +124,19 @@ export default function EntranceSeal({
           </div>
 
           <div className="ent-mark" aria-hidden="true">
+            {/*
+              Оригинальный белый VivoEpsilon: luminance → заливка цвета палитры.
+              Крылья, корона, глаз, текст — те же; меняется только цвет.
+            */}
+            <svg className="ent-logo-defs" width="0" height="0" aria-hidden="true" focusable="false">
+              <defs>
+                <filter id="entLogoTint" x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
+                  <feColorMatrix in="SourceGraphic" type="luminanceToAlpha" result="alpha" />
+                  <feFlood floodColor={logoTint} result="fill" />
+                  <feComposite in="fill" in2="alpha" operator="in" />
+                </filter>
+              </defs>
+            </svg>
             <div className="ent-logo">
               <img
                 src={vivoEpsilonLogo}

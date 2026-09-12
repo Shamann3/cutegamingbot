@@ -23,6 +23,15 @@ function BellIcon() {
   )
 }
 
+function MenuIcon({ open }) {
+  return (
+    <span
+      className={`panel-hamburger-icon${open ? ' panel-hamburger-icon-open' : ''}`}
+      aria-hidden="true"
+    />
+  )
+}
+
 /** Приветствие по времени суток — панель открывают в любую смену,
  *  и «Добрый вечер» в 3 ночи выглядело бы небрежно. */
 function greetingFor(hour) {
@@ -36,13 +45,17 @@ function greetingFor(hour) {
  *
  *  Поиск — не декорация: это переключатель разделов. Печатаешь часть
  *  названия (русского или английского), стрелки/Enter — переход.
- *  Открывается и с клавиатуры: Ctrl/Cmd+K. */
+ *  Открывается и с клавиатуры: Ctrl/Cmd+K.
+ *
+ *  На телефоне — компактный chrome: марка, название раздела, колокольчик, меню. */
 export default function EliteTopbar({
   sections = [],
   activeSection,
   onNavigate,
   openTickets = 0,
   onOpenNotifications,
+  onOpenMenu,
+  menuOpen = false,
   /** Полное «С возвращением» — только на Главной. На остальных разделах
    *  компактная строка, иначе приветствие конкурирует с sec-title. */
   compact = false,
@@ -56,6 +69,12 @@ export default function EliteTopbar({
 
   const greeting = useMemo(() => greetingFor(new Date().getHours()), [])
   const firstName = (displayName || '').trim().split(/\s+/)[0] || 'коллега'
+
+  const activeMeta = useMemo(
+    () => sections.find((s) => s.id === activeSection) || null,
+    [sections, activeSection],
+  )
+  const sectionTitle = activeMeta?.labelRu || 'Панель'
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -122,7 +141,8 @@ export default function EliteTopbar({
         <span className="elite-brand-slot-ring" aria-hidden="true" />
         <EpsilonLogo size="sm" decorative />
       </div>
-      <div className="elite-greeting">
+
+      <div className="elite-greeting elite-greeting-desktop">
         {compact ? (
           <h1 className="elite-greeting-title elite-greeting-title-compact">
             {greeting}, {firstName}
@@ -137,8 +157,12 @@ export default function EliteTopbar({
         )}
       </div>
 
+      <div className="elite-mobile-title">
+        <p className="elite-mobile-kicker">Epsilon</p>
+        <h1 className="elite-mobile-section">{sectionTitle}</h1>
+      </div>
+
       <div className="elite-topbar-actions">
-        {/* Колокольчик слева от поиска — не под системным ✕ Telegram WebApp */}
         <button
           type="button"
           className="elite-icon-btn"
@@ -199,6 +223,18 @@ export default function EliteTopbar({
             </div>
           )}
         </div>
+
+        {typeof onOpenMenu === 'function' && (
+          <button
+            type="button"
+            className={`elite-menu-btn${menuOpen ? ' elite-menu-btn-open' : ''}`}
+            aria-label={menuOpen ? 'Закрыть меню разделов' : 'Открыть меню разделов'}
+            aria-expanded={menuOpen}
+            onClick={onOpenMenu}
+          >
+            <MenuIcon open={menuOpen} />
+          </button>
+        )}
       </div>
     </div>
   )

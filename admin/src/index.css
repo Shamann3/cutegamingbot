@@ -5823,49 +5823,87 @@ body {
 .panel-mobile-bottombar-hidden { display: none !important; }
 
 /* ============================================================
-   MOBILE — ПОЛНОЕ ОТКЛЮЧЕНИЕ ВСЕХ ЭФФЕКТОВ (≤1024px)
-   Убираем backdrop-filter, анимации, туман, зерно, тени, blur.
-   Приоритет производительности над визуалом.
+   MOBILE / TABLET ≤1024px — лёгкий визуал без тяжёлых эффектов
+   Сохраняем accent-палитру и читаемость; убираем blur/grain/glow.
    ============================================================ */
 @media (max-width: 1024px) {
-  /* Убираем ВСЕ backdrop-filter */
-  *, *::before, *::after {
+  /* Тяжёлые blur только точечно запрещены ниже — не на весь DOM */
+
+  /* Декоративные фоновые элементы */
+  .gold-bg,
+  .gold-fog-1,
+  .gold-fog-2,
+  .gold-grain,
+  .gold-particles,
+  .gold-bg-parallax,
+  .cursor-glow,
+  .section-flash,
+  .egl-halo,
+  .egl-sheen,
+  .egl-canvas,
+  .egl-screen {
+    display: none !important;
+  }
+
+  .panel-shell {
+    background: #08080c !important;
+  }
+
+  .panel-shell-main {
+    background: transparent !important;
+  }
+
+  /* Карточки — тёмные, с accent-линией, без glass blur */
+  .panel-shelf {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: 0 10px 28px -18px rgba(0, 0, 0, 0.85) !important;
+    background: rgba(14, 14, 18, 0.96) !important;
+    border-color: rgba(var(--e-accent-rgb, 255, 5, 36), 0.16) !important;
+  }
+
+  .panel-shelf-sidebar {
+    background: #0a0a0e !important;
+  }
+
+  .panel-shell::after,
+  body::after {
+    display: none !important;
+  }
+
+  .admin-modal {
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.75) !important;
+    background: #0e0e14 !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
 
-  /* Убираем все анимации полностью */
-  *, *::before, *::after {
-    animation: none !important;
-    animation-duration: 0s !important;
-    animation-delay: 0s !important;
-    transition-duration: 0.1s !important;
+  .admin-modal-backdrop {
+    background: rgba(0, 0, 0, 0.78) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
-  /* Убираем градиентный текст — мигает на iOS */
-  * {
-    -webkit-text-fill-color: unset !important;
-    background-clip: unset !important;
-    -webkit-background-clip: unset !important;
+  .auth-btn-primary,
+  .panel-users-btn-primary,
+  .support-reply-send-btn {
+    background: var(--e-accent, #7EB89A) !important;
+    color: var(--e-accent-ink, #111) !important;
   }
 
-  /* Все заголовки — сбрасываем градиентный текст, простой цвет */
-  .panel-profile-name,
-  .sec-title,
-  .auth-title,
-  .sec-subtitle,
-  .support-thread-name,
-  .staff-card-name,
-  h1, h2, h3, h4 {
-    background: none !important;
-    -webkit-text-fill-color: unset !important;
-    background-clip: unset !important;
-    -webkit-background-clip: unset !important;
+  .panel-select-menu {
+    background: #0e0e14 !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.85) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
-  .panel-profile-name { color: var(--txt, #e8e8e8) !important; }
-  .sec-title { color: var(--gold-2, #cccccc) !important; }
-  .auth-title { color: var(--txt, #e8e8e8) !important; }
+  .auth-card,
+  .rules-gate {
+    background: #0c0c12 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
 
   /* Профиль — не уходит вправо */
   .panel-profile-name,
@@ -5877,12 +5915,6 @@ body {
     max-width: 100% !important;
   }
 
-  .panel-profile-kicker,
-  .panel-profile-username {
-    color: #888888 !important;
-  }
-
-  /* Контейнер профиля — не даём вылезать за края */
   .panel-sidebar-profile {
     overflow: hidden !important;
     max-width: 100% !important;
@@ -5894,94 +5926,16 @@ body {
     flex: 1 !important;
   }
 
-  /* Убираем декоративные фоновые элементы */
-  .gold-bg,
-  .gold-fog-1,
-  .gold-fog-2,
-  .gold-grain,
-  .gold-particles,
-  .gold-bg-parallax,
-  .cursor-glow,
-  .section-flash,
-  .panel-live-dot,
-  .egl-halo,
-  .egl-sheen,
-  .egl-canvas,
-  .egl-screen {
-    display: none !important;
+  .sec-title {
+    color: var(--e-accent-bright, #ff6a7a) !important;
+    background: none !important;
+    -webkit-text-fill-color: unset !important;
   }
 
-  /* Чистый тёмный фон */
-  .panel-shell {
-    background: #08080f !important;
-  }
-
-  .panel-shell-main {
-    background: transparent !important;
-  }
-
-  /* Карточки — простой тёмный стиль */
-  .panel-shelf {
-    box-shadow: none !important;
-    background: #0f0f1a !important;
-    border-color: rgba(255,255,255,0.07) !important;
-    animation: none !important;
-  }
-
-  /* Сайдбар */
-  .panel-shelf-sidebar {
-    background: #0a0a12 !important;
-  }
-
-  /* Убираем виньетку */
-  .panel-shell::after,
-  body::after {
-    display: none !important;
-  }
-
-  .admin-modal {
-    box-shadow: 0 4px 24px rgba(0,0,0,0.8) !important;
-    background: #0e0e18 !important;
-  }
-
-  /* Убираем overlay blur */
-  .admin-modal-backdrop {
-    background: rgba(0,0,0,0.85) !important;
-  }
-
-  /* Убираем сложные градиенты на кнопках */
-  .auth-btn-primary,
-  .panel-users-btn-primary,
-  .support-reply-send-btn {
-    background: #b8860b !important;
-  }
-
-  /* Sidebar без эффектов */
-  .panel-shelf-sidebar {
-    background: #0a0a12 !important;
-    box-shadow: none !important;
-  }
-
-  /* Select menu без blur */
-  .panel-select-menu {
-    background: #0e0e1a !important;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.9) !important;
-  }
-
-  /* Auth card */
-  .auth-card {
-    background: #0a0a14 !important;
-    box-shadow: none !important;
-  }
-
-  /* Rules gate */
-  .rules-gate {
-    background: #0e0e18 !important;
-  }
-
-  /* Убираем виньетку */
-  .panel-shell::after {
-    display: none !important;
+  .panel-profile-name {
+    color: var(--txt, #e8e8e8) !important;
+    background: none !important;
+    -webkit-text-fill-color: unset !important;
   }
 }
 
@@ -5993,38 +5947,23 @@ body {
     overflow-x: hidden;
   }
 
-  /* Space for the fixed bottom bar */
+  /* Без нижней tab-bar — только safe-area снизу */
   .panel-shell-main {
-    padding-top: max(8px, env(safe-area-inset-top, 0px));
+    padding-top: 0;
     padding-left: max(12px, env(safe-area-inset-left, 0px));
     padding-right: max(12px, env(safe-area-inset-right, 0px));
-    padding-bottom: calc(64px + max(8px, env(safe-area-inset-bottom, 0px)));
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
   }
 
-  /* ---- Fixed bottom nav bar ---- */
+  /* Нижняя tab-bar удалена — не показывать */
   .panel-mobile-bottombar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 300;
-    height: 52px;
-    padding: 0 16px;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: rgba(5, 5, 8, 0.98);
-    border-top: 1px solid rgba(255, 255, 255, 0.09);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    box-shadow: 0 -1px 0 rgba(255,255,255,0.04);
+    display: none !important;
   }
 
   .panel-mobile-section-name {
     font-size: 0.92rem;
     font-weight: 600;
-    color: #e2e8f0;
+    color: #e2e8e8;
     flex: 1;
     white-space: nowrap;
     overflow: hidden;
@@ -6032,30 +5971,14 @@ body {
     margin-right: 8px;
   }
 
-  /* ---- Menu button (hamburger → X) ---- */
-  .panel-mobile-hamburger {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    border: none;
-    background: rgba(255, 255, 255, 0.07);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    padding: 0;
-    -webkit-tap-highlight-color: transparent;
-  }
-
+  /* Hamburger styles live on .elite-menu-btn (elite.css ≤900) */
   .panel-hamburger-icon {
     position: relative;
     display: block;
     width: 18px;
     height: 2px;
-    background: #e2e8f0;
+    background: currentColor;
     border-radius: 2px;
-    transition: background 0.2s;
   }
 
   .panel-hamburger-icon::before,
@@ -6065,9 +5988,8 @@ body {
     left: 0;
     width: 18px;
     height: 2px;
-    background: #e2e8f0;
+    background: currentColor;
     border-radius: 2px;
-    transition: transform 0.22s ease, top 0.22s ease;
   }
 
   .panel-hamburger-icon::before { top: -6px; }
@@ -6077,82 +5999,71 @@ body {
   .panel-hamburger-icon-open::before      { top: 0; transform: rotate(45deg); }
   .panel-hamburger-icon-open::after       { top: 0; transform: rotate(-45deg); }
 
-  /* ---- Dark overlay ---- */
-  /* z-index 290: below bottom bar (300) and sidebar (310), above all content */
   .panel-mobile-overlay {
     display: block;
     position: fixed;
     inset: 0;
-    z-index: 290;
-    background: rgba(0, 0, 0, 0.65);
-    /* Без анимации — мгновенно */
+    z-index: 310;
+    background: rgba(0, 0, 0, 0.62);
   }
 
-  /* ---- Sidebar → bottom sheet ---- */
+  /* Полноэкранный drawer — не перебиваем elite.css bottom-sheet-ом */
   .panel-shelf-sidebar {
-    /* Completely removed from grid flow */
     position: fixed !important;
-    inset: auto 0 0 0 !important;
-    top: auto !important;
+    inset: 0 !important;
     width: 100% !important;
-    /* Tall enough for all 13+ nav items + profile + footer */
-    max-height: 88dvh !important;
-    z-index: 310 !important;
+    max-height: 100dvh !important;
+    height: 100dvh !important;
+    z-index: 320 !important;
     grid-column: unset !important;
     grid-row: unset !important;
-    /* Без скруглений и теней — быстрее рендер */
     border-radius: 0 !important;
-    border-right: none !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
-    /* Скрыт — без transition для моментального появления */
-    transform: translateY(100%);
+    border-right: 1px solid rgba(var(--e-accent-rgb, 255, 5, 36), 0.18) !important;
+    border-top: none !important;
+    transform: translateX(-104%) !important;
     visibility: hidden;
-    transition: none;
-    /* The sheet itself scrolls when content overflows */
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 0.24s ease !important;
     overflow-y: auto !important;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    background: #0e0e18 !important;
-    box-shadow: none;
-    /* Padding: небольшой сверху (ручка — отдельный элемент), снизу — safe area */
-    padding: 6px 0 max(16px, env(safe-area-inset-bottom, 16px)) !important;
+    background: #0a0a0e !important;
+    padding:
+      max(12px, env(safe-area-inset-top, 12px))
+      max(14px, env(safe-area-inset-right, 14px))
+      max(18px, env(safe-area-inset-bottom, 18px))
+      max(14px, env(safe-area-inset-left, 14px)) !important;
     display: flex !important;
     flex-direction: column !important;
-    gap: 0 !important;
+    gap: 0.65rem !important;
   }
 
-  /* Старый псевдо-pill больше не нужен — ручка теперь реальный элемент .panel-sidebar-grab */
   .panel-shelf-sidebar::before { display: none !important; }
 
-  /* Ручка листа: pill по центру + крестик справа. Единственная зона свайпа-закрытия. */
   .panel-sidebar-grab {
     display: flex !important;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    height: 36px;
+    flex-direction: column;
+    gap: 0.7rem;
     flex-shrink: 0;
-    touch-action: none; /* жест обрабатываем сами, без прокрутки страницы */
+    height: auto;
+    touch-action: manipulation;
   }
 
   .panel-sidebar-grabber {
-    width: 44px;
-    height: 5px;
-    border-radius: 3px;
-    background: rgba(255, 255, 255, 0.22);
-    pointer-events: none;
+    display: none !important;
   }
 
   .panel-sidebar-close {
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 40px;
-    height: 40px;
+    position: static;
+    transform: none;
+    width: 2.55rem;
+    height: 2.55rem;
     border-radius: 12px;
-    border: none;
-    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.06);
     color: #e2e8f0;
     font-size: 1.05rem;
     line-height: 1;
@@ -6168,12 +6079,14 @@ body {
     background: rgba(255, 255, 255, 0.16);
   }
 
-  /* Open state — мгновенно без transition */
   .panel-sidebar-mobile-open {
-    transform: translateY(0) !important;
+    transform: translateX(0) !important;
     visibility: visible !important;
-    transition: none !important;
-    box-shadow: none !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    box-shadow:
+      12px 0 48px rgba(0, 0, 0, 0.55),
+      0 0 0 1px rgba(var(--e-accent-rgb, 255, 5, 36), 0.12) !important;
   }
 
   /* Profile: horizontal compact layout inside the sheet */
@@ -6182,7 +6095,7 @@ body {
     text-align: left !important;
     align-items: center !important;
     flex-shrink: 0 !important;
-    padding: 4px 20px 12px !important;
+    padding: 4px 8px 12px !important;
     gap: 12px !important;
   }
 
@@ -6197,29 +6110,24 @@ body {
     text-overflow: ellipsis;
   }
 
-  /* Nav: NO internal scroll — the sheet itself scrolls */
   .panel-sidebar-nav {
-    overflow-y: visible !important;
-    overflow: visible !important;
-    flex: unset !important;
-    min-height: unset !important;
-    padding: 0 10px !important;
+    overflow-y: auto !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    padding: 0 4px !important;
   }
 
-  /* Touch-friendly nav items */
   .panel-nav-item {
     min-height: 50px !important;
-    padding: 12px 16px !important;
-    border-radius: 10px !important;
+    padding: 12px 14px !important;
+    border-radius: 12px !important;
   }
 
-  /* Footer: no auto margin (that would push it past all content requiring a scroll),
-     just a normal block after the nav */
   .panel-sidebar-footer {
     flex-shrink: 0 !important;
-    margin-top: 8px !important;
+    margin-top: auto !important;
     margin-bottom: 0 !important;
-    padding: 0 20px !important;
+    padding: 0 4px !important;
   }
 
   /* ---- All layouts: single column, sidebar out of flow ---- */
@@ -6427,66 +6335,10 @@ body {
     padding: 0.6rem !important;
   }
 
-  /* ---- Новые кнопки быстрых вкладок ---- */
-  .panel-mobile-bottombar {
-    display: flex;
-    align-items: stretch;
-    justify-content: space-around;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 300;
-    height: calc(56px + env(safe-area-inset-bottom, 0px));
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: rgba(6, 5, 10, 0.97);
-    border-top: 1px solid rgba(200, 200, 200, 0.18);
-    /* Без backdrop-filter — на мобайле дорого */
-  }
-
+  /* ---- Быстрые вкладки удалены — только fullscreen drawer ---- */
+  .panel-mobile-bottombar,
   .panel-mobile-tab {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
-    gap: 3px;
-    padding: 6px 4px;
-    border: none;
-    background: transparent;
-    color: #64748b;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    transition: color 0.15s;
-    min-width: 0;
-    touch-action: manipulation;
-  }
-
-  .panel-mobile-tab-active {
-    color: #888888;
-  }
-
-  .panel-mobile-tab-icon {
-    font-size: 1.15rem;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 22px;
-  }
-  .panel-mobile-tab-icon svg {
-    width: 1.25rem;
-    height: 1.25rem;
-  }
-
-  .panel-mobile-tab-label {
-    font-size: 0.6rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
+    display: none !important;
   }
 
   /* ---- Полное отключение тяжёлых эффектов на мобайле ---- */

@@ -481,6 +481,17 @@ export default function SupportSection() {
   selectedRef.current = selected
 
   useEffect(() => {
+    if (!selected) return undefined
+    const narrow = typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches
+    if (!narrow) return undefined
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [selected])
+
+  useEffect(() => {
     const load = () => fetchSupportStats().then(setStats).catch(() => {})
     load()
     const id = setInterval(load, 10_000)

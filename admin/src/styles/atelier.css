@@ -585,33 +585,20 @@ tr:hover td {
   color: var(--e-accent-bright) !important;
 }
 
-/* ---------- Mobile bottom bar ---------- */
+/* ---------- Mobile nav overlay (drawer) ---------- */
 
 .panel-mobile-bottombar {
-  border-top: 1px solid var(--e-line) !important;
-  background: rgba(8, 8, 8, 0.92) !important;
-  backdrop-filter: blur(18px) saturate(1.2);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
-}
-
-.panel-mobile-tab-active {
-  color: var(--e-accent-bright) !important;
-}
-
-.panel-mobile-tab-active .panel-mobile-tab-icon {
-  color: var(--e-accent-bright) !important;
-  filter: drop-shadow(0 0 10px rgba(var(--e-accent-rgb), 0.6));
+  display: none !important;
 }
 
 .panel-mobile-overlay {
-  background: rgba(0, 0, 0, 0.55) !important;
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.58) !important;
 }
 
 .panel-sidebar-mobile-open {
   box-shadow:
-    0 -8px 40px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(var(--e-accent-rgb), 0.15) !important;
+    12px 0 48px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(var(--e-accent-rgb), 0.14) !important;
 }
 
 /* ---------- Модалки ---------- */

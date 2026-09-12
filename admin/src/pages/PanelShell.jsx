@@ -4,7 +4,6 @@ import PanelSidebar from '../components/PanelSidebar'
 import EliteTopbar from '../components/EliteTopbar'
 import PanelBackdrop from '../components/PanelBackdrop'
 import GoldBackdrop from '../components/GoldBackdrop'
-import { NAV_ICONS } from '../components/NavIcons'
 import ToastHost from '../components/ToastHost'
 import { fetchAdminMe, fetchSupportStats, logoutAdmin, registerUnauthorizedHandler } from '../lib/adminClient'
 import DashboardSection from './sections/DashboardSection'
@@ -44,6 +43,7 @@ import {
   loadStoredAccent,
   persistAccent,
 } from '../lib/accentTheme'
+import { loadRecentSections, pushRecentSection } from '../lib/recentSections'
 
 export default function PanelShell({ onLogout }) {
   const { lightMode, setLightMode } = usePerfMode()
@@ -73,10 +73,6 @@ export default function PanelShell({ onLogout }) {
     setAccent(saved)
   }, [])
 
-  // Глобальные горячие клавиши
-  useGlobalKeys({
-    onEscape: () => setMobileNavOpen(false),
-  })
   const [section, setSection] = useState('dashboard')
   const [flashKey, setFlashKey] = useState(0)
   const [usersInitialId, setUsersInitialId] = useState(null)
@@ -90,6 +86,20 @@ export default function PanelShell({ onLogout }) {
   const [godMode, setGodMode] = useState(false)
   const [projectCreatorId, setProjectCreatorId] = useState(null)
   const [isProjectCreator, setIsProjectCreator] = useState(false)
+  const [recentSections, setRecentSections] = useState(() => loadRecentSections())
+
+  useGlobalKeys({
+    onEscape: () => setMobileNavOpen(false),
+  })
+
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [mobileNavOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -181,6 +191,7 @@ export default function PanelShell({ onLogout }) {
     if (id !== section) setFlashKey((k) => k + 1)
     setSection(id)
     setMobileNavOpen(false)
+    setRecentSections(pushRecentSection(id))
   }, [section])
 
   const currentSection = PANEL_SECTIONS.find((s) => s.id === section)
@@ -223,42 +234,7 @@ export default function PanelShell({ onLogout }) {
       <PanelBackdrop active />
       {!lightMode && <CursorGlow />}
 
-      {/* Mobile: bottom navigation bar с быстрыми вкладками */}
-      <footer className="panel-mobile-bottombar">
-        {/* Быстрые вкладки — самые нужные разделы */}
-        {[
-          { id: 'dashboard', label: 'Главная' },
-          { id: 'users',     label: 'Игроки' },
-          { id: 'staff',     label: 'Стафф' },
-          { id: 'support',   label: 'Помощь' },
-          { id: 'moderation',label: 'Архив' },
-        ].filter(tab => navSections.some(s => s.id === tab.id)).map(tab => {
-          const TabIcon = NAV_ICONS[tab.id]
-          return (
-            <button
-              key={tab.id}
-              className={`panel-mobile-tab${section === tab.id ? ' panel-mobile-tab-active' : ''}`}
-              onClick={() => handleNavigate(tab.id)}
-            >
-              <span className="panel-mobile-tab-icon">{TabIcon && <TabIcon />}</span>
-              <span className="panel-mobile-tab-label">{tab.label}</span>
-            </button>
-          )
-        })}
-        {/* Кнопка «Ещё» открывает полное меню */}
-        <button
-          className={`panel-mobile-tab${mobileNavOpen ? ' panel-mobile-tab-active' : ''}`}
-          aria-label="Все разделы"
-          onClick={() => setMobileNavOpen((v) => !v)}
-        >
-          <span className="panel-mobile-tab-icon">
-            <span className={`panel-hamburger-icon${mobileNavOpen ? ' panel-hamburger-icon-open' : ''}`} style={{ display: 'inline-block', width: 20, height: 14, position: 'relative' }} />
-          </span>
-          <span className="panel-mobile-tab-label">Ещё</span>
-        </button>
-      </footer>
-
-      {/* Mobile: overlay backdrop */}
+      {/* Mobile: dimmer under fullscreen nav drawer */}
       {mobileNavOpen && (
         <div
           className="panel-mobile-overlay"
@@ -331,6 +307,7 @@ export default function PanelShell({ onLogout }) {
             badges={{ support: openTickets }}
             accent={accent}
             onAccentChange={handleAccentChange}
+            recentSectionIds={recentSections}
           />
 
           <EliteTopbar
@@ -339,6 +316,8 @@ export default function PanelShell({ onLogout }) {
             onNavigate={handleNavigate}
             openTickets={openTickets}
             onOpenNotifications={() => handleNavigate('support')}
+            onOpenMenu={() => setMobileNavOpen((v) => !v)}
+            menuOpen={mobileNavOpen}
             compact={section !== 'dashboard'}
           />
 

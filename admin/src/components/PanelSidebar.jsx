@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getAdminInitials, getAdminProfile } from '../lib/adminProfile'
 import { groupSections } from '../constants/panelNav'
 import { NAV_ICONS } from './NavIcons'
@@ -52,101 +52,72 @@ export default function PanelSidebar({
   badges = {},
   accent = null,
   onAccentChange,
+  recentSectionIds = [],
 }) {
   const { displayName, username, photoUrl } = getAdminProfile()
   const initials = getAdminInitials(displayName)
+  const [navQuery, setNavQuery] = useState('')
 
-  const sidebarRef = useRef(null)
-  const grabRef = useRef(null)
+  const navGroups = useMemo(() => {
+    const groups = groupSections(sections)
+    const q = navQuery.trim().toLowerCase()
+    if (!q) return groups
+    return groups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter(
+          (item) =>
+            item.labelRu.toLowerCase().includes(q) ||
+            item.label.toLowerCase().includes(q),
+        ),
+      }))
+      .filter((group) => group.items.length > 0)
+  }, [sections, navQuery])
 
-  const navGroups = useMemo(() => groupSections(sections), [sections])
+  const recentItems = useMemo(() => {
+    const byId = new Map(sections.map((s) => [s.id, s]))
+    return (recentSectionIds || [])
+      .map((id) => byId.get(id))
+      .filter(Boolean)
+      .slice(0, 5)
+  }, [sections, recentSectionIds])
 
-  // Свайп-вниз для закрытия bottom-sheet на мобильных.
-  //
-  // ВАЖНО: обработчики висят ТОЛЬКО на «ручке» (grab-handle) сверху листа, а не на
-  // всём сайдбаре. Раньше touch-обработчики покрывали все пункты навигации, и любое
-  // микродвижение пальца во время тапа считалось началом drag → touchmove +
-  // preventDefault отменяли click, и кнопки «не нажимались» на телефоне. Теперь тапы
-  // по пунктам меню вообще не попадают в drag-логику — они срабатывают всегда.
-  //
-  // Слушатели нативные и non-passive, чтобы preventDefault реально гасил прокрутку
-  // страницы во время перетаскивания. Трансформация ставится с приоритетом important,
-  // иначе её перебивает правило `.panel-sidebar-mobile-open { transform: ... !important }`.
   useEffect(() => {
-    const handle = grabRef.current
-    const sheet = sidebarRef.current
-    if (!handle || !sheet) return
-
-    const THRESHOLD = 6 // px — порог, ниже которого жест считается тапом, а не drag
-    let startY = null
-    let active = false
-
-    const setTransform = (px) => {
-      if (px === null) sheet.style.removeProperty('transform')
-      else sheet.style.setProperty('transform', `translateY(${px}px)`, 'important')
-    }
-
-    const onStart = (e) => {
-      startY = e.touches[0].clientY
-      active = false
-    }
-
-    const onMove = (e) => {
-      if (startY === null) return
-      const dy = e.touches[0].clientY - startY
-      if (dy <= 0) {
-        if (active) setTransform(0)
-        return
-      }
-      // Пока палец не сдвинулся дальше порога — это ещё тап, не мешаем.
-      if (!active && dy < THRESHOLD) return
-      active = true
-      e.preventDefault() // гасим прокрутку страницы во время drag
-      const resistance = 1 - Math.min(dy / 600, 0.4) // «резинка»
-      setTransform(dy * resistance)
-    }
-
-    const onEnd = (e) => {
-      if (startY === null) return
-      const dy = (e.changedTouches[0]?.clientY ?? startY) - startY
-      startY = null
-      if (!active) return
-      active = false
-      // Снимаем inline-трансформацию — управление возвращается CSS-классу:
-      // открыт → translateY(0), после onClose класс убирается → translateY(100%).
-      setTransform(null)
-      if (dy > 110) onClose?.()
-    }
-
-    handle.addEventListener('touchstart', onStart, { passive: true })
-    handle.addEventListener('touchmove', onMove, { passive: false })
-    handle.addEventListener('touchend', onEnd, { passive: true })
-    handle.addEventListener('touchcancel', onEnd, { passive: true })
-    return () => {
-      handle.removeEventListener('touchstart', onStart)
-      handle.removeEventListener('touchmove', onMove)
-      handle.removeEventListener('touchend', onEnd)
-      handle.removeEventListener('touchcancel', onEnd)
-    }
-  }, [onClose])
+    if (!mobileOpen) setNavQuery('')
+  }, [mobileOpen])
 
   return (
     <aside
-      ref={sidebarRef}
       className={`panel-shelf panel-shelf-sidebar${mobileOpen ? ' panel-sidebar-mobile-open' : ''}`}
     >
-      {/* Ручка + крестик — только на мобильном bottom-sheet. Здесь и только здесь
-          живёт свайп-вниз; крестик — гарантированный способ закрыть меню. */}
-      <div className="panel-sidebar-grab" ref={grabRef}>
-        <span className="panel-sidebar-grabber" aria-hidden="true" />
-        <button
-          type="button"
-          className="panel-sidebar-close"
-          aria-label="Закрыть меню"
-          onClick={onClose}
-        >
-          ✕
-        </button>
+      {/* Drawer chrome — видимо только на mobile через CSS */}
+      <div className="panel-sidebar-grab">
+        <div className="panel-sidebar-drawer-head">
+          <div className="panel-sidebar-drawer-titles">
+            <p className="panel-sidebar-drawer-kicker">Навигация</p>
+            <h2 className="panel-sidebar-drawer-title">Разделы</h2>
+          </div>
+          <button
+            type="button"
+            className="panel-sidebar-close"
+            aria-label="Закрыть меню"
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        </div>
+        <label className="panel-sidebar-search">
+          <span className="panel-sidebar-search-icon" aria-hidden="true">⌕</span>
+          <input
+            type="search"
+            value={navQuery}
+            onChange={(e) => setNavQuery(e.target.value)}
+            placeholder="Найти раздел…"
+            aria-label="Поиск раздела в меню"
+            enterKeyHint="search"
+            autoComplete="off"
+          />
+        </label>
       </div>
 
       <div className="panel-brand" aria-label="Epsilon">
@@ -164,6 +135,32 @@ export default function PanelSidebar({
       </div>
 
       <nav className="panel-sidebar-nav" aria-label="Навигация панели">
+        {!navQuery.trim() && recentItems.length > 0 && (
+          <div className="panel-nav-group panel-nav-recent">
+            <span className="panel-nav-group-label" aria-hidden="true">
+              Недавние
+            </span>
+            <div className="panel-nav-recent-row">
+              {recentItems.map((item) => {
+                const Icon = NAV_ICONS[item.id]
+                const active = item.id === activeSection
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="panel-nav-recent-chip"
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => onNavigate(item.id)}
+                  >
+                    {Icon && <Icon />}
+                    {item.labelRu}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {navGroups.map((group) => (
           <div className="panel-nav-group" key={group.id}>
             {group.label && (
@@ -203,6 +200,9 @@ export default function PanelSidebar({
             })}
           </div>
         ))}
+        {navQuery.trim() && navGroups.length === 0 && (
+          <p className="panel-sidebar-search-empty">Ничего не найдено</p>
+        )}
       </nav>
 
       <div className="panel-sidebar-footer">

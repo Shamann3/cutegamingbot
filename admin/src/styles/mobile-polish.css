@@ -1,0 +1,562 @@
+/* Недавние — только в mobile drawer; на desktop сайдбар и так короткий путь */
+.panel-nav-recent {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .panel-nav-recent {
+    display: block;
+  }
+}
+
+@media (max-width: 900px) {
+  /* ---------- Global QA ---------- */
+  html,
+  body,
+  .panel-shell {
+    overscroll-behavior-x: none;
+  }
+
+  .panel-shell {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* iOS: без автозума на фокусе инпута */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  button,
+  .panel-users-btn,
+  .sec-btn,
+  .sec-tab,
+  .elite-icon-btn,
+  .elite-menu-btn,
+  .panel-nav-item,
+  .support-claim-btn,
+  .support-reply-send-btn,
+  .panel-logout-btn,
+  .panel-perf-btn,
+  .pu-tab,
+  .pu-action-btn,
+  .pu-inv-item,
+  .admin-modal button {
+    min-height: 44px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .elite-icon-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    border-radius: 12px;
+  }
+
+  /* Topbar: место под ✕ Telegram WebApp справа */
+  .elite-topbar,
+  .elite-topbar-compact {
+    padding-right: max(0.85rem, calc(env(safe-area-inset-right, 0px) + 3.15rem)) !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* Недавние в drawer */
+  .panel-nav-recent {
+    margin-bottom: 0.55rem;
+    padding-bottom: 0.55rem;
+    border-bottom: 1px solid rgba(var(--e-accent-rgb, 126, 184, 154), 0.18);
+  }
+
+  .panel-nav-recent .panel-nav-group-label {
+    color: rgba(var(--e-accent-rgb, 126, 184, 154), 0.85) !important;
+  }
+
+  .panel-nav-recent-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    padding: 0.15rem 0.2rem 0.35rem;
+  }
+
+  .panel-nav-recent-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2.35rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid rgba(var(--e-accent-rgb, 126, 184, 154), 0.28);
+    background: rgba(var(--e-accent-rgb, 126, 184, 154), 0.1);
+    color: var(--e-accent-bright, #9ecbb4);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .panel-nav-recent-chip[aria-current="page"] {
+    background: var(--e-accent, #7EB89A);
+    color: var(--e-accent-ink, #111);
+    border-color: transparent;
+  }
+
+  .panel-nav-recent-chip svg {
+    width: 0.95rem;
+    height: 0.95rem;
+  }
+
+  /* Shelf cards — чуть воздушнее */
+  .panel-shelf {
+    border-radius: 18px !important;
+  }
+
+  /* ---------- Tables → scroll cards ---------- */
+  .panel-table-wrap,
+  .sec-table-wrap,
+  .logs-table-wrap,
+  .market-table-scroll,
+  .economy-table-wrap,
+  .analytics-table-wrap,
+  table.panel-table,
+  .panel-logs table,
+  .panel-economy table,
+  .panel-market table {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  table {
+    min-width: 32rem;
+  }
+
+  /* ---------- Modals as bottom sheets ---------- */
+  .admin-modal-backdrop {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+
+  .admin-modal {
+    width: 100% !important;
+    max-width: none !important;
+    max-height: min(92dvh, 44rem) !important;
+    margin: 0 !important;
+    border-radius: 20px 20px 0 0 !important;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* ---------- Skeletons / empty ---------- */
+  .panel-users-empty-hint,
+  .support-empty-state,
+  .sec-empty {
+    padding: 1.25rem 1rem !important;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+}
+
+/* ============================================================
+   ИГРОКИ — phone craft
+   ============================================================ */
+@media (max-width: 900px) {
+  .panel-users {
+    gap: 0.7rem !important;
+  }
+
+  .panel-users .panel-users-search {
+    position: sticky;
+    top: calc(3.35rem + env(safe-area-inset-top, 0px));
+    z-index: 40;
+    border-radius: 20px !important;
+    padding: 0.95rem 0.95rem 0.9rem !important;
+    margin: 0 !important;
+  }
+
+  .panel-users .panel-page-title {
+    font-size: 1.35rem !important;
+  }
+
+  .panel-users .panel-page-lead {
+    font-size: 0.82rem !important;
+    margin-bottom: 0.7rem !important;
+  }
+
+  .panel-users .panel-users-search-form {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .panel-users .panel-users-input {
+    flex: 1 1 auto !important;
+    min-height: 48px !important;
+    font-size: 16px !important;
+    border-radius: 14px !important;
+  }
+
+  .panel-users .panel-users-btn {
+    width: 100%;
+    min-height: 48px !important;
+    border-radius: 14px !important;
+  }
+
+  .panel-users .pu-tabs-bar {
+    position: sticky;
+    top: calc(3.35rem + env(safe-area-inset-top, 0px));
+    z-index: 39;
+    border-radius: 18px !important;
+    padding: 0.75rem 0.7rem 0.65rem !important;
+  }
+
+  .panel-users .pu-profile-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+  }
+
+  .panel-users .pu-action-btn {
+    min-height: 44px !important;
+    padding: 0.55rem 0.9rem !important;
+    font-size: 0.82rem !important;
+    justify-content: center;
+  }
+
+  /* Горизонтальные chip-табы */
+  .panel-users .pu-tabs {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    gap: 0.3rem;
+    padding: 0.22rem;
+    border-radius: 16px;
+    scrollbar-width: none;
+  }
+
+  .panel-users .pu-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .panel-users .pu-tab {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    min-height: 42px !important;
+    padding: 0.55rem 0.95rem !important;
+    font-size: 0.82rem !important;
+    white-space: nowrap;
+  }
+
+  .panel-users .panel-users-card,
+  .panel-users .pu-intel-card {
+    border-radius: 18px !important;
+    padding: 0.95rem 0.9rem !important;
+  }
+
+  .pu-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .pu-heat-hours {
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+    height: 4.5rem;
+  }
+
+  .pu-heat-col:nth-child(n + 13) {
+    display: none;
+  }
+
+  button.pu-inv-item,
+  .pu-inv-item {
+    min-height: 52px;
+    padding: 0.8rem 0.9rem !important;
+    border-radius: 14px !important;
+  }
+
+  .pu-farm-actions {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .pu-farm-actions .panel-users-btn {
+    min-height: 46px !important;
+    font-size: 0.78rem !important;
+  }
+
+  .pu-farm-plant-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .panel-users-plot-grid,
+  .pu-farm-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 0.45rem !important;
+  }
+
+  .panel-users-plot {
+    min-height: 4.5rem;
+    padding: 0.45rem !important;
+  }
+
+  .pu-dossier-grid,
+  .pu-dossier-edit-grid,
+  .pu-transfer-filters {
+    grid-template-columns: 1fr !important;
+  }
+
+  .pu-transfer-filters {
+    gap: 0.55rem;
+  }
+
+  /* Поповеры предметов — full-width sheet feel */
+  .pu-inv-popover-inline,
+  .panel-users .pu-item-popover {
+    width: 100% !important;
+    max-width: none !important;
+    left: 0 !important;
+    right: 0 !important;
+  }
+}
+
+@media (max-width: 400px) {
+  .panel-users-plot-grid,
+  .pu-farm-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .pu-farm-actions {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ============================================================
+   ПОДДЕРЖКА — list ↔ thread
+   ============================================================ */
+@media (max-width: 900px) {
+  .support-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    min-height: calc(100dvh - 5.5rem);
+  }
+
+  .support-section-header {
+    padding: 0.15rem 0.1rem !important;
+  }
+
+  .support-layout {
+    display: block !important;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .support-list-wrap {
+    display: block !important;
+    width: 100% !important;
+    border-right: none !important;
+    max-height: none !important;
+  }
+
+  .support-empty-state,
+  .support-thread-wrap {
+    display: none !important;
+  }
+
+  .support-ticket-list {
+    max-height: none !important;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .support-ticket-item,
+  .support-ticket {
+    min-height: 64px;
+    padding: 0.85rem 0.95rem !important;
+    border-radius: 16px !important;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .support-layout-thread-open .support-list-wrap,
+  .support-layout-thread-open .support-section-header {
+    display: none !important;
+  }
+
+  .support-layout-thread-open .support-thread-wrap {
+    display: flex !important;
+    flex-direction: column;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: #0a0a0e;
+    padding:
+      max(0.55rem, env(safe-area-inset-top, 0px))
+      max(0.75rem, env(safe-area-inset-right, 0px))
+      0
+      max(0.75rem, env(safe-area-inset-left, 0px));
+    min-height: 100dvh;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
+  .support-layout-thread-open .support-thread-header {
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: rgba(10, 10, 14, 0.96);
+    border-bottom: 1px solid rgba(var(--e-accent-rgb, 126, 184, 154), 0.18);
+    padding: 0.65rem 0.25rem 0.75rem !important;
+    gap: 0.5rem;
+  }
+
+  .support-layout-thread-open .support-messages {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none !important;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0.75rem 0.15rem 1rem;
+  }
+
+  .support-msg-bubble {
+    max-width: min(92%, 28rem);
+    border-radius: 16px !important;
+    padding: 0.7rem 0.85rem !important;
+  }
+
+  .support-layout-thread-open .support-reply-box {
+    flex-shrink: 0;
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    margin: 0 -0.75rem;
+    padding:
+      0.65rem 0.75rem
+      max(0.75rem, env(safe-area-inset-bottom, 0.75rem)) !important;
+    background: rgba(8, 8, 12, 0.98);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .support-reply-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .support-reply-inner textarea,
+  .support-reply-box textarea {
+    min-height: 3.2rem !important;
+    font-size: 16px !important;
+    border-radius: 14px !important;
+  }
+
+  .support-reply-send-btn,
+  .support-claim-btn {
+    width: 100%;
+    min-height: 48px !important;
+    border-radius: 14px !important;
+  }
+
+  .support-thread-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    width: 100%;
+  }
+
+  .support-thread-actions button {
+    flex: 1 1 auto;
+    min-height: 44px;
+  }
+}
+
+/* ============================================================
+   СТАФФ / АРХИВ / СПИСКИ
+   ============================================================ */
+@media (max-width: 900px) {
+  .staff-section,
+  .panel-staff,
+  .arc-shell,
+  .chs-root {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .staff-card,
+  .staff-grid > *,
+  .arc-card {
+    border-radius: 16px !important;
+  }
+
+  .staff-grid,
+  .staff-cards,
+  .arc-list {
+    grid-template-columns: 1fr !important;
+    gap: 0.55rem !important;
+  }
+
+  .sec-tabs {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 0.3rem;
+    padding-bottom: 0.15rem;
+  }
+
+  .sec-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sec-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    min-height: 44px !important;
+    border-radius: 12px !important;
+  }
+
+  .sec-title {
+    font-size: clamp(1.2rem, 5vw, 1.45rem) !important;
+  }
+}
+
+/* ============================================================
+   DASHBOARD / Общие секции
+   ============================================================ */
+@media (max-width: 900px) {
+  .panel-layout-dashboard {
+    gap: 0.65rem !important;
+  }
+
+  .panel-pulse-hero,
+  .panel-shelf-stat,
+  .panel-shelf-server,
+  .panel-shelf-online,
+  .panel-shelf-maintenance {
+    border-radius: 18px !important;
+  }
+
+  .panel-shelf-page {
+    padding: 0.95rem 0.85rem !important;
+  }
+}
+
+/* Reduced motion — сохранить читаемость, убрать лишнее */
+@media (max-width: 900px) and (prefers-reduced-motion: reduce) {
+  .panel-users,
+  .panel-shelf,
+  .support-ticket-item {
+    animation: none !important;
+    transition: none !important;
+  }
+}
