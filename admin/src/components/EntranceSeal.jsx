@@ -116,13 +116,11 @@ export default function EntranceSeal({
         </div>
 
         <div className="ent-mark" aria-hidden="true">
-          <div className="ent-logo">
-            <img
-              src={vivoEpsilonLogo}
-              alt=""
-              draggable={false}
-              decoding="async"
-            />
+          <div
+            className="ent-logo"
+            style={{ '--ent-logo-url': `url(${vivoEpsilonLogo})` }}
+          >
+            <span className="ent-logo-glyph" />
           </div>
           <div className="ent-stamp" />
         </div>
