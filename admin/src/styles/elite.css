@@ -2808,10 +2808,10 @@ body,
     height: auto !important;
     max-height: none !important;
     overflow: visible !important;
-    padding-top: 0 !important;
-    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)) !important;
-    padding-left: max(12px, env(safe-area-inset-left, 0px)) !important;
-    padding-right: max(12px, env(safe-area-inset-right, 0px)) !important;
+    padding-top: max(0.25rem, var(--tg-content-top, 0px)) !important;
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px), var(--tg-content-bottom, 0px)) !important;
+    padding-left: max(12px, env(safe-area-inset-left, 0px), var(--tg-safe-left, 0px)) !important;
+    padding-right: max(12px, env(safe-area-inset-right, 0px), var(--tg-safe-right, 0px)) !important;
   }
 
   .panel-layout,
@@ -2867,19 +2867,23 @@ body,
   .elite-topbar-compact {
     grid-column: 1 / -1 !important;
     position: sticky;
-    top: 0;
+    /* Липнем под шапкой Telegram, не под ней */
+    top: max(0px, var(--tg-content-top, 0px)) !important;
     z-index: 80;
     display: flex !important;
     flex-wrap: nowrap !important;
     align-items: center;
     gap: 0.55rem;
     min-height: 3.35rem;
-    padding-top: max(0.55rem, env(safe-area-inset-top, 0px)) !important;
+    padding-top: 0.55rem !important;
     padding-bottom: 0.55rem !important;
-    padding-left: max(0.35rem, env(safe-area-inset-left, 0px)) !important;
-    /* Правый inset + запас под системный ✕ Telegram */
-    padding-right: max(0.85rem, calc(env(safe-area-inset-right, 0px) + 3.15rem)) !important;
-    background: rgba(8, 8, 10, 0.94);
+    padding-left: max(0.35rem, env(safe-area-inset-left, 0px), var(--tg-safe-left, 0px)) !important;
+    padding-right: max(
+      0.85rem,
+      calc(env(safe-area-inset-right, 0px) + 3.15rem),
+      calc(var(--tg-safe-right, 0px) + 2.75rem)
+    ) !important;
+    background: rgba(8, 8, 10, 0.96);
     border-bottom: 1px solid rgba(var(--e-accent-rgb, 255, 5, 36), 0.18);
   }
 
@@ -2997,10 +3001,11 @@ body,
   .panel-shelf-sidebar {
     position: fixed !important;
     inset: 0 !important;
+    top: max(0px, var(--tg-content-top, 0px)) !important;
     width: 100% !important;
     max-width: none !important;
-    height: 100dvh !important;
-    max-height: 100dvh !important;
+    height: calc(100dvh - max(0px, var(--tg-content-top, 0px))) !important;
+    max-height: calc(100dvh - max(0px, var(--tg-content-top, 0px))) !important;
     z-index: 320 !important;
     grid-column: unset !important;
     grid-row: unset !important;

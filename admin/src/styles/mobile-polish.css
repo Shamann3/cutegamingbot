@@ -56,12 +56,22 @@
     border-radius: 12px;
   }
 
-  /* Topbar: место под ✕ Telegram WebApp справа */
+  /* Topbar: место под ✕ Telegram + contentSafeArea */
   .elite-topbar,
   .elite-topbar-compact {
-    padding-right: max(0.85rem, calc(env(safe-area-inset-right, 0px) + 3.15rem)) !important;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    top: max(0px, var(--tg-content-top, 0px)) !important;
+    padding-right: max(
+      0.85rem,
+      calc(env(safe-area-inset-right, 0px) + 3.15rem),
+      calc(var(--tg-safe-right, 0px) + 2.75rem)
+    ) !important;
+  }
+
+  .panel-shell-main {
+    padding-top: max(0.35rem, var(--tg-content-top, 0px)) !important;
+    padding-left: max(12px, env(safe-area-inset-left, 0px), var(--tg-safe-left, 0px)) !important;
+    padding-right: max(12px, env(safe-area-inset-right, 0px), var(--tg-safe-right, 0px)) !important;
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px), var(--tg-content-bottom, 0px)) !important;
   }
 
   /* Недавние в drawer */
@@ -174,7 +184,7 @@
 
   .panel-users .panel-users-search {
     position: sticky;
-    top: calc(3.35rem + env(safe-area-inset-top, 0px));
+    top: calc(3.35rem + max(0px, var(--tg-content-top, 0px)));
     z-index: 40;
     border-radius: 20px !important;
     padding: 0.95rem 0.95rem 0.9rem !important;
@@ -211,7 +221,7 @@
 
   .panel-users .pu-tabs-bar {
     position: sticky;
-    top: calc(3.35rem + env(safe-area-inset-top, 0px));
+    top: calc(3.35rem + max(0px, var(--tg-content-top, 0px)));
     z-index: 39;
     border-radius: 18px !important;
     padding: 0.75rem 0.7rem 0.65rem !important;
@@ -395,17 +405,20 @@
     display: flex !important;
     flex-direction: column;
     position: fixed;
-    inset: 0;
+    top: max(0px, var(--tg-content-top, 0px));
+    right: 0;
+    bottom: 0;
+    left: 0;
     z-index: 200;
     background: #0a0a0e;
     padding:
-      max(0.55rem, env(safe-area-inset-top, 0px))
-      max(0.75rem, env(safe-area-inset-right, 0px))
+      0.55rem
+      max(0.75rem, env(safe-area-inset-right, 0px), var(--tg-safe-right, 0px))
       0
-      max(0.75rem, env(safe-area-inset-left, 0px));
-    min-height: 100dvh;
-    height: 100dvh;
-    max-height: 100dvh;
+      max(0.75rem, env(safe-area-inset-left, 0px), var(--tg-safe-left, 0px));
+    min-height: calc(100dvh - max(0px, var(--tg-content-top, 0px)));
+    height: calc(100dvh - max(0px, var(--tg-content-top, 0px)));
+    max-height: calc(100dvh - max(0px, var(--tg-content-top, 0px)));
   }
 
   .support-layout-thread-open .support-thread-header {

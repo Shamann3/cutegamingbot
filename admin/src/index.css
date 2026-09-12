@@ -427,10 +427,10 @@ body {
   align-items: stretch;
   justify-content: center;
   padding:
-    max(1.15rem, env(safe-area-inset-top, 0px))
-    max(1.35rem, env(safe-area-inset-right, 0px))
-    max(1.35rem, env(safe-area-inset-bottom, 0px))
-    max(1.35rem, env(safe-area-inset-left, 0px));
+    max(1.15rem, env(safe-area-inset-top, 0px), var(--tg-content-top, 0px))
+    max(1.35rem, env(safe-area-inset-right, 0px), var(--tg-safe-right, 0px))
+    max(1.35rem, env(safe-area-inset-bottom, 0px), var(--tg-content-bottom, 0px))
+    max(1.35rem, env(safe-area-inset-left, 0px), var(--tg-safe-left, 0px));
 }
 
 
@@ -5947,12 +5947,11 @@ body {
     overflow-x: hidden;
   }
 
-  /* Без нижней tab-bar — только safe-area снизу */
   .panel-shell-main {
     padding-top: 0;
-    padding-left: max(12px, env(safe-area-inset-left, 0px));
-    padding-right: max(12px, env(safe-area-inset-right, 0px));
-    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(12px, env(safe-area-inset-left, 0px), var(--tg-safe-left, 0px));
+    padding-right: max(12px, env(safe-area-inset-right, 0px), var(--tg-safe-right, 0px));
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px), var(--tg-content-bottom, 0px));
   }
 
   /* Нижняя tab-bar удалена — не показывать */
@@ -8729,6 +8728,12 @@ body {
    ЧЁРНО-ЗОЛОТАЯ ТЕМА (mrachno-luxe). Слой переопределений поверх базы.
    ========================================================================= */
 :root {
+  --tg-safe-top: 0px;
+  --tg-safe-bottom: 0px;
+  --tg-safe-left: 0px;
+  --tg-safe-right: 0px;
+  --tg-content-top: 0px;
+  --tg-content-bottom: 0px;
   --bg-top: #080808;
   --bg-bottom: #0a0a0a;
   --gold-1: #555555;
