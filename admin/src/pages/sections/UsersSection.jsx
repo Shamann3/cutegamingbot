@@ -1550,7 +1550,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
   )
 
   return (
-    <div className="panel-users">
+    <div className={`panel-users${hasProfile ? ' panel-users-has-profile' : ''}`}>
       <AdminActionModal
         open={pendingAction === 'ban'}
         title="Забанить игрока?"

@@ -1866,4 +1866,19 @@ button.pu-inv-item.is-active {
   }
 }
 
+@media (max-width: 900px) {
+  .pu-profile-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.55rem !important;
+  }
+
+  .panel-users .pu-tabs-bar,
+  .panel-users .panel-users-search {
+    position: relative !important;
+    top: auto !important;
+    z-index: auto !important;
+  }
+}
+
 

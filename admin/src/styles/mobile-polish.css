@@ -248,8 +248,8 @@ html.panel-nav-open .panel-shelf-sidebar {
 
 /* ============================================================
    ИГРОКИ — phone craft
-   Поиск закреплён вверху; скролл только у .panel-users-body.
-   Нельзя sticky search+tabs с одним top — они наезжают друг на друга.
+   Поиск компактный и стоит на месте. Табы НЕ sticky.
+   Скролл только у .panel-users-body — ничего не «ползёт» поверх.
    ============================================================ */
 @media (max-width: 900px) {
   /* Лочим viewport только на разделе Игроки */
@@ -284,7 +284,7 @@ html.panel-nav-open .panel-shelf-sidebar {
     display: grid !important;
     grid-template-columns: 1fr !important;
     grid-template-rows: auto minmax(0, 1fr) !important;
-    gap: 0.55rem !important;
+    gap: 0.45rem !important;
     align-content: stretch !important;
   }
 
@@ -326,43 +326,83 @@ html.panel-nav-open .panel-shelf-sidebar {
     overflow: hidden !important;
     display: flex !important;
     flex-direction: column !important;
-    gap: 0.55rem !important;
-    /* transform/filter ломают sticky/contain — без page-in на телефоне */
+    gap: 0.45rem !important;
     animation: none !important;
     filter: none !important;
     transform: none !important;
   }
 
+  /* Поиск — стоит на месте, НЕ sticky, НЕ ездит поверх контента */
   .panel-users .panel-users-search {
     position: relative !important;
     top: auto !important;
-    z-index: 2;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    z-index: 1 !important;
     flex: 0 0 auto !important;
-    border-radius: 18px !important;
-    padding: 0.85rem 0.9rem 0.8rem !important;
+    border-radius: 16px !important;
+    padding: 0.75rem 0.8rem 0.7rem !important;
     margin: 0 !important;
     box-shadow:
-      0 12px 28px -18px rgba(0, 0, 0, 0.75),
+      0 10px 24px -16px rgba(0, 0, 0, 0.7),
       0 0 0 1px rgba(var(--e-accent-rgb, 255, 5, 36), 0.12) !important;
   }
 
+  /* Когда профиль открыт — поиск в одну строку, без героя-заголовка */
+  .panel-users-has-profile .panel-users-search {
+    padding: 0.5rem 0.55rem !important;
+    border-radius: 14px !important;
+  }
+
+  .panel-users-has-profile .panel-users-search .panel-shelf-label,
+  .panel-users-has-profile .panel-users-search .panel-page-title,
+  .panel-users-has-profile .panel-users-search .panel-page-lead {
+    display: none !important;
+  }
+
+  .panel-users-has-profile .panel-users-search-form {
+    flex-direction: row !important;
+    align-items: stretch !important;
+    gap: 0.4rem !important;
+    margin-top: 0 !important;
+  }
+
+  .panel-users-has-profile .panel-users-search .panel-users-input {
+    flex: 1 1 auto !important;
+    min-height: 44px !important;
+    width: auto !important;
+  }
+
+  .panel-users-has-profile .panel-users-search .panel-users-btn {
+    width: auto !important;
+    flex: 0 0 auto !important;
+    min-width: 5.5rem;
+    min-height: 44px !important;
+    padding: 0 0.85rem !important;
+  }
+
+  .panel-users-has-profile .panel-users-search .panel-users-results {
+    margin-top: 0.45rem;
+  }
+
   .panel-users .panel-page-title {
-    font-size: 1.28rem !important;
+    font-size: 1.22rem !important;
     letter-spacing: -0.01em !important;
     line-height: 1.2 !important;
     white-space: normal !important;
   }
 
   .panel-users .panel-page-lead {
-    font-size: 0.8rem !important;
-    margin-bottom: 0.65rem !important;
-    line-height: 1.4 !important;
+    font-size: 0.78rem !important;
+    margin-bottom: 0.55rem !important;
+    line-height: 1.35 !important;
   }
 
-  .panel-users .panel-users-search-form {
+  .panel-users:not(.panel-users-has-profile) .panel-users-search-form {
     flex-direction: column;
     align-items: stretch;
-    gap: 0.5rem;
+    gap: 0.45rem;
   }
 
   .panel-users .panel-users-input {
@@ -372,13 +412,13 @@ html.panel-nav-open .panel-shelf-sidebar {
     border-radius: 14px !important;
   }
 
-  .panel-users .panel-users-btn {
+  .panel-users:not(.panel-users-has-profile) .panel-users-btn {
     width: 100%;
     min-height: 48px !important;
     border-radius: 14px !important;
   }
 
-  /* Единственный скролл-контейнер профиля */
+  /* Единственный скролл: табы + профиль + действия уезжают вместе */
   .panel-layout-users > .panel-users .panel-users-body {
     flex: 1 1 auto !important;
     min-height: 0 !important;
@@ -388,63 +428,106 @@ html.panel-nav-open .panel-shelf-sidebar {
     overscroll-behavior: contain;
     display: flex !important;
     flex-direction: column !important;
-    gap: 0.65rem !important;
-    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px)) !important;
+    gap: 0.55rem !important;
+    padding-bottom: max(0.85rem, env(safe-area-inset-bottom, 0px)) !important;
     animation: none !important;
     filter: none !important;
     transform: none !important;
   }
 
-  /* Табы липнут внутри body (под поиском), не к окну */
+  /* КРИТИЧНО: никакого sticky — иначе ползёт поверх и жрёт экран */
+  .panel-users .pu-tabs-bar,
+  .panel-users .panel-users-search,
+  .panel-users .pu-hero-card,
+  .panel-users .panel-users-right,
+  .panel-users .panel-users-actions-card,
+  .panel-users .pu-inv-card,
+  .panel-users .pu-profile-layout,
+  .panel-users .pu-tab-pane {
+    position: relative !important;
+    top: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    right: auto !important;
+    z-index: auto !important;
+  }
+
   .panel-users .pu-tabs-bar {
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 6;
     flex-shrink: 0;
     border-radius: 16px !important;
-    padding: 0.7rem 0.65rem 0.6rem !important;
+    padding: 0.65rem 0.6rem 0.55rem !important;
     margin: 0 !important;
     background:
       linear-gradient(180deg, rgba(14, 14, 18, 0.98), rgba(10, 10, 12, 0.98)) !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    box-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.7);
     touch-action: pan-x pan-y;
   }
 
   .panel-users .pu-profile-header {
     flex-direction: column;
     align-items: stretch;
-    gap: 0.5rem;
-    margin-bottom: 0.55rem !important;
+    gap: 0.45rem;
+    margin-bottom: 0.5rem !important;
   }
 
   .panel-users .pu-profile-header-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 0.4rem;
+    gap: 0.35rem;
   }
 
   .panel-users .pu-action-btn {
-    min-height: 44px !important;
-    padding: 0.55rem 0.75rem !important;
-    font-size: 0.82rem !important;
+    min-height: 42px !important;
+    padding: 0.45rem 0.7rem !important;
+    font-size: 0.8rem !important;
     justify-content: center;
     width: 100%;
   }
 
-  .panel-users .pu-tab-pane,
-  .panel-users .pu-profile-layout,
-  .panel-users .pu-hero-card,
-  .panel-users .panel-users-card,
-  .panel-users .pu-intel-card {
+  /* Профиль: строгий столбец, без наложений колонок */
+  .panel-users .pu-profile-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.55rem !important;
+    align-items: stretch !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+
+  .panel-users .pu-profile-layout > * {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
     position: relative !important;
     top: auto !important;
     z-index: auto !important;
-    margin-top: 0 !important;
+    margin: 0 !important;
+    float: none !important;
   }
 
-  /* Горизонтальные chip-табы — pan-x + pan-y, иначе iOS «залипает» жест */
+  .panel-users .panel-users-right {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.55rem !important;
+  }
+
+  .panel-users .pu-inv-card .panel-users-inv-list {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .panel-users .panel-users-card,
+  .panel-users .pu-intel-card,
+  .panel-users .pu-hero-card,
+  .panel-users .panel-users-actions-card {
+    border-radius: 16px !important;
+    padding: 0.85rem 0.8rem !important;
+    overflow: visible !important;
+  }
+
+  /* Горизонтальные chip-табы */
   .panel-users .pu-tabs,
   .sec-tabs {
     flex-wrap: nowrap !important;
@@ -455,7 +538,7 @@ html.panel-nav-open .panel-shelf-sidebar {
     touch-action: pan-x pan-y;
     scroll-snap-type: x proximity;
     gap: 0.3rem;
-    padding: 0.22rem;
+    padding: 0.2rem;
     border-radius: 14px;
     scrollbar-width: none;
   }
@@ -469,17 +552,11 @@ html.panel-nav-open .panel-shelf-sidebar {
   .sec-tab {
     flex: 0 0 auto !important;
     scroll-snap-align: start;
-    min-height: 42px !important;
-    padding: 0.55rem 0.95rem !important;
-    font-size: 0.82rem !important;
+    min-height: 40px !important;
+    padding: 0.5rem 0.9rem !important;
+    font-size: 0.8rem !important;
     white-space: nowrap;
     touch-action: pan-x pan-y;
-  }
-
-  .panel-users .panel-users-card,
-  .panel-users .pu-intel-card {
-    border-radius: 16px !important;
-    padding: 0.9rem 0.85rem !important;
   }
 
   .pu-stat-grid {
@@ -536,7 +613,6 @@ html.panel-nav-open .panel-shelf-sidebar {
     gap: 0.55rem;
   }
 
-  /* Поповеры предметов — full-width sheet feel */
   .pu-inv-popover-inline,
   .panel-users .pu-item-popover {
     width: 100% !important;
