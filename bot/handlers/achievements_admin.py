@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import re
 import time
@@ -11,6 +12,21 @@ from typing import Any, Optional, Tuple
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot.funcs import achievements as ach
+
+NAV_NEXT_EMOJI = "5434040112352607251"
+NAV_PREV_EMOJI = "5440542387896070668"
+
+# Меню достижений жмут часто. Telegram режет EditMessageText (flood).
+# Действие применяем сразу, а перерисовку склеиваем: пользователь видит
+# мгновенный ответ кнопки, экран догоняет одним спокойным кадром.
+_ACHM_ABSORB_SEC = 0.26
+_ACHM_MIN_GAP_SEC = 0.78
+_ACHM_LAST_EDIT: dict[tuple, float] = {}
+_ACHM_FLOOD_UNTIL: dict[tuple, float] = {}
+_ACHM_PENDING: dict[tuple, tuple] = {}
+_ACHM_TASKS: dict[tuple, asyncio.Task] = {}
+_ACHM_GEN: dict[tuple, int] = {}
+_ACHM_LAST_FP: dict[tuple, str] = {}
 
 # Pending official pick: admin_id -> target_user_id
 _pending_official: dict[int, int] = {}
@@ -142,6 +158,206 @@ def _btn(**kwargs):
         kwargs.pop("style", None)
         kwargs.pop("icon_custom_emoji_id", None)
         return InlineKeyboardButton(**kwargs)
+
+
+def _msg_key(message) -> Optional[tuple]:
+    try:
+        return (int(message.chat.id), int(message.message_id))
+    except Exception:
+        return None
+
+
+def _prune_achm_maps() -> None:
+    if len(_ACHM_LAST_EDIT) < 240:
+        return
+    now = time.monotonic()
+    stale = [k for k, ts in _ACHM_LAST_EDIT.items() if now - ts > 1800]
+    for k in stale:
+        _ACHM_LAST_EDIT.pop(k, None)
+        _ACHM_FLOOD_UNTIL.pop(k, None)
+        _ACHM_LAST_FP.pop(k, None)
+        _ACHM_GEN.pop(k, None)
+        _ACHM_PENDING.pop(k, None)
+
+
+def _render_fp(text: str, kb: InlineKeyboardMarkup) -> str:
+    return f"{text}\0{repr(kb)}"
+
+
+def _cancel_achm_render(message) -> None:
+    """Сбросить отложенную перерисовку, чтобы «К профилю» / удаление не перетёрлись."""
+    key = _msg_key(message)
+    if not key:
+        return
+    _ACHM_PENDING.pop(key, None)
+    _ACHM_GEN[key] = int(_ACHM_GEN.get(key, 0)) + 1
+
+
+def _flood_wait_sec(exc: BaseException) -> float:
+    raw = str(exc or "")
+    low = raw.lower()
+    if not any(x in low for x in ("retry after", "flood", "too many requests")):
+        return 0.0
+    ra = getattr(exc, "retry_after", None)
+    try:
+        if ra is not None:
+            return max(0.2, float(ra))
+    except Exception:
+        pass
+    m = re.search(r"retry after[^\d]*(\d+(?:\.\d+)?)", raw, flags=re.I)
+    if m:
+        try:
+            return max(0.2, float(m.group(1)))
+        except Exception:
+            return 1.2
+    return 1.2
+
+
+def _nav_row(*, page_i: int, pages: int, prev_cb: str, next_cb: str):
+    """Первая страница — только «Вперёд». Последняя — только «Назад». Середина — обе."""
+    if pages <= 1:
+        return None
+    row = []
+    if page_i > 0:
+        row.append(_btn(
+            text="Назад",
+            callback_data=prev_cb,
+            style="default",
+            icon_custom_emoji_id=NAV_PREV_EMOJI,
+        ))
+    if page_i < pages - 1:
+        row.append(_btn(
+            text="Вперёд",
+            callback_data=next_cb,
+            style="default",
+            icon_custom_emoji_id=NAV_NEXT_EMOJI,
+        ))
+    return row or None
+
+
+async def _achm_edit_now(message, text: str, kb: InlineKeyboardMarkup) -> bool:
+    """Один edit. При flood — ждём retry_after и пробуем ещё раз.
+    Caption — только если в сообщении нет текста (фото), не как запас после flood.
+    """
+    if message is None:
+        return False
+    key = _msg_key(message)
+    fp = _render_fp(text, kb)
+    if key and _ACHM_LAST_FP.get(key) == fp:
+        return True
+    now = time.monotonic()
+    if key:
+        extra = _ACHM_FLOOD_UNTIL.get(key, 0) - now
+        if extra > 0:
+            await asyncio.sleep(extra)
+
+    async def _send_text(body: str) -> None:
+        await message.edit_text(
+            body, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True,
+        )
+
+    async def _send_caption(body: str) -> None:
+        await message.edit_caption(caption=body, parse_mode="HTML", reply_markup=kb)
+
+    def _mark_ok() -> None:
+        if key:
+            _ACHM_LAST_EDIT[key] = time.monotonic()
+            _ACHM_LAST_FP[key] = fp
+            _prune_achm_maps()
+
+    try:
+        await _send_text(text)
+        _mark_ok()
+        return True
+    except Exception as e:
+        low = str(e).lower()
+        if "not modified" in low:
+            _mark_ok()
+            return True
+        wait = _flood_wait_sec(e)
+        if wait:
+            if key:
+                _ACHM_FLOOD_UNTIL[key] = time.monotonic() + wait
+            await asyncio.sleep(wait + 0.12)
+            try:
+                await _send_text(text)
+                _mark_ok()
+                return True
+            except Exception as e2:
+                if "not modified" in str(e2).lower():
+                    _mark_ok()
+                    return True
+                print(f"[ACH] edit flood retry fail: {e2!r}")
+                return False
+        if "DOCUMENT_INVALID" in str(e) or "can't parse" in low:
+            try:
+                await _send_text(ach.strip_tg_emoji(text))
+                _mark_ok()
+                return True
+            except Exception:
+                return False
+        if "there is no text" in low or "message can't be edited" in low:
+            try:
+                await _send_caption(text)
+                _mark_ok()
+                return True
+            except Exception as e3:
+                if "not modified" in str(e3).lower():
+                    _mark_ok()
+                    return True
+                return False
+        print(f"[ACH] edit fail: {e!r}")
+        return False
+
+
+def _schedule_achm_render(message, text: str, kb: InlineKeyboardMarkup) -> None:
+    """Склеивает частые клики в одну перерисовку — flood почти не случается."""
+    if message is None:
+        return
+    key = _msg_key(message)
+    if not key:
+        return
+    gen = int(_ACHM_GEN.get(key, 0))
+    if _ACHM_LAST_FP.get(key) == _render_fp(text, kb) and key not in _ACHM_PENDING:
+        return
+    _ACHM_PENDING[key] = (text, kb, gen)
+    task = _ACHM_TASKS.get(key)
+    if task is not None and not task.done():
+        return
+
+    async def _pump() -> None:
+        try:
+            idle = time.monotonic() - _ACHM_LAST_EDIT.get(key, 0.0)
+            await asyncio.sleep(0.12 if idle > 1.2 else _ACHM_ABSORB_SEC)
+            while True:
+                payload = _ACHM_PENDING.pop(key, None)
+                if payload is None:
+                    return
+                body, markup, gen = payload
+                if int(_ACHM_GEN.get(key, 0)) != gen:
+                    return
+                last = _ACHM_LAST_EDIT.get(key, 0.0)
+                flood_left = _ACHM_FLOOD_UNTIL.get(key, 0.0) - time.monotonic()
+                wait = max(_ACHM_MIN_GAP_SEC - (time.monotonic() - last), flood_left, 0.0)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                    if int(_ACHM_GEN.get(key, 0)) != gen:
+                        return
+                    newer = _ACHM_PENDING.pop(key, None)
+                    if newer is not None:
+                        body, markup, gen = newer
+                        if int(_ACHM_GEN.get(key, 0)) != gen:
+                            return
+                await _achm_edit_now(message, body, markup)
+        except Exception as e:
+            print(f"[ACH] render pump: {e!r}")
+        finally:
+            _ACHM_TASKS.pop(key, None)
+            leftover = _ACHM_PENDING.get(key)
+            if leftover is not None and int(leftover[2]) == int(_ACHM_GEN.get(key, 0)):
+                _schedule_achm_render(message, leftover[0], leftover[1])
+
+    _ACHM_TASKS[key] = asyncio.create_task(_pump())
 
 
 async def _refresh_profile(db, user_id: int) -> None:
@@ -561,12 +777,14 @@ def _revoke_list_view(target_id: int, rows, page: int = 0) -> Tuple[str, InlineK
             callback_data=f"ach_rev:{int(target_id)}:{iid}:{page_i}",
             style="danger",
         )])
-    if pages > 1:
-        kb_rows.append([
-            _btn(text="◀", callback_data=f"ach_revp:{int(target_id)}:{max(0, page_i - 1)}"),
-            _btn(text=f"{page_i + 1}/{pages}", callback_data=f"ach_revp:{int(target_id)}:{page_i}"),
-            _btn(text="▶", callback_data=f"ach_revp:{int(target_id)}:{min(pages - 1, page_i + 1)}"),
-        ])
+    nav = _nav_row(
+        page_i=page_i,
+        pages=pages,
+        prev_cb=f"ach_revp:{int(target_id)}:{page_i - 1}",
+        next_cb=f"ach_revp:{int(target_id)}:{page_i + 1}",
+    )
+    if nav:
+        kb_rows.append(nav)
     kb_rows.append([_btn(
         text="Закрыть",
         callback_data="achc_x",
@@ -985,7 +1203,6 @@ async def _return_achievements_to_profile(
         _profile_build_own_profile_markup,
         _profile_build_who_markup,
         _profile_get_message_meta,
-        _profile_safe_edit_message,
         _profile_store_message_meta,
         _profile_target_has_warns,
         user_message_mappingprofile,
@@ -994,6 +1211,8 @@ async def _return_achievements_to_profile(
     message = callback.message
     if message is None:
         return False
+
+    _cancel_achm_render(message)
 
     meta = _profile_get_message_meta(message.message_id)
     mode = str(meta.get("mode") or "")
@@ -1025,17 +1244,12 @@ async def _return_achievements_to_profile(
             has_warns=has_warns,
         )
 
-    edit_mode = await _profile_safe_edit_message(
-        message, text=caption, reply_markup=markup, parse_mode="HTML",
-    )
-    if edit_mode == "failed":
-        plain = ach.strip_tg_emoji(caption)
-        edit_mode = await _profile_safe_edit_message(
-            message, text=plain, reply_markup=markup, parse_mode="HTML",
-        )
+    ok_edit = await _achm_edit_now(message, caption, markup)
+    if not ok_edit:
+        ok_edit = await _achm_edit_now(message, ach.strip_tg_emoji(caption), markup)
 
     new_mid = message.message_id
-    if edit_mode == "failed":
+    if not ok_edit:
         try:
             new_msg = await message.answer(
                 text=caption,
@@ -1064,10 +1278,6 @@ async def _return_achievements_to_profile(
 
 
 async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
-    from bot.funcs.profile import (
-        user_message_mappingprofile,
-    )
-
     data = str(callback.data or "")
     # achm_all / achm_pg / achm_back / achm_up / achm_dn / achm_pin / achm_slot / achm_del / achm_delok
     parts = data.split(":")
@@ -1107,10 +1317,6 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
     else:
         page = 0
 
-    mid = callback.message.message_id if callback.message else None
-    if mid and (viewer not in user_message_mappingprofile or user_message_mappingprofile[viewer] != mid):
-        pass
-
     is_owner = clicker == target
 
     async def _ack(text: str = "", *, alert: bool = False) -> None:
@@ -1122,31 +1328,23 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
         except Exception:
             pass
 
-    async def _edit(text: str, kb: InlineKeyboardMarkup) -> bool:
-        from bot.funcs.profile import _profile_safe_edit_message
-
-        mode = await _profile_safe_edit_message(
-            callback.message, text=text, reply_markup=kb, parse_mode="HTML",
-        )
-        if mode != "failed":
-            return True
-        plain = ach.strip_tg_emoji(text)
-        if plain != text:
-            mode = await _profile_safe_edit_message(
-                callback.message, text=plain, reply_markup=kb, parse_mode="HTML",
-            )
-            if mode != "failed":
-                return True
-        return False
-
     if action in ("achm_all", "achm_pg"):
+        if action == "achm_pg" and not is_owner:
+            await _ack("Только владелец профиля", alert=True)
+            return True
         await _ack()
         doc = await ach.get_user_achievements_doc(db, target)
         rows = ach.sorted_items_for_display(doc)
-        _, page, pages, _ = ach.paginate_items(rows, page, ach.PAGE_SIZE)
-        text = ach.format_full_achievements_html(doc, page=page)
+        if is_owner:
+            _, page, _, _ = ach.paginate_items(rows, page, ach.PAGE_SIZE)
+            text = ach.format_full_achievements_html(doc, page=page)
+        else:
+            page = 0
+            text = ach.format_full_achievements_html(
+                doc, page=0, page_size=max(len(rows), 1),
+            )
         kb = _build_manage_keyboard(viewer, target, doc, is_owner=is_owner, page=page)
-        await _edit(text, kb)
+        _schedule_achm_render(callback.message, text, kb)
         return True
 
     if action == "achm_back":
@@ -1189,6 +1387,7 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
             await _ack("Можно удалять только свободные", alert=True)
             return True
         await _ack()
+        _cancel_achm_render(callback.message)
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [_btn(
                 text="Да, удалить",
@@ -1201,7 +1400,7 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
                 style="primary",
             )],
         ])
-        await _edit(ach.format_delete_confirm_html(it), kb)
+        await _achm_edit_now(callback.message, ach.format_delete_confirm_html(it), kb)
         return True
     elif action == "achm_delok":
         it = (doc.get("items") or {}).get(iid)
@@ -1218,7 +1417,7 @@ async def _handle_profile_manage_cb(callback: CallbackQuery, db) -> bool:
     _, page, _, _ = ach.paginate_items(rows, page, ach.PAGE_SIZE)
     text = ach.format_full_achievements_html(doc, page=page)
     kb = _build_manage_keyboard(viewer, target, doc, is_owner=True, page=page)
-    await _edit(text, kb)
+    _schedule_achm_render(callback.message, text, kb)
     return True
 
 
@@ -1289,24 +1488,15 @@ def _build_manage_keyboard(
                 ))
             rows.append(slot_row)
 
-    if pages > 1:
-        rows.append([
-            _btn(
-                text="◀ Назад",
-                callback_data=f"achm_pg:{viewer}:{target}:{max(0, page_i - 1)}",
-                style="default",
-            ),
-            _btn(
-                text=f"{page_i + 1} / {pages}",
-                callback_data=f"achm_all:{viewer}:{target}:{page_i}",
-                style="primary",
-            ),
-            _btn(
-                text="Вперёд ▶",
-                callback_data=f"achm_pg:{viewer}:{target}:{min(pages - 1, page_i + 1)}",
-                style="default",
-            ),
-        ])
+    if is_owner:
+        nav = _nav_row(
+            page_i=page_i,
+            pages=pages,
+            prev_cb=f"achm_pg:{viewer}:{target}:{page_i - 1}",
+            next_cb=f"achm_pg:{viewer}:{target}:{page_i + 1}",
+        )
+        if nav:
+            rows.append(nav)
 
     rows.append([_profile_back_button(viewer, target)])
     return InlineKeyboardMarkup(inline_keyboard=rows)

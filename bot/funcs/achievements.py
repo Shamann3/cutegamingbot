@@ -563,7 +563,7 @@ def format_full_achievements_html(
     page_rows, page_i, pages, total = paginate_items(rows, page, page_size)
     showcase_ids = {iid for iid, _ in showcase_items(doc, SHOWCASE_LIMIT)}
     showcase_list = [x for x, _ in showcase_items(doc, SHOWCASE_LIMIT)]
-    pager = f"стр. {page_i + 1}/{pages} · {total} · по {page_size} на странице" if pages > 1 else f"{total} наград"
+    pager = f"{page_i + 1} из {pages} · {total} наград" if pages > 1 else f"{total} наград"
     parts = [
         f"<tg-emoji emoji-id='{ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
         f"<b>Достижения</b>"
