@@ -24,8 +24,9 @@ TG_EMOJI_RE = re.compile(
 )
 EMOJI_ID_RE = re.compile(r"(\d{5,32})")
 TOKEN_RE = re.compile(r"\{emoji:(\d{5,32})\}", re.I)
-# В теге и на кнопке обычный смайл не ставим: иначе клиент рисует его рядом с premium.
-PREMIUM_ONLY_FALLBACK = "\u2060"
+# В теге нужен настоящий fallback-символ: иначе Telegram не создаёт custom_emoji
+# и клиент рисует обычный смайл (или пустоту). На кнопке unicode не ставим —
+# премиум идёт только через icon_custom_emoji_id, как в gc_emoji / king_stats.
 ICON_ONLY_TEXT = " "
 
 CHALLENGE_TTL_SEC = 30 * 60
@@ -89,16 +90,17 @@ class PremiumEmoji:
     html: str
 
     def as_html(self) -> str:
-        if self.emoji_id:
-            return f"<tg-emoji emoji-id='{self.emoji_id}'>{PREMIUM_ONLY_FALLBACK}</tg-emoji>"
-        return ""
+        if not self.emoji_id:
+            return ""
+        return _premium_html(self.emoji_id, self.face)
 
     def as_plain(self) -> str:
         return self.face or ""
 
 
-def _premium_html(eid: str) -> str:
-    return f"<tg-emoji emoji-id='{eid}'>{PREMIUM_ONLY_FALLBACK}</tg-emoji>"
+def _premium_html(eid: str, face: str = "") -> str:
+    inner = (face or "").strip() or "•"
+    return f"<tg-emoji emoji-id='{eid}'>{inner}</tg-emoji>"
 
 
 def parse_premium_emoji(raw: Any, fallback_face: str = "•") -> PremiumEmoji:
@@ -112,23 +114,25 @@ def parse_premium_emoji(raw: Any, fallback_face: str = "•") -> PremiumEmoji:
     m = TG_EMOJI_RE.search(s)
     if m:
         face = re.sub(r"<[^>]+>", "", m.group(2) or "").strip() or fallback_face
+        if face in {"\u2060", "\u200b", "•"}:
+            face = fallback_face
         eid = m.group(1)
-        return PremiumEmoji(eid, face, _premium_html(eid))
+        return PremiumEmoji(eid, face, _premium_html(eid, face))
 
     m = TOKEN_RE.search(s)
     if m:
         eid = m.group(1)
-        return PremiumEmoji(eid, fallback_face, _premium_html(eid))
+        return PremiumEmoji(eid, fallback_face, _premium_html(eid, fallback_face))
 
     m = re.search(r"emoji-id\s*=\s*['\"](\d{5,32})['\"]", s, re.I)
     if m:
         eid = m.group(1)
-        return PremiumEmoji(eid, fallback_face, _premium_html(eid))
+        return PremiumEmoji(eid, fallback_face, _premium_html(eid, fallback_face))
 
     digits = EMOJI_ID_RE.fullmatch(s)
     if digits:
         eid = digits.group(1)
-        return PremiumEmoji(eid, fallback_face, _premium_html(eid))
+        return PremiumEmoji(eid, fallback_face, _premium_html(eid, fallback_face))
 
     return PremiumEmoji("", s[:8] or fallback_face, "")
 
@@ -158,17 +162,6 @@ def check_sign(mac: str, *parts: Any) -> bool:
     return hmac.compare_digest(expected, str(mac or ""))
 
 
-def _btn(**kwargs):
-    from aiogram.types import InlineKeyboardButton
-    try:
-        return InlineKeyboardButton(**kwargs)
-    except TypeError:
-        kwargs = dict(kwargs)
-        kwargs.pop("style", None)
-        kwargs.pop("icon_custom_emoji_id", None)
-        return InlineKeyboardButton(**kwargs)
-
-
 def premium_button(
     item: PremiumEmoji,
     callback_data: str,
@@ -177,21 +170,15 @@ def premium_button(
     text: Optional[str] = None,
     plain: bool = False,
 ):
-    if text is not None:
-        label = text
-    elif plain:
-        label = item.face or ICON_ONLY_TEXT
-    else:
-        label = ICON_ONLY_TEXT
-    kwargs: Dict[str, Any] = {
-        "text": label,
-        "callback_data": callback_data,
-    }
-    if item.emoji_id and not plain:
-        kwargs["icon_custom_emoji_id"] = item.emoji_id
-    if style:
-        kwargs["style"] = style
-    return _btn(**kwargs)
+    """Как в проводах: text=' ', премиум только через icon_custom_emoji_id."""
+    _ = plain
+    from aiogram.types import InlineKeyboardButton
+    return InlineKeyboardButton(
+        text=ICON_ONLY_TEXT if text is None else text,
+        callback_data=callback_data,
+        style=style or "default",
+        icon_custom_emoji_id=str(item.emoji_id),
+    )
 
 
 def mention_html(user: Any) -> str:
@@ -245,8 +232,9 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         correct = r.choice(options)
         target = emoji(correct)
         prefix = emoji("v1_prefix")
-        text = f"{prefix.as_html()} <b>Нажмите {_mark('такое же')} {target.as_html()}</b>"
-        return _pack(v, prefix, text, options, correct)
+        chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": "такое же"}]
+        extras = [_emoji_ref(target)]
+        return _pack(v, prefix, options, correct, chunks, extras=extras)
 
     if v == 2:
         colors = ["red", "green", "blue"]
@@ -254,16 +242,16 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = _shuffle(colors, r)
         words = {"red": "красный", "green": "зелёный", "blue": "синий"}
         prefix = emoji("v2_prefix")
-        text = f"{prefix.as_html()} <b>Нажмите {_mark(words[correct])}</b>"
-        return _pack(v, prefix, text, options, correct, extra={"color": words[correct]})
+        chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": words[correct]}]
+        return _pack(v, prefix, options, correct, chunks, extra={"color": words[correct]})
 
     if v == 3:
         pool = ["gift", "star", "dollar"]
         correct = r.choice(pool)
         options = _shuffle(pool, r)
         prefix = emoji(correct)
-        text = f"{prefix.as_html()} <b>Нажмите {_mark('такое же')}</b>"
-        return _pack(v, prefix, text, options, correct)
+        chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": "такое же"}]
+        return _pack(v, prefix, options, correct, chunks)
 
     if v == 4:
         keys = ["living", "food", "thing"]
@@ -271,16 +259,16 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = _shuffle(keys, r)
         words = {"living": "живое", "food": "еду", "thing": "вещь"}
         prefix = emoji("v4_prefix")
-        text = f"{prefix.as_html()} <b>Нажмите {_mark(words[correct])}</b>"
-        return _pack(v, prefix, text, options, correct, extra={"ask": words[correct]})
+        chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": words[correct]}]
+        return _pack(v, prefix, options, correct, chunks, extra={"ask": words[correct]})
 
     if v == 5:
         correct = r.choice(["left", "right"])
         options = ["left", "right"]  # места фиксированы
         words = {"left": "налево", "right": "направо"}
         prefix = emoji("v5_prefix")
-        text = f"{prefix.as_html()} <b>Нажмите {_mark(words[correct])}</b>"
-        return _pack(v, prefix, text, options, correct, extra={"side": words[correct]})
+        chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": words[correct]}]
+        return _pack(v, prefix, options, correct, chunks, extra={"side": words[correct]})
 
     if v == 6:
         keys = ["happy", "sad", "angry"]
@@ -288,8 +276,8 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = _shuffle(keys, r)
         words = {"happy": "весёлое", "sad": "грустное", "angry": "злое"}
         prefix = emoji("v6_prefix")
-        text = f"{prefix.as_html()} <b>Нажмите {_mark(words[correct])}</b>"
-        return _pack(v, prefix, text, options, correct, extra={"mood": words[correct]})
+        chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": words[correct]}]
+        return _pack(v, prefix, options, correct, chunks, extra={"mood": words[correct]})
 
     if v == 7:
         pool = ["sun", "moon", "earth"]
@@ -297,12 +285,14 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = _shuffle(pool, r)
         names = {"sun": "солнце", "moon": "луну", "earth": "землю"}
         prefix = emoji("v7_prefix")
-        text = (
-            f"{prefix.as_html()} <b>Сначала нажмите {_mark(names[first])}, "
-            f"затем {_mark(names[second])}</b>"
-        )
+        chunks = [
+            {"kind": "text", "value": "Сначала нажмите "},
+            {"kind": "mark", "value": names[first]},
+            {"kind": "text", "value": ", затем "},
+            {"kind": "mark", "value": names[second]},
+        ]
         return _pack(
-            v, prefix, text, options, first,
+            v, prefix, options, first, chunks,
             extra={"sequence": [first, second], "step": 0, "names": names},
         )
 
@@ -317,23 +307,51 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         "spark": "самое маленькое",
     }
     prefix = emoji("v8_prefix")
-    text = f"{prefix.as_html()} <b>Нажмите {_mark(words[correct])}</b>"
-    return _pack(v, prefix, text, options, correct, extra={"size": sizes[correct], "ask": words[correct]})
+    chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": words[correct]}]
+    return _pack(
+        v, prefix, options, correct, chunks,
+        extra={"size": sizes[correct], "ask": words[correct]},
+    )
+
+
+def _emoji_ref(item: PremiumEmoji) -> Dict[str, str]:
+    return {"id": item.emoji_id, "face": item.face}
+
+
+def _chunks_html(chunks: Sequence[Dict[str, Any]]) -> str:
+    parts: List[str] = []
+    for ch in chunks:
+        kind = ch.get("kind")
+        if kind == "mark":
+            parts.append(_mark(str(ch.get("value") or "")))
+        elif kind == "emoji":
+            parts.append(_premium_html(str(ch.get("id") or ""), str(ch.get("face") or "")))
+        else:
+            parts.append(str(ch.get("value") or ""))
+    return "".join(parts)
 
 
 def _pack(
     variant: int,
     prefix: PremiumEmoji,
-    text: str,
     options: Sequence[str],
     correct: str,
+    chunks: Sequence[Dict[str, Any]],
+    *,
+    extras: Optional[Sequence[Dict[str, str]]] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    extras = list(extras or [])
+    tail = "".join(f" {_premium_html(e['id'], e['face'])}" for e in extras if e.get("id"))
+    text = f"{prefix.as_html()} <b>{_chunks_html(chunks)}</b>{tail}"
     payload = {
         "variant": variant,
         "options": list(options),
         "correct": correct,
         "prefix_id": prefix.emoji_id,
+        "prefix_face": prefix.face,
+        "chunks": list(chunks),
+        "extra_emoji": extras,
         "text": text,
         "step": 0,
         "sequence": [],
@@ -343,9 +361,104 @@ def _pack(
     return payload
 
 
+def _utf16_len(s: str) -> int:
+    return len(s.encode("utf-16-le")) // 2
+
+
+def _display_name(user: Any) -> str:
+    raw = (
+        getattr(user, "full_name", None)
+        or getattr(user, "first_name", None)
+        or "друг"
+    )
+    return str(raw)[:40]
+
+
+def card_plain_and_entities(payload: Dict[str, Any], user: Any):
+    """Карточка через entities: custom_emoji уходит в Telegram напрямую, не как обычный смайл."""
+    from aiogram.enums import MessageEntityType
+    from aiogram.types import MessageEntity
+
+    buf: List[str] = []
+    ents: List[Any] = []
+
+    def add(s: str) -> Tuple[int, int]:
+        start = _utf16_len("".join(buf))
+        buf.append(s)
+        return start, _utf16_len(s)
+
+    name = _display_name(user)
+    start, ln = add(name)
+    uid = int(getattr(user, "id", 0) or 0)
+    if uid and ln:
+        try:
+            ents.append(MessageEntity(
+                type=MessageEntityType.TEXT_MENTION,
+                offset=start,
+                length=ln,
+                user=user,
+            ))
+        except Exception:
+            ents.append(MessageEntity(
+                type=MessageEntityType.TEXT_LINK,
+                offset=start,
+                length=ln,
+                url=f"tg://user?id={uid}",
+            ))
+        ents.append(MessageEntity(type=MessageEntityType.BOLD, offset=start, length=ln))
+
+    add("\n")
+
+    prefix_id = str(payload.get("prefix_id") or "")
+    prefix_face = str(payload.get("prefix_face") or "")
+    if prefix_id and prefix_face:
+        start, ln = add(prefix_face)
+        ents.append(MessageEntity(
+            type=MessageEntityType.CUSTOM_EMOJI,
+            offset=start,
+            length=ln,
+            custom_emoji_id=prefix_id,
+        ))
+        add(" ")
+
+    bold_start = _utf16_len("".join(buf))
+    for ch in payload.get("chunks") or []:
+        kind = ch.get("kind")
+        if kind == "mark":
+            start, ln = add(str(ch.get("value") or ""))
+            if ln:
+                ents.append(MessageEntity(type=MessageEntityType.UNDERLINE, offset=start, length=ln))
+        elif kind == "emoji" and ch.get("id") and ch.get("face"):
+            start, ln = add(str(ch["face"]))
+            ents.append(MessageEntity(
+                type=MessageEntityType.CUSTOM_EMOJI,
+                offset=start,
+                length=ln,
+                custom_emoji_id=str(ch["id"]),
+            ))
+        else:
+            add(str(ch.get("value") or ""))
+    bold_len = _utf16_len("".join(buf)) - bold_start
+    if bold_len > 0:
+        ents.append(MessageEntity(type=MessageEntityType.BOLD, offset=bold_start, length=bold_len))
+
+    for extra in payload.get("extra_emoji") or []:
+        if not extra.get("id") or not extra.get("face"):
+            continue
+        add(" ")
+        start, ln = add(str(extra["face"]))
+        ents.append(MessageEntity(
+            type=MessageEntityType.CUSTOM_EMOJI,
+            offset=start,
+            length=ln,
+            custom_emoji_id=str(extra["id"]),
+        ))
+
+    return "".join(buf), ents
+
+
 def card_html(payload: Dict[str, Any], user: Any) -> str:
-    # Не оборачиваем mention в ещё один <b>: Telegram ломает вложенный bold
-    # и карточка просто не отправляется.
+    # Не оборачиваем mention в ещё один <b>: Telegram ломает вложенный bold.
     body = str(payload.get("text") or "<b>Нажмите нужную кнопку</b>")
     who = mention_html(user)
     return f"{who}\n{body}"
@@ -523,6 +636,11 @@ def strip_tg_emoji(raw: str) -> str:
     return TG_EMOJI_RE.sub(lambda m: (m.group(2) or "").strip(), raw or "")
 
 
+def text_outside_tg_emoji(raw: str) -> str:
+    """Текст карточки без premium-тегов — здесь обычных смайлов быть не должно."""
+    return TG_EMOJI_RE.sub("", raw or "")
+
+
 def _face_by_id(eid: str) -> str:
     for key in EMOJI:
         item = emoji(key)
@@ -532,7 +650,7 @@ def _face_by_id(eid: str) -> str:
 
 
 def html_to_faces(raw: str) -> str:
-    """Только для аварийного fallback, если Telegram отверг premium."""
+    """Не для отправки в чат. Нужен тестам и отладке."""
     return TG_EMOJI_RE.sub(lambda m: _face_by_id(m.group(1)), raw or "")
 
 

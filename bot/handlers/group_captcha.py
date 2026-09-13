@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from aiogram import BaseMiddleware, F, Router
 from aiogram.enums import ChatType
@@ -127,9 +127,12 @@ async def _try_deliver(
     text: str,
     markup,
     parse_mode: Optional[str],
+    entities=None,
 ) -> Optional[int]:
     kwargs: Dict[str, Any] = {"reply_markup": markup}
-    if parse_mode:
+    if entities:
+        kwargs["entities"] = entities
+    elif parse_mode:
         kwargs["parse_mode"] = parse_mode
     if mid:
         try:
@@ -178,23 +181,30 @@ async def _send_or_edit(
     row: Dict[str, Any],
     payload: Dict[str, Any],
 ) -> Optional[int]:
-    rich_text = gc.card_html(payload, user)
-    variants = (
-        (rich_text, gc.build_markup(int(row["id"]), int(chat_id), payload, plain=False), "HTML"),
-        (gc.html_to_faces(rich_text), gc.build_markup(int(row["id"]), int(chat_id), payload, plain=True), "HTML"),
-        (gc.to_plain_text(rich_text), gc.build_markup(int(row["id"]), int(chat_id), payload, plain=True), None),
-    )
+    markup = gc.build_markup(int(row["id"]), int(chat_id), payload)
     mid = row.get("message_id")
     last_err: Optional[BaseException] = None
-    for text, markup, parse_mode in variants:
+    # 1) entities + custom_emoji — так Telegram реально рисует премиум, а не обычный смайл.
+    # 2) HTML <tg-emoji> — запасной путь в том же каноне, что и остальной бот.
+    tries: List[Dict[str, Any]] = []
+    try:
+        plain, entities = gc.card_plain_and_entities(payload, user)
+        if plain and entities:
+            tries.append({"text": plain, "entities": entities, "parse_mode": None})
+    except Exception as e:
+        last_err = e
+        log.warning("captcha entities build failed: %s", e)
+    tries.append({"text": gc.card_html(payload, user), "entities": None, "parse_mode": "HTML"})
+    for spec in tries:
         try:
             sent = await _try_deliver(
                 bot,
                 chat_id=chat_id,
                 mid=mid,
-                text=text,
+                text=spec["text"],
                 markup=markup,
-                parse_mode=parse_mode,
+                parse_mode=spec["parse_mode"],
+                entities=spec["entities"],
             )
             if sent:
                 return sent

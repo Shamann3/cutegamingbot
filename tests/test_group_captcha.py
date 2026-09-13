@@ -6,17 +6,17 @@ from bot.funcs.group_captcha import (
     SCHEMA_SQL,
     answer_callback_data,
     build_challenge,
+    card_plain_and_entities,
     check_sign,
     disable_callback_data,
     emoji,
     is_correct_pick,
     parse_answer_callback,
     parse_disable_callback,
-    html_to_faces,
     parse_premium_emoji,
     pick_variant,
     sign_parts,
-    to_plain_text,
+    text_outside_tg_emoji,
 )
 
 
@@ -28,38 +28,32 @@ def test_schema_is_one_statement_each():
         assert body.upper().startswith("CREATE")
 
 
-def test_plain_fallback_keeps_faces():
-    raw = "<tg-emoji emoji-id='5472164874886846699'>\u2060</tg-emoji> Нажмите"
-    assert html_to_faces(raw) == "✨ Нажмите"
-    assert "Нажмите" in to_plain_text("<b>Нажмите <u>красный</u></b>")
-    assert "<" not in to_plain_text("<b>Нажмите <u>красный</u></b>")
-    card = build_challenge(1, rng=random.Random(1))
-    markup = __import__("bot.funcs.group_captcha", fromlist=["build_markup"]).build_markup(
-        1, -100, card, plain=True,
-    )
-    assert all(not getattr(btn, "icon_custom_emoji_id", None) for btn in markup.inline_keyboard[0])
-
-
 def test_parse_premium_emoji_from_tag():
     item = parse_premium_emoji("<tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji>")
     assert item.emoji_id == "5472164874886846699"
     assert "5472164874886846699" in item.as_html()
-    assert "✨" not in item.as_html()
+    assert "<tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji>" == item.as_html()
+    assert "\u2060" not in item.as_html()
 
 
-def test_card_has_no_regular_emoji():
+def test_card_uses_premium_tags_not_raw_faces():
     faces = {emoji(k).face for k in ("shield", "fire", "diamond", "gift", "star", "dollar")}
     for i in range(20):
         card = build_challenge(rng=random.Random(i + 9))
+        text = card.get("text") or ""
+        assert "<tg-emoji emoji-id='" in text
+        visible = text_outside_tg_emoji(text)
         for face in faces:
-            if face and face in (card.get("text") or ""):
-                raise AssertionError(f"обычный эмодзи {face!r} попал в текст")
+            if face and face in visible:
+                raise AssertionError(f"обычный эмодзи {face!r} оказался вне <tg-emoji>")
         markup = __import__("bot.funcs.group_captcha", fromlist=["build_markup"]).build_markup(
             3, -100, card,
         )
         for btn in markup.inline_keyboard[0]:
             assert btn.text.strip() == ""
             assert getattr(btn, "icon_custom_emoji_id", None)
+            for face in faces:
+                assert face not in (btn.text or "")
 
 
 def test_all_catalog_tags_have_ids():
@@ -68,6 +62,10 @@ def test_all_catalog_tags_have_ids():
         assert item.emoji_id.isdigit(), key
         assert len(item.emoji_id) >= 5, key
         assert item.face, key
+        html = item.as_html()
+        assert f"emoji-id='{item.emoji_id}'" in html
+        assert item.face in html
+        assert "\u2060" not in html
 
 
 def test_variant_1_target_and_shuffle_change():
@@ -172,6 +170,28 @@ def test_signed_callbacks_are_short_and_tamper_proof():
     assert check_sign(mac, "x", -100123)
 
 
+def test_card_entities_carry_custom_emoji():
+    from types import SimpleNamespace
+
+    user = SimpleNamespace(id=7, full_name="Иэрихон Cute", first_name="Иэрихон", is_bot=False)
+    card = build_challenge(5, rng=random.Random(5))
+    text, ents = card_plain_and_entities(card, user)
+    kinds = [str(getattr(e, "type", "")) for e in ents]
+    assert "custom_emoji" in kinds
+    assert "underline" in kinds
+    assert "bold" in kinds
+    custom = [e for e in ents if str(getattr(e, "type", "")) == "custom_emoji"]
+    assert custom
+    assert custom[0].custom_emoji_id == card["prefix_id"]
+    assert card["prefix_face"] in text
+    # в подписи кнопки этого лица быть не должно — только пробел + icon
+    markup = __import__("bot.funcs.group_captcha", fromlist=["build_markup"]).build_markup(1, -100, card)
+    for btn in markup.inline_keyboard[0]:
+        assert btn.text == " "
+        assert btn.icon_custom_emoji_id
+        assert card["prefix_face"] not in btn.text
+
+
 def test_buttons_carry_premium_emoji_ids():
     from bot.funcs.group_captcha import build_markup, premium_button
 
@@ -186,9 +206,10 @@ def test_buttons_carry_premium_emoji_ids():
     assert disable.text == "Убрать капчу"
     assert disable.icon_custom_emoji_id == "5462990652943904884"
     assert disable.callback_data.startswith("gcX:")
-    sample = premium_button(emoji("spark"), "x")
+    sample = premium_button(emoji("spark"), "x", plain=True)
     assert sample.icon_custom_emoji_id == "5472164874886846699"
     assert sample.text == " "
+    assert "✨" not in sample.text
 
 
 def test_variant_7_is_rare_but_present():
