@@ -280,6 +280,7 @@ profileprivate = InlineKeyboardMarkup(inline_keyboard=[
 
 btn_help1 = InlineKeyboardButton(text="Что такое Кут?", callback_data="help_btn1", style="default" ,icon_custom_emoji_id="5318959255385043017")
 btn_help22 = InlineKeyboardButton(text="Как заработать?", callback_data="help_btn22", style="default" ,icon_custom_emoji_id="5303547422373349738")
+btn_helpcomm = InlineKeyboardButton(text="Комиссия", callback_data="help_btncomm", style="default" ,icon_custom_emoji_id="5363817495847279825")
 btn_help2 = InlineKeyboardButton(text="Игры", callback_data="help_btn2", style="default" ,icon_custom_emoji_id="5319229795375018323")
 btn_help3 = InlineKeyboardButton(text="Разное", callback_data="help_btn3", style="default" ,icon_custom_emoji_id="5354789281317548026")
 btn_help4 = InlineKeyboardButton(text="💘 Браки", callback_data="help_btn4")
@@ -301,6 +302,7 @@ btn_help11 = InlineKeyboardButton(text="Скрыть", callback_data="help_delet
 inline_keyboard = [
     [btn_help1],
     [btn_help22],
+    [btn_helpcomm],
     [btn_help10],
     [btn_helpking],
     [btn_help2, btn_help3],
@@ -324,6 +326,7 @@ btn_help = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 btn_help19 = InlineKeyboardButton(text="Что такое Кут?", callback_data="9help_btn1", style="default" ,icon_custom_emoji_id="5318959255385043017")
 btn_help229 = InlineKeyboardButton(text="Как заработать?", callback_data="9help_btn22", style="default" ,icon_custom_emoji_id="5303547422373349738")
+btn_helpcomm9 = InlineKeyboardButton(text="Комиссия", callback_data="9help_btncomm", style="default" ,icon_custom_emoji_id="5363817495847279825")
 btn_help29 = InlineKeyboardButton(text="Игры", callback_data="9help_btn2", style="default" ,icon_custom_emoji_id="5319229795375018323")
 btn_help39 = InlineKeyboardButton(text="Разное", callback_data="9help_btn3", style="default" ,icon_custom_emoji_id="5354789281317548026")
 btn_help49 = InlineKeyboardButton(text="💘 Браки", callback_data="9help_btn4")
@@ -343,6 +346,7 @@ btn_help119 = InlineKeyboardButton(text="Скрыть", callback_data="9help_del
 inline_keyboard = [
     [btn_help19],
     [btn_help229],
+    [btn_helpcomm9],
     [btn_help109],
     [btn_helpking9],
     [btn_help29, btn_help39],
@@ -368,6 +372,7 @@ btn_helplol = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 btn_info_inline = InlineKeyboardButton(text="Что такое Кут?", callback_data="help_info_main", style="default" ,icon_custom_emoji_id="5318959255385043017")
 btn_earnings_inline = InlineKeyboardButton(text="Как заработать?", callback_data="help_earnings", style="default" ,icon_custom_emoji_id="5303547422373349738")
+btn_commission_inline = InlineKeyboardButton(text="Комиссия", callback_data="help_commission", style="default" ,icon_custom_emoji_id="5363817495847279825")
 btn_games_inline = InlineKeyboardButton(text="Игры", callback_data="help_games", style="default" ,icon_custom_emoji_id="5319229795375018323")
 btn_misc_inline = InlineKeyboardButton(text="Разное", callback_data="help_misc", style="default" ,icon_custom_emoji_id="5354789281317548026")
 btn_marriages_inline = InlineKeyboardButton(text="💘 Браки", callback_data="help_marriages")
@@ -387,6 +392,7 @@ btn_help1111_inline = InlineKeyboardButton(text="🩵 Оформление пр�
 inline_keyboard = [
     [btn_info_inline],
     [btn_earnings_inline],
+    [btn_commission_inline],
     [btn_functions_inline],
     [btn_games_inline, btn_misc_inline],
     [btn_market_inline],

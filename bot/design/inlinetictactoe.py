@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.enums import ParseMode, ChatType  # Импортируем ParseMode из aiogram.enums
 
-from bot.funcs.help import wordhelp,brak,ffunc,other,gamehelp,textstore,textglobhelp,textzabhelp,clanss,texteditprofile
+from bot.funcs.help import wordhelp,brak,ffunc,other,gamehelp,textstore,textglobhelp,textzabhelp,textcommhelp,clanss,texteditprofile
 import uuid
 import time
 
@@ -96,6 +96,24 @@ async def callback_main(call: CallbackQuery):
             await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
 
         pass  # Игнорируем ошибку MessageNotModified
+
+@dp.callback_query(lambda c: c.data == 'help_commission')
+async def callback_help_commission_inline(call: CallbackQuery):
+    user_id = call.from_user.id
+    first_name = re.sub(r'[<>/{}"]' , '' , call.from_user.first_name)
+    username = call.from_user.username
+    await inline_add_or_update_user_info(bot1 , user_id , first_name , username,db, start_balance)
+
+    try:
+        await bot1.edit_message_text(
+            text=textcommhelp,
+            inline_message_id=call.inline_message_id,
+            parse_mode="HTML",
+            reply_markup=btn_help_inline
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
 
 @dp.callback_query(lambda c: c.data == 'help_games')
 async def callback_main(call: CallbackQuery):

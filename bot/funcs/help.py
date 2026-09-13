@@ -176,6 +176,19 @@ textzabhelp = f'''
 <tg-emoji emoji-id='5229225792159888151'>💸</tg-emoji> <b>Удачных заработков!</b>
 '''
 
+textcommhelp = '''
+<tg-emoji emoji-id='5325881587319982195'>😎</tg-emoji> <b>Комиссия</b>
+
+<blockquote><b><tg-emoji emoji-id='5352756722404466080'>🗽</tg-emoji> Для чего она создана</b>
+<i>С выигрыша удерживается небольшой процент. Он уходит в Фонд Роста : так проект продолжает жить, а ваши игры копятся в шкале профиля.</i></blockquote>
+
+<blockquote><b><tg-emoji emoji-id='5469967260380612012'>🏆</tg-emoji> Купон Возможностей</b>
+<i>Когда шкала заполняется, вы получаете купон. Используйте его - и шансы на победу следующей одиночной игре многократно увеличатся</i>
+<code>Использовать 💸</code></blockquote>
+
+<blockquote><b>Комиссия возвращается победой.</b></blockquote>
+'''
+
 textglobhelp = f'''
 <tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> <b>Что такое Кут? </b>
 <tg-emoji emoji-id='5436339947080548936'>🌟</tg-emoji> <b>Кут - это элитный игровой Telegram-бот с собственной валютой.
@@ -561,6 +574,12 @@ _HELP_ADMIN_ALIASES = frozenset({
     "help admin", "help admins", "help moderation", "help punishments",
 })
 
+_HELP_COMMISSION_ALIASES = frozenset({
+    "хелп комиссия", "комиссия хелп", "хелп комиссии", "комиссии хелп",
+    "хелп/комиссия", "комиссия/хелп", "хелп/комиссии", "комиссии/хелп",
+    "помощь комиссия", "комиссия помощь", "help commission", "commission help",
+})
+
 
 def _help_norm(text: str) -> str:
     return " ".join((text or "").lower().strip().split())
@@ -586,6 +605,22 @@ def _help_owner_guard(user_id: int, message_id: int) -> bool:
 
 def is_admin_help_text(text: str | None) -> bool:
     return _help_norm(text or "") in _HELP_ADMIN_ALIASES
+
+
+def is_commission_help_text(text: str | None) -> bool:
+    return _help_norm(text or "") in _HELP_COMMISSION_ALIASES
+
+
+async def send_commission_help(message: Message) -> None:
+    """Справка по комиссии: «хелп комиссия» и синонимы."""
+    user_id = message.from_user.id
+    sent = await message.reply(
+        textcommhelp,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=btn_help,
+    )
+    _help_register_message(user_id, sent.message_id)
 
 
 async def send_admin_help(message: Message) -> None:
@@ -641,6 +676,9 @@ async def help(message: Message):
 
     if is_admin_help_text(message.text):
         await send_admin_help(message)
+
+    if is_commission_help_text(message.text):
+        await send_commission_help(message)
 
     if message.text and message.text.lower() in ["хелп царь", "царь хелп", "царь помощь", "help king"]:
         await message.reply(kinghelp, parse_mode="HTML", disable_web_page_preview=True)
@@ -925,6 +963,32 @@ async def callback_erwqedsaCXZmain(call: types.CallbackQuery):
         if "message is not modified" in str(e):
             pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
+
+@dp.callback_query(lambda c: c.data.startswith('9help_btncomm'))
+async def callback_help_commission_9(call: types.CallbackQuery):
+    try:
+        await call.answer()
+        await call.message.edit_text(
+            text=textcommhelp, parse_mode="HTML", disable_web_page_preview=True, reply_markup=btn_help9)
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+
+@dp.callback_query(lambda c: c.data.startswith('help_btncomm'))
+async def callback_help_commission(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    message_id = call.message.message_id
+    try:
+        if not _help_owner_guard(user_id, message_id):
+            await _help_reject_intruder(call)
+            return
+
+        await call.answer()
+        await call.message.edit_text(
+            text=textcommhelp, parse_mode="HTML", disable_web_page_preview=True, reply_markup=btn_help)
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
 
 #🚀 Краш <pre>краш [ставка] [коэфициэнт]</pre>
 #🦋 Бабочка <pre>бк [ставка]</pre>

@@ -4445,7 +4445,7 @@ class ButtonRegistry:
         from bot.games.risk import risk_process_game_buttons,risk_process_withdraw
         from bot.games.plate import plate_process_game_buttons, plate_process_withdraw
         from bot.games.bombs import bombs_stop_game, bombs_process_bomb_click,bombs_bombsskukota_game
-        from bot.funcs.help import qwehelp_editprofile, asundifcallback_main, callbadfssgfafdsack_main, callbadfsDFGGQack_main, callbaYTRWEQck_main, callback_erwqedsaCXZmain, callQWRQWRQback_main, call12412512back_main, callbacrvecek_main, call1dacadcaback_main, calybybybrvcrelback_main, calltewdxwback_main, caloakdaslpdlback_main, callbacsqdqwdqk_main, callback_aosdaslpdmain, capasldpalsdallback_main, callapsdlasdlback_main, callback_mpaspdoasoain, caakodaklspdqlqsqllback_main, calakdoaksdaslback_main, cadaspdlasaallback_main, calasdspaldasqwsqflback_top, calisackascvaslback_top, cahfduascniamwwallback_top, callback_tadfhadj9fwop, callbacqwdjqsoqkqzxcvk_top, caakdoakscijllback_top, akdfadfkoasdmccallback_top
+        from bot.funcs.help import qwehelp_editprofile, asundifcallback_main, callbadfssgfafdsack_main, callbadfsDFGGQack_main, callbaYTRWEQck_main, callback_erwqedsaCXZmain, callback_help_commission, callback_help_commission_9, callQWRQWRQback_main, call12412512back_main, callbacrvecek_main, call1dacadcaback_main, calybybybrvcrelback_main, calltewdxwback_main, caloakdaslpdlback_main, callbacsqdqwdqk_main, callback_aosdaslpdmain, capasldpalsdallback_main, callapsdlasdlback_main, callback_mpaspdoasoain, caakodaklspdqlqsqllback_main, calakdoaksdaslback_main, cadaspdlasaallback_main, calasdspaldasqwsqflback_top, calisackascvaslback_top, cahfduascniamwwallback_top, callback_tadfhadj9fwop, callbacqwdjqsoqkqzxcvk_top, caakdoakscijllback_top, akdfadfkoasdmccallback_top
         from bot.funcs.shop import shop_process_filter_pagination,shop_process_pagination,shop_filter_by_sorting,shop_reset_sorting
         from bot.funcs.Shep import asdasdview_message
         from bot.games.provoda import provoda_callback,wires_paid_stub,wires_end_stub
@@ -4559,6 +4559,8 @@ class ButtonRegistry:
                     'help_btn1': callbadfsDFGGQack_main,
                     '9help_btn22': callbaYTRWEQck_main,
                     'help_btn22': callback_erwqedsaCXZmain,
+                    '9help_btncomm': callback_help_commission_9,
+                    'help_btncomm': callback_help_commission,
                     '9help_btn2': callQWRQWRQback_main,
                     'help_btn2': call12412512back_main,
                     '9help_btn3': callbacrvecek_main,
@@ -6987,7 +6989,7 @@ help_commands = ["/buy@CuteGamingBot","/ex@CuteGamingBot","/shop@CuteGamingBot" 
 ]
 
 # Список команд, которые нужно обрабатывать ( использование startswith + нижний регистр )
-custom_commands = {"мои рефы","мои приграшенные","мой реф", "мои инвайты","мои инваиты","мой реф","снять флаг" , "Снять флаг" , "Флаг снять" , "флаг снять ","хелп админы", "хелп админ", "хелп админка", "хелп модерация", "хелп наказания",
+custom_commands = {"мои рефы","мои приграшенные","мой реф", "мои инвайты","мои инваиты","мой реф","снять флаг" , "Снять флаг" , "Флаг снять" , "флаг снять ","хелп комиссия", "комиссия хелп", "хелп комиссии", "комиссии хелп", "хелп/комиссия", "комиссия/хелп", "хелп/комиссии", "комиссии/хелп", "помощь комиссия", "комиссия помощь", "help commission", "commission help","хелп админы", "хелп админ", "хелп админка", "хелп модерация", "хелп наказания",
     "админы хелп", "админ хелп", "админка хелп", "модерация хелп", "наказания хелп",
     "хелп/админы", "хелп/админ", "хелп/админка", "хелп/модерация", "хелп/наказания",
     "админы/хелп", "админ/хелп", "админка/хелп", "модерация/хелп", "наказания/хелп",
@@ -7115,6 +7117,7 @@ custom_commands = {"мои рефы","мои приграшенные","мой �
                                  "топ балансы групп" , "топ бч","Хелп/биржа" , "хелп/биржа" , "биржа/хелп" , "Биржа/хелп","Хелп/основное","хелп/основное","основное/хелп","Основное/хелп","Главное о боте","главное о боте","главное/хелп","Главное/хелп","хелп/главное","Хелп/главное","Хелп/игры","хелп/игры","игры/хелп","Игры/хелп","Хелп/разное","хелп/разное","разное/хелп","разное/хелп","Хелп/функции","хелп/функции","функции/хелп","функции/хелп","Хелп/брак","хелп/брак","брак/хелп","брак/хелп","Браки/хелп","браки/хелп","хелп/браки","Хелп/браки","/rules","правила" , "где правила" , "правила группы" , "правила чата" , "смотреть правила","б" , "баланс" , "💸 баланс" , "реклама кут" , "мой баланс" , "идгрупп","донат" , "donate",'поженится','пожениться','свадьба','сделать предложение',"sypherзабратьпредмет","sypherдатьпредмет","выиграно","докс","задоксить","рулетка","Рулетка",".отправить", ".Отправить", ".передать", ".Передать", ".сделка", ".Сделка", ".подарить", ".Подарить",".купить",".Купить","мой баланс","кн" , "крестики нолики" , "нолики крестики","🚀 Как играть?","🚀 как играть?","реклама лизка","прошептать","б", "баланс", "💸 баланс","🎩 профиль","🎩 Профиль‍" , "профиль","Профиль" , "проф","Проф" , "кто я","Кто я","докс" , "ктоя","Ктоя" , "/profile@CuteGamingBot" , "/profile" ,
         "profile" , "кто ты","Кто ты" , "кто ты такая","Кто ты такая" , "кто ты такой","Кто ты такой","шарик","рул","шар","трейд","башня","рулетка","мемори","📚 помощь","📚 Помощь","Хелп брак" , "хелп брак" , "брак хелп" , "брак хелп" , "Браки хелп" , "браки хелп" , "хелп браки","идгрупп" ,
         "Хелп браки" , "Хелп функции" , "хелп функции" , "функции хелп" , "функции хелп" , "Хелп разное" ,
+        "хелп комиссия" , "комиссия хелп" , "хелп комиссии" , "комиссии хелп" , "хелп/комиссия" , "комиссия/хелп" , "хелп/комиссии" , "комиссии/хелп" , "помощь комиссия" , "комиссия помощь" , "help commission" , "commission help" ,
         "хелп разное" , "разное хелп" , "разное хелп" , "Хелп игры" , "хелп игры" , "игры хелп" , "Игры хелп" ,
         "Хелп основное" , "хелп основное" , "основное хелп" , "Основное хелп" , "Главное о боте" , "главное о боте" ,
         "главное хелп" , "Главное хелп" , "хелп главное" , "Хелп главное" , "хелп брак" , "брак хелп" , "браки хелп" ,
@@ -37638,7 +37641,10 @@ async def add_firstname_to_usercheck_balance(message: Message):
             await task1
 
         # Проверка и выполнение для "помощь"
-        helptext = {"хелп админы", "хелп админ", "хелп админка", "хелп модерация", "хелп наказания",
+        helptext = {"хелп комиссия", "комиссия хелп", "хелп комиссии", "комиссии хелп",
+    "хелп/комиссия", "комиссия/хелп", "хелп/комиссии", "комиссии/хелп",
+    "помощь комиссия", "комиссия помощь", "help commission", "commission help",
+    "хелп админы", "хелп админ", "хелп админка", "хелп модерация", "хелп наказания",
     "админы хелп", "админ хелп", "админка хелп", "модерация хелп", "наказания хелп",
     "хелп/админы", "хелп/админ", "хелп/админка", "хелп/модерация", "хелп/наказания",
     "админы/хелп", "админ/хелп", "админка/хелп", "модерация/хелп", "наказания/хелп",
@@ -37652,7 +37658,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
             "биржа хелп" , "помощь" , "хелп" , "Хелп биржа" , "хелп биржа" , "биржа хелп" , "Биржа хелп" , "/help","правила","где правила","правила группы","правила чата","смотреть правила"}
         _help_cmd_norm = _normalize_command_text(text_lower)
         if _help_cmd_norm in helptext or text_lower in helptext:
-            from bot.funcs.help import help, is_admin_help_text, send_admin_help
+            from bot.funcs.help import help, is_admin_help_text, send_admin_help, is_commission_help_text, send_commission_help
             try:
                 await update(bot1 , chat_id , db)  # Проверка бана группы
             except GroupBanned:
@@ -37660,6 +37666,8 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
             if is_admin_help_text(message.text):
                 await measure_time(send_admin_help(message), "помощь админы")
+            elif is_commission_help_text(message.text):
+                await measure_time(send_commission_help(message), "помощь комиссия")
             else:
                 task1 = asyncio.create_task(measure_time(help(message) , "помощь"))
                 await task1

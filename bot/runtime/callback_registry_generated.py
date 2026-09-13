@@ -78,7 +78,7 @@ CALLBACK_MODULES: Tuple[str, ...] = (
     'bot.tggames.soccer',
 )
 
-# prefix -> (module, handler): 382
+# prefix -> (module, handler): 387
 PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'ajdfiasjoaskdokasdqwqkpфыафывйц': ('main', 'send_styles'),
     'callbroulletanswermultiplier': ('bot.games.Fortuna', 'fortuna_multiplier_info'),
@@ -202,8 +202,6 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     '1tic_tac_join:': ('bot.design.inlinetictac2', 'inline_tic_tac_join_game_callback'),
     '9back_to_menu1': ('main', 'handle_back_to_menu'),
     'ach_grant_off:': ('main', 'achievements_callbacks'),
-    'ach_rev': ('main', 'achievements_callbacks'),
-    'achc_': ('main', 'achievements_callbacks'),
     'back_to_stars_': ('main', 'back_to_stars_handler'),
     'back_to_x2_req': ('main', 'back_to_x2_requirements_handler'),
     'checkers_mode:': ('bot.design.schahinline', 'change_mode_callback'),
@@ -226,6 +224,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'tank_paid_stub': ('bot.games.tank', 'tank_paid_stub'),
     'tank_withdraw_': ('bot.games.tank', 'tank_process_withdraw'),
     'tic_tac_create': ('bot.design.inlinetictac2', 'inline_tic_tac_create_game_callback'),
+    '9help_btncomm': ('bot.funcs.help', 'callback_help_commission_9'),
     '9help_btnfunk': ('bot.funcs.help', 'calybybybrvcrelback_main'),
     '9help_btnking': ('bot.funcs.help', 'callback_help_king_9'),
     'accept_action': ('bot.design.inlinekn', 'accept_action_handler'),
@@ -273,6 +272,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'errorbasket_': ('bot.tggames.basket', 'errorbasket_alert'),
     'filter_page_': ('bot.funcs.shop', 'paginate_handler'),
     'gameshistory': ('bot.funcs.history', 'process_callback'),
+    'help_btncomm': ('bot.funcs.help', 'callback_help_commission'),
     'help_btnfunk': ('bot.funcs.help', 'calltewdxwback_main'),
     'help_btnking': ('bot.funcs.help', 'callback_help_king'),
     'help_store10': ('bot.funcs.help', 'cahfduascniamwwallback_top'),
@@ -371,6 +371,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'user_page_': ('bot.buisnesses.clan_filter', 'process_pagination'),
     'btnstars_': ('main', 'btnstars_callback'),
     'ept_join_': ('bot.buisnesses.clan_filter', 'process_accept_join'),
+    'gbl_more:': ('bot.handlers.chatbalance', 'gbl_more_handler'),
     'gildjoin:': ('bot.games.gild', 'join_game_callback'),
     'greet_cut': ('main', 'greet_cut_handler'),
     'help_btn1': ('bot.funcs.help', 'callbadfsDFGGQack_main'),
@@ -403,7 +404,6 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'startknb:': ('bot.funcs.knb', 'knb_start_game_callback'),
     'topinvite': ('bot.funcs.top', 'caasqscwqscqllback_top'),
     'view_car_': ('bot.funcs.shopvir', 'view_car'),
-    'ach_rev:': ('main', 'achievements_callbacks'),
     'back_btn': ('bot.handlers.handlers_btns', 'callback_main'),
     'balance:': ('bot.funcs.balance', 'cb_balance_refresh'),
     'buy_car_': ('bot.funcs.shopvir', 'process_callback'),
@@ -411,7 +411,6 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'decline_': ('bot.funcs.shop', 'process_decline_callback'),
     'gamehelp': ('bot.funcs.help', 'callbacqwdjqsoqkqzxcvk_top'),
     'gbl_pay:': ('bot.handlers.chatbalance', 'gbl_pay_handler'),
-    'gbl_more:': ('bot.handlers.chatbalance', 'gbl_more_handler'),
     'joinknb:': ('bot.funcs.knb', 'knb_join_game_callback'),
     'ob_earn:': ('bot.funcs.onboarding', 'ob_earn_page'),
     'ob_game:': ('bot.funcs.onboarding', 'ob_game'),
@@ -422,6 +421,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'shamode:': ('bot.games.scah', 'select_mode_callback'),
     'state123': ('bot.funcs.top', 'cb_stats_today'),
     'accept_': ('bot.funcs.shop', 'process_accept_callback'),
+    'ach_rev': ('main', 'achievements_callbacks'),
     'backtop': ('bot.funcs.top', 'sasadqqwdqwcallback_top'),
     'bostop_': ('bot.games.bombs', 'bombs_stop_game'),
     'button_': ('bot.games.game', 'process_adm_menu'),
@@ -448,6 +448,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'sts:g:': ('main', 'btnstars_callback'),
     'topic:': ('server.support_bot', 'cb_topic'),
     'wdact:': ('main', 'admin_withdraw_action_handler'),
+    'achc_': ('main', 'achievements_callbacks'),
     'achm_': ('main', 'achievements_callbacks'),
     'achv_': ('main', 'achievements_callbacks'),
     'ball_': ('bot.games.balls', 'process_callback_ball'),
@@ -468,7 +469,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'gc:': ('bot.funcs.balance', 'gc_info_callback'),
 }
 
-# exact callback_data -> (module, handler): 173
+# exact callback_data -> (module, handler): 176
 EXACT_HANDLERS: Dict[str, Tuple[str, str]] = {
     '1st6': ('bot.funcs.BlackGack', 'range_callback'),
     '1to9': ('bot.funcs.BlackGack', 'range_callback'),
@@ -537,14 +538,16 @@ EXACT_HANDLERS: Dict[str, Tuple[str, str]] = {
     'deletehistorymoneybuttons1': ('bot.funcs.history', 'process_buy_callback'),
     'donesub': ('main', 'sub_channel_done'),
     'fullstate123': ('bot.funcs.top', 'cb_stats_all'),
-    'gbl_raise': ('bot.handlers.chatbalance', 'gbl_raise_handler'),
+    'gbl_cap_status': ('bot.handlers.chatbalance', 'gbl_cap_status'),
     'gbl_more_close': ('bot.handlers.chatbalance', 'gbl_more_close_handler'),
+    'gbl_raise': ('bot.handlers.chatbalance', 'gbl_raise_handler'),
     'gc_diff_types': ('main', 'gc_diff_types'),
     'gc_regular_info': ('main', 'gc_regular_info'),
     'group_balance_overview': ('bot.handlers.chatbalance', 'group_balance_overview'),
     'grow_cultures': ('bot.funcs.garden', 'handle_grow_cultures3412'),
     'grow_cultures1': ('bot.funcs.garden', 'handle_grow_cultures1'),
     'help_clans': ('bot.design.inlinetictactoe', 'callback_main'),
+    'help_commission': ('bot.design.inlinetictactoe', 'callback_help_commission_inline'),
     'help_earnings': ('bot.design.inlinetictactoe', 'callback_main'),
     'help_functions': ('bot.design.inlinetictactoe', 'callback_main'),
     'help_games': ('bot.design.inlinetictactoe', 'callback_main'),
