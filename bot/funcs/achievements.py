@@ -230,6 +230,11 @@ def is_rich_title(html_text: str) -> bool:
     return raw.count("\n") >= 1 or count_custom_emojis(raw) >= 3
 
 
+def title_carries_custom_emoji(html_text: str) -> bool:
+    """В названии уже есть premium-эмодзи — второй значок слева не рисуем."""
+    return count_custom_emojis(html_text or "") >= 1
+
+
 def title_first_line_html(html_text: str) -> str:
     raw = html_text or ""
     return raw.split("\n", 1)[0].strip() or raw[:80]
@@ -724,7 +729,9 @@ def item_pack_weight(it: Dict[str, Any]) -> int:
 
 def item_emoji_weight(it: Dict[str, Any]) -> int:
     raw = str(it.get("title_html") or it.get("title") or "")
-    extra = 1 if it.get("icon_emoji_id") and not is_rich_title(raw) else 0
+    extra = 1 if it.get("icon_emoji_id") and not (
+        is_rich_title(raw) or title_carries_custom_emoji(raw)
+    ) else 0
     return count_custom_emojis(raw) + extra
 
 
@@ -930,7 +937,7 @@ def achievement_line_html(
     title = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
     if compact:
         title = title_compact_html(title)
-    rich = is_rich_title(title)
+    rich = is_rich_title(title) or title_carries_custom_emoji(title)
     ic = icon_html(it.get("icon_emoji_id"), it.get("icon_fallback") or DEFAULT_ICON_FALLBACK)
     head = title if rich else f"{ic} {title}"
     if not with_rarity:

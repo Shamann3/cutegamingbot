@@ -24,6 +24,20 @@ def test_profile_pin_does_not_leak_html_tags():
     assert "Первооткрыватель" in preview
 
 
+def test_one_title_emoji_is_not_duplicated():
+    from bot.funcs.achievements import achievement_line_html
+    html = achievement_line_html({
+        "title_html": (
+            "<tg-emoji emoji-id='5379764753762704744'>🎁</tg-emoji> "
+            "Первооткрыватель купона возможностей"
+        ),
+        "icon_emoji_id": "5379764753762704744",
+        "icon_fallback": "🎁",
+        "kind": "free",
+    }, with_rarity=False)
+    assert html.count("<tg-emoji") == 1
+
+
 def test_profile_pin_keeps_premium_emoji_and_bold():
     from bot.funcs.achievements import achievement_profile_pin_html
     pin = achievement_profile_pin_html({

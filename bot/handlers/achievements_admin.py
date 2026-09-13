@@ -405,7 +405,9 @@ def _wizard_preview_html(state: dict) -> str:
     ic = ach.icon_html(state.get("icon_emoji_id"), state.get("icon_fallback") or "⭐")
     eid = state.get("icon_emoji_id")
     eid_line = f"значок · <code>{html.escape(str(eid))}</code>" if eid else "значок · обычный emoji"
-    body = title_html if ach.is_rich_title(title_html) else f"{ic} {title_html}"
+    body = title_html if (
+        ach.is_rich_title(title_html) or ach.title_carries_custom_emoji(title_html)
+    ) else f"{ic} {title_html}"
     return (
         f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
         f"<b>Свободная награда — превью</b>\n\n"
@@ -1042,7 +1044,7 @@ async def _handle_wizard_cb(callback: CallbackQuery, db, user_id: int, data: str
         _wizard_clear(user_id)
         await _ack("Выдано")
         granted = state["title_html"]
-        if not ach.is_rich_title(granted):
+        if not (ach.is_rich_title(granted) or ach.title_carries_custom_emoji(granted)):
             granted = f"{ach.icon_html(state.get('icon_emoji_id'), state.get('icon_fallback') or '⭐')} {granted}"
         await _show(
             f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
