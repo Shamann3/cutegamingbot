@@ -9,9 +9,23 @@ from typing import Any, Dict, List, Optional
 
 from db import db
 
-from bot.funcs.group_captcha import VARIANT_LABELS, ensure_tables
-
 log = logging.getLogger("admin_captcha")
+
+try:
+    from bot.funcs.group_captcha import VARIANT_LABELS, ensure_tables
+except Exception:
+    log.exception("captcha admin: не удалось импортировать bot.funcs.group_captcha")
+    VARIANT_LABELS = {
+        1: "Найдите такое же",
+        2: "Цвет",
+        4: "Живое / еда / вещь",
+        5: "Сторона",
+        6: "Настроение",
+        7: "Два по порядку",
+    }
+
+    async def ensure_tables(pool) -> None:
+        return
 
 EVENT_LABELS = {
     "shown": "показали карточку",
@@ -51,10 +65,9 @@ async def _ready() -> bool:
         return False
     try:
         await ensure_tables(pool)
-        return True
     except Exception:
-        log.exception("captcha admin: ensure_tables failed")
-        return False
+        log.exception("captcha admin: ensure_tables failed, читаем таблицы как есть")
+    return True
 
 
 async def _q(label: str, coro, default=None):
@@ -102,6 +115,7 @@ def _chat_title(chat_id: int, names: Dict[int, Dict[str, Optional[str]]], meta: 
 
 async def user_captcha(user_id: int) -> Dict[str, Any]:
     empty = {
+        "ok": True,
         "passedGroups": 0,
         "fails": 0,
         "shown": 0,
@@ -281,6 +295,7 @@ async def user_captcha(user_id: int) -> Dict[str, Any]:
         favorite = {"variant": fav_key, "label": _label(fav_key), "passes": variant_counts[fav_key]}
 
     return {
+        "ok": True,
         "passedGroups": len(groups),
         "fails": fails,
         "shown": shown,
@@ -301,6 +316,7 @@ async def user_captcha(user_id: int) -> Dict[str, Any]:
 
 async def chat_captcha(chat_id: int, *, members: Optional[int] = None) -> Dict[str, Any]:
     empty = {
+        "ok": True,
         "enabled": True,
         "disabledAt": None,
         "disabledBy": None,
@@ -641,6 +657,7 @@ async def chat_captcha(chat_id: int, *, members: Optional[int] = None) -> Dict[s
         pass_rate = round(100.0 * passed / shown, 1)
 
     return {
+        "ok": True,
         "enabled": enabled,
         "disabledAt": disabled_at,
         "disabledBy": disabled_by,
@@ -667,6 +684,7 @@ async def chat_captcha(chat_id: int, *, members: Optional[int] = None) -> Dict[s
 
 async def overview_captcha() -> Dict[str, Any]:
     empty = {
+        "ok": True,
         "enabledChats": 0,
         "disabledChats": 0,
         "passed": 0,
@@ -861,6 +879,7 @@ async def overview_captcha() -> Dict[str, Any]:
         facts.append("Капча только запускается — факты появятся после первых прохождений")
 
     return {
+        "ok": True,
         "enabledChats": _iint(enabled_chats),
         "disabledChats": disabled_chats,
         "passed": totals["passed"],

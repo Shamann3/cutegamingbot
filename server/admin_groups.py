@@ -806,17 +806,41 @@ async def log_level_event(
 async def _safe_chat_captcha(chat_id: int, members: Optional[int] = None) -> Dict[str, Any]:
     try:
         from admin_captcha import chat_captcha
-        return await chat_captcha(int(chat_id), members=members)
+        data = await chat_captcha(int(chat_id), members=members)
+        data["ok"] = True
+        return data
     except Exception:
-        return {"enabled": True, "passed": 0, "fails": 0, "shown": 0, "pending": 0, "variants": []}
+        import logging
+        logging.getLogger("admin_groups").exception("captcha chat failed chat=%s", chat_id)
+        hint = max(0, int(members) - 0) if members else None
+        return {
+            "ok": False,
+            "enabled": True,
+            "passed": 0,
+            "fails": 0,
+            "shown": 0,
+            "pending": 0,
+            "blocked": 0,
+            "notPassedHint": hint,
+            "variants": [],
+            "recentFails": [],
+            "recentPasses": [],
+            "recentShown": [],
+            "waiting": [],
+            "pendingPeople": [],
+        }
 
 
 async def _safe_overview_captcha() -> Dict[str, Any]:
     try:
         from admin_captcha import overview_captcha
-        return await overview_captcha()
+        data = await overview_captcha()
+        data["ok"] = True
+        return data
     except Exception:
-        return {"passed": 0, "fails": 0, "shown": 0, "facts": []}
+        import logging
+        logging.getLogger("admin_groups").exception("captcha overview failed")
+        return {"ok": False, "passed": 0, "fails": 0, "shown": 0, "blocked": 0, "facts": []}
 
 
 async def get_group_detail(chat_id: int) -> Dict[str, Any]:

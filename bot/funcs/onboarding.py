@@ -139,6 +139,12 @@ def _farm_url() -> str:
     return url
 
 
+def _farm_open_url() -> str:
+    """t.me deep-link: работает и в личке, и в группе (web_app — только в PM)."""
+    from bot.funcs.webapp_links import farm_url
+    return farm_url()
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Shared emoji для хелперов (_quest_stats). Тексты экранов - прямо в функциях с <tg-emoji>
 # ──────────────────────────────────────────────────────────────────────
@@ -1189,7 +1195,7 @@ async def _menu_rows(user_id: Optional[int] = None) -> List[List[InlineKeyboardB
         [_btn("Вывод", data="conc_stars", icon=ICON_WITHDRAW),
          _btn("Донат", data="insert_stars", icon=ICON_DONATE)],
         [_btn("Задания", data="questions_stars", icon=ICON_TASKS)],
-        [_btn("Ферма", web_app=_farm_url(), icon=ICON_FARM)],
+        [_btn("Ферма", url=_farm_open_url(), icon=ICON_FARM)],
         [_btn("Чёрный рынок", data="blackshop", icon=ICON_MARKET)],
         [_btn("О нас", data="about_start", icon=ICON_US)],
         [_btn("Назад", data="ob_start", icon=ICON_CLOSE)],
@@ -3681,7 +3687,7 @@ def _no_funds_markup(wallet: Wallet) -> InlineKeyboardMarkup:
         ])
     return InlineKeyboardMarkup(inline_keyboard=[
         [_btn("Получить куты", data="ob_earn", icon=ICON_GIFT, style="success")],
-        [_btn("Ферма", web_app=_farm_url(), icon=ICON_FARM)],
+        [_btn("Ферма", url=_farm_open_url(), icon=ICON_FARM)],
         [_btn("Другая игра", data="ob_games", icon=ICON_PLAY)],
     ])
 
@@ -3716,7 +3722,7 @@ def _empty_treasury_text() -> str:
 
 def _empty_treasury_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Ферма", web_app=_farm_url(), icon=ICON_FARM)],
+        [_btn("Ферма", url=_farm_open_url(), icon=ICON_FARM)],
         [_btn("Попробовать снова", data="ob_retry", icon=ICON_PLAY)],
     ])
 

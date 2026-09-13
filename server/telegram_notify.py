@@ -5,14 +5,26 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from urllib.parse import parse_qs, urlparse
 
 from config import BOT_TOKEN
 
 logger = logging.getLogger("cute-farm.telegram")
+
+_BOT_USERNAME = os.getenv("BOT_USERNAME", "CuteGamingBot").lstrip("@")
+_APP_NAME = os.getenv("WEBAPP_SHORT_NAME", "cute").strip() or "cute"
+_STARTAPP_HINTS = (
+    ("farm", ("farm", "ферм")),
+    ("market", ("market", "бирж", "рынок", "маркет")),
+    ("shop", ("shop", "магазин", "шоп")),
+    ("craft", ("craft", "крафт")),
+    ("inventory", ("inventory", "инвентар")),
+)
 
 
 @dataclass
@@ -62,21 +74,84 @@ def _classify_error(error_code: int | None, description: str) -> str:
     return "other"
 
 
-def build_inline_keyboard(rows: list[list[dict]]) -> str | None:
+def _is_group_chat(chat_id: str | None) -> bool:
+    try:
+        return int(str(chat_id or "").strip()) < 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _mini_app_url(startapp: str = "") -> str:
+    link = f"https://t.me/{_BOT_USERNAME}/{_APP_NAME}"
+    start = (startapp or "").strip()
+    if start:
+        link += f"?startapp={start}"
+    return link
+
+
+def _infer_startapp(url: str, text: str = "") -> str:
+    parsed = urlparse(url or "")
+    qs = parse_qs(parsed.query)
+    for key in ("startapp", "tgWebAppStartParam"):
+        values = qs.get(key) or []
+        if values and str(values[0]).strip():
+            return str(values[0]).strip()
+    blob = f"{parsed.path} {text}".lower()
+    for startapp, hints in _STARTAPP_HINTS:
+        if any(hint in blob for hint in hints):
+            return startapp
+    return ""
+
+
+def _is_our_mini_app(url: str) -> bool:
+    low = (url or "").strip().lower()
+    if not low:
+        return False
+    if f"t.me/{_BOT_USERNAME.lower()}/" in low:
+        return True
+    return "cutegaming" in low
+
+
+def group_safe_button_url(url: str, text: str = "", btn_type: str = "url") -> str:
+    """В группах web_app не открывается — наш Mini App превращаем в t.me deep-link."""
+    raw = (url or "").strip()
+    if not raw:
+        return raw
+    as_web_app = (btn_type or "").strip() == "web_app"
+    low = raw.lower()
+    if ("t.me/" in low or low.startswith("tg:")) and not as_web_app:
+        return raw
+    if as_web_app or _is_our_mini_app(raw):
+        return _mini_app_url(_infer_startapp(raw, text) or "farm")
+    return raw
+
+
+def build_inline_keyboard(
+    rows: list[list[dict]],
+    *,
+    group_safe: bool = False,
+) -> str | None:
     """rows: [[{"text": str, "url": str, "type": "url"|"web_app"}, ...], ...].
     Пустые/невалидные строки и кнопки без text/url молча пропускаются - вызывающий
     код (group_posts.py) уже провалидировал структуру при сохранении, здесь -
     последняя защита перед отправкой в Telegram. Возвращает JSON для
-    reply_markup или None, если после фильтрации кнопок не осталось."""
+    reply_markup или None, если после фильтрации кнопок не осталось.
+
+    group_safe=True: web_app → url t.me/bot/app (группы/каналы).
+    group_safe=False: web_app остаётся web_app (личка, рассылки в PM).
+    """
     keyboard: list[list[dict]] = []
     for row in rows or []:
         buttons = []
         for btn in row or []:
             text = str((btn or {}).get("text") or "").strip()
             url = str((btn or {}).get("url") or "").strip()
+            btn_type = str((btn or {}).get("type") or "url").strip()
             if not text or not url:
                 continue
-            if (btn or {}).get("type") == "web_app":
+            if group_safe:
+                buttons.append({"text": text, "url": group_safe_button_url(url, text, btn_type)})
+            elif btn_type == "web_app":
                 buttons.append({"text": text, "web_app": {"url": url}})
             else:
                 buttons.append({"text": text, "url": url})
@@ -109,45 +184,37 @@ def _call_bot_api_sync(
     """
     bot_token = token or BOT_TOKEN
     if not bot_token:
-        return TelegramSendResult(ok=False, category="other", description="Missing bot token")
+        return TelegramSendResult(ok=False, category="other", description="Missing bot token or chat_id")
 
-    url = f"https://api.telegram.org/bot{bot_token}/{method}"
-    body = urllib.parse.urlencode(payload).encode("utf-8")
-    request = urllib.request.Request(url, data=body, method="POST")
+    encoded = urllib.parse.urlencode(payload).encode()
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{bot_token}/{method}",
+        data=encoded,
+        method="POST",
+    )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read()
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            result = json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
-        error_code = exc.code
-        description = str(exc)
         try:
-            err_raw = exc.read()
-            parsed = json.loads(err_raw) if err_raw else {}
-            error_code = int(parsed.get("error_code", error_code))
-            description = str(parsed.get("description", description))
+            result = json.loads(exc.read().decode())
         except Exception:
-            pass
-        category = _classify_error(error_code, description)
-        logger.warning(
-            "Telegram %s error (chat_id=%s): %s %s", method, chat_id, error_code, description
-        )
-        return TelegramSendResult(
-            ok=False, category=category, error_code=error_code, description=description
-        )
+            return TelegramSendResult(ok=False, category="other", description=str(exc))
     except Exception as exc:
         logger.exception("Telegram %s failed (chat_id=%s)", method, chat_id)
         return TelegramSendResult(ok=False, category="other", description=str(exc))
 
-    message_id: int | None = None
-    try:
-        parsed = json.loads(raw) if raw else {}
-        result = parsed.get("result")
-        if isinstance(result, dict) and result.get("message_id") is not None:
-            message_id = int(result["message_id"])
-    except Exception:
-        # Тело ответа не критично: Telegram уже подтвердил операцию кодом 200.
-        # Без message_id пост просто не попадёт в трекинг удаления/закрепа.
-        logger.warning("Telegram %s: не удалось разобрать ответ (chat_id=%s)", method, chat_id)
+    if not result.get("ok"):
+        error_code = result.get("error_code")
+        description = result.get("description", "")
+        category = _classify_error(error_code, description)
+        logger.warning("Telegram %s error (chat_id=%s): %s %s", method, chat_id, error_code, description)
+        return TelegramSendResult(ok=False, category=category, error_code=error_code, description=description)
+
+    raw = result.get("result")
+    message_id = None
+    if isinstance(raw, dict) and raw.get("message_id") is not None:
+        message_id = int(raw["message_id"])
     return TelegramSendResult(ok=True, message_id=message_id)
 
 
@@ -172,9 +239,16 @@ def send_telegram_message_sync(
     }
     if thread_id is not None:
         payload["message_thread_id"] = str(thread_id)
-    reply_markup = build_inline_keyboard(buttons) if buttons else None
+    group_safe = _is_group_chat(chat_id)
+    reply_markup = build_inline_keyboard(buttons, group_safe=group_safe) if buttons else None
     if reply_markup is None and cta_text and cta_url:
-        reply_markup = _webapp_button_markup(cta_text, cta_url)
+        if group_safe:
+            reply_markup = build_inline_keyboard(
+                [[{"text": cta_text, "url": cta_url, "type": "web_app"}]],
+                group_safe=True,
+            )
+        else:
+            reply_markup = _webapp_button_markup(cta_text, cta_url)
     if reply_markup:
         payload["reply_markup"] = reply_markup
     return _call_bot_api_sync("sendMessage", payload, token=token, chat_id=chat_id)
@@ -232,7 +306,7 @@ async def send_telegram_photo_bytes(
     if caption:
         data.add_field("caption", caption)
         data.add_field("parse_mode", "HTML")
-    reply_markup = build_inline_keyboard(buttons or [])
+    reply_markup = build_inline_keyboard(buttons or [], group_safe=_is_group_chat(chat_id))
     if reply_markup:
         data.add_field("reply_markup", reply_markup)
     data.add_field("photo", photo_bytes, filename=filename, content_type=content_type)
@@ -285,7 +359,7 @@ def send_telegram_photo_by_file_id_sync(
     if caption:
         payload["caption"] = caption
         payload["parse_mode"] = "HTML"
-    reply_markup = build_inline_keyboard(buttons or [])
+    reply_markup = build_inline_keyboard(buttons or [], group_safe=_is_group_chat(chat_id))
     if reply_markup:
         payload["reply_markup"] = reply_markup
     result = _call_bot_api_sync("sendPhoto", payload, token=token, chat_id=chat_id)
@@ -316,58 +390,100 @@ async def send_telegram_photo_by_file_id(
         return TelegramSendResult(ok=False, category="other", description=str(exc))
 
 
-async def _call_bot_api(
-    method: str, payload: dict[str, str], *, token: str | None = None, chat_id: str | None = None
+def pin_chat_message_sync(
+    *,
+    chat_id: str,
+    message_id: int,
+    disable_notification: bool = True,
+    token: str | None = None,
 ) -> TelegramSendResult:
-    try:
-        return await asyncio.to_thread(
-            _call_bot_api_sync, method, payload, token=token, chat_id=chat_id
-        )
-    except Exception as exc:
-        logger.exception("Telegram %s failed (chat_id=%s)", method, chat_id)
-        return TelegramSendResult(ok=False, category="other", description=str(exc))
+    if not chat_id or not message_id:
+        return TelegramSendResult(ok=False, category="other", description="Missing chat_id or message_id")
+    payload = {
+        "chat_id": chat_id,
+        "message_id": str(message_id),
+        "disable_notification": "true" if disable_notification else "false",
+    }
+    return _call_bot_api_sync("pinChatMessage", payload, token=token, chat_id=chat_id)
 
 
 async def pin_chat_message(
-    *, chat_id: str, message_id: int, disable_notification: bool = True, token: str | None = None
+    *,
+    chat_id: str,
+    message_id: int,
+    disable_notification: bool = True,
+    token: str | None = None,
 ) -> TelegramSendResult:
-    """Закрепляет пост в группе. Требует у бота право can_pin_messages —
-    без него Telegram отвечает 400 "not enough rights" (категория no_rights).
+    try:
+        return await asyncio.to_thread(
+            pin_chat_message_sync,
+            chat_id=chat_id,
+            message_id=message_id,
+            disable_notification=disable_notification,
+            token=token,
+        )
+    except Exception as exc:
+        logger.exception("Telegram pin failed (chat_id=%s)", chat_id)
+        return TelegramSendResult(ok=False, category="other", description=str(exc))
 
-    Закреп нового сообщения НЕ открепляет предыдущее: в супергруппах закрепы
-    складываются стопкой, поэтому старый закреп снимается отдельным вызовом
-    unpin_chat_message (см. group_posts.py)."""
-    return await _call_bot_api(
-        "pinChatMessage",
-        {
-            "chat_id": chat_id,
-            "message_id": str(message_id),
-            "disable_notification": "true" if disable_notification else "false",
-        },
-        token=token,
-        chat_id=chat_id,
-    )
+
+def unpin_chat_message_sync(
+    *,
+    chat_id: str,
+    message_id: int | None = None,
+    token: str | None = None,
+) -> TelegramSendResult:
+    if not chat_id:
+        return TelegramSendResult(ok=False, category="other", description="Missing chat_id")
+    payload = {"chat_id": chat_id}
+    if message_id is not None:
+        payload["message_id"] = str(message_id)
+    return _call_bot_api_sync("unpinChatMessage", payload, token=token, chat_id=chat_id)
 
 
 async def unpin_chat_message(
-    *, chat_id: str, message_id: int, token: str | None = None
+    *,
+    chat_id: str,
+    message_id: int | None = None,
+    token: str | None = None,
 ) -> TelegramSendResult:
-    return await _call_bot_api(
-        "unpinChatMessage",
-        {"chat_id": chat_id, "message_id": str(message_id)},
-        token=token,
-        chat_id=chat_id,
-    )
+    try:
+        return await asyncio.to_thread(
+            unpin_chat_message_sync,
+            chat_id=chat_id,
+            message_id=message_id,
+            token=token,
+        )
+    except Exception as exc:
+        logger.exception("Telegram unpin failed (chat_id=%s)", chat_id)
+        return TelegramSendResult(ok=False, category="other", description=str(exc))
+
+
+def delete_message_sync(
+    *,
+    chat_id: str,
+    message_id: int,
+    token: str | None = None,
+) -> TelegramSendResult:
+    if not chat_id or not message_id:
+        return TelegramSendResult(ok=False, category="other", description="Missing chat_id or message_id")
+    payload = {"chat_id": chat_id, "message_id": str(message_id)}
+    return _call_bot_api_sync("deleteMessage", payload, token=token, chat_id=chat_id)
 
 
 async def delete_message(
-    *, chat_id: str, message_id: int, token: str | None = None
+    *,
+    chat_id: str,
+    message_id: int,
+    token: str | None = None,
 ) -> TelegramSendResult:
-    """Удаляет сообщение. Бот-администратор группы может удалить в ней любое
-    сообщение; без прав администратора — только своё и не старше 48 часов."""
-    return await _call_bot_api(
-        "deleteMessage",
-        {"chat_id": chat_id, "message_id": str(message_id)},
-        token=token,
-        chat_id=chat_id,
-    )
+    try:
+        return await asyncio.to_thread(
+            delete_message_sync,
+            chat_id=chat_id,
+            message_id=message_id,
+            token=token,
+        )
+    except Exception as exc:
+        logger.exception("Telegram delete failed (chat_id=%s)", chat_id)
+        return TelegramSendResult(ok=False, category="other", description=str(exc))

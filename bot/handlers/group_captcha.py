@@ -413,14 +413,14 @@ class CaptchaGateMiddleware(BaseMiddleware):
 
 
 class CaptchaCallbackGateMiddleware(BaseMiddleware):
-    """Кнопки игр и меню не работают, пока человек не прошёл капчу."""
+    """Игровые кнопки закрыты до капчи. Справка, закрытие и ссылки наружу — нет."""
 
     async def __call__(self, handler, event: TelegramObject, data: Dict[str, Any]):
         callback = event if isinstance(event, CallbackQuery) else None
         if callback is None:
             return await handler(event, data)
         raw = callback.data or ""
-        if raw.startswith("gcA:") or raw.startswith("gcX:"):
+        if gc.is_free_callback(raw):
             return await handler(event, data)
         message = callback.message
         chat = getattr(message, "chat", None) if message else None
@@ -439,7 +439,7 @@ class CaptchaCallbackGateMiddleware(BaseMiddleware):
         if bot:
             await _maybe_unrestrict(bot, int(chat.id), int(user.id))
         try:
-            await callback.answer()
+            await callback.answer(gc.GATE_ALERT, show_alert=True)
         except Exception:
             pass
         return None

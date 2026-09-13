@@ -1903,6 +1903,7 @@ async def _build_user_dossier(user_id: int, *, is_owner: bool) -> dict:
     except Exception as exc:
         print(f"[CAPTCHA] user dossier failed user={user_id}: {exc}")
         out["captcha"] = {
+            "ok": False,
             "passedGroups": 0,
             "fails": 0,
             "shown": 0,

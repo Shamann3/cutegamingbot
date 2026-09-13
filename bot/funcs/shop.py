@@ -693,7 +693,12 @@ async def shop_op(message: Message):
 
         STICKER_FARM = "CAACAgIAAxkBAz0Olmo3EismmDFcJjau6qhIBikZzK7wAAIwTQACGKbRSluouIGSQuh5PAQ"
         url = f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=farm"
-        webapp_btn = InlineKeyboardButton(text="Открыть ферму" , url=url)
+        webapp_btn = InlineKeyboardButton(
+            text="Открыть ферму",
+            url=url,
+            style="default",
+            icon_custom_emoji_id="5208464835079082371",
+        )
         keyboard = InlineKeyboardMarkup(inline_keyboard=[ [ webapp_btn ] ])
         await message.answer_sticker(STICKER_FARM , reply_markup=keyboard)
 
@@ -703,7 +708,12 @@ async def shop_op(message: Message):
 
         STICKER_MARKET = "CAACAgIAAxkBAzsOFGo0URpw6VHeFJ0cV7uIWEXerD59AALNAAOYv4ANUzcwURozRpk8BA"
         url = f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=market"
-        webapp_btn = InlineKeyboardButton(text="Открыть биржу" , url=url)
+        webapp_btn = InlineKeyboardButton(
+            text="Открыть биржу",
+            url=url,
+            style="default",
+            icon_custom_emoji_id="5438440765908874600",
+        )
         keyboard = InlineKeyboardMarkup(inline_keyboard=[ [ webapp_btn ] ])
         await message.answer_sticker(STICKER_MARKET , reply_markup=keyboard)
 

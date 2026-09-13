@@ -74,7 +74,7 @@ function ButtonsBuilder({ rows, onChange }) {
                 onChange={(e) => updateButton(rowIdx, btnIdx, 'type', e.target.value)}
               >
                 <option value="url">Ссылка</option>
-                <option value="web_app">WebApp</option>
+                <option value="web_app">Ферма / Mini App</option>
               </select>
               <button type="button" className="panel-users-btn panel-users-btn-danger" onClick={() => removeButton(rowIdx, btnIdx)}>
                 ✕
@@ -764,6 +764,9 @@ export default function GroupPostsPanel() {
             )}
             <label className="panel-economy-field">
               <span>Кнопки</span>
+              <p className="panel-shelf-muted">
+                «Ферма / Mini App» в группе уходит ссылкой t.me/CuteGamingBot/cute — иначе Telegram не откроет приложение.
+              </p>
               <ButtonsBuilder rows={form.buttons} onChange={(buttons) => setForm({ ...form, buttons })} />
             </label>
             <label className="panel-economy-field">

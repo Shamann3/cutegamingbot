@@ -296,6 +296,12 @@ btn_helpking = InlineKeyboardButton(text="Царь статы", callback_data="h
 btn_help1111 = InlineKeyboardButton(text="🩵 Оформление профиля", callback_data="help_editprofile")
 
 btn_help5123 = InlineKeyboardButton(text="Админы", callback_data="help_btnadmin", style="default" ,icon_custom_emoji_id="5352668069984510307")
+btn_help_farm = InlineKeyboardButton(
+    text="Ферма",
+    url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=farm",
+    style="default",
+    icon_custom_emoji_id="5208464835079082371",
+)
 btn_help11 = InlineKeyboardButton(text="Скрыть", callback_data="help_deletehelp", style="default" ,icon_custom_emoji_id="5226660202035554522")
 
 # Создаем список кнопок
@@ -307,6 +313,7 @@ inline_keyboard = [
     [btn_helpking],
     [btn_help2, btn_help3],
     [btn_help5],
+    [btn_help_farm],
     [btn_help5123],
     #[btn_help4],
     # [btn_help6],  # Разкомментируйте, если нужно,
@@ -351,6 +358,7 @@ inline_keyboard = [
     [btn_helpking9],
     [btn_help29, btn_help39],
     [btn_help59],
+    [btn_help_farm],
     [btn_help5123123],
     #[btn_help49],
     # [btn_help69],  # Разкомментируйте, если нужно
@@ -396,6 +404,7 @@ inline_keyboard = [
     [btn_functions_inline],
     [btn_games_inline, btn_misc_inline],
     [btn_market_inline],
+    [btn_help_farm],
     [btn_help5123123123],
     #[btn_marriages_inline],
     [btn_hide_inline]

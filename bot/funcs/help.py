@@ -11,6 +11,7 @@ import random
 from aiogram.types import Message
 from bot.config.config import *
 from bot.design.buttons import *
+from bot.funcs.help_guard import help_callback_allowed
 from main import dp,button_user_message_help,user_message_help,user_message_helpgame,user_message_brak,user_message_store,user_message_textglobhelp,user_message_gamehelp,user_message_ffunc
 
 
@@ -591,7 +592,7 @@ def _help_register_message(user_id: int, message_id: int) -> None:
 
 
 def _help_is_message_owner(user_id: int, message_id: int) -> bool:
-    return user_id in user_message_help and user_message_help[user_id] == message_id
+    return help_callback_allowed(user_id, message_id, user_message_help)
 
 
 async def _help_reject_intruder(call: types.CallbackQuery) -> None:
@@ -599,8 +600,8 @@ async def _help_reject_intruder(call: types.CallbackQuery) -> None:
 
 
 def _help_owner_guard(user_id: int, message_id: int) -> bool:
-    """True нажал автор help-сообщения."""
-    return _help_is_message_owner(user_id, message_id)
+    """True: автор личного хелпа или общая карточка без владельца."""
+    return help_callback_allowed(user_id, message_id, user_message_help)
 
 
 def is_admin_help_text(text: str | None) -> bool:

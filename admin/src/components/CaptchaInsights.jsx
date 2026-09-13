@@ -21,11 +21,17 @@ function when(iso) {
   }
 }
 
+function FailNote({ ok }) {
+  if (ok !== false) return null
+  return <p className="grp-help">Капчу из базы прочитать не удалось — проверьте логи админки. Карточка не должна быть пустой после того, как кто-то написал в группу.</p>
+}
+
 export function CaptchaOverviewBlock({ data, onOpenChat, onOpenUser }) {
   const c = data || {}
   const facts = Array.isArray(c.facts) ? c.facts : []
   return (
     <div className="cap-block">
+      <FailNote ok={c.ok} />
       <div className="grp-stat-grid">
         <div className="grp-stat"><span className="grp-stat-label">Прошли</span><strong className="grp-stat-value">{fmt(c.passed)}</strong><span className="grp-stat-hint">человек × групп</span></div>
         <div className="grp-stat"><span className="grp-stat-label">Ошибки</span><strong className="grp-stat-value">{fmt(c.fails)}</strong><span className="grp-stat-hint">нажатий мимо</span></div>
@@ -104,11 +110,17 @@ export function CaptchaChatBlock({ data, members, onOpenUser }) {
   const waiting = Array.isArray(c.waiting) ? c.waiting : []
   const shown = Array.isArray(c.recentShown) ? c.recentShown : []
   const pendingPeople = Array.isArray(c.pendingPeople) ? c.pendingPeople : []
+  const passed = Number(c.passed || 0)
+  const notPassed = c.notPassedHint != null
+    ? c.notPassedHint
+    : (members != null ? Math.max(0, Number(members) - passed) : null)
   return (
     <div className="cap-block">
+      <FailNote ok={c.ok} />
       <div className="grp-stat-grid">
         <div className="grp-stat"><span className="grp-stat-label">Статус</span><strong className="grp-stat-value">{c.enabled === false ? 'выкл' : 'вкл'}</strong></div>
-        <div className="grp-stat"><span className="grp-stat-label">Прошли</span><strong className="grp-stat-value">{fmt(c.passed)}</strong></div>
+        <div className="grp-stat"><span className="grp-stat-label">Прошли</span><strong className="grp-stat-value">{fmt(passed)}</strong></div>
+        <div className="grp-stat"><span className="grp-stat-label">Ещё не прошли</span><strong className="grp-stat-value">{notPassed == null ? '—' : fmt(notPassed)}</strong><span className="grp-stat-hint">{members != null ? `из ${fmt(members)} в Telegram` : 'если известен состав'}</span></div>
         <div className="grp-stat"><span className="grp-stat-label">Карточек</span><strong className="grp-stat-value">{fmt(c.shown)}</strong><span className="grp-stat-hint">показано</span></div>
         <div className="grp-stat"><span className="grp-stat-label">Удалено</span><strong className="grp-stat-value">{fmt(c.blocked)}</strong><span className="grp-stat-hint">сообщений до капчи</span></div>
         <div className="grp-stat"><span className="grp-stat-label">Писали, не прошли</span><strong className="grp-stat-value">{fmt(waiting.length || c.uniqueTriggered)}</strong></div>
@@ -122,26 +134,27 @@ export function CaptchaChatBlock({ data, members, onOpenUser }) {
         <p className="grp-help">Владелец выключил капчу{c.disabledAt ? ` · ${when(c.disabledAt)}` : ''}{c.disabledBy ? ` · id ${c.disabledBy}` : ''}</p>
       )}
 
-      {(c.variants || []).length > 0 && (
-        <div className="grp-card" style={{ marginBottom: '1rem' }}>
-          <h3 className="grp-card-title">Типы карточек в этой группе</h3>
-          <table className="grp-table">
-            <thead>
-              <tr><th>Тип</th><th>Показ</th><th>Успех</th><th>Ошибки</th></tr>
-            </thead>
-            <tbody>
-              {c.variants.map((v) => (
-                <tr key={v.variant}>
-                  <td>{v.label}</td>
-                  <td>{fmt(v.shown)}</td>
-                  <td>{fmt(v.passed)}</td>
-                  <td>{fmt(v.fails)}{v.failRate != null ? ` · ${v.failRate}%` : ''}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="grp-card" style={{ marginBottom: '1rem' }}>
+        <h3 className="grp-card-title">Типы карточек в этой группе</h3>
+        <table className="grp-table">
+          <thead>
+            <tr><th>Тип</th><th>Показ</th><th>Успех</th><th>Ошибки</th></tr>
+          </thead>
+          <tbody>
+            {(c.variants || []).map((v) => (
+              <tr key={v.variant}>
+                <td>{v.label}</td>
+                <td>{fmt(v.shown)}</td>
+                <td>{fmt(v.passed)}</td>
+                <td>{fmt(v.fails)}{v.failRate != null ? ` · ${v.failRate}%` : ''}</td>
+              </tr>
+            ))}
+            {!(c.variants || []).length && (
+              <tr><td colSpan={4}>Пока нет показов в этой группе</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <div className="grp-two">
         <div className="grp-card">
@@ -221,10 +234,13 @@ export function CaptchaDossierBlock({ data, onOpenChat }) {
   const groups = Array.isArray(c.groups) ? c.groups : []
   const recent = Array.isArray(c.recent) ? c.recent : []
   const pending = Array.isArray(c.pendingCards) ? c.pendingCards : []
-  const hasAny = groups.length > 0 || recent.length > 0 || pending.length > 0 || Number(c.shown) > 0 || Number(c.fails) > 0
+  const hasAny = groups.length > 0 || recent.length > 0 || pending.length > 0 || Number(c.shown) > 0 || Number(c.fails) > 0 || Number(c.blocked) > 0
   return (
     <div className="pu-dossier-captcha">
       <p className="pu-dossier-label">Капча в группах</p>
+      {c.ok === false && (
+        <p className="panel-shelf-muted">Капчу из базы прочитать не удалось</p>
+      )}
       <div className="pu-dossier-grid">
         <div className="pu-dossier-tile">
           <span>Карточек</span>

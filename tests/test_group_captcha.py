@@ -321,3 +321,40 @@ def test_variant_7_is_rare_but_present():
     assert set(picks) >= {1, 2, 4, 5, 6, 7}
     assert 3 not in picks
     assert 8 not in picks
+
+
+def test_help_and_farm_callbacks_are_free_before_captcha():
+    from bot.funcs.group_captcha import GATE_ALERT, is_free_callback
+
+    assert is_free_callback("help_btn1")
+    assert is_free_callback("9help_btn22")
+    assert is_free_callback("help_deletehelp")
+    assert is_free_callback("twogreet_cut")
+    assert is_free_callback("starthowtoplay")
+    assert is_free_callback("gcA:1:x:abc")
+    assert is_free_callback("gcX:1:abc")
+    assert not is_free_callback("greet_cut")
+    assert not is_free_callback("kosti_take_1")
+    assert "капчу" in GATE_ALERT.lower()
+
+
+def test_farm_deep_link_works_in_groups():
+    from bot.funcs.webapp_links import farm_url, group_safe_url, infer_startapp
+
+    assert farm_url() == "https://t.me/CuteGamingBot/cute?startapp=farm"
+    assert infer_startapp("https://cutegaming-ridbh.ondigitalocean.app/", "Открыть ферму") == "farm"
+    assert group_safe_url(
+        "https://cutegaming-ridbh.ondigitalocean.app/",
+        "Ферма",
+        as_web_app=True,
+    ) == farm_url()
+
+
+def test_help_unowned_card_is_public():
+    from bot.funcs.help_guard import help_callback_allowed
+
+    owners = {11: 900}
+    assert help_callback_allowed(11, 900, owners)
+    assert not help_callback_allowed(22, 900, owners)
+    assert help_callback_allowed(22, 901, owners)
+    assert help_callback_allowed(1, 1, {})

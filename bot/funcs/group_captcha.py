@@ -37,6 +37,38 @@ DISABLE_ALERT = (
     "Если вам действительно мешает капча — попросите создателя группы отключить её"
 )
 PASS_ALERT = "Капча пройдена. Теперь вы можете писать в группе"
+GATE_ALERT = (
+    "Сначала пройдите капчу в этой группе. "
+    "После этого игровые кнопки заработают"
+)
+
+# Справка, закрытие карточек и ссылки наружу — не игра.
+# Игровые callback'и (ставки, ходы, меню игр) остаются закрытыми до капчи.
+_FREE_CALLBACK_EXACT = frozenset({
+    "twogreet_cut",
+    "starthowtoplay",
+    "9close_bonus",
+    "about_start",
+    "3412helpstarthelp",
+    "noop",
+})
+_FREE_CALLBACK_PREFIXES = (
+    "gcA:",
+    "gcX:",
+    "help_",
+    "9help_",
+    "deletehelp",
+)
+
+
+def is_free_callback(data: str) -> bool:
+    """True — кнопку можно нажать до прохождения капчи."""
+    raw = str(data or "")
+    if raw in _FREE_CALLBACK_EXACT:
+        return True
+    return raw.startswith(_FREE_CALLBACK_PREFIXES)
+
+
 CAPTCHA_INTRO_LINE1 = "Это капча."
 CAPTCHA_INTRO_LINE2 = "Чтобы писать в группе, пожалуйста, выполните задание ниже."
 CAPTCHA_INTRO = f"{CAPTCHA_INTRO_LINE1}\n{CAPTCHA_INTRO_LINE2}"
