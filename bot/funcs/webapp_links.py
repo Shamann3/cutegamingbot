@@ -68,12 +68,14 @@ def is_telegram_deep_link(url: str) -> bool:
 
 
 def is_our_mini_app(url: str) -> bool:
-    low = (url or "").strip().lower()
-    if not low:
+    raw = (url or "").strip()
+    if not raw:
         return False
+    low = raw.lower()
     if f"t.me/{bot_username().lower()}/" in low:
         return True
-    return "cutegaming" in low
+    host = (urlparse(raw).hostname or "").lower()
+    return bool(host) and ("cutegaming" in host or host.endswith("ondigitalocean.app"))
 
 
 def group_safe_url(url: str, text: str = "", *, as_web_app: bool = False) -> str:
@@ -88,5 +90,5 @@ def group_safe_url(url: str, text: str = "", *, as_web_app: bool = False) -> str
     if is_telegram_deep_link(raw) and not as_web_app:
         return raw
     if as_web_app or is_our_mini_app(raw):
-        return mini_app_url(infer_startapp(raw, text))
+        return mini_app_url(infer_startapp(raw, text) or "farm")
     return raw

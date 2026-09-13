@@ -329,25 +329,39 @@ def test_help_and_farm_callbacks_are_free_before_captcha():
     assert is_free_callback("help_btn1")
     assert is_free_callback("9help_btn22")
     assert is_free_callback("help_deletehelp")
+    assert is_free_callback("help_hide")
     assert is_free_callback("twogreet_cut")
     assert is_free_callback("starthowtoplay")
+    assert is_free_callback("9close_bonus")
+    assert is_free_callback("store_close_message")
+    assert is_free_callback("close_message_inventory")
     assert is_free_callback("gcA:1:x:abc")
     assert is_free_callback("gcX:1:abc")
     assert not is_free_callback("greet_cut")
     assert not is_free_callback("kosti_take_1")
+    assert not is_free_callback("craft_choose:1")
     assert "капчу" in GATE_ALERT.lower()
 
 
 def test_farm_deep_link_works_in_groups():
-    from bot.funcs.webapp_links import farm_url, group_safe_url, infer_startapp
+    from bot.funcs.webapp_links import (
+        farm_url,
+        group_safe_url,
+        infer_startapp,
+        is_our_mini_app,
+    )
 
     assert farm_url() == "https://t.me/CuteGamingBot/cute?startapp=farm"
     assert infer_startapp("https://cutegaming-ridbh.ondigitalocean.app/", "Открыть ферму") == "farm"
+    assert infer_startapp("https://cutegaming-ridbh.ondigitalocean.app/?startapp=shop", "") == "shop"
     assert group_safe_url(
         "https://cutegaming-ridbh.ondigitalocean.app/",
         "Ферма",
         as_web_app=True,
     ) == farm_url()
+    assert group_safe_url("https://example.com/page", "Сайт", as_web_app=False) == "https://example.com/page"
+    assert is_our_mini_app("https://cutegaming-ridbh.ondigitalocean.app/")
+    assert not is_our_mini_app("https://evil.example/cutegaming")
 
 
 def test_help_unowned_card_is_public():

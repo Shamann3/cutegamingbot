@@ -627,7 +627,9 @@ async def build_shop_markup(
     if buttonwebapp == 1:
         webapp_btn = InlineKeyboardButton(
             text="Открыть в приложении",
-            url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=shop"
+            url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=shop",
+            style="default",
+            icon_custom_emoji_id="5253767677670862169",
         )
         keyboard.append([webapp_btn])
 
@@ -881,7 +883,11 @@ async def shop_op(message: Message):
             # Кнопка «Открыть в приложении» – добавляем только если buttonwebapp == 1
             if buttonwebapp == 1:
                 webapp_button = InlineKeyboardButton(
-                    text="Открыть в приложении" , url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=craft")
+                    text="Открыть в приложении",
+                    url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=craft",
+                    style="default",
+                    icon_custom_emoji_id="5253767677670862169",
+                )
                 keyboard_rows.append([ webapp_button ])
 
             # Кнопка отмены (закрытия)
@@ -1092,7 +1098,10 @@ async def shop_op(message: Message):
             if buttonwebapp == 1:
                 webapp_button = InlineKeyboardButton(
                     text="Открыть в приложении",
-                    url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=inventory")
+                    url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=inventory",
+                    style="default",
+                    icon_custom_emoji_id="5253767677670862169",
+                )
                 keyboard_rows.append([webapp_button])
 
             # Навигационные кнопки (только если есть куда листать)

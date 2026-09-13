@@ -45,11 +45,6 @@ GATE_ALERT = (
 # Справка, закрытие карточек и ссылки наружу — не игра.
 # Игровые callback'и (ставки, ходы, меню игр) остаются закрытыми до капчи.
 _FREE_CALLBACK_EXACT = frozenset({
-    "twogreet_cut",
-    "starthowtoplay",
-    "9close_bonus",
-    "about_start",
-    "3412helpstarthelp",
     "noop",
 })
 _FREE_CALLBACK_PREFIXES = (
@@ -58,6 +53,13 @@ _FREE_CALLBACK_PREFIXES = (
     "help_",
     "9help_",
     "deletehelp",
+    "twogreet_cut",
+    "starthowtoplay",
+    "9close_bonus",
+    "about_start",
+    "3412helpstarthelp",
+    "store_close",
+    "close_message",
 )
 
 

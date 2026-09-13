@@ -4,6 +4,7 @@ from aiogram.types import ReplyKeyboardRemove, \
 from collections import defaultdict
 from bot.db_create.db import *
 from bot.config.config import *
+from bot.funcs.webapp_links import FARM_ICON_ID, farm_url
 from pathlib import Path
 
 #mystic_inline_keyboard = InlineKeyboardMarkup()
@@ -298,9 +299,9 @@ btn_help1111 = InlineKeyboardButton(text="🩵 Оформление профил
 btn_help5123 = InlineKeyboardButton(text="Админы", callback_data="help_btnadmin", style="default" ,icon_custom_emoji_id="5352668069984510307")
 btn_help_farm = InlineKeyboardButton(
     text="Ферма",
-    url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=farm",
+    url=farm_url(),
     style="default",
-    icon_custom_emoji_id="5208464835079082371",
+    icon_custom_emoji_id=FARM_ICON_ID,
 )
 btn_help11 = InlineKeyboardButton(text="Скрыть", callback_data="help_deletehelp", style="default" ,icon_custom_emoji_id="5226660202035554522")
 

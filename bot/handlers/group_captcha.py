@@ -442,6 +442,19 @@ class CaptchaCallbackGateMiddleware(BaseMiddleware):
             await callback.answer(gc.GATE_ALERT, show_alert=True)
         except Exception:
             pass
+        if bot:
+            try:
+                await maybe_prompt_captcha(
+                    bot,
+                    chat_id=int(chat.id),
+                    user=user,
+                    trigger="callback",
+                    thread_id=getattr(message, "message_thread_id", None),
+                    chat=chat,
+                    extra_meta={"trigger": "callback", "callback": raw[:40]},
+                )
+            except Exception:
+                log.exception("captcha prompt on blocked callback chat=%s user=%s", chat.id, user.id)
         return None
 
 

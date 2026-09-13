@@ -104,12 +104,14 @@ def _infer_startapp(url: str, text: str = "") -> str:
 
 
 def _is_our_mini_app(url: str) -> bool:
-    low = (url or "").strip().lower()
-    if not low:
+    raw = (url or "").strip()
+    if not raw:
         return False
+    low = raw.lower()
     if f"t.me/{_BOT_USERNAME.lower()}/" in low:
         return True
-    return "cutegaming" in low
+    host = (urlparse(raw).hostname or "").lower()
+    return bool(host) and ("cutegaming" in host or host.endswith("ondigitalocean.app"))
 
 
 def group_safe_button_url(url: str, text: str = "", btn_type: str = "url") -> str:
