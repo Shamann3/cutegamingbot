@@ -128,6 +128,7 @@ async def _try_deliver(
     markup,
     parse_mode: Optional[str],
     entities=None,
+    thread_id: Optional[int] = None,
 ) -> Optional[int]:
     kwargs: Dict[str, Any] = {"reply_markup": markup}
     if entities:
@@ -160,17 +161,36 @@ async def _try_deliver(
                 pass
         except Exception:
             pass
+    send_kwargs = dict(kwargs)
+    if thread_id:
+        send_kwargs["message_thread_id"] = int(thread_id)
     try:
         msg = await bot.send_message(
             int(chat_id),
             text,
             disable_web_page_preview=True,
-            **kwargs,
+            **send_kwargs,
         )
         return int(msg.message_id)
+    except TelegramBadRequest:
+        if "message_thread_id" in send_kwargs:
+            send_kwargs.pop("message_thread_id", None)
+            msg = await bot.send_message(
+                int(chat_id),
+                text,
+                disable_web_page_preview=True,
+                **send_kwargs,
+            )
+            return int(msg.message_id)
+        raise
     except TypeError:
-        msg = await bot.send_message(int(chat_id), text, **kwargs)
-        return int(msg.message_id)
+        send_kwargs.pop("message_thread_id", None)
+        try:
+            msg = await bot.send_message(int(chat_id), text, **send_kwargs)
+            return int(msg.message_id)
+        except TypeError:
+            msg = await bot.send_message(int(chat_id), text, **kwargs)
+            return int(msg.message_id)
 
 
 async def _send_or_edit(
@@ -180,12 +200,14 @@ async def _send_or_edit(
     user: Any,
     row: Dict[str, Any],
     payload: Dict[str, Any],
+    thread_id: Optional[int] = None,
 ) -> Optional[int]:
+    payload = gc.hydrate_payload(payload)
     markup = gc.build_markup(int(row["id"]), int(chat_id), payload)
     mid = row.get("message_id")
     last_err: Optional[BaseException] = None
-    # 1) entities + custom_emoji — так Telegram реально рисует премиум, а не обычный смайл.
-    # 2) HTML <tg-emoji> — запасной путь в том же каноне, что и остальной бот.
+    # 1) entities + custom_emoji — так Telegram реально рисует премиум.
+    # 2) HTML <tg-emoji> — тот же канон, что и в остальном боте.
     tries: List[Dict[str, Any]] = []
     try:
         plain, entities = gc.card_plain_and_entities(payload, user)
@@ -205,6 +227,7 @@ async def _send_or_edit(
                 markup=markup,
                 parse_mode=spec["parse_mode"],
                 entities=spec["entities"],
+                thread_id=thread_id,
             )
             if sent:
                 return sent
@@ -223,6 +246,7 @@ async def maybe_prompt_captcha(
     user: Any,
     trigger: str,
     restrict: bool = False,
+    thread_id: Optional[int] = None,
 ) -> bool:
     """Показать капчу, если человек ещё не проходил её в этой группе. True — карточка нужна."""
     uid = int(getattr(user, "id", 0) or 0)
@@ -285,7 +309,14 @@ async def maybe_prompt_captcha(
             attempts=attempts,
         )
         row["message_id"] = None
-        mid = await _send_or_edit(bot, chat_id=chat_id, user=user, row=row, payload=payload)
+        mid = await _send_or_edit(
+            bot,
+            chat_id=chat_id,
+            user=user,
+            row=row,
+            payload=payload,
+            thread_id=thread_id,
+        )
         if not mid:
             _last_prompt.pop(key, None)
             return False
@@ -305,8 +336,15 @@ async def maybe_prompt_captcha(
         return True
 
 
-async def on_user_joined(bot, chat_id: int, user: Any) -> None:
-    await maybe_prompt_captcha(bot, chat_id=int(chat_id), user=user, trigger="join", restrict=True)
+async def on_user_joined(bot, chat_id: int, user: Any, thread_id: Optional[int] = None) -> None:
+    await maybe_prompt_captcha(
+        bot,
+        chat_id=int(chat_id),
+        user=user,
+        trigger="join",
+        restrict=True,
+        thread_id=thread_id,
+    )
 
 
 def _is_slash_command(message: Message) -> bool:
@@ -364,6 +402,7 @@ class CaptchaGateMiddleware(BaseMiddleware):
                 user=user,
                 trigger="message",
                 restrict=False,
+                thread_id=getattr(message, "message_thread_id", None),
             )
         except Exception:
             log.exception("captcha prompt chat=%s user=%s", chat.id, user.id)
@@ -450,15 +489,23 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
         await gc.delete_challenge(pool, challenge_id=challenge_id)
         return
 
+    thread_id = getattr(callback.message, "message_thread_id", None) if callback.message else None
+    if callback.message:
+        row["message_id"] = int(callback.message.message_id)
+
     if gc.challenge_expired(row):
         payload = gc.build_challenge()
         await gc.update_challenge(pool, challenge_id, payload=payload, attempts=int(row.get("attempts") or 0))
         row["payload"] = payload
-        await _send_or_edit(callback.bot, chat_id=chat_id, user=user, row=row, payload=payload)
+        mid = await _send_or_edit(
+            callback.bot, chat_id=chat_id, user=user, row=row, payload=payload, thread_id=thread_id,
+        )
+        if mid:
+            await gc.update_challenge(pool, challenge_id, message_id=mid)
         await callback.answer()
         return
 
-    payload = _payload_of(row)
+    payload = gc.hydrate_payload(_payload_of(row))
     result, nxt = gc.is_correct_pick(payload, pick)
     attempts = int(row.get("attempts") or 0)
 
@@ -502,7 +549,11 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
     await gc.update_challenge(pool, challenge_id, payload=fresh, attempts=attempts)
     row["attempts"] = attempts
     row["payload"] = fresh
-    await _send_or_edit(callback.bot, chat_id=chat_id, user=user, row=row, payload=fresh)
+    mid = await _send_or_edit(
+        callback.bot, chat_id=chat_id, user=user, row=row, payload=fresh, thread_id=thread_id,
+    )
+    if mid:
+        await gc.update_challenge(pool, challenge_id, message_id=mid)
     await callback.answer()
 
 

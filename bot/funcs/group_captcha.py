@@ -371,7 +371,49 @@ def _display_name(user: Any) -> str:
         or getattr(user, "first_name", None)
         or "друг"
     )
-    return str(raw)[:40]
+    name = re.sub(r"[<>]", "", str(raw)[:40]).strip()
+    return name or "друг"
+
+
+def hydrate_payload(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Достраивает старые карточки из БД, чтобы премиум и задание не терялись."""
+    data = dict(payload or {})
+    if not data.get("prefix_face") and data.get("prefix_id"):
+        data["prefix_face"] = _face_by_id(str(data["prefix_id"]))
+    variant = int(data.get("variant") or 0)
+    if variant == 1 and not data.get("extra_emoji"):
+        key = str(data.get("correct") or "")
+        if key in EMOJI:
+            data["extra_emoji"] = [_emoji_ref(emoji(key))]
+    if data.get("chunks"):
+        return data
+    if variant == 7 and data.get("names") and data.get("sequence"):
+        names = data.get("names") or {}
+        seq = list(data.get("sequence") or [])
+        first = seq[0] if seq else ""
+        second = seq[1] if len(seq) > 1 else ""
+        data["chunks"] = [
+            {"kind": "text", "value": "Сначала нажмите "},
+            {"kind": "mark", "value": str(names.get(first) or first)},
+            {"kind": "text", "value": ", затем "},
+            {"kind": "mark", "value": str(names.get(second) or second)},
+        ]
+        return data
+    if variant == 1:
+        data["chunks"] = [
+            {"kind": "text", "value": "Нажмите "},
+            {"kind": "mark", "value": "такое же"},
+        ]
+        return data
+    mark = data.get("color") or data.get("ask") or data.get("side") or data.get("mood")
+    if mark:
+        data["chunks"] = [
+            {"kind": "text", "value": "Нажмите "},
+            {"kind": "mark", "value": str(mark)},
+        ]
+        return data
+    data["chunks"] = [{"kind": "text", "value": "Нажмите нужную кнопку"}]
+    return data
 
 
 def card_plain_and_entities(payload: Dict[str, Any], user: Any):
@@ -379,6 +421,7 @@ def card_plain_and_entities(payload: Dict[str, Any], user: Any):
     from aiogram.enums import MessageEntityType
     from aiogram.types import MessageEntity
 
+    payload = hydrate_payload(payload)
     buf: List[str] = []
     ents: List[Any] = []
 
@@ -391,20 +434,13 @@ def card_plain_and_entities(payload: Dict[str, Any], user: Any):
     start, ln = add(name)
     uid = int(getattr(user, "id", 0) or 0)
     if uid and ln:
-        try:
-            ents.append(MessageEntity(
-                type=MessageEntityType.TEXT_MENTION,
-                offset=start,
-                length=ln,
-                user=user,
-            ))
-        except Exception:
-            ents.append(MessageEntity(
-                type=MessageEntityType.TEXT_LINK,
-                offset=start,
-                length=ln,
-                url=f"tg://user?id={uid}",
-            ))
+        # text_link надёжнее text_mention: не зависит от полной сериализации User.
+        ents.append(MessageEntity(
+            type=MessageEntityType.TEXT_LINK,
+            offset=start,
+            length=ln,
+            url=f"tg://user?id={uid}",
+        ))
         ents.append(MessageEntity(type=MessageEntityType.BOLD, offset=start, length=ln))
 
     add("\n")

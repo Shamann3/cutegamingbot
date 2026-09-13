@@ -212,6 +212,47 @@ def test_buttons_carry_premium_emoji_ids():
     assert "✨" not in sample.text
 
 
+def test_hydrate_recovers_old_payload():
+    from bot.funcs.group_captcha import hydrate_payload
+
+    old = {
+        "variant": 5,
+        "options": ["left", "right"],
+        "correct": "right",
+        "prefix_id": emoji("v5_prefix").emoji_id,
+        "side": "направо",
+        "text": "legacy",
+    }
+    hydrated = hydrate_payload(old)
+    assert hydrated["prefix_face"] == emoji("v5_prefix").face
+    assert hydrated["chunks"][1]["value"] == "направо"
+    text, ents = card_plain_and_entities(old, type("U", (), {"id": 1, "full_name": "Аня", "first_name": "Аня"})())
+    custom = [e for e in ents if str(getattr(e, "type", "")) == "custom_emoji"]
+    assert custom[0].custom_emoji_id == old["prefix_id"]
+    total = len(text.encode("utf-16-le")) // 2
+    for e in ents:
+        assert 0 <= e.offset < total
+        assert e.offset + e.length <= total
+
+
+def test_button_dump_keeps_icon_and_space():
+    from bot.funcs.group_captcha import build_markup
+
+    card = build_challenge(5, rng=random.Random(8))
+    markup = build_markup(4, -1002, card)
+    dumped = markup.model_dump()
+    row = dumped["inline_keyboard"][0]
+    for btn in row:
+        assert btn["text"] == " "
+        assert btn["icon_custom_emoji_id"]
+        assert "✨" not in btn["text"]
+        assert emoji("left").face not in btn["text"]
+        assert emoji("right").face not in btn["text"]
+    disable = dumped["inline_keyboard"][1][0]
+    assert disable["text"] == "Убрать капчу"
+    assert disable["icon_custom_emoji_id"] == "5462990652943904884"
+
+
 def test_variant_7_is_rare_but_present():
     rng = random.Random(2026)
     picks = [pick_variant(rng) for _ in range(400)]

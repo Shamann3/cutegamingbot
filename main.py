@@ -5620,7 +5620,12 @@ async def on_user_join_message(message: Message):
 
         try:
             from bot.handlers.group_captcha import on_user_joined
-            await on_user_joined(message.bot, chat_id, u)
+            await on_user_joined(
+                message.bot,
+                chat_id,
+                u,
+                thread_id=getattr(message, "message_thread_id", None),
+            )
         except Exception as e:
             print(f"⚠️ [CAPTCHA] join-message uid={uid} chat_id={chat_id}: {type(e).__name__}: {e}")
 
