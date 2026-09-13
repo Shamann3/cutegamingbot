@@ -224,6 +224,23 @@ def _cell_list(items) -> List[Tuple[int, int]]:
     return out
 
 
+def _sync_turn_picks(g: Dict[str, Any]) -> List[Tuple[int, int]]:
+    """Текущие открытые, но ещё не закрытые клетки этого хода."""
+    picks = _cell_list(g.get("turn_picks"))
+    revealed = set(_cell_list(g.get("revealed")))
+    orphans: List[Tuple[int, int]] = []
+    for i, row in enumerate(g.get("texts") or []):
+        for j, val in enumerate(row or []):
+            if val != " " and (i, j) not in revealed:
+                orphans.append((i, j))
+    if not picks and len(orphans) == 1:
+        picks = orphans
+    elif picks:
+        picks = [p for p in picks if p in orphans]
+    g["turn_picks"] = picks
+    return picks
+
+
 def _restore_after_load(game: Dict[str, Any]) -> Dict[str, Any]:
     """Восстановление типов после загрузки (list -> set)."""
     if isinstance(game.get("revealed"), list):
@@ -874,7 +891,7 @@ async def memory_open(cb: CallbackQuery):
                 await safe_answer(cb, msg("already_open"))
                 return
 
-            picks = _cell_list(g.get("turn_picks"))
+            picks = _sync_turn_picks(g)
             if pick in picks:
                 await safe_answer(cb, msg("already_open"))
                 return
