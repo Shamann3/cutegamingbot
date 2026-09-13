@@ -37,7 +37,7 @@ PROFILE                 = False
 TOTAL_ROWS, TOTAL_COLS  = 4, 5
 TOTAL_CELLS             = TOTAL_ROWS * TOTAL_COLS
 
-USER_CLICK_COOLDOWN     = 1.05
+USER_CLICK_COOLDOWN     = 0.28
 MISMATCH_HIDE_DELAY     = 1.50
 BASE_RETRY_DELAY        = 0.08
 MAX_RETRIES_EDIT        = 3
@@ -121,6 +121,7 @@ STITCH_STICKERS_6 = [
 
 # ======================== СОСТОЯНИЯ/КАШИ ===================
 user_last_click: Dict[int, float] = {}
+user_last_cell: Dict[int, Tuple[int, int]] = {}
 
 # игровые локи
 game_locks: Dict[str, asyncio.Lock] = {}
@@ -209,12 +210,30 @@ def _normalize_for_save(game: Dict[str, Any]) -> Dict[str, Any]:
         norm["user_links"] = {}
     return norm
 
+def _cell(pos) -> Tuple[int, int]:
+    return (int(pos[0]), int(pos[1]))
+
+
+def _cell_list(items) -> List[Tuple[int, int]]:
+    out: List[Tuple[int, int]] = []
+    for item in items or []:
+        try:
+            out.append(_cell(item))
+        except Exception:
+            continue
+    return out
+
+
 def _restore_after_load(game: Dict[str, Any]) -> Dict[str, Any]:
     """Восстановление типов после загрузки (list -> set)."""
     if isinstance(game.get("revealed"), list):
-        game["revealed"] = set(tuple(x) for x in game["revealed"])
+        game["revealed"] = set(_cell_list(game["revealed"]))
     elif "revealed" not in game or game["revealed"] is None:
         game["revealed"] = set()
+    move = game.get("move")
+    if isinstance(move, dict):
+        game["move"] = {uid: _cell_list(cells) for uid, cells in move.items()}
+    game["turn_picks"] = _cell_list(game.get("turn_picks"))
     return game
 
 def _save_games_memory(game_id: Optional[str] = None):
@@ -312,7 +331,7 @@ async def safe_edit_text(message: types.Message, text: str,
     except Exception:
         pass
 
-async def safe_answer(cb: CallbackQuery, text: str = "", show_alert: bool=False) -> None:
+async def safe_answer(cb: CallbackQuery, text: str = "", *, show_alert: bool=False) -> None:
     if not text:
         try:
             await cb.answer()
@@ -325,6 +344,59 @@ async def safe_answer(cb: CallbackQuery, text: str = "", show_alert: bool=False)
         pass
 
 # =================== HEAL / WATCHDOG =======================
+async def _refresh_board(game_id: str, g: Dict[str, Any], message: Optional[types.Message] = None) -> None:
+    kb = build_keyboard(game_id, g["texts"])
+    txt = await build_turn_full_text(g, None, False)
+    if message is not None:
+        await safe_edit_text(message, txt, kb)
+        return
+    chat_id, mid = g.get("chat_id"), g.get("message_id")
+    if not chat_id or not mid:
+        return
+    try:
+        await bot1.edit_message_text(
+            txt,
+            chat_id=chat_id,
+            message_id=mid,
+            reply_markup=kb,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        pass
+
+
+async def _apply_pending_hide_now(
+    game_id: str,
+    message: Optional[types.Message] = None,
+    *,
+    force: bool = False,
+) -> bool:
+    """Закрыть не-пару и отдать ход. Один раз, с обновлением доски."""
+    g = games_memory.get(game_id)
+    if not g or not g.get("game_active"):
+        return False
+    ph = g.get("pending_hide")
+    if not ph:
+        return False
+    if not force and time.monotonic() < float(ph.get("unlock_at", 0.0)):
+        return False
+    revealed = g.setdefault("revealed", set())
+    for r, c in _cell_list(ph.get("cells")):
+        if (r, c) not in revealed:
+            g["texts"][r][c] = " "
+            log_move(game_id, g.get("turn", 0), r, c, "hide")
+    g["turn"] = ph.get("turn_next", g["turn"])
+    g["turn_picks"] = []
+    g["pending_hide"] = None
+    g["locked"] = False
+    g["state_ver"] = int(g.get("state_ver", 0)) + 1
+    _save_games_memory(game_id)
+    log_state(game_id, g, "apply_pending_hide")
+    await _refresh_board(game_id, g, message)
+    return True
+
+
 async def heal_if_needed(game_id: str, message: Optional[types.Message] = None) -> None:
     """Самолечение зависаний и просроченных pending_hide (monotonic)."""
     try:
@@ -333,36 +405,17 @@ async def heal_if_needed(game_id: str, message: Optional[types.Message] = None) 
             return
         now = time.monotonic()
         ph = g.get("pending_hide")
-
-        # просроченное скрытие - просто откатываем
         if ph and now >= float(ph.get("unlock_at", 0.0)):
-            cells: List[Tuple[int,int]] = ph.get("cells", [])
-            for r, c in cells:
-                if (r, c) not in g.get("revealed", set()):
-                    g["texts"][r][c] = " "
-            g["turn"] = ph.get("turn_next", g["turn"])
-            g["pending_hide"] = None
+            await _apply_pending_hide_now(game_id, message)
+            g = games_memory.get(game_id) or g
+            ph = g.get("pending_hide")
+
+        # зависший lock без задачи скрытия
+        if g.get("locked") and not ph:
             g["locked"] = False
             g["state_ver"] = int(g.get("state_ver", 0)) + 1
             _save_games_memory(game_id)
-            log_state(game_id, g, "heal:pending_hide")
-
-            if message:
-                await safe_edit_text(
-                    message,
-                    await build_turn_full_text(g, None, False),
-                    build_keyboard(game_id, g["texts"])
-                )
-
-        # зависший lock - принудительно снимаем
-        if g.get("locked"):
-            ts_un = float(ph.get("unlock_at", now)) if ph else 0.0
-            if not ph or (now - ts_un) > GAME_STUCK_TIMEOUT:
-                g["locked"] = False
-                g["pending_hide"] = None
-                g["state_ver"] = int(g.get("state_ver", 0)) + 1
-                _save_games_memory(game_id)
-                log_state(game_id, g, "heal:force-unlock")
+            log_state(game_id, g, "heal:force-unlock")
     except Exception:
         pass
 
@@ -532,6 +585,7 @@ async def memory(message: Message):
             "matches": {creator_id: {"score": 0, "turns": []}},
             "player_moves": {creator_id: []},
             "move": {},
+            "turn_picks": [],
             "style": style,
             "game_active": True,
             "locked": False,
@@ -601,7 +655,7 @@ async def memory_join_game(cb: CallbackQuery):
     try:
         game_id = cb.data.split(":", 1)[1]
     except Exception:
-        await safe_answer(cb, "⚠️ Неверные данные.", True, show_alert=True);
+        await safe_answer(cb, "⚠️ Неверные данные.", show_alert=True);
         return
 
     key = (game_id, user_id)
@@ -616,21 +670,21 @@ async def memory_join_game(cb: CallbackQuery):
         async with lock:
             g = games_memory.get(game_id)
             if not g or not g.get("game_active"):
-                await safe_answer(cb, "💭 Эта игра больше не существует.", True, show_alert=True);
+                await safe_answer(cb, "💭 Эта игра больше не существует.", show_alert=True);
                 return
 
             if await db.is_user_banned(user_id):
-                await safe_answer(cb, "❗️ Вы заблокированы в боте", True, show_alert=True);
+                await safe_answer(cb, "❗️ Вы заблокированы в боте", show_alert=True);
                 return
 
             participants = list(dict.fromkeys([int(x) for x in g.get("participants", [])]))
             g["participants"] = participants
 
             if user_id == g.get("creator"):
-                await safe_answer(cb, "❕ Вы создатель этой игры", True, show_alert=True);
+                await safe_answer(cb, "❕ Вы создатель этой игры", show_alert=True);
                 return
             if len(participants) >= 2:
-                await safe_answer(cb, msg("game_full"), True);
+                await safe_answer(cb, msg("game_full"), show_alert=True);
                 return
 
             bet = int(g.get("bet", 0) or 0)
@@ -638,10 +692,10 @@ async def memory_join_game(cb: CallbackQuery):
                 try:
                     bal = await db.get_user_balance(user_id)
                     if not (bal is not None and int(bal) >= bet):
-                        await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", True, show_alert=True);
+                        await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", show_alert=True);
                         return
                 except Exception:
-                    await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", True, show_alert=True);
+                    await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", show_alert=True);
                     return
 
             if user_id in participants:
@@ -658,7 +712,7 @@ async def memory_join_game(cb: CallbackQuery):
                 if inviter_id and inviter_id in parts_set:
                     secs = await _pair_seconds_left(db, user_id, inviter_id, now=None)
                     if secs > 0:
-                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш пригласитель.\n⏳ До снятия ограничения: {_format_hms(secs)}\n#AntiFarmSystem", True, show_alert=True);
+                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш пригласитель.\n⏳ До снятия ограничения: {_format_hms(secs)}\n#AntiFarmSystem", show_alert=True);
                         return
                 invitees_here = await db.get_invitees_in(inviter_id=user_id, candidates=parts_set)
                 if invitees_here:
@@ -668,15 +722,15 @@ async def memory_join_game(cb: CallbackQuery):
                         if secs > 0:
                             min_secs = secs if min_secs is None else min(min_secs, secs)
                     if min_secs:
-                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш приглашённый.\n⏳ До снятия ограничения: {_format_hms(min_secs)}\n#AntiFarmSystem", True, show_alert=True);
+                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш приглашённый.\n⏳ До снятия ограничения: {_format_hms(min_secs)}\n#AntiFarmSystem", show_alert=True);
                         return
             except Exception:
-                await safe_answer(cb, "💭 Техническая ошибка #1212471", True, show_alert=True);
+                await safe_answer(cb, "💭 Техническая ошибка #1212471", show_alert=True);
                 return
 
             # атомарно
             if len(g["participants"]) >= 2:
-                await safe_answer(cb, msg("game_full"), True);
+                await safe_answer(cb, msg("game_full"), show_alert=True);
                 return
 
             g["participants"].append(user_id)
@@ -710,7 +764,7 @@ async def memory_join_game(cb: CallbackQuery):
             await safe_answer(cb, msg("joined"))
     except Exception as e:
         logger.exception("join error: %r", e)
-        await safe_answer(cb, "💭 Ошибка присоединения. Повторите позже.", True, show_alert=True)
+        await safe_answer(cb, "💭 Ошибка присоединения. Повторите позже.", show_alert=True)
     finally:
         _inflight_joins.discard(key)
 
@@ -725,17 +779,18 @@ async def memory_start_game_callback(cb: CallbackQuery):
         await heal_if_needed(game_id, cb.message)
         g = games_memory.get(game_id)
         if not g:
-            await safe_answer(cb, "💭 Эта игра больше не существует.", True, show_alert=True);
+            await safe_answer(cb, "💭 Эта игра больше не существует.", show_alert=True);
             return
         if user_id != g['creator']:
-            await safe_answer(cb, msg("start_only_creator"), True);
+            await safe_answer(cb, msg("start_only_creator"), show_alert=True);
             return
         if len(g['participants']) != 2:
-            await safe_answer(cb, "💭 В игре должны участвовать 2 игрока.", True, show_alert=True);
+            await safe_answer(cb, "💭 В игре должны участвовать 2 игрока.", show_alert=True);
             return
 
         g["game_active"] = True
         g["pending_hide"] = None
+        g["turn_picks"] = []
         g["locked"] = False
         g["state_ver"] = int(g.get("state_ver", 0)) + 1
         kb = build_keyboard(game_id, g["texts"])
@@ -750,29 +805,30 @@ async def memory_start_game_callback(cb: CallbackQuery):
         _ensure_watchdog(game_id)
     except Exception as e:
         logger.exception("start error: %r", e)
-        await safe_answer(cb, "💭 Ошибка запуска. Повторите позже.", True, show_alert=True)
+        await safe_answer(cb, "💭 Ошибка запуска. Повторите позже.", show_alert=True)
 
 # ======================== ХОД (КЛИК) =======================
 @dp.callback_query(lambda c: c.data.startswith("memory_open:"))
 async def memory_open(cb: CallbackQuery):
     user_id = cb.from_user.id
-    now = time.monotonic()
-
-    if now - user_last_click.get(user_id, 0.0) < USER_CLICK_COOLDOWN:
-        await safe_answer(cb, msg("too_fast"), False);
-        return
-    user_last_click[user_id] = now
 
     try:
         _, game_id, r_s, c_s = cb.data.split(":")
         row, col = int(r_s), int(c_s)
+        pick = (row, col)
     except Exception:
-        await safe_answer(cb, msg("invalid"), True);
+        await safe_answer(cb, msg("invalid"), show_alert=True)
         return
 
-    key = (game_id, user_id)
+    now = time.monotonic()
+    last = user_last_click.get(user_id, 0.0)
+    if user_last_cell.get(user_id) == pick and now - last < USER_CLICK_COOLDOWN:
+        await safe_answer(cb, msg("too_fast"))
+        return
+
+    key = (game_id, user_id, row, col)
     if key in _inflight_opens:
-        await safe_answer(cb);
+        await safe_answer(cb)
         return
     _inflight_opens.add(key)
 
@@ -781,7 +837,7 @@ async def memory_open(cb: CallbackQuery):
 
         g = games_memory.get(game_id)
         if not g or not g.get("game_active"):
-            await safe_answer(cb, msg("game_over"), True);
+            await safe_answer(cb, msg("game_over"), show_alert=True)
             return
 
         lock = game_locks.setdefault(game_id, asyncio.Lock())
@@ -792,95 +848,89 @@ async def memory_open(cb: CallbackQuery):
                 g2["locked"] = False
                 g2["state_ver"] = int(g2.get("state_ver", 0)) + 1
                 _save_games_memory(game_id)
-            await safe_answer(cb);
+            await safe_answer(cb)
             return
 
+        found_pair = False
+        emoji = None
         try:
             g = games_memory.get(game_id)
             if not g or not g.get("game_active"):
-                await safe_answer(cb, msg("game_over"), True);
+                await safe_answer(cb, msg("game_over"), show_alert=True)
                 return
 
             await heal_if_needed(game_id, cb.message)
             if g.get("locked"):
-                await safe_answer(cb);
+                await safe_answer(cb)
                 return
 
             if user_id != g["turn"]:
-                await safe_answer(cb, msg("not_your_turn"), False);
+                await safe_answer(cb, msg("not_your_turn"))
                 return
             if not (0 <= row < TOTAL_ROWS and 0 <= col < TOTAL_COLS):
-                await safe_answer(cb, msg("invalid"), True);
+                await safe_answer(cb, msg("invalid"), show_alert=True)
                 return
-            if (row, col) in g.get("revealed", set()):
-                await safe_answer(cb, msg("already_open"), False);
+            if pick in set(_cell_list(g.get("revealed"))) or g["texts"][row][col] != " ":
+                await safe_answer(cb, msg("already_open"))
                 return
 
-            # открываем клетку
+            picks = _cell_list(g.get("turn_picks"))
+            if pick in picks:
+                await safe_answer(cb, msg("already_open"))
+                return
+
             emoji = g["board"][row][col]
             g["texts"][row][col] = emoji
-            mv: List[Tuple[int, int]] = g["move"].setdefault(user_id, [])
-            if not mv or mv[-1] != (row, col):
-                mv.append((row, col))
-                g["state_ver"] = int(g.get("state_ver", 0)) + 1
-            log_move(game_id, user_id, row, col, "first" if len(mv)%2==1 else "second")
+            picks.append(pick)
+            g["turn_picks"] = picks
+            g.setdefault("move", {}).setdefault(user_id, []).append(pick)
+            g["state_ver"] = int(g.get("state_ver", 0)) + 1
+            log_move(game_id, user_id, row, col, "first" if len(picks) == 1 else "second")
+            user_last_click[user_id] = now
+            user_last_cell[user_id] = pick
 
-            await safe_edit_text(
-                cb.message,
-                await build_turn_full_text(g, last_open_emoji=emoji, found_pair=False),
-                build_keyboard(game_id, g["texts"])
-            )
-
-            # пара/промах
-            if len(mv) % 2 == 0:
-                c1, c2 = mv[-2], mv[-1]
+            if len(picks) >= 2:
+                c1, c2 = picks[0], picks[1]
                 e1 = g["board"][c1[0]][c1[1]]
                 e2 = g["board"][c2[0]][c2[1]]
-
-                if e1 == e2:
+                if e1 == e2 and c1 != c2:
+                    found_pair = True
                     g.setdefault("revealed", set()).update([c1, c2])
                     g.setdefault("matches", {}).setdefault(user_id, {"score": 0, "turns": []})
                     g["matches"][user_id]["score"] += 1
-                    g["state_ver"] = int(g.get("state_ver", 0)) + 1
-                    _save_games_memory(game_id)
-
-                    await safe_edit_text(
-                        cb.message,
-                        await build_turn_full_text(g, last_open_emoji=emoji, found_pair=True),
-                        build_keyboard(game_id, g["texts"])
-                    )
+                    g["turn_picks"] = []
                     log_move(game_id, user_id, row, col, "pair")
                 else:
-                    # промах → мягкая блокировка и отложенное скрытие
                     g["locked"] = True
                     opp = next((x for x in g["participants"] if x != user_id), user_id)
                     g["pending_hide"] = {
                         "cells": [c1, c2],
                         "unlock_at": time.monotonic() + MISMATCH_HIDE_DELAY,
                         "turn_next": opp,
-                        "ver": int(g.get("state_ver", 0)) + 1
                     }
-                    g["state_ver"] = int(g.get("state_ver", 0)) + 1
-                    _save_games_memory(game_id)
-
+                    g["turn_picks"] = []
                     log_move(game_id, user_id, row, col, "miss")
                     _schedule_hide(game_id, cb.message)
 
             _save_games_memory(game_id)
-
-            if len(g.get("revealed", set())) == TOTAL_CELLS:
-                await finish_game(cb.message, game_id);
-                return
-
+            await safe_answer(cb)
         finally:
             if lock.locked():
                 lock.release()
 
-        await heal_if_needed(game_id, cb.message)
+        if emoji is not None:
+            await safe_edit_text(
+                cb.message,
+                await build_turn_full_text(g, last_open_emoji=emoji, found_pair=found_pair),
+                build_keyboard(game_id, g["texts"]),
+            )
+
+        if len(g.get("revealed", set())) == TOTAL_CELLS:
+            await finish_game(cb.message, game_id)
     except Exception as e:
         logger.exception("open error: %r", e)
         try:
-            await safe_answer(cb, "💭 Что-то пошло не так, уже чиним.", True, show_alert=True)
+            await safe_answer(cb, "💭 Что-то пошло не так, уже чиним.", show_alert=True)
         except Exception:
             pass
     finally:
@@ -890,41 +940,10 @@ async def memory_open(cb: CallbackQuery):
 async def _apply_pending_hide_after_delay(game_id: str, message: types.Message) -> None:
     try:
         await asyncio.sleep(MISMATCH_HIDE_DELAY)
-        g = games_memory.get(game_id)
-        if not g or not g.get("game_active"):
-            return
-        ph = g.get("pending_hide")
-        if not ph:
-            return
-        if ph.get("ver") is not None and ph["ver"] < g.get("state_ver", 0):
-            return  # устарело
-
-        # просто закрываем обе клетки обратно
-        for r, c in ph.get("cells", []):
-            if (r, c) not in g.get("revealed", set()):
-                g["texts"][r][c] = " "
-                log_move(game_id, g.get("turn", 0), r, c, "hide")
-
-        g["turn"] = ph.get("turn_next", g["turn"])
-        g["pending_hide"] = None
-        g["locked"] = False
-        g["state_ver"] = int(g.get("state_ver", 0)) + 1
-        _save_games_memory(game_id)
-        log_state(game_id, g, "apply_pending_hide")
-
-        await safe_edit_text(
-            message,
-            await build_turn_full_text(g, last_open_emoji=None, found_pair=False),
-            build_keyboard(game_id, g["texts"])
-        )
+        await _apply_pending_hide_now(game_id, message, force=True)
     except Exception:
         try:
-            gg = games_memory.get(game_id)
-            if gg:
-                gg["locked"] = False
-                gg["pending_hide"] = None
-                gg["state_ver"] = int(gg.get("state_ver", 0)) + 1
-                _save_games_memory(game_id)
+            await _apply_pending_hide_now(game_id, message, force=True)
         except Exception:
             pass
     finally:

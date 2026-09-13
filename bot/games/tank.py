@@ -512,7 +512,7 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
         cb_rev = int(rev_s); row_idx = int(row_s); col_idx = int(col_s); owner_id = int(owner_s)
     except: return
 
-    if uid != owner_id: await call.answer("Не ваша игра", True, show_alert=True); return
+    if uid != owner_id: await call.answer("Не ваша игра", show_alert=True); return
     if user_messagetank.get(owner_id) != msg_id: await call.answer("Игра устарела", show_alert=True); return
 
     inflight_key = (msg_id, uid)
@@ -823,7 +823,7 @@ async def tank_process_withdraw(call: types.CallbackQuery):
         _, _, rev_s, owner_s = call.data.split("_")
         cb_rev = int(rev_s); owner_id = int(owner_s)
     except: return
-    if uid != owner_id: await call.answer("Не ваша игра", True, show_alert=True); return
+    if uid != owner_id: await call.answer("Не ваша игра", show_alert=True); return
     if user_messagetank.get(owner_id) != msg_id: await call.answer("Игра устарела", show_alert=True); return
     lock = _get_session_lock(msg_id)
     async with lock:

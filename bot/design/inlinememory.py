@@ -48,7 +48,7 @@ except Exception:
     }
 
 # ======================= НАСТРОЙКИ =======================
-INLINE_USER_COOLDOWN   = 2.05    # антифлуд: минимум между кликами пользователя
+INLINE_USER_COOLDOWN   = 0.28    # только защита от дабл-тапа той же клетки
 INLINE_EDIT_RETRY      = 0.15    # базовая задержка перед повторной попыткой edit
 INLINE_MISMATCH_DELAY  = 0.75    # сколько держим открытую не-пару
 TOTAL_ROWS, TOTAL_COLS = 4, 5
@@ -100,6 +100,7 @@ def _msg(key: str) -> str:
 
 # ======================= СОСТОЯНИЯ ========================
 inline_last_press_times: Dict[int, float] = {}       # антифлуд по пользователю
+inline_last_cells: Dict[int, Tuple[int, int]] = {}
 inline_game_locks: Dict[str, asyncio.Lock] = {}      # локи ходов
 _inline_join_locks: Dict[str, asyncio.Lock] = {}     # локи на join
 
@@ -154,7 +155,7 @@ async def _acquire_with_timeout(lock: asyncio.Lock, timeout: float = LOCK_ACQUIR
 try:
     from bot.utils.callback_fast import safe_answer, fire_answer
 except Exception:
-    async def safe_answer(cb: CallbackQuery, text: str = "", show_alert: bool = False) -> None:
+    async def safe_answer(cb: CallbackQuery, text: str = "", *, show_alert: bool = False) -> None:
         try:
             if text:
                 await cb.answer(text, show_alert=show_alert)
@@ -342,7 +343,7 @@ async def inline_memory_create_game_callback(cb: CallbackQuery):
             except Exception:
                 bal = 0
             if int(bal or 0) < bet_amount:
-                await safe_answer(cb, "❌ Недостаточно средств для такой ставки.", True, show_alert=True)
+                await safe_answer(cb, "❌ Недостаточно средств для такой ставки.", show_alert=True)
                 return
 
         # профиль - мягко
@@ -356,13 +357,13 @@ async def inline_memory_create_game_callback(cb: CallbackQuery):
         game_style = random.randint(1, 5)
         board = await _create_board(game_style)
         if board is None:
-            await safe_answer(cb, "💭 Ошибка создания игры.", True, show_alert=True)
+            await safe_answer(cb, "💭 Ошибка создания игры.", show_alert=True)
             return
 
         game_id = str(uuid.uuid4())
         inline_id = cb.inline_message_id  # якорь для правок
         if not inline_id:
-            await safe_answer(cb, "💭 Нет inline_message_id для правки.", True, show_alert=True)
+            await safe_answer(cb, "💭 Нет inline_message_id для правки.", show_alert=True)
             return
 
         # первичное состояние игры
@@ -376,6 +377,7 @@ async def inline_memory_create_game_callback(cb: CallbackQuery):
             "game_active": True,
             "player_moves": {creator_id: []},
             "move": {},
+            "turn_picks": [],
             "keyboard": [[InlineKeyboardButton(text=" ", callback_data=f"oinlinememory_open:{game_id}:{i}:{j}")
                          for j in range(TOTAL_COLS)] for i in range(TOTAL_ROWS)],
             "locked": False,
@@ -410,7 +412,7 @@ async def inline_memory_create_game_callback(cb: CallbackQuery):
         )
     except Exception as e:
         logger.exception("create error: %r", e)
-        await safe_answer(cb, "💭 Техническая ошибка при создании лобби.", True, show_alert=True)
+        await safe_answer(cb, "💭 Техническая ошибка при создании лобби.", show_alert=True)
 
 # ======================= JOIN ===============================
 @dp.callback_query(lambda c: c.data.startswith("inlinememoryjoin:"))
@@ -419,7 +421,7 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
     try:
         game_id = cb.data.split(":", 1)[1]
     except Exception:
-        await safe_answer(cb, "⚠️ Неверные данные.", True, show_alert=True)
+        await safe_answer(cb, "⚠️ Неверные данные.", show_alert=True)
         return
     if await db.is_user_banned(user_id):
         await cb.answer("❗️ Вы заблокированы в боте", show_alert=True)
@@ -448,13 +450,13 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
                 username = cb.from_user.username
 
             if user_id == game.get("creator"):
-                await safe_answer(cb, "❕ Вы создатель этой игры", True, show_alert=True)
+                await safe_answer(cb, "❕ Вы создатель этой игры", show_alert=True)
                 return
 
             participants = _dedupe_preserve_order([int(x) for x in game.get("participants", [])])
             game["participants"] = participants
             if len(participants) >= 2:
-                await safe_answer(cb, _msg("game_full"), True)
+                await safe_answer(cb, _msg("game_full"), show_alert=True)
                 return
             if user_id in participants:
                 await safe_answer(cb, _msg("joined"))
@@ -470,7 +472,7 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
                 if inviter_id and inviter_id in parts_set:
                     secs = await _pair_seconds_left(db, user_id, inviter_id, now=None)
                     if secs > 0:
-                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш пригласитель.\n⏳ До снятия ограничения: {_format_hms(secs)}\n#AntiFarmSystem", True, show_alert=True)
+                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш пригласитель.\n⏳ До снятия ограничения: {_format_hms(secs)}\n#AntiFarmSystem", show_alert=True)
                         return
 
                 invitees_here = await db.get_invitees_in(inviter_id=user_id, candidates=parts_set)
@@ -481,10 +483,10 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
                         if secs > 0:
                             min_secs = secs if min_secs is None else min(min_secs, secs)
                     if min_secs:
-                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш приглашённый.\n⏳ До снятия ограничения: {_format_hms(min_secs)}\n#AntiFarmSystem", True, show_alert=True)
+                        await safe_answer(cb, f"💭 Нельзя присоединиться: в лобби ваш приглашённый.\n⏳ До снятия ограничения: {_format_hms(min_secs)}\n#AntiFarmSystem", show_alert=True)
                         return
             except Exception:
-                await safe_answer(cb, "💭 Техническая ошибка #1212471", True, show_alert=True)
+                await safe_answer(cb, "💭 Техническая ошибка #1212471", show_alert=True)
                 return
 
             # ставка - проверка
@@ -496,12 +498,12 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
                     bal = 0
                 enough = (bal is not None) and int(bal) >= bet_amount
                 if not enough:
-                    await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", True, show_alert=True)
+                    await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", show_alert=True)
                     return
 
             # бронь места без гонки
             if game.get("opponent_id") and game["opponent_id"] != user_id:
-                await safe_answer(cb, "❗️ Место уже занято.", True, show_alert=True)
+                await safe_answer(cb, "❗️ Место уже занято.", show_alert=True)
                 return
 
             # добавление
@@ -546,7 +548,7 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
             await safe_answer(cb, _msg("joined"))
     except Exception as e:
         logger.exception("join error: %r", e)
-        await safe_answer(cb, "💭 Ошибка присоединения к лобби.", True, show_alert=True)
+        await safe_answer(cb, "💭 Ошибка присоединения к лобби.", show_alert=True)
     finally:
         _inflight_memory_joins.discard(inflight_key)
 
@@ -560,13 +562,13 @@ async def inline_memory_start_game_callback(cb: CallbackQuery):
 
         game = games_memory_inline.get(game_id)
         if not game:
-            await safe_answer(cb, "💭 Эта игра больше не существует.", True, show_alert=True)
+            await safe_answer(cb, "💭 Эта игра больше не существует.", show_alert=True)
             return
         if user_id != game['creator']:
-            await safe_answer(cb, _msg("start_only_creator"), True)
+            await safe_answer(cb, _msg("start_only_creator"), show_alert=True)
             return
         if len(game['participants']) != 2:
-            await safe_answer(cb, "💭 В игре должны участвовать 2 игрока.", True, show_alert=True)
+            await safe_answer(cb, "💭 В игре должны участвовать 2 игрока.", show_alert=True)
             return
 
         # проверка на ставку перед стартом (на всякий)
@@ -577,12 +579,13 @@ async def inline_memory_start_game_callback(cb: CallbackQuery):
             except Exception:
                 bal = 0
             if int(bal or 0) < bet_amount:
-                await safe_answer(cb, "💭 Недостаточно средств для игры.", True, show_alert=True)
+                await safe_answer(cb, "💭 Недостаточно средств для игры.", show_alert=True)
                 return
 
         game["game_active"] = True
         game["locked"] = False
         game["move"] = {}
+        game["turn_picks"] = []
         game.setdefault("revealed", set())
         # стартовая клавиатура
         kb = _build_hidden_keyboard(game_id)
@@ -596,27 +599,26 @@ async def inline_memory_start_game_callback(cb: CallbackQuery):
         _save_inline()
     except Exception as e:
         logger.exception("start error: %r", e)
-        await safe_answer(cb, "💭 Ошибка запуска игры.", True, show_alert=True)
+        await safe_answer(cb, "💭 Ошибка запуска игры.", show_alert=True)
 
 # ======================= ХОД (КЛЕТКА) ======================
 @dp.callback_query(lambda c: c.data.startswith("oinlinememory_open:"))
 async def inline_memory_memory_open111(cb: CallbackQuery):
     uid = cb.from_user.id
-    now = time.monotonic()
-    if now - inline_last_press_times.get(uid, 0.0) < INLINE_USER_COOLDOWN:
-        await safe_answer(cb, _msg("too_fast"))
-        return
-    inline_last_press_times[uid] = now
-
-    # идемпотентность на игрока/игру
     try:
         _, game_id, r_s, c_s = cb.data.split(":")
         row, col = int(r_s), int(c_s)
+        pick = (row, col)
     except Exception:
-        await safe_answer(cb, _msg("invalid"), True)
+        await safe_answer(cb, _msg("invalid"), show_alert=True)
         return
 
-    inflight_key = (game_id, uid)
+    now = time.monotonic()
+    if inline_last_cells.get(uid) == pick and now - inline_last_press_times.get(uid, 0.0) < INLINE_USER_COOLDOWN:
+        await safe_answer(cb, _msg("too_fast"))
+        return
+
+    inflight_key = (game_id, uid, row, col)
     if inflight_key in _inflight_memory_opens:
         await safe_answer(cb)  # уже в работе
         return
@@ -661,56 +663,54 @@ async def inline_memory_memory_open111(cb: CallbackQuery):
             if not (0 <= row < TOTAL_ROWS and 0 <= col < TOTAL_COLS):
                 await safe_answer(cb, _msg("invalid"))
                 return
-            if (row, col) in game.get("revealed", set()):
+            btn_txt = getattr(game["keyboard"][row][col], "text", " ")
+            revealed = game.get("revealed") or set()
+            if isinstance(revealed, list):
+                revealed = set(tuple(x) for x in revealed)
+                game["revealed"] = revealed
+            if pick in revealed or btn_txt != " ":
+                await safe_answer(cb, _msg("already_open"))
+                return
+
+            picks = []
+            for item in game.get("turn_picks") or []:
+                try:
+                    picks.append((int(item[0]), int(item[1])))
+                except Exception:
+                    continue
+            if pick in picks:
                 await safe_answer(cb, _msg("already_open"))
                 return
 
             # открыть клетку
             emoji = game["board"][row][col]
             game["keyboard"][row][col] = InlineKeyboardButton(text=emoji, callback_data="disabled")
-            mv: List[Tuple[int, int]] = game["move"].setdefault(uid, [])
-            if not mv or mv[-1] != (row, col):
-                mv.append((row, col))
+            picks.append(pick)
+            game["turn_picks"] = picks
+            game.setdefault("move", {}).setdefault(uid, []).append(pick)
+            inline_last_press_times[uid] = now
+            inline_last_cells[uid] = pick
 
-            # обновим текст/клавиатуру
-            # ПЕРФ: раньше на парном ходе шло ДВА последовательных
-            # EditMessageText - сначала «клетка открыта», сразу за ним
-            # «найдена пара». Каждый - отдельный сетевой round-trip к Telegram
-            # (~100-170мс по логам TG-API), итого ~300мс на один клик.
-            # Второй кадр полностью перекрывает первый (та же доска + строка
-            # про пару), поэтому промежуточный кадр не нужен: сверяем пару
-            # ДО отрисовки и шлём один финальный edit.
-            # Порядок безопасен: _build_turn_text/_build_keyboard_from_state
-            # читают turn/matches/revealed и не смотрят на locked, а
-            # _hide_pair_after_delay сначала спит и идёт через тот же
-            # per-message лок правки.
             found_pair = False
-
-            # если выбрано 2 клетки - сверяем
-            if len(mv) % 2 == 0:
-                c1, c2 = mv[-2], mv[-1]
+            if len(picks) >= 2:
+                c1, c2 = picks[0], picks[1]
                 e1 = game["board"][c1[0]][c1[1]]
                 e2 = game["board"][c2[0]][c2[1]]
-
-                if e1 == e2:
+                if e1 == e2 and c1 != c2:
                     found_pair = True
                     game.setdefault("revealed", set()).update([c1, c2])
                     game.setdefault("matches", {}).setdefault(uid, {"score": 0, "turns": []})
                     game["matches"][uid]["score"] += 1
+                    game["turn_picks"] = []
                     fire_answer(cb, _msg("pair_found"))
                 else:
-                    # не-пара - блокируем и скрываем позже, передаём ход сопернику
                     game["locked"] = True
+                    game["turn_picks"] = []
                     def _coro():
                         return _hide_pair_after_delay(game_id, uid, [c1, c2])
                     _schedule_hide(game_id, _coro)
                     fire_answer(cb, _msg("pair_miss"))
             else:
-                # ВАЖНО: на «первой» клетке хода answerCallbackQuery не
-                # отправлялся вообще (в логах на kind=first виден только
-                # EditMessageText). Из-за этого крутилка на кнопке висела до
-                # тайм-аута на стороне Telegram - визуально это и читалось как
-                # «кнопка тупит», даже когда доска уже перерисовалась.
                 fire_answer(cb)
 
             kb = _build_keyboard_from_state(game)
@@ -727,7 +727,7 @@ async def inline_memory_memory_open111(cb: CallbackQuery):
                 lock.release()
     except Exception as e:
         logger.exception("open error: %r", e)
-        await safe_answer(cb, "💭 Что-то пошло не так, уже чиним.", True, show_alert=True)
+        await safe_answer(cb, "💭 Что-то пошло не так, уже чиним.", show_alert=True)
     finally:
         _inflight_memory_opens.discard(inflight_key)
 
@@ -749,6 +749,7 @@ async def _hide_pair_after_delay(game_id: str, uid: int, cells: List[Tuple[int, 
         parts = game["participants"]
         if len(parts) == 2:
             game["turn"] = parts[1] if parts[0] == uid else parts[0]
+        game["turn_picks"] = []
         game["locked"] = False
 
         await safe_edit_inline_text(
