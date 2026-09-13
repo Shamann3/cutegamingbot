@@ -36,7 +36,12 @@ DISABLE_ALERT = (
     "Капчу в группе может отключить только владелец чата.\n"
     "Если вам действительно мешает капча — попросите создателя группы отключить её"
 )
-PASS_ALERT = "Капча пройдена. Теперь вы можете пользоваться ботом"
+PASS_ALERT = "Капча пройдена. Теперь вы можете писать в группе"
+CAPTCHA_INTRO_LINE1 = "Это капча."
+CAPTCHA_INTRO_LINE2 = "Пожалуйста, пройдите её, чтобы писать в группе."
+CAPTCHA_INTRO = f"{CAPTCHA_INTRO_LINE1}\n{CAPTCHA_INTRO_LINE2}"
+INTRO_EYE_ID = "5389099803655305880"
+INTRO_WARN_ID = "5213205860498549992"
 
 VARIANT_LABELS = {
     1: "Найдите такое же",
@@ -79,6 +84,8 @@ EMOJI = {
     "v8_prefix": "<tg-emoji emoji-id='5461152608804689572'>⚖️</tg-emoji>",
     "berry": "<tg-emoji emoji-id='5406759193052995173'>🍒</tg-emoji>",
     "spark": "<tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji>",
+    "intro_eye": f"<tg-emoji emoji-id='{INTRO_EYE_ID}'>👁️</tg-emoji>",
+    "intro_warn": f"<tg-emoji emoji-id='{INTRO_WARN_ID}'>⚠️</tg-emoji>",
     "disable": DISABLE_ICON,
 }
 
@@ -429,6 +436,10 @@ def card_plain_and_entities(payload: Dict[str, Any], user: Any):
         ents.append(MessageEntity(type=MessageEntityType.BOLD, offset=start, length=ln))
 
     add("\n")
+    _add_intro_line(add, ents, emoji("intro_eye"), CAPTCHA_INTRO_LINE1)
+    add("\n")
+    _add_intro_line(add, ents, emoji("intro_warn"), CAPTCHA_INTRO_LINE2)
+    add("\n\n")
 
     prefix_id = str(payload.get("prefix_id") or "")
     prefix_face = str(payload.get("prefix_face") or "")
@@ -478,11 +489,33 @@ def card_plain_and_entities(payload: Dict[str, Any], user: Any):
     return "".join(buf), ents
 
 
+def _add_intro_line(add, ents, icon: PremiumEmoji, text: str) -> None:
+    from aiogram.enums import MessageEntityType
+    from aiogram.types import MessageEntity
+
+    if icon.emoji_id and icon.face:
+        start, ln = add(icon.face)
+        ents.append(MessageEntity(
+            type=MessageEntityType.CUSTOM_EMOJI,
+            offset=start,
+            length=ln,
+            custom_emoji_id=icon.emoji_id,
+        ))
+        add(" ")
+    start, ln = add(text)
+    if ln:
+        ents.append(MessageEntity(type=MessageEntityType.BOLD, offset=start, length=ln))
+
+
 def card_html(payload: Dict[str, Any], user: Any) -> str:
-    # Не оборачиваем mention в ещё один <b>: Telegram ломает вложенный bold.
+    # Не оборачиваем mention и tg-emoji в ещё один <b>: Telegram ломает вложенный bold.
     body = str(payload.get("text") or "<b>Нажмите нужную кнопку</b>")
     who = mention_html(user)
-    return f"{who}\n{body}"
+    intro = (
+        f"{emoji('intro_eye').as_html()} <b>{CAPTCHA_INTRO_LINE1}</b>\n"
+        f"{emoji('intro_warn').as_html()} <b>{CAPTCHA_INTRO_LINE2}</b>"
+    )
+    return f"{who}\n{intro}\n\n{body}"
 
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -649,8 +682,50 @@ _schema_ready = False
 _passed_cache: Dict[Tuple[int, int], float] = {}
 _not_passed_cache: Dict[Tuple[int, int], float] = {}
 _disabled_cache: Dict[int, Tuple[bool, float]] = {}
+_live_challenges: Dict[int, Dict[str, Any]] = {}
 _CACHE_TTL = 90.0
 _NOT_PASSED_TTL = 20.0
+
+
+def remember_live(row: Optional[Dict[str, Any]]) -> None:
+    if not row or not row.get("id"):
+        return
+    stored = dict(row)
+    raw = stored.get("payload")
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                stored["payload"] = parsed
+        except Exception:
+            pass
+    _live_challenges[int(stored["id"])] = stored
+
+
+def peek_live(challenge_id: int) -> Optional[Dict[str, Any]]:
+    row = _live_challenges.get(int(challenge_id))
+    return dict(row) if row else None
+
+
+def patch_live(challenge_id: int, **fields: Any) -> None:
+    row = _live_challenges.get(int(challenge_id))
+    if not row:
+        return
+    row.update(fields)
+
+
+def forget_live(challenge_id: int) -> None:
+    _live_challenges.pop(int(challenge_id), None)
+
+
+def forget_chat_live(chat_id: int) -> None:
+    cid = int(chat_id)
+    for key in [k for k, row in _live_challenges.items() if int(row.get("chat_id") or 0) == cid]:
+        _live_challenges.pop(key, None)
+
+
+def note_passed(chat_id: int, user_id: int) -> None:
+    _cache_pass(int(chat_id), int(user_id))
 
 
 def strip_tg_emoji(raw: str) -> str:
@@ -790,6 +865,7 @@ async def disable_chat(pool, chat_id: int, by_user_id: int) -> None:
         int(by_user_id),
     )
     _disabled_cache[int(chat_id)] = (False, time.monotonic())
+    forget_chat_live(chat_id)
     await pool.execute(
         "DELETE FROM group_captcha_challenges WHERE chat_id = $1",
         int(chat_id),
@@ -834,12 +910,19 @@ async def mark_passed(
 
 
 async def get_challenge(pool, challenge_id: int) -> Optional[Dict[str, Any]]:
+    live = peek_live(challenge_id)
+    if live:
+        return live
     await ensure_tables(pool)
     row = await pool.fetchrow(
         "SELECT * FROM group_captcha_challenges WHERE id = $1",
         int(challenge_id),
     )
-    return dict(row) if row else None
+    if not row:
+        return None
+    data = dict(row)
+    remember_live(data)
+    return data
 
 
 async def get_open_challenge(pool, chat_id: int, user_id: int) -> Optional[Dict[str, Any]]:
@@ -894,7 +977,9 @@ async def save_challenge(
         trigger,
         expires_dt,
     )
-    return dict(row)
+    data = dict(row)
+    remember_live(data)
+    return data
 
 
 async def update_challenge(
@@ -924,14 +1009,30 @@ async def update_challenge(
         f"UPDATE group_captcha_challenges SET {', '.join(sets)} WHERE id = ${len(args)}",
         *args,
     )
+    live_fields: Dict[str, Any] = {}
+    if payload is not None:
+        live_fields["payload"] = payload
+    if message_id is not None:
+        live_fields["message_id"] = int(message_id)
+    if attempts is not None:
+        live_fields["attempts"] = int(attempts)
+    if live_fields:
+        patch_live(challenge_id, **live_fields)
 
 
 async def delete_challenge(pool, *, challenge_id: Optional[int] = None, chat_id: Optional[int] = None, user_id: Optional[int] = None) -> None:
     await ensure_tables(pool)
     if challenge_id is not None:
+        forget_live(int(challenge_id))
         await pool.execute("DELETE FROM group_captcha_challenges WHERE id = $1", int(challenge_id))
         return
     if chat_id is not None and user_id is not None:
+        dead = [
+            cid for cid, row in _live_challenges.items()
+            if int(row.get("chat_id") or 0) == int(chat_id) and int(row.get("user_id") or 0) == int(user_id)
+        ]
+        for cid in dead:
+            forget_live(cid)
         await pool.execute(
             "DELETE FROM group_captcha_challenges WHERE chat_id = $1 AND user_id = $2",
             int(chat_id),

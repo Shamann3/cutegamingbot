@@ -98,6 +98,11 @@ def test_answers_are_underlined_and_card_is_bold():
     card = build_challenge(2, rng=random.Random(2))
     assert f"<u>{card['color']}</u>" in card["text"]
     html = card_html(card, SimpleNamespace(id=1, full_name="Анна", first_name="Анна", is_bot=False))
+    assert "Это капча." in html
+    assert "писать в группе" in html
+    assert "5389099803655305880" in html
+    assert "5213205860498549992" in html
+    assert "<b>Это капча.</b>" in html
     assert "<b>Нажмите" in html
     assert html.endswith("</b>")
     assert "<u>" in html
@@ -182,13 +187,17 @@ def test_card_entities_carry_custom_emoji():
     user = SimpleNamespace(id=7, full_name="Иэрихон Cute", first_name="Иэрихон", is_bot=False)
     card = build_challenge(5, rng=random.Random(5))
     text, ents = card_plain_and_entities(card, user)
+    assert "Это капча." in text
+    assert "писать в группе" in text
     kinds = [str(getattr(e, "type", "")) for e in ents]
     assert "custom_emoji" in kinds
     assert "underline" in kinds
     assert "bold" in kinds
     custom = [e for e in ents if str(getattr(e, "type", "")) == "custom_emoji"]
-    assert custom
-    assert custom[0].custom_emoji_id == card["prefix_id"]
+    custom_ids = [e.custom_emoji_id for e in custom]
+    assert "5389099803655305880" in custom_ids
+    assert "5213205860498549992" in custom_ids
+    assert card["prefix_id"] in custom_ids
     assert card["prefix_face"] in text
     # в подписи кнопки этого лица быть не должно — только пробел + icon
     markup = __import__("bot.funcs.group_captcha", fromlist=["build_markup"]).build_markup(1, -100, card)
@@ -234,7 +243,9 @@ def test_hydrate_recovers_old_payload():
     assert hydrated["chunks"][1]["value"] == "направо"
     text, ents = card_plain_and_entities(old, type("U", (), {"id": 1, "full_name": "Аня", "first_name": "Аня"})())
     custom = [e for e in ents if str(getattr(e, "type", "")) == "custom_emoji"]
-    assert custom[0].custom_emoji_id == old["prefix_id"]
+    custom_ids = [e.custom_emoji_id for e in custom]
+    assert "5389099803655305880" in custom_ids
+    assert old["prefix_id"] in custom_ids
     total = len(text.encode("utf-16-le")) // 2
     for e in ents:
         assert 0 <= e.offset < total
