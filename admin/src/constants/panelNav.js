@@ -38,6 +38,10 @@ export const PANEL_SECTIONS = [
     blurb: 'Создание и контроль розыгрышей призов для игроков.',
   },
   {
+    id: 'tiktok', label: 'TikTok', labelRu: 'TikTok', group: 'content',
+    blurb: 'Очередь скринов и видео: копии, просмотры, начисление кут.',
+  },
+  {
     id: 'botQuests', label: 'Bot Quests', labelRu: 'Задания TG', group: 'content', ownerOnly: true,
     blurb: 'Мастер заданий Telegram-бота: подписки и челленджи — только для владельца.',
   },

@@ -157,6 +157,10 @@ textzabhelp = f'''
 <i>Выполняйте задания подписываясь на каналы или группы, получая за это игровую валюту</i>
 <blockquote><code>Задания</code></blockquote>
 
+<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>TikTok</b>
+<i>Комментарии под роликами с тегом и видео про бота. Открой Задания и нажми Тик ток.</i>
+<blockquote><code>Задания</code></blockquote>
+
 <tg-emoji emoji-id='5438449626426410465'>🎁</tg-emoji> <b>Промокоды</b>
 <i>Активируйте промокоды и получайте куты</i>
 <blockquote><code>Промолист</code></blockquote>

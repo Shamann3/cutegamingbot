@@ -2084,3 +2084,55 @@ export async function fetchGroupPostCampaignPhotoBlob(campaignId) {
   if (!resp.ok) throw new Error(`Ошибка ${resp.status}`)
   return resp.blob()
 }
+
+export async function fetchTiktokOverview() {
+  return adminFetch('/tiktok/overview')
+}
+
+export async function fetchTiktokAccessMap() {
+  return adminFetch('/tiktok/access-map')
+}
+
+export async function fetchTiktokSettings() {
+  return adminFetch('/tiktok/settings')
+}
+
+export async function saveTiktokSettings(body) {
+  return adminFetch('/tiktok/settings', { method: 'PUT', body })
+}
+
+export async function fetchTiktokComments(status = 'pending') {
+  return adminFetch(`/tiktok/comments?status=${encodeURIComponent(status)}`)
+}
+
+export async function fetchTiktokCommentsArchive() {
+  return adminFetch('/tiktok/comments/archive')
+}
+
+export async function fetchTiktokComment(caseId) {
+  return adminFetch(`/tiktok/comments/${caseId}`)
+}
+
+export async function approveTiktokComment(caseId) {
+  return adminFetch(`/tiktok/comments/${caseId}/approve`, { method: 'POST', body: {} })
+}
+
+export async function rejectTiktokComment(caseId) {
+  return adminFetch(`/tiktok/comments/${caseId}/reject`, { method: 'POST', body: {} })
+}
+
+export async function saveTiktokVerdict(hashA, hashB, verdict) {
+  return adminFetch('/tiktok/verdict', { method: 'POST', body: { hashA, hashB, verdict } })
+}
+
+export async function fetchTiktokVideos(kind = 'pending') {
+  return adminFetch(`/tiktok/videos?kind=${encodeURIComponent(kind)}`)
+}
+
+export async function approveTiktokVideo(videoId, views) {
+  return adminFetch(`/tiktok/videos/${videoId}/approve`, { method: 'POST', body: { views } })
+}
+
+export async function rejectTiktokVideo(videoId, reasonIds) {
+  return adminFetch(`/tiktok/videos/${videoId}/reject`, { method: 'POST', body: { reasonIds } })
+}

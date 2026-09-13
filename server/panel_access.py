@@ -37,6 +37,7 @@ PANEL_SECTION_DEFS: list[dict] = [
     {"id": "farm", "label": "Ферма", "group": "economy", "permissions": ["manage_farm"]},
     {"id": "content", "label": "Контент", "group": "content", "permissions": ["manage_content"]},
     {"id": "giveaways", "label": "Розыгрыши", "group": "content", "permissions": ["manage_content"]},
+    {"id": "tiktok", "label": "TikTok", "group": "content", "permissions": []},
     {
         "id": "botQuests",
         "label": "Задания TG",
@@ -136,6 +137,13 @@ SECTION_TABS: dict[str, list[dict]] = {
         {"id": "craft", "label": "Крафт"},
         {"id": "map", "label": "Карта", "ownerOnly": True},
         {"id": "quests", "label": "Задания"},
+    ],
+    "tiktok": [
+        {"id": "comments", "label": "Очередь комментариев"},
+        {"id": "videos", "label": "Очередь видео"},
+        {"id": "live", "label": "Живые видео"},
+        {"id": "archive", "label": "Архив"},
+        {"id": "settings", "label": "Настройки"},
     ],
     "achievements": [
         {"id": "catalog", "label": "Каталог", "perm": "manage_achievements"},

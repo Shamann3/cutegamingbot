@@ -1,0 +1,233 @@
+.tt-page {
+  overflow: auto;
+  min-height: 0;
+  padding-bottom: 1.4rem;
+}
+
+.tt-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.8rem 0 0.4rem;
+}
+
+.tt-tab {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  border-radius: 999px;
+  padding: 0.42rem 0.8rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tt-tab.is-on {
+  border-color: rgba(232, 197, 120, 0.55);
+  background: rgba(232, 197, 120, 0.12);
+}
+
+.tt-tab.is-lock {
+  opacity: 0.62;
+}
+
+.tt-hint,
+.tt-empty {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.tt-guide,
+.tt-lock,
+.tt-card,
+.tt-video,
+.tt-work,
+.tt-settings {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border-radius: 1rem;
+  padding: 1rem;
+  margin: 0.7rem 0;
+}
+
+.tt-guide ol {
+  padding-left: 1.2rem;
+}
+
+.tt-guide-x {
+  float: right;
+  background: none;
+  border: 0;
+  color: inherit;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.tt-lock-seal,
+.tt-flag-hot {
+  display: inline-block;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f3c56b;
+  border: 1px solid rgba(243, 197, 107, 0.35);
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+}
+
+.tt-lock-who {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.8rem 0;
+}
+
+.tt-lock-who span {
+  display: block;
+  opacity: 0.6;
+  font-size: 0.8rem;
+}
+
+.tt-lock-push,
+.tt-lock-teaser {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.tt-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.tt-card,
+.tt-video {
+  text-align: left;
+  width: 100%;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tt-card-top,
+.tt-work-head,
+.tt-actions,
+.tt-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.tt-card-nicks,
+.tt-break {
+  opacity: 0.7;
+  font-size: 0.86rem;
+}
+
+.tt-break span {
+  margin-right: 0.7rem;
+}
+
+.tt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.2rem, 1fr));
+  gap: 0.5rem;
+}
+
+.tt-shot {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 0.7rem;
+  overflow: hidden;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tt-shot span {
+  display: block;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.tt-shot-hot {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.45);
+}
+
+.tt-compare {
+  display: grid;
+  grid-template-columns: minmax(8rem, 14rem) 1fr;
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+}
+
+.tt-compare-hit {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.7rem;
+  padding: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.tt-btn {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.85rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tt-btn-ok {
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.12);
+}
+
+.tt-btn-hot {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.tt-field,
+.tt-settings label {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.6rem 0;
+}
+
+.tt-field input,
+.tt-settings input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  border-radius: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+}
+
+.tt-link {
+  color: #f3c56b;
+}
+
+.tt-reasons {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.6rem 0;
+}
+
+.tt-reasons label {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .tt-compare {
+    grid-template-columns: 1fr;
+  }
+
+  .tt-actions,
+  .tt-btn {
+    width: 100%;
+  }
+}

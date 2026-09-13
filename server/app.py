@@ -192,6 +192,12 @@ async def lifespan(application: FastAPI):
     except Exception:
         logger.warning("group_balance_level schema init failed — check DB permissions")
 
+    try:
+        from admin_tiktok import ensure_tiktok_schema
+        await ensure_tiktok_schema()
+    except Exception:
+        logger.warning("tiktok schema init failed — check DB permissions")
+
     from support_db import ensure_tables as ensure_support_tables
     try:
         await ensure_support_tables()

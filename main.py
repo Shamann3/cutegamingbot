@@ -18788,6 +18788,7 @@ async def questions_stars_menu(callback_query: types.CallbackQuery):
         kb = InlineKeyboardBuilder()
         kb.button(text="Задания с подпиской", callback_data="qst:show_subs", style="default", icon_custom_emoji_id="5362063083311214432")
         kb.button(text="Челленджи", callback_data="qst:show_gc", style="default", icon_custom_emoji_id="5445096582238181549")
+        kb.button(text="Тик ток", callback_data="tt:hub", style="default", icon_custom_emoji_id="5456282961999570188")
         kb.button(text="Закрыть", callback_data="9close_bonus_+")
         kb.adjust(1)
         kb_markup = kb.as_markup()
@@ -40844,6 +40845,12 @@ if __name__ == "__main__":
         attach_group_captcha(dp)
     except Exception as _cap_err:
         print(f"[CAPTCHA][WIRE][ERROR] {type(_cap_err).__name__}: {_cap_err}")
+
+    try:
+        from bot.handlers.tiktok_earn import attach_tiktok_earn
+        attach_tiktok_earn(dp)
+    except Exception as _tt_err:
+        print(f"[TIKTOK][WIRE][ERROR] {type(_tt_err).__name__}: {_tt_err}")
 
     dp.include_router(router)
 

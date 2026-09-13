@@ -11,6 +11,7 @@ import './styles/users-ios.css'
 import './styles/mobile-polish.css'
 import './styles/bot-quests-phone.css'
 import './styles/viewport-locks.css'
+import './styles/tiktok.css'
 import { applyAccentToDocument, loadStoredAccent } from './lib/accentTheme'
 import { applyViewportModeToDocument } from './lib/useIsDesktop'
 

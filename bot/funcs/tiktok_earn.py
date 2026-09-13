@@ -1,0 +1,601 @@
+# -*- coding: utf-8 -*-
+"""TikTok-заработок в боте: тексты, ники, набор скринов и ссылок."""
+
+from __future__ import annotations
+
+import json
+import logging
+import sys
+from datetime import datetime, timedelta, timezone
+from io import BytesIO
+from pathlib import Path
+from typing import Any
+
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+_SERVER = Path(__file__).resolve().parents[2] / "server"
+if str(_SERVER) not in sys.path:
+    sys.path.insert(0, str(_SERVER))
+
+from tiktok_earn_logic import (  # noqa: E402
+    hashes_from_image_bytes,
+    normalize_nick,
+    parse_tiktok_url,
+    recheck_wait_text,
+    validate_nick,
+)
+
+log = logging.getLogger("tiktok_earn")
+
+TT_HUB = "tt:hub"
+TT_COMMENTS = "tt:comments"
+TT_VIDEOS = "tt:videos"
+TT_NICKS = "tt:nicks"
+TT_NICK_ADD = "tt:nick_add"
+TT_NICK_EDIT = "tt:nick_edit"
+TT_NICK_PICK = "tt:nick_pick:"
+TT_SEND_PHOTOS = "tt:send_photos"
+TT_SEND_LINK = "tt:send_link"
+TT_CANCEL_COLLECT = "tt:cancel_collect"
+TT_SUBMIT_PHOTOS = "tt:submit_photos"
+TT_UNDO_PHOTO = "tt:undo_photo"
+TT_RECHECK = "tt:recheck:"
+TT_BACK_TASKS = "questions_stars"
+
+ICON_TT = "5456282961999570188"
+ICON_BACK = "5226660202035554522"
+ICON_OK = "5224257782013769471"
+ICON_CAM = "5373098002641805602"
+
+_SCHEMA_READY = False
+
+
+def _pool():
+    from bot.db_create.db import db
+    return getattr(db, "pool", None)
+
+
+def _json(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return value
+    return value
+
+
+async def ensure_schema() -> None:
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    pool = _pool()
+    if not pool:
+        return
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tiktok_settings (
+            id INTEGER PRIMARY KEY DEFAULT 1,
+            comment_tag TEXT NOT NULL DEFAULT 'тг звезды',
+            video_hashtag TEXT NOT NULL DEFAULT '@CuteGamingBot',
+            comment_reward INTEGER NOT NULL DEFAULT 5,
+            views_per_unit INTEGER NOT NULL DEFAULT 1000,
+            kut_per_unit INTEGER NOT NULL DEFAULT 30,
+            recheck_days INTEGER NOT NULL DEFAULT 7,
+            max_nicks INTEGER NOT NULL DEFAULT 3,
+            photos_required INTEGER NOT NULL DEFAULT 15,
+            reject_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS tiktok_nicks (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            nick TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (nick)
+        );
+        CREATE INDEX IF NOT EXISTS tiktok_nicks_user_idx ON tiktok_nicks (user_id);
+        CREATE TABLE IF NOT EXISTS tiktok_sessions (
+            user_id BIGINT PRIMARY KEY,
+            mode TEXT NOT NULL DEFAULT '',
+            extra JSONB NOT NULL DEFAULT '{}'::jsonb,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS tiktok_comment_cases (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            photos JSONB NOT NULL DEFAULT '[]'::jsonb,
+            nick_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
+            reviewed_by BIGINT,
+            reviewed_at TIMESTAMPTZ,
+            reject_text TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS tiktok_videos (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            url TEXT NOT NULL,
+            canonical_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            last_views INTEGER NOT NULL DEFAULT 0,
+            last_paid_thousands INTEGER NOT NULL DEFAULT 0,
+            last_checked_at TIMESTAMPTZ,
+            recheck_requested_at TIMESTAMPTZ,
+            reject_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            reviewed_by BIGINT,
+            reviewed_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS tiktok_comment_one_pending
+            ON tiktok_comment_cases (user_id) WHERE status = 'pending';
+        CREATE UNIQUE INDEX IF NOT EXISTS tiktok_video_one_pending
+            ON tiktok_videos (user_id) WHERE status = 'pending';
+        CREATE UNIQUE INDEX IF NOT EXISTS tiktok_video_canonical_active
+            ON tiktok_videos (canonical_key) WHERE status IN ('pending', 'live');
+        """
+    )
+    await pool.execute(
+        """
+        INSERT INTO tiktok_settings (id) VALUES (1)
+        ON CONFLICT (id) DO NOTHING
+        """
+    )
+    _SCHEMA_READY = True
+
+
+async def get_settings() -> dict[str, Any]:
+    await ensure_schema()
+    pool = _pool()
+    row = await pool.fetchrow("SELECT * FROM tiktok_settings WHERE id = 1")
+    if not row:
+        return {
+            "commentTag": "тг звезды",
+            "videoHashtag": "@CuteGamingBot",
+            "commentReward": 5,
+            "viewsPerUnit": 1000,
+            "kutPerUnit": 30,
+            "recheckDays": 7,
+            "maxNicks": 3,
+            "photosRequired": 15,
+        }
+    return {
+        "commentTag": row["comment_tag"],
+        "videoHashtag": row["video_hashtag"],
+        "commentReward": int(row["comment_reward"]),
+        "viewsPerUnit": int(row["views_per_unit"]),
+        "kutPerUnit": int(row["kut_per_unit"]),
+        "recheckDays": int(row["recheck_days"]),
+        "maxNicks": int(row["max_nicks"]),
+        "photosRequired": int(row["photos_required"]),
+    }
+
+
+async def list_nicks(user_id: int) -> list[str]:
+    await ensure_schema()
+    rows = await _pool().fetch(
+        "SELECT nick FROM tiktok_nicks WHERE user_id = $1 ORDER BY id",
+        int(user_id),
+    )
+    return [r["nick"] for r in rows]
+
+
+async def require_nicks(user_id: int) -> list[str]:
+    nicks = await list_nicks(user_id)
+    if not nicks:
+        raise ValueError("Сначала укажи свой ник в TikTok. Без него скриншоты принять нельзя.")
+    return nicks
+
+
+async def has_pending(user_id: int) -> bool:
+    await ensure_schema()
+    pool = _pool()
+    comment = await pool.fetchval(
+        "SELECT 1 FROM tiktok_comment_cases WHERE user_id = $1 AND status = 'pending'",
+        int(user_id),
+    )
+    video = await pool.fetchval(
+        """
+        SELECT 1 FROM tiktok_videos
+        WHERE user_id = $1 AND (status = 'pending' OR recheck_requested_at IS NOT NULL)
+        """,
+        int(user_id),
+    )
+    return bool(comment or video)
+
+
+async def add_nick(user_id: int, raw: str) -> str:
+    await ensure_schema()
+    cfg = await get_settings()
+    nick = validate_nick(raw)
+    nicks = await list_nicks(user_id)
+    if nick in nicks:
+        raise ValueError("Такой ник уже есть в твоём списке")
+    if len(nicks) >= int(cfg["maxNicks"]):
+        raise ValueError(f"Можно не больше {cfg['maxNicks']} ников")
+    if await has_pending(user_id):
+        raise ValueError("Сейчас идёт проверка. Ники можно менять после ответа.")
+    owner = await _pool().fetchval("SELECT user_id FROM tiktok_nicks WHERE nick = $1", nick)
+    if owner and int(owner) != int(user_id):
+        raise ValueError("Этот ник уже занят другим игроком")
+    try:
+        await _pool().execute(
+            "INSERT INTO tiktok_nicks (user_id, nick) VALUES ($1, $2)",
+            int(user_id),
+            nick,
+        )
+    except Exception as exc:
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            raise ValueError("Этот ник уже занят другим игроком") from exc
+        raise
+    return nick
+
+
+async def replace_nick(user_id: int, old_nick: str, raw: str) -> str:
+    await ensure_schema()
+    if await has_pending(user_id):
+        raise ValueError("Сейчас идёт проверка. Ники можно менять после ответа.")
+    new_nick = validate_nick(raw)
+    old = normalize_nick(old_nick)
+    current = await list_nicks(user_id)
+    if old not in current:
+        raise ValueError("Такого ника нет в твоём списке")
+    if new_nick in current and new_nick != old:
+        raise ValueError("Такой ник уже есть в твоём списке")
+    owner = await _pool().fetchval("SELECT user_id FROM tiktok_nicks WHERE nick = $1", new_nick)
+    if owner and int(owner) != int(user_id):
+        raise ValueError("Этот ник уже занят другим игроком")
+    await _pool().execute(
+        "UPDATE tiktok_nicks SET nick = $3 WHERE user_id = $1 AND nick = $2",
+        int(user_id),
+        old,
+        new_nick,
+    )
+    return new_nick
+
+
+async def get_session(user_id: int) -> dict[str, Any]:
+    await ensure_schema()
+    row = await _pool().fetchrow(
+        "SELECT mode, extra FROM tiktok_sessions WHERE user_id = $1",
+        int(user_id),
+    )
+    if not row:
+        return {"mode": "", "extra": {}}
+    extra = _json(row["extra"]) or {}
+    if not isinstance(extra, dict):
+        extra = {}
+    return {"mode": row["mode"] or "", "extra": extra}
+
+
+async def set_session(user_id: int, mode: str, extra: dict[str, Any] | None = None) -> None:
+    await ensure_schema()
+    await _pool().execute(
+        """
+        INSERT INTO tiktok_sessions (user_id, mode, extra, updated_at)
+        VALUES ($1, $2, $3::jsonb, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET mode = EXCLUDED.mode, extra = EXCLUDED.extra, updated_at = NOW()
+        """,
+        int(user_id),
+        mode or "",
+        json.dumps(extra or {}, ensure_ascii=False),
+    )
+
+
+async def clear_session(user_id: int) -> None:
+    await set_session(user_id, "", {})
+
+
+async def submit_comment_case(user_id: int, photos: list[dict[str, Any]]) -> None:
+    await ensure_schema()
+    cfg = await get_settings()
+    needed = int(cfg["photosRequired"])
+    if len(photos) != needed:
+        raise ValueError(f"Нужно ровно {needed} скриншотов")
+    nicks = await require_nicks(user_id)
+    existing = await _pool().fetchval(
+        "SELECT id FROM tiktok_comment_cases WHERE user_id = $1 AND status = 'pending'",
+        int(user_id),
+    )
+    if existing:
+        raise ValueError("Эта пачка ещё на проверке. Как ответим — можно прислать новую.")
+    await _pool().execute(
+        """
+        INSERT INTO tiktok_comment_cases (user_id, status, photos, nick_snapshot)
+        VALUES ($1, 'pending', $2::jsonb, $3::jsonb)
+        """,
+        int(user_id),
+        json.dumps(photos, ensure_ascii=False),
+        json.dumps(nicks, ensure_ascii=False),
+    )
+    await clear_session(user_id)
+
+
+async def submit_video(user_id: int, raw_url: str) -> None:
+    await ensure_schema()
+    await require_nicks(user_id)
+    parsed = parse_tiktok_url(raw_url)
+    pending = await _pool().fetchval(
+        "SELECT id FROM tiktok_videos WHERE user_id = $1 AND status = 'pending'",
+        int(user_id),
+    )
+    if pending:
+        raise ValueError("Это видео ещё на проверке. Как ответим — можно прислать новую ссылку.")
+    taken = await _pool().fetchval(
+        """
+        SELECT id FROM tiktok_videos
+        WHERE canonical_key = $1 AND status IN ('pending', 'live')
+        """,
+        parsed["canonical"],
+    )
+    if taken:
+        raise ValueError("Этот ролик уже в системе.")
+    await _pool().execute(
+        """
+        INSERT INTO tiktok_videos (user_id, url, canonical_key, status)
+        VALUES ($1, $2, $3, 'pending')
+        """,
+        int(user_id),
+        parsed["url"],
+        parsed["canonical"],
+    )
+    await clear_session(user_id)
+
+
+async def list_user_videos(user_id: int) -> list[dict[str, Any]]:
+    await ensure_schema()
+    rows = await _pool().fetch(
+        """
+        SELECT id, url, status, last_views, last_checked_at, recheck_requested_at, created_at
+        FROM tiktok_videos WHERE user_id = $1
+        ORDER BY created_at DESC
+        """,
+        int(user_id),
+    )
+    return [
+        {
+            "id": int(r["id"]),
+            "url": r["url"],
+            "status": r["status"],
+            "lastViews": int(r["last_views"] or 0),
+            "recheckPending": bool(r["recheck_requested_at"]),
+            "lastCheckedAt": r["last_checked_at"],
+        }
+        for r in rows
+    ]
+
+
+async def request_recheck(user_id: int, video_id: int) -> None:
+    await ensure_schema()
+    cfg = await get_settings()
+    row = await _pool().fetchrow(
+        "SELECT * FROM tiktok_videos WHERE id = $1 AND user_id = $2",
+        int(video_id),
+        int(user_id),
+    )
+    if not row:
+        raise ValueError("Видео не найдено")
+    if row["status"] != "live":
+        raise ValueError("Перепроверка доступна только для принятого видео")
+    if row["recheck_requested_at"]:
+        raise ValueError("Запрос уже на проверке")
+    last = row["last_checked_at"]
+    days = int(cfg["recheckDays"])
+    if last:
+        ready = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+        ready_at = ready + timedelta(days=days)
+        now = datetime.now(timezone.utc)
+        if ready_at > now:
+            raise ValueError(recheck_wait_text((ready_at - now).total_seconds()))
+    await _pool().execute(
+        "UPDATE tiktok_videos SET recheck_requested_at = NOW() WHERE id = $1",
+        int(video_id),
+    )
+
+
+def _kb(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _btn(text: str, data: str, icon: str | None = None) -> InlineKeyboardButton:
+    kwargs = {"text": text, "callback_data": data, "style": "default"}
+    if icon:
+        kwargs["icon_custom_emoji_id"] = icon
+    return InlineKeyboardButton(**kwargs)
+
+
+def hub_keyboard() -> InlineKeyboardMarkup:
+    return _kb(
+        [
+            [_btn("Комментарии", TT_COMMENTS, ICON_CAM)],
+            [_btn("Видео о боте", TT_VIDEOS, ICON_OK)],
+            [_btn("Мои ники", TT_NICKS)],
+            [_btn("Назад", TT_BACK_TASKS, ICON_BACK)],
+        ]
+    )
+
+
+def comments_keyboard(*, can_send: bool) -> InlineKeyboardMarkup:
+    rows = []
+    if can_send:
+        rows.append([_btn("Отправить скриншоты", TT_SEND_PHOTOS, ICON_CAM)])
+    rows.append([_btn("Мои ники", TT_NICKS)])
+    rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
+    return _kb(rows)
+
+
+def videos_keyboard(videos: list[dict] | None = None) -> InlineKeyboardMarkup:
+    rows = [[_btn("Отправить ссылку", TT_SEND_LINK, ICON_OK)]]
+    for item in videos or []:
+        if item.get("status") == "live" and not item.get("recheckPending"):
+            rows.append([_btn(f"Проверить просмотры · #{item['id']}", f"{TT_RECHECK}{item['id']}")])
+    rows.append([_btn("Мои ники", TT_NICKS)])
+    rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
+    return _kb(rows)
+
+
+def nicks_keyboard(nicks: list[str], *, locked: bool) -> InlineKeyboardMarkup:
+    rows = []
+    if not locked:
+        rows.append([_btn("Добавить ник", TT_NICK_ADD)])
+        if nicks:
+            rows.append([_btn("Изменить", TT_NICK_EDIT)])
+    rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
+    return _kb(rows)
+
+
+def nick_pick_keyboard(nicks: list[str]) -> InlineKeyboardMarkup:
+    rows = [[_btn(f"@{n}", f"{TT_NICK_PICK}{n}")] for n in nicks]
+    rows.append([_btn("Назад", TT_NICKS, ICON_BACK)])
+    return _kb(rows)
+
+
+def collect_keyboard(count: int, needed: int) -> InlineKeyboardMarkup:
+    rows = []
+    if count >= needed:
+        rows.append([_btn("Отправить", TT_SUBMIT_PHOTOS, ICON_OK)])
+        rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
+    rows.append([_btn("Отменить набор", TT_CANCEL_COLLECT, ICON_BACK)])
+    return _kb(rows)
+
+
+def bind_keyboard() -> InlineKeyboardMarkup:
+    return _kb([[_btn("Указать ник", TT_NICK_ADD)], [_btn("Назад", TT_HUB, ICON_BACK)]])
+
+
+def text_hub() -> str:
+    return (
+        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Тик ток</b>\n\n"
+        "<i>Два способа получить куты через TikTok.</i>\n\n"
+        "<b>Комментарии</b> — 15 скриншотов и быстрая награда.\n"
+        "<b>Видео</b> — ролик про бота и оплата за просмотры."
+    )
+
+
+def text_comments(cfg: dict[str, Any]) -> str:
+    tag = cfg.get("commentTag") or "тг звезды"
+    reward = int(cfg.get("commentReward") or 5)
+    photos = int(cfg.get("photosRequired") or 15)
+    return (
+        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Комментарии в TikTok</b>\n\n"
+        f"<i>Напиши {photos} комментариев под любыми роликами с тегом «{tag}».\n"
+        "Поставь лайк своему комментарию.\n"
+        f"Сними {photos} скриншотов — по одному на каждый комментарий.</i>\n\n"
+        f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>За одобренную пачку — {reward} кут.</b>\n\n"
+        "<i>Не нужно ничего брать. Прочитай, сделай, пришли скрины сюда.</i>"
+    )
+
+
+def text_videos(cfg: dict[str, Any]) -> str:
+    hashtag = cfg.get("videoHashtag") or "@CuteGamingBot"
+    kut = int(cfg.get("kutPerUnit") or 30)
+    per = int(cfg.get("viewsPerUnit") or 1000)
+    return (
+        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Видео про бота</b>\n\n"
+        "<i>Сними ролик про @CuteGamingBot.\n"
+        f"Поставь хештег {hashtag}.</i>\n\n"
+        f"<i>После публикации пришли ссылку сюда. Мы проверим ролик. "
+        f"Оплата — за каждые полные {per} просмотров: {kut} кут. "
+        "Просмотры можно перепроверять: доплатим только прирост.</i>\n\n"
+        "<i>Если нужна помощь с идеей или монтажом — напиши создателю @JerichoCute. "
+        "Коротко скажи, что хочешь снять.</i>"
+    )
+
+
+def text_need_nick() -> str:
+    return (
+        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Сначала укажи свой TikTok</b>\n\n"
+        "<i>Без публичного ника мы не можем проверить, что комментарии и видео твои. "
+        "Скриншоты и ссылку не примем, пока не будет аккаунта, по которому тебя можно найти.</i>\n\n"
+        "<b>Напиши ник так, как он написан в TikTok.</b> Без ссылки — только имя.\n"
+        "<blockquote><code>cuteplayer</code></blockquote>"
+    )
+
+
+def text_ask_nick() -> str:
+    return (
+        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Твой ник в TikTok</b>\n\n"
+        "<i>Напиши одним сообщением. Можно с @ или без. "
+        "Именно по нему админ найдёт твои комментарии и ролики.</i>\n\n"
+        "<blockquote><code>cuteplayer</code></blockquote>"
+    )
+
+
+def text_nick_required_alert() -> str:
+    return "Сначала укажи свой ник в TikTok. Без него скриншоты принять нельзя."
+
+
+def text_nicks(nicks: list[str], *, locked: bool) -> str:
+    body = "\n".join(f"@{n}" for n in nicks) if nicks else "<i>Пока ни одного ника.</i>"
+    extra = (
+        "\n\n<i>Сейчас идёт проверка. Ники можно менять после ответа.</i>"
+        if locked
+        else "\n\n<i>Если переименовался — измени ник. Можно добавить ещё один аккаунт.</i>"
+    )
+    return f"<b>Твои TikTok-аккаунты</b>\n\n{body}{extra}"
+
+
+def help_earnings_block() -> str:
+    return (
+        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>TikTok</b>\n"
+        "<i>Комментарии под роликами с тегом и видео про бота. "
+        "Открой Задания и нажми Тик ток.</i>\n"
+        "<blockquote><code>Задания</code></blockquote>"
+    )
+
+
+def collect_text(count: int, needed: int) -> str:
+    if count >= needed:
+        return f"<b>{needed} из {needed}. Отправляем на проверку?</b>"
+    return f"<b>Принято {count} из {needed}.</b>\n<i>Пришли остальные. Можно альбомом.</i>"
+
+
+async def download_and_hash(bot, file_id: str) -> dict[str, str]:
+    try:
+        buf = BytesIO()
+        await bot.download(file_id, destination=buf)
+        return hashes_from_image_bytes(buf.getvalue())
+    except Exception:
+        log.exception("tiktok photo hash failed")
+        return {"ahash": "", "dhash": "", "phash": "", "md5": ""}
+
+
+async def add_photo(user_id: int, file_id: str, hashes: dict[str, str]) -> dict[str, Any]:
+    await require_nicks(user_id)
+    cfg = await get_settings()
+    needed = int(cfg["photosRequired"])
+    session = await get_session(user_id)
+    extra = dict(session.get("extra") or {})
+    photos = list(extra.get("photos") or [])
+    if len(photos) >= needed:
+        return {"count": len(photos), "needed": needed, "full": True}
+    photos.append({"fileId": file_id, **hashes})
+    extra["photos"] = photos
+    await set_session(user_id, "collect_photos", extra)
+    return {"count": len(photos), "needed": needed, "full": len(photos) >= needed}
+
+
+async def undo_photo(user_id: int) -> dict[str, Any]:
+    cfg = await get_settings()
+    session = await get_session(user_id)
+    extra = dict(session.get("extra") or {})
+    photos = list(extra.get("photos") or [])
+    if photos:
+        photos.pop()
+    extra["photos"] = photos
+    await set_session(user_id, "collect_photos", extra)
+    return {"count": len(photos), "needed": int(cfg["photosRequired"])}
+
+
+async def is_collecting(user_id: int) -> bool:
+    if (await get_session(user_id)).get("mode") != "collect_photos":
+        return False
+    return bool(await list_nicks(user_id))
+
+
+async def is_waiting_nick(user_id: int) -> bool:
+    return (await get_session(user_id)).get("mode") in {"await_nick", "await_nick_edit"}
+
+
+async def is_waiting_link(user_id: int) -> bool:
+    return (await get_session(user_id)).get("mode") == "await_video_link"

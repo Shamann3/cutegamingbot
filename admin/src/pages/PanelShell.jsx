@@ -15,6 +15,7 @@ import MarketSection from './sections/MarketSection'
 import FarmSection from './sections/FarmSection'
 import ContentSection from './sections/ContentSection'
 import GiveawaysSection from './sections/GiveawaysSection'
+import TikTokSection from './sections/TikTokSection'
 import BotQuestsSection from './sections/BotQuestsSection'
 import GroupBalanceLevelSection from './sections/GroupBalanceLevelSection'
 import GroupsStudioSection from './sections/GroupsStudioSection'
@@ -223,6 +224,7 @@ export default function PanelShell({ onLogout }) {
   const isFarm = section === 'farm'
   const isContent = section === 'content'
   const isGiveaways = section === 'giveaways'
+  const isTiktok = section === 'tiktok'
   const isBotQuests = section === 'botQuests'
   const isGroupBalanceLevel = section === 'groupBalanceLevel'
   const isGroupsStudio = section === 'groupsStudio'
@@ -283,6 +285,8 @@ export default function PanelShell({ onLogout }) {
                       : isContent
                         ? ' panel-layout-content'
                         : isGiveaways
+                        ? ' panel-layout-broadcast'
+                        : isTiktok
                         ? ' panel-layout-broadcast'
                         : isBotQuests
                           ? ' panel-layout-broadcast'
@@ -375,6 +379,7 @@ export default function PanelShell({ onLogout }) {
           )}
           {isContent && <ContentSection role={role} panelTabs={panelTabs} />}
           {isGiveaways && <GiveawaysSection />}
+          {isTiktok && <TikTokSection panelTabs={panelTabs} role={role} />}
           {isBotQuests && role === 'owner' && <BotQuestsSection />}
           {isGroupBalanceLevel && role === 'owner' && <GroupBalanceLevelSection />}
           {isGroupsStudio && isProjectCreator && (
@@ -423,7 +428,7 @@ export default function PanelShell({ onLogout }) {
           {isChronicle && <ChronicleSection />}
           {isPanelAccess && <PanelAccessSection />}
           {isSoftRestart && isProjectCreator && <SoftRestartSection />}
-          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isSoftRestart && (
+          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

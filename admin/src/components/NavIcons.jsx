@@ -216,6 +216,15 @@ const GroupsStudio = () => (
   </Icon>
 )
 
+const TikTok = () => (
+  <Icon>
+    <rect x="6" y="3" width="12" height="18" rx="2.4" />
+    <circle cx="12" cy="16.2" r="2.3" />
+    <path d="M13.2 8.2v5.2" />
+    <path d="M13.2 10.2c1.6 0 2.8-1 2.8-2.4" />
+  </Icon>
+)
+
 export const NAV_ICONS = {
   dashboard: Dashboard,
   users: Players,
@@ -225,6 +234,7 @@ export const NAV_ICONS = {
   farm: Farm,
   content: Content,
   giveaways: Giveaways,
+  tiktok: TikTok,
   botQuests: BotQuests,
   groupBalanceLevel: Economy,
   groupsStudio: GroupsStudio,
