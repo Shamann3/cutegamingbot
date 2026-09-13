@@ -18,6 +18,7 @@ EVENT_LABELS = {
     "fail": "ошибка",
     "pass": "прошёл",
     "disable": "выключил капчу",
+    "blocked": "написал — сообщение удалено",
 }
 
 
@@ -105,6 +106,7 @@ async def user_captcha(user_id: int) -> Dict[str, Any]:
         "fails": 0,
         "shown": 0,
         "pending": 0,
+        "blocked": 0,
         "firstTryPasses": 0,
         "avgDurationMs": None,
         "lastPassedAt": None,
@@ -196,6 +198,7 @@ async def user_captcha(user_id: int) -> Dict[str, Any]:
 
     shown = 0
     fails = 0
+    blocked = 0
     last_shown = None
     last_fail = None
     recent: List[Dict[str, Any]] = []
@@ -217,6 +220,7 @@ async def user_captcha(user_id: int) -> Dict[str, Any]:
             "variantLabel": _label(r["variant"]) if r["variant"] else None,
             "pick": meta.get("pick"),
             "attempts": meta.get("attempts"),
+            "preview": meta.get("preview"),
             "at": at,
         })
 
@@ -226,7 +230,8 @@ async def user_captcha(user_id: int) -> Dict[str, Any]:
         db.pool.fetchrow(
             """
             SELECT count(*) FILTER (WHERE event = 'shown')::int AS shown,
-                   count(*) FILTER (WHERE event = 'fail')::int AS fails
+                   count(*) FILTER (WHERE event = 'fail')::int AS fails,
+                   count(*) FILTER (WHERE event = 'blocked')::int AS blocked
               FROM group_captcha_events
              WHERE user_id = $1
             """,
@@ -237,6 +242,7 @@ async def user_captcha(user_id: int) -> Dict[str, Any]:
     if totals:
         shown = _iint(totals["shown"])
         fails = _iint(totals["fails"])
+        blocked = _iint(totals["blocked"])
 
     fail_rows = await _q(
         "user_fail_variants",
@@ -279,6 +285,7 @@ async def user_captcha(user_id: int) -> Dict[str, Any]:
         "fails": fails,
         "shown": shown,
         "pending": len(pending_cards),
+        "blocked": blocked,
         "firstTryPasses": first_try,
         "avgDurationMs": int(sum(durations) / len(durations)) if durations else None,
         "lastPassedAt": groups[0]["passedAt"] if groups else None,
@@ -301,12 +308,17 @@ async def chat_captcha(chat_id: int, *, members: Optional[int] = None) -> Dict[s
         "fails": 0,
         "shown": 0,
         "pending": 0,
+        "blocked": 0,
+        "uniqueTriggered": 0,
         "passRate": None,
         "avgDurationMs": None,
         "notPassedHint": None,
         "variants": [],
         "recentFails": [],
         "recentPasses": [],
+        "recentShown": [],
+        "waiting": [],
+        "pendingPeople": [],
         "nightPasses": 0,
         "joinPasses": 0,
         "messagePasses": 0,
@@ -361,11 +373,15 @@ async def chat_captcha(chat_id: int, *, members: Optional[int] = None) -> Dict[s
 
     shown = 0
     fails = 0
+    blocked = 0
+    unique_triggered = 0
     try:
         ev = await db.pool.fetchrow(
             """
             SELECT count(*) FILTER (WHERE event = 'shown')::int AS shown,
-                   count(*) FILTER (WHERE event = 'fail')::int AS fails
+                   count(*) FILTER (WHERE event = 'fail')::int AS fails,
+                   count(*) FILTER (WHERE event = 'blocked')::int AS blocked,
+                   count(DISTINCT user_id)::int AS users
               FROM group_captcha_events
              WHERE chat_id = $1
             """,
@@ -374,8 +390,10 @@ async def chat_captcha(chat_id: int, *, members: Optional[int] = None) -> Dict[s
         if ev:
             shown = _iint(ev["shown"])
             fails = _iint(ev["fails"])
+            blocked = _iint(ev["blocked"])
+            unique_triggered = _iint(ev["users"])
     except Exception:
-        pass
+        log.exception("captcha admin query failed: chat_events")
 
     pending = 0
     try:
@@ -522,6 +540,98 @@ async def chat_captcha(chat_id: int, *, members: Optional[int] = None) -> Dict[s
                 "at": _iso(r["passed_at"]),
             })
 
+    recent_shown: List[Dict[str, Any]] = []
+    rows = await _q(
+        "chat_recent_shown",
+        db.pool.fetch(
+            """
+            SELECT e.user_id, e.event, e.variant, e.created_at, e.meta,
+                   u.first_name, u.username
+              FROM group_captcha_events e
+              LEFT JOIN users u ON u.user_id = e.user_id
+             WHERE e.chat_id = $1 AND e.event IN ('shown', 'blocked')
+             ORDER BY e.created_at DESC
+             LIMIT 20
+            """,
+            cid,
+        ),
+        [],
+    ) or []
+    for r in rows:
+        meta = _meta(r)
+        recent_shown.append({
+            "userId": int(r["user_id"]),
+            "name": r["first_name"] or meta.get("name") or str(r["user_id"]),
+            "username": r["username"] or meta.get("username"),
+            "event": str(r["event"] or "shown"),
+            "label": EVENT_LABELS.get(str(r["event"] or "shown"), "карточка"),
+            "variantLabel": _label(r["variant"]) if r["variant"] else None,
+            "preview": meta.get("preview"),
+            "at": _iso(r["created_at"]),
+        })
+
+    waiting: List[Dict[str, Any]] = []
+    rows = await _q(
+        "chat_waiting",
+        db.pool.fetch(
+            """
+            SELECT e.user_id,
+                   max(e.created_at) AS last_at,
+                   count(*) FILTER (WHERE e.event = 'shown')::int AS shown,
+                   count(*) FILTER (WHERE e.event = 'fail')::int AS fails,
+                   max(u.first_name) AS first_name,
+                   max(u.username) AS username
+              FROM group_captcha_events e
+              LEFT JOIN group_captcha_passes p
+                     ON p.user_id = e.user_id AND p.chat_id = e.chat_id
+              LEFT JOIN users u ON u.user_id = e.user_id
+             WHERE e.chat_id = $1 AND p.user_id IS NULL
+             GROUP BY e.user_id
+             ORDER BY last_at DESC
+             LIMIT 20
+            """,
+            cid,
+        ),
+        [],
+    ) or []
+    for r in rows:
+        waiting.append({
+            "userId": int(r["user_id"]),
+            "name": r["first_name"] or str(r["user_id"]),
+            "username": r["username"],
+            "shown": _iint(r["shown"]),
+            "fails": _iint(r["fails"]),
+            "at": _iso(r["last_at"]),
+        })
+
+    pending_people: List[Dict[str, Any]] = []
+    rows = await _q(
+        "chat_pending_people",
+        db.pool.fetch(
+            """
+            SELECT c.user_id, c.variant, c.attempts, c.trigger, c.created_at,
+                   u.first_name, u.username
+              FROM group_captcha_challenges c
+              LEFT JOIN users u ON u.user_id = c.user_id
+             WHERE c.chat_id = $1 AND c.expires_at > NOW()
+             ORDER BY c.created_at DESC
+             LIMIT 20
+            """,
+            cid,
+        ),
+        [],
+    ) or []
+    for r in rows:
+        pending_people.append({
+            "userId": int(r["user_id"]),
+            "name": r["first_name"] or str(r["user_id"]),
+            "username": r["username"],
+            "variantLabel": _label(r["variant"]),
+            "attempts": _iint(r["attempts"]),
+            "trigger": r["trigger"],
+            "at": _iso(r["created_at"]),
+        })
+
     not_passed_hint = None
     if members and members > 0:
         not_passed_hint = max(0, int(members) - passed)
@@ -538,12 +648,17 @@ async def chat_captcha(chat_id: int, *, members: Optional[int] = None) -> Dict[s
         "fails": fails,
         "shown": shown,
         "pending": pending,
+        "blocked": blocked,
+        "uniqueTriggered": unique_triggered,
         "passRate": pass_rate,
         "avgDurationMs": avg_ms,
         "notPassedHint": not_passed_hint,
         "variants": variants,
         "recentFails": recent_fails,
         "recentPasses": recent_passes,
+        "recentShown": recent_shown,
+        "waiting": waiting,
+        "pendingPeople": pending_people,
         "nightPasses": night_passes,
         "joinPasses": join_passes,
         "messagePasses": message_passes,
@@ -558,6 +673,7 @@ async def overview_captcha() -> Dict[str, Any]:
         "fails": 0,
         "shown": 0,
         "pending": 0,
+        "blocked": 0,
         "uniqueUsers": 0,
         "passRate": None,
         "avgDurationMs": None,
@@ -582,7 +698,7 @@ async def overview_captcha() -> Dict[str, Any]:
     except Exception:
         pass
 
-    totals = {"passed": 0, "fails": 0, "shown": 0, "pending": 0, "unique_users": 0, "avg_ms": None, "first_try": 0, "night": 0}
+    totals = {"passed": 0, "fails": 0, "shown": 0, "blocked": 0, "pending": 0, "unique_users": 0, "avg_ms": None, "first_try": 0, "night": 0}
     try:
         row = await db.pool.fetchrow(
             """
@@ -609,13 +725,15 @@ async def overview_captcha() -> Dict[str, Any]:
         ev = await db.pool.fetchrow(
             """
             SELECT count(*) FILTER (WHERE event = 'shown')::int AS shown,
-                   count(*) FILTER (WHERE event = 'fail')::int AS fails
+                   count(*) FILTER (WHERE event = 'fail')::int AS fails,
+                   count(*) FILTER (WHERE event = 'blocked')::int AS blocked
               FROM group_captcha_events
             """
         )
         if ev:
             totals["shown"] = _iint(ev["shown"])
             totals["fails"] = _iint(ev["fails"])
+            totals["blocked"] = _iint(ev["blocked"])
     except Exception:
         pass
     try:
@@ -733,6 +851,8 @@ async def overview_captcha() -> Dict[str, Any]:
         facts.append(f"{night_share}% прохождений ночью по Москве")
     if totals["pending"]:
         facts.append(f"Сейчас висят {totals['pending']} незакрытых карточек")
+    if totals["blocked"]:
+        facts.append(f"Удалено {totals['blocked']} сообщений до прохождения")
     if disabled_chats:
         facts.append(f"Владельцы выключили капчу в {disabled_chats} группах")
     if last_event_at:
@@ -746,6 +866,7 @@ async def overview_captcha() -> Dict[str, Any]:
         "passed": totals["passed"],
         "fails": totals["fails"],
         "shown": totals["shown"],
+        "blocked": totals["blocked"],
         "pending": totals["pending"],
         "uniqueUsers": totals["unique_users"],
         "passRate": pass_rate,

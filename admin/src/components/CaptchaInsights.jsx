@@ -30,6 +30,7 @@ export function CaptchaOverviewBlock({ data, onOpenChat, onOpenUser }) {
         <div className="grp-stat"><span className="grp-stat-label">Прошли</span><strong className="grp-stat-value">{fmt(c.passed)}</strong><span className="grp-stat-hint">человек × групп</span></div>
         <div className="grp-stat"><span className="grp-stat-label">Ошибки</span><strong className="grp-stat-value">{fmt(c.fails)}</strong><span className="grp-stat-hint">нажатий мимо</span></div>
         <div className="grp-stat"><span className="grp-stat-label">Карточек</span><strong className="grp-stat-value">{fmt(c.shown)}</strong><span className="grp-stat-hint">показано</span></div>
+        <div className="grp-stat"><span className="grp-stat-label">Удалено</span><strong className="grp-stat-value">{fmt(c.blocked)}</strong><span className="grp-stat-hint">сообщений до капчи</span></div>
         <div className="grp-stat"><span className="grp-stat-label">Доходят</span><strong className="grp-stat-value">{c.passRate == null ? '—' : `${c.passRate}%`}</strong><span className="grp-stat-hint">с первой карточки до успеха</span></div>
         <div className="grp-stat"><span className="grp-stat-label">С первой попытки</span><strong className="grp-stat-value">{c.firstTryRate == null ? '—' : `${c.firstTryRate}%`}</strong></div>
         <div className="grp-stat"><span className="grp-stat-label">Среднее время</span><strong className="grp-stat-value">{dur(c.avgDurationMs)}</strong></div>
@@ -100,21 +101,86 @@ export function CaptchaOverviewBlock({ data, onOpenChat, onOpenUser }) {
 
 export function CaptchaChatBlock({ data, members, onOpenUser }) {
   const c = data || {}
+  const waiting = Array.isArray(c.waiting) ? c.waiting : []
+  const shown = Array.isArray(c.recentShown) ? c.recentShown : []
+  const pendingPeople = Array.isArray(c.pendingPeople) ? c.pendingPeople : []
   return (
     <div className="cap-block">
       <div className="grp-stat-grid">
         <div className="grp-stat"><span className="grp-stat-label">Статус</span><strong className="grp-stat-value">{c.enabled === false ? 'выкл' : 'вкл'}</strong></div>
         <div className="grp-stat"><span className="grp-stat-label">Прошли</span><strong className="grp-stat-value">{fmt(c.passed)}</strong></div>
-        <div className="grp-stat"><span className="grp-stat-label">Ещё не прошли</span><strong className="grp-stat-value">{c.notPassedHint == null ? '—' : fmt(c.notPassedHint)}</strong><span className="grp-stat-hint">{members != null ? `из ${fmt(members)} в Telegram` : 'если известен состав'}</span></div>
+        <div className="grp-stat"><span className="grp-stat-label">Карточек</span><strong className="grp-stat-value">{fmt(c.shown)}</strong><span className="grp-stat-hint">показано</span></div>
+        <div className="grp-stat"><span className="grp-stat-label">Удалено</span><strong className="grp-stat-value">{fmt(c.blocked)}</strong><span className="grp-stat-hint">сообщений до капчи</span></div>
+        <div className="grp-stat"><span className="grp-stat-label">Писали, не прошли</span><strong className="grp-stat-value">{fmt(waiting.length || c.uniqueTriggered)}</strong></div>
+        <div className="grp-stat"><span className="grp-stat-label">Висят сейчас</span><strong className="grp-stat-value">{fmt(c.pending)}</strong></div>
         <div className="grp-stat"><span className="grp-stat-label">Ошибки</span><strong className="grp-stat-value">{fmt(c.fails)}</strong></div>
         <div className="grp-stat"><span className="grp-stat-label">Доходят</span><strong className="grp-stat-value">{c.passRate == null ? '—' : `${c.passRate}%`}</strong></div>
         <div className="grp-stat"><span className="grp-stat-label">Среднее время</span><strong className="grp-stat-value">{dur(c.avgDurationMs)}</strong></div>
-        <div className="grp-stat"><span className="grp-stat-label">При входе</span><strong className="grp-stat-value">{fmt(c.joinPasses)}</strong></div>
-        <div className="grp-stat"><span className="grp-stat-label">Со старых участников</span><strong className="grp-stat-value">{fmt(c.messagePasses)}</strong></div>
+        <div className="grp-stat"><span className="grp-stat-label">При входе / из чата</span><strong className="grp-stat-value">{fmt(c.joinPasses)} / {fmt(c.messagePasses)}</strong></div>
       </div>
       {c.enabled === false && (
         <p className="grp-help">Владелец выключил капчу{c.disabledAt ? ` · ${when(c.disabledAt)}` : ''}{c.disabledBy ? ` · id ${c.disabledBy}` : ''}</p>
       )}
+
+      {(c.variants || []).length > 0 && (
+        <div className="grp-card" style={{ marginBottom: '1rem' }}>
+          <h3 className="grp-card-title">Типы карточек в этой группе</h3>
+          <table className="grp-table">
+            <thead>
+              <tr><th>Тип</th><th>Показ</th><th>Успех</th><th>Ошибки</th></tr>
+            </thead>
+            <tbody>
+              {c.variants.map((v) => (
+                <tr key={v.variant}>
+                  <td>{v.label}</td>
+                  <td>{fmt(v.shown)}</td>
+                  <td>{fmt(v.passed)}</td>
+                  <td>{fmt(v.fails)}{v.failRate != null ? ` · ${v.failRate}%` : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="grp-two">
+        <div className="grp-card">
+          <h3 className="grp-card-title">Ещё не прошли</h3>
+          <ul className="cap-list">
+            {waiting.map((u) => (
+              <li key={`w-${u.userId}`}>
+                <button type="button" className="cap-link" onClick={() => onOpenUser?.(u.userId)}>
+                  {u.name}{u.username ? ` · @${u.username}` : ''}
+                </button>
+                <span>{fmt(u.shown)} показ. · {fmt(u.fails)} ош. · {when(u.at)}</span>
+              </li>
+            ))}
+            {pendingPeople.filter((p) => !waiting.some((w) => w.userId === p.userId)).map((p) => (
+              <li key={`p-${p.userId}`}>
+                <button type="button" className="cap-link" onClick={() => onOpenUser?.(p.userId)}>
+                  {p.name}
+                </button>
+                <span>висит · {p.variantLabel} · {when(p.at)}</span>
+              </li>
+            ))}
+            {!waiting.length && !pendingPeople.length && <li className="grp-help">Все, кто писал, уже прошли — или капчу ещё не показывали</li>}
+          </ul>
+        </div>
+        <div className="grp-card">
+          <h3 className="grp-card-title">Последние сообщения до капчи</h3>
+          <ul className="cap-list">
+            {shown.map((f, i) => (
+              <li key={`s-${f.userId}-${f.at}-${i}`}>
+                <button type="button" className="cap-link" onClick={() => onOpenUser?.(f.userId)}>
+                  {f.name}
+                </button>
+                <span>{f.label}{f.preview ? ` · «${f.preview}»` : ''} · {when(f.at)}</span>
+              </li>
+            ))}
+            {!shown.length && <li className="grp-help">Пока никто не писал до прохождения</li>}
+          </ul>
+        </div>
+      </div>
 
       <div className="grp-two">
         <div className="grp-card">
@@ -163,7 +229,7 @@ export function CaptchaDossierBlock({ data, onOpenChat }) {
         <div className="pu-dossier-tile">
           <span>Карточек</span>
           <strong>{fmt(c.shown)}</strong>
-          <em>показали</em>
+          <em>{c.blocked ? `удалили ${fmt(c.blocked)} сообщ.` : 'показали'}</em>
         </div>
         <div className="pu-dossier-tile">
           <span>Прошёл</span>
@@ -209,7 +275,7 @@ export function CaptchaDossierBlock({ data, onOpenChat }) {
               <button type="button" className="cap-link" onClick={() => onOpenChat?.(e.chatId)}>
                 {e.chatName}
               </button>
-              <em>{e.label}{e.variantLabel ? ` · ${e.variantLabel}` : ''} · {when(e.at)}</em>
+              <em>{e.label}{e.preview ? ` · «${e.preview}»` : ''}{e.variantLabel ? ` · ${e.variantLabel}` : ''} · {when(e.at)}</em>
             </li>
           ))}
         </ul>

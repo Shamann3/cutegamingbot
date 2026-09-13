@@ -221,6 +221,32 @@ async def _send_or_edit(
     return None
 
 
+def _message_extra(message: Message) -> Dict[str, Any]:
+    text = (message.text or message.caption or "").strip()
+    extra: Dict[str, Any] = {
+        "deleted_message_id": int(message.message_id),
+        "deleted": True,
+    }
+    if text:
+        extra["preview"] = text[:80]
+    return extra
+
+
+async def _log_blocked(pool, *, user: Any, chat: Any, chat_id: int, extra: Optional[Dict[str, Any]]) -> None:
+    if pool is None:
+        return
+    try:
+        await gc.log_event(
+            pool,
+            user_id=int(getattr(user, "id", 0) or 0),
+            chat_id=int(chat_id),
+            event="blocked",
+            meta=gc.event_meta(user, chat, extra={"trigger": "message", **(extra or {})}),
+        )
+    except Exception:
+        log.exception("captcha blocked log failed chat=%s user=%s", chat_id, getattr(user, "id", None))
+
+
 async def maybe_prompt_captcha(
     bot,
     *,
@@ -228,6 +254,8 @@ async def maybe_prompt_captcha(
     user: Any,
     trigger: str,
     thread_id: Optional[int] = None,
+    chat: Any = None,
+    extra_meta: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """Показать капчу, если человек ещё не проходил её в этой группе. True — карточка нужна."""
     uid = int(getattr(user, "id", 0) or 0)
@@ -253,6 +281,7 @@ async def maybe_prompt_captcha(
             return True
     if trigger == "message" and now - _last_prompt.get(key, 0.0) < _MESSAGE_RESEND_GAP:
         await _maybe_unrestrict(bot, chat_id, uid)
+        await _log_blocked(pool, user=user, chat=chat, chat_id=chat_id, extra=extra_meta)
         return True
 
     async with _lock(chat_id, uid):
@@ -263,6 +292,7 @@ async def maybe_prompt_captcha(
 
         open_row = await gc.get_open_challenge(pool, chat_id, uid)
         if trigger == "message" and time.monotonic() - _last_prompt.get(key, 0.0) < _MESSAGE_RESEND_GAP:
+            await _log_blocked(pool, user=user, chat=chat, chat_id=chat_id, extra=extra_meta)
             return True
 
         # Новое сообщение не прошедшего — новая карточка сразу под ним.
@@ -310,7 +340,7 @@ async def maybe_prompt_captcha(
                 chat_id=int(chat_id),
                 event="shown",
                 variant=payload.get("variant"),
-                meta=gc.event_meta(user, extra={"trigger": trigger}),
+                meta=gc.event_meta(user, chat, extra={"trigger": trigger, **(extra_meta or {})}),
             )
         except Exception:
             log.exception("captcha shown log failed chat=%s user=%s", chat_id, uid)
@@ -330,17 +360,6 @@ async def on_user_joined(bot, chat_id: int, user: Any, thread_id: Optional[int] 
     )
 
 
-def _is_slash_command(message: Message) -> bool:
-    text = (message.text or message.caption or "").lstrip()
-    if text.startswith("/"):
-        return True
-    for ent in list(message.entities or []) + list(message.caption_entities or []):
-        kind = str(getattr(ent, "type", "") or "")
-        if kind in {"bot_command", "BotCommand"}:
-            return True
-    return False
-
-
 async def _user_needs_captcha(chat_id: int, user_id: int) -> bool:
     pool = _pool()
     if pool is None:
@@ -353,8 +372,8 @@ async def _user_needs_captcha(chat_id: int, user_id: int) -> bool:
 
 
 class CaptchaGateMiddleware(BaseMiddleware):
-    """Пока капча не пройдена — в группе бот не отвечает на команды.
-    Сообщения остаются в чате, карточка приходит снова."""
+    """Пока капча не пройдена — команды бота молчат.
+    Сообщение, на которое сработала капча, удаляется. Мута нет."""
 
     async def __call__(self, handler, event: TelegramObject, data: Dict[str, Any]):
         message = event if isinstance(event, Message) else None
@@ -375,9 +394,8 @@ class CaptchaGateMiddleware(BaseMiddleware):
             return await handler(event, data)
         if not needed:
             return await handler(event, data)
-        if _is_slash_command(message):
-            return None
         bot = data.get("bot") or message.bot
+        extra = _message_extra(message)
         try:
             await maybe_prompt_captcha(
                 bot,
@@ -385,9 +403,12 @@ class CaptchaGateMiddleware(BaseMiddleware):
                 user=user,
                 trigger="message",
                 thread_id=getattr(message, "message_thread_id", None),
+                chat=chat,
+                extra_meta=extra,
             )
         except Exception:
             log.exception("captcha prompt chat=%s user=%s", chat.id, user.id)
+        await _delete_message(bot, int(chat.id), message.message_id)
         return None
 
 

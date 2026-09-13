@@ -709,7 +709,17 @@ SCHEMA_SQL = (
     CREATE UNIQUE INDEX IF NOT EXISTS group_captcha_challenges_user_chat_idx
         ON group_captcha_challenges (chat_id, user_id)
     """,
+    """
+    CREATE TABLE IF NOT EXISTS group_captcha_resets (
+        token TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
 )
+
+# Один раз сбрасывает «уже прошёл», чтобы капча снова появилась у всех.
+# Повторный запуск бота этот токен не повторит.
+PASSES_RESET_TOKEN = "2026-09-14-reask-everyone"
 
 _schema_ready = False
 _passed_cache: Dict[Tuple[int, int], float] = {}
@@ -783,6 +793,31 @@ def html_to_faces(raw: str) -> str:
     return TG_EMOJI_RE.sub(lambda m: _face_by_id(m.group(1)), raw or "")
 
 
+def _clear_pass_memory() -> None:
+    _passed_cache.clear()
+    _not_passed_cache.clear()
+    _live_challenges.clear()
+
+
+async def _apply_passes_reset(conn) -> None:
+    """Стирает прохождения один раз. История событий в админке остаётся."""
+    already = await conn.fetchval(
+        "SELECT 1 FROM group_captcha_resets WHERE token = $1",
+        PASSES_RESET_TOKEN,
+    )
+    if already:
+        return
+    passes = await conn.execute("DELETE FROM group_captcha_passes")
+    cards = await conn.execute("DELETE FROM group_captcha_challenges")
+    await conn.execute(
+        "INSERT INTO group_captcha_resets (token) VALUES ($1)",
+        PASSES_RESET_TOKEN,
+    )
+    _clear_pass_memory()
+    print(f"[CAPTCHA] one-shot reset {PASSES_RESET_TOKEN}: {passes} ; {cards}")
+    log.warning("captcha one-shot reset applied token=%s passes=%s cards=%s", PASSES_RESET_TOKEN, passes, cards)
+
+
 async def ensure_tables(pool) -> None:
     global _schema_ready
     if _schema_ready or pool is None:
@@ -790,6 +825,7 @@ async def ensure_tables(pool) -> None:
     async with pool.acquire() as conn:
         for stmt in SCHEMA_SQL:
             await conn.execute(stmt)
+        await _apply_passes_reset(conn)
     _schema_ready = True
 
 

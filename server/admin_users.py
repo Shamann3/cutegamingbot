@@ -1900,12 +1900,14 @@ async def _build_user_dossier(user_id: int, *, is_owner: bool) -> dict:
     try:
         from admin_captcha import user_captcha
         out["captcha"] = await user_captcha(int(user_id))
-    except Exception:
+    except Exception as exc:
+        print(f"[CAPTCHA] user dossier failed user={user_id}: {exc}")
         out["captcha"] = {
             "passedGroups": 0,
             "fails": 0,
             "shown": 0,
             "pending": 0,
+            "blocked": 0,
             "groups": [],
             "recent": [],
             "pendingCards": [],
