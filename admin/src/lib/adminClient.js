@@ -1565,6 +1565,10 @@ export async function setGroupsStudioLevel(chatId, level) {
   })
 }
 
+export async function fetchCaptchaOverview() {
+  return adminFetch('/captcha/overview')
+}
+
 export async function groupsStudioModerate(payload) {
   return adminFetch('/groups-studio/moderate', {
     method: 'POST',

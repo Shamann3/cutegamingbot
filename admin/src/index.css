@@ -6205,7 +6205,8 @@ body {
   .panel-shelf-server,
   .panel-shelf-maintenance,
   .panel-shelf-page,
-  .panel-shelf-online {
+  .panel-shelf-online,
+  .ach-page {
     grid-column: 1 !important;
     grid-row: auto !important;
   }
@@ -6246,7 +6247,8 @@ body {
   /* These specific sections also have height:100% + overflow:hidden on desktop */
   .panel-layout-analytics .analytics-section,
   .panel-layout-analytics .panel-analytics-sidebar,
-  .panel-settings {
+  .panel-settings,
+  .ach-page {
     height: auto !important;
     overflow: visible !important;
     overflow-y: visible !important;

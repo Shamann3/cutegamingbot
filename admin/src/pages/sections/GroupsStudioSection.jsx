@@ -10,6 +10,7 @@ import {
 import { notifyAdmin } from '../../lib/notify'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import DurationUntil from '../../components/DurationUntil'
+import { CaptchaChatBlock, CaptchaOverviewBlock } from '../../components/CaptchaInsights'
 
 const PUNISH_ACTIONS = [
   { group: 'В этой группе', items: [
@@ -324,6 +325,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
   const tabs = useMemo(() => ([
     { id: 'lookup', label: 'Поиск' },
     { id: 'detail', label: 'Карточка' },
+    { id: 'captcha', label: 'Капча' },
     { id: 'tops', label: 'Топы' },
   ]), [])
 
@@ -331,6 +333,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
     { id: 'overview', label: 'Обзор' },
     { id: 'economy', label: 'Экономика' },
     { id: 'people', label: 'Люди' },
+    { id: 'captcha', label: 'Капча' },
     { id: 'moderation', label: 'Модерация' },
     { id: 'control', label: 'Контроль' },
     { id: 'raw', label: 'Все поля' },
@@ -353,6 +356,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
           <Stat label="Комиссии всего" value={fmt(g.commission)} hint="кут" delay={60} />
           <Stat label="В дом проекта" value={fmt(g.to_project)} hint="из комиссий" delay={120} />
           <Stat label="Событий" value={fmt(g.events)} delay={180} />
+          <Stat label="Капча пройдена" value={fmt(overview?.captcha?.passed)} hint={overview?.captcha?.passRate != null ? `${overview.captcha.passRate}% доходят` : 'раз'} delay={240} />
         </div>
       </header>
 
@@ -555,6 +559,14 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                         </div>
                       </div>
                     </>
+                  )}
+
+                  {sub === 'captcha' && (
+                    <CaptchaChatBlock
+                      data={detail.captcha}
+                      members={detail.members}
+                      onOpenUser={onOpenUser}
+                    />
                   )}
 
                   {sub === 'economy' && (
@@ -995,6 +1007,20 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                 </div>
               </>
             )}
+          </section>
+        )}
+
+        {tab === 'captcha' && (
+          <section className="grp-panel grp-enter">
+            <h2 className="grp-panel-title">Капча по всем группам</h2>
+            <p className="grp-help">
+              Один раз в группе навсегда. Старые участники проходят, когда пишут. Владелец может выключить одной кнопкой.
+            </p>
+            <CaptchaOverviewBlock
+              data={overview?.captcha}
+              onOpenChat={openChat}
+              onOpenUser={onOpenUser}
+            />
           </section>
         )}
 

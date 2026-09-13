@@ -803,6 +803,22 @@ async def log_level_event(
         pass
 
 
+async def _safe_chat_captcha(chat_id: int, members: Optional[int] = None) -> Dict[str, Any]:
+    try:
+        from admin_captcha import chat_captcha
+        return await chat_captcha(int(chat_id), members=members)
+    except Exception:
+        return {"enabled": True, "passed": 0, "fails": 0, "shown": 0, "pending": 0, "variants": []}
+
+
+async def _safe_overview_captcha() -> Dict[str, Any]:
+    try:
+        from admin_captcha import overview_captcha
+        return await overview_captcha()
+    except Exception:
+        return {"passed": 0, "fails": 0, "shown": 0, "facts": []}
+
+
 async def get_group_detail(chat_id: int) -> Dict[str, Any]:
     brief = await get_group_brief(chat_id)
     if not brief:
@@ -1010,6 +1026,7 @@ async def get_group_detail(chat_id: int) -> Dict[str, Any]:
             "members": _bar(float(members or 0), 5_000),
             "level": brief["level"] * 20,
         },
+        "captcha": await _safe_chat_captcha(chat_id, members),
     }
 
 
@@ -1164,6 +1181,7 @@ async def overview() -> Dict[str, Any]:
             "В дом проекта — доля комиссий проекта. "
             "Баланс группы — текущий бч."
         ),
+        "captcha": await _safe_overview_captcha(),
     }
 
 

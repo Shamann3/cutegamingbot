@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { patchOwnerUserFields } from '../lib/adminClient'
 import { notifyAdmin } from '../lib/notify'
+import { CaptchaDossierBlock } from './CaptchaInsights'
 
 function fmt(n) {
   return Number(n || 0).toLocaleString('ru-RU')
@@ -106,6 +107,8 @@ export default function PlayerDossierPanel({
           {d.accountAge && <em>{d.accountAge}</em>}
         </div>
       </div>
+
+      <CaptchaDossierBlock data={d.captcha} />
 
       {(d.sponsoredChats || []).length > 0 && (
         <div className="pu-dossier-roles">

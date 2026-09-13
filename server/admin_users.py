@@ -1897,6 +1897,17 @@ async def _build_user_dossier(user_id: int, *, is_owner: bool) -> dict:
     except Exception:
         out["sponsoredChats"] = []
 
+    try:
+        from admin_captcha import user_captcha
+        out["captcha"] = await user_captcha(int(user_id))
+    except Exception:
+        out["captcha"] = {
+            "passedGroups": 0,
+            "fails": 0,
+            "shown": 0,
+            "groups": [],
+        }
+
     if is_owner:
         secrets: dict[str, Any] = {"demo": 0, "zeroDemo": 0}
         try:

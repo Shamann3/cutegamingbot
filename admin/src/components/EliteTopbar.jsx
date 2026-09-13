@@ -47,7 +47,7 @@ function greetingFor(hour) {
  *  названия (русского или английского), стрелки/Enter — переход.
  *  Открывается и с клавиатуры: Ctrl/Cmd+K.
  *
- *  На телефоне — компактный chrome: марка, название раздела, колокольчик, меню. */
+ *  На телефоне — компактный chrome: меню слева, колокольчик (поддержка), название раздела. */
 export default function EliteTopbar({
   sections = [],
   activeSection,
@@ -138,6 +138,18 @@ export default function EliteTopbar({
 
   return (
     <div className={`elite-topbar${compact ? ' elite-topbar-compact' : ''}`}>
+      {typeof onOpenMenu === 'function' && (
+        <button
+          type="button"
+          className={`elite-menu-btn${menuOpen ? ' elite-menu-btn-open' : ''}`}
+          aria-label={menuOpen ? 'Закрыть меню разделов' : 'Открыть меню разделов'}
+          aria-expanded={menuOpen}
+          onClick={onOpenMenu}
+        >
+          <MenuIcon open={menuOpen} />
+        </button>
+      )}
+
       <div className="elite-brand-slot" title="Epsilon Command" aria-label="Epsilon">
         <span className="elite-brand-slot-ring" aria-hidden="true" />
         <EpsilonLogo size="sm" decorative />
@@ -224,18 +236,6 @@ export default function EliteTopbar({
             </div>
           )}
         </div>
-
-        {typeof onOpenMenu === 'function' && (
-          <button
-            type="button"
-            className={`elite-menu-btn${menuOpen ? ' elite-menu-btn-open' : ''}`}
-            aria-label={menuOpen ? 'Закрыть меню разделов' : 'Открыть меню разделов'}
-            aria-expanded={menuOpen}
-            onClick={onOpenMenu}
-          >
-            <MenuIcon open={menuOpen} />
-          </button>
-        )}
       </div>
     </div>
   )

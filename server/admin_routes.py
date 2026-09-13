@@ -4708,6 +4708,15 @@ async def admin_groups_studio_moderate(
     return result
 
 
+@router.get("/captcha/overview")
+async def admin_captcha_overview(
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_captcha import overview_captcha
+    return await overview_captcha()
+
+
 @router.get("/achievements/overview")
 async def admin_achievements_overview(
     _admin_id: int = Depends(require_admin_permission("manage_achievements")),

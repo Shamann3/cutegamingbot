@@ -1475,13 +1475,15 @@
 
 .pu-dossier-roles,
 .pu-dossier-ach,
+.pu-dossier-captcha,
 .pu-dossier-owner,
 .pu-dossier-edit {
   margin-top: 0.85rem;
 }
 
 .pu-dossier-roles ul,
-.pu-dossier-ach ul {
+.pu-dossier-ach ul,
+.pu-dossier-captcha ul {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1491,7 +1493,8 @@
 }
 
 .pu-dossier-roles li,
-.pu-dossier-ach li {
+.pu-dossier-ach li,
+.pu-dossier-captcha li {
   display: flex;
   align-items: center;
   gap: 0.45rem;

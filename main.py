@@ -5618,6 +5618,12 @@ async def on_user_join_message(message: Message):
             except Exception as e:
                 print(f"🔴 [GREET] send failed chat_id={chat_id} uid={uid} err={e!r}")
 
+        try:
+            from bot.handlers.group_captcha import on_user_joined
+            await on_user_joined(message.bot, chat_id, u)
+        except Exception as e:
+            print(f"⚠️ [CAPTCHA] join-message uid={uid} chat_id={chat_id}: {type(e).__name__}: {e}")
+
         # 4) твоя логика обновления пользователя/группы
         #    (лучше делать на каждого вступившего - если функции умеют работать по uid)
         try:
@@ -5685,6 +5691,12 @@ async def on_user_join_or_leave(event: ChatMemberUpdated):
             )
         except Exception as e:
             print(f"⚠️ [USER][JOIN][CM] check_and_add_user: {type(e).__name__}: {e}")
+
+        try:
+            from bot.handlers.group_captcha import on_user_joined
+            await on_user_joined(event.bot, chat_id, user)
+        except Exception as e:
+            print(f"⚠️ [CAPTCHA] join-member uid={user.id} chat_id={chat_id}: {type(e).__name__}: {e}")
 
         return
 
@@ -40821,6 +40833,12 @@ if __name__ == "__main__":
         print("[MODERATION] ✅ Системы варна, бана, мута и кика подключены к диспетчеру")
     except Exception as _wire_err:
         print(f"[MODERATION][WIRE][ERROR] {type(_wire_err).__name__}: {_wire_err}")
+
+    try:
+        from bot.handlers.group_captcha import attach_group_captcha
+        attach_group_captcha(dp)
+    except Exception as _cap_err:
+        print(f"[CAPTCHA][WIRE][ERROR] {type(_cap_err).__name__}: {_cap_err}")
 
     dp.include_router(router)
 
