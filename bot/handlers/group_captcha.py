@@ -25,12 +25,6 @@ _last_prompt: Dict[Tuple[int, int], float] = {}
 _PROMPT_GAP = 8.0
 _MESSAGE_RESEND_GAP = 1.1
 
-_RESTRICTED = ChatPermissions(
-    can_send_messages=False,
-    can_send_media_messages=False,
-    can_send_other_messages=False,
-    can_add_web_page_previews=False,
-)
 _OPEN = ChatPermissions(
     can_send_messages=True,
     can_send_media_messages=True,
@@ -82,18 +76,6 @@ async def _member_status(bot, chat_id: int, user_id: int) -> str:
         return str(getattr(member, "status", "") or "")
     except Exception:
         return ""
-
-
-async def _maybe_restrict(bot, chat_id: int, user_id: int) -> None:
-    status = await _member_status(bot, chat_id, user_id)
-    if status in {"creator", "administrator"}:
-        return
-    try:
-        await bot.restrict_chat_member(int(chat_id), int(user_id), permissions=_RESTRICTED)
-    except (TelegramBadRequest, TelegramForbiddenError):
-        return
-    except Exception as e:
-        log.debug("restrict skip: %s", e)
 
 
 async def _maybe_unrestrict(bot, chat_id: int, user_id: int) -> None:
@@ -245,7 +227,6 @@ async def maybe_prompt_captcha(
     chat_id: int,
     user: Any,
     trigger: str,
-    restrict: bool = False,
     thread_id: Optional[int] = None,
 ) -> bool:
     """Показать капчу, если человек ещё не проходил её в этой группе. True — карточка нужна."""
@@ -268,8 +249,10 @@ async def maybe_prompt_captcha(
     if trigger != "message" and now - _last_prompt.get(key, 0.0) < _PROMPT_GAP:
         open_row = await gc.get_open_challenge(pool, chat_id, uid)
         if open_row and not gc.challenge_expired(open_row) and open_row.get("message_id"):
+            await _maybe_unrestrict(bot, chat_id, uid)
             return True
     if trigger == "message" and now - _last_prompt.get(key, 0.0) < _MESSAGE_RESEND_GAP:
+        await _maybe_unrestrict(bot, chat_id, uid)
         return True
 
     async with _lock(chat_id, uid):
@@ -293,8 +276,7 @@ async def maybe_prompt_captcha(
             and open_row.get("message_id")
         ):
             _last_prompt[key] = time.monotonic()
-            if restrict:
-                await _maybe_restrict(bot, chat_id, uid)
+            await _maybe_unrestrict(bot, chat_id, uid)
             return True
 
         payload = gc.build_challenge()
@@ -331,8 +313,7 @@ async def maybe_prompt_captcha(
         )
         _last_prompt[key] = time.monotonic()
         print(f"[CAPTCHA] shown chat={chat_id} user={uid} mid={mid} trigger={trigger}")
-        if restrict or trigger == "message":
-            await _maybe_restrict(bot, chat_id, uid)
+        await _maybe_unrestrict(bot, chat_id, uid)
         return True
 
 
@@ -342,7 +323,6 @@ async def on_user_joined(bot, chat_id: int, user: Any, thread_id: Optional[int] 
         chat_id=int(chat_id),
         user=user,
         trigger="join",
-        restrict=True,
         thread_id=thread_id,
     )
 
@@ -371,7 +351,7 @@ async def _user_needs_captcha(chat_id: int, user_id: int) -> bool:
 
 class CaptchaGateMiddleware(BaseMiddleware):
     """Пока капча не пройдена — в группе бот не отвечает на команды.
-    Карточка уходит только на обычные сообщения."""
+    Сообщения остаются в чате, карточка приходит снова."""
 
     async def __call__(self, handler, event: TelegramObject, data: Dict[str, Any]):
         message = event if isinstance(event, Message) else None
@@ -401,12 +381,10 @@ class CaptchaGateMiddleware(BaseMiddleware):
                 chat_id=int(chat.id),
                 user=user,
                 trigger="message",
-                restrict=False,
                 thread_id=getattr(message, "message_thread_id", None),
             )
         except Exception:
             log.exception("captcha prompt chat=%s user=%s", chat.id, user.id)
-        await _delete_message(bot, int(chat.id), message.message_id)
         return None
 
 
@@ -433,6 +411,9 @@ class CaptchaCallbackGateMiddleware(BaseMiddleware):
             return await handler(event, data)
         if not needed:
             return await handler(event, data)
+        bot = data.get("bot") or getattr(callback, "bot", None)
+        if bot:
+            await _maybe_unrestrict(bot, int(chat.id), int(user.id))
         try:
             await callback.answer()
         except Exception:
@@ -468,6 +449,7 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
     if uid != int(row["user_id"]):
         await callback.answer("Эта капча предназначена для другого участника")
         return
+    await _maybe_unrestrict(callback.bot, chat_id, uid)
     if callback.message and int(callback.message.chat.id) != chat_id:
         await callback.answer()
         return

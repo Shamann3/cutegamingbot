@@ -43,20 +43,15 @@ CAPTCHA_INTRO = f"{CAPTCHA_INTRO_LINE1}\n{CAPTCHA_INTRO_LINE2}"
 INTRO_EYE_ID = "5389099803655305880"
 INTRO_WARN_ID = "6025996269141364975"
 INTRO_LINE1_CHUNKS = (
-    {"kind": "text", "value": "Это "},
-    {"kind": "mark", "value": "капча"},
-    {"kind": "text", "value": "."},
+    {"kind": "text", "value": CAPTCHA_INTRO_LINE1},
 )
 INTRO_LINE2_CHUNKS = (
-    {"kind": "text", "value": "Чтобы "},
-    {"kind": "mark", "value": "писать в группе"},
-    {"kind": "text", "value": ", пожалуйста, выполните задание ниже."},
+    {"kind": "text", "value": CAPTCHA_INTRO_LINE2},
 )
 
 VARIANT_LABELS = {
     1: "Найдите такое же",
     2: "Цвет",
-    3: "Как на карточке",
     4: "Живое / еда / вещь",
     5: "Сторона",
     6: "Настроение",
@@ -215,7 +210,7 @@ def pick_variant(rng: Optional[random.Random] = None) -> int:
     r = rng or random
     if r.random() < VARIANT_7_CHANCE:
         return 7
-    return r.choice([1, 2, 3, 4, 5, 6])
+    return r.choice([1, 2, 4, 5, 6])
 
 
 def _mark(answer: str) -> str:
@@ -307,14 +302,6 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         prefix = emoji("v2_prefix")
         chunks = _press_chunks(words[correct], suffix=" значок")
         return _pack(v, prefix, options, correct, chunks, extra={"color": words[correct]})
-
-    if v == 3:
-        pool = ["gift", "star", "dollar"]
-        correct = r.choice(pool)
-        options = _shuffle(pool, r)
-        prefix = emoji(correct)
-        chunks = _press_same_icon_chunks()
-        return _pack(v, prefix, options, correct, chunks)
 
     if v == 4:
         keys = ["living", "food", "thing"]
@@ -437,7 +424,7 @@ def hydrate_payload(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         second = seq[1] if len(seq) > 1 else ""
         data["chunks"] = _v7_chunks(str(first), str(second), names)
         return data
-    if variant == 1 or variant == 3:
+    if variant in {1, 3}:
         data["chunks"] = _press_same_icon_chunks()
         return data
     if data.get("color"):

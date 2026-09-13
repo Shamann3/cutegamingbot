@@ -103,8 +103,9 @@ def test_answers_are_underlined_and_card_is_bold():
     assert "выполните задание ниже" in html
     assert "5389099803655305880" in html
     assert "6025996269141364975" in html
-    assert "<u>капча</u>" in html
-    assert "<u>писать в группе</u>" in html
+    intro = html.split("\n\n", 1)[0]
+    assert "<u>" not in intro
+    assert f"<u>{card['color']}</u>" in html
     assert "<b>Нажмите" in html
     assert html.endswith("</b>")
     assert "<u>" in html
@@ -124,14 +125,12 @@ def test_variant_2_color_word_matches_correct():
     assert seen == {"red", "green", "blue"}
 
 
-def test_variant_3_prefix_is_the_answer():
-    for i in range(20):
-        card = build_challenge(3, rng=random.Random(200 + i))
-        assert card["correct"] in {"gift", "star", "dollar"}
-        assert card["prefix_id"] == emoji(card["correct"]).emoji_id
-        assert set(card["options"]) == {"gift", "star", "dollar"}
-        assert "таким же значком" in card["text"]
-        assert "такое же<" not in card["text"]
+def test_variant_3_is_removed():
+    assert 3 not in VARIANT_LABELS
+    for i in range(80):
+        assert pick_variant(random.Random(i)) != 3
+    card = build_challenge(3, rng=random.Random(3))
+    assert card["variant"] != 3
 
 
 def test_variant_4_and_6_rotate_task():
@@ -151,8 +150,9 @@ def test_variant_4_and_6_rotate_task():
         assert is_correct_pick(c4, "nope")[0] == "fail"
     assert asks4 == {"живое", "еду", "вещь"}
     assert asks6 == {"весёлый", "грустный", "злой"}
+    assert 3 not in VARIANT_LABELS
     assert 8 not in VARIANT_LABELS
-    assert all(pick_variant(random.Random(i)) != 8 for i in range(80))
+    assert all(pick_variant(random.Random(i)) not in {3, 8} for i in range(80))
 
 
 def test_variant_5_keeps_left_right_order():
@@ -219,6 +219,11 @@ def test_card_entities_carry_custom_emoji():
     assert "custom_emoji" in kinds
     assert "underline" in kinds
     assert "bold" in kinds
+    under = [e for e in ents if str(getattr(e, "type", "")) == "underline"]
+    assert len(under) == 1
+    raw = text.encode("utf-16-le")
+    marked = raw[under[0].offset * 2:(under[0].offset + under[0].length) * 2].decode("utf-16-le")
+    assert marked == card["side"]
     custom = [e for e in ents if str(getattr(e, "type", "")) == "custom_emoji"]
     custom_ids = [e.custom_emoji_id for e in custom]
     assert "5389099803655305880" in custom_ids
@@ -301,5 +306,6 @@ def test_variant_7_is_rare_but_present():
     picks = [pick_variant(rng) for _ in range(400)]
     share = picks.count(7) / len(picks)
     assert 0.05 < share < 0.20
-    assert set(picks) >= {1, 2, 3, 4, 5, 6, 7}
+    assert set(picks) >= {1, 2, 4, 5, 6, 7}
+    assert 3 not in picks
     assert 8 not in picks
