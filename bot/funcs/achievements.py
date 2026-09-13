@@ -38,9 +38,15 @@ TG_MESSAGE_HTML_MAX = 3900
 MAX_CUSTOM_EMOJI_PER_MESSAGE = 88
 # Профиль уже несёт свои premium-эмодзи (имя, баланс, даты…).
 # Витрина не имеет права добить лимит — иначе Telegram не открывает профиль.
-PROFILE_CUSTOM_EMOJI_BUDGET = 80
+PROFILE_CUSTOM_EMOJI_BUDGET = 96
 PROFILE_CAPTION_HTML_MAX = 3800
 SHOWCASE_PIN_TITLE_CHARS = 52
+# Первая строка витрины: premium-эмодзи и жирный/курсив обязательны.
+PROFILE_PIN_EMOJI_CAP = 12
+_SHOWCASE_BLOCK_RE = re.compile(
+    r"(<blockquote>\s*<tg-emoji[^>]*>.*?</tg-emoji>\s*<b>Витрина</b>.*?</blockquote>)",
+    flags=re.IGNORECASE | re.DOTALL,
+)
 _TG_EMOJI_TAG_RE = re.compile(
     r"<tg-emoji\b[^>]*>(.*?)</tg-emoji>",
     flags=re.IGNORECASE | re.DOTALL,
@@ -242,9 +248,16 @@ def first_custom_emoji_id(html_text: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
-def plain_title_preview(html_text: str, max_chars: int = SHOWCASE_PIN_TITLE_CHARS) -> str:
+def strip_all_html(html_text: str) -> str:
+    """Снять tg-emoji и любые другие теги. Для превью и запасной отправки."""
     raw = strip_tg_emoji(html_text or "")
-    raw = raw.replace("\u00A0", " ").replace("\r", "")
+    raw = re.sub(r"<[^>]+>", "", raw)
+    return html.unescape(raw).replace("\u00A0", " ")
+
+
+def plain_title_preview(html_text: str, max_chars: int = SHOWCASE_PIN_TITLE_CHARS) -> str:
+    raw = strip_all_html(html_text or "")
+    raw = raw.replace("\r", "")
     raw = raw.split("\n", 1)[0]
     raw = re.sub(r"[ \t]{2,}", " ", raw).strip() or "награда"
     if len(raw) > max_chars:
@@ -268,43 +281,11 @@ def clip_custom_emojis(html_text: str, max_n: int) -> str:
     return _TG_EMOJI_TAG_RE.sub(_repl, html_text or "")
 
 
-def fit_telegram_html(
-    html_text: str,
-    *,
-    max_emojis: int = MAX_CUSTOM_EMOJI_PER_MESSAGE,
-    max_len: int = TG_MESSAGE_HTML_MAX,
-) -> str:
-    """Гарантирует, что HTML влезет в одно сообщение Telegram."""
-    out = html_text or ""
-    if count_custom_emojis(out) > max_emojis:
-        out = clip_custom_emojis(out, max_emojis)
-    return safe_clip_html(out, max_len)
-
-
-def achievement_profile_pin_html(it: Dict[str, Any]) -> str:
-    """Лёгкая строка витрины: один значок + обычный текст первой строки.
-
-    Полная карточка с десятками premium-эмодзи живёт в «Все достижения».
-    В профиле она ломает лимит Telegram и профиль не открывается.
-    """
-    title_html = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
-    eid = it.get("icon_emoji_id") or first_custom_emoji_id(title_html)
-    ic = icon_html(eid, it.get("icon_fallback") or DEFAULT_ICON_FALLBACK)
-    return f"{ic} {plain_title_preview(title_html)}"
-
-
-def safe_clip_html(html_text: str, max_len: int) -> str:
-    """Обрезать HTML, не разрывая <tg-emoji> — иначе Telegram падает."""
+def repair_html(html_text: str) -> str:
+    """Закрыть незакрытые теги — иначе Telegram шлёт сырой HTML в чат."""
     s = html_text or ""
-    if len(s) <= max_len:
-        return s
-    cut = s[:max_len]
-    last_lt = cut.rfind("<")
-    last_gt = cut.rfind(">")
-    if last_lt > last_gt:
-        cut = cut[:last_lt]
-    opened = []
-    for m in re.finditer(r"</?([a-z0-9-]+)([^>]*)>", cut, flags=re.I):
+    opened: List[str] = []
+    for m in re.finditer(r"</?([a-z0-9-]+)([^>]*)>", s, flags=re.I):
         full = m.group(0)
         name = m.group(1).lower()
         if full.startswith("</"):
@@ -315,8 +296,155 @@ def safe_clip_html(html_text: str, max_len: int) -> str:
             continue
         opened.append(name)
     for name in reversed(opened):
-        cut += f"</{name}>"
-    return cut
+        s += f"</{name}>"
+    return s
+
+
+def normalize_tg_emoji_tags(html_text: str) -> str:
+    """Единый вид <tg-emoji>, чтобы Telegram не отбрасывал parse_mode."""
+
+    def _repl(m: re.Match) -> str:
+        eid = m.group(1)
+        inner = (m.group(2) or DEFAULT_ICON_FALLBACK).strip() or DEFAULT_ICON_FALLBACK
+        inner = re.sub(r"<[^>]+>", "", inner).strip() or DEFAULT_ICON_FALLBACK
+        return f"<tg-emoji emoji-id=\"{eid}\">{inner}</tg-emoji>"
+
+    return re.sub(
+        r"<tg-emoji[^>]*emoji-id=['\"](\d{5,32})['\"][^>]*>(.*?)</tg-emoji>",
+        _repl,
+        html_text or "",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+
+def title_first_line_html_safe(html_text: str, max_emojis: int = PROFILE_PIN_EMOJI_CAP) -> str:
+    """Первая строка карточки: жирный/курсив и premium-эмодзи целые."""
+    raw = html_text or ""
+    cut = raw
+    in_tag = False
+    for i, ch in enumerate(raw):
+        if ch == "<":
+            in_tag = True
+        elif ch == ">":
+            in_tag = False
+        elif ch == "\n" and not in_tag:
+            cut = raw[:i]
+            break
+    cut = cut.strip() or raw
+    cut = clip_custom_emojis(cut, max_emojis)
+    return repair_html(normalize_tg_emoji_tags(cut))
+
+
+def fit_telegram_html(
+    html_text: str,
+    *,
+    max_emojis: int = MAX_CUSTOM_EMOJI_PER_MESSAGE,
+    max_len: int = TG_MESSAGE_HTML_MAX,
+) -> str:
+    """Гарантирует, что HTML влезет в одно сообщение Telegram."""
+    out = normalize_tg_emoji_tags(html_text or "")
+    if count_custom_emojis(out) > max_emojis:
+        out = clip_custom_emojis(out, max_emojis)
+    return safe_clip_html(out, max_len)
+
+
+def fit_protecting_showcase(
+    html_text: str,
+    *,
+    max_emojis: int,
+    max_len: int,
+    showcase_emoji_cap: Optional[int] = None,
+) -> str:
+    """Жмёт шапку профиля, витрину с premium-эмодзи не выкидывает."""
+    raw = normalize_tg_emoji_tags(html_text or "")
+    m = _SHOWCASE_BLOCK_RE.search(raw)
+    if not m:
+        return fit_telegram_html(raw, max_emojis=max_emojis, max_len=max_len)
+    prefix, showcase, suffix = raw[:m.start()], m.group(1), raw[m.end():]
+    if showcase_emoji_cap is not None:
+        showcase = clip_custom_emojis(showcase, max(1, int(showcase_emoji_cap)))
+    sc_n = count_custom_emojis(showcase)
+    prefix = clip_custom_emojis(prefix, max(8, int(max_emojis) - sc_n))
+    suffix = clip_custom_emojis(suffix, 4)
+    return safe_clip_html(repair_html(prefix + showcase + suffix), max_len)
+
+
+def html_send_ladder(html_text: str) -> List[str]:
+    """Ступени отправки: сначала все эмодзи и форматирование, в конце только разметка."""
+    raw = normalize_tg_emoji_tags(html_text or "")
+    out: List[str] = []
+    seen = set()
+
+    def _add(body: str) -> None:
+        s = repair_html(body or "")
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+
+    _add(raw)
+    for n in (64, 48, 32, 24, 16, 8, 4, 2, 1):
+        _add(fit_telegram_html(raw, max_emojis=n, max_len=3600))
+    _add(strip_tg_emoji(raw))
+    return out
+
+
+async def reply_html_safe(message, html_text: str, **kwargs) -> bool:
+    """Показать premium-эмодзи и форматирование любой ценой.
+
+    Сырые теги в чат не уходят. Форматирование (b/i/blockquote) снимаем
+    только если Telegram отверг даже HTML без custom emoji.
+    """
+    send_kw = dict(kwargs)
+    send_kw.setdefault("disable_web_page_preview", True)
+    last = None
+    for body in html_send_ladder(html_text):
+        try:
+            await message.reply(body, parse_mode="HTML", **send_kw)
+            return True
+        except Exception as e:
+            last = e
+            low = str(e).lower()
+            if any(x in low for x in (
+                "can't parse", "cant parse", "document_invalid",
+                "too many", "too long", "custom emoji", "entity",
+            )):
+                continue
+            print(f"[ACH] reply_html_safe stop: {e!r}")
+            break
+    try:
+        await message.reply(
+            f"<b>{html.escape(strip_all_html(html_text) or 'Готово.')}</b>",
+            parse_mode="HTML",
+            **kwargs,
+        )
+        return True
+    except Exception as e:
+        print(f"[ACH] reply_html_safe give up: {last!r} then {e!r}")
+    return False
+
+
+def achievement_profile_pin_html(it: Dict[str, Any]) -> str:
+    """Строка витрины: первая строка карточки как есть — эмодзи + жирный/курсив."""
+    title_html = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
+    line = title_first_line_html_safe(title_html, PROFILE_PIN_EMOJI_CAP)
+    if count_custom_emojis(line) == 0:
+        eid = it.get("icon_emoji_id") or first_custom_emoji_id(title_html)
+        ic = icon_html(eid, it.get("icon_fallback") or DEFAULT_ICON_FALLBACK)
+        line = f"{ic} {line}"
+    return line
+
+
+def safe_clip_html(html_text: str, max_len: int) -> str:
+    """Обрезать HTML, не разрывая <tg-emoji> — иначе Telegram падает."""
+    s = html_text or ""
+    if len(s) <= max_len:
+        return repair_html(s)
+    cut = s[:max_len]
+    last_lt = cut.rfind("<")
+    last_gt = cut.rfind(">")
+    if last_lt > last_gt:
+        cut = cut[:last_lt]
+    return repair_html(cut)
 
 
 def sanitize_achievement_html(
@@ -422,6 +550,7 @@ def prepare_title_from_message(
     title_html = expand_tokens_in_html(
         title_html, fallback or DEFAULT_ICON_FALLBACK, max_len=max_len,
     )
+    title_html = normalize_tg_emoji_tags(title_html)
     if not emoji_id:
         emoji_id = parse_custom_emoji_id(text)
     return title_html, emoji_id, fallback
@@ -600,8 +729,8 @@ def item_emoji_weight(it: Dict[str, Any]) -> int:
 
 
 def title_button_label(it: Dict[str, Any], max_chars: int = 18) -> str:
-    raw = strip_tg_emoji(str(it.get("title_html") or it.get("title") or "…"))
-    raw = raw.replace("\u00A0", " ").split("\n", 1)[0].strip() or "…"
+    raw = strip_all_html(str(it.get("title_html") or it.get("title") or "…"))
+    raw = raw.replace("\r", "").split("\n", 1)[0].strip() or "…"
     return raw[:max_chars]
 
 

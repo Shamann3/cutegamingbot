@@ -18,6 +18,13 @@ from craft_map import serialize_positions
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]{1,48}$")
 
 
+def _dex_text(value: Any, default: str = "") -> str:
+    """dex.use / bonus / craft в базе бывают и текстом, и числом."""
+    if value is None:
+        return default
+    return str(value).strip()
+
+
 def _validate_key(key: str) -> str:
     key = (key or "").strip().lower()
     if not _KEY_RE.match(key):
@@ -159,17 +166,17 @@ async def get_dex_item_full(item_id: str) -> dict:
         raise ValueError("Предмет не найден")
     return {
         "id": str(row["id"]),
-        "name": (row["name"] or "").strip(),
-        "name1": (row["name1"] or "").strip(),
-        "emoji": (row["emoji"] or "").strip() or "📦",
+        "name": _dex_text(row["name"]),
+        "name1": _dex_text(row["name1"]),
+        "emoji": _dex_text(row["emoji"]) or "📦",
         "price": int(row["price"] or 0),
         "dis": int(row["dis"] or 0),
         "remains": int(row["remains"] or 0),
         "sorting": row["sorting"],
-        "bio": (row["bio"] or "").strip(),
-        "use": (row["use"] or "").strip(),
-        "bonus": (row["bonus"] or "").strip(),
-        "craft": (row["craft"] or "").strip(),
+        "bio": _dex_text(row["bio"]),
+        "use": _dex_text(row["use"]),
+        "bonus": _dex_text(row["bonus"]),
+        "craft": _dex_text(row["craft"]),
     }
 
 
@@ -208,10 +215,10 @@ async def create_dex_item(
         max(0, int(dis)),
         max(0, int(remains)),
         sorting,
-        (bio or "").strip(),
-        (use or "").strip(),
-        (bonus or "").strip(),
-        (craft or "").strip(),
+        _dex_text(bio),
+        _dex_text(use),
+        _dex_text(bonus),
+        _dex_text(craft),
     )
     await _invalidate_content()
     return {
@@ -223,10 +230,10 @@ async def create_dex_item(
         "dis": int(new_row["dis"] or 0),
         "remains": int(new_row["remains"] or 0),
         "sorting": new_row["sorting"],
-        "bio": (new_row["bio"] or "").strip(),
-        "use": (new_row["use"] or "").strip(),
-        "bonus": (new_row["bonus"] or "").strip(),
-        "craft": (new_row["craft"] or "").strip(),
+        "bio": _dex_text(new_row["bio"]),
+        "use": _dex_text(new_row["use"]),
+        "bonus": _dex_text(new_row["bonus"]),
+        "craft": _dex_text(new_row["craft"]),
     }
 
 
@@ -278,16 +285,16 @@ async def update_dex_item_meta(
         params.append(sorting)
         sets.append(f"sorting = ${len(params)}")
     if bio is not None:
-        params.append(bio.strip())
+        params.append(_dex_text(bio))
         sets.append(f"bio = ${len(params)}")
     if use is not None:
-        params.append(use.strip())
+        params.append(_dex_text(use))
         sets.append(f'"use" = ${len(params)}')
     if bonus is not None:
-        params.append(bonus.strip())
+        params.append(_dex_text(bonus))
         sets.append(f"bonus = ${len(params)}")
     if craft is not None:
-        params.append(craft.strip())
+        params.append(_dex_text(craft))
         sets.append(f"craft = ${len(params)}")
 
     if not sets:
@@ -307,17 +314,17 @@ async def update_dex_item_meta(
     await _invalidate_content()
     return {
         "id": str(row["id"]),
-        "name": (row["name"] or "").strip(),
-        "name1": (row["name1"] or "").strip(),
-        "emoji": (row["emoji"] or "").strip() or "📦",
+        "name": _dex_text(row["name"]),
+        "name1": _dex_text(row["name1"]),
+        "emoji": _dex_text(row["emoji"]) or "📦",
         "price": int(row["price"] or 0),
         "dis": int(row["dis"] or 0),
         "remains": int(row["remains"] or 0),
         "sorting": row["sorting"],
-        "bio": (row["bio"] or "").strip(),
-        "use": (row["use"] or "").strip(),
-        "bonus": (row["bonus"] or "").strip(),
-        "craft": (row["craft"] or "").strip(),
+        "bio": _dex_text(row["bio"]),
+        "use": _dex_text(row["use"]),
+        "bonus": _dex_text(row["bonus"]),
+        "craft": _dex_text(row["craft"]),
     }
 
 
@@ -838,14 +845,14 @@ async def get_craft_map() -> dict:
         items.append(
             {
                 "id": item_id,
-                "name": (row["name"] or "").strip() or item_id,
-                "name1": (row["name1"] or "").strip(),
-                "emoji": (row["emoji"] or "").strip() or "📦",
+                "name": _dex_text(row["name"]) or item_id,
+                "name1": _dex_text(row["name1"]),
+                "emoji": _dex_text(row["emoji"]) or "📦",
                 "price": int(row["price"] or 0),
                 "sorting": row["sorting"],
-                "bio": (row["bio"] or "").strip(),
-                "use": str(row["use"] or "").strip() if row["use"] not in (None, 0) else "",
-                "bonus": str(row["bonus"] or "").strip() if row["bonus"] not in (None, 0) else "",
+                "bio": _dex_text(row["bio"]),
+                "use": _dex_text(row["use"]),
+                "bonus": _dex_text(row["bonus"]),
             }
         )
 

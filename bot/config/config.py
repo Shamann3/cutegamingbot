@@ -579,7 +579,8 @@ slots_BASE_MAX_BET = 1000  # базовый максимум, дальше мо�
 
 soccer_MIN_BET = 2
 soccer_BASE_MAX_BET = 1000
-SOCCER_TARGET_VALUES = {3, 5, 4}   # гол (dice values)
+# Telegram ⚽: гол только 4 и 5. 1–3 — мимо (3 выглядит как штанга).
+SOCCER_TARGET_VALUES = {4, 5}
 
 # Скрытый исход "неудачный удар"
 # 0.05 = 5% на удар. Меняй здесь.

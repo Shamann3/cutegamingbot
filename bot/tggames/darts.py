@@ -6,6 +6,7 @@
 
 from main import *  # noqa: F401,F403
 from bot.games.group_only import reject_if_private_game
+from bot.funcs.tg_dice import abort_if_unread_dice, is_darts_bullseye, read_dice_value
 
 import asyncio
 import random
@@ -565,8 +566,10 @@ async def _tgdarts_free_game(
     dart = await message.reply_dice(emoji="🎯")
     await asyncio.sleep(3)
 
-    value = getattr(getattr(dart, "dice", None), "value", None)
-    is_hit = int(value or 0) in DARTS_TARGET_VALUES
+    value = read_dice_value(dart)
+    if await abort_if_unread_dice(message, value, _ddbg):
+        return
+    is_hit = is_darts_bullseye(value)
     bad_throw_now = (not is_hit) and _is_bad_throw_roll_conditional()
 
     _ddbg("FREE", f"dice value={value} hit={is_hit} bad_throw={bad_throw_now}")
@@ -1185,8 +1188,10 @@ async def tgdarts(message: Message):
     dart = await message.reply_dice(emoji="🎯")
     await asyncio.sleep(3)
 
-    value = getattr(getattr(dart, "dice", None), "value", None)
-    is_hit = int(value or 0) in DARTS_TARGET_VALUES
+    value = read_dice_value(dart)
+    if await abort_if_unread_dice(message, value, _ddbg):
+        return
+    is_hit = is_darts_bullseye(value)
     bad_throw_now = (not is_hit) and _is_bad_throw_roll_conditional()
 
     _ddbg("DICE", f"value={value} hit={is_hit} bad_throw={bad_throw_now}")

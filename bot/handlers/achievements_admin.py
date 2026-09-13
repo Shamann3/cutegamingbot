@@ -512,11 +512,10 @@ async def handle_achievements_pending_message(message: Message, db) -> bool:
             state["icon_fallback"] = fallback
         state["step"] = "confirm"
         _pending_free[admin_id] = state
-        await message.reply(
+        await ach.reply_html_safe(
+            message,
             _wizard_preview_html(state),
-            parse_mode="HTML",
             reply_markup=_wizard_confirm_kb(),
-            disable_web_page_preview=True,
         )
         return True
 
@@ -753,10 +752,10 @@ async def _handle_grant(message: Message, db, prefix: str, rest: str) -> bool:
         granted_by_name=granter_name,
     )
     await _refresh_profile(db, target_id)
-    await message.reply(
+    await ach.reply_html_safe(
+        message,
         f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
         f"<b>Свободная награда выдана</b>\n{title_html}",
-        parse_mode="HTML",
     )
     return True
 
@@ -835,13 +834,21 @@ async def _handle_wizard_cb(callback: CallbackQuery, db, user_id: int, data: str
             pass
 
     async def _show(text: str, kb: Optional[InlineKeyboardMarkup] = None) -> None:
-        try:
-            await callback.message.edit_text(
-                text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True,
-            )
-        except Exception:
+        bodies = ach.html_send_ladder(text)
+        for body in bodies:
             try:
-                await callback.message.answer(text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True)
+                await callback.message.edit_text(
+                    body, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True,
+                )
+                return
+            except Exception:
+                pass
+        for body in bodies:
+            try:
+                await callback.message.answer(
+                    body, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True,
+                )
+                return
             except Exception:
                 pass
 

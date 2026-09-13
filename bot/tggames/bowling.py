@@ -5,6 +5,7 @@
 
 from main import *  # noqa: F401,F403
 from bot.games.group_only import reject_if_private_game
+from bot.funcs.tg_dice import abort_if_unread_dice, is_bowling_strike, read_dice_value
 
 import asyncio
 import random
@@ -543,8 +544,10 @@ async def _tgbowling_free_game(
     bowling = await message.reply_dice(emoji="🎳")
     await asyncio.sleep(3.5)
 
-    value = getattr(getattr(bowling, "dice", None), "value", None)
-    is_strike = int(value or 0) in BOWLING_TARGET_VALUES
+    value = read_dice_value(bowling)
+    if await abort_if_unread_dice(message, value, _bdbg):
+        return
+    is_strike = is_bowling_strike(value)
     bad_hit_now = (not is_strike) and _is_bad_hit_roll_conditional()
 
     _bdbg("FREE", f"dice value={value} strike={is_strike} bad_hit={bad_hit_now}")
@@ -1156,8 +1159,10 @@ async def tgbowling(message: Message):
     bowling = await message.reply_dice(emoji="🎳")
     await asyncio.sleep(3.5)
 
-    value = getattr(getattr(bowling, "dice", None), "value", None)
-    is_strike = int(value or 0) in BOWLING_TARGET_VALUES
+    value = read_dice_value(bowling)
+    if await abort_if_unread_dice(message, value, _bdbg):
+        return
+    is_strike = is_bowling_strike(value)
     bad_hit_now = (not is_strike) and _is_bad_hit_roll_conditional()
 
     _bdbg("DICE", f"value={value} strike={is_strike} bad_hit={bad_hit_now}")

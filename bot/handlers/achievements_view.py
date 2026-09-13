@@ -149,13 +149,20 @@ VIEW_TRIGGERS = (
     "награды",
     "награда",
     "витрина",
-    "ачи",
     "achievements",
     "achievement",
     "achivki",
     "achivky",
     "awards",
 )
+
+# Эти фразы открывают профиль, не альбом наград.
+_PROFILE_BLOCK = frozenset({
+    "кто ты", "ктоты", "ты кто", "кто я", "ктоя",
+    "кто ты такой", "кто ты такая",
+    "докс", "задоксить", "стоп кто ты",
+    "профиль", "проф", "мой профиль", "профиль мой",
+})
 
 ADMIN_BLOCK_PREFIXES = (
     "наградить",
@@ -209,6 +216,8 @@ def parse_achievements_intent(text: str) -> Optional[Tuple[str, str]]:
     n = _norm(raw)
     if not n:
         return None
+    if n in _PROFILE_BLOCK or any(n.startswith(p + " ") for p in _PROFILE_BLOCK):
+        return None
 
     for p in ADMIN_BLOCK_PREFIXES:
         if _starts(n, p):
@@ -233,11 +242,11 @@ def parse_achievements_intent(text: str) -> Optional[Tuple[str, str]]:
                 return "own", ""
             return "view", rest
 
-    # «вася достижения», «@nick ачивки», «123456 награды»
+    # «вася достижения», «@nick ачивки» — не «за покупку уровня идет достижение»
     trail = (
-        "достижения", "достижение", "ачивки", "ачивка", "ачивы", "ачики",
-        "награды", "награда", "витрина", "ачи",
-        "achievements", "achievement", "awards",
+        "достижения", "ачивки", "ачивка", "ачивы", "ачики",
+        "награды", "витрина",
+        "achievements", "awards",
     )
     trail_block_left = frozenset({
         "царь", "king", "топ", "стата", "статистика", "хелп", "help",
@@ -252,8 +261,33 @@ def parse_achievements_intent(text: str) -> Optional[Tuple[str, str]]:
             head = rest.split()[0] if rest else ""
             if rest in ADMIN_BLOCK_PREFIXES or head in trail_block_left:
                 return None
+            if not _looks_like_player_query(rest):
+                return None
             return "view", rest
     return None
+
+
+def _looks_like_player_query(q: str) -> bool:
+    """Имя / @ник / id — не обрывок обычной фразы."""
+    s = " ".join((q or "").split()).strip(" ,.;:!?\"'`()[]{}<>—–")
+    if not s or len(s) > 48:
+        return False
+    if any(ch in s for ch in ",!?;:—–"):
+        return False
+    words = s.split()
+    if not words or len(words) > 3:
+        return False
+    chatter = {
+        "к", "слове", "слову", "за", "покупку", "уровня", "идет", "идёт",
+        "это", "тут", "там", "просто", "ну", "да", "нет", "как", "что",
+        "почему", "если", "будет", "было", "есть", "идет",
+    }
+    if any(w in chatter for w in words):
+        return False
+    first = words[0]
+    if first.startswith("@") or first.isdigit():
+        return True
+    return all(len(w) >= 2 for w in words)
 
 
 def _entity_type(ent) -> str:
@@ -551,12 +585,7 @@ async def send_achievements_album(
     kb = _build_manage_keyboard(
         int(viewer_id), int(target_id), doc, is_owner=manage, page=0,
     )
-    bodies = (
-        text,
-        ach.fit_telegram_html(text, max_emojis=60, max_len=3600),
-        ach.fit_telegram_html(text, max_emojis=24, max_len=2400),
-        ach.strip_tg_emoji(text),
-    )
+    bodies = tuple(ach.html_send_ladder(text))
     last_err = None
     for body in bodies:
         try:
@@ -594,6 +623,9 @@ async def handle_achievements_view_message(message: Message, db) -> bool:
 
     kind, query = parsed
     viewer_id = int(message.from_user.id)
+
+    if kind == "view" and query and not _looks_like_player_query(query):
+        return False
 
     if kind == "help":
         await message.reply(help_html(), parse_mode="HTML", disable_web_page_preview=True)

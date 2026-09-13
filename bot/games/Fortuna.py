@@ -97,6 +97,10 @@ FORTUNA_LOSE_STREAK_SOFTEN_CAP_STEPS = 3
 FORTUNA_MIN_NATURAL_SHARE = 0.52
 FORTUNA_MAX_NATURAL_SHARE = 0.90
 
+# Колесо 0..12, не европейское 0..36. Честный 1/13 ≈ 7.7% слишком часто
+# опустошает кассу на ставке «одно число». Держим редкий джекпот ~1/36.
+FORTUNA_SINGLE_NUMBER_WIN_CHANCE = 0.028
+
 # ===================== ХРАНИЛИЩА / БЛОКИРОВКИ =====================
 # ВАЖНО: asyncio.Lock нельзя класть в LazyGameStore/Redis.
 # После pickle/unpickle лок «мертвый» или чужого event loop →
@@ -417,6 +421,14 @@ def _target_win_probability(parsed: dict, lose_streak: int = 0) -> float:
     natural_prob = _natural_win_probability(parsed)
     if natural_prob <= 0:
         return 0.0
+
+    if mode == "number":
+        rare = _clamp01(float(FORTUNA_SINGLE_NUMBER_WIN_CHANCE))
+        if int(lose_streak or 0) >= FORTUNA_LOSE_STREAK_SOFTEN_FROM:
+            extra_steps = int(lose_streak or 0) - int(FORTUNA_LOSE_STREAK_SOFTEN_FROM) + 1
+            extra_steps = max(0, min(extra_steps, int(FORTUNA_LOSE_STREAK_SOFTEN_CAP_STEPS)))
+            rare = _clamp01(rare + 0.004 * extra_steps)
+        return rare
 
     profile = str(FORTUNA_WIN_PROFILE or "hard").strip().lower()
     profile_map = FORTUNA_WIN_PROB_FACTORS.get(profile) or FORTUNA_WIN_PROB_FACTORS["hard"]

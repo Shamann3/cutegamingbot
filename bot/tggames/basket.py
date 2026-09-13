@@ -14,6 +14,7 @@
 
 from main import *  # noqa: F401,F403
 from bot.games.group_only import reject_if_private_game
+from bot.funcs.tg_dice import abort_if_unread_dice, is_basket_hit, read_dice_value
 
 import asyncio
 import random
@@ -76,7 +77,8 @@ DEMO_STREAK_BREAK = 3                    # после скольких побе�
 ZERO_MASK_WIN_PROB = 0.12                # вероятность подмены LOSS → WIN в 0demo-режиме
 ZERO_STREAK_BREAK = 3                    # после скольких проигрышей подряд принудительно WIN
 
-# Вероятность промаха (не попал в TARGET_VALUES)
+# Telegram 🏀: кольцо только 4 и 5. 1–3 мимо (3 бьёт в дужку — не гол).
+# Выплата всегда по анимации: is_basket_hit(read_dice_value(...)).
 _all_values = range(1, 6)
 _miss_values = [v for v in _all_values if v not in TARGET_VALUES]
 BASKET_MISS_PROBABILITY = Decimal(len(_miss_values)) / Decimal(5)
@@ -562,8 +564,10 @@ async def _tgbasket_free_game(
     basketball = await message.reply_dice(emoji="🏀")
     await asyncio.sleep(4.9)
 
-    value = getattr(getattr(basketball, "dice", None), "value", None)
-    is_hit = int(value or 0) in TARGET_VALUES
+    value = read_dice_value(basketball)
+    if await abort_if_unread_dice(message, value, _kdbg):
+        return
+    is_hit = is_basket_hit(value)
 
     flat_now = (not is_hit) and _is_flat_roll_conditional()
     _kdbg("FREE", f"dice value={value} hit={is_hit} bet={bet_int} flat={flat_now}")
@@ -1180,8 +1184,10 @@ async def tgbasket(message: Message):
     basketball = await message.reply_dice(emoji="🏀")
     await asyncio.sleep(4.9)
 
-    value = getattr(getattr(basketball, "dice", None), "value", None)
-    is_hit = int(value or 0) in TARGET_VALUES
+    value = read_dice_value(basketball)
+    if await abort_if_unread_dice(message, value, _kdbg):
+        return
+    is_hit = is_basket_hit(value)
     flat_now = (not is_hit) and _is_flat_roll_conditional()
     _kdbg("DICE", f"value={value} hit={is_hit} flat={flat_now}")
 

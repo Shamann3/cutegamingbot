@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 ⚽️ Футбол (футбол/фут) (ставка) - полная версия с Jericho, маскировкой и сериями.
-Исправлено: целевые значения гола {3,4,5}, динамический расчёт промаха.
+Исправлено: гол только {4,5} — как в анимации Telegram.
 """
 
 from main import *  # noqa: F401,F403
 from bot.games.group_only import reject_if_private_game
+from bot.funcs.tg_dice import abort_if_unread_dice, is_soccer_goal, read_dice_value
 
 import asyncio
 import random
@@ -71,9 +72,10 @@ ZERO_MASK_WIN_PROB = 0.12                # вероятность подмены
 ZERO_STREAK_BREAK = 3                    # после скольких проигрышей подряд принудительно WIN
 
 # -------------------- Целевые значения dice (гол) --------------------
-# У футбольного дайса (⚽) значения от 1 до 5
+# У футбольного дайса (⚽) значения от 1 до 5. Гол только 4 и 5.
+# 3 — штанга: анимация «почти», по Telegram это промах.
 SOCCER_DICE_MAX_VALUE = 5
-SOCCER_TARGET_VALUES = {3, 5, 4}          # гол при 3, 4 или 5
+SOCCER_TARGET_VALUES = {4, 5}
 
 # Вероятности исходов (используются только в обычном режиме)
 SOCCER_BAD_SHOT_CHANCE = Decimal("0.08")  # общая вероятность неудачного удара
@@ -564,8 +566,10 @@ async def _tgsoccer_free_game(
     soccer = await message.reply_dice(emoji="⚽")
     await asyncio.sleep(4.5)
 
-    value = getattr(getattr(soccer, "dice", None), "value", None)
-    is_goal = int(value or 0) in SOCCER_TARGET_VALUES
+    value = read_dice_value(soccer)
+    if await abort_if_unread_dice(message, value, _sdbg):
+        return
+    is_goal = is_soccer_goal(value)
     bad_shot_now = (not is_goal) and _is_bad_shot_roll_conditional()
 
     _sdbg("FREE", f"dice value={value} is_goal={is_goal} bad_shot={bad_shot_now}")
@@ -1187,8 +1191,10 @@ async def tgsoccer(message: Message):
     soccer = await message.reply_dice(emoji="⚽")
     await asyncio.sleep(4.5)
 
-    value = getattr(getattr(soccer, "dice", None), "value", None)
-    is_goal = int(value or 0) in SOCCER_TARGET_VALUES
+    value = read_dice_value(soccer)
+    if await abort_if_unread_dice(message, value, _sdbg):
+        return
+    is_goal = is_soccer_goal(value)
     bad_shot_now = (not is_goal) and _is_bad_shot_roll_conditional()
 
     _sdbg("DICE", f"value={value} is_goal={is_goal} bad_shot={bad_shot_now}")

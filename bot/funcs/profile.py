@@ -1238,13 +1238,21 @@ async def _build_profile_caption_for_target(
     caption = "\n".join(filter(None, caption_parts))
     try:
         from bot.funcs import achievements as ach_fit
-        caption = ach_fit.fit_telegram_html(
+        caption = ach_fit.fit_protecting_showcase(
             caption,
             max_emojis=ach_fit.PROFILE_CUSTOM_EMOJI_BUDGET,
             max_len=ach_fit.PROFILE_CAPTION_HTML_MAX,
         )
     except Exception:
-        pass
+        try:
+            from bot.funcs import achievements as ach_fit
+            caption = ach_fit.fit_telegram_html(
+                caption,
+                max_emojis=ach_fit.PROFILE_CUSTOM_EMOJI_BUDGET,
+                max_len=ach_fit.PROFILE_CAPTION_HTML_MAX,
+            )
+        except Exception:
+            pass
     return caption
 # =========================================================
 # FULL PROFILE REFRESH
@@ -1542,7 +1550,7 @@ def _profile_is_html_limit_error(e: Exception) -> bool:
 
 
 def _profile_caption_fallbacks(caption: str) -> List[str]:
-    """Варианты подписи: полная → ужать → без витрины → без premium-тегов."""
+    """Полная подпись → жмём шапку, витрину с premium-эмодзи оставляем."""
     out: List[str] = []
     seen = set()
 
@@ -1555,26 +1563,24 @@ def _profile_caption_fallbacks(caption: str) -> List[str]:
     _add(caption)
     try:
         from bot.funcs import achievements as ach_mod
-        _add(ach_mod.fit_telegram_html(
-            caption,
-            max_emojis=min(48, ach_mod.PROFILE_CUSTOM_EMOJI_BUDGET),
-            max_len=ach_mod.PROFILE_CAPTION_HTML_MAX,
-        ))
-        _add(ach_mod.fit_telegram_html(
-            caption,
-            max_emojis=24,
-            max_len=2800,
-        ))
-        stripped_block = re.sub(
-            r"<blockquote>\s*<tg-emoji[^>]*>.*?</tg-emoji>\s*<b>Витрина</b>.*?</blockquote>",
-            "",
-            caption or "",
-            flags=re.I | re.S,
-        )
-        _add(stripped_block.strip())
+        for total, sc_cap in (
+            (ach_mod.PROFILE_CUSTOM_EMOJI_BUDGET, None),
+            (80, 48),
+            (72, 36),
+            (64, 24),
+            (56, 16),
+            (48, 10),
+        ):
+            _add(ach_mod.fit_protecting_showcase(
+                caption,
+                max_emojis=total,
+                max_len=ach_mod.PROFILE_CAPTION_HTML_MAX,
+                showcase_emoji_cap=sc_cap,
+            ))
+        # Только если Telegram отверг custom emoji целиком — оставляем b/i.
         _add(ach_mod.strip_tg_emoji(caption))
     except Exception:
-        _add(re.sub(r"<tg-emoji[^>]*>.*?</tg-emoji>", "", caption or "", flags=re.I | re.S))
+        _add(caption)
     return out
 
 
