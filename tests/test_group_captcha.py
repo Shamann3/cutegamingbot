@@ -16,6 +16,7 @@ from bot.funcs.group_captcha import (
     parse_premium_emoji,
     pick_variant,
     sign_parts,
+    to_plain_text,
 )
 
 
@@ -30,6 +31,8 @@ def test_schema_is_one_statement_each():
 def test_plain_fallback_keeps_faces():
     raw = "<tg-emoji emoji-id='5472164874886846699'>\u2060</tg-emoji> Нажмите"
     assert html_to_faces(raw) == "✨ Нажмите"
+    assert "Нажмите" in to_plain_text("<b>Нажмите <u>красный</u></b>")
+    assert "<" not in to_plain_text("<b>Нажмите <u>красный</u></b>")
     card = build_challenge(1, rng=random.Random(1))
     markup = __import__("bot.funcs.group_captcha", fromlist=["build_markup"]).build_markup(
         1, -100, card, plain=True,
@@ -90,9 +93,11 @@ def test_answers_are_underlined_and_card_is_bold():
     card = build_challenge(2, rng=random.Random(2))
     assert f"<u>{card['color']}</u>" in card["text"]
     html = card_html(card, SimpleNamespace(id=1, full_name="Анна", first_name="Анна", is_bot=False))
-    assert html.startswith("<b>")
+    assert "<b>Нажмите" in html
     assert html.endswith("</b>")
     assert "<u>" in html
+    # вложенный <b> вокруг mention ломает parse entities у Telegram
+    assert not html.startswith("<b><a ")
 
 
 def test_variant_2_color_word_matches_correct():

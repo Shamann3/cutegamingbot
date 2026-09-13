@@ -119,15 +119,55 @@ async def _delete_message(bot, chat_id: int, message_id: Optional[int]) -> None:
         return
 
 
-def _telegram_needs_plain(err: BaseException) -> bool:
-    text = str(err).upper()
-    return any(token in text for token in (
-        "DOCUMENT_INVALID",
-        "CUSTOM_EMOJI",
-        "BUTTON_TYPE_INVALID",
-        "CAN'T PARSE",
-        "CANT PARSE",
-    ))
+async def _try_deliver(
+    bot,
+    *,
+    chat_id: int,
+    mid: Optional[int],
+    text: str,
+    markup,
+    parse_mode: Optional[str],
+) -> Optional[int]:
+    kwargs: Dict[str, Any] = {"reply_markup": markup}
+    if parse_mode:
+        kwargs["parse_mode"] = parse_mode
+    if mid:
+        try:
+            await bot.edit_message_text(
+                text,
+                chat_id=int(chat_id),
+                message_id=int(mid),
+                disable_web_page_preview=True,
+                **kwargs,
+            )
+            return int(mid)
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e).lower():
+                return int(mid)
+        except TypeError:
+            try:
+                await bot.edit_message_text(
+                    text,
+                    chat_id=int(chat_id),
+                    message_id=int(mid),
+                    **kwargs,
+                )
+                return int(mid)
+            except Exception:
+                pass
+        except Exception:
+            pass
+    try:
+        msg = await bot.send_message(
+            int(chat_id),
+            text,
+            disable_web_page_preview=True,
+            **kwargs,
+        )
+        return int(msg.message_id)
+    except TypeError:
+        msg = await bot.send_message(int(chat_id), text, **kwargs)
+        return int(msg.message_id)
 
 
 async def _send_or_edit(
@@ -140,74 +180,29 @@ async def _send_or_edit(
 ) -> Optional[int]:
     rich_text = gc.card_html(payload, user)
     variants = (
-        (rich_text, gc.build_markup(int(row["id"]), int(chat_id), payload, plain=False)),
-        (gc.html_to_faces(rich_text), gc.build_markup(int(row["id"]), int(chat_id), payload, plain=True)),
+        (rich_text, gc.build_markup(int(row["id"]), int(chat_id), payload, plain=False), "HTML"),
+        (gc.html_to_faces(rich_text), gc.build_markup(int(row["id"]), int(chat_id), payload, plain=True), "HTML"),
+        (gc.to_plain_text(rich_text), gc.build_markup(int(row["id"]), int(chat_id), payload, plain=True), None),
     )
     mid = row.get("message_id")
     last_err: Optional[BaseException] = None
-    for text, markup in variants:
-        if mid:
-            try:
-                await bot.edit_message_text(
-                    text,
-                    chat_id=int(chat_id),
-                    message_id=int(mid),
-                    parse_mode="HTML",
-                    reply_markup=markup,
-                    disable_web_page_preview=True,
-                )
-                return int(mid)
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e).lower():
-                    return int(mid)
-                last_err = e
-                if not _telegram_needs_plain(e):
-                    break
-            except TypeError:
-                try:
-                    await bot.edit_message_text(
-                        text,
-                        chat_id=int(chat_id),
-                        message_id=int(mid),
-                        parse_mode="HTML",
-                        reply_markup=markup,
-                    )
-                    return int(mid)
-                except Exception as e:
-                    last_err = e
-                    if not _telegram_needs_plain(e):
-                        break
-            except Exception as e:
-                last_err = e
-                if not _telegram_needs_plain(e):
-                    break
+    for text, markup, parse_mode in variants:
         try:
-            msg = await bot.send_message(
-                int(chat_id),
-                text,
-                parse_mode="HTML",
-                reply_markup=markup,
-                disable_web_page_preview=True,
+            sent = await _try_deliver(
+                bot,
+                chat_id=chat_id,
+                mid=mid,
+                text=text,
+                markup=markup,
+                parse_mode=parse_mode,
             )
-            return int(msg.message_id)
-        except TypeError:
-            try:
-                msg = await bot.send_message(
-                    int(chat_id),
-                    text,
-                    parse_mode="HTML",
-                    reply_markup=markup,
-                )
-                return int(msg.message_id)
-            except Exception as e:
-                last_err = e
-                if not _telegram_needs_plain(e):
-                    break
+            if sent:
+                return sent
         except Exception as e:
             last_err = e
-            if not _telegram_needs_plain(e):
-                break
+            continue
     log.warning("captcha send failed chat=%s user=%s: %s", chat_id, getattr(user, "id", None), last_err)
+    print(f"[CAPTCHA] SEND FAIL chat={chat_id} user={getattr(user, 'id', None)}: {last_err}")
     return None
 
 
@@ -225,6 +220,8 @@ async def maybe_prompt_captcha(
         return False
     pool = _pool()
     if pool is None:
+        print("[CAPTCHA] skip: db pool is None")
+        log.warning("captcha skip: db pool is None")
         return False
 
     if not await gc.is_chat_enabled(pool, chat_id):
@@ -279,8 +276,10 @@ async def maybe_prompt_captcha(
         )
         row["message_id"] = None
         mid = await _send_or_edit(bot, chat_id=chat_id, user=user, row=row, payload=payload)
-        if mid:
-            await gc.update_challenge(pool, int(row["id"]), message_id=mid)
+        if not mid:
+            _last_prompt.pop(key, None)
+            return False
+        await gc.update_challenge(pool, int(row["id"]), message_id=mid)
         await gc.log_event(
             pool,
             user_id=uid,
@@ -290,6 +289,7 @@ async def maybe_prompt_captcha(
             meta={"trigger": trigger},
         )
         _last_prompt[key] = time.monotonic()
+        print(f"[CAPTCHA] shown chat={chat_id} user={uid} mid={mid} trigger={trigger}")
         if restrict or trigger == "message":
             await _maybe_restrict(bot, chat_id, uid)
         return True
@@ -299,8 +299,31 @@ async def on_user_joined(bot, chat_id: int, user: Any) -> None:
     await maybe_prompt_captcha(bot, chat_id=int(chat_id), user=user, trigger="join", restrict=True)
 
 
-class CaptchaMessageMiddleware(BaseMiddleware):
-    """Старые участники без капчи получают карточку на первом сообщении."""
+def _is_slash_command(message: Message) -> bool:
+    text = (message.text or message.caption or "").lstrip()
+    if text.startswith("/"):
+        return True
+    for ent in list(message.entities or []) + list(message.caption_entities or []):
+        kind = str(getattr(ent, "type", "") or "")
+        if kind in {"bot_command", "BotCommand"}:
+            return True
+    return False
+
+
+async def _user_needs_captcha(chat_id: int, user_id: int) -> bool:
+    pool = _pool()
+    if pool is None:
+        return False
+    if not await gc.is_chat_enabled(pool, chat_id):
+        return False
+    if await gc.has_passed(pool, chat_id, user_id):
+        return False
+    return True
+
+
+class CaptchaGateMiddleware(BaseMiddleware):
+    """Пока капча не пройдена — в группе бот не отвечает на команды.
+    Карточка уходит только на обычные сообщения."""
 
     async def __call__(self, handler, event: TelegramObject, data: Dict[str, Any]):
         message = event if isinstance(event, Message) else None
@@ -315,6 +338,15 @@ class CaptchaMessageMiddleware(BaseMiddleware):
         if not user or user.is_bot:
             return await handler(event, data)
         try:
+            needed = await _user_needs_captcha(int(chat.id), int(user.id))
+        except Exception:
+            log.exception("captcha gate check chat=%s user=%s", chat.id, user.id)
+            return await handler(event, data)
+        if not needed:
+            return await handler(event, data)
+        if _is_slash_command(message):
+            return None
+        try:
             bot = data.get("bot") or message.bot
             await maybe_prompt_captcha(
                 bot,
@@ -323,9 +355,39 @@ class CaptchaMessageMiddleware(BaseMiddleware):
                 trigger="message",
                 restrict=False,
             )
-        except Exception as e:
-            log.debug("captcha middleware: %s", e)
-        return await handler(event, data)
+        except Exception:
+            log.exception("captcha prompt chat=%s user=%s", chat.id, user.id)
+        return None
+
+
+class CaptchaCallbackGateMiddleware(BaseMiddleware):
+    """Кнопки игр и меню не работают, пока человек не прошёл капчу."""
+
+    async def __call__(self, handler, event: TelegramObject, data: Dict[str, Any]):
+        callback = event if isinstance(event, CallbackQuery) else None
+        if callback is None:
+            return await handler(event, data)
+        raw = callback.data or ""
+        if raw.startswith("gcA:") or raw.startswith("gcX:"):
+            return await handler(event, data)
+        message = callback.message
+        chat = getattr(message, "chat", None) if message else None
+        if not chat or chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
+            return await handler(event, data)
+        user = callback.from_user
+        if not user or user.is_bot:
+            return await handler(event, data)
+        try:
+            needed = await _user_needs_captcha(int(chat.id), int(user.id))
+        except Exception:
+            return await handler(event, data)
+        if not needed:
+            return await handler(event, data)
+        try:
+            await callback.answer()
+        except Exception:
+            pass
+        return None
 
 
 @captcha_router.callback_query(F.data.startswith("gcA:"))
@@ -469,18 +531,10 @@ def attach_group_captcha(dp) -> None:
     global _attached
     if _attached:
         return
-    dp.message.middleware(CaptchaMessageMiddleware())
+    # outer: ловит каждое сообщение, даже если хендлер не сматчился,
+    # и может остановить команды до остальных роутеров.
+    dp.message.outer_middleware(CaptchaGateMiddleware())
+    dp.callback_query.outer_middleware(CaptchaCallbackGateMiddleware())
     dp.include_router(captcha_router)
     _attached = True
-    try:
-        loop = asyncio.get_running_loop()
-
-        async def _boot():
-            pool = _pool()
-            if pool:
-                await gc.ensure_tables(pool)
-
-        loop.create_task(_boot())
-    except RuntimeError:
-        pass
     print("[CAPTCHA] групповая капча подключена")

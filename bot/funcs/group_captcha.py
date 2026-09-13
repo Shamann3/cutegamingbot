@@ -245,7 +245,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         correct = r.choice(options)
         target = emoji(correct)
         prefix = emoji("v1_prefix")
-        text = f"{prefix.as_html()} Нажмите {_mark('такое же')} {target.as_html()}"
+        text = f"{prefix.as_html()} <b>Нажмите {_mark('такое же')} {target.as_html()}</b>"
         return _pack(v, prefix, text, options, correct)
 
     if v == 2:
@@ -254,7 +254,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = _shuffle(colors, r)
         words = {"red": "красный", "green": "зелёный", "blue": "синий"}
         prefix = emoji("v2_prefix")
-        text = f"{prefix.as_html()} Нажмите {_mark(words[correct])}"
+        text = f"{prefix.as_html()} <b>Нажмите {_mark(words[correct])}</b>"
         return _pack(v, prefix, text, options, correct, extra={"color": words[correct]})
 
     if v == 3:
@@ -262,7 +262,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         correct = r.choice(pool)
         options = _shuffle(pool, r)
         prefix = emoji(correct)
-        text = f"{prefix.as_html()} Нажмите {_mark('такое же')}"
+        text = f"{prefix.as_html()} <b>Нажмите {_mark('такое же')}</b>"
         return _pack(v, prefix, text, options, correct)
 
     if v == 4:
@@ -271,7 +271,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = _shuffle(keys, r)
         words = {"living": "живое", "food": "еду", "thing": "вещь"}
         prefix = emoji("v4_prefix")
-        text = f"{prefix.as_html()} Нажмите {_mark(words[correct])}"
+        text = f"{prefix.as_html()} <b>Нажмите {_mark(words[correct])}</b>"
         return _pack(v, prefix, text, options, correct, extra={"ask": words[correct]})
 
     if v == 5:
@@ -279,7 +279,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = ["left", "right"]  # места фиксированы
         words = {"left": "налево", "right": "направо"}
         prefix = emoji("v5_prefix")
-        text = f"{prefix.as_html()} Нажмите {_mark(words[correct])}"
+        text = f"{prefix.as_html()} <b>Нажмите {_mark(words[correct])}</b>"
         return _pack(v, prefix, text, options, correct, extra={"side": words[correct]})
 
     if v == 6:
@@ -288,7 +288,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = _shuffle(keys, r)
         words = {"happy": "весёлое", "sad": "грустное", "angry": "злое"}
         prefix = emoji("v6_prefix")
-        text = f"{prefix.as_html()} Нажмите {_mark(words[correct])}"
+        text = f"{prefix.as_html()} <b>Нажмите {_mark(words[correct])}</b>"
         return _pack(v, prefix, text, options, correct, extra={"mood": words[correct]})
 
     if v == 7:
@@ -298,8 +298,8 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         names = {"sun": "солнце", "moon": "луну", "earth": "землю"}
         prefix = emoji("v7_prefix")
         text = (
-            f"{prefix.as_html()} Сначала нажмите {_mark(names[first])}, "
-            f"затем {_mark(names[second])}"
+            f"{prefix.as_html()} <b>Сначала нажмите {_mark(names[first])}, "
+            f"затем {_mark(names[second])}</b>"
         )
         return _pack(
             v, prefix, text, options, first,
@@ -317,7 +317,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         "spark": "самое маленькое",
     }
     prefix = emoji("v8_prefix")
-    text = f"{prefix.as_html()} Нажмите {_mark(words[correct])}"
+    text = f"{prefix.as_html()} <b>Нажмите {_mark(words[correct])}</b>"
     return _pack(v, prefix, text, options, correct, extra={"size": sizes[correct], "ask": words[correct]})
 
 
@@ -344,9 +344,21 @@ def _pack(
 
 
 def card_html(payload: Dict[str, Any], user: Any) -> str:
-    body = str(payload.get("text") or "Нажмите нужную кнопку")
+    # Не оборачиваем mention в ещё один <b>: Telegram ломает вложенный bold
+    # и карточка просто не отправляется.
+    body = str(payload.get("text") or "<b>Нажмите нужную кнопку</b>")
     who = mention_html(user)
-    return f"<b>{who}\n{body}</b>"
+    return f"{who}\n{body}"
+
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def to_plain_text(raw: str) -> str:
+    """Последний запасной вариант, если HTML Telegram отверг целиком."""
+    s = html_to_faces(raw or "")
+    s = _HTML_TAG_RE.sub("", s)
+    return html.unescape(s).strip()
 
 
 def answer_callback_data(challenge_id: int, pick: str) -> str:
