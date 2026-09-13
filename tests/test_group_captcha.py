@@ -3,7 +3,9 @@ import random
 
 from bot.funcs.group_captcha import (
     EMOJI,
+    PASS_ALERT,
     SCHEMA_SQL,
+    VARIANT_LABELS,
     answer_callback_data,
     build_challenge,
     card_plain_and_entities,
@@ -18,6 +20,11 @@ from bot.funcs.group_captcha import (
     sign_parts,
     text_outside_tg_emoji,
 )
+
+
+def test_pass_alert_is_set():
+    assert "пройдена" in PASS_ALERT.lower()
+    assert "вы" in PASS_ALERT.lower()
 
 
 def test_schema_is_one_statement_each():
@@ -118,20 +125,19 @@ def test_variant_3_prefix_is_the_answer():
         assert set(card["options"]) == {"gift", "star", "dollar"}
 
 
-def test_variant_4_and_6_and_8_rotate_task():
-    asks4, asks6, asks8 = set(), set(), set()
+def test_variant_4_and_6_rotate_task():
+    asks4, asks6 = set(), set()
     for i in range(30):
         c4 = build_challenge(4, rng=random.Random(300 + i))
         c6 = build_challenge(6, rng=random.Random(400 + i))
-        c8 = build_challenge(8, rng=random.Random(500 + i))
         asks4.add(c4["ask"])
         asks6.add(c6["mood"])
-        asks8.add(c8["ask"])
         assert is_correct_pick(c4, c4["correct"])[0] == "pass"
         assert is_correct_pick(c4, "nope")[0] == "fail"
     assert len(asks4) == 3
     assert len(asks6) == 3
-    assert len(asks8) == 3
+    assert 8 not in VARIANT_LABELS
+    assert all(pick_variant(random.Random(i)) != 8 for i in range(80))
 
 
 def test_variant_5_keeps_left_right_order():
@@ -258,4 +264,5 @@ def test_variant_7_is_rare_but_present():
     picks = [pick_variant(rng) for _ in range(400)]
     share = picks.count(7) / len(picks)
     assert 0.05 < share < 0.20
-    assert set(picks) >= {1, 2, 3, 4, 5, 6, 7, 8}
+    assert set(picks) >= {1, 2, 3, 4, 5, 6, 7}
+    assert 8 not in picks

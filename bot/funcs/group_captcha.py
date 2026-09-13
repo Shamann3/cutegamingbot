@@ -36,6 +36,7 @@ DISABLE_ALERT = (
     "Капчу в группе может отключить только владелец чата.\n"
     "Если вам действительно мешает капча — попросите создателя группы отключить её"
 )
+PASS_ALERT = "Капча пройдена. Теперь вы можете пользоваться ботом"
 
 VARIANT_LABELS = {
     1: "Найдите такое же",
@@ -45,7 +46,6 @@ VARIANT_LABELS = {
     5: "Сторона",
     6: "Настроение",
     7: "Два по порядку",
-    8: "Размер",
 }
 
 # Сырые теги — источник правды. Код сам достаёт id и fallback.
@@ -198,7 +198,7 @@ def pick_variant(rng: Optional[random.Random] = None) -> int:
     r = rng or random
     if r.random() < VARIANT_7_CHANCE:
         return 7
-    return r.choice([1, 2, 3, 4, 5, 6, 8])
+    return r.choice([1, 2, 3, 4, 5, 6])
 
 
 def _mark(answer: str) -> str:
@@ -296,22 +296,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
             extra={"sequence": [first, second], "step": 0, "names": names},
         )
 
-    # v == 8
-    sizes = {"earth": "большое", "berry": "среднее", "spark": "маленькое"}
-    keys = ["earth", "berry", "spark"]
-    correct = r.choice(keys)
-    options = _shuffle(keys, r)
-    words = {
-        "earth": "самое большое",
-        "berry": "среднее",
-        "spark": "самое маленькое",
-    }
-    prefix = emoji("v8_prefix")
-    chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": words[correct]}]
-    return _pack(
-        v, prefix, options, correct, chunks,
-        extra={"size": sizes[correct], "ask": words[correct]},
-    )
+    return build_challenge(pick_variant(r), rng=r)
 
 
 def _emoji_ref(item: PremiumEmoji) -> Dict[str, str]:

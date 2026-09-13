@@ -394,8 +394,8 @@ class CaptchaGateMiddleware(BaseMiddleware):
             return await handler(event, data)
         if _is_slash_command(message):
             return None
+        bot = data.get("bot") or message.bot
         try:
-            bot = data.get("bot") or message.bot
             await maybe_prompt_captcha(
                 bot,
                 chat_id=int(chat.id),
@@ -406,6 +406,7 @@ class CaptchaGateMiddleware(BaseMiddleware):
             )
         except Exception:
             log.exception("captcha prompt chat=%s user=%s", chat.id, user.id)
+        await _delete_message(bot, int(chat.id), message.message_id)
         return None
 
 
@@ -532,7 +533,7 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
                 await callback.message.delete()
             except Exception:
                 pass
-        await callback.answer()
+        await callback.answer(gc.PASS_ALERT, show_alert=True)
         return
 
     # fail — тихо, новая лёгкая карточка
@@ -585,7 +586,7 @@ async def on_captcha_disable(callback: CallbackQuery) -> None:
         await callback.message.delete()
     except Exception:
         pass
-    await callback.answer("Капча в этой группе выключена")
+    await callback.answer("Капча в этой группе выключена", show_alert=True)
 
 
 def attach_group_captcha(dp) -> None:
