@@ -78,7 +78,7 @@ CALLBACK_MODULES: Tuple[str, ...] = (
     'bot.tggames.soccer',
 )
 
-# prefix -> (module, handler): 387
+# prefix -> (module, handler): 385
 PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'ajdfiasjoaskdokasdqwqkpфыафывйц': ('main', 'send_styles'),
     'callbroulletanswermultiplier': ('bot.games.Fortuna', 'fortuna_multiplier_info'),
@@ -224,7 +224,6 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'tank_paid_stub': ('bot.games.tank', 'tank_paid_stub'),
     'tank_withdraw_': ('bot.games.tank', 'tank_process_withdraw'),
     'tic_tac_create': ('bot.design.inlinetictac2', 'inline_tic_tac_create_game_callback'),
-    '9help_btncomm': ('bot.funcs.help', 'callback_help_commission_9'),
     '9help_btnfunk': ('bot.funcs.help', 'calybybybrvcrelback_main'),
     '9help_btnking': ('bot.funcs.help', 'callback_help_king_9'),
     'accept_action': ('bot.design.inlinekn', 'accept_action_handler'),
@@ -272,7 +271,6 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'errorbasket_': ('bot.tggames.basket', 'errorbasket_alert'),
     'filter_page_': ('bot.funcs.shop', 'paginate_handler'),
     'gameshistory': ('bot.funcs.history', 'process_callback'),
-    'help_btncomm': ('bot.funcs.help', 'callback_help_commission'),
     'help_btnfunk': ('bot.funcs.help', 'calltewdxwback_main'),
     'help_btnking': ('bot.funcs.help', 'callback_help_king'),
     'help_store10': ('bot.funcs.help', 'cahfduascniamwwallback_top'),
@@ -469,13 +467,14 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'gc:': ('bot.funcs.balance', 'gc_info_callback'),
 }
 
-# exact callback_data -> (module, handler): 176
+# exact callback_data -> (module, handler): 178
 EXACT_HANDLERS: Dict[str, Tuple[str, str]] = {
     '1st6': ('bot.funcs.BlackGack', 'range_callback'),
     '1to9': ('bot.funcs.BlackGack', 'range_callback'),
     '2nd6': ('bot.funcs.BlackGack', 'range_callback'),
     '3flagcancel_flag_removal': ('bot.funcs.balance', 'cancel_flag_removal'),
     '3rd6': ('bot.funcs.BlackGack', 'range_callback'),
+    '9help_btncomm': ('bot.funcs.help', 'callback_help_commission_9'),
     '9to18': ('bot.funcs.BlackGack', 'range_callback'),
     'EVEN': ('bot.funcs.BlackGack', 'range_callback'),
     'ODD': ('bot.funcs.BlackGack', 'range_callback'),
@@ -546,6 +545,7 @@ EXACT_HANDLERS: Dict[str, Tuple[str, str]] = {
     'group_balance_overview': ('bot.handlers.chatbalance', 'group_balance_overview'),
     'grow_cultures': ('bot.funcs.garden', 'handle_grow_cultures3412'),
     'grow_cultures1': ('bot.funcs.garden', 'handle_grow_cultures1'),
+    'help_btncomm': ('bot.funcs.help', 'callback_help_commission'),
     'help_clans': ('bot.design.inlinetictactoe', 'callback_main'),
     'help_commission': ('bot.design.inlinetictactoe', 'callback_help_commission_inline'),
     'help_earnings': ('bot.design.inlinetictactoe', 'callback_main'),

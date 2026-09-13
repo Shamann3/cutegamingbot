@@ -183,8 +183,8 @@ textcommhelp = '''
 <i>С выигрыша удерживается небольшой процент. Он уходит в Фонд Роста : так проект продолжает жить, а ваши игры копятся в шкале профиля.</i></blockquote>
 
 <blockquote><b><tg-emoji emoji-id='5469967260380612012'>🏆</tg-emoji> Купон Возможностей</b>
-<i>Когда шкала заполняется, вы получаете купон. Используйте его - и шансы на победу следующей одиночной игре многократно увеличатся</i>
-<code>Использовать 💸</code></blockquote>
+<i>Когда шкала заполняется, вы получаете купон. Используйте его — и шансы на победу в следующей одиночной игре многократно увеличатся.</i></blockquote>
+<blockquote><code>Использовать 💸</code></blockquote>
 
 <blockquote><b>Комиссия возвращается победой.</b></blockquote>
 '''
@@ -964,31 +964,31 @@ async def callback_erwqedsaCXZmain(call: types.CallbackQuery):
             pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
 
-@dp.callback_query(lambda c: c.data.startswith('9help_btncomm'))
+async def _edit_commission_tab(call: types.CallbackQuery, markup) -> None:
+    try:
+        await call.answer()
+        await call.message.edit_text(
+            text=textcommhelp,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=markup,
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+
+
+@dp.callback_query(lambda c: c.data == "9help_btncomm")
 async def callback_help_commission_9(call: types.CallbackQuery):
-    try:
-        await call.answer()
-        await call.message.edit_text(
-            text=textcommhelp, parse_mode="HTML", disable_web_page_preview=True, reply_markup=btn_help9)
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            pass
+    await _edit_commission_tab(call, btn_help9)
 
-@dp.callback_query(lambda c: c.data.startswith('help_btncomm'))
+
+@dp.callback_query(lambda c: c.data == "help_btncomm")
 async def callback_help_commission(call: types.CallbackQuery):
-    user_id = call.from_user.id
-    message_id = call.message.message_id
-    try:
-        if not _help_owner_guard(user_id, message_id):
-            await _help_reject_intruder(call)
-            return
-
-        await call.answer()
-        await call.message.edit_text(
-            text=textcommhelp, parse_mode="HTML", disable_web_page_preview=True, reply_markup=btn_help)
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            pass
+    if not _help_owner_guard(call.from_user.id, call.message.message_id):
+        await _help_reject_intruder(call)
+        return
+    await _edit_commission_tab(call, btn_help)
 
 #🚀 Краш <pre>краш [ставка] [коэфициэнт]</pre>
 #🦋 Бабочка <pre>бк [ставка]</pre>

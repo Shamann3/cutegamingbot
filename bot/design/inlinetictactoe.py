@@ -109,8 +109,10 @@ async def callback_help_commission_inline(call: CallbackQuery):
             text=textcommhelp,
             inline_message_id=call.inline_message_id,
             parse_mode="HTML",
+            disable_web_page_preview=True,
             reply_markup=btn_help_inline
         )
+        await call.answer()
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
             await call.answer("🥹 Вы уже находитесь в этой вкладке" , show_alert=True)
