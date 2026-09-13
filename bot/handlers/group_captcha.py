@@ -303,14 +303,17 @@ async def maybe_prompt_captcha(
             _last_prompt.pop(key, None)
             return False
         await gc.update_challenge(pool, int(row["id"]), message_id=mid)
-        await gc.log_event(
-            pool,
-            user_id=uid,
-            chat_id=int(chat_id),
-            event="shown",
-            variant=payload.get("variant"),
-            meta={"trigger": trigger},
-        )
+        try:
+            await gc.log_event(
+                pool,
+                user_id=uid,
+                chat_id=int(chat_id),
+                event="shown",
+                variant=payload.get("variant"),
+                meta=gc.event_meta(user, extra={"trigger": trigger}),
+            )
+        except Exception:
+            log.exception("captcha shown log failed chat=%s user=%s", chat_id, uid)
         _last_prompt[key] = time.monotonic()
         print(f"[CAPTCHA] shown chat={chat_id} user={uid} mid={mid} trigger={trigger}")
         await _maybe_unrestrict(bot, chat_id, uid)
@@ -509,23 +512,31 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
         gc.note_passed(chat_id, uid)
         gc.forget_live(challenge_id)
         await callback.answer(gc.PASS_ALERT, show_alert=True)
-        tasks = []
+        chat = getattr(callback.message, "chat", None)
         if pool:
-            tasks.append(gc.mark_passed(
-                pool,
-                user_id=uid,
-                chat_id=chat_id,
-                variant=payload.get("variant"),
-                attempts=attempts,
-                duration_ms=gc.duration_ms_of(row),
-                trigger=row.get("trigger"),
-            ))
-            tasks.append(gc.delete_challenge(pool, challenge_id=challenge_id))
-        tasks.append(_maybe_unrestrict(callback.bot, chat_id, uid))
+            try:
+                await gc.mark_passed(
+                    pool,
+                    user_id=uid,
+                    chat_id=chat_id,
+                    variant=payload.get("variant"),
+                    attempts=attempts,
+                    duration_ms=gc.duration_ms_of(row),
+                    trigger=row.get("trigger"),
+                    meta=gc.event_meta(user, chat),
+                )
+            except Exception:
+                log.exception("captcha pass persist failed chat=%s user=%s", chat_id, uid)
+            try:
+                await gc.delete_challenge(pool, challenge_id=challenge_id)
+            except Exception:
+                log.exception("captcha challenge delete failed id=%s", challenge_id)
+        else:
+            log.warning("captcha pass without db pool chat=%s user=%s", chat_id, uid)
+        after = [_maybe_unrestrict(callback.bot, chat_id, uid)]
         if callback.message:
-            tasks.append(_delete_message(callback.bot, chat_id, callback.message.message_id))
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            after.append(_delete_message(callback.bot, chat_id, callback.message.message_id))
+        await asyncio.gather(*after, return_exceptions=True)
         return
 
     attempts += 1
@@ -538,19 +549,27 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
         callback.bot, chat_id=chat_id, user=user, row=row, payload=fresh, thread_id=thread_id,
     )
     if not pool:
+        log.warning("captcha fail without db pool chat=%s user=%s", chat_id, uid)
         return
-    persist = [
-        gc.update_challenge(pool, challenge_id, payload=fresh, attempts=attempts, message_id=mid),
-        gc.log_event(
+    try:
+        await gc.update_challenge(pool, challenge_id, payload=fresh, attempts=attempts, message_id=mid)
+    except Exception:
+        log.exception("captcha fail update failed id=%s", challenge_id)
+    try:
+        await gc.log_event(
             pool,
             user_id=uid,
             chat_id=chat_id,
             event="fail",
             variant=payload.get("variant"),
-            meta={"pick": pick, "attempts": attempts},
-        ),
-    ]
-    await asyncio.gather(*persist, return_exceptions=True)
+            meta=gc.event_meta(
+                user,
+                getattr(callback.message, "chat", None),
+                extra={"pick": pick, "attempts": attempts},
+            ),
+        )
+    except Exception:
+        log.exception("captcha fail log failed chat=%s user=%s", chat_id, uid)
 
 
 @captcha_router.callback_query(F.data.startswith("gcX:"))

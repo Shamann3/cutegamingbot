@@ -4,6 +4,7 @@ import random
 from bot.funcs.group_captcha import (
     EMOJI,
     PASS_ALERT,
+    event_meta,
     SCHEMA_SQL,
     VARIANT_LABELS,
     answer_callback_data,
@@ -20,6 +21,17 @@ from bot.funcs.group_captcha import (
     sign_parts,
     text_outside_tg_emoji,
 )
+
+
+def test_event_meta_keeps_names():
+    user = type("U", (), {"full_name": "Анна Cute", "first_name": "Анна", "username": "anna"})()
+    chat = type("C", (), {"title": "Игры", "username": "games"})()
+    meta = event_meta(user, chat, extra={"trigger": "message", "pick": "right"})
+    assert meta["name"] == "Анна Cute"
+    assert meta["username"] == "anna"
+    assert meta["chat"] == "Игры"
+    assert meta["trigger"] == "message"
+    assert meta["pick"] == "right"
 
 
 def test_pass_alert_is_set():

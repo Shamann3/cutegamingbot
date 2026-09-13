@@ -1905,7 +1905,10 @@ async def _build_user_dossier(user_id: int, *, is_owner: bool) -> dict:
             "passedGroups": 0,
             "fails": 0,
             "shown": 0,
+            "pending": 0,
             "groups": [],
+            "recent": [],
+            "pendingCards": [],
         }
 
     if is_owner:

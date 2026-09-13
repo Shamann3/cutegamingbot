@@ -3,12 +3,22 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from db import db
 
 from bot.funcs.group_captcha import VARIANT_LABELS, ensure_tables
+
+log = logging.getLogger("admin_captcha")
+
+EVENT_LABELS = {
+    "shown": "показали карточку",
+    "fail": "ошибка",
+    "pass": "прошёл",
+    "disable": "выключил капчу",
+}
 
 
 def _iint(v: Any, default: int = 0) -> int:
@@ -36,12 +46,57 @@ def _label(variant: Any) -> str:
 async def _ready() -> bool:
     pool = getattr(db, "pool", None)
     if pool is None:
+        log.warning("captcha admin: db pool is None")
         return False
     try:
         await ensure_tables(pool)
         return True
     except Exception:
+        log.exception("captcha admin: ensure_tables failed")
         return False
+
+
+async def _q(label: str, coro, default=None):
+    try:
+        return await coro
+    except Exception:
+        log.exception("captcha admin query failed: %s", label)
+        return default
+
+
+def _meta(row: Any) -> Dict[str, Any]:
+    raw = row["meta"] if row and "meta" in row.keys() else None
+    return raw if isinstance(raw, dict) else {}
+
+
+async def _chat_names(chat_ids: List[int]) -> Dict[int, Dict[str, Optional[str]]]:
+    ids = [int(x) for x in dict.fromkeys(chat_ids) if x]
+    if not ids:
+        return {}
+    rows = await _q(
+        "chat_names",
+        db.pool.fetch(
+            "SELECT chat_id, namechat, usernamechat FROM chat WHERE chat_id = ANY($1::bigint[])",
+            ids,
+        ),
+        [],
+    )
+    out: Dict[int, Dict[str, Optional[str]]] = {}
+    for r in rows or []:
+        out[int(r["chat_id"])] = {
+            "name": r["namechat"] or str(r["chat_id"]),
+            "username": r["usernamechat"],
+        }
+    return out
+
+
+def _chat_title(chat_id: int, names: Dict[int, Dict[str, Optional[str]]], meta: Optional[Dict[str, Any]] = None) -> str:
+    hit = names.get(int(chat_id))
+    if hit and hit.get("name"):
+        return str(hit["name"])
+    if meta and meta.get("chat"):
+        return str(meta["chat"])
+    return str(chat_id)
 
 
 async def user_captcha(user_id: int) -> Dict[str, Any]:
@@ -49,31 +104,69 @@ async def user_captcha(user_id: int) -> Dict[str, Any]:
         "passedGroups": 0,
         "fails": 0,
         "shown": 0,
+        "pending": 0,
         "firstTryPasses": 0,
         "avgDurationMs": None,
         "lastPassedAt": None,
+        "lastShownAt": None,
+        "lastFailAt": None,
         "groups": [],
+        "recent": [],
+        "pendingCards": [],
         "hardestVariant": None,
         "favoriteVariant": None,
     }
     if not await _ready():
         return empty
     uid = int(user_id)
-    try:
-        passes = await db.pool.fetch(
+
+    passes = await _q(
+        "user_passes",
+        db.pool.fetch(
             """
-            SELECT p.chat_id, p.passed_at, p.variant, p.attempts, p.duration_ms, p.trigger,
-                   c.namechat, c.usernamechat
-              FROM group_captcha_passes p
-              LEFT JOIN chat c ON c.chat_id = p.chat_id
-             WHERE p.user_id = $1
-             ORDER BY p.passed_at DESC
+            SELECT chat_id, passed_at, variant, attempts, duration_ms, trigger
+              FROM group_captcha_passes
+             WHERE user_id = $1
+             ORDER BY passed_at DESC
              LIMIT 80
             """,
             uid,
-        )
-    except Exception:
-        return empty
+        ),
+        [],
+    ) or []
+
+    ev_rows = await _q(
+        "user_events",
+        db.pool.fetch(
+            """
+            SELECT event, variant, chat_id, created_at, meta
+              FROM group_captcha_events
+             WHERE user_id = $1
+             ORDER BY created_at DESC
+             LIMIT 40
+            """,
+            uid,
+        ),
+        [],
+    ) or []
+
+    pending_rows = await _q(
+        "user_pending",
+        db.pool.fetch(
+            """
+            SELECT chat_id, variant, attempts, trigger, created_at, expires_at
+              FROM group_captcha_challenges
+             WHERE user_id = $1 AND expires_at > NOW()
+             ORDER BY created_at DESC
+             LIMIT 20
+            """,
+            uid,
+        ),
+        [],
+    ) or []
+
+    chat_ids = [int(r["chat_id"]) for r in list(passes) + list(ev_rows) + list(pending_rows)]
+    names = await _chat_names(chat_ids)
 
     groups = []
     durations: List[int] = []
@@ -87,10 +180,12 @@ async def user_captcha(user_id: int) -> Dict[str, Any]:
             first_try += 1
         key = str(r["variant"])
         variant_counts[key] = variant_counts.get(key, 0) + 1
+        cid = int(r["chat_id"])
+        hit = names.get(cid) or {}
         groups.append({
-            "chatId": int(r["chat_id"]),
-            "name": r["namechat"] or str(r["chat_id"]),
-            "username": r["usernamechat"],
+            "chatId": cid,
+            "name": hit.get("name") or str(cid),
+            "username": hit.get("username"),
             "variant": key,
             "variantLabel": _label(key),
             "attempts": _iint(r["attempts"], 1),
@@ -99,28 +194,76 @@ async def user_captcha(user_id: int) -> Dict[str, Any]:
             "passedAt": _iso(r["passed_at"]),
         })
 
-    fails = 0
     shown = 0
-    fail_by_variant: Dict[str, int] = {}
-    try:
-        ev = await db.pool.fetch(
+    fails = 0
+    last_shown = None
+    last_fail = None
+    recent: List[Dict[str, Any]] = []
+    for r in ev_rows:
+        kind = str(r["event"] or "")
+        meta = _meta(r)
+        cid = int(r["chat_id"])
+        at = _iso(r["created_at"])
+        if kind == "fail" and last_fail is None:
+            last_fail = at
+        elif kind == "shown" and last_shown is None:
+            last_shown = at
+        recent.append({
+            "event": kind,
+            "label": EVENT_LABELS.get(kind, kind),
+            "chatId": cid,
+            "chatName": _chat_title(cid, names, meta),
+            "variant": str(r["variant"] or ""),
+            "variantLabel": _label(r["variant"]) if r["variant"] else None,
+            "pick": meta.get("pick"),
+            "attempts": meta.get("attempts"),
+            "at": at,
+        })
+
+    # агрегаты по всей истории, не только по последним 40 событиям
+    totals = await _q(
+        "user_event_totals",
+        db.pool.fetchrow(
             """
-            SELECT event, variant, count(*)::int AS n
+            SELECT count(*) FILTER (WHERE event = 'shown')::int AS shown,
+                   count(*) FILTER (WHERE event = 'fail')::int AS fails
               FROM group_captcha_events
-             WHERE user_id = $1 AND event IN ('fail', 'shown')
-             GROUP BY event, variant
+             WHERE user_id = $1
             """,
             uid,
-        )
-        for r in ev:
-            if r["event"] == "fail":
-                fails += int(r["n"])
-                if r["variant"]:
-                    fail_by_variant[str(r["variant"])] = int(r["n"])
-            elif r["event"] == "shown":
-                shown += int(r["n"])
-    except Exception:
-        pass
+        ),
+        None,
+    )
+    if totals:
+        shown = _iint(totals["shown"])
+        fails = _iint(totals["fails"])
+
+    fail_rows = await _q(
+        "user_fail_variants",
+        db.pool.fetch(
+            """
+            SELECT variant, count(*)::int AS n
+              FROM group_captcha_events
+             WHERE user_id = $1 AND event = 'fail' AND variant IS NOT NULL
+             GROUP BY variant
+            """,
+            uid,
+        ),
+        [],
+    ) or []
+    fail_by_variant = {str(r["variant"]): int(r["n"]) for r in fail_rows}
+
+    pending_cards = []
+    for r in pending_rows:
+        cid = int(r["chat_id"])
+        pending_cards.append({
+            "chatId": cid,
+            "name": (names.get(cid) or {}).get("name") or str(cid),
+            "variantLabel": _label(r["variant"]),
+            "attempts": _iint(r["attempts"]),
+            "trigger": r["trigger"],
+            "at": _iso(r["created_at"]),
+        })
 
     hardest = None
     if fail_by_variant:
@@ -135,10 +278,15 @@ async def user_captcha(user_id: int) -> Dict[str, Any]:
         "passedGroups": len(groups),
         "fails": fails,
         "shown": shown,
+        "pending": len(pending_cards),
         "firstTryPasses": first_try,
         "avgDurationMs": int(sum(durations) / len(durations)) if durations else None,
         "lastPassedAt": groups[0]["passedAt"] if groups else None,
+        "lastShownAt": last_shown,
+        "lastFailAt": last_fail,
         "groups": groups,
+        "recent": recent,
+        "pendingCards": pending_cards,
         "hardestVariant": hardest,
         "favoriteVariant": favorite,
     }
@@ -283,17 +431,43 @@ async def chat_captcha(chat_id: int, *, members: Optional[int] = None) -> Dict[s
             cid,
         )
         for r in rows:
+            meta = r["meta"] if isinstance(r["meta"], dict) else {}
             recent_fails.append({
                 "userId": int(r["user_id"]),
-                "name": r["first_name"] or str(r["user_id"]),
-                "username": r["username"],
+                "name": r["first_name"] or meta.get("name") or str(r["user_id"]),
+                "username": r["username"] or meta.get("username"),
                 "variant": str(r["variant"] or ""),
                 "variantLabel": _label(r["variant"]),
                 "at": _iso(r["created_at"]),
-                "pick": (r["meta"] or {}).get("pick") if isinstance(r["meta"], dict) else None,
+                "pick": meta.get("pick"),
             })
     except Exception:
-        pass
+        log.exception("captcha admin query failed: chat_recent_fails")
+        rows = await _q(
+            "chat_recent_fails_plain",
+            db.pool.fetch(
+                """
+                SELECT user_id, variant, created_at, meta
+                  FROM group_captcha_events
+                 WHERE chat_id = $1 AND event = 'fail'
+                 ORDER BY created_at DESC
+                 LIMIT 20
+                """,
+                cid,
+            ),
+            [],
+        ) or []
+        for r in rows:
+            meta = r["meta"] if isinstance(r["meta"], dict) else {}
+            recent_fails.append({
+                "userId": int(r["user_id"]),
+                "name": meta.get("name") or str(r["user_id"]),
+                "username": meta.get("username"),
+                "variant": str(r["variant"] or ""),
+                "variantLabel": _label(r["variant"]),
+                "at": _iso(r["created_at"]),
+                "pick": meta.get("pick"),
+            })
 
     recent_passes: List[Dict[str, Any]] = []
     try:
@@ -321,7 +495,32 @@ async def chat_captcha(chat_id: int, *, members: Optional[int] = None) -> Dict[s
                 "at": _iso(r["passed_at"]),
             })
     except Exception:
-        pass
+        log.exception("captcha admin query failed: chat_recent_passes")
+        rows = await _q(
+            "chat_recent_passes_plain",
+            db.pool.fetch(
+                """
+                SELECT user_id, variant, passed_at, attempts, duration_ms
+                  FROM group_captcha_passes
+                 WHERE chat_id = $1
+                 ORDER BY passed_at DESC
+                 LIMIT 20
+                """,
+                cid,
+            ),
+            [],
+        ) or []
+        for r in rows:
+            recent_passes.append({
+                "userId": int(r["user_id"]),
+                "name": str(r["user_id"]),
+                "username": None,
+                "variant": str(r["variant"] or ""),
+                "variantLabel": _label(r["variant"]),
+                "attempts": _iint(r["attempts"], 1),
+                "durationMs": None if r["duration_ms"] is None else int(r["duration_ms"]),
+                "at": _iso(r["passed_at"]),
+            })
 
     not_passed_hint = None
     if members and members > 0:
@@ -369,6 +568,7 @@ async def overview_captcha() -> Dict[str, Any]:
         "topFailUsers": [],
         "topGroups": [],
         "nightShare": None,
+        "lastEventAt": None,
         "facts": [],
     }
     if not await _ready():
@@ -505,6 +705,17 @@ async def overview_captcha() -> Dict[str, Any]:
     except Exception:
         pass
 
+    enabled_chats = await _q(
+        "overview_chats",
+        db.pool.fetchval("SELECT count(DISTINCT chat_id) FROM group_captcha_events"),
+        0,
+    )
+    last_event_at = await _q(
+        "overview_last_event",
+        db.pool.fetchval("SELECT max(created_at) FROM group_captcha_events"),
+        None,
+    )
+
     pass_rate = round(100.0 * totals["passed"] / totals["shown"], 1) if totals["shown"] else None
     first_try_rate = round(100.0 * totals["first_try"] / totals["passed"], 1) if totals["passed"] else None
     night_share = round(100.0 * totals["night"] / totals["passed"], 1) if totals["passed"] else None
@@ -524,11 +735,13 @@ async def overview_captcha() -> Dict[str, Any]:
         facts.append(f"Сейчас висят {totals['pending']} незакрытых карточек")
     if disabled_chats:
         facts.append(f"Владельцы выключили капчу в {disabled_chats} группах")
+    if last_event_at:
+        facts.append(f"Последняя запись в базе — {_iso(last_event_at)}")
     if not facts:
         facts.append("Капча только запускается — факты появятся после первых прохождений")
 
     return {
-        "enabledChats": max(0, len(top_groups)),  # ориентир по группам с прохождениями
+        "enabledChats": _iint(enabled_chats),
         "disabledChats": disabled_chats,
         "passed": totals["passed"],
         "fails": totals["fails"],
@@ -544,5 +757,6 @@ async def overview_captcha() -> Dict[str, Any]:
         "topFailUsers": top_fail_users,
         "topGroups": top_groups,
         "nightShare": night_share,
+        "lastEventAt": _iso(last_event_at),
         "facts": facts,
     }

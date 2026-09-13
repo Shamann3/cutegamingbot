@@ -1506,7 +1506,8 @@
   font-size: 0.84rem;
 }
 
-.pu-dossier-ach li em {
+.pu-dossier-ach li em,
+.pu-dossier-captcha li em {
   margin-left: auto;
   font-style: normal;
   font-size: 0.7rem;

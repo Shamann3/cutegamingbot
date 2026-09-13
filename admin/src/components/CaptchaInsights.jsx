@@ -35,6 +35,8 @@ export function CaptchaOverviewBlock({ data, onOpenChat, onOpenUser }) {
         <div className="grp-stat"><span className="grp-stat-label">Среднее время</span><strong className="grp-stat-value">{dur(c.avgDurationMs)}</strong></div>
         <div className="grp-stat"><span className="grp-stat-label">Висят сейчас</span><strong className="grp-stat-value">{fmt(c.pending)}</strong></div>
         <div className="grp-stat"><span className="grp-stat-label">Выключили</span><strong className="grp-stat-value">{fmt(c.disabledChats)}</strong><span className="grp-stat-hint">групп</span></div>
+        <div className="grp-stat"><span className="grp-stat-label">Групп с капчей</span><strong className="grp-stat-value">{fmt(c.enabledChats)}</strong><span className="grp-stat-hint">где уже показывали</span></div>
+        <div className="grp-stat"><span className="grp-stat-label">Последнее событие</span><strong className="grp-stat-value">{when(c.lastEventAt)}</strong></div>
       </div>
 
       {facts.length > 0 && (
@@ -151,10 +153,18 @@ export function CaptchaChatBlock({ data, members, onOpenUser }) {
 export function CaptchaDossierBlock({ data, onOpenChat }) {
   const c = data || {}
   const groups = Array.isArray(c.groups) ? c.groups : []
+  const recent = Array.isArray(c.recent) ? c.recent : []
+  const pending = Array.isArray(c.pendingCards) ? c.pendingCards : []
+  const hasAny = groups.length > 0 || recent.length > 0 || pending.length > 0 || Number(c.shown) > 0 || Number(c.fails) > 0
   return (
     <div className="pu-dossier-captcha">
       <p className="pu-dossier-label">Капча в группах</p>
       <div className="pu-dossier-grid">
+        <div className="pu-dossier-tile">
+          <span>Карточек</span>
+          <strong>{fmt(c.shown)}</strong>
+          <em>показали</em>
+        </div>
         <div className="pu-dossier-tile">
           <span>Прошёл</span>
           <strong>{fmt(c.passedGroups)}</strong>
@@ -168,22 +178,38 @@ export function CaptchaDossierBlock({ data, onOpenChat }) {
         <div className="pu-dossier-tile">
           <span>Среднее время</span>
           <strong>{dur(c.avgDurationMs)}</strong>
-          {c.firstTryPasses ? <em>с первой: {fmt(c.firstTryPasses)}</em> : null}
+          {c.firstTryPasses ? <em>с первой: {fmt(c.firstTryPasses)}</em> : <em>{c.lastShownAt ? `показ ${when(c.lastShownAt)}` : 'ещё нет успеха'}</em>}
         </div>
       </div>
       {c.hardestVariant && (
         <p className="panel-shelf-muted">Чаще путает «{c.hardestVariant.label}»</p>
       )}
-      {groups.length === 0 ? (
-        <p className="panel-shelf-muted">В группах капчу ещё не проходил</p>
-      ) : (
+      {pending.length > 0 && (
+        <p className="panel-shelf-muted">Сейчас висит карточка в {pending.map((p) => p.name).join(', ')}</p>
+      )}
+      {!hasAny && (
+        <p className="panel-shelf-muted">В группах капчу ещё не показывали</p>
+      )}
+      {groups.length > 0 && (
         <ul>
           {groups.map((g) => (
-            <li key={g.chatId}>
+            <li key={`pass-${g.chatId}`}>
               <button type="button" className="cap-link" onClick={() => onOpenChat?.(g.chatId)}>
                 {g.name}
               </button>
-              <em>{g.variantLabel} · {g.attempts} попыт. · {when(g.passedAt)}</em>
+              <em>прошёл · {g.variantLabel} · {g.attempts} попыт. · {when(g.passedAt)}</em>
+            </li>
+          ))}
+        </ul>
+      )}
+      {recent.length > 0 && (
+        <ul>
+          {recent.slice(0, 8).map((e, i) => (
+            <li key={`ev-${e.at}-${i}`}>
+              <button type="button" className="cap-link" onClick={() => onOpenChat?.(e.chatId)}>
+                {e.chatName}
+              </button>
+              <em>{e.label}{e.variantLabel ? ` · ${e.variantLabel}` : ''} · {when(e.at)}</em>
             </li>
           ))}
         </ul>

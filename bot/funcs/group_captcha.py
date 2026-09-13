@@ -860,6 +860,33 @@ async def has_passed(pool, chat_id: int, user_id: int) -> bool:
     return False
 
 
+def event_meta(user: Any = None, chat: Any = None, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Снимок человека и чата — чтобы админка читала историю даже без JOIN."""
+    meta: Dict[str, Any] = {}
+    if user is not None:
+        name = (
+            getattr(user, "full_name", None)
+            or getattr(user, "first_name", None)
+        )
+        if name:
+            meta["name"] = str(name)[:80]
+        uname = getattr(user, "username", None)
+        if uname:
+            meta["username"] = str(uname)[:64]
+    if chat is not None:
+        title = getattr(chat, "title", None)
+        if title:
+            meta["chat"] = str(title)[:80]
+        cuser = getattr(chat, "username", None)
+        if cuser:
+            meta["chat_username"] = str(cuser)[:64]
+    if extra:
+        for key, value in extra.items():
+            if value is not None and value != "":
+                meta[key] = value
+    return meta
+
+
 async def log_event(
     pool,
     *,
@@ -869,18 +896,28 @@ async def log_event(
     variant: Any = None,
     meta: Optional[Dict[str, Any]] = None,
 ) -> None:
+    if pool is None:
+        log.warning("captcha log_event skipped: no pool event=%s user=%s chat=%s", event, user_id, chat_id)
+        return
     await ensure_tables(pool)
-    await pool.execute(
-        """
-        INSERT INTO group_captcha_events (user_id, chat_id, event, variant, meta)
-        VALUES ($1, $2, $3, $4, $5::jsonb)
-        """,
-        int(user_id),
-        int(chat_id),
-        str(event),
-        None if variant is None else str(variant),
-        json.dumps(meta or {}, ensure_ascii=False),
-    )
+    try:
+        await pool.execute(
+            """
+            INSERT INTO group_captcha_events (user_id, chat_id, event, variant, meta)
+            VALUES ($1, $2, $3, $4, $5::jsonb)
+            """,
+            int(user_id),
+            int(chat_id),
+            str(event),
+            None if variant is None else str(variant),
+            json.dumps(meta or {}, ensure_ascii=False),
+        )
+    except Exception:
+        log.exception(
+            "captcha log_event failed event=%s user=%s chat=%s variant=%s",
+            event, user_id, chat_id, variant,
+        )
+        raise
 
 
 async def disable_chat(pool, chat_id: int, by_user_id: int) -> None:
@@ -915,22 +952,37 @@ async def mark_passed(
     attempts: int,
     duration_ms: Optional[int],
     trigger: Optional[str],
+    meta: Optional[Dict[str, Any]] = None,
 ) -> None:
+    if pool is None:
+        log.warning("captcha mark_passed skipped: no pool user=%s chat=%s", user_id, chat_id)
+        return
     await ensure_tables(pool)
-    await pool.execute(
-        """
-        INSERT INTO group_captcha_passes
-            (user_id, chat_id, passed_at, variant, attempts, duration_ms, trigger)
-        VALUES ($1, $2, NOW(), $3, $4, $5, $6)
-        ON CONFLICT (user_id, chat_id) DO NOTHING
-        """,
-        int(user_id),
-        int(chat_id),
-        str(variant),
-        max(1, int(attempts or 1)),
-        duration_ms,
-        trigger,
-    )
+    packed = {
+        "attempts": max(1, int(attempts or 1)),
+        "duration_ms": duration_ms,
+        "trigger": trigger,
+    }
+    if meta:
+        packed.update(meta)
+    try:
+        await pool.execute(
+            """
+            INSERT INTO group_captcha_passes
+                (user_id, chat_id, passed_at, variant, attempts, duration_ms, trigger)
+            VALUES ($1, $2, NOW(), $3, $4, $5, $6)
+            ON CONFLICT (user_id, chat_id) DO NOTHING
+            """,
+            int(user_id),
+            int(chat_id),
+            str(variant),
+            packed["attempts"],
+            duration_ms,
+            trigger,
+        )
+    except Exception:
+        log.exception("captcha mark_passed failed user=%s chat=%s", user_id, chat_id)
+        raise
     _cache_pass(chat_id, user_id)
     await log_event(
         pool,
@@ -938,7 +990,7 @@ async def mark_passed(
         chat_id=chat_id,
         event="pass",
         variant=variant,
-        meta={"attempts": attempts, "duration_ms": duration_ms, "trigger": trigger},
+        meta=packed,
     )
 
 
