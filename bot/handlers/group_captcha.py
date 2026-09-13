@@ -23,6 +23,7 @@ _attached = False
 _locks: Dict[Tuple[int, int], asyncio.Lock] = {}
 _last_prompt: Dict[Tuple[int, int], float] = {}
 _PROMPT_GAP = 8.0
+_MESSAGE_RESEND_GAP = 1.1
 
 _RESTRICTED = ChatPermissions(
     can_send_messages=False,
@@ -140,7 +141,7 @@ async def _send_or_edit(
     rich_text = gc.card_html(payload, user)
     variants = (
         (rich_text, gc.build_markup(int(row["id"]), int(chat_id), payload, plain=False)),
-        (gc.strip_tg_emoji(rich_text), gc.build_markup(int(row["id"]), int(chat_id), payload, plain=True)),
+        (gc.html_to_faces(rich_text), gc.build_markup(int(row["id"]), int(chat_id), payload, plain=True)),
     )
     mid = row.get("message_id")
     last_err: Optional[BaseException] = None
@@ -233,10 +234,12 @@ async def maybe_prompt_captcha(
 
     key = (int(chat_id), uid)
     now = time.monotonic()
-    if now - _last_prompt.get(key, 0.0) < _PROMPT_GAP:
+    if trigger != "message" and now - _last_prompt.get(key, 0.0) < _PROMPT_GAP:
         open_row = await gc.get_open_challenge(pool, chat_id, uid)
         if open_row and not gc.challenge_expired(open_row) and open_row.get("message_id"):
             return True
+    if trigger == "message" and now - _last_prompt.get(key, 0.0) < _MESSAGE_RESEND_GAP:
+        return True
 
     async with _lock(chat_id, uid):
         if await gc.has_passed(pool, chat_id, uid):
@@ -245,9 +248,21 @@ async def maybe_prompt_captcha(
             return False
 
         open_row = await gc.get_open_challenge(pool, chat_id, uid)
-        if open_row and not gc.challenge_expired(open_row) and open_row.get("message_id"):
-            _last_prompt[key] = now
-            if restrict or trigger == "message":
+        if trigger == "message" and time.monotonic() - _last_prompt.get(key, 0.0) < _MESSAGE_RESEND_GAP:
+            return True
+
+        # Новое сообщение не прошедшего — новая карточка сразу под ним.
+        # Старую убираем, чтобы чат не зарастал копиями.
+        if trigger == "message" and open_row and open_row.get("message_id"):
+            await _delete_message(bot, chat_id, open_row.get("message_id"))
+        elif (
+            trigger != "message"
+            and open_row
+            and not gc.challenge_expired(open_row)
+            and open_row.get("message_id")
+        ):
+            _last_prompt[key] = time.monotonic()
+            if restrict:
                 await _maybe_restrict(bot, chat_id, uid)
             return True
 
@@ -262,6 +277,7 @@ async def maybe_prompt_captcha(
             message_id=None,
             attempts=attempts,
         )
+        row["message_id"] = None
         mid = await _send_or_edit(bot, chat_id=chat_id, user=user, row=row, payload=payload)
         if mid:
             await gc.update_challenge(pool, int(row["id"]), message_id=mid)
@@ -274,7 +290,7 @@ async def maybe_prompt_captcha(
             meta={"trigger": trigger},
         )
         _last_prompt[key] = time.monotonic()
-        if restrict:
+        if restrict or trigger == "message":
             await _maybe_restrict(bot, chat_id, uid)
         return True
 
@@ -320,7 +336,7 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
         return
     challenge_id, pick, mac = parsed
     if not gc.check_sign(mac, "a", challenge_id, pick):
-        await callback.answer("Карточка устарела", show_alert=True)
+        await callback.answer("Эта карточка уже устарела", show_alert=True)
         return
 
     pool = _pool()
@@ -330,14 +346,14 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
 
     row = await gc.get_challenge(pool, challenge_id)
     if not row:
-        await callback.answer("Карточка уже не действует")
+        await callback.answer("Эта карточка уже не действует")
         return
 
     user = callback.from_user
     uid = int(user.id)
     chat_id = int(row["chat_id"])
     if uid != int(row["user_id"]):
-        await callback.answer("Это не ваша капча")
+        await callback.answer("Эта капча предназначена для другого участника")
         return
     if callback.message and int(callback.message.chat.id) != chat_id:
         await callback.answer()
@@ -353,7 +369,7 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
         return
 
     if await gc.has_passed(pool, chat_id, uid):
-        await callback.answer("Уже пройдено")
+        await callback.answer("Вы уже прошли капчу")
         if callback.message:
             try:
                 await callback.message.delete()
@@ -426,7 +442,7 @@ async def on_captcha_disable(callback: CallbackQuery) -> None:
         return
     chat_id, mac = parsed
     if not gc.check_sign(mac, "x", chat_id):
-        await callback.answer("Карточка устарела", show_alert=True)
+        await callback.answer("Эта карточка уже устарела", show_alert=True)
         return
     if not callback.message or int(callback.message.chat.id) != int(chat_id):
         await callback.answer()

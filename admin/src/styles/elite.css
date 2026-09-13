@@ -2970,8 +2970,10 @@ body,
     display: none !important;
   }
 
-  .elite-menu-btn {
+  .elite-mobile-title {
     order: 1;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .elite-topbar-actions {
@@ -2980,16 +2982,11 @@ body,
     flex: 0 0 auto;
     gap: 0.28rem;
     margin-right: 0 !important;
-    margin-left: 0 !important;
+    margin-left: auto !important;
     padding: 0 !important;
     border: none !important;
     background: transparent !important;
     border-radius: 0 !important;
-  }
-
-  .elite-mobile-title {
-    order: 3;
-    flex: 1 1 auto;
   }
 
   .elite-menu-btn {

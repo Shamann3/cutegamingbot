@@ -96,7 +96,7 @@ html.panel-nav-open .panel-shelf-sidebar {
     border-radius: 12px;
   }
 
-  /* Topbar липнет под .panel-tg-chrome; меню и колокольчик слева */
+  /* Topbar липнет под .panel-tg-chrome; колокольчик и меню справа */
   .elite-topbar,
   .elite-topbar-compact {
     top: var(--tg-content-top, 0px) !important;
@@ -110,7 +110,7 @@ html.panel-nav-open .panel-shelf-sidebar {
   }
 
   .elite-topbar-actions {
-    margin-left: 0 !important;
+    margin-left: auto !important;
     margin-right: 0 !important;
     gap: 0.28rem !important;
   }

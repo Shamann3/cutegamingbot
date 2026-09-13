@@ -24,6 +24,9 @@ TG_EMOJI_RE = re.compile(
 )
 EMOJI_ID_RE = re.compile(r"(\d{5,32})")
 TOKEN_RE = re.compile(r"\{emoji:(\d{5,32})\}", re.I)
+# В теге и на кнопке обычный смайл не ставим: иначе клиент рисует его рядом с premium.
+PREMIUM_ONLY_FALLBACK = "\u2060"
+ICON_ONLY_TEXT = " "
 
 CHALLENGE_TTL_SEC = 30 * 60
 VARIANT_7_CHANCE = 0.11
@@ -34,7 +37,7 @@ DISABLE_ALERT = (
 )
 
 VARIANT_LABELS = {
-    1: "Найди такое же",
+    1: "Найдите такое же",
     2: "Цвет",
     3: "Как на карточке",
     4: "Живое / еда / вещь",
@@ -86,7 +89,16 @@ class PremiumEmoji:
     html: str
 
     def as_html(self) -> str:
-        return self.html or f"<tg-emoji emoji-id='{self.emoji_id}'>{html.escape(self.face)}</tg-emoji>"
+        if self.emoji_id:
+            return f"<tg-emoji emoji-id='{self.emoji_id}'>{PREMIUM_ONLY_FALLBACK}</tg-emoji>"
+        return ""
+
+    def as_plain(self) -> str:
+        return self.face or ""
+
+
+def _premium_html(eid: str) -> str:
+    return f"<tg-emoji emoji-id='{eid}'>{PREMIUM_ONLY_FALLBACK}</tg-emoji>"
 
 
 def parse_premium_emoji(raw: Any, fallback_face: str = "•") -> PremiumEmoji:
@@ -95,30 +107,30 @@ def parse_premium_emoji(raw: Any, fallback_face: str = "•") -> PremiumEmoji:
         return raw
     s = str(raw or "").strip()
     if not s:
-        return PremiumEmoji("", fallback_face, html.escape(fallback_face))
+        return PremiumEmoji("", fallback_face, "")
 
     m = TG_EMOJI_RE.search(s)
     if m:
         face = re.sub(r"<[^>]+>", "", m.group(2) or "").strip() or fallback_face
         eid = m.group(1)
-        return PremiumEmoji(eid, face, f"<tg-emoji emoji-id='{eid}'>{face}</tg-emoji>")
+        return PremiumEmoji(eid, face, _premium_html(eid))
 
     m = TOKEN_RE.search(s)
     if m:
         eid = m.group(1)
-        return PremiumEmoji(eid, fallback_face, f"<tg-emoji emoji-id='{eid}'>{fallback_face}</tg-emoji>")
+        return PremiumEmoji(eid, fallback_face, _premium_html(eid))
 
     m = re.search(r"emoji-id\s*=\s*['\"](\d{5,32})['\"]", s, re.I)
     if m:
         eid = m.group(1)
-        return PremiumEmoji(eid, fallback_face, f"<tg-emoji emoji-id='{eid}'>{fallback_face}</tg-emoji>")
+        return PremiumEmoji(eid, fallback_face, _premium_html(eid))
 
     digits = EMOJI_ID_RE.fullmatch(s)
     if digits:
         eid = digits.group(1)
-        return PremiumEmoji(eid, fallback_face, f"<tg-emoji emoji-id='{eid}'>{fallback_face}</tg-emoji>")
+        return PremiumEmoji(eid, fallback_face, _premium_html(eid))
 
-    return PremiumEmoji("", s[:8] or fallback_face, html.escape(s[:8] or fallback_face))
+    return PremiumEmoji("", s[:8] or fallback_face, "")
 
 
 def emoji(key: str) -> PremiumEmoji:
@@ -165,8 +177,14 @@ def premium_button(
     text: Optional[str] = None,
     plain: bool = False,
 ):
+    if text is not None:
+        label = text
+    elif plain:
+        label = item.face or ICON_ONLY_TEXT
+    else:
+        label = ICON_ONLY_TEXT
     kwargs: Dict[str, Any] = {
-        "text": text or item.face or "•",
+        "text": label,
         "callback_data": callback_data,
     }
     if item.emoji_id and not plain:
@@ -196,6 +214,11 @@ def pick_variant(rng: Optional[random.Random] = None) -> int:
     return r.choice([1, 2, 3, 4, 5, 6, 8])
 
 
+def _mark(answer: str) -> str:
+    """Правильный ответ в задании — жирный и подчёркнутый."""
+    return f"<u>{answer}</u>"
+
+
 def _shuffle(keys: Sequence[str], rng: random.Random) -> List[str]:
     out = list(keys)
     r = rng
@@ -222,7 +245,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         correct = r.choice(options)
         target = emoji(correct)
         prefix = emoji("v1_prefix")
-        text = f"{prefix.as_html()} Нажми такое же {target.as_html()}"
+        text = f"{prefix.as_html()} Нажмите {_mark('такое же')} {target.as_html()}"
         return _pack(v, prefix, text, options, correct)
 
     if v == 2:
@@ -231,7 +254,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = _shuffle(colors, r)
         words = {"red": "красный", "green": "зелёный", "blue": "синий"}
         prefix = emoji("v2_prefix")
-        text = f"{prefix.as_html()} Нажми {words[correct]}"
+        text = f"{prefix.as_html()} Нажмите {_mark(words[correct])}"
         return _pack(v, prefix, text, options, correct, extra={"color": words[correct]})
 
     if v == 3:
@@ -239,7 +262,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         correct = r.choice(pool)
         options = _shuffle(pool, r)
         prefix = emoji(correct)
-        text = f"{prefix.as_html()} Нажми такое же"
+        text = f"{prefix.as_html()} Нажмите {_mark('такое же')}"
         return _pack(v, prefix, text, options, correct)
 
     if v == 4:
@@ -248,7 +271,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = _shuffle(keys, r)
         words = {"living": "живое", "food": "еду", "thing": "вещь"}
         prefix = emoji("v4_prefix")
-        text = f"{prefix.as_html()} Нажми {words[correct]}"
+        text = f"{prefix.as_html()} Нажмите {_mark(words[correct])}"
         return _pack(v, prefix, text, options, correct, extra={"ask": words[correct]})
 
     if v == 5:
@@ -256,7 +279,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = ["left", "right"]  # места фиксированы
         words = {"left": "налево", "right": "направо"}
         prefix = emoji("v5_prefix")
-        text = f"{prefix.as_html()} Нажми {words[correct]}"
+        text = f"{prefix.as_html()} Нажмите {_mark(words[correct])}"
         return _pack(v, prefix, text, options, correct, extra={"side": words[correct]})
 
     if v == 6:
@@ -265,16 +288,19 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = _shuffle(keys, r)
         words = {"happy": "весёлое", "sad": "грустное", "angry": "злое"}
         prefix = emoji("v6_prefix")
-        text = f"{prefix.as_html()} Нажми {words[correct]}"
+        text = f"{prefix.as_html()} Нажмите {_mark(words[correct])}"
         return _pack(v, prefix, text, options, correct, extra={"mood": words[correct]})
 
     if v == 7:
         pool = ["sun", "moon", "earth"]
         first, second = r.sample(pool, 2)
         options = _shuffle(pool, r)
-        names = {"sun": "солнце", "moon": "луна", "earth": "земля"}
+        names = {"sun": "солнце", "moon": "луну", "earth": "землю"}
         prefix = emoji("v7_prefix")
-        text = f"{prefix.as_html()} Сначала {names[first]}, потом {names[second]}"
+        text = (
+            f"{prefix.as_html()} Сначала нажмите {_mark(names[first])}, "
+            f"затем {_mark(names[second])}"
+        )
         return _pack(
             v, prefix, text, options, first,
             extra={"sequence": [first, second], "step": 0, "names": names},
@@ -291,7 +317,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         "spark": "самое маленькое",
     }
     prefix = emoji("v8_prefix")
-    text = f"{prefix.as_html()} Нажми {words[correct]}"
+    text = f"{prefix.as_html()} Нажмите {_mark(words[correct])}"
     return _pack(v, prefix, text, options, correct, extra={"size": sizes[correct], "ask": words[correct]})
 
 
@@ -318,9 +344,9 @@ def _pack(
 
 
 def card_html(payload: Dict[str, Any], user: Any) -> str:
-    body = str(payload.get("text") or "Нажми нужную кнопку")
+    body = str(payload.get("text") or "Нажмите нужную кнопку")
     who = mention_html(user)
-    return f"{who}\n{body}"
+    return f"<b>{who}\n{body}</b>"
 
 
 def answer_callback_data(challenge_id: int, pick: str) -> str:
@@ -483,6 +509,19 @@ _NOT_PASSED_TTL = 20.0
 
 def strip_tg_emoji(raw: str) -> str:
     return TG_EMOJI_RE.sub(lambda m: (m.group(2) or "").strip(), raw or "")
+
+
+def _face_by_id(eid: str) -> str:
+    for key in EMOJI:
+        item = emoji(key)
+        if item.emoji_id == str(eid):
+            return item.face
+    return ""
+
+
+def html_to_faces(raw: str) -> str:
+    """Только для аварийного fallback, если Telegram отверг premium."""
+    return TG_EMOJI_RE.sub(lambda m: _face_by_id(m.group(1)), raw or "")
 
 
 async def ensure_tables(pool) -> None:

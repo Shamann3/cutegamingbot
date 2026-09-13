@@ -12,10 +12,10 @@ from bot.funcs.group_captcha import (
     is_correct_pick,
     parse_answer_callback,
     parse_disable_callback,
+    html_to_faces,
     parse_premium_emoji,
     pick_variant,
     sign_parts,
-    strip_tg_emoji,
 )
 
 
@@ -28,8 +28,8 @@ def test_schema_is_one_statement_each():
 
 
 def test_plain_fallback_keeps_faces():
-    raw = "<tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji> Нажми"
-    assert strip_tg_emoji(raw) == "✨ Нажми"
+    raw = "<tg-emoji emoji-id='5472164874886846699'>\u2060</tg-emoji> Нажмите"
+    assert html_to_faces(raw) == "✨ Нажмите"
     card = build_challenge(1, rng=random.Random(1))
     markup = __import__("bot.funcs.group_captcha", fromlist=["build_markup"]).build_markup(
         1, -100, card, plain=True,
@@ -40,8 +40,23 @@ def test_plain_fallback_keeps_faces():
 def test_parse_premium_emoji_from_tag():
     item = parse_premium_emoji("<tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji>")
     assert item.emoji_id == "5472164874886846699"
-    assert item.face == "✨"
     assert "5472164874886846699" in item.as_html()
+    assert "✨" not in item.as_html()
+
+
+def test_card_has_no_regular_emoji():
+    faces = {emoji(k).face for k in ("shield", "fire", "diamond", "gift", "star", "dollar")}
+    for i in range(20):
+        card = build_challenge(rng=random.Random(i + 9))
+        for face in faces:
+            if face and face in (card.get("text") or ""):
+                raise AssertionError(f"обычный эмодзи {face!r} попал в текст")
+        markup = __import__("bot.funcs.group_captcha", fromlist=["build_markup"]).build_markup(
+            3, -100, card,
+        )
+        for btn in markup.inline_keyboard[0]:
+            assert btn.text.strip() == ""
+            assert getattr(btn, "icon_custom_emoji_id", None)
 
 
 def test_all_catalog_tags_have_ids():
@@ -66,6 +81,18 @@ def test_variant_1_target_and_shuffle_change():
         assert "5391270106464539040" in card["text"]
     assert len(seen_correct) == 3
     assert len(seen_order) > 1
+
+
+def test_answers_are_underlined_and_card_is_bold():
+    from types import SimpleNamespace
+    from bot.funcs.group_captcha import card_html
+
+    card = build_challenge(2, rng=random.Random(2))
+    assert f"<u>{card['color']}</u>" in card["text"]
+    html = card_html(card, SimpleNamespace(id=1, full_name="Анна", first_name="Анна", is_bot=False))
+    assert html.startswith("<b>")
+    assert html.endswith("</b>")
+    assert "<u>" in html
 
 
 def test_variant_2_color_word_matches_correct():
@@ -149,12 +176,14 @@ def test_buttons_carry_premium_emoji_ids():
     ids = {btn.icon_custom_emoji_id for btn in row}
     expected = {emoji(k).emoji_id for k in card["options"]}
     assert ids == expected
+    assert all(btn.text == " " for btn in row)
     disable = markup.inline_keyboard[1][0]
     assert disable.text == "Убрать капчу"
     assert disable.icon_custom_emoji_id == "5462990652943904884"
     assert disable.callback_data.startswith("gcX:")
     sample = premium_button(emoji("spark"), "x")
     assert sample.icon_custom_emoji_id == "5472164874886846699"
+    assert sample.text == " "
 
 
 def test_variant_7_is_rare_but_present():
