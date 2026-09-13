@@ -38,10 +38,20 @@ DISABLE_ALERT = (
 )
 PASS_ALERT = "Капча пройдена. Теперь вы можете писать в группе"
 CAPTCHA_INTRO_LINE1 = "Это капча."
-CAPTCHA_INTRO_LINE2 = "Пожалуйста, пройдите её, чтобы писать в группе."
+CAPTCHA_INTRO_LINE2 = "Чтобы писать в группе, пожалуйста, выполните задание ниже."
 CAPTCHA_INTRO = f"{CAPTCHA_INTRO_LINE1}\n{CAPTCHA_INTRO_LINE2}"
 INTRO_EYE_ID = "5389099803655305880"
-INTRO_WARN_ID = "5213205860498549992"
+INTRO_WARN_ID = "6025996269141364975"
+INTRO_LINE1_CHUNKS = (
+    {"kind": "text", "value": "Это "},
+    {"kind": "mark", "value": "капча"},
+    {"kind": "text", "value": "."},
+)
+INTRO_LINE2_CHUNKS = (
+    {"kind": "text", "value": "Чтобы "},
+    {"kind": "mark", "value": "писать в группе"},
+    {"kind": "text", "value": ", пожалуйста, выполните задание ниже."},
+)
 
 VARIANT_LABELS = {
     1: "Найдите такое же",
@@ -85,7 +95,7 @@ EMOJI = {
     "berry": "<tg-emoji emoji-id='5406759193052995173'>🍒</tg-emoji>",
     "spark": "<tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji>",
     "intro_eye": f"<tg-emoji emoji-id='{INTRO_EYE_ID}'>👁️</tg-emoji>",
-    "intro_warn": f"<tg-emoji emoji-id='{INTRO_WARN_ID}'>⚠️</tg-emoji>",
+    "intro_warn": f"<tg-emoji emoji-id='{INTRO_WARN_ID}'>👁</tg-emoji>",
     "disable": DISABLE_ICON,
 }
 
@@ -213,6 +223,52 @@ def _mark(answer: str) -> str:
     return f"<u>{answer}</u>"
 
 
+def _press_chunks(answer: str, *, prefix: str = "Нажмите ", suffix: str = "") -> List[Dict[str, Any]]:
+    chunks: List[Dict[str, Any]] = [
+        {"kind": "text", "value": prefix},
+        {"kind": "mark", "value": answer},
+    ]
+    if suffix:
+        chunks.append({"kind": "text", "value": suffix})
+    return chunks
+
+
+def _press_same_icon_chunks() -> List[Dict[str, Any]]:
+    return _press_chunks("таким же значком", prefix="Нажмите кнопку с ")
+
+
+V4_WORDS = {"living": "живое", "food": "еду", "thing": "вещь"}
+V6_WORDS = {"happy": "весёлый", "sad": "грустный", "angry": "злой"}
+V7_ONTO = {"sun": "на солнце", "moon": "на луну", "earth": "на землю"}
+_V7_ONTO_LEGACY = {"солнце": "на солнце", "луну": "на луну", "землю": "на землю"}
+
+
+def _v4_chunks(word: str) -> List[Dict[str, Any]]:
+    return _press_chunks(word, prefix="Нажмите на значок, который обозначает ")
+
+
+def _v6_chunks(word: str) -> List[Dict[str, Any]]:
+    return _press_chunks(word, prefix="Нажмите на ", suffix=" эмодзи")
+
+
+def _v7_onto(key: str, names: Optional[Dict[str, Any]] = None) -> str:
+    if key in V7_ONTO:
+        return V7_ONTO[key]
+    raw = str((names or {}).get(key) or key).strip()
+    if raw.startswith("на "):
+        return raw
+    return _V7_ONTO_LEGACY.get(raw, f"на {raw}" if raw else raw)
+
+
+def _v7_chunks(first: str, second: str, names: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    return [
+        {"kind": "text", "value": "Нажмите сначала "},
+        {"kind": "mark", "value": _v7_onto(first, names)},
+        {"kind": "text", "value": ", затем "},
+        {"kind": "mark", "value": _v7_onto(second, names)},
+    ]
+
+
 def _shuffle(keys: Sequence[str], rng: random.Random) -> List[str]:
     out = list(keys)
     r = rng
@@ -239,7 +295,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         correct = r.choice(options)
         target = emoji(correct)
         prefix = emoji("v1_prefix")
-        chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": "такое же"}]
+        chunks = _press_same_icon_chunks()
         extras = [_emoji_ref(target)]
         return _pack(v, prefix, options, correct, chunks, extras=extras)
 
@@ -249,7 +305,7 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = _shuffle(colors, r)
         words = {"red": "красный", "green": "зелёный", "blue": "синий"}
         prefix = emoji("v2_prefix")
-        chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": words[correct]}]
+        chunks = _press_chunks(words[correct], suffix=" значок")
         return _pack(v, prefix, options, correct, chunks, extra={"color": words[correct]})
 
     if v == 3:
@@ -257,16 +313,16 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         correct = r.choice(pool)
         options = _shuffle(pool, r)
         prefix = emoji(correct)
-        chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": "такое же"}]
+        chunks = _press_same_icon_chunks()
         return _pack(v, prefix, options, correct, chunks)
 
     if v == 4:
         keys = ["living", "food", "thing"]
         correct = r.choice(keys)
         options = _shuffle(keys, r)
-        words = {"living": "живое", "food": "еду", "thing": "вещь"}
+        words = V4_WORDS
         prefix = emoji("v4_prefix")
-        chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": words[correct]}]
+        chunks = _v4_chunks(words[correct])
         return _pack(v, prefix, options, correct, chunks, extra={"ask": words[correct]})
 
     if v == 5:
@@ -274,30 +330,25 @@ def build_challenge(variant: Optional[int] = None, *, rng: Optional[random.Rando
         options = ["left", "right"]  # места фиксированы
         words = {"left": "налево", "right": "направо"}
         prefix = emoji("v5_prefix")
-        chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": words[correct]}]
+        chunks = _press_chunks(words[correct], prefix="Нажмите кнопку ")
         return _pack(v, prefix, options, correct, chunks, extra={"side": words[correct]})
 
     if v == 6:
         keys = ["happy", "sad", "angry"]
         correct = r.choice(keys)
         options = _shuffle(keys, r)
-        words = {"happy": "весёлое", "sad": "грустное", "angry": "злое"}
+        words = V6_WORDS
         prefix = emoji("v6_prefix")
-        chunks = [{"kind": "text", "value": "Нажмите "}, {"kind": "mark", "value": words[correct]}]
+        chunks = _v6_chunks(words[correct])
         return _pack(v, prefix, options, correct, chunks, extra={"mood": words[correct]})
 
     if v == 7:
         pool = ["sun", "moon", "earth"]
         first, second = r.sample(pool, 2)
         options = _shuffle(pool, r)
-        names = {"sun": "солнце", "moon": "луну", "earth": "землю"}
+        names = dict(V7_ONTO)
         prefix = emoji("v7_prefix")
-        chunks = [
-            {"kind": "text", "value": "Сначала нажмите "},
-            {"kind": "mark", "value": names[first]},
-            {"kind": "text", "value": ", затем "},
-            {"kind": "mark", "value": names[second]},
-        ]
+        chunks = _v7_chunks(first, second, names)
         return _pack(
             v, prefix, options, first, chunks,
             extra={"sequence": [first, second], "step": 0, "names": names},
@@ -384,27 +435,26 @@ def hydrate_payload(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         seq = list(data.get("sequence") or [])
         first = seq[0] if seq else ""
         second = seq[1] if len(seq) > 1 else ""
-        data["chunks"] = [
-            {"kind": "text", "value": "Сначала нажмите "},
-            {"kind": "mark", "value": str(names.get(first) or first)},
-            {"kind": "text", "value": ", затем "},
-            {"kind": "mark", "value": str(names.get(second) or second)},
-        ]
+        data["chunks"] = _v7_chunks(str(first), str(second), names)
         return data
-    if variant == 1:
-        data["chunks"] = [
-            {"kind": "text", "value": "Нажмите "},
-            {"kind": "mark", "value": "такое же"},
-        ]
+    if variant == 1 or variant == 3:
+        data["chunks"] = _press_same_icon_chunks()
         return data
-    mark = data.get("color") or data.get("ask") or data.get("side") or data.get("mood")
-    if mark:
-        data["chunks"] = [
-            {"kind": "text", "value": "Нажмите "},
-            {"kind": "mark", "value": str(mark)},
-        ]
+    if data.get("color"):
+        data["chunks"] = _press_chunks(str(data["color"]), suffix=" значок")
         return data
-    data["chunks"] = [{"kind": "text", "value": "Нажмите нужную кнопку"}]
+    if data.get("ask"):
+        data["chunks"] = _v4_chunks(str(data["ask"]))
+        return data
+    if data.get("side"):
+        data["chunks"] = _press_chunks(str(data["side"]), prefix="Нажмите кнопку ")
+        return data
+    if data.get("mood"):
+        mood = str(data["mood"])
+        legacy_mood = {"весёлое": "весёлый", "грустное": "грустный", "злое": "злой"}
+        data["chunks"] = _v6_chunks(legacy_mood.get(mood, mood))
+        return data
+    data["chunks"] = [{"kind": "text", "value": "Нажмите верную кнопку"}]
     return data
 
 
@@ -436,43 +486,15 @@ def card_plain_and_entities(payload: Dict[str, Any], user: Any):
         ents.append(MessageEntity(type=MessageEntityType.BOLD, offset=start, length=ln))
 
     add("\n")
-    _add_intro_line(add, ents, emoji("intro_eye"), CAPTCHA_INTRO_LINE1)
+    _add_rich_line(add, ents, emoji("intro_eye"), INTRO_LINE1_CHUNKS)
     add("\n")
-    _add_intro_line(add, ents, emoji("intro_warn"), CAPTCHA_INTRO_LINE2)
+    _add_rich_line(add, ents, emoji("intro_warn"), INTRO_LINE2_CHUNKS)
     add("\n\n")
 
     prefix_id = str(payload.get("prefix_id") or "")
     prefix_face = str(payload.get("prefix_face") or "")
-    if prefix_id and prefix_face:
-        start, ln = add(prefix_face)
-        ents.append(MessageEntity(
-            type=MessageEntityType.CUSTOM_EMOJI,
-            offset=start,
-            length=ln,
-            custom_emoji_id=prefix_id,
-        ))
-        add(" ")
-
-    bold_start = _utf16_len("".join(buf))
-    for ch in payload.get("chunks") or []:
-        kind = ch.get("kind")
-        if kind == "mark":
-            start, ln = add(str(ch.get("value") or ""))
-            if ln:
-                ents.append(MessageEntity(type=MessageEntityType.UNDERLINE, offset=start, length=ln))
-        elif kind == "emoji" and ch.get("id") and ch.get("face"):
-            start, ln = add(str(ch["face"]))
-            ents.append(MessageEntity(
-                type=MessageEntityType.CUSTOM_EMOJI,
-                offset=start,
-                length=ln,
-                custom_emoji_id=str(ch["id"]),
-            ))
-        else:
-            add(str(ch.get("value") or ""))
-    bold_len = _utf16_len("".join(buf)) - bold_start
-    if bold_len > 0:
-        ents.append(MessageEntity(type=MessageEntityType.BOLD, offset=bold_start, length=bold_len))
+    prefix_icon = PremiumEmoji(prefix_id, prefix_face, "") if prefix_id and prefix_face else None
+    _add_rich_line(add, ents, prefix_icon, payload.get("chunks") or [])
 
     for extra in payload.get("extra_emoji") or []:
         if not extra.get("id") or not extra.get("face"):
@@ -489,11 +511,16 @@ def card_plain_and_entities(payload: Dict[str, Any], user: Any):
     return "".join(buf), ents
 
 
-def _add_intro_line(add, ents, icon: PremiumEmoji, text: str) -> None:
+def _add_rich_line(
+    add,
+    ents,
+    icon: Optional[PremiumEmoji],
+    chunks: Sequence[Dict[str, Any]],
+) -> None:
     from aiogram.enums import MessageEntityType
     from aiogram.types import MessageEntity
 
-    if icon.emoji_id and icon.face:
+    if icon and icon.emoji_id and icon.face:
         start, ln = add(icon.face)
         ents.append(MessageEntity(
             type=MessageEntityType.CUSTOM_EMOJI,
@@ -502,18 +529,37 @@ def _add_intro_line(add, ents, icon: PremiumEmoji, text: str) -> None:
             custom_emoji_id=icon.emoji_id,
         ))
         add(" ")
-    start, ln = add(text)
-    if ln:
-        ents.append(MessageEntity(type=MessageEntityType.BOLD, offset=start, length=ln))
+
+    bold_start, _ = add("")
+    for ch in chunks:
+        kind = ch.get("kind")
+        if kind == "mark":
+            start, ln = add(str(ch.get("value") or ""))
+            if ln:
+                ents.append(MessageEntity(type=MessageEntityType.UNDERLINE, offset=start, length=ln))
+        elif kind == "emoji" and ch.get("id") and ch.get("face"):
+            start, ln = add(str(ch["face"]))
+            ents.append(MessageEntity(
+                type=MessageEntityType.CUSTOM_EMOJI,
+                offset=start,
+                length=ln,
+                custom_emoji_id=str(ch["id"]),
+            ))
+        else:
+            add(str(ch.get("value") or ""))
+    bold_end, _ = add("")
+    bold_len = bold_end - bold_start
+    if bold_len > 0:
+        ents.append(MessageEntity(type=MessageEntityType.BOLD, offset=bold_start, length=bold_len))
 
 
 def card_html(payload: Dict[str, Any], user: Any) -> str:
     # Не оборачиваем mention и tg-emoji в ещё один <b>: Telegram ломает вложенный bold.
-    body = str(payload.get("text") or "<b>Нажмите нужную кнопку</b>")
+    body = str(payload.get("text") or "<b>Нажмите верную кнопку</b>")
     who = mention_html(user)
     intro = (
-        f"{emoji('intro_eye').as_html()} <b>{CAPTCHA_INTRO_LINE1}</b>\n"
-        f"{emoji('intro_warn').as_html()} <b>{CAPTCHA_INTRO_LINE2}</b>"
+        f"{emoji('intro_eye').as_html()} <b>{_chunks_html(INTRO_LINE1_CHUNKS)}</b>\n"
+        f"{emoji('intro_warn').as_html()} <b>{_chunks_html(INTRO_LINE2_CHUNKS)}</b>"
     )
     return f"{who}\n{intro}\n\n{body}"
 

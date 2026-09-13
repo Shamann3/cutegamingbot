@@ -98,11 +98,13 @@ def test_answers_are_underlined_and_card_is_bold():
     card = build_challenge(2, rng=random.Random(2))
     assert f"<u>{card['color']}</u>" in card["text"]
     html = card_html(card, SimpleNamespace(id=1, full_name="Анна", first_name="Анна", is_bot=False))
-    assert "Это капча." in html
+    assert "Это " in html and "капча" in html
     assert "писать в группе" in html
+    assert "выполните задание ниже" in html
     assert "5389099803655305880" in html
-    assert "5213205860498549992" in html
-    assert "<b>Это капча.</b>" in html
+    assert "6025996269141364975" in html
+    assert "<u>капча</u>" in html
+    assert "<u>писать в группе</u>" in html
     assert "<b>Нажмите" in html
     assert html.endswith("</b>")
     assert "<u>" in html
@@ -128,6 +130,8 @@ def test_variant_3_prefix_is_the_answer():
         assert card["correct"] in {"gift", "star", "dollar"}
         assert card["prefix_id"] == emoji(card["correct"]).emoji_id
         assert set(card["options"]) == {"gift", "star", "dollar"}
+        assert "таким же значком" in card["text"]
+        assert "такое же<" not in card["text"]
 
 
 def test_variant_4_and_6_rotate_task():
@@ -137,10 +141,16 @@ def test_variant_4_and_6_rotate_task():
         c6 = build_challenge(6, rng=random.Random(400 + i))
         asks4.add(c4["ask"])
         asks6.add(c6["mood"])
+        assert "значок, который обозначает" in c4["text"]
+        assert c4["ask"] in c4["text"]
+        assert f"<u>{c4['ask']}</u>" in c4["text"]
+        assert "эмодзи" in c6["text"]
+        assert c6["mood"] in c6["text"]
+        assert f"<u>{c6['mood']}</u>" in c6["text"]
         assert is_correct_pick(c4, c4["correct"])[0] == "pass"
         assert is_correct_pick(c4, "nope")[0] == "fail"
-    assert len(asks4) == 3
-    assert len(asks6) == 3
+    assert asks4 == {"живое", "еду", "вещь"}
+    assert asks6 == {"весёлый", "грустный", "злой"}
     assert 8 not in VARIANT_LABELS
     assert all(pick_variant(random.Random(i)) != 8 for i in range(80))
 
@@ -153,6 +163,21 @@ def test_variant_5_keeps_left_right_order():
         seen.add(card["correct"])
         assert card["side"] in card["text"]
     assert seen == {"left", "right"}
+
+
+def test_variant_7_onto_phrases():
+    seen = set()
+    for i in range(50):
+        card = build_challenge(7, rng=random.Random(900 + i))
+        assert "Нажмите сначала " in card["text"]
+        assert ", затем " in card["text"]
+        for key in card["sequence"]:
+            seen.add(key)
+            phrase = {"sun": "на солнце", "moon": "на луну", "earth": "на землю"}[key]
+            assert phrase in card["text"]
+            assert f"<u>{phrase}</u>" in card["text"]
+        assert "сначало" not in card["text"]
+    assert seen == {"sun", "moon", "earth"}
 
 
 def test_variant_7_two_steps():
@@ -189,6 +214,7 @@ def test_card_entities_carry_custom_emoji():
     text, ents = card_plain_and_entities(card, user)
     assert "Это капча." in text
     assert "писать в группе" in text
+    assert "выполните задание ниже" in text
     kinds = [str(getattr(e, "type", "")) for e in ents]
     assert "custom_emoji" in kinds
     assert "underline" in kinds
@@ -196,7 +222,7 @@ def test_card_entities_carry_custom_emoji():
     custom = [e for e in ents if str(getattr(e, "type", "")) == "custom_emoji"]
     custom_ids = [e.custom_emoji_id for e in custom]
     assert "5389099803655305880" in custom_ids
-    assert "5213205860498549992" in custom_ids
+    assert "6025996269141364975" in custom_ids
     assert card["prefix_id"] in custom_ids
     assert card["prefix_face"] in text
     # в подписи кнопки этого лица быть не должно — только пробел + icon
