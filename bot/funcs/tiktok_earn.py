@@ -6,7 +6,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import sys
+from html import escape
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
@@ -21,6 +23,7 @@ if str(_SERVER) not in sys.path:
 from tiktok_earn_logic import (  # noqa: E402
     COMMENT_REWARD,
     KUT_PER_UNIT,
+    MAX_NICKS,
     PHOTOS_REQUIRED,
     append_case_photos,
     comment_progress,
@@ -43,6 +46,10 @@ TT_NICKS = "tt:nicks"
 TT_NICK_ADD = "tt:nick_add"
 TT_NICK_EDIT = "tt:nick_edit"
 TT_NICK_PICK = "tt:nick_pick:"
+TT_MY_VIDEOS = "tt:my_videos"
+TT_VIDEO_PAGE = "tt:vpage:"
+TT_VIDEO_OPEN = "tt:vid:"
+TT_NOOP = "tt:noop"
 TT_SEND_PHOTOS = "tt:send_photos"
 TT_SEND_LINK = "tt:send_link"
 TT_CANCEL_COLLECT = "tt:cancel_collect"
@@ -59,6 +66,15 @@ ICON_OK = "5224257782013769471"
 ICON_CAM = "5373098002641805602"
 ICON_COMMENTS = "5350367217349311525"
 ICON_VIDEOS = "5375309569905938163"
+ICON_NICKS = "5456282961999570188"
+ICON_MY_VIDEOS = "5326018884539553727"
+ICON_ADD = "5339564150534200424"
+ICON_EDIT = "5472410705929971383"
+ICON_UNDO = "5373098002641805602"
+ICON_WITHDRAW = "5213205860498549992"
+ICON_PREV = "5255703720078879038"
+ICON_NEXT = "5253767677670862169"
+VIDEOS_PAGE_SIZE = 10
 
 MODE_COMMENTS = "comments"
 MODE_VIDEOS = "videos"
@@ -879,7 +895,7 @@ async def submit_comment_case(user_id: int, photos: list[dict[str, Any]] | None 
     return case
 
 
-async def submit_video(user_id: int, raw_url: str) -> None:
+async def submit_video(user_id: int, raw_url: str) -> dict[str, Any]:
     await ensure_schema()
     await require_nicks(user_id)
     parsed = await asyncio.to_thread(canonicalize_tiktok_url, raw_url)
@@ -908,6 +924,7 @@ async def submit_video(user_id: int, raw_url: str) -> None:
         parsed["canonical"],
     )
     await clear_session(user_id)
+    return parsed
 
 
 def video_recheck_state(last_checked, days: int) -> dict[str, Any]:
@@ -927,28 +944,43 @@ async def list_user_videos(user_id: int) -> list[dict[str, Any]]:
     days = int(cfg["recheckDays"])
     rows = await _pool().fetch(
         """
-        SELECT id, url, status, last_views, last_checked_at, recheck_requested_at, created_at
+        SELECT id, url, status, last_views, last_paid_thousands,
+               last_checked_at, recheck_requested_at, reject_reasons, created_at
         FROM tiktok_videos WHERE user_id = $1
         ORDER BY created_at DESC
         """,
         int(user_id),
     )
+    unit = int(cfg["kutPerUnit"])
     out = []
     for r in rows:
         state = video_recheck_state(r["last_checked_at"], days)
+        paid_thousands = int(r["last_paid_thousands"] or 0)
         out.append(
             {
                 "id": int(r["id"]),
                 "url": r["url"],
                 "status": r["status"],
                 "lastViews": int(r["last_views"] or 0),
+                "lastPaidThousands": paid_thousands,
+                "paidKut": paid_thousands * unit,
+                "kutPerUnit": unit,
                 "recheckPending": bool(r["recheck_requested_at"]),
                 "lastCheckedAt": r["last_checked_at"],
                 "recheckReady": state["ready"],
                 "recheckWaitText": state["waitText"],
+                "rejectReasons": _json(r["reject_reasons"]) or [],
             }
         )
     return out
+
+
+async def get_user_video(user_id: int, video_id: int) -> dict[str, Any] | None:
+    videos = await list_user_videos(user_id)
+    for item in videos:
+        if int(item["id"]) == int(video_id):
+            return item
+    return None
 
 
 async def request_recheck(user_id: int, video_id: int) -> None:
@@ -990,11 +1022,20 @@ def _btn(text: str, data: str, icon: str | None = None) -> InlineKeyboardButton:
     return InlineKeyboardButton(**kwargs)
 
 
+def _chain_rows(*exclude: str) -> list[list[InlineKeyboardButton]]:
+    items = (
+        ("comments", "Комментарии", TT_COMMENTS, ICON_COMMENTS),
+        ("videos", "Видео о боте", TT_VIDEOS, ICON_VIDEOS),
+        ("nicks", "Имена аккаунтов", TT_NICKS, ICON_NICKS),
+        ("mine", "Ваши ролики", TT_MY_VIDEOS, ICON_MY_VIDEOS),
+    )
+    return [[_btn(label, data, icon)] for key, label, data, icon in items if key not in exclude]
+
+
 def hub_keyboard() -> InlineKeyboardMarkup:
     return _kb(
         [
-            [_btn("Комментарии", TT_COMMENTS, ICON_COMMENTS)],
-            [_btn("Видео о боте", TT_VIDEOS, ICON_VIDEOS)],
+            *_chain_rows(),
             [_btn("Назад", TT_BACK_TASKS, ICON_BACK)],
         ]
     )
@@ -1008,17 +1049,13 @@ def comments_keyboard(
     waiting: bool = False,
     complete: bool = False,
 ) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
     if complete or count >= needed:
-        return _kb(
-            [
-                [_btn("Отклонить заявку", TT_WITHDRAW)],
-                [_btn("Назад", TT_HUB, ICON_BACK)],
-            ]
-        )
-    rows = []
-    if count > 0:
-        rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
-    rows.append([_btn("Мои ники", TT_NICKS)])
+        rows.append([_btn("Отклонить заявку", TT_WITHDRAW, ICON_WITHDRAW)])
+    elif count > 0:
+        rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO, ICON_UNDO)])
+    else:
+        rows.append([_btn("Имена аккаунтов", TT_NICKS, ICON_NICKS)])
     rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
     return _kb(rows)
 
@@ -1029,31 +1066,32 @@ def videos_keyboard(
     waiting: bool = False,
     can_send: bool = True,
 ) -> InlineKeyboardMarkup:
-    rows = []
-    for item in videos or []:
-        if item.get("status") != "live" or item.get("recheckPending"):
-            continue
-        if item.get("recheckReady") is False:
-            continue
-        rows.append([_btn(f"Проверить просмотры · #{item['id']}", f"{TT_RECHECK}{item['id']}")])
-    rows.append([_btn("Мои ники", TT_NICKS)])
-    rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
-    return _kb(rows)
+    return _kb(
+        [
+            [_btn("Ваши ролики", TT_MY_VIDEOS, ICON_MY_VIDEOS)],
+            [_btn("Имена аккаунтов", TT_NICKS, ICON_NICKS)],
+            [_btn("Назад", TT_HUB, ICON_BACK)],
+        ]
+    )
 
 
 def nicks_keyboard(nicks: list[str], *, locked: bool, origin: str = "hub") -> InlineKeyboardMarkup:
     rows = []
     if not locked:
-        rows.append([_btn("Написать имя TikTok", TT_NICK_ADD)])
+        rows.append([_btn("Написать имя TikTok", TT_NICK_ADD, ICON_ADD)])
         if nicks:
-            rows.append([_btn("Изменить", TT_NICK_EDIT)])
-    back = TT_COMMENTS if origin == "comments" else TT_VIDEOS if origin == "videos" else TT_HUB
+            rows.append([_btn("Изменить", TT_NICK_EDIT, ICON_EDIT)])
+    back = {
+        "comments": TT_COMMENTS,
+        "videos": TT_VIDEOS,
+        "mine": TT_MY_VIDEOS,
+    }.get(origin, TT_HUB)
     rows.append([_btn("Назад", back, ICON_BACK)])
     return _kb(rows)
 
 
 def nick_pick_keyboard(nicks: list[str]) -> InlineKeyboardMarkup:
-    rows = [[_btn(f"@{n}", f"{TT_NICK_PICK}{n}")] for n in nicks]
+    rows = [[_btn(f"@{n}", f"{TT_NICK_PICK}{n}", ICON_NICKS)] for n in nicks]
     rows.append([_btn("Назад", TT_NICKS, ICON_BACK)])
     return _kb(rows)
 
@@ -1066,6 +1104,8 @@ def nick_wait_keyboard(*, back: str = "hub") -> InlineKeyboardMarkup:
         data = TT_COMMENTS
     elif back == "videos":
         data = TT_VIDEOS
+    elif back == "mine":
+        data = TT_MY_VIDEOS
     return _kb([[_btn("Назад", data, ICON_BACK)]])
 
 
@@ -1077,18 +1117,92 @@ def bind_keyboard(*, waiting: bool = False) -> InlineKeyboardMarkup:
     return _kb([[_btn("Назад", TT_HUB, ICON_BACK)]])
 
 
-def text_hub(cfg: dict[str, Any] | None = None) -> str:
+def done_keyboard(*, after: str = "hub") -> InlineKeyboardMarkup:
+    rows = []
+    if after == "comments":
+        rows.append([_btn("Продолжить", TT_COMMENTS, ICON_COMMENTS)])
+    elif after == "videos":
+        rows.append([_btn("Продолжить", TT_VIDEOS, ICON_VIDEOS)])
+    elif after == "mine":
+        rows.append([_btn("К роликам", TT_MY_VIDEOS, ICON_MY_VIDEOS)])
+    rows.append([_btn("Тик ток", TT_HUB, ICON_TT)])
+    return _kb(rows)
+
+
+def _video_pages(total: int, page: int) -> tuple[int, int]:
+    pages = max(1, math.ceil(total / VIDEOS_PAGE_SIZE) if total else 1)
+    page = max(0, min(int(page or 0), pages - 1))
+    return page, pages
+
+
+def video_button_label(item: dict[str, Any]) -> str:
+    vid = int(item.get("id") or 0)
+    status = item.get("status")
+    paid = int(item.get("paidKut") or 0)
+    if status == "pending":
+        return f"На проверке · #{vid}"
+    if status == "rejected":
+        return f"Отклонено · #{vid}"
+    if item.get("recheckPending"):
+        return f"Перепроверка · #{vid}"
+    if paid:
+        return f"Принято · +{paid} кут"
+    return f"Принято · #{vid}"
+
+
+def my_videos_keyboard(
+    videos: list[dict[str, Any]],
+    *,
+    page: int = 0,
+) -> InlineKeyboardMarkup:
+    page, pages = _video_pages(len(videos), page)
+    start = page * VIDEOS_PAGE_SIZE
+    chunk = videos[start:start + VIDEOS_PAGE_SIZE]
+    rows: list[list[InlineKeyboardButton]] = []
+    for item in chunk:
+        rows.append([_btn(video_button_label(item), f"{TT_VIDEO_OPEN}{item['id']}", ICON_MY_VIDEOS)])
+    if pages > 1:
+        nav = []
+        if page > 0:
+            nav.append(_btn("Раньше", f"{TT_VIDEO_PAGE}{page - 1}", ICON_PREV))
+        if page + 1 < pages:
+            nav.append(_btn("Дальше", f"{TT_VIDEO_PAGE}{page + 1}", ICON_NEXT))
+        if nav:
+            rows.append(nav)
+    rows.append([_btn("Новая ссылка", TT_VIDEOS, ICON_VIDEOS)])
+    rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
+    return _kb(rows)
+
+
+def video_card_keyboard(item: dict[str, Any], *, page: int = 0) -> InlineKeyboardMarkup:
+    rows = []
+    if (
+        item.get("status") == "live"
+        and not item.get("recheckPending")
+        and item.get("recheckReady") is not False
+    ):
+        rows.append([_btn("Проверить просмотры", f"{TT_RECHECK}{item['id']}", ICON_OK)])
+    rows.append([_btn("Назад", f"{TT_VIDEO_PAGE}{page}", ICON_BACK)])
+    return _kb(rows)
+
+
+def text_hub(cfg: dict[str, Any] | None = None, *, has_nicks: bool = True) -> str:
     cfg = cfg or {}
     reward = int(cfg.get("commentReward") or COMMENT_REWARD)
     kut = int(cfg.get("kutPerUnit") or KUT_PER_UNIT)
     photos = int(cfg.get("photosRequired") or PHOTOS_REQUIRED)
+    lead = (
+        "Выберите задание. Куты приходят после проверки."
+        if has_nicks
+        else "Выберите задание. Сначала один раз напишем имя TikTok - это полминуты."
+    )
     return (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Тик ток</b>\n\n"
-        "<tg-emoji emoji-id='5472083261918291121'>😎</tg-emoji> <b><i>Выберите одно. Потом просто следуйте шагам.</i></b>\n"
-        f"<blockquote><b>1. Комментарии - напишите комментарии и пришлите фото.\n"
-        f"{photos} фото = {reward} кут</b></blockquote>\n"
-        f"<blockquote><b>2. Видео - снимите ролик про бота.\n"
-        f"Каждые 1.000 просмотров = {kut} кут</b></blockquote>"
+        f"<tg-emoji emoji-id='5472083261918291121'>😎</tg-emoji> <b><i>{lead}</i></b>\n"
+        f"<blockquote><b>1. Комментарии\n"
+        f"{photos} фото = {reward} кут. Можно закрыть сегодня.</b></blockquote>\n"
+        f"<blockquote><b>2. Видео про бота\n"
+        f"Каждые 1.000 просмотров = {kut} кут. Чем больше просмотров - тем больше кут.</b></blockquote>"
     )
 
 
@@ -1098,17 +1212,15 @@ def text_comments(cfg: dict[str, Any]) -> str:
     photos = int(cfg.get("photosRequired") or PHOTOS_REQUIRED)
     return (
         f"<tg-emoji emoji-id='5350367217349311525'>💬</tg-emoji> <b>Комментарии</b>\n\n"
-        "<tg-emoji emoji-id='5471937988944470973'>😊</tg-emoji> <b>Делайте по порядку :</b>\n"
-        
+        "<tg-emoji emoji-id='5471937988944470973'>😊</tg-emoji> <b>Делайте по порядку:</b>\n"
         "<blockquote><b>1. Откройте TikTok\n"
         f'2. Найдите ролики с хештегом "<code>{hashtag}</code>"\n'
         "3. Напишите комментарий и поставьте лайк своему комментарию\n"
         "4. Сделайте скриншот своего комментария\n"
-        f"5. Пришлите сюда {photos} таких фото. Одно фото - один комментарий</b></blockquote>\n\n"
-        
-        "<tg-emoji emoji-id='5472410705929971383'>📖</tg-emoji> <b><i>Пример комментария :</i></b>\n"
+        f"5. Пришлите сюда {photos} таких фото. Одно фото - один комментарий. Каждое сразу уходит на проверку</b></blockquote>\n\n"
+        "<tg-emoji emoji-id='5472410705929971383'>📖</tg-emoji> <b><i>Пример комментария:</i></b>\n"
         f"<blockquote><code>{EXAMPLE_COMMENT}</code></blockquote>\n\n"
-        f"<tg-emoji emoji-id='5472249867994670881'>😈</tg-emoji> <b>Награда : {photos} фото = {reward} кут</b>"
+        f"<tg-emoji emoji-id='{ICON_OK}'>✅</tg-emoji> <b>Награда: {photos} фото = {reward} кут. После проверки придут сюда.</b>"
     )
 
 
@@ -1118,26 +1230,26 @@ def text_videos(cfg: dict[str, Any]) -> str:
     per = int(cfg.get("viewsPerUnit") or 1000)
     return (
         f"<tg-emoji emoji-id='5375309569905938163'>📹</tg-emoji> <b>Видео про бота</b>\n\n"
-        "<tg-emoji emoji-id='5391143319029968523'>🤙</tg-emoji> <b>Делайте по порядку :</b>\n"
+        "<tg-emoji emoji-id='5391143319029968523'>🤙</tg-emoji> <b>Делайте по порядку:</b>\n"
         "<blockquote><b>1. Снимите ролик про бота <code>@CuteGamingBot</code>\n"
         f"2. В описании поставьте хештег <code>{hashtag}</code>\n"
         "3. Опубликуйте ролик\n"
         "4. Скопируйте ссылку и отправьте её сюда</b></blockquote>\n\n"
-        "<tg-emoji emoji-id='5388591472800986666'>✌</tg-emoji> <b><i>Пример ссылки :</i></b>\n"
-        f"<blockquote><code>{EXAMPLE_VIDEO_SHORT}</code>\n"
-        f"<code>{EXAMPLE_VIDEO_URL}</code></blockquote>\n\n"
-        f"<tg-emoji emoji-id='5326018884539553727'>🖤</tg-emoji> <b>Награда : каждые {per} просмотров = {kut} кут</b>"
+        "<tg-emoji emoji-id='5388591472800986666'>✌</tg-emoji> <b><i>Пример ссылки:</i></b>\n"
+        "<b>1.</b> <code>" + EXAMPLE_VIDEO_SHORT + "</code>\n"
+        "<b>2.</b> <code>" + EXAMPLE_VIDEO_URL + "</code>\n\n"
+        f"<tg-emoji emoji-id='5326018884539553727'>🖤</tg-emoji> <b>Награда: каждые {per} просмотров = {kut} кут. Просмотры копятся сами.</b>"
     )
 
 
 def text_need_nick(path: str = "", error: str = "") -> str:
     body = (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Напишите имя своего TikTok</b>\n\n"
-        "<tg-emoji emoji-id='5339564150534200424'>🎁</tg-emoji> <b>Что сделать :</b>\n"
+        "<tg-emoji emoji-id='5339564150534200424'>🎁</tg-emoji> <b>Что сделать:</b>\n"
         "<blockquote><b>1. Откройте TikTok\n"
         "2. Скопируйте своё имя профиля\n"
         "3. Отправьте его сюда. Можно с @ или без</b></blockquote>\n\n"
-        "<tg-emoji emoji-id='5255850874248399164'>🎁</tg-emoji> <b><i>Пример написания ника :</i></b>\n"
+        "<tg-emoji emoji-id='5255850874248399164'>🎁</tg-emoji> <b><i>Пример написания ника:</i></b>\n"
         f"<blockquote><code>{EXAMPLE_NICK}</code></blockquote>\n\n"
         f"<b>{INPUT_FOOTER}</b>"
     )
@@ -1153,15 +1265,15 @@ def text_ask_nick(error: str = "") -> str:
 def text_link_screen(error: str = "") -> str:
     body = (
         f"<tg-emoji emoji-id='{ICON_VIDEOS}'>📹</tg-emoji> <b>Отправьте ссылку на ролик</b>\n\n"
-        "<tg-emoji emoji-id='5391143319029968523'>🤙</tg-emoji> <b>Что сделать :</b>\n"
+        "<tg-emoji emoji-id='5391143319029968523'>🤙</tg-emoji> <b>Что сделать:</b>\n"
         "<blockquote>"
         "<b>1. Откройте свой ролик в TikTok\n"
         "2. Нажмите «Поделиться» и скопируйте ссылку\n"
         "3. Отправьте ссылку сюда. Подойдёт короткая vt.tiktok.com</b>"
         "</blockquote>\n\n"
-        "<tg-emoji emoji-id='5388591472800986666'>✌</tg-emoji> <b><i>Пример ссылки :</i></b>\n"
-        f"<blockquote><code>{EXAMPLE_VIDEO_SHORT}</code>\n"
-        f"<code>{EXAMPLE_VIDEO_URL}</code></blockquote>\n\n"
+        "<tg-emoji emoji-id='5388591472800986666'>✌</tg-emoji> <b><i>Пример ссылки:</i></b>\n"
+        "<b>1.</b> <code>" + EXAMPLE_VIDEO_SHORT + "</code>\n"
+        "<b>2.</b> <code>" + EXAMPLE_VIDEO_URL + "</code>\n\n"
         f"<b>{INPUT_FOOTER}</b>"
     )
     if error:
@@ -1178,14 +1290,17 @@ def text_nick_required_alert() -> str:
 
 
 def text_nicks(nicks: list[str], *, locked: bool) -> str:
-    body = "\n".join(f"<code>@{n}</code>" for n in nicks) if nicks else "<i>Аккаунтов пока нет.</i>"
+    if nicks:
+        body = "\n".join(f"<b>{i}. <code>@{n}</code></b>" for i, n in enumerate(nicks, 1))
+    else:
+        body = "<i>Пока нет ни одного имени.</i>"
     extra = (
-        "\n\n<i>Сейчас идёт проверка. Имя аккаунта можно сменить после ответа.</i>"
+        "\n\n<i>Сейчас идёт проверка. Имя можно сменить после ответа.</i>"
         if locked
-        else "\n\n<i>Можно добавить до трёх аккаунтов</i>"
+        else "\n\n<i>Можно указать до трёх имён.</i>"
     )
     return (
-        "<b>Ваши имена аккаунтов TikTok</b>\n\n"
+        f"<tg-emoji emoji-id='{ICON_NICKS}'>🎵</tg-emoji> <b>Имена аккаунтов TikTok</b>\n\n"
         f"{body}{extra}"
     )
 
@@ -1201,7 +1316,7 @@ def _nicks_block(nicks: list[str]) -> str:
     if not nicks:
         return ""
     lines = "\n".join(f"<code>@{n}</code>" for n in nicks)
-    return f"\n\n<b><i>Имена аккаунтов :</i></b>\n{lines}"
+    return f"\n\n<b><i>Имена аккаунтов:</i></b>\n{lines}"
 
 
 def comments_screen_text(
@@ -1210,51 +1325,49 @@ def comments_screen_text(
     *,
     pending: bool,
     count: int,
+    notice: str = "",
 ) -> str:
     needed = int(cfg.get("photosRequired") or PHOTOS_REQUIRED)
     if pending:
-        return (
+        text = (
             f"<tg-emoji emoji-id='5350367217349311525'>💬</tg-emoji> <b>Комментарии</b>\n\n"
-            f"<b>Серия сдана</b>\n"
-            f"<blockquote><b>{needed} из {needed}. Ждём решение.</b>\n"
-            "<i>Если передумали - отклоните заявку. Серия сбросится, можно будет сдать новую.</i></blockquote>"
-            f"{_nicks_block(nicks)}"
+            f"<blockquote><b>{needed} из {needed} сдано. Ждём проверку.</b>\n"
+            "<i>Как ответят - куты придут сюда. Если передумали, заявку можно отозвать.</i></blockquote>"
         )
-    body = text_comments(cfg)
-    body += _nicks_block(nicks)
-    if count > 0:
-        body += "\n\n" + collect_text(count, needed)
-    body += f"\n\n{PHOTO_FOOTER}"
-    return body
+    elif count > 0:
+        left = max(0, needed - int(count))
+        reward = int(cfg.get("commentReward") or COMMENT_REWARD)
+        text = (
+            f"<tg-emoji emoji-id='5350367217349311525'>💬</tg-emoji> <b>Комментарии</b>\n\n"
+            f"<blockquote><b>{count} из {needed}. Ещё {left} фото - и {reward} кут Ваши.</b>\n"
+            "<i>Альбом до 10 фото. Одно фото - один комментарий.</i></blockquote>\n"
+            f"{PHOTO_FOOTER}"
+        )
+    else:
+        text = text_comments(cfg)
+        text += f"\n\n{PHOTO_FOOTER}"
+    if notice:
+        return f"{notice}\n\n{text}"
+    return text
 
 
 def videos_screen_text(
     cfg: dict[str, Any],
     nicks: list[str],
     videos: list[dict[str, Any]],
+    notice: str = "",
 ) -> str:
     body = text_videos(cfg)
-    body += _nicks_block(nicks)
     pending = [v for v in videos if v.get("status") == "pending"]
-    live = [v for v in videos if v.get("status") == "live"]
     if pending:
         body += (
-            "\n\n<b>Ссылка на проверке</b>\n"
-            "<blockquote><i>Ждём решение. Новую ссылку можно прислать после ответа.</i></blockquote>"
+            "\n\n<b>Ссылка уже на проверке</b>\n"
+            "<blockquote><i>Ждём решение. Как примем - куты придут сюда. Новую ссылку можно прислать после ответа.</i></blockquote>"
         )
-    if live:
-        body += "\n\n<b>Ваши ролики</b>"
-        for item in live[:5]:
-            if item.get("recheckPending"):
-                mark = " · ждём перепроверку"
-            elif item.get("recheckReady") is False:
-                mark = f" · учтено {item['lastViews']} · {item.get('recheckWaitText') or 'ещё рано'}"
-            else:
-                mark = f" · учтено {item['lastViews']} · можно проверить"
-            body += f"\n<code>{item['url']}</code>\n<i>{mark}</i>"
-    if pending:
-        return body
-    body += f"\n\n<blockquote><i>Теперь отправьте ссылку на ролик следующим сообщением.</i></blockquote>\n{INPUT_FOOTER}"
+    else:
+        body += f"\n\n<blockquote><i>Теперь отправьте ссылку на ролик следующим сообщением.</i></blockquote>\n{INPUT_FOOTER}"
+    if notice:
+        return f"{notice}\n\n{body}"
     return body
 
 
@@ -1299,9 +1412,9 @@ def text_wait_link() -> str:
         "2. Нажмите «Поделиться» и скопируйте ссылку\n"
         "3. Отправьте ссылку сюда. Можно vt.tiktok.com</b>"
         "</blockquote>\n"
-        "<b><i>Пример :</i></b>\n"
-        f"<blockquote><code>{EXAMPLE_VIDEO_SHORT}</code>\n"
-        f"<code>{EXAMPLE_VIDEO_URL}</code></blockquote>\n"
+        "<b><i>Пример:</i></b>\n"
+        "<b>1.</b> <code>" + EXAMPLE_VIDEO_SHORT + "</code>\n"
+        "<b>2.</b> <code>" + EXAMPLE_VIDEO_URL + "</code>\n"
         f"{INPUT_FOOTER}"
     )
 
@@ -1342,7 +1455,7 @@ def text_press_bind_nick() -> str:
 def collect_text(count: int, needed: int, nicks: list[str] | None = None) -> str:
     bound = ""
     if nicks:
-        bound = "\n<i>Проверяем :</i> " + ", ".join(f"<b>@{n}</b>" for n in nicks)
+        bound = "\n<i>Проверяем:</i> " + ", ".join(f"<b>@{n}</b>" for n in nicks)
     if count >= needed:
         return f"<b>{needed} из {needed}. Ждём решение.</b>{bound}"
     left = needed - count
@@ -1362,7 +1475,7 @@ def text_photos_on_review(
     needed = int(needed)
     bound = ""
     if nicks:
-        bound = "\n<i>Ники аккаунтов :</i> " + ", ".join(f"<b>@{n}</b>" for n in nicks)
+        bound = "\n<i>Ники аккаунтов:</i> " + ", ".join(f"<b>@{n}</b>" for n in nicks)
     if added <= 0 and count >= needed:
         return f"<b>{needed} из {needed}. Ждём решение.</b>"
     word = ru_screenshot_word(added)
@@ -1383,9 +1496,126 @@ def text_photos_on_review(
 
 def text_case_withdrawn() -> str:
     return (
-        "<b>Заявку отозвали.</b>\n"
+        f"<tg-emoji emoji-id='{ICON_OK}'>✅</tg-emoji> <b>Заявку отозвали</b>\n"
         "<blockquote><i>Серия сброшена. Можно собрать новую.</i></blockquote>"
     )
+
+
+def text_done_nick_added(nick: str, nicks: list[str]) -> str:
+    left = max(0, MAX_NICKS - len(nicks))
+    extra = f"Можно добавить ещё {left}." if left else "Лимит имён заполнен."
+    return (
+        f"<tg-emoji emoji-id='{ICON_OK}'>✅</tg-emoji> <b>Имя аккаунта записано</b>\n\n"
+        f"<blockquote><b><code>@{escape(nick)}</code></b>\n"
+        f"<i>{extra} Теперь можно сдавать комментарии и видео.</i></blockquote>"
+    )
+
+
+def text_done_nick_changed(old: str, new: str) -> str:
+    return (
+        f"<tg-emoji emoji-id='{ICON_OK}'>✅</tg-emoji> <b>Имя аккаунта изменено</b>\n\n"
+        f"<blockquote><b>Было: <code>@{escape(old)}</code>\n"
+        f"Стало: <code>@{escape(new)}</code></b></blockquote>"
+    )
+
+
+def text_done_video_sent(url: str) -> str:
+    return (
+        f"<tg-emoji emoji-id='{ICON_VIDEOS}'>📹</tg-emoji> <b>Ссылка принята</b>\n\n"
+        f"<blockquote><b><code>{escape(url)}</code></b>\n"
+        "<i>Ролик на проверке. Как примем - куты за просмотры придут сюда.</i></blockquote>"
+    )
+
+
+def text_done_recheck(item: dict[str, Any]) -> str:
+    return (
+        f"<tg-emoji emoji-id='{ICON_OK}'>✅</tg-emoji> <b>Перепроверку запросили</b>\n\n"
+        f"<blockquote><b><code>{escape(str(item.get('url') or ''))}</code></b>\n"
+        "<i>Ролик снова в очереди. Напишем, когда посчитаем новые просмотры.</i></blockquote>"
+    )
+
+
+def text_done_undo(count: int, needed: int) -> str:
+    return (
+        f"<tg-emoji emoji-id='{ICON_CAM}'>📸</tg-emoji> <b>Последний скрин убрали</b>\n"
+        f"<blockquote><b>Сейчас {count} из {needed}.</b></blockquote>"
+    )
+
+
+def _fmt_num(n: int) -> str:
+    return f"{int(n):,}".replace(",", " ")
+
+
+def video_status_phrase(item: dict[str, Any]) -> str:
+    status = item.get("status")
+    if status == "pending":
+        return "на проверке"
+    if status == "rejected":
+        return "отклонено"
+    if item.get("recheckPending"):
+        return "перепроверка"
+    return "принято"
+
+
+def text_my_videos(videos: list[dict[str, Any]], page: int = 0) -> str:
+    total = len(videos)
+    if not total:
+        return (
+            f"<tg-emoji emoji-id='{ICON_MY_VIDEOS}'>🖤</tg-emoji> <b>Ваши ролики</b>\n\n"
+            "<i>Пока нет ни одного ролика.</i>\n"
+            "<blockquote><i>Нажмите «Новая ссылка» и отправьте ролик. Каждые 1.000 просмотров приносят куты.</i></blockquote>"
+        )
+    page, pages = _video_pages(total, page)
+    pending = sum(1 for v in videos if v.get("status") == "pending")
+    live = sum(1 for v in videos if v.get("status") == "live")
+    paid = sum(int(v.get("paidKut") or 0) for v in videos)
+    return (
+        f"<tg-emoji emoji-id='{ICON_MY_VIDEOS}'>🖤</tg-emoji> <b>Ваши ролики</b>\n\n"
+        f"<blockquote><b>Всего: {total} · принято: {live} · на проверке: {pending}\n"
+        f"Выплачено: {_fmt_num(paid)} кут</b>\n"
+        f"<i>Страница {page + 1} из {pages}. Нажмите ролик - там статус и выплата.</i></blockquote>"
+    )
+
+
+def text_video_card(item: dict[str, Any]) -> str:
+    status = video_status_phrase(item)
+    url = escape(str(item.get("url") or ""))
+    views = int(item.get("lastViews") or 0)
+    paid = int(item.get("paidKut") or 0)
+    unit = int(item.get("kutPerUnit") or KUT_PER_UNIT)
+    thousands = int(item.get("lastPaidThousands") or 0)
+    lines = [
+        f"<tg-emoji emoji-id='{ICON_VIDEOS}'>📹</tg-emoji> <b>Ролик #{item.get('id')}</b>",
+        "",
+        f"<b>Статус:</b> {status}",
+        f"<blockquote><code>{url}</code></blockquote>",
+    ]
+    if item.get("status") == "live" or paid or views:
+        pay_line = f"<b>Выплата:</b> +{_fmt_num(paid)} кут"
+        if thousands:
+            pay_line += f"\n<i>{_fmt_num(thousands)} тыс. × {unit} кут</i>"
+        elif item.get("status") == "live":
+            pay_line += "\n<i>Пока меньше 1.000. Куты появятся, когда наберётся тысяча.</i>"
+        lines.append(
+            "<blockquote>"
+            f"<b>Просмотры:</b> {_fmt_num(views)}\n"
+            f"{pay_line}"
+            "</blockquote>"
+        )
+    reasons = [str(r).strip() for r in (item.get("rejectReasons") or []) if str(r).strip()]
+    if item.get("status") == "rejected":
+        reason_text = "\n".join(f"· {escape(r)}" for r in reasons) or "· Ролик не приняли"
+        lines.append(f"<blockquote><b>Почему отклонили</b>\n{reason_text}</blockquote>")
+    if item.get("status") == "pending":
+        lines.append("<blockquote><i>Ждём решение. Напишем сюда.</i></blockquote>")
+    elif item.get("recheckPending"):
+        lines.append("<blockquote><i>Перепроверка уже в очереди.</i></blockquote>")
+    elif item.get("status") == "live" and item.get("recheckReady") is False:
+        wait = item.get("recheckWaitText") or "ещё рано"
+        lines.append(f"<blockquote><i>Следующая проверка {wait}.</i></blockquote>")
+    elif item.get("status") == "live":
+        lines.append("<blockquote><i>Можно запросить перепроверку просмотров.</i></blockquote>")
+    return "\n".join(lines)
 
 
 async def download_and_hash(bot, file_id: str) -> dict[str, str]:

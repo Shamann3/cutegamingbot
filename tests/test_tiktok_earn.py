@@ -70,6 +70,9 @@ def test_hub_buttons_use_premium_emoji_ids():
     assert "<tg-emoji" not in comments.text
     assert comments.icon_custom_emoji_id == ICON_COMMENTS == "5350367217349311525"
     assert videos.icon_custom_emoji_id == ICON_VIDEOS == "5375309569905938163"
+    for row in kb.inline_keyboard:
+        for btn in row:
+            assert btn.icon_custom_emoji_id, btn.text
 
 
 def test_player_tiktok_texts_have_no_emdash():
@@ -146,7 +149,7 @@ def test_collect_progress_and_undo_available_before_full():
 
 def test_video_recheck_state_and_keyboard():
     from datetime import datetime, timedelta, timezone
-    from bot.funcs.tiktok_earn import video_recheck_state, videos_keyboard
+    from bot.funcs.tiktok_earn import my_videos_keyboard, video_card_keyboard, video_recheck_state
 
     now = datetime.now(timezone.utc)
     waiting = video_recheck_state(now, 7)
@@ -154,12 +157,25 @@ def test_video_recheck_state_and_keyboard():
     assert "через" in waiting["waitText"]
     ready = video_recheck_state(now - timedelta(days=8), 7)
     assert ready["ready"] is True
-    dumped = _kb_data(videos_keyboard([
-        {"id": 4, "status": "live", "recheckPending": False, "recheckReady": False},
-        {"id": 5, "status": "live", "recheckPending": False, "recheckReady": True},
-    ]))
+    dumped = _kb_data(video_card_keyboard({
+        "id": 5, "status": "live", "recheckPending": False, "recheckReady": True,
+    }))
     assert "tt:recheck:5" in dumped
-    assert "tt:recheck:4" not in dumped
+    waiting_kb = _kb_data(video_card_keyboard({
+        "id": 4, "status": "live", "recheckPending": False, "recheckReady": False,
+    }))
+    assert "tt:recheck:4" not in waiting_kb
+    items = [{"id": i, "status": "live", "paidKut": 30} for i in range(1, 12)]
+    page0 = _kb_data(my_videos_keyboard(items, page=0))
+    assert "tt:vpage:1" in page0
+    assert "tt:vid:1" in page0
+    assert "tt:vid:11" not in page0
+    page1 = _kb_data(my_videos_keyboard(items, page=1))
+    assert "tt:vid:11" in page1
+    assert "tt:vpage:0" in page1
+    page_labels = " ".join(btn.text for row in my_videos_keyboard(items, page=0).inline_keyboard for btn in row)
+    assert "Дальше" in page_labels
+    assert page_labels.count("Назад") == 1
 
 
 def test_bot_texts_follow_settings_rewards():
@@ -190,7 +206,8 @@ def test_direction_then_work_on_same_screen():
     assert "Настройки" not in hub
     dumped = _kb_data(hub_keyboard())
     assert dumped.split()[:2] == ["tt:comments", "tt:videos"]
-    assert "tt:nicks" not in dumped
+    assert "tt:nicks" in dumped
+    assert "tt:my_videos" in dumped
     work = _kb_data(comments_keyboard(can_send=True, count=3, needed=15, waiting=False))
     assert "tt:submit_photos" not in work
     assert "tt:undo_photo" in work
@@ -310,6 +327,11 @@ def test_player_tiktok_copy_is_formal_vy():
         text_wait_link,
         text_wait_photos,
         collect_text,
+        text_done_nick_added,
+        text_done_nick_changed,
+        text_done_video_sent,
+        text_my_videos,
+        text_video_card,
     )
 
     blobs = [
@@ -327,6 +349,12 @@ def test_player_tiktok_copy_is_formal_vy():
         text_nick_required_alert(),
         text_wait_photos(),
         text_wait_link(),
+        text_wait_expired(),
+        text_done_nick_added("cuteplayer", ["cuteplayer"]),
+        text_done_nick_changed("oldnick", "newnick"),
+        text_done_video_sent("https://vt.tiktok.com/ZSqxKyCTB/"),
+        text_my_videos([]),
+        text_video_card({"id": 1, "url": "https://vt.tiktok.com/ZSqxKyCTB/", "status": "live", "lastViews": 2500, "paidKut": 60, "lastPaidThousands": 2, "kutPerUnit": 30}),
         text_press_send_photos(),
         text_press_send_link(),
         text_wait_expired(),
@@ -399,6 +427,9 @@ def test_wait_modes_photo_ignored_until_button():
     assert EXAMPLE_COMMENT in text_comments({})
     assert EXAMPLE_VIDEO_URL in text_videos({})
     assert "vt.tiktok.com" in text_videos({})
+    assert "<b>1.</b>" in text_videos({})
+    assert "<b>2.</b>" in text_videos({})
+    assert "<blockquote><code>" not in text_videos({})
     comments = text_comments({})
     videos = text_videos({})
     assert "хештег" in comments
@@ -606,6 +637,9 @@ def test_admin_photo_proxy_client_uses_jwt_query_and_thumb():
     assert "nickBreakdown" not in section
     assert "Следующее · конец" not in section
     assert "readonly={tab === 'archive'}" in section
+    assert "VideoWorkspace" in section
+    assert "Открыть улику в TikTok" in section
+    assert "busyRef.current" in section
 
 
 def test_wait_expires_after_five_minutes_and_keeps_escape():

@@ -213,13 +213,16 @@ async def _arm_nick_screen(
 
 async def show_hub(target: CallbackQuery | Message) -> None:
     await tt.ensure_schema()
-    if getattr(getattr(target, "from_user", None), "id", None):
-        await tt.clear_session(target.from_user.id)
+    user_id = getattr(getattr(target, "from_user", None), "id", None)
+    has_nicks = False
+    if user_id:
+        await tt.clear_session(user_id)
+        has_nicks = bool(await tt.list_nicks(user_id))
     cfg = await tt.get_settings()
-    await _edit_or_send(target, tt.text_hub(cfg), tt.hub_keyboard())
+    await _edit_or_send(target, tt.text_hub(cfg, has_nicks=has_nicks), tt.hub_keyboard())
 
 
-async def show_comments(target: CallbackQuery | Message, user_id: int) -> None:
+async def show_comments(target: CallbackQuery | Message, user_id: int, notice: str = "") -> None:
     nicks = await tt.list_nicks(user_id)
     if not nicks:
         await _arm_nick_screen(target, user_id, "comments")
@@ -242,7 +245,8 @@ async def show_comments(target: CallbackQuery | Message, user_id: int) -> None:
         count = 0
         pending_complete = False
         kind = tt.WAIT_PHOTOS
-    text = tt.comments_screen_text(cfg, nicks, pending=pending_complete, count=count)
+    extra["origin"] = "comments"
+    text = tt.comments_screen_text(cfg, nicks, pending=pending_complete, count=count, notice=notice)
     markup = tt.comments_keyboard(
         can_send=not pending_complete,
         count=count,
@@ -258,7 +262,7 @@ async def show_comments(target: CallbackQuery | Message, user_id: int) -> None:
     await tt.set_session(user_id, mode, extra)
 
 
-async def show_videos(target: CallbackQuery | Message, user_id: int) -> None:
+async def show_videos(target: CallbackQuery | Message, user_id: int, notice: str = "") -> None:
     nicks = await tt.list_nicks(user_id)
     if not nicks:
         await _arm_nick_screen(target, user_id, "videos")
@@ -267,7 +271,7 @@ async def show_videos(target: CallbackQuery | Message, user_id: int) -> None:
     videos = await tt.list_user_videos(user_id)
     pending = any(v["status"] == "pending" for v in videos)
     extra = {"after": "videos", "origin": "videos"}
-    text = tt.videos_screen_text(cfg, nicks, videos)
+    text = tt.videos_screen_text(cfg, nicks, videos, notice=notice)
     markup = tt.videos_keyboard(videos, waiting=not pending, can_send=not pending)
     sent = await _edit_or_send(target, text, markup)
     if pending:
@@ -289,8 +293,8 @@ async def _nicks_origin(user_id: int) -> str:
         if extra.get("after") == "videos" or rec.get("after") == "videos":
             return "videos"
         return "comments"
-    if origin in {"videos", tt.MODE_VIDEOS, tt.MODE_WAIT_LINK}:
-        return "videos"
+    if origin in {"videos", tt.MODE_VIDEOS, tt.MODE_WAIT_LINK, "mine", "my_videos"}:
+        return "videos" if origin in {"videos", tt.MODE_VIDEOS, tt.MODE_WAIT_LINK} else "mine"
     return "hub"
 
 
@@ -299,11 +303,38 @@ async def show_nicks(target: CallbackQuery | Message, user_id: int) -> None:
     nicks = await tt.list_nicks(user_id)
     locked = await tt.has_pending(user_id)
     origin = await _nicks_origin(user_id)
+    await tt.set_session(user_id, tt.MODE_NEED_NICK if not nicks else "nicks", {"origin": origin, "after": origin})
     await _edit_or_send(
         target,
         tt.text_nicks(nicks, locked=locked),
         tt.nicks_keyboard(nicks, locked=locked, origin=origin),
     )
+
+
+async def show_my_videos(target: CallbackQuery | Message, user_id: int, page: int = 0, notice: str = "") -> None:
+    tt.clear_wait(user_id)
+    videos = await tt.list_user_videos(user_id)
+    page, _pages = tt._video_pages(len(videos), page)
+    await tt.set_session(user_id, "my_videos", {"origin": "mine", "after": "mine", "videoPage": page})
+    text = tt.text_my_videos(videos, page)
+    if notice:
+        text = f"{notice}\n\n{text}"
+    await _edit_or_send(target, text, tt.my_videos_keyboard(videos, page=page))
+
+
+async def show_video_card(target: CallbackQuery | Message, user_id: int, video_id: int, notice: str = "") -> None:
+    tt.clear_wait(user_id)
+    item = await tt.get_user_video(user_id, video_id)
+    session = await tt.get_session(user_id)
+    page = int((session.get("extra") or {}).get("videoPage") or 0)
+    if not item:
+        await show_my_videos(target, user_id, page)
+        return
+    await tt.set_session(user_id, "my_videos", {"origin": "mine", "after": "mine", "videoPage": page, "videoId": video_id})
+    text = tt.text_video_card(item)
+    if notice:
+        text = f"{notice}\n\n{text}"
+    await _edit_or_send(target, text, tt.video_card_keyboard(item, page=page))
 
 
 @tiktok_router.callback_query(F.data == tt.TT_HUB)
@@ -333,6 +364,49 @@ async def on_videos(callback: CallbackQuery) -> None:
     await show_videos(callback, callback.from_user.id)
 
 
+@tiktok_router.callback_query(F.data == tt.TT_MY_VIDEOS)
+async def on_my_videos(callback: CallbackQuery) -> None:
+    if not _private(callback):
+        await callback.answer()
+        return
+    await callback.answer()
+    await show_my_videos(callback, callback.from_user.id, 0)
+
+
+@tiktok_router.callback_query(F.data.startswith(tt.TT_VIDEO_PAGE))
+async def on_video_page(callback: CallbackQuery) -> None:
+    if not _private(callback):
+        await callback.answer()
+        return
+    raw = (callback.data or "").replace(tt.TT_VIDEO_PAGE, "", 1)
+    try:
+        page = int(raw)
+    except ValueError:
+        page = 0
+    await callback.answer()
+    await show_my_videos(callback, callback.from_user.id, page)
+
+
+@tiktok_router.callback_query(F.data.startswith(tt.TT_VIDEO_OPEN))
+async def on_video_open(callback: CallbackQuery) -> None:
+    if not _private(callback):
+        await callback.answer()
+        return
+    raw = (callback.data or "").replace(tt.TT_VIDEO_OPEN, "", 1)
+    try:
+        video_id = int(raw)
+    except ValueError:
+        await callback.answer("Ролик не найден", show_alert=True)
+        return
+    await callback.answer()
+    await show_video_card(callback, callback.from_user.id, video_id)
+
+
+@tiktok_router.callback_query(F.data == tt.TT_NOOP)
+async def on_tt_noop(callback: CallbackQuery) -> None:
+    await callback.answer()
+
+
 @tiktok_router.callback_query(F.data == tt.TT_NICKS)
 async def on_nicks(callback: CallbackQuery) -> None:
     if not _private(callback):
@@ -348,6 +422,9 @@ async def on_nicks(callback: CallbackQuery) -> None:
     elif session.get("mode") in {tt.MODE_WAIT_LINK, tt.MODE_VIDEOS} or rec.get("kind") == tt.WAIT_LINK:
         extra["origin"] = "videos"
         await tt.set_session(user_id, session.get("mode") or tt.MODE_VIDEOS, extra)
+    elif session.get("mode") in {"my_videos", "nicks"} or extra.get("origin") == "mine":
+        extra["origin"] = extra.get("origin") or "mine"
+        await tt.set_session(user_id, session.get("mode") or "nicks", extra)
     await callback.answer()
     await show_nicks(callback, user_id)
 
@@ -363,6 +440,8 @@ async def on_nick_add(callback: CallbackQuery) -> None:
     after = extra.get("after") or extra.get("origin") or rec.get("after") or "comments"
     if session.get("mode") in {tt.MODE_WAIT_LINK, tt.MODE_VIDEOS}:
         after = "videos"
+    if session.get("mode") in {"my_videos"} or extra.get("origin") == "mine":
+        after = "mine"
     if session.get("mode") in {tt.MODE_WAIT_PHOTOS, "collect_photos", tt.MODE_COMMENTS, tt.MODE_COMMENT_DONE}:
         after = "comments"
     await callback.answer()
@@ -441,8 +520,9 @@ async def on_undo_photo(callback: CallbackQuery) -> None:
     except ValueError as exc:
         await callback.answer(str(exc), show_alert=True)
         return
-    await callback.answer("Убрали")
-    await show_comments(callback, callback.from_user.id)
+    await callback.answer()
+    notice = tt.text_done_undo(int(state.get("count") or 0), int(state.get("needed") or 15))
+    await show_comments(callback, callback.from_user.id, notice=notice)
 
 
 @tiktok_router.callback_query(F.data == tt.TT_WITHDRAW)
@@ -455,8 +535,12 @@ async def on_withdraw(callback: CallbackQuery) -> None:
     except ValueError as exc:
         await callback.answer(str(exc), show_alert=True)
         return
-    await callback.answer("Заявку отозвали. Можно сдать новую.")
-    await show_comments(callback, callback.from_user.id)
+    await callback.answer()
+    await _edit_or_send(
+        callback,
+        tt.text_case_withdrawn(),
+        tt.done_keyboard(after="comments"),
+    )
 
 
 @tiktok_router.callback_query(F.data == tt.TT_SUBMIT_PHOTOS)
@@ -494,7 +578,16 @@ async def on_recheck(callback: CallbackQuery) -> None:
         await callback.answer(str(exc), show_alert=True)
         return
     await callback.answer()
-    await show_videos(callback, callback.from_user.id)
+    item = await tt.get_user_video(callback.from_user.id, video_id)
+    if not item:
+        await show_my_videos(callback, callback.from_user.id)
+        return
+    await show_video_card(
+        callback,
+        callback.from_user.id,
+        video_id,
+        notice=tt.text_done_recheck(item),
+    )
 
 
 async def _send_collect_progress(message: Message, state: dict, *, delete_user: bool = True) -> None:
@@ -568,9 +661,12 @@ async def on_wait_text(message: Message) -> None:
         try:
             if kind == tt.WAIT_NICK_EDIT or session.get("mode") == tt.MODE_WAIT_NICK_EDIT:
                 old = extra.get("oldNick") or rec.get("oldNick") or ""
-                await tt.replace_nick(user_id, old, message.text or "")
+                new_nick = await tt.replace_nick(user_id, old, message.text or "")
+                notice = tt.text_done_nick_changed(old, new_nick)
             else:
-                await tt.add_nick(user_id, message.text or "")
+                new_nick = await tt.add_nick(user_id, message.text or "")
+                have = await tt.list_nicks(user_id)
+                notice = tt.text_done_nick_added(new_nick, have)
         except ValueError as exc:
             have = await tt.list_nicks(user_id)
             await _reprompt(
@@ -583,10 +679,13 @@ async def on_wait_text(message: Message) -> None:
         await _delete_user_message(message)
         await _delete_prompt(user_id)
         tt.clear_wait(user_id)
-        if after == "videos":
-            await show_videos(message, user_id)
-            return
-        await show_comments(message, user_id)
+        dest = after if after in {"comments", "videos", "mine"} else "hub"
+        await message.answer(
+            notice,
+            reply_markup=tt.done_keyboard(after=dest),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
         return
     if kind == tt.WAIT_LINK or await tt.is_waiting_link(user_id):
         videos = await tt.list_user_videos(user_id)
@@ -600,14 +699,21 @@ async def on_wait_text(message: Message) -> None:
             )
             return
         try:
-            await tt.submit_video(user_id, raw)
+            parsed = await tt.submit_video(user_id, raw)
         except ValueError as exc:
             await _reprompt(message, user_id, tt.text_link_screen(str(exc)), kb)
             return
         await _delete_user_message(message)
         await _delete_prompt(user_id)
         tt.clear_wait(user_id)
-        await show_videos(message, user_id)
+        url = (parsed or {}).get("url") if isinstance(parsed, dict) else None
+        await message.answer(
+            tt.text_done_video_sent(url or raw),
+            reply_markup=tt.done_keyboard(after="mine"),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return
 
 
 async def on_wait_photo(message: Message) -> None:
