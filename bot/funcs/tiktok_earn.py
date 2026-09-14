@@ -868,7 +868,7 @@ def text_press_send_link() -> str:
         "<i>Потом отправьте ссылку.</i>"
     )
 
-
+#
 def text_press_bind_nick() -> str:
     return (
         "<b>Сначала нажмите кнопку.</b>\n"
