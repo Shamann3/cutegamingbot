@@ -48,13 +48,15 @@ def test_nick_taken_message_is_defined():
 
 
 def test_bot_texts_match_plan():
-    from bot.funcs.tiktok_earn import help_earnings_block, text_ask_nick, text_hub, text_need_nick
+    from bot.funcs.tiktok_earn import format_hashtag, help_earnings_block, text_ask_nick, text_hub, text_need_nick
     assert "Тик ток" in text_hub()
     assert "cuteplayer" in text_ask_nick()
     assert "Задания" in help_earnings_block()
     assert "Напишите имя своего TikTok" in text_need_nick()
     assert "@cuteplayer" in text_need_nick()
     assert text_ask_nick() == text_need_nick()
+    assert format_hashtag("тг звезды") == "#тгзвезды"
+    assert format_hashtag("@CuteGamingBot") == "#CuteGamingBot"
 
 
 def test_hub_buttons_use_premium_emoji_ids():
@@ -383,7 +385,15 @@ def test_wait_modes_photo_ignored_until_button():
     assert EXAMPLE_NICK in need
     assert EXAMPLE_COMMENT in text_comments({})
     assert EXAMPLE_VIDEO_URL in text_videos({})
-    for blob in (ask, need, text_comments({}), text_videos({})):
+    comments = text_comments({})
+    videos = text_videos({})
+    assert "хештег" in comments
+    assert "Тег ролика" not in comments
+    assert "<blockquote>" in comments
+    assert "<blockquote>" in videos
+    assert "Делайте по порядку" in comments
+    assert "Делайте по порядку" in videos
+    for blob in (ask, need, comments, videos):
         assert "<code>" in blob
         assert "—" not in blob
 

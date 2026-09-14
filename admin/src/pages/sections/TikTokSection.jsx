@@ -24,7 +24,7 @@ const TABS = [
   { id: 'videos', label: 'Видео', hint: 'Открой ссылку в TikTok, впиши просмотры. Код сам посчитает куты.' },
   { id: 'live', label: 'Живые', hint: 'Уже принятые ролики. Если игрок просит перепроверку — доплати разницу.' },
   { id: 'archive', label: 'Архив', hint: 'Закрытые дела. Здесь ничего начислять не нужно.' },
-  { id: 'settings', label: 'Настройки', hint: 'Тег, причины отказа и тексты игроку. Награду в кутах меняет только создатель.' },
+  { id: 'settings', label: 'Настройки', hint: 'Хештеги, причины отказа и тексты игроку. Награду в кутах меняет только создатель.' },
 ]
 
 const GUIDE_KEY = 'cf_tiktok_guide_v1'
@@ -142,14 +142,15 @@ function CommentCase({ item, onOpen, current }) {
   )
 }
 
-function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
+function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentRejectReasons }) {
   const [busy, setBusy] = useState(false)
   const [lightbox, setLightbox] = useState(null)
   const [compare, setCompare] = useState(null)
   const [local, setLocal] = useState(item)
+  const [reasons, setReasons] = useState([])
   const busyRef = useRef(false)
 
-  useEffect(() => { setLocal(item); setCompare(null) }, [item])
+  useEffect(() => { setLocal(item); setCompare(null); setReasons([]) }, [item])
 
   const matchByIndex = useMemo(() => {
     const map = {}
@@ -215,7 +216,11 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
       }
       if (e.key === 'r' || e.key === 'R') {
         e.preventDefault()
-        decide(() => rejectTiktokComment(local.id), 'Отклонено, игроку ушёл ответ')
+        if (!reasons.length) {
+          showToast('Отметьте хотя бы одну причину отказа')
+          return
+        }
+        decide(() => rejectTiktokComment(local.id, reasons), 'Отклонено, игроку ушёл ответ')
       }
       if (e.key === 'n' || e.key === 'N' || e.key === 'j' || e.key === 'J') {
         e.preventDefault()
@@ -225,7 +230,7 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [local, onAdvance, onClose])
+  }, [local, reasons, onAdvance, onClose])
 
   const nextHint = nextQueueItem(queue, local.id)
   const needed = local.photosRequired || 15
@@ -346,12 +351,26 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
         </div>
       )}
 
+      <div className="tt-reasons">
+        <p className="tt-hint">Почему отклоняем. Игрок увидит эти пункты в сообщении.</p>
+        {(commentRejectReasons || []).map((r) => (
+          <label key={r.id} className={`tt-reason-chip${reasons.includes(r.id) ? ' is-on' : ''}`}>
+            <input
+              type="checkbox"
+              checked={reasons.includes(r.id)}
+              onChange={() => setReasons((cur) => (cur.includes(r.id) ? cur.filter((x) => x !== r.id) : [...cur, r.id]))}
+            />
+            {r.label || 'Причина без названия'}
+          </label>
+        ))}
+      </div>
+
       <div className="tt-actions">
         <button
           type="button"
           className="tt-btn tt-btn-hot"
-          disabled={busy}
-          onClick={() => decide(() => rejectTiktokComment(local.id), 'Отклонено')}
+          disabled={busy || !reasons.length}
+          onClick={() => decide(() => rejectTiktokComment(local.id, reasons), 'Отклонено')}
         >
           Отклонить
         </button>
@@ -420,7 +439,7 @@ function VideoCard({ item, settings, onDone, rejectReasons }) {
       {item.status === 'pending' && (
         <div className="tt-reasons">
           {(rejectReasons || []).map((r) => (
-            <label key={r.id}>
+            <label key={r.id} className={`tt-reason-chip${reasons.includes(r.id) ? ' is-on' : ''}`}>
               <input
                 type="checkbox"
                 checked={reasons.includes(r.id)}
@@ -461,6 +480,7 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
   useEffect(() => { setForm(initial) }, [initial])
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }))
   const reasons = form.rejectReasons || []
+  const photoReasons = form.commentRejectReasons || []
   const barnums = form.barnumRejects || []
   const caps = form.rewardCaps || { commentMin: 1, commentMax: 500, videoMin: 1, videoMax: 5000 }
   const pack = Number(form.photosRequired ?? 15)
@@ -477,6 +497,7 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
             commentTag: form.commentTag,
             videoHashtag: form.videoHashtag,
             rejectReasons: form.rejectReasons,
+            commentRejectReasons: form.commentRejectReasons,
             barnumRejects: form.barnumRejects,
           }
           if (canEditRewards) {
@@ -493,7 +514,7 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
         }
       }}
     >
-      <p className="tt-hint">Тег и тексты отказа можно править. Пачка, пауза и лимит ников - правила продукта.</p>
+      <p className="tt-hint">Хештеги и тексты отказа можно править. Пачка, пауза и лимит ников - правила продукта.</p>
 
       <div className={`tt-reward-card${canEditRewards ? '' : ' is-lock'}`}>
         <div className="tt-reward-head">
@@ -541,17 +562,48 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
       </div>
 
       <label className="tt-field">
-        <span>Тег, который должен быть у ролика с комментариями</span>
-        <input value={form.commentTag || ''} onChange={(e) => set('commentTag', e.target.value)} placeholder="например тг звезды" />
+        <span>Хештег роликов для комментариев</span>
+        <input value={form.commentTag || ''} onChange={(e) => set('commentTag', e.target.value)} placeholder="#тгзвезды" />
       </label>
       <label className="tt-field">
-        <span>Отметка в ролике про бота</span>
-        <input value={form.videoHashtag || ''} onChange={(e) => set('videoHashtag', e.target.value)} placeholder="@CuteGamingBot" />
+        <span>Хештег в ролике про бота</span>
+        <input value={form.videoHashtag || ''} onChange={(e) => set('videoHashtag', e.target.value)} placeholder="#CuteGamingBot" />
       </label>
       <div className="tt-locked-nums">
         <span>пачка {pack} скринов</span>
         <span>перепроверка {form.recheckDays ?? 7} дн.</span>
         <span>ников ≤ {form.maxNicks ?? 3}</span>
+      </div>
+
+      <h4>Причины отказа комментариев</h4>
+      <p className="tt-hint">Чеклист на карточке серии. Игрок получит выбранные пункты в сообщении.</p>
+      <div className="tt-reason-edit">
+        {photoReasons.map((r, i) => (
+          <div key={r.id || i} className="tt-reason-row">
+            <input
+              value={r.label || ''}
+              onChange={(e) => {
+                const next = photoReasons.map((row, idx) => (idx === i ? { ...row, label: e.target.value } : row))
+                set('commentRejectReasons', next)
+              }}
+            />
+            <button
+              type="button"
+              className="tt-btn"
+              onClick={() => set('commentRejectReasons', photoReasons.filter((_, idx) => idx !== i))}
+              disabled={photoReasons.length <= 1}
+            >
+              убрать
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="tt-btn"
+          onClick={() => set('commentRejectReasons', [...photoReasons, { id: `photo_${Date.now()}`, label: '' }])}
+        >
+          Добавить причину
+        </button>
       </div>
 
       <h4>Причины отказа видео</h4>
@@ -585,8 +637,8 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
         </button>
       </div>
 
-      <h4>Ответ игроку при отказе комментариев</h4>
-      <p className="tt-hint">Размытые формулировки. Не пиши «копия» и не объясняй, как обойти проверку.</p>
+      <h4>Старые размытые ответы</h4>
+      <p className="tt-hint">Больше не уходят игроку. При отказе серии уходят только выбранные причины из чеклиста выше.</p>
       <div className="tt-reason-edit">
         {barnums.map((text, i) => (
           <div key={i} className="tt-barnum-row">
@@ -706,7 +758,7 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
       <p className="panel-shelf-label">TikTok</p>
       <h2 className="panel-page-title">Очередь заработка</h2>
       <p className="panel-page-lead">
-        Игрок не берёт задание — читает и присылает доказательства. Твоя работа: быстро решить, настоящее это или нет.
+        Игрок не берёт задание - читает и присылает доказательства. Ваша работа: быстро решить, настоящее это или нет.
       </p>
 
       {guide && (
@@ -760,6 +812,7 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
           <CommentWorkspace
             item={openCase}
             queue={comments}
+            commentRejectReasons={settings?.commentRejectReasons}
             onClose={() => setOpenCase(null)}
             onAdvance={advanceFrom}
             onDecided={afterDecide}

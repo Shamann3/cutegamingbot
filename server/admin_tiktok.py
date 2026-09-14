@@ -19,6 +19,7 @@ from tiktok_earn_logic import (
     COMMENT_REWARD_MAX,
     COMMENT_REWARD_MIN,
     DEFAULT_COMMENT_TAG,
+    DEFAULT_PHOTO_REJECT_REASONS,
     DEFAULT_REJECT_REASONS,
     DEFAULT_VIDEO_HASHTAG,
     HASH_THRESHOLD,
@@ -36,14 +37,13 @@ from tiktok_earn_logic import (
     next_queue_item,
     validate_comment_reward,
     validate_video_reward,
-    wrap_barnum_html,
+    format_photo_reject_html,
     hashes_from_image_bytes,
     hashes_similar,
     normalize_nick,
     pair_key,
     parse_tiktok_url,
     payout_delta,
-    pick_barnum,
     validate_nick,
 )
 
@@ -56,7 +56,7 @@ TIKTOK_TABS = (
     {"id": "videos", "label": "Очередь видео", "blurb": "Открой TikTok, впиши просмотры — код сам посчитает куты."},
     {"id": "live", "label": "Живые видео", "blurb": "Уже принятые ролики и запросы на доплату за новые тысячи."},
     {"id": "archive", "label": "Архив", "blurb": "Закрытые дела: одобрения, отказы, кто и когда решил."},
-    {"id": "settings", "label": "Настройки", "blurb": "Тег, награды, причины отказа и пауза между проверками."},
+    {"id": "settings", "label": "Настройки", "blurb": "Хештеги, награды, причины отказа и пауза между проверками."},
 )
 
 _SCHEMA_READY = False
@@ -149,6 +149,8 @@ async def ensure_tiktok_schema() -> None:
             ON tiktok_hash_verdicts (hash_a, hash_b);
         ALTER TABLE tiktok_settings
             ADD COLUMN IF NOT EXISTS barnum_rejects JSONB NOT NULL DEFAULT '[]'::jsonb;
+        ALTER TABLE tiktok_settings
+            ADD COLUMN IF NOT EXISTS comment_reject_reasons JSONB NOT NULL DEFAULT '[]'::jsonb;
         CREATE INDEX IF NOT EXISTS tiktok_videos_recheck_idx
             ON tiktok_videos (status, recheck_requested_at)
             WHERE recheck_requested_at IS NOT NULL;
@@ -188,6 +190,7 @@ async def get_settings() -> dict[str, Any]:
             "maxNicks": MAX_NICKS,
             "photosRequired": PHOTOS_REQUIRED,
             "rejectReasons": list(DEFAULT_REJECT_REASONS),
+            "commentRejectReasons": list(DEFAULT_PHOTO_REJECT_REASONS),
             "barnumRejects": list(BARNUM_REJECTS),
             "rewardCaps": {
                 "commentMin": COMMENT_REWARD_MIN,
@@ -197,6 +200,13 @@ async def get_settings() -> dict[str, Any]:
             },
         }
     reasons = _json(row["reject_reasons"]) or list(DEFAULT_REJECT_REASONS)
+    photo_reasons = (
+        _json(row["comment_reject_reasons"])
+        if "comment_reject_reasons" in row.keys()
+        else []
+    )
+    if not photo_reasons:
+        photo_reasons = list(DEFAULT_PHOTO_REJECT_REASONS)
     barnum = _json(row["barnum_rejects"]) if "barnum_rejects" in row.keys() else []
     if not barnum:
         barnum = list(BARNUM_REJECTS)
@@ -210,6 +220,7 @@ async def get_settings() -> dict[str, Any]:
         "maxNicks": int(row["max_nicks"]),
         "photosRequired": int(row["photos_required"]),
         "rejectReasons": reasons,
+        "commentRejectReasons": photo_reasons,
         "barnumRejects": barnum,
         "rewardCaps": {
             "commentMin": COMMENT_REWARD_MIN,
@@ -776,10 +787,26 @@ async def approve_comment_case(case_id: int, admin_id: int) -> dict:
     return {"ok": True, "balance": after, "kut": amount}
 
 
-async def reject_comment_case(case_id: int, admin_id: int) -> dict:
+def _clean_reason_catalog(raw, fallback: list[dict[str, str]]) -> list[dict[str, str]]:
+    clean = []
+    for item in raw or []:
+        if not isinstance(item, dict):
+            continue
+        rid = str(item.get("id") or "").strip()[:40]
+        label = str(item.get("label") or "").strip()[:180]
+        if rid and label:
+            clean.append({"id": rid, "label": label})
+    if not clean:
+        raise ValueError("Нужна хотя бы одна причина отказа")
+    return clean[:20]
+
+
+async def reject_comment_case(case_id: int, admin_id: int, reason_ids: list[str] | None = None) -> dict:
     await ensure_tiktok_schema()
     settings = await get_settings()
-    text = wrap_barnum_html(pick_barnum(texts=settings.get("barnumRejects")))
+    catalog = {r["id"]: r["label"] for r in settings.get("commentRejectReasons") or []}
+    labels = [catalog[rid] for rid in (reason_ids or []) if rid in catalog]
+    text = format_photo_reject_html(labels)
     async with db.pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(
@@ -804,7 +831,7 @@ async def reject_comment_case(case_id: int, admin_id: int) -> dict:
         int(row["user_id"]),
         f"<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> {text}",
     )
-    return {"ok": True, "rejectText": text}
+    return {"ok": True, "rejectText": text, "reasons": labels}
 
 
 async def save_verdict(hash_a: str, hash_b: str, verdict: str, admin_id: int) -> None:
@@ -1047,20 +1074,12 @@ async def update_settings(payload: dict[str, Any]) -> dict:
     max_nicks = int(current["maxNicks"])
     photos_required = int(current["photosRequired"])
     reasons = payload.get("rejectReasons") or current["rejectReasons"]
+    photo_reasons = payload.get("commentRejectReasons") or current.get("commentRejectReasons")
     barnum = payload.get("barnumRejects")
     if barnum is None:
         barnum = current.get("barnumRejects") or list(BARNUM_REJECTS)
-    clean_reasons = []
-    for item in reasons:
-        if not isinstance(item, dict):
-            continue
-        rid = str(item.get("id") or "").strip()[:40]
-        label = str(item.get("label") or "").strip()[:180]
-        if rid and label:
-            clean_reasons.append({"id": rid, "label": label})
-    if not clean_reasons:
-        raise ValueError("Нужна хотя бы одна причина отказа видео")
-    reasons = clean_reasons[:20]
+    reasons = _clean_reason_catalog(reasons, DEFAULT_REJECT_REASONS)
+    photo_reasons = _clean_reason_catalog(photo_reasons, DEFAULT_PHOTO_REJECT_REASONS)
     clean_barnum = [str(t).strip()[:500] for t in barnum if str(t).strip()]
     if not clean_barnum:
         clean_barnum = list(BARNUM_REJECTS)
@@ -1082,6 +1101,7 @@ async def update_settings(payload: dict[str, Any]) -> dict:
             photos_required = $8,
             reject_reasons = $9::jsonb,
             barnum_rejects = $10::jsonb,
+            comment_reject_reasons = $11::jsonb,
             updated_at = NOW()
         WHERE id = 1
         """,
@@ -1095,6 +1115,7 @@ async def update_settings(payload: dict[str, Any]) -> dict:
         photos_required,
         json.dumps(reasons, ensure_ascii=False),
         json.dumps(barnum, ensure_ascii=False),
+        json.dumps(photo_reasons, ensure_ascii=False),
     )
     return await get_settings()
 
@@ -1211,6 +1232,7 @@ class SettingsBody(BaseModel):
     maxNicks: int | None = Field(default=None, ge=1, le=10)
     photosRequired: int | None = Field(default=None, ge=1, le=30)
     rejectReasons: list[dict] | None = None
+    commentRejectReasons: list[dict] | None = None
     barnumRejects: list[str] | None = None
 
 
@@ -1334,13 +1356,18 @@ async def tiktok_comment_approve(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+class CommentRejectBody(BaseModel):
+    reasonIds: list[str] = Field(default_factory=list)
+
+
 @router.post("/comments/{case_id}/reject")
 async def tiktok_comment_reject(
     case_id: int,
+    body: CommentRejectBody,
     admin_id: int = Depends(require_tiktok_tab("comments")),
 ):
     try:
-        return await reject_comment_case(case_id, admin_id)
+        return await reject_comment_case(case_id, admin_id, body.reasonIds)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

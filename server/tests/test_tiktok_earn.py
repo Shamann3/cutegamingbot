@@ -250,6 +250,7 @@ def test_counts_and_settings_endpoints_exist():
     settings_src = inspect.getsource(update_settings)
     assert "barnumRejects" in settings_src
     assert "rejectReasons" in settings_src
+    assert "commentRejectReasons" in settings_src
     body_src = inspect.getsource(tiktok_put_settings)
     assert "SettingsBody" in body_src
     from admin_tiktok import tiktok_get_settings, tiktok_overview
@@ -279,6 +280,23 @@ def test_incomplete_case_cannot_be_approved():
     reject_src = inspect.getsource(reject_comment_case)
     assert "assert_can_approve_comments" not in reject_src
     assert "pending" in reject_src
+    assert "format_photo_reject_html" in reject_src
+    assert "reason_ids" in reject_src
+
+
+def test_photo_reject_message_lists_selected_reasons():
+    from tiktok_earn_logic import format_photo_reject_html
+
+    text = format_photo_reject_html(["18+ контент", "Оскорбление проекта или людей"])
+    assert "18+ контент" in text
+    assert "Оскорбление проекта" in text
+    assert "копия" not in text.lower()
+    assert "<blockquote>" in text
+    try:
+        format_photo_reject_html([])
+        assert False
+    except ValueError:
+        pass
 
 
 def test_comment_list_is_light_and_paginated():

@@ -547,7 +547,7 @@ async def on_wait_text(message: Message) -> None:
         return
     if kind == tt.WAIT_LINK or await tt.is_waiting_link(user_id):
         if not tt.looks_like_tiktok_url(raw):
-            await _reprompt(message, user_id, tt.text_link_screen("Это не ссылка TikTok."))
+            await _reprompt(message, user_id, tt.text_link_screen("Это не ссылка на TikTok. Скопируйте ссылку из приложения."))
             return
         try:
             await tt.submit_video(user_id, raw)
@@ -635,12 +635,12 @@ async def on_wait_noise(message: Message) -> None:
         await _reprompt(
             message,
             user_id,
-            tt.text_need_nick(rec.get("after") or "", error="Нужно имя TikTok, не файл."),
+            tt.text_need_nick(rec.get("after") or "", error="Нужно имя TikTok текстом, не файл."),
         )
         return
     cfg = await tt.get_settings()
     needed = int(cfg["photosRequired"])
-    hint = "Нужно фото, не файл." if message.document else "Сейчас отправьте фото."
+    hint = "Нужно фото комментария, не файл." if message.document else "Отправьте фото комментария."
     case = await tt.get_pending_comment_case(user_id)
     count = int((case or {}).get("received") or 0)
     await _reprompt(message, user_id, tt.text_photo_wait_error(hint, count, needed))

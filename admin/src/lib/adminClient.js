@@ -2124,8 +2124,8 @@ export async function approveTiktokComment(caseId) {
   return adminFetch(`/tiktok/comments/${caseId}/approve`, { method: 'POST', body: {} })
 }
 
-export async function rejectTiktokComment(caseId) {
-  return adminFetch(`/tiktok/comments/${caseId}/reject`, { method: 'POST', body: {} })
+export async function rejectTiktokComment(caseId, reasonIds) {
+  return adminFetch(`/tiktok/comments/${caseId}/reject`, { method: 'POST', body: { reasonIds } })
 }
 
 export async function saveTiktokVerdict(hashA, hashB, verdict) {

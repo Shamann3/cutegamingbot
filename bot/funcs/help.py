@@ -158,7 +158,7 @@ textzabhelp = f'''
 <blockquote><code>Задания</code></blockquote>
 
 <tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>TikTok</b>
-<i>Задания → Тик ток → комментарии или видео.</i>
+<i>Откройте Задания, нажмите Тик ток и выберите комментарии или видео. Бот покажет, что делать по шагам.</i>
 <blockquote><code>Задания</code></blockquote>
 
 <tg-emoji emoji-id='5438449626426410465'>🎁</tg-emoji> <b>Промокоды</b>
