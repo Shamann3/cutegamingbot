@@ -272,12 +272,12 @@ async def on_nick_edit(callback: CallbackQuery) -> None:
         return
     nicks = await tt.list_nicks(callback.from_user.id)
     if not nicks:
-        await callback.answer("Сначала добавьте ник", show_alert=True)
+        await callback.answer("Сначала напишите имя TikTok", show_alert=True)
         return
     await callback.answer()
     await _edit_or_send(
         callback,
-        "<b>Какой ник изменить?</b>\n<i>Выберите аккаунт из списка.</i>",
+        "<b>Какое имя сменить?</b>",
         tt.nick_pick_keyboard(nicks),
     )
 
@@ -299,7 +299,7 @@ async def on_nick_pick(callback: CallbackQuery) -> None:
         origin = "comments"
     await _edit_or_send(
         callback,
-        f"<b>Новый ник вместо @{old}</b>\n\n{tt.text_ask_nick()}",
+        f"<b>Новое имя вместо @{old}</b>\n\n{tt.text_ask_nick()}",
         tt.nicks_keyboard(
             await tt.list_nicks(callback.from_user.id),
             locked=False,
@@ -365,7 +365,7 @@ async def on_cancel_collect(callback: CallbackQuery) -> None:
     extra = session.get("extra") or {}
     after = extra.get("after") or extra.get("origin") or ""
     mode = session.get("mode") or ""
-    await callback.answer("Вернули к правилам")
+    await callback.answer()
     if mode == tt.MODE_WAIT_LINK or after == "videos" or mode == tt.MODE_VIDEOS:
         await show_videos(callback, callback.from_user.id)
         return
@@ -377,7 +377,7 @@ async def on_done_wait(callback: CallbackQuery) -> None:
     if not _private(callback):
         await callback.answer()
         return
-    await callback.answer("Вернули к правилам")
+    await callback.answer()
     await show_comments(callback, callback.from_user.id)
 
 
@@ -391,7 +391,7 @@ async def on_undo_photo(callback: CallbackQuery) -> None:
     except ValueError as exc:
         await callback.answer(str(exc), show_alert=True)
         return
-    await callback.answer("Убрали последний кадр с проверки")
+    await callback.answer("Убрали")
     user_id = callback.from_user.id
     cfg = await tt.get_settings()
     nicks = await tt.list_nicks(user_id)
@@ -478,7 +478,7 @@ async def on_idle_comments_photo(message: Message) -> None:
         return
     if mode == tt.MODE_COMMENT_DONE:
         await message.answer(
-            "<b>Серия уже на проверке.</b>\n<i>Новые кадры сейчас не примем.</i>",
+            "<b>Уже на проверке.</b>\n<i>Новые фото сейчас не нужны.</i>",
             parse_mode="HTML",
         )
         return
@@ -537,16 +537,11 @@ async def on_photo(message: Message) -> None:
 async def on_collect_noise(message: Message) -> None:
     cfg = await tt.get_settings()
     needed = int(cfg["photosRequired"])
-    hint = (
-        "Пришлите скрин как фото, не как файл."
-        if message.document
-        else "Сейчас жду скриншоты. Текст не приму."
-    )
+    hint = "Нужно фото, не файл." if message.document else "Сейчас отправьте фото."
     case = await tt.get_pending_comment_case(message.from_user.id)
     count = int((case or {}).get("received") or 0)
-    nicks = await tt.list_nicks(message.from_user.id)
     await message.answer(
-        f"<b>{hint}</b>\n<i>На проверке уже {count} из {needed}.</i>",
+        f"<b>{hint}</b>",
         reply_markup=tt.comments_keyboard(waiting=True, count=count, needed=needed),
         parse_mode="HTML",
     )
@@ -568,10 +563,6 @@ async def on_text(message: Message) -> None:
             return
         after = (session.get("extra") or {}).get("after") or ""
         await tt.clear_session(user_id)
-        await message.answer(
-            f"<b>Ник @{nick} привязан.</b>\n<i>Продолжаем с того же направления.</i>",
-            parse_mode="HTML",
-        )
         if after == "videos":
             await show_videos(message, user_id)
             return
@@ -583,11 +574,6 @@ async def on_text(message: Message) -> None:
         except ValueError as exc:
             await message.answer(f"<b>{exc}</b>", parse_mode="HTML")
             return
-        await message.answer(
-            "<b>Ссылка ушла на проверку.</b>\n"
-            "<i>Когда укажем просмотры - начислим куты за полные тысячи.</i>",
-            parse_mode="HTML",
-        )
         await show_videos(message, user_id)
 
 

@@ -41,7 +41,7 @@ def test_nick_taken_message_is_defined():
     assert "Этот ник уже занят другим игроком" in src
     assert "Можно не больше" in src
     assert "уже на проверке" in src
-    assert "Без него скриншоты принять нельзя" in src
+    assert "напишите имя своего TikTok" in src
     assert "require_nicks" in src
     assert "INSERT INTO tiktok_comment_cases" in src
     assert "append_case_photos" in src
@@ -52,7 +52,8 @@ def test_bot_texts_match_plan():
     assert "Тик ток" in text_hub()
     assert "cuteplayer" in text_ask_nick()
     assert "Задания" in help_earnings_block()
-    assert "Вас искать" in text_need_nick() or "ник" in text_need_nick()
+    assert "Напишите имя своего TikTok" in text_need_nick()
+    assert "@cuteplayer" in text_need_nick()
 
 
 def test_hub_buttons_use_premium_emoji_ids():
@@ -119,7 +120,7 @@ def test_collect_progress_and_undo_available_before_full():
 
     text = collect_text(7, 15, ["cuteplayer"])
     assert "7 из 15" in text
-    assert "Осталось 8" in text
+    assert "Ещё 8" in text
     assert "@cuteplayer" in text
     dumped = _kb_data(collect_keyboard(7, 15))
     assert "tt:undo_photo" in dumped
@@ -179,7 +180,7 @@ def test_direction_then_work_on_same_screen():
     assert "Настройки" not in hub
     dumped = _kb_data(hub_keyboard())
     assert dumped.split()[:2] == ["tt:comments", "tt:videos"]
-    assert "tt:nicks" in dumped
+    assert "tt:nicks" not in dumped
     work = _kb_data(comments_keyboard(can_send=True, count=3, needed=15, waiting=False))
     assert "tt:submit_photos" not in work
     assert "tt:undo_photo" in work
@@ -272,7 +273,8 @@ def test_review_copy_uses_vy_and_counts():
     five = text_photos_on_review(5, 5, 15)
     assert "5 скриншотов ушли на проверку" in five
     full = text_photos_on_review(1, 15, 15)
-    assert "Серия собрана" in full
+    assert "15 из 15" in full
+    assert "Ждём решение" in full
     assert ru_screenshot_word(1) == "скриншот"
     assert ru_gone_verb(1) == "ушёл"
 
@@ -322,8 +324,8 @@ def test_player_tiktok_copy_is_formal_vy():
         assert "—" not in blob
         hit = _TY_RE.search(blob)
         assert hit is None, f"informal: {hit.group(0)} in {blob[:80]}"
-    assert "Вы" in text_hub() or "Выберите" in text_hub()
-    assert "Вас" in text_need_nick() or "Ваш" in text_ask_nick()
+    assert "Выберите" in text_hub()
+    assert "Напишите имя своего TikTok" in text_need_nick()
     assert "копия" not in "".join(BARNUM_REJECTS).lower()
 
 
@@ -371,12 +373,11 @@ def test_wait_modes_photo_ignored_until_button():
     assert "wait_photos" in funcs
 
     ask = text_ask_nick()
-    assert "По нему найдём Ваш аккаунт" in ask
+    assert "Сейчас отправьте имя TikTok" in ask
     assert EXAMPLE_NICK in ask
-    assert "Ваш ко" not in ask.replace("Ваш аккаунт", "")
     need = text_need_nick("comments")
+    assert "Напишите имя своего TikTok" in need
     assert EXAMPLE_NICK in need
-    assert "Указать имя профиля" in need
     assert EXAMPLE_COMMENT in text_comments({})
     assert EXAMPLE_VIDEO_URL in text_videos({})
     for blob in (ask, need, text_comments({}), text_videos({})):
