@@ -7,6 +7,7 @@ import io
 import math
 import random
 import re
+from html import escape
 from typing import Any, Iterable
 from urllib.parse import parse_qs, urlparse
 
@@ -36,6 +37,16 @@ TIKTOK_IN_TEXT_RE = re.compile(
 )
 SHORT_HOSTS = frozenset({"vt.tiktok.com", "vm.tiktok.com"})
 LINK_HINT = "Пришлите ссылку tiktok.com, vt.tiktok.com или vm.tiktok.com."
+VIDEO_TITLE_MIN = 2
+VIDEO_TITLE_MAX = 48
+STATUS_EMOJI_OK = "5339112148175959615"
+STATUS_EMOJI_WAIT = "5339082633160703625"
+STATUS_EMOJI_NO = "5337017423906226569"
+STATUS_EMOJI = {
+    "ok": (STATUS_EMOJI_OK, "🟢"),
+    "wait": (STATUS_EMOJI_WAIT, "🟡"),
+    "no": (STATUS_EMOJI_NO, "🔴"),
+}
 
 DEFAULT_COMMENT_TAG = "тг звезды"
 DEFAULT_VIDEO_HASHTAG = "@CuteGamingBot"
@@ -220,6 +231,53 @@ def resolve_tiktok_redirects(url: str, *, timeout: float = 6.0) -> str:
     return last
 
 
+def status_emoji_html(kind: str) -> str:
+    eid, fallback = STATUS_EMOJI.get(kind) or STATUS_EMOJI["wait"]
+    return f"<tg-emoji emoji-id='{eid}'>{fallback}</tg-emoji>"
+
+
+def status_kind_for_task(status: str, *, recheck: bool = False) -> str:
+    value = str(status or "").strip().lower()
+    if value in {"rejected", "rejected_comments"}:
+        return "no"
+    if value in {"approved", "live"}:
+        return "ok"
+    if recheck or value in {"pending", "withdrawn", ""}:
+        return "wait"
+    return "wait"
+
+
+def looks_like_tiktok_url_text(raw: str) -> bool:
+    text = str(raw or "").strip()
+    if not text:
+        return False
+    try:
+        parse_tiktok_url(text)
+        return True
+    except ValueError:
+        return bool(TIKTOK_IN_TEXT_RE.search(text))
+
+
+def validate_video_title(raw: str) -> str:
+    text = " ".join(str(raw or "").split())
+    if not text:
+        raise ValueError("Напишите, как назвать ролик.")
+    if looks_like_tiktok_url_text(text):
+        raise ValueError("Это ссылка. Сначала напишите название, ссылку пришлёте следующим шагом.")
+    if len(text) < VIDEO_TITLE_MIN:
+        raise ValueError("Название слишком короткое. Хотя бы два символа.")
+    if len(text) > VIDEO_TITLE_MAX:
+        raise ValueError(f"Название длиннее {VIDEO_TITLE_MAX} символов. Сократите.")
+    return text
+
+
+def clip_button_text(text: str, limit: int = 64) -> str:
+    value = " ".join(str(text or "").split())
+    if len(value) <= limit:
+        return value
+    return value[: max(1, limit - 3)].rstrip() + "..."
+
+
 def canonicalize_tiktok_url(raw: str, *, resolve: bool = True) -> dict[str, str]:
     parsed = parse_tiktok_url(raw)
     if not resolve or parsed.get("videoId"):
@@ -344,10 +402,10 @@ def format_photo_reject_html(labels: list[str]) -> str:
         raise ValueError("Отметьте хотя бы одну причину отказа")
     lines = "\n".join(f"<b>{i}.</b> {label}" for i, label in enumerate(clean, 1))
     return (
-        "<b>Комментарии не приняли.</b>\n"
+        f"{status_emoji_html('no')} <b>Комментарии не приняли.</b>\n"
         "<i>Что исправить:</i>\n"
         f"<blockquote>\n{lines}\n</blockquote>\n"
-        "<i>Соберите новую серию и отправьте снова.</i>"
+        "<i>Можно сразу собрать новую серию и отправить снова.</i>"
     )
 
 
@@ -355,7 +413,7 @@ def format_comment_payout_html(amount: int, photos: int = PHOTOS_REQUIRED) -> st
     pay = max(0, int(amount))
     pack = max(1, int(photos or PHOTOS_REQUIRED))
     return (
-        f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{pay} кут</b>\n"
+        f"{status_emoji_html('ok')} <tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{pay} кут</b>\n"
         "<blockquote>"
         "<b>За что:</b> комментарии TikTok\n"
         f"<b>Пачка:</b> {pack} скринов\n"
@@ -372,16 +430,19 @@ def format_video_payout_html(
     is_recheck: bool = False,
     old_views: int = 0,
     days: int = RECHECK_DAYS,
+    title: str = "",
 ) -> str:
     pay = max(0, int(kut))
     now = max(0, int(views))
     unit = max(1, int(kut_per_unit or KUT_PER_UNIT))
     thousands = thousands_from_views(now)
     wait_days = max(1, int(days or RECHECK_DAYS))
+    named = f"<b>{escape(title)}</b>\n" if str(title or "").strip() else ""
     if is_recheck:
         if pay > 0:
             return (
-                f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{pay} кут</b>\n"
+                f"{status_emoji_html('ok')} <tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{pay} кут</b>\n"
+                f"{named}"
                 "<blockquote>"
                 "<b>За что:</b> новые просмотры видео\n"
                 f"<b>Было:</b> {int(old_views)}\n"
@@ -390,7 +451,8 @@ def format_video_payout_html(
                 "</blockquote>"
             )
         return (
-            "<b>Просмотры обновили.</b>\n"
+            f"{status_emoji_html('ok')} <b>Просмотры обновили.</b>\n"
+            f"{named}"
             "<blockquote>"
             "<b>За что:</b> перепроверка видео\n"
             f"<b>Сейчас:</b> {now}\n"
@@ -400,7 +462,8 @@ def format_video_payout_html(
         )
     if pay > 0:
         return (
-            f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{pay} кут</b>\n"
+            f"{status_emoji_html('ok')} <tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{pay} кут</b>\n"
+            f"{named}"
             "<blockquote>"
             "<b>За что:</b> видео про бота\n"
             f"<b>Просмотры:</b> {now}\n"
@@ -408,12 +471,28 @@ def format_video_payout_html(
             "</blockquote>"
         )
     return (
-        "<b>Видео принято.</b>\n"
+        f"{status_emoji_html('ok')} <b>Видео принято.</b>\n"
+        f"{named}"
         "<blockquote>"
         "<b>За что:</b> ролик про бота\n"
         f"<b>Просмотры:</b> {now}\n"
         "<b>Куты:</b> появятся после 1000 просмотров"
         "</blockquote>"
+    )
+
+
+def format_video_reject_html(labels: list[str], *, title: str = "") -> str:
+    clean = [str(item).strip() for item in (labels or []) if str(item).strip()]
+    if not clean:
+        raise ValueError("Отметьте хотя бы одну причину отказа")
+    lines = "\n".join(f"<b>{i}.</b> {label}" for i, label in enumerate(clean, 1))
+    named = f"<blockquote><b>{escape(title)}</b></blockquote>\n" if str(title or "").strip() else ""
+    return (
+        f"{status_emoji_html('no')} <b>Ролик не приняли.</b>\n"
+        f"{named}"
+        "<i>Что исправить:</i>\n"
+        f"<blockquote>\n{lines}\n</blockquote>\n"
+        "<i>Откройте Ваши ролики и нажмите «Отправить снова».</i>"
     )
 
 

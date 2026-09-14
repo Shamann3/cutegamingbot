@@ -37,6 +37,7 @@ from tiktok_earn_logic import (
     format_comment_payout_html,
     format_photo_reject_html,
     format_video_payout_html,
+    format_video_reject_html,
     next_queue_item,
     validate_comment_reward,
     validate_video_reward,
@@ -122,6 +123,7 @@ async def ensure_tiktok_schema() -> None:
             user_id BIGINT NOT NULL,
             url TEXT NOT NULL,
             canonical_key TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'pending',
             last_views INTEGER NOT NULL DEFAULT 0,
             last_paid_thousands INTEGER NOT NULL DEFAULT 0,
@@ -157,6 +159,8 @@ async def ensure_tiktok_schema() -> None:
         CREATE INDEX IF NOT EXISTS tiktok_videos_recheck_idx
             ON tiktok_videos (status, recheck_requested_at)
             WHERE recheck_requested_at IS NOT NULL;
+        ALTER TABLE tiktok_videos
+            ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '';
         """
     )
     await db.pool.execute(
@@ -506,17 +510,23 @@ async def submit_comment_case(user_id: int, photos: list[dict[str, Any]]) -> dic
     return {"id": int(row["id"]), "createdAt": row["created_at"].isoformat()}
 
 
-async def submit_video(user_id: int, raw_url: str) -> dict[str, Any]:
+async def submit_video(
+    user_id: int,
+    raw_url: str,
+    title: str = "",
+    replace_id: int | None = None,
+) -> dict[str, Any]:
     await ensure_tiktok_schema()
     nicks = await list_nicks(user_id)
     if not nicks:
-        raise ValueError("Сначала укажи свой ник в TikTok. Без него скриншоты принять нельзя.")
+        raise ValueError("Сначала напишите имя своего TikTok.")
     parsed = await asyncio.to_thread(canonicalize_tiktok_url, raw_url)
+    name = str(title or "").strip()
     pending = await db.pool.fetchval(
         "SELECT id FROM tiktok_videos WHERE user_id = $1 AND status = 'pending'",
         int(user_id),
     )
-    if pending:
+    if pending and int(pending) != int(replace_id or 0):
         raise ValueError("Это видео ещё на проверке. Как ответим - можно прислать новую ссылку.")
     taken = await db.pool.fetchrow(
         """
@@ -525,22 +535,45 @@ async def submit_video(user_id: int, raw_url: str) -> dict[str, Any]:
         """,
         parsed["canonical"],
     )
-    if taken:
-        if int(taken["user_id"]) == int(user_id):
-            raise ValueError("Этот ролик уже в системе.")
+    if taken and int(taken["id"]) != int(replace_id or 0):
         raise ValueError("Этот ролик уже в системе.")
+    if replace_id:
+        row = await db.pool.fetchrow(
+            "SELECT * FROM tiktok_videos WHERE id = $1 AND user_id = $2",
+            int(replace_id),
+            int(user_id),
+        )
+        if not row or row["status"] != "rejected":
+            raise ValueError("Снова отправить можно только отклонённый ролик.")
+        await db.pool.execute(
+            """
+            UPDATE tiktok_videos
+            SET url = $2, canonical_key = $3, title = $4, status = 'pending',
+                last_views = 0, last_paid_thousands = 0, last_checked_at = NULL,
+                recheck_requested_at = NULL, reject_reasons = '[]'::jsonb,
+                reviewed_by = NULL, reviewed_at = NULL
+            WHERE id = $1
+            """,
+            int(replace_id),
+            parsed["url"],
+            parsed["canonical"],
+            name,
+        )
+        await clear_session(user_id)
+        return {"id": int(replace_id), "url": parsed["url"], "title": name}
     row = await db.pool.fetchrow(
         """
-        INSERT INTO tiktok_videos (user_id, url, canonical_key, status)
-        VALUES ($1, $2, $3, 'pending')
+        INSERT INTO tiktok_videos (user_id, url, canonical_key, title, status)
+        VALUES ($1, $2, $3, $4, 'pending')
         RETURNING id, created_at
         """,
         int(user_id),
         parsed["url"],
         parsed["canonical"],
+        name,
     )
     await clear_session(user_id)
-    return {"id": int(row["id"]), "createdAt": row["created_at"].isoformat()}
+    return {"id": int(row["id"]), "createdAt": row["created_at"].isoformat(), "title": name, "url": parsed["url"]}
 
 
 async def request_recheck(user_id: int, video_id: int) -> dict[str, Any]:
@@ -867,6 +900,7 @@ def _video_dict(row, settings: dict | None = None) -> dict[str, Any]:
         "userId": int(row["user_id"]),
         "url": row["url"],
         "canonicalKey": row["canonical_key"],
+        "title": (row["title"] if "title" in row.keys() else "") or "",
         "status": row["status"],
         "lastViews": last_views,
         "lastPaidThousands": int(row["last_paid_thousands"] or 0),
@@ -998,6 +1032,7 @@ async def approve_video(video_id: int, admin_id: int, views: int) -> dict:
         is_recheck=is_recheck,
         old_views=int(delta["oldViews"]),
         days=days,
+        title=str(row["title"] if "title" in row.keys() else "") or "",
     )
     _notify(user_id, text)
     return {"ok": True, "balance": after, **delta}
@@ -1034,10 +1069,9 @@ async def reject_video(video_id: int, admin_id: int, reason_ids: list[str]) -> d
                 json.dumps(reason_ids, ensure_ascii=False),
                 int(admin_id),
             )
-    bullets = "\n".join(f"<i>• {label}</i>" for label in labels)
-    text = (
-        f"<b>Видео не принято.</b>\n\n{bullets}\n\n"
-        f"<i>Опубликуйте правки и пришлите новую ссылку. Если нужна помощь - @JerichoCute.</i>"
+    text = format_video_reject_html(
+        labels,
+        title=str(row["title"] if "title" in row.keys() else "") or "",
     )
     _notify(int(row["user_id"]), text)
     return {"ok": True, "reasons": labels}

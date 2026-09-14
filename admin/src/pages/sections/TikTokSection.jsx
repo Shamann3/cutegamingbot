@@ -515,10 +515,12 @@ function VideoCase({ item, onOpen, current }) {
       onClick={() => onOpen(item)}
     >
       <div className="tt-card-top">
-        <strong>{playerName(item.user)}</strong>
+        <strong>{item.title || playerName(item.user)}</strong>
         <span>{fmtDate(item.createdAt)}</span>
       </div>
       <div className="tt-card-nicks">
+        {playerName(item.user)}
+        {' · '}
         {(item.user?.nicks || []).map((n) => `@${n}`).join(' · ') || 'нет ников'}
       </div>
       <div className="tt-card-flags">
@@ -633,8 +635,9 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
       <div className="tt-work-head">
         <div>
           <p className="tt-case-index">{caseTotal ? `Дело ${caseNo} из ${caseTotal}` : 'Дело'}</p>
-          <h3>{playerName(item.user)}</h3>
+          <h3>{item.title || playerName(item.user)}</h3>
           <p>
+            {item.title ? `${playerName(item.user)} · ` : ''}
             {(item.user?.nicks || []).map((n) => `@${n}`).join(' · ') || 'нет ников'}
             {' · '}
             {fmtDate(item.createdAt)}

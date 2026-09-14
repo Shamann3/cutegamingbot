@@ -326,6 +326,7 @@ def test_player_tiktok_copy_is_formal_vy():
         text_wait_expired,
         text_wait_link,
         text_wait_photos,
+        text_wait_title,
         collect_text,
         text_done_nick_added,
         text_done_nick_changed,
@@ -349,6 +350,7 @@ def test_player_tiktok_copy_is_formal_vy():
         text_nick_required_alert(),
         text_wait_photos(),
         text_wait_link(),
+        text_wait_title(),
         text_wait_expired(),
         text_done_nick_added("cuteplayer", ["cuteplayer"]),
         text_done_nick_changed("oldnick", "newnick"),
@@ -720,3 +722,61 @@ def test_wait_expires_after_five_minutes_and_keeps_escape():
         assert CANCEL_HINT in blob
         assert "Ответьте" in blob or "отправьте" in blob.lower()
         assert "—" not in blob
+
+
+def test_video_title_then_link_and_retry_flow():
+    from bot.funcs.tiktok_earn import (
+        MODE_WAIT_TITLE,
+        TT_HUB,
+        TT_RETRY_VIDEO,
+        WAIT_TITLE,
+        clip_button_text,
+        done_keyboard,
+        my_videos_keyboard,
+        text_done_video_sent,
+        text_my_videos,
+        text_video_card,
+        text_wait_title,
+        text_videos,
+        video_card_keyboard,
+    )
+
+    assert MODE_WAIT_TITLE == "await_video_title"
+    assert WAIT_TITLE == "title"
+    title_screen = text_wait_title()
+    assert "название" in title_screen.lower()
+    assert "ссылку пришлёте" in title_screen.lower() or "следующим" in title_screen.lower()
+    assert "—" not in title_screen
+    assert "cuteplayer" in text_videos({}) or "Обзор" in text_videos({})
+    done = " ".join(btn.text for row in done_keyboard(after="mine").inline_keyboard for btn in row)
+    dumped = " ".join(btn.callback_data or "" for row in done_keyboard(after="hub").inline_keyboard for btn in row)
+    assert "В главное меню" in done
+    assert "Тик ток" not in done
+    assert TT_HUB in dumped
+    card = text_video_card({
+        "id": 9,
+        "title": "Обзор бота",
+        "url": "https://vt.tiktok.com/ZSqxKyCTB/",
+        "status": "rejected",
+        "lastViews": 0,
+        "paidKut": 0,
+    })
+    assert "Обзор бота" in card
+    assert "vt.tiktok.com" in card
+    retry = " ".join(btn.callback_data or "" for row in video_card_keyboard({"id": 9, "status": "rejected"}).inline_keyboard for btn in row)
+    assert f"{TT_RETRY_VIDEO}9" in retry
+    labels = " ".join(btn.text for row in my_videos_keyboard([
+        {"id": 3, "title": "Мой обзор CuteGamingBot", "status": "pending"},
+    ], page=0).inline_keyboard for btn in row)
+    assert "Мой обзор CuteGamingBot" in labels
+    assert clip_button_text("x" * 80).endswith("...")
+    sent = text_done_video_sent("https://vt.tiktok.com/ZSqxKyCTB/", "Обзор бота")
+    assert "Обзор бота" in sent
+    assert "Ваши ролики" in text_my_videos([]) or "пусто" in text_my_videos([]).lower()
+    handler = Path("bot/handlers/tiktok_earn.py").read_text(encoding="utf-8")
+    funcs = Path("bot/funcs/tiktok_earn.py").read_text(encoding="utf-8")
+    assert "WAIT_TITLE" in handler
+    assert "replaceVideoId" in handler
+    assert "В главное меню" in funcs
+    assert "validate_video_title" in handler
+
