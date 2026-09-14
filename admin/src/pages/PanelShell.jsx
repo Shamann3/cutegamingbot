@@ -389,7 +389,13 @@ export default function PanelShell({ onLogout }) {
           )}
           {isContent && <ContentSection role={role} panelTabs={panelTabs} />}
           {isGiveaways && <GiveawaysSection />}
-          {isTiktok && <TikTokSection panelTabs={panelTabs} role={role} />}
+          {isTiktok && (
+            <TikTokSection
+              panelTabs={panelTabs}
+              role={role}
+              isProjectCreator={isProjectCreator}
+            />
+          )}
           {isBotQuests && role === 'owner' && <BotQuestsSection />}
           {isGroupBalanceLevel && role === 'owner' && <GroupBalanceLevelSection />}
           {isGroupsStudio && isProjectCreator && (

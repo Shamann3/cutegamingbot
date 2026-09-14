@@ -17,6 +17,11 @@ COMMENT_REWARD = 5
 VIEWS_PER_UNIT = 1000
 KUT_PER_UNIT = 30
 RECHECK_DAYS = 7
+# Потолок наград: опечатка в админке не должна начеканить миллионы.
+COMMENT_REWARD_MIN = 1
+COMMENT_REWARD_MAX = 500
+VIDEO_REWARD_MIN = 1
+VIDEO_REWARD_MAX = 5000
 HASH_THRESHOLD = 10
 VIDEO_CANONICAL_RE = re.compile(r"/video/(\d+)")
 SHORT_CODE_RE = re.compile(r"tiktok\.com/(?:t/)?([A-Za-z0-9]+)/?$")
@@ -115,6 +120,30 @@ def thousands_from_views(views: int) -> int:
     if views < 0:
         raise ValueError("Просмотры не могут быть меньше 0")
     return views // VIEWS_PER_UNIT
+
+
+def validate_comment_reward(raw: Any) -> int:
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Награда за пачку должна быть целым числом") from exc
+    if value < COMMENT_REWARD_MIN or value > COMMENT_REWARD_MAX:
+        raise ValueError(
+            f"Награда за пачку: от {COMMENT_REWARD_MIN} до {COMMENT_REWARD_MAX} кут"
+        )
+    return value
+
+
+def validate_video_reward(raw: Any) -> int:
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Награда за 1000 просмотров должна быть целым числом") from exc
+    if value < VIDEO_REWARD_MIN or value > VIDEO_REWARD_MAX:
+        raise ValueError(
+            f"Награда за 1000 просмотров: от {VIDEO_REWARD_MIN} до {VIDEO_REWARD_MAX} кут"
+        )
+    return value
 
 
 def kut_for_thousands(thousands: int, kut_per_unit: int = KUT_PER_UNIT) -> int:

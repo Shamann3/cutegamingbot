@@ -25,7 +25,7 @@ const TABS = [
   { id: 'videos', label: 'Видео', hint: 'Открой ссылку в TikTok, впиши просмотры. Код сам посчитает куты.' },
   { id: 'live', label: 'Живые', hint: 'Уже принятые ролики. Если игрок просит перепроверку — доплати разницу.' },
   { id: 'archive', label: 'Архив', hint: 'Закрытые дела. Здесь ничего начислять не нужно.' },
-  { id: 'settings', label: 'Настройки', hint: 'Тег, причины отказа и тексты игроку. Цифры наград зафиксированы правилами.' },
+  { id: 'settings', label: 'Настройки', hint: 'Тег, причины отказа и тексты игроку. Награду в кутах меняет только создатель.' },
 ]
 
 const GUIDE_KEY = 'cf_tiktok_guide_v1'
@@ -189,7 +189,7 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
       if (document.querySelector('.img-lightbox')) return
       if (e.key === 'a' || e.key === 'A') {
         e.preventDefault()
-        decide(() => approveTiktokComment(local.id), 'Принято, 5 кут ушли')
+        decide(() => approveTiktokComment(local.id), `Принято, ${local.reward || ''} кут ушли`)
       }
       if (e.key === 'r' || e.key === 'R') {
         e.preventDefault()
@@ -392,13 +392,17 @@ function VideoCard({ item, settings, onDone, rejectReasons }) {
   )
 }
 
-function SettingsForm({ initial, onSaved }) {
+function SettingsForm({ initial, onSaved, canEditRewards = false }) {
   const [form, setForm] = useState(initial)
   const [busy, setBusy] = useState(false)
   useEffect(() => { setForm(initial) }, [initial])
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }))
   const reasons = form.rejectReasons || []
   const barnums = form.barnumRejects || []
+  const caps = form.rewardCaps || { commentMin: 1, commentMax: 500, videoMin: 1, videoMax: 5000 }
+  const pack = Number(form.photosRequired ?? 15)
+  const commentPay = Number(form.commentReward ?? 0)
+  const videoPay = Number(form.kutPerUnit ?? 0)
   return (
     <form
       className="tt-settings"
@@ -406,18 +410,17 @@ function SettingsForm({ initial, onSaved }) {
         e.preventDefault()
         setBusy(true)
         try {
-          const saved = await saveTiktokSettings({
+          const body = {
             commentTag: form.commentTag,
             videoHashtag: form.videoHashtag,
-            commentReward: Number(form.commentReward),
-            viewsPerUnit: Number(form.viewsPerUnit),
-            kutPerUnit: Number(form.kutPerUnit),
-            recheckDays: Number(form.recheckDays),
-            maxNicks: Number(form.maxNicks),
-            photosRequired: Number(form.photosRequired),
             rejectReasons: form.rejectReasons,
             barnumRejects: form.barnumRejects,
-          })
+          }
+          if (canEditRewards) {
+            body.commentReward = Number(form.commentReward)
+            body.kutPerUnit = Number(form.kutPerUnit)
+          }
+          const saved = await saveTiktokSettings(body)
           showToast('Настройки сохранены')
           onSaved(saved)
         } catch (err) {
@@ -427,13 +430,57 @@ function SettingsForm({ initial, onSaved }) {
         }
       }}
     >
-      <p className="tt-hint">Тег и тексты отказа можно править. Цифры 15 / 5 / 30 / 1000 / 7 / 3 — правила продукта, не ломай их без причины.</p>
+      <p className="tt-hint">Тег и тексты отказа можно править. Пачка, пауза и лимит ников - правила продукта.</p>
+
+      <div className={`tt-reward-card${canEditRewards ? '' : ' is-lock'}`}>
+        <div className="tt-reward-head">
+          <h4>Награды в кутах</h4>
+          {canEditRewards ? (
+            <span className="tt-lock-seal">создатель</span>
+          ) : (
+            <span className="tt-lock-seal">только создатель</span>
+          )}
+        </div>
+        <p className="tt-hint">
+          {canEditRewards
+            ? 'Новые одобрения и доплаты за перепроверку считают по этим цифрам. Уже выплаченное не переписываем.'
+            : 'Сейчас видишь актуальные цифры. Менять награду может только создатель проекта.'}
+        </p>
+        <div className="tt-reward-grid">
+          <label>
+            Пачка комментариев, кут
+            <input
+              type="number"
+              min={caps.commentMin}
+              max={caps.commentMax}
+              value={form.commentReward ?? ''}
+              disabled={!canEditRewards}
+              onChange={(e) => set('commentReward', e.target.value)}
+            />
+          </label>
+          <label>
+            Каждые 1000 просмотров, кут
+            <input
+              type="number"
+              min={caps.videoMin}
+              max={caps.videoMax}
+              value={form.kutPerUnit ?? ''}
+              disabled={!canEditRewards}
+              onChange={(e) => set('kutPerUnit', e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="tt-reward-live">
+          <span>{pack} скринов = {commentPay || '-'} кут</span>
+          <span>каждые 1000 просмотров = {videoPay || '-'} кут</span>
+        </div>
+        <p className="tt-hint">Пачка: {caps.commentMin}-{caps.commentMax} кут. Видео: {caps.videoMin}-{caps.videoMax} кут за тысячу. Перепроверка: (новые тысячи - старые) x текущая награда.</p>
+      </div>
+
       <label>Тег комментариев<input value={form.commentTag || ''} onChange={(e) => set('commentTag', e.target.value)} /></label>
       <label>Хештег видео<input value={form.videoHashtag || ''} onChange={(e) => set('videoHashtag', e.target.value)} /></label>
       <div className="tt-locked-nums">
-        <span>пачка {form.photosRequired ?? 15} скринов</span>
-        <span>{form.commentReward ?? 5} кут</span>
-        <span>{form.kutPerUnit ?? 30} кут / 1000</span>
+        <span>пачка {pack} скринов</span>
         <span>перепроверка {form.recheckDays ?? 7} дн.</span>
         <span>ников ≤ {form.maxNicks ?? 3}</span>
       </div>
@@ -503,7 +550,7 @@ function SettingsForm({ initial, onSaved }) {
   )
 }
 
-export default function TikTokSection({ panelTabs = null, role = null }) {
+export default function TikTokSection({ panelTabs = null, role = null, isProjectCreator = false }) {
   const allowed = panelTabs?.tiktok
   const can = (id) => role === 'owner' || allowed == null || allowed.includes(id)
   const [tab, setTab] = useState(() => TABS.find((t) => can(t.id))?.id || 'comments')
@@ -678,7 +725,13 @@ export default function TikTokSection({ panelTabs = null, role = null }) {
           ))}
         </div>
       ) : (
-        settings && <SettingsForm initial={settings} onSaved={(s) => setOverview((cur) => ({ ...(cur || {}), settings: s }))} />
+        settings && (
+          <SettingsForm
+            initial={settings}
+            canEditRewards={Boolean(settings.canEditRewards || role === 'owner' || isProjectCreator)}
+            onSaved={(s) => setOverview((cur) => ({ ...(cur || {}), settings: s }))}
+          />
+        )
       )}
     </article>
   )

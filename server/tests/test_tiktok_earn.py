@@ -4,6 +4,8 @@ from telegram_file_cache import (
     photo_proxy_url_shape,
 )
 from tiktok_earn_logic import (
+    COMMENT_REWARD_MAX,
+    VIDEO_REWARD_MAX,
     find_matches,
     hashes_from_image_bytes,
     hashes_similar,
@@ -15,7 +17,9 @@ from tiktok_earn_logic import (
     pick_barnum,
     recheck_wait_text,
     thousands_from_views,
+    validate_comment_reward,
     validate_nick,
+    validate_video_reward,
 )
 
 
@@ -166,6 +170,41 @@ def test_photo_proxy_uses_cache_and_thumb_size():
     assert "410" in src
 
 
+def test_reward_validators_and_stored_payout():
+    assert validate_comment_reward(17) == 17
+    assert validate_video_reward(90) == 90
+    try:
+        validate_comment_reward(COMMENT_REWARD_MAX + 1)
+        assert False
+    except ValueError:
+        pass
+    try:
+        validate_video_reward(VIDEO_REWARD_MAX + 1)
+        assert False
+    except ValueError:
+        pass
+    assert payout_delta(2000, 5000, kut_per_unit=25)["kut"] == 75
+    assert kut_for_views(1999, kut_per_unit=25) == 25
+
+
+def test_owner_only_reward_write_and_settings_read():
+    import inspect
+    from admin_tiktok import is_tiktok_rewards_owner, tiktok_put_settings, update_settings
+
+    owner_src = inspect.getsource(is_tiktok_rewards_owner)
+    assert "owner_user_ids" in owner_src
+    assert "ROLE_OWNER" in owner_src
+    put_src = inspect.getsource(tiktok_put_settings)
+    assert "is_tiktok_rewards_owner" in put_src
+    assert "403" in put_src
+    assert "Награду меняет только создатель проекта" in put_src
+    assert "payload.pop(\"commentReward\"" in put_src or "payload.pop('commentReward'" in put_src
+    upd = inspect.getsource(update_settings)
+    assert "validate_comment_reward" in upd
+    assert "validate_video_reward" in upd
+    assert "photos_required = int(current[\"photosRequired\"])" in upd
+
+
 def test_counts_and_settings_endpoints_exist():
     import inspect
     from admin_tiktok import (
@@ -184,6 +223,10 @@ def test_counts_and_settings_endpoints_exist():
     assert "rejectReasons" in settings_src
     body_src = inspect.getsource(tiktok_put_settings)
     assert "SettingsBody" in body_src
+    from admin_tiktok import tiktok_get_settings, tiktok_overview
+
+    assert "canEditRewards" in inspect.getsource(tiktok_get_settings)
+    assert "canEditRewards" in inspect.getsource(tiktok_overview)
 
 
 def test_comment_list_is_light_and_paginated():

@@ -16,6 +16,8 @@ from db import db
 from tiktok_earn_logic import (
     BARNUM_REJECTS,
     COMMENT_REWARD,
+    COMMENT_REWARD_MAX,
+    COMMENT_REWARD_MIN,
     DEFAULT_COMMENT_TAG,
     DEFAULT_REJECT_REASONS,
     DEFAULT_VIDEO_HASHTAG,
@@ -25,9 +27,13 @@ from tiktok_earn_logic import (
     PHOTOS_REQUIRED,
     RECHECK_DAYS,
     TAB_TEASERS,
+    VIDEO_REWARD_MAX,
+    VIDEO_REWARD_MIN,
     VIEWS_PER_UNIT,
     find_matches,
     next_queue_item,
+    validate_comment_reward,
+    validate_video_reward,
     hashes_from_image_bytes,
     hashes_similar,
     normalize_nick,
@@ -180,6 +186,12 @@ async def get_settings() -> dict[str, Any]:
             "photosRequired": PHOTOS_REQUIRED,
             "rejectReasons": list(DEFAULT_REJECT_REASONS),
             "barnumRejects": list(BARNUM_REJECTS),
+            "rewardCaps": {
+                "commentMin": COMMENT_REWARD_MIN,
+                "commentMax": COMMENT_REWARD_MAX,
+                "videoMin": VIDEO_REWARD_MIN,
+                "videoMax": VIDEO_REWARD_MAX,
+            },
         }
     reasons = _json(row["reject_reasons"]) or list(DEFAULT_REJECT_REASONS)
     barnum = _json(row["barnum_rejects"]) if "barnum_rejects" in row.keys() else []
@@ -196,6 +208,12 @@ async def get_settings() -> dict[str, Any]:
         "photosRequired": int(row["photos_required"]),
         "rejectReasons": reasons,
         "barnumRejects": barnum,
+        "rewardCaps": {
+            "commentMin": COMMENT_REWARD_MIN,
+            "commentMax": COMMENT_REWARD_MAX,
+            "videoMin": VIDEO_REWARD_MIN,
+            "videoMax": VIDEO_REWARD_MAX,
+        },
     }
 
 
@@ -969,12 +987,19 @@ async def update_settings(payload: dict[str, Any]) -> dict:
     current = await get_settings()
     comment_tag = str(payload.get("commentTag") or current["commentTag"]).strip() or DEFAULT_COMMENT_TAG
     video_hashtag = str(payload.get("videoHashtag") or current["videoHashtag"]).strip() or DEFAULT_VIDEO_HASHTAG
-    comment_reward = int(payload.get("commentReward") or current["commentReward"])
-    views_per_unit = int(payload.get("viewsPerUnit") or current["viewsPerUnit"])
-    kut_per_unit = int(payload.get("kutPerUnit") or current["kutPerUnit"])
-    recheck_days = int(payload.get("recheckDays") or current["recheckDays"])
-    max_nicks = int(payload.get("maxNicks") or current["maxNicks"])
-    photos_required = int(payload.get("photosRequired") or current["photosRequired"])
+    if payload.get("commentReward") is not None:
+        comment_reward = validate_comment_reward(payload["commentReward"])
+    else:
+        comment_reward = int(current["commentReward"])
+    if payload.get("kutPerUnit") is not None:
+        kut_per_unit = validate_video_reward(payload["kutPerUnit"])
+    else:
+        kut_per_unit = int(current["kutPerUnit"])
+    # 15 скринов / 7 дней / 3 ника / 1000 просмотров - правила продукта, не из формы.
+    views_per_unit = int(current["viewsPerUnit"])
+    recheck_days = int(current["recheckDays"])
+    max_nicks = int(current["maxNicks"])
+    photos_required = int(current["photosRequired"])
     reasons = payload.get("rejectReasons") or current["rejectReasons"]
     barnum = payload.get("barnumRejects")
     if barnum is None:
@@ -994,7 +1019,7 @@ async def update_settings(payload: dict[str, Any]) -> dict:
     if not clean_barnum:
         clean_barnum = list(BARNUM_REJECTS)
     barnum = clean_barnum[:12]
-    if comment_reward < 0 or kut_per_unit < 0 or views_per_unit < 1:
+    if views_per_unit < 1:
         raise ValueError("Награды должны быть положительными")
     if recheck_days < 1 or max_nicks < 1 or photos_required < 1:
         raise ValueError("Лимиты должны быть больше нуля")
@@ -1112,6 +1137,17 @@ async def assert_tiktok_tab(admin_id: int, tab_id: str) -> int:
     return admin_id
 
 
+async def is_tiktok_rewards_owner(admin_id: int) -> bool:
+    """Создатель проекта или роль owner - единственные, кто меняет награды."""
+    from admin_db import get_admin_account
+    from config import owner_user_ids
+
+    if int(admin_id) in owner_user_ids():
+        return True
+    acc = await get_admin_account(admin_id)
+    return bool(acc and acc.get("role") == ROLE_OWNER)
+
+
 def require_tiktok_tab(tab_id: str):
     async def _dep(admin_id: int = Depends(require_admin_session)) -> int:
         return await assert_tiktok_tab(admin_id, tab_id)
@@ -1122,9 +1158,9 @@ def require_tiktok_tab(tab_id: str):
 class SettingsBody(BaseModel):
     commentTag: str | None = None
     videoHashtag: str | None = None
-    commentReward: int | None = Field(default=None, ge=0, le=100000)
+    commentReward: int | None = Field(default=None, ge=COMMENT_REWARD_MIN, le=COMMENT_REWARD_MAX)
     viewsPerUnit: int | None = Field(default=None, ge=1, le=1000000)
-    kutPerUnit: int | None = Field(default=None, ge=0, le=100000)
+    kutPerUnit: int | None = Field(default=None, ge=VIDEO_REWARD_MIN, le=VIDEO_REWARD_MAX)
     recheckDays: int | None = Field(default=None, ge=1, le=90)
     maxNicks: int | None = Field(default=None, ge=1, le=10)
     photosRequired: int | None = Field(default=None, ge=1, le=30)
@@ -1148,6 +1184,7 @@ async def tiktok_overview(_admin_id: int = Depends(require_admin_session)):
     await ensure_tiktok_schema()
     counts = await overview_counts()
     settings = await get_settings()
+    settings["canEditRewards"] = await is_tiktok_rewards_owner(_admin_id)
     return {**counts, "settings": settings, "tabs": TIKTOK_TABS}
 
 
@@ -1162,19 +1199,36 @@ async def tiktok_access_map(_admin_id: int = Depends(require_admin_session)):
 
 
 @router.get("/settings")
-async def tiktok_get_settings(_admin_id: int = Depends(require_tiktok_tab("settings"))):
-    return await get_settings()
+async def tiktok_get_settings(admin_id: int = Depends(require_tiktok_tab("settings"))):
+    settings = await get_settings()
+    settings["canEditRewards"] = await is_tiktok_rewards_owner(admin_id)
+    return settings
 
 
 @router.put("/settings")
 async def tiktok_put_settings(
     body: SettingsBody,
-    _admin_id: int = Depends(require_tiktok_tab("settings")),
+    admin_id: int = Depends(require_tiktok_tab("settings")),
 ):
+    payload = body.model_dump(exclude_none=True)
+    owner = await is_tiktok_rewards_owner(admin_id)
+    if not owner:
+        current = await get_settings()
+        for key, current_key in (("commentReward", "commentReward"), ("kutPerUnit", "kutPerUnit")):
+            incoming = payload.get(key)
+            if incoming is not None and int(incoming) != int(current[current_key]):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Награду меняет только создатель проекта",
+                )
+        payload.pop("commentReward", None)
+        payload.pop("kutPerUnit", None)
     try:
-        return await update_settings(body.model_dump(exclude_none=True))
+        saved = await update_settings(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    saved["canEditRewards"] = owner
+    return saved
 
 
 @router.get("/comments")

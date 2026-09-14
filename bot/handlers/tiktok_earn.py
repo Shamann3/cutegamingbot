@@ -87,54 +87,76 @@ async def _edit_or_send(target: CallbackQuery | Message, text: str, markup) -> N
 
 async def show_hub(target: CallbackQuery | Message) -> None:
     await tt.ensure_schema()
-    await _edit_or_send(target, tt.text_hub(), tt.hub_keyboard())
+    if getattr(getattr(target, "from_user", None), "id", None):
+        await tt.clear_session(target.from_user.id)
+    cfg = await tt.get_settings()
+    await _edit_or_send(target, tt.text_hub(cfg), tt.hub_keyboard())
 
 
 async def show_comments(target: CallbackQuery | Message, user_id: int) -> None:
     nicks = await tt.list_nicks(user_id)
     if not nicks:
-        await _edit_or_send(target, tt.text_need_nick(), tt.bind_keyboard())
+        await tt.set_session(user_id, "await_nick", {"after": "comments"})
+        await _edit_or_send(target, tt.text_need_nick("comments"), tt.bind_keyboard())
         return
     cfg = await tt.get_settings()
     pending = await tt.has_pending(user_id)
-    can_send = not pending
-    extra = "\n\n<b>Ники, по которым проверят:</b> " + ", ".join(f"@{n}" for n in nicks)
+    count = 0
     if pending:
-        extra += "\n\n<b>Эта пачка ещё на проверке. Кнопки «отправить» нет - как ответим, можно прислать новую.</b>"
+        await tt.clear_session(user_id)
     else:
-        extra += "\n\n<b>Можно отправлять: сейчас нет другой пачки на проверке.</b>"
-    await _edit_or_send(target, tt.text_comments(cfg) + extra, tt.comments_keyboard(can_send=can_send))
+        session = await tt.get_session(user_id)
+        extra = dict(session.get("extra") or {})
+        photos = list(extra.get("photos") or []) if session.get("mode") == "collect_photos" else []
+        await tt.set_session(user_id, "collect_photos", {"photos": photos})
+        count = len(photos)
+    needed = int(cfg["photosRequired"])
+    await _edit_or_send(
+        target,
+        tt.comments_screen_text(cfg, nicks, pending=pending, count=count),
+        tt.comments_keyboard(can_send=not pending, count=count, needed=needed),
+    )
 
 
 async def show_videos(target: CallbackQuery | Message, user_id: int) -> None:
     nicks = await tt.list_nicks(user_id)
     if not nicks:
-        await _edit_or_send(target, tt.text_need_nick(), tt.bind_keyboard())
+        await tt.set_session(user_id, "await_nick", {"after": "videos"})
+        await _edit_or_send(target, tt.text_need_nick("videos"), tt.bind_keyboard())
         return
     cfg = await tt.get_settings()
     videos = await tt.list_user_videos(user_id)
-    live = [v for v in videos if v["status"] == "live"]
-    pending = [v for v in videos if v["status"] == "pending"]
-    extra = "\n\n<b>Ники:</b> " + ", ".join(f"@{n}" for n in nicks)
-    if pending:
-        extra += "\n\n<b>Ссылка на проверке. Когда укажем просмотры - начислим куты за полные тысячи.</b>"
-    if live:
-        extra += "\n\n<b>Твои ролики</b>"
-        for v in live[:5]:
-            if v["recheckPending"]:
-                mark = " · ждём перепроверку"
-            elif v.get("recheckReady") is False:
-                mark = f" · учтено {v['lastViews']} · {v.get('recheckWaitText') or 'ещё рано'}"
-            else:
-                mark = f" · учтено {v['lastViews']} · можно проверить"
-            extra += f"\n<code>{v['url']}</code><b>{mark}</b>"
-    await _edit_or_send(target, tt.text_videos(cfg) + extra, tt.videos_keyboard(videos))
+    if any(v["status"] == "pending" for v in videos):
+        await tt.clear_session(user_id)
+    else:
+        await tt.set_session(user_id, "await_video_link", {})
+    await _edit_or_send(
+        target,
+        tt.videos_screen_text(cfg, nicks, videos),
+        tt.videos_keyboard(videos),
+    )
+
+
+async def _nicks_origin(user_id: int) -> str:
+    session = await tt.get_session(user_id)
+    extra = session.get("extra") or {}
+    origin = extra.get("origin") or extra.get("after") or ""
+    if origin in {"comments", "photos"}:
+        return "comments"
+    if origin == "videos":
+        return "videos"
+    return "hub"
 
 
 async def show_nicks(target: CallbackQuery | Message, user_id: int) -> None:
     nicks = await tt.list_nicks(user_id)
     locked = await tt.has_pending(user_id)
-    await _edit_or_send(target, tt.text_nicks(nicks, locked=locked), tt.nicks_keyboard(nicks, locked=locked))
+    origin = await _nicks_origin(user_id)
+    await _edit_or_send(
+        target,
+        tt.text_nicks(nicks, locked=locked),
+        tt.nicks_keyboard(nicks, locked=locked, origin=origin),
+    )
 
 
 @tiktok_router.callback_query(F.data == tt.TT_HUB)
@@ -169,8 +191,17 @@ async def on_nicks(callback: CallbackQuery) -> None:
     if not _private(callback):
         await callback.answer()
         return
+    user_id = callback.from_user.id
+    session = await tt.get_session(user_id)
+    extra = dict(session.get("extra") or {})
+    if session.get("mode") == "collect_photos":
+        extra["origin"] = "comments"
+        await tt.set_session(user_id, "collect_photos", extra)
+    elif session.get("mode") == "await_video_link":
+        extra["origin"] = "videos"
+        await tt.set_session(user_id, "await_video_link", extra)
     await callback.answer()
-    await show_nicks(callback, callback.from_user.id)
+    await show_nicks(callback, user_id)
 
 
 @tiktok_router.callback_query(F.data == tt.TT_NICK_ADD)
@@ -178,7 +209,18 @@ async def on_nick_add(callback: CallbackQuery) -> None:
     if not _private(callback):
         await callback.answer()
         return
-    await tt.set_session(callback.from_user.id, "await_nick", {"after": "comments"})
+    session = await tt.get_session(callback.from_user.id)
+    extra = dict(session.get("extra") or {})
+    after = extra.get("after") or extra.get("origin") or "comments"
+    if session.get("mode") == "await_video_link":
+        after = "videos"
+    if session.get("mode") == "collect_photos":
+        after = "comments"
+    await tt.set_session(
+        callback.from_user.id,
+        "await_nick",
+        {"after": after, "photos": extra.get("photos") or []},
+    )
     await callback.answer()
     await _edit_or_send(callback, tt.text_ask_nick(), tt.bind_keyboard())
 
@@ -202,12 +244,23 @@ async def on_nick_pick(callback: CallbackQuery) -> None:
         await callback.answer()
         return
     old = (callback.data or "").replace(tt.TT_NICK_PICK, "", 1)
-    await tt.set_session(callback.from_user.id, "await_nick_edit", {"oldNick": old})
+    session = await tt.get_session(callback.from_user.id)
+    extra = dict(session.get("extra") or {})
+    extra["oldNick"] = old
+    extra["after"] = extra.get("after") or extra.get("origin") or "comments"
+    await tt.set_session(callback.from_user.id, "await_nick_edit", extra)
     await callback.answer()
+    origin = extra.get("origin") or extra.get("after") or "hub"
+    if origin == "photos":
+        origin = "comments"
     await _edit_or_send(
         callback,
         f"<b>Новый ник вместо @{old}</b>\n\n{tt.text_ask_nick()}",
-        tt.nicks_keyboard(await tt.list_nicks(callback.from_user.id), locked=False),
+        tt.nicks_keyboard(
+            await tt.list_nicks(callback.from_user.id),
+            locked=False,
+            origin=origin if origin in {"comments", "videos"} else "hub",
+        ),
     )
 
 
@@ -216,24 +269,8 @@ async def on_send_photos(callback: CallbackQuery) -> None:
     if not _private(callback):
         await callback.answer()
         return
-    user_id = callback.from_user.id
-    if not await tt.list_nicks(user_id):
-        await tt.set_session(user_id, "await_nick", {"after": "photos"})
-        await callback.answer(tt.text_nick_required_alert(), show_alert=True)
-        await _edit_or_send(callback, tt.text_need_nick(), tt.bind_keyboard())
-        return
-    if await tt.has_pending(user_id):
-        await callback.answer("Эта пачка ещё на проверке. Как ответим - можно прислать новую.", show_alert=True)
-        return
-    cfg = await tt.get_settings()
-    nicks = await tt.list_nicks(user_id)
-    await tt.set_session(user_id, "collect_photos", {"photos": []})
     await callback.answer()
-    await _edit_or_send(
-        callback,
-        tt.collect_text(0, int(cfg["photosRequired"]), nicks),
-        tt.collect_keyboard(0, int(cfg["photosRequired"])),
-    )
+    await show_comments(callback, callback.from_user.id)
 
 
 @tiktok_router.callback_query(F.data == tt.TT_SEND_LINK)
@@ -241,23 +278,8 @@ async def on_send_link(callback: CallbackQuery) -> None:
     if not _private(callback):
         await callback.answer()
         return
-    user_id = callback.from_user.id
-    if not await tt.list_nicks(user_id):
-        await tt.set_session(user_id, "await_nick", {"after": "videos"})
-        await callback.answer(tt.text_nick_required_alert(), show_alert=True)
-        await _edit_or_send(callback, tt.text_need_nick(), tt.bind_keyboard())
-        return
-    pending = await tt.list_user_videos(user_id)
-    if any(v["status"] == "pending" for v in pending):
-        await callback.answer("Это видео ещё на проверке. Как ответим - можно прислать новую ссылку.", show_alert=True)
-        return
-    await tt.set_session(user_id, "await_video_link", {})
     await callback.answer()
-    await _edit_or_send(
-        callback,
-        "<b>Пришли ссылку на видео TikTok.</b>\n<b>tiktok.com или vm.tiktok.com</b>",
-        tt.videos_keyboard(await tt.list_user_videos(user_id)),
-    )
+    await show_videos(callback, callback.from_user.id)
 
 
 @tiktok_router.callback_query(F.data == tt.TT_CANCEL_COLLECT)
@@ -277,11 +299,13 @@ async def on_undo_photo(callback: CallbackQuery) -> None:
         return
     state = await tt.undo_photo(callback.from_user.id)
     await callback.answer("Убрали последний кадр")
-    nicks = await tt.list_nicks(callback.from_user.id)
+    user_id = callback.from_user.id
+    cfg = await tt.get_settings()
+    nicks = await tt.list_nicks(user_id)
     await _edit_or_send(
         callback,
-        tt.collect_text(state["count"], state["needed"], nicks),
-        tt.collect_keyboard(state["count"], state["needed"]),
+        tt.comments_screen_text(cfg, nicks, pending=False, count=state["count"]),
+        tt.comments_keyboard(can_send=True, count=state["count"], needed=state["needed"]),
     )
 
 
@@ -294,7 +318,7 @@ async def on_submit_photos(callback: CallbackQuery) -> None:
     if not await tt.list_nicks(user_id):
         await tt.clear_session(user_id)
         await callback.answer(tt.text_nick_required_alert(), show_alert=True)
-        await _edit_or_send(callback, tt.text_need_nick(), tt.bind_keyboard())
+        await _edit_or_send(callback, tt.text_need_nick("comments"), tt.bind_keyboard())
         return
     session = await tt.get_session(user_id)
     photos = list((session.get("extra") or {}).get("photos") or [])
@@ -304,12 +328,7 @@ async def on_submit_photos(callback: CallbackQuery) -> None:
         await callback.answer(str(exc), show_alert=True)
         return
     await callback.answer()
-    await _edit_or_send(
-        callback,
-        "<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>Скриншоты на проверке.</b>\n"
-        "<b>Ники сейчас не меняются. Новую пачку - после ответа.</b>",
-        tt.hub_keyboard(),
-    )
+    await show_comments(callback, user_id)
 
 
 @tiktok_router.callback_query(F.data.startswith(tt.TT_RECHECK))
@@ -325,18 +344,18 @@ async def on_recheck(callback: CallbackQuery) -> None:
         await callback.answer(str(exc), show_alert=True)
         return
     await callback.answer()
-    await _edit_or_send(
-        callback,
-        "<b>Запрос ушёл.</b>\n<b>Админ впишет текущие просмотры - доплатим разницу.</b>",
-        tt.videos_keyboard(await tt.list_user_videos(callback.from_user.id)),
-    )
+    await show_videos(callback, callback.from_user.id)
 
 
 async def _send_collect_progress(message: Message, state: dict) -> None:
-    nicks = await tt.list_nicks(message.from_user.id)
+    user_id = message.from_user.id
+    cfg = await tt.get_settings()
+    nicks = await tt.list_nicks(user_id)
     await message.answer(
-        tt.collect_text(state["count"], state["needed"], nicks),
-        reply_markup=tt.collect_keyboard(state["count"], state["needed"]),
+        tt.comments_screen_text(cfg, nicks, pending=False, count=state["count"]),
+        reply_markup=tt.comments_keyboard(
+            can_send=True, count=state["count"], needed=state["needed"]
+        ),
         parse_mode="HTML",
     )
 
@@ -346,7 +365,7 @@ async def on_photo(message: Message) -> None:
     user_id = message.from_user.id
     if not await tt.list_nicks(user_id):
         await tt.clear_session(user_id)
-        await message.answer(tt.text_need_nick(), reply_markup=tt.bind_keyboard(), parse_mode="HTML")
+        await message.answer(tt.text_need_nick("comments"), reply_markup=tt.bind_keyboard(), parse_mode="HTML")
         return
     photo = message.photo[-1]
     thumb_id = tt.pick_thumb_file_id(message.photo)
@@ -355,7 +374,7 @@ async def on_photo(message: Message) -> None:
         state = await tt.add_photo(user_id, photo.file_id, hashes, thumb_id)
     except ValueError as exc:
         await tt.clear_session(user_id)
-        await message.answer(f"<b>{exc}</b>\n\n{tt.text_need_nick()}", reply_markup=tt.bind_keyboard(), parse_mode="HTML")
+        await message.answer(f"<b>{exc}</b>\n\n{tt.text_need_nick('comments')}", reply_markup=tt.bind_keyboard(), parse_mode="HTML")
         return
     if message.media_group_id:
         prev = _album_tasks.pop(user_id, None)
@@ -387,8 +406,8 @@ async def on_collect_noise(message: Message) -> None:
     hint = "Пришли скрин как фото, не как файл." if message.document else "Сейчас жду скриншоты. Текст не приму."
     nicks = await tt.list_nicks(message.from_user.id)
     await message.answer(
-        f"<b>{hint}</b>\n{tt.collect_text(len(photos), needed, nicks)}",
-        reply_markup=tt.collect_keyboard(len(photos), needed),
+        f"<b>{hint}</b>\n{tt.comments_screen_text(cfg, nicks, pending=False, count=len(photos))}",
+        reply_markup=tt.comments_keyboard(can_send=True, count=len(photos), needed=needed),
         parse_mode="HTML",
     )
 
@@ -408,23 +427,14 @@ async def on_text(message: Message) -> None:
             await message.answer(f"<b>{exc}</b>", parse_mode="HTML")
             return
         after = (session.get("extra") or {}).get("after") or ""
+        kept = list((session.get("extra") or {}).get("photos") or [])
         await tt.clear_session(user_id)
-        await message.answer(f"<b>Ник @{nick} привязан.</b>\n<b>Теперь можно отправлять скриншоты и ссылки.</b>", parse_mode="HTML")
-        if after == "photos":
-            if await tt.has_pending(user_id):
-                await show_comments(message, user_id)
-                return
-            cfg = await tt.get_settings()
-            await tt.set_session(user_id, "collect_photos", {"photos": []})
-            await message.answer(
-                tt.collect_text(0, int(cfg["photosRequired"]), await tt.list_nicks(user_id)),
-                reply_markup=tt.collect_keyboard(0, int(cfg["photosRequired"])),
-                parse_mode="HTML",
-            )
-            return
+        await message.answer(f"<b>Ник @{nick} привязан.</b>\n<b>Продолжаем с того же направления.</b>", parse_mode="HTML")
         if after == "videos":
             await show_videos(message, user_id)
             return
+        if kept:
+            await tt.set_session(user_id, "collect_photos", {"photos": kept})
         await show_comments(message, user_id)
         return
     if await tt.is_waiting_link(user_id):
@@ -436,8 +446,8 @@ async def on_text(message: Message) -> None:
         await message.answer(
             "<b>Приняли.</b> <b>Видео на проверке. Когда укажем просмотры - начислим куты за полные тысячи.</b>",
             parse_mode="HTML",
-            reply_markup=tt.hub_keyboard(),
         )
+        await show_videos(message, user_id)
 
 
 def attach_tiktok_earn(dp) -> None:

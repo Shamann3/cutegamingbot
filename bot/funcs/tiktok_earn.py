@@ -18,6 +18,9 @@ if str(_SERVER) not in sys.path:
     sys.path.insert(0, str(_SERVER))
 
 from tiktok_earn_logic import (  # noqa: E402
+    COMMENT_REWARD,
+    KUT_PER_UNIT,
+    PHOTOS_REQUIRED,
     hashes_from_image_bytes,
     normalize_nick,
     parse_tiktok_url,
@@ -157,12 +160,12 @@ async def get_settings() -> dict[str, Any]:
         return {
             "commentTag": "тг звезды",
             "videoHashtag": "@CuteGamingBot",
-            "commentReward": 5,
+            "commentReward": COMMENT_REWARD,
             "viewsPerUnit": 1000,
-            "kutPerUnit": 30,
+            "kutPerUnit": KUT_PER_UNIT,
             "recheckDays": 7,
             "maxNicks": 3,
-            "photosRequired": 15,
+            "photosRequired": PHOTOS_REQUIRED,
         }
     return {
         "commentTag": row["comment_tag"],
@@ -439,17 +442,20 @@ def hub_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def comments_keyboard(*, can_send: bool) -> InlineKeyboardMarkup:
+def comments_keyboard(*, can_send: bool, count: int = 0, needed: int = 15) -> InlineKeyboardMarkup:
     rows = []
     if can_send:
-        rows.append([_btn("Отправить скриншоты", TT_SEND_PHOTOS, ICON_CAM)])
+        if count >= needed:
+            rows.append([_btn("Отправить", TT_SUBMIT_PHOTOS, ICON_OK)])
+        if count > 0:
+            rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
     rows.append([_btn("Мои ники", TT_NICKS)])
-    rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
+    rows.append([_btn("К выбору", TT_HUB, ICON_BACK)])
     return _kb(rows)
 
 
 def videos_keyboard(videos: list[dict] | None = None) -> InlineKeyboardMarkup:
-    rows = [[_btn("Отправить ссылку", TT_SEND_LINK, ICON_OK)]]
+    rows = []
     for item in videos or []:
         if item.get("status") != "live" or item.get("recheckPending"):
             continue
@@ -457,17 +463,18 @@ def videos_keyboard(videos: list[dict] | None = None) -> InlineKeyboardMarkup:
             continue
         rows.append([_btn(f"Проверить просмотры · #{item['id']}", f"{TT_RECHECK}{item['id']}")])
     rows.append([_btn("Мои ники", TT_NICKS)])
-    rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
+    rows.append([_btn("К выбору", TT_HUB, ICON_BACK)])
     return _kb(rows)
 
 
-def nicks_keyboard(nicks: list[str], *, locked: bool) -> InlineKeyboardMarkup:
+def nicks_keyboard(nicks: list[str], *, locked: bool, origin: str = "hub") -> InlineKeyboardMarkup:
     rows = []
     if not locked:
         rows.append([_btn("Добавить ник", TT_NICK_ADD)])
         if nicks:
             rows.append([_btn("Изменить", TT_NICK_EDIT)])
-    rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
+    back = TT_COMMENTS if origin == "comments" else TT_VIDEOS if origin == "videos" else TT_HUB
+    rows.append([_btn("Назад", back, ICON_BACK)])
     return _kb(rows)
 
 
@@ -478,33 +485,31 @@ def nick_pick_keyboard(nicks: list[str]) -> InlineKeyboardMarkup:
 
 
 def collect_keyboard(count: int, needed: int) -> InlineKeyboardMarkup:
-    rows = []
-    if count >= needed:
-        rows.append([_btn("Отправить", TT_SUBMIT_PHOTOS, ICON_OK)])
-    if count > 0:
-        rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
-    rows.append([_btn("Отменить набор", TT_CANCEL_COLLECT, ICON_BACK)])
-    return _kb(rows)
+    return comments_keyboard(can_send=True, count=count, needed=needed)
 
 
 def bind_keyboard() -> InlineKeyboardMarkup:
-    return _kb([[_btn("Указать ник", TT_NICK_ADD)], [_btn("Назад", TT_HUB, ICON_BACK)]])
+    return _kb([[_btn("Указать ник", TT_NICK_ADD)], [_btn("К выбору", TT_HUB, ICON_BACK)]])
 
 
-def text_hub() -> str:
+def text_hub(cfg: dict[str, Any] | None = None) -> str:
+    cfg = cfg or {}
+    reward = int(cfg.get("commentReward") or COMMENT_REWARD)
+    kut = int(cfg.get("kutPerUnit") or KUT_PER_UNIT)
+    photos = int(cfg.get("photosRequired") or PHOTOS_REQUIRED)
     return (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Тик ток</b>\n\n"
-        "<b>Куты за то, что уже умеешь: комментировать и снимать.</b>\n\n"
-        "<b>Комментарии - 15 кадров и живая награда.</b>\n"
-        "<b>Видео - расскажи про бота и получи куты за просмотры.</b>\n\n"
-        "<b>Сначала ник. Без него не проверим, что это ты.</b>"
+        "<b>Что хочешь сделать?</b>\n\n"
+        f"<b>Комментарии - {photos} скринов, {reward} кут за принятую пачку.</b>\n"
+        f"<b>Видео - ролик про бота, {kut} кут за каждые 1000 просмотров.</b>\n\n"
+        "<b>Выбери направление. Доказательства отправишь сразу на следующем экране.</b>"
     )
 
 
 def text_comments(cfg: dict[str, Any]) -> str:
     tag = cfg.get("commentTag") or "тг звезды"
-    reward = int(cfg.get("commentReward") or 5)
-    photos = int(cfg.get("photosRequired") or 15)
+    reward = int(cfg.get("commentReward") or COMMENT_REWARD)
+    photos = int(cfg.get("photosRequired") or PHOTOS_REQUIRED)
     return (
         f"<tg-emoji emoji-id='{ICON_COMMENTS}'>💬</tg-emoji> <b>Комментарии в TikTok</b>\n\n"
         f"<b>Найди ролики с тегом «{tag}».</b>\n"
@@ -512,30 +517,37 @@ def text_comments(cfg: dict[str, Any]) -> str:
         f"<b>Один комментарий - один скрин. Всего {photos} фото.</b>\n\n"
         f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> "
         f"<b>За принятую пачку - {reward} кут. Можно снова и снова.</b>\n\n"
-        "<b>Пришли скрины сюда: альбомом или по одному.</b>"
+        "<b>Пришли скрины прямо сюда: альбомом или по одному.</b>"
     )
 
 
 def text_videos(cfg: dict[str, Any]) -> str:
     hashtag = cfg.get("videoHashtag") or "@CuteGamingBot"
-    kut = int(cfg.get("kutPerUnit") or 30)
+    kut = int(cfg.get("kutPerUnit") or KUT_PER_UNIT)
     per = int(cfg.get("viewsPerUnit") or 1000)
     return (
         f"<tg-emoji emoji-id='{ICON_VIDEOS}'>📹</tg-emoji> <b>Видео про бота</b>\n\n"
         "<b>Сними ролик про @CuteGamingBot.</b>\n"
         f"<b>Поставь хештег {hashtag}.</b>\n\n"
-        f"<b>Пришли ссылку. Мы откроем TikTok и впишем просмотры.</b>\n"
+        f"<b>Пришли ссылку прямо сюда. Мы откроем TikTok и впишем просмотры.</b>\n"
         f"<b>За каждые полные {per} просмотров - {kut} кут.</b>\n"
         f"<b>Перепроверить можно через {int(cfg.get('recheckDays') or 7)} дней: доплатим только прирост.</b>\n\n"
         "<b>Идея или монтаж не складываются - напиши @JerichoCute. Коротко, что хочешь снять.</b>"
     )
 
 
-def text_need_nick() -> str:
+def text_need_nick(path: str = "") -> str:
+    after = (
+        "Потом сразу вернёмся к комментариям."
+        if path == "comments"
+        else "Потом сразу вернёмся к видео."
+        if path == "videos"
+        else "Потом продолжим выбранное направление."
+    )
     return (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Сначала укажи свой TikTok</b>\n\n"
         "<b>Без публичного ника не поймём, где тебя можно найти.</b>\n"
-        "<b>Скрины и ссылку примем, когда будет аккаунт.</b>\n\n"
+        f"<b>{after}</b>\n\n"
         "<b>Напиши ник как в TikTok. Без ссылки, только имя.</b>\n"
         "<blockquote><code>cuteplayer</code></blockquote>"
     )
@@ -568,9 +580,54 @@ def help_earnings_block() -> str:
     return (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>TikTok</b>\n"
         "<b>Куты за комментарии с тегом и за видео про бота.</b>\n"
-        "<b>Открой Задания и нажми Тик ток.</b>\n"
+        "<b>Открой Задания, нажми Тик ток и выбери направление.</b>\n"
         "<blockquote><code>Задания</code></blockquote>"
     )
+
+
+def comments_screen_text(
+    cfg: dict[str, Any],
+    nicks: list[str],
+    *,
+    pending: bool,
+    count: int,
+) -> str:
+    needed = int(cfg.get("photosRequired") or 15)
+    body = text_comments(cfg)
+    if nicks:
+        body += "\n\n<b>Ники, по которым проверят:</b> " + ", ".join(f"@{n}" for n in nicks)
+    if pending:
+        body += "\n\n<b>Эта пачка ещё на проверке. Новую можно прислать после ответа.</b>"
+    else:
+        body += "\n\n" + collect_text(count, needed)
+    return body
+
+
+def videos_screen_text(
+    cfg: dict[str, Any],
+    nicks: list[str],
+    videos: list[dict[str, Any]],
+) -> str:
+    body = text_videos(cfg)
+    if nicks:
+        body += "\n\n<b>Ники:</b> " + ", ".join(f"@{n}" for n in nicks)
+    pending = [v for v in videos if v.get("status") == "pending"]
+    live = [v for v in videos if v.get("status") == "live"]
+    if pending:
+        body += "\n\n<b>Ссылка на проверке. Когда укажем просмотры - начислим куты за полные тысячи.</b>"
+    else:
+        body += "\n\n<b>Ссылку tiktok.com или vm.tiktok.com можно отправить следующим сообщением.</b>"
+    if live:
+        body += "\n\n<b>Твои ролики</b>"
+        for item in live[:5]:
+            if item.get("recheckPending"):
+                mark = " · ждём перепроверку"
+            elif item.get("recheckReady") is False:
+                mark = f" · учтено {item['lastViews']} · {item.get('recheckWaitText') or 'ещё рано'}"
+            else:
+                mark = f" · учтено {item['lastViews']} · можно проверить"
+            body += f"\n<code>{item['url']}</code><b>{mark}</b>"
+    return body
 
 
 def collect_text(count: int, needed: int, nicks: list[str] | None = None) -> str:

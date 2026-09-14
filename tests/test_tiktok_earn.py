@@ -7,11 +7,17 @@ if str(SERVER) not in sys.path:
     sys.path.insert(0, str(SERVER))
 
 from tiktok_earn_logic import (  # noqa: E402
+    COMMENT_REWARD_MAX,
+    COMMENT_REWARD_MIN,
+    VIDEO_REWARD_MAX,
+    VIDEO_REWARD_MIN,
     kut_for_views,
     normalize_nick,
     parse_tiktok_url,
     payout_delta,
+    validate_comment_reward,
     validate_nick,
+    validate_video_reward,
 )
 
 
@@ -122,6 +128,63 @@ def test_video_recheck_state_and_keyboard():
     assert "tt:recheck:4" not in dumped
 
 
+def test_bot_texts_follow_settings_rewards():
+    from bot.funcs.tiktok_earn import comments_keyboard, text_comments, text_hub, text_videos
+
+    comments = text_comments({"commentReward": 17, "photosRequired": 15})
+    assert "17" in comments
+    assert "5 кут" not in comments
+    videos = text_videos({"kutPerUnit": 42, "viewsPerUnit": 1000})
+    assert "42" in videos
+    assert "30 кут" not in videos
+    hub = text_hub({"commentReward": 88, "kutPerUnit": 9, "photosRequired": 15})
+    assert "88" in hub
+    assert "9" in hub
+    dumped = _kb_data(comments_keyboard(can_send=True, count=15, needed=15))
+    assert "tt:submit_photos" in dumped
+    assert "tt:send_photos" not in dumped
+
+
+def test_direction_then_work_on_same_screen():
+    from bot.funcs.tiktok_earn import comments_keyboard, hub_keyboard, text_hub, text_videos, videos_keyboard
+
+    hub = text_hub({"commentReward": 12, "kutPerUnit": 40})
+    assert "Что хочешь сделать" in hub
+    assert "Настройки" not in hub
+    dumped = _kb_data(hub_keyboard())
+    assert dumped.split()[:2] == ["tt:comments", "tt:videos"]
+    assert "tt:nicks" in dumped
+    work = _kb_data(comments_keyboard(can_send=True, count=3, needed=15))
+    assert "tt:submit_photos" not in work
+    assert "tt:undo_photo" in work
+    assert "tt:send_photos" not in work
+    assert "tt:send_link" not in _kb_data(videos_keyboard([]))
+    assert "прямо сюда" in text_videos({"kutPerUnit": 40})
+
+
+def test_reward_caps_and_payout_use_stored_value():
+    assert validate_comment_reward(17) == 17
+    assert validate_video_reward(40) == 40
+    try:
+        validate_comment_reward(0)
+        assert False
+    except ValueError as exc:
+        assert str(COMMENT_REWARD_MIN) in str(exc)
+    try:
+        validate_comment_reward(COMMENT_REWARD_MAX + 1)
+        assert False
+    except ValueError:
+        pass
+    try:
+        validate_video_reward(VIDEO_REWARD_MAX + 1)
+        assert False
+    except ValueError:
+        pass
+    assert VIDEO_REWARD_MIN == 1
+    assert payout_delta(1000, 3500, kut_per_unit=40)["kut"] == 80
+    assert kut_for_views(2500, kut_per_unit=40) == 80
+
+
 def test_shared_url_and_payout():
     assert normalize_nick("@Foo") == "foo"
     assert validate_nick("foo_1") == "foo_1"
@@ -129,3 +192,18 @@ def test_shared_url_and_payout():
     assert parsed["canonical"] == "video:111"
     assert kut_for_views(1000) == 30
     assert payout_delta(0, 1000)["kut"] == 30
+
+
+def test_navigation_callbacks_stay_on_path():
+    from pathlib import Path
+
+    src = Path("bot/handlers/tiktok_earn.py").read_text(encoding="utf-8")
+    assert "F.data == tt.TT_COMMENTS" in src
+    assert "F.data == tt.TT_VIDEOS" in src
+    assert "await show_comments" in src
+    assert "await show_videos" in src
+    assert "await_video_link" in src
+    assert 'after": "comments"' in src or '"after": "comments"' in src
+    assert "ChatType.PRIVATE" in src
+    assert "_CollectingPhoto" in src
+    assert "_WaitingNickOrLink" in src
