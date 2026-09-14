@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import '../../styles/tiktok.css'
 import TgPhoto from '../../components/TgPhoto'
 import ImageLightbox from '../../components/ImageLightbox'
 import { showToast } from '../../components/ToastHost'
+import { getPhotoProxyUrl } from '../../lib/adminClient'
 import {
   approveTiktokComment,
   approveTiktokVideo,
@@ -24,7 +25,7 @@ const TABS = [
   { id: 'videos', label: 'Видео', hint: 'Открой ссылку в TikTok, впиши просмотры. Код сам посчитает куты.' },
   { id: 'live', label: 'Живые', hint: 'Уже принятые ролики. Если игрок просит перепроверку — доплати разницу.' },
   { id: 'archive', label: 'Архив', hint: 'Закрытые дела. Здесь ничего начислять не нужно.' },
-  { id: 'settings', label: 'Настройки', hint: 'Тег, награда, причины отказа. Меняй только если понимаешь последствия.' },
+  { id: 'settings', label: 'Настройки', hint: 'Тег, причины отказа и тексты игроку. Цифры наград зафиксированы правилами.' },
 ]
 
 const GUIDE_KEY = 'cf_tiktok_guide_v1'
@@ -52,6 +53,22 @@ function kutForViews(views, unit = 30) {
   return Math.floor(n / 1000) * unit
 }
 
+function nextQueueItem(items, currentId) {
+  if (!items?.length) return null
+  if (currentId == null) return items[0]
+  const idx = items.findIndex((item) => Number(item.id) === Number(currentId))
+  if (idx < 0) return items[0]
+  return items[idx + 1] || null
+}
+
+function shotFileId(photo) {
+  return photo?.thumbFileId || photo?.fileId || ''
+}
+
+function fullFileId(photo) {
+  return photo?.fileId || photo?.thumbFileId || ''
+}
+
 function LockCard({ tab, map }) {
   const info = (map?.tabs || []).find((t) => t.id === tab.id) || tab
   const roles = info.openRoles || []
@@ -69,7 +86,7 @@ function LockCard({ tab, map }) {
         </div>
         <div>
           <span>Сейчас здесь работают</span>
-          <b>{people.length ? people.map((p) => p.name).join(', ') : 'никого'}</b>
+          <b>{people.length ? people.map((p) => `${p.name}${p.roleLabel ? ` · ${p.roleLabel}` : ''}`).join(', ') : 'никого'}</b>
         </div>
       </div>
       <p className="tt-lock-push">Когда доверят выше — окажешься здесь. Доступ выдаёт создатель в «Админ панель».</p>
@@ -83,9 +100,10 @@ function Guide({ onClose }) {
       <button type="button" className="tt-guide-x" onClick={onClose} aria-label="Закрыть гид">×</button>
       <h3>Как разбирать TikTok за минуту</h3>
       <ol>
-        <li>Слева очередь. Открой карточку — справа 15 кадров сразу, не 15 тикетов.</li>
-        <li>Красная рамка: код нашёл похожий кадр. Нажми фото — сравни и отметь «копия» или «не копия».</li>
-        <li>Видео: открой ссылку, впиши просмотры. Под полем сразу видно, сколько кут уйдёт.</li>
+        <li>Слева очередь. Карточка открывает 15 превью сразу — полные кадры по клику, без перезагрузки страницы.</li>
+        <li>Красная рамка: код нашёл похожий кадр. Сравни и отметь «копия» или «не копия». Решение за тобой.</li>
+        <li>Видео: открой ссылку в TikTok, впиши просмотры. Под полем сразу видно, сколько кут уйдёт.</li>
+        <li>Клавиши: A принять, R отклонить, N или J — следующее дело, Esc — к очереди.</li>
       </ol>
       <button type="button" className="tt-btn tt-btn-ok" onClick={onClose}>Понятно, к очереди</button>
     </div>
@@ -93,6 +111,7 @@ function Guide({ onClose }) {
 }
 
 function CommentCase({ item, onOpen }) {
+  const count = item.photoCount || (item.photos || []).length
   return (
     <button type="button" className="tt-card" onClick={() => onOpen(item)}>
       <div className="tt-card-top">
@@ -101,20 +120,21 @@ function CommentCase({ item, onOpen }) {
       </div>
       <div className="tt-card-nicks">{(item.nicks || []).map((n) => `@${n}`).join(' · ') || 'нет ников'}</div>
       <div className="tt-card-flags">
-        <span>{(item.photos || []).length} фото</span>
+        <span>{count} фото</span>
         {item.hasSimilar ? <span className="tt-flag-hot">есть похожие · {item.matchCount}</span> : <span>уникальные</span>}
       </div>
     </button>
   )
 }
 
-function CommentWorkspace({ item, onClose, onDone }) {
+function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
   const [busy, setBusy] = useState(false)
   const [lightbox, setLightbox] = useState(null)
   const [compare, setCompare] = useState(null)
   const [local, setLocal] = useState(item)
+  const busyRef = useRef(false)
 
-  useEffect(() => { setLocal(item) }, [item])
+  useEffect(() => { setLocal(item); setCompare(null) }, [item])
 
   const matchByIndex = useMemo(() => {
     const map = {}
@@ -127,15 +147,24 @@ function CommentWorkspace({ item, onClose, onDone }) {
     return map
   }, [local.matches])
 
+  const openFull = (photo) => {
+    const id = fullFileId(photo)
+    if (!id) return
+    setLightbox(getPhotoProxyUrl(id, 'full'))
+  }
+
   const decide = async (fn, okText) => {
+    if (busyRef.current) return
+    busyRef.current = true
     setBusy(true)
     try {
       await fn()
       showToast(okText)
-      onDone()
+      onDecided(local.id)
     } catch (err) {
       showToast(err.message || 'Ошибка')
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
@@ -156,14 +185,27 @@ function CommentWorkspace({ item, onClose, onDone }) {
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
-      if (e.key === 'a' || e.key === 'A') decide(() => approveTiktokComment(local.id), 'Принято, 5 кут ушли')
-      if (e.key === 'r' || e.key === 'R') decide(() => rejectTiktokComment(local.id), 'Отклонено, игроку ушёл ответ')
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return
+      if (document.querySelector('.img-lightbox')) return
+      if (e.key === 'a' || e.key === 'A') {
+        e.preventDefault()
+        decide(() => approveTiktokComment(local.id), 'Принято, 5 кут ушли')
+      }
+      if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault()
+        decide(() => rejectTiktokComment(local.id), 'Отклонено, игроку ушёл ответ')
+      }
+      if (e.key === 'n' || e.key === 'N' || e.key === 'j' || e.key === 'J') {
+        e.preventDefault()
+        onAdvance(local.id)
+      }
       if (e.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [local.id])
+  }, [local.id, onAdvance, onClose])
+
+  const nextHint = nextQueueItem(queue, local.id)
 
   return (
     <div className="tt-work">
@@ -181,14 +223,22 @@ function CommentWorkspace({ item, onClose, onDone }) {
             ))}
           </div>
         </div>
-        <button type="button" className="tt-btn" onClick={onClose}>К очереди</button>
+        <div className="tt-work-nav">
+          <button type="button" className="tt-btn" onClick={() => onAdvance(local.id)} disabled={!nextHint}>
+            Следующее{nextHint ? '' : ' · конец'}
+          </button>
+          <button type="button" className="tt-btn" onClick={onClose}>К очереди</button>
+        </div>
       </div>
 
-      <p className="tt-hint">Нажми кадр с красной рамкой — увидишь, на что он похож. A — принять, R — отклонить.</p>
+      <p className="tt-hint">
+        Превью лёгкие, полный кадр — по клику. Красная рамка: сравни. A принять · R отклонить · N следующее.
+      </p>
 
       <div className="tt-grid">
         {(local.photos || []).map((photo, i) => {
           const hits = matchByIndex[i] || []
+          const thumb = shotFileId(photo)
           return (
             <button
               key={photo.id || i}
@@ -196,10 +246,15 @@ function CommentWorkspace({ item, onClose, onDone }) {
               className={`tt-shot${hits.length ? ' tt-shot-hot' : ''}`}
               onClick={() => {
                 if (hits.length) setCompare({ photo, hits })
-                else setLightbox(photo.fileId)
+                else openFull(photo)
               }}
             >
-              <TgPhoto fileId={photo.fileId} style={{ width: '100%', height: 120, objectFit: 'cover' }} />
+              <TgPhoto
+                fileId={thumb}
+                size="thumb"
+                lazy
+                style={{ width: '100%', height: 120, objectFit: 'cover' }}
+              />
               <span>#{i + 1}{hits.length ? ` · ${hits.length} похож.` : ''}</span>
             </button>
           )
@@ -210,12 +265,22 @@ function CommentWorkspace({ item, onClose, onDone }) {
         <div className="tt-compare">
           <div className="tt-compare-col">
             <b>Этот кадр</b>
-            <TgPhoto fileId={compare.photo.fileId} onClick={(src) => setLightbox(src)} />
+            <TgPhoto
+              fileId={fullFileId(compare.photo)}
+              size="full"
+              lazy={false}
+              onClick={() => openFull(compare.photo)}
+            />
           </div>
           <div className="tt-compare-list">
             {compare.hits.map((hit, i) => (
-              <div key={i} className="tt-compare-hit">
-                <TgPhoto fileId={hit.match.fileId} onClick={(src) => setLightbox(src)} />
+              <div key={`${hit.match?.id || i}`} className="tt-compare-hit">
+                <TgPhoto
+                  fileId={fullFileId(hit.match)}
+                  size="full"
+                  lazy={false}
+                  onClick={() => openFull(hit.match)}
+                />
                 <p>
                   Заявка #{hit.match.caseId} · игрок {hit.match.userId} · дистанция {hit.distance}
                   {hit.verdict ? ` · уже: ${hit.verdict === 'copy' ? 'копия' : 'не копия'}` : ''}
@@ -332,6 +397,8 @@ function SettingsForm({ initial, onSaved }) {
   const [busy, setBusy] = useState(false)
   useEffect(() => { setForm(initial) }, [initial])
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }))
+  const reasons = form.rejectReasons || []
+  const barnums = form.barnumRejects || []
   return (
     <form
       className="tt-settings"
@@ -349,6 +416,7 @@ function SettingsForm({ initial, onSaved }) {
             maxNicks: Number(form.maxNicks),
             photosRequired: Number(form.photosRequired),
             rejectReasons: form.rejectReasons,
+            barnumRejects: form.barnumRejects,
           })
           showToast('Настройки сохранены')
           onSaved(saved)
@@ -359,14 +427,77 @@ function SettingsForm({ initial, onSaved }) {
         }
       }}
     >
-      <p className="tt-hint">Эти цифры видит игрок в боте. Не меняй награду посреди живой очереди без причины.</p>
+      <p className="tt-hint">Тег и тексты отказа можно править. Цифры 15 / 5 / 30 / 1000 / 7 / 3 — правила продукта, не ломай их без причины.</p>
       <label>Тег комментариев<input value={form.commentTag || ''} onChange={(e) => set('commentTag', e.target.value)} /></label>
       <label>Хештег видео<input value={form.videoHashtag || ''} onChange={(e) => set('videoHashtag', e.target.value)} /></label>
-      <label>Награда за пачку<input type="number" value={form.commentReward ?? 5} onChange={(e) => set('commentReward', e.target.value)} /></label>
-      <label>Куты за 1000 просмотров<input type="number" value={form.kutPerUnit ?? 30} onChange={(e) => set('kutPerUnit', e.target.value)} /></label>
-      <label>Пауза перепроверки, дни<input type="number" value={form.recheckDays ?? 7} onChange={(e) => set('recheckDays', e.target.value)} /></label>
-      <label>Максимум ников<input type="number" value={form.maxNicks ?? 3} onChange={(e) => set('maxNicks', e.target.value)} /></label>
-      <label>Скриншотов в пачке<input type="number" value={form.photosRequired ?? 15} onChange={(e) => set('photosRequired', e.target.value)} /></label>
+      <div className="tt-locked-nums">
+        <span>пачка {form.photosRequired ?? 15} скринов</span>
+        <span>{form.commentReward ?? 5} кут</span>
+        <span>{form.kutPerUnit ?? 30} кут / 1000</span>
+        <span>перепроверка {form.recheckDays ?? 7} дн.</span>
+        <span>ников ≤ {form.maxNicks ?? 3}</span>
+      </div>
+
+      <h4>Причины отказа видео</h4>
+      <p className="tt-hint">Чеклист на карточке ролика. Коротко, по делу, без CMS.</p>
+      <div className="tt-reason-edit">
+        {reasons.map((r, i) => (
+          <div key={r.id || i} className="tt-reason-row">
+            <input
+              value={r.label || ''}
+              onChange={(e) => {
+                const next = reasons.map((row, idx) => (idx === i ? { ...row, label: e.target.value } : row))
+                set('rejectReasons', next)
+              }}
+            />
+            <button
+              type="button"
+              className="tt-btn"
+              onClick={() => set('rejectReasons', reasons.filter((_, idx) => idx !== i))}
+              disabled={reasons.length <= 1}
+            >
+              убрать
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="tt-btn"
+          onClick={() => set('rejectReasons', [...reasons, { id: `custom_${Date.now()}`, label: '' }])}
+        >
+          Добавить причину
+        </button>
+      </div>
+
+      <h4>Ответ игроку при отказе комментариев</h4>
+      <p className="tt-hint">Размытые формулировки. Не пиши «копия» и не объясняй, как обойти проверку.</p>
+      <div className="tt-reason-edit">
+        {barnums.map((text, i) => (
+          <div key={i} className="tt-barnum-row">
+            <textarea
+              rows={3}
+              value={text}
+              onChange={(e) => set('barnumRejects', barnums.map((row, idx) => (idx === i ? e.target.value : row)))}
+            />
+            <button
+              type="button"
+              className="tt-btn"
+              onClick={() => set('barnumRejects', barnums.filter((_, idx) => idx !== i))}
+              disabled={barnums.length <= 1}
+            >
+              убрать
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="tt-btn"
+          onClick={() => set('barnumRejects', [...barnums, ''])}
+          disabled={barnums.length >= 12}
+        >
+          Добавить формулировку
+        </button>
+      </div>
       <button type="submit" className="tt-btn tt-btn-ok" disabled={busy}>Сохранить</button>
     </form>
   )
@@ -383,9 +514,10 @@ export default function TikTokSection({ panelTabs = null, role = null }) {
   const [videos, setVideos] = useState([])
   const [openCase, setOpenCase] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [archiveOffset, setArchiveOffset] = useState(0)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true)
     try {
       const [ov, access] = await Promise.all([
         fetchTiktokOverview().catch(() => null),
@@ -397,8 +529,9 @@ export default function TikTokSection({ panelTabs = null, role = null }) {
         const data = await fetchTiktokComments('pending')
         setComments(data.items || [])
       } else if (tab === 'archive' && can('archive')) {
-        const data = await fetchTiktokCommentsArchive()
+        const data = await fetchTiktokCommentsArchive({ limit: 20, offset: 0 })
         setComments(data.items || [])
+        setArchiveOffset(data.items?.length || 0)
       } else if ((tab === 'videos' || tab === 'live') && can(tab)) {
         const data = await fetchTiktokVideos(tab === 'live' ? 'live' : 'pending')
         setVideos(data.items || [])
@@ -409,7 +542,7 @@ export default function TikTokSection({ panelTabs = null, role = null }) {
     } catch (err) {
       showToast(err.message || 'Не удалось загрузить TikTok')
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }, [tab, role, allowed])
 
@@ -421,6 +554,37 @@ export default function TikTokSection({ panelTabs = null, role = null }) {
       if (next) setTab(next.id)
     }
   }, [tab, allowed, role])
+
+  const openFromQueue = async (item) => {
+    if (!item) {
+      setOpenCase(null)
+      return
+    }
+    if (item.photos?.length) {
+      setOpenCase(item)
+      return
+    }
+    try {
+      const full = await fetchTiktokComment(item.id)
+      setOpenCase(full)
+    } catch (err) {
+      showToast(err.message || 'Не открылось')
+    }
+  }
+
+  const advanceFrom = async (currentId, { remove = false } = {}) => {
+    const nxt = nextQueueItem(comments, currentId)
+    if (remove) {
+      setComments((cur) => cur.filter((c) => Number(c.id) !== Number(currentId)))
+    }
+    if (nxt) await openFromQueue(nxt)
+    else setOpenCase(null)
+    load({ quiet: true })
+  }
+
+  const afterDecide = async (currentId) => {
+    await advanceFrom(currentId, { remove: true })
+  }
 
   const locked = !can(tab)
   const settings = overview?.settings
@@ -450,7 +614,7 @@ export default function TikTokSection({ panelTabs = null, role = null }) {
             role="tab"
             aria-selected={tab === t.id}
             className={`tt-tab${tab === t.id ? ' is-on' : ''}${can(t.id) ? '' : ' is-lock'}`}
-            onClick={() => setTab(t.id)}
+            onClick={() => { setOpenCase(null); setTab(t.id) }}
           >
             {t.label}
             {!can(t.id) ? ' · замок' : ''}
@@ -465,16 +629,40 @@ export default function TikTokSection({ panelTabs = null, role = null }) {
 
       {locked ? (
         <LockCard tab={TABS.find((t) => t.id === tab)} map={map} />
-      ) : loading ? (
+      ) : loading && !openCase ? (
         <p className="tt-hint">Загружаем очередь…</p>
       ) : openCase ? (
-        <CommentWorkspace item={openCase} onClose={() => setOpenCase(null)} onDone={() => { setOpenCase(null); load() }} />
+        <CommentWorkspace
+          item={openCase}
+          queue={comments}
+          onClose={() => setOpenCase(null)}
+          onAdvance={advanceFrom}
+          onDecided={afterDecide}
+        />
       ) : tab === 'comments' || tab === 'archive' ? (
         <div className="tt-list">
           {comments.length === 0 && <p className="tt-empty">Пока пусто. Когда игрок пришлёт 15 скринов — карточка появится здесь.</p>}
           {comments.map((item) => (
-            <CommentCase key={item.id} item={item} onOpen={setOpenCase} />
+            <CommentCase key={item.id} item={item} onOpen={openFromQueue} />
           ))}
+          {tab === 'archive' && comments.length >= 20 && (
+            <button
+              type="button"
+              className="tt-btn"
+              onClick={async () => {
+                try {
+                  const data = await fetchTiktokCommentsArchive({ limit: 20, offset: archiveOffset })
+                  const extra = data.items || []
+                  setComments((cur) => [...cur, ...extra])
+                  setArchiveOffset((n) => n + extra.length)
+                } catch (err) {
+                  showToast(err.message || 'Архив не догрузился')
+                }
+              }}
+            >
+              Ещё из архива
+            </button>
+          )}
         </div>
       ) : tab === 'videos' || tab === 'live' ? (
         <div className="tt-list">
@@ -485,7 +673,7 @@ export default function TikTokSection({ panelTabs = null, role = null }) {
               item={item}
               settings={settings}
               rejectReasons={settings?.rejectReasons}
-              onDone={load}
+              onDone={() => load({ quiet: true })}
             />
           ))}
         </div>

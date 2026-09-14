@@ -13,6 +13,7 @@ from typing import Any
 from db import db
 from user_items import items_to_db, parse_items
 from admin_db import get_admin_account
+from admin_portrait import staff_search_badge
 
 
 def _safe_dict(value: Any) -> dict:
@@ -59,8 +60,18 @@ async def search_users(query: str, *, limit: int = 20) -> list[dict]:
             return []
         row = await db.pool.fetchrow(
             """
-            SELECT user_id, username, display_name, first_name, balance, banned, last_seen_at
-            FROM users WHERE user_id = $1
+            SELECT u.user_id, u.username, u.display_name, u.first_name, u.balance,
+                   u.banned, u.last_seen_at,
+                   aa.role AS staff_role, aa.status AS staff_status
+            FROM users u
+            LEFT JOIN LATERAL (
+                SELECT role, status
+                FROM admin_accounts
+                WHERE user_id = u.user_id
+                ORDER BY registered_at DESC NULLS LAST
+                LIMIT 1
+            ) aa ON TRUE
+            WHERE u.user_id = $1
             """,
             user_id,
         )
@@ -72,12 +83,21 @@ async def search_users(query: str, *, limit: int = 20) -> list[dict]:
     pattern = f"%{q}%"
     rows = await db.pool.fetch(
         """
-        SELECT user_id, username, display_name, first_name, balance, banned, last_seen_at
-        FROM users
-        WHERE username ILIKE $1
-           OR display_name ILIKE $1
-           OR first_name ILIKE $1
-        ORDER BY user_id
+        SELECT u.user_id, u.username, u.display_name, u.first_name, u.balance,
+               u.banned, u.last_seen_at,
+               aa.role AS staff_role, aa.status AS staff_status
+        FROM users u
+        LEFT JOIN LATERAL (
+            SELECT role, status
+            FROM admin_accounts
+            WHERE user_id = u.user_id
+            ORDER BY registered_at DESC NULLS LAST
+            LIMIT 1
+        ) aa ON TRUE
+        WHERE u.username ILIKE $1
+           OR u.display_name ILIKE $1
+           OR u.first_name ILIKE $1
+        ORDER BY u.user_id
         LIMIT $2
         """,
         pattern,
@@ -88,7 +108,7 @@ async def search_users(query: str, *, limit: int = 20) -> list[dict]:
 
 def _user_search_row(row) -> dict:
     name = row["display_name"] or row["first_name"] or str(row["user_id"])
-    return {
+    payload = {
         "userId": int(row["user_id"]),
         "username": row["username"],
         "displayName": name,
@@ -96,6 +116,13 @@ def _user_search_row(row) -> dict:
         "banned": bool(row["banned"]),
         "lastSeenAt": row["last_seen_at"].isoformat() if row["last_seen_at"] else None,
     }
+    keys = row.keys() if hasattr(row, "keys") else ()
+    role = row["staff_role"] if "staff_role" in keys else None
+    status = row["staff_status"] if "staff_status" in keys else None
+    badge = staff_search_badge(role, status)
+    if badge:
+        payload.update(badge)
+    return payload
 
 
 async def get_user_admin_profile(user_id: int) -> dict | None:
@@ -116,7 +143,7 @@ async def get_user_admin_profile(user_id: int) -> dict | None:
     farm = await db.get_farm_state(user_id)
     inventory = await db.get_inventory_state(user_id)
 
-    return {
+    result = {
         "userId": int(row["user_id"]),
         "username": row["username"],
         "firstName": row["first_name"],
@@ -143,6 +170,15 @@ async def get_user_admin_profile(user_id: int) -> dict | None:
         "inventory": inventory.get("items", []),
         "kut": farm.get("kut", 0),
     }
+
+    try:
+        from admin_staff_card import load_staff_portrait
+        portrait = await load_staff_portrait(int(row["user_id"]))
+        if portrait:
+            result["staffPortrait"] = portrait
+    except Exception:
+        pass
+    return result
 
 
 async def get_user_audit_history(user_id: int, *, limit: int = 50, offset: int = 0) -> dict:

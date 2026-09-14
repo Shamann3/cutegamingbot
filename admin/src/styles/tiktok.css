@@ -81,6 +81,80 @@
   margin: 0.8rem 0;
 }
 
+.tt-work-nav {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.tt-locked-nums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.4rem 0 0.8rem;
+}
+
+.tt-locked-nums span {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
+  opacity: 0.78;
+}
+
+.tt-reason-edit {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.4rem 0 1rem;
+}
+
+.tt-reason-row,
+.tt-barnum-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem;
+  align-items: start;
+}
+
+.tt-barnum-row textarea {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  border-radius: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+  resize: vertical;
+}
+
+.tg-photo-ph,
+.tg-photo-fallback {
+  display: block;
+  width: 100%;
+  min-height: 7.2rem;
+  border: 0;
+  border-radius: 0.7rem;
+  background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.1), rgba(255,255,255,0.04));
+  background-size: 200% 100%;
+  animation: tt-ph 1.2s ease-in-out infinite;
+}
+
+.tg-photo-fallback {
+  animation: none;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  font-size: 0.72rem;
+  text-align: center;
+  padding: 0.6rem;
+  cursor: pointer;
+}
+
+@keyframes tt-ph {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
 .tt-lock-who span {
   display: block;
   opacity: 0.6;
@@ -187,6 +261,11 @@
   background: rgba(248, 113, 113, 0.12);
 }
 
+.tt-settings h4 {
+  margin: 1rem 0 0.2rem;
+  font-size: 0.95rem;
+}
+
 .tt-field,
 .tt-settings label {
   display: grid;
@@ -226,8 +305,28 @@
     grid-template-columns: 1fr;
   }
 
+  .tt-grid {
+    grid-template-columns: repeat(auto-fill, minmax(5.4rem, 1fr));
+  }
+
   .tt-actions,
-  .tt-btn {
+  .tt-btn,
+  .tt-work-nav {
     width: 100%;
+  }
+
+  .tt-reason-row,
+  .tt-barnum-row {
+    grid-template-columns: 1fr;
+  }
+
+  .tt-shot span {
+    font-size: 0.68rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tg-photo-ph {
+    animation: none;
   }
 }

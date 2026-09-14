@@ -1881,10 +1881,11 @@ export async function fetchSupportStats() {
   return adminRequest('/support/stats')
 }
 
-export function getPhotoProxyUrl(fileId) {
+export function getPhotoProxyUrl(fileId, size = 'full') {
   const prefix = import.meta.env.VITE_ADMIN_API_PREFIX || '/admin/api'
   const token = getAdminToken()
-  return `${prefix}/photo-proxy?file_id=${encodeURIComponent(fileId)}&t=${encodeURIComponent(token || '')}`
+  const kind = size === 'thumb' ? 'thumb' : 'full'
+  return `${prefix}/photo-proxy?file_id=${encodeURIComponent(fileId)}&size=${kind}&t=${encodeURIComponent(token || '')}`
 }
 
 export async function fetchAppeals({ status = '', limit = 50, offset = 0 } = {}) {
@@ -2089,6 +2090,10 @@ export async function fetchTiktokOverview() {
   return adminFetch('/tiktok/overview')
 }
 
+export async function fetchTiktokCounts() {
+  return adminFetch('/tiktok/counts')
+}
+
 export async function fetchTiktokAccessMap() {
   return adminFetch('/tiktok/access-map')
 }
@@ -2101,12 +2106,14 @@ export async function saveTiktokSettings(body) {
   return adminFetch('/tiktok/settings', { method: 'PUT', body })
 }
 
-export async function fetchTiktokComments(status = 'pending') {
-  return adminFetch(`/tiktok/comments?status=${encodeURIComponent(status)}`)
+export async function fetchTiktokComments(status = 'pending', { limit = 40, offset = 0 } = {}) {
+  const p = new URLSearchParams({ status, limit, offset })
+  return adminFetch(`/tiktok/comments?${p}`)
 }
 
-export async function fetchTiktokCommentsArchive() {
-  return adminFetch('/tiktok/comments/archive')
+export async function fetchTiktokCommentsArchive({ limit = 20, offset = 0 } = {}) {
+  const p = new URLSearchParams({ limit, offset })
+  return adminFetch(`/tiktok/comments/archive?${p}`)
 }
 
 export async function fetchTiktokComment(caseId) {
@@ -2125,8 +2132,9 @@ export async function saveTiktokVerdict(hashA, hashB, verdict) {
   return adminFetch('/tiktok/verdict', { method: 'POST', body: { hashA, hashB, verdict } })
 }
 
-export async function fetchTiktokVideos(kind = 'pending') {
-  return adminFetch(`/tiktok/videos?kind=${encodeURIComponent(kind)}`)
+export async function fetchTiktokVideos(kind = 'pending', { limit = 40, offset = 0 } = {}) {
+  const p = new URLSearchParams({ kind, limit, offset })
+  return adminFetch(`/tiktok/videos?${p}`)
 }
 
 export async function approveTiktokVideo(videoId, views) {

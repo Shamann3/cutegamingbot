@@ -27,6 +27,7 @@ from tiktok_earn_logic import (
     TAB_TEASERS,
     VIEWS_PER_UNIT,
     find_matches,
+    next_queue_item,
     hashes_from_image_bytes,
     hashes_similar,
     normalize_nick,
@@ -69,6 +70,7 @@ async def ensure_tiktok_schema() -> None:
             max_nicks INTEGER NOT NULL DEFAULT 3,
             photos_required INTEGER NOT NULL DEFAULT 15,
             reject_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            barnum_rejects JSONB NOT NULL DEFAULT '[]'::jsonb,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         CREATE TABLE IF NOT EXISTS tiktok_nicks (
@@ -136,6 +138,11 @@ async def ensure_tiktok_schema() -> None:
         );
         CREATE INDEX IF NOT EXISTS tiktok_hash_verdicts_pair_idx
             ON tiktok_hash_verdicts (hash_a, hash_b);
+        ALTER TABLE tiktok_settings
+            ADD COLUMN IF NOT EXISTS barnum_rejects JSONB NOT NULL DEFAULT '[]'::jsonb;
+        CREATE INDEX IF NOT EXISTS tiktok_videos_recheck_idx
+            ON tiktok_videos (status, recheck_requested_at)
+            WHERE recheck_requested_at IS NOT NULL;
         """
     )
     await db.pool.execute(
@@ -172,8 +179,12 @@ async def get_settings() -> dict[str, Any]:
             "maxNicks": MAX_NICKS,
             "photosRequired": PHOTOS_REQUIRED,
             "rejectReasons": list(DEFAULT_REJECT_REASONS),
+            "barnumRejects": list(BARNUM_REJECTS),
         }
     reasons = _json(row["reject_reasons"]) or list(DEFAULT_REJECT_REASONS)
+    barnum = _json(row["barnum_rejects"]) if "barnum_rejects" in row.keys() else []
+    if not barnum:
+        barnum = list(BARNUM_REJECTS)
     return {
         "commentTag": row["comment_tag"],
         "videoHashtag": row["video_hashtag"],
@@ -184,6 +195,7 @@ async def get_settings() -> dict[str, Any]:
         "maxNicks": int(row["max_nicks"]),
         "photosRequired": int(row["photos_required"]),
         "rejectReasons": reasons,
+        "barnumRejects": barnum,
     }
 
 
@@ -340,6 +352,7 @@ def _photo_records(case_id: int, user_id: int, photos: list[dict], created_at: A
                 "userId": user_id,
                 "index": i,
                 "fileId": photo.get("fileId") or photo.get("file_id") or "",
+                "thumbFileId": photo.get("thumbFileId") or photo.get("thumb_file_id") or "",
                 "ahash": photo.get("ahash") or "",
                 "dhash": photo.get("dhash") or "",
                 "phash": photo.get("phash") or "",
@@ -357,7 +370,7 @@ async def _library_photos(exclude_case_id: int | None = None) -> list[dict]:
         FROM tiktok_comment_cases
         WHERE status IN ('pending', 'approved', 'rejected')
         ORDER BY id DESC
-        LIMIT 400
+        LIMIT 200
         """
     )
     lib: list[dict] = []
@@ -407,6 +420,7 @@ async def submit_comment_case(user_id: int, photos: list[dict[str, Any]]) -> dic
         clean.append(
             {
                 "fileId": file_id,
+                "thumbFileId": (photo.get("thumbFileId") or photo.get("thumb_file_id") or "").strip(),
                 "ahash": photo.get("ahash") or "",
                 "dhash": photo.get("dhash") or "",
                 "phash": photo.get("phash") or "",
@@ -553,19 +567,26 @@ def _notify(user_id: int, text: str) -> None:
     schedule_player_telegram_dm(int(user_id), text)
 
 
-def _case_dict(row, *, matches: list | None = None, settings: dict | None = None) -> dict[str, Any]:
+def _case_dict(
+    row,
+    *,
+    matches: list | None = None,
+    settings: dict | None = None,
+    light: bool = False,
+) -> dict[str, Any]:
     photos = _json(row["photos"]) or []
     nicks = _json(row["nick_snapshot"]) or []
     photo_recs = _photo_records(int(row["id"]), int(row["user_id"]), photos, row["created_at"])
-    return {
+    payload = {
         "id": int(row["id"]),
         "userId": int(row["user_id"]),
         "status": row["status"],
-        "photos": photo_recs,
+        "photos": [] if light else photo_recs,
+        "photoCount": len(photo_recs),
         "nicks": nicks,
         "nickBreakdown": _nick_breakdown(photos, nicks),
         "hasSimilar": bool(matches),
-        "matches": matches or [],
+        "matches": [] if light else (matches or []),
         "matchCount": len(matches or []),
         "reviewedBy": int(row["reviewed_by"]) if row["reviewed_by"] else None,
         "reviewedAt": row["reviewed_at"].isoformat() if row["reviewed_at"] else None,
@@ -573,6 +594,7 @@ def _case_dict(row, *, matches: list | None = None, settings: dict | None = None
         "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
         "reward": (settings or {}).get("commentReward", COMMENT_REWARD),
     }
+    return payload
 
 
 async def _decorate_case(row) -> dict[str, Any]:
@@ -587,19 +609,65 @@ async def _decorate_case(row) -> dict[str, Any]:
     return data
 
 
-async def list_comment_cases(status: str = "pending", limit: int = 40) -> list[dict]:
+async def list_comment_cases(
+    status: str = "pending",
+    limit: int = 40,
+    offset: int = 0,
+    *,
+    light: bool = True,
+) -> list[dict]:
     await ensure_tiktok_schema()
+    settings = await get_settings()
     rows = await db.pool.fetch(
         """
         SELECT * FROM tiktok_comment_cases
         WHERE status = $1
         ORDER BY created_at ASC, id ASC
-        LIMIT $2
+        LIMIT $2 OFFSET $3
         """,
         status,
         limit,
+        offset,
     )
-    return [await _decorate_case(r) for r in rows]
+    if not rows:
+        return []
+    library: list[dict] = []
+    verdicts: dict = {}
+    if status == "pending":
+        library = await _library_photos()
+        verdicts = await _load_verdicts()
+    out = []
+    for row in rows:
+        photos = _json(row["photos"]) or []
+        recs = _photo_records(int(row["id"]), int(row["user_id"]), photos, row["created_at"])
+        matches = []
+        if status == "pending":
+            matches = find_matches(recs, recs + library, verdicts=verdicts)
+        data = _case_dict(row, matches=matches, settings=settings, light=light)
+        data["user"] = await _user_card(int(row["user_id"]))
+        out.append(data)
+    return out
+
+
+async def list_comment_archive(limit: int = 20, offset: int = 0) -> list[dict]:
+    await ensure_tiktok_schema()
+    settings = await get_settings()
+    rows = await db.pool.fetch(
+        """
+        SELECT * FROM tiktok_comment_cases
+        WHERE status IN ('approved', 'rejected')
+        ORDER BY COALESCE(reviewed_at, created_at) DESC, id DESC
+        LIMIT $1 OFFSET $2
+        """,
+        limit,
+        offset,
+    )
+    out = []
+    for row in rows:
+        data = _case_dict(row, matches=[], settings=settings, light=True)
+        data["user"] = await _user_card(int(row["user_id"]))
+        out.append(data)
+    return out
 
 
 async def get_comment_case(case_id: int) -> dict:
@@ -644,7 +712,8 @@ async def approve_comment_case(case_id: int, admin_id: int) -> dict:
 
 async def reject_comment_case(case_id: int, admin_id: int) -> dict:
     await ensure_tiktok_schema()
-    text = pick_barnum()
+    settings = await get_settings()
+    text = pick_barnum(texts=settings.get("barnumRejects"))
     async with db.pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(
@@ -717,7 +786,7 @@ def _video_dict(row, settings: dict | None = None) -> dict[str, Any]:
     }
 
 
-async def list_videos(kind: str = "pending", limit: int = 40) -> list[dict]:
+async def list_videos(kind: str = "pending", limit: int = 40, offset: int = 0) -> list[dict]:
     await ensure_tiktok_schema()
     settings = await get_settings()
     if kind == "live":
@@ -726,9 +795,10 @@ async def list_videos(kind: str = "pending", limit: int = 40) -> list[dict]:
             SELECT * FROM tiktok_videos
             WHERE status = 'live'
             ORDER BY COALESCE(recheck_requested_at, created_at) DESC
-            LIMIT $1
+            LIMIT $1 OFFSET $2
             """,
             limit,
+            offset,
         )
     elif kind == "recheck":
         rows = await db.pool.fetch(
@@ -736,9 +806,10 @@ async def list_videos(kind: str = "pending", limit: int = 40) -> list[dict]:
             SELECT * FROM tiktok_videos
             WHERE status = 'live' AND recheck_requested_at IS NOT NULL
             ORDER BY recheck_requested_at ASC
-            LIMIT $1
+            LIMIT $1 OFFSET $2
             """,
             limit,
+            offset,
         )
     elif kind == "archive":
         rows = await db.pool.fetch(
@@ -746,9 +817,10 @@ async def list_videos(kind: str = "pending", limit: int = 40) -> list[dict]:
             SELECT * FROM tiktok_videos
             WHERE status IN ('live', 'rejected')
             ORDER BY COALESCE(reviewed_at, created_at) DESC
-            LIMIT $1
+            LIMIT $1 OFFSET $2
             """,
             limit,
+            offset,
         )
     else:
         rows = await db.pool.fetch(
@@ -756,9 +828,10 @@ async def list_videos(kind: str = "pending", limit: int = 40) -> list[dict]:
             SELECT * FROM tiktok_videos
             WHERE status = 'pending'
             ORDER BY created_at ASC, id ASC
-            LIMIT $1
+            LIMIT $1 OFFSET $2
             """,
             limit,
+            offset,
         )
     out = []
     for row in rows:
@@ -903,6 +976,24 @@ async def update_settings(payload: dict[str, Any]) -> dict:
     max_nicks = int(payload.get("maxNicks") or current["maxNicks"])
     photos_required = int(payload.get("photosRequired") or current["photosRequired"])
     reasons = payload.get("rejectReasons") or current["rejectReasons"]
+    barnum = payload.get("barnumRejects")
+    if barnum is None:
+        barnum = current.get("barnumRejects") or list(BARNUM_REJECTS)
+    clean_reasons = []
+    for item in reasons:
+        if not isinstance(item, dict):
+            continue
+        rid = str(item.get("id") or "").strip()[:40]
+        label = str(item.get("label") or "").strip()[:180]
+        if rid and label:
+            clean_reasons.append({"id": rid, "label": label})
+    if not clean_reasons:
+        raise ValueError("Нужна хотя бы одна причина отказа видео")
+    reasons = clean_reasons[:20]
+    clean_barnum = [str(t).strip()[:500] for t in barnum if str(t).strip()]
+    if not clean_barnum:
+        clean_barnum = list(BARNUM_REJECTS)
+    barnum = clean_barnum[:12]
     if comment_reward < 0 or kut_per_unit < 0 or views_per_unit < 1:
         raise ValueError("Награды должны быть положительными")
     if recheck_days < 1 or max_nicks < 1 or photos_required < 1:
@@ -919,6 +1010,7 @@ async def update_settings(payload: dict[str, Any]) -> dict:
             max_nicks = $7,
             photos_required = $8,
             reject_reasons = $9::jsonb,
+            barnum_rejects = $10::jsonb,
             updated_at = NOW()
         WHERE id = 1
         """,
@@ -931,6 +1023,7 @@ async def update_settings(payload: dict[str, Any]) -> dict:
         max_nicks,
         photos_required,
         json.dumps(reasons, ensure_ascii=False),
+        json.dumps(barnum, ensure_ascii=False),
     )
     return await get_settings()
 
@@ -1036,6 +1129,7 @@ class SettingsBody(BaseModel):
     maxNicks: int | None = Field(default=None, ge=1, le=10)
     photosRequired: int | None = Field(default=None, ge=1, le=30)
     rejectReasons: list[dict] | None = None
+    barnumRejects: list[str] | None = None
 
 
 class VerdictBody(BaseModel):
@@ -1055,6 +1149,11 @@ async def tiktok_overview(_admin_id: int = Depends(require_admin_session)):
     counts = await overview_counts()
     settings = await get_settings()
     return {**counts, "settings": settings, "tabs": TIKTOK_TABS}
+
+
+@router.get("/counts")
+async def tiktok_counts(_admin_id: int = Depends(require_admin_session)):
+    return await overview_counts()
 
 
 @router.get("/access-map")
@@ -1081,20 +1180,36 @@ async def tiktok_put_settings(
 @router.get("/comments")
 async def tiktok_comments(
     status: str = "pending",
+    limit: int = 40,
+    offset: int = 0,
     _admin_id: int = Depends(require_tiktok_tab("comments")),
 ):
-    tab = "archive" if status != "pending" else "comments"
-    # archive uses this endpoint too; access checked loosely via comments unless archive
+    cap = max(1, min(int(limit), 80))
+    skip = max(0, int(offset))
     if status != "pending":
-        return {"items": await list_comment_cases(status)}
-    return {"items": await list_comment_cases("pending")}
+        return {"items": await list_comment_cases(status, cap, skip, light=True)}
+    return {"items": await list_comment_cases("pending", cap, skip, light=True)}
 
 
 @router.get("/comments/archive")
-async def tiktok_comments_archive(_admin_id: int = Depends(require_tiktok_tab("archive"))):
-    approved = await list_comment_cases("approved")
-    rejected = await list_comment_cases("rejected")
-    return {"items": approved + rejected}
+async def tiktok_comments_archive(
+    limit: int = 20,
+    offset: int = 0,
+    _admin_id: int = Depends(require_tiktok_tab("archive")),
+):
+    cap = max(1, min(int(limit), 80))
+    skip = max(0, int(offset))
+    return {"items": await list_comment_archive(cap, skip)}
+
+
+@router.get("/comments/next")
+async def tiktok_comment_next(
+    after_id: int = 0,
+    _admin_id: int = Depends(require_tiktok_tab("comments")),
+):
+    items = await list_comment_cases("pending", limit=40, offset=0, light=True)
+    nxt = next_queue_item(items, after_id or None)
+    return {"item": nxt}
 
 
 @router.get("/comments/{case_id}")
@@ -1145,11 +1260,15 @@ async def tiktok_verdict(
 @router.get("/videos")
 async def tiktok_videos(
     kind: str = "pending",
+    limit: int = 40,
+    offset: int = 0,
     admin_id: int = Depends(require_admin_session),
 ):
     tab = {"pending": "videos", "recheck": "videos", "live": "live", "archive": "archive"}.get(kind, "videos")
     await assert_tiktok_tab(admin_id, tab)
-    return {"items": await list_videos(kind)}
+    cap = max(1, min(int(limit), 80))
+    skip = max(0, int(offset))
+    return {"items": await list_videos(kind, cap, skip)}
 
 
 @router.post("/videos/{video_id}/approve")

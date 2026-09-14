@@ -245,11 +245,17 @@ def _validate_admin_init_data(init_data: str, request: Request) -> tuple[int, di
 
 
 def _bearer_token(request: Request) -> str:
-    """Достаём Bearer-токен из заголовка Authorization (или пустая строка)."""
+    """Достаём Bearer-токен из заголовка Authorization (или пустая строка).
+
+    Для <img src> у photo-proxy заголовки недоступны — допускаем тот же JWT
+    в query `t` (см. getPhotoProxyUrl). В access-логах это видно, поэтому
+    прокси отвечает Cache-Control: private.
+    """
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         return auth_header.removeprefix("Bearer ").strip()
-    return ""
+    query_token = (request.query_params.get("t") or "").strip()
+    return query_token
 
 
 async def get_admin_user_id(

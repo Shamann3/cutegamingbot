@@ -132,6 +132,10 @@ async def ensure_schema() -> None:
             ON tiktok_videos (user_id) WHERE status = 'pending';
         CREATE UNIQUE INDEX IF NOT EXISTS tiktok_video_canonical_active
             ON tiktok_videos (canonical_key) WHERE status IN ('pending', 'live');
+        CREATE INDEX IF NOT EXISTS tiktok_comment_status_idx
+            ON tiktok_comment_cases (status, created_at);
+        CREATE INDEX IF NOT EXISTS tiktok_videos_status_idx
+            ON tiktok_videos (status, created_at);
         """
     )
     await pool.execute(
@@ -342,8 +346,21 @@ async def submit_video(user_id: int, raw_url: str) -> None:
     await clear_session(user_id)
 
 
+def video_recheck_state(last_checked, days: int) -> dict[str, Any]:
+    if not last_checked:
+        return {"ready": True, "waitText": ""}
+    ready = last_checked if last_checked.tzinfo else last_checked.replace(tzinfo=timezone.utc)
+    ready_at = ready + timedelta(days=int(days))
+    now = datetime.now(timezone.utc)
+    if ready_at > now:
+        return {"ready": False, "waitText": recheck_wait_text((ready_at - now).total_seconds())}
+    return {"ready": True, "waitText": ""}
+
+
 async def list_user_videos(user_id: int) -> list[dict[str, Any]]:
     await ensure_schema()
+    cfg = await get_settings()
+    days = int(cfg["recheckDays"])
     rows = await _pool().fetch(
         """
         SELECT id, url, status, last_views, last_checked_at, recheck_requested_at, created_at
@@ -352,17 +369,22 @@ async def list_user_videos(user_id: int) -> list[dict[str, Any]]:
         """,
         int(user_id),
     )
-    return [
-        {
-            "id": int(r["id"]),
-            "url": r["url"],
-            "status": r["status"],
-            "lastViews": int(r["last_views"] or 0),
-            "recheckPending": bool(r["recheck_requested_at"]),
-            "lastCheckedAt": r["last_checked_at"],
-        }
-        for r in rows
-    ]
+    out = []
+    for r in rows:
+        state = video_recheck_state(r["last_checked_at"], days)
+        out.append(
+            {
+                "id": int(r["id"]),
+                "url": r["url"],
+                "status": r["status"],
+                "lastViews": int(r["last_views"] or 0),
+                "recheckPending": bool(r["recheck_requested_at"]),
+                "lastCheckedAt": r["last_checked_at"],
+                "recheckReady": state["ready"],
+                "recheckWaitText": state["waitText"],
+            }
+        )
+    return out
 
 
 async def request_recheck(user_id: int, video_id: int) -> None:
@@ -427,8 +449,11 @@ def comments_keyboard(*, can_send: bool) -> InlineKeyboardMarkup:
 def videos_keyboard(videos: list[dict] | None = None) -> InlineKeyboardMarkup:
     rows = [[_btn("Отправить ссылку", TT_SEND_LINK, ICON_OK)]]
     for item in videos or []:
-        if item.get("status") == "live" and not item.get("recheckPending"):
-            rows.append([_btn(f"Проверить просмотры · #{item['id']}", f"{TT_RECHECK}{item['id']}")])
+        if item.get("status") != "live" or item.get("recheckPending"):
+            continue
+        if item.get("recheckReady") is False:
+            continue
+        rows.append([_btn(f"Проверить просмотры · #{item['id']}", f"{TT_RECHECK}{item['id']}")])
     rows.append([_btn("Мои ники", TT_NICKS)])
     rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
     return _kb(rows)
@@ -454,6 +479,7 @@ def collect_keyboard(count: int, needed: int) -> InlineKeyboardMarkup:
     rows = []
     if count >= needed:
         rows.append([_btn("Отправить", TT_SUBMIT_PHOTOS, ICON_OK)])
+    if count > 0:
         rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
     rows.append([_btn("Отменить набор", TT_CANCEL_COLLECT, ICON_BACK)])
     return _kb(rows)
@@ -468,7 +494,8 @@ def text_hub() -> str:
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Тик ток</b>\n\n"
         "<i>Два способа получить куты через TikTok.</i>\n\n"
         "<b>Комментарии</b> — 15 скриншотов и быстрая награда.\n"
-        "<b>Видео</b> — ролик про бота и оплата за просмотры."
+        "<b>Видео</b> — ролик про бота и оплата за просмотры.\n\n"
+        "<i>Сначала укажи ник — без него скрины и ссылку не примем.</i>"
     )
 
 
@@ -482,7 +509,7 @@ def text_comments(cfg: dict[str, Any]) -> str:
         "Поставь лайк своему комментарию.\n"
         f"Сними {photos} скриншотов — по одному на каждый комментарий.</i>\n\n"
         f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>За одобренную пачку — {reward} кут.</b>\n\n"
-        "<i>Не нужно ничего брать. Прочитай, сделай, пришли скрины сюда.</i>"
+        "<i>Не нужно ничего брать. Прочитай, сделай, пришли скрины сюда — альбомом или по одному.</i>"
     )
 
 
@@ -544,10 +571,22 @@ def help_earnings_block() -> str:
     )
 
 
-def collect_text(count: int, needed: int) -> str:
+def collect_text(count: int, needed: int, nicks: list[str] | None = None) -> str:
+    bound = ""
+    if nicks:
+        bound = "\n<i>Проверяем: " + ", ".join(f"@{n}" for n in nicks) + "</i>"
     if count >= needed:
-        return f"<b>{needed} из {needed}. Отправляем на проверку?</b>"
-    return f"<b>Принято {count} из {needed}.</b>\n<i>Пришли остальные. Можно альбомом.</i>"
+        return (
+            f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> "
+            f"<b>{needed} из {needed}. Можно отправить.</b>{bound}\n"
+            "<i>Убрать последний кадр — кнопка ниже. После отправки новая пачка — только когда ответим.</i>"
+        )
+    left = needed - count
+    return (
+        f"<tg-emoji emoji-id='5373098002641805602'>📸</tg-emoji> "
+        f"<b>Принято {count} из {needed}. Осталось {left}.</b>{bound}\n"
+        "<i>Альбомом или по одному. Как фото, не как файл.</i>"
+    )
 
 
 async def download_and_hash(bot, file_id: str) -> dict[str, str]:
@@ -560,7 +599,18 @@ async def download_and_hash(bot, file_id: str) -> dict[str, str]:
         return {"ahash": "", "dhash": "", "phash": "", "md5": ""}
 
 
-async def add_photo(user_id: int, file_id: str, hashes: dict[str, str]) -> dict[str, Any]:
+def pick_thumb_file_id(sizes) -> str:
+    if not sizes:
+        return ""
+    return min(sizes, key=lambda s: abs((getattr(s, "width", 0) or 0) - 320)).file_id
+
+
+async def add_photo(
+    user_id: int,
+    file_id: str,
+    hashes: dict[str, str],
+    thumb_file_id: str = "",
+) -> dict[str, Any]:
     await require_nicks(user_id)
     cfg = await get_settings()
     needed = int(cfg["photosRequired"])
@@ -569,7 +619,7 @@ async def add_photo(user_id: int, file_id: str, hashes: dict[str, str]) -> dict[
     photos = list(extra.get("photos") or [])
     if len(photos) >= needed:
         return {"count": len(photos), "needed": needed, "full": True}
-    photos.append({"fileId": file_id, **hashes})
+    photos.append({"fileId": file_id, "thumbFileId": thumb_file_id or "", **hashes})
     extra["photos"] = photos
     await set_session(user_id, "collect_photos", extra)
     return {"count": len(photos), "needed": needed, "full": len(photos) >= needed}

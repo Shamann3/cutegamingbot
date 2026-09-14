@@ -6216,6 +6216,7 @@ async def moderation_notify(request: Request):
 @router.get("/photo-proxy")
 async def photo_proxy(
     file_id: str = Query(...),
+    size: str = Query("full"),
     _admin_id: int = Depends(require_admin_session),
 ):
     """Проксирует файл из Telegram через наш сервер — обходит CORS.
@@ -6224,29 +6225,33 @@ async def photo_proxy(
     в БД токен-владелец пруфа (его пишут все системы наказаний рядом с file_id),
     затем — настроенные токены как запасной вариант. Токен остаётся на сервере:
     клиенту уходят только байты картинки.
+
+    size=thumb отдаёт JPEG ~320px из дискового кэша; оригинал качается один раз.
+    Повторное открытие той же заявки не бьёт Telegram и не держит 15 фото в RAM.
     """
-    import aiohttp
-    from admin_moderation import candidate_tokens_for_file
-    tokens = await candidate_tokens_for_file(file_id)
-    if not tokens:
-        raise HTTPException(502, "Токен бота не настроен")
-    async with aiohttp.ClientSession() as session:
-        for token in tokens:
-            async with session.get(
-                f"https://api.telegram.org/bot{token}/getFile",
-                params={"file_id": file_id},
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                data = await resp.json()
-            if not data.get("ok"):
-                continue
-            file_path = data["result"]["file_path"]
-            file_url = f"https://api.telegram.org/file/bot{token}/{file_path}"
-            async with session.get(file_url, timeout=aiohttp.ClientTimeout(total=30)) as img_resp:
-                content_type = img_resp.headers.get("Content-Type", "image/jpeg")
-                content = await img_resp.read()
-            return Response(content=content, media_type=content_type)
-    raise HTTPException(404, "Файл недоступен")
+    from telegram_file_cache import load_telegram_photo, normalize_photo_size
+
+    if not (file_id or "").strip():
+        raise HTTPException(400, "Нет file_id")
+    kind = normalize_photo_size(size)
+    try:
+        content, content_type = await load_telegram_photo(file_id.strip(), kind)
+    except FileNotFoundError as exc:
+        reason = str(exc)
+        if reason == "token":
+            raise HTTPException(502, "Токен бота не настроен") from exc
+        if reason == "gone":
+            raise HTTPException(410, "Файл в Telegram уже недоступен") from exc
+        raise HTTPException(404, "Файл недоступен") from exc
+    except Exception:
+        logger.exception("photo-proxy failed file_id=%s", file_id[:24])
+        raise HTTPException(404, "Файл недоступен")
+    headers = {
+        "Cache-Control": "private, max-age=3600",
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+    }
+    return Response(content=content, media_type=content_type or "image/jpeg", headers=headers)
 
 
 @router.get("/appeals")

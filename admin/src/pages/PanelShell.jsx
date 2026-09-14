@@ -5,7 +5,7 @@ import EliteTopbar from '../components/EliteTopbar'
 import PanelBackdrop from '../components/PanelBackdrop'
 import GoldBackdrop from '../components/GoldBackdrop'
 import ToastHost from '../components/ToastHost'
-import { fetchAdminMe, fetchSupportStats, logoutAdmin, registerUnauthorizedHandler } from '../lib/adminClient'
+import { fetchAdminMe, fetchSupportStats, fetchTiktokCounts, logoutAdmin, registerUnauthorizedHandler } from '../lib/adminClient'
 import DashboardSection from './sections/DashboardSection'
 import SectionPlaceholder from './sections/SectionPlaceholder'
 import UsersSection from './sections/UsersSection'
@@ -174,14 +174,24 @@ export default function PanelShell({ onLogout }) {
   // на колокольчике. Опрашиваем только когда вкладка на экране, чтобы
   // фоновая панель не долбила API.
   const [openTickets, setOpenTickets] = useState(0)
+  const [tiktokPending, setTiktokPending] = useState(0)
   useEffect(() => {
-    if (!navSections.some((s) => s.id === 'support')) return
+    const hasSupport = navSections.some((s) => s.id === 'support')
+    const hasTiktok = navSections.some((s) => s.id === 'tiktok')
+    if (!hasSupport && !hasTiktok) return
     let cancelled = false
     const load = () => {
       if (document.visibilityState !== 'visible') return
-      fetchSupportStats()
-        .then((d) => { if (!cancelled) setOpenTickets(d.openTickets || 0) })
-        .catch(() => {})
+      if (hasSupport) {
+        fetchSupportStats()
+          .then((d) => { if (!cancelled) setOpenTickets(d.openTickets || 0) })
+          .catch(() => {})
+      }
+      if (hasTiktok) {
+        fetchTiktokCounts()
+          .then((d) => { if (!cancelled) setTiktokPending(d.pendingTotal || 0) })
+          .catch(() => {})
+      }
     }
     load()
     const id = setInterval(load, 20_000)
@@ -330,7 +340,7 @@ export default function PanelShell({ onLogout }) {
             onMusicVolumeChange={setMusicVolume}
             onToggleMusic={toggleMusicMute}
             onEnterGodMode={() => setGodMode(true)}
-            badges={{ support: openTickets }}
+            badges={{ support: openTickets, tiktok: tiktokPending }}
             accent={accent}
             onAccentChange={handleAccentChange}
             recentSectionIds={recentSections}

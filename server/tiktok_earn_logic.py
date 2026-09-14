@@ -141,9 +141,29 @@ def payout_delta(old_views: int, new_views: int, kut_per_unit: int = KUT_PER_UNI
     }
 
 
-def pick_barnum(rng: random.Random | None = None) -> str:
+def pick_barnum(
+    rng: random.Random | None = None,
+    texts: Iterable[str] | None = None,
+) -> str:
+    pool = [t.strip() for t in (texts or BARNUM_REJECTS) if str(t).strip()]
+    if not pool:
+        pool = list(BARNUM_REJECTS)
     src = rng or random
-    return src.choice(BARNUM_REJECTS)
+    return src.choice(pool)
+
+
+def next_queue_item(items: list[dict[str, Any]], current_id: int | None) -> dict[str, Any] | None:
+    if not items:
+        return None
+    if current_id is None:
+        return items[0]
+    for index, item in enumerate(items):
+        try:
+            if int(item.get("id")) == int(current_id):
+                return items[index + 1] if index + 1 < len(items) else None
+        except (TypeError, ValueError):
+            continue
+    return items[0]
 
 
 def hamming_hex(a: str, b: str) -> int:
@@ -216,7 +236,7 @@ def find_matches(
                 }
             )
     found.sort(key=lambda x: x["distance"])
-    return found
+    return found[:48]
 
 
 def _avg_hash(pixels: list[int], width: int, height: int) -> str:

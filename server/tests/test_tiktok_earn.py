@@ -1,11 +1,18 @@
+from telegram_file_cache import (
+    make_thumb_jpeg,
+    photo_cache_key,
+    photo_proxy_url_shape,
+)
 from tiktok_earn_logic import (
     find_matches,
     hashes_from_image_bytes,
     hashes_similar,
     kut_for_views,
+    next_queue_item,
     normalize_nick,
     parse_tiktok_url,
     payout_delta,
+    pick_barnum,
     recheck_wait_text,
     thousands_from_views,
     validate_nick,
@@ -111,3 +118,83 @@ def test_find_matches_marks_near_duplicates():
     c = {"id": "3:0", "caseId": 3, "index": 0, **png((250, 10, 10))}
     matches = find_matches([a], [a, b, c])
     assert any(m["match"]["id"] == "2:0" for m in matches)
+
+
+def test_photo_cache_keys_and_proxy_url_shape():
+    assert photo_cache_key("AgAC_file", "thumb").startswith("thumb_")
+    assert photo_cache_key("AgAC_file", "full").startswith("full_")
+    assert photo_cache_key("AgAC_file", "thumb") != photo_cache_key("AgAC_file", "full")
+    url = photo_proxy_url_shape("AgAC abc", "thumb")
+    assert url.startswith("/admin/api/photo-proxy?")
+    assert "file_id=AgAC+abc" in url or "file_id=AgAC%20abc" in url
+    assert "size=thumb" in url
+    assert "base64" not in url
+
+
+def test_thumb_jpeg_is_smaller_than_source():
+    from PIL import Image
+    import io
+
+    img = Image.new("RGB", (800, 600), (20, 40, 80))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    raw = buf.getvalue()
+    thumb = make_thumb_jpeg(raw, max_edge=320)
+    assert thumb[:2] == b"\xff\xd8"
+    assert len(thumb) < len(raw)
+
+
+def test_next_queue_item():
+    items = [{"id": 3}, {"id": 7}, {"id": 11}]
+    assert next_queue_item(items, 3)["id"] == 7
+    assert next_queue_item(items, 11) is None
+    assert next_queue_item(items, 99)["id"] == 3
+    assert next_queue_item([], 1) is None
+
+
+def test_pick_barnum_uses_settings_texts():
+    text = pick_barnum(rng=__import__("random").Random(1), texts=["Только эта формулировка."])
+    assert text == "Только эта формулировка."
+
+
+def test_photo_proxy_uses_cache_and_thumb_size():
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[1] / "admin_routes.py").read_text(encoding="utf-8")
+    assert "load_telegram_photo" in src
+    assert 'size: str = Query("full")' in src
+    assert "410" in src
+
+
+def test_counts_and_settings_endpoints_exist():
+    import inspect
+    from admin_tiktok import (
+        overview_counts,
+        tiktok_counts,
+        tiktok_put_settings,
+        update_settings,
+    )
+
+    src = inspect.getsource(overview_counts)
+    assert "pendingComments" in src
+    assert "pendingTotal" in src
+    assert inspect.getsource(tiktok_counts).count("overview_counts") >= 1
+    settings_src = inspect.getsource(update_settings)
+    assert "barnumRejects" in settings_src
+    assert "rejectReasons" in settings_src
+    body_src = inspect.getsource(tiktok_put_settings)
+    assert "SettingsBody" in body_src
+
+
+def test_comment_list_is_light_and_paginated():
+    import inspect
+    from admin_tiktok import list_comment_archive, list_comment_cases, tiktok_comments
+
+    from admin_tiktok import _library_photos
+
+    src = inspect.getsource(list_comment_cases)
+    assert "light" in src
+    assert "OFFSET" in src
+    assert "LIMIT 200" in inspect.getsource(_library_photos)
+    assert "limit" in inspect.getsource(tiktok_comments)
+    assert "OFFSET" in inspect.getsource(list_comment_archive)

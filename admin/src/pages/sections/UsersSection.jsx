@@ -28,6 +28,7 @@ import {
 import { notifyAdmin } from '../../lib/notify'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import PlayerDossierPanel from '../../components/PlayerDossierPanel'
+import StaffPortraitRail from '../../components/StaffPortraitRail'
 
 const EVENT_LABELS = {
   shop_buy: 'Покупка в магазине',
@@ -1811,12 +1812,17 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
               <li key={row.userId}>
                 <button
                   type="button"
-                  className="panel-users-result-btn"
+                  className={`panel-users-result-btn${row.isStaff ? ' is-staff' : ''}`}
                   onClick={() => loadUser(row.userId, { clearStack: true })}
                 >
-                  <span>
-                    {row.displayName}
-                    {row.username && ` @${row.username}`}
+                  <span className="panel-users-result-main">
+                    <span>
+                      {row.displayName}
+                      {row.username && ` @${row.username}`}
+                    </span>
+                    {row.isStaff && (
+                      <span className="pu-staff-mark">{row.roleLabel || 'Админ'}</span>
+                    )}
                   </span>
                   <span className="panel-users-result-meta">
                     ID {row.userId} · {row.balance} кут
@@ -1881,7 +1887,10 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
         {hasProfile && !peek && (
           <div className="panel-shelf pu-tabs-bar">
             <div className="pu-profile-header">
-              <p className="panel-shelf-label">Профиль · {profile?.displayName}</p>
+              <p className="panel-shelf-label">
+                Профиль · {profile?.displayName}
+                {profile?.staffPortrait?.roleLabel ? ` · ${profile.staffPortrait.roleLabel}` : ''}
+              </p>
               <div className="pu-profile-header-actions">
                 <button
                   type="button"
@@ -2055,7 +2064,9 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
               </div>
 
               <div className="pu-hero-identity">
-                <p className="pu-hero-kicker">Карточка пользователя</p>
+                {!profile?.staffPortrait && (
+                  <p className="pu-hero-kicker">Карточка пользователя</p>
+                )}
                 <h3 className={`panel-users-name${!hasProfile ? ' panel-users-placeholder' : ''}`}>
                   {hasProfile ? profile.displayName : 'Игрок не выбран'}
                 </h3>
@@ -2066,6 +2077,9 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   <span className="pu-hero-chip pu-hero-chip-id">
                     ID {hasProfile ? profile.userId : '—'}
                   </span>
+                  {profile?.staffPortrait?.roleLabel && (
+                    <span className="pu-hero-chip pu-hero-chip-staff">{profile.staffPortrait.roleLabel}</span>
+                  )}
                   {hasProfile && profile.banned && (
                     <span className="panel-users-badge panel-users-badge-ban">BAN</span>
                   )}
@@ -2097,6 +2111,10 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 </span>
               </div>
             </div>
+
+            {hasProfile && profile.staffPortrait && (
+              <StaffPortraitRail portrait={profile.staffPortrait} />
+            )}
 
             <div className="panel-users-stats pu-hero-keystats">
               <div>
