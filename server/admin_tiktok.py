@@ -411,7 +411,7 @@ async def submit_comment_case(user_id: int, photos: list[dict[str, Any]]) -> dic
         int(user_id),
     )
     if existing:
-        raise ValueError("Эта пачка ещё на проверке. Как ответим — можно прислать новую.")
+        raise ValueError("Эта пачка ещё на проверке. Как ответим - можно прислать новую.")
     clean = []
     for photo in photos:
         file_id = (photo.get("fileId") or photo.get("file_id") or "").strip()
@@ -453,7 +453,7 @@ async def submit_video(user_id: int, raw_url: str) -> dict[str, Any]:
         int(user_id),
     )
     if pending:
-        raise ValueError("Это видео ещё на проверке. Как ответим — можно прислать новую ссылку.")
+        raise ValueError("Это видео ещё на проверке. Как ответим - можно прислать новую ссылку.")
     taken = await db.pool.fetchrow(
         """
         SELECT id, user_id FROM tiktok_videos
@@ -904,7 +904,7 @@ async def approve_video(video_id: int, admin_id: int, views: int) -> dict:
             )
         else:
             text = (
-                f"<b>Просмотры обновили. Полных новых тысяч нет — доплаты нет. "
+                f"<b>Просмотры обновили. Полных новых тысяч нет - доплаты нет. "
                 f"Следующая проверка через {days} дней.</b>"
             )
     elif kut > 0:
@@ -917,7 +917,7 @@ async def approve_video(video_id: int, admin_id: int, views: int) -> dict:
     else:
         text = (
             "<b>Видео принято и закреплено за тобой. "
-            "Пока меньше 1000 просмотров — куты будут после перепроверки.</b>"
+            "Пока меньше 1000 просмотров - куты будут после перепроверки.</b>"
         )
     _notify(user_id, text)
     return {"ok": True, "balance": after, **delta}
@@ -957,8 +957,8 @@ async def reject_video(video_id: int, admin_id: int, reason_ids: list[str]) -> d
     bullets = "\n".join(f"• {label}" for label in labels)
     text = (
         f"<b>Видео не принято.</b>\n\n{bullets}\n\n"
-        f"<i>Переопубликуй с правками и пришли новую ссылку. "
-        f"Если нужна помощь — @JerichoCute.</i>"
+        f"<b>Переопубликуй с правками и пришли новую ссылку. "
+        f"Если нужна помощь - @JerichoCute.</b>"
     )
     _notify(int(row["user_id"]), text)
     return {"ok": True, "reasons": labels}

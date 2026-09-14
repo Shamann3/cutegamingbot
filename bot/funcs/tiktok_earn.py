@@ -46,6 +46,8 @@ ICON_TT = "5456282961999570188"
 ICON_BACK = "5226660202035554522"
 ICON_OK = "5224257782013769471"
 ICON_CAM = "5373098002641805602"
+ICON_COMMENTS = "5350367217349311525"
+ICON_VIDEOS = "5375309569905938163"
 
 _SCHEMA_READY = False
 
@@ -302,7 +304,7 @@ async def submit_comment_case(user_id: int, photos: list[dict[str, Any]]) -> Non
         int(user_id),
     )
     if existing:
-        raise ValueError("Эта пачка ещё на проверке. Как ответим — можно прислать новую.")
+        raise ValueError("Эта пачка ещё на проверке. Как ответим - можно прислать новую.")
     await _pool().execute(
         """
         INSERT INTO tiktok_comment_cases (user_id, status, photos, nick_snapshot)
@@ -324,7 +326,7 @@ async def submit_video(user_id: int, raw_url: str) -> None:
         int(user_id),
     )
     if pending:
-        raise ValueError("Это видео ещё на проверке. Как ответим — можно прислать новую ссылку.")
+        raise ValueError("Это видео ещё на проверке. Как ответим - можно прислать новую ссылку.")
     taken = await _pool().fetchval(
         """
         SELECT id FROM tiktok_videos
@@ -429,8 +431,8 @@ def _btn(text: str, data: str, icon: str | None = None) -> InlineKeyboardButton:
 def hub_keyboard() -> InlineKeyboardMarkup:
     return _kb(
         [
-            [_btn("Комментарии", TT_COMMENTS, ICON_CAM)],
-            [_btn("Видео о боте", TT_VIDEOS, ICON_OK)],
+            [_btn("Комментарии", TT_COMMENTS, ICON_COMMENTS)],
+            [_btn("Видео о боте", TT_VIDEOS, ICON_VIDEOS)],
             [_btn("Мои ники", TT_NICKS)],
             [_btn("Назад", TT_BACK_TASKS, ICON_BACK)],
         ]
@@ -492,10 +494,10 @@ def bind_keyboard() -> InlineKeyboardMarkup:
 def text_hub() -> str:
     return (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Тик ток</b>\n\n"
-        "<i>Два способа получить куты через TikTok.</i>\n\n"
-        "<b>Комментарии</b> — 15 скриншотов и быстрая награда.\n"
-        "<b>Видео</b> — ролик про бота и оплата за просмотры.\n\n"
-        "<i>Сначала укажи ник — без него скрины и ссылку не примем.</i>"
+        "<b>Куты за то, что уже умеешь: комментировать и снимать.</b>\n\n"
+        "<b>Комментарии - 15 кадров и живая награда.</b>\n"
+        "<b>Видео - расскажи про бота и получи куты за просмотры.</b>\n\n"
+        "<b>Сначала ник. Без него не проверим, что это ты.</b>"
     )
 
 
@@ -504,12 +506,13 @@ def text_comments(cfg: dict[str, Any]) -> str:
     reward = int(cfg.get("commentReward") or 5)
     photos = int(cfg.get("photosRequired") or 15)
     return (
-        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Комментарии в TikTok</b>\n\n"
-        f"<i>Напиши {photos} комментариев под любыми роликами с тегом «{tag}».\n"
-        "Поставь лайк своему комментарию.\n"
-        f"Сними {photos} скриншотов — по одному на каждый комментарий.</i>\n\n"
-        f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>За одобренную пачку — {reward} кут.</b>\n\n"
-        "<i>Не нужно ничего брать. Прочитай, сделай, пришли скрины сюда — альбомом или по одному.</i>"
+        f"<tg-emoji emoji-id='{ICON_COMMENTS}'>💬</tg-emoji> <b>Комментарии в TikTok</b>\n\n"
+        f"<b>Найди ролики с тегом «{tag}».</b>\n"
+        f"<b>Напиши {photos} своих комментариев и лайкни каждый.</b>\n"
+        f"<b>Один комментарий - один скрин. Всего {photos} фото.</b>\n\n"
+        f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> "
+        f"<b>За принятую пачку - {reward} кут. Можно снова и снова.</b>\n\n"
+        "<b>Пришли скрины сюда: альбомом или по одному.</b>"
     )
 
 
@@ -518,23 +521,22 @@ def text_videos(cfg: dict[str, Any]) -> str:
     kut = int(cfg.get("kutPerUnit") or 30)
     per = int(cfg.get("viewsPerUnit") or 1000)
     return (
-        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Видео про бота</b>\n\n"
-        "<i>Сними ролик про @CuteGamingBot.\n"
-        f"Поставь хештег {hashtag}.</i>\n\n"
-        f"<i>После публикации пришли ссылку сюда. Мы проверим ролик. "
-        f"Оплата — за каждые полные {per} просмотров: {kut} кут. "
-        "Просмотры можно перепроверять: доплатим только прирост.</i>\n\n"
-        "<i>Если нужна помощь с идеей или монтажом — напиши создателю @JerichoCute. "
-        "Коротко скажи, что хочешь снять.</i>"
+        f"<tg-emoji emoji-id='{ICON_VIDEOS}'>📹</tg-emoji> <b>Видео про бота</b>\n\n"
+        "<b>Сними ролик про @CuteGamingBot.</b>\n"
+        f"<b>Поставь хештег {hashtag}.</b>\n\n"
+        f"<b>Пришли ссылку. Мы откроем TikTok и впишем просмотры.</b>\n"
+        f"<b>За каждые полные {per} просмотров - {kut} кут.</b>\n"
+        f"<b>Перепроверить можно через {int(cfg.get('recheckDays') or 7)} дней: доплатим только прирост.</b>\n\n"
+        "<b>Идея или монтаж не складываются - напиши @JerichoCute. Коротко, что хочешь снять.</b>"
     )
 
 
 def text_need_nick() -> str:
     return (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Сначала укажи свой TikTok</b>\n\n"
-        "<i>Без публичного ника мы не можем проверить, что комментарии и видео твои. "
-        "Скриншоты и ссылку не примем, пока не будет аккаунта, по которому тебя можно найти.</i>\n\n"
-        "<b>Напиши ник так, как он написан в TikTok.</b> Без ссылки — только имя.\n"
+        "<b>Без публичного ника не поймём, где тебя можно найти.</b>\n"
+        "<b>Скрины и ссылку примем, когда будет аккаунт.</b>\n\n"
+        "<b>Напиши ник как в TikTok. Без ссылки, только имя.</b>\n"
         "<blockquote><code>cuteplayer</code></blockquote>"
     )
 
@@ -542,8 +544,8 @@ def text_need_nick() -> str:
 def text_ask_nick() -> str:
     return (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Твой ник в TikTok</b>\n\n"
-        "<i>Напиши одним сообщением. Можно с @ или без. "
-        "Именно по нему админ найдёт твои комментарии и ролики.</i>\n\n"
+        "<b>Одним сообщением. С @ или без.</b>\n"
+        "<b>По нему найдём твои комментарии и ролики.</b>\n\n"
         "<blockquote><code>cuteplayer</code></blockquote>"
     )
 
@@ -553,11 +555,11 @@ def text_nick_required_alert() -> str:
 
 
 def text_nicks(nicks: list[str], *, locked: bool) -> str:
-    body = "\n".join(f"@{n}" for n in nicks) if nicks else "<i>Пока ни одного ника.</i>"
+    body = "\n".join(f"<b>@{n}</b>" for n in nicks) if nicks else "<b>Пока ни одного ника.</b>"
     extra = (
-        "\n\n<i>Сейчас идёт проверка. Ники можно менять после ответа.</i>"
+        "\n\n<b>Сейчас идёт проверка. Ники можно менять после ответа.</b>"
         if locked
-        else "\n\n<i>Если переименовался — измени ник. Можно добавить ещё один аккаунт.</i>"
+        else "\n\n<b>Переименовался - измени ник. Можно добавить ещё один аккаунт, до трёх.</b>"
     )
     return f"<b>Твои TikTok-аккаунты</b>\n\n{body}{extra}"
 
@@ -565,8 +567,8 @@ def text_nicks(nicks: list[str], *, locked: bool) -> str:
 def help_earnings_block() -> str:
     return (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>TikTok</b>\n"
-        "<i>Комментарии под роликами с тегом и видео про бота. "
-        "Открой Задания и нажми Тик ток.</i>\n"
+        "<b>Куты за комментарии с тегом и за видео про бота.</b>\n"
+        "<b>Открой Задания и нажми Тик ток.</b>\n"
         "<blockquote><code>Задания</code></blockquote>"
     )
 
@@ -574,18 +576,18 @@ def help_earnings_block() -> str:
 def collect_text(count: int, needed: int, nicks: list[str] | None = None) -> str:
     bound = ""
     if nicks:
-        bound = "\n<i>Проверяем: " + ", ".join(f"@{n}" for n in nicks) + "</i>"
+        bound = "\n<b>Проверяем: " + ", ".join(f"@{n}" for n in nicks) + "</b>"
     if count >= needed:
         return (
             f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> "
             f"<b>{needed} из {needed}. Можно отправить.</b>{bound}\n"
-            "<i>Убрать последний кадр — кнопка ниже. После отправки новая пачка — только когда ответим.</i>"
+            "<b>Убрать последний кадр - кнопка ниже. Новую пачку - после ответа.</b>"
         )
     left = needed - count
     return (
-        f"<tg-emoji emoji-id='5373098002641805602'>📸</tg-emoji> "
+        f"<tg-emoji emoji-id='{ICON_COMMENTS}'>💬</tg-emoji> "
         f"<b>Принято {count} из {needed}. Осталось {left}.</b>{bound}\n"
-        "<i>Альбомом или по одному. Как фото, не как файл.</i>"
+        "<b>Альбомом или по одному. Как фото, не как файл.</b>"
     )
 
 

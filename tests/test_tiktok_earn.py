@@ -33,6 +33,53 @@ def test_bot_texts_match_plan():
     assert "по которому тебя можно найти" in text_need_nick() or "можно найти" in text_need_nick()
 
 
+def test_hub_buttons_use_premium_emoji_ids():
+    from bot.funcs.tiktok_earn import ICON_COMMENTS, ICON_VIDEOS, hub_keyboard
+
+    kb = hub_keyboard()
+    comments = kb.inline_keyboard[0][0]
+    videos = kb.inline_keyboard[1][0]
+    assert comments.text == "Комментарии"
+    assert videos.text == "Видео о боте"
+    assert "<tg-emoji" not in comments.text
+    assert comments.icon_custom_emoji_id == ICON_COMMENTS == "5350367217349311525"
+    assert videos.icon_custom_emoji_id == ICON_VIDEOS == "5375309569905938163"
+
+
+def test_player_tiktok_texts_have_no_emdash():
+    from bot.funcs.tiktok_earn import (
+        collect_text,
+        help_earnings_block,
+        text_ask_nick,
+        text_comments,
+        text_hub,
+        text_need_nick,
+        text_nicks,
+        text_videos,
+    )
+    from pathlib import Path
+
+    blobs = [
+        text_hub(),
+        text_comments({}),
+        text_videos({}),
+        text_need_nick(),
+        text_ask_nick(),
+        text_nicks(["cuteplayer"], locked=False),
+        help_earnings_block(),
+        collect_text(7, 15, ["cuteplayer"]),
+        collect_text(15, 15, ["cuteplayer"]),
+    ]
+    help_src = Path("bot/funcs/help.py").read_text(encoding="utf-8")
+    tiktok_help = help_src.split("<b>TikTok</b>")[1].split("<b>Промокоды</b>")[0]
+    blobs.append(tiktok_help)
+    for blob in blobs:
+        assert "—" not in blob
+        assert "–" not in blob
+    assert "<b>" in text_hub()
+    assert "<i>" not in text_hub()
+
+
 def _kb_data(kb) -> str:
     return " ".join(btn.callback_data or "" for row in kb.inline_keyboard for btn in row)
 

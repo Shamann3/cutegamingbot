@@ -100,9 +100,9 @@ async def show_comments(target: CallbackQuery | Message, user_id: int) -> None:
     can_send = not pending
     extra = "\n\n<b>Ники, по которым проверят:</b> " + ", ".join(f"@{n}" for n in nicks)
     if pending:
-        extra += "\n\n<i>Эта пачка ещё на проверке. Кнопки «отправить» нет — как ответим, можно прислать новую.</i>"
+        extra += "\n\n<b>Эта пачка ещё на проверке. Кнопки «отправить» нет - как ответим, можно прислать новую.</b>"
     else:
-        extra += "\n\n<i>Можно отправлять, пока нет другой пачки на проверке.</i>"
+        extra += "\n\n<b>Можно отправлять: сейчас нет другой пачки на проверке.</b>"
     await _edit_or_send(target, tt.text_comments(cfg) + extra, tt.comments_keyboard(can_send=can_send))
 
 
@@ -117,7 +117,7 @@ async def show_videos(target: CallbackQuery | Message, user_id: int) -> None:
     pending = [v for v in videos if v["status"] == "pending"]
     extra = "\n\n<b>Ники:</b> " + ", ".join(f"@{n}" for n in nicks)
     if pending:
-        extra += "\n\n<i>Ссылка на проверке. Когда укажем просмотры — начислим куты за полные тысячи.</i>"
+        extra += "\n\n<b>Ссылка на проверке. Когда укажем просмотры - начислим куты за полные тысячи.</b>"
     if live:
         extra += "\n\n<b>Твои ролики</b>"
         for v in live[:5]:
@@ -127,7 +127,7 @@ async def show_videos(target: CallbackQuery | Message, user_id: int) -> None:
                 mark = f" · учтено {v['lastViews']} · {v.get('recheckWaitText') or 'ещё рано'}"
             else:
                 mark = f" · учтено {v['lastViews']} · можно проверить"
-            extra += f"\n<code>{v['url']}</code>{mark}"
+            extra += f"\n<code>{v['url']}</code><b>{mark}</b>"
     await _edit_or_send(target, tt.text_videos(cfg) + extra, tt.videos_keyboard(videos))
 
 
@@ -223,7 +223,7 @@ async def on_send_photos(callback: CallbackQuery) -> None:
         await _edit_or_send(callback, tt.text_need_nick(), tt.bind_keyboard())
         return
     if await tt.has_pending(user_id):
-        await callback.answer("Эта пачка ещё на проверке. Как ответим — можно прислать новую.", show_alert=True)
+        await callback.answer("Эта пачка ещё на проверке. Как ответим - можно прислать новую.", show_alert=True)
         return
     cfg = await tt.get_settings()
     nicks = await tt.list_nicks(user_id)
@@ -249,13 +249,13 @@ async def on_send_link(callback: CallbackQuery) -> None:
         return
     pending = await tt.list_user_videos(user_id)
     if any(v["status"] == "pending" for v in pending):
-        await callback.answer("Это видео ещё на проверке. Как ответим — можно прислать новую ссылку.", show_alert=True)
+        await callback.answer("Это видео ещё на проверке. Как ответим - можно прислать новую ссылку.", show_alert=True)
         return
     await tt.set_session(user_id, "await_video_link", {})
     await callback.answer()
     await _edit_or_send(
         callback,
-        "<b>Пришли ссылку на видео TikTok.</b>\n<i>tiktok.com или vm.tiktok.com</i>",
+        "<b>Пришли ссылку на видео TikTok.</b>\n<b>tiktok.com или vm.tiktok.com</b>",
         tt.videos_keyboard(await tt.list_user_videos(user_id)),
     )
 
@@ -307,7 +307,7 @@ async def on_submit_photos(callback: CallbackQuery) -> None:
     await _edit_or_send(
         callback,
         "<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>Скриншоты на проверке.</b>\n"
-        "<i>Ники сейчас не меняются. Новую пачку — после ответа.</i>",
+        "<b>Ники сейчас не меняются. Новую пачку - после ответа.</b>",
         tt.hub_keyboard(),
     )
 
@@ -327,7 +327,7 @@ async def on_recheck(callback: CallbackQuery) -> None:
     await callback.answer()
     await _edit_or_send(
         callback,
-        "<b>Запрос ушёл.</b>\n<i>Админ впишет текущие просмотры — доплатим разницу.</i>",
+        "<b>Запрос ушёл.</b>\n<b>Админ впишет текущие просмотры - доплатим разницу.</b>",
         tt.videos_keyboard(await tt.list_user_videos(callback.from_user.id)),
     )
 
@@ -409,7 +409,7 @@ async def on_text(message: Message) -> None:
             return
         after = (session.get("extra") or {}).get("after") or ""
         await tt.clear_session(user_id)
-        await message.answer(f"<b>Ник @{nick} привязан.</b>\n<i>Теперь можно отправлять скриншоты и ссылки.</i>", parse_mode="HTML")
+        await message.answer(f"<b>Ник @{nick} привязан.</b>\n<b>Теперь можно отправлять скриншоты и ссылки.</b>", parse_mode="HTML")
         if after == "photos":
             if await tt.has_pending(user_id):
                 await show_comments(message, user_id)
@@ -434,7 +434,7 @@ async def on_text(message: Message) -> None:
             await message.answer(f"<b>{exc}</b>", parse_mode="HTML")
             return
         await message.answer(
-            "<b>Приняли.</b> <i>Видео на проверке. Когда укажем просмотры — начислим куты за полные тысячи.</i>",
+            "<b>Приняли.</b> <b>Видео на проверке. Когда укажем просмотры - начислим куты за полные тысячи.</b>",
             parse_mode="HTML",
             reply_markup=tt.hub_keyboard(),
         )
