@@ -363,21 +363,50 @@ async def _load_verdicts() -> dict[tuple[str, str], str]:
     return out
 
 
+def _photo_file_ids(photo: Any) -> tuple[str, str]:
+    if isinstance(photo, str):
+        raw = photo.strip()
+        return raw, ""
+    if not isinstance(photo, dict):
+        return "", ""
+    nested = photo.get("hashes") if isinstance(photo.get("hashes"), dict) else {}
+    file_id = str(
+        photo.get("fileId")
+        or photo.get("file_id")
+        or photo.get("telegramFileId")
+        or nested.get("fileId")
+        or nested.get("file_id")
+        or ""
+    ).strip()
+    thumb = str(
+        photo.get("thumbFileId")
+        or photo.get("thumb_file_id")
+        or photo.get("thumbFileID")
+        or nested.get("thumbFileId")
+        or nested.get("thumb_file_id")
+        or ""
+    ).strip()
+    return file_id, thumb
+
+
 def _photo_records(case_id: int, user_id: int, photos: list[dict], created_at: Any) -> list[dict]:
     out = []
     for i, photo in enumerate(photos):
+        data = photo if isinstance(photo, dict) else {}
+        nested = data.get("hashes") if isinstance(data.get("hashes"), dict) else {}
+        file_id, thumb = _photo_file_ids(photo)
         out.append(
             {
                 "id": f"{case_id}:{i}",
                 "caseId": case_id,
                 "userId": user_id,
                 "index": i,
-                "fileId": photo.get("fileId") or photo.get("file_id") or "",
-                "thumbFileId": photo.get("thumbFileId") or photo.get("thumb_file_id") or "",
-                "ahash": photo.get("ahash") or "",
-                "dhash": photo.get("dhash") or "",
-                "phash": photo.get("phash") or "",
-                "md5": photo.get("md5") or "",
+                "fileId": file_id,
+                "thumbFileId": thumb,
+                "ahash": data.get("ahash") or nested.get("ahash") or "",
+                "dhash": data.get("dhash") or nested.get("dhash") or "",
+                "phash": data.get("phash") or nested.get("phash") or "",
+                "md5": data.get("md5") or nested.get("md5") or "",
                 "createdAt": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
             }
         )

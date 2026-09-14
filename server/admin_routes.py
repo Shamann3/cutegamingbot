@@ -6250,6 +6250,7 @@ async def photo_proxy(
         "Cache-Control": "private, max-age=3600",
         "Referrer-Policy": "no-referrer",
         "X-Content-Type-Options": "nosniff",
+        "Cross-Origin-Resource-Policy": "same-origin",
     }
     return Response(content=content, media_type=content_type or "image/jpeg", headers=headers)
 

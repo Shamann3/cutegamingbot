@@ -138,6 +138,32 @@ def test_photo_cache_keys_and_proxy_url_shape():
     assert "base64" not in url
 
 
+def test_photo_records_normalize_nested_and_snake_case():
+    from admin_tiktok import _photo_records
+
+    recs = _photo_records(
+        9,
+        42,
+        [
+            {
+                "file_id": "AgAC_full",
+                "thumb_file_id": "AgAC_thumb",
+                "hashes": {"ahash": "aa", "phash": "pp"},
+            },
+            {"fileId": "AgAC_b", "ahash": "bb"},
+            "AgAC_plain",
+        ],
+        None,
+    )
+    assert recs[0]["fileId"] == "AgAC_full"
+    assert recs[0]["thumbFileId"] == "AgAC_thumb"
+    assert recs[0]["ahash"] == "aa"
+    assert recs[0]["phash"] == "pp"
+    assert recs[1]["fileId"] == "AgAC_b"
+    assert recs[2]["fileId"] == "AgAC_plain"
+    assert all("base64" not in (r["fileId"] or "") for r in recs)
+
+
 def test_thumb_jpeg_is_smaller_than_source():
     from PIL import Image
     import io

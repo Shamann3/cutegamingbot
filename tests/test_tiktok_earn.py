@@ -94,12 +94,13 @@ def test_player_tiktok_texts_have_no_emdash():
         collect_text(7, 15, ["cuteplayer"]),
         collect_text(15, 15, ["cuteplayer"]),
     ]
-    from bot.funcs.tiktok_earn import text_photos_on_review, text_wait_link, text_wait_photos
+    from bot.funcs.tiktok_earn import text_photos_on_review, text_wait_expired, text_wait_link, text_wait_photos
     blobs.append(text_photos_on_review(1, 1, 15))
     blobs.append(text_photos_on_review(5, 5, 15))
     blobs.append(text_photos_on_review(1, 15, 15))
     blobs.append(text_wait_photos())
     blobs.append(text_wait_link())
+    blobs.append(text_wait_expired())
     help_src = Path("bot/funcs/help.py").read_text(encoding="utf-8")
     tiktok_help = help_src.split("<b>TikTok</b>")[1].split("<b>Промокоды</b>")[0]
     blobs.append(tiktok_help)
@@ -293,6 +294,7 @@ def test_player_tiktok_copy_is_formal_vy():
         text_press_send_link,
         text_press_send_photos,
         text_videos,
+        text_wait_expired,
         text_wait_link,
         text_wait_photos,
         collect_text,
@@ -315,6 +317,7 @@ def test_player_tiktok_copy_is_formal_vy():
         text_wait_link(),
         text_press_send_photos(),
         text_press_send_link(),
+        text_wait_expired(),
     ]
     help_src = Path("bot/funcs/help.py").read_text(encoding="utf-8")
     blobs.append(help_src.split("<b>TikTok</b>")[1].split("<b>Промокоды</b>")[0])
@@ -491,3 +494,101 @@ def test_button_and_attach_use_gift_like_wait():
     assert "prompt_message_id" in funcs
     assert "persist_prompt" in funcs
     assert "is_cancel_input" in funcs
+    assert "expires_at" in funcs
+    assert "WAIT_TTL_SECONDS" in funcs
+    assert "text_wait_expired" in funcs
+    assert "expire_wait_if_needed" in handler
+
+
+def test_admin_photo_proxy_client_uses_jwt_query_and_thumb():
+    client = Path("admin/src/lib/adminClient.js").read_text(encoding="utf-8")
+    photo = Path("admin/src/components/TgPhoto.jsx").read_text(encoding="utf-8")
+    section = Path("admin/src/pages/sections/TikTokSection.jsx").read_text(encoding="utf-8")
+    assert "export function getPhotoProxyUrl" in client
+    assert "size=${kind}" in client
+    assert "&t=${encodeURIComponent(token" in client
+    assert "loadTgPhotoUrl" in photo
+    assert "getPhotoProxyUrl(fileId, kind)" in photo
+    assert "tt-shot-empty" in section
+    assert "loadTgPhotoUrl" in section
+    assert "size=\"thumb\"" in section or "size='thumb'" in section
+
+
+def test_wait_expires_after_five_minutes_and_keeps_escape():
+    from datetime import datetime, timedelta, timezone
+
+    from bot.funcs.tiktok_earn import (
+        CANCEL_HINT,
+        WAIT_TTL_SECONDS,
+        begin_wait,
+        clear_wait,
+        handler_would_accept_text,
+        is_cancel_input,
+        is_wait_expired,
+        message_matches_wait_photo,
+        message_matches_wait_text,
+        should_skip_main_text_handler,
+        text_link_screen,
+        text_need_nick,
+        text_photos_on_review,
+        text_wait_expired,
+        text_wait_link,
+        text_wait_photos,
+    )
+
+    class _User:
+        def __init__(self, uid):
+            self.id = uid
+
+    class _Chat:
+        def __init__(self, typ):
+            self.type = typ
+
+    class _Msg:
+        def __init__(self, uid, text="", chat_type="private", photo=None):
+            self.from_user = _User(uid)
+            self.chat = _Chat(chat_type)
+            self.text = text
+            self.photo = photo
+
+    assert WAIT_TTL_SECONDS == 300
+    assert is_cancel_input("Назад")
+    assert is_cancel_input("«Завершить»")
+    uid = 980033
+    clear_wait(uid)
+    rec = begin_wait(uid, "nick", after="comments")
+    assert rec.get("expires_at")
+    assert not is_wait_expired(uid)
+    assert message_matches_wait_text(_Msg(uid, "Назад"))
+    assert message_matches_wait_text(_Msg(uid, "Завершить"))
+    assert message_matches_wait_text(_Msg(uid, "cuteplayer"))
+
+    past = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    begin_wait(uid, "nick", after="comments", extra={"expires_at": past})
+    assert is_wait_expired(uid)
+    assert not handler_would_accept_text(uid, "cuteplayer")
+    assert not message_matches_wait_text(_Msg(uid, "cuteplayer"))
+    assert not should_skip_main_text_handler(uid)
+    begin_wait(uid, "photos", after="comments", extra={"expires_at": past})
+    assert not message_matches_wait_photo(_Msg(uid, photo=["x"]))
+    clear_wait(uid)
+
+    expiry = text_wait_expired()
+    assert "Срок ввода истёк" in expiry
+    assert "Попробуйте повторно загрузить доказательства" in expiry
+    assert "<b>" in expiry and "<i>" in expiry
+    assert "—" not in expiry
+    for blob in (
+        text_need_nick(),
+        text_need_nick("comments", error="Этот ник уже занят другим игроком"),
+        text_wait_photos(),
+        text_wait_photos(3, 15),
+        text_wait_link(),
+        text_link_screen("Это не ссылка TikTok."),
+        text_photos_on_review(1, 1, 15),
+    ):
+        assert "Назад" in blob
+        assert "Завершить" in blob
+        assert CANCEL_HINT in blob
+        assert "Ответьте" in blob or "отправьте" in blob.lower()
+        assert "—" not in blob

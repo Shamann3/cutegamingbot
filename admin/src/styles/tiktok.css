@@ -26,15 +26,34 @@
   background: rgba(232, 197, 120, 0.12);
 }
 
+.tt-tab:focus-visible,
+.tt-card:focus-visible,
+.tt-shot:focus-visible,
+.tt-btn:focus-visible,
+.tt-field input:focus-visible,
+.tt-settings input:focus-visible,
+.tt-barnum-row textarea:focus-visible {
+  outline: 2px solid rgba(232, 197, 120, 0.85);
+  outline-offset: 2px;
+}
+
 .tt-tab.is-lock {
   opacity: 0.62;
 }
 
 .tt-hint,
-.tt-empty {
-  color: rgba(255, 255, 255, 0.62);
+.tt-empty,
+.tt-keys {
+  color: rgba(255, 255, 255, 0.72);
   font-size: 0.92rem;
-  line-height: 1.45;
+  line-height: 1.5;
+}
+
+.tt-keys {
+  border: 1px solid rgba(232, 197, 120, 0.22);
+  background: rgba(232, 197, 120, 0.08);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem;
 }
 
 .tt-guide,
@@ -218,6 +237,26 @@
   color: rgba(255, 255, 255, 0.72);
 }
 
+.tt-review {
+  display: grid;
+  grid-template-columns: minmax(11rem, 16rem) minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.tt-rail {
+  display: grid;
+  gap: 0.45rem;
+  max-height: 72vh;
+  overflow: auto;
+  padding-right: 0.15rem;
+}
+
+.tt-rail .tt-card {
+  margin: 0;
+  padding: 0.7rem;
+}
+
 .tt-list {
   display: grid;
   gap: 0.7rem;
@@ -293,6 +332,36 @@
   border-color: rgba(232, 197, 120, 0.35);
 }
 
+.tt-card.is-current {
+  border-color: rgba(232, 197, 120, 0.7);
+  box-shadow: 0 0 0 1px rgba(232, 197, 120, 0.35);
+}
+
+.tt-shot.is-on {
+  box-shadow: 0 0 0 2px rgba(232, 197, 120, 0.85);
+}
+
+.tt-shot.is-copy {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.55);
+}
+
+.tt-shot img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  display: block;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.tt-compare img {
+  width: 100%;
+  height: auto;
+  max-height: none;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
 .tt-incomplete-note {
   border: 1px solid rgba(232, 197, 120, 0.35);
   background: rgba(232, 197, 120, 0.1);
@@ -360,19 +429,35 @@
 .tt-field,
 .tt-settings label {
   display: grid;
-  gap: 0.3rem;
-  margin: 0.6rem 0;
+  gap: 0.35rem;
+  margin: 0.65rem 0;
+}
+
+.tt-field span,
+.tt-settings label span {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  overflow: visible;
+  white-space: normal;
+}
+
+.tt-field small {
+  color: rgba(255, 255, 255, 0.68);
+  line-height: 1.4;
 }
 
 .tt-field input,
 .tt-settings input {
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.25);
+  min-height: 2.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.28);
   color: inherit;
   border-radius: 0.6rem;
-  padding: 0.55rem 0.7rem;
+  padding: 0.6rem 0.75rem;
   font: inherit;
+  overflow: visible;
 }
 
 .tt-link {
@@ -392,6 +477,18 @@
 }
 
 @media (max-width: 720px) {
+  .tt-review {
+    grid-template-columns: 1fr;
+  }
+
+  .tt-rail {
+    max-height: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(12rem, 72vw);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
   .tt-compare {
     grid-template-columns: 1fr;
   }

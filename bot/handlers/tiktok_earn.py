@@ -509,8 +509,14 @@ async def _send_collect_progress(message: Message, state: dict) -> None:
 
 async def on_wait_text(message: Message) -> None:
     user_id = message.from_user.id
+    if await tt.expire_wait_if_needed(user_id):
+        return
     await tt.restore_wait_from_session(user_id)
+    if await tt.expire_wait_if_needed(user_id):
+        return
     rec = tt.get_wait(user_id) or {}
+    if not rec:
+        return
     kind = rec.get("kind") or ""
     raw = (message.text or "").strip()
     if tt.is_cancel_input(raw):
@@ -554,7 +560,11 @@ async def on_wait_text(message: Message) -> None:
 
 async def on_wait_photo(message: Message) -> None:
     user_id = message.from_user.id
+    if await tt.expire_wait_if_needed(user_id):
+        return
     await tt.restore_wait_from_session(user_id)
+    if await tt.expire_wait_if_needed(user_id) or not tt.get_wait(user_id):
+        return
     if not await tt.list_nicks(user_id):
         await _delete_user_message(message)
         await _arm_nick_screen(message, user_id, "comments")
@@ -602,8 +612,14 @@ async def on_wait_photo(message: Message) -> None:
 
 async def on_wait_noise(message: Message) -> None:
     user_id = message.from_user.id
+    if await tt.expire_wait_if_needed(user_id):
+        return
     await tt.restore_wait_from_session(user_id)
+    if await tt.expire_wait_if_needed(user_id):
+        return
     rec = tt.get_wait(user_id) or {}
+    if not rec:
+        return
     kind = rec.get("kind") or ""
     raw = (message.text or "").strip()
     if tt.is_cancel_input(raw):

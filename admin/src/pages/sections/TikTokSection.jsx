@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import '../../styles/tiktok.css'
-import TgPhoto from '../../components/TgPhoto'
+import TgPhoto, { loadTgPhotoUrl } from '../../components/TgPhoto'
 import ImageLightbox from '../../components/ImageLightbox'
 import { showToast } from '../../components/ToastHost'
-import { getPhotoProxyUrl } from '../../lib/adminClient'
 import {
   approveTiktokComment,
   approveTiktokVideo,
@@ -61,12 +60,20 @@ function nextQueueItem(items, currentId) {
   return items[idx + 1] || null
 }
 
+function photoIds(photo) {
+  if (!photo) return { thumb: '', full: '' }
+  const nested = photo.hashes && typeof photo.hashes === 'object' ? photo.hashes : {}
+  const full = String(photo.fileId || photo.file_id || nested.fileId || nested.file_id || '').trim()
+  const thumb = String(photo.thumbFileId || photo.thumb_file_id || nested.thumbFileId || full).trim()
+  return { thumb: thumb || full, full: full || thumb }
+}
+
 function shotFileId(photo) {
-  return photo?.thumbFileId || photo?.fileId || ''
+  return photoIds(photo).thumb
 }
 
 function fullFileId(photo) {
-  return photo?.fileId || photo?.thumbFileId || ''
+  return photoIds(photo).full
 }
 
 function LockCard({ tab, map }) {
@@ -110,12 +117,16 @@ function Guide({ onClose }) {
   )
 }
 
-function CommentCase({ item, onOpen }) {
+function CommentCase({ item, onOpen, current }) {
   const count = item.photoCount || (item.photos || []).length
   const needed = item.photosRequired || 15
   const incomplete = item.incomplete ?? count < needed
   return (
-    <button type="button" className={`tt-card${incomplete ? ' is-incomplete' : ''}`} onClick={() => onOpen(item)}>
+    <button
+      type="button"
+      className={`tt-card${incomplete ? ' is-incomplete' : ''}${current ? ' is-current' : ''}`}
+      onClick={() => onOpen(item)}
+    >
       <div className="tt-card-top">
         <strong>{playerName(item.user)}</strong>
         <span>{fmtDate(item.createdAt)}</span>
@@ -151,10 +162,14 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
     return map
   }, [local.matches])
 
-  const openFull = (photo) => {
+  const openFull = async (photo) => {
     const id = fullFileId(photo)
     if (!id) return
-    setLightbox(getPhotoProxyUrl(id, 'full'))
+    try {
+      setLightbox(await loadTgPhotoUrl(id, 'full'))
+    } catch {
+      showToast('Кадр не открылся. Нажмите ещё раз или проверьте вход.')
+    }
   }
 
   const decide = async (fn, okText) => {
@@ -210,7 +225,7 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [local.id, onAdvance, onClose])
+  }, [local, onAdvance, onClose])
 
   const nextHint = nextQueueItem(queue, local.id)
   const needed = local.photosRequired || 15
@@ -242,10 +257,10 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
         </div>
       </div>
 
-      <p className="tt-hint">
+      <p className="tt-keys" role="note">
         {incomplete
-          ? `Серия неполная: ${received} из ${needed}. Принять нельзя, отклонить можно сразу.`
-          : 'Превью лёгкие, полный кадр - по клику. Красная рамка: сравни. A принять · R отклонить · N следующее.'}
+          ? `Серия неполная: ${received} из ${needed}. Принять нельзя. R отклонить · N следующее · Esc очередь`
+          : 'A принять · R отклонить · N или J следующее · Esc очередь. Красная рамка - похожий кадр.'}
       </p>
       {incomplete && (
         <div className="tt-incomplete-note">
@@ -253,35 +268,46 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
         </div>
       )}
 
-      <div className="tt-grid">
+      <div className="tt-grid" aria-label="Скриншоты серии">
         {slots.map((photo, i) => {
-          if (!photo) {
+          if (!photo || !shotFileId(photo)) {
             return (
-              <div key={`empty-${i}`} className="tt-shot tt-shot-empty">
-                <span>#{i + 1}</span>
+              <div key={`empty-${i}`} className="tt-shot tt-shot-empty" aria-hidden="true">
+                <span>#{i + 1} пусто</span>
               </div>
             )
           }
           const hits = matchByIndex[i] || []
           const thumb = shotFileId(photo)
+          const copyHit = hits.some((h) => h.verdict === 'copy')
+          const selected = compare && fullFileId(compare.photo) === fullFileId(photo)
           return (
-            <button
+            <div
               key={photo.id || i}
-              type="button"
-              className={`tt-shot${hits.length ? ' tt-shot-hot' : ''}`}
+              role="button"
+              tabIndex={0}
+              className={`tt-shot${hits.length ? ' tt-shot-hot' : ''}${copyHit ? ' is-copy' : ''}${selected ? ' is-on' : ''}`}
               onClick={() => {
                 if (hits.length) setCompare({ photo, hits })
                 else openFull(photo)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  if (hits.length) setCompare({ photo, hits })
+                  else openFull(photo)
+                }
               }}
             >
               <TgPhoto
                 fileId={thumb}
                 size="thumb"
                 lazy
+                alt={`Скрин ${i + 1}`}
                 style={{ width: '100%', height: 120, objectFit: 'cover' }}
               />
-              <span>#{i + 1}{hits.length ? ` · ${hits.length} похож.` : ''}</span>
-            </button>
+              <span>#{i + 1}{hits.length ? ` · ${hits.length} похож.` : ''}{copyHit ? ' · копия' : ''}</span>
+            </div>
           )
         })}
       </div>
@@ -377,17 +403,18 @@ function VideoCard({ item, settings, onDone, rejectReasons }) {
       <a className="tt-link" href={item.url} target="_blank" rel="noreferrer">Открыть в TikTok</a>
       {item.recheckPending && <div className="tt-flag-hot">перепроверка · было {old} просмотров</div>}
       <label className="tt-field">
-        <span>Просмотры сейчас</span>
+        <span>Сколько просмотров сейчас у ролика</span>
         <input
           type="number"
           min="0"
+          inputMode="numeric"
           value={views}
           onChange={(e) => setViews(e.target.value)}
           placeholder="Например 12500"
         />
         <small>
-          {Number(views) || 0} → {Math.floor((Number(views) || 0) / 1000)} × {unit} = {preview} кут
-          {item.recheckPending ? ` · доплата ${delta}` : ''}
+          {Number(views) || 0} просмотров → {Math.floor((Number(views) || 0) / 1000)} тыс. × {unit} кут = <b>{preview} кут</b>
+          {item.recheckPending ? ` · доплата ${delta} кут` : ''}
         </small>
       </label>
       {item.status === 'pending' && (
@@ -399,7 +426,7 @@ function VideoCard({ item, settings, onDone, rejectReasons }) {
                 checked={reasons.includes(r.id)}
                 onChange={() => setReasons((cur) => (cur.includes(r.id) ? cur.filter((x) => x !== r.id) : [...cur, r.id]))}
               />
-              {r.label}
+              {r.label || 'Причина без названия'}
             </label>
           ))}
         </div>
@@ -483,8 +510,8 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
             : 'Сейчас видишь актуальные цифры. Менять награду может только создатель проекта.'}
         </p>
         <div className="tt-reward-grid">
-          <label>
-            Пачка комментариев, кут
+          <label className="tt-field">
+            <span>Награда за полную пачку комментариев, кут</span>
             <input
               type="number"
               min={caps.commentMin}
@@ -494,8 +521,8 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
               onChange={(e) => set('commentReward', e.target.value)}
             />
           </label>
-          <label>
-            Каждые 1000 просмотров, кут
+          <label className="tt-field">
+            <span>Награда за каждые 1000 просмотров, кут</span>
             <input
               type="number"
               min={caps.videoMin}
@@ -513,8 +540,14 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
         <p className="tt-hint">Пачка: {caps.commentMin}-{caps.commentMax} кут. Видео: {caps.videoMin}-{caps.videoMax} кут за тысячу. Перепроверка: (новые тысячи - старые) x текущая награда.</p>
       </div>
 
-      <label>Тег комментариев<input value={form.commentTag || ''} onChange={(e) => set('commentTag', e.target.value)} /></label>
-      <label>Хештег видео<input value={form.videoHashtag || ''} onChange={(e) => set('videoHashtag', e.target.value)} /></label>
+      <label className="tt-field">
+        <span>Тег, который должен быть у ролика с комментариями</span>
+        <input value={form.commentTag || ''} onChange={(e) => set('commentTag', e.target.value)} placeholder="например тг звезды" />
+      </label>
+      <label className="tt-field">
+        <span>Отметка в ролике про бота</span>
+        <input value={form.videoHashtag || ''} onChange={(e) => set('videoHashtag', e.target.value)} placeholder="@CuteGamingBot" />
+      </label>
       <div className="tt-locked-nums">
         <span>пачка {pack} скринов</span>
         <span>перепроверка {form.recheckDays ?? 7} дн.</span>
@@ -643,10 +676,6 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
       setOpenCase(null)
       return
     }
-    if (item.photos?.length) {
-      setOpenCase(item)
-      return
-    }
     try {
       const full = await fetchTiktokComment(item.id)
       setOpenCase(full)
@@ -715,18 +744,37 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
       ) : loading && !openCase ? (
         <p className="tt-hint">Загружаем очередь…</p>
       ) : openCase ? (
-        <CommentWorkspace
-          item={openCase}
-          queue={comments}
-          onClose={() => setOpenCase(null)}
-          onAdvance={advanceFrom}
-          onDecided={afterDecide}
-        />
+        <div className="tt-review">
+          {(tab === 'comments' || tab === 'archive') && comments.length > 0 && (
+            <aside className="tt-rail" aria-label="Очередь без фото">
+              {comments.map((item) => (
+                <CommentCase
+                  key={item.id}
+                  item={item}
+                  current={Number(openCase.id) === Number(item.id)}
+                  onOpen={openFromQueue}
+                />
+              ))}
+            </aside>
+          )}
+          <CommentWorkspace
+            item={openCase}
+            queue={comments}
+            onClose={() => setOpenCase(null)}
+            onAdvance={advanceFrom}
+            onDecided={afterDecide}
+          />
+        </div>
       ) : tab === 'comments' || tab === 'archive' ? (
         <div className="tt-list">
           {comments.length === 0 && <p className="tt-empty">Пока пусто. Первый скрин уже откроет карточку здесь, даже если серия ещё неполная.</p>}
           {comments.map((item) => (
-            <CommentCase key={item.id} item={item} onOpen={openFromQueue} />
+            <CommentCase
+              key={item.id}
+              item={item}
+              current={Number(openCase?.id) === Number(item.id)}
+              onOpen={openFromQueue}
+            />
           ))}
           {tab === 'archive' && comments.length >= 20 && (
             <button

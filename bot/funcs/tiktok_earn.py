@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import sys
@@ -79,8 +80,12 @@ WAIT_LINK = "link"
 WAIT_PHOTOS = "photos"
 TEXT_WAIT_KINDS = frozenset({WAIT_NICK, WAIT_NICK_EDIT, WAIT_LINK})
 CANCEL_WORDS = frozenset({"назад", "завершить"})
+WAIT_TTL_SECONDS = 300
 CANCEL_HINT = "<i>Напишите «Назад» или «Завершить», чтобы выйти.</i>"
+REPLY_HINT = "<i>Ответьте на это сообщение. На ответ есть 5 минут.</i>"
+INPUT_FOOTER = f"{REPLY_HINT}\n{CANCEL_HINT}"
 _tt_wait: dict[int, dict[str, Any]] = {}
+_timeout_tasks: dict[int, asyncio.Task] = {}
 
 _SCHEMA_READY = False
 
@@ -326,11 +331,58 @@ async def clear_session(user_id: int) -> None:
     await set_session(user_id, "", {})
 
 
+def _parse_expires(value: Any) -> datetime | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        dt = value
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    return None
+
+
+def _expires_is_past(value: Any, *, now: datetime | None = None) -> bool:
+    exp = _parse_expires(value)
+    if exp is None:
+        return False
+    stamp = now or datetime.now(timezone.utc)
+    return stamp >= exp
+
+
+def _rec_is_expired(rec: dict[str, Any] | None, *, now: datetime | None = None) -> bool:
+    if not rec:
+        return False
+    return _expires_is_past(rec.get("expires_at"), now=now)
+
+
+def _fresh_expires_iso() -> str:
+    return (datetime.now(timezone.utc) + timedelta(seconds=WAIT_TTL_SECONDS)).isoformat()
+
+
+def peek_wait(user_id: int) -> dict[str, Any] | None:
+    return _tt_wait.get(int(user_id))
+
+
 def get_wait(user_id: int) -> dict[str, Any] | None:
-    rec = _tt_wait.get(int(user_id))
-    if rec and rec.get("awaiting"):
+    rec = peek_wait(user_id)
+    if rec and rec.get("awaiting") and not _rec_is_expired(rec):
         return rec
     return None
+
+
+def is_wait_expired(user_id: int) -> bool:
+    return _rec_is_expired(peek_wait(user_id))
 
 
 def begin_wait(
@@ -355,6 +407,11 @@ def begin_wait(
         rec["awaiting"] = True
         if after:
             rec["after"] = after
+    if extra is not None and extra.get("expires_at") is not None:
+        parsed = _parse_expires(extra.get("expires_at"))
+        rec["expires_at"] = parsed.isoformat() if parsed else _fresh_expires_iso()
+    else:
+        rec["expires_at"] = _fresh_expires_iso()
     _tt_wait[int(user_id)] = rec
     return rec
 
@@ -384,7 +441,46 @@ def force_reply_markup() -> ForceReply:
     return ForceReply(selective=True)
 
 
+def with_input_footer(body: str) -> str:
+    text = (body or "").rstrip()
+    if CANCEL_HINT not in text:
+        return f"{text}\n\n{INPUT_FOOTER}"
+    if REPLY_HINT not in text:
+        return f"{text}\n{REPLY_HINT}"
+    return text
+
+
+def cancel_wait_timeout(user_id: int) -> None:
+    task = _timeout_tasks.pop(int(user_id), None)
+    if task is not None and not task.done():
+        task.cancel()
+
+
+def schedule_wait_timeout(user_id: int) -> None:
+    cancel_wait_timeout(user_id)
+    rec = peek_wait(user_id)
+    delay = float(WAIT_TTL_SECONDS)
+    exp = _parse_expires((rec or {}).get("expires_at"))
+    if exp is not None:
+        delay = max(0.0, (exp - datetime.now(timezone.utc)).total_seconds())
+
+    async def _job() -> None:
+        try:
+            await asyncio.sleep(delay)
+            if _rec_is_expired(peek_wait(user_id)):
+                await expire_wait(user_id, notify=True)
+        except asyncio.CancelledError:
+            return
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    _timeout_tasks[int(user_id)] = loop.create_task(_job())
+
+
 def clear_wait(user_id: int) -> None:
+    cancel_wait_timeout(user_id)
     _tt_wait.pop(int(user_id), None)
 
 
@@ -433,18 +529,106 @@ async def persist_prompt(user_id: int, chat_id: int | None, message_id: int | No
         extra["after"] = rec["after"]
     if rec.get("oldNick"):
         extra["oldNick"] = rec["oldNick"]
+    if rec.get("expires_at"):
+        extra["expires_at"] = rec["expires_at"]
     await set_session(user_id, session.get("mode") or "", extra)
+
+
+def _session_is_wait(mode: str, extra: dict[str, Any]) -> bool:
+    return bool(
+        extra.get("awaiting")
+        or extra.get("prompt_message_id")
+        or mode in NICK_WAIT_MODES
+        or mode == MODE_WAIT_LINK
+        or mode in PHOTO_WAIT_MODES
+    )
+
+
+async def expire_wait(user_id: int, *, notify: bool = True) -> bool:
+    """Снять waiter. Дело и уже сданные фото не трогаем."""
+    rec = peek_wait(user_id) or {}
+    chat_id = rec.get("prompt_chat_id")
+    mid = rec.get("prompt_message_id")
+    extra: dict[str, Any] = {}
+    mode = ""
+    try:
+        session = await get_session(user_id)
+        extra = dict(session.get("extra") or {})
+        mode = str(session.get("mode") or "")
+        chat_id = chat_id or extra.get("prompt_chat_id")
+        mid = mid or extra.get("prompt_message_id")
+    except Exception:
+        pass
+    cancel_wait_timeout(user_id)
+    _tt_wait.pop(int(user_id), None)
+    extra.pop("awaiting", None)
+    extra.pop("prompt_message_id", None)
+    extra.pop("prompt_chat_id", None)
+    extra.pop("expires_at", None)
+    extra.pop("kind", None)
+    extra.pop("album_group", None)
+    if mode in NICK_WAIT_MODES:
+        mode = ""
+    elif mode == MODE_WAIT_LINK:
+        mode = MODE_VIDEOS
+    elif mode in PHOTO_WAIT_MODES:
+        mode = MODE_COMMENTS
+    try:
+        await set_session(user_id, mode, extra)
+    except Exception:
+        pass
+    if notify:
+        try:
+            from main import bot1
+            if chat_id and mid:
+                try:
+                    await bot1.delete_message(int(chat_id), int(mid))
+                except Exception:
+                    pass
+            await bot1.send_message(
+                int(chat_id or user_id),
+                text_wait_expired(),
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            log.exception("tiktok expire notify failed uid=%s", user_id)
+    return True
+
+
+async def expire_wait_if_needed(user_id: int) -> bool:
+    rec = peek_wait(user_id)
+    if rec and _rec_is_expired(rec):
+        await expire_wait(user_id, notify=True)
+        return True
+    try:
+        session = await get_session(user_id)
+    except Exception:
+        return False
+    extra = dict(session.get("extra") or {})
+    mode = str(session.get("mode") or "")
+    if _session_is_wait(mode, extra) and _expires_is_past(extra.get("expires_at")):
+        await expire_wait(user_id, notify=True)
+        return True
+    return False
 
 
 async def restore_wait_from_session(user_id: int) -> bool:
     """Если в БД wait, а в памяти пусто (рестарт) - поднять флаг и prompt id как у user_gift."""
     if get_wait(user_id):
         return True
+    if peek_wait(user_id) and _rec_is_expired(peek_wait(user_id)):
+        await expire_wait(user_id, notify=True)
+        return False
     session = await get_session(user_id)
     mode = session.get("mode") or ""
     extra = dict(session.get("extra") or {})
+    if _session_is_wait(mode, extra) and _expires_is_past(extra.get("expires_at")):
+        await expire_wait(user_id, notify=True)
+        return False
     after = str(extra.get("after") or extra.get("origin") or "")
     prompt_chat_id, prompt_message_id = _prompt_ids_from(extra)
+    restored = False
     if mode in NICK_WAIT_MODES:
         kind = WAIT_NICK_EDIT if mode == MODE_WAIT_NICK_EDIT else WAIT_NICK
         begin_wait(
@@ -455,8 +639,8 @@ async def restore_wait_from_session(user_id: int) -> bool:
             prompt_chat_id=prompt_chat_id,
             prompt_message_id=prompt_message_id,
         )
-        return True
-    if mode == MODE_WAIT_LINK:
+        restored = True
+    elif mode == MODE_WAIT_LINK:
         begin_wait(
             user_id,
             WAIT_LINK,
@@ -465,8 +649,8 @@ async def restore_wait_from_session(user_id: int) -> bool:
             prompt_chat_id=prompt_chat_id,
             prompt_message_id=prompt_message_id,
         )
-        return True
-    if mode in PHOTO_WAIT_MODES:
+        restored = True
+    elif mode in PHOTO_WAIT_MODES:
         begin_wait(
             user_id,
             WAIT_PHOTOS,
@@ -475,8 +659,10 @@ async def restore_wait_from_session(user_id: int) -> bool:
             prompt_chat_id=prompt_chat_id,
             prompt_message_id=prompt_message_id,
         )
-        return True
-    return False
+        restored = True
+    if restored:
+        schedule_wait_timeout(user_id)
+    return restored
 
 
 def _message_is_private(message: Any) -> bool:
@@ -579,6 +765,7 @@ async def arm_wait(
 ) -> dict[str, Any]:
     extra = dict(extra or {})
     after = str(extra.get("after") or extra.get("origin") or "")
+    extra.pop("expires_at", None)
     if prompt_chat_id:
         extra["prompt_chat_id"] = int(prompt_chat_id)
     if prompt_message_id:
@@ -593,7 +780,9 @@ async def arm_wait(
         prompt_message_id=prompt_message_id,
         extra=extra,
     )
+    extra["expires_at"] = rec["expires_at"]
     await set_session(user_id, mode, extra)
+    schedule_wait_timeout(user_id)
     return rec
 
 
@@ -852,7 +1041,7 @@ def text_need_nick(path: str = "", error: str = "") -> str:
         "<i>Как в приложении. С @ или без.</i>\n\n"
         "<i>Пример:</i>\n"
         f"<code>{EXAMPLE_NICK}</code>\n\n"
-        f"{CANCEL_HINT}"
+        f"{INPUT_FOOTER}"
     )
     if error:
         return f"<b>{error}</b>\n\n{body}"
@@ -869,7 +1058,7 @@ def text_link_screen(error: str = "") -> str:
         "<i>Отправьте ссылку на ролик.</i>\n\n"
         "<i>Пример:</i>\n"
         f"<code>{EXAMPLE_VIDEO_URL}</code>\n\n"
-        f"{CANCEL_HINT}"
+        f"{INPUT_FOOTER}"
     )
     if error:
         return f"<b>{error}</b>\n\n{body}"
@@ -920,9 +1109,10 @@ def comments_screen_text(
     body += _nicks_block(nicks)
     if pending:
         body += f"\n\n<b>{needed} из {needed}. Ждём решение.</b>"
-    elif count > 0:
+        return body
+    if count > 0:
         body += "\n\n" + collect_text(count, needed)
-    body += f"\n\n{CANCEL_HINT}"
+    body += f"\n\n<i>Отправьте фото ответом на это сообщение. Альбомом или по одному.</i>\n{INPUT_FOOTER}"
     return body
 
 
@@ -947,7 +1137,9 @@ def videos_screen_text(
             else:
                 mark = f" · учтено {item['lastViews']} · можно проверить"
             body += f"\n<code>{item['url']}</code>\n<i>{mark}</i>"
-    body += f"\n\n{CANCEL_HINT}"
+    if pending:
+        return body
+    body += f"\n\n<i>Отправьте ссылку на ролик ответом на это сообщение.</i>\n{INPUT_FOOTER}"
     return body
 
 
@@ -957,12 +1149,21 @@ def text_wait_photos(count: int = 0, needed: int = 15) -> str:
         return (
             "<b>Сейчас отправьте фото</b>\n"
             f"<i>На проверке {count} из {needed}. Ещё {left}.</i>\n"
-            f"{CANCEL_HINT}"
+            f"{INPUT_FOOTER}"
         )
     return (
         "<b>Сейчас отправьте фото</b>\n"
-        "<i>Альбомом или по одному.</i>\n"
-        f"{CANCEL_HINT}"
+        "<i>Альбомом или по одному. Ответьте на это сообщение.</i>\n"
+        f"{INPUT_FOOTER}"
+    )
+
+
+def text_wait_expired() -> str:
+    return (
+        "<b>Срок ввода истёк.</b>\n"
+        "<i>Попробуйте повторно загрузить доказательства.</i>\n"
+        "<i>Откройте комментарии или видео и начните снова.</i>\n"
+        "<i>Уже отправленные фото остаются на проверке.</i>"
     )
 
 
@@ -971,27 +1172,31 @@ def text_wait_link() -> str:
         "<b>Сейчас отправьте ссылку</b>\n\n"
         "<i>Пример:</i>\n"
         f"<code>{EXAMPLE_VIDEO_URL}</code>\n\n"
-        f"{CANCEL_HINT}"
+        f"{INPUT_FOOTER}"
     )
 
 
 def text_press_send_photos() -> str:
     return (
         "<b>Сначала нажмите кнопку.</b>\n"
-        "<i>Потом отправьте фото.</i>"
+        "<i>Потом отправьте фото ответом на сообщение.</i>\n"
+        f"{CANCEL_HINT}"
     )
 
 
 def text_press_send_link() -> str:
     return (
         "<b>Сначала нажмите кнопку.</b>\n"
-        "<i>Потом отправьте ссылку.</i>"
+        "<i>Потом отправьте ссылку ответом на сообщение.</i>\n"
+        f"{CANCEL_HINT}"
     )
+
 
 def text_press_bind_nick() -> str:
     return (
         "<b>Сначала нажмите кнопку.</b>\n"
-        "<i>Потом напишите имя своего TikTok.</i>"
+        "<i>Потом напишите имя своего TikTok.</i>\n"
+        f"{CANCEL_HINT}"
     )
 
 
@@ -1027,9 +1232,9 @@ def text_photos_on_review(
             f"<b>{needed} из {needed}. Ждём решение.</b>{bound}"
         )
     left = needed - count
-    return (
+    return with_input_footer(
         f"<b>{added} {word} {verb} на проверку.</b>\n"
-        f"<i>Сейчас {count} из {needed}. Ещё {left}.</i>{bound}"
+        f"<i>Сейчас {count} из {needed}. Ещё {left}. Отправьте следующее фото ответом.</i>{bound}"
     )
 
 
