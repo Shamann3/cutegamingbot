@@ -6,6 +6,9 @@ from telegram_file_cache import (
 from tiktok_earn_logic import (
     COMMENT_REWARD_MAX,
     VIDEO_REWARD_MAX,
+    append_case_photos,
+    assert_can_approve_comments,
+    comment_progress,
     find_matches,
     hashes_from_image_bytes,
     hashes_similar,
@@ -227,6 +230,29 @@ def test_counts_and_settings_endpoints_exist():
 
     assert "canEditRewards" in inspect.getsource(tiktok_get_settings)
     assert "canEditRewards" in inspect.getsource(tiktok_overview)
+
+
+def test_incomplete_case_cannot_be_approved():
+    first = append_case_photos([], [{"fileId": "one"}], 15)
+    assert first["received"] == 1
+    assert first["incomplete"] is True
+    fifteenth = append_case_photos([{"n": i} for i in range(14)], [{"n": 14}], 15)
+    assert fifteenth["complete"] is True
+    try:
+        assert_can_approve_comments(first["photos"], 15)
+        assert False
+    except ValueError as exc:
+        assert "1 из 15" in str(exc)
+    assert comment_progress(fifteenth["photos"], 15)["complete"] is True
+
+    import inspect
+    from admin_tiktok import approve_comment_case, reject_comment_case
+
+    approve_src = inspect.getsource(approve_comment_case)
+    assert "assert_can_approve_comments" in approve_src
+    reject_src = inspect.getsource(reject_comment_case)
+    assert "assert_can_approve_comments" not in reject_src
+    assert "pending" in reject_src
 
 
 def test_comment_list_is_light_and_paginated():

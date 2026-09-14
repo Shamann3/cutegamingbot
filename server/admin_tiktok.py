@@ -30,10 +30,13 @@ from tiktok_earn_logic import (
     VIDEO_REWARD_MAX,
     VIDEO_REWARD_MIN,
     VIEWS_PER_UNIT,
+    assert_can_approve_comments,
+    comment_progress,
     find_matches,
     next_queue_item,
     validate_comment_reward,
     validate_video_reward,
+    wrap_barnum_html,
     hashes_from_image_bytes,
     hashes_similar,
     normalize_nick,
@@ -595,12 +598,17 @@ def _case_dict(
     photos = _json(row["photos"]) or []
     nicks = _json(row["nick_snapshot"]) or []
     photo_recs = _photo_records(int(row["id"]), int(row["user_id"]), photos, row["created_at"])
+    needed = int((settings or {}).get("photosRequired") or PHOTOS_REQUIRED)
+    progress = comment_progress(photo_recs, needed)
     payload = {
         "id": int(row["id"]),
         "userId": int(row["user_id"]),
         "status": row["status"],
         "photos": [] if light else photo_recs,
-        "photoCount": len(photo_recs),
+        "photoCount": progress["received"],
+        "photosRequired": progress["needed"],
+        "complete": progress["complete"],
+        "incomplete": progress["incomplete"],
         "nicks": nicks,
         "nickBreakdown": _nick_breakdown(photos, nicks),
         "hasSimilar": bool(matches),
@@ -649,6 +657,16 @@ async def list_comment_cases(
     )
     if not rows:
         return []
+    needed = int(settings.get("photosRequired") or PHOTOS_REQUIRED)
+    if status == "pending":
+        rows = sorted(
+            rows,
+            key=lambda row: (
+                comment_progress(_json(row["photos"]) or [], needed)["complete"],
+                row["created_at"],
+                int(row["id"]),
+            ),
+        )
     library: list[dict] = []
     verdicts: dict = {}
     if status == "pending":
@@ -709,6 +727,7 @@ async def approve_comment_case(case_id: int, admin_id: int) -> dict:
                 raise ValueError("Заявка не найдена")
             if row["status"] != "pending":
                 raise ValueError("Заявка уже закрыта")
+            assert_can_approve_comments(_json(row["photos"]) or [], settings["photosRequired"])
             await conn.execute(
                 """
                 UPDATE tiktok_comment_cases
@@ -722,7 +741,7 @@ async def approve_comment_case(case_id: int, admin_id: int) -> dict:
     after = await _credit(int(row["user_id"]), amount, "+ tiktok комментарии")
     text = (
         f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>Комментарии приняты.</b>\n"
-        f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji> <b>На баланс зачислено {amount} кут.</b>"
+        f"<i>На баланс зачислено</i> <b>{amount} кут</b><i>.</i>"
     )
     _notify(int(row["user_id"]), text)
     return {"ok": True, "balance": after, "kut": amount}
@@ -731,7 +750,7 @@ async def approve_comment_case(case_id: int, admin_id: int) -> dict:
 async def reject_comment_case(case_id: int, admin_id: int) -> dict:
     await ensure_tiktok_schema()
     settings = await get_settings()
-    text = pick_barnum(texts=settings.get("barnumRejects"))
+    text = wrap_barnum_html(pick_barnum(texts=settings.get("barnumRejects")))
     async with db.pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(
@@ -754,7 +773,7 @@ async def reject_comment_case(case_id: int, admin_id: int) -> dict:
             )
     _notify(
         int(row["user_id"]),
-        f"<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>{text}</b>",
+        f"<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> {text}",
     )
     return {"ok": True, "rejectText": text}
 
@@ -916,26 +935,25 @@ async def approve_video(video_id: int, admin_id: int, views: int) -> dict:
     if is_recheck:
         if kut > 0:
             text = (
-                f"<b>Новые просмотры: {delta['newViews']}. "
-                f"Было учтено: {delta['oldViews']}. "
-                f"Доплата: {kut} кут.</b>"
+                f"<b>Новые просмотры: {delta['newViews']}.</b>\n"
+                f"<i>Было учтено {delta['oldViews']}. Доплата -</i> <b>{kut} кут</b><i>.</i>"
             )
         else:
             text = (
-                f"<b>Просмотры обновили. Полных новых тысяч нет - доплаты нет. "
-                f"Следующая проверка через {days} дней.</b>"
+                f"<b>Просмотры обновили.</b>\n"
+                f"<i>Полных новых тысяч нет, доплаты нет. Следующая проверка через {days} дней.</i>"
             )
     elif kut > 0:
         text = (
             f"<b>Видео принято.</b>\n"
-            f"<b>Просмотры на проверке: {delta['newViews']}.</b>\n"
+            f"<i>Просмотры на проверке:</i> <b>{delta['newViews']}</b><i>.</i>\n"
             f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> "
             f"<b>Начислено: {kut} кут.</b>"
         )
     else:
         text = (
-            "<b>Видео принято и закреплено за тобой. "
-            "Пока меньше 1000 просмотров - куты будут после перепроверки.</b>"
+            "<b>Видео принято.</b>\n"
+            "<i>Ролик закреплён за Вами. Пока меньше 1000 просмотров - куты появятся после перепроверки.</i>"
         )
     _notify(user_id, text)
     return {"ok": True, "balance": after, **delta}
@@ -972,11 +990,10 @@ async def reject_video(video_id: int, admin_id: int, reason_ids: list[str]) -> d
                 json.dumps(reason_ids, ensure_ascii=False),
                 int(admin_id),
             )
-    bullets = "\n".join(f"• {label}" for label in labels)
+    bullets = "\n".join(f"<i>• {label}</i>" for label in labels)
     text = (
         f"<b>Видео не принято.</b>\n\n{bullets}\n\n"
-        f"<b>Переопубликуй с правками и пришли новую ссылку. "
-        f"Если нужна помощь - @JerichoCute.</b>"
+        f"<i>Опубликуйте правки и пришлите новую ссылку. Если нужна помощь - @JerichoCute.</i>"
     )
     _notify(int(row["user_id"]), text)
     return {"ok": True, "reasons": labels}

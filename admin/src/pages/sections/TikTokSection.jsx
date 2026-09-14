@@ -21,7 +21,7 @@ import {
 } from '../../lib/adminClient'
 
 const TABS = [
-  { id: 'comments', label: 'Комментарии', hint: 'Одна заявка = 15 кадров. Красная рамка — код нашёл похожее.' },
+  { id: 'comments', label: 'Комментарии', hint: 'Неполная серия видна сразу. Принять можно только 15/15. Отклонить - всегда.' },
   { id: 'videos', label: 'Видео', hint: 'Открой ссылку в TikTok, впиши просмотры. Код сам посчитает куты.' },
   { id: 'live', label: 'Живые', hint: 'Уже принятые ролики. Если игрок просит перепроверку — доплати разницу.' },
   { id: 'archive', label: 'Архив', hint: 'Закрытые дела. Здесь ничего начислять не нужно.' },
@@ -112,15 +112,19 @@ function Guide({ onClose }) {
 
 function CommentCase({ item, onOpen }) {
   const count = item.photoCount || (item.photos || []).length
+  const needed = item.photosRequired || 15
+  const incomplete = item.incomplete ?? count < needed
   return (
-    <button type="button" className="tt-card" onClick={() => onOpen(item)}>
+    <button type="button" className={`tt-card${incomplete ? ' is-incomplete' : ''}`} onClick={() => onOpen(item)}>
       <div className="tt-card-top">
         <strong>{playerName(item.user)}</strong>
         <span>{fmtDate(item.createdAt)}</span>
       </div>
       <div className="tt-card-nicks">{(item.nicks || []).map((n) => `@${n}`).join(' · ') || 'нет ников'}</div>
       <div className="tt-card-flags">
-        <span>{count} фото</span>
+        {incomplete
+          ? <span className="tt-flag-incomplete">незавершено {count}/{needed}</span>
+          : <span>{count} фото</span>}
         {item.hasSimilar ? <span className="tt-flag-hot">есть похожие · {item.matchCount}</span> : <span>уникальные</span>}
       </div>
     </button>
@@ -188,6 +192,9 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return
       if (document.querySelector('.img-lightbox')) return
       if (e.key === 'a' || e.key === 'A') {
+        const neededKey = local.photosRequired || 15
+        const receivedKey = local.photoCount ?? (local.photos || []).length
+        if ((local.incomplete ?? receivedKey < neededKey)) return
         e.preventDefault()
         decide(() => approveTiktokComment(local.id), `Принято, ${local.reward || ''} кут ушли`)
       }
@@ -206,6 +213,10 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
   }, [local.id, onAdvance, onClose])
 
   const nextHint = nextQueueItem(queue, local.id)
+  const needed = local.photosRequired || 15
+  const received = local.photoCount ?? (local.photos || []).length
+  const incomplete = local.incomplete ?? received < needed
+  const slots = Array.from({ length: needed }, (_, i) => local.photos?.[i] || null)
 
   return (
     <div className="tt-work">
@@ -232,11 +243,25 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
       </div>
 
       <p className="tt-hint">
-        Превью лёгкие, полный кадр — по клику. Красная рамка: сравни. A принять · R отклонить · N следующее.
+        {incomplete
+          ? `Серия неполная: ${received} из ${needed}. Принять нельзя, отклонить можно сразу.`
+          : 'Превью лёгкие, полный кадр - по клику. Красная рамка: сравни. A принять · R отклонить · N следующее.'}
       </p>
+      {incomplete && (
+        <div className="tt-incomplete-note">
+          незавершено {received}/{needed} · награду платить рано
+        </div>
+      )}
 
       <div className="tt-grid">
-        {(local.photos || []).map((photo, i) => {
+        {slots.map((photo, i) => {
+          if (!photo) {
+            return (
+              <div key={`empty-${i}`} className="tt-shot tt-shot-empty">
+                <span>#{i + 1}</span>
+              </div>
+            )
+          }
           const hits = matchByIndex[i] || []
           const thumb = shotFileId(photo)
           return (
@@ -296,11 +321,22 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided }) {
       )}
 
       <div className="tt-actions">
-        <button type="button" className="tt-btn tt-btn-ok" disabled={busy} onClick={() => decide(() => approveTiktokComment(local.id), 'Принято')}>
-          Всё правильно
-        </button>
-        <button type="button" className="tt-btn tt-btn-hot" disabled={busy} onClick={() => decide(() => rejectTiktokComment(local.id), 'Отклонено')}>
+        <button
+          type="button"
+          className="tt-btn tt-btn-hot"
+          disabled={busy}
+          onClick={() => decide(() => rejectTiktokComment(local.id), 'Отклонено')}
+        >
           Отклонить
+        </button>
+        <button
+          type="button"
+          className="tt-btn tt-btn-ok"
+          disabled={busy || incomplete}
+          title={incomplete ? `Нельзя принять: ${received} из ${needed}` : ''}
+          onClick={() => decide(() => approveTiktokComment(local.id), 'Принято')}
+        >
+          {incomplete ? `Принять нельзя · ${received}/${needed}` : 'Всё правильно'}
         </button>
       </div>
       {lightbox && <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} />}
@@ -688,7 +724,7 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
         />
       ) : tab === 'comments' || tab === 'archive' ? (
         <div className="tt-list">
-          {comments.length === 0 && <p className="tt-empty">Пока пусто. Когда игрок пришлёт 15 скринов — карточка появится здесь.</p>}
+          {comments.length === 0 && <p className="tt-empty">Пока пусто. Первый скрин уже откроет карточку здесь, даже если серия ещё неполная.</p>}
           {comments.map((item) => (
             <CommentCase key={item.id} item={item} onOpen={openFromQueue} />
           ))}

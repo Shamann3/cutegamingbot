@@ -6,18 +6,32 @@ SERVER = ROOT / "server"
 if str(SERVER) not in sys.path:
     sys.path.insert(0, str(SERVER))
 
+import re
+
 from tiktok_earn_logic import (  # noqa: E402
+    BARNUM_REJECTS,
     COMMENT_REWARD_MAX,
     COMMENT_REWARD_MIN,
     VIDEO_REWARD_MAX,
     VIDEO_REWARD_MIN,
+    append_case_photos,
+    assert_can_approve_comments,
+    comment_progress,
     kut_for_views,
     normalize_nick,
     parse_tiktok_url,
     payout_delta,
+    ru_gone_verb,
+    ru_screenshot_word,
     validate_comment_reward,
     validate_nick,
     validate_video_reward,
+    wrap_barnum_html,
+)
+
+_TY_RE = re.compile(
+    r"(?<![А-Яа-яA-Za-z])(ты|тебя|тебе|тобой|твой|твоя|твоё|твое|твои|твоих|твоим|твоему|твоей)(?![А-Яа-яA-Za-z])",
+    re.IGNORECASE,
 )
 
 
@@ -26,9 +40,11 @@ def test_nick_taken_message_is_defined():
     src = Path(tt.__file__).read_text(encoding="utf-8")
     assert "Этот ник уже занят другим игроком" in src
     assert "Можно не больше" in src
-    assert "Эта пачка ещё на проверке" in src
+    assert "уже на проверке" in src
     assert "Без него скриншоты принять нельзя" in src
     assert "require_nicks" in src
+    assert "INSERT INTO tiktok_comment_cases" in src
+    assert "append_case_photos" in src
 
 
 def test_bot_texts_match_plan():
@@ -36,7 +52,7 @@ def test_bot_texts_match_plan():
     assert "Тик ток" in text_hub()
     assert "cuteplayer" in text_ask_nick()
     assert "Задания" in help_earnings_block()
-    assert "по которому тебя можно найти" in text_need_nick() or "можно найти" in text_need_nick()
+    assert "Вас искать" in text_need_nick() or "ник" in text_need_nick()
 
 
 def test_hub_buttons_use_premium_emoji_ids():
@@ -76,6 +92,10 @@ def test_player_tiktok_texts_have_no_emdash():
         collect_text(7, 15, ["cuteplayer"]),
         collect_text(15, 15, ["cuteplayer"]),
     ]
+    from bot.funcs.tiktok_earn import text_photos_on_review
+    blobs.append(text_photos_on_review(1, 1, 15))
+    blobs.append(text_photos_on_review(5, 5, 15))
+    blobs.append(text_photos_on_review(1, 15, 15))
     help_src = Path("bot/funcs/help.py").read_text(encoding="utf-8")
     tiktok_help = help_src.split("<b>TikTok</b>")[1].split("<b>Промокоды</b>")[0]
     blobs.append(tiktok_help)
@@ -83,7 +103,9 @@ def test_player_tiktok_texts_have_no_emdash():
         assert "—" not in blob
         assert "–" not in blob
     assert "<b>" in text_hub()
-    assert "<i>" not in text_hub()
+    assert "<i>" in text_hub()
+    assert "<i>" in text_comments({})
+    assert "<i>" in text_videos({})
 
 
 def _kb_data(kb) -> str:
@@ -100,7 +122,9 @@ def test_collect_progress_and_undo_available_before_full():
     dumped = _kb_data(collect_keyboard(7, 15))
     assert "tt:undo_photo" in dumped
     assert "tt:submit_photos" not in dumped
-    assert "tt:submit_photos" in _kb_data(collect_keyboard(15, 15))
+    full = _kb_data(collect_keyboard(15, 15))
+    assert "tt:undo_photo" in full
+    assert "tt:submit_photos" in full
 
     class _Size:
         def __init__(self, file_id, width):
@@ -149,7 +173,7 @@ def test_direction_then_work_on_same_screen():
     from bot.funcs.tiktok_earn import comments_keyboard, hub_keyboard, text_hub, text_videos, videos_keyboard
 
     hub = text_hub({"commentReward": 12, "kutPerUnit": 40})
-    assert "Что хочешь сделать" in hub
+    assert "Выберите" in hub
     assert "Настройки" not in hub
     dumped = _kb_data(hub_keyboard())
     assert dumped.split()[:2] == ["tt:comments", "tt:videos"]
@@ -207,3 +231,87 @@ def test_navigation_callbacks_stay_on_path():
     assert "ChatType.PRIVATE" in src
     assert "_CollectingPhoto" in src
     assert "_WaitingNickOrLink" in src
+    assert "get_pending_comment_case" in src
+    assert "text_photos_on_review" in src
+
+
+def test_partial_case_logic_and_approve_gate():
+    first = append_case_photos([], [{"fileId": "a"}], 15)
+    assert first["added"] == 1
+    assert first["received"] == 1
+    assert first["incomplete"] is True
+    assert first["complete"] is False
+    mid = append_case_photos(first["photos"], [{"fileId": "b"}, {"fileId": "c"}], 15)
+    assert mid["received"] == 3
+    assert mid["added"] == 2
+    done = append_case_photos([{"i": n} for n in range(14)], [{"i": 14}], 15)
+    assert done["complete"] is True
+    assert done["received"] == 15
+    extra = append_case_photos(done["photos"], [{"i": 99}], 15)
+    assert extra["added"] == 0
+    assert extra["received"] == 15
+    try:
+        assert_can_approve_comments([1, 2, 3], 15)
+        assert False
+    except ValueError as exc:
+        assert "3 из 15" in str(exc)
+    assert assert_can_approve_comments(list(range(15)), 15)["complete"] is True
+    assert comment_progress([], 15)["incomplete"] is True
+
+
+def test_review_copy_uses_vy_and_counts():
+    from bot.funcs.tiktok_earn import text_photos_on_review
+
+    one = text_photos_on_review(1, 1, 15)
+    assert "1 скриншот ушёл на проверку" in one
+    assert "1 из 15" in one
+    three = text_photos_on_review(3, 3, 15)
+    assert "3 скриншота ушли на проверку" in three
+    five = text_photos_on_review(5, 5, 15)
+    assert "5 скриншотов ушли на проверку" in five
+    full = text_photos_on_review(1, 15, 15)
+    assert "Серия собрана" in full
+    assert ru_screenshot_word(1) == "скриншот"
+    assert ru_gone_verb(1) == "ушёл"
+
+
+def test_player_tiktok_copy_is_formal_vy():
+    from bot.funcs.tiktok_earn import (
+        help_earnings_block,
+        text_ask_nick,
+        text_comments,
+        text_hub,
+        text_need_nick,
+        text_nicks,
+        text_nick_required_alert,
+        text_photos_on_review,
+        text_videos,
+        collect_text,
+    )
+
+    blobs = [
+        text_hub({"commentReward": 17, "kutPerUnit": 40}),
+        text_comments({"commentReward": 17}),
+        text_videos({"kutPerUnit": 40}),
+        text_need_nick("comments"),
+        text_need_nick("videos"),
+        text_ask_nick(),
+        text_nicks(["cuteplayer"], locked=False),
+        text_nicks(["cuteplayer"], locked=True),
+        help_earnings_block(),
+        collect_text(3, 15, ["cuteplayer"]),
+        text_photos_on_review(1, 1, 15),
+        text_nick_required_alert(),
+    ]
+    help_src = Path("bot/funcs/help.py").read_text(encoding="utf-8")
+    blobs.append(help_src.split("<b>TikTok</b>")[1].split("<b>Промокоды</b>")[0])
+    blobs.extend(BARNUM_REJECTS)
+    blobs.append(wrap_barnum_html("Проверка не сложилась."))
+    handler = Path("bot/handlers/tiktok_earn.py").read_text(encoding="utf-8")
+    for blob in blobs:
+        assert "—" not in blob
+        hit = _TY_RE.search(blob)
+        assert hit is None, f"informal: {hit.group(0)} in {blob[:80]}"
+    assert "Вы" in text_hub() or "Выберите" in text_hub()
+    assert "Вас" in text_need_nick() or "Ваш" in text_ask_nick()
+    assert "копия" not in "".join(BARNUM_REJECTS).lower()

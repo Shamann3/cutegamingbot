@@ -64,6 +64,7 @@
 }
 
 .tt-lock-seal,
+.tt-flag-incomplete,
 .tt-flag-hot {
   display: inline-block;
   font-size: 0.72rem;
@@ -276,6 +277,45 @@
 .tt-shot-hot {
   border-color: #ef4444;
   box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.45);
+}
+
+.tt-shot-empty {
+  min-height: 148px;
+  display: grid;
+  place-items: center;
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.02);
+  cursor: default;
+  opacity: 0.5;
+}
+
+.tt-card.is-incomplete {
+  border-color: rgba(232, 197, 120, 0.35);
+}
+
+.tt-incomplete-note {
+  border: 1px solid rgba(232, 197, 120, 0.35);
+  background: rgba(232, 197, 120, 0.1);
+  border-radius: 0.75rem;
+  padding: 0.45rem 0.7rem;
+  margin: 0.5rem 0 0.8rem;
+  font-size: 0.86rem;
+}
+
+.tt-btn-ok:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.tt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.tt-actions .tt-btn-hot {
+  min-width: 8.5rem;
 }
 
 .tt-compare {

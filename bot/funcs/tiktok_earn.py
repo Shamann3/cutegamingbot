@@ -21,10 +21,14 @@ from tiktok_earn_logic import (  # noqa: E402
     COMMENT_REWARD,
     KUT_PER_UNIT,
     PHOTOS_REQUIRED,
+    append_case_photos,
+    comment_progress,
     hashes_from_image_bytes,
     normalize_nick,
     parse_tiktok_url,
     recheck_wait_text,
+    ru_gone_verb,
+    ru_screenshot_word,
     validate_nick,
 )
 
@@ -191,7 +195,7 @@ async def list_nicks(user_id: int) -> list[str]:
 async def require_nicks(user_id: int) -> list[str]:
     nicks = await list_nicks(user_id)
     if not nicks:
-        raise ValueError("Сначала укажи свой ник в TikTok. Без него скриншоты принять нельзя.")
+        raise ValueError("Сначала укажите свой ник в TikTok. Без него скриншоты принять нельзя.")
     return nicks
 
 
@@ -218,7 +222,7 @@ async def add_nick(user_id: int, raw: str) -> str:
     nick = validate_nick(raw)
     nicks = await list_nicks(user_id)
     if nick in nicks:
-        raise ValueError("Такой ник уже есть в твоём списке")
+        raise ValueError("Такой ник уже есть в Вашем списке")
     if len(nicks) >= int(cfg["maxNicks"]):
         raise ValueError(f"Можно не больше {cfg['maxNicks']} ников")
     if await has_pending(user_id):
@@ -247,9 +251,9 @@ async def replace_nick(user_id: int, old_nick: str, raw: str) -> str:
     old = normalize_nick(old_nick)
     current = await list_nicks(user_id)
     if old not in current:
-        raise ValueError("Такого ника нет в твоём списке")
+        raise ValueError("Такого ника нет в Вашем списке")
     if new_nick in current and new_nick != old:
-        raise ValueError("Такой ник уже есть в твоём списке")
+        raise ValueError("Такой ник уже есть в Вашем списке")
     owner = await _pool().fetchval("SELECT user_id FROM tiktok_nicks WHERE nick = $1", new_nick)
     if owner and int(owner) != int(user_id):
         raise ValueError("Этот ник уже занят другим игроком")
@@ -295,29 +299,29 @@ async def clear_session(user_id: int) -> None:
     await set_session(user_id, "", {})
 
 
-async def submit_comment_case(user_id: int, photos: list[dict[str, Any]]) -> None:
+async def get_pending_comment_case(user_id: int) -> dict[str, Any] | None:
     await ensure_schema()
     cfg = await get_settings()
-    needed = int(cfg["photosRequired"])
-    if len(photos) != needed:
-        raise ValueError(f"Нужно ровно {needed} скриншотов")
-    nicks = await require_nicks(user_id)
-    existing = await _pool().fetchval(
-        "SELECT id FROM tiktok_comment_cases WHERE user_id = $1 AND status = 'pending'",
+    row = await _pool().fetchrow(
+        "SELECT id, photos, status FROM tiktok_comment_cases WHERE user_id = $1 AND status = 'pending'",
         int(user_id),
     )
-    if existing:
-        raise ValueError("Эта пачка ещё на проверке. Как ответим - можно прислать новую.")
-    await _pool().execute(
-        """
-        INSERT INTO tiktok_comment_cases (user_id, status, photos, nick_snapshot)
-        VALUES ($1, 'pending', $2::jsonb, $3::jsonb)
-        """,
-        int(user_id),
-        json.dumps(photos, ensure_ascii=False),
-        json.dumps(nicks, ensure_ascii=False),
-    )
-    await clear_session(user_id)
+    if not row:
+        return None
+    photos = _json(row["photos"]) or []
+    if not isinstance(photos, list):
+        photos = []
+    progress = comment_progress(photos, cfg["photosRequired"])
+    return {"id": int(row["id"]), "photos": photos, "status": row["status"], **progress}
+
+
+async def submit_comment_case(user_id: int, photos: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Старый колбэк «Отправить»: кадры уже на проверке с первого фото."""
+    await require_nicks(user_id)
+    case = await get_pending_comment_case(user_id)
+    if not case:
+        raise ValueError("Сначала пришлите хотя бы один скриншот. Он сразу уйдёт на проверку.")
+    return case
 
 
 async def submit_video(user_id: int, raw_url: str) -> None:
@@ -329,7 +333,7 @@ async def submit_video(user_id: int, raw_url: str) -> None:
         int(user_id),
     )
     if pending:
-        raise ValueError("Это видео ещё на проверке. Как ответим - можно прислать новую ссылку.")
+        raise ValueError("Это видео ещё на проверке. Новую ссылку можно прислать после ответа.")
     taken = await _pool().fetchval(
         """
         SELECT id FROM tiktok_videos
@@ -442,13 +446,12 @@ def hub_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def comments_keyboard(*, can_send: bool, count: int = 0, needed: int = 15) -> InlineKeyboardMarkup:
+def comments_keyboard(*, can_send: bool = True, count: int = 0, needed: int = 15) -> InlineKeyboardMarkup:
     rows = []
-    if can_send:
-        if count >= needed:
-            rows.append([_btn("Отправить", TT_SUBMIT_PHOTOS, ICON_OK)])
-        if count > 0:
-            rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
+    if can_send and count > 0:
+        rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
+    if count >= needed:
+        rows.append([_btn("Уже на проверке", TT_SUBMIT_PHOTOS, ICON_OK)])
     rows.append([_btn("Мои ники", TT_NICKS)])
     rows.append([_btn("К выбору", TT_HUB, ICON_BACK)])
     return _kb(rows)
@@ -499,10 +502,13 @@ def text_hub(cfg: dict[str, Any] | None = None) -> str:
     photos = int(cfg.get("photosRequired") or PHOTOS_REQUIRED)
     return (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Тик ток</b>\n\n"
-        "<b>Что хочешь сделать?</b>\n\n"
-        f"<b>Комментарии - {photos} скринов, {reward} кут за принятую пачку.</b>\n"
-        f"<b>Видео - ролик про бота, {kut} кут за каждые 1000 просмотров.</b>\n\n"
-        "<b>Выбери направление. Доказательства отправишь сразу на следующем экране.</b>"
+        "<i>Выберите, чем хотите заняться прямо сейчас.</i>\n\n"
+        f"<b>Комментарии</b>\n"
+        f"<i>Напишите {photos} живых комментариев и пришлите скрины. За принятую серию -</i> "
+        f"<b>{reward} кут</b><i>.</i>\n\n"
+        f"<b>Видео о боте</b>\n"
+        f"<i>Снимите ролик про @CuteGamingBot. За каждые 1000 просмотров -</i> "
+        f"<b>{kut} кут</b><i>.</i>"
     )
 
 
@@ -512,12 +518,14 @@ def text_comments(cfg: dict[str, Any]) -> str:
     photos = int(cfg.get("photosRequired") or PHOTOS_REQUIRED)
     return (
         f"<tg-emoji emoji-id='{ICON_COMMENTS}'>💬</tg-emoji> <b>Комментарии в TikTok</b>\n\n"
-        f"<b>Найди ролики с тегом «{tag}».</b>\n"
-        f"<b>Напиши {photos} своих комментариев и лайкни каждый.</b>\n"
-        f"<b>Один комментарий - один скрин. Всего {photos} фото.</b>\n\n"
+        f"<i>Найдите ролики с тегом «{tag}». Напишите {photos} своих комментариев и поставьте лайк на каждый.</i>\n"
+        f"<i>В тексте - живое упоминание проекта и обязательно @CuteGamingBot. "
+        f"Один комментарий - один кадр, без повторов с ролика на ролик.</i>\n\n"
+        "<i>Пример:</i>\n"
+        "<blockquote><code>Как по мне @CuteGamingBot намного лучше для заработка звезд</code></blockquote>\n\n"
         f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> "
-        f"<b>За принятую пачку - {reward} кут. Можно снова и снова.</b>\n\n"
-        "<b>Пришли скрины прямо сюда: альбомом или по одному.</b>"
+        f"<b>За полную принятую серию - {reward} кут.</b>\n"
+        f"<i>Каждый скрин сразу уходит на проверку. Награду начислим только за {photos} кадров.</i>"
     )
 
 
@@ -525,14 +533,15 @@ def text_videos(cfg: dict[str, Any]) -> str:
     hashtag = cfg.get("videoHashtag") or "@CuteGamingBot"
     kut = int(cfg.get("kutPerUnit") or KUT_PER_UNIT)
     per = int(cfg.get("viewsPerUnit") or 1000)
+    days = int(cfg.get("recheckDays") or 7)
     return (
         f"<tg-emoji emoji-id='{ICON_VIDEOS}'>📹</tg-emoji> <b>Видео про бота</b>\n\n"
-        "<b>Сними ролик про @CuteGamingBot.</b>\n"
-        f"<b>Поставь хештег {hashtag}.</b>\n\n"
-        f"<b>Пришли ссылку прямо сюда. Мы откроем TikTok и впишем просмотры.</b>\n"
-        f"<b>За каждые полные {per} просмотров - {kut} кут.</b>\n"
-        f"<b>Перепроверить можно через {int(cfg.get('recheckDays') or 7)} дней: доплатим только прирост.</b>\n\n"
-        "<b>Идея или монтаж не складываются - напиши @JerichoCute. Коротко, что хочешь снять.</b>"
+        f"<i>Снимите ролик про @CuteGamingBot и поставьте хештег {hashtag}.</i>\n"
+        "<i>Пришлите ссылку прямо сюда: tiktok.com или vm.tiktok.com. "
+        "Мы откроем ролик и впишем просмотры.</i>\n\n"
+        f"<b>Каждые полные {per} просмотров - {kut} кут.</b>\n"
+        f"<i>Перепроверка через {days} дней: доплата только за новый прирост.</i>\n"
+        "<i>Если идея или монтаж не складываются - напишите @JerichoCute.</i>"
     )
 
 
@@ -545,43 +554,42 @@ def text_need_nick(path: str = "") -> str:
         else "Потом продолжим выбранное направление."
     )
     return (
-        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Сначала укажи свой TikTok</b>\n\n"
-        "<b>Без публичного ника не поймём, где тебя можно найти.</b>\n"
-        f"<b>{after}</b>\n\n"
-        "<b>Напиши ник как в TikTok. Без ссылки, только имя.</b>\n"
+        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Сначала укажите свой TikTok</b>\n\n"
+        "<i>Без публичного ника мы не поймём, где Вас искать.</i>\n"
+        f"<i>{after}</i>\n"
+        "<i>Напишите ник как в TikTok. Без ссылки, только имя.</i>\n"
         "<blockquote><code>cuteplayer</code></blockquote>"
     )
 
 
 def text_ask_nick() -> str:
     return (
-        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Твой ник в TikTok</b>\n\n"
-        "<b>Одним сообщением. С @ или без.</b>\n"
-        "<b>По нему найдём твои комментарии и ролики.</b>\n\n"
+        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Ваш ник в TikTok</b>\n\n"
+        "<i>Одним сообщением. С @ или без.</i>\n"
+        "<i>По нему найдём Ваши комментарии и ролики.</i>\n"
         "<blockquote><code>cuteplayer</code></blockquote>"
     )
 
 
 def text_nick_required_alert() -> str:
-    return "Сначала укажи свой ник в TikTok. Без него скриншоты принять нельзя."
+    return "Сначала укажите свой ник в TikTok. Без него скриншоты принять нельзя."
 
 
 def text_nicks(nicks: list[str], *, locked: bool) -> str:
-    body = "\n".join(f"<b>@{n}</b>" for n in nicks) if nicks else "<b>Пока ни одного ника.</b>"
+    body = "\n".join(f"<b>@{n}</b>" for n in nicks) if nicks else "<i>Пока ни одного ника.</i>"
     extra = (
-        "\n\n<b>Сейчас идёт проверка. Ники можно менять после ответа.</b>"
+        "\n\n<i>Сейчас идёт проверка. Ники можно менять после ответа.</i>"
         if locked
-        else "\n\n<b>Переименовался - измени ник. Можно добавить ещё один аккаунт, до трёх.</b>"
+        else "\n\n<i>Переименовались - измените ник. Можно добавить ещё один аккаунт, до трёх.</i>"
     )
-    return f"<b>Твои TikTok-аккаунты</b>\n\n{body}{extra}"
+    return f"<b>Ваши TikTok-аккаунты</b>\n\n{body}{extra}"
 
 
 def help_earnings_block() -> str:
     return (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>TikTok</b>\n"
-        "<b>Куты за комментарии с тегом и за видео про бота.</b>\n"
-        "<b>Открой Задания, нажми Тик ток и выбери направление.</b>\n"
-        "<blockquote><code>Задания</code></blockquote>"
+        "<i>Куты за комментарии с тегом и за видео про бота.</i>\n"
+        "<i>Откройте Задания, нажмите Тик ток и выберите направление.</i>\n"
     )
 
 
@@ -592,14 +600,22 @@ def comments_screen_text(
     pending: bool,
     count: int,
 ) -> str:
-    needed = int(cfg.get("photosRequired") or 15)
+    needed = int(cfg.get("photosRequired") or PHOTOS_REQUIRED)
     body = text_comments(cfg)
     if nicks:
-        body += "\n\n<b>Ники, по которым проверят:</b> " + ", ".join(f"@{n}" for n in nicks)
+        body += "\n\n<i>Ники, по которым проверят:</i> " + ", ".join(f"<b>@{n}</b>" for n in nicks)
     if pending:
-        body += "\n\n<b>Эта пачка ещё на проверке. Новую можно прислать после ответа.</b>"
-    else:
+        body += (
+            f"\n\n<b>Серия полная: {needed} из {needed}.</b>\n"
+            "<i>Всё уже на проверке. Новую серию можно прислать после ответа.</i>"
+        )
+    elif count > 0:
         body += "\n\n" + collect_text(count, needed)
+    else:
+        body += (
+            "\n\n<i>Пришлите скрины прямо сюда: альбомом или по одному. "
+            "Первый кадр сразу уйдёт на проверку.</i>"
+        )
     return body
 
 
@@ -610,15 +626,15 @@ def videos_screen_text(
 ) -> str:
     body = text_videos(cfg)
     if nicks:
-        body += "\n\n<b>Ники:</b> " + ", ".join(f"@{n}" for n in nicks)
+        body += "\n\n<i>Ники:</i> " + ", ".join(f"<b>@{n}</b>" for n in nicks)
     pending = [v for v in videos if v.get("status") == "pending"]
     live = [v for v in videos if v.get("status") == "live"]
     if pending:
-        body += "\n\n<b>Ссылка на проверке. Когда укажем просмотры - начислим куты за полные тысячи.</b>"
+        body += "\n\n<b>Ссылка на проверке.</b>\n<i>Когда укажем просмотры - начислим куты за полные тысячи.</i>"
     else:
-        body += "\n\n<b>Ссылку tiktok.com или vm.tiktok.com можно отправить следующим сообщением.</b>"
+        body += "\n\n<i>Ссылку tiktok.com или vm.tiktok.com можно отправить следующим сообщением.</i>"
     if live:
-        body += "\n\n<b>Твои ролики</b>"
+        body += "\n\n<b>Ваши ролики</b>"
         for item in live[:5]:
             if item.get("recheckPending"):
                 mark = " · ждём перепроверку"
@@ -626,25 +642,56 @@ def videos_screen_text(
                 mark = f" · учтено {item['lastViews']} · {item.get('recheckWaitText') or 'ещё рано'}"
             else:
                 mark = f" · учтено {item['lastViews']} · можно проверить"
-            body += f"\n<code>{item['url']}</code><b>{mark}</b>"
+            body += f"\n<code>{item['url']}</code><i>{mark}</i>"
     return body
 
 
 def collect_text(count: int, needed: int, nicks: list[str] | None = None) -> str:
     bound = ""
     if nicks:
-        bound = "\n<b>Проверяем: " + ", ".join(f"@{n}" for n in nicks) + "</b>"
+        bound = "\n<i>Проверяем:</i> " + ", ".join(f"<b>@{n}</b>" for n in nicks)
     if count >= needed:
         return (
-            f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> "
-            f"<b>{needed} из {needed}. Можно отправить.</b>{bound}\n"
-            "<b>Убрать последний кадр - кнопка ниже. Новую пачку - после ответа.</b>"
+            f"<b>{needed} из {needed}. Серия собрана и уже на проверке.</b>{bound}\n"
+            "<i>Убрать последний кадр можно кнопкой ниже, пока нет решения.</i>"
         )
     left = needed - count
     return (
-        f"<tg-emoji emoji-id='{ICON_COMMENTS}'>💬</tg-emoji> "
-        f"<b>Принято {count} из {needed}. Осталось {left}.</b>{bound}\n"
-        "<b>Альбомом или по одному. Как фото, не как файл.</b>"
+        f"<b>На проверке {count} из {needed}.</b> <i>Осталось {left}.</i>{bound}\n"
+        "<i>Альбомом или по одному. Как фото, не как файл. Награду начислим только за полную серию.</i>"
+    )
+
+
+def text_photos_on_review(
+    added: int,
+    count: int,
+    needed: int,
+    nicks: list[str] | None = None,
+) -> str:
+    added = max(0, int(added))
+    count = int(count)
+    needed = int(needed)
+    bound = ""
+    if nicks:
+        bound = "\n<i>Ники:</i> " + ", ".join(f"<b>@{n}</b>" for n in nicks)
+    if added <= 0 and count >= needed:
+        return (
+            f"<b>Серия уже на проверке: {needed} из {needed}.</b>\n"
+            "<i>Ждём решение. Новые кадры сейчас не примем.</i>"
+        )
+    word = ru_screenshot_word(added)
+    verb = ru_gone_verb(added)
+    if count >= needed:
+        return (
+            f"<b>{added} {word} {verb} на проверку.</b>\n"
+            f"<b>Серия собрана: {needed} из {needed}.</b>\n"
+            f"<i>Ждём решение. Награду начислим только за полную принятую серию.</i>{bound}"
+        )
+    left = needed - count
+    return (
+        f"<b>{added} {word} {verb} на проверку.</b>\n"
+        f"<i>Сейчас на проверке</i> <b>{count} из {needed}</b><i>. Осталось {left}.</i>\n"
+        f"<i>Можно прислать ещё альбомом или по одному.</i>{bound}"
     )
 
 
@@ -670,36 +717,113 @@ async def add_photo(
     hashes: dict[str, str],
     thumb_file_id: str = "",
 ) -> dict[str, Any]:
-    await require_nicks(user_id)
+    nicks = await require_nicks(user_id)
     cfg = await get_settings()
     needed = int(cfg["photosRequired"])
-    session = await get_session(user_id)
-    extra = dict(session.get("extra") or {})
-    photos = list(extra.get("photos") or [])
-    if len(photos) >= needed:
-        return {"count": len(photos), "needed": needed, "full": True}
-    photos.append({"fileId": file_id, "thumbFileId": thumb_file_id or "", **hashes})
-    extra["photos"] = photos
-    await set_session(user_id, "collect_photos", extra)
-    return {"count": len(photos), "needed": needed, "full": len(photos) >= needed}
+    photo = {"fileId": file_id, "thumbFileId": thumb_file_id or "", **hashes}
+    pool = _pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                SELECT id, photos FROM tiktok_comment_cases
+                WHERE user_id = $1 AND status = 'pending'
+                FOR UPDATE
+                """,
+                int(user_id),
+            )
+            if row:
+                existing = _json(row["photos"]) or []
+                if not isinstance(existing, list):
+                    existing = []
+                result = append_case_photos(existing, [photo], needed)
+                if result["added"]:
+                    await conn.execute(
+                        "UPDATE tiktok_comment_cases SET photos = $2::jsonb WHERE id = $1 AND status = 'pending'",
+                        int(row["id"]),
+                        json.dumps(result["photos"], ensure_ascii=False),
+                    )
+                case_id = int(row["id"])
+            else:
+                result = append_case_photos([], [photo], needed)
+                case_id = int(
+                    await conn.fetchval(
+                        """
+                        INSERT INTO tiktok_comment_cases (user_id, status, photos, nick_snapshot)
+                        VALUES ($1, 'pending', $2::jsonb, $3::jsonb)
+                        RETURNING id
+                        """,
+                        int(user_id),
+                        json.dumps(result["photos"], ensure_ascii=False),
+                        json.dumps(nicks, ensure_ascii=False),
+                    )
+                )
+    await set_session(user_id, "collect_photos", {"caseId": case_id})
+    return {
+        "count": result["received"],
+        "needed": result["needed"],
+        "added": result["added"],
+        "full": result["complete"],
+        "complete": result["complete"],
+        "caseId": case_id,
+    }
 
 
 async def undo_photo(user_id: int) -> dict[str, Any]:
     cfg = await get_settings()
-    session = await get_session(user_id)
-    extra = dict(session.get("extra") or {})
-    photos = list(extra.get("photos") or [])
-    if photos:
-        photos.pop()
-    extra["photos"] = photos
-    await set_session(user_id, "collect_photos", extra)
-    return {"count": len(photos), "needed": int(cfg["photosRequired"])}
+    needed = int(cfg["photosRequired"])
+    pool = _pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                SELECT id, photos, reviewed_at FROM tiktok_comment_cases
+                WHERE user_id = $1 AND status = 'pending'
+                FOR UPDATE
+                """,
+                int(user_id),
+            )
+            if not row:
+                await set_session(user_id, "collect_photos", {})
+                return {"count": 0, "needed": needed, "complete": False, "deleted": False}
+            if row["reviewed_at"]:
+                raise ValueError("По этой серии уже есть решение.")
+            photos = _json(row["photos"]) or []
+            if not isinstance(photos, list):
+                photos = []
+            if photos:
+                photos.pop()
+            if not photos:
+                await conn.execute(
+                    "DELETE FROM tiktok_comment_cases WHERE id = $1 AND status = 'pending'",
+                    int(row["id"]),
+                )
+                await set_session(user_id, "collect_photos", {})
+                return {"count": 0, "needed": needed, "complete": False, "deleted": True}
+            await conn.execute(
+                "UPDATE tiktok_comment_cases SET photos = $2::jsonb WHERE id = $1 AND status = 'pending'",
+                int(row["id"]),
+                json.dumps(photos, ensure_ascii=False),
+            )
+            await set_session(user_id, "collect_photos", {"caseId": int(row["id"])})
+            progress = comment_progress(photos, needed)
+            return {
+                "count": progress["received"],
+                "needed": progress["needed"],
+                "complete": progress["complete"],
+                "deleted": False,
+            }
 
 
 async def is_collecting(user_id: int) -> bool:
+    if not await list_nicks(user_id):
+        return False
     if (await get_session(user_id)).get("mode") != "collect_photos":
         return False
-    return bool(await list_nicks(user_id))
+    case = await get_pending_comment_case(user_id)
+    if case and case["complete"]:
+        return False
+    return True
 
 
 async def is_waiting_nick(user_id: int) -> bool:

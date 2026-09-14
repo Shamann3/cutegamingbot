@@ -41,10 +41,10 @@ DEFAULT_REJECT_REASONS: list[dict[str, str]] = [
 ]
 
 BARNUM_REJECTS: tuple[str, ...] = (
-    "Эта пачка не прошла проверку. Часть кадров выглядит так, будто задание собрано не так, как мы просили. Сделай 15 разных комментариев под роликами с нужным тегом, лайк на своём, свежие скрины - и пришли ещё раз.",
-    "Проверка смотрит не только на количество кадров, а на то, как собрана вся пачка. Сейчас она выглядит незавершённой. Сделай 15 разных комментариев под роликами с нужным тегом, лайк на своём - и пришли новые скрины.",
-    "Мы не смогли принять эту пачку: по ней не складывается цельная картина выполнения. Попробуй ещё раз с нуля: 15 свежих скринов, один комментарий - один кадр.",
-    "Эта сдача не прошла. Иногда так бывает, если кадры слишком похожи друг на друга или не показывают задание целиком. Собери новую пачку и отправь снова.",
+    "<b>Эту серию не приняли.</b>\n<i>По кадрам не складывается цельная картина выполнения. Соберите новую серию: 15 разных комментариев под роликами с нужным тегом, лайк на своём и свежие скрины.</i>",
+    "<b>Серия не прошла проверку.</b>\n<i>Смотрим не только на число кадров, а на то, как собрано всё вместе. Сейчас картина выглядит незавершённой. Пришлите новую серию с нуля.</i>",
+    "<b>Пока не можем принять.</b>\n<i>По этой сдаче не видно, что задание выполнено целиком. 15 свежих скринов, один комментарий - один кадр, и можно снова.</i>",
+    "<b>Эту сдачу закрыли.</b>\n<i>Так бывает, если кадры слишком похожи или не показывают задание целиком. Соберите новую серию и пришлите снова.</i>",
 )
 
 TAB_TEASERS: dict[str, str] = {
@@ -76,7 +76,7 @@ def validate_nick(raw: str) -> str:
 def parse_tiktok_url(raw: str) -> dict[str, str]:
     text = (raw or "").strip()
     if not text:
-        raise ValueError("Это не похоже на ссылку TikTok. Пришли tiktok.com или vm.tiktok.com.")
+        raise ValueError("Это не похоже на ссылку TikTok. Пришлите tiktok.com или vm.tiktok.com.")
     if "://" not in text:
         text = "https://" + text
     parsed = urlparse(text)
@@ -89,7 +89,7 @@ def parse_tiktok_url(raw: str) -> dict[str, str]:
         or host in {"vm.tiktok.com", "vt.tiktok.com"}
     )
     if not allowed:
-        raise ValueError("Это не похоже на ссылку TikTok. Пришли tiktok.com или vm.tiktok.com.")
+        raise ValueError("Это не похоже на ссылку TikTok. Пришлите tiktok.com или vm.tiktok.com.")
     path = parsed.path or ""
     match = VIDEO_CANONICAL_RE.search(path)
     if match:
@@ -102,7 +102,7 @@ def parse_tiktok_url(raw: str) -> dict[str, str]:
     if host in {"vm.tiktok.com", "vt.tiktok.com"}:
         code = path.strip("/").split("/")[0]
         if not code:
-            raise ValueError("Это не похоже на ссылку TikTok. Пришли tiktok.com или vm.tiktok.com.")
+            raise ValueError("Это не похоже на ссылку TikTok. Пришлите tiktok.com или vm.tiktok.com.")
         return {"url": text, "canonical": f"short:{code.lower()}", "videoId": ""}
     short = SHORT_CODE_RE.search(host + path)
     if "tiktok.com/t/" in f"{host}{path}" or re.search(r"/t/[A-Za-z0-9]+", path):
@@ -112,7 +112,7 @@ def parse_tiktok_url(raw: str) -> dict[str, str]:
     if qs.get("share_item_id"):
         video_id = str(qs["share_item_id"][0])
         return {"url": text, "canonical": f"video:{video_id}", "videoId": video_id}
-    raise ValueError("Это не похоже на ссылку TikTok. Пришли tiktok.com или vm.tiktok.com.")
+    raise ValueError("Это не похоже на ссылку TikTok. Пришлите tiktok.com или vm.tiktok.com.")
 
 
 def thousands_from_views(views: int) -> int:
@@ -144,6 +144,73 @@ def validate_video_reward(raw: Any) -> int:
             f"Награда за 1000 просмотров: от {VIDEO_REWARD_MIN} до {VIDEO_REWARD_MAX} кут"
         )
     return value
+
+
+def comment_progress(photos: Any, needed: int = PHOTOS_REQUIRED) -> dict[str, Any]:
+    received = len(list(photos or []))
+    need = max(1, int(needed or PHOTOS_REQUIRED))
+    return {
+        "received": received,
+        "needed": need,
+        "left": max(0, need - received),
+        "complete": received >= need,
+        "incomplete": received < need,
+    }
+
+
+def append_case_photos(
+    existing: Iterable[Any] | None,
+    incoming: Iterable[Any] | None,
+    needed: int = PHOTOS_REQUIRED,
+) -> dict[str, Any]:
+    photos = list(existing or [])
+    added = 0
+    for item in incoming or []:
+        if len(photos) >= int(needed or PHOTOS_REQUIRED):
+            break
+        photos.append(item)
+        added += 1
+    progress = comment_progress(photos, needed)
+    return {**progress, "photos": photos, "added": added}
+
+
+def assert_can_approve_comments(photos: Any, needed: int = PHOTOS_REQUIRED) -> dict[str, Any]:
+    progress = comment_progress(photos, needed)
+    if progress["incomplete"]:
+        raise ValueError(
+            f"Серия неполная: {progress['received']} из {progress['needed']}. "
+            "Награду можно начислить только за полную пачку."
+        )
+    return progress
+
+
+def ru_screenshot_word(n: int) -> str:
+    value = abs(int(n))
+    mod10 = value % 10
+    mod100 = value % 100
+    if mod10 == 1 and mod100 != 11:
+        return "скриншот"
+    if mod10 in {2, 3, 4} and mod100 not in {12, 13, 14}:
+        return "скриншота"
+    return "скриншотов"
+
+
+def ru_gone_verb(n: int) -> str:
+    value = abs(int(n))
+    mod10 = value % 10
+    mod100 = value % 100
+    if mod10 == 1 and mod100 != 11:
+        return "ушёл"
+    return "ушли"
+
+
+def wrap_barnum_html(text: str) -> str:
+    raw = (text or "").strip()
+    if not raw:
+        raw = BARNUM_REJECTS[0]
+    if "<b>" in raw or "<i>" in raw:
+        return raw
+    return f"<b>Серия не принята.</b>\n<i>{raw}</i>"
 
 
 def kut_for_thousands(thousands: int, kut_per_unit: int = KUT_PER_UNIT) -> int:
