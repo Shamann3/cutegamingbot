@@ -369,6 +369,8 @@ def test_wait_modes_photo_ignored_until_button():
     assert "PHOTO_WAIT_MODES" in funcs
     assert "MODE_NEED_NICK" in src
     assert "wait_photos" in funcs
+    assert "ForceReply" in src
+    assert "_reprompt" in src
 
     ask = text_ask_nick()
     assert "Напишите имя своего TikTok" in ask
@@ -435,6 +437,21 @@ def test_gift_like_wait_flag_lets_handler_accept_text():
     clear_wait(uid)
     assert not message_matches_wait_photo(_Msg(uid, photo=["x"]))
 
+    class _Reply:
+        def __init__(self, mid):
+            self.message_id = mid
+
+    class _ReplyMsg(_Msg):
+        def __init__(self, uid, text="", chat_type="private", photo=None, reply_mid=None):
+            super().__init__(uid, text, chat_type, photo)
+            self.reply_to_message = _Reply(reply_mid) if reply_mid else None
+
+    begin_wait(uid, "nick", after="comments", prompt_message_id=100)
+    assert message_matches_wait_text(_ReplyMsg(uid, "Ooooo", reply_mid=100))
+    assert message_matches_wait_text(_Msg(uid, "Ooooo"))
+    assert not message_matches_wait_text(_ReplyMsg(uid, "Ooooo", reply_mid=999))
+    clear_wait(uid)
+
 
 def test_invalid_nick_error_stays_on_same_screen():
     from bot.funcs.tiktok_earn import text_need_nick
@@ -460,3 +477,17 @@ def test_button_and_attach_use_gift_like_wait():
     assert "dp.message.register" in handler
     assert "SkipHandler" in main_src
     assert "should_skip_main_text_handler" in main_src
+    assert "ForceReply" in handler
+    assert "ForceReply(selective=True)" in handler
+    assert "_reprompt" in handler
+    assert "process_tiktok_wait_text" in main_src
+    assert "process_user_gift_recipient" in main_src
+    assert main_src.index("async def process_tiktok_wait_text") < main_src.index(
+        "async def add_firstname_to_usercheck_balance"
+    )
+    assert main_src.index("async def process_user_gift_recipient") < main_src.index(
+        "async def process_tiktok_wait_text"
+    )
+    assert "prompt_message_id" in funcs
+    assert "persist_prompt" in funcs
+    assert "is_cancel_input" in funcs

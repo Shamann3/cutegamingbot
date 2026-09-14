@@ -33016,6 +33016,64 @@ async def process_user_gift_recipient(message: types.Message):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# TikTok wait: тот же паттерн, что process_user_gift_recipient
+# ForceReply + awaiting + prompt_message_id, хендлер на dp ДО общего F.text.
+# ─────────────────────────────────────────────────────────────────────────────
+async def _tiktok_wait_text_filter(m):
+    try:
+        from bot.funcs import tiktok_earn as _tt
+        if not m or not getattr(m, "from_user", None):
+            return False
+        if not _tt.get_wait(m.from_user.id):
+            await _tt.restore_wait_from_session(m.from_user.id)
+        return _tt.message_matches_wait_text(m)
+    except Exception:
+        return False
+
+
+async def _tiktok_wait_photo_filter(m):
+    try:
+        from bot.funcs import tiktok_earn as _tt
+        if not m or not getattr(m, "from_user", None):
+            return False
+        if not _tt.get_wait(m.from_user.id):
+            await _tt.restore_wait_from_session(m.from_user.id)
+        return _tt.message_matches_wait_photo(m)
+    except Exception:
+        return False
+
+
+async def _tiktok_wait_noise_filter(m):
+    try:
+        from bot.funcs import tiktok_earn as _tt
+        if not m or not getattr(m, "from_user", None):
+            return False
+        if not _tt.get_wait(m.from_user.id):
+            await _tt.restore_wait_from_session(m.from_user.id)
+        return _tt.message_matches_wait_noise(m)
+    except Exception:
+        return False
+
+
+@dp.message(_tiktok_wait_text_filter)
+async def process_tiktok_wait_text(message: types.Message):
+    from bot.handlers.tiktok_earn import on_wait_text
+    await on_wait_text(message)
+
+
+@dp.message(_tiktok_wait_photo_filter)
+async def process_tiktok_wait_photo(message: types.Message):
+    from bot.handlers.tiktok_earn import on_wait_photo
+    await on_wait_photo(message)
+
+
+@dp.message(_tiktok_wait_noise_filter)
+async def process_tiktok_wait_noise(message: types.Message):
+    from bot.handlers.tiktok_earn import on_wait_noise
+    await on_wait_noise(message)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ✅ 2) ТВОЙ обработчик (gift_context) - сценарий “giftconfirmwithdrawal_... -> ввод получателя -> confirmwithdrawal”
 # НЕ МЕШАЕТ user_gift, потому что:
 # - фильтр привязан к gift_context и prompt_message_id из gift_context

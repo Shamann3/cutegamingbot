@@ -8,7 +8,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.enums import ChatType
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, ForceReply, Message
 
 from bot.funcs import tiktok_earn as tt
 
@@ -36,6 +36,20 @@ def _prompt_ids(target: CallbackQuery | Message) -> tuple[int | None, int | None
     return (int(chat_id) if chat_id else None, int(mid) if mid else None)
 
 
+def _chat_id_of(target: CallbackQuery | Message) -> int:
+    if isinstance(target, CallbackQuery):
+        msg = target.message
+        if msg and getattr(msg, "chat", None):
+            return int(msg.chat.id)
+        return int(target.from_user.id)
+    return int(target.chat.id)
+
+
+async def _bot():
+    from main import bot1
+    return bot1
+
+
 async def _delete_user_message(message: Message) -> None:
     try:
         await message.delete()
@@ -43,46 +57,119 @@ async def _delete_user_message(message: Message) -> None:
         pass
 
 
+async def _delete_prompt(user_id: int) -> None:
+    rec = tt.get_wait(user_id) or {}
+    chat_id = rec.get("prompt_chat_id")
+    mid = rec.get("prompt_message_id")
+    if not (chat_id and mid):
+        try:
+            extra = ((await tt.get_session(user_id)).get("extra") or {})
+            chat_id = extra.get("prompt_chat_id")
+            mid = extra.get("prompt_message_id")
+        except Exception:
+            chat_id = chat_id
+            mid = mid
+    if not (chat_id and mid):
+        return
+    try:
+        bot1 = await _bot()
+        await bot1.delete_message(int(chat_id), int(mid))
+    except Exception:
+        pass
+
+
 async def _edit_or_send(target: CallbackQuery | Message, text: str, markup) -> None:
     uid = getattr(getattr(target, "from_user", None), "id", None)
-    rec = tt.get_wait(uid) if uid else None
-    if rec and rec.get("prompt_chat_id") and rec.get("prompt_message_id"):
-        try:
-            from main import bot1
-            await bot1.edit_message_text(
-                text,
-                chat_id=rec["prompt_chat_id"],
-                message_id=rec["prompt_message_id"],
-                reply_markup=markup,
-                parse_mode="HTML",
-            )
-            return
-        except Exception:
-            pass
     if isinstance(target, CallbackQuery):
         msg = target.message
         try:
             if msg and getattr(msg, "text", None):
                 await msg.edit_text(text, reply_markup=markup, parse_mode="HTML")
-                if uid:
-                    tt.remember_prompt(uid, getattr(msg.chat, "id", None), msg.message_id)
                 return
         except Exception:
             pass
-        chat_id = target.from_user.id
         try:
             if msg:
                 await msg.delete()
         except Exception:
             pass
-        from main import bot1
-        sent = await bot1.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
-        if uid:
-            tt.remember_prompt(uid, sent.chat.id, sent.message_id)
+        bot1 = await _bot()
+        await bot1.send_message(target.from_user.id, text, reply_markup=markup, parse_mode="HTML")
         return
-    sent = await target.answer(text, reply_markup=markup, parse_mode="HTML")
-    if uid and sent:
-        tt.remember_prompt(uid, sent.chat.id, sent.message_id)
+    await target.answer(text, reply_markup=markup, parse_mode="HTML")
+
+
+async def _send_force_reply(user_id: int, chat_id: int, text: str):
+    bot1 = await _bot()
+    return await bot1.send_message(
+        chat_id,
+        text,
+        reply_markup=ForceReply(selective=True),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+
+
+async def _send_wait_prompt(
+    target: CallbackQuery | Message,
+    user_id: int,
+    text: str,
+    kind: str,
+    mode: str,
+    extra: dict,
+) -> None:
+    extra = dict(extra or {})
+    chat_id = _chat_id_of(target)
+    if isinstance(target, CallbackQuery) and target.message:
+        try:
+            await target.message.delete()
+        except Exception:
+            pass
+    else:
+        await _delete_prompt(user_id)
+    prompt = await _send_force_reply(user_id, chat_id, text)
+    await tt.arm_wait(
+        user_id,
+        kind,
+        mode,
+        extra,
+        prompt_chat_id=prompt.chat.id,
+        prompt_message_id=prompt.message_id,
+    )
+
+
+async def _reprompt(message: Message, user_id: int, text: str) -> None:
+    rec = tt.get_wait(user_id) or {}
+    session = await tt.get_session(user_id)
+    extra = dict(session.get("extra") or rec)
+    kind = rec.get("kind") or extra.get("kind") or tt.WAIT_NICK
+    if kind == tt.WAIT_PHOTOS:
+        mode = tt.MODE_WAIT_PHOTOS
+    elif kind == tt.WAIT_LINK:
+        mode = tt.MODE_WAIT_LINK
+    elif kind == tt.WAIT_NICK_EDIT:
+        mode = tt.MODE_WAIT_NICK_EDIT
+    else:
+        mode = tt.MODE_WAIT_NICK
+    await _delete_user_message(message)
+    await _delete_prompt(user_id)
+    prompt = await _send_force_reply(user_id, message.chat.id, text)
+    await tt.arm_wait(
+        user_id,
+        kind,
+        mode,
+        extra,
+        prompt_chat_id=prompt.chat.id,
+        prompt_message_id=prompt.message_id,
+    )
+
+
+async def _cancel_wait(message: Message, user_id: int) -> None:
+    await _delete_user_message(message)
+    await _delete_prompt(user_id)
+    await tt.clear_session(user_id)
+    cfg = await tt.get_settings()
+    await message.answer(tt.text_hub(cfg), reply_markup=tt.hub_keyboard(), parse_mode="HTML")
 
 
 async def _arm_nick_screen(
@@ -99,24 +186,14 @@ async def _arm_nick_screen(
         kind, mode = tt.WAIT_NICK_EDIT, tt.MODE_WAIT_NICK_EDIT
     else:
         kind, mode = tt.WAIT_NICK, tt.MODE_WAIT_NICK
-    if isinstance(target, CallbackQuery):
-        chat_id, mid = _prompt_ids(target)
-    else:
-        rec = tt.get_wait(user_id) or {}
-        chat_id, mid = rec.get("prompt_chat_id"), rec.get("prompt_message_id")
-    await tt.arm_wait(
+    await _send_wait_prompt(
+        target,
         user_id,
+        tt.text_need_nick(after, error=error),
         kind,
         mode,
         extra,
-        prompt_chat_id=chat_id,
-        prompt_message_id=mid,
     )
-    await _edit_or_send(target, tt.text_need_nick(after, error=error), tt.bind_keyboard(waiting=True))
-    if isinstance(target, CallbackQuery):
-        chat_id, mid = _prompt_ids(target)
-        if chat_id and mid:
-            tt.remember_prompt(user_id, chat_id, mid)
 
 
 async def show_hub(target: CallbackQuery | Message) -> None:
@@ -150,31 +227,20 @@ async def show_comments(target: CallbackQuery | Message, user_id: int) -> None:
         count = 0
         pending_complete = False
         kind = tt.WAIT_PHOTOS
-    if isinstance(target, CallbackQuery):
-        chat_id, mid = _prompt_ids(target)
-    else:
-        rec = tt.get_wait(user_id) or {}
-        chat_id, mid = rec.get("prompt_chat_id"), rec.get("prompt_message_id")
-    if kind:
-        await tt.arm_wait(user_id, kind, mode, extra, prompt_chat_id=chat_id, prompt_message_id=mid)
-    else:
-        tt.clear_wait(user_id)
-        await tt.set_session(user_id, mode, extra)
-    await _edit_or_send(
-        target,
-        tt.comments_screen_text(cfg, nicks, pending=pending_complete, count=count),
-        tt.comments_keyboard(
-            can_send=not pending_complete,
-            count=count,
-            needed=needed,
-            waiting=not pending_complete,
-            complete=pending_complete,
-        ),
+    text = tt.comments_screen_text(cfg, nicks, pending=pending_complete, count=count)
+    markup = tt.comments_keyboard(
+        can_send=not pending_complete,
+        count=count,
+        needed=needed,
+        waiting=not pending_complete,
+        complete=pending_complete,
     )
-    if isinstance(target, CallbackQuery):
-        chat_id, mid = _prompt_ids(target)
-        if chat_id and mid and kind:
-            tt.remember_prompt(user_id, chat_id, mid)
+    if kind:
+        await _send_wait_prompt(target, user_id, text, kind, mode, extra)
+        return
+    tt.clear_wait(user_id)
+    await tt.set_session(user_id, mode, extra)
+    await _edit_or_send(target, text, markup)
 
 
 async def show_videos(target: CallbackQuery | Message, user_id: int) -> None:
@@ -186,32 +252,14 @@ async def show_videos(target: CallbackQuery | Message, user_id: int) -> None:
     videos = await tt.list_user_videos(user_id)
     pending = any(v["status"] == "pending" for v in videos)
     extra = {"after": "videos", "origin": "videos"}
-    if isinstance(target, CallbackQuery):
-        chat_id, mid = _prompt_ids(target)
-    else:
-        rec = tt.get_wait(user_id) or {}
-        chat_id, mid = rec.get("prompt_chat_id"), rec.get("prompt_message_id")
+    text = tt.videos_screen_text(cfg, nicks, videos)
+    markup = tt.videos_keyboard(videos, waiting=not pending, can_send=not pending)
     if pending:
         tt.clear_wait(user_id)
         await tt.set_session(user_id, tt.MODE_VIDEOS, extra)
-    else:
-        await tt.arm_wait(
-            user_id,
-            tt.WAIT_LINK,
-            tt.MODE_WAIT_LINK,
-            extra,
-            prompt_chat_id=chat_id,
-            prompt_message_id=mid,
-        )
-    await _edit_or_send(
-        target,
-        tt.videos_screen_text(cfg, nicks, videos),
-        tt.videos_keyboard(videos, waiting=not pending, can_send=not pending),
-    )
-    if isinstance(target, CallbackQuery) and not pending:
-        chat_id, mid = _prompt_ids(target)
-        if chat_id and mid:
-            tt.remember_prompt(user_id, chat_id, mid)
+        await _edit_or_send(target, text, markup)
+        return
+    await _send_wait_prompt(target, user_id, text, tt.WAIT_LINK, tt.MODE_WAIT_LINK, extra)
 
 
 async def _nicks_origin(user_id: int) -> str:
@@ -430,23 +478,44 @@ async def _send_collect_progress(message: Message, state: dict) -> None:
         int(state["needed"]),
         nicks,
     )
-    markup = tt.comments_keyboard(
-        can_send=True,
-        count=state["count"],
-        needed=state["needed"],
-        waiting=not complete,
-        complete=complete,
-    )
-    await _edit_or_send(message, text, markup)
+    extra = {"after": "comments", "caseId": state.get("caseId")}
     await _delete_user_message(message)
+    await _delete_prompt(user_id)
     if complete:
         tt.clear_wait(user_id)
+        await tt.set_session(user_id, tt.MODE_COMMENT_DONE, extra)
+        await message.answer(
+            text,
+            reply_markup=tt.comments_keyboard(
+                can_send=True,
+                count=state["count"],
+                needed=state["needed"],
+                waiting=False,
+                complete=True,
+            ),
+            parse_mode="HTML",
+        )
+        return
+    prompt = await _send_force_reply(user_id, message.chat.id, text)
+    await tt.arm_wait(
+        user_id,
+        tt.WAIT_PHOTOS,
+        tt.MODE_WAIT_PHOTOS,
+        extra,
+        prompt_chat_id=prompt.chat.id,
+        prompt_message_id=prompt.message_id,
+    )
 
 
 async def on_wait_text(message: Message) -> None:
     user_id = message.from_user.id
+    await tt.restore_wait_from_session(user_id)
     rec = tt.get_wait(user_id) or {}
     kind = rec.get("kind") or ""
+    raw = (message.text or "").strip()
+    if tt.is_cancel_input(raw):
+        await _cancel_wait(message, user_id)
+        return
     if kind in {tt.WAIT_NICK, tt.WAIT_NICK_EDIT} or await tt.is_waiting_nick(user_id):
         session = await tt.get_session(user_id)
         extra = dict(session.get("extra") or rec)
@@ -458,50 +527,37 @@ async def on_wait_text(message: Message) -> None:
             else:
                 await tt.add_nick(user_id, message.text or "")
         except ValueError as exc:
-            await _edit_or_send(
-                message,
-                tt.text_need_nick(after, error=str(exc)),
-                tt.bind_keyboard(waiting=True),
-            )
-            await _delete_user_message(message)
+            await _reprompt(message, user_id, tt.text_need_nick(after, error=str(exc)))
             return
         await _delete_user_message(message)
+        await _delete_prompt(user_id)
+        tt.clear_wait(user_id)
         if after == "videos":
             await show_videos(message, user_id)
             return
         await show_comments(message, user_id)
         return
     if kind == tt.WAIT_LINK or await tt.is_waiting_link(user_id):
-        raw = (message.text or "").strip()
         if not tt.looks_like_tiktok_url(raw):
-            videos = await tt.list_user_videos(user_id)
-            await _edit_or_send(
-                message,
-                tt.text_link_screen("Это не ссылка TikTok."),
-                tt.videos_keyboard(videos, waiting=True, can_send=False),
-            )
-            await _delete_user_message(message)
+            await _reprompt(message, user_id, tt.text_link_screen("Это не ссылка TikTok."))
             return
         try:
             await tt.submit_video(user_id, raw)
         except ValueError as exc:
-            videos = await tt.list_user_videos(user_id)
-            await _edit_or_send(
-                message,
-                tt.text_link_screen(str(exc)),
-                tt.videos_keyboard(videos, waiting=True, can_send=False),
-            )
-            await _delete_user_message(message)
+            await _reprompt(message, user_id, tt.text_link_screen(str(exc)))
             return
         await _delete_user_message(message)
+        await _delete_prompt(user_id)
+        tt.clear_wait(user_id)
         await show_videos(message, user_id)
 
 
 async def on_wait_photo(message: Message) -> None:
     user_id = message.from_user.id
+    await tt.restore_wait_from_session(user_id)
     if not await tt.list_nicks(user_id):
-        await _arm_nick_screen(message, user_id, "comments")
         await _delete_user_message(message)
+        await _arm_nick_screen(message, user_id, "comments")
         return
     photo = message.photo[-1]
     thumb_id = tt.pick_thumb_file_id(message.photo)
@@ -509,14 +565,14 @@ async def on_wait_photo(message: Message) -> None:
     try:
         state = await tt.add_photo(user_id, photo.file_id, hashes, thumb_id)
     except ValueError as exc:
-        await _arm_nick_screen(message, user_id, "comments", error=str(exc))
-        await _delete_user_message(message)
+        await _reprompt(message, user_id, tt.text_need_nick("comments", error=str(exc)))
         return
     rec = tt.get_wait(user_id) or {}
     if not rec:
         extra = {"after": "comments"}
         await tt.arm_wait(user_id, tt.WAIT_PHOTOS, tt.MODE_WAIT_PHOTOS, extra)
     if message.media_group_id:
+        tt.remember_album_group(user_id, message.media_group_id)
         prev = _album_tasks.pop(user_id, None)
         if prev:
             prev.cancel()
@@ -533,6 +589,7 @@ async def on_wait_photo(message: Message) -> None:
                     "count": int((case or {}).get("received") or 0),
                     "needed": int((case or {}).get("needed") or cfg["photosRequired"]),
                     "complete": bool(case and case.get("complete")),
+                    "caseId": (case or {}).get("id"),
                 }
                 await _send_collect_progress(message, latest)
             except asyncio.CancelledError:
@@ -544,27 +601,27 @@ async def on_wait_photo(message: Message) -> None:
 
 
 async def on_wait_noise(message: Message) -> None:
-    rec = tt.get_wait(message.from_user.id) or {}
+    user_id = message.from_user.id
+    await tt.restore_wait_from_session(user_id)
+    rec = tt.get_wait(user_id) or {}
     kind = rec.get("kind") or ""
+    raw = (message.text or "").strip()
+    if tt.is_cancel_input(raw):
+        await _cancel_wait(message, user_id)
+        return
     if kind in {tt.WAIT_NICK, tt.WAIT_NICK_EDIT}:
-        await _edit_or_send(
+        await _reprompt(
             message,
+            user_id,
             tt.text_need_nick(rec.get("after") or "", error="Нужно имя TikTok, не файл."),
-            tt.bind_keyboard(waiting=True),
         )
-        await _delete_user_message(message)
         return
     cfg = await tt.get_settings()
     needed = int(cfg["photosRequired"])
     hint = "Нужно фото, не файл." if message.document else "Сейчас отправьте фото."
-    case = await tt.get_pending_comment_case(message.from_user.id)
+    case = await tt.get_pending_comment_case(user_id)
     count = int((case or {}).get("received") or 0)
-    await _edit_or_send(
-        message,
-        tt.text_photo_wait_error(hint, count, needed),
-        tt.comments_keyboard(waiting=True, count=count, needed=needed),
-    )
-    await _delete_user_message(message)
+    await _reprompt(message, user_id, tt.text_photo_wait_error(hint, count, needed))
 
 
 def attach_tiktok_earn(dp) -> None:
