@@ -1089,12 +1089,12 @@ def text_need_nick(path: str = "", error: str = "") -> str:
     body = (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Напишите имя своего TikTok</b>\n\n"
         "<tg-emoji emoji-id='5339564150534200424'>🎁</tg-emoji> <b>Что сделать :</b>\n"
-        "<blockquote>1. Откройте TikTok\n"
+        "<blockquote><b>1. Откройте TikTok\n"
         "2. Скопируйте своё имя профиля\n"
-        "3. Отправьте его сюда. Можно с @ или без</blockquote>\n\n"
+        "3. Отправьте его сюда. Можно с @ или без</b></blockquote>\n\n"
         "<tg-emoji emoji-id='5255850874248399164'>🎁</tg-emoji> <b><i>Пример написания ника :</i></b>\n"
         f"<blockquote><code>{EXAMPLE_NICK}</code></blockquote>\n\n"
-        f"{INPUT_FOOTER}"
+        f"<b>{INPUT_FOOTER}</b>"
     )
     if error:
         return f"<b>{error}</b>\n\n{body}"
@@ -1116,7 +1116,7 @@ def text_link_screen(error: str = "") -> str:
         "</blockquote>\n\n"
         "<tg-emoji emoji-id='5388591472800986666'>✌</tg-emoji> <b><i>Пример ссылки :</i></b>\n"
         f"<blockquote><code>{EXAMPLE_VIDEO_URL}</code></blockquote>\n\n"
-        f"{INPUT_FOOTER}"
+        f"<b>{INPUT_FOOTER}</b>"
     )
     if error:
         return f"<b>{error}</b>\n\n{body}"
