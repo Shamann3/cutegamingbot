@@ -78,14 +78,14 @@ DEFAULT_PHOTO_REJECT_REASONS: list[dict[str, str]] = [
 ]
 
 BARNUM_REJECTS: tuple[str, ...] = (
-    "<b>Эту серию не приняли.</b>\n<i>По кадрам не складывается цельная картина выполнения. Соберите новую серию : 15 разных комментариев под роликами с нужным тегом, лайк на своём и свежие скрины.</i>",
-    "<b>Серия не прошла проверку.</b>\n<i>Смотрим не только на число кадров, а на то, как собрано всё вместе. Сейчас картина выглядит незавершённой. Пришлите новую серию с нуля.</i>",
+    "<b>Эту серию комментариев не приняли.</b>\n<i>По кадрам не складывается цельная картина выполнения. Соберите новую серию комментариев : 15 разных комментариев под роликами с нужным хештегом, а также лайк на своём комментарии и свежие скрины.</i>",
+    "<b>Серия комментариев не прошла проверку.</b>\n<i>Смотрим не только на число кадров, а на то, как собрано всё вместе. Сейчас картина выглядит незавершённой. Пришлите новую серию комментариев с нуля.</i>",
     "<b>Пока не можем принять.</b>\n<i>По этой сдаче не видно, что задание выполнено целиком. 15 свежих скринов, один комментарий - один кадр, и можно снова.</i>",
-    "<b>Эту сдачу закрыли.</b>\n<i>Так бывает, если кадры слишком похожи или не показывают задание целиком. Соберите новую серию и пришлите снова.</i>",
+    "<b>Эту сдачу закрыли.</b>\n<i>Так бывает, если кадры слишком похожи или не показывают выполненное задание целиком. Соберите новую серию комментариев и пришлите снова.</i>",
 )
 
 TAB_TEASERS: dict[str, str] = {
-    "comments": "Эту очередь разбирают те, кому доверили живые скрины. Когда откроют — окажешься здесь.",
+    "comments": "Эту очередь разбирают те, кому доверили живые скрины. Когда откроют — окажитесь здесь.",
     "videos": "Ссылку и просмотры видят только те, кого пустили к роликам. Должность выше — дверь ближе.",
     "live": "Живые ролики и доплаты за тысячи просмотров. Сюда пускают после доверия к обычной очереди.",
     "archive": "Архив — память раздела. Его открывают тем, кто уже умеет закрывать дела, а не только смотреть.",
@@ -192,8 +192,8 @@ def reviewer_mention_html(user_id: int, name: str = "", username: str = "") -> s
 
 def reviewer_line_html(kind: str, mention: str) -> str:
     if kind == "comments":
-        return f"<i>Выполнение Вашего задания на комментарии проверял</i> {mention}."
-    return f"<i>Ваше видео проверял</i> {mention}."
+        return f"<b><i>Выполнение Вашего задания на комментарии проверял сотрудник Эпсилона</i> {mention}.</b>"
+    return f"<b><i>Ваше видео проверял сотрудник Эпсилона</i> {mention}.</b>"
 
 
 def display_tiktok_url(parsed: dict[str, str] | None, raw: str = "") -> str:
@@ -399,10 +399,10 @@ def validate_video_reward(raw: Any) -> int:
     try:
         value = int(raw)
     except (TypeError, ValueError) as exc:
-        raise ValueError("Награда за 1000 просмотров должна быть целым числом") from exc
+        raise ValueError("Награда за 1.000 просмотров должна быть целым числом") from exc
     if value < VIDEO_REWARD_MIN or value > VIDEO_REWARD_MAX:
         raise ValueError(
-            f"Награда за 1000 просмотров: от {VIDEO_REWARD_MIN} до {VIDEO_REWARD_MAX} кут"
+            f"Награда за 1.000 просмотров : от {VIDEO_REWARD_MIN} до {VIDEO_REWARD_MAX} кут"
         )
     return value
 
@@ -439,7 +439,7 @@ def assert_can_approve_comments(photos: Any, needed: int = PHOTOS_REQUIRED) -> d
     progress = comment_progress(photos, needed)
     if progress["incomplete"]:
         raise ValueError(
-            f"Серия неполная: {progress['received']} из {progress['needed']}. "
+            f"Серия неполная : {progress['received']} из {progress['needed']}. "
             "Награду можно начислить только за полную пачку."
         )
     return progress
@@ -471,7 +471,7 @@ def wrap_barnum_html(text: str) -> str:
         raw = BARNUM_REJECTS[0]
     if "<b>" in raw or "<i>" in raw:
         return raw
-    return f"<b>Серия не принята.</b>\n<i>{raw}</i>"
+    return f"<b>Серия комментариев не принята.\n<i>{raw}</i></b>"
 
 
 CUSTOM_REASON_MAX = 280
@@ -513,7 +513,7 @@ def format_photo_reject_html(labels: list[str], *, reviewer_html: str = "") -> s
     return (
         f"{status_emoji_html('no')} <b>Комментарии не приняли.</b>\n"
         "<blockquote>"
-        f"<b>Что исправить :</b>\n{lines}"
+        f"<b>{lines}</b>"
         "</blockquote>"
         f"{_who_checked('comments', reviewer_html)}"
     )
@@ -529,7 +529,7 @@ def format_comment_payout_html(
     pack = max(1, int(photos or PHOTOS_REQUIRED))
     return (
         f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{format_int_dot(pay)} кут</b>\n"
-        f"<blockquote><b>{pack} скринов</b> за комментарии</blockquote>"
+        f"<blockquote><b>{pack} скринов за комментарии</b></blockquote>"
         f"{_who_checked('comments', reviewer_html)}"
     )
 
@@ -558,10 +558,10 @@ def format_video_payout_html(
                 f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{format_int_dot(pay)} кут</b>\n"
                 f"{named}"
                 "<blockquote>"
-                "<b>За что :</b> обновление новых просмотров на TikTok видео\n"
-                f"<b>Было :</b> {format_int_dot(int(old_views))}\n"
-                f"<b>Сейчас :</b> {format_int_dot(now)}\n"
-                f"<b>Доплата :</b> {format_int_dot(pay)} кут"
+                "<b>За обновление новых просмотров на TikTok видео</b>\n"
+                f"<b>Было {format_int_dot(int(old_views))}</b>\n"
+                f"<b>Сейчас {format_int_dot(now)}</b>\n"
+                f"<b>Доплата {format_int_dot(pay)} кут</b>"
                 "</blockquote>"
                 f"{who}"
             )
@@ -569,11 +569,11 @@ def format_video_payout_html(
             f"<b>Просмотры обновили.</b>\n"
             f"{named}"
             "<blockquote>"
-            "<b>За что :</b> перепроверка TikTok видео\n"
-            f"<b>Сейчас :</b> {format_int_dot(now)}\n"
-            "<b>Доплаты нет :</b> новых полных тысяч не набралось"
+            "<b>За перепроверку TikTok видео</b>\n"
+            f"<b>Сейчас {format_int_dot(now)}</b>\n"
+            "<b>Доплаты нет, новых полных тысяч не набралось</b>"
             "</blockquote>\n"
-            f"<i>Следующая проверка через {wait_days} дн.</i>"
+            f"<b><i>Следующая проверка через {wait_days} дн.</i></b>"
             f"{who}"
         )
     if pay > 0:
@@ -581,9 +581,9 @@ def format_video_payout_html(
             f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{format_int_dot(pay)} кут</b>\n"
             f"{named}"
             "<blockquote>"
-            "<b>За что :</b> TikTok видео про бота\n"
-            f"<b>Просмотры :</b> {format_int_dot(now)}\n"
-            f"<b>Счёт :</b> {format_int_dot(thousands)} × {unit} кут"
+            "<b>За TikTok видео о проекте</b>\n"
+            f"<b>Просмотры {format_int_dot(now)}</b>\n"
+            f"<b>Счёт {format_int_dot(thousands)} × {unit} кут</b>"
             "</blockquote>"
             f"{who}"
         )
@@ -591,9 +591,9 @@ def format_video_payout_html(
         f"{status_emoji_html('ok')} <b>Видео принято.</b>\n"
         f"{named}"
         "<blockquote>"
-        "<b>За что :</b> TikTok ролик про бота\n"
-        f"<b>Просмотры :</b> {format_int_dot(now)}\n"
-        f"<b>Куты :</b> появятся после {format_int_dot(VIEWS_PER_UNIT)} просмотров"
+        "<b>За TikTok ролик о проекте</b>\n"
+        f"<b>Просмотры {format_int_dot(now)}</b>\n"
+        f"<b>Куты появятся после {format_int_dot(VIEWS_PER_UNIT)} просмотров</b>"
         "</blockquote>"
         f"{who}"
     )
@@ -601,15 +601,15 @@ def format_video_payout_html(
 
 def format_video_reject_html(labels: list[str], *, title: str = "", reviewer_html: str = "") -> str:
     clean = reject_labels(labels)
-    lines = "\n".join(f"<b>{i}.</b> {escape(label)}" for i, label in enumerate(clean, 1))
+    lines = "\n".join(f"<b>{i}. {escape(label)}</b>" for i, label in enumerate(clean, 1))
     named = f"<b>{escape(title)}</b>\n" if str(title or "").strip() else ""
     return (
         f"{status_emoji_html('no')} <b>Ролик не приняли.</b>\n"
         f"{named}"
         "<blockquote>"
-        f"<b>Что исправить :</b>\n{lines}"
+        f"<b>{lines}</b>"
         "</blockquote>\n"
-        "<blockquote><i>Ваши ролики → «Отправить снова».</i></blockquote>"
+        "<blockquote><b><i>Ваши ролики → «Отправить снова».</i></b></blockquote>"
         f"{_who_checked('video', reviewer_html)}"
     )
 
