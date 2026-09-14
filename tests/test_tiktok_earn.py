@@ -424,9 +424,16 @@ def test_gift_like_wait_flag_lets_handler_accept_text():
     begin_wait(uid, "nick", after="comments")
     assert is_awaiting_text(uid)
     assert should_skip_main_text_handler(uid)
+    assert should_skip_main_text_handler(uid, chat_type="private")
+    assert not should_skip_main_text_handler(uid, chat_type="group")
+    assert not should_skip_main_text_handler(uid, chat_type="supergroup")
+    assert not should_skip_main_text_handler(uid, chat_type="channel")
     assert handler_would_accept_text(uid, "Ooooo")
     assert handler_would_accept_text(uid, "Cutetestjerichocute")
     assert message_matches_wait_text(_Msg(uid, "Ooooo"))
+    assert not message_matches_wait_text(_Msg(uid, "Ooooo", chat_type="group"))
+    assert not message_matches_wait_text(_Msg(uid, "Ooooo", chat_type="supergroup"))
+    assert not message_matches_wait_text(_Msg(uid, "Ooooo", chat_type="channel"))
     assert not handler_would_accept_text(uid, "/start")
     assert not handler_would_accept_text(uid, "Ooooo", chat_type="group")
     clear_wait(uid)
@@ -436,6 +443,7 @@ def test_gift_like_wait_flag_lets_handler_accept_text():
     assert is_awaiting_photos(uid)
     assert message_matches_wait_photo(_Msg(uid, photo=["x"]))
     assert not message_matches_wait_photo(_Msg(uid, photo=["x"], chat_type="group"))
+    assert not message_matches_wait_photo(_Msg(uid, photo=["x"], chat_type="supergroup"))
     assert not message_matches_wait_text(_Msg(uid, "просто текст"))
     clear_wait(uid)
     assert not message_matches_wait_photo(_Msg(uid, photo=["x"]))
@@ -453,6 +461,54 @@ def test_gift_like_wait_flag_lets_handler_accept_text():
     assert message_matches_wait_text(_ReplyMsg(uid, "Ooooo", reply_mid=100))
     assert message_matches_wait_text(_Msg(uid, "Ooooo"))
     assert not message_matches_wait_text(_ReplyMsg(uid, "Ooooo", reply_mid=999))
+    clear_wait(uid)
+
+
+def test_tiktok_wait_never_matches_group_chats():
+    from bot.funcs.tiktok_earn import (
+        begin_wait,
+        clear_wait,
+        message_matches_wait_noise,
+        message_matches_wait_photo,
+        message_matches_wait_text,
+        should_skip_main_text_handler,
+        should_skip_photo_handler,
+    )
+
+    class _User:
+        def __init__(self, uid):
+            self.id = uid
+
+    class _Chat:
+        def __init__(self, typ):
+            self.type = typ
+
+    class _Msg:
+        def __init__(self, uid, text="", chat_type="private", photo=None, document=None):
+            self.from_user = _User(uid)
+            self.chat = _Chat(chat_type)
+            self.text = text
+            self.photo = photo
+            self.document = document
+
+    uid = 980044
+    clear_wait(uid)
+    begin_wait(uid, "nick", after="comments")
+    assert message_matches_wait_text(_Msg(uid, "cuteplayer"))
+    for typ in ("group", "supergroup", "channel"):
+        assert not message_matches_wait_text(_Msg(uid, "cuteplayer", chat_type=typ))
+        assert not should_skip_main_text_handler(uid, chat_type=typ)
+    assert should_skip_main_text_handler(uid, chat_type="private")
+
+    begin_wait(uid, "photos", after="comments")
+    assert message_matches_wait_photo(_Msg(uid, photo=["x"]))
+    assert message_matches_wait_noise(_Msg(uid, "просто текст"))
+    for typ in ("group", "supergroup", "channel"):
+        assert not message_matches_wait_photo(_Msg(uid, photo=["x"], chat_type=typ))
+        assert not message_matches_wait_noise(_Msg(uid, "просто текст", chat_type=typ))
+        assert not should_skip_photo_handler(uid, chat_type=typ)
+        assert not should_skip_main_text_handler(uid, chat_type=typ)
+    assert should_skip_photo_handler(uid, chat_type="private")
     clear_wait(uid)
 
 
@@ -498,6 +554,10 @@ def test_button_and_attach_use_gift_like_wait():
     assert "WAIT_TTL_SECONDS" in funcs
     assert "text_wait_expired" in funcs
     assert "expire_wait_if_needed" in handler
+    assert "message_is_private_chat" in main_src
+    assert "is_private_chat_type" in main_src
+    assert "should_skip_photo_handler" in Path("bot/handlers/admin_panel.py").read_text(encoding="utf-8")
+    assert "if not _private(message)" in handler
 
 
 def test_admin_photo_proxy_client_uses_jwt_query_and_thumb():

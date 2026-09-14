@@ -33024,6 +33024,8 @@ async def _tiktok_wait_text_filter(m):
         from bot.funcs import tiktok_earn as _tt
         if not m or not getattr(m, "from_user", None):
             return False
+        if not _tt.message_is_private_chat(m):
+            return False
         if not _tt.get_wait(m.from_user.id):
             await _tt.restore_wait_from_session(m.from_user.id)
         return _tt.message_matches_wait_text(m)
@@ -33036,6 +33038,8 @@ async def _tiktok_wait_photo_filter(m):
         from bot.funcs import tiktok_earn as _tt
         if not m or not getattr(m, "from_user", None):
             return False
+        if not _tt.message_is_private_chat(m):
+            return False
         if not _tt.get_wait(m.from_user.id):
             await _tt.restore_wait_from_session(m.from_user.id)
         return _tt.message_matches_wait_photo(m)
@@ -33047,6 +33051,8 @@ async def _tiktok_wait_noise_filter(m):
     try:
         from bot.funcs import tiktok_earn as _tt
         if not m or not getattr(m, "from_user", None):
+            return False
+        if not _tt.message_is_private_chat(m):
             return False
         if not _tt.get_wait(m.from_user.id):
             await _tt.restore_wait_from_session(m.from_user.id)
@@ -34341,13 +34347,15 @@ async def add_firstname_to_usercheck_balance(message: Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
 
-    # TikTok wait как user_gift awaiting_recipient: не съедать текст общим F.text.
+    # TikTok wait: общий F.text скипаем только в ЛИЧКЕ. Группа должна жить как обычно.
     _tt_armed = False
+    _tt_chat_type = getattr(getattr(message, "chat", None), "type", "")
     try:
         from bot.funcs import tiktok_earn as _tt_earn
-        _tt_armed = _tt_earn.should_skip_main_text_handler(user_id)
-        if not _tt_armed:
-            _tt_armed = await _tt_earn.restore_wait_from_session(user_id)
+        if _tt_earn.is_private_chat_type(_tt_chat_type):
+            _tt_armed = _tt_earn.should_skip_main_text_handler(user_id, chat_type=_tt_chat_type)
+            if not _tt_armed:
+                _tt_armed = await _tt_earn.restore_wait_from_session(user_id)
     except Exception:
         _tt_armed = False
     if _tt_armed:

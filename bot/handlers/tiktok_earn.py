@@ -508,6 +508,8 @@ async def _send_collect_progress(message: Message, state: dict) -> None:
 
 
 async def on_wait_text(message: Message) -> None:
+    if not _private(message):
+        return
     user_id = message.from_user.id
     if await tt.expire_wait_if_needed(user_id):
         return
@@ -559,6 +561,8 @@ async def on_wait_text(message: Message) -> None:
 
 
 async def on_wait_photo(message: Message) -> None:
+    if not _private(message):
+        return
     user_id = message.from_user.id
     if await tt.expire_wait_if_needed(user_id):
         return
@@ -611,6 +615,8 @@ async def on_wait_photo(message: Message) -> None:
 
 
 async def on_wait_noise(message: Message) -> None:
+    if not _private(message):
+        return
     user_id = message.from_user.id
     if await tt.expire_wait_if_needed(user_id):
         return

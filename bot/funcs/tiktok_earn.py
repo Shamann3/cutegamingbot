@@ -494,9 +494,38 @@ def is_awaiting_photos(user_id: int) -> bool:
     return bool(rec and rec.get("kind") == WAIT_PHOTOS)
 
 
-def should_skip_main_text_handler(user_id: int) -> bool:
+def chat_type_name(chat_or_message: Any = None, chat_type: Any = None) -> str:
+    raw = chat_type
+    if raw is None:
+        if chat_or_message is None:
+            return ""
+        chat = getattr(chat_or_message, "chat", chat_or_message)
+        raw = getattr(chat, "type", chat)
+    value = getattr(raw, "value", raw)
+    return str(value or "").strip().lower()
+
+
+def is_private_chat_type(chat_type: Any = None, *, message: Any = None) -> bool:
+    return chat_type_name(message, chat_type=chat_type) == "private"
+
+
+def message_is_private_chat(message: Any) -> bool:
+    return is_private_chat_type(message=message)
+
+
+def should_skip_main_text_handler(user_id: int, chat_type: Any = "private") -> bool:
+    """Общий F.text пропускаем только в личке, пока ждём ник / ссылку / фото."""
+    if not is_private_chat_type(chat_type):
+        return False
     rec = get_wait(int(user_id))
     return bool(rec and rec.get("awaiting"))
+
+
+def should_skip_photo_handler(user_id: int, chat_type: Any = "private") -> bool:
+    """Чужой F.photo не должен забирать скрины. В группе никогда не скипать."""
+    if not is_private_chat_type(chat_type):
+        return False
+    return is_awaiting_photos(user_id)
 
 
 def _prompt_ids_from(extra: dict[str, Any]) -> tuple[int | None, int | None]:
@@ -666,8 +695,7 @@ async def restore_wait_from_session(user_id: int) -> bool:
 
 
 def _message_is_private(message: Any) -> bool:
-    chat = getattr(message, "chat", None)
-    return str(getattr(chat, "type", "") or "") == "private"
+    return message_is_private_chat(message)
 
 
 def handler_would_accept_text(user_id: int, text: str, *, chat_type: str = "private") -> bool:

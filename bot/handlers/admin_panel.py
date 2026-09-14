@@ -59,8 +59,11 @@ async def send_msg_to_usrs(message : types.Message):
     global keyboard1
     _tt_photo_wait = False
     try:
-        from bot.funcs.tiktok_earn import is_awaiting_photos
-        _tt_photo_wait = is_awaiting_photos(message.from_user.id)
+        from bot.funcs.tiktok_earn import should_skip_photo_handler
+        _tt_photo_wait = should_skip_photo_handler(
+            message.from_user.id,
+            chat_type=getattr(getattr(message, "chat", None), "type", ""),
+        )
     except Exception:
         _tt_photo_wait = False
     if _tt_photo_wait:
