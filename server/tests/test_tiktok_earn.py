@@ -127,6 +127,45 @@ def test_find_matches_marks_near_duplicates():
     assert any(m["match"]["id"] == "2:0" for m in matches)
 
 
+def test_find_matches_skips_same_series_lookalikes():
+    zero = "0" * 16
+    eight = "00000000000000ff"
+    one = "0000000000000001"
+    src = {"id": "1:0", "caseId": 1, "index": 0, "ahash": zero, "dhash": zero, "phash": zero}
+    same_series = {"id": "1:1", "caseId": 1, "index": 1, "ahash": eight, "dhash": eight, "phash": eight}
+    other_case = {"id": "2:0", "caseId": 2, "index": 0, "ahash": eight, "dhash": eight, "phash": eight}
+    near = {"id": "1:2", "caseId": 1, "index": 2, "ahash": one, "dhash": one, "phash": one}
+    matches = find_matches([src], [src, same_series, other_case, near])
+    ids = {m["match"]["id"] for m in matches}
+    assert "1:1" not in ids
+    assert "2:0" in ids
+    assert "1:2" in ids
+    cross = [m for m in matches if not m["sameCase"]]
+    assert all(m["similarity"] >= 80 for m in cross)
+
+
+def test_payout_messages_name_the_job():
+    from tiktok_earn_logic import format_comment_payout_html, format_video_payout_html
+
+    comments = format_comment_payout_html(5, 15)
+    assert "+5 кут" in comments
+    assert "комментарии" in comments.lower()
+    assert "15 скринов" in comments
+    assert "—" not in comments
+    video = format_video_payout_html(kut=6390, views=213012, kut_per_unit=30)
+    assert "+6390 кут" in video
+    assert "213012" in video
+    assert "213 × 30" in video
+    assert "видео" in video.lower()
+    zero = format_video_payout_html(kut=0, views=400, kut_per_unit=30)
+    assert "1000" in zero
+    recheck = format_video_payout_html(
+        kut=60, views=5000, kut_per_unit=30, is_recheck=True, old_views=2000, days=7
+    )
+    assert "доплата" in recheck.lower()
+    assert "2000" in recheck
+
+
 def test_photo_cache_keys_and_proxy_url_shape():
     assert photo_cache_key("AgAC_file", "thumb").startswith("thumb_")
     assert photo_cache_key("AgAC_file", "full").startswith("full_")
@@ -292,6 +331,7 @@ def test_photo_reject_message_lists_selected_reasons():
     assert "Оскорбление проекта" in text
     assert "копия" not in text.lower()
     assert "<blockquote>" in text
+    assert "Комментарии не приняли" in text
     try:
         format_photo_reject_html([])
         assert False

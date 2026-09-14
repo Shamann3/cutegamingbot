@@ -14,6 +14,8 @@ from bot.funcs import tiktok_earn as tt
 
 _album_tasks: dict[int, asyncio.Task] = {}
 _album_added: dict[int, int] = {}
+_album_msgs: dict[int, list[Message]] = {}
+_photo_locks: dict[int, asyncio.Lock] = {}
 
 log = logging.getLogger("tiktok_earn")
 tiktok_router = Router(name="tiktok_earn")
@@ -430,6 +432,20 @@ async def on_undo_photo(callback: CallbackQuery) -> None:
     await show_comments(callback, callback.from_user.id)
 
 
+@tiktok_router.callback_query(F.data == tt.TT_WITHDRAW)
+async def on_withdraw(callback: CallbackQuery) -> None:
+    if not _private(callback):
+        await callback.answer()
+        return
+    try:
+        await tt.withdraw_comment_case(callback.from_user.id)
+    except ValueError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    await callback.answer("Заявку отозвали. Можно сдать новую.")
+    await show_comments(callback, callback.from_user.id)
+
+
 @tiktok_router.callback_query(F.data == tt.TT_SUBMIT_PHOTOS)
 async def on_submit_photos(callback: CallbackQuery) -> None:
     if not _private(callback):
@@ -468,7 +484,7 @@ async def on_recheck(callback: CallbackQuery) -> None:
     await show_videos(callback, callback.from_user.id)
 
 
-async def _send_collect_progress(message: Message, state: dict) -> None:
+async def _send_collect_progress(message: Message, state: dict, *, delete_user: bool = True) -> None:
     user_id = message.from_user.id
     nicks = await tt.list_nicks(user_id)
     complete = bool(state.get("complete") or state.get("full") or int(state["count"]) >= int(state["needed"]))
@@ -479,7 +495,8 @@ async def _send_collect_progress(message: Message, state: dict) -> None:
         nicks,
     )
     extra = {"after": "comments", "caseId": state.get("caseId")}
-    await _delete_user_message(message)
+    if delete_user:
+        await _delete_user_message(message)
     await _delete_prompt(user_id)
     if complete:
         tt.clear_wait(user_id)
@@ -569,35 +586,46 @@ async def on_wait_photo(message: Message) -> None:
     await tt.restore_wait_from_session(user_id)
     if await tt.expire_wait_if_needed(user_id) or not tt.get_wait(user_id):
         return
+    if message.media_group_id:
+        tt.remember_album_group(user_id, message.media_group_id)
+    await tt.touch_wait(user_id)
     if not await tt.list_nicks(user_id):
         await _delete_user_message(message)
         await _arm_nick_screen(message, user_id, "comments")
         return
+    lock = _photo_locks.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _photo_locks[user_id] = lock
     photo = message.photo[-1]
     thumb_id = tt.pick_thumb_file_id(message.photo)
-    hashes = await tt.download_and_hash(message.bot, photo.file_id)
-    try:
-        state = await tt.add_photo(user_id, photo.file_id, hashes, thumb_id)
-    except ValueError as exc:
-        await _reprompt(message, user_id, tt.text_need_nick("comments", error=str(exc)))
-        return
+    async with lock:
+        hashes = await tt.download_and_hash(message.bot, photo.file_id)
+        try:
+            state = await tt.add_photo(user_id, photo.file_id, hashes, thumb_id)
+        except ValueError as exc:
+            await _reprompt(message, user_id, tt.text_need_nick("comments", error=str(exc)))
+            return
     rec = tt.get_wait(user_id) or {}
     if not rec:
         extra = {"after": "comments"}
         await tt.arm_wait(user_id, tt.WAIT_PHOTOS, tt.MODE_WAIT_PHOTOS, extra)
     if message.media_group_id:
         tt.remember_album_group(user_id, message.media_group_id)
+        await tt.touch_wait(user_id)
         prev = _album_tasks.pop(user_id, None)
         if prev:
             prev.cancel()
         _album_added[user_id] = _album_added.get(user_id, 0) + int(state.get("added") or 0)
+        _album_msgs.setdefault(user_id, []).append(message)
 
         async def _flush() -> None:
             try:
-                await asyncio.sleep(0.7)
+                await asyncio.sleep(1.2)
                 case = await tt.get_pending_comment_case(user_id)
                 cfg = await tt.get_settings()
                 added = _album_added.pop(user_id, 0)
+                msgs = _album_msgs.pop(user_id, [])
                 latest = {
                     "added": added,
                     "count": int((case or {}).get("received") or 0),
@@ -605,7 +633,9 @@ async def on_wait_photo(message: Message) -> None:
                     "complete": bool(case and case.get("complete")),
                     "caseId": (case or {}).get("id"),
                 }
-                await _send_collect_progress(message, latest)
+                for item in msgs:
+                    await _delete_user_message(item)
+                await _send_collect_progress(message, latest, delete_user=False)
             except asyncio.CancelledError:
                 return
 

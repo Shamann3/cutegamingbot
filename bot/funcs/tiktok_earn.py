@@ -48,6 +48,7 @@ TT_CANCEL_COLLECT = "tt:cancel_collect"
 TT_DONE_WAIT = "tt:done_wait"
 TT_SUBMIT_PHOTOS = "tt:submit_photos"
 TT_UNDO_PHOTO = "tt:undo_photo"
+TT_WITHDRAW = "tt:withdraw"
 TT_RECHECK = "tt:recheck:"
 TT_BACK_TASKS = "questions_stars"
 
@@ -81,9 +82,12 @@ WAIT_PHOTOS = "photos"
 TEXT_WAIT_KINDS = frozenset({WAIT_NICK, WAIT_NICK_EDIT, WAIT_LINK})
 CANCEL_WORDS = frozenset({"назад", "завершить"})
 WAIT_TTL_SECONDS = 300
+PHOTO_WAIT_TTL_SECONDS = 1200
 CANCEL_HINT = "<blockquote><i>Чтобы выйти - напишите</i> <code>Назад</code> <i>или</i> <code>Завершить</code></blockquote>"
-REPLY_HINT = "<blockquote><i>Ответьте на это сообщение. На ответ есть 5 минут.</i></blockquote>"
+REPLY_HINT = "<blockquote><i>Ответьте на это сообщение.</i></blockquote>"
+PHOTO_HINT = "<blockquote><i>Можно альбомом или по одному. Telegram берёт до 10 фото за раз - пришлите ещё, пока не будет 15.</i></blockquote>"
 INPUT_FOOTER = f"{REPLY_HINT}\n{CANCEL_HINT}"
+PHOTO_FOOTER = f"{PHOTO_HINT}\n{CANCEL_HINT}"
 
 
 def format_hashtag(raw: str, *, fallback: str = "тгзвезды") -> str:
@@ -376,8 +380,9 @@ def _rec_is_expired(rec: dict[str, Any] | None, *, now: datetime | None = None) 
     return _expires_is_past(rec.get("expires_at"), now=now)
 
 
-def _fresh_expires_iso() -> str:
-    return (datetime.now(timezone.utc) + timedelta(seconds=WAIT_TTL_SECONDS)).isoformat()
+def _fresh_expires_iso(kind: str = "") -> str:
+    ttl = PHOTO_WAIT_TTL_SECONDS if kind == WAIT_PHOTOS else WAIT_TTL_SECONDS
+    return (datetime.now(timezone.utc) + timedelta(seconds=ttl)).isoformat()
 
 
 def peek_wait(user_id: int) -> dict[str, Any] | None:
@@ -419,9 +424,9 @@ def begin_wait(
             rec["after"] = after
     if extra is not None and extra.get("expires_at") is not None:
         parsed = _parse_expires(extra.get("expires_at"))
-        rec["expires_at"] = parsed.isoformat() if parsed else _fresh_expires_iso()
+        rec["expires_at"] = parsed.isoformat() if parsed else _fresh_expires_iso(kind)
     else:
-        rec["expires_at"] = _fresh_expires_iso()
+        rec["expires_at"] = _fresh_expires_iso(kind)
     _tt_wait[int(user_id)] = rec
     return rec
 
@@ -440,6 +445,24 @@ def remember_album_group(user_id: int, media_group_id: Any) -> None:
     rec = _tt_wait.get(int(user_id))
     if rec and media_group_id:
         rec["album_group"] = str(media_group_id)
+
+
+async def touch_wait(user_id: int) -> None:
+    rec = peek_wait(user_id)
+    if not rec:
+        return
+    rec["awaiting"] = True
+    rec["expires_at"] = _fresh_expires_iso(str(rec.get("kind") or ""))
+    schedule_wait_timeout(user_id)
+    try:
+        session = await get_session(user_id)
+        extra = dict(session.get("extra") or {})
+        extra["expires_at"] = rec["expires_at"]
+        extra["awaiting"] = True
+        extra["kind"] = rec.get("kind")
+        await set_session(user_id, session.get("mode") or MODE_WAIT_PHOTOS, extra)
+    except Exception:
+        log.exception("tiktok touch wait persist failed uid=%s", user_id)
 
 
 def is_cancel_input(text: str) -> bool:
@@ -765,7 +788,12 @@ def message_matches_wait_photo(message: Any) -> bool:
     rec = get_wait(message.from_user.id)
     if not rec or rec.get("kind") != WAIT_PHOTOS:
         return False
-    return _gift_style_or_fallback(message, rec)
+    group = getattr(message, "media_group_id", None)
+    if group:
+        remember_album_group(message.from_user.id, group)
+    # Альбом в Telegram: первое фото отвечает на ForceReply, остальные -
+    # на первое фото альбома. Пока ждём скрины, принимаем все фото в личке.
+    return True
 
 
 def message_matches_wait_noise(message: Any) -> bool:
@@ -978,12 +1006,10 @@ def comments_keyboard(
     waiting: bool = False,
     complete: bool = False,
 ) -> InlineKeyboardMarkup:
-    rows = []
     if complete or count >= needed:
-        rows.append([_btn("Уже на проверке", TT_SUBMIT_PHOTOS, ICON_OK)])
-    if count > 0 and not (complete or count >= needed):
-        rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
-    elif count > 0 and (complete or count >= needed):
+        return _kb([[_btn("Отклонить заявку", TT_WITHDRAW)]])
+    rows = []
+    if count > 0:
         rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
     rows.append([_btn("Мои ники", TT_NICKS)])
     rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
@@ -1166,14 +1192,19 @@ def comments_screen_text(
     count: int,
 ) -> str:
     needed = int(cfg.get("photosRequired") or PHOTOS_REQUIRED)
+    if pending:
+        return (
+            f"<tg-emoji emoji-id='5350367217349311525'>💬</tg-emoji> <b>Комментарии</b>\n\n"
+            f"<b>Серия сдана</b>\n"
+            f"<blockquote><b>{needed} из {needed}. Ждём решение.</b>\n"
+            "<i>Если передумали - отклоните заявку. Серия сбросится, можно будет сдать новую.</i></blockquote>"
+            f"{_nicks_block(nicks)}"
+        )
     body = text_comments(cfg)
     body += _nicks_block(nicks)
-    if pending:
-        body += f"\n\n<b>{needed} из {needed}. Ждём решение.</b>"
-        return body
     if count > 0:
         body += "\n\n" + collect_text(count, needed)
-    body += f"\n\n<blockquote><i>Теперь отправьте фото ответом на это сообщение. Можно несколько или по одному.</i></blockquote>\n{INPUT_FOOTER}"
+    body += f"\n\n{PHOTO_FOOTER}"
     return body
 
 
@@ -1187,7 +1218,10 @@ def videos_screen_text(
     pending = [v for v in videos if v.get("status") == "pending"]
     live = [v for v in videos if v.get("status") == "live"]
     if pending:
-        body += "\n\n<b>Ссылка на проверке.</b>"
+        body += (
+            "\n\n<b>Ссылка на проверке</b>\n"
+            "<blockquote><i>Ждём решение. Новую ссылку можно прислать после ответа.</i></blockquote>"
+        )
     if live:
         body += "\n\n<b>Ваши ролики</b>"
         for item in live[:5]:
@@ -1209,21 +1243,18 @@ def text_wait_photos(count: int = 0, needed: int = 15) -> str:
         left = max(0, int(needed) - int(count))
         return (
             "<b>Отправьте следующее фото</b>\n"
-            f"<b><i>Уже на проверке {count} из {needed}. Осталось {left}.</i></b>\n"
-            "<blockquote>"
-            "<b>1. Сделайте скриншот комментария\n"
-            "2. Отправьте фото ответом на это сообщение"
-            "</b></blockquote>\n"
-            f"{INPUT_FOOTER}"
+            f"<blockquote><b>Уже на проверке {count} из {needed}. Осталось {left}.</b>\n"
+            "<i>Альбом до 10 фото. Если не хватает - пришлите ещё одним альбомом.</i></blockquote>\n"
+            f"{PHOTO_FOOTER}"
         )
     return (
         "<b>Отправьте скриншоты комментариев</b>\n"
         "<blockquote>"
         "<b>1. Сделайте скриншот комментария\n"
-        "2. Отправьте фото ответом на это сообщение\n"
-        "3. Можно альбомом или по одному</b>"
+        "2. Отправьте фото сюда\n"
+        "3. Можно альбомом. Telegram берёт до 10 фото за раз</b>"
         "</blockquote>\n"
-        f"{INPUT_FOOTER}"
+        f"{PHOTO_FOOTER}"
     )
 
 
@@ -1292,9 +1323,11 @@ def collect_text(count: int, needed: int, nicks: list[str] | None = None) -> str
     if nicks:
         bound = "\n<i>Проверяем :</i> " + ", ".join(f"<b>@{n}</b>" for n in nicks)
     if count >= needed:
-        return f"<b>{needed} из {needed}. Ждём решение. </b>{bound}"
+        return f"<b>{needed} из {needed}. Ждём решение.</b>{bound}"
     left = needed - count
-    return f"<b>На проверке {count} из {needed}. <i>Ещё {left}.</i></b>{bound}"
+    return (
+        f"<b>На проверке {count} из {needed}. <i>Ещё {left}.</i></b>{bound}"
+    )
 
 
 def text_photos_on_review(
@@ -1316,23 +1349,36 @@ def text_photos_on_review(
     if count >= needed:
         return (
             f"<b>{added} {word} {verb} на проверку.</b>\n"
-            f"<b>{needed} из {needed}. Ждём решение.</b>{bound}"
+            f"<blockquote><b>{needed} из {needed}. Ждём решение.</b>{bound}</blockquote>"
         )
     left = needed - count
     return with_input_footer(
         f"<b>{added} {word} {verb} на проверку.</b>\n"
-        f"<b><i>Сейчас {count} из {needed}. Осталось {left}. Отправьте следующее фото ответом.</i></b>{bound}"
+        f"<blockquote><b>Сейчас {count} из {needed}. Осталось {left}.</b>\n"
+        "<i>Отправьте следующее фото. Можно альбомом.</i>"
+        f"{bound}</blockquote>"
+    )
+
+
+def text_case_withdrawn() -> str:
+    return (
+        "<b>Заявку отозвали.</b>\n"
+        "<blockquote><i>Серия сброшена. Можно собрать новую.</i></blockquote>"
     )
 
 
 async def download_and_hash(bot, file_id: str) -> dict[str, str]:
-    try:
-        buf = BytesIO()
-        await bot.download(file_id, destination=buf)
-        return hashes_from_image_bytes(buf.getvalue())
-    except Exception:
-        log.exception("tiktok photo hash failed")
-        return {"ahash": "", "dhash": "", "phash": "", "md5": ""}
+    empty = {"ahash": "", "dhash": "", "phash": "", "md5": ""}
+    for attempt in range(2):
+        try:
+            buf = BytesIO()
+            await bot.download(file_id, destination=buf)
+            hashes = hashes_from_image_bytes(buf.getvalue())
+            if hashes.get("phash") or hashes.get("ahash"):
+                return hashes
+        except Exception:
+            log.exception("tiktok photo hash failed attempt=%s", attempt + 1)
+    return empty
 
 
 def pick_thumb_file_id(sizes) -> str:
@@ -1460,6 +1506,37 @@ async def undo_photo(user_id: int) -> dict[str, Any]:
                 "complete": progress["complete"],
                 "deleted": False,
             }
+
+
+async def withdraw_comment_case(user_id: int) -> dict[str, Any]:
+    await ensure_schema()
+    pool = _pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                SELECT id, photos, reviewed_at FROM tiktok_comment_cases
+                WHERE user_id = $1 AND status = 'pending'
+                FOR UPDATE
+                """,
+                int(user_id),
+            )
+            if not row:
+                raise ValueError("Открытой заявки нет.")
+            if row["reviewed_at"]:
+                raise ValueError("По этой серии уже есть решение.")
+            await conn.execute(
+                """
+                UPDATE tiktok_comment_cases
+                SET status = 'withdrawn', reviewed_at = NOW(), reject_text = $2
+                WHERE id = $1 AND status = 'pending'
+                """,
+                int(row["id"]),
+                "Игрок отозвал заявку",
+            )
+    clear_wait(user_id)
+    await set_session(user_id, MODE_WAIT_PHOTOS, {"after": "comments"})
+    return {"ok": True, "id": int(row["id"])}
 
 
 async def session_mode(user_id: int) -> str:

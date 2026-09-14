@@ -22,7 +22,6 @@ from tiktok_earn_logic import (
     DEFAULT_PHOTO_REJECT_REASONS,
     DEFAULT_REJECT_REASONS,
     DEFAULT_VIDEO_HASHTAG,
-    HASH_THRESHOLD,
     KUT_PER_UNIT,
     MAX_NICKS,
     PHOTOS_REQUIRED,
@@ -34,10 +33,12 @@ from tiktok_earn_logic import (
     assert_can_approve_comments,
     comment_progress,
     find_matches,
+    format_comment_payout_html,
+    format_photo_reject_html,
+    format_video_payout_html,
     next_queue_item,
     validate_comment_reward,
     validate_video_reward,
-    format_photo_reject_html,
     hashes_from_image_bytes,
     hashes_similar,
     normalize_nick,
@@ -640,6 +641,8 @@ def _case_dict(
     photo_recs = _photo_records(int(row["id"]), int(row["user_id"]), photos, row["created_at"])
     needed = int((settings or {}).get("photosRequired") or PHOTOS_REQUIRED)
     progress = comment_progress(photo_recs, needed)
+    all_matches = list(matches or [])
+    cross = [item for item in all_matches if not item.get("sameCase")]
     payload = {
         "id": int(row["id"]),
         "userId": int(row["user_id"]),
@@ -651,9 +654,10 @@ def _case_dict(
         "incomplete": progress["incomplete"],
         "nicks": nicks,
         "nickBreakdown": _nick_breakdown(photos, nicks),
-        "hasSimilar": bool(matches),
-        "matches": [] if light else (matches or []),
-        "matchCount": len(matches or []),
+        "hasSimilar": bool(cross),
+        "matches": [] if light else all_matches,
+        "matchCount": len(cross),
+        "intraCount": len(all_matches) - len(cross),
         "reviewedBy": int(row["reviewed_by"]) if row["reviewed_by"] else None,
         "reviewedAt": row["reviewed_at"].isoformat() if row["reviewed_at"] else None,
         "rejectText": row["reject_text"] or "",
@@ -779,10 +783,7 @@ async def approve_comment_case(case_id: int, admin_id: int) -> dict:
             )
     amount = int(settings["commentReward"])
     after = await _credit(int(row["user_id"]), amount, "+ tiktok комментарии")
-    text = (
-        f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>Комментарии приняты.</b>\n"
-        f"<i>На баланс зачислено</i> <b>{amount} кут</b><i>.</i>"
-    )
+    text = format_comment_payout_html(amount, settings["photosRequired"])
     _notify(int(row["user_id"]), text)
     return {"ok": True, "balance": after, "kut": amount}
 
@@ -988,29 +989,14 @@ async def approve_video(video_id: int, admin_id: int, views: int) -> dict:
     kut = int(delta["kut"])
     after = await _credit(user_id, kut, "+ tiktok видео")
     days = int(settings["recheckDays"])
-    if is_recheck:
-        if kut > 0:
-            text = (
-                f"<b>Новые просмотры: {delta['newViews']}.</b>\n"
-                f"<i>Было учтено {delta['oldViews']}. Доплата -</i> <b>{kut} кут</b><i>.</i>"
-            )
-        else:
-            text = (
-                f"<b>Просмотры обновили.</b>\n"
-                f"<i>Полных новых тысяч нет, доплаты нет. Следующая проверка через {days} дней.</i>"
-            )
-    elif kut > 0:
-        text = (
-            f"<b>Видео принято.</b>\n"
-            f"<i>Просмотры на проверке:</i> <b>{delta['newViews']}</b><i>.</i>\n"
-            f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> "
-            f"<b>Начислено: {kut} кут.</b>"
-        )
-    else:
-        text = (
-            "<b>Видео принято.</b>\n"
-            "<i>Ролик закреплён за Вами. Пока меньше 1000 просмотров - куты появятся после перепроверки.</i>"
-        )
+    text = format_video_payout_html(
+        kut=kut,
+        views=int(delta["newViews"]),
+        kut_per_unit=int(settings["kutPerUnit"]),
+        is_recheck=is_recheck,
+        old_views=int(delta["oldViews"]),
+        days=days,
+    )
     _notify(user_id, text)
     return {"ok": True, "balance": after, **delta}
 

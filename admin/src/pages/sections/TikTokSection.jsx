@@ -107,10 +107,10 @@ function Guide({ onClose }) {
       <button type="button" className="tt-guide-x" onClick={onClose} aria-label="Закрыть гид">×</button>
       <h3>Как разбирать TikTok за минуту</h3>
       <ol>
-        <li>Слева очередь. Карточка открывает 15 превью сразу — полные кадры по клику, без перезагрузки страницы.</li>
-        <li>Красная рамка: код нашёл похожий кадр. Сравни и отметь «копия» или «не копия». Решение за тобой.</li>
-        <li>Видео: открой ссылку в TikTok, впиши просмотры. Под полем сразу видно, сколько кут уйдёт.</li>
-        <li>Клавиши: A принять, R отклонить, N или J — следующее дело, Esc — к очереди.</li>
+        <li>Слева очередь. Карточка открывает превью сразу. Клик по кадру раскрывает его на весь экран - закрыть: ✕, «Закрыть», фон или свайп вниз.</li>
+        <li>Похожие кадры из других заявок собираются ниже сетки. Сравните два кадра и отметьте «одинаковые» или «разные». Решение за вами, код только подсвечивает.</li>
+        <li>Видео: откройте ссылку в TikTok, впишите просмотры. Под полем сразу видно, сколько кут уйдёт.</li>
+        <li>Клавиши: A принять, R отклонить, N или J - следующее дело, Esc - к очереди.</li>
       </ol>
       <button type="button" className="tt-btn tt-btn-ok" onClick={onClose}>Понятно, к очереди</button>
     </div>
@@ -134,9 +134,9 @@ function CommentCase({ item, onOpen, current }) {
       <div className="tt-card-nicks">{(item.nicks || []).map((n) => `@${n}`).join(' · ') || 'нет ников'}</div>
       <div className="tt-card-flags">
         {incomplete
-          ? <span className="tt-flag-incomplete">незавершено {count}/{needed}</span>
-          : <span>{count} фото</span>}
-        {item.hasSimilar ? <span className="tt-flag-hot">есть похожие · {item.matchCount}</span> : <span>уникальные</span>}
+          ? <span className="tt-flag-incomplete">{count}/{needed}</span>
+          : <span className="tt-flag-ok">{count}/{needed}</span>}
+        {item.hasSimilar ? <span className="tt-flag-hot">похожие {item.matchCount}</span> : null}
       </div>
     </button>
   )
@@ -144,13 +144,12 @@ function CommentCase({ item, onOpen, current }) {
 
 function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentRejectReasons }) {
   const [busy, setBusy] = useState(false)
-  const [lightbox, setLightbox] = useState(null)
-  const [compare, setCompare] = useState(null)
+  const [viewer, setViewer] = useState(null)
   const [local, setLocal] = useState(item)
   const [reasons, setReasons] = useState([])
   const busyRef = useRef(false)
 
-  useEffect(() => { setLocal(item); setCompare(null); setReasons([]) }, [item])
+  useEffect(() => { setLocal(item); setViewer(null); setReasons([]) }, [item])
 
   const matchByIndex = useMemo(() => {
     const map = {}
@@ -163,14 +162,49 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
     return map
   }, [local.matches])
 
-  const openFull = async (photo) => {
+  const needed = local.photosRequired || 15
+  const received = local.photoCount ?? (local.photos || []).length
+  const incomplete = local.incomplete ?? received < needed
+  const slots = Array.from({ length: needed }, (_, i) => local.photos?.[i] || null)
+  const openable = slots
+    .map((photo, index) => ({ photo, index }))
+    .filter((row) => shotFileId(row.photo))
+  const crossHits = (local.matches || []).filter((m) => !m.sameCase)
+  const intraHits = (local.matches || []).filter((m) => m.sameCase)
+
+  const openAt = async (slotIndex) => {
+    const photo = slots[slotIndex]
     const id = fullFileId(photo)
     if (!id) return
     try {
-      setLightbox(await loadTgPhotoUrl(id, 'full'))
+      const src = await loadTgPhotoUrl(id, 'full')
+      setViewer({ src, index: slotIndex, alt: `Скрин ${slotIndex + 1}` })
     } catch {
       showToast('Кадр не открылся. Нажмите ещё раз или проверьте вход.')
     }
+  }
+
+  const openPhoto = async (photo) => {
+    const idx = slots.findIndex((itemPhoto) => itemPhoto && fullFileId(itemPhoto) === fullFileId(photo))
+    if (idx >= 0) {
+      await openAt(idx)
+      return
+    }
+    const id = fullFileId(photo)
+    if (!id) return
+    try {
+      setViewer({ src: await loadTgPhotoUrl(id, 'full'), index: -1, alt: 'Похожий кадр' })
+    } catch {
+      showToast('Кадр не открылся. Нажмите ещё раз или проверьте вход.')
+    }
+  }
+
+  const stepViewer = (dir) => {
+    if (!openable.length || viewer == null) return
+    const pos = openable.findIndex((row) => row.index === viewer.index)
+    const next = openable[(pos < 0 ? 0 : pos) + dir]
+      || (dir > 0 ? openable[0] : openable[openable.length - 1])
+    if (next) openAt(next.index)
   }
 
   const decide = async (fn, okText) => {
@@ -192,10 +226,13 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
   const markPair = async (pair, verdict) => {
     const a = pair.source?.phash || pair.source?.ahash
     const b = pair.match?.phash || pair.match?.ahash
-    if (!a || !b) return
+    if (!a || !b) {
+      showToast('У этих кадров нет отпечатка. Откройте оба и решите глазами.')
+      return
+    }
     try {
       await saveTiktokVerdict(a, b, verdict)
-      showToast(verdict === 'copy' ? 'Отметили как копию' : 'Отметили как разные')
+      showToast(verdict === 'copy' ? 'Отметили как одинаковые' : 'Отметили как разные')
       const fresh = await fetchTiktokComment(local.id)
       setLocal(fresh)
     } catch (err) {
@@ -233,10 +270,46 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
   }, [local, reasons, onAdvance, onClose])
 
   const nextHint = nextQueueItem(queue, local.id)
-  const needed = local.photosRequired || 15
-  const received = local.photoCount ?? (local.photos || []).length
-  const incomplete = local.incomplete ?? received < needed
-  const slots = Array.from({ length: needed }, (_, i) => local.photos?.[i] || null)
+
+  const renderPair = (hit, i) => (
+    <div key={`${hit.source?.id || i}-${hit.match?.id || i}`} className="tt-pair">
+      <div className="tt-pair-col">
+        <b>Этот кадр · #{(hit.source?.index ?? 0) + 1}</b>
+        <TgPhoto
+          fileId={fullFileId(hit.source)}
+          size="full"
+          lazy={false}
+          alt={`Кадр ${(hit.source?.index ?? 0) + 1}`}
+          onClick={() => openPhoto(hit.source)}
+        />
+      </div>
+      <div className="tt-pair-col">
+        <b>
+          {hit.sameCase
+            ? `В этой серии · #${(hit.match?.index ?? 0) + 1}`
+            : `Заявка #${hit.match?.caseId} · #${(hit.match?.index ?? 0) + 1}`}
+        </b>
+        <TgPhoto
+          fileId={fullFileId(hit.match)}
+          size="full"
+          lazy={false}
+          alt="Похожий кадр"
+          onClick={() => openPhoto(hit.match)}
+        />
+      </div>
+      <div className="tt-pair-meta">
+        <p>
+          Похожесть {hit.similarity ?? 0}%
+          {hit.sameCase ? ' · дубль внутри серии' : ` · игрок ${hit.match?.userId || '—'}`}
+          {hit.verdict === 'copy' ? ' · уже: одинаковые' : hit.verdict === 'unique' ? ' · уже: разные' : ''}
+        </p>
+        <div className="tt-row">
+          <button type="button" className="tt-btn tt-btn-hot" onClick={() => markPair(hit, 'copy')}>Одинаковые</button>
+          <button type="button" className="tt-btn" onClick={() => markPair(hit, 'unique')}>Разные</button>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
     <div className="tt-work">
@@ -264,8 +337,8 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
 
       <p className="tt-keys" role="note">
         {incomplete
-          ? `Серия неполная: ${received} из ${needed}. Принять нельзя. R отклонить · N следующее · Esc очередь`
-          : 'A принять · R отклонить · N или J следующее · Esc очередь. Красная рамка - похожий кадр.'}
+          ? `Серия неполная: ${received} из ${needed}. Принять нельзя. Клик по кадру открывает его. R отклонить · Esc очередь`
+          : 'Клик по кадру открывает его. A принять · R отклонить · N следующее · Esc очередь.'}
       </p>
       {incomplete && (
         <div className="tt-incomplete-note">
@@ -283,73 +356,59 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
             )
           }
           const hits = matchByIndex[i] || []
-          const thumb = shotFileId(photo)
+          const cross = hits.filter((h) => !h.sameCase)
+          const intra = hits.filter((h) => h.sameCase)
           const copyHit = hits.some((h) => h.verdict === 'copy')
-          const selected = compare && fullFileId(compare.photo) === fullFileId(photo)
+          const selected = viewer && viewer.index === i
           return (
             <div
               key={photo.id || i}
               role="button"
               tabIndex={0}
-              className={`tt-shot${hits.length ? ' tt-shot-hot' : ''}${copyHit ? ' is-copy' : ''}${selected ? ' is-on' : ''}`}
-              onClick={() => {
-                if (hits.length) setCompare({ photo, hits })
-                else openFull(photo)
-              }}
+              className={`tt-shot${cross.length ? ' tt-shot-hot' : ''}${copyHit ? ' is-copy' : ''}${selected ? ' is-on' : ''}`}
+              onClick={() => openAt(i)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
-                  if (hits.length) setCompare({ photo, hits })
-                  else openFull(photo)
+                  openAt(i)
                 }
               }}
             >
+              {cross.length ? <span className="tt-shot-mark">похоже {Math.max(...cross.map((h) => h.similarity || 0))}%</span> : null}
+              {!cross.length && intra.length ? <span className="tt-shot-mark is-dup">дубль</span> : null}
               <TgPhoto
-                fileId={thumb}
+                fileId={shotFileId(photo)}
                 size="thumb"
                 lazy
                 alt={`Скрин ${i + 1}`}
                 style={{ width: '100%', height: 120, objectFit: 'cover' }}
               />
-              <span>#{i + 1}{hits.length ? ` · ${hits.length} похож.` : ''}{copyHit ? ' · копия' : ''}</span>
+              <span>#{i + 1}</span>
             </div>
           )
         })}
       </div>
 
-      {compare && (
-        <div className="tt-compare">
-          <div className="tt-compare-col">
-            <b>Этот кадр</b>
-            <TgPhoto
-              fileId={fullFileId(compare.photo)}
-              size="full"
-              lazy={false}
-              onClick={() => openFull(compare.photo)}
-            />
-          </div>
-          <div className="tt-compare-list">
-            {compare.hits.map((hit, i) => (
-              <div key={`${hit.match?.id || i}`} className="tt-compare-hit">
-                <TgPhoto
-                  fileId={fullFileId(hit.match)}
-                  size="full"
-                  lazy={false}
-                  onClick={() => openFull(hit.match)}
-                />
-                <p>
-                  Заявка #{hit.match.caseId} · игрок {hit.match.userId} · дистанция {hit.distance}
-                  {hit.verdict ? ` · уже: ${hit.verdict === 'copy' ? 'копия' : 'не копия'}` : ''}
-                </p>
-                <div className="tt-row">
-                  <button type="button" className="tt-btn tt-btn-hot" onClick={() => markPair(hit, 'copy')}>Копия</button>
-                  <button type="button" className="tt-btn" onClick={() => markPair(hit, 'unique')}>Не копия</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="tt-similar">
+        <h4>Похожие кадры</h4>
+        <p className="tt-similar-lead">
+          Код сравнивает отпечатки фото. Подсветка - подсказка, не приговор. Откройте кадр и решите сами.
+        </p>
+        {crossHits.length ? (
+          <>
+            <p className="tt-hint">С другими заявками</p>
+            {crossHits.map(renderPair)}
+          </>
+        ) : (
+          <p className="tt-similar-empty">С другими заявками совпадений нет.</p>
+        )}
+        {intraHits.length ? (
+          <>
+            <p className="tt-hint">Почти одинаковые кадры внутри этой серии</p>
+            {intraHits.map(renderPair)}
+          </>
+        ) : null}
+      </div>
 
       <div className="tt-reasons">
         <p className="tt-hint">Почему отклоняем. Игрок увидит эти пункты в сообщении.</p>
@@ -384,7 +443,18 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
           {incomplete ? `Принять нельзя · ${received}/${needed}` : 'Всё правильно'}
         </button>
       </div>
-      {lightbox && <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} />}
+      {viewer?.src && (
+        <ImageLightbox
+          src={viewer.src}
+          alt={viewer.alt}
+          caption={viewer.alt}
+          index={Math.max(0, openable.findIndex((row) => row.index === viewer.index))}
+          total={openable.length}
+          onClose={() => setViewer(null)}
+          onPrev={viewer.index >= 0 && openable.length > 1 ? () => stepViewer(-1) : undefined}
+          onNext={viewer.index >= 0 && openable.length > 1 ? () => stepViewer(1) : undefined}
+        />
+      )}
     </div>
   )
 }

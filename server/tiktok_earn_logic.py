@@ -23,6 +23,9 @@ COMMENT_REWARD_MAX = 500
 VIDEO_REWARD_MIN = 1
 VIDEO_REWARD_MAX = 5000
 HASH_THRESHOLD = 10
+# В одной серии скрины одного приложения часто похожи. Чужие заявки ловим мягче,
+# внутри серии показываем только почти точные дубли.
+HASH_INTRA_THRESHOLD = 2
 VIDEO_CANONICAL_RE = re.compile(r"/video/(\d+)")
 SHORT_CODE_RE = re.compile(r"tiktok\.com/(?:t/)?([A-Za-z0-9]+)/?$")
 
@@ -234,10 +237,76 @@ def format_photo_reject_html(labels: list[str]) -> str:
         raise ValueError("Отметьте хотя бы одну причину отказа")
     lines = "\n".join(f"<b>{i}.</b> {label}" for i, label in enumerate(clean, 1))
     return (
-        "<b>Эту серию не приняли.</b>\n"
-        "<i>Вот что нужно исправить:</i>\n"
+        "<b>Комментарии не приняли.</b>\n"
+        "<i>Что исправить:</i>\n"
         f"<blockquote>\n{lines}\n</blockquote>\n"
-        "<i>Соберите новую серию скринов и отправьте снова.</i>"
+        "<i>Соберите новую серию и отправьте снова.</i>"
+    )
+
+
+def format_comment_payout_html(amount: int, photos: int = PHOTOS_REQUIRED) -> str:
+    pay = max(0, int(amount))
+    pack = max(1, int(photos or PHOTOS_REQUIRED))
+    return (
+        f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{pay} кут</b>\n"
+        "<blockquote>"
+        "<b>За что:</b> комментарии TikTok\n"
+        f"<b>Пачка:</b> {pack} скринов\n"
+        f"<b>Награда:</b> {pay} кут"
+        "</blockquote>"
+    )
+
+
+def format_video_payout_html(
+    *,
+    kut: int,
+    views: int,
+    kut_per_unit: int = KUT_PER_UNIT,
+    is_recheck: bool = False,
+    old_views: int = 0,
+    days: int = RECHECK_DAYS,
+) -> str:
+    pay = max(0, int(kut))
+    now = max(0, int(views))
+    unit = max(1, int(kut_per_unit or KUT_PER_UNIT))
+    thousands = thousands_from_views(now)
+    wait_days = max(1, int(days or RECHECK_DAYS))
+    if is_recheck:
+        if pay > 0:
+            return (
+                f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{pay} кут</b>\n"
+                "<blockquote>"
+                "<b>За что:</b> новые просмотры видео\n"
+                f"<b>Было:</b> {int(old_views)}\n"
+                f"<b>Сейчас:</b> {now}\n"
+                f"<b>Доплата:</b> {pay} кут"
+                "</blockquote>"
+            )
+        return (
+            "<b>Просмотры обновили.</b>\n"
+            "<blockquote>"
+            "<b>За что:</b> перепроверка видео\n"
+            f"<b>Сейчас:</b> {now}\n"
+            "<b>Доплаты нет:</b> новых полных тысяч не набралось"
+            "</blockquote>\n"
+            f"<i>Следующая проверка через {wait_days} дн.</i>"
+        )
+    if pay > 0:
+        return (
+            f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{pay} кут</b>\n"
+            "<blockquote>"
+            "<b>За что:</b> видео про бота\n"
+            f"<b>Просмотры:</b> {now}\n"
+            f"<b>Счёт:</b> {thousands} × {unit} кут"
+            "</blockquote>"
+        )
+    return (
+        "<b>Видео принято.</b>\n"
+        "<blockquote>"
+        "<b>За что:</b> ролик про бота\n"
+        f"<b>Просмотры:</b> {now}\n"
+        "<b>Куты:</b> появятся после 1000 просмотров"
+        "</blockquote>"
     )
 
 
@@ -296,15 +365,28 @@ def hamming_hex(a: str, b: str) -> int:
     return bin(int(a, 16) ^ int(b, 16)).count("1")
 
 
-def hashes_similar(left: dict[str, str], right: dict[str, str], threshold: int = HASH_THRESHOLD) -> bool:
+def hash_distance(left: dict[str, str], right: dict[str, str]) -> int:
+    left_md5 = str(left.get("md5") or "")
+    right_md5 = str(right.get("md5") or "")
+    if left_md5 and right_md5 and left_md5 == right_md5:
+        return 0
     scores = []
     for key in ("ahash", "dhash", "phash"):
         a, b = left.get(key) or "", right.get(key) or ""
         if a and b:
             scores.append(hamming_hex(a, b))
     if not scores:
-        return False
-    return min(scores) <= threshold
+        return 64
+    return min(scores)
+
+
+def similarity_percent(distance: int) -> int:
+    dist = max(0, min(64, int(distance)))
+    return int(round(100 * (1 - dist / 64)))
+
+
+def hashes_similar(left: dict[str, str], right: dict[str, str], threshold: int = HASH_THRESHOLD) -> bool:
+    return hash_distance(left, right) <= int(threshold)
 
 
 def pair_key(a: str, b: str) -> tuple[str, str]:
@@ -317,8 +399,9 @@ def find_matches(
     *,
     verdicts: dict[tuple[str, str], str] | None = None,
     threshold: int = HASH_THRESHOLD,
+    intra_threshold: int = HASH_INTRA_THRESHOLD,
 ) -> list[dict[str, Any]]:
-    """Находит похожие пары. photos — текущая пачка, library — история (может включать текущую)."""
+    """Похожие пары: другие заявки по threshold, внутри серии только почти точные дубли."""
     verdicts = verdicts or {}
     found: list[dict[str, Any]] = []
     seen_pairs: set[tuple[Any, Any, Any, Any]] = set()
@@ -328,11 +411,16 @@ def find_matches(
                 continue
             if src.get("id") and other.get("id") and src["id"] == other["id"]:
                 continue
-            if src.get("caseId") and other.get("caseId") and src.get("index") == other.get("index"):
-                if src["caseId"] == other["caseId"]:
-                    if src is other:
-                        continue
-            if not hashes_similar(src, other, threshold):
+            same_case = bool(
+                src.get("caseId") is not None
+                and other.get("caseId") is not None
+                and src.get("caseId") == other.get("caseId")
+            )
+            if same_case and src.get("index") == other.get("index"):
+                continue
+            distance = hash_distance(src, other)
+            limit = int(intra_threshold if same_case else threshold)
+            if distance > limit:
                 continue
             key = pair_key(src.get("phash") or src.get("ahash") or "", other.get("phash") or other.get("ahash") or "")
             if verdicts.get(key) == "unique":
@@ -351,15 +439,14 @@ def find_matches(
                 {
                     "source": src,
                     "match": other,
-                    "distance": min(
-                        hamming_hex(src.get(k) or "0", other.get(k) or "0")
-                        for k in ("ahash", "dhash", "phash")
-                        if src.get(k) and other.get(k)
-                    ) if any(src.get(k) and other.get(k) for k in ("ahash", "dhash", "phash")) else 64,
+                    "distance": distance,
+                    "similarity": similarity_percent(distance),
+                    "sameCase": same_case,
+                    "scope": "same_series" if same_case else "other",
                     "verdict": verdicts.get(key),
                 }
             )
-    found.sort(key=lambda x: x["distance"])
+    found.sort(key=lambda x: (x["sameCase"], x["distance"]))
     return found[:48]
 
 

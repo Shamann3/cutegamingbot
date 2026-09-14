@@ -129,9 +129,11 @@ def test_collect_progress_and_undo_available_before_full():
     dumped = _kb_data(collect_keyboard(7, 15))
     assert "tt:undo_photo" in dumped
     assert "tt:submit_photos" not in dumped
+    assert "tt:withdraw" not in dumped
     full = _kb_data(collect_keyboard(15, 15))
-    assert "tt:undo_photo" in full
-    assert "tt:submit_photos" in full
+    assert full.strip() == "tt:withdraw"
+    assert "tt:undo_photo" not in full
+    assert "tt:submit_photos" not in full
 
     class _Size:
         def __init__(self, file_id, width):
@@ -172,8 +174,10 @@ def test_bot_texts_follow_settings_rewards():
     assert "88" in hub
     assert "9" in hub
     dumped = _kb_data(comments_keyboard(can_send=True, count=15, needed=15, complete=True))
-    assert "tt:submit_photos" in dumped
+    assert dumped.strip() == "tt:withdraw"
+    assert "tt:submit_photos" not in dumped
     assert "tt:send_photos" not in dumped
+    assert "tt:undo_photo" not in dumped
 
 
 def test_direction_then_work_on_same_screen():
@@ -240,6 +244,8 @@ def test_navigation_callbacks_stay_on_path():
     assert "message_matches_wait_text" in src
     assert "get_pending_comment_case" in src
     assert "text_photos_on_review" in src
+    assert "TT_WITHDRAW" in src
+    assert "withdraw_comment_case" in src
 
 
 def test_partial_case_logic_and_approve_gate():
@@ -295,6 +301,7 @@ def test_player_tiktok_copy_is_formal_vy():
         text_photos_on_review,
         text_press_send_link,
         text_press_send_photos,
+        text_case_withdrawn,
         text_videos,
         text_wait_expired,
         text_wait_link,
@@ -320,6 +327,7 @@ def test_player_tiktok_copy_is_formal_vy():
         text_press_send_photos(),
         text_press_send_link(),
         text_wait_expired(),
+        text_case_withdrawn(),
     ]
     help_src = Path("bot/funcs/help.py").read_text(encoding="utf-8")
     blobs.append(help_src.split("<b>TikTok</b>")[1].split("<b>Промокоды</b>")[0])
@@ -471,6 +479,11 @@ def test_gift_like_wait_flag_lets_handler_accept_text():
     assert message_matches_wait_text(_ReplyMsg(uid, "Ooooo", reply_mid=100))
     assert message_matches_wait_text(_Msg(uid, "Ooooo"))
     assert not message_matches_wait_text(_ReplyMsg(uid, "Ooooo", reply_mid=999))
+    clear_wait(uid)
+
+    begin_wait(uid, "photos", after="comments", prompt_message_id=100)
+    assert message_matches_wait_photo(_ReplyMsg(uid, photo=["x"], reply_mid=999))
+    assert message_matches_wait_photo(_Msg(uid, photo=["x"]))
     clear_wait(uid)
 
 
