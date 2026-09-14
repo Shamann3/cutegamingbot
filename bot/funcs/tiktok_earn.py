@@ -44,6 +44,7 @@ TT_NICK_PICK = "tt:nick_pick:"
 TT_SEND_PHOTOS = "tt:send_photos"
 TT_SEND_LINK = "tt:send_link"
 TT_CANCEL_COLLECT = "tt:cancel_collect"
+TT_DONE_WAIT = "tt:done_wait"
 TT_SUBMIT_PHOTOS = "tt:submit_photos"
 TT_UNDO_PHOTO = "tt:undo_photo"
 TT_RECHECK = "tt:recheck:"
@@ -55,6 +56,20 @@ ICON_OK = "5224257782013769471"
 ICON_CAM = "5373098002641805602"
 ICON_COMMENTS = "5350367217349311525"
 ICON_VIDEOS = "5375309569905938163"
+
+MODE_COMMENTS = "comments"
+MODE_VIDEOS = "videos"
+MODE_NEED_NICK = "need_nick"
+MODE_WAIT_PHOTOS = "wait_photos"
+MODE_WAIT_LINK = "await_video_link"
+MODE_WAIT_NICK = "await_nick"
+MODE_WAIT_NICK_EDIT = "await_nick_edit"
+MODE_COMMENT_DONE = "comment_wait"
+PHOTO_WAIT_MODES = frozenset({MODE_WAIT_PHOTOS, "collect_photos"})
+NICK_WAIT_MODES = frozenset({MODE_WAIT_NICK, MODE_WAIT_NICK_EDIT})
+EXAMPLE_NICK = "@cuteplayer"
+EXAMPLE_COMMENT = "Как по мне @CuteGamingBot намного лучше для заработка звезд"
+EXAMPLE_VIDEO_URL = "https://www.tiktok.com/@cuteplayer/video/7123456789012345678"
 
 _SCHEMA_READY = False
 
@@ -446,18 +461,39 @@ def hub_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def comments_keyboard(*, can_send: bool = True, count: int = 0, needed: int = 15) -> InlineKeyboardMarkup:
+def comments_keyboard(
+    *,
+    can_send: bool = True,
+    count: int = 0,
+    needed: int = 15,
+    waiting: bool = False,
+    complete: bool = False,
+) -> InlineKeyboardMarkup:
     rows = []
-    if can_send and count > 0:
-        rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
-    if count >= needed:
+    if complete or count >= needed:
         rows.append([_btn("Уже на проверке", TT_SUBMIT_PHOTOS, ICON_OK)])
+        if count > 0:
+            rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
+    elif waiting:
+        rows.append([_btn("Не сейчас", TT_CANCEL_COLLECT, ICON_BACK)])
+        if count > 0:
+            rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
+            rows.append([_btn("Готово", TT_DONE_WAIT, ICON_OK)])
+    elif can_send:
+        rows.append([_btn("Отправить скриншоты", TT_SEND_PHOTOS, ICON_CAM)])
+        if count > 0:
+            rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
     rows.append([_btn("Мои ники", TT_NICKS)])
     rows.append([_btn("К выбору", TT_HUB, ICON_BACK)])
     return _kb(rows)
 
 
-def videos_keyboard(videos: list[dict] | None = None) -> InlineKeyboardMarkup:
+def videos_keyboard(
+    videos: list[dict] | None = None,
+    *,
+    waiting: bool = False,
+    can_send: bool = True,
+) -> InlineKeyboardMarkup:
     rows = []
     for item in videos or []:
         if item.get("status") != "live" or item.get("recheckPending"):
@@ -465,6 +501,10 @@ def videos_keyboard(videos: list[dict] | None = None) -> InlineKeyboardMarkup:
         if item.get("recheckReady") is False:
             continue
         rows.append([_btn(f"Проверить просмотры · #{item['id']}", f"{TT_RECHECK}{item['id']}")])
+    if waiting:
+        rows.append([_btn("Не сейчас", TT_CANCEL_COLLECT, ICON_BACK)])
+    elif can_send:
+        rows.append([_btn("Отправить ссылку", TT_SEND_LINK, ICON_VIDEOS)])
     rows.append([_btn("Мои ники", TT_NICKS)])
     rows.append([_btn("К выбору", TT_HUB, ICON_BACK)])
     return _kb(rows)
@@ -473,7 +513,7 @@ def videos_keyboard(videos: list[dict] | None = None) -> InlineKeyboardMarkup:
 def nicks_keyboard(nicks: list[str], *, locked: bool, origin: str = "hub") -> InlineKeyboardMarkup:
     rows = []
     if not locked:
-        rows.append([_btn("Добавить ник", TT_NICK_ADD)])
+        rows.append([_btn("Указать имя профиля", TT_NICK_ADD)])
         if nicks:
             rows.append([_btn("Изменить", TT_NICK_EDIT)])
     back = TT_COMMENTS if origin == "comments" else TT_VIDEOS if origin == "videos" else TT_HUB
@@ -488,11 +528,23 @@ def nick_pick_keyboard(nicks: list[str]) -> InlineKeyboardMarkup:
 
 
 def collect_keyboard(count: int, needed: int) -> InlineKeyboardMarkup:
-    return comments_keyboard(can_send=True, count=count, needed=needed)
+    return comments_keyboard(can_send=True, count=count, needed=needed, waiting=True)
 
 
-def bind_keyboard() -> InlineKeyboardMarkup:
-    return _kb([[_btn("Указать ник", TT_NICK_ADD)], [_btn("К выбору", TT_HUB, ICON_BACK)]])
+def bind_keyboard(*, waiting: bool = False) -> InlineKeyboardMarkup:
+    if waiting:
+        return _kb(
+            [
+                [_btn("Не сейчас", TT_CANCEL_COLLECT, ICON_BACK)],
+                [_btn("К выбору", TT_HUB, ICON_BACK)],
+            ]
+        )
+    return _kb(
+        [
+            [_btn("Указать имя профиля", TT_NICK_ADD)],
+            [_btn("К выбору", TT_HUB, ICON_BACK)],
+        ]
+    )
 
 
 def text_hub(cfg: dict[str, Any] | None = None) -> str:
@@ -518,14 +570,18 @@ def text_comments(cfg: dict[str, Any]) -> str:
     photos = int(cfg.get("photosRequired") or PHOTOS_REQUIRED)
     return (
         f"<tg-emoji emoji-id='{ICON_COMMENTS}'>💬</tg-emoji> <b>Комментарии в TikTok</b>\n\n"
-        f"<i>Найдите ролики с тегом «{tag}». Напишите {photos} своих комментариев и поставьте лайк на каждый.</i>\n"
-        f"<i>В тексте - живое упоминание проекта и обязательно @CuteGamingBot. "
-        f"Один комментарий - один кадр, без повторов с ролика на ролик.</i>\n\n"
-        "<i>Пример:</i>\n"
-        "<blockquote><code>Как по мне @CuteGamingBot намного лучше для заработка звезд</code></blockquote>\n\n"
+        f"<i>Найдите ролики с тегом ниже. Напишите {photos} своих комментариев.</i>\n"
+        f"<i>Поставьте лайк на каждый. Один комментарий - один скрин.</i>\n\n"
+        "<b>Как это выглядит</b>\n"
+        "<i>Тег ролика:</i>\n"
+        f"<code>{tag}</code>\n"
+        "<i>Комментарий:</i>\n"
+        f"<code>{EXAMPLE_COMMENT}</code>\n"
+        "<i>На скрине - Ваш комментарий и лайк на нём.</i>\n\n"
         f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> "
         f"<b>За полную принятую серию - {reward} кут.</b>\n"
-        f"<i>Каждый скрин сразу уходит на проверку. Награду начислим только за {photos} кадров.</i>"
+        f"<i>Нажмите «Отправить скриншоты», затем пришлите кадры.</i>\n"
+        f"<i>Награду начислим только за {photos} скринов.</i>"
     )
 
 
@@ -536,38 +592,43 @@ def text_videos(cfg: dict[str, Any]) -> str:
     days = int(cfg.get("recheckDays") or 7)
     return (
         f"<tg-emoji emoji-id='{ICON_VIDEOS}'>📹</tg-emoji> <b>Видео про бота</b>\n\n"
-        f"<i>Снимите ролик про @CuteGamingBot и поставьте хештег {hashtag}.</i>\n"
-        "<i>Пришлите ссылку прямо сюда: tiktok.com или vm.tiktok.com. "
-        "Мы откроем ролик и впишем просмотры.</i>\n\n"
+        f"<i>Снимите ролик про @CuteGamingBot.</i>\n"
+        f"<i>Поставьте хештег {hashtag}.</i>\n\n"
+        "<b>Как отправить ссылку</b>\n"
+        "<i>Нажмите «Отправить ссылку», затем пришлите адрес.</i>\n"
+        "<i>Пример:</i>\n"
+        f"<code>{EXAMPLE_VIDEO_URL}</code>\n\n"
         f"<b>Каждые полные {per} просмотров - {kut} кут.</b>\n"
-        f"<i>Перепроверка через {days} дней: доплата только за новый прирост.</i>\n"
-        "<i>Если идея или монтаж не складываются - напишите @JerichoCute.</i>"
+        f"<i>Перепроверка через {days} дней: доплата только за прирост.</i>\n"
+        "<i>Нужна помощь с идеей - напишите @JerichoCute.</i>"
     )
 
 
 def text_need_nick(path: str = "") -> str:
     after = (
-        "Потом сразу вернёмся к комментариям."
+        "Потом вернёмся к комментариям."
         if path == "comments"
-        else "Потом сразу вернёмся к видео."
+        else "Потом вернёмся к видео."
         if path == "videos"
         else "Потом продолжим выбранное направление."
     )
     return (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Сначала укажите свой TikTok</b>\n\n"
-        "<i>Без публичного ника мы не поймём, где Вас искать.</i>\n"
-        f"<i>{after}</i>\n"
-        "<i>Напишите ник как в TikTok. Без ссылки, только имя.</i>\n"
-        "<blockquote><code>cuteplayer</code></blockquote>"
+        "<i>Без публичного ника мы не найдём Ваш аккаунт.</i>\n"
+        f"<i>{after}</i>\n\n"
+        "<b>Как выглядит ник</b>\n"
+        f"<code>{EXAMPLE_NICK}</code>\n"
+        "<i>Нажмите «Указать имя профиля», затем отправьте имя.</i>"
     )
 
 
 def text_ask_nick() -> str:
     return (
-        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Ваш ник в TikTok</b>\n\n"
-        "<i>Одним сообщением. С @ или без.</i>\n"
-        "<i>По нему найдём Ваши комментарии и ролики.</i>\n"
-        "<blockquote><code>cuteplayer</code></blockquote>"
+        "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Ждём имя профиля</b>\n\n"
+        "<i>Отправьте ник одним сообщением. С @ или без.</i>\n"
+        "<i>По нему найдём Ваш аккаунт.</i>\n\n"
+        "<i>Пример:</i>\n"
+        f"<code>{EXAMPLE_NICK}</code>"
     )
 
 
@@ -593,6 +654,13 @@ def help_earnings_block() -> str:
     )
 
 
+def _nicks_block(nicks: list[str]) -> str:
+    if not nicks:
+        return ""
+    lines = "\n".join(f"<code>@{n}</code>" for n in nicks)
+    return f"\n\n<i>Ники, по которым проверят:</i>\n{lines}"
+
+
 def comments_screen_text(
     cfg: dict[str, Any],
     nicks: list[str],
@@ -602,8 +670,7 @@ def comments_screen_text(
 ) -> str:
     needed = int(cfg.get("photosRequired") or PHOTOS_REQUIRED)
     body = text_comments(cfg)
-    if nicks:
-        body += "\n\n<i>Ники, по которым проверят:</i> " + ", ".join(f"<b>@{n}</b>" for n in nicks)
+    body += _nicks_block(nicks)
     if pending:
         body += (
             f"\n\n<b>Серия полная: {needed} из {needed}.</b>\n"
@@ -611,11 +678,6 @@ def comments_screen_text(
         )
     elif count > 0:
         body += "\n\n" + collect_text(count, needed)
-    else:
-        body += (
-            "\n\n<i>Пришлите скрины прямо сюда: альбомом или по одному. "
-            "Первый кадр сразу уйдёт на проверку.</i>"
-        )
     return body
 
 
@@ -625,14 +687,11 @@ def videos_screen_text(
     videos: list[dict[str, Any]],
 ) -> str:
     body = text_videos(cfg)
-    if nicks:
-        body += "\n\n<i>Ники:</i> " + ", ".join(f"<b>@{n}</b>" for n in nicks)
+    body += _nicks_block(nicks)
     pending = [v for v in videos if v.get("status") == "pending"]
     live = [v for v in videos if v.get("status") == "live"]
     if pending:
         body += "\n\n<b>Ссылка на проверке.</b>\n<i>Когда укажем просмотры - начислим куты за полные тысячи.</i>"
-    else:
-        body += "\n\n<i>Ссылку tiktok.com или vm.tiktok.com можно отправить следующим сообщением.</i>"
     if live:
         body += "\n\n<b>Ваши ролики</b>"
         for item in live[:5]:
@@ -642,8 +701,53 @@ def videos_screen_text(
                 mark = f" · учтено {item['lastViews']} · {item.get('recheckWaitText') or 'ещё рано'}"
             else:
                 mark = f" · учтено {item['lastViews']} · можно проверить"
-            body += f"\n<code>{item['url']}</code><i>{mark}</i>"
+            body += f"\n<code>{item['url']}</code>\n<i>{mark}</i>"
     return body
+
+
+def text_wait_photos(count: int = 0, needed: int = 15) -> str:
+    if count > 0:
+        left = max(0, int(needed) - int(count))
+        return (
+            "<b>Ждём скриншоты</b>\n\n"
+            f"<i>Сейчас на проверке</i> <b>{count} из {needed}</b><i>.</i>\n"
+            f"<i>Осталось {left}. Альбомом или по одному, как фото.</i>"
+        )
+    return (
+        "<b>Ждём скриншоты</b>\n\n"
+        "<i>Пришлите кадры альбомом или по одному. Как фото, не как файл.</i>\n"
+        "<i>Каждый скрин сразу уйдёт на проверку.</i>"
+    )
+
+
+def text_wait_link() -> str:
+    return (
+        "<b>Ждём ссылку на видео</b>\n\n"
+        "<i>Отправьте адрес одним сообщением.</i>\n"
+        "<i>Пример:</i>\n"
+        f"<code>{EXAMPLE_VIDEO_URL}</code>"
+    )
+
+
+def text_press_send_photos() -> str:
+    return (
+        "<b>Сначала нажмите кнопку.</b>\n"
+        "<i>Нажмите «Отправить скриншоты», затем пришлите фото.</i>"
+    )
+
+
+def text_press_send_link() -> str:
+    return (
+        "<b>Сначала нажмите кнопку.</b>\n"
+        "<i>Нажмите «Отправить ссылку», затем пришлите адрес.</i>"
+    )
+
+
+def text_press_bind_nick() -> str:
+    return (
+        "<b>Сначала укажите имя профиля.</b>\n"
+        "<i>Нажмите «Указать имя профиля», затем отправьте ник.</i>"
+    )
 
 
 def collect_text(count: int, needed: int, nicks: list[str] | None = None) -> str:
@@ -758,7 +862,8 @@ async def add_photo(
                         json.dumps(nicks, ensure_ascii=False),
                     )
                 )
-    await set_session(user_id, "collect_photos", {"caseId": case_id})
+    next_mode = MODE_COMMENT_DONE if result["complete"] else MODE_WAIT_PHOTOS
+    await set_session(user_id, next_mode, {"caseId": case_id})
     return {
         "count": result["received"],
         "needed": result["needed"],
@@ -784,7 +889,9 @@ async def undo_photo(user_id: int) -> dict[str, Any]:
                 int(user_id),
             )
             if not row:
-                await set_session(user_id, "collect_photos", {})
+                session = await get_session(user_id)
+                keep = MODE_WAIT_PHOTOS if session.get("mode") in PHOTO_WAIT_MODES else MODE_COMMENTS
+                await set_session(user_id, keep, {})
                 return {"count": 0, "needed": needed, "complete": False, "deleted": False}
             if row["reviewed_at"]:
                 raise ValueError("По этой серии уже есть решение.")
@@ -798,14 +905,18 @@ async def undo_photo(user_id: int) -> dict[str, Any]:
                     "DELETE FROM tiktok_comment_cases WHERE id = $1 AND status = 'pending'",
                     int(row["id"]),
                 )
-                await set_session(user_id, "collect_photos", {})
+                session = await get_session(user_id)
+                keep = MODE_WAIT_PHOTOS if session.get("mode") in PHOTO_WAIT_MODES else MODE_COMMENTS
+                await set_session(user_id, keep, {})
                 return {"count": 0, "needed": needed, "complete": False, "deleted": True}
             await conn.execute(
                 "UPDATE tiktok_comment_cases SET photos = $2::jsonb WHERE id = $1 AND status = 'pending'",
                 int(row["id"]),
                 json.dumps(photos, ensure_ascii=False),
             )
-            await set_session(user_id, "collect_photos", {"caseId": int(row["id"])})
+            session = await get_session(user_id)
+            keep = MODE_WAIT_PHOTOS if session.get("mode") in PHOTO_WAIT_MODES else MODE_COMMENTS
+            await set_session(user_id, keep, {"caseId": int(row["id"])})
             progress = comment_progress(photos, needed)
             return {
                 "count": progress["received"],
@@ -815,10 +926,14 @@ async def undo_photo(user_id: int) -> dict[str, Any]:
             }
 
 
+async def session_mode(user_id: int) -> str:
+    return str((await get_session(user_id)).get("mode") or "")
+
+
 async def is_collecting(user_id: int) -> bool:
     if not await list_nicks(user_id):
         return False
-    if (await get_session(user_id)).get("mode") != "collect_photos":
+    if (await session_mode(user_id)) not in PHOTO_WAIT_MODES:
         return False
     case = await get_pending_comment_case(user_id)
     if case and case["complete"]:
@@ -827,8 +942,24 @@ async def is_collecting(user_id: int) -> bool:
 
 
 async def is_waiting_nick(user_id: int) -> bool:
-    return (await get_session(user_id)).get("mode") in {"await_nick", "await_nick_edit"}
+    return (await session_mode(user_id)) in NICK_WAIT_MODES
 
 
 async def is_waiting_link(user_id: int) -> bool:
-    return (await get_session(user_id)).get("mode") == "await_video_link"
+    return (await session_mode(user_id)) == MODE_WAIT_LINK
+
+
+async def is_comments_idle(user_id: int) -> bool:
+    return (await session_mode(user_id)) in {MODE_COMMENTS, MODE_NEED_NICK, MODE_COMMENT_DONE}
+
+
+async def is_videos_idle(user_id: int) -> bool:
+    return (await session_mode(user_id)) == MODE_VIDEOS
+
+
+def looks_like_tiktok_url(raw: str) -> bool:
+    try:
+        parse_tiktok_url(raw)
+        return True
+    except ValueError:
+        return False

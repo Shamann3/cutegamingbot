@@ -92,10 +92,12 @@ def test_player_tiktok_texts_have_no_emdash():
         collect_text(7, 15, ["cuteplayer"]),
         collect_text(15, 15, ["cuteplayer"]),
     ]
-    from bot.funcs.tiktok_earn import text_photos_on_review
+    from bot.funcs.tiktok_earn import text_photos_on_review, text_wait_link, text_wait_photos
     blobs.append(text_photos_on_review(1, 1, 15))
     blobs.append(text_photos_on_review(5, 5, 15))
     blobs.append(text_photos_on_review(1, 15, 15))
+    blobs.append(text_wait_photos())
+    blobs.append(text_wait_link())
     help_src = Path("bot/funcs/help.py").read_text(encoding="utf-8")
     tiktok_help = help_src.split("<b>TikTok</b>")[1].split("<b>Промокоды</b>")[0]
     blobs.append(tiktok_help)
@@ -164,7 +166,7 @@ def test_bot_texts_follow_settings_rewards():
     hub = text_hub({"commentReward": 88, "kutPerUnit": 9, "photosRequired": 15})
     assert "88" in hub
     assert "9" in hub
-    dumped = _kb_data(comments_keyboard(can_send=True, count=15, needed=15))
+    dumped = _kb_data(comments_keyboard(can_send=True, count=15, needed=15, complete=True))
     assert "tt:submit_photos" in dumped
     assert "tt:send_photos" not in dumped
 
@@ -178,12 +180,12 @@ def test_direction_then_work_on_same_screen():
     dumped = _kb_data(hub_keyboard())
     assert dumped.split()[:2] == ["tt:comments", "tt:videos"]
     assert "tt:nicks" in dumped
-    work = _kb_data(comments_keyboard(can_send=True, count=3, needed=15))
+    work = _kb_data(comments_keyboard(can_send=True, count=3, needed=15, waiting=False))
     assert "tt:submit_photos" not in work
     assert "tt:undo_photo" in work
-    assert "tt:send_photos" not in work
-    assert "tt:send_link" not in _kb_data(videos_keyboard([]))
-    assert "прямо сюда" in text_videos({"kutPerUnit": 40})
+    assert "tt:send_photos" in work
+    assert "tt:send_link" in _kb_data(videos_keyboard([]))
+    assert "cuteplayer" in text_videos({"kutPerUnit": 40})
 
 
 def test_reward_caps_and_payout_use_stored_value():
@@ -285,7 +287,11 @@ def test_player_tiktok_copy_is_formal_vy():
         text_nicks,
         text_nick_required_alert,
         text_photos_on_review,
+        text_press_send_link,
+        text_press_send_photos,
         text_videos,
+        text_wait_link,
+        text_wait_photos,
         collect_text,
     )
 
@@ -302,6 +308,10 @@ def test_player_tiktok_copy_is_formal_vy():
         collect_text(3, 15, ["cuteplayer"]),
         text_photos_on_review(1, 1, 15),
         text_nick_required_alert(),
+        text_wait_photos(),
+        text_wait_link(),
+        text_press_send_photos(),
+        text_press_send_link(),
     ]
     help_src = Path("bot/funcs/help.py").read_text(encoding="utf-8")
     blobs.append(help_src.split("<b>TikTok</b>")[1].split("<b>Промокоды</b>")[0])
@@ -315,3 +325,60 @@ def test_player_tiktok_copy_is_formal_vy():
     assert "Вы" in text_hub() or "Выберите" in text_hub()
     assert "Вас" in text_need_nick() or "Ваш" in text_ask_nick()
     assert "копия" not in "".join(BARNUM_REJECTS).lower()
+
+
+def test_wait_modes_photo_ignored_until_button():
+    from bot.funcs.tiktok_earn import (
+        EXAMPLE_COMMENT,
+        EXAMPLE_NICK,
+        EXAMPLE_VIDEO_URL,
+        MODE_COMMENTS,
+        MODE_WAIT_PHOTOS,
+        PHOTO_WAIT_MODES,
+        comments_keyboard,
+        looks_like_tiktok_url,
+        text_ask_nick,
+        text_comments,
+        text_need_nick,
+        text_press_send_photos,
+        text_videos,
+        videos_keyboard,
+    )
+
+    idle = _kb_data(comments_keyboard(waiting=False, count=0, needed=15))
+    assert "tt:send_photos" in idle
+    waiting = _kb_data(comments_keyboard(waiting=True, count=2, needed=15))
+    assert "tt:cancel_collect" in waiting
+    assert "tt:send_photos" not in waiting
+    assert "tt:undo_photo" in waiting
+    assert "tt:done_wait" in waiting
+    assert "tt:send_link" in _kb_data(videos_keyboard([], waiting=False))
+    assert "tt:cancel_collect" in _kb_data(videos_keyboard([], waiting=True, can_send=False))
+    assert MODE_WAIT_PHOTOS in PHOTO_WAIT_MODES
+    assert MODE_COMMENTS not in PHOTO_WAIT_MODES
+    assert looks_like_tiktok_url(EXAMPLE_VIDEO_URL)
+    assert looks_like_tiktok_url("https://vm.tiktok.com/ZMabcdef/")
+    assert not looks_like_tiktok_url("просто текст")
+    assert "Сначала нажмите кнопку" in text_press_send_photos()
+
+    src = Path("bot/handlers/tiktok_earn.py").read_text(encoding="utf-8")
+    funcs = Path("bot/funcs/tiktok_earn.py").read_text(encoding="utf-8")
+    assert "_IdleCommentsPhoto" in src
+    assert "_IdleVideosUrl" in src
+    assert "is_collecting" in src
+    assert "PHOTO_WAIT_MODES" in funcs
+    assert "MODE_NEED_NICK" in src
+    assert "wait_photos" in funcs
+
+    ask = text_ask_nick()
+    assert "По нему найдём Ваш аккаунт" in ask
+    assert EXAMPLE_NICK in ask
+    assert "Ваш ко" not in ask.replace("Ваш аккаунт", "")
+    need = text_need_nick("comments")
+    assert EXAMPLE_NICK in need
+    assert "Указать имя профиля" in need
+    assert EXAMPLE_COMMENT in text_comments({})
+    assert EXAMPLE_VIDEO_URL in text_videos({})
+    for blob in (ask, need, text_comments({}), text_videos({})):
+        assert "<code>" in blob
+        assert "—" not in blob
