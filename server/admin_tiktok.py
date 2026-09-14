@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -46,6 +47,7 @@ from tiktok_earn_logic import (
     parse_tiktok_url,
     payout_delta,
     validate_nick,
+    canonicalize_tiktok_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -430,7 +432,7 @@ async def _library_photos(exclude_case_id: int | None = None) -> list[dict]:
         """
         SELECT id, user_id, photos, created_at, status
         FROM tiktok_comment_cases
-        WHERE status IN ('pending', 'approved', 'rejected')
+        WHERE status IN ('pending', 'approved', 'rejected', 'withdrawn')
         ORDER BY id DESC
         LIMIT 200
         """
@@ -509,7 +511,7 @@ async def submit_video(user_id: int, raw_url: str) -> dict[str, Any]:
     nicks = await list_nicks(user_id)
     if not nicks:
         raise ValueError("Сначала укажи свой ник в TikTok. Без него скриншоты принять нельзя.")
-    parsed = parse_tiktok_url(raw_url)
+    parsed = await asyncio.to_thread(canonicalize_tiktok_url, raw_url)
     pending = await db.pool.fetchval(
         "SELECT id FROM tiktok_videos WHERE user_id = $1 AND status = 'pending'",
         int(user_id),
@@ -735,7 +737,7 @@ async def list_comment_archive(limit: int = 20, offset: int = 0) -> list[dict]:
     rows = await db.pool.fetch(
         """
         SELECT * FROM tiktok_comment_cases
-        WHERE status IN ('approved', 'rejected')
+        WHERE status IN ('approved', 'rejected', 'withdrawn')
         ORDER BY COALESCE(reviewed_at, created_at) DESC, id DESC
         LIMIT $1 OFFSET $2
         """,

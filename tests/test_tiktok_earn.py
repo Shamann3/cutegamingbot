@@ -131,7 +131,8 @@ def test_collect_progress_and_undo_available_before_full():
     assert "tt:submit_photos" not in dumped
     assert "tt:withdraw" not in dumped
     full = _kb_data(collect_keyboard(15, 15))
-    assert full.strip() == "tt:withdraw"
+    assert "tt:withdraw" in full
+    assert "tt:hub" in full
     assert "tt:undo_photo" not in full
     assert "tt:submit_photos" not in full
 
@@ -174,7 +175,8 @@ def test_bot_texts_follow_settings_rewards():
     assert "88" in hub
     assert "9" in hub
     dumped = _kb_data(comments_keyboard(can_send=True, count=15, needed=15, complete=True))
-    assert dumped.strip() == "tt:withdraw"
+    assert "tt:withdraw" in dumped
+    assert "tt:hub" in dumped
     assert "tt:submit_photos" not in dumped
     assert "tt:send_photos" not in dumped
     assert "tt:undo_photo" not in dumped
@@ -194,6 +196,7 @@ def test_direction_then_work_on_same_screen():
     assert "tt:undo_photo" in work
     assert "tt:hub" in work
     assert "tt:nicks" in _kb_data(videos_keyboard([]))
+    assert "tt:hub" in _kb_data(videos_keyboard([]))
     assert "cuteplayer" in text_videos({"kutPerUnit": 40})
 
 
@@ -371,6 +374,8 @@ def test_wait_modes_photo_ignored_until_button():
     assert MODE_COMMENTS not in PHOTO_WAIT_MODES
     assert looks_like_tiktok_url(EXAMPLE_VIDEO_URL)
     assert looks_like_tiktok_url("https://vm.tiktok.com/ZMabcdef/")
+    assert looks_like_tiktok_url("https://vt.tiktok.com/ZSqxKyCTB/")
+    assert looks_like_tiktok_url("смотрите https://vt.tiktok.com/ZSqxKyCTB/")
     assert not looks_like_tiktok_url("просто текст")
     assert "Сначала нажмите кнопку" in text_press_send_photos()
 
@@ -382,7 +387,7 @@ def test_wait_modes_photo_ignored_until_button():
     assert "PHOTO_WAIT_MODES" in funcs
     assert "MODE_NEED_NICK" in src
     assert "wait_photos" in funcs
-    assert "ForceReply" in src
+    assert "nick_wait_keyboard" in funcs
     assert "_reprompt" in src
 
     ask = text_ask_nick()
@@ -393,6 +398,7 @@ def test_wait_modes_photo_ignored_until_button():
     assert EXAMPLE_NICK in need
     assert EXAMPLE_COMMENT in text_comments({})
     assert EXAMPLE_VIDEO_URL in text_videos({})
+    assert "vt.tiktok.com" in text_videos({})
     comments = text_comments({})
     videos = text_videos({})
     assert "хештег" in comments
@@ -478,7 +484,7 @@ def test_gift_like_wait_flag_lets_handler_accept_text():
     begin_wait(uid, "nick", after="comments", prompt_message_id=100)
     assert message_matches_wait_text(_ReplyMsg(uid, "Ooooo", reply_mid=100))
     assert message_matches_wait_text(_Msg(uid, "Ooooo"))
-    assert not message_matches_wait_text(_ReplyMsg(uid, "Ooooo", reply_mid=999))
+    assert message_matches_wait_text(_ReplyMsg(uid, "Ooooo", reply_mid=999))
     clear_wait(uid)
 
     begin_wait(uid, "photos", after="comments", prompt_message_id=100)
@@ -559,8 +565,8 @@ def test_button_and_attach_use_gift_like_wait():
     assert "dp.message.register" in handler
     assert "SkipHandler" in main_src
     assert "should_skip_main_text_handler" in main_src
-    assert "ForceReply" in handler
-    assert "ForceReply(selective=True)" in handler
+    assert "_arm_wait_on_message" in handler
+    assert "nick_wait_keyboard" in handler
     assert "_reprompt" in handler
     assert "process_tiktok_wait_text" in main_src
     assert "process_user_gift_recipient" in main_src
@@ -592,9 +598,14 @@ def test_admin_photo_proxy_client_uses_jwt_query_and_thumb():
     assert "&t=${encodeURIComponent(token" in client
     assert "loadTgPhotoUrl" in photo
     assert "getPhotoProxyUrl(fileId, kind)" in photo
-    assert "tt-shot-empty" in section
     assert "loadTgPhotoUrl" in section
     assert "size=\"thumb\"" in section or "size='thumb'" in section
+    css = Path("admin/src/styles/tiktok.css").read_text(encoding="utf-8")
+    assert "aspect-ratio: 1 / 1" not in css
+    assert "tt-shot-empty" not in section
+    assert "nickBreakdown" not in section
+    assert "Следующее · конец" not in section
+    assert "readonly={tab === 'archive'}" in section
 
 
 def test_wait_expires_after_five_minutes_and_keeps_escape():

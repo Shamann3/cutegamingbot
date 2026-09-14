@@ -22,12 +22,20 @@ COMMENT_REWARD_MIN = 1
 COMMENT_REWARD_MAX = 500
 VIDEO_REWARD_MIN = 1
 VIDEO_REWARD_MAX = 5000
-HASH_THRESHOLD = 10
-# В одной серии скрины одного приложения часто похожи. Чужие заявки ловим мягче,
-# внутри серии показываем только почти точные дубли.
-HASH_INTRA_THRESHOLD = 2
-VIDEO_CANONICAL_RE = re.compile(r"/video/(\d+)")
-SHORT_CODE_RE = re.compile(r"tiktok\.com/(?:t/)?([A-Za-z0-9]+)/?$")
+HASH_THRESHOLD = 4
+# Скрины одного приложения часто похожи. Подсвечиваем только почти точный дубль,
+# иначе админ тонет в ложных «похоже 90%» на одинаковом интерфейсе.
+HASH_INTRA_THRESHOLD = 1
+VIDEO_CANONICAL_RE = re.compile(r"/(?:video|v)/(\d+)", re.I)
+SHARE_VIDEO_RE = re.compile(r"/share/video/(\d+)", re.I)
+PHOTO_RE = re.compile(r"/photo/(\d+)", re.I)
+SHORT_CODE_RE = re.compile(r"^[A-Za-z0-9]{5,24}$")
+TIKTOK_IN_TEXT_RE = re.compile(
+    r"(?:https?://)?(?:www\.)?(?:(?:vt|vm|m)\.)?tiktok\.com/[^\s<>\"'\)\]]+",
+    re.I,
+)
+SHORT_HOSTS = frozenset({"vt.tiktok.com", "vm.tiktok.com"})
+LINK_HINT = "Пришлите ссылку tiktok.com, vt.tiktok.com или vm.tiktok.com."
 
 DEFAULT_COMMENT_TAG = "тг звезды"
 DEFAULT_VIDEO_HASHTAG = "@CuteGamingBot"
@@ -91,46 +99,145 @@ def validate_nick(raw: str) -> str:
     return nick
 
 
-def parse_tiktok_url(raw: str) -> dict[str, str]:
-    text = (raw or "").strip()
-    if not text:
-        raise ValueError("Это не похоже на ссылку TikTok. Пришлите tiktok.com или vm.tiktok.com.")
-    if "://" not in text:
-        text = "https://" + text
-    parsed = urlparse(text)
-    host = (parsed.netloc or "").lower().lstrip("www.")
+def _tiktok_host(netloc: str) -> str:
+    host = (netloc or "").split("@")[-1].lower()
+    if ":" in host:
+        host = host.split(":", 1)[0]
     if host.startswith("www."):
         host = host[4:]
-    allowed = (
-        host == "tiktok.com"
-        or host.endswith(".tiktok.com")
-        or host in {"vm.tiktok.com", "vt.tiktok.com"}
-    )
-    if not allowed:
-        raise ValueError("Это не похоже на ссылку TikTok. Пришлите tiktok.com или vm.tiktok.com.")
+    return host
+
+
+def _is_tiktok_host(host: str) -> bool:
+    return host == "tiktok.com" or host.endswith(".tiktok.com")
+
+
+def extract_tiktok_url(raw: str) -> str:
+    text = (raw or "").strip()
+    if not text:
+        raise ValueError(f"Это не похоже на ссылку TikTok. {LINK_HINT}")
+    text = text.replace("\\", "").strip("<>«»\"'`“”")
+    found = TIKTOK_IN_TEXT_RE.search(text)
+    if found:
+        return found.group(0).rstrip(".,;!?")
+    cleaned = text.split()[0].rstrip(".,;!?")
+    if "tiktok.com" in cleaned.lower():
+        return cleaned
+    raise ValueError(f"Это не похоже на ссылку TikTok. {LINK_HINT}")
+
+
+def _video_payload(video_id: str, url: str) -> dict[str, str]:
+    vid = str(video_id or "").strip()
+    if not vid.isdigit():
+        raise ValueError(f"Это не похоже на ссылку TikTok. {LINK_HINT}")
+    return {
+        "url": f"https://www.tiktok.com/video/{vid}",
+        "canonical": f"video:{vid}",
+        "videoId": vid,
+        "kind": "video",
+        "sourceUrl": url,
+    }
+
+
+def _short_payload(code: str, url: str) -> dict[str, str]:
+    token = re.sub(r"[^A-Za-z0-9]", "", code or "")
+    if not SHORT_CODE_RE.match(token):
+        raise ValueError(f"Это не похоже на ссылку TikTok. {LINK_HINT}")
+    return {
+        "url": url,
+        "canonical": f"short:{token.lower()}",
+        "videoId": "",
+        "kind": "short",
+        "sourceUrl": url,
+    }
+
+
+def parse_tiktok_url(raw: str) -> dict[str, str]:
+    text = extract_tiktok_url(raw)
+    if "://" not in text:
+        text = "https://" + text.lstrip("/")
+    parsed = urlparse(text)
+    host = _tiktok_host(parsed.netloc)
+    if not _is_tiktok_host(host):
+        raise ValueError(f"Это не похоже на ссылку TikTok. {LINK_HINT}")
     path = parsed.path or ""
-    match = VIDEO_CANONICAL_RE.search(path)
-    if match:
-        video_id = match.group(1)
-        return {
-            "url": f"https://www.tiktok.com{path}" if path.startswith("/") else text,
-            "canonical": f"video:{video_id}",
-            "videoId": video_id,
-        }
-    if host in {"vm.tiktok.com", "vt.tiktok.com"}:
-        code = path.strip("/").split("/")[0]
-        if not code:
-            raise ValueError("Это не похоже на ссылку TikTok. Пришлите tiktok.com или vm.tiktok.com.")
-        return {"url": text, "canonical": f"short:{code.lower()}", "videoId": ""}
-    short = SHORT_CODE_RE.search(host + path)
-    if "tiktok.com/t/" in f"{host}{path}" or re.search(r"/t/[A-Za-z0-9]+", path):
-        code = path.rstrip("/").split("/")[-1]
-        return {"url": text, "canonical": f"short:{code.lower()}", "videoId": ""}
+    if PHOTO_RE.search(path):
+        raise ValueError("Нужна ссылка на видео, не на фото.")
+    share = SHARE_VIDEO_RE.search(path)
+    if share:
+        return _video_payload(share.group(1), text)
+    video = VIDEO_CANONICAL_RE.search(path)
+    if video:
+        return _video_payload(video.group(1), text)
     qs = parse_qs(parsed.query)
-    if qs.get("share_item_id"):
-        video_id = str(qs["share_item_id"][0])
-        return {"url": text, "canonical": f"video:{video_id}", "videoId": video_id}
-    raise ValueError("Это не похоже на ссылку TikTok. Пришлите tiktok.com или vm.tiktok.com.")
+    for key in ("share_item_id", "item_id", "aweme_id"):
+        if qs.get(key) and str(qs[key][0]).isdigit():
+            return _video_payload(str(qs[key][0]), text)
+    parts = [p for p in path.split("/") if p]
+    code = ""
+    if parts and parts[0].lower() == "t" and len(parts) > 1:
+        code = parts[1]
+    elif host in SHORT_HOSTS and parts:
+        code = parts[0]
+    elif len(parts) == 1 and SHORT_CODE_RE.match(parts[0]):
+        code = parts[0]
+    if code:
+        display = text.split("?", 1)[0].split("#", 1)[0]
+        if not display.endswith("/"):
+            display += "/"
+        return _short_payload(code, display)
+    raise ValueError(f"Это не похоже на ссылку TikTok. {LINK_HINT}")
+
+
+def resolve_tiktok_redirects(url: str, *, timeout: float = 6.0) -> str:
+    """Разворачивает vt/vm короткие ссылки. Никуда кроме TikTok не ходим."""
+    import urllib.request
+
+    class _OnlyTikTok(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            host = _tiktok_host(urlparse(newurl).netloc)
+            if not _is_tiktok_host(host):
+                return None
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    opener = urllib.request.build_opener(_OnlyTikTok)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+    }
+    last = url
+    for method in ("HEAD", "GET"):
+        try:
+            req = urllib.request.Request(url, method=method, headers=headers)
+            with opener.open(req, timeout=timeout) as resp:
+                final = resp.geturl() or url
+                if final:
+                    last = final
+                    break
+        except Exception:
+            continue
+    return last
+
+
+def canonicalize_tiktok_url(raw: str, *, resolve: bool = True) -> dict[str, str]:
+    parsed = parse_tiktok_url(raw)
+    if not resolve or parsed.get("videoId"):
+        return parsed
+    try:
+        final = resolve_tiktok_redirects(parsed["url"])
+    except Exception:
+        return parsed
+    if not final or final == parsed["url"]:
+        return parsed
+    try:
+        again = parse_tiktok_url(final)
+    except ValueError:
+        return parsed
+    if again.get("videoId"):
+        again["sourceUrl"] = parsed["url"]
+        return again
+    return parsed
 
 
 def thousands_from_views(views: int) -> int:

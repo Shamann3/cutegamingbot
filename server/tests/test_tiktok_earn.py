@@ -53,9 +53,25 @@ def test_parse_tiktok_video_url():
 
 def test_parse_short_and_vm_links():
     short = parse_tiktok_url("https://vm.tiktok.com/ZMabcdef/")
-    assert short["canonical"].startswith("short:")
+    assert short["canonical"] == "short:zmabcdef"
     tlink = parse_tiktok_url("https://www.tiktok.com/t/ZTdabcde/")
-    assert tlink["canonical"].startswith("short:")
+    assert tlink["canonical"] == "short:ztdabcde"
+    vt = parse_tiktok_url("https://vt.tiktok.com/ZSqxKyCTB/")
+    assert vt["canonical"] == "short:zsqxkyctb"
+    assert vt["kind"] == "short"
+    wrapped = parse_tiktok_url("вот ссылка https://vt.tiktok.com/ZSqxKyCTB/ смотрите")
+    assert wrapped["canonical"] == "short:zsqxkyctb"
+    noscheme = parse_tiktok_url("vt.tiktok.com/ZSqxKyCTB/")
+    assert noscheme["canonical"] == "short:zsqxkyctb"
+    mobile = parse_tiktok_url("https://m.tiktok.com/v/1234567890123456789.html")
+    assert mobile["canonical"] == "video:1234567890123456789"
+    share = parse_tiktok_url("https://www.tiktok.com/share/video/1234567890123456789")
+    assert share["canonical"] == "video:1234567890123456789"
+    try:
+        parse_tiktok_url("https://www.tiktok.com/@cute/photo/1234567890123456789")
+        assert False
+    except ValueError as exc:
+        assert "видео" in str(exc).lower()
 
 
 def test_reject_non_tiktok_url():
@@ -133,7 +149,7 @@ def test_find_matches_skips_same_series_lookalikes():
     one = "0000000000000001"
     src = {"id": "1:0", "caseId": 1, "index": 0, "ahash": zero, "dhash": zero, "phash": zero}
     same_series = {"id": "1:1", "caseId": 1, "index": 1, "ahash": eight, "dhash": eight, "phash": eight}
-    other_case = {"id": "2:0", "caseId": 2, "index": 0, "ahash": eight, "dhash": eight, "phash": eight}
+    other_case = {"id": "2:0", "caseId": 2, "index": 0, "ahash": one, "dhash": one, "phash": one}
     near = {"id": "1:2", "caseId": 1, "index": 2, "ahash": one, "dhash": one, "phash": one}
     matches = find_matches([src], [src, same_series, other_case, near])
     ids = {m["match"]["id"] for m in matches}
@@ -141,7 +157,7 @@ def test_find_matches_skips_same_series_lookalikes():
     assert "2:0" in ids
     assert "1:2" in ids
     cross = [m for m in matches if not m["sameCase"]]
-    assert all(m["similarity"] >= 80 for m in cross)
+    assert all(m["similarity"] >= 94 for m in cross)
 
 
 def test_payout_messages_name_the_job():
@@ -351,3 +367,4 @@ def test_comment_list_is_light_and_paginated():
     assert "LIMIT 200" in inspect.getsource(_library_photos)
     assert "limit" in inspect.getsource(tiktok_comments)
     assert "OFFSET" in inspect.getsource(list_comment_archive)
+    assert "withdrawn" in inspect.getsource(list_comment_archive)

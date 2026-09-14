@@ -20,11 +20,11 @@ import {
 } from '../../lib/adminClient'
 
 const TABS = [
-  { id: 'comments', label: 'Комментарии', hint: 'Неполная серия видна сразу. Принять можно только 15/15. Отклонить - всегда.' },
-  { id: 'videos', label: 'Видео', hint: 'Открой ссылку в TikTok, впиши просмотры. Код сам посчитает куты.' },
-  { id: 'live', label: 'Живые', hint: 'Уже принятые ролики. Если игрок просит перепроверку — доплати разницу.' },
-  { id: 'archive', label: 'Архив', hint: 'Закрытые дела. Здесь ничего начислять не нужно.' },
-  { id: 'settings', label: 'Настройки', hint: 'Хештеги, причины отказа и тексты игроку. Награду в кутах меняет только создатель.' },
+  { id: 'comments', label: 'Комментарии', hint: 'Принять можно только полную пачку. Отклонить - в любой момент.' },
+  { id: 'videos', label: 'Видео', hint: 'Откройте ролик, впишите просмотры. Куты посчитаются сами.' },
+  { id: 'live', label: 'Живые', hint: 'Только ролики, которые игрок попросил перепроверить.' },
+  { id: 'archive', label: 'Архив', hint: 'Закрытые заявки. Только просмотр.' },
+  { id: 'settings', label: 'Настройки', hint: 'Хештеги и причины отказа. Награду меняет создатель.' },
 ]
 
 const GUIDE_KEY = 'cf_tiktok_guide_v1'
@@ -101,18 +101,39 @@ function LockCard({ tab, map }) {
   )
 }
 
+function caseStatus(item) {
+  const count = item.photoCount || (item.photos || []).length
+  const needed = item.photosRequired || 15
+  if (item.status === 'approved') return 'принято'
+  if (item.status === 'rejected') return 'отклонено'
+  if (item.status === 'withdrawn') return 'отозвано'
+  return `${count}/${needed}`
+}
+
+function statusFlagClass(item) {
+  if (item.status === 'approved') return 'tt-flag-ok'
+  if (item.status === 'rejected') return 'tt-flag-no'
+  if (item.status === 'withdrawn') return 'tt-flag-muted'
+  const count = item.photoCount || (item.photos || []).length
+  const needed = item.photosRequired || 15
+  if (item.incomplete ?? count < needed) return 'tt-flag-incomplete'
+  return 'tt-flag-ok'
+}
+
+function plainText(html) {
+  return String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
 function Guide({ onClose }) {
   return (
     <div className="tt-guide">
       <button type="button" className="tt-guide-x" onClick={onClose} aria-label="Закрыть гид">×</button>
-      <h3>Как разбирать TikTok за минуту</h3>
+      <h3>Проверка TikTok</h3>
       <ol>
-        <li>Слева очередь. Карточка открывает превью сразу. Клик по кадру раскрывает его на весь экран - закрыть: ✕, «Закрыть», фон или свайп вниз.</li>
-        <li>Похожие кадры из других заявок собираются ниже сетки. Сравните два кадра и отметьте «одинаковые» или «разные». Решение за вами, код только подсвечивает.</li>
-        <li>Видео: откройте ссылку в TikTok, впишите просмотры. Под полем сразу видно, сколько кут уйдёт.</li>
-        <li>Клавиши: A принять, R отклонить, N или J - следующее дело, Esc - к очереди.</li>
+        <li>Откройте заявку и кадр. Примите или отклоните.</li>
+        <li>Красная рамка - почти точный дубль. Для видео впишите просмотры из TikTok.</li>
       </ol>
-      <button type="button" className="tt-btn tt-btn-ok" onClick={onClose}>Понятно, к очереди</button>
+      <button type="button" className="tt-btn tt-btn-ok" onClick={onClose}>Понятно</button>
     </div>
   )
 }
@@ -121,10 +142,11 @@ function CommentCase({ item, onOpen, current }) {
   const count = item.photoCount || (item.photos || []).length
   const needed = item.photosRequired || 15
   const incomplete = item.incomplete ?? count < needed
+  const closed = ['approved', 'rejected', 'withdrawn'].includes(item.status)
   return (
     <button
       type="button"
-      className={`tt-card${incomplete ? ' is-incomplete' : ''}${current ? ' is-current' : ''}`}
+      className={`tt-card${incomplete && !closed ? ' is-incomplete' : ''}${current ? ' is-current' : ''}`}
       onClick={() => onOpen(item)}
     >
       <div className="tt-card-top">
@@ -133,16 +155,14 @@ function CommentCase({ item, onOpen, current }) {
       </div>
       <div className="tt-card-nicks">{(item.nicks || []).map((n) => `@${n}`).join(' · ') || 'нет ников'}</div>
       <div className="tt-card-flags">
-        {incomplete
-          ? <span className="tt-flag-incomplete">{count}/{needed}</span>
-          : <span className="tt-flag-ok">{count}/{needed}</span>}
-        {item.hasSimilar ? <span className="tt-flag-hot">похожие {item.matchCount}</span> : null}
+        <span className={statusFlagClass(item)}>{caseStatus(item)}</span>
+        {!closed && item.hasSimilar ? <span className="tt-flag-hot">дубль</span> : null}
       </div>
     </button>
   )
 }
 
-function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentRejectReasons }) {
+function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentRejectReasons, readonly = false }) {
   const [busy, setBusy] = useState(false)
   const [viewer, setViewer] = useState(null)
   const [local, setLocal] = useState(item)
@@ -165,15 +185,15 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
   const needed = local.photosRequired || 15
   const received = local.photoCount ?? (local.photos || []).length
   const incomplete = local.incomplete ?? received < needed
-  const slots = Array.from({ length: needed }, (_, i) => local.photos?.[i] || null)
-  const openable = slots
-    .map((photo, index) => ({ photo, index }))
-    .filter((row) => shotFileId(row.photo))
-  const crossHits = (local.matches || []).filter((m) => !m.sameCase)
-  const intraHits = (local.matches || []).filter((m) => m.sameCase)
+  const closed = ['approved', 'rejected', 'withdrawn'].includes(local.status)
+  const viewOnly = readonly || closed
+  const photos = (local.photos || []).filter((photo) => shotFileId(photo))
+  const openable = photos.map((photo, index) => ({ photo, index: photo.index ?? index }))
+  const crossHits = (local.matches || []).filter((m) => !m.sameCase).slice(0, 4)
+  const intraHits = (local.matches || []).filter((m) => m.sameCase).slice(0, 2)
 
   const openAt = async (slotIndex) => {
-    const photo = slots[slotIndex]
+    const photo = photos.find((itemPhoto) => (itemPhoto.index ?? 0) === slotIndex)
     const id = fullFileId(photo)
     if (!id) return
     try {
@@ -185,9 +205,9 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
   }
 
   const openPhoto = async (photo) => {
-    const idx = slots.findIndex((itemPhoto) => itemPhoto && fullFileId(itemPhoto) === fullFileId(photo))
+    const idx = photos.findIndex((itemPhoto) => itemPhoto && fullFileId(itemPhoto) === fullFileId(photo))
     if (idx >= 0) {
-      await openAt(idx)
+      await openAt(photo.index ?? idx)
       return
     }
     const id = fullFileId(photo)
@@ -245,6 +265,7 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return
       if (document.querySelector('.img-lightbox')) return
       if (e.key === 'a' || e.key === 'A') {
+        if (viewOnly) return
         const neededKey = local.photosRequired || 15
         const receivedKey = local.photoCount ?? (local.photos || []).length
         if ((local.incomplete ?? receivedKey < neededKey)) return
@@ -252,11 +273,12 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
         decide(() => approveTiktokComment(local.id), `Принято, ${local.reward || ''} кут ушли`)
       }
       if (e.key === 'r' || e.key === 'R') {
-        e.preventDefault()
+        if (viewOnly) return
         if (!reasons.length) {
           showToast('Отметьте хотя бы одну причину отказа')
           return
         }
+        e.preventDefault()
         decide(() => rejectTiktokComment(local.id, reasons), 'Отклонено, игроку ушёл ответ')
       }
       if (e.key === 'n' || e.key === 'N' || e.key === 'j' || e.key === 'J') {
@@ -267,7 +289,7 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [local, reasons, onAdvance, onClose])
+  }, [local, reasons, viewOnly, onAdvance, onClose])
 
   const nextHint = nextQueueItem(queue, local.id)
 
@@ -287,7 +309,7 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
         <b>
           {hit.sameCase
             ? `В этой серии · #${(hit.match?.index ?? 0) + 1}`
-            : `Заявка #${hit.match?.caseId} · #${(hit.match?.index ?? 0) + 1}`}
+            : `Другая заявка · #${(hit.match?.index ?? 0) + 1}`}
         </b>
         <TgPhoto
           fileId={fullFileId(hit.match)}
@@ -299,13 +321,17 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
       </div>
       <div className="tt-pair-meta">
         <p>
-          Похожесть {hit.similarity ?? 0}%
-          {hit.sameCase ? ' · дубль внутри серии' : ` · игрок ${hit.match?.userId || '—'}`}
-          {hit.verdict === 'copy' ? ' · уже: одинаковые' : hit.verdict === 'unique' ? ' · уже: разные' : ''}
+          {hit.similarity ?? 0}%
+          {hit.sameCase ? ' · внутри серии' : ''}
+          {hit.verdict === 'copy' ? ' · одинаковые' : hit.verdict === 'unique' ? ' · разные' : ''}
         </p>
         <div className="tt-row">
-          <button type="button" className="tt-btn tt-btn-hot" onClick={() => markPair(hit, 'copy')}>Одинаковые</button>
-          <button type="button" className="tt-btn" onClick={() => markPair(hit, 'unique')}>Разные</button>
+          {!viewOnly && (
+            <>
+              <button type="button" className="tt-btn tt-btn-hot" onClick={() => markPair(hit, 'copy')}>Одинаковые</button>
+              <button type="button" className="tt-btn" onClick={() => markPair(hit, 'unique')}>Разные</button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -317,132 +343,117 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
         <div>
           <h3>{playerName(local.user)}</h3>
           <p>
-            {(local.nicks || []).map((n) => `@${n}`).join(' · ')}
+            {(local.nicks || []).map((n) => `@${n}`).join(' · ') || 'нет ников'}
             {' · '}
             {fmtDate(local.createdAt)}
           </p>
-          <div className="tt-break">
-            {(local.nickBreakdown || []).map((row) => (
-              <span key={row.nick}>@{row.nick}: {row.count}</span>
-            ))}
-          </div>
         </div>
         <div className="tt-work-nav">
-          <button type="button" className="tt-btn" onClick={() => onAdvance(local.id)} disabled={!nextHint}>
-            Следующее{nextHint ? '' : ' · конец'}
-          </button>
+          <span className={statusFlagClass(local)}>{caseStatus(local)}</span>
+          {nextHint ? (
+            <button type="button" className="tt-btn" onClick={() => onAdvance(local.id)}>
+              Следующее
+            </button>
+          ) : null}
           <button type="button" className="tt-btn" onClick={onClose}>К очереди</button>
         </div>
       </div>
 
-      <p className="tt-keys" role="note">
-        {incomplete
-          ? `Серия неполная: ${received} из ${needed}. Принять нельзя. Клик по кадру открывает его. R отклонить · Esc очередь`
-          : 'Клик по кадру открывает его. A принять · R отклонить · N следующее · Esc очередь.'}
-      </p>
-      {incomplete && (
+      {incomplete && !viewOnly && (
         <div className="tt-incomplete-note">
-          незавершено {received}/{needed} · награду платить рано
+          {received} из {needed}. Принять можно только полную пачку.
+        </div>
+      )}
+      {viewOnly && (
+        <div className="tt-incomplete-note">
+          {local.status === 'rejected' && plainText(local.rejectText)
+            ? plainText(local.rejectText)
+            : 'Только просмотр'}
         </div>
       )}
 
+      {photos.length === 0 ? (
+        <p className="tt-empty">Нет скринов.</p>
+      ) : (
       <div className="tt-grid" aria-label="Скриншоты серии">
-        {slots.map((photo, i) => {
-          if (!photo || !shotFileId(photo)) {
-            return (
-              <div key={`empty-${i}`} className="tt-shot tt-shot-empty" aria-hidden="true">
-                <span>#{i + 1} пусто</span>
-              </div>
-            )
-          }
-          const hits = matchByIndex[i] || []
+        {photos.map((photo, i) => {
+          const idx = photo.index ?? i
+          const hits = matchByIndex[idx] || []
           const cross = hits.filter((h) => !h.sameCase)
-          const intra = hits.filter((h) => h.sameCase)
           const copyHit = hits.some((h) => h.verdict === 'copy')
-          const selected = viewer && viewer.index === i
+          const selected = viewer && viewer.index === idx
           return (
             <div
-              key={photo.id || i}
+              key={photo.id || idx}
               role="button"
               tabIndex={0}
-              className={`tt-shot${cross.length ? ' tt-shot-hot' : ''}${copyHit ? ' is-copy' : ''}${selected ? ' is-on' : ''}`}
-              onClick={() => openAt(i)}
+              className={`tt-shot${copyHit || cross.some((h) => (h.similarity || 0) >= 96) ? ' tt-shot-hot' : ''}${selected ? ' is-on' : ''}`}
+              onClick={() => openAt(idx)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
-                  openAt(i)
+                  openAt(idx)
                 }
               }}
             >
-              {cross.length ? <span className="tt-shot-mark">похоже {Math.max(...cross.map((h) => h.similarity || 0))}%</span> : null}
-              {!cross.length && intra.length ? <span className="tt-shot-mark is-dup">дубль</span> : null}
               <TgPhoto
                 fileId={shotFileId(photo)}
                 size="thumb"
                 lazy
-                alt={`Скрин ${i + 1}`}
-                style={{ width: '100%', height: 120, objectFit: 'cover' }}
+                alt={`Скрин ${idx + 1}`}
+                style={{ width: '100%', height: 148, objectFit: 'cover' }}
               />
-              <span>#{i + 1}</span>
+              <span>#{idx + 1}{copyHit || cross.some((h) => (h.similarity || 0) >= 96) ? ' · дубль' : ''}</span>
             </div>
           )
         })}
       </div>
+      )}
 
-      <div className="tt-similar">
-        <h4>Похожие кадры</h4>
-        <p className="tt-similar-lead">
-          Код сравнивает отпечатки фото. Подсветка - подсказка, не приговор. Откройте кадр и решите сами.
-        </p>
-        {crossHits.length ? (
-          <>
-            <p className="tt-hint">С другими заявками</p>
-            {crossHits.map(renderPair)}
-          </>
-        ) : (
-          <p className="tt-similar-empty">С другими заявками совпадений нет.</p>
-        )}
-        {intraHits.length ? (
-          <>
-            <p className="tt-hint">Почти одинаковые кадры внутри этой серии</p>
-            {intraHits.map(renderPair)}
-          </>
-        ) : null}
-      </div>
+      {(crossHits.length > 0 || intraHits.length > 0) && (
+        <div className="tt-similar">
+          <h4>Похоже на другой кадр</h4>
+          {crossHits.map(renderPair)}
+          {intraHits.map(renderPair)}
+        </div>
+      )}
 
-      <div className="tt-reasons">
-        <p className="tt-hint">Почему отклоняем. Игрок увидит эти пункты в сообщении.</p>
-        {(commentRejectReasons || []).map((r) => (
-          <label key={r.id} className={`tt-reason-chip${reasons.includes(r.id) ? ' is-on' : ''}`}>
-            <input
-              type="checkbox"
-              checked={reasons.includes(r.id)}
-              onChange={() => setReasons((cur) => (cur.includes(r.id) ? cur.filter((x) => x !== r.id) : [...cur, r.id]))}
-            />
-            {r.label || 'Причина без названия'}
-          </label>
-        ))}
-      </div>
-
-      <div className="tt-actions">
-        <button
-          type="button"
-          className="tt-btn tt-btn-hot"
-          disabled={busy || !reasons.length}
-          onClick={() => decide(() => rejectTiktokComment(local.id, reasons), 'Отклонено')}
-        >
-          Отклонить
-        </button>
-        <button
-          type="button"
-          className="tt-btn tt-btn-ok"
-          disabled={busy || incomplete}
-          title={incomplete ? `Нельзя принять: ${received} из ${needed}` : ''}
-          onClick={() => decide(() => approveTiktokComment(local.id), 'Принято')}
-        >
-          {incomplete ? `Принять нельзя · ${received}/${needed}` : 'Всё правильно'}
-        </button>
-      </div>
+      {!viewOnly && (
+        <>
+          <div className="tt-reasons">
+            <p className="tt-hint">Почему отклоняем. Игрок увидит эти пункты.</p>
+            {(commentRejectReasons || []).map((r) => (
+              <label key={r.id} className={`tt-reason-chip${reasons.includes(r.id) ? ' is-on' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={reasons.includes(r.id)}
+                  onChange={() => setReasons((cur) => (cur.includes(r.id) ? cur.filter((x) => x !== r.id) : [...cur, r.id]))}
+                />
+                {r.label || 'Причина без названия'}
+              </label>
+            ))}
+          </div>
+          <div className="tt-actions tt-actions-bar">
+            <button
+              type="button"
+              className="tt-btn tt-btn-hot"
+              disabled={busy || !reasons.length}
+              onClick={() => decide(() => rejectTiktokComment(local.id, reasons), 'Отклонено')}
+            >
+              Отклонить
+            </button>
+            <button
+              type="button"
+              className="tt-btn tt-btn-ok"
+              disabled={busy || incomplete}
+              title={incomplete ? `Нельзя принять: ${received} из ${needed}` : ''}
+              onClick={() => decide(() => approveTiktokComment(local.id), 'Принято')}
+            >
+              {incomplete ? `Принять · ${received}/${needed}` : 'Принять'}
+            </button>
+          </div>
+        </>
+      )}
       {viewer?.src && (
         <ImageLightbox
           src={viewer.src}
@@ -488,11 +499,15 @@ function VideoCard({ item, settings, onDone, rejectReasons }) {
         <strong>{playerName(item.user)}</strong>
         <span>{fmtDate(item.createdAt)}</span>
       </div>
-      <div className="tt-card-nicks">{(item.user?.nicks || []).map((n) => `@${n}`).join(' · ')}</div>
+      {(item.user?.nicks || []).length > 0 && (
+        <div className="tt-card-nicks">{(item.user?.nicks || []).map((n) => `@${n}`).join(' · ')}</div>
+      )}
       <a className="tt-link" href={item.url} target="_blank" rel="noreferrer">Открыть в TikTok</a>
-      {item.recheckPending && <div className="tt-flag-hot">перепроверка · было {old} просмотров</div>}
+      {item.recheckPending && (
+        <div className="tt-flag-hot">перепроверка · было {old.toLocaleString('ru-RU')} просмотров</div>
+      )}
       <label className="tt-field">
-        <span>Сколько просмотров сейчас у ролика</span>
+        <span>Просмотры сейчас</span>
         <input
           type="number"
           min="0"
@@ -502,7 +517,7 @@ function VideoCard({ item, settings, onDone, rejectReasons }) {
           placeholder="Например 12500"
         />
         <small>
-          {Number(views) || 0} просмотров → {Math.floor((Number(views) || 0) / 1000)} тыс. × {unit} кут = <b>{preview} кут</b>
+          {preview} кут
           {item.recheckPending ? ` · доплата ${delta} кут` : ''}
         </small>
       </label>
@@ -527,7 +542,7 @@ function VideoCard({ item, settings, onDone, rejectReasons }) {
           disabled={busy || views === ''}
           onClick={() => run(() => approveTiktokVideo(item.id, Number(views)), 'Начислили')}
         >
-          Принять и начислить
+          Принять
         </button>
         {item.status === 'pending' && (
           <button
@@ -551,7 +566,6 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }))
   const reasons = form.rejectReasons || []
   const photoReasons = form.commentRejectReasons || []
-  const barnums = form.barnumRejects || []
   const caps = form.rewardCaps || { commentMin: 1, commentMax: 500, videoMin: 1, videoMax: 5000 }
   const pack = Number(form.photosRequired ?? 15)
   const commentPay = Number(form.commentReward ?? 0)
@@ -568,7 +582,6 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
             videoHashtag: form.videoHashtag,
             rejectReasons: form.rejectReasons,
             commentRejectReasons: form.commentRejectReasons,
-            barnumRejects: form.barnumRejects,
           }
           if (canEditRewards) {
             body.commentReward = Number(form.commentReward)
@@ -584,7 +597,7 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
         }
       }}
     >
-      <p className="tt-hint">Хештеги и тексты отказа можно править. Пачка, пауза и лимит ников - правила продукта.</p>
+      <p className="tt-hint">Хештеги и тексты отказа. Пачка, пауза и лимит ников - правила продукта.</p>
 
       <div className={`tt-reward-card${canEditRewards ? '' : ' is-lock'}`}>
         <div className="tt-reward-head">
@@ -646,7 +659,7 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
       </div>
 
       <h4>Причины отказа комментариев</h4>
-      <p className="tt-hint">Чеклист на карточке серии. Игрок получит выбранные пункты в сообщении.</p>
+      <p className="tt-hint">Игрок получит выбранные пункты.</p>
       <div className="tt-reason-edit">
         {photoReasons.map((r, i) => (
           <div key={r.id || i} className="tt-reason-row">
@@ -677,7 +690,7 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
       </div>
 
       <h4>Причины отказа видео</h4>
-      <p className="tt-hint">Чеклист на карточке ролика. Коротко, по делу, без CMS.</p>
+      <p className="tt-hint">Игрок получит выбранные пункты.</p>
       <div className="tt-reason-edit">
         {reasons.map((r, i) => (
           <div key={r.id || i} className="tt-reason-row">
@@ -704,36 +717,6 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
           onClick={() => set('rejectReasons', [...reasons, { id: `custom_${Date.now()}`, label: '' }])}
         >
           Добавить причину
-        </button>
-      </div>
-
-      <h4>Старые размытые ответы</h4>
-      <p className="tt-hint">Больше не уходят игроку. При отказе серии уходят только выбранные причины из чеклиста выше.</p>
-      <div className="tt-reason-edit">
-        {barnums.map((text, i) => (
-          <div key={i} className="tt-barnum-row">
-            <textarea
-              rows={3}
-              value={text}
-              onChange={(e) => set('barnumRejects', barnums.map((row, idx) => (idx === i ? e.target.value : row)))}
-            />
-            <button
-              type="button"
-              className="tt-btn"
-              onClick={() => set('barnumRejects', barnums.filter((_, idx) => idx !== i))}
-              disabled={barnums.length <= 1}
-            >
-              убрать
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          className="tt-btn"
-          onClick={() => set('barnumRejects', [...barnums, ''])}
-          disabled={barnums.length >= 12}
-        >
-          Добавить формулировку
         </button>
       </div>
       <button type="submit" className="tt-btn tt-btn-ok" disabled={busy}>Сохранить</button>
@@ -772,7 +755,8 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
         setArchiveOffset(data.items?.length || 0)
       } else if ((tab === 'videos' || tab === 'live') && can(tab)) {
         const data = await fetchTiktokVideos(tab === 'live' ? 'live' : 'pending')
-        setVideos(data.items || [])
+        const items = data.items || []
+        setVideos(tab === 'live' ? items.filter((item) => item.recheckPending) : items)
       } else if (tab === 'settings' && can('settings')) {
         const s = await fetchTiktokSettings()
         setOverview((cur) => ({ ...(cur || {}), settings: s }))
@@ -828,7 +812,7 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
       <p className="panel-shelf-label">TikTok</p>
       <h2 className="panel-page-title">Очередь заработка</h2>
       <p className="panel-page-lead">
-        Игрок не берёт задание - читает и присылает доказательства. Ваша работа: быстро решить, настоящее это или нет.
+        Откройте заявку, посмотрите скрины, примите или отклоните.
       </p>
 
       {guide && (
@@ -868,7 +852,7 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
       ) : openCase ? (
         <div className="tt-review">
           {(tab === 'comments' || tab === 'archive') && comments.length > 0 && (
-            <aside className="tt-rail" aria-label="Очередь без фото">
+            <aside className="tt-rail" aria-label="Очередь">
               {comments.map((item) => (
                 <CommentCase
                   key={item.id}
@@ -883,6 +867,7 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
             item={openCase}
             queue={comments}
             commentRejectReasons={settings?.commentRejectReasons}
+            readonly={tab === 'archive'}
             onClose={() => setOpenCase(null)}
             onAdvance={advanceFrom}
             onDecided={afterDecide}
@@ -890,7 +875,11 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
         </div>
       ) : tab === 'comments' || tab === 'archive' ? (
         <div className="tt-list">
-          {comments.length === 0 && <p className="tt-empty">Пока пусто. Первый скрин уже откроет карточку здесь, даже если серия ещё неполная.</p>}
+          {comments.length === 0 && (
+            <p className="tt-empty">
+              {tab === 'archive' ? 'Архив пуст.' : 'Очередь пуста. Неполная пачка тоже появится здесь.'}
+            </p>
+          )}
           {comments.map((item) => (
             <CommentCase
               key={item.id}
@@ -920,7 +909,11 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
         </div>
       ) : tab === 'videos' || tab === 'live' ? (
         <div className="tt-list">
-          {videos.length === 0 && <p className="tt-empty">Нет роликов в этой папке.</p>}
+          {videos.length === 0 && (
+            <p className="tt-empty">
+              {tab === 'live' ? 'Нет запросов на перепроверку.' : 'Нет роликов на проверке.'}
+            </p>
+          )}
           {videos.map((item) => (
             <VideoCard
               key={item.id}

@@ -31,6 +31,7 @@ from tiktok_earn_logic import (  # noqa: E402
     ru_gone_verb,
     ru_screenshot_word,
     validate_nick,
+    canonicalize_tiktok_url,
 )
 
 log = logging.getLogger("tiktok_earn")
@@ -72,6 +73,7 @@ NICK_WAIT_MODES = frozenset({MODE_WAIT_NICK, MODE_WAIT_NICK_EDIT, MODE_NEED_NICK
 EXAMPLE_NICK = "@cuteplayer"
 EXAMPLE_COMMENT = "Как по мне @CuteGamingBot намного лучше для заработка звезд в тг"
 EXAMPLE_VIDEO_URL = "https://www.tiktok.com/@cuteplayer/video/7123456789012345678"
+EXAMPLE_VIDEO_SHORT = "https://vt.tiktok.com/ZSqxKyCTB/"
 
 # Как user_gift["awaiting_recipient"] у подарка другу: флаг в памяти,
 # чтобы @dp.message(lambda ...) поймал следующее сообщение до общего F.text.
@@ -84,7 +86,7 @@ CANCEL_WORDS = frozenset({"назад", "завершить"})
 WAIT_TTL_SECONDS = 300
 PHOTO_WAIT_TTL_SECONDS = 1200
 CANCEL_HINT = "<blockquote><i>Чтобы выйти - напишите</i> <code>Назад</code> <i>или</i> <code>Завершить</code></blockquote>"
-REPLY_HINT = "<blockquote><i>Ответьте на это сообщение.</i></blockquote>"
+REPLY_HINT = "<blockquote><i>Отправьте следующим сообщением в этот чат.</i></blockquote>"
 PHOTO_HINT = "<blockquote><i>Можно альбомом или по одному. Telegram берёт до 10 фото за раз - пришлите ещё, пока не будет 15.</i></blockquote>"
 INPUT_FOOTER = f"{REPLY_HINT}\n{CANCEL_HINT}"
 PHOTO_FOOTER = f"{PHOTO_HINT}\n{CANCEL_HINT}"
@@ -768,14 +770,14 @@ def message_matches_wait_text(message: Any) -> bool:
     if not _message_is_private(message):
         return False
     rec = get_wait(message.from_user.id)
-    raw = (getattr(message, "text", None) or "").strip()
+    raw = (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
     if rec and rec.get("kind") == WAIT_PHOTOS and is_cancel_input(raw):
-        return _gift_style_or_fallback(message, rec)
-    if not handler_would_accept_text(message.from_user.id, raw):
-        return False
-    if not rec:
-        return False
-    return _gift_style_or_fallback(message, rec)
+        return True
+    if rec and rec.get("kind") in TEXT_WAIT_KINDS:
+        if is_cancel_input(raw):
+            return True
+        return handler_would_accept_text(message.from_user.id, raw)
+    return False
 
 
 def message_matches_wait_photo(message: Any) -> bool:
@@ -880,7 +882,7 @@ async def submit_comment_case(user_id: int, photos: list[dict[str, Any]] | None 
 async def submit_video(user_id: int, raw_url: str) -> None:
     await ensure_schema()
     await require_nicks(user_id)
-    parsed = parse_tiktok_url(raw_url)
+    parsed = await asyncio.to_thread(canonicalize_tiktok_url, raw_url)
     pending = await _pool().fetchval(
         "SELECT id FROM tiktok_videos WHERE user_id = $1 AND status = 'pending'",
         int(user_id),
@@ -1007,7 +1009,12 @@ def comments_keyboard(
     complete: bool = False,
 ) -> InlineKeyboardMarkup:
     if complete or count >= needed:
-        return _kb([[_btn("Отклонить заявку", TT_WITHDRAW)]])
+        return _kb(
+            [
+                [_btn("Отклонить заявку", TT_WITHDRAW)],
+                [_btn("Назад", TT_HUB, ICON_BACK)],
+            ]
+        )
     rows = []
     if count > 0:
         rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
@@ -1049,6 +1056,17 @@ def nick_pick_keyboard(nicks: list[str]) -> InlineKeyboardMarkup:
     rows = [[_btn(f"@{n}", f"{TT_NICK_PICK}{n}")] for n in nicks]
     rows.append([_btn("Назад", TT_NICKS, ICON_BACK)])
     return _kb(rows)
+
+
+def nick_wait_keyboard(*, back: str = "hub") -> InlineKeyboardMarkup:
+    data = TT_HUB
+    if back == "nicks":
+        data = TT_NICKS
+    elif back == "comments":
+        data = TT_COMMENTS
+    elif back == "videos":
+        data = TT_VIDEOS
+    return _kb([[_btn("Назад", data, ICON_BACK)]])
 
 
 def collect_keyboard(count: int, needed: int) -> InlineKeyboardMarkup:
@@ -1106,7 +1124,8 @@ def text_videos(cfg: dict[str, Any]) -> str:
         "3. Опубликуйте ролик\n"
         "4. Скопируйте ссылку и отправьте её сюда</b></blockquote>\n\n"
         "<tg-emoji emoji-id='5388591472800986666'>✌</tg-emoji> <b><i>Пример ссылки :</i></b>\n"
-        f"<blockquote><code>{EXAMPLE_VIDEO_URL}</code></blockquote>\n\n"
+        f"<blockquote><code>{EXAMPLE_VIDEO_SHORT}</code>\n"
+        f"<code>{EXAMPLE_VIDEO_URL}</code></blockquote>\n\n"
         f"<tg-emoji emoji-id='5326018884539553727'>🖤</tg-emoji> <b>Награда : каждые {per} просмотров = {kut} кут</b>"
     )
 
@@ -1138,10 +1157,11 @@ def text_link_screen(error: str = "") -> str:
         "<blockquote>"
         "<b>1. Откройте свой ролик в TikTok\n"
         "2. Нажмите «Поделиться» и скопируйте ссылку\n"
-        "3. Отправьте ссылку сюда ответом на это сообщение</b>"
+        "3. Отправьте ссылку сюда. Подойдёт короткая vt.tiktok.com</b>"
         "</blockquote>\n\n"
         "<tg-emoji emoji-id='5388591472800986666'>✌</tg-emoji> <b><i>Пример ссылки :</i></b>\n"
-        f"<blockquote><code>{EXAMPLE_VIDEO_URL}</code></blockquote>\n\n"
+        f"<blockquote><code>{EXAMPLE_VIDEO_SHORT}</code>\n"
+        f"<code>{EXAMPLE_VIDEO_URL}</code></blockquote>\n\n"
         f"<b>{INPUT_FOOTER}</b>"
     )
     if error:
@@ -1234,7 +1254,7 @@ def videos_screen_text(
             body += f"\n<code>{item['url']}</code>\n<i>{mark}</i>"
     if pending:
         return body
-    body += f"\n\n<blockquote><i>Теперь отправьте ссылку на ролик ответом на это сообщение.</i></blockquote>\n{INPUT_FOOTER}"
+    body += f"\n\n<blockquote><i>Теперь отправьте ссылку на ролик следующим сообщением.</i></blockquote>\n{INPUT_FOOTER}"
     return body
 
 
@@ -1277,10 +1297,11 @@ def text_wait_link() -> str:
         "<blockquote>"
         "<b>1. Откройте ролик в TikTok\n"
         "2. Нажмите «Поделиться» и скопируйте ссылку\n"
-        "3. Отправьте ссылку сюда</b>"
+        "3. Отправьте ссылку сюда. Можно vt.tiktok.com</b>"
         "</blockquote>\n"
         "<b><i>Пример :</i></b>\n"
-        f"<blockquote><code>{EXAMPLE_VIDEO_URL}</code></blockquote>\n"
+        f"<blockquote><code>{EXAMPLE_VIDEO_SHORT}</code>\n"
+        f"<code>{EXAMPLE_VIDEO_URL}</code></blockquote>\n"
         f"{INPUT_FOOTER}"
     )
 
@@ -1585,3 +1606,13 @@ def looks_like_tiktok_url(raw: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def message_link_text(message: Any) -> str:
+    text = (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
+    for bucket in (getattr(message, "entities", None), getattr(message, "caption_entities", None)):
+        for ent in bucket or []:
+            url = getattr(ent, "url", None)
+            if url:
+                return str(url).strip()
+    return text
