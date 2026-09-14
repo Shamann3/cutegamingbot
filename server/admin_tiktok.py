@@ -34,10 +34,14 @@ from tiktok_earn_logic import (
     assert_can_approve_comments,
     comment_progress,
     find_matches,
+    clean_custom_reason,
+    display_tiktok_url,
     format_comment_payout_html,
     format_photo_reject_html,
     format_video_payout_html,
     format_video_reject_html,
+    parse_views_input,
+    reviewer_mention_html,
     next_queue_item,
     validate_comment_reward,
     validate_video_reward,
@@ -373,6 +377,15 @@ async def _user_card(user_id: int) -> dict[str, Any]:
     }
 
 
+async def _reviewer_html(admin_id: int) -> str:
+    card = await _user_card(int(admin_id))
+    return reviewer_mention_html(
+        int(admin_id),
+        str(card.get("displayName") or card.get("firstName") or ""),
+        str(card.get("username") or ""),
+    )
+
+
 async def _load_verdicts() -> dict[tuple[str, str], str]:
     rows = await db.pool.fetch("SELECT hash_a, hash_b, verdict FROM tiktok_hash_verdicts")
     out: dict[tuple[str, str], str] = {}
@@ -473,7 +486,7 @@ async def submit_comment_case(user_id: int, photos: list[dict[str, Any]]) -> dic
         raise ValueError(f"Нужно ровно {needed} скриншотов")
     nicks = await list_nicks(user_id)
     if not nicks:
-        raise ValueError("Сначала укажи свой ник в TikTok. Без него скриншоты принять нельзя.")
+        raise ValueError("Сначала напишите имя своего TikTok. Без него скриншоты принять нельзя.")
     existing = await db.pool.fetchval(
         "SELECT id FROM tiktok_comment_cases WHERE user_id = $1 AND status = 'pending'",
         int(user_id),
@@ -521,6 +534,7 @@ async def submit_video(
     if not nicks:
         raise ValueError("Сначала напишите имя своего TikTok.")
     parsed = await asyncio.to_thread(canonicalize_tiktok_url, raw_url)
+    display = display_tiktok_url(parsed, raw_url)
     name = str(title or "").strip()
     pending = await db.pool.fetchval(
         "SELECT id FROM tiktok_videos WHERE user_id = $1 AND status = 'pending'",
@@ -555,12 +569,12 @@ async def submit_video(
             WHERE id = $1
             """,
             int(replace_id),
-            parsed["url"],
+            display,
             parsed["canonical"],
             name,
         )
         await clear_session(user_id)
-        return {"id": int(replace_id), "url": parsed["url"], "title": name}
+        return {"id": int(replace_id), "url": display, "title": name}
     row = await db.pool.fetchrow(
         """
         INSERT INTO tiktok_videos (user_id, url, canonical_key, title, status)
@@ -568,12 +582,12 @@ async def submit_video(
         RETURNING id, created_at
         """,
         int(user_id),
-        parsed["url"],
+        display,
         parsed["canonical"],
         name,
     )
     await clear_session(user_id)
-    return {"id": int(row["id"]), "createdAt": row["created_at"].isoformat(), "title": name, "url": parsed["url"]}
+    return {"id": int(row["id"]), "createdAt": row["created_at"].isoformat(), "title": name, "url": display}
 
 
 async def request_recheck(user_id: int, video_id: int) -> dict[str, Any]:
@@ -818,7 +832,11 @@ async def approve_comment_case(case_id: int, admin_id: int) -> dict:
             )
     amount = int(settings["commentReward"])
     after = await _credit(int(row["user_id"]), amount, "+ tiktok комментарии")
-    text = format_comment_payout_html(amount, settings["photosRequired"])
+    text = format_comment_payout_html(
+        amount,
+        settings["photosRequired"],
+        reviewer_html=await _reviewer_html(admin_id),
+    )
     _notify(int(row["user_id"]), text)
     return {"ok": True, "balance": after, "kut": amount}
 
@@ -837,12 +855,20 @@ def _clean_reason_catalog(raw, fallback: list[dict[str, str]]) -> list[dict[str,
     return clean[:20]
 
 
-async def reject_comment_case(case_id: int, admin_id: int, reason_ids: list[str] | None = None) -> dict:
+async def reject_comment_case(
+    case_id: int,
+    admin_id: int,
+    reason_ids: list[str] | None = None,
+    custom_reason: str = "",
+) -> dict:
     await ensure_tiktok_schema()
     settings = await get_settings()
     catalog = {r["id"]: r["label"] for r in settings.get("commentRejectReasons") or []}
     labels = [catalog[rid] for rid in (reason_ids or []) if rid in catalog]
-    text = format_photo_reject_html(labels)
+    custom = clean_custom_reason(custom_reason)
+    if custom:
+        labels.append(custom)
+    text = format_photo_reject_html(labels, reviewer_html=await _reviewer_html(admin_id))
     async with db.pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(
@@ -985,10 +1011,11 @@ async def list_user_videos(user_id: int) -> list[dict]:
     return [_video_dict(r, settings) for r in rows]
 
 
-async def approve_video(video_id: int, admin_id: int, views: int) -> dict:
+async def approve_video(video_id: int, admin_id: int, views: Any) -> dict:
     await ensure_tiktok_schema()
     settings = await get_settings()
     kut_unit = int(settings["kutPerUnit"])
+    views = parse_views_input(views)
     async with db.pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(
@@ -1033,18 +1060,27 @@ async def approve_video(video_id: int, admin_id: int, views: int) -> dict:
         old_views=int(delta["oldViews"]),
         days=days,
         title=str(row["title"] if "title" in row.keys() else "") or "",
+        reviewer_html=await _reviewer_html(admin_id),
     )
     _notify(user_id, text)
     return {"ok": True, "balance": after, **delta}
 
 
-async def reject_video(video_id: int, admin_id: int, reason_ids: list[str]) -> dict:
+async def reject_video(
+    video_id: int,
+    admin_id: int,
+    reason_ids: list[str],
+    custom_reason: str = "",
+) -> dict:
     await ensure_tiktok_schema()
     settings = await get_settings()
     catalog = {r["id"]: r["label"] for r in settings["rejectReasons"]}
     labels = [catalog[rid] for rid in reason_ids if rid in catalog]
+    custom = clean_custom_reason(custom_reason)
+    if custom:
+        labels.append(custom)
     if not labels:
-        raise ValueError("Отметь хотя бы одну причину отказа")
+        raise ValueError("Отметьте хотя бы одну причину отказа")
     async with db.pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(
@@ -1072,6 +1108,7 @@ async def reject_video(video_id: int, admin_id: int, reason_ids: list[str]) -> d
     text = format_video_reject_html(
         labels,
         title=str(row["title"] if "title" in row.keys() else "") or "",
+        reviewer_html=await _reviewer_html(admin_id),
     )
     _notify(int(row["user_id"]), text)
     return {"ok": True, "reasons": labels}
@@ -1265,8 +1302,9 @@ class VerdictBody(BaseModel):
 
 
 class VideoDecideBody(BaseModel):
-    views: int | None = Field(default=None, ge=0, le=2_000_000_000)
+    views: Any = None
     reasonIds: list[str] = Field(default_factory=list)
+    customReason: str = ""
 
 
 @router.get("/overview")
@@ -1380,6 +1418,7 @@ async def tiktok_comment_approve(
 
 class CommentRejectBody(BaseModel):
     reasonIds: list[str] = Field(default_factory=list)
+    customReason: str = ""
 
 
 @router.post("/comments/{case_id}/reject")
@@ -1389,7 +1428,7 @@ async def tiktok_comment_reject(
     admin_id: int = Depends(require_tiktok_tab("comments")),
 ):
     try:
-        return await reject_comment_case(case_id, admin_id, body.reasonIds)
+        return await reject_comment_case(case_id, admin_id, body.reasonIds, body.customReason)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1426,13 +1465,13 @@ async def tiktok_video_approve(
     body: VideoDecideBody,
     admin_id: int = Depends(require_admin_session),
 ):
-    if body.views is None:
-        raise HTTPException(status_code=400, detail="Укажи просмотры")
+    if body.views is None or str(body.views).strip() == "":
+        raise HTTPException(status_code=400, detail="Впишите просмотры")
     try:
         row = await db.pool.fetchrow("SELECT status, recheck_requested_at FROM tiktok_videos WHERE id = $1", video_id)
         tab = "live" if row and row["status"] == "live" else "videos"
         await assert_tiktok_tab(admin_id, tab)
-        return await approve_video(video_id, admin_id, int(body.views))
+        return await approve_video(video_id, admin_id, body.views)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1444,6 +1483,6 @@ async def tiktok_video_reject(
     admin_id: int = Depends(require_tiktok_tab("videos")),
 ):
     try:
-        return await reject_video(video_id, admin_id, body.reasonIds)
+        return await reject_video(video_id, admin_id, body.reasonIds, body.customReason)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -82,6 +82,23 @@ def test_reject_non_tiktok_url():
         assert "TikTok" in str(exc)
 
 
+def test_views_dot_format_and_compact_parse():
+    from tiktok_earn_logic import format_int_dot, format_views_compact, parse_views_input, parse_tiktok_url
+
+    assert format_int_dot(1000) == "1.000"
+    assert format_int_dot(6390) == "6.390"
+    assert format_int_dot(213012) == "213.012"
+    assert format_views_compact(64600) == "64.6k"
+    assert parse_views_input("64.6k") == 64600
+    assert parse_views_input("64.6") == 64600
+    assert parse_views_input("1.000") == 1000
+    assert parse_views_input("64600") == 64600
+    assert parse_views_input(64600) == 64600
+    parsed = parse_tiktok_url("https://www.tiktok.com/@cuteplayer/video/7123456789012345678")
+    assert "@cuteplayer" in parsed["url"]
+    assert parsed["canonical"] == "video:7123456789012345678"
+
+
 def test_views_formula_and_delta():
     assert thousands_from_views(999) == 0
     assert kut_for_views(999) == 0
@@ -168,18 +185,30 @@ def test_payout_messages_name_the_job():
     assert "комментарии" in comments.lower()
     assert "15 скринов" in comments
     assert "—" not in comments
+    named = format_comment_payout_html(
+        5, 15, reviewer_html='<a href="tg://user?id=7">Анна</a>'
+    )
+    assert "проверял" in named
+    assert "tg://user?id=7" in named
     video = format_video_payout_html(kut=6390, views=213012, kut_per_unit=30)
-    assert "+6390 кут" in video
-    assert "213012" in video
+    assert "+6.390 кут" in video
+    assert "213.012" in video
     assert "213 × 30" in video
     assert "видео" in video.lower()
     zero = format_video_payout_html(kut=0, views=400, kut_per_unit=30)
-    assert "1000" in zero
+    assert "1.000" in zero
     recheck = format_video_payout_html(
         kut=60, views=5000, kut_per_unit=30, is_recheck=True, old_views=2000, days=7
     )
     assert "доплата" in recheck.lower()
-    assert "2000" in recheck
+    assert "2.000" in recheck
+    reviewed = format_video_payout_html(
+        kut=60,
+        views=5000,
+        reviewer_html='<a href="tg://user?id=9">Иван</a>',
+    )
+    assert "Ваше видео проверял" in reviewed
+    assert "tg://user?id=9" in reviewed
 
 
 def test_photo_cache_keys_and_proxy_url_shape():

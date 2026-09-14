@@ -2124,8 +2124,8 @@ export async function approveTiktokComment(caseId) {
   return adminFetch(`/tiktok/comments/${caseId}/approve`, { method: 'POST', body: {} })
 }
 
-export async function rejectTiktokComment(caseId, reasonIds) {
-  return adminFetch(`/tiktok/comments/${caseId}/reject`, { method: 'POST', body: { reasonIds } })
+export async function rejectTiktokComment(caseId, reasonIds, customReason = '') {
+  return adminFetch(`/tiktok/comments/${caseId}/reject`, { method: 'POST', body: { reasonIds, customReason } })
 }
 
 export async function saveTiktokVerdict(hashA, hashB, verdict) {
@@ -2141,6 +2141,6 @@ export async function approveTiktokVideo(videoId, views) {
   return adminFetch(`/tiktok/videos/${videoId}/approve`, { method: 'POST', body: { views } })
 }
 
-export async function rejectTiktokVideo(videoId, reasonIds) {
-  return adminFetch(`/tiktok/videos/${videoId}/reject`, { method: 'POST', body: { reasonIds } })
+export async function rejectTiktokVideo(videoId, reasonIds, customReason = '') {
+  return adminFetch(`/tiktok/videos/${videoId}/reject`, { method: 'POST', body: { reasonIds, customReason } })
 }

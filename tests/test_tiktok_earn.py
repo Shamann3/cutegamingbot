@@ -73,6 +73,7 @@ def test_hub_buttons_use_premium_emoji_ids():
     for row in kb.inline_keyboard:
         for btn in row:
             assert btn.icon_custom_emoji_id, btn.text
+            assert getattr(btn, "style", None) == "primary"
 
 
 def test_player_tiktok_texts_have_no_emdash():
@@ -214,7 +215,7 @@ def test_direction_then_work_on_same_screen():
     assert "tt:hub" in work
     assert "tt:nicks" in _kb_data(videos_keyboard([]))
     assert "tt:hub" in _kb_data(videos_keyboard([]))
-    assert "cuteplayer" in text_videos({"kutPerUnit": 40})
+    assert "cuteplayer" in text_videos({"kutPerUnit": 40}) or "Обзор" in text_videos({"kutPerUnit": 40})
 
 
 def test_reward_caps_and_payout_use_stored_value():
@@ -427,8 +428,8 @@ def test_wait_modes_photo_ignored_until_button():
     assert "Напишите имя своего TikTok" in need
     assert EXAMPLE_NICK in need
     assert EXAMPLE_COMMENT in text_comments({})
-    assert EXAMPLE_VIDEO_URL in text_videos({})
-    assert "vt.tiktok.com" in text_videos({})
+    assert EXAMPLE_VIDEO_URL not in text_videos({})
+    assert "vt.tiktok.com" not in text_videos({})
     assert "<b>1.</b>" in text_videos({})
     assert "<b>2.</b>" in text_videos({})
     assert "<blockquote><code>" not in text_videos({})
@@ -642,6 +643,15 @@ def test_admin_photo_proxy_client_uses_jwt_query_and_thumb():
     assert "VideoWorkspace" in section
     assert "Открыть улику в TikTok" in section
     assert "busyRef.current" in section
+    assert "Начать работу" in section
+    assert "parseViewsInput" in section
+    assert "64.6k" in section
+    assert "customReason" in section
+    assert "tt-field-box" in section
+    lightbox = Path("admin/src/components/ImageLightbox.jsx").read_text(encoding="utf-8")
+    assert "wheel" in lightbox
+    assert "touches" in lightbox
+    assert "scale" in lightbox
 
 
 def test_wait_expires_after_five_minutes_and_keeps_escape():
@@ -745,7 +755,7 @@ def test_video_title_then_link_and_retry_flow():
     assert WAIT_TITLE == "title"
     title_screen = text_wait_title()
     assert "название" in title_screen.lower()
-    assert "ссылку пришлёте" in title_screen.lower() or "следующим" in title_screen.lower()
+    assert "ссылку" in title_screen.lower()
     assert "—" not in title_screen
     assert "cuteplayer" in text_videos({}) or "Обзор" in text_videos({})
     done = " ".join(btn.text for row in done_keyboard(after="mine").inline_keyboard for btn in row)

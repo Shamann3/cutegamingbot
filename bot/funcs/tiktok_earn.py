@@ -31,6 +31,8 @@ from tiktok_earn_logic import (  # noqa: E402
     canonicalize_tiktok_url,
     clip_button_text,
     comment_progress,
+    display_tiktok_url,
+    format_int_dot,
     hashes_from_image_bytes,
     kut_for_views,
     looks_like_tiktok_url_text,
@@ -329,11 +331,18 @@ def _status_icon(kind: str) -> str:
     return {"ok": ICON_STATUS_OK, "no": ICON_STATUS_NO}.get(kind, ICON_STATUS_WAIT)
 
 
-def _btn(text: str, data: str, icon: str | None = None) -> InlineKeyboardButton:
-    kwargs: dict[str, Any] = {"text": text, "callback_data": data}
+def _btn(text: str, data: str, icon: str | None = None, style: str = "primary") -> InlineKeyboardButton:
+    kwargs: dict[str, Any] = {"text": text, "callback_data": data, "style": style}
     if icon:
         kwargs["icon_custom_emoji_id"] = icon
     return InlineKeyboardButton(**kwargs)
+
+
+def _link_html(url: str) -> str:
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    return f'<a href="{escape(raw, quote=True)}">{escape(raw)}</a>'
 
 
 def _cfg(cfg: dict[str, Any] | None) -> dict[str, Any]:
@@ -375,18 +384,19 @@ def text_hub(cfg: dict[str, Any] | None = None, *, has_nicks: bool = False) -> s
     reward = int(s["commentReward"])
     kut = int(s["kutPerUnit"])
     needed = int(s["photosRequired"])
+    unit = format_int_dot(int(s["viewsPerUnit"]))
     extra = (
-        "<i>Имена TikTok уже сохранены - можно сразу сдавать работу.</i>"
+        "<i>Имена уже сохранены.</i>"
         if has_nicks
-        else "<i>Сначала один раз напишите имя своего TikTok. Дальше бот запомнит его.</i>"
+        else "<i>Сначала напишите имя своего TikTok.</i>"
     )
     return (
         f"<tg-emoji emoji-id='{ICON_TT}'>🎵</tg-emoji> <b>Тик ток</b>\n"
-        "<i>Выберите, чем закрыть день.</i>\n"
+        "<i>Выберите.</i>\n"
         f"{extra}\n"
         "<blockquote>"
-        f"<b>Комментарии</b> - {needed} скринов и {reward} кут после проверки.\n"
-        f"<b>Видео</b> - {kut} кут за каждую 1000 просмотров, пока ролик набирает охват."
+        f"<b>Комментарии</b> - {needed} скринов, {reward} кут.\n"
+        f"<b>Видео</b> - {kut} кут за каждую {unit} просмотров."
         "</blockquote>"
     )
 
@@ -421,13 +431,13 @@ def text_comments(cfg: dict[str, Any] | None = None) -> str:
     needed = int(s["photosRequired"])
     return (
         f"<tg-emoji emoji-id='{ICON_COMMENTS}'>💬</tg-emoji> <b>Комментарии</b>\n"
-        f"<i>Делайте по порядку. Один комментарий - один кадр. Лайк на своём обязателен.</i>\n"
+        "<i>Делайте по порядку. Один кадр - один комментарий с лайком на своём.</i>\n"
         "<blockquote>"
-        f"<b>1.</b> Найдите ролики с хештегом <code>{escape(tag)}</code>\n"
-        "<b>2.</b> Напишите живой комментарий и поставьте лайк на свой\n"
-        f"<b>3.</b> Пришлите {needed} разных скринов - и {reward} кут после проверки"
+        f"<b>1.</b> Ролики с хештегом <code>{escape(tag)}</code>\n"
+        "<b>2.</b> Комментарий и лайк на свой\n"
+        f"<b>3.</b> {needed} скринов, {reward} кут"
         "</blockquote>\n"
-        f"<i>Пример комментария:</i>\n<blockquote><code>{escape(EXAMPLE_COMMENT)}</code></blockquote>\n"
+        f"<blockquote><code>{escape(EXAMPLE_COMMENT)}</code></blockquote>\n"
         f"{PHOTO_FOOTER}"
     )
 
@@ -436,18 +446,16 @@ def text_videos(cfg: dict[str, Any] | None = None) -> str:
     s = _cfg(cfg)
     tag = escape(str(s.get("videoHashtag") or "@CuteGamingBot"))
     kut = int(s["kutPerUnit"])
+    unit = format_int_dot(int(s["viewsPerUnit"]))
     return (
         f"<tg-emoji emoji-id='{ICON_VIDEOS}'>🎬</tg-emoji> <b>Видео о боте</b>\n"
-        f"<i>Делайте по порядку. Сначала имя ролика, затем ссылка. Так в «Ваших роликах» сразу понятно, что на проверке.</i>\n"
+        "<i>Делайте по порядку.</i>\n"
         "<blockquote>"
-        f"<b>1.</b> Снимите ролик про бота и поставьте {tag}\n"
-        "<b>2.</b> Напишите короткое название, например "
-        f"<code>{escape(EXAMPLE_VIDEO_TITLE)}</code>\n"
-        "<b>3.</b> Следующим сообщением пришлите ссылку"
+        f"<b>1.</b> Название\n"
+        f"<b>2.</b> Ссылка. В ролике поставьте {tag}"
         "</blockquote>\n"
-        f"<b>1.</b> {escape(EXAMPLE_VIDEO_URL)}\n"
-        f"<b>2.</b> {escape(EXAMPLE_VIDEO_SHORT)}\n"
-        f"<i>За каждые 1000 просмотров - {kut} кут. Через 7 дней можно попросить пересчёт.</i>\n"
+        f"<code>{escape(EXAMPLE_VIDEO_TITLE)}</code>\n"
+        f"<i>За каждые {unit} просмотров - {kut} кут.</i>\n"
         f"{INPUT_FOOTER}"
     )
 
@@ -527,8 +535,8 @@ def videos_screen_text(
     if pending:
         title = escape(str(pending.get("title") or f"Ролик #{pending.get('id')}"))
         return (
-            f"{head}{status_emoji_html('wait')} <b>{title}</b> уже на проверке.\n"
-            "<i>Как ответим - можно прислать следующий ролик. Пока ждёте, откройте Ваши ролики.</i>\n"
+            f"{head}{status_emoji_html('wait')} <b>{title}</b> на проверке.\n"
+            "<i>Откройте Ваши ролики.</i>\n"
             f"{CANCEL_HINT}"
         )
     return head + text_videos(s)
@@ -540,23 +548,19 @@ def text_wait_photos(count: int = 0, needed: int = 15, nicks: list[str] | None =
 
 def text_wait_title(error: str = "", *, replace: bool = False) -> str:
     head = f"<b>{escape(error)}</b>\n" if error else ""
-    action = "новое название ролика" if replace else "название ролика"
+    action = "новое название" if replace else "название"
     return (
-        f"{head}{status_emoji_html('wait')} <b>Как назвать ролик?</b>\n"
-        f"<i>Напишите {action} своими словами. Ссылку пришлёте следующим шагом.</i>\n"
-        f"<blockquote><code>{escape(EXAMPLE_VIDEO_TITLE)}</code></blockquote>\n"
+        f"{head}{status_emoji_html('wait')} <b>{action.capitalize()}.</b>\n"
+        "<i>Затем ссылку.</i>\n"
         f"{INPUT_FOOTER}"
     )
 
 
 def text_wait_link(title: str = "", error: str = "") -> str:
     head = f"<b>{escape(error)}</b>\n" if error else ""
-    named = f"<i>Название:</i> <b>{escape(title)}</b>\n" if title else ""
+    named = f"<b>{escape(title)}</b>\n" if title else ""
     return (
-        f"{head}{named}{status_emoji_html('wait')} <b>Теперь ссылка на ролик</b>\n"
-        "<i>Скопируйте её из TikTok и пришлите следующим сообщением.</i>\n"
-        f"<b>1.</b> {escape(EXAMPLE_VIDEO_URL)}\n"
-        f"<b>2.</b> {escape(EXAMPLE_VIDEO_SHORT)}\n"
+        f"{head}{named}{status_emoji_html('wait')} <b>Ссылка.</b>\n"
         f"{INPUT_FOOTER}"
     )
 
@@ -635,23 +639,21 @@ def text_video_card(item: dict[str, Any] | None, notice: str = "") -> str:
     recheck = bool(item.get("recheckPending"))
     kind = status_kind_for_task(status, recheck=recheck)
     title = escape(str(item.get("title") or f"Ролик #{item.get('id')}"))
-    url = escape(str(item.get("url") or ""))
     views = int(item.get("lastViews") or 0)
     paid = int(item.get("paidKut") or 0)
     head = _notice_block(notice)
     if status == "rejected":
-        state = "<i>Не приняли. Можно сразу отправить этот слот снова - новое имя и новая ссылка.</i>"
+        state = "<i>Не приняли. Нажмите «Отправить снова».</i>"
     elif status == "pending" or recheck:
-        state = "<i>На проверке. Как ответим - статус сменится здесь.</i>"
+        state = "<i>На проверке.</i>"
     else:
         state = (
-            f"<i>Принят. {views} просмотров, выплачено {paid} кут. "
-            "Через 7 дней можно попросить пересчёт по новым просмотрам.</i>"
+            f"<i>Принят. {format_int_dot(views)} просмотров, {format_int_dot(paid)} кут.</i>"
         )
     return (
         f"{head}{status_emoji_html(kind)} <b>{title}</b>\n"
         f"{state}\n"
-        f"<blockquote>{url}</blockquote>"
+        f"{_link_html(str(item.get('url') or ''))}"
     )
 
 
@@ -673,9 +675,8 @@ def text_done_nick_changed(old: str, new: str) -> str:
 def text_done_video_sent(url: str, title: str = "") -> str:
     named = f"<b>{escape(title)}</b>\n" if title else ""
     return (
-        f"{status_emoji_html('wait')} {named}<b>Ролик ушёл на проверку.</b>\n"
-        f"<i>Ссылку сохранили. Когда примем - куты придут, а ролик появится в Ваших роликах.</i>\n"
-        f"<blockquote>{escape(url)}</blockquote>"
+        f"{status_emoji_html('wait')} {named}<b>На проверке.</b>\n"
+        f"{_link_html(url)}"
     )
 
 
@@ -1382,6 +1383,7 @@ async def submit_video(
     await require_nicks(user_id)
     name = validate_video_title(title) if title else ""
     parsed = await asyncio.to_thread(canonicalize_tiktok_url, raw_url)
+    display = display_tiktok_url(parsed, raw_url)
     pool = _pool()
     if not pool:
         raise ValueError("Сейчас нельзя принять ссылку. Попробуйте позже.")
@@ -1427,11 +1429,11 @@ async def submit_video(
             WHERE id = $1
             """,
             int(replace_id),
-            parsed["url"],
+            display,
             parsed["canonical"],
             name,
         )
-        return {"id": int(replace_id), "url": parsed["url"], "title": name, "canonical": parsed["canonical"]}
+        return {"id": int(replace_id), "url": display, "title": name, "canonical": parsed["canonical"]}
     row = await pool.fetchrow(
         """
         INSERT INTO tiktok_videos (user_id, url, canonical_key, title, status)
@@ -1439,11 +1441,11 @@ async def submit_video(
         RETURNING id
         """,
         int(user_id),
-        parsed["url"],
+        display,
         parsed["canonical"],
         name,
     )
-    return {"id": int(row["id"]), "url": parsed["url"], "title": name, "canonical": parsed["canonical"]}
+    return {"id": int(row["id"]), "url": display, "title": name, "canonical": parsed["canonical"]}
 
 
 async def request_recheck(user_id: int, video_id: int) -> dict[str, Any]:

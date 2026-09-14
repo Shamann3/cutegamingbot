@@ -78,7 +78,7 @@ DEFAULT_PHOTO_REJECT_REASONS: list[dict[str, str]] = [
 ]
 
 BARNUM_REJECTS: tuple[str, ...] = (
-    "<b>Эту серию не приняли.</b>\n<i>По кадрам не складывается цельная картина выполнения. Соберите новую серию: 15 разных комментариев под роликами с нужным тегом, лайк на своём и свежие скрины.</i>",
+    "<b>Эту серию не приняли.</b>\n<i>По кадрам не складывается цельная картина выполнения. Соберите новую серию : 15 разных комментариев под роликами с нужным тегом, лайк на своём и свежие скрины.</i>",
     "<b>Серия не прошла проверку.</b>\n<i>Смотрим не только на число кадров, а на то, как собрано всё вместе. Сейчас картина выглядит незавершённой. Пришлите новую серию с нуля.</i>",
     "<b>Пока не можем принять.</b>\n<i>По этой сдаче не видно, что задание выполнено целиком. 15 свежих скринов, один комментарий - один кадр, и можно снова.</i>",
     "<b>Эту сдачу закрыли.</b>\n<i>Так бывает, если кадры слишком похожи или не показывают задание целиком. Соберите новую серию и пришлите снова.</i>",
@@ -137,16 +137,92 @@ def extract_tiktok_url(raw: str) -> str:
     raise ValueError(f"Это не похоже на ссылку TikTok. {LINK_HINT}")
 
 
+def format_int_dot(value: int) -> str:
+    number = int(value)
+    sign = "-" if number < 0 else ""
+    digits = str(abs(number))
+    parts: list[str] = []
+    while digits:
+        parts.append(digits[-3:])
+        digits = digits[:-3]
+    return sign + ".".join(reversed(parts))
+
+
+def format_views_compact(value: int) -> str:
+    number = max(0, int(value))
+    if number >= 1_000_000:
+        text = f"{number / 1_000_000:.1f}".rstrip("0").rstrip(".")
+        return f"{text}m"
+    if number >= 1000:
+        text = f"{number / 1000:.1f}".rstrip("0").rstrip(".")
+        return f"{text}k"
+    return format_int_dot(number)
+
+
+def parse_views_input(raw: Any) -> int:
+    text = str(raw or "").strip().lower().replace(" ", "").replace("\u00a0", "")
+    if not text:
+        raise ValueError("Впишите просмотры")
+    text = text.replace(",", ".")
+    mult = 1
+    if text.endswith(("k", "к")):
+        mult = 1000
+        text = text[:-1]
+    elif text.endswith(("m", "м")):
+        mult = 1_000_000
+        text = text[:-1]
+    if not re.fullmatch(r"\d+(?:\.\d+)*", text):
+        raise ValueError("Просмотры: 64.6k или 1.000")
+    parts = text.split(".")
+    if mult > 1:
+        return int(round(float(text) * mult))
+    if len(parts) == 1:
+        return int(parts[0])
+    if all(len(chunk) == 3 for chunk in parts[1:]):
+        return int("".join(parts))
+    if len(parts) == 2 and 1 <= len(parts[1]) <= 2 and int(parts[0]) < 1000:
+        return int(round(float(text) * 1000))
+    raise ValueError("Просмотры: 64.6k или 1.000")
+
+
+def reviewer_mention_html(user_id: int, name: str = "", username: str = "") -> str:
+    label = escape(str(name or username or user_id).strip() or str(user_id))
+    return f'<a href="tg://user?id={int(user_id)}">{label}</a>'
+
+
+def reviewer_line_html(kind: str, mention: str) -> str:
+    if kind == "comments":
+        return f"<i>Выполнение Вашего задания на комментарии проверял</i> {mention}."
+    return f"<i>Ваше видео проверял</i> {mention}."
+
+
+def display_tiktok_url(parsed: dict[str, str] | None, raw: str = "") -> str:
+    data = parsed or {}
+    for key in ("sourceUrl", "url"):
+        value = str(data.get(key) or "").strip()
+        if value:
+            if "://" not in value:
+                value = "https://" + value.lstrip("/")
+            return value.split("#", 1)[0]
+    text = str(raw or "").strip()
+    return text
+
+
 def _video_payload(video_id: str, url: str) -> dict[str, str]:
     vid = str(video_id or "").strip()
     if not vid.isdigit():
         raise ValueError(f"Это не похоже на ссылку TikTok. {LINK_HINT}")
+    display = str(url or "").strip()
+    if display and "://" not in display:
+        display = "https://" + display.lstrip("/")
+    if not display:
+        display = f"https://www.tiktok.com/video/{vid}"
     return {
-        "url": f"https://www.tiktok.com/video/{vid}",
+        "url": display,
         "canonical": f"video:{vid}",
         "videoId": vid,
         "kind": "video",
-        "sourceUrl": url,
+        "sourceUrl": display,
     }
 
 
@@ -293,7 +369,9 @@ def canonicalize_tiktok_url(raw: str, *, resolve: bool = True) -> dict[str, str]
     except ValueError:
         return parsed
     if again.get("videoId"):
-        again["sourceUrl"] = parsed["url"]
+        original = parsed.get("sourceUrl") or parsed.get("url") or raw
+        again["sourceUrl"] = original
+        again["url"] = original
         return again
     return parsed
 
@@ -396,29 +474,62 @@ def wrap_barnum_html(text: str) -> str:
     return f"<b>Серия не принята.</b>\n<i>{raw}</i>"
 
 
-def format_photo_reject_html(labels: list[str]) -> str:
-    clean = [str(item).strip() for item in (labels or []) if str(item).strip()]
+CUSTOM_REASON_MAX = 280
+
+
+def clean_custom_reason(raw: Any) -> str:
+    text = " ".join(str(raw or "").split())
+    if len(text) > CUSTOM_REASON_MAX:
+        raise ValueError(f"Своя причина длиннее {CUSTOM_REASON_MAX} символов")
+    return text
+
+
+def reject_labels(*parts: Any) -> list[str]:
+    clean: list[str] = []
+    for part in parts:
+        if isinstance(part, (list, tuple)):
+            items = part
+        else:
+            items = [part]
+        for item in items:
+            label = str(item or "").strip()
+            if label and label not in clean:
+                clean.append(label)
     if not clean:
         raise ValueError("Отметьте хотя бы одну причину отказа")
-    lines = "\n".join(f"<b>{i}.</b> {label}" for i, label in enumerate(clean, 1))
+    return clean
+
+
+def _who_checked(kind: str, reviewer_html: str = "") -> str:
+    mention = str(reviewer_html or "").strip()
+    if not mention:
+        return ""
+    return f"\n{reviewer_line_html(kind, mention)}"
+
+
+def format_photo_reject_html(labels: list[str], *, reviewer_html: str = "") -> str:
+    clean = reject_labels(labels)
+    lines = "\n".join(f"<b>{i}.</b> {escape(label)}" for i, label in enumerate(clean, 1))
     return (
         f"{status_emoji_html('no')} <b>Комментарии не приняли.</b>\n"
-        "<i>Что исправить:</i>\n"
-        f"<blockquote>\n{lines}\n</blockquote>\n"
-        "<i>Можно сразу собрать новую серию и отправить снова.</i>"
+        "<i>Что исправить :</i>\n"
+        f"<blockquote>\n{lines}\n</blockquote>"
+        f"{_who_checked('comments', reviewer_html)}"
     )
 
 
-def format_comment_payout_html(amount: int, photos: int = PHOTOS_REQUIRED) -> str:
+def format_comment_payout_html(
+    amount: int,
+    photos: int = PHOTOS_REQUIRED,
+    *,
+    reviewer_html: str = "",
+) -> str:
     pay = max(0, int(amount))
     pack = max(1, int(photos or PHOTOS_REQUIRED))
     return (
-        f"{status_emoji_html('ok')} <tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{pay} кут</b>\n"
-        "<blockquote>"
-        "<b>За что:</b> комментарии TikTok\n"
-        f"<b>Пачка:</b> {pack} скринов\n"
-        f"<b>Награда:</b> {pay} кут"
-        "</blockquote>"
+        f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{format_int_dot(pay)} кут</b>\n"
+        f"<i>{pack} скринов за комментарии.</i>"
+        f"{_who_checked('comments', reviewer_html)}"
     )
 
 
@@ -431,6 +542,7 @@ def format_video_payout_html(
     old_views: int = 0,
     days: int = RECHECK_DAYS,
     title: str = "",
+    reviewer_html: str = "",
 ) -> str:
     pay = max(0, int(kut))
     now = max(0, int(views))
@@ -438,61 +550,65 @@ def format_video_payout_html(
     thousands = thousands_from_views(now)
     wait_days = max(1, int(days or RECHECK_DAYS))
     named = f"<b>{escape(title)}</b>\n" if str(title or "").strip() else ""
+    who = _who_checked("video", reviewer_html)
     if is_recheck:
         if pay > 0:
             return (
-                f"{status_emoji_html('ok')} <tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{pay} кут</b>\n"
+                f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{format_int_dot(pay)} кут</b>\n"
                 f"{named}"
                 "<blockquote>"
-                "<b>За что:</b> новые просмотры видео\n"
-                f"<b>Было:</b> {int(old_views)}\n"
-                f"<b>Сейчас:</b> {now}\n"
-                f"<b>Доплата:</b> {pay} кут"
+                "<b>За что :</b> обновление новых просмотров на TikTok видео\n"
+                f"<b>Было :</b> {format_int_dot(int(old_views))}\n"
+                f"<b>Сейчас :</b> {format_int_dot(now)}\n"
+                f"<b>Доплата :</b> {format_int_dot(pay)} кут"
                 "</blockquote>"
+                f"{who}"
             )
         return (
-            f"{status_emoji_html('ok')} <b>Просмотры обновили.</b>\n"
+            f"<b>Просмотры обновили.</b>\n"
             f"{named}"
             "<blockquote>"
-            "<b>За что:</b> перепроверка видео\n"
-            f"<b>Сейчас:</b> {now}\n"
-            "<b>Доплаты нет:</b> новых полных тысяч не набралось"
+            "<b>За что :</b> перепроверка TikTok видео\n"
+            f"<b>Сейчас :</b> {format_int_dot(now)}\n"
+            "<b>Доплаты нет :</b> новых полных тысяч не набралось"
             "</blockquote>\n"
             f"<i>Следующая проверка через {wait_days} дн.</i>"
+            f"{who}"
         )
     if pay > 0:
         return (
-            f"{status_emoji_html('ok')} <tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{pay} кут</b>\n"
+            f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{format_int_dot(pay)} кут</b>\n"
             f"{named}"
             "<blockquote>"
-            "<b>За что:</b> видео про бота\n"
-            f"<b>Просмотры:</b> {now}\n"
-            f"<b>Счёт:</b> {thousands} × {unit} кут"
+            "<b>За что :</b> TikTok видео про бота\n"
+            f"<b>Просмотры :</b> {format_int_dot(now)}\n"
+            f"<b>Счёт :</b> {format_int_dot(thousands)} × {unit} кут"
             "</blockquote>"
+            f"{who}"
         )
     return (
         f"{status_emoji_html('ok')} <b>Видео принято.</b>\n"
         f"{named}"
         "<blockquote>"
-        "<b>За что:</b> ролик про бота\n"
-        f"<b>Просмотры:</b> {now}\n"
-        "<b>Куты:</b> появятся после 1000 просмотров"
+        "<b>За что :</b> TikTok ролик про бота\n"
+        f"<b>Просмотры :</b> {format_int_dot(now)}\n"
+        f"<b>Куты :</b> появятся после {format_int_dot(VIEWS_PER_UNIT)} просмотров"
         "</blockquote>"
+        f"{who}"
     )
 
 
-def format_video_reject_html(labels: list[str], *, title: str = "") -> str:
-    clean = [str(item).strip() for item in (labels or []) if str(item).strip()]
-    if not clean:
-        raise ValueError("Отметьте хотя бы одну причину отказа")
-    lines = "\n".join(f"<b>{i}.</b> {label}" for i, label in enumerate(clean, 1))
-    named = f"<blockquote><b>{escape(title)}</b></blockquote>\n" if str(title or "").strip() else ""
+def format_video_reject_html(labels: list[str], *, title: str = "", reviewer_html: str = "") -> str:
+    clean = reject_labels(labels)
+    lines = "\n".join(f"<b>{i}.</b> {escape(label)}" for i, label in enumerate(clean, 1))
+    named = f"<b>{escape(title)}</b>\n" if str(title or "").strip() else ""
     return (
         f"{status_emoji_html('no')} <b>Ролик не приняли.</b>\n"
         f"{named}"
-        "<i>Что исправить:</i>\n"
+        "<i>Что исправить :</i>\n"
         f"<blockquote>\n{lines}\n</blockquote>\n"
         "<i>Откройте Ваши ролики и нажмите «Отправить снова».</i>"
+        f"{_who_checked('video', reviewer_html)}"
     )
 
 

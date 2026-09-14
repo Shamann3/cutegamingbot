@@ -20,14 +20,86 @@ import {
 } from '../../lib/adminClient'
 
 const TABS = [
-  { id: 'comments', label: 'Комментарии', hint: 'Дело: сверить 15 кадров. Принять только полную пачку.' },
-  { id: 'videos', label: 'Видео', hint: 'Откройте дело, снимите просмотры с ролика, вынесите вердикт.' },
-  { id: 'live', label: 'Живые', hint: 'Игрок просит пересчитать. Сверьте новые просмотры и доплатите разницу.' },
-  { id: 'archive', label: 'Архив', hint: 'Закрытые дела. Только просмотр.' },
-  { id: 'settings', label: 'Настройки', hint: 'Хештеги и причины отказа. Награду меняет создатель.' },
+  { id: 'comments', label: 'Комментарии', hint: '15 кадров. Щипок или колесо - зум. Принять только полную пачку.' },
+  { id: 'videos', label: 'Видео', hint: 'Откройте ролик. Просмотры: 64.6k или 64.6. Enter - принять.' },
+  { id: 'live', label: 'Живые', hint: 'Новые просмотры минус старые. Доплата только за новые тысячи.' },
+  { id: 'archive', label: 'Архив', hint: 'Закрытые дела. Только просмотр. Скрины можно приближать.' },
+  { id: 'settings', label: 'Настройки', hint: 'Хештеги и причины. Награду меняет создатель.' },
 ]
 
-const GUIDE_KEY = 'cf_tiktok_guide_v3'
+const BRIEF = {
+  comments: {
+    title: 'Комментарии',
+    text: 'Сверьте 15 кадров. Приблизьте скрин щипком или колесом. Принять можно только полную пачку. A принять, R отклонить. Свою причину можно дописать.',
+  },
+  videos: {
+    title: 'Видео',
+    text: 'Откройте ролик, снимите просмотры и впишите 64.6k или 64.6. Enter принять. Причину отказа можно выбрать или написать свою.',
+  },
+  live: {
+    title: 'Перепроверка',
+    text: 'Впишите текущие просмотры. Доплата только за новые полные тысячи. 64.6k или 64.6.',
+  },
+  archive: {
+    title: 'Архив',
+    text: 'Закрытые дела. Только просмотр. Скрины увеличиваются так же, как в очереди.',
+  },
+  settings: {
+    title: 'Настройки',
+    text: 'Хештеги и формулировки отказа. Сумму награды меняет только создатель.',
+  },
+}
+
+function formatIntDot(value) {
+  const n = Math.trunc(Number(value) || 0)
+  const sign = n < 0 ? '-' : ''
+  return sign + String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+
+function formatViewsCompact(value) {
+  const n = Math.max(0, Math.trunc(Number(value) || 0))
+  if (n >= 1_000_000) return `${String((n / 1_000_000).toFixed(1)).replace(/\.0$/, '')}m`
+  if (n >= 1000) return `${String((n / 1000).toFixed(1)).replace(/\.0$/, '')}k`
+  return formatIntDot(n)
+}
+
+function parseViewsInput(raw) {
+  const text = String(raw ?? '').trim().toLowerCase().replace(/\s/g, '').replace(',', '.')
+  if (!text) throw new Error('Впишите просмотры')
+  let mult = 1
+  let body = text
+  if (/[kк]$/i.test(body)) {
+    mult = 1000
+    body = body.slice(0, -1)
+  } else if (/[mм]$/i.test(body)) {
+    mult = 1_000_000
+    body = body.slice(0, -1)
+  }
+  if (!/^\d+(\.\d+)*$/.test(body)) throw new Error('Просмотры: 64.6k или 1.000')
+  const parts = body.split('.')
+  if (mult > 1) return Math.round(Number(body) * mult)
+  if (parts.length === 1) return Number(parts[0])
+  if (parts.slice(1).every((p) => p.length === 3)) return Number(parts.join(''))
+  if (parts.length === 2 && parts[1].length >= 1 && parts[1].length <= 2 && Number(parts[0]) < 1000) {
+    return Math.round(Number(body) * 1000)
+  }
+  throw new Error('Просмотры: 64.6k или 1.000')
+}
+
+function Briefing({ tab, count = 0, onStart, compact = false }) {
+  const copy = BRIEF[tab] || BRIEF.comments
+  return (
+    <div className={`tt-brief${compact ? ' is-compact' : ''}`}>
+      <div>
+        <h3>{copy.title}</h3>
+        <p>{copy.text}</p>
+      </div>
+      {onStart && count > 0 ? (
+        <button type="button" className="tt-btn tt-btn-ok" onClick={onStart}>Начать работу</button>
+      ) : null}
+    </div>
+  )
+}
 
 function fmtDate(iso) {
   if (!iso) return '—'
@@ -131,21 +203,6 @@ function plainText(html) {
   return String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-function Guide({ onClose }) {
-  return (
-    <div className="tt-guide">
-      <button type="button" className="tt-guide-x" onClick={onClose} aria-label="Закрыть гид">×</button>
-      <h3>Разбор дел</h3>
-      <ol>
-        <li>Комментарии: кадры - улики. Клик увеличивает. Красное - почти дубль.</li>
-        <li>Видео: откройте ролик, снимите просмотры, впишите число. Enter - принять.</li>
-        <li>A принять · R отклонить · N следующее · Esc очередь.</li>
-      </ol>
-      <button type="button" className="tt-btn tt-btn-ok" onClick={onClose}>Понятно</button>
-    </div>
-  )
-}
-
 function CommentCase({ item, onOpen, current }) {
   const count = item.photoCount || (item.photos || []).length
   const needed = item.photosRequired || 15
@@ -175,10 +232,21 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
   const [viewer, setViewer] = useState(null)
   const [local, setLocal] = useState(item)
   const [reasons, setReasons] = useState([])
+  const [customReason, setCustomReason] = useState('')
   const [stamp, setStamp] = useState(null)
   const busyRef = useRef(false)
+  const reasonsRef = useRef([])
+  const customRef = useRef('')
 
-  useEffect(() => { setLocal(item); setViewer(null); setReasons([]); setStamp(null) }, [item])
+  useEffect(() => {
+    setLocal(item)
+    setViewer(null)
+    setReasons([])
+    reasonsRef.current = []
+    setCustomReason('')
+    customRef.current = ''
+    setStamp(null)
+  }, [item])
 
   const matchByIndex = useMemo(() => {
     const map = {}
@@ -293,12 +361,14 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
       }
       if (e.key === 'r' || e.key === 'R') {
         if (viewOnly) return
-        if (!reasons.length) {
-          showToast('Отметьте хотя бы одну причину отказа')
+        const picked = reasonsRef.current
+        const own = String(customRef.current || '').trim()
+        if (!picked.length && !own) {
+          showToast('Отметьте причину или напишите свою')
           return
         }
         e.preventDefault()
-        decide(() => rejectTiktokComment(local.id, reasons), 'Отклонено, игроку ушёл ответ', 'no')
+        decide(() => rejectTiktokComment(local.id, picked, own), 'Отклонено, игроку ушёл ответ', 'no')
       }
       if (e.key === 'n' || e.key === 'N' || e.key === 'j' || e.key === 'J') {
         e.preventDefault()
@@ -444,25 +514,41 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
       {!viewOnly && (
         <>
           <div className="tt-reasons">
-            <p className="tt-hint">Почему отклоняем. Игрок увидит эти пункты.</p>
+            <p className="tt-hint">Почему отклоняем. Игрок увидит эти пункты. Свою формулировку можно дописать.</p>
             {(commentRejectReasons || []).map((r) => (
               <label key={r.id} className={`tt-reason-chip${reasons.includes(r.id) ? ' is-on' : ''}`}>
                 <input
                   type="checkbox"
                   checked={reasons.includes(r.id)}
-                  onChange={() => setReasons((cur) => (cur.includes(r.id) ? cur.filter((x) => x !== r.id) : [...cur, r.id]))}
+                  onChange={() => setReasons((cur) => {
+                    const next = cur.includes(r.id) ? cur.filter((x) => x !== r.id) : [...cur, r.id]
+                    reasonsRef.current = next
+                    return next
+                  })}
                 />
                 {r.label || 'Причина без названия'}
               </label>
             ))}
+            <label className="tt-field tt-field-box">
+              <span>Своя причина, по желанию</span>
+              <textarea
+                rows={3}
+                value={customReason}
+                placeholder="Коротко, своими словами"
+                onChange={(e) => {
+                  setCustomReason(e.target.value)
+                  customRef.current = e.target.value
+                }}
+              />
+            </label>
           </div>
           <p className="tt-keys">A принять · R отклонить · N следующее · Esc очередь</p>
           <div className="tt-actions tt-actions-bar">
             <button
               type="button"
               className="tt-btn tt-btn-hot"
-              disabled={busy || !reasons.length}
-              onClick={() => decide(() => rejectTiktokComment(local.id, reasons), 'Отклонено', 'no')}
+              disabled={busy || (!reasons.length && !customReason.trim())}
+              onClick={() => decide(() => rejectTiktokComment(local.id, reasons, customReason), 'Отклонено', 'no')}
             >
               Отклонить
             </button>
@@ -495,8 +581,8 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
 }
 
 function initialVideoViews(item) {
-  if (item.recheckPending) return item.lastViews ?? 0
-  if (item.lastViews) return item.lastViews
+  if (item.recheckPending && item.lastViews) return formatViewsCompact(item.lastViews)
+  if (item.lastViews) return formatViewsCompact(item.lastViews)
   return ''
 }
 
@@ -527,7 +613,7 @@ function VideoCase({ item, onOpen, current }) {
         <span className={item.recheckPending ? 'tt-flag-hot' : item.status === 'pending' ? 'tt-flag-incomplete' : 'tt-flag-ok'}>
           {videoFlag(item)}
         </span>
-        {item.lastViews ? <span className="tt-flag-muted">{Number(item.lastViews).toLocaleString('ru-RU')} просм.</span> : null}
+        {item.lastViews ? <span className="tt-flag-muted">{formatViewsCompact(item.lastViews)} просм.</span> : null}
       </div>
     </button>
   )
@@ -536,11 +622,13 @@ function VideoCase({ item, onOpen, current }) {
 function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvance, onDecided }) {
   const [views, setViews] = useState(() => initialVideoViews(item))
   const [reasons, setReasons] = useState([])
+  const [customReason, setCustomReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [stamp, setStamp] = useState(null)
   const busyRef = useRef(false)
   const viewsRef = useRef(initialVideoViews(item))
   const reasonsRef = useRef([])
+  const customRef = useRef('')
 
   useEffect(() => {
     const start = initialVideoViews(item)
@@ -548,11 +636,19 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
     viewsRef.current = start
     setReasons([])
     reasonsRef.current = []
+    setCustomReason('')
+    customRef.current = ''
     setStamp(null)
   }, [item])
 
   const unit = settings?.kutPerUnit || 30
-  const preview = kutForViews(views, unit)
+  let parsedViews = null
+  try {
+    parsedViews = views === '' || views == null ? null : parseViewsInput(views)
+  } catch {
+    parsedViews = null
+  }
+  const preview = parsedViews == null ? 0 : kutForViews(parsedViews, unit)
   const old = item.lastViews || 0
   const oldKut = kutForViews(old, unit)
   const delta = Math.max(0, preview - oldKut)
@@ -584,20 +680,28 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
       showToast('Впишите просмотры с ролика')
       return
     }
-    const pay = kutForViews(raw, unit)
+    let count
+    try {
+      count = parseViewsInput(raw)
+    } catch (err) {
+      showToast(err.message || 'Просмотры: 64.6k или 1.000')
+      return
+    }
+    const pay = kutForViews(count, unit)
     const extra = Math.max(0, pay - kutForViews(item.lastViews || 0, unit))
-    const ok = item.recheckPending ? `Доплата ${extra} кут` : `Начислили ${pay} кут`
-    decide(() => approveTiktokVideo(item.id, Number(raw)), ok, 'ok')
+    const ok = item.recheckPending ? `Доплата ${formatIntDot(extra)} кут` : `Начислили ${formatIntDot(pay)} кут`
+    decide(() => approveTiktokVideo(item.id, raw), ok, 'ok')
   }
 
   const reject = () => {
     const picked = reasonsRef.current
+    const own = String(customRef.current || '').trim()
     if (!canReject) return
-    if (!picked.length) {
-      showToast('Отметьте хотя бы одну причину отказа')
+    if (!picked.length && !own) {
+      showToast('Отметьте причину или напишите свою')
       return
     }
-    decide(() => rejectTiktokVideo(item.id, picked), 'Отклонено, игроку ушёл ответ', 'no')
+    decide(() => rejectTiktokVideo(item.id, picked, own), 'Отклонено, игроку ушёл ответ', 'no')
   }
 
   useEffect(() => {
@@ -660,15 +764,14 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
       <a className="tt-link tt-link-case" href={item.url} target="_blank" rel="noreferrer">Открыть улику в TikTok</a>
       {item.recheckPending && (
         <div className="tt-incomplete-note">
-          Перепроверка. Раньше было {old.toLocaleString('ru-RU')} просмотров · {oldKut} кут. Доплатите только разницу.
+          Перепроверка. Раньше было {formatViewsCompact(old)} · {formatIntDot(oldKut)} кут. Доплатите только разницу.
         </div>
       )}
       <label className="tt-field">
         <span>Просмотры сейчас</span>
         <input
-          type="number"
-          min="0"
-          inputMode="numeric"
+          type="text"
+          inputMode="decimal"
           autoFocus
           value={views}
           onFocus={(e) => e.target.select()}
@@ -676,16 +779,17 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
             setViews(e.target.value)
             viewsRef.current = e.target.value
           }}
-          placeholder="Например 12500"
+          placeholder="64.6k или 64.6"
         />
         <small className="tt-kut-live">
-          <b key={preview}>{preview} кут</b>
-          {item.recheckPending ? ` · доплата ${delta} кут` : ''}
+          <b key={preview}>{formatIntDot(preview)} кут</b>
+          {item.recheckPending ? ` · доплата ${formatIntDot(delta)} кут` : ''}
+          {parsedViews != null ? ` · ${formatViewsCompact(parsedViews)}` : ''}
         </small>
       </label>
       {canReject && (
         <div className="tt-reasons">
-          <p className="tt-hint">Почему отклоняем. Игрок увидит эти пункты.</p>
+          <p className="tt-hint">Почему отклоняем. Можно выбрать пункты или написать свою причину.</p>
           {(rejectReasons || []).map((r) => (
             <label key={r.id} className={`tt-reason-chip${reasons.includes(r.id) ? ' is-on' : ''}`}>
               <input
@@ -702,6 +806,18 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
               {r.label || 'Причина без названия'}
             </label>
           ))}
+          <label className="tt-field tt-field-box">
+            <span>Своя причина, по желанию</span>
+            <textarea
+              rows={3}
+              value={customReason}
+              placeholder="Коротко, своими словами"
+              onChange={(e) => {
+                setCustomReason(e.target.value)
+                customRef.current = e.target.value
+              }}
+            />
+          </label>
         </div>
       )}
       <p className="tt-keys">
@@ -714,7 +830,7 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
           <button
             type="button"
             className="tt-btn tt-btn-hot"
-            disabled={busy || !reasons.length}
+            disabled={busy || (!reasons.length && !customReason.trim())}
             onClick={reject}
           >
             Отклонить
@@ -723,10 +839,10 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
         <button
           type="button"
           className="tt-btn tt-btn-ok"
-          disabled={busy || views === ''}
+          disabled={busy || views === '' || parsedViews == null}
           onClick={approve}
         >
-          {item.recheckPending ? `Доплатить ${delta} кут` : `Начислить ${preview} кут`}
+          {item.recheckPending ? `Доплатить ${formatIntDot(delta)} кут` : `Начислить ${formatIntDot(preview)} кут`}
         </button>
       </div>
     </div>
@@ -785,7 +901,7 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
         <p className="tt-hint">
           {canEditRewards
             ? 'Новые одобрения и доплаты за перепроверку считают по этим цифрам. Уже выплаченное не переписываем.'
-            : 'Сейчас видишь актуальные цифры. Менять награду может только создатель проекта.'}
+            : 'Сейчас видны актуальные цифры. Менять награду может только создатель проекта.'}
         </p>
         <div className="tt-reward-grid">
           <label className="tt-field">
@@ -812,10 +928,10 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
           </label>
         </div>
         <div className="tt-reward-live">
-          <span>{pack} скринов = {commentPay || '-'} кут</span>
-          <span>каждые 1000 просмотров = {videoPay || '-'} кут</span>
+          <span>{pack} скринов = {formatIntDot(commentPay) || '-'} кут</span>
+          <span>каждые {formatIntDot(1000)} просмотров = {formatIntDot(videoPay) || '-'} кут</span>
         </div>
-        <p className="tt-hint">Пачка: {caps.commentMin}-{caps.commentMax} кут. Видео: {caps.videoMin}-{caps.videoMax} кут за тысячу. Перепроверка: (новые тысячи - старые) x текущая награда.</p>
+        <p className="tt-hint">Пачка: {formatIntDot(caps.commentMin)}-{formatIntDot(caps.commentMax)} кут. Видео: {formatIntDot(caps.videoMin)}-{formatIntDot(caps.videoMax)} кут за тысячу. Перепроверка: (новые тысячи - старые) × текущая награда.</p>
       </div>
 
       <label className="tt-field">
@@ -838,6 +954,7 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
         {photoReasons.map((r, i) => (
           <div key={r.id || i} className="tt-reason-row">
             <input
+              className="tt-box-input"
               value={r.label || ''}
               onChange={(e) => {
                 const next = photoReasons.map((row, idx) => (idx === i ? { ...row, label: e.target.value } : row))
@@ -869,6 +986,7 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
         {reasons.map((r, i) => (
           <div key={r.id || i} className="tt-reason-row">
             <input
+              className="tt-box-input"
               value={r.label || ''}
               onChange={(e) => {
                 const next = reasons.map((row, idx) => (idx === i ? { ...row, label: e.target.value } : row))
@@ -902,7 +1020,6 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
   const allowed = panelTabs?.tiktok
   const can = (id) => role === 'owner' || allowed == null || allowed.includes(id)
   const [tab, setTab] = useState(() => TABS.find((t) => can(t.id))?.id || 'comments')
-  const [guide, setGuide] = useState(() => !localStorage.getItem(GUIDE_KEY))
   const [map, setMap] = useState(null)
   const [overview, setOverview] = useState(null)
   const [comments, setComments] = useState([])
@@ -1015,17 +1132,8 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
       <p className="panel-shelf-label">TikTok</p>
       <h2 className="panel-page-title">Разбор заявок</h2>
       <p className="panel-page-lead">
-        Откройте дело, сверьте улики, вынесите вердикт.
+        Сначала прочитайте, что делать на вкладке. Затем нажмите «Начать работу».
       </p>
-
-      {guide && (
-        <Guide
-          onClose={() => {
-            localStorage.setItem(GUIDE_KEY, '1')
-            setGuide(false)
-          }}
-        />
-      )}
 
       <div className="tt-tabs" role="tablist">
         {TABS.map((t) => (
@@ -1047,6 +1155,21 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
       </div>
 
       <p className="tt-hint">{TABS.find((t) => t.id === tab)?.hint}</p>
+
+      {!locked && (
+        <Briefing
+          tab={tab}
+          compact={Boolean(openCase || openVideo)}
+          count={tab === 'comments' ? comments.length : (tab === 'videos' || tab === 'live') ? videos.length : 0}
+          onStart={
+            tab === 'comments' && comments.length && !openCase
+              ? () => openFromQueue(comments[0])
+              : (tab === 'videos' || tab === 'live') && videos.length && !openVideo
+                ? () => setOpenVideo(videos[0])
+                : undefined
+          }
+        />
+      )}
 
       {locked ? (
         <LockCard tab={TABS.find((t) => t.id === tab)} map={map} />
