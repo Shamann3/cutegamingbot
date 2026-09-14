@@ -512,8 +512,9 @@ def format_photo_reject_html(labels: list[str], *, reviewer_html: str = "") -> s
     lines = "\n".join(f"<b>{i}.</b> {escape(label)}" for i, label in enumerate(clean, 1))
     return (
         f"{status_emoji_html('no')} <b>Комментарии не приняли.</b>\n"
-        "<i>Что исправить :</i>\n"
-        f"<blockquote>\n{lines}\n</blockquote>"
+        "<blockquote>"
+        f"<b>Что исправить :</b>\n{lines}"
+        "</blockquote>"
         f"{_who_checked('comments', reviewer_html)}"
     )
 
@@ -528,7 +529,7 @@ def format_comment_payout_html(
     pack = max(1, int(photos or PHOTOS_REQUIRED))
     return (
         f"<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+{format_int_dot(pay)} кут</b>\n"
-        f"<i>{pack} скринов за комментарии.</i>"
+        f"<blockquote><b>{pack} скринов</b> за комментарии</blockquote>"
         f"{_who_checked('comments', reviewer_html)}"
     )
 
@@ -605,9 +606,10 @@ def format_video_reject_html(labels: list[str], *, title: str = "", reviewer_htm
     return (
         f"{status_emoji_html('no')} <b>Ролик не приняли.</b>\n"
         f"{named}"
-        "<i>Что исправить :</i>\n"
-        f"<blockquote>\n{lines}\n</blockquote>\n"
-        "<i>Откройте Ваши ролики и нажмите «Отправить снова».</i>"
+        "<blockquote>"
+        f"<b>Что исправить :</b>\n{lines}"
+        "</blockquote>\n"
+        "<blockquote><i>Ваши ролики → «Отправить снова».</i></blockquote>"
         f"{_who_checked('video', reviewer_html)}"
     )
 

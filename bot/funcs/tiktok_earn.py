@@ -117,9 +117,9 @@ TEXT_WAIT_KINDS = frozenset({WAIT_NICK, WAIT_NICK_EDIT, WAIT_LINK, WAIT_TITLE})
 CANCEL_WORDS = frozenset({"назад", "завершить"})
 WAIT_TTL_SECONDS = 300
 PHOTO_WAIT_TTL_SECONDS = 1200
-CANCEL_HINT = "<blockquote><i>Чтобы выйти - напишите</i> <code>Назад</code> <i>или</i> <code>Завершить</code></blockquote>"
-REPLY_HINT = "<blockquote><i>Отправьте следующим сообщением в этот чат.</i></blockquote>"
-PHOTO_HINT = "<blockquote><i>Можно альбомом или по одному. Отправьте фото в этот чат. Telegram берёт до 10 фото за раз - пришлите ещё, пока не будет 15.</i></blockquote>"
+CANCEL_HINT = "<blockquote><i>Выйти :</i> <code>Назад</code> <i>или</i> <code>Завершить</code></blockquote>"
+REPLY_HINT = "<blockquote><i>Отправьте следующим сообщением.</i></blockquote>"
+PHOTO_HINT = "<blockquote><i>Отправьте фото в этот чат. Альбомом или по одному.</i></blockquote>"
 INPUT_FOOTER = f"{REPLY_HINT}\n{CANCEL_HINT}"
 PHOTO_FOOTER = f"{PHOTO_HINT}\n{CANCEL_HINT}"
 
@@ -331,8 +331,10 @@ def _status_icon(kind: str) -> str:
     return {"ok": ICON_STATUS_OK, "no": ICON_STATUS_NO}.get(kind, ICON_STATUS_WAIT)
 
 
-def _btn(text: str, data: str, icon: str | None = None, style: str = "primary") -> InlineKeyboardButton:
-    kwargs: dict[str, Any] = {"text": text, "callback_data": data, "style": style}
+def _btn(text: str, data: str, icon: str | None = None, style: str | None = None) -> InlineKeyboardButton:
+    kwargs: dict[str, Any] = {"text": text, "callback_data": data}
+    if style:
+        kwargs["style"] = style
     if icon:
         kwargs["icon_custom_emoji_id"] = icon
     return InlineKeyboardButton(**kwargs)
@@ -374,7 +376,7 @@ def _notice_block(notice: str) -> str:
 def help_earnings_block() -> str:
     return (
         f"<tg-emoji emoji-id='{ICON_TT}'>🎵</tg-emoji> <b>Тик ток</b>\n"
-        "<i>Откройте Задания, нажмите Тик ток и выберите комментарии или видео. Бот покажет, что делать по шагам.</i>\n"
+        "<i>Откройте Задания и нажмите Тик ток.</i>\n"
         "<blockquote><code>Задания</code></blockquote>"
     )
 
@@ -386,31 +388,31 @@ def text_hub(cfg: dict[str, Any] | None = None, *, has_nicks: bool = False) -> s
     needed = int(s["photosRequired"])
     unit = format_int_dot(int(s["viewsPerUnit"]))
     extra = (
-        "<i>Имена уже сохранены.</i>"
+        "<blockquote><b>Имена :</b> уже сохранены</blockquote>"
         if has_nicks
-        else "<i>Сначала напишите имя своего TikTok.</i>"
+        else "<blockquote><b>Сначала :</b> напишите имя своего TikTok</blockquote>"
     )
     return (
         f"<tg-emoji emoji-id='{ICON_TT}'>🎵</tg-emoji> <b>Тик ток</b>\n"
-        "<i>Выберите.</i>\n"
-        f"{extra}\n"
         "<blockquote>"
-        f"<b>Комментарии</b> - {needed} скринов, {reward} кут.\n"
-        f"<b>Видео</b> - {kut} кут за каждую {unit} просмотров."
-        "</blockquote>"
+        f"<b>Комментарии :</b> {needed} скринов · {reward} кут\n"
+        f"<b>Видео :</b> {kut} кут за {unit} просмотров"
+        "</blockquote>\n"
+        f"{extra}\n"
+        "<i>Выберите.</i>"
     )
 
 
 def text_need_nick(after: str = "", error: str = "") -> str:
     head = f"<b>{escape(error)}</b>\n" if error else ""
     why = {
-        "comments": "Без имени не видно, что комментарии Ваши.",
-        "videos": "Без имени ролик нельзя принять на проверку.",
-        "mine": "Без имени нельзя открыть сдачу роликов.",
-    }.get(after, "Без имени работу принять нельзя.")
+        "comments": "чтобы было видно, что комментарии Ваши",
+        "videos": "чтобы принять ролик на проверку",
+        "mine": "чтобы открыть Ваши ролики",
+    }.get(after, "чтобы принять работу")
     return (
         f"{head}<b>Напишите имя своего TikTok</b>\n"
-        f"<i>{why} Как в приложении, без ссылки.</i>\n"
+        f"<blockquote><b>Зачем :</b> {why}</blockquote>\n"
         f"<blockquote><code>{EXAMPLE_NICK}</code></blockquote>\n"
         f"{INPUT_FOOTER}"
     )
@@ -431,11 +433,11 @@ def text_comments(cfg: dict[str, Any] | None = None) -> str:
     needed = int(s["photosRequired"])
     return (
         f"<tg-emoji emoji-id='{ICON_COMMENTS}'>💬</tg-emoji> <b>Комментарии</b>\n"
-        "<i>Делайте по порядку. Один кадр - один комментарий с лайком на своём.</i>\n"
+        "<i>Делайте по порядку.</i>\n"
         "<blockquote>"
         f"<b>1.</b> Ролики с хештегом <code>{escape(tag)}</code>\n"
         "<b>2.</b> Комментарий и лайк на свой\n"
-        f"<b>3.</b> {needed} скринов, {reward} кут"
+        f"<b>3.</b> {needed} скринов · {reward} кут"
         "</blockquote>\n"
         f"<blockquote><code>{escape(EXAMPLE_COMMENT)}</code></blockquote>\n"
         f"{PHOTO_FOOTER}"
@@ -452,10 +454,13 @@ def text_videos(cfg: dict[str, Any] | None = None) -> str:
         "<i>Делайте по порядку.</i>\n"
         "<blockquote>"
         f"<b>1.</b> Название\n"
-        f"<b>2.</b> Ссылка. В ролике поставьте {tag}"
+        f"<b>2.</b> Ссылка"
+        "</blockquote>\n"
+        "<blockquote>"
+        f"<b>Хештег :</b> {tag}\n"
+        f"<b>Награда :</b> {kut} кут за {unit} просмотров"
         "</blockquote>\n"
         f"<code>{escape(EXAMPLE_VIDEO_TITLE)}</code>\n"
-        f"<i>За каждые {unit} просмотров - {kut} кут.</i>\n"
         f"{INPUT_FOOTER}"
     )
 
@@ -467,18 +472,18 @@ def collect_text(count: int, needed: int, nicks: list[str] | None = None, cfg: d
     names = _nicks_line(nicks)
     if count >= needed:
         body = (
-            f"<b>{count} из {needed}.</b> Серия собрана.\n"
-            f"<i>{reward} кут будут Ваши после проверки.</i>"
+            f"<b>{count} из {needed}</b>\n"
+            f"<blockquote><b>Готово :</b> {reward} кут после проверки</blockquote>"
         )
     elif count > 0:
         body = (
-            f"<b>{count} из {needed}.</b> Ещё {left} фото - и {reward} кут Ваши.\n"
-            f"<i>Продолжайте с аккаунта {names}.</i>"
+            f"<b>{count} из {needed}</b>\n"
+            f"<blockquote><b>Ещё {left}</b> · {names}</blockquote>"
         )
     else:
         body = (
-            f"<b>0 из {needed}.</b> Пришлите первый скрин.\n"
-            f"<i>Комментарии с аккаунта {names}.</i>"
+            f"<b>0 из {needed}</b>\n"
+            f"<blockquote><b>Аккаунт :</b> {names}</blockquote>"
         )
     return (
         f"{status_emoji_html('wait')} {body}\n"
@@ -501,7 +506,7 @@ def comments_screen_text(
     if pending:
         return (
             f"{head}{status_emoji_html('wait')} <b>Серия на проверке.</b>\n"
-            f"<i>{count} из {needed}. Ждём решение - новую пачку можно собрать после ответа.</i>\n"
+            f"<blockquote><b>{count} из {needed}</b></blockquote>\n"
             f"{CANCEL_HINT}"
         )
     if count > 0:
@@ -510,14 +515,13 @@ def comments_screen_text(
         reason = escape(str(latest.get("rejectText") or "Серию не приняли."))
         return (
             f"{head}{status_emoji_html('no')} <b>Прошлая серия не прошла.</b>\n"
-            f"<i>{reason}</i>\n"
-            f"<i>Можно сразу собрать новую: {needed} свежих скринов.</i>\n\n"
+            f"<blockquote>{reason}</blockquote>\n"
             f"{text_comments(s)}"
         )
     if latest and latest.get("status") == "approved":
         return (
             f"{head}{status_emoji_html('ok')} <b>Прошлая серия принята.</b>\n"
-            f"<i>Можно собрать следующую пачку на {int(s['commentReward'])} кут.</i>\n\n"
+            f"<blockquote><b>Следующая :</b> {int(s['commentReward'])} кут</blockquote>\n"
             f"{text_comments(s)}"
         )
     return head + text_comments(s)
@@ -535,8 +539,8 @@ def videos_screen_text(
     if pending:
         title = escape(str(pending.get("title") or f"Ролик #{pending.get('id')}"))
         return (
-            f"{head}{status_emoji_html('wait')} <b>{title}</b> на проверке.\n"
-            "<i>Откройте Ваши ролики.</i>\n"
+            f"{head}{status_emoji_html('wait')} <b>{title}</b>\n"
+            "<blockquote><b>На проверке</b></blockquote>\n"
             f"{CANCEL_HINT}"
         )
     return head + text_videos(s)
@@ -548,10 +552,10 @@ def text_wait_photos(count: int = 0, needed: int = 15, nicks: list[str] | None =
 
 def text_wait_title(error: str = "", *, replace: bool = False) -> str:
     head = f"<b>{escape(error)}</b>\n" if error else ""
-    action = "новое название" if replace else "название"
+    action = "Новое название" if replace else "Название"
     return (
-        f"{head}{status_emoji_html('wait')} <b>{action.capitalize()}.</b>\n"
-        "<i>Затем ссылку.</i>\n"
+        f"{head}{status_emoji_html('wait')} <b>{action}.</b>\n"
+        "<blockquote><i>Затем ссылку.</i></blockquote>\n"
         f"{INPUT_FOOTER}"
     )
 
@@ -572,7 +576,7 @@ def text_link_screen(error: str = "", title: str = "") -> str:
 def text_wait_expired() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Срок ввода истёк</b>\n"
-        "<i>Попробуйте повторно загрузить доказательства - откройте Тик ток и начните шаг заново.</i>\n"
+        "<blockquote><i>Попробуйте повторно загрузить доказательства.</i></blockquote>\n"
         f"{INPUT_FOOTER}"
     )
 
@@ -581,26 +585,26 @@ def text_photos_on_review(added: int, count: int, needed: int, nicks: list[str] 
     word = ru_screenshot_word(added)
     verb = ru_gone_verb(added)
     names = _nicks_line(nicks)
-    wait = " Ждём решение." if count >= needed else f" Ещё {max(0, needed - count)} - и серия уйдёт на проверку."
+    wait = "Ждём решение" if count >= needed else f"ещё {max(0, needed - count)}"
     return (
         f"{status_emoji_html('wait')} <b>{added} {word} {verb} на проверку.</b>\n"
-        f"<i>{count} из {needed}.{wait} Аккаунт: {names}.</i>\n"
+        f"<blockquote><b>{count} из {needed}</b> · {wait} · {names}</blockquote>\n"
         f"{PHOTO_FOOTER if count < needed else CANCEL_HINT}"
     )
 
 
 def text_press_send_photos() -> str:
-    return "<b>Сначала нажмите кнопку</b> в меню комментариев, затем пришлите фото."
+    return "<b>Сначала нажмите кнопку.</b>\n<blockquote>Затем пришлите фото.</blockquote>"
 
 
 def text_press_send_link() -> str:
-    return "<b>Сначала нажмите кнопку</b> в меню видео, затем пришлите название и ссылку."
+    return "<b>Сначала нажмите кнопку.</b>\n<blockquote>Затем название и ссылку.</blockquote>"
 
 
 def text_photo_wait_error(hint: str, count: int, needed: int) -> str:
     return (
         f"<b>{escape(hint)}</b>\n"
-        f"<i>Сейчас {count} из {needed}.</i>\n"
+        f"<blockquote><b>Сейчас :</b> {count} из {needed}</blockquote>\n"
         f"{PHOTO_FOOTER}"
     )
 
@@ -610,9 +614,9 @@ def text_nicks(nicks: list[str], *, locked: bool = False) -> str:
         return text_need_nick()
     listed = "\n".join(f"<code>@{escape(n)}</code>" for n in nicks)
     lock = (
-        "<i>Сейчас идёт проверка. Имена можно сменить после ответа.</i>"
+        "<blockquote><b>Сейчас :</b> идёт проверка</blockquote>"
         if locked
-        else "<i>Можно добавить ещё имя или сменить текущее.</i>"
+        else "<blockquote><i>Добавить или сменить имя.</i></blockquote>"
     )
     return f"<b>Ваши имена TikTok</b>\n{listed}\n{lock}"
 
@@ -622,13 +626,13 @@ def text_my_videos(videos: list[dict[str, Any]] | None = None, page: int = 0) ->
     if not items:
         return (
             f"{status_emoji_html('wait')} <b>Ваши ролики</b>\n"
-            "<i>Пока пусто. Назовите ролик и пришлите ссылку - он появится здесь со статусом.</i>"
+            "<blockquote><i>Пока пусто.</i></blockquote>"
         )
     _, pages = _video_pages(len(items), page)
     extra = f" · стр. {page + 1} из {pages}" if pages > 1 else ""
     return (
         f"<b>Ваши ролики</b>{escape(extra)}\n"
-        "<i>Зелёный - принят, жёлтый - ждём, красный - можно отправить снова.</i>"
+        "<blockquote><b>Зелёный</b> принят · <b>жёлтый</b> ждём · <b>красный</b> снова</blockquote>"
     )
 
 
@@ -643,12 +647,12 @@ def text_video_card(item: dict[str, Any] | None, notice: str = "") -> str:
     paid = int(item.get("paidKut") or 0)
     head = _notice_block(notice)
     if status == "rejected":
-        state = "<i>Не приняли. Нажмите «Отправить снова».</i>"
+        state = "<blockquote><b>Не приняли.</b> Нажмите «Отправить снова».</blockquote>"
     elif status == "pending" or recheck:
-        state = "<i>На проверке.</i>"
+        state = "<blockquote><b>На проверке.</b></blockquote>"
     else:
         state = (
-            f"<i>Принят. {format_int_dot(views)} просмотров, {format_int_dot(paid)} кут.</i>"
+            f"<blockquote><b>Принят :</b> {format_int_dot(views)} просм. · {format_int_dot(paid)} кут</blockquote>"
         )
     return (
         f"{head}{status_emoji_html(kind)} <b>{title}</b>\n"
@@ -658,7 +662,7 @@ def text_video_card(item: dict[str, Any] | None, notice: str = "") -> str:
 
 
 def text_done_nick_added(nick: str, have: list[str] | None = None) -> str:
-    extra = f"\n<i>Сейчас сохранено: {_nicks_line(have)}</i>" if have else ""
+    extra = f"\n<blockquote><b>Сейчас :</b> {_nicks_line(have)}</blockquote>" if have else ""
     return (
         f"{status_emoji_html('ok')} <b>Имя @{escape(nick)} сохранено.</b>"
         f"{extra}"
@@ -668,7 +672,7 @@ def text_done_nick_added(nick: str, have: list[str] | None = None) -> str:
 def text_done_nick_changed(old: str, new: str) -> str:
     return (
         f"{status_emoji_html('ok')} <b>Имя сменили.</b>\n"
-        f"<i>@{escape(old)} - теперь @{escape(new)}</i>"
+        f"<blockquote>@{escape(old)} - теперь @{escape(new)}</blockquote>"
     )
 
 
@@ -676,26 +680,29 @@ def text_done_video_sent(url: str, title: str = "") -> str:
     named = f"<b>{escape(title)}</b>\n" if title else ""
     return (
         f"{status_emoji_html('wait')} {named}<b>На проверке.</b>\n"
-        f"{_link_html(url)}"
+        f"<blockquote>{_link_html(url)}</blockquote>"
     )
 
 
 def text_done_undo(count: int, needed: int) -> str:
-    return f"{status_emoji_html('wait')} <b>Последний кадр убрали.</b> Сейчас {count} из {needed}."
+    return (
+        f"{status_emoji_html('wait')} <b>Последний кадр убрали.</b>\n"
+        f"<blockquote><b>Сейчас :</b> {count} из {needed}</blockquote>"
+    )
 
 
 def text_done_recheck(item: dict[str, Any] | None = None) -> str:
     title = escape(str((item or {}).get("title") or "ролик"))
     return (
         f"{status_emoji_html('wait')} <b>Пересчёт просмотров запросили.</b>\n"
-        f"<i>{title} снова в очереди. Доплата придёт только за новые тысячи.</i>"
+        f"<blockquote><b>{title}</b> · только новые тысячи</blockquote>"
     )
 
 
 def text_case_withdrawn() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Серию сняли с проверки.</b>\n"
-        "<i>Можно сразу собрать новую пачку скринов.</i>"
+        "<blockquote><i>Можно собрать новую пачку.</i></blockquote>"
     )
 
 
@@ -717,8 +724,8 @@ def video_recheck_state(last_checked: datetime | None, days: int = 7) -> dict[st
 
 def hub_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Комментарии", TT_COMMENTS, ICON_COMMENTS)],
-        [_btn("Видео о боте", TT_VIDEOS, ICON_VIDEOS)],
+        [_btn("Комментарии", TT_COMMENTS, ICON_COMMENTS, style="primary")],
+        [_btn("Видео о боте", TT_VIDEOS, ICON_VIDEOS, style="primary")],
         [_btn("Ники TikTok", TT_NICKS, ICON_NICKS)],
         [_btn("Ваши ролики", TT_MY_VIDEOS, ICON_MY_VIDEOS)],
         [_btn("Назад", TT_BACK_TASKS, ICON_BACK)],

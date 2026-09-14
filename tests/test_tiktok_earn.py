@@ -70,10 +70,12 @@ def test_hub_buttons_use_premium_emoji_ids():
     assert "<tg-emoji" not in comments.text
     assert comments.icon_custom_emoji_id == ICON_COMMENTS == "5350367217349311525"
     assert videos.icon_custom_emoji_id == ICON_VIDEOS == "5375309569905938163"
-    for row in kb.inline_keyboard:
+    assert getattr(comments, "style", None) == "primary"
+    assert getattr(videos, "style", None) == "primary"
+    for row in kb.inline_keyboard[2:]:
         for btn in row:
             assert btn.icon_custom_emoji_id, btn.text
-            assert getattr(btn, "style", None) == "primary"
+            assert getattr(btn, "style", None) != "primary"
 
 
 def test_player_tiktok_texts_have_no_emdash():

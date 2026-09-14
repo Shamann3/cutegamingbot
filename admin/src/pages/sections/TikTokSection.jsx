@@ -20,33 +20,33 @@ import {
 } from '../../lib/adminClient'
 
 const TABS = [
-  { id: 'comments', label: 'Комментарии', hint: '15 кадров. Щипок или колесо - зум. Принять только полную пачку.' },
-  { id: 'videos', label: 'Видео', hint: 'Откройте ролик. Просмотры: 64.6k или 64.6. Enter - принять.' },
-  { id: 'live', label: 'Живые', hint: 'Новые просмотры минус старые. Доплата только за новые тысячи.' },
-  { id: 'archive', label: 'Архив', hint: 'Закрытые дела. Только просмотр. Скрины можно приближать.' },
+  { id: 'comments', label: 'Комментарии', hint: '15 кадров. Принять только полную пачку.' },
+  { id: 'videos', label: 'Видео', hint: 'Просмотры: 64.6k или 64.6. Enter - принять.' },
+  { id: 'live', label: 'Живые', hint: 'Доплата только за новые тысячи.' },
+  { id: 'archive', label: 'Архив', hint: 'Закрытые дела. Только просмотр.' },
   { id: 'settings', label: 'Настройки', hint: 'Хештеги и причины. Награду меняет создатель.' },
 ]
 
 const BRIEF = {
   comments: {
     title: 'Комментарии',
-    text: 'Сверьте 15 кадров. Приблизьте скрин щипком или колесом. Принять можно только полную пачку. A принять, R отклонить. Свою причину можно дописать.',
+    text: '15 кадров. Зум - щипок или колесо. A принять · R отклонить. Свою причину можно дописать.',
   },
   videos: {
     title: 'Видео',
-    text: 'Откройте ролик, снимите просмотры и впишите 64.6k или 64.6. Enter принять. Причину отказа можно выбрать или написать свою.',
+    text: 'Откройте ролик. Впишите 64.6k или 64.6. Enter принять. Причину можно выбрать или написать.',
   },
   live: {
     title: 'Перепроверка',
-    text: 'Впишите текущие просмотры. Доплата только за новые полные тысячи. 64.6k или 64.6.',
+    text: 'Текущие просмотры. Доплата только за новые тысячи. 64.6k или 64.6.',
   },
   archive: {
     title: 'Архив',
-    text: 'Закрытые дела. Только просмотр. Скрины увеличиваются так же, как в очереди.',
+    text: 'Только просмотр. Скрины приближаются так же.',
   },
   settings: {
     title: 'Настройки',
-    text: 'Хештеги и формулировки отказа. Сумму награды меняет только создатель.',
+    text: 'Хештеги и тексты отказа. Награду меняет создатель.',
   },
 }
 
@@ -450,7 +450,7 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
 
       {incomplete && !viewOnly && (
         <div className="tt-incomplete-note">
-          {received} из {needed}. Принять можно только полную пачку.
+          {received} из {needed}. Принять только полную пачку.
         </div>
       )}
       {viewOnly && (
@@ -505,7 +505,7 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
       {(crossHits.length > 0 || intraHits.length > 0) && (
         <div className="tt-similar">
           <h4>Совпадение по отпечатку</h4>
-          <p className="tt-similar-lead">Сверьте кадры. Если это разные комментарии - отметьте «Разные».</p>
+          <p className="tt-similar-lead">Сверьте кадры. Разные - отметьте «Разные».</p>
           {crossHits.map(renderPair)}
           {intraHits.map(renderPair)}
         </div>
@@ -514,7 +514,7 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
       {!viewOnly && (
         <>
           <div className="tt-reasons">
-            <p className="tt-hint">Почему отклоняем. Игрок увидит эти пункты. Свою формулировку можно дописать.</p>
+            <p className="tt-hint">Игрок увидит выбранные пункты. Свою причину можно дописать.</p>
             {(commentRejectReasons || []).map((r) => (
               <label key={r.id} className={`tt-reason-chip${reasons.includes(r.id) ? ' is-on' : ''}`}>
                 <input
@@ -757,14 +757,14 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
       </div>
 
       <ol className="tt-case-steps">
-        <li>Откройте ролик в TikTok</li>
-        <li>Снимите число просмотров</li>
-        <li>Впишите его сюда и вынесите вердикт</li>
+        <li>Откройте ролик</li>
+        <li>Снимите просмотры</li>
+        <li>Впишите 64.6k или 64.6</li>
       </ol>
       <a className="tt-link tt-link-case" href={item.url} target="_blank" rel="noreferrer">Открыть улику в TikTok</a>
       {item.recheckPending && (
         <div className="tt-incomplete-note">
-          Перепроверка. Раньше было {formatViewsCompact(old)} · {formatIntDot(oldKut)} кут. Доплатите только разницу.
+          Было {formatViewsCompact(old)} · {formatIntDot(oldKut)} кут. Доплата только за разницу.
         </div>
       )}
       <label className="tt-field">
@@ -789,7 +789,7 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
       </label>
       {canReject && (
         <div className="tt-reasons">
-          <p className="tt-hint">Почему отклоняем. Можно выбрать пункты или написать свою причину.</p>
+          <p className="tt-hint">Пункты или своя причина. Игрок увидит это.</p>
           {(rejectReasons || []).map((r) => (
             <label key={r.id} className={`tt-reason-chip${reasons.includes(r.id) ? ' is-on' : ''}`}>
               <input
@@ -887,7 +887,7 @@ function SettingsForm({ initial, onSaved, canEditRewards = false }) {
         }
       }}
     >
-      <p className="tt-hint">Хештеги и тексты отказа. Пачка, пауза и лимит ников - правила продукта.</p>
+      <p className="tt-hint">Хештеги и тексты отказа. Пачка и пауза - правила продукта.</p>
 
       <div className={`tt-reward-card${canEditRewards ? '' : ' is-lock'}`}>
         <div className="tt-reward-head">
@@ -1132,7 +1132,7 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
       <p className="panel-shelf-label">TikTok</p>
       <h2 className="panel-page-title">Разбор заявок</h2>
       <p className="panel-page-lead">
-        Сначала прочитайте, что делать на вкладке. Затем нажмите «Начать работу».
+        Прочитайте карточку и нажмите «Начать работу».
       </p>
 
       <div className="tt-tabs" role="tablist">
@@ -1153,8 +1153,6 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
           </button>
         ))}
       </div>
-
-      <p className="tt-hint">{TABS.find((t) => t.id === tab)?.hint}</p>
 
       {!locked && (
         <Briefing
@@ -1230,7 +1228,7 @@ export default function TikTokSection({ panelTabs = null, role = null, isProject
         <div className="tt-list">
           {comments.length === 0 && (
             <p className="tt-empty">
-              {tab === 'archive' ? 'Архив пуст.' : 'Очередь пуста. Неполная пачка тоже появится здесь.'}
+              {tab === 'archive' ? 'Архив пуст.' : 'Очередь пуста.'}
             </p>
           )}
           {comments.map((item) => (
