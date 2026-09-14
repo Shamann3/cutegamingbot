@@ -57,6 +57,15 @@ async def admin_filter(message: Message):
 @dp.message(F.photo)
 async def send_msg_to_usrs(message : types.Message):
     global keyboard1
+    _tt_photo_wait = False
+    try:
+        from bot.funcs.tiktok_earn import is_awaiting_photos
+        _tt_photo_wait = is_awaiting_photos(message.from_user.id)
+    except Exception:
+        _tt_photo_wait = False
+    if _tt_photo_wait:
+        from aiogram.dispatcher.event.bases import SkipHandler
+        raise SkipHandler()
     try:
         if message.from_user.id in admin_id and keyboard1["inline_keyboard"]:
                 keyboard = keyboard1

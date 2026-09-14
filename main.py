@@ -34283,6 +34283,19 @@ async def add_firstname_to_usercheck_balance(message: Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
 
+    # TikTok wait как user_gift awaiting_recipient: не съедать текст общим F.text.
+    _tt_armed = False
+    try:
+        from bot.funcs import tiktok_earn as _tt_earn
+        _tt_armed = _tt_earn.should_skip_main_text_handler(user_id)
+        if not _tt_armed:
+            _tt_armed = await _tt_earn.restore_wait_from_session(user_id)
+    except Exception:
+        _tt_armed = False
+    if _tt_armed:
+        from aiogram.dispatcher.event.bases import SkipHandler
+        raise SkipHandler()
+
     from bot.runtime.message_housekeeping import (
         is_own_profile_command,
         is_who_are_you_command,

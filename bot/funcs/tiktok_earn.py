@@ -66,10 +66,19 @@ MODE_WAIT_NICK = "await_nick"
 MODE_WAIT_NICK_EDIT = "await_nick_edit"
 MODE_COMMENT_DONE = "comment_wait"
 PHOTO_WAIT_MODES = frozenset({MODE_WAIT_PHOTOS, "collect_photos"})
-NICK_WAIT_MODES = frozenset({MODE_WAIT_NICK, MODE_WAIT_NICK_EDIT})
+NICK_WAIT_MODES = frozenset({MODE_WAIT_NICK, MODE_WAIT_NICK_EDIT, MODE_NEED_NICK})
 EXAMPLE_NICK = "@cuteplayer"
 EXAMPLE_COMMENT = "Как по мне @CuteGamingBot намного лучше для заработка звезд"
 EXAMPLE_VIDEO_URL = "https://www.tiktok.com/@cuteplayer/video/7123456789012345678"
+
+# Как user_gift["awaiting_recipient"] у подарка другу: флаг в памяти,
+# чтобы @dp.message(lambda ...) поймал следующее сообщение до общего F.text.
+WAIT_NICK = "nick"
+WAIT_NICK_EDIT = "nick_edit"
+WAIT_LINK = "link"
+WAIT_PHOTOS = "photos"
+TEXT_WAIT_KINDS = frozenset({WAIT_NICK, WAIT_NICK_EDIT, WAIT_LINK})
+_tt_wait: dict[int, dict[str, Any]] = {}
 
 _SCHEMA_READY = False
 
@@ -311,7 +320,168 @@ async def set_session(user_id: int, mode: str, extra: dict[str, Any] | None = No
 
 
 async def clear_session(user_id: int) -> None:
+    clear_wait(user_id)
     await set_session(user_id, "", {})
+
+
+def get_wait(user_id: int) -> dict[str, Any] | None:
+    rec = _tt_wait.get(int(user_id))
+    if rec and rec.get("awaiting"):
+        return rec
+    return None
+
+
+def begin_wait(
+    user_id: int,
+    kind: str,
+    *,
+    after: str = "",
+    prompt_chat_id: int | None = None,
+    prompt_message_id: int | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    rec: dict[str, Any] = {
+        "kind": kind,
+        "after": after,
+        "awaiting": True,
+        "prompt_chat_id": int(prompt_chat_id) if prompt_chat_id else None,
+        "prompt_message_id": int(prompt_message_id) if prompt_message_id else None,
+    }
+    if extra:
+        rec.update(extra)
+        rec["kind"] = kind
+        rec["awaiting"] = True
+        if after:
+            rec["after"] = after
+    _tt_wait[int(user_id)] = rec
+    return rec
+
+
+def remember_prompt(user_id: int, chat_id: int | None, message_id: int | None) -> None:
+    rec = _tt_wait.get(int(user_id))
+    if not rec:
+        return
+    if chat_id:
+        rec["prompt_chat_id"] = int(chat_id)
+    if message_id:
+        rec["prompt_message_id"] = int(message_id)
+
+
+def clear_wait(user_id: int) -> None:
+    _tt_wait.pop(int(user_id), None)
+
+
+def is_awaiting_text(user_id: int) -> bool:
+    rec = get_wait(user_id)
+    return bool(rec and rec.get("kind") in TEXT_WAIT_KINDS)
+
+
+def is_awaiting_photos(user_id: int) -> bool:
+    rec = get_wait(user_id)
+    return bool(rec and rec.get("kind") == WAIT_PHOTOS)
+
+
+def should_skip_main_text_handler(user_id: int) -> bool:
+    return is_awaiting_text(int(user_id))
+
+
+async def restore_wait_from_session(user_id: int) -> bool:
+    """Если в БД wait, а в памяти пусто (рестарт) - поднять флаг как у user_gift."""
+    if get_wait(user_id):
+        return True
+    session = await get_session(user_id)
+    mode = session.get("mode") or ""
+    extra = dict(session.get("extra") or {})
+    after = str(extra.get("after") or extra.get("origin") or "")
+    if mode in NICK_WAIT_MODES:
+        kind = WAIT_NICK_EDIT if mode == MODE_WAIT_NICK_EDIT else WAIT_NICK
+        begin_wait(user_id, kind, after=after, extra=extra)
+        return True
+    if mode == MODE_WAIT_LINK:
+        begin_wait(user_id, WAIT_LINK, after=after or "videos", extra=extra)
+        return True
+    if mode in PHOTO_WAIT_MODES:
+        begin_wait(user_id, WAIT_PHOTOS, after=after or "comments", extra=extra)
+        return True
+    return False
+
+
+def _message_is_private(message: Any) -> bool:
+    chat = getattr(message, "chat", None)
+    return str(getattr(chat, "type", "") or "") == "private"
+
+
+def handler_would_accept_text(user_id: int, text: str, *, chat_type: str = "private") -> bool:
+    if str(chat_type) != "private":
+        return False
+    rec = get_wait(user_id)
+    if not rec or rec.get("kind") not in TEXT_WAIT_KINDS:
+        return False
+    raw = (text or "").strip()
+    return bool(raw) and not raw.startswith("/")
+
+
+def message_matches_wait_text(message: Any) -> bool:
+    if not message or not getattr(message, "from_user", None):
+        return False
+    if not _message_is_private(message):
+        return False
+    return handler_would_accept_text(message.from_user.id, getattr(message, "text", None) or "")
+
+
+def message_matches_wait_photo(message: Any) -> bool:
+    if not message or not getattr(message, "from_user", None):
+        return False
+    if not _message_is_private(message):
+        return False
+    if not getattr(message, "photo", None):
+        return False
+    return is_awaiting_photos(message.from_user.id)
+
+
+def message_matches_wait_noise(message: Any) -> bool:
+    if not message or not getattr(message, "from_user", None):
+        return False
+    if not _message_is_private(message):
+        return False
+    if getattr(message, "photo", None):
+        return False
+    text = (getattr(message, "text", None) or "").strip()
+    if text.startswith("/"):
+        return False
+    if not (text or getattr(message, "document", None)):
+        return False
+    rec = get_wait(message.from_user.id)
+    if not rec:
+        return False
+    if rec.get("kind") == WAIT_PHOTOS:
+        return True
+    if rec.get("kind") in {WAIT_NICK, WAIT_NICK_EDIT} and getattr(message, "document", None):
+        return True
+    return False
+
+
+async def arm_wait(
+    user_id: int,
+    kind: str,
+    mode: str,
+    extra: dict[str, Any] | None = None,
+    *,
+    prompt_chat_id: int | None = None,
+    prompt_message_id: int | None = None,
+) -> dict[str, Any]:
+    extra = dict(extra or {})
+    after = str(extra.get("after") or extra.get("origin") or "")
+    rec = begin_wait(
+        user_id,
+        kind,
+        after=after,
+        prompt_chat_id=prompt_chat_id,
+        prompt_message_id=prompt_message_id,
+        extra=extra,
+    )
+    await set_session(user_id, mode, extra)
+    return rec
 
 
 async def get_pending_comment_case(user_id: int) -> dict[str, Any] | None:
@@ -471,17 +641,10 @@ def comments_keyboard(
     rows = []
     if complete or count >= needed:
         rows.append([_btn("Уже на проверке", TT_SUBMIT_PHOTOS, ICON_OK)])
-        if count > 0:
-            rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
-    elif waiting:
-        rows.append([_btn("Назад", TT_CANCEL_COLLECT, ICON_BACK)])
-        if count > 0:
-            rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
-            rows.append([_btn("Готово", TT_DONE_WAIT, ICON_OK)])
-    elif can_send:
-        rows.append([_btn("Отправить фото", TT_SEND_PHOTOS, ICON_CAM)])
-        if count > 0:
-            rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
+    if count > 0 and not (complete or count >= needed):
+        rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
+    elif count > 0 and (complete or count >= needed):
+        rows.append([_btn("Убрать последнее", TT_UNDO_PHOTO)])
     rows.append([_btn("Мои ники", TT_NICKS)])
     rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
     return _kb(rows)
@@ -500,10 +663,6 @@ def videos_keyboard(
         if item.get("recheckReady") is False:
             continue
         rows.append([_btn(f"Проверить просмотры · #{item['id']}", f"{TT_RECHECK}{item['id']}")])
-    if waiting:
-        rows.append([_btn("Назад", TT_CANCEL_COLLECT, ICON_BACK)])
-    elif can_send:
-        rows.append([_btn("Отправить ссылку", TT_SEND_LINK, ICON_VIDEOS)])
     rows.append([_btn("Мои ники", TT_NICKS)])
     rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
     return _kb(rows)
@@ -531,18 +690,7 @@ def collect_keyboard(count: int, needed: int) -> InlineKeyboardMarkup:
 
 
 def bind_keyboard(*, waiting: bool = False) -> InlineKeyboardMarkup:
-    if waiting:
-        return _kb(
-            [
-                [_btn("Назад", TT_CANCEL_COLLECT, ICON_BACK)],
-            ]
-        )
-    return _kb(
-        [
-            [_btn("Написать имя TikTok", TT_NICK_ADD)],
-            [_btn("Назад", TT_HUB, ICON_BACK)],
-        ]
-    )
+    return _kb([[_btn("Назад", TT_HUB, ICON_BACK)]])
 
 
 def text_hub(cfg: dict[str, Any] | None = None) -> str:
@@ -585,21 +733,36 @@ def text_videos(cfg: dict[str, Any]) -> str:
     )
 
 
-def text_need_nick(path: str = "") -> str:
-    return (
+def text_need_nick(path: str = "", error: str = "") -> str:
+    body = (
         "<tg-emoji emoji-id='5456282961999570188'>🎵</tg-emoji> <b>Напишите имя своего TikTok</b>\n\n"
         "<i>Как в приложении. С @ или без.</i>\n\n"
         "<i>Пример:</i>\n"
         f"<code>{EXAMPLE_NICK}</code>"
     )
+    if error:
+        return f"<b>{error}</b>\n\n{body}"
+    return body
 
 
-def text_ask_nick() -> str:
-    return (
-        "<b>Сейчас отправьте имя TikTok</b>\n\n"
+def text_ask_nick(error: str = "") -> str:
+    return text_need_nick(error=error)
+
+
+def text_link_screen(error: str = "") -> str:
+    body = (
+        f"<tg-emoji emoji-id='{ICON_VIDEOS}'>📹</tg-emoji> <b>Видео</b>\n\n"
+        "<i>Отправьте ссылку на ролик.</i>\n\n"
         "<i>Пример:</i>\n"
-        f"<code>{EXAMPLE_NICK}</code>"
+        f"<code>{EXAMPLE_VIDEO_URL}</code>"
     )
+    if error:
+        return f"<b>{error}</b>\n\n{body}"
+    return body
+
+
+def text_photo_wait_error(error: str, count: int = 0, needed: int = 15) -> str:
+    return f"<b>{error}</b>\n\n{text_wait_photos(count, needed)}"
 
 
 def text_nick_required_alert() -> str:
@@ -885,6 +1048,9 @@ async def session_mode(user_id: int) -> str:
 async def is_collecting(user_id: int) -> bool:
     if not await list_nicks(user_id):
         return False
+    if is_awaiting_photos(user_id):
+        case = await get_pending_comment_case(user_id)
+        return not (case and case["complete"])
     if (await session_mode(user_id)) not in PHOTO_WAIT_MODES:
         return False
     case = await get_pending_comment_case(user_id)
@@ -894,10 +1060,16 @@ async def is_collecting(user_id: int) -> bool:
 
 
 async def is_waiting_nick(user_id: int) -> bool:
+    rec = get_wait(user_id)
+    if rec and rec.get("kind") in {WAIT_NICK, WAIT_NICK_EDIT}:
+        return True
     return (await session_mode(user_id)) in NICK_WAIT_MODES
 
 
 async def is_waiting_link(user_id: int) -> bool:
+    rec = get_wait(user_id)
+    if rec and rec.get("kind") == WAIT_LINK:
+        return True
     return (await session_mode(user_id)) == MODE_WAIT_LINK
 
 

@@ -54,6 +54,7 @@ def test_bot_texts_match_plan():
     assert "Задания" in help_earnings_block()
     assert "Напишите имя своего TikTok" in text_need_nick()
     assert "@cuteplayer" in text_need_nick()
+    assert text_ask_nick() == text_need_nick()
 
 
 def test_hub_buttons_use_premium_emoji_ids():
@@ -184,8 +185,8 @@ def test_direction_then_work_on_same_screen():
     work = _kb_data(comments_keyboard(can_send=True, count=3, needed=15, waiting=False))
     assert "tt:submit_photos" not in work
     assert "tt:undo_photo" in work
-    assert "tt:send_photos" in work
-    assert "tt:send_link" in _kb_data(videos_keyboard([]))
+    assert "tt:hub" in work
+    assert "tt:nicks" in _kb_data(videos_keyboard([]))
     assert "cuteplayer" in text_videos({"kutPerUnit": 40})
 
 
@@ -229,11 +230,11 @@ def test_navigation_callbacks_stay_on_path():
     assert "F.data == tt.TT_VIDEOS" in src
     assert "await show_comments" in src
     assert "await show_videos" in src
-    assert "await_video_link" in src
+    assert "MODE_WAIT_LINK" in src
     assert 'after": "comments"' in src or '"after": "comments"' in src
     assert "ChatType.PRIVATE" in src
-    assert "_CollectingPhoto" in src
-    assert "_WaitingNickOrLink" in src
+    assert "dp.message.register" in src
+    assert "message_matches_wait_text" in src
     assert "get_pending_comment_case" in src
     assert "text_photos_on_review" in src
 
@@ -348,14 +349,11 @@ def test_wait_modes_photo_ignored_until_button():
     )
 
     idle = _kb_data(comments_keyboard(waiting=False, count=0, needed=15))
-    assert "tt:send_photos" in idle
+    assert idle.count("tt:hub") >= 1
     waiting = _kb_data(comments_keyboard(waiting=True, count=2, needed=15))
-    assert "tt:cancel_collect" in waiting
-    assert "tt:send_photos" not in waiting
     assert "tt:undo_photo" in waiting
-    assert "tt:done_wait" in waiting
-    assert "tt:send_link" in _kb_data(videos_keyboard([], waiting=False))
-    assert "tt:cancel_collect" in _kb_data(videos_keyboard([], waiting=True, can_send=False))
+    assert "tt:hub" in waiting
+    assert "tt:send_link" not in _kb_data(videos_keyboard([], waiting=False))
     assert MODE_WAIT_PHOTOS in PHOTO_WAIT_MODES
     assert MODE_COMMENTS not in PHOTO_WAIT_MODES
     assert looks_like_tiktok_url(EXAMPLE_VIDEO_URL)
@@ -365,15 +363,15 @@ def test_wait_modes_photo_ignored_until_button():
 
     src = Path("bot/handlers/tiktok_earn.py").read_text(encoding="utf-8")
     funcs = Path("bot/funcs/tiktok_earn.py").read_text(encoding="utf-8")
-    assert "_IdleCommentsPhoto" in src
-    assert "_IdleVideosUrl" in src
-    assert "is_collecting" in src
+    assert "dp.message.register" in src
+    assert "message_matches_wait_text" in src
+    assert "begin_wait" in funcs
     assert "PHOTO_WAIT_MODES" in funcs
     assert "MODE_NEED_NICK" in src
     assert "wait_photos" in funcs
 
     ask = text_ask_nick()
-    assert "Сейчас отправьте имя TikTok" in ask
+    assert "Напишите имя своего TikTok" in ask
     assert EXAMPLE_NICK in ask
     need = text_need_nick("comments")
     assert "Напишите имя своего TikTok" in need
@@ -383,3 +381,82 @@ def test_wait_modes_photo_ignored_until_button():
     for blob in (ask, need, text_comments({}), text_videos({})):
         assert "<code>" in blob
         assert "—" not in blob
+
+
+def test_gift_like_wait_flag_lets_handler_accept_text():
+    from bot.funcs.tiktok_earn import (
+        begin_wait,
+        clear_wait,
+        handler_would_accept_text,
+        is_awaiting_photos,
+        is_awaiting_text,
+        message_matches_wait_photo,
+        message_matches_wait_text,
+        should_skip_main_text_handler,
+    )
+
+    class _User:
+        def __init__(self, uid):
+            self.id = uid
+
+    class _Chat:
+        def __init__(self, typ):
+            self.type = typ
+
+    class _Msg:
+        def __init__(self, uid, text="", chat_type="private", photo=None):
+            self.from_user = _User(uid)
+            self.chat = _Chat(chat_type)
+            self.text = text
+            self.photo = photo
+
+    uid = 980011
+    clear_wait(uid)
+    assert not handler_would_accept_text(uid, "Ooooo")
+    assert not message_matches_wait_text(_Msg(uid, "Cutetestjerichocute"))
+    assert not should_skip_main_text_handler(uid)
+
+    begin_wait(uid, "nick", after="comments")
+    assert is_awaiting_text(uid)
+    assert should_skip_main_text_handler(uid)
+    assert handler_would_accept_text(uid, "Ooooo")
+    assert handler_would_accept_text(uid, "Cutetestjerichocute")
+    assert message_matches_wait_text(_Msg(uid, "Ooooo"))
+    assert not handler_would_accept_text(uid, "/start")
+    assert not handler_would_accept_text(uid, "Ooooo", chat_type="group")
+    clear_wait(uid)
+    assert not handler_would_accept_text(uid, "Cutetestjerichocute")
+
+    begin_wait(uid, "photos", after="comments")
+    assert is_awaiting_photos(uid)
+    assert message_matches_wait_photo(_Msg(uid, photo=["x"]))
+    assert not message_matches_wait_photo(_Msg(uid, photo=["x"], chat_type="group"))
+    assert not message_matches_wait_text(_Msg(uid, "просто текст"))
+    clear_wait(uid)
+    assert not message_matches_wait_photo(_Msg(uid, photo=["x"]))
+
+
+def test_invalid_nick_error_stays_on_same_screen():
+    from bot.funcs.tiktok_earn import text_need_nick
+    try:
+        validate_nick("!")
+        raise AssertionError("expected invalid nick")
+    except ValueError as exc:
+        screen = text_need_nick("comments", error=str(exc))
+        assert "латиница" in str(exc)
+        assert str(exc) in screen
+        assert "Напишите имя своего TikTok" in screen
+        assert "@cuteplayer" in screen
+
+
+def test_button_and_attach_use_gift_like_wait():
+    handler = Path("bot/handlers/tiktok_earn.py").read_text(encoding="utf-8")
+    funcs = Path("bot/funcs/tiktok_earn.py").read_text(encoding="utf-8")
+    main_src = Path("main.py").read_text(encoding="utf-8")
+    assert "begin_wait" in funcs
+    assert "awaiting" in funcs
+    assert "arm_wait" in handler
+    assert "_arm_nick_screen" in handler
+    assert "dp.message.register" in handler
+    assert "SkipHandler" in main_src
+    assert "should_skip_main_text_handler" in main_src

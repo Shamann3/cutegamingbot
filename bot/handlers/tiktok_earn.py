@@ -8,79 +8,12 @@ import logging
 
 from aiogram import F, Router
 from aiogram.enums import ChatType
-from aiogram.filters import Filter
 from aiogram.types import CallbackQuery, Message
 
 from bot.funcs import tiktok_earn as tt
 
 _album_tasks: dict[int, asyncio.Task] = {}
 _album_added: dict[int, int] = {}
-
-
-class _CollectingPhoto(Filter):
-    async def __call__(self, message: Message) -> bool:
-        if getattr(message.chat, "type", None) != ChatType.PRIVATE:
-            return False
-        if not message.from_user or not message.photo:
-            return False
-        return await tt.is_collecting(message.from_user.id)
-
-
-class _WaitingNickOrLink(Filter):
-    async def __call__(self, message: Message) -> bool:
-        if getattr(message.chat, "type", None) != ChatType.PRIVATE:
-            return False
-        if not message.from_user or not message.text:
-            return False
-        uid = message.from_user.id
-        return await tt.is_waiting_nick(uid) or await tt.is_waiting_link(uid)
-
-
-class _CollectingNoise(Filter):
-    """Текст или файл во время набора скринов - не перехватываем чужие режимы."""
-
-    async def __call__(self, message: Message) -> bool:
-        if getattr(message.chat, "type", None) != ChatType.PRIVATE:
-            return False
-        if not message.from_user:
-            return False
-        if message.photo:
-            return False
-        if not (message.text or message.document):
-            return False
-        if message.text and message.text.startswith("/"):
-            return False
-        return await tt.is_collecting(message.from_user.id)
-
-
-class _IdleCommentsPhoto(Filter):
-    """Фото на экране комментариев до кнопки - только подсказка, не доказательство."""
-
-    async def __call__(self, message: Message) -> bool:
-        if getattr(message.chat, "type", None) != ChatType.PRIVATE:
-            return False
-        if not message.from_user or not message.photo:
-            return False
-        if await tt.is_collecting(message.from_user.id):
-            return False
-        return await tt.is_comments_idle(message.from_user.id)
-
-
-class _IdleVideosUrl(Filter):
-    """Похожая на TikTok ссылка до кнопки - подсказка, не сдача."""
-
-    async def __call__(self, message: Message) -> bool:
-        if getattr(message.chat, "type", None) != ChatType.PRIVATE:
-            return False
-        if not message.from_user or not message.text:
-            return False
-        if message.text.startswith("/"):
-            return False
-        if await tt.is_waiting_link(message.from_user.id):
-            return False
-        if not await tt.is_videos_idle(message.from_user.id):
-            return False
-        return tt.looks_like_tiktok_url(message.text)
 
 log = logging.getLogger("tiktok_earn")
 tiktok_router = Router(name="tiktok_earn")
@@ -95,12 +28,44 @@ def _private(event) -> bool:
     return getattr(src, "type", None) == ChatType.PRIVATE
 
 
+def _prompt_ids(target: CallbackQuery | Message) -> tuple[int | None, int | None]:
+    msg = target.message if isinstance(target, CallbackQuery) else target
+    chat = getattr(msg, "chat", None)
+    chat_id = getattr(chat, "id", None) if chat is not None else None
+    mid = getattr(msg, "message_id", None)
+    return (int(chat_id) if chat_id else None, int(mid) if mid else None)
+
+
+async def _delete_user_message(message: Message) -> None:
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
 async def _edit_or_send(target: CallbackQuery | Message, text: str, markup) -> None:
+    uid = getattr(getattr(target, "from_user", None), "id", None)
+    rec = tt.get_wait(uid) if uid else None
+    if rec and rec.get("prompt_chat_id") and rec.get("prompt_message_id"):
+        try:
+            from main import bot1
+            await bot1.edit_message_text(
+                text,
+                chat_id=rec["prompt_chat_id"],
+                message_id=rec["prompt_message_id"],
+                reply_markup=markup,
+                parse_mode="HTML",
+            )
+            return
+        except Exception:
+            pass
     if isinstance(target, CallbackQuery):
         msg = target.message
         try:
             if msg and getattr(msg, "text", None):
                 await msg.edit_text(text, reply_markup=markup, parse_mode="HTML")
+                if uid:
+                    tt.remember_prompt(uid, getattr(msg.chat, "id", None), msg.message_id)
                 return
         except Exception:
             pass
@@ -111,9 +76,47 @@ async def _edit_or_send(target: CallbackQuery | Message, text: str, markup) -> N
         except Exception:
             pass
         from main import bot1
-        await bot1.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+        sent = await bot1.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+        if uid:
+            tt.remember_prompt(uid, sent.chat.id, sent.message_id)
         return
-    await target.answer(text, reply_markup=markup, parse_mode="HTML")
+    sent = await target.answer(text, reply_markup=markup, parse_mode="HTML")
+    if uid and sent:
+        tt.remember_prompt(uid, sent.chat.id, sent.message_id)
+
+
+async def _arm_nick_screen(
+    target: CallbackQuery | Message,
+    user_id: int,
+    after: str,
+    *,
+    error: str = "",
+    old_nick: str = "",
+) -> None:
+    extra = {"after": after}
+    if old_nick:
+        extra["oldNick"] = old_nick
+        kind, mode = tt.WAIT_NICK_EDIT, tt.MODE_WAIT_NICK_EDIT
+    else:
+        kind, mode = tt.WAIT_NICK, tt.MODE_WAIT_NICK
+    if isinstance(target, CallbackQuery):
+        chat_id, mid = _prompt_ids(target)
+    else:
+        rec = tt.get_wait(user_id) or {}
+        chat_id, mid = rec.get("prompt_chat_id"), rec.get("prompt_message_id")
+    await tt.arm_wait(
+        user_id,
+        kind,
+        mode,
+        extra,
+        prompt_chat_id=chat_id,
+        prompt_message_id=mid,
+    )
+    await _edit_or_send(target, tt.text_need_nick(after, error=error), tt.bind_keyboard(waiting=True))
+    if isinstance(target, CallbackQuery):
+        chat_id, mid = _prompt_ids(target)
+        if chat_id and mid:
+            tt.remember_prompt(user_id, chat_id, mid)
 
 
 async def show_hub(target: CallbackQuery | Message) -> None:
@@ -127,24 +130,36 @@ async def show_hub(target: CallbackQuery | Message) -> None:
 async def show_comments(target: CallbackQuery | Message, user_id: int) -> None:
     nicks = await tt.list_nicks(user_id)
     if not nicks:
-        await tt.set_session(user_id, tt.MODE_NEED_NICK, {"after": "comments"})
-        await _edit_or_send(target, tt.text_need_nick("comments"), tt.bind_keyboard())
+        await _arm_nick_screen(target, user_id, "comments")
         return
     cfg = await tt.get_settings()
     case = await tt.get_pending_comment_case(user_id)
     needed = int(cfg["photosRequired"])
     if case and case["complete"]:
-        await tt.set_session(user_id, tt.MODE_COMMENT_DONE, {"caseId": case["id"]})
+        mode, extra = tt.MODE_COMMENT_DONE, {"caseId": case["id"], "after": "comments"}
         count = case["received"]
         pending_complete = True
+        kind = None
     elif case:
-        await tt.set_session(user_id, tt.MODE_COMMENTS, {"caseId": case["id"]})
+        mode, extra = tt.MODE_WAIT_PHOTOS, {"caseId": case["id"], "after": "comments"}
         count = case["received"]
         pending_complete = False
+        kind = tt.WAIT_PHOTOS
     else:
-        await tt.set_session(user_id, tt.MODE_COMMENTS, {})
+        mode, extra = tt.MODE_WAIT_PHOTOS, {"after": "comments"}
         count = 0
         pending_complete = False
+        kind = tt.WAIT_PHOTOS
+    if isinstance(target, CallbackQuery):
+        chat_id, mid = _prompt_ids(target)
+    else:
+        rec = tt.get_wait(user_id) or {}
+        chat_id, mid = rec.get("prompt_chat_id"), rec.get("prompt_message_id")
+    if kind:
+        await tt.arm_wait(user_id, kind, mode, extra, prompt_chat_id=chat_id, prompt_message_id=mid)
+    else:
+        tt.clear_wait(user_id)
+        await tt.set_session(user_id, mode, extra)
     await _edit_or_send(
         target,
         tt.comments_screen_text(cfg, nicks, pending=pending_complete, count=count),
@@ -152,35 +167,63 @@ async def show_comments(target: CallbackQuery | Message, user_id: int) -> None:
             can_send=not pending_complete,
             count=count,
             needed=needed,
-            waiting=False,
+            waiting=not pending_complete,
             complete=pending_complete,
         ),
     )
+    if isinstance(target, CallbackQuery):
+        chat_id, mid = _prompt_ids(target)
+        if chat_id and mid and kind:
+            tt.remember_prompt(user_id, chat_id, mid)
 
 
 async def show_videos(target: CallbackQuery | Message, user_id: int) -> None:
     nicks = await tt.list_nicks(user_id)
     if not nicks:
-        await tt.set_session(user_id, tt.MODE_NEED_NICK, {"after": "videos"})
-        await _edit_or_send(target, tt.text_need_nick("videos"), tt.bind_keyboard())
+        await _arm_nick_screen(target, user_id, "videos")
         return
     cfg = await tt.get_settings()
     videos = await tt.list_user_videos(user_id)
     pending = any(v["status"] == "pending" for v in videos)
-    await tt.set_session(user_id, tt.MODE_VIDEOS, {})
+    extra = {"after": "videos", "origin": "videos"}
+    if isinstance(target, CallbackQuery):
+        chat_id, mid = _prompt_ids(target)
+    else:
+        rec = tt.get_wait(user_id) or {}
+        chat_id, mid = rec.get("prompt_chat_id"), rec.get("prompt_message_id")
+    if pending:
+        tt.clear_wait(user_id)
+        await tt.set_session(user_id, tt.MODE_VIDEOS, extra)
+    else:
+        await tt.arm_wait(
+            user_id,
+            tt.WAIT_LINK,
+            tt.MODE_WAIT_LINK,
+            extra,
+            prompt_chat_id=chat_id,
+            prompt_message_id=mid,
+        )
     await _edit_or_send(
         target,
         tt.videos_screen_text(cfg, nicks, videos),
-        tt.videos_keyboard(videos, waiting=False, can_send=not pending),
+        tt.videos_keyboard(videos, waiting=not pending, can_send=not pending),
     )
+    if isinstance(target, CallbackQuery) and not pending:
+        chat_id, mid = _prompt_ids(target)
+        if chat_id and mid:
+            tt.remember_prompt(user_id, chat_id, mid)
 
 
 async def _nicks_origin(user_id: int) -> str:
     session = await tt.get_session(user_id)
     extra = session.get("extra") or {}
-    origin = extra.get("origin") or extra.get("after") or session.get("mode") or ""
-    if origin in {"comments", "photos", tt.MODE_COMMENTS, tt.MODE_WAIT_PHOTOS, "collect_photos", tt.MODE_COMMENT_DONE, tt.MODE_NEED_NICK}:
-        if extra.get("after") == "videos":
+    rec = tt.get_wait(user_id) or {}
+    origin = extra.get("origin") or extra.get("after") or rec.get("after") or session.get("mode") or ""
+    if origin in {
+        "comments", "photos", tt.MODE_COMMENTS, tt.MODE_WAIT_PHOTOS, "collect_photos",
+        tt.MODE_COMMENT_DONE, tt.MODE_NEED_NICK, tt.MODE_WAIT_NICK,
+    }:
+        if extra.get("after") == "videos" or rec.get("after") == "videos":
             return "videos"
         return "comments"
     if origin in {"videos", tt.MODE_VIDEOS, tt.MODE_WAIT_LINK}:
@@ -189,6 +232,7 @@ async def _nicks_origin(user_id: int) -> str:
 
 
 async def show_nicks(target: CallbackQuery | Message, user_id: int) -> None:
+    tt.clear_wait(user_id)
     nicks = await tt.list_nicks(user_id)
     locked = await tt.has_pending(user_id)
     origin = await _nicks_origin(user_id)
@@ -234,10 +278,11 @@ async def on_nicks(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
     session = await tt.get_session(user_id)
     extra = dict(session.get("extra") or {})
-    if session.get("mode") in {tt.MODE_WAIT_PHOTOS, "collect_photos", tt.MODE_COMMENTS, tt.MODE_COMMENT_DONE}:
+    rec = tt.get_wait(user_id) or {}
+    if session.get("mode") in {tt.MODE_WAIT_PHOTOS, "collect_photos", tt.MODE_COMMENTS, tt.MODE_COMMENT_DONE} or rec.get("kind") == tt.WAIT_PHOTOS:
         extra["origin"] = "comments"
         await tt.set_session(user_id, session.get("mode") or tt.MODE_COMMENTS, extra)
-    elif session.get("mode") in {tt.MODE_WAIT_LINK, tt.MODE_VIDEOS}:
+    elif session.get("mode") in {tt.MODE_WAIT_LINK, tt.MODE_VIDEOS} or rec.get("kind") == tt.WAIT_LINK:
         extra["origin"] = "videos"
         await tt.set_session(user_id, session.get("mode") or tt.MODE_VIDEOS, extra)
     await callback.answer()
@@ -251,18 +296,14 @@ async def on_nick_add(callback: CallbackQuery) -> None:
         return
     session = await tt.get_session(callback.from_user.id)
     extra = dict(session.get("extra") or {})
-    after = extra.get("after") or extra.get("origin") or "comments"
+    rec = tt.get_wait(callback.from_user.id) or {}
+    after = extra.get("after") or extra.get("origin") or rec.get("after") or "comments"
     if session.get("mode") in {tt.MODE_WAIT_LINK, tt.MODE_VIDEOS}:
         after = "videos"
     if session.get("mode") in {tt.MODE_WAIT_PHOTOS, "collect_photos", tt.MODE_COMMENTS, tt.MODE_COMMENT_DONE}:
         after = "comments"
-    await tt.set_session(
-        callback.from_user.id,
-        tt.MODE_WAIT_NICK,
-        {"after": after},
-    )
     await callback.answer()
-    await _edit_or_send(callback, tt.text_ask_nick(), tt.bind_keyboard(waiting=True))
+    await _arm_nick_screen(callback, callback.from_user.id, after)
 
 
 @tiktok_router.callback_query(F.data == tt.TT_NICK_EDIT)
@@ -275,11 +316,7 @@ async def on_nick_edit(callback: CallbackQuery) -> None:
         await callback.answer("Сначала напишите имя TikTok", show_alert=True)
         return
     await callback.answer()
-    await _edit_or_send(
-        callback,
-        "<b>Какое имя сменить?</b>",
-        tt.nick_pick_keyboard(nicks),
-    )
+    await _edit_or_send(callback, "<b>Какое имя сменить?</b>", tt.nick_pick_keyboard(nicks))
 
 
 @tiktok_router.callback_query(F.data.startswith(tt.TT_NICK_PICK))
@@ -290,22 +327,9 @@ async def on_nick_pick(callback: CallbackQuery) -> None:
     old = (callback.data or "").replace(tt.TT_NICK_PICK, "", 1)
     session = await tt.get_session(callback.from_user.id)
     extra = dict(session.get("extra") or {})
-    extra["oldNick"] = old
-    extra["after"] = extra.get("after") or extra.get("origin") or "comments"
-    await tt.set_session(callback.from_user.id, tt.MODE_WAIT_NICK_EDIT, extra)
+    after = extra.get("after") or extra.get("origin") or "comments"
     await callback.answer()
-    origin = extra.get("origin") or extra.get("after") or "hub"
-    if origin == "photos":
-        origin = "comments"
-    await _edit_or_send(
-        callback,
-        f"<b>Новое имя вместо @{old}</b>\n\n{tt.text_ask_nick()}",
-        tt.nicks_keyboard(
-            await tt.list_nicks(callback.from_user.id),
-            locked=False,
-            origin=origin if origin in {"comments", "videos"} else "hub",
-        ),
-    )
+    await _arm_nick_screen(callback, callback.from_user.id, after, old_nick=old)
 
 
 @tiktok_router.callback_query(F.data == tt.TT_SEND_PHOTOS)
@@ -313,27 +337,8 @@ async def on_send_photos(callback: CallbackQuery) -> None:
     if not _private(callback):
         await callback.answer()
         return
-    user_id = callback.from_user.id
-    if not await tt.list_nicks(user_id):
-        await callback.answer(tt.text_nick_required_alert(), show_alert=True)
-        await show_comments(callback, user_id)
-        return
-    case = await tt.get_pending_comment_case(user_id)
-    if case and case["complete"]:
-        await callback.answer("Серия уже на проверке")
-        await show_comments(callback, user_id)
-        return
-    extra = {"caseId": case["id"]} if case else {}
-    await tt.set_session(user_id, tt.MODE_WAIT_PHOTOS, extra)
-    cfg = await tt.get_settings()
-    count = int((case or {}).get("received") or 0)
-    needed = int(cfg["photosRequired"])
     await callback.answer()
-    await _edit_or_send(
-        callback,
-        tt.text_wait_photos(count, needed),
-        tt.comments_keyboard(waiting=True, count=count, needed=needed),
-    )
+    await show_comments(callback, callback.from_user.id)
 
 
 @tiktok_router.callback_query(F.data == tt.TT_SEND_LINK)
@@ -341,19 +346,8 @@ async def on_send_link(callback: CallbackQuery) -> None:
     if not _private(callback):
         await callback.answer()
         return
-    user_id = callback.from_user.id
-    if not await tt.list_nicks(user_id):
-        await callback.answer(tt.text_nick_required_alert(), show_alert=True)
-        await show_videos(callback, user_id)
-        return
-    videos = await tt.list_user_videos(user_id)
-    if any(v["status"] == "pending" for v in videos):
-        await callback.answer("Ссылка уже на проверке")
-        await show_videos(callback, user_id)
-        return
-    await tt.set_session(user_id, tt.MODE_WAIT_LINK, {"origin": "videos"})
     await callback.answer()
-    await _edit_or_send(callback, tt.text_wait_link(), tt.videos_keyboard(videos, waiting=True, can_send=False))
+    await show_videos(callback, callback.from_user.id)
 
 
 @tiktok_router.callback_query(F.data == tt.TT_CANCEL_COLLECT)
@@ -361,15 +355,8 @@ async def on_cancel_collect(callback: CallbackQuery) -> None:
     if not _private(callback):
         await callback.answer()
         return
-    session = await tt.get_session(callback.from_user.id)
-    extra = session.get("extra") or {}
-    after = extra.get("after") or extra.get("origin") or ""
-    mode = session.get("mode") or ""
     await callback.answer()
-    if mode == tt.MODE_WAIT_LINK or after == "videos" or mode == tt.MODE_VIDEOS:
-        await show_videos(callback, callback.from_user.id)
-        return
-    await show_comments(callback, callback.from_user.id)
+    await show_hub(callback)
 
 
 @tiktok_router.callback_query(F.data == tt.TT_DONE_WAIT)
@@ -392,22 +379,7 @@ async def on_undo_photo(callback: CallbackQuery) -> None:
         await callback.answer(str(exc), show_alert=True)
         return
     await callback.answer("Убрали")
-    user_id = callback.from_user.id
-    cfg = await tt.get_settings()
-    nicks = await tt.list_nicks(user_id)
-    pending_complete = bool(state.get("complete"))
-    waiting = (await tt.session_mode(user_id)) in tt.PHOTO_WAIT_MODES
-    await _edit_or_send(
-        callback,
-        tt.comments_screen_text(cfg, nicks, pending=pending_complete, count=state["count"]),
-        tt.comments_keyboard(
-            can_send=True,
-            count=state["count"],
-            needed=state["needed"],
-            waiting=waiting and not pending_complete,
-            complete=pending_complete,
-        ),
-    )
+    await show_comments(callback, callback.from_user.id)
 
 
 @tiktok_router.callback_query(F.data == tt.TT_SUBMIT_PHOTOS)
@@ -417,9 +389,8 @@ async def on_submit_photos(callback: CallbackQuery) -> None:
         return
     user_id = callback.from_user.id
     if not await tt.list_nicks(user_id):
-        await tt.clear_session(user_id)
         await callback.answer(tt.text_nick_required_alert(), show_alert=True)
-        await _edit_or_send(callback, tt.text_need_nick("comments"), tt.bind_keyboard())
+        await show_comments(callback, user_id)
         return
     try:
         case = await tt.submit_comment_case(user_id)
@@ -452,50 +423,85 @@ async def on_recheck(callback: CallbackQuery) -> None:
 async def _send_collect_progress(message: Message, state: dict) -> None:
     user_id = message.from_user.id
     nicks = await tt.list_nicks(user_id)
-    await message.answer(
-        tt.text_photos_on_review(
-            int(state.get("added") or 0),
-            int(state["count"]),
-            int(state["needed"]),
-            nicks,
-        ),
-        reply_markup=tt.comments_keyboard(
-            can_send=True,
-            count=state["count"],
-            needed=state["needed"],
-            waiting=not bool(state.get("complete") or state.get("full")),
-            complete=bool(state.get("complete") or state.get("full")),
-        ),
-        parse_mode="HTML",
+    complete = bool(state.get("complete") or state.get("full") or int(state["count"]) >= int(state["needed"]))
+    text = tt.text_photos_on_review(
+        int(state.get("added") or 0),
+        int(state["count"]),
+        int(state["needed"]),
+        nicks,
     )
+    markup = tt.comments_keyboard(
+        can_send=True,
+        count=state["count"],
+        needed=state["needed"],
+        waiting=not complete,
+        complete=complete,
+    )
+    await _edit_or_send(message, text, markup)
+    await _delete_user_message(message)
+    if complete:
+        tt.clear_wait(user_id)
 
 
-@tiktok_router.message(_IdleCommentsPhoto())
-async def on_idle_comments_photo(message: Message) -> None:
-    mode = await tt.session_mode(message.from_user.id)
-    if mode == tt.MODE_NEED_NICK:
-        await message.answer(tt.text_press_bind_nick(), parse_mode="HTML")
+async def on_wait_text(message: Message) -> None:
+    user_id = message.from_user.id
+    rec = tt.get_wait(user_id) or {}
+    kind = rec.get("kind") or ""
+    if kind in {tt.WAIT_NICK, tt.WAIT_NICK_EDIT} or await tt.is_waiting_nick(user_id):
+        session = await tt.get_session(user_id)
+        extra = dict(session.get("extra") or rec)
+        after = extra.get("after") or rec.get("after") or ""
+        try:
+            if kind == tt.WAIT_NICK_EDIT or session.get("mode") == tt.MODE_WAIT_NICK_EDIT:
+                old = extra.get("oldNick") or rec.get("oldNick") or ""
+                await tt.replace_nick(user_id, old, message.text or "")
+            else:
+                await tt.add_nick(user_id, message.text or "")
+        except ValueError as exc:
+            await _edit_or_send(
+                message,
+                tt.text_need_nick(after, error=str(exc)),
+                tt.bind_keyboard(waiting=True),
+            )
+            await _delete_user_message(message)
+            return
+        await _delete_user_message(message)
+        if after == "videos":
+            await show_videos(message, user_id)
+            return
+        await show_comments(message, user_id)
         return
-    if mode == tt.MODE_COMMENT_DONE:
-        await message.answer(
-            "<b>Уже на проверке.</b>\n<i>Новые фото сейчас не нужны.</i>",
-            parse_mode="HTML",
-        )
-        return
-    await message.answer(tt.text_press_send_photos(), parse_mode="HTML")
+    if kind == tt.WAIT_LINK or await tt.is_waiting_link(user_id):
+        raw = (message.text or "").strip()
+        if not tt.looks_like_tiktok_url(raw):
+            videos = await tt.list_user_videos(user_id)
+            await _edit_or_send(
+                message,
+                tt.text_link_screen("Это не ссылка TikTok."),
+                tt.videos_keyboard(videos, waiting=True, can_send=False),
+            )
+            await _delete_user_message(message)
+            return
+        try:
+            await tt.submit_video(user_id, raw)
+        except ValueError as exc:
+            videos = await tt.list_user_videos(user_id)
+            await _edit_or_send(
+                message,
+                tt.text_link_screen(str(exc)),
+                tt.videos_keyboard(videos, waiting=True, can_send=False),
+            )
+            await _delete_user_message(message)
+            return
+        await _delete_user_message(message)
+        await show_videos(message, user_id)
 
 
-@tiktok_router.message(_IdleVideosUrl())
-async def on_idle_videos_url(message: Message) -> None:
-    await message.answer(tt.text_press_send_link(), parse_mode="HTML")
-
-
-@tiktok_router.message(_CollectingPhoto())
-async def on_photo(message: Message) -> None:
+async def on_wait_photo(message: Message) -> None:
     user_id = message.from_user.id
     if not await tt.list_nicks(user_id):
-        await tt.clear_session(user_id)
-        await message.answer(tt.text_need_nick("comments"), reply_markup=tt.bind_keyboard(), parse_mode="HTML")
+        await _arm_nick_screen(message, user_id, "comments")
+        await _delete_user_message(message)
         return
     photo = message.photo[-1]
     thumb_id = tt.pick_thumb_file_id(message.photo)
@@ -503,14 +509,17 @@ async def on_photo(message: Message) -> None:
     try:
         state = await tt.add_photo(user_id, photo.file_id, hashes, thumb_id)
     except ValueError as exc:
-        await tt.clear_session(user_id)
-        await message.answer(f"<b>{exc}</b>\n\n{tt.text_need_nick('comments')}", reply_markup=tt.bind_keyboard(), parse_mode="HTML")
+        await _arm_nick_screen(message, user_id, "comments", error=str(exc))
+        await _delete_user_message(message)
         return
+    rec = tt.get_wait(user_id) or {}
+    if not rec:
+        extra = {"after": "comments"}
+        await tt.arm_wait(user_id, tt.WAIT_PHOTOS, tt.MODE_WAIT_PHOTOS, extra)
     if message.media_group_id:
         prev = _album_tasks.pop(user_id, None)
         if prev:
             prev.cancel()
-
         _album_added[user_id] = _album_added.get(user_id, 0) + int(state.get("added") or 0)
 
         async def _flush() -> None:
@@ -523,6 +532,7 @@ async def on_photo(message: Message) -> None:
                     "added": added,
                     "count": int((case or {}).get("received") or 0),
                     "needed": int((case or {}).get("needed") or cfg["photosRequired"]),
+                    "complete": bool(case and case.get("complete")),
                 }
                 await _send_collect_progress(message, latest)
             except asyncio.CancelledError:
@@ -533,53 +543,37 @@ async def on_photo(message: Message) -> None:
     await _send_collect_progress(message, state)
 
 
-@tiktok_router.message(_CollectingNoise())
-async def on_collect_noise(message: Message) -> None:
+async def on_wait_noise(message: Message) -> None:
+    rec = tt.get_wait(message.from_user.id) or {}
+    kind = rec.get("kind") or ""
+    if kind in {tt.WAIT_NICK, tt.WAIT_NICK_EDIT}:
+        await _edit_or_send(
+            message,
+            tt.text_need_nick(rec.get("after") or "", error="Нужно имя TikTok, не файл."),
+            tt.bind_keyboard(waiting=True),
+        )
+        await _delete_user_message(message)
+        return
     cfg = await tt.get_settings()
     needed = int(cfg["photosRequired"])
     hint = "Нужно фото, не файл." if message.document else "Сейчас отправьте фото."
     case = await tt.get_pending_comment_case(message.from_user.id)
     count = int((case or {}).get("received") or 0)
-    await message.answer(
-        f"<b>{hint}</b>",
-        reply_markup=tt.comments_keyboard(waiting=True, count=count, needed=needed),
-        parse_mode="HTML",
+    await _edit_or_send(
+        message,
+        tt.text_photo_wait_error(hint, count, needed),
+        tt.comments_keyboard(waiting=True, count=count, needed=needed),
     )
-
-
-@tiktok_router.message(_WaitingNickOrLink())
-async def on_text(message: Message) -> None:
-    user_id = message.from_user.id
-    if await tt.is_waiting_nick(user_id):
-        session = await tt.get_session(user_id)
-        try:
-            if session.get("mode") == tt.MODE_WAIT_NICK_EDIT:
-                old = (session.get("extra") or {}).get("oldNick") or ""
-                nick = await tt.replace_nick(user_id, old, message.text or "")
-            else:
-                nick = await tt.add_nick(user_id, message.text or "")
-        except ValueError as exc:
-            await message.answer(f"<b>{exc}</b>", parse_mode="HTML")
-            return
-        after = (session.get("extra") or {}).get("after") or ""
-        await tt.clear_session(user_id)
-        if after == "videos":
-            await show_videos(message, user_id)
-            return
-        await show_comments(message, user_id)
-        return
-    if await tt.is_waiting_link(user_id):
-        try:
-            await tt.submit_video(user_id, message.text or "")
-        except ValueError as exc:
-            await message.answer(f"<b>{exc}</b>", parse_mode="HTML")
-            return
-        await show_videos(message, user_id)
+    await _delete_user_message(message)
 
 
 def attach_tiktok_earn(dp) -> None:
     global _attached
     if _attached:
         return
+    # Как process_user_gift_recipient: хендлер на самом dp, фильтр по флагу awaiting.
+    dp.message.register(on_wait_text, lambda m: tt.message_matches_wait_text(m))
+    dp.message.register(on_wait_photo, lambda m: tt.message_matches_wait_photo(m))
+    dp.message.register(on_wait_noise, lambda m: tt.message_matches_wait_noise(m))
     dp.include_router(tiktok_router)
     _attached = True
