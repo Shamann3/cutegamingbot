@@ -717,7 +717,9 @@ def test_wait_expires_after_five_minutes_and_keeps_escape():
     assert not message_matches_wait_text(_Msg(uid, "cuteplayer"))
     assert not should_skip_main_text_handler(uid)
     begin_wait(uid, "photos", after="comments", extra={"expires_at": past})
-    assert not message_matches_wait_photo(_Msg(uid, photo=["x"]))
+    assert not is_wait_expired(uid)
+    assert message_matches_wait_photo(_Msg(uid, photo=["x"]))
+    assert should_skip_main_text_handler(uid)
     clear_wait(uid)
 
     expiry = text_wait_expired()
@@ -733,12 +735,13 @@ def test_wait_expires_after_five_minutes_and_keeps_escape():
         text_wait_link(),
         text_link_screen("Это не ссылка TikTok."),
         text_photos_on_review(1, 1, 15),
+        expiry,
     ):
-        assert "Назад" in blob
-        assert "Завершить" in blob
-        assert CANCEL_HINT in blob
-        assert "Ответьте" in blob or "отправьте" in blob.lower()
         assert "—" not in blob
+    assert "TikTok" in text_need_nick()
+    assert "из 15" in text_wait_photos(3, 15)
+    assert "ссылк" in text_wait_link().lower()
+    assert CANCEL_HINT
 
 
 def test_video_title_then_link_and_retry_flow():
@@ -802,4 +805,84 @@ def test_video_title_then_link_and_retry_flow():
     assert "tt:my_videos" not in wait_kb
     assert "tt:hub" in wait_kb
     assert "video_wait_keyboard" in handler
+
+
+def test_comments_collect_photos_and_image_files():
+    from datetime import datetime, timedelta, timezone
+
+    from bot.funcs.tiktok_earn import (
+        PHOTO_WAIT_TTL_SECONDS,
+        begin_wait,
+        clear_wait,
+        collectable_image_from_message,
+        is_awaiting_photos,
+        is_wait_expired,
+        message_matches_wait_noise,
+        message_matches_wait_photo,
+        should_skip_photo_handler,
+    )
+
+    class _User:
+        def __init__(self, uid):
+            self.id = uid
+
+    class _Chat:
+        def __init__(self, typ):
+            self.type = typ
+
+    class _Photo:
+        def __init__(self, file_id, width=800):
+            self.file_id = file_id
+            self.width = width
+
+    class _Doc:
+        def __init__(self, file_id, mime="", name="", thumb=None):
+            self.file_id = file_id
+            self.mime_type = mime
+            self.file_name = name
+            self.thumbnail = thumb
+
+    class _Msg:
+        def __init__(self, uid, chat_type="private", photo=None, document=None):
+            self.from_user = _User(uid)
+            self.chat = _Chat(chat_type)
+            self.photo = photo
+            self.document = document
+            self.text = None
+
+    uid = 980055
+    clear_wait(uid)
+    assert PHOTO_WAIT_TTL_SECONDS >= 86400
+    begin_wait(uid, "photos", after="comments")
+    assert is_awaiting_photos(uid)
+    assert should_skip_photo_handler(uid)
+    shot = _Msg(uid, photo=[_Photo("AgAC_small", 90), _Photo("AgAC_full", 1280)])
+    media = collectable_image_from_message(shot)
+    assert media["fileId"] == "AgAC_full"
+    assert message_matches_wait_photo(shot)
+    assert not message_matches_wait_noise(shot)
+
+    image_file = _Msg(uid, document=_Doc("BQAC_img", mime="image/jpeg", name="comment.jpg"))
+    assert collectable_image_from_message(image_file)["fileId"] == "BQAC_img"
+    assert message_matches_wait_photo(image_file)
+    assert not message_matches_wait_noise(image_file)
+
+    pdf = _Msg(uid, document=_Doc("BQAC_pdf", mime="application/pdf", name="file.pdf"))
+    assert collectable_image_from_message(pdf) is None
+    assert not message_matches_wait_photo(pdf)
+    assert message_matches_wait_noise(pdf)
+
+    past = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    begin_wait(uid, "photos", after="comments", extra={"expires_at": past})
+    assert not is_wait_expired(uid)
+    assert message_matches_wait_photo(shot)
+    assert should_skip_photo_handler(uid)
+    assert not message_matches_wait_photo(_Msg(uid, photo=[_Photo("x")], chat_type="group"))
+    handler = Path("bot/handlers/tiktok_earn.py").read_text(encoding="utf-8")
+    funcs = Path("bot/funcs/tiktok_earn.py").read_text(encoding="utf-8")
+    admin = Path("bot/handlers/admin_panel.py").read_text(encoding="utf-8")
+    assert "collectable_image_from_message" in handler
+    assert "rec.get(\"kind\") == WAIT_PHOTOS" in funcs
+    assert "restore_wait_from_session" in admin
+    clear_wait(uid)
 

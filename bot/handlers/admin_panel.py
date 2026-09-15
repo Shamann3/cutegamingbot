@@ -27,7 +27,28 @@ send_value = []
 
 @dp.message()
 async def admin_filter(message: Message):
+    try:
+        from aiogram.dispatcher.event.bases import SkipHandler
+        from bot.funcs.tiktok_earn import (
+            restore_wait_from_session,
+            should_skip_main_text_handler,
+            should_skip_photo_handler,
+        )
+        _uid = message.from_user.id if message.from_user else 0
+        _chat_type = getattr(getattr(message, "chat", None), "type", "")
+        if _uid:
+            await restore_wait_from_session(_uid)
+        if should_skip_photo_handler(_uid, chat_type=_chat_type) or should_skip_main_text_handler(
+            _uid, chat_type=_chat_type
+        ):
+            raise SkipHandler()
+    except Exception as _tt_skip_err:
+        from aiogram.dispatcher.event.bases import SkipHandler as _SkipHandler
+        if isinstance(_tt_skip_err, _SkipHandler):
+            raise
     mes = message.text
+    if not mes:
+        return
     if mes == "рассылка" and int(message.from_user.id) in admin_id:
         await message.reply("Введите кнопки в формате [кнопка ссылка]")
     elif mes[0] == "[" and int(message.from_user.id) in admin_id:
@@ -59,7 +80,8 @@ async def send_msg_to_usrs(message : types.Message):
     global keyboard1
     _tt_photo_wait = False
     try:
-        from bot.funcs.tiktok_earn import should_skip_photo_handler
+        from bot.funcs.tiktok_earn import restore_wait_from_session, should_skip_photo_handler
+        await restore_wait_from_session(message.from_user.id)
         _tt_photo_wait = should_skip_photo_handler(
             message.from_user.id,
             chat_type=getattr(getattr(message, "chat", None), "type", ""),

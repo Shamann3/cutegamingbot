@@ -116,7 +116,18 @@ WAIT_PHOTOS = "photos"
 TEXT_WAIT_KINDS = frozenset({WAIT_NICK, WAIT_NICK_EDIT, WAIT_LINK, WAIT_TITLE})
 CANCEL_WORDS = frozenset({"назад", "завершить"})
 WAIT_TTL_SECONDS = 300
-PHOTO_WAIT_TTL_SECONDS = 1200
+# Сбор скринов живёт, пока человек на задании. 20 минут мало: комментарии
+# делают в TikTok, потом присылают пачку. Срок снимает только «Назад» или 15/15.
+PHOTO_WAIT_TTL_SECONDS = 86400
+IMAGE_DOC_TYPES = frozenset({
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+})
+IMAGE_DOC_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif")
 CANCEL_HINT = "<blockquote><i>Выйти :</i> <code>Назад</code> <i>или</i> <code>Завершить</code></blockquote>"
 REPLY_HINT = "<blockquote><i>Отправьте следующим сообщением.</i></blockquote>"
 PHOTO_HINT = "<blockquote><i>Отправьте фото в этот чат. Альбомом или по одному.</i></blockquote>"
@@ -195,6 +206,49 @@ def pick_thumb_file_id(sizes: list[Any] | None) -> str:
     return str(getattr(best, "file_id", "") or "")
 
 
+def _file_id_of(item: Any) -> str:
+    if item is None:
+        return ""
+    value = getattr(item, "file_id", None)
+    if value:
+        return str(value)
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict):
+        return str(item.get("file_id") or item.get("fileId") or "")
+    return ""
+
+
+def _image_document_ok(document: Any) -> bool:
+    if document is None:
+        return False
+    mime = str(getattr(document, "mime_type", "") or "").lower()
+    name = str(getattr(document, "file_name", "") or "").lower()
+    return mime in IMAGE_DOC_TYPES or name.endswith(IMAGE_DOC_EXTS)
+
+
+def collectable_image_from_message(message: Any) -> dict[str, str] | None:
+    photos = getattr(message, "photo", None) or []
+    if photos:
+        file_id = _file_id_of(photos[-1])
+        return {"fileId": file_id, "thumbFileId": pick_thumb_file_id(photos)}
+    document = getattr(message, "document", None)
+    if not _image_document_ok(document):
+        return None
+    thumb = getattr(document, "thumbnail", None) or getattr(document, "thumb", None)
+    return {
+        "fileId": _file_id_of(document),
+        "thumbFileId": _file_id_of(thumb),
+    }
+
+
+def message_has_collectable_image(message: Any) -> bool:
+    photos = getattr(message, "photo", None)
+    if photos:
+        return True
+    return collectable_image_from_message(message) is not None
+
+
 def _uid_of(message: Any) -> int | None:
     user = getattr(message, "from_user", None)
     uid = getattr(user, "id", None)
@@ -245,6 +299,8 @@ def is_wait_expired(user_id: int) -> bool:
     rec = get_wait(user_id)
     if not rec:
         return False
+    if rec.get("kind") == WAIT_PHOTOS:
+        return False
     expires = _parse_iso(rec.get("expires_at"))
     if not expires:
         return False
@@ -258,7 +314,7 @@ def is_awaiting_text(user_id: int) -> bool:
 
 def is_awaiting_photos(user_id: int) -> bool:
     rec = get_wait(user_id)
-    return bool(rec and rec.get("awaiting") and rec.get("kind") == WAIT_PHOTOS and not is_wait_expired(user_id))
+    return bool(rec and rec.get("awaiting") and rec.get("kind") == WAIT_PHOTOS)
 
 
 def handler_would_accept_text(user_id: int, text: str, chat_type: str = "private") -> bool:
@@ -298,7 +354,7 @@ def message_matches_wait_photo(message: Any) -> bool:
     uid = _uid_of(message)
     if not uid or not is_awaiting_photos(uid):
         return False
-    return bool(getattr(message, "photo", None))
+    return message_has_collectable_image(message)
 
 
 def message_matches_wait_noise(message: Any) -> bool:
@@ -1060,7 +1116,7 @@ async def restore_wait_from_session(user_id: int) -> dict[str, Any] | None:
 
 async def expire_wait_if_needed(user_id: int) -> bool:
     rec = get_wait(user_id) or await restore_wait_from_session(user_id)
-    if not rec or not is_wait_expired(user_id):
+    if not rec or rec.get("kind") == WAIT_PHOTOS or not is_wait_expired(user_id):
         return False
     chat_id = rec.get("prompt_chat_id")
     mid = rec.get("prompt_message_id")
@@ -1239,20 +1295,32 @@ async def _ensure_pending_case(user_id: int) -> dict[str, Any]:
         return existing
     nicks = await require_nicks(user_id)
     pool = _pool()
+    if not pool:
+        raise ValueError("Сейчас нельзя принять скрин. Попробуйте позже.")
     settings = await get_settings()
-    row = await pool.fetchrow(
-        """
-        INSERT INTO tiktok_comment_cases (user_id, status, photos, nick_snapshot)
-        VALUES ($1, 'pending', '[]'::jsonb, $2::jsonb)
-        RETURNING *
-        """,
-        int(user_id),
-        json.dumps(nicks, ensure_ascii=False),
-    )
+    try:
+        row = await pool.fetchrow(
+            """
+            INSERT INTO tiktok_comment_cases (user_id, status, photos, nick_snapshot)
+            VALUES ($1, 'pending', '[]'::jsonb, $2::jsonb)
+            RETURNING *
+            """,
+            int(user_id),
+            json.dumps(nicks, ensure_ascii=False),
+        )
+    except Exception as exc:
+        if type(exc).__name__ != "UniqueViolationError":
+            raise
+        existing = await get_pending_comment_case(user_id)
+        if existing:
+            return existing
+        raise
     return _case_from_row(row, int(settings["photosRequired"]))
 
 
 async def add_photo(user_id: int, file_id: str, hashes: dict[str, Any] | None, thumb_id: str = "") -> dict[str, Any]:
+    if not str(file_id or "").strip():
+        raise ValueError("Не удалось прочитать фото. Пришлите скрин ещё раз.")
     await require_nicks(user_id)
     settings = await get_settings()
     needed = int(settings["photosRequired"])
@@ -1267,6 +1335,8 @@ async def add_photo(user_id: int, file_id: str, hashes: dict[str, Any] | None, t
     }
     result = append_case_photos(case["photos"], [photo], needed)
     pool = _pool()
+    if not pool:
+        raise ValueError("Сейчас нельзя принять скрин. Попробуйте позже.")
     await pool.execute(
         "UPDATE tiktok_comment_cases SET photos = $2::jsonb WHERE id = $1",
         case["id"],
@@ -1294,6 +1364,14 @@ async def undo_photo(user_id: int) -> dict[str, Any]:
     settings = await get_settings()
     needed = int(settings["photosRequired"])
     pool = _pool()
+    if not pool:
+        raise ValueError("Сейчас нельзя изменить серию. Попробуйте позже.")
+    if not photos:
+        await pool.execute(
+            "DELETE FROM tiktok_comment_cases WHERE id = $1 AND status = 'pending'",
+            case["id"],
+        )
+        return {"count": 0, "needed": needed, "complete": False, "caseId": None}
     await pool.execute(
         "UPDATE tiktok_comment_cases SET photos = $2::jsonb WHERE id = $1",
         case["id"],

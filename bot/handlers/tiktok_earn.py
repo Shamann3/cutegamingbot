@@ -304,11 +304,19 @@ async def _nicks_origin(user_id: int) -> str:
 
 
 async def show_nicks(target: CallbackQuery | Message, user_id: int) -> None:
-    tt.clear_wait(user_id)
+    rec = tt.get_wait(user_id) or {}
+    if rec.get("kind") != tt.WAIT_PHOTOS:
+        tt.clear_wait(user_id)
     nicks = await tt.list_nicks(user_id)
     locked = await tt.has_pending(user_id)
     origin = await _nicks_origin(user_id)
-    await tt.set_session(user_id, tt.MODE_NEED_NICK if not nicks else "nicks", {"origin": origin, "after": origin})
+    if rec.get("kind") == tt.WAIT_PHOTOS:
+        extra = dict((await tt.get_session(user_id)).get("extra") or rec)
+        extra["origin"] = origin or extra.get("origin") or "comments"
+        extra["after"] = extra.get("after") or "comments"
+        await tt.persist_prompt(user_id, extra, mode=tt.MODE_WAIT_PHOTOS)
+    else:
+        await tt.set_session(user_id, tt.MODE_NEED_NICK if not nicks else "nicks", {"origin": origin, "after": origin})
     await _edit_or_send(
         target,
         tt.text_nicks(nicks, locked=locked),
@@ -825,18 +833,44 @@ async def on_wait_photo(message: Message) -> None:
     if lock is None:
         lock = asyncio.Lock()
         _photo_locks[user_id] = lock
-    photo = message.photo[-1]
-    thumb_id = tt.pick_thumb_file_id(message.photo)
+    media = tt.collectable_image_from_message(message)
+    file_id = str((media or {}).get("fileId") or "")
+    if not file_id:
+        cfg = await tt.get_settings()
+        needed = int(cfg["photosRequired"])
+        case = await tt.get_pending_comment_case(user_id)
+        count = int((case or {}).get("received") or 0)
+        await _reprompt(
+            message,
+            user_id,
+            tt.text_photo_wait_error("Нужно изображение комментария.", count, needed),
+            tt.comments_keyboard(count=count, needed=needed, waiting=True),
+        )
+        return
+    thumb_id = str((media or {}).get("thumbFileId") or "")
     async with lock:
-        hashes = await tt.download_and_hash(message.bot, photo.file_id)
+        hashes = await tt.download_and_hash(message.bot, file_id)
         try:
-            state = await tt.add_photo(user_id, photo.file_id, hashes, thumb_id)
+            state = await tt.add_photo(user_id, file_id, hashes, thumb_id)
         except ValueError as exc:
+            err = str(exc)
+            if "TikTok" in err or "ник" in err.lower() or "имя" in err.lower():
+                await _reprompt(
+                    message,
+                    user_id,
+                    tt.text_need_nick("comments", error=err),
+                    tt.nick_wait_keyboard(back="hub"),
+                )
+                return
+            cfg = await tt.get_settings()
+            needed = int(cfg["photosRequired"])
+            case = await tt.get_pending_comment_case(user_id)
+            count = int((case or {}).get("received") or 0)
             await _reprompt(
                 message,
                 user_id,
-                tt.text_need_nick("comments", error=str(exc)),
-                tt.nick_wait_keyboard(back="hub"),
+                tt.text_photo_wait_error(err, count, needed),
+                tt.comments_keyboard(count=count, needed=needed, waiting=True),
             )
             return
     rec = tt.get_wait(user_id) or {}
@@ -921,7 +955,11 @@ async def on_wait_noise(message: Message) -> None:
         return
     cfg = await tt.get_settings()
     needed = int(cfg["photosRequired"])
-    hint = "Нужно фото комментария, не файл." if message.document else "Отправьте фото комментария."
+    hint = (
+        "Нужно изображение комментария."
+        if getattr(message, "document", None) or getattr(message, "video", None)
+        else "Отправьте скрин комментария."
+    )
     case = await tt.get_pending_comment_case(user_id)
     count = int((case or {}).get("received") or 0)
     await _reprompt(
