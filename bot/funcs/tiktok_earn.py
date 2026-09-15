@@ -539,7 +539,6 @@ def collect_text(count: int, needed: int, nicks: list[str] | None = None, cfg: d
         f"{status_emoji_html('wait')} {body}\n"
     )
 
-
 def comments_screen_text(
     cfg: dict[str, Any] | None,
     nicks: list[str],
@@ -554,21 +553,21 @@ def comments_screen_text(
     head = _notice_block(notice)
     if pending:
         return (
-            f"{head}{status_emoji_html('wait')} <b>Серия скриншотов на проверке.</b>\n"
-            f"<blockquote><b>{count} из {needed}</b></blockquote>\n"
+            f"{head}🟡 Серия скриншотов на проверке.\n"
+            f"{count} из {needed}\n"
         )
     if count > 0:
         return head + collect_text(count, needed, nicks, s)
     if latest and latest.get("status") == "rejected":
-        reason = escape(str(latest.get("rejectText") or "Серию не приняли."))
+        reason = str(latest.get("rejectText") or "Серию не приняли.")
         return (
-            f"{head}{status_emoji_html('no')} <b>Прошлая серия сриншотов не прошла проверку</b>\n"
-            f"<blockquote>{reason}</blockquote>\n"
+            f"{head}🔴 Прошлая серия сриншотов не прошла проверку\n"
+            f"{reason}\n"
             f"{text_comments(s)}"
         )
     if latest and latest.get("status") == "approved":
         return (
-            f"{head}{status_emoji_html('ok')} <b>Прошлая серия скриншотов принята.</b>\n"
+            f"{head}🟢 Прошлая серия скриншотов принята.\n"
             f"{text_comments(s)}"
         )
     return head + text_comments(s)
