@@ -169,7 +169,7 @@ global user_id_with_buttons3412
 # поэтому таймаут задаём честно через сессию. allowed_updates передаётся в start_polling().
 from aiogram.client.session.aiohttp import AiohttpSession as _AiohttpSession
 from bot.utils.event_loop_monitor import monitor_event_loop
-from aiogram.client.default import DefaultBotProperties
+
 
 
 
@@ -181,11 +181,7 @@ _bot1_session = _AiohttpSession(timeout=60.0)
 
 bot1 = Bot(
     token=TOKEN,
-    session=_bot1_session,
-    default=DefaultBotProperties(
-        parse_mode=ParseMode.HTML,
-        link_preview_is_disabled=True,
-    ),
+    session=_bot1_session
 )
 
 bot1.session.middleware(TelegramApiLogger())

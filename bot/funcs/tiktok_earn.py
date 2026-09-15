@@ -79,8 +79,8 @@ ICON_OK = "5224257782013769471"
 ICON_CAM = "5373098002641805602"
 ICON_COMMENTS = "5350367217349311525"
 ICON_VIDEOS = "5229011542011299168"
-ICON_NICKS = "5229011542011299168"
-ICON_MY_VIDEOS = "5226928895189598791"
+ICON_NICKS = "6021625933759257863"
+ICON_MY_VIDEOS = "6021375494216226506"
 ICON_ADD = "5339564150534200424"
 ICON_EDIT = "5472410705929971383"
 ICON_UNDO = "5373098002641805602"
@@ -554,7 +554,7 @@ def comments_screen_text(
     if pending:
         return (
             f"<b>{head}<tg-emoji emoji-id='5339082633160703625'>🟡</tg-emoji> Серия скриншотов на проверке.</b>\n"
-            f"<b>{count} из {needed}\n</b"
+            f"<b>{count} из {needed}\n</b>"
         )
     if count > 0:
         return head + collect_text(count, needed, nicks, s)
