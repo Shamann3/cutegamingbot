@@ -21,7 +21,7 @@ import {
 
 const TABS = [
   { id: 'comments', label: 'Комментарии', hint: '15 кадров. Принять только полную пачку.' },
-  { id: 'videos', label: 'Видео', hint: 'Просмотры: 64.6k или 64.6. Enter - принять.' },
+  { id: 'videos', label: 'Видео', hint: 'Впишите просмотры с ролика. Enter принять.' },
   { id: 'live', label: 'Живые', hint: 'Доплата только за новые тысячи.' },
   { id: 'archive', label: 'Архив', hint: 'Закрытые дела. Только просмотр.' },
   { id: 'settings', label: 'Настройки', hint: 'Хештеги и причины. Награду меняет создатель.' },
@@ -34,11 +34,11 @@ const BRIEF = {
   },
   videos: {
     title: 'Видео',
-    text: 'Откройте ролик. Впишите 64.6k или 64.6. Enter принять. Причину можно выбрать или написать.',
+    text: 'Откройте ролик. Впишите просмотры. Enter принять. Причину можно выбрать или написать.',
   },
   live: {
     title: 'Перепроверка',
-    text: 'Текущие просмотры. Доплата только за новые тысячи. 64.6k или 64.6.',
+    text: 'Текущие просмотры. Доплата только за новые тысячи.',
   },
   archive: {
     title: 'Архив',
@@ -56,16 +56,9 @@ function formatIntDot(value) {
   return sign + String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
 }
 
-function formatViewsCompact(value) {
-  const n = Math.max(0, Math.trunc(Number(value) || 0))
-  if (n >= 1_000_000) return `${String((n / 1_000_000).toFixed(1)).replace(/\.0$/, '')}m`
-  if (n >= 1000) return `${String((n / 1000).toFixed(1)).replace(/\.0$/, '')}k`
-  return formatIntDot(n)
-}
-
 function parseViewsInput(raw) {
   const text = String(raw ?? '').trim().toLowerCase().replace(/\s/g, '').replace(',', '.')
-  if (!text) throw new Error('Впишите просмотры')
+  if (!text) throw new Error('Впишите просмотры с ролика')
   let mult = 1
   let body = text
   if (/[kк]$/i.test(body)) {
@@ -75,7 +68,7 @@ function parseViewsInput(raw) {
     mult = 1_000_000
     body = body.slice(0, -1)
   }
-  if (!/^\d+(\.\d+)*$/.test(body)) throw new Error('Просмотры: 64.6k или 1.000')
+  if (!/^\d+(\.\d+)*$/.test(body)) throw new Error('Впишите просмотры с ролика')
   const parts = body.split('.')
   if (mult > 1) return Math.round(Number(body) * mult)
   if (parts.length === 1) return Number(parts[0])
@@ -83,7 +76,7 @@ function parseViewsInput(raw) {
   if (parts.length === 2 && parts[1].length >= 1 && parts[1].length <= 2 && Number(parts[0]) < 1000) {
     return Math.round(Number(body) * 1000)
   }
-  throw new Error('Просмотры: 64.6k или 1.000')
+  throw new Error('Впишите просмотры с ролика')
 }
 
 function Briefing({ tab, count = 0, onStart, compact = false }) {
@@ -581,8 +574,7 @@ function CommentWorkspace({ item, queue, onClose, onAdvance, onDecided, commentR
 }
 
 function initialVideoViews(item) {
-  if (item.recheckPending && item.lastViews) return formatViewsCompact(item.lastViews)
-  if (item.lastViews) return formatViewsCompact(item.lastViews)
+  if (item.lastViews) return formatIntDot(item.lastViews)
   return ''
 }
 
@@ -613,7 +605,7 @@ function VideoCase({ item, onOpen, current }) {
         <span className={item.recheckPending ? 'tt-flag-hot' : item.status === 'pending' ? 'tt-flag-incomplete' : 'tt-flag-ok'}>
           {videoFlag(item)}
         </span>
-        {item.lastViews ? <span className="tt-flag-muted">{formatViewsCompact(item.lastViews)} просм.</span> : null}
+        {item.lastViews ? <span className="tt-flag-muted">{formatIntDot(item.lastViews)} просм.</span> : null}
       </div>
     </button>
   )
@@ -684,7 +676,7 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
     try {
       count = parseViewsInput(raw)
     } catch (err) {
-      showToast(err.message || 'Просмотры: 64.6k или 1.000')
+      showToast(err.message || 'Впишите просмотры с ролика')
       return
     }
     const pay = kutForViews(count, unit)
@@ -759,12 +751,12 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
       <ol className="tt-case-steps">
         <li>Откройте ролик</li>
         <li>Снимите просмотры</li>
-        <li>Впишите 64.6k или 64.6</li>
+        <li>Впишите просмотры</li>
       </ol>
       <a className="tt-link tt-link-case" href={item.url} target="_blank" rel="noreferrer">Открыть улику в TikTok</a>
       {item.recheckPending && (
         <div className="tt-incomplete-note">
-          Было {formatViewsCompact(old)} · {formatIntDot(oldKut)} кут. Доплата только за разницу.
+          Было {formatIntDot(old)} · {formatIntDot(oldKut)} кут. Доплата только за разницу.
         </div>
       )}
       <label className="tt-field">
@@ -779,12 +771,12 @@ function VideoWorkspace({ item, queue, settings, rejectReasons, onClose, onAdvan
             setViews(e.target.value)
             viewsRef.current = e.target.value
           }}
-          placeholder="64.6k или 64.6"
+          placeholder="просмотры с ролика"
         />
         <small className="tt-kut-live">
           <b key={preview}>{formatIntDot(preview)} кут</b>
           {item.recheckPending ? ` · доплата ${formatIntDot(delta)} кут` : ''}
-          {parsedViews != null ? ` · ${formatViewsCompact(parsedViews)}` : ''}
+          {parsedViews != null ? ` · ${formatIntDot(parsedViews)} просм.` : ''}
         </small>
       </label>
       {canReject && (

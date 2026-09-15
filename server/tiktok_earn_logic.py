@@ -162,7 +162,7 @@ def format_views_compact(value: int) -> str:
 def parse_views_input(raw: Any) -> int:
     text = str(raw or "").strip().lower().replace(" ", "").replace("\u00a0", "")
     if not text:
-        raise ValueError("Впишите просмотры")
+        raise ValueError("Впишите просмотры с ролика")
     text = text.replace(",", ".")
     mult = 1
     if text.endswith(("k", "к")):
@@ -172,7 +172,7 @@ def parse_views_input(raw: Any) -> int:
         mult = 1_000_000
         text = text[:-1]
     if not re.fullmatch(r"\d+(?:\.\d+)*", text):
-        raise ValueError("Просмотры: 64.6k или 1.000")
+        raise ValueError("Впишите просмотры с ролика")
     parts = text.split(".")
     if mult > 1:
         return int(round(float(text) * mult))
@@ -182,7 +182,7 @@ def parse_views_input(raw: Any) -> int:
         return int("".join(parts))
     if len(parts) == 2 and 1 <= len(parts[1]) <= 2 and int(parts[0]) < 1000:
         return int(round(float(text) * 1000))
-    raise ValueError("Просмотры: 64.6k или 1.000")
+    raise ValueError("Впишите просмотры с ролика")
 
 
 def reviewer_mention_html(user_id: int, name: str = "", username: str = "") -> str:

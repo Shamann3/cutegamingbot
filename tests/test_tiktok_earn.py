@@ -694,7 +694,9 @@ def test_admin_photo_proxy_client_uses_jwt_query_and_thumb():
     assert "tt-brief-copy" in section
     assert "flex-direction: column" in css
     assert "parseViewsInput" in section
-    assert "64.6k" in section
+    assert "64.6k" not in section
+    assert "64.6" not in section
+    assert "Впишите просмотры" in section
     assert "customReason" in section
     assert "tt-field-box" in section
     lightbox = Path("admin/src/components/ImageLightbox.jsx").read_text(encoding="utf-8")
