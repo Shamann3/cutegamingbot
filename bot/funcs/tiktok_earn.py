@@ -397,8 +397,7 @@ def text_hub(cfg: dict[str, Any] | None = None, *, has_nicks: bool = False) -> s
         "<blockquote>"
         f"<b>Создание комментариев : {needed} скринов · {reward} кут</b>\n"
         f"<b>Съемка видео : {kut} кут за {unit} просмотров</b>"
-        "</blockquote>\n"
-        f"{extra}\n"
+        "</blockquote>"
     )
 
 
