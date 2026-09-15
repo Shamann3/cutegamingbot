@@ -7,7 +7,7 @@ import asyncio
 import logging
 
 from aiogram import F, Router
-from aiogram.enums import ChatType
+from aiogram.enums import ChatType , parse_mode
 from aiogram.types import CallbackQuery, Message
 
 from bot.funcs import tiktok_earn as tt
@@ -259,7 +259,7 @@ async def show_comments(target: CallbackQuery | Message, user_id: int, notice: s
         waiting=not pending_complete,
         complete=pending_complete,
     )
-    sent = await _edit_or_send(target, text, markup)
+    sent = await _edit_or_send(target, text, markup, parse_mode="HTML")
     if kind:
         await _arm_wait_on_message(user_id, sent, kind, mode, extra)
         return
