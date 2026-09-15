@@ -277,7 +277,12 @@ async def show_videos(target: CallbackQuery | Message, user_id: int, notice: str
     pending = any(v["status"] == "pending" for v in videos)
     extra = {"after": "videos", "origin": "videos"}
     text = tt.videos_screen_text(cfg, nicks, videos, notice=notice)
-    markup = tt.videos_keyboard(videos, waiting=not pending, can_send=not pending)
+    markup = tt.videos_keyboard(
+        videos,
+        waiting=not pending,
+        can_send=not pending,
+        pending=pending,
+    )
     sent = await _edit_or_send(target, text, markup)
     if pending:
         tt.clear_wait(user_id)
@@ -553,6 +558,24 @@ async def on_withdraw(callback: CallbackQuery) -> None:
         callback,
         tt.text_case_withdrawn(),
         tt.done_keyboard(after="comments"),
+    )
+
+
+@tiktok_router.callback_query(F.data == tt.TT_WITHDRAW_VIDEO)
+async def on_withdraw_video(callback: CallbackQuery) -> None:
+    if not _private(callback):
+        await callback.answer()
+        return
+    try:
+        item = await tt.withdraw_pending_video(callback.from_user.id)
+    except ValueError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    await callback.answer()
+    await _edit_or_send(
+        callback,
+        tt.text_video_withdrawn(str((item or {}).get("title") or "")),
+        tt.done_keyboard(after="videos"),
     )
 
 

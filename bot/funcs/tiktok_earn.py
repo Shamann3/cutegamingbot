@@ -68,6 +68,7 @@ TT_DONE_WAIT = "tt:done_wait"
 TT_SUBMIT_PHOTOS = "tt:submit_photos"
 TT_UNDO_PHOTO = "tt:undo_photo"
 TT_WITHDRAW = "tt:withdraw"
+TT_WITHDRAW_VIDEO = "tt:vwithdraw"
 TT_RECHECK = "tt:recheck:"
 TT_RETRY_VIDEO = "tt:vretry:"
 TT_BACK_TASKS = "questions_stars"
@@ -747,6 +748,14 @@ def text_case_withdrawn() -> str:
     )
 
 
+def text_video_withdrawn(title: str = "") -> str:
+    named = f"<b>{escape(title)}</b>\n" if title else ""
+    return (
+        f"{status_emoji_html('wait')} {named}<b>Ролик сняли с проверки.</b>\n"
+        "<blockquote><b><i>Можно отправить новый.</i></b></blockquote>"
+    )
+
+
 def _video_pages(total: int, page: int = 0) -> tuple[int, int]:
     pages = max(1, (max(0, int(total)) + VIDEOS_PAGE_SIZE - 1) // VIDEOS_PAGE_SIZE)
     return max(0, min(int(page), pages - 1)), pages
@@ -805,11 +814,11 @@ def comments_keyboard(
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if complete:
-        rows.append([_btn("Забрать серию", TT_WITHDRAW, ICON_WITHDRAW)])
+        rows.append([_btn("Отклонить", TT_WITHDRAW, ICON_WITHDRAW)])
     elif can_send and 0 < count < needed:
         rows.append([_btn("Убрать последнее фото", TT_UNDO_PHOTO, ICON_UNDO)])
     rows.append([_btn("Аккаунты TikTok", TT_NICKS, ICON_NICKS)])
-    rows.append([_btn("Назад", TT_HUB, ICON_BACK)])
+    rows.append([_btn("Назад, в главное меню", TT_HUB, ICON_BACK,style="success")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -828,14 +837,16 @@ def videos_keyboard(
     *,
     waiting: bool = False,
     can_send: bool = True,
+    pending: bool = False,
 ) -> InlineKeyboardMarkup:
     if waiting:
         return video_wait_keyboard()
-    rows = [
-        [_btn("Аккаунты TikTok", TT_NICKS, ICON_NICKS)],
-        [_btn("Ваши ролики", TT_MY_VIDEOS, ICON_MY_VIDEOS)],
-        [_btn("Назад", TT_HUB, ICON_BACK)],
-    ]
+    rows: list[list[InlineKeyboardButton]] = []
+    if pending or not can_send:
+        rows.append([_btn("Отклонить", TT_WITHDRAW_VIDEO, ICON_WITHDRAW)])
+    rows.append([_btn("Аккаунты TikTok", TT_NICKS, ICON_NICKS)])
+    rows.append([_btn("Ваши ролики", TT_MY_VIDEOS, ICON_MY_VIDEOS)])
+    rows.append([_btn("Назад, в главное меню", TT_HUB, ICON_BACK, style="success")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -890,6 +901,8 @@ def video_card_keyboard(item: dict[str, Any], page: int = 0) -> InlineKeyboardMa
     rows: list[list[InlineKeyboardButton]] = []
     vid = int(item.get("id") or 0)
     status = str(item.get("status") or "")
+    if status == "pending":
+        rows.append([_btn("Отклонить", TT_WITHDRAW_VIDEO, ICON_WITHDRAW)])
     if status == "live" and item.get("recheckReady") and not item.get("recheckPending"):
         rows.append([_btn("Пересчитать просмотры", f"{TT_RECHECK}{vid}", ICON_OK)])
     if status == "rejected":
@@ -1393,6 +1406,35 @@ async def withdraw_comment_case(user_id: int) -> None:
     )
 
 
+async def withdraw_pending_video(user_id: int) -> dict[str, Any]:
+    await ensure_schema()
+    pool = _pool()
+    if not pool:
+        raise ValueError("Сейчас нельзя снять ролик. Попробуйте позже.")
+    row = await pool.fetchrow(
+        """
+        SELECT * FROM tiktok_videos
+        WHERE user_id = $1 AND status = 'pending'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        int(user_id),
+    )
+    if not row:
+        raise ValueError("Нет ролика на проверке.")
+    await pool.execute(
+        """
+        UPDATE tiktok_videos
+        SET status = 'withdrawn',
+            recheck_requested_at = NULL
+        WHERE id = $1 AND user_id = $2 AND status = 'pending'
+        """,
+        int(row["id"]),
+        int(user_id),
+    )
+    return {"id": int(row["id"]), "title": row["title"] if "title" in row.keys() else ""}
+
+
 async def submit_comment_case(user_id: int) -> dict[str, Any]:
     case = await get_pending_comment_case(user_id)
     if not case:
@@ -1430,7 +1472,11 @@ async def list_user_videos(user_id: int) -> list[dict[str, Any]]:
         return []
     settings = await get_settings()
     rows = await pool.fetch(
-        "SELECT * FROM tiktok_videos WHERE user_id = $1 ORDER BY created_at DESC",
+        """
+        SELECT * FROM tiktok_videos
+        WHERE user_id = $1 AND status IN ('pending', 'live', 'rejected')
+        ORDER BY created_at DESC
+        """,
         int(user_id),
     )
     return [_video_item(r, settings) for r in rows]

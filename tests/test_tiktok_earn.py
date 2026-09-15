@@ -150,6 +150,41 @@ def test_collect_progress_and_undo_available_before_full():
     assert pick_thumb_file_id([_Size("small", 90), _Size("mid", 320), _Size("big", 1280)]) == "mid"
 
 
+def test_pending_video_reject_matches_comments_layout():
+    from bot.funcs.tiktok_earn import (
+        ICON_WITHDRAW,
+        comments_keyboard,
+        text_video_withdrawn,
+        video_card_keyboard,
+        videos_keyboard,
+    )
+
+    comments = comments_keyboard(can_send=True, count=15, needed=15, complete=True)
+    videos = videos_keyboard([], pending=True, can_send=False, waiting=False)
+    comment_labels = [btn.text for row in comments.inline_keyboard for btn in row]
+    video_labels = [btn.text for row in videos.inline_keyboard for btn in row]
+    assert comment_labels[0] == video_labels[0] == "Отклонить"
+    assert comments.inline_keyboard[0][0].icon_custom_emoji_id == ICON_WITHDRAW
+    assert videos.inline_keyboard[0][0].icon_custom_emoji_id == ICON_WITHDRAW
+    assert comments.inline_keyboard[0][0].callback_data == "tt:withdraw"
+    assert videos.inline_keyboard[0][0].callback_data == "tt:vwithdraw"
+    assert "Аккаунты TikTok" in video_labels
+    assert "Ваши ролики" in video_labels
+    assert video_labels[-1] == comment_labels[-1] == "Назад, в главное меню"
+    assert (videos.inline_keyboard[-1][0].style or "") == "success"
+    assert (comments.inline_keyboard[-1][0].style or "") == "success"
+    assert "tt:vwithdraw" not in _kb_data(videos_keyboard([]))
+    card = video_card_keyboard({"id": 8, "status": "pending"})
+    assert _kb_data(card).split()[0] == "tt:vwithdraw"
+    assert "Отклонить" in " ".join(btn.text for row in card.inline_keyboard for btn in row)
+    live = _kb_data(video_card_keyboard({"id": 8, "status": "live"}))
+    assert "tt:vwithdraw" not in live
+    done = text_video_withdrawn("дриплик")
+    assert "дриплик" in done
+    assert "сняли с проверки" in done
+    assert "—" not in done
+
+
 def test_video_recheck_state_and_keyboard():
     from datetime import datetime, timedelta, timezone
     from bot.funcs.tiktok_earn import my_videos_keyboard, video_card_keyboard, video_recheck_state
@@ -218,6 +253,7 @@ def test_direction_then_work_on_same_screen():
     assert "tt:nicks" in _kb_data(videos_keyboard([]))
     assert "tt:my_videos" in _kb_data(videos_keyboard([]))
     assert "tt:hub" in _kb_data(videos_keyboard([]))
+    assert "tt:vwithdraw" not in _kb_data(videos_keyboard([]))
     waiting = _kb_data(videos_keyboard([], waiting=True))
     assert "tt:nicks" not in waiting
     assert "tt:my_videos" not in waiting
@@ -273,7 +309,9 @@ def test_navigation_callbacks_stay_on_path():
     assert "get_pending_comment_case" in src
     assert "text_photos_on_review" in src
     assert "TT_WITHDRAW" in src
+    assert "TT_WITHDRAW_VIDEO" in src
     assert "withdraw_comment_case" in src
+    assert "withdraw_pending_video" in src
 
 
 def test_partial_case_logic_and_approve_gate():
@@ -330,6 +368,7 @@ def test_player_tiktok_copy_is_formal_vy():
         text_press_send_link,
         text_press_send_photos,
         text_case_withdrawn,
+        text_video_withdrawn,
         text_videos,
         text_wait_expired,
         text_wait_link,
@@ -369,6 +408,7 @@ def test_player_tiktok_copy_is_formal_vy():
         text_press_send_link(),
         text_wait_expired(),
         text_case_withdrawn(),
+        text_video_withdrawn("дриплик"),
     ]
     help_src = Path("bot/funcs/help.py").read_text(encoding="utf-8")
     blobs.append(help_src.split("<b>TikTok</b>")[1].split("<b>Промокоды</b>")[0])
