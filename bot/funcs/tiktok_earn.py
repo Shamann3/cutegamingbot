@@ -78,7 +78,7 @@ ICON_OK = "5224257782013769471"
 ICON_CAM = "5373098002641805602"
 ICON_COMMENTS = "5350367217349311525"
 ICON_VIDEOS = "5229011542011299168"
-ICON_NICKS = "5456282961999570188"
+ICON_NICKS = "5229011542011299168"
 ICON_MY_VIDEOS = "5226928895189598791"
 ICON_ADD = "5339564150534200424"
 ICON_EDIT = "5472410705929971383"
@@ -530,7 +530,7 @@ def videos_screen_text(
     if pending:
         title = escape(str(pending.get("title") or f"Ролик #{pending.get('id')}"))
         return (
-            f"{head}{status_emoji_html('wait')} <b>{title}</b>\n"
+            f"{head}{status_emoji_html('wait')} <b>Видео {title}</b>\n"
             "<blockquote><b>На проверке</b></blockquote>\n"
         )
     return head + text_videos(s)
@@ -617,8 +617,8 @@ def text_my_videos(videos: list[dict[str, Any]] | None = None, page: int = 0) ->
     _, pages = _video_pages(len(items), page)
     extra = f" · стр. {page + 1} из {pages}" if pages > 1 else ""
     return (
-        f"<b>Ваши ролики{escape(extra)}</b>\n"
-        "<blockquote><b>Зелёный</b> принят · <b>жёлтый</b> ждём · <b>красный</b> снова</blockquote>"
+        f"<tg-emoji emoji-id='5226928895189598791'>⭐️</tg-emoji> <b>Ваши ролики{escape(extra)}</b>\n"
+        "<blockquote><b>Зелёный <i>принят</i> · жёлтый <i>ждём</i> · красный <i>снова</i></b></blockquote>"
     )
 
 
@@ -712,7 +712,7 @@ def hub_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [_btn("Комментарии", TT_COMMENTS, ICON_COMMENTS, style="primary")],
         [_btn("Видео о боте", TT_VIDEOS, ICON_VIDEOS, style="primary")],
-        [_btn("Аккаунты TikTok", TT_NICKS, ICON_MY_VIDEOS)],
+        [_btn("Аккаунты TikTok", TT_NICKS, ICON_NICKS)],
         [_btn("Ваши ролики", TT_MY_VIDEOS, ICON_MY_VIDEOS)],
         [_btn("Назад", TT_BACK_TASKS, ICON_BACK)],
     ])
