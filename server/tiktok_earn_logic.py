@@ -511,7 +511,7 @@ def format_photo_reject_html(labels: list[str], *, reviewer_html: str = "") -> s
     clean = reject_labels(labels)
     lines = "\n".join(f"<b>{i}.</b> {escape(label)}" for i, label in enumerate(clean, 1))
     return (
-        f"{status_emoji_html('no')} <b>Комментарии не приняли.</b>\n"
+        f"<b>Комментарии не приняли.</b>\n"
         "<blockquote>"
         f"<b>{lines}</b>"
         "</blockquote>"

@@ -181,7 +181,11 @@ _bot1_session = _AiohttpSession(timeout=60.0)
 
 bot1 = Bot(
     token=TOKEN,
-    session=_bot1_session
+    session=_bot1_session,
+    default=DefaultBotProperties(
+        parse_mode=ParseMode.HTML,
+        link_preview_is_disabled=True,
+    ),
 )
 
 bot1.session.middleware(TelegramApiLogger())
