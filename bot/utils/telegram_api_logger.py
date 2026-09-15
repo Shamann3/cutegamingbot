@@ -8,11 +8,12 @@ from aiogram.exceptions import (
     TelegramBadRequest,
     TelegramForbiddenError,
     TelegramNetworkError,
+    TelegramRetryAfter,
+    TelegramServerError,
 )
 from aiogram.methods import TelegramMethod
 
 # Кратковременные обрывы до api.telegram.org (ClientConnectorError и т.п.).
-# GetUpdates сюда не попадают (_SKIP_METHODS) — у polling свой цикл перезапуска.
 _NETWORK_RETRY_ATTEMPTS = 3
 _NETWORK_RETRY_BASE_DELAY = 0.45
 
@@ -38,8 +39,44 @@ if not logger.handlers:
     logger.propagate = False
 
 
-# Служебные методы long-polling не логируем (только шум).
-_SKIP_METHODS = {"GetUpdates", "GetMe"}
+# GetMe не логируем. GetUpdates обрабатываем отдельно: flood/502 нельзя
+# отдавать в backoff aiogram (он спит 1с вместо retry_after).
+_SKIP_METHODS = {"GetMe"}
+_GETUPDATES_MAX_WAIT = 60.0
+
+
+async def _get_updates_resilient(make_request, bot, method):
+    delay = 5.0
+    while True:
+        try:
+            return await make_request(bot, method)
+        except asyncio.CancelledError:
+            raise
+        except TelegramRetryAfter as e:
+            wait = max(float(getattr(e, "retry_after", None) or delay), delay) + 1.0
+            wait = min(wait, 90.0)
+            logger.warning("GetUpdates flood: жду %.0fs, как просит Telegram", wait)
+            await asyncio.sleep(wait)
+            delay = 5.0
+        except (TelegramServerError, TelegramNetworkError) as e:
+            text = str(e).lower()
+            transient = (
+                isinstance(e, TelegramNetworkError)
+                or "bad gateway" in text
+                or "gateway time" in text
+                or "502" in text
+                or "503" in text
+                or "504" in text
+            )
+            if not transient:
+                raise
+            logger.warning(
+                "GetUpdates %s: жду %.0fs и повторяю",
+                type(e).__name__,
+                delay,
+            )
+            await asyncio.sleep(delay)
+            delay = min(_GETUPDATES_MAX_WAIT, delay * 1.6)
 
 # Ожидаемые (штатные) ошибки Telegram API для некоторых методов:
 # их не нужно печатать как traceback на каждый вызов.
@@ -292,6 +329,8 @@ class TelegramApiLogger(BaseRequestMiddleware):
                     method = swapped
                     method_name = swapped.__class__.__name__
 
+        if method_name == "GetUpdates":
+            return await _get_updates_resilient(make_request, bot, method)
         if method_name in _SKIP_METHODS:
             return await make_request(bot, method)
 

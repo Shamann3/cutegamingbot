@@ -711,7 +711,7 @@ def video_recheck_state(last_checked: datetime | None, days: int = 7) -> dict[st
 def hub_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [_btn("Комментарии", TT_COMMENTS, ICON_COMMENTS, style="primary")],
-        [_btn("Видео о боте", TT_VIDEOS, ICON_VIDEOS, style="primary")],
+        [_btn("Видео о боте", TT_VIDEOS, "5375309569905938163", style="primary")],
         [_btn("Аккаунты TikTok", TT_NICKS, ICON_NICKS)],
         [_btn("Ваши ролики", TT_MY_VIDEOS, ICON_MY_VIDEOS)],
         [_btn("Назад", TT_BACK_TASKS, ICON_BACK)],

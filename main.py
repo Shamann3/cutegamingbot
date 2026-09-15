@@ -40836,9 +40836,13 @@ async def botmain():
         _cold_start["main"] = False
         if drop:
             print("[MAIN] Холодный старт: сбрасываю очередь старых апдейтов")
+        from aiogram.utils.backoff import BackoffConfig
+
         return dp.start_polling(
             bot1,
             drop_pending_updates=drop,
+            polling_timeout=30,
+            backoff_config=BackoffConfig(min_delay=5.0, max_delay=60.0, factor=1.5, jitter=0.2),
             allowed_updates=[
                 "message",
                 "edited_message",
