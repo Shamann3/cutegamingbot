@@ -824,7 +824,7 @@ async def on_wait_photo(message: Message) -> None:
         return
     if message.media_group_id:
         tt.remember_album_group(user_id, message.media_group_id)
-    await tt.touch_wait(user_id)
+    tt.touch_wait(user_id)
     if not await tt.list_nicks(user_id):
         await _delete_user_message(message)
         await _arm_nick_screen(message, user_id, "comments")
@@ -879,7 +879,7 @@ async def on_wait_photo(message: Message) -> None:
         await tt.arm_wait(user_id, tt.WAIT_PHOTOS, tt.MODE_WAIT_PHOTOS, extra)
     if message.media_group_id:
         tt.remember_album_group(user_id, message.media_group_id)
-        await tt.touch_wait(user_id)
+        tt.touch_wait(user_id)
         prev = _album_tasks.pop(user_id, None)
         if prev:
             prev.cancel()

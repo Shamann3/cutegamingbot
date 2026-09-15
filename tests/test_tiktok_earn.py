@@ -884,5 +884,7 @@ def test_comments_collect_photos_and_image_files():
     assert "collectable_image_from_message" in handler
     assert "rec.get(\"kind\") == WAIT_PHOTOS" in funcs
     assert "restore_wait_from_session" in admin
+    assert "await tt.touch_wait" not in handler
+    assert "tt.touch_wait(" in handler
     clear_wait(uid)
 
