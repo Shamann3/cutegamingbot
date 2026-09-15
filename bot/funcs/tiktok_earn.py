@@ -818,7 +818,7 @@ def comments_keyboard(
     elif can_send and 0 < count < needed:
         rows.append([_btn("Убрать последнее фото", TT_UNDO_PHOTO, ICON_UNDO)])
     rows.append([_btn("Аккаунты TikTok", TT_NICKS, ICON_NICKS)])
-    rows.append([_btn("Назад, в главное меню", TT_HUB, ICON_BACK,style="success")])
+    rows.append([_btn("Назад, в главное меню", TT_HUB, "5348423147647414077",style="success")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -846,7 +846,7 @@ def videos_keyboard(
         rows.append([_btn("Отклонить", TT_WITHDRAW_VIDEO, ICON_WITHDRAW)])
     rows.append([_btn("Аккаунты TikTok", TT_NICKS, ICON_NICKS)])
     rows.append([_btn("Ваши ролики", TT_MY_VIDEOS, ICON_MY_VIDEOS)])
-    rows.append([_btn("Назад, в главное меню", TT_HUB, ICON_BACK, style="success")])
+    rows.append([_btn("Назад, в главное меню", TT_HUB, "5348423147647414077", style="success")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
