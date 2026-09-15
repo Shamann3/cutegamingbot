@@ -691,6 +691,8 @@ def test_admin_photo_proxy_client_uses_jwt_query_and_thumb():
     assert "Открыть улику в TikTok" in section
     assert "busyRef.current" in section
     assert "Начать работу" in section
+    assert "tt-brief-copy" in section
+    assert "flex-direction: column" in css
     assert "parseViewsInput" in section
     assert "64.6k" in section
     assert "customReason" in section

@@ -90,7 +90,7 @@ function Briefing({ tab, count = 0, onStart, compact = false }) {
   const copy = BRIEF[tab] || BRIEF.comments
   return (
     <div className={`tt-brief${compact ? ' is-compact' : ''}`}>
-      <div>
+      <div className="tt-brief-copy">
         <h3>{copy.title}</h3>
         <p>{copy.text}</p>
       </div>
