@@ -548,29 +548,15 @@ def comments_screen_text(
     notice: str = "",
     latest: dict[str, Any] | None = None,
 ) -> str:
-    s = _cfg(cfg)
-    needed = int(s["photosRequired"])
-    head = _notice_block(notice)
     if pending:
-        return (
-            f"{head}🟡 Серия скриншотов на проверке.\n"
-            f"{count} из {needed}\n"
-        )
+        return " "
     if count > 0:
-        return head + collect_text(count, needed, nicks, s)
+        return " "
     if latest and latest.get("status") == "rejected":
-        reason = str(latest.get("rejectText") or "Серию не приняли.")
-        return (
-            f"{head}🔴 Прошлая серия сриншотов не прошла проверку\n"
-            f"{reason}\n"
-            f"{text_comments(s)}"
-        )
+        return " "
     if latest and latest.get("status") == "approved":
-        return (
-            f"{head}🟢 Прошлая серия скриншотов принята.\n"
-            f"{text_comments(s)}"
-        )
-    return head + text_comments(s)
+        return " "
+    return " "
 
 
 def videos_screen_text(
