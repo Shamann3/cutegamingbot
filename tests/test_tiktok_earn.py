@@ -216,7 +216,12 @@ def test_direction_then_work_on_same_screen():
     assert "tt:undo_photo" in work
     assert "tt:hub" in work
     assert "tt:nicks" in _kb_data(videos_keyboard([]))
+    assert "tt:my_videos" in _kb_data(videos_keyboard([]))
     assert "tt:hub" in _kb_data(videos_keyboard([]))
+    waiting = _kb_data(videos_keyboard([], waiting=True))
+    assert "tt:nicks" not in waiting
+    assert "tt:my_videos" not in waiting
+    assert waiting.strip() == "tt:hub"
     assert "cuteplayer" in text_videos({"kutPerUnit": 40}) or "Обзор" in text_videos({"kutPerUnit": 40})
 
 
@@ -751,6 +756,7 @@ def test_video_title_then_link_and_retry_flow():
         text_wait_title,
         text_videos,
         video_card_keyboard,
+        video_wait_keyboard,
     )
 
     assert MODE_WAIT_TITLE == "await_video_title"
@@ -791,4 +797,9 @@ def test_video_title_then_link_and_retry_flow():
     assert "replaceVideoId" in handler
     assert "В главное меню" in funcs
     assert "validate_video_title" in handler
+    wait_kb = _kb_data(video_wait_keyboard())
+    assert "tt:nicks" not in wait_kb
+    assert "tt:my_videos" not in wait_kb
+    assert "tt:hub" in wait_kb
+    assert "video_wait_keyboard" in handler
 

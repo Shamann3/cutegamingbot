@@ -628,7 +628,7 @@ async def on_retry_video(callback: CallbackQuery) -> None:
         tt.WAIT_TITLE,
         tt.MODE_WAIT_TITLE,
         extra,
-        tt.videos_keyboard(await tt.list_user_videos(user_id), waiting=True),
+        tt.video_wait_keyboard(),
     )
 
 
@@ -739,8 +739,7 @@ async def on_wait_text(message: Message) -> None:
     if kind == tt.WAIT_TITLE or await tt.is_waiting_title(user_id):
         session = await tt.get_session(user_id)
         extra = dict(session.get("extra") or rec)
-        videos = await tt.list_user_videos(user_id)
-        kb = tt.videos_keyboard(videos, waiting=True, can_send=True)
+        kb = tt.video_wait_keyboard()
         try:
             title = tt.validate_video_title(raw)
         except ValueError as exc:
@@ -778,8 +777,7 @@ async def on_wait_text(message: Message) -> None:
         extra = dict(session.get("extra") or rec)
         title = str(extra.get("videoTitle") or "")
         replace_id = extra.get("replaceVideoId")
-        videos = await tt.list_user_videos(user_id)
-        kb = tt.videos_keyboard(videos)
+        kb = tt.video_wait_keyboard()
         if not tt.looks_like_tiktok_url(raw):
             await _reprompt(
                 message,
@@ -906,21 +904,19 @@ async def on_wait_noise(message: Message) -> None:
         )
         return
     if kind == tt.WAIT_TITLE:
-        videos = await tt.list_user_videos(user_id)
         await _reprompt(
             message,
             user_id,
             tt.text_wait_title("Нужно название ролика текстом, не файл."),
-            tt.videos_keyboard(videos, waiting=True),
+            tt.video_wait_keyboard(),
         )
         return
     if kind == tt.WAIT_LINK:
-        videos = await tt.list_user_videos(user_id)
         await _reprompt(
             message,
             user_id,
             tt.text_link_screen("Нужна ссылка на ролик, не файл."),
-            tt.videos_keyboard(videos),
+            tt.video_wait_keyboard(),
         )
         return
     cfg = await tt.get_settings()

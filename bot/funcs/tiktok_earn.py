@@ -435,7 +435,7 @@ def text_comments(cfg: dict[str, Any] | None = None) -> str:
         "<b>2. Напишите комментарий с упоминанием @CuteGamingBot и поставьте лайк на свой комментарий</b>\n"
         f"<b>3. {needed} скринов · {reward} кут</b>"
         "</blockquote>\n"
-        f"<blockquote><b>Например <code>{escape(EXAMPLE_COMMENT)}</code></b></blockquote>\n"
+        f"<blockquote><b>Например <code>{escape(EXAMPLE_COMMENT)}</code></b></blockquote>\n\n<b>Отправьте скриншоты ваших комментариев</b>"
     )
 
 
@@ -448,7 +448,7 @@ def text_videos(cfg: dict[str, Any] | None = None) -> str:
         f"<tg-emoji emoji-id='{ICON_VIDEOS}'>🎬</tg-emoji> <b>Видео о боте</b>\n"
         "<b><i>Делайте по порядку.</i></b>\n"
         "<blockquote>"
-        f"<b>1. Назовите своё видео</b>\n"
+        f"<b>1. Напишите название для своего видео</b>\n"
         f"<b>2. Отправьте ссылку на видео</b>"
         "</blockquote>\n"
         "<blockquote>"
@@ -552,7 +552,7 @@ def text_wait_link(title: str = "", error: str = "") -> str:
     head = f"<b>{escape(error)}</b>\n" if error else ""
     named = f"<b>{escape(title)}</b>\n" if title else ""
     return (
-        f"{head}{named}{status_emoji_html('wait')} <b>Теперь ссылка.</b>\n"
+        f"{head}{named}{status_emoji_html('wait')} <b>Теперь отправьте ссылку на ваше видео.</b>\n"
     )
 
 
@@ -773,12 +773,18 @@ def videos_keyboard(
     waiting: bool = False,
     can_send: bool = True,
 ) -> InlineKeyboardMarkup:
+    if waiting:
+        return video_wait_keyboard()
     rows = [
         [_btn("Аккаунты TikTok", TT_NICKS, ICON_NICKS)],
         [_btn("Ваши ролики", TT_MY_VIDEOS, ICON_MY_VIDEOS)],
         [_btn("Назад", TT_HUB, ICON_BACK)],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def video_wait_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[_btn("Назад", TT_HUB, ICON_BACK)]])
 
 
 def nicks_keyboard(nicks: list[str], *, locked: bool = False, origin: str = "hub") -> InlineKeyboardMarkup:
