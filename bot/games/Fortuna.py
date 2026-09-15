@@ -99,7 +99,15 @@ FORTUNA_MAX_NATURAL_SHARE = 0.90
 
 # Колесо 0..12, не европейское 0..36. Честный 1/13 ≈ 7.7% слишком часто
 # опустошает кассу на ставке «одно число». Держим редкий джекпот ~1/36.
-FORTUNA_SINGLE_NUMBER_WIN_CHANCE = 0.028
+# Колесо 0..12, не европейское 0..36.
+# Натуральные шансы: 1 число ≈ 7.7%, 2 числа ≈ 15.4%, 3 числа ≈ 23%.
+# Игра должна быть реально трудной, поэтому для маленьких ставок
+# жёстко держим редкий шанс победы (ниже, чем даже "hard"-профиль).
+FORTUNA_SINGLE_NUMBER_WIN_CHANCE = 0.020   # ~1 из 50 спинов
+FORTUNA_SMALL_RANGE_WIN_CHANCE: Dict[int, float] = {
+    2: 0.035,   # ~1 из 28 спинов
+    3: 0.070,   # ~1 из 14 спинов
+}
 
 # ===================== ХРАНИЛИЩА / БЛОКИРОВКИ =====================
 # ВАЖНО: asyncio.Lock нельзя класть в LazyGameStore/Redis.
@@ -429,6 +437,25 @@ def _target_win_probability(parsed: dict, lose_streak: int = 0) -> float:
             extra_steps = max(0, min(extra_steps, int(FORTUNA_LOSE_STREAK_SOFTEN_CAP_STEPS)))
             rare = _clamp01(rare + 0.004 * extra_steps)
         return rare
+
+    if mode == "range":
+        try:
+            start = int(parsed.get("start_num") or 1)
+            end = int(parsed.get("end_num") or 12)
+        except Exception:
+            start, end = 1, 12
+        width = max(0, end - start + 1)
+
+        small_map = FORTUNA_SMALL_RANGE_WIN_CHANCE or {}
+        if width in small_map:
+            rare = _clamp01(float(small_map[width]))
+            # Смягчение длинных луз-стриков (как у single number), но всё равно редко.
+            if int(lose_streak or 0) >= FORTUNA_LOSE_STREAK_SOFTEN_FROM:
+                extra_steps = int(lose_streak or 0) - int(FORTUNA_LOSE_STREAK_SOFTEN_FROM) + 1
+                extra_steps = max(0, min(extra_steps, int(FORTUNA_LOSE_STREAK_SOFTEN_CAP_STEPS)))
+                rare = _clamp01(rare + 0.005 * extra_steps)
+            return rare
+        # широкие диапазоны (4..11 чисел) — как раньше, по профилю
 
     profile = str(FORTUNA_WIN_PROFILE or "hard").strip().lower()
     profile_map = FORTUNA_WIN_PROB_FACTORS.get(profile) or FORTUNA_WIN_PROB_FACTORS["hard"]

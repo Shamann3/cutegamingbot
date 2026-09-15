@@ -76,7 +76,7 @@ ZERO_STREAK_BREAK = 3          # после скольких проигрыше�
 try:
     KUBE_LOST_CHANCE = Decimal(str(KUBE_LOST_CHANCE))
 except NameError:
-    KUBE_LOST_CHANCE = Decimal("0.05")
+    KUBE_LOST_CHANCE = Decimal("0.15")
 
 KUBE_MISS_PROBABILITY = Decimal(5) / Decimal(6)
 if KUBE_MISS_PROBABILITY > 0:
