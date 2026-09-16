@@ -59,12 +59,18 @@ ZERO_STREAK_BREAK = 3
 
 # Доп. контроль demo для ставок на одно число:
 # даже в demo-режиме такая ставка не должна гарантированно выигрывать.
-FORTUNA_DEMO_NUMBER_WIN_PROB_BASE = 0.34
-FORTUNA_DEMO_NUMBER_WIN_PROB_MIN = 0.14
-FORTUNA_DEMO_NUMBER_WIN_PROB_MAX = 0.55
-FORTUNA_DEMO_NUMBER_WIN_STREAK_PENALTY = 0.06
-FORTUNA_DEMO_NUMBER_LOSE_STREAK_BONUS = 0.03
+FORTUNA_DEMO_NUMBER_WIN_PROB_BASE = 0.08
+FORTUNA_DEMO_NUMBER_WIN_PROB_MIN = 0.03
+FORTUNA_DEMO_NUMBER_WIN_PROB_MAX = 0.15
+FORTUNA_DEMO_NUMBER_WIN_STREAK_PENALTY = 0.03
+FORTUNA_DEMO_NUMBER_LOSE_STREAK_BONUS = 0.02
 FORTUNA_DEMO_NUMBER_STREAK_CAP = 3
+
+# Для узких диапазонов в demo — свои (тоже низкие) шансы.
+FORTUNA_DEMO_SMALL_RANGE_WIN_PROB: Dict[int, float] = {
+    2: 0.05,   # ~1 из 20
+    3: 0.10,   # ~1 из 10
+}
 
 # Профиль экономики выпадений (чем ниже коэффициент, тем "жестче" игра).
 # Значения применяются как доля от естественного шанса победы по типу ставки.
@@ -103,10 +109,10 @@ FORTUNA_MAX_NATURAL_SHARE = 0.90
 # Натуральные шансы: 1 число ≈ 7.7%, 2 числа ≈ 15.4%, 3 числа ≈ 23%.
 # Игра должна быть реально трудной, поэтому для маленьких ставок
 # жёстко держим редкий шанс победы (ниже, чем даже "hard"-профиль).
-FORTUNA_SINGLE_NUMBER_WIN_CHANCE = 0.020   # ~1 из 50 спинов
+FORTUNA_SINGLE_NUMBER_WIN_CHANCE = 0.005   # ~1 из 200 спинов
 FORTUNA_SMALL_RANGE_WIN_CHANCE: Dict[int, float] = {
-    2: 0.035,   # ~1 из 28 спинов
-    3: 0.070,   # ~1 из 14 спинов
+    2: 0.010,   # ~1 из 100 спинов
+    3: 0.020,   # ~1 из 50 спинов
 }
 
 # ===================== ХРАНИЛИЩА / БЛОКИРОВКИ =====================
@@ -1691,32 +1697,53 @@ async def _fortuna_paid_game(
                         should_lose = True
                         _fdbg("DEMO_MASK", "random chance -> LOSS/HOME")
 
-                    # Для режима "ставка на число" в demo добавляем отдельный вероятностный фильтр:
-                    # win остаются чаще, чем в обычной игре, но уже не 100% каждый раунд.
-                    if not should_lose and str(parsed.get("mode") or "") == "number":
-                        ws = max(0, min(int(win_streak or 0), int(FORTUNA_DEMO_NUMBER_STREAK_CAP)))
-                        ls = max(0, min(int(lose_streak or 0), int(FORTUNA_DEMO_NUMBER_STREAK_CAP)))
-                        number_demo_win_prob = float(FORTUNA_DEMO_NUMBER_WIN_PROB_BASE)
-                        number_demo_win_prob -= ws * float(FORTUNA_DEMO_NUMBER_WIN_STREAK_PENALTY)
-                        number_demo_win_prob += ls * float(FORTUNA_DEMO_NUMBER_LOSE_STREAK_BONUS)
-                        number_demo_win_prob = _clamp01(number_demo_win_prob)
-                        number_demo_win_prob = max(
-                            float(FORTUNA_DEMO_NUMBER_WIN_PROB_MIN),
-                            min(float(FORTUNA_DEMO_NUMBER_WIN_PROB_MAX), number_demo_win_prob),
-                        )
+                    # Для "точечных" ставок в demo добавляем отдельный вероятностный фильтр:
+                    # 1 число и узкие диапазоны (2/3 числа) НЕ должны почти всегда заходить.
+                    if not should_lose:
+                        mode_dbg = str(parsed.get("mode") or "")
+                        base_prob: Optional[float] = None
+                        tag_dbg = ""
 
-                        number_roll = random.random()
-                        if number_roll >= number_demo_win_prob:
-                            should_lose = True
-                            _fdbg(
-                                "DEMO_NUMBER",
-                                f"roll={number_roll:.4f} >= prob={number_demo_win_prob:.4f} -> LOSS",
+                        if mode_dbg == "number":
+                            base_prob = float(FORTUNA_DEMO_NUMBER_WIN_PROB_BASE)
+                            tag_dbg = "DEMO_NUMBER"
+                        elif mode_dbg == "range":
+                            try:
+                                start_r = int(parsed.get("start_num") or 1)
+                                end_r = int(parsed.get("end_num") or 12)
+                            except Exception:
+                                start_r, end_r = 1, 12
+                            width = max(0, end_r - start_r + 1)
+                            small_map = FORTUNA_DEMO_SMALL_RANGE_WIN_PROB or {}
+                            if width in small_map:
+                                base_prob = float(small_map[width])
+                                tag_dbg = f"DEMO_RANGE_{width}"
+
+                        if base_prob is not None:
+                            ws = max(0, min(int(win_streak or 0), int(FORTUNA_DEMO_NUMBER_STREAK_CAP)))
+                            ls = max(0, min(int(lose_streak or 0), int(FORTUNA_DEMO_NUMBER_STREAK_CAP)))
+
+                            demo_win_prob = float(base_prob)
+                            demo_win_prob -= ws * float(FORTUNA_DEMO_NUMBER_WIN_STREAK_PENALTY)
+                            demo_win_prob += ls * float(FORTUNA_DEMO_NUMBER_LOSE_STREAK_BONUS)
+                            demo_win_prob = _clamp01(demo_win_prob)
+                            demo_win_prob = max(
+                                float(FORTUNA_DEMO_NUMBER_WIN_PROB_MIN),
+                                min(float(FORTUNA_DEMO_NUMBER_WIN_PROB_MAX), demo_win_prob),
                             )
-                        else:
-                            _fdbg(
-                                "DEMO_NUMBER",
-                                f"roll={number_roll:.4f} < prob={number_demo_win_prob:.4f} -> WIN",
-                            )
+
+                            roll = random.random()
+                            if roll >= demo_win_prob:
+                                should_lose = True
+                                _fdbg(
+                                    tag_dbg,
+                                    f"roll={roll:.4f} >= prob={demo_win_prob:.4f} -> LOSS",
+                                )
+                            else:
+                                _fdbg(
+                                    tag_dbg,
+                                    f"roll={roll:.4f} < prob={demo_win_prob:.4f} -> WIN",
+                                )
 
                     if should_lose:
                         # Маскировочный проигрыш, demo не списываем

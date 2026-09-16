@@ -40615,15 +40615,30 @@ async def botmain():
     print(f"⏳ Время подготовки данных: {prepare_elapsed_time_ms:.2f} мс | {prepare_elapsed_time_sec:.2f} сек")
 
     # ===================== 4) Фоновые задачи =====================
+    # ===================== 4) Фоновые задачи =====================
     async def _after_polling_started():
         nonlocal run_bot_task
         print("[🚀] startup inner begin")
         await on_bot_started()
 
         try:
-            start_heartbeat_task(interval=15, debug=False)
+            start_heartbeat_task(interval=15 , debug=False)
         except Exception as e:
             print(f"[HEARTBEAT][WARN] Ошибка запуска heartbeat: {type(e).__name__}: {e}")
+
+        # ─── Капча: фоновая чистка просроченных карточек (TTL 30 мин) ───
+        # Запускается только в процессе, который владеет polling. В момент
+        # rolling-деплоя handoff-child сюда не дойдёт, пока старый инстанс
+        # не отпустит очередь, — значит второго воркера не будет.
+        try:
+            from bot.handlers.group_captcha import start_cleanup_task
+            _cap_task = start_cleanup_task(getattr(db , "pool" , None) , bot1)
+            if _cap_task is not None:
+                print("[CAPTCHA] ✅ cleanup worker запущен (интервал 60с, TTL 30м)")
+            else:
+                print("[CAPTCHA][WARN] cleanup worker не запущен: нет pool или bot1")
+        except Exception as e:
+            print(f"[CAPTCHA][WARN] cleanup worker: {type(e).__name__}: {e}")
 
         try:
             from bot.admins.punish_timers import start_moderation_workers
@@ -40647,7 +40662,7 @@ async def botmain():
                 exc = task.exception()
                 if exc is not None:
                     print(f"🟥 [RUNBOT][CRASH] run_bot() упал с исключением: {type(exc).__name__}: {exc!r}")
-                    traceback.print_exception(type(exc), exc, exc.__traceback__)
+                    traceback.print_exception(type(exc) , exc , exc.__traceback__)
 
             run_bot_task.add_done_callback(_run_bot_task_done)
         except Exception as e:
@@ -40658,10 +40673,10 @@ async def botmain():
         # Пишут в /app/log_event_loop.txt и в stdout (network). Ловят «замирания»
         # цикла (из-за которых виснут отправки в Telegram) и сетевые проблемы.
         try:
-            asyncio.create_task(monitor_event_loop(interval=0.2, warn_delay=0.5, stall_threshold=3.0))
+            asyncio.create_task(monitor_event_loop(interval=0.2 , warn_delay=0.5 , stall_threshold=3.0))
             # network_monitor (🌐 пинг Telegram каждые 30с) по умолчанию ВЫКЛЮЧЕН —
             # только шумит в логах. Включить: DIAG_NETMON=1.
-            if os.getenv("DIAG_NETMON", "0") in ("1", "true", "yes", "on"):
+            if os.getenv("DIAG_NETMON" , "0") in ("1" , "true" , "yes" , "on"):
                 from bot.utils.network_monitor import network_monitor
                 asyncio.create_task(network_monitor())
                 print("[DIAG] ✅ network monitor запущен")
@@ -40676,16 +40691,14 @@ async def botmain():
             async def _soft_restart_notify(html: str) -> None:
                 try:
                     await bot1.send_message(
-                        _soft_restart.creator_id(), html, parse_mode="HTML"
-                    )
+                        _soft_restart.creator_id() , html , parse_mode="HTML")
                 except Exception:
                     pass
 
-            _soft_restart.start_scheduler(dp=dp, notify=_soft_restart_notify)
+            _soft_restart.start_scheduler(dp=dp , notify=_soft_restart_notify)
             print(
                 f"[SR] ready enabled={_soft_restart.is_enabled()} "
-                f"test={_soft_restart.is_test_mode()} interval={_soft_restart.interval_sec():.0f}s"
-            )
+                f"test={_soft_restart.is_test_mode()} interval={_soft_restart.interval_sec():.0f}s")
         except Exception as e:
             print(f"[SR][WARN] {type(e).__name__}: {e}")
 
@@ -40872,6 +40885,14 @@ async def botmain():
     finally:
         polling_end_time = time.time()
 
+        # === ОСТАНОВКА CAPTCHA CLEANUP ===
+        try:
+            from bot.handlers.group_captcha import stop_cleanup_task
+            await stop_cleanup_task()
+            print("[CAPTCHA] cleanup worker остановлен")
+        except Exception as e:
+            print(f"[CAPTCHA][WARN] stop cleanup: {type(e).__name__}: {e}")
+
         # === ОСТАНОВКА EDEN ===
         if eden_task and not eden_task.done():
             print("[🌱] Eden-бот: отправляю сигнал отмены...")
@@ -40884,7 +40905,7 @@ async def botmain():
                 print(f"[🌱][WARN] Eden-бот: ошибка при отмене: {type(e).__name__}: {e}")
 
         # === ОСТАНОВКА RUNBOT ===
-        await _safe_cancel_task(run_bot_task, "RUNBOT")
+        await _safe_cancel_task(run_bot_task , "RUNBOT")
 
         # === ЗАКРЫТИЕ СЕССИЙ ===
         try:

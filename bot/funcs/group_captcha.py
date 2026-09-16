@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import html
@@ -41,6 +42,11 @@ GATE_ALERT = (
     "Сначала пройдите капчу в этой группе. "
     "После этого игровые кнопки заработают"
 )
+
+# --- Фоновая очистка просроченных карточек -------------------------------
+CLEANUP_INTERVAL_SEC = 60     # как часто просыпается воркер
+CLEANUP_BATCH = 200           # максимум карточек за одну итерацию
+ORPHANS_BATCH = 200           # максимум осиротевших сообщений за итерацию
 
 # Справка, закрытие карточек и ссылки наружу — не игра.
 # Игровые callback'и (ставки, ходы, меню игр) остаются закрытыми до капчи.
@@ -743,11 +749,30 @@ SCHEMA_SQL = (
     CREATE UNIQUE INDEX IF NOT EXISTS group_captcha_challenges_user_chat_idx
         ON group_captcha_challenges (chat_id, user_id)
     """,
+    # Ускоряет фоновую чистку просроченных карточек.
+    """
+    CREATE INDEX IF NOT EXISTS group_captcha_challenges_expires_idx
+        ON group_captcha_challenges (expires_at)
+    """,
     """
     CREATE TABLE IF NOT EXISTS group_captcha_resets (
         token TEXT PRIMARY KEY,
         applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+    """,
+    # Осиротевшие сообщения капчи: перевыпуск карточки в новом сообщении,
+    # старое сообщение уже не в challenges, но должно быть удалено.
+    """
+    CREATE TABLE IF NOT EXISTS group_captcha_orphans (
+        id BIGSERIAL PRIMARY KEY,
+        chat_id BIGINT NOT NULL,
+        message_id BIGINT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS group_captcha_orphans_chat_idx
+        ON group_captcha_orphans (chat_id)
     """,
 )
 
@@ -762,6 +787,10 @@ _disabled_cache: Dict[int, Tuple[bool, float]] = {}
 _live_challenges: Dict[int, Dict[str, Any]] = {}
 _CACHE_TTL = 90.0
 _NOT_PASSED_TTL = 20.0
+
+# Фоновая задача чистки.
+_cleanup_task: Optional[asyncio.Task] = None
+_cleanup_stop: Optional[asyncio.Event] = None
 
 
 def remember_live(row: Optional[Dict[str, Any]]) -> None:
@@ -1106,6 +1135,32 @@ async def save_challenge(
     attempts: int = 0,
 ) -> Dict[str, Any]:
     await ensure_tables(pool)
+
+    # Если у пользователя была карточка с ДРУГИМ message_id, старое сообщение
+    # сейчас потеряется из БД — фиксируем его в orphans, чтобы фоновая чистка
+    # его подобрала. Один SQL, без гонок.
+    if message_id is not None:
+        try:
+            await pool.execute(
+                """
+                INSERT INTO group_captcha_orphans (chat_id, message_id)
+                SELECT $1, c.message_id
+                  FROM group_captcha_challenges c
+                 WHERE c.chat_id = $1
+                   AND c.user_id = $2
+                   AND c.message_id IS NOT NULL
+                   AND c.message_id <> $3
+                """,
+                int(chat_id),
+                int(user_id),
+                int(message_id),
+            )
+        except Exception:
+            log.exception(
+                "captcha save_challenge: orphan mark failed chat=%s user=%s",
+                chat_id, user_id,
+            )
+
     expires = datetime.now(timezone.utc).timestamp() + CHALLENGE_TTL_SEC
     expires_dt = datetime.fromtimestamp(expires, tz=timezone.utc)
     row = await pool.fetchrow(
@@ -1211,3 +1266,211 @@ def duration_ms_of(row: Dict[str, Any]) -> Optional[int]:
     if getattr(created, "tzinfo", None) is None:
         created = created.replace(tzinfo=timezone.utc)
     return max(0, int((datetime.now(timezone.utc) - created).total_seconds() * 1000))
+
+
+# --------------------------------------------------------------------------
+# Фоновая очистка просроченных карточек
+# --------------------------------------------------------------------------
+
+# Строки, которые Telegram отдаёт, когда удалять уже нечего или нельзя.
+# Их молча пропускаем — это нормальные ситуации, не ошибка бота.
+_DELETE_SOFT_ERRORS = (
+    "message to delete not found",
+    "message can't be deleted",
+    "message identifier is not specified",
+    "chat not found",
+    "bot was kicked",
+    "bot is not a member",
+    "not enough rights",
+    "have no rights",
+)
+
+
+async def _safe_delete_message(bot, chat_id: int, message_id: int) -> bool:
+    """
+    Пытается удалить сообщение. Возвращает True, если «удалено или уже нет».
+    Никогда не бросает наружу — воркер должен жить даже при ошибках Telegram.
+    """
+    if bot is None or not chat_id or not message_id:
+        return False
+    try:
+        from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
+    except Exception:
+        TelegramAPIError = TelegramBadRequest = TelegramForbiddenError = ()  # type: ignore
+
+    try:
+        await bot.delete_message(chat_id=int(chat_id), message_id=int(message_id))
+        return True
+    except Exception as exc:  # noqa: BLE001
+        text = str(exc).lower()
+        if any(s in text for s in _DELETE_SOFT_ERRORS):
+            log.debug(
+                "captcha cleanup: message already gone chat=%s msg=%s (%s)",
+                chat_id, message_id, exc,
+            )
+            return True
+        log.warning(
+            "captcha cleanup: delete failed chat=%s msg=%s: %s",
+            chat_id, message_id, exc,
+        )
+        return False
+
+
+async def _cleanup_expired_challenges(pool, bot, *, limit: int = CLEANUP_BATCH) -> int:
+    rows = await pool.fetch(
+        """
+        SELECT id, chat_id, message_id
+          FROM group_captcha_challenges
+         WHERE expires_at <= NOW()
+         ORDER BY expires_at ASC
+         LIMIT $1
+        """,
+        int(limit),
+    )
+    if not rows:
+        return 0
+
+    ids: List[int] = []
+    for r in rows:
+        cid = int(r["id"])
+        ids.append(cid)
+        forget_live(cid)
+        mid = r["message_id"]
+        if mid:
+            await _safe_delete_message(bot, int(r["chat_id"]), int(mid))
+
+    # Запись из БД убираем в любом случае: даже если удалить сообщение не вышло
+    # (нет прав и т.п.), карточка уже просрочена и жить в БД не должна.
+    await pool.execute(
+        "DELETE FROM group_captcha_challenges WHERE id = ANY($1::bigint[])",
+        ids,
+    )
+    return len(ids)
+
+
+async def _cleanup_orphans(pool, bot, *, limit: int = ORPHANS_BATCH) -> int:
+    rows = await pool.fetch(
+        """
+        SELECT id, chat_id, message_id
+          FROM group_captcha_orphans
+         ORDER BY id ASC
+         LIMIT $1
+        """,
+        int(limit),
+    )
+    if not rows:
+        return 0
+    ids: List[int] = []
+    for r in rows:
+        ids.append(int(r["id"]))
+        await _safe_delete_message(bot, int(r["chat_id"]), int(r["message_id"]))
+    await pool.execute(
+        "DELETE FROM group_captcha_orphans WHERE id = ANY($1::bigint[])",
+        ids,
+    )
+    return len(ids)
+
+
+async def cleanup_expired(pool, bot, *, limit: int = CLEANUP_BATCH) -> int:
+    """
+    Один проход фоновой чистки: просроченные карточки + осиротевшие сообщения.
+    Возвращает суммарное число обработанных записей.
+    """
+    if pool is None or bot is None:
+        return 0
+    await ensure_tables(pool)
+    removed = 0
+    try:
+        removed += await _cleanup_expired_challenges(pool, bot, limit=limit)
+    except Exception:
+        log.exception("captcha cleanup: expired challenges pass failed")
+    try:
+        removed += await _cleanup_orphans(pool, bot, limit=limit)
+    except Exception:
+        log.exception("captcha cleanup: orphans pass failed")
+    if removed:
+        log.info("captcha cleanup: removed=%s", removed)
+    return removed
+
+
+async def expire_challenge_now(pool, bot, row: Optional[Dict[str, Any]]) -> None:
+    """
+    Мгновенно удаляет просроченную карточку.
+    Удобно звать из обработчика клика, если challenge_expired(row) == True.
+    """
+    if not row or pool is None:
+        return
+    cid = int(row.get("id") or 0)
+    chat_id = int(row.get("chat_id") or 0)
+    mid = row.get("message_id")
+    if cid:
+        forget_live(cid)
+        try:
+            await pool.execute("DELETE FROM group_captcha_challenges WHERE id = $1", cid)
+        except Exception:
+            log.exception("captcha expire_challenge_now: DB delete failed id=%s", cid)
+    if mid and bot is not None:
+        await _safe_delete_message(bot, chat_id, int(mid))
+
+
+async def _cleanup_worker(pool, bot, stop_event: asyncio.Event) -> None:
+    log.info(
+        "captcha cleanup worker started: interval=%ss batch=%s",
+        CLEANUP_INTERVAL_SEC, CLEANUP_BATCH,
+    )
+    # Первый проход — сразу, чтобы подчистить хвосты после рестарта.
+    while not stop_event.is_set():
+        try:
+            await cleanup_expired(pool, bot)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("captcha cleanup iteration crashed")
+
+        if stop_event.is_set():
+            break
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=CLEANUP_INTERVAL_SEC)
+        except asyncio.TimeoutError:
+            continue
+        except asyncio.CancelledError:
+            raise
+    log.info("captcha cleanup worker stopped")
+
+
+def start_cleanup_task(pool, bot) -> Optional[asyncio.Task]:
+    """
+    Запускает фоновую чистку просроченных карточек.
+    Вызывать один раз на старте бота, ПОСЛЕ создания pool и bot.
+    Повторный вызов возвращает уже работающую задачу.
+    """
+    global _cleanup_task, _cleanup_stop
+    if pool is None or bot is None:
+        log.warning("captcha cleanup: not started (pool=%s bot=%s)", bool(pool), bool(bot))
+        return None
+    if _cleanup_task is not None and not _cleanup_task.done():
+        return _cleanup_task
+
+    _cleanup_stop = asyncio.Event()
+    _cleanup_task = asyncio.create_task(
+        _cleanup_worker(pool, bot, _cleanup_stop),
+        name="group_captcha_cleanup",
+    )
+    return _cleanup_task
+
+
+async def stop_cleanup_task() -> None:
+    """Останавливает воркер. Безопасно вызывать, даже если он не запущен."""
+    global _cleanup_task, _cleanup_stop
+    task = _cleanup_task
+    ev = _cleanup_stop
+    _cleanup_task = None
+    _cleanup_stop = None
+    if ev is not None:
+        ev.set()
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
