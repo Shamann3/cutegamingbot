@@ -38,10 +38,12 @@ DISABLE_ALERT = (
     "Если вам действительно мешает капча — попросите создателя группы отключить её"
 )
 PASS_ALERT = "Капча пройдена. Теперь вы можете писать в группе"
+NEXT_ALERT = "Верно. Теперь нажмите вторую кнопку"
 GATE_ALERT = (
     "Сначала пройдите капчу в этой группе. "
     "После этого игровые кнопки заработают"
 )
+CLICK_DB_TIMEOUT_SEC = 1.6
 
 # --- Фоновая очистка просроченных карточек -------------------------------
 CLEANUP_INTERVAL_SEC = 60     # как часто просыпается воркер
@@ -631,6 +633,15 @@ def parse_disable_callback(data: str) -> Optional[Tuple[int, str]]:
         return None
 
 
+def resolve_click_chat_id(row: Dict[str, Any], message_chat_id: Optional[int]) -> int:
+    """Реальный чат клика важнее id из БД: новая группа часто мигрирует в супергруппу."""
+    db_id = int(row.get("chat_id") or 0)
+    if not message_chat_id:
+        return db_id
+    msg_id = int(message_chat_id)
+    return msg_id or db_id
+
+
 def build_markup(challenge_id: int, chat_id: int, payload: Dict[str, Any], *, plain: bool = False):
     from aiogram.types import InlineKeyboardMarkup
     rows: List[List[Any]] = []
@@ -785,12 +796,34 @@ _passed_cache: Dict[Tuple[int, int], float] = {}
 _not_passed_cache: Dict[Tuple[int, int], float] = {}
 _disabled_cache: Dict[int, Tuple[bool, float]] = {}
 _live_challenges: Dict[int, Dict[str, Any]] = {}
+_live_by_user: Dict[Tuple[int, int], int] = {}
 _CACHE_TTL = 90.0
 _NOT_PASSED_TTL = 20.0
+_seeded_chats: Dict[int, float] = {}
+_SEED_TTL = 600.0
 
 # Фоновая задача чистки.
 _cleanup_task: Optional[asyncio.Task] = None
 _cleanup_stop: Optional[asyncio.Event] = None
+
+
+def _index_live(stored: Dict[str, Any]) -> None:
+    cid = int(stored.get("chat_id") or 0)
+    uid = int(stored.get("user_id") or 0)
+    hid = int(stored.get("id") or 0)
+    if cid and uid and hid:
+        _live_by_user[(cid, uid)] = hid
+
+
+def _drop_live_index(challenge_id: int, row: Optional[Dict[str, Any]] = None) -> None:
+    hid = int(challenge_id)
+    stored = row or _live_challenges.get(hid)
+    if not stored:
+        return
+    cid = int(stored.get("chat_id") or 0)
+    uid = int(stored.get("user_id") or 0)
+    if cid and uid and _live_by_user.get((cid, uid)) == hid:
+        _live_by_user.pop((cid, uid), None)
 
 
 def remember_live(row: Optional[Dict[str, Any]]) -> None:
@@ -805,7 +838,12 @@ def remember_live(row: Optional[Dict[str, Any]]) -> None:
                 stored["payload"] = parsed
         except Exception:
             pass
-    _live_challenges[int(stored["id"])] = stored
+    hid = int(stored["id"])
+    old = _live_challenges.get(hid)
+    if old:
+        _drop_live_index(hid, old)
+    _live_challenges[hid] = stored
+    _index_live(stored)
 
 
 def peek_live(challenge_id: int) -> Optional[Dict[str, Any]]:
@@ -813,21 +851,34 @@ def peek_live(challenge_id: int) -> Optional[Dict[str, Any]]:
     return dict(row) if row else None
 
 
+def peek_live_user(chat_id: int, user_id: int) -> Optional[Dict[str, Any]]:
+    hid = _live_by_user.get((int(chat_id), int(user_id)))
+    if not hid:
+        return None
+    return peek_live(hid)
+
+
 def patch_live(challenge_id: int, **fields: Any) -> None:
     row = _live_challenges.get(int(challenge_id))
     if not row:
         return
+    if "chat_id" in fields or "user_id" in fields:
+        _drop_live_index(int(challenge_id), row)
     row.update(fields)
+    _index_live(row)
 
 
 def forget_live(challenge_id: int) -> None:
-    _live_challenges.pop(int(challenge_id), None)
+    hid = int(challenge_id)
+    old = _live_challenges.pop(hid, None)
+    if old:
+        _drop_live_index(hid, old)
 
 
 def forget_chat_live(chat_id: int) -> None:
     cid = int(chat_id)
     for key in [k for k, row in _live_challenges.items() if int(row.get("chat_id") or 0) == cid]:
-        _live_challenges.pop(key, None)
+        forget_live(key)
 
 
 def note_passed(chat_id: int, user_id: int) -> None:
@@ -860,6 +911,8 @@ def _clear_pass_memory() -> None:
     _passed_cache.clear()
     _not_passed_cache.clear()
     _live_challenges.clear()
+    _live_by_user.clear()
+    _seeded_chats.clear()
 
 
 async def _apply_passes_reset(conn) -> None:
@@ -957,6 +1010,224 @@ async def has_passed(pool, chat_id: int, user_id: int) -> bool:
         return True
     _cache_not_passed(chat_id, user_id)
     return False
+
+
+async def user_needs_captcha(pool, chat_id: int, user_id: int) -> bool:
+    """Один кэш/один SQL вместо пары запросов на каждое сообщение."""
+    if pool is None:
+        return False
+    if cached_disabled(chat_id) is True:
+        return False
+    if cached_passed(chat_id, user_id) is True:
+        return False
+    if cached_disabled(chat_id) is False and cached_passed(chat_id, user_id) is False:
+        return True
+    await ensure_tables(pool)
+    row = await pool.fetchrow(
+        """
+        SELECT COALESCE(
+                   (SELECT s.enabled FROM group_captcha_settings s WHERE s.chat_id = $1),
+                   TRUE
+               ) AS enabled,
+               EXISTS(
+                   SELECT 1 FROM group_captcha_passes p
+                    WHERE p.chat_id = $1 AND p.user_id = $2
+               ) AS passed
+        """,
+        int(chat_id),
+        int(user_id),
+    )
+    enabled = True if row is None else bool(row["enabled"])
+    passed = False if row is None else bool(row["passed"])
+    _disabled_cache[int(chat_id)] = (enabled, time.monotonic())
+    if passed:
+        _cache_pass(chat_id, user_id)
+    else:
+        _cache_not_passed(chat_id, user_id)
+    return bool(enabled) and not passed
+
+
+def _chat_title(chat: Any) -> str:
+    return str(getattr(chat, "title", None) or "Группа")[:255]
+
+
+def _chat_username(chat: Any) -> str:
+    raw = getattr(chat, "username", None)
+    return str(raw)[:64] if raw else "username отсутствует"
+
+
+async def seed_new_group(pool, chat: Any = None, user: Any = None, *, chat_id: Optional[int] = None) -> None:
+    """Заводит группу в captcha-настройках и в chat/memberchat без Telegram API."""
+    if pool is None:
+        return
+    cid = int(getattr(chat, "id", 0) or chat_id or 0)
+    if cid >= 0:
+        return
+    now = time.monotonic()
+    ts = _seeded_chats.get(cid)
+    if ts is not None and now - ts < _SEED_TTL:
+        return
+    _seeded_chats[cid] = now
+    await ensure_tables(pool)
+    try:
+        await pool.execute(
+            """
+            INSERT INTO group_captcha_settings (chat_id, enabled)
+            VALUES ($1, TRUE)
+            ON CONFLICT (chat_id) DO NOTHING
+            """,
+            cid,
+        )
+        if cached_disabled(cid) is None:
+            _disabled_cache[cid] = (True, time.monotonic())
+    except Exception:
+        log.exception("captcha seed settings failed chat=%s", cid)
+    title = _chat_title(chat) if chat is not None else "Группа"
+    uname = _chat_username(chat) if chat is not None else "username отсутствует"
+    try:
+        await pool.execute(
+            """
+            INSERT INTO chat (
+                chat_id, namechat, usernamechat, chatlink, description,
+                creator_id, creator_name, creator_username, text, data
+            )
+            VALUES ($1, $2, $3, $4, $5, 0, $6, $7, 0, NOW())
+            ON CONFLICT (chat_id) DO NOTHING
+            """,
+            cid,
+            title,
+            uname,
+            "Приватная ссылка не найдена",
+            "Описание отсутствует",
+            "Неизвестно",
+            "Неизвестно",
+        )
+    except Exception as e:
+        log.warning("captcha seed chat row fallback chat=%s: %s", cid, e)
+        try:
+            await pool.execute(
+                "INSERT INTO chat (chat_id) VALUES ($1) ON CONFLICT (chat_id) DO NOTHING",
+                cid,
+            )
+        except Exception:
+            log.exception("captcha seed chat row failed chat=%s", cid)
+    uid = int(getattr(user, "id", 0) or 0)
+    if uid <= 0:
+        return
+    name = str(
+        getattr(user, "full_name", None) or getattr(user, "first_name", None) or "друг"
+    )[:80]
+    u_name = str(getattr(user, "username", None) or "")[:64]
+    try:
+        await pool.execute(
+            """
+            INSERT INTO memberchat (user_id, name, username, chat_id, chat_name, data)
+            SELECT $1, $2, $3, $4, $5, NOW()
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM memberchat WHERE user_id = $1 AND chat_id = $4
+             )
+            """,
+            uid,
+            name,
+            u_name,
+            cid,
+            title,
+        )
+    except Exception:
+        log.warning("captcha seed memberchat failed chat=%s user=%s", cid, uid)
+
+
+async def remap_chat_id(pool, old_chat_id: int, new_chat_id: int) -> None:
+    """Группа стала супергруппой: переносим капчу и строку chat на новый id."""
+    old_id, new_id = int(old_chat_id), int(new_chat_id)
+    if old_id == new_id or old_id >= 0 or new_id >= 0:
+        return
+    for hid, row in list(_live_challenges.items()):
+        if int(row.get("chat_id") or 0) == old_id:
+            patch_live(hid, chat_id=new_id)
+    hit = _disabled_cache.pop(old_id, None)
+    if hit:
+        _disabled_cache[new_id] = hit
+    for (cid, uid), ts in list(_passed_cache.items()):
+        if cid == old_id:
+            _passed_cache.pop((cid, uid), None)
+            _passed_cache[(new_id, uid)] = ts
+    for (cid, uid), ts in list(_not_passed_cache.items()):
+        if cid == old_id:
+            _not_passed_cache.pop((cid, uid), None)
+            _not_passed_cache[(new_id, uid)] = ts
+    _seeded_chats.pop(old_id, None)
+    _seeded_chats[new_id] = time.monotonic()
+    if pool is None:
+        return
+    await ensure_tables(pool)
+    stmts = (
+        """
+        INSERT INTO group_captcha_settings (chat_id, enabled, disabled_at, disabled_by)
+        SELECT $2, enabled, disabled_at, disabled_by
+          FROM group_captcha_settings
+         WHERE chat_id = $1
+        ON CONFLICT (chat_id) DO NOTHING
+        """,
+        "UPDATE group_captcha_challenges SET chat_id = $2 WHERE chat_id = $1",
+        "UPDATE group_captcha_orphans SET chat_id = $2 WHERE chat_id = $1",
+        "UPDATE group_captcha_events SET chat_id = $2 WHERE chat_id = $1",
+        """
+        INSERT INTO group_captcha_passes
+            (user_id, chat_id, passed_at, variant, attempts, duration_ms, trigger)
+        SELECT user_id, $2, passed_at, variant, attempts, duration_ms, trigger
+          FROM group_captcha_passes
+         WHERE chat_id = $1
+        ON CONFLICT (user_id, chat_id) DO NOTHING
+        """,
+    )
+    for sql in stmts:
+        try:
+            await pool.execute(sql, old_id, new_id)
+        except Exception:
+            log.exception("captcha remap failed chat %s -> %s", old_id, new_id)
+    try:
+        await pool.execute(
+            """
+            INSERT INTO chat (
+                chat_id, namechat, usernamechat, chatlink, description,
+                creator_id, creator_name, creator_username, text, data
+            )
+            SELECT $2, namechat, usernamechat, chatlink, description,
+                   creator_id, creator_name, creator_username, text, NOW()
+              FROM chat
+             WHERE chat_id = $1
+            ON CONFLICT (chat_id) DO NOTHING
+            """,
+            old_id,
+            new_id,
+        )
+    except Exception:
+        try:
+            await pool.execute(
+                "INSERT INTO chat (chat_id) VALUES ($1) ON CONFLICT (chat_id) DO NOTHING",
+                new_id,
+            )
+        except Exception:
+            log.exception("captcha remap chat row failed %s -> %s", old_id, new_id)
+    try:
+        await pool.execute(
+            """
+            INSERT INTO memberchat (user_id, name, username, chat_id, chat_name, data)
+            SELECT user_id, name, username, $2, chat_name, data
+              FROM memberchat
+             WHERE chat_id = $1
+               AND NOT EXISTS (
+                   SELECT 1 FROM memberchat m
+                    WHERE m.user_id = memberchat.user_id AND m.chat_id = $2
+               )
+            """,
+            old_id,
+            new_id,
+        )
+    except Exception:
+        log.warning("captcha remap memberchat failed %s -> %s", old_id, new_id)
+    print(f"[CAPTCHA] remapped chat {old_id} -> {new_id}")
 
 
 def event_meta(user: Any = None, chat: Any = None, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -1097,11 +1368,20 @@ async def get_challenge(pool, challenge_id: int) -> Optional[Dict[str, Any]]:
     live = peek_live(challenge_id)
     if live:
         return live
+    if pool is None:
+        return None
     await ensure_tables(pool)
-    row = await pool.fetchrow(
-        "SELECT * FROM group_captcha_challenges WHERE id = $1",
-        int(challenge_id),
-    )
+    try:
+        row = await asyncio.wait_for(
+            pool.fetchrow(
+                "SELECT * FROM group_captcha_challenges WHERE id = $1",
+                int(challenge_id),
+            ),
+            timeout=CLICK_DB_TIMEOUT_SEC,
+        )
+    except asyncio.TimeoutError:
+        log.warning("captcha get_challenge timeout id=%s", challenge_id)
+        return None
     if not row:
         return None
     data = dict(row)
@@ -1110,6 +1390,9 @@ async def get_challenge(pool, challenge_id: int) -> Optional[Dict[str, Any]]:
 
 
 async def get_open_challenge(pool, chat_id: int, user_id: int) -> Optional[Dict[str, Any]]:
+    live = peek_live_user(chat_id, user_id)
+    if live:
+        return live
     await ensure_tables(pool)
     row = await pool.fetchrow(
         """
@@ -1121,7 +1404,11 @@ async def get_open_challenge(pool, chat_id: int, user_id: int) -> Optional[Dict[
         int(chat_id),
         int(user_id),
     )
-    return dict(row) if row else None
+    if not row:
+        return None
+    data = dict(row)
+    remember_live(data)
+    return data
 
 
 async def save_challenge(

@@ -72,10 +72,21 @@ async def _is_staff_muted(chat_id: int, user_id: int) -> bool:
 
 async def _member_status(bot, chat_id: int, user_id: int) -> str:
     try:
-        member = await bot.get_chat_member(int(chat_id), int(user_id))
+        member = await asyncio.wait_for(
+            bot.get_chat_member(int(chat_id), int(user_id)),
+            timeout=1.8,
+        )
         return str(getattr(member, "status", "") or "")
     except Exception:
         return ""
+
+
+def _bg(coro) -> None:
+    try:
+        task = asyncio.create_task(coro)
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.done() else None)
+    except Exception:
+        pass
 
 
 async def _maybe_unrestrict(bot, chat_id: int, user_id: int) -> None:
@@ -85,8 +96,11 @@ async def _maybe_unrestrict(bot, chat_id: int, user_id: int) -> None:
     if status in {"creator", "administrator"}:
         return
     try:
-        await bot.restrict_chat_member(int(chat_id), int(user_id), permissions=_OPEN)
-    except (TelegramBadRequest, TelegramForbiddenError):
+        await asyncio.wait_for(
+            bot.restrict_chat_member(int(chat_id), int(user_id), permissions=_OPEN),
+            timeout=1.8,
+        )
+    except (TelegramBadRequest, TelegramForbiddenError, asyncio.TimeoutError):
         return
     except Exception as e:
         log.debug("unrestrict skip: %s", e)
@@ -267,9 +281,12 @@ async def maybe_prompt_captcha(
         log.warning("captcha skip: db pool is None")
         return False
 
-    if not await gc.is_chat_enabled(pool, chat_id):
-        return False
-    if await gc.has_passed(pool, chat_id, uid):
+    if chat is not None:
+        _bg(gc.seed_new_group(pool, chat, user, chat_id=int(chat_id)))
+    else:
+        _bg(gc.seed_new_group(pool, None, user, chat_id=int(chat_id)))
+
+    if not await gc.user_needs_captcha(pool, chat_id, uid):
         return False
 
     key = (int(chat_id), uid)
@@ -277,28 +294,23 @@ async def maybe_prompt_captcha(
     if trigger != "message" and now - _last_prompt.get(key, 0.0) < _PROMPT_GAP:
         open_row = await gc.get_open_challenge(pool, chat_id, uid)
         if open_row and not gc.challenge_expired(open_row) and open_row.get("message_id"):
-            await _maybe_unrestrict(bot, chat_id, uid)
             return True
     if trigger == "message" and now - _last_prompt.get(key, 0.0) < _MESSAGE_RESEND_GAP:
-        await _maybe_unrestrict(bot, chat_id, uid)
         await _log_blocked(pool, user=user, chat=chat, chat_id=chat_id, extra=extra_meta)
         return True
 
+    payload = None
+    row = None
+    open_row = None
     async with _lock(chat_id, uid):
-        if await gc.has_passed(pool, chat_id, uid):
+        if not await gc.user_needs_captcha(pool, chat_id, uid):
             return False
-        if not await gc.is_chat_enabled(pool, chat_id):
-            return False
-
         open_row = await gc.get_open_challenge(pool, chat_id, uid)
         if trigger == "message" and time.monotonic() - _last_prompt.get(key, 0.0) < _MESSAGE_RESEND_GAP:
             await _log_blocked(pool, user=user, chat=chat, chat_id=chat_id, extra=extra_meta)
             return True
-
-        # Новое сообщение не прошедшего — новая карточка сразу под ним.
-        # Старую убираем, чтобы чат не зарастал копиями.
         if trigger == "message" and open_row and open_row.get("message_id"):
-            await _delete_message(bot, chat_id, open_row.get("message_id"))
+            _bg(_delete_message(bot, chat_id, open_row.get("message_id")))
         elif (
             trigger != "message"
             and open_row
@@ -306,7 +318,6 @@ async def maybe_prompt_captcha(
             and open_row.get("message_id")
         ):
             _last_prompt[key] = time.monotonic()
-            await _maybe_unrestrict(bot, chat_id, uid)
             return True
 
         payload = gc.build_challenge()
@@ -321,33 +332,32 @@ async def maybe_prompt_captcha(
             attempts=attempts,
         )
         row["message_id"] = None
-        mid = await _send_or_edit(
-            bot,
-            chat_id=chat_id,
-            user=user,
-            row=row,
-            payload=payload,
-            thread_id=thread_id,
-        )
-        if not mid:
-            _last_prompt.pop(key, None)
-            return False
-        await gc.update_challenge(pool, int(row["id"]), message_id=mid)
-        try:
-            await gc.log_event(
-                pool,
-                user_id=uid,
-                chat_id=int(chat_id),
-                event="shown",
-                variant=payload.get("variant"),
-                meta=gc.event_meta(user, chat, extra={"trigger": trigger, **(extra_meta or {})}),
-            )
-        except Exception:
-            log.exception("captcha shown log failed chat=%s user=%s", chat_id, uid)
-        _last_prompt[key] = time.monotonic()
-        print(f"[CAPTCHA] shown chat={chat_id} user={uid} mid={mid} trigger={trigger}")
-        await _maybe_unrestrict(bot, chat_id, uid)
-        return True
+
+    if not row or not payload:
+        return False
+    mid = await _send_or_edit(
+        bot,
+        chat_id=chat_id,
+        user=user,
+        row=row,
+        payload=payload,
+        thread_id=thread_id,
+    )
+    if not mid:
+        _last_prompt.pop(key, None)
+        return False
+    await gc.update_challenge(pool, int(row["id"]), message_id=mid)
+    _bg(gc.log_event(
+        pool,
+        user_id=uid,
+        chat_id=int(chat_id),
+        event="shown",
+        variant=payload.get("variant"),
+        meta=gc.event_meta(user, chat, extra={"trigger": trigger, **(extra_meta or {})}),
+    ))
+    _last_prompt[key] = time.monotonic()
+    print(f"[CAPTCHA] shown chat={chat_id} user={uid} mid={mid} trigger={trigger}")
+    return True
 
 
 async def on_user_joined(bot, chat_id: int, user: Any, thread_id: Optional[int] = None) -> None:
@@ -364,11 +374,7 @@ async def _user_needs_captcha(chat_id: int, user_id: int) -> bool:
     pool = _pool()
     if pool is None:
         return False
-    if not await gc.is_chat_enabled(pool, chat_id):
-        return False
-    if await gc.has_passed(pool, chat_id, user_id):
-        return False
-    return True
+    return await gc.user_needs_captcha(pool, chat_id, user_id)
 
 
 class CaptchaGateMiddleware(BaseMiddleware):
@@ -383,6 +389,8 @@ class CaptchaGateMiddleware(BaseMiddleware):
         if not chat or chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
             return await handler(event, data)
         if message.new_chat_members or message.left_chat_member:
+            return await handler(event, data)
+        if getattr(message, "migrate_to_chat_id", None) or getattr(message, "migrate_from_chat_id", None):
             return await handler(event, data)
         user = message.from_user
         if not user or user.is_bot:
@@ -436,8 +444,6 @@ class CaptchaCallbackGateMiddleware(BaseMiddleware):
         if not needed:
             return await handler(event, data)
         bot = data.get("bot") or getattr(callback, "bot", None)
-        if bot:
-            await _maybe_unrestrict(bot, int(chat.id), int(user.id))
         try:
             await callback.answer(gc.GATE_ALERT, show_alert=True)
         except Exception:
@@ -475,40 +481,54 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
         if pool is None:
             await callback.answer()
             return
-        row = await gc.get_challenge(pool, challenge_id)
+        try:
+            row = await gc.get_challenge(pool, challenge_id)
+        except Exception:
+            log.exception("captcha get_challenge failed id=%s", challenge_id)
+            await callback.answer("Не удалось проверить капчу, нажмите ещё раз", show_alert=True)
+            return
     if not row:
-        await callback.answer("Эта карточка уже не действует")
+        await callback.answer("Эта карточка уже не действует", show_alert=True)
         return
 
     user = callback.from_user
     uid = int(user.id)
-    chat_id = int(row["chat_id"])
     if uid != int(row["user_id"]):
         await callback.answer("Эта капча предназначена для другого участника")
         return
-    await _maybe_unrestrict(callback.bot, chat_id, uid)
-    if callback.message and int(callback.message.chat.id) != chat_id:
-        await callback.answer()
-        return
+
+    msg_chat_id = None
+    if callback.message and getattr(callback.message, "chat", None):
+        try:
+            msg_chat_id = int(callback.message.chat.id)
+        except Exception:
+            msg_chat_id = None
+    stored_chat_id = int(row["chat_id"])
+    chat_id = gc.resolve_click_chat_id(row, msg_chat_id)
+    if chat_id != stored_chat_id:
+        log.warning(
+            "captcha chat id drift challenge=%s db=%s msg=%s user=%s",
+            challenge_id, stored_chat_id, chat_id, uid,
+        )
+        gc.patch_live(challenge_id, chat_id=chat_id)
+        row["chat_id"] = chat_id
+        if pool:
+            _bg(gc.remap_chat_id(pool, stored_chat_id, chat_id))
+            _bg(gc.seed_new_group(pool, getattr(callback.message, "chat", None), user, chat_id=chat_id))
 
     if gc.cached_disabled(chat_id) is True:
         await callback.answer("Капча в этой группе выключена", show_alert=True)
         if callback.message:
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
+            _bg(_delete_message(callback.bot, chat_id, callback.message.message_id))
         return
 
-    if gc.cached_passed(chat_id, uid) is True:
+    if gc.cached_passed(chat_id, uid) is True or gc.cached_passed(stored_chat_id, uid) is True:
+        gc.note_passed(chat_id, uid)
         await callback.answer("Вы уже прошли капчу", show_alert=True)
         if callback.message:
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
+            _bg(_delete_message(callback.bot, chat_id, callback.message.message_id))
         if pool:
-            await gc.delete_challenge(pool, challenge_id=challenge_id)
+            _bg(gc.delete_challenge(pool, challenge_id=challenge_id))
         return
 
     thread_id = getattr(callback.message, "message_thread_id", None) if callback.message else None
@@ -524,53 +544,60 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
             callback.bot, chat_id=chat_id, user=user, row=row, payload=payload, thread_id=thread_id,
         )
         if pool:
-            await gc.update_challenge(
+            _bg(gc.update_challenge(
                 pool, challenge_id, payload=payload, attempts=int(row.get("attempts") or 0),
                 message_id=mid,
-            )
+            ))
         return
 
     payload = gc.hydrate_payload(_payload_of(row))
     result, nxt = gc.is_correct_pick(payload, pick)
     attempts = int(row.get("attempts") or 0)
+    print(f"[CAPTCHA] click chat={chat_id} user={uid} pick={pick} result={result}")
 
     if result == "next" and nxt is not None:
-        await callback.answer()
+        await callback.answer(gc.NEXT_ALERT)
         gc.patch_live(challenge_id, payload=nxt)
+        row["payload"] = nxt
+        mid = await _send_or_edit(
+            callback.bot, chat_id=chat_id, user=user, row=row, payload=nxt, thread_id=thread_id,
+        )
         if pool:
-            await gc.update_challenge(pool, challenge_id, payload=nxt)
+            _bg(gc.update_challenge(pool, challenge_id, payload=nxt, message_id=mid))
         return
 
     if result == "pass":
         attempts = max(1, attempts)
         gc.note_passed(chat_id, uid)
+        gc.note_passed(stored_chat_id, uid)
         gc.forget_live(challenge_id)
         await callback.answer(gc.PASS_ALERT, show_alert=True)
         chat = getattr(callback.message, "chat", None)
         if pool:
-            try:
-                await gc.mark_passed(
-                    pool,
-                    user_id=uid,
-                    chat_id=chat_id,
-                    variant=payload.get("variant"),
-                    attempts=attempts,
-                    duration_ms=gc.duration_ms_of(row),
-                    trigger=row.get("trigger"),
-                    meta=gc.event_meta(user, chat),
-                )
-            except Exception:
-                log.exception("captcha pass persist failed chat=%s user=%s", chat_id, uid)
-            try:
-                await gc.delete_challenge(pool, challenge_id=challenge_id)
-            except Exception:
-                log.exception("captcha challenge delete failed id=%s", challenge_id)
+            async def _persist_pass() -> None:
+                try:
+                    await gc.mark_passed(
+                        pool,
+                        user_id=uid,
+                        chat_id=chat_id,
+                        variant=payload.get("variant"),
+                        attempts=attempts,
+                        duration_ms=gc.duration_ms_of(row),
+                        trigger=row.get("trigger"),
+                        meta=gc.event_meta(user, chat),
+                    )
+                except Exception:
+                    log.exception("captcha pass persist failed chat=%s user=%s", chat_id, uid)
+                try:
+                    await gc.delete_challenge(pool, challenge_id=challenge_id)
+                except Exception:
+                    log.exception("captcha challenge delete failed id=%s", challenge_id)
+            _bg(_persist_pass())
         else:
             log.warning("captcha pass without db pool chat=%s user=%s", chat_id, uid)
-        after = [_maybe_unrestrict(callback.bot, chat_id, uid)]
         if callback.message:
-            after.append(_delete_message(callback.bot, chat_id, callback.message.message_id))
-        await asyncio.gather(*after, return_exceptions=True)
+            _bg(_delete_message(callback.bot, chat_id, callback.message.message_id))
+        _bg(_maybe_unrestrict(callback.bot, chat_id, uid))
         return
 
     attempts += 1
@@ -585,25 +612,29 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
     if not pool:
         log.warning("captcha fail without db pool chat=%s user=%s", chat_id, uid)
         return
-    try:
-        await gc.update_challenge(pool, challenge_id, payload=fresh, attempts=attempts, message_id=mid)
-    except Exception:
-        log.exception("captcha fail update failed id=%s", challenge_id)
-    try:
-        await gc.log_event(
-            pool,
-            user_id=uid,
-            chat_id=chat_id,
-            event="fail",
-            variant=payload.get("variant"),
-            meta=gc.event_meta(
-                user,
-                getattr(callback.message, "chat", None),
-                extra={"pick": pick, "attempts": attempts},
-            ),
-        )
-    except Exception:
-        log.exception("captcha fail log failed chat=%s user=%s", chat_id, uid)
+
+    async def _persist_fail() -> None:
+        try:
+            await gc.update_challenge(pool, challenge_id, payload=fresh, attempts=attempts, message_id=mid)
+        except Exception:
+            log.exception("captcha fail update failed id=%s", challenge_id)
+        try:
+            await gc.log_event(
+                pool,
+                user_id=uid,
+                chat_id=chat_id,
+                event="fail",
+                variant=payload.get("variant"),
+                meta=gc.event_meta(
+                    user,
+                    getattr(callback.message, "chat", None),
+                    extra={"pick": pick, "attempts": attempts},
+                ),
+            )
+        except Exception:
+            log.exception("captcha fail log failed chat=%s user=%s", chat_id, uid)
+
+    _bg(_persist_fail())
 
 
 @captcha_router.callback_query(F.data.startswith("gcX:"))
@@ -612,13 +643,13 @@ async def on_captcha_disable(callback: CallbackQuery) -> None:
     if not parsed:
         await callback.answer()
         return
-    chat_id, mac = parsed
-    if not gc.check_sign(mac, "x", chat_id):
+    signed_chat_id, mac = parsed
+    if not gc.check_sign(mac, "x", signed_chat_id):
         await callback.answer("Эта карточка уже устарела", show_alert=True)
         return
-    if not callback.message or int(callback.message.chat.id) != int(chat_id):
-        await callback.answer()
-        return
+    chat_id = signed_chat_id
+    if callback.message and getattr(callback.message, "chat", None):
+        chat_id = int(callback.message.chat.id)
 
     status = await _member_status(callback.bot, chat_id, int(callback.from_user.id))
     if status != "creator":
@@ -631,10 +662,32 @@ async def on_captcha_disable(callback: CallbackQuery) -> None:
         return
     await callback.answer("Капча в этой группе выключена", show_alert=True)
     await gc.disable_chat(pool, chat_id, int(callback.from_user.id))
+    if int(chat_id) != int(signed_chat_id):
+        try:
+            await gc.disable_chat(pool, int(signed_chat_id), int(callback.from_user.id))
+        except Exception:
+            pass
     try:
         await callback.message.delete()
     except Exception:
         pass
+
+
+@captcha_router.message(F.migrate_to_chat_id)
+async def on_group_migrated(message: Message) -> None:
+    old_id = int(message.chat.id)
+    new_id = int(message.migrate_to_chat_id)
+    pool = _pool()
+    print(f"[CAPTCHA] group migrated {old_id} -> {new_id}")
+    await gc.remap_chat_id(pool, old_id, new_id)
+
+
+def start_cleanup_task(pool, bot):
+    return gc.start_cleanup_task(pool, bot)
+
+
+async def stop_cleanup_task():
+    return await gc.stop_cleanup_task()
 
 
 def attach_group_captcha(dp) -> None:

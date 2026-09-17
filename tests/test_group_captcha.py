@@ -372,3 +372,50 @@ def test_help_unowned_card_is_public():
     assert not help_callback_allowed(22, 900, owners)
     assert help_callback_allowed(22, 901, owners)
     assert help_callback_allowed(1, 1, {})
+
+
+def test_click_uses_message_chat_id_after_supergroup_upgrade():
+    from bot.funcs.group_captcha import resolve_click_chat_id
+
+    row = {"chat_id": -12345, "user_id": 7}
+    assert resolve_click_chat_id(row, -10012345) == -10012345
+    assert resolve_click_chat_id(row, None) == -12345
+    assert resolve_click_chat_id(row, 0) == -12345
+
+
+def test_live_challenge_index_survives_chat_id_patch():
+    from bot.funcs import group_captcha as gc
+
+    gc._clear_pass_memory()
+    gc.remember_live({
+        "id": 91,
+        "chat_id": -11,
+        "user_id": 5,
+        "payload": {"variant": 5, "correct": "right", "options": ["left", "right"]},
+    })
+    found = gc.peek_live_user(-11, 5)
+    assert found is not None
+    assert found["id"] == 91
+    gc.patch_live(91, chat_id=-10011)
+    assert gc.peek_live_user(-11, 5) is None
+    moved = gc.peek_live_user(-10011, 5)
+    assert moved is not None
+    assert moved["chat_id"] == -10011
+    gc.forget_live(91)
+    assert gc.peek_live(91) is None
+
+
+def test_captcha_callbacks_are_magic_priority():
+    from bot.magic.priorities import PRIORITY_PREFIXES
+
+    assert "gcA:" in PRIORITY_PREFIXES
+    assert "gcX:" in PRIORITY_PREFIXES
+
+
+def test_handler_reexports_cleanup_and_next_alert():
+    from bot.handlers.group_captcha import start_cleanup_task, stop_cleanup_task
+    from bot.funcs.group_captcha import NEXT_ALERT
+
+    assert callable(start_cleanup_task)
+    assert callable(stop_cleanup_task)
+    assert "вторую" in NEXT_ALERT

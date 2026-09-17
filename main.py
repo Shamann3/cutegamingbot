@@ -5514,6 +5514,12 @@ async def on_bot_added_or_removed(event: ChatMemberUpdated):
     if is_join(old_status, new_status):
         print(f"✅ [BOT][ADDED] chat_id={chat_id} ({old_status}->{new_status})")
 
+        try:
+            from bot.funcs import group_captcha as _gc
+            await _gc.seed_new_group(getattr(db, "pool", None), chat, event.from_user)
+        except Exception as e:
+            print(f"⚠️ [BOT][ADDED] captcha seed: {type(e).__name__}: {e}")
+
         # обновляем инфу о группе (не критично - не падаем)
         try:
             await measure_time(

@@ -131,6 +131,9 @@ PRIORITY_PREFIXES: List[str] = [
     "fortuna", "roulette", "рулет",
     "callbroullet",
 
+    # --- групповая капча: клики должны обгонять антиспам ---
+    "gcA:", "gcX:",
+
     # --- GC / челлендж-подсказки внутри игр ---
     "gc_info", "gc_status", "gc_reward", "gc_regular", "gc_diff", "gc_in_place",
 
