@@ -202,3 +202,77 @@ def test_forecast_tick_paused_and_topup():
     dry_ladder = [{"chatId": GAME_COMMISSION_CHAT_ID, "title": "комиссии игр", "balance": 0}]
     blocked = forecast_tick({"enabled": True}, [row], groups, dry_ladder)
     assert blocked["items"][0]["action"] == "blocked"
+
+
+class _FakeConn:
+    async def execute(self, *_args, **_kwargs):
+        return "OK"
+
+
+class _Acquire:
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *_exc):
+        return False
+
+
+class _FakePool:
+    def acquire(self):
+        return _Acquire(_FakeConn())
+
+
+def test_ready_pool_accepts_admin_db_without_ensure_pool():
+    import asyncio
+    import sys
+
+    sys.path.insert(0, str(_ROOT / "server"))
+    from nika.schema import ensure_nika_schema, ready_nika_pool
+
+    class AlreadyOpen:
+        def __init__(self):
+            self.pool = object()
+
+    asyncio.run(ready_nika_pool(AlreadyOpen()))
+
+    class Connects:
+        def __init__(self):
+            self.pool = None
+
+        async def connect(self):
+            self.pool = object()
+
+    opened = Connects()
+    asyncio.run(ready_nika_pool(opened))
+    assert opened.pool is not None
+
+    class Empty:
+        pass
+
+    try:
+        asyncio.run(ready_nika_pool(Empty()))
+    except RuntimeError as exc:
+        assert "Пул соединений" in str(exc)
+    else:
+        raise AssertionError("пустой db должен падать")
+
+    class AdminLike:
+        def __init__(self):
+            self.pool = _FakePool()
+
+    asyncio.run(ensure_nika_schema(AdminLike()))
+
+
+def test_admin_schema_ensure_is_once_and_duck_typed():
+    admin = _read("server", "admin_nika.py")
+    assert "await db.ensure_pool()" not in admin
+    assert "_schema_ok" in admin
+    assert "_SCHEMA_RETRY_SEC" in admin
+    assert "ready_nika_pool" in _read("server", "nika", "schema.py")
+    assert "ready_nika_pool" in _read("bot", "runtime", "nika", "schema.py")
+    db_src = _read("server", "db.py")
+    assert "async def ensure_pool" in db_src
+    assert "ensure_nika_schema" in db_src

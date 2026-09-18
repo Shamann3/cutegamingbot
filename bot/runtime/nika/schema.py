@@ -265,10 +265,29 @@ ON CONFLICT (chat_id) DO NOTHING
 """
 
 
+async def ready_nika_pool(db) -> None:
+    """Пул готов и у бота (ensure_pool), и у API (уже открыт / connect)."""
+    if getattr(db, "pool", None) is not None:
+        return
+    ensure = getattr(db, "ensure_pool", None)
+    if callable(ensure):
+        try:
+            ok = bool(await ensure())
+        except Exception as exc:
+            raise RuntimeError("Пул соединений не инициализирован (ensure_nika_schema).") from exc
+        if not ok or getattr(db, "pool", None) is None:
+            raise RuntimeError("Пул соединений не инициализирован (ensure_nika_schema).")
+        return
+    opener = getattr(db, "ensure_connected", None) or getattr(db, "connect", None)
+    if callable(opener):
+        await opener()
+    if getattr(db, "pool", None) is None:
+        raise RuntimeError("Пул соединений не инициализирован (ensure_nika_schema).")
+
+
 async def ensure_nika_schema(db) -> None:
     """Создать/досоздать таблицы Ники и засеять первую обслуживаемую группу."""
-    if not await db.ensure_pool():
-        raise RuntimeError("Пул соединений не инициализирован (ensure_nika_schema).")
+    await ready_nika_pool(db)
 
     from bot.runtime.nika.policy import SOURCE_LADDER, suggest_caps
 
@@ -297,8 +316,8 @@ async def ensure_nika_schema(db) -> None:
             """,
             owner_id,
         )
-        # Техкошельки сами себя не обслуживают: долив из копилки в копилку
-        # или из кассы комиссий в кассу комиссий — это не поддержание стола.
+        # Кассы сами себя не обслуживают: долив из копилки в копилку
+        # или из кассы игр в кассу игр — это не баланс группы.
         forbidden = {int(cid) for cid, _ in SOURCE_LADDER}
         forbidden.add(int(PROFIT_JAR_CHAT_ID))
         await conn.execute(

@@ -50,6 +50,7 @@ def test_admin_nika_does_not_import_bot_package():
     assert "from bot." not in text
     assert "import bot" not in text
     assert "from nika.policy import" in text
+    assert "await db.ensure_pool()" not in text
     assert (_ROOT / "server" / "nika" / "policy.py").is_file()
     assert (_ROOT / "server" / "nika" / "ids.py").is_file()
 

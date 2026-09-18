@@ -12,13 +12,19 @@ fastlane-кэш бота останется со старым балансом �
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from db import db
 
 log = logging.getLogger("admin_nika")
+_schema_ok = False
+_schema_lock = asyncio.Lock()
+_schema_fail_mono = 0.0
+_SCHEMA_RETRY_SEC = 45.0
 
 WORKER_STALE_SEC = 600
 # Тот же порог, что команда «все балансы» в боте (main.JERICHO_GROUP_EXCESS_THRESHOLD).
@@ -327,15 +333,41 @@ def _incident_out(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def _ensure() -> None:
-    if not db.pool:
-        await db.ensure_pool()
-    try:
-        from nika.schema import ensure_nika_schema
+async def _open_admin_pool() -> None:
+    if getattr(db, "pool", None) is not None:
+        return
+    ensure = getattr(db, "ensure_pool", None)
+    if callable(ensure):
+        if not await ensure():
+            raise RuntimeError("Пул админки не открыт")
+        return
+    opener = getattr(db, "ensure_connected", None) or getattr(db, "connect", None)
+    if callable(opener):
+        await opener()
+    if getattr(db, "pool", None) is None:
+        raise RuntimeError("Пул админки не открыт")
 
-        await ensure_nika_schema(db)
-    except Exception as exc:
-        log.warning("nika schema ensure: %s: %s", type(exc).__name__, exc)
+
+async def _ensure() -> None:
+    global _schema_ok, _schema_fail_mono
+    if _schema_ok:
+        return
+    now = time.monotonic()
+    if _schema_fail_mono and (now - _schema_fail_mono) < _SCHEMA_RETRY_SEC:
+        return
+    async with _schema_lock:
+        if _schema_ok:
+            return
+        try:
+            await _open_admin_pool()
+            from nika.schema import ensure_nika_schema
+
+            await ensure_nika_schema(db)
+            _schema_ok = True
+            _schema_fail_mono = 0.0
+        except Exception as exc:
+            _schema_fail_mono = time.monotonic()
+            log.warning("nika schema ensure: %s: %s", type(exc).__name__, exc)
 
 
 def _forbidden() -> List[int]:

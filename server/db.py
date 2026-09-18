@@ -455,6 +455,14 @@ class Database:
         if migrated:
             print(f"Items: мигрировано записей users.items: {migrated}")
 
+        try:
+            from nika.schema import ensure_nika_schema
+
+            await ensure_nika_schema(self)
+            print("[DB][OK] nika schema")
+        except Exception as _nika_err:
+            _logger.warning("nika schema skipped: %s", _nika_err)
+
         await self._normalize_all_grow_timers()
         print("Пул соединений создан, schema применена.")
         print(f"Dex: {len(dex_catalog._by_id)} предметов в каталоге.")
@@ -484,6 +492,16 @@ class Database:
     async def ensure_connected(self):
         """Idempotent pool init — safe to call from API, bots, or scripts."""
         await self.connect()
+
+    async def ensure_pool(self) -> bool:
+        """Тот же контракт, что у бота: пул готов или False, без исключения наружу."""
+        if self.pool:
+            return True
+        try:
+            await self.connect()
+            return self.pool is not None
+        except Exception:
+            return False
 
     async def close(self):
         if self.pool:
