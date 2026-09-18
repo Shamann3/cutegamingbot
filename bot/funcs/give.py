@@ -23,6 +23,7 @@ from aiogram.types import InputFile
 from bot.config.config import *
 from bot.design.buttons import *
 from bot.db_create.db import *
+from bot.db_create import item_cost
 
 from bot.games.games import Cube122, Bowling34, Basketball34, Slots1, Trade,dart122,foot1
 from bot.funcs.func import *
@@ -112,7 +113,10 @@ async def give(message: Message):
             print(f"🛠️ [DEBUG] Найден предмет: {item_name}")
 
             # Добавляем предмет в инвентарь пользователя
-            await db.set_items(user_id , item_name , quantity)
+            await db.set_items(
+                user_id , item_name , quantity ,
+                source=item_cost.SOURCE_ADMIN , ref_kind="admin_give" ,
+            )
 
             await message.reply(
                 f"✅ <b>Пользователю выдано : {quantity}шт | <code>{emoji}</code> {item_name}</b>" , parse_mode="HTML" ,
@@ -160,7 +164,10 @@ async def give(message: Message):
             print(f"🛠️ [DEBUG] Найден предмет: {item_name}")
 
             # Удаляем предмет из инвентаря пользователя
-            await db.delete_user_inventory12(user_id , item_name , quantity)
+            await db.delete_user_inventory12(
+                user_id , item_name , quantity ,
+                reason=item_cost.REASON_ADMIN_TAKE , destroyed=True ,
+            )
 
             await message.reply(
                 f"✅ <b>У пользователя изъято {quantity}шт | <code>{emoji}</code> {item_name}</b>" ,

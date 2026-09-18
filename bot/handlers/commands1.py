@@ -117,9 +117,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'поцеловал(-а) + {coins} 💖' , caption , "<tg-emoji emoji-id='5474525960143385880'>💋</tg-emoji>" , "<tg-emoji emoji-id='5474525960143385880'>💋</tg-emoji>")
                 else:
@@ -188,9 +186,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'кастрировал(-а) + {coins} 💖' , caption , "<tg-emoji emoji-id='5237808360882977239'>✂️</tg-emoji>" , "<tg-emoji emoji-id='5237808360882977239'>✂️</tg-emoji>")
                 else:
@@ -223,9 +219,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'попросил(-а) прощения + {coins} 💖' , caption , "<tg-emoji emoji-id='5377618041813080281'>🥺</tg-emoji>" , "<tg-emoji emoji-id='5377618041813080281'>🥺</tg-emoji>")
                 else:
@@ -259,9 +253,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'отправил(-а) воздушный поцелуй + {coins} 💖' , caption , "<tg-emoji emoji-id='5366286462092323271'>😘</tg-emoji>" , "<tg-emoji emoji-id='5366286462092323271'>😘</tg-emoji>")
                 else:
@@ -295,9 +287,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'чмокнул(-а) + {xp} XP 💖' , caption , "<tg-emoji emoji-id='5366286462092323271'>😘</tg-emoji>" , "<tg-emoji emoji-id='5366286462092323271'>😘</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'чмокнул(-а)' , caption , "<tg-emoji emoji-id='5366286462092323271'>😘</tg-emoji>" , "<tg-emoji emoji-id='5366286462092323271'>😘</tg-emoji>")
@@ -329,9 +319,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'трахнул(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5868738502614584375'>😈</tg-emoji>" , "<tg-emoji emoji-id='5868738502614584375'>😈</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'трахнул(-а)' , caption , "<tg-emoji emoji-id='5868738502614584375'>😈</tg-emoji>" , "<tg-emoji emoji-id='5868738502614584375'>😈</tg-emoji>")
@@ -364,9 +352,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'решил(-а) пошалить с + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5834815029844643624'>🫦</tg-emoji>" , "<tg-emoji emoji-id='5834815029844643624'>🫦</tg-emoji>")
                 else:
@@ -399,9 +385,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'отсосал(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5832644989028404876'>🍌</tg-emoji>" , "<tg-emoji emoji-id='5832644989028404876'>🍌</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'отсосал(-а)' , caption , "<tg-emoji emoji-id='5832644989028404876'>🍌</tg-emoji>" , "<tg-emoji emoji-id='5832644989028404876'>🍌</tg-emoji>")
@@ -433,9 +417,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'отлизал(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5834976056758505296'>👅</tg-emoji>" , "<tg-emoji emoji-id='5834976056758505296'>👅</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'отлизал(-а)' , caption , "<tg-emoji emoji-id='5834976056758505296'>👅</tg-emoji>" , "<tg-emoji emoji-id='5834976056758505296'>👅</tg-emoji>")
@@ -467,9 +449,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'занялись сексом + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5834683754169241985'>🔞</tg-emoji>" , "<tg-emoji emoji-id='5834683754169241985'>🔞</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'занялись сексом' , caption , "<tg-emoji emoji-id='5834683754169241985'>🔞</tg-emoji>" , "<tg-emoji emoji-id='5834683754169241985'>🔞</tg-emoji>")
@@ -503,9 +483,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'потрогал(-а) грудь + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5980878659899101595'>💇‍♀️</tg-emoji>" , "<tg-emoji emoji-id='5980878659899101595'>💇‍♀️</tg-emoji>")
                 else:
@@ -538,9 +516,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'засосал(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5834760818767433249'>👄</tg-emoji>" , "<tg-emoji emoji-id='5834760818767433249'>👄</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'засосал(-а)' , caption , "<tg-emoji emoji-id='5834760818767433249'>👄</tg-emoji>" , "<tg-emoji emoji-id='5834760818767433249'>👄</tg-emoji>")
@@ -572,9 +548,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'нежно мурчит для + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5262606930819426800'>🐱</tg-emoji>" , "<tg-emoji emoji-id='5262606930819426800'>🐱</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'нежно мурчит для' , caption , "<tg-emoji emoji-id='5262606930819426800'>🐱</tg-emoji>" , "<tg-emoji emoji-id='5262606930819426800'>🐱</tg-emoji>")
@@ -606,9 +580,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'романтично поднял(-а) на руки + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5465511459444235288'>💕</tg-emoji>" , "<tg-emoji emoji-id='5465511459444235288'>💕</tg-emoji>")
                 else:
@@ -643,9 +615,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'покормил(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5348308557919970713'>🍫</tg-emoji>" , "<tg-emoji emoji-id='5348308557919970713'>🍫</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'покормил(-а)' , caption , "<tg-emoji emoji-id='5348308557919970713'>🍫</tg-emoji>" , "<tg-emoji emoji-id='5348308557919970713'>🍫</tg-emoji>")
@@ -678,9 +648,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'покормил(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5348308557919970713'>🍫</tg-emoji>" , "<tg-emoji emoji-id='5348308557919970713'>🍫</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'покормил(-а)' , caption , "<tg-emoji emoji-id='5348308557919970713'>🍫</tg-emoji>" , "<tg-emoji emoji-id='5348308557919970713'>🍫</tg-emoji>")
@@ -713,9 +681,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'отшлёпал(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5373117556036999296'>🫣</tg-emoji>" , "<tg-emoji emoji-id='5373117556036999296'>🫣</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'отшлёпал(-а)' , caption , "<tg-emoji emoji-id='5373117556036999296'>🫣</tg-emoji>" , "<tg-emoji emoji-id='5373117556036999296'>🫣</tg-emoji>")
@@ -747,9 +713,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'напоил(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5330015368788322059'>🥃</tg-emoji>" , "<tg-emoji emoji-id='5330015368788322059'>🥃</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'напоил(-а)' , caption , "<tg-emoji emoji-id='5330015368788322059'>🥃</tg-emoji>" , "<tg-emoji emoji-id='5330015368788322059'>🥃</tg-emoji>")
@@ -781,9 +745,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'Нежно приласкал(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5255911149819412788'>💕</tg-emoji>" , "<tg-emoji emoji-id='5255911149819412788'>💕</tg-emoji>")
                 else:
@@ -816,9 +778,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'пожалел(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5377509400615327935'>🥹</tg-emoji>" , "<tg-emoji emoji-id='5377509400615327935'>🥹</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'пожалел(-а)' , caption , "<tg-emoji emoji-id='5377509400615327935'>🥹</tg-emoji>" , "<tg-emoji emoji-id='5377509400615327935'>🥹</tg-emoji>")
@@ -851,9 +811,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'нежно снял(-а) одежку с + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5377509400615327935'>🥹</tg-emoji>" , "<tg-emoji emoji-id='5377509400615327935'>🥹</tg-emoji>")
                 else:
@@ -886,9 +844,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(message , f'Флиртует с + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5296688956602078390'>❤️</tg-emoji>" , "<tg-emoji emoji-id='5296688956602078390'>❤️</tg-emoji>")
                 else:
                     await perform_action_with_caption(message , 'Флиртует с' , caption , "<tg-emoji emoji-id='5296688956602078390'>❤️</tg-emoji>" , "<tg-emoji emoji-id='5296688956602078390'>❤️</tg-emoji>")
@@ -920,9 +876,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'принес(-ла) чай для + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5359370246190801956'>☕️</tg-emoji>" , "<tg-emoji emoji-id='5359370246190801956'>☕️</tg-emoji>")
                 else:
@@ -957,9 +911,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'вдул(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5866442237004485645'>🍆</tg-emoji>" , "<tg-emoji emoji-id='5866442237004485645'>🍆</tg-emoji>")
                 else:
@@ -992,9 +944,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'украл(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5868225885382904788'>🍆</tg-emoji>" , "<tg-emoji emoji-id='5868225885382904788'>🍆</tg-emoji>")
                 else:
@@ -1027,9 +977,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'поймал(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5467550297599516219'>🙊</tg-emoji>" , "<tg-emoji emoji-id='5467550297599516219'>🙊</tg-emoji>")
                 else:
@@ -1063,9 +1011,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'мило няшиться с + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5370900820336319679'>🥰</tg-emoji>" , "<tg-emoji emoji-id='5370900820336319679'>🥰</tg-emoji>")
                 else:
@@ -1098,9 +1044,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'обрадовал(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5465511459444235288'>💕</tg-emoji>" , "<tg-emoji emoji-id='5465511459444235288'>💕</tg-emoji>")
                 else:
@@ -1133,9 +1077,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'разсмешил(-а) + {coins} XP 💖' , caption , "<tg-emoji emoji-id='5370953476635368811'>😂</tg-emoji>" , "<tg-emoji emoji-id='5370953476635368811'>😂</tg-emoji>")
                 else:
@@ -1168,9 +1110,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'оттрахал(-а) + {coins} XP 💖' , caption , '👉👌' , '👉👌')
                 else:
@@ -1202,9 +1142,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'обнял(-а) + {coins} XP 💖' , caption , '💕' , '💕')
                 else:
@@ -1236,9 +1174,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'извинился(-ась) перед {coins} 💖' , caption , '🥺' , '🥺')
                 else:
@@ -1272,9 +1208,7 @@ async def kiss(message: Message):
                     item_to_send = "LoveCoin"
                     quantity = coins
 
-                    receiver_inventory = await db.get_user_inventory(user_id)
-                    receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                    await db.set_user_inventory(user_id , receiver_inventory)
+                    await db.set_items(user_id , item_to_send , quantity)
                     await perform_action_with_caption(
                         message , f'дал(-а) автограф {coins} 💖' , caption , '📜 ✍️' , '📜 ✍️')
                 else:

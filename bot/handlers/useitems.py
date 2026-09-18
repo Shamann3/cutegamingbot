@@ -1,5 +1,6 @@
 from bot.db_create.db import *
 from bot.db_create.items_codec import decode_items, encode_items
+from bot.db_create import item_cost
 from aiogram import Bot, Dispatcher, types
 from bot.config.config import *
 from main import dp
@@ -592,6 +593,10 @@ async def case5000_15000(db, user_id, message):
 
             updated_inventory = encode_items(user_inventory)
             await db.fetch_all("UPDATE users SET items=$1 WHERE user_id=$2", (updated_inventory, user_id))
+            await item_cost.record_losses(
+                db.pool, user_id, {case_name: 1, key_name: 1},
+                reason=item_cost.REASON_CASE_OPEN, ref_kind="case",
+            )
         else:
             # Если у пользователя нет ключа, отправляем сообщение об ошибке
             await message.reply(
@@ -648,6 +653,10 @@ async def case20000_40000(db, user_id, message):
 
             updated_inventory = encode_items(user_inventory)
             await db.fetch_all("UPDATE users SET items=$1 WHERE user_id=$2", (updated_inventory, user_id))
+            await item_cost.record_losses(
+                db.pool, user_id, {case_name: 1, key_name: 1},
+                reason=item_cost.REASON_CASE_OPEN, ref_kind="case",
+            )
         else:
             # Если у пользователя нет ключа, отправляем сообщение об ошибке
             await message.reply(
@@ -704,6 +713,10 @@ async def case50000_100000(db, user_id, message):
 
             updated_inventory = encode_items(user_inventory)
             await db.fetch_all("UPDATE users SET items=$1 WHERE user_id=$2", (updated_inventory, user_id))
+            await item_cost.record_losses(
+                db.pool, user_id, {case_name: 1, key_name: 1},
+                reason=item_cost.REASON_CASE_OPEN, ref_kind="case",
+            )
         else:
             # Если у пользователя нет ключа, отправляем сообщение об ошибке
             await message.reply(
@@ -1692,6 +1705,10 @@ async def pistoletik(db, user_id, message):
 
             updated_inventory = encode_items(user_inventory)
             await db.fetch_all("UPDATE users SET items=$1 WHERE user_id=$2", (updated_inventory, user_id))
+            await item_cost.record_losses(
+                db.pool, user_id, {key_name: 1},
+                reason=item_cost.REASON_ITEM_USED, ref_kind="item_use",
+            )
         else:
             await message.reply(
                 "✖️ <b>У вас нет воды для выстрела из пистолетика.</b>", parse_mode="HTML"

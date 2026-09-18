@@ -73,6 +73,13 @@ export const PANEL_SECTION_TABS = {
     { id: 'craft', label: 'Крафт', blurb: 'Аналитика крафта.' },
     { id: 'retention', label: 'Удержание', blurb: 'Удержание и возвращаемость игроков.' },
   ],
+  nika: [
+    { id: 'incidents', label: 'Ошибки', blurb: 'Только то, что автоматика уже не смогла починить.' },
+    { id: 'groups', label: 'Столы', blurb: 'Группы под Никой: долив, сбор, пауза.' },
+    { id: 'earnings', label: 'Заработок', blurb: 'Журнал с момента запуска Ники, без фейковой истории.' },
+    { id: 'journal', label: 'Журнал', blurb: 'Каждый перевод кут с кнопкой возврата.' },
+    { id: 'settings', label: 'Система', blurb: 'Выключатель и сухой прогон.' },
+  ],
   logs: [
     { id: 'audit', label: 'Audit', blurb: 'Аудит-логи системы.' },
     { id: 'transfers', label: 'Переводы', blurb: 'Логи переводов и P2P.' },

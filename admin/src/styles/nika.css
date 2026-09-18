@@ -1,0 +1,815 @@
+/* Ника — отдельный визуальный мир. iOS Wallet / Stocks:
+   крупные числа, сегменты, inset-списки, пружина, 44pt тап.
+   Селекторы с .grp-page.nika-page перебивают старые правила elite.css. */
+
+.nika-crisis {
+  flex: 0 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  animation: nika-crisis-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.nika-crisis-go { min-height: 44px; }
+
+@keyframes nika-crisis-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.grp-page.nika-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  padding: 0.2rem 0.2rem 1.8rem;
+  min-height: 0;
+  color: #f5f2ef;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+  font-feature-settings: "ss01" 1, "tnum" 1;
+  letter-spacing: -0.01em;
+  animation: nika-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes nika-in {
+  from { opacity: 0; transform: translateY(16px); filter: blur(10px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+.grp-page.nika-page .nika-pane {
+  animation: nika-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.grp-page.nika-page .nika-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.grp-page.nika-page .nika-head h1 {
+  margin: 0;
+  font-size: clamp(2.15rem, 4.6vw, 3.05rem);
+  font-weight: 760;
+  letter-spacing: -0.055em;
+  line-height: 0.92;
+  color: #fff;
+}
+.grp-page.nika-page .nika-head-copy p {
+  margin: 0.6rem 0 0;
+  max-width: 40rem;
+  color: #a39b96;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.grp-page.nika-page .nika-status {
+  flex: 0 0 auto;
+  min-width: 8.8rem;
+  padding: 0.72rem 0.9rem;
+  border-radius: 18px;
+  background: rgba(18, 18, 18, 0.92);
+  border: 1px solid rgba(255,255,255,.08);
+  text-align: right;
+  backdrop-filter: blur(16px);
+}
+.grp-page.nika-page .nika-status b { display: block; font-size: 0.95rem; }
+.grp-page.nika-page .nika-status span { color: #8a827c; font-size: 0.72rem; }
+.grp-page.nika-page .nika-status.is-ok { background: #101410; }
+.grp-page.nika-page .nika-status.is-ok b { color: #d8ead4; }
+.grp-page.nika-page .nika-status.is-hot {
+  background: #2a0c0c;
+  border-color: rgba(255,80,60,.4);
+  box-shadow: 0 12px 32px -16px rgba(255, 50, 40, 0.7);
+}
+.grp-page.nika-page .nika-status.is-hot b { color: #ffd2cc; }
+
+.grp-page.nika-page .nika-seg {
+  display: flex;
+  gap: 0;
+  padding: 0.22rem;
+  border-radius: 14px;
+  background: rgba(28, 28, 30, 0.94);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  backdrop-filter: blur(18px) saturate(1.2);
+}
+.grp-page.nika-page .nika-seg::-webkit-scrollbar { display: none; }
+.grp-page.nika-page .nika-seg-btn,
+.grp-page.nika-page .nika-seg > button {
+  flex: 1 0 auto;
+  min-height: 36px;
+  border: 0 !important;
+  border-radius: 11px !important;
+  background: transparent !important;
+  color: #c4bbb4 !important;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 620;
+  padding: 0.45rem 0.85rem !important;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.grp-page.nika-page .nika-seg-btn.is-on,
+.grp-page.nika-page .nika-seg > button.is-on {
+  background: #3a3a3c !important;
+  color: #fff !important;
+  box-shadow: 0 1px 0 rgba(255,255,255,.12) inset, 0 6px 16px -10px rgba(0,0,0,.8);
+}
+.grp-page.nika-page .nika-seg-btn i,
+.grp-page.nika-page .nika-seg > button i {
+  display: inline-flex;
+  margin-left: 0.3rem;
+  min-width: 1.05rem;
+  justify-content: center;
+  font-style: normal;
+  font-size: 0.68rem;
+  background: #ff3b30;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0 0.28rem;
+}
+.grp-page.nika-page .nika-seg-mini { width: max-content; position: static; }
+.grp-page.nika-page .nika-seg-mini .nika-seg-btn { min-width: 4.4rem; }
+.grp-page.nika-page .nika-filter { margin: 0.75rem 0 0.45rem; }
+
+.grp-page.nika-page .nika-panel {
+  padding: 1.1rem 1.1rem 1.2rem;
+  border-radius: 26px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.05), transparent 32%),
+    #111111;
+  border: 1px solid rgba(255,255,255,.07);
+  box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 28px 52px -30px rgba(0,0,0,.92);
+}
+.grp-page.nika-page .nika-panel h2 {
+  margin: 0;
+  font-size: 1.22rem;
+  letter-spacing: -0.035em;
+  color: #fff;
+}
+.grp-page.nika-page .nika-panel-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+.grp-page.nika-page .nika-help {
+  margin: 0.35rem 0 0.8rem;
+  color: #8f877f;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.grp-page.nika-page .nika-wallet {
+  padding: 1.2rem 1.2rem 1.1rem;
+  border-radius: 28px;
+  background:
+    radial-gradient(ellipse 80% 90% at 100% 0%, rgba(50, 215, 75, 0.14), transparent 55%),
+    linear-gradient(165deg, #1c1c1e, #0a0a0a);
+  border: 1px solid rgba(255,255,255,.1);
+  box-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 30px 60px -34px rgba(0,0,0,.95);
+}
+.grp-page.nika-page .nika-wallet-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.grp-page.nika-page .nika-wallet p {
+  margin: 0;
+  color: #8c847c;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.grp-page.nika-page .nika-wallet strong {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: clamp(2.1rem, 5vw, 3.15rem);
+  letter-spacing: -0.055em;
+  font-weight: 760;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.grp-page.nika-page .nika-wallet-top span {
+  display: block;
+  margin-top: 0.45rem;
+  color: #9a928b;
+  font-size: 0.82rem;
+}
+.grp-page.nika-page .nika-wallet-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.85rem;
+  margin-top: 0.95rem;
+  color: #8f877f;
+  font-size: 0.78rem;
+}
+.grp-page.nika-page .nika-wallet-meta b { color: #efe8e2; font-weight: 650; }
+.grp-page.nika-page .nika-hot-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0.55rem 0 0;
+  border-top: 1px solid rgba(255,255,255,.06);
+  display: grid;
+  gap: 0.35rem;
+}
+.grp-page.nika-page .nika-hot-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+  color: #cfc6be;
+}
+.grp-page.nika-page .nika-hot-list em {
+  font-style: normal;
+  color: #ff9f0a;
+  font-variant-numeric: tabular-nums;
+}
+
+.nika-spark {
+  width: 7.5rem;
+  height: 2.1rem;
+  flex: 0 0 auto;
+  margin-top: 0.55rem;
+}
+.nika-spark path {
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.nika-spark.is-up path { stroke: #32d74b; }
+.nika-spark.is-down path { stroke: #ff453a; }
+
+.grp-page.nika-page .nika-universe {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.grp-page.nika-page .nika-uni {
+  padding: 0.9rem 0.95rem 0.85rem;
+  border-radius: 20px;
+  background: #0a0a0a;
+  border: 1px solid rgba(255,255,255,.06);
+  min-height: 5.6rem;
+}
+.grp-page.nika-page .nika-uni p {
+  margin: 0;
+  color: #8c847c;
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.grp-page.nika-page .nika-uni strong {
+  display: block;
+  margin-top: 0.38rem;
+  font-size: clamp(1.12rem, 1.9vw, 1.48rem);
+  letter-spacing: -0.04em;
+  font-weight: 740;
+  font-variant-numeric: tabular-nums;
+}
+.grp-page.nika-page .nika-uni small { color: #6e6862; font-size: 0.7rem; }
+.grp-page.nika-page .nika-uni-hero {
+  background: linear-gradient(160deg, #1d1d20, #0b0b0b);
+  border-color: rgba(255,255,255,.14);
+}
+.grp-page.nika-page .nika-uni-plus { background: #10140f; }
+.grp-page.nika-page .nika-uni-warn { background: #16110a; }
+
+.grp-page.nika-page .nika-flow { display: grid; gap: 0.9rem; }
+.grp-page.nika-page .nika-flow-hero {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.grp-page.nika-page .nika-flow-hero > div {
+  padding: 0.78rem 0.8rem 0.72rem;
+  border-radius: 18px;
+  background: #0b0b0b;
+}
+.grp-page.nika-page .nika-flow-hero small {
+  display: block;
+  color: #8a827c;
+  font-size: 0.68rem;
+  margin-bottom: 0.12rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.grp-page.nika-page .nika-flow-hero b {
+  display: block;
+  font-size: clamp(1.2rem, 2vw, 1.55rem);
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}
+.grp-page.nika-page .nika-flow-hero em {
+  display: block;
+  margin-top: 0.28rem;
+  font-style: normal;
+  color: #6e6862;
+  font-size: 0.7rem;
+}
+.grp-page.nika-page .nika-flow-hero .is-plus { background: #0d140e; }
+.grp-page.nika-page .nika-flow-hero .is-minus { background: #160c0c; }
+
+.grp-page.nika-page .nika-extrema {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+}
+.grp-page.nika-page .nika-ext {
+  padding: 0.7rem 0.8rem;
+  border-radius: 16px;
+  background: #0b0b0b;
+}
+.grp-page.nika-page .nika-ext small {
+  display: block;
+  color: #8a827c;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.grp-page.nika-page .nika-ext strong { display: block; margin: 0.15rem 0; color: #efe8e2; }
+.grp-page.nika-page .nika-ext b { font-size: 1.15rem; letter-spacing: -0.03em; }
+.grp-page.nika-page .nika-ext.is-plus { background: #0d140e; }
+.grp-page.nika-page .nika-ext.is-minus { background: #160c0c; }
+
+.grp-page.nika-page .nika-plus { color: #32d74b; }
+.grp-page.nika-page .nika-minus { color: #ff453a; }
+.grp-page.nika-page .nika-mute { color: #6e6862; }
+
+.grp-page.nika-page .nika-chart { margin: 0.15rem -0.15rem 0.35rem; }
+.grp-page.nika-page .nika-chart-empty {
+  min-height: 8.5rem;
+  display: grid;
+  place-items: center;
+  color: #8a827c;
+  text-align: center;
+  padding: 1.4rem;
+}
+.grp-page.nika-page .nika-chart-readout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.4rem, 1fr));
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+.grp-page.nika-page .nika-chart-readout span {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+}
+.grp-page.nika-page .nika-chart-readout small { color: #8a827c; font-size: 0.66rem; }
+.grp-page.nika-page .nika-chart-touch {
+  touch-action: none;
+  cursor: ew-resize;
+  outline: none;
+}
+.grp-page.nika-page .nika-chart-svg {
+  width: 100%;
+  height: 228px;
+  display: block;
+}
+.grp-page.nika-page .nika-chart-mid { stroke: rgba(255,255,255,.12); stroke-width: 1; }
+.grp-page.nika-page .nika-bar-plus,
+.grp-page.nika-page .nika-bar-minus {
+  transform-box: fill-box;
+  animation: nika-bar 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.grp-page.nika-page .nika-bar-plus { fill: #32d74b; }
+.grp-page.nika-page .nika-bar-minus { fill: #ff453a; }
+.grp-page.nika-page .nika-bar.is-on .nika-bar-plus,
+.grp-page.nika-page .nika-bar.is-on .nika-bar-minus { filter: brightness(1.18); }
+.grp-page.nika-page .nika-chart-sys {
+  stroke: #ffffff;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.78;
+}
+.grp-page.nika-page .nika-chart-sys-fill { fill: url(#nikaSysFill); }
+.grp-page.nika-page .nika-chart-hair {
+  stroke: rgba(255,255,255,.35);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+.grp-page.nika-page .nika-chart-tick { fill: #6e6862; font-size: 11px; }
+.grp-page.nika-page .nika-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.9rem;
+  margin-top: 0.4rem;
+  font-size: 0.7rem;
+  color: #8a827c;
+}
+.grp-page.nika-page .nika-chart-legend .is-plus { color: #32d74b; }
+.grp-page.nika-page .nika-chart-legend .is-minus { color: #ff453a; }
+.grp-page.nika-page .nika-chart-legend .is-sys { color: #d8d2cc; }
+
+@keyframes nika-bar {
+  from { transform: scaleY(0.06); opacity: 0.25; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+
+.grp-page.nika-page .nika-days {
+  list-style: none;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #0b0b0b;
+}
+.grp-page.nika-page .nika-days li {
+  display: grid;
+  grid-template-columns: 0.55rem 3.4rem 1fr 1fr 1fr auto;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.78rem 0.85rem;
+  min-height: 48px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+}
+.grp-page.nika-page .nika-days li:last-child { border-bottom: 0; }
+.grp-page.nika-page .nika-days-pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3a3a3c;
+}
+.grp-page.nika-page .nika-days li.is-plus .nika-days-pip { background: #32d74b; box-shadow: 0 0 8px rgba(50, 215, 75, 0.55); }
+.grp-page.nika-page .nika-days li.is-minus .nika-days-pip { background: #ff453a; box-shadow: 0 0 8px rgba(255, 69, 58, 0.5); }
+.grp-page.nika-page .nika-days-when { color: #cfc6be; }
+.grp-page.nika-page .nika-days strong { text-align: right; }
+.grp-page.nika-page .nika-days em {
+  font-style: normal;
+  font-size: 0.68rem;
+  opacity: 0.9;
+  justify-self: end;
+}
+
+.grp-page.nika-page .nika-ladder { display: grid; gap: 0.55rem; grid-template-columns: 1fr; }
+.grp-page.nika-page .nika-src {
+  display: block;
+  padding: 0.75rem 0.85rem 0.85rem;
+  border-radius: 16px;
+  background: #0b0b0b;
+}
+.grp-page.nika-page .nika-src.is-empty { outline: 1px solid rgba(255,69,58,.35); }
+.grp-page.nika-page .nika-src-vault { background: #10140f; }
+.grp-page.nika-page .nika-src-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.84rem;
+}
+.grp-page.nika-page .nika-src-track {
+  display: block;
+  height: 5px;
+  border-radius: 99px;
+  background: #1f1f1f;
+  overflow: hidden;
+}
+.grp-page.nika-page .nika-src-track > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #f2f2f2;
+  transition: width 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.grp-page.nika-page .nika-src-vault .nika-src-track > i { background: #32d74b; }
+
+.grp-page.nika-page .nika-stack { display: grid; gap: 0.7rem; }
+.grp-page.nika-page .nika-card,
+.grp-page.nika-page .nika-empty,
+.grp-page.nika-page .nika-table {
+  padding: 1.05rem 1.1rem;
+  border-radius: 22px;
+  background: #111;
+  border: 1px solid rgba(255,255,255,.07);
+}
+.grp-page.nika-page .nika-card.is-critical,
+.grp-page.nika-page .nika-table.is-dry {
+  background: linear-gradient(165deg, #2a1010, #120808);
+  border-color: rgba(255,69,58,.35);
+}
+.grp-page.nika-page .nika-card h3,
+.grp-page.nika-page .nika-table h3,
+.grp-page.nika-page .nika-empty h3 {
+  margin: 0.1rem 0 0.4rem;
+  font-size: 1.14rem;
+  letter-spacing: -0.02em;
+}
+.grp-page.nika-page .nika-card-code {
+  margin: 0;
+  color: #c45a52;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.grp-page.nika-page .nika-card p,
+.grp-page.nika-page .nika-empty p {
+  margin: 0;
+  color: #b7aea7;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+.grp-page.nika-page .nika-card-body { white-space: pre-wrap; }
+.grp-page.nika-page .nika-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.8rem;
+}
+
+.grp-page.nika-page .nika-btn {
+  min-height: 44px;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px !important;
+  border: 1px solid rgba(255,255,255,.12);
+  background: #1c1c1e;
+  color: #f4f0ec;
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+  transition: transform 0.16s cubic-bezier(0.34, 1.4, 0.64, 1), background 0.16s ease;
+}
+.grp-page.nika-page .nika-btn:active { transform: scale(0.97); }
+.grp-page.nika-page .nika-btn:disabled { opacity: 0.45; cursor: wait; }
+.grp-page.nika-page .nika-btn-primary { background: #f4f4f5; color: #111; border-color: #f4f4f5; font-weight: 700; }
+.grp-page.nika-page .nika-btn-danger { background: #2a0d0d; color: #ffd0ca; border-color: rgba(255,69,58,.4); }
+.grp-page.nika-page .nika-btn-sm { min-height: 34px; font-size: 0.74rem; padding: 0.28rem 0.65rem; }
+
+.grp-page.nika-page .nika-alarm {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 1rem 1.05rem;
+  border-radius: 22px;
+  background: linear-gradient(160deg, #3a1010, #140808);
+  border: 1px solid rgba(255,69,58,.4);
+}
+.grp-page.nika-page .nika-alarm strong { display: block; color: #ffe8e4; margin-bottom: 0.25rem; }
+.grp-page.nika-page .nika-alarm p { margin: 0; color: #f0c8c2; font-size: 0.84rem; }
+.grp-page.nika-page .nika-alarm-actions { display: flex; flex-direction: column; gap: 0.35rem; min-width: 10.5rem; }
+
+.grp-page.nika-page .nika-add { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.grp-page.nika-page .nika-input {
+  flex: 1 1 11rem;
+  min-height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: #0c0c0c;
+  color: #eee;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+}
+.grp-page.nika-page .nika-input-sm { flex: 0 1 6.5rem; }
+.grp-page.nika-page .nika-hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+.grp-page.nika-page .nika-hit {
+  width: 100%;
+  min-height: 48px;
+  text-align: left;
+  border: 0;
+  border-radius: 14px;
+  background: #171717;
+  color: #eee;
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+}
+.grp-page.nika-page .nika-hit span { display: block; color: #8a827c; font-size: 0.72rem; }
+
+.grp-page.nika-page .nika-tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16.5rem, 1fr));
+  gap: 0.65rem;
+}
+.grp-page.nika-page .nika-table header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.grp-page.nika-page .nika-table header span { color: #8a827c; font-size: 0.72rem; }
+.grp-page.nika-page .nika-table-id { margin: 0 0 0.45rem; color: #6e6862; font-size: 0.72rem; }
+.grp-page.nika-page .nika-meter {
+  height: 6px;
+  border-radius: 99px;
+  background: #1d1d1d;
+  overflow: hidden;
+}
+.grp-page.nika-page .nika-meter > i {
+  display: block;
+  height: 100%;
+  background: #f2f2f2;
+  border-radius: inherit;
+  transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.grp-page.nika-page .nika-table.is-dry .nika-meter > i { background: #ff453a; }
+.grp-page.nika-page .nika-table-nums {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.5rem 0 0.15rem;
+  font-variant-numeric: tabular-nums;
+}
+.grp-page.nika-page .nika-table-nums span { color: #8a827c; font-size: 0.78rem; }
+
+.grp-page.nika-page .nika-ledger-group h3 {
+  margin: 0.2rem 0.2rem 0.45rem;
+  font-size: 0.78rem;
+  color: #8a827c;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.grp-page.nika-page .nika-ledger { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.grp-page.nika-page .nika-ledger-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "title amount"
+    "meta meta"
+    "status action";
+  gap: 0.15rem 0.7rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 16px;
+  background: #111;
+  min-height: 64px;
+}
+.grp-page.nika-page .nika-ledger-row > div { grid-area: title; }
+.grp-page.nika-page .nika-ledger-row > div span { display: block; color: #8a827c; font-size: 0.72rem; }
+.grp-page.nika-page .nika-ledger-row > b { grid-area: amount; font-size: 1.08rem; font-variant-numeric: tabular-nums; }
+.grp-page.nika-page .nika-ledger-row > small { grid-area: meta; color: #6e6862; }
+.grp-page.nika-page .nika-ledger-row > em { grid-area: status; width: max-content; }
+.grp-page.nika-page .nika-ledger-row > .nika-btn { grid-area: action; justify-self: end; }
+.grp-page.nika-page .nika-ledger-row.is-plus > b { color: #32d74b; }
+.grp-page.nika-page .nika-ledger-row.is-minus > b { color: #ff453a; }
+
+.grp-page.nika-page .nika-pill {
+  font-style: normal;
+  font-size: 0.68rem;
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+}
+.grp-page.nika-page .nika-pill-ok { color: #b8e0b4; background: #122010; }
+.grp-page.nika-page .nika-pill-bad { color: #ffc4bc; background: #2a0c0c; }
+.grp-page.nika-page .nika-pill-wait { color: #e6d39a; background: #241c0c; }
+.grp-page.nika-page .nika-pill-mute { color: #9a908c; background: #161616; }
+
+.grp-page.nika-page .nika-ios-list {
+  border-radius: 18px;
+  overflow: hidden;
+  background: #1c1c1e;
+}
+.grp-page.nika-page .nika-ios-row {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border: 0;
+  background: transparent;
+  color: #f4f0ec;
+  font: inherit;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.grp-page.nika-page .nika-ios-row:last-child { border-bottom: 0; }
+.grp-page.nika-page .nika-ios-row.is-static { cursor: default; }
+.grp-page.nika-page .nika-ios-row.is-static b { color: #cfc6be; font-weight: 560; font-size: 0.86rem; }
+.grp-page.nika-page .nika-switch {
+  width: 51px;
+  height: 31px;
+  border-radius: 999px;
+  background: #39393d;
+  position: relative;
+  display: inline-block;
+}
+.grp-page.nika-page .nika-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 6px rgba(0,0,0,.35);
+}
+.grp-page.nika-page .nika-switch.is-on { background: #32d74b; }
+.grp-page.nika-page .nika-switch.is-on::after { transform: translateX(20px); }
+
+.grp-page.nika-page .nika-skel {
+  min-height: 14rem;
+  border-radius: 24px;
+  background: linear-gradient(90deg, #111 20%, #1a1a1a 50%, #111 80%);
+  background-size: 200% 100%;
+  animation: nika-shimmer 1.2s ease infinite;
+}
+@keyframes nika-shimmer { to { background-position: -200% 0; } }
+.grp-page.nika-page .nika-error-line { color: #ff8a80; font-size: 0.8rem; }
+
+html.is-phone .nika-page,
+html[data-viewport="phone"] .nika-page {
+  padding-bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
+}
+html.is-phone .grp-page.nika-page .nika-head,
+html[data-viewport="phone"] .grp-page.nika-page .nika-head {
+  flex-direction: column;
+}
+html.is-phone .grp-page.nika-page .nika-status,
+html[data-viewport="phone"] .grp-page.nika-page .nika-status {
+  width: 100%;
+  text-align: left;
+}
+html.is-phone .grp-page.nika-page .nika-universe,
+html[data-viewport="phone"] .grp-page.nika-page .nika-universe {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  gap: 0.6rem;
+  padding-bottom: 0.4rem;
+}
+html.is-phone .grp-page.nika-page .nika-uni,
+html[data-viewport="phone"] .grp-page.nika-page .nika-uni {
+  flex: 0 0 78%;
+  scroll-snap-align: start;
+}
+html.is-phone .grp-page.nika-page .nika-flow-hero,
+html[data-viewport="phone"] .grp-page.nika-page .nika-flow-hero,
+html.is-phone .grp-page.nika-page .nika-extrema,
+html[data-viewport="phone"] .grp-page.nika-page .nika-extrema,
+html.is-phone .grp-page.nika-page .nika-chart-readout,
+html[data-viewport="phone"] .grp-page.nika-page .nika-chart-readout {
+  grid-template-columns: 1fr 1fr;
+}
+html.is-phone .grp-page.nika-page .nika-flow-hero > div:last-child,
+html[data-viewport="phone"] .grp-page.nika-page .nika-flow-hero > div:last-child,
+html.is-phone .grp-page.nika-page .nika-chart-readout > div:nth-child(n+3),
+html[data-viewport="phone"] .grp-page.nika-page .nika-chart-readout > div:nth-child(n+3) {
+  grid-column: span 2;
+}
+html.is-phone .grp-page.nika-page .nika-days li,
+html[data-viewport="phone"] .grp-page.nika-page .nika-days li {
+  grid-template-columns: 0.55rem 2.6rem 1fr 1fr;
+  grid-template-rows: auto auto;
+}
+html.is-phone .grp-page.nika-page .nika-days li strong,
+html[data-viewport="phone"] .grp-page.nika-page .nika-days li em {
+  grid-column: 2 / -1;
+}
+html.is-phone .grp-page.nika-page .nika-alarm,
+html[data-viewport="phone"] .grp-page.nika-page .nika-alarm {
+  flex-direction: column;
+}
+html.is-phone .grp-page.nika-page .nika-btn,
+html[data-viewport="phone"] .grp-page.nika-page .nika-btn {
+  flex: 1 1 calc(50% - 0.4rem);
+}
+html.is-phone .grp-page.nika-page .nika-chart-svg,
+html[data-viewport="phone"] .grp-page.nika-page .nika-chart-svg {
+  height: 188px;
+}
+html.is-phone .grp-page.nika-page .nika-wallet-top,
+html[data-viewport="phone"] .grp-page.nika-page .nika-wallet-top {
+  flex-direction: column;
+}
+html.is-phone .nika-spark,
+html[data-viewport="phone"] .nika-spark {
+  width: 100%;
+  height: 2.4rem;
+}
+
+html.is-desktop .nika-page,
+html[data-viewport="desktop"] .nika-page {
+  max-width: 72rem;
+}
+html.is-desktop .grp-page.nika-page .nika-chart-svg,
+html[data-viewport="desktop"] .grp-page.nika-page .nika-chart-svg {
+  height: 248px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grp-page.nika-page,
+  .grp-page.nika-page .nika-pane,
+  .grp-page.nika-page .nika-bar-plus,
+  .grp-page.nika-page .nika-bar-minus,
+  .grp-page.nika-page .nika-skel,
+  .grp-page.nika-page .nika-src-track > i,
+  .grp-page.nika-page .nika-meter > i,
+  .grp-page.nika-page .nika-switch::after,
+  .nika-crisis {
+    animation: none !important;
+    transition: none !important;
+  }
+}

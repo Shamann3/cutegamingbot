@@ -40488,10 +40488,23 @@ async def botmain():
         print(f"[ACH][WARN] ensure schema: {type(e).__name__}: {e}")
 
     try:
+        # chat.is_technical + сид служебных групп: публичные топы читают этот флаг.
+        if hasattr(db, "ensure_technical_chat_schema"):
+            await db.ensure_technical_chat_schema()
+    except Exception as e:
+        print(f"[TECHCHAT][WARN] ensure schema: {type(e).__name__}: {e}")
+
+    try:
         if hasattr(db, "ensure_growth_fund_schema"):
             await db.ensure_growth_fund_schema()
     except Exception as e:
         print(f"[GFUND][WARN] ensure schema: {type(e).__name__}: {e}")
+
+    try:
+        from bot.runtime.nika.schema import ensure_nika_schema
+        await ensure_nika_schema(db)
+    except Exception as e:
+        print(f"[NIKA][WARN] ensure schema: {type(e).__name__}: {e}")
 
     try:
         # Guard: эта функция может выполниться повторно при soft-restart
@@ -40543,6 +40556,12 @@ async def botmain():
             )
         except Exception as e:
             print(f"[KING][WARN] worker start: {type(e).__name__}: {e}")
+
+        try:
+            from bot.runtime.nika.worker import start_nika_worker
+            start_nika_worker(db, bot1)
+        except Exception as e:
+            print(f"[NIKA][WARN] worker start: {type(e).__name__}: {e}")
 
     # ===================== 3) Регистрация кнопок =====================
     try:
@@ -40611,6 +40630,11 @@ async def botmain():
                 )
             except Exception as e:
                 print(f"[KING][WARN] worker start: {type(e).__name__}: {e}")
+            try:
+                from bot.runtime.nika.worker import start_nika_worker
+                start_nika_worker(db, bot1)
+            except Exception as e:
+                print(f"[NIKA][WARN] worker start: {type(e).__name__}: {e}")
         except Exception as _sr_gate_err:
             print(f"[MAIN][SR][WARN] handoff gate: {type(_sr_gate_err).__name__}: {_sr_gate_err}")
             return

@@ -351,6 +351,12 @@ async def _credit_house_kuts(db, bot, amount: int, *, dest_chat_id: Optional[int
             ok = await db.add_to_chatbalance(bot, house, amount)
             if ok:
                 _vdbg(f"[ФОНД РОСТА] house credit ok chat={house} +{amount} attempt={attempt}")
+                try:
+                    from bot.funcs.tech_plus import announce_tech_plus
+
+                    await announce_tech_plus(bot, house, amount, reason="commission")
+                except Exception as plus_exc:
+                    _vdbg(f"[ФОНД РОСТА] tech plus skip: {plus_exc!r}")
                 return True
             last_err = "add_to_chatbalance returned False"
         except Exception as e:
@@ -374,7 +380,7 @@ async def apply_commission(
 ) -> Optional[Dict[str, Any]]:
     """
     Считает и ПРИМЕНЯЕТ комиссию игры за один раунд:
-      1) ВСЯ сумма commission зачисляется на баланс GROWTH_FUND_HOUSE_CHAT_ID
+      1) ВСЯ сумма commission зачисляется на баланс GAME_COMMISSION_CHAT_ID
          через db.add_to_chatbalance. Не доля, не сплит — вся удержанная сумма.
       2) Журнал (growth_fund_ledger / pool / stats) пишет разметку из
          GROWTH_FUND_SPLIT. При chat_balance=1.0 она совпадает с реальными кутами.
@@ -427,9 +433,12 @@ async def apply_commission(
     to_fund = result["to_growth_fund"]
     to_project = result["to_project"]
 
-    # Единый резерв: вся комиссия, не доля split. Если конфиг вдруг не задан
-    # (0/None) - fail-safe откат на настоящий chat_id, чтобы куты не терялись.
-    money_chat_id = _get_house_chat_id() or chat_id
+    # Касса комиссий: вся удержанная сумма, не доля split. Если id кассы
+    # вдруг не задан — fail-safe на дом, затем на настоящий chat_id,
+    # чтобы куты не терялись.
+    import bot.config.config as cfg
+    commission_chat = int(getattr(cfg, "GAME_COMMISSION_CHAT_ID", 0) or 0)
+    money_chat_id = commission_chat or _get_house_chat_id() or chat_id
     credited = await _credit_house_kuts(
         db, bot, result["commission"], dest_chat_id=money_chat_id,
     )

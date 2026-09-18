@@ -19,6 +19,8 @@ import TikTokSection from './sections/TikTokSection'
 import BotQuestsSection from './sections/BotQuestsSection'
 import GroupBalanceLevelSection from './sections/GroupBalanceLevelSection'
 import GroupsStudioSection from './sections/GroupsStudioSection'
+import NikaSection from './sections/NikaSection'
+import NikaCrisisStrip from '../components/NikaCrisisStrip'
 import SoftRestartSection from './sections/SoftRestartSection'
 import AchievementsSection from './sections/AchievementsSection'
 import BroadcastSection from './sections/BroadcastSection'
@@ -175,6 +177,11 @@ export default function PanelShell({ onLogout }) {
   // фоновая панель не долбила API.
   const [openTickets, setOpenTickets] = useState(0)
   const [tiktokPending, setTiktokPending] = useState(0)
+  const [nikaCrisisCount, setNikaCrisisCount] = useState(0)
+  const handleNikaPulse = useCallback((pulse) => {
+    const n = Number(pulse?.openCritical || 0) + Number(pulse?.starvingCount || 0)
+    setNikaCrisisCount(pulse?.crisis ? Math.max(1, n) : 0)
+  }, [])
   useEffect(() => {
     const hasSupport = navSections.some((s) => s.id === 'support')
     const hasTiktok = navSections.some((s) => s.id === 'tiktok')
@@ -238,6 +245,7 @@ export default function PanelShell({ onLogout }) {
   const isBotQuests = section === 'botQuests'
   const isGroupBalanceLevel = section === 'groupBalanceLevel'
   const isGroupsStudio = section === 'groupsStudio'
+  const isNika = section === 'nika'
   const isAchievements = section === 'achievements'
   const isBroadcast = section === 'broadcast'
   const isLogs = section === 'logs'
@@ -277,6 +285,14 @@ export default function PanelShell({ onLogout }) {
         />
       )}
 
+      {isProjectCreator && (
+        <NikaCrisisStrip
+          enabled={isProjectCreator}
+          onOpen={() => handleNavigate('nika')}
+          onPulse={handleNikaPulse}
+        />
+      )}
+
       <main className="panel-shell-main">
         <div
           className={`panel-layout${
@@ -300,7 +316,7 @@ export default function PanelShell({ onLogout }) {
                         ? ' panel-layout-broadcast'
                         : isBotQuests
                           ? ' panel-layout-broadcast'
-                        : isGroupBalanceLevel || isGroupsStudio
+                        : isGroupBalanceLevel || isGroupsStudio || isNika
                           ? ' panel-layout-broadcast'
                         : isBroadcast
                         ? ' panel-layout-broadcast'
@@ -320,7 +336,7 @@ export default function PanelShell({ onLogout }) {
                                       ? ' panel-layout-support'
                                       : isChronicle
                                         ? ' panel-layout-chronicle'
-                                        : isPanelAccess || isSoftRestart || isGroupsStudio
+                                        : isPanelAccess || isSoftRestart || isGroupsStudio || isNika
                                           ? ' panel-layout-security'
                                           : ' panel-layout-page'
           }`}
@@ -340,7 +356,7 @@ export default function PanelShell({ onLogout }) {
             onMusicVolumeChange={setMusicVolume}
             onToggleMusic={toggleMusicMute}
             onEnterGodMode={() => setGodMode(true)}
-            badges={{ support: openTickets, tiktok: tiktokPending }}
+            badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount }}
             accent={accent}
             onAccentChange={handleAccentChange}
             recentSectionIds={recentSections}
@@ -406,6 +422,7 @@ export default function PanelShell({ onLogout }) {
               }}
             />
           )}
+          {isNika && isProjectCreator && <NikaSection />}
           {isAchievements && (
             <AchievementsSection
               onOpenUser={(userId) => {
@@ -444,7 +461,7 @@ export default function PanelShell({ onLogout }) {
           {isChronicle && <ChronicleSection />}
           {isPanelAccess && <PanelAccessSection />}
           {isSoftRestart && isProjectCreator && <SoftRestartSection />}
-          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isSoftRestart && (
+          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

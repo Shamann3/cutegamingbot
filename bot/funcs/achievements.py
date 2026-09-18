@@ -14,6 +14,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from bot.funcs.technical_chats import is_technical_chat
+
 SHOWCASE_LIMIT = 5
 PAGE_SIZE = 10
 MAX_RARITY_RANK = 20
@@ -430,7 +432,7 @@ async def reply_html_safe(message, html_text: str, **kwargs) -> bool:
 
 def achievement_profile_pin_html(it: Dict[str, Any]) -> str:
     """Строка витрины: первая строка карточки как есть — эмодзи + жирный/курсив."""
-    title_html = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
+    title_html = public_title_html(it)
     line = title_first_line_html_safe(title_html, PROFILE_PIN_EMOJI_CAP)
     if count_custom_emojis(line) == 0:
         eid = it.get("icon_emoji_id") or first_custom_emoji_id(title_html)
@@ -847,6 +849,9 @@ def format_group_ref_html(
     return f"<b>{safe}</b>"
 
 
+GBL_TITLE_GROUP_SEP = " · "
+
+
 def build_gbl_title_html(
     base_title: str,
     *,
@@ -854,12 +859,34 @@ def build_gbl_title_html(
     chat_title: Optional[str] = None,
     chat_url: Optional[str] = None,
 ) -> str:
-    """«Спонсор группы · Название» — название кликабельно."""
+    """«Спонсор группы · Название» — название кликабельно.
+
+    Техническую группу в титул не подмешиваем: карточку видит любой, кто открыл
+    профиль (см. bot/funcs/technical_chats.py).
+    """
     title = html.escape((base_title or "Достижение").strip() or "Достижение")
+    if is_technical_chat(chat_id):
+        return title
     group = format_group_ref_html(
         chat_id=chat_id, chat_title=chat_title, chat_url=chat_url,
     )
-    return f"{title} · {group}"
+    return f"{title}{GBL_TITLE_GROUP_SEP}{group}"
+
+
+def public_title_html(it: Dict[str, Any]) -> str:
+    """Титул награды для показа игроку.
+
+    Новые выдачи за техгруппу уже приходят без её названия, но старые хранят
+    готовый HTML со ссылкой на группу — у них срезаем хвост, добавленный
+    build_gbl_title_html. Строка проверяется по meta.chat_id, поэтому обычные
+    награды не трогаем.
+    """
+    raw = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
+    meta = it.get("meta") if isinstance(it.get("meta"), dict) else {}
+    if not is_technical_chat(meta.get("chat_id")):
+        return raw
+    head = raw.rsplit(GBL_TITLE_GROUP_SEP, 1)[0].strip()
+    return head or raw
 
 
 _RARITY_LEVELS_CACHE: List[Dict[str, Any]] = []
@@ -934,7 +961,7 @@ def achievement_line_html(
     compact: bool = False,
 ) -> str:
     """Карточка: богатый title рисуем как есть, без лишней иконки слева."""
-    title = it.get("title_html") or html.escape(str(it.get("title") or "Достижение"))
+    title = public_title_html(it)
     if compact:
         title = title_compact_html(title)
     rich = is_rich_title(title) or title_carries_custom_emoji(title)
@@ -2008,6 +2035,9 @@ async def grant_gbl_level_achievement(
         or str(official.get("title") or catalog_code)
     )
     if chat_id is not None:
+        # Техгруппу не подписываем ни в титуле, ни в meta: и то и другое уезжает
+        # в users.profile_achievements, который читает любой зритель профиля.
+        hide_group = is_technical_chat(chat_id)
         unique = gbl_unique_code(level, int(chat_id))
         title_html = build_gbl_title_html(
             base_title,
@@ -2017,8 +2047,8 @@ async def grant_gbl_level_achievement(
         )
         meta = {
             "chat_id": int(chat_id),
-            "chat_title": (chat_title or "").strip() or None,
-            "chat_url": (chat_url or "").strip() or None,
+            "chat_title": None if hide_group else ((chat_title or "").strip() or None),
+            "chat_url": None if hide_group else ((chat_url or "").strip() or None),
             "level": level,
             "code": catalog_code,
             "rarity": int(official.get("rarity") or level),

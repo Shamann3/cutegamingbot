@@ -152,6 +152,7 @@ async def search_groups(query: str, *, limit: int = 12) -> List[Dict[str, Any]]:
                    coalesce(chatbalance, 0) AS chatbalance,
                    coalesce(dexbalance, 0) AS dexbalance,
                    coalesce(group_balance_level, 0) AS group_balance_level,
+                   coalesce(is_technical, FALSE) AS is_technical,
                    creator_id
             FROM chat
             WHERE namechat ILIKE $1
@@ -181,6 +182,9 @@ def _brief_from_row(r: Dict[str, Any]) -> Dict[str, Any]:
         "chatbalance": _num(r.get("chatbalance")),
         "dexbalance": _num(r.get("dexbalance")),
         "level": max(0, min(5, _iint(r.get("group_balance_level")))),
+        # Служебная группа: в админке ничего не прячем, флаг нужен только для
+        # метки в интерфейсе (игроку такие группы не показываются).
+        "is_technical": bool(r.get("is_technical")),
         "creator_id": _iint(r.get("creator_id")) or None,
     }
 
@@ -193,6 +197,7 @@ async def get_group_brief(chat_id: int) -> Optional[Dict[str, Any]]:
                    coalesce(chatbalance, 0) AS chatbalance,
                    coalesce(dexbalance, 0) AS dexbalance,
                    coalesce(group_balance_level, 0) AS group_balance_level,
+                   coalesce(is_technical, FALSE) AS is_technical,
                    group_balance_sponsor_id,
                    creator_id
             FROM chat WHERE chat_id = $1

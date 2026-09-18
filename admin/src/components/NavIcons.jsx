@@ -206,6 +206,13 @@ const SoftRestart = () => (
   </Icon>
 )
 
+const Nika = () => (
+  <Icon>
+    <path d="M12 3.8l7 3.1v5.4c0 4.2-2.8 7.2-7 8.7-4.2-1.5-7-4.5-7-8.7V6.9l7-3.1z" />
+    <path d="M8.4 12.2l2.4 2.4 4.8-5" />
+  </Icon>
+)
+
 const GroupsStudio = () => (
   <Icon>
     <circle cx="9" cy="10" r="3.2" />
@@ -238,6 +245,7 @@ export const NAV_ICONS = {
   botQuests: BotQuests,
   groupBalanceLevel: Economy,
   groupsStudio: GroupsStudio,
+  nika: Nika,
   achievements: Giveaways,
   broadcast: Broadcast,
   logs: Logs,

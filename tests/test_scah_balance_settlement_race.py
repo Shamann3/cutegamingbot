@@ -11,8 +11,7 @@
 Тест моделирует общий стор баланса и параллельный кредит, вклинивающийся между
 чтением и записью, и показывает: SET теряет кредит, DELTA — сохраняет.
 """
-import io, sys, asyncio, re
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+import sys, asyncio, re
 
 
 class FakeBalanceStore:
@@ -100,4 +99,10 @@ async def main():
     print("ВСЕ ПРОВЕРКИ ПРОШЛИ")
 
 
-asyncio.run(main())
+def test_settlement_delta_keeps_concurrent_credit():
+    asyncio.run(main())
+
+
+if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
+    asyncio.run(main())

@@ -163,6 +163,12 @@ from bot.config.db_config import (
     db_pool_max,
     _safe_log,
 )
+from bot.config.config import BACKGROUND_EARNINGS_CHAT_ID
+from bot.db_create.item_cost import (
+    acquire_cost_lot as _grant_cost_lot,
+    consume_cost_lots as _consume_cost_lots,
+    item_lots,
+)
 
 bootstrap_database_env()
 db_settings = build_db_settings()
@@ -835,6 +841,10 @@ class Database:
         except Exception as e:
             db_debug_log(f"[DB] pool OK, verify skipped: {type(e).__name__}")
 
+        # Схема учёта себестоимости — один раз на старте, а не в хот-пате.
+        if not await item_lots.ensure_item_cost_schema(self.pool):
+            db_debug_log("[DB] item cost schema unavailable — учёт себестоимости выключен")
+
     async def close(self):
         if self.pool is not None:
             await self.pool.close()
@@ -1189,6 +1199,75 @@ class Database:
         """
         async with self.pool.acquire() as conn:
             await conn.execute(sql)
+
+    async def ensure_technical_chat_schema(self) -> None:
+        """chat.is_technical - служебные группы, которых игрок видеть не должен.
+
+        Таблицу chat заводят два владельца схемы (этот файл и server/schema.sql),
+        порядок старта процессов не фиксирован - поэтому ADD COLUMN IF NOT EXISTS
+        и сид идемпотентны: кто первым поднялся, тот и разметил.
+
+        Сид только UPDATE: строки с нулевым балансом для групп, которых ещё нет
+        в таблице, не создаём - иначе техгруппа сама всплыла бы в выборках.
+        """
+        if not await self.ensure_pool():
+            raise RuntimeError("Пул соединений не инициализирован (ensure_technical_chat_schema).")
+
+        from bot.funcs.technical_chats import TECHNICAL_CHAT_IDS
+
+        sql = """
+        ALTER TABLE chat
+            ADD COLUMN IF NOT EXISTS is_technical BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- Под публичные выборки групп (get_group_balances и всё, что фильтрует
+        -- техгруппы): индекс покрывает только то, что видит игрок.
+        CREATE INDEX IF NOT EXISTS idx_chat_public_by_balance
+            ON chat (chatbalance DESC, chat_id)
+            WHERE COALESCE(is_technical, FALSE) = FALSE;
+        """
+        async with self.pool.acquire() as conn:
+            await conn.execute(sql)
+            if TECHNICAL_CHAT_IDS:
+                await conn.execute(
+                    """
+                    UPDATE chat
+                       SET is_technical = TRUE
+                     WHERE chat_id = ANY($1::bigint[])
+                       AND COALESCE(is_technical, FALSE) = FALSE
+                    """,
+                    sorted(TECHNICAL_CHAT_IDS),
+                )
+
+    async def mark_chat_technical_if_needed(self, chat_id: int, *, conn=None) -> None:
+        """Проставить флаг сразу при создании строки чата (см. add_group).
+
+        Нужна, потому что сид в ensure_technical_chat_schema разметит только те
+        группы, которые к моменту старта уже были в таблице.
+
+        conn: если строка создаётся внутри уже занятого соединения, передавай его -
+        второй acquire на пуле с min_size=1 рискует встать в дедлок.
+        """
+        from bot.funcs.technical_chats import is_technical_chat
+
+        if not is_technical_chat(chat_id):
+            return
+
+        query = """
+            UPDATE chat
+               SET is_technical = TRUE
+             WHERE chat_id = $1
+               AND COALESCE(is_technical, FALSE) = FALSE
+        """
+        try:
+            if conn is not None:
+                await conn.execute(query, int(chat_id))
+                return
+            if not await self.ensure_pool():
+                return
+            async with self.pool.acquire() as own_conn:
+                await own_conn.execute(query, int(chat_id))
+        except Exception as e:
+            print(f"[TECHCHAT][DB] mark_chat_technical_if_needed({chat_id}) fail: {e!r}")
 
     async def get_chat_group_balance_level(self, chat_id: int) -> int:
         """Текущий уровень ★ группы из таблицы chat (0…5)."""
@@ -9399,14 +9478,19 @@ class Database:
         """Получение деталей группы, включая ID, баланс, имя и username из таблицы chat,
         с учетом только chatbalance (dexbalance заморожен).
         Код находит только группы, где usernamechat существует и не равен 'username отсутствует'.
+
+        Это источник ОБОИХ публичных топов групп (bot/funcs/top.py), поэтому
+        технические группы отсекаются здесь - по chat.is_technical, а на старой
+        схеме без колонки - по списку из bot/funcs/technical_chats.py.
+        Админские агрегаты по группам эту функцию не используют.
         """
         if not self.pool:
             print("Ошибка: Пул соединений не инициализирован.")
             return None
 
-        try:
-            async with self.pool.acquire() as connection:
-                query_with_creator = """
+        from bot.funcs.technical_chats import filter_public_chats
+
+        select_with_creator = """
                     SELECT 
                         chat_id, 
                         chatbalance, 
@@ -9416,10 +9500,8 @@ class Database:
                         namechat, 
                         usernamechat 
                     FROM chat
-                    WHERE usernamechat IS NOT NULL
-                    AND usernamechat != 'username отсутствует'
-                """
-                query_without_creator = """
+        """
+        select_without_creator = """
                     SELECT 
                         chat_id, 
                         chatbalance, 
@@ -9428,15 +9510,37 @@ class Database:
                         namechat, 
                         usernamechat 
                     FROM chat
+        """
+        where_public = """
                     WHERE usernamechat IS NOT NULL
                     AND usernamechat != 'username отсутствует'
-                """
-                try:
-                    result = await connection.fetch(query_with_creator)
-                except Exception as qerr:
-                    print(f"[get_group_balances] fallback без creator_id: {qerr}")
-                    result = await connection.fetch(query_without_creator)
-                return result
+                    AND COALESCE(is_technical, FALSE) = FALSE
+        """
+        where_legacy = """
+                    WHERE usernamechat IS NOT NULL
+                    AND usernamechat != 'username отсутствует'
+        """
+
+        # Порядок вариантов: сначала полный (creator_id + is_technical), затем
+        # деградация по колонкам, которых может не быть в старой схеме. Техгруппы
+        # на legacy-вариантах отсекает filter_public_chats ниже.
+        variants = (
+            ("creator_id + is_technical", select_with_creator + where_public),
+            ("is_technical", select_without_creator + where_public),
+            ("creator_id", select_with_creator + where_legacy),
+            ("legacy", select_without_creator + where_legacy),
+        )
+
+        try:
+            async with self.pool.acquire() as connection:
+                for label, query in variants:
+                    try:
+                        result = await connection.fetch(query)
+                    except Exception as qerr:
+                        print(f"[get_group_balances] вариант '{label}' недоступен: {qerr}")
+                        continue
+                    return filter_public_chats(result)
+                return None
         except Exception as e:
             print(f"Ошибка при получении данных о группах: {e}")
             return None
@@ -9482,6 +9586,7 @@ class Database:
                             WHERE COALESCE(chatbalance, 0) > $1
                         )::int AS hot_groups
                     FROM chat
+                    WHERE COALESCE(is_technical, FALSE) = FALSE
                     """,
                     threshold,
                 )
@@ -9505,6 +9610,7 @@ class Database:
                             )::int AS creator_hot_groups
                         FROM chat
                         WHERE creator_id IS NOT NULL
+                          AND COALESCE(is_technical, FALSE) = FALSE
                         GROUP BY creator_id
                         HAVING SUM(
                             GREATEST(COALESCE(chatbalance, 0) - $1, 0)
@@ -17893,25 +17999,65 @@ class Database:
             print(f"Ошибка при обновлении цены предмета '💠 CuteCoin': {e}")
 
 
-    async def set_items(self , user_id , item_name , quantity):
-        """Обновление инвентаря пользователя, добавление или обновление количества предметов."""
+    async def set_items(
+            self , user_id , item_name , quantity , *,
+            source=item_lots.SOURCE_REWARD , ref_kind="" , ref_id=""
+    ):
+        """Обновление инвентаря пользователя, добавление или обновление количества предметов.
+
+        Заодно заводит лот себестоимости в той же транзакции. По умолчанию
+        источник — награда (себестоимость 0): именно так сюда попадают призы
+        игр, царь чата, промо и прочие выдачи. Покупки за куты идут не сюда,
+        а в set_items_with_cost, где известна уплаченная цена.
+        """
+        await self._set_items_tx(
+            user_id , item_name , quantity ,
+            parts=[ item_lots.CostPart(0 , int(quantity or 0)) ] ,
+            source=source , ref_kind=ref_kind , ref_id=ref_id ,
+        )
+
+    async def set_items_with_cost(
+            self , user_id , item_name , quantity , *, total_paid , ref_kind="shop" , ref_id="" ,
+            source=item_lots.SOURCE_SHOP
+    ):
+        """set_items для покупки: себестоимость = фактически уплаченная цена."""
+        await self._set_items_tx(
+            user_id , item_name , quantity ,
+            parts=item_lots.split_cost(total_paid , quantity) ,
+            source=source , ref_kind=ref_kind , ref_id=ref_id ,
+        )
+
+    async def _set_items_tx(
+            self , user_id , item_name , quantity , *, parts , source , ref_kind , ref_id
+    ):
+        """Выдача предмета и запись лота В ОДНОЙ транзакции.
+
+        Инвентарь пишется ровно так же, как раньше (тот же кодек, та же
+        обработка ошибок) — меняется только то, что рядом появляется запись
+        стоимости. Если учёт сорвётся, он откатится по своему савпоинту, а
+        выдача предмета всё равно закоммитится.
+        """
         async with self.pool.acquire() as connection:
             try:
-                # Получаем текущий список предметов пользователя
-                result = await connection.fetchrow("SELECT items FROM users WHERE user_id = $1" , user_id)
-
-                # Загружаем инвентарь через единый кодек (понимает любой формат)
-                current_items = decode_items(result [ 'items' ] if result else None)
-
-                # Обновляем количество предмета или добавляем новый
-                if item_name in current_items:
-                    current_items [ item_name ] = int(current_items [ item_name ] or 0) + quantity
-                else:
-                    current_items [ item_name ] = quantity
-
-                # Обновляем запись в базе данных
-                await connection.execute(
-                    "UPDATE users SET items = $1 WHERE user_id = $2" , encode_items(current_items) , user_id)
+                async with connection.transaction():
+                    result = await connection.fetchrow(
+                        "SELECT items FROM users WHERE user_id = $1 FOR UPDATE" , user_id)
+                    current_items = decode_items(result [ 'items' ] if result else None)
+                    if item_name in current_items:
+                        current_items [ item_name ] = int(current_items [ item_name ] or 0) + quantity
+                    else:
+                        current_items [ item_name ] = quantity
+                    await connection.execute(
+                        "UPDATE users SET items = $1 WHERE user_id = $2" , encode_items(current_items) , user_id)
+                    await item_lots.record_acquire_parts(
+                        connection ,
+                        user_id ,
+                        item_name ,
+                        parts ,
+                        source=source ,
+                        ref_kind=ref_kind ,
+                        ref_id=ref_id ,
+                    )
                 print(f"Инвентарь пользователя {user_id} успешно обновлен.")
             except Exception as e:
                 print(f"Ошибка при обновлении инвентаря пользователя {user_id}: {e}")
@@ -18003,12 +18149,16 @@ class Database:
             return
         async with self.pool.acquire() as connection:
             try:
-                result = await connection.fetchrow(
-                    "SELECT items FROM users WHERE user_id = $1" , user_id)
-                inventory = decode_items(result [ 'items' ]) if result else {}
-                inventory [ item_name ] = int(inventory.get(item_name , 0)) + qty
-                await connection.execute(
-                    "UPDATE users SET items = $1 WHERE user_id = $2" , encode_items(inventory) , user_id)
+                async with connection.transaction():
+                    result = await connection.fetchrow(
+                        "SELECT items FROM users WHERE user_id = $1 FOR UPDATE" , user_id)
+                    inventory = decode_items(result [ 'items' ]) if result else {}
+                    inventory [ item_name ] = int(inventory.get(item_name , 0)) + qty
+                    await connection.execute(
+                        "UPDATE users SET items = $1 WHERE user_id = $2" , encode_items(inventory) , user_id)
+                    await item_lots.record_acquire(
+                        connection , user_id , item_name , qty ,
+                        unit_cost=0 , source=item_lots.SOURCE_REWARD , ref_kind="growth_fund")
                 print(f"[ФОНД РОСТА] +{qty} «{item_name}» пользователю {user_id}")
             except Exception as e:
                 print(f"Ошибка при начислении предмета «{item_name}» пользователю {user_id}: {e}")
@@ -18242,7 +18392,9 @@ class Database:
             print(f"⚠️ [DEBUG] Ошибка при получении стикера: {e}")
             return None
 
-    async def delete_user_inventory12(self , user_id , item_name , quantity):
+    async def delete_user_inventory12(
+            self , user_id , item_name , quantity , *, reason="item_spend" , destroyed=True
+    ):
         try:
             # Получаем текущий инвентарь пользователя
             async with self.pool.acquire() as connection:
@@ -18266,7 +18418,12 @@ class Database:
 
                             # Обновляем запись в базе данных
                             update_query = "UPDATE users SET items = $1 WHERE user_id = $2"
-                            await connection.execute(update_query , encode_items(inventory_items) , user_id)
+                            async with connection.transaction():
+                                await connection.execute(update_query , encode_items(inventory_items) , user_id)
+                                await _consume_cost_lots(
+                                    connection , user_id , item_name , quantity ,
+                                    reason=reason , destroyed=destroyed ,
+                                )
 
                             print(f"Предмет {item_name} успешно удален из инвентаря пользователя {user_id}.")
                             return True
@@ -18283,7 +18440,7 @@ class Database:
             print(f"Ошибка при удалении предмета из инвентаря пользователя: {e}")
             return False
 
-    async def delete_user_inventory1(self, user_id, item_name):
+    async def delete_user_inventory1(self, user_id, item_name, *, reason="item_spend", destroyed=True):
         try:
             async with self.pool.acquire() as connection:
                 # Получаем текущий инвентарь пользователя
@@ -18304,10 +18461,15 @@ class Database:
                             del inventory_items[item_name]
 
                         # Обновляем запись в базе данных
-                        await connection.execute(
-                            "UPDATE users SET items = $1 WHERE user_id = $2",
-                            encode_items(inventory_items), user_id
-                        )
+                        async with connection.transaction():
+                            await connection.execute(
+                                "UPDATE users SET items = $1 WHERE user_id = $2",
+                                encode_items(inventory_items), user_id
+                            )
+                            await _consume_cost_lots(
+                                connection, user_id, item_name, 1,
+                                reason=reason, destroyed=destroyed,
+                            )
 
                         print(f"Предмет {item_name} успешно удален из инвентаря пользователя {user_id}.")
                         return True
@@ -18431,6 +18593,10 @@ class Database:
                         sql , chat_id , namechat , usernamechat , chatlink , description , creator_id , creator_name ,
                         creator_username , 0 , current_date)  # Передаем объект datetime
 
+                # Служебная группа не должна успеть попасть в публичные топы
+                # между своим добавлением и следующим стартом бота.
+                await self.mark_chat_technical_if_needed(chat_id)
+
                 print(f"Добавлена новая группа {chat_id}.")
             except Exception as e:
                 print(f"Ошибка при добавлении группы {chat_id}: {e}")
@@ -18529,6 +18695,8 @@ class Database:
                     total_messages = await connection.fetchval(
                         'SELECT SUM(text) FROM chat WHERE chat_id = $1' , chat_id) or 0
                     await connection.execute('UPDATE chat SET text = $1 WHERE chat_id = $2' , total_messages , chat_id)
+
+                    await self.mark_chat_technical_if_needed(chat_id, conn=connection)
 
             print(f"Группа с chat_id={chat_id} обновлена или добавлена.")
         except Exception as e:
@@ -23732,7 +23900,7 @@ class Database:
         amount: int,
         source_chat_id: Optional[int] = None,
         note: str = "",
-        target_chat_id: int = -1003855337972,
+        target_chat_id: int = BACKGROUND_EARNINGS_CHAT_ID,
     ) -> bool:
         """
         Регистрирует взнос в чёрный рынок и пополняет баланс целевой группы.

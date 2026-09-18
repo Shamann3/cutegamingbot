@@ -50,10 +50,11 @@ def test_nick_taken_message_is_defined():
 def test_bot_texts_match_plan():
     from bot.funcs.tiktok_earn import format_hashtag, help_earnings_block, text_ask_nick, text_hub, text_need_nick
     assert "Тик ток" in text_hub()
-    assert "cuteplayer" in text_ask_nick()
+    # Пример ника уехал из подсказки в строку аккаунтов, экран просит ник текстом.
+    assert "Напишите имя своего TikTok" in text_ask_nick()
     assert "Задания" in help_earnings_block()
     assert "Напишите имя своего TikTok" in text_need_nick()
-    assert "@cuteplayer" in text_need_nick()
+    assert "чтобы принять работу" in text_need_nick()
     assert text_ask_nick() == text_need_nick()
     assert format_hashtag("тг звезды") == "#тгзвезды"
     assert format_hashtag("@CuteGamingBot") == "#CuteGamingBot"
@@ -69,7 +70,9 @@ def test_hub_buttons_use_premium_emoji_ids():
     assert videos.text == "Видео о боте"
     assert "<tg-emoji" not in comments.text
     assert comments.icon_custom_emoji_id == ICON_COMMENTS == "5350367217349311525"
-    assert videos.icon_custom_emoji_id == ICON_VIDEOS == "5375309569905938163"
+    # Кнопка хаба задаёт id мимо ICON_VIDEOS, поэтому фиксируем оба значения.
+    assert videos.icon_custom_emoji_id == "5375309569905938163"
+    assert ICON_VIDEOS == "5229011542011299168"
     assert getattr(comments, "style", None) == "primary"
     assert getattr(videos, "style", None) == "primary"
     for row in kb.inline_keyboard[2:]:
@@ -116,7 +119,8 @@ def test_player_tiktok_texts_have_no_emdash():
         assert "—" not in blob
         assert "–" not in blob
     assert "<b>" in text_hub()
-    assert "<i>" in text_hub()
+    # Хаб перешёл на список направлений в цитате, курсива в нём больше нет.
+    assert "<blockquote>" in text_hub()
     assert "<i>" in text_comments({})
     assert "<i>" in text_videos({})
 
@@ -240,7 +244,9 @@ def test_direction_then_work_on_same_screen():
     from bot.funcs.tiktok_earn import comments_keyboard, hub_keyboard, text_hub, text_videos, videos_keyboard
 
     hub = text_hub({"commentReward": 12, "kutPerUnit": 40})
-    assert "Выберите" in hub
+    # Хаб называет оба направления, чтобы выбор делался прямо на нём.
+    assert "Создание комментариев" in hub
+    assert "Съемка видео" in hub
     assert "Настройки" not in hub
     dumped = _kb_data(hub_keyboard())
     assert dumped.split()[:2] == ["tt:comments", "tt:videos"]
@@ -258,7 +264,7 @@ def test_direction_then_work_on_same_screen():
     assert "tt:nicks" not in waiting
     assert "tt:my_videos" not in waiting
     assert waiting.strip() == "tt:hub"
-    assert "cuteplayer" in text_videos({"kutPerUnit": 40}) or "Обзор" in text_videos({"kutPerUnit": 40})
+    assert "Напишите название для своего видео" in text_videos({"kutPerUnit": 40})
 
 
 def test_reward_caps_and_payout_use_stored_value():
@@ -419,8 +425,9 @@ def test_player_tiktok_copy_is_formal_vy():
         assert "—" not in blob
         hit = _TY_RE.search(blob)
         assert hit is None, f"informal: {hit.group(0)} in {blob[:80]}"
-    assert "Выберите" in text_hub()
+    assert "Создание комментариев" in text_hub()
     assert "Напишите имя своего TikTok" in text_need_nick()
+    assert "Чтобы было видно, что комментарии Ваши" in text_need_nick("comments")
     assert "копия" not in "".join(BARNUM_REJECTS).lower()
 
 
@@ -470,15 +477,16 @@ def test_wait_modes_photo_ignored_until_button():
 
     ask = text_ask_nick()
     assert "Напишите имя своего TikTok" in ask
-    assert EXAMPLE_NICK in ask
     need = text_need_nick("comments")
     assert "Напишите имя своего TikTok" in need
-    assert EXAMPLE_NICK in need
+    # Пример ника ушёл из подсказки в строку аккаунтов, но остаётся тем же.
+    assert EXAMPLE_NICK == "@cuteplayer"
+    assert "комментарии Ваши" in need
     assert EXAMPLE_COMMENT in text_comments({})
     assert EXAMPLE_VIDEO_URL not in text_videos({})
     assert "vt.tiktok.com" not in text_videos({})
-    assert "<b>1.</b>" in text_videos({})
-    assert "<b>2.</b>" in text_videos({})
+    assert "<b>1. Напишите название для своего видео</b>" in text_videos({})
+    assert "<b>2. Отправьте ссылку на видео</b>" in text_videos({})
     assert "<blockquote><code>" not in text_videos({})
     comments = text_comments({})
     videos = text_videos({})
@@ -489,8 +497,10 @@ def test_wait_modes_photo_ignored_until_button():
     assert "Делайте по порядку" in comments
     assert "Делайте по порядку" in videos
     for blob in (ask, need, comments, videos):
-        assert "<code>" in blob
+        assert "<b>" in blob
         assert "—" not in blob
+    # Копируемое тапом осталось только там, где есть что копировать.
+    assert "<code>" in comments
 
 
 def test_gift_like_wait_flag_lets_handler_accept_text():
@@ -632,7 +642,7 @@ def test_invalid_nick_error_stays_on_same_screen():
         assert "латиница" in str(exc)
         assert str(exc) in screen
         assert "Напишите имя своего TikTok" in screen
-        assert "@cuteplayer" in screen
+        assert screen.endswith(text_need_nick("comments"))
 
 
 def test_button_and_attach_use_gift_like_wait():
@@ -812,7 +822,10 @@ def test_video_title_then_link_and_retry_flow():
     assert "название" in title_screen.lower()
     assert "ссылку" in title_screen.lower()
     assert "—" not in title_screen
-    assert "cuteplayer" in text_videos({}) or "Обзор" in text_videos({})
+    videos_screen = text_videos({})
+    assert videos_screen.index("Напишите название для своего видео") < videos_screen.index(
+        "Отправьте ссылку на видео"
+    )
     done = " ".join(btn.text for row in done_keyboard(after="mine").inline_keyboard for btn in row)
     dumped = " ".join(btn.callback_data or "" for row in done_keyboard(after="hub").inline_keyboard for btn in row)
     assert "В главное меню" in done

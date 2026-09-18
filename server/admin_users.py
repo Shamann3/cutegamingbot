@@ -283,6 +283,7 @@ async def admin_adjust_item(
     if delta == 0:
         raise ValueError("Изменение количества не может быть 0")
 
+    import item_lots
     from dex_catalog import dex_catalog
     from user_items import add_shop_item_to_storage, count_item_in_storage, take_item_from_storage
 
@@ -312,6 +313,29 @@ async def admin_adjust_item(
                 user_id,
                 items_to_db(updated_items),
             )
+
+            if delta > 0:
+                # Админская выдача — себестоимость 0 с явным источником.
+                await item_lots.record_acquire(
+                    conn,
+                    user_id,
+                    item_id,
+                    delta,
+                    unit_cost=0,
+                    source=item_lots.SOURCE_ADMIN,
+                    ref_kind="admin",
+                    ref_id=str(admin_user_id),
+                )
+            else:
+                await item_lots.record_consume(
+                    conn,
+                    user_id,
+                    item_id,
+                    -delta,
+                    reason=item_lots.REASON_ADMIN_TAKE,
+                    ref_kind="admin",
+                    ref_id=str(admin_user_id),
+                )
 
     if note.strip():
         from admin_player_notify import notify_item_adjustment

@@ -10,6 +10,7 @@ from market_rules import MARKET_MAX_PRICE, MARKET_MIN_PRICE
 from db import db
 from dex_catalog import dex_catalog
 from shop_catalog import effective_price
+import item_lots
 from user_items import add_shop_item_to_storage, items_to_db, parse_items
 
 SUSPICIOUS_HIGH_RATIO = 3.0
@@ -304,6 +305,11 @@ async def admin_cancel_listing(
                 WHERE id = $1
                 """,
                 listing_id,
+            )
+            # Как и при обычном снятии лота: себестоимость возвращается
+            # продавцу той же, какой ушла в эскроу.
+            await item_lots.escrow_return(
+                conn, seller_id, str(row["item_id"]), qty, holder_id=listing_id
             )
 
     entry = dex_catalog.get(str(row["item_id"]))

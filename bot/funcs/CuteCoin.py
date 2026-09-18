@@ -1,5 +1,6 @@
 from main import *
 
+from bot.db_create import item_cost
 
 cutecoinlist = {}
 sellcutelist = {}
@@ -316,6 +317,10 @@ async def cutecoin(message: Message):
                 # Обновляем инвентарь в базе данных
                 await db.increase_item_quantity(item_to_sell , quantity_to_sell)
                 await db.set_user_inventorycutecoin(user_id , inventory)
+                # Продажа ктк обратно в магазин — выбытие, но не сгорание
+                await item_cost.record_loss(
+                    db.pool , user_id , item_to_sell , quantity_to_sell ,
+                    reason="cutecoin_sold" , destroyed=False , ref_kind="cutecoin")
 
                 # Обновляем балансы и количество ктк
                 db.update_user_cutecoin_balance(user_id , - amount_to_sell)
@@ -460,7 +465,10 @@ async def process_callback(callback_query: types.CallbackQuery):
 
         # Добавляем купленный предмет "💠 CuteCoin" в инвентарь пользователя
         if item_name == "💠 CuteCoin" and bought_quantity is not None and bought_quantity > 0:
-            await db.set_items(user_id , item_name , bought_quantity)  # Добавляем купленное количество CuteCoin
+            # Покупка за куты — себестоимость равна уплаченной сумме
+            await db.set_items_with_cost(
+                user_id , item_name , bought_quantity ,
+                total_paid=int(abc or 0) , ref_kind="cutecoin")
             db.update_user_cutecoin_balance(
                 user_id , win_amount_rounded)
             loss_formatted = "{:,.0f}".format(abc).replace("," , ".")  # Выводим стоимость покупки
@@ -514,7 +522,10 @@ async def process_callback(callback_query: types.CallbackQuery):
 
         # Добавляем купленный предмет "💠 CuteCoin" в инвентарь пользователя
         if item_name == "💠 CuteCoin" and bought_quantity is not None and bought_quantity > 0:
-            await db.set_items(user_id, item_name, bought_quantity)  # Добавляем купленное количество CuteCoin
+            # Покупка за куты — себестоимость равна уплаченной сумме
+            await db.set_items_with_cost(
+                user_id, item_name, bought_quantity,
+                total_paid=int(total_cost or 0), ref_kind="cutecoin")
 
             # Обновляем баланс CuteCoin пользователя (необязательный шаг)
             db.update_user_cutecoin_balance(user_id, amount_to_buy)

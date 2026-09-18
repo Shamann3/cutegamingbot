@@ -4719,6 +4719,162 @@ async def admin_captcha_overview(
     return await overview_captcha()
 
 
+# ─── Ника: инциденты и автобаланс (только создатель) ─────────────────────────
+
+
+class NikaSettingsBody(BaseModel):
+    enabled: bool | None = None
+    dry_run: bool | None = None
+    tick_interval_sec: int | None = Field(default=None, ge=30, le=3600)
+    model_config = {"extra": "forbid"}
+
+
+class NikaGroupBody(BaseModel):
+    chat_id: int
+    target_balance: int = Field(ge=0, le=10_000_000)
+    speed_mode: str = Field(default="auto", max_length=16)
+    enabled: bool = True
+    note: str | None = Field(default=None, max_length=240)
+    model_config = {"extra": "forbid"}
+
+
+class NikaGroupIdBody(BaseModel):
+    chat_id: int
+    model_config = {"extra": "forbid"}
+
+
+class NikaActionBody(BaseModel):
+    action: str = Field(max_length=32)
+    incident_id: int | None = None
+    chat_id: int | None = None
+    transfer_id: int | None = None
+    note: str | None = Field(default=None, max_length=500)
+    model_config = {"extra": "forbid"}
+
+
+@router.get("/nika/pulse")
+async def admin_nika_pulse(admin_id: int = Depends(require_admin_role(ROLE_OWNER))):
+    _require_project_creator(admin_id)
+    from admin_nika import pulse
+    return await pulse()
+
+
+@router.get("/nika/overview")
+async def admin_nika_overview(admin_id: int = Depends(require_admin_role(ROLE_OWNER))):
+    _require_project_creator(admin_id)
+    from admin_nika import overview
+    return await overview()
+
+
+@router.get("/nika/earnings")
+async def admin_nika_earnings(admin_id: int = Depends(require_admin_role(ROLE_OWNER))):
+    _require_project_creator(admin_id)
+    from admin_nika import earnings
+    return await earnings()
+
+
+@router.get("/nika/candidates")
+async def admin_nika_candidates(
+    q: str = Query("", max_length=128),
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_nika import search_candidates
+    return {"items": await search_candidates(q)}
+
+
+@router.post("/nika/settings")
+async def admin_nika_settings(
+    body: NikaSettingsBody,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_nika import save_settings
+    result = await save_settings(
+        enabled=body.enabled,
+        dry_run=body.dry_run,
+        tick_interval_sec=body.tick_interval_sec,
+    )
+    await log_admin_action(
+        admin_id, "nika_settings",
+        target_type="nika",
+        target_label="Настройки Ники",
+        details=body.model_dump(),
+    )
+    return result
+
+
+@router.post("/nika/group")
+async def admin_nika_group(
+    body: NikaGroupBody,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_nika import save_group
+    result = await save_group(
+        body.chat_id,
+        target_balance=body.target_balance,
+        speed_mode=body.speed_mode,
+        enabled=body.enabled,
+        note=body.note,
+        updated_by=admin_id,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error") or "Нельзя")
+    await log_admin_action(
+        admin_id, "nika_group",
+        target_type="chat",
+        target_id=str(body.chat_id),
+        target_label="Группа под Никой",
+        details=body.model_dump(),
+    )
+    return result
+
+
+@router.post("/nika/group/remove")
+async def admin_nika_group_remove(
+    body: NikaGroupIdBody,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_nika import drop_group
+    result = await drop_group(body.chat_id)
+    await log_admin_action(
+        admin_id, "nika_group_remove",
+        target_type="chat",
+        target_id=str(body.chat_id),
+        target_label="Сняли группу с Ники",
+    )
+    return result
+
+
+@router.post("/nika/action")
+async def admin_nika_action(
+    body: NikaActionBody,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_nika import apply_action
+    result = await apply_action(
+        action=body.action,
+        admin_id=admin_id,
+        incident_id=body.incident_id,
+        chat_id=body.chat_id,
+        transfer_id=body.transfer_id,
+        note=body.note or "",
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error") or "Нельзя")
+    await log_admin_action(
+        admin_id, f"nika_{body.action}",
+        target_type="nika",
+        target_id=str(body.incident_id or body.chat_id or body.transfer_id or ""),
+        target_label="Действие Ники",
+        details=body.model_dump(),
+    )
+    return result
+
+
 @router.get("/achievements/overview")
 async def admin_achievements_overview(
     _admin_id: int = Depends(require_admin_permission("manage_achievements")),

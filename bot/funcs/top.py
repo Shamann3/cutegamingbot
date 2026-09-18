@@ -1,6 +1,8 @@
 from main import *
 import asyncio
 
+from bot.funcs.technical_chats import is_public_chat
+
 
 
 
@@ -937,8 +939,8 @@ async def top(message: Message):
         group_data = [ {"chat_id": item.get("chat_id") ,
             "balance": int(item.get("chatbalance") or 0) ,
             "name": (item.get("namechat") or "Без названия") , "username": (item.get("usernamechat") or "")} for item in
-            data if item.get("chat_id") is not None and int(item.get("chatbalance") or 0) > 0 and item.get(
-                "chat_id") != -1002135149822 ]
+            data if item.get("chat_id") is not None and int(item.get("chatbalance") or 0) > 0 and is_public_chat(
+                item) ]
 
         if not group_data:
             await message.answer("Нет данных для отображения (все балансы нулевые).")
@@ -1984,7 +1986,7 @@ async def calsadqwdqwqdqwcqlback_top(call: types.CallbackQuery):
             "username": row["usernamechat"]
         }
         for row in data
-        if "chat_id" in row and int(row["chatbalance"] or 0) > 0 and row["chat_id"] != -1002135149822
+        if "chat_id" in row and int(row["chatbalance"] or 0) > 0 and is_public_chat(row)
     ]
 
     if not group_data:

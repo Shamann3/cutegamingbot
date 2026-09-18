@@ -43,11 +43,23 @@ def test_read_dice_value():
 def test_single_number_is_rare():
     src = Path("bot/games/Fortuna.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
-    chance = None
+    consts = {}
     for node in tree.body:
-        if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name) and t.id == "FORTUNA_SINGLE_NUMBER_WIN_CHANCE":
-                    chance = ast.literal_eval(node.value)
+        targets = node.targets if isinstance(node, ast.Assign) else (
+            [node.target] if isinstance(node, ast.AnnAssign) else []
+        )
+        for t in targets:
+            if isinstance(t, ast.Name) and t.id.startswith("FORTUNA_"):
+                consts[t.id] = ast.literal_eval(node.value)
+    chance = consts.get("FORTUNA_SINGLE_NUMBER_WIN_CHANCE")
+    small_ranges = consts.get("FORTUNA_SMALL_RANGE_WIN_CHANCE")
     assert chance is not None
-    assert 0.02 <= float(chance) <= 0.04
+    assert small_ranges
+    # Множитель ставки на одно число = 11.0, значит теоретический возврат
+    # игроку сейчас 0.005 * 11 = 5.5% от ставки. Меняете константу —
+    # пересчитайте возврат и поправьте число здесь осознанно.
+    assert float(chance) == 0.005
+    # Ставка на одно число обязана оставаться самым редким исходом:
+    # реже натуральных 1/13 и реже любого узкого диапазона (2 и 3 числа).
+    assert float(chance) < 1 / 13
+    assert all(float(chance) < float(v) for v in small_ranges.values())

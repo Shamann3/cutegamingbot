@@ -466,9 +466,7 @@ async def garden(message: Message):
                         item_to_send = "🍅 Помидор"
                         quantity = 2
 
-                        receiver_inventory = await db.get_user_inventory(user_id)
-                        receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                        await db.set_user_inventory(user_id , receiver_inventory)
+                        await db.set_items(user_id , item_to_send , quantity)
                         db.update_tomato_growth_progress(user_id , random123)
 
                         await message.edit_text(
@@ -575,9 +573,7 @@ async def garden(message: Message):
                         item_to_send = "🥒 Огурец"
                         quantity = 2
 
-                        receiver_inventory = await db.get_user_inventory(user_id)
-                        receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                        await db.set_user_inventory(user_id , receiver_inventory)
+                        await db.set_items(user_id , item_to_send , quantity)
                         db.update_cucumbers_growth_progress(user_id , randomcucu)
                         await message.edit_text(
                             f"👨🏼‍🌾 Огурцы выросли! Вы получили <b>{quantity}</b> шт огурцов", parse_mode="HTML")
@@ -683,9 +679,7 @@ async def garden(message: Message):
                         item_to_send = "🥕 Морковь"
                         quantity = 2
 
-                        receiver_inventory = await db.get_user_inventory(user_id)
-                        receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                        await db.set_user_inventory(user_id , receiver_inventory)
+                        await db.set_items(user_id , item_to_send , quantity)
                         db.update_carrot_growth_progress(user_id , randomcarrot)
                         await message.edit_text(
                             f"👨🏼‍🌾 Морковь выросла! Вы получили <b>{quantity}</b> шт моркови", parse_mode="HTML")
@@ -793,9 +787,7 @@ async def garden(message: Message):
                         item_to_send = "🥔 Картофель"
                         quantity = 3
 
-                        receiver_inventory = await db.get_user_inventory(user_id)
-                        receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                        await db.set_user_inventory(user_id , receiver_inventory)
+                        await db.set_items(user_id , item_to_send , quantity)
                         db.update_potato_growth_progress(user_id , randompotato)
                         await message.edit_text(
                             f"👨🏼‍🌾 Картофель выросла! Вы получили <b>{quantity}</b> шт картошки", parse_mode="HTML")
@@ -909,9 +901,7 @@ async def garden(message: Message):
                         item_to_send = "🥬 Капуста"
                         quantity = 3
 
-                        receiver_inventory = await db.get_user_inventory(user_id)
-                        receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                        await db.set_user_inventory(user_id , receiver_inventory)
+                        await db.set_items(user_id , item_to_send , quantity)
                         db.update_cabbage_growth_progress(user_id , randomcabbage)
                         await message.edit_text(
                             f"👨🏼‍🌾 Капуста выросла! Вы получили <b>{quantity}</b> шт капусты", parse_mode="HTML")
@@ -1017,9 +1007,7 @@ async def garden(message: Message):
                         item_to_send = "🍏 Яблоко"
                         quantity = 3
 
-                        receiver_inventory = await db.get_user_inventory(user_id)
-                        receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                        await db.set_user_inventory(user_id , receiver_inventory)
+                        await db.set_items(user_id , item_to_send , quantity)
                         db.update_apple_growth_progress(user_id , randomapple)
                         await message.edit_text(
                             f"👨🏼‍🌾 Яблоки выросли! Вы получили <b>{quantity}</b> шт яблок", parse_mode="HTML")
@@ -1122,9 +1110,7 @@ async def garden(message: Message):
                         item_to_send = "🍉 Арбуз"
                         quantity = 3
 
-                        receiver_inventory = await db.get_user_inventory(user_id)
-                        receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                        await db.set_user_inventory(user_id , receiver_inventory)
+                        await db.set_items(user_id , item_to_send , quantity)
                         db.update_melon_growth_progress(user_id , randommelon)
                         await message.edit_text(
                             f"👨🏼‍🌾 Арбуз вырос! Вы получили <b>{quantity}</b> арбуза" ,
@@ -1232,9 +1218,7 @@ async def garden(message: Message):
                         item_to_send = "🍌 Бананы"
                         quantity = 5
 
-                        receiver_inventory = await db.get_user_inventory(user_id)
-                        receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                        await db.set_user_inventory(user_id , receiver_inventory)
+                        await db.set_items(user_id , item_to_send , quantity)
                         db.update_banana_growth_progress(user_id , randombanana)
                         await message.edit_text(
                             f"👨🏼‍🌾 Бананы выросли! Вы получили <b>{quantity}</b> шт бананов", parse_mode="HTML")
@@ -1340,9 +1324,7 @@ async def garden(message: Message):
                         item_to_send = "🍓 Клубника"
                         quantity = 5
 
-                        receiver_inventory = await db.get_user_inventory(user_id)
-                        receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                        await db.set_user_inventory(user_id , receiver_inventory)
+                        await db.set_items(user_id , item_to_send , quantity)
                         db.update_berry_growth_progress(user_id , randomberry)
                         await message.edit_text(
                             f"👨🏼‍🌾 Клубника выросла! Вы получили <b>{quantity}</b> шт клубники", parse_mode="HTML")
@@ -1440,9 +1422,7 @@ async def garden(message: Message):
                         item_to_send = "🌽 Кукуруза"
                         quantity = 3
 
-                        receiver_inventory = await db.get_user_inventory(user_id)
-                        receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                        await db.set_user_inventory(user_id , receiver_inventory)
+                        await db.set_items(user_id , item_to_send , quantity)
                         db.update_corn_growth_progress(user_id , randomcorn)
                         await message.edit_text(
                             f"👨🏼‍🌾 Кукуруза выросла! Вы получили <b>{quantity}</b> шт кукурузы", parse_mode="HTML")
@@ -1543,9 +1523,7 @@ async def garden(message: Message):
                         item_to_send = "🌿 Марихуана"
                         quantity = 4
 
-                        receiver_inventory = await db.get_user_inventory(user_id)
-                        receiver_inventory [ item_to_send ] = receiver_inventory.get(item_to_send , 0) + quantity
-                        await db.set_user_inventory(user_id , receiver_inventory)
+                        await db.set_items(user_id , item_to_send , quantity)
                         db.update_marix_growth_progress(user_id , randommarix)
                         await message.edit_text(
                             f"👨🏼‍🌾 Марихуана выросла! Вы получили <b>{quantity}</b> шт марихуаны" ,

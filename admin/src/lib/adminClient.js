@@ -1576,6 +1576,39 @@ export async function groupsStudioModerate(payload) {
   })
 }
 
+export async function fetchNikaPulse() {
+  return adminFetch('/nika/pulse')
+}
+
+export async function fetchNikaOverview() {
+  return adminFetch('/nika/overview')
+}
+
+export async function fetchNikaEarnings() {
+  return adminFetch('/nika/earnings')
+}
+
+export async function searchNikaCandidates(query) {
+  const params = new URLSearchParams({ q: String(query || '') })
+  return adminFetch(`/nika/candidates?${params}`)
+}
+
+export async function saveNikaSettings(payload) {
+  return adminFetch('/nika/settings', { method: 'POST', body: payload })
+}
+
+export async function saveNikaGroup(payload) {
+  return adminFetch('/nika/group', { method: 'POST', body: payload })
+}
+
+export async function removeNikaGroup(chatId) {
+  return adminFetch('/nika/group/remove', { method: 'POST', body: { chat_id: Number(chatId) } })
+}
+
+export async function runNikaAction(payload) {
+  return adminFetch('/nika/action', { method: 'POST', body: payload })
+}
+
 export async function fetchSoftRestartOverview() {
   return adminFetch('/soft-restart/overview')
 }

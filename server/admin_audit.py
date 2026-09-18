@@ -38,6 +38,20 @@ _ACTION_LABELS: dict[str, str] = {
     "support_claim":  "💬 Взял тикет поддержки",
     "support_close":  "🔒 Закрыл тикет поддержки",
     "rules_accept":   "📜 Принял правила",
+    "nika_settings": "Ника: настройки",
+    "nika_group": "Ника: группа",
+    "nika_group_remove": "Ника: сняли группу",
+    "nika_force_tick": "Ника: проверить снова",
+    "nika_force_topup": "Ника: долить куты",
+    "nika_force_sweep": "Ника: собрать куты",
+    "nika_retry_heal": "Ника: вернуть куты",
+    "nika_revert": "Ника: откат перевода",
+    "nika_pause_all": "Ника: аварийный стоп",
+    "nika_pause_group": "Ника: пауза группы",
+    "nika_enable_all": "Ника: включить",
+    "nika_enable_group": "Ника: включить группу",
+    "nika_resolve": "Ника: закрыли инцидент",
+    "nika_ack": "Ника: приняли инцидент",
 }
 
 

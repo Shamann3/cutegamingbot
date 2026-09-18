@@ -220,7 +220,8 @@
   .panel-layout > .arc-shell,
   .panel-layout > .ach-page,
   .panel-layout > .gbl-page,
-  .panel-layout > .grp-page {
+  .panel-layout > .grp-page,
+  .panel-layout > .nika-page {
     grid-column: 2 !important;
     grid-row: 2 !important;
     min-height: 0 !important;

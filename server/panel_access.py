@@ -61,6 +61,14 @@ PANEL_SECTION_DEFS: list[dict] = [
         "creatorOnly": True,
     },
     {
+        "id": "nika",
+        "label": "Ника",
+        "group": "economy",
+        "permissions": [],
+        "ownerOnly": True,
+        "creatorOnly": True,
+    },
+    {
         "id": "softRestart",
         "label": "Sypher",
         "group": "system",
@@ -180,6 +188,13 @@ SECTION_TABS: dict[str, list[dict]] = {
         {"id": "market", "label": "Биржа"},
         {"id": "craft", "label": "Крафт"},
         {"id": "retention", "label": "Удержание"},
+    ],
+    "nika": [
+        {"id": "incidents", "label": "Ошибки", "ownerOnly": True},
+        {"id": "groups", "label": "Столы", "ownerOnly": True},
+        {"id": "earnings", "label": "Заработок", "ownerOnly": True},
+        {"id": "journal", "label": "Журнал", "ownerOnly": True},
+        {"id": "settings", "label": "Система", "ownerOnly": True},
     ],
     "logs": [
         {"id": "audit", "label": "Audit"},

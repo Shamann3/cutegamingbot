@@ -57,6 +57,7 @@ from tool_durability import (
 )
 from migrate_items import migrate_all_users_items
 from dex_catalog import dex_catalog, farm_item_ids_for_client
+import item_lots
 from shop_cache import build_shop_catalog_cache
 from audit_log import schedule_balance_event
 from game_events_log import log_game_event
@@ -208,6 +209,16 @@ class Database:
         # схему и миграции на той же БД. Повторять тяжёлую инициализацию не нужно.
         _light = os.getenv("CF_DB_LIGHT_CONNECT", "").strip().lower() in ("1", "true", "yes", "on")
         if _light:
+            # Единственный ALTER, который тут нельзя пропускать: публичные
+            # выборки групп фильтруют по chat.is_technical, а farm-бот может
+            # подняться раньше API-сервера со schema.sql. Запрос идемпотентный.
+            try:
+                async with self.pool.acquire() as _tech_conn:
+                    await _tech_conn.execute(
+                        "ALTER TABLE chat ADD COLUMN IF NOT EXISTS is_technical BOOLEAN NOT NULL DEFAULT FALSE"
+                    )
+            except Exception as _tech_col_err:
+                print(f"[DB][WARN] lightweight is_technical column: {_tech_col_err}")
             await dex_catalog.load(self.pool)
             from content_registry import load_content_registry
 
@@ -540,6 +551,38 @@ class Database:
             "UPDATE users SET items = $2 WHERE user_id = $1", user_id, items_to_db(items)
         )
 
+    async def _grant_items_in_tx(self, conn, user_id, raw_items, game_items, *, ref_kind, ref_id=""):
+        """Записать инвентарь и завести лоты на то, что реально прибавилось.
+
+        Учёт идёт по разнице до/после, поэтому выдача остаётся там, где была,
+        и её правила не дублируются. Себестоимость подарков от системы — 0
+        с явным источником, а не «неизвестна».
+        """
+        await self._set_user_items(conn, user_id, game_items, raw_original=raw_items)
+        await item_lots.record_inventory_gain(
+            conn,
+            user_id,
+            raw_items,
+            game_items,
+            unit_cost=0,
+            source=item_lots.SOURCE_REWARD,
+            ref_kind=ref_kind,
+            ref_id=ref_id,
+        )
+
+    async def _take_items_in_tx(self, conn, user_id, raw_items, game_items, *, reason, ref_kind, ref_id=""):
+        """Зеркало _grant_items_in_tx для служебного изъятия предметов."""
+        await self._set_user_items(conn, user_id, game_items, raw_original=raw_items)
+        await item_lots.record_inventory_loss(
+            conn,
+            user_id,
+            raw_items,
+            game_items,
+            reason=reason,
+            ref_kind=ref_kind,
+            ref_id=ref_id,
+        )
+
     async def _bump_quest_in_tx(self, conn, user_id, action, amount=1, *, item_ids=()):
         from quest_progress import bump_progress, parse_progress_store, progress_store_to_db
 
@@ -625,6 +668,16 @@ class Database:
             """,
             user_id,
             items_to_db(stored),
+        )
+        await item_lots.record_inventory_gain(
+            conn,
+            user_id,
+            raw_items,
+            stored,
+            unit_cost=0,
+            source=item_lots.SOURCE_REWARD,
+            ref_kind="starter_pack",
+            ref_id="",
         )
         return True
 
@@ -931,6 +984,15 @@ class Database:
                     raise ValueError("Грядка уже занята")
                 stored_items = take_seed_from_storage(raw_items, crop, 1)
                 await self._set_user_items(conn, user_id, stored_items)
+                await item_lots.record_consume(
+                    conn,
+                    user_id,
+                    seed_id,
+                    1,
+                    reason=item_lots.REASON_FARM_PLANT,
+                    ref_kind="plot",
+                    ref_id=str(plot_id),
+                )
                 row = apply_plant(row, now(), crop_id=crop.key)
                 await self._save_plot(conn, user_id, row)
                 await self._bump_quest_in_tx(conn, user_id, "plant", item_ids=(seed_id,))
@@ -967,6 +1029,15 @@ class Database:
 
                 stored_items = take_item_from_storage(raw_items, resolved_item_id, water_cost)
                 await self._set_user_items(conn, user_id, stored_items)
+                await item_lots.record_consume(
+                    conn,
+                    user_id,
+                    resolved_item_id,
+                    water_cost,
+                    reason=item_lots.REASON_FARM_WATER,
+                    ref_kind="plot",
+                    ref_id=str(plot_id),
+                )
                 row = apply_water(row, current)
                 await self._save_plot(conn, user_id, row)
                 await self._bump_quest_in_tx(conn, user_id, "water")
@@ -1001,6 +1072,15 @@ class Database:
                     raise ValueError(f"У Вас нет {label}. Скрафтите в разделе «Крафты»")
                 stored_items = take_item_from_storage(raw_items, AUTOWATER_ITEM_KEY, 1)
                 await self._set_user_items(conn, user_id, stored_items)
+                await item_lots.record_consume(
+                    conn,
+                    user_id,
+                    AUTOWATER_ITEM_KEY,
+                    1,
+                    reason=item_lots.REASON_FARM_AUTOWATER,
+                    ref_kind="plot",
+                    ref_id=str(plot_id),
+                )
                 row = apply_autowater(row, current)
                 await self._save_plot(conn, user_id, row)
         from farm_notifications import attach_farm_notify, notify_item
@@ -1097,6 +1177,40 @@ class Database:
                     items_to_db(stored),
                     tool_durability_to_db(tool_durability),
                 )
+                if crop.harvest_tool_item_id:
+                    await item_lots.record_consume(
+                        conn,
+                        user_id,
+                        crop.harvest_tool_item_id,
+                        crop.harvest_tool_cost,
+                        reason=item_lots.REASON_FARM_TOOL,
+                        ref_kind="plot",
+                        ref_id=str(plot_id),
+                    )
+                # Урожай — новые лоты. Себестоимость NULL, а не ноль: затраты
+                # на грядку (саженец, поливы, инструмент) уже учтены отдельными
+                # событиями сгорания, приписывать их конкретной единице урожая
+                # было бы домыслом.
+                harvest_gains = {}
+                for item_id, drop_amount in drops:
+                    canon_item_id = dex_catalog.canonical_key(item_id)
+                    harvest_gains[canon_item_id] = (
+                        harvest_gains.get(canon_item_id, 0) + drop_amount
+                    )
+                if seed_dropped:
+                    seed_canon = dex_catalog.canonical_key(crop.seed_id)
+                    harvest_gains[seed_canon] = harvest_gains.get(seed_canon, 0) + 1
+                for canon_item_id, drop_amount in sorted(harvest_gains.items()):
+                    await item_lots.record_acquire(
+                        conn,
+                        user_id,
+                        canon_item_id,
+                        drop_amount,
+                        unit_cost=None,
+                        source=item_lots.SOURCE_HARVEST,
+                        ref_kind="plot",
+                        ref_id=str(plot_id),
+                    )
                 flags = await self._fetch_onboarding_flags(conn, user_id)
                 if (
                     flags["active"]
@@ -1358,6 +1472,17 @@ class Database:
             "UPDATE users SET items = $2 WHERE user_id = $1",
             user_id,
             items_to_db(stored),
+        )
+        # Возврат legacy-брони: сколько стоил этот купон, уже не восстановить —
+        # честно заводим лот с неизвестной себестоимостью, а не с нулём.
+        await item_lots.record_acquire(
+            conn,
+            user_id,
+            coupon_canon,
+            1,
+            unit_cost=None,
+            source=item_lots.SOURCE_UNKNOWN,
+            ref_kind="coupon_refund",
         )
 
     @staticmethod
@@ -1678,6 +1803,22 @@ class Database:
                 """
             )
 
+    async def reconcile_item_lots(self, user_id, *, record=False):
+        """Ревизор: сверяет остатки лотов с фактическим инвентарём игрока.
+
+        Ничего не чинит — инвентарь остаётся единственным источником правды
+        по количеству. Нужен тестам и будущей кнопке в админке.
+        """
+        async with self.pool.acquire() as conn:
+            items_raw = await conn.fetchval(
+                "SELECT items FROM users WHERE user_id = $1", user_id
+            )
+            inventory = parse_items(items_raw)
+            if record:
+                async with conn.transaction():
+                    return await item_lots.reconcile_and_report(conn, user_id, inventory)
+            return await item_lots.reconcile_user(conn, user_id, inventory)
+
     async def sanitize_user_items_against_dex(self, user_id) -> dict:
         """Сверяет users.items с таблицей dex при входе в WebApp.
 
@@ -1753,6 +1894,17 @@ class Database:
                     user_id,
                     items_to_db(cleaned),
                 )
+                if removed:
+                    # Предмет исчез из dex — его лоты обязаны уйти следом,
+                    # иначе слой стоимости навсегда разойдётся с инвентарём.
+                    await item_lots.record_inventory_loss(
+                        conn,
+                        user_id,
+                        raw_items,
+                        cleaned,
+                        reason="dex_sanitize",
+                        ref_kind="sanitize",
+                    )
 
         if removed:
             print(
@@ -1936,6 +2088,25 @@ class Database:
                         units,
                         (cost - unit_cost * (buy_qty - units)) // max(1, units),
                     )
+                    await item_lots.record_consume(
+                        conn,
+                        user_id,
+                        coupon_canon,
+                        1,
+                        reason=item_lots.REASON_COUPON_SPEND,
+                        ref_kind="dex",
+                        ref_id=str(dex_row["id"]),
+                    )
+                # Себестоимость = фактически уплаченная сумма со скидкой.
+                await item_lots.record_acquire_parts(
+                    conn,
+                    user_id,
+                    str(dex_row["id"]),
+                    item_lots.split_cost(cost, buy_qty),
+                    source=item_lots.SOURCE_SHOP,
+                    ref_kind="dex",
+                    ref_id=str(dex_row["id"]),
+                )
                 purchased = {
                     "id": str(dex_row["id"]),
                     "name": (dex_row["name"] or "").strip() or str(dex_row["id"]),
@@ -2020,8 +2191,8 @@ class Database:
                 if plot and plot["status"] == "EMPTY":
                     game_items, granted = ensure_onboarding_demo_seeds(game_items)
                     if granted:
-                        await self._set_user_items(
-                            conn, user_id, game_items, raw_original=raw_items
+                        await self._grant_items_in_tx(
+                            conn, user_id, raw_items, game_items, ref_kind="onboarding_seed"
                         )
                         await conn.execute(
                             """
@@ -2063,8 +2234,8 @@ class Database:
                     game_items = normalize_items(raw_items)
                     game_items, granted = ensure_onboarding_demo_seeds(game_items)
                     if granted:
-                        await self._set_user_items(
-                            conn, user_id, game_items, raw_original=raw_items
+                        await self._grant_items_in_tx(
+                            conn, user_id, raw_items, game_items, ref_kind="onboarding_seed"
                         )
                         await conn.execute(
                             """
@@ -2090,8 +2261,8 @@ class Database:
                     raw_items = parse_items(items_raw)
                     if count_item(raw_items, WATER_ITEM_KEY) < 1:
                         game_items = add_item(normalize_items(raw_items), WATER_ITEM_KEY, 1)
-                        await self._set_user_items(
-                            conn, user_id, game_items, raw_original=raw_items
+                        await self._grant_items_in_tx(
+                            conn, user_id, raw_items, game_items, ref_kind="onboarding_water"
                         )
                 else:
                     if row["status"] not in ("GROWING", "READY"):
@@ -2110,8 +2281,8 @@ class Database:
                     raw_items = parse_items(user_row["items"])
                     if count_item(raw_items, AXE_ITEM_KEY) < 1:
                         game_items = add_item(normalize_items(raw_items), AXE_ITEM_KEY, 1)
-                        await self._set_user_items(
-                            conn, user_id, game_items, raw_original=raw_items
+                        await self._grant_items_in_tx(
+                            conn, user_id, raw_items, game_items, ref_kind="onboarding_axe"
                         )
                 await conn.execute(
                     """
@@ -2156,8 +2327,13 @@ class Database:
                     remove = min(demo_logs, current_logs)
                     if remove > 0:
                         game_items = take_item(game_items, (TREE_ITEM_KEY, "justtree"), remove)
-                        await self._set_user_items(
-                            conn, user_id, game_items, raw_original=raw_items
+                        await self._take_items_in_tx(
+                            conn,
+                            user_id,
+                            raw_items,
+                            game_items,
+                            reason="onboarding_cleanup",
+                            ref_kind="onboarding",
                         )
                 await conn.execute(
                     """
@@ -2211,6 +2387,16 @@ class Database:
                     user_id,
                     items_to_db(stored),
                     today,
+                )
+                await item_lots.record_acquire(
+                    conn,
+                    user_id,
+                    chosen_seed,
+                    DAILY_SEED_AMOUNT,
+                    unit_cost=0,
+                    source=item_lots.SOURCE_REWARD,
+                    ref_kind="daily_seed",
+                    ref_id=str(today),
                 )
         state = await self.get_farm_state(user_id)
         state["dailySeedReward"] = {
@@ -2360,6 +2546,16 @@ class Database:
                     user_id,
                     items_to_db(stored),
                     json.dumps(progress_store_to_db(store)),
+                )
+                await item_lots.record_inventory_gain(
+                    conn,
+                    user_id,
+                    raw_items,
+                    stored,
+                    unit_cost=0,
+                    source=item_lots.SOURCE_REWARD,
+                    ref_kind="quest",
+                    ref_id=str(quest.id),
                 )
                 if kut_reward:
                     schedule_balance_event(
@@ -2881,6 +3077,20 @@ class Database:
                 await conn.execute(
                     "UPDATE users SET items = $2 WHERE user_id = $1", user_id, items_to_db(stored)
                 )
+                # Ингредиенты сгорают в обоих исходах; при успехе их
+                # себестоимость целиком переходит в результат.
+                ingredient_totals = {}
+                for ing in ingredients:
+                    ing_id = str(ing["id"])
+                    ingredient_totals[ing_id] = ingredient_totals.get(ing_id, 0) + int(ing["qty"])
+                await item_lots.record_craft(
+                    conn,
+                    user_id,
+                    ingredient_totals,
+                    success=rolled_success,
+                    result_ref=result_id,
+                    ref_id=str(recipe.id),
+                )
                 if rolled_success:
                     await self._bump_quest_in_tx(
                         conn, user_id, "craft", item_ids=(result_id,)
@@ -3221,15 +3431,21 @@ class Database:
                 await conn.execute(
                     "UPDATE users SET items = $2 WHERE user_id = $1", user_id, items_to_db(stored)
                 )
-                await conn.execute(
+                listing_id = await conn.fetchval(
                     """
                     INSERT INTO market_listings (seller_id, item_id, quantity, price, status)
                     VALUES ($1, $2, $3, $4, 'active')
+                    RETURNING id
                     """,
                     user_id,
                     item_key,
                     quantity,
                     price,
+                )
+                # Выставленный предмет не уничтожен — его себестоимость
+                # паркуется до продажи или снятия лота.
+                await item_lots.escrow_hold(
+                    conn, user_id, item_key, quantity, holder_id=listing_id
                 )
         try:
             schedule_balance_event(
@@ -3386,6 +3602,25 @@ class Database:
                         int(row["seller_id"]),
                         seller_payout,
                     )
+                # Покупатель: себестоимость = цена сделки. Продавец: предмет
+                # окончательно выбыл, его себестоимость уходит в журнал.
+                await item_lots.record_acquire(
+                    conn,
+                    user_id,
+                    str(row["item_id"]),
+                    buy_qty,
+                    unit_cost=unit_price,
+                    source=item_lots.SOURCE_MARKET,
+                    ref_kind=item_lots.ESCROW_MARKET_LISTING,
+                    ref_id=str(listing_id),
+                )
+                await item_lots.escrow_settle_sale(
+                    conn,
+                    seller_id,
+                    str(row["item_id"]),
+                    buy_qty,
+                    holder_id=listing_id,
+                )
                 remaining = available - buy_qty
                 if remaining <= 0:
                     await conn.execute(
@@ -3402,7 +3637,7 @@ class Database:
                         listing_id,
                         remaining,
                     )
-        from config import TECH_CHAT_ID
+        from config import BACKGROUND_EARNINGS_CHAT_ID
 
         sale_name = (row["name"] or str(row["item_id"]) or "").strip() or str(row["item_id"])
         sale_emoji = (row["emoji"] or "").strip() or "📦"
@@ -3410,7 +3645,11 @@ class Database:
 
         # Побочка после COMMIT не должна превращать успешную покупку в HTTP 500.
         try:
-            await self.update_chat_balance(TECH_CHAT_ID, commission)
+            await self.update_chat_balance(BACKGROUND_EARNINGS_CHAT_ID, commission)
+            if commission > 0:
+                from tech_plus import schedule_tech_plus
+
+                schedule_tech_plus(BACKGROUND_EARNINGS_CHAT_ID, commission)
         except Exception as e:
             print(f"[MARKET][BUY][WARN] commission wallet: {e!r}")
         try:
@@ -3787,6 +4026,10 @@ class Database:
                     WHERE id = $1
                     """,
                     listing_id,
+                )
+                # Снятие лота — себестоимость возвращается владельцу как была.
+                await item_lots.escrow_return(
+                    conn, user_id, str(row["item_id"]), qty, holder_id=listing_id
                 )
         try:
             catalog = await self.get_market_catalog(

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-// Плавная «накрутка» числа от 0 (или предыдущего) до value.
-export default function CountUp({ value, duration = 900, className }) {
+// Плавная «накрутка» числа от предыдущего значения до value.
+export default function CountUp({ value, duration = 900, className, signed = false }) {
   const [display, setDisplay] = useState(0)
   const fromRef = useRef(0)
   const rafRef = useRef(0)
@@ -28,5 +28,13 @@ export default function CountUp({ value, duration = 900, className }) {
     return () => cancelAnimationFrame(rafRef.current)
   }, [value, duration])
 
-  return <span className={className}>{display.toLocaleString('ru-RU')}</span>
+  const abs = Math.abs(display).toLocaleString('ru-RU')
+  let text = display.toLocaleString('ru-RU')
+  if (signed) {
+    if (display > 0) text = `+${abs}`
+    else if (display < 0) text = `−${abs}`
+    else text = '0'
+  }
+
+  return <span className={className}>{text}</span>
 }

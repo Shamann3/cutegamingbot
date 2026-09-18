@@ -1,5 +1,6 @@
-import io, os, pathlib, sys, asyncio, types as pytypes
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+import os, pathlib, sys, asyncio, types as pytypes
+
+import pytest
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
@@ -11,8 +12,13 @@ if str(_ROOT) not in sys.path:
 from bot.config.db_config import bootstrap_database_env
 bootstrap_database_env()
 
+import bot.db_create.pklcode as P
 import bot.funcs.king_stats as ks
 from aiogram.exceptions import TelegramForbiddenError
+
+# Шаг 5 проверяет пережитие рестарта, а это возможно только если состояние
+# действительно ушло в Redis. Без него шаг нечем проверять - см. ниже skipif.
+HAVE_REDIS = P._raw_client() is not None or P._try_bind_redis_from_env()
 
 GROUP_A, GROUP_B, USER = -1002213242513, -1002189875640, 555
 DM = USER
@@ -73,7 +79,6 @@ def show(tag):
 
 def wipe_king_stores():
     """Тесты должны стартовать с чистого листа: Redis тут настоящий."""
-    import bot.db_create.pklcode as P
     rc = P._raw_client()
     if rc is None:
         return
@@ -87,7 +92,7 @@ def wipe_king_stores():
         s.clear(); s.timestamps.clear()
 
 
-async def main():
+async def main(check_restart=True):
     wipe_king_stores()
     db, bot = DB(), Bot()
     ok = True
@@ -134,27 +139,29 @@ async def main():
     good = saved is not None and untouched is None
     print("  ->", "OK" if good else "ПРОВАЛ"); ok &= good
 
-    print("\n=== 5. Переживание рестарта бота (через настоящий Redis) ===")
-    import bot.db_create.pklcode as P
-    # Как при выключении контейнера: сбрасываем всё в Redis.
-    for st in (ks._KING_MENU_TARGET, ks._KING_MENU_OWNERS, ks._KING_DM_LAST_MENU):
-        st._load().flush()
-    # Как при старте нового процесса: ни одного объекта стора в памяти.
-    P.GameStore._instances.clear()
-    P.LazyGameStore._loaded_instances.clear()
-    for st in (ks._KING_MENU_TARGET, ks._KING_MENU_OWNERS, ks._KING_DM_LAST_MENU):
-        st._store = None
-    print(f"  сторов в памяти после «рестарта»: {len(P.GameStore._instances)}")
-    # Меню 104 после шага 4 удалено штатно (панель заменяется новой), поэтому
-    # проверяем нетронутое меню группы B и актуальное меню группы A.
-    survived_b = ks._get_menu_target(DM, dm_msg_b)
-    owner_b = ks._get_menu_owner(DM, dm_msg_b)
-    fresh_a = ks._get_dm_last_menu(USER, GROUP_A)
-    survived_a = ks._get_menu_target(DM, fresh_a) if fresh_a else None
-    print(f"  меню группы B ({dm_msg_b}) -> группа {survived_b}, владелец {owner_b}")
-    print(f"  актуальное меню группы A ({fresh_a}) -> группа {survived_a}")
-    good = survived_b == GROUP_B and owner_b == USER and survived_a == GROUP_A
-    print("  ->", "OK" if good else "ПРОВАЛ"); ok &= good
+    if check_restart:
+        print("\n=== 5. Переживание рестарта бота (через настоящий Redis) ===")
+        # Как при выключении контейнера: сбрасываем всё в Redis.
+        for st in (ks._KING_MENU_TARGET, ks._KING_MENU_OWNERS, ks._KING_DM_LAST_MENU):
+            st._load().flush()
+        # Как при старте нового процесса: ни одного объекта стора в памяти.
+        P.GameStore._instances.clear()
+        P.LazyGameStore._loaded_instances.clear()
+        for st in (ks._KING_MENU_TARGET, ks._KING_MENU_OWNERS, ks._KING_DM_LAST_MENU):
+            st._store = None
+        print(f"  сторов в памяти после «рестарта»: {len(P.GameStore._instances)}")
+        # Меню 104 после шага 4 удалено штатно (панель заменяется новой), поэтому
+        # проверяем нетронутое меню группы B и актуальное меню группы A.
+        survived_b = ks._get_menu_target(DM, dm_msg_b)
+        owner_b = ks._get_menu_owner(DM, dm_msg_b)
+        fresh_a = ks._get_dm_last_menu(USER, GROUP_A)
+        survived_a = ks._get_menu_target(DM, fresh_a) if fresh_a else None
+        print(f"  меню группы B ({dm_msg_b}) -> группа {survived_b}, владелец {owner_b}")
+        print(f"  актуальное меню группы A ({fresh_a}) -> группа {survived_a}")
+        good = survived_b == GROUP_B and owner_b == USER and survived_a == GROUP_A
+        print("  ->", "OK" if good else "ПРОВАЛ"); ok &= good
+    else:
+        print("\n=== 5. Переживание рестарта — ПРОПУЩЕН (нет Redis) ===")
 
     print("\n=== 6. ЛС закрыто -> подсказка запустить бота ===")
     ks._KING_DM_LAST_MENU.clear() if hasattr(ks._KING_DM_LAST_MENU, 'clear') else None
@@ -167,4 +174,23 @@ async def main():
     print("\n" + ("="*46) + f"\nИТОГ: {'ВСЕ ПРОВЕРКИ ПРОШЛИ' if ok else 'ЕСТЬ ПРОВАЛЫ'}")
     return 0 if ok else 1
 
-sys.exit(asyncio.run(main()))
+
+def test_dm_menu_routing():
+    """Шаги 1-4 и 6: маршрутизация меню и привязка к группе. Redis не нужен."""
+    assert asyncio.run(main(check_restart=False)) == 0, "см. вывод выше: есть ПРОВАЛЫ"
+
+
+@pytest.mark.redis
+@pytest.mark.skipif(
+    not HAVE_REDIS,
+    reason="шаг 5 проверяет пережитие рестарта через настоящий Redis: "
+           "без него состояние просто некуда сохранить, и проверка бессмысленна",
+)
+def test_dm_menu_survives_restart():
+    """Тот же сценарий целиком, включая шаг 5 («рестарт бота»)."""
+    assert asyncio.run(main(check_restart=True)) == 0, "см. вывод выше: есть ПРОВАЛЫ"
+
+
+if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.exit(asyncio.run(main(check_restart=HAVE_REDIS)))

@@ -8,10 +8,14 @@
 поэтому на реальные данные тест не влияет.
 
 Запуск:  python tests/test_withdraw_cooldown.py
+Под pytest включается осознанно: RUN_DB_TESTS=1 (см. skipif внизу файла).
 """
 import asyncio
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -298,5 +302,17 @@ async def main() -> int:
     return 0
 
 
+@pytest.mark.db
+@pytest.mark.skipif(
+    os.getenv("RUN_DB_TESTS") != "1",
+    reason="нужна живая Postgres: тест создаёт, правит и удаляет строки "
+           "(users, withdraw_*) для синтетического user_id. "
+           "config.py указывает на боевую базу, поэтому запуск только явный: RUN_DB_TESTS=1",
+)
+def test_withdraw_cooldown_is_armed_once():
+    assert asyncio.run(main()) == 0, "см. вывод выше: перечислены проваленные проверки"
+
+
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
     raise SystemExit(asyncio.run(main()))

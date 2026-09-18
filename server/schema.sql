@@ -1018,6 +1018,32 @@ WHERE NOT EXISTS (SELECT 1 FROM chat WHERE chat_id = -1003855337972);
 -- (server/group_posts.py::list_known_chats).
 ALTER TABLE chat ADD COLUMN IF NOT EXISTS namechat TEXT;
 
+-- Технические группы (копилка прибыли, фоновые заработки, чёрный рынок,
+-- комиссии игр, тестовый чат): игрок их видеть не должен. Публичные выборки
+-- бота фильтруют по этому флагу, админка и владелец - нет.
+-- Колонку заводят два владельца схемы: этот файл и bot/db_create/db.py
+-- (Database.ensure_technical_chat_schema), порядок старта процессов не
+-- фиксирован - поэтому оба места идемпотентны.
+ALTER TABLE chat ADD COLUMN IF NOT EXISTS is_technical BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_chat_public_by_balance
+    ON chat (chatbalance DESC, chat_id)
+    WHERE COALESCE(is_technical, FALSE) = FALSE;
+
+-- Сид флага: только UPDATE существующих строк. Новых строк с нулевым балансом
+-- для отсутствующих групп не создаём - они бы сами всплыли в выборках.
+-- Тот же список: bot/config/config.py :: TECHNICAL_CHAT_IDS.
+UPDATE chat
+   SET is_technical = TRUE
+ WHERE chat_id IN (
+           -1004238101266,  -- копилка прибыли
+           -1004318525471,  -- фоновые заработки
+           -1003855337972,  -- чёрный рынок / дом в играх
+           -1004324787050,  -- комиссии игр
+           -1002135149822   -- тестовая группа
+       )
+   AND COALESCE(is_technical, FALSE) = FALSE;
+
 -- Логи взносов в чёрный рынок от покупок в магазине
 CREATE TABLE IF NOT EXISTS black_market_shop_deposits (
     id BIGSERIAL PRIMARY KEY,

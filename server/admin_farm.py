@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from admin_users import get_user_admin_profile, search_users
 from db import db
+import item_lots
 from farm_crops import crops_for_client
 from farm_logic import (
     apply_harvest,
@@ -242,6 +243,18 @@ async def _admin_force_harvest(user_id: int, plot_id: int) -> tuple[list[dict], 
                 """,
                 user_id,
                 items_to_db(stored),
+            )
+            # Урожай (в т.ч. сорванный админом) — новые лоты с неизвестной
+            # себестоимостью: затраты на грядку учтены отдельными событиями.
+            await item_lots.record_inventory_gain(
+                conn,
+                user_id,
+                raw_items,
+                stored,
+                unit_cost=None,
+                source=item_lots.SOURCE_HARVEST,
+                ref_kind="admin_plot",
+                ref_id=str(plot_id),
             )
 
     label = ", ".join(

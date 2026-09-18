@@ -1,4 +1,4 @@
-from aiogram import Bot, Dispatcher, types
+﻿from aiogram import Bot, Dispatcher, types
 from bot.design.buttons import *
 from bot.db_create.db import *
 from bot.config.config import *
@@ -11,6 +11,7 @@ from aiogram.enums import ParseMode  # Для ParseMode из aiogram.enums
 import re
 from bot.db_create.db import *
 from bot.db_create.items_codec import decode_items
+from bot.db_create import item_cost
 import json
 import math
 import logging
@@ -60,7 +61,18 @@ global args
 import unicodedata
 
 REFERRAL_SOURCE_CHAT_ID = -1002135149822
-BLACK_MARKET_GROUP_CHAT_ID = -1003855337972
+# Отчисления с покупок в магазине уходят в «фоновые заработки».
+# Раньше они шли на чёрный рынок; уже накопленное там и остаётся.
+SHOP_DEPOSIT_CHAT_ID = BACKGROUND_EARNINGS_CHAT_ID
+
+
+def _announce_shop_plus(amount) -> None:
+    try:
+        from bot.funcs.tech_plus import schedule_tech_plus
+
+        schedule_tech_plus(bot1, SHOP_DEPOSIT_CHAT_ID, amount, reason="shop")
+    except Exception as exc:
+        print(f"[BUY][TECH_PLUS] skip: {exc!r}")
 
 
 def _safe_int(value , default=0):
@@ -992,6 +1004,10 @@ async def shop_op(message: Message):
             await db.remove_items_craft(user_id , item_right_name , 1)
             await db.reset_craftprox(user_id)
 
+            craft_ingredients = { }
+            for ingredient in (item_left_name , item_right_name):
+                craft_ingredients [ ingredient ] = craft_ingredients.get(ingredient , 0) + 1
+
             # Формируем текст с информацией о бонусе
             bonus_text = ""
             if user_bonus > 0:
@@ -1002,11 +1018,25 @@ async def shop_op(message: Message):
                 if not result_name:
                     raise ValueError(f"Не найден предмет для эмодзи {result_emoji}")
                 await db.add_item_craft(user_id , result_name , result_count)
+                # Себестоимость результата = сумма себестоимостей ингредиентов.
+                await item_cost.record_craft(
+                    db.pool ,
+                    user_id ,
+                    craft_ingredients ,
+                    success=True ,
+                    result_ref=result_name ,
+                    result_quantity=result_count ,
+                    ref_id=str(result_emoji) ,
+                )
                 if result_count > 1:
                     text = f"<tg-emoji emoji-id='5247186516463091814'>🐒</tg-emoji> <b>Успех! +{result_count} <code>{result_emoji}</code></b>{bonus_text}"
                 else:
                     text = f"<tg-emoji emoji-id='5247186516463091814'>🐒</tg-emoji> <b>Успех! Вы получили <code>{result_emoji}</code></b>{bonus_text}"
             else:
+                # Срыв крафта — то самое сгорание, ради учёта которого всё и делалось.
+                await item_cost.record_craft(
+                    db.pool , user_id , craft_ingredients , success=False ,
+                )
                 text = f"<tg-emoji emoji-id='5247114421142058549'>🐒</tg-emoji> <b>Провал! Предметы сгорели.</b>{bonus_text}"
 
             await callback_query.message.edit_text(text , parse_mode="HTML")
@@ -1661,7 +1691,7 @@ async def shop_op(message: Message):
                     amount=total_price ,
                     source_chat_id=source_chat_id ,
                     note="shop_buy_message" ,
-                    target_chat_id=BLACK_MARKET_GROUP_CHAT_ID ,
+                    target_chat_id=SHOP_DEPOSIT_CHAT_ID ,
                 )
                 if not market_deposit_ok:
                     raise RuntimeError("black market deposit failed")
@@ -1669,12 +1699,13 @@ async def shop_op(message: Message):
                 await db.update_user_balance(user_id , new_balance)
 
                 await db.cutehistory_minus(user_id , total_price , "покупка предмета через .купить")
+                _announce_shop_plus(total_price)
 
             except Exception as e:
 
                 if market_deposit_ok:
                     try:
-                        await db.update_chat_balance(bot1 , BLACK_MARKET_GROUP_CHAT_ID , -total_price)
+                        await db.update_chat_balance(bot1 , SHOP_DEPOSIT_CHAT_ID , -total_price)
                     except Exception as rollback_err:
                         print(f"[BUY_MESSAGE][ROLLBACK] Не удалось откатить рынок: {rollback_err}")
 
@@ -1702,7 +1733,13 @@ async def shop_op(message: Message):
 
                 try:
 
-                    await db.set_items(user_id , item_name , bought_quantity)
+                    await db.set_items_with_cost(
+                        user_id ,
+                        item_name ,
+                        bought_quantity ,
+                        total_paid=_safe_int(row.get("item_total_price") , 0) ,
+                        ref_id=str(item_name) ,
+                    )
 
                     await db.buy_item(item_name , bought_quantity)
 
@@ -2543,6 +2580,17 @@ async def shop_op(message: Message):
                     del sender_inventory [ item_name ]
             await db.set_user_inventory(sender_id , sender_inventory)
 
+            # Платная сделка: для покупателя себестоимость — цена сделки,
+            # у продавца выбытие пишется с его реальной себестоимостью.
+            await item_cost.record_transfer(
+                db.pool ,
+                sender_id ,
+                receiver_id ,
+                items_to_send ,
+                total_paid=_safe_int(pricefor , 0) ,
+                ref_kind="p2p_trade" ,
+            )
+
             await db.update_user_balance(sender_id , sender_balance + pricefor)
             await db.update_user_balance(receiver_id , receiver_balance - pricefor)
 
@@ -2673,6 +2721,16 @@ async def shop_op(message: Message):
                 if sender_inventory [ item_name ] == 0:
                     del sender_inventory [ item_name ]
             await db.set_user_inventory(user_id , sender_inventory)
+
+            # Подарок: себестоимость копируется из списанных лотов дарителя,
+            # поэтому цепочка передач разворачивается сама собой.
+            await item_cost.record_transfer(
+                db.pool ,
+                user_id ,
+                receiver_id ,
+                [ (item_name , quantity) for item_name , _ in items_to_send ] ,
+                ref_kind="p2p_gift" ,
+            )
 
             await db.remove_zero_items(user_id)
             await db.remove_zero_items(receiver_id)
@@ -3696,10 +3754,11 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
             amount=market_deposit_amount ,
             source_chat_id=source_chat_id ,
             note="shop_buy_coupon" ,
-            target_chat_id=BLACK_MARKET_GROUP_CHAT_ID ,
+            target_chat_id=SHOP_DEPOSIT_CHAT_ID ,
         )
         if not market_deposit_ok:
             raise RuntimeError("black market deposit failed")
+        _announce_shop_plus(market_deposit_amount)
     except Exception as e:
         print(f"[BUY][WARN] black market deposit failed: {e!r}")
         try:
@@ -3728,7 +3787,15 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
         item_price = it["price"]
         # уменьшаем остаток на бирже и добавляем в инвентарь
         try:
-            await db.set_items(user_id, item_name, can_buy)         # пользователю
+            # Себестоимость — цена СО скидкой купона, а не витринная.
+            paid_for_row = int(round(float(item_price) * can_buy * (100 - discount_percent) / 100))
+            await db.set_items_with_cost(
+                user_id,
+                item_name,
+                can_buy,
+                total_paid=paid_for_row,
+                ref_id=str(item_name),
+            )                                                       # пользователю
             await db.buy_item(item_name, can_buy)                   # со склада/биржи
         except Exception as e:
             print(f"[BUY][WARN] stock/inventory update failed for {item_name}: {e!r}")
@@ -3963,18 +4030,25 @@ async def process_buy_callback(callback_query: types.CallbackQuery):
                     amount=item_total_price ,
                     source_chat_id=source_chat_id ,
                     note="shop_buy_callback" ,
-                    target_chat_id=BLACK_MARKET_GROUP_CHAT_ID ,
+                    target_chat_id=SHOP_DEPOSIT_CHAT_ID ,
                 )
                 if not market_deposit_ok:
                     raise RuntimeError("black market deposit failed")
                 await db.update_user_balance(user_id, new_balance)
                 await db.cutehistory_minus(user_id, item_total_price, "покупка предмета")
-                await db.set_items(user_id, item_name, bought_quantity)
+                await db.set_items_with_cost(
+                    user_id,
+                    item_name,
+                    bought_quantity,
+                    total_paid=_safe_int(item_total_price, 0),
+                    ref_id=str(item_name),
+                )
                 await db.buy_item(item_name, bought_quantity)
+                _announce_shop_plus(item_total_price)
             except Exception as e:
                 if market_deposit_ok:
                     try:
-                        await db.update_chat_balance(bot1 , BLACK_MARKET_GROUP_CHAT_ID , -item_total_price)
+                        await db.update_chat_balance(bot1 , SHOP_DEPOSIT_CHAT_ID , -item_total_price)
                     except Exception as rollback_err:
                         print(f"[BUY][ROLLBACK] Не удалось откатить рынок: {rollback_err}")
                 try:

@@ -552,7 +552,8 @@ tr:hover td {
 .panel-layout > .arc-shell,
 .panel-layout > .ach-page,
 .panel-layout > .gbl-page,
-.panel-layout > .grp-page {
+.panel-layout > .grp-page,
+.panel-layout > .nika-page {
   animation: atelier-page-in 0.42s var(--e-ease) both;
 }
 
@@ -656,6 +657,7 @@ tr:hover td {
   .panel-layout > .ach-page,
   .panel-layout > .gbl-page,
   .panel-layout > .grp-page,
+  .panel-layout > .nika-page,
   .admin-modal {
     animation: none !important;
   }
@@ -845,7 +847,7 @@ body.perf-light .elite-btn-primary {
   border-radius: var(--e-r-input) !important;
 }
 
-.panel-shell button:not(.panel-nav-item):not(.grp-tab):not(.grp-subtab),
+.panel-shell button:not(.panel-nav-item):not(.grp-tab):not(.grp-subtab):not(.nika-btn):not(.nika-crisis-go):not(.nika-ios-row):not(.nika-hit):not(.nika-seg-btn),
 .panel-shell .panel-users-btn,
 .panel-shell .elite-btn {
   border-radius: var(--e-r-pill) !important;

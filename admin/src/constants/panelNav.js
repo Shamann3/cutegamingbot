@@ -55,6 +55,11 @@ export const PANEL_SECTIONS = [
     blurb: 'Студия групп: поиск, бч, уровни, комиссии, топы и модерация — только создатель проекта.',
   },
   {
+    id: 'nika', label: 'Nika', labelRu: 'Ника', group: 'economy',
+    ownerOnly: true, creatorOnly: true,
+    blurb: 'Все балансы, плюсы и минусы по дням, автодолив столов. Только создатель.',
+  },
+  {
     id: 'achievements', label: 'Achievements', labelRu: 'Достижения', group: 'content', permission: 'manage_achievements',
     blurb: 'Официальные достижения профиля: каталог, редкость, иконки и права выдачи для команды.',
   },
