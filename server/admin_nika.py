@@ -5,6 +5,9 @@
 fastlane-кэш бота останется со старым балансом и игры выплатят не то.
 Кнопки «долить / собрать / вернуть» кладут команду, её исполняет процесс бота.
 Пауза и настройки — обычный SQL, без движения кут.
+
+Формула и SQL живут в пакете nika/ — не в bot.runtime.nika. Образ api
+собирается из server/ и пакета bot там нет.
 """
 
 from __future__ import annotations
@@ -51,7 +54,7 @@ def _jsonable(value: Any) -> Any:
 
 
 async def _universe_now(conn) -> Dict[str, Any]:
-    from bot.runtime.nika.policy import SOURCE_LADDER, SWEEP_DEST_CHAT_ID
+    from nika.policy import SOURCE_LADDER, SWEEP_DEST_CHAT_ID
 
     ladder_ids = [int(cid) for cid, _ in SOURCE_LADDER]
     vault = int(SWEEP_DEST_CHAT_ID)
@@ -296,7 +299,7 @@ async def _flow_bucket(conn, since, trunc: str, *, until: Optional[datetime] = N
 
 
 def _incident_out(row: Dict[str, Any]) -> Dict[str, Any]:
-    from bot.runtime.nika.incidents import actions_for
+    from nika.incidents import actions_for
 
     actions = row.get("actions")
     if not isinstance(actions, list) or not actions:
@@ -327,7 +330,7 @@ async def _ensure() -> None:
     if not db.pool:
         await db.ensure_pool()
     try:
-        from bot.runtime.nika.schema import ensure_nika_schema
+        from nika.schema import ensure_nika_schema
 
         await ensure_nika_schema(db)
     except Exception as exc:
@@ -335,7 +338,7 @@ async def _ensure() -> None:
 
 
 def _forbidden() -> List[int]:
-    from bot.runtime.nika.store import forbidden_managed_ids
+    from nika.store import forbidden_managed_ids
 
     return forbidden_managed_ids()
 
@@ -351,13 +354,13 @@ def forecast_tick(
     Сбор излишка здесь честно остаётся «ждёт выдержку»: без окна истории
     Ника свежие куты не снимает, и панель это не прячет.
     """
-    from bot.runtime.nika.policy import (
+    from nika.policy import (
         SOURCE_LADDER,
         allocate_from_ladder,
         dead_zone,
         plan_topup,
     )
-    from bot.runtime.nika.store import policy_from_row
+    from nika.store import policy_from_row
 
     if not bool(settings.get("enabled")):
         return {
@@ -487,9 +490,9 @@ def forecast_tick(
 async def pulse() -> Dict[str, Any]:
     """Короткий снимок для красной полосы. Без движения денег."""
     await _ensure()
-    from bot.runtime.nika import incidents as inc
-    from bot.runtime.nika.policy import SOURCE_LADDER, dead_zone
-    from bot.runtime.nika.store import fetch_settings, policy_from_row, queued_command_stats
+    from nika import incidents as inc
+    from nika.policy import SOURCE_LADDER, dead_zone
+    from nika.store import fetch_settings, policy_from_row, queued_command_stats
 
     async with db.pool.acquire() as conn:
         settings = await fetch_settings(conn) or {}
@@ -621,10 +624,10 @@ async def pulse() -> Dict[str, Any]:
 
 async def overview() -> Dict[str, Any]:
     await _ensure()
-    from bot.runtime.nika import incidents as inc
-    from bot.runtime.nika.policy import SPEED_MODES, SWEEP_DEST_CHAT_ID, suggest_caps
-    from bot.runtime.nika.schema import FIRST_MANAGED_CHAT_ID, FIRST_MANAGED_TARGET
-    from bot.runtime.nika.store import fetch_settings
+    from nika import incidents as inc
+    from nika.policy import SPEED_MODES, SWEEP_DEST_CHAT_ID, suggest_caps
+    from nika.schema import FIRST_MANAGED_CHAT_ID, FIRST_MANAGED_TARGET
+    from nika.store import fetch_settings
 
     snap = await pulse()
     async with db.pool.acquire() as conn:
@@ -718,10 +721,10 @@ def _command_out(row: Dict[str, Any]) -> Dict[str, Any]:
 async def earnings() -> Dict[str, Any]:
     """Журнал с момента запуска Ники — без фейковой истории до этой даты."""
     await _ensure()
-    from bot.runtime.nika.store import fetch_settings
+    from nika.store import fetch_settings
 
     try:
-        from bot.runtime.nika.store import maybe_sample_universe
+        from nika.store import maybe_sample_universe
 
         await maybe_sample_universe(db)
     except Exception as exc:
@@ -902,7 +905,7 @@ async def save_settings(
     tick_interval_sec: Optional[int] = None,
 ) -> Dict[str, Any]:
     await _ensure()
-    from bot.runtime.nika.store import update_global_settings
+    from nika.store import update_global_settings
 
     await update_global_settings(
         db, enabled=enabled, dry_run=dry_run, tick_interval_sec=tick_interval_sec,
@@ -920,7 +923,7 @@ async def save_group(
     updated_by: Optional[int] = None,
 ) -> Dict[str, Any]:
     await _ensure()
-    from bot.runtime.nika.store import upsert_group
+    from nika.store import upsert_group
 
     ok = await upsert_group(
         db,
@@ -938,7 +941,7 @@ async def save_group(
 
 async def drop_group(chat_id: int) -> Dict[str, Any]:
     await _ensure()
-    from bot.runtime.nika.store import remove_group
+    from nika.store import remove_group
 
     ok = await remove_group(db, int(chat_id))
     return {"ok": ok, "pulse": await pulse()}
@@ -955,8 +958,8 @@ async def apply_action(
 ) -> Dict[str, Any]:
     """Кнопка с карточки. Деньги — в очередь бота. Пауза — сразу."""
     await _ensure()
-    from bot.runtime.nika import incidents as inc
-    from bot.runtime.nika.store import (
+    from nika import incidents as inc
+    from nika.store import (
         disable_group,
         disable_system,
         enable_group,

@@ -45,6 +45,46 @@ def test_main_starts_schema_and_worker():
     assert "set_group_sync_fn(add_or_update_group_info)" in main
 
 
+def test_admin_nika_does_not_import_bot_package():
+    text = _read("server", "admin_nika.py")
+    assert "from bot." not in text
+    assert "import bot" not in text
+    assert "from nika.policy import" in text
+    assert (_ROOT / "server" / "nika" / "policy.py").is_file()
+    assert (_ROOT / "server" / "nika" / "ids.py").is_file()
+
+
+def test_admin_nika_imports_when_bot_package_missing():
+    import os
+    import subprocess
+    import sys
+
+    server = str(_ROOT / "server")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = server
+    env.pop("PYTHONHOME", None)
+    code = (
+        "from nika.policy import SOURCE_LADDER, plan_topup, GroupPolicy; "
+        "from nika.store import policy_from_row, forbidden_managed_ids; "
+        "from nika.incidents import actions_for; "
+        "from nika.schema import FIRST_MANAGED_TARGET; "
+        "p = GroupPolicy(chat_id=1, target_balance=5000); "
+        "print(len(SOURCE_LADDER), plan_topup(p, balance=0).action, FIRST_MANAGED_TARGET, "
+        "actions_for('empty_ladder')[0]['id'], len(forbidden_managed_ids()), bool(policy_from_row))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=server,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "topup" in result.stdout
+    assert "5000" in result.stdout
+
+
 def test_balance_sync_fn_is_optional():
     src = _read("bot", "db_create", "db.py")
     assert "self.group_sync_fn = None" in src

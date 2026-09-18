@@ -31,6 +31,39 @@ OFFICIAL = GroupPolicy(
 )
 
 
+def test_admin_nika_ids_match_bot_config():
+    import sys
+
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "server"))
+    from nika.ids import (
+        BACKGROUND_EARNINGS_CHAT_ID as ADMIN_BG,
+        GAME_COMMISSION_CHAT_ID as ADMIN_COMM,
+        GROWTH_FUND_OWNER_NOTIFY_USER_ID as ADMIN_OWNER,
+        PROFIT_JAR_CHAT_ID as ADMIN_JAR,
+        TECH_CHAT_ID as ADMIN_TECH,
+    )
+    from nika.policy import SOURCE_LADDER as ADMIN_LADDER, plan_topup as admin_topup, GroupPolicy as AdminPolicy
+
+    from bot.config.config import (
+        BACKGROUND_EARNINGS_CHAT_ID,
+        GAME_COMMISSION_CHAT_ID,
+        GROWTH_FUND_OWNER_NOTIFY_USER_ID,
+        PROFIT_JAR_CHAT_ID,
+        TECH_CHAT_ID,
+    )
+
+    assert ADMIN_JAR == PROFIT_JAR_CHAT_ID
+    assert ADMIN_COMM == GAME_COMMISSION_CHAT_ID
+    assert ADMIN_BG == BACKGROUND_EARNINGS_CHAT_ID
+    assert ADMIN_TECH == TECH_CHAT_ID
+    assert ADMIN_OWNER == GROWTH_FUND_OWNER_NOTIFY_USER_ID
+    assert [cid for cid, _ in ADMIN_LADDER] == [cid for cid, _ in SOURCE_LADDER]
+    bot_plan = plan_topup(OFFICIAL, balance=0)
+    admin_plan = admin_topup(AdminPolicy(chat_id=OFFICIAL.chat_id, target_balance=OFFICIAL.target_balance, speed_mode="auto", max_transfer=1000, max_daily_topup=10000, max_daily_sweep=10000), balance=0)
+    assert admin_plan.action == bot_plan.action
+    assert admin_plan.amount == bot_plan.amount
+
+
 def test_ladder_order_is_owner_decision():
     ids = [cid for cid, _ in SOURCE_LADDER]
     assert ids == [

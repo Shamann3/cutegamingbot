@@ -1,0 +1,8 @@
+# -*- coding: utf-8 -*-
+"""Техкошельки Ники. Те же id, что в bot.config.config — api-контейнер бота не видит."""
+
+PROFIT_JAR_CHAT_ID = -1004238101266
+GAME_COMMISSION_CHAT_ID = -1004324787050
+BACKGROUND_EARNINGS_CHAT_ID = -1004318525471
+TECH_CHAT_ID = -1003855337972
+GROWTH_FUND_OWNER_NOTIFY_USER_ID = 6801702632
