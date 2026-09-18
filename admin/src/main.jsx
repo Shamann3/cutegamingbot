@@ -13,13 +13,16 @@ import './styles/bot-quests-phone.css'
 import './styles/viewport-locks.css'
 import './styles/tiktok.css'
 import './styles/nika.css'
+import './styles/no-copy.css'
 import { applyAccentToDocument, loadStoredAccent } from './lib/accentTheme'
 import { applyViewportModeToDocument } from './lib/useIsDesktop'
+import { installPanelCopyGuard } from './lib/guardPanelCopy'
 
 // Подсветка до первого кадра — без вспышки дефолтного цвета
 applyAccentToDocument(loadStoredAccent())
 // Phone/PC до первого paint — CSS сразу берёт правильную ветку
 applyViewportModeToDocument()
+installPanelCopyGuard()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

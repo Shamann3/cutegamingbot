@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { isTextEntry } from './isTextEntry'
 
 /**
  * Глобальные горячие клавиши админки.
@@ -13,16 +14,6 @@ import { useEffect } from 'react'
  *  — в модалке: подтвердить (primary/danger), в textarea — Ctrl/⌘+Enter
  *  — вне модалки: активировать сфокусированную кнопку
  */
-
-function isTextEntry(el) {
-  if (!el || el === document.body) return false
-  if (el.isContentEditable) return true
-  const tag = el.tagName
-  if (tag === 'TEXTAREA' || tag === 'SELECT') return true
-  if (tag !== 'INPUT') return false
-  const type = String(el.type || 'text').toLowerCase()
-  return !['button', 'submit', 'checkbox', 'radio', 'file', 'reset', 'image', 'hidden'].includes(type)
-}
 
 function topBackdrop() {
   const nodes = document.querySelectorAll('.admin-modal-backdrop')

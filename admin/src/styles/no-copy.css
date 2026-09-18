@@ -1,0 +1,30 @@
+/* Вся панель: текст нельзя выделить и скопировать. Поля ввода — можно. */
+
+html,
+body,
+#root,
+#root * {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none;
+}
+
+#root input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="reset"]):not([type="hidden"]):not([type="image"]):not([type="range"]):not([type="color"]),
+#root textarea,
+#root select,
+#root [contenteditable="true"],
+#root [contenteditable=""] {
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+  -webkit-touch-callout: default;
+}
+
+#root *:not(input):not(textarea):not(select):not([contenteditable="true"]):not([contenteditable=""])::selection,
+#root *:not(input):not(textarea):not(select):not([contenteditable="true"]):not([contenteditable=""])::-moz-selection {
+  background: transparent !important;
+  color: inherit !important;
+}
