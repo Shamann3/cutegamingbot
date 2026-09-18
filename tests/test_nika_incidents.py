@@ -111,14 +111,23 @@ def test_crisis_strip_exists():
     assert "Самый плюс" in section
     assert "id: 'machine'" in section
     assert "nika-machine" in section
-    assert "Следующий тик" in section
-    assert "Путь денег" in section
+    assert "Следующая проверка" in section
+    assert "Баланс групп" in section
+    assert "Игры и кассы" in section
+    assert "nika-meter" not in section
+    assert "nika-src-track" not in section
+    assert "слот" not in section.lower()
+    assert "стол" not in section.lower()
     chart = _read("admin", "src", "components", "NikaMoneyChart.jsx")
     assert "все балансы" in chart
     css = _read("admin", "src", "styles", "nika.css")
     assert "nika-wallet" in css
     assert "nika-bar-plus" in css
     assert "nika-machine" in css
+    assert "nika-bal-value" in css
+    assert "nika-flow-hero" in css
+    assert "nika-meter" not in css
+    assert "nika-src-track" not in css
     assert "filter: blur" not in css
     assert "flex-wrap: wrap" in css
 
@@ -188,7 +197,7 @@ def test_forecast_tick_paused_and_topup():
     assert live["mode"] == "live"
     assert live["items"][0]["action"] == "topup"
     assert 0 < live["items"][0]["amount"] < FIRST_MANAGED_TARGET
-    assert "комиссии" in live["items"][0]["text"]
+    assert "игры" in live["items"][0]["text"]
 
     dry_ladder = [{"chatId": GAME_COMMISSION_CHAT_ID, "title": "комиссии игр", "balance": 0}]
     blocked = forecast_tick({"enabled": True}, [row], groups, dry_ladder)

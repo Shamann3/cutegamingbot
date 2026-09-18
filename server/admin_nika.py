@@ -109,6 +109,7 @@ async def _universe_now(conn) -> Dict[str, Any]:
         "managed": _as_int(totals["managed_balance"] if totals else 0),
         "ladder": _as_int(totals["ladder_balance"] if totals else 0),
         "vault": _as_int(totals["vault_balance"] if totals else 0),
+        "vaultChatId": vault,
         "pressurePct": round(
             (100.0 * _as_int(pressure["total_excess"] if pressure else 0) / max(1, _as_int(pressure["groups_total"] if pressure else 0))),
             1,
@@ -365,7 +366,7 @@ def forecast_tick(
     if not bool(settings.get("enabled")):
         return {
             "mode": "paused",
-            "summary": "Ника на паузе. Тик смотрит цифры, но куты не двигает.",
+            "summary": "Ника на паузе. Проверка смотрит цифры, но куты не двигает.",
             "items": [],
         }
 
@@ -399,7 +400,7 @@ def forecast_tick(
                 "name": name,
                 "action": "paused",
                 "amount": 0,
-                "text": f"{name}: стол на паузе, Ника его не трогает",
+                "text": f"{name}: группа на паузе, баланс не трогает",
             })
             continue
         row = row_by_id.get(chat_id)
@@ -409,7 +410,7 @@ def forecast_tick(
                 "name": name,
                 "action": "hold",
                 "amount": 0,
-                "text": f"{name}: нет настроек политики",
+                "text": f"{name}: нет цели и скорости",
             })
             continue
         policy = policy_from_row(row)
@@ -424,7 +425,7 @@ def forecast_tick(
                     "name": name,
                     "action": "blocked",
                     "amount": int(top.amount),
-                    "text": f"{name}: хочет долить {int(top.amount)} кут, лестница пуста",
+                    "text": f"{name}: хочет долить {int(top.amount)} кут, в играх и кассах пусто",
                 })
             else:
                 src_id, amt = takes[0]
@@ -456,12 +457,19 @@ def forecast_tick(
             })
             continue
 
+        hold = str(top.reason or "")
+        if "мёртвой зоны" in hold:
+            hold = "баланс группы в зоне"
+        elif "потолком" in hold:
+            hold = "сегодня уже доливали достаточно"
+        elif "цель не задана" in hold:
+            hold = "нет цели"
         items.append({
             "chatId": chat_id,
             "name": name,
             "action": "hold",
             "amount": 0,
-            "text": f"{name}: {top.reason}",
+            "text": f"{name}: {hold}",
         })
 
     n_top = sum(1 for i in items if i["action"] == "topup")
@@ -470,15 +478,15 @@ def forecast_tick(
     if dry:
         summary = "Сухой прогон: посчитает шаг, куты не тронет."
     elif n_blk and not n_top:
-        summary = "Хочет долить, но на лестнице пусто."
+        summary = "Хочет долить баланс группы, но в играх и кассах пусто."
     elif n_top:
-        summary = f"На следующем тике дольёт {n_top} стол(а). Излишек снимет только после выдержки."
+        summary = f"На следующей проверке дольёт {n_top} групп(ы). Лишнее снимет только после выдержки."
     elif n_watch:
-        summary = "Столы выше цели. Сбор ждёт выдержку — Ника не снимает свежие куты сразу."
+        summary = "Баланс групп выше цели. Сбор ждёт выдержку — свежие куты сразу не снимает."
     elif not items:
-        summary = "Столов под Никой нет."
+        summary = "Групп под Никой нет."
     else:
-        summary = "Столы в мёртвой зоне. Следующий тик ничего не двинет."
+        summary = "Баланс групп в зоне. Следующая проверка ничего не двинет."
 
     return {
         "mode": "dry" if dry else "live",
@@ -585,17 +593,17 @@ async def pulse() -> Dict[str, Any]:
         headline = "НЕТ КУТ у групп под Никой"
         detail = f"{len(starving)} групп(ы) с нулём: {names}."
         if ladder_empty:
-            detail += " Лестница источников тоже пуста — доливать не из чего."
+            detail += " В играх и кассах тоже пусто — доливать не из чего."
     elif ladder_empty and needy:
-        headline = "Доливать столы не из чего"
-        detail = "Технические группы пусты, а игровые столы уже ниже цели."
+        headline = "Доливать баланс групп не из чего"
+        detail = "В играх и кассах пусто, а баланс групп уже ниже цели."
     elif open_critical:
         first = open_rows[0] if open_rows else None
         headline = (first or {}).get("title") or "Ника не смогла починить ошибку"
         detail = (first or {}).get("body") or ""
     elif stale_worker:
         headline = "Ника молчит"
-        detail = "Бот не проводит тики. Команды и долив стоят, пока процесс не оживёт."
+        detail = "Бот не проводит проверки. Команды и долив стоят, пока процесс не оживёт."
     elif _as_int(cmd_stats.get("stale")) > 0:
         headline = "Команды Ники зависли"
         detail = "Админка отправила действие боту, а он его не забрал."

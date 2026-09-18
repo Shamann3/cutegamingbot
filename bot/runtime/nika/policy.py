@@ -29,10 +29,10 @@ from bot.config.config import (
 # копилка чистой прибыли идёт последней и только когда выше пусто.
 # ---------------------------------------------------------------------------
 SOURCE_LADDER: Tuple[Tuple[int, str], ...] = (
-    (GAME_COMMISSION_CHAT_ID, "комиссии игр"),
-    (BACKGROUND_EARNINGS_CHAT_ID, "фоновые заработки"),
-    (TECH_CHAT_ID, "чёрный рынок / дом в играх"),
-    (PROFIT_JAR_CHAT_ID, "копилка чистой прибыли"),
+    (GAME_COMMISSION_CHAT_ID, "игры"),
+    (BACKGROUND_EARNINGS_CHAT_ID, "фон"),
+    (TECH_CHAT_ID, "дом игр"),
+    (PROFIT_JAR_CHAT_ID, "копилка"),
 )
 
 # Куда уходит излишек. Та же копилка, что и последний источник: излишек группы

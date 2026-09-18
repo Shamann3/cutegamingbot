@@ -120,7 +120,7 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
           <span className={(selected?.net || 0) >= 0 ? 'nika-plus' : 'nika-minus'}>
             {signedFmt(selected?.net)}
           </span>
-          <small>{selected?.label || 'сальдо'}</small>
+          <small>{selected?.label || 'итог'}</small>
         </div>
         {selected?.systemDelta != null ? (
           <div>
@@ -159,7 +159,7 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
         aria-valuemin={0}
         aria-valuemax={items.length - 1}
         aria-valuenow={idx}
-        aria-label="Плюсы и минусы по времени. Стрелки листают, палец выбирает столбик."
+        aria-label="Плюсы и минусы по времени. Стрелки листают, палец выбирает день или час."
       >
         <svg
           className="nika-chart-svg"
@@ -237,8 +237,8 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
         </svg>
       </div>
       <div className="nika-chart-legend">
-        <span className="is-plus">плюс — копилка и комиссии</span>
-        <span className="is-minus">минус — долив столов</span>
+        <span className="is-plus">плюс — копилка и игры</span>
+        <span className="is-minus">минус — долив баланса групп</span>
         {metrics.hasSystem ? <span className="is-sys">линия — все балансы</span> : null}
       </div>
     </div>

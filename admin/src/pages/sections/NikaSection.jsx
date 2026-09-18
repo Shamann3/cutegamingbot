@@ -14,10 +14,10 @@ import NikaMoneyChart, { NikaSpark } from '../../components/NikaMoneyChart'
 import { useIsPhone } from '../../lib/useIsDesktop'
 
 const TABS = [
-  { id: 'machine', label: 'Машина' },
+  { id: 'machine', label: 'Как работает' },
   { id: 'flow', label: 'Аналитика' },
   { id: 'incidents', label: 'Ошибки' },
-  { id: 'groups', label: 'Столы' },
+  { id: 'groups', label: 'Группы' },
   { id: 'journal', label: 'Движения' },
   { id: 'settings', label: 'Система' },
 ]
@@ -30,10 +30,10 @@ const SPEED = [
 ]
 
 const THINK = [
-  'Смотрит каждый стол: баланс против цели.',
-  'Ниже цели — берёт с лестницы, никогда не закрывает дыру одним переводом.',
-  'Выше цели — ждёт выдержку, потом сметает часть в копилку.',
-  'Деньги двигает только процесс бота. Игроки этого не видят.',
+  'Смотрит баланс каждой группы и сравнивает его с целью.',
+  'Ниже цели — берёт куты из игр и касс, никогда не закрывает дыру одним разом.',
+  'Выше цели — ждёт выдержку, потом часть уходит в копилку.',
+  'Игроки этого не видят. Деньги двигает только бот.',
 ]
 
 function fmt(n) {
@@ -64,7 +64,7 @@ function dayTitle(iso) {
 }
 
 function ago(iso) {
-  if (!iso) return 'тика ещё не было'
+  if (!iso) return 'проверки ещё не было'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
   const sec = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000))
@@ -81,22 +81,31 @@ function toneOf(status) {
   return 'mute'
 }
 
+function statusLabel(status) {
+  if (status === 'done') return 'готово'
+  if (status === 'refunded') return 'вернули'
+  if (status === 'failed' || status === 'refund_failed') return 'сбой'
+  if (status === 'queued') return 'ждёт'
+  if (status === 'running' || status === 'pending') return 'сейчас'
+  return status || '—'
+}
+
 function kindLabel(kind) {
   if (kind === 'sweep') return 'Сбор в копилку'
-  if (kind === 'topup') return 'Долив стола'
+  if (kind === 'topup') return 'Долив группы'
   if (kind === 'revert') return 'Возврат'
   return kind || '—'
 }
 
 function cmdLabel(kind) {
-  if (kind === 'force_tick') return 'Тик'
+  if (kind === 'force_tick') return 'Проверка'
   if (kind === 'force_topup') return 'Долив'
   if (kind === 'force_sweep') return 'Сбор'
   if (kind === 'revert') return 'Возврат'
-  if (kind === 'retry_heal') return 'Лечение'
+  if (kind === 'retry_heal') return 'Повтор'
   if (kind === 'pause_all') return 'Выключение'
-  if (kind === 'pause_group') return 'Пауза стола'
-  if (kind === 'enable_group') return 'Вкл стол'
+  if (kind === 'pause_group') return 'Пауза группы'
+  if (kind === 'enable_group') return 'Группа включена'
   if (kind === 'resolve') return 'Закрыть'
   return kind || '—'
 }
@@ -113,12 +122,97 @@ function speedLabel(mode) {
   return SPEED.find((s) => s.id === mode)?.label || mode || 'Авто'
 }
 
+function cashTitle(src) {
+  const t = String(src?.title || src?.sourceTitle || '')
+  if (t === 'игры' || /комисс/i.test(t)) return 'Игры'
+  if (t === 'фон' || /фонов/i.test(t)) return 'Фон'
+  if (/рынок|дом/i.test(t)) return 'Дом игр'
+  if (/копилк|прибыл/i.test(t)) return 'Копилка'
+  return t || 'Касса'
+}
+
+function cashHint(src) {
+  const t = String(src?.title || '')
+  if (t === 'игры' || /комисс/i.test(t)) return 'комиссии с игр, первый источник долива'
+  if (t === 'фон' || /фонов/i.test(t)) return 'фоновые заработки'
+  if (/рынок|дом/i.test(t)) return 'дом игр'
+  if (/копилк|прибыл/i.test(t)) return 'чистая прибыль, руками не снимаем'
+  return 'касса для долива баланса групп'
+}
+
+function chatFlow(transfers, chatId) {
+  const id = Number(chatId)
+  let plus = 0
+  let minus = 0
+  for (const t of transfers || []) {
+    if (t.status && t.status !== 'done') continue
+    const amt = Number(t.amount) || 0
+    const src = Number(t.sourceChatId)
+    const dest = Number(t.destChatId)
+    if (t.kind === 'sweep' && (src === id || dest === id)) plus += amt
+    if (t.kind === 'topup' && (src === id || dest === id)) minus += amt
+  }
+  return { plus, minus, net: plus - minus }
+}
+
 function UniCard({ label, value, hint, tone }) {
   return (
     <article className={`nika-uni${tone ? ` nika-uni-${tone}` : ''}`}>
       <p>{label}</p>
       <strong><CountUp value={Number(value) || 0} duration={1100} /></strong>
       {hint ? <small>{hint}</small> : null}
+    </article>
+  )
+}
+
+function FlowStrip({ plus, minus, plusHint, minusHint, compact }) {
+  const net = (Number(plus) || 0) - (Number(minus) || 0)
+  return (
+    <div className={`nika-flow-hero${compact ? ' is-compact' : ''}`}>
+      <div className="is-plus">
+        <small>Плюс</small>
+        <b className="nika-plus"><CountUp value={Number(plus) || 0} duration={900} /></b>
+        {plusHint ? <em>{plusHint}</em> : null}
+      </div>
+      <div className="is-minus">
+        <small>Минус</small>
+        <b className="nika-minus"><CountUp value={Number(minus) || 0} duration={900} /></b>
+        {minusHint ? <em>{minusHint}</em> : null}
+      </div>
+      <div>
+        <small>Итог</small>
+        <b className={net >= 0 ? 'nika-plus' : 'nika-minus'}>
+          <CountUp value={net} signed duration={900} />
+        </b>
+      </div>
+    </div>
+  )
+}
+
+function GroupBalanceCard({ group, flow, extra }) {
+  const gap = Number(group.gap) || 0
+  return (
+    <article className={`nika-table${group.starving ? ' is-dry' : ''}${group.enabled ? '' : ' is-paused'}`}>
+      <header>
+        <h3>{group.name}</h3>
+        <span>{group.enabled ? speedLabel(group.speedMode) : 'пауза'}</span>
+      </header>
+      <p className="nika-bal-kicker">Баланс группы</p>
+      <strong className="nika-bal-value"><CountUp value={Number(group.balance) || 0} duration={1000} /></strong>
+      <div className="nika-bal-meta">
+        <span>цель {fmt(group.target)}</span>
+        <em className={gap > 0 ? 'nika-minus' : gap < 0 ? 'nika-plus' : 'nika-mute'}>
+          {gap > 0 ? `не хватает ${fmt(gap)}` : gap < 0 ? `лишнее ${fmt(-gap)}` : 'в цели'}
+        </em>
+      </div>
+      <FlowStrip
+        compact
+        plus={flow.plus}
+        minus={flow.minus}
+        plusHint="сбор в копилку"
+        minusHint="долив баланса"
+      />
+      {extra}
     </article>
   )
 }
@@ -212,17 +306,13 @@ export default function NikaSection() {
   const starving = data?.starving || []
   const groups = data?.groups || []
   const ladder = data?.ladder || []
+  const transfers = data?.transfers || []
   const universe = earn?.universe || data?.universe || {}
   const chartPoints = range === 'hours' ? (earn?.hours || []) : (earn?.days || [])
   const extrema = range === 'hours' ? earn?.hourExtrema : earn?.extrema
-  const plusDays = (earn?.days || []).filter((d) => (d.net || 0) > 0)
-  const minusDays = (earn?.days || []).filter((d) => (d.net || 0) < 0)
   const sparkValues = (earn?.spark || []).map((s) => s.system)
-  const ladderMax = Math.max(
-    1,
-    ...ladder.map((x) => Number(x.balance) || 0),
-    Number(universe.vault) || 0,
-  )
+  const vaultId = data?.meta?.sweepDestChatId || universe.vaultChatId
+  const vaultFlow = chatFlow(transfers, vaultId)
   const dayRows = useMemo(() => {
     const rows = chartPoints.slice().reverse()
     if (dayFilter === 'plus') return rows.filter((d) => (d.net || 0) > 0)
@@ -230,21 +320,20 @@ export default function NikaSection() {
     return rows
   }, [chartPoints, dayFilter])
   const ledgerGroups = useMemo(
-    () => groupLedger(data?.transfers || []),
-    [data],
+    () => groupLedger(transfers),
+    [transfers],
   )
   const forecast = data?.forecast || {
     mode: data?.enabled ? (data?.dryRun ? 'dry' : 'live') : 'paused',
     summary: data?.enabled
-      ? 'Считаю следующий тик…'
-      : 'Ника на паузе. Тик смотрит цифры, но куты не двигает.',
+      ? 'Считаю следующую проверку…'
+      : 'Ника на паузе. Проверка смотрит цифры, но куты не двигает.',
     items: [],
   }
   const queued = Number(data?.commands?.queued || data?.commands?.pending || 0)
   const tickEvery = Number(data?.tickIntervalSec || data?.settings?.tickIntervalSec || 180)
-  const recentMoves = (data?.transfers || []).slice(0, 6)
+  const recentMoves = transfers.slice(0, 6)
   const recentCmds = (data?.commandLog || []).slice(0, 6)
-
   const incidentCount = incidents.length + starving.length
 
   if (loading && !data) {
@@ -255,21 +344,64 @@ export default function NikaSection() {
     )
   }
 
+  const plusMinusHead = (
+    <>
+      <div className="nika-panel-top">
+        <div>
+          <h2>Плюсы и минусы</h2>
+          <p className="nika-help">
+            Плюс — сбор в копилку и комиссии игр. Минус — долив баланса групп из игр и касс.
+            С {when(earn?.since)}.
+          </p>
+        </div>
+        <div className="nika-seg nika-seg-mini" role="group" aria-label="Масштаб">
+          <button type="button" className={`nika-seg-btn${range === 'days' ? ' is-on' : ''}`} onClick={() => { setRange('days'); setDayFilter('all') }}>Дни</button>
+          <button type="button" className={`nika-seg-btn${range === 'hours' ? ' is-on' : ''}`} onClick={() => { setRange('hours'); setDayFilter('all') }}>Часы</button>
+        </div>
+      </div>
+      <FlowStrip
+        plus={earn?.nika?.plus || 0}
+        minus={earn?.nika?.minus || 0}
+        plusHint={`копилка ${fmt(earn?.nika?.sweptToVault)} · игры ${fmt(earn?.games?.commission)}`}
+        minusHint="долив баланса групп"
+      />
+      {(extrema?.best || extrema?.worst) && (
+        <div className="nika-extrema">
+          {extrema.best ? (
+            <article className="nika-ext is-plus">
+              <small>Самый плюс</small>
+              <strong>{extrema.best.label}</strong>
+              <b className="nika-plus">{signed(extrema.best.net)}</b>
+            </article>
+          ) : null}
+          {extrema.worst ? (
+            <article className="nika-ext is-minus">
+              <small>Самый минус</small>
+              <strong>{extrema.worst.label}</strong>
+              <b className="nika-minus">{signed(extrema.worst.net)}</b>
+            </article>
+          ) : null}
+        </div>
+      )}
+      <NikaMoneyChart key={range} points={chartPoints} mode="system" />
+    </>
+  )
+
   return (
     <section className={`grp-page nika-page${data?.crisis ? ' is-crisis' : ''}${phone ? ' is-phone' : ' is-desktop'}`}>
       <header className="nika-head">
         <div className="nika-head-copy">
           <h1>Ника</h1>
-          <p>Сама держит столы. Игроки этого не видят — только ты.</p>
+          <p>Сама держит баланс групп. Игроки этого не видят — только ты.</p>
         </div>
         <div className={`nika-status${data?.crisis ? ' is-hot' : data?.enabled ? ' is-ok' : ' is-off'}`}>
-          <b>{data?.crisis ? 'Критично' : (data?.enabled ? (data?.dryRun ? 'Сухой прогон' : 'Работает') : 'Пауза')}</b>
+          <b>{data?.crisis ? 'Критично' : (data?.enabled ? (data?.dryRun ? 'Без движения' : 'Работает') : 'Пауза')}</b>
           <span>
             {data?.staleWorker
               ? 'бот молчит'
               : data?.lastTickAt
                 ? ago(data.lastTickAt)
-                : 'тика ещё не было'}
+                : 'проверки ещё не было'}
           </span>
         </div>
       </header>
@@ -318,23 +450,108 @@ export default function NikaSection() {
           <div className="nika-mach-grid">
             <article className={`nika-mach-tile${data?.crisis ? ' is-hot' : data?.enabled ? ' is-ok' : ''}`}>
               <small>Режим</small>
-              <b>{data?.crisis ? 'Критично' : (data?.enabled ? (data?.dryRun ? 'Сухой прогон' : 'Боевой') : 'Пауза')}</b>
+              <b>{data?.crisis ? 'Критично' : (data?.enabled ? (data?.dryRun ? 'Без движения' : 'Боевой') : 'Пауза')}</b>
             </article>
             <article className="nika-mach-tile">
-              <small>Тик</small>
+              <small>Проверка</small>
               <b>{data?.lastTickAt ? ago(data.lastTickAt) : 'ещё не было'}</b>
               <em>каждые {tickEvery} сек</em>
             </article>
             <article className={`nika-mach-tile${data?.staleWorker ? ' is-hot' : ''}`}>
-              <small>Воркер</small>
+              <small>Бот</small>
               <b>{data?.staleWorker ? 'молчит' : (data?.enabled ? 'жив' : 'ждёт включения')}</b>
             </article>
             <article className="nika-mach-tile">
               <small>Очередь</small>
               <b>{queued > 0 ? `${queued} команд` : 'пусто'}</b>
-              <em>{groups.filter((g) => g.enabled).length} стол(ов) живых</em>
+              <em>{groups.filter((g) => g.enabled).length} групп под Никой</em>
             </article>
           </div>
+
+          <section className="nika-panel nika-panel-chart">
+            {plusMinusHead}
+          </section>
+
+          <section className="nika-panel">
+            <h2>Баланс групп</h2>
+            <p className="nika-help">Сколько сейчас лежит в группе, чего не хватает до цели, и какие плюсы с минусами уже прошли.</p>
+            <div className="nika-tables">
+              {groups.length === 0 && (
+                <article className="nika-empty">
+                  <h3>Групп нет</h3>
+                  <p>Поставь группу во вкладке «Группы» — Ника начнёт держать её баланс.</p>
+                </article>
+              )}
+              {groups.map((g) => (
+                <GroupBalanceCard key={g.chatId} group={g} flow={chatFlow(transfers, g.chatId)} />
+              ))}
+            </div>
+          </section>
+
+          <section className="nika-panel">
+            <h2>Игры и кассы</h2>
+            <p className="nika-help">Откуда Ника берёт куты на долив баланса групп. Копилка — последний источник и дом лишнего.</p>
+            <div className="nika-tables">
+              {ladder.map((src) => {
+                const flow = chatFlow(transfers, src.chatId)
+                return (
+                  <article key={src.chatId} className={`nika-table${src.balance <= 0 ? ' is-dry' : ''}`}>
+                    <header>
+                      <h3>{cashTitle(src)}</h3>
+                      <span>{src.balance <= 0 ? 'пусто' : 'есть куты'}</span>
+                    </header>
+                    <p className="nika-bal-kicker">Баланс кассы</p>
+                    <strong className="nika-bal-value"><CountUp value={Number(src.balance) || 0} duration={1000} /></strong>
+                    <p className="nika-help">{cashHint(src)}</p>
+                    <FlowStrip compact plus={flow.plus} minus={flow.minus} plusHint="пришло" minusHint="ушло на долив" />
+                  </article>
+                )
+              })}
+              <article className="nika-table nika-table-vault">
+                <header>
+                  <h3>Копилка</h3>
+                  <span>чистая прибыль</span>
+                </header>
+                <p className="nika-bal-kicker">Баланс копилки</p>
+                <strong className="nika-bal-value nika-plus"><CountUp value={Number(universe.vault) || 0} duration={1000} /></strong>
+                <FlowStrip
+                  compact
+                  plus={Number(earn?.nika?.sweptToVault) || vaultFlow.plus}
+                  minus={vaultFlow.minus}
+                  plusHint="сбор с групп"
+                  minusHint="если брали отсюда"
+                />
+              </article>
+            </div>
+          </section>
+
+          <section className="nika-panel">
+            <div className="nika-panel-top">
+              <div>
+                <h2>Следующая проверка</h2>
+                <p className="nika-help">{forecast.summary}</p>
+              </div>
+              <button type="button" className="nika-btn nika-btn-primary" disabled={!!busy} onClick={() => run({ action: 'force_tick' }, 'Проверка поставлена')}>
+                Проверить сейчас
+              </button>
+            </div>
+            {forecast.items?.length ? (
+              <ul className="nika-next">
+                {forecast.items.map((item) => (
+                  <li key={item.chatId} className={forecastTone(item.action)}>
+                    <b>{item.name}</b>
+                    <span>{item.sourceTitle ? item.text.replace(item.sourceTitle, cashTitle({ title: item.sourceTitle })) : item.text}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="nika-help">
+                {data?.enabled
+                  ? 'Групп нет или баланс в зоне — проверка пройдёт вхолостую.'
+                  : 'Включи автодолив в «Система», если хочешь, чтобы проверка двигала куты.'}
+              </p>
+            )}
+          </section>
 
           <section className="nika-panel">
             <h2>Как думает</h2>
@@ -346,93 +563,6 @@ export default function NikaSection() {
                 </li>
               ))}
             </ol>
-          </section>
-
-          <section className="nika-panel">
-            <div className="nika-panel-top">
-              <div>
-                <h2>Следующий тик</h2>
-                <p className="nika-help">{forecast.summary}</p>
-              </div>
-              <button type="button" className="nika-btn nika-btn-primary" disabled={!!busy} onClick={() => run({ action: 'force_tick' }, 'Тик поставлен')}>
-                Запустить тик
-              </button>
-            </div>
-            {forecast.items?.length ? (
-              <ul className="nika-next">
-                {forecast.items.map((item) => (
-                  <li key={item.chatId} className={forecastTone(item.action)}>
-                    <b>{item.name}</b>
-                    <span>{item.text}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="nika-help">
-                {data?.enabled
-                  ? 'Столов нет или все в зоне — тик пройдёт вхолостую.'
-                  : 'Включи автодолив в «Система», если хочешь, чтобы тик двигал куты.'}
-              </p>
-            )}
-          </section>
-
-          <section className="nika-panel">
-            <h2>Путь денег</h2>
-            <p className="nika-help">Долив идёт сверху вниз. Копилка — последний источник и дом излишка.</p>
-            <div className="nika-pipe">
-              {ladder.map((src, idx) => (
-                <div key={src.chatId}>
-                  {idx > 0 ? <div className="nika-pipe-arrow" aria-hidden="true">↓ если выше пусто</div> : null}
-                  <div className={`nika-pipe-step${src.balance <= 0 ? ' is-empty' : ''}`}>
-                    <em>{idx + 1}</em>
-                    <div>
-                      <b>{src.title}</b>
-                      <span>{src.balance <= 0 ? 'пусто — этот ярус пропускает' : 'есть куты на долив'}</span>
-                    </div>
-                    <strong>{fmt(src.balance)}</strong>
-                  </div>
-                </div>
-              ))}
-              <div className="nika-pipe-arrow" aria-hidden="true">↓ излишек столов</div>
-              <div className="nika-pipe-step is-vault">
-                <em>⌂</em>
-                <div>
-                  <b>Копилка</b>
-                  <span>чистая прибыль, руками отсюда не снимаем</span>
-                </div>
-                <strong className="nika-plus">{fmt(universe.vault)}</strong>
-              </div>
-            </div>
-          </section>
-
-          <section className="nika-panel">
-            <h2>Столы сейчас</h2>
-            <div className="nika-tables">
-              {groups.length === 0 && (
-                <article className="nika-empty">
-                  <h3>Столов нет</h3>
-                  <p>Поставь группу во вкладке «Столы» — Ника начнёт её держать.</p>
-                </article>
-              )}
-              {groups.map((g) => {
-                const pct = g.target > 0 ? Math.min(140, Math.max(0, (g.balance / g.target) * 100)) : 0
-                return (
-                  <article key={g.chatId} className={`nika-table${g.starving ? ' is-dry' : ''}${g.enabled ? '' : ' is-paused'}`}>
-                    <header>
-                      <h3>{g.name}</h3>
-                      <span>{g.enabled ? speedLabel(g.speedMode) : 'пауза'}</span>
-                    </header>
-                    <p className="nika-table-id">{g.chatId}</p>
-                    <div className="nika-meter"><i style={{ width: `${Math.min(100, pct)}%` }} /></div>
-                    <div className="nika-table-nums">
-                      <b>{fmt(g.balance)}</b>
-                      <span>цель {fmt(g.target)}</span>
-                      <em className={g.gap > 0 ? 'nika-minus' : 'nika-plus'}>{signed(-g.gap)}</em>
-                    </div>
-                  </article>
-                )
-              })}
-            </div>
           </section>
 
           <div className="nika-mach-split">
@@ -457,7 +587,7 @@ export default function NikaSection() {
             <section className="nika-panel">
               <h2>Команды боту</h2>
               {recentCmds.length === 0 ? (
-                <p className="nika-help">Очередь пуста. Кнопки «долить / тик / вернуть» появляются здесь, пока бот их не заберёт.</p>
+                <p className="nika-help">Очередь пуста. Кнопки «долить / проверить / вернуть» появляются здесь, пока бот их не заберёт.</p>
               ) : (
                 <ul className="nika-moves">
                   {recentCmds.map((c) => (
@@ -466,7 +596,7 @@ export default function NikaSection() {
                         <b>{cmdLabel(c.kind)}</b>
                         <span>{when(c.createdAt)}</span>
                       </div>
-                      <em className={`nika-pill nika-pill-${toneOf(c.status)}`}>{c.status}</em>
+                      <em className={`nika-pill nika-pill-${toneOf(c.status)}`}>{statusLabel(c.status)}</em>
                     </li>
                   ))}
                 </ul>
@@ -506,70 +636,17 @@ export default function NikaSection() {
 
           <div className="nika-universe">
             <UniCard label="Игроки" value={universe.users} hint="сумма балансов" />
-            <UniCard label="Все чаты" value={universe.chats} hint="включая кухню" />
+            <UniCard label="Все чаты" value={universe.chats} hint="включая служебные" />
             <UniCard label="Система" value={universe.system} hint="игроки + чаты" tone="hero" />
-            <UniCard label="Живые группы" value={universe.liveChats} hint="без техкошельков" />
-            <UniCard label="Столы Ники" value={universe.managed} hint="под автодоливом" />
+            <UniCard label="Живые группы" value={universe.liveChats} hint="без служебных касс" />
+            <UniCard label="Баланс групп" value={universe.managed} hint="под автодоливом" />
             <UniCard label="Копилка" value={universe.vault} hint="чистая прибыль" tone="plus" />
-            <UniCard label="Лестница" value={universe.ladder} hint="откуда доливаем" />
+            <UniCard label="Игры и кассы" value={universe.ladder} hint="откуда доливаем" />
             <UniCard label="Лишнее" value={universe.excess} hint={`сверх ${fmt(universe.excessThreshold || 3000)}`} tone="warn" />
           </div>
 
           <section className="nika-panel nika-panel-chart">
-            <div className="nika-panel-top">
-              <div>
-                <h2>Плюсы и минусы</h2>
-                <p className="nika-help">
-                  Плюс — сбор в копилку и комиссии игр. Минус — долив столов из лестницы.
-                  С {when(earn?.since)}.
-                </p>
-              </div>
-              <div className="nika-seg nika-seg-mini" role="group" aria-label="Масштаб">
-                <button type="button" className={`nika-seg-btn${range === 'days' ? ' is-on' : ''}`} onClick={() => { setRange('days'); setDayFilter('all') }}>Дни</button>
-                <button type="button" className={`nika-seg-btn${range === 'hours' ? ' is-on' : ''}`} onClick={() => { setRange('hours'); setDayFilter('all') }}>Часы</button>
-              </div>
-            </div>
-
-            <div className="nika-flow-hero">
-              <div className="is-plus">
-                <small>Плюс</small>
-                <b className="nika-plus"><CountUp value={earn?.nika?.plus || 0} duration={1200} /></b>
-                <em>копилка {fmt(earn?.nika?.sweptToVault)} · игры {fmt(earn?.games?.commission)}</em>
-              </div>
-              <div className="is-minus">
-                <small>Минус</small>
-                <b className="nika-minus"><CountUp value={earn?.nika?.minus || 0} duration={1200} /></b>
-                <em>долив столов</em>
-              </div>
-              <div>
-                <small>Сальдо</small>
-                <b className={(earn?.nika?.net || 0) >= 0 ? 'nika-plus' : 'nika-minus'}>
-                  <CountUp value={earn?.nika?.net || 0} signed duration={1200} />
-                </b>
-                <em>{plusDays.length} дн. плюс · {minusDays.length} дн. минус</em>
-              </div>
-            </div>
-
-            {(extrema?.best || extrema?.worst) && (
-              <div className="nika-extrema">
-                {extrema.best ? (
-                  <article className="nika-ext is-plus">
-                    <small>Самый плюс</small>
-                    <strong>{extrema.best.label}</strong>
-                    <b className="nika-plus">{signed(extrema.best.net)}</b>
-                  </article>
-                ) : null}
-                {extrema.worst ? (
-                  <article className="nika-ext is-minus">
-                    <small>Самый минус</small>
-                    <strong>{extrema.worst.label}</strong>
-                    <b className="nika-minus">{signed(extrema.worst.net)}</b>
-                  </article>
-                ) : null}
-              </div>
-            )}
-
-            <NikaMoneyChart key={range} points={chartPoints} mode="system" />
+            {plusMinusHead}
 
             <div className="nika-seg nika-seg-mini nika-filter" role="group" aria-label="Фильтр знака">
               <button type="button" className={`nika-seg-btn${dayFilter === 'all' ? ' is-on' : ''}`} onClick={() => setDayFilter('all')}>Все</button>
@@ -608,28 +685,24 @@ export default function NikaSection() {
           </section>
 
           <section className="nika-panel">
-            <h2>Лестница</h2>
-            <p className="nika-help">Откуда Ника берёт куты на долив. Копилка — только вход, руками не снимаем отсюда.</p>
-            <div className="nika-ladder">
+            <h2>Игры и кассы</h2>
+            <p className="nika-help">Откуда Ника берёт куты на долив баланса групп. Копилка — только вход, руками не снимаем.</p>
+            <div className="nika-tables">
               {ladder.map((src) => {
-                const fill = Math.min(100, ((Number(src.balance) || 0) / ladderMax) * 100)
+                const flow = chatFlow(transfers, src.chatId)
                 return (
-                  <div key={src.chatId} className={`nika-src${src.balance <= 0 ? ' is-empty' : ''}`}>
-                    <div className="nika-src-row">
-                      <span>{src.title}</span>
-                      <strong>{fmt(src.balance)}</strong>
-                    </div>
-                    <i className="nika-src-track"><i style={{ width: `${fill}%` }} /></i>
-                  </div>
+                  <article key={src.chatId} className={`nika-table${src.balance <= 0 ? ' is-dry' : ''}`}>
+                    <header>
+                      <h3>{cashTitle(src)}</h3>
+                      <span>{src.balance <= 0 ? 'пусто' : 'есть куты'}</span>
+                    </header>
+                    <p className="nika-bal-kicker">Баланс кассы</p>
+                    <strong className="nika-bal-value"><CountUp value={Number(src.balance) || 0} duration={1000} /></strong>
+                    <p className="nika-help">{cashHint(src)}</p>
+                    <FlowStrip compact plus={flow.plus} minus={flow.minus} plusHint="пришло" minusHint="ушло на долив" />
+                  </article>
                 )
               })}
-              <div className="nika-src nika-src-vault">
-                <div className="nika-src-row">
-                  <span>Копилка</span>
-                  <strong className="nika-plus">{fmt(universe.vault)}</strong>
-                </div>
-                <i className="nika-src-track"><i style={{ width: `${Math.min(100, ((Number(universe.vault) || 0) / ladderMax) * 100)}%` }} /></i>
-              </div>
             </div>
           </section>
         </div>
@@ -640,18 +713,18 @@ export default function NikaSection() {
           {incidents.length === 0 && !starving.length && (
             <article className="nika-empty">
               <h3>Тишина</h3>
-              <p>Ника сама держит столы. Карточка появится, только если автоматика уже пробовала и не смогла.</p>
+              <p>Ника сама держит баланс групп. Карточка появится, только если автоматика уже пробовала и не смогла.</p>
             </article>
           )}
           {starving.map((g) => (
             <article key={`dry-${g.chatId}`} className="nika-card is-critical">
               <p className="nika-card-code">Нет кут</p>
               <h3>{g.name}</h3>
-              <p>Стол пуст: 0 из {fmt(g.target)}. Если лестница тоже ноль — доливать не из чего.</p>
+              <p>Баланс группы пуст: 0 из {fmt(g.target)}. Если в играх и кассах тоже ноль — доливать не из чего.</p>
               <div className="nika-card-actions">
                 <button type="button" className="nika-btn nika-btn-primary" disabled={!!busy} onClick={() => run({ action: 'force_topup', chat_id: g.chatId }, 'Долив в очереди')}>Долить</button>
                 <button type="button" className="nika-btn" disabled={!!busy} onClick={() => run({ action: 'force_tick' }, 'Проверяю')}>Проверить</button>
-                <button type="button" className="nika-btn" disabled={!!busy} onClick={() => run({ action: 'pause_group', chat_id: g.chatId }, 'Группа на паузе')}>Пауза стола</button>
+                <button type="button" className="nika-btn" disabled={!!busy} onClick={() => run({ action: 'pause_group', chat_id: g.chatId }, 'Группа на паузе')}>Пауза группы</button>
               </div>
             </article>
           ))}
@@ -726,7 +799,7 @@ export default function NikaSection() {
                 <li key={h.chatId}>
                   <button type="button" className="nika-hit" disabled={h.forbidden} onClick={() => setDraft({ chatId: h.chatId, target: draft.target, speed: draft.speed })}>
                     <strong>{h.name}</strong>
-                    <span>{h.chatId} · {fmt(h.balance)} кут{h.forbidden ? ' · кухня' : ''}</span>
+                    <span>{h.chatId} · {fmt(h.balance)} кут{h.forbidden ? ' · служебная' : ''}</span>
                   </button>
                 </li>
               ))}
@@ -751,7 +824,7 @@ export default function NikaSection() {
                 }
                 try {
                   await saveNikaGroup({ chat_id: chatId, target_balance: target, speed_mode: draft.speed, enabled: true })
-                  showToast('Стол под Никой')
+                  showToast('Группа под Никой')
                   setHits([])
                   await load()
                 } catch (err) {
@@ -764,21 +837,12 @@ export default function NikaSection() {
           </div>
 
           <div className="nika-tables">
-            {groups.map((g) => {
-              const pct = g.target > 0 ? Math.min(140, Math.max(0, (g.balance / g.target) * 100)) : 0
-              return (
-                <article key={g.chatId} className={`nika-table${g.starving ? ' is-dry' : ''}${g.enabled ? '' : ' is-paused'}`}>
-                  <header>
-                    <h3>{g.name}</h3>
-                    <span>{g.enabled ? 'живёт' : 'пауза'}</span>
-                  </header>
-                  <p className="nika-table-id">{g.chatId}</p>
-                  <div className="nika-meter"><i style={{ width: `${Math.min(100, pct)}%` }} /></div>
-                  <div className="nika-table-nums">
-                    <b>{fmt(g.balance)}</b>
-                    <span>цель {fmt(g.target)}</span>
-                    <em className={g.gap > 0 ? 'nika-minus' : 'nika-plus'}>{signed(-g.gap)}</em>
-                  </div>
+            {groups.map((g) => (
+              <GroupBalanceCard
+                key={g.chatId}
+                group={g}
+                flow={chatFlow(transfers, g.chatId)}
+                extra={(
                   <div className="nika-card-actions">
                     <button type="button" className="nika-btn nika-btn-primary" disabled={!!busy} onClick={() => run({ action: 'force_topup', chat_id: g.chatId }, 'Долив в очереди')}>Долить</button>
                     <button type="button" className="nika-btn" disabled={!!busy} onClick={() => run({ action: 'force_sweep', chat_id: g.chatId }, 'Сбор в очереди')}>Собрать</button>
@@ -791,7 +855,7 @@ export default function NikaSection() {
                       onClick={async () => {
                         try {
                           await removeNikaGroup(g.chatId)
-                          showToast('Сняли со стола')
+                          showToast('Сняли с Ники')
                           await load()
                         } catch (err) {
                           showToast(err.message || 'Не снялась', 'error')
@@ -801,9 +865,9 @@ export default function NikaSection() {
                       Снять
                     </button>
                   </div>
-                </article>
-              )
-            })}
+                )}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -822,7 +886,7 @@ export default function NikaSection() {
                     </div>
                     <b>{t.sign < 0 ? '−' : t.sign > 0 ? '+' : ''}{fmt(t.amount)}</b>
                     <small>{t.sourceChatId} → {t.destChatId}</small>
-                    <em className={`nika-pill nika-pill-${toneOf(t.status)}`}>{t.status}</em>
+                    <em className={`nika-pill nika-pill-${toneOf(t.status)}`}>{statusLabel(t.status)}</em>
                     {t.status === 'done' && !t.revertedAt ? (
                       <button type="button" className="nika-btn nika-btn-sm" disabled={!!busy} onClick={() => run({ action: 'revert', transfer_id: t.id }, 'Возврат в очереди')}>
                         Вернуть
@@ -833,7 +897,7 @@ export default function NikaSection() {
               </ul>
             </div>
           ))}
-          {(data?.transfers || []).length === 0 && (
+          {transfers.length === 0 && (
             <article className="nika-empty">
               <h3>Движений ещё нет</h3>
               <p>Как только Ника дольёт или соберёт куты, строка появится здесь со знаком плюс или минус.</p>
@@ -869,18 +933,18 @@ export default function NikaSection() {
                 try {
                   const pulse = await saveNikaSettings({ dry_run: !data?.dryRun })
                   applyPulse(pulse)
-                  showToast(data?.dryRun ? 'Боевой режим' : 'Сухой прогон')
+                  showToast(data?.dryRun ? 'Боевой режим' : 'Без движения кут')
                   await load()
                 } catch (err) {
                   showToast(err.message || 'Не переключилась', 'error')
                 }
               }}
             >
-              <span>Сухой прогон</span>
+              <span>Без движения кут</span>
               <i className={`nika-switch${data?.dryRun ? ' is-on' : ''}`} />
             </button>
             <div className="nika-ios-row is-static">
-              <span>Последний тик</span>
+              <span>Последняя проверка</span>
               <b>{when(data?.lastTickAt)}</b>
             </div>
             <div className="nika-ios-row is-static">
@@ -888,12 +952,12 @@ export default function NikaSection() {
               <b>{when(earn?.since || data?.settings?.earningsSince)}</b>
             </div>
             <div className="nika-ios-row is-static">
-              <span>Серия тиков</span>
+              <span>Удачных проверок подряд</span>
               <b>{data?.settings?.healOkStreak || 0}</b>
             </div>
           </div>
           <div className="nika-card-actions">
-            <button type="button" className="nika-btn nika-btn-primary" disabled={!!busy} onClick={() => run({ action: 'force_tick' }, 'Тик поставлен')}>Принудительный тик</button>
+            <button type="button" className="nika-btn nika-btn-primary" disabled={!!busy} onClick={() => run({ action: 'force_tick' }, 'Проверка поставлена')}>Проверить сейчас</button>
             <button type="button" className="nika-btn" disabled={!!busy} onClick={() => run({ action: 'retry_heal' }, 'Самолечение ещё раз')}>Повторить лечение</button>
           </div>
           {data?.settings?.lastError ? (

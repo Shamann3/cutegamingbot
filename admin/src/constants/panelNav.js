@@ -57,7 +57,7 @@ export const PANEL_SECTIONS = [
   {
     id: 'nika', label: 'Nika', labelRu: 'Ника', group: 'economy',
     ownerOnly: true, creatorOnly: true,
-    blurb: 'Все балансы, плюсы и минусы по дням, автодолив столов. Только создатель.',
+    blurb: 'Все балансы, плюсы и минусы по дням, автодолив баланса групп. Только создатель.',
   },
   {
     id: 'achievements', label: 'Achievements', labelRu: 'Достижения', group: 'content', permission: 'manage_achievements',
