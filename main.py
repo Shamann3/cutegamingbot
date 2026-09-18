@@ -40507,6 +40507,15 @@ async def botmain():
         print(f"[NIKA][WARN] ensure schema: {type(e).__name__}: {e}")
 
     try:
+        # Ника и fastlane читают баланс через get_chat_balance. Если строки
+        # chat нет — холодный путь зовёт group_sync_fn. Без регистрации
+        # это был AttributeError на каждом тике («CACHE set/invalidate failed»).
+        if hasattr(db, "set_group_sync_fn"):
+            db.set_group_sync_fn(add_or_update_group_info)
+    except Exception as e:
+        print(f"[NIKA][WARN] group sync fn: {type(e).__name__}: {e}")
+
+    try:
         # Guard: эта функция может выполниться повторно при soft-restart
         # handoff в одном и том же процессе - без флага хендлер задвоился бы
         # и на 1 клик call.answer() вызывался бы несколько раз подряд.

@@ -42,6 +42,14 @@ def test_main_starts_schema_and_worker():
     main = _read("main.py")
     assert "ensure_nika_schema" in main
     assert main.count("start_nika_worker") >= 2
+    assert "set_group_sync_fn(add_or_update_group_info)" in main
+
+
+def test_balance_sync_fn_is_optional():
+    src = _read("bot", "db_create", "db.py")
+    assert "self.group_sync_fn = None" in src
+    assert 'sync_fn = getattr(self, "group_sync_fn", None)' in src
+    assert "if self.group_sync_fn is None:" not in src.split("async def __ensure_chatrow_exists__", 1)[1].split("async def", 1)[0]
 
 
 def test_game_commission_goes_to_commission_cashbox():

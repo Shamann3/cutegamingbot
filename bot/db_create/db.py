@@ -768,6 +768,9 @@ class Database:
         # ✅ Отдельные кэши только для баланса (уникальные имена)
         self.__CACHE_CHATBAL_FASTLANE__: Dict [ int , _BalCacheCell ] = {}
         self.__CACHE_CHATBAL_NEGGUARD__: Dict [ int , float ] = {}
+        # Холодный путь get_chat_balance зовёт это, если строки chat нет.
+        # Пока main не вызвал set_group_sync_fn — None, без AttributeError.
+        self.group_sync_fn = None
 
         # ------------------------------
         # Учёт сообщений (статистика chatchange / chat.text)
@@ -22712,7 +22715,8 @@ class Database:
             self.anarch_print(f"SYNC skipped negguard chat_id={chat_id}")
             return False
 
-        if self.group_sync_fn is None:
+        sync_fn = getattr(self, "group_sync_fn", None)
+        if sync_fn is None:
             self.anarch_print("SYNC FN is not set. Call db.set_group_sync_fn(add_or_update_group_info) in main.py")
             return False
 
@@ -22727,7 +22731,7 @@ class Database:
             self.anarch_print(f"SYNC start chat_id={chat_id}")
             try:
                 ok = await asyncio.wait_for(
-                    self.group_sync_fn(bot, chat_id, self),
+                    sync_fn(bot, chat_id, self),
                     timeout=self.BALANCE_SYNC_TIMEOUT
                 )
             except Exception as e:

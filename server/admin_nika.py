@@ -340,6 +340,150 @@ def _forbidden() -> List[int]:
     return forbidden_managed_ids()
 
 
+def forecast_tick(
+    settings: Dict[str, Any],
+    group_rows: List[Any],
+    group_out: List[Dict[str, Any]],
+    ladder: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Что сделает следующий тик — той же формулой, что engine, без движения кут.
+
+    Сбор излишка здесь честно остаётся «ждёт выдержку»: без окна истории
+    Ника свежие куты не снимает, и панель это не прячет.
+    """
+    from bot.runtime.nika.policy import (
+        SOURCE_LADDER,
+        allocate_from_ladder,
+        dead_zone,
+        plan_topup,
+    )
+    from bot.runtime.nika.store import policy_from_row
+
+    if not bool(settings.get("enabled")):
+        return {
+            "mode": "paused",
+            "summary": "Ника на паузе. Тик смотрит цифры, но куты не двигает.",
+            "items": [],
+        }
+
+    dry = bool(settings.get("dry_run"))
+    titles = {int(cid): title for cid, title in SOURCE_LADDER}
+    avail: Dict[int, int] = {}
+    order: List[int] = []
+    for src in ladder or []:
+        cid = int(src["chatId"])
+        avail[cid] = _as_int(src.get("balance"))
+        order.append(cid)
+    if not order:
+        order = [int(cid) for cid, _ in SOURCE_LADDER]
+        for cid in order:
+            avail.setdefault(cid, 0)
+
+    row_by_id: Dict[int, Any] = {}
+    for row in group_rows or []:
+        try:
+            row_by_id[int(row["chat_id"])] = row
+        except Exception:
+            continue
+
+    items: List[Dict[str, Any]] = []
+    for item in group_out or []:
+        name = str(item.get("name") or item.get("chatId"))
+        chat_id = int(item["chatId"])
+        if not item.get("enabled"):
+            items.append({
+                "chatId": chat_id,
+                "name": name,
+                "action": "paused",
+                "amount": 0,
+                "text": f"{name}: стол на паузе, Ника его не трогает",
+            })
+            continue
+        row = row_by_id.get(chat_id)
+        if row is None:
+            items.append({
+                "chatId": chat_id,
+                "name": name,
+                "action": "hold",
+                "amount": 0,
+                "text": f"{name}: нет настроек политики",
+            })
+            continue
+        policy = policy_from_row(row)
+        balance = _as_int(item.get("balance"))
+        top = plan_topup(policy, balance=balance)
+        if top.action == "topup" and top.amount > 0:
+            sources = tuple((cid, max(0, int(avail.get(cid, 0)))) for cid in order)
+            takes, still = allocate_from_ladder(top.amount, sources)
+            if not takes:
+                items.append({
+                    "chatId": chat_id,
+                    "name": name,
+                    "action": "blocked",
+                    "amount": int(top.amount),
+                    "text": f"{name}: хочет долить {int(top.amount)} кут, лестница пуста",
+                })
+            else:
+                src_id, amt = takes[0]
+                avail[src_id] = max(0, int(avail.get(src_id, 0)) - int(amt))
+                title = titles.get(int(src_id), str(src_id))
+                extra = f", ещё не хватает {int(still)}" if still else ""
+                items.append({
+                    "chatId": chat_id,
+                    "name": name,
+                    "action": "topup",
+                    "amount": int(amt),
+                    "sourceChatId": int(src_id),
+                    "sourceTitle": title,
+                    "text": f"{name}: возьмёт {int(amt)} с «{title}»{extra}",
+                })
+            continue
+
+        surplus = balance - int(policy.target_balance)
+        if surplus > dead_zone(policy):
+            items.append({
+                "chatId": chat_id,
+                "name": name,
+                "action": "watch",
+                "amount": int(surplus),
+                "text": (
+                    f"{name}: излишек {int(surplus)} кут, сбор только после выдержки "
+                    "— свежие куты не снимает"
+                ),
+            })
+            continue
+
+        items.append({
+            "chatId": chat_id,
+            "name": name,
+            "action": "hold",
+            "amount": 0,
+            "text": f"{name}: {top.reason}",
+        })
+
+    n_top = sum(1 for i in items if i["action"] == "topup")
+    n_blk = sum(1 for i in items if i["action"] == "blocked")
+    n_watch = sum(1 for i in items if i["action"] == "watch")
+    if dry:
+        summary = "Сухой прогон: посчитает шаг, куты не тронет."
+    elif n_blk and not n_top:
+        summary = "Хочет долить, но на лестнице пусто."
+    elif n_top:
+        summary = f"На следующем тике дольёт {n_top} стол(а). Излишек снимет только после выдержки."
+    elif n_watch:
+        summary = "Столы выше цели. Сбор ждёт выдержку — Ника не снимает свежие куты сразу."
+    elif not items:
+        summary = "Столов под Никой нет."
+    else:
+        summary = "Столы в мёртвой зоне. Следующий тик ничего не двинет."
+
+    return {
+        "mode": "dry" if dry else "live",
+        "summary": summary,
+        "items": items,
+    }
+
+
 async def pulse() -> Dict[str, Any]:
     """Короткий снимок для красной полосы. Без движения денег."""
     await _ensure()
@@ -386,6 +530,7 @@ async def pulse() -> Dict[str, Any]:
             "gap": target - balance,
             "enabled": enabled,
             "starving": dry,
+            "speedMode": row["speed_mode"] or "auto",
         }
         group_out.append(item)
         if dry:
@@ -469,6 +614,8 @@ async def pulse() -> Dict[str, Any]:
         "incidents": [_incident_out(r) for r in open_rows],
         "groups": group_out,
         "ladder": ladder,
+        "forecast": forecast_tick(settings, groups, group_out, ladder),
+        "tickIntervalSec": _as_int(settings.get("tick_interval_sec"), 180),
     }
 
 

@@ -552,8 +552,7 @@ tr:hover td {
 .panel-layout > .arc-shell,
 .panel-layout > .ach-page,
 .panel-layout > .gbl-page,
-.panel-layout > .grp-page,
-.panel-layout > .nika-page {
+.panel-layout > .grp-page:not(.nika-page) {
   animation: atelier-page-in 0.42s var(--e-ease) both;
 }
 

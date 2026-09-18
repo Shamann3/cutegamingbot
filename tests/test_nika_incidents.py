@@ -109,11 +109,18 @@ def test_crisis_strip_exists():
     assert "Только минусы" in section
     assert "NikaSpark" in section
     assert "Самый плюс" in section
+    assert "id: 'machine'" in section
+    assert "nika-machine" in section
+    assert "Следующий тик" in section
+    assert "Путь денег" in section
     chart = _read("admin", "src", "components", "NikaMoneyChart.jsx")
     assert "все балансы" in chart
     css = _read("admin", "src", "styles", "nika.css")
     assert "nika-wallet" in css
     assert "nika-bar-plus" in css
+    assert "nika-machine" in css
+    assert "filter: blur" not in css
+    assert "flex-wrap: wrap" in css
 
 
 def test_flow_calendar_and_extrema():
@@ -140,3 +147,49 @@ def test_flow_calendar_and_extrema():
     assert ext["minusBuckets"] == 1
     assert ext["best"]["net"] == 10
     assert ext["worst"]["net"] == -4
+
+
+def test_forecast_tick_paused_and_topup():
+    import sys
+
+    sys.path.insert(0, str(_ROOT / "server"))
+    from admin_nika import forecast_tick
+    from bot.config.config import GAME_COMMISSION_CHAT_ID
+    from bot.runtime.nika.schema import FIRST_MANAGED_CHAT_ID, FIRST_MANAGED_TARGET
+
+    paused = forecast_tick({"enabled": False}, [], [], [])
+    assert paused["mode"] == "paused"
+    assert paused["items"] == []
+
+    row = {
+        "chat_id": FIRST_MANAGED_CHAT_ID,
+        "target_balance": FIRST_MANAGED_TARGET,
+        "speed_mode": "medium",
+        "dead_zone_pct": 0.05,
+        "dead_zone_min": 100,
+        "max_transfer": 1000,
+        "max_daily_topup": 10000,
+        "max_daily_sweep": 10000,
+        "sweep_share": 0.25,
+        "sweep_delay_sec": 3600,
+        "sweep_cooldown_sec": 1800,
+    }
+    groups = [{
+        "chatId": FIRST_MANAGED_CHAT_ID,
+        "name": "Official",
+        "balance": 0,
+        "target": FIRST_MANAGED_TARGET,
+        "gap": FIRST_MANAGED_TARGET,
+        "enabled": True,
+        "starving": True,
+    }]
+    ladder = [{"chatId": GAME_COMMISSION_CHAT_ID, "title": "комиссии игр", "balance": 800}]
+    live = forecast_tick({"enabled": True, "dry_run": False}, [row], groups, ladder)
+    assert live["mode"] == "live"
+    assert live["items"][0]["action"] == "topup"
+    assert 0 < live["items"][0]["amount"] < FIRST_MANAGED_TARGET
+    assert "комиссии" in live["items"][0]["text"]
+
+    dry_ladder = [{"chatId": GAME_COMMISSION_CHAT_ID, "title": "комиссии игр", "balance": 0}]
+    blocked = forecast_tick({"enabled": True}, [row], groups, dry_ladder)
+    assert blocked["items"][0]["action"] == "blocked"
