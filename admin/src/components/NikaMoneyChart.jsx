@@ -47,6 +47,7 @@ function defaultSpan(len) {
 
 export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
   const wrapRef = useRef(null)
+  const hideTimer = useRef(null)
   const [active, setActive] = useState(null)
   const [tip, setTip] = useState(null)
   const [win, setWin] = useState({ start: 0, span: 0 })
@@ -57,7 +58,15 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
     setWin({ start: Math.max(0, items.length - span), span })
     setActive(null)
     setTip(null)
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current)
+      hideTimer.current = null
+    }
   }, [items.length])
+
+  useEffect(() => () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current)
+  }, [])
 
   const start = Math.max(0, Math.min(win.start, Math.max(0, items.length - 1)))
   const span = Math.max(MIN_SPAN, Math.min(items.length || MIN_SPAN, win.span || items.length))
@@ -117,28 +126,56 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
   const sysLine = sysPts.filter(Boolean)
   const sysPath = sysLine.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
 
-  const setIndex = (next, clientX, clientY) => {
-    const safe = Math.max(0, Math.min(visible.length - 1, next))
-    setActive(safe)
-    const el = wrapRef.current
-    if (!el) return
-    const r = el.getBoundingClientRect()
-    const x = clientX == null ? ((safe + 0.5) / visible.length) * r.width : clientX - r.left
-    const y = clientY == null ? 24 : clientY - r.top
-    setTip({
-      i: safe,
-      left: Math.max(8, Math.min(r.width - 220, x - 110)),
-      top: Math.max(8, Math.min(r.height - 8, y - 12)),
-    })
+  const hideTip = () => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current)
+      hideTimer.current = null
+    }
+    setTip(null)
   }
 
-  const scrub = (clientX, clientY) => {
-    if (!visible.length) return
+  const leaveBar = (event) => {
+    if (event.pointerType === 'touch') return
+    const cls = event.relatedTarget?.getAttribute?.('class') || ''
+    if (cls.includes('nika-bar-plus') || cls.includes('nika-bar-minus')) return
+    if (hideTimer.current) clearTimeout(hideTimer.current)
+    hideTimer.current = setTimeout(() => setTip(null), 70)
+  }
+
+  const showBarTip = (i, side) => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current)
+      hideTimer.current = null
+    }
+    const safe = Math.max(0, Math.min(visible.length - 1, i))
+    const point = visible[safe]
     const el = wrapRef.current
-    if (!el) return
+    if (!point || !el) return
+    setActive(safe)
     const r = el.getBoundingClientRect()
-    const x = (clientX - r.left) / Math.max(1, r.width)
-    setIndex(Math.floor(x * visible.length), clientX, clientY)
+    const plusH = Number(point.plus) > 0 ? Math.max(10, (Number(point.plus) / metrics.flowMax) * upH) : 0
+    const minusH = Number(point.minus) > 0 ? Math.max(10, (Number(point.minus) / metrics.flowMax) * downH) : 0
+    const cx = PAD.left + gap * safe + gap / 2
+    const y0 = side === 'plus' ? midY - plusH : midY
+    const y1 = side === 'plus' ? midY : midY + minusH
+    const sx = r.width / W
+    const sy = r.height / H
+    const boxW = 148
+    const boxH = 72
+    let left = (cx + barW / 2) * sx + 10
+    let place = 'right'
+    if (left + boxW > r.width - 8) {
+      left = (cx - barW / 2) * sx - boxW - 10
+      place = 'left'
+    }
+    if (left < 8) {
+      left = 8
+      place = 'right'
+    }
+    let top = ((y0 + y1) / 2) * sy - boxH / 2
+    if (top < 8) top = 8
+    if (top + boxH > r.height - 8) top = r.height - boxH - 8
+    setTip({ i: safe, side, left, top, place })
   }
 
   const zoomAt = (frac, factor) => {
@@ -204,28 +241,23 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
       <div
         ref={wrapRef}
         className="nika-chart-touch"
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId)
-          scrub(e.clientX, e.clientY)
-        }}
-        onPointerMove={(e) => scrub(e.clientX, e.clientY)}
-        onPointerLeave={() => setTip(null)}
+        onPointerDown={hideTip}
+        onPointerLeave={hideTip}
         onKeyDown={(e) => {
           if (e.key === 'ArrowLeft') {
             e.preventDefault()
-            setIndex((active == null ? visible.length - 1 : active) - 1)
+            setActive((cur) => Math.max(0, (cur == null ? visible.length - 1 : cur) - 1))
+            hideTip()
           }
           if (e.key === 'ArrowRight') {
             e.preventDefault()
-            setIndex((active == null ? visible.length - 1 : active) + 1)
+            setActive((cur) => Math.min(visible.length - 1, (cur == null ? visible.length - 1 : cur) + 1))
+            hideTip()
           }
         }}
-        role="slider"
+        role="img"
         tabIndex={0}
-        aria-valuemin={0}
-        aria-valuemax={Math.max(0, visible.length - 1)}
-        aria-valuenow={idx}
-        aria-label="Плюсы и минусы. Наведи — подробности. Колесо — масштаб."
+        aria-label="Плюсы и минусы. Подсказка только на зелёном или красном. Колесо — масштаб."
       >
         <svg
           className="nika-chart-svg"
@@ -237,9 +269,9 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
           {sysPath && metrics.hasSystem ? <path className="nika-chart-sys" d={sysPath} fill="none" /> : null}
           {visible.map((p, i) => {
             const cx = PAD.left + gap * i + gap / 2
-            const plusH = ((Number(p.plus) || 0) / metrics.flowMax) * upH
-            const minusH = ((Number(p.minus) || 0) / metrics.flowMax) * downH
-            const on = i === idx
+            const plusH = Number(p.plus) > 0 ? Math.max(10, ((Number(p.plus) || 0) / metrics.flowMax) * upH) : 0
+            const minusH = Number(p.minus) > 0 ? Math.max(10, ((Number(p.minus) || 0) / metrics.flowMax) * downH) : 0
+            const on = tip?.i === i
             return (
               <g key={p.t || i} className={`nika-bar${on ? ' is-on' : ''}`}>
                 {plusH > 0 ? (
@@ -249,11 +281,14 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
                     y={midY - plusH}
                     width={barW}
                     height={plusH}
-                    rx={Math.min(6, barW / 2)}
+                    rx={Math.min(7, barW / 2)}
                     style={{ transformOrigin: `${cx}px ${midY}px`, animationDelay: `${Math.min(i * 18, 420)}ms` }}
+                    onPointerEnter={() => showBarTip(i, 'plus')}
+                    onPointerDown={(e) => { e.stopPropagation(); showBarTip(i, 'plus') }}
+                    onPointerLeave={leaveBar}
                   />
                 ) : (
-                  <circle className="nika-chart-dot is-flat" cx={cx} cy={midY} r={on ? 3.2 : 2.1} />
+                  <circle className="nika-chart-dot is-flat" cx={cx} cy={midY} r={2.1} />
                 )}
                 {minusH > 0 ? (
                   <rect
@@ -262,20 +297,16 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
                     y={midY}
                     width={barW}
                     height={minusH}
-                    rx={Math.min(6, barW / 2)}
+                    rx={Math.min(7, barW / 2)}
                     style={{ transformOrigin: `${cx}px ${midY}px`, animationDelay: `${Math.min(i * 18, 420)}ms` }}
+                    onPointerEnter={() => showBarTip(i, 'minus')}
+                    onPointerDown={(e) => { e.stopPropagation(); showBarTip(i, 'minus') }}
+                    onPointerLeave={leaveBar}
                   />
                 ) : null}
               </g>
             )
           })}
-          <line
-            className="nika-chart-hair"
-            x1={PAD.left + gap * idx + gap / 2}
-            x2={PAD.left + gap * idx + gap / 2}
-            y1={PAD.top}
-            y2={H - PAD.bottom}
-          />
           {visible.map((p, i) => (
             (i === 0 || i === visible.length - 1 || i % tickEvery === 0) ? (
               <text key={`l${i}`} className="nika-chart-tick" x={PAD.left + gap * i + gap / 2} y={H - 8} textAnchor="middle">
@@ -285,25 +316,23 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
           ))}
         </svg>
         {tip && visible[tip.i] && (
-          <aside className="nika-chart-tip" style={{ left: tip.left, top: 8 }} role="status">
-            <b>{visible[tip.i].label}</b>
-            <p>Плюс Ники <em className="nika-plus">+{fullFmt(visible[tip.i].plus)}</em></p>
-            <small>
-              копилка {fullFmt(visible[tip.i].plusVault)} · игры {fullFmt(visible[tip.i].commission)}
-            </small>
-            <p>Минус Ники <em className="nika-minus">−{fullFmt(visible[tip.i].minus)}</em></p>
-            <small>долив баланса групп</small>
-            <p>Итог Ники <em className={(visible[tip.i].net || 0) >= 0 ? 'nika-plus' : 'nika-minus'}>{signedFmt(visible[tip.i].net)}</em></p>
-            {visible[tip.i].system != null ? (
+          <aside
+            key={`${tip.i}-${tip.side}`}
+            className={`nika-chart-tip is-${tip.side} is-${tip.place || 'right'}`}
+            style={{ left: tip.left, top: tip.top }}
+            role="status"
+          >
+            <span className="nika-chart-tip-kicker">{visible[tip.i].label}</span>
+            {tip.side === 'plus' ? (
               <>
-                <p>Все балансы <em>{fullFmt(visible[tip.i].system)}</em></p>
-                <small>
-                  игроки {fullFmt(visible[tip.i].users)} + чаты {fullFmt(visible[tip.i].chats)}
-                  {visible[tip.i].systemDelta != null ? ` · сдвиг ${signedFmt(visible[tip.i].systemDelta)}` : ''}
-                </small>
+                <strong className="nika-plus">+{fullFmt(visible[tip.i].plus)}</strong>
+                <small>копилка {fullFmt(visible[tip.i].plusVault)} · игры {fullFmt(visible[tip.i].commission)}</small>
               </>
             ) : (
-              <small>Срез всех балансов за этот {pointKind} ещё не записан</small>
+              <>
+                <strong className="nika-minus">−{fullFmt(visible[tip.i].minus)}</strong>
+                <small>долив баланса групп</small>
+              </>
             )}
           </aside>
         )}
@@ -312,7 +341,7 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
         <span className="is-plus">вверх — плюс Ники</span>
         <span className="is-minus">вниз — минус Ники</span>
         {metrics.hasSystem ? <span className="is-sys">линия — все балансы в тот день</span> : null}
-        <span>наведи на точку · колесо ближе/дальше</span>
+        <span>наведи на зелёное или красное</span>
       </div>
     </div>
   )

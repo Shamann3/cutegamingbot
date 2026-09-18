@@ -457,37 +457,77 @@
 .grp-page.nika-page .nika-chart-touch {
   position: relative;
   touch-action: none;
-  cursor: crosshair;
+  cursor: default;
   outline: none;
 }
 .grp-page.nika-page .nika-chart-tip {
   position: absolute;
-  z-index: 3;
-  width: 13.4rem;
-  padding: 0.7rem 0.75rem 0.65rem;
-  border-radius: 14px;
-  background: #141416;
-  border: 1px solid rgba(255,255,255,.12);
-  box-shadow: 0 16px 36px -18px rgba(0,0,0,.9);
+  z-index: 4;
+  width: max-content;
+  max-width: 9.6rem;
+  padding: 0.42rem 0.58rem 0.46rem;
+  border-radius: 11px;
+  background: #121214;
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 8px 20px -12px rgba(0,0,0,.92);
   pointer-events: none;
   letter-spacing: 0;
+  animation: nika-tip 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-.grp-page.nika-page .nika-chart-tip b {
+.grp-page.nika-page .nika-chart-tip.is-plus {
+  background: #101610;
+  border-color: rgba(50, 215, 75, 0.42);
+}
+.grp-page.nika-page .nika-chart-tip.is-minus {
+  background: #161010;
+  border-color: rgba(255, 69, 58, 0.42);
+}
+.grp-page.nika-page .nika-chart-tip::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -4px;
+  background: inherit;
+  border: inherit;
+  transform: rotate(45deg);
+}
+.grp-page.nika-page .nika-chart-tip.is-right::after {
+  left: -5px;
+  border-right: 0;
+  border-top: 0;
+}
+.grp-page.nika-page .nika-chart-tip.is-left::after {
+  right: -5px;
+  border-left: 0;
+  border-bottom: 0;
+}
+.grp-page.nika-page .nika-chart-tip-kicker {
   display: block;
-  margin-bottom: 0.35rem;
-  color: #fff;
-  font-size: 0.82rem;
+  color: #8a827c;
+  font-size: 0.62rem;
+  letter-spacing: 0;
 }
-.grp-page.nika-page .nika-chart-tip p {
-  margin: 0.22rem 0 0;
-  color: #d8d0c8;
-  font-size: 0.74rem;
+.grp-page.nika-page .nika-chart-tip strong {
+  display: block;
+  margin-top: 0.08rem;
+  font-size: 0.98rem;
+  font-weight: 740;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  line-height: 1.15;
 }
 .grp-page.nika-page .nika-chart-tip small {
   display: block;
+  margin-top: 0.1rem;
   color: #8a827c;
-  font-size: 0.66rem;
-  line-height: 1.35;
+  font-size: 0.62rem;
+  line-height: 1.28;
+}
+@keyframes nika-tip {
+  from { opacity: 0; transform: translateY(3px) scale(0.96); }
+  to { opacity: 1; transform: none; }
 }
 .grp-page.nika-page .nika-chart-dot { fill: #6e6862; }
 .grp-page.nika-page .nika-id-line {
@@ -506,10 +546,13 @@
   width: 100%;
   height: 228px;
   display: block;
+  pointer-events: none;
 }
 .grp-page.nika-page .nika-chart-mid { stroke: rgba(255,255,255,.12); stroke-width: 1; }
 .grp-page.nika-page .nika-bar-plus,
 .grp-page.nika-page .nika-bar-minus {
+  pointer-events: auto;
+  cursor: pointer;
   transform-box: fill-box;
   animation: nika-bar 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -1094,6 +1137,7 @@ html[data-viewport="desktop"] .grp-page.nika-page .nika-chart-svg {
   .grp-page.nika-page .nika-bar-minus,
   .grp-page.nika-page .nika-skel,
   .grp-page.nika-page .nika-switch::after,
+  .grp-page.nika-page .nika-chart-tip,
   .nika-crisis {
     animation: none !important;
     transition: none !important;

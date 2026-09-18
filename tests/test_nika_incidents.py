@@ -125,6 +125,10 @@ def test_crisis_strip_exists():
     assert "nika-chart-tip" in chart
     assert "Ближе" in chart
     assert "тыс" not in chart
+    assert "showBarTip" in chart
+    assert "onPointerEnter={() => showBarTip(i, 'plus')}" in chart
+    assert "onPointerEnter={() => showBarTip(i, 'minus')}" in chart
+    assert "наведи на зелёное или красное" in chart
     css = _read("admin", "src", "styles", "nika.css")
     assert "nika-wallet" in css
     assert "nika-bar-plus" in css
