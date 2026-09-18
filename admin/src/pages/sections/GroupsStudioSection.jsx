@@ -11,6 +11,7 @@ import { notifyAdmin } from '../../lib/notify'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import DurationUntil from '../../components/DurationUntil'
 import { CaptchaChatBlock, CaptchaOverviewBlock } from '../../components/CaptchaInsights'
+import { CopyableId, CopyableUsername } from '../../components/Copyable'
 
 const PUNISH_ACTIONS = [
   { group: 'В этой группе', items: [
@@ -53,15 +54,6 @@ function shortWhen(iso) {
     return d.toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
   } catch {
     return String(iso).slice(0, 16)
-  }
-}
-
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(String(text))
-    notifyAdmin('Скопировано')
-  } catch {
-    notifyAdmin('Не удалось скопировать', { error: true })
   }
 }
 
@@ -133,9 +125,9 @@ function PersonLine({ title, person, onOpen }) {
       >
         {person.name}
       </strong>
-      <span>{uname || person.user_id}</span>
+      {uname ? <CopyableUsername value={uname} /> : null}
+      <CopyableId value={person.user_id} label="id игрока" />
       {role ? <em className="grp-person-tag">{role}</em> : null}
-      <Chip onClick={() => copyText(person.user_id)}>id</Chip>
     </div>
   )
 }
@@ -401,7 +393,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                 >
                   <strong>{h.name}</strong>
                   <span>{stars(h.level)} · бч {fmt(h.chatbalance)}</span>
-                  <code>{h.chat_id}</code>
+                  <CopyableId value={h.chat_id} label="id группы" />
                 </button>
               ))}
             </div>
@@ -425,13 +417,8 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                       {detail.gbl?.stars_label ? ` · ${detail.gbl.stars_label}` : ''}
                     </p>
                     <div className="grp-id-row">
-                      <code>{chat.chat_id}</code>
-                      <Chip onClick={() => copyText(chat.chat_id)}>копировать id</Chip>
-                      {chat.username ? (
-                        <Chip onClick={() => copyText(`@${String(chat.username).replace(/^@/, '')}`)}>
-                          @{String(chat.username).replace(/^@/, '')}
-                        </Chip>
-                      ) : null}
+                      <CopyableId value={chat.chat_id} label="id группы" />
+                      {chat.username ? <CopyableUsername value={chat.username} label="username группы" /> : null}
                       {chat.link ? (
                         <a className="grp-chip" href={chat.link} target="_blank" rel="noreferrer">ссылка</a>
                       ) : null}

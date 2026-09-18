@@ -1,21 +1,18 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const W = 720
 const H = 248
-const PAD = { top: 16, right: 10, bottom: 30, left: 10 }
+const PAD = { top: 18, right: 12, bottom: 32, left: 12 }
+const MIN_SPAN = 3
 
-function fmt(n) {
-  const v = Math.round(Number(n) || 0)
-  const abs = Math.abs(v)
-  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)} млн`
-  if (abs >= 1000) return `${(v / 1000).toFixed(abs >= 10_000 ? 0 : 1)} тыс`
-  return v.toLocaleString('ru-RU')
+function fullFmt(n) {
+  return new Intl.NumberFormat('ru-RU').format(Math.round(Number(n) || 0))
 }
 
 function signedFmt(n) {
   const v = Number(n) || 0
-  if (v > 0) return `+${fmt(v)}`
-  if (v < 0) return `−${fmt(Math.abs(v))}`
+  if (v > 0) return `+${fullFmt(v)}`
+  if (v < 0) return `−${fullFmt(Math.abs(v))}`
   return '0'
 }
 
@@ -43,26 +40,57 @@ export function NikaSpark({ values = [], className = '' }) {
   )
 }
 
+function defaultSpan(len) {
+  if (len <= 16) return len
+  return 14
+}
+
 export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
   const wrapRef = useRef(null)
   const [active, setActive] = useState(null)
+  const [tip, setTip] = useState(null)
+  const [win, setWin] = useState({ start: 0, span: 0 })
   const items = Array.isArray(points) ? points : []
 
+  useEffect(() => {
+    const span = defaultSpan(items.length)
+    setWin({ start: Math.max(0, items.length - span), span })
+    setActive(null)
+    setTip(null)
+  }, [items.length])
+
+  const start = Math.max(0, Math.min(win.start, Math.max(0, items.length - 1)))
+  const span = Math.max(MIN_SPAN, Math.min(items.length || MIN_SPAN, win.span || items.length))
+  const from = Math.max(0, Math.min(start, Math.max(0, items.length - span)))
+  const visible = items.slice(from, from + span)
+
   const metrics = useMemo(() => {
-    const plusMax = Math.max(0, ...items.map((p) => Number(p.plus) || 0))
-    const minusMax = Math.max(0, ...items.map((p) => Number(p.minus) || 0))
-    const sysVals = items.map((p) => p.system).filter((v) => v != null)
-    const sysMin = sysVals.length ? Math.min(...sysVals) : 0
-    const sysMax = sysVals.length ? Math.max(...sysVals) : 1
+    const plusMax = Math.max(0, ...visible.map((p) => Number(p.plus) || 0))
+    const minusMax = Math.max(0, ...visible.map((p) => Number(p.minus) || 0))
+    const sysVals = visible.map((p) => p.system).filter((v) => v != null)
     return {
-      plusMax,
-      minusMax,
       flowMax: Math.max(1, plusMax, minusMax),
-      sysMin,
-      sysMax,
+      sysMin: sysVals.length ? Math.min(...sysVals) : 0,
+      sysMax: sysVals.length ? Math.max(...sysVals) : 1,
       hasSystem: sysVals.length > 1,
     }
-  }, [items])
+  }, [visible])
+
+  const idx = active == null ? visible.length - 1 : Math.max(0, Math.min(visible.length - 1, active))
+  const selected = visible[idx] || items[items.length - 1]
+
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return undefined
+    const onWheel = (event) => {
+      event.preventDefault()
+      const rect = el.getBoundingClientRect()
+      const frac = (event.clientX - rect.left) / Math.max(1, rect.width)
+      zoomAt(frac, event.deltaY > 0 ? 1.28 : 0.78)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  })
 
   if (!items.length) {
     return (
@@ -73,93 +101,131 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
   }
 
   const innerW = W - PAD.left - PAD.right
-  const midY = PAD.top + (H - PAD.top - PAD.bottom) * 0.55
+  const midY = PAD.top + (H - PAD.top - PAD.bottom) * 0.58
   const upH = midY - PAD.top
   const downH = H - PAD.bottom - midY
-  const gap = innerW / items.length
-  const barW = Math.max(3.5, Math.min(20, gap * 0.52))
-  const idx = active == null ? items.length - 1 : active
-  const selected = items[idx] || items[items.length - 1]
+  const gap = innerW / Math.max(1, visible.length)
+  const barW = Math.max(4, Math.min(22, gap * 0.55))
 
-  const sysPts = items.map((p, i) => {
+  const sysPts = visible.map((p, i) => {
     if (p.system == null) return null
-    const span = Math.max(1, metrics.sysMax - metrics.sysMin)
+    const sysSpan = Math.max(1, metrics.sysMax - metrics.sysMin)
     const x = PAD.left + gap * i + gap / 2
-    const y = PAD.top + (1 - (p.system - metrics.sysMin) / span) * (H - PAD.top - PAD.bottom)
+    const y = PAD.top + (1 - (p.system - metrics.sysMin) / sysSpan) * (H - PAD.top - PAD.bottom)
     return { x, y }
   })
   const sysLine = sysPts.filter(Boolean)
   const sysPath = sysLine.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
-  const sysArea = sysLine.length > 1
-    ? `${sysPath} L${sysLine[sysLine.length - 1].x.toFixed(1)} ${midY} L${sysLine[0].x.toFixed(1)} ${midY} Z`
-    : ''
 
-  const scrub = (clientX) => {
+  const setIndex = (next, clientX, clientY) => {
+    const safe = Math.max(0, Math.min(visible.length - 1, next))
+    setActive(safe)
     const el = wrapRef.current
-    if (!el || !items.length) return
+    if (!el) return
     const r = el.getBoundingClientRect()
-    const x = (clientX - r.left) / Math.max(1, r.width)
-    const next = Math.max(0, Math.min(items.length - 1, Math.floor(x * items.length)))
-    setActive(next)
+    const x = clientX == null ? ((safe + 0.5) / visible.length) * r.width : clientX - r.left
+    const y = clientY == null ? 24 : clientY - r.top
+    setTip({
+      i: safe,
+      left: Math.max(8, Math.min(r.width - 220, x - 110)),
+      top: Math.max(8, Math.min(r.height - 8, y - 12)),
+    })
   }
 
-  const tickEvery = Math.max(1, Math.ceil(items.length / (items.length > 24 ? 6 : 5)))
+  const scrub = (clientX, clientY) => {
+    if (!visible.length) return
+    const el = wrapRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const x = (clientX - r.left) / Math.max(1, r.width)
+    setIndex(Math.floor(x * visible.length), clientX, clientY)
+  }
+
+  const zoomAt = (frac, factor) => {
+    const nextSpan = Math.max(MIN_SPAN, Math.min(items.length, Math.round(span * factor)))
+    const center = from + span * frac
+    let nextStart = Math.round(center - nextSpan / 2)
+    nextStart = Math.max(0, Math.min(Math.max(0, items.length - nextSpan), nextStart))
+    setWin({ start: nextStart, span: nextSpan })
+  }
+
+  const pan = (dir) => {
+    const step = Math.max(1, Math.round(span * 0.35))
+    setWin((cur) => {
+      const next = Math.max(0, Math.min(Math.max(0, items.length - (cur.span || span)), (cur.start || 0) + dir * step))
+      return { ...cur, start: next }
+    })
+  }
+
+  const tickEvery = Math.max(1, Math.ceil(visible.length / (visible.length > 18 ? 6 : 5)))
+  const zoomed = span < items.length
+  const pointKind = String(selected?.t || '').includes('T') && selected?.label?.includes(':') ? 'час' : 'день'
 
   return (
     <div className="nika-chart">
       <div className="nika-chart-readout">
         <div>
-          <span className="nika-plus">+{fmt(selected?.plus)}</span>
-          <small>плюс</small>
+          <span className="nika-plus">+{fullFmt(selected?.plus)}</span>
+          <small>плюс Ники</small>
         </div>
         <div>
-          <span className="nika-minus">−{fmt(selected?.minus)}</span>
-          <small>минус</small>
+          <span className="nika-minus">−{fullFmt(selected?.minus)}</span>
+          <small>минус Ники</small>
         </div>
         <div>
           <span className={(selected?.net || 0) >= 0 ? 'nika-plus' : 'nika-minus'}>
             {signedFmt(selected?.net)}
           </span>
-          <small>{selected?.label || 'итог'}</small>
+          <small>итог Ники · {selected?.label}</small>
         </div>
-        {selected?.systemDelta != null ? (
-          <div>
-            <span className={selected.systemDelta >= 0 ? 'nika-plus' : 'nika-minus'}>
-              {signedFmt(selected.systemDelta)}
-            </span>
-            <small>все балансы</small>
-          </div>
-        ) : selected?.system != null ? (
-          <div>
-            <span>{fmt(selected.system)}</span>
-            <small>система</small>
-          </div>
-        ) : null}
       </div>
+      {selected?.system != null && (
+        <p className="nika-chart-sub">
+          Все балансы в этот {pointKind}: {fullFmt(selected.system)}
+          {selected.users != null ? ` · игроки ${fullFmt(selected.users)}` : ''}
+          {selected.chats != null ? ` + чаты ${fullFmt(selected.chats)}` : ''}
+          {selected.systemDelta != null ? ` · сдвиг ${signedFmt(selected.systemDelta)}` : ''}
+        </p>
+      )}
+
+      <div className="nika-chart-zoom" role="group" aria-label="Масштаб графика">
+        <button type="button" className="nika-chart-zoom-btn" disabled={span <= MIN_SPAN} onClick={() => zoomAt(0.5, 0.7)}>Ближе</button>
+        <button type="button" className="nika-chart-zoom-btn" disabled={span >= items.length} onClick={() => zoomAt(0.5, 1.35)}>Дальше</button>
+        <button type="button" className="nika-chart-zoom-btn" disabled={!zoomed} onClick={() => setWin({ start: 0, span: items.length })}>Все {items.length}</button>
+        {zoomed ? (
+          <>
+            <button type="button" className="nika-chart-zoom-btn" disabled={from <= 0} onClick={() => pan(-1)}>←</button>
+            <button type="button" className="nika-chart-zoom-btn" disabled={from + span >= items.length} onClick={() => pan(1)}>→</button>
+          </>
+        ) : null}
+        <em>{visible[0]?.label} — {visible[visible.length - 1]?.label}</em>
+      </div>
+
       <div
         ref={wrapRef}
         className="nika-chart-touch"
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId)
-          scrub(e.clientX)
+          scrub(e.clientX, e.clientY)
         }}
-        onPointerMove={(e) => scrub(e.clientX)}
+        onPointerMove={(e) => scrub(e.clientX, e.clientY)}
+        onPointerLeave={() => setTip(null)}
         onKeyDown={(e) => {
           if (e.key === 'ArrowLeft') {
             e.preventDefault()
-            setActive((cur) => Math.max(0, (cur == null ? items.length - 1 : cur) - 1))
+            setIndex((active == null ? visible.length - 1 : active) - 1)
           }
           if (e.key === 'ArrowRight') {
             e.preventDefault()
-            setActive((cur) => Math.min(items.length - 1, (cur == null ? items.length - 1 : cur) + 1))
+            setIndex((active == null ? visible.length - 1 : active) + 1)
           }
         }}
         role="slider"
         tabIndex={0}
         aria-valuemin={0}
-        aria-valuemax={items.length - 1}
+        aria-valuemax={Math.max(0, visible.length - 1)}
         aria-valuenow={idx}
-        aria-label="Плюсы и минусы по времени. Стрелки листают, палец выбирает день или час."
+        aria-label="Плюсы и минусы. Наведи — подробности. Колесо — масштаб."
       >
         <svg
           className="nika-chart-svg"
@@ -167,16 +233,9 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
           preserveAspectRatio="none"
           aria-hidden="true"
         >
-          <defs>
-            <linearGradient id="nikaSysFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
-              <stop offset="100%" stopColor="rgba(255,255,255,0)" />
-            </linearGradient>
-          </defs>
           <line className="nika-chart-mid" x1={PAD.left} x2={W - PAD.right} y1={midY} y2={midY} />
-          {sysArea && metrics.hasSystem ? <path className="nika-chart-sys-fill" d={sysArea} /> : null}
           {sysPath && metrics.hasSystem ? <path className="nika-chart-sys" d={sysPath} fill="none" /> : null}
-          {items.map((p, i) => {
+          {visible.map((p, i) => {
             const cx = PAD.left + gap * i + gap / 2
             const plusH = ((Number(p.plus) || 0) / metrics.flowMax) * upH
             const minusH = ((Number(p.minus) || 0) / metrics.flowMax) * downH
@@ -191,12 +250,11 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
                     width={barW}
                     height={plusH}
                     rx={Math.min(6, barW / 2)}
-                    style={{
-                      transformOrigin: `${cx}px ${midY}px`,
-                      animationDelay: `${Math.min(i * 18, 420)}ms`,
-                    }}
+                    style={{ transformOrigin: `${cx}px ${midY}px`, animationDelay: `${Math.min(i * 18, 420)}ms` }}
                   />
-                ) : null}
+                ) : (
+                  <circle className="nika-chart-dot is-flat" cx={cx} cy={midY} r={on ? 3.2 : 2.1} />
+                )}
                 {minusH > 0 ? (
                   <rect
                     className="nika-bar-minus"
@@ -205,10 +263,7 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
                     width={barW}
                     height={minusH}
                     rx={Math.min(6, barW / 2)}
-                    style={{
-                      transformOrigin: `${cx}px ${midY}px`,
-                      animationDelay: `${Math.min(i * 18, 420)}ms`,
-                    }}
+                    style={{ transformOrigin: `${cx}px ${midY}px`, animationDelay: `${Math.min(i * 18, 420)}ms` }}
                   />
                 ) : null}
               </g>
@@ -221,28 +276,46 @@ export default function NikaMoneyChart({ points = [], mode = 'flow' }) {
             y1={PAD.top}
             y2={H - PAD.bottom}
           />
-          {items.map((p, i) => (
-            (i === 0 || i === items.length - 1 || i % tickEvery === 0) ? (
-              <text
-                key={`l${i}`}
-                className="nika-chart-tick"
-                x={PAD.left + gap * i + gap / 2}
-                y={H - 8}
-                textAnchor="middle"
-              >
+          {visible.map((p, i) => (
+            (i === 0 || i === visible.length - 1 || i % tickEvery === 0) ? (
+              <text key={`l${i}`} className="nika-chart-tick" x={PAD.left + gap * i + gap / 2} y={H - 8} textAnchor="middle">
                 {p.label}
               </text>
             ) : null
           ))}
         </svg>
+        {tip && visible[tip.i] && (
+          <aside className="nika-chart-tip" style={{ left: tip.left, top: 8 }} role="status">
+            <b>{visible[tip.i].label}</b>
+            <p>Плюс Ники <em className="nika-plus">+{fullFmt(visible[tip.i].plus)}</em></p>
+            <small>
+              копилка {fullFmt(visible[tip.i].plusVault)} · игры {fullFmt(visible[tip.i].commission)}
+            </small>
+            <p>Минус Ники <em className="nika-minus">−{fullFmt(visible[tip.i].minus)}</em></p>
+            <small>долив баланса групп</small>
+            <p>Итог Ники <em className={(visible[tip.i].net || 0) >= 0 ? 'nika-plus' : 'nika-minus'}>{signedFmt(visible[tip.i].net)}</em></p>
+            {visible[tip.i].system != null ? (
+              <>
+                <p>Все балансы <em>{fullFmt(visible[tip.i].system)}</em></p>
+                <small>
+                  игроки {fullFmt(visible[tip.i].users)} + чаты {fullFmt(visible[tip.i].chats)}
+                  {visible[tip.i].systemDelta != null ? ` · сдвиг ${signedFmt(visible[tip.i].systemDelta)}` : ''}
+                </small>
+              </>
+            ) : (
+              <small>Срез всех балансов за этот {pointKind} ещё не записан</small>
+            )}
+          </aside>
+        )}
       </div>
       <div className="nika-chart-legend">
-        <span className="is-plus">плюс — копилка и игры</span>
-        <span className="is-minus">минус — долив баланса групп</span>
-        {metrics.hasSystem ? <span className="is-sys">линия — все балансы</span> : null}
+        <span className="is-plus">вверх — плюс Ники</span>
+        <span className="is-minus">вниз — минус Ники</span>
+        {metrics.hasSystem ? <span className="is-sys">линия — все балансы в тот день</span> : null}
+        <span>наведи на точку · колесо ближе/дальше</span>
       </div>
     </div>
   )
 }
 
-export { fmt as fmtShort, signedFmt }
+export { fullFmt as fmtShort, signedFmt }

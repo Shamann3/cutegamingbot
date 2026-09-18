@@ -8,6 +8,7 @@ import {
 } from '../../lib/adminClient'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
 import UserLookupPreview from '../../components/UserLookupPreview'
+import { CopyableId, CopyableUsername } from '../../components/Copyable'
 
 const API_PREFIX = import.meta.env.VITE_ADMIN_API_PREFIX || '/admin/api'
 
@@ -633,8 +634,8 @@ function AppealCard({ item, onUpdate }) {
         </span>
         <div className="apl-player-inline">
           <span className="apl-player-name">{item.firstName || item.username || `#${item.userId}`}</span>
-          {item.username && <span className="apl-username">@{item.username}</span>}
-          <span className="apl-uid">ID: {item.userId}</span>
+          {item.username && <span className="apl-username"><CopyableUsername value={item.username} /></span>}
+          <span className="apl-uid"><CopyableId value={item.userId} /></span>
         </div>
         <span className="apl-date">{fmtDateShort(item.createdAt)}</span>
         <span className="apl-chevron">{open ? '▲' : '▼'}</span>

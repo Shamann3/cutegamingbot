@@ -10,6 +10,7 @@ import {
 } from '../../lib/adminClient'
 import { showToast } from '../../components/ToastHost'
 import CountUp from '../../components/CountUp'
+import Copyable, { CopyableId, CopyableUsername } from '../../components/Copyable'
 import NikaMoneyChart, { NikaSpark } from '../../components/NikaMoneyChart'
 import { useIsPhone } from '../../lib/useIsDesktop'
 
@@ -189,6 +190,20 @@ function FlowStrip({ plus, minus, plusHint, minusHint, compact }) {
   )
 }
 
+function IdentityLine({ chatId, username, name, link }) {
+  const uname = String(username || '').trim()
+  return (
+    <p className="nika-id-line">
+      {name ? <span className="nika-id-name">{name}</span> : null}
+      <CopyableId value={chatId} label="id группы" />
+      {uname ? <CopyableUsername value={uname} label="username группы" /> : null}
+      {link && /^https?:\/\//i.test(link) ? (
+        <a className="nika-id-link" href={link} target="_blank" rel="noreferrer">ссылка</a>
+      ) : null}
+    </p>
+  )
+}
+
 function GroupBalanceCard({ group, flow, extra }) {
   const gap = Number(group.gap) || 0
   return (
@@ -197,7 +212,8 @@ function GroupBalanceCard({ group, flow, extra }) {
         <h3>{group.name}</h3>
         <span>{group.enabled ? speedLabel(group.speedMode) : 'пауза'}</span>
       </header>
-      <p className="nika-bal-kicker">Баланс группы</p>
+      <IdentityLine chatId={group.chatId} username={group.username} link={group.link} />
+      <p className="nika-bal-kicker">Баланс этой группы</p>
       <strong className="nika-bal-value"><CountUp value={Number(group.balance) || 0} duration={1000} /></strong>
       <div className="nika-bal-meta">
         <span>цель {fmt(group.target)}</span>
@@ -500,6 +516,7 @@ export default function NikaSection() {
                       <h3>{cashTitle(src)}</h3>
                       <span>{src.balance <= 0 ? 'пусто' : 'есть куты'}</span>
                     </header>
+                    <IdentityLine chatId={src.chatId} />
                     <p className="nika-bal-kicker">Баланс кассы</p>
                     <strong className="nika-bal-value"><CountUp value={Number(src.balance) || 0} duration={1000} /></strong>
                     <p className="nika-help">{cashHint(src)}</p>
@@ -512,6 +529,7 @@ export default function NikaSection() {
                   <h3>Копилка</h3>
                   <span>чистая прибыль</span>
                 </header>
+                <IdentityLine chatId={vaultId} />
                 <p className="nika-bal-kicker">Баланс копилки</p>
                 <strong className="nika-bal-value nika-plus"><CountUp value={Number(universe.vault) || 0} duration={1000} /></strong>
                 <FlowStrip
@@ -613,7 +631,13 @@ export default function NikaSection() {
               <div>
                 <p>Все балансы</p>
                 <strong><CountUp value={Number(universe.system) || 0} duration={1400} /></strong>
-                <span>игроки {fmt(universe.users)} + чаты {fmt(universe.chats)}</span>
+                <span className="nika-wallet-eq">
+                  игроки {fmt(universe.users)} + все чаты {fmt(universe.chats)}
+                </span>
+                <em className="nika-wallet-note">
+                  Это сумма всех игроков и всех чатов. Баланс одной группы тут не обязан совпадать — он входит в «чаты».
+                  Группы под Никой сейчас {fmt(universe.managed)}.
+                </em>
               </div>
               <NikaSpark values={sparkValues} />
             </div>
@@ -627,6 +651,7 @@ export default function NikaSection() {
                 {universe.hotList.map((h) => (
                   <li key={h.chatId}>
                     <span>{h.name}</span>
+                    <CopyableId value={h.chatId} label="id группы" />
                     <em>+{fmt(h.excess)}</em>
                   </li>
                 ))}
@@ -637,7 +662,7 @@ export default function NikaSection() {
           <div className="nika-universe">
             <UniCard label="Игроки" value={universe.users} hint="сумма балансов" />
             <UniCard label="Все чаты" value={universe.chats} hint="включая служебные" />
-            <UniCard label="Система" value={universe.system} hint="игроки + чаты" tone="hero" />
+            <UniCard label="Все балансы" value={universe.system} hint="игроки + все чаты" tone="hero" />
             <UniCard label="Живые группы" value={universe.liveChats} hint="без служебных касс" />
             <UniCard label="Баланс групп" value={universe.managed} hint="под автодоливом" />
             <UniCard label="Копилка" value={universe.vault} hint="чистая прибыль" tone="plus" />
@@ -665,10 +690,10 @@ export default function NikaSection() {
                     <span className="nika-minus">−{fmt(d.minus)}</span>
                     <strong className={(d.net || 0) >= 0 ? 'nika-plus' : 'nika-minus'}>{signed(d.net)}</strong>
                     {sys != null ? (
-                      <em className={sys >= 0 ? 'nika-plus' : 'nika-minus'} title="Изменение всех балансов">
-                        все {signed(sys)}
+                      <em className={sys >= 0 ? 'nika-plus' : 'nika-minus'} title="Как сдвинулась сумма игроки+чаты">
+                        сдвиг {signed(sys)}
                       </em>
-                    ) : <em className="nika-mute">все —</em>}
+                    ) : <em className="nika-mute">сдвиг —</em>}
                   </li>
                 )
               })}
@@ -679,8 +704,8 @@ export default function NikaSection() {
               </p>
             )}
             <p className="nika-help">
-              «Все» — как сдвинулась сумма игроки+чаты за этот {range === 'hours' ? 'час' : 'день'}.
-              Пустые строки тоже нарочно: так видно, когда ничего не двигалось.
+              «Сдвиг» — как изменилась сумма игроки+все чаты за этот {range === 'hours' ? 'час' : 'день'}.
+              Это не баланс одной группы. Пустые строки нарочно: так видно тишину.
             </p>
           </section>
 
@@ -696,6 +721,7 @@ export default function NikaSection() {
                       <h3>{cashTitle(src)}</h3>
                       <span>{src.balance <= 0 ? 'пусто' : 'есть куты'}</span>
                     </header>
+                    <IdentityLine chatId={src.chatId} />
                     <p className="nika-bal-kicker">Баланс кассы</p>
                     <strong className="nika-bal-value"><CountUp value={Number(src.balance) || 0} duration={1000} /></strong>
                     <p className="nika-help">{cashHint(src)}</p>
@@ -720,6 +746,7 @@ export default function NikaSection() {
             <article key={`dry-${g.chatId}`} className="nika-card is-critical">
               <p className="nika-card-code">Нет кут</p>
               <h3>{g.name}</h3>
+              <IdentityLine chatId={g.chatId} username={g.username} link={g.link} />
               <p>Баланс группы пуст: 0 из {fmt(g.target)}. Если в играх и кассах тоже ноль — доливать не из чего.</p>
               <div className="nika-card-actions">
                 <button type="button" className="nika-btn nika-btn-primary" disabled={!!busy} onClick={() => run({ action: 'force_topup', chat_id: g.chatId }, 'Долив в очереди')}>Долить</button>
@@ -799,7 +826,11 @@ export default function NikaSection() {
                 <li key={h.chatId}>
                   <button type="button" className="nika-hit" disabled={h.forbidden} onClick={() => setDraft({ chatId: h.chatId, target: draft.target, speed: draft.speed })}>
                     <strong>{h.name}</strong>
-                    <span>{h.chatId} · {fmt(h.balance)} кут{h.forbidden ? ' · служебная' : ''}</span>
+                    <span>
+                      <CopyableId value={h.chatId} label="id группы" />
+                      {h.username ? <> · <CopyableUsername value={h.username} /></> : null}
+                      {' · '}{fmt(h.balance)} кут{h.forbidden ? ' · служебная' : ''}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -885,7 +916,15 @@ export default function NikaSection() {
                       <span>{when(t.createdAt)}</span>
                     </div>
                     <b>{t.sign < 0 ? '−' : t.sign > 0 ? '+' : ''}{fmt(t.amount)}</b>
-                    <small>{t.sourceChatId} → {t.destChatId}</small>
+                    <small>
+                      <Copyable value={t.sourceChatId} label="id">{t.sourceUsername ? `@${String(t.sourceUsername).replace(/^@/, '')}` : (t.sourceName || t.sourceChatId)}</Copyable>
+                      {' → '}
+                      <Copyable value={t.destChatId} label="id">{t.destUsername ? `@${String(t.destUsername).replace(/^@/, '')}` : (t.destName || t.destChatId)}</Copyable>
+                      {' · '}
+                      <CopyableId value={t.sourceChatId} />
+                      {' → '}
+                      <CopyableId value={t.destChatId} />
+                    </small>
                     <em className={`nika-pill nika-pill-${toneOf(t.status)}`}>{statusLabel(t.status)}</em>
                     {t.status === 'done' && !t.revertedAt ? (
                       <button type="button" className="nika-btn nika-btn-sm" disabled={!!busy} onClick={() => run({ action: 'revert', transfer_id: t.id }, 'Возврат в очереди')}>

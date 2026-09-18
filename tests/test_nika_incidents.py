@@ -105,6 +105,8 @@ def test_crisis_strip_exists():
     section = _read("admin", "src", "pages", "sections", "NikaSection.jsx")
     assert "grp-page nika-page" in section
     assert "Все балансы" in section
+    assert "Баланс этой группы" in section
+    assert "CopyableId" in section
     assert "NikaMoneyChart" in section
     assert "Только минусы" in section
     assert "NikaSpark" in section
@@ -119,13 +121,18 @@ def test_crisis_strip_exists():
     assert "слот" not in section.lower()
     assert "стол" not in section.lower()
     chart = _read("admin", "src", "components", "NikaMoneyChart.jsx")
-    assert "все балансы" in chart
+    assert "все балансы" in chart.lower()
+    assert "nika-chart-tip" in chart
+    assert "Ближе" in chart
+    assert "тыс" not in chart
     css = _read("admin", "src", "styles", "nika.css")
     assert "nika-wallet" in css
     assert "nika-bar-plus" in css
     assert "nika-machine" in css
     assert "nika-bal-value" in css
     assert "nika-flow-hero" in css
+    assert "nika-chart-tip" in css
+    assert "nika-id-line" in css
     assert "nika-meter" not in css
     assert "nika-src-track" not in css
     assert "filter: blur" not in css

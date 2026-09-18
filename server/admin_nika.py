@@ -538,7 +538,8 @@ async def pulse() -> Dict[str, Any]:
         settings = await fetch_settings(conn) or {}
         groups = await conn.fetch(
             """
-            SELECT s.*, COALESCE(c.chatbalance, 0)::bigint AS balance, c.namechat
+            SELECT s.*, COALESCE(c.chatbalance, 0)::bigint AS balance,
+                   c.namechat, c.usernamechat, c.chatlink
             FROM nika_group_settings s
             LEFT JOIN chat c ON c.chat_id = s.chat_id
             ORDER BY s.enabled DESC, s.chat_id
@@ -560,7 +561,8 @@ async def pulse() -> Dict[str, Any]:
 
     starving: List[Dict[str, Any]] = []
     group_out: List[Dict[str, Any]] = []
-    for row in groups:
+    for raw in groups:
+        row = dict(raw)
         balance = _as_int(row["balance"])
         target = _as_int(row["target_balance"])
         enabled = bool(row["enabled"])
@@ -568,6 +570,8 @@ async def pulse() -> Dict[str, Any]:
         item = {
             "chatId": int(row["chat_id"]),
             "name": row["namechat"] or str(row["chat_id"]),
+            "username": row.get("usernamechat") or "",
+            "link": row.get("chatlink") or "",
             "balance": balance,
             "target": target,
             "gap": target - balance,
@@ -675,8 +679,15 @@ async def overview() -> Dict[str, Any]:
         recent = await inc.list_recent(conn, limit=40)
         transfers = await conn.fetch(
             """
-            SELECT * FROM nika_transfer_log
-            ORDER BY created_at DESC
+            SELECT t.*,
+                   sc.namechat AS source_name,
+                   sc.usernamechat AS source_username,
+                   dc.namechat AS dest_name,
+                   dc.usernamechat AS dest_username
+            FROM nika_transfer_log t
+            LEFT JOIN chat sc ON sc.chat_id = t.source_chat_id
+            LEFT JOIN chat dc ON dc.chat_id = t.dest_chat_id
+            ORDER BY t.created_at DESC
             LIMIT 60
             """
         )
@@ -732,7 +743,11 @@ def _transfer_out(row: Dict[str, Any]) -> Dict[str, Any]:
         "status": row.get("status"),
         "chatId": row.get("chat_id"),
         "sourceChatId": row.get("source_chat_id"),
+        "sourceName": row.get("source_name") or "",
+        "sourceUsername": row.get("source_username") or "",
         "destChatId": row.get("dest_chat_id"),
+        "destName": row.get("dest_name") or "",
+        "destUsername": row.get("dest_username") or "",
         "amount": _as_int(row.get("amount")),
         "sign": sign,
         "reason": row.get("reason") or "",

@@ -219,11 +219,23 @@
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.grp-page.nika-page .nika-wallet-top span {
+.grp-page.nika-page .nika-wallet-top span,
+.grp-page.nika-page .nika-wallet-eq {
   display: block;
   margin-top: 0.45rem;
   color: #9a928b;
   font-size: 0.82rem;
+  letter-spacing: 0;
+}
+.grp-page.nika-page .nika-wallet-note {
+  display: block;
+  margin-top: 0.45rem;
+  max-width: 36rem;
+  color: #7a736c;
+  font-size: 0.74rem;
+  font-style: normal;
+  line-height: 1.4;
+  letter-spacing: 0;
 }
 .grp-page.nika-page .nika-wallet-meta {
   display: flex;
@@ -402,12 +414,93 @@
   font-size: 1.05rem;
   font-weight: 720;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
 }
-.grp-page.nika-page .nika-chart-readout small { color: #8a827c; font-size: 0.66rem; }
+.grp-page.nika-page .nika-chart-readout small {
+  color: #8a827c;
+  font-size: 0.66rem;
+  letter-spacing: 0;
+}
+.grp-page.nika-page .nika-chart-sub {
+  margin: 0 0 0.55rem;
+  color: #9a928b;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+.grp-page.nika-page .nika-chart-zoom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 0.45rem;
+}
+.grp-page.nika-page .nika-chart-zoom-btn {
+  min-height: 32px;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: #1c1c1e;
+  color: #efe8e2;
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+  letter-spacing: 0;
+}
+.grp-page.nika-page .nika-chart-zoom-btn:disabled { opacity: 0.35; cursor: default; }
+.grp-page.nika-page .nika-chart-zoom em {
+  font-style: normal;
+  color: #8a827c;
+  font-size: 0.7rem;
+  letter-spacing: 0;
+}
 .grp-page.nika-page .nika-chart-touch {
+  position: relative;
   touch-action: none;
-  cursor: ew-resize;
+  cursor: crosshair;
   outline: none;
+}
+.grp-page.nika-page .nika-chart-tip {
+  position: absolute;
+  z-index: 3;
+  width: 13.4rem;
+  padding: 0.7rem 0.75rem 0.65rem;
+  border-radius: 14px;
+  background: #141416;
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 16px 36px -18px rgba(0,0,0,.9);
+  pointer-events: none;
+  letter-spacing: 0;
+}
+.grp-page.nika-page .nika-chart-tip b {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #fff;
+  font-size: 0.82rem;
+}
+.grp-page.nika-page .nika-chart-tip p {
+  margin: 0.22rem 0 0;
+  color: #d8d0c8;
+  font-size: 0.74rem;
+}
+.grp-page.nika-page .nika-chart-tip small {
+  display: block;
+  color: #8a827c;
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+.grp-page.nika-page .nika-chart-dot { fill: #6e6862; }
+.grp-page.nika-page .nika-id-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+  margin: 0.35rem 0 0;
+  color: #9a928b;
+  font-size: 0.74rem;
+  letter-spacing: 0;
+}
+.grp-page.nika-page .nika-id-link {
+  color: #cfc6be;
 }
 .grp-page.nika-page .nika-chart-svg {
   width: 100%;

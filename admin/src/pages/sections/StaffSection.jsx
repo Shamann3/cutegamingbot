@@ -42,6 +42,7 @@ import {
 import AdminSelect from '../../components/AdminSelect'
 import CountUp from '../../components/CountUp'
 import { showToast } from '../../components/ToastHost'
+import { CopyableId, CopyableUsername } from '../../components/Copyable'
 import { APPLICATION_QUESTIONS, PAYOUT_OPTIONS } from '../../config/applicationQuestions'
 import PayrollSalariesTab from './payroll/SalariesTab'
 import PayrollBonusesTab from './payroll/BonusesTab'
@@ -1074,6 +1075,8 @@ function LedgerTab({ isProjectCreator = false }) {
             <div key={p.id} className="staff-member-row">
               <div className="staff-member-info">
                 <span className="staff-card-name">{p.firstName || (p.username ? `@${p.username}` : `ID ${p.userId}`)}</span>
+                {p.username ? <CopyableUsername value={p.username} /> : null}
+                {p.userId ? <CopyableId value={p.userId} /> : null}
                 <span className="staff-badge" style={{ '--badge-color': '#fbbf24' }}>
                   {p.kind === 'advance' ? 'аванс' : 'выплата'} {p.amount} {p.method || ''}
                 </span>

@@ -15,7 +15,9 @@ body,
 #root textarea,
 #root select,
 #root [contenteditable="true"],
-#root [contenteditable=""] {
+#root [contenteditable=""],
+#root [data-copyable],
+#root [data-copyable] * {
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
   -ms-user-select: text !important;
@@ -23,8 +25,26 @@ body,
   -webkit-touch-callout: default;
 }
 
-#root *:not(input):not(textarea):not(select):not([contenteditable="true"]):not([contenteditable=""])::selection,
-#root *:not(input):not(textarea):not(select):not([contenteditable="true"]):not([contenteditable=""])::-moz-selection {
+#root *:not(input):not(textarea):not(select):not([contenteditable="true"]):not([contenteditable=""]):not([data-copyable])::selection,
+#root *:not(input):not(textarea):not(select):not([contenteditable="true"]):not([contenteditable=""]):not([data-copyable])::-moz-selection {
   background: transparent !important;
   color: inherit !important;
+}
+
+#root [data-copyable],
+#root [data-copyable] * {
+  cursor: text;
+}
+
+#root [data-copyable]::selection,
+#root [data-copyable] *::selection {
+  background: rgba(80, 160, 255, 0.38) !important;
+  color: inherit !important;
+}
+
+.panel-copyable {
+  display: inline;
+  border-bottom: 1px dashed rgba(255,255,255,.28);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
 }

@@ -1,4 +1,4 @@
-import { isTextEntry, isTextEntryEvent } from './isTextEntry'
+import { isCopyableNode, isTextEntry, isTextEntryEvent } from './isTextEntry'
 
 function stop(event) {
   event.preventDefault()
@@ -37,13 +37,15 @@ function onKeyDown(event) {
 function fieldFromNode(node) {
   if (!node) return null
   if (node.nodeType === 3) node = node.parentElement
-  return node?.closest?.('input, textarea, select, [contenteditable="true"], [contenteditable=""]') || null
+  return node?.closest?.('input, textarea, select, [contenteditable="true"], [contenteditable=""], [data-copyable]') || null
 }
 
 function collapseForeignSelection() {
   const sel = window.getSelection?.()
   if (!sel || sel.isCollapsed) return
-  if (isTextEntry(fieldFromNode(sel.anchorNode)) && isTextEntry(fieldFromNode(sel.focusNode))) return
+  const a = fieldFromNode(sel.anchorNode)
+  const b = fieldFromNode(sel.focusNode)
+  if ((isTextEntry(a) || isCopyableNode(a)) && (isTextEntry(b) || isCopyableNode(b))) return
   sel.removeAllRanges()
 }
 

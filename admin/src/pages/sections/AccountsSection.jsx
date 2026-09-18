@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { CopyableId, CopyableUsername } from '../../components/Copyable'
 import {
   fetchAdminAccount,
   fetchRecentAdminAccounts,
@@ -83,8 +84,8 @@ function SearchResult({ row, active, onSelect }) {
     >
       <span className="panel-account-search-name">{row.displayName}</span>
       <span className="panel-account-search-meta">
-        ID {row.userId}
-        {row.username ? ` · @${row.username}` : ''}
+        <CopyableId value={row.userId} label="id игрока" />
+        {row.username ? <> · <CopyableUsername value={row.username} /></> : ''}
         {row.lastClientIp ? ` · ${row.lastClientIp}` : ''}
       </span>
       {row.onlineNow && (
@@ -308,9 +309,9 @@ export default function AccountsSection({ onOpenInUsers }) {
               <div>
                 <h3 className="panel-account-name">{profile.displayName}</h3>
                 {profile.username && (
-                  <p className="panel-account-username">@{profile.username}</p>
+                  <p className="panel-account-username"><CopyableUsername value={profile.username} /></p>
                 )}
-                <p className="panel-account-id">Telegram ID {profile.userId}</p>
+                <p className="panel-account-id"><CopyableId value={profile.userId} label="id игрока" /></p>
                 <div className="panel-account-badges">
                   {profile.onlineNow && (
                     <span className="panel-account-badge panel-account-badge-online">Online</span>
@@ -379,7 +380,7 @@ export default function AccountsSection({ onOpenInUsers }) {
             <article className="panel-shelf panel-account-card">
               <p className="panel-shelf-label">Telegram</p>
               <InfoRow label="Имя" value={[profile.firstName, profile.lastName].filter(Boolean).join(' ') || profile.displayName} />
-              <InfoRow label="Username" value={profile.username ? `@${profile.username}` : '—'} mono />
+              <InfoRow label="Username" value={profile.username ? <CopyableUsername value={profile.username} /> : '—'} mono />
               <InfoRow label="Язык" value={telegram.languageCode} />
               <InfoRow label="Premium" value={telegram.isPremium == null ? '—' : telegram.isPremium ? 'Да' : 'Нет'} />
               <InfoRow label="Профиль обновлён" value={formatDate(profile.profileUpdatedAt)} />

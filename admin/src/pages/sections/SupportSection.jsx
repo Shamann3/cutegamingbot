@@ -11,6 +11,7 @@ import {
 import { showToast } from '../../components/ToastHost'
 import TgPhoto from '../../components/TgPhoto'
 import ImageLightbox from '../../components/ImageLightbox'
+import { CopyableId, CopyableUsername } from '../../components/Copyable'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -190,7 +191,8 @@ function TicketThread({ ticket: initialTicket, onBack, onClosed, onStatusSync })
           <button className="sec-btn sec-btn-ghost sec-btn-sm" onClick={onBack}>← Назад</button>
           <div className="support-thread-title">
             <span className="support-thread-name">{userName(ticket)}</span>
-            {ticket.username && <span className="support-thread-sub">@{ticket.username}</span>}
+            {ticket.username && <span className="support-thread-sub"><CopyableUsername value={ticket.username} /></span>}
+            {ticket.userId ? <span className="support-thread-sub"><CopyableId value={ticket.userId} label="id игрока" /></span> : null}
             {ticket.subject && <span className="support-thread-sub">· {ticket.subject}</span>}
             <span className="staff-badge support-badge-open" style={{ '--badge-color': 'var(--e-text)' }}>
               открыт
@@ -238,7 +240,8 @@ function TicketThread({ ticket: initialTicket, onBack, onClosed, onStatusSync })
         <button className="sec-btn sec-btn-ghost sec-btn-sm" onClick={onBack}>← Назад</button>
         <div className="support-thread-title">
           <span className="support-thread-name">{userName(ticket)}</span>
-          {ticket.username && <span className="support-thread-sub">@{ticket.username}</span>}
+          {ticket.username && <span className="support-thread-sub"><CopyableUsername value={ticket.username} /></span>}
+          {ticket.userId ? <span className="support-thread-sub"><CopyableId value={ticket.userId} label="id игрока" /></span> : null}
           {ticket.subject && <span className="support-thread-sub">· {ticket.subject}</span>}
           <span
             className={`staff-badge ${isOpen ? 'support-badge-open' : ''}`}

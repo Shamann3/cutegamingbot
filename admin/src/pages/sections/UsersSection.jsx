@@ -29,6 +29,7 @@ import { notifyAdmin } from '../../lib/notify'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import PlayerDossierPanel from '../../components/PlayerDossierPanel'
 import StaffPortraitRail from '../../components/StaffPortraitRail'
+import { CopyableId, CopyableUsername } from '../../components/Copyable'
 
 const EVENT_LABELS = {
   shop_buy: 'Покупка в магазине',
@@ -1223,7 +1224,7 @@ function CounterpartyLine({ direction, cp, onOpenUser }) {
   if (!onOpenUser || !cp?.userId) {
     return (
       <p className="panel-shelf-muted">
-        {arrow} {name} <span style={{ opacity: 0.6 }}>(id {cp.userId})</span>
+        {arrow} {name} <span style={{ opacity: 0.6 }}>(<CopyableId value={cp.userId} />)</span>
       </p>
     )
   }
@@ -1233,7 +1234,7 @@ function CounterpartyLine({ direction, cp, onOpenUser }) {
       <button type="button" className="pu-cp-link" onClick={() => onOpenUser(cp)}>
         {name}
       </button>{' '}
-      <span style={{ opacity: 0.6 }}>(id {cp.userId})</span>
+      <span style={{ opacity: 0.6 }}>(<CopyableId value={cp.userId} />)</span>
     </p>
   )
 }
@@ -1825,7 +1826,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                     )}
                   </span>
                   <span className="panel-users-result-meta">
-                    ID {row.userId} · {row.balance} кут
+                    <CopyableId value={row.userId} label="id игрока" /> · {row.balance} кут
                     {row.banned && ' · забанен'}
                   </span>
                 </button>
@@ -1851,8 +1852,8 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
             <div className="pu-peek-meta">
               <strong className="pu-peek-name">{peek.displayName}</strong>
               <span className="pu-peek-sub">
-                {peek.username ? `@${peek.username}` : `id ${peek.userId}`}
-                <em> · id {peek.userId}</em>
+                {peek.username ? <CopyableUsername value={peek.username} /> : <CopyableId value={peek.userId} />}
+                <em> · <CopyableId value={peek.userId} /></em>
               </span>
               {peek.fromLabel && (
                 <span className="pu-peek-from">Сейчас открыт профиль {peek.fromLabel}</span>
@@ -2072,10 +2073,10 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 </h3>
                 <div className="pu-hero-meta-row">
                   {hasProfile && profile.username ? (
-                    <span className="pu-hero-chip">@{profile.username}</span>
+                    <span className="pu-hero-chip"><CopyableUsername value={profile.username} /></span>
                   ) : null}
                   <span className="pu-hero-chip pu-hero-chip-id">
-                    ID {hasProfile ? profile.userId : '—'}
+                    {hasProfile ? <CopyableId value={profile.userId} label="id игрока" /> : 'ID —'}
                   </span>
                   {profile?.staffPortrait?.roleLabel && (
                     <span className="pu-hero-chip pu-hero-chip-staff">{profile.staffPortrait.roleLabel}</span>
