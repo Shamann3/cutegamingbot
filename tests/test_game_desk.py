@@ -115,15 +115,20 @@ def test_panel_games_is_creator_only():
     assert "NikaMoneyChart" in section
     assert "Техработы" in section
     assert "maintenance" in section
-    assert "gm-motif-" not in section
+    assert "gm-tile" in section
+    assert "GameSkin" in section
+    assert "gm-skin-" in section
     assert "is-dirty" not in section
     assert "Copyable" in section
     icons = _read("admin", "src", "components", "NavIcons.jsx")
     assert "games: Games" in icons
+    skin = _read("admin", "src", "components", "GameSkin.jsx")
+    assert "board:" in skin
+    assert "roulette:" in skin
+    assert "cookie:" in skin
     css = _read("admin", "src", "styles", "games.css")
-    assert "border-radius: 8px" in css
-    assert "border-radius: 4px" in css
-    assert "gm-motif-" not in css
+    assert "aspect-ratio: 1 / 1" in css
+    assert "border-radius: 2px !important" in css
     assert "repeating-linear-gradient" not in css
     assert "repeating-conic-gradient" not in css
     assert "position: sticky" not in css

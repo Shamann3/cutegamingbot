@@ -4,6 +4,7 @@ import { showToast } from '../../components/ToastHost'
 import CountUp from '../../components/CountUp'
 import Copyable, { CopyableId } from '../../components/Copyable'
 import NikaMoneyChart, { NikaSpark } from '../../components/NikaMoneyChart'
+import GameSkin, { themeOf, themeVars } from '../../components/GameSkin'
 import { useIsPhone } from '../../lib/useIsDesktop'
 
 const TABS = [
@@ -338,6 +339,7 @@ export default function GamesSection() {
   const preview = current ? previewCommission(settings, current.key, pot, level) : null
   const payout = current ? previewPayout(current, currentState, pot) : null
   const currentStatus = gameStatus(currentState)
+  const currentTheme = themeOf(current)
   const flowDays = data?.flow?.days || []
 
   return (
@@ -438,27 +440,30 @@ export default function GamesSection() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Название, команда или настроение"
             />
-            <div className="nika-tables gm-tables">
+            <div className="gm-tiles">
               {shown.map((g) => {
                 const state = settings.games?.[g.key] || g.state || {}
                 const status = gameStatus(state)
                 const pack = analyticsOf(data, g)
                 const spark = (pack.days || []).map((d) => Number(d.plus) || 0)
+                const theme = themeOf(g)
                 return (
                   <button
                     key={g.key}
                     type="button"
-                    className={`nika-table gm-table${state.enabled ? '' : ' is-paused'}${state.maintenance ? ' is-dry' : ''}${selected === g.key ? ' is-on' : ''}`}
+                    style={themeVars(theme)}
+                    className={`gm-tile gm-skin-${theme.motif}${state.enabled ? '' : ' is-off'}${state.maintenance ? ' is-maint' : ''}${selected === g.key ? ' is-on' : ''}`}
                     onClick={() => { setSelected(g.key); setTab('game') }}
                   >
+                    <GameSkin motif={theme.motif} />
                     <header>
-                      <h3>{g.emoji} {g.title}</h3>
+                      <h3><em>{g.emoji}</em> {g.title}</h3>
                       <span className={`nika-pill nika-pill-${status.tone === 'hot' ? 'bad' : status.tone}`}>{status.label}</span>
                     </header>
-                    <p className="nika-help">{g.mood || g.hint}</p>
-                    <p className="nika-bal-kicker">Собрано комиссией</p>
-                    <strong className="nika-bal-value"><CountUp value={Number(pack.commission) || 0} duration={700} /></strong>
-                    <div className="nika-bal-meta">
+                    <p>{g.mood || g.hint}</p>
+                    <p className="gm-tile-kicker">Собрано комиссией</p>
+                    <strong><CountUp value={Number(pack.commission) || 0} duration={700} /></strong>
+                    <div className="gm-tile-meta">
                       <span>{fmt(pack.events || 0)} партий</span>
                       <em>{state.minBet ?? 0}–{fmt(state.maxBet || 0)} кут</em>
                     </div>
@@ -517,7 +522,8 @@ export default function GamesSection() {
 
       {tab === 'game' && current && (
         <div className="nika-pane nika-stack">
-          <section className="nika-panel gm-hero">
+          <section className={`gm-hero gm-skin-${currentTheme.motif}`} style={themeVars(currentTheme)}>
+            <GameSkin motif={currentTheme.motif} />
             <div className="gm-hero-copy">
               <small>{current.kind === 'pve' ? 'С кассой группы' : 'Игрок против игрока'}</small>
               <h2>{current.emoji} {current.title}</h2>
@@ -532,7 +538,7 @@ export default function GamesSection() {
 
           <GameAnalytics game={current} data={data} />
 
-          <section className="nika-panel gm-desk">
+          <section className={`nika-panel gm-desk gm-skin-${currentTheme.motif}`} style={themeVars(currentTheme)}>
             <div className="nika-ios-list">
               <Switch
                 on={!!currentState.enabled}
@@ -579,7 +585,7 @@ export default function GamesSection() {
           </section>
 
           {groupedFields.map((group) => (
-            <section key={group.key} className="nika-panel gm-desk">
+            <section key={group.key} className={`nika-panel gm-desk gm-skin-${currentTheme.motif}`} style={themeVars(currentTheme)}>
               <h2>{group.label}</h2>
               <p className="nika-help">
                 {group.key === 'odds' && 'Эти числа крутят исход. Игрок их не видит, но чувствует.'}
