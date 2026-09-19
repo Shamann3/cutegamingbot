@@ -18795,6 +18795,7 @@ async def questions_stars_menu(callback_query: types.CallbackQuery):
         kb.button(text="Задания с подпиской", callback_data="qst:show_subs", style="default", icon_custom_emoji_id="5362063083311214432")
         kb.button(text="Челленджи", callback_data="qst:show_gc", style="default", icon_custom_emoji_id="5445096582238181549")
         kb.button(text="Тик ток", callback_data="tt:hub", style="default", icon_custom_emoji_id="5456282961999570188")
+        kb.button(text="Пиар в группах", callback_data="prg:hub", style="default", icon_custom_emoji_id="5424616516018537963")
         kb.button(text="Закрыть", callback_data="9close_bonus_+")
         kb.adjust(1)
         kb_markup = kb.as_markup()
@@ -33085,6 +33086,25 @@ async def process_tiktok_wait_noise(message: types.Message):
     await on_wait_noise(message)
 
 
+async def _pr_wait_photo_filter(m):
+    try:
+        from bot.funcs import pr_groups as _pr
+        if not m or not getattr(m, "from_user", None):
+            return False
+        chat_type = getattr(getattr(m, "chat", None), "type", "")
+        if chat_type != "private" or not getattr(m, "photo", None):
+            return False
+        return await _pr.is_waiting_photos(m.from_user.id, chat_type)
+    except Exception:
+        return False
+
+
+@dp.message(_pr_wait_photo_filter)
+async def process_pr_wait_photo(message: types.Message):
+    from bot.handlers.pr_groups import on_wait_photo
+    await on_wait_photo(message)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ✅ 2) ТВОЙ обработчик (gift_context) - сценарий “giftconfirmwithdrawal_... -> ввод получателя -> confirmwithdrawal”
 # НЕ МЕШАЕТ user_gift, потому что:
@@ -34367,6 +34387,25 @@ async def add_firstname_to_usercheck_balance(message: Message):
     if _tt_armed:
         from aiogram.dispatcher.event.bases import SkipHandler
         raise SkipHandler()
+
+    try:
+        from bot.funcs.pr_groups import is_waiting_photos as _pr_wait
+        if await _pr_wait(user_id, _tt_chat_type):
+            from aiogram.dispatcher.event.bases import SkipHandler
+            raise SkipHandler()
+    except Exception as _pr_skip:
+        from aiogram.dispatcher.event.bases import SkipHandler as _Skip
+        if isinstance(_pr_skip, _Skip):
+            raise
+
+    try:
+        from bot.funcs.pr_groups import looks_like_confirm as _pr_confirm
+        if _pr_confirm(message.text) and _tt_chat_type in ("group", "supergroup"):
+            from bot.handlers.pr_groups import on_confirm_command
+            await on_confirm_command(message)
+            return
+    except Exception:
+        pass
 
     from bot.runtime.message_housekeeping import (
         is_own_profile_command,
@@ -40994,6 +41033,12 @@ if __name__ == "__main__":
         attach_tiktok_earn(dp)
     except Exception as _tt_err:
         print(f"[TIKTOK][WIRE][ERROR] {type(_tt_err).__name__}: {_tt_err}")
+
+    try:
+        from bot.handlers.pr_groups import attach_pr_groups
+        attach_pr_groups(dp)
+    except Exception as _pr_err:
+        print(f"[PR][WIRE][ERROR] {type(_pr_err).__name__}: {_pr_err}")
 
     dp.include_router(router)
 

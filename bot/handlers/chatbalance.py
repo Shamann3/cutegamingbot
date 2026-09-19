@@ -500,6 +500,18 @@ async def chatbalance(message: Message):
                     "<b>Недостаточно средств на балансе группы.</b>" , parse_mode="HTML")
                 return
 
+            try:
+                from bot.funcs.pr_groups import seed_lock_for_chat
+                lock = int(await seed_lock_for_chat(chat_id) or 0)
+                if chat_balance - amount < lock:
+                    await message.reply(
+                        "<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> "
+                        f"<b>С посева снять нельзя. Можно снять {max(0, chat_balance - lock)} кут.</b>",
+                        parse_mode="HTML")
+                    return
+            except Exception as _pr_lock_exc:
+                print(f"[СНЯТИЕ С БАЛАНСА ГРУППЫ] pr lock: {_pr_lock_exc}")
+
             # Получение создателя группы
             print("[СНЯТИЕ С БАЛАНСА ГРУППЫ] 🟩 Получаю creator_id...")
             creator_id = await db.get_creator_id(chat_id)

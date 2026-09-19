@@ -280,9 +280,11 @@ from admin_analytics import (
 from admin_audit import list_admin_audit, list_admin_action_types, log_admin_action
 from ip_ban import add_ip_ban, list_ip_bans, remove_ip_ban
 from admin_tiktok import router as tiktok_router
+from admin_pr_groups import router as pr_groups_router
 
 router = APIRouter(prefix="/admin/api", tags=["admin"])
 router.include_router(tiktok_router)
+router.include_router(pr_groups_router)
 logger = logging.getLogger(__name__)
 
 

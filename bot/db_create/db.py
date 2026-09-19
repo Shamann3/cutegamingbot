@@ -7535,6 +7535,17 @@ class Database:
         # в одном и том же порядке, поэтому дедлок невозможен.
         first_id, second_id = sorted((sender_id, receiver_id))
 
+        try:
+            from bot.funcs.pr_groups import gift_blocks_other_spend
+            if await gift_blocks_other_spend(sender_id, amount):
+                raise InsufficientBalanceError(
+                    f"user_id={sender_id} подарочные куты нельзя перевести"
+                )
+        except InsufficientBalanceError:
+            raise
+        except Exception:
+            pass
+
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 # Лочим обе строки в детерминированном порядке (SELECT ... FOR UPDATE),
@@ -12954,6 +12965,25 @@ class Database:
             print(
                 f"💰[UPD][PARSED] uid={uid}, mode={'DELTA' if is_delta else 'SET'}, "
                 f"value={delta if is_delta else target}, dt={(time.perf_counter() - t_norm):.4f}s")
+
+        try:
+            from bot.funcs.pr_groups import gift_blocks_other_spend, gift_claw_active
+            if not gift_claw_active():
+                spend = 0
+                if is_delta and delta is not None and int(delta) < 0:
+                    spend = -int(delta)
+                elif (not is_delta) and target is not None:
+                    cur = await self.get_user_balance(uid)
+                    cur_i = int(cur[0] if isinstance(cur, tuple) else cur or 0)
+                    if int(target) < cur_i:
+                        spend = cur_i - int(target)
+                if spend > 0 and await gift_blocks_other_spend(uid, spend):
+                    if DEBUG:
+                        print(f"💰[UPD][ABORT] подарочные куты uid={uid} spend={spend}")
+                    return None
+        except Exception as _pr_gift_exc:
+            if DEBUG:
+                print(f"💰[UPD][GIFT] skip check: {_pr_gift_exc!r}")
 
         # ---- Redis-lock (меж инстансами, best-effort) ----
         lock_token = None

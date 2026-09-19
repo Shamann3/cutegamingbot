@@ -2037,6 +2037,27 @@ async def reject_if_bet_over_group_level(
         if chat is None or str(getattr(chat, "type", "") or "") == "private":
             return False
         chat_id = int(chat.id)
+        try:
+            from bot.funcs import pr_groups as _pr
+            from bot.handlers.pr_groups import send_gift_locked, send_gift_notice
+            uid = int(getattr(getattr(message, "from_user", None), "id", 0) or 0)
+            if uid and int(bet) > 0:
+                granted = await _pr.maybe_grant_gift(
+                    getattr(message, "bot", None),
+                    user_id=uid, chat_id=chat_id,
+                    name=getattr(getattr(message, "from_user", None), "first_name", "") or "игрок",
+                )
+                if granted:
+                    await send_gift_notice(
+                        message, uid,
+                        getattr(message.from_user, "first_name", "") or "игрок",
+                        int(granted),
+                    )
+                if not await _pr.consume_gift_bet(uid, chat_id, int(bet)):
+                    await send_gift_locked(message)
+                    return True
+        except Exception as _pr_exc:
+            print(f"[GBL] pr gift hook: {_pr_exc!r}")
         atmo = 0.0
         _db = None
         try:

@@ -4,6 +4,8 @@ import random
 from bot.funcs.group_captcha import (
     EMOJI,
     PASS_ALERT,
+    PASS_EMOJI_ID,
+    PASS_HTML,
     event_meta,
     SCHEMA_SQL,
     VARIANT_LABELS,
@@ -35,8 +37,12 @@ def test_event_meta_keeps_names():
 
 
 def test_pass_alert_is_set():
-    assert "пройдена" in PASS_ALERT.lower()
-    assert "вы" in PASS_ALERT.lower()
+    assert PASS_ALERT == "Капча пройдена успешно!"
+    assert PASS_HTML == (
+        f"<tg-emoji emoji-id='{PASS_EMOJI_ID}'>🤩</tg-emoji> "
+        "<b>Капча пройдена успешно!</b>"
+    )
+    assert "5348423147647414077" in PASS_HTML
 
 
 def test_schema_is_one_statement_each():
@@ -518,3 +524,52 @@ def test_handler_reexports_cleanup_and_next_alert():
     assert callable(start_cleanup_task)
     assert callable(stop_cleanup_task)
     assert "вторую" in NEXT_ALERT
+
+
+def test_wrong_word_writes_a_new_captcha_and_pass_posts_html():
+    import asyncio
+    import inspect
+    from bot.handlers import group_captcha as handler
+    from bot.funcs.group_captcha import build_challenge
+
+    src = inspect.getsource(handler)
+    assert "_write_fresh_captcha" in src
+    assert "_announce_passed" in src
+    assert "PASS_HTML" in src
+    assert "_write_fresh_captcha(" in src
+    assert "_finish_pass(" in src
+
+    class Msg:
+        def __init__(self, mid):
+            self.message_id = mid
+
+    class Bot:
+        def __init__(self):
+            self.deleted = []
+            self.sent = []
+
+        async def delete_message(self, chat_id, message_id):
+            self.deleted.append((int(chat_id), int(message_id)))
+
+        async def send_message(self, chat_id, text, **kwargs):
+            self.sent.append({"chat_id": int(chat_id), "text": text, **kwargs})
+            return Msg(77)
+
+        async def edit_message_text(self, *args, **kwargs):
+            raise AssertionError("новая капча должна писаться новым сообщением")
+
+    user = type("U", (), {"id": 3, "full_name": "Аня", "first_name": "Аня", "is_bot": False})()
+    payload = build_challenge(5, rng=random.Random(1))
+    row = {"id": 5, "message_id": 12, "user_id": 3, "chat_id": -100}
+    bot = Bot()
+    asyncio.run(handler._write_fresh_captcha(bot, row, payload, -100, user, None, None, 5, attempts=2))
+    assert bot.deleted == [(-100, 12)]
+    assert len(bot.sent) == 1
+    assert row["message_id"] == 77
+    assert "Это капча" in bot.sent[0]["text"] or bot.sent[0].get("entities")
+
+    notice = Bot()
+    asyncio.run(handler._announce_passed(notice, -100, 9))
+    assert notice.sent[0]["text"] == PASS_HTML
+    assert notice.sent[0]["parse_mode"] == "HTML"
+    assert notice.sent[0]["message_thread_id"] == 9

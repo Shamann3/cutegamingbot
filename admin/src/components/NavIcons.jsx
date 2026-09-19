@@ -257,6 +257,7 @@ export const NAV_ICONS = {
   groupBalanceLevel: Economy,
   groupsStudio: GroupsStudio,
   nika: Nika,
+  prGroups: GroupsStudio,
   games: Games,
   achievements: Giveaways,
   broadcast: Broadcast,

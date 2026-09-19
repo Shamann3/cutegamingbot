@@ -42,6 +42,14 @@ async def admin_filter(message: Message):
             _uid, chat_type=_chat_type
         ):
             raise SkipHandler()
+        try:
+            from bot.funcs.pr_groups import is_waiting_photos as _pr_photos
+            if await _pr_photos(_uid, _chat_type):
+                raise SkipHandler()
+        except SkipHandler:
+            raise
+        except Exception:
+            pass
     except Exception as _tt_skip_err:
         from aiogram.dispatcher.event.bases import SkipHandler as _SkipHandler
         if isinstance(_tt_skip_err, _SkipHandler):
@@ -91,6 +99,18 @@ async def send_msg_to_usrs(message : types.Message):
     if _tt_photo_wait:
         from aiogram.dispatcher.event.bases import SkipHandler
         raise SkipHandler()
+    try:
+        from bot.funcs.pr_groups import is_waiting_photos as _pr_photos
+        if await _pr_photos(
+            message.from_user.id,
+            getattr(getattr(message, "chat", None), "type", ""),
+        ):
+            from aiogram.dispatcher.event.bases import SkipHandler
+            raise SkipHandler()
+    except Exception as _pr_photo_err:
+        from aiogram.dispatcher.event.bases import SkipHandler as _Skip
+        if isinstance(_pr_photo_err, _Skip):
+            raise
     try:
         if message.from_user.id in admin_id and keyboard1["inline_keyboard"]:
                 keyboard = keyboard1

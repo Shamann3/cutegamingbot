@@ -54,6 +54,14 @@ def test_user_and_group_ids_are_copyable():
     assert "CopyableUsername" in groups
 
     assert "CopyableId" in nika
+    prg = _read("admin", "src", "pages", "sections", "PrGroupsSection.jsx")
+    assert "CopyableId" in prg
+    assert "Пиар в группах" in prg
+    assert "id группы" in prg
+    assert "Тихий долив" in prg
+    nav = _read("admin", "src", "constants", "panelNav.js")
+    assert "prGroups" in nav
+    assert "Пиар в группах" in nav
     assert "CopyableUsername" in nika
     assert "id группы" in nika
     assert "Сбор лишнего" in nika

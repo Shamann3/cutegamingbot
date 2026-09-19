@@ -20,6 +20,7 @@ import BotQuestsSection from './sections/BotQuestsSection'
 import GroupBalanceLevelSection from './sections/GroupBalanceLevelSection'
 import GroupsStudioSection from './sections/GroupsStudioSection'
 import NikaSection from './sections/NikaSection'
+import PrGroupsSection from './sections/PrGroupsSection'
 import GamesSection from './sections/GamesSection'
 import NikaCrisisStrip from '../components/NikaCrisisStrip'
 import SoftRestartSection from './sections/SoftRestartSection'
@@ -247,6 +248,7 @@ export default function PanelShell({ onLogout }) {
   const isGroupBalanceLevel = section === 'groupBalanceLevel'
   const isGroupsStudio = section === 'groupsStudio'
   const isNika = section === 'nika'
+  const isPrGroups = section === 'prGroups'
   const isGames = section === 'games'
   const isAchievements = section === 'achievements'
   const isBroadcast = section === 'broadcast'
@@ -318,7 +320,7 @@ export default function PanelShell({ onLogout }) {
                         ? ' panel-layout-broadcast'
                         : isBotQuests
                           ? ' panel-layout-broadcast'
-                        : isGroupBalanceLevel || isGroupsStudio || isNika || isGames
+                        : isGroupBalanceLevel || isGroupsStudio || isNika || isPrGroups || isGames
                           ? ' panel-layout-broadcast'
                         : isBroadcast
                         ? ' panel-layout-broadcast'
@@ -425,6 +427,7 @@ export default function PanelShell({ onLogout }) {
             />
           )}
           {isNika && isProjectCreator && <NikaSection />}
+          {isPrGroups && isProjectCreator && <PrGroupsSection />}
           {isGames && isProjectCreator && <GamesSection />}
           {isAchievements && (
             <AchievementsSection

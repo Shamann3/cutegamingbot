@@ -2189,3 +2189,43 @@ export async function approveTiktokVideo(videoId, views) {
 export async function rejectTiktokVideo(videoId, reasonIds, customReason = '') {
   return adminFetch(`/tiktok/videos/${videoId}/reject`, { method: 'POST', body: { reasonIds, customReason } })
 }
+
+export async function fetchPrOverview() {
+  return adminFetch('/pr-groups/overview')
+}
+
+export async function fetchPrQueue() {
+  return adminFetch('/pr-groups/queue')
+}
+
+export async function fetchPrLive() {
+  return adminFetch('/pr-groups/live')
+}
+
+export async function fetchPrArchive() {
+  return adminFetch('/pr-groups/archive')
+}
+
+export async function fetchPrClaim(id) {
+  return adminFetch(`/pr-groups/claim/${id}`)
+}
+
+export async function acceptPrGroup(id, body) {
+  return adminFetch(`/pr-groups/claim/${id}/accept`, { method: 'POST', body })
+}
+
+export async function rejectPrGroup(id, reasonIds, customReason = '') {
+  return adminFetch(`/pr-groups/claim/${id}/reject`, { method: 'POST', body: { reasonIds, customReason } })
+}
+
+export async function togglePrNika(id) {
+  return adminFetch(`/pr-groups/claim/${id}/nika`, { method: 'POST', body: {} })
+}
+
+export async function fetchPrSettings() {
+  return adminFetch('/pr-groups/settings')
+}
+
+export async function savePrSettings(body) {
+  return adminFetch('/pr-groups/settings', { method: 'PUT', body })
+}

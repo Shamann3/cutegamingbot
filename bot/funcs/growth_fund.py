@@ -393,6 +393,7 @@ async def apply_commission(
     round_id: Optional[str] = None,
     level: Optional[int] = None,
     notify_owner: bool = True,
+    source_chat_id: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Считает и ПРИМЕНЯЕТ комиссию игры за один раунд:
@@ -571,6 +572,23 @@ async def apply_commission(
         except Exception as e:
             _vdbg(f"[ФОНД РОСТА][УВЕДОМЛЕНИЕ] notify fail user={user_id}: {e!r}")
 
+    try:
+        from bot.funcs import pr_groups as _pr
+        used_gift = False
+        pr_chat = int(source_chat_id or chat_id)
+        st = await _pr.gift_state(user_id)
+        if int(st.get("chat_id") or 0) == pr_chat and int(st.get("last_bet") or 0) > 0:
+            net = int(result.get("net_pot") or 0) or max(0, int(result.get("pot") or 0) - int(result.get("commission") or 0))
+            await _pr.credit_gift_win(user_id, pr_chat, net)
+            used_gift = True
+        await _pr.note_commission(
+            chat_id=pr_chat, user_id=user_id,
+            commission=int(result.get("commission") or 0),
+            used_gift=used_gift,
+        )
+    except Exception as e:
+        _vdbg(f"[ФОНД РОСТА][ПИАР] note fail user={user_id}: {e!r}")
+
     return result
 
 
@@ -701,6 +719,7 @@ async def apply_commission_pvp(
     winner_id: int,
     loser_ids: Optional[list] = None,
     round_id: Optional[str] = None,
+    source_chat_id: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     PvP-версия apply_commission(). В PvP банк формируют САМИ игроки (не
@@ -733,6 +752,7 @@ async def apply_commission_pvp(
         pot=pot,
         round_id=round_id,
         notify_owner=False,
+        source_chat_id=source_chat_id,
     )
     if result:
         result["is_pvp"] = True

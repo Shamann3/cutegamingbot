@@ -944,6 +944,7 @@ async def _settle_saga(game_id: int):
                     gfund_result = await apply_commission_pvp(
                         db, bot1, game="kosti", pot=int(gain),
                         winner_id=winner_id, loser_ids=losers,
+                        source_chat_id=game.get("chat_id"),
                     )
                     if gfund_result:
                         gain = max(0, gain - gfund_result["commission"])

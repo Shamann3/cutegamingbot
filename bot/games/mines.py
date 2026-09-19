@@ -577,6 +577,7 @@ async def mines_mine_click_callback(callback_query: CallbackQuery):
                 gfund_result = await apply_commission_pvp(
                     db, bot1, game="mines", pot=int(bet),
                     winner_id=winner_id, loser_ids=[user_id],
+                    source_chat_id=game.get("chat_id"),
                 )
                 if gfund_result:
                     net_bet = max(0, bet - gfund_result["commission"])

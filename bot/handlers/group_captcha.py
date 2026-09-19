@@ -191,6 +191,91 @@ async def _delete_message(bot, chat_id: int, message_id: Optional[int]) -> None:
         return
 
 
+async def _announce_passed(bot, chat_id: int, thread_id: Optional[int] = None) -> None:
+    """В чат — ровно то сообщение, которое должно увидеть человек после успеха."""
+    send_kwargs: Dict[str, Any] = {
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    if thread_id:
+        send_kwargs["message_thread_id"] = int(thread_id)
+    try:
+        await asyncio.wait_for(
+            bot.send_message(int(chat_id), gc.PASS_HTML, **send_kwargs),
+            timeout=_TG_TIMEOUT,
+        )
+        return
+    except TypeError:
+        send_kwargs.pop("message_thread_id", None)
+        send_kwargs.pop("disable_web_page_preview", None)
+    except Exception:
+        send_kwargs = {"parse_mode": "HTML"}
+    try:
+        await asyncio.wait_for(
+            bot.send_message(int(chat_id), gc.PASS_HTML, **send_kwargs),
+            timeout=_TG_TIMEOUT,
+        )
+    except Exception:
+        try:
+            await asyncio.wait_for(
+                bot.send_message(int(chat_id), gc.PASS_ALERT),
+                timeout=_TG_TIMEOUT,
+            )
+        except Exception:
+            return
+
+
+async def _finish_pass(
+    bot,
+    *,
+    chat_id: int,
+    user_id: int,
+    old_mid: Optional[int],
+    thread_id: Optional[int],
+) -> None:
+    if old_mid:
+        await _delete_message(bot, chat_id, old_mid)
+    await _announce_passed(bot, chat_id, thread_id)
+    await _maybe_unrestrict(bot, chat_id, user_id)
+
+
+async def _write_fresh_captcha(
+    bot,
+    row: Dict[str, Any],
+    payload: Dict[str, Any],
+    chat_id: int,
+    user: Any,
+    thread_id: Optional[int],
+    pool,
+    challenge_id: int,
+    attempts: Optional[int] = None,
+) -> None:
+    """Старую карточку убрать и написать новую — так ошибка сразу видна."""
+    old_mid = row.get("message_id")
+    if old_mid:
+        await _delete_message(bot, chat_id, old_mid)
+    row["message_id"] = None
+    mid = await _send_or_edit(
+        bot, chat_id=chat_id, user=user, row=row, payload=payload, thread_id=thread_id,
+    )
+    if mid:
+        row["message_id"] = mid
+        gc.patch_live(challenge_id, message_id=mid, payload=payload)
+        if attempts is not None:
+            gc.patch_live(challenge_id, attempts=attempts)
+    uid = int(getattr(user, "id", 0) or row.get("user_id") or 0)
+    if uid:
+        _last_prompt[(int(chat_id), uid)] = time.monotonic()
+    if pool:
+        kwargs: Dict[str, Any] = {"payload": payload, "message_id": mid}
+        if attempts is not None:
+            kwargs["attempts"] = attempts
+        try:
+            await gc.update_challenge(pool, challenge_id, **kwargs)
+        except Exception:
+            log.exception("captcha reissue persist failed id=%s", challenge_id)
+
+
 async def _try_deliver(
     bot,
     *,
@@ -514,10 +599,13 @@ async def _try_text_captcha(bot, message: Message, chat, user) -> bool:
         gc.note_passed(chat_id, uid)
         gc.note_passed(stored_chat_id, uid)
         gc.forget_live(challenge_id)
-        mid = row.get("message_id")
-        if mid:
-            _bg(_delete_message(bot, chat_id, mid))
-        _bg(_maybe_unrestrict(bot, chat_id, uid))
+        _bg(_finish_pass(
+            bot,
+            chat_id=chat_id,
+            user_id=uid,
+            old_mid=row.get("message_id"),
+            thread_id=thread_id,
+        ))
         if pool:
             async def _persist_pass() -> None:
                 try:
@@ -545,7 +633,7 @@ async def _try_text_captcha(bot, message: Message, chat, user) -> bool:
     gc.patch_live(challenge_id, payload=fresh, attempts=attempts)
     row["attempts"] = attempts
     row["payload"] = fresh
-    _bg(_refresh_card(bot, row, fresh, chat_id, user, thread_id, pool, challenge_id, attempts=attempts))
+    _bg(_write_fresh_captcha(bot, row, fresh, chat_id, user, thread_id, pool, challenge_id, attempts=attempts))
     if pool:
         _bg(gc.log_event(
             pool,
@@ -767,8 +855,16 @@ async def _handle_captcha_pick(
         gc.note_passed(chat_id, uid)
         gc.note_passed(stored_chat_id, uid)
         gc.forget_live(challenge_id)
-        await _ack(callback, gc.PASS_ALERT, alert=True)
+        await _ack(callback, gc.PASS_ALERT)
         chat = getattr(callback.message, "chat", None)
+        old_mid = int(callback.message.message_id) if callback.message else row.get("message_id")
+        _bg(_finish_pass(
+            callback.bot,
+            chat_id=chat_id,
+            user_id=uid,
+            old_mid=old_mid,
+            thread_id=thread_id,
+        ))
         if pool:
             async def _persist_pass() -> None:
                 try:
@@ -791,9 +887,6 @@ async def _handle_captcha_pick(
             _bg(_persist_pass())
         else:
             log.warning("captcha pass without db pool chat=%s user=%s", chat_id, uid)
-        if callback.message:
-            _bg(_delete_message(callback.bot, chat_id, callback.message.message_id))
-        _bg(_maybe_unrestrict(callback.bot, chat_id, uid))
         return
 
     attempts += 1
@@ -802,7 +895,7 @@ async def _handle_captcha_pick(
     gc.patch_live(challenge_id, payload=fresh, attempts=attempts)
     row["attempts"] = attempts
     row["payload"] = fresh
-    _bg(_refresh_card(callback.bot, row, fresh, chat_id, user, thread_id, pool, challenge_id, attempts=attempts))
+    _bg(_write_fresh_captcha(callback.bot, row, fresh, chat_id, user, thread_id, pool, challenge_id, attempts=attempts))
     if not pool:
         log.warning("captcha fail without db pool chat=%s user=%s", chat_id, uid)
         return

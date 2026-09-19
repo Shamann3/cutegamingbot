@@ -69,6 +69,14 @@ PANEL_SECTION_DEFS: list[dict] = [
         "creatorOnly": True,
     },
     {
+        "id": "prGroups",
+        "label": "Пиар в группах",
+        "group": "economy",
+        "permissions": [],
+        "ownerOnly": True,
+        "creatorOnly": True,
+    },
+    {
         "id": "games",
         "label": "Игры",
         "group": "economy",

@@ -198,6 +198,12 @@ async def lifespan(application: FastAPI):
     except Exception:
         logger.warning("tiktok schema init failed — check DB permissions")
 
+    try:
+        from admin_pr_groups import ensure_pr_schema
+        await ensure_pr_schema()
+    except Exception:
+        logger.warning("pr groups schema init failed — check DB permissions")
+
     from item_lots import ensure_item_cost_schema
     if not await ensure_item_cost_schema(db.pool):
         logger.warning("item cost schema init failed — учёт себестоимости выключен")
