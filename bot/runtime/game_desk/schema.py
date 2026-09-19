@@ -27,11 +27,6 @@ CREATE INDEX IF NOT EXISTS idx_game_desk_history_created
     ON game_desk_history (created_at DESC);
 """
 
-_LEDGER_INDEX = """
-CREATE INDEX IF NOT EXISTS idx_gf_ledger_game_created
-    ON growth_fund_ledger (game, created_at DESC);
-"""
-
 
 async def ensure_game_desk_schema(db) -> None:
     pool = getattr(db, "pool", None)
@@ -55,7 +50,3 @@ async def ensure_game_desk_schema(db) -> None:
         raise RuntimeError("Пул соединений не инициализирован (ensure_game_desk_schema).")
     async with pool.acquire() as conn:
         await conn.execute(_DDL)
-        try:
-            await conn.execute(_LEDGER_INDEX)
-        except Exception:
-            pass

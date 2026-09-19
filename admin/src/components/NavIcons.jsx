@@ -213,6 +213,17 @@ const Nika = () => (
   </Icon>
 )
 
+const Games = () => (
+  <Icon>
+    <rect x="4.5" y="4.5" width="15" height="15" rx="2" />
+    <circle cx="9" cy="9" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="9" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="9" cy="15" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="15" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.15" fill="currentColor" stroke="none" />
+  </Icon>
+)
+
 const GroupsStudio = () => (
   <Icon>
     <circle cx="9" cy="10" r="3.2" />
@@ -246,6 +257,7 @@ export const NAV_ICONS = {
   groupBalanceLevel: Economy,
   groupsStudio: GroupsStudio,
   nika: Nika,
+  games: Games,
   achievements: Giveaways,
   broadcast: Broadcast,
   logs: Logs,

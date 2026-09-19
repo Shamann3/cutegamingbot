@@ -185,6 +185,15 @@ def _paths(name: str) -> List[Path]:
     return [root / name for root in _data_roots()]
 
 
+def _is_persisted_config(cfg: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(cfg, dict) or not cfg:
+        return False
+    return any(
+        key in cfg
+        for key in ("enabled", "mode", "interval_sec", "hourly_minute", "daily_times", "persisted")
+    )
+
+
 def _as_dict(value: Any) -> Dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
@@ -365,11 +374,12 @@ def _read_history() -> Dict[str, Any]:
 
 async def load_config() -> Dict[str, Any]:
     row = await _pg_row()
-    if row and row.get("config"):
-        return normalize_config(row["config"], defaults=dict(DEFAULT_CFG))
+    cfg = (row or {}).get("config") if row else None
+    if _is_persisted_config(cfg):
+        return normalize_config(cfg, defaults=dict(DEFAULT_CFG))
     for path in _paths("sr_runtime.json"):
         got = _read_json(path)
-        if got:
+        if _is_persisted_config(got):
             return normalize_config(got, defaults=dict(DEFAULT_CFG))
     return normalize_config(None, defaults=dict(DEFAULT_CFG))
 
@@ -514,6 +524,8 @@ async def save_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
         else:
             cfg[k] = v
     cfg = normalize_config(cfg, defaults=dict(DEFAULT_CFG))
+    cfg["persisted"] = True
+    cfg["source"] = "panel"
     _write_json_all("sr_runtime.json", cfg)
     await _pg_write_config(cfg)
     cmd = {"op": "apply", "config": cfg, "ts": time.time()}

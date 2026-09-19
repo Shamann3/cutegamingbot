@@ -44,8 +44,6 @@ GATE_ALERT = (
     "После этого игровые кнопки заработают"
 )
 CLICK_DB_TIMEOUT_SEC = 1.6
-_FAIL_OPEN_TTL = 12.0
-_fail_open: Dict[Tuple[int, int], float] = {}
 
 # --- Фоновая очистка просроченных карточек -------------------------------
 CLEANUP_INTERVAL_SEC = 60     # как часто просыпается воркер
@@ -1014,25 +1012,9 @@ async def has_passed(pool, chat_id: int, user_id: int) -> bool:
     return False
 
 
-def _fail_open_cached(chat_id: int, user_id: int) -> bool:
-    ts = _fail_open.get((int(chat_id), int(user_id)))
-    if ts is None:
-        return False
-    if time.monotonic() - ts <= _FAIL_OPEN_TTL:
-        return True
-    _fail_open.pop((int(chat_id), int(user_id)), None)
-    return False
-
-
-def _mark_fail_open(chat_id: int, user_id: int) -> None:
-    _fail_open[(int(chat_id), int(user_id))] = time.monotonic()
-
-
 async def user_needs_captcha(pool, chat_id: int, user_id: int) -> bool:
     """Один кэш/один SQL вместо пары запросов на каждое сообщение."""
     if pool is None:
-        return False
-    if _fail_open_cached(chat_id, user_id):
         return False
     if cached_disabled(chat_id) is True:
         return False
@@ -1040,29 +1022,21 @@ async def user_needs_captcha(pool, chat_id: int, user_id: int) -> bool:
         return False
     if cached_disabled(chat_id) is False and cached_passed(chat_id, user_id) is False:
         return True
-    try:
-        await asyncio.wait_for(ensure_tables(pool), timeout=CLICK_DB_TIMEOUT_SEC)
-        row = await asyncio.wait_for(
-            pool.fetchrow(
-                """
-                SELECT COALESCE(
-                           (SELECT s.enabled FROM group_captcha_settings s WHERE s.chat_id = $1),
-                           TRUE
-                       ) AS enabled,
-                       EXISTS(
-                           SELECT 1 FROM group_captcha_passes p
-                            WHERE p.chat_id = $1 AND p.user_id = $2
-                       ) AS passed
-                """,
-                int(chat_id),
-                int(user_id),
-            ),
-            timeout=CLICK_DB_TIMEOUT_SEC,
-        )
-    except Exception:
-        log.warning("captcha user_needs timeout chat=%s user=%s", chat_id, user_id)
-        _mark_fail_open(chat_id, user_id)
-        return False
+    await ensure_tables(pool)
+    row = await pool.fetchrow(
+        """
+        SELECT COALESCE(
+                   (SELECT s.enabled FROM group_captcha_settings s WHERE s.chat_id = $1),
+                   TRUE
+               ) AS enabled,
+               EXISTS(
+                   SELECT 1 FROM group_captcha_passes p
+                    WHERE p.chat_id = $1 AND p.user_id = $2
+               ) AS passed
+        """,
+        int(chat_id),
+        int(user_id),
+    )
     enabled = True if row is None else bool(row["enabled"])
     passed = False if row is None else bool(row["passed"])
     _disabled_cache[int(chat_id)] = (enabled, time.monotonic())

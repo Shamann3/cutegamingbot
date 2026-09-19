@@ -3,12 +3,25 @@
 
 from __future__ import annotations
 
+import re
 import time
 from decimal import Decimal
 from typing import Any, Dict, Optional, Tuple
 
-from .catalog import default_game_state, default_payload, resolve_key
+from .catalog import HELP_MARKERS, default_game_state, default_payload, resolve_key
 from .store import load_payload, normalize_payload
+
+MAINT_PLAY_HTML = (
+    "<tg-emoji emoji-id='5462921117423384478'>🛠</tg-emoji> "
+    "<b>В этой игре проводят технические работы</b>"
+)
+MAINT_HELP_HTML = (
+    "<tg-emoji emoji-id='5462921117423384478'>🛠</tg-emoji> "
+    "<b>Тех работы</b>"
+)
+HELP_TITLE_ALIASES = {
+    "knb": ("Камень-ножницы-бумагa", "Камень-ножницы-бумага", "Камень-ножницы-бумаг"),
+}
 
 _TTL = 2.0
 _cache: Dict[str, Any] = default_payload()
@@ -38,7 +51,11 @@ def is_on(key: str) -> bool:
 
 
 def is_maintenance(key: str) -> bool:
-    return bool(game_state(key).get("maintenance"))
+    return bool(game_state(key).get("maintenance", False))
+
+
+def is_playable(key: str) -> bool:
+    return is_on(key) and not is_maintenance(key)
 
 
 def bets(key: str) -> Tuple[int, int]:
@@ -128,44 +145,6 @@ async def refresh(db=None) -> Dict[str, Any]:
     return _cache
 
 
-MAINT_PLAY_HTML = (
-    "<tg-emoji emoji-id='5462921117423384478'>🛠</tg-emoji> "
-    "<b>В этой игре проводят технические работы</b>"
-)
-MAINT_HELP_HTML = (
-    "<tg-emoji emoji-id='5462921117423384478'>🛠</tg-emoji> "
-    "<b>Тех работы</b>"
-)
-
-HELP_TITLES = {
-    "scah": "Шашки",
-    "memory": "Найди пару",
-    "bingo": "Бинго",
-    "fortuna_lobby": "Фортуна",
-    "kosti": "Кости",
-    "duel": "Дуэли",
-    "orel": "Орел или решка",
-    "knb": "Камень-ножницы-бумагa",
-    "mines": "Мины",
-    "tic_tac_toe": "Крестики-нолики",
-    "tank": "Башня",
-    "risk": "Риск",
-    "plate": "Плиты",
-    "bombs": "Бомбы",
-    "trade": "Трейд",
-    "balls": "Шарик",
-    "provoda": "Провода",
-    "slots": "Слоты",
-    "basket": "Баскетбол",
-    "soccer": "Футбол",
-    "bowling": "Боулинг",
-    "darts": "Дартс",
-    "kube": "Кубик",
-    "fortuna_solo": "Рулетка",
-    "words": "Слова",
-}
-
-
 def closed_html(key: str) -> str:
     from .catalog import game_meta
     meta = game_meta(key)
@@ -174,34 +153,6 @@ def closed_html(key: str) -> str:
         "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
         f"<b>{title} сейчас выключена.</b>"
     )
-
-
-def maint_html() -> str:
-    return MAINT_PLAY_HTML
-
-
-def apply_help_maintenance(text: str, down: Dict[str, bool]) -> str:
-    """Вставляет пометку техработ сразу под названием игры в «хелп игры»."""
-    out = str(text or "")
-    for key, title in HELP_TITLES.items():
-        if not down.get(key):
-            continue
-        mark = f" {title}\n"
-        insert = f" {title}\n{MAINT_HELP_HTML}\n"
-        if insert in out:
-            continue
-        if mark in out:
-            out = out.replace(mark, insert, 1)
-    return out
-
-
-async def render_gamehelp(base: str) -> str:
-    try:
-        await refresh()
-    except Exception:
-        pass
-    flags = {key: is_maintenance(key) for key in HELP_TITLES}
-    return apply_help_maintenance(base, flags)
 
 
 def min_html(amount: int) -> str:
@@ -218,6 +169,56 @@ def max_html(amount: int) -> str:
     )
 
 
+def maintenance_html() -> str:
+    return MAINT_PLAY_HTML
+
+
+def _help_titles(key: str) -> Tuple[str, ...]:
+    extra = HELP_TITLE_ALIASES.get(key) or ()
+    marker = HELP_MARKERS.get(key)
+    titles = []
+    if marker:
+        titles.append(str(marker))
+    titles.extend(str(x) for x in extra if x)
+    seen = set()
+    out = []
+    for title in titles:
+        if title in seen:
+            continue
+        seen.add(title)
+        out.append(title)
+    return tuple(out)
+
+
+def _replace_help_title(text: str, marker: str) -> str:
+    pattern = re.compile(
+        rf"<tg-emoji[^>]*>[^<]*</tg-emoji>\s*{re.escape(marker)}",
+        flags=re.IGNORECASE,
+    )
+    updated, n = pattern.subn(MAINT_HELP_HTML, text, count=1)
+    if n:
+        return updated
+    return text
+
+
+async def render_gamehelp(template: str) -> str:
+    """Справка /игры: у игр на техработах заголовок меняется на «Тех работы»."""
+    try:
+        await refresh()
+    except Exception:
+        pass
+    text = template or ""
+    for key in HELP_MARKERS:
+        if not is_maintenance(key):
+            continue
+        for title in _help_titles(key):
+            nxt = _replace_help_title(text, title)
+            if nxt != text:
+                text = nxt
+                break
+    return text
+
+
 async def reject_desk(message, key: str, bet: Optional[int] = None) -> bool:
     """True — игра уже ответила и её нужно прервать."""
     try:
@@ -225,7 +226,7 @@ async def reject_desk(message, key: str, bet: Optional[int] = None) -> bool:
     except Exception:
         pass
     if is_maintenance(key):
-        await _reply(message, maint_html())
+        await _reply(message, MAINT_PLAY_HTML)
         return True
     if not is_on(key):
         await _reply(message, closed_html(key))

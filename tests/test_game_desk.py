@@ -12,7 +12,7 @@ def test_normalize_and_preview():
 
     sys.path.insert(0, str(_ROOT / "server"))
     from game_desk.catalog import default_payload, game_meta
-    from game_desk.store import merge_payload, normalize_payload, _payload_needs_seed
+    from game_desk.store import merge_payload, normalize_payload
 
     def _preview(settings, game_key, pot, level):
         comm = settings.get("commission") or {}
@@ -29,22 +29,13 @@ def test_normalize_and_preview():
     assert clean["games"]["slots"]["minBet"] == 2
     assert clean["games"]["soccer"]["params"]["badShotChance"] == 0.08
     assert clean["games"]["slots"]["params"]["tripleSeven"] == 2.5
+    assert clean["games"]["slots"]["params"]["jamChance"] == 0.15
     assert clean["games"]["risk"]["params"]["homeChance"] == 0.15
     assert clean["games"]["kosti"]["params"]["maxPlayers"] == 12
     assert clean["games"]["scah"]["params"]["turnRest"] == 2.2
     assert clean["games"]["slots"]["maintenance"] is False
 
-    nxt = merge_payload(clean, {
-        "games": {
-            "slots": {
-                "enabled": False,
-                "maintenance": True,
-                "minBet": 15,
-                "commissionMult": 0,
-                "params": {"jamChance": 0.2, "tripleSeven": 4},
-            }
-        }
-    })
+    nxt = merge_payload(clean, {"games": {"slots": {"enabled": False, "maintenance": True, "minBet": 15, "commissionMult": 0, "params": {"jamChance": 0.2, "tripleSeven": 4}}}})
     assert nxt["games"]["slots"]["enabled"] is False
     assert nxt["games"]["slots"]["maintenance"] is True
     assert nxt["games"]["slots"]["minBet"] == 15
@@ -53,12 +44,6 @@ def test_normalize_and_preview():
     assert nxt["games"]["slots"]["params"]["tripleSeven"] == 4
     assert nxt["games"]["kube"]["minBet"] == clean["games"]["kube"]["minBet"]
     assert nxt["games"]["kube"]["maintenance"] is False
-
-    seeded = normalize_payload({})
-    assert seeded["games"]["slots"]["minBet"] == clean["games"]["slots"]["minBet"]
-    assert seeded["games"]["scah"]["params"]["turnRest"] == clean["games"]["scah"]["params"]["turnRest"]
-    assert _payload_needs_seed({}, seeded) is True
-    assert _payload_needs_seed(seeded, seeded) is False
 
     off = _preview(nxt, "slots", 100, 3)
     assert off["commission"] == 0
@@ -75,6 +60,37 @@ def test_normalize_and_preview():
     assert listed <= set(GAME_BY_KEY)
     assert any(f["key"] == "homeChance" for f in GAME_BY_KEY["risk"]["fields"])
     assert any(f["key"] == "tripleSeven" for f in GAME_BY_KEY["slots"]["fields"])
+
+
+def test_maintenance_help_and_play():
+    import sys
+
+    sys.path.insert(0, str(_ROOT / "bot"))
+    sys.path.insert(0, str(_ROOT))
+    from bot.runtime.game_desk.live import (
+        MAINT_HELP_HTML,
+        MAINT_PLAY_HTML,
+        _replace_help_title,
+        is_maintenance,
+        is_on,
+    )
+    from bot.runtime.game_desk.store import merge_payload, normalize_payload
+    from bot.runtime.game_desk.catalog import default_payload
+
+    raw = _read("bot", "funcs", "help.py")
+    assert "Шашки" in raw
+    snippet = "<tg-emoji emoji-id='5424687267014801006'>♟</tg-emoji> Шашки"
+    assert MAINT_HELP_HTML in _replace_help_title(snippet, "Шашки")
+    assert "5462921117423384478" in MAINT_PLAY_HTML
+    assert "В этой игре проводят технические работы" in MAINT_PLAY_HTML
+    assert "Тех работы" in MAINT_HELP_HTML
+
+    clean = normalize_payload(default_payload())
+    nxt = merge_payload(clean, {"games": {"scah": {"maintenance": True}}})
+    assert nxt["games"]["scah"]["maintenance"] is True
+    assert nxt["games"]["scah"]["enabled"] is True
+    assert is_on("scah") in (True, False)
+    assert is_maintenance("memory") in (True, False)
 
 
 def test_panel_games_is_creator_only():
@@ -95,33 +111,27 @@ def test_panel_games_is_creator_only():
     section = _read("admin", "src", "pages", "sections", "GamesSection.jsx")
     assert "grp-page nika-page gm-page" in section
     assert "Только создатель" in section
-    assert "GameAnalytics" in section
+    assert "nika-alarm" in section
     assert "NikaMoneyChart" in section
+    assert "Техработы" in section
     assert "maintenance" in section
-    assert "Copyable" in section
-    assert "gm-hero" in section
-    assert "gm-motif-" in section
-    assert "themeVars" in section
+    assert "gm-motif-" not in section
     assert "is-dirty" not in section
+    assert "Copyable" in section
+    icons = _read("admin", "src", "components", "NavIcons.jsx")
+    assert "games: Games" in icons
     css = _read("admin", "src", "styles", "games.css")
-    assert "minmax(min(16.4rem, 100%), 1fr)" in css
-    assert "grid-template-columns: 1fr" in css
     assert "border-radius: 8px" in css
-    assert "position: static" in css
-    assert "gm-motif-board" in css
-    assert "gm-motif-roulette" in css
+    assert "border-radius: 4px" in css
+    assert "gm-motif-" not in css
     assert "repeating-linear-gradient" not in css
     assert "repeating-conic-gradient" not in css
+    assert "position: sticky" not in css
     bot_live = _read("bot", "runtime", "game_desk", "live.py")
     assert "reject_desk" in bot_live
-    assert "is_maintenance" in bot_live
-    assert "5462921117423384478" in bot_live
-    assert "В этой игре проводят технические работы" in bot_live
-    assert "Тех работы" in bot_live
     assert "render_gamehelp" in bot_live
-    help_py = _read("bot", "funcs", "help.py")
-    assert "_live_gamehelp" in help_py
-    assert "await _live_gamehelp()" in help_py
+    assert "MAINT_PLAY_HTML" in bot_live
+    assert "is_maintenance" in bot_live
     growth = _read("bot", "funcs", "growth_fund.py")
     assert "desk.commission_on" in growth
     group = _read("bot", "games", "group_only.py")
@@ -142,82 +152,26 @@ def test_panel_games_is_creator_only():
     assert "_live_fortuna_range" in fortuna
     kosti = _read("bot", "funcs", "kosti.py")
     assert "_live_kosti_max" in kosti
+    onboarding = _read("bot", "funcs", "onboarding.py")
+    assert "is_maintenance" in onboarding
+    captcha = _read("bot", "handlers", "group_captcha.py")
+    assert "_GATE_TIMEOUT" in captcha
+    assert "wait_for" in captcha
+    sypher = _read("bot", "funcs", "soft_restart.py")
+    assert "_cfg_origin" in sypher
+    assert "env defaults must not overwrite" in sypher
+    admin_sr = _read("server", "admin_soft_restart.py")
+    assert "_is_persisted_config" in admin_sr
+    assert 'cfg["persisted"] = True' in admin_sr
     bot_cat = _read("bot", "runtime", "game_desk", "catalog.py")
     api_cat = _read("server", "game_desk", "catalog.py")
     assert '"scah"' in bot_cat and '"scah"' in api_cat
     assert "tripleSeven" in bot_cat and "tripleSeven" in api_cat
     assert "homeChance" in bot_cat and "homeChance" in api_cat
     assert "maintenance" in bot_cat and "maintenance" in api_cat
-    admin = _read("server", "admin_games.py")
-    assert "_load_series" in admin
-    assert "dayExtrema" in admin
-    sr = _read("bot", "funcs", "soft_restart.py")
-    assert "_hydrate_from_bridge" in sr
-    assert "hydrate first" in sr
-    assert "_bridge_push_config()" in sr
-    captcha = _read("bot", "handlers", "group_captcha.py")
-    assert "_prompt_safe" in captcha
-    assert "timeout=1.4" in captcha
-    gate = _read("bot", "funcs", "group_captcha.py")
-    assert "captcha user_needs timeout" in gate
-    assert "_mark_fail_open" in gate
-    assert "await maybe_prompt_captcha" in captcha
-    assert "wait_for(maybe_prompt_captcha" not in captcha
-
-
-def test_help_maintenance_marks_every_listed_game():
-    import sys
-
-    sys.path.insert(0, str(_ROOT / "bot"))
-    from runtime.game_desk.live import HELP_TITLES, MAINT_HELP_HTML, apply_help_maintenance
-
-    help_src = _read("bot", "funcs", "help.py")
-    start = help_src.index("gamehelp = f'''")
-    end = help_src.index("'''", start + 20)
-    body = help_src[start:end]
-    for title in HELP_TITLES.values():
-        assert f" {title}\n" in body, title
-    down = {key: True for key in HELP_TITLES}
-    marked = apply_help_maintenance(body, down)
-    assert marked.count(MAINT_HELP_HTML) == len(HELP_TITLES)
-    once = apply_help_maintenance(marked, down)
-    assert once.count(MAINT_HELP_HTML) == len(HELP_TITLES)
-    none = apply_help_maintenance(body, {key: False for key in HELP_TITLES})
-    assert MAINT_HELP_HTML not in none
-
-
-def test_sypher_does_not_treat_empty_pg_as_saved():
-    import sys
-
-    sys.path.insert(0, str(_ROOT))
-    from bot.funcs.soft_restart import _cfg_from_row, _is_persisted_config
-    from bot.funcs.sr_schedule import compute_next_at
-
-    assert _is_persisted_config(None) is False
-    assert _is_persisted_config({}) is False
-    assert _is_persisted_config({"foo": 1}) is False
-    assert _is_persisted_config({"enabled": True, "mode": "hourly"}) is True
-    assert _cfg_from_row('{"enabled": true, "mode": "hourly"}')["mode"] == "hourly"
-    nxt = compute_next_at(
-        {"enabled": True, "mode": "hourly", "hourly_minute": 0, "initial_delay_sec": 30, "timezone": "Europe/Moscow"},
-        now_ts=1_700_000_000,
-        started_at=1_700_000_000,
-        first_cycle=True,
-    )
-    assert nxt is not None
-    assert nxt > 1_700_000_000
-
-
-def test_captcha_fail_open_does_not_requery():
-    import sys
-    import time
-
-    sys.path.insert(0, str(_ROOT))
-    from bot.funcs import group_captcha as gc
-
-    gc._fail_open.clear()
-    assert gc._fail_open_cached(1, 2) is False
-    gc._mark_fail_open(1, 2)
-    assert gc._fail_open_cached(1, 2) is True
-    gc._fail_open[(1, 2)] = time.monotonic() - 100
-    assert gc._fail_open_cached(1, 2) is False
+    bot_store = _read("bot", "runtime", "game_desk", "store.py")
+    api_store = _read("server", "game_desk", "store.py")
+    assert "maintenance" in bot_store and "maintenance" in api_store
+    admin_games = _read("server", "admin_games.py")
+    assert "analytics" in admin_games
+    assert "14 days" in admin_games

@@ -283,7 +283,7 @@ GAMES: List[Dict[str, Any]] = [
         mood="Неон казино и три барабана.",
         theme=_theme("#ff4d8d", "#7c2cff", "#120814", "rgba(255,77,141,.16)", "neon"),
         params={
-            "jamChance": 0.08,
+            "jamChance": 0.15,
             "tripleSeven": 2.5,
             "tripleLemon": 2.2,
             "tripleGrape": 1.9,
@@ -432,6 +432,35 @@ GROUP_LABELS = {
     "payout": "Выплата",
     "table": "Стол",
     "tempo": "Темп",
+}
+
+HELP_MARKERS = {
+    "scah": "Шашки",
+    "memory": "Найди пару",
+    "bingo": "Бинго",
+    "fortuna_lobby": "Фортуна",
+    "kosti": "Кости",
+    "duel": "Дуэли",
+    "orel": "Орел или решка",
+    "knb": "Камень-ножницы-бумаг",
+    "mines": "Мины",
+    "tic_tac_toe": "Крестики-нолики",
+    "tank": "Башня",
+    "risk": "Риск",
+    "plate": "Плиты",
+    "bombs": "Бомбы",
+    "trade": "Трейд",
+    "balls": "Шарик",
+    "provoda": "Провода",
+    "slots": "Слоты",
+    "basket": "Баскетбол",
+    "soccer": "Футбол",
+    "bowling": "Боулинг",
+    "darts": "Дартс",
+    "kube": "Кубик",
+    "fortuna_solo": "Рулетка",
+    "words": "Слова",
+    "bullet": "Пуля",
 }
 
 

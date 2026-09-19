@@ -83,6 +83,7 @@ _dp_ref = None
 _notify_fn: Optional[NotifyFn] = None
 _cfg: Optional[Dict[str, Any]] = None
 _loaded = False
+_cfg_origin = "none"
 _last_cmd_ts: float = 0.0
 _last_cfg_rev: int = -1
 _bridge_table_ready = False
@@ -271,16 +272,19 @@ def _read_any_runtime_file() -> Optional[Dict[str, Any]]:
 
 
 def ensure_loaded() -> Dict[str, Any]:
-    global _cfg, _loaded
+    global _cfg, _loaded, _cfg_origin
     if _loaded and _cfg is not None:
         return _cfg
     cfg = _defaults_from_env()
-    for src in (_read_redis, _read_any_runtime_file):
+    origin = "env"
+    for src, name in ((_read_redis, "redis"), (_read_any_runtime_file, "file")):
         got = src()
-        if got:
+        if _is_persisted_config(got) and not _same_as_env_defaults(got):
             cfg = _normalize(got)
+            origin = name
             break
     _cfg = cfg
+    _cfg_origin = origin
     _loaded = True
     return _cfg
 
@@ -448,6 +452,7 @@ def status_dict() -> dict:
         "bridge_ok": True,
         "bridge_error": _bridge_last_error or None,
         "applied": dict(cfg),
+        "origin": _cfg_origin,
     }
 
 
@@ -548,17 +553,29 @@ def _cfg_from_row(raw: Any) -> Optional[Dict[str, Any]]:
 def _is_persisted_config(cfg: Optional[Dict[str, Any]]) -> bool:
     if not isinstance(cfg, dict) or not cfg:
         return False
+    if cfg.get("persisted") or str(cfg.get("source") or "") in {"panel", "user", "db"}:
+        return True
     return any(key in cfg for key in ("enabled", "mode", "interval_sec", "hourly_minute", "daily_times"))
+
+
+def _same_as_env_defaults(cfg: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(cfg, dict) or not cfg:
+        return True
+    if cfg.get("persisted") or str(cfg.get("source") or "") in {"panel", "user", "db"}:
+        return False
+    env = _defaults_from_env()
+    watch = ("enabled", "mode", "interval_sec", "initial_delay_sec", "hourly_minute", "test")
+    return all(cfg.get(k) == env.get(k) for k in watch)
 
 
 async def _hydrate_from_bridge() -> str:
     """Postgres побеждает. Записанные настройки нельзя затирать дефолтами из env.
 
     ok — прочитали живой конфиг.
-    empty — строка пустая, можно один раз засеять.
+    empty — строка пустая, можно один раз засеять из уже сохранённого локального.
     error — базу не трогаем, чтобы не затереть настройки.
     """
-    global _cfg, _loaded, _last_cfg_rev, _bridge_last_error
+    global _cfg, _loaded, _cfg_origin, _last_cfg_rev, _bridge_last_error
     if not await _bridge_ensure_table():
         return "error"
     try:
@@ -575,6 +592,7 @@ async def _hydrate_from_bridge() -> str:
         async with _cfg_lock:
             _cfg = _normalize(cfg)
             _loaded = True
+            _cfg_origin = "db"
             _persist()
         _last_cfg_rev = int(row["config_rev"] or 0)
         _bridge_last_error = ""
@@ -592,7 +610,13 @@ async def _hydrate_from_bridge() -> str:
 
 async def _bridge_push_config() -> None:
     global _bridge_last_error, _last_cfg_rev
+    if _cfg_origin == "env":
+        print("[SR] skip postgres push: env defaults must not overwrite saved settings", flush=True)
+        return
     cfg = ensure_loaded()
+    if not _is_persisted_config(cfg):
+        print("[SR] skip postgres push: config is not persisted", flush=True)
+        return
     payload = json.dumps(cfg, ensure_ascii=False, indent=2)
     for path in _paths("sr_runtime.json"):
         try:
@@ -659,10 +683,14 @@ async def maybe_notify_boot() -> None:
 
 async def apply_external_config(raw: Dict[str, Any]) -> Dict[str, Any]:
     """Применить конфиг из админ-панели (файл/PG cmd)."""
-    global _cfg, _loaded
+    global _cfg, _loaded, _cfg_origin
     async with _cfg_lock:
-        _cfg = _normalize(raw if isinstance(raw, dict) else {})
+        incoming = dict(raw) if isinstance(raw, dict) else {}
+        incoming["persisted"] = True
+        incoming["source"] = incoming.get("source") or "user"
+        _cfg = _normalize(incoming)
         _loaded = True
+        _cfg_origin = "user"
         _persist()
     await reschedule()
     await _bridge_publish_status()
@@ -739,16 +767,20 @@ async def _poll_bridge_once() -> None:
             return
         crev = int(row["config_rev"] or 0)
         if crev > _last_cfg_rev:
-            _last_cfg_rev = crev
             cfg = row["config"]
             if isinstance(cfg, str):
                 cfg = _cmd_as_dict(cfg)
-            if isinstance(cfg, dict) and cfg:
+            if _is_persisted_config(cfg):
+                _last_cfg_rev = crev
                 cur = ensure_loaded()
                 norm = _normalize(cfg)
                 if any(cur.get(k) != norm.get(k) for k in norm):
                     await apply_external_config(norm)
                     print(f"[SR] bridge config_rev={crev}", flush=True)
+            elif _is_persisted_config(ensure_loaded()) and _cfg_origin != "env":
+                _last_cfg_rev = crev
+            else:
+                _last_cfg_rev = crev
         cmd = _cmd_as_dict(row["cmd"])
         if isinstance(cmd, dict):
             await _consume_cmd(cmd)
@@ -769,8 +801,11 @@ async def _bridge_loop() -> None:
         except Exception as e:
             print(f"[SR] hydrate: {e!r}", flush=True)
         if hydrated == "empty":
-            await _bridge_push_config()
-            print("[SR] postgres empty — seeded current settings", flush=True)
+            if _cfg_origin in {"user", "file", "redis", "db"} and _is_persisted_config(ensure_loaded()):
+                await _bridge_push_config()
+                print("[SR] postgres empty — seeded already saved settings", flush=True)
+            else:
+                print("[SR] postgres empty — waiting for panel save, env defaults stay local", flush=True)
         elif hydrated == "error":
             print("[SR] postgres unread — keep local settings, do not overwrite", flush=True)
         try:
@@ -779,6 +814,13 @@ async def _bridge_loop() -> None:
             print(f"[SR] reschedule after hydrate: {e!r}", flush=True)
         while True:
             try:
+                if _cfg_origin == "env" or hydrated == "error":
+                    again = await _hydrate_from_bridge()
+                    if again == "ok":
+                        hydrated = "ok"
+                        await reschedule()
+                    elif again == "empty" and hydrated != "empty":
+                        hydrated = "empty"
                 await _poll_bridge_once()
                 await _bridge_publish_status()
             except asyncio.CancelledError:
@@ -1223,9 +1265,10 @@ _SCHED_KEYS = frozenset(
 
 
 async def update_settings(**kwargs: Any) -> Dict[str, Any]:
-    global _cfg
+    global _cfg, _cfg_origin
     async with _cfg_lock:
         cfg = dict(ensure_loaded())
+        _cfg_origin = "user"
         for k, v in kwargs.items():
             if k == "conditions" and isinstance(v, dict):
                 cur = dict(cfg.get("conditions") or {})
@@ -1241,6 +1284,8 @@ async def update_settings(**kwargs: Any) -> Dict[str, Any]:
                 "notify_creator",
             ):
                 cfg[k] = v
+        cfg["persisted"] = True
+        cfg["source"] = "user"
         _cfg = _normalize(cfg)
         _persist()
         need_sched = any(k in _SCHED_KEYS for k in kwargs)

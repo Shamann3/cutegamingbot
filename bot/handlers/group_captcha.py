@@ -32,9 +32,26 @@ _OPEN = ChatPermissions(
     can_send_other_messages=True,
     can_add_web_page_previews=True,
 )
+_TG_TIMEOUT = 2.2
+_DB_TIMEOUT = 1.4
+_GATE_TIMEOUT = 1.6
+_PROMPT_TIMEOUT = 3.0
+
+
+async def _wait(coro, timeout: float, default=None):
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except asyncio.TimeoutError:
+        return default
+    except Exception:
+        return default
 
 
 def _lock(chat_id: int, user_id: int) -> asyncio.Lock:
+    if len(_locks) > 256:
+        dead = [key for key, item in _locks.items() if not item.locked()]
+        for key in dead[:160]:
+            _locks.pop(key, None)
     key = (int(chat_id), int(user_id))
     lock = _locks.get(key)
     if lock is None:
@@ -110,7 +127,7 @@ async def _delete_message(bot, chat_id: int, message_id: Optional[int]) -> None:
     if not message_id:
         return
     try:
-        await asyncio.wait_for(bot.delete_message(int(chat_id), int(message_id)), timeout=1.5)
+        await asyncio.wait_for(bot.delete_message(int(chat_id), int(message_id)), timeout=_TG_TIMEOUT)
     except Exception:
         return
 
@@ -133,12 +150,15 @@ async def _try_deliver(
         kwargs["parse_mode"] = parse_mode
     if mid:
         try:
-            await bot.edit_message_text(
-                text,
-                chat_id=int(chat_id),
-                message_id=int(mid),
-                disable_web_page_preview=True,
-                **kwargs,
+            await asyncio.wait_for(
+                bot.edit_message_text(
+                    text,
+                    chat_id=int(chat_id),
+                    message_id=int(mid),
+                    disable_web_page_preview=True,
+                    **kwargs,
+                ),
+                timeout=_TG_TIMEOUT,
             )
             return int(mid)
         except TelegramBadRequest as e:
@@ -146,47 +166,64 @@ async def _try_deliver(
                 return int(mid)
         except TypeError:
             try:
-                await bot.edit_message_text(
-                    text,
-                    chat_id=int(chat_id),
-                    message_id=int(mid),
-                    **kwargs,
+                await asyncio.wait_for(
+                    bot.edit_message_text(
+                        text,
+                        chat_id=int(chat_id),
+                        message_id=int(mid),
+                        **kwargs,
+                    ),
+                    timeout=_TG_TIMEOUT,
                 )
                 return int(mid)
             except Exception:
                 pass
-        except Exception:
+        except (asyncio.TimeoutError, Exception):
             pass
     send_kwargs = dict(kwargs)
     if thread_id:
         send_kwargs["message_thread_id"] = int(thread_id)
     try:
-        msg = await bot.send_message(
-            int(chat_id),
-            text,
-            disable_web_page_preview=True,
-            **send_kwargs,
+        msg = await asyncio.wait_for(
+            bot.send_message(
+                int(chat_id),
+                text,
+                disable_web_page_preview=True,
+                **send_kwargs,
+            ),
+            timeout=_TG_TIMEOUT,
         )
         return int(msg.message_id)
     except TelegramBadRequest:
         if "message_thread_id" in send_kwargs:
             send_kwargs.pop("message_thread_id", None)
-            msg = await bot.send_message(
-                int(chat_id),
-                text,
-                disable_web_page_preview=True,
-                **send_kwargs,
+            msg = await asyncio.wait_for(
+                bot.send_message(
+                    int(chat_id),
+                    text,
+                    disable_web_page_preview=True,
+                    **send_kwargs,
+                ),
+                timeout=_TG_TIMEOUT,
             )
             return int(msg.message_id)
         raise
     except TypeError:
         send_kwargs.pop("message_thread_id", None)
         try:
-            msg = await bot.send_message(int(chat_id), text, **send_kwargs)
+            msg = await asyncio.wait_for(
+                bot.send_message(int(chat_id), text, **send_kwargs),
+                timeout=_TG_TIMEOUT,
+            )
             return int(msg.message_id)
         except TypeError:
-            msg = await bot.send_message(int(chat_id), text, **kwargs)
+            msg = await asyncio.wait_for(
+                bot.send_message(int(chat_id), text, **kwargs),
+                timeout=_TG_TIMEOUT,
+            )
             return int(msg.message_id)
+    except asyncio.TimeoutError:
+        return None
 
 
 async def _send_or_edit(
@@ -286,13 +323,13 @@ async def maybe_prompt_captcha(
     else:
         _bg(gc.seed_new_group(pool, None, user, chat_id=int(chat_id)))
 
-    if not await gc.user_needs_captcha(pool, chat_id, uid):
+    if not await _wait(gc.user_needs_captcha(pool, chat_id, uid), _DB_TIMEOUT, False):
         return False
 
     key = (int(chat_id), uid)
     now = time.monotonic()
     if trigger != "message" and now - _last_prompt.get(key, 0.0) < _PROMPT_GAP:
-        open_row = await gc.get_open_challenge(pool, chat_id, uid)
+        open_row = await _wait(gc.get_open_challenge(pool, chat_id, uid), _DB_TIMEOUT, None)
         if open_row and not gc.challenge_expired(open_row) and open_row.get("message_id"):
             return True
     if trigger == "message" and now - _last_prompt.get(key, 0.0) < _MESSAGE_RESEND_GAP:
@@ -303,9 +340,9 @@ async def maybe_prompt_captcha(
     row = None
     open_row = None
     async with _lock(chat_id, uid):
-        if not await gc.user_needs_captcha(pool, chat_id, uid):
+        if not await _wait(gc.user_needs_captcha(pool, chat_id, uid), _DB_TIMEOUT, False):
             return False
-        open_row = await gc.get_open_challenge(pool, chat_id, uid)
+        open_row = await _wait(gc.get_open_challenge(pool, chat_id, uid), _DB_TIMEOUT, None)
         if trigger == "message" and time.monotonic() - _last_prompt.get(key, 0.0) < _MESSAGE_RESEND_GAP:
             await _log_blocked(pool, user=user, chat=chat, chat_id=chat_id, extra=extra_meta)
             return True
@@ -322,16 +359,21 @@ async def maybe_prompt_captcha(
 
         payload = gc.build_challenge()
         attempts = int((open_row or {}).get("attempts") or 0)
-        row = await gc.save_challenge(
-            pool,
-            user_id=uid,
-            chat_id=int(chat_id),
-            payload=payload,
-            trigger=trigger,
-            message_id=None,
-            attempts=attempts,
+        row = await _wait(
+            gc.save_challenge(
+                pool,
+                user_id=uid,
+                chat_id=int(chat_id),
+                payload=payload,
+                trigger=trigger,
+                message_id=None,
+                attempts=attempts,
+            ),
+            _DB_TIMEOUT,
+            None,
         )
-        row["message_id"] = None
+        if isinstance(row, dict):
+            row["message_id"] = None
 
     if not row or not payload:
         return False
@@ -346,7 +388,7 @@ async def maybe_prompt_captcha(
     if not mid:
         _last_prompt.pop(key, None)
         return False
-    await gc.update_challenge(pool, int(row["id"]), message_id=mid)
+    await _wait(gc.update_challenge(pool, int(row["id"]), message_id=mid), _DB_TIMEOUT, None)
     _bg(gc.log_event(
         pool,
         user_id=uid,
@@ -374,21 +416,7 @@ async def _user_needs_captcha(chat_id: int, user_id: int) -> bool:
     pool = _pool()
     if pool is None:
         return False
-    try:
-        return bool(await asyncio.wait_for(
-            gc.user_needs_captcha(pool, chat_id, user_id),
-            timeout=1.4,
-        ))
-    except Exception:
-        log.warning("captcha gate timeout chat=%s user=%s", chat_id, user_id)
-        return False
-
-
-async def _prompt_safe(bot, **kwargs) -> None:
-    try:
-        await maybe_prompt_captcha(bot, **kwargs)
-    except Exception:
-        log.exception("captcha prompt hang chat=%s user=%s", kwargs.get("chat_id"), getattr(kwargs.get("user"), "id", None))
+    return await gc.user_needs_captcha(pool, chat_id, user_id)
 
 
 class CaptchaGateMiddleware(BaseMiddleware):
@@ -410,7 +438,13 @@ class CaptchaGateMiddleware(BaseMiddleware):
         if not user or user.is_bot:
             return await handler(event, data)
         try:
-            needed = await _user_needs_captcha(int(chat.id), int(user.id))
+            needed = await asyncio.wait_for(
+                _user_needs_captcha(int(chat.id), int(user.id)),
+                timeout=_GATE_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            log.warning("captcha gate timeout chat=%s user=%s", chat.id, user.id)
+            return await handler(event, data)
         except Exception:
             log.exception("captcha gate check chat=%s user=%s", chat.id, user.id)
             return await handler(event, data)
@@ -418,15 +452,23 @@ class CaptchaGateMiddleware(BaseMiddleware):
             return await handler(event, data)
         bot = data.get("bot") or message.bot
         extra = _message_extra(message)
-        _bg(_prompt_safe(
-            bot,
-            chat_id=int(chat.id),
-            user=user,
-            trigger="message",
-            thread_id=getattr(message, "message_thread_id", None),
-            chat=chat,
-            extra_meta=extra,
-        ))
+        try:
+            await asyncio.wait_for(
+                maybe_prompt_captcha(
+                    bot,
+                    chat_id=int(chat.id),
+                    user=user,
+                    trigger="message",
+                    thread_id=getattr(message, "message_thread_id", None),
+                    chat=chat,
+                    extra_meta=extra,
+                ),
+                timeout=_PROMPT_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            log.warning("captcha prompt timeout chat=%s user=%s", chat.id, user.id)
+        except Exception:
+            log.exception("captcha prompt chat=%s user=%s", chat.id, user.id)
         await _delete_message(bot, int(chat.id), message.message_id)
         return None
 
@@ -449,7 +491,12 @@ class CaptchaCallbackGateMiddleware(BaseMiddleware):
         if not user or user.is_bot:
             return await handler(event, data)
         try:
-            needed = await _user_needs_captcha(int(chat.id), int(user.id))
+            needed = await asyncio.wait_for(
+                _user_needs_captcha(int(chat.id), int(user.id)),
+                timeout=_GATE_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            return await handler(event, data)
         except Exception:
             return await handler(event, data)
         if not needed:
@@ -460,15 +507,23 @@ class CaptchaCallbackGateMiddleware(BaseMiddleware):
         except Exception:
             pass
         if bot:
-            _bg(_prompt_safe(
-                bot,
-                chat_id=int(chat.id),
-                user=user,
-                trigger="callback",
-                thread_id=getattr(message, "message_thread_id", None),
-                chat=chat,
-                extra_meta={"trigger": "callback", "callback": raw[:40]},
-            ))
+            try:
+                await asyncio.wait_for(
+                    maybe_prompt_captcha(
+                        bot,
+                        chat_id=int(chat.id),
+                        user=user,
+                        trigger="callback",
+                        thread_id=getattr(message, "message_thread_id", None),
+                        chat=chat,
+                        extra_meta={"trigger": "callback", "callback": raw[:40]},
+                    ),
+                    timeout=_PROMPT_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                log.warning("captcha prompt timeout on callback chat=%s user=%s", chat.id, user.id)
+            except Exception:
+                log.exception("captcha prompt on blocked callback chat=%s user=%s", chat.id, user.id)
         return None
 
 

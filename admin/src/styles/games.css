@@ -1,264 +1,75 @@
 .grp-page.gm-page .gm-uni {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
-.grp-page.gm-page .gm-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(16.4rem, 100%), 1fr));
-  gap: 0.7rem;
+.grp-page.gm-page .gm-tables {
   margin-top: 0.95rem;
 }
-.grp-page.nika-page.gm-page .gm-card.nika-table,
-.grp-page.gm-page .gm-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 0.35rem;
-  min-width: 0;
-  min-height: 0;
+.grp-page.gm-page .gm-table {
+  appearance: none;
   width: 100%;
-  margin: 0;
-  padding: 1.05rem 1.1rem;
-  overflow: hidden;
-  isolation: isolate;
-  border: 1px solid color-mix(in srgb, var(--gm-accent, #fff) 22%, rgba(255,255,255,.08));
-  border-radius: 8px !important;
-  background:
-    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--gm-accent) 26%, transparent), transparent 58%),
-    radial-gradient(70% 60% at 0% 100%, color-mix(in srgb, var(--gm-accent2) 14%, transparent), transparent 52%),
-    linear-gradient(180deg, color-mix(in srgb, var(--gm-ink) 86%, #141416), #101012);
-  color: inherit;
+  min-width: 0;
   text-align: left;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
+  border-radius: 8px !important;
   letter-spacing: 0;
-  box-shadow: 0 1px 0 rgba(255,255,255,.05) inset;
 }
-.grp-page.gm-page .gm-card-glow {
-  position: absolute;
-  right: -12%;
-  top: -28%;
-  width: 9rem;
-  height: 9rem;
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--gm-accent2) 34%, transparent), transparent 70%);
-  pointer-events: none;
-  z-index: 0;
+.grp-page.gm-page .gm-table.is-on {
+  border-color: rgba(255,255,255,.22);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.08);
 }
-.grp-page.gm-page .gm-card > *:not(.gm-card-glow),
-.grp-page.gm-page .gm-hero > *:not(.gm-card-glow) {
-  position: relative;
-  z-index: 1;
+.grp-page.gm-page .gm-table .nika-help {
+  min-height: 2.4em;
 }
-.grp-page.gm-page .gm-card header {
+.grp-page.gm-page .gm-table .nika-spark {
+  margin-top: 0.7rem;
+  width: 100%;
+}
+
+.grp-page.gm-page .gm-hero {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 0.55rem;
+  gap: 1rem;
+}
+.grp-page.gm-page .gm-hero-copy {
+  flex: 1 1 12rem;
   min-width: 0;
+  max-width: 34rem;
 }
-.grp-page.gm-page .gm-card h3 {
-  margin: 0;
-  color: #fff;
-  font-size: 1.08rem;
-  letter-spacing: -0.03em;
-  overflow-wrap: anywhere;
-}
-.grp-page.nika-page.gm-page .gm-card header .nika-pill,
-.grp-page.gm-page .gm-card .nika-pill {
-  flex: 0 0 auto;
-}
-.grp-page.nika-page.gm-page .gm-card header .nika-pill-ok { color: #b8e0b4; }
-.grp-page.nika-page.gm-page .gm-card header .nika-pill-mute { color: #9a908c; }
-.grp-page.gm-page .gm-card p {
-  margin: 0;
-  color: #cfc6be;
-  font-size: 0.8rem;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-.grp-page.gm-page .gm-card .nika-bal-kicker {
-  margin-top: 0.55rem;
-}
-.grp-page.gm-page .gm-card .nika-bal-value {
-  margin: 0;
-}
-.grp-page.gm-page .gm-card small {
+.grp-page.gm-page .gm-hero-copy small {
   color: #8a827c;
-  font-size: 0.7rem;
-  overflow-wrap: anywhere;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
-.grp-page.gm-page .gm-card.is-paused { opacity: 0.72; }
-
-.grp-page.nika-page.gm-page .gm-hero.nika-wallet,
-.grp-page.gm-page .gm-hero {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-  border-radius: 8px !important;
-  min-height: 0;
-  background:
-    radial-gradient(90% 120% at 100% 0%, color-mix(in srgb, var(--gm-accent) 28%, transparent), transparent 58%),
-    radial-gradient(70% 80% at 0% 100%, color-mix(in srgb, var(--gm-accent2) 16%, transparent), transparent 55%),
-    linear-gradient(165deg, color-mix(in srgb, var(--gm-ink) 90%, #1c1c1e), #0a0a0a);
-  border-color: color-mix(in srgb, var(--gm-accent) 28%, rgba(255,255,255,.1));
-}
-.grp-page.gm-page .gm-hero .gm-card-glow {
-  width: 14rem;
-  height: 14rem;
-  right: -8%;
-  top: -40%;
-}
-.grp-page.gm-page .gm-hero h2 {
-  margin: 0.15rem 0 0;
+.grp-page.gm-page .gm-hero-copy h2 {
+  margin: 0.28rem 0 0;
   color: #fff;
   font-size: clamp(1.7rem, 3.4vw, 2.35rem);
   letter-spacing: -0.04em;
   line-height: 1.05;
 }
-.grp-page.gm-page .gm-desk .gm-range,
-.grp-page.gm-page .gm-hero .gm-range {
-  accent-color: var(--gm-accent, #32d74b);
+.grp-page.gm-page .gm-hero-copy p {
+  margin: 0.5rem 0 0;
+  color: #e8e0d8;
+  font-size: 0.92rem;
+  line-height: 1.45;
 }
-.grp-page.gm-page .gm-card.is-on {
-  border-color: color-mix(in srgb, var(--gm-accent) 55%, #fff);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gm-accent) 28%, transparent);
+.grp-page.gm-page .gm-hero-hint {
+  color: #b8afa6 !important;
+  font-size: 0.8rem !important;
 }
-
-.grp-page.gm-page .gm-motif-board {
-  background-image:
-    radial-gradient(90% 80% at 92% 8%, rgba(196,165,116,.34), transparent 56%),
-    radial-gradient(70% 60% at 8% 92%, rgba(59,42,28,.28), transparent 58%),
-    linear-gradient(180deg, #1a120c, #120c08);
+.grp-page.gm-page .gm-hero-copy em {
+  display: block;
+  margin-top: 0.7rem;
+  color: #8a827c;
+  font-style: normal;
+  font-size: 0.78rem;
 }
-.grp-page.gm-page .gm-motif-wood {
-  background-image:
-    radial-gradient(85% 75% at 100% 0%, rgba(215,161,90,.32), transparent 58%),
-    linear-gradient(180deg, #24160c, #140c08);
-}
-.grp-page.gm-page .gm-motif-cookie {
-  background-image:
-    radial-gradient(circle at 86% 16%, rgba(232,160,90,.36), transparent 42%),
-    radial-gradient(circle at 12% 88%, rgba(138,61,28,.22), transparent 46%),
-    linear-gradient(180deg, #2a160c, #140c08);
-}
-.grp-page.gm-page .gm-motif-wheel {
-  background-image:
-    radial-gradient(circle at 88% 12%, rgba(240,193,75,.34), transparent 40%),
-    radial-gradient(circle at 12% 88%, rgba(122,31,107,.28), transparent 48%),
-    linear-gradient(180deg, #1c0a18, #100610);
-}
-.grp-page.gm-page .gm-motif-felt {
-  background-image:
-    radial-gradient(90% 80% at 100% 0%, rgba(61,139,90,.3), transparent 56%),
-    linear-gradient(180deg, #0e1c14, #0a140e);
-}
-.grp-page.gm-page .gm-motif-duel {
-  background-image:
-    radial-gradient(80% 70% at 100% 0%, rgba(201,163,106,.26), transparent 54%),
-    linear-gradient(180deg, #16110c, #0c0a08);
-}
-.grp-page.gm-page .gm-motif-coin {
-  background-image:
-    radial-gradient(circle at 86% 16%, rgba(230,195,92,.36), transparent 38%),
-    linear-gradient(180deg, #1c1408, #100c08);
-}
-.grp-page.gm-page .gm-motif-steel {
-  background-image:
-    radial-gradient(90% 70% at 100% 0%, rgba(138,160,184,.24), transparent 56%),
-    linear-gradient(180deg, #10141a, #0c1014);
-}
-.grp-page.gm-page .gm-motif-hazard {
-  background-image:
-    radial-gradient(80% 70% at 100% 0%, rgba(226,75,75,.3), transparent 54%),
-    linear-gradient(180deg, #1a0a0a, #100808);
-}
-.grp-page.gm-page .gm-motif-grid {
-  background-image:
-    radial-gradient(90% 80% at 100% 0%, rgba(90,160,230,.26), transparent 56%),
-    linear-gradient(180deg, #0e1620, #0a1016);
-}
-.grp-page.gm-page .gm-motif-clover {
-  background-image:
-    radial-gradient(circle at 88% 14%, rgba(92,184,106,.32), transparent 40%),
-    linear-gradient(180deg, #102016, #0a140e);
-}
-.grp-page.gm-page .gm-motif-jungle {
-  background-image:
-    radial-gradient(80% 70% at 100% 0%, rgba(196,90,42,.26), transparent 50%),
-    radial-gradient(70% 60% at 0% 100%, rgba(76,175,122,.2), transparent 52%),
-    linear-gradient(180deg, #122016, #0c140c);
-}
-.grp-page.gm-page .gm-motif-rose {
-  background-image:
-    radial-gradient(circle at 88% 14%, rgba(224,122,168,.3), transparent 40%),
-    radial-gradient(70% 60% at 0% 100%, rgba(106,42,122,.2), transparent 50%),
-    linear-gradient(180deg, #1a101c, #100c14);
-}
-.grp-page.gm-page .gm-motif-blast {
-  background-image:
-    radial-gradient(circle at 88% 16%, rgba(240,138,42,.36), transparent 34%),
-    radial-gradient(circle at 88% 16%, rgba(240,138,42,.14), transparent 58%),
-    linear-gradient(180deg, #1c1008, #100808);
-}
-.grp-page.gm-page .gm-motif-terminal {
-  background-image:
-    radial-gradient(70% 80% at 100% 0%, rgba(50,215,75,.2), transparent 52%),
-    radial-gradient(60% 70% at 0% 100%, rgba(255,69,58,.16), transparent 50%),
-    linear-gradient(180deg, #0a1410, #08100c);
-}
-.grp-page.gm-page .gm-motif-billiard {
-  background-image:
-    radial-gradient(circle at 88% 16%, rgba(17,17,17,.55), transparent 28%),
-    radial-gradient(90% 80% at 100% 0%, rgba(47,107,58,.28), transparent 56%),
-    linear-gradient(180deg, #12301c, #0a1a10);
-}
-.grp-page.gm-page .gm-motif-neon {
-  background-image:
-    radial-gradient(70% 80% at 100% 0%, rgba(90,208,255,.22), transparent 50%),
-    radial-gradient(70% 80% at 0% 100%, rgba(255,77,141,.2), transparent 50%),
-    linear-gradient(180deg, #100818, #0a0812);
-}
-.grp-page.gm-page .gm-motif-court {
-  background-image:
-    radial-gradient(85% 75% at 100% 0%, rgba(230,122,46,.3), transparent 56%),
-    linear-gradient(180deg, #2a180e, #140c08);
-}
-.grp-page.gm-page .gm-motif-grass {
-  background-image:
-    radial-gradient(90% 80% at 100% 0%, rgba(76,175,80,.28), transparent 56%),
-    linear-gradient(180deg, #123016, #0c1c10);
-}
-.grp-page.gm-page .gm-motif-alley {
-  background-image:
-    radial-gradient(85% 75% at 100% 0%, rgba(212,165,116,.26), transparent 56%),
-    linear-gradient(180deg, #1c140c, #100c08);
-}
-.grp-page.gm-page .gm-motif-target {
-  background-image:
-    radial-gradient(circle at 88% 16%, rgba(209,43,43,.34), transparent 22%),
-    radial-gradient(circle at 88% 16%, rgba(209,43,43,.16), transparent 48%),
-    linear-gradient(180deg, #1a0a0a, #100808);
-}
-.grp-page.gm-page .gm-motif-dice {
-  background-image:
-    radial-gradient(circle at 86% 18%, rgba(198,40,40,.28), transparent 18%),
-    linear-gradient(180deg, #1c1a18, #121110);
-}
-.grp-page.gm-page .gm-motif-roulette {
-  background-image:
-    radial-gradient(circle at 88% 12%, rgba(212,175,55,.3), transparent 36%),
-    radial-gradient(80% 70% at 0% 100%, rgba(31,107,58,.24), transparent 52%),
-    linear-gradient(180deg, #0c1a12, #08140c);
-}
-.grp-page.gm-page .gm-motif-paper {
-  background-image:
-    radial-gradient(90% 80% at 100% 0%, rgba(216,207,192,.16), transparent 56%),
-    linear-gradient(180deg, #1c1814, #12100c);
-}
-.grp-page.gm-page .gm-motif-brass {
-  background-image:
-    radial-gradient(85% 75% at 100% 0%, rgba(201,163,106,.3), transparent 54%),
-    linear-gradient(180deg, #16120c, #0e0c08);
+.grp-page.gm-page .gm-hero .nika-btn {
+  flex: 0 0 auto;
 }
 
 .grp-page.gm-page .gm-field {
@@ -284,15 +95,14 @@
 }
 .grp-page.gm-page .gm-range {
   width: 100%;
-  height: 8px;
   accent-color: #32d74b;
 }
 .grp-page.gm-page .gm-num {
   width: 100%;
   min-width: 0;
   min-height: 36px;
-  padding: 0.35rem 0.45rem;
-  border-radius: 6px;
+  padding: 0.35rem 0.55rem;
+  border-radius: 4px;
   border: 1px solid rgba(255,255,255,.1);
   background: #101012;
   color: #fff;
@@ -321,35 +131,14 @@
 }
 .grp-page.gm-page .gm-steps li + li { margin-top: 0.45rem; }
 
-.grp-page.gm-page .gm-save {
-  position: static;
-  z-index: auto;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0.9rem 1rem;
+.grp-page.gm-page .nika-panel,
+.grp-page.gm-page .nika-table,
+.grp-page.gm-page .nika-alarm,
+.grp-page.gm-page .nika-card,
+.grp-page.gm-page .nika-empty,
+.grp-page.gm-page .nika-uni,
+.grp-page.gm-page .nika-mach-tile {
   border-radius: 8px;
-  background: #161618;
-  border: 1px solid rgba(255,255,255,.12);
-  box-shadow: none;
-}
-.grp-page.gm-page .gm-save .nika-card-actions {
-  margin-top: 0;
-}
-.grp-page.gm-page .gm-save strong { display: block; color: #fff; }
-.grp-page.gm-page .gm-save span { color: #8a827c; font-size: 0.74rem; }
-
-.grp-page.gm-page .gm-flow-pick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.28rem;
-  margin-top: 0.55rem;
-}
-.grp-page.gm-page .gm-flow-pick .nika-seg-btn {
-  flex: 0 1 auto;
-  min-width: 2.4rem;
 }
 
 html.is-phone .grp-page.gm-page .gm-uni,
@@ -364,14 +153,14 @@ html.is-phone .grp-page.gm-page .gm-field-ctrl,
 html[data-viewport="phone"] .grp-page.gm-page .gm-field-ctrl {
   grid-template-columns: 1fr;
 }
-html.is-phone .grp-page.gm-page .gm-save,
-html[data-viewport="phone"] .grp-page.gm-page .gm-save {
+html.is-phone .grp-page.gm-page .gm-hero,
+html[data-viewport="phone"] .grp-page.gm-page .gm-hero {
   flex-direction: column;
-  align-items: stretch;
 }
-html.is-phone .grp-page.gm-page .gm-save .nika-card-actions,
-html[data-viewport="phone"] .grp-page.gm-page .gm-save .nika-card-actions {
+html.is-phone .grp-page.gm-page .gm-hero .nika-btn,
+html[data-viewport="phone"] .grp-page.gm-page .gm-hero .nika-btn {
   width: 100%;
+  flex: 1 1 auto;
 }
 html.is-phone .grp-page.gm-page .nika-panel-top .nika-seg,
 html[data-viewport="phone"] .grp-page.gm-page .nika-panel-top .nika-seg,
@@ -389,6 +178,12 @@ html[data-viewport="phone"] .grp-page.gm-page .nika-seg-mini .nika-seg-btn {
   padding-right: 0.4rem !important;
 }
 
+@media (max-width: 980px) {
+  .grp-page.gm-page .gm-uni {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 720px) {
   .grp-page.gm-page .gm-uni,
   .grp-page.gm-page .gm-preview,
@@ -397,7 +192,7 @@ html[data-viewport="phone"] .grp-page.gm-page .nika-seg-mini .nika-seg-btn {
   .grp-page.gm-page .gm-field-ctrl {
     grid-template-columns: 1fr;
   }
-  .grp-page.gm-page .gm-grid {
-    grid-template-columns: 1fr;
+  .grp-page.gm-page .gm-hero {
+    flex-direction: column;
   }
 }

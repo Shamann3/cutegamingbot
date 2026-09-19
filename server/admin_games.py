@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Админка игр: каталог, сохранение, комиссия, аналитика. Деньги не двигает."""
+"""Админка игр: каталог, сохранение, комиссия, история. Деньги не двигает."""
 
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 from db import db
@@ -13,7 +13,6 @@ from game_desk.schema import ensure_game_desk_schema
 from game_desk.store import load_payload, merge_payload, save_payload
 
 _schema_ok = False
-_MONTHS = ("янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
 
 
 async def _ensure() -> None:
@@ -21,6 +20,16 @@ async def _ensure() -> None:
     if _schema_ok:
         return
     await ensure_game_desk_schema(db)
+    try:
+        async with db.pool.acquire() as conn:
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_gf_ledger_game_created
+                    ON growth_fund_ledger (game, created_at DESC)
+                """
+            )
+    except Exception:
+        pass
     _schema_ok = True
 
 
@@ -30,89 +39,6 @@ def _jsonable(value: Any) -> Any:
             value = value.replace(tzinfo=timezone.utc)
         return value.isoformat()
     return value
-
-
-def _aware(value) -> datetime:
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
-    return datetime.now(timezone.utc)
-
-
-def _as_int(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
-def _bucket_key(value, trunc: str) -> str:
-    if isinstance(value, datetime):
-        dt = _aware(value)
-        return dt.strftime("%Y-%m-%dT%H") if trunc == "hour" else dt.strftime("%Y-%m-%d")
-    text = str(value or "")
-    if trunc == "hour":
-        return text[:13].replace(" ", "T")
-    return text[:10]
-
-
-def _iter_buckets(since, until, trunc: str) -> List[datetime]:
-    step = timedelta(hours=1) if trunc == "hour" else timedelta(days=1)
-    cap = 48 if trunc == "hour" else 62
-    end = _aware(until)
-    start = _aware(since)
-    if trunc == "hour":
-        end = end.replace(minute=0, second=0, microsecond=0)
-        start = start.replace(minute=0, second=0, microsecond=0)
-    else:
-        end = end.replace(hour=0, minute=0, second=0, microsecond=0)
-        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
-    out: List[datetime] = []
-    cur = end
-    while cur >= start and len(out) < cap:
-        out.append(cur)
-        cur = cur - step
-    out.reverse()
-    return out
-
-
-def _label(dt: datetime, trunc: str) -> str:
-    d = _aware(dt)
-    if trunc == "hour":
-        return d.strftime("%H:%M")
-    return f"{d.day} {_MONTHS[d.month - 1]}"
-
-
-def _point(dt: datetime, trunc: str, pot: int, commission: int, events: int) -> Dict[str, Any]:
-    return {
-        "t": _jsonable(dt),
-        "label": _label(dt, trunc),
-        "events": int(events),
-        "pot": int(pot),
-        "commission": int(commission),
-        "plus": int(pot),
-        "minus": int(commission),
-        "net": int(pot) - int(commission),
-    }
-
-
-def _extrema(points: List[Dict[str, Any]]) -> Dict[str, Any]:
-    plus_n = sum(1 for p in points if (p.get("net") or 0) > 0)
-    minus_n = sum(1 for p in points if (p.get("net") or 0) < 0)
-    best = max(points, key=lambda p: p.get("net") or 0) if points else None
-    worst = min(points, key=lambda p: p.get("net") or 0) if points else None
-    if best and (best.get("net") or 0) <= 0:
-        best = None
-    if worst and (worst.get("net") or 0) >= 0:
-        worst = None
-    return {
-        "plusBuckets": plus_n,
-        "minusBuckets": minus_n,
-        "flatBuckets": max(0, len(points) - plus_n - minus_n),
-        "best": best,
-        "worst": worst,
-    }
 
 
 def _preview(settings: Dict[str, Any], game_key: str, pot: int, level: int) -> Dict[str, Any]:
@@ -127,49 +53,32 @@ def _preview(settings: Dict[str, Any], game_key: str, pot: int, level: int) -> D
     return {"commission": amount, "rate": rate, "note": ""}
 
 
-def _fill_series(by_bucket: Dict[str, Dict[str, int]], since, until, trunc: str) -> List[Dict[str, Any]]:
-    points = []
-    for dt in _iter_buckets(since, until, trunc):
-        row = by_bucket.get(_bucket_key(dt, trunc)) or {}
-        points.append(_point(dt, trunc, _as_int(row.get("pot")), _as_int(row.get("commission")), _as_int(row.get("events"))))
-    return points
-
-
-async def _load_series(conn, since, until, trunc: str) -> Dict[str, List[Dict[str, Any]]]:
-    trunc = "hour" if trunc == "hour" else "day"
+def _day_label(iso: str) -> str:
     try:
-        rows = await conn.fetch(
-            f"""
-            SELECT game,
-                   date_trunc('{trunc}', created_at) AS bucket,
-                   COUNT(*)::int AS events,
-                   COALESCE(SUM(commission), 0)::bigint AS commission,
-                   COALESCE(SUM(pot), 0)::bigint AS pot
-            FROM growth_fund_ledger
-            WHERE created_at >= $1 AND created_at <= $2
-            GROUP BY 1, 2
-            """,
-            since,
-            until,
-        )
+        d = date.fromisoformat(iso[:10])
     except Exception:
-        rows = []
-    buckets: Dict[str, Dict[str, Dict[str, int]]] = {}
-    all_buckets: Dict[str, Dict[str, int]] = {}
-    for row in rows:
-        key = resolve_key(str(row["game"] or ""))
-        stamp = _bucket_key(row["bucket"], trunc)
-        cell = buckets.setdefault(key, {}).setdefault(stamp, {"events": 0, "pot": 0, "commission": 0})
-        cell["events"] += _as_int(row["events"])
-        cell["pot"] += _as_int(row["pot"])
-        cell["commission"] += _as_int(row["commission"])
-        total = all_buckets.setdefault(stamp, {"events": 0, "pot": 0, "commission": 0})
-        total["events"] += _as_int(row["events"])
-        total["pot"] += _as_int(row["pot"])
-        total["commission"] += _as_int(row["commission"])
-    out = {key: _fill_series(vals, since, until, trunc) for key, vals in buckets.items()}
-    out["_all"] = _fill_series(all_buckets, since, until, trunc)
-    return out
+        return iso
+    return f"{d.day:02d}.{d.month:02d}"
+
+
+def _empty_day(iso: str) -> Dict[str, Any]:
+    return {
+        "day": iso,
+        "label": _day_label(iso),
+        "plus": 0,
+        "minus": 0,
+        "system": 0,
+        "events": 0,
+        "pot": 0,
+        "commission": 0,
+    }
+
+
+def _canon_game(name: Any) -> str:
+    try:
+        return resolve_key(str(name or ""))
+    except Exception:
+        return str(name or "")
 
 
 async def overview() -> Dict[str, Any]:
@@ -178,11 +87,8 @@ async def overview() -> Dict[str, Any]:
     stats: List[Dict[str, Any]] = []
     total = 0
     events = 0
-    now = datetime.now(timezone.utc)
-    days_since = now - timedelta(days=62)
-    hours_since = now - timedelta(hours=48)
-    days: Dict[str, List[Dict[str, Any]]] = {}
-    hours: Dict[str, List[Dict[str, Any]]] = {}
+    day_rows = []
+    recent_rows = []
     try:
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -193,6 +99,27 @@ async def overview() -> Dict[str, Any]:
                        COALESCE(SUM(pot), 0)::bigint AS pot
                 FROM growth_fund_ledger
                 GROUP BY game
+                """
+            )
+            day_rows = await conn.fetch(
+                """
+                SELECT game,
+                       ((created_at AT TIME ZONE 'UTC')::date) AS day,
+                       COUNT(*)::int AS events,
+                       COALESCE(SUM(commission), 0)::bigint AS commission,
+                       COALESCE(SUM(pot), 0)::bigint AS pot
+                FROM growth_fund_ledger
+                WHERE created_at >= NOW() - INTERVAL '14 days'
+                GROUP BY game, day
+                ORDER BY day
+                """
+            )
+            recent_rows = await conn.fetch(
+                """
+                SELECT game, chat_id, user_id, pot, commission, level, created_at
+                FROM growth_fund_ledger
+                ORDER BY created_at DESC
+                LIMIT 80
                 """
             )
             meta_row = await conn.fetchrow(
@@ -206,28 +133,81 @@ async def overview() -> Dict[str, Any]:
                 LIMIT 24
                 """
             )
-            days = await _load_series(conn, days_since, now, "day")
-            hours = await _load_series(conn, hours_since, now, "hour")
     except Exception:
         rows = []
+        day_rows = []
+        recent_rows = []
         meta_row = None
         hist = []
-        days = {}
-        hours = {}
     by_game = {}
     for r in rows:
-        key = resolve_key(str(r["game"] or ""))
-        cur = by_game.setdefault(key, {"events": 0, "commission": 0, "pot": 0})
-        cur["events"] += _as_int(r["events"])
-        cur["commission"] += _as_int(r["commission"])
-        cur["pot"] += _as_int(r["pot"])
+        key = _canon_game(r["game"])
+        prev = by_game.get(key)
+        if prev:
+            by_game[key] = {
+                "events": int(prev["events"]) + int(r["events"]),
+                "commission": int(prev["commission"]) + int(r["commission"]),
+                "pot": int(prev["pot"]) + int(r["pot"]),
+            }
+        else:
+            by_game[key] = {
+                "events": int(r["events"]),
+                "commission": int(r["commission"]),
+                "pot": int(r["pot"]),
+            }
+    today = date.today()
+    day_keys = [(today - timedelta(days=i)).isoformat() for i in range(13, -1, -1)]
+    days_map: Dict[str, Dict[str, Dict[str, int]]] = {}
+    flow_acc: Dict[str, Dict[str, int]] = {d: {"plus": 0, "events": 0, "pot": 0} for d in day_keys}
+    for r in day_rows:
+        key = _canon_game(r["game"])
+        day = r["day"].isoformat() if hasattr(r["day"], "isoformat") else str(r["day"])[:10]
+        bucket = days_map.setdefault(key, {})
+        cur = bucket.get(day) or {"events": 0, "commission": 0, "pot": 0}
+        cur["events"] += int(r["events"])
+        cur["commission"] += int(r["commission"])
+        cur["pot"] += int(r["pot"])
+        bucket[day] = cur
+        if day in flow_acc:
+            flow_acc[day]["plus"] += int(r["commission"])
+            flow_acc[day]["events"] += int(r["events"])
+            flow_acc[day]["pot"] += int(r["pot"])
+    recent_by: Dict[str, List[Dict[str, Any]]] = {}
+    for r in recent_rows:
+        key = _canon_game(r["game"])
+        recent_by.setdefault(key, []).append({
+            "game": key,
+            "chatId": int(r["chat_id"]),
+            "userId": int(r["user_id"]),
+            "pot": int(r["pot"] or 0),
+            "commission": int(r["commission"] or 0),
+            "level": int(r["level"] or 0),
+            "createdAt": _jsonable(r["created_at"]),
+        })
+    analytics: Dict[str, Any] = {}
     for item in catalog_public():
         row = by_game.get(item["key"])
-        take = _as_int(row["commission"]) if row else 0
-        n = _as_int(row["events"]) if row else 0
-        pot = _as_int(row["pot"]) if row else 0
+        take = int(row["commission"]) if row else 0
+        n = int(row["events"]) if row else 0
+        pot = int(row["pot"]) if row else 0
         total += take
         events += n
+        days = []
+        for day in day_keys:
+            rec = (days_map.get(item["key"]) or {}).get(day) or {}
+            comm = int(rec.get("commission") or 0)
+            ev = int(rec.get("events") or 0)
+            p = int(rec.get("pot") or 0)
+            days.append({
+                "day": day,
+                "label": _day_label(day),
+                "plus": comm,
+                "minus": 0,
+                "system": p,
+                "events": ev,
+                "pot": p,
+                "commission": comm,
+            })
         stats.append({
             "key": item["key"],
             "title": item["title"],
@@ -236,43 +216,45 @@ async def overview() -> Dict[str, Any]:
             "events": n,
             "pot": pot,
         })
-    empty_days = _fill_series({}, days_since, now, "day")
-    empty_hours = _fill_series({}, hours_since, now, "hour")
+        analytics[item["key"]] = {
+            "days": days,
+            "recent": (recent_by.get(item["key"]) or [])[:12],
+            "events": n,
+            "commission": take,
+            "pot": pot,
+        }
     games = []
     for item in catalog_public():
         state = (settings.get("games") or {}).get(item["key"]) or item["defaults"]
         preview = _preview(settings, item["key"], 100, 3)
-        day_points = days.get(item["key"]) or empty_days
-        hour_points = hours.get(item["key"]) or empty_hours
+        game_stats = next((s for s in stats if s["key"] == item["key"]), {})
         games.append({
             **item,
             "state": state,
-            "stats": next((s for s in stats if s["key"] == item["key"]), {}),
+            "stats": game_stats,
+            "analytics": analytics.get(item["key"]) or {},
             "preview": preview,
-            "days": day_points,
-            "hours": hour_points,
-            "dayExtrema": _extrema(day_points),
-            "hourExtrema": _extrema(hour_points),
         })
+    flow = [_empty_day(d) for d in day_keys]
+    for point in flow:
+        acc = flow_acc.get(point["day"]) or {}
+        point["plus"] = int(acc.get("plus") or 0)
+        point["events"] = int(acc.get("events") or 0)
+        point["pot"] = int(acc.get("pot") or 0)
+        point["system"] = point["pot"]
+        point["commission"] = point["plus"]
     return {
         "settings": settings,
         "defaults": default_payload(),
         "catalog": games,
+        "analytics": analytics,
+        "flow": {"days": flow},
         "totals": {
             "commission": total,
             "events": events,
-            "pot": sum(_as_int((s or {}).get("pot")) for s in stats),
             "on": sum(1 for g in games if g["state"].get("enabled") and not g["state"].get("maintenance")),
             "off": sum(1 for g in games if not g["state"].get("enabled")),
             "maintenance": sum(1 for g in games if g["state"].get("maintenance")),
-        },
-        "series": {
-            "days": days.get("_all") or empty_days,
-            "hours": hours.get("_all") or empty_hours,
-            "dayExtrema": _extrema(days.get("_all") or empty_days),
-            "hourExtrema": _extrema(hours.get("_all") or empty_hours),
-            "sinceDays": _jsonable(days_since),
-            "sinceHours": _jsonable(hours_since),
         },
         "history": [
             {

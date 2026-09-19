@@ -153,6 +153,12 @@ def normalize_config(raw: Optional[Dict[str, Any]], *, defaults: Optional[Dict[s
     base["weekdays"] = _norm_weekdays(base.get("weekdays"))
     base["conditions"] = _norm_conditions(base.get("conditions"))
     base["notify_creator"] = bool(base.get("notify_creator", True))
+    if isinstance(raw, dict):
+        if raw.get("persisted"):
+            base["persisted"] = True
+        src = str(raw.get("source") or "").strip()
+        if src:
+            base["source"] = src[:32]
     return base
 
 
