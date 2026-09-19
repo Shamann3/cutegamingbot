@@ -70,7 +70,8 @@ def test_card_uses_premium_tags_not_raw_faces():
         )
         for btn, key in zip(markup.inline_keyboard[0], card["options"]):
             item = emoji(str(key))
-            assert btn.text == item.face
+            assert btn.text == " "
+            assert item.face not in (btn.text or "")
             assert getattr(btn, "icon_custom_emoji_id", None) == item.emoji_id
 
 
@@ -222,7 +223,7 @@ def test_card_entities_carry_custom_emoji():
     markup = __import__("bot.funcs.group_captcha", fromlist=["build_markup"]).build_markup(1, -100, card)
     for btn, key in zip(markup.inline_keyboard[0], card["options"]):
         item = emoji(str(key))
-        assert btn.text == item.face
+        assert btn.text == " "
         assert btn.icon_custom_emoji_id == item.emoji_id
 
 
@@ -235,14 +236,15 @@ def test_buttons_carry_premium_emoji_ids():
     ids = {btn.icon_custom_emoji_id for btn in row}
     expected = {emoji(k).emoji_id for k in card["options"]}
     assert ids == expected
-    assert all(btn.text == emoji(k).face for btn, k in zip(row, card["options"]))
+    assert all(btn.text == " " for btn in row)
+    assert all(emoji(k).face not in (btn.text or "") for btn, k in zip(row, card["options"]))
     disable = markup.inline_keyboard[1][0]
     assert disable.text == "Убрать капчу"
     assert disable.icon_custom_emoji_id == "5462990652943904884"
     assert disable.callback_data.startswith("gcX:")
     sample = premium_button(emoji("spark"), "x", plain=True)
     assert sample.icon_custom_emoji_id == "5472164874886846699"
-    assert sample.text == emoji("spark").face
+    assert sample.text == " "
 
 
 def test_hydrate_recovers_old_payload():
@@ -270,6 +272,24 @@ def test_hydrate_recovers_old_payload():
         assert e.offset + e.length <= total
 
 
+def test_option_buttons_never_put_unicode_faces_in_text():
+    from bot.funcs.group_captcha import ICON_ONLY_TEXT, build_markup
+
+    faces = {emoji(k).face for k in EMOJI}
+    faces.discard("")
+    for variant in (1, 2, 4, 5):
+        card = build_challenge(variant, rng=random.Random(40 + variant))
+        markup = build_markup(variant, -100, card)
+        for btn in markup.inline_keyboard[0]:
+            assert btn.text == ICON_ONLY_TEXT
+            assert btn.icon_custom_emoji_id
+            for face in faces:
+                assert face not in (btn.text or "")
+        disable = markup.inline_keyboard[1][0]
+        assert disable.text == "Убрать капчу"
+        assert disable.icon_custom_emoji_id == "5462990652943904884"
+
+
 def test_button_dump_keeps_icon_and_space():
     from bot.funcs.group_captcha import build_markup
 
@@ -279,7 +299,7 @@ def test_button_dump_keeps_icon_and_space():
     row = dumped["inline_keyboard"][0]
     for btn, key in zip(row, card["options"]):
         item = emoji(str(key))
-        assert btn["text"] == item.face
+        assert btn["text"] == " "
         assert btn["icon_custom_emoji_id"] == item.emoji_id
     disable = dumped["inline_keyboard"][1][0]
     assert disable["text"] == "Убрать капчу"

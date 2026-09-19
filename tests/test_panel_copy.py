@@ -63,6 +63,9 @@ def test_user_and_group_ids_are_copyable():
     assert "SweepSpeedPicker" in nika
     assert "now_sweep" in nika
     assert "Снять" in nika
+    nika_css = _read("admin", "src", "styles", "nika.css")
+    assert "border-radius: 10px !important" in nika_css
+    assert "border-radius: 999px !important" not in nika_css
     assert "elite-support-btn" in _read("admin", "src", "components", "EliteTopbar.jsx")
 
     assert "CopyableId" in games
@@ -109,7 +112,7 @@ def test_user_and_group_ids_are_copyable():
     topbar = _read("admin", "src", "components", "EliteTopbar.jsx")
     assert "elite-support-btn" in topbar
     assert "Поддержка" in topbar
-    assert topbar.index("elite-menu-btn") < topbar.index("elite-support-btn")
+    assert topbar.index("elite-support-btn") < topbar.index("elite-menu-btn")
 
     farm_main = _read("src", "main.jsx")
     assert "farm-thumb.css" in farm_main

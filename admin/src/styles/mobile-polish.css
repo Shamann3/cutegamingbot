@@ -89,14 +89,16 @@ html.panel-nav-open .panel-shelf-sidebar {
     -webkit-tap-highlight-color: transparent;
   }
 
-  .elite-icon-btn {
+  .elite-icon-btn,
+  .elite-menu-btn,
+  .elite-support-btn {
     width: 44px;
     height: 44px;
     min-width: 44px;
-    border-radius: 12px;
+    border-radius: 8px;
   }
 
-  /* Topbar липнет под .panel-tg-chrome; колокольчик и меню справа */
+  /* Topbar липнет под .panel-tg-chrome; поддержка и меню справа, меню в углу */
   .elite-topbar,
   .elite-topbar-compact {
     top: var(--tg-content-top, 0px) !important;

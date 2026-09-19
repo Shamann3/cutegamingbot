@@ -293,6 +293,14 @@ def check_sign(mac: str, *parts: Any) -> bool:
     return hmac.compare_digest(expected, str(mac or ""))
 
 
+def _button_label(text: Optional[str]) -> str:
+    """Telegram не принимает пустой text. Для иконки — ровно один пробел, без unicode-лица."""
+    if text is None:
+        return ICON_ONLY_TEXT
+    label = str(text)
+    return label if label else ICON_ONLY_TEXT
+
+
 def premium_button(
     item: PremiumEmoji,
     callback_data: str,
@@ -301,20 +309,23 @@ def premium_button(
     text: Optional[str] = None,
     plain: bool = False,
 ):
-    """Видимый текст + премиум-иконка: кнопка остаётся живой даже без custom emoji."""
+    """Только премиум-иконка. Текст кнопки — пробел, если свой текст не задан."""
     _ = plain
     from aiogram.types import InlineKeyboardButton
-    label = text if text is not None else (getattr(item, "face", None) or "•")
-    kwargs = {"text": str(label), "callback_data": callback_data}
+    label = _button_label(text)
+    kwargs = {"text": label, "callback_data": callback_data}
+    eid = str(getattr(item, "emoji_id", "") or "")
+    if not eid:
+        return InlineKeyboardButton(**kwargs)
     try:
         return InlineKeyboardButton(
             **kwargs,
             style=style or "default",
-            icon_custom_emoji_id=str(item.emoji_id),
+            icon_custom_emoji_id=eid,
         )
     except TypeError:
         try:
-            return InlineKeyboardButton(**kwargs, icon_custom_emoji_id=str(item.emoji_id))
+            return InlineKeyboardButton(**kwargs, icon_custom_emoji_id=eid)
         except TypeError:
             return InlineKeyboardButton(**kwargs)
 

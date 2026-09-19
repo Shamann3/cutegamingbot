@@ -449,7 +449,7 @@ body,
   color: var(--e-text) !important;
 }
 
-/* Круглая иконочная кнопка */
+/* Прямоугольная иконочная кнопка, чуть скруглённые углы */
 .elite-icon-btn {
   position: relative;
   display: inline-flex;
@@ -459,7 +459,7 @@ body,
   height: 2.5rem;
   flex: 0 0 auto;
   border: 1px solid var(--e-line);
-  border-radius: 999px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
   color: var(--e-text-2);
   cursor: pointer;
@@ -3002,7 +3002,7 @@ body,
     height: 2.7rem;
     min-width: 2.7rem;
     min-height: 2.7rem;
-    border-radius: 13px;
+    border-radius: 8px;
     border: 1px solid rgba(var(--e-accent-rgb, 255, 5, 36), 0.28);
     background: rgba(var(--e-accent-rgb, 255, 5, 36), 0.1);
     color: var(--e-accent-bright, #ff6a7a);
@@ -8515,7 +8515,7 @@ body,
   border: 1px solid rgba(255,255,255,.12);
   background: #121212;
   color: #e8e2de;
-  border-radius: 999px;
+  border-radius: 10px;
   padding: 0.42rem 0.8rem;
   font-size: 0.8rem;
   cursor: pointer;

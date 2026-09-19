@@ -108,7 +108,7 @@
   flex-wrap: wrap;
   gap: 0.28rem;
   padding: 0.28rem;
-  border-radius: 16px;
+  border-radius: 10px;
   background: #1c1c1e;
   overflow: visible;
   position: relative;
@@ -121,7 +121,7 @@
   min-width: max-content;
   max-width: 100%;
   border: 0 !important;
-  border-radius: 11px !important;
+  border-radius: 8px !important;
   background: transparent !important;
   color: #c4bbb4 !important;
   font: inherit;
@@ -169,7 +169,7 @@
   min-height: 5.6rem;
   padding: 0.75rem 0.85rem;
   border: 1px solid rgba(255,255,255,.08);
-  border-radius: 16px;
+  border-radius: 10px !important;
   background: #161616;
   color: #cfc6be;
   font: inherit;
@@ -513,7 +513,7 @@
 .grp-page.nika-page .nika-chart-zoom-btn {
   min-height: 32px;
   padding: 0.2rem 0.65rem;
-  border-radius: 999px;
+  border-radius: 8px;
   border: 1px solid rgba(255,255,255,.12);
   background: #1c1c1e;
   color: #efe8e2;
@@ -757,7 +757,7 @@
   min-width: max-content;
   max-width: 100%;
   padding: 0.45rem 0.9rem;
-  border-radius: 999px !important;
+  border-radius: 10px !important;
   border: 1px solid rgba(255,255,255,.12);
   background: #1c1c1e;
   color: #f4f0ec;

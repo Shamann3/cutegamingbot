@@ -27,6 +27,7 @@
   --e-r-card: 18px;
   --e-r-block: 14px;
   --e-r-input: 12px;
+  --e-r-btn: 10px;
 
   --e-shadow-card:
     0 1px 0 0 rgba(255, 255, 255, 0.045) inset,
@@ -846,10 +847,20 @@ body.perf-light .elite-btn-primary {
   border-radius: var(--e-r-input) !important;
 }
 
-.panel-shell button:not(.panel-nav-item):not(.grp-tab):not(.grp-subtab):not(.nika-btn):not(.nika-crisis-go):not(.nika-ios-row):not(.nika-hit):not(.nika-seg-btn),
+.panel-shell button:not(.panel-nav-item):not(.grp-tab):not(.grp-subtab):not(.nika-ios-row):not(.nika-hit):not(.nika-switch),
 .panel-shell .panel-users-btn,
-.panel-shell .elite-btn {
-  border-radius: var(--e-r-pill) !important;
+.panel-shell .elite-btn,
+.panel-shell .nika-btn,
+.panel-shell .nika-sweep-card,
+.panel-shell .nika-seg-btn,
+.panel-shell .nika-chart-zoom-btn {
+  border-radius: var(--e-r-btn) !important;
+}
+
+.panel-shell .elite-icon-btn,
+.panel-shell .elite-menu-btn,
+.panel-shell .elite-support-btn {
+  border-radius: 8px !important;
 }
 
 .panel-shell .grp-table-wrap,

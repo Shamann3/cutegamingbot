@@ -47,7 +47,7 @@ function greetingFor(hour) {
  *  названия (русского или английского), стрелки/Enter — переход.
  *  Открывается и с клавиатуры: Ctrl/Cmd+K.
  *
- *  На телефоне — название слева, меню и поддержка справа; поддержка в правом верхнем углу. */
+ *  На телефоне — название слева; поддержка и меню справа, меню в правом верхнем углу. */
 export default function EliteTopbar({
   sections = [],
   activeSection,
@@ -210,18 +210,6 @@ export default function EliteTopbar({
           )}
         </div>
 
-        {typeof onOpenMenu === 'function' && (
-          <button
-            type="button"
-            className={`elite-menu-btn${menuOpen ? ' elite-menu-btn-open' : ''}`}
-            aria-label={menuOpen ? 'Закрыть меню разделов' : 'Открыть меню разделов'}
-            aria-expanded={menuOpen}
-            onClick={onOpenMenu}
-          >
-            <MenuIcon open={menuOpen} />
-          </button>
-        )}
-
         <button
           type="button"
           className="elite-icon-btn elite-support-btn"
@@ -234,6 +222,18 @@ export default function EliteTopbar({
           <BellIcon />
           {openTickets > 0 && <span className="elite-bell-dot" aria-hidden="true" />}
         </button>
+
+        {typeof onOpenMenu === 'function' && (
+          <button
+            type="button"
+            className={`elite-menu-btn${menuOpen ? ' elite-menu-btn-open' : ''}`}
+            aria-label={menuOpen ? 'Закрыть меню разделов' : 'Открыть меню разделов'}
+            aria-expanded={menuOpen}
+            onClick={onOpenMenu}
+          >
+            <MenuIcon open={menuOpen} />
+          </button>
+        )}
       </div>
     </div>
   )
