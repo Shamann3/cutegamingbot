@@ -2118,8 +2118,11 @@ async def _try_launch(call: CallbackQuery, game_key: str, bet: int,
     game = GAMES[game_key]
     desk_key = "fortuna_solo" if game_key == "fortuna" else game_key
     try:
-        from bot.runtime.game_desk.live import bets as desk_bets, is_on, refresh as refresh_desk
+        from bot.runtime.game_desk.live import bets as desk_bets, is_maintenance, is_on, refresh as refresh_desk
         await refresh_desk()
+        if is_maintenance(desk_key):
+            await call.answer("В этой игре проводят технические работы", show_alert=True)
+            return
         if not is_on(desk_key):
             await call.answer("Эта игра сейчас выключена.", show_alert=True)
             return

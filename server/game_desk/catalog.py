@@ -76,6 +76,7 @@ def _game(
         "theme": dict(theme or _theme("#8a827c", "#d8cfc6", "#141416", "rgba(255,255,255,.06)", "plain")),
         "defaults": {
             "enabled": True,
+            "maintenance": False,
             "minBet": int(min_bet),
             "maxBet": int(max_bet),
             "commissionMult": float(commission),
@@ -448,6 +449,7 @@ def default_game_state(key: str) -> Dict[str, Any]:
     if not meta:
         return {
             "enabled": True,
+            "maintenance": False,
             "minBet": 1,
             "maxBet": PVP_MAX,
             "commissionMult": 1.0,
@@ -455,6 +457,7 @@ def default_game_state(key: str) -> Dict[str, Any]:
         }
     return {
         "enabled": True,
+        "maintenance": False,
         "minBet": int(meta["defaults"]["minBet"]),
         "maxBet": int(meta["defaults"]["maxBet"]),
         "commissionMult": float(meta["defaults"]["commissionMult"]),

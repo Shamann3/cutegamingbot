@@ -4,6 +4,8 @@ from .live import (
     bets,
     commission_mult,
     commission_on,
+    apply_help_maintenance,
+    is_maintenance,
     is_on,
     max_players,
     param,
@@ -12,6 +14,7 @@ from .live import (
     param_int,
     refresh,
     reject_desk,
+    render_gamehelp,
     session_seconds,
 )
 from .schema import ensure_game_desk_schema
@@ -24,7 +27,10 @@ __all__ = [
     "commission_on",
     "default_payload",
     "ensure_game_desk_schema",
+    "apply_help_maintenance",
+    "is_maintenance",
     "is_on",
+    "render_gamehelp",
     "max_players",
     "param",
     "param_decimal",

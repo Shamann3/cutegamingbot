@@ -68,6 +68,7 @@ def normalize_game(key: str, raw: Any) -> Dict[str, Any]:
     meta = game_meta(key)
     base = (meta or {}).get("defaults") or {
         "enabled": True,
+        "maintenance": False,
         "minBet": 1,
         "maxBet": 500_000,
         "commissionMult": 1.0,
@@ -79,7 +80,8 @@ def normalize_game(key: str, raw: Any) -> Dict[str, Any]:
     if max_bet < min_bet:
         max_bet = min_bet
     return {
-        "enabled": _as_bool(src.get("enabled", base["enabled"]), True),
+        "enabled": _as_bool(src.get("enabled", base.get("enabled", True)), True),
+        "maintenance": _as_bool(src.get("maintenance", base.get("maintenance", False)), False),
         "minBet": min_bet,
         "maxBet": max_bet,
         "commissionMult": _as_float(src.get("commissionMult", base["commissionMult"]), float(base["commissionMult"]), 0.0, 5.0),
@@ -110,6 +112,48 @@ def normalize_payload(raw: Any) -> Dict[str, Any]:
     }
 
 
+def _payload_needs_seed(raw: Any, clean: Dict[str, Any]) -> bool:
+    if not isinstance(raw, dict):
+        return True
+    games = raw.get("games")
+    if not isinstance(games, dict) or not games:
+        return True
+    if not isinstance(raw.get("commission"), dict):
+        return True
+    for key, state in (clean.get("games") or {}).items():
+        src = games.get(key)
+        if not isinstance(src, dict):
+            return True
+        for field in ("enabled", "maintenance", "minBet", "maxBet", "commissionMult"):
+            if field not in src:
+                return True
+        params = src.get("params")
+        if not isinstance(params, dict):
+            return True
+        for pk in (state.get("params") or {}):
+            if pk not in params:
+                return True
+    return False
+
+
+async def _write_payload_only(db, payload: Dict[str, Any]) -> None:
+    pool = getattr(db, "pool", None)
+    if pool is None:
+        return
+    clean = normalize_payload(payload)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO game_desk_settings (id, payload, updated_at)
+            VALUES (1, $1::jsonb, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                payload = EXCLUDED.payload,
+                updated_at = NOW()
+            """,
+            json.dumps(clean, ensure_ascii=False),
+        )
+
+
 def merge_payload(current: Any, patch: Any) -> Dict[str, Any]:
     cur = normalize_payload(current)
     if not isinstance(patch, dict):
@@ -126,7 +170,7 @@ def merge_payload(current: Any, patch: Any) -> Dict[str, Any]:
             if not isinstance(value, dict):
                 continue
             merged = dict(nxt["games"][real])
-            for field in ("enabled", "minBet", "maxBet", "commissionMult"):
+            for field in ("enabled", "maintenance", "minBet", "maxBet", "commissionMult"):
                 if field in value:
                     merged[field] = value[field]
             if isinstance(value.get("params"), dict):
@@ -145,7 +189,13 @@ async def load_payload(db) -> Dict[str, Any]:
         raw = row["payload"] if row else {}
         if isinstance(raw, str):
             raw = json.loads(raw)
-        return normalize_payload(raw)
+        clean = normalize_payload(raw)
+        if _payload_needs_seed(raw, clean):
+            try:
+                await _write_payload_only(db, clean)
+            except Exception:
+                pass
+        return clean
     except Exception:
         return default_payload()
 

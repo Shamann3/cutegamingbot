@@ -353,6 +353,14 @@ gamehelp = f'''
 '''
 
 
+async def _live_gamehelp() -> str:
+    try:
+        from bot.runtime.game_desk.live import render_gamehelp
+        return await render_gamehelp(gamehelp)
+    except Exception:
+        return gamehelp
+
+
 other = f'''
 <b><tg-emoji emoji-id='5354789281317548026'>🍭</tg-emoji> Дополнительные функции</b>
 
@@ -749,7 +757,7 @@ async def help(message: Message):
         button = InlineKeyboardButton(text=" " , callback_data="gamehelp", style="default" ,
                 icon_custom_emoji_id="5226660202035554522")
         keyboard = InlineKeyboardMarkup(inline_keyboard=[ [ button ] ])
-        sent_messagetextgamehelp = await message.reply(gamehelp, reply_markup=keyboard, parse_mode="HTML")
+        sent_messagetextgamehelp = await message.reply(await _live_gamehelp(), reply_markup=keyboard, parse_mode="HTML")
 
         user_message_gamehelp [ user_id ] = sent_messagetextgamehelp.message_id
     user_message_gamehelp.save()
@@ -1013,7 +1021,7 @@ async def callQWRQWRQback_main(call: types.CallbackQuery):
 
         await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
-        text=gamehelp,
+        text=await _live_gamehelp(),
         parse_mode="HTML",
         disable_web_page_preview=True,
         reply_markup=btn_help9
@@ -1041,7 +1049,7 @@ async def call12412512back_main(call: types.CallbackQuery):
             return
         await call.answer()  # мгновенный акт нажатия - до сетевого edit_text
         await call.message.edit_text(
-        text=gamehelp,
+        text=await _live_gamehelp(),
         parse_mode="HTML",
         disable_web_page_preview=True,
         reply_markup=btn_help

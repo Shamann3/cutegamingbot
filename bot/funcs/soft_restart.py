@@ -528,10 +528,71 @@ async def _bridge_publish_status() -> None:
         print(f"[SR] bridge status: {e!r}")
 
 
+def _cfg_from_row(raw: Any) -> Optional[Dict[str, Any]]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            raw = raw.decode("utf-8", errors="ignore")
+        except Exception:
+            return None
+    if isinstance(raw, str) and raw.strip():
+        try:
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
+    return None
+
+
+def _is_persisted_config(cfg: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(cfg, dict) or not cfg:
+        return False
+    return any(key in cfg for key in ("enabled", "mode", "interval_sec", "hourly_minute", "daily_times"))
+
+
+async def _hydrate_from_bridge() -> str:
+    """Postgres побеждает. Записанные настройки нельзя затирать дефолтами из env.
+
+    ok — прочитали живой конфиг.
+    empty — строка пустая, можно один раз засеять.
+    error — базу не трогаем, чтобы не затереть настройки.
+    """
+    global _cfg, _loaded, _last_cfg_rev, _bridge_last_error
+    if not await _bridge_ensure_table():
+        return "error"
+    try:
+        from bot.db_create.db import db
+
+        row = await db.pool.fetchrow(
+            "SELECT config, config_rev FROM soft_restart_bridge WHERE id = 1"
+        )
+        if not row:
+            return "empty"
+        cfg = _cfg_from_row(row["config"])
+        if not _is_persisted_config(cfg):
+            return "empty"
+        async with _cfg_lock:
+            _cfg = _normalize(cfg)
+            _loaded = True
+            _persist()
+        _last_cfg_rev = int(row["config_rev"] or 0)
+        _bridge_last_error = ""
+        print(
+            f"[SR] hydrated from postgres rev={_last_cfg_rev} "
+            f"enabled={bool(_cfg.get('enabled'))} mode={_cfg.get('mode')}",
+            flush=True,
+        )
+        return "ok"
+    except Exception as e:
+        _bridge_last_error = repr(e)
+        print(f"[SR] hydrate failed: {e!r}", flush=True)
+        return "error"
+
+
 async def _bridge_push_config() -> None:
-    global _bridge_last_error
+    global _bridge_last_error, _last_cfg_rev
     cfg = ensure_loaded()
-    # Дублируем runtime-файл во все корни — панель читает server/data и repo/data
     payload = json.dumps(cfg, ensure_ascii=False, indent=2)
     for path in _paths("sr_runtime.json"):
         try:
@@ -546,14 +607,19 @@ async def _bridge_push_config() -> None:
             return
         from bot.db_create.db import db
 
-        await db.pool.execute(
+        row = await db.pool.fetchrow(
             """
             UPDATE soft_restart_bridge
-            SET config = $1::jsonb, updated_at = NOW()
+            SET config = $1::jsonb,
+                config_rev = config_rev + 1,
+                updated_at = NOW()
             WHERE id = 1
+            RETURNING config_rev
             """,
             json.dumps(cfg, ensure_ascii=False),
         )
+        if row:
+            _last_cfg_rev = int(row["config_rev"] or 0)
         _bridge_last_error = ""
     except Exception as e:
         _bridge_last_error = repr(e)
@@ -697,7 +763,20 @@ async def _poll_bridge_once() -> None:
 
 async def _bridge_loop() -> None:
     try:
-        await _bridge_push_config()
+        hydrated = "error"
+        try:
+            hydrated = await _hydrate_from_bridge()
+        except Exception as e:
+            print(f"[SR] hydrate: {e!r}", flush=True)
+        if hydrated == "empty":
+            await _bridge_push_config()
+            print("[SR] postgres empty — seeded current settings", flush=True)
+        elif hydrated == "error":
+            print("[SR] postgres unread — keep local settings, do not overwrite", flush=True)
+        try:
+            await reschedule()
+        except Exception as e:
+            print(f"[SR] reschedule after hydrate: {e!r}", flush=True)
         while True:
             try:
                 await _poll_bridge_once()
@@ -1103,20 +1182,16 @@ def start_scheduler(*, dp=None, notify: Optional[NotifyFn] = None) -> Optional[a
 
     if _bridge_task is None or _bridge_task.done():
         _bridge_task = asyncio.create_task(_bridge_loop(), name="soft_restart_bridge")
-        print("[SR] panel bridge on", flush=True)
+        print("[SR] panel bridge on — hydrate first", flush=True)
 
     # Короткий пинг создателю только после реального рестарта
     asyncio.create_task(maybe_notify_boot(), name="soft_restart_boot_notify")
 
-    if _scheduler_task and not _scheduler_task.done():
-        return _scheduler_task
-    if not is_enabled():
-        print("[SR] auto off — waiting for creator commands / panel")
-        _publish_status_sync()
-        return None
-    _arm_next_from_schedule(first_cycle=True)
-    _scheduler_task = asyncio.create_task(_scheduler_loop(), name="soft_restart_scheduler")
-    return _scheduler_task
+    # Планировщик взводится после hydrate в _bridge_loop.
+    # Иначе env/файл с enabled=False успевают выключить часовой рестарт
+    # и затереть живые настройки в Postgres.
+    _publish_status_sync()
+    return _bridge_task
 
 
 async def reschedule() -> None:

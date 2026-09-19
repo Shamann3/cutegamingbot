@@ -3,12 +3,14 @@ import { fetchGamesOverview, resetGameSettings, saveGamesSettings } from '../../
 import { showToast } from '../../components/ToastHost'
 import CountUp from '../../components/CountUp'
 import Copyable, { CopyableId } from '../../components/Copyable'
+import NikaMoneyChart from '../../components/NikaMoneyChart'
 import { useIsPhone } from '../../lib/useIsDesktop'
 
 const TABS = [
-  { id: 'catalog', label: 'Каталог', short: 'Каталог' },
-  { id: 'commission', label: 'Комиссия', short: 'Комиссия' },
+  { id: 'catalog', label: 'Стол', short: 'Стол' },
   { id: 'game', label: 'Игра', short: 'Игра' },
+  { id: 'flow', label: 'Аналитика', short: 'Плюсы' },
+  { id: 'commission', label: 'Комиссия', short: 'Комиссия' },
   { id: 'journal', label: 'Журнал', short: 'Журнал' },
   { id: 'machine', label: 'Как работает', short: 'Как' },
 ]
@@ -29,6 +31,13 @@ function pct(n) {
   return `${Math.round((Number(n) || 0) * 1000) / 10}%`
 }
 
+function signed(n) {
+  const v = Number(n) || 0
+  if (v > 0) return `+${fmt(v)}`
+  if (v < 0) return `−${fmt(Math.abs(v))}`
+  return '0'
+}
+
 function when(iso) {
   if (!iso) return '—'
   const d = new Date(iso)
@@ -40,23 +49,10 @@ function clone(v) {
   return JSON.parse(JSON.stringify(v || {}))
 }
 
-function themeOf(game) {
-  return game?.theme || {
-    accent: '#8a827c',
-    accent2: '#d8cfc6',
-    ink: '#141416',
-    wash: 'rgba(255,255,255,.06)',
-    motif: 'plain',
-  }
-}
-
-function themeVars(theme) {
-  return {
-    '--gm-accent': theme.accent,
-    '--gm-accent2': theme.accent2,
-    '--gm-ink': theme.ink,
-    '--gm-wash': theme.wash,
-  }
+function statusOf(state) {
+  if (state?.maintenance) return { label: 'техработы', tone: 'hot' }
+  if (state?.enabled) return { label: 'вкл', tone: 'ok' }
+  return { label: 'выкл', tone: 'mute' }
 }
 
 function previewCommission(settings, gameKey, pot, level) {
@@ -166,7 +162,8 @@ function ParamField({ field, value, onChange }) {
 function cardChips(game, state) {
   const p = state?.params || {}
   const chips = [`${state?.minBet ?? 0}–${fmt(state?.maxBet || 0)}`]
-  if (Number(state?.commissionMult) === 0) chips.push('без комиссии')
+  if (state?.maintenance) chips.push('техработы')
+  else if (Number(state?.commissionMult) === 0) chips.push('без комиссии')
   else chips.push(`комиссия ×${Number(state?.commissionMult || 0).toFixed(2)}`)
   const first = (game.fields || [])[0]
   if (first) {
@@ -176,6 +173,101 @@ function cardChips(game, state) {
     else chips.push(`${first.label} ${Number(raw || 0).toFixed(2)}`)
   }
   return chips
+}
+
+function FlowStrip({ plus, minus, plusHint, minusHint }) {
+  const net = (Number(plus) || 0) - (Number(minus) || 0)
+  return (
+    <div className="nika-flow-hero is-compact">
+      <div className="is-plus">
+        <small>Оборот</small>
+        <b className="nika-plus"><CountUp value={Number(plus) || 0} duration={900} /></b>
+        {plusHint ? <em>{plusHint}</em> : null}
+      </div>
+      <div className="is-minus">
+        <small>Комиссия</small>
+        <b className="nika-minus"><CountUp value={Number(minus) || 0} duration={900} /></b>
+        {minusHint ? <em>{minusHint}</em> : null}
+      </div>
+      <div>
+        <small>Игрокам</small>
+        <b className={net >= 0 ? 'nika-plus' : 'nika-minus'}>
+          <CountUp value={net} signed duration={900} />
+        </b>
+      </div>
+    </div>
+  )
+}
+
+function GameAnalytics({ game, range, onRange, dayFilter, onFilter, phone }) {
+  const points = range === 'hours' ? (game?.hours || []) : (game?.days || [])
+  const extrema = range === 'hours' ? game?.hourExtrema : game?.dayExtrema
+  const rows = useMemo(() => {
+    const list = points.slice().reverse()
+    if (dayFilter === 'plus') return list.filter((d) => (d.net || 0) > 0)
+    if (dayFilter === 'minus') return list.filter((d) => (d.net || 0) < 0)
+    return list
+  }, [points, dayFilter])
+  const plus = points.reduce((s, p) => s + (Number(p.plus) || 0), 0)
+  const minus = points.reduce((s, p) => s + (Number(p.minus) || 0), 0)
+  return (
+    <section className="nika-panel nika-panel-chart">
+      <div className="nika-panel-top">
+        <div>
+          <h2>Плюсы и минусы</h2>
+          <p className="nika-help">
+            Оборот — банки партий. Минус — комиссия в Фонд Роста. Итог — сколько ушло игрокам.
+          </p>
+        </div>
+        <div className="nika-seg nika-seg-mini" role="group" aria-label="Масштаб">
+          <button type="button" className={`nika-seg-btn${range === 'days' ? ' is-on' : ''}`} onClick={() => { onRange('days'); onFilter('all') }}>Дни</button>
+          <button type="button" className={`nika-seg-btn${range === 'hours' ? ' is-on' : ''}`} onClick={() => { onRange('hours'); onFilter('all') }}>Часы</button>
+        </div>
+      </div>
+      <FlowStrip plus={plus} minus={minus} plusHint={`${fmt(game?.stats?.events || 0)} партий`} minusHint="фонд роста" />
+      {(extrema?.best || extrema?.worst) && (
+        <div className="nika-extrema">
+          {extrema.best ? (
+            <article className="nika-ext is-plus">
+              <small>Самый плюс</small>
+              <strong>{extrema.best.label}</strong>
+              <b className="nika-plus">{signed(extrema.best.net)}</b>
+            </article>
+          ) : null}
+          {extrema.worst ? (
+            <article className="nika-ext is-minus">
+              <small>Самый минус</small>
+              <strong>{extrema.worst.label}</strong>
+              <b className="nika-minus">{signed(extrema.worst.net)}</b>
+            </article>
+          ) : null}
+        </div>
+      )}
+      <NikaMoneyChart key={`${game?.key || 'game'}-${range}`} points={points} mode="flow" />
+      <div className="nika-seg nika-seg-mini nika-filter" role="group" aria-label="Фильтр знака">
+        <button type="button" className={`nika-seg-btn${dayFilter === 'all' ? ' is-on' : ''}`} onClick={() => onFilter('all')}>Все</button>
+        <button type="button" className={`nika-seg-btn${dayFilter === 'plus' ? ' is-on' : ''}`} onClick={() => onFilter('plus')}>Только плюсы</button>
+        <button type="button" className={`nika-seg-btn${dayFilter === 'minus' ? ' is-on' : ''}`} onClick={() => onFilter('minus')}>Только минусы</button>
+      </div>
+      <ul className="nika-days">
+        {rows.slice(0, phone ? 10 : 18).map((d) => (
+          <li key={d.t} className={(d.net || 0) > 0 ? 'is-plus' : (d.net || 0) < 0 ? 'is-minus' : 'is-flat'}>
+            <i className="nika-days-pip" aria-hidden="true" />
+            <span className="nika-days-when">{d.label}</span>
+            <span className="nika-plus">+{fmt(d.plus)}</span>
+            <span className="nika-minus">−{fmt(d.minus)}</span>
+            <strong className={(d.net || 0) >= 0 ? 'nika-plus' : 'nika-minus'}>{signed(d.net)}</strong>
+            <em className="nika-mute">{fmt(d.events || 0)} парт.</em>
+          </li>
+        ))}
+      </ul>
+      {rows.length === 0 && (
+        <p className="nika-help">
+          {dayFilter === 'minus' ? 'Минусов на этом отрезке ещё не было.' : dayFilter === 'plus' ? 'Плюсов на этом отрезке ещё не было.' : 'Партий ещё нет. Как сыграют — строка появится здесь.'}
+        </p>
+      )}
+    </section>
+  )
 }
 
 export default function GamesSection() {
@@ -190,6 +282,9 @@ export default function GamesSection() {
   const [selected, setSelected] = useState(null)
   const [pot, setPot] = useState(100)
   const [level, setLevel] = useState(3)
+  const [range, setRange] = useState('days')
+  const [dayFilter, setDayFilter] = useState('all')
+  const [flowScope, setFlowScope] = useState('game')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -217,7 +312,6 @@ export default function GamesSection() {
   })
   const current = games.find((g) => g.key === selected) || shown[0] || games[0]
   const currentState = settings.games?.[current?.key] || current?.state || {}
-  const currentTheme = themeOf(current)
   const groups = current?.groups || GROUP_FALLBACK
   const groupedFields = useMemo(() => {
     const fields = current?.fields || []
@@ -313,33 +407,57 @@ export default function GamesSection() {
 
   const preview = current ? previewCommission(settings, current.key, pot, level) : null
   const payout = current ? previewPayout(current, currentState, pot) : null
+  const currentStatus = statusOf(currentState)
+  const flowGame = flowScope === 'all'
+    ? {
+        key: '_all',
+        days: data?.series?.days || [],
+        hours: data?.series?.hours || [],
+        dayExtrema: data?.series?.dayExtrema,
+        hourExtrema: data?.series?.hourExtrema,
+        stats: { events: data?.totals?.events || 0, commission: data?.totals?.commission || 0, pot: data?.totals?.pot || 0 },
+      }
+    : current
 
   return (
-    <section className={`grp-page nika-page gm-page${phone ? ' is-phone' : ' is-desktop'}${dirty ? ' is-dirty' : ''}`}>
+    <section className={`grp-page nika-page gm-page${phone ? ' is-phone' : ' is-desktop'}`}>
       <header className="nika-head">
         <div className="nika-head-copy">
           <h1>Игры</h1>
-          <p>Каждая игра — свой стол. Включаешь, режешь ставку, ставишь шансы и выплату. Видит эту вкладку только ты.</p>
+          <p>Каждая игра — свой стол и своя аналитика. Числа живут в базе и не сбрасываются.</p>
         </div>
-        <div className={`nika-status${settings.commission?.enabled ? ' is-ok' : ' is-hot'}`}>
-          <b>{settings.commission?.enabled ? 'Комиссия жива' : 'Комиссия выключена'}</b>
-          <span>{data?.totals?.on || 0} игр включены · {data?.totals?.off || 0} молчат</span>
+        <div className={`nika-status${currentState.maintenance ? ' is-hot' : settings.commission?.enabled ? ' is-ok' : ' is-hot'}`}>
+          <b>{currentState.maintenance ? 'Техработы' : settings.commission?.enabled ? 'Комиссия жива' : 'Комиссия выключена'}</b>
+          <span>{data?.totals?.on || 0} открыты · {data?.totals?.maintenance || 0} на паузе · {data?.totals?.off || 0} выкл</span>
         </div>
       </header>
 
+      {dirty ? (
+        <div className="gm-save" role="status">
+          <div>
+            <strong>Есть несохранённые правки</strong>
+            <span>Бот ещё играет по старым числам. Поля ниже свободны — плашка их не закрывает.</span>
+          </div>
+          <div className="nika-card-actions">
+            <button type="button" className="nika-btn" onClick={() => setDraft(clone(data.settings))}>Отменить</button>
+            <button type="button" className="nika-btn nika-btn-primary" disabled={saving} onClick={onSave}>Сохранить</button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="nika-universe gm-uni">
         <article className="nika-uni">
-          <p>Включено</p>
+          <p>Открыто</p>
           <strong><CountUp value={data?.totals?.on || 0} duration={700} /></strong>
           <small>из {games.length}</small>
         </article>
         <article className="nika-uni nika-uni-plus">
           <p>Собрано с игр</p>
           <strong><CountUp value={data?.totals?.commission || 0} duration={900} /></strong>
-          <small>за всё время</small>
+          <small>комиссия за всё время</small>
         </article>
         <article className="nika-uni">
-          <p>Партий с комиссией</p>
+          <p>Партий</p>
           <strong><CountUp value={data?.totals?.events || 0} duration={800} /></strong>
           <small>каждая честно записана</small>
         </article>
@@ -366,7 +484,7 @@ export default function GamesSection() {
             <div className="nika-panel-top">
               <div>
                 <h2>Все игры</h2>
-                <p className="nika-help">Нажми карточку — откроется стол этой игры со всеми живыми числами.</p>
+                <p className="nika-help">Нажми карточку — откроется стол и аналитика этой игры.</p>
               </div>
               <div className="nika-seg nika-seg-mini" role="group" aria-label="Тип">
                 <button type="button" className={`nika-seg-btn${kind === 'all' ? ' is-on' : ''}`} onClick={() => setKind('all')}>Все</button>
@@ -380,26 +498,24 @@ export default function GamesSection() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Название, команда или настроение"
             />
-            <div className="gm-grid">
+            <div className="gm-grid nika-tables">
               {shown.map((g) => {
                 const state = settings.games?.[g.key] || g.state || {}
-                const theme = themeOf(g)
+                const st = statusOf(state)
                 return (
                   <button
                     key={g.key}
                     type="button"
-                    style={themeVars(theme)}
-                    className={`gm-card gm-motif-${theme.motif}${state.enabled ? '' : ' is-off'}${selected === g.key ? ' is-on' : ''}`}
+                    className={`gm-card nika-table${state.enabled ? '' : ' is-paused'}${state.maintenance ? ' is-dry' : ''}${selected === g.key ? ' is-on' : ''}`}
                     onClick={() => { setSelected(g.key); setTab('game') }}
                   >
-                    <i className="gm-card-glow" aria-hidden="true" />
                     <header>
-                      <b><em>{g.emoji}</em> {g.title}</b>
-                      <span className={`nika-pill ${state.enabled ? 'nika-pill-ok' : 'nika-pill-mute'}`}>
-                        {state.enabled ? 'вкл' : 'выкл'}
-                      </span>
+                      <h3>{g.emoji} {g.title}</h3>
+                      <span className={`nika-pill nika-pill-${st.tone === 'hot' ? 'mute' : st.tone}`}>{st.label}</span>
                     </header>
                     <p>{g.mood || g.hint}</p>
+                    <p className="nika-bal-kicker">Собрано комиссией</p>
+                    <strong className="nika-bal-value"><CountUp value={Number(g.stats?.commission) || 0} duration={700} /></strong>
                     <small>{cardChips(g, state).join(' · ')}</small>
                   </button>
                 )
@@ -455,34 +571,38 @@ export default function GamesSection() {
 
       {tab === 'game' && current && (
         <div className="nika-pane nika-stack">
-          <section className={`gm-hero gm-motif-${currentTheme.motif}`} style={themeVars(currentTheme)}>
-            <i className="gm-hero-glow" aria-hidden="true" />
-            <div className="gm-hero-copy">
-              <small>{current.kind === 'pve' ? 'С кассой группы' : 'Игрок против игрока'}</small>
-              <h2>{current.emoji} {current.title}</h2>
-              <p>{current.mood || current.hint}</p>
-              <p className="gm-hero-hint">{current.hint}</p>
-              <em>Команда: <Copyable value={current.command || current.key} label="команда">{current.command || current.key}</Copyable></em>
+          <section className="nika-panel">
+            <div className="nika-panel-top">
+              <div>
+                <p className="nika-help" style={{ marginTop: 0 }}>{current.kind === 'pve' ? 'С кассой группы' : 'Игрок против игрока'}</p>
+                <h2>{current.emoji} {current.title}</h2>
+                <p className="nika-help">{current.mood || current.hint}</p>
+                <p className="nika-id-line">
+                  Команда: <Copyable value={current.command || current.key} label="команда">{current.command || current.key}</Copyable>
+                </p>
+              </div>
+              <button type="button" className="nika-btn nika-btn-sm" disabled={saving} onClick={() => onResetGame(current.key)}>
+                Как было
+              </button>
             </div>
-            <button type="button" className="nika-btn nika-btn-sm" disabled={saving} onClick={() => onResetGame(current.key)}>
-              Как было
-            </button>
-          </section>
-
-          <section className="nika-panel gm-desk" style={themeVars(currentTheme)}>
             <div className="nika-ios-list">
               <Switch
                 on={!!currentState.enabled}
                 label={currentState.enabled ? 'Игра включена' : 'Игра выключена'}
                 onClick={() => patchGame(current.key, 'enabled', !currentState.enabled)}
               />
+              <Switch
+                on={!!currentState.maintenance}
+                label={currentState.maintenance ? 'Технические работы' : 'Закрыть на техработы'}
+                onClick={() => patchGame(current.key, 'maintenance', !currentState.maintenance)}
+              />
               <div className="nika-ios-row is-static">
                 <span>Собрано комиссией</span>
                 <b>{fmt(current.stats?.commission || 0)}</b>
               </div>
               <div className="nika-ios-row is-static">
-                <span>Живых настроек</span>
-                <b>{(current.fields || []).length + 3}</b>
+                <span>Статус</span>
+                <b>{currentStatus.label}</b>
               </div>
             </div>
             <Field label={`Минимум: ${currentState.minBet} кут`} help="Ниже этой ставки партия не стартует.">
@@ -503,7 +623,7 @@ export default function GamesSection() {
           </section>
 
           {groupedFields.map((group) => (
-            <section key={group.key} className="nika-panel gm-desk" style={themeVars(currentTheme)}>
+            <section key={group.key} className="nika-panel gm-desk">
               <h2>{group.label}</h2>
               <p className="nika-help">
                 {group.key === 'odds' && 'Эти числа крутят исход. Игрок их не видит, но чувствует.'}
@@ -556,6 +676,45 @@ export default function GamesSection() {
         </div>
       )}
 
+      {tab === 'flow' && flowGame && (
+        <div className="nika-pane nika-stack nika-flow">
+          <section className="nika-panel">
+            <div className="nika-panel-top">
+              <div>
+                <h2>Аналитика {flowScope === 'all' ? 'всех игр' : current?.title}</h2>
+                <p className="nika-help">Те же плюсы и минусы, что у Ники: оборот, комиссия, итог игрокам.</p>
+              </div>
+              <div className="nika-seg nika-seg-mini" role="group" aria-label="Охват">
+                <button type="button" className={`nika-seg-btn${flowScope === 'game' ? ' is-on' : ''}`} onClick={() => setFlowScope('game')}>{phone ? 'Игра' : current?.title || 'Игра'}</button>
+                <button type="button" className={`nika-seg-btn${flowScope === 'all' ? ' is-on' : ''}`} onClick={() => setFlowScope('all')}>Все</button>
+              </div>
+            </div>
+            {flowScope === 'game' && (
+              <div className="gm-flow-pick">
+                {games.map((g) => (
+                  <button
+                    key={g.key}
+                    type="button"
+                    className={`nika-seg-btn${current?.key === g.key ? ' is-on' : ''}`}
+                    onClick={() => setSelected(g.key)}
+                  >
+                    {g.emoji} {phone ? '' : g.title}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+          <GameAnalytics
+            game={flowGame}
+            range={range}
+            onRange={setRange}
+            dayFilter={dayFilter}
+            onFilter={setDayFilter}
+            phone={phone}
+          />
+        </div>
+      )}
+
       {tab === 'journal' && (
         <div className="nika-pane">
           <section className="nika-panel">
@@ -601,34 +760,21 @@ export default function GamesSection() {
             <article className="nika-mach-tile">
               <small>Что трогает</small>
               <b>Каждую игру целиком</b>
-              <em>выключатель, ставки, шансы, выплата, стол, темп</em>
+              <em>выключатель, техработы, ставки, шансы, выплата</em>
             </article>
           </div>
           <section className="nika-panel">
             <h2>Как это устроено</h2>
             <ol className="gm-steps">
+              <li>Техработы закрывают игру отдельно от выключателя. Игрок видит сообщение про работы, в «хелп игры» — короткую пометку.</li>
               <li>Выключатель игры. Если выключена — команда отвечает и партия не стартует.</li>
               <li>Минимум и максимум ставки. Лимит ★ группы может сузить максимум ещё, но не поднять его.</li>
               <li>Комиссия: сначала таблица по ★, потом множитель этой игры. Ноль множителя — комиссии нет.</li>
               <li>Шансы крутят скрытый исход: заклинивание, ноль, обвал, «домой», сорвавшаяся сделка.</li>
               <li>Выплата — сколько касса отдаёт, если игрок угадал. Стол — сколько людей или жил.</li>
-              <li>Темп — пауза между ходами и сколько минут живёт партия.</li>
-              <li>Защита demo и Jericho сюда не вынесена. Это не правила игры, а защита кассы.</li>
+              <li>Все числа пишутся в Postgres. Пустая запись один раз заполняется текущими значениями и больше сама не сбрасывается.</li>
             </ol>
           </section>
-        </div>
-      )}
-
-      {dirty && (
-        <div className="gm-save">
-          <div>
-            <strong>Есть несохранённые правки</strong>
-            <span>Бот ещё играет по старым числам.</span>
-          </div>
-          <div className="nika-card-actions">
-            <button type="button" className="nika-btn" onClick={() => setDraft(clone(data.settings))}>Отменить</button>
-            <button type="button" className="nika-btn nika-btn-primary" disabled={saving} onClick={onSave}>Сохранить</button>
-          </div>
         </div>
       )}
     </section>

@@ -37,6 +37,10 @@ def is_on(key: str) -> bool:
     return bool(game_state(key).get("enabled", True))
 
 
+def is_maintenance(key: str) -> bool:
+    return bool(game_state(key).get("maintenance"))
+
+
 def bets(key: str) -> Tuple[int, int]:
     state = game_state(key)
     return int(state.get("minBet") or 0), int(state.get("maxBet") or 0)
@@ -124,6 +128,44 @@ async def refresh(db=None) -> Dict[str, Any]:
     return _cache
 
 
+MAINT_PLAY_HTML = (
+    "<tg-emoji emoji-id='5462921117423384478'>🛠</tg-emoji> "
+    "<b>В этой игре проводят технические работы</b>"
+)
+MAINT_HELP_HTML = (
+    "<tg-emoji emoji-id='5462921117423384478'>🛠</tg-emoji> "
+    "<b>Тех работы</b>"
+)
+
+HELP_TITLES = {
+    "scah": "Шашки",
+    "memory": "Найди пару",
+    "bingo": "Бинго",
+    "fortuna_lobby": "Фортуна",
+    "kosti": "Кости",
+    "duel": "Дуэли",
+    "orel": "Орел или решка",
+    "knb": "Камень-ножницы-бумагa",
+    "mines": "Мины",
+    "tic_tac_toe": "Крестики-нолики",
+    "tank": "Башня",
+    "risk": "Риск",
+    "plate": "Плиты",
+    "bombs": "Бомбы",
+    "trade": "Трейд",
+    "balls": "Шарик",
+    "provoda": "Провода",
+    "slots": "Слоты",
+    "basket": "Баскетбол",
+    "soccer": "Футбол",
+    "bowling": "Боулинг",
+    "darts": "Дартс",
+    "kube": "Кубик",
+    "fortuna_solo": "Рулетка",
+    "words": "Слова",
+}
+
+
 def closed_html(key: str) -> str:
     from .catalog import game_meta
     meta = game_meta(key)
@@ -132,6 +174,34 @@ def closed_html(key: str) -> str:
         "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> "
         f"<b>{title} сейчас выключена.</b>"
     )
+
+
+def maint_html() -> str:
+    return MAINT_PLAY_HTML
+
+
+def apply_help_maintenance(text: str, down: Dict[str, bool]) -> str:
+    """Вставляет пометку техработ сразу под названием игры в «хелп игры»."""
+    out = str(text or "")
+    for key, title in HELP_TITLES.items():
+        if not down.get(key):
+            continue
+        mark = f" {title}\n"
+        insert = f" {title}\n{MAINT_HELP_HTML}\n"
+        if insert in out:
+            continue
+        if mark in out:
+            out = out.replace(mark, insert, 1)
+    return out
+
+
+async def render_gamehelp(base: str) -> str:
+    try:
+        await refresh()
+    except Exception:
+        pass
+    flags = {key: is_maintenance(key) for key in HELP_TITLES}
+    return apply_help_maintenance(base, flags)
 
 
 def min_html(amount: int) -> str:
@@ -154,6 +224,9 @@ async def reject_desk(message, key: str, bet: Optional[int] = None) -> bool:
         await refresh()
     except Exception:
         pass
+    if is_maintenance(key):
+        await _reply(message, maint_html())
+        return True
     if not is_on(key):
         await _reply(message, closed_html(key))
         return True

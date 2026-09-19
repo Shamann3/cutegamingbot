@@ -110,7 +110,7 @@ async def _delete_message(bot, chat_id: int, message_id: Optional[int]) -> None:
     if not message_id:
         return
     try:
-        await bot.delete_message(int(chat_id), int(message_id))
+        await asyncio.wait_for(bot.delete_message(int(chat_id), int(message_id)), timeout=1.5)
     except Exception:
         return
 
@@ -374,7 +374,21 @@ async def _user_needs_captcha(chat_id: int, user_id: int) -> bool:
     pool = _pool()
     if pool is None:
         return False
-    return await gc.user_needs_captcha(pool, chat_id, user_id)
+    try:
+        return bool(await asyncio.wait_for(
+            gc.user_needs_captcha(pool, chat_id, user_id),
+            timeout=1.4,
+        ))
+    except Exception:
+        log.warning("captcha gate timeout chat=%s user=%s", chat_id, user_id)
+        return False
+
+
+async def _prompt_safe(bot, **kwargs) -> None:
+    try:
+        await maybe_prompt_captcha(bot, **kwargs)
+    except Exception:
+        log.exception("captcha prompt hang chat=%s user=%s", kwargs.get("chat_id"), getattr(kwargs.get("user"), "id", None))
 
 
 class CaptchaGateMiddleware(BaseMiddleware):
@@ -404,18 +418,15 @@ class CaptchaGateMiddleware(BaseMiddleware):
             return await handler(event, data)
         bot = data.get("bot") or message.bot
         extra = _message_extra(message)
-        try:
-            await maybe_prompt_captcha(
-                bot,
-                chat_id=int(chat.id),
-                user=user,
-                trigger="message",
-                thread_id=getattr(message, "message_thread_id", None),
-                chat=chat,
-                extra_meta=extra,
-            )
-        except Exception:
-            log.exception("captcha prompt chat=%s user=%s", chat.id, user.id)
+        _bg(_prompt_safe(
+            bot,
+            chat_id=int(chat.id),
+            user=user,
+            trigger="message",
+            thread_id=getattr(message, "message_thread_id", None),
+            chat=chat,
+            extra_meta=extra,
+        ))
         await _delete_message(bot, int(chat.id), message.message_id)
         return None
 
@@ -449,18 +460,15 @@ class CaptchaCallbackGateMiddleware(BaseMiddleware):
         except Exception:
             pass
         if bot:
-            try:
-                await maybe_prompt_captcha(
-                    bot,
-                    chat_id=int(chat.id),
-                    user=user,
-                    trigger="callback",
-                    thread_id=getattr(message, "message_thread_id", None),
-                    chat=chat,
-                    extra_meta={"trigger": "callback", "callback": raw[:40]},
-                )
-            except Exception:
-                log.exception("captcha prompt on blocked callback chat=%s user=%s", chat.id, user.id)
+            _bg(_prompt_safe(
+                bot,
+                chat_id=int(chat.id),
+                user=user,
+                trigger="callback",
+                thread_id=getattr(message, "message_thread_id", None),
+                chat=chat,
+                extra_meta={"trigger": "callback", "callback": raw[:40]},
+            ))
         return None
 
 
