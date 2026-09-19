@@ -42,6 +42,9 @@ def test_user_and_group_ids_are_copyable():
     assert "IdentityBits" in users
     assert "CopyableId" in users
     assert "CopyableUsername" in users
+    assert "grp-page nika-page users-page" in users
+    assert "nika-seg" in users
+    assert "useIsPhone" in users
     assert "id группы" in users or "chatUsername" in users
 
     assert "IdentityBits" in groups
@@ -56,3 +59,9 @@ def test_user_and_group_ids_are_copyable():
     assert "IdentityBits" in farm
     assert "CopyableId" in logs
     assert 'label="id группы"' in posts
+
+    app = _read("src", "App.jsx")
+    assert "FarmEntrance" not in app
+    css = _read("admin", "src", "styles", "users-nika.css")
+    assert "users-page" in css
+    assert "html.is-phone" in css

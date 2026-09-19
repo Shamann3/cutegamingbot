@@ -30,6 +30,7 @@ import UserLookupPreview from '../../components/UserLookupPreview'
 import PlayerDossierPanel from '../../components/PlayerDossierPanel'
 import StaffPortraitRail from '../../components/StaffPortraitRail'
 import { CopyableId, CopyableUsername, IdentityBits } from '../../components/Copyable'
+import { useIsPhone } from '../../lib/useIsDesktop'
 
 const EVENT_LABELS = {
   shop_buy: 'Покупка в магазине',
@@ -52,16 +53,16 @@ const EVENT_LABELS = {
 const PLOT_SLOTS_FALLBACK = 8
 
 const PROFILE_TABS = [
-  { id: 'profile', label: 'Профиль' },
-  { id: 'compare', label: 'Сравнение' },
-  { id: 'intel', label: 'Аналитика' },
-  { id: 'transfers', label: 'Переводы' },
-  { id: 'farm', label: 'Ферма' },
-  { id: 'history', label: 'История' },
-  { id: 'quests', label: 'Квесты' },
-  { id: 'bans', label: 'Баны' },
-  { id: 'inventory', label: 'Инвентарь' },
-  { id: 'notes', label: 'Заметки' },
+  { id: 'profile', label: 'Профиль', short: 'Профиль' },
+  { id: 'compare', label: 'Сравнение', short: 'Сравн.' },
+  { id: 'intel', label: 'Аналитика', short: 'Сводка' },
+  { id: 'transfers', label: 'Переводы', short: 'Куты' },
+  { id: 'farm', label: 'Ферма', short: 'Ферма' },
+  { id: 'history', label: 'История', short: 'Журнал' },
+  { id: 'quests', label: 'Квесты', short: 'Квесты' },
+  { id: 'bans', label: 'Баны', short: 'Баны' },
+  { id: 'inventory', label: 'Инвентарь', short: 'Вещи' },
+  { id: 'notes', label: 'Заметки', short: 'Заметки' },
 ]
 
 // Категории полного сравнения — держим тег/метки в одном месте с backend'ом
@@ -1376,6 +1377,7 @@ function CuteHistoryFeed({ userId, onOpenUser }) {
 }
 
 export default function UsersSection({ initialUserId = null, onInitialUserConsumed, permissions = [], role = null, isProjectCreator = false }) {
+  const phone = useIsPhone()
   const isOwner = role === 'owner'
   // «Экспорт» и другие creator-only действия — не просто owner-роль (их может
   // быть несколько), а именно ЕДИНСТВЕННЫЙ создатель проекта (PROJECT_CREATOR_ID
@@ -1713,8 +1715,10 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
     [profile?.userId, reloadCurrent],
   )
 
+  const statusTone = !hasProfile ? '' : profile.banned ? ' is-hot' : ' is-ok'
+
   return (
-    <div className={`panel-users${hasProfile ? ' panel-users-has-profile' : ''}`}>
+    <section className={`grp-page nika-page users-page panel-users${hasProfile ? ' panel-users-has-profile' : ''}${phone ? ' is-phone' : ' is-desktop'}`}>
       <AdminActionModal
         open={pendingAction === 'ban'}
         title="Забанить игрока?"
@@ -1763,32 +1767,50 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
           if (!actionLoading) setPendingAction(null)
         }}
       />
-      <article className="panel-shelf panel-shelf-page panel-users-search">
-        <p className="panel-shelf-label">Игроки</p>
-        <h2 className="panel-page-title">Поиск игрока</h2>
-        <p className="panel-page-lead">Введите ID, @username или имя — минимум 2 символа</p>
+      <header className="nika-head">
+        <div className="nika-head-copy">
+          <h1>Игроки</h1>
+          <p>
+            {hasProfile
+              ? 'Карточка, действия и история — как у Ники: крупные числа, сегменты, без наложений.'
+              : 'Найди по ID, @username или имени. Минимум два символа.'}
+          </p>
+        </div>
+        <div className={`nika-status${statusTone}`}>
+          <b>{!hasProfile ? 'Поиск' : profile.banned ? 'Бан' : 'Открыт'}</b>
+          <span>
+            {hasProfile
+              ? `${Number(profile.balance || 0).toLocaleString('ru-RU')} кут`
+              : 'карточка откроется здесь'}
+          </span>
+        </div>
+      </header>
 
+      <article className="nika-panel users-search-panel">
         <form
-          className="panel-users-search-form"
+          className="users-search-form"
           onSubmit={(e) => {
             e.preventDefault()
             handleSearch()
           }}
         >
           <input
-            className="panel-users-input"
+            className="nika-input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="6801702632 или @username"
             disabled={loading}
+            enterKeyHint="search"
+            autoCapitalize="off"
+            autoCorrect="off"
           />
-          <button type="submit" className="panel-users-btn panel-users-btn-primary" disabled={loading}>
+          <button type="submit" className="nika-btn nika-btn-primary" disabled={loading}>
             {loading ? '…' : 'Найти'}
           </button>
           {hasProfile && (
             <button
               type="button"
-              className="panel-users-btn"
+              className="nika-btn"
               title="Закрыть профиль и вернуться к поиску"
               onClick={() => {
                 setQuery('')
@@ -1801,32 +1823,28 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 setReturnStack([])
               }}
             >
-              ✕ Закрыть
+              Закрыть
             </button>
           )}
         </form>
 
         {results.length > 1 && !hasProfile && (
-          <ul className="panel-users-results">
+          <ul className="nika-hits users-hits">
             {results.map((row) => (
               <li key={row.userId}>
                 <button
                   type="button"
-                  className={`panel-users-result-btn${row.isStaff ? ' is-staff' : ''}`}
+                  className={`nika-hit${row.isStaff ? ' is-staff' : ''}`}
                   onClick={() => loadUser(row.userId, { clearStack: true })}
                 >
-                  <span className="panel-users-result-main">
-                    <span>
-                      {row.displayName}{' '}
-                      {row.username ? <CopyableUsername value={row.username} /> : null}
-                    </span>
-                    {row.isStaff && (
-                      <span className="pu-staff-mark">{row.roleLabel || 'Админ'}</span>
-                    )}
-                  </span>
-                  <span className="panel-users-result-meta">
+                  <b>
+                    {row.displayName}{' '}
+                    {row.username ? <CopyableUsername value={row.username} /> : null}
+                    {row.isStaff ? ` · ${row.roleLabel || 'Админ'}` : ''}
+                  </b>
+                  <span>
                     <CopyableId value={row.userId} label="id игрока" /> · {row.balance} кут
-                    {row.banned && ' · забанен'}
+                    {row.banned ? ' · бан' : ''}
                   </span>
                 </button>
               </li>
@@ -1861,14 +1879,14 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
             <div className="pu-peek-actions">
               <button
                 type="button"
-                className="panel-users-btn panel-users-btn-primary"
+                className="nika-btn nika-btn-primary"
                 autoFocus
                 onClick={openPeekFull}
               >
                 Больше информации
               </button>
-              <button type="button" className="panel-users-btn" onClick={dismissPeek}>
-                {peek.fromLabel ? `Остаться на ${peek.fromLabel}` : 'Закрыть'}
+              <button type="button" className="nika-btn" onClick={dismissPeek}>
+                {peek.fromLabel ? `Остаться` : 'Закрыть'}
               </button>
             </div>
           </div>
@@ -1883,36 +1901,27 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
 
       <div className={`panel-users-body${loading && !hasProfile ? ' panel-users-body-loading' : ''}${peek ? ' panel-users-body-peek' : ''}`}>
 
-        {/* ── Шапка с вкладками — вся ширина ── */}
         {hasProfile && !peek && (
-          <div className="panel-shelf pu-tabs-bar">
-            <div className="pu-profile-header">
-              <p className="panel-shelf-label">
-                Профиль · {profile?.displayName}
-                {profile?.staffPortrait?.roleLabel ? ` · ${profile.staffPortrait.roleLabel}` : ''}
-              </p>
-              <div className="pu-profile-header-actions">
-                <button
-                  type="button"
-                  className={`pu-action-btn${profileTab === 'compare' ? ' pu-action-btn-on' : ''}`}
-                  onClick={() => setProfileTab('compare')}
-                >
-                  Сравнить
-                </button>
-                {isCreator && (
-                  <button type="button" className="pu-action-btn" onClick={handleExport} title="Только создателю проекта">
-                    Экспорт
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="pu-tabs">
+          <div className="users-toolbar">
+            <nav className="nika-seg" role="tablist" aria-label="Разделы игрока">
               {PROFILE_TABS.map((t) => (
-                <button key={t.id} className={`pu-tab${profileTab === t.id ? ' active' : ''}`} onClick={() => setProfileTab(t.id)}>
-                  {t.label}
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`nika-seg-btn${profileTab === t.id ? ' is-on' : ''}`}
+                  onClick={() => setProfileTab(t.id)}
+                >
+                  {phone ? t.short : t.label}
                 </button>
               ))}
-            </div>
+            </nav>
+            {isCreator && (
+              <div className="users-toolbar-extra">
+                <button type="button" className="nika-btn nika-btn-sm" onClick={handleExport} title="Только создателю проекта">
+                  Экспорт
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -2764,6 +2773,6 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
           </article>
         )}
       </div>
-    </div>
+    </section>
   )
 }

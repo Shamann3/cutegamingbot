@@ -1,0 +1,246 @@
+/* Игроки в мире Ники: iOS Wallet, 44pt, без sticky и без наложений. */
+
+.grp-page.nika-page.users-page {
+  animation: none !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+.grp-page.nika-page.users-page .users-search-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: stretch;
+}
+
+.grp-page.nika-page.users-page .users-search-form .nika-input {
+  flex: 1 1 14rem;
+}
+
+.grp-page.nika-page.users-page .users-hits {
+  margin-top: 0.65rem;
+}
+
+.grp-page.nika-page.users-page .users-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.grp-page.nika-page.users-page .users-toolbar-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.grp-page.nika-page.users-page .pu-peek-card {
+  display: grid;
+  grid-template-columns: 2.6rem minmax(0, 1fr);
+  gap: 0.65rem 0.75rem;
+  margin-top: 0.75rem;
+  padding: 0.85rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #121212;
+}
+
+.grp-page.nika-page.users-page .pu-peek-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.grp-page.nika-page.users-page .pu-return-chip {
+  margin-top: 0.65rem;
+  min-height: 44px;
+  border: 0;
+  border-radius: 14px;
+  background: #1c1c1e;
+  color: #f4f0ec;
+  padding: 0.45rem 0.8rem;
+  font: inherit;
+}
+
+.grp-page.nika-page.users-page .panel-users-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.grp-page.nika-page.users-page .pu-hero-kicker,
+.grp-page.nika-page.users-page .panel-shelf-label {
+  display: none;
+}
+
+html.is-phone .panel-shell:has(.users-page),
+html[data-viewport="phone"] .panel-shell:has(.users-page) {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+html.is-phone .panel-shell:has(.users-page) .panel-shell-main,
+html[data-viewport="phone"] .panel-shell:has(.users-page) .panel-shell-main {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  padding-left: max(0.2rem, env(safe-area-inset-left, 0px)) !important;
+  padding-right: max(0.2rem, env(safe-area-inset-right, 0px)) !important;
+}
+
+html.is-phone .panel-layout-users:has(.users-page),
+html[data-viewport="phone"] .panel-layout-users:has(.users-page) {
+  display: flex !important;
+  flex-direction: column !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+html.is-phone .panel-layout-users:has(.users-page) > .panel-users,
+html[data-viewport="phone"] .panel-layout-users:has(.users-page) > .users-page {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+html.is-phone .grp-page.nika-page.users-page,
+html[data-viewport="phone"] .grp-page.nika-page.users-page {
+  padding-bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px));
+}
+
+html.is-phone .grp-page.nika-page.users-page .users-search-form,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .users-search-form {
+  flex-direction: column;
+}
+
+html.is-phone .grp-page.nika-page.users-page .users-search-form .nika-btn,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .users-search-form .nika-btn {
+  width: 100%;
+  flex: 1 1 auto;
+}
+
+html.is-phone .grp-page.nika-page.users-page .nika-seg,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .nika-seg {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+html.is-phone .grp-page.nika-page.users-page .nika-seg::-webkit-scrollbar,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .nika-seg::-webkit-scrollbar {
+  display: none;
+}
+
+html.is-phone .grp-page.nika-page.users-page .nika-seg-btn,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .nika-seg-btn {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
+html.is-phone .grp-page.nika-page.users-page .users-toolbar-extra .nika-btn,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .users-toolbar-extra .nika-btn {
+  flex: 1 1 calc(50% - 0.4rem);
+  min-height: 44px;
+}
+
+html.is-phone .grp-page.nika-page.users-page .pu-profile-layout,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-profile-layout {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.7rem !important;
+}
+
+html.is-phone .grp-page.nika-page.users-page .pu-profile-layout .pu-inv-card,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-profile-layout .pu-inv-card {
+  display: none;
+}
+
+html.is-phone .grp-page.nika-page.users-page .pu-hero-main,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-hero-main {
+  display: grid !important;
+  grid-template-columns: 3.6rem minmax(0, 1fr) !important;
+  gap: 0.75rem !important;
+}
+
+html.is-phone .grp-page.nika-page.users-page .pu-hero-balance,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-hero-balance {
+  grid-column: 1 / -1;
+  padding: 0.85rem 0.9rem;
+  border-radius: 16px;
+  background: #121212;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+html.is-phone .grp-page.nika-page.users-page .panel-users-avatar,
+html.is-phone .grp-page.nika-page.users-page .panel-users-avatar-fallback,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-avatar,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-avatar-fallback {
+  width: 3.6rem !important;
+  height: 3.6rem !important;
+  border-radius: 16px !important;
+}
+
+html.is-phone .grp-page.nika-page.users-page .panel-users-card,
+html.is-phone .grp-page.nika-page.users-page .pu-hero-card,
+html.is-phone .grp-page.nika-page.users-page .panel-users-actions-card,
+html.is-phone .grp-page.nika-page.users-page .pu-tab-pane,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-card,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-hero-card,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-actions-card,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-tab-pane {
+  border-radius: 16px !important;
+  animation: none !important;
+  overflow: visible !important;
+}
+
+html.is-phone .grp-page.nika-page.users-page .panel-users-action-grid,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-action-grid,
+html.is-phone .grp-page.nika-page.users-page .panel-users-right .panel-users-action-grid,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-right .panel-users-action-grid {
+  grid-template-columns: 1fr !important;
+}
+
+html.is-phone .grp-page.nika-page.users-page .panel-users-btn,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-btn,
+html.is-phone .grp-page.nika-page.users-page .pu-stepper-btn,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-stepper-btn {
+  min-height: 44px !important;
+  border-radius: 14px !important;
+}
+
+html.is-phone .grp-page.nika-page.users-page .panel-users-input,
+html.is-phone .grp-page.nika-page.users-page .pu-field-input,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-input,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-field-input {
+  min-height: 44px !important;
+  font-size: 16px !important;
+  border-radius: 14px !important;
+}
+
+html.is-phone .grp-page.nika-page.users-page .pu-hero-card .panel-users-stats,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-hero-card .panel-users-stats {
+  grid-template-columns: 1fr 1fr !important;
+}
+
+html.is-phone .grp-page.nika-page.users-page .pu-cmp-row,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-cmp-row {
+  grid-template-columns: 1fr 1fr !important;
+  grid-template-areas:
+    "label label"
+    "a b" !important;
+}
+
+html.is-phone .grp-page.nika-page.users-page .pu-cmp-categories,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-cmp-categories {
+  grid-template-columns: 1fr !important;
+}
+
+html.is-desktop .grp-page.nika-page.users-page .users-search-form .nika-btn,
+html[data-viewport="desktop"] .grp-page.nika-page.users-page .users-search-form .nika-btn {
+  flex: 0 0 auto;
+}

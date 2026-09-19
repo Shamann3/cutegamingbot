@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { PlayerSyncProvider } from './context/PlayerSyncContext'
 import { PlayerProfileProvider } from './context/PlayerProfileContext'
 import { OnboardingProvider, useOnboardingOptional } from './context/OnboardingContext'
-import FarmEntrance, { hasSeenFarmEntrance } from './components/FarmEntrance'
 import FarmModule from './components/FarmModule'
 import CraftModule from './components/CraftModule'
 import TradeModule from './components/TradeModule'
@@ -107,14 +106,7 @@ export default function App() {
   )
 }
 
-/** Как admin Splash → panel: сначала печать на весь экран, потом оболочка. */
 function AppBoot() {
-  const [entranceDone, setEntranceDone] = useState(() => hasSeenFarmEntrance())
-
-  if (!entranceDone) {
-    return <FarmEntrance onDone={() => setEntranceDone(true)} />
-  }
-
   return <AppWithOnboarding />
 }
 
