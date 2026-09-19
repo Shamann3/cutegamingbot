@@ -4,7 +4,7 @@
 
 .grp-page.gm-page .gm-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17.4rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(13.6rem, 1fr));
   gap: 0.75rem;
   margin-top: 0.95rem;
 }
@@ -19,34 +19,29 @@ html body .grp-page.nika-page.gm-page .gm-tile,
   position: relative;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   justify-content: flex-end;
-  gap: 0.32rem;
+  gap: 0.22rem;
   width: 100%;
   min-width: 0;
-  min-height: 13.6rem;
-  aspect-ratio: auto;
+  min-height: 0;
+  aspect-ratio: 1 / 1;
   overflow: hidden;
   isolation: isolate;
-  padding: 1.05rem 1.05rem 0.95rem 1.2rem;
+  padding: 0.78rem 0.8rem 0.72rem;
   text-align: left;
   color: inherit;
   font: inherit;
   cursor: pointer;
-  letter-spacing: 0;
-  border-radius: 0 !important;
-  border: 1px solid color-mix(in srgb, var(--gm-accent) 46%, rgba(255,255,255,.08));
-  background: var(--gm-ink);
-  box-shadow: none;
-}
-
-.grp-page.gm-page .gm-tile-edge {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  background: var(--gm-accent);
-  z-index: 2;
+  letter-spacing: -0.02em;
+  border-radius: 16px !important;
+  border: 1px solid color-mix(in srgb, var(--gm-accent) 34%, rgba(255,255,255,.08));
+  background:
+    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--gm-accent) 26%, transparent), transparent 58%),
+    var(--gm-ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.1),
+    0 10px 28px -18px rgba(0,0,0,.9);
 }
 
 .grp-page.gm-page .gm-tile.is-on {
@@ -68,6 +63,7 @@ html body .grp-page.nika-page.gm-page .gm-tile,
   color: var(--gm-accent);
   pointer-events: none;
   z-index: 0;
+  opacity: 0.55;
 }
 
 .grp-page.gm-page .gm-skin-mark {
@@ -76,7 +72,8 @@ html body .grp-page.nika-page.gm-page .gm-tile,
   display: block;
 }
 
-.grp-page.gm-page .gm-tile header,
+.grp-page.gm-page .gm-tile .gm-emoji,
+.grp-page.gm-page .gm-tile .gm-tile-copy,
 .grp-page.gm-page .gm-tile p,
 .grp-page.gm-page .gm-tile strong,
 .grp-page.gm-page .gm-tile .gm-tile-meta,
@@ -85,52 +82,69 @@ html body .grp-page.nika-page.gm-page .gm-tile,
   z-index: 1;
 }
 
-.grp-page.gm-page .gm-tile header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.5rem;
-  min-width: 0;
-  margin-bottom: auto;
-}
-
-.grp-page.gm-page .gm-tile h3 {
-  display: flex;
-  align-items: center;
-  gap: 0.38rem;
-  margin: 0;
-  min-width: 0;
-  color: #fff;
-  font-size: 1.16rem;
-  letter-spacing: -0.03em;
-  overflow-wrap: anywhere;
-}
-
-.grp-page.gm-page .gm-tile h3 em {
-  font-style: normal;
-  font-size: 1.3rem;
+.grp-page.gm-page .gm-emoji {
+  display: grid;
+  place-items: center;
+  width: 4.35rem;
+  height: 4.35rem;
+  margin: auto auto 0.5rem;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--gm-accent) 55%, #fff), var(--gm-accent));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.42),
+    0 10px 20px -12px color-mix(in srgb, var(--gm-accent) 70%, #000);
+  font-size: 2.15rem;
   line-height: 1;
 }
 
+.grp-page.gm-page .gm-hero .gm-emoji {
+  width: 3.4rem;
+  height: 3.4rem;
+  margin: 0 0 0.75rem;
+  font-size: 1.7rem;
+  border-radius: 15px;
+}
+
+.grp-page.gm-page .gm-tile-copy {
+  min-width: 0;
+}
+
+.grp-page.gm-page .gm-tile h3 {
+  margin: 0;
+  min-width: 0;
+  color: #fff;
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grp-page.gm-page .gm-tile-copy p {
+  margin: 0.18rem 0 0;
+  color: #c8c0b8;
+  font-size: 0.7rem;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .grp-page.gm-page .gm-chip {
-  flex: 0 0 auto;
-  font-size: 0.68rem;
+  position: absolute;
+  top: 0.62rem;
+  right: 0.62rem;
+  z-index: 2;
+  font-size: 0.62rem;
   padding: 0.16rem 0.42rem;
-  border-radius: 0 !important;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  border-radius: 8px !important;
+  letter-spacing: 0.02em;
 }
 .grp-page.gm-page .gm-chip-ok { color: #b8e0b4; background: #122010; }
 .grp-page.gm-page .gm-chip-bad { color: #ffc4bc; background: #2a0c0c; }
 .grp-page.gm-page .gm-chip-mute { color: #9a908c; background: #161616; }
-
-.grp-page.gm-page .gm-tile > p {
-  margin: 0;
-  color: #d4cbc3;
-  font-size: 0.8rem;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
 
 .grp-page.gm-page .gm-tile-kicker {
   margin: 0.35rem 0 0 !important;
@@ -143,7 +157,7 @@ html body .grp-page.nika-page.gm-page .gm-tile,
 .grp-page.gm-page .gm-tile strong {
   display: block;
   color: #fff;
-  font-size: clamp(1.4rem, 2.5vw, 1.85rem);
+  font-size: clamp(1.15rem, 2vw, 1.45rem);
   letter-spacing: -0.045em;
   font-variant-numeric: tabular-nums;
 }
@@ -161,128 +175,54 @@ html body .grp-page.nika-page.gm-page .gm-tile,
   width: 100%;
 }
 
-/* Каждая игра — свой стол, без полосок на весь фон */
-.grp-page.gm-page .gm-skin-board {
-  background:
-    radial-gradient(90% 80% at 100% 0%, rgba(196,165,116,.38), transparent 56%),
-    linear-gradient(180deg, #2a1a10, #100a06);
-}
-.grp-page.gm-page .gm-skin-wood {
-  background:
-    radial-gradient(80% 70% at 90% 10%, rgba(215,161,90,.42), transparent 54%),
-    linear-gradient(165deg, #3a2210, #140c08);
-}
-.grp-page.gm-page .gm-skin-cookie {
-  background:
-    radial-gradient(circle at 86% 16%, rgba(232,160,90,.55) 0 2.4rem, transparent 2.55rem),
-    radial-gradient(circle at 72% 28%, rgba(138,61,28,.35) 0 0.7rem, transparent 0.8rem),
-    linear-gradient(180deg, #3a1a0c, #140806);
-}
-.grp-page.gm-page .gm-skin-wheel {
-  background:
-    radial-gradient(70% 90% at 100% 0%, rgba(240,193,75,.4), transparent 50%),
-    radial-gradient(60% 80% at 0% 100%, rgba(122,31,107,.45), transparent 55%),
-    linear-gradient(145deg, #2a0c22, #100610);
-}
-.grp-page.gm-page .gm-skin-felt {
-  background:
-    radial-gradient(80% 80% at 100% 0%, rgba(61,139,90,.4), transparent 55%),
-    linear-gradient(180deg, #0e2216, #06100a);
-}
-.grp-page.gm-page .gm-skin-duel {
-  background:
-    linear-gradient(115deg, transparent 58%, rgba(201,163,106,.22) 59% 64%, transparent 65%),
-    linear-gradient(180deg, #22180e, #0c0a08);
-}
-.grp-page.gm-page .gm-skin-coin {
-  background:
-    radial-gradient(circle at 86% 18%, rgba(230,195,92,.5) 0 3.2rem, transparent 3.35rem),
-    linear-gradient(180deg, #2a1c08, #100c06);
-}
-.grp-page.gm-page .gm-skin-steel {
-  background:
-    linear-gradient(180deg, rgba(138,160,184,.22), transparent 42%),
-    linear-gradient(180deg, #161c24, #0a0e12);
-}
-.grp-page.gm-page .gm-skin-hazard {
-  background:
-    linear-gradient(180deg, #3a1010, #100606);
-}
-.grp-page.gm-page .gm-skin-grid {
-  background:
-    linear-gradient(180deg, #102030, #0a1018);
-}
-.grp-page.gm-page .gm-skin-clover {
-  background:
-    radial-gradient(circle at 84% 16%, rgba(92,184,106,.42) 0 2.6rem, transparent 2.75rem),
-    linear-gradient(180deg, #102418, #08140c);
-}
-.grp-page.gm-page .gm-skin-jungle {
-  background:
-    radial-gradient(ellipse at 100% 0%, rgba(196,90,42,.38), transparent 48%),
-    linear-gradient(180deg, #142418, #0a140c);
-}
-.grp-page.gm-page .gm-skin-rose {
-  background:
-    radial-gradient(circle at 88% 12%, rgba(224,122,168,.42) 0 3rem, transparent 3.15rem),
-    linear-gradient(180deg, #24101c, #100810);
-}
-.grp-page.gm-page .gm-skin-blast {
-  background:
-    radial-gradient(circle at 88% 14%, rgba(240,138,42,.55) 0 1.5rem, transparent 1.65rem),
-    radial-gradient(circle at 88% 14%, rgba(240,138,42,.18) 0 4rem, transparent 4.2rem),
-    linear-gradient(180deg, #2a1408, #100806);
-}
-.grp-page.gm-page .gm-skin-terminal {
-  background:
-    linear-gradient(180deg, #0c1c14, #06100a);
-}
-.grp-page.gm-page .gm-skin-billiard {
-  background:
-    radial-gradient(circle at 86% 18%, #111 0 1.35rem, #f2f2f2 1.4rem 1.55rem, transparent 1.6rem),
-    linear-gradient(180deg, #143020, #0a1810);
-}
-.grp-page.gm-page .gm-skin-neon {
-  background:
-    linear-gradient(90deg, rgba(90,208,255,.18), transparent 34%),
-    linear-gradient(270deg, rgba(255,77,141,.22), transparent 36%),
-    linear-gradient(180deg, #180820, #0a0814);
-}
-.grp-page.gm-page .gm-skin-court {
-  background:
-    linear-gradient(90deg, transparent 46%, rgba(230,122,46,.28) 47% 53%, transparent 54%),
-    linear-gradient(180deg, #2a180e, #120c08);
-}
-.grp-page.gm-page .gm-skin-grass {
-  background:
-    linear-gradient(180deg, #163820, #0c1c10);
-}
-.grp-page.gm-page .gm-skin-alley {
-  background:
-    linear-gradient(180deg, #2a1c10, #120c08);
-}
-.grp-page.gm-page .gm-skin-target {
-  background:
-    radial-gradient(circle at 86% 18%, transparent 0 0.7rem, rgba(209,43,43,.5) 0.75rem 1.2rem, transparent 1.25rem 1.75rem, rgba(209,43,43,.28) 1.8rem 2.3rem, transparent 2.35rem),
-    linear-gradient(180deg, #240a0a, #100606);
-}
-.grp-page.gm-page .gm-skin-dice {
-  background:
-    linear-gradient(180deg, #242018, #121110);
-}
-.grp-page.gm-page .gm-skin-roulette {
-  background:
-    radial-gradient(70% 80% at 100% 0%, rgba(212,175,55,.32), transparent 52%),
-    linear-gradient(180deg, #0c2416, #06140c);
-}
+/* Форма стола своя, цвет всегда от эмодзи */
+.grp-page.gm-page .gm-skin-board,
+.grp-page.gm-page .gm-skin-wood,
+.grp-page.gm-page .gm-skin-felt,
+.grp-page.gm-page .gm-skin-steel,
+.grp-page.gm-page .gm-skin-hazard,
+.grp-page.gm-page .gm-skin-grid,
+.grp-page.gm-page .gm-skin-terminal,
+.grp-page.gm-page .gm-skin-grass,
+.grp-page.gm-page .gm-skin-alley,
+.grp-page.gm-page .gm-skin-dice,
 .grp-page.gm-page .gm-skin-paper {
   background:
-    linear-gradient(180deg, #242018, #141210);
+    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--gm-accent) 28%, transparent), transparent 58%),
+    linear-gradient(180deg, color-mix(in srgb, var(--gm-accent) 16%, var(--gm-ink)), var(--gm-ink));
 }
-.grp-page.gm-page .gm-skin-brass {
+.grp-page.gm-page .gm-skin-cookie,
+.grp-page.gm-page .gm-skin-coin,
+.grp-page.gm-page .gm-skin-clover,
+.grp-page.gm-page .gm-skin-rose,
+.grp-page.gm-page .gm-skin-blast {
   background:
-    linear-gradient(115deg, transparent 62%, rgba(201,163,106,.24) 63% 74%, transparent 75%),
-    linear-gradient(180deg, #22180e, #100c08);
+    radial-gradient(circle at 82% 16%, color-mix(in srgb, var(--gm-accent) 46%, transparent) 0 2.4rem, transparent 2.55rem),
+    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--gm-accent) 22%, transparent), transparent 58%),
+    var(--gm-ink);
+}
+.grp-page.gm-page .gm-skin-wheel,
+.grp-page.gm-page .gm-skin-jungle,
+.grp-page.gm-page .gm-skin-neon,
+.grp-page.gm-page .gm-skin-roulette {
+  background:
+    radial-gradient(70% 90% at 100% 0%, color-mix(in srgb, var(--gm-accent) 38%, transparent), transparent 50%),
+    radial-gradient(60% 80% at 0% 100%, color-mix(in srgb, var(--gm-accent2) 32%, transparent), transparent 55%),
+    var(--gm-ink);
+}
+.grp-page.gm-page .gm-skin-duel,
+.grp-page.gm-page .gm-skin-brass,
+.grp-page.gm-page .gm-skin-court {
+  background:
+    linear-gradient(115deg, transparent 58%, color-mix(in srgb, var(--gm-accent2) 28%, transparent) 59% 64%, transparent 65%),
+    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--gm-accent) 22%, transparent), transparent 58%),
+    var(--gm-ink);
+}
+.grp-page.gm-page .gm-skin-billiard,
+.grp-page.gm-page .gm-skin-target {
+  background:
+    radial-gradient(circle at 84% 16%, color-mix(in srgb, var(--gm-accent) 55%, #000) 0 1.2rem, color-mix(in srgb, var(--gm-accent2) 40%, transparent) 1.25rem 1.85rem, transparent 1.95rem),
+    var(--gm-ink);
 }
 
 .grp-page.gm-page .gm-hero {
@@ -297,20 +237,13 @@ html body .grp-page.nika-page.gm-page .gm-tile,
   overflow: hidden;
   isolation: isolate;
   min-height: 11rem;
-  padding: 1.25rem 1.15rem 1.15rem 1.35rem;
-  border-radius: 0 !important;
+  padding: 1.25rem 1.15rem 1.15rem;
+  border-radius: 16px !important;
   border: 1px solid color-mix(in srgb, var(--gm-accent) 42%, rgba(255,255,255,.08));
   background: var(--gm-ink);
-}
-
-.grp-page.gm-page .gm-hero::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  background: var(--gm-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.08),
+    0 12px 32px -20px rgba(0,0,0,.9);
 }
 
 .grp-page.gm-page .gm-hero .gm-skin-art {
@@ -367,11 +300,11 @@ html body .grp-page.nika-page.gm-page .gm-tile,
   position: relative;
   z-index: 1;
   flex: 0 0 auto;
-  border-radius: 0 !important;
+  border-radius: 16px !important;
 }
 
 .grp-page.gm-page .gm-desk {
-  border-radius: 0 !important;
+  border-radius: 16px !important;
   border-color: color-mix(in srgb, var(--gm-accent) 24%, rgba(255,255,255,.07));
   background:
     radial-gradient(90% 80% at 100% 0%, color-mix(in srgb, var(--gm-accent) 14%, transparent), transparent 52%),
@@ -413,7 +346,7 @@ html body .grp-page.nika-page.gm-page .gm-tile,
   min-width: 0;
   min-height: 36px;
   padding: 0.35rem 0.55rem;
-  border-radius: 0;
+  border-radius: 10px;
   border: 1px solid rgba(255,255,255,.1);
   background: #101012;
   color: #fff;
@@ -450,7 +383,7 @@ html body .grp-page.nika-page.gm-page .gm-tile,
 .grp-page.gm-page .nika-ios-list,
 .grp-page.gm-page .nika-flow-hero > div,
 .grp-page.gm-page .nika-table {
-  border-radius: 0 !important;
+  border-radius: 16px !important;
 }
 
 html.is-phone .grp-page.gm-page .gm-uni,
@@ -468,14 +401,22 @@ html[data-viewport="phone"] .grp-page.gm-page .gm-field-ctrl {
 
 html.is-phone .grp-page.gm-page .gm-tiles,
 html[data-viewport="phone"] .grp-page.gm-page .gm-tiles {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 html.is-phone .grp-page.gm-page .gm-tile,
 html[data-viewport="phone"] .grp-page.gm-page .gm-tile {
-  min-height: 12.4rem;
-  aspect-ratio: auto;
-  border-radius: 0 !important;
+  min-height: 0;
+  aspect-ratio: 1 / 1;
+  border-radius: 16px !important;
+}
+
+html.is-phone .grp-page.gm-page .gm-tile .gm-emoji,
+html[data-viewport="phone"] .grp-page.gm-page .gm-tile .gm-emoji {
+  width: 3.35rem;
+  height: 3.35rem;
+  font-size: 1.65rem;
+  border-radius: 14px;
 }
 
 html.is-phone .grp-page.gm-page .gm-hero,
@@ -521,5 +462,5 @@ html[data-viewport="phone"] .grp-page.gm-page .nika-seg-mini .nika-seg-btn {
     grid-template-columns: 1fr;
   }
   .grp-page.gm-page .gm-hero { flex-direction: column; }
-  .grp-page.gm-page .gm-tiles { grid-template-columns: 1fr; }
+  .grp-page.gm-page .gm-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

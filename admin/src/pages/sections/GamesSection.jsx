@@ -445,7 +445,6 @@ export default function GamesSection() {
                 const state = settings.games?.[g.key] || g.state || {}
                 const status = gameStatus(state)
                 const pack = analyticsOf(data, g)
-                const spark = (pack.days || []).map((d) => Number(d.plus) || 0)
                 const theme = themeOf(g)
                 return (
                   <article
@@ -463,20 +462,19 @@ export default function GamesSection() {
                       }
                     }}
                   >
-                    <b className="gm-tile-edge" aria-hidden="true" />
                     <GameSkin motif={theme.motif} />
-                    <header>
-                      <h3><em>{g.emoji}</em> {g.title}</h3>
-                      <span className={`gm-chip gm-chip-${status.tone === 'hot' ? 'bad' : status.tone}`}>{status.label}</span>
-                    </header>
-                    <p>{g.mood || g.hint}</p>
+                    <span className={`gm-chip gm-chip-${status.tone === 'hot' ? 'bad' : status.tone}`}>{status.label}</span>
+                    <span className="gm-emoji" aria-hidden="true">{g.emoji}</span>
+                    <div className="gm-tile-copy">
+                      <h3>{g.title}</h3>
+                      <p>{g.mood || g.hint}</p>
+                    </div>
                     <p className="gm-tile-kicker">Собрано комиссией</p>
                     <strong><CountUp value={Number(pack.commission) || 0} duration={700} /></strong>
                     <div className="gm-tile-meta">
                       <span>{fmt(pack.events || 0)} партий</span>
                       <em>{state.minBet ?? 0}–{fmt(state.maxBet || 0)} кут</em>
                     </div>
-                    <NikaSpark values={spark} />
                   </article>
                 )
               })}
@@ -534,8 +532,9 @@ export default function GamesSection() {
           <section className={`gm-hero gm-skin-${currentTheme.motif}`} style={themeVars(currentTheme)}>
             <GameSkin motif={currentTheme.motif} />
             <div className="gm-hero-copy">
+              <span className="gm-emoji" aria-hidden="true">{current.emoji}</span>
               <small>{current.kind === 'pve' ? 'С кассой группы' : 'Игрок против игрока'}</small>
-              <h2>{current.emoji} {current.title}</h2>
+              <h2>{current.title}</h2>
               <p>{current.mood || current.hint}</p>
               <p className="gm-hero-hint">{current.hint}</p>
               <em>Команда: <Copyable value={current.command || current.key} label="команда">{current.command || current.key}</Copyable></em>
