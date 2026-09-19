@@ -49,6 +49,25 @@ function clone(v) {
   return JSON.parse(JSON.stringify(v || {}))
 }
 
+function themeOf(game) {
+  return game?.theme || {
+    accent: '#8a827c',
+    accent2: '#d8cfc6',
+    ink: '#141416',
+    wash: 'rgba(255,255,255,.06)',
+    motif: 'plain',
+  }
+}
+
+function themeVars(theme) {
+  return {
+    '--gm-accent': theme.accent,
+    '--gm-accent2': theme.accent2,
+    '--gm-ink': theme.ink,
+    '--gm-wash': theme.wash,
+  }
+}
+
 function statusOf(state) {
   if (state?.maintenance) return { label: 'техработы', tone: 'hot' }
   if (state?.enabled) return { label: 'вкл', tone: 'ok' }
@@ -312,6 +331,7 @@ export default function GamesSection() {
   })
   const current = games.find((g) => g.key === selected) || shown[0] || games[0]
   const currentState = settings.games?.[current?.key] || current?.state || {}
+  const currentTheme = themeOf(current)
   const groups = current?.groups || GROUP_FALLBACK
   const groupedFields = useMemo(() => {
     const fields = current?.fields || []
@@ -502,13 +522,16 @@ export default function GamesSection() {
               {shown.map((g) => {
                 const state = settings.games?.[g.key] || g.state || {}
                 const st = statusOf(state)
+                const theme = themeOf(g)
                 return (
                   <button
                     key={g.key}
                     type="button"
-                    className={`gm-card nika-table${state.enabled ? '' : ' is-paused'}${state.maintenance ? ' is-dry' : ''}${selected === g.key ? ' is-on' : ''}`}
+                    style={themeVars(theme)}
+                    className={`gm-card nika-table gm-motif-${theme.motif}${state.enabled ? '' : ' is-paused'}${state.maintenance ? ' is-dry' : ''}${selected === g.key ? ' is-on' : ''}`}
                     onClick={() => { setSelected(g.key); setTab('game') }}
                   >
+                    <i className="gm-card-glow" aria-hidden="true" />
                     <header>
                       <h3>{g.emoji} {g.title}</h3>
                       <span className={`nika-pill nika-pill-${st.tone === 'hot' ? 'mute' : st.tone}`}>{st.label}</span>
@@ -571,7 +594,8 @@ export default function GamesSection() {
 
       {tab === 'game' && current && (
         <div className="nika-pane nika-stack">
-          <section className="nika-panel">
+          <section className={`nika-wallet gm-hero gm-motif-${currentTheme.motif}`} style={themeVars(currentTheme)}>
+            <i className="gm-card-glow" aria-hidden="true" />
             <div className="nika-panel-top">
               <div>
                 <p className="nika-help" style={{ marginTop: 0 }}>{current.kind === 'pve' ? 'С кассой группы' : 'Игрок против игрока'}</p>
@@ -623,7 +647,7 @@ export default function GamesSection() {
           </section>
 
           {groupedFields.map((group) => (
-            <section key={group.key} className="nika-panel gm-desk">
+            <section key={group.key} className="nika-panel gm-desk" style={themeVars(currentTheme)}>
               <h2>{group.label}</h2>
               <p className="nika-help">
                 {group.key === 'odds' && 'Эти числа крутят исход. Игрок их не видит, но чувствует.'}
@@ -673,6 +697,15 @@ export default function GamesSection() {
               ) : null}
             </div>
           </section>
+
+          <GameAnalytics
+            game={current}
+            range={range}
+            onRange={setRange}
+            dayFilter={dayFilter}
+            onFilter={setDayFilter}
+            phone={phone}
+          />
         </div>
       )}
 

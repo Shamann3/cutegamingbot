@@ -99,16 +99,19 @@ def test_panel_games_is_creator_only():
     assert "NikaMoneyChart" in section
     assert "maintenance" in section
     assert "Copyable" in section
-    assert "gm-hero" not in section
-    assert "gm-motif-" not in section
+    assert "gm-hero" in section
+    assert "gm-motif-" in section
+    assert "themeVars" in section
     assert "is-dirty" not in section
     css = _read("admin", "src", "styles", "games.css")
     assert "minmax(min(16.4rem, 100%), 1fr)" in css
     assert "grid-template-columns: 1fr" in css
     assert "border-radius: 8px" in css
     assert "position: static" in css
-    assert "gm-motif-" not in css
+    assert "gm-motif-board" in css
+    assert "gm-motif-roulette" in css
     assert "repeating-linear-gradient" not in css
+    assert "repeating-conic-gradient" not in css
     bot_live = _read("bot", "runtime", "game_desk", "live.py")
     assert "reject_desk" in bot_live
     assert "is_maintenance" in bot_live
