@@ -381,7 +381,7 @@ async def claim_commands(conn, limit: int = 8) -> List[Any]:
             SELECT id
             FROM nika_operator_commands
             WHERE status = 'queued'
-            ORDER BY created_at ASC
+            ORDER BY CASE WHEN kind = 'now_sweep' THEN 0 ELSE 1 END, created_at ASC
             FOR UPDATE SKIP LOCKED
             LIMIT $1
         )

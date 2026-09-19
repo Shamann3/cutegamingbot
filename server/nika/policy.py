@@ -394,6 +394,26 @@ def plan_sweep(
                 dead_zone=keep, gap=gap, step_raw=step_raw)
 
 
+def plan_drain_sweep(policy: GroupPolicy, *, balance: int) -> Plan:
+    """Ручная кнопка: снять всё над целью. Без запаса, доли и суточного потолка."""
+    target = int(max(0, policy.target_balance))
+    bal = int(balance)
+    excess = bal - target
+    if target <= 0:
+        return Plan("none", 0, 0, "drain", "цель не задана", skip="no_target", gap=target - bal)
+    if excess <= 0:
+        return Plan("none", 0, 0, "drain", "лишнего нет", skip="on_target", gap=target - bal)
+    return Plan(
+        "sweep",
+        int(excess),
+        0,
+        "drain",
+        f"снять всё лишнее до цели {target}: баланс {bal}, излишек {excess}",
+        gap=target - bal,
+        step_raw=int(excess),
+    )
+
+
 def allocate_from_ladder(
     need: int,
     sources: Tuple[Tuple[int, int], ...],

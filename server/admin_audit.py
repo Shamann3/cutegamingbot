@@ -44,6 +44,7 @@ _ACTION_LABELS: dict[str, str] = {
     "nika_force_tick": "Ника: проверить снова",
     "nika_force_topup": "Ника: долить куты",
     "nika_force_sweep": "Ника: собрать куты",
+    "nika_now_sweep": "Ника: снять лишнее до цели",
     "nika_retry_heal": "Ника: вернуть куты",
     "nika_revert": "Ника: откат перевода",
     "nika_pause_all": "Ника: аварийный стоп",

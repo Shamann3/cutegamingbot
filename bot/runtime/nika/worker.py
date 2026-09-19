@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 
-from bot.runtime.nika.engine import run_tick
+from bot.runtime.nika.engine import run_operator_pass, run_tick
 from bot.runtime.nika.schema import ensure_nika_schema
 
 _STARTED = False
@@ -57,5 +57,19 @@ def start_nika_worker(db, bot) -> None:
                     print(f"[NIKA][LOOP] schema heal: {type(heal_exc).__name__}: {heal_exc}")
             await asyncio.sleep(sleep_for)
 
+    async def _command_loop() -> None:
+        delay = 1.0
+        while True:
+            try:
+                summary = await run_operator_pass(db, bot)
+                delay = 0.35 if int((summary or {}).get("processed") or 0) > 0 else 1.0
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                delay = 1.2
+                print(f"[NIKA][CMD] {type(exc).__name__}: {exc}; retry in {delay}s")
+            await asyncio.sleep(delay)
+
     asyncio.create_task(_loop())
-    print("[NIKA] worker started (sweep follows creator speed, heal+commands on every wake)")
+    asyncio.create_task(_command_loop())
+    print("[NIKA] worker started (sweep follows creator speed, drain commands every second)")

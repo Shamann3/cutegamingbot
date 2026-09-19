@@ -211,7 +211,7 @@ CREATE TABLE IF NOT EXISTS nika_operator_commands (
     CONSTRAINT nika_cmd_status CHECK (status IN ('queued', 'running', 'done', 'failed')),
     CONSTRAINT nika_cmd_kind CHECK (
         kind IN (
-            'force_tick', 'force_topup', 'force_sweep', 'retry_heal', 'revert',
+            'force_tick', 'force_topup', 'force_sweep', 'now_sweep', 'retry_heal', 'revert',
             'pause_group', 'pause_all', 'enable_group', 'enable_all'
         )
     )
@@ -224,7 +224,7 @@ CREATE INDEX IF NOT EXISTS idx_nika_cmd_queue
 ALTER TABLE nika_operator_commands DROP CONSTRAINT IF EXISTS nika_cmd_kind;
 ALTER TABLE nika_operator_commands ADD CONSTRAINT nika_cmd_kind CHECK (
     kind IN (
-        'force_tick', 'force_topup', 'force_sweep', 'retry_heal', 'revert',
+        'force_tick', 'force_topup', 'force_sweep', 'now_sweep', 'retry_heal', 'revert',
         'pause_group', 'pause_all', 'enable_group', 'enable_all'
     )
 );

@@ -32,10 +32,28 @@ _OPEN = ChatPermissions(
     can_send_other_messages=True,
     can_add_web_page_previews=True,
 )
-_TG_TIMEOUT = 2.2
-_DB_TIMEOUT = 1.4
-_GATE_TIMEOUT = 1.6
-_PROMPT_TIMEOUT = 3.0
+_TG_TIMEOUT = 1.6
+_DB_TIMEOUT = 0.8
+_GATE_TIMEOUT = 0.7
+_PROMPT_TIMEOUT = 2.0
+_CLICK_DB_TIMEOUT = 0.55
+_ACK_TIMEOUT = 1.1
+_click_busy: set = set()
+_creator_cache: Dict[int, Tuple[int, float]] = {}
+_staff_cache: Dict[Tuple[int, int], Tuple[str, float]] = {}
+_STAFF_TTL = 180.0
+_CREATOR_TTL = 900.0
+
+
+async def _ack(callback: CallbackQuery, text: str = "", *, alert: bool = False) -> None:
+    """Telegram крутит спиннер, пока нет answer. Отвечаем сразу и коротко."""
+    try:
+        if text:
+            await asyncio.wait_for(callback.answer(text, show_alert=alert), timeout=_ACK_TIMEOUT)
+        else:
+            await asyncio.wait_for(callback.answer(), timeout=_ACK_TIMEOUT)
+    except Exception:
+        return
 
 
 async def _wait(coro, timeout: float, default=None):
@@ -87,15 +105,56 @@ async def _is_staff_muted(chat_id: int, user_id: int) -> bool:
         return False
 
 
+def _remember_creator(chat_id: int, user_id: int) -> None:
+    _creator_cache[int(chat_id)] = (int(user_id), time.monotonic())
+    _staff_cache[(int(chat_id), int(user_id))] = ("creator", time.monotonic())
+
+
+def _cached_creator(chat_id: int) -> Optional[int]:
+    hit = _creator_cache.get(int(chat_id))
+    if not hit:
+        return None
+    uid, ts = hit
+    if time.monotonic() - ts > _CREATOR_TTL:
+        _creator_cache.pop(int(chat_id), None)
+        return None
+    return int(uid)
+
+
 async def _member_status(bot, chat_id: int, user_id: int) -> str:
+    key = (int(chat_id), int(user_id))
+    hit = _staff_cache.get(key)
+    if hit and time.monotonic() - hit[1] <= _STAFF_TTL:
+        return hit[0]
     try:
         member = await asyncio.wait_for(
             bot.get_chat_member(int(chat_id), int(user_id)),
-            timeout=1.8,
+            timeout=0.8,
         )
-        return str(getattr(member, "status", "") or "")
+        status = str(getattr(member, "status", "") or "")
     except Exception:
         return ""
+    _staff_cache[key] = (status, time.monotonic())
+    if status == "creator":
+        _remember_creator(chat_id, user_id)
+    return status
+
+
+async def _warm_creator(bot, chat_id: int) -> None:
+    if _cached_creator(chat_id) is not None:
+        return
+    try:
+        admins = await asyncio.wait_for(bot.get_chat_administrators(int(chat_id)), timeout=1.4)
+    except Exception:
+        return
+    for item in admins or []:
+        if str(getattr(item, "status", "") or "") != "creator":
+            continue
+        user = getattr(item, "user", None)
+        uid = int(getattr(user, "id", 0) or 0)
+        if uid:
+            _remember_creator(chat_id, uid)
+        return
 
 
 def _bg(coro) -> None:
@@ -398,6 +457,7 @@ async def maybe_prompt_captcha(
         meta=gc.event_meta(user, chat, extra={"trigger": trigger, **(extra_meta or {})}),
     ))
     _last_prompt[key] = time.monotonic()
+    _bg(_warm_creator(bot, int(chat_id)))
     print(f"[CAPTCHA] shown chat={chat_id} user={uid} mid={mid} trigger={trigger}")
     return True
 
@@ -417,6 +477,85 @@ async def _user_needs_captcha(chat_id: int, user_id: int) -> bool:
     if pool is None:
         return False
     return await gc.user_needs_captcha(pool, chat_id, user_id)
+
+
+async def _try_text_captcha(bot, message: Message, chat, user) -> bool:
+    """True — сообщение разобрали как ответ на капчу, дальше гейт молчит."""
+    text = (message.text or message.caption or "").strip()
+    if not text:
+        return False
+    chat_id = int(chat.id)
+    uid = int(user.id)
+    row = gc.peek_live_user(chat_id, uid)
+    pool = _pool()
+    if row is None and pool is not None:
+        row = await _wait(gc.get_open_challenge(pool, chat_id, uid), _CLICK_DB_TIMEOUT, None)
+        if row:
+            gc.remember_live(row)
+    if not row or gc.challenge_expired(row):
+        return False
+    payload = gc.hydrate_payload(_payload_of(row))
+    result, pick, nxt = gc.match_chat_answer(payload, text)
+    if result == "miss":
+        return False
+    challenge_id = int(row["id"])
+    stored_chat_id = int(row.get("chat_id") or chat_id)
+    thread_id = getattr(message, "message_thread_id", None)
+    _bg(_delete_message(bot, chat_id, message.message_id))
+    print(f"[CAPTCHA] text chat={chat_id} user={uid} pick={pick} result={result}")
+
+    if result == "next" and nxt is not None:
+        gc.patch_live(challenge_id, payload=nxt)
+        row["payload"] = nxt
+        _bg(_refresh_card(bot, row, nxt, chat_id, user, thread_id, pool, challenge_id))
+        return True
+
+    if result == "pass":
+        gc.note_passed(chat_id, uid)
+        gc.note_passed(stored_chat_id, uid)
+        gc.forget_live(challenge_id)
+        mid = row.get("message_id")
+        if mid:
+            _bg(_delete_message(bot, chat_id, mid))
+        _bg(_maybe_unrestrict(bot, chat_id, uid))
+        if pool:
+            async def _persist_pass() -> None:
+                try:
+                    await gc.mark_passed(
+                        pool,
+                        user_id=uid,
+                        chat_id=chat_id,
+                        variant=payload.get("variant"),
+                        attempts=max(1, int(row.get("attempts") or 0)),
+                        duration_ms=gc.duration_ms_of(row),
+                        trigger="text",
+                        meta=gc.event_meta(user, chat, extra={"pick": pick, "via": "text"}),
+                    )
+                except Exception:
+                    log.exception("captcha text pass persist failed chat=%s user=%s", chat_id, uid)
+                try:
+                    await gc.delete_challenge(pool, challenge_id=challenge_id)
+                except Exception:
+                    log.exception("captcha challenge delete failed id=%s", challenge_id)
+            _bg(_persist_pass())
+        return True
+
+    attempts = int(row.get("attempts") or 0) + 1
+    fresh = gc.build_challenge()
+    gc.patch_live(challenge_id, payload=fresh, attempts=attempts)
+    row["attempts"] = attempts
+    row["payload"] = fresh
+    _bg(_refresh_card(bot, row, fresh, chat_id, user, thread_id, pool, challenge_id, attempts=attempts))
+    if pool:
+        _bg(gc.log_event(
+            pool,
+            user_id=uid,
+            chat_id=chat_id,
+            event="fail",
+            variant=payload.get("variant"),
+            meta=gc.event_meta(user, chat, extra={"pick": pick, "attempts": attempts, "via": "text"}),
+        ))
+    return True
 
 
 class CaptchaGateMiddleware(BaseMiddleware):
@@ -451,6 +590,9 @@ class CaptchaGateMiddleware(BaseMiddleware):
         if not needed:
             return await handler(event, data)
         bot = data.get("bot") or message.bot
+        answered = await _try_text_captcha(bot, message, chat, user)
+        if answered:
+            return None
         extra = _message_extra(message)
         try:
             await asyncio.wait_for(
@@ -490,40 +632,35 @@ class CaptchaCallbackGateMiddleware(BaseMiddleware):
         user = callback.from_user
         if not user or user.is_bot:
             return await handler(event, data)
-        try:
-            needed = await asyncio.wait_for(
-                _user_needs_captcha(int(chat.id), int(user.id)),
-                timeout=_GATE_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
+        cached = gc.cached_passed(int(chat.id), int(user.id))
+        if cached is True:
             return await handler(event, data)
-        except Exception:
-            return await handler(event, data)
+        if cached is False:
+            needed = True
+        else:
+            try:
+                needed = await asyncio.wait_for(
+                    _user_needs_captcha(int(chat.id), int(user.id)),
+                    timeout=_GATE_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                return await handler(event, data)
+            except Exception:
+                return await handler(event, data)
         if not needed:
             return await handler(event, data)
         bot = data.get("bot") or getattr(callback, "bot", None)
-        try:
-            await callback.answer(gc.GATE_ALERT, show_alert=True)
-        except Exception:
-            pass
+        await _ack(callback, gc.GATE_ALERT, alert=True)
         if bot:
-            try:
-                await asyncio.wait_for(
-                    maybe_prompt_captcha(
-                        bot,
-                        chat_id=int(chat.id),
-                        user=user,
-                        trigger="callback",
-                        thread_id=getattr(message, "message_thread_id", None),
-                        chat=chat,
-                        extra_meta={"trigger": "callback", "callback": raw[:40]},
-                    ),
-                    timeout=_PROMPT_TIMEOUT,
-                )
-            except asyncio.TimeoutError:
-                log.warning("captcha prompt timeout on callback chat=%s user=%s", chat.id, user.id)
-            except Exception:
-                log.exception("captcha prompt on blocked callback chat=%s user=%s", chat.id, user.id)
+            _bg(maybe_prompt_captcha(
+                bot,
+                chat_id=int(chat.id),
+                user=user,
+                trigger="callback",
+                thread_id=getattr(message, "message_thread_id", None),
+                chat=chat,
+                extra_meta={"trigger": "callback", "callback": raw[:40]},
+            ))
         return None
 
 
@@ -531,34 +668,30 @@ class CaptchaCallbackGateMiddleware(BaseMiddleware):
 async def on_captcha_answer(callback: CallbackQuery) -> None:
     parsed = gc.parse_answer_callback(callback.data or "")
     if not parsed:
-        await callback.answer()
+        await _ack(callback)
         return
     challenge_id, pick, mac = parsed
     if not gc.check_sign(mac, "a", challenge_id, pick):
-        await callback.answer("Эта карточка уже устарела", show_alert=True)
+        await _ack(callback, "Эта карточка уже устарела", alert=True)
         return
 
     row = gc.peek_live(challenge_id)
     pool = _pool()
-    if row is None:
-        if pool is None:
-            await callback.answer()
-            return
-        try:
-            row = await gc.get_challenge(pool, challenge_id)
-        except Exception:
-            log.exception("captcha get_challenge failed id=%s", challenge_id)
-            await callback.answer("Не удалось проверить капчу, нажмите ещё раз", show_alert=True)
-            return
+    if row is None and pool is not None:
+        row = await _wait(gc.get_challenge(pool, challenge_id), _CLICK_DB_TIMEOUT, None)
     if not row:
-        await callback.answer("Эта карточка уже не действует", show_alert=True)
+        await _ack(callback, "Нажмите ещё раз", alert=True)
         return
 
     user = callback.from_user
     uid = int(user.id)
     if uid != int(row["user_id"]):
-        await callback.answer("Эта капча предназначена для другого участника")
+        await _ack(callback, "Эта капча предназначена для другого участника")
         return
+    if challenge_id in _click_busy:
+        await _ack(callback)
+        return
+    _click_busy.add(challenge_id)
 
     msg_chat_id = None
     if callback.message and getattr(callback.message, "chat", None):
@@ -579,15 +712,26 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
             _bg(gc.remap_chat_id(pool, stored_chat_id, chat_id))
             _bg(gc.seed_new_group(pool, getattr(callback.message, "chat", None), user, chat_id=chat_id))
 
+    try:
+        await _handle_captcha_pick(
+            callback, row, challenge_id, pick, mac, uid, user, chat_id, stored_chat_id, pool,
+        )
+    finally:
+        _click_busy.discard(challenge_id)
+
+
+async def _handle_captcha_pick(
+    callback, row, challenge_id, pick, mac, uid, user, chat_id, stored_chat_id, pool,
+) -> None:
     if gc.cached_disabled(chat_id) is True:
-        await callback.answer("Капча в этой группе выключена", show_alert=True)
+        await _ack(callback, "Капча в этой группе выключена", alert=True)
         if callback.message:
             _bg(_delete_message(callback.bot, chat_id, callback.message.message_id))
         return
 
     if gc.cached_passed(chat_id, uid) is True or gc.cached_passed(stored_chat_id, uid) is True:
         gc.note_passed(chat_id, uid)
-        await callback.answer("Вы уже прошли капчу", show_alert=True)
+        await _ack(callback, "Вы уже прошли капчу", alert=True)
         if callback.message:
             _bg(_delete_message(callback.bot, chat_id, callback.message.message_id))
         if pool:
@@ -599,18 +743,11 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
         row["message_id"] = int(callback.message.message_id)
 
     if gc.challenge_expired(row):
-        await callback.answer()
+        await _ack(callback)
         payload = gc.build_challenge()
         gc.patch_live(challenge_id, payload=payload)
         row["payload"] = payload
-        mid = await _send_or_edit(
-            callback.bot, chat_id=chat_id, user=user, row=row, payload=payload, thread_id=thread_id,
-        )
-        if pool:
-            _bg(gc.update_challenge(
-                pool, challenge_id, payload=payload, attempts=int(row.get("attempts") or 0),
-                message_id=mid,
-            ))
+        _bg(_refresh_card(callback.bot, row, payload, chat_id, user, thread_id, pool, challenge_id))
         return
 
     payload = gc.hydrate_payload(_payload_of(row))
@@ -619,14 +756,10 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
     print(f"[CAPTCHA] click chat={chat_id} user={uid} pick={pick} result={result}")
 
     if result == "next" and nxt is not None:
-        await callback.answer(gc.NEXT_ALERT)
+        await _ack(callback, gc.NEXT_ALERT)
         gc.patch_live(challenge_id, payload=nxt)
         row["payload"] = nxt
-        mid = await _send_or_edit(
-            callback.bot, chat_id=chat_id, user=user, row=row, payload=nxt, thread_id=thread_id,
-        )
-        if pool:
-            _bg(gc.update_challenge(pool, challenge_id, payload=nxt, message_id=mid))
+        _bg(_refresh_card(callback.bot, row, nxt, chat_id, user, thread_id, pool, challenge_id))
         return
 
     if result == "pass":
@@ -634,7 +767,7 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
         gc.note_passed(chat_id, uid)
         gc.note_passed(stored_chat_id, uid)
         gc.forget_live(challenge_id)
-        await callback.answer(gc.PASS_ALERT, show_alert=True)
+        await _ack(callback, gc.PASS_ALERT, alert=True)
         chat = getattr(callback.message, "chat", None)
         if pool:
             async def _persist_pass() -> None:
@@ -664,21 +797,19 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
         return
 
     attempts += 1
-    await callback.answer()
+    await _ack(callback)
     fresh = gc.build_challenge()
     gc.patch_live(challenge_id, payload=fresh, attempts=attempts)
     row["attempts"] = attempts
     row["payload"] = fresh
-    mid = await _send_or_edit(
-        callback.bot, chat_id=chat_id, user=user, row=row, payload=fresh, thread_id=thread_id,
-    )
+    _bg(_refresh_card(callback.bot, row, fresh, chat_id, user, thread_id, pool, challenge_id, attempts=attempts))
     if not pool:
         log.warning("captcha fail without db pool chat=%s user=%s", chat_id, uid)
         return
 
     async def _persist_fail() -> None:
         try:
-            await gc.update_challenge(pool, challenge_id, payload=fresh, attempts=attempts, message_id=mid)
+            await gc.update_challenge(pool, challenge_id, payload=fresh, attempts=attempts)
         except Exception:
             log.exception("captcha fail update failed id=%s", challenge_id)
         try:
@@ -700,40 +831,64 @@ async def on_captcha_answer(callback: CallbackQuery) -> None:
     _bg(_persist_fail())
 
 
+async def _refresh_card(bot, row, payload, chat_id, user, thread_id, pool, challenge_id, attempts=None) -> None:
+    mid = await _send_or_edit(
+        bot, chat_id=chat_id, user=user, row=row, payload=payload, thread_id=thread_id,
+    )
+    if pool:
+        kwargs = {"payload": payload, "message_id": mid}
+        if attempts is not None:
+            kwargs["attempts"] = attempts
+        try:
+            await gc.update_challenge(pool, challenge_id, **kwargs)
+        except Exception:
+            log.exception("captcha refresh persist failed id=%s", challenge_id)
+
+
 @captcha_router.callback_query(F.data.startswith("gcX:"))
 async def on_captcha_disable(callback: CallbackQuery) -> None:
     parsed = gc.parse_disable_callback(callback.data or "")
     if not parsed:
-        await callback.answer()
+        await _ack(callback)
         return
     signed_chat_id, mac = parsed
     if not gc.check_sign(mac, "x", signed_chat_id):
-        await callback.answer("Эта карточка уже устарела", show_alert=True)
+        await _ack(callback, "Эта карточка уже устарела", alert=True)
         return
     chat_id = signed_chat_id
     if callback.message and getattr(callback.message, "chat", None):
         chat_id = int(callback.message.chat.id)
 
-    status = await _member_status(callback.bot, chat_id, int(callback.from_user.id))
-    if status != "creator":
-        await callback.answer(gc.DISABLE_ALERT, show_alert=True)
+    uid = int(callback.from_user.id)
+    owner = _cached_creator(chat_id) or _cached_creator(signed_chat_id)
+    if owner is not None:
+        is_owner = uid == int(owner)
+    else:
+        is_owner = (await _member_status(callback.bot, chat_id, uid)) == "creator"
+    if not is_owner:
+        await _ack(callback, gc.DISABLE_ALERT, alert=True)
         return
 
     pool = _pool()
     if pool is None:
-        await callback.answer()
+        await _ack(callback)
         return
-    await callback.answer("Капча в этой группе выключена", show_alert=True)
-    await gc.disable_chat(pool, chat_id, int(callback.from_user.id))
-    if int(chat_id) != int(signed_chat_id):
+    await _ack(callback, "Капча в этой группе выключена", alert=True)
+
+    async def _do_disable() -> None:
         try:
-            await gc.disable_chat(pool, int(signed_chat_id), int(callback.from_user.id))
+            await gc.disable_chat(pool, chat_id, uid)
         except Exception:
-            pass
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
+            log.exception("captcha disable failed chat=%s", chat_id)
+        if int(chat_id) != int(signed_chat_id):
+            try:
+                await gc.disable_chat(pool, int(signed_chat_id), uid)
+            except Exception:
+                pass
+        if callback.message:
+            await _delete_message(callback.bot, chat_id, callback.message.message_id)
+
+    _bg(_do_disable())
 
 
 @captcha_router.message(F.migrate_to_chat_id)

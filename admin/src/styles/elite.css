@@ -2959,9 +2959,10 @@ body,
     letter-spacing: -0.02em;
     line-height: 1.2;
     color: var(--e-text, #f4f4f5);
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .elite-brand-slot {
@@ -2991,19 +2992,28 @@ body,
     border-radius: 0 !important;
   }
 
-  .elite-menu-btn {
+  .elite-menu-btn,
+  .elite-support-btn,
+  .elite-icon-btn {
     display: inline-flex !important;
     align-items: center;
     justify-content: center;
-    width: 2.55rem;
-    height: 2.55rem;
-    border-radius: 12px;
+    width: 2.7rem;
+    height: 2.7rem;
+    min-width: 2.7rem;
+    min-height: 2.7rem;
+    border-radius: 13px;
     border: 1px solid rgba(var(--e-accent-rgb, 255, 5, 36), 0.28);
     background: rgba(var(--e-accent-rgb, 255, 5, 36), 0.1);
     color: var(--e-accent-bright, #ff6a7a);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+  }
+  .elite-support-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.16);
+    color: #f4f4f5;
   }
 
   .elite-menu-btn:active {

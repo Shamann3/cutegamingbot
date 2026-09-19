@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from db import db
+from nika.lookup import normalize_group_query, parse_group_ref, pick_resolved_hit
 
 log = logging.getLogger("admin_nika")
 _schema_ok = False
@@ -949,14 +950,26 @@ async def earnings() -> Dict[str, Any]:
     }
 
 
+def _candidate_out(row: Any, forbidden: List[int]) -> Dict[str, Any]:
+    cid = int(row["chat_id"])
+    tech = bool(row["is_technical"]) or cid in set(forbidden)
+    return {
+        "chatId": cid,
+        "name": row["namechat"] or str(cid),
+        "username": row["usernamechat"],
+        "balance": _as_int(row["balance"]),
+        "forbidden": tech,
+    }
+
+
 async def search_candidates(query: str) -> List[Dict[str, Any]]:
     await _ensure()
     forbidden = _forbidden()
-    q = (query or "").strip()
-    if not q:
+    ref = parse_group_ref(query)
+    if ref["kind"] in {"empty", "invite"}:
         return []
     async with db.pool.acquire() as conn:
-        if q.lstrip("-").isdigit():
+        if ref["kind"] == "id":
             rows = await conn.fetch(
                 """
                 SELECT chat_id, namechat, usernamechat, COALESCE(chatbalance, 0)::bigint AS balance,
@@ -965,10 +978,12 @@ async def search_candidates(query: str) -> List[Dict[str, Any]]:
                 WHERE chat_id = $1
                 LIMIT 1
                 """,
-                int(q),
+                int(ref["chat_id"]),
             )
         else:
+            q = str(ref.get("query") or "")
             like = f"%{q}%"
+            exact = q.lower()
             rows = await conn.fetch(
                 """
                 SELECT chat_id, namechat, usernamechat, COALESCE(chatbalance, 0)::bigint AS balance,
@@ -978,26 +993,28 @@ async def search_candidates(query: str) -> List[Dict[str, Any]]:
                   AND chat_id <> ALL($1::bigint[])
                   AND (
                         namechat ILIKE $2
+                     OR lower(regexp_replace(coalesce(usernamechat, ''), '^@', '')) = $3
                      OR lower(coalesce(usernamechat, '')) LIKE lower($2)
                   )
-                ORDER BY chatbalance DESC NULLS LAST
+                ORDER BY
+                  CASE
+                    WHEN lower(regexp_replace(coalesce(usernamechat, ''), '^@', '')) = $3 THEN 0
+                    WHEN lower(coalesce(namechat, '')) = $3 THEN 1
+                    ELSE 2
+                  END,
+                  chatbalance DESC NULLS LAST
                 LIMIT 20
                 """,
                 forbidden,
                 like,
+                exact,
             )
-    out = []
-    for row in rows:
-        cid = int(row["chat_id"])
-        tech = bool(row["is_technical"]) or cid in set(forbidden)
-        out.append({
-            "chatId": cid,
-            "name": row["namechat"] or str(cid),
-            "username": row["usernamechat"],
-            "balance": _as_int(row["balance"]),
-            "forbidden": tech,
-        })
-    return out
+    return [_candidate_out(row, forbidden) for row in rows]
+
+
+async def resolve_group_query(query: str) -> Dict[str, Any]:
+    """Один запрос: id, @username, ссылка или имя. Одна группа — сразу её."""
+    return pick_resolved_hit(await search_candidates(query), query)
 
 
 async def save_settings(
@@ -1021,8 +1038,9 @@ async def save_settings(
 
 
 async def save_group(
-    chat_id: int,
+    chat_id: Optional[int] = None,
     *,
+    query: Optional[str] = None,
     target_balance: int,
     speed_mode: str = "auto",
     enabled: bool = True,
@@ -1031,6 +1049,14 @@ async def save_group(
 ) -> Dict[str, Any]:
     await _ensure()
     from nika.store import upsert_group
+
+    if chat_id is None and query:
+        found = await resolve_group_query(query)
+        if not found.get("ok"):
+            return found
+        chat_id = int(found["chatId"])
+    if chat_id is None:
+        return {"ok": False, "error": "Нужны id, @username или имя группы."}
 
     ok = await upsert_group(
         db,
@@ -1043,7 +1069,9 @@ async def save_group(
     )
     if not ok:
         return {"ok": False, "error": "Эту группу нельзя поставить под Нику — это техкошелёк."}
-    return {"ok": True, "pulse": await pulse()}
+    cards = await search_candidates(str(chat_id))
+    match = cards[0] if cards else {"chatId": int(chat_id)}
+    return {"ok": True, "chatId": int(chat_id), "match": match, "pulse": await pulse()}
 
 
 async def drop_group(chat_id: int) -> Dict[str, Any]:
@@ -1133,6 +1161,36 @@ async def apply_action(
         await request_revert(db, int(transfer_id), admin_id)
         async with db.pool.acquire() as conn:
             queued_id = await inc.enqueue_command(conn, "revert", payload, admin_id)
+    elif kind == "now_sweep":
+        if chat_id is None:
+            return {"ok": False, "error": "Нет группы"}
+        async with db.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT s.target_balance::bigint AS target,
+                       COALESCE(c.chatbalance, 0)::bigint AS balance
+                FROM nika_group_settings s
+                LEFT JOIN chat c ON c.chat_id = s.chat_id
+                WHERE s.chat_id = $1
+                """,
+                int(chat_id),
+            )
+            if row is None:
+                return {"ok": False, "error": "Этой группы нет под Никой"}
+            target = int(row["target"] or 0)
+            balance = int(row["balance"] or 0)
+            excess = balance - target
+            if excess <= 0:
+                return {"ok": False, "error": "Лишнего нет — баланс уже в цели или ниже."}
+            queued_id = await inc.enqueue_command(conn, "now_sweep", payload, admin_id)
+        return {
+            "ok": True,
+            "queuedId": queued_id,
+            "amount": excess,
+            "target": target,
+            "balance": balance,
+            "pulse": await pulse(),
+        }
     elif kind in inc.COMMAND_KINDS:
         async with db.pool.acquire() as conn:
             queued_id = await inc.enqueue_command(conn, kind, payload, admin_id)

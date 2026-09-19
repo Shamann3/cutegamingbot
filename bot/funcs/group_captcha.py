@@ -31,7 +31,6 @@ TOKEN_RE = re.compile(r"\{emoji:(\d{5,32})\}", re.I)
 ICON_ONLY_TEXT = " "
 
 CHALLENGE_TTL_SEC = 30 * 60
-VARIANT_7_CHANCE = 0.11
 DISABLE_ICON = "<tg-emoji emoji-id='5462990652943904884'>✨</tg-emoji>"
 DISABLE_ALERT = (
     "Капчу в группе может отключить только владелец чата.\n"
@@ -94,11 +93,89 @@ INTRO_LINE2_CHUNKS = (
 VARIANT_LABELS = {
     1: "Найдите такое же",
     2: "Цвет",
-    4: "Живое / еда / вещь",
+    4: "Птица / картошка / чемодан",
     5: "Сторона",
-    6: "Настроение",
-    7: "Два по порядку",
 }
+ACTIVE_VARIANTS = (1, 2, 4, 5)
+
+# Канон в кавычках подсказки. Алиасы — всё, что код принимает как этот ответ.
+CHAT_OPTION = {
+    "shield": ("щит", (
+        "щит", "щитом", "щита", "щите", "щиту", "щиток", "щитком",
+        "защита", "защиту", "защитой", "защите", "щитем", "shield",
+    )),
+    "fire": ("огонь", (
+        "огонь", "огня", "огнем", "огнём", "огне", "пламя", "пламени", "пламенем",
+        "костер", "костёр", "костра", "костре", "огонек", "огонёк", "fire",
+    )),
+    "diamond": ("алмаз", (
+        "алмаз", "алмаза", "алмазом", "алмазу", "алмазе", "алмазик",
+        "бриллиант", "бриллианта", "бриллиантом", "камень", "камня", "камнем", "diamond",
+    )),
+    "red": ("красный", (
+        "красный", "красное", "красная", "красную", "красным", "красного",
+        "красненький", "красненькое", "алый", "алое", "алая", "red",
+    )),
+    "green": ("зелёный", (
+        "зеленый", "зелёный", "зеленое", "зелёное", "зеленая", "зелёная",
+        "зеленую", "зелёную", "зеленым", "зелёным", "зеленого", "зелёного",
+        "зелененький", "зелененькое", "green",
+    )),
+    "blue": ("синий", (
+        "синий", "синее", "синяя", "синюю", "синим", "синего",
+        "синенький", "синенькое", "голубой", "голубое", "голубая", "голубую", "blue",
+    )),
+    "living": ("птица", (
+        "птица", "птицу", "птицы", "птицей", "птице", "птичка", "птичку", "птички",
+        "голубь", "голубя", "голубок", "живое", "живого", "живой", "животное", "living",
+    )),
+    "food": ("картошка", (
+        "картошка", "картошку", "картошки", "картошкой", "картошке", "картошечка",
+        "картофель", "картофеля", "картоху", "фри", "еда", "еду", "едой", "еды", "food",
+    )),
+    "thing": ("чемодан", (
+        "чемодан", "чемодана", "чемоданом", "чемодану", "чемодане", "чемоданчик",
+        "багаж", "багажа", "вещь", "вещи", "вещью", "предмет", "предмета", "thing",
+    )),
+    "left": ("налево", (
+        "налево", "на лево", "влево", "в лево", "лево", "левая", "левую", "левой",
+        "левое", "слева", "левее", "left",
+    )),
+    "right": ("направо", (
+        "направо", "на право", "вправо", "в право", "право", "правая", "правую", "правой",
+        "правое", "справа", "правее", "right",
+    )),
+    "happy": ("весёлый", ("веселый", "весёлый", "веселое", "весёлое", "веселая", "весёлая", "радость", "радостный", "смех", "смеется", "смеётся", "happy")),
+    "sad": ("грустный", ("грустный", "грустное", "грустная", "грусть", "печаль", "печальный", "грущу", "sad")),
+    "angry": ("злой", ("злой", "злое", "злая", "злость", "злой", "сердитый", "сердитое", "злюсь", "angry")),
+    "sun": ("солнце", ("солнце", "солнца", "солнцем", "солнышко", "солнцу", "sun")),
+    "moon": ("луна", ("луна", "луну", "луны", "луной", "луне", "месяц", "месяца", "moon")),
+    "earth": ("земля", ("земля", "землю", "земли", "землей", "землёй", "земле", "earth")),
+}
+
+_CHAT_FILLERS = frozenset({
+    "на", "кнопку", "кнопка", "значок", "значком", "эмодзи", "смайл", "сначала",
+    "потом", "затем", "после", "этого", "напишите", "напиши", "в", "чат", "или",
+    "ответьте", "ответ", "нажмите", "нажать", "нужно", "надо", "пожалуйста",
+    "это", "эта", "этот", "наверное", "думаю", "кажется", "будет", "вот",
+    "точно", "может", "мне", "правильный", "вариант", "капча", "задание",
+    "здесь", "тут", "отвечаю", "пишу", "значит", "типа", "как", "будто",
+    "похоже", "скорее", "всего", "да", "ну", "же", "бы", "ли", "просто",
+    "только", "кнопке", "кнопки", "значка", "цвет", "цвета", "цветом",
+    "сторону", "сторона", "направление",
+})
+_CHAT_SPLIT = re.compile(
+    r"(?:,|;|/|\s+(?:и затем|а затем|затем|а потом|и потом|потом|после этого|и)\s+)",
+    re.I,
+)
+_CHAT_PREFIXES = (
+    "или напишите в чат ",
+    "напишите в чат ",
+    "напиши в чат ",
+    "или напиши ",
+    "ответ ",
+    "ответь ",
+)
 
 # Сырые теги — источник правды. Код сам достаёт id и fallback.
 EMOJI = {
@@ -224,15 +301,22 @@ def premium_button(
     text: Optional[str] = None,
     plain: bool = False,
 ):
-    """Как в проводах: text=' ', премиум только через icon_custom_emoji_id."""
+    """Видимый текст + премиум-иконка: кнопка остаётся живой даже без custom emoji."""
     _ = plain
     from aiogram.types import InlineKeyboardButton
-    return InlineKeyboardButton(
-        text=ICON_ONLY_TEXT if text is None else text,
-        callback_data=callback_data,
-        style=style or "default",
-        icon_custom_emoji_id=str(item.emoji_id),
-    )
+    label = text if text is not None else (getattr(item, "face", None) or "•")
+    kwargs = {"text": str(label), "callback_data": callback_data}
+    try:
+        return InlineKeyboardButton(
+            **kwargs,
+            style=style or "default",
+            icon_custom_emoji_id=str(item.emoji_id),
+        )
+    except TypeError:
+        try:
+            return InlineKeyboardButton(**kwargs, icon_custom_emoji_id=str(item.emoji_id))
+        except TypeError:
+            return InlineKeyboardButton(**kwargs)
 
 
 def mention_html(user: Any) -> str:
@@ -249,10 +333,7 @@ def mention_html(user: Any) -> str:
 
 
 def pick_variant(rng: Optional[random.Random] = None) -> int:
-    r = rng or random
-    if r.random() < VARIANT_7_CHANCE:
-        return 7
-    return r.choice([1, 2, 4, 5, 6])
+    return (rng or random).choice(list(ACTIVE_VARIANTS))
 
 
 def _mark(answer: str) -> str:
@@ -274,7 +355,7 @@ def _press_same_icon_chunks() -> List[Dict[str, Any]]:
     return _press_chunks("таким же значком", prefix="Нажмите кнопку с ")
 
 
-V4_WORDS = {"living": "живое", "food": "еду", "thing": "вещь"}
+V4_WORDS = {"living": "птица", "food": "картошка", "thing": "чемодан"}
 V6_WORDS = {"happy": "весёлый", "sad": "грустный", "angry": "злой"}
 V7_ONTO = {"sun": "на солнце", "moon": "на луну", "earth": "на землю"}
 _V7_ONTO_LEGACY = {"солнце": "на солнце", "луну": "на луну", "землю": "на землю"}
@@ -537,6 +618,16 @@ def card_plain_and_entities(payload: Dict[str, Any], user: Any):
             custom_emoji_id=str(extra["id"]),
         ))
 
+    hint = chat_hint_line(payload)
+    if hint:
+        add("\n")
+        start, ln = add(hint)
+        if ln:
+            ents.append(MessageEntity(type=MessageEntityType.BOLD, offset=start, length=ln))
+            block = getattr(MessageEntityType, "BLOCKQUOTE", None)
+            if block is not None:
+                ents.append(MessageEntity(type=block, offset=start, length=ln))
+
     return "".join(buf), ents
 
 
@@ -590,7 +681,9 @@ def card_html(payload: Dict[str, Any], user: Any) -> str:
         f"{emoji('intro_eye').as_html()} <b>{_chunks_html(INTRO_LINE1_CHUNKS)}</b>\n"
         f"{emoji('intro_warn').as_html()} <b>{_chunks_html(INTRO_LINE2_CHUNKS)}</b>"
     )
-    return f"{who}\n{intro}\n\n{body}"
+    hint = html.escape(chat_hint_line(payload), quote=False)
+    quote = f"<blockquote><b>{hint}</b></blockquote>" if hint else ""
+    return f"{who}\n{intro}\n\n{body}\n{quote}"
 
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -688,6 +781,239 @@ def is_correct_pick(payload: Dict[str, Any], pick: str) -> Tuple[str, Optional[D
     if pick == str(payload.get("correct") or ""):
         return "pass", payload
     return "fail", None
+
+
+def _fold_chat(text: str) -> str:
+    s = str(text or "").replace("\u00a0", " ").strip().lower().replace("ё", "е")
+    s = re.sub(r"[«»„“‟\"'`]+", "", s)
+    s = re.sub(r"[.!?…]+$", "", s)
+    s = re.sub(r"\s+", " ", s).strip(" \t,;:-—")
+    return s
+
+
+def chat_hint_quoted(payload: Dict[str, Any]) -> str:
+    """Строка в кавычках: Или напишите в чат \"…\"."""
+    data = hydrate_payload(payload)
+    variant = int(data.get("variant") or 0)
+    if variant == 7:
+        seq = [str(x) for x in (data.get("sequence") or []) if x]
+        parts = [CHAT_OPTION.get(k, (k, ()))[0] for k in seq]
+        return ", ".join(parts)
+    key = str(data.get("correct") or "")
+    if key in CHAT_OPTION:
+        return CHAT_OPTION[key][0]
+    for field in ("color", "ask", "side", "mood"):
+        if data.get(field):
+            return str(data[field])
+    return key
+
+
+def chat_hint_line(payload: Dict[str, Any]) -> str:
+    quoted = chat_hint_quoted(payload)
+    return f'Или напишите в чат "{quoted}"'
+
+
+def option_aliases(key: str) -> set:
+    key = str(key or "")
+    names = {_fold_chat(key)}
+    if key in CHAT_OPTION:
+        hint, aliases = CHAT_OPTION[key]
+        names.add(_fold_chat(hint))
+        names.update(_fold_chat(a) for a in aliases)
+    if key in EMOJI:
+        face = _fold_chat(emoji(key).face)
+        if face:
+            names.add(face)
+    names.discard("")
+    return names
+
+
+_RU_ENDINGS = (
+    "ами", "ями", "ого", "его", "ому", "ему", "ыми", "ими",
+    "ый", "ий", "ая", "ое", "ее", "ые", "ие",
+    "ом", "ем", "ам", "ям", "ах", "ях", "ов", "ев",
+    "ую", "юю", "ой", "ей", "ью",
+    "а", "я", "у", "ю", "е", "и", "ы", "о",
+)
+
+
+def _compact_chat(text: str) -> str:
+    return _fold_chat(text).replace(" ", "")
+
+
+def _stems(word: str) -> set:
+    word = _compact_chat(word)
+    out = {word}
+    if len(word) < 4:
+        return out
+    for end in _RU_ENDINGS:
+        if word.endswith(end):
+            stem = word[:-len(end)]
+            if len(stem) >= 3:
+                out.add(stem)
+    return out
+
+
+def _levenshtein(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    if not a or not b:
+        return max(len(a), len(b))
+    if abs(len(a) - len(b)) > 2:
+        return 99
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _score_token_alias(token: str, alias: str) -> float:
+    token = _fold_chat(token)
+    alias = _fold_chat(alias)
+    if not token or not alias:
+        return 0.0
+    if token == alias:
+        return 1.0
+    compact_t = token.replace(" ", "")
+    compact_a = alias.replace(" ", "")
+    if compact_t == compact_a:
+        return 0.99
+    if _stems(compact_t) & _stems(compact_a):
+        return 0.93
+    shorter, longer = (compact_t, compact_a) if len(compact_t) <= len(compact_a) else (compact_a, compact_t)
+    if len(shorter) >= 4 and longer.startswith(shorter):
+        return 0.86 + 0.08 * (len(shorter) / max(len(longer), 1))
+    if len(shorter) >= 5 and shorter in longer:
+        return 0.80
+    n, m = len(compact_t), len(compact_a)
+    if min(n, m) >= 3:
+        dist = _levenshtein(compact_t, compact_a)
+        if dist == 1 and max(n, m) >= 4:
+            return 0.88
+        if dist == 2 and min(n, m) >= 6:
+            return 0.74
+    return 0.0
+
+
+def _bare_token(token: str) -> str:
+    folded = _fold_chat(token)
+    if folded.startswith("на ") and folded not in {"налево", "направо"}:
+        folded = folded[3:].strip()
+    return folded
+
+
+def resolve_chat_token(token: str, options: Sequence[str]) -> Optional[str]:
+    folded = _bare_token(token)
+    if not folded:
+        return None
+    scores: Dict[str, float] = {}
+    for key in options:
+        best = 0.0
+        for alias in option_aliases(str(key)):
+            best = max(best, _score_token_alias(folded, alias), _score_token_alias(token, alias))
+        scores[str(key)] = best
+    ranked = sorted(scores.items(), key=lambda item: -item[1])
+    if not ranked or ranked[0][1] < 0.74:
+        return None
+    winner, top = ranked[0]
+    runner = ranked[1][1] if len(ranked) > 1 else 0.0
+    if top < 0.99 and top - runner < 0.12:
+        return None
+    return winner
+
+
+def _resolved_picks(tokens: Sequence[str], options: Sequence[str]) -> List[str]:
+    found: List[str] = []
+    for token in tokens:
+        pick = resolve_chat_token(token, options)
+        if pick is not None:
+            found.append(pick)
+    if not found and tokens:
+        pick = resolve_chat_token(" ".join(tokens), options)
+        if pick is not None:
+            found.append(pick)
+    return found
+
+
+def _chat_tokens(text: str) -> List[str]:
+    raw = _fold_chat(text)
+    for prefix in _CHAT_PREFIXES:
+        if raw.startswith(prefix):
+            raw = raw[len(prefix):].strip()
+            break
+    quoted = re.findall(r"\"([^\"]+)\"", str(text or ""))
+    if not quoted:
+        quoted = re.findall(r"[«„“]([^»”]+)[»”]", str(text or ""))
+    if quoted:
+        raw = _fold_chat(quoted[-1])
+    parts = [p.strip() for p in _CHAT_SPLIT.split(raw) if p and p.strip()]
+    if len(parts) <= 1:
+        words = [_fold_chat(w) for w in raw.split()]
+        words = [w for w in words if w and w not in _CHAT_FILLERS]
+        if words:
+            parts = words
+    cleaned: List[str] = []
+    for part in parts:
+        item = _bare_token(part)
+        bits = [w for w in item.split() if w and w not in _CHAT_FILLERS]
+        if not bits:
+            continue
+        cleaned.extend(bits)
+    return cleaned
+
+
+def match_chat_answer(payload: Dict[str, Any], text: str) -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
+    """Разбор ответа из чата: pass | next | fail | miss."""
+    data = hydrate_payload(payload)
+    raw = str(text or "").strip()
+    if not raw:
+        return "miss", None, None
+    options = [str(x) for x in (data.get("options") or [])]
+    if not options:
+        return "miss", None, None
+
+    exact = _fold_chat(raw)
+    for prefix in _CHAT_PREFIXES:
+        if exact.startswith(prefix):
+            exact = exact[len(prefix):].strip()
+    hint = _fold_chat(chat_hint_quoted(data))
+    tokens = _chat_tokens(raw)
+
+    variant = int(data.get("variant") or 0)
+    if variant == 7:
+        seq = [str(x) for x in (data.get("sequence") or [])]
+        step = int(data.get("step") or 0)
+        need = seq[step:]
+        resolved = _resolved_picks(tokens, options)
+        if exact == hint or (resolved and resolved == seq) or (resolved and resolved == need):
+            nxt = dict(data)
+            nxt["step"] = len(seq)
+            return "pass", (need[-1] if need else (seq[-1] if seq else None)), nxt
+        if len(resolved) == 1:
+            pick = resolved[0]
+            status, nxt = is_correct_pick(data, pick)
+            return status, pick, nxt
+        if resolved:
+            return "fail", resolved[0], None
+        return "miss", None, None
+
+    if exact == hint or _compact_chat(exact) == _compact_chat(hint):
+        pick = str(data.get("correct") or "")
+        status, nxt = is_correct_pick(data, pick)
+        return status, pick, nxt
+
+    resolved = _resolved_picks(tokens, options)
+    unique = list(dict.fromkeys(resolved))
+    if len(unique) == 1:
+        pick = unique[0]
+        status, nxt = is_correct_pick(data, pick)
+        return status, pick, nxt
+    if len(unique) > 1:
+        return "fail", unique[0], None
+    return "miss", None, None
 
 
 SCHEMA_SQL = (

@@ -20,6 +20,9 @@ def test_atomic_move_locks_and_updates_both_sides_in_one_transaction():
     assert "stale_pending_abandoned" in engine
     assert "UndefinedTableError" in engine
     assert "process_operator_commands" in engine
+    assert "run_operator_pass" in engine
+    assert "now_sweep" in engine
+    assert "plan_drain_sweep" in engine
     assert "CODE_EMPTY_LADDER" in engine
     assert "maybe_sample_universe" in engine
     assert "announce_tech_plus" in engine
@@ -32,6 +35,8 @@ def test_worker_heals_schema_and_does_not_die():
     assert "ensure_nika_schema" in worker
     assert "CancelledError" in worker
     assert "create_task(_loop())" in worker
+    assert "create_task(_command_loop())" in worker
+    assert "run_operator_pass" in worker
 
 
 def test_emergency_off_is_one_sql_update():
@@ -55,6 +60,7 @@ def test_admin_nika_does_not_import_bot_package():
     assert "await db.ensure_pool()" not in text
     assert (_ROOT / "server" / "nika" / "policy.py").is_file()
     assert (_ROOT / "server" / "nika" / "ids.py").is_file()
+    assert (_ROOT / "server" / "nika" / "lookup.py").is_file()
 
 
 def test_admin_nika_imports_when_bot_package_missing():
@@ -67,7 +73,7 @@ def test_admin_nika_imports_when_bot_package_missing():
     env["PYTHONPATH"] = server
     env.pop("PYTHONHOME", None)
     code = (
-        "from nika.policy import SOURCE_LADDER, plan_topup, GroupPolicy, pick_sweep_dest, apply_sweep_speed; "
+        "from nika.policy import SOURCE_LADDER, plan_topup, plan_drain_sweep, GroupPolicy, pick_sweep_dest, apply_sweep_speed; "
         "from nika.store import policy_from_row, forbidden_managed_ids; "
         "from nika.incidents import actions_for; "
         "from nika.schema import FIRST_MANAGED_TARGET; "
@@ -117,3 +123,34 @@ def test_schema_uses_timestamptz_and_idempotency():
     assert "FIRST_MANAGED_TARGET = 5000" in schema
     assert "sweep_speed" in schema
     assert "BETWEEN 15 AND 3600" in schema
+
+
+def test_group_lookup_accepts_id_username_name_and_links():
+    import sys
+
+    server = str(_ROOT / "server")
+    if server not in sys.path:
+        sys.path.insert(0, server)
+    from nika.lookup import normalize_group_query, parse_group_ref, pick_resolved_hit
+
+    assert normalize_group_query("https://t.me/CuteClub") == "CuteClub"
+    assert normalize_group_query("@CuteClub") == "CuteClub"
+    assert parse_group_ref("t.me/c/2574123456/12")["chat_id"] == -1002574123456
+    assert parse_group_ref("-1001612636292")["kind"] == "id"
+    assert parse_group_ref("https://telegram.me/joinchat/AAAA")["kind"] == "invite"
+    assert parse_group_ref("Большая Чёрная")["kind"] == "name"
+
+    hits = [
+        {"chatId": 1, "name": "Большая Чёрная", "username": "bch", "forbidden": False},
+        {"chatId": 2, "name": "Другая БЧ", "username": "other", "forbidden": False},
+        {"chatId": 3, "name": "Служебная", "username": "tech", "forbidden": True},
+    ]
+    one = pick_resolved_hit(hits, "@bch")
+    assert one["ok"] is True
+    assert one["chatId"] == 1
+    many = pick_resolved_hit(hits, "Чёрная")
+    assert many["ok"] is False
+    assert len(many["candidates"]) == 2
+    named = pick_resolved_hit(hits, "Большая Чёрная")
+    assert named["ok"] is True
+    assert named["chatId"] == 1

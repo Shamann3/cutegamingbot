@@ -68,11 +68,10 @@ def test_card_uses_premium_tags_not_raw_faces():
         markup = __import__("bot.funcs.group_captcha", fromlist=["build_markup"]).build_markup(
             3, -100, card,
         )
-        for btn in markup.inline_keyboard[0]:
-            assert btn.text.strip() == ""
-            assert getattr(btn, "icon_custom_emoji_id", None)
-            for face in faces:
-                assert face not in (btn.text or "")
+        for btn, key in zip(markup.inline_keyboard[0], card["options"]):
+            item = emoji(str(key))
+            assert btn.text == item.face
+            assert getattr(btn, "icon_custom_emoji_id", None) == item.emoji_id
 
 
 def test_all_catalog_tags_have_ids():
@@ -119,7 +118,8 @@ def test_answers_are_underlined_and_card_is_bold():
     assert "<u>" not in intro
     assert f"<u>{card['color']}</u>" in html
     assert "<b>Нажмите" in html
-    assert html.endswith("</b>")
+    assert html.endswith("</blockquote>")
+    assert "<blockquote><b>Или напишите в чат \"" in html
     assert "<u>" in html
     # вложенный <b> вокруг mention ломает parse entities у Telegram
     assert not html.startswith("<b><a ")
@@ -145,26 +145,22 @@ def test_variant_3_is_removed():
     assert card["variant"] != 3
 
 
-def test_variant_4_and_6_rotate_task():
-    asks4, asks6 = set(), set()
+def test_variant_4_rotates_bird_potato_suitcase():
+    asks4 = set()
     for i in range(30):
         c4 = build_challenge(4, rng=random.Random(300 + i))
-        c6 = build_challenge(6, rng=random.Random(400 + i))
         asks4.add(c4["ask"])
-        asks6.add(c6["mood"])
         assert "значок, который обозначает" in c4["text"]
         assert c4["ask"] in c4["text"]
         assert f"<u>{c4['ask']}</u>" in c4["text"]
-        assert "эмодзи" in c6["text"]
-        assert c6["mood"] in c6["text"]
-        assert f"<u>{c6['mood']}</u>" in c6["text"]
         assert is_correct_pick(c4, c4["correct"])[0] == "pass"
         assert is_correct_pick(c4, "nope")[0] == "fail"
-    assert asks4 == {"живое", "еду", "вещь"}
-    assert asks6 == {"весёлый", "грустный", "злой"}
+    assert asks4 == {"птица", "картошка", "чемодан"}
     assert 3 not in VARIANT_LABELS
+    assert 6 not in VARIANT_LABELS
+    assert 7 not in VARIANT_LABELS
     assert 8 not in VARIANT_LABELS
-    assert all(pick_variant(random.Random(i)) not in {3, 8} for i in range(80))
+    assert all(pick_variant(random.Random(i)) not in {3, 6, 7, 8} for i in range(80))
 
 
 def test_variant_5_keeps_left_right_order():
@@ -177,31 +173,12 @@ def test_variant_5_keeps_left_right_order():
     assert seen == {"left", "right"}
 
 
-def test_variant_7_onto_phrases():
-    seen = set()
-    for i in range(50):
-        card = build_challenge(7, rng=random.Random(900 + i))
-        assert "Нажмите сначала " in card["text"]
-        assert ", затем " in card["text"]
-        for key in card["sequence"]:
-            seen.add(key)
-            phrase = {"sun": "на солнце", "moon": "на луну", "earth": "на землю"}[key]
-            assert phrase in card["text"]
-            assert f"<u>{phrase}</u>" in card["text"]
-        assert "сначало" not in card["text"]
-    assert seen == {"sun", "moon", "earth"}
-
-
-def test_variant_7_two_steps():
-    card = build_challenge(7, rng=random.Random(7))
-    first, second = card["sequence"]
-    assert first != second
-    assert is_correct_pick(card, "zzz")[0] == "fail"
-    status, nxt = is_correct_pick(card, first)
-    assert status == "next"
-    assert nxt["step"] == 1
-    assert is_correct_pick(nxt, first)[0] == "fail"
-    assert is_correct_pick(nxt, second)[0] == "pass"
+def test_removed_variants_are_not_issued():
+    for i in range(120):
+        assert pick_variant(random.Random(i)) in {1, 2, 4, 5}
+    for gone in (3, 6, 7, 8):
+        card = build_challenge(gone, rng=random.Random(gone * 17))
+        assert card["variant"] in {1, 2, 4, 5}
 
 
 def test_signed_callbacks_are_short_and_tamper_proof():
@@ -242,12 +219,11 @@ def test_card_entities_carry_custom_emoji():
     assert "6025996269141364975" in custom_ids
     assert card["prefix_id"] in custom_ids
     assert card["prefix_face"] in text
-    # в подписи кнопки этого лица быть не должно — только пробел + icon
     markup = __import__("bot.funcs.group_captcha", fromlist=["build_markup"]).build_markup(1, -100, card)
-    for btn in markup.inline_keyboard[0]:
-        assert btn.text == " "
-        assert btn.icon_custom_emoji_id
-        assert card["prefix_face"] not in btn.text
+    for btn, key in zip(markup.inline_keyboard[0], card["options"]):
+        item = emoji(str(key))
+        assert btn.text == item.face
+        assert btn.icon_custom_emoji_id == item.emoji_id
 
 
 def test_buttons_carry_premium_emoji_ids():
@@ -259,15 +235,14 @@ def test_buttons_carry_premium_emoji_ids():
     ids = {btn.icon_custom_emoji_id for btn in row}
     expected = {emoji(k).emoji_id for k in card["options"]}
     assert ids == expected
-    assert all(btn.text == " " for btn in row)
+    assert all(btn.text == emoji(k).face for btn, k in zip(row, card["options"]))
     disable = markup.inline_keyboard[1][0]
     assert disable.text == "Убрать капчу"
     assert disable.icon_custom_emoji_id == "5462990652943904884"
     assert disable.callback_data.startswith("gcX:")
     sample = premium_button(emoji("spark"), "x", plain=True)
     assert sample.icon_custom_emoji_id == "5472164874886846699"
-    assert sample.text == " "
-    assert "✨" not in sample.text
+    assert sample.text == emoji("spark").face
 
 
 def test_hydrate_recovers_old_payload():
@@ -302,25 +277,22 @@ def test_button_dump_keeps_icon_and_space():
     markup = build_markup(4, -1002, card)
     dumped = markup.model_dump()
     row = dumped["inline_keyboard"][0]
-    for btn in row:
-        assert btn["text"] == " "
-        assert btn["icon_custom_emoji_id"]
-        assert "✨" not in btn["text"]
-        assert emoji("left").face not in btn["text"]
-        assert emoji("right").face not in btn["text"]
+    for btn, key in zip(row, card["options"]):
+        item = emoji(str(key))
+        assert btn["text"] == item.face
+        assert btn["icon_custom_emoji_id"] == item.emoji_id
     disable = dumped["inline_keyboard"][1][0]
     assert disable["text"] == "Убрать капчу"
     assert disable["icon_custom_emoji_id"] == "5462990652943904884"
 
 
-def test_variant_7_is_rare_but_present():
+def test_active_variants_are_only_match_color_object_side():
     rng = random.Random(2026)
     picks = [pick_variant(rng) for _ in range(400)]
-    share = picks.count(7) / len(picks)
-    assert 0.05 < share < 0.20
-    assert set(picks) >= {1, 2, 4, 5, 6, 7}
+    assert set(picks) == {1, 2, 4, 5}
     assert 3 not in picks
-    assert 8 not in picks
+    assert 6 not in picks
+    assert 7 not in picks
 
 
 def test_help_and_farm_callbacks_are_free_before_captcha():
@@ -407,9 +379,116 @@ def test_live_challenge_index_survives_chat_id_patch():
 
 def test_captcha_callbacks_are_magic_priority():
     from bot.magic.priorities import PRIORITY_PREFIXES
+    from bot.magic.limits import MagicLimits
 
     assert "gcA:" in PRIORITY_PREFIXES
     assert "gcX:" in PRIORITY_PREFIXES
+    lim = MagicLimits(
+        prio_debounce_sec=30,
+        debounce_sec=30,
+        prio_user_max_clicks=1,
+        user_max_clicks=1,
+        global_inflight_soft=0,
+        prio_global_inflight_soft=0,
+    )
+    for i in range(12):
+        ok, reason = lim.allow(7, f"gcA:{i}:left:deadbeef")
+        assert ok, reason
+        ok, reason = lim.allow(7, f"gcX:-100:{i}")
+        assert ok, reason
+
+
+def test_card_adds_blockquote_chat_hint():
+    from types import SimpleNamespace
+    from bot.funcs.group_captcha import card_html, chat_hint_line, chat_hint_quoted
+
+    user = SimpleNamespace(id=3, full_name="Наташа", first_name="Наташа")
+    card = build_challenge(4, rng=random.Random(3))
+    html = card_html(card, user)
+    quoted = chat_hint_quoted(card)
+    line = chat_hint_line(card)
+    assert quoted
+    assert line == f'Или напишите в чат "{quoted}"'
+    assert f"<blockquote><b>{line}</b></blockquote>" in html
+    text, ents = card_plain_and_entities(card, user)
+    assert line in text
+    kinds = [str(getattr(e, "type", "")) for e in ents]
+    assert "blockquote" in kinds
+
+
+def test_chat_answers_cover_every_variant_and_many_aliases():
+    from bot.funcs.group_captcha import CHAT_OPTION, match_chat_answer
+
+    v2 = build_challenge(2, rng=random.Random(2))
+    color = v2["color"]
+    assert match_chat_answer(v2, color)[0] == "pass"
+    assert match_chat_answer(v2, color.upper())[0] == "pass"
+    assert match_chat_answer(v2, f'Или напишите в чат "{color}"')[0] == "pass"
+    wrong = "синий" if color != "синий" else "красный"
+    assert match_chat_answer(v2, wrong)[0] == "fail"
+    assert match_chat_answer(v2, "привет как дела всем")[0] == "miss"
+
+    v5 = build_challenge(5, rng=random.Random(5))
+    side = v5["side"]
+    short = "лево" if side == "налево" else "право"
+    alias = "влево" if side == "налево" else "вправо"
+    assert match_chat_answer(v5, alias)[0] == "pass"
+    assert match_chat_answer(v5, short)[0] == "pass"
+    assert match_chat_answer(v5, "налево" if side == "направо" else "направо")[0] == "fail"
+    assert match_chat_answer(v5, "лево" if side == "направо" else "право")[0] == "fail"
+
+    v1 = build_challenge(1, rng=random.Random(1))
+    key = v1["correct"]
+    hint = CHAT_OPTION[key][0]
+    assert match_chat_answer(v1, hint)[0] == "pass"
+    assert match_chat_answer(v1, CHAT_OPTION[key][1][1])[0] == "pass"
+
+    v4 = build_challenge(4, rng=random.Random(4))
+    ask = v4["ask"]
+    assert ask in {"птица", "картошка", "чемодан"}
+    assert match_chat_answer(v4, ask)[0] == "pass"
+    near = {"птица": "птицу", "картошка": "картошку", "чемодан": "чемоданом"}[ask]
+    assert match_chat_answer(v4, near)[0] == "pass"
+    old = {"птица": "живое", "картошка": "еду", "чемодан": "вещь"}[ask]
+    assert match_chat_answer(v4, old)[0] == "pass"
+    other = "птица" if ask != "птица" else "чемодан"
+    assert match_chat_answer(v4, other)[0] == "fail"
+
+    for variant in (1, 2, 4, 5):
+        card = build_challenge(variant, rng=random.Random(20 + variant))
+        html = __import__("bot.funcs.group_captcha", fromlist=["card_html"]).card_html(
+            card, type("U", (), {"id": 1, "full_name": "Аня"})(),
+        )
+        assert "<blockquote><b>Или напишите в чат \"" in html
+        assert "</b></blockquote>" in html
+
+
+def test_fuzzy_chat_answers_accept_close_wording():
+    from bot.funcs.group_captcha import CHAT_OPTION, match_chat_answer
+
+    v4 = build_challenge(4, rng=random.Random(11))
+    ask = v4["ask"]
+    typo = {"птица": "птицца", "картошка": "картошкаа", "чемодан": "чемоданн"}[ask]
+    phrase = f"мне кажется это {ask}"
+    assert match_chat_answer(v4, phrase)[0] == "pass"
+    assert match_chat_answer(v4, typo)[0] == "pass"
+    assert match_chat_answer(v4, "привет всем в чате")[0] == "miss"
+
+    v5_left = dict(build_challenge(5, rng=random.Random(5)))
+    v5_left["correct"] = "left"
+    v5_left["side"] = "налево"
+    assert match_chat_answer(v5_left, "лево")[0] == "pass"
+    assert match_chat_answer(v5_left, "налева")[0] == "pass"
+    assert match_chat_answer(v5_left, "право")[0] == "fail"
+
+    v2 = build_challenge(2, rng=random.Random(8))
+    color_key = v2["correct"]
+    stem = {"red": "красн", "green": "зелен", "blue": "синенький"}[color_key]
+    assert match_chat_answer(v2, f"думаю {stem}")[0] == "pass"
+
+    v1 = build_challenge(1, rng=random.Random(3))
+    hint = CHAT_OPTION[v1["correct"]][0]
+    assert match_chat_answer(v1, f"ну это {hint} же")[0] == "pass"
 
 
 def test_handler_reexports_cleanup_and_next_alert():

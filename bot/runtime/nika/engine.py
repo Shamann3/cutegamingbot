@@ -33,9 +33,11 @@ import bot.runtime.nika.incidents as incidents
 import bot.runtime.nika.store as store
 from bot.runtime.nika.policy import (
     SOURCE_LADDER,
+    SWEEP_DEST_LADDER,
     apply_sweep_speed,
     allocate_from_ladder,
     pick_sweep_dest,
+    plan_drain_sweep,
     plan_sweep,
     plan_topup,
 )
@@ -640,6 +642,82 @@ async def _sweep_group(
     return "sweep" if result.ok else (result.error or "sweep_fail")
 
 
+async def _drain_group(
+    db, bot, *, policy, dry_run: bool, command_id: int = 0,
+) -> Dict[str, Any]:
+    """Снять всё над целью в первую доступную техкассу. Без запаса и доли."""
+    if int(policy.chat_id) in set(store.forbidden_managed_ids()):
+        return {"result": "forbidden", "amount": 0}
+    balance = await _chat_balance(db, bot, policy.chat_id)
+    plan = plan_drain_sweep(policy, balance=balance)
+    if plan.amount <= 0:
+        return {"result": plan.skip or "on_target", "amount": 0, "balance": int(balance), "target": int(policy.target_balance)}
+
+    dests = [int(cid) for cid, _title in SWEEP_DEST_LADDER if int(cid) != int(policy.chat_id)]
+    last_error = "no_dest"
+    for dest in dests:
+        result = await _atomic_move(
+            db, bot,
+            kind="sweep",
+            chat_id=policy.chat_id,
+            source=policy.chat_id,
+            dest=dest,
+            amount=plan.amount,
+            reason=f"снять лишнее без очереди: {plan.reason}",
+            speed_mode=policy.speed_mode,
+            activity_tier="drain",
+            target_balance=policy.target_balance,
+            cooldown_sec=8,
+            extra_key=f"drain:{int(command_id)}:{dest}",
+            dry_run=dry_run,
+        )
+        if result.ok:
+            return {
+                "result": "drain",
+                "amount": int(result.amount),
+                "dest": dest,
+                "balance": int(balance),
+                "target": int(policy.target_balance),
+                "status": result.status,
+            }
+        last_error = result.error or "sweep_fail"
+        if str(last_error).startswith("insufficient"):
+            balance = await _chat_balance(db, bot, policy.chat_id)
+            plan = plan_drain_sweep(policy, balance=balance)
+            if plan.amount <= 0:
+                return {"result": "on_target", "amount": 0, "balance": int(balance), "target": int(policy.target_balance)}
+            result = await _atomic_move(
+                db, bot,
+                kind="sweep",
+                chat_id=policy.chat_id,
+                source=policy.chat_id,
+                dest=dest,
+                amount=plan.amount,
+                reason=f"снять лишнее без очереди: {plan.reason}",
+                speed_mode=policy.speed_mode,
+                activity_tier="drain",
+                target_balance=policy.target_balance,
+                cooldown_sec=8,
+                extra_key=f"drain:{int(command_id)}:{dest}:retry",
+                dry_run=dry_run,
+            )
+            if result.ok:
+                return {
+                    "result": "drain",
+                    "amount": int(result.amount),
+                    "dest": dest,
+                    "balance": int(balance),
+                    "target": int(policy.target_balance),
+                    "status": result.status,
+                }
+            last_error = result.error or last_error
+            break
+        if "dest_missing" in str(last_error):
+            continue
+        break
+    return {"result": last_error, "amount": 0, "balance": int(balance), "target": int(policy.target_balance)}
+
+
 async def _service_group(
     db, bot, row: Any, settings: Dict[str, Any], dry_run: bool,
     *, skip_cooldown: bool = False, force_kind: str = "",
@@ -731,6 +809,21 @@ async def _execute_operator_command(db, bot, row: Any, settings: Dict[str, Any],
         )
         return {"action": kind, "chat_id": int(chat_id), "result": action}
 
+    if kind == "now_sweep":
+        if chat_id is None:
+            raise RuntimeError("chat_id required")
+        async with db.pool.acquire() as conn:
+            group = await store.fetch_group_row(conn, int(chat_id))
+        if group is None:
+            raise RuntimeError("group_not_managed")
+        drained = await _drain_group(
+            db, bot,
+            policy=policy_from_row(group),
+            dry_run=dry_run,
+            command_id=int(row["id"] or 0),
+        )
+        return {"action": kind, "chat_id": int(chat_id), **drained}
+
     raise RuntimeError(f"unknown_command:{kind}")
 
 
@@ -763,6 +856,19 @@ async def process_operator_commands(db, bot, settings: Dict[str, Any], dry_run: 
             except Exception as inner:
                 _print(f"finish command fail: {type(inner).__name__}: {inner}")
     return summary
+
+
+async def run_operator_pass(db, bot) -> Dict[str, Any]:
+    """Только команды с кнопок. Крутится чаще тика, чтобы «снять лишнее» не ждало."""
+    if not getattr(db, "pool", None):
+        return {"processed": 0, "failed": 0, "actions": []}
+    try:
+        async with db.pool.acquire() as conn:
+            settings = await store.fetch_settings(conn) or {}
+    except Exception as exc:
+        _print(f"operator pass settings fail: {type(exc).__name__}: {exc}")
+        return {"processed": 0, "failed": 0, "actions": [], "error": str(exc)}
+    return await process_operator_commands(db, bot, settings, bool(settings.get("dry_run")))
 
 
 async def run_tick(db, bot, *, force: bool = False, _retried: bool = False) -> Dict[str, Any]:

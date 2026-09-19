@@ -31,10 +31,10 @@ const SPEED = [
 ]
 
 const SWEEP_SPEED = [
-  { id: 'instant', label: 'Мгновенно', hint: '15 сек · забирает всё над запасом в дом игр' },
-  { id: 'fast', label: 'Быстро', hint: '45 сек · почти весь излишек в техкассы' },
-  { id: 'medium', label: 'Средне', hint: '3 мин · большую часть, спокойнее' },
-  { id: 'slow', label: 'Тихо', hint: '15 мин · как раньше, долго смотрит' },
+  { id: 'instant', label: 'Мгновенно', wait: '15 сек', hint: 'Забирает всё над запасом сразу в дом игр' },
+  { id: 'fast', label: 'Быстро', wait: '45 сек', hint: 'Почти весь излишек в техкассы. Так и должно быть' },
+  { id: 'medium', label: 'Средне', wait: '3 мин', hint: 'Большую часть, если излишек держится' },
+  { id: 'slow', label: 'Тихо', wait: '15 мин', hint: 'Долго смотрит, снимает спокойно' },
 ]
 
 const THINK = [
@@ -109,6 +109,7 @@ function cmdLabel(kind) {
   if (kind === 'force_tick') return 'Проверка'
   if (kind === 'force_topup') return 'Долив'
   if (kind === 'force_sweep') return 'Сбор'
+  if (kind === 'now_sweep') return 'Снятие лишнего'
   if (kind === 'revert') return 'Возврат'
   if (kind === 'retry_heal') return 'Повтор'
   if (kind === 'pause_all') return 'Выключение'
@@ -135,7 +136,32 @@ function sweepSpeedLabel(mode) {
 }
 
 function sweepSpeedHint(mode) {
-  return SWEEP_SPEED.find((s) => s.id === mode)?.hint || SWEEP_SPEED[1].hint
+  const s = SWEEP_SPEED.find((x) => x.id === mode) || SWEEP_SPEED[1]
+  return `${s.wait} · ${s.hint}`
+}
+
+function SweepSpeedPicker({ value, onPick, saving }) {
+  const current = value || 'fast'
+  return (
+    <div className="nika-sweep-grid" role="radiogroup" aria-label="Скорость сбора лишнего">
+      {SWEEP_SPEED.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          role="radio"
+          aria-checked={current === s.id}
+          className={`nika-sweep-card${current === s.id ? ' is-on' : ''}${s.id === 'fast' ? ' is-rec' : ''}`}
+          aria-busy={saving === s.id}
+          onClick={() => onPick(s)}
+        >
+          <strong>{s.label}</strong>
+          <b>{s.wait}</b>
+          <span>{s.hint}</span>
+          {s.id === 'fast' ? <em>удобно</em> : null}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function cashTitle(src) {
@@ -268,9 +294,10 @@ export default function NikaSection() {
   const [range, setRange] = useState('days')
   const [dayFilter, setDayFilter] = useState('all')
   const [confirmStop, setConfirmStop] = useState(false)
-  const [query, setQuery] = useState('')
   const [hits, setHits] = useState([])
-  const [draft, setDraft] = useState({ chatId: '', target: 5000, speed: 'auto' })
+  const [draft, setDraft] = useState({ query: '', target: 5000, speed: 'auto' })
+  const [sweepSaving, setSweepSaving] = useState('')
+  const searchTimer = useRef(null)
   const firstLoad = useRef(true)
 
   const applyPulse = useCallback((pulse, rest = {}) => {
@@ -309,6 +336,99 @@ export default function NikaSection() {
     }, 12000)
     return () => window.clearInterval(id)
   }, [load])
+
+  const pickSweep = useCallback(async (speed) => {
+    setSweepSaving(speed.id)
+    applyPulse({ sweepSpeed: speed.id })
+    try {
+      const pulse = await saveNikaSettings({ sweep_speed: speed.id })
+      applyPulse({ ...(pulse || {}), sweepSpeed: speed.id })
+      showToast(`Сбор: ${speed.label}`)
+    } catch (err) {
+      showToast(err.message || 'Не сохранилась скорость', 'error')
+    } finally {
+      setSweepSaving('')
+    }
+  }, [applyPulse])
+
+  const lookupGroups = useCallback(async (text) => {
+    const q = String(text || '').trim()
+    if (!q) {
+      setHits([])
+      return []
+    }
+    try {
+      const items = (await searchNikaCandidates(q)).items || []
+      setHits(items)
+      return items
+    } catch (err) {
+      showToast(err.message || 'Поиск не вышел', 'error')
+      return []
+    }
+  }, [])
+
+  const putGroup = useCallback(async (query, chatId) => {
+    const target = Number(draft.target)
+    if (!Number.isFinite(target) || target < 0) {
+      showToast('Нужна цель баланса', 'error')
+      return
+    }
+    const payload = {
+      target_balance: target,
+      speed_mode: draft.speed,
+      enabled: true,
+    }
+    if (chatId) payload.chat_id = Number(chatId)
+    else payload.query = String(query || draft.query || '').trim()
+    if (!payload.chat_id && !payload.query) {
+      showToast('Введи id, @username или имя группы', 'error')
+      return
+    }
+    try {
+      setBusy('put-group')
+      const res = await saveNikaGroup(payload)
+      if (res?.candidates?.length) {
+        setHits(res.candidates)
+        showToast(res.error || 'Выбери группу из списка')
+        return
+      }
+      showToast(res?.match?.name ? `Под Никой: ${res.match.name}` : 'Группа под Никой')
+      setHits([])
+      setDraft((d) => ({ ...d, query: '' }))
+      if (res?.pulse) applyPulse(res.pulse)
+      await load()
+    } catch (err) {
+      showToast(err.message || 'Не поставилась', 'error')
+    } finally {
+      setBusy('')
+    }
+  }, [applyPulse, draft.query, draft.speed, draft.target, load])
+
+  const drainNow = useCallback(async (group) => {
+    const excess = Math.max(0, (Number(group.balance) || 0) - (Number(group.target) || 0))
+    if (excess <= 0) {
+      showToast('Лишнего нет', 'error')
+      return
+    }
+    const key = `now_sweep:${group.chatId}`
+    setBusy(key)
+    try {
+      const res = await runNikaAction({ action: 'now_sweep', chat_id: group.chatId })
+      const took = Number(res?.amount) || excess
+      if (res.pulse) applyPulse(res.pulse)
+      showToast(data?.dryRun
+        ? `Режим без движения: ${fmt(took)} не уйдут, пока не выключишь его в «Система»`
+        : `Снимаю ${fmt(took)} до цели ${fmt(group.target)}`)
+      for (let i = 0; i < 6; i += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 450))
+        await load()
+      }
+    } catch (err) {
+      showToast(err.message || 'Не снялось', 'error')
+    } finally {
+      setBusy('')
+    }
+  }, [applyPulse, data?.dryRun, load])
 
   const run = useCallback(async (payload, okText) => {
     const key = `${payload.action}:${payload.incident_id || payload.chat_id || payload.transfer_id || 'x'}`
@@ -362,7 +482,8 @@ export default function NikaSection() {
     items: [],
   }
   const queued = Number(data?.commands?.queued || data?.commands?.pending || 0)
-  const tickEvery = Number(data?.tickIntervalSec || data?.settings?.tickIntervalSec || 180)
+  const tickEvery = Number(data?.tickIntervalSec || data?.settings?.tickIntervalSec || 20)
+  const sweepNow = data?.sweepSpeed || data?.settings?.sweepSpeed || 'fast'
   const recentMoves = transfers.slice(0, 6)
   const recentCmds = (data?.commandLog || []).slice(0, 6)
   const incidentCount = incidents.length + starving.length
@@ -486,7 +607,7 @@ export default function NikaSection() {
             <article className="nika-mach-tile">
               <small>Проверка</small>
               <b>{data?.lastTickAt ? ago(data.lastTickAt) : 'ещё не было'}</b>
-              <em>каждые {tickEvery} сек · сбор {sweepSpeedLabel(data?.sweepSpeed || data?.settings?.sweepSpeed).toLowerCase()}</em>
+              <em>каждые {tickEvery} сек · сбор {sweepSpeedLabel(sweepNow).toLowerCase()}</em>
             </article>
             <article className={`nika-mach-tile${data?.staleWorker ? ' is-hot' : ''}`}>
               <small>Бот</small>
@@ -498,6 +619,15 @@ export default function NikaSection() {
               <em>{groups.filter((g) => g.enabled).length} групп под Никой</em>
             </article>
           </div>
+
+          <section className="nika-panel">
+            <h2>Сбор лишнего</h2>
+            <p className="nika-help">
+              Нажал карточку — Ника сразу меняет скорость. Если на БЧ больше цели,
+              лишнее уходит в техкассы. Цель 3000, на БЧ 3152 — заберёт около 150 кут.
+            </p>
+            <SweepSpeedPicker value={sweepNow} saving={sweepSaving} onPick={pickSweep} />
+          </section>
 
           <section className="nika-panel nika-panel-chart">
             {plusMinusHead}
@@ -806,40 +936,50 @@ export default function NikaSection() {
 
       {tab === 'groups' && (
         <div className="nika-pane nika-stack">
-          <div className="nika-add">
+          <div className="nika-add nika-add-smart">
             <input
-              className="nika-input"
-              placeholder="id, @username или название"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={async (e) => {
-                if (e.key !== 'Enter') return
-                try {
-                  setHits((await searchNikaCandidates(query)).items || [])
-                } catch (err) {
-                  showToast(err.message || 'Поиск не вышел', 'error')
+              className="nika-input nika-add-query"
+              placeholder="id, @username, t.me/… или имя группы"
+              aria-label="Группа: id, username или имя"
+              value={draft.query}
+              autoComplete="off"
+              onChange={(e) => {
+                const next = e.target.value
+                setDraft((d) => ({ ...d, query: next }))
+                if (searchTimer.current) window.clearTimeout(searchTimer.current)
+                searchTimer.current = window.setTimeout(() => { lookupGroups(next) }, 220)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  putGroup(draft.query)
                 }
               }}
             />
+            <input className="nika-input nika-input-sm" inputMode="numeric" placeholder="цель" aria-label="Цель баланса" value={draft.target} onChange={(e) => setDraft((d) => ({ ...d, target: e.target.value }))} />
+            <select className="nika-input nika-input-sm" value={draft.speed} aria-label="Скорость долива" onChange={(e) => setDraft((d) => ({ ...d, speed: e.target.value }))}>
+              {SPEED.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
             <button
               type="button"
-              className="nika-btn"
-              onClick={async () => {
-                try {
-                  setHits((await searchNikaCandidates(query)).items || [])
-                } catch (err) {
-                  showToast(err.message || 'Поиск не вышел', 'error')
-                }
-              }}
+              className="nika-btn nika-btn-primary"
+              disabled={busy === 'put-group'}
+              onClick={() => putGroup(draft.query)}
             >
-              Найти
+              Поставить
             </button>
           </div>
+          <p className="nika-help">Можно сразу жать «Поставить»: одна группа найдётся сама, несколько — выбери из списка. «Снять лишнее» уводит всё над целью в техкассы сразу, не дожидаясь тика.</p>
           {hits.length > 0 && (
             <ul className="nika-hits">
               {hits.map((h) => (
                 <li key={h.chatId}>
-                  <button type="button" className="nika-hit" disabled={h.forbidden} onClick={() => setDraft({ chatId: h.chatId, target: draft.target, speed: draft.speed })}>
+                  <button
+                    type="button"
+                    className="nika-hit"
+                    disabled={h.forbidden}
+                    onClick={() => putGroup(h.username || h.name, h.chatId)}
+                  >
                     <strong>{h.name}</strong>
                     <span>
                       <CopyableId value={h.chatId} label="id группы" />
@@ -851,36 +991,6 @@ export default function NikaSection() {
               ))}
             </ul>
           )}
-          <div className="nika-add">
-            <input className="nika-input" placeholder="chat id" value={draft.chatId} onChange={(e) => setDraft((d) => ({ ...d, chatId: e.target.value }))} />
-            <input className="nika-input nika-input-sm" inputMode="numeric" placeholder="цель" value={draft.target} onChange={(e) => setDraft((d) => ({ ...d, target: e.target.value }))} />
-            <select className="nika-input nika-input-sm" value={draft.speed} onChange={(e) => setDraft((d) => ({ ...d, speed: e.target.value }))}>
-              {SPEED.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
-            <button
-              type="button"
-              className="nika-btn nika-btn-primary"
-              disabled={!!busy}
-              onClick={async () => {
-                const chatId = Number(draft.chatId)
-                const target = Number(draft.target)
-                if (!chatId || !Number.isFinite(target)) {
-                  showToast('Нужны id и цель', 'error')
-                  return
-                }
-                try {
-                  await saveNikaGroup({ chat_id: chatId, target_balance: target, speed_mode: draft.speed, enabled: true })
-                  showToast('Группа под Никой')
-                  setHits([])
-                  await load()
-                } catch (err) {
-                  showToast(err.message || 'Не поставилась', 'error')
-                }
-              }}
-            >
-              Поставить
-            </button>
-          </div>
 
           <div className="nika-tables">
             {groups.map((g) => (
@@ -890,8 +1000,19 @@ export default function NikaSection() {
                 flow={chatFlow(transfers, g.chatId)}
                 extra={(
                   <div className="nika-card-actions">
+                    {((Number(g.balance) || 0) - (Number(g.target) || 0)) > 0 ? (
+                      <button
+                        type="button"
+                        className="nika-btn nika-btn-primary nika-btn-drain"
+                        disabled={busy === `now_sweep:${g.chatId}`}
+                        onClick={() => drainNow(g)}
+                      >
+                        {busy === `now_sweep:${g.chatId}`
+                          ? 'Снимаю…'
+                          : `Снять ${fmt((Number(g.balance) || 0) - (Number(g.target) || 0))}`}
+                      </button>
+                    ) : null}
                     <button type="button" className="nika-btn nika-btn-primary" disabled={!!busy} onClick={() => run({ action: 'force_topup', chat_id: g.chatId }, 'Долив в очереди')}>Долить</button>
-                    <button type="button" className="nika-btn" disabled={!!busy} onClick={() => run({ action: 'force_sweep', chat_id: g.chatId }, 'Сбор в очереди')}>Собрать</button>
                     <button type="button" className="nika-btn" disabled={!!busy} onClick={() => run({ action: g.enabled ? 'pause_group' : 'enable_group', chat_id: g.chatId }, g.enabled ? 'Пауза' : 'Включена')}>
                       {g.enabled ? 'Пауза' : 'Вкл'}
                     </button>
@@ -965,39 +1086,11 @@ export default function NikaSection() {
           <section className="nika-panel">
             <h2>Сбор лишнего</h2>
             <p className="nika-help">
-              Если на БЧ больше цели — Ника сама забирает излишек и кладёт в техкассы
-              (дом игр → игры → фон → копилка). Чем быстрее режим, тем короче пауза.
+              Одна карточка — одна скорость. Меняется сразу, без лишних полей.
+              Лишнее с групп: дом игр → игры → фон → копилка.
             </p>
-            <div className="nika-seg nika-sweep-seg" role="group" aria-label="Скорость сбора">
-              {SWEEP_SPEED.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  className={`nika-seg-btn${(data?.sweepSpeed || data?.settings?.sweepSpeed || 'fast') === s.id ? ' is-on' : ''}`}
-                  disabled={!!busy}
-                  onClick={async () => {
-                    try {
-                      setBusy(`sweep:${s.id}`)
-                      const pulse = await saveNikaSettings({ sweep_speed: s.id })
-                      applyPulse(pulse)
-                      showToast(`Сбор: ${s.label}`)
-                      await load()
-                    } catch (err) {
-                      showToast(err.message || 'Не сохранилась скорость', 'error')
-                    } finally {
-                      setBusy('')
-                    }
-                  }}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-            <p className="nika-help">{sweepSpeedHint(data?.sweepSpeed || data?.settings?.sweepSpeed)}</p>
-            <p className="nika-help">
-              Пример: цель 3000, на БЧ 3152 — заберёт лишние ~150 кут в дом игр,
-              оставив маленький запас над целью, чтобы не качать туда-сюда.
-            </p>
+            <SweepSpeedPicker value={sweepNow} saving={sweepSaving} onPick={pickSweep} />
+            <p className="nika-help">{sweepSpeedHint(sweepNow)}</p>
           </section>
           <div className="nika-ios-list">
             <button

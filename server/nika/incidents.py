@@ -19,6 +19,7 @@ COMMAND_KINDS = (
     "force_tick",
     "force_topup",
     "force_sweep",
+    "now_sweep",
     "retry_heal",
     "revert",
     "pause_group",
@@ -27,7 +28,7 @@ COMMAND_KINDS = (
     "enable_all",
 )
 
-MONEY_COMMANDS = frozenset({"force_tick", "force_topup", "force_sweep", "retry_heal", "revert"})
+MONEY_COMMANDS = frozenset({"force_tick", "force_topup", "force_sweep", "now_sweep", "retry_heal", "revert"})
 SWITCH_COMMANDS = frozenset({"pause_group", "pause_all", "enable_group", "enable_all"})
 
 SEVERITY_CRITICAL = "critical"

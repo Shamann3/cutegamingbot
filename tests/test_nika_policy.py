@@ -16,6 +16,7 @@ from bot.runtime.nika.policy import (
     apply_sweep_speed,
     dead_zone,
     pick_sweep_dest,
+    plan_drain_sweep,
     plan_sweep,
     plan_topup,
     suggest_caps,
@@ -232,6 +233,31 @@ def test_fast_sweep_takes_user_case_152_above_3000():
     assert instant.action == "sweep"
     assert instant.amount >= ready.amount
     assert instant.cooldown_sec <= 15
+
+
+def test_drain_sweep_takes_everything_above_target():
+    policy = GroupPolicy(
+        chat_id=1,
+        target_balance=3000,
+        max_transfer=600,
+        max_daily_topup=6000,
+        max_daily_sweep=10,
+        sweep_keep_min=150,
+        sweep_keep_pct=0.05,
+        sweep_share=0.25,
+    )
+    plan = plan_drain_sweep(policy, balance=3600)
+    assert plan.action == "sweep"
+    assert plan.amount == 600
+    assert plan.tier == "drain"
+    assert plan_drain_sweep(policy, balance=3000).amount == 0
+    assert plan_drain_sweep(policy, balance=2999).skip == "on_target"
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "server"))
+    from nika.policy import GroupPolicy as AdminPolicy
+    from nika.policy import plan_drain_sweep as admin_drain
+    admin = admin_drain(AdminPolicy(chat_id=1, target_balance=3000), balance=3600)
+    assert admin.amount == 600
 
 
 def test_suggest_caps_scale_with_target():

@@ -2,7 +2,7 @@
 
 html.is-phone,
 html[data-viewport="phone"] {
-  --thumb-dock-h: 4.75rem;
+  --thumb-dock-h: 0px;
 }
 
 /* Один скролл — сама оболочка. html/body режут по viewport,
@@ -42,7 +42,7 @@ html[data-viewport="phone"] .panel-shell:has(.panel-layout-users) .panel-shell-m
   min-height: 0 !important;
   overflow: visible !important;
   display: block !important;
-  padding-bottom: calc(var(--thumb-dock-h) + env(safe-area-inset-bottom, 0px) + 2.4rem) !important;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 2.4rem) !important;
 }
 
 html.is-phone .panel-layout,
@@ -176,11 +176,48 @@ html[data-viewport="phone"] .grp-page.nika-page .nika-btn {
   text-overflow: ellipsis;
 }
 
+html.is-phone .elite-search-wrap,
+html[data-viewport="phone"] .elite-search-wrap {
+  display: none !important;
+}
+html.is-phone .elite-topbar-actions,
+html[data-viewport="phone"] .elite-topbar-actions {
+  display: flex !important;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+  min-width: 0;
+  max-width: calc(2.7rem + 0.35rem + 2.7rem);
+  overflow: visible;
+}
 html.is-phone .elite-menu-btn,
 html.is-phone .elite-icon-btn,
+html.is-phone .elite-support-btn,
 html[data-viewport="phone"] .elite-menu-btn,
-html[data-viewport="phone"] .elite-icon-btn {
-  display: none !important;
+html[data-viewport="phone"] .elite-icon-btn,
+html[data-viewport="phone"] .elite-support-btn {
+  display: inline-flex !important;
+  flex: 0 0 auto;
+  width: 2.7rem;
+  height: 2.7rem;
+  min-width: 2.7rem;
+  min-height: 2.7rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+}
+html.is-phone .elite-mobile-title,
+html[data-viewport="phone"] .elite-mobile-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 0.4rem;
+}
+html.is-phone .elite-mobile-section,
+html[data-viewport="phone"] .elite-mobile-section {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 html.is-phone .elite-topbar,
@@ -251,13 +288,10 @@ html[data-viewport="phone"] .panel-sidebar-close {
   margin-left: auto;
 }
 
-.panel-thumb-dock {
-  display: none;
-}
-
+.panel-thumb-dock,
 html.is-phone .panel-thumb-dock,
 html[data-viewport="phone"] .panel-thumb-dock {
-  display: flex;
+  display: none !important;
   position: fixed;
   right: max(0.7rem, env(safe-area-inset-right, 0px));
   bottom: max(0.7rem, env(safe-area-inset-bottom, 0px));

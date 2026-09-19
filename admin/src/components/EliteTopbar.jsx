@@ -47,7 +47,7 @@ function greetingFor(hour) {
  *  названия (русского или английского), стрелки/Enter — переход.
  *  Открывается и с клавиатуры: Ctrl/Cmd+K.
  *
- *  На телефоне — компактный chrome: название раздела слева, колокольчик и меню справа. */
+ *  На телефоне — название слева, меню и поддержка справа; поддержка в правом верхнем углу. */
 export default function EliteTopbar({
   sections = [],
   activeSection,
@@ -164,21 +164,6 @@ export default function EliteTopbar({
       </div>
 
       <div className="elite-topbar-actions">
-        <button
-          type="button"
-          className="elite-icon-btn"
-          aria-label={openTickets > 0
-            ? `Открытых обращений: ${openTickets}`
-            : 'Уведомлений нет'}
-          title={openTickets > 0
-            ? `${openTickets} открытых обращений`
-            : 'Уведомлений нет'}
-          onClick={onOpenNotifications}
-        >
-          <BellIcon />
-          {openTickets > 0 && <span className="elite-bell-dot" aria-hidden="true" />}
-        </button>
-
         <div className="elite-search-wrap" ref={wrapRef}>
           <div className="elite-search">
             <SearchIcon />
@@ -236,6 +221,19 @@ export default function EliteTopbar({
             <MenuIcon open={menuOpen} />
           </button>
         )}
+
+        <button
+          type="button"
+          className="elite-icon-btn elite-support-btn"
+          aria-label={openTickets > 0
+            ? `Поддержка, открытых обращений: ${openTickets}`
+            : 'Поддержка'}
+          title="Поддержка"
+          onClick={onOpenNotifications}
+        >
+          <BellIcon />
+          {openTickets > 0 && <span className="elite-bell-dot" aria-hidden="true" />}
+        </button>
       </div>
     </div>
   )

@@ -4731,7 +4731,8 @@ class NikaSettingsBody(BaseModel):
 
 
 class NikaGroupBody(BaseModel):
-    chat_id: int
+    chat_id: int | None = None
+    query: str | None = Field(default=None, max_length=160)
     target_balance: int = Field(ge=0, le=10_000_000)
     speed_mode: str = Field(default="auto", max_length=16)
     enabled: bool = True
@@ -4858,6 +4859,7 @@ async def admin_nika_group(
     from admin_nika import save_group
     result = await save_group(
         body.chat_id,
+        query=body.query,
         target_balance=body.target_balance,
         speed_mode=body.speed_mode,
         enabled=body.enabled,
@@ -4865,11 +4867,13 @@ async def admin_nika_group(
         updated_by=admin_id,
     )
     if not result.get("ok"):
+        if result.get("candidates"):
+            return result
         raise HTTPException(status_code=400, detail=result.get("error") or "Нельзя")
     await log_admin_action(
         admin_id, "nika_group",
         target_type="chat",
-        target_id=str(body.chat_id),
+        target_id=str(result.get("chatId") or body.chat_id or body.query or ""),
         target_label="Группа под Никой",
         details=body.model_dump(),
     )

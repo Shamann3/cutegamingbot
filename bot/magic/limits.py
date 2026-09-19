@@ -139,6 +139,12 @@ class MagicLimits:
         """
         now = time.monotonic()
         data = str(data or "")
+        # Капча не должна «замирать»: антиспам тихо глушил повторные gcA/gcX.
+        low = data.lower()
+        if low.startswith("gca:") or low.startswith("gcx:"):
+            self._stats_prio_passed += 1
+            self._stats_passed += 1
+            return True, ""
         prio = is_priority(data)
 
         # лёгкая очистка stale inflight на горячем пути (дёшево, раз в N вызовов)

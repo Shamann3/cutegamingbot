@@ -59,6 +59,11 @@ def test_user_and_group_ids_are_copyable():
     assert "Сбор лишнего" in nika
     assert "sweep_speed" in nika
     assert "Мгновенно" in nika
+    assert "t.me/" in nika
+    assert "SweepSpeedPicker" in nika
+    assert "now_sweep" in nika
+    assert "Снять" in nika
+    assert "elite-support-btn" in _read("admin", "src", "components", "EliteTopbar.jsx")
 
     assert "CopyableId" in games
     assert "IdentityBits" in farm
@@ -76,6 +81,8 @@ def test_user_and_group_ids_are_copyable():
     assert "phone-thumb.css" in main
     thumb = _read("admin", "src", "styles", "phone-thumb.css")
     assert "panel-thumb-dock" in thumb
+    assert "display: none !important" in thumb
+    assert "elite-support-btn" in thumb
     assert "overflow-y: auto" in thumb
     assert "e-invert-bg" in thumb
     assert "e-invert-text" in thumb
@@ -97,8 +104,12 @@ def test_user_and_group_ids_are_copyable():
         assert needle in thumb, needle
 
     shell = _read("admin", "src", "pages", "PanelShell.jsx")
-    assert "panel-thumb-dock" in shell
-    assert "panel-thumb-menu" in shell
+    assert "panel-thumb-dock" not in shell
+    assert "panel-thumb-menu" not in shell
+    topbar = _read("admin", "src", "components", "EliteTopbar.jsx")
+    assert "elite-support-btn" in topbar
+    assert "Поддержка" in topbar
+    assert topbar.index("elite-menu-btn") < topbar.index("elite-support-btn")
 
     farm_main = _read("src", "main.jsx")
     assert "farm-thumb.css" in farm_main

@@ -64,15 +64,19 @@ class MagicCallbackMiddleware(BaseMiddleware):
             uid = int(event.from_user.id) if event.from_user else 0
             cdata = str(event.data or "")
 
-            ok, reason = m.limits.allow(uid, cdata)
-            if not ok:
-                m.stats_blocked += 1
-                if cfg.silent_block:
-                    try:
-                        await event.answer()
-                    except Exception:
-                        pass
-                return None
+            captcha_click = cdata.startswith(("gcA:", "gcX:"))
+            if not captcha_click:
+                ok, reason = m.limits.allow(uid, cdata)
+                if not ok:
+                    m.stats_blocked += 1
+                    if cfg.silent_block:
+                        try:
+                            await event.answer()
+                        except Exception:
+                            pass
+                    return None
+            else:
+                ok, reason = True, ""
         except Exception as e_lim:
             logger.warning("limits err (pass-through): %r", e_lim)
 
@@ -149,7 +153,8 @@ class MagicCallbackMiddleware(BaseMiddleware):
         inflight_token: int | None = None
         try:
             try:
-                inflight_token = m.limits.enter()
+                if not str(event.data or "").startswith(("gcA:", "gcX:")):
+                    inflight_token = m.limits.enter()
             except Exception:
                 inflight_token = None
             data["magic"] = m

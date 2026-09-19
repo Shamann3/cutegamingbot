@@ -39,6 +39,8 @@ def test_money_commands_are_explicit_and_narrow():
     assert MONEY_COMMANDS <= set(COMMAND_KINDS)
     assert "pause_all" not in MONEY_COMMANDS
     assert "force_topup" in MONEY_COMMANDS
+    assert "now_sweep" in MONEY_COMMANDS
+    assert "now_sweep" in COMMAND_KINDS
 
 
 def test_schema_has_incident_tables_and_earnings_since():
@@ -48,6 +50,7 @@ def test_schema_has_incident_tables_and_earnings_since():
     assert "earnings_since" in schema
     assert "nika_universe_sample" in schema
     assert "pause_all" in schema
+    assert "now_sweep" in schema
 
 
 def test_engine_raises_and_resolves_unfixable_only():
