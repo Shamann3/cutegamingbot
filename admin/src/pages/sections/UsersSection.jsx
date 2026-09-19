@@ -1772,8 +1772,8 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
           <h1>Игроки</h1>
           <p>
             {hasProfile
-              ? 'Карточка, действия и история — как у Ники: крупные числа, сегменты, без наложений.'
-              : 'Найди по ID, @username или имени. Минимум два символа.'}
+              ? 'Карточка и действия. Всё в своих полях, без наложений.'
+              : 'ID, @username или имя. Минимум два символа.'}
           </p>
         </div>
         <div className={`nika-status${statusTone}`}>
@@ -1795,7 +1795,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
           }}
         >
           <input
-            className="nika-input"
+            className="nika-input users-search-input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="6801702632 или @username"
@@ -1804,28 +1804,30 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
             autoCapitalize="off"
             autoCorrect="off"
           />
-          <button type="submit" className="nika-btn nika-btn-primary" disabled={loading}>
-            {loading ? '…' : 'Найти'}
-          </button>
-          {hasProfile && (
-            <button
-              type="button"
-              className="nika-btn"
-              title="Закрыть профиль и вернуться к поиску"
-              onClick={() => {
-                setQuery('')
-                setResults([])
-                setProfile(null)
-                setAudit(null)
-                setError('')
-                setInfo('')
-                setPeek(null)
-                setReturnStack([])
-              }}
-            >
-              Закрыть
+          <div className="users-search-actions">
+            <button type="submit" className="nika-btn nika-btn-primary" disabled={loading}>
+              {loading ? '…' : 'Найти'}
             </button>
-          )}
+            {hasProfile && (
+              <button
+                type="button"
+                className="nika-btn"
+                title="Закрыть профиль и вернуться к поиску"
+                onClick={() => {
+                  setQuery('')
+                  setResults([])
+                  setProfile(null)
+                  setAudit(null)
+                  setError('')
+                  setInfo('')
+                  setPeek(null)
+                  setReturnStack([])
+                }}
+              >
+                Закрыть
+              </button>
+            )}
+          </div>
         </form>
 
         {results.length > 1 && !hasProfile && (
@@ -1883,7 +1885,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 autoFocus
                 onClick={openPeekFull}
               >
-                Больше информации
+                {phone ? 'Открыть' : 'Больше информации'}
               </button>
               <button type="button" className="nika-btn" onClick={dismissPeek}>
                 {peek.fromLabel ? `Остаться` : 'Закрыть'}

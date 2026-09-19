@@ -469,6 +469,33 @@ export default function PanelShell({ onLogout }) {
           )}
         </div>
       </main>
+
+      <nav className="panel-thumb-dock" aria-label="Быстрые действия">
+          <button
+            type="button"
+            className="panel-thumb-bell"
+            aria-label={openTickets > 0 ? `Открытых обращений: ${openTickets}` : 'Уведомления'}
+            onClick={() => {
+              setMobileNavOpen(false)
+              handleNavigate('support')
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M18 8a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7" />
+              <path d="M13.7 20a2 2 0 0 1-3.4 0" />
+            </svg>
+            {openTickets > 0 && <span className="panel-thumb-dot" aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            className={`panel-thumb-menu${mobileNavOpen ? ' is-open' : ''}`}
+            aria-label={mobileNavOpen ? 'Закрыть меню' : 'Открыть меню'}
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen((v) => !v)}
+          >
+            {mobileNavOpen ? 'Готово' : 'Меню'}
+          </button>
+        </nav>
     </div>
   )
 }

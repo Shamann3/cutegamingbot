@@ -3,10 +3,10 @@ import { useQuestBadge } from '../hooks/useQuests'
 import { TAB_ACCENTS, TAB_ICONS } from './TabIcons'
 
 const PRIMARY = [
-  { id: 'farm', label: 'Ферма' },
-  { id: 'trade', label: 'Торговля' },
   { id: 'quests', label: 'Задания' },
+  { id: 'trade', label: 'Торговля' },
   { id: 'profile', label: 'Профиль' },
+  { id: 'farm', label: 'Ферма' },
 ]
 
 export default function TabBar({ active, onChange }) {

@@ -1,0 +1,260 @@
+/* Ферма: правый большой палец, поля не наползают, текст остаётся внутри. */
+
+.app-shell,
+.app-main,
+.tab-theme-farm,
+.farm-plots-grid,
+.farm-batch-bar,
+.farm-batch-btn,
+.farm-item-row,
+.plot-card,
+.app-tab-btn {
+  min-width: 0;
+}
+
+.app-main *,
+.tab-theme-farm * {
+  box-sizing: border-box;
+}
+
+.app-tab-label,
+.farm-batch-label,
+.farm-buy-plot-label,
+.farm-stat-chip-label,
+.farm-item-row,
+.plot-card p,
+.plot-card button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.app-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.segment-tabs,
+.segment-tab {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.segment-tab {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html:not([data-tg-desktop='1']) .app-tab-bar-inner {
+  grid-template-columns: 0.9fr 0.9fr 0.9fr 1.28fr;
+  padding-right: 6px;
+}
+
+html:not([data-tg-desktop='1']) .app-tab-btn[data-tab='farm'] {
+  min-height: 3.35rem;
+}
+
+html:not([data-tg-desktop='1']) .app-tab-btn[data-tab='farm'] .app-tab-icon {
+  width: 1.32rem;
+  height: 1.32rem;
+}
+
+html:not([data-tg-desktop='1']) .app-shell[data-active-tab='farm'] .app-main {
+  padding-bottom: calc(9.6rem + env(safe-area-inset-bottom, 0px));
+}
+
+html:not([data-tg-desktop='1']) .farm-batch-bar {
+  position: sticky;
+  bottom: calc(5.6rem + env(safe-area-inset-bottom, 0px));
+  z-index: 18;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin: 0 0 0.85rem;
+  padding: 0.35rem 0.15rem;
+}
+
+html:not([data-tg-desktop='1']) .farm-batch-btn {
+  flex: 0 1 auto;
+  min-height: 48px;
+  min-width: min(100%, 9.5rem);
+  max-width: 100%;
+  border-radius: 16px;
+}
+
+html:not([data-tg-desktop='1']) .farm-btn,
+html:not([data-tg-desktop='1']) .farm-btn-water,
+html:not([data-tg-desktop='1']) .farm-btn-harvest,
+html:not([data-tg-desktop='1']) .farm-btn-autowater,
+html:not([data-tg-desktop='1']) .farm-buy-plot-btn,
+html:not([data-tg-desktop='1']) .plot-empty-row-btn {
+  min-height: 44px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.plot-empty-row,
+.plot-empty-row-btn-name,
+.plot-crop-label {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* Все разделы фермы: магазин, биржа, задания, профиль, настройки, крафт, инвентарь. */
+.trade-module,
+.shop-exchange,
+.market-exchange,
+.quests-module,
+.profile-shell,
+.settings-module,
+.craft-module,
+.inventory-module,
+.chest-module,
+.giveaways-module {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.trade-header,
+.shop-exchange-header,
+.craft-module-header,
+.settings-hero,
+.quests-hero,
+.profile-module-header,
+.inventory-hero {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.shop-shelf-tile,
+.market-shelf-tile,
+.quests-card,
+.inv-card,
+.craft-book-item,
+.craft-slot-card,
+.profile-leader-row,
+.shop-sheet-toggle-row,
+.shop-sheet-option,
+.inventory-tile {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.shop-shelf-tile p,
+.shop-shelf-tile span,
+.market-shelf-tile p,
+.quests-card,
+.quests-card p,
+.inv-card-title,
+.inv-card-desc,
+.craft-book-item-formula,
+.profile-leader-name,
+.shop-sheet-toggle-label,
+.shop-sheet-toggle-desc,
+.settings-hero-title,
+.trade-header-title {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+html:not([data-tg-desktop='1']) .quests-card-actions,
+html:not([data-tg-desktop='1']) .shop-modal-actions,
+html:not([data-tg-desktop='1']) .inv-card-actions,
+html:not([data-tg-desktop='1']) .market-sell-actions,
+html:not([data-tg-desktop='1']) .craft-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+html:not([data-tg-desktop='1']) .quests-action-btn,
+html:not([data-tg-desktop='1']) .quests-action-btn--claim,
+html:not([data-tg-desktop='1']) .quests-action-btn--accept {
+  min-height: 48px;
+  min-width: 7.2rem;
+  font-size: 0.78rem;
+  border-radius: 16px;
+}
+
+html:not([data-tg-desktop='1']) .market-sell-card-btn,
+html:not([data-tg-desktop='1']) .craft-action-btn,
+html:not([data-tg-desktop='1']) .settings-support-btn,
+html:not([data-tg-desktop='1']) .farm-btn-buy,
+html:not([data-tg-desktop='1']) .farm-btn-primary {
+  min-height: 48px;
+  width: 100%;
+  max-width: 100%;
+  border-radius: 16px;
+}
+
+html:not([data-tg-desktop='1']) .shop-sheet-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 48px;
+}
+
+html:not([data-tg-desktop='1']) .shop-sheet-switch {
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-width: 3.1rem;
+  min-height: 1.85rem;
+}
+
+html:not([data-tg-desktop='1']) .shop-sheet-option,
+html:not([data-tg-desktop='1']) .settings-perf-option {
+  min-height: 48px;
+}
+
+html:not([data-tg-desktop='1']) .shop-shelf-tile,
+html:not([data-tg-desktop='1']) .market-shelf-tile {
+  min-height: 0;
+}
+
+html:not([data-tg-desktop='1']) .app-shell[data-active-tab='trade'] .app-main,
+html:not([data-tg-desktop='1']) .app-shell[data-active-tab='quests'] .app-main,
+html:not([data-tg-desktop='1']) .app-shell[data-active-tab='profile'] .app-main {
+  padding-bottom: calc(8.4rem + env(safe-area-inset-bottom, 0px));
+}
+
+html[data-tg-desktop='1'] .quests-card-actions,
+html[data-tg-desktop='1'] .shop-modal-actions,
+html[data-tg-desktop='1'] .craft-footer {
+  justify-content: flex-end;
+}
+
+html[data-tg-desktop='1'] .app-tab-bar-inner {
+  grid-template-columns: 1fr 1fr 1fr 1.18fr;
+}
+
+html[data-tg-desktop='1'] .farm-batch-bar {
+  justify-content: flex-end;
+}
+
+html[data-tg-desktop='1'] .farm-batch-btn {
+  flex: 0 0 auto;
+  min-width: 11rem;
+}
+
+html:not([data-tg-desktop='1']) .inventory-tile,
+html:not([data-tg-desktop='1']) .inventory-filter-chip,
+html:not([data-tg-desktop='1']) .profile-board-tab,
+html:not([data-tg-desktop='1']) .quests-seed-choice {
+  min-height: 44px;
+  max-width: 100%;
+}
+
+html:not([data-tg-desktop='1']) .inventory-tile-name,
+html:not([data-tg-desktop='1']) .profile-card-name,
+html:not([data-tg-desktop='1']) .quests-card-title,
+html:not([data-tg-desktop='1']) .quests-card-desc {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}

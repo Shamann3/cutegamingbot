@@ -45,6 +45,8 @@ def test_user_and_group_ids_are_copyable():
     assert "grp-page nika-page users-page" in users
     assert "nika-seg" in users
     assert "useIsPhone" in users
+    assert "users-search-actions" in users
+    assert "users-search-input" in users
     assert "id группы" in users or "chatUsername" in users
 
     assert "IdentityBits" in groups
@@ -65,3 +67,51 @@ def test_user_and_group_ids_are_copyable():
     css = _read("admin", "src", "styles", "users-nika.css")
     assert "users-page" in css
     assert "html.is-phone" in css
+    assert "max-height: 48px" in css
+
+    main = _read("admin", "src", "main.jsx")
+    assert "phone-thumb.css" in main
+    thumb = _read("admin", "src", "styles", "phone-thumb.css")
+    assert "panel-thumb-dock" in thumb
+    assert "overflow-y: auto" in thumb
+    for needle in (
+        "panel-economy",
+        "panel-market",
+        "panel-farm",
+        "support-section",
+        "staff-section",
+        "tt-page",
+        "bq-root",
+        "ach-page",
+        "gm-page",
+        "analytics-section",
+        "admin-modal-actions",
+        "support-reply-send-btn",
+    ):
+        assert needle in thumb, needle
+
+    shell = _read("admin", "src", "pages", "PanelShell.jsx")
+    assert "panel-thumb-dock" in shell
+    assert "panel-thumb-menu" in shell
+
+    farm_main = _read("src", "main.jsx")
+    assert "farm-thumb.css" in farm_main
+    farm_css = _read("src", "styles", "farm-thumb.css")
+    for needle in (
+        "trade-module",
+        "shop-exchange",
+        "market-exchange",
+        "quests-module",
+        "profile-shell",
+        "settings-module",
+        "craft-module",
+        "inventory-module",
+        "quests-action-btn--claim",
+        "craft-action-btn",
+        "shop-sheet-switch",
+    ):
+        assert needle in farm_css, needle
+    tabs = _read("src", "components", "TabBar.jsx")
+    assert tabs.index("{ id: 'farm', label: 'Ферма' }") > tabs.index("{ id: 'quests', label: 'Задания' }")
+    swipe = _read("src", "hooks", "useSwipeTabs.js")
+    assert "['quests', 'trade', 'profile', 'farm']" in swipe

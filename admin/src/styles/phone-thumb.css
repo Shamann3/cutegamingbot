@@ -1,0 +1,563 @@
+/* Телефон админки: живой скролл, поля не наползают, большой палец справа снизу. */
+
+html.is-phone,
+html[data-viewport="phone"] {
+  --thumb-dock-h: 4.75rem;
+}
+
+html.is-phone .panel-shell,
+html.is-phone .panel-shell:has(.panel-layout-users),
+html.is-phone .panel-shell:has(.panel-layout-farm),
+html[data-viewport="phone"] .panel-shell,
+html[data-viewport="phone"] .panel-shell:has(.panel-layout-users),
+html[data-viewport="phone"] .panel-shell:has(.panel-layout-farm) {
+  height: auto !important;
+  max-height: none !important;
+  min-height: 100dvh;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain;
+}
+
+html.is-phone .panel-shell-main,
+html.is-phone .panel-shell:has(.panel-layout-users) .panel-shell-main,
+html[data-viewport="phone"] .panel-shell-main,
+html[data-viewport="phone"] .panel-shell:has(.panel-layout-users) .panel-shell-main {
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  padding-bottom: calc(var(--thumb-dock-h) + env(safe-area-inset-bottom, 0px) + 1rem) !important;
+}
+
+html.is-phone .panel-layout,
+html.is-phone [class*="panel-layout-"],
+html.is-phone .panel-layout-users,
+html.is-phone .panel-layout-farm,
+html.is-phone .grp-page,
+html.is-phone .nika-page,
+html.is-phone .panel-users,
+html.is-phone .panel-layout-users > .panel-users,
+html[data-viewport="phone"] .panel-layout,
+html[data-viewport="phone"] [class*="panel-layout-"],
+html[data-viewport="phone"] .panel-layout-users,
+html[data-viewport="phone"] .panel-users,
+html[data-viewport="phone"] .panel-layout-users > .panel-users {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+html.is-phone .panel-layout > *,
+html.is-phone [class*="panel-layout-"] > *,
+html.is-phone .panel-users > *,
+html.is-phone .nika-page > *,
+html[data-viewport="phone"] .panel-layout > *,
+html[data-viewport="phone"] [class*="panel-layout-"] > *,
+html[data-viewport="phone"] .panel-users > *,
+html[data-viewport="phone"] .nika-page > * {
+  flex: 0 0 auto;
+}
+
+html.is-phone .panel-users-body,
+html.is-phone .panel-layout-users > .panel-users .panel-users-body,
+html[data-viewport="phone"] .panel-users-body,
+html[data-viewport="phone"] .panel-layout-users > .panel-users .panel-users-body {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  flex: none !important;
+}
+
+html.is-phone .panel-shell-main *,
+html[data-viewport="phone"] .panel-shell-main * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+html.is-phone .panel-shell-main h1,
+html.is-phone .panel-shell-main h2,
+html.is-phone .panel-shell-main h3,
+html.is-phone .panel-shell-main p,
+html.is-phone .panel-shell-main span,
+html.is-phone .panel-shell-main b,
+html.is-phone .panel-shell-main strong,
+html.is-phone .panel-shell-main em,
+html.is-phone .panel-shell-main label,
+html.is-phone .panel-shell-main button,
+html.is-phone .panel-shell-main a,
+html[data-viewport="phone"] .panel-shell-main h1,
+html[data-viewport="phone"] .panel-shell-main h2,
+html[data-viewport="phone"] .panel-shell-main h3,
+html[data-viewport="phone"] .panel-shell-main p,
+html[data-viewport="phone"] .panel-shell-main span,
+html[data-viewport="phone"] .panel-shell-main button,
+html[data-viewport="phone"] .panel-shell-main label {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+html.is-phone .panel-shell-main input,
+html.is-phone .panel-shell-main textarea,
+html.is-phone .panel-shell-main select,
+html.is-phone .nika-input,
+html.is-phone .grp-page.nika-page .nika-input,
+html.is-phone .panel-users-input,
+html[data-viewport="phone"] .panel-shell-main input,
+html[data-viewport="phone"] .panel-shell-main textarea,
+html[data-viewport="phone"] .panel-shell-main select,
+html[data-viewport="phone"] .nika-input,
+html[data-viewport="phone"] .grp-page.nika-page .nika-input {
+  flex-grow: 0 !important;
+  flex-shrink: 1 !important;
+  flex-basis: auto !important;
+  width: 100%;
+  min-height: 44px;
+  height: 48px !important;
+  max-height: 48px !important;
+  font-size: 16px !important;
+}
+
+html.is-phone .panel-shell-main textarea,
+html[data-viewport="phone"] .panel-shell-main textarea {
+  height: auto !important;
+  max-height: none !important;
+  min-height: 5.5rem;
+}
+
+html.is-phone .nika-seg,
+html[data-viewport="phone"] .nika-seg {
+  display: flex;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+html.is-phone .nika-seg-btn,
+html.is-phone .nika-seg > button,
+html[data-viewport="phone"] .nika-seg-btn,
+html[data-viewport="phone"] .nika-seg > button {
+  flex: 1 1 calc(33.33% - 0.28rem);
+  min-width: 0 !important;
+  max-width: 100%;
+  min-height: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html.is-phone .nika-btn,
+html.is-phone .grp-page.nika-page .nika-btn,
+html[data-viewport="phone"] .nika-btn,
+html[data-viewport="phone"] .grp-page.nika-page .nika-btn {
+  flex-grow: 0 !important;
+  min-width: 0 !important;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html.is-phone .elite-menu-btn,
+html.is-phone .elite-icon-btn,
+html[data-viewport="phone"] .elite-menu-btn,
+html[data-viewport="phone"] .elite-icon-btn {
+  display: none !important;
+}
+
+html.is-phone .elite-topbar,
+html.is-phone .elite-topbar-compact,
+html[data-viewport="phone"] .elite-topbar,
+html[data-viewport="phone"] .elite-topbar-compact {
+  position: sticky;
+  top: var(--tg-content-top, 0px);
+  z-index: 80;
+}
+
+html.is-phone .panel-economy-grid-2,
+html.is-phone .panel-economy-stats,
+html.is-phone .panel-farm-plot-preview,
+html[data-viewport="phone"] .panel-economy-grid-2,
+html[data-viewport="phone"] .panel-economy-stats,
+html[data-viewport="phone"] .panel-farm-plot-preview {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 0.65rem !important;
+}
+
+html.is-phone .panel-users-search-form,
+html[data-viewport="phone"] .panel-users-search-form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+html.is-phone .panel-users-search-form .panel-users-btn,
+html.is-phone .panel-action-btn,
+html.is-phone .panel-users-btn,
+html[data-viewport="phone"] .panel-users-search-form .panel-users-btn,
+html[data-viewport="phone"] .panel-action-btn,
+html[data-viewport="phone"] .panel-users-btn {
+  width: 100%;
+  flex: 0 0 auto !important;
+  min-height: 48px;
+  max-width: 100%;
+}
+
+html.is-phone .panel-nav-item,
+html[data-viewport="phone"] .panel-nav-item {
+  min-height: 48px !important;
+  border-radius: 14px !important;
+}
+
+html.is-phone .panel-shelf-sidebar,
+html[data-viewport="phone"] .panel-shelf-sidebar {
+  left: auto !important;
+  right: 0 !important;
+  width: min(22.5rem, 92vw) !important;
+  transform: translateX(110%) !important;
+  border-right: none !important;
+  padding-bottom: calc(var(--thumb-dock-h) + 1.1rem) !important;
+}
+
+html.is-phone .panel-sidebar-mobile-open,
+html[data-viewport="phone"] .panel-sidebar-mobile-open {
+  transform: translateX(0) !important;
+}
+
+html.is-phone .panel-sidebar-close,
+html[data-viewport="phone"] .panel-sidebar-close {
+  width: 2.8rem;
+  height: 2.8rem;
+  margin-left: auto;
+}
+
+.panel-thumb-dock {
+  display: none;
+}
+
+html.is-phone .panel-thumb-dock,
+html[data-viewport="phone"] .panel-thumb-dock {
+  display: flex;
+  position: fixed;
+  right: max(0.7rem, env(safe-area-inset-right, 0px));
+  bottom: max(0.7rem, env(safe-area-inset-bottom, 0px));
+  z-index: 360;
+  gap: 0.45rem;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+html.is-phone .panel-thumb-dock > button,
+html[data-viewport="phone"] .panel-thumb-dock > button {
+  pointer-events: auto;
+  border: 0;
+  color: #f4f0ec;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+html.is-phone .panel-thumb-bell,
+html[data-viewport="phone"] .panel-thumb-bell {
+  width: 3.05rem;
+  height: 3.05rem;
+  border-radius: 16px;
+  background: #1c1c1e;
+  box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.9);
+}
+
+html.is-phone .panel-thumb-menu,
+html[data-viewport="phone"] .panel-thumb-menu {
+  width: 4.2rem;
+  height: 4.2rem;
+  border-radius: 22px;
+  background: #f4f4f5;
+  color: #111;
+  font-size: 0.7rem;
+  font-weight: 760;
+  letter-spacing: 0.03em;
+  box-shadow: 0 14px 32px -14px rgba(0, 0, 0, 0.95);
+}
+
+html.is-phone .panel-thumb-menu.is-open,
+html[data-viewport="phone"] .panel-thumb-menu.is-open {
+  background: #ffd60a;
+  color: #111;
+}
+
+html.is-phone .panel-thumb-bell svg,
+html[data-viewport="phone"] .panel-thumb-bell svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+html.is-phone .panel-thumb-dot,
+html[data-viewport="phone"] .panel-thumb-dot {
+  position: absolute;
+  top: 0.42rem;
+  right: 0.42rem;
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: #ff3b30;
+}
+
+html.panel-nav-open .panel-thumb-dock {
+  pointer-events: auto;
+}
+
+/* Все вкладки админки: одна колонка, крупные тапы, действия справа, текст внутри. */
+html.is-phone .panel-dashboard,
+html.is-phone .panel-accounts,
+html.is-phone .panel-economy,
+html.is-phone .panel-market,
+html.is-phone .panel-farm,
+html.is-phone .panel-content,
+html.is-phone .panel-logs,
+html.is-phone .panel-settings,
+html.is-phone .panel-events,
+html.is-phone .panel-security,
+html.is-phone .panel-broadcast,
+html.is-phone .panel-broadcast-wrap,
+html.is-phone .analytics-section,
+html.is-phone .support-section,
+html.is-phone .staff-section,
+html.is-phone .chs-root,
+html.is-phone .arc-shell,
+html.is-phone .ach-page,
+html.is-phone .gbl-page,
+html.is-phone .grp-page,
+html.is-phone .tt-page,
+html.is-phone .bq-root,
+html.is-phone .sr-page,
+html.is-phone .gm-page,
+html[data-viewport="phone"] .panel-dashboard,
+html[data-viewport="phone"] .panel-accounts,
+html[data-viewport="phone"] .panel-economy,
+html[data-viewport="phone"] .panel-market,
+html[data-viewport="phone"] .panel-farm,
+html[data-viewport="phone"] .panel-content,
+html[data-viewport="phone"] .panel-logs,
+html[data-viewport="phone"] .panel-settings,
+html[data-viewport="phone"] .panel-events,
+html[data-viewport="phone"] .panel-security,
+html[data-viewport="phone"] .panel-broadcast,
+html[data-viewport="phone"] .panel-broadcast-wrap,
+html[data-viewport="phone"] .analytics-section,
+html[data-viewport="phone"] .support-section,
+html[data-viewport="phone"] .staff-section,
+html[data-viewport="phone"] .chs-root,
+html[data-viewport="phone"] .arc-shell,
+html[data-viewport="phone"] .ach-page,
+html[data-viewport="phone"] .gbl-page,
+html[data-viewport="phone"] .grp-page,
+html[data-viewport="phone"] .tt-page,
+html[data-viewport="phone"] .bq-root,
+html[data-viewport="phone"] .sr-page,
+html[data-viewport="phone"] .gm-page {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+html.is-phone .panel-economy-stats,
+html.is-phone .panel-dashboard-grid,
+html.is-phone .panel-accounts-grid,
+html.is-phone .panel-market-grid,
+html.is-phone .panel-content-grid,
+html.is-phone .panel-logs-grid,
+html.is-phone .analytics-grid,
+html.is-phone .staff-grid,
+html.is-phone .staff-cards,
+html.is-phone .ach-layout,
+html.is-phone .ach-grid,
+html.is-phone .gbl-grid,
+html.is-phone .grp-two,
+html.is-phone .grp-tops,
+html.is-phone .grp-stat-grid,
+html.is-phone .grp-hero-stats,
+html.is-phone .grp-meters,
+html.is-phone .grp-kv-grid,
+html.is-phone .tt-layout,
+html.is-phone .tt-split,
+html.is-phone .bq-layout,
+html.is-phone .bq-grid-2,
+html.is-phone .bq-grid-3,
+html.is-phone .bq-hero,
+html.is-phone .sr-slider-wrap,
+html.is-phone .support-layout,
+html.is-phone .sec-split,
+html.is-phone .logs-split,
+html[data-viewport="phone"] .panel-economy-stats,
+html[data-viewport="phone"] .panel-dashboard-grid,
+html[data-viewport="phone"] .panel-accounts-grid,
+html[data-viewport="phone"] .panel-market-grid,
+html[data-viewport="phone"] .panel-content-grid,
+html[data-viewport="phone"] .analytics-grid,
+html[data-viewport="phone"] .staff-grid,
+html[data-viewport="phone"] .staff-cards,
+html[data-viewport="phone"] .ach-layout,
+html[data-viewport="phone"] .ach-grid,
+html[data-viewport="phone"] .gbl-grid,
+html[data-viewport="phone"] .grp-two,
+html[data-viewport="phone"] .grp-tops,
+html[data-viewport="phone"] .grp-stat-grid,
+html[data-viewport="phone"] .grp-hero-stats,
+html[data-viewport="phone"] .grp-meters,
+html[data-viewport="phone"] .grp-kv-grid,
+html[data-viewport="phone"] .tt-layout,
+html[data-viewport="phone"] .tt-split,
+html[data-viewport="phone"] .bq-layout,
+html[data-viewport="phone"] .bq-grid-2,
+html[data-viewport="phone"] .bq-grid-3,
+html[data-viewport="phone"] .bq-hero,
+html[data-viewport="phone"] .sr-slider-wrap,
+html[data-viewport="phone"] .support-layout {
+  grid-template-columns: 1fr !important;
+}
+
+html.is-phone .grp-meters,
+html.is-phone .sr-stats,
+html.is-phone .bq-metrics,
+html.is-phone .bq-card-stats,
+html.is-phone .bq-card-stats-3,
+html.is-phone .tt-stats,
+html[data-viewport="phone"] .grp-meters,
+html[data-viewport="phone"] .sr-stats,
+html[data-viewport="phone"] .bq-metrics,
+html[data-viewport="phone"] .bq-card-stats,
+html[data-viewport="phone"] .bq-card-stats-3,
+html[data-viewport="phone"] .tt-stats {
+  grid-template-columns: 1fr 1fr !important;
+}
+
+html.is-phone .sec-tabs,
+html[data-viewport="phone"] .sec-tabs {
+  flex-wrap: wrap !important;
+  overflow: visible !important;
+}
+
+html.is-phone .sec-tab,
+html.is-phone .tt-tab,
+html.is-phone .bq-tab,
+html.is-phone .bq-pill,
+html.is-phone .ach-tab,
+html.is-phone .gbl-tab,
+html.is-phone .panel-logs-tab,
+html[data-viewport="phone"] .sec-tab,
+html[data-viewport="phone"] .tt-tab,
+html[data-viewport="phone"] .bq-tab,
+html[data-viewport="phone"] .bq-pill,
+html[data-viewport="phone"] .ach-tab {
+  min-height: 44px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html.is-phone .panel-shelf,
+html.is-phone .panel-shelf-page,
+html.is-phone .tt-card,
+html.is-phone .bq-card,
+html.is-phone .ach-card,
+html.is-phone .staff-card,
+html.is-phone .arc-card,
+html.is-phone .gbl-card,
+html.is-phone .sr-card,
+html[data-viewport="phone"] .panel-shelf,
+html[data-viewport="phone"] .tt-card,
+html[data-viewport="phone"] .bq-card,
+html[data-viewport="phone"] .staff-card {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+html.is-phone table,
+html[data-viewport="phone"] table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+html.is-phone .admin-modal-actions,
+html[data-viewport="phone"] .admin-modal-actions {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: stretch;
+  gap: 0.45rem;
+}
+
+html.is-phone .admin-modal-actions button,
+html[data-viewport="phone"] .admin-modal-actions button {
+  width: 100%;
+  min-height: 48px;
+}
+
+html.is-phone .support-layout-thread-open .support-reply-box,
+html[data-viewport="phone"] .support-layout-thread-open .support-reply-box {
+  padding-bottom: calc(var(--thumb-dock-h) + 0.7rem) !important;
+}
+
+html.is-phone .support-reply-actions,
+html[data-viewport="phone"] .support-reply-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+html.is-phone .support-reply-send-btn,
+html.is-phone .support-claim-btn,
+html[data-viewport="phone"] .support-reply-send-btn,
+html[data-viewport="phone"] .support-claim-btn {
+  min-width: min(100%, 8.5rem);
+  min-height: 48px !important;
+  margin-left: auto;
+}
+
+html.is-phone .bq-card-actions,
+html.is-phone .bq-hero-actions,
+html.is-phone .tt-toolbar,
+html.is-phone .panel-shelf-actions,
+html.is-phone .ach-toolbar,
+html.is-phone .sr-actions,
+html.is-phone .gbl-actions,
+html.is-phone .grp-actions,
+html[data-viewport="phone"] .bq-card-actions,
+html[data-viewport="phone"] .bq-hero-actions,
+html[data-viewport="phone"] .tt-toolbar,
+html[data-viewport="phone"] .panel-shelf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+html.is-phone .bq-btn,
+html.is-phone .bq-btn-mini,
+html.is-phone .tt-btn,
+html.is-phone .ach-btn,
+html.is-phone .sr-btn,
+html.is-phone .gbl-btn,
+html.is-phone .panel-action-btn,
+html[data-viewport="phone"] .bq-btn,
+html[data-viewport="phone"] .tt-btn,
+html[data-viewport="phone"] .ach-btn,
+html[data-viewport="phone"] .sr-btn {
+  min-height: 44px;
+  max-width: 100%;
+}
+
+html.is-phone .bq-btn-primary,
+html.is-phone .tt-btn-primary,
+html.is-phone .ach-btn-primary,
+html.is-phone .sr-btn-primary,
+html[data-viewport="phone"] .bq-btn-primary,
+html[data-viewport="phone"] .tt-btn-primary {
+  min-height: 48px;
+}

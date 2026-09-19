@@ -1,4 +1,4 @@
-/* Игроки в мире Ники: iOS Wallet, 44pt, без sticky и без наложений. */
+/* Игроки: как Ника, без растянутых полей и без блокировки скролла. */
 
 .grp-page.nika-page.users-page {
   animation: none !important;
@@ -6,15 +6,52 @@
   transform: none !important;
 }
 
-.grp-page.nika-page.users-page .users-search-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  align-items: stretch;
+.grp-page.nika-page.users-page .nika-head-copy,
+.grp-page.nika-page.users-page .nika-status,
+.grp-page.nika-page.users-page .nika-panel,
+.grp-page.nika-page.users-page .users-search-form,
+.grp-page.nika-page.users-page .users-toolbar {
+  min-width: 0;
+  max-width: 100%;
 }
 
-.grp-page.nika-page.users-page .users-search-form .nika-input {
-  flex: 1 1 14rem;
+.grp-page.nika-page.users-page .users-search-panel {
+  padding: 0.75rem;
+}
+
+.grp-page.nika-page.users-page .users-search-form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.grp-page.nika-page.users-page .users-search-form .nika-input,
+.grp-page.nika-page.users-page .users-search-input {
+  flex: 0 0 auto !important;
+  width: 100%;
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+  align-self: stretch;
+}
+
+.grp-page.nika-page.users-page .users-search-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+}
+
+.grp-page.nika-page.users-page.panel-users-has-profile .users-search-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+.grp-page.nika-page.users-page .users-search-actions .nika-btn {
+  flex: 0 0 auto !important;
+  width: 100%;
+  height: 48px;
+  min-height: 48px !important;
+  max-height: 48px;
 }
 
 .grp-page.nika-page.users-page .users-hits {
@@ -29,7 +66,7 @@
 
 .grp-page.nika-page.users-page .users-toolbar-extra {
   display: flex;
-  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.4rem;
 }
 
@@ -46,8 +83,8 @@
 
 .grp-page.nika-page.users-page .pu-peek-actions {
   grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 0.4rem;
 }
 
@@ -67,6 +104,7 @@
   flex-direction: column;
   gap: 0.75rem;
   min-width: 0;
+  overflow: visible !important;
 }
 
 .grp-page.nika-page.users-page .pu-hero-kicker,
@@ -74,78 +112,81 @@
   display: none;
 }
 
-html.is-phone .panel-shell:has(.users-page),
-html[data-viewport="phone"] .panel-shell:has(.users-page) {
-  height: auto !important;
-  max-height: none !important;
-  overflow: visible !important;
+html.is-desktop .grp-page.nika-page.users-page .users-search-form,
+html[data-viewport="desktop"] .grp-page.nika-page.users-page .users-search-form {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
-html.is-phone .panel-shell:has(.users-page) .panel-shell-main,
-html[data-viewport="phone"] .panel-shell:has(.users-page) .panel-shell-main {
-  flex: 1 1 auto !important;
-  height: auto !important;
-  max-height: none !important;
-  overflow: visible !important;
-  padding-left: max(0.2rem, env(safe-area-inset-left, 0px)) !important;
-  padding-right: max(0.2rem, env(safe-area-inset-right, 0px)) !important;
+html.is-desktop .grp-page.nika-page.users-page .users-search-input,
+html[data-viewport="desktop"] .grp-page.nika-page.users-page .users-search-input {
+  flex: 1 1 16rem !important;
+  width: auto;
 }
 
-html.is-phone .panel-layout-users:has(.users-page),
-html[data-viewport="phone"] .panel-layout-users:has(.users-page) {
-  display: flex !important;
-  flex-direction: column !important;
-  height: auto !important;
-  max-height: none !important;
-  overflow: visible !important;
+html.is-desktop .grp-page.nika-page.users-page .users-search-actions,
+html[data-viewport="desktop"] .grp-page.nika-page.users-page .users-search-actions {
+  display: flex;
+  width: auto;
+  grid-template-columns: none;
 }
 
-html.is-phone .panel-layout-users:has(.users-page) > .panel-users,
-html[data-viewport="phone"] .panel-layout-users:has(.users-page) > .users-page {
-  height: auto !important;
-  max-height: none !important;
-  overflow: visible !important;
+html.is-desktop .grp-page.nika-page.users-page .users-search-actions .nika-btn,
+html[data-viewport="desktop"] .grp-page.nika-page.users-page .users-search-actions .nika-btn {
+  width: auto;
+  min-width: 6.5rem;
 }
 
 html.is-phone .grp-page.nika-page.users-page,
 html[data-viewport="phone"] .grp-page.nika-page.users-page {
-  padding-bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 0.4rem;
 }
 
-html.is-phone .grp-page.nika-page.users-page .users-search-form,
-html[data-viewport="phone"] .grp-page.nika-page.users-page .users-search-form {
-  flex-direction: column;
+html.is-phone .grp-page.nika-page.users-page .nika-head,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .nika-head {
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
 }
 
-html.is-phone .grp-page.nika-page.users-page .users-search-form .nika-btn,
-html[data-viewport="phone"] .grp-page.nika-page.users-page .users-search-form .nika-btn {
+html.is-phone .grp-page.nika-page.users-page .nika-head h1,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .nika-head h1 {
+  font-size: 1.7rem;
+  line-height: 1.1;
+}
+
+html.is-phone .grp-page.nika-page.users-page .nika-head-copy p,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .nika-head-copy p {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+html.is-phone .grp-page.nika-page.users-page .nika-status,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .nika-status {
   width: 100%;
-  flex: 1 1 auto;
+  text-align: left;
 }
 
 html.is-phone .grp-page.nika-page.users-page .nika-seg,
 html[data-viewport="phone"] .grp-page.nika-page.users-page .nika-seg {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-html.is-phone .grp-page.nika-page.users-page .nika-seg::-webkit-scrollbar,
-html[data-viewport="phone"] .grp-page.nika-page.users-page .nika-seg::-webkit-scrollbar {
-  display: none;
+  display: flex;
+  flex-wrap: wrap;
+  overflow: visible;
 }
 
 html.is-phone .grp-page.nika-page.users-page .nika-seg-btn,
 html[data-viewport="phone"] .grp-page.nika-page.users-page .nika-seg-btn {
-  flex: 0 0 auto;
+  flex: 1 1 calc(33.33% - 0.28rem);
+  min-width: 0;
   min-height: 44px;
+  padding: 0.4rem 0.35rem !important;
+  font-size: 0.74rem;
 }
 
-html.is-phone .grp-page.nika-page.users-page .users-toolbar-extra .nika-btn,
-html[data-viewport="phone"] .grp-page.nika-page.users-page .users-toolbar-extra .nika-btn {
-  flex: 1 1 calc(50% - 0.4rem);
-  min-height: 44px;
+html.is-phone .grp-page.nika-page.users-page .users-toolbar-extra,
+html[data-viewport="phone"] .grp-page.nika-page.users-page .users-toolbar-extra {
+  justify-content: flex-end;
 }
 
 html.is-phone .grp-page.nika-page.users-page .pu-profile-layout,
@@ -163,14 +204,14 @@ html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-profile-layout .p
 html.is-phone .grp-page.nika-page.users-page .pu-hero-main,
 html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-hero-main {
   display: grid !important;
-  grid-template-columns: 3.6rem minmax(0, 1fr) !important;
-  gap: 0.75rem !important;
+  grid-template-columns: 3.4rem minmax(0, 1fr) !important;
+  gap: 0.7rem !important;
 }
 
 html.is-phone .grp-page.nika-page.users-page .pu-hero-balance,
 html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-hero-balance {
   grid-column: 1 / -1;
-  padding: 0.85rem 0.9rem;
+  padding: 0.8rem 0.85rem;
   border-radius: 16px;
   background: #121212;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -180,8 +221,8 @@ html.is-phone .grp-page.nika-page.users-page .panel-users-avatar,
 html.is-phone .grp-page.nika-page.users-page .panel-users-avatar-fallback,
 html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-avatar,
 html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-avatar-fallback {
-  width: 3.6rem !important;
-  height: 3.6rem !important;
+  width: 3.4rem !important;
+  height: 3.4rem !important;
   border-radius: 16px !important;
 }
 
@@ -195,7 +236,7 @@ html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-actions-
 html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-tab-pane {
   border-radius: 16px !important;
   animation: none !important;
-  overflow: visible !important;
+  overflow: hidden !important;
 }
 
 html.is-phone .grp-page.nika-page.users-page .panel-users-action-grid,
@@ -210,15 +251,6 @@ html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-btn,
 html.is-phone .grp-page.nika-page.users-page .pu-stepper-btn,
 html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-stepper-btn {
   min-height: 44px !important;
-  border-radius: 14px !important;
-}
-
-html.is-phone .grp-page.nika-page.users-page .panel-users-input,
-html.is-phone .grp-page.nika-page.users-page .pu-field-input,
-html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-input,
-html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-field-input {
-  min-height: 44px !important;
-  font-size: 16px !important;
   border-radius: 14px !important;
 }
 
@@ -238,9 +270,4 @@ html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-cmp-row {
 html.is-phone .grp-page.nika-page.users-page .pu-cmp-categories,
 html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-cmp-categories {
   grid-template-columns: 1fr !important;
-}
-
-html.is-desktop .grp-page.nika-page.users-page .users-search-form .nika-btn,
-html[data-viewport="desktop"] .grp-page.nika-page.users-page .users-search-form .nika-btn {
-  flex: 0 0 auto;
 }

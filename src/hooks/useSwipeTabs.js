@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 const SWIPE_THRESHOLD = 56
-const TAB_ORDER = ['farm', 'trade', 'quests', 'profile']
+const TAB_ORDER = ['quests', 'trade', 'profile', 'farm']
 
 function nextTab(tab) {
   const index = TAB_ORDER.indexOf(tab)

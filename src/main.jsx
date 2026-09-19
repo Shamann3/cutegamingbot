@@ -11,6 +11,7 @@ import './styles/glass.css'
 import './styles/theme.css'
 /* season.css ПОСЛЕ theme — иначе зелёный theme перекрывает весну/осень/зиму */
 import './styles/season.css'
+import './styles/farm-thumb.css'
 
 initTelegramWebApp()
 
