@@ -390,8 +390,12 @@ def forecast_tick(
     from nika.policy import (
         SOURCE_LADDER,
         allocate_from_ladder,
-        dead_zone,
+        apply_sweep_speed,
+        pick_sweep_dest,
+        plan_sweep,
         plan_topup,
+        sweep_dest_title,
+        sweep_keep,
     )
     from nika.store import policy_from_row
 
@@ -445,7 +449,7 @@ def forecast_tick(
                 "text": f"{name}: нет цели и скорости",
             })
             continue
-        policy = policy_from_row(row)
+        policy = apply_sweep_speed(policy_from_row(row), settings.get("sweep_speed"))
         balance = _as_int(item.get("balance"))
         top = plan_topup(policy, balance=balance)
         if top.action == "topup" and top.amount > 0:
@@ -476,17 +480,40 @@ def forecast_tick(
             continue
 
         surplus = balance - int(policy.target_balance)
-        if surplus > dead_zone(policy):
-            items.append({
-                "chatId": chat_id,
-                "name": name,
-                "action": "watch",
-                "amount": int(surplus),
-                "text": (
-                    f"{name}: излишек {int(surplus)} кут, сбор только после выдержки "
-                    "— свежие куты не снимает"
-                ),
-            })
+        keep = sweep_keep(policy)
+        if surplus > keep:
+            dest = pick_sweep_dest(chat_id)
+            dest_name = sweep_dest_title(dest) or "техгруппы"
+            ready = plan_sweep(
+                policy,
+                balance=balance,
+                stable_balance=balance,
+                history_covers_delay=True,
+            )
+            if ready.action == "sweep" and ready.amount > 0:
+                items.append({
+                    "chatId": chat_id,
+                    "name": name,
+                    "action": "sweep",
+                    "amount": int(ready.amount),
+                    "destChatId": dest,
+                    "destTitle": dest_name,
+                    "text": (
+                        f"{name}: снимет {int(ready.amount)} кут в «{dest_name}» "
+                        f"(выдержка {int(policy.sweep_delay_sec)} сек)"
+                    ),
+                })
+            else:
+                items.append({
+                    "chatId": chat_id,
+                    "name": name,
+                    "action": "watch",
+                    "amount": int(surplus),
+                    "text": (
+                        f"{name}: излишек {int(surplus)} кут, ждёт выдержку "
+                        f"{int(policy.sweep_delay_sec)} сек — потом в «{dest_name}»"
+                    ),
+                })
             continue
 
         hold = str(top.reason or "")
@@ -505,16 +532,21 @@ def forecast_tick(
         })
 
     n_top = sum(1 for i in items if i["action"] == "topup")
+    n_sweep = sum(1 for i in items if i["action"] == "sweep")
     n_blk = sum(1 for i in items if i["action"] == "blocked")
     n_watch = sum(1 for i in items if i["action"] == "watch")
     if dry:
         summary = "Сухой прогон: посчитает шаг, куты не тронет."
     elif n_blk and not n_top:
         summary = "Хочет долить баланс группы, но в играх и кассах пусто."
+    elif n_sweep and n_top:
+        summary = f"Дольёт {n_top} и заберёт лишнее с {n_sweep} групп(ы) в техкассы."
+    elif n_sweep:
+        summary = f"На следующей проверке заберёт лишнее с {n_sweep} групп(ы) в техкассы."
     elif n_top:
-        summary = f"На следующей проверке дольёт {n_top} групп(ы). Лишнее снимет только после выдержки."
+        summary = f"На следующей проверке дольёт {n_top} групп(ы)."
     elif n_watch:
-        summary = "Баланс групп выше цели. Сбор ждёт выдержку — свежие куты сразу не снимает."
+        summary = "Баланс групп выше цели. Сбор ждёт короткую выдержку — потом в техкассы."
     elif not items:
         summary = "Групп под Никой нет."
     else:
@@ -662,14 +694,22 @@ async def pulse() -> Dict[str, Any]:
         "groups": group_out,
         "ladder": ladder,
         "forecast": forecast_tick(settings, groups, group_out, ladder),
-        "tickIntervalSec": _as_int(settings.get("tick_interval_sec"), 180),
+        "tickIntervalSec": _as_int(settings.get("tick_interval_sec"), 20),
+        "sweepSpeed": str(settings.get("sweep_speed") or "fast"),
     }
 
 
 async def overview() -> Dict[str, Any]:
     await _ensure()
     from nika import incidents as inc
-    from nika.policy import SPEED_MODES, SWEEP_DEST_CHAT_ID, suggest_caps
+    from nika.policy import (
+        SPEED_MODES,
+        SWEEP_DEST_CHAT_ID,
+        SWEEP_DEST_LADDER,
+        SWEEP_SPEEDS,
+        suggest_caps,
+        sweep_speed_preset,
+    )
     from nika.schema import FIRST_MANAGED_CHAT_ID, FIRST_MANAGED_TARGET
     from nika.store import fetch_settings
 
@@ -712,7 +752,9 @@ async def overview() -> Dict[str, Any]:
         "settings": {
             "enabled": bool(settings.get("enabled")),
             "dryRun": bool(settings.get("dry_run")),
-            "tickIntervalSec": _as_int(settings.get("tick_interval_sec"), 180),
+            "tickIntervalSec": _as_int(settings.get("tick_interval_sec"), 20),
+            "sweepSpeed": str(settings.get("sweep_speed") or "fast"),
+            "sweepPreset": sweep_speed_preset(settings.get("sweep_speed")),
             "ownerAlertUserId": settings.get("owner_alert_user_id"),
             "lastError": settings.get("last_error") or "",
             "lastErrorAt": _jsonable(settings.get("last_error_at")),
@@ -724,7 +766,12 @@ async def overview() -> Dict[str, Any]:
             "officialChatId": int(FIRST_MANAGED_CHAT_ID),
             "officialTarget": int(FIRST_MANAGED_TARGET),
             "sweepDestChatId": int(SWEEP_DEST_CHAT_ID),
+            "sweepDestLadder": [
+                {"chatId": int(cid), "title": title} for cid, title in SWEEP_DEST_LADDER
+            ],
             "speedModes": list(SPEED_MODES),
+            "sweepSpeeds": list(SWEEP_SPEEDS),
+            "sweepPreset": sweep_speed_preset(settings.get("sweep_speed")),
             "forbiddenChatIds": _forbidden(),
             "suggestCaps": suggest_caps(FIRST_MANAGED_TARGET),
         },
@@ -958,12 +1005,17 @@ async def save_settings(
     enabled: Optional[bool] = None,
     dry_run: Optional[bool] = None,
     tick_interval_sec: Optional[int] = None,
+    sweep_speed: Optional[str] = None,
 ) -> Dict[str, Any]:
     await _ensure()
     from nika.store import update_global_settings
 
     await update_global_settings(
-        db, enabled=enabled, dry_run=dry_run, tick_interval_sec=tick_interval_sec,
+        db,
+        enabled=enabled,
+        dry_run=dry_run,
+        tick_interval_sec=tick_interval_sec,
+        sweep_speed=sweep_speed,
     )
     return await pulse()
 

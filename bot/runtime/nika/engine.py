@@ -33,8 +33,9 @@ import bot.runtime.nika.incidents as incidents
 import bot.runtime.nika.store as store
 from bot.runtime.nika.policy import (
     SOURCE_LADDER,
-    SWEEP_DEST_CHAT_ID,
+    apply_sweep_speed,
     allocate_from_ladder,
+    pick_sweep_dest,
     plan_sweep,
     plan_topup,
 )
@@ -60,7 +61,7 @@ class MoveResult:
 def _slot(cooldown_sec: int) -> int:
     import time
 
-    step = max(60, int(cooldown_sec or 60))
+    step = max(8, int(cooldown_sec or 8))
     return int(time.time()) // step
 
 
@@ -581,7 +582,9 @@ async def _topup_group(
 
 async def _sweep_group(
     db, bot, *, policy, balance: int, dry_run: bool, skip_cooldown: bool = False,
+    sweep_speed: str = "fast",
 ) -> str:
+    policy = apply_sweep_speed(policy, sweep_speed)
     async with db.pool.acquire() as conn:
         window = await store.sweep_window(conn, policy.chat_id, policy.sweep_delay_sec)
         daily = await store.daily_done_sum(conn, policy.chat_id, "sweep")
@@ -595,11 +598,11 @@ async def _sweep_group(
         if skip_cooldown and plan.amount <= 0:
             # Ручной сбор: если выдержки ещё нет, берём текущий излишек
             # теми же потолками, но без ожидания окна.
-            from bot.runtime.nika.policy import dead_zone
+            from bot.runtime.nika.policy import sweep_keep
             target = int(max(0, policy.target_balance))
             excess = int(balance) - target
-            dz = dead_zone(policy)
-            if excess > dz and target > 0:
+            keep = sweep_keep(policy)
+            if excess > keep and target > 0:
                 plan = plan_sweep(
                     policy,
                     balance=balance,
@@ -616,8 +619,8 @@ async def _sweep_group(
             if not claimed:
                 return "cooldown"
 
-    dest = int(SWEEP_DEST_CHAT_ID)
-    if dest == int(policy.chat_id):
+    dest = pick_sweep_dest(policy.chat_id)
+    if dest is None or dest == int(policy.chat_id):
         return "self"
     result = await _atomic_move(
         db, bot,
@@ -642,6 +645,8 @@ async def _service_group(
     *, skip_cooldown: bool = False, force_kind: str = "",
 ) -> str:
     policy = policy_from_row(row)
+    sweep_speed = str((settings or {}).get("sweep_speed") or "fast")
+    policy = apply_sweep_speed(policy, sweep_speed)
     if policy.chat_id in set(store.forbidden_managed_ids()):
         return "forbidden"
     balance = await _chat_balance(db, bot, policy.chat_id)
@@ -664,7 +669,7 @@ async def _service_group(
     if want == "sweep" or (not want and balance > target):
         return await _sweep_group(
             db, bot, policy=policy, balance=balance, dry_run=dry_run,
-            skip_cooldown=skip_cooldown,
+            skip_cooldown=skip_cooldown, sweep_speed=sweep_speed,
         )
     if want:
         return "on_target"
@@ -761,7 +766,7 @@ async def process_operator_commands(db, bot, settings: Dict[str, Any], dry_run: 
 
 
 async def run_tick(db, bot, *, force: bool = False, _retried: bool = False) -> Dict[str, Any]:
-    summary: Dict[str, Any] = {"ok": False, "actions": [], "heal": {}, "commands": {}, "error": ""}
+    summary: Dict[str, Any] = {"ok": False, "actions": [], "heal": {}, "commands": {}, "error": "", "tick_interval_sec": 20}
     if not getattr(db, "pool", None):
         summary["error"] = "no_pool"
         return summary
@@ -770,6 +775,7 @@ async def run_tick(db, bot, *, force: bool = False, _retried: bool = False) -> D
         async with db.pool.acquire() as conn:
             settings = await store.fetch_settings(conn) or {}
             dry_run = bool(settings.get("dry_run"))
+            summary["tick_interval_sec"] = int(settings.get("tick_interval_sec") or 20)
         # Команды с кнопок и самолечение — каждый заход, даже если долив
         # ещё рано или система на паузе. Деньги иначе зависнут.
         summary["commands"] = await process_operator_commands(db, bot, settings, dry_run)

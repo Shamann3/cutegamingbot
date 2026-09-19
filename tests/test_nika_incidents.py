@@ -214,6 +214,15 @@ def test_forecast_tick_paused_and_topup():
     blocked = forecast_tick({"enabled": True}, [row], groups, dry_ladder)
     assert blocked["items"][0]["action"] == "blocked"
 
+    fat = dict(groups[0])
+    fat["balance"] = FIRST_MANAGED_TARGET + 400
+    fat["gap"] = -400
+    fat["starving"] = False
+    swept = forecast_tick({"enabled": True, "sweep_speed": "fast"}, [row], [fat], ladder)
+    assert swept["items"][0]["action"] == "sweep"
+    assert swept["items"][0]["amount"] > 0
+    assert "дом игр" in swept["items"][0]["text"]
+
 
 class _FakeConn:
     async def execute(self, *_args, **_kwargs):

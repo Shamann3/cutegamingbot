@@ -140,7 +140,7 @@ html[data-viewport="desktop"] .grp-page.nika-page.users-page .users-search-actio
 
 html.is-phone .grp-page.nika-page.users-page,
 html[data-viewport="phone"] .grp-page.nika-page.users-page {
-  padding-bottom: 0.4rem;
+  padding-bottom: 1.2rem;
 }
 
 html.is-phone .grp-page.nika-page.users-page .nika-head,
@@ -236,7 +236,7 @@ html[data-viewport="phone"] .grp-page.nika-page.users-page .panel-users-actions-
 html[data-viewport="phone"] .grp-page.nika-page.users-page .pu-tab-pane {
   border-radius: 16px !important;
   animation: none !important;
-  overflow: hidden !important;
+  overflow: visible !important;
 }
 
 html.is-phone .grp-page.nika-page.users-page .panel-users-action-grid,

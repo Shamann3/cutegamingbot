@@ -56,6 +56,9 @@ def test_user_and_group_ids_are_copyable():
     assert "CopyableId" in nika
     assert "CopyableUsername" in nika
     assert "id группы" in nika
+    assert "Сбор лишнего" in nika
+    assert "sweep_speed" in nika
+    assert "Мгновенно" in nika
 
     assert "CopyableId" in games
     assert "IdentityBits" in farm
@@ -74,6 +77,9 @@ def test_user_and_group_ids_are_copyable():
     thumb = _read("admin", "src", "styles", "phone-thumb.css")
     assert "panel-thumb-dock" in thumb
     assert "overflow-y: auto" in thumb
+    assert "e-invert-bg" in thumb
+    assert "e-invert-text" in thumb
+    assert "overscroll-behavior-y: auto" in thumb
     for needle in (
         "panel-economy",
         "panel-market",

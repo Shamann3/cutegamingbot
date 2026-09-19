@@ -14,10 +14,14 @@ from typing import Any, Dict, List, Optional, Sequence
 from bot.runtime.nika.policy import (
     DEFAULT_SPEED_MODE,
     GroupPolicy,
+    MAX_TICK_SEC,
+    MIN_TICK_SEC,
     SOURCE_LADDER,
     SWEEP_DEST_CHAT_ID,
     normalize_speed_mode,
+    normalize_sweep_speed,
     suggest_caps,
+    sweep_speed_preset,
 )
 
 SAMPLE_KEEP_DAYS = 14
@@ -41,9 +45,9 @@ def policy_from_row(row: Any) -> GroupPolicy:
         max_transfer=_as_int(row["max_transfer"], 1000),
         max_daily_topup=_as_int(row["max_daily_topup"], 10000),
         max_daily_sweep=_as_int(row["max_daily_sweep"], 10000),
-        sweep_share=float(row["sweep_share"] or 0.25),
-        sweep_delay_sec=_as_int(row["sweep_delay_sec"], 3600),
-        sweep_cooldown_sec=_as_int(row["sweep_cooldown_sec"], 1800),
+        sweep_share=float(row["sweep_share"] or 0.90),
+        sweep_delay_sec=_as_int(row["sweep_delay_sec"], 45),
+        sweep_cooldown_sec=_as_int(row["sweep_cooldown_sec"], 30),
     )
 
 
@@ -69,7 +73,7 @@ async def claim_tick(conn) -> Optional[Dict[str, Any]]:
           AND enabled = TRUE
           AND (
               last_tick_at IS NULL
-              OR last_tick_at < NOW() - (GREATEST(tick_interval_sec, 30) * 0.8) * INTERVAL '1 second'
+              OR last_tick_at < NOW() - (GREATEST(tick_interval_sec, 8) * 0.8) * INTERVAL '1 second'
           )
         RETURNING *
         """
@@ -118,7 +122,7 @@ async def claim_group_action(conn, chat_id: int, kind: str, cooldown_sec: int) -
     column = "last_topup_at" if kind == "topup" else "last_sweep_at"
     if column not in ("last_topup_at", "last_sweep_at"):
         return False
-    wait = max(60, int(cooldown_sec or 60))
+    wait = max(8, int(cooldown_sec or 8))
     row = await conn.fetchrow(
         f"""
         UPDATE nika_group_settings
@@ -205,7 +209,7 @@ async def drain_per_hour(conn, chat_id: int, window_hours: int = 6) -> float:
 
 
 async def sweep_window(conn, chat_id: int, delay_sec: int) -> Dict[str, Any]:
-    wait = int(max(60, delay_sec))
+    wait = int(max(8, delay_sec))
     row = await conn.fetchrow(
         """
         SELECT
@@ -542,6 +546,7 @@ async def update_global_settings(
     enabled: Optional[bool] = None,
     dry_run: Optional[bool] = None,
     tick_interval_sec: Optional[int] = None,
+    sweep_speed: Optional[str] = None,
 ) -> None:
     sets = ["updated_at = NOW()"]
     args: list = []
@@ -551,12 +556,20 @@ async def update_global_settings(
     if dry_run is not None:
         args.append(bool(dry_run))
         sets.append(f"dry_run = ${len(args)}")
+    speed_key = None
+    if sweep_speed is not None:
+        speed_key = normalize_sweep_speed(sweep_speed)
+        args.append(speed_key)
+        sets.append(f"sweep_speed = ${len(args)}")
+        # Скорость сбора сама подтягивает шаг проверки, если его не задали отдельно.
+        if tick_interval_sec is None:
+            tick_interval_sec = int(sweep_speed_preset(speed_key)["tickSec"])
     if tick_interval_sec is not None:
         tick = int(tick_interval_sec)
-        if tick < 30:
-            tick = 30
-        if tick > 3600:
-            tick = 3600
+        if tick < MIN_TICK_SEC:
+            tick = MIN_TICK_SEC
+        if tick > MAX_TICK_SEC:
+            tick = MAX_TICK_SEC
         args.append(tick)
         sets.append(f"tick_interval_sec = ${len(args)}")
     if len(args) == 0:

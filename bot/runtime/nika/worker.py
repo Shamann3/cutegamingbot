@@ -9,8 +9,21 @@ from bot.runtime.nika.engine import run_tick
 from bot.runtime.nika.schema import ensure_nika_schema
 
 _STARTED = False
-_MIN_SLEEP = 15
+_MIN_SLEEP = 8
 _MAX_SLEEP = 180
+
+
+def _tick_sleep(summary: dict) -> int:
+    tick = int((summary or {}).get("tick_interval_sec") or 20)
+    if tick < _MIN_SLEEP:
+        tick = _MIN_SLEEP
+    if tick > _MAX_SLEEP:
+        tick = _MAX_SLEEP
+    if (summary or {}).get("error") in ("skipped", "disabled"):
+        return min(tick, 12)
+    if int(((summary or {}).get("commands") or {}).get("processed") or 0) > 0:
+        return min(tick, 8)
+    return tick
 
 
 def start_nika_worker(db, bot) -> None:
@@ -20,16 +33,12 @@ def start_nika_worker(db, bot) -> None:
     _STARTED = True
 
     async def _loop() -> None:
-        sleep_for = 30
+        sleep_for = 12
         while True:
             try:
                 summary = await run_tick(db, bot)
                 if summary.get("ok"):
-                    sleep_for = 30
-                    if summary.get("error") in ("skipped", "disabled"):
-                        sleep_for = 15
-                    if int((summary.get("commands") or {}).get("processed") or 0) > 0:
-                        sleep_for = 8
+                    sleep_for = _tick_sleep(summary)
                 else:
                     sleep_for = min(_MAX_SLEEP, max(_MIN_SLEEP, sleep_for * 2))
                     print(f"[NIKA][LOOP] tick not ok: {summary.get('error')}; retry in {sleep_for}s")
@@ -49,4 +58,4 @@ def start_nika_worker(db, bot) -> None:
             await asyncio.sleep(sleep_for)
 
     asyncio.create_task(_loop())
-    print("[NIKA] worker started (tick ~3 min, heal+commands on every wake)")
+    print("[NIKA] worker started (sweep follows creator speed, heal+commands on every wake)")

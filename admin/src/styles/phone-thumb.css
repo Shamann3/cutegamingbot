@@ -5,18 +5,32 @@ html[data-viewport="phone"] {
   --thumb-dock-h: 4.75rem;
 }
 
+/* Один скролл — сама оболочка. html/body режут по viewport,
+   контент внутри растёт, shell крутится до самого низа. */
+html.is-phone,
+html.is-phone body,
+html.is-phone #root,
+html[data-viewport="phone"],
+html[data-viewport="phone"] body,
+html[data-viewport="phone"] #root {
+  height: var(--tg-viewport-stable-height, 100dvh) !important;
+  max-height: var(--tg-viewport-stable-height, 100dvh) !important;
+  overflow: hidden !important;
+}
+
 html.is-phone .panel-shell,
 html.is-phone .panel-shell:has(.panel-layout-users),
 html.is-phone .panel-shell:has(.panel-layout-farm),
 html[data-viewport="phone"] .panel-shell,
 html[data-viewport="phone"] .panel-shell:has(.panel-layout-users),
 html[data-viewport="phone"] .panel-shell:has(.panel-layout-farm) {
-  height: auto !important;
-  max-height: none !important;
-  min-height: 100dvh;
+  height: var(--tg-viewport-stable-height, 100dvh) !important;
+  max-height: var(--tg-viewport-stable-height, 100dvh) !important;
+  min-height: 0 !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
-  overscroll-behavior-y: contain;
+  overscroll-behavior-y: auto !important;
+  -webkit-overflow-scrolling: touch;
 }
 
 html.is-phone .panel-shell-main,
@@ -27,7 +41,8 @@ html[data-viewport="phone"] .panel-shell:has(.panel-layout-users) .panel-shell-m
   max-height: none !important;
   min-height: 0 !important;
   overflow: visible !important;
-  padding-bottom: calc(var(--thumb-dock-h) + env(safe-area-inset-bottom, 0px) + 1rem) !important;
+  display: block !important;
+  padding-bottom: calc(var(--thumb-dock-h) + env(safe-area-inset-bottom, 0px) + 2.4rem) !important;
 }
 
 html.is-phone .panel-layout,
@@ -35,12 +50,14 @@ html.is-phone [class*="panel-layout-"],
 html.is-phone .panel-layout-users,
 html.is-phone .panel-layout-farm,
 html.is-phone .grp-page,
+html.is-phone .grp-page.users-page,
 html.is-phone .nika-page,
 html.is-phone .panel-users,
 html.is-phone .panel-layout-users > .panel-users,
 html[data-viewport="phone"] .panel-layout,
 html[data-viewport="phone"] [class*="panel-layout-"],
 html[data-viewport="phone"] .panel-layout-users,
+html[data-viewport="phone"] .grp-page.users-page,
 html[data-viewport="phone"] .panel-users,
 html[data-viewport="phone"] .panel-layout-users > .panel-users {
   height: auto !important;
@@ -68,7 +85,8 @@ html[data-viewport="phone"] .panel-layout-users > .panel-users .panel-users-body
   height: auto !important;
   max-height: none !important;
   overflow: visible !important;
-  flex: none !important;
+  flex: 0 0 auto !important;
+  overscroll-behavior: auto !important;
 }
 
 html.is-phone .panel-shell-main *,
@@ -253,7 +271,6 @@ html.is-phone .panel-thumb-dock > button,
 html[data-viewport="phone"] .panel-thumb-dock > button {
   pointer-events: auto;
   border: 0;
-  color: #f4f0ec;
   font: inherit;
   cursor: pointer;
   display: inline-flex;
@@ -273,21 +290,30 @@ html[data-viewport="phone"] .panel-thumb-bell {
 
 html.is-phone .panel-thumb-menu,
 html[data-viewport="phone"] .panel-thumb-menu {
-  width: 4.2rem;
-  height: 4.2rem;
+  width: 4.35rem;
+  height: 4.35rem;
   border-radius: 22px;
-  background: #f4f4f5;
-  color: #111;
-  font-size: 0.7rem;
-  font-weight: 760;
-  letter-spacing: 0.03em;
-  box-shadow: 0 14px 32px -14px rgba(0, 0, 0, 0.95);
+  background: #1c1c1e;
+  color: #f4f4f5;
+  -webkit-text-fill-color: #f4f4f5;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.05;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 14px 32px -14px rgba(0, 0, 0, 0.95);
 }
 
 html.is-phone .panel-thumb-menu.is-open,
 html[data-viewport="phone"] .panel-thumb-menu.is-open {
-  background: #ffd60a;
-  color: #111;
+  background: var(--e-invert-bg, #f4f4f5);
+  color: var(--e-invert-text, #0a0a0a);
+  -webkit-text-fill-color: var(--e-invert-text, #0a0a0a);
+  box-shadow:
+    0 0 0 2px #0a0a0a,
+    0 0 0 4px rgba(244, 244, 245, 0.92),
+    0 16px 36px -12px rgba(0, 0, 0, 0.95);
 }
 
 html.is-phone .panel-thumb-bell svg,
@@ -331,7 +357,7 @@ html.is-phone .chs-root,
 html.is-phone .arc-shell,
 html.is-phone .ach-page,
 html.is-phone .gbl-page,
-html.is-phone .grp-page,
+html.is-phone .grp-page:not(.users-page),
 html.is-phone .tt-page,
 html.is-phone .bq-root,
 html.is-phone .sr-page,
@@ -355,7 +381,7 @@ html[data-viewport="phone"] .chs-root,
 html[data-viewport="phone"] .arc-shell,
 html[data-viewport="phone"] .ach-page,
 html[data-viewport="phone"] .gbl-page,
-html[data-viewport="phone"] .grp-page,
+html[data-viewport="phone"] .grp-page:not(.users-page),
 html[data-viewport="phone"] .tt-page,
 html[data-viewport="phone"] .bq-root,
 html[data-viewport="phone"] .sr-page,

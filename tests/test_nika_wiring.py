@@ -23,6 +23,8 @@ def test_atomic_move_locks_and_updates_both_sides_in_one_transaction():
     assert "CODE_EMPTY_LADDER" in engine
     assert "maybe_sample_universe" in engine
     assert "announce_tech_plus" in engine
+    assert "pick_sweep_dest" in engine
+    assert "apply_sweep_speed" in engine
 
 
 def test_worker_heals_schema_and_does_not_die():
@@ -65,7 +67,7 @@ def test_admin_nika_imports_when_bot_package_missing():
     env["PYTHONPATH"] = server
     env.pop("PYTHONHOME", None)
     code = (
-        "from nika.policy import SOURCE_LADDER, plan_topup, GroupPolicy; "
+        "from nika.policy import SOURCE_LADDER, plan_topup, GroupPolicy, pick_sweep_dest, apply_sweep_speed; "
         "from nika.store import policy_from_row, forbidden_managed_ids; "
         "from nika.incidents import actions_for; "
         "from nika.schema import FIRST_MANAGED_TARGET; "
@@ -113,3 +115,5 @@ def test_schema_uses_timestamptz_and_idempotency():
     assert "idx_nika_transfer_pending" in schema
     assert "FIRST_MANAGED_CHAT_ID = -1001612636292" in schema
     assert "FIRST_MANAGED_TARGET = 5000" in schema
+    assert "sweep_speed" in schema
+    assert "BETWEEN 15 AND 3600" in schema

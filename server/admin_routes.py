@@ -4725,7 +4725,8 @@ async def admin_captcha_overview(
 class NikaSettingsBody(BaseModel):
     enabled: bool | None = None
     dry_run: bool | None = None
-    tick_interval_sec: int | None = Field(default=None, ge=30, le=3600)
+    tick_interval_sec: int | None = Field(default=None, ge=15, le=3600)
+    sweep_speed: str | None = Field(default=None, max_length=16)
     model_config = {"extra": "forbid"}
 
 
@@ -4837,6 +4838,7 @@ async def admin_nika_settings(
         enabled=body.enabled,
         dry_run=body.dry_run,
         tick_interval_sec=body.tick_interval_sec,
+        sweep_speed=body.sweep_speed,
     )
     await log_admin_action(
         admin_id, "nika_settings",

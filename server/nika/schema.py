@@ -36,14 +36,16 @@ CREATE TABLE IF NOT EXISTS nika_settings (
     id SMALLINT PRIMARY KEY DEFAULT 1,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     dry_run BOOLEAN NOT NULL DEFAULT FALSE,
-    tick_interval_sec INTEGER NOT NULL DEFAULT 180,
+    tick_interval_sec INTEGER NOT NULL DEFAULT 20,
+    sweep_speed TEXT NOT NULL DEFAULT 'fast',
     owner_alert_user_id BIGINT,
     owner_alert_cooldown_sec INTEGER NOT NULL DEFAULT 21600,
     last_owner_alert_at TIMESTAMPTZ,
     last_tick_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT nika_settings_singleton CHECK (id = 1),
-    CONSTRAINT nika_settings_tick_range CHECK (tick_interval_sec BETWEEN 30 AND 3600),
+    CONSTRAINT nika_settings_tick_range CHECK (tick_interval_sec BETWEEN 15 AND 3600),
+    CONSTRAINT nika_settings_sweep_speed CHECK (sweep_speed IN ('instant', 'fast', 'medium', 'slow')),
     CONSTRAINT nika_settings_alert_cooldown CHECK (owner_alert_cooldown_sec >= 600)
 );
 
@@ -59,9 +61,9 @@ CREATE TABLE IF NOT EXISTS nika_group_settings (
     max_transfer BIGINT NOT NULL DEFAULT 1000,
     max_daily_topup BIGINT NOT NULL DEFAULT 10000,
     max_daily_sweep BIGINT NOT NULL DEFAULT 10000,
-    sweep_share DOUBLE PRECISION NOT NULL DEFAULT 0.25,
-    sweep_delay_sec INTEGER NOT NULL DEFAULT 3600,
-    sweep_cooldown_sec INTEGER NOT NULL DEFAULT 1800,
+    sweep_share DOUBLE PRECISION NOT NULL DEFAULT 0.90,
+    sweep_delay_sec INTEGER NOT NULL DEFAULT 45,
+    sweep_cooldown_sec INTEGER NOT NULL DEFAULT 30,
     last_topup_at TIMESTAMPTZ,
     last_sweep_at TIMESTAMPTZ,
     note TEXT,
@@ -76,8 +78,8 @@ CREATE TABLE IF NOT EXISTS nika_group_settings (
     CONSTRAINT nika_group_max_daily_topup CHECK (max_daily_topup >= 0),
     CONSTRAINT nika_group_max_daily_sweep CHECK (max_daily_sweep >= 0),
     CONSTRAINT nika_group_sweep_share CHECK (sweep_share > 0 AND sweep_share <= 1),
-    CONSTRAINT nika_group_sweep_delay CHECK (sweep_delay_sec >= 60),
-    CONSTRAINT nika_group_sweep_cooldown CHECK (sweep_cooldown_sec >= 60)
+    CONSTRAINT nika_group_sweep_delay CHECK (sweep_delay_sec >= 8),
+    CONSTRAINT nika_group_sweep_cooldown CHECK (sweep_cooldown_sec >= 8)
 );
 
 -- Тик перебирает только включённые группы, их единицы - частичный индекс
@@ -248,6 +250,26 @@ ALTER TABLE nika_universe_sample ADD COLUMN IF NOT EXISTS live_chats_balance BIG
 ALTER TABLE nika_universe_sample ADD COLUMN IF NOT EXISTS managed_balance BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE nika_universe_sample ADD COLUMN IF NOT EXISTS ladder_balance BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE nika_universe_sample ADD COLUMN IF NOT EXISTS vault_balance BIGINT NOT NULL DEFAULT 0;
+
+ALTER TABLE nika_settings ADD COLUMN IF NOT EXISTS sweep_speed TEXT NOT NULL DEFAULT 'fast';
+ALTER TABLE nika_settings DROP CONSTRAINT IF EXISTS nika_settings_tick_range;
+ALTER TABLE nika_settings ADD CONSTRAINT nika_settings_tick_range
+    CHECK (tick_interval_sec BETWEEN 15 AND 3600);
+ALTER TABLE nika_settings DROP CONSTRAINT IF EXISTS nika_settings_sweep_speed;
+ALTER TABLE nika_settings ADD CONSTRAINT nika_settings_sweep_speed
+    CHECK (sweep_speed IN ('instant', 'fast', 'medium', 'slow'));
+UPDATE nika_settings
+   SET tick_interval_sec = 20
+ WHERE id = 1
+   AND tick_interval_sec = 180
+   AND sweep_speed = 'fast';
+
+ALTER TABLE nika_group_settings DROP CONSTRAINT IF EXISTS nika_group_sweep_delay;
+ALTER TABLE nika_group_settings ADD CONSTRAINT nika_group_sweep_delay
+    CHECK (sweep_delay_sec >= 8);
+ALTER TABLE nika_group_settings DROP CONSTRAINT IF EXISTS nika_group_sweep_cooldown;
+ALTER TABLE nika_group_settings ADD CONSTRAINT nika_group_sweep_cooldown
+    CHECK (sweep_cooldown_sec >= 8);
 """
 
 _LEDGER_INDEX_SQL = """

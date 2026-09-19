@@ -154,6 +154,16 @@
 }
 .grp-page.nika-page .nika-seg-mini { width: max-content; position: static; }
 .grp-page.nika-page .nika-seg-mini .nika-seg-btn { min-width: 4.4rem; }
+.grp-page.nika-page .nika-sweep-seg {
+  width: 100%;
+  margin: 0.15rem 0 0.35rem;
+}
+.grp-page.nika-page .nika-sweep-seg .nika-seg-btn {
+  flex: 1 1 calc(50% - 0.28rem);
+  min-width: 0;
+  white-space: normal;
+  text-align: center;
+}
 .grp-page.nika-page .nika-filter { margin: 0.75rem 0 0.45rem; }
 
 .grp-page.nika-page .nika-panel {

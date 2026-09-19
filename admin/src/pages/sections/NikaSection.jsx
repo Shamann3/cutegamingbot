@@ -30,10 +30,17 @@ const SPEED = [
   { id: 'aggressive', label: 'Жёстко' },
 ]
 
+const SWEEP_SPEED = [
+  { id: 'instant', label: 'Мгновенно', hint: '15 сек · забирает всё над запасом в дом игр' },
+  { id: 'fast', label: 'Быстро', hint: '45 сек · почти весь излишек в техкассы' },
+  { id: 'medium', label: 'Средне', hint: '3 мин · большую часть, спокойнее' },
+  { id: 'slow', label: 'Тихо', hint: '15 мин · как раньше, долго смотрит' },
+]
+
 const THINK = [
   'Смотрит баланс каждой группы и сравнивает его с целью.',
   'Ниже цели — берёт куты из игр и касс, никогда не закрывает дыру одним разом.',
-  'Выше цели — ждёт выдержку, потом часть уходит в копилку.',
+  'Выше цели — быстро забирает лишнее в техкассы. Скорость задаёшь в «Система».',
   'Игроки этого не видят. Деньги двигает только бот.',
 ]
 
@@ -92,7 +99,7 @@ function statusLabel(status) {
 }
 
 function kindLabel(kind) {
-  if (kind === 'sweep') return 'Сбор в копилку'
+  if (kind === 'sweep') return 'Сбор в техкассы'
   if (kind === 'topup') return 'Долив группы'
   if (kind === 'revert') return 'Возврат'
   return kind || '—'
@@ -123,6 +130,14 @@ function speedLabel(mode) {
   return SPEED.find((s) => s.id === mode)?.label || mode || 'Авто'
 }
 
+function sweepSpeedLabel(mode) {
+  return SWEEP_SPEED.find((s) => s.id === mode)?.label || 'Быстро'
+}
+
+function sweepSpeedHint(mode) {
+  return SWEEP_SPEED.find((s) => s.id === mode)?.hint || SWEEP_SPEED[1].hint
+}
+
 function cashTitle(src) {
   const t = String(src?.title || src?.sourceTitle || '')
   if (t === 'игры' || /комисс/i.test(t)) return 'Игры'
@@ -136,8 +151,8 @@ function cashHint(src) {
   const t = String(src?.title || '')
   if (t === 'игры' || /комисс/i.test(t)) return 'комиссии с игр, первый источник долива'
   if (t === 'фон' || /фонов/i.test(t)) return 'фоновые заработки'
-  if (/рынок|дом/i.test(t)) return 'дом игр'
-  if (/копилк|прибыл/i.test(t)) return 'чистая прибыль, руками не снимаем'
+  if (/рынок|дом/i.test(t)) return 'дом игр — сюда первым делом уходит лишнее с групп'
+  if (/копилк|прибыл/i.test(t)) return 'чистая прибыль, последний приёмник если техкассы недоступны'
   return 'касса для долива баланса групп'
 }
 
@@ -366,7 +381,7 @@ export default function NikaSection() {
         <div>
           <h2>Плюсы и минусы</h2>
           <p className="nika-help">
-            Плюс — сбор в копилку и комиссии игр. Минус — долив баланса групп из игр и касс.
+            Плюс — сбор лишнего в техкассы и комиссии игр. Минус — долив баланса групп из игр и касс.
             С {when(earn?.since)}.
           </p>
         </div>
@@ -378,7 +393,7 @@ export default function NikaSection() {
       <FlowStrip
         plus={earn?.nika?.plus || 0}
         minus={earn?.nika?.minus || 0}
-        plusHint={`копилка ${fmt(earn?.nika?.sweptToVault)} · игры ${fmt(earn?.games?.commission)}`}
+        plusHint={`сбор ${fmt(earn?.nika?.sweptToVault)} · игры ${fmt(earn?.games?.commission)}`}
         minusHint="долив баланса групп"
       />
       {(extrema?.best || extrema?.worst) && (
@@ -471,7 +486,7 @@ export default function NikaSection() {
             <article className="nika-mach-tile">
               <small>Проверка</small>
               <b>{data?.lastTickAt ? ago(data.lastTickAt) : 'ещё не было'}</b>
-              <em>каждые {tickEvery} сек</em>
+              <em>каждые {tickEvery} сек · сбор {sweepSpeedLabel(data?.sweepSpeed || data?.settings?.sweepSpeed).toLowerCase()}</em>
             </article>
             <article className={`nika-mach-tile${data?.staleWorker ? ' is-hot' : ''}`}>
               <small>Бот</small>
@@ -506,7 +521,7 @@ export default function NikaSection() {
 
           <section className="nika-panel">
             <h2>Игры и кассы</h2>
-            <p className="nika-help">Откуда Ника берёт куты на долив баланса групп. Копилка — последний источник и дом лишнего.</p>
+            <p className="nika-help">Откуда Ника берёт куты на долив. Лишнее с групп сначала идёт в дом игр, потом в остальные техкассы, копилка — запасной сейф.</p>
             <div className="nika-tables">
               {ladder.map((src) => {
                 const flow = chatFlow(transfers, src.chatId)
@@ -536,7 +551,7 @@ export default function NikaSection() {
                   compact
                   plus={Number(earn?.nika?.sweptToVault) || vaultFlow.plus}
                   minus={vaultFlow.minus}
-                  plusHint="сбор с групп"
+                  plusHint="если дошло до копилки"
                   minusHint="если брали отсюда"
                 />
               </article>
@@ -947,6 +962,43 @@ export default function NikaSection() {
 
       {tab === 'settings' && (
         <div className="nika-pane nika-stack">
+          <section className="nika-panel">
+            <h2>Сбор лишнего</h2>
+            <p className="nika-help">
+              Если на БЧ больше цели — Ника сама забирает излишек и кладёт в техкассы
+              (дом игр → игры → фон → копилка). Чем быстрее режим, тем короче пауза.
+            </p>
+            <div className="nika-seg nika-sweep-seg" role="group" aria-label="Скорость сбора">
+              {SWEEP_SPEED.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`nika-seg-btn${(data?.sweepSpeed || data?.settings?.sweepSpeed || 'fast') === s.id ? ' is-on' : ''}`}
+                  disabled={!!busy}
+                  onClick={async () => {
+                    try {
+                      setBusy(`sweep:${s.id}`)
+                      const pulse = await saveNikaSettings({ sweep_speed: s.id })
+                      applyPulse(pulse)
+                      showToast(`Сбор: ${s.label}`)
+                      await load()
+                    } catch (err) {
+                      showToast(err.message || 'Не сохранилась скорость', 'error')
+                    } finally {
+                      setBusy('')
+                    }
+                  }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <p className="nika-help">{sweepSpeedHint(data?.sweepSpeed || data?.settings?.sweepSpeed)}</p>
+            <p className="nika-help">
+              Пример: цель 3000, на БЧ 3152 — заберёт лишние ~150 кут в дом игр,
+              оставив маленький запас над целью, чтобы не качать туда-сюда.
+            </p>
+          </section>
           <div className="nika-ios-list">
             <button
               type="button"
@@ -982,6 +1034,10 @@ export default function NikaSection() {
               <span>Без движения кут</span>
               <i className={`nika-switch${data?.dryRun ? ' is-on' : ''}`} />
             </button>
+            <div className="nika-ios-row is-static">
+              <span>Шаг проверки</span>
+              <b>каждые {tickEvery} сек</b>
+            </div>
             <div className="nika-ios-row is-static">
               <span>Последняя проверка</span>
               <b>{when(data?.lastTickAt)}</b>

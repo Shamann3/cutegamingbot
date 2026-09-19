@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Optional, Tuple
 
 from bot.config.config import (
@@ -35,12 +35,24 @@ SOURCE_LADDER: Tuple[Tuple[int, str], ...] = (
     (PROFIT_JAR_CHAT_ID, "копилка"),
 )
 
-# Куда уходит излишек. Та же копилка, что и последний источник: излишек группы
-# - это и есть чистый заработок проекта.
+# Куда уходит излишек. Сначала технические кассы (дом игр → комиссии → фон),
+# копилка — только если выше некуда. Источник сам себя не кормит.
+SWEEP_DEST_LADDER: Tuple[Tuple[int, str], ...] = (
+    (TECH_CHAT_ID, "дом игр"),
+    (GAME_COMMISSION_CHAT_ID, "игры"),
+    (BACKGROUND_EARNINGS_CHAT_ID, "фон"),
+    (PROFIT_JAR_CHAT_ID, "копилка"),
+)
+# Копилка остаётся «сейфом» аналитики. Реальный сбор идёт по лестнице выше.
 SWEEP_DEST_CHAT_ID = PROFIT_JAR_CHAT_ID
 
 SPEED_MODES: Tuple[str, ...] = ("auto", "slow", "medium", "aggressive")
 DEFAULT_SPEED_MODE = "auto"
+
+# Глобальная скорость сбора лишнего. Долив группы (speed_mode) — другое:
+# там осторожность. Здесь — как быстро снимать то, что уже выше цели.
+SWEEP_SPEEDS: Tuple[str, ...] = ("instant", "fast", "medium", "slow")
+DEFAULT_SWEEP_SPEED = "fast"
 
 # ---------------------------------------------------------------------------
 # Готовые режимы владельца: (доля цели за один долив, максимальная доля
@@ -89,9 +101,25 @@ DEFAULT_MAX_TRANSFER_PCT = 0.20
 DEFAULT_MAX_TRANSFER_FLOOR = 50
 DEFAULT_MAX_DAILY_TARGETS = 2.0
 DEFAULT_MAX_DAILY_FLOOR = 500
-DEFAULT_SWEEP_SHARE = 0.25
-DEFAULT_SWEEP_DELAY_SEC = 3600
-DEFAULT_SWEEP_COOLDOWN_SEC = 1800
+# Запас, который оставляем НАД целью после сбора — чтобы не качать
+# «снял ровно до цели → одна ставка → долив». Это не мёртвая зона долива.
+DEFAULT_SWEEP_SHARE = 0.90
+DEFAULT_SWEEP_DELAY_SEC = 45
+DEFAULT_SWEEP_COOLDOWN_SEC = 30
+DEFAULT_SWEEP_KEEP_PCT = 0.01
+DEFAULT_SWEEP_KEEP_MIN = 15
+
+MIN_TICK_SEC = 15
+MAX_TICK_SEC = 3600
+MIN_SWEEP_WAIT_SEC = 8
+
+# delay, cooldown, share, keep_pct, keep_min, recommended tick
+_SWEEP_SPEED_PRESETS: Dict[str, Tuple[int, int, float, float, int, int]] = {
+    "instant": (15, 15, 1.00, 0.005, 10, 15),
+    "fast": (45, 30, 0.90, 0.01, 15, 20),
+    "medium": (180, 120, 0.60, 0.02, 40, 60),
+    "slow": (900, 600, 0.35, 0.05, 100, 180),
+}
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -117,6 +145,8 @@ class GroupPolicy:
     sweep_share: float = DEFAULT_SWEEP_SHARE
     sweep_delay_sec: int = DEFAULT_SWEEP_DELAY_SEC
     sweep_cooldown_sec: int = DEFAULT_SWEEP_COOLDOWN_SEC
+    sweep_keep_pct: float = DEFAULT_SWEEP_KEEP_PCT
+    sweep_keep_min: int = DEFAULT_SWEEP_KEEP_MIN
 
 
 @dataclass(frozen=True)
@@ -144,9 +174,77 @@ def dead_zone(policy: GroupPolicy) -> int:
     return int(max(0, policy.dead_zone_min, by_pct))
 
 
+def sweep_keep(policy: GroupPolicy) -> int:
+    """Сколько кут оставляем над целью, чтобы сбор не ронял группу в долив."""
+    by_pct = int(round(max(0, policy.target_balance) * max(0.0, policy.sweep_keep_pct)))
+    return int(max(0, policy.sweep_keep_min, by_pct))
+
+
 def normalize_speed_mode(mode: object) -> str:
     text = str(mode or "").strip().lower()
     return text if text in SPEED_MODES else DEFAULT_SPEED_MODE
+
+
+def normalize_sweep_speed(mode: object) -> str:
+    text = str(mode or "").strip().lower()
+    return text if text in SWEEP_SPEEDS else DEFAULT_SWEEP_SPEED
+
+
+def sweep_speed_preset(mode: object) -> Dict[str, float]:
+    """Числа выбранной скорости сбора. Источник правды для UI и engine."""
+    key = normalize_sweep_speed(mode)
+    delay, cooldown, share, keep_pct, keep_min, tick = _SWEEP_SPEED_PRESETS[key]
+    return {
+        "key": key,
+        "delaySec": int(delay),
+        "cooldownSec": int(cooldown),
+        "share": float(share),
+        "keepPct": float(keep_pct),
+        "keepMin": int(keep_min),
+        "tickSec": int(tick),
+    }
+
+
+def apply_sweep_speed(policy: GroupPolicy, mode: object) -> GroupPolicy:
+    """Наложить глобальную скорость сбора на политику группы.
+
+    Колонки группы остаются запасным контуром. Скорость, которую задаёт
+    создатель во вкладке «Ника», всегда главнее: иначе одна медленная
+    строка в БД снова держала бы излишек час.
+    """
+    preset = sweep_speed_preset(mode)
+    daily = int(policy.max_daily_sweep)
+    if float(preset["share"]) >= 0.85:
+        daily = max(daily, int(policy.target_balance) * 20, 50_000)
+    return replace(
+        policy,
+        sweep_share=float(preset["share"]),
+        sweep_delay_sec=int(preset["delaySec"]),
+        sweep_cooldown_sec=int(preset["cooldownSec"]),
+        sweep_keep_pct=float(preset["keepPct"]),
+        sweep_keep_min=int(preset["keepMin"]),
+        max_daily_sweep=daily,
+    )
+
+
+def pick_sweep_dest(source_chat_id: int) -> Optional[int]:
+    """Первая техкасса, которая не является самой группой-источником."""
+    src = int(source_chat_id)
+    for chat_id, _title in SWEEP_DEST_LADDER:
+        dest = int(chat_id)
+        if dest != src:
+            return dest
+    return None
+
+
+def sweep_dest_title(chat_id: Optional[int]) -> str:
+    if chat_id is None:
+        return ""
+    dest = int(chat_id)
+    for cid, title in SWEEP_DEST_LADDER:
+        if int(cid) == dest:
+            return title
+    return ""
 
 
 def activity_tier(events_24h: int) -> Tuple[str, float, float, int]:
@@ -240,52 +338,61 @@ def plan_sweep(
     history_covers_delay: bool,
     daily_sweep_used: int = 0,
 ) -> Plan:
-    """Сколько излишка снять в копилку прямо сейчас.
+    """Сколько излишка снять в техгруппы прямо сейчас.
 
-    stable_balance - МИНИМУМ баланса за окно sweep_delay_sec. Именно он, а не
-    текущий баланс, даёт требуемую задержку: свежее пополнение группы в это
-    окно ещё не попало, поэтому оно не собирается сразу, а только после того,
-    как продержалось выше цели весь период ожидания.
+    Порог сбора — sweep_keep, не мёртвая зона долива. Иначе при цели 3000
+    излишек 152 кута «не существовал»: 5% цели = 150. Сбор оставляет запас
+    над целью, чтобы сразу не включать долив.
+
+    stable_balance — МИНИМУМ за окно sweep_delay_sec. На быстрых режимах
+    окно короткое (15–45 сек), на тихом — минуты. Свежий депозит игрока
+    в окно не попадает и не снимается сразу.
     """
     target = int(max(0, policy.target_balance))
-    dz = dead_zone(policy)
+    keep = sweep_keep(policy)
     gap = target - int(balance)
+    wait = int(max(MIN_SWEEP_WAIT_SEC, policy.sweep_cooldown_sec))
 
     if target <= 0:
-        return Plan("none", 0, policy.sweep_cooldown_sec, "sweep", "цель не задана", skip="no_target", dead_zone=dz, gap=gap)
-    if int(balance) - target <= dz:
-        return Plan("none", 0, policy.sweep_cooldown_sec, "sweep", "излишек в пределах мёртвой зоны",
-                    skip="dead_zone", dead_zone=dz, gap=gap)
+        return Plan("none", 0, wait, "sweep", "цель не задана", skip="no_target", dead_zone=keep, gap=gap)
+    if int(balance) - target <= keep:
+        return Plan("none", 0, wait, "sweep", "излишек в пределах запаса над целью",
+                    skip="keep", dead_zone=keep, gap=gap)
     if not history_covers_delay or stable_balance is None:
-        return Plan("none", 0, policy.sweep_cooldown_sec, "sweep", "жду выдержку излишка",
-                    skip="sweep_delay", dead_zone=dz, gap=gap)
+        return Plan("none", 0, wait, "sweep", "жду короткую выдержку излишка",
+                    skip="sweep_delay", dead_zone=keep, gap=gap)
 
     stable_excess = int(stable_balance) - target
-    if stable_excess <= dz:
-        return Plan("none", 0, policy.sweep_cooldown_sec, "sweep", "устойчивого излишка нет",
-                    skip="sweep_delay", dead_zone=dz, gap=gap)
+    if stable_excess <= keep:
+        return Plan("none", 0, wait, "sweep", "устойчивого излишка нет",
+                    skip="sweep_delay", dead_zone=keep, gap=gap)
 
-    step_raw = int(round(stable_excess * max(0.0, policy.sweep_share)))
+    takeable = int(stable_excess - keep)
+    step_raw = int(round(takeable * max(0.0, min(1.0, policy.sweep_share))))
     min_step = int(max(1, round(target * MIN_STEP_PCT)))
-    amount = max(step_raw, min_step)
+    amount = max(step_raw, min_step) if takeable >= min_step else takeable
 
-    # Ниже цели группу не опускаем даже на кут.
-    amount = min(amount, stable_excess)
-    amount = min(amount, int(max(0, policy.max_transfer)))
+    # Ниже цели+запаса группу не опускаем даже на кут.
+    amount = min(amount, takeable)
+    # Быстрый сбор не грызёт потолком одного долива: иначе с 50к снимут 600.
+    # Тихий/средний режимы оставляют потолок, чтобы не опустошать стол разом.
+    if policy.sweep_share < 0.85:
+        amount = min(amount, int(max(0, policy.max_transfer)))
     daily_left = int(max(0, policy.max_daily_sweep)) - int(max(0, daily_sweep_used))
     amount = min(amount, daily_left)
 
     if amount <= 0:
         skip = "daily_cap" if daily_left <= 0 else "cap"
-        return Plan("none", 0, policy.sweep_cooldown_sec, "sweep", f"сбор заблокирован потолком ({skip})",
-                    skip=skip, dead_zone=dz, gap=gap, step_raw=step_raw)
+        return Plan("none", 0, wait, "sweep", f"сбор заблокирован потолком ({skip})",
+                    skip=skip, dead_zone=keep, gap=gap, step_raw=step_raw)
 
     reason = (
         f"сбор излишка над целью {target}: баланс {int(balance)}, "
-        f"устойчивый излишек {stable_excess}, доля {policy.sweep_share:.2f}, шаг {step_raw}→{amount}"
+        f"устойчивый излишек {stable_excess}, запас {keep}, "
+        f"доля {policy.sweep_share:.2f}, шаг {step_raw}→{amount}"
     )
-    return Plan("sweep", int(amount), int(max(60, policy.sweep_cooldown_sec)), "sweep", reason,
-                dead_zone=dz, gap=gap, step_raw=step_raw)
+    return Plan("sweep", int(amount), wait, "sweep", reason,
+                dead_zone=keep, gap=gap, step_raw=step_raw)
 
 
 def allocate_from_ladder(
