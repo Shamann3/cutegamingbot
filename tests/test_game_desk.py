@@ -116,6 +116,7 @@ def test_panel_games_is_creator_only():
     assert "Техработы" in section
     assert "maintenance" in section
     assert "gm-tile" in section
+    assert "<article" in section
     assert "GameSkin" in section
     assert "gm-skin-" in section
     assert "is-dirty" not in section
@@ -127,8 +128,11 @@ def test_panel_games_is_creator_only():
     assert "roulette:" in skin
     assert "cookie:" in skin
     css = _read("admin", "src", "styles", "games.css")
-    assert "aspect-ratio: 1 / 1" in css
-    assert "border-radius: 2px !important" in css
+    assert "aspect-ratio: auto" in css
+    assert "border-radius: 0 !important" in css
+    assert "gm-skin-board" in css
+    assert "gm-skin-roulette" in css
+    assert "article.gm-tile" in css
     assert "repeating-linear-gradient" not in css
     assert "repeating-conic-gradient" not in css
     assert "position: sticky" not in css

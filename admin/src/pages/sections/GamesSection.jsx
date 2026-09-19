@@ -448,17 +448,26 @@ export default function GamesSection() {
                 const spark = (pack.days || []).map((d) => Number(d.plus) || 0)
                 const theme = themeOf(g)
                 return (
-                  <button
+                  <article
                     key={g.key}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     style={themeVars(theme)}
                     className={`gm-tile gm-skin-${theme.motif}${state.enabled ? '' : ' is-off'}${state.maintenance ? ' is-maint' : ''}${selected === g.key ? ' is-on' : ''}`}
                     onClick={() => { setSelected(g.key); setTab('game') }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setSelected(g.key)
+                        setTab('game')
+                      }
+                    }}
                   >
+                    <b className="gm-tile-edge" aria-hidden="true" />
                     <GameSkin motif={theme.motif} />
                     <header>
                       <h3><em>{g.emoji}</em> {g.title}</h3>
-                      <span className={`nika-pill nika-pill-${status.tone === 'hot' ? 'bad' : status.tone}`}>{status.label}</span>
+                      <span className={`gm-chip gm-chip-${status.tone === 'hot' ? 'bad' : status.tone}`}>{status.label}</span>
                     </header>
                     <p>{g.mood || g.hint}</p>
                     <p className="gm-tile-kicker">Собрано комиссией</p>
@@ -468,7 +477,7 @@ export default function GamesSection() {
                       <em>{state.minBet ?? 0}–{fmt(state.maxBet || 0)} кут</em>
                     </div>
                     <NikaSpark values={spark} />
-                  </button>
+                  </article>
                 )
               })}
             </div>

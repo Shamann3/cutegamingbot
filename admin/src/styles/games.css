@@ -4,11 +4,13 @@
 
 .grp-page.gm-page .gm-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15.2rem, 1fr));
-  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fill, minmax(17.4rem, 1fr));
+  gap: 0.75rem;
   margin-top: 0.95rem;
 }
 
+html body .grp-page.gm-page article.gm-tile,
+html body .grp-page.nika-page.gm-page .gm-tile,
 .grp-page.gm-page .gm-tile {
   --gm-accent: #8a827c;
   --gm-accent2: #d8cfc6;
@@ -17,51 +19,55 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 0.28rem;
+  justify-content: flex-end;
+  gap: 0.32rem;
   width: 100%;
   min-width: 0;
-  aspect-ratio: 1 / 1;
+  min-height: 13.6rem;
+  aspect-ratio: auto;
   overflow: hidden;
   isolation: isolate;
-  padding: 1rem 1rem 0.85rem;
+  padding: 1.05rem 1.05rem 0.95rem 1.2rem;
   text-align: left;
   color: inherit;
   font: inherit;
   cursor: pointer;
   letter-spacing: 0;
-  border-radius: 2px !important;
-  border: 1px solid color-mix(in srgb, var(--gm-accent) 42%, rgba(255,255,255,.08));
-  background:
-    radial-gradient(120% 88% at 100% 0%, color-mix(in srgb, var(--gm-accent) 34%, transparent), transparent 58%),
-    radial-gradient(80% 70% at 0% 100%, color-mix(in srgb, var(--gm-accent2) 18%, transparent), transparent 52%),
-    linear-gradient(180deg, color-mix(in srgb, var(--gm-ink) 94%, #090909), #090909);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gm-accent) 10%, transparent);
+  border-radius: 0 !important;
+  border: 1px solid color-mix(in srgb, var(--gm-accent) 46%, rgba(255,255,255,.08));
+  background: var(--gm-ink);
+  box-shadow: none;
+}
+
+.grp-page.gm-page .gm-tile-edge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: var(--gm-accent);
+  z-index: 2;
 }
 
 .grp-page.gm-page .gm-tile.is-on {
-  border-color: color-mix(in srgb, var(--gm-accent) 72%, #fff);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--gm-accent) 22%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--gm-accent) 28%, transparent);
+  border-color: color-mix(in srgb, var(--gm-accent) 80%, #fff);
 }
 
-.grp-page.gm-page .gm-tile.is-off { opacity: 0.68; }
+.grp-page.gm-page .gm-tile.is-off { opacity: 0.7; }
 .grp-page.gm-page .gm-tile.is-maint {
-  border-color: color-mix(in srgb, #ff453a 46%, var(--gm-accent));
+  border-color: #ff453a;
 }
 
 .grp-page.gm-page .gm-skin-art,
 .grp-page.gm-page .gm-hero .gm-skin-art {
   position: absolute;
-  right: -0.4rem;
-  top: -0.55rem;
-  width: 10.2rem;
-  height: 10.2rem;
+  right: -0.2rem;
+  top: -0.3rem;
+  width: 11.4rem;
+  height: 11.4rem;
   color: var(--gm-accent);
   pointer-events: none;
   z-index: 0;
-  opacity: 0.95;
 }
 
 .grp-page.gm-page .gm-skin-mark {
@@ -85,6 +91,7 @@
   align-items: flex-start;
   gap: 0.5rem;
   min-width: 0;
+  margin-bottom: auto;
 }
 
 .grp-page.gm-page .gm-tile h3 {
@@ -94,43 +101,50 @@
   margin: 0;
   min-width: 0;
   color: #fff;
-  font-size: 1.12rem;
+  font-size: 1.16rem;
   letter-spacing: -0.03em;
   overflow-wrap: anywhere;
 }
 
 .grp-page.gm-page .gm-tile h3 em {
   font-style: normal;
-  font-size: 1.28rem;
+  font-size: 1.3rem;
   line-height: 1;
 }
 
-.grp-page.gm-page .gm-tile .nika-pill {
+.grp-page.gm-page .gm-chip {
   flex: 0 0 auto;
-  border-radius: 2px !important;
+  font-size: 0.68rem;
+  padding: 0.16rem 0.42rem;
+  border-radius: 0 !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
+.grp-page.gm-page .gm-chip-ok { color: #b8e0b4; background: #122010; }
+.grp-page.gm-page .gm-chip-bad { color: #ffc4bc; background: #2a0c0c; }
+.grp-page.gm-page .gm-chip-mute { color: #9a908c; background: #161616; }
 
 .grp-page.gm-page .gm-tile > p {
   margin: 0;
-  color: color-mix(in srgb, var(--gm-accent) 28%, #cfc6be);
-  font-size: 0.78rem;
+  color: #d4cbc3;
+  font-size: 0.8rem;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .grp-page.gm-page .gm-tile-kicker {
-  margin: auto 0 0 !important;
-  color: color-mix(in srgb, var(--gm-accent) 55%, #8a827c) !important;
+  margin: 0.35rem 0 0 !important;
+  color: color-mix(in srgb, var(--gm-accent) 70%, #cfc6be) !important;
   font-size: 0.64rem !important;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .grp-page.gm-page .gm-tile strong {
   display: block;
   color: #fff;
-  font-size: clamp(1.35rem, 2.4vw, 1.7rem);
-  letter-spacing: -0.04em;
+  font-size: clamp(1.4rem, 2.5vw, 1.85rem);
+  letter-spacing: -0.045em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -138,13 +152,137 @@
   display: flex;
   justify-content: space-between;
   gap: 0.4rem;
-  color: color-mix(in srgb, var(--gm-accent) 48%, #8a827c);
+  color: #9a9088;
   font-size: 0.7rem;
 }
 
 .grp-page.gm-page .gm-tile .nika-spark {
-  margin-top: 0.15rem;
+  margin-top: 0.2rem;
   width: 100%;
+}
+
+/* Каждая игра — свой стол, без полосок на весь фон */
+.grp-page.gm-page .gm-skin-board {
+  background:
+    radial-gradient(90% 80% at 100% 0%, rgba(196,165,116,.38), transparent 56%),
+    linear-gradient(180deg, #2a1a10, #100a06);
+}
+.grp-page.gm-page .gm-skin-wood {
+  background:
+    radial-gradient(80% 70% at 90% 10%, rgba(215,161,90,.42), transparent 54%),
+    linear-gradient(165deg, #3a2210, #140c08);
+}
+.grp-page.gm-page .gm-skin-cookie {
+  background:
+    radial-gradient(circle at 86% 16%, rgba(232,160,90,.55) 0 2.4rem, transparent 2.55rem),
+    radial-gradient(circle at 72% 28%, rgba(138,61,28,.35) 0 0.7rem, transparent 0.8rem),
+    linear-gradient(180deg, #3a1a0c, #140806);
+}
+.grp-page.gm-page .gm-skin-wheel {
+  background:
+    radial-gradient(70% 90% at 100% 0%, rgba(240,193,75,.4), transparent 50%),
+    radial-gradient(60% 80% at 0% 100%, rgba(122,31,107,.45), transparent 55%),
+    linear-gradient(145deg, #2a0c22, #100610);
+}
+.grp-page.gm-page .gm-skin-felt {
+  background:
+    radial-gradient(80% 80% at 100% 0%, rgba(61,139,90,.4), transparent 55%),
+    linear-gradient(180deg, #0e2216, #06100a);
+}
+.grp-page.gm-page .gm-skin-duel {
+  background:
+    linear-gradient(115deg, transparent 58%, rgba(201,163,106,.22) 59% 64%, transparent 65%),
+    linear-gradient(180deg, #22180e, #0c0a08);
+}
+.grp-page.gm-page .gm-skin-coin {
+  background:
+    radial-gradient(circle at 86% 18%, rgba(230,195,92,.5) 0 3.2rem, transparent 3.35rem),
+    linear-gradient(180deg, #2a1c08, #100c06);
+}
+.grp-page.gm-page .gm-skin-steel {
+  background:
+    linear-gradient(180deg, rgba(138,160,184,.22), transparent 42%),
+    linear-gradient(180deg, #161c24, #0a0e12);
+}
+.grp-page.gm-page .gm-skin-hazard {
+  background:
+    linear-gradient(180deg, #3a1010, #100606);
+}
+.grp-page.gm-page .gm-skin-grid {
+  background:
+    linear-gradient(180deg, #102030, #0a1018);
+}
+.grp-page.gm-page .gm-skin-clover {
+  background:
+    radial-gradient(circle at 84% 16%, rgba(92,184,106,.42) 0 2.6rem, transparent 2.75rem),
+    linear-gradient(180deg, #102418, #08140c);
+}
+.grp-page.gm-page .gm-skin-jungle {
+  background:
+    radial-gradient(ellipse at 100% 0%, rgba(196,90,42,.38), transparent 48%),
+    linear-gradient(180deg, #142418, #0a140c);
+}
+.grp-page.gm-page .gm-skin-rose {
+  background:
+    radial-gradient(circle at 88% 12%, rgba(224,122,168,.42) 0 3rem, transparent 3.15rem),
+    linear-gradient(180deg, #24101c, #100810);
+}
+.grp-page.gm-page .gm-skin-blast {
+  background:
+    radial-gradient(circle at 88% 14%, rgba(240,138,42,.55) 0 1.5rem, transparent 1.65rem),
+    radial-gradient(circle at 88% 14%, rgba(240,138,42,.18) 0 4rem, transparent 4.2rem),
+    linear-gradient(180deg, #2a1408, #100806);
+}
+.grp-page.gm-page .gm-skin-terminal {
+  background:
+    linear-gradient(180deg, #0c1c14, #06100a);
+}
+.grp-page.gm-page .gm-skin-billiard {
+  background:
+    radial-gradient(circle at 86% 18%, #111 0 1.35rem, #f2f2f2 1.4rem 1.55rem, transparent 1.6rem),
+    linear-gradient(180deg, #143020, #0a1810);
+}
+.grp-page.gm-page .gm-skin-neon {
+  background:
+    linear-gradient(90deg, rgba(90,208,255,.18), transparent 34%),
+    linear-gradient(270deg, rgba(255,77,141,.22), transparent 36%),
+    linear-gradient(180deg, #180820, #0a0814);
+}
+.grp-page.gm-page .gm-skin-court {
+  background:
+    linear-gradient(90deg, transparent 46%, rgba(230,122,46,.28) 47% 53%, transparent 54%),
+    linear-gradient(180deg, #2a180e, #120c08);
+}
+.grp-page.gm-page .gm-skin-grass {
+  background:
+    linear-gradient(180deg, #163820, #0c1c10);
+}
+.grp-page.gm-page .gm-skin-alley {
+  background:
+    linear-gradient(180deg, #2a1c10, #120c08);
+}
+.grp-page.gm-page .gm-skin-target {
+  background:
+    radial-gradient(circle at 86% 18%, transparent 0 0.7rem, rgba(209,43,43,.5) 0.75rem 1.2rem, transparent 1.25rem 1.75rem, rgba(209,43,43,.28) 1.8rem 2.3rem, transparent 2.35rem),
+    linear-gradient(180deg, #240a0a, #100606);
+}
+.grp-page.gm-page .gm-skin-dice {
+  background:
+    linear-gradient(180deg, #242018, #121110);
+}
+.grp-page.gm-page .gm-skin-roulette {
+  background:
+    radial-gradient(70% 80% at 100% 0%, rgba(212,175,55,.32), transparent 52%),
+    linear-gradient(180deg, #0c2416, #06140c);
+}
+.grp-page.gm-page .gm-skin-paper {
+  background:
+    linear-gradient(180deg, #242018, #141210);
+}
+.grp-page.gm-page .gm-skin-brass {
+  background:
+    linear-gradient(115deg, transparent 62%, rgba(201,163,106,.24) 63% 74%, transparent 75%),
+    linear-gradient(180deg, #22180e, #100c08);
 }
 
 .grp-page.gm-page .gm-hero {
@@ -159,20 +297,27 @@
   overflow: hidden;
   isolation: isolate;
   min-height: 11rem;
-  padding: 1.25rem 1.15rem 1.15rem;
-  border-radius: 2px !important;
-  border: 1px solid color-mix(in srgb, var(--gm-accent) 40%, rgba(255,255,255,.08));
-  background:
-    radial-gradient(90% 120% at 100% 0%, color-mix(in srgb, var(--gm-accent) 36%, transparent), transparent 58%),
-    radial-gradient(70% 80% at 0% 100%, color-mix(in srgb, var(--gm-accent2) 16%, transparent), transparent 50%),
-    linear-gradient(180deg, color-mix(in srgb, var(--gm-ink) 94%, #0a0a0a), #0a0a0a);
+  padding: 1.25rem 1.15rem 1.15rem 1.35rem;
+  border-radius: 0 !important;
+  border: 1px solid color-mix(in srgb, var(--gm-accent) 42%, rgba(255,255,255,.08));
+  background: var(--gm-ink);
+}
+
+.grp-page.gm-page .gm-hero::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: var(--gm-accent);
 }
 
 .grp-page.gm-page .gm-hero .gm-skin-art {
-  width: 14rem;
-  height: 14rem;
-  right: -0.8rem;
-  top: -1.4rem;
+  width: 15rem;
+  height: 15rem;
+  right: -0.6rem;
+  top: -1.2rem;
 }
 
 .grp-page.gm-page .gm-hero-copy {
@@ -184,9 +329,9 @@
 }
 
 .grp-page.gm-page .gm-hero-copy small {
-  color: color-mix(in srgb, var(--gm-accent) 72%, #fff);
+  color: color-mix(in srgb, var(--gm-accent) 78%, #fff);
   font-size: 0.72rem;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
@@ -222,20 +367,15 @@
   position: relative;
   z-index: 1;
   flex: 0 0 auto;
-  border-radius: 2px !important;
+  border-radius: 0 !important;
 }
 
 .grp-page.gm-page .gm-desk {
-  border-radius: 2px !important;
-  border-color: color-mix(in srgb, var(--gm-accent) 22%, rgba(255,255,255,.07));
+  border-radius: 0 !important;
+  border-color: color-mix(in srgb, var(--gm-accent) 24%, rgba(255,255,255,.07));
   background:
-    radial-gradient(90% 80% at 100% 0%, color-mix(in srgb, var(--gm-accent) 12%, transparent), transparent 52%),
+    radial-gradient(90% 80% at 100% 0%, color-mix(in srgb, var(--gm-accent) 14%, transparent), transparent 52%),
     #111;
-}
-
-.grp-page.gm-page .gm-desk .gm-range,
-.grp-page.gm-page .gm-tile + .gm-range {
-  accent-color: var(--gm-accent, #32d74b);
 }
 
 .grp-page.gm-page .gm-field {
@@ -273,7 +413,7 @@
   min-width: 0;
   min-height: 36px;
   padding: 0.35rem 0.55rem;
-  border-radius: 2px;
+  border-radius: 0;
   border: 1px solid rgba(255,255,255,.1);
   background: #101012;
   color: #fff;
@@ -282,21 +422,15 @@
   text-align: right;
 }
 
-.grp-page.gm-page .gm-rates {
-  display: grid;
-  gap: 0.35rem;
-}
-
+.grp-page.gm-page .gm-rates { display: grid; gap: 0.35rem; }
 .grp-page.gm-page .gm-preview {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.8rem;
 }
-
 .grp-page.gm-page .nika-flow-hero.is-three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-
 .grp-page.gm-page .gm-steps {
   margin: 0.4rem 0 0;
   padding-left: 1.15rem;
@@ -304,7 +438,6 @@
   font-size: 0.88rem;
   line-height: 1.55;
 }
-
 .grp-page.gm-page .gm-steps li + li { margin-top: 0.45rem; }
 
 .grp-page.gm-page .nika-panel,
@@ -315,8 +448,9 @@
 .grp-page.gm-page .nika-mach-tile,
 .grp-page.gm-page .nika-input,
 .grp-page.gm-page .nika-ios-list,
-.grp-page.gm-page .nika-flow-hero > div {
-  border-radius: 2px !important;
+.grp-page.gm-page .nika-flow-hero > div,
+.grp-page.gm-page .nika-table {
+  border-radius: 0 !important;
 }
 
 html.is-phone .grp-page.gm-page .gm-uni,
@@ -339,7 +473,9 @@ html[data-viewport="phone"] .grp-page.gm-page .gm-tiles {
 
 html.is-phone .grp-page.gm-page .gm-tile,
 html[data-viewport="phone"] .grp-page.gm-page .gm-tile {
-  aspect-ratio: 1 / 1;
+  min-height: 12.4rem;
+  aspect-ratio: auto;
+  border-radius: 0 !important;
 }
 
 html.is-phone .grp-page.gm-page .gm-hero,
@@ -384,10 +520,6 @@ html[data-viewport="phone"] .grp-page.gm-page .nika-seg-mini .nika-seg-btn {
   .grp-page.gm-page .gm-field-ctrl {
     grid-template-columns: 1fr;
   }
-  .grp-page.gm-page .gm-hero {
-    flex-direction: column;
-  }
-  .grp-page.gm-page .gm-tiles {
-    grid-template-columns: 1fr;
-  }
+  .grp-page.gm-page .gm-hero { flex-direction: column; }
+  .grp-page.gm-page .gm-tiles { grid-template-columns: 1fr; }
 }
