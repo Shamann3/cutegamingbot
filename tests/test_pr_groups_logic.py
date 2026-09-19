@@ -25,6 +25,8 @@ from pr_groups_logic import (
     text_after_photos_reco,
     text_entry,
     text_gift,
+    text_how,
+    text_wait_photo,
     weekly_seed_budget,
     withdrawable_chat,
 )
@@ -35,7 +37,18 @@ def test_entry_is_short_and_honest():
     assert "35%" in html
     assert "комиссии" in html
     assert "14 дней" in html
+    assert "1." in html
     assert "Начать" not in html
+
+
+def test_how_tells_what_to_do_next():
+    html = text_how()
+    assert "@CuteGamingBot" in html
+    assert "Проверить" in html
+    assert "администратором" in html
+    photo = text_wait_photo(0, 0)
+    assert "1 из 3" in photo
+    assert "следующим сообщением" in photo
 
 
 def test_reco_after_photos_mentions_confirm():

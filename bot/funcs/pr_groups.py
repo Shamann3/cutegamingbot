@@ -68,6 +68,14 @@ log = logging.getLogger("pr_groups")
 
 PR_HUB = "prg:hub"
 PR_START = "prg:go"
+PR_CHECK = "prg:chk"
+PR_HOW = "prg:how"
+PR_PUBLIC = "prg:pub"
+PR_ADMIN = "prg:adm"
+PR_MINE = "prg:mine"
+PR_BACK = "prg:back"
+PR_WROTE = "prg:wrote"
+PR_OPEN = "prg:c:"
 PR_PICK = "prg:g:"
 PR_OWNER = "prg:own"
 PR_RECO = "prg:rec"
@@ -78,21 +86,51 @@ PR_NO = "prgN:"
 ICON_GO = "5424616516018537963"
 ICON_OK = "5339112148175959615"
 ICON_NO = "5337017423906226569"
+ICON_BACK = "5226660202035554522"
 
 
 def _btn(text: str, data: str, icon: str, style: str = "default") -> InlineKeyboardButton:
     return InlineKeyboardButton(text=text, callback_data=data, style=style, icon_custom_emoji_id=icon)
 
 
+def _url(text: str, url: str, icon: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=text, url=url, icon_custom_emoji_id=icon)
+
+
 def entry_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[_btn("Начать", PR_START, ICON_GO, "success")]])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Начать", PR_START, ICON_GO, "success")],
+        [_btn("Мои заявки", PR_MINE, ICON_OK)],
+    ])
+
+
+def how_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Проверить", PR_CHECK, ICON_GO, "success")],
+        [_btn("Нет @адреса", PR_PUBLIC, ICON_OK), _btn("Кут не админ", PR_ADMIN, ICON_OK)],
+        [_btn("Мои заявки", PR_MINE, ICON_OK), _btn("Назад", PR_HUB, ICON_BACK)],
+    ])
+
+
+def how_public_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Проверить", PR_CHECK, ICON_GO, "success")],
+        [_btn("Назад", PR_HOW, ICON_BACK)],
+    ])
+
+
+def how_admin_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Проверить", PR_CHECK, ICON_GO, "success")],
+        [_btn("Назад", PR_HOW, ICON_BACK)],
+    ])
 
 
 def role_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Это моя группа", PR_OWNER, ICON_OK)],
+        [_btn("Это моя группа", PR_OWNER, ICON_OK, "success")],
         [_btn("Я привёл Кут", PR_RECO, ICON_GO)],
-        [_btn("Снять", PR_CANCEL, ICON_NO)],
+        [_btn("Назад", PR_BACK, ICON_BACK)],
     ])
 
 
@@ -101,12 +139,73 @@ def groups_keyboard(rows: list[dict[str, Any]]) -> InlineKeyboardMarkup:
     for row in rows:
         title = (row.get("title") or str(row.get("chat_id")))[:32]
         kb.append([_btn(title, f"{PR_PICK}{row['chat_id']}", ICON_GO)])
-    kb.append([_btn("Снять", PR_CANCEL, ICON_NO)])
+    kb.append([_btn("Назад", PR_HUB, ICON_BACK)])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 def cancel_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[_btn("Снять", PR_CANCEL, ICON_NO)]])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Снять", PR_CANCEL, ICON_NO), _btn("Назад", PR_BACK, ICON_BACK)],
+    ])
+
+
+def hub_only_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[_btn("В пиар", PR_HUB, ICON_BACK)]])
+
+
+def after_cancel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Начать", PR_START, ICON_GO, "success")],
+        [_btn("В пиар", PR_HUB, ICON_BACK)],
+    ])
+
+
+def after_owner_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Мои заявки", PR_MINE, ICON_OK)],
+        [_btn("В пиар", PR_HUB, ICON_BACK)],
+    ])
+
+
+def after_reco_keyboard(username: str = "") -> InlineKeyboardMarkup:
+    rows = []
+    uname = str(username or "").strip().lstrip("@")
+    if uname:
+        rows.append([_url("Открыть группу", f"https://t.me/{uname}", ICON_GO)])
+    rows.append([_btn("Я написал", PR_WROTE, ICON_OK, "success")])
+    rows.append([_btn("Снять", PR_CANCEL, ICON_NO), _btn("В пиар", PR_HUB, ICON_BACK)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def joined_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Проверить", PR_CHECK, ICON_GO, "success")],
+        [_btn("Что дальше", PR_HOW, ICON_OK)],
+    ])
+
+
+def mine_keyboard(rows: list[dict[str, Any]]) -> InlineKeyboardMarkup:
+    kb = []
+    for row in rows[:6]:
+        title = str(row.get("chat_title") or row.get("title") or row.get("id"))[:28]
+        kb.append([_btn(title, f"{PR_OPEN}{row['id']}", ICON_GO)])
+    if rows:
+        kb.append([_btn("Начать ещё", PR_START, ICON_GO)])
+    else:
+        kb.append([_btn("Начать", PR_START, ICON_GO, "success")])
+    kb.append([_btn("Назад", PR_HUB, ICON_BACK)])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def resume_keyboard(status: str) -> InlineKeyboardMarkup:
+    rows = []
+    if status == ST_PHOTOS:
+        rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
+    elif status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
+        rows.append([_btn("Я написал", PR_WROTE, ICON_OK)])
+        rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
+    rows.append([_btn("Мои заявки", PR_MINE, ICON_OK), _btn("В пиар", PR_HUB, ICON_BACK)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def confirm_keyboard(claim_id: int, token: int = 0) -> InlineKeyboardMarkup:
@@ -1109,6 +1208,19 @@ async def try_quiet_nika(bot, claim: dict[str, Any]) -> int:
         nika_last_at=_now(),
     )
     return step
+
+
+async def list_user_claims(user_id: int) -> list[dict[str, Any]]:
+    p = await pool()
+    rows = await p.fetch(
+        """
+        SELECT * FROM pr_claims
+         WHERE user_id = $1 AND status = ANY($2::text[])
+         ORDER BY updated_at DESC
+        """,
+        int(user_id), list(IN_PROGRESS_STATUSES),
+    )
+    return [_row(r) for r in rows]
 
 
 async def list_queue() -> list[dict[str, Any]]:

@@ -20,6 +20,10 @@ def test_wired_into_bot_and_panel():
     shell = (ROOT / "admin" / "src" / "pages" / "PanelShell.jsx").read_text(encoding="utf-8")
     assert "PrGroupsSection" in shell
     assert "isPrGroups" in shell
+    assert "!isPrGroups" in shell
+    core = (ROOT / "bot" / "funcs" / "pr_groups.py").read_text(encoding="utf-8")
+    assert "prg:chk" in core
+    assert "how_keyboard" in core
 
 
 def test_gift_lock_hooks_exist():
