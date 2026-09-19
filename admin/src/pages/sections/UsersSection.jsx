@@ -29,7 +29,7 @@ import { notifyAdmin } from '../../lib/notify'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import PlayerDossierPanel from '../../components/PlayerDossierPanel'
 import StaffPortraitRail from '../../components/StaffPortraitRail'
-import { CopyableId, CopyableUsername } from '../../components/Copyable'
+import { CopyableId, CopyableUsername, IdentityBits } from '../../components/Copyable'
 
 const EVENT_LABELS = {
   shop_buy: 'Покупка в магазине',
@@ -395,8 +395,10 @@ function PlayerIntelOverview({ intel, onOpenUser }) {
                   onClick={() => onOpenUser?.(t.counterparty)}
                 >
                   {t.direction === 'out' ? '→' : '←'}{' '}
-                  {t.counterparty?.username ? `@${t.counterparty.username}` : t.counterparty?.name}
+                  {t.counterparty?.name || 'игрок'}
                 </button>
+                {' '}
+                <IdentityBits userId={t.counterparty?.userId} username={t.counterparty?.username} />
                 <strong className={t.direction === 'out' ? 'pu-out' : 'pu-in'}>
                   {t.direction === 'out' ? '−' : '+'}{formatKutAmount(t.amount)}
                 </strong>
@@ -484,8 +486,9 @@ function PlayerTransfersPanel({ userId, intel, onOpenUser }) {
             <li key={t.id} className={`pu-level-${t.level || 'small'}`}>
               <button type="button" className="pu-cp-link" onClick={() => onOpenUser?.(t.counterparty)}>
                 {t.direction === 'out' ? 'Отправил' : 'Получил от'}{' '}
-                {t.counterparty?.username ? `@${t.counterparty.username}` : t.counterparty?.name}
-                <em> · id {t.counterparty?.userId}</em>
+                {t.counterparty?.name || 'игрок'}
+                {' '}
+                <IdentityBits userId={t.counterparty?.userId} username={t.counterparty?.username} />
               </button>
               <strong className={t.direction === 'out' ? 'pu-out' : 'pu-in'}>
                 {t.direction === 'out' ? '−' : '+'}{formatKutAmount(t.amount)}
@@ -512,9 +515,13 @@ function PlayerTransfersPanel({ userId, intel, onOpenUser }) {
               </div>
               <p>{it.cause || '—'}</p>
               {it.counterparty && (
-                <button type="button" className="pu-cp-link" onClick={() => onOpenUser?.(it.counterparty)}>
-                  {it.counterparty.username ? `@${it.counterparty.username}` : it.counterparty.name}
-                </button>
+                <span>
+                  <button type="button" className="pu-cp-link" onClick={() => onOpenUser?.(it.counterparty)}>
+                    {it.counterparty.name || 'игрок'}
+                  </button>
+                  {' '}
+                  <IdentityBits userId={it.counterparty.userId} username={it.counterparty.username} />
+                </span>
               )}
               {it.ts && <time>{formatDate(it.ts)}</time>}
             </li>
@@ -1219,22 +1226,15 @@ function DexItemQuickPicker({ dexItems, onSelect, disabled }) {
 const CUTE_PAGE = 50
 
 function CounterpartyLine({ direction, cp, onOpenUser }) {
-  const name = cp.username ? `@${cp.username}` : (cp.name || 'игрок')
+  const name = cp.name || 'игрок'
   const arrow = direction === 'out' ? '→' : '←'
-  if (!onOpenUser || !cp?.userId) {
-    return (
-      <p className="panel-shelf-muted">
-        {arrow} {name} <span style={{ opacity: 0.6 }}>(<CopyableId value={cp.userId} />)</span>
-      </p>
-    )
-  }
   return (
     <p className="panel-shelf-muted">
       {arrow}{' '}
-      <button type="button" className="pu-cp-link" onClick={() => onOpenUser(cp)}>
-        {name}
-      </button>{' '}
-      <span style={{ opacity: 0.6 }}>(<CopyableId value={cp.userId} />)</span>
+      {onOpenUser && cp?.userId ? (
+        <button type="button" className="pu-cp-link" onClick={() => onOpenUser(cp)}>{name}</button>
+      ) : name}{' '}
+      <IdentityBits userId={cp.userId} username={cp.username} />
     </p>
   )
 }
@@ -1344,9 +1344,8 @@ function CuteHistoryFeed({ userId, onOpenUser }) {
             )}
             {it.group && (
               <p className="panel-shelf-muted">
-                → группа {it.group.name || '—'}
-                {it.group.username ? ` @${it.group.username}` : ''}{' '}
-                <span style={{ opacity: 0.6 }}>(id {it.group.chatId})</span>
+                → группа {it.group.name || '—'}{' '}
+                <IdentityBits chatId={it.group.chatId} chatUsername={it.group.username} />
               </p>
             )}
           </li>
@@ -1818,8 +1817,8 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                 >
                   <span className="panel-users-result-main">
                     <span>
-                      {row.displayName}
-                      {row.username && ` @${row.username}`}
+                      {row.displayName}{' '}
+                      {row.username ? <CopyableUsername value={row.username} /> : null}
                     </span>
                     {row.isStaff && (
                       <span className="pu-staff-mark">{row.roleLabel || 'Админ'}</span>
@@ -2660,7 +2659,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   >
                     {compareData.verdict.winner === 'a' && <span className="pu-cmp-crown">👑</span>}
                     <p className="pu-cmp-hero-name">{profile.displayName}</p>
-                    <p className="pu-cmp-hero-id">ID {profile.userId}</p>
+                    <p className="pu-cmp-hero-id"><CopyableId value={profile.userId} label="id игрока" /></p>
                   </button>
                   <div className="pu-cmp-vs">VS</div>
                   <button
@@ -2671,7 +2670,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   >
                     {compareData.verdict.winner === 'b' && <span className="pu-cmp-crown">👑</span>}
                     <p className="pu-cmp-hero-name">{compareProfile.displayName}</p>
-                    <p className="pu-cmp-hero-id">ID {compareProfile.userId} · открыть</p>
+                    <p className="pu-cmp-hero-id"><CopyableId value={compareProfile.userId} label="id игрока" /> · открыть</p>
                   </button>
                 </div>
 

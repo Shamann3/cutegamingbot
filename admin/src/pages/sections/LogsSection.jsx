@@ -3,6 +3,7 @@ import AdminSelect from '../../components/AdminSelect'
 import { fetchAuditLogs, fetchLogsOverview, fetchSystemLogs, fetchTransferLogs } from '../../lib/adminClient'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
 import UserLookupPreview from '../../components/UserLookupPreview'
+import { CopyableId } from '../../components/Copyable'
 
 const TABS = [
   { id: 'audit', label: 'Audit', hint: 'экономические события игроков' },
@@ -56,7 +57,7 @@ function AuditCard({ row }) {
     <article className="panel-log-card">
       <div className="panel-log-card-head">
         <time className="panel-log-time">{formatDate(row.createdAt)}</time>
-        <span className="panel-log-user">ID {row.userId}</span>
+        <span className="panel-log-user"><CopyableId value={row.userId} /></span>
         <span className={`panel-log-badge panel-log-badge-${tone}`}>{label}</span>
       </div>
 
@@ -93,7 +94,7 @@ function TransferCard({ row }) {
       </div>
 
       <p className="panel-log-summary">
-        ID {row.senderId} → ID {row.receiverId} · <strong>{formatKut(row.amount)} кут</strong>
+        <CopyableId value={row.senderId} /> → <CopyableId value={row.receiverId} /> · <strong>{formatKut(row.amount)} кут</strong>
       </p>
 
       <div className="panel-log-balance">
@@ -122,7 +123,7 @@ function SystemCard({ row, variant }) {
           </span>
         )}
         {row.userId != null && row.userId > 0 && (
-          <span className="panel-log-user">ID {row.userId}</span>
+          <span className="panel-log-user"><CopyableId value={row.userId} /></span>
         )}
       </div>
 

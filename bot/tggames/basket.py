@@ -142,12 +142,21 @@ def _fmt_int(n: int) -> str:
         return str(n)
 
 
+def _live_flat() -> Decimal:
+    try:
+        from bot.runtime.game_desk.live import param_decimal
+        return param_decimal("basket", "flatChance", BASKET_FLAT_CHANCE)
+    except Exception:
+        return BASKET_FLAT_CHANCE
+
+
 def _is_flat_roll_raw() -> bool:
     """Исходная вероятность (для 0demo, без привязки к dice)."""
     try:
         r = Decimal(str(random.random()))
-        flat = r < BASKET_FLAT_CHANCE
-        _kdbg("FLAT_RAW", f"rand={r} chance={BASKET_FLAT_CHANCE} flat={flat}")
+        chance = _live_flat()
+        flat = r < chance
+        _kdbg("FLAT_RAW", f"rand={r} chance={chance} flat={flat}")
         return flat
     except Exception:
         return False
@@ -157,8 +166,10 @@ def _is_flat_roll_conditional() -> bool:
     """Условная вероятность «мяч сдулся» при уже случившемся промахе."""
     try:
         r = Decimal(str(random.random()))
-        flat = r < BASKET_FLAT_CONDITIONAL
-        _kdbg("FLAT_COND", f"rand={r} cond={BASKET_FLAT_CONDITIONAL} flat={flat}")
+        chance = _live_flat()
+        cond = min(chance / BASKET_MISS_PROBABILITY, Decimal(1)) if BASKET_MISS_PROBABILITY > 0 else Decimal(0)
+        flat = r < cond
+        _kdbg("FLAT_COND", f"rand={r} cond={cond} flat={flat}")
         return flat
     except Exception:
         return False
@@ -640,7 +651,7 @@ async def _tgbasket_free_game(
 # ===================== ОСНОВНОЙ ХЭНДЛЕР =====================
 @dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("баскет", "баскетбал", "баскетбол", "баскетболл"))
 async def tgbasket(message: Message):
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "basket"):
         return
     text = (message.text or "").strip().lower()
     parts = (message.text or "").strip().split()
@@ -671,19 +682,10 @@ async def tgbasket(message: Message):
         )
         return
 
-    if bet_int < basket_MIN_BET:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Минимальная ставка {basket_MIN_BET} кут.</b>",
-            parse_mode="HTML"
-        )
+    from bot.runtime.game_desk.live import bets as desk_bets, reject_desk
+    if await reject_desk(message, "basket", bet_int):
         return
-
-    if bet_int > basket_BASE_MAX_BET:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка {basket_BASE_MAX_BET} кут.</b>",
-            parse_mode="HTML"
-        )
-        return
+    _desk_min, basket_live_max = desk_bets("basket")
 
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
@@ -708,7 +710,7 @@ async def tgbasket(message: Message):
     from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
     gate = decide_gc_play_mode(
         bet=bet_int,
-        game_max_bet=basket_BASE_MAX_BET,
+        game_max_bet=basket_live_max or basket_BASE_MAX_BET,
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_state.get("gc_bet_limit"),

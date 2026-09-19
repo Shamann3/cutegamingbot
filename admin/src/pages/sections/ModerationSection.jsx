@@ -243,7 +243,7 @@ function CaseModal({ item, role, perms, onClose, onUnbanned }) {
                 {meta.scope === 'chat' && item.chatId ? (
                   <div className="case-row">
                     <span className="case-key">Группа</span>
-                    <span className="case-val" style={{ fontFamily:'monospace' }}>{item.chatId}</span>
+                    <span className="case-val"><CopyableId value={item.chatId} label="id группы" /></span>
                   </div>
                 ) : null}
                 {item.durationMinutes && (

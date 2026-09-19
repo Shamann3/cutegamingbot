@@ -20,6 +20,7 @@ import BotQuestsSection from './sections/BotQuestsSection'
 import GroupBalanceLevelSection from './sections/GroupBalanceLevelSection'
 import GroupsStudioSection from './sections/GroupsStudioSection'
 import NikaSection from './sections/NikaSection'
+import GamesSection from './sections/GamesSection'
 import NikaCrisisStrip from '../components/NikaCrisisStrip'
 import SoftRestartSection from './sections/SoftRestartSection'
 import AchievementsSection from './sections/AchievementsSection'
@@ -246,6 +247,7 @@ export default function PanelShell({ onLogout }) {
   const isGroupBalanceLevel = section === 'groupBalanceLevel'
   const isGroupsStudio = section === 'groupsStudio'
   const isNika = section === 'nika'
+  const isGames = section === 'games'
   const isAchievements = section === 'achievements'
   const isBroadcast = section === 'broadcast'
   const isLogs = section === 'logs'
@@ -316,7 +318,7 @@ export default function PanelShell({ onLogout }) {
                         ? ' panel-layout-broadcast'
                         : isBotQuests
                           ? ' panel-layout-broadcast'
-                        : isGroupBalanceLevel || isGroupsStudio || isNika
+                        : isGroupBalanceLevel || isGroupsStudio || isNika || isGames
                           ? ' panel-layout-broadcast'
                         : isBroadcast
                         ? ' panel-layout-broadcast'
@@ -336,7 +338,7 @@ export default function PanelShell({ onLogout }) {
                                       ? ' panel-layout-support'
                                       : isChronicle
                                         ? ' panel-layout-chronicle'
-                                        : isPanelAccess || isSoftRestart || isGroupsStudio || isNika
+                                        : isPanelAccess || isSoftRestart || isGroupsStudio || isNika || isGames
                                           ? ' panel-layout-security'
                                           : ' panel-layout-page'
           }`}
@@ -423,6 +425,7 @@ export default function PanelShell({ onLogout }) {
             />
           )}
           {isNika && isProjectCreator && <NikaSection />}
+          {isGames && isProjectCreator && <GamesSection />}
           {isAchievements && (
             <AchievementsSection
               onOpenUser={(userId) => {
@@ -461,7 +464,7 @@ export default function PanelShell({ onLogout }) {
           {isChronicle && <ChronicleSection />}
           {isPanelAccess && <PanelAccessSection />}
           {isSoftRestart && isProjectCreator && <SoftRestartSection />}
-          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isSoftRestart && (
+          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

@@ -205,11 +205,11 @@ async def orel(message: Message):
         else:
             return
 
-        if await reject_if_private_game(message):
-            return
-
         if bet_str is not None:
             bet = int(bet_str)
+        if await reject_if_private_game(message, "orel", bet):
+            return
+        if bet_str is not None:
             # как у тебя: ставка должна быть > 0, иначе отвечаем
             if bet <= 0:
                 await message.reply(

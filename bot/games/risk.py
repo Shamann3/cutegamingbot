@@ -122,6 +122,41 @@ def _load_risk_home_chance() -> Decimal:
 
 RISK_HOME_CHANCE = _load_risk_home_chance()
 
+def _live_risk_step():
+    try:
+        from bot.runtime.game_desk.live import param_decimal
+        return param_decimal("risk", "stepMultiplier", RISK_STEP_MULTIPLIER)
+    except Exception:
+        return RISK_STEP_MULTIPLIER
+
+def _live_risk_home():
+    try:
+        from bot.runtime.game_desk.live import param_float
+        return max(0.0, min(1.0, param_float("risk", "homeChance", float(RISK_HOME_CHANCE))))
+    except Exception:
+        return float(RISK_HOME_CHANCE)
+
+def _live_risk_ttl():
+    try:
+        from bot.runtime.game_desk.live import session_seconds
+        return session_seconds("risk", 20)
+    except Exception:
+        return SESSION_TTL
+
+def _live_risk_cd():
+    try:
+        from bot.runtime.game_desk.live import param_float
+        return param_float("risk", "clickCooldown", USER_CLICK_COOLDOWN)
+    except Exception:
+        return USER_CLICK_COOLDOWN
+
+def _live_risk_max():
+    try:
+        from bot.runtime.game_desk.live import bets as desk_bets
+        return desk_bets("risk")[1] or int(RISK_MAX_BET)
+    except Exception:
+        return int(RISK_MAX_BET)
+
 RAN_EMOJIS_MSG = (
     "<tg-emoji emoji-id='5472389656295253790'>🍃</tg-emoji>",
     "<tg-emoji emoji-id='5449850741667668411'>🌿</tg-emoji>",
@@ -579,7 +614,7 @@ def _build_secret_field(seed: int, is_demo: bool = False, is_0demo: bool = False
     """
     rng = random.Random(int(seed))
     field = [[" " for _ in range(1)] for _ in range(10)]
-    home_p = float(RISK_HOME_CHANCE)
+    home_p = _live_risk_home()
     home_p = max(0.0, min(1.0, home_p))
     for r in range(10):
         x = rng.random()
@@ -763,7 +798,7 @@ async def risk(message: Message):
         )
         return
 
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "risk", bet_amount):
         return
 
     user_id = int(message.from_user.id)
@@ -803,14 +838,14 @@ async def risk(message: Message):
     from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
     gate = decide_gc_play_mode(
         bet=bet_amount,
-        game_max_bet=int(RISK_MAX_BET),
+        game_max_bet=_live_risk_max(),
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_bet_limit,
     )
     if gate.get("mode") == "reject":
         await message.reply(
-            format_game_max_bet_html(gate.get("max") or RISK_MAX_BET),
+            format_game_max_bet_html(gate.get("max") or _live_risk_max()),
             parse_mode="HTML"
         )
         return
@@ -834,7 +869,7 @@ async def risk(message: Message):
 
     # ─── Расчёт максимального выигрыша для проверки баланса группы ───
     max_profit_steps = 10  # 10 рядов
-    max_profit = _to_int_floor(_dec(bet_amount) * _dec(max_profit_steps) * _dec(RISK_STEP_MULTIPLIER))
+    max_profit = _to_int_floor(_dec(bet_amount) * _dec(max_profit_steps) * _dec(_live_risk_step()))
     # Для челленджа тоже нужен max_profit, но проверка группы общая
 
     # ---------- ВЫЗОВ JERICHO (только определение режима, без автоматического доливания) ----------
@@ -1011,7 +1046,7 @@ async def risk(message: Message):
         user_message_risk[user_id] = msg_id
         _store_save_safe(user_message_risk, "USERMSG_SAVE_START")
 
-        asyncio.create_task(_session_ttl_watcher(chat_id, msg_id, user_id, SESSION_TTL))
+        asyncio.create_task(_session_ttl_watcher(chat_id, msg_id, user_id, _live_risk_ttl()))
 
 
 # ======================================================================
@@ -1023,7 +1058,7 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
     msg_id = int(call.message.message_id)
 
     now = _now_mono()
-    if now - _last_click.get(uid, 0.0) < USER_CLICK_COOLDOWN:
+    if now - _last_click.get(uid, 0.0) < _live_risk_cd():
         try:
             await call.answer("⏳ Подожди чуть-чуть…", show_alert=True)
         except Exception:
@@ -1190,7 +1225,7 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
                     game_data["first_success"] = True
 
                 prev = _dec(game_data.get("win_amount", bet_amount))
-                add = _dec(bet_amount) * _dec(RISK_STEP_MULTIPLIER)
+                add = _dec(bet_amount) * _dec(_live_risk_step())
                 new_win = prev + add
                 game_data["win_amount"] = _str_dec(new_win)
 

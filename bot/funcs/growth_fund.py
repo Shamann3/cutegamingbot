@@ -279,20 +279,36 @@ def compute_commission(
     """
     import bot.config.config as cfg
 
-    if not getattr(cfg, "GROWTH_FUND_ENABLED", False):
+    try:
+        from bot.runtime.game_desk import live as desk
+        use_desk = True
+    except Exception:
+        desk = None
+        use_desk = False
+
+    if use_desk:
+        if not desk.commission_on():
+            return None
+    elif not getattr(cfg, "GROWTH_FUND_ENABLED", False):
         return None
 
     pot = int(pot or 0)
-    min_pot = int(getattr(cfg, "GROWTH_FUND_MIN_POT_FOR_COMMISSION", 0) or 0)
+    if use_desk:
+        min_pot = desk.commission_min_pot()
+    else:
+        min_pot = int(getattr(cfg, "GROWTH_FUND_MIN_POT_FOR_COMMISSION", 0) or 0)
     if pot < min_pot:
         return None
 
     lvl = _clamp_level(level)
-    rate_by_level = getattr(cfg, "GROWTH_FUND_RATE_BY_LEVEL", {}) or {}
-    base_rate = float(rate_by_level.get(lvl, rate_by_level.get(str(lvl), 0.0)) or 0.0)
-
-    multipliers = getattr(cfg, "GROWTH_FUND_GAME_MULTIPLIER", {}) or {}
-    multiplier = float(multipliers.get(game, 1.0))
+    if use_desk:
+        base_rate = desk.commission_rate(lvl)
+        multiplier = desk.commission_mult(game)
+    else:
+        rate_by_level = getattr(cfg, "GROWTH_FUND_RATE_BY_LEVEL", {}) or {}
+        base_rate = float(rate_by_level.get(lvl, rate_by_level.get(str(lvl), 0.0)) or 0.0)
+        multipliers = getattr(cfg, "GROWTH_FUND_GAME_MULTIPLIER", {}) or {}
+        multiplier = float(multipliers.get(game, 1.0))
 
     rate = max(0.0, min(1.0, base_rate * multiplier))  # защита от кривого конфига
     if rate <= 0:
@@ -407,6 +423,12 @@ async def apply_commission(
     Возвращает None, если комиссия не применяется в этом раунде (тогда игра
     работает как раньше, кнопку "Комиссия игры" не показываем).
     """
+    try:
+        from bot.runtime.game_desk.live import refresh as refresh_desk
+        await refresh_desk(db)
+    except Exception:
+        pass
+
     try:
         chat_id = int(chat_id)
         user_id = int(user_id)

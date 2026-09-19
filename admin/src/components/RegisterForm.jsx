@@ -139,7 +139,7 @@ export default function RegisterForm({
                 <div className="auth-totp-key-block">
                   <p className="auth-totp-key-label">Ключ вручную</p>
                   <div className="auth-totp-key-row">
-                    <code className="auth-totp-key">{setup.totpSecret}</code>
+                    <code className="auth-totp-key" data-copyable="1">{setup.totpSecret}</code>
                     <button type="button" className="auth-totp-copy-btn" onClick={copyKey}>
                       {copied ? '✓' : '📋'}
                     </button>

@@ -39,6 +39,13 @@ from main import (
 T = TypeVar("T")
 
 MAX_PARTICIPANTS = 5
+
+def _live_fortuna_lobby_max():
+    try:
+        from bot.runtime.game_desk.live import max_players
+        return max_players("fortuna_lobby", MAX_PARTICIPANTS)
+    except Exception:
+        return MAX_PARTICIPANTS
 FLOOD_EDIT_MAX_RETRIES = 4
 FLOOD_SLEEP_BUFFER_SEC = 1.0
 
@@ -365,7 +372,7 @@ async def _rollback_debits(user_ids: List[int], bet: int) -> None:
 
 
 def _lobby_keyboard(game_id: int, participant_count: int) -> InlineKeyboardMarkup:
-    if participant_count >= MAX_PARTICIPANTS:
+    if participant_count >= _live_fortuna_lobby_max():
         rows = [[InlineKeyboardButton(text="Начать игру", callback_data=f"startruletka:{game_id}")]]
     else:
         rows = [
@@ -529,6 +536,10 @@ async def ruletka(message: Message):
     if bet < 0:
         return
 
+    from bot.games.group_only import reject_if_private_game
+    if await reject_if_private_game(message, "fortuna_lobby", bet):
+        return
+
     creator_id = message.from_user.id
 
     # твоя метка последнего вызова (оставляем, но делаем быстрее)
@@ -675,7 +686,7 @@ async def ruletka_join_game_callback(callback_query: types.CallbackQuery):
             ])
             game["participants"] = participants_list
 
-            if len(participants_list) >= MAX_PARTICIPANTS:
+            if len(participants_list) >= _live_fortuna_lobby_max():
                 await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
@@ -753,7 +764,7 @@ async def ruletka_join_game_callback(callback_query: types.CallbackQuery):
                 )
                 return
 
-            if len(game["participants"]) >= MAX_PARTICIPANTS:
+            if len(game["participants"]) >= _live_fortuna_lobby_max():
                 await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 

@@ -10,6 +10,7 @@ import {
 } from '../../lib/adminClient'
 import { parseRequiredIntFields } from '../../lib/formNumbers'
 import { notifyAdmin } from '../../lib/notify'
+import { IdentityBits } from '../../components/Copyable'
 
 function formatKut(value) {
   if (value == null) return '-'
@@ -436,8 +437,8 @@ export default function EconomySection() {
             <li key={row.userId} className={row.banned ? 'panel-economy-rich-banned' : ''}>
               <span className="panel-economy-rich-rank">{index + 1}</span>
               <span className="panel-economy-rich-name">
-                {row.displayName}
-                {row.username && ` @${row.username}`}
+                {row.displayName}{' '}
+                <IdentityBits userId={row.userId} username={row.username} />
                 {row.banned && ' · ban'}
               </span>
               <span className="panel-economy-rich-balance">{formatKut(row.balance)} кут</span>

@@ -44,7 +44,10 @@ body,
 
 .panel-copyable {
   display: inline;
+  max-width: 100%;
   border-bottom: 1px dashed rgba(255,255,255,.28);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }

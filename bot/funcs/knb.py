@@ -88,7 +88,7 @@ async def knb(message: Message):
         if bet < 0:
             return
 
-        if await reject_if_private_game(message):
+        if await reject_if_private_game(message, "knb", bet):
             return
 
         creator_id = message.from_user.id

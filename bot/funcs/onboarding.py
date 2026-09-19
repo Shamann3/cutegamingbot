@@ -2116,6 +2116,22 @@ async def _try_launch(call: CallbackQuery, game_key: str, bet: int,
     """
     user = call.from_user
     game = GAMES[game_key]
+    desk_key = "fortuna_solo" if game_key == "fortuna" else game_key
+    try:
+        from bot.runtime.game_desk.live import bets as desk_bets, is_on, refresh as refresh_desk
+        await refresh_desk()
+        if not is_on(desk_key):
+            await call.answer("Эта игра сейчас выключена.", show_alert=True)
+            return
+        mn, mx = desk_bets(desk_key)
+        if bet < mn:
+            await call.answer(f"Минимальная ставка {mn} кут.", show_alert=True)
+            return
+        if mx and bet > mx:
+            await call.answer(f"Максимальная ставка {mx} кут.", show_alert=True)
+            return
+    except Exception:
+        pass
     wallet = await _wallet(user.id)
     venue_chat_id, venue_url, venue_ref = _play_venue(wallet)
 

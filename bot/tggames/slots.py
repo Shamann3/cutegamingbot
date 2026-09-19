@@ -123,11 +123,55 @@ def _fmt_int(n: int) -> str:
 def _is_jam_roll_adjusted() -> bool:
     try:
         r = Decimal(str(random.random()))
-        jam = r < SLOTS_JAM_CONDITIONAL
-        _sdbg("JAM_ADJ", f"rand={r} conditional={SLOTS_JAM_CONDITIONAL} jam={jam}")
+        from bot.runtime.game_desk.live import param_decimal
+        jam_chance = param_decimal("slots", "jamChance", SLOTS_JAM_CHANCE)
+        jam_conditional = jam_chance / SLOTS_LOSS_PROBABILITY if SLOTS_LOSS_PROBABILITY > 0 else Decimal(0)
+        jam = r < jam_conditional
+        _sdbg("JAM_ADJ", f"rand={r} conditional={jam_conditional} jam={jam}")
         return jam
     except Exception:
         return False
+
+
+def _live_slots_multipliers():
+    try:
+        from bot.runtime.game_desk.live import param_decimal
+        seven = param_decimal("slots", "tripleSeven", Decimal("2.5"))
+        lemon = param_decimal("slots", "tripleLemon", Decimal("2.2"))
+        grape = param_decimal("slots", "tripleGrape", Decimal("1.9"))
+        bar = param_decimal("slots", "tripleBar", Decimal("1.7"))
+        pair_seven = param_decimal("slots", "pairSeven", Decimal("1.5"))
+        pair_lemon = param_decimal("slots", "pairLemon", Decimal("1.4"))
+        pair_grape = param_decimal("slots", "pairGrape", Decimal("1.3"))
+        pair_bar = param_decimal("slots", "pairBar", Decimal("1.2"))
+    except Exception:
+        return SLOTS_MULTIPLIERS
+    table = dict(SLOTS_MULTIPLIERS)
+    table[("семь", "семь", "семь")] = seven
+    table[("лимон", "лимон", "лимон")] = lemon
+    table[("виноград", "виноград", "виноград")] = grape
+    table[("BAR", "BAR", "BAR")] = bar
+    for key in list(table):
+        if key in {
+            ("семь", "семь", "семь"),
+            ("лимон", "лимон", "лимон"),
+            ("виноград", "виноград", "виноград"),
+            ("BAR", "BAR", "BAR"),
+        }:
+            continue
+        sevens = key.count("семь")
+        lemons = key.count("лимон")
+        grapes = key.count("виноград")
+        bars = key.count("BAR")
+        if sevens == 2:
+            table[key] = pair_seven
+        elif lemons == 2:
+            table[key] = pair_lemon
+        elif grapes == 2:
+            table[key] = pair_grape
+        elif bars == 2:
+            table[key] = pair_bar
+    return table
 
 
 def get_combo_text(dice_value: int):
@@ -539,7 +583,7 @@ async def _tgslots_free_game(
 
     dice_val = getattr(getattr(first_slots, "dice", None), "value", 1)
     combo = get_combo_text(int(dice_val or 1))
-    multiplier = SLOTS_MULTIPLIERS.get(tuple(combo), Decimal("0"))
+    multiplier = _live_slots_multipliers().get(tuple(combo), Decimal("0"))
 
     _sdbg("FREE", f"dice={dice_val} combo={combo} mult={multiplier}")
 
@@ -614,7 +658,7 @@ async def _tgslots_free_game(
 # ======================= ОСНОВНОЙ ХЭНДЛЕР =======================
 @dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("спин", "слоты", "слот", "барабан"))
 async def tgslots(message: Message):
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "slots"):
         return
     text = (message.text or "").strip().lower()
     parts = (message.text or "").strip().split()
@@ -645,19 +689,10 @@ async def tgslots(message: Message):
         )
         return
 
-    if bet_int < slots_MIN_BET:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Минимальная ставка {slots_MIN_BET} кут.</b>",
-            parse_mode="HTML",
-        )
+    from bot.runtime.game_desk.live import bets as desk_bets, reject_desk
+    if await reject_desk(message, "slots", bet_int):
         return
-
-    if bet_int > slots_BASE_MAX_BET:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка {slots_BASE_MAX_BET} кут.</b>",
-            parse_mode="HTML",
-        )
-        return
+    _desk_min, slots_live_max = desk_bets("slots")
 
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
@@ -680,7 +715,7 @@ async def tgslots(message: Message):
     from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
     gate = decide_gc_play_mode(
         bet=bet_int,
-        game_max_bet=slots_BASE_MAX_BET,
+        game_max_bet=slots_live_max or slots_BASE_MAX_BET,
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_state.get("gc_bet_limit"),
@@ -863,7 +898,7 @@ async def tgslots(message: Message):
         await asyncio.sleep(1.0)
 
         if should_win:
-            max_multiplier = max(SLOTS_MULTIPLIERS.values())
+            max_multiplier = max(_live_slots_multipliers().values())
             win_amount_raw = Decimal(bet_int) * max_multiplier
             win_amount_int = int(win_amount_raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
             profit_int = max(0, win_amount_int - bet_int)
@@ -1006,7 +1041,7 @@ async def tgslots(message: Message):
         sent_msg = await message.reply(initial_emoji, parse_mode="HTML", disable_web_page_preview=True)
         await asyncio.sleep(1.0)
 
-        max_multiplier = max(SLOTS_MULTIPLIERS.values())
+        max_multiplier = max(_live_slots_multipliers().values())
         win_amount_raw = Decimal(bet_int) * max_multiplier
         win_amount_int = int(win_amount_raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
         profit_int = max(0, win_amount_int - bet_int)
@@ -1121,7 +1156,7 @@ async def tgslots(message: Message):
 
     dice_val = getattr(getattr(first_slots, "dice", None), "value", 1)
     combo = get_combo_text(int(dice_val or 1))
-    multiplier = SLOTS_MULTIPLIERS.get(tuple(combo), Decimal("0"))
+    multiplier = _live_slots_multipliers().get(tuple(combo), Decimal("0"))
 
     _sdbg("SPIN", f"dice={dice_val} combo={combo} mult={multiplier}")
 

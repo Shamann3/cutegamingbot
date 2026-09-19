@@ -62,7 +62,7 @@ async def roulett(message: Message):
     if bet < 0:
         return
 
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "duel", bet):
         return
 
     user_id = message.from_user.id

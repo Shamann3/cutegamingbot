@@ -125,11 +125,20 @@ def _fmt_int(n: int) -> str:
         return str(n)
 
 
+def _live_bad_hit() -> Decimal:
+    try:
+        from bot.runtime.game_desk.live import param_decimal
+        return param_decimal("bowling", "badHitChance", BOWLING_BAD_HIT_CHANCE)
+    except Exception:
+        return BOWLING_BAD_HIT_CHANCE
+
+
 def _is_bad_hit_roll_raw() -> bool:
     try:
         r = Decimal(str(random.random()))
-        bad = r < BOWLING_BAD_HIT_CHANCE
-        _bdbg("BAD_RAW", f"rand={r} chance={BOWLING_BAD_HIT_CHANCE} bad={bad}")
+        chance = _live_bad_hit()
+        bad = r < chance
+        _bdbg("BAD_RAW", f"rand={r} chance={chance} bad={bad}")
         return bad
     except Exception:
         return False
@@ -138,8 +147,10 @@ def _is_bad_hit_roll_raw() -> bool:
 def _is_bad_hit_roll_conditional() -> bool:
     try:
         r = Decimal(str(random.random()))
-        bad = r < BOWLING_BAD_CONDITIONAL
-        _bdbg("BAD_COND", f"rand={r} cond={BOWLING_BAD_CONDITIONAL} bad={bad}")
+        chance = _live_bad_hit()
+        cond = chance / BOWLING_MISS_PROBABILITY if BOWLING_MISS_PROBABILITY > 0 else Decimal(0)
+        bad = r < cond
+        _bdbg("BAD_COND", f"rand={r} cond={cond} bad={bad}")
         return bad
     except Exception:
         return False
@@ -620,7 +631,7 @@ async def _tgbowling_free_game(
 # ===================== ОСНОВНОЙ ХЭНДЛЕР =====================
 @dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("боулинг", "боул"))
 async def tgbowling(message: Message):
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "bowling"):
         return
     text = (message.text or "").strip().lower()
     parts = (message.text or "").strip().split()
@@ -651,19 +662,10 @@ async def tgbowling(message: Message):
         )
         return
 
-    if bet_int < bowling_MIN_BET:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Минимальная ставка {bowling_MIN_BET} кут.</b>",
-            parse_mode="HTML"
-        )
+    from bot.runtime.game_desk.live import bets as desk_bets, reject_desk
+    if await reject_desk(message, "bowling", bet_int):
         return
-
-    if bet_int > bowling_BASE_MAX_BET:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка {bowling_BASE_MAX_BET} кут.</b>",
-            parse_mode="HTML"
-        )
-        return
+    _desk_min, bowling_live_max = desk_bets("bowling")
 
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
@@ -686,7 +688,7 @@ async def tgbowling(message: Message):
     from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
     gate = decide_gc_play_mode(
         bet=bet_int,
-        game_max_bet=bowling_BASE_MAX_BET,
+        game_max_bet=bowling_live_max or bowling_BASE_MAX_BET,
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_state.get("gc_bet_limit"),

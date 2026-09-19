@@ -34,6 +34,43 @@ from main import (
 
 getcontext().prec = 28
 
+def _live_wires_payout():
+    try:
+        from bot.runtime.game_desk.live import param_decimal
+        return param_decimal("provoda", "payout", PAYOUT_MULTIPLIER)
+    except Exception:
+        return PAYOUT_MULTIPLIER
+
+def _live_wires_range():
+    try:
+        from bot.runtime.game_desk.live import param_int
+        lo = param_int("provoda", "wiresMin", WIRES_MIN)
+        hi = param_int("provoda", "wiresMax", WIRES_MAX)
+    except Exception:
+        lo, hi = int(WIRES_MIN), int(WIRES_MAX)
+    lo, hi = max(2, int(lo)), max(2, int(hi))
+    if hi < lo:
+        hi = lo
+    return lo, hi
+
+def _live_win_by_count(wires_count: int) -> int:
+    key = {3: "winWires3", 4: "winWires4", 5: "winWires5"}.get(int(wires_count))
+    fallback = WIN_BY_COUNT.get(int(wires_count), 1)
+    if not key:
+        return int(fallback)
+    try:
+        from bot.runtime.game_desk.live import param_int
+        return max(1, param_int("provoda", key, fallback))
+    except Exception:
+        return int(fallback)
+
+def _live_provoda_max():
+    try:
+        from bot.runtime.game_desk.live import bets as desk_bets
+        return desk_bets("provoda")[1] or int(provoda_MAX_BET)
+    except Exception:
+        return int(provoda_MAX_BET)
+
 CB_PREFIX = "wcol"
 CB_HDR = "wires_hdr"
 CB_CNT = "wires_cnt"
@@ -682,7 +719,7 @@ async def _session_ttl_watcher(chat_id: int, msg_id: int, owner_id: int, ttl: in
 # ======================================================================
 @dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("провода", "провод"))
 async def provoda(message: Message):
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "provoda"):
         return
     txt = (message.text or "").strip()
     if not txt:
@@ -701,18 +738,8 @@ async def provoda(message: Message):
     bet_amount = int(bet_token)
     if bet_amount <= 0:
         return
-    if bet_amount < provoda_MIN_BET:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Минимальная ставка {provoda_MIN_BET} кут.</b>",
-            parse_mode="HTML", disable_web_page_preview=True,
-        )
-        return
-    if bet_amount > provoda_MAX_BET:
-        try:
-            selected_phrase = random.choice(phrases12312)
-        except Exception:
-            selected_phrase = "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> Ставка слишком большая."
-        await message.reply(f"<b>{selected_phrase}</b>", parse_mode="HTML", disable_web_page_preview=True)
+    from bot.runtime.game_desk.live import reject_desk
+    if await reject_desk(message, "provoda", bet_amount):
         return
 
     user_id = int(message.from_user.id)
@@ -737,14 +764,14 @@ async def provoda(message: Message):
     from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
     gate = decide_gc_play_mode(
         bet=bet_amount,
-        game_max_bet=provoda_MAX_BET,
+        game_max_bet=_live_provoda_max(),
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_state.get("gc_bet_limit"),
     )
     if gate.get("mode") == "reject":
         await message.reply(
-            format_game_max_bet_html(gate.get("max") or provoda_MAX_BET),
+            format_game_max_bet_html(gate.get("max") or _live_provoda_max()),
             parse_mode="HTML", disable_web_page_preview=True,
         )
         return
@@ -856,7 +883,7 @@ async def provoda(message: Message):
 
         # ----- ПРОВЕРКА БАЛАНСА ГРУППЫ (не для free) -----
         chat_balance_now = await _chat_get_balance(chat_id)
-        max_win = int(bet_amount * PAYOUT_MULTIPLIER)
+        max_win = int(bet_amount * _live_wires_payout())
         if chat_balance_now < max_win:
             await message.reply(
                 f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>В группе недостаточно средств для выплаты возможного выигрыша.</b>\n"
@@ -897,7 +924,8 @@ async def provoda(message: Message):
         prev_state = active_games_wires.get(user_id) or {}
         session_rev = int(prev_state.get("session_rev", 0)) + 1
 
-        wires_count = random.randint(WIRES_MIN, WIRES_MAX)
+        wires_lo, wires_hi = _live_wires_range()
+        wires_count = random.randint(wires_lo, wires_hi)
         colors = random.sample(WIRE_COLORS, k=wires_count)
 
         all_indices = list(range(wires_count))
@@ -913,7 +941,7 @@ async def provoda(message: Message):
             win_mask = [0] * wires_count
             fake_win_count = wires_count - 1   # показываем N-1 победных
         else:
-            wins = WIN_BY_COUNT.get(wires_count, 1)
+            wins = _live_win_by_count(wires_count)
             remaining = [i for i in all_indices if i != short_idx]
             win_indices = set(random.sample(remaining, wins)) if wins <= len(remaining) else set(remaining)
             win_mask = [1 if i in win_indices else 0 for i in range(wires_count)]
@@ -946,7 +974,7 @@ async def provoda(message: Message):
             "short_idx": int(short_idx),
             "colors": [c["key"] for c in colors],
             "win_mask": win_mask,
-            "multiplier": str(PAYOUT_MULTIPLIER),
+            "multiplier": str(_live_wires_payout()),
             "has_assignment": has_assignment,
             "is_free": is_free_play,
             "using_demo": using_demo,
@@ -1059,7 +1087,8 @@ async def provoda_callback(callback_query: CallbackQuery):
                 win_streak = game.get("win_streak", 0)
                 lose_streak = game.get("lose_streak", 0)
             else:
-                if not (0 <= idx < length) or not (WIRES_MIN <= length <= WIRES_MAX):
+                wires_lo, wires_hi = _live_wires_range()
+                if not (0 <= idx < length) or not (wires_lo <= length <= wires_hi):
                     return
                 short_idx = short_idx_cb
                 using_demo = False
@@ -1144,7 +1173,7 @@ async def provoda_callback(callback_query: CallbackQuery):
                     active_games_wires[user_id] = game
                     _save_safe(active_games_wires)
 
-                raw_win = int((Decimal(bet_amount) * Decimal(str(PAYOUT_MULTIPLIER))).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+                raw_win = int((Decimal(bet_amount) * Decimal(str(_live_wires_payout()))).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
                 profit = max(0, raw_win - bet_amount)
 
                 # Списание demo/0demo (если включены) - на реальной победе обнуляем остаток целиком

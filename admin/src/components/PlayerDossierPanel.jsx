@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { patchOwnerUserFields } from '../lib/adminClient'
 import { notifyAdmin } from '../lib/notify'
 import { CaptchaDossierBlock } from './CaptchaInsights'
+import { IdentityBits } from './Copyable'
 
 function fmt(n) {
   return Number(n || 0).toLocaleString('ru-RU')
@@ -116,8 +117,8 @@ export default function PlayerDossierPanel({
           <ul>
             {d.sponsoredChats.map((c) => (
               <li key={c.chatId}>
-                Спонсор / архитектор · <strong>{c.name}</strong>
-                {c.username ? ` @${c.username}` : ''}
+                Спонсор / архитектор · <strong>{c.name}</strong>{' '}
+                <IdentityBits chatId={c.chatId} chatUsername={c.username} />
               </li>
             ))}
           </ul>

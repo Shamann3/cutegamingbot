@@ -63,3 +63,21 @@ export function CopyableUsername({ value, label = 'username' }) {
   if (!text || text === '@') return null
   return <Copyable value={text} label={label}>{text}</Copyable>
 }
+
+export function IdentityBits({
+  userId,
+  username,
+  chatId,
+  chatUsername,
+  userLabel = 'id игрока',
+  chatLabel = 'id группы',
+}) {
+  return (
+    <>
+      {username ? <CopyableUsername value={username} /> : null}
+      {userId != null && String(userId).trim() !== '' ? <CopyableId value={userId} label={userLabel} /> : null}
+      {chatUsername ? <CopyableUsername value={chatUsername} label="username группы" /> : null}
+      {chatId != null && String(chatId).trim() !== '' ? <CopyableId value={chatId} label={chatLabel} /> : null}
+    </>
+  )
+}

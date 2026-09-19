@@ -66,7 +66,7 @@ async def bullet(message: Message):
     else:
         return  # Неправильный формат команды
 
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "bullet"):
         return
 
     try:

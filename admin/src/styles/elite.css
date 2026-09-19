@@ -8174,10 +8174,19 @@ body,
 .cap-list li {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.7rem;
   align-items: baseline;
   font-size: .84rem;
   color: #9a9a9a;
+}
+.cap-who {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+  min-width: 0;
+  max-width: 100%;
 }
 .cap-link {
   border: 0;

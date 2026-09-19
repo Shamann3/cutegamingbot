@@ -142,6 +142,59 @@ def _fmt_kut(x) -> str:
         return str(x)
 
 
+def _live_bombs_edge() -> Decimal:
+    try:
+        from bot.runtime.game_desk.live import param_decimal
+        return param_decimal("bombs", "houseEdge", HOUSE_EDGE)
+    except Exception:
+        return HOUSE_EDGE
+
+
+def _live_bomb_count() -> int:
+    try:
+        from bot.runtime.game_desk.live import param_int
+        return max(1, min(GRID_SIZE - 1, param_int("bombs", "bombCount", BOMB_COUNT)))
+    except Exception:
+        return int(BOMB_COUNT)
+
+
+def _live_nuke_range():
+    try:
+        from bot.runtime.game_desk.live import param_int
+        lo = param_int("bombs", "nukeMin", NUKE_MIN)
+        hi = param_int("bombs", "nukeMax", NUKE_MAX)
+    except Exception:
+        lo, hi = int(NUKE_MIN), int(NUKE_MAX)
+    lo, hi = max(0, int(lo)), max(0, int(hi))
+    if hi < lo:
+        hi = lo
+    return lo, hi
+
+
+def _live_bombs_ttl():
+    try:
+        from bot.runtime.game_desk.live import session_seconds
+        return session_seconds("bombs", 20)
+    except Exception:
+        return SESSION_TTL
+
+
+def _live_bombs_cd():
+    try:
+        from bot.runtime.game_desk.live import param_float
+        return param_float("bombs", "clickCooldown", USER_CLICK_COOLDOWN)
+    except Exception:
+        return USER_CLICK_COOLDOWN
+
+
+def _live_bombs_max():
+    try:
+        from bot.runtime.game_desk.live import bets as desk_bets
+        return desk_bets("bombs")[1] or int(bomb_MAX_BET)
+    except Exception:
+        return int(bomb_MAX_BET)
+
+
 def _gain_per_click(grid_size: int = GRID_SIZE, bomb_count: int = BOMB_COUNT, nuke_count: int = 0) -> Decimal:
     safe_cells = grid_size - bomb_count - nuke_count
     if safe_cells <= 0 or grid_size <= 0:
@@ -150,13 +203,13 @@ def _gain_per_click(grid_size: int = GRID_SIZE, bomb_count: int = BOMB_COUNT, nu
     if p_safe <= 0:
         return Decimal("0")
     k_fair = (Decimal("1") / p_safe) - Decimal("1")
-    k = k_fair * (Decimal("1") - HOUSE_EDGE)
+    k = k_fair * (Decimal("1") - _live_bombs_edge())
     return k.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
 def _current_gain_per_click(nuke_count: int) -> Decimal:
     if INCREMENT_MODE.upper() == "FAIR":
-        return _gain_per_click(GRID_SIZE, BOMB_COUNT, nuke_count)
+        return _gain_per_click(GRID_SIZE, _live_bomb_count(), nuke_count)
     return max(Decimal("0"), FIXED_GAIN_PER_CLICK).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
@@ -529,7 +582,7 @@ def _finalize_game(uid: int, msg_id: Optional[int] = None) -> None:
 
 async def _session_ttl_watcher(owner_id: int, msg_id: int, chat_id: int):
     try:
-        await asyncio.sleep(SESSION_TTL)
+        await asyncio.sleep(_live_bombs_ttl())
         key = (int(chat_id), int(msg_id))
         if key in _closed_msgs:
             return
@@ -547,7 +600,7 @@ async def _session_ttl_watcher(owner_id: int, msg_id: int, chat_id: int):
 # ========================= СТАРТ ИГРЫ =========================
 @dp.message(lambda m: isinstance(m.text, str) and re.match(r"^\s*(бомбы|бомба)\b", m.text.strip().lower()))
 async def bombs(message: Message):
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "bombs"):
         return
     text_raw = (message.text or "").strip()
     if not text_raw:
@@ -582,11 +635,8 @@ async def bombs(message: Message):
     if bet_int <= 0:
         return
 
-    if bet_int < int(bomb_MIN_BET):
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Минимальная ставка {bomb_MIN_BET} кут.</b>",
-            parse_mode="HTML", disable_web_page_preview=True
-        )
+    from bot.runtime.game_desk.live import reject_desk
+    if await reject_desk(message, "bombs", bet_int):
         return
 
     bet_dec = _dec(bet_int)
@@ -630,14 +680,14 @@ async def bombs(message: Message):
     from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
     gate = decide_gc_play_mode(
         bet=bet_int,
-        game_max_bet=int(bomb_MAX_BET),
+        game_max_bet=_live_bombs_max(),
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_bet_limit,
     )
     if gate.get("mode") == "reject":
         await message.reply(
-            format_game_max_bet_html(gate.get("max") or bomb_MAX_BET),
+            format_game_max_bet_html(gate.get("max") or _live_bombs_max()),
             parse_mode="HTML", disable_web_page_preview=True
         )
         return
@@ -783,18 +833,20 @@ async def bombs(message: Message):
         random.shuffle(all_idxs)
 
         # Генерация поля с учётом demo / 0demo
+        live_bombs = _live_bomb_count()
+        nuke_lo, nuke_hi = _live_nuke_range()
         if using_0demo:
-            nuke_count = random.randint(NUKE_MIN, NUKE_MAX)
-            nukes_set = set(random.sample(all_idxs, nuke_count))
+            nuke_count = random.randint(nuke_lo, nuke_hi)
+            nukes_set = set(random.sample(all_idxs, min(nuke_count, len(all_idxs))))
             bombs_set = set(all_idxs) - nukes_set
         elif using_demo:
             bombs_set = set()
-            nuke_count = random.randint(NUKE_MIN, NUKE_MAX)
+            nuke_count = random.randint(nuke_lo, nuke_hi)
             nukes_set = set(all_idxs[:nuke_count])
         else:
-            bombs_set = set(all_idxs[:BOMB_COUNT])
-            nuke_count = random.randint(NUKE_MIN, NUKE_MAX)
-            rest = [x for x in all_idxs[BOMB_COUNT:] if x not in bombs_set]
+            bombs_set = set(all_idxs[:live_bombs])
+            nuke_count = random.randint(nuke_lo, nuke_hi)
+            rest = [x for x in all_idxs[live_bombs:] if x not in bombs_set]
             nukes_set = set(rest[:nuke_count])
 
         bombs_positions[user_id] = {"bombs": bombs_set, "nukes": nukes_set}
@@ -845,7 +897,7 @@ async def bombs_process_bomb_click(callback_query: CallbackQuery):
     inflight_key = (msg_id, uid)
 
     now = time.monotonic()
-    if now - _last_click.get(uid, 0.0) < USER_CLICK_COOLDOWN:
+    if now - _last_click.get(uid, 0.0) < _live_bombs_cd():
         await _safe_answer(callback_query, random.choice(PHRASES_TOO_FAST))
         if inflight_key in _inflight:
             _pending_click[inflight_key] = callback_query.data

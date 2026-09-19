@@ -17,6 +17,7 @@ import {
   saveDailyRotationSettings,
   sendBroadcast,
 } from '../../lib/adminClient'
+import { CopyableId, CopyableUsername } from '../../components/Copyable'
 
 const AUDIENCE_LABEL = {
   all: 'Все игроки',
@@ -291,7 +292,7 @@ function BroadcastRunCard({ row, expanded, onToggle, onCancel, cancelling }) {
             </div>
           </div>
           <p className="panel-shelf-muted">
-            Админ ID {row.adminUserId}
+            Админ <CopyableId value={row.adminUserId} />
             {row.templateKey && ` · шаблон ${row.templateKey}`}
             {row.finishedAt && ` · завершено ${formatDate(row.finishedAt)}`}
           </p>
@@ -334,8 +335,8 @@ function BroadcastRunCard({ row, expanded, onToggle, onCancel, cancelling }) {
                   <li key={`${r.userId}-${r.channel}-${i}`} className="panel-broadcast-recipient-row">
                     <span className="panel-broadcast-recipient-name">
                       {r.displayName || `Игрок ${r.userId}`}
-                      {r.username && <span className="panel-shelf-muted"> · @{r.username}</span>}
-                      <span className="panel-shelf-muted"> · ID {r.userId}</span>
+                      {r.username ? <span className="panel-shelf-muted"> · <CopyableUsername value={r.username} /></span> : null}
+                      <span className="panel-shelf-muted"> · <CopyableId value={r.userId} /></span>
                     </span>
                     <span className="panel-broadcast-recipient-channel">
                       {r.channel === 'telegram' ? 'Telegram' : 'WebApp'}
@@ -999,7 +1000,7 @@ export default function BroadcastSection({ panelTabs = null }) {
             <>
               <p className="panel-shelf-muted">
                 Пример: {preview.sampleUser?.displayName}
-                {preview.sampleUser?.username && ` @${preview.sampleUser.username}`}
+                {preview.sampleUser?.username ? <> <CopyableUsername value={preview.sampleUser.username} /></> : null}
                 {' · '}
                 {preview.sampleUser?.balance} кут
               </p>

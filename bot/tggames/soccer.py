@@ -145,12 +145,21 @@ def _fmt_int(n: int) -> str:
         return str(n)
 
 
+def _live_bad_shot() -> Decimal:
+    try:
+        from bot.runtime.game_desk.live import param_decimal
+        return param_decimal("soccer", "badShotChance", SOCCER_BAD_SHOT_CHANCE)
+    except Exception:
+        return SOCCER_BAD_SHOT_CHANCE
+
+
 def _is_bad_shot_roll_raw() -> bool:
     """Исходная вероятность неудачного удара (для 0demo, без привязки к dice)."""
     try:
         r = Decimal(str(random.random()))
-        bad = r < SOCCER_BAD_SHOT_CHANCE
-        _sdbg("BAD_RAW", f"rand={r} chance={SOCCER_BAD_SHOT_CHANCE} bad={bad}")
+        chance = _live_bad_shot()
+        bad = r < chance
+        _sdbg("BAD_RAW", f"rand={r} chance={chance} bad={bad}")
         return bad
     except Exception:
         return False
@@ -160,8 +169,10 @@ def _is_bad_shot_roll_conditional() -> bool:
     """Условная вероятность неудачного удара при уже случившемся промахе."""
     try:
         r = Decimal(str(random.random()))
-        bad = r < SOCCER_BAD_CONDITIONAL
-        _sdbg("BAD_COND", f"rand={r} cond={SOCCER_BAD_CONDITIONAL} bad={bad}")
+        chance = _live_bad_shot()
+        cond = chance / SOCCER_MISS_PROBABILITY if SOCCER_MISS_PROBABILITY > 0 else Decimal(0)
+        bad = r < cond
+        _sdbg("BAD_COND", f"rand={r} cond={cond} bad={bad}")
         return bad
     except Exception:
         return False
@@ -642,7 +653,7 @@ async def _tgsoccer_free_game(
 # ===================== ОСНОВНОЙ ХЭНДЛЕР =====================
 @dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("футбол", "фут"))
 async def tgsoccer(message: Message):
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "soccer"):
         return
     text = (message.text or "").strip().lower()
     parts = (message.text or "").strip().split()
@@ -673,19 +684,10 @@ async def tgsoccer(message: Message):
         )
         return
 
-    if bet_int < soccer_MIN_BET:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Минимальная ставка {soccer_MIN_BET} кут.</b>",
-            parse_mode="HTML"
-        )
+    from bot.runtime.game_desk.live import bets as desk_bets, reject_desk
+    if await reject_desk(message, "soccer", bet_int):
         return
-
-    if bet_int > soccer_BASE_MAX_BET:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка {soccer_BASE_MAX_BET} кут.</b>",
-            parse_mode="HTML"
-        )
-        return
+    _desk_min, soccer_live_max = desk_bets("soccer")
 
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
@@ -710,7 +712,7 @@ async def tgsoccer(message: Message):
     from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
     gate = decide_gc_play_mode(
         bet=bet_int,
-        game_max_bet=soccer_BASE_MAX_BET,
+        game_max_bet=soccer_live_max or soccer_BASE_MAX_BET,
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_state.get("gc_bet_limit"),

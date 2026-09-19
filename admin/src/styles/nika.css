@@ -848,7 +848,10 @@
   cursor: pointer;
   border-bottom: 1px solid rgba(255,255,255,.06);
 }
-.grp-page.nika-page .nika-ios-row span { min-width: 0; }
+.grp-page.nika-page .nika-ios-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .grp-page.nika-page .nika-ios-row b {
   min-width: 0;
   text-align: right;

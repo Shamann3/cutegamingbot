@@ -37,6 +37,13 @@ from bot.config.config import TOKEN, donate_bet, timeoutdonate, ref_coin
 
 # ====== Константы ======
 MAX_PARTICIPANTS = 12
+
+def _live_kosti_max():
+    try:
+        from bot.runtime.game_desk.live import max_players
+        return max_players("kosti", MAX_PARTICIPANTS)
+    except Exception:
+        return MAX_PARTICIPANTS
 DICE_MIN, DICE_MAX = 1, 12
 FLOOD_EDIT_MAX_RETRIES = 4
 FLOOD_SLEEP_BUFFER_SEC = 1.0
@@ -356,7 +363,7 @@ async def kosti(message: Message):
     if parts[0].lower() != "кости":
         return
 
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "kosti"):
         return
 
     if len(parts) == 1:
@@ -372,6 +379,10 @@ async def kosti(message: Message):
 
     # отрицательные/мусор - игнор
     if bet < 0:
+        return
+
+    from bot.runtime.game_desk.live import reject_desk
+    if await reject_desk(message, "kosti", bet):
         return
 
     creator_id = message.from_user.id
@@ -501,7 +512,7 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
             participants = _dedupe_preserve_order([int(x) for x in game.get('participants', [])])
             game['participants'] = participants
 
-            if len(participants) >= MAX_PARTICIPANTS:
+            if len(participants) >= _live_kosti_max():
                 await callback_query.answer("💭 В игре нет мест.", show_alert=True)
                 return
 
@@ -575,7 +586,7 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
                 winf = "{:,.0f}".format(total_pot - game['bet']).replace(",", ".")
                 win_text = f"\n<tg-emoji emoji-id='5292146637844543370'>🕊</tg-emoji> <b>Выигрыш {winf} кут</b>"
 
-            if len(game['participants']) >= MAX_PARTICIPANTS:
+            if len(game['participants']) >= _live_kosti_max():
                 keyboard = InlineKeyboardMarkup(
                     inline_keyboard=[[InlineKeyboardButton(text="Начать игру", callback_data=f"kostistart:{game_id}")]]
                 )

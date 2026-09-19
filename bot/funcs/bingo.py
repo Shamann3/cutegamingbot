@@ -42,6 +42,13 @@ from main import (
 from bot.config.config import TOKEN, donate_bet, timeoutdonate, ref_coin
 
 MAX_PARTICIPANTS = 10
+
+def _live_bingo_max():
+    try:
+        from bot.runtime.game_desk.live import max_players
+        return max_players("bingo", MAX_PARTICIPANTS)
+    except Exception:
+        return MAX_PARTICIPANTS
 FLOOD_EDIT_MAX_RETRIES = 4
 FLOOD_SLEEP_BUFFER_SEC = 1.0
 
@@ -427,7 +434,7 @@ async def bingo(message: Message):
     if bet < 0:
         return
 
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "bingo", bet):
         return
 
     creator_id = message.from_user.id
@@ -566,7 +573,7 @@ async def bingo_join_game_callback(callback_query: CallbackQuery):
             participants = _dedupe_preserve_order([int(x) for x in game.get('participants', [])])
             game['participants'] = participants
 
-            if len(participants) >= MAX_PARTICIPANTS:
+            if len(participants) >= _live_bingo_max():
                 await callback_query.answer("💭 В игре нет мест", show_alert=True)
                 return
 
@@ -641,7 +648,7 @@ async def bingo_join_game_callback(callback_query: CallbackQuery):
 
             total_pot = game['bet'] * len(game['participants'])
 
-            if len(game['participants']) >= MAX_PARTICIPANTS:
+            if len(game['participants']) >= _live_bingo_max():
                 keyboard = InlineKeyboardMarkup(
                     inline_keyboard=[[InlineKeyboardButton(text="Начать игру", callback_data=f"startbingo:{game_id}")]]
                 )

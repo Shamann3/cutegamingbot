@@ -143,12 +143,21 @@ def _fmt_int(n: int) -> str:
         return str(n)
 
 
+def _live_bad_throw() -> Decimal:
+    try:
+        from bot.runtime.game_desk.live import param_decimal
+        return param_decimal("darts", "badThrowChance", DARTS_BAD_THROW_CHANCE)
+    except Exception:
+        return DARTS_BAD_THROW_CHANCE
+
+
 def _is_bad_throw_roll_raw() -> bool:
     """Исходная вероятность (для 0demo, без привязки к dice)."""
     try:
         r = Decimal(str(random.random()))
-        bad = r < DARTS_BAD_THROW_CHANCE
-        _ddbg("BAD_RAW", f"rand={r} chance={DARTS_BAD_THROW_CHANCE} bad={bad}")
+        chance = _live_bad_throw()
+        bad = r < chance
+        _ddbg("BAD_RAW", f"rand={r} chance={chance} bad={bad}")
         return bad
     except Exception:
         return False
@@ -158,8 +167,10 @@ def _is_bad_throw_roll_conditional() -> bool:
     """Условная вероятность неудачного броска при уже случившемся промахе."""
     try:
         r = Decimal(str(random.random()))
-        bad = r < DARTS_BAD_CONDITIONAL
-        _ddbg("BAD_COND", f"rand={r} cond={DARTS_BAD_CONDITIONAL} bad={bad}")
+        chance = _live_bad_throw()
+        cond = chance / DARTS_MISS_PROBABILITY if DARTS_MISS_PROBABILITY > 0 else Decimal(0)
+        bad = r < cond
+        _ddbg("BAD_COND", f"rand={r} cond={cond} bad={bad}")
         return bad
     except Exception:
         return False
@@ -642,7 +653,7 @@ async def _tgdarts_free_game(
 # ===================== ОСНОВНОЙ ХЭНДЛЕР =====================
 @dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("дарт", "дартс"))
 async def tgdarts(message: Message):
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "darts"):
         return
     text = (message.text or "").strip().lower()
     parts = (message.text or "").strip().split()
@@ -673,19 +684,10 @@ async def tgdarts(message: Message):
         )
         return
 
-    if bet_int < darts_MIN_BET:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Минимальная ставка {darts_MIN_BET} кут.</b>",
-            parse_mode="HTML"
-        )
+    from bot.runtime.game_desk.live import bets as desk_bets, reject_desk
+    if await reject_desk(message, "darts", bet_int):
         return
-
-    if bet_int > darts_BASE_MAX_BET:
-        await message.reply(
-            f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная ставка {darts_BASE_MAX_BET} кут.</b>",
-            parse_mode="HTML"
-        )
-        return
+    _desk_min, darts_live_max = desk_bets("darts")
 
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
@@ -710,7 +712,7 @@ async def tgdarts(message: Message):
     from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
     gate = decide_gc_play_mode(
         bet=bet_int,
-        game_max_bet=darts_BASE_MAX_BET,
+        game_max_bet=darts_live_max or darts_BASE_MAX_BET,
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_state.get("gc_bet_limit"),

@@ -1609,6 +1609,18 @@ export async function runNikaAction(payload) {
   return adminFetch('/nika/action', { method: 'POST', body: payload })
 }
 
+export async function fetchGamesOverview() {
+  return adminFetch('/games/overview')
+}
+
+export async function saveGamesSettings(payload) {
+  return adminFetch('/games/settings', { method: 'POST', body: payload })
+}
+
+export async function resetGameSettings(game) {
+  return adminFetch('/games/reset', { method: 'POST', body: { game } })
+}
+
 export async function fetchSoftRestartOverview() {
   return adminFetch('/soft-restart/overview')
 }

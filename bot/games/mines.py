@@ -79,9 +79,6 @@ async def mines(message: Message):
         # Неправильный формат команды, выходим
         return
 
-    if await reject_if_private_game(message):
-        return
-
     try:
         # Проверяем, что bet_str не пустой и является числом
         if bet_str.isdigit():
@@ -89,10 +86,8 @@ async def mines(message: Message):
         else:
             raise ValueError("Некорректная ставка")
 
-        # Проверяем, что ставка больше 0
-        #if bet <= 0:
-            #await message.reply("🛠 Ставка должна быть больше 0")
-            #return
+        if await reject_if_private_game(message, "mines", bet):
+            return
     except ValueError:
         await message.reply("🛠 <b>Некорректная ставка</b>",
             parse_mode="HTML",

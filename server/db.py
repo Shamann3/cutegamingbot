@@ -463,6 +463,14 @@ class Database:
         except Exception as _nika_err:
             _logger.warning("nika schema skipped: %s", _nika_err)
 
+        try:
+            from game_desk.schema import ensure_game_desk_schema
+
+            await ensure_game_desk_schema(self)
+            print("[DB][OK] game desk schema")
+        except Exception as _desk_err:
+            _logger.warning("game desk schema skipped: %s", _desk_err)
+
         await self._normalize_all_grow_timers()
         print("Пул соединений создан, schema применена.")
         print(f"Dex: {len(dex_catalog._by_id)} предметов в каталоге.")

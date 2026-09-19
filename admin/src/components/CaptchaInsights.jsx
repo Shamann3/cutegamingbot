@@ -1,5 +1,31 @@
+import { CopyableId, CopyableUsername } from './Copyable'
+
 function fmt(n) {
   return Number(n || 0).toLocaleString('ru-RU')
+}
+
+function WhoMark({ name, userId, username, onOpen }) {
+  return (
+    <span className="cap-who">
+      {onOpen && userId ? (
+        <button type="button" className="cap-link" onClick={() => onOpen(userId)}>{name || 'игрок'}</button>
+      ) : <span>{name || 'игрок'}</span>}
+      {username ? <CopyableUsername value={username} /> : null}
+      {userId ? <CopyableId value={userId} /> : null}
+    </span>
+  )
+}
+
+function ChatMark({ name, chatId, username, onOpen }) {
+  return (
+    <span className="cap-who">
+      {onOpen && chatId ? (
+        <button type="button" className="cap-link" onClick={() => onOpen(chatId)}>{name || 'группа'}</button>
+      ) : <span>{name || 'группа'}</span>}
+      {username ? <CopyableUsername value={username} label="username группы" /> : null}
+      {chatId ? <CopyableId value={chatId} label="id группы" /> : null}
+    </span>
+  )
 }
 
 function dur(ms) {
@@ -79,9 +105,7 @@ export function CaptchaOverviewBlock({ data, onOpenChat, onOpenUser }) {
           <ul className="cap-list">
             {(c.topGroups || []).map((g) => (
               <li key={g.chatId}>
-                <button type="button" className="cap-link" onClick={() => onOpenChat?.(g.chatId)}>
-                  {g.name}
-                </button>
+                <ChatMark name={g.name} chatId={g.chatId} username={g.username} onOpen={onOpenChat} />
                 <span>{fmt(g.passed)}</span>
               </li>
             ))}
@@ -91,9 +115,7 @@ export function CaptchaOverviewBlock({ data, onOpenChat, onOpenUser }) {
           <ul className="cap-list">
             {(c.topFailUsers || []).map((u) => (
               <li key={u.userId}>
-                <button type="button" className="cap-link" onClick={() => onOpenUser?.(u.userId)}>
-                  {u.name}{u.username ? ` · @${u.username}` : ''}
-                </button>
+                <WhoMark name={u.name} userId={u.userId} username={u.username} onOpen={onOpenUser} />
                 <span>{fmt(u.fails)}</span>
               </li>
             ))}
@@ -131,7 +153,7 @@ export function CaptchaChatBlock({ data, members, onOpenUser }) {
         <div className="grp-stat"><span className="grp-stat-label">При входе / из чата</span><strong className="grp-stat-value">{fmt(c.joinPasses)} / {fmt(c.messagePasses)}</strong></div>
       </div>
       {c.enabled === false && (
-        <p className="grp-help">Владелец выключил капчу{c.disabledAt ? ` · ${when(c.disabledAt)}` : ''}{c.disabledBy ? ` · id ${c.disabledBy}` : ''}</p>
+        <p className="grp-help">Владелец выключил капчу{c.disabledAt ? ` · ${when(c.disabledAt)}` : ''}{c.disabledBy ? <> · <CopyableId value={c.disabledBy} /></> : ''}</p>
       )}
 
       <div className="grp-card" style={{ marginBottom: '1rem' }}>
@@ -162,17 +184,13 @@ export function CaptchaChatBlock({ data, members, onOpenUser }) {
           <ul className="cap-list">
             {waiting.map((u) => (
               <li key={`w-${u.userId}`}>
-                <button type="button" className="cap-link" onClick={() => onOpenUser?.(u.userId)}>
-                  {u.name}{u.username ? ` · @${u.username}` : ''}
-                </button>
+                <WhoMark name={u.name} userId={u.userId} username={u.username} onOpen={onOpenUser} />
                 <span>{fmt(u.shown)} показ. · {fmt(u.fails)} ош. · {when(u.at)}</span>
               </li>
             ))}
             {pendingPeople.filter((p) => !waiting.some((w) => w.userId === p.userId)).map((p) => (
               <li key={`p-${p.userId}`}>
-                <button type="button" className="cap-link" onClick={() => onOpenUser?.(p.userId)}>
-                  {p.name}
-                </button>
+                <WhoMark name={p.name} userId={p.userId} username={p.username} onOpen={onOpenUser} />
                 <span>висит · {p.variantLabel} · {when(p.at)}</span>
               </li>
             ))}
@@ -184,9 +202,7 @@ export function CaptchaChatBlock({ data, members, onOpenUser }) {
           <ul className="cap-list">
             {shown.map((f, i) => (
               <li key={`s-${f.userId}-${f.at}-${i}`}>
-                <button type="button" className="cap-link" onClick={() => onOpenUser?.(f.userId)}>
-                  {f.name}
-                </button>
+                <WhoMark name={f.name} userId={f.userId} username={f.username} onOpen={onOpenUser} />
                 <span>{f.label}{f.preview ? ` · «${f.preview}»` : ''} · {when(f.at)}</span>
               </li>
             ))}
@@ -201,9 +217,7 @@ export function CaptchaChatBlock({ data, members, onOpenUser }) {
           <ul className="cap-list">
             {(c.recentFails || []).map((f, i) => (
               <li key={`${f.userId}-${f.at}-${i}`}>
-                <button type="button" className="cap-link" onClick={() => onOpenUser?.(f.userId)}>
-                  {f.name}
-                </button>
+                <WhoMark name={f.name} userId={f.userId} username={f.username} onOpen={onOpenUser} />
                 <span>{f.variantLabel} · {when(f.at)}</span>
               </li>
             ))}
@@ -215,9 +229,7 @@ export function CaptchaChatBlock({ data, members, onOpenUser }) {
           <ul className="cap-list">
             {(c.recentPasses || []).map((p) => (
               <li key={`${p.userId}-${p.at}`}>
-                <button type="button" className="cap-link" onClick={() => onOpenUser?.(p.userId)}>
-                  {p.name}
-                </button>
+                <WhoMark name={p.name} userId={p.userId} username={p.username} onOpen={onOpenUser} />
                 <span>{p.variantLabel} · {dur(p.durationMs)} · {p.attempts} попыт.</span>
               </li>
             ))}
@@ -276,9 +288,7 @@ export function CaptchaDossierBlock({ data, onOpenChat }) {
         <ul>
           {groups.map((g) => (
             <li key={`pass-${g.chatId}`}>
-              <button type="button" className="cap-link" onClick={() => onOpenChat?.(g.chatId)}>
-                {g.name}
-              </button>
+              <ChatMark name={g.name} chatId={g.chatId} username={g.username} onOpen={onOpenChat} />
               <em>прошёл · {g.variantLabel} · {g.attempts} попыт. · {when(g.passedAt)}</em>
             </li>
           ))}
@@ -288,9 +298,7 @@ export function CaptchaDossierBlock({ data, onOpenChat }) {
         <ul>
           {recent.slice(0, 8).map((e, i) => (
             <li key={`ev-${e.at}-${i}`}>
-              <button type="button" className="cap-link" onClick={() => onOpenChat?.(e.chatId)}>
-                {e.chatName}
-              </button>
+              <ChatMark name={e.chatName} chatId={e.chatId} username={e.chatUsername} onOpen={onOpenChat} />
               <em>{e.label}{e.preview ? ` · «${e.preview}»` : ''}{e.variantLabel ? ` · ${e.variantLabel}` : ''} · {when(e.at)}</em>
             </li>
           ))}

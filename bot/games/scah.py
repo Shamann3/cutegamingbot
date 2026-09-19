@@ -26,6 +26,13 @@ from bot.db_create.pklcode import LazyGameStore as _LazyGS_shah
 shah_cooldowns = _LazyGS_shah("shah_cooldowns")
 REST = 2.2
 
+def _live_scah_rest():
+    try:
+        from bot.runtime.game_desk.live import param_float
+        return param_float("scah", "turnRest", REST)
+    except Exception:
+        return REST
+
 
 def _get_sha_lock(game_id: int) -> asyncio.Lock:
     if game_id not in _join_locks_sha:
@@ -484,10 +491,9 @@ async def sha(message: Message):
     if len(parts) > 2:
         return
 
-    if await reject_if_private_game(message):
-        return
-
     bet = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
+    if await reject_if_private_game(message, "scah", bet):
+        return
     creator_id = message.from_user.id
 
     if bet > 0 and not await check_balance(creator_id, bet):
@@ -883,7 +889,7 @@ async def scah_select_piece_callback(callback_query: types.CallbackQuery):
 
     current_time = time.time()
     last_usage = shah_cooldowns.get(user_id, 0)
-    if current_time - last_usage < REST:
+    if current_time - last_usage < _live_scah_rest():
         await safe_callback_answer(
             callback_query, f"⌚️ Не спешите", show_alert=True)
         return

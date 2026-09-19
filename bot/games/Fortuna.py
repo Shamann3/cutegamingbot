@@ -375,11 +375,16 @@ def _canonical_roulette_choice(choice: str) -> str:
 
 def _spin_roulette_number() -> int:
     r = _dec(random.random())
-    if r < FORTUNA_ZERO_CHANCE:
+    try:
+        from bot.runtime.game_desk.live import param_decimal
+        zero = param_decimal("fortuna_solo", "zeroChance", FORTUNA_ZERO_CHANCE)
+    except Exception:
+        zero = FORTUNA_ZERO_CHANCE
+    if r < zero:
         num = 0
     else:
         num = random.randint(1, 12)
-    _fdbg("SPIN", f"rand={r} zero_chance={FORTUNA_ZERO_CHANCE} -> {num}")
+    _fdbg("SPIN", f"rand={r} zero_chance={zero} -> {num}")
     return int(num)
 
 def _clamp01(v: float) -> float:
@@ -393,12 +398,49 @@ def _clamp01(v: float) -> float:
         return 1.0
     return x
 
+def _live_fortuna_mult(name: str, default: float) -> float:
+    try:
+        from bot.runtime.game_desk.live import param_float
+        return float(param_float("fortuna_solo", name, default))
+    except Exception:
+        return float(default)
+
+
+def _live_fortuna_min() -> int:
+    try:
+        from bot.runtime.game_desk.live import bets as desk_bets
+        return int(desk_bets("fortuna_solo")[0] or FORTUNA_MIN_BET)
+    except Exception:
+        return int(FORTUNA_MIN_BET)
+
+
+def _live_fortuna_max() -> int:
+    try:
+        from bot.runtime.game_desk.live import bets as desk_bets
+        return int(desk_bets("fortuna_solo")[1] or FORTUNA_MAXIMUM_BET_AMOUNT)
+    except Exception:
+        return int(FORTUNA_MAXIMUM_BET_AMOUNT)
+
+
+def _live_fortuna_range(start: int, end: int) -> float:
+    gap = abs(int(end) - int(start)) + 1
+    defaults = {
+        1: 11.0, 2: 6.0, 3: 4.0, 4: 3.0, 5: 2.4, 6: 2.0,
+        7: 1.7, 8: 1.45, 9: 1.25, 10: 1.10, 11: 1.02,
+    }
+    return _live_fortuna_mult(f"range{gap}", defaults.get(gap, 1.0))
+
+
 def _zero_chance_float() -> float:
     try:
-        z = float(FORTUNA_ZERO_CHANCE)
+        from bot.runtime.game_desk.live import param_float
+        return _clamp01(float(param_float("fortuna_solo", "zeroChance", FORTUNA_ZERO_CHANCE)))
     except Exception:
-        z = 1.0 / 13.0
-    return _clamp01(z)
+        try:
+            z = float(FORTUNA_ZERO_CHANCE)
+        except Exception:
+            z = 1.0 / 13.0
+        return _clamp01(z)
 
 def _natural_win_probability(parsed: dict) -> float:
     mode = str(parsed.get("mode") or "")
@@ -437,7 +479,7 @@ def _target_win_probability(parsed: dict, lose_streak: int = 0) -> float:
         return 0.0
 
     if mode == "number":
-        rare = _clamp01(float(FORTUNA_SINGLE_NUMBER_WIN_CHANCE))
+        rare = _clamp01(_live_fortuna_mult("singleNumberWinChance", float(FORTUNA_SINGLE_NUMBER_WIN_CHANCE)))
         if int(lose_streak or 0) >= FORTUNA_LOSE_STREAK_SOFTEN_FROM:
             extra_steps = int(lose_streak or 0) - int(FORTUNA_LOSE_STREAK_SOFTEN_FROM) + 1
             extra_steps = max(0, min(extra_steps, int(FORTUNA_LOSE_STREAK_SOFTEN_CAP_STEPS)))
@@ -1128,7 +1170,7 @@ async def _load_gc_state_for_user_fortuna(user_id: int) -> dict:
         "current_two": current_two,
         "target_amount": target_amount,
         "gc_bet_limit": gc_bet_limit,
-        "max_bet": FORTUNA_MAXIMUM_BET_AMOUNT,
+        "max_bet": _live_fortuna_max(),
     }
 
 # ===================== ПАРСИНГ СТАВКИ =====================
@@ -1162,19 +1204,19 @@ def _parse_roulette_choice(parts: List[str]) -> dict:
             result["ok"] = True
             result["mode"] = "number"
             result["selected_number"] = selected_number
-            result["multiplier"] = 11.0
+            result["multiplier"] = _live_fortuna_mult("numberMult", 11.0)
             return result
 
         if canonical in ("red", "black"):
             result["ok"] = True
             result["mode"] = "color"
-            result["multiplier"] = 2.0
+            result["multiplier"] = _live_fortuna_mult("colorMult", 2.0)
             return result
 
         if canonical in ("even", "odd"):
             result["ok"] = True
             result["mode"] = "parity"
-            result["multiplier"] = 2.0
+            result["multiplier"] = _live_fortuna_mult("parityMult", 2.0)
             return result
 
         result["error"] = _roulette_help_text()
@@ -1196,7 +1238,7 @@ def _parse_roulette_choice(parts: List[str]) -> dict:
         result["mode"] = "range"
         result["start_num"] = start_num
         result["end_num"] = end_num
-        result["multiplier"] = float(calculate_multiplier(start_num, end_num))
+        result["multiplier"] = _live_fortuna_range(start_num, end_num)
         return result
 
     result["error"] = _roulette_help_text()
@@ -1554,7 +1596,7 @@ async def _fortuna_paid_game(
                     selected_phrase = random.choice(phrases12312)
                 except Exception:
                     selected_phrase = None
-                if not using_demo and not using_0demo and selected_phrase and bet_int > FORTUNA_MAXIMUM_BET_AMOUNT:
+                if not using_demo and not using_0demo and selected_phrase and bet_int > _live_fortuna_max():
                     try:
                         await bot1.send_message(chat_id, f"<b>{selected_phrase}</b>", reply_to_message_id=message.message_id, parse_mode="HTML")
                     except Exception:
@@ -2031,7 +2073,7 @@ async def Fortuna(message: Message):
         if _already_processed(message):
             return
 
-        if await reject_if_private_game(message):
+        if await reject_if_private_game(message, "fortuna_solo"):
             return
 
         parts = (message.text or "").strip().split()
@@ -2064,11 +2106,11 @@ async def Fortuna(message: Message):
             _mark_processed_message(message)
             return
 
-        if bet_int < FORTUNA_MIN_BET:
+        if bet_int < _live_fortuna_min():
             try:
                 await bot1.send_message(
                     message.chat.id,
-                    f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Ставка должна быть больше {FORTUNA_MIN_BET} кут</b>",
+                    f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Ставка должна быть больше {_live_fortuna_min()} кут</b>",
                     reply_to_message_id=message.message_id,
                     parse_mode="HTML",
                 )
@@ -2077,11 +2119,11 @@ async def Fortuna(message: Message):
             _mark_processed_message(message)
             return
 
-        if bet_int > FORTUNA_MAXIMUM_BET_AMOUNT:
+        if bet_int > _live_fortuna_max():
             try:
                 await bot1.send_message(
                     message.chat.id,
-                    f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная сумма ставки - {fmt_int(FORTUNA_MAXIMUM_BET_AMOUNT)} кут.</b>",
+                    f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Максимальная сумма ставки - {fmt_int(_live_fortuna_max())} кут.</b>",
                     reply_to_message_id=message.message_id,
                     parse_mode="HTML",
                 )
@@ -2113,7 +2155,7 @@ async def Fortuna(message: Message):
         from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
         gate = decide_gc_play_mode(
             bet=bet_int,
-            game_max_bet=FORTUNA_MAXIMUM_BET_AMOUNT,
+            game_max_bet=_live_fortuna_max(),
             has_assignment=has_assignment,
             is_free=is_free,
             gc_bet_limit=gc_state.get("gc_bet_limit"),
@@ -2122,7 +2164,7 @@ async def Fortuna(message: Message):
             try:
                 await bot1.send_message(
                     chat_id,
-                    format_game_max_bet_html(gate.get("max") or FORTUNA_MAXIMUM_BET_AMOUNT),
+                    format_game_max_bet_html(gate.get("max") or _live_fortuna_max()),
                     reply_to_message_id=message.message_id,
                     parse_mode="HTML",
                 )

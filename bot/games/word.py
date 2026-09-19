@@ -16,7 +16,7 @@ async def word(message: Message):
 
     # Если сообщение начинается с "слово", это попытка создать новую игру
     if len(text_parts) >= 2 and text_parts[0].lower() in ['слово34123412','слова34123412']:
-        if await reject_if_private_game(message):
+        if await reject_if_private_game(message, "words"):
             return
 
         # Проверяем, что на 1 индексе есть хотя бы одно слово или ставка

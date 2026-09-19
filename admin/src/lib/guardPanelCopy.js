@@ -34,6 +34,11 @@ function onKeyDown(event) {
   if (key === 'c' || key === 'x' || key === 'a' || key === 'insert') stop(event)
 }
 
+function onContextMenu(event) {
+  if (isTextEntryEvent(event)) return
+  stop(event)
+}
+
 function fieldFromNode(node) {
   if (!node) return null
   if (node.nodeType === 3) node = node.parentElement
@@ -61,6 +66,7 @@ export function installPanelCopyGuard() {
   document.addEventListener('selectstart', onSelectStart, true)
   document.addEventListener('dragstart', onDragStart, true)
   document.addEventListener('keydown', onKeyDown, true)
+  document.addEventListener('contextmenu', onContextMenu, true)
   document.addEventListener('mouseup', collapseForeignSelection, true)
   document.addEventListener('touchend', collapseForeignSelection, true)
 
@@ -70,6 +76,7 @@ export function installPanelCopyGuard() {
     document.removeEventListener('selectstart', onSelectStart, true)
     document.removeEventListener('dragstart', onDragStart, true)
     document.removeEventListener('keydown', onKeyDown, true)
+    document.removeEventListener('contextmenu', onContextMenu, true)
     document.removeEventListener('mouseup', collapseForeignSelection, true)
     document.removeEventListener('touchend', collapseForeignSelection, true)
     delete document.documentElement.dataset.noCopy

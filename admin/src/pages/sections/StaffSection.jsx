@@ -166,7 +166,7 @@ function ReviewModal({ application, onClose, onApproved, onRejected }) {
       >
         <h3 className="admin-modal-title">{nameOf(application)}</h3>
         <p className="admin-modal-desc">
-          Подана {fmtDate(application.createdAt)} · ID {application.userId}
+          Подана {fmtDate(application.createdAt)} · <CopyableId value={application.userId} />
         </p>
 
         <div className="staff-answers">
@@ -676,6 +676,8 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff }) {
           <div key={m.userId} className="staff-member-row">
             <div className="staff-member-info">
               <span className="staff-card-name">{nameOf(m)}</span>
+              {m.username ? <CopyableUsername value={m.username} /> : null}
+              {m.userId ? <CopyableId value={m.userId} /> : null}
               <span className="staff-badge" style={{ '--badge-color': ROLE_BADGE_COLOR[m.role] || '#94a3b8' }}>
                 {m.roleLabel}
               </span>
@@ -1108,6 +1110,8 @@ function LedgerTab({ isProjectCreator = false }) {
               <div key={it.id} className="staff-member-row">
                 <div className="staff-member-info">
                   <span className="staff-card-name">{it.firstName || (it.username ? `@${it.username}` : `ID ${it.userId}`)}</span>
+                  {it.username ? <CopyableUsername value={it.username} /> : null}
+                  {it.userId ? <CopyableId value={it.userId} /> : null}
                   <span className="staff-badge" style={{ '--badge-color': it.kind === 'advance' ? '#fbbf24' : '#34d399' }}>
                     {it.kind === 'advance' ? 'аванс' : 'выплата'} {it.amount}
                   </span>
@@ -1171,6 +1175,8 @@ function LeaderboardTab() {
           <div key={m.userId} className="staff-member-row">
             <div className="staff-member-info">
               <span className="staff-card-name">#{i + 1} {nameOf(m)}</span>
+              {m.username ? <CopyableUsername value={m.username} /> : null}
+              {m.userId ? <CopyableId value={m.userId} /> : null}
               <span className="staff-badge" style={{ '--badge-color': ROLE_BADGE_COLOR[m.role] || '#94a3b8' }}>
                 {roleLabel(m.role)}
               </span>
@@ -1265,6 +1271,8 @@ function ShiftsTab() {
             <div key={s.id} className="staff-member-row">
               <div className="staff-member-info">
                 <span className="staff-card-name">{s.firstName || (s.username ? `@${s.username}` : `ID ${s.userId}`)}</span>
+                {s.username ? <CopyableUsername value={s.username} /> : null}
+                {s.userId ? <CopyableId value={s.userId} /> : null}
                 <span className="staff-badge" style={{ '--badge-color': at.color || '#94a3b8' }}>{at.label || s.attendance}</span>
               </div>
               <div className="staff-member-meta">
@@ -1498,6 +1506,7 @@ function InvitesTab() {
               <div className="staff-member-meta">
                 <code
                   className="staff-invite-token staff-invite-token-copy"
+                  data-copyable="1"
                   title="Нажми чтобы скопировать"
                   onClick={() => handleCopy(t)}
                   style={{ cursor: 'pointer' }}

@@ -11,7 +11,7 @@ import { notifyAdmin } from '../../lib/notify'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import DurationUntil from '../../components/DurationUntil'
 import { CaptchaChatBlock, CaptchaOverviewBlock } from '../../components/CaptchaInsights'
-import { CopyableId, CopyableUsername } from '../../components/Copyable'
+import { CopyableId, CopyableUsername, IdentityBits } from '../../components/Copyable'
 
 const PUNISH_ACTIONS = [
   { group: 'В этой группе', items: [
@@ -144,7 +144,7 @@ function RankRow({ item, metric, onOpen, index = 0 }) {
       <span className="grp-rank-body">
         <span className="grp-rank-name">{item.name || `Чат ${item.chat_id}`}</span>
         <span className="grp-rank-meta">
-          {item.username ? `@${String(item.username).replace(/^@/, '')}` : item.chat_id}
+          <IdentityBits chatId={item.chat_id} chatUsername={item.username} />
         </span>
       </span>
       <span className="grp-rank-metric">{metric}</span>
@@ -594,18 +594,22 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                               key: 'name',
                               label: 'Игрок',
                               render: (r) => (
-                                <button
-                                  type="button"
-                                  className="grp-inline-link"
-                                  onClick={() => r.user_id && onOpenUser?.(r.user_id)}
-                                >
-                                  {`${r.name || 'Игрок'}${r.username ? ` @${r.username}` : ''}`}
-                                </button>
+                                <span>
+                                  <button
+                                    type="button"
+                                    className="grp-inline-link"
+                                    onClick={() => r.user_id && onOpenUser?.(r.user_id)}
+                                  >
+                                    {r.name || 'Игрок'}
+                                  </button>
+                                  {' '}
+                                  <IdentityBits userId={r.user_id} username={r.username} />
+                                </span>
                               ),
                             },
                             { key: 'commission', label: 'Комиссия', render: (r) => fmt(r.commission) },
                             { key: 'events', label: 'Игр', render: (r) => fmt(r.events) },
-                            { key: 'user_id', label: 'ID' },
+                            { key: 'user_id', label: 'ID', render: (r) => <CopyableId value={r.user_id} /> },
                           ]}
                           rows={fund?.top_payers || []}
                           empty="Пока никто не платил комиссии в этой группе"
@@ -623,13 +627,9 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                               key: 'user_id',
                               label: 'Игрок',
                               render: (r) => (
-                                <button
-                                  type="button"
-                                  className="grp-inline-link"
-                                  onClick={() => r.user_id && onOpenUser?.(r.user_id)}
-                                >
-                                  {r.user_id || '—'}
-                                </button>
+                                r.user_id
+                                  ? <CopyableId value={r.user_id} />
+                                  : '—'
                               ),
                             },
                           ]}
@@ -666,13 +666,17 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                               key: 'actor_name',
                               label: 'Кто',
                               render: (r) => (
-                                <button
-                                  type="button"
-                                  className="grp-inline-link"
-                                  onClick={() => r.actor_user_id && onOpenUser?.(r.actor_user_id)}
-                                >
-                                  {`${r.actor_name || '—'}${r.username ? ` @${r.username}` : ''}`}
-                                </button>
+                                <span>
+                                  <button
+                                    type="button"
+                                    className="grp-inline-link"
+                                    onClick={() => r.actor_user_id && onOpenUser?.(r.actor_user_id)}
+                                  >
+                                    {r.actor_name || '—'}
+                                  </button>
+                                  {' '}
+                                  <IdentityBits userId={r.actor_user_id} username={r.username} />
+                                </span>
                               ),
                             },
                             { key: 'actor_role_label', label: 'Роль' },
@@ -696,19 +700,11 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                           columns={[
                             { key: 'name', label: 'Имя', render: (r) => `${r.name}${r.is_bot ? ' 🤖' : ''}` },
                             { key: 'status', label: 'Статус' },
-                            { key: 'username', label: 'Username', render: (r) => r.username ? `@${r.username}` : '—' },
+                            { key: 'username', label: 'Username', render: (r) => r.username ? <CopyableUsername value={r.username} /> : '—' },
                             {
                               key: 'user_id',
                               label: 'ID',
-                              render: (r) => (
-                                <button
-                                  type="button"
-                                  className="grp-inline-link"
-                                  onClick={() => !r.is_bot && r.user_id && onOpenUser?.(r.user_id)}
-                                >
-                                  {r.user_id}
-                                </button>
-                              ),
+                              render: (r) => <CopyableId value={r.user_id} />,
                             },
                           ]}
                           rows={detail.admins || []}
@@ -732,17 +728,21 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                               key: 'name',
                               label: 'Имя',
                               render: (r) => (
-                                <button
-                                  type="button"
-                                  className="grp-inline-link"
-                                  onClick={() => r.user_id && onOpenUser?.(r.user_id)}
-                                >
-                                  {`${r.name}${r.username ? ` @${r.username}` : ''}`}
-                                </button>
+                                <span>
+                                  <button
+                                    type="button"
+                                    className="grp-inline-link"
+                                    onClick={() => r.user_id && onOpenUser?.(r.user_id)}
+                                  >
+                                    {r.name}
+                                  </button>
+                                  {' '}
+                                  <IdentityBits userId={r.user_id} username={r.username} />
+                                </span>
                               ),
                             },
                             { key: 'messages', label: 'Сообщ.', render: (r) => fmt(r.messages) },
-                            { key: 'user_id', label: 'ID' },
+                            { key: 'user_id', label: 'ID', render: (r) => <CopyableId value={r.user_id} /> },
                           ]}
                           rows={detail.activity?.top_writers || []}
                         />
@@ -771,9 +771,13 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                                 key: 'name',
                                 label: 'Кто',
                                 render: (r) => (
-                                  <button type="button" className="grp-inline-link" onClick={() => r.user_id && onOpenUser?.(r.user_id)}>
-                                    {r.name || r.user_id}
-                                  </button>
+                                  <span>
+                                    <button type="button" className="grp-inline-link" onClick={() => r.user_id && onOpenUser?.(r.user_id)}>
+                                      {r.name || 'игрок'}
+                                    </button>
+                                    {' '}
+                                    <IdentityBits userId={r.user_id} username={r.username} />
+                                  </span>
                                 ),
                               },
                               { key: 'until', label: 'До', render: (r) => shortWhen(r.until) },
@@ -790,9 +794,13 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                                 key: 'name',
                                 label: 'Кто',
                                 render: (r) => (
-                                  <button type="button" className="grp-inline-link" onClick={() => r.user_id && onOpenUser?.(r.user_id)}>
-                                    {r.name || r.user_id}
-                                  </button>
+                                  <span>
+                                    <button type="button" className="grp-inline-link" onClick={() => r.user_id && onOpenUser?.(r.user_id)}>
+                                      {r.name || 'игрок'}
+                                    </button>
+                                    {' '}
+                                    <IdentityBits userId={r.user_id} username={r.username} />
+                                  </span>
                                 ),
                               },
                               { key: 'until', label: 'До', render: (r) => shortWhen(r.until) },
@@ -809,11 +817,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                             {
                               key: 'user_id',
                               label: 'Игрок',
-                              render: (r) => (
-                                <button type="button" className="grp-inline-link" onClick={() => r.user_id && onOpenUser?.(r.user_id)}>
-                                  {r.user_id}
-                                </button>
-                              ),
+                              render: (r) => <CopyableId value={r.user_id} />,
                             },
                             { key: 'mode', label: 'Тип', render: (r) => ({ chat: 'варн', all: 'варналл', full: 'варнфулл' }[r.mode] || r.mode || '—') },
                             { key: 'expires_at', label: 'До', render: (r) => shortWhen(r.expires_at) },
@@ -832,11 +836,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                             {
                               key: 'target_user_id',
                               label: 'Цель',
-                              render: (r) => (
-                                <button type="button" className="grp-inline-link" onClick={() => r.target_user_id && onOpenUser?.(r.target_user_id)}>
-                                  {r.target_user_id || '—'}
-                                </button>
-                              ),
+                              render: (r) => r.target_user_id ? <CopyableId value={r.target_user_id} /> : '—',
                             },
                             { key: 'admin', label: 'Админ' },
                             { key: 'reason', label: 'Причина' },

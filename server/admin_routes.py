@@ -4752,6 +4752,49 @@ class NikaActionBody(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+@router.get("/games/overview")
+async def admin_games_overview(admin_id: int = Depends(require_admin_role(ROLE_OWNER))):
+    _require_project_creator(admin_id)
+    from admin_games import overview
+    return await overview()
+
+
+class GamesSettingsBody(BaseModel):
+    commission: dict | None = None
+    games: dict | None = None
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/games/settings")
+async def admin_games_settings(
+    body: GamesSettingsBody,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_games import save_settings
+    data = await save_settings(body.model_dump(exclude_none=True), admin_id)
+    try:
+        await log_admin_action(
+            admin_id, "games_settings",
+            target_type="games",
+            details={"keys": list((body.model_dump(exclude_none=True) or {}).keys())},
+        )
+    except Exception:
+        pass
+    return data
+
+
+@router.post("/games/reset")
+async def admin_games_reset(
+    body: dict,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_games import reset_game
+    key = str((body or {}).get("game") or (body or {}).get("key") or "")
+    return await reset_game(key, admin_id)
+
+
 @router.get("/nika/pulse")
 async def admin_nika_pulse(admin_id: int = Depends(require_admin_role(ROLE_OWNER))):
     _require_project_creator(admin_id)

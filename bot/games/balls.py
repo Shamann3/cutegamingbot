@@ -122,6 +122,13 @@ def _find_ball_state_by_message_id(mid: int) -> Optional[tuple[int, dict]]:
 
 _BTN_TYPES = {"ball": ("✅ Выигрыш", "WIN"), "empty": ("❌ Проигрыш", "LOSS"), "pop": ("🫧 Шар лопнул", "POP")}
 
+def _live_balls_max():
+    try:
+        from bot.runtime.game_desk.live import bets as desk_bets
+        return desk_bets("balls")[1] or int(Balls_MAX_BET)
+    except Exception:
+        return int(Balls_MAX_BET)
+
 def _describe_field_with_mode(kb: InlineKeyboardMarkup, using_demo: bool, using_0demo: bool) -> str:
     mode_str = "DEMO" if using_demo else ("0DEMO" if using_0demo else "Обычный")
     header = f"🎱 Игровое поле (режим: {mode_str})"
@@ -182,7 +189,7 @@ async def _load_gc_state_for_user(uid: int) -> dict:
         "has_assignment": has_assignment, "is_free": is_free,
         "current_two": int(current_two), "target_amount": int(target_amount),
         "gc_bet_limit": gc_bet_limit,
-        "max_bet": int(Balls_MAX_BET),
+        "max_bet": int(_live_balls_max()),
     }
 
 def _append_regular_assignment_info_rows(rows: list, has_assignment: bool, is_free: bool) -> None:
@@ -274,7 +281,7 @@ async def balls(message: Message):
     bet_token = (parts[1] or "").strip()
     if not bet_token.isdigit(): return
     bet_amount = int(bet_token)
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "balls", bet_amount):
         return
 
     if bet_amount <= 0 or bet_amount < Balls_MIN_BET:
@@ -292,13 +299,13 @@ async def balls(message: Message):
     from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
     gate = decide_gc_play_mode(
         bet=bet_amount,
-        game_max_bet=Balls_MAX_BET,
+        game_max_bet=_live_balls_max(),
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_state.get("gc_bet_limit"),
     )
     if gate.get("mode") == "reject":
-        await message.reply(format_game_max_bet_html(gate.get("max") or Balls_MAX_BET), parse_mode="HTML")
+        await message.reply(format_game_max_bet_html(gate.get("max") or _live_balls_max()), parse_mode="HTML")
         return
     is_free_play = gate.get("mode") == "free"
 
@@ -521,7 +528,11 @@ async def process_callback_ball(callback_query: CallbackQuery):
 
             # ---------- BALL (WIN) ----------
             if kind == "ball":
-                profit = bet_amount
+                try:
+                    from bot.runtime.game_desk.live import param_float
+                    profit = max(0, int(round(bet_amount * float(param_float("balls", "winMultiplier", 1.0)))))
+                except Exception:
+                    profit = bet_amount
                 is_free_real = has_assignment and is_free  # бесплатный челлендж - реальных кутов не двигаем
 
                 if using_demo:

@@ -32,6 +32,13 @@ HOUSE_EDGE = 0.07
 
 BASE_MAX_BET = max_amount_trade
 
+def _live_trade_max():
+    try:
+        from bot.runtime.game_desk.live import bets as desk_bets
+        return desk_bets("trade")[1] or int(BASE_MAX_BET)
+    except Exception:
+        return int(BASE_MAX_BET)
+
 # RNG (криптостойкий)
 _rng = secrets.SystemRandom()
 
@@ -56,13 +63,16 @@ def _parse_direction(word: str) -> Optional[Direction]:
 
 
 def _pick_outcome() -> Outcome:
-    total = Trade_P_OUTCOME_UP + Trade_P_OUTCOME_DOWN + Trade_P_OUTCOME_BROKEN
-    if abs(total - 1.0) > 1e-9:
-        up = Trade_P_OUTCOME_UP / total
-        down = Trade_P_OUTCOME_DOWN / total
-        broken = Trade_P_OUTCOME_BROKEN / total
-    else:
+    try:
+        from bot.runtime.game_desk.live import param as desk_param
+        up = float(desk_param("trade", "pUp", Trade_P_OUTCOME_UP))
+        down = float(desk_param("trade", "pDown", Trade_P_OUTCOME_DOWN))
+        broken = float(desk_param("trade", "pBroken", Trade_P_OUTCOME_BROKEN))
+    except Exception:
         up, down, broken = Trade_P_OUTCOME_UP, Trade_P_OUTCOME_DOWN, Trade_P_OUTCOME_BROKEN
+    total = up + down + broken
+    if abs(total - 1.0) > 1e-9 and total > 0:
+        up, down, broken = up / total, down / total, broken / total
 
     r = _rng.random()
     if r < up:
@@ -224,7 +234,7 @@ async def trade(message: Message):
         )
         return
 
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "trade", bet_amount):
         return
 
 
@@ -299,13 +309,13 @@ async def trade(message: Message):
     )
     gate = decide_gc_play_mode(
         bet=bet_amount,
-        game_max_bet=int(BASE_MAX_BET),
+        game_max_bet=int(_live_trade_max()),
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_bet_limit,
     )
     if gate.get("mode") == "reject":
-        await _reply_simple(message, format_game_max_bet_html(gate.get("max") or BASE_MAX_BET))
+        await _reply_simple(message, format_game_max_bet_html(gate.get("max") or _live_trade_max()))
         return
     is_free_play = gate.get("mode") == "free"
 
@@ -432,7 +442,11 @@ async def trade(message: Message):
     # ============================================
     # Заранее готовим клавиатуру (зависит от win/loss)
     if is_win:
-        profit = bet_amount
+        try:
+            from bot.runtime.game_desk.live import param_float
+            profit = max(0, int(round(bet_amount * float(param_float("trade", "winMultiplier", 1.0)))))
+        except Exception:
+            profit = bet_amount
 
         # Комиссия игры считается ДО показа результата - пользователь сразу
         # видит ту сумму, которую реально получит (без обмана "показали одно,

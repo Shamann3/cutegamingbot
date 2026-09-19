@@ -6,6 +6,7 @@ import SessionTimer from './SessionTimer'
 import EpsilonLogo from './EpsilonLogo'
 import AccentPalette from './AccentPalette'
 import { useIsPhone } from '../lib/useIsDesktop'
+import { CopyableUsername } from './Copyable'
 
 function SpeakerIcon({ muted }) {
   return (
@@ -301,7 +302,7 @@ export default function PanelSidebar({
               <div className="panel-profile-meta">
                 <p className="panel-profile-name">{displayName}</p>
                 <p className="panel-profile-kicker">
-                  {role === 'owner' ? 'Владелец' : username ? `@${username}` : 'Cute Epsilon'}
+                  {role === 'owner' ? 'Владелец' : username ? <CopyableUsername value={username} /> : 'Cute Epsilon'}
                 </p>
               </div>
             </div>
@@ -340,7 +341,7 @@ export default function PanelSidebar({
               <div className="panel-profile-meta">
                 <p className="panel-profile-name">{displayName}</p>
                 <p className="panel-profile-kicker">
-                  {role === 'owner' ? 'Владелец' : username ? `@${username}` : 'Cute Epsilon'}
+                  {role === 'owner' ? 'Владелец' : username ? <CopyableUsername value={username} /> : 'Cute Epsilon'}
                 </p>
               </div>
             </div>

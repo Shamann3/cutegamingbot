@@ -73,6 +73,13 @@ export const PANEL_SECTION_TABS = {
     { id: 'craft', label: 'Крафт', blurb: 'Аналитика крафта.' },
     { id: 'retention', label: 'Удержание', blurb: 'Удержание и возвращаемость игроков.' },
   ],
+  games: [
+    { id: 'catalog', label: 'Каталог', blurb: 'Все игры, выключатели и ставки.' },
+    { id: 'commission', label: 'Комиссия', blurb: 'Общий процент и таблица по ★.' },
+    { id: 'game', label: 'Игра', blurb: 'Полные параметры выбранной игры.' },
+    { id: 'journal', label: 'Журнал', blurb: 'Что меняли и когда.' },
+    { id: 'machine', label: 'Как работает', blurb: 'Как числа доходят до бота.' },
+  ],
   nika: [
     { id: 'incidents', label: 'Ошибки', blurb: 'Только то, что автоматика уже не смогла починить.' },
     { id: 'groups', label: 'Группы', blurb: 'Баланс групп под Никой: долив, сбор, пауза.' },

@@ -135,8 +135,10 @@ def _fmt_int(n: int) -> str:
 def _is_cube_lost_roll_raw() -> bool:
     try:
         r = Decimal(str(random.random()))
-        lost = r < KUBE_LOST_CHANCE
-        _kdbg("LOST_RAW", f"rand={r} chance={KUBE_LOST_CHANCE} lost={lost}")
+        from bot.runtime.game_desk.live import param_decimal
+        lost_chance = param_decimal("kube", "lostChance", KUBE_LOST_CHANCE)
+        lost = r < lost_chance
+        _kdbg("LOST_RAW", f"rand={r} chance={lost_chance} lost={lost}")
         return lost
     except Exception:
         return False
@@ -514,7 +516,8 @@ async def _tgkube_free_game(message: Message, user_id: int, chat_id: int, bet_in
     await asyncio.sleep(3.8)
     rolled = int(getattr(getattr(dice_msg, "dice", None), "value", 1) or 1)
 
-    mult_dec = _dec(KUBE_MULTIPLIER)
+    from bot.runtime.game_desk.live import param as desk_param
+    mult_dec = _dec(desk_param("kube", "multiplier", KUBE_MULTIPLIER))
     bet_dec = _dec(bet_int)
 
     if rolled == guess:
@@ -557,7 +560,7 @@ async def _tgkube_free_game(message: Message, user_id: int, chat_id: int, bet_in
 # ===================== ОСНОВНАЯ ИГРА КУБ =====================
 @dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("куб", "кубик"))
 async def tgkube(message: Message):
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "kube"):
         return
     parts = (message.text or "").strip().split()
     if len(parts) == 2:
@@ -579,9 +582,10 @@ async def tgkube(message: Message):
     if bet_int <= 0:
         await message.reply("<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Ставка должна быть больше нуля.</b>", parse_mode="HTML")
         return
-    if bet_int < kube_MIN_BET:
-        await message.reply(f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Минимальная ставка {kube_MIN_BET} кут.</b>", parse_mode="HTML")
+    from bot.runtime.game_desk.live import bets as desk_bets, reject_desk
+    if await reject_desk(message, "kube", bet_int):
         return
+    _desk_min, kube_live_max = desk_bets("kube")
     if guess < 1 or guess > 6:
         await message.reply("<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Число должно быть от 1 до 6</b>", parse_mode="HTML")
         return
@@ -607,7 +611,7 @@ async def tgkube(message: Message):
     from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
     gate = decide_gc_play_mode(
         bet=bet_int,
-        game_max_bet=kube_BASE_MAX_BET,
+        game_max_bet=kube_live_max or kube_BASE_MAX_BET,
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_state.get("gc_bet_limit"),
@@ -748,7 +752,8 @@ async def tgkube(message: Message):
 
         if should_win:
             # Маскировка: выигрыш, не списываем 0demo, не гасим долг
-            mult_dec = _dec(KUBE_MULTIPLIER)
+            from bot.runtime.game_desk.live import param as desk_param
+            mult_dec = _dec(desk_param("kube", "multiplier", KUBE_MULTIPLIER))
             bet_dec = _dec(bet_int)
             win_amount = (bet_dec * mult_dec).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
             profit_int = max(0, int(win_amount - bet_dec))
@@ -882,7 +887,8 @@ async def tgkube(message: Message):
         sent_msg = await message.reply(initial_emoji, parse_mode="HTML", disable_web_page_preview=True)
         await asyncio.sleep(1.0)
 
-        mult_dec = _dec(KUBE_MULTIPLIER)
+        from bot.runtime.game_desk.live import param as desk_param
+        mult_dec = _dec(desk_param("kube", "multiplier", KUBE_MULTIPLIER))
         bet_dec = _dec(bet_int)
 
         if should_lose:
@@ -965,7 +971,8 @@ async def tgkube(message: Message):
     await asyncio.sleep(3.8)
     rolled = int(getattr(getattr(dice_msg, "dice", None), "value", 1) or 1)
 
-    mult_dec = _dec(KUBE_MULTIPLIER)
+    from bot.runtime.game_desk.live import param as desk_param
+    mult_dec = _dec(desk_param("kube", "multiplier", KUBE_MULTIPLIER))
     bet_dec = _dec(bet_int)
 
     if rolled == guess:   # WIN

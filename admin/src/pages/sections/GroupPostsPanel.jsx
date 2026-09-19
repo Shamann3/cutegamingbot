@@ -12,6 +12,7 @@ import {
   runGroupPostCampaignNow,
   updateGroupPostCampaign,
 } from '../../lib/adminClient'
+import { CopyableId } from '../../components/Copyable'
 
 const FAIL_REASON_LABEL = {
   blocked: 'бота удалили/кикнули из группы',
@@ -156,7 +157,7 @@ function ChatPicker({ selectedIds, onChange, chats, loading, error }) {
             <label key={c.chatId} className="panel-market-check panel-grouppost-chatpicker-item">
               <input type="checkbox" checked={selectedIds.includes(c.chatId)} onChange={() => toggle(c.chatId)} />
               <span>{c.name || `Группа ${c.chatId}`}</span>
-              <span className="panel-shelf-muted"> · ID {c.chatId}</span>
+              <span className="panel-shelf-muted"> · <CopyableId value={c.chatId} label="id группы" /></span>
             </label>
           ))}
         </div>
@@ -165,7 +166,7 @@ function ChatPicker({ selectedIds, onChange, chats, loading, error }) {
         <div className="panel-grouppost-chatpicker-manual-list">
           {manualSelected.map((id) => (
             <span key={id} className="panel-grouppost-chip">
-              ID {id}
+              <CopyableId value={id} label="id группы" />
               <button type="button" onClick={() => toggle(id)}>✕</button>
             </span>
           ))}
@@ -225,7 +226,7 @@ function ChatOverridesEditor({ chatIds, chatNames, overrides, onChange, defaults
             >
               <span className="panel-grouppost-override-name">
                 {chatNames.get(chatId) || `Группа ${chatId}`}
-                <span className="panel-shelf-muted"> · ID {chatId}</span>
+                <span className="panel-shelf-muted"> · <CopyableId value={chatId} label="id группы" /></span>
               </span>
               {OVERRIDE_FIELDS.map((field) => {
                 const isOverride = entry[field.key] !== undefined
@@ -298,7 +299,7 @@ function CampaignLog({ campaignId }) {
         <ul className="panel-broadcast-recipients-list">
           {items.map((item, i) => (
             <li key={`${item.chatId}-${item.createdAt}-${i}`} className="panel-broadcast-recipient-row">
-              <span className="panel-broadcast-recipient-name">Группа {item.chatId}</span>
+              <span className="panel-broadcast-recipient-name">Группа <CopyableId value={item.chatId} label="id группы" /></span>
               <span className="panel-shelf-muted">{formatDate(item.createdAt)}</span>
               <span className={`panel-broadcast-recipient-status panel-broadcast-recipient-status-${item.status}`}>
                 {item.status === 'sent' ? 'Доставлено' : 'Ошибка'}

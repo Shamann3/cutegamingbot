@@ -60,6 +60,11 @@ export const PANEL_SECTIONS = [
     blurb: 'Все балансы, плюсы и минусы по дням, автодолив баланса групп. Только создатель.',
   },
   {
+    id: 'games', label: 'Games', labelRu: 'Игры', group: 'economy',
+    ownerOnly: true, creatorOnly: true,
+    blurb: 'Каждая игра: выключатель, ставки, комиссия и шансы. Только создатель.',
+  },
+  {
     id: 'achievements', label: 'Achievements', labelRu: 'Достижения', group: 'content', permission: 'manage_achievements',
     blurb: 'Официальные достижения профиля: каталог, редкость, иконки и права выдачи для команды.',
   },

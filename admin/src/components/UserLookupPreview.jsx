@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { searchAdminUsers } from '../lib/adminClient'
+import { CopyableId, CopyableUsername } from './Copyable'
 
 function fmt(n) {
   const v = Number(n)
@@ -114,7 +115,8 @@ export default function UserLookupPreview({
           <span className="ulp-meta">
             <strong>{card.name}</strong>
             <em>
-              {card.uname || `id ${card.uid}`}
+              {card.uname ? <CopyableUsername value={card.uname} /> : <CopyableId value={card.uid} />}
+              {card.uname && card.uid ? <> · <CopyableId value={card.uid} /></> : null}
               {card.balance != null ? ` · ${fmt(card.balance)} кут` : ''}
               {card.banned ? ' · бан в боте' : ''}
             </em>
@@ -135,7 +137,11 @@ export default function UserLookupPreview({
               onClick={() => choose(h.raw)}
             >
               <strong>{h.name}</strong>
-              <em>{h.uname || `id ${h.uid}`}{h.banned ? ' · бан' : ''}</em>
+              <em>
+                {h.uname ? <CopyableUsername value={h.uname} /> : <CopyableId value={h.uid} />}
+                {h.uname && h.uid ? <> · <CopyableId value={h.uid} /></> : null}
+                {h.banned ? ' · бан' : ''}
+              </em>
             </button>
           ))}
         </div>

@@ -40,6 +40,34 @@ def _load_tank_step_multiplier() -> Decimal:
 
 TANK_STEP_MULTIPLIER = _load_tank_step_multiplier()
 RAN_EMOJIS = ("<tg-emoji emoji-id='5204467307153234577'>🍀</tg-emoji>",)
+
+def _live_tank_step():
+    try:
+        from bot.runtime.game_desk.live import param_decimal
+        return param_decimal("tank", "stepMultiplier", TANK_STEP_MULTIPLIER)
+    except Exception:
+        return TANK_STEP_MULTIPLIER
+
+def _live_tank_ttl():
+    try:
+        from bot.runtime.game_desk.live import session_seconds
+        return session_seconds("tank", 20)
+    except Exception:
+        return SESSION_TTL
+
+def _live_tank_cd():
+    try:
+        from bot.runtime.game_desk.live import param_float
+        return param_float("tank", "clickCooldown", USER_CLICK_COOLDOWN)
+    except Exception:
+        return USER_CLICK_COOLDOWN
+
+def _live_tank_max():
+    try:
+        from bot.runtime.game_desk.live import bets as desk_bets
+        return desk_bets("tank")[1] or Tank_MAX_BET
+    except Exception:
+        return Tank_MAX_BET
 DEBUG_TANK = True
 
 CELL_HIDDEN, CELL_SAFE, CELL_TRAP, CELL_COLLAPSE = " ", "ㅤ", "     ", "\u200b"
@@ -337,9 +365,8 @@ async def game_filter_tank(message: Message):
     if len(parts) != 2: return
     if not parts[1].isdigit(): return
     bet_amount = int(parts[1])
-    if bet_amount < Tank_MIN_BET or bet_amount > Tank_MAX_BET: return
 
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "tank", bet_amount):
         return
 
     user_id = message.from_user.id
@@ -381,13 +408,13 @@ async def game_filter_tank(message: Message):
     from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
     gate = decide_gc_play_mode(
         bet=bet_amount,
-        game_max_bet=Tank_MAX_BET,
+        game_max_bet=_live_tank_max(),
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_bet_limit,
     )
     if gate.get("mode") == "reject":
-        await message.reply(format_game_max_bet_html(gate.get("max") or Tank_MAX_BET), parse_mode="HTML")
+        await message.reply(format_game_max_bet_html(gate.get("max") or _live_tank_max()), parse_mode="HTML")
         return
     is_free_play = gate.get("mode") == "free"
 
@@ -495,7 +522,7 @@ async def game_filter_tank(message: Message):
         state["message_id"] = sent.message_id
         tank_active_games[user_id] = state
         user_messagetank[user_id] = sent.message_id
-        asyncio.create_task(_session_ttl_watcher(chat_id, sent.message_id, user_id, SESSION_TTL))
+        asyncio.create_task(_session_ttl_watcher(chat_id, sent.message_id, user_id, _live_tank_ttl()))
         print(f"[TANK] Игра запущена, msg_id={sent.message_id}")
 
 # ========== КЛИКИ ==========
@@ -503,7 +530,7 @@ async def game_filter_tank(message: Message):
 async def tank_process_game_buttons(call: types.CallbackQuery):
     uid = call.from_user.id; msg_id = call.message.message_id
     now = _now_mono()
-    if now - _last_click.get(uid, 0) < USER_CLICK_COOLDOWN:
+    if now - _last_click.get(uid, 0) < _live_tank_cd():
         await call.answer("⏳"); return
     _last_click[uid] = now
 
@@ -629,7 +656,7 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
                         field[row_idx][c] = SHOW_TRAP if random.random() < 0.5 else SHOW_SAFE
 
                 prev = _dec(game_data["win_amount"])
-                game_data["win_amount"] = _str_dec(prev + _dec(bet) * TANK_STEP_MULTIPLIER)
+                game_data["win_amount"] = _str_dec(prev + _dec(bet) * _live_tank_step())
                 print(f"[TANK] 🎉 Demo безопасно, выигрыш растёт: {game_data['win_amount']}")
 
                 if row_idx == 9:
@@ -692,7 +719,7 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
                         elif field[r][c] == CELL_COLLAPSE: field[r][c] = SHOW_SAFE
 
                 prev = _dec(game_data["win_amount"])
-                game_data["win_amount"] = _str_dec(prev + _dec(bet) * TANK_STEP_MULTIPLIER)
+                game_data["win_amount"] = _str_dec(prev + _dec(bet) * _live_tank_step())
                 print(f"[TANK] ✅ Безопасно! Выигрыш: {game_data['win_amount']}")
 
                 if row_idx == 9:

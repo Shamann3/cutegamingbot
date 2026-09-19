@@ -45,34 +45,42 @@ def private_game_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[btn]])
 
 
-async def reject_if_private_game(message: Message) -> bool:
-    """Если чат личный — отвечает CTA и возвращает True (игру нужно прервать)."""
-    if not is_private_chat(message):
-        return False
+async def reject_if_private_game(message: Message, game_key: Optional[str] = None, bet: Optional[int] = None) -> bool:
+    """Если чат личный — отвечает CTA и возвращает True (игру нужно прервать).
 
-    kb = private_game_markup()
-    try:
-        await message.reply(
-            PRIVATE_GAME_TEXT,
-            reply_markup=kb,
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
+    Если передан game_key — ещё проверяет выключатель и лимиты ставки со стола игр.
+    """
+    if is_private_chat(message):
+        kb = private_game_markup()
+        try:
+            await message.reply(
+                PRIVATE_GAME_TEXT,
+                reply_markup=kb,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            return True
+        except Exception:
+            pass
+        try:
+            plain_kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="Играть", url=PLAY_GROUP_URL),
+            ]])
+            await message.reply(
+                "☁️ <b>В эту игру можно играть только в публичных группах.</b>",
+                reply_markup=plain_kb,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        except Exception as e:
+            print(f"[GROUP_ONLY] private reject failed: {e!r}")
         return True
-    except Exception:
-        pass
 
-    # Fallback без премиум-иконки / style
-    try:
-        plain_kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="Играть", url=PLAY_GROUP_URL),
-        ]])
-        await message.reply(
-            "☁️ <b>В эту игру можно играть только в публичных группах.</b>",
-            reply_markup=plain_kb,
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
-    except Exception as e:
-        print(f"[GROUP_ONLY] private reject failed: {e!r}")
-    return True
+    if game_key:
+        try:
+            from bot.runtime.game_desk.live import reject_desk
+            if await reject_desk(message, game_key, bet):
+                return True
+        except Exception as e:
+            print(f"[GROUP_ONLY] desk reject failed: {e!r}")
+    return False

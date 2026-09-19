@@ -847,6 +847,12 @@ class Database:
         # Схема учёта себестоимости — один раз на старте, а не в хот-пате.
         if not await item_lots.ensure_item_cost_schema(self.pool):
             db_debug_log("[DB] item cost schema unavailable — учёт себестоимости выключен")
+        try:
+            from bot.runtime.game_desk.schema import ensure_game_desk_schema
+
+            await ensure_game_desk_schema(self)
+        except Exception as _desk_err:
+            db_debug_log(f"[DB] game desk schema skipped: {_desk_err!r}")
 
     async def close(self):
         if self.pool is not None:

@@ -39,6 +39,20 @@ TOTAL_CELLS             = TOTAL_ROWS * TOTAL_COLS
 
 USER_CLICK_COOLDOWN     = 0.28
 MISMATCH_HIDE_DELAY     = 1.50
+
+def _live_memory_hide():
+    try:
+        from bot.runtime.game_desk.live import param_float
+        return param_float("memory", "hideDelay", MISMATCH_HIDE_DELAY)
+    except Exception:
+        return MISMATCH_HIDE_DELAY
+
+def _live_memory_cd():
+    try:
+        from bot.runtime.game_desk.live import param_float
+        return param_float("memory", "clickCooldown", USER_CLICK_COOLDOWN)
+    except Exception:
+        return USER_CLICK_COOLDOWN
 BASE_RETRY_DELAY        = 0.08
 MAX_RETRIES_EDIT        = 3
 GAME_STUCK_TIMEOUT      = 3.5
@@ -543,10 +557,9 @@ async def memory(message: Message):
         if bet_str is None or not bet_str.isdigit():
             return
 
-        if await reject_if_private_game(message):
-            return
-
         bet = int(bet_str)
+        if await reject_if_private_game(message, "memory", bet):
+            return
         creator_id = message.from_user.id
 
         if not await check_balance_fast(creator_id, bet):
@@ -839,7 +852,7 @@ async def memory_open(cb: CallbackQuery):
 
     now = time.monotonic()
     last = user_last_click.get(user_id, 0.0)
-    if user_last_cell.get(user_id) == pick and now - last < USER_CLICK_COOLDOWN:
+    if user_last_cell.get(user_id) == pick and now - last < _live_memory_cd():
         await safe_answer(cb, msg("too_fast"))
         return
 
@@ -922,7 +935,7 @@ async def memory_open(cb: CallbackQuery):
                     opp = next((x for x in g["participants"] if x != user_id), user_id)
                     g["pending_hide"] = {
                         "cells": [c1, c2],
-                        "unlock_at": time.monotonic() + MISMATCH_HIDE_DELAY,
+                        "unlock_at": time.monotonic() + _live_memory_hide(),
                         "turn_next": opp,
                     }
                     g["turn_picks"] = []
@@ -956,7 +969,7 @@ async def memory_open(cb: CallbackQuery):
 # ====== скрытие после задержки и передача хода ======
 async def _apply_pending_hide_after_delay(game_id: str, message: types.Message) -> None:
     try:
-        await asyncio.sleep(MISMATCH_HIDE_DELAY)
+        await asyncio.sleep(_live_memory_hide())
         await _apply_pending_hide_now(game_id, message, force=True)
     except Exception:
         try:

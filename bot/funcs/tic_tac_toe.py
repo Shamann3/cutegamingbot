@@ -43,6 +43,13 @@ from main import (
 # =========================================================
 
 REST = 1.2
+
+def _live_ttt_rest():
+    try:
+        from bot.runtime.game_desk.live import param_float
+        return param_float("tic_tac_toe", "turnRest", REST)
+    except Exception:
+        return REST
 tictac_cooldowns: Dict[int, float] = {}
 
 # text -> для текста сообщений
@@ -464,7 +471,7 @@ async def tic_tac_toe(message: Message):
         if bet < 0:
             return
 
-        if await reject_if_private_game(message):
+        if await reject_if_private_game(message, "tic_tac_toe", bet):
             return
 
         creator_id = message.from_user.id
@@ -948,8 +955,8 @@ async def make_move_callback(callback_query: types.CallbackQuery):
     message_id = game["message_id"]
 
     current_time = time.time()
-    if current_time - tictac_cooldowns.get(user_id, 0) < REST:
-        remaining_time = REST - (current_time - tictac_cooldowns[user_id])
+    if current_time - tictac_cooldowns.get(user_id, 0) < _live_ttt_rest():
+        remaining_time = _live_ttt_rest() - (current_time - tictac_cooldowns[user_id])
         await callback_query.answer(f"⌚️ Подождите {int(remaining_time)} секунд", show_alert=True)
         return
 

@@ -1,0 +1,456 @@
+.grp-page.gm-page .gm-uni {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.grp-page.gm-page .gm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(16.4rem, 100%), 1fr));
+  gap: 0.75rem;
+  margin-top: 0.95rem;
+}
+.grp-page.gm-page .gm-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.42rem;
+  min-width: 0;
+  min-height: 10.4rem;
+  padding: 1.05rem 1.05rem 0.95rem;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid color-mix(in srgb, var(--gm-accent) 28%, rgba(255,255,255,.08));
+  border-radius: 22px;
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--gm-accent) 22%, transparent), transparent 58%),
+    linear-gradient(180deg, color-mix(in srgb, var(--gm-ink) 88%, #141416), #121214);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  letter-spacing: 0;
+}
+.grp-page.gm-page .gm-card-glow {
+  position: absolute;
+  inset: auto -18% -40% auto;
+  width: 9rem;
+  height: 9rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--gm-accent2) 42%, transparent), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+.grp-page.gm-page .gm-card header,
+.grp-page.gm-page .gm-card p,
+.grp-page.gm-page .gm-card small {
+  position: relative;
+  z-index: 1;
+}
+.grp-page.gm-page .gm-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.55rem;
+  min-width: 0;
+}
+.grp-page.gm-page .gm-card b {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 0.4rem;
+  color: #fff;
+  font-size: 1.08rem;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+.grp-page.gm-page .gm-card .nika-pill {
+  flex: 0 0 auto;
+}
+.grp-page.gm-page .gm-card b em {
+  font-style: normal;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.grp-page.gm-page .gm-card p {
+  margin: 0;
+  color: #cfc6be;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.grp-page.gm-page .gm-card small {
+  color: color-mix(in srgb, var(--gm-accent) 55%, #8a827c);
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+.grp-page.gm-page .gm-card.is-off { opacity: 0.62; }
+.grp-page.gm-page .gm-card.is-on {
+  border-color: color-mix(in srgb, var(--gm-accent) 55%, #fff);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gm-accent) 28%, transparent);
+}
+
+.grp-page.gm-page .gm-hero {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  overflow: hidden;
+  min-height: 10.5rem;
+  padding: 1.25rem 1.2rem 1.15rem;
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--gm-accent) 32%, rgba(255,255,255,.08));
+  background:
+    radial-gradient(90% 120% at 100% 0%, color-mix(in srgb, var(--gm-accent) 28%, transparent), transparent 60%),
+    linear-gradient(180deg, color-mix(in srgb, var(--gm-ink) 92%, #101012), #101012);
+}
+.grp-page.gm-page .gm-hero-glow {
+  position: absolute;
+  right: -2rem;
+  top: -3rem;
+  width: 14rem;
+  height: 14rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--gm-accent2) 36%, transparent), transparent 68%);
+  pointer-events: none;
+}
+.grp-page.gm-page .gm-hero-copy {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 12rem;
+  min-width: 0;
+  max-width: 34rem;
+}
+.grp-page.gm-page .gm-hero-copy small {
+  color: color-mix(in srgb, var(--gm-accent) 70%, #fff);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.grp-page.gm-page .gm-hero-copy h2 {
+  margin: 0.28rem 0 0;
+  color: #fff;
+  font-size: clamp(1.7rem, 3.4vw, 2.35rem);
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+.grp-page.gm-page .gm-hero-copy p {
+  margin: 0.5rem 0 0;
+  color: #e8e0d8;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.grp-page.gm-page .gm-hero-hint {
+  color: #b8afa6 !important;
+  font-size: 0.8rem !important;
+}
+.grp-page.gm-page .gm-hero-copy em {
+  display: block;
+  margin-top: 0.7rem;
+  color: color-mix(in srgb, var(--gm-accent) 60%, #cfc6be);
+  font-style: normal;
+  font-size: 0.78rem;
+}
+.grp-page.gm-page .gm-hero .nika-btn {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+}
+
+.grp-page.gm-page .gm-desk .gm-range {
+  accent-color: var(--gm-accent, #32d74b);
+}
+
+.grp-page.gm-page .gm-field {
+  display: grid;
+  gap: 0.28rem;
+  margin-top: 0.9rem;
+}
+.grp-page.gm-page .gm-field span {
+  color: #f4f0ec;
+  font-size: 0.86rem;
+}
+.grp-page.gm-page .gm-field small {
+  color: #8a827c;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+.grp-page.gm-page .gm-field-ctrl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(5.8rem, 7.2rem);
+  gap: 0.7rem;
+  align-items: center;
+  min-width: 0;
+}
+.grp-page.gm-page .gm-range {
+  width: 100%;
+  accent-color: #32d74b;
+}
+.grp-page.gm-page .gm-num {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0.35rem 0.45rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: #101012;
+  color: #fff;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.grp-page.gm-page .gm-rates {
+  display: grid;
+  gap: 0.35rem;
+}
+.grp-page.gm-page .gm-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+}
+.grp-page.gm-page .nika-flow-hero.is-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.grp-page.gm-page .gm-steps {
+  margin: 0.4rem 0 0;
+  padding-left: 1.15rem;
+  color: #cfc6be;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+.grp-page.gm-page .gm-steps li + li { margin-top: 0.45rem; }
+.grp-page.gm-page.is-dirty {
+  padding-bottom: 7.6rem;
+}
+.grp-page.gm-page .gm-save {
+  position: sticky;
+  bottom: 0.7rem;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem 1rem;
+  border-radius: 18px;
+  background: #161618;
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 16px 40px -22px rgba(0,0,0,.95);
+}
+.grp-page.gm-page .gm-save .nika-card-actions {
+  margin-top: 0;
+}
+.grp-page.gm-page .gm-save strong { display: block; color: #fff; }
+.grp-page.gm-page .gm-save span { color: #8a827c; font-size: 0.74rem; }
+
+.grp-page.gm-page .gm-motif-board {
+  background-image:
+    linear-gradient(45deg, rgba(196,165,116,.14) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(196,165,116,.14) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(196,165,116,.14) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(196,165,116,.14) 75%),
+    linear-gradient(180deg, #1a120c, #120c08);
+  background-size: 28px 28px, 28px 28px, 28px 28px, 28px 28px, auto;
+  background-position: 0 0, 0 14px, 14px -14px, -14px 0, 0 0;
+}
+.grp-page.gm-page .gm-motif-wood {
+  background-image:
+    repeating-linear-gradient(90deg, rgba(215,161,90,.08) 0 2px, transparent 2px 11px),
+    linear-gradient(180deg, #24160c, #140c08);
+}
+.grp-page.gm-page .gm-motif-cookie {
+  background-image:
+    radial-gradient(circle at 18% 28%, rgba(232,160,90,.28) 0 7px, transparent 8px),
+    radial-gradient(circle at 78% 62%, rgba(138,61,28,.22) 0 6px, transparent 7px),
+    radial-gradient(circle at 62% 22%, rgba(232,160,90,.18) 0 5px, transparent 6px),
+    linear-gradient(180deg, #2a160c, #140c08);
+}
+.grp-page.gm-page .gm-motif-wheel {
+  background-image:
+    repeating-conic-gradient(from 18deg, rgba(240,193,75,.16) 0 14deg, rgba(122,31,107,.18) 14deg 28deg),
+    linear-gradient(180deg, #1c0a18, #100610);
+}
+.grp-page.gm-page .gm-motif-felt {
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(243,239,230,.08) 0 2px, transparent 3px),
+    linear-gradient(180deg, #0e1c14, #0a140e);
+}
+.grp-page.gm-page .gm-motif-duel {
+  background-image:
+    linear-gradient(115deg, transparent 42%, rgba(201,163,106,.12) 43% 44%, transparent 45%),
+    linear-gradient(180deg, #16110c, #0c0a08);
+}
+.grp-page.gm-page .gm-motif-coin {
+  background-image:
+    radial-gradient(circle at 82% 18%, rgba(230,195,92,.28) 0 3.4rem, transparent 3.5rem),
+    linear-gradient(180deg, #1c1408, #100c08);
+}
+.grp-page.gm-page .gm-motif-steel {
+  background-image:
+    linear-gradient(180deg, rgba(138,160,184,.08), transparent 40%),
+    linear-gradient(180deg, #10141a, #0c1014);
+}
+.grp-page.gm-page .gm-motif-hazard {
+  background-image:
+    repeating-linear-gradient(-28deg, rgba(226,75,75,.16) 0 12px, transparent 12px 22px),
+    linear-gradient(180deg, #1a0a0a, #100808);
+}
+.grp-page.gm-page .gm-motif-grid {
+  background-image:
+    linear-gradient(rgba(90,160,230,.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(90,160,230,.12) 1px, transparent 1px),
+    linear-gradient(180deg, #0e1620, #0a1016);
+  background-size: 22px 22px, 22px 22px, auto;
+}
+.grp-page.gm-page .gm-motif-clover {
+  background-image:
+    radial-gradient(circle at 18% 72%, rgba(92,184,106,.2) 0 18px, transparent 19px),
+    radial-gradient(circle at 28% 72%, rgba(92,184,106,.2) 0 18px, transparent 19px),
+    radial-gradient(circle at 23% 62%, rgba(92,184,106,.2) 0 18px, transparent 19px),
+    linear-gradient(180deg, #102016, #0a140e);
+}
+.grp-page.gm-page .gm-motif-jungle {
+  background-image:
+    radial-gradient(ellipse at 90% 10%, rgba(196,90,42,.2), transparent 42%),
+    linear-gradient(180deg, #122016, #0c140c);
+}
+.grp-page.gm-page .gm-motif-rose {
+  background-image:
+    radial-gradient(circle at 86% 18%, rgba(224,122,168,.24) 0 2.6rem, transparent 2.7rem),
+    linear-gradient(180deg, #1a101c, #100c14);
+}
+.grp-page.gm-page .gm-motif-blast {
+  background-image:
+    radial-gradient(circle at 85% 20%, rgba(240,138,42,.28) 0 1.2rem, transparent 1.3rem),
+    radial-gradient(circle at 85% 20%, rgba(240,138,42,.12) 0 3.4rem, transparent 3.5rem),
+    linear-gradient(180deg, #1c1008, #100808);
+}
+.grp-page.gm-page .gm-motif-terminal {
+  background-image:
+    linear-gradient(rgba(50,215,75,.06) 1px, transparent 1px),
+    linear-gradient(180deg, #0a1410, #08100c);
+  background-size: 100% 10px, auto;
+}
+.grp-page.gm-page .gm-motif-billiard {
+  background-image:
+    radial-gradient(circle at 84% 22%, #111 0 1.15rem, #f2f2f2 1.2rem 1.35rem, transparent 1.4rem),
+    linear-gradient(180deg, #12301c, #0a1a10);
+}
+.grp-page.gm-page .gm-motif-neon {
+  background-image:
+    linear-gradient(90deg, rgba(90,208,255,.12), transparent 30%),
+    linear-gradient(270deg, rgba(255,77,141,.14), transparent 32%),
+    linear-gradient(180deg, #100818, #0a0812);
+}
+.grp-page.gm-page .gm-motif-court {
+  background-image:
+    linear-gradient(90deg, transparent 46%, rgba(230,122,46,.2) 47% 53%, transparent 54%),
+    linear-gradient(180deg, #2a180e, #140c08);
+}
+.grp-page.gm-page .gm-motif-grass {
+  background-image:
+    repeating-linear-gradient(90deg, rgba(76,175,80,.1) 0 10px, rgba(220,232,216,.06) 10px 20px),
+    linear-gradient(180deg, #123016, #0c1c10);
+}
+.grp-page.gm-page .gm-motif-alley {
+  background-image:
+    repeating-linear-gradient(90deg, rgba(212,165,116,.1) 0 14px, rgba(42,24,16,.2) 14px 16px),
+    linear-gradient(180deg, #1c140c, #100c08);
+}
+.grp-page.gm-page .gm-motif-target {
+  background-image:
+    radial-gradient(circle at 84% 22%, transparent 0 0.7rem, rgba(209,43,43,.35) 0.75rem 1.15rem, transparent 1.2rem 1.7rem, rgba(209,43,43,.22) 1.75rem 2.2rem, transparent 2.25rem),
+    linear-gradient(180deg, #1a0a0a, #100808);
+}
+.grp-page.gm-page .gm-motif-dice {
+  background-image:
+    radial-gradient(circle at 78% 24%, #c62828 0 6px, transparent 7px),
+    radial-gradient(circle at 86% 18%, #c62828 0 5px, transparent 6px),
+    radial-gradient(circle at 86% 30%, #c62828 0 5px, transparent 6px),
+    linear-gradient(180deg, #1c1a18, #121110);
+}
+.grp-page.gm-page .gm-motif-roulette {
+  background-image:
+    repeating-conic-gradient(from 8deg, rgba(31,107,58,.22) 0 12deg, rgba(212,175,55,.16) 12deg 18deg, rgba(18,18,18,.2) 18deg 24deg),
+    linear-gradient(180deg, #0c1a12, #08140c);
+}
+.grp-page.gm-page .gm-motif-paper {
+  background-image:
+    repeating-linear-gradient(180deg, rgba(216,207,192,.08) 0 1px, transparent 1px 18px),
+    linear-gradient(180deg, #1c1814, #12100c);
+}
+.grp-page.gm-page .gm-motif-brass {
+  background-image:
+    linear-gradient(115deg, transparent 58%, rgba(201,163,106,.16) 59% 72%, transparent 73%),
+    linear-gradient(180deg, #16120c, #0e0c08);
+}
+
+html.is-phone .grp-page.gm-page .gm-uni,
+html[data-viewport="phone"] .grp-page.gm-page .gm-uni,
+html.is-phone .grp-page.gm-page .gm-preview,
+html[data-viewport="phone"] .grp-page.gm-page .gm-preview,
+html.is-phone .grp-page.gm-page .nika-flow-hero.is-three,
+html[data-viewport="phone"] .grp-page.gm-page .nika-flow-hero.is-three,
+html.is-phone .grp-page.gm-page .nika-flow-hero.is-compact,
+html[data-viewport="phone"] .grp-page.gm-page .nika-flow-hero.is-compact,
+html.is-phone .grp-page.gm-page .gm-field-ctrl,
+html[data-viewport="phone"] .grp-page.gm-page .gm-field-ctrl {
+  grid-template-columns: 1fr;
+}
+html.is-phone .grp-page.gm-page .gm-hero,
+html[data-viewport="phone"] .grp-page.gm-page .gm-hero {
+  flex-direction: column;
+}
+html.is-phone .grp-page.gm-page .gm-hero .nika-btn,
+html[data-viewport="phone"] .grp-page.gm-page .gm-hero .nika-btn {
+  width: 100%;
+  flex: 1 1 auto;
+}
+html.is-phone .grp-page.gm-page.is-dirty,
+html[data-viewport="phone"] .grp-page.gm-page.is-dirty {
+  padding-bottom: 11rem;
+}
+html.is-phone .grp-page.gm-page .gm-save,
+html[data-viewport="phone"] .grp-page.gm-page .gm-save {
+  flex-direction: column;
+  align-items: stretch;
+  bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
+}
+html.is-phone .grp-page.gm-page .gm-save .nika-card-actions,
+html[data-viewport="phone"] .grp-page.gm-page .gm-save .nika-card-actions {
+  width: 100%;
+}
+html.is-phone .grp-page.gm-page .nika-panel-top .nika-seg,
+html[data-viewport="phone"] .grp-page.gm-page .nika-panel-top .nika-seg,
+html.is-phone .grp-page.gm-page .nika-seg-mini,
+html[data-viewport="phone"] .grp-page.gm-page .nika-seg-mini {
+  width: 100%;
+}
+html.is-phone .grp-page.gm-page .nika-seg-mini .nika-seg-btn,
+html[data-viewport="phone"] .grp-page.gm-page .nika-seg-mini .nika-seg-btn {
+  flex: 1 1 0;
+  min-width: 0 !important;
+  white-space: normal;
+  line-height: 1.15;
+  padding-left: 0.4rem !important;
+  padding-right: 0.4rem !important;
+}
+html.is-phone .grp-page.gm-page .gm-card,
+html[data-viewport="phone"] .grp-page.gm-page .gm-card {
+  min-height: 0;
+}
+
+@media (max-width: 720px) {
+  .grp-page.gm-page .gm-uni,
+  .grp-page.gm-page .gm-preview,
+  .grp-page.gm-page .nika-flow-hero.is-three,
+  .grp-page.gm-page .nika-flow-hero.is-compact,
+  .grp-page.gm-page .gm-field-ctrl {
+    grid-template-columns: 1fr;
+  }
+  .grp-page.gm-page .gm-hero {
+    flex-direction: column;
+  }
+  .grp-page.gm-page .gm-grid {
+    grid-template-columns: 1fr;
+  }
+}

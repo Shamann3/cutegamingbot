@@ -17,6 +17,7 @@ import {
   disableBotChallenge,
 } from '../../lib/adminClient'
 import { useIsPhone, detectViewportMode } from '../../lib/useIsDesktop'
+import { CopyableId, CopyableUsername } from '../../components/Copyable'
 
 const DEFAULT_CHAT = '@CuteGamingChat'
 
@@ -127,10 +128,10 @@ function groupPayoutsByDay(items) {
 function payoutDisplayName(item) {
   const name = (item.firstName || '').trim()
   const un = (item.username || '').trim().replace(/^@/, '')
-  if (name && un) return { title: name, sub: `@${un}` }
-  if (un) return { title: `@${un}`, sub: `id ${item.userId}` }
-  if (name) return { title: name, sub: `id ${item.userId}` }
-  return { title: `Игрок ${item.userId}`, sub: 'без username' }
+  if (name && un) return { title: name, username: un, userId: item.userId }
+  if (un) return { title: `@${un}`, username: un, userId: item.userId }
+  if (name) return { title: name, username: '', userId: item.userId }
+  return { title: `Игрок ${item.userId}`, username: '', userId: item.userId }
 }
 
 function isoToLocalInput(iso) {
@@ -1256,7 +1257,10 @@ export default function BotQuestsSection() {
                               </div>
                               <p className="bq-pay-detail">{item.detail || item.title}</p>
                               <div className="bq-pay-meta">
-                                <span>{who.sub}</span>
+                                <span>
+                                  {who.username ? <CopyableUsername value={who.username} /> : null}
+                                  {who.userId ? <CopyableId value={who.userId} label="id игрока" /> : null}
+                                </span>
                                 <span>{fmtPayoutTime(item.createdAt, item.createdAtLabel)}</span>
                                 <span>{isSub ? 'quebalance' : 'основной баланс'}</span>
                               </div>

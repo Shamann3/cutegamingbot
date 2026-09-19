@@ -100,6 +100,47 @@ def _load_plate_step_multiplier() -> Decimal:
 
 PLATE_STEP_MULTIPLIER = _load_plate_step_multiplier()
 
+def _live_plate_step():
+    try:
+        from bot.runtime.game_desk.live import param_decimal
+        return param_decimal("plate", "stepMultiplier", PLATE_STEP_MULTIPLIER)
+    except Exception:
+        return PLATE_STEP_MULTIPLIER
+
+def _live_plate_collapse():
+    try:
+        from bot.runtime.game_desk.live import param_int
+        lo = param_int("plate", "collapseMin", PLATE_COLLAPSE_MIN)
+        hi = param_int("plate", "collapseMax", PLATE_COLLAPSE_MAX)
+    except Exception:
+        lo, hi = int(PLATE_COLLAPSE_MIN), int(PLATE_COLLAPSE_MAX)
+    lo = max(1, min(10, int(lo)))
+    hi = max(1, min(10, int(hi)))
+    if hi < lo:
+        hi = lo
+    return lo, hi
+
+def _live_plate_ttl():
+    try:
+        from bot.runtime.game_desk.live import session_seconds
+        return session_seconds("plate", 20)
+    except Exception:
+        return SESSION_TTL
+
+def _live_plate_cd():
+    try:
+        from bot.runtime.game_desk.live import param_float
+        return param_float("plate", "clickCooldown", USER_CLICK_COOLDOWN)
+    except Exception:
+        return USER_CLICK_COOLDOWN
+
+def _live_plate_max():
+    try:
+        from bot.runtime.game_desk.live import bets as desk_bets
+        return desk_bets("plate")[1] or PLATE_MAX_BET
+    except Exception:
+        return PLATE_MAX_BET
+
 # Клетки
 CELL_HIDDEN = " "
 CELL_SAFE = "ㅤ"
@@ -393,7 +434,8 @@ def initialize_game_field_plate(is_demo: bool = False, is_0demo: bool = False) -
         _debug_print_field_plate(field, "Инициализация 0DEMO")
         return field
     if is_demo:
-        k = random.randint(int(PLATE_COLLAPSE_MIN), int(PLATE_COLLAPSE_MAX))
+        lo, hi = _live_plate_collapse()
+        k = random.randint(int(lo), int(hi))
         collapse_rows = set(random.sample(list(range(10)), k=k))
         for r in range(10):
             if r in collapse_rows:
@@ -407,7 +449,8 @@ def initialize_game_field_plate(is_demo: bool = False, is_0demo: bool = False) -
         _debug_print_field_plate(field, f"Инициализация DEMO, collapse_rows={sorted(list(collapse_rows))}")
         return field
     # Обычный
-    k = random.randint(int(PLATE_COLLAPSE_MIN), int(PLATE_COLLAPSE_MAX))
+    lo, hi = _live_plate_collapse()
+    k = random.randint(int(lo), int(hi))
     collapse_rows = set(random.sample(list(range(10)), k=k))
     for r in range(10):
         if r in collapse_rows:
@@ -474,7 +517,7 @@ async def plate(message: Message):
     if len(parts) != 2: return
     if not parts[1].isdigit(): return
     bet_amount = int(parts[1])
-    if await reject_if_private_game(message):
+    if await reject_if_private_game(message, "plate", bet_amount):
         return
     if bet_amount < PLATE_MIN_BET:
         await message.reply(f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Минимальная ставка {PLATE_MIN_BET} кут.</b>", parse_mode="HTML")
@@ -502,13 +545,13 @@ async def plate(message: Message):
     from bot.funcs.group_balance_level import decide_gc_play_mode, format_game_max_bet_html
     gate = decide_gc_play_mode(
         bet=bet_amount,
-        game_max_bet=PLATE_MAX_BET,
+        game_max_bet=_live_plate_max(),
         has_assignment=has_assignment,
         is_free=is_free,
         gc_bet_limit=gc_bet_limit,
     )
     if gate.get("mode") == "reject":
-        await message.reply(format_game_max_bet_html(gate.get("max") or PLATE_MAX_BET), parse_mode="HTML")
+        await message.reply(format_game_max_bet_html(gate.get("max") or _live_plate_max()), parse_mode="HTML")
         return
     is_free_play = gate.get("mode") == "free"
 
@@ -596,7 +639,7 @@ async def plate(message: Message):
         state["message_id"] = sent.message_id
         active_games_plate[user_id] = state
         user_message_plate[user_id] = sent.message_id
-        asyncio.create_task(_session_ttl_watcher(chat_id, sent.message_id, user_id, SESSION_TTL))
+        asyncio.create_task(_session_ttl_watcher(chat_id, sent.message_id, user_id, _live_plate_ttl()))
 
 
 # ======================================================================
@@ -606,7 +649,7 @@ async def plate(message: Message):
 async def plate_process_game_buttons(call: types.CallbackQuery):
     uid = int(call.from_user.id); msg_id = int(call.message.message_id)
     now = _now_mono()
-    if now - _last_click.get(uid, 0.0) < USER_CLICK_COOLDOWN:
+    if now - _last_click.get(uid, 0.0) < _live_plate_cd():
         await call.answer("⏳"); return
     _last_click[uid] = now
     try:
@@ -748,7 +791,7 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                     game_field[current_row][other] = SHOW_TRAP
 
                 prev = _dec(game_data["win_amount"])
-                game_data["win_amount"] = _str_dec(prev + _dec(bet_amount) * PLATE_STEP_MULTIPLIER)
+                game_data["win_amount"] = _str_dec(prev + _dec(bet_amount) * _live_plate_step())
                 win_streak += 1; lose_streak = 0
                 game_data["win_streak"] = win_streak; game_data["lose_streak"] = lose_streak
 
@@ -813,7 +856,7 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
                     elif game_field[current_row][c] == CELL_TRAP: game_field[current_row][c] = SHOW_TRAP
                     elif game_field[current_row][c] == CELL_COLLAPSE: game_field[current_row][c] = SHOW_SAFE
                 prev = _dec(game_data["win_amount"])
-                game_data["win_amount"] = _str_dec(prev + _dec(bet_amount) * PLATE_STEP_MULTIPLIER)
+                game_data["win_amount"] = _str_dec(prev + _dec(bet_amount) * _live_plate_step())
                 profit_now = max(1, _to_int_floor(_dec(game_data["win_amount"]) - _dec(bet_amount)))
                 win_streak += 1; lose_streak = 0
                 game_data["win_streak"] = win_streak; game_data["lose_streak"] = lose_streak

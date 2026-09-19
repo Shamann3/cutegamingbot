@@ -11,6 +11,7 @@ import {
 import { parseRequiredIntFields } from '../../lib/formNumbers'
 import { notifyAdmin } from '../../lib/notify'
 import UserLookupPreview from '../../components/UserLookupPreview'
+import { IdentityBits } from '../../components/Copyable'
 
 function formatSec(sec) {
   if (sec == null) return '-'
@@ -419,8 +420,9 @@ export default function FarmSection({ onOpenUser } = {}) {
         {playerFarm && (
           <>
             <p className="panel-shelf-muted">
-              {playerFarm.displayName}
-              {playerFarm.username && ` @${playerFarm.username}`} · {playerFarm.ownedPlots}/{playerFarm.maxPlots} грядок · вода: {playerFarm.waterCount ?? 0}
+              {playerFarm.displayName}{' '}
+              <IdentityBits userId={playerFarm.userId} username={playerFarm.username} />
+              {' · '}{playerFarm.ownedPlots}/{playerFarm.maxPlots} грядок · вода: {playerFarm.waterCount ?? 0}
             </p>
             <div className="panel-users-plot-grid panel-farm-plot-grid">
               {playerFarm.plots.map((plot) => (
