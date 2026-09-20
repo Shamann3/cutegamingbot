@@ -306,12 +306,12 @@ def test_earnings_screen_and_card_are_plain():
     assert "Мои группы" in pending
     reco_card = text_group_card(live, today=3, newcomers=6, gifts=0)
     assert "Вам уже пришло" in reco_card
-    assert "Сегодня: <b>3 кут</b>" in reco_card
-    assert "Новых людей: <b>6</b>" in reco_card
+    assert "Сегодня: 3 кут" in reco_card
+    assert "Новых людей: 6" in reco_card
     assert "замороз" not in reco_card.lower()
     owner_card = text_group_card(own, today=0, newcomers=4, gifts=7, chat_balance=80)
     assert "Баланс группы" in owner_card
-    assert "Подарков новым: <b>7</b>" in owner_card
+    assert "Подарков новым: 7" in owner_card
     pause = text_group_card({**live, "freeze": "admin"}, today=0, newcomers=1)
     assert "пауза: Кут нужна админка" in pause
     assert "Верните Кут в администраторы" in pause
@@ -342,6 +342,7 @@ def test_earnings_screen_and_card_are_plain():
 
 
 def test_each_pr_message_has_one_unique_premium_emoji():
+    import re
     from datetime import datetime, timedelta, timezone
 
     from pr_groups_logic import (
@@ -357,16 +358,21 @@ def test_each_pr_message_has_one_unique_premium_emoji():
         text_cancelled,
         text_cant_add,
         text_choose_role,
+        text_confirm_expired,
         text_confirm_no_first,
+        text_confirm_no_second,
         text_confirm_prompt,
+        text_confirm_timeout,
         text_confirm_yes,
         text_digest,
         text_earnings,
         text_entry,
         text_forward_no_group,
         text_freeze_admin,
+        text_freeze_public,
         text_gift,
         text_gift_locked,
+        text_group_busy,
         text_group_card,
         text_group_not_found,
         text_how,
@@ -377,15 +383,26 @@ def test_each_pr_message_has_one_unique_premium_emoji():
         text_need_admin,
         text_need_link,
         text_need_photo,
+        text_need_photos_first,
         text_need_public,
         text_not_a_group,
+        text_not_creator,
         text_not_in_group,
         text_not_owner_switch,
+        text_not_your_claim,
+        text_owner_bridge,
+        text_owner_no_confirm,
         text_pick_group,
+        text_pick_role,
         text_photos_expired,
+        text_reco_bridge,
+        text_rejected,
+        text_resume_claim,
+        text_term_end,
         text_two_live,
         text_two_pending,
         text_wait_photo,
+        text_wrong_group,
         text_wrote_confirm,
     )
 
@@ -395,6 +412,13 @@ def test_each_pr_message_has_one_unique_premium_emoji():
         "role": "reco",
         "paid_kut": 4,
         "live_until": datetime.now(timezone.utc) + timedelta(days=3),
+    }
+    own = {
+        "chat_title": "Мой чат",
+        "status": "live",
+        "role": "owner",
+        "paid_kut": 0,
+        "gifts": 2,
     }
     samples = [
         text_entry(),
@@ -442,8 +466,113 @@ def test_each_pr_message_has_one_unique_premium_emoji():
         text_banned_31(),
         text_freeze_admin(),
         text_accepted(14),
+        text_accepted(14, role="owner"),
+        text_bot_joined("x", has_intent=True),
+        text_how_admin(intent="reco"),
+        text_need_admin("x", intent="reco"),
+        text_bot_not_there("x", intent="reco"),
+        text_need_photo("album"),
+        text_need_photo("dup"),
+        text_confirm_no_second(),
+        text_not_your_claim(),
+        text_not_creator(),
+        text_confirm_expired(),
+        text_wrong_group(),
+        text_need_photos_first(),
+        text_term_end(),
+        text_rejected("Мало людей", can_fix=True),
+        text_rejected("18+", can_fix=False),
+        text_freeze_public(),
+        text_group_busy(),
+        text_group_busy(owner=True),
+        text_confirm_timeout(),
+        text_owner_no_confirm(),
+        text_resume_claim("Друзья", "photos"),
+        text_pick_role("Друзья"),
+        text_owner_bridge("Друзья"),
+        text_reco_bridge("Друзья"),
+        text_group_card(own, today=0, newcomers=1, gifts=2, chat_balance=10),
+        text_group_card({**live, "status": "photos"}, today=0, newcomers=0),
+        text_group_card({**live, "status": "rejected", "reject_text": "Мало людей"}, today=0, newcomers=0),
     ]
+    extra_re = re.compile(r"<blockquote><b><i>.*?</i></b></blockquote>", re.S)
+    quote_re = re.compile(r"<blockquote>.*?</blockquote>", re.S)
     for html in samples:
         ids = premium_emoji_ids(html)
-        assert len(ids) <= 1, html
-        assert len(ids) == len(set(ids)), html
+        assert len(ids) == 1, html
+        assert "<b>" in html, html
+        stripped = extra_re.sub("", html)
+        assert "<i>" not in stripped, html
+        for quote in quote_re.findall(html):
+            assert quote.startswith("<blockquote><b><i>"), html
+            assert quote.endswith("</i></b></blockquote>"), html
+
+
+def test_pr_themed_emojis_and_extra_quote():
+    from pr_groups_logic import (
+        EMOJI_ADMIN,
+        EMOJI_EARN,
+        EMOJI_GROUPS,
+        EMOJI_HUB,
+        EMOJI_OWNER,
+        EMOJI_PHOTO,
+        EMOJI_PUBLIC,
+        EMOJI_RECO,
+        STATUS_EMOJI_NO,
+        STATUS_EMOJI_OK,
+        STATUS_EMOJI_WAIT,
+        extra,
+        text_after_proofs_owner,
+        text_cant_add,
+        text_choose_role,
+        text_entry,
+        text_earnings,
+        text_forward_no_group,
+        text_how,
+        text_how_admin,
+        text_how_public,
+        text_need_link,
+        text_wait_photo,
+    )
+
+    assert extra("факт") == "<blockquote><b><i>факт</i></b></blockquote>"
+    hub = text_entry()
+    assert EMOJI_HUB in hub
+    assert "<blockquote><b><i>" in hub
+    assert "14 дней" in hub
+    assert "35%" in hub
+    assert EMOJI_OWNER in text_how(intent="owner")
+    assert EMOJI_RECO in text_how(intent="reco")
+    assert EMOJI_RECO in text_choose_role()
+    assert EMOJI_PUBLIC in text_how_public()
+    assert EMOJI_ADMIN in text_how_admin()
+    assert EMOJI_PHOTO in text_wait_photo(0, 0)
+    assert EMOJI_GROUPS in text_earnings([], total=0, today=0, live=False)
+    assert EMOJI_EARN in text_earnings([], total=4, today=1, live=True)
+    assert STATUS_EMOJI_NO in text_forward_no_group()
+    assert STATUS_EMOJI_OK in text_after_proofs_owner()
+    assert STATUS_EMOJI_WAIT in text_need_link()
+    assert "Подойдёт" in text_cant_add()
+    assert "<blockquote><i>" not in text_need_link()
+
+
+def test_design_file_drives_hub_and_buttons():
+    from pr_groups_design import HUB, SCREENS, emoji_id
+    from pr_groups_logic import text_entry
+
+    hub = SCREENS["hub"]
+    assert hub["next"].startswith("Нажмите, кто вы")
+    assert "что нужно делать далее" in hub["next"]
+    assert emoji_id(hub["emoji"]) == emoji_id(HUB)
+    assert emoji_id(HUB) in text_entry()
+    assert any(btn.get("go") == "owner" for row in hub["buttons"] if isinstance(row, list) for btn in row)
+    for name, spec in SCREENS.items():
+        assert spec.get("emoji"), name
+        assert spec.get("title"), name
+        for row in spec.get("buttons") or []:
+            if isinstance(row, dict):
+                assert row.get("repeat")
+                continue
+            gos = [btn.get("go") for btn in row]
+            assert len(gos) == len(set(gos)), (name, gos)
+

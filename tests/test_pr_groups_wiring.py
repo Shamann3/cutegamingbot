@@ -23,11 +23,13 @@ def test_wired_into_bot_and_panel():
     assert "isPrGroups" in shell
     assert "!isPrGroups" in shell
     core = (ROOT / "bot" / "funcs" / "pr_groups.py").read_text(encoding="utf-8")
+    design = (ROOT / "server" / "pr_groups_design.py").read_text(encoding="utf-8")
     assert "prg:chk" in core
     assert "prg:undo" in core
     assert "choose_keyboard" in core
-    assert "Я владелец группы" in core
-    assert "Я рекомендую бот в группах" in core
+    assert "keyboard_for" in core
+    assert "Я владелец группы" in design
+    assert "Я рекомендую бот в группах" in design
     assert "startgroup" in core
     assert "is_waiting_link" in core
     assert "photo_keyboard" in core
@@ -35,10 +37,10 @@ def test_wired_into_bot_and_panel():
     assert "pop_photo" in core
     assert "prg:n:" in core
     assert "card_keyboard" in core
-    assert "Сдать ещё группу" in core
-    assert "Заработки" in core
-    assert "Мои группы" in core
-    assert "Назад, в главное меню" in core
+    assert "Сдать ещё группу" in design
+    assert "Заработки" in design
+    assert "Мои группы" in design
+    assert "Назад, в главное меню" in design
     handlers = (ROOT / "bot" / "handlers" / "pr_groups.py").read_text(encoding="utf-8")
     assert "on_undo" in handlers
     assert "looks_like_help" in handlers
@@ -240,6 +242,8 @@ def test_gift_lock_hooks_exist():
     assert "баланс чата" in ui
     assert "баланс группы" in ui
     logic = (ROOT / "server" / "pr_groups_logic.py").read_text(encoding="utf-8")
+    design = (ROOT / "server" / "pr_groups_design.py").read_text(encoding="utf-8")
     assert "стол" not in logic.lower()
+    assert "стол" not in design.lower()
     assert "стол" not in core.lower()
     assert "стол" not in handlers.lower()

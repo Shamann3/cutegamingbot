@@ -12,16 +12,32 @@ from datetime import datetime, timedelta, timezone
 from html import escape
 from typing import Any, Iterable, Optional
 
+from pr_groups_design import (
+    CONFIRM_EMOJI,
+    EMOJI_ADMIN,
+    EMOJI_EARN,
+    EMOJI_GROUPS,
+    EMOJI_HUB,
+    EMOJI_OWNER,
+    EMOJI_PHOTO,
+    EMOJI_PUBLIC,
+    EMOJI_RECO,
+    GIFT_EMOJI,
+    LINK_HINT as LINK_HINT_HTML,
+    NEED_PHOTO,
+    PALETTE,
+    PHOTO_STEPS,
+    SCREENS,
+    STATUS_EMOJI_NO,
+    STATUS_EMOJI_OK,
+    STATUS_EMOJI_WAIT,
+    emoji_html as design_emoji_html,
+)
+
 try:
     from zoneinfo import ZoneInfo
 except Exception:  # pragma: no cover
     ZoneInfo = None  # type: ignore
-
-STATUS_EMOJI_OK = "5339112148175959615"
-STATUS_EMOJI_WAIT = "5339082633160703625"
-STATUS_EMOJI_NO = "5337017423906226569"
-GIFT_EMOJI = "5199552030615558774"
-CONFIRM_EMOJI = "5424616516018537963"
 
 SHARE_PCT = 0.35
 WEEKLY_SEED_PCT = 0.15
@@ -126,27 +142,11 @@ PHOTO_HINTS = (
     "создатель группы",
 )
 
-# Один экран — один кадр. HTML уже безопасный.
-PHOTO_STEPS: tuple[dict[str, str], ...] = (
-    {
-        "what": "Список администраторов группы.",
-        "need": "На кадре должен быть <code>@CuteGamingBot</code>.",
-    },
-    {
-        "what": "Сообщение от Кут в этой группе.",
-        "need": "Нужно видеть, что бот там отвечает.",
-    },
-    {
-        "what": "Кто создатель группы.",
-        "need": "В списке админов — человек с короной.",
-    },
-)
-
+# Кадры доказательств: тексты в pr_groups_design.PHOTO_STEPS.
 HELP_WORDS = frozenset({"хелп", "help", "помощь", "?"})
 LINK_MODES = frozenset({"how", "how_public", "how_admin", "wait_link"})
 BOT_USERNAME = "CuteGamingBot"
 STARTGROUP_RIGHTS = "delete_messages+restrict_members+pin_messages+invite_users"
-LINK_HINT_HTML = "<code>@группа</code> · <code>t.me/группа</code> · <code>t.me/c/id</code> · id"
 
 _USER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")
 _AT_RE = re.compile(r"(?<![A-Za-z0-9_])@([A-Za-z][A-Za-z0-9_]{4,31})\b")
@@ -326,13 +326,122 @@ DEFAULT_REJECT_REASONS: list[dict[str, str]] = [
 ]
 
 
+def theme_emoji_html(kind: str) -> str:
+    tag = PALETTE.get(str(kind or "")) or PALETTE["wait"]
+    return design_emoji_html(tag)
+
+
 def status_emoji_html(kind: str) -> str:
-    eid, face = {
-        "ok": (STATUS_EMOJI_OK, "🟢"),
-        "wait": (STATUS_EMOJI_WAIT, "🟡"),
-        "no": (STATUS_EMOJI_NO, "🔴"),
-    }.get(kind, (STATUS_EMOJI_WAIT, "🟡"))
-    return f"<tg-emoji emoji-id='{eid}'>{face}</tg-emoji>"
+    return theme_emoji_html(kind)
+
+
+def extra(text: str) -> str:
+    """Только дополнительная информация: цитата, жирная и курсив."""
+    t = str(text or "").strip()
+    if not t:
+        return ""
+    return f"<blockquote><b><i>{t}</i></b></blockquote>"
+
+
+def do_next(text: str) -> str:
+    """Главное действие на экране — жирный текст, не цитата."""
+    t = str(text or "").strip()
+    if not t:
+        return ""
+    return f"<b>{t}</b>"
+
+
+def _bold_line(text: str) -> str:
+    t = str(text or "").strip()
+    if not t:
+        return ""
+    if t.startswith("<blockquote"):
+        return t
+    if t.startswith("<b>") and t.endswith("</b>"):
+        return t
+    return f"<b>{t}</b>"
+
+
+class _SafeFmt(dict):
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
+def fill_design(text: Any, values: dict[str, Any] | None = None) -> str:
+    if text is None:
+        return ""
+    if isinstance(text, (list, tuple)):
+        lines = [fill_design(item, values) for item in text]
+        return "\n".join(line for line in lines if line)
+    return str(text).format_map(_SafeFmt(values or {}))
+
+
+def pr_screen(
+    emoji: str,
+    title: str,
+    body: str = "",
+    extra_text: str = "",
+    next_text: str = "",
+) -> str:
+    """Заголовок с премиум-эмодзи, факты жирным, цитата только для доп. сведений."""
+    mark = theme_emoji_html(emoji) if emoji in PALETTE else design_emoji_html(emoji)
+    head = f"{mark} {_bold_line(title)}".strip() if mark else _bold_line(title)
+    parts = [head] if head else []
+    if body:
+        for chunk in str(body).split("\n"):
+            line = _bold_line(chunk)
+            if line:
+                parts.append(line)
+    if extra_text:
+        quoted = extra(extra_text)
+        if quoted:
+            parts.append(quoted)
+    if next_text:
+        action = do_next(next_text)
+        if action:
+            parts.append(action)
+    return "\n".join(parts)
+
+
+def render_design(name: str, values: dict[str, Any] | None = None, **overrides: Any) -> str:
+    spec = SCREENS[name]
+    vals = {"link_hint": LINK_HINT_HTML}
+    vals.update(values or {})
+    emoji = overrides.get("emoji") or spec.get("emoji") or ""
+    emoji_by = spec.get("emoji_by") or {}
+    if emoji_by and vals.get("emoji_key"):
+        emoji = emoji_by.get(vals["emoji_key"], emoji)
+    extra_text = overrides["extra"] if "extra" in overrides else spec.get("extra") or ""
+    extra_by = spec.get("extra_by") or {}
+    if "extra" not in overrides and isinstance(extra_by, dict) and vals.get("extra_key"):
+        extra_text = extra_by.get(vals["extra_key"], extra_text)
+    next_text = overrides["next"] if "next" in overrides else spec.get("next") or ""
+    next_by = spec.get("next_by") or {}
+    if "next" not in overrides and isinstance(next_by, dict) and vals.get("next_key") is not None:
+        next_text = next_by.get(str(vals["next_key"]), next_by.get("default", next_text))
+    if "next" not in overrides and vals.get("has_items") is False and spec.get("next_empty"):
+        next_text = spec["next_empty"]
+    body = overrides["body"] if "body" in overrides else spec.get("body") or ""
+    return pr_screen(
+        emoji,
+        fill_design(spec.get("title") or "", vals),
+        fill_design(body, vals),
+        fill_design(extra_text, vals),
+        fill_design(next_text, vals),
+    )
+
+
+def card_emoji_kind(status: str, freeze: str | None = None, *, owner: bool = False) -> str:
+    if pause_label(freeze):
+        return "wait"
+    st = str(status or "")
+    if st == ST_PHOTOS:
+        return "photos"
+    if st in {ST_REJECTED, ST_BURNED}:
+        return "error"
+    if st == ST_LIVE:
+        return "live_owner" if owner else "live_reco"
+    return "wait"
 
 
 _PREMIUM_ID_RE = re.compile(r"emoji-id=['\"](\d+)['\"]")
@@ -340,10 +449,6 @@ _PREMIUM_ID_RE = re.compile(r"emoji-id=['\"](\d+)['\"]")
 
 def premium_emoji_ids(html: str | None) -> list[str]:
     return _PREMIUM_ID_RE.findall(str(html or ""))
-
-
-def do_next(text: str) -> str:
-    return f"<blockquote><i>{text}</i></blockquote>"
 
 
 def mention_html(user_id: int, name: str) -> str:
@@ -658,235 +763,115 @@ def looks_like_help(text: str | None) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Экраны в личке. Один экран — одно действие. Кнопка говорит, что нажать.
+# Экраны читают pr_groups_design.SCREENS. Здесь только данные и выбор варианта.
 # ---------------------------------------------------------------------------
 
-def text_entry() -> str:
-    return (
-        f"<tg-emoji emoji-id='5452002597592382164'>📣</tg-emoji> <b>Рекомендация бота в группах</b>\n"
-        "<b>Заработок - до 35% комиссии с игр новых людей.</b>\n"
-        "<blockquote><i>Длительность заработка - 14 дней · с той группы, в которую вы добавите нашего бота</i></blockquote>\n"
-        "<i>Нажмите, кто вы. Дальше бот покажет один шаг за раз.</i>"
-    )
-
-
-def text_choose_role() -> str:
-    return (
-        f"<tg-emoji emoji-id='5451910260090485999'>🔥</tg-emoji> <b>Кто вы?</b>\n"
-        "Владелец — корона в списке админов. Если привели бота в чужой чат — вторая кнопка.\n"
-        + do_next("Нажмите одну кнопку. Потом бот скажет, что прислать.")
-    )
-
-
-def _epsilon_watch(*, yours: bool = True) -> str:
-    whose = "ваша группа" if yours else "эта группа"
-    return do_next(
-        f"Теперь {whose} уйдёт на проверку. Ответ придёт сюда. "
-        "Нажмите «Мои группы», чтобы видеть статус, или «Назад» — в меню пиара."
-    )
-
-
-def _link_quote() -> str:
-    return do_next(f"Пришлите сюда ссылку текстом. Подойдёт {LINK_HINT_HTML}")
-
-
-def text_how(*, intent: str = "", no_public: list | None = None, no_admin: list | None = None) -> str:
-    extra = []
+def _seen_groups_extra(no_public: list | None, no_admin: list | None) -> str:
+    bits = []
     line_pub = _titles_line(list(no_public or []), "нет @адреса")
     line_adm = _titles_line(list(no_admin or []), "Кут не админ")
     if line_pub:
-        extra.append(line_pub)
+        bits.append(line_pub)
     if line_adm:
-        extra.append(line_adm)
-    seen = f"\n<tg-spoiler>{' '.join(extra)}</tg-spoiler>" if extra else ""
-    if intent == ROLE_RECO:
-        return (
-            f"{status_emoji_html('wait')} <b>Чужой чат</b>\n"
-            "Попросите создателя добавить @CuteGamingBot в админы.\n"
-            f"{do_next(f'Когда Кут в админах — пришлите сюда ссылку. Подойдёт {LINK_HINT_HTML}')}"
-            f"{seen}"
-        )
-    return (
-        f"{status_emoji_html('wait')} <b>Ваша группа</b>\n"
-        "Добавьте Кут в список администраторов в свою публичную группу.\n"
-        f"{do_next(f'Нажмите «Добавить Кут», выберите чат. Потом пришлите сюда ссылку. Подойдёт {LINK_HINT_HTML}')}"
-        f"{seen}"
-    )
+        bits.append(line_adm)
+    return " ".join(bits)
+
+
+def _seen_value(no_public: list | None = None, no_admin: list | None = None) -> str:
+    seen = _seen_groups_extra(no_public, no_admin)
+    return f" {seen}" if seen else ""
+
+
+def text_entry() -> str:
+    return render_design("hub")
+
+
+def text_choose_role() -> str:
+    return render_design("choose")
+
+
+def text_how(*, intent: str = "", no_public: list | None = None, no_admin: list | None = None) -> str:
+    name = "how_reco" if intent == ROLE_RECO else "how_owner"
+    return render_design(name, {"seen": _seen_value(no_public, no_admin)})
 
 
 def text_how_public() -> str:
-    return (
-        f"{status_emoji_html('wait')} <b>Нужен @адрес</b>\n"
-        "Название сверху → <b>Управление</b> → <b>Тип группы</b> → <b>Публичная</b>.\n"
-        + do_next("Сделайте группу публичной. Потом пришлите сюда ссылку.")
-    )
+    return render_design("how_public")
 
 
 def text_how_admin(*, intent: str = "") -> str:
-    if intent == ROLE_RECO:
-        return (
-            f"{status_emoji_html('wait')} <b>Кут должен быть админом</b>\n"
-            "Попросите создателя: <b>Управление</b> → <b>Администраторы</b> → @CuteGamingBot.\n"
-            + do_next("Когда Кут в админах — пришлите сюда ссылку.")
-        )
-    return (
-        f"{status_emoji_html('wait')} <b>Кут должен быть админом</b>\n"
-        "<b>Управление</b> → <b>Администраторы</b> → @CuteGamingBot.\n"
-        + do_next("Нажмите «Проверить» или пришлите ссылку сюда.")
-    )
+    return render_design("how_admin_reco" if intent == ROLE_RECO else "how_admin")
 
 
 def text_need_public(title: str = "") -> str:
-    name = escape(title or "эта группа")
-    return (
-        f"{status_emoji_html('no')} <b>У «{name}» нет @адреса</b>\n"
-        "Название сверху → <b>Управление</b> → <b>Тип группы</b> → <b>Публичная</b>.\n"
-        + do_next("Сделайте группу публичной. Потом пришлите сюда ссылку.")
-    )
+    return render_design("need_public", {"name": escape(title or "эта группа")})
 
 
 def text_need_admin(title: str = "", *, intent: str = "") -> str:
-    name = escape(title or "эта группа")
-    if intent == ROLE_RECO:
-        return (
-            f"{status_emoji_html('no')} <b>В «{name}» Кут не админ</b>\n"
-            "Попросите создателя дать ему админку.\n"
-            + do_next("Когда Кут в админах — пришлите сюда ссылку.")
-        )
-    return (
-        f"{status_emoji_html('no')} <b>В «{name}» Кут не админ</b>\n"
-        "<b>Управление</b> → <b>Администраторы</b> → @CuteGamingBot.\n"
-        + do_next("Нажмите «Проверить» или пришлите ссылку сюда.")
-    )
+    name = "need_admin_reco" if intent == ROLE_RECO else "need_admin"
+    return render_design(name, {"name": escape(title or "эта группа")})
 
 
 def text_bot_joined(title: str, *, has_intent: bool = False) -> str:
-    name = escape(title or "группа")
-    if has_intent:
-        return (
-            f"{status_emoji_html('ok')} <b>Кут зашёл в «{name}»</b>\n"
-            + do_next("Если он админ — нажмите «Проверить» или пришлите ссылку сюда.")
-        )
-    return (
-        f"{status_emoji_html('ok')} <b>Кут зашёл в «{name}»</b>\n"
-        + do_next("Нажмите, кто вы: владелец или рекомендуете. Дальше бот скажет следующий шаг.")
-    )
+    key = "bot_joined_intent" if has_intent else "bot_joined"
+    return render_design(key, {"name": escape(title or "группа")})
 
 
 def text_need_link() -> str:
-    return (
-        f"{status_emoji_html('wait')} <b>Нужна ссылка на группу</b>\n"
-        "<i>В группе : сообщение → Копировать ссылку — вставьте сюда текстом</i>\n"
-        f"{_link_quote()}"
-    )
+    return render_design("need_link")
 
 
 def text_forward_no_group() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Пересылка не подходит</b>\n"
-        + do_next(f"Не пересылайте сообщение. Пришлите ссылку текстом. Подойдёт {LINK_HINT_HTML}")
-    )
+    return render_design("forward_no_group")
 
 
 def text_link_invite() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Это закрытая ссылка</b>\n"
-        + do_next("Нужна публичная группа. Сделайте @адрес и пришлите обычную ссылку.")
-    )
+    return render_design("link_invite")
 
 
 def text_group_not_found() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Такую группу не вижу</b>\n"
-        + do_next("Проверьте ссылку. Кут должен быть в чате. Потом пришлите ссылку снова.")
-    )
+    return render_design("group_not_found")
 
 
 def text_bot_not_there(title: str = "", *, intent: str = "") -> str:
-    name = escape(title or "эта группа")
-    if intent == ROLE_RECO:
-        return (
-            f"{status_emoji_html('no')} <b>Кут не в «{name}»</b>\n"
-            "Попросите создателя добавить @CuteGamingBot в админы.\n"
-            + do_next("Когда Кут будет в чате — пришлите сюда ссылку снова.")
-        )
-    return (
-        f"{status_emoji_html('no')} <b>Кут не в «{name}»</b>\n"
-        + do_next("Нажмите «Добавить Кут», выберите этот чат. Потом пришлите ссылку снова.")
-    )
+    name = "bot_not_there_reco" if intent == ROLE_RECO else "bot_not_there"
+    return render_design(name, {"name": escape(title or "эта группа")})
 
 
 def text_cant_add() -> str:
-    return (
-        f"{status_emoji_html('wait')} <b>Чужая группа</b>\n"
-        "Напишите создателю: добавь @CuteGamingBot в админы.\n"
-        + do_next(f"Когда Кут будет в чате — пришлите сюда ссылку. Подойдёт {LINK_HINT_HTML}")
-    )
+    return render_design("cant_add")
 
 
 def text_not_in_group(title: str = "") -> str:
-    name = escape(title or "эта группа")
-    return (
-        f"{status_emoji_html('no')} <b>Вас нет в «{name}»</b>\n"
-        + do_next("Сначала вступите в группу. Потом вернитесь сюда и пришлите ссылку.")
-    )
+    return render_design("not_in_group", {"name": escape(title or "эта группа")})
 
 
 def text_not_a_group() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Это не группа</b>\n"
-        + do_next("Нужен чат, не канал и не человек. Пришлите ссылку на группу.")
-    )
+    return render_design("not_a_group")
 
 
 def text_pick_group() -> str:
-    return (
-        f"{status_emoji_html('wait')} <b>Какую группу сдаём?</b>\n"
-        + do_next("Нажмите на нужную группу. Если список не тот — «Назад», в главное меню.")
-    )
+    return render_design("pick_group")
 
 
 def text_pick_role(title: str) -> str:
-    name = escape(title or "группа")
-    return (
-        f"{status_emoji_html('ok')} <b>«{name}»</b>\n"
-        "Кто сдаёт эту группу?\n"
-        + do_next("Своя — первая кнопка. Привели Кут — вторая. Создатель потом нажмёт Да.")
-    )
+    return render_design("pick_role", {"name": escape(title or "группа")})
 
 
 def text_owner_bridge(title: str) -> str:
-    name = escape(title or "группа")
-    return (
-        f"{status_emoji_html('ok')} <b>«{name}»</b>\n"
-        "Вы создатель. Дальше 3 фото — и заявка на проверку.\n"
-        + do_next("Пришлите первое фото сюда. Если друг просил добавить Кут — не забирайте заявку: пусть он пришлёт ссылку в бота.")
-    )
+    return render_design("owner_bridge", {"name": escape(title or "группа")})
 
 
 def text_reco_bridge(title: str) -> str:
-    name = escape(title or "группа")
-    return (
-        f"{status_emoji_html('ok')} <b>«{name}»</b>\n"
-        "Вы не создатель. Чтобы доля шла вам, создатель нажмёт Да в группе.\n"
-        + do_next("Пришлите первое фото сюда. Да нажимает только человек с короной в админах.")
-    )
+    return render_design("reco_bridge", {"name": escape(title or "группа")})
 
 
 def text_not_owner_switch(title: str = "") -> str:
-    name = escape(title or "эта группа")
-    return (
-        f"{status_emoji_html('no')} <b>Вы не владелец «{name}»</b>\n"
-        + do_next("Нажмите «Я рекомендую бот в группах». Чужой чат сдаётся так.")
-    )
+    return render_design("not_owner_switch", {"name": escape(title or "эта группа")})
 
 
 def text_are_owner_switch(title: str = "") -> str:
-    name = escape(title or "эта группа")
-    return (
-        f"{status_emoji_html('wait')} <b>«{name}» — ваша группа</b>\n"
-        + do_next("Нажмите «Я владелец группы». Сдавайте как владелец.")
-    )
+    return render_design("are_owner_switch", {"name": escape(title or "эта группа")})
 
 
 def text_wrong_owner() -> str:
@@ -897,20 +882,20 @@ def text_wait_photo(index: int, have: int) -> str:
     nxt = have if 0 <= have < PHOTOS_REQUIRED else min(int(index), PHOTOS_REQUIRED - 1)
     if 0 <= nxt < len(PHOTO_STEPS):
         step = PHOTO_STEPS[nxt]
-        body = f"{step['what']}\n{step['need']}"
+        what = step["what"]
+        need = step["need"]
     else:
-        body = escape(photo_hint(nxt))
-    have_line = f"Есть {have} из {PHOTOS_REQUIRED}.\n" if have > 0 else ""
-    tail = "Пришлите фото сюда"
-    if have == 1:
-        tail = "Пришлите следующее фото сюда, одним кадром."
-    elif have == 2:
-        tail = "Пришлите последнее фото сюда — и заявка уйдёт дальше."
-    return (
-        f"{status_emoji_html('wait')} <b>{have + 1} из {PHOTOS_REQUIRED}</b>\n"
-        f"{have_line}{body}\n"
-        f"{do_next(tail)}"
-    )
+        what = escape(photo_hint(nxt))
+        need = ""
+    body = f"Есть {have} из {PHOTOS_REQUIRED}.\n{what}" if have > 0 else what
+    return render_design("wait_photo", {
+        "step": have + 1,
+        "total": PHOTOS_REQUIRED,
+        "body": body,
+        "need": need,
+        "tail": "",
+        "next_key": str(min(max(int(have), 0), 2)),
+    })
 
 
 def text_photo_progress(have: int) -> str:
@@ -918,32 +903,16 @@ def text_photo_progress(have: int) -> str:
 
 
 def text_need_photo(kind: str = "") -> str:
-    titles = {
-        "video": "Нужно фото, не видео.",
-        "file": "Нужно фото, не файл.",
-        "sticker": "Нужно фото из группы.",
-        "text": "Нужно фото, не текст.",
-        "album": "По одному фото.",
-        "dup": "Это фото уже есть.",
-    }
-    tails = {
-        "album": "Следующий кадр — отдельным сообщением.",
-        "dup": "Пришлите другой кадр.",
-        "sticker": "Картинка из группы — сюда.",
-    }
-    title = titles.get(kind or "", "Нужно именно фото.")
-    tail = tails.get(kind or "", "Картинка из галереи — сюда.")
-    return (
-        f"{status_emoji_html('no')} <b>{escape(title)}</b>\n"
-        f"<blockquote><i>{escape(tail)}</i></blockquote>"
-    )
+    spec = NEED_PHOTO.get(kind or "") or NEED_PHOTO[""]
+    return render_design("need_photo", {
+        "title": spec["title"],
+        "extra": spec["extra"],
+        "tail": spec["next"],
+    })
 
 
 def text_photos_expired() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>24 часа вышли</b>\n"
-        + do_next("Нажмите «Сдать ещё группу» или «Назад» — и сдайте три фото заново.")
-    )
+    return render_design("photos_expired")
 
 
 def text_after_photos_owner() -> str:
@@ -951,51 +920,31 @@ def text_after_photos_owner() -> str:
 
 
 def text_after_proofs_owner() -> str:
-    return (
-        f"{status_emoji_html('ok')} <b>Доказательства приняты</b>\n"
-        "Новым людям проект даст куты — играть ими можно только у вас, в этой группе.\n"
-        "Группа уходит на проверку. Ответ придёт сюда.\n"
-        + do_next("Нажмите «Мои группы», чтобы видеть статус. «Назад» — в меню пиара.")
-    )
+    return render_design("after_proofs_owner")
 
 
 def text_after_proofs_reco() -> str:
-    return (
-        f"{status_emoji_html('ok')} <b>Доказательства приняты</b>\n"
-        "14 дней вам будет капать доля с игр новых людей в этой группе.\n"
-        "Группа уходит на проверку. Ответ придёт сюда.\n"
-        + do_next("Нажмите «Мои группы», чтобы видеть статус. «Назад» — в меню пиара.")
-    )
+    return render_design("after_proofs_reco")
 
 
 def text_after_photos_reco(title: str = "") -> str:
-    name = escape(title or "группу")
-    return (
-        f"{status_emoji_html('wait')} <b>Напишите в группе</b>\n"
-        f"Откройте «{name}» и отправьте слово <code>подтверждение</code>.\n"
-        "<i>Да нажимает только создатель (корона). 24 часа.</i>\n"
-        + do_next("Нажмите «Открыть группу», напишите слово, дождитесь Да. Потом можно нажать «Я написал».")
-    )
+    return render_design("after_photos_reco", {"name": escape(title or "группу")})
 
 
 def text_wrote_confirm() -> str:
-    return (
-        f"{status_emoji_html('wait')} <b>Ждём создателя</b>\n"
-        "Под сообщением в группе он должен нажать Да.\n"
-        + do_next("Если не нажал — откройте группу и напишите «подтверждение» ещё раз.")
-    )
+    return render_design("wrote_confirm")
 
 
-def _earnings_barnum(*, total: int, today: int, count: int, live: bool) -> str:
+def _earnings_key(*, total: int, today: int, count: int, live: bool) -> str:
     if count <= 0:
-        return "Пока тихо. Сдайте группу — и здесь появятся цифры, которые захочется открывать."
+        return "empty"
     if live and total > 0:
-        return "Это уже ваши цифры. Откройте группу — будет видно, откуда капает."
+        return "live_paid"
     if live:
-        return "Группа уже в работе. Первые куты приходят, когда новые люди начинают играть."
+        return "live"
     if today > 0:
-        return "Сегодня уже есть движение. Откройте группу — там подробнее."
-    return "Вы уже сделали свою часть. Пока смотрим заявку — можно подождать здесь."
+        return "today"
+    return "pending"
 
 
 def text_earnings(
@@ -1006,20 +955,16 @@ def text_earnings(
     live: bool = False,
 ) -> str:
     items = list(rows or [])
-    title = "Заработки" if live else "Мои группы"
-    kind = "ok" if live or int(total) > 0 else "wait"
-    barnum = _earnings_barnum(total=int(total), today=int(today), count=len(items), live=live)
-    lines = [
-        f"{status_emoji_html(kind)} <b>{title}</b>",
-        f"<b>Всего вам пришло: {kut_amount(total)}</b>",
-        f"<b>Сегодня: {kut_amount(today)}</b>",
-        f"<i>{barnum}</i>",
-    ]
-    if items:
-        lines.append(do_next("Нажмите группу — откроется карточка. «Сдать ещё группу» — новое меню."))
-    else:
-        lines.append(do_next("Нажмите «Сдать ещё группу» и выберите, кто вы."))
-    return "\n".join(lines)
+    name = "earnings" if live or int(total) > 0 else "mine"
+    key = _earnings_key(total=int(total), today=int(today), count=len(items), live=live)
+    spec = SCREENS[name]
+    barnum = (spec.get("extra_by") or {}).get(key) or ""
+    return render_design(name, {
+        "total": kut_amount(total),
+        "today": kut_amount(today),
+        "barnum": barnum,
+        "has_items": bool(items),
+    })
 
 
 def text_mine(
@@ -1030,6 +975,27 @@ def text_mine(
     live: bool = False,
 ) -> str:
     return text_earnings(rows, total=total, today=today, live=live)
+
+
+def _card_status_key(status: str, freeze: str | None) -> str:
+    if pause_hint(freeze):
+        return "pause"
+    st = str(status or "")
+    if st == ST_PHOTOS:
+        return "photos"
+    if st in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
+        return "wait_confirm"
+    if st in {ST_PENDING, ST_ACCEPTING, ST_FULFILLING}:
+        return "pending"
+    if st == ST_LIVE:
+        return "live"
+    if st == ST_ENDED:
+        return "ended"
+    if st == ST_REJECTED:
+        return "rejected"
+    if st == ST_BURNED:
+        return "burned"
+    return "default"
 
 
 def text_group_card(
@@ -1044,132 +1010,86 @@ def text_group_card(
     name = escape(str(data.get("chat_title") or data.get("title") or "группа"))
     status = str(data.get("status") or "")
     freeze = data.get("freeze")
-    label = claim_status_label(status, freeze)
-    kind = "ok" if status == ST_LIVE and not freeze else ("no" if status in {ST_REJECTED, ST_BURNED} else "wait")
-    lines = [
-        f"{status_emoji_html(kind)} <b>«{name}»</b>",
-        f"<b>{escape(label)}</b>",
-    ]
     owner = is_owner_claim(data)
-    if owner:
-        if chat_balance is not None:
-            lines.append(f"Баланс группы: <b>{kut_amount(chat_balance)}</b>")
-        lines.append(f"Подарков новым: <b>{int(gifts or 0)}</b>")
-    else:
-        lines.append(f"Вам уже пришло: <b>{kut_amount(data.get('paid_kut'))}</b>")
-        lines.append(f"Сегодня: <b>{kut_amount(today)}</b>")
+    spec = SCREENS["card"]
+    key = _card_status_key(status, freeze)
+    values: dict[str, Any] = {
+        "name": name,
+        "status": escape(claim_status_label(status, freeze)),
+        "gifts": int(gifts or 0),
+        "paid": kut_amount(data.get("paid_kut")),
+        "today": kut_amount(today),
+        "newcomers": int(newcomers or 0),
+        "hint": pause_hint(freeze),
+        "reason": escape(str(data.get("reject_text") or "").strip()) or "Заявку не приняли.",
+        "emoji_key": card_emoji_kind(status, freeze, owner=owner),
+        "extra_key": key,
+        "next_key": key,
+        "balance": kut_amount(chat_balance) if chat_balance is not None else "",
+        "days": "",
+    }
     days = claim_days_left(data)
     if days is not None and status in LIVE_STATUSES:
-        lines.append(f"Осталось дней: <b>{days}</b>")
-    lines.append(f"Новых людей: <b>{int(newcomers or 0)}</b>")
-    hint = pause_hint(freeze)
-    if hint:
-        action = f"{hint} «Назад» — к списку групп."
-    elif status == ST_PHOTOS:
-        action = "Нажмите «Продолжить фото» и пришлите следующий кадр сюда."
-    elif status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
-        action = "Нажмите «Открыть группу», напишите «подтверждение», дождитесь Да."
-    elif status in {ST_PENDING, ST_ACCEPTING, ST_FULFILLING}:
-        action = "Ждите. Решение придёт в этот чат. «Назад» — к списку."
-    elif status == ST_LIVE:
-        action = "Ничего нажимать не нужно. «Назад» — к списку групп."
-    elif status == ST_ENDED:
-        action = "Срок вышел. «Назад» — к списку. Новую группу сдайте с главного меню."
-    elif status == ST_REJECTED:
-        reason = str(data.get("reject_text") or "").strip()
-        action = (reason + " «Назад» — к списку.") if reason else "Не приняли. «Назад» — к списку."
-    elif status == ST_BURNED:
-        action = "Кут убрали из группы. «Назад» — к списку."
-    else:
-        action = "«Назад» — к списку групп."
-    lines.append(do_next(escape(action) if status == ST_REJECTED else action))
-    return "\n".join(lines)
+        values["days"] = days
+    templates = spec.get("facts_owner") if owner else spec.get("facts_reco")
+    facts: list[str] = []
+    for tmpl in list(templates or []):
+        if "{balance}" in tmpl and chat_balance is None:
+            continue
+        if "{days}" in tmpl and values["days"] == "":
+            continue
+        line = fill_design(tmpl, values)
+        if line:
+            facts.append(line)
+    values["facts"] = "\n".join(facts)
+    extra_tmpl = (spec.get("extra_by") or {}).get(key) or spec.get("extra") or ""
+    next_tmpl = (spec.get("next_by") or {}).get(key) or (spec.get("next_by") or {}).get("default") or spec.get("next") or ""
+    return render_design("card", values, extra=fill_design(extra_tmpl, values), next=fill_design(next_tmpl, values))
 
 
 def text_cancelled() -> str:
-    return (
-        f"{status_emoji_html('wait')} <b>Заявку сняли</b>\n"
-        + do_next("Нажмите «Сдать ещё группу» — и выберите путь заново.")
-    )
+    return render_design("cancelled")
 
 
 def text_confirm_prompt(user_id: int, name: str) -> str:
-    who = mention_html(user_id, name)
-    return (
-        f"<tg-emoji emoji-id='{CONFIRM_EMOJI}'>🎁</tg-emoji> "
-        f"<b>{who} добавил Кут сюда. Если это так — нажмите Да. Тогда заработок пойдёт ему.</b>"
-    )
+    return render_design("confirm", {"who": mention_html(user_id, name)})
 
 
 def text_confirm_yes() -> str:
-    return (
-        f"{status_emoji_html('ok')} <b>Подтверждено. Заявка на проверке.</b>\n"
-        + do_next("Ничего больше нажимать не нужно. Решение придёт пригласившему в личку.")
-    )
+    return render_design("confirm_yes")
 
 
 def text_confirm_no_first() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Создатель не подтвердил</b>\n"
-        + do_next("Остался один шанс. Откройте группу и напишите <code>подтверждение</code> ещё раз.")
-    )
+    return render_design("confirm_no_first")
 
 
 def text_confirm_no_second() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Снова нет</b>\n"
-        + do_next("Эту группу нельзя 31 день. Нажмите «Назад» и возьмите другую.")
-    )
+    return render_design("confirm_no_second")
 
 
 def text_not_your_claim() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Это не ваша заявка.</b>\n"
-        + do_next("Нажмите «Назад» — откроется меню пиара.")
-    )
+    return render_design("not_your_claim")
 
 
 def text_not_creator() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Подтверждает только создатель</b>\n"
-        + do_next("Да должен нажать человек с короной в списке админов.")
-    )
+    return render_design("not_creator")
 
 
 def text_confirm_expired() -> str:
-    return (
-        f"{status_emoji_html('wait')} <b>Это подтверждение уже не действует.</b>\n"
-        + do_next("Напишите в группе «подтверждение» снова.")
-    )
+    return render_design("confirm_expired")
 
 
 def text_wrong_group() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Не та группа.</b>\n"
-        + do_next("Откройте ту группу, куда вы добавляли Кут, и напишите «подтверждение» там.")
-    )
+    return render_design("wrong_group")
 
 
 def text_need_photos_first() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Сначала 3 фото в боте</b>\n"
-        + do_next("Пришлите их сюда, в этот чат, по одному кадру.")
-    )
+    return render_design("need_photos_first")
 
 
 def text_accepted(term_days: int, *, role: str = "") -> str:
-    days = int(term_days or DEFAULT_TERM_DAYS)
-    if str(role or "") == ROLE_OWNER:
-        return (
-            f"{status_emoji_html('ok')} <b>Группу приняли.</b>\n"
-            f"<b>{days} дней · новые смогут играть у вас на подарочные куты.</b>\n"
-            + do_next("Нажмите «Мои группы», когда захотите цифры.")
-        )
-    return (
-        f"{status_emoji_html('ok')} <b>Группу приняли.</b>\n"
-        f"<b>{days} дней вам капает доля с игр новых.</b>\n"
-        + do_next("Нажмите «Заработки» или «Мои группы», когда захотите цифры.")
-    )
+    name = "accepted_owner" if str(role or "") == ROLE_OWNER else "accepted"
+    return render_design(name, {"days": int(term_days or DEFAULT_TERM_DAYS)})
 
 
 def text_digest(
@@ -1180,118 +1100,71 @@ def text_digest(
     days_left: int,
     title: str = "",
 ) -> str:
-    name = escape(title or "группы")
-    extra = "Это уже на вашем балансе." if int(paid or 0) > 0 else "Как появятся игры новых — цифра вырастет."
-    return (
-        f"{status_emoji_html('ok')} <b>Сегодня с «{name}»: {int(newcomers or 0)} новых людей · вам {kut_amount(paid)}.</b>\n"
-        f"<b>Осталось {int(days_left or 0)} дн.</b>\n"
-        f"<i>{extra}</i>\n"
-        + do_next("Откройте «Заработки», чтобы видеть цифры по группам.")
-    )
+    return render_design("digest", {
+        "name": escape(title or "группы"),
+        "newcomers": int(newcomers or 0),
+        "paid": kut_amount(paid),
+        "days": int(days_left or 0),
+        "note": "",
+        "extra_key": "paid" if int(paid or 0) > 0 else "empty",
+    })
 
 
 def text_gift(user_id: int, name: str, amount: int) -> str:
-    who = mention_html(user_id, name)
-    n = int(amount)
-    return (
-        f"<tg-emoji emoji-id='{GIFT_EMOJI}'>🪙</tg-emoji> "
-        f"<b>{who}, На ваш баланс было выдано {n} кут в подарок, для того чтобы научится играть в @CuteGamingBot</b>\n"
-        "<blockquote><b>В случае каких либо непоняток, напишите \"хелп\"</b></blockquote>"
-    )
+    return render_design("gift", {
+        "who": mention_html(user_id, name),
+        "amount": int(amount),
+    })
 
 
 def text_gift_locked() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Подарочные куты можно поставить только в играх этой группы, одному.</b>\n"
-        "<blockquote><i>Снять или перевести нельзя — ими учатся играть у вас.</i></blockquote>"
-    )
+    return render_design("gift_locked")
 
 
 def text_term_end() -> str:
-    return (
-        f"{status_emoji_html('wait')} <b>Срок по этой группе закончился. Новые куты с неё больше не капают.</b>\n"
-        + do_next("Откройте «Мои группы», чтобы увидеть статус. Новую можно сдать с главного меню.")
-    )
+    return render_design("term_end")
 
 
 def text_kicked() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Кут убрали из группы. Начисления стоп.</b>\n"
-        + do_next("Верните Кут в админы, если хотите продолжить. Статус — в «Мои группы».")
-    )
+    return render_design("kicked")
 
 
 def text_rejected(reason: str, *, can_fix: bool) -> str:
+    name = "rejected_fix" if can_fix else "rejected"
     body = escape((reason or "Не приняли.").strip() or "Не приняли.")
-    if can_fix:
-        action = f"{body} Есть 48 часов. Исправьте и сдайте снова через «Сдать ещё группу»."
-    else:
-        action = f"{body} Нажмите «Назад» — в меню пиара."
-    return (
-        f"{status_emoji_html('no')} <b>Не приняли.</b>\n"
-        + do_next(action)
-    )
+    return render_design(name, {"reason": body})
 
 
 def text_two_pending() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Уже 2 заявки</b>\n"
-        + do_next("Нажмите «Мои группы»: дождитесь проверки или снимите одну.")
-    )
+    return render_design("two_pending")
 
 
 def text_two_live() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Уже 2 живые группы</b>\n"
-        + do_next("Нажмите «Заработки». Новую можно сдать, когда освободится слот.")
-    )
+    return render_design("two_live")
 
 
 def text_banned_31() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Эту группу нельзя 31 день</b>\n"
-        + do_next("Нажмите «Назад» и возьмите другую — или подождите.")
-    )
+    return render_design("banned_31")
 
 
 def text_freeze_admin() -> str:
-    return (
-        f"{status_emoji_html('wait')} <b>Пауза: Кут нужна админка</b>\n"
-        + do_next("Верните Кут в администраторы группы. Потом снова начнёт капать.")
-    )
+    return render_design("freeze_admin")
 
 
 def text_freeze_public() -> str:
-    return (
-        f"{status_emoji_html('wait')} <b>Пауза: группа стала закрытой</b>\n"
-        + do_next("Сделайте группу открытой с @адресом. Потом снова начнёт капать.")
-    )
+    return render_design("freeze_public")
 
 
 def text_group_busy(*, owner: bool = False) -> str:
-    if owner:
-        return (
-            f"{status_emoji_html('no')} <b>Эту группу уже сдаёт создатель</b>\n"
-            + do_next("Одна группа — один человек. Нажмите «Назад» и возьмите другую.")
-        )
-    return (
-        f"{status_emoji_html('no')} <b>Эту группу уже сдают</b>\n"
-        + do_next("Одна группа — один человек. Нажмите «Назад» и возьмите другую.")
-    )
+    return render_design("group_busy_owner" if owner else "group_busy")
 
 
 def text_confirm_timeout() -> str:
-    return (
-        f"{status_emoji_html('no')} <b>Создатель не нажал Да за 24 часа</b>\n"
-        + do_next("Нажмите «Сдать ещё группу» — можно начать снова.")
-    )
+    return render_design("confirm_timeout")
 
 
 def text_owner_no_confirm() -> str:
-    return (
-        f"{status_emoji_html('wait')} <b>Вам подтверждение не нужно</b>\n"
-        + do_next("Заявка создателя идёт на проверку без Да. Смотрите «Мои группы».")
-    )
+    return render_design("owner_no_confirm")
 
 
 def text_no_groups() -> str:
@@ -1299,14 +1172,11 @@ def text_no_groups() -> str:
 
 
 def text_resume_claim(title: str, status: str, freeze: str | None = None) -> str:
-    name = escape(title or "группа")
-    label = claim_status_label(status, freeze)
-    return (
-        f"{status_emoji_html('wait')} <b>«{name}»</b>\n"
-        f"<b>{escape(label)}</b>\n"
-        + do_next("Нажмите кнопку ниже — бот продолжит с этого шага.")
-    )
-
+    return render_design("resume", {
+        "name": escape(title or "группа"),
+        "status": escape(claim_status_label(status, freeze)),
+        "emoji_key": card_emoji_kind(status, freeze),
+    })
 
 def reject_text_from(reasons: Iterable[dict[str, str]] | None, custom: str, catalog: list[dict[str, str]]) -> str:
     labels = []

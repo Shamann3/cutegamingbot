@@ -66,6 +66,30 @@ from pr_groups_logic import (  # noqa: E402
     moscow_day_start,
 )
 
+from pr_groups_design import (  # noqa: E402
+    ICON_ADMIN,
+    ICON_BACK,
+    ICON_BACK_HUB,
+    ICON_CANT,
+    ICON_CHECK,
+    ICON_CONT,
+    ICON_EARN,
+    ICON_GO,
+    ICON_GROUPS,
+    ICON_MORE,
+    ICON_NO,
+    ICON_OPEN,
+    ICON_OWNER,
+    ICON_PUBLIC,
+    ICON_RECO,
+    ICON_UNDO,
+    ICON_WROTE,
+    SCREENS,
+    emoji_id as design_emoji_id,
+)
+
+ICON_OK = ICON_CHECK
+
 _GIFT_CLAW = ContextVar("pr_gift_claw", default=False)
 _fulfill_lock = asyncio.Lock()
 
@@ -92,25 +116,6 @@ PR_YES = "prgY:"
 PR_NO = "prgN:"
 PR_CONT = "prg:n:"
 
-ICON_GO = "5317000922096769303"
-ICON_CHECK = "5339112148175959615"
-ICON_NO = "5337017423906226569"
-ICON_BACK = "5226660202035554522"
-ICON_BACK_HUB = "5348423147647414077"
-ICON_OWNER = "5442949339108366200"
-ICON_RECO = "5388583647370565067"
-ICON_EARN = "5224257782013769471"
-ICON_GROUPS = "5192951739623447936"
-ICON_CANT = "5213205860498549992"
-ICON_PUBLIC = "6021625933759257863"
-ICON_ADMIN = "6037421444789440735"
-ICON_OPEN = "5229011542011299168"
-ICON_WROTE = "5350367217349311525"
-ICON_UNDO = "5373098002641805602"
-ICON_MORE = "5339564150534200424"
-ICON_CONT = "5253767677670862169"
-ICON_OK = ICON_CHECK
-
 
 def _btn(text: str, data: str, icon: str | None = None, style: str = "default") -> InlineKeyboardButton:
     kwargs: dict[str, Any] = {"text": text, "callback_data": data, "style": style}
@@ -126,12 +131,6 @@ def _url(text: str, url: str, icon: str | None = None) -> InlineKeyboardButton:
     return InlineKeyboardButton(**kwargs)
 
 
-def _back(data: str = PR_HUB) -> InlineKeyboardButton:
-    if data == PR_HUB:
-        return _btn("Назад, в главное меню", PR_HUB, ICON_BACK_HUB, "success")
-    return _btn("Назад", data, ICON_BACK)
-
-
 def keyboard_icon_ids(markup: InlineKeyboardMarkup) -> list[str]:
     ids: list[str] = []
     for row in markup.inline_keyboard:
@@ -142,29 +141,140 @@ def keyboard_icon_ids(markup: InlineKeyboardMarkup) -> list[str]:
     return ids
 
 
-def _markup(rows: list, back: str = PR_HUB) -> InlineKeyboardMarkup:
-    out = [list(row) for row in rows if row]
-    out.append([_back(back)])
-    return InlineKeyboardMarkup(inline_keyboard=out)
+def _btn_visible(show: str | None, ctx: dict[str, Any]) -> bool:
+    flag = str(show or "always")
+    if flag in {"", "always"}:
+        return True
+    live = bool(ctx.get("live"))
+    mine = bool(ctx.get("mine"))
+    intent = str(ctx.get("intent") or "")
+    status = str(ctx.get("status") or "")
+    if flag == "live":
+        return live
+    if flag == "not_live":
+        return not live
+    if flag == "mine":
+        return mine and not live
+    if flag == "reco":
+        return intent == ROLE_RECO
+    if flag == "no_public":
+        return bool(ctx.get("no_public"))
+    if flag == "no_admin":
+        return bool(ctx.get("no_admin"))
+    if flag == "have_photos":
+        return int(ctx.get("have") or 0) > 0
+    if flag == "has_username":
+        return bool(str(ctx.get("username") or "").strip())
+    if flag == "photos":
+        return status == ST_PHOTOS
+    if flag == "wait_confirm":
+        return status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}
+    if flag == "pending":
+        return status == ST_PENDING
+    return True
+
+
+def _fill_btn_text(text: str, values: dict[str, Any]) -> str:
+    class Safe(dict):
+        def __missing__(self, key: str) -> str:
+            return ""
+    return str(text or "").format_map(Safe(values))
+
+
+def _resolve_go(go: str, ctx: dict[str, Any]) -> tuple[str, str]:
+    """kind url|cb, payload."""
+    username = str(ctx.get("username") or "").strip().lstrip("@")
+    bot_username = str(ctx.get("bot_username") or "CuteGamingBot")
+    cid = int(ctx.get("id") or ctx.get("claim_id") or 0)
+    token = int(ctx.get("token") or 0)
+    chat_id = ctx.get("chat_id")
+    mapping = {
+        "owner": ("cb", PR_OWNER),
+        "reco": ("cb", PR_RECO),
+        "earnings": ("cb", PR_MINE),
+        "groups": ("cb", PR_MINE),
+        "add_bot": ("url", startgroup_url(bot_username)),
+        "cant": ("cb", PR_CANT),
+        "check": ("cb", PR_CHECK),
+        "public": ("cb", PR_PUBLIC),
+        "admin": ("cb", PR_ADMIN),
+        "open_group": ("url", f"https://t.me/{username}" if username else ""),
+        "wrote": ("cb", PR_WROTE),
+        "undo": ("cb", PR_UNDO),
+        "cancel": ("cb", PR_CANCEL),
+        "more": ("cb", PR_HUB),
+        "continue_photo": ("cb", f"{PR_CONT}{cid}" if cid else ""),
+        "yes": ("cb", f"{PR_YES}{cid}:{token}"),
+        "no_confirm": ("cb", f"{PR_NO}{cid}:{token}"),
+        "back_hub": ("cb", PR_HUB),
+        "back_tasks": ("cb", PR_TASKS),
+        "back_how": ("cb", PR_HOW),
+        "back_mine": ("cb", PR_MINE),
+        "open_claim": ("cb", f"{PR_OPEN}{cid}" if cid else ""),
+        "pick_group": ("cb", f"{PR_PICK}{chat_id}" if chat_id is not None else ""),
+    }
+    return mapping.get(go, ("cb", ""))
+
+
+def _design_button(item: dict[str, Any], ctx: dict[str, Any]) -> InlineKeyboardButton | None:
+    kind, payload = _resolve_go(str(item.get("go") or ""), ctx)
+    if not payload:
+        return None
+    text = _fill_btn_text(str(item.get("text") or ""), ctx)
+    icon = design_emoji_id(str(item.get("icon") or ""))
+    style = str(item.get("style") or "default")
+    if kind == "url":
+        return _url(text, payload, icon or None)
+    return _btn(text, payload, icon or None, style)
+
+
+def _repeat_buttons(item: dict[str, Any], ctx: dict[str, Any]) -> list[list[InlineKeyboardButton]]:
+    kind = str(item.get("repeat") or "")
+    rows: list[list[InlineKeyboardButton]] = []
+    if kind == "claims":
+        for row in list(ctx.get("claims") or [])[:12]:
+            local = dict(ctx)
+            local["id"] = row.get("id")
+            local["label"] = claim_button_label(row)
+            btn = _design_button({**item, "icon": ""}, local)
+            if btn:
+                rows.append([btn])
+    elif kind == "groups":
+        for row in list(ctx.get("groups") or []):
+            local = dict(ctx)
+            local["chat_id"] = row.get("chat_id")
+            local["title"] = (row.get("title") or str(row.get("chat_id")))[:32]
+            btn = _design_button({**item, "icon": ""}, local)
+            if btn:
+                rows.append([btn])
+    return rows
+
+
+def keyboard_for(name: str, **ctx: Any) -> InlineKeyboardMarkup:
+    spec = SCREENS[name]
+    rows_out: list[list[InlineKeyboardButton]] = []
+    for row in spec.get("buttons") or []:
+        if isinstance(row, dict) and row.get("repeat"):
+            rows_out.extend(_repeat_buttons(row, ctx))
+            continue
+        built: list[InlineKeyboardButton] = []
+        for item in row:
+            if not _btn_visible(item.get("show"), ctx):
+                continue
+            btn = _design_button(item, ctx)
+            if btn:
+                built.append(btn)
+        if built:
+            rows_out.append(built)
+    return InlineKeyboardMarkup(inline_keyboard=rows_out)
 
 
 def entry_keyboard(*, mine: bool = False, live: bool = False) -> InlineKeyboardMarkup:
-    rows = [
-        [_btn("Я владелец группы", PR_OWNER, ICON_OWNER, "primary")],
-        [_btn("Я рекомендую бот в группах", PR_RECO, ICON_RECO, "primary")],
-    ]
-    if live:
-        rows.append([_btn("Заработки", PR_MINE, ICON_EARN, "success")])
-    elif mine:
-        rows.append([_btn("Мои группы", PR_MINE, ICON_GROUPS)])
-    return _markup(rows, back=PR_TASKS)
+    return keyboard_for("hub", mine=mine, live=live)
 
 
 def choose_keyboard() -> InlineKeyboardMarkup:
-    return _markup([
-        [_btn("Я владелец группы", PR_OWNER, ICON_OWNER, "default")],
-        [_btn("Я рекомендую бот в группах", PR_RECO, ICON_RECO)],
-    ], back=PR_HUB)
+    return keyboard_for("choose")
 
 
 def how_keyboard(
@@ -174,18 +284,14 @@ def how_keyboard(
     no_admin: bool = False,
     bot_username: str = "CuteGamingBot",
 ) -> InlineKeyboardMarkup:
-    rows = [[_url("Добавить Кут", startgroup_url(bot_username), ICON_GO)]]
-    if intent == ROLE_RECO:
-        rows.append([_btn("Не могу добавить", PR_CANT, ICON_CANT)])
-    rows.append([_btn("Уже добавил", PR_CHECK, ICON_CHECK, "success")])
-    help_row = []
-    if no_public:
-        help_row.append(_btn("Нет @адреса", PR_PUBLIC, ICON_PUBLIC))
-    if no_admin:
-        help_row.append(_btn("Не админ", PR_ADMIN, ICON_ADMIN))
-    if help_row:
-        rows.append(help_row)
-    return _markup(rows, back=PR_HUB)
+    name = "how_reco" if intent == ROLE_RECO else "how_owner"
+    return keyboard_for(
+        name,
+        intent=intent,
+        no_public=no_public,
+        no_admin=no_admin,
+        bot_username=bot_username,
+    )
 
 
 def how_public_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
@@ -197,54 +303,32 @@ def how_admin_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "")
 
 
 def how_fix_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
-    rows = [[_url("Добавить Кут", startgroup_url(bot_username), ICON_GO)]]
-    if intent == ROLE_RECO:
-        rows.append([_btn("Не могу добавить", PR_CANT, ICON_CANT)])
-    rows.append([_btn("Проверить", PR_CHECK, ICON_CHECK, "success")])
-    return _markup(rows, back=PR_HOW)
+    name = "how_admin_reco" if intent == ROLE_RECO else "how_public"
+    return keyboard_for(name, intent=intent, bot_username=bot_username)
 
 
 def add_group_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
-    rows = [[_url("Добавить Кут", startgroup_url(bot_username), ICON_GO)]]
-    if intent == ROLE_RECO:
-        rows.append([_btn("Не могу добавить", PR_CANT, ICON_CANT)])
-    return _markup(rows, back=PR_HUB)
+    return keyboard_for("bot_not_there", intent=intent, bot_username=bot_username)
 
 
 def cant_add_keyboard(bot_username: str = "CuteGamingBot") -> InlineKeyboardMarkup:
-    return _markup(
-        [[_url("Добавить Кут", startgroup_url(bot_username), ICON_GO)]],
-        back=PR_HOW,
-    )
+    return keyboard_for("cant_add", bot_username=bot_username)
 
 
 def switch_to_reco_keyboard() -> InlineKeyboardMarkup:
-    return _markup(
-        [[_btn("Я рекомендую бот в группах", PR_RECO, ICON_RECO, "success")]],
-        back=PR_HUB,
-    )
+    return keyboard_for("not_owner_switch")
 
 
 def switch_to_owner_keyboard() -> InlineKeyboardMarkup:
-    return _markup(
-        [[_btn("Я владелец группы", PR_OWNER, ICON_OWNER, "default")]],
-        back=PR_HUB,
-    )
+    return keyboard_for("are_owner_switch")
 
 
 def role_keyboard() -> InlineKeyboardMarkup:
-    return _markup([
-        [_btn("Это моя группа", PR_OWNER, ICON_OWNER, "primary")],
-        [_btn("Я рекомендую Кут в группах", PR_RECO, ICON_RECO)],
-    ], back=PR_HUB)
+    return keyboard_for("pick_role")
 
 
 def groups_keyboard(rows: list[dict[str, Any]]) -> InlineKeyboardMarkup:
-    kb = []
-    for row in rows:
-        title = (row.get("title") or str(row.get("chat_id")))[:32]
-        kb.append([_btn(title, f"{PR_PICK}{row['chat_id']}")])
-    return _markup(kb, back=PR_HUB)
+    return keyboard_for("pick_group", groups=rows)
 
 
 def cancel_keyboard() -> InlineKeyboardMarkup:
@@ -252,104 +336,54 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
 
 
 def photo_keyboard(have: int = 0) -> InlineKeyboardMarkup:
-    rows = []
-    if have > 0:
-        rows.append([_btn("Другое фото", PR_UNDO, ICON_UNDO)])
-    rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
-    return _markup(rows, back=PR_HUB)
+    return keyboard_for("wait_photo", have=have)
 
 
 def hub_only_keyboard() -> InlineKeyboardMarkup:
-    return _markup([], back=PR_HUB)
+    return keyboard_for("not_your_claim")
 
 
 def after_cancel_keyboard() -> InlineKeyboardMarkup:
-    return _markup(
-        [[_btn("Сдать ещё группу", PR_HUB, ICON_MORE, "success")]],
-        back=PR_HUB,
-    )
+    return keyboard_for("cancelled")
 
 
 def after_owner_keyboard() -> InlineKeyboardMarkup:
-    return _markup(
-        [[_btn("Мои группы", PR_MINE, ICON_GROUPS, "success")]],
-        back=PR_HUB,
-    )
+    return keyboard_for("after_proofs_owner")
 
 
 def after_reco_keyboard(username: str = "") -> InlineKeyboardMarkup:
-    rows = []
-    uname = str(username or "").strip().lstrip("@")
-    if uname:
-        rows.append([_url("Открыть группу", f"https://t.me/{uname}", ICON_OPEN)])
-    rows.append([_btn("Я написал", PR_WROTE, ICON_WROTE, "success")])
-    rows.append([_btn("Мои группы", PR_MINE, ICON_GROUPS)])
-    rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
-    return _markup(rows, back=PR_HUB)
+    return keyboard_for("after_photos_reco", username=username)
 
 
 def joined_keyboard() -> InlineKeyboardMarkup:
-    return _markup(
-        [
-            [_btn("Я владелец группы", PR_OWNER, ICON_OWNER, "primary")],
-            [_btn("Я рекомендую бот в группах", PR_RECO, ICON_RECO)],
-        ],
-        back=PR_HUB,
-    )
+    return keyboard_for("bot_joined")
 
 
 def pending_keyboard() -> InlineKeyboardMarkup:
-    return _markup(
-        [[_btn("Мои группы", PR_MINE, ICON_GROUPS, "success")]],
-        back=PR_HUB,
-    )
+    return keyboard_for("two_pending")
 
 
 def mine_keyboard(rows: list[dict[str, Any]] | None = None, *, live: bool = False) -> InlineKeyboardMarkup:
-    kb = []
-    for row in list(rows or [])[:12]:
-        label = claim_button_label(row)
-        kb.append([_btn(label, f"{PR_OPEN}{row['id']}")])
-    more_icon = ICON_EARN if live else ICON_MORE
-    kb.append([_btn("Сдать ещё группу", PR_HUB, more_icon, "success" if live else "default")])
-    return _markup(kb, back=PR_HUB)
+    name = "earnings" if live else "mine"
+    return keyboard_for(name, claims=list(rows or []), live=live)
 
 
 def card_keyboard(claim: dict[str, Any] | None = None) -> InlineKeyboardMarkup:
     data = claim or {}
-    rows: list[list[InlineKeyboardButton]] = []
-    uname = str(data.get("chat_username") or "").strip().lstrip("@")
-    if uname:
-        rows.append([_url("Открыть группу", f"https://t.me/{uname}", ICON_OPEN)])
-    status = str(data.get("status") or "")
-    cid = int(data.get("id") or 0)
-    if status == ST_PHOTOS and cid:
-        rows.append([_btn("Продолжить фото", f"{PR_CONT}{cid}", ICON_CONT, "success")])
-        rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
-    elif status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
-        rows.append([_btn("Я написал", PR_WROTE, ICON_WROTE, "success")])
-        rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
-    elif status == ST_PENDING:
-        rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
-    return _markup(rows, back=PR_MINE)
+    return keyboard_for(
+        "card",
+        username=str(data.get("chat_username") or ""),
+        status=str(data.get("status") or ""),
+        id=int(data.get("id") or 0),
+    )
 
 
 def resume_keyboard(status: str) -> InlineKeyboardMarkup:
-    rows = []
-    if status == ST_PHOTOS:
-        rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
-    elif status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
-        rows.append([_btn("Я написал", PR_WROTE, ICON_WROTE)])
-        rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
-    rows.append([_btn("Мои группы", PR_MINE, ICON_GROUPS)])
-    return _markup(rows, back=PR_HUB)
+    return keyboard_for("resume", status=status)
 
 
 def confirm_keyboard(claim_id: int, token: int = 0) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        _btn("Да", f"{PR_YES}{claim_id}:{int(token)}", ICON_OK, "success"),
-        _btn("Нет", f"{PR_NO}{claim_id}:{int(token)}", ICON_NO, "danger"),
-    ]])
+    return keyboard_for("confirm", claim_id=claim_id, id=claim_id, token=token)
 
 
 _IMAGE_MIME = frozenset({
