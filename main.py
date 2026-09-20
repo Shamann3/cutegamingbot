@@ -33105,6 +33105,27 @@ async def process_pr_wait_photo(message: types.Message):
     await on_wait_photo(message)
 
 
+async def _pr_wait_link_filter(m):
+    try:
+        from bot.funcs import pr_groups as _pr
+        if not m or not getattr(m, "from_user", None):
+            return False
+        chat_type = getattr(getattr(m, "chat", None), "type", "")
+        if chat_type != "private":
+            return False
+        if await _pr.is_waiting_photos(m.from_user.id, chat_type):
+            return False
+        return await _pr.is_waiting_link(m.from_user.id, chat_type)
+    except Exception:
+        return False
+
+
+@dp.message(_pr_wait_link_filter)
+async def process_pr_wait_link(message: types.Message):
+    from bot.handlers.pr_groups import on_wait_link
+    await on_wait_link(message)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ✅ 2) ТВОЙ обработчик (gift_context) - сценарий “giftconfirmwithdrawal_... -> ввод получателя -> confirmwithdrawal”
 # НЕ МЕШАЕТ user_gift, потому что:
@@ -34390,7 +34411,8 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
     try:
         from bot.funcs.pr_groups import is_waiting_photos as _pr_wait
-        if await _pr_wait(user_id, _tt_chat_type):
+        from bot.funcs.pr_groups import is_waiting_link as _pr_link
+        if await _pr_wait(user_id, _tt_chat_type) or await _pr_link(user_id, _tt_chat_type):
             from aiogram.dispatcher.event.bases import SkipHandler
             raise SkipHandler()
     except Exception as _pr_skip:

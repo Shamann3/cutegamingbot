@@ -17,7 +17,10 @@ from pr_groups_logic import (
     is_new_class,
     left_days_hint,
     looks_like_confirm,
+    looks_like_group_ref,
     looks_like_help,
+    parse_group_ref,
+    startgroup_url,
     nika_step_amount,
     promoter_cut,
     recommend_seed,
@@ -44,11 +47,20 @@ def test_entry_is_short_and_honest():
 
 
 def test_how_tells_what_to_do_next():
-    html = text_how()
-    assert "@CuteGamingBot" in html
-    assert "Проверить" in html
-    assert "администратором" in html
-    assert "1." not in html
+    owner = text_how(intent="owner")
+    assert "Ваша группа" in owner
+    assert "@группа" in owner
+    reco = text_how(intent="reco")
+    assert "Чужой" in reco
+    assert "@CuteGamingBot" in reco
+    assert "1." not in owner
+    photo = text_wait_photo(0, 0)
+    assert "1 из 3" in photo
+    assert "Пришлите фото сюда" in photo
+    assert "@CuteGamingBot" in photo
+    second = text_wait_photo(1, 1)
+    assert "Есть 1 из 3" in second
+    assert "2 из 3" in second
     photo = text_wait_photo(0, 0)
     assert "1 из 3" in photo
     assert "Пришлите фото сюда" in photo
@@ -71,7 +83,40 @@ def test_need_photo_explains_the_mistake():
 def test_reco_after_photos_mentions_confirm():
     html = text_after_photos_reco()
     assert "подтверждение" in html
+    assert "корона" in html
     assert "которую в которую" not in html
+
+
+def test_reco_bridge_does_not_pretend_they_are_owner():
+    from pr_groups_logic import (
+        text_after_proofs_owner,
+        text_after_proofs_reco,
+        text_cant_add,
+        text_choose_role,
+    )
+    choose = text_choose_role()
+    assert "Кто вы" in choose
+    assert "Я владелец группы" in choose
+    assert "Рекомендую бот в группах" in choose
+    cant = text_cant_add()
+    assert "@CuteGamingBot" in cant
+    assert "@группа" in cant
+    owner = text_after_proofs_owner()
+    assert "баланс группы" in owner
+    assert "подарочные куты" in owner
+    assert "соло" in owner
+    assert "ваша группа" in owner
+    assert "Эпсилон" in owner
+    assert "этот чат" in owner
+    assert "Следите за этим" in owner
+    assert "стол" not in owner.lower()
+    reco = text_after_proofs_reco()
+    assert "зарабатываете" in reco
+    assert "35%" in reco
+    assert "новая группа" in reco
+    assert "Эпсилон" in reco
+    assert "этот чат" in reco
+    assert "Следите за этим" in reco
 
 
 def test_gift_has_kut_and_user_wording():
@@ -169,6 +214,20 @@ def test_confirm_words():
     assert looks_like_confirm("Подтверждение")
     assert looks_like_confirm("подтвердить")
     assert not looks_like_confirm("привет")
+
+
+def test_parse_group_ref():
+    assert parse_group_ref("@myfriends") == {"kind": "username", "value": "myfriends"}
+    assert parse_group_ref("https://t.me/myfriends") == {"kind": "username", "value": "myfriends"}
+    assert parse_group_ref("t.me/myfriends/12")["kind"] == "username"
+    assert parse_group_ref("https://t.me/+AbCdEf")["kind"] == "invite"
+    assert parse_group_ref("https://t.me/c/1234567890/5") == {"kind": "internal", "value": "1234567890"}
+    assert parse_group_ref("привет") is None
+    assert parse_group_ref("hello") is None
+    assert looks_like_group_ref("@CuteGroup")
+    assert not looks_like_group_ref("хелп")
+    assert "startgroup=pr" in startgroup_url()
+    assert "admin=" in startgroup_url()
 
 
 def test_ban_is_31_days():

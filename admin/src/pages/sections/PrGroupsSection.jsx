@@ -77,7 +77,7 @@ function MoneyHint({ money, rec }) {
   return (
     <p className="nika-help">
       Можно на посев {fmt(money.spendable)} · запас Ники {fmt(money.nikaReserve)} · неделя {fmt(money.weeklyLeft)}
-      {rec ? ` · раскол ${fmt(rec.total)} · стол ${fmt(rec.table)} · фонд ${fmt(rec.pool)} · подарок ${fmt(rec.gift)} · хватит на ${fmt(rec.slots)}` : ''}
+      {rec ? ` · раскол ${fmt(rec.total)} · баланс чата ${fmt(rec.table)} · подарки ${fmt(rec.pool)} · подарок ${fmt(rec.gift)} · хватит на ${fmt(rec.slots)}` : ''}
     </p>
   )
 }
@@ -157,8 +157,8 @@ function ClaimCard({ item, settings, onBack, onChanged, canDecide }) {
       <MoneyHint money={item.money} rec={canDecide ? rec : item.recommend} />
       {item.status === 'live' ? (
         <p className="nika-help">
-          БЧ {fmt(item.chatBalance)} · стол {fmt(item.tableAmount)} · замок {fmt(item.seedLock)}
-          · фонд {fmt(item.poolLeft)} из {fmt(item.poolAmount)}
+          баланс чата {fmt(item.chatBalance)} · посев на баланс {fmt(item.tableAmount)} · замок {fmt(item.seedLock)}
+          · подарки {fmt(item.poolLeft)} из {fmt(item.poolAmount)}
           · комиссия {fmt(item.commission)} · ему {fmt(item.paid)}
           {item.freeze ? ` · ${item.freeze === 'admin' ? 'нет админки' : 'не публичная'}` : ''}
         </p>
@@ -309,7 +309,7 @@ export default function PrGroupsSection() {
       <header className="nika-head">
         <div className="nika-head-copy">
           <h1>Пиар в группах</h1>
-          <p>Новые чаты, посев со стола и фонда, доля комиссии с новых. Куты не печатаем.</p>
+          <p>Новые группы: посев на баланс чата и подарки новичкам, доля комиссии с новых. Куты не печатаем.</p>
         </div>
         <div className={`nika-status${(data?.overview?.pending || 0) > 0 ? ' is-ok' : ' is-off'}`}>
           <b>{data?.overview?.pending || 0} в очереди</b>
@@ -355,7 +355,7 @@ export default function PrGroupsSection() {
               {tab === 'queue'
                 ? 'Нажмите строку. Срок и всего кут — руками, раскол считает код.'
                 : tab === 'live'
-                  ? 'Стол, фонд, новые, выплачено. Тихий долив — переключатель на карточке.'
+                  ? 'Баланс чата / баланс группы, подарки, новые, выплачено. Тихий долив — переключатель на карточке.'
                   : 'Закрытые заявки. Только просмотр.'}
             </p>
             {!(list || []).length ? (
@@ -397,7 +397,7 @@ function SystemPane({ settings, overview, onSave }) {
       <section className="nika-panel">
         <h2>Как платим</h2>
         <p className="nika-help">
-          35% комиссии новых · 2 живых посева · 15% spendable в неделю · тихий долив: 3 новых / 24ч, до 20 кут раз в 12 часов, не больше половины стола.
+          35% комиссии новых · 2 живых посева · 15% spendable в неделю · тихий долив: 3 новых / 24ч, до 20 кут раз в 12 часов, не больше половины баланса группы.
         </p>
         <p className="nika-help">Сейчас можно потратить {fmt(overview?.spendable)} · неделя {fmt(overview?.weeklyLeft)}</p>
       </section>

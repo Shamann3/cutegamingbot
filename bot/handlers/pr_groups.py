@@ -8,6 +8,7 @@ import logging
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from aiogram import F, Router
 from aiogram.enums import ChatMemberStatus, ChatType
@@ -20,6 +21,7 @@ if str(_SERVER) not in sys.path:
 from bot.funcs import pr_groups as pr
 from pr_groups_logic import (  # noqa: E402
     FIRST_NO_HOLD_HOURS,
+    LINK_MODES,
     MAX_LIVE_SEEDS,
     MAX_PENDING,
     PHOTOS_REQUIRED,
@@ -33,12 +35,18 @@ from pr_groups_logic import (  # noqa: E402
     ST_WAIT_CONFIRM,
     looks_like_confirm,
     looks_like_help,
+    parse_group_ref,
     text_accepted,
-    text_after_photos_owner,
     text_after_photos_reco,
+    text_after_proofs_owner,
+    text_after_proofs_reco,
+    text_are_owner_switch,
     text_banned_31,
     text_bot_joined,
+    text_bot_not_there,
     text_cancelled,
+    text_cant_add,
+    text_choose_role,
     text_confirm_expired,
     text_confirm_no_first,
     text_confirm_no_second,
@@ -50,20 +58,26 @@ from pr_groups_logic import (  # noqa: E402
     text_gift,
     text_gift_locked,
     text_group_busy,
+    text_group_not_found,
     text_how,
     text_how_admin,
     text_how_public,
     text_kicked,
     text_mine,
+    text_link_invite,
     text_need_admin,
+    text_need_link,
     text_need_photo,
     text_need_photos_first,
     text_need_public,
+    text_not_a_group,
     text_not_creator,
+    text_not_in_group,
+    text_not_owner_switch,
     text_not_your_claim,
     text_photos_expired,
     text_pick_group,
-    text_pick_role,
+    text_owner_no_confirm,
     text_resume_claim,
     text_two_live,
     text_two_pending,
@@ -99,9 +113,29 @@ def _claim_extra(claim: dict, extra: dict | None = None) -> dict:
     return base
 
 
+_bot_uname = ""
+
+
 async def _bot():
     from main import bot1
     return bot1
+
+
+async def _bot_username() -> str:
+    global _bot_uname
+    if _bot_uname:
+        return _bot_uname
+    bot = await _bot()
+    me = await bot.get_me()
+    _bot_uname = (getattr(me, "username", None) or "CuteGamingBot").lstrip("@")
+    return _bot_uname
+
+
+async def _push(uid: int, text: str, markup=None) -> None:
+    bot = await _bot()
+    await bot.send_message(
+        int(uid), text, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True,
+    )
 
 
 async def _edit(target: CallbackQuery | Message, text: str, markup=None) -> Message | None:
@@ -134,11 +168,14 @@ async def _inspect_chat(bot, chat_id: int) -> dict:
     except Exception:
         members = 0
     me = await bot.get_me()
+    is_member = False
+    is_admin = False
     try:
         self_m = await bot.get_chat_member(chat_id, me.id)
+        is_member = self_m.status not in (ChatMemberStatus.LEFT, ChatMemberStatus.KICKED)
         is_admin = self_m.status in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR)
     except Exception:
-        is_admin = False
+        pass
     creator_id = None
     try:
         admins = await bot.get_chat_administrators(chat_id)
@@ -154,6 +191,7 @@ async def _inspect_chat(bot, chat_id: int) -> dict:
         "username": username,
         "member_count": members,
         "public": bool(username),
+        "bot_member": is_member,
         "bot_admin": is_admin,
         "creator_id": creator_id,
         "type": getattr(chat, "type", None),
@@ -188,6 +226,23 @@ async def _scan_user_groups(user_id: int) -> dict:
     return {"ready": ready, "no_public": no_public, "no_admin": no_admin}
 
 
+def _intent_of(extra: dict | None, session: dict | None = None) -> str:
+    blob = dict(extra or {})
+    if session:
+        blob.update(session.get("extra") or {})
+    intent = str(blob.get("intent") or "")
+    if intent in {ROLE_OWNER, ROLE_RECO}:
+        return intent
+    return ""
+
+
+async def _open_choose(target, uid: int, extra: dict | None = None) -> None:
+    base = dict(extra or {})
+    base.pop("intent", None)
+    await pr.set_session(uid, claim_id=None, mode="choose", extra=base)
+    await _edit(target, text_choose_role(), pr.choose_keyboard())
+
+
 async def _open_hub(target: CallbackQuery | Message) -> None:
     await pr.ensure_schema()
     start_pr_ticker()
@@ -197,26 +252,39 @@ async def _open_hub(target: CallbackQuery | Message) -> None:
 
 
 async def _show_how(target, uid: int, scan: dict | None = None) -> None:
+    session = await pr.get_session(uid) or {}
+    intent = _intent_of(session.get("extra"), session)
     scan = scan or await _scan_user_groups(uid)
-    extra = {
-        "no_public": [g["chat_id"] for g in scan["no_public"]],
-        "no_admin": [g["chat_id"] for g in scan["no_admin"]],
-    }
+    extra = dict(session.get("extra") or {})
+    extra["intent"] = intent
+    extra["no_public"] = [g["chat_id"] for g in scan["no_public"]]
+    extra["no_admin"] = [g["chat_id"] for g in scan["no_admin"]]
+    uname = await _bot_username()
     if not scan["ready"] and len(scan["no_public"]) == 1 and not scan["no_admin"]:
         group = scan["no_public"][0]
+        extra["chat_id"] = group.get("chat_id")
+        extra["title"] = group.get("title") or ""
         await pr.set_session(uid, claim_id=None, mode="how_public", extra=extra)
-        await _edit(target, text_need_public(group.get("title") or ""), pr.how_public_keyboard())
+        await _edit(target, text_need_public(group.get("title") or ""), pr.how_public_keyboard(uname, intent=intent))
         return
     if not scan["ready"] and len(scan["no_admin"]) == 1 and not scan["no_public"]:
         group = scan["no_admin"][0]
+        extra["chat_id"] = group.get("chat_id")
+        extra["title"] = group.get("title") or ""
         await pr.set_session(uid, claim_id=None, mode="how_admin", extra=extra)
-        await _edit(target, text_need_admin(group.get("title") or ""), pr.how_admin_keyboard())
+        await _edit(target, text_need_admin(group.get("title") or "", intent=intent), pr.how_admin_keyboard(uname, intent=intent))
         return
+    extra.pop("chat_id", None)
     await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
     await _edit(
         target,
-        text_how(no_public=scan["no_public"], no_admin=scan["no_admin"]),
-        pr.how_keyboard(no_public=bool(scan["no_public"]), no_admin=bool(scan["no_admin"])),
+        text_how(intent=intent, no_public=scan["no_public"], no_admin=scan["no_admin"]),
+        pr.how_keyboard(
+            intent=intent,
+            no_public=bool(scan["no_public"]),
+            no_admin=bool(scan["no_admin"]),
+            bot_username=uname,
+        ),
     )
 
 
@@ -251,13 +319,25 @@ async def _try_advance(target, uid: int) -> None:
     if await pr.count_status(uid, {ST_LIVE}) >= MAX_LIVE_SEEDS:
         await _edit(target, text_two_live(), pr.pending_keyboard())
         return
+    session = await pr.get_session(uid) or {}
+    intent = _intent_of(session.get("extra"), session)
+    if not intent:
+        await _open_choose(target, uid, session.get("extra") or {})
+        return
     scan = await _scan_user_groups(uid)
-    ready = scan["ready"]
+    ready = list(scan["ready"])
+    if intent == ROLE_OWNER:
+        ready = [g for g in ready if int(g.get("creator_id") or 0) in {0, uid}]
+    elif intent == ROLE_RECO:
+        ready = [g for g in ready if int(g.get("creator_id") or 0) != uid]
     if len(ready) == 1:
-        await _begin_role(target, uid, ready[0])
+        await _begin_proofs(target, uid, ready[0])
         return
     if len(ready) > 1:
-        await pr.set_session(uid, claim_id=None, mode="pick", extra={"groups": [g["chat_id"] for g in ready]})
+        extra = dict(session.get("extra") or {})
+        extra["intent"] = intent
+        extra["groups"] = [g["chat_id"] for g in ready]
+        await pr.set_session(uid, claim_id=None, mode="pick", extra=extra)
         await _edit(target, text_pick_group(), pr.groups_keyboard(ready))
         return
     await _show_how(target, uid, scan)
@@ -278,7 +358,23 @@ async def on_start(cb: CallbackQuery) -> None:
         await cb.answer()
     except Exception:
         pass
-    await _try_advance(cb, int(cb.from_user.id))
+    uid = int(cb.from_user.id)
+    await pr.ensure_schema()
+    start_pr_ticker()
+    open_claim = await pr.active_claim_for_user(uid)
+    if open_claim and open_claim["status"] in {ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
+        await _resume_claim_screen(cb, uid, open_claim)
+        return
+    if await pr.count_status(uid, {ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY, ST_PENDING}) >= MAX_PENDING:
+        await _edit(cb, text_two_pending(), pr.pending_keyboard())
+        return
+    if await pr.count_status(uid, {ST_LIVE}) >= MAX_LIVE_SEEDS:
+        await _edit(cb, text_two_live(), pr.pending_keyboard())
+        return
+    session = await pr.get_session(uid) or {}
+    extra = dict(session.get("extra") or {})
+    extra.pop("intent", None)
+    await _open_choose(cb, uid, extra)
 
 
 @router.callback_query(F.data == pr.PR_CHECK)
@@ -307,8 +403,11 @@ async def on_how_public(cb: CallbackQuery) -> None:
     except Exception:
         pass
     uid = int(cb.from_user.id)
-    await pr.set_session(uid, claim_id=None, mode="how_public", extra={})
-    await _edit(cb, text_how_public(), pr.how_public_keyboard())
+    session = await pr.get_session(uid) or {}
+    extra = dict(session.get("extra") or {})
+    extra["intent"] = _intent_of(extra, session)
+    await pr.set_session(uid, claim_id=None, mode="how_public", extra=extra)
+    await _edit(cb, text_how_public(), pr.how_public_keyboard(await _bot_username(), intent=extra["intent"]))
 
 
 @router.callback_query(F.data == pr.PR_ADMIN)
@@ -318,8 +417,11 @@ async def on_how_admin(cb: CallbackQuery) -> None:
     except Exception:
         pass
     uid = int(cb.from_user.id)
-    await pr.set_session(uid, claim_id=None, mode="how_admin", extra={})
-    await _edit(cb, text_how_admin(), pr.how_admin_keyboard())
+    session = await pr.get_session(uid) or {}
+    extra = dict(session.get("extra") or {})
+    extra["intent"] = _intent_of(extra, session)
+    await pr.set_session(uid, claim_id=None, mode="how_admin", extra=extra)
+    await _edit(cb, text_how_admin(intent=extra["intent"]), pr.how_admin_keyboard(await _bot_username(), intent=extra["intent"]))
 
 
 @router.callback_query(F.data == pr.PR_MINE)
@@ -396,22 +498,22 @@ async def on_back(cb: CallbackQuery) -> None:
     session = await pr.get_session(uid) or {}
     mode = session.get("mode")
     extra = dict(session.get("extra") or {})
+    if mode in LINK_MODES or mode == "pick":
+        await _open_choose(cb, uid, extra)
+        return
     if mode == "photos" and session.get("claim_id"):
         claim = await pr.claim_by_id(int(session["claim_id"]))
         if claim and claim["status"] == ST_PHOTOS:
             await pr.cancel_claim(int(claim["id"]))
-        info = {k: extra.get(k) for k in ("chat_id", "title", "username", "member_count", "added_by", "creator_id", "joined_at", "public", "bot_admin")}
+        extra["intent"] = extra.get("intent") or claim.get("role") if claim else extra.get("intent")
+        extra.pop("n", None)
         if extra.get("chat_id"):
-            await _begin_role(cb, uid, extra if extra.get("title") else {**info, **extra})
+            await _begin_proofs(cb, uid, extra if extra.get("title") else extra)
             return
         await _try_advance(cb, uid)
         return
-    if mode == "role":
-        groups = extra.get("groups") or ([extra["chat_id"]] if extra.get("chat_id") else [])
-        if len(groups) > 1:
-            await _try_advance(cb, uid)
-            return
-        await _open_hub(cb)
+    if mode in {"role", "choose", "mismatch"}:
+        await _open_choose(cb, uid, extra)
         return
     await _open_hub(cb)
 
@@ -436,7 +538,7 @@ async def on_pick(cb: CallbackQuery) -> None:
     mem = await pr.get_membership(chat_id)
     info["added_by"] = (mem or {}).get("last_added_by")
     info["joined_at"] = (mem or {}).get("last_joined_at")
-    await _begin_role(cb, uid, info)
+    await _begin_proofs(cb, uid, info)
 
 
 async def _user_in_group(bot, chat_id: int, user_id: int) -> bool:
@@ -447,28 +549,213 @@ async def _user_in_group(bot, chat_id: int, user_id: int) -> bool:
         return False
 
 
-async def _begin_role(target, uid: int, info: dict) -> None:
-    title = str(info.get("title") or "")
+async def _begin_proofs(target, uid: int, info: dict) -> None:
+    session = await pr.get_session(uid) or {}
+    extra = dict(session.get("extra") or {})
+    extra.update(info)
+    extra["chat_id"] = int(info["chat_id"])
+    intent = _intent_of(extra, session)
+    extra["intent"] = intent
+    title = str(info.get("title") or extra.get("title") or "")
+    uname = await _bot_username()
+    if not info.get("bot_member", True) and not info.get("bot_admin"):
+        await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
+        await _edit(target, text_bot_not_there(title, intent=intent), pr.add_group_keyboard(uname, intent=intent))
+        return
     if not info.get("public"):
-        await _edit(target, text_need_public(title), pr.how_public_keyboard())
+        await pr.set_session(uid, claim_id=None, mode="how_public", extra=extra)
+        await _edit(target, text_need_public(title), pr.how_public_keyboard(uname, intent=intent))
         return
     if not info.get("bot_admin"):
-        await _edit(target, text_need_admin(title), pr.how_admin_keyboard())
+        await pr.set_session(uid, claim_id=None, mode="how_admin", extra=extra)
+        await _edit(target, text_need_admin(title, intent=intent), pr.how_admin_keyboard(uname, intent=intent))
         return
     bot = await _bot()
     if not await _user_in_group(bot, int(info["chat_id"]), uid):
-        await _show_how(target, uid)
+        await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
+        await _edit(target, text_not_in_group(title), pr.add_group_keyboard(uname, intent=intent))
         return
     if await pr.user_banned(uid, int(info["chat_id"])):
         await _edit(target, text_banned_31(), pr.hub_only_keyboard())
         return
-    if await pr.group_busy(int(info["chat_id"]), except_user=uid):
-        await _edit(target, text_group_busy(), pr.hub_only_keyboard())
+    busy = await pr.group_busy(int(info["chat_id"]), except_user=uid)
+    if busy:
+        owner_took = int(busy.get("user_id") or 0) == int(info.get("creator_id") or -1)
+        await _edit(target, text_group_busy(owner=owner_took), pr.hub_only_keyboard())
         return
-    extra = dict(info)
+    creator_id = int(info.get("creator_id") or extra.get("creator_id") or 0)
+    extra["creator_id"] = creator_id or extra.get("creator_id")
+    if not intent:
+        await _open_choose(target, uid, extra)
+        return
+    if intent == ROLE_OWNER and creator_id and creator_id != uid:
+        extra["intent"] = ROLE_OWNER
+        await pr.set_session(uid, claim_id=None, mode="mismatch", extra=extra)
+        await _edit(target, text_not_owner_switch(title), pr.switch_to_reco_keyboard())
+        return
+    if intent == ROLE_RECO and creator_id and creator_id == uid:
+        extra["intent"] = ROLE_RECO
+        await pr.set_session(uid, claim_id=None, mode="mismatch", extra=extra)
+        await _edit(target, text_are_owner_switch(title), pr.switch_to_owner_keyboard())
+        return
+    await _open_photos(target, uid, extra, ROLE_OWNER if intent == ROLE_OWNER else ROLE_RECO)
+
+
+async def _begin_role(target, uid: int, info: dict) -> None:
+    await _begin_proofs(target, uid, info)
+
+
+async def _begin_role_dm(uid: int, info: dict) -> None:
+    session = await pr.get_session(uid) or {}
+    extra = dict(session.get("extra") or {})
+    extra.update(info)
+    extra["intent"] = _intent_of(extra, session)
+    await pr.set_session(uid, claim_id=None, mode=session.get("mode") or "how", extra=extra)
+    await _begin_proofs_dm(uid, extra)
+
+
+async def _begin_proofs_dm(uid: int, info: dict) -> None:
+    session = await pr.get_session(uid) or {}
+    extra = dict(session.get("extra") or {})
+    extra.update(info)
     extra["chat_id"] = int(info["chat_id"])
-    await pr.set_session(uid, claim_id=None, mode="role", extra=extra)
-    await _edit(target, text_pick_role(title), pr.role_keyboard())
+    intent = _intent_of(extra, session)
+    extra["intent"] = intent
+
+    async def _send(text: str, markup=None):
+        await _push(uid, text, markup)
+
+    title = str(info.get("title") or "")
+    uname = await _bot_username()
+    if not info.get("bot_member", True) and not info.get("bot_admin"):
+        await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
+        await _send(text_bot_not_there(title, intent=intent), pr.add_group_keyboard(uname, intent=intent))
+        return
+    if not info.get("public"):
+        await pr.set_session(uid, claim_id=None, mode="how_public", extra=extra)
+        await _send(text_need_public(title), pr.how_public_keyboard(uname, intent=intent))
+        return
+    if not info.get("bot_admin"):
+        await pr.set_session(uid, claim_id=None, mode="how_admin", extra=extra)
+        await _send(text_need_admin(title, intent=intent), pr.how_admin_keyboard(uname, intent=intent))
+        return
+    bot_api = await _bot()
+    if not await _user_in_group(bot_api, int(info["chat_id"]), uid):
+        await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
+        await _send(text_not_in_group(title), pr.add_group_keyboard(uname, intent=intent))
+        return
+    if await pr.user_banned(uid, int(info["chat_id"])):
+        await _send(text_banned_31(), pr.hub_only_keyboard())
+        return
+    busy = await pr.group_busy(int(info["chat_id"]), except_user=uid)
+    if busy:
+        owner_took = int(busy.get("user_id") or 0) == int(info.get("creator_id") or -1)
+        await _send(text_group_busy(owner=owner_took), pr.hub_only_keyboard())
+        return
+    creator_id = int(info.get("creator_id") or 0)
+    extra["creator_id"] = creator_id
+    if not intent:
+        await pr.set_session(uid, claim_id=None, mode="choose", extra=extra)
+        await _send(text_choose_role(), pr.choose_keyboard())
+        return
+    if intent == ROLE_OWNER and creator_id and creator_id != uid:
+        await pr.set_session(uid, claim_id=None, mode="mismatch", extra=extra)
+        await _send(text_not_owner_switch(title), pr.switch_to_reco_keyboard())
+        return
+    if intent == ROLE_RECO and creator_id and creator_id == uid:
+        await pr.set_session(uid, claim_id=None, mode="mismatch", extra=extra)
+        await _send(text_are_owner_switch(title), pr.switch_to_owner_keyboard())
+        return
+    await _open_photos_dm(uid, extra, ROLE_OWNER if intent == ROLE_OWNER else ROLE_RECO)
+
+
+def _forwarded_group(message: Message):
+    origin = getattr(message, "forward_origin", None)
+    chat = getattr(origin, "chat", None)
+    typ = str(getattr(chat, "type", "") or "")
+    if chat is not None and typ in {"group", "supergroup", str(ChatType.GROUP), str(ChatType.SUPERGROUP)}:
+        return chat
+    old = getattr(message, "forward_from_chat", None)
+    typ = str(getattr(old, "type", "") or "")
+    if old is not None and typ in {"group", "supergroup", str(ChatType.GROUP), str(ChatType.SUPERGROUP)}:
+        return old
+    return None
+
+
+async def _info_from_chat_id(chat_id: int, uid: int) -> dict:
+    bot = await _bot()
+    info = await _inspect_chat(bot, int(chat_id))
+    mem = await pr.get_membership(int(chat_id))
+    if not mem and info.get("bot_member"):
+        await pr.record_join(int(chat_id), uid)
+        mem = await pr.get_membership(int(chat_id))
+    info["added_by"] = (mem or {}).get("last_added_by") or uid
+    info["joined_at"] = (mem or {}).get("last_joined_at")
+    return info
+
+
+async def _resolve_group_and_begin(target, uid: int, *, chat_id: int | None = None, ref: dict | None = None) -> None:
+    uname = await _bot_username()
+    session = await pr.get_session(uid) or {}
+    intent = _intent_of(session.get("extra"), session)
+    bot = await _bot()
+    try:
+        if chat_id is not None:
+            info = await _info_from_chat_id(int(chat_id), uid)
+        elif ref and ref.get("kind") == "username":
+            chat = await bot.get_chat("@" + ref["value"])
+            if str(getattr(chat, "type", "") or "") not in {
+                ChatType.GROUP, ChatType.SUPERGROUP, "group", "supergroup",
+            }:
+                await _edit(target, text_not_a_group(), pr.add_group_keyboard(uname, intent=intent))
+                return
+            info = await _info_from_chat_id(int(chat.id), uid)
+        elif ref and ref.get("kind") == "internal":
+            info = await _info_from_chat_id(int("-100" + ref["value"]), uid)
+        else:
+            await _edit(target, text_need_link(), pr.how_keyboard(bot_username=uname, intent=intent))
+            return
+    except Exception:
+        await _edit(target, text_group_not_found(), pr.add_group_keyboard(uname, intent=intent))
+        return
+    await _begin_proofs(target, uid, info)
+
+
+async def on_wait_link(message: Message) -> None:
+    uid = int(message.from_user.id)
+    session = await pr.get_session(uid)
+    if not session or session.get("mode") not in LINK_MODES:
+        return
+    intent = _intent_of(session.get("extra"), session)
+    uname = await _bot_username()
+    text = str(getattr(message, "text", None) or getattr(message, "caption", None) or "")
+    if text.startswith("/"):
+        return
+    if looks_like_help(text) and not parse_group_ref(text):
+        await _show_how(message, uid)
+        return
+    forwarded = _forwarded_group(message)
+    if forwarded is not None:
+        await _resolve_group_and_begin(message, uid, chat_id=int(forwarded.id))
+        return
+    ref = parse_group_ref(text)
+    if ref is None:
+        await message.answer(
+            text_need_link(),
+            reply_markup=pr.how_keyboard(bot_username=uname, intent=intent),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return
+    if ref["kind"] == "invite":
+        await message.answer(
+            text_link_invite(),
+            reply_markup=pr.how_public_keyboard(uname, intent=intent),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return
+    await _resolve_group_and_begin(message, uid, ref=ref)
 
 
 async def _open_photos(target, uid: int, info: dict, role: str) -> None:
@@ -486,8 +773,43 @@ async def _open_photos(target, uid: int, info: dict, role: str) -> None:
     extra = dict(info)
     extra["n"] = 0
     extra["role"] = role
+    extra["intent"] = role
     await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
     await _edit(target, text_wait_photo(0, 0), pr.photo_keyboard(0))
+
+
+async def _open_photos_dm(uid: int, info: dict, role: str) -> None:
+    claim = await pr.create_claim(
+        user_id=uid,
+        chat_id=int(info["chat_id"]),
+        role=role,
+        title=str(info.get("title") or ""),
+        username=str(info.get("username") or ""),
+        member_count=int(info.get("member_count") or 0),
+        added_by=info.get("added_by"),
+        creator_id=info.get("creator_id"),
+        joined_at=info.get("joined_at"),
+    )
+    extra = dict(info)
+    extra["n"] = 0
+    extra["role"] = role
+    extra["intent"] = role
+    await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
+    await _push(uid, text_wait_photo(0, 0), pr.photo_keyboard(0))
+
+
+@router.callback_query(F.data == pr.PR_CANT)
+async def on_cant_add(cb: CallbackQuery) -> None:
+    try:
+        await cb.answer()
+    except Exception:
+        pass
+    uid = int(cb.from_user.id)
+    session = await pr.get_session(uid) or {}
+    extra = dict(session.get("extra") or {})
+    extra["intent"] = ROLE_RECO
+    await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
+    await _edit(cb, text_cant_add(), pr.cant_add_keyboard(await _bot_username()))
 
 
 @router.callback_query(F.data == pr.PR_OWNER)
@@ -498,14 +820,18 @@ async def on_owner(cb: CallbackQuery) -> None:
         pass
     uid = int(cb.from_user.id)
     session = await pr.get_session(uid) or {}
-    info = dict(session.get("extra") or {})
-    if session.get("mode") != "role" or not info.get("chat_id"):
-        await _open_hub(cb)
+    extra = dict(session.get("extra") or {})
+    extra["intent"] = ROLE_OWNER
+    await pr.set_session(uid, claim_id=None, mode=session.get("mode") or "choose", extra=extra)
+    if extra.get("chat_id"):
+        try:
+            info = await _info_from_chat_id(int(extra["chat_id"]), uid)
+        except Exception:
+            info = extra
+        info.update({k: extra[k] for k in extra if k not in info})
+        await _begin_proofs(cb, uid, info)
         return
-    if int(info.get("creator_id") or 0) != uid:
-        await _edit(cb, text_wrong_owner(), pr.role_keyboard())
-        return
-    await _open_photos(cb, uid, info, ROLE_OWNER)
+    await _try_advance(cb, uid)
 
 
 @router.callback_query(F.data == pr.PR_RECO)
@@ -516,11 +842,18 @@ async def on_reco(cb: CallbackQuery) -> None:
         pass
     uid = int(cb.from_user.id)
     session = await pr.get_session(uid) or {}
-    info = dict(session.get("extra") or {})
-    if session.get("mode") != "role" or not info.get("chat_id"):
-        await _open_hub(cb)
+    extra = dict(session.get("extra") or {})
+    extra["intent"] = ROLE_RECO
+    await pr.set_session(uid, claim_id=None, mode=session.get("mode") or "choose", extra=extra)
+    if extra.get("chat_id"):
+        try:
+            info = await _info_from_chat_id(int(extra["chat_id"]), uid)
+        except Exception:
+            info = extra
+        info.update({k: extra[k] for k in extra if k not in info})
+        await _begin_proofs(cb, uid, info)
         return
-    await _open_photos(cb, uid, info, ROLE_RECO)
+    await _try_advance(cb, uid)
 
 
 @router.callback_query(F.data == pr.PR_CANCEL)
@@ -551,7 +884,7 @@ async def _finish_photos(message: Message, uid: int, claim: dict, extra: dict) -
     extra = _claim_extra(claim, extra)
     if claim["role"] == ROLE_OWNER:
         await pr.set_session(uid, claim_id=int(claim["id"]), mode="pending", extra=extra)
-        await message.answer(text_after_photos_owner(), reply_markup=pr.after_owner_keyboard(), parse_mode="HTML")
+        await message.answer(text_after_proofs_owner(), reply_markup=pr.after_owner_keyboard(), parse_mode="HTML")
         return
     await pr.set_session(uid, claim_id=int(claim["id"]), mode="wait_confirm", extra=extra)
     await message.answer(
@@ -625,6 +958,8 @@ async def on_confirm_command(message: Message) -> None:
             await message.reply(text_not_your_claim(), parse_mode="HTML")
         return
     if claim["role"] != ROLE_RECO:
+        if claim["status"] in {ST_PENDING, ST_PHOTOS, ST_LIVE}:
+            await message.reply(text_owner_no_confirm(), parse_mode="HTML")
         return
     if claim["status"] == ST_PHOTOS:
         await message.reply(text_need_photos_first(), parse_mode="HTML")
@@ -731,7 +1066,7 @@ async def on_confirm_click(cb: CallbackQuery) -> None:
         try:
             await bot.send_message(
                 int(claim["user_id"]),
-                text_after_photos_owner(),
+                text_after_proofs_reco(),
                 reply_markup=pr.after_owner_keyboard(),
                 parse_mode="HTML",
             )
@@ -805,18 +1140,25 @@ async def on_my_chat(event: ChatMemberUpdated) -> None:
         adder = getattr(event.from_user, "id", None)
         await pr.record_join(chat_id, adder)
         if adder:
-            title = getattr(chat, "title", None) or str(chat_id)
             try:
                 bot = await _bot()
-                await bot.send_message(
-                    int(adder),
-                    text_bot_joined(title),
-                    reply_markup=pr.joined_keyboard(),
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                )
+                info = await _inspect_chat(bot, chat_id)
+                info["added_by"] = adder
+                info["joined_at"] = datetime.now(timezone.utc)
+                await _begin_role_dm(int(adder), info)
             except Exception:
-                pass
+                title = getattr(chat, "title", None) or str(chat_id)
+                try:
+                    bot = await _bot()
+                    await bot.send_message(
+                        int(adder),
+                        text_bot_joined(title),
+                        reply_markup=pr.joined_keyboard(),
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    pass
         return
     if was and not now:
         await pr.record_leave(chat_id)
@@ -842,6 +1184,28 @@ async def on_my_chat(event: ChatMemberUpdated) -> None:
         claim = await pr.live_claim_for_chat(chat_id)
         if claim and claim.get("freeze") == "admin":
             await pr.save_claim(int(claim["id"]), freeze=None)
+        if old not in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR):
+            who = getattr(event.from_user, "id", None)
+            mem = await pr.get_membership(chat_id)
+            seen: list[int] = []
+            for cand in (who, (mem or {}).get("last_added_by")):
+                if cand and int(cand) not in seen:
+                    seen.append(int(cand))
+            try:
+                bot = await _bot()
+                info = await _inspect_chat(bot, chat_id)
+                info["added_by"] = (mem or {}).get("last_added_by") or who
+                info["joined_at"] = (mem or {}).get("last_joined_at")
+            except Exception:
+                return
+            for cand in seen:
+                session = await pr.get_session(cand) or {}
+                if session.get("mode") in LINK_MODES:
+                    try:
+                        await _begin_role_dm(cand, info)
+                    except Exception:
+                        pass
+                    break
 
 
 async def watch_public_flag(bot, chat_id: int) -> None:

@@ -375,7 +375,7 @@ def plan_sweep(
     # Ниже цели+запаса группу не опускаем даже на кут.
     amount = min(amount, takeable)
     # Быстрый сбор не грызёт потолком одного долива: иначе с 50к снимут 600.
-    # Тихий/средний режимы оставляют потолок, чтобы не опустошать стол разом.
+    # Тихий/средний режимы оставляют потолок, чтобы не опустошать баланс группы разом.
     if policy.sweep_share < 0.85:
         amount = min(amount, int(max(0, policy.max_transfer)))
     daily_left = int(max(0, policy.max_daily_sweep)) - int(max(0, daily_sweep_used))

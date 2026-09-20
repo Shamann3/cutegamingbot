@@ -52,8 +52,10 @@ from pr_groups_logic import (  # noqa: E402
     is_broke,
     is_new_class,
     left_days_hint,
+    LINK_MODES,
     looks_like_confirm,
     nika_step_amount,
+    startgroup_url,
     promoter_cut,
     recommend_seed,
     recommend_split,
@@ -76,6 +78,7 @@ PR_MINE = "prg:mine"
 PR_BACK = "prg:back"
 PR_WROTE = "prg:wrote"
 PR_UNDO = "prg:undo"
+PR_CANT = "prg:cant"
 PR_OPEN = "prg:c:"
 PR_PICK = "prg:g:"
 PR_OWNER = "prg:own"
@@ -105,8 +108,25 @@ def entry_keyboard(*, mine: bool = False) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def how_keyboard(*, no_public: bool = False, no_admin: bool = False) -> InlineKeyboardMarkup:
-    rows = [[_btn("Проверить", PR_CHECK, ICON_GO, "success")]]
+def choose_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Я владелец группы", PR_OWNER, ICON_OK, "success")],
+        [_btn("Рекомендую бот в группах", PR_RECO, ICON_GO)],
+        [_btn("Назад", PR_HUB, ICON_BACK)],
+    ])
+
+
+def how_keyboard(
+    *,
+    intent: str = "",
+    no_public: bool = False,
+    no_admin: bool = False,
+    bot_username: str = "CuteGamingBot",
+) -> InlineKeyboardMarkup:
+    rows = [[_url("Добавить Кута", startgroup_url(bot_username), ICON_GO)]]
+    if intent == ROLE_RECO:
+        rows.append([_btn("Не могу добавить", PR_CANT, ICON_OK)])
+    rows.append([_btn("Уже добавил", PR_CHECK, ICON_OK, "success")])
     help_row = []
     if no_public:
         help_row.append(_btn("Нет @адреса", PR_PUBLIC, ICON_OK))
@@ -114,21 +134,53 @@ def how_keyboard(*, no_public: bool = False, no_admin: bool = False) -> InlineKe
         help_row.append(_btn("Не админ", PR_ADMIN, ICON_OK))
     if help_row:
         rows.append(help_row)
-    rows.append([_btn("Назад", PR_HUB, ICON_BACK)])
+    rows.append([_btn("Назад", PR_BACK, ICON_BACK)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def how_public_keyboard() -> InlineKeyboardMarkup:
+def how_public_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    return how_fix_keyboard(bot_username, intent=intent)
+
+
+def how_admin_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    return how_fix_keyboard(bot_username, intent=intent)
+
+
+def how_fix_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    rows = [[_url("Добавить Кута", startgroup_url(bot_username), ICON_GO)]]
+    if intent == ROLE_RECO:
+        rows.append([_btn("Не могу добавить", PR_CANT, ICON_OK)])
+    rows.append([_btn("Проверить", PR_CHECK, ICON_GO, "success")])
+    rows.append([_btn("Назад", PR_HOW, ICON_BACK)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def add_group_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    rows = [[_url("Добавить Кута", startgroup_url(bot_username), ICON_GO)]]
+    if intent == ROLE_RECO:
+        rows.append([_btn("Не могу добавить", PR_CANT, ICON_OK)])
+    rows.append([_btn("Назад", PR_BACK, ICON_BACK)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def cant_add_keyboard(bot_username: str = "CuteGamingBot") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Проверить", PR_CHECK, ICON_GO, "success")],
+        [_url("Добавить Кута", startgroup_url(bot_username), ICON_GO)],
         [_btn("Назад", PR_HOW, ICON_BACK)],
     ])
 
 
-def how_admin_keyboard() -> InlineKeyboardMarkup:
+def switch_to_reco_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Проверить", PR_CHECK, ICON_GO, "success")],
-        [_btn("Назад", PR_HOW, ICON_BACK)],
+        [_btn("Рекомендую бот в группах", PR_RECO, ICON_GO, "success")],
+        [_btn("Назад", PR_BACK, ICON_BACK)],
+    ])
+
+
+def switch_to_owner_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Я владелец группы", PR_OWNER, ICON_OK, "success")],
+        [_btn("Назад", PR_BACK, ICON_BACK)],
     ])
 
 
@@ -193,7 +245,7 @@ def after_reco_keyboard(username: str = "") -> InlineKeyboardMarkup:
 
 def joined_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Проверить", PR_CHECK, ICON_GO, "success")],
+        [_btn("Начать", PR_START, ICON_GO, "success")],
     ])
 
 
@@ -552,6 +604,13 @@ async def is_waiting_photos(user_id: int, chat_type: str = "") -> bool:
     return bool(session and session.get("mode") == "photos")
 
 
+async def is_waiting_link(user_id: int, chat_type: str = "") -> bool:
+    if str(chat_type or "") != "private":
+        return False
+    session = await get_session(user_id)
+    return bool(session and session.get("mode") in LINK_MODES)
+
+
 async def get_session(user_id: int) -> Optional[dict[str, Any]]:
     try:
         p = await pool()
@@ -809,7 +868,7 @@ async def _give_to_user(user_id: int, amount: int, cause: str) -> None:
 
 
 async def fulfill_accept(claim_id: int, *, bot) -> dict[str, Any]:
-    """Идемпотентно: стол снимается один раз, повтор тикера не списывает снова."""
+    """Идемпотентно: куты на баланс чата списываются один раз, повтор тикера не списывает снова."""
     async with _fulfill_lock:
         return await _fulfill_accept_locked(claim_id, bot=bot)
 
@@ -849,7 +908,7 @@ async def _fulfill_accept_locked(claim_id: int, *, bot) -> dict[str, Any]:
         if split["table"] > 0:
             if not await _take_from_ladder(split["table"], bot=bot):
                 await save_claim(claim_id, status=ST_ACCEPTING)
-                raise ValueError("Техкасса не отдаёт стол")
+                raise ValueError("Техкасса не отдаёт куты на баланс чата")
             await _give_to_chat(bot, int(claim["chat_id"]), split["table"])
         await save_claim(
             claim_id,
@@ -1332,7 +1391,7 @@ async def push_notice(user_id: int, kind: str, payload: Optional[dict] = None) -
 
 
 async def drain_notices(bot) -> None:
-    from pr_groups_logic import text_accepted, text_rejected
+    from pr_groups_logic import text_accepted, text_confirm_timeout, text_photos_expired, text_rejected
     p = await pool()
     rows = await p.fetch("SELECT * FROM pr_notices ORDER BY id ASC LIMIT 20")
     for row in rows:
@@ -1343,6 +1402,10 @@ async def drain_notices(bot) -> None:
                 await bot.send_message(int(row["user_id"]), text_accepted(int(payload.get("termDays") or 14)), parse_mode="HTML", disable_web_page_preview=True)
             elif kind == "rejected":
                 await bot.send_message(int(row["user_id"]), text_rejected(str(payload.get("text") or ""), can_fix=bool(payload.get("canFix"))), parse_mode="HTML", disable_web_page_preview=True)
+            elif kind == "photos_expired":
+                await bot.send_message(int(row["user_id"]), text_photos_expired(), reply_markup=after_cancel_keyboard(), parse_mode="HTML", disable_web_page_preview=True)
+            elif kind == "confirm_expired":
+                await bot.send_message(int(row["user_id"]), text_confirm_timeout(), reply_markup=after_cancel_keyboard(), parse_mode="HTML", disable_web_page_preview=True)
         except Exception:
             log.debug("notice fail", exc_info=True)
         await p.execute("DELETE FROM pr_notices WHERE id = $1", int(row["id"]))
@@ -1372,6 +1435,7 @@ async def housekeep(bot) -> None:
     )
     for row in photos:
         await expire_claim(int(row["id"]))
+        await push_notice(int(row["user_id"]), "photos_expired")
     waits = await p.fetch(
         """
         SELECT * FROM pr_claims
@@ -1384,6 +1448,7 @@ async def housekeep(bot) -> None:
     )
     for row in waits:
         await expire_claim(int(row["id"]))
+        await push_notice(int(row["user_id"]), "confirm_expired")
     retries = await p.fetch(
         """
         SELECT * FROM pr_claims
@@ -1396,6 +1461,7 @@ async def housekeep(bot) -> None:
     )
     for row in retries:
         await expire_claim(int(row["id"]))
+        await push_notice(int(row["user_id"]), "confirm_expired")
     lives = await list_live()
     for claim in lives:
         until = claim.get("live_until")

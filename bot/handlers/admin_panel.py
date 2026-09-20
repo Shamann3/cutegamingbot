@@ -44,7 +44,8 @@ async def admin_filter(message: Message):
             raise SkipHandler()
         try:
             from bot.funcs.pr_groups import is_waiting_photos as _pr_photos
-            if await _pr_photos(_uid, _chat_type):
+            from bot.funcs.pr_groups import is_waiting_link as _pr_link
+            if await _pr_photos(_uid, _chat_type) or await _pr_link(_uid, _chat_type):
                 raise SkipHandler()
         except SkipHandler:
             raise

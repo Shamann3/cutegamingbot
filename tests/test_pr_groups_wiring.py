@@ -8,6 +8,7 @@ def test_wired_into_bot_and_panel():
     assert "attach_pr_groups" in main
     assert "prg:hub" in main
     assert "_pr_wait_photo_filter" in main
+    assert "_pr_wait_link_filter" in main
     assert "looks_like_confirm" in main
     assert "Пиар в группах" in main
 
@@ -24,7 +25,11 @@ def test_wired_into_bot_and_panel():
     core = (ROOT / "bot" / "funcs" / "pr_groups.py").read_text(encoding="utf-8")
     assert "prg:chk" in core
     assert "prg:undo" in core
-    assert "how_keyboard" in core
+    assert "choose_keyboard" in core
+    assert "Я владелец группы" in core
+    assert "Рекомендую бот в группах" in core
+    assert "startgroup" in core
+    assert "is_waiting_link" in core
     assert "photo_keyboard" in core
     assert "image_file_id" in core
     assert "pop_photo" in core
@@ -33,6 +38,15 @@ def test_wired_into_bot_and_panel():
     assert "looks_like_help" in handlers
     assert "_album_used" in handlers
     assert "_resume_claim_screen" in handlers
+    assert "on_wait_link" in handlers
+    assert "_resolve_group_and_begin" in handlers
+    assert "prg:cant" in (ROOT / "bot" / "funcs" / "pr_groups.py").read_text(encoding="utf-8")
+    assert "_begin_proofs" in handlers
+    assert "on_cant_add" in handlers
+    assert "text_choose_role" in handlers
+    assert "_open_choose" in handlers
+    assert "text_after_proofs_owner" in handlers
+    assert "text_after_proofs_reco" in handlers
 
 
 def test_image_file_id_accepts_photo_and_png():
@@ -86,3 +100,10 @@ def test_gift_lock_hooks_exist():
     ui = (ROOT / "admin" / "src" / "pages" / "sections" / "PrGroupsSection.jsx").read_text(encoding="utf-8")
     assert "previewSplit" in ui
     assert "overBudget" in ui
+    assert "стол" not in ui.lower()
+    assert "баланс чата" in ui
+    assert "баланс группы" in ui
+    logic = (ROOT / "server" / "pr_groups_logic.py").read_text(encoding="utf-8")
+    assert "стол" not in logic.lower()
+    assert "стол" not in core.lower()
+    assert "стол" not in handlers.lower()
