@@ -115,21 +115,17 @@ def test_reco_bridge_does_not_pretend_they_are_owner():
     assert "@CuteGamingBot" in cant
     assert "@группа" in cant
     owner = text_after_proofs_owner()
-    assert "баланс группы" in owner
-    assert "подарочные куты" in owner
-    assert "соло" in owner
-    assert "ваша группа" in owner
-    assert "Эпсилон" in owner
-    assert "этот чат" in owner
-    assert "Следите за этим" in owner
+    assert "Доказательства приняты" in owner
+    assert "только у вас" in owner
+    assert "проверку" in owner
+    assert "этот чат" in owner or "сюда" in owner
     assert "стол" not in owner.lower()
+    assert "соло" not in owner.lower()
     reco = text_after_proofs_reco()
-    assert "зарабатываете" in reco
-    assert "35%" in reco
-    assert "новая группа" in reco
-    assert "Эпсилон" in reco
-    assert "этот чат" in reco
-    assert "Следите за этим" in reco
+    assert "Доказательства приняты" in reco
+    assert "14 дней" in reco
+    assert "сюда" in reco
+    assert "комисси" not in reco.lower()
 
 
 def test_gift_has_kut_and_user_wording():
@@ -265,3 +261,81 @@ def test_parse_group_ref():
 
 def test_ban_is_31_days():
     assert BAN_DAYS == 31
+
+
+def test_earnings_screen_and_card_are_plain():
+    from datetime import datetime, timedelta, timezone
+
+    from pr_groups_logic import (
+        claim_button_label,
+        claim_status_label,
+        moscow_day_start,
+        text_confirm_prompt,
+        text_digest,
+        text_earnings,
+        text_freeze_admin,
+        text_group_card,
+        text_accepted,
+    )
+
+    live = {
+        "id": 1,
+        "chat_title": "Друзья",
+        "status": "live",
+        "role": "reco",
+        "paid_kut": 40,
+        "gifts": 0,
+        "freeze": None,
+        "live_until": datetime.now(timezone.utc) + timedelta(days=11),
+    }
+    own = {
+        "id": 2,
+        "chat_title": "Мой чат",
+        "status": "live",
+        "role": "owner",
+        "paid_kut": 0,
+        "gifts": 7,
+        "freeze": None,
+    }
+    html = text_earnings([live, own], total=40, today=8, live=True)
+    assert "Заработки" in html
+    assert "Всего вам пришло: 40 кут" in html
+    assert "Сегодня: 8 кут" in html
+    assert "кута" not in html.lower()
+    pending = text_earnings([{"chat_title": "x", "status": "pending"}], total=0, today=0, live=False)
+    assert "Мои группы" in pending
+    reco_card = text_group_card(live, today=3, newcomers=6, gifts=0)
+    assert "Вам уже пришло" in reco_card
+    assert "Сегодня: <b>3 кут</b>" in reco_card
+    assert "Новых людей: <b>6</b>" in reco_card
+    assert "замороз" not in reco_card.lower()
+    owner_card = text_group_card(own, today=0, newcomers=4, gifts=7, chat_balance=80)
+    assert "Баланс группы" in owner_card
+    assert "Подарков новым: <b>7</b>" in owner_card
+    pause = text_group_card({**live, "freeze": "admin"}, today=0, newcomers=1)
+    assert "пауза: Кут нужна админка" in pause
+    assert "Верните Кут в администраторы" in pause
+    btn = claim_button_label(live)
+    assert "Друзья" in btn
+    assert "40 кут" in btn
+    own_btn = claim_button_label(own)
+    assert "подарков: 7" in own_btn
+    assert claim_status_label("photos") == "нужны 3 фото"
+    assert claim_status_label("live") == "идёт заработок"
+    assert "кута" not in text_confirm_prompt(1, "Игорь").lower()
+    assert "добав" in text_confirm_prompt(1, "Игорь").lower()
+    digest = text_digest(newcomers=2, paid=5, days_left=9, title="Друзья")
+    assert "Сегодня с «Друзья»" in digest
+    assert "комисси" not in digest.lower()
+    assert "5 кут" in digest
+    freeze = text_freeze_admin()
+    assert "Пауза" in freeze
+    assert "замороз" not in freeze.lower()
+    accepted = text_accepted(14)
+    assert "комисси" not in accepted.lower()
+    assert "14 дней" in accepted
+    start = moscow_day_start(datetime(2026, 9, 20, 22, 0, tzinfo=timezone.utc))
+    assert start.tzinfo is not None
+    blob = "\n".join([html, reco_card, owner_card, pause, digest, freeze, accepted]).lower()
+    assert "кута " not in blob
+    assert "замороз" not in blob

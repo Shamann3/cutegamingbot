@@ -33,6 +33,7 @@ from pr_groups_logic import (  # noqa: E402
     ST_PENDING,
     ST_PHOTOS,
     ST_WAIT_CONFIRM,
+    LIVE_STATUSES,
     looks_like_confirm,
     looks_like_help,
     parse_group_ref,
@@ -55,6 +56,8 @@ from pr_groups_logic import (  # noqa: E402
     text_confirm_prompt,
     text_confirm_yes,
     text_entry,
+    text_earnings,
+    text_group_card,
     text_freeze_admin,
     text_freeze_public,
     text_forward_no_group,
@@ -66,7 +69,6 @@ from pr_groups_logic import (  # noqa: E402
     text_how_admin,
     text_how_public,
     text_kicked,
-    text_mine,
     text_link_invite,
     text_need_admin,
     text_need_link,
@@ -250,8 +252,32 @@ async def _open_hub(target: CallbackQuery | Message) -> None:
     await pr.ensure_schema()
     start_pr_ticker()
     uid = int(target.from_user.id)
+    session = await pr.get_session(uid) or {}
+    extra = dict(session.get("extra") or {})
+    for key in ("intent", "chat_id", "n", "groups", "title", "username", "role"):
+        extra.pop(key, None)
+    await pr.set_session(uid, claim_id=None, mode="hub", extra=extra)
     rows = await pr.list_user_claims(uid)
-    await _edit(target, text_entry(), pr.entry_keyboard(mine=bool(rows)))
+    live = any(str(row.get("status") or "") in LIVE_STATUSES for row in rows)
+    await _edit(target, text_entry(), pr.entry_keyboard(mine=bool(rows), live=live))
+
+
+async def _show_mine(target: CallbackQuery | Message, uid: int) -> None:
+    await pr.ensure_schema()
+    rows = await pr.list_user_claims(uid)
+    live = any(str(row.get("status") or "") in LIVE_STATUSES for row in rows)
+    total = await pr.user_paid_total(uid)
+    today = await pr.payouts_today(uid)
+    extra = dict((await pr.get_session(uid) or {}).get("extra") or {})
+    await pr.set_session(uid, claim_id=None, mode="mine", extra=extra)
+    await _edit(target, text_earnings(rows, total=total, today=today, live=live), pr.mine_keyboard(rows, live=live))
+
+
+async def _show_card(target: CallbackQuery | Message, uid: int, claim: dict) -> None:
+    extra = _claim_extra(claim)
+    stats = await pr.claim_card_stats(claim)
+    await pr.set_session(uid, claim_id=int(claim["id"]), mode="card", extra=extra)
+    await _edit(target, text_group_card(claim, **stats), pr.card_keyboard(claim))
 
 
 async def _show_how(target, uid: int, scan: dict | None = None) -> None:
@@ -307,7 +333,7 @@ async def _resume_claim_screen(target, uid: int, claim: dict) -> None:
         await _edit(target, text_after_photos_reco(title), pr.after_reco_keyboard(extra["username"]))
         return
     await pr.set_session(uid, claim_id=int(claim["id"]), mode="view", extra=extra)
-    await _edit(target, text_resume_claim(title, status), pr.resume_keyboard(status))
+    await _edit(target, text_resume_claim(title, status, claim.get("freeze")), pr.resume_keyboard(status))
 
 
 async def _try_advance(target, uid: int) -> None:
@@ -323,9 +349,13 @@ async def _try_advance(target, uid: int) -> None:
         await _edit(target, text_two_live(), pr.pending_keyboard())
         return
     session = await pr.get_session(uid) or {}
-    intent = _intent_of(session.get("extra"), session)
+    extra = dict(session.get("extra") or {})
+    intent = _intent_of(extra, session)
     if not intent:
-        await _open_choose(target, uid, session.get("extra") or {})
+        if extra.get("chat_id"):
+            await _open_choose(target, uid, extra)
+            return
+        await _open_hub(target)
         return
     scan = await _scan_user_groups(uid)
     ready = list(scan["ready"])
@@ -361,23 +391,7 @@ async def on_start(cb: CallbackQuery) -> None:
         await cb.answer()
     except Exception:
         pass
-    uid = int(cb.from_user.id)
-    await pr.ensure_schema()
-    start_pr_ticker()
-    open_claim = await pr.active_claim_for_user(uid)
-    if open_claim and open_claim["status"] in {ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
-        await _resume_claim_screen(cb, uid, open_claim)
-        return
-    if await pr.count_status(uid, {ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY, ST_PENDING}) >= MAX_PENDING:
-        await _edit(cb, text_two_pending(), pr.pending_keyboard())
-        return
-    if await pr.count_status(uid, {ST_LIVE}) >= MAX_LIVE_SEEDS:
-        await _edit(cb, text_two_live(), pr.pending_keyboard())
-        return
-    session = await pr.get_session(uid) or {}
-    extra = dict(session.get("extra") or {})
-    extra.pop("intent", None)
-    await _open_choose(cb, uid, extra)
+    await _open_hub(cb)
 
 
 @router.callback_query(F.data == pr.PR_CHECK)
@@ -433,14 +447,30 @@ async def on_mine(cb: CallbackQuery) -> None:
         await cb.answer()
     except Exception:
         pass
-    uid = int(cb.from_user.id)
-    rows = await pr.list_user_claims(uid)
-    await pr.set_session(uid, claim_id=None, mode="mine", extra={})
-    await _edit(cb, text_mine(rows), pr.mine_keyboard(rows))
+    await _show_mine(cb, int(cb.from_user.id))
 
 
 @router.callback_query(F.data.startswith(pr.PR_OPEN))
 async def on_open_claim(cb: CallbackQuery) -> None:
+    try:
+        await cb.answer()
+    except Exception:
+        pass
+    uid = int(cb.from_user.id)
+    try:
+        claim_id = int((cb.data or "").split(":")[-1])
+    except Exception:
+        await _open_hub(cb)
+        return
+    claim = await pr.claim_by_id(claim_id)
+    if not claim or int(claim.get("user_id") or 0) != uid:
+        await _edit(cb, text_not_your_claim(), pr.hub_only_keyboard())
+        return
+    await _show_card(cb, uid, claim)
+
+
+@router.callback_query(F.data.startswith(pr.PR_CONT))
+async def on_continue_claim(cb: CallbackQuery) -> None:
     try:
         await cb.answer()
     except Exception:
@@ -500,21 +530,8 @@ async def on_back(cb: CallbackQuery) -> None:
     uid = int(cb.from_user.id)
     session = await pr.get_session(uid) or {}
     mode = session.get("mode")
-    extra = dict(session.get("extra") or {})
-    if mode in LINK_MODES or mode == "pick":
-        await _open_choose(cb, uid, extra)
-        return
-    if mode == "photos" and session.get("claim_id"):
-        claim = await pr.claim_by_id(int(session["claim_id"]))
-        if claim and claim["status"] == ST_PHOTOS:
-            await pr.cancel_claim(int(claim["id"]))
-        extra["intent"] = extra.get("intent") or (claim.get("role") if claim else "") or extra.get("intent")
-        extra.pop("n", None)
-        await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
-        await _show_how(cb, uid)
-        return
-    if mode == "mismatch":
-        await _open_choose(cb, uid, extra)
+    if mode == "card":
+        await _show_mine(cb, uid)
         return
     await _open_hub(cb)
 
@@ -587,7 +604,10 @@ async def _begin_proofs(target, uid: int, info: dict) -> None:
     creator_id = int(info.get("creator_id") or extra.get("creator_id") or 0)
     extra["creator_id"] = creator_id or extra.get("creator_id")
     if not intent:
-        await _open_choose(target, uid, extra)
+        if extra.get("chat_id"):
+            await _open_choose(target, uid, extra)
+            return
+        await _open_hub(target)
         return
     if intent == ROLE_OWNER and creator_id and creator_id != uid:
         extra["intent"] = ROLE_OWNER
@@ -657,7 +677,7 @@ async def _begin_proofs_dm(uid: int, info: dict) -> None:
     extra["creator_id"] = creator_id
     if not intent:
         await pr.set_session(uid, claim_id=None, mode="choose", extra=extra)
-        await _send(text_choose_role(), pr.choose_keyboard())
+        await _send(text_bot_joined(title), pr.joined_keyboard())
         return
     if intent == ROLE_OWNER and creator_id and creator_id != uid:
         await pr.set_session(uid, claim_id=None, mode="mismatch", extra=extra)
@@ -1277,12 +1297,12 @@ def attach_pr_groups(dp) -> None:
     start_pr_ticker()
 
 
-async def notify_accepted(user_id: int, term_days: int) -> None:
+async def notify_accepted(user_id: int, term_days: int, *, role: str = "") -> None:
     bot = await _bot()
     try:
         await bot.send_message(
             int(user_id),
-            text_accepted(term_days),
+            text_accepted(term_days, role=role),
             reply_markup=pr.after_owner_keyboard(),
             parse_mode="HTML",
             disable_web_page_preview=True,

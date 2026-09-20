@@ -8,8 +8,14 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 from html import escape
 from typing import Any, Iterable, Optional
+
+try:
+    from zoneinfo import ZoneInfo
+except Exception:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
 
 STATUS_EMOJI_OK = "5339112148175959615"
 STATUS_EMOJI_WAIT = "5339082633160703625"
@@ -62,6 +68,9 @@ LIVE_STATUSES = frozenset({ST_LIVE, ST_ACCEPTING, ST_FULFILLING})
 IN_PROGRESS_STATUSES = frozenset({
     ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY, ST_PENDING, ST_ACCEPTING, ST_FULFILLING, ST_LIVE,
 })
+MINE_STATUSES = frozenset(
+    IN_PROGRESS_STATUSES | {ST_ENDED, ST_BURNED, ST_REJECTED, ST_EXPIRED}
+)
 HOLD_GROUP_STATUSES = frozenset({
     ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY, ST_PENDING, ST_ACCEPTING, ST_FULFILLING, ST_LIVE, ST_REJECTED,
 })
@@ -113,7 +122,7 @@ CONFIRM_WORDS = frozenset({
 
 PHOTO_HINTS = (
     "список админов",
-    "сообщение Кута",
+    "сообщение от Кут",
     "создатель группы",
 )
 
@@ -124,7 +133,7 @@ PHOTO_STEPS: tuple[dict[str, str], ...] = (
         "need": "На кадре должен быть <code>@CuteGamingBot</code>.",
     },
     {
-        "what": "Сообщение Кута в этой группе.",
+        "what": "Сообщение от Кут в этой группе.",
         "need": "Нужно видеть, что бот там отвечает.",
     },
     {
@@ -500,16 +509,128 @@ def photo_hint(index: int) -> str:
     return "фото"
 
 
-def claim_status_label(status: str) -> str:
+def moscow_day_start(now: datetime | None = None) -> datetime:
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    try:
+        zone = ZoneInfo("Europe/Moscow") if ZoneInfo else timezone(timedelta(hours=3))
+    except Exception:
+        zone = timezone(timedelta(hours=3))
+    local = moment.astimezone(zone)
+    start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return start.astimezone(timezone.utc)
+
+
+def clip_btn(text: str, limit: int = 64) -> str:
+    raw = " ".join(str(text or "").split())
+    if len(raw) <= limit:
+        return raw
+    if limit <= 1:
+        return "…"
+    return raw[: limit - 1] + "…"
+
+
+def kut_amount(n: int) -> str:
+    return f"{max(0, int(n or 0))} кут"
+
+
+def is_owner_claim(row: dict[str, Any] | None) -> bool:
+    return str((row or {}).get("role") or "") == ROLE_OWNER
+
+
+def claim_days_left(row: dict[str, Any] | None, now: datetime | None = None) -> Optional[int]:
+    until = (row or {}).get("live_until")
+    if until is None:
+        return None
+    if getattr(until, "tzinfo", None) is None:
+        until = until.replace(tzinfo=timezone.utc)
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return max(0, int((until - moment).total_seconds() // 86400))
+
+
+def pause_label(freeze: str | None) -> str:
+    kind = str(freeze or "").strip().lower()
+    if kind == "admin":
+        return "пауза: Кут нужна админка"
+    if kind == "public":
+        return "пауза: группа стала закрытой"
+    return ""
+
+
+def pause_hint(freeze: str | None) -> str:
+    kind = str(freeze or "").strip().lower()
+    if kind == "admin":
+        return "Верните Кут в администраторы — снова начнёт капать."
+    if kind == "public":
+        return "Сделайте группу открытой с @адресом — снова начнёт капать."
+    return ""
+
+
+def claim_status_label(status: str, freeze: str | None = None) -> str:
+    paused = pause_label(freeze)
+    if paused:
+        return paused
     return {
-        ST_PHOTOS: "ждите 3 фото",
-        ST_WAIT_CONFIRM: "напишите «подтверждение» в группе",
-        ST_CONFIRM_RETRY: "ещё один шанс · напишите «подтверждение»",
-        ST_PENDING: "на проверке",
-        ST_ACCEPTING: "на проверке",
-        ST_FULFILLING: "на проверке",
-        ST_LIVE: "капает",
+        ST_PHOTOS: "нужны 3 фото",
+        ST_WAIT_CONFIRM: "ждём Да от создателя",
+        ST_CONFIRM_RETRY: "ещё один шанс у создателя",
+        ST_PENDING: "заявку смотрят",
+        ST_ACCEPTING: "заявку смотрят",
+        ST_FULFILLING: "заявку смотрят",
+        ST_LIVE: "идёт заработок",
+        ST_ENDED: "срок вышел",
+        ST_REJECTED: "не приняли",
+        ST_BURNED: "Кут убрали из группы",
+        ST_EXPIRED: "время вышло",
+        ST_CANCELLED: "заявку сняли",
     }.get(str(status or ""), str(status or ""))
+
+
+def claim_status_short(status: str, freeze: str | None = None) -> str:
+    kind = str(freeze or "").strip().lower()
+    if kind == "admin":
+        return "пауза"
+    if kind == "public":
+        return "закрыта"
+    return {
+        ST_PHOTOS: "фото",
+        ST_WAIT_CONFIRM: "ждём Да",
+        ST_CONFIRM_RETRY: "ещё шанс",
+        ST_PENDING: "смотрят",
+        ST_ACCEPTING: "смотрят",
+        ST_FULFILLING: "смотрят",
+        ST_LIVE: "идёт",
+        ST_ENDED: "срок",
+        ST_REJECTED: "не приняли",
+        ST_BURNED: "убрали",
+        ST_EXPIRED: "время",
+        ST_CANCELLED: "сняли",
+    }.get(str(status or ""), "группа")
+
+
+def list_row_money(row: dict[str, Any] | None) -> str:
+    data = row or {}
+    if is_owner_claim(data):
+        gifts = int(data.get("gifts") or 0)
+        if gifts or str(data.get("status") or "") in LIVE_STATUSES:
+            return f"подарков: {gifts}"
+        return ""
+    paid = int(data.get("paid_kut") or 0)
+    if paid:
+        return kut_amount(paid)
+    return ""
+
+
+def claim_button_label(row: dict[str, Any] | None) -> str:
+    data = row or {}
+    title = str(data.get("chat_title") or data.get("title") or "группа").strip() or "группа"
+    short = claim_status_short(str(data.get("status") or ""), data.get("freeze"))
+    money = list_row_money(data)
+    raw = f"{title} · {short} · {money}" if money else f"{title} · {short}"
+    return clip_btn(raw)
 
 
 def _titles_line(rows: list[dict[str, Any]], reason: str) -> str:
@@ -539,17 +660,22 @@ def text_entry() -> str:
 
 def text_choose_role() -> str:
     return (
-        f"<tg-emoji emoji-id='5388583647370565067'>🌂</tg-emoji> <b>Кто вы?</b>\n"
-        "<blockquote><i>Нажмите кнопку. Дальше бот будет ждать доказательства под ваш путь</i></blockquote>"
+        f"<tg-emoji emoji-id='5451910260090485999'>🔥</tg-emoji> <b>Кто вы?</b>\n"
+        "<blockquote><i>Нажмите кнопку. Дальше бот будет ждать доказательства под ваш путь</i></blockquote>\n"
+        "<i>Если сомневаетесь: владелец — тот, у кого корона в админах.</i>"
     )
 
 
 def _epsilon_watch(*, yours: bool = True) -> str:
-    whose = "ваша группа" if yours else "новая группа"
+    whose = "ваша группа" if yours else "эта группа"
     return (
-        f"<blockquote><i>Теперь {whose} уйдёт на проверку в защитную систему проекта Эпсилон.\n"
-        "После этого вам придёт сообщение — прямо в этот чат. Следите за этим.</i></blockquote>"
+        f"<blockquote><i>Теперь {whose} уйдёт на проверку. "
+        "Ответ придёт сюда, в этот чат. Никуда ходить не нужно.</i></blockquote>"
     )
+
+
+def _link_quote() -> str:
+    return f"<blockquote><i>Подойдёт {LINK_HINT_HTML}</i></blockquote>"
 
 
 def text_how(*, intent: str = "", no_public: list | None = None, no_admin: list | None = None) -> str:
@@ -566,13 +692,16 @@ def text_how(*, intent: str = "", no_public: list | None = None, no_admin: list 
             f"{status_emoji_html('wait')} <b>Чужой чат</b>\n"
             "Попросите создателя добавить @CuteGamingBot в админы.\n"
             "Потом пришлите сюда ссылку:\n"
-
+            f"{_link_quote()}"
+            "<blockquote><i>Вам не нужно быть владельцем. Достаточно привести бота — доля пойдёт вам.</i></blockquote>"
             f"{seen}"
         )
     return (
         f"<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji> <b>Ваша группа</b>\n"
         "<b>Добавьте Кут в список администраторов в свою публичную группу.</b>\n"
         "<b>Потом пришлите сюда ссылку</b>\n"
+        f"{_link_quote()}"
+        "<blockquote><i>Люди из вашей группы охотнее пробуют игры, когда бот уже стоит у вас. Это как раз тот шаг.</i></blockquote>"
         f"{seen}"
     )
 
@@ -628,25 +757,27 @@ def text_bot_joined(title: str, *, has_intent: bool = False) -> str:
     if has_intent:
         return (
             f"{status_emoji_html('ok')} <b>Кут зашёл в «{name}»</b>\n"
-            f"<blockquote><i>Если он админ — нажмите «Проверить» или пришлите ссылку</i></blockquote>"
+            "<blockquote><i>Если он админ — нажмите «Проверить» или пришлите ссылку</i></blockquote>"
         )
     return (
         f"{status_emoji_html('ok')} <b>Кут зашёл в «{name}»</b>\n"
-        "<blockquote><i>Нажмите «Начать» и выберите, кто вы</i></blockquote>"
+        "<blockquote><i>Нажмите, кто вы — владелец или рекомендуете. Дальше бот сам подскажет шаг.</i></blockquote>"
     )
 
 
 def text_need_link() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Нужна ссылка на группу</b>\n"
-        "<i>В группе : сообщение → Копировать ссылку — вставьте сюда текстом</i>"
+        "<i>В группе : сообщение → Копировать ссылку — вставьте сюда текстом</i>\n"
+        f"{_link_quote()}"
     )
 
 
 def text_forward_no_group() -> str:
     return (
         f"{status_emoji_html('no')} <b>Пересылка не подходит</b>\n"
-        f"<blockquote><i>Нужна ссылка текстом</i></blockquote>"
+        "<blockquote><i>Нужна ссылка текстом</i></blockquote>\n"
+        f"{_link_quote()}"
     )
 
 
@@ -668,14 +799,14 @@ def text_bot_not_there(title: str = "", *, intent: str = "") -> str:
     name = escape(title or "эта группа")
     if intent == ROLE_RECO:
         return (
-            f"{status_emoji_html('no')} <b>Кута нет в «{name}»</b>\n"
+            f"{status_emoji_html('no')} <b>Кут не в «{name}»</b>\n"
             "Попросите создателя добавить @CuteGamingBot в админы.\n"
-            f"<blockquote><i>Потом снова пришлите ссылку</i></blockquote>"
+            "<blockquote><i>Потом снова пришлите ссылку</i></blockquote>"
         )
     return (
-        f"{status_emoji_html('no')} <b>Кута нет в «{name}»</b>\n"
-        "Нажмите «Добавить Кута» и выберите этот чат.\n"
-        f"<blockquote><i>Потом снова пришлите ссылку</i></blockquote>"
+        f"{status_emoji_html('no')} <b>Кут не в «{name}»</b>\n"
+        "Нажмите «Добавить Кут» и выберите этот чат.\n"
+        "<blockquote><i>Потом снова пришлите ссылку</i></blockquote>"
     )
 
 
@@ -684,6 +815,7 @@ def text_cant_add() -> str:
         f"{status_emoji_html('wait')} <b>Чужая группа</b>\n"
         "Напишите создателю: добавь @CuteGamingBot в админы.\n"
         "Когда Кут будет в чате - пришлите сюда ссылку :\n"
+        f"{_link_quote()}"
     )
 
 
@@ -723,7 +855,7 @@ def text_owner_bridge(title: str) -> str:
     return (
         f"{status_emoji_html('ok')} <b>«{name}»</b>\n"
         "Вы создатель. Дальше 3 фото — и заявка на проверку.\n"
-        "<blockquote><i>Друг попросил добавить Кута? Не забирайте заявку — пусть он пришлёт ссылку в бота</i></blockquote>"
+        "<blockquote><i>Друг попросил добавить Кут? Не забирайте заявку — пусть он пришлёт ссылку в бота</i></blockquote>"
     )
 
 
@@ -766,11 +898,16 @@ def text_wait_photo(index: int, have: int) -> str:
     head = ""
     if have > 0:
         head = f"{status_emoji_html('ok')} <b>Есть {have} из {PHOTOS_REQUIRED}</b>\n\n"
+    tail = "Пришлите фото сюда"
+    if have == 1:
+        tail = "Первый кадр на месте. Следующий — отдельным сообщением."
+    elif have == 2:
+        tail = "Остался последний кадр — вы уже почти сдали группу."
     return (
         f"{head}"
         f"{status_emoji_html('wait')} <b>{have + 1} из {PHOTOS_REQUIRED}</b>\n"
         f"{body}\n"
-        "<blockquote><i>Пришлите фото сюда</i></blockquote>"
+        f"<blockquote><i>{tail}</i></blockquote>"
     )
 
 
@@ -803,7 +940,7 @@ def text_need_photo(kind: str = "") -> str:
 def text_photos_expired() -> str:
     return (
         f"{status_emoji_html('no')} <b>24 часа вышли</b>\n"
-        "<blockquote><i>Нажмите «Начать» — три фото заново</i></blockquote>"
+        "<blockquote><i>Вернитесь в пиар и выберите путь — три фото заново</i></blockquote>"
     )
 
 
@@ -814,22 +951,18 @@ def text_after_photos_owner() -> str:
 def text_after_proofs_owner() -> str:
     return (
         f"{status_emoji_html('ok')} <b>Доказательства приняты</b>\n"
-        "<b>Как это работает в вашей группе.</b>\n"
-        "Проект положит куты на баланс группы — с него идут выплаты в играх. "
-        "Новому человеку проект даст подарочные куты: ими можно сыграть соло здесь, в этой группе. "
-        "Снять и перевести подарочные куты нельзя: только научиться играть у вас.\n"
-        f"{_epsilon_watch(yours=True)}"
+        "Новым людям проект даст куты — играть ими можно только у вас, в этой группе.\n"
+        "Группа уходит на проверку. Ответ придёт сюда.\n"
+        "<blockquote><i>Вы уже сделали главное. Пока смотрим — можно просто подождать в этом чате.</i></blockquote>"
     )
 
 
 def text_after_proofs_reco() -> str:
     return (
         f"{status_emoji_html('ok')} <b>Доказательства приняты</b>\n"
-        "<b>Как вы зарабатываете.</b>\n"
-        "14 дней вам капает до 35% комиссии с игр новых людей в этой группе. "
-        "Новым считается тот, кто раньше не крутил живые ставки. "
-        "Куты приходят вам в этого бота, пока Кут — админ в публичном чате.\n"
-        f"{_epsilon_watch(yours=False)}"
+        "14 дней вам будет капать доля с игр новых людей в этой группе.\n"
+        "Группа уходит на проверку. Ответ придёт сюда.\n"
+        "<blockquote><i>С этой группы заработок привязан к вам. Решение придёт сюда, не потеряется.</i></blockquote>"
     )
 
 
@@ -838,8 +971,9 @@ def text_after_photos_reco(title: str = "") -> str:
     return (
         f"{status_emoji_html('wait')} <b>Напишите в группе</b>\n"
         f"Откройте «{name}» и отправьте слово:\n"
-        "<blockquote><code>подтверждение</code></blockquote>"
-        "<i>Да нажимает только создатель (корона). 24 часа.</i>"
+        "<blockquote><code>подтверждение</code></blockquote>\n"
+        "<i>Да нажимает только создатель (корона). 24 часа.</i>\n"
+        "<blockquote><i>Это короткий шаг. Как нажмут Да — заявка поедет на проверку, а вы увидите группу в списке.</i></blockquote>"
     )
 
 
@@ -847,21 +981,107 @@ def text_wrote_confirm() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Ждём создателя</b>\n"
         "Под сообщением в группе он должен нажать Да.\n"
-        "<blockquote><i>Не нажал — напишите слово ещё раз</i></blockquote>"
+        "<blockquote><i>Не нажал — напишите слово ещё раз. Вы свою часть уже сделали.</i></blockquote>"
     )
 
 
-def text_mine(rows: list[dict[str, Any]]) -> str:
-    if not rows:
-        return (
-            f"{status_emoji_html('wait')} <b>Пока пусто</b>\n"
-            "<blockquote><i>Нажмите «Начать» — сначала группа</i></blockquote>"
-        )
-    lines = [f"{status_emoji_html('wait')} <b>Мои заявки</b>"]
-    for row in rows[:8]:
-        title = escape(str(row.get("chat_title") or row.get("title") or "группа"))
-        label = claim_status_label(str(row.get("status") or ""))
-        lines.append(f"• <b>{title}</b> — <i>{escape(label)}</i>")
+def _earnings_barnum(*, total: int, today: int, count: int, live: bool) -> str:
+    if count <= 0:
+        return "Пока тихо. Сдайте группу — и здесь появятся цифры, которые захочется открывать."
+    if live and total > 0:
+        return "Это уже ваши цифры. Откройте группу — будет видно, откуда капает."
+    if live:
+        return "Группа уже в работе. Первые куты приходят, когда новые люди начинают играть."
+    if today > 0:
+        return "Сегодня уже есть движение. Откройте группу — там подробнее."
+    return "Вы уже сделали свою часть. Пока смотрим заявку — можно подождать здесь."
+
+
+def text_earnings(
+    rows: list[dict[str, Any]] | None = None,
+    *,
+    total: int = 0,
+    today: int = 0,
+    live: bool = False,
+) -> str:
+    items = list(rows or [])
+    title = "Заработки" if live else "Мои группы"
+    kind = "ok" if live or int(total) > 0 else "wait"
+    barnum = _earnings_barnum(total=int(total), today=int(today), count=len(items), live=live)
+    lines = [
+        f"{status_emoji_html(kind)} <b>{title}</b>",
+        f"<b>Всего вам пришло: {kut_amount(total)}</b>",
+        f"<b>Сегодня: {kut_amount(today)}</b>",
+        f"<blockquote><i>{barnum}</i></blockquote>",
+    ]
+    if items:
+        lines.append("<i>Нажмите группу — откроется карточка</i>")
+    return "\n".join(lines)
+
+
+def text_mine(
+    rows: list[dict[str, Any]] | None = None,
+    *,
+    total: int = 0,
+    today: int = 0,
+    live: bool = False,
+) -> str:
+    return text_earnings(rows, total=total, today=today, live=live)
+
+
+def text_group_card(
+    claim: dict[str, Any] | None,
+    *,
+    today: int = 0,
+    newcomers: int = 0,
+    gifts: int = 0,
+    chat_balance: int | None = None,
+) -> str:
+    data = claim or {}
+    name = escape(str(data.get("chat_title") or data.get("title") or "группа"))
+    status = str(data.get("status") or "")
+    freeze = data.get("freeze")
+    label = claim_status_label(status, freeze)
+    kind = "ok" if status == ST_LIVE and not freeze else ("no" if status in {ST_REJECTED, ST_BURNED} else "wait")
+    lines = [
+        f"{status_emoji_html(kind)} <b>«{name}»</b>",
+        f"<b>{escape(label)}</b>",
+    ]
+    owner = is_owner_claim(data)
+    if owner:
+        if chat_balance is not None:
+            lines.append(f"Баланс группы: <b>{kut_amount(chat_balance)}</b>")
+        lines.append(f"Подарков новым: <b>{int(gifts or 0)}</b>")
+    else:
+        lines.append(f"Вам уже пришло: <b>{kut_amount(data.get('paid_kut'))}</b>")
+        lines.append(f"Сегодня: <b>{kut_amount(today)}</b>")
+    days = claim_days_left(data)
+    if days is not None and status in LIVE_STATUSES:
+        lines.append(f"Осталось дней: <b>{days}</b>")
+    lines.append(f"Новых людей: <b>{int(newcomers or 0)}</b>")
+    hint = pause_hint(freeze)
+    if hint:
+        lines.append(f"<blockquote><i>{escape(hint)}</i></blockquote>")
+    elif status == ST_LIVE and owner and int(gifts or 0) > 0:
+        lines.append("<blockquote><i>Новые люди пробуют игры именно у вас. Это уже работает.</i></blockquote>")
+    elif status == ST_LIVE and not owner and int(data.get("paid_kut") or 0) > 0:
+        lines.append("<blockquote><i>Эта группа уже приносит вам куты. Пока Кут админ — капает само.</i></blockquote>")
+    elif status == ST_LIVE:
+        lines.append("<blockquote><i>Первые игры новых людей ещё впереди. Вы уже на месте.</i></blockquote>")
+    elif status == ST_PHOTOS:
+        have = len(data.get("photos") or [])
+        left = max(0, PHOTOS_REQUIRED - have)
+        lines.append(f"<blockquote><i>Осталось {left} фото. Это последний шаг, который видит только бот.</i></blockquote>")
+    elif status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
+        lines.append("<blockquote><i>Вы свою часть сделали. Теперь слово за человеком с короной.</i></blockquote>")
+    elif status in {ST_PENDING, ST_ACCEPTING, ST_FULFILLING}:
+        lines.append("<blockquote><i>Заявку смотрят. Как будет решение — напишем сюда.</i></blockquote>")
+    elif status == ST_ENDED:
+        lines.append("<blockquote><i>Срок по этой группе вышел. Новые куты с неё больше не капают.</i></blockquote>")
+    elif status == ST_REJECTED:
+        reason = str(data.get("reject_text") or "").strip()
+        if reason:
+            lines.append(f"<blockquote><i>{escape(reason)}</i></blockquote>")
     return "\n".join(lines)
 
 
@@ -876,7 +1096,7 @@ def text_confirm_prompt(user_id: int, name: str) -> str:
     who = mention_html(user_id, name)
     return (
         f"<tg-emoji emoji-id='{CONFIRM_EMOJI}'>🎁</tg-emoji> "
-        f"<b>Создатель, подтвердите: {who} привёл @CuteGamingBot в эту группу?</b>"
+        f"<b>{who} добавил Кут сюда. Если это так — нажмите Да. Тогда заработок пойдёт ему.</b>"
     )
 
 
@@ -920,22 +1140,39 @@ def text_wrong_group() -> str:
 def text_need_photos_first() -> str:
     return (
         f"{status_emoji_html('no')} <b>Сначала 3 фото в боте</b>\n"
-        "<blockquote><i>Пришлите их Куту в личку</i></blockquote>"
+        "<blockquote><i>Пришлите их сюда, в этот чат</i></blockquote>"
     )
 
 
-def text_accepted(term_days: int) -> str:
+def text_accepted(term_days: int, *, role: str = "") -> str:
     days = int(term_days or DEFAULT_TERM_DAYS)
+    if str(role or "") == ROLE_OWNER:
+        return (
+            f"{status_emoji_html('ok')} <b>Группу приняли.</b>\n"
+            f"<blockquote><b>{days} дней · новые смогут играть у вас на подарочные куты.</b></blockquote>\n"
+            "<i>Откройте «Мои группы», когда захотите цифры.</i>"
+        )
     return (
         f"{status_emoji_html('ok')} <b>Группу приняли.</b>\n"
-        f"<blockquote><b>{days} дней · до 35% комиссии с игр новых.</b></blockquote>"
+        f"<blockquote><b>{days} дней вам капает доля с игр новых.</b></blockquote>\n"
+        "<i>Откройте «Заработки», когда захотите цифры.</i>"
     )
 
 
-def text_digest(*, newcomers: int, commission: int, paid: int, days_left: int) -> str:
+def text_digest(
+    *,
+    newcomers: int,
+    commission: int = 0,
+    paid: int,
+    days_left: int,
+    title: str = "",
+) -> str:
+    name = escape(title or "группы")
+    extra = " Это уже на вашем балансе." if int(paid or 0) > 0 else " Как появятся игры новых — цифра вырастет."
     return (
-        f"{status_emoji_html('ok')} <b>За сутки: {newcomers} новых · комиссия {commission} · вам {paid} кут.</b>\n"
-        f"<blockquote><b>Осталось {days_left} дн.</b></blockquote>"
+        f"{status_emoji_html('ok')} <b>Сегодня с «{name}»: {int(newcomers or 0)} новых людей · вам {kut_amount(paid)}.</b>\n"
+        f"<blockquote><b>Осталось {int(days_left or 0)} дн.</b></blockquote>\n"
+        f"<i>{extra.strip()}</i>"
     )
 
 
@@ -950,7 +1187,10 @@ def text_gift(user_id: int, name: str, amount: int) -> str:
 
 
 def text_gift_locked() -> str:
-    return f"{status_emoji_html('no')} <b>Подарочные куты — только соло-игры в этой группе.</b>"
+    return (
+        f"{status_emoji_html('no')} <b>Подарочные куты можно поставить только в играх этой группы, одному.</b>\n"
+        "<blockquote><i>Снять или перевести нельзя — ими учатся играть у вас.</i></blockquote>"
+    )
 
 
 def text_term_end() -> str:
@@ -971,7 +1211,7 @@ def text_rejected(reason: str, *, can_fix: bool) -> str:
 def text_two_pending() -> str:
     return (
         f"{status_emoji_html('no')} <b>Уже 2 заявки</b>\n"
-        "<blockquote><i>Дождитесь проверки или снимите одну в «Мои заявки»</i></blockquote>"
+        "<blockquote><i>Дождитесь проверки или снимите одну в «Мои группы»</i></blockquote>"
     )
 
 
@@ -991,15 +1231,15 @@ def text_banned_31() -> str:
 
 def text_freeze_admin() -> str:
     return (
-        f"{status_emoji_html('wait')} <b>У бота нет прав администратора.</b>\n"
-        "<blockquote><b>Верните админку — подарки снова включатся</b></blockquote>"
+        f"{status_emoji_html('wait')} <b>Пауза: Кут нужна админка</b>\n"
+        "<blockquote><i>Верните Кут в администраторы — снова начнёт капать. Это поправимо за минуту.</i></blockquote>"
     )
 
 
 def text_freeze_public() -> str:
     return (
-        f"{status_emoji_html('wait')} <b>Группа больше не публичная.</b>\n"
-        "<blockquote><b>Верните @адрес — подарки снова включатся</b></blockquote>"
+        f"{status_emoji_html('wait')} <b>Пауза: группа стала закрытой</b>\n"
+        "<blockquote><i>Сделайте группу открытой с @адресом — снова начнёт капать.</i></blockquote>"
     )
 
 
@@ -1033,9 +1273,9 @@ def text_no_groups() -> str:
     return text_how()
 
 
-def text_resume_claim(title: str, status: str) -> str:
+def text_resume_claim(title: str, status: str, freeze: str | None = None) -> str:
     name = escape(title or "группа")
-    label = claim_status_label(status)
+    label = claim_status_label(status, freeze)
     return (
         f"{status_emoji_html('wait')} <b>«{name}»</b>\n"
         f"<blockquote><b>{escape(label)}</b></blockquote>"

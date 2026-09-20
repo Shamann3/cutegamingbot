@@ -27,12 +27,18 @@ def test_wired_into_bot_and_panel():
     assert "prg:undo" in core
     assert "choose_keyboard" in core
     assert "Я владелец группы" in core
-    assert "Рекомендую бот в группах" in core
+    assert "Я рекомендую бот в группах" in core
     assert "startgroup" in core
     assert "is_waiting_link" in core
     assert "photo_keyboard" in core
     assert "image_file_id" in core
     assert "pop_photo" in core
+    assert "prg:n:" in core
+    assert "card_keyboard" in core
+    assert "Сдать ещё группу" in core
+    assert "Заработки" in core
+    assert "Мои группы" in core
+    assert "Назад, в главное меню" in core
     handlers = (ROOT / "bot" / "handlers" / "pr_groups.py").read_text(encoding="utf-8")
     assert "on_undo" in handlers
     assert "looks_like_help" in handlers
@@ -44,8 +50,11 @@ def test_wired_into_bot_and_panel():
     assert "_begin_proofs" in handlers
     assert "on_cant_add" in handlers
     assert "text_choose_role" in handlers
-    assert "_open_choose" in handlers
-    assert "text_after_proofs_owner" in handlers
+    assert "_show_mine" in handlers
+    assert "_show_card" in handlers
+    assert "text_earnings" in handlers
+    assert "text_group_card" in handlers
+    assert "on_continue_claim" in handlers
     assert "text_after_proofs_reco" in handlers
     assert "text_forward_no_group" in handlers
     assert "extract_group_ref" in handlers
@@ -115,20 +124,43 @@ def test_every_pr_screen_has_back():
         pr.joined_keyboard(),
         pr.pending_keyboard(),
         pr.mine_keyboard([]),
-        pr.mine_keyboard([{"id": 1, "chat_title": "a"}]),
+        pr.mine_keyboard([{"id": 1, "chat_title": "a", "status": "pending", "role": "reco"}]),
+        pr.mine_keyboard(
+            [{"id": 1, "chat_title": "a", "status": "live", "role": "reco", "paid_kut": 12}],
+            live=True,
+        ),
+        pr.card_keyboard({"id": 1, "status": "photos", "chat_username": "x"}),
+        pr.card_keyboard({"id": 2, "status": "live"}),
         pr.resume_keyboard("pending"),
         pr.resume_keyboard("photos"),
         pr.resume_keyboard("wait_confirm"),
     ]
     for kb in screens:
         texts = _kb_texts(kb)
-        assert texts[-1] == "Назад", texts
+        assert texts[-1].startswith("Назад"), texts
     entry = pr.entry_keyboard()
+    entry_texts = _kb_texts(entry)
+    assert "Я владелец группы" in entry_texts
+    assert "Я рекомендую бот в группах" in entry_texts
+    assert "Начать" not in entry_texts
+    assert "Заработки" not in entry_texts
+    assert "Мои группы" not in entry_texts
+    pending_hub = _kb_texts(pr.entry_keyboard(mine=True))
+    assert "Мои группы" in pending_hub
+    assert "Заработки" not in pending_hub
+    live_hub = _kb_texts(pr.entry_keyboard(mine=True, live=True))
+    assert "Заработки" in live_hub
+    assert "Мои группы" not in live_hub
     assert pr.PR_TASKS in _kb_datas(entry)
     assert pr.PR_TASKS == "questions_stars"
     photo = pr.photo_keyboard(2)
     assert "Другое фото" in _kb_texts(photo)
-    assert "Назад" in _kb_texts(photo)
+    assert any(text.startswith("Назад") for text in _kb_texts(photo))
+    after = _kb_texts(pr.after_owner_keyboard())
+    assert "Мои группы" in after
+    mine = _kb_texts(pr.mine_keyboard([{"id": 1, "chat_title": "Друзья", "status": "live", "role": "reco", "paid_kut": 9}]))
+    assert "Сдать ещё группу" in mine
+    assert any("Друзья" in text for text in mine)
 
 
 def test_gift_lock_hooks_exist():

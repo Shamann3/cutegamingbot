@@ -61,6 +61,9 @@ from pr_groups_logic import (  # noqa: E402
     recommend_split,
     spendable_amount,
     weekly_seed_budget,
+    MINE_STATUSES,
+    claim_button_label,
+    moscow_day_start,
 )
 
 _GIFT_CLAW = ContextVar("pr_gift_claw", default=False)
@@ -87,11 +90,15 @@ PR_RECO = "prg:rec"
 PR_CANCEL = "prg:x"
 PR_YES = "prgY:"
 PR_NO = "prgN:"
+PR_CONT = "prg:n:"
 
 ICON_GO = "5317000922096769303"
 ICON_OK = "5339112148175959615"
 ICON_NO = "5337017423906226569"
 ICON_BACK = "5226660202035554522"
+ICON_BACK_HUB = "5348423147647414077"
+ICON_OWNER = "5442949339108366200"
+ICON_RECO = "5388583647370565067"
 
 
 def _btn(text: str, data: str, icon: str, style: str = "default") -> InlineKeyboardButton:
@@ -103,6 +110,8 @@ def _url(text: str, url: str, icon: str) -> InlineKeyboardButton:
 
 
 def _back(data: str = PR_HUB) -> InlineKeyboardButton:
+    if data == PR_HUB:
+        return _btn("Назад, в главное меню", PR_HUB, ICON_BACK_HUB, "success")
     return _btn("Назад", data, ICON_BACK)
 
 
@@ -112,17 +121,22 @@ def _markup(rows: list, back: str = PR_HUB) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=out)
 
 
-def entry_keyboard(*, mine: bool = False) -> InlineKeyboardMarkup:
-    rows = [[_btn("Начать", PR_START, ICON_GO, "success")]]
-    if mine:
-        rows.append([_btn("Мои заявки", PR_MINE, ICON_OK)])
+def entry_keyboard(*, mine: bool = False, live: bool = False) -> InlineKeyboardMarkup:
+    rows = [
+        [_btn("Я владелец группы", PR_OWNER, ICON_OWNER, "primary")],
+        [_btn("Я рекомендую бот в группах", PR_RECO, ICON_RECO, "primary")],
+    ]
+    if live:
+        rows.append([_btn("Заработки", PR_MINE, ICON_OK, "success")])
+    elif mine:
+        rows.append([_btn("Мои группы", PR_MINE, ICON_OK)])
     return _markup(rows, back=PR_TASKS)
 
 
 def choose_keyboard() -> InlineKeyboardMarkup:
     return _markup([
-        [_btn("Я владелец группы", PR_OWNER, "5442949339108366200", "default")],
-        [_btn("Рекомендую бот в группах", PR_RECO, "5388583647370565067")],
+        [_btn("Я владелец группы", PR_OWNER, ICON_OWNER, "default")],
+        [_btn("Я рекомендую бот в группах", PR_RECO, ICON_RECO)],
     ], back=PR_HUB)
 
 
@@ -144,7 +158,7 @@ def how_keyboard(
         help_row.append(_btn("Не админ", PR_ADMIN, ICON_OK))
     if help_row:
         rows.append(help_row)
-    return _markup(rows, back=PR_BACK)
+    return _markup(rows, back=PR_HUB)
 
 
 def how_public_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
@@ -167,7 +181,7 @@ def add_group_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "")
     rows = [[_url("Добавить Кут", startgroup_url(bot_username), ICON_GO)]]
     if intent == ROLE_RECO:
         rows.append([_btn("Не могу добавить", PR_CANT, ICON_OK)])
-    return _markup(rows, back=PR_BACK)
+    return _markup(rows, back=PR_HUB)
 
 
 def cant_add_keyboard(bot_username: str = "CuteGamingBot") -> InlineKeyboardMarkup:
@@ -179,15 +193,15 @@ def cant_add_keyboard(bot_username: str = "CuteGamingBot") -> InlineKeyboardMark
 
 def switch_to_reco_keyboard() -> InlineKeyboardMarkup:
     return _markup(
-        [[_btn("Рекомендую бот в группах", PR_RECO, ICON_GO, "success")]],
-        back=PR_BACK,
+        [[_btn("Я рекомендую бот в группах", PR_RECO, ICON_GO, "success")]],
+        back=PR_HUB,
     )
 
 
 def switch_to_owner_keyboard() -> InlineKeyboardMarkup:
     return _markup(
-        [[_btn("Я владелец группы", PR_OWNER, "5442949339108366200", "default")]],
-        back=PR_BACK,
+        [[_btn("Я владелец группы", PR_OWNER, ICON_OWNER, "default")]],
+        back=PR_HUB,
     )
 
 
@@ -195,7 +209,7 @@ def role_keyboard() -> InlineKeyboardMarkup:
     return _markup([
         [_btn("Это моя группа", PR_OWNER, ICON_OK, "primary")],
         [_btn("Я рекомендую Кут в группах", PR_RECO, ICON_GO)],
-    ], back=PR_BACK)
+    ], back=PR_HUB)
 
 
 def groups_keyboard(rows: list[dict[str, Any]]) -> InlineKeyboardMarkup:
@@ -203,7 +217,7 @@ def groups_keyboard(rows: list[dict[str, Any]]) -> InlineKeyboardMarkup:
     for row in rows:
         title = (row.get("title") or str(row.get("chat_id")))[:32]
         kb.append([_btn(title, f"{PR_PICK}{row['chat_id']}", ICON_GO)])
-    return _markup(kb, back=PR_BACK)
+    return _markup(kb, back=PR_HUB)
 
 
 def cancel_keyboard() -> InlineKeyboardMarkup:
@@ -215,7 +229,7 @@ def photo_keyboard(have: int = 0) -> InlineKeyboardMarkup:
     if have > 0:
         rows.append([_btn("Другое фото", PR_UNDO, ICON_BACK)])
     rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
-    return _markup(rows, back=PR_BACK)
+    return _markup(rows, back=PR_HUB)
 
 
 def hub_only_keyboard() -> InlineKeyboardMarkup:
@@ -224,14 +238,14 @@ def hub_only_keyboard() -> InlineKeyboardMarkup:
 
 def after_cancel_keyboard() -> InlineKeyboardMarkup:
     return _markup(
-        [[_btn("Начать", PR_START, ICON_GO, "success")]],
+        [[_btn("Сдать ещё группу", PR_HUB, ICON_GO, "success")]],
         back=PR_HUB,
     )
 
 
 def after_owner_keyboard() -> InlineKeyboardMarkup:
     return _markup(
-        [[_btn("Мои заявки", PR_MINE, ICON_OK)]],
+        [[_btn("Мои группы", PR_MINE, ICON_OK, "success")]],
         back=PR_HUB,
     )
 
@@ -242,34 +256,54 @@ def after_reco_keyboard(username: str = "") -> InlineKeyboardMarkup:
     if uname:
         rows.append([_url("Открыть группу", f"https://t.me/{uname}", ICON_GO)])
     rows.append([_btn("Я написал", PR_WROTE, ICON_OK, "success")])
+    rows.append([_btn("Мои группы", PR_MINE, ICON_OK)])
     rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
     return _markup(rows, back=PR_HUB)
 
 
 def joined_keyboard() -> InlineKeyboardMarkup:
     return _markup(
-        [[_btn("Начать", PR_START, ICON_GO, "success")]],
+        [
+            [_btn("Я владелец группы", PR_OWNER, ICON_OWNER, "primary")],
+            [_btn("Я рекомендую бот в группах", PR_RECO, ICON_RECO)],
+        ],
         back=PR_HUB,
     )
 
 
 def pending_keyboard() -> InlineKeyboardMarkup:
     return _markup(
-        [[_btn("Мои заявки", PR_MINE, ICON_OK, "success")]],
+        [[_btn("Мои группы", PR_MINE, ICON_OK, "success")]],
         back=PR_HUB,
     )
 
 
-def mine_keyboard(rows: list[dict[str, Any]]) -> InlineKeyboardMarkup:
+def mine_keyboard(rows: list[dict[str, Any]] | None = None, *, live: bool = False) -> InlineKeyboardMarkup:
     kb = []
-    for row in rows[:6]:
-        title = str(row.get("chat_title") or row.get("title") or row.get("id"))[:28]
-        kb.append([_btn(title, f"{PR_OPEN}{row['id']}", ICON_GO)])
-    if rows:
-        kb.append([_btn("Начать ещё", PR_START, ICON_GO)])
-    else:
-        kb.append([_btn("Начать", PR_START, ICON_GO, "success")])
+    for row in list(rows or [])[:12]:
+        label = claim_button_label(row)
+        kb.append([_btn(label, f"{PR_OPEN}{row['id']}", ICON_GO)])
+    kb.append([_btn("Сдать ещё группу", PR_HUB, ICON_GO, "success" if live else "default")])
     return _markup(kb, back=PR_HUB)
+
+
+def card_keyboard(claim: dict[str, Any] | None = None) -> InlineKeyboardMarkup:
+    data = claim or {}
+    rows: list[list[InlineKeyboardButton]] = []
+    uname = str(data.get("chat_username") or "").strip().lstrip("@")
+    if uname:
+        rows.append([_url("Открыть группу", f"https://t.me/{uname}", ICON_GO)])
+    status = str(data.get("status") or "")
+    cid = int(data.get("id") or 0)
+    if status == ST_PHOTOS and cid:
+        rows.append([_btn("Продолжить фото", f"{PR_CONT}{cid}", ICON_GO, "success")])
+        rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
+    elif status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
+        rows.append([_btn("Я написал", PR_WROTE, ICON_OK, "success")])
+        rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
+    elif status == ST_PENDING:
+        rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
+    return _markup(rows, back=PR_MINE)
 
 
 def resume_keyboard(status: str) -> InlineKeyboardMarkup:
@@ -279,7 +313,7 @@ def resume_keyboard(status: str) -> InlineKeyboardMarkup:
     elif status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
         rows.append([_btn("Я написал", PR_WROTE, ICON_OK)])
         rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
-    rows.append([_btn("Мои заявки", PR_MINE, ICON_OK)])
+    rows.append([_btn("Мои группы", PR_MINE, ICON_OK)])
     return _markup(rows, back=PR_HUB)
 
 
@@ -439,6 +473,19 @@ async def ensure_schema() -> None:
         )
         """
     )
+    await p.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pr_payouts (
+            id BIGSERIAL PRIMARY KEY,
+            claim_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            amount INTEGER NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    await p.execute("CREATE INDEX IF NOT EXISTS pr_payouts_user_idx ON pr_payouts (user_id, created_at DESC)")
+    await p.execute("CREATE INDEX IF NOT EXISTS pr_payouts_claim_idx ON pr_payouts (claim_id, created_at DESC)")
 
 
 def _row(row) -> Optional[dict[str, Any]]:
@@ -1213,6 +1260,7 @@ async def flush_digest(bot, claim: dict[str, Any]) -> None:
     if pay > 0:
         if await _take_from_ladder(pay, bot=bot):
             await _give_to_user(int(claim["user_id"]), pay, "пиар в группах")
+            await record_payout(int(claim["id"]), int(claim["user_id"]), pay)
             await save_claim(
                 int(claim["id"]),
                 paid_kut=int(claim.get("paid_kut") or 0) + pay,
@@ -1234,6 +1282,7 @@ async def flush_digest(bot, claim: dict[str, Any]) -> None:
                 commission=int(claim.get("commission_seen") or 0),
                 paid=pay,
                 days_left=left,
+                title=str(claim.get("chat_title") or ""),
             ),
             parse_mode="HTML",
             disable_web_page_preview=True,
@@ -1345,11 +1394,128 @@ async def list_user_claims(user_id: int) -> list[dict[str, Any]]:
         """
         SELECT * FROM pr_claims
          WHERE user_id = $1 AND status = ANY($2::text[])
-         ORDER BY updated_at DESC
+         ORDER BY
+           CASE WHEN status = ANY($3::text[]) THEN 0 ELSE 1 END,
+           updated_at DESC
+         LIMIT 20
         """,
-        int(user_id), list(IN_PROGRESS_STATUSES),
+        int(user_id), list(MINE_STATUSES), list(IN_PROGRESS_STATUSES),
     )
-    return [_row(r) for r in rows]
+    items = [_row(r) for r in rows]
+    return await _decorate_claims(int(user_id), items)
+
+
+async def _decorate_claims(user_id: int, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ids = [int(row["id"]) for row in items if row and row.get("id")]
+    if not ids:
+        return items
+    p = await pool()
+    gifts = {
+        int(r["claim_id"]): int(r["n"] or 0)
+        for r in await p.fetch(
+            "SELECT claim_id, COUNT(*) AS n FROM pr_gifts WHERE claim_id = ANY($1::bigint[]) AND amount > 0 GROUP BY claim_id",
+            ids,
+        )
+        if r["claim_id"] is not None
+    }
+    since = moscow_day_start()
+    today = {
+        int(r["claim_id"]): int(r["n"] or 0)
+        for r in await p.fetch(
+            """
+            SELECT claim_id, COALESCE(SUM(amount), 0) AS n
+              FROM pr_payouts
+             WHERE user_id = $1 AND created_at >= $2 AND claim_id = ANY($3::bigint[])
+             GROUP BY claim_id
+            """,
+            int(user_id), since, ids,
+        )
+        if r["claim_id"] is not None
+    }
+    for row in items:
+        cid = int(row.get("id") or 0)
+        row["gifts"] = gifts.get(cid, 0)
+        row["today_kut"] = today.get(cid, 0)
+    return items
+
+
+async def user_paid_total(user_id: int) -> int:
+    p = await pool()
+    return _as_int(await p.fetchval(
+        "SELECT COALESCE(SUM(paid_kut), 0) FROM pr_claims WHERE user_id = $1",
+        int(user_id),
+    ))
+
+
+async def payouts_today(user_id: int, claim_id: int | None = None) -> int:
+    p = await pool()
+    since = moscow_day_start()
+    if claim_id:
+        return _as_int(await p.fetchval(
+            """
+            SELECT COALESCE(SUM(amount), 0) FROM pr_payouts
+             WHERE user_id = $1 AND claim_id = $2 AND created_at >= $3
+            """,
+            int(user_id), int(claim_id), since,
+        ))
+    return _as_int(await p.fetchval(
+        "SELECT COALESCE(SUM(amount), 0) FROM pr_payouts WHERE user_id = $1 AND created_at >= $2",
+        int(user_id), since,
+    ))
+
+
+async def record_payout(claim_id: int, user_id: int, amount: int) -> None:
+    n = int(amount or 0)
+    if n <= 0:
+        return
+    p = await pool()
+    await p.execute(
+        "INSERT INTO pr_payouts (claim_id, user_id, amount) VALUES ($1, $2, $3)",
+        int(claim_id), int(user_id), n,
+    )
+
+
+async def gift_count(claim_id: int) -> int:
+    p = await pool()
+    return _as_int(await p.fetchval(
+        "SELECT COUNT(*) FROM pr_gifts WHERE claim_id = $1 AND amount > 0",
+        int(claim_id),
+    ))
+
+
+async def newcomer_count(claim_id: int) -> int:
+    p = await pool()
+    return _as_int(await p.fetchval(
+        "SELECT COUNT(*) FROM pr_player_bind WHERE claim_id = $1",
+        int(claim_id),
+    ))
+
+
+async def chat_balance_of(chat_id: int) -> int:
+    from main import db
+    try:
+        return _as_int(await db.pool.fetchval(
+            "SELECT COALESCE(chatbalance, 0) FROM chat WHERE chat_id = $1",
+            int(chat_id),
+        ))
+    except Exception:
+        return 0
+
+
+async def claim_card_stats(claim: dict[str, Any]) -> dict[str, Any]:
+    cid = int(claim.get("id") or 0)
+    uid = int(claim.get("user_id") or 0)
+    chat_id = int(claim.get("chat_id") or 0)
+    today = await payouts_today(uid, cid) if uid and cid else 0
+    newcomers = await newcomer_count(cid) if cid else 0
+    gifts = await gift_count(cid) if cid else 0
+    balance = await chat_balance_of(chat_id) if chat_id else 0
+    return {
+        "today": today,
+        "newcomers": newcomers,
+        "gifts": gifts,
+        "chat_balance": balance,
+    }
 
 
 async def list_queue() -> list[dict[str, Any]]:
@@ -1402,7 +1568,13 @@ async def drain_notices(bot) -> None:
         payload = row["payload"] if isinstance(row["payload"], dict) else json.loads(row["payload"] or "{}")
         try:
             if kind == "accepted":
-                await bot.send_message(int(row["user_id"]), text_accepted(int(payload.get("termDays") or 14)), parse_mode="HTML", disable_web_page_preview=True)
+                await bot.send_message(
+                    int(row["user_id"]),
+                    text_accepted(int(payload.get("termDays") or 14), role=str(payload.get("role") or "")),
+                    reply_markup=after_owner_keyboard(),
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
             elif kind == "rejected":
                 await bot.send_message(int(row["user_id"]), text_rejected(str(payload.get("text") or ""), can_fix=bool(payload.get("canFix"))), parse_mode="HTML", disable_web_page_preview=True)
             elif kind == "photos_expired":
@@ -1425,7 +1597,10 @@ async def housekeep(bot) -> None:
         try:
             done = await fulfill_accept(int(row["id"]), bot=bot)
             if done and done.get("status") == ST_LIVE:
-                await push_notice(int(done["user_id"]), "accepted", {"termDays": done.get("term_days")})
+                await push_notice(int(done["user_id"]), "accepted", {
+                    "termDays": done.get("term_days"),
+                    "role": done.get("role"),
+                })
         except Exception:
             log.exception("fulfill accept")
     await drain_notices(bot)
