@@ -51,6 +51,8 @@ def test_entry_is_short_and_honest():
     assert "35%" in html
     assert "комиссии" in html
     assert "14 дней" in html
+    assert "проект" in html
+    assert "подар" in html
     assert "1." not in html
     assert "Начать" not in html
 
@@ -58,12 +60,16 @@ def test_entry_is_short_and_honest():
 def test_how_tells_what_to_do_next():
     owner = text_how(intent="owner")
     assert "Сдать свою группу" in owner
+    assert "проект" in owner
+    assert "подар" in owner
     assert "@группа" in owner
     assert "t.me" in owner
     assert "пересл" not in owner.lower()
     assert "Шаг 1 из 4" in owner
     reco = text_how(intent="reco")
     assert "чужой" in reco
+    assert "проект" in reco
+    assert "подар" in reco
     assert "@CuteGamingBot" in reco
     assert "пересл" not in reco.lower()
     assert "Шаг 1 из 5" in reco
@@ -121,6 +127,8 @@ def test_reco_bridge_does_not_pretend_they_are_owner():
     owner = text_after_proofs_owner()
     assert "Доказательства приняты" in owner
     assert "только у вас" in owner
+    assert "проект" in owner
+    assert "подар" in owner
     assert "проверку" in owner
     assert "этот чат" in owner or "сюда" in owner
     assert "стол" not in owner.lower()
@@ -130,6 +138,8 @@ def test_reco_bridge_does_not_pretend_they_are_owner():
     reco = text_after_proofs_reco()
     assert "Доказательства приняты" in reco
     assert "14 дней" in reco
+    assert "проект" in reco
+    assert "подар" in reco
     assert "сюда" in reco
     assert "комисси" not in reco.lower()
     assert "Шаг 5 из 5" in reco
@@ -344,9 +354,13 @@ def test_earnings_screen_and_card_are_plain():
     assert "комисси" not in accepted.lower()
     assert "14 дней" in accepted
     assert "капают сами" in accepted
+    assert "проект" in accepted
+    assert "подар" in accepted
     assert "Мои группы" in accepted
     own_ok = text_accepted(14, role="owner")
     assert "капают сами" in own_ok
+    assert "проект" in own_ok
+    assert "подар" in own_ok
     assert "Мои группы" in own_ok
     start = moscow_day_start(datetime(2026, 9, 20, 22, 0, tzinfo=timezone.utc))
     assert start.tzinfo is not None
