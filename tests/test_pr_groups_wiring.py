@@ -10,7 +10,7 @@ def test_wired_into_bot_and_panel():
     assert "_pr_wait_photo_filter" in main
     assert "_pr_wait_link_filter" in main
     assert "looks_like_confirm" in main
-    assert "Пиар в группах" in main
+    assert "TASKS_MENU" in main
 
     access = (ROOT / "server" / "panel_access.py").read_text(encoding="utf-8")
     assert "prGroups" in access
@@ -30,6 +30,14 @@ def test_wired_into_bot_and_panel():
     assert "keyboard_for" in core
     assert "Я владелец группы" in design
     assert "Я рекомендую бот в группах" in design
+    assert 'text="Я владелец группы"' in design
+    assert 'text="""Я владелец группы"""' not in design
+    assert "Пиар в группах" in design
+    assert "HELP_TASKS" in design
+    assert "TASKS_MENU" in design
+    assert "WORDS" in design
+    help_src = (ROOT / "bot" / "funcs" / "help.py").read_text(encoding="utf-8")
+    assert "pr_groups_help" in help_src
     assert "startgroup" in core
     assert "is_waiting_link" in core
     assert "photo_keyboard" in core
@@ -136,6 +144,26 @@ def test_every_pr_screen_has_back():
         pr.resume_keyboard("pending"),
         pr.resume_keyboard("photos"),
         pr.resume_keyboard("wait_confirm"),
+        pr.need_link_keyboard(),
+        pr.forward_no_group_keyboard(),
+        pr.link_invite_keyboard(),
+        pr.group_not_found_keyboard(),
+        pr.not_in_group_keyboard(),
+        pr.not_a_group_keyboard(),
+        pr.need_public_keyboard(),
+        pr.need_admin_keyboard(intent=pr.ROLE_RECO),
+        pr.need_photo_keyboard(2),
+        pr.photos_expired_keyboard(),
+        pr.two_live_keyboard(),
+        pr.banned_keyboard(),
+        pr.busy_keyboard(),
+        pr.wrote_keyboard(""),
+        pr.confirm_no_second_keyboard(),
+        pr.owner_no_confirm_keyboard(),
+        pr.accepted_keyboard(),
+        pr.rejected_keyboard(),
+        pr.rejected_keyboard(can_fix=True),
+        pr.confirm_timeout_keyboard(),
     ]
     for kb in screens:
         texts = _kb_texts(kb)
@@ -205,6 +233,31 @@ def test_each_pr_keyboard_has_unique_premium_icons():
         pr.resume_keyboard("photos"),
         pr.resume_keyboard("wait_confirm"),
         pr.confirm_keyboard(9, 1),
+        pr.need_link_keyboard(),
+        pr.forward_no_group_keyboard(intent=pr.ROLE_RECO),
+        pr.link_invite_keyboard(),
+        pr.group_not_found_keyboard(),
+        pr.not_in_group_keyboard(),
+        pr.not_a_group_keyboard(),
+        pr.need_public_keyboard(),
+        pr.need_admin_keyboard(intent=pr.ROLE_RECO),
+        pr.need_photo_keyboard(0),
+        pr.need_photo_keyboard(2),
+        pr.photos_expired_keyboard(),
+        pr.two_live_keyboard(),
+        pr.banned_keyboard(),
+        pr.busy_keyboard(),
+        pr.busy_keyboard(owner=True),
+        pr.wrote_keyboard("x"),
+        pr.confirm_no_first_keyboard("x"),
+        pr.confirm_no_second_keyboard(),
+        pr.need_photos_first_keyboard(1),
+        pr.owner_no_confirm_keyboard(),
+        pr.accepted_keyboard(),
+        pr.accepted_keyboard(owner=True),
+        pr.rejected_keyboard(),
+        pr.rejected_keyboard(can_fix=True),
+        pr.confirm_timeout_keyboard(),
     ]
     for kb in screens:
         ids = pr.keyboard_icon_ids(kb)

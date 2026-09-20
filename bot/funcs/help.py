@@ -14,6 +14,13 @@ from bot.design.buttons import *
 from bot.funcs.help_guard import help_callback_allowed
 from main import dp,button_user_message_help,user_message_help,user_message_helpgame,user_message_brak,user_message_store,user_message_textglobhelp,user_message_gamehelp,user_message_ffunc
 
+import sys
+from pathlib import Path
+_SERVER = Path(__file__).resolve().parents[2] / "server"
+if str(_SERVER) not in sys.path:
+    sys.path.insert(0, str(_SERVER))
+from pr_groups_design import HELP_TASKS as pr_groups_help
+
 
 text_admin_help = f'''
 <tg-emoji emoji-id='5352668069984510307'>🛡</tg-emoji> <b>Модерация · полная справка</b>
@@ -161,9 +168,7 @@ textzabhelp = f'''
 <i>Откройте Задания, нажмите Тик ток и выберите комментарии или видео. Бот покажет, что делать по шагам.</i>
 <blockquote><code>Задания</code></blockquote>
 
-<tg-emoji emoji-id='5424616516018537963'>🎁</tg-emoji> <b>Пиар в группах</b>
-<blockquote><b><i>Задания → Пиар в группах → кто вы. Потом ссылка, доказательства, проверка. Решение придёт в этот чат.</i></b></blockquote>
-<blockquote><code>Задания</code></blockquote>
+{pr_groups_help}
 
 <tg-emoji emoji-id='5438449626426410465'>🎁</tg-emoji> <b>Промокоды</b>
 <i>Активируйте промокоды и получайте куты</i>

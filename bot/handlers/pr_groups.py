@@ -294,14 +294,14 @@ async def _show_how(target, uid: int, scan: dict | None = None) -> None:
         extra["chat_id"] = group.get("chat_id")
         extra["title"] = group.get("title") or ""
         await pr.set_session(uid, claim_id=None, mode="how_public", extra=extra)
-        await _edit(target, text_need_public(group.get("title") or ""), pr.how_public_keyboard(uname, intent=intent))
+        await _edit(target, text_need_public(group.get("title") or ""), pr.need_public_keyboard(uname, intent=intent))
         return
     if not scan["ready"] and len(scan["no_admin"]) == 1 and not scan["no_public"]:
         group = scan["no_admin"][0]
         extra["chat_id"] = group.get("chat_id")
         extra["title"] = group.get("title") or ""
         await pr.set_session(uid, claim_id=None, mode="how_admin", extra=extra)
-        await _edit(target, text_need_admin(group.get("title") or "", intent=intent), pr.how_admin_keyboard(uname, intent=intent))
+        await _edit(target, text_need_admin(group.get("title") or "", intent=intent), pr.need_admin_keyboard(uname, intent=intent))
         return
     extra.pop("chat_id", None)
     await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
@@ -346,7 +346,7 @@ async def _try_advance(target, uid: int) -> None:
         await _edit(target, text_two_pending(), pr.pending_keyboard())
         return
     if await pr.count_status(uid, {ST_LIVE}) >= MAX_LIVE_SEEDS:
-        await _edit(target, text_two_live(), pr.pending_keyboard())
+        await _edit(target, text_two_live(), pr.two_live_keyboard())
         return
     session = await pr.get_session(uid) or {}
     extra = dict(session.get("extra") or {})
@@ -397,7 +397,7 @@ async def on_start(cb: CallbackQuery) -> None:
 @router.callback_query(F.data == pr.PR_CHECK)
 async def on_check(cb: CallbackQuery) -> None:
     try:
-        await cb.answer("Смотрю группы…")
+        await cb.answer(pr.say("toast_check"))
     except Exception:
         pass
     await _try_advance(cb, int(cb.from_user.id))
@@ -518,7 +518,7 @@ async def on_wrote(cb: CallbackQuery) -> None:
         pass
     session = await pr.get_session(int(cb.from_user.id)) or {}
     username = str((session.get("extra") or {}).get("username") or "")
-    await _edit(cb, text_wrote_confirm(), pr.after_reco_keyboard(username))
+    await _edit(cb, text_wrote_confirm(), pr.wrote_keyboard(username))
 
 
 @router.callback_query(F.data == pr.PR_BACK)
@@ -582,24 +582,24 @@ async def _begin_proofs(target, uid: int, info: dict) -> None:
         return
     if not info.get("public"):
         await pr.set_session(uid, claim_id=None, mode="how_public", extra=extra)
-        await _edit(target, text_need_public(title), pr.how_public_keyboard(uname, intent=intent))
+        await _edit(target, text_need_public(title), pr.need_public_keyboard(uname, intent=intent))
         return
     if not info.get("bot_admin"):
         await pr.set_session(uid, claim_id=None, mode="how_admin", extra=extra)
-        await _edit(target, text_need_admin(title, intent=intent), pr.how_admin_keyboard(uname, intent=intent))
+        await _edit(target, text_need_admin(title, intent=intent), pr.need_admin_keyboard(uname, intent=intent))
         return
     bot = await _bot()
     if not await _user_in_group(bot, int(info["chat_id"]), uid):
         await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
-        await _edit(target, text_not_in_group(title), pr.add_group_keyboard(uname, intent=intent))
+        await _edit(target, text_not_in_group(title), pr.not_in_group_keyboard(uname, intent=intent))
         return
     if await pr.user_banned(uid, int(info["chat_id"])):
-        await _edit(target, text_banned_31(), pr.hub_only_keyboard())
+        await _edit(target, text_banned_31(), pr.banned_keyboard())
         return
     busy = await pr.group_busy(int(info["chat_id"]), except_user=uid)
     if busy:
         owner_took = int(busy.get("user_id") or 0) == int(info.get("creator_id") or -1)
-        await _edit(target, text_group_busy(owner=owner_took), pr.hub_only_keyboard())
+        await _edit(target, text_group_busy(owner=owner_took), pr.busy_keyboard(owner=owner_took))
         return
     creator_id = int(info.get("creator_id") or extra.get("creator_id") or 0)
     extra["creator_id"] = creator_id or extra.get("creator_id")
@@ -654,24 +654,24 @@ async def _begin_proofs_dm(uid: int, info: dict) -> None:
         return
     if not info.get("public"):
         await pr.set_session(uid, claim_id=None, mode="how_public", extra=extra)
-        await _send(text_need_public(title), pr.how_public_keyboard(uname, intent=intent))
+        await _send(text_need_public(title), pr.need_public_keyboard(uname, intent=intent))
         return
     if not info.get("bot_admin"):
         await pr.set_session(uid, claim_id=None, mode="how_admin", extra=extra)
-        await _send(text_need_admin(title, intent=intent), pr.how_admin_keyboard(uname, intent=intent))
+        await _send(text_need_admin(title, intent=intent), pr.need_admin_keyboard(uname, intent=intent))
         return
     bot_api = await _bot()
     if not await _user_in_group(bot_api, int(info["chat_id"]), uid):
         await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
-        await _send(text_not_in_group(title), pr.add_group_keyboard(uname, intent=intent))
+        await _send(text_not_in_group(title), pr.not_in_group_keyboard(uname, intent=intent))
         return
     if await pr.user_banned(uid, int(info["chat_id"])):
-        await _send(text_banned_31(), pr.hub_only_keyboard())
+        await _send(text_banned_31(), pr.banned_keyboard())
         return
     busy = await pr.group_busy(int(info["chat_id"]), except_user=uid)
     if busy:
         owner_took = int(busy.get("user_id") or 0) == int(info.get("creator_id") or -1)
-        await _send(text_group_busy(owner=owner_took), pr.hub_only_keyboard())
+        await _send(text_group_busy(owner=owner_took), pr.busy_keyboard(owner=owner_took))
         return
     creator_id = int(info.get("creator_id") or 0)
     extra["creator_id"] = creator_id
@@ -734,21 +734,21 @@ async def _resolve_group_and_begin(target, uid: int, *, chat_id: int | None = No
             if str(getattr(chat, "type", "") or "") not in {
                 ChatType.GROUP, ChatType.SUPERGROUP, "group", "supergroup",
             }:
-                await _edit(target, text_not_a_group(), pr.add_group_keyboard(uname, intent=intent))
+                await _edit(target, text_not_a_group(), pr.not_a_group_keyboard(uname, intent=intent))
                 return
             info = await _info_from_chat_id(int(chat.id), uid)
         elif chat_id_from_ref(ref) is not None:
             info = await _info_from_chat_id(int(chat_id_from_ref(ref)), uid)
         else:
-            await _edit(target, text_need_link(), pr.how_keyboard(bot_username=uname, intent=intent))
+            await _edit(target, text_need_link(), pr.need_link_keyboard(uname, intent=intent))
             return
     except Exception:
-        await _edit(target, text_group_not_found(), pr.add_group_keyboard(uname, intent=intent))
+        await _edit(target, text_group_not_found(), pr.group_not_found_keyboard(uname, intent=intent))
         return
     if str(info.get("type") or "") not in {
         ChatType.GROUP, ChatType.SUPERGROUP, "group", "supergroup",
     }:
-        await _edit(target, text_not_a_group(), pr.add_group_keyboard(uname, intent=intent))
+        await _edit(target, text_not_a_group(), pr.not_a_group_keyboard(uname, intent=intent))
         return
     await _begin_proofs(target, uid, info)
 
@@ -769,7 +769,7 @@ async def on_wait_link(message: Message) -> None:
     if _is_forwarded(message):
         await message.answer(
             text_forward_no_group(),
-            reply_markup=pr.how_keyboard(bot_username=uname, intent=intent),
+            reply_markup=pr.forward_no_group_keyboard(uname, intent=intent),
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
@@ -778,7 +778,7 @@ async def on_wait_link(message: Message) -> None:
     if ref is None:
         await message.answer(
             text_need_link(),
-            reply_markup=pr.how_keyboard(bot_username=uname, intent=intent),
+            reply_markup=pr.need_link_keyboard(uname, intent=intent),
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
@@ -786,7 +786,7 @@ async def on_wait_link(message: Message) -> None:
     if ref["kind"] == "invite":
         await message.answer(
             text_link_invite(),
-            reply_markup=pr.how_public_keyboard(uname, intent=intent),
+            reply_markup=pr.link_invite_keyboard(uname, intent=intent),
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
@@ -939,7 +939,7 @@ async def on_wait_photo(message: Message) -> None:
     claim = await pr.claim_by_id(int(session["claim_id"]))
     if not claim or claim["status"] != ST_PHOTOS:
         if claim and claim["status"] == ST_EXPIRED:
-            await message.answer(text_photos_expired(), reply_markup=pr.after_cancel_keyboard(), parse_mode="HTML")
+            await message.answer(text_photos_expired(), reply_markup=pr.photos_expired_keyboard(), parse_mode="HTML")
             await pr.clear_session(uid)
         return
     have = len(claim.get("photos") or [])
@@ -953,7 +953,7 @@ async def on_wait_photo(message: Message) -> None:
     file_id = pr.image_file_id(message)
     if not file_id:
         kind = pr.photo_noise_kind(message)
-        await message.answer(text_need_photo(kind), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
+        await message.answer(text_need_photo(kind), reply_markup=pr.need_photo_keyboard(have), parse_mode="HTML")
         return
     async with _photo_lock(uid):
         claim = await pr.claim_by_id(int(session["claim_id"]))
@@ -970,7 +970,7 @@ async def on_wait_photo(message: Message) -> None:
         extra["n"] = have
         await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
         if have == before:
-            await message.answer(text_need_photo("dup"), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
+            await message.answer(text_need_photo("dup"), reply_markup=pr.need_photo_keyboard(have), parse_mode="HTML")
             return
         if have < PHOTOS_REQUIRED:
             await message.answer(text_wait_photo(have, have), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
@@ -995,16 +995,16 @@ async def on_confirm_command(message: Message) -> None:
         return
     if claim["role"] != ROLE_RECO:
         if claim["status"] in {ST_PENDING, ST_PHOTOS, ST_LIVE}:
-            await message.reply(text_owner_no_confirm(), parse_mode="HTML")
+            await message.reply(text_owner_no_confirm(), reply_markup=pr.owner_no_confirm_keyboard(), parse_mode="HTML")
         return
     if claim["status"] == ST_PHOTOS:
-        await message.reply(text_need_photos_first(), parse_mode="HTML")
+        await message.reply(text_need_photos_first(), reply_markup=pr.need_photos_first_keyboard(), parse_mode="HTML")
         return
     if claim["status"] not in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
         return
     token = int(claim.get("confirm_token") or 0) + 1
     sent = await message.reply(
-        text_confirm_prompt(uid, message.from_user.first_name or "игрок"),
+        text_confirm_prompt(uid, message.from_user.first_name or pr.say("player")),
         reply_markup=pr.confirm_keyboard(int(claim["id"]), token),
         parse_mode="HTML",
         disable_web_page_preview=True,
@@ -1103,7 +1103,7 @@ async def on_confirm_click(cb: CallbackQuery) -> None:
             await bot.send_message(
                 int(claim["user_id"]),
                 text_after_proofs_reco(),
-                reply_markup=pr.after_owner_keyboard(),
+                reply_markup=pr.keyboard_for("after_proofs_reco", mine=True),
                 parse_mode="HTML",
             )
         except Exception:
@@ -1129,7 +1129,7 @@ async def on_confirm_click(cb: CallbackQuery) -> None:
             await bot.send_message(
                 int(claim["user_id"]),
                 text_confirm_no_first(),
-                reply_markup=pr.after_reco_keyboard(claim.get("chat_username") or ""),
+                reply_markup=pr.confirm_no_first_keyboard(claim.get("chat_username") or ""),
                 parse_mode="HTML",
             )
         except Exception:
@@ -1149,7 +1149,7 @@ async def on_confirm_click(cb: CallbackQuery) -> None:
             await bot.send_message(
                 int(claim["user_id"]),
                 text_confirm_no_second(),
-                reply_markup=pr.hub_only_keyboard(),
+                reply_markup=pr.confirm_no_second_keyboard(),
                 parse_mode="HTML",
             )
         except Exception:
@@ -1303,7 +1303,7 @@ async def notify_accepted(user_id: int, term_days: int, *, role: str = "") -> No
         await bot.send_message(
             int(user_id),
             text_accepted(term_days, role=role),
-            reply_markup=pr.after_owner_keyboard(),
+            reply_markup=pr.accepted_keyboard(owner=role == ROLE_OWNER),
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
@@ -1311,10 +1311,16 @@ async def notify_accepted(user_id: int, term_days: int, *, role: str = "") -> No
         pass
 
 
-async def notify_rejected(user_id: int, html: str) -> None:
+async def notify_rejected(user_id: int, html: str, *, can_fix: bool = False) -> None:
     bot = await _bot()
     try:
-        await bot.send_message(int(user_id), html, parse_mode="HTML", disable_web_page_preview=True)
+        await bot.send_message(
+            int(user_id),
+            html,
+            reply_markup=pr.rejected_keyboard(can_fix=can_fix),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
     except Exception:
         pass
 

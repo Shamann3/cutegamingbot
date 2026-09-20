@@ -23,15 +23,31 @@ from pr_groups_design import (
     EMOJI_PUBLIC,
     EMOJI_RECO,
     GIFT_EMOJI,
+    HELP_TASKS,
+    HELP_WORDS,
+    IDLE_HINT,
+    IDLE_LABEL,
     LINK_HINT as LINK_HINT_HTML,
     NEED_PHOTO,
     PALETTE,
+    PAUSE,
+    PAUSE_HINT,
+    PAUSE_SHORT,
+    PHOTO_HINTS,
     PHOTO_STEPS,
+    REJECT_REASONS,
     SCREENS,
+    STATUS,
     STATUS_EMOJI_NO,
     STATUS_EMOJI_OK,
     STATUS_EMOJI_WAIT,
+    STATUS_SHORT,
+    TASKS_MENU,
+    WORDS,
+    CONFIRM_WORDS,
     emoji_html as design_emoji_html,
+    name_or,
+    say,
 )
 
 try:
@@ -132,18 +148,7 @@ CLAIM_COLUMNS: tuple[tuple[str, str], ...] = (
     ("joined_at", "TIMESTAMPTZ"),
 )
 
-CONFIRM_WORDS = frozenset({
-    "подтверждение", "подтвердить", "подтверди", "confirm", "confirmation",
-})
-
-PHOTO_HINTS = (
-    "список админов",
-    "сообщение от Кут",
-    "создатель группы",
-)
-
 # Кадры доказательств: тексты в pr_groups_design.PHOTO_STEPS.
-HELP_WORDS = frozenset({"хелп", "help", "помощь", "?"})
 LINK_MODES = frozenset({"how", "how_public", "how_admin", "wait_link"})
 BOT_USERNAME = "CuteGamingBot"
 STARTGROUP_RIGHTS = "delete_messages+restrict_members+pin_messages+invite_users"
@@ -313,17 +318,7 @@ def chat_id_from_ref(ref: dict[str, Any] | None) -> int | None:
 def looks_like_group_ref(text: str | None) -> bool:
     return parse_group_ref(text) is not None
 
-DEFAULT_REJECT_REASONS: list[dict[str, str]] = [
-    {"id": "already_was", "label": "Уже был Кут"},
-    {"id": "not_admin", "label": "Бот не администратор"},
-    {"id": "not_public", "label": "Нет открытого @username"},
-    {"id": "too_small", "label": "Мало людей"},
-    {"id": "farm", "label": "Пустышка / накрутка"},
-    {"id": "dead", "label": "Мёртвая группа"},
-    {"id": "bad_link", "label": "Неверная ссылка"},
-    {"id": "adult", "label": "18+"},
-    {"id": "insult", "label": "Оскорбление"},
-]
+DEFAULT_REJECT_REASONS: list[dict[str, str]] = list(REJECT_REASONS)
 
 
 def theme_emoji_html(kind: str) -> str:
@@ -340,6 +335,8 @@ def extra(text: str) -> str:
     t = str(text or "").strip()
     if not t:
         return ""
+    if t.startswith("<blockquote"):
+        return t
     return f"<blockquote><b><i>{t}</i></b></blockquote>"
 
 
@@ -362,6 +359,16 @@ def _bold_line(text: str) -> str:
     return f"<b>{t}</b>"
 
 
+def _content_line(chunk: str) -> str:
+    raw = str(chunk or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("<blockquote"):
+        inner = re.sub(r"<[^>]+>", "", raw).strip()
+        return raw if inner else ""
+    return _bold_line(raw)
+
+
 class _SafeFmt(dict):
     def __missing__(self, key: str) -> str:
         return ""
@@ -378,29 +385,38 @@ def fill_design(text: Any, values: dict[str, Any] | None = None) -> str:
 
 def pr_screen(
     emoji: str,
-    title: str,
+    text: str = "",
+    title: str = "",
     body: str = "",
     extra_text: str = "",
     next_text: str = "",
 ) -> str:
-    """Заголовок с премиум-эмодзи, факты жирным, цитата только для доп. сведений."""
+    """Эмодзи + целый текст сообщения. Обычные строки жирные, цитата как написана."""
+    blob = text
+    if not blob:
+        parts = [title]
+        if body:
+            parts.extend(str(body).split("\n"))
+        if extra_text:
+            parts.append(extra(extra_text))
+        if next_text:
+            parts.append(next_text)
+        blob = "\n".join(str(p) for p in parts if str(p).strip())
     mark = theme_emoji_html(emoji) if emoji in PALETTE else design_emoji_html(emoji)
-    head = f"{mark} {_bold_line(title)}".strip() if mark else _bold_line(title)
-    parts = [head] if head else []
-    if body:
-        for chunk in str(body).split("\n"):
-            line = _bold_line(chunk)
-            if line:
-                parts.append(line)
-    if extra_text:
-        quoted = extra(extra_text)
-        if quoted:
-            parts.append(quoted)
-    if next_text:
-        action = do_next(next_text)
-        if action:
-            parts.append(action)
-    return "\n".join(parts)
+    out: list[str] = []
+    first = True
+    for chunk in str(blob).split("\n"):
+        line = _content_line(chunk)
+        if not line:
+            continue
+        if first:
+            out.append(f"{mark} {line}".strip() if mark else line)
+            first = False
+        else:
+            out.append(line)
+    if first and mark:
+        out.append(mark)
+    return "\n".join(out)
 
 
 def render_design(name: str, values: dict[str, Any] | None = None, **overrides: Any) -> str:
@@ -411,24 +427,35 @@ def render_design(name: str, values: dict[str, Any] | None = None, **overrides: 
     emoji_by = spec.get("emoji_by") or {}
     if emoji_by and vals.get("emoji_key"):
         emoji = emoji_by.get(vals["emoji_key"], emoji)
-    extra_text = overrides["extra"] if "extra" in overrides else spec.get("extra") or ""
+    blob = overrides["text"] if "text" in overrides else spec.get("text") or ""
     extra_by = spec.get("extra_by") or {}
-    if "extra" not in overrides and isinstance(extra_by, dict) and vals.get("extra_key"):
+    extra_text = overrides["extra"] if "extra" in overrides else spec.get("extra") or ""
+    if "extra" not in overrides and extra_by and vals.get("extra_key"):
         extra_text = extra_by.get(vals["extra_key"], extra_text)
+    extra_filled = fill_design(extra_text, vals)
+    if extra_filled:
+        vals.setdefault("extra", extra_filled)
+        for token in ("note", "barnum"):
+            if "{%s}" % token in blob:
+                vals.setdefault(token, extra_filled)
     next_text = overrides["next"] if "next" in overrides else spec.get("next") or ""
     next_by = spec.get("next_by") or {}
-    if "next" not in overrides and isinstance(next_by, dict) and vals.get("next_key") is not None:
+    if "next" not in overrides and next_by and vals.get("next_key") is not None:
         next_text = next_by.get(str(vals["next_key"]), next_by.get("default", next_text))
     if "next" not in overrides and vals.get("has_items") is False and spec.get("next_empty"):
         next_text = spec["next_empty"]
-    body = overrides["body"] if "body" in overrides else spec.get("body") or ""
-    return pr_screen(
-        emoji,
-        fill_design(spec.get("title") or "", vals),
-        fill_design(body, vals),
-        fill_design(extra_text, vals),
-        fill_design(next_text, vals),
-    )
+    if next_text:
+        vals.setdefault("next", fill_design(next_text, vals))
+    if not blob:
+        blob = "\n".join(
+            part for part in (
+                spec.get("title") or "",
+                spec.get("body") or "",
+                extra(extra_filled) if extra_filled else "",
+                next_text,
+            ) if str(part).strip()
+        )
+    return pr_screen(emoji, fill_design(blob, vals))
 
 
 def card_emoji_kind(status: str, freeze: str | None = None, *, owner: bool = False) -> str:
@@ -452,7 +479,7 @@ def premium_emoji_ids(html: str | None) -> list[str]:
 
 
 def mention_html(user_id: int, name: str) -> str:
-    label = escape((name or "игрок").strip() or "игрок")
+    label = escape(name_or(name, "player"))
     return f'<a href="tg://user?id={int(user_id)}">{label}</a>'
 
 
@@ -552,12 +579,13 @@ def left_days_hint(days: Optional[int]) -> Optional[dict[str, Any]]:
         return None
     n = int(days)
     if n < 7:
-        tone, hint = "hot", "скорее нет"
+        tone = "hot"
     elif n <= 30:
-        tone, hint = "warn", "осторожно"
+        tone = "warn"
     else:
-        tone, hint = "ok", "можно смотреть"
-    return {"days": n, "tone": tone, "hint": hint, "label": f"Уходил {n} дн. назад · {hint}"}
+        tone = "ok"
+    hint = IDLE_HINT[tone]
+    return {"days": n, "tone": tone, "hint": hint, "label": IDLE_LABEL.format(n=n, hint=hint)}
 
 
 def classify_player(
@@ -622,7 +650,7 @@ def looks_like_confirm(text: str) -> bool:
 def photo_hint(index: int) -> str:
     if 0 <= index < len(PHOTO_HINTS):
         return PHOTO_HINTS[index]
-    return "фото"
+    return say("photo_hint_n", n=index + 1) if index >= 0 else say("photo")
 
 
 def moscow_day_start(now: datetime | None = None) -> datetime:
@@ -643,12 +671,12 @@ def clip_btn(text: str, limit: int = 64) -> str:
     if len(raw) <= limit:
         return raw
     if limit <= 1:
-        return "…"
-    return raw[: limit - 1] + "…"
+        return say("ellipsis")
+    return raw[: limit - 1] + say("ellipsis")
 
 
 def kut_amount(n: int) -> str:
-    return f"{max(0, int(n or 0))} кут"
+    return say("kut", n=max(0, int(n or 0)))
 
 
 def is_owner_claim(row: dict[str, Any] | None) -> bool:
@@ -668,63 +696,26 @@ def claim_days_left(row: dict[str, Any] | None, now: datetime | None = None) -> 
 
 
 def pause_label(freeze: str | None) -> str:
-    kind = str(freeze or "").strip().lower()
-    if kind == "admin":
-        return "пауза: Кут нужна админка"
-    if kind == "public":
-        return "пауза: группа стала закрытой"
-    return ""
+    return PAUSE.get(str(freeze or "").strip().lower(), "")
 
 
 def pause_hint(freeze: str | None) -> str:
-    kind = str(freeze or "").strip().lower()
-    if kind == "admin":
-        return "Верните Кут в администраторы — снова начнёт капать."
-    if kind == "public":
-        return "Сделайте группу открытой с @адресом — снова начнёт капать."
-    return ""
+    return PAUSE_HINT.get(str(freeze or "").strip().lower(), "")
 
 
 def claim_status_label(status: str, freeze: str | None = None) -> str:
     paused = pause_label(freeze)
     if paused:
         return paused
-    return {
-        ST_PHOTOS: "нужны 3 фото",
-        ST_WAIT_CONFIRM: "ждём Да от создателя",
-        ST_CONFIRM_RETRY: "ещё один шанс у создателя",
-        ST_PENDING: "заявку смотрят",
-        ST_ACCEPTING: "заявку смотрят",
-        ST_FULFILLING: "заявку смотрят",
-        ST_LIVE: "идёт заработок",
-        ST_ENDED: "срок вышел",
-        ST_REJECTED: "не приняли",
-        ST_BURNED: "Кут убрали из группы",
-        ST_EXPIRED: "время вышло",
-        ST_CANCELLED: "заявку сняли",
-    }.get(str(status or ""), str(status or ""))
+    return STATUS.get(str(status or ""), str(status or ""))
 
 
 def claim_status_short(status: str, freeze: str | None = None) -> str:
     kind = str(freeze or "").strip().lower()
-    if kind == "admin":
-        return "пауза"
-    if kind == "public":
-        return "закрыта"
-    return {
-        ST_PHOTOS: "фото",
-        ST_WAIT_CONFIRM: "ждём Да",
-        ST_CONFIRM_RETRY: "ещё шанс",
-        ST_PENDING: "смотрят",
-        ST_ACCEPTING: "смотрят",
-        ST_FULFILLING: "смотрят",
-        ST_LIVE: "идёт",
-        ST_ENDED: "срок",
-        ST_REJECTED: "не приняли",
-        ST_BURNED: "убрали",
-        ST_EXPIRED: "время",
-        ST_CANCELLED: "сняли",
-    }.get(str(status or ""), "группа")
+    short_pause = PAUSE_SHORT.get(kind)
+    if short_pause:
+        return short_pause
+    return STATUS_SHORT.get(str(status or ""), say("group"))
 
 
 def list_row_money(row: dict[str, Any] | None) -> str:
@@ -732,7 +723,7 @@ def list_row_money(row: dict[str, Any] | None) -> str:
     if is_owner_claim(data):
         gifts = int(data.get("gifts") or 0)
         if gifts or str(data.get("status") or "") in LIVE_STATUSES:
-            return f"подарков: {gifts}"
+            return say("gifts_row", n=gifts)
         return ""
     paid = int(data.get("paid_kut") or 0)
     if paid:
@@ -742,20 +733,20 @@ def list_row_money(row: dict[str, Any] | None) -> str:
 
 def claim_button_label(row: dict[str, Any] | None) -> str:
     data = row or {}
-    title = str(data.get("chat_title") or data.get("title") or "группа").strip() or "группа"
+    title = name_or(data.get("chat_title") or data.get("title"), "group")
     short = claim_status_short(str(data.get("status") or ""), data.get("freeze"))
     money = list_row_money(data)
-    raw = f"{title} · {short} · {money}" if money else f"{title} · {short}"
+    raw = say("claim_btn_money", title=title, short=short, money=money) if money else say("claim_btn", title=title, short=short)
     return clip_btn(raw)
 
 
 def _titles_line(rows: list[dict[str, Any]], reason: str) -> str:
     names = []
     for row in rows[:3]:
-        names.append(escape(str(row.get("title") or "группа")))
+        names.append(escape(name_or(row.get("title"), "group")))
     if not names:
         return ""
-    return f"«{'», «'.join(names)}» — {reason}."
+    return say("seen_line", names=say("seen_join").join(names), reason=reason)
 
 
 def looks_like_help(text: str | None) -> bool:
@@ -768,8 +759,8 @@ def looks_like_help(text: str | None) -> bool:
 
 def _seen_groups_extra(no_public: list | None, no_admin: list | None) -> str:
     bits = []
-    line_pub = _titles_line(list(no_public or []), "нет @адреса")
-    line_adm = _titles_line(list(no_admin or []), "Кут не админ")
+    line_pub = _titles_line(list(no_public or []), say("seen_no_public"))
+    line_adm = _titles_line(list(no_admin or []), say("seen_no_admin"))
     if line_pub:
         bits.append(line_pub)
     if line_adm:
@@ -804,17 +795,17 @@ def text_how_admin(*, intent: str = "") -> str:
 
 
 def text_need_public(title: str = "") -> str:
-    return render_design("need_public", {"name": escape(title or "эта группа")})
+    return render_design("need_public", {"name": escape(name_or(title, "this_group"))})
 
 
 def text_need_admin(title: str = "", *, intent: str = "") -> str:
     name = "need_admin_reco" if intent == ROLE_RECO else "need_admin"
-    return render_design(name, {"name": escape(title or "эта группа")})
+    return render_design(name, {"name": escape(name_or(title, "this_group"))})
 
 
 def text_bot_joined(title: str, *, has_intent: bool = False) -> str:
     key = "bot_joined_intent" if has_intent else "bot_joined"
-    return render_design(key, {"name": escape(title or "группа")})
+    return render_design(key, {"name": escape(name_or(title, "group"))})
 
 
 def text_need_link() -> str:
@@ -835,7 +826,7 @@ def text_group_not_found() -> str:
 
 def text_bot_not_there(title: str = "", *, intent: str = "") -> str:
     name = "bot_not_there_reco" if intent == ROLE_RECO else "bot_not_there"
-    return render_design(name, {"name": escape(title or "эта группа")})
+    return render_design(name, {"name": escape(name_or(title, "this_group"))})
 
 
 def text_cant_add() -> str:
@@ -843,7 +834,7 @@ def text_cant_add() -> str:
 
 
 def text_not_in_group(title: str = "") -> str:
-    return render_design("not_in_group", {"name": escape(title or "эта группа")})
+    return render_design("not_in_group", {"name": escape(name_or(title, "this_group"))})
 
 
 def text_not_a_group() -> str:
@@ -855,23 +846,23 @@ def text_pick_group() -> str:
 
 
 def text_pick_role(title: str) -> str:
-    return render_design("pick_role", {"name": escape(title or "группа")})
+    return render_design("pick_role", {"name": escape(name_or(title, "group"))})
 
 
 def text_owner_bridge(title: str) -> str:
-    return render_design("owner_bridge", {"name": escape(title or "группа")})
+    return render_design("owner_bridge", {"name": escape(name_or(title, "group"))})
 
 
 def text_reco_bridge(title: str) -> str:
-    return render_design("reco_bridge", {"name": escape(title or "группа")})
+    return render_design("reco_bridge", {"name": escape(name_or(title, "group"))})
 
 
 def text_not_owner_switch(title: str = "") -> str:
-    return render_design("not_owner_switch", {"name": escape(title or "эта группа")})
+    return render_design("not_owner_switch", {"name": escape(name_or(title, "this_group"))})
 
 
 def text_are_owner_switch(title: str = "") -> str:
-    return render_design("are_owner_switch", {"name": escape(title or "эта группа")})
+    return render_design("are_owner_switch", {"name": escape(name_or(title, "this_group"))})
 
 
 def text_wrong_owner() -> str:
@@ -887,7 +878,7 @@ def text_wait_photo(index: int, have: int) -> str:
     else:
         what = escape(photo_hint(nxt))
         need = ""
-    body = f"Есть {have} из {PHOTOS_REQUIRED}.\n{what}" if have > 0 else what
+    body = say("photo_have", have=have, total=PHOTOS_REQUIRED, what=what) if have > 0 else what
     return render_design("wait_photo", {
         "step": have + 1,
         "total": PHOTOS_REQUIRED,
@@ -928,7 +919,7 @@ def text_after_proofs_reco() -> str:
 
 
 def text_after_photos_reco(title: str = "") -> str:
-    return render_design("after_photos_reco", {"name": escape(title or "группу")})
+    return render_design("after_photos_reco", {"name": escape(name_or(title, "group_acc"))})
 
 
 def text_wrote_confirm() -> str:
@@ -1007,7 +998,7 @@ def text_group_card(
     chat_balance: int | None = None,
 ) -> str:
     data = claim or {}
-    name = escape(str(data.get("chat_title") or data.get("title") or "группа"))
+    name = escape(name_or(data.get("chat_title") or data.get("title"), "group"))
     status = str(data.get("status") or "")
     freeze = data.get("freeze")
     owner = is_owner_claim(data)
@@ -1021,7 +1012,7 @@ def text_group_card(
         "today": kut_amount(today),
         "newcomers": int(newcomers or 0),
         "hint": pause_hint(freeze),
-        "reason": escape(str(data.get("reject_text") or "").strip()) or "Заявку не приняли.",
+        "reason": escape(str(data.get("reject_text") or "").strip()) or say("reject_fallback"),
         "emoji_key": card_emoji_kind(status, freeze, owner=owner),
         "extra_key": key,
         "next_key": key,
@@ -1032,8 +1023,12 @@ def text_group_card(
     if days is not None and status in LIVE_STATUSES:
         values["days"] = days
     templates = spec.get("facts_owner") if owner else spec.get("facts_reco")
+    if isinstance(templates, str):
+        lines_src = [line for line in templates.split("\n") if line.strip()]
+    else:
+        lines_src = list(templates or [])
     facts: list[str] = []
-    for tmpl in list(templates or []):
+    for tmpl in lines_src:
         if "{balance}" in tmpl and chat_balance is None:
             continue
         if "{days}" in tmpl and values["days"] == "":
@@ -1044,7 +1039,9 @@ def text_group_card(
     values["facts"] = "\n".join(facts)
     extra_tmpl = (spec.get("extra_by") or {}).get(key) or spec.get("extra") or ""
     next_tmpl = (spec.get("next_by") or {}).get(key) or (spec.get("next_by") or {}).get("default") or spec.get("next") or ""
-    return render_design("card", values, extra=fill_design(extra_tmpl, values), next=fill_design(next_tmpl, values))
+    values["extra"] = fill_design(extra_tmpl, values)
+    values["next"] = fill_design(next_tmpl, values)
+    return render_design("card", values)
 
 
 def text_cancelled() -> str:
@@ -1101,7 +1098,7 @@ def text_digest(
     title: str = "",
 ) -> str:
     return render_design("digest", {
-        "name": escape(title or "группы"),
+        "name": escape(name_or(title, "of_group")),
         "newcomers": int(newcomers or 0),
         "paid": kut_amount(paid),
         "days": int(days_left or 0),
@@ -1131,7 +1128,7 @@ def text_kicked() -> str:
 
 def text_rejected(reason: str, *, can_fix: bool) -> str:
     name = "rejected_fix" if can_fix else "rejected"
-    body = escape((reason or "Не приняли.").strip() or "Не приняли.")
+    body = escape(name_or(reason, "rejected"))
     return render_design(name, {"reason": body})
 
 
@@ -1173,7 +1170,7 @@ def text_no_groups() -> str:
 
 def text_resume_claim(title: str, status: str, freeze: str | None = None) -> str:
     return render_design("resume", {
-        "name": escape(title or "группа"),
+        "name": escape(name_or(title, "group")),
         "status": escape(claim_status_label(status, freeze)),
         "emoji_key": card_emoji_kind(status, freeze),
     })
@@ -1187,4 +1184,4 @@ def reject_text_from(reasons: Iterable[dict[str, str]] | None, custom: str, cata
     own = " ".join(str(custom or "").split())
     if own:
         labels.append(own)
-    return " · ".join(labels) or "Не приняли."
+    return say("reject_join").join(labels) or say("rejected")

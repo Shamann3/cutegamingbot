@@ -28,6 +28,7 @@ from pr_groups_logic import (
     left_days_hint,
     recommend_seed,
     recommend_split,
+    say,
     reject_text_from,
     spendable_amount,
     weekly_seed_budget,
@@ -196,7 +197,7 @@ async def _public_claim(row) -> dict[str, Any]:
         "creator": await _user_bit(data.get("creator_id")),
         "addedBy": await _user_bit(data.get("added_by")),
         "photos": [
-            {"fileId": p.get("file_id"), "label": PHOTO_HINTS[i] if i < len(PHOTO_HINTS) else f"фото {i+1}"}
+            {"fileId": p.get("file_id"), "label": PHOTO_HINTS[i] if i < len(PHOTO_HINTS) else say("photo_hint_n", n=i + 1)}
             for i, p in enumerate(photos)
         ],
         "left": left_days_hint(left),

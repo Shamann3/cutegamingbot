@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 import asyncio
 from contextvars import ContextVar
@@ -67,6 +68,7 @@ from pr_groups_logic import (  # noqa: E402
 )
 
 from pr_groups_design import (  # noqa: E402
+    HELP_TASKS,
     ICON_ADMIN,
     ICON_BACK,
     ICON_BACK_HUB,
@@ -85,7 +87,11 @@ from pr_groups_design import (  # noqa: E402
     ICON_UNDO,
     ICON_WROTE,
     SCREENS,
+    TASKS_MENU,
+    TASKS_MENU_ICON_ID,
     emoji_id as design_emoji_id,
+    iter_button_rows,
+    say,
 )
 
 ICON_OK = ICON_CHECK
@@ -174,11 +180,15 @@ def _btn_visible(show: str | None, ctx: dict[str, Any]) -> bool:
     return True
 
 
+_HTML_TAG = re.compile(r"<[^>]+>")
+
+
 def _fill_btn_text(text: str, values: dict[str, Any]) -> str:
     class Safe(dict):
         def __missing__(self, key: str) -> str:
             return ""
-    return str(text or "").format_map(Safe(values))
+    filled = str(text or "").format_map(Safe(values))
+    return " ".join(_HTML_TAG.sub("", filled).split())
 
 
 def _resolve_go(go: str, ctx: dict[str, Any]) -> tuple[str, str]:
@@ -222,7 +232,7 @@ def _design_button(item: dict[str, Any], ctx: dict[str, Any]) -> InlineKeyboardB
         return None
     text = _fill_btn_text(str(item.get("text") or ""), ctx)
     icon = design_emoji_id(str(item.get("icon") or ""))
-    style = str(item.get("style") or "default")
+    style = str(item.get("style") or item.get("color") or "default")
     if kind == "url":
         return _url(text, payload, icon or None)
     return _btn(text, payload, icon or None, style)
@@ -253,13 +263,13 @@ def _repeat_buttons(item: dict[str, Any], ctx: dict[str, Any]) -> list[list[Inli
 def keyboard_for(name: str, **ctx: Any) -> InlineKeyboardMarkup:
     spec = SCREENS[name]
     rows_out: list[list[InlineKeyboardButton]] = []
-    for row in spec.get("buttons") or []:
+    for row in iter_button_rows(spec.get("buttons")):
         if isinstance(row, dict) and row.get("repeat"):
             rows_out.extend(_repeat_buttons(row, ctx))
             continue
         built: list[InlineKeyboardButton] = []
         for item in row:
-            if not _btn_visible(item.get("show"), ctx):
+            if not _btn_visible(item.get("show") or item.get("when"), ctx):
                 continue
             btn = _design_button(item, ctx)
             if btn:
@@ -295,20 +305,21 @@ def how_keyboard(
 
 
 def how_public_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
-    return how_fix_keyboard(bot_username, intent=intent)
+    return keyboard_for("how_public", intent=intent, bot_username=bot_username)
 
 
 def how_admin_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
-    return how_fix_keyboard(bot_username, intent=intent)
-
-
-def how_fix_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
-    name = "how_admin_reco" if intent == ROLE_RECO else "how_public"
+    name = "how_admin_reco" if intent == ROLE_RECO else "how_admin"
     return keyboard_for(name, intent=intent, bot_username=bot_username)
 
 
+def how_fix_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    return how_admin_keyboard(bot_username, intent=intent)
+
+
 def add_group_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
-    return keyboard_for("bot_not_there", intent=intent, bot_username=bot_username)
+    name = "bot_not_there_reco" if intent == ROLE_RECO else "bot_not_there"
+    return keyboard_for(name, intent=intent, bot_username=bot_username)
 
 
 def cant_add_keyboard(bot_username: str = "CuteGamingBot") -> InlineKeyboardMarkup:
@@ -348,11 +359,11 @@ def after_cancel_keyboard() -> InlineKeyboardMarkup:
 
 
 def after_owner_keyboard() -> InlineKeyboardMarkup:
-    return keyboard_for("after_proofs_owner")
+    return keyboard_for("after_proofs_owner", mine=True)
 
 
 def after_reco_keyboard(username: str = "") -> InlineKeyboardMarkup:
-    return keyboard_for("after_photos_reco", username=username)
+    return keyboard_for("after_photos_reco", username=username, mine=True)
 
 
 def joined_keyboard() -> InlineKeyboardMarkup:
@@ -360,7 +371,7 @@ def joined_keyboard() -> InlineKeyboardMarkup:
 
 
 def pending_keyboard() -> InlineKeyboardMarkup:
-    return keyboard_for("two_pending")
+    return keyboard_for("two_pending", mine=True)
 
 
 def mine_keyboard(rows: list[dict[str, Any]] | None = None, *, live: bool = False) -> InlineKeyboardMarkup:
@@ -384,6 +395,91 @@ def resume_keyboard(status: str) -> InlineKeyboardMarkup:
 
 def confirm_keyboard(claim_id: int, token: int = 0) -> InlineKeyboardMarkup:
     return keyboard_for("confirm", claim_id=claim_id, id=claim_id, token=token)
+
+
+def need_public_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    return keyboard_for("need_public", intent=intent, bot_username=bot_username)
+
+
+def need_admin_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    name = "need_admin_reco" if intent == ROLE_RECO else "need_admin"
+    return keyboard_for(name, intent=intent, bot_username=bot_username)
+
+
+def need_link_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    return keyboard_for("need_link", intent=intent, bot_username=bot_username)
+
+
+def forward_no_group_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    return keyboard_for("forward_no_group", intent=intent, bot_username=bot_username)
+
+
+def link_invite_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    return keyboard_for("link_invite", intent=intent, bot_username=bot_username)
+
+
+def group_not_found_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    return keyboard_for("group_not_found", intent=intent, bot_username=bot_username)
+
+
+def not_in_group_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    return keyboard_for("not_in_group", intent=intent, bot_username=bot_username)
+
+
+def not_a_group_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
+    return keyboard_for("not_a_group", intent=intent, bot_username=bot_username)
+
+
+def need_photo_keyboard(have: int = 0) -> InlineKeyboardMarkup:
+    return keyboard_for("need_photo", have=have)
+
+
+def photos_expired_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("photos_expired")
+
+
+def two_live_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("two_live", mine=True)
+
+
+def banned_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("banned_31")
+
+
+def busy_keyboard(*, owner: bool = False) -> InlineKeyboardMarkup:
+    return keyboard_for("group_busy_owner" if owner else "group_busy")
+
+
+def wrote_keyboard(username: str = "") -> InlineKeyboardMarkup:
+    return keyboard_for("wrote_confirm", username=username, mine=True)
+
+
+def confirm_no_first_keyboard(username: str = "") -> InlineKeyboardMarkup:
+    return keyboard_for("confirm_no_first", username=username, mine=True, status=ST_CONFIRM_RETRY)
+
+
+def confirm_no_second_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("confirm_no_second")
+
+
+def need_photos_first_keyboard(have: int = 0) -> InlineKeyboardMarkup:
+    return keyboard_for("need_photos_first", have=have)
+
+
+def owner_no_confirm_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("owner_no_confirm", mine=True)
+
+
+def accepted_keyboard(*, owner: bool = False) -> InlineKeyboardMarkup:
+    return keyboard_for("accepted_owner" if owner else "accepted", mine=True)
+
+
+def rejected_keyboard(*, can_fix: bool = False) -> InlineKeyboardMarkup:
+    return keyboard_for("rejected_fix" if can_fix else "rejected")
+
+
+def confirm_timeout_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("confirm_timeout")
 
 
 _IMAGE_MIME = frozenset({
@@ -1184,7 +1280,7 @@ async def maybe_grant_gift(bot, *, user_id: int, chat_id: int, name: str) -> Opt
         return None
     if not await _take_from_ladder(size, bot=bot):
         return None
-    await _give_to_user(user_id, size, "подарок пиар-группы")
+    await _give_to_user(user_id, size, say("history_gift"))
     p = await pool()
     await p.execute(
         """
@@ -1321,7 +1417,7 @@ async def flush_digest(bot, claim: dict[str, Any]) -> None:
         newcomers = 0
     if pay > 0:
         if await _take_from_ladder(pay, bot=bot):
-            await _give_to_user(int(claim["user_id"]), pay, "пиар в группах")
+            await _give_to_user(int(claim["user_id"]), pay, say("history_payout"))
             await record_payout(int(claim["id"]), int(claim["user_id"]), pay)
             await save_claim(
                 int(claim["id"]),
@@ -1633,16 +1729,23 @@ async def drain_notices(bot) -> None:
                 await bot.send_message(
                     int(row["user_id"]),
                     text_accepted(int(payload.get("termDays") or 14), role=str(payload.get("role") or "")),
-                    reply_markup=after_owner_keyboard(),
+                    reply_markup=accepted_keyboard(owner=str(payload.get("role") or "") == ROLE_OWNER),
                     parse_mode="HTML",
                     disable_web_page_preview=True,
                 )
             elif kind == "rejected":
-                await bot.send_message(int(row["user_id"]), text_rejected(str(payload.get("text") or ""), can_fix=bool(payload.get("canFix"))), parse_mode="HTML", disable_web_page_preview=True)
+                can_fix = bool(payload.get("canFix"))
+                await bot.send_message(
+                    int(row["user_id"]),
+                    text_rejected(str(payload.get("text") or ""), can_fix=can_fix),
+                    reply_markup=rejected_keyboard(can_fix=can_fix),
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
             elif kind == "photos_expired":
-                await bot.send_message(int(row["user_id"]), text_photos_expired(), reply_markup=after_cancel_keyboard(), parse_mode="HTML", disable_web_page_preview=True)
+                await bot.send_message(int(row["user_id"]), text_photos_expired(), reply_markup=photos_expired_keyboard(), parse_mode="HTML", disable_web_page_preview=True)
             elif kind == "confirm_expired":
-                await bot.send_message(int(row["user_id"]), text_confirm_timeout(), reply_markup=after_cancel_keyboard(), parse_mode="HTML", disable_web_page_preview=True)
+                await bot.send_message(int(row["user_id"]), text_confirm_timeout(), reply_markup=confirm_timeout_keyboard(), parse_mode="HTML", disable_web_page_preview=True)
         except Exception:
             log.debug("notice fail", exc_info=True)
         await p.execute("DELETE FROM pr_notices WHERE id = $1", int(row["id"]))

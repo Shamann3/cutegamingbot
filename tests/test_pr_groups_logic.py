@@ -557,22 +557,40 @@ def test_pr_themed_emojis_and_extra_quote():
 
 
 def test_design_file_drives_hub_and_buttons():
-    from pr_groups_design import HUB, SCREENS, emoji_id
+    from pr_groups_design import HUB, SCREENS, design_errors, emoji_id, iter_button_rows
     from pr_groups_logic import text_entry
 
     hub = SCREENS["hub"]
-    assert hub["next"].startswith("Нажмите, кто вы")
-    assert "что нужно делать далее" in hub["next"]
+    assert "Нажмите, кто вы" in hub["text"]
+    assert "что нужно делать далее" in hub["text"]
     assert emoji_id(hub["emoji"]) == emoji_id(HUB)
     assert emoji_id(HUB) in text_entry()
-    assert any(btn.get("go") == "owner" for row in hub["buttons"] if isinstance(row, list) for btn in row)
+    hub_gos = [btn.get("go") for row in iter_button_rows(hub["buttons"]) for btn in row]
+    assert "owner" in hub_gos
+    assert not design_errors()
     for name, spec in SCREENS.items():
         assert spec.get("emoji"), name
-        assert spec.get("title"), name
-        for row in spec.get("buttons") or []:
+        assert spec.get("text"), name
+        for row in iter_button_rows(spec.get("buttons")):
             if isinstance(row, dict):
                 assert row.get("repeat")
                 continue
             gos = [btn.get("go") for btn in row]
             assert len(gos) == len(set(gos)), (name, gos)
+            for btn in row:
+                assert btn.get("icon"), (name, btn.get("text"))
+
+
+def test_words_drive_every_short_label():
+    from pr_groups_design import HELP_TASKS, STATUS, TASKS_MENU, WORDS
+    from pr_groups_logic import claim_status_label, kut_amount, pause_label, say
+
+    assert kut_amount(40) == say("kut", n=40)
+    assert claim_status_label("photos") == STATUS["photos"]
+    assert claim_status_label("live", "admin") == pause_label("admin")
+    assert TASKS_MENU["text"] == "Пиар в группах"
+    assert "Пиар в группах" in HELP_TASKS
+    assert WORDS["toast_check"]
+    assert WORDS["history_gift"]
+    assert WORDS["photo_have"]
 
