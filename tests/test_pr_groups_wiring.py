@@ -29,7 +29,9 @@ def test_wired_into_bot_and_panel():
     assert "choose_keyboard" in core
     assert "keyboard_for" in core
     assert "Я владелец группы" in design
-    assert "Я рекомендую бот в группах" in design
+    assert "Это чужая группа" in design
+    assert "Группа закрытая" in design
+    assert "Нет @username" not in design
     assert 'text="Я владелец группы"' in design
     assert 'text="""Я владелец группы"""' not in design
     assert "Пиар в группах" in design
@@ -171,7 +173,7 @@ def test_every_pr_screen_has_back():
     entry = pr.entry_keyboard()
     entry_texts = _kb_texts(entry)
     assert "Я владелец группы" in entry_texts
-    assert "Я рекомендую бот в группах" in entry_texts
+    assert "Это чужая группа" in entry_texts
     assert "Начать" not in entry_texts
     assert "Заработки" not in entry_texts
     assert "Мои группы" not in entry_texts

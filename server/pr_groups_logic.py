@@ -47,6 +47,7 @@ from pr_groups_design import (
     CONFIRM_WORDS,
     emoji_html as design_emoji_html,
     name_or,
+    progress,
     say,
 )
 
@@ -392,7 +393,7 @@ def _bold_line(text: str) -> str:
     t = str(text or "").strip()
     if not t:
         return ""
-    if t.startswith("<blockquote"):
+    if t.startswith("<blockquote") or t.startswith("<pre"):
         return t
     if "<" in t:
         return t
@@ -406,7 +407,37 @@ def _content_line(chunk: str) -> str:
     if raw.startswith("<blockquote"):
         inner = re.sub(r"<[^>]+>", "", raw).strip()
         return raw if inner else ""
+    if raw.startswith("<pre"):
+        inner = re.sub(r"<[^>]+>", "", raw).strip()
+        return raw if inner else ""
     return _bold_line(raw)
+
+
+def _render_message_lines(blob: str) -> list[str]:
+    """Собирает строки экрана: пустые строки остаются, <pre> не жирнеет построчно."""
+    out: list[str] = []
+    in_pre = 0
+    for chunk in str(blob).split("\n"):
+        low = chunk.lower()
+        opens = len(re.findall(r"<pre\b", low))
+        closes = low.count("</pre>")
+        if in_pre or opens:
+            out.append(chunk.rstrip())
+            in_pre += opens - closes
+            if in_pre < 0:
+                in_pre = 0
+            continue
+        raw = chunk.strip()
+        if not raw:
+            if out and out[-1] != "":
+                out.append("")
+            continue
+        line = _content_line(chunk)
+        if line:
+            out.append(line)
+    while out and out[-1] == "":
+        out.pop()
+    return out
 
 
 class _SafeFmt(dict):
@@ -443,19 +474,14 @@ def pr_screen(
             parts.append(next_text)
         blob = "\n".join(str(p) for p in parts if str(p).strip())
     mark = theme_emoji_html(emoji) if emoji in PALETTE else design_emoji_html(emoji)
-    out: list[str] = []
-    first = True
-    for chunk in str(blob).split("\n"):
-        line = _content_line(chunk)
-        if not line:
-            continue
-        if first:
-            out.append(f"{mark} {line}".strip() if mark else line)
-            first = False
+    out = _render_message_lines(blob)
+    if mark:
+        for i, line in enumerate(out):
+            if line.strip():
+                out[i] = f"{mark} {line}".strip()
+                break
         else:
-            out.append(line)
-    if first and mark:
-        out.append(mark)
+            out = [mark]
     return tg_safe_html("\n".join(out))
 
 
@@ -823,62 +849,83 @@ def text_choose_role() -> str:
 
 def text_how(*, intent: str = "", no_public: list | None = None, no_admin: list | None = None) -> str:
     name = "how_reco" if intent == ROLE_RECO else "how_owner"
-    return render_design(name, {"seen": _seen_value(no_public, no_admin)})
+    return render_design(name, {
+        "seen": _seen_value(no_public, no_admin),
+        "progress": progress(intent=intent, n=1),
+    })
 
 
-def text_how_public() -> str:
-    return render_design("how_public")
+def text_how_public(*, intent: str = "") -> str:
+    return render_design("how_public", {"progress": progress(intent=intent, n=1)})
 
 
 def text_how_admin(*, intent: str = "") -> str:
-    return render_design("how_admin_reco" if intent == ROLE_RECO else "how_admin")
+    return render_design(
+        "how_admin_reco" if intent == ROLE_RECO else "how_admin",
+        {"progress": progress(intent=intent, n=1)},
+    )
 
 
-def text_need_public(title: str = "") -> str:
-    return render_design("need_public", {"name": escape(name_or(title, "this_group"))})
+def text_need_public(title: str = "", *, intent: str = "") -> str:
+    return render_design("need_public", {
+        "name": escape(name_or(title, "this_group")),
+        "progress": progress(intent=intent, n=1),
+    })
 
 
 def text_need_admin(title: str = "", *, intent: str = "") -> str:
     name = "need_admin_reco" if intent == ROLE_RECO else "need_admin"
-    return render_design(name, {"name": escape(name_or(title, "this_group"))})
+    return render_design(name, {
+        "name": escape(name_or(title, "this_group")),
+        "progress": progress(intent=intent, n=1),
+    })
 
 
-def text_bot_joined(title: str, *, has_intent: bool = False) -> str:
+def text_bot_joined(title: str, *, has_intent: bool = False, intent: str = "") -> str:
     key = "bot_joined_intent" if has_intent else "bot_joined"
-    return render_design(key, {"name": escape(name_or(title, "group"))})
+    vals = {"name": escape(name_or(title, "group"))}
+    if has_intent:
+        vals["progress"] = progress(intent=intent, n=1)
+    return render_design(key, vals)
 
 
-def text_need_link() -> str:
-    return render_design("need_link")
+def text_need_link(*, intent: str = "") -> str:
+    return render_design("need_link", {"progress": progress(intent=intent, n=2)})
 
 
-def text_forward_no_group() -> str:
-    return render_design("forward_no_group")
+def text_forward_no_group(*, intent: str = "") -> str:
+    return render_design("forward_no_group", {"progress": progress(intent=intent, n=2)})
 
 
-def text_link_invite() -> str:
-    return render_design("link_invite")
+def text_link_invite(*, intent: str = "") -> str:
+    return render_design("link_invite", {"progress": progress(intent=intent, n=2)})
 
 
-def text_group_not_found() -> str:
-    return render_design("group_not_found")
+def text_group_not_found(*, intent: str = "") -> str:
+    return render_design("group_not_found", {"progress": progress(intent=intent, n=2)})
 
 
 def text_bot_not_there(title: str = "", *, intent: str = "") -> str:
     name = "bot_not_there_reco" if intent == ROLE_RECO else "bot_not_there"
-    return render_design(name, {"name": escape(name_or(title, "this_group"))})
+    return render_design(name, {
+        "name": escape(name_or(title, "this_group")),
+        "progress": progress(intent=intent, n=1),
+    })
 
 
 def text_cant_add() -> str:
-    return render_design("cant_add")
+    return render_design("cant_add", {"progress": progress(intent=ROLE_RECO, n=1)})
 
 
-def text_not_in_group(title: str = "") -> str:
-    return render_design("not_in_group", {"name": escape(name_or(title, "this_group"))})
+def text_not_in_group(title: str = "", *, intent: str = "") -> str:
+    return render_design("not_in_group", {
+        "name": escape(name_or(title, "this_group")),
+        "progress": progress(intent=intent, n=2),
+    })
 
 
-def text_not_a_group() -> str:
-    return render_design("not_a_group")
+def text_not_a_group(*, intent: str = "") -> str:
+    return render_design("not_a_group", {"progress": progress(intent=intent, n=2)})
 
 
 def text_pick_group() -> str:
@@ -890,11 +937,17 @@ def text_pick_role(title: str) -> str:
 
 
 def text_owner_bridge(title: str) -> str:
-    return render_design("owner_bridge", {"name": escape(name_or(title, "group"))})
+    return render_design("owner_bridge", {
+        "name": escape(name_or(title, "group")),
+        "progress": progress(intent=ROLE_OWNER, n=3),
+    })
 
 
 def text_reco_bridge(title: str) -> str:
-    return render_design("reco_bridge", {"name": escape(name_or(title, "group"))})
+    return render_design("reco_bridge", {
+        "name": escape(name_or(title, "group")),
+        "progress": progress(intent=ROLE_RECO, n=3),
+    })
 
 
 def text_not_owner_switch(title: str = "") -> str:
@@ -909,7 +962,7 @@ def text_wrong_owner() -> str:
     return text_not_owner_switch()
 
 
-def text_wait_photo(index: int, have: int) -> str:
+def text_wait_photo(index: int, have: int, *, intent: str = "") -> str:
     nxt = have if 0 <= have < PHOTOS_REQUIRED else min(int(index), PHOTOS_REQUIRED - 1)
     if 0 <= nxt < len(PHOTO_STEPS):
         step = PHOTO_STEPS[nxt]
@@ -926,19 +979,21 @@ def text_wait_photo(index: int, have: int) -> str:
         "need": need,
         "tail": "",
         "next_key": str(min(max(int(have), 0), 2)),
+        "progress": progress(intent=intent, n=3),
     })
 
 
-def text_photo_progress(have: int) -> str:
-    return text_wait_photo(have, have)
+def text_photo_progress(have: int, *, intent: str = "") -> str:
+    return text_wait_photo(have, have, intent=intent)
 
 
-def text_need_photo(kind: str = "") -> str:
+def text_need_photo(kind: str = "", *, intent: str = "") -> str:
     spec = NEED_PHOTO.get(kind or "") or NEED_PHOTO[""]
     return render_design("need_photo", {
         "title": spec["title"],
         "extra": spec["extra"],
         "tail": spec["next"],
+        "progress": progress(intent=intent, n=3),
     })
 
 
@@ -951,19 +1006,22 @@ def text_after_photos_owner() -> str:
 
 
 def text_after_proofs_owner() -> str:
-    return render_design("after_proofs_owner")
+    return render_design("after_proofs_owner", {"progress": progress(intent=ROLE_OWNER, n=4)})
 
 
 def text_after_proofs_reco() -> str:
-    return render_design("after_proofs_reco")
+    return render_design("after_proofs_reco", {"progress": progress(intent=ROLE_RECO, n=5)})
 
 
 def text_after_photos_reco(title: str = "") -> str:
-    return render_design("after_photos_reco", {"name": escape(name_or(title, "group_acc"))})
+    return render_design("after_photos_reco", {
+        "name": escape(name_or(title, "group_acc")),
+        "progress": progress(intent=ROLE_RECO, n=4),
+    })
 
 
 def text_wrote_confirm() -> str:
-    return render_design("wrote_confirm")
+    return render_design("wrote_confirm", {"progress": progress(intent=ROLE_RECO, n=4)})
 
 
 def _earnings_key(*, total: int, today: int, count: int, live: bool) -> str:
@@ -1120,8 +1178,8 @@ def text_wrong_group() -> str:
     return render_design("wrong_group")
 
 
-def text_need_photos_first() -> str:
-    return render_design("need_photos_first")
+def text_need_photos_first(*, intent: str = "") -> str:
+    return render_design("need_photos_first", {"progress": progress(intent=intent or ROLE_RECO, n=3)})
 
 
 def text_accepted(term_days: int, *, role: str = "") -> str:

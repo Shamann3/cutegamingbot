@@ -61,15 +61,19 @@ def test_how_tells_what_to_do_next():
     assert "@группа" in owner
     assert "t.me" in owner
     assert "пересл" not in owner.lower()
+    assert "Шаг 1 из 4" in owner
     reco = text_how(intent="reco")
-    assert "Чужой" in reco
+    assert "Чужая" in reco
     assert "@CuteGamingBot" in reco
     assert "пересл" not in reco.lower()
+    assert "Шаг 1 из 5" in reco
     need = text_need_link()
     assert "t.me" in need
     assert "id" in need.lower()
     assert "пересл" not in need.lower()
     assert "Копировать ссылку" in need
+    assert "Шаг 2 из 4" in need
+    assert "Шаг 2 из 5" in text_need_link(intent="reco")
     bad = text_forward_no_group()
     assert "не подходит" in bad
     assert "@группа" in bad
@@ -78,6 +82,8 @@ def test_how_tells_what_to_do_next():
     assert "1 из 3" in photo
     assert "Пришлите фото сюда" in photo
     assert "@CuteGamingBot" in photo
+    assert "Шаг 3 из 4" in photo
+    assert "Шаг 3 из 5" in text_wait_photo(0, 0, intent="reco")
     second = text_wait_photo(1, 1)
     assert "Есть 1 из 3" in _visible(second)
     assert "2 из 3" in second
@@ -119,11 +125,16 @@ def test_reco_bridge_does_not_pretend_they_are_owner():
     assert "этот чат" in owner or "сюда" in owner
     assert "стол" not in owner.lower()
     assert "соло" not in owner.lower()
+    assert "Шаг 4 из 4" in owner
+    assert "Мои группы" in owner
     reco = text_after_proofs_reco()
     assert "Доказательства приняты" in reco
     assert "14 дней" in reco
     assert "сюда" in reco
     assert "комисси" not in reco.lower()
+    assert "Шаг 5 из 5" in reco
+    assert "Мои группы" in reco
+    assert "Шаг 4 из 5" in text_after_photos_reco()
 
 
 def test_gift_has_kut_and_user_wording():
@@ -332,6 +343,11 @@ def test_earnings_screen_and_card_are_plain():
     accepted = text_accepted(14)
     assert "комисси" not in accepted.lower()
     assert "14 дней" in accepted
+    assert "капают сами" in accepted
+    assert "Мои группы" in accepted
+    own_ok = text_accepted(14, role="owner")
+    assert "капают сами" in own_ok
+    assert "Мои группы" in own_ok
     start = moscow_day_start(datetime(2026, 9, 20, 22, 0, tzinfo=timezone.utc))
     assert start.tzinfo is not None
     blob = "\n".join([html, reco_card, owner_card, pause, digest, freeze, accepted]).lower()
@@ -535,7 +551,7 @@ def test_pr_themed_emojis_and_extra_quote():
     assert extra("факт") == "<blockquote><b><i>факт</i></b></blockquote>"
     hub = text_entry()
     assert EMOJI_HUB in hub
-    assert "<blockquote><b><i>" in hub
+    assert "<pre>" in hub
     assert "14 дней" in hub
     assert "35%" in hub
     assert EMOJI_OWNER in text_how(intent="owner")

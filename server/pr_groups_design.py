@@ -1,21 +1,22 @@
 # -*- coding: utf-8 -*-
-"""Пиар в группах — дизайн всех сообщений.
+"""Пиар в группах - дизайн всех сообщений.
 
 Как править
 -----------
-Сообщение целиком — в text= тройными кавычками.
-Эмодзи сообщения — в emoji=.
+Сообщение целиком - в text= тройными кавычками.
+Эмодзи сообщения - в emoji=.
 Кнопки сразу под текстом: text="подпись" обычными кавычками, icon= у каждой.
 
 Типографика
 -----------
-<b>жирный</b> — то, на чём нужно сосредоточиться.
-<i>курсив</i> — доп. текст, в основном навигация: что нажать, куда отправить.
-<u>подчёркнутый</u> — только самое важное: 35%, 14 дней, Да, 3 фото, суммы, @бот.
-Доп. информация — в <blockquote><b><i>…</i></b></blockquote>
+<b>жирный</b> - то, на чём нужно сосредоточиться.
+<i>курсив</i> - доп. текст, в основном навигация: что нажать, куда отправить.
+<u>подчёркнутый</u> - только самое важное: 35%, 14 дней, Да, 3 фото, суммы, @бот.
+Доп. информация - в <blockquote><b><i>…</i></b></blockquote>
+Много текста - в <pre>…</pre>, блоки разделяй пустой строкой.
 
-WORDS для кнопок, тостов и истории — без тегов: Telegram их там не рисует.
-В тексте можно: <b> <i> <u> <code> {name} {link_hint}
+WORDS для кнопок, тостов и истории - без тегов: Telegram их там не рисует.
+В тексте можно: <b> <i> <u> <code> <pre> {name} {link_hint} {progress}
 """
 
 from __future__ import annotations
@@ -113,15 +114,15 @@ LINK_HINT = t("""<code>@группа</code> · <code>t.me/группа</code> ·
 PHOTO_STEPS = (
     {
         'what': t("""<b>Скриншот списка администраторов.</b>"""),
-        'need': t("""<blockquote><b><i>На кадре должен быть <u>@CuteGamingBot</u>.</i></b></blockquote>"""),
+        'need': t("""<blockquote><b><i>Так видно, что <u>@CuteGamingBot</u> админ.</i></b></blockquote>"""),
     },
     {
         'what': t("""<b>Скриншот сообщения от Кут в этой группе.</b>"""),
-        'need': t("""<blockquote><b><i>Нужно видеть, что бот там отвечает.</i></b></blockquote>"""),
+        'need': t("""<blockquote><b><i>Так видно, что бот в чате отвечает.</i></b></blockquote>"""),
     },
     {
-        'what': t("""<b>Скриншот, где видно создателя группы.</b>"""),
-        'need': t("""<blockquote><b><i>Откройте список администраторов — создатель должен быть на кадре.</i></b></blockquote>"""),
+        'what': t("""<b>Скриншот, где видно создателя.</b>"""),
+        'need': t("""<blockquote><b><i>Так понятно, кто владелец группы.</i></b></blockquote>"""),
     },
 )
 
@@ -129,27 +130,27 @@ NEED_PHOTO = {
     'video': {
         'title': t("""Нужно фото, не видео."""),
         'extra': t("""Видео и кружок не принимаем."""),
-        'next': t("""Картинка из галереи — отправьте её сюда."""),
+        'next': t("""Картинка из галереи - сюда."""),
     },
     'file': {
         'title': t("""Нужно фото, не файл."""),
         'extra': t("""Документ без картинки не принимаем."""),
-        'next': t("""Картинка из галереи — отправьте её сюда."""),
+        'next': t("""Картинка из галереи - сюда."""),
     },
     'sticker': {
         'title': t("""Нужно фото из группы."""),
-        'extra': t("""Стикер и эмодзи — это не скрин группы."""),
-        'next': t("""Картинка из группы — отправьте её сюда."""),
+        'extra': t("""Стикер и эмодзи - это не скрин."""),
+        'next': t("""Картинка из группы - сюда."""),
     },
     'text': {
         'title': t("""Нужно фото, не текст."""),
-        'extra': t("""Текст сюда не подходит — нужен кадр."""),
-        'next': t("""Картинка из галереи — отправьте её сюда."""),
+        'extra': t("""Текст сюда не подходит - нужен кадр."""),
+        'next': t("""Картинка из галереи - сюда."""),
     },
     'album': {
         'title': t("""По одному фото."""),
-        'extra': t("""Альбом Telegram считает одним сообщением — кадры склеятся."""),
-        'next': t("""Следующий кадр — отдельным сообщением."""),
+        'extra': t("""Альбом склеит кадры в одно сообщение."""),
+        'next': t("""Следующий кадр - отдельно."""),
     },
     'dup': {
         'title': t("""Это фото уже есть."""),
@@ -159,13 +160,13 @@ NEED_PHOTO = {
     '': {
         'title': t("""Нужно именно фото."""),
         'extra': t("""Нужен скрин из самой группы."""),
-        'next': t("""Картинка из галереи — отправьте её сюда."""),
+        'next': t("""Картинка из галереи - сюда."""),
     },
 }
 
 # ===========================================================================
 # Короткие тексты. Человек их тоже видит.
-# Кнопки списков, статусы, тосты, меню заданий, хелп — правь здесь.
+# Кнопки списков, статусы, тосты, меню заданий, хелп - правь здесь.
 # ===========================================================================
 
 WORDS = {
@@ -176,13 +177,13 @@ WORDS = {
     "of_group": "группы",
     "player": "игрок",
     "photo": "фото",
-    "photo_have": "<b>Есть <u>{have} из {total}</u>.</b>\n{what}",
+    "photo_have": "<b>Есть <u>{have} из {total}</u>.</b>\n\n{what}",
     "photo_hint_n": "фото {n}",
     "ellipsis": "…",
     "gifts_row": "подарков: {n}",
     "claim_btn": "{title} · {short}",
     "claim_btn_money": "{title} · {short} · {money}",
-    "seen_line": "«{names}» — {reason}.",
+    "seen_line": "«{names}» - {reason}.",
     "seen_join": "», «",
     "seen_no_public": "нет @адреса",
     "seen_no_admin": "Кут не администратор",
@@ -192,7 +193,19 @@ WORDS = {
     "toast_check": "Смотрю группы…",
     "history_gift": "подарок новой группы",
     "history_payout": "рекомендации бота в группах",
+    "progress": "<i>Шаг {n} из {total} · {what}</i>",
 }
+
+PATH_OWNER = ("админка", "ссылка", "фото", "проверка")
+PATH_RECO = ("админка", "ссылка", "фото", "Да", "проверка")
+
+
+def progress(*, intent: str = "", n: int = 1) -> str:
+    reco = str(intent or "") == "reco"
+    labels = PATH_RECO if reco else PATH_OWNER
+    total = len(labels)
+    step = max(1, min(int(n or 1), total))
+    return say("progress", n=step, total=total, what=labels[step - 1])
 
 # Слова, которые человек пишет боту. Пусть совпадают с текстом сообщений.
 CONFIRM_WORDS = frozenset({
@@ -238,8 +251,8 @@ PAUSE = {
 }
 
 PAUSE_HINT = {
-    "admin": "Верните Кут в администраторы — и зарплата снова начнёт капать.",
-    "public": "Сделайте группу публичной — и зарплата снова начнёт капать.",
+    "admin": "Верните Кут в администраторы - зарплата снова начнёт капать.",
+    "public": "Сделайте группу публичной - зарплата снова начнёт капать.",
 }
 
 PAUSE_SHORT = {
@@ -280,7 +293,9 @@ TASKS_MENU = {
 
 HELP_TASKS = t("""
 <tg-emoji emoji-id='5424616516018537963'>🎁</tg-emoji> <b>Рекомендация проекта в группах</b>
-<blockquote><b><i>Задания → Рекомендация проекта в группах → кто вы. Потом ссылка, доказательства, проверка. Решение придёт в этот чат.</i></b></blockquote>
+
+<blockquote><b><i>Своя группа - подарки игрокам у вас. Чужая - до 35% комиссии вам, 14 дней, нужно Да. Ответ придёт сюда.</i></b></blockquote>
+
 <blockquote><code>Задания</code></blockquote>
 """)
 
@@ -295,8 +310,17 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5452002597592382164'>📣</tg-emoji>""",
         text="""
         <b>Рекомендация бота в группах</b>
-        <b>Заработок — до <u>35%</u> комиссии с игр новых людей.</b>
-        <blockquote><b><i>Длительность — <u>14 дней</u> с той группы, куда вы добавите Кут.</i></b></blockquote>
+
+        <b>Добавьте Кут в чат. Деньги идут только с игр новых людей - тех, кого Кут ещё не знал.</b>
+
+        <pre>Своя группа
+Новым даём куты в подарок. Играть ими можно только у вас.
+Вам не 35% на карман - вам игроки и баланс группы.
+
+Чужая группа
+Вам капает до 35% комиссии с их игр.
+14 дней. Нужно Да от создателя.</pre>
+
         <i>Нажмите, кто вы. Дальше бот покажет, что нужно делать далее.</i>
         """,
         buttons=[
@@ -307,7 +331,7 @@ SCREENS: dict[str, dict] = {
                 go='owner',
             ),
             b(
-                text="Я рекомендую бот в группах",
+                text="Это чужая группа",
                 icon="""<tg-emoji emoji-id='5388583647370565067'>🔥</tg-emoji>""",
                 color='default',
                 go='reco',
@@ -327,8 +351,8 @@ SCREENS: dict[str, dict] = {
             ),
             b(
                 text="Назад, в главное меню",
-                icon="""<tg-emoji emoji-id='5348423147647414077'>↩️</tg-emoji>""",
-                color='success',
+                icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""",
+                color='primary',
                 go='back_tasks',
             ),
         ],
@@ -338,7 +362,14 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5451910260090485999'>🔥</tg-emoji>""",
         text="""
         <b>Кто вы?</b>
-        <i>Одна кнопка — и бот покажет следующий шаг.</i>
+
+        <pre>Своя группа
+Новым - подарки. Играть только у вас.
+
+Чужая группа
+Вам до 35% комиссии. 14 дней. Нужно Да от создателя.</pre>
+
+        <i>Нажмите кнопку.</i>
         """,
         buttons=[
             b(
@@ -347,14 +378,14 @@ SCREENS: dict[str, dict] = {
                 go='owner',
             ),
             b(
-                text="Я рекомендую бот в группах",
+                text="Это чужая группа",
                 icon="""<tg-emoji emoji-id='5388583647370565067'>🔥</tg-emoji>""",
                 go='reco',
             ),
             b(
                 text="Назад, в главное меню",
-                icon="""<tg-emoji emoji-id='5345947485548326948'>😛</tg-emoji>""",
-                color='success',
+                icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""",
+                color='primary',
                 go='back_hub',
             ),
         ],
@@ -364,10 +395,23 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji>""",
         text="""
         <b>Ваша группа</b>
+
+        {progress}
+
         <b>Добавьте Кут в администраторы <u>публичной</u> группы.</b>
-        <blockquote><b><i>Подойдёт {link_hint}</i></b></blockquote>
+
+        <pre>Как вы зарабатываете
+Кут даёт новым людям куты в подарок.
+Играть ими можно только у вас, в одиночных играх.
+Снять или перевести нельзя.
+Вам не 35% на карман - вам игроки и баланс группы.
+14 дней. Только те, кого Кут ещё не знал.</pre>
+
+        <blockquote><b><i>Когда вернётесь - пришлите ссылку сюда текстом. Подойдёт {link_hint}</i></b></blockquote>
+
         <blockquote><b><i>{seen}</i></b></blockquote>
-        <i>Нажмите «Добавить Кут», выберите чат. Потом пришлите ссылку сюда.</i>
+
+        <i>Нажмите «Добавить Кут». Ссылку - из шапки группы.</i>
         """,
         buttons=[
             b(
@@ -383,7 +427,7 @@ SCREENS: dict[str, dict] = {
             ),
             [
                 b(
-                    text="Нет @username",
+                    text="Группа закрытая",
                     icon="""<tg-emoji emoji-id='5271604874419647061'>🔗</tg-emoji>""",
                     color='primary' ,
                     go='public',
@@ -399,8 +443,8 @@ SCREENS: dict[str, dict] = {
             ],
             b(
                 text="Назад, в главное меню",
-                icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""",
-                color='success',
+                icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""",
+                color='primary',
                 go='back_hub',
             ),
         ],
@@ -409,11 +453,24 @@ SCREENS: dict[str, dict] = {
     'how_reco': msg(
         emoji="""<tg-emoji emoji-id='5451910260090485999'>🔥</tg-emoji>""",
         text="""
-        <b>Чужой чат</b>
-        <b>Попросите создателя добавить <u>@CuteGamingBot</u> в администраторы.</b>
-        <blockquote><b><i>Подойдёт {link_hint}</i></b></blockquote>
+        <b>Чужая группа</b>
+
+        {progress}
+
+        <b>Нужно <u>Да</u> от создателя. Сначала он добавляет <u>@CuteGamingBot</u> в админы.</b>
+
+        <pre>Как вы зарабатываете
+Человек первый раз играет в Кут через эту группу.
+С комиссии его игр вам капает до 35%.
+Только новые - кого Кут ещё не знал.
+14 дней с этой группы.
+Куты приходят вам на баланс сами.</pre>
+
+        <blockquote><b><i>Потом ссылка сюда, 3 фото и слово «подтверждение» в группе.</i></b></blockquote>
+
         <blockquote><b><i>{seen}</i></b></blockquote>
-        <i>Когда Кут в админах — пришлите сюда ссылку.</i>
+
+        <i>Когда Кут в админах - пришлите ссылку сюда.</i>
         """,
         buttons=[
             b(
@@ -429,7 +486,7 @@ SCREENS: dict[str, dict] = {
             ),
             [
                 b(
-                    text="Нет @username",
+                    text="Группа закрытая",
                     icon="""<tg-emoji emoji-id='5271604874419647061'>🔗</tg-emoji>""",
                     color='primary' ,
                     go='public',
@@ -445,8 +502,8 @@ SCREENS: dict[str, dict] = {
             ],
             b(
                 text="Назад, в главное меню",
-                icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""",
-                color='success',
+                icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""",
+                color='primary',
                 go='back_hub',
             ),
         ],
@@ -456,8 +513,13 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5856976696019784799'>💙</tg-emoji>""",
         text="""
         <b>Группа должна быть публичной</b>
-        <b>Название сверху → Управление → Тип группы → <u>Публичная</u>.</b>
+
+        {progress}
+
+        <pre>Название сверху → Управление → Тип группы → <u>Публичная</u></pre>
+
         <blockquote><b><i>Без открытого @адреса заявку не примем.</i></b></blockquote>
+
         <i>Сделайте публичной и пришлите ссылку сюда.</i>
         """,
         buttons=[
@@ -485,8 +547,13 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Куту нужна админка</b>
+
+        {progress}
+
         <b>Без прав администратора заявку не примем.</b>
-        <blockquote><b><i>Кут должен видеть чат, иначе проверку не начнём.</i></b></blockquote>
+
+        <blockquote><b><i>Кут должен видеть чат.</i></b></blockquote>
+
         <i>Добавьте Кут в администраторы и пришлите ссылку сюда.</i>
         """,
         buttons=[
@@ -514,9 +581,14 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Куту нужна админка</b>
+
+        {progress}
+
         <b>Попросите создателя дать Куту права администратора.</b>
-        <blockquote><b><i>Без админки Кут не видит чат — заявку не примем.</i></b></blockquote>
-        <i>Когда Кут в админах — пришлите ссылку сюда.</i>
+
+        <blockquote><b><i>Без админки заявку не примем.</i></b></blockquote>
+
+        <i>Когда Кут в админах - пришлите ссылку сюда.</i>
         """,
         buttons=[
             b(
@@ -543,9 +615,14 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>У «{name}» нет @адреса</b>
+
+        {progress}
+
         <b>Закрытую группу сдать нельзя.</b>
-        <blockquote><b><i>Нужен открытый @адрес, иначе заявку не примем.</i></b></blockquote>
-        <i>Сделайте группу публичной и пришлите ссылку сюда.</i>
+
+        <blockquote><b><i>Нужен открытый @адрес.</i></b></blockquote>
+
+        <i>Сделайте публичной и пришлите ссылку сюда.</i>
         """,
         buttons=[
             b(
@@ -572,8 +649,13 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>В «{name}» Кут не администратор</b>
+
+        {progress}
+
         <b>Без админки заявку не примем.</b>
-        <blockquote><b><i>Кут должен видеть чат, иначе проверку не начнём.</i></b></blockquote>
+
+        <blockquote><b><i>Кут должен видеть чат.</i></b></blockquote>
+
         <i>Добавьте Кут в администраторы и пришлите ссылку сюда.</i>
         """,
         buttons=[
@@ -601,9 +683,14 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>В «{name}» Кут не администратор</b>
+
+        {progress}
+
         <b>Попросите создателя дать ему админку.</b>
+
         <blockquote><b><i>Без админки заявку не примем.</i></b></blockquote>
-        <i>Когда Кут в админах — пришлите сюда ссылку.</i>
+
+        <i>Когда Кут в админах - пришлите ссылку сюда.</i>
         """,
         buttons=[ b(
             text="Добавить Кут" , icon="""<tg-emoji emoji-id='5461055585493470291'>🔥</tg-emoji>""" , color='success' ,
@@ -626,16 +713,18 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5451910260090485999'>🔥</tg-emoji>""",
         text="""
         <b>Кут зашёл в «{name}»</b>
-        <blockquote><b><i>Дальше нужно только указать, кто вы.</i></b></blockquote>
-        <i>Нажмите кнопку ниже.</i>
+
+        <b>Дальше укажите, кто вы - бот скажет следующий шаг.</b>
+
+        <blockquote><b><i>Своя группа - подарки у вас. Чужая - доля вам, нужно Да от создателя.</i></b></blockquote>
         """,
         buttons=[ b(
             text="Я владелец группы" , icon="""<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji>""" ,
             go='owner' , ) , b(
-            text="Я рекомендую бот в группах" , icon="""<tg-emoji emoji-id='5388583647370565067'>🔥</tg-emoji>""" ,
+            text="Это чужая группа" , icon="""<tg-emoji emoji-id='5388583647370565067'>🔥</tg-emoji>""" ,
             go='reco' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5345947485548326948'>😛</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -643,9 +732,14 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5857185830862329369'>💚</tg-emoji>""",
         text="""
         <b>Кут зашёл в «{name}»</b>
-        <b>Если он ещё не админ — сначала дайте админку.</b>
-        <blockquote><b><i>Без админки ссылку проверять рано.</i></b></blockquote>
-        <i>Если Кут уже администратор — отправьте сюда ссылку на группу.</i>
+
+        {progress}
+
+        <b>Если он ещё не админ - дайте админку.</b>
+
+        <blockquote><b><i>Потом пришлите ссылку на группу сюда. Без ссылки дальше не пойдём.</i></b></blockquote>
+
+        <i>Если Кут уже админ - отправьте ссылку сюда.</i>
         """,
         buttons=[ b(
             text="Добавить Кут" , icon="""<tg-emoji emoji-id='5461055585493470291'>🔥</tg-emoji>""" , color='success' ,
@@ -660,21 +754,26 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5271929616896921139'>🪨</tg-emoji>""",
         text="""
         <b>Нужна ссылка на группу</b>
-        <b>Пришлите её сюда текстом.</b>
+
+        {progress}
+
+        <b>Пришлите её сюда текстом - из шапки группы.</b>
+
         <blockquote><b><i>Подойдёт {link_hint}</i></b></blockquote>
-        <i>Копировать ссылку — из шапки группы, не пересылкой.</i>
+
+        <i>Копировать ссылку - из шапки группы.</i>
         """,
         buttons=[ b(
             text="Добавить Кут" , icon="""<tg-emoji emoji-id='5461055585493470291'>🔥</tg-emoji>""" , go='add_bot' , ) ,
             b(
                 text="Не могу добавить" , icon="""<tg-emoji emoji-id='5463426192692500499'>🤞</tg-emoji>""" , go='cant' ,
                 when='reco' , ) , [ b(
-                text="Нет @username" , icon="""<tg-emoji emoji-id='5271604874419647061'>🔗</tg-emoji>""" ,
+                text="Группа закрытая" , icon="""<tg-emoji emoji-id='5271604874419647061'>🔗</tg-emoji>""" ,
                 color='primary' , go='public' , when='no_public' , ) , b(
                 text="Кут не администратор" , icon="""<tg-emoji emoji-id='5251203410396458957'>🛡</tg-emoji>""" ,
                 color='primary' , go='admin' , when='no_admin' , ) , ] , b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -682,21 +781,26 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Пересылка не подходит</b>
+
+        {progress}
+
         <b>Пришлите ссылку текстом, не сообщением из группы.</b>
+
         <blockquote><b><i>Подойдёт {link_hint}</i></b></blockquote>
-        <i>Скопируйте @адрес или ссылку и отправьте сюда.</i>
+
+        <i>Скопируйте ссылку из шапки и отправьте сюда.</i>
         """,
         buttons=[ b(
             text="Добавить Кут" , icon="""<tg-emoji emoji-id='5461055585493470291'>🔥</tg-emoji>""" , go='add_bot' , ) ,
             b(
                 text="Не могу добавить" , icon="""<tg-emoji emoji-id='5463426192692500499'>🤞</tg-emoji>""" , go='cant' ,
                 when='reco' , ) , [ b(
-                text="Нет @username" , icon="""<tg-emoji emoji-id='5271604874419647061'>🔗</tg-emoji>""" ,
+                text="Группа закрытая" , icon="""<tg-emoji emoji-id='5271604874419647061'>🔗</tg-emoji>""" ,
                 color='primary' , go='public' , when='no_public' , ) , b(
                 text="Кут не администратор" , icon="""<tg-emoji emoji-id='5251203410396458957'>🛡</tg-emoji>""" ,
                 color='primary' , go='admin' , when='no_admin' , ) , ] , b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -704,8 +808,13 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Это закрытая ссылка</b>
+
+        {progress}
+
         <b>Нужна <u>публичная</u> ссылка на группу.</b>
-        <blockquote><b><i>Приглашение t.me/+ не подходит — заявку по нему не найдём.</i></b></blockquote>
+
+        <blockquote><b><i>Приглашение t.me/+ не подойдёт.</i></b></blockquote>
+
         <i>Создайте публичную ссылку и отправьте её сюда.</i>
         """,
         buttons=[ b(
@@ -721,17 +830,22 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Такую группу система не видит</b>
+
+        {progress}
+
         <b>Кут уже должен быть в чате.</b>
-        <blockquote><b><i>Иначе группу не найдём — ссылка сама по себе ничего не доказывает.</i></b></blockquote>
-        <i>Проверьте ссылку. Когда Кут в чате — пришлите её снова.</i>
+
+        <blockquote><b><i>Без Кута в чате ссылку не проверим.</i></b></blockquote>
+
+        <i>Проверьте ссылку и пришлите её снова.</i>
         """,
         buttons=[ b(
             text="Добавить Кут" , icon="""<tg-emoji emoji-id='5461055585493470291'>🔥</tg-emoji>""" , color='success' ,
             go='add_bot' , ) , b(
             text="Не могу добавить" , icon="""<tg-emoji emoji-id='5463426192692500499'>🤞</tg-emoji>""" , go='cant' ,
             when='reco' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -739,17 +853,22 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Кут не в «{name}»</b>
+
+        {progress}
+
         <b>Сначала добавьте бота в чат.</b>
-        <blockquote><b><i>Пока Кут не в группе — ссылку проверять рано.</i></b></blockquote>
-        <i>Добавьте Кут, потом отправьте ссылку сюда снова.</i>
+
+        <blockquote><b><i>Пока Кут не в группе - ссылку проверять рано.</i></b></blockquote>
+
+        <i>Добавьте Кут и отправьте ссылку сюда снова.</i>
         """,
         buttons=[ b(
             text="Добавить Кут" , icon="""<tg-emoji emoji-id='5461055585493470291'>🔥</tg-emoji>""" , color='success' ,
             go='add_bot' , ) , b(
             text="Не могу добавить" , icon="""<tg-emoji emoji-id='5463426192692500499'>🤞</tg-emoji>""" , go='cant' ,
             when='reco' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -757,17 +876,22 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Кут не в «{name}»</b>
+
+        {progress}
+
         <b>Попросите создателя добавить <u>@CuteGamingBot</u> в админы.</b>
-        <blockquote><b><i>Пока Кут не в чате — ссылку проверять рано.</i></b></blockquote>
-        <i>Когда Кут в чате — пришлите сюда ссылку снова.</i>
+
+        <blockquote><b><i>Пока Кут не в чате - ссылку проверять рано.</i></b></blockquote>
+
+        <i>Когда Кут в чате - пришлите ссылку снова.</i>
         """,
         buttons=[ b(
             text="Добавить Кут" , icon="""<tg-emoji emoji-id='5461055585493470291'>🔥</tg-emoji>""" , color='success' ,
             go='add_bot' , ) , b(
             text="Не могу добавить" , icon="""<tg-emoji emoji-id='5463426192692500499'>🤞</tg-emoji>""" , go='cant' ,
             when='reco' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -775,9 +899,14 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5445325005778866735'>😩</tg-emoji>""",
         text="""
         <b>Чужая группа</b>
+
+        {progress}
+
         <b>Попросите создателя добавить <u>@CuteGamingBot</u> в администраторы.</b>
+
         <blockquote><b><i>Подойдёт {link_hint}</i></b></blockquote>
-        <i>Когда Кут в чате — пришлите сюда ссылку.</i>
+
+        <i>Когда Кут в чате - пришлите ссылку сюда, из шапки группы.</i>
         """,
         buttons=[ b(
             text="Добавить Кут" , icon="""<tg-emoji emoji-id='5461055585493470291'>🔥</tg-emoji>""" , color='success' ,
@@ -794,8 +923,13 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Вас нет в «{name}»</b>
-        <b>Сдавать можно только чат, в котором вы сами состоите.</b>
+
+        {progress}
+
+        <b>Сдавать можно только чат, где вы сами состоите.</b>
+
         <blockquote><b><i>Чужой чат со стороны не принимаем.</i></b></blockquote>
+
         <i>Сначала вступите. Потом пришлите ссылку сюда.</i>
         """,
         buttons=[ b(
@@ -803,8 +937,8 @@ SCREENS: dict[str, dict] = {
             go='add_bot' , ) , b(
             text="Не могу добавить" , icon="""<tg-emoji emoji-id='5463426192692500499'>🤞</tg-emoji>""" , go='cant' ,
             when='reco' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -812,8 +946,13 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Это не группа</b>
+
+        {progress}
+
         <b>Канал, бот и личка не подходят.</b>
-        <blockquote><b><i>Нужен именно чат — там люди пишут и играют.</i></b></blockquote>
+
+        <blockquote><b><i>Нужен чат - там пишут и играют.</i></b></blockquote>
+
         <i>Пришлите ссылку на группу.</i>
         """,
         buttons=[ b(
@@ -821,8 +960,8 @@ SCREENS: dict[str, dict] = {
             go='add_bot' , ) , b(
             text="Не могу добавить" , icon="""<tg-emoji emoji-id='5463426192692500499'>🤞</tg-emoji>""" , go='cant' ,
             when='reco' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -830,13 +969,15 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5445325005778866735'>😩</tg-emoji>""",
         text="""
         <b>Какую группу сдаём?</b>
-        <blockquote><b><i>Список — чаты, где Кут уже есть. Одна кнопка — одна группа.</i></b></blockquote>
-        <i>Нажмите нужную. Если список не тот — «Назад».</i>
+
+        <blockquote><b><i>Список - чаты, где Кут уже есть.</i></b></blockquote>
+
+        <i>Нажмите нужную. Если список не тот - «Назад».</i>
         """,
         buttons=[
             items('groups', text="{title}", go='pick_group'), b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -844,8 +985,12 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5444884960609590878'>🧐</tg-emoji>""",
         text="""
         <b>«{name}»</b>
+
         <b>Кто сдаёт эту группу?</b>
-        <blockquote><b><i>Если вы не владелец — создатель потом нажмёт <u>Да</u> в группе.</i></b></blockquote>
+
+        <pre>Своя - подарки игрокам у вас.
+Чужая - доля вам, нужно Да от создателя.</pre>
+
         <i>Нажмите, кто вы.</i>
         """,
         buttons=[
@@ -856,12 +1001,12 @@ SCREENS: dict[str, dict] = {
                 go='owner',
             ),
             b(
-                text="Я рекомендую Кут в группах",
+                text="Это чужая группа",
                 icon="""<tg-emoji emoji-id='5388583647370565067'>🔥</tg-emoji>""",
                 go='reco',
             ), b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -869,8 +1014,13 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji>""",
         text="""
         <b>«{name}»</b>
-        <b>Вы создатель. Дальше <u>3 фото</u> — и заявка идёт на проверку.</b>
-        <blockquote><b><i>Если знакомый попросил добавить Кут — не забирайте заявку: пусть он сам пришлёт ссылку в бота.</i></b></blockquote>
+
+        {progress}
+
+        <b>Дальше <u>3 фото</u> - по ним проверим, что Кут в чате.</b>
+
+        <blockquote><b><i>Если знакомый просил добавить Кут - пусть сам пришлёт ссылку в бота.</i></b></blockquote>
+
         <i>Пришлите первое фото сюда.</i>
         """,
         buttons=[
@@ -881,12 +1031,12 @@ SCREENS: dict[str, dict] = {
                 when='have_photos',
             ),
             b(
-                text="Снять",
+                text="Снять заявку",
                 icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
                 go='cancel',
             ), b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -894,8 +1044,13 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5451910260090485999'>🔥</tg-emoji>""",
         text="""
         <b>«{name}»</b>
-        <b>Вы не создатель. Чтобы доля шла вам, владелец нажмёт <u>Да</u>.</b>
-        <blockquote><b><i>После трёх фото напишите в группе «подтверждение» — и он увидит кнопки.</i></b></blockquote>
+
+        {progress}
+
+        <b>Чтобы доля шла вам, создатель нажмёт <u>Да</u>.</b>
+
+        <blockquote><b><i>Сначала 3 фото. Потом в группе напишите «подтверждение».</i></b></blockquote>
+
         <i>Пришлите первое фото сюда.</i>
         """,
         buttons=[
@@ -906,12 +1061,12 @@ SCREENS: dict[str, dict] = {
                 when='have_photos',
             ),
             b(
-                text="Снять",
+                text="Снять заявку",
                 icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
                 go='cancel',
             ), b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -919,33 +1074,38 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Вы не владелец «{name}»</b>
+
         <b>Чужой чат сдаётся через рекомендацию.</b>
-        <blockquote><b><i>Путь владельца здесь не подойдёт — иначе доля уйдёт не тому.</i></b></blockquote>
-        <i>Нажмите «Я рекомендую бот в группах».</i>
+
+        <blockquote><b><i>Иначе доля уйдёт не тому.</i></b></blockquote>
+
+        <i>Нажмите «Это чужая группа».</i>
         """,
         buttons=[
             b(
-                text="Я рекомендую бот в группах",
+                text="Это чужая группа",
                 icon="""<tg-emoji emoji-id='5388583647370565067'>🔥</tg-emoji>""",
                 go='reco',
             ), b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
     ),
 
     'are_owner_switch': msg(
         emoji="""<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji>""",
         text="""
-        <b>«{name}» — ваша группа</b>
-        <blockquote><b><i>Создателю не нужно подтверждение в своей же группе.</i></b></blockquote>
+        <b>«{name}» - ваша группа</b>
+
+        <blockquote><b><i>Создателю подтверждение не нужно.</i></b></blockquote>
+
         <i>Нажмите «Я владелец группы».</i>
         """,
         buttons=[ b(
             text="Я владелец группы" , icon="""<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji>""" ,
             go='owner' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -953,21 +1113,26 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5388625626380916939'>📖</tg-emoji>""",
         text="""
         <b>{step} из {total}</b>
+
+        {progress}
+
         {body}
+
         {need}
+
         {next}
         """,
         buttons=[ b(
             text="Другое фото" , icon="""<tg-emoji emoji-id='5231137194340540199'>🤙</tg-emoji>""" , go='undo' ,
             when='have_photos' , ) , b(
-            text="Снять" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Снять заявку" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' , ) , b(
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
         next_by={
             '0': """<i>Пришлите фото сюда.</i>""",
             '1': """<i>Пришлите следующее фото сюда, одним кадром.</i>""",
-            '2': """<i>Пришлите последнее фото сюда — и заявка уйдёт дальше.</i>""",
+            '2': """<i>Пришлите последнее фото сюда.</i>""",
         },
     ),
 
@@ -975,15 +1140,19 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>{title}</b>
+
+        {progress}
+
         <blockquote><b><i>{extra}</i></b></blockquote>
+
         <i>{tail}</i>
         """,
         buttons=[ b(
             text="Другое фото" , icon="""<tg-emoji emoji-id='5231137194340540199'>🤙</tg-emoji>""" , go='undo' ,
             when='have_photos' , ) , b(
-            text="Снять" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Снять заявку" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' , ) , b(
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -991,8 +1160,10 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b><u>24 часа</u> вышли</b>
-        <blockquote><b><i>Три фото нужно успеть отправить за сутки с первого кадра.</i></b></blockquote>
-        <i>Нажмите «Сдать ещё группу» — и сдайте три фото заново.</i>
+
+        <blockquote><b><i>Три фото нужно успеть за сутки с первого кадра.</i></b></blockquote>
+
+        <i>Нажмите «Сдать ещё группу» и сдайте фото заново.</i>
         """,
         buttons=[
             b(
@@ -1001,8 +1172,8 @@ SCREENS: dict[str, dict] = {
                 color='success',
                 go='more',
             ), b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1010,15 +1181,25 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5474515587797360318'>💋</tg-emoji>""",
         text="""
         <b>Доказательства приняты</b>
-        <b>Новым людям проект даст куты — играть ими можно только у вас, в этой группе.</b>
-        <blockquote><b><i>Теперь заявка уйдёт на проверку. Ответ придёт сюда.</i></b></blockquote>
-        <i>Ничего больше отправлять не нужно.</i>
+
+        {progress}
+
+        <b>Заявку ещё смотрят - это ещё не финал.</b>
+
+        <pre>Если примут
+Новым даём куты в подарок.
+Играть только у вас, в этой группе.
+Вам игроки и баланс группы, не 35% на карман.</pre>
+
+        <blockquote><b><i>Ждём проверку. Ответ придёт сюда.</i></b></blockquote>
+
+        <i>Пока ничего нажимать не нужно. Статус - в «Мои группы».</i>
         """,
         buttons=[ b(
             text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
             when='mine' , ) , b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1026,15 +1207,25 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5474515587797360318'>💋</tg-emoji>""",
         text="""
         <b>Доказательства приняты</b>
-        <b><u>14 дней</u> вам будет капать доля с игр новых людей в этой группе.</b>
-        <blockquote><b><i>Теперь заявка уйдёт на проверку. Ответ придёт сюда.</i></b></blockquote>
-        <i>Ничего больше отправлять не нужно.</i>
+
+        {progress}
+
+        <b>Заявку ещё смотрят - это ещё не финал.</b>
+
+        <pre>Если примут
+14 дней вам капает доля с игр новых.
+Только те, кого Кут ещё не знал.
+Куты приходят вам на баланс сами.</pre>
+
+        <blockquote><b><i>Ждём проверку. Ответ придёт сюда.</i></b></blockquote>
+
+        <i>Пока ничего нажимать не нужно. Статус - в «Мои группы».</i>
         """,
         buttons=[ b(
             text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
             when='mine' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1042,8 +1233,13 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5388670457249552219'>👯‍♀️</tg-emoji>""",
         text="""
         <b>Откройте «{name}» и напишите <code>подтверждение</code>.</b>
+
+        {progress}
+
         <b>Владелец должен нажать <u>Да</u> за <u>24 часа</u>.</b>
-        <blockquote><b><i>Без Да доля вам не пойдёт — заявка дальше не едет.</i></b></blockquote>
+
+        <blockquote><b><i>Без Да долю не откроем. Проверку начнём только после Да.</i></b></blockquote>
+
         <i>Нажмите «Открыть группу», если есть кнопка.</i>
         """,
         buttons=[
@@ -1056,9 +1252,9 @@ SCREENS: dict[str, dict] = {
             b(
                 text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
                 when='mine' , ) , b(
-                text="Снять" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' , ) , b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Снять заявку" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' , ) , b(
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1066,17 +1262,21 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5391270106464539040'>😐</tg-emoji>""",
         text="""
         <b>Ждём <u>Да</u> от создателя</b>
+
+        {progress}
+
         <blockquote><b><i>Без Да доля вам не пойдёт.</i></b></blockquote>
-        <i>Если не нажал — откройте группу и напишите «подтверждение» ещё раз.</i>
+
+        <i>Если не нажал - напишите «подтверждение» ещё раз.</i>
         """,
         buttons=[ b(
             text="Открыть группу" , icon="""<tg-emoji emoji-id='5388583647370565067'>🌂</tg-emoji>""" , go='open_group' ,
             when='has_username' , ) , b(
             text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
             when='mine' , ) , b(
-            text="Снять" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Снять заявку" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' , ) , b(
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1084,9 +1284,12 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5231463873848039753'>😳</tg-emoji>""",
         text="""
         <b>Заработки</b>
-        <b>Всего вам пришло: <u>{total}</u></b>
-        <b>Сегодня: <u>{today}</u></b>
+
+        <pre><b>Всего вам пришло: <u>{total}</u></b>
+<b>Сегодня: <u>{today}</u></b></pre>
+
         <blockquote><b><i>{barnum}</i></b></blockquote>
+
         <i>{next}</i>
         """,
         buttons=[
@@ -1104,27 +1307,30 @@ SCREENS: dict[str, dict] = {
                 go='more',
                 when='not_live',
             ), b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
         extra_by={
-            'empty': """Пока тихо. Сдайте группу — и здесь появятся цифры.""",
-            'live_paid': """Это уже ваши цифры. Откройте группу — будет видно, откуда капает.""",
-            'live': """Группа уже в работе. Первые куты приходят, когда новые люди начинают играть.""",
-            'today': """Сегодня уже есть движение. Откройте группу — там подробнее.""",
-            'pending': """Вы уже сделали свою часть. Пока смотрят заявку — можно подождать здесь.""",
+            'empty': """Пока тихо. Сдайте группу - здесь появятся цифры.""",
+            'live_paid': """Это уже ваши цифры. Откройте группу - видно, откуда капает.""",
+            'live': """Группа в работе. Куты капают, когда новые люди играют.""",
+            'today': """Сегодня уже есть движение.""",
+            'pending': """Свою часть вы сделали. Ждём проверку.""",
         },
         next_empty="""Нажмите «Сдать ещё группу» и выберите, кто вы.""",
-        next="""Нажмите группу — откроется карточка.""",
+        next="""Нажмите группу - откроется карточка.""",
     ),
 
     'mine': msg(
         emoji="""<tg-emoji emoji-id='5452064260437859029'>🌐</tg-emoji>""",
         text="""
         <b>Мои группы</b>
-        <b>Всего вам пришло: <u>{total}</u></b>
-        <b>Сегодня: <u>{today}</u></b>
+
+        <pre><b>Всего вам пришло: <u>{total}</u></b>
+<b>Сегодня: <u>{today}</u></b></pre>
+
         <blockquote><b><i>{barnum}</i></b></blockquote>
+
         <i>{next}</i>
         """,
         buttons=[
@@ -1142,26 +1348,29 @@ SCREENS: dict[str, dict] = {
                 go='more',
                 when='not_live',
             ), b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
         extra_by={
-            'empty': """Пока тихо. Сдайте группу — и здесь появятся цифры.""",
-            'live_paid': """Это уже ваши цифры. Откройте группу — будет видно, откуда капает.""",
-            'live': """Группа уже в работе. Первые куты приходят, когда новые люди начинают играть.""",
-            'today': """Сегодня уже есть движение. Откройте группу — там подробнее.""",
-            'pending': """Вы уже сделали свою часть. Пока смотрят заявку — можно подождать здесь.""",
+            'empty': """Пока тихо. Сдайте группу - здесь появятся цифры.""",
+            'live_paid': """Это уже ваши цифры. Откройте группу - видно, откуда капает.""",
+            'live': """Группа в работе. Куты капают, когда новые люди играют.""",
+            'today': """Сегодня уже есть движение.""",
+            'pending': """Свою часть вы сделали. Ждём проверку.""",
         },
         next_empty="""Нажмите «Сдать ещё группу» и выберите, кто вы.""",
-        next="""Нажмите группу — откроется карточка.""",
+        next="""Нажмите группу - откроется карточка.""",
     ),
 
     'card': msg(
         emoji="""<tg-emoji emoji-id='5391270106464539040'>😐</tg-emoji>""",
         text="""
         <b>«{name}»</b>
-        {facts}
+
+        <pre>{facts}</pre>
+
         <blockquote><b><i>{extra}</i></b></blockquote>
+
         <i>{next}</i>
         """,
         buttons=[ b(
@@ -1175,19 +1384,19 @@ SCREENS: dict[str, dict] = {
                 when='photos',
             ),
             b(
-                text="Снять",
+                text="Снять заявку",
                 icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
                 go='cancel',
                 when='photos',
             ),
             b(
-                text="Снять",
+                text="Снять заявку",
                 icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
                 go='cancel',
                 when='wait_confirm',
             ),
             b(
-                text="Снять",
+                text="Снять заявку",
                 icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
                 go='cancel',
                 when='pending',
@@ -1207,24 +1416,24 @@ SCREENS: dict[str, dict] = {
         },
         extra_by={
             'pause': """Начисления стоят, пока это не исправить.""",
-            'photos': """Три кадра нужны, чтобы заявка ушла дальше.""",
-            'wait_confirm': """Да нажимает только владелец группы.""",
-            'pending': """Решение по заявке придёт в этот чат.""",
-            'live': """Пока Кут в админах и группа открытая — цифры обновляются сами.""",
+            'photos': """Нужны три кадра - иначе заявка не уйдёт.""",
+            'wait_confirm': """Да нажимает только владелец.""",
+            'pending': """Решение придёт в этот чат.""",
+            'live': """Пока Кут админ и группа открытая - цифры обновляются сами.""",
             'ended': """Новые куты с этой группы больше не капают.""",
             'rejected': """{reason}""",
-            'burned': """Если Кут вернуть в админы — это уже новая заявка.""",
+            'burned': """Вернуть Кут в админы - уже новая заявка.""",
         },
         next_by={
             'pause': """{hint}""",
-            'photos': """Нажмите «Продолжить фото» и пришлите следующий кадр сюда.""",
-            'wait_confirm': """Нажмите «Открыть группу», напишите «подтверждение», дождитесь Да.""",
-            'pending': """Ждите. «Назад» — к списку.""",
-            'live': """Ничего нажимать не нужно. «Назад» — к списку.""",
+            'photos': """Нажмите «Продолжить фото» и пришлите кадр сюда.""",
+            'wait_confirm': """Откройте группу, напишите «подтверждение», дождитесь Да.""",
+            'pending': """Ждите. «Назад» - к списку.""",
+            'live': """Ничего нажимать не нужно.""",
             'ended': """Срок вышел. Новую группу сдайте с главного меню.""",
-            'rejected': """«Назад» — к списку.""",
-            'burned': """Кут убрали из группы. «Назад» — к списку.""",
-            'default': """«Назад» — к списку групп.""",
+            'rejected': """«Назад» - к списку.""",
+            'burned': """Кут убрали. «Назад» - к списку.""",
+            'default': """«Назад» - к списку.""",
         },
         facts_owner="""
         <b>{status}</b>
@@ -1245,8 +1454,10 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5397751602956239123'>🔥</tg-emoji>""",
         text="""
         <b>Заявку сняли</b>
+
         <blockquote><b><i>Эту группу можно сдать снова, если слот свободен.</i></b></blockquote>
-        <i>Нажмите «Сдать ещё группу», если хотите начать заново.</i>
+
+        <i>Нажмите «Сдать ещё группу», если хотите заново.</i>
         """,
         buttons=[
             b(
@@ -1255,8 +1466,8 @@ SCREENS: dict[str, dict] = {
                 color='success',
                 go='more',
             ), b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1264,7 +1475,9 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5424616516018537963'>🎁</tg-emoji>""",
         text="""
         <b>{who} рекомендовал добавить Кут в эту группу?</b>
-        <b>Если да — нажмите <u>Да</u>.</b>
+
+        <b>Если да - нажмите <u>Да</u>.</b>
+
         <blockquote><b><i>Тогда его задание будет выполнено.</i></b></blockquote>
         """,
         buttons=[
@@ -1289,8 +1502,8 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5474515587797360318'>💋</tg-emoji>""",
         text="""
         <b>Подтверждено. Заявка на проверке.</b>
+
         <blockquote><b><i>Решение придёт тому, кто привёл Кут, в личку.</i></b></blockquote>
-        <i>Ничего больше нажимать не нужно.</i>
         """,
     ),
 
@@ -1298,19 +1511,22 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5391050667995460499'>🤨</tg-emoji>""",
         text="""
         <b>Создатель не подтвердил рекомендацию</b>
+
         <b>Остался <u>один шанс</u> за <u>24 часа</u>.</b>
-        <blockquote><b><i>Второй отказ закроет эту группу на месяц.</i></b></blockquote>
-        <i>Откройте группу и напишите <code>подтверждение</code> ещё раз.</i>
+
+        <blockquote><b><i>Второй отказ закроет группу на месяц.</i></b></blockquote>
+
+        <i>Напишите <code>подтверждение</code> ещё раз.</i>
         """,
         buttons=[ b(
             text="Открыть группу" , icon="""<tg-emoji emoji-id='5388583647370565067'>🌂</tg-emoji>""" , go='open_group' ,
             when='has_username' , ) , b(
             text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
             when='mine' , ) , b(
-            text="Снять" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' ,
+            text="Снять заявку" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' ,
             when='wait_confirm' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1318,13 +1534,14 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Снова отказ от владельца</b>
+
         <b>Эту группу нельзя сдавать <u>31 день</u>.</b>
-        <blockquote><b><i>После двух отказов слот на чат закрывается на месяц.</i></b></blockquote>
-        <i>Нажмите «Назад» и возьмите другую группу.</i>
+
+        <blockquote><b><i>После двух отказов слот закрывается на месяц.</i></b></blockquote>
         """,
         buttons=[ b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1332,12 +1549,12 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Это не ваша заявка</b>
-        <blockquote><b><i>Подтверждение и снятие — только тому, кто сдавал группу.</i></b></blockquote>
-        <i>Нажмите «Назад».</i>
+
+        <blockquote><b><i>Подтверждение и снятие - только тому, кто сдавал группу.</i></b></blockquote>
         """,
         buttons=[ b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1345,7 +1562,8 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Подтверждает только создатель</b>
-        <blockquote><b><i>Да или Нет нажимает владелец группы — больше никто.</i></b></blockquote>
+
+        <blockquote><b><i>Да или Нет нажимает владелец - больше никто.</i></b></blockquote>
         """,
     ),
 
@@ -1353,7 +1571,9 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5447589583120257784'>😁</tg-emoji>""",
         text="""
         <b>Это подтверждение уже не действует</b>
-        <blockquote><b><i>Кнопки Да / Нет живут <u>24 часа</u> с момента «подтверждение».</i></b></blockquote>
+
+        <blockquote><b><i>Кнопки Да / Нет живут <u>24 часа</u>.</i></b></blockquote>
+
         <i>Напишите в группе «подтверждение» снова.</i>
         """,
     ),
@@ -1362,8 +1582,10 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Не та группа</b>
-        <blockquote><b><i>«Подтверждение» срабатывает только в сданном вами чате.</i></b></blockquote>
-        <i>Откройте ту группу, куда добавляли Кут, и напишите там.</i>
+
+        <blockquote><b><i>«Подтверждение» работает только в сданном чате.</i></b></blockquote>
+
+        <i>Напишите его в той группе, куда добавляли Кут.</i>
         """,
     ),
 
@@ -1371,15 +1593,19 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5388625626380916939'>📖</tg-emoji>""",
         text="""
         <b>Сначала отправьте <u>3 фото</u> сюда</b>
-        <blockquote><b><i>Подтверждение в группе открывается только после трёх кадров.</i></b></blockquote>
-        <i>Пришлите их в этот чат, по одному кадру.</i>
+
+        {progress}
+
+        <blockquote><b><i>Подтверждение откроется только после трёх кадров.</i></b></blockquote>
+
+        <i>Пришлите их сюда, по одному кадру.</i>
         """,
         buttons=[ b(
             text="Другое фото" , icon="""<tg-emoji emoji-id='5231137194340540199'>🤙</tg-emoji>""" , go='undo' ,
             when='have_photos' , ) , b(
-            text="Снять" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Снять заявку" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' , ) , b(
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1387,15 +1613,20 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5461055585493470291'>🔥</tg-emoji>""",
         text="""
         <b>Группу приняли</b>
+
         <b><u>{days} дней</u> вам будет капать доля с игр новых людей.</b>
-        <blockquote><b><i>Капает только с тех, кого Кут ещё не знал.</i></b></blockquote>
-        <i>Ничего нажимать не нужно — цифры появятся сами.</i>
+
+        <pre>До 35% с их игр - на ваш баланс.
+Только те, кого Кут ещё не знал.
+Ничего нажимать не нужно - куты капают сами.</pre>
+
+        <i>Откройте «Мои группы», если хотите посмотреть статус.</i>
         """,
         buttons=[ b(
             text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
             when='mine' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1403,15 +1634,21 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5461055585493470291'>🔥</tg-emoji>""",
         text="""
         <b>Группу приняли</b>
+
         <b><u>{days} дней</u> новые люди смогут играть у вас на подарочные куты.</b>
-        <blockquote><b><i>Подарки работают только в одиночных играх этой группы.</i></b></blockquote>
-        <i>Ничего нажимать не нужно.</i>
+
+        <pre>Новым даём куты в подарок.
+Играть только у вас, в одиночных играх.
+Снять или перевести нельзя.
+Ничего нажимать не нужно - куты капают сами.</pre>
+
+        <i>Статус и баланс группы - в «Мои группы».</i>
         """,
         buttons=[ b(
             text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
             when='mine' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1419,7 +1656,9 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5444884960609590878'>🧐</tg-emoji>""",
         text="""
         <b>Сегодня с «{name}»: <u>{newcomers}</u> новых · вам <u>{paid}</u>.</b>
+
         <b>Осталось <u>{days}</u> дн.</b>
+
         <blockquote><b><i>{note}</i></b></blockquote>
         """,
         extra_by={
@@ -1431,17 +1670,20 @@ SCREENS: dict[str, dict] = {
     'gift': msg(
         emoji="""<tg-emoji emoji-id='5355193051193059834'>🎁</tg-emoji>""",
         text="""
-        <b>{who}, вам <u>{amount} кут</u> в подарок — чтобы научится играть в Кут.</b>
+        <b>{who}, вам <u>{amount} кут</u> в подарок - чтобы научится играть в Кут.</b>
+
         <blockquote><b><i>Играть ими можно только в этой группе, в одиночных играх.</i></b></blockquote>
-        <i>Если что-то непонятно — напишите «хелп».</i>
+
+        <i>Если что-то непонятно - напишите «хелп».</i>
         """,
     ),
 
     'gift_locked': msg(
         emoji="""<tg-emoji emoji-id='5271929616896921139'>🪨</tg-emoji>""",
         text="""
-        <b>Подарочные куты ставятся только в <u>одиночной игре</u> этой группы.</b>
-        <blockquote><b><i>Снять или перевести нельзя — ими учатся играть у вас.</i></b></blockquote>
+        <b>Подарочные куты - только в <u>одиночной игре</u> этой группы.</b>
+
+        <blockquote><b><i>Снять или перевести нельзя - ими учатся играть у вас.</i></b></blockquote>
         """,
     ),
 
@@ -1449,15 +1691,16 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5445110875889360215'>🤐</tg-emoji>""",
         text="""
         <b>Срок по этой группе закончился</b>
+
         <b>Новые куты с неё больше не капают.</b>
+
         <blockquote><b><i>Уже начисленные куты остаются у вас.</i></b></blockquote>
-        <i>Откройте «Мои группы», чтобы увидеть статус.</i>
         """,
         buttons=[ b(
             text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
             when='mine' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1465,9 +1708,10 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Кут убрали из группы</b>
+
         <b>Начисления остановились.</b>
-        <blockquote><b><i>Если бота выгнали — заявка по этой группе сгорает.</i></b></blockquote>
-        <i>Верните Кут в админы, если хотите начать заново. Статус — в «Мои группы».</i>
+
+        <blockquote><b><i>Если бота выгнали - заявка сгорает.</i></b></blockquote>
         """,
     ),
 
@@ -1475,13 +1719,14 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5397751602956239123'>🔥</tg-emoji>""",
         text="""
         <b>Не приняли</b>
+
         <b>{reason}</b>
+
         <blockquote><b><i>Эту заявку уже не поправить.</i></b></blockquote>
-        <i>Нажмите «Назад».</i>
         """,
         buttons=[ b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1489,15 +1734,18 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5397751602956239123'>🔥</tg-emoji>""",
         text="""
         <b>Не приняли</b>
+
         <b>{reason}</b>
+
         <blockquote><b><i>Есть <u>48 часов</u>, чтобы исправить и сдать снова.</i></b></blockquote>
+
         <i>Нажмите «Сдать ещё группу».</i>
         """,
         buttons=[ b(
             text="Сдать ещё группу" , icon="""<tg-emoji emoji-id='5461055585493470291'>🔥</tg-emoji>""" ,
             color='success' , go='more' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1505,14 +1753,16 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5231463873848039753'>😳</tg-emoji>""",
         text="""
         <b>Максимум <u>2 заявки</u> на проверке</b>
-        <blockquote><b><i>Одновременно смотрим не больше двух заявок на человека.</i></b></blockquote>
-        <i>Нажмите «Мои группы»: дождитесь проверки или снимите одну.</i>
+
+        <blockquote><b><i>Одновременно смотрим не больше двух.</i></b></blockquote>
+
+        <i>Нажмите «Мои группы»: ждите или снимите одну.</i>
         """,
         buttons=[ b(
             text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
             when='mine' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1520,14 +1770,16 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5231463873848039753'>😳</tg-emoji>""",
         text="""
         <b>Максимум <u>2 живых</u> группы</b>
+
         <blockquote><b><i>Живых групп на человеке не больше двух.</i></b></blockquote>
-        <i>Нажмите «Мои группы», чтобы увидеть, что уже идёт.</i>
+
+        <i>Нажмите «Мои группы» - там видно, что уже идёт.</i>
         """,
         buttons=[ b(
             text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
             when='mine' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1535,12 +1787,12 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5296773795091094130'>💎</tg-emoji>""",
         text="""
         <b>Эту группу нельзя сдавать</b>
-        <blockquote><b><i>После отказа создателя слот закрывается на <u>31 день</u>.</i></b></blockquote>
-        <i>Нажмите «Назад» и возьмите другую.</i>
+
+        <blockquote><b><i>После отказа создателя слот закрыт на <u>31 день</u>.</i></b></blockquote>
         """,
         buttons=[ b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1548,7 +1800,9 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5449913031578379785'>🛡</tg-emoji>""",
         text="""
         <b>Пауза: Куту нужна админка</b>
-        <blockquote><b><i>Пока Кут не администратор — начисления стоят.</i></b></blockquote>
+
+        <blockquote><b><i>Пока Кут не администратор - начисления стоят.</i></b></blockquote>
+
         <i>Верните Кут в администраторы. Потом зарплата снова начнёт капать.</i>
         """,
     ),
@@ -1557,8 +1811,10 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5447589583120257784'>😁</tg-emoji>""",
         text="""
         <b>Пауза: группа стала закрытой</b>
+
         <blockquote><b><i>Начисления идут только пока группа <u>публичная</u>.</i></b></blockquote>
-        <i>Сделайте группу публичной — и зарплата снова начнёт капать.</i>
+
+        <i>Сделайте группу публичной - зарплата снова начнёт капать.</i>
         """,
     ),
 
@@ -1566,12 +1822,12 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5393451614843467174'>🔮</tg-emoji>""",
         text="""
         <b>Эту группу уже сдают</b>
-        <blockquote><b><i>Одна группа — один человек. Первый, кто сдал доказательства, держит слот.</i></b></blockquote>
-        <i>Нажмите «Назад» и возьмите другую.</i>
+
+        <blockquote><b><i>Одна группа - один человек. Первый, кто сдал доказательства, держит слот.</i></b></blockquote>
         """,
         buttons=[ b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1579,12 +1835,12 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Эту группу уже сдаёт создатель</b>
-        <blockquote><b><i>Одна группа — один человек. Первый, кто сдал доказательства, держит слот.</i></b></blockquote>
-        <i>Нажмите «Назад» и возьмите другую.</i>
+
+        <blockquote><b><i>Одна группа - один человек. Первый, кто сдал доказательства, держит слот.</i></b></blockquote>
         """,
         buttons=[ b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1592,14 +1848,16 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
         text="""
         <b>Создатель не нажал <u>Да</u> за <u>24 часа</u></b>
+
         <blockquote><b><i>Без подтверждения заявка не идёт на проверку.</i></b></blockquote>
-        <i>Нажмите «Сдать ещё группу», если хотите начать заново.</i>
+
+        <i>Нажмите «Сдать ещё группу», если хотите заново.</i>
         """,
         buttons=[ b(
             text="Сдать ещё группу" , icon="""<tg-emoji emoji-id='5461055585493470291'>🔥</tg-emoji>""" ,
             color='success' , go='more' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1607,14 +1865,14 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji>""",
         text="""
         <b>Вам подтверждение не нужно</b>
-        <blockquote><b><i>Создателю не нужно подтверждать рекомендацию в своей же группе.</i></b></blockquote>
-        <i>Нажмите «Мои группы», если хотите увидеть статус.</i>
+
+        <blockquote><b><i>Создателю не нужно подтверждать рекомендацию в своей группе.</i></b></blockquote>
         """,
         buttons=[ b(
             text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
             when='mine' , ) , b(
-            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-            color='success' , go='back_hub' , ) ,
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
         ],
     ),
 
@@ -1622,15 +1880,16 @@ SCREENS: dict[str, dict] = {
         emoji="""<tg-emoji emoji-id='5388625626380916939'>📖</tg-emoji>""",
         text="""
         <b>«{name}»</b>
+
         <b>{status}</b>
-        <blockquote><b><i>Заявка не потерялась — продолжаем с того же шага.</i></b></blockquote>
-        <i>Нажмите кнопку ниже, если нужно продолжить или снять.</i>
+
+        <blockquote><b><i>Заявка не потерялась - продолжаем с того же шага.</i></b></blockquote>
         """,
         buttons=[b(
-            text="Снять" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' ,
+            text="Снять заявку" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' ,
             when='photos' , ) ,
             b(
-                text="Снять",
+                text="Снять заявку",
                 icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
                 go='cancel',
                 when='wait_confirm',
@@ -1640,8 +1899,8 @@ SCREENS: dict[str, dict] = {
                 icon="""<tg-emoji emoji-id='5192951739623447936'>👥</tg-emoji>""",
                 go='groups',
             ), b(
-                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5460858729962421671'>✨</tg-emoji>""" ,
-                color='success' , go='back_hub' , ) ,
+                text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+                color='primary' , go='back_hub' , ) ,
         ],
         emoji_by={
             'live_owner': """<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji>""",
@@ -1741,7 +2000,7 @@ _NEED_WORDS = (
     "gifts_row", "claim_btn", "claim_btn_money",
     "seen_line", "seen_join", "seen_no_public", "seen_no_admin",
     "rejected", "reject_fallback", "reject_join",
-    "toast_check", "history_gift", "history_payout",
+    "toast_check", "history_gift", "history_payout", "progress",
 )
 
 
@@ -1758,7 +2017,7 @@ def design_errors() -> list[str]:
         errors.append("HELP_TASKS: пустой текст хелпа")
     for name, spec in SCREENS.items():
         if not str(spec.get("text") or "").strip():
-            errors.append(f"{name}: пустой text — вставь сообщение")
+            errors.append(f"{name}: пустой text - вставь сообщение")
         found: list[tuple[str, str, str]] = []
         for row in iter_button_rows(spec.get("buttons")):
             if isinstance(row, dict):
@@ -1778,7 +2037,7 @@ def design_errors() -> list[str]:
                 if color not in COLORS:
                     errors.append(f"{name}: у «{text}» неизвестный color={color!r}")
                 if not eid:
-                    errors.append(f"{name}: у «{text}» нет прем-эмодзи — вставь icon=...")
+                    errors.append(f"{name}: у «{text}» нет прем-эмодзи - вставь icon=...")
                 else:
                     found.append((text, eid, when))
                 gos.append(go)
@@ -1787,14 +2046,14 @@ def design_errors() -> list[str]:
         for i, (text_a, id_a, when_a) in enumerate(found):
             for text_b, id_b, when_b in found[i + 1:]:
                 if id_a == id_b and _shows_together(when_a, when_b):
-                    errors.append(f"{name}: одинаковый эмодзи у кнопок «{text_a}» и «{text_b}» — смени icon")
+                    errors.append(f"{name}: одинаковый эмодзи у кнопок «{text_a}» и «{text_b}» - смени icon")
     return errors
 
 
 def assert_design() -> None:
     bad = design_errors()
     if bad:
-        raise RuntimeError("Дизайн пиара — повтор эмодзи на кнопках:\n- " + "\n- ".join(bad))
+        raise RuntimeError("Дизайн пиара - повтор эмодзи на кнопках:\n- " + "\n- ".join(bad))
 
 
 EMOJI_HUB = emoji_id(SCREENS["hub"]["emoji"])

@@ -114,7 +114,10 @@ def _claim_extra(claim: dict, extra: dict | None = None) -> dict:
     base["chat_id"] = claim.get("chat_id") or base.get("chat_id")
     base["title"] = claim.get("chat_title") or base.get("title") or ""
     base["username"] = claim.get("chat_username") or base.get("username") or ""
-    base["role"] = claim.get("role") or base.get("role")
+    role = claim.get("role") or base.get("role")
+    base["role"] = role
+    if role in {ROLE_OWNER, ROLE_RECO}:
+        base["intent"] = role
     return base
 
 
@@ -241,6 +244,17 @@ def _intent_of(extra: dict | None, session: dict | None = None) -> str:
     return ""
 
 
+def _path_intent(extra: dict | None = None, session: dict | None = None, claim: dict | None = None) -> str:
+    intent = _intent_of(extra, session)
+    if intent:
+        return intent
+    for blob in (claim, extra, (session or {}).get("extra")):
+        role = str((blob or {}).get("role") or "")
+        if role in {ROLE_OWNER, ROLE_RECO}:
+            return role
+    return ""
+
+
 async def _open_choose(target, uid: int, extra: dict | None = None) -> None:
     base = dict(extra or {})
     base.pop("intent", None)
@@ -294,7 +308,7 @@ async def _show_how(target, uid: int, scan: dict | None = None) -> None:
         extra["chat_id"] = group.get("chat_id")
         extra["title"] = group.get("title") or ""
         await pr.set_session(uid, claim_id=None, mode="how_public", extra=extra)
-        await _edit(target, text_need_public(group.get("title") or ""), pr.need_public_keyboard(uname, intent=intent))
+        await _edit(target, text_need_public(group.get("title") or "", intent=intent), pr.need_public_keyboard(uname, intent=intent))
         return
     if not scan["ready"] and len(scan["no_admin"]) == 1 and not scan["no_public"]:
         group = scan["no_admin"][0]
@@ -325,7 +339,7 @@ async def _resume_claim_screen(target, uid: int, claim: dict) -> None:
         have = len(claim.get("photos") or [])
         extra["n"] = have
         await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
-        await _edit(target, text_wait_photo(have, have), pr.photo_keyboard(have))
+        await _edit(target, text_wait_photo(have, have, intent=_path_intent(extra, claim=claim)), pr.photo_keyboard(have))
         return
     if status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
         extra["username"] = claim.get("chat_username") or extra.get("username") or ""
@@ -424,7 +438,7 @@ async def on_how_public(cb: CallbackQuery) -> None:
     extra = dict(session.get("extra") or {})
     extra["intent"] = _intent_of(extra, session)
     await pr.set_session(uid, claim_id=None, mode="how_public", extra=extra)
-    await _edit(cb, text_how_public(), pr.how_public_keyboard(await _bot_username(), intent=extra["intent"]))
+    await _edit(cb, text_how_public(intent=extra["intent"]), pr.how_public_keyboard(await _bot_username(), intent=extra["intent"]))
 
 
 @router.callback_query(F.data == pr.PR_ADMIN)
@@ -507,7 +521,7 @@ async def on_undo(cb: CallbackQuery) -> None:
     extra = _claim_extra(claim, session.get("extra") or {})
     extra["n"] = have
     await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
-    await _edit(cb, text_wait_photo(have, have), pr.photo_keyboard(have))
+    await _edit(cb, text_wait_photo(have, have, intent=_path_intent(extra, claim=claim)), pr.photo_keyboard(have))
 
 
 @router.callback_query(F.data == pr.PR_WROTE)
@@ -582,7 +596,7 @@ async def _begin_proofs(target, uid: int, info: dict) -> None:
         return
     if not info.get("public"):
         await pr.set_session(uid, claim_id=None, mode="how_public", extra=extra)
-        await _edit(target, text_need_public(title), pr.need_public_keyboard(uname, intent=intent))
+        await _edit(target, text_need_public(title, intent=intent), pr.need_public_keyboard(uname, intent=intent))
         return
     if not info.get("bot_admin"):
         await pr.set_session(uid, claim_id=None, mode="how_admin", extra=extra)
@@ -591,7 +605,7 @@ async def _begin_proofs(target, uid: int, info: dict) -> None:
     bot = await _bot()
     if not await _user_in_group(bot, int(info["chat_id"]), uid):
         await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
-        await _edit(target, text_not_in_group(title), pr.not_in_group_keyboard(uname, intent=intent))
+        await _edit(target, text_not_in_group(title, intent=intent), pr.not_in_group_keyboard(uname, intent=intent))
         return
     if await pr.user_banned(uid, int(info["chat_id"])):
         await _edit(target, text_banned_31(), pr.banned_keyboard())
@@ -654,7 +668,7 @@ async def _begin_proofs_dm(uid: int, info: dict) -> None:
         return
     if not info.get("public"):
         await pr.set_session(uid, claim_id=None, mode="how_public", extra=extra)
-        await _send(text_need_public(title), pr.need_public_keyboard(uname, intent=intent))
+        await _send(text_need_public(title, intent=intent), pr.need_public_keyboard(uname, intent=intent))
         return
     if not info.get("bot_admin"):
         await pr.set_session(uid, claim_id=None, mode="how_admin", extra=extra)
@@ -663,7 +677,7 @@ async def _begin_proofs_dm(uid: int, info: dict) -> None:
     bot_api = await _bot()
     if not await _user_in_group(bot_api, int(info["chat_id"]), uid):
         await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
-        await _send(text_not_in_group(title), pr.not_in_group_keyboard(uname, intent=intent))
+        await _send(text_not_in_group(title, intent=intent), pr.not_in_group_keyboard(uname, intent=intent))
         return
     if await pr.user_banned(uid, int(info["chat_id"])):
         await _send(text_banned_31(), pr.banned_keyboard())
@@ -734,21 +748,21 @@ async def _resolve_group_and_begin(target, uid: int, *, chat_id: int | None = No
             if str(getattr(chat, "type", "") or "") not in {
                 ChatType.GROUP, ChatType.SUPERGROUP, "group", "supergroup",
             }:
-                await _edit(target, text_not_a_group(), pr.not_a_group_keyboard(uname, intent=intent))
+                await _edit(target, text_not_a_group(intent=intent), pr.not_a_group_keyboard(uname, intent=intent))
                 return
             info = await _info_from_chat_id(int(chat.id), uid)
         elif chat_id_from_ref(ref) is not None:
             info = await _info_from_chat_id(int(chat_id_from_ref(ref)), uid)
         else:
-            await _edit(target, text_need_link(), pr.need_link_keyboard(uname, intent=intent))
+            await _edit(target, text_need_link(intent=intent), pr.need_link_keyboard(uname, intent=intent))
             return
     except Exception:
-        await _edit(target, text_group_not_found(), pr.group_not_found_keyboard(uname, intent=intent))
+        await _edit(target, text_group_not_found(intent=intent), pr.group_not_found_keyboard(uname, intent=intent))
         return
     if str(info.get("type") or "") not in {
         ChatType.GROUP, ChatType.SUPERGROUP, "group", "supergroup",
     }:
-        await _edit(target, text_not_a_group(), pr.not_a_group_keyboard(uname, intent=intent))
+        await _edit(target, text_not_a_group(intent=intent), pr.not_a_group_keyboard(uname, intent=intent))
         return
     await _begin_proofs(target, uid, info)
 
@@ -768,7 +782,7 @@ async def on_wait_link(message: Message) -> None:
         return
     if _is_forwarded(message):
         await message.answer(
-            text_forward_no_group(),
+            text_forward_no_group(intent=intent),
             reply_markup=pr.forward_no_group_keyboard(uname, intent=intent),
             parse_mode="HTML",
             disable_web_page_preview=True,
@@ -777,7 +791,7 @@ async def on_wait_link(message: Message) -> None:
     ref = extract_group_ref(text=text, urls=_entity_urls(message))
     if ref is None:
         await message.answer(
-            text_need_link(),
+            text_need_link(intent=intent),
             reply_markup=pr.need_link_keyboard(uname, intent=intent),
             parse_mode="HTML",
             disable_web_page_preview=True,
@@ -785,7 +799,7 @@ async def on_wait_link(message: Message) -> None:
         return
     if ref["kind"] == "invite":
         await message.answer(
-            text_link_invite(),
+            text_link_invite(intent=intent),
             reply_markup=pr.link_invite_keyboard(uname, intent=intent),
             parse_mode="HTML",
             disable_web_page_preview=True,
@@ -811,7 +825,7 @@ async def _open_photos(target, uid: int, info: dict, role: str) -> None:
     extra["role"] = role
     extra["intent"] = role
     await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
-    await _edit(target, text_wait_photo(0, 0), pr.photo_keyboard(0))
+    await _edit(target, text_wait_photo(0, 0, intent=role), pr.photo_keyboard(0))
 
 
 async def _open_photos_dm(uid: int, info: dict, role: str) -> None:
@@ -831,7 +845,7 @@ async def _open_photos_dm(uid: int, info: dict, role: str) -> None:
     extra["role"] = role
     extra["intent"] = role
     await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
-    await _push(uid, text_wait_photo(0, 0), pr.photo_keyboard(0))
+    await _push(uid, text_wait_photo(0, 0, intent=role), pr.photo_keyboard(0))
 
 
 @router.callback_query(F.data == pr.PR_CANT)
@@ -945,7 +959,7 @@ async def on_wait_photo(message: Message) -> None:
     have = len(claim.get("photos") or [])
     extra = dict(session.get("extra") or {})
     if looks_like_help(getattr(message, "text", None)):
-        await message.answer(text_wait_photo(have, have), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
+        await message.answer(text_wait_photo(have, have, intent=_path_intent(extra, session, claim)), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
         return
     album_id = getattr(message, "media_group_id", None)
     if album_id and _album_used.get(uid) == str(album_id):
@@ -953,7 +967,7 @@ async def on_wait_photo(message: Message) -> None:
     file_id = pr.image_file_id(message)
     if not file_id:
         kind = pr.photo_noise_kind(message)
-        await message.answer(text_need_photo(kind), reply_markup=pr.need_photo_keyboard(have), parse_mode="HTML")
+        await message.answer(text_need_photo(kind, intent=_path_intent(extra, session, claim)), reply_markup=pr.need_photo_keyboard(have), parse_mode="HTML")
         return
     async with _photo_lock(uid):
         claim = await pr.claim_by_id(int(session["claim_id"]))
@@ -970,10 +984,10 @@ async def on_wait_photo(message: Message) -> None:
         extra["n"] = have
         await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
         if have == before:
-            await message.answer(text_need_photo("dup"), reply_markup=pr.need_photo_keyboard(have), parse_mode="HTML")
+            await message.answer(text_need_photo("dup", intent=_path_intent(extra, session, claim)), reply_markup=pr.need_photo_keyboard(have), parse_mode="HTML")
             return
         if have < PHOTOS_REQUIRED:
-            await message.answer(text_wait_photo(have, have), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
+            await message.answer(text_wait_photo(have, have, intent=_path_intent(extra, session, claim)), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
             return
     await _finish_photos(message, uid, claim, extra)
 
@@ -998,7 +1012,7 @@ async def on_confirm_command(message: Message) -> None:
             await message.reply(text_owner_no_confirm(), reply_markup=pr.owner_no_confirm_keyboard(), parse_mode="HTML")
         return
     if claim["status"] == ST_PHOTOS:
-        await message.reply(text_need_photos_first(), reply_markup=pr.need_photos_first_keyboard(), parse_mode="HTML")
+        await message.reply(text_need_photos_first(intent=ROLE_RECO), reply_markup=pr.need_photos_first_keyboard(), parse_mode="HTML")
         return
     if claim["status"] not in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
         return
