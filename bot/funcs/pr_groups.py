@@ -88,7 +88,7 @@ PR_CANCEL = "prg:x"
 PR_YES = "prgY:"
 PR_NO = "prgN:"
 
-ICON_GO = "5424616516018537963"
+ICON_GO = "5317000922096769303"
 ICON_OK = "5339112148175959615"
 ICON_NO = "5337017423906226569"
 ICON_BACK = "5226660202035554522"
@@ -121,8 +121,8 @@ def entry_keyboard(*, mine: bool = False) -> InlineKeyboardMarkup:
 
 def choose_keyboard() -> InlineKeyboardMarkup:
     return _markup([
-        [_btn("Я владелец группы", PR_OWNER, ICON_OK, "success")],
-        [_btn("Рекомендую бот в группах", PR_RECO, ICON_GO)],
+        [_btn("Я владелец группы", PR_OWNER, "5231463873848039753", "default")],
+        [_btn("Рекомендую бот в группах", "5388583647370565067", ICON_GO)],
     ], back=PR_HUB)
 
 
@@ -133,7 +133,7 @@ def how_keyboard(
     no_admin: bool = False,
     bot_username: str = "CuteGamingBot",
 ) -> InlineKeyboardMarkup:
-    rows = [[_url("Добавить Кута", startgroup_url(bot_username), ICON_GO)]]
+    rows = [[_url("Добавить Кут", startgroup_url(bot_username), ICON_GO)]]
     if intent == ROLE_RECO:
         rows.append([_btn("Не могу добавить", PR_CANT, ICON_OK)])
     rows.append([_btn("Уже добавил", PR_CHECK, ICON_OK, "success")])
@@ -156,7 +156,7 @@ def how_admin_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "")
 
 
 def how_fix_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
-    rows = [[_url("Добавить Кута", startgroup_url(bot_username), ICON_GO)]]
+    rows = [[_url("Добавить Кут", startgroup_url(bot_username), ICON_GO)]]
     if intent == ROLE_RECO:
         rows.append([_btn("Не могу добавить", PR_CANT, ICON_OK)])
     rows.append([_btn("Проверить", PR_CHECK, ICON_GO, "success")])
@@ -164,7 +164,7 @@ def how_fix_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -
 
 
 def add_group_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "") -> InlineKeyboardMarkup:
-    rows = [[_url("Добавить Кута", startgroup_url(bot_username), ICON_GO)]]
+    rows = [[_url("Добавить Кут", startgroup_url(bot_username), ICON_GO)]]
     if intent == ROLE_RECO:
         rows.append([_btn("Не могу добавить", PR_CANT, ICON_OK)])
     return _markup(rows, back=PR_BACK)
@@ -172,7 +172,7 @@ def add_group_keyboard(bot_username: str = "CuteGamingBot", *, intent: str = "")
 
 def cant_add_keyboard(bot_username: str = "CuteGamingBot") -> InlineKeyboardMarkup:
     return _markup(
-        [[_url("Добавить Кута", startgroup_url(bot_username), ICON_GO)]],
+        [[_url("Добавить Кут", startgroup_url(bot_username), ICON_GO)]],
         back=PR_HOW,
     )
 
@@ -186,15 +186,15 @@ def switch_to_reco_keyboard() -> InlineKeyboardMarkup:
 
 def switch_to_owner_keyboard() -> InlineKeyboardMarkup:
     return _markup(
-        [[_btn("Я владелец группы", PR_OWNER, ICON_OK, "success")]],
+        [[_btn("Я владелец группы", PR_OWNER, "5231463873848039753", "default")]],
         back=PR_BACK,
     )
 
 
 def role_keyboard() -> InlineKeyboardMarkup:
     return _markup([
-        [_btn("Это моя группа", PR_OWNER, ICON_OK, "success")],
-        [_btn("Я привёл Кут", PR_RECO, ICON_GO)],
+        [_btn("Это моя группа", PR_OWNER, ICON_OK, "primary")],
+        [_btn("Я рекомендую Кут в группах", PR_RECO, ICON_GO)],
     ], back=PR_BACK)
 
 

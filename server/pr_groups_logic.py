@@ -416,9 +416,7 @@ def text_entry() -> str:
 
 def text_choose_role() -> str:
     return (
-        f"{status_emoji_html('wait')} <b>Кто вы?</b>\n"
-        "Я владелец группы - свой чат.\n"
-        "Рекомендую бот в группах — чужой чат.\n"
+        f"<tg-emoji emoji-id='5388583647370565067'>🌂</tg-emoji> <b>Кто вы?</b>\n"
         "<blockquote><i>Нажмите кнопку. Дальше бот будет ждать доказательства под ваш путь</i></blockquote>"
     )
 
