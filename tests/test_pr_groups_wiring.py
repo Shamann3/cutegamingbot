@@ -163,6 +163,52 @@ def test_every_pr_screen_has_back():
     assert any("Друзья" in text for text in mine)
 
 
+def test_each_pr_keyboard_has_unique_premium_icons():
+    from bot.funcs import pr_groups as pr
+
+    screens = [
+        pr.entry_keyboard(),
+        pr.entry_keyboard(mine=True),
+        pr.entry_keyboard(mine=True, live=True),
+        pr.choose_keyboard(),
+        pr.how_keyboard(),
+        pr.how_keyboard(intent=pr.ROLE_RECO, no_public=True, no_admin=True),
+        pr.how_public_keyboard(),
+        pr.how_admin_keyboard(intent=pr.ROLE_RECO),
+        pr.add_group_keyboard(),
+        pr.add_group_keyboard(intent=pr.ROLE_RECO),
+        pr.cant_add_keyboard(),
+        pr.switch_to_reco_keyboard(),
+        pr.switch_to_owner_keyboard(),
+        pr.role_keyboard(),
+        pr.groups_keyboard([{"title": "g", "chat_id": 1}, {"title": "h", "chat_id": 2}]),
+        pr.photo_keyboard(0),
+        pr.photo_keyboard(2),
+        pr.hub_only_keyboard(),
+        pr.after_cancel_keyboard(),
+        pr.after_owner_keyboard(),
+        pr.after_reco_keyboard("x"),
+        pr.after_reco_keyboard(""),
+        pr.joined_keyboard(),
+        pr.pending_keyboard(),
+        pr.mine_keyboard([]),
+        pr.mine_keyboard([
+            {"id": 1, "chat_title": "a", "status": "live", "role": "reco", "paid_kut": 3},
+            {"id": 2, "chat_title": "b", "status": "pending", "role": "owner"},
+        ], live=True),
+        pr.card_keyboard({"id": 1, "status": "photos", "chat_username": "x"}),
+        pr.card_keyboard({"id": 2, "status": "wait_confirm", "chat_username": "y"}),
+        pr.card_keyboard({"id": 3, "status": "live"}),
+        pr.resume_keyboard("pending"),
+        pr.resume_keyboard("photos"),
+        pr.resume_keyboard("wait_confirm"),
+        pr.confirm_keyboard(9, 1),
+    ]
+    for kb in screens:
+        ids = pr.keyboard_icon_ids(kb)
+        assert len(ids) == len(set(ids)), ids
+
+
 def test_gift_lock_hooks_exist():
     transfer = (ROOT / "bot" / "db_create" / "db.py").read_text(encoding="utf-8")
     assert "gift_blocks_other_spend" in transfer

@@ -335,6 +335,17 @@ def status_emoji_html(kind: str) -> str:
     return f"<tg-emoji emoji-id='{eid}'>{face}</tg-emoji>"
 
 
+_PREMIUM_ID_RE = re.compile(r"emoji-id=['\"](\d+)['\"]")
+
+
+def premium_emoji_ids(html: str | None) -> list[str]:
+    return _PREMIUM_ID_RE.findall(str(html or ""))
+
+
+def do_next(text: str) -> str:
+    return f"<blockquote><i>{text}</i></blockquote>"
+
+
 def mention_html(user_id: int, name: str) -> str:
     label = escape((name or "игрок").strip() or "игрок")
     return f'<a href="tg://user?id={int(user_id)}">{label}</a>'
@@ -653,29 +664,30 @@ def looks_like_help(text: str | None) -> bool:
 def text_entry() -> str:
     return (
         f"<tg-emoji emoji-id='5452002597592382164'>📣</tg-emoji> <b>Рекомендация бота в группах</b>\n"
-        "<b><tg-emoji emoji-id='5391270106464539040'>😐</tg-emoji> Заработок - до 35% комиссии с игр новых людей.</b>\n"
-        "<blockquote><i>Длительность заработка - 14 дней · с той группы, в которую вы добавите нашего бота</i></blockquote>"
+        "<b>Заработок - до 35% комиссии с игр новых людей.</b>\n"
+        "<blockquote><i>Длительность заработка - 14 дней · с той группы, в которую вы добавите нашего бота</i></blockquote>\n"
+        "<i>Нажмите, кто вы. Дальше бот покажет один шаг за раз.</i>"
     )
 
 
 def text_choose_role() -> str:
     return (
         f"<tg-emoji emoji-id='5451910260090485999'>🔥</tg-emoji> <b>Кто вы?</b>\n"
-        "<blockquote><i>Нажмите кнопку. Дальше бот будет ждать доказательства под ваш путь</i></blockquote>\n"
-        "<i>Если сомневаетесь: владелец — тот, у кого корона в админах.</i>"
+        "Владелец — корона в списке админов. Если привели бота в чужой чат — вторая кнопка.\n"
+        + do_next("Нажмите одну кнопку. Потом бот скажет, что прислать.")
     )
 
 
 def _epsilon_watch(*, yours: bool = True) -> str:
     whose = "ваша группа" if yours else "эта группа"
-    return (
-        f"<blockquote><i>Теперь {whose} уйдёт на проверку. "
-        "Ответ придёт сюда, в этот чат. Никуда ходить не нужно.</i></blockquote>"
+    return do_next(
+        f"Теперь {whose} уйдёт на проверку. Ответ придёт сюда. "
+        "Нажмите «Мои группы», чтобы видеть статус, или «Назад» — в меню пиара."
     )
 
 
 def _link_quote() -> str:
-    return f"<blockquote><i>Подойдёт {LINK_HINT_HTML}</i></blockquote>"
+    return do_next(f"Пришлите сюда ссылку текстом. Подойдёт {LINK_HINT_HTML}")
 
 
 def text_how(*, intent: str = "", no_public: list | None = None, no_admin: list | None = None) -> str:
@@ -691,17 +703,13 @@ def text_how(*, intent: str = "", no_public: list | None = None, no_admin: list 
         return (
             f"{status_emoji_html('wait')} <b>Чужой чат</b>\n"
             "Попросите создателя добавить @CuteGamingBot в админы.\n"
-            "Потом пришлите сюда ссылку:\n"
-            f"{_link_quote()}"
-            "<blockquote><i>Вам не нужно быть владельцем. Достаточно привести бота — доля пойдёт вам.</i></blockquote>"
+            f"{do_next(f'Когда Кут в админах — пришлите сюда ссылку. Подойдёт {LINK_HINT_HTML}')}"
             f"{seen}"
         )
     return (
-        f"<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji> <b>Ваша группа</b>\n"
-        "<b>Добавьте Кут в список администраторов в свою публичную группу.</b>\n"
-        "<b>Потом пришлите сюда ссылку</b>\n"
-        f"{_link_quote()}"
-        "<blockquote><i>Люди из вашей группы охотнее пробуют игры, когда бот уже стоит у вас. Это как раз тот шаг.</i></blockquote>"
+        f"{status_emoji_html('wait')} <b>Ваша группа</b>\n"
+        "Добавьте Кут в список администраторов в свою публичную группу.\n"
+        f"{do_next(f'Нажмите «Добавить Кут», выберите чат. Потом пришлите сюда ссылку. Подойдёт {LINK_HINT_HTML}')}"
         f"{seen}"
     )
 
@@ -710,7 +718,7 @@ def text_how_public() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Нужен @адрес</b>\n"
         "Название сверху → <b>Управление</b> → <b>Тип группы</b> → <b>Публичная</b>.\n"
-        f"<blockquote><i>Потом пришлите сюда ссылку</i></blockquote>"
+        + do_next("Сделайте группу публичной. Потом пришлите сюда ссылку.")
     )
 
 
@@ -719,12 +727,12 @@ def text_how_admin(*, intent: str = "") -> str:
         return (
             f"{status_emoji_html('wait')} <b>Кут должен быть админом</b>\n"
             "Попросите создателя: <b>Управление</b> → <b>Администраторы</b> → @CuteGamingBot.\n"
-            f"<blockquote><i>Потом пришлите сюда ссылку</i></blockquote>"
+            + do_next("Когда Кут в админах — пришлите сюда ссылку.")
         )
     return (
         f"{status_emoji_html('wait')} <b>Кут должен быть админом</b>\n"
         "<b>Управление</b> → <b>Администраторы</b> → @CuteGamingBot.\n"
-        f"<blockquote><i>Потом «Проверить» или пришлите ссылку</i></blockquote>"
+        + do_next("Нажмите «Проверить» или пришлите ссылку сюда.")
     )
 
 
@@ -733,7 +741,7 @@ def text_need_public(title: str = "") -> str:
     return (
         f"{status_emoji_html('no')} <b>У «{name}» нет @адреса</b>\n"
         "Название сверху → <b>Управление</b> → <b>Тип группы</b> → <b>Публичная</b>.\n"
-        f"<blockquote><i>Потом пришлите сюда ссылку</i></blockquote>"
+        + do_next("Сделайте группу публичной. Потом пришлите сюда ссылку.")
     )
 
 
@@ -743,12 +751,12 @@ def text_need_admin(title: str = "", *, intent: str = "") -> str:
         return (
             f"{status_emoji_html('no')} <b>В «{name}» Кут не админ</b>\n"
             "Попросите создателя дать ему админку.\n"
-            f"<blockquote><i>Потом пришлите сюда ссылку</i></blockquote>"
+            + do_next("Когда Кут в админах — пришлите сюда ссылку.")
         )
     return (
         f"{status_emoji_html('no')} <b>В «{name}» Кут не админ</b>\n"
         "<b>Управление</b> → <b>Администраторы</b> → @CuteGamingBot.\n"
-        f"<blockquote><i>Потом «Проверить» или пришлите ссылку</i></blockquote>"
+        + do_next("Нажмите «Проверить» или пришлите ссылку сюда.")
     )
 
 
@@ -757,11 +765,11 @@ def text_bot_joined(title: str, *, has_intent: bool = False) -> str:
     if has_intent:
         return (
             f"{status_emoji_html('ok')} <b>Кут зашёл в «{name}»</b>\n"
-            "<blockquote><i>Если он админ — нажмите «Проверить» или пришлите ссылку</i></blockquote>"
+            + do_next("Если он админ — нажмите «Проверить» или пришлите ссылку сюда.")
         )
     return (
         f"{status_emoji_html('ok')} <b>Кут зашёл в «{name}»</b>\n"
-        "<blockquote><i>Нажмите, кто вы — владелец или рекомендуете. Дальше бот сам подскажет шаг.</i></blockquote>"
+        + do_next("Нажмите, кто вы: владелец или рекомендуете. Дальше бот скажет следующий шаг.")
     )
 
 
@@ -776,22 +784,21 @@ def text_need_link() -> str:
 def text_forward_no_group() -> str:
     return (
         f"{status_emoji_html('no')} <b>Пересылка не подходит</b>\n"
-        "<blockquote><i>Нужна ссылка текстом</i></blockquote>\n"
-        f"{_link_quote()}"
+        + do_next(f"Не пересылайте сообщение. Пришлите ссылку текстом. Подойдёт {LINK_HINT_HTML}")
     )
 
 
 def text_link_invite() -> str:
     return (
         f"{status_emoji_html('no')} <b>Это закрытая ссылка</b>\n"
-        f"<blockquote><i>Нужна публичная группа</i></blockquote>"
+        + do_next("Нужна публичная группа. Сделайте @адрес и пришлите обычную ссылку.")
     )
 
 
 def text_group_not_found() -> str:
     return (
         f"{status_emoji_html('no')} <b>Такую группу не вижу</b>\n"
-        f"<blockquote><i>Проверьте ссылку. Кут должен быть в чате. </i></blockquote>"
+        + do_next("Проверьте ссылку. Кут должен быть в чате. Потом пришлите ссылку снова.")
     )
 
 
@@ -801,12 +808,11 @@ def text_bot_not_there(title: str = "", *, intent: str = "") -> str:
         return (
             f"{status_emoji_html('no')} <b>Кут не в «{name}»</b>\n"
             "Попросите создателя добавить @CuteGamingBot в админы.\n"
-            "<blockquote><i>Потом снова пришлите ссылку</i></blockquote>"
+            + do_next("Когда Кут будет в чате — пришлите сюда ссылку снова.")
         )
     return (
         f"{status_emoji_html('no')} <b>Кут не в «{name}»</b>\n"
-        "Нажмите «Добавить Кут» и выберите этот чат.\n"
-        "<blockquote><i>Потом снова пришлите ссылку</i></blockquote>"
+        + do_next("Нажмите «Добавить Кут», выберите этот чат. Потом пришлите ссылку снова.")
     )
 
 
@@ -814,8 +820,7 @@ def text_cant_add() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Чужая группа</b>\n"
         "Напишите создателю: добавь @CuteGamingBot в админы.\n"
-        "Когда Кут будет в чате - пришлите сюда ссылку :\n"
-        f"{_link_quote()}"
+        + do_next(f"Когда Кут будет в чате — пришлите сюда ссылку. Подойдёт {LINK_HINT_HTML}")
     )
 
 
@@ -823,21 +828,21 @@ def text_not_in_group(title: str = "") -> str:
     name = escape(title or "эта группа")
     return (
         f"{status_emoji_html('no')} <b>Вас нет в «{name}»</b>\n"
-        "<blockquote><i>Сначала вступите в группу</i></blockquote>"
+        + do_next("Сначала вступите в группу. Потом вернитесь сюда и пришлите ссылку.")
     )
 
 
 def text_not_a_group() -> str:
     return (
         f"{status_emoji_html('no')} <b>Это не группа</b>\n"
-        "<blockquote><i>Нужен чат, не канал и не человек</i></blockquote>"
+        + do_next("Нужен чат, не канал и не человек. Пришлите ссылку на группу.")
     )
 
 
 def text_pick_group() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Какую группу сдаём?</b>\n"
-        "<blockquote><i>Нажмите на нужную</i></blockquote>"
+        + do_next("Нажмите на нужную группу. Если список не тот — «Назад», в главное меню.")
     )
 
 
@@ -846,7 +851,7 @@ def text_pick_role(title: str) -> str:
     return (
         f"{status_emoji_html('ok')} <b>«{name}»</b>\n"
         "Кто сдаёт эту группу?\n"
-        "<blockquote><i>Своя — первая кнопка. Привели Кут — вторая, создатель потом нажмёт Да</i></blockquote>"
+        + do_next("Своя — первая кнопка. Привели Кут — вторая. Создатель потом нажмёт Да.")
     )
 
 
@@ -855,7 +860,7 @@ def text_owner_bridge(title: str) -> str:
     return (
         f"{status_emoji_html('ok')} <b>«{name}»</b>\n"
         "Вы создатель. Дальше 3 фото — и заявка на проверку.\n"
-        "<blockquote><i>Друг попросил добавить Кут? Не забирайте заявку — пусть он пришлёт ссылку в бота</i></blockquote>"
+        + do_next("Пришлите первое фото сюда. Если друг просил добавить Кут — не забирайте заявку: пусть он пришлёт ссылку в бота.")
     )
 
 
@@ -863,8 +868,8 @@ def text_reco_bridge(title: str) -> str:
     name = escape(title or "группа")
     return (
         f"{status_emoji_html('ok')} <b>«{name}»</b>\n"
-        "Вы не создатель. Чтобы % шёл вам, создатель нажмёт Да в группе.\n"
-        "<blockquote><i>Дальше 3 фото сюда. Да нажимает только создатель — корона в админах</i></blockquote>"
+        "Вы не создатель. Чтобы доля шла вам, создатель нажмёт Да в группе.\n"
+        + do_next("Пришлите первое фото сюда. Да нажимает только человек с короной в админах.")
     )
 
 
@@ -872,7 +877,7 @@ def text_not_owner_switch(title: str = "") -> str:
     name = escape(title or "эта группа")
     return (
         f"{status_emoji_html('no')} <b>Вы не владелец «{name}»</b>\n"
-        "<blockquote><i>Чужой чат сдаётся через «Рекомендую бот в группах»</i></blockquote>"
+        + do_next("Нажмите «Я рекомендую бот в группах». Чужой чат сдаётся так.")
     )
 
 
@@ -880,7 +885,7 @@ def text_are_owner_switch(title: str = "") -> str:
     name = escape(title or "эта группа")
     return (
         f"{status_emoji_html('wait')} <b>«{name}» — ваша группа</b>\n"
-        "<blockquote><i>Сдавайте как владелец</i></blockquote>"
+        + do_next("Нажмите «Я владелец группы». Сдавайте как владелец.")
     )
 
 
@@ -895,19 +900,16 @@ def text_wait_photo(index: int, have: int) -> str:
         body = f"{step['what']}\n{step['need']}"
     else:
         body = escape(photo_hint(nxt))
-    head = ""
-    if have > 0:
-        head = f"{status_emoji_html('ok')} <b>Есть {have} из {PHOTOS_REQUIRED}</b>\n\n"
+    have_line = f"Есть {have} из {PHOTOS_REQUIRED}.\n" if have > 0 else ""
     tail = "Пришлите фото сюда"
     if have == 1:
-        tail = "Первый кадр на месте. Следующий — отдельным сообщением."
+        tail = "Пришлите следующее фото сюда, одним кадром."
     elif have == 2:
-        tail = "Остался последний кадр — вы уже почти сдали группу."
+        tail = "Пришлите последнее фото сюда — и заявка уйдёт дальше."
     return (
-        f"{head}"
         f"{status_emoji_html('wait')} <b>{have + 1} из {PHOTOS_REQUIRED}</b>\n"
-        f"{body}\n"
-        f"<blockquote><i>{tail}</i></blockquote>"
+        f"{have_line}{body}\n"
+        f"{do_next(tail)}"
     )
 
 
@@ -940,7 +942,7 @@ def text_need_photo(kind: str = "") -> str:
 def text_photos_expired() -> str:
     return (
         f"{status_emoji_html('no')} <b>24 часа вышли</b>\n"
-        "<blockquote><i>Вернитесь в пиар и выберите путь — три фото заново</i></blockquote>"
+        + do_next("Нажмите «Сдать ещё группу» или «Назад» — и сдайте три фото заново.")
     )
 
 
@@ -953,7 +955,7 @@ def text_after_proofs_owner() -> str:
         f"{status_emoji_html('ok')} <b>Доказательства приняты</b>\n"
         "Новым людям проект даст куты — играть ими можно только у вас, в этой группе.\n"
         "Группа уходит на проверку. Ответ придёт сюда.\n"
-        "<blockquote><i>Вы уже сделали главное. Пока смотрим — можно просто подождать в этом чате.</i></blockquote>"
+        + do_next("Нажмите «Мои группы», чтобы видеть статус. «Назад» — в меню пиара.")
     )
 
 
@@ -962,7 +964,7 @@ def text_after_proofs_reco() -> str:
         f"{status_emoji_html('ok')} <b>Доказательства приняты</b>\n"
         "14 дней вам будет капать доля с игр новых людей в этой группе.\n"
         "Группа уходит на проверку. Ответ придёт сюда.\n"
-        "<blockquote><i>С этой группы заработок привязан к вам. Решение придёт сюда, не потеряется.</i></blockquote>"
+        + do_next("Нажмите «Мои группы», чтобы видеть статус. «Назад» — в меню пиара.")
     )
 
 
@@ -970,10 +972,9 @@ def text_after_photos_reco(title: str = "") -> str:
     name = escape(title or "группу")
     return (
         f"{status_emoji_html('wait')} <b>Напишите в группе</b>\n"
-        f"Откройте «{name}» и отправьте слово:\n"
-        "<blockquote><code>подтверждение</code></blockquote>\n"
+        f"Откройте «{name}» и отправьте слово <code>подтверждение</code>.\n"
         "<i>Да нажимает только создатель (корона). 24 часа.</i>\n"
-        "<blockquote><i>Это короткий шаг. Как нажмут Да — заявка поедет на проверку, а вы увидите группу в списке.</i></blockquote>"
+        + do_next("Нажмите «Открыть группу», напишите слово, дождитесь Да. Потом можно нажать «Я написал».")
     )
 
 
@@ -981,7 +982,7 @@ def text_wrote_confirm() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Ждём создателя</b>\n"
         "Под сообщением в группе он должен нажать Да.\n"
-        "<blockquote><i>Не нажал — напишите слово ещё раз. Вы свою часть уже сделали.</i></blockquote>"
+        + do_next("Если не нажал — откройте группу и напишите «подтверждение» ещё раз.")
     )
 
 
@@ -1012,10 +1013,12 @@ def text_earnings(
         f"{status_emoji_html(kind)} <b>{title}</b>",
         f"<b>Всего вам пришло: {kut_amount(total)}</b>",
         f"<b>Сегодня: {kut_amount(today)}</b>",
-        f"<blockquote><i>{barnum}</i></blockquote>",
+        f"<i>{barnum}</i>",
     ]
     if items:
-        lines.append("<i>Нажмите группу — откроется карточка</i>")
+        lines.append(do_next("Нажмите группу — откроется карточка. «Сдать ещё группу» — новое меню."))
+    else:
+        lines.append(do_next("Нажмите «Сдать ещё группу» и выберите, кто вы."))
     return "\n".join(lines)
 
 
@@ -1061,34 +1064,32 @@ def text_group_card(
     lines.append(f"Новых людей: <b>{int(newcomers or 0)}</b>")
     hint = pause_hint(freeze)
     if hint:
-        lines.append(f"<blockquote><i>{escape(hint)}</i></blockquote>")
-    elif status == ST_LIVE and owner and int(gifts or 0) > 0:
-        lines.append("<blockquote><i>Новые люди пробуют игры именно у вас. Это уже работает.</i></blockquote>")
-    elif status == ST_LIVE and not owner and int(data.get("paid_kut") or 0) > 0:
-        lines.append("<blockquote><i>Эта группа уже приносит вам куты. Пока Кут админ — капает само.</i></blockquote>")
-    elif status == ST_LIVE:
-        lines.append("<blockquote><i>Первые игры новых людей ещё впереди. Вы уже на месте.</i></blockquote>")
+        action = f"{hint} «Назад» — к списку групп."
     elif status == ST_PHOTOS:
-        have = len(data.get("photos") or [])
-        left = max(0, PHOTOS_REQUIRED - have)
-        lines.append(f"<blockquote><i>Осталось {left} фото. Это последний шаг, который видит только бот.</i></blockquote>")
+        action = "Нажмите «Продолжить фото» и пришлите следующий кадр сюда."
     elif status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
-        lines.append("<blockquote><i>Вы свою часть сделали. Теперь слово за человеком с короной.</i></blockquote>")
+        action = "Нажмите «Открыть группу», напишите «подтверждение», дождитесь Да."
     elif status in {ST_PENDING, ST_ACCEPTING, ST_FULFILLING}:
-        lines.append("<blockquote><i>Заявку смотрят. Как будет решение — напишем сюда.</i></blockquote>")
+        action = "Ждите. Решение придёт в этот чат. «Назад» — к списку."
+    elif status == ST_LIVE:
+        action = "Ничего нажимать не нужно. «Назад» — к списку групп."
     elif status == ST_ENDED:
-        lines.append("<blockquote><i>Срок по этой группе вышел. Новые куты с неё больше не капают.</i></blockquote>")
+        action = "Срок вышел. «Назад» — к списку. Новую группу сдайте с главного меню."
     elif status == ST_REJECTED:
         reason = str(data.get("reject_text") or "").strip()
-        if reason:
-            lines.append(f"<blockquote><i>{escape(reason)}</i></blockquote>")
+        action = (reason + " «Назад» — к списку.") if reason else "Не приняли. «Назад» — к списку."
+    elif status == ST_BURNED:
+        action = "Кут убрали из группы. «Назад» — к списку."
+    else:
+        action = "«Назад» — к списку групп."
+    lines.append(do_next(escape(action) if status == ST_REJECTED else action))
     return "\n".join(lines)
 
 
 def text_cancelled() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Заявку сняли</b>\n"
-        "<blockquote><i>Можно начать снова — с группы</i></blockquote>"
+        + do_next("Нажмите «Сдать ещё группу» — и выберите путь заново.")
     )
 
 
@@ -1101,46 +1102,58 @@ def text_confirm_prompt(user_id: int, name: str) -> str:
 
 
 def text_confirm_yes() -> str:
-    return f"{status_emoji_html('ok')} <b>Подтверждено. Заявка на проверке.</b>"
+    return (
+        f"{status_emoji_html('ok')} <b>Подтверждено. Заявка на проверке.</b>\n"
+        + do_next("Ничего больше нажимать не нужно. Решение придёт пригласившему в личку.")
+    )
 
 
 def text_confirm_no_first() -> str:
     return (
         f"{status_emoji_html('no')} <b>Создатель не подтвердил</b>\n"
-        "<blockquote><i>Остался один шанс. Напишите <code>подтверждение</code> ещё раз</i></blockquote>"
+        + do_next("Остался один шанс. Откройте группу и напишите <code>подтверждение</code> ещё раз.")
     )
 
 
 def text_confirm_no_second() -> str:
     return (
         f"{status_emoji_html('no')} <b>Снова нет</b>\n"
-        "<blockquote><i>Эту группу нельзя 31 день. Возьмите другую</i></blockquote>"
+        + do_next("Эту группу нельзя 31 день. Нажмите «Назад» и возьмите другую.")
     )
 
 
 def text_not_your_claim() -> str:
-    return f"{status_emoji_html('no')} <b>Это не ваша заявка.</b>"
+    return (
+        f"{status_emoji_html('no')} <b>Это не ваша заявка.</b>\n"
+        + do_next("Нажмите «Назад» — откроется меню пиара.")
+    )
 
 
 def text_not_creator() -> str:
     return (
         f"{status_emoji_html('no')} <b>Подтверждает только создатель</b>\n"
-        "<blockquote><i>Человек с короной в списке админов</i></blockquote>"
+        + do_next("Да должен нажать человек с короной в списке админов.")
     )
 
 
 def text_confirm_expired() -> str:
-    return f"{status_emoji_html('wait')} <b>Это подтверждение уже не действует. Напишите «подтверждение» снова.</b>"
+    return (
+        f"{status_emoji_html('wait')} <b>Это подтверждение уже не действует.</b>\n"
+        + do_next("Напишите в группе «подтверждение» снова.")
+    )
 
 
 def text_wrong_group() -> str:
-    return f"{status_emoji_html('no')} <b>Не та группа.</b>"
+    return (
+        f"{status_emoji_html('no')} <b>Не та группа.</b>\n"
+        + do_next("Откройте ту группу, куда вы добавляли Кут, и напишите «подтверждение» там.")
+    )
 
 
 def text_need_photos_first() -> str:
     return (
         f"{status_emoji_html('no')} <b>Сначала 3 фото в боте</b>\n"
-        "<blockquote><i>Пришлите их сюда, в этот чат</i></blockquote>"
+        + do_next("Пришлите их сюда, в этот чат, по одному кадру.")
     )
 
 
@@ -1149,13 +1162,13 @@ def text_accepted(term_days: int, *, role: str = "") -> str:
     if str(role or "") == ROLE_OWNER:
         return (
             f"{status_emoji_html('ok')} <b>Группу приняли.</b>\n"
-            f"<blockquote><b>{days} дней · новые смогут играть у вас на подарочные куты.</b></blockquote>\n"
-            "<i>Откройте «Мои группы», когда захотите цифры.</i>"
+            f"<b>{days} дней · новые смогут играть у вас на подарочные куты.</b>\n"
+            + do_next("Нажмите «Мои группы», когда захотите цифры.")
         )
     return (
         f"{status_emoji_html('ok')} <b>Группу приняли.</b>\n"
-        f"<blockquote><b>{days} дней вам капает доля с игр новых.</b></blockquote>\n"
-        "<i>Откройте «Заработки», когда захотите цифры.</i>"
+        f"<b>{days} дней вам капает доля с игр новых.</b>\n"
+        + do_next("Нажмите «Заработки» или «Мои группы», когда захотите цифры.")
     )
 
 
@@ -1168,11 +1181,12 @@ def text_digest(
     title: str = "",
 ) -> str:
     name = escape(title or "группы")
-    extra = " Это уже на вашем балансе." if int(paid or 0) > 0 else " Как появятся игры новых — цифра вырастет."
+    extra = "Это уже на вашем балансе." if int(paid or 0) > 0 else "Как появятся игры новых — цифра вырастет."
     return (
         f"{status_emoji_html('ok')} <b>Сегодня с «{name}»: {int(newcomers or 0)} новых людей · вам {kut_amount(paid)}.</b>\n"
-        f"<blockquote><b>Осталось {int(days_left or 0)} дн.</b></blockquote>\n"
-        f"<i>{extra.strip()}</i>"
+        f"<b>Осталось {int(days_left or 0)} дн.</b>\n"
+        f"<i>{extra}</i>\n"
+        + do_next("Откройте «Заработки», чтобы видеть цифры по группам.")
     )
 
 
@@ -1194,52 +1208,63 @@ def text_gift_locked() -> str:
 
 
 def text_term_end() -> str:
-    return f"{status_emoji_html('wait')} <b>Срок по этой группе закончился. Новые куты с неё больше не капают.</b>"
+    return (
+        f"{status_emoji_html('wait')} <b>Срок по этой группе закончился. Новые куты с неё больше не капают.</b>\n"
+        + do_next("Откройте «Мои группы», чтобы увидеть статус. Новую можно сдать с главного меню.")
+    )
 
 
 def text_kicked() -> str:
-    return f"{status_emoji_html('no')} <b>Кут убрали из группы. Начисления стоп.</b>"
+    return (
+        f"{status_emoji_html('no')} <b>Кут убрали из группы. Начисления стоп.</b>\n"
+        + do_next("Верните Кут в админы, если хотите продолжить. Статус — в «Мои группы».")
+    )
 
 
 def text_rejected(reason: str, *, can_fix: bool) -> str:
     body = escape((reason or "Не приняли.").strip() or "Не приняли.")
-    extra = "Есть 48 часов." if can_fix else ""
-    tail = f"\n<blockquote><b>{extra}</b></blockquote>" if extra else ""
-    return f"{status_emoji_html('no')} <b>Не приняли.</b>\n<blockquote><b>{body}</b></blockquote>{tail}"
+    if can_fix:
+        action = f"{body} Есть 48 часов. Исправьте и сдайте снова через «Сдать ещё группу»."
+    else:
+        action = f"{body} Нажмите «Назад» — в меню пиара."
+    return (
+        f"{status_emoji_html('no')} <b>Не приняли.</b>\n"
+        + do_next(action)
+    )
 
 
 def text_two_pending() -> str:
     return (
         f"{status_emoji_html('no')} <b>Уже 2 заявки</b>\n"
-        "<blockquote><i>Дождитесь проверки или снимите одну в «Мои группы»</i></blockquote>"
+        + do_next("Нажмите «Мои группы»: дождитесь проверки или снимите одну.")
     )
 
 
 def text_two_live() -> str:
     return (
         f"{status_emoji_html('no')} <b>Уже 2 живые группы</b>\n"
-        "<blockquote><i>Новую можно сдать, когда освободится слот</i></blockquote>"
+        + do_next("Нажмите «Заработки». Новую можно сдать, когда освободится слот.")
     )
 
 
 def text_banned_31() -> str:
     return (
         f"{status_emoji_html('no')} <b>Эту группу нельзя 31 день</b>\n"
-        "<blockquote><i>Возьмите другую — или подождите</i></blockquote>"
+        + do_next("Нажмите «Назад» и возьмите другую — или подождите.")
     )
 
 
 def text_freeze_admin() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Пауза: Кут нужна админка</b>\n"
-        "<blockquote><i>Верните Кут в администраторы — снова начнёт капать. Это поправимо за минуту.</i></blockquote>"
+        + do_next("Верните Кут в администраторы группы. Потом снова начнёт капать.")
     )
 
 
 def text_freeze_public() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Пауза: группа стала закрытой</b>\n"
-        "<blockquote><i>Сделайте группу открытой с @адресом — снова начнёт капать.</i></blockquote>"
+        + do_next("Сделайте группу открытой с @адресом. Потом снова начнёт капать.")
     )
 
 
@@ -1247,25 +1272,25 @@ def text_group_busy(*, owner: bool = False) -> str:
     if owner:
         return (
             f"{status_emoji_html('no')} <b>Эту группу уже сдаёт создатель</b>\n"
-            "<blockquote><i>Одна группа — один человек. Возьмите другую</i></blockquote>"
+            + do_next("Одна группа — один человек. Нажмите «Назад» и возьмите другую.")
         )
     return (
         f"{status_emoji_html('no')} <b>Эту группу уже сдают</b>\n"
-        "<blockquote><i>Одна группа — один человек. Возьмите другую</i></blockquote>"
+        + do_next("Одна группа — один человек. Нажмите «Назад» и возьмите другую.")
     )
 
 
 def text_confirm_timeout() -> str:
     return (
         f"{status_emoji_html('no')} <b>Создатель не нажал Да за 24 часа</b>\n"
-        "<blockquote><i>Можно начать снова — с группы</i></blockquote>"
+        + do_next("Нажмите «Сдать ещё группу» — можно начать снова.")
     )
 
 
 def text_owner_no_confirm() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Вам подтверждение не нужно</b>\n"
-        "<blockquote><i>Заявка создателя идёт на проверку без Да</i></blockquote>"
+        + do_next("Заявка создателя идёт на проверку без Да. Смотрите «Мои группы».")
     )
 
 
@@ -1278,7 +1303,8 @@ def text_resume_claim(title: str, status: str, freeze: str | None = None) -> str
     label = claim_status_label(status, freeze)
     return (
         f"{status_emoji_html('wait')} <b>«{name}»</b>\n"
-        f"<blockquote><b>{escape(label)}</b></blockquote>"
+        f"<b>{escape(label)}</b>\n"
+        + do_next("Нажмите кнопку ниже — бот продолжит с этого шага.")
     )
 
 
