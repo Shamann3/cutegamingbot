@@ -57,13 +57,13 @@ def test_entry_is_short_and_honest():
 
 def test_how_tells_what_to_do_next():
     owner = text_how(intent="owner")
-    assert "Ваша группа" in owner
+    assert "Сдать свою группу" in owner
     assert "@группа" in owner
     assert "t.me" in owner
     assert "пересл" not in owner.lower()
     assert "Шаг 1 из 4" in owner
     reco = text_how(intent="reco")
-    assert "Чужая" in reco
+    assert "чужой" in reco
     assert "@CuteGamingBot" in reco
     assert "пересл" not in reco.lower()
     assert "Шаг 1 из 5" in reco
@@ -551,7 +551,7 @@ def test_pr_themed_emojis_and_extra_quote():
     assert extra("факт") == "<blockquote><b><i>факт</i></b></blockquote>"
     hub = text_entry()
     assert EMOJI_HUB in hub
-    assert "<pre>" in hub
+    assert "<blockquote>" in hub
     assert "14 дней" in hub
     assert "35%" in hub
     assert EMOJI_OWNER in text_how(intent="owner")

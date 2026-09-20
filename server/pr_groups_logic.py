@@ -414,18 +414,24 @@ def _content_line(chunk: str) -> str:
 
 
 def _render_message_lines(blob: str) -> list[str]:
-    """Собирает строки экрана: пустые строки остаются, <pre> не жирнеет построчно."""
+    """Собирает строки экрана: пустые строки остаются, цитата не жирнеет построчно."""
     out: list[str] = []
-    in_pre = 0
+    in_block = 0
     for chunk in str(blob).split("\n"):
         low = chunk.lower()
-        opens = len(re.findall(r"<pre\b", low))
-        closes = low.count("</pre>")
-        if in_pre or opens:
-            out.append(chunk.rstrip())
-            in_pre += opens - closes
-            if in_pre < 0:
-                in_pre = 0
+        opens = len(re.findall(r"<(?:pre|blockquote)\b", low))
+        closes = low.count("</pre>") + low.count("</blockquote>")
+        if in_block or opens:
+            next_in = in_block + opens - closes
+            if not in_block and opens and next_in <= 0:
+                line = _content_line(chunk)
+                if line:
+                    out.append(line)
+                in_block = 0
+                continue
+            piece = chunk.rstrip() if in_block else chunk.strip()
+            out.append(piece)
+            in_block = max(0, next_in)
             continue
         raw = chunk.strip()
         if not raw:
