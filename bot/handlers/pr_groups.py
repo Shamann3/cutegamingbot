@@ -505,14 +505,12 @@ async def on_back(cb: CallbackQuery) -> None:
         claim = await pr.claim_by_id(int(session["claim_id"]))
         if claim and claim["status"] == ST_PHOTOS:
             await pr.cancel_claim(int(claim["id"]))
-        extra["intent"] = extra.get("intent") or claim.get("role") if claim else extra.get("intent")
+        extra["intent"] = extra.get("intent") or (claim.get("role") if claim else "") or extra.get("intent")
         extra.pop("n", None)
-        if extra.get("chat_id"):
-            await _begin_proofs(cb, uid, extra if extra.get("title") else extra)
-            return
-        await _try_advance(cb, uid)
+        await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
+        await _show_how(cb, uid)
         return
-    if mode in {"role", "choose", "mismatch"}:
+    if mode == "mismatch":
         await _open_choose(cb, uid, extra)
         return
     await _open_hub(cb)

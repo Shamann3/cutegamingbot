@@ -408,16 +408,16 @@ def looks_like_help(text: str | None) -> bool:
 
 def text_entry() -> str:
     return (
-        f"{status_emoji_html('wait')} <b>Пиар в группах</b>\n"
-        "<b>До 35% комиссии с игр новых людей.</b>\n"
-        "<blockquote><i>14 дней · с той группы, куда вы привели Кута</i></blockquote>"
+        f"<tg-emoji emoji-id='5452002597592382164'>📣</tg-emoji> <b>Рекомендация бота в группах</b>\n"
+        "<b><tg-emoji emoji-id='5391270106464539040'>😐</tg-emoji> Заработок - до 35% комиссии с игр новых людей.</b>\n"
+        "<blockquote><i>Длительность заработка - 14 дней · с той группы, в которую вы добавите нашего бота</i></blockquote>"
     )
 
 
 def text_choose_role() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Кто вы?</b>\n"
-        "Я владелец группы — свой чат.\n"
+        "Я владелец группы - свой чат.\n"
         "Рекомендую бот в группах — чужой чат.\n"
         "<blockquote><i>Нажмите кнопку. Дальше бот будет ждать доказательства под ваш путь</i></blockquote>"
     )

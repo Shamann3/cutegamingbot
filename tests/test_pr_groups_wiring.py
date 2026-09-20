@@ -47,6 +47,8 @@ def test_wired_into_bot_and_panel():
     assert "_open_choose" in handlers
     assert "text_after_proofs_owner" in handlers
     assert "text_after_proofs_reco" in handlers
+    assert "questions_stars" in core
+    assert "PR_TASKS" in core
 
 
 def test_image_file_id_accepts_photo_and_png():
@@ -71,6 +73,58 @@ def test_image_file_id_accepts_photo_and_png():
     )
     assert image_file_id(noise) == ""
     assert photo_noise_kind(noise) == "video"
+
+
+def _kb_texts(markup) -> list[str]:
+    return [btn.text for row in markup.inline_keyboard for btn in row]
+
+
+def _kb_datas(markup) -> list[str]:
+    return [getattr(btn, "callback_data", None) or "" for row in markup.inline_keyboard for btn in row]
+
+
+def test_every_pr_screen_has_back():
+    from bot.funcs import pr_groups as pr
+
+    screens = [
+        pr.entry_keyboard(),
+        pr.entry_keyboard(mine=True),
+        pr.choose_keyboard(),
+        pr.how_keyboard(),
+        pr.how_keyboard(intent=pr.ROLE_RECO, no_public=True, no_admin=True),
+        pr.how_public_keyboard(),
+        pr.how_admin_keyboard(intent=pr.ROLE_RECO),
+        pr.add_group_keyboard(),
+        pr.add_group_keyboard(intent=pr.ROLE_RECO),
+        pr.cant_add_keyboard(),
+        pr.switch_to_reco_keyboard(),
+        pr.switch_to_owner_keyboard(),
+        pr.role_keyboard(),
+        pr.groups_keyboard([{"title": "g", "chat_id": 1}]),
+        pr.photo_keyboard(0),
+        pr.photo_keyboard(2),
+        pr.hub_only_keyboard(),
+        pr.after_cancel_keyboard(),
+        pr.after_owner_keyboard(),
+        pr.after_reco_keyboard("x"),
+        pr.after_reco_keyboard(""),
+        pr.joined_keyboard(),
+        pr.pending_keyboard(),
+        pr.mine_keyboard([]),
+        pr.mine_keyboard([{"id": 1, "chat_title": "a"}]),
+        pr.resume_keyboard("pending"),
+        pr.resume_keyboard("photos"),
+        pr.resume_keyboard("wait_confirm"),
+    ]
+    for kb in screens:
+        texts = _kb_texts(kb)
+        assert texts[-1] == "Назад", texts
+    entry = pr.entry_keyboard()
+    assert pr.PR_TASKS in _kb_datas(entry)
+    assert pr.PR_TASKS == "questions_stars"
+    photo = pr.photo_keyboard(2)
+    assert "Другое фото" in _kb_texts(photo)
+    assert "Назад" in _kb_texts(photo)
 
 
 def test_gift_lock_hooks_exist():
