@@ -397,7 +397,7 @@ async def on_start(cb: CallbackQuery) -> None:
 @router.callback_query(F.data == pr.PR_CHECK)
 async def on_check(cb: CallbackQuery) -> None:
     try:
-        await cb.answer(pr.say("toast_check"))
+        await cb.answer(pr.plain(pr.say("toast_check")))
     except Exception:
         pass
     await _try_advance(cb, int(cb.from_user.id))

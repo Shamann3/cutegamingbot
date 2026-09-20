@@ -89,8 +89,10 @@ from pr_groups_design import (  # noqa: E402
     SCREENS,
     TASKS_MENU,
     TASKS_MENU_ICON_ID,
+    TASKS_MENU_TEXT,
     emoji_id as design_emoji_id,
     iter_button_rows,
+    plain,
     say,
 )
 
@@ -1280,7 +1282,7 @@ async def maybe_grant_gift(bot, *, user_id: int, chat_id: int, name: str) -> Opt
         return None
     if not await _take_from_ladder(size, bot=bot):
         return None
-    await _give_to_user(user_id, size, say("history_gift"))
+    await _give_to_user(user_id, size, plain(say("history_gift")))
     p = await pool()
     await p.execute(
         """
@@ -1417,7 +1419,7 @@ async def flush_digest(bot, claim: dict[str, Any]) -> None:
         newcomers = 0
     if pay > 0:
         if await _take_from_ladder(pay, bot=bot):
-            await _give_to_user(int(claim["user_id"]), pay, say("history_payout"))
+            await _give_to_user(int(claim["user_id"]), pay, plain(say("history_payout")))
             await record_payout(int(claim["id"]), int(claim["user_id"]), pay)
             await save_claim(
                 int(claim["id"]),

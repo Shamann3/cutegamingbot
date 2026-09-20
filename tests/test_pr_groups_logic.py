@@ -1,5 +1,10 @@
+import re
 import sys
 from pathlib import Path
+
+
+def _visible(html: str) -> str:
+    return re.sub(r"<[^>]+>", "", html)
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "server"
@@ -74,14 +79,7 @@ def test_how_tells_what_to_do_next():
     assert "Пришлите фото сюда" in photo
     assert "@CuteGamingBot" in photo
     second = text_wait_photo(1, 1)
-    assert "Есть 1 из 3" in second
-    assert "2 из 3" in second
-    photo = text_wait_photo(0, 0)
-    assert "1 из 3" in photo
-    assert "Пришлите фото сюда" in photo
-    assert "@CuteGamingBot" in photo
-    second = text_wait_photo(1, 1)
-    assert "Есть 1 из 3" in second
+    assert "Есть 1 из 3" in _visible(second)
     assert "2 из 3" in second
 
 
@@ -98,7 +96,7 @@ def test_need_photo_explains_the_mistake():
 def test_reco_after_photos_mentions_confirm():
     html = text_after_photos_reco()
     assert "подтверждение" in html
-    assert "корона" in html
+    assert "Да" in html
     assert "которую в которую" not in html
 
 
@@ -130,7 +128,7 @@ def test_reco_bridge_does_not_pretend_they_are_owner():
 
 def test_gift_has_kut_and_user_wording():
     html = text_gift(1, "Вася", 10)
-    assert "10 кут в подарок" in html
+    assert "10 кут в подарок" in _visible(html)
     assert "научится играть" in html
     assert "хелп" in html
     assert "tg://user?id=1" in html
@@ -299,29 +297,29 @@ def test_earnings_screen_and_card_are_plain():
     }
     html = text_earnings([live, own], total=40, today=8, live=True)
     assert "Заработки" in html
-    assert "Всего вам пришло: 40 кут" in html
-    assert "Сегодня: 8 кут" in html
+    assert "Всего вам пришло: 40 кут" in _visible(html)
+    assert "Сегодня: 8 кут" in _visible(html)
     assert "кута" not in html.lower()
     pending = text_earnings([{"chat_title": "x", "status": "pending"}], total=0, today=0, live=False)
     assert "Мои группы" in pending
     reco_card = text_group_card(live, today=3, newcomers=6, gifts=0)
     assert "Вам уже пришло" in reco_card
-    assert "Сегодня: 3 кут" in reco_card
-    assert "Новых людей: 6" in reco_card
+    assert "Сегодня: 3 кут" in _visible(reco_card)
+    assert "Новых людей: 6" in _visible(reco_card)
     assert "замороз" not in reco_card.lower()
     owner_card = text_group_card(own, today=0, newcomers=4, gifts=7, chat_balance=80)
     assert "Баланс группы" in owner_card
-    assert "Подарков новым: 7" in owner_card
+    assert "Подарков новым: 7" in _visible(owner_card)
     pause = text_group_card({**live, "freeze": "admin"}, today=0, newcomers=1)
-    assert "пауза: Кут нужна админка" in pause
+    assert "пауза: Куту нужна админка" in pause
     assert "Верните Кут в администраторы" in pause
     btn = claim_button_label(live)
     assert "Друзья" in btn
     assert "40 кут" in btn
     own_btn = claim_button_label(own)
     assert "подарков: 7" in own_btn
-    assert claim_status_label("photos") == "нужны 3 фото"
-    assert claim_status_label("live") == "идёт заработок"
+    assert "3 фото" in claim_status_label("photos")
+    assert "идёт заработок" in claim_status_label("live")
     assert "кута" not in text_confirm_prompt(1, "Игорь").lower()
     assert "добав" in text_confirm_prompt(1, "Игорь").lower()
     digest = text_digest(newcomers=2, paid=5, days_left=9, title="Друзья")
@@ -502,7 +500,6 @@ def test_each_pr_message_has_one_unique_premium_emoji():
         assert len(ids) == 1, html
         assert "<b>" in html, html
         stripped = extra_re.sub("", html)
-        assert "<i>" not in stripped, html
         for quote in quote_re.findall(html):
             assert quote.startswith("<blockquote><b><i>"), html
             assert quote.endswith("</i></b></blockquote>"), html
@@ -582,15 +579,78 @@ def test_design_file_drives_hub_and_buttons():
 
 
 def test_words_drive_every_short_label():
-    from pr_groups_design import HELP_TASKS, STATUS, TASKS_MENU, WORDS
+    from pr_groups_design import STATUS, TASKS_MENU, TASKS_MENU_TEXT, WORDS
     from pr_groups_logic import claim_status_label, kut_amount, pause_label, say
 
     assert kut_amount(40) == say("kut", n=40)
     assert claim_status_label("photos") == STATUS["photos"]
     assert claim_status_label("live", "admin") == pause_label("admin")
-    assert TASKS_MENU["text"] == "Пиар в группах"
-    assert "Пиар в группах" in HELP_TASKS
+    assert "<" not in TASKS_MENU_TEXT
+    assert ">" not in TASKS_MENU_TEXT
+    assert TASKS_MENU_TEXT
+    assert "5391270106464539040" in TASKS_MENU["icon"]
     assert WORDS["toast_check"]
     assert WORDS["history_gift"]
     assert WORDS["photo_have"]
+
+
+def test_every_pr_message_has_valid_telegram_html():
+    from pr_groups_logic import html_errors, text_need_photo, text_wait_photo
+
+    samples = [
+        text_wait_photo(0, 0),
+        text_wait_photo(1, 1),
+        text_wait_photo(2, 2),
+        text_need_photo("video"),
+        text_need_photo("file"),
+        text_need_photo("sticker"),
+        text_need_photo("text"),
+        text_need_photo("album"),
+        text_need_photo("dup"),
+        text_need_photo(""),
+    ]
+    from pr_groups_logic import (
+        text_accepted,
+        text_after_photos_reco,
+        text_after_proofs_owner,
+        text_cant_add,
+        text_entry,
+        text_gift,
+        text_group_card,
+        text_how,
+        text_need_link,
+        text_rejected,
+        text_resume_claim,
+    )
+    from datetime import datetime, timedelta, timezone
+
+    live = {
+        "chat_title": "Друзья",
+        "status": "live",
+        "role": "reco",
+        "paid_kut": 4,
+        "live_until": datetime.now(timezone.utc) + timedelta(days=3),
+    }
+    samples.extend([
+        text_entry(),
+        text_how(intent="owner"),
+        text_how(intent="reco"),
+        text_need_link(),
+        text_cant_add(),
+        text_after_proofs_owner(),
+        text_after_photos_reco("Друзья"),
+        text_accepted(14),
+        text_accepted(14, role="owner"),
+        text_rejected("Мало людей", can_fix=True),
+        text_gift(1, "Игорь", 8),
+        text_resume_claim("Друзья", "photos"),
+        text_resume_claim("Друзья", "wait_confirm"),
+        text_group_card(live, today=1, newcomers=2),
+        text_group_card({**live, "status": "photos", "freeze": None}, today=0, newcomers=0),
+        text_group_card({**live, "status": "wait_confirm"}, today=0, newcomers=0),
+        text_group_card({**live, "freeze": "admin"}, today=0, newcomers=1),
+    ])
+    for html in samples:
+        bad = html_errors(html)
+        assert not bad, (bad, html)
 

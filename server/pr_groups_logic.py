@@ -348,13 +348,53 @@ def do_next(text: str) -> str:
     return f"<b>{t}</b>"
 
 
+_HTML_PAIR = frozenset({
+    "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+    "code", "pre", "blockquote", "a", "tg-emoji", "tg-spoiler", "span",
+})
+_HTML_TAG = re.compile(r"</?([a-zA-Z0-9-]+)(?:\s[^>]*)?>")
+
+
+def html_errors(html: str) -> list[str]:
+    """Telegram HTML: незакрытый тег ломает SendMessage."""
+    stack: list[str] = []
+    for match in _HTML_TAG.finditer(str(html or "")):
+        name = match.group(1).lower()
+        if name not in _HTML_PAIR:
+            continue
+        if match.group(0).startswith("</"):
+            if not stack or stack[-1] != name:
+                want = stack[-1] if stack else "?"
+                return [f"ожидали </{want}>, нашли </{name}>"]
+            stack.pop()
+        else:
+            stack.append(name)
+    if stack:
+        return [f"не закрыт <{stack[-1]}>"]
+    return []
+
+
+def tg_safe_html(html: str) -> str:
+    raw = str(html or "")
+    if not html_errors(raw):
+        return raw
+    kept: list[str] = []
+    pos = 0
+    for match in re.finditer(r"<tg-emoji\b[^>]*>.*?</tg-emoji>", raw, re.I | re.S):
+        kept.append(re.sub(r"<[^>]+>", "", raw[pos:match.start()]))
+        kept.append(match.group(0))
+        pos = match.end()
+    kept.append(re.sub(r"<[^>]+>", "", raw[pos:]))
+    return "".join(kept)
+
+
 def _bold_line(text: str) -> str:
     t = str(text or "").strip()
     if not t:
         return ""
     if t.startswith("<blockquote"):
         return t
-    if t.startswith("<b>") and t.endswith("</b>"):
+    if "<" in t:
         return t
     return f"<b>{t}</b>"
 
@@ -416,7 +456,7 @@ def pr_screen(
             out.append(line)
     if first and mark:
         out.append(mark)
-    return "\n".join(out)
+    return tg_safe_html("\n".join(out))
 
 
 def render_design(name: str, values: dict[str, Any] | None = None, **overrides: Any) -> str:
@@ -1006,7 +1046,7 @@ def text_group_card(
     key = _card_status_key(status, freeze)
     values: dict[str, Any] = {
         "name": name,
-        "status": escape(claim_status_label(status, freeze)),
+        "status": claim_status_label(status, freeze),
         "gifts": int(gifts or 0),
         "paid": kut_amount(data.get("paid_kut")),
         "today": kut_amount(today),
@@ -1171,7 +1211,7 @@ def text_no_groups() -> str:
 def text_resume_claim(title: str, status: str, freeze: str | None = None) -> str:
     return render_design("resume", {
         "name": escape(name_or(title, "group")),
-        "status": escape(claim_status_label(status, freeze)),
+        "status": claim_status_label(status, freeze),
         "emoji_key": card_emoji_kind(status, freeze),
     })
 
