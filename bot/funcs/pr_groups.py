@@ -75,6 +75,7 @@ PR_ADMIN = "prg:adm"
 PR_MINE = "prg:mine"
 PR_BACK = "prg:back"
 PR_WROTE = "prg:wrote"
+PR_UNDO = "prg:undo"
 PR_OPEN = "prg:c:"
 PR_PICK = "prg:g:"
 PR_OWNER = "prg:own"
@@ -97,19 +98,24 @@ def _url(text: str, url: str, icon: str) -> InlineKeyboardButton:
     return InlineKeyboardButton(text=text, url=url, icon_custom_emoji_id=icon)
 
 
-def entry_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Начать", PR_START, ICON_GO, "success")],
-        [_btn("Мои заявки", PR_MINE, ICON_OK)],
-    ])
+def entry_keyboard(*, mine: bool = False) -> InlineKeyboardMarkup:
+    rows = [[_btn("Начать", PR_START, ICON_GO, "success")]]
+    if mine:
+        rows.append([_btn("Мои заявки", PR_MINE, ICON_OK)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def how_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Проверить", PR_CHECK, ICON_GO, "success")],
-        [_btn("Нет @адреса", PR_PUBLIC, ICON_OK), _btn("Кут не админ", PR_ADMIN, ICON_OK)],
-        [_btn("Мои заявки", PR_MINE, ICON_OK), _btn("Назад", PR_HUB, ICON_BACK)],
-    ])
+def how_keyboard(*, no_public: bool = False, no_admin: bool = False) -> InlineKeyboardMarkup:
+    rows = [[_btn("Проверить", PR_CHECK, ICON_GO, "success")]]
+    help_row = []
+    if no_public:
+        help_row.append(_btn("Нет @адреса", PR_PUBLIC, ICON_OK))
+    if no_admin:
+        help_row.append(_btn("Не админ", PR_ADMIN, ICON_OK))
+    if help_row:
+        rows.append(help_row)
+    rows.append([_btn("Назад", PR_HUB, ICON_BACK)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def how_public_keyboard() -> InlineKeyboardMarkup:
@@ -144,9 +150,17 @@ def groups_keyboard(rows: list[dict[str, Any]]) -> InlineKeyboardMarkup:
 
 
 def cancel_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn("Снять", PR_CANCEL, ICON_NO), _btn("Назад", PR_BACK, ICON_BACK)],
-    ])
+    return photo_keyboard(0)
+
+
+def photo_keyboard(have: int = 0) -> InlineKeyboardMarkup:
+    rows = []
+    if have > 0:
+        rows.append([_btn("Другое фото", PR_UNDO, ICON_BACK)])
+    else:
+        rows.append([_btn("Назад", PR_BACK, ICON_BACK)])
+    rows.append([_btn("Снять", PR_CANCEL, ICON_NO)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def hub_only_keyboard() -> InlineKeyboardMarkup:
@@ -180,7 +194,13 @@ def after_reco_keyboard(username: str = "") -> InlineKeyboardMarkup:
 def joined_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [_btn("Проверить", PR_CHECK, ICON_GO, "success")],
-        [_btn("Что дальше", PR_HOW, ICON_OK)],
+    ])
+
+
+def pending_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("Мои заявки", PR_MINE, ICON_OK, "success")],
+        [_btn("В пиар", PR_HUB, ICON_BACK)],
     ])
 
 
@@ -213,6 +233,41 @@ def confirm_keyboard(claim_id: int, token: int = 0) -> InlineKeyboardMarkup:
         _btn("Да", f"{PR_YES}{claim_id}:{int(token)}", ICON_OK, "success"),
         _btn("Нет", f"{PR_NO}{claim_id}:{int(token)}", ICON_NO, "danger"),
     ]])
+
+
+_IMAGE_MIME = frozenset({
+    "image/jpeg", "image/jpg", "image/png", "image/webp",
+    "image/heic", "image/heif", "image/gif",
+})
+_IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".gif")
+
+
+def image_file_id(message: Any) -> str:
+    photos = getattr(message, "photo", None) or []
+    if photos:
+        return str(getattr(photos[-1], "file_id", "") or "")
+    doc = getattr(message, "document", None)
+    if not doc:
+        return ""
+    mime = str(getattr(doc, "mime_type", "") or "").lower()
+    name = str(getattr(doc, "file_name", "") or "").lower()
+    if mime in _IMAGE_MIME or name.endswith(_IMAGE_EXT):
+        return str(getattr(doc, "file_id", "") or "")
+    return ""
+
+
+def photo_noise_kind(message: Any) -> str:
+    if image_file_id(message):
+        return ""
+    if getattr(message, "video", None) or getattr(message, "video_note", None):
+        return "video"
+    if getattr(message, "sticker", None):
+        return "sticker"
+    if getattr(message, "animation", None):
+        return "video"
+    if getattr(message, "document", None):
+        return "file"
+    return "text"
 
 
 def _now() -> datetime:
@@ -572,6 +627,8 @@ async def save_claim(claim_id: int, **fields: Any) -> Optional[dict[str, Any]]:
 async def add_photo(claim_id: int, file_id: str) -> dict[str, Any]:
     claim = await claim_by_id(claim_id)
     photos = list(claim.get("photos") or [])
+    if any(str(item.get("file_id") or "") == str(file_id) for item in photos):
+        return claim
     photos.append({"file_id": file_id, "n": len(photos) + 1})
     fields: dict[str, Any] = {"photos": photos}
     if len(photos) >= PHOTOS_REQUIRED:
@@ -581,6 +638,16 @@ async def add_photo(claim_id: int, file_id: str) -> dict[str, Any]:
         else:
             fields["status"] = ST_WAIT_CONFIRM
     return await save_claim(claim_id, **fields)
+
+
+async def pop_photo(claim_id: int) -> Optional[dict[str, Any]]:
+    claim = await claim_by_id(claim_id)
+    if not claim:
+        return None
+    photos = list(claim.get("photos") or [])
+    if photos:
+        photos.pop()
+    return await save_claim(int(claim_id), photos=photos, photos_done_at=None, status=ST_PHOTOS)
 
 
 async def cancel_claim(claim_id: int) -> Optional[dict[str, Any]]:

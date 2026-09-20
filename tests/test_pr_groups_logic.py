@@ -17,6 +17,7 @@ from pr_groups_logic import (
     is_new_class,
     left_days_hint,
     looks_like_confirm,
+    looks_like_help,
     nika_step_amount,
     promoter_cut,
     recommend_seed,
@@ -26,6 +27,7 @@ from pr_groups_logic import (
     text_entry,
     text_gift,
     text_how,
+    text_need_photo,
     text_wait_photo,
     weekly_seed_budget,
     withdrawable_chat,
@@ -37,7 +39,7 @@ def test_entry_is_short_and_honest():
     assert "35%" in html
     assert "комиссии" in html
     assert "14 дней" in html
-    assert "1." in html
+    assert "1." not in html
     assert "Начать" not in html
 
 
@@ -46,9 +48,24 @@ def test_how_tells_what_to_do_next():
     assert "@CuteGamingBot" in html
     assert "Проверить" in html
     assert "администратором" in html
+    assert "1." not in html
     photo = text_wait_photo(0, 0)
     assert "1 из 3" in photo
-    assert "следующим сообщением" in photo
+    assert "Пришлите фото сюда" in photo
+    assert "@CuteGamingBot" in photo
+    second = text_wait_photo(1, 1)
+    assert "Есть 1 из 3" in second
+    assert "2 из 3" in second
+
+
+def test_need_photo_explains_the_mistake():
+    assert "не видео" in text_need_photo("video")
+    assert "не файл" in text_need_photo("file")
+    assert "уже есть" in text_need_photo("dup")
+    assert "галереи" in text_need_photo()
+    assert looks_like_help("хелп")
+    assert looks_like_help("Help")
+    assert not looks_like_help("привет")
 
 
 def test_reco_after_photos_mentions_confirm():

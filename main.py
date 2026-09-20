@@ -33092,7 +33092,7 @@ async def _pr_wait_photo_filter(m):
         if not m or not getattr(m, "from_user", None):
             return False
         chat_type = getattr(getattr(m, "chat", None), "type", "")
-        if chat_type != "private" or not getattr(m, "photo", None):
+        if chat_type != "private":
             return False
         return await _pr.is_waiting_photos(m.from_user.id, chat_type)
     except Exception:

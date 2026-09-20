@@ -32,6 +32,7 @@ from pr_groups_logic import (  # noqa: E402
     ST_PHOTOS,
     ST_WAIT_CONFIRM,
     looks_like_confirm,
+    looks_like_help,
     text_accepted,
     text_after_photos_owner,
     text_after_photos_reco,
@@ -76,6 +77,26 @@ log = logging.getLogger("pr_groups")
 router = Router(name="pr_groups")
 _attached = False
 _tick_started = False
+_photo_locks: dict[int, asyncio.Lock] = {}
+_album_used: dict[int, str] = {}
+
+
+def _photo_lock(user_id: int) -> asyncio.Lock:
+    lock = _photo_locks.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _photo_locks[user_id] = lock
+    return lock
+
+
+def _claim_extra(claim: dict, extra: dict | None = None) -> dict:
+    base = dict(extra or {})
+    base["n"] = len(claim.get("photos") or [])
+    base["chat_id"] = claim.get("chat_id") or base.get("chat_id")
+    base["title"] = claim.get("chat_title") or base.get("title") or ""
+    base["username"] = claim.get("chat_username") or base.get("username") or ""
+    base["role"] = claim.get("role") or base.get("role")
+    return base
 
 
 async def _bot():
@@ -170,25 +191,65 @@ async def _scan_user_groups(user_id: int) -> dict:
 async def _open_hub(target: CallbackQuery | Message) -> None:
     await pr.ensure_schema()
     start_pr_ticker()
-    await _edit(target, text_entry(), pr.entry_keyboard())
+    uid = int(target.from_user.id)
+    rows = await pr.list_user_claims(uid)
+    await _edit(target, text_entry(), pr.entry_keyboard(mine=bool(rows)))
 
 
 async def _show_how(target, uid: int, scan: dict | None = None) -> None:
     scan = scan or await _scan_user_groups(uid)
-    await pr.set_session(uid, claim_id=None, mode="how", extra={
+    extra = {
         "no_public": [g["chat_id"] for g in scan["no_public"]],
         "no_admin": [g["chat_id"] for g in scan["no_admin"]],
-    })
-    await _edit(target, text_how(no_public=scan["no_public"], no_admin=scan["no_admin"]), pr.how_keyboard())
+    }
+    if not scan["ready"] and len(scan["no_public"]) == 1 and not scan["no_admin"]:
+        group = scan["no_public"][0]
+        await pr.set_session(uid, claim_id=None, mode="how_public", extra=extra)
+        await _edit(target, text_need_public(group.get("title") or ""), pr.how_public_keyboard())
+        return
+    if not scan["ready"] and len(scan["no_admin"]) == 1 and not scan["no_public"]:
+        group = scan["no_admin"][0]
+        await pr.set_session(uid, claim_id=None, mode="how_admin", extra=extra)
+        await _edit(target, text_need_admin(group.get("title") or ""), pr.how_admin_keyboard())
+        return
+    await pr.set_session(uid, claim_id=None, mode="how", extra=extra)
+    await _edit(
+        target,
+        text_how(no_public=scan["no_public"], no_admin=scan["no_admin"]),
+        pr.how_keyboard(no_public=bool(scan["no_public"]), no_admin=bool(scan["no_admin"])),
+    )
+
+
+async def _resume_claim_screen(target, uid: int, claim: dict) -> None:
+    status = claim["status"]
+    title = claim.get("chat_title") or ""
+    extra = _claim_extra(claim)
+    if status == ST_PHOTOS:
+        have = len(claim.get("photos") or [])
+        extra["n"] = have
+        await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
+        await _edit(target, text_wait_photo(have, have), pr.photo_keyboard(have))
+        return
+    if status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
+        extra["username"] = claim.get("chat_username") or extra.get("username") or ""
+        await pr.set_session(uid, claim_id=int(claim["id"]), mode="wait_confirm", extra=extra)
+        await _edit(target, text_after_photos_reco(title), pr.after_reco_keyboard(extra["username"]))
+        return
+    await pr.set_session(uid, claim_id=int(claim["id"]), mode="view", extra=extra)
+    await _edit(target, text_resume_claim(title, status), pr.resume_keyboard(status))
 
 
 async def _try_advance(target, uid: int) -> None:
     await pr.ensure_schema()
+    open_claim = await pr.active_claim_for_user(uid)
+    if open_claim and open_claim["status"] in {ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
+        await _resume_claim_screen(target, uid, open_claim)
+        return
     if await pr.count_status(uid, {ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY, ST_PENDING}) >= MAX_PENDING:
-        await _edit(target, text_two_pending(), pr.after_owner_keyboard())
+        await _edit(target, text_two_pending(), pr.pending_keyboard())
         return
     if await pr.count_status(uid, {ST_LIVE}) >= MAX_LIVE_SEEDS:
-        await _edit(target, text_two_live(), pr.after_owner_keyboard())
+        await _edit(target, text_two_live(), pr.pending_keyboard())
         return
     scan = await _scan_user_groups(uid)
     ready = scan["ready"]
@@ -289,19 +350,29 @@ async def on_open_claim(cb: CallbackQuery) -> None:
     if not claim or int(claim.get("user_id") or 0) != uid:
         await _edit(cb, text_not_your_claim(), pr.hub_only_keyboard())
         return
-    status = claim["status"]
-    title = claim.get("chat_title") or ""
-    if status == ST_PHOTOS:
-        await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra={"n": len(claim.get("photos") or [])})
-        have = len(claim.get("photos") or [])
-        await _edit(cb, text_wait_photo(have, have), pr.cancel_keyboard())
+    await _resume_claim_screen(cb, uid, claim)
+
+
+@router.callback_query(F.data == pr.PR_UNDO)
+async def on_undo(cb: CallbackQuery) -> None:
+    try:
+        await cb.answer()
+    except Exception:
+        pass
+    uid = int(cb.from_user.id)
+    session = await pr.get_session(uid) or {}
+    if session.get("mode") != "photos" or not session.get("claim_id"):
+        await _open_hub(cb)
         return
-    if status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
-        await pr.set_session(uid, claim_id=int(claim["id"]), mode="wait_confirm", extra={"username": claim.get("chat_username") or ""})
-        await _edit(cb, text_after_photos_reco(title), pr.after_reco_keyboard(claim.get("chat_username") or ""))
+    claim = await pr.pop_photo(int(session["claim_id"]))
+    if not claim:
+        await _open_hub(cb)
         return
-    await pr.set_session(uid, claim_id=int(claim["id"]), mode="view", extra={})
-    await _edit(cb, text_resume_claim(title, status), pr.resume_keyboard(status))
+    have = len(claim.get("photos") or [])
+    extra = _claim_extra(claim, session.get("extra") or {})
+    extra["n"] = have
+    await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
+    await _edit(cb, text_wait_photo(have, have), pr.photo_keyboard(have))
 
 
 @router.callback_query(F.data == pr.PR_WROTE)
@@ -416,7 +487,7 @@ async def _open_photos(target, uid: int, info: dict, role: str) -> None:
     extra["n"] = 0
     extra["role"] = role
     await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
-    await _edit(target, text_wait_photo(0, 0), pr.cancel_keyboard())
+    await _edit(target, text_wait_photo(0, 0), pr.photo_keyboard(0))
 
 
 @router.callback_query(F.data == pr.PR_OWNER)
@@ -471,8 +542,24 @@ async def on_cancel(cb: CallbackQuery) -> None:
 def message_matches_photo(message: Message) -> bool:
     if not message or getattr(message.chat, "type", None) != "private":
         return False
-    # session check is async; cheap prefilter — photo only
-    return bool(message.photo)
+    return bool(pr.image_file_id(message))
+
+
+async def _finish_photos(message: Message, uid: int, claim: dict, extra: dict) -> None:
+    title = claim.get("chat_title") or extra.get("title") or ""
+    username = claim.get("chat_username") or extra.get("username") or ""
+    extra = _claim_extra(claim, extra)
+    if claim["role"] == ROLE_OWNER:
+        await pr.set_session(uid, claim_id=int(claim["id"]), mode="pending", extra=extra)
+        await message.answer(text_after_photos_owner(), reply_markup=pr.after_owner_keyboard(), parse_mode="HTML")
+        return
+    await pr.set_session(uid, claim_id=int(claim["id"]), mode="wait_confirm", extra=extra)
+    await message.answer(
+        text_after_photos_reco(title),
+        reply_markup=pr.after_reco_keyboard(username),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
 
 
 async def on_wait_photo(message: Message) -> None:
@@ -486,31 +573,40 @@ async def on_wait_photo(message: Message) -> None:
             await message.answer(text_photos_expired(), reply_markup=pr.after_cancel_keyboard(), parse_mode="HTML")
             await pr.clear_session(uid)
         return
-    if not message.photo:
-        await message.answer(text_need_photo(), reply_markup=pr.cancel_keyboard(), parse_mode="HTML")
-        return
-    file_id = message.photo[-1].file_id
-    claim = await pr.add_photo(int(claim["id"]), file_id)
     have = len(claim.get("photos") or [])
     extra = dict(session.get("extra") or {})
-    extra["n"] = have
-    await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
-    if have < PHOTOS_REQUIRED:
-        await message.answer(text_wait_photo(have, have), reply_markup=pr.cancel_keyboard(), parse_mode="HTML")
+    if looks_like_help(getattr(message, "text", None)):
+        await message.answer(text_wait_photo(have, have), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
         return
-    title = claim.get("chat_title") or extra.get("title") or ""
-    username = claim.get("chat_username") or extra.get("username") or ""
-    if claim["role"] == ROLE_OWNER:
-        await pr.set_session(uid, claim_id=int(claim["id"]), mode="pending", extra=extra)
-        await message.answer(text_after_photos_owner(), reply_markup=pr.after_owner_keyboard(), parse_mode="HTML")
-    else:
-        await pr.set_session(uid, claim_id=int(claim["id"]), mode="wait_confirm", extra=extra)
-        await message.answer(
-            text_after_photos_reco(title),
-            reply_markup=pr.after_reco_keyboard(username),
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
+    album_id = getattr(message, "media_group_id", None)
+    if album_id and _album_used.get(uid) == str(album_id):
+        return
+    file_id = pr.image_file_id(message)
+    if not file_id:
+        kind = pr.photo_noise_kind(message)
+        await message.answer(text_need_photo(kind), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
+        return
+    async with _photo_lock(uid):
+        claim = await pr.claim_by_id(int(session["claim_id"]))
+        if not claim or claim["status"] != ST_PHOTOS:
+            return
+        if album_id:
+            if _album_used.get(uid) == str(album_id):
+                return
+            _album_used[uid] = str(album_id)
+        before = len(claim.get("photos") or [])
+        claim = await pr.add_photo(int(claim["id"]), file_id)
+        have = len(claim.get("photos") or [])
+        extra = _claim_extra(claim, extra)
+        extra["n"] = have
+        await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
+        if have == before:
+            await message.answer(text_need_photo("dup"), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
+            return
+        if have < PHOTOS_REQUIRED:
+            await message.answer(text_wait_photo(have, have), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
+            return
+    await _finish_photos(message, uid, claim, extra)
 
 
 @router.message(F.chat.type.in_({"group", "supergroup"}), F.text)

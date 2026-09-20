@@ -23,7 +23,40 @@ def test_wired_into_bot_and_panel():
     assert "!isPrGroups" in shell
     core = (ROOT / "bot" / "funcs" / "pr_groups.py").read_text(encoding="utf-8")
     assert "prg:chk" in core
+    assert "prg:undo" in core
     assert "how_keyboard" in core
+    assert "photo_keyboard" in core
+    assert "image_file_id" in core
+    assert "pop_photo" in core
+    handlers = (ROOT / "bot" / "handlers" / "pr_groups.py").read_text(encoding="utf-8")
+    assert "on_undo" in handlers
+    assert "looks_like_help" in handlers
+    assert "_album_used" in handlers
+    assert "_resume_claim_screen" in handlers
+
+
+def test_image_file_id_accepts_photo_and_png():
+    from types import SimpleNamespace
+
+    from bot.funcs.pr_groups import image_file_id, photo_noise_kind
+
+    photo = SimpleNamespace(
+        photo=[SimpleNamespace(file_id="p1")],
+        document=None, video=None, video_note=None, sticker=None, animation=None, text=None,
+    )
+    assert image_file_id(photo) == "p1"
+    doc = SimpleNamespace(
+        photo=None,
+        document=SimpleNamespace(file_id="d1", mime_type="image/png", file_name="a.png"),
+        video=None, video_note=None, sticker=None, animation=None, text=None,
+    )
+    assert image_file_id(doc) == "d1"
+    noise = SimpleNamespace(
+        photo=None, document=None, video=SimpleNamespace(file_id="v"),
+        video_note=None, sticker=None, animation=None, text=None,
+    )
+    assert image_file_id(noise) == ""
+    assert photo_noise_kind(noise) == "video"
 
 
 def test_gift_lock_hooks_exist():
