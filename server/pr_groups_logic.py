@@ -137,10 +137,19 @@ HELP_WORDS = frozenset({"хелп", "help", "помощь", "?"})
 LINK_MODES = frozenset({"how", "how_public", "how_admin", "wait_link"})
 BOT_USERNAME = "CuteGamingBot"
 STARTGROUP_RIGHTS = "delete_messages+restrict_members+pin_messages+invite_users"
+LINK_HINT_HTML = "<code>@группа</code> · <code>t.me/группа</code> · <code>t.me/c/id</code> · id"
 
-_TME_RE = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/([A-Za-z0-9_+]+)", re.I)
-_USER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{3,31}$")
-_SKIP_TME = frozenset({"share", "addstickers", "socks", "proxy", "iv", "boost"})
+_USER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")
+_AT_RE = re.compile(r"(?<![A-Za-z0-9_])@([A-Za-z][A-Za-z0-9_]{4,31})\b")
+_URL_RE = re.compile(
+    r"(?:https?://)?(?:www\.)?(?:t(?:elegram)?\.me|telegram\.dog)/[^\s<>\"')\]]+|tg://[^\s<>\"')\]]+",
+    re.I,
+)
+_SKIP_TME = frozenset({
+    "share", "addstickers", "socks", "proxy", "iv", "boost", "login",
+    "confirmphone", "setlanguage", "premium", "nft", "giftcode", "invoice",
+    "addlist", "addtheme", "addemoji", "bg", "stars",
+})
 
 
 def startgroup_url(username: str | None = None) -> str:
@@ -148,33 +157,147 @@ def startgroup_url(username: str | None = None) -> str:
     return f"https://t.me/{uname}?startgroup=pr&admin={STARTGROUP_RIGHTS}"
 
 
-def parse_group_ref(text: str | None) -> dict[str, str] | None:
-    """@имя / t.me/имя / закрытая ссылка / t.me/c/id. Без голых слов — меньше ложных срабатываний."""
+def _trim_url(url: str) -> str:
+    return str(url or "").strip().rstrip(".,;:!?)]}'\"")
+
+
+def _normalize_chat_id(raw: str) -> int | None:
+    compact = str(raw or "").replace(" ", "").replace("\u00a0", "")
+    if not compact or not compact.lstrip("-").isdigit():
+        return None
+    digits = compact.lstrip("-")
+    if len(digits) < 6 or len(digits) > 20:
+        return None
+    n = int(compact)
+    if compact.startswith("-"):
+        return n
+    if compact.startswith("100") and len(compact) >= 13:
+        return -n
+    return int(f"-100{compact}")
+
+
+def _username_ref(name: str | None) -> dict[str, str] | None:
+    value = str(name or "").strip().lstrip("@")
+    if not _USER_RE.fullmatch(value):
+        return None
+    return {"kind": "username", "value": value}
+
+
+def _id_ref(raw: str | int) -> dict[str, Any] | None:
+    chat_id = _normalize_chat_id(str(raw))
+    if chat_id is None:
+        return None
+    return {"kind": "id", "value": str(chat_id), "chat_id": chat_id}
+
+
+def _invite_ref(value: str) -> dict[str, str]:
+    return {"kind": "invite", "value": str(value)}
+
+
+def _parse_tme_path(path: str) -> dict[str, Any] | None:
+    from urllib.parse import unquote
+
+    raw = _trim_url(unquote(str(path or "")))
+    if "?" in raw:
+        raw = raw.split("?", 1)[0]
+    if "#" in raw:
+        raw = raw.split("#", 1)[0]
+    parts = [p for p in raw.strip("/").split("/") if p]
+    if not parts:
+        return None
+    first = parts[0]
+    low = first.lower()
+    if first.startswith("+"):
+        return _invite_ref(first)
+    if low == "joinchat":
+        token = parts[1] if len(parts) > 1 else first
+        return _invite_ref(token)
+    if low == "c":
+        if len(parts) >= 2:
+            return _id_ref(parts[1])
+        return None
+    if low == "s" and len(parts) >= 2:
+        first = parts[1]
+        low = first.lower()
+    if low in _SKIP_TME:
+        return None
+    return _username_ref(first)
+
+
+def _parse_tg_scheme(url: str) -> dict[str, Any] | None:
+    from urllib.parse import parse_qs, unquote, urlparse
+
+    parsed = urlparse(_trim_url(url))
+    query = parse_qs(parsed.query)
+    host = (parsed.netloc or parsed.path.lstrip("/").split("/", 1)[0]).lower()
+    if host in {"resolve", "privatepost"}:
+        domain = (query.get("domain") or [None])[0]
+        ref = _username_ref(domain)
+        if ref:
+            return ref
+    chat_raw = (query.get("chat_id") or query.get("channel") or [None])[0]
+    if chat_raw:
+        ref = _id_ref(unquote(str(chat_raw)))
+        if ref:
+            return ref
+    invite = (query.get("invite") or [None])[0]
+    if invite or host == "join":
+        return _invite_ref(unquote(str(invite or "")))
+    return None
+
+
+def _parse_http_tme(url: str) -> dict[str, Any] | None:
+    from urllib.parse import unquote
+
+    raw = _trim_url(unquote(url))
+    match = re.search(
+        r"(?:https?://)?(?:www\.)?(?:t(?:elegram)?\.me|telegram\.dog)/(.+)$",
+        raw,
+        re.I,
+    )
+    if not match:
+        return None
+    return _parse_tme_path(match.group(1))
+
+
+def parse_group_ref(text: str | None) -> dict[str, Any] | None:
+    """Любая ссылка: @username, t.me, t.me/c/id, tg://, голый id. Не имя и не пересылка."""
     raw = str(text or "").strip()
     if not raw:
         return None
-    found = _TME_RE.search(raw)
-    if found:
-        part = found.group(1)
-        low = part.lower()
-        if part.startswith("+") or low == "joinchat":
-            return {"kind": "invite", "value": part}
-        if low == "c":
-            rest = raw[found.end():]
-            nums = re.match(r"/?(\d{6,})", rest)
-            if nums:
-                return {"kind": "internal", "value": nums.group(1)}
-            return None
-        if low in _SKIP_TME:
-            return None
-        if _USER_RE.fullmatch(part):
-            return {"kind": "username", "value": part}
+    for match in _URL_RE.finditer(raw):
+        url = _trim_url(match.group(0))
+        parsed = _parse_tg_scheme(url) if url.lower().startswith("tg:") else _parse_http_tme(url)
+        if parsed:
+            return parsed
+    found_at = _AT_RE.search(raw)
+    if found_at:
+        return _username_ref(found_at.group(1))
+    compact = raw.replace(" ", "").replace("\u00a0", "")
+    if compact.lstrip("-").isdigit():
+        return _id_ref(compact)
+    return None
+
+
+def extract_group_ref(*, text: str = "", urls: list[str] | None = None) -> dict[str, Any] | None:
+    for blob in [*(urls or []), text]:
+        ref = parse_group_ref(blob)
+        if ref:
+            return ref
+    return None
+
+
+def chat_id_from_ref(ref: dict[str, Any] | None) -> int | None:
+    if not ref:
         return None
-    token = raw.split()[0]
-    if token.startswith("@"):
-        name = token[1:].split("/")[0]
-        if _USER_RE.fullmatch(name):
-            return {"kind": "username", "value": name}
+    kind = str(ref.get("kind") or "")
+    if kind in {"id", "internal"}:
+        if ref.get("chat_id") is not None:
+            try:
+                return int(ref["chat_id"])
+            except (TypeError, ValueError):
+                return None
+        return _normalize_chat_id(str(ref.get("value") or ""))
     return None
 
 
@@ -443,16 +566,13 @@ def text_how(*, intent: str = "", no_public: list | None = None, no_admin: list 
             f"{status_emoji_html('wait')} <b>Чужой чат</b>\n"
             "Попросите создателя добавить @CuteGamingBot в админы.\n"
             "Потом пришлите сюда ссылку:\n"
-            "<blockquote><code>@группа</code></blockquote>"
-            "<i>Можно переслать сообщение из той группы.</i>"
+
             f"{seen}"
         )
     return (
-        f"{status_emoji_html('wait')} <b>Ваша группа</b>\n"
-        "Добавьте Кута админом в публичную группу.\n"
-        "Потом пришлите сюда ссылку:\n"
-        "<blockquote><code>@группа</code></blockquote>"
-        "<i>Можно переслать сообщение из той группы.</i>"
+        f"<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji> <b>Ваша группа</b>\n"
+        "<b>Добавьте Кут в список администраторов в свою публичную группу.</b>\n"
+        "<b>Потом пришлите сюда ссылку</b>\n"
         f"{seen}"
     )
 
@@ -461,7 +581,7 @@ def text_how_public() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Нужен @адрес</b>\n"
         "Название сверху → <b>Управление</b> → <b>Тип группы</b> → <b>Публичная</b>.\n"
-        "<blockquote><i>Потом пришлите сюда <code>@адрес</code></i></blockquote>"
+        f"<blockquote><i>Потом пришлите сюда ссылку</i></blockquote>"
     )
 
 
@@ -470,12 +590,12 @@ def text_how_admin(*, intent: str = "") -> str:
         return (
             f"{status_emoji_html('wait')} <b>Кут должен быть админом</b>\n"
             "Попросите создателя: <b>Управление</b> → <b>Администраторы</b> → @CuteGamingBot.\n"
-            "<blockquote><i>Потом пришлите сюда <code>@ссылку</code></i></blockquote>"
+            f"<blockquote><i>Потом пришлите сюда ссылку</i></blockquote>"
         )
     return (
         f"{status_emoji_html('wait')} <b>Кут должен быть админом</b>\n"
         "<b>Управление</b> → <b>Администраторы</b> → @CuteGamingBot.\n"
-        "<blockquote><i>Потом «Проверить» или пришлите <code>@ссылку</code></i></blockquote>"
+        f"<blockquote><i>Потом «Проверить» или пришлите ссылку</i></blockquote>"
     )
 
 
@@ -484,7 +604,7 @@ def text_need_public(title: str = "") -> str:
     return (
         f"{status_emoji_html('no')} <b>У «{name}» нет @адреса</b>\n"
         "Название сверху → <b>Управление</b> → <b>Тип группы</b> → <b>Публичная</b>.\n"
-        "<blockquote><i>Потом пришлите сюда <code>@адрес</code></i></blockquote>"
+        f"<blockquote><i>Потом пришлите сюда ссылку</i></blockquote>"
     )
 
 
@@ -494,12 +614,12 @@ def text_need_admin(title: str = "", *, intent: str = "") -> str:
         return (
             f"{status_emoji_html('no')} <b>В «{name}» Кут не админ</b>\n"
             "Попросите создателя дать ему админку.\n"
-            "<blockquote><i>Потом пришлите сюда <code>@ссылку</code></i></blockquote>"
+            f"<blockquote><i>Потом пришлите сюда ссылку</i></blockquote>"
         )
     return (
         f"{status_emoji_html('no')} <b>В «{name}» Кут не админ</b>\n"
         "<b>Управление</b> → <b>Администраторы</b> → @CuteGamingBot.\n"
-        "<blockquote><i>Потом «Проверить» или пришлите <code>@ссылку</code></i></blockquote>"
+        f"<blockquote><i>Потом «Проверить» или пришлите ссылку</i></blockquote>"
     )
 
 
@@ -508,7 +628,7 @@ def text_bot_joined(title: str, *, has_intent: bool = False) -> str:
     if has_intent:
         return (
             f"{status_emoji_html('ok')} <b>Кут зашёл в «{name}»</b>\n"
-            "<blockquote><i>Если он админ — нажмите «Проверить» или пришлите <code>@ссылку</code></i></blockquote>"
+            f"<blockquote><i>Если он админ — нажмите «Проверить» или пришлите ссылку</i></blockquote>"
         )
     return (
         f"{status_emoji_html('ok')} <b>Кут зашёл в «{name}»</b>\n"
@@ -519,22 +639,28 @@ def text_bot_joined(title: str, *, has_intent: bool = False) -> str:
 def text_need_link() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Нужна ссылка на группу</b>\n"
-        "Пришлите <code>@имя</code> или <code>t.me/имя</code>\n"
-        "<blockquote><i>Или перешлите сообщение из той группы</i></blockquote>"
+        "<i>В группе : сообщение → Копировать ссылку — вставьте сюда текстом</i>"
+    )
+
+
+def text_forward_no_group() -> str:
+    return (
+        f"{status_emoji_html('no')} <b>Пересылка не подходит</b>\n"
+        f"<blockquote><i>Нужна ссылка текстом</i></blockquote>"
     )
 
 
 def text_link_invite() -> str:
     return (
         f"{status_emoji_html('no')} <b>Это закрытая ссылка</b>\n"
-        "<blockquote><i>Группа должна быть публичной — с @адресом</i></blockquote>"
+        f"<blockquote><i>Нужна публичная группа</i></blockquote>"
     )
 
 
 def text_group_not_found() -> str:
     return (
         f"{status_emoji_html('no')} <b>Такую группу не вижу</b>\n"
-        "<blockquote><i>Проверьте @адрес. Кут должен быть в чате</i></blockquote>"
+        f"<blockquote><i>Проверьте ссылку. Кут должен быть в чате. </i></blockquote>"
     )
 
 
@@ -544,12 +670,12 @@ def text_bot_not_there(title: str = "", *, intent: str = "") -> str:
         return (
             f"{status_emoji_html('no')} <b>Кута нет в «{name}»</b>\n"
             "Попросите создателя добавить @CuteGamingBot в админы.\n"
-            "<blockquote><i>Потом снова пришлите <code>@ссылку</code></i></blockquote>"
+            f"<blockquote><i>Потом снова пришлите ссылку</i></blockquote>"
         )
     return (
         f"{status_emoji_html('no')} <b>Кута нет в «{name}»</b>\n"
         "Нажмите «Добавить Кута» и выберите этот чат.\n"
-        "<blockquote><i>Потом снова пришлите <code>@ссылку</code></i></blockquote>"
+        f"<blockquote><i>Потом снова пришлите ссылку</i></blockquote>"
     )
 
 
@@ -557,8 +683,7 @@ def text_cant_add() -> str:
     return (
         f"{status_emoji_html('wait')} <b>Чужая группа</b>\n"
         "Напишите создателю: добавь @CuteGamingBot в админы.\n"
-        "Когда Кут будет в чате — пришлите сюда ссылку:\n"
-        "<blockquote><code>@группа</code></blockquote>"
+        "Когда Кут будет в чате - пришлите сюда ссылку :\n"
     )
 
 
@@ -598,7 +723,7 @@ def text_owner_bridge(title: str) -> str:
     return (
         f"{status_emoji_html('ok')} <b>«{name}»</b>\n"
         "Вы создатель. Дальше 3 фото — и заявка на проверку.\n"
-        "<blockquote><i>Друг попросил добавить Кута? Не забирайте заявку — пусть он пришлёт @ссылку в бота</i></blockquote>"
+        "<blockquote><i>Друг попросил добавить Кута? Не забирайте заявку — пусть он пришлёт ссылку в бота</i></blockquote>"
     )
 
 

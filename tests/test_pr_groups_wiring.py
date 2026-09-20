@@ -47,6 +47,10 @@ def test_wired_into_bot_and_panel():
     assert "_open_choose" in handlers
     assert "text_after_proofs_owner" in handlers
     assert "text_after_proofs_reco" in handlers
+    assert "text_forward_no_group" in handlers
+    assert "extract_group_ref" in handlers
+    assert "_forwarded_group" not in handlers
+    assert "chat_id_from_ref" in handlers
     assert "questions_stars" in core
     assert "PR_TASKS" in core
 

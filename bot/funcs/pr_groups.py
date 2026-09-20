@@ -121,8 +121,8 @@ def entry_keyboard(*, mine: bool = False) -> InlineKeyboardMarkup:
 
 def choose_keyboard() -> InlineKeyboardMarkup:
     return _markup([
-        [_btn("Я владелец группы", PR_OWNER, "5231463873848039753", "default")],
-        [_btn("Рекомендую бот в группах", "5388583647370565067", ICON_GO)],
+        [_btn("Я владелец группы", PR_OWNER, "5442949339108366200", "default")],
+        [_btn("Рекомендую бот в группах", PR_RECO, "5388583647370565067")],
     ], back=PR_HUB)
 
 
@@ -186,7 +186,7 @@ def switch_to_reco_keyboard() -> InlineKeyboardMarkup:
 
 def switch_to_owner_keyboard() -> InlineKeyboardMarkup:
     return _markup(
-        [[_btn("Я владелец группы", PR_OWNER, "5231463873848039753", "default")]],
+        [[_btn("Я владелец группы", PR_OWNER, "5442949339108366200", "default")]],
         back=PR_BACK,
     )
 

@@ -36,6 +36,8 @@ from pr_groups_logic import (  # noqa: E402
     looks_like_confirm,
     looks_like_help,
     parse_group_ref,
+    extract_group_ref,
+    chat_id_from_ref,
     text_accepted,
     text_after_photos_reco,
     text_after_proofs_owner,
@@ -55,6 +57,7 @@ from pr_groups_logic import (  # noqa: E402
     text_entry,
     text_freeze_admin,
     text_freeze_public,
+    text_forward_no_group,
     text_gift,
     text_gift_locked,
     text_group_busy,
@@ -667,17 +670,23 @@ async def _begin_proofs_dm(uid: int, info: dict) -> None:
     await _open_photos_dm(uid, extra, ROLE_OWNER if intent == ROLE_OWNER else ROLE_RECO)
 
 
-def _forwarded_group(message: Message):
-    origin = getattr(message, "forward_origin", None)
-    chat = getattr(origin, "chat", None)
-    typ = str(getattr(chat, "type", "") or "")
-    if chat is not None and typ in {"group", "supergroup", str(ChatType.GROUP), str(ChatType.SUPERGROUP)}:
-        return chat
-    old = getattr(message, "forward_from_chat", None)
-    typ = str(getattr(old, "type", "") or "")
-    if old is not None and typ in {"group", "supergroup", str(ChatType.GROUP), str(ChatType.SUPERGROUP)}:
-        return old
-    return None
+def _is_forwarded(message: Message) -> bool:
+    return bool(
+        getattr(message, "forward_origin", None)
+        or getattr(message, "forward_from_chat", None)
+        or getattr(message, "forward_from", None)
+        or getattr(message, "forward_sender_name", None)
+        or getattr(message, "forward_date", None)
+    )
+
+
+def _entity_urls(message: Message) -> list[str]:
+    urls: list[str] = []
+    for ent in list(getattr(message, "entities", None) or []) + list(getattr(message, "caption_entities", None) or []):
+        url = getattr(ent, "url", None)
+        if url:
+            urls.append(str(url))
+    return urls
 
 
 async def _info_from_chat_id(chat_id: int, uid: int) -> dict:
@@ -708,13 +717,18 @@ async def _resolve_group_and_begin(target, uid: int, *, chat_id: int | None = No
                 await _edit(target, text_not_a_group(), pr.add_group_keyboard(uname, intent=intent))
                 return
             info = await _info_from_chat_id(int(chat.id), uid)
-        elif ref and ref.get("kind") == "internal":
-            info = await _info_from_chat_id(int("-100" + ref["value"]), uid)
+        elif chat_id_from_ref(ref) is not None:
+            info = await _info_from_chat_id(int(chat_id_from_ref(ref)), uid)
         else:
             await _edit(target, text_need_link(), pr.how_keyboard(bot_username=uname, intent=intent))
             return
     except Exception:
         await _edit(target, text_group_not_found(), pr.add_group_keyboard(uname, intent=intent))
+        return
+    if str(info.get("type") or "") not in {
+        ChatType.GROUP, ChatType.SUPERGROUP, "group", "supergroup",
+    }:
+        await _edit(target, text_not_a_group(), pr.add_group_keyboard(uname, intent=intent))
         return
     await _begin_proofs(target, uid, info)
 
@@ -732,11 +746,15 @@ async def on_wait_link(message: Message) -> None:
     if looks_like_help(text) and not parse_group_ref(text):
         await _show_how(message, uid)
         return
-    forwarded = _forwarded_group(message)
-    if forwarded is not None:
-        await _resolve_group_and_begin(message, uid, chat_id=int(forwarded.id))
+    if _is_forwarded(message):
+        await message.answer(
+            text_forward_no_group(),
+            reply_markup=pr.how_keyboard(bot_username=uname, intent=intent),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
         return
-    ref = parse_group_ref(text)
+    ref = extract_group_ref(text=text, urls=_entity_urls(message))
     if ref is None:
         await message.answer(
             text_need_link(),

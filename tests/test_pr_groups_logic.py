@@ -30,8 +30,12 @@ from pr_groups_logic import (
     text_entry,
     text_gift,
     text_how,
+    text_forward_no_group,
+    text_need_link,
     text_need_photo,
     text_wait_photo,
+    extract_group_ref,
+    chat_id_from_ref,
     weekly_seed_budget,
     withdrawable_chat,
 )
@@ -50,10 +54,21 @@ def test_how_tells_what_to_do_next():
     owner = text_how(intent="owner")
     assert "Ваша группа" in owner
     assert "@группа" in owner
+    assert "t.me" in owner
+    assert "пересл" not in owner.lower()
     reco = text_how(intent="reco")
     assert "Чужой" in reco
     assert "@CuteGamingBot" in reco
-    assert "1." not in owner
+    assert "пересл" not in reco.lower()
+    need = text_need_link()
+    assert "t.me" in need
+    assert "id" in need.lower()
+    assert "пересл" not in need.lower()
+    assert "Копировать ссылку" in need
+    bad = text_forward_no_group()
+    assert "не подходит" in bad
+    assert "@группа" in bad
+    assert "id" in bad.lower()
     photo = text_wait_photo(0, 0)
     assert "1 из 3" in photo
     assert "Пришлите фото сюда" in photo
@@ -96,8 +111,6 @@ def test_reco_bridge_does_not_pretend_they_are_owner():
     )
     choose = text_choose_role()
     assert "Кто вы" in choose
-    assert "Я владелец группы" in choose
-    assert "Рекомендую бот в группах" in choose
     cant = text_cant_add()
     assert "@CuteGamingBot" in cant
     assert "@группа" in cant
@@ -218,14 +231,34 @@ def test_confirm_words():
 
 def test_parse_group_ref():
     assert parse_group_ref("@myfriends") == {"kind": "username", "value": "myfriends"}
+    assert parse_group_ref("  вот @My_Friends смотри ") == {"kind": "username", "value": "My_Friends"}
     assert parse_group_ref("https://t.me/myfriends") == {"kind": "username", "value": "myfriends"}
+    assert parse_group_ref("http://t.me/myfriends/") == {"kind": "username", "value": "myfriends"}
+    assert parse_group_ref("https://www.t.me/myfriends") == {"kind": "username", "value": "myfriends"}
+    assert parse_group_ref("https://telegram.me/myfriends") == {"kind": "username", "value": "myfriends"}
+    assert parse_group_ref("https://telegram.dog/myfriends") == {"kind": "username", "value": "myfriends"}
     assert parse_group_ref("t.me/myfriends/12")["kind"] == "username"
+    assert parse_group_ref("https://t.me/myfriends/12?single")["value"] == "myfriends"
+    assert parse_group_ref("tg://resolve?domain=myfriends") == {"kind": "username", "value": "myfriends"}
     assert parse_group_ref("https://t.me/+AbCdEf")["kind"] == "invite"
-    assert parse_group_ref("https://t.me/c/1234567890/5") == {"kind": "internal", "value": "1234567890"}
+    assert parse_group_ref("https://t.me/joinchat/AAAA")["kind"] == "invite"
+    assert parse_group_ref("https://t.me/c/1234567890/5") == {
+        "kind": "id", "value": "-1001234567890", "chat_id": -1001234567890,
+    }
+    assert parse_group_ref("https://t.me/c/1234567890/5/7")["chat_id"] == -1001234567890
+    assert parse_group_ref("-1001234567890")["chat_id"] == -1001234567890
+    assert parse_group_ref("1234567890")["chat_id"] == -1001234567890
+    assert parse_group_ref("1001234567890")["chat_id"] == -1001234567890
+    assert parse_group_ref("tg://openmessage?chat_id=-1001234567890")["chat_id"] == -1001234567890
     assert parse_group_ref("привет") is None
     assert parse_group_ref("hello") is None
+    assert parse_group_ref("https://t.me/share/url?url=x") is None
+    assert parse_group_ref("https://t.me/addstickers/Pack") is None
     assert looks_like_group_ref("@CuteGroup")
     assert not looks_like_group_ref("хелп")
+    assert extract_group_ref(text="наш чат", urls=["https://t.me/myfriends/3"])["value"] == "myfriends"
+    assert chat_id_from_ref(parse_group_ref("t.me/c/2574123456")) == -1002574123456
+    assert chat_id_from_ref(parse_group_ref("@myfriends")) is None
     assert "startgroup=pr" in startgroup_url()
     assert "admin=" in startgroup_url()
 
