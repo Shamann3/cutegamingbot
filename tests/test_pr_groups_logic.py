@@ -224,6 +224,13 @@ def test_claim_schema_has_money_and_confirm_columns():
     assert "accepting" in WEEK_SEED_STATUSES
 
 
+def test_html_without_custom_emoji_keeps_inner():
+    from pr_groups_logic import html_without_custom_emoji
+
+    raw = "<tg-emoji emoji-id='1'>📣</tg-emoji> <b>текст</b>"
+    assert html_without_custom_emoji(raw) == "📣 <b>текст</b>"
+
+
 def test_claim_sql_quotes_freeze():
     from pr_groups_logic import alter_claim_column_sql, claim_set_sql, sql_ident
 

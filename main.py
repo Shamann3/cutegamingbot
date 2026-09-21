@@ -18203,22 +18203,8 @@ async def qst_sub_refresh(callback_query: types.CallbackQuery):
     lock = _get_user_sub_lock(user_id)
     async with lock:
         try:
-            # 1) Удаляем предыдущее "активное" сообщение для этого пользователя (если оно есть)
-            prev = _USER_SUB_MSG.get(user_id)
-            if prev is not None:
-                prev_chat_id, prev_msg_id = prev
-                await _safe_delete_message(prev_chat_id, prev_msg_id)
-
-            # 2) Удаляем сообщение, по которому нажали (кнопка), чтобы не оставалось старых UI
-            if cur_msg_id:
-                await _safe_delete_message(cur_chat_id, cur_msg_id)
-
-            # 3) Выбираем стикер в зависимости от наличия заданий
-
             sticker_id = "CAACAgIAAxkBAnnkimkkxMC5_fsg-96x8mjz21p-o7DtAAIeiQAC6FMoSb1sUOpoXdxiNgQ"
-
-
-            # 4) Отправляем НОВЫЙ СТИКЕР + inline-клавиатура
+            msg = None
             try:
                 msg = await bot1.send_sticker(
                     chat_id=cur_chat_id,
@@ -18230,12 +18216,10 @@ async def qst_sub_refresh(callback_query: types.CallbackQuery):
                     f"chat={cur_chat_id} msg={msg.message_id} no_tasks={no_tasks}"
                 )
             except Exception as e_st:
-                # Теоретически может упасть send_sticker (битый file_id, бан и т.д.)
                 _qdbg_exc(
                     "qst_sub_refresh: send_sticker failed, fallback to text message",
                     e_st,
                 )
-                # Фоллбек: всё-таки отправим текст, чтобы не оставить пользователя без UI
                 fallback_text = (
                     "Заданий больше нет."
                     if no_tasks
@@ -18249,7 +18233,14 @@ async def qst_sub_refresh(callback_query: types.CallbackQuery):
                     reply_markup=kb,
                 )
 
-            # 5) Запоминаем новое сообщение как единственное актуальное для этого пользователя
+            prev = _USER_SUB_MSG.get(user_id)
+            if prev is not None:
+                prev_chat_id, prev_msg_id = prev
+                if (prev_chat_id, prev_msg_id) != (msg.chat.id, msg.message_id):
+                    await _safe_delete_message(prev_chat_id, prev_msg_id)
+            if cur_msg_id and (cur_chat_id, cur_msg_id) != (msg.chat.id, msg.message_id):
+                await _safe_delete_message(cur_chat_id, cur_msg_id)
+
             _USER_SUB_MSG[user_id] = (msg.chat.id, msg.message_id)
 
         except Exception as e:
@@ -18438,13 +18429,55 @@ async def _safe_edit_message_text(
     reply_markup=None,
     replacement_sticker: Optional[str] = None,
 ) -> Optional[types.Message]:
-    """
-    Safe replacement: удаляем старое сообщение (best-effort), затем отправляем стикер (если задан)
-    или текст с клавиатурой.
-    Возвращаем новый message или None.
-    """
+    """Сначала новое сообщение, старое удаляем только после успеха — иначе пустой чат."""
     try:
-        if message_id:
+        stickers_pool = []
+        if REPLACEMENT_STICKERS:
+            stickers_pool.extend(REPLACEMENT_STICKERS)
+        if STICKERS:
+            stickers_pool.extend(STICKERS)
+
+        sticker_to_send = replacement_sticker or (
+            random.choice(stickers_pool) if stickers_pool else None
+        )
+
+        new_msg = None
+        if sticker_to_send:
+            try:
+                new_msg = await bot1.send_sticker(
+                    chat_id=chat_id,
+                    sticker=sticker_to_send,
+                    reply_markup=reply_markup,
+                )
+                _qdbg("replacement sticker send: OK")
+            except Exception as e_send:
+                _qdbg_exc(
+                    "replacement sticker send failed (fall back to text)", e_send
+                )
+
+        if new_msg is None:
+            try:
+                new_msg = await bot1.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                    reply_markup=reply_markup,
+                )
+                _qdbg("send_message (fallback): OK")
+            except Exception as e_msg:
+                _qdbg_exc("send_message failed", e_msg)
+                try:
+                    new_msg = await bot1.send_message(
+                        chat_id=chat_id,
+                        text="Задания",
+                        reply_markup=reply_markup,
+                    )
+                except Exception as e_plain:
+                    _qdbg_exc("send_message plain failed", e_plain)
+                    return None
+
+        if message_id and getattr(new_msg, "message_id", None) != message_id:
             try:
                 await bot1.delete_message(chat_id=chat_id, message_id=message_id)
                 _qdbg("delete_message: OK")
@@ -18458,45 +18491,7 @@ async def _safe_edit_message_text(
                     )
                 else:
                     _qdbg_exc("delete_message failed (continuing)", e_del)
-
-        # выбираем стикер (replacement или любой из массивов)
-        stickers_pool = []
-        if REPLACEMENT_STICKERS:
-            stickers_pool.extend(REPLACEMENT_STICKERS)
-        if STICKERS:
-            stickers_pool.extend(STICKERS)
-
-        sticker_to_send = replacement_sticker or (
-            random.choice(stickers_pool) if stickers_pool else None
-        )
-
-        if sticker_to_send:
-            try:
-                new_msg = await bot1.send_sticker(
-                    chat_id=chat_id,
-                    sticker=sticker_to_send,
-                    reply_markup=reply_markup,
-                )
-                _qdbg("replacement sticker send: OK")
-                return new_msg
-            except Exception as e_send:
-                _qdbg_exc(
-                    "replacement sticker send failed (fall back to text)", e_send
-                )
-
-        try:
-            new_msg = await bot1.send_message(
-                chat_id=chat_id,
-                text=text,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-                reply_markup=reply_markup,
-            )
-            _qdbg("send_message (fallback): OK")
-            return new_msg
-        except Exception as e_msg:
-            _qdbg_exc("send_message failed", e_msg)
-            return None
+        return new_msg
     except Exception as e_outer:
         _qdbg_exc("_safe_edit_message_text outer", e_outer)
         return None
@@ -18558,16 +18553,6 @@ async def qst_menu_back(callback_query: types.CallbackQuery):
             await callback_query.answer()
         except Exception:
             pass
-
-        # аккуратно удаляем старое сообщение
-        try:
-            if callback_query.message:
-                await _safe_delete_message(
-                    chat_id=callback_query.message.chat.id,
-                    message_id=callback_query.message.message_id,
-                )
-        except Exception as e:
-            _qdbg_exc("qst_menu_back: checking/deleting message failed", e)
 
         # пробуем открыть нормальное меню
         try:
@@ -18780,64 +18765,155 @@ async def _safe_delete_message(chat_id: int, message_id: int) -> bool:
         return False
 
 # ---------- Menu & navigation handlers ----------
+def _tasks_menu_keyboard(*, icons: bool = True):
+    pr_text = "Рекомендация проекта"
+    pr_icon = "5391270106464539040"
+    try:
+        from bot.funcs.pr_groups import TASKS_MENU_ICON_ID, TASKS_MENU_TEXT
+        pr_text = TASKS_MENU_TEXT or pr_text
+        pr_icon = TASKS_MENU_ICON_ID or pr_icon
+    except Exception as e:
+        _qdbg_exc("tasks kb: pr import failed", e)
+
+    def btn(text, data, icon=None):
+        if icons and icon:
+            return gc_btn(text, callback_data=data, icon_custom_emoji_id=icon)
+        return gc_btn(text, callback_data=data)
+
+    rows = [
+        [btn("Задания с подпиской", "qst:show_subs", "5362063083311214432")],
+        [btn("Челленджи", "qst:show_gc", "5445096582238181549")],
+        [btn("Тик ток", "tt:hub", "5456282961999570188")],
+        [btn(pr_text, "prg:hub", pr_icon)],
+        [btn("Закрыть", "9close_bonus_+")],
+    ]
+    return types.InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _show_tasks_menu(callback_query: types.CallbackQuery, markup=None) -> bool:
+    """Показать меню заданий. Сначала новое сообщение, старое удаляем только после успеха."""
+    rich = markup or _tasks_menu_keyboard()
+    plain = _tasks_menu_keyboard(icons=False)
+    text = "<b>Задания</b>\n\n<i>Выберите.</i>"
+    msg = getattr(callback_query, "message", None)
+    chat_id = msg.chat.id if msg and getattr(msg, "chat", None) else callback_query.from_user.id
+    old_id = msg.message_id if msg else None
+    variants = [
+        (text, rich, "HTML"),
+        (text, plain, "HTML"),
+        ("Задания\n\nВыберите.", plain, None),
+    ]
+
+    async def _try_edit() -> bool:
+        if not msg:
+            return False
+        if getattr(msg, "text", None) is not None:
+            for txt, mk, parse in variants:
+                try:
+                    kwargs = {"reply_markup": mk, "disable_web_page_preview": True}
+                    if parse:
+                        kwargs["parse_mode"] = parse
+                    await msg.edit_text(txt, **kwargs)
+                    return True
+                except Exception as e:
+                    if "not modified" in str(e).lower():
+                        try:
+                            await msg.edit_reply_markup(reply_markup=mk)
+                        except Exception:
+                            pass
+                        return True
+                    _qdbg_exc("tasks menu: edit_text failed", e)
+        if getattr(msg, "caption", None) is not None:
+            for txt, mk, parse in variants:
+                try:
+                    kwargs = {"reply_markup": mk}
+                    if parse:
+                        kwargs["parse_mode"] = parse
+                    await msg.edit_caption(txt, **kwargs)
+                    return True
+                except Exception as e:
+                    if "not modified" in str(e).lower():
+                        return True
+                    _qdbg_exc("tasks menu: edit_caption failed", e)
+        return False
+
+    if await _try_edit():
+        return True
+
+    sent = None
+    for txt, mk, parse in variants:
+        try:
+            kwargs = {
+                "chat_id": chat_id,
+                "text": txt,
+                "reply_markup": mk,
+                "disable_web_page_preview": True,
+            }
+            if parse:
+                kwargs["parse_mode"] = parse
+            sent = await bot1.send_message(**kwargs)
+            break
+        except Exception as e:
+            _qdbg_exc("tasks menu: send_message failed", e)
+    if sent is None:
+        sticker_id = None
+        try:
+            if isinstance(STICKERS, (list, tuple)) and STICKERS:
+                sticker_id = random.choice(STICKERS)
+        except Exception:
+            sticker_id = None
+        if sticker_id:
+            try:
+                sent = await bot1.send_sticker(chat_id=chat_id, sticker=sticker_id, reply_markup=plain)
+            except Exception as e:
+                _qdbg_exc("tasks menu: send_sticker failed", e)
+    if sent is not None and old_id and getattr(sent, "message_id", None) != old_id:
+        await _safe_delete_message(chat_id, old_id)
+    return sent is not None
+
+
 @dp.callback_query(lambda c: c.data == "questions_stars")
 async def questions_stars_menu(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     _qdbg(f"questions_stars_menu called by {user_id}")
     try:
+        ok = await _show_tasks_menu(callback_query)
+        try:
+            if ok:
+                await callback_query.answer()
+            else:
+                await callback_query.answer("Не удалось показать меню. Попробуйте ещё.", show_alert=True)
+        except Exception:
+            pass
         try:
             if hasattr(db, "ensure_quest_schema"):
                 await db.ensure_quest_schema()
         except Exception as e:
             _qdbg_exc("ensure_quest_schema fail", e)
-
-        kb = InlineKeyboardBuilder()
-        kb.button(text="Задания с подпиской", callback_data="qst:show_subs", style="default", icon_custom_emoji_id="5362063083311214432")
-        kb.button(text="Челленджи", callback_data="qst:show_gc", style="default", icon_custom_emoji_id="5445096582238181549")
-        kb.button(text="Тик ток", callback_data="tt:hub", style="default", icon_custom_emoji_id="5456282961999570188")
-        from bot.funcs.pr_groups import TASKS_MENU_ICON_ID, TASKS_MENU_TEXT
-        kb.button(text=TASKS_MENU_TEXT, callback_data="prg:hub", style="default", icon_custom_emoji_id=TASKS_MENU_ICON_ID)
-        kb.button(text="Закрыть", callback_data="9close_bonus_+")
-        kb.adjust(1)
-        kb_markup = kb.as_markup()
-
-        try:
-            await callback_query.answer()
-        except Exception:
-            pass
-
-        target_chat = callback_query.message.chat.id if getattr(callback_query, "message", None) else callback_query.from_user.id
-        target_msg_id = callback_query.message.message_id if getattr(callback_query, "message", None) else None
-
-        try:
-            if target_msg_id is not None:
-                await _safe_delete_message(target_chat, target_msg_id)
-        except Exception as e:
-            _qdbg_exc("questions_stars_menu: safe delete wrapper failed", e)
-
-        sticker_id = None
-        try:
-            if isinstance(STICKERS, (list, tuple)) and STICKERS:
-                sticker_id = random.choice(STICKERS)
-        except Exception as e:
-            _qdbg_exc("questions_stars_menu: choose sticker failed", e)
-
-        try:
-            if sticker_id:
-                await bot1.send_sticker(chat_id=target_chat, sticker=sticker_id, reply_markup=kb_markup)
-            else:
-                await bot1.send_message(chat_id=target_chat, text="Меню заданий", reply_markup=kb_markup)
-        except Exception as e:
-            _qdbg_exc("questions_stars_menu: send_sticker/send_message failed", e)
-            try:
-                await callback_query.answer("Не удалось показать меню. Попробуйте ещё.", show_alert=True)
-            except Exception:
-                pass
-
     except Exception as e:
         _qdbg_exc("questions_stars_menu unexpected", e)
         try:
             await callback_query.answer("Ошибка при открытии меню. Попробуйте ещё.", show_alert=True)
+        except Exception:
+            pass
+
+
+@dp.callback_query(lambda c: isinstance(c.data, str) and c.data == "prg:hub")
+async def pr_groups_open_hub(callback_query: types.CallbackQuery):
+    try:
+        await callback_query.answer()
+    except Exception:
+        pass
+    try:
+        from bot.handlers.pr_groups import _open_hub
+        await _open_hub(callback_query)
+    except Exception as e:
+        _qdbg_exc("prg:hub open failed", e)
+        try:
+            await bot1.send_message(
+                callback_query.from_user.id,
+                "Не открылось. Нажмите ещё раз «Рекомендация проекта».",
+            )
         except Exception:
             pass
 

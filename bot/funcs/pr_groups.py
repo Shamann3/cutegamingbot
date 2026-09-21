@@ -68,6 +68,7 @@ from pr_groups_logic import (  # noqa: E402
     claim_button_label,
     claim_set_sql,
     alter_claim_column_sql,
+    html_without_custom_emoji,
     moscow_day_start,
 )
 
@@ -141,6 +142,35 @@ def _url(text: str, url: str, icon: str | None = None) -> InlineKeyboardButton:
     if icon:
         kwargs["icon_custom_emoji_id"] = icon
     return InlineKeyboardButton(**kwargs)
+
+
+def markup_without_icons(markup: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup | None:
+    if markup is None:
+        return None
+    rows: list[list[InlineKeyboardButton]] = []
+    for row in markup.inline_keyboard:
+        built: list[InlineKeyboardButton] = []
+        for btn in row:
+            kwargs: dict[str, Any] = {"text": str(btn.text or "·")}
+            data = getattr(btn, "callback_data", None)
+            url = getattr(btn, "url", None)
+            if data:
+                kwargs["callback_data"] = data
+            elif url:
+                kwargs["url"] = url
+            else:
+                continue
+            style = getattr(btn, "style", None)
+            if style:
+                kwargs["style"] = style
+            try:
+                built.append(InlineKeyboardButton(**kwargs))
+            except TypeError:
+                kwargs.pop("style", None)
+                built.append(InlineKeyboardButton(**kwargs))
+        if built:
+            rows.append(built)
+    return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
 
 
 def keyboard_icon_ids(markup: InlineKeyboardMarkup) -> list[str]:
@@ -899,51 +929,71 @@ async def remember_ui(user_id: int, chat_id: int, message_id: int) -> None:
     )
 
 
-async def deliver_dm(bot, user_id: int, text: str, markup=None) -> None:
-    """Одно живое сообщение в личке: правим его, иначе удаляем старое и шлём новое."""
+async def deliver_dm(bot, user_id: int, text: str, markup=None) -> bool:
+    """Одно живое сообщение в личке: правим его, иначе шлём новое и только потом удаляем старое."""
     session = await get_session(user_id) or {}
     extra = dict(session.get("extra") or {})
     chat_id = extra.get("ui_chat") or int(user_id)
     msg_id = extra.get("ui_msg")
-    if msg_id:
+
+    async def _edit_or_send(txt: str, mk) -> bool:
+        if msg_id:
+            try:
+                await bot.edit_message_text(
+                    txt,
+                    chat_id=int(chat_id),
+                    message_id=int(msg_id),
+                    reply_markup=mk,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+                return True
+            except TelegramBadRequest as err:
+                low = str(err).lower()
+                if "not modified" in low:
+                    if mk is not None:
+                        try:
+                            await bot.edit_message_reply_markup(
+                                chat_id=int(chat_id), message_id=int(msg_id), reply_markup=mk,
+                            )
+                        except Exception:
+                            pass
+                    return True
+            except Exception:
+                pass
         try:
-            await bot.edit_message_text(
-                text,
-                chat_id=int(chat_id),
-                message_id=int(msg_id),
-                reply_markup=markup,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
+            sent = await bot.send_message(
+                int(user_id), txt, reply_markup=mk, parse_mode="HTML", disable_web_page_preview=True,
             )
-            return
-        except TelegramBadRequest as err:
-            low = str(err).lower()
-            if "not modified" in low:
-                if markup is not None:
-                    try:
-                        await bot.edit_message_reply_markup(
-                            chat_id=int(chat_id), message_id=int(msg_id), reply_markup=markup,
-                        )
-                    except Exception:
-                        pass
-                return
         except Exception:
-            pass
+            try:
+                sent = await bot.send_message(int(user_id), txt, reply_markup=mk)
+            except Exception:
+                return False
+        extra["ui_chat"] = int(sent.chat.id)
+        extra["ui_msg"] = int(sent.message_id)
         try:
-            await bot.delete_message(int(chat_id), int(msg_id))
+            await set_session(
+                int(user_id),
+                claim_id=session.get("claim_id"),
+                mode=str(session.get("mode") or "hub"),
+                extra=extra,
+            )
         except Exception:
-            pass
-    sent = await bot.send_message(
-        int(user_id), text, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True,
-    )
-    extra["ui_chat"] = int(sent.chat.id)
-    extra["ui_msg"] = int(sent.message_id)
-    await set_session(
-        int(user_id),
-        claim_id=session.get("claim_id"),
-        mode=str(session.get("mode") or "hub"),
-        extra=extra,
-    )
+            log.exception("pr remember ui after send")
+        if msg_id and int(sent.message_id) != int(msg_id):
+            try:
+                await bot.delete_message(int(chat_id), int(msg_id))
+            except Exception:
+                pass
+        return True
+
+    if await _edit_or_send(text, markup):
+        return True
+    plain_mk = markup_without_icons(markup)
+    if await _edit_or_send(html_without_custom_emoji(text), plain_mk):
+        return True
+    return await _edit_or_send(html_without_custom_emoji(text), None)
 
 
 async def clear_session(user_id: int) -> None:
@@ -1832,6 +1882,7 @@ async def drain_notices(bot) -> None:
         kind = row["kind"]
         payload = row["payload"] if isinstance(row["payload"], dict) else json.loads(row["payload"] or "{}")
         try:
+            sent = False
             if kind == "accepting":
                 claim = None
                 claim_id = payload.get("claimId")
@@ -1840,31 +1891,36 @@ async def drain_notices(bot) -> None:
                 role = str((claim or {}).get("role") or payload.get("role") or "")
                 days = int((claim or {}).get("term_days") or payload.get("termDays") or 14)
                 if claim and claim.get("status") == ST_LIVE:
-                    await deliver_dm(
+                    sent = await deliver_dm(
                         bot, int(row["user_id"]),
                         text_accepted(days, role=role),
                         accepted_keyboard(owner=role == ROLE_OWNER),
                     )
                 else:
-                    await deliver_dm(bot, int(row["user_id"]), text_accepting(), accepting_keyboard())
+                    sent = await deliver_dm(bot, int(row["user_id"]), text_accepting(), accepting_keyboard())
             elif kind == "accepted":
-                await deliver_dm(
+                sent = await deliver_dm(
                     bot, int(row["user_id"]),
                     text_accepted(int(payload.get("termDays") or 14), role=str(payload.get("role") or "")),
                     accepted_keyboard(owner=str(payload.get("role") or "") == ROLE_OWNER),
                 )
             elif kind == "rejected":
                 can_fix = bool(payload.get("canFix"))
-                await deliver_dm(
+                sent = await deliver_dm(
                     bot, int(row["user_id"]),
                     text_rejected(str(payload.get("text") or ""), can_fix=can_fix),
                     rejected_keyboard(can_fix=can_fix),
                 )
             elif kind == "photos_expired":
-                await deliver_dm(bot, int(row["user_id"]), text_photos_expired(), photos_expired_keyboard())
+                sent = await deliver_dm(bot, int(row["user_id"]), text_photos_expired(), photos_expired_keyboard())
             elif kind == "confirm_expired":
-                await deliver_dm(bot, int(row["user_id"]), text_confirm_timeout(), confirm_timeout_keyboard())
-            await p.execute("DELETE FROM pr_notices WHERE id = $1", int(row["id"]))
+                sent = await deliver_dm(bot, int(row["user_id"]), text_confirm_timeout(), confirm_timeout_keyboard())
+            else:
+                sent = True
+            if sent:
+                await p.execute("DELETE FROM pr_notices WHERE id = $1", int(row["id"]))
+            else:
+                raise RuntimeError("notice not delivered")
         except Exception:
             log.exception("notice fail id=%s kind=%s", row["id"], kind)
             try:

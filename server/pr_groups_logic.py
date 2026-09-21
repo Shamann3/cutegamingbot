@@ -151,6 +151,11 @@ CLAIM_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 _IDENT = re.compile(r"^[a-z_][a-z0-9_]*$")
+_TG_EMOJI = re.compile(r"<tg-emoji[^>]*>(.*?)</tg-emoji>", re.I | re.S)
+
+
+def html_without_custom_emoji(html: str) -> str:
+    return _TG_EMOJI.sub(r"\1", str(html or ""))
 
 
 def sql_ident(name: str) -> str:

@@ -147,27 +147,39 @@ async def _push(uid: int, text: str, markup=None) -> None:
 async def _edit(target: CallbackQuery | Message, text: str, markup=None) -> Message | None:
     bot = await _bot()
     uid = int(target.from_user.id)
+    variants = [
+        (text, markup),
+        (text, pr.markup_without_icons(markup)),
+        (pr.html_without_custom_emoji(text), pr.markup_without_icons(markup)),
+        (pr.html_without_custom_emoji(text), None),
+    ]
     if isinstance(target, CallbackQuery):
         msg = target.message
         chat = getattr(msg, "chat", None) if msg else None
         private = bool(chat and getattr(chat, "type", None) == ChatType.PRIVATE)
-        try:
-            if msg and getattr(msg, "text", None) is not None:
-                await msg.edit_text(text, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True)
-                if private:
-                    await pr.remember_ui(uid, int(chat.id), int(msg.message_id))
-                return msg
-        except Exception as err:
-            if "not modified" in str(err).lower():
-                if private and msg:
-                    await pr.remember_ui(uid, int(chat.id), int(msg.message_id))
-                return msg
-        try:
-            if msg and private:
-                await msg.delete()
-        except Exception:
-            pass
-        await pr.deliver_dm(bot, uid, text, markup)
+        if msg and getattr(msg, "text", None) is not None:
+            for body, kb in variants:
+                try:
+                    await msg.edit_text(body, reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
+                    if private:
+                        await pr.remember_ui(uid, int(chat.id), int(msg.message_id))
+                    return msg
+                except Exception as err:
+                    if "not modified" in str(err).lower():
+                        if private and msg:
+                            await pr.remember_ui(uid, int(chat.id), int(msg.message_id))
+                        return msg
+        old_id = int(msg.message_id) if msg and private else None
+        old_chat = int(chat.id) if chat and private else None
+        sent = await pr.deliver_dm(bot, uid, text, markup)
+        if sent and old_id and old_chat:
+            session = await pr.get_session(uid) or {}
+            extra = session.get("extra") or {}
+            if int(extra.get("ui_msg") or 0) != old_id:
+                try:
+                    await bot.delete_message(old_chat, old_id)
+                except Exception:
+                    pass
         return None
     await pr.deliver_dm(bot, uid, text, markup)
     return None
@@ -269,17 +281,43 @@ async def _open_choose(target, uid: int, extra: dict | None = None) -> None:
 
 
 async def _open_hub(target: CallbackQuery | Message) -> None:
-    await pr.ensure_schema()
-    start_pr_ticker()
     uid = int(target.from_user.id)
+    try:
+        await pr.ensure_schema()
+    except Exception:
+        log.exception("pr schema on hub")
+    start_pr_ticker()
     session = await pr.get_session(uid) or {}
     extra = dict(session.get("extra") or {})
     for key in ("intent", "chat_id", "n", "groups", "title", "username", "role"):
         extra.pop(key, None)
-    await pr.set_session(uid, claim_id=None, mode="hub", extra=extra)
-    rows = await pr.list_user_claims(uid)
+    try:
+        await pr.set_session(uid, claim_id=None, mode="hub", extra=extra)
+    except Exception:
+        log.exception("pr session on hub")
+    rows = []
+    try:
+        rows = await pr.list_user_claims(uid)
+    except Exception:
+        log.exception("pr claims on hub")
     live = any(str(row.get("status") or "") in LIVE_STATUSES for row in rows)
-    await _edit(target, text_entry(), pr.entry_keyboard(mine=bool(rows), live=live))
+    try:
+        await _edit(target, text_entry(), pr.entry_keyboard(mine=bool(rows), live=live))
+    except Exception:
+        log.exception("pr hub send")
+        bot = await _bot()
+        try:
+            await bot.send_message(
+                uid, text_entry(),
+                reply_markup=pr.entry_keyboard(mine=bool(rows), live=live),
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            try:
+                await bot.send_message(uid, "Нажмите ещё раз «Рекомендация проекта».")
+            except Exception:
+                pass
 
 
 async def _show_mine(target: CallbackQuery | Message, uid: int) -> None:
@@ -959,13 +997,13 @@ async def on_wait_photo(message: Message) -> None:
     claim = await pr.claim_by_id(int(session["claim_id"]))
     if not claim or claim["status"] != ST_PHOTOS:
         if claim and claim["status"] == ST_EXPIRED:
-            await message.answer(text_photos_expired(), reply_markup=pr.photos_expired_keyboard(), parse_mode="HTML")
+            await _edit(message, text_photos_expired(), pr.photos_expired_keyboard())
             await pr.clear_session(uid)
         return
     have = len(claim.get("photos") or [])
     extra = dict(session.get("extra") or {})
     if looks_like_help(getattr(message, "text", None)):
-        await message.answer(text_wait_photo(have, have, intent=_path_intent(extra, session, claim)), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
+        await _edit(message, text_wait_photo(have, have, intent=_path_intent(extra, session, claim)), pr.photo_keyboard(have))
         return
     album_id = getattr(message, "media_group_id", None)
     if album_id and _album_used.get(uid) == str(album_id):
@@ -973,7 +1011,7 @@ async def on_wait_photo(message: Message) -> None:
     file_id = pr.image_file_id(message)
     if not file_id:
         kind = pr.photo_noise_kind(message)
-        await message.answer(text_need_photo(kind, intent=_path_intent(extra, session, claim)), reply_markup=pr.need_photo_keyboard(have), parse_mode="HTML")
+        await _edit(message, text_need_photo(kind, intent=_path_intent(extra, session, claim)), pr.need_photo_keyboard(have))
         return
     async with _photo_lock(uid):
         claim = await pr.claim_by_id(int(session["claim_id"]))
@@ -990,10 +1028,10 @@ async def on_wait_photo(message: Message) -> None:
         extra["n"] = have
         await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
         if have == before:
-            await message.answer(text_need_photo("dup", intent=_path_intent(extra, session, claim)), reply_markup=pr.need_photo_keyboard(have), parse_mode="HTML")
+            await _edit(message, text_need_photo("dup", intent=_path_intent(extra, session, claim)), pr.need_photo_keyboard(have))
             return
         if have < PHOTOS_REQUIRED:
-            await message.answer(text_wait_photo(have, have, intent=_path_intent(extra, session, claim)), reply_markup=pr.photo_keyboard(have), parse_mode="HTML")
+            await _edit(message, text_wait_photo(have, have, intent=_path_intent(extra, session, claim)), pr.photo_keyboard(have))
             return
     await _finish_photos(message, uid, claim, extra)
 
@@ -1309,6 +1347,47 @@ def start_pr_ticker() -> None:
         return
     _tick_started = True
     loop.create_task(_ticker())
+
+
+async def dispatch_pr_callback(cb: CallbackQuery) -> None:
+    """Hot-dispatch / orphan: все кнопки prg: после рестарта."""
+    data = str(cb.data or "")
+    if data.startswith(pr.PR_OPEN):
+        await on_open_claim(cb)
+        return
+    if data.startswith(pr.PR_CONT):
+        await on_continue_claim(cb)
+        return
+    if data.startswith(pr.PR_PICK):
+        await on_pick(cb)
+        return
+    if data.startswith(pr.PR_YES) or data.startswith(pr.PR_NO):
+        await on_confirm_click(cb)
+        return
+    fn = {
+        pr.PR_HUB: on_hub,
+        pr.PR_START: on_start,
+        pr.PR_CHECK: on_check,
+        pr.PR_HOW: on_how,
+        pr.PR_PUBLIC: on_how_public,
+        pr.PR_ADMIN: on_how_admin,
+        pr.PR_MINE: on_mine,
+        pr.PR_UNDO: on_undo,
+        pr.PR_WROTE: on_wrote,
+        pr.PR_BACK: on_back,
+        pr.PR_CANT: on_cant_add,
+        pr.PR_OWNER: on_owner,
+        pr.PR_RECO: on_reco,
+        pr.PR_CANCEL: on_cancel,
+    }.get(data)
+    if fn:
+        await fn(cb)
+        return
+    try:
+        await cb.answer()
+    except Exception:
+        pass
+    await _open_hub(cb)
 
 
 def attach_pr_groups(dp) -> None:

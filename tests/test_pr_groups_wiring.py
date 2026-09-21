@@ -7,6 +7,9 @@ def test_wired_into_bot_and_panel():
     main = (ROOT / "main.py").read_text(encoding="utf-8")
     assert "attach_pr_groups" in main
     assert "prg:hub" in main
+    assert "pr_groups_open_hub" in main
+    assert "_show_tasks_menu" in main
+    assert "gc_btn(text, callback_data=data" in main
     assert "_pr_wait_photo_filter" in main
     assert "_pr_wait_link_filter" in main
     assert "looks_like_confirm" in main
@@ -329,6 +332,12 @@ def test_gift_lock_hooks_exist():
     assert "created_at = NOW() + INTERVAL '5 minutes'" in core
     assert "accepting_keyboard" in core
     assert "text_accepting" in logic
+    assert "html_without_custom_emoji" in logic
+    assert "markup_without_icons" in core
+    assert "dispatch_pr_callback" in handlers
+    assert "'prg:':" in (ROOT / "bot" / "runtime" / "callback_registry_generated.py").read_text(encoding="utf-8")
+    assert "if sent:" in core
+    assert "return True" in core
 
 
 def test_session_extra_json_serializes_datetime_and_enum():

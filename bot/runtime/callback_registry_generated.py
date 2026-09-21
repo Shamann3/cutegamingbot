@@ -69,6 +69,7 @@ CALLBACK_MODULES: Tuple[str, ...] = (
     'bot.handlers.chatbalance',
     'bot.handlers.editprofile',
     'bot.handlers.handlers_btns',
+    'bot.handlers.pr_groups',
     'bot.handlers.useitems',
     'bot.tggames.basket',
     'bot.tggames.bowling',
@@ -80,6 +81,7 @@ CALLBACK_MODULES: Tuple[str, ...] = (
 
 # prefix -> (module, handler): 385
 PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
+    'prg:': ('bot.handlers.pr_groups', 'dispatch_pr_callback'),
     'ajdfiasjoaskdokasdqwqkpфыафывйц': ('main', 'send_styles'),
     'callbroulletanswermultiplier': ('bot.games.Fortuna', 'fortuna_multiplier_info'),
     'next_pagemoneyhistorygame_': ('bot.funcs.history', 'process_callback_button'),
@@ -612,6 +614,7 @@ EXACT_HANDLERS: Dict[str, Tuple[str, str]] = {
     'qst:show_subs_normal': ('main', 'qst_show_subs_normal'),
     'qst:sub_refresh': ('main', 'qst_sub_refresh'),
     'qst:withdraw_ok': ('main', 'qst_withdraw_ok'),
+    'prg:hub': ('main', 'pr_groups_open_hub'),
     'questions_stars': ('main', 'questions_stars_menu'),
     'red': ('bot.funcs.BlackGack', 'range_callback'),
     'reject': ('bot.funcs.marriage', 'process_callback_button_reject'),
