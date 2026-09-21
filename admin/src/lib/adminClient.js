@@ -2226,6 +2226,17 @@ export async function fetchPrSettings() {
   return adminFetch('/pr-groups/settings')
 }
 
+export async function fetchPrPeople(query = '') {
+  const params = new URLSearchParams()
+  if (query) params.set('q', query)
+  const suffix = params.toString() ? `?${params}` : ''
+  return adminFetch(`/pr-groups/people${suffix}`)
+}
+
+export async function fetchPrPerson(userId) {
+  return adminFetch(`/pr-groups/people/${userId}`)
+}
+
 export async function savePrSettings(body) {
   return adminFetch('/pr-groups/settings', { method: 'PUT', body })
 }

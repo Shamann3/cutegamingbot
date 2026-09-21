@@ -141,30 +141,36 @@ async def _bot_username() -> str:
 
 async def _push(uid: int, text: str, markup=None) -> None:
     bot = await _bot()
-    await bot.send_message(
-        int(uid), text, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True,
-    )
+    await pr.deliver_dm(bot, int(uid), text, markup)
 
 
 async def _edit(target: CallbackQuery | Message, text: str, markup=None) -> Message | None:
     bot = await _bot()
+    uid = int(target.from_user.id)
     if isinstance(target, CallbackQuery):
         msg = target.message
+        chat = getattr(msg, "chat", None) if msg else None
+        private = bool(chat and getattr(chat, "type", None) == ChatType.PRIVATE)
         try:
             if msg and getattr(msg, "text", None) is not None:
                 await msg.edit_text(text, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True)
+                if private:
+                    await pr.remember_ui(uid, int(chat.id), int(msg.message_id))
                 return msg
-        except Exception:
-            pass
+        except Exception as err:
+            if "not modified" in str(err).lower():
+                if private and msg:
+                    await pr.remember_ui(uid, int(chat.id), int(msg.message_id))
+                return msg
         try:
-            if msg:
+            if msg and private:
                 await msg.delete()
         except Exception:
             pass
-        return await bot.send_message(
-            target.from_user.id, text, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True,
-        )
-    return await target.answer(text, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True)
+        await pr.deliver_dm(bot, uid, text, markup)
+        return None
+    await pr.deliver_dm(bot, uid, text, markup)
+    return None
 
 
 async def _inspect_chat(bot, chat_id: int) -> dict:
@@ -1114,11 +1120,11 @@ async def on_confirm_click(cb: CallbackQuery) -> None:
         except Exception:
             pass
         try:
-            await bot.send_message(
+            await pr.deliver_dm(
+                bot,
                 int(claim["user_id"]),
                 text_after_proofs_reco(),
-                reply_markup=pr.keyboard_for("after_proofs_reco", mine=True),
-                parse_mode="HTML",
+                pr.keyboard_for("after_proofs_reco", mine=True),
             )
         except Exception:
             pass
@@ -1140,11 +1146,11 @@ async def on_confirm_click(cb: CallbackQuery) -> None:
         except Exception:
             pass
         try:
-            await bot.send_message(
+            await pr.deliver_dm(
+                bot,
                 int(claim["user_id"]),
                 text_confirm_no_first(),
-                reply_markup=pr.confirm_no_first_keyboard(claim.get("chat_username") or ""),
-                parse_mode="HTML",
+                pr.confirm_no_first_keyboard(claim.get("chat_username") or ""),
             )
         except Exception:
             pass
@@ -1160,11 +1166,11 @@ async def on_confirm_click(cb: CallbackQuery) -> None:
         except Exception:
             pass
         try:
-            await bot.send_message(
+            await pr.deliver_dm(
+                bot,
                 int(claim["user_id"]),
                 text_confirm_no_second(),
-                reply_markup=pr.confirm_no_second_keyboard(),
-                parse_mode="HTML",
+                pr.confirm_no_second_keyboard(),
             )
         except Exception:
             pass
@@ -1200,12 +1206,11 @@ async def on_my_chat(event: ChatMemberUpdated) -> None:
                 title = getattr(chat, "title", None) or str(chat_id)
                 try:
                     bot = await _bot()
-                    await bot.send_message(
+                    await pr.deliver_dm(
+                        bot,
                         int(adder),
                         text_bot_joined(title),
-                        reply_markup=pr.joined_keyboard(),
-                        parse_mode="HTML",
-                        disable_web_page_preview=True,
+                        pr.joined_keyboard(),
                     )
                 except Exception:
                     pass
@@ -1217,7 +1222,7 @@ async def on_my_chat(event: ChatMemberUpdated) -> None:
             bot = await _bot()
             await pr.end_claim(bot, claim, reason="kicked")
             try:
-                await bot.send_message(int(claim["user_id"]), text_kicked(), parse_mode="HTML")
+                await pr.deliver_dm(bot, int(claim["user_id"]), text_kicked(), pr.kicked_keyboard())
             except Exception:
                 pass
         return
@@ -1227,7 +1232,7 @@ async def on_my_chat(event: ChatMemberUpdated) -> None:
             await pr.save_claim(int(claim["id"]), freeze="admin")
             try:
                 bot = await _bot()
-                await bot.send_message(int(claim["user_id"]), text_freeze_admin(), parse_mode="HTML")
+                await pr.deliver_dm(bot, int(claim["user_id"]), text_freeze_admin(), pr.freeze_admin_keyboard())
             except Exception:
                 pass
     if now and new in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR):
@@ -1270,7 +1275,7 @@ async def watch_public_flag(bot, chat_id: int) -> None:
     if not public and claim.get("freeze") != "public":
         await pr.save_claim(int(claim["id"]), freeze="public")
         try:
-            await bot.send_message(int(claim["user_id"]), text_freeze_public(), parse_mode="HTML")
+            await pr.deliver_dm(bot, int(claim["user_id"]), text_freeze_public(), pr.freeze_public_keyboard())
         except Exception:
             pass
     if public and claim.get("freeze") == "public":
@@ -1278,16 +1283,20 @@ async def watch_public_flag(bot, chat_id: int) -> None:
 
 
 async def _ticker() -> None:
-    await asyncio.sleep(8)
+    await asyncio.sleep(2)
     while True:
+        wait = 8
         try:
             bot = await _bot()
             await pr.housekeep(bot)
             for claim in await pr.list_live():
                 await watch_public_flag(bot, int(claim["chat_id"]))
+            if await pr.has_open_fulfill():
+                wait = 4
         except Exception:
             log.debug("pr ticker", exc_info=True)
-        await asyncio.sleep(60)
+            wait = 12
+        await asyncio.sleep(wait)
 
 
 def start_pr_ticker() -> None:
@@ -1314,12 +1323,9 @@ def attach_pr_groups(dp) -> None:
 async def notify_accepted(user_id: int, term_days: int, *, role: str = "") -> None:
     bot = await _bot()
     try:
-        await bot.send_message(
-            int(user_id),
-            text_accepted(term_days, role=role),
-            reply_markup=pr.accepted_keyboard(owner=role == ROLE_OWNER),
-            parse_mode="HTML",
-            disable_web_page_preview=True,
+        await pr.deliver_dm(
+            bot, int(user_id), text_accepted(term_days, role=role),
+            pr.accepted_keyboard(owner=role == ROLE_OWNER),
         )
     except Exception:
         pass
@@ -1328,13 +1334,7 @@ async def notify_accepted(user_id: int, term_days: int, *, role: str = "") -> No
 async def notify_rejected(user_id: int, html: str, *, can_fix: bool = False) -> None:
     bot = await _bot()
     try:
-        await bot.send_message(
-            int(user_id),
-            html,
-            reply_markup=pr.rejected_keyboard(can_fix=can_fix),
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
+        await pr.deliver_dm(bot, int(user_id), html, pr.rejected_keyboard(can_fix=can_fix))
     except Exception:
         pass
 

@@ -50,22 +50,24 @@ def test_entry_explains_commission_for_both_roles():
     html = text_entry()
     assert "зарабат" in html.lower()
     assert "узнавал" in html.lower()
-    assert "рекоменд" in html.lower()
-    assert "35%" in html
-    assert "комиссии" in html
-    assert "14 дней" in html
     assert "проект" in html
-    assert "подар" in html
-    assert "владел" in html.lower()
-    assert "чуж" in html.lower()
-    assert "карман" in html
-    assert "баланс группы" in html
-    assert "личный баланс" in html
-    assert html.lower().find("чуж") < html.lower().find("владел")
+    assert "Нажмите, кто вы" in html
+    assert "35%" not in html
+    assert "карман" not in html
     assert "Кут - игры" not in html
     assert "игры в Telegram" not in html
     assert "1." not in html
     assert "Начать" not in html
+    owner = text_how(intent="owner")
+    reco = text_how(intent="reco")
+    assert "35%" in reco
+    assert "комиссии" in reco
+    assert "14 дней" in reco
+    assert "личный баланс" in reco
+    assert "чужой" in reco
+    assert "карман" in owner
+    assert "баланс группы" in owner
+    assert "владел" in owner.lower()
 
 
 def test_how_tells_what_to_do_next():
@@ -307,6 +309,7 @@ def test_earnings_screen_and_card_are_plain():
         text_freeze_admin,
         text_group_card,
         text_accepted,
+        text_accepting,
     )
 
     live = {
@@ -374,6 +377,10 @@ def test_earnings_screen_and_card_are_plain():
     assert "проект" in own_ok
     assert "подар" in own_ok
     assert "Мои группы" in own_ok
+    seeding = text_accepting()
+    assert "приня" in seeding.lower()
+    assert "баланс группы" in seeding
+    assert "35%" not in seeding
     start = moscow_day_start(datetime(2026, 9, 20, 22, 0, tzinfo=timezone.utc))
     assert start.tzinfo is not None
     blob = "\n".join([html, reco_card, owner_card, pause, digest, freeze, accepted]).lower()
@@ -388,6 +395,7 @@ def test_each_pr_message_has_one_unique_premium_emoji():
     from pr_groups_logic import (
         premium_emoji_ids,
         text_accepted,
+        text_accepting,
         text_after_photos_reco,
         text_after_proofs_owner,
         text_after_proofs_reco,
@@ -507,6 +515,7 @@ def test_each_pr_message_has_one_unique_premium_emoji():
         text_freeze_admin(),
         text_accepted(14),
         text_accepted(14, role="owner"),
+        text_accepting(),
         text_bot_joined("x", has_intent=True),
         text_how_admin(intent="reco"),
         text_need_admin("x", intent="reco"),
@@ -577,9 +586,8 @@ def test_pr_themed_emojis_and_extra_quote():
     assert extra("факт") == "<blockquote><b><i>факт</i></b></blockquote>"
     hub = text_entry()
     assert EMOJI_HUB in hub
-    assert "<blockquote>" in hub
-    assert "14 дней" in hub
-    assert "35%" in hub
+    assert "Нажмите, кто вы" in hub
+    assert "зарабат" in hub.lower()
     assert EMOJI_OWNER in text_how(intent="owner")
     assert EMOJI_RECO in text_how(intent="reco")
     assert EMOJI_RECO in text_choose_role()
@@ -601,11 +609,9 @@ def test_design_file_drives_hub_and_buttons():
 
     hub = SCREENS["hub"]
     assert "Нажмите, кто вы" in hub["text"]
-    assert "рекоменд" in hub["text"].lower()
     assert "зарабат" in hub["text"].lower()
     assert "узнавал" in hub["text"].lower()
-    assert "комиссии" in hub["text"]
-    assert "игры" in hub["text"].lower()
+    assert "35%" not in hub["text"]
     assert "Кут - игры" not in hub["text"]
     assert emoji_id(hub["emoji"]) == emoji_id(HUB)
     assert emoji_id(HUB) in text_entry()
@@ -631,6 +637,8 @@ def test_words_drive_every_short_label():
 
     assert kut_amount(40) == say("kut", n=40)
     assert claim_status_label("photos") == STATUS["photos"]
+    assert claim_status_label("accepting") == STATUS["accepting"]
+    assert "посев" in STATUS["accepting"]
     assert claim_status_label("live", "admin") == pause_label("admin")
     assert "<" not in TASKS_MENU_TEXT
     assert ">" not in TASKS_MENU_TEXT
@@ -658,6 +666,7 @@ def test_every_pr_message_has_valid_telegram_html():
     ]
     from pr_groups_logic import (
         text_accepted,
+        text_accepting,
         text_after_photos_reco,
         text_after_proofs_owner,
         text_cant_add,
@@ -688,6 +697,7 @@ def test_every_pr_message_has_valid_telegram_html():
         text_after_photos_reco("Друзья"),
         text_accepted(14),
         text_accepted(14, role="owner"),
+        text_accepting(),
         text_rejected("Мало людей", can_fix=True),
         text_gift(1, "Игорь", 8),
         text_resume_claim("Друзья", "photos"),

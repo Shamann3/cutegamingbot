@@ -163,6 +163,12 @@ def test_every_pr_screen_has_back():
         pr.confirm_no_second_keyboard(),
         pr.owner_no_confirm_keyboard(),
         pr.accepted_keyboard(),
+        pr.accepting_keyboard(),
+        pr.digest_keyboard(),
+        pr.kicked_keyboard(),
+        pr.freeze_admin_keyboard(),
+        pr.freeze_public_keyboard(),
+        pr.term_end_keyboard(),
         pr.rejected_keyboard(),
         pr.rejected_keyboard(can_fix=True),
         pr.confirm_timeout_keyboard(),
@@ -291,18 +297,34 @@ def test_gift_lock_hooks_exist():
     admin = (ROOT / "server" / "admin_pr_groups.py").read_text(encoding="utf-8")
     assert "CLAIM_COLUMNS" in admin
     assert "alreadyKnown" in admin
+    assert "QUEUE_STATUSES" in admin
+    assert "/people" in admin
+    assert "ST_ACCEPTING" in admin
     ui = (ROOT / "admin" / "src" / "pages" / "sections" / "PrGroupsSection.jsx").read_text(encoding="utf-8")
     assert "previewSplit" in ui
     assert "overBudget" in ui
+    assert "Люди" in ui
+    assert "stay: true" in ui
+    assert "fetchPrPeople" in ui
     assert "стол" not in ui.lower()
     assert "баланс чата" in ui
     assert "баланс группы" in ui
+    client = (ROOT / "admin" / "src" / "lib" / "adminClient.js").read_text(encoding="utf-8")
+    assert "fetchPrPeople" in client
+    assert "fetchPrPerson" in client
+    shell = (ROOT / "admin" / "src" / "pages" / "PanelShell.jsx").read_text(encoding="utf-8")
+    assert "prGroups: prPending" in shell
+    assert "fetchPrOverview" in shell
     logic = (ROOT / "server" / "pr_groups_logic.py").read_text(encoding="utf-8")
     design = (ROOT / "server" / "pr_groups_design.py").read_text(encoding="utf-8")
     assert "стол" not in logic.lower()
     assert "стол" not in design.lower()
     assert "стол" not in core.lower()
     assert "стол" not in handlers.lower()
+    assert "deliver_dm" in core
+    assert "remember_ui" in core
+    assert "accepting_keyboard" in core
+    assert "text_accepting" in logic
 
 
 def test_session_extra_json_serializes_datetime_and_enum():

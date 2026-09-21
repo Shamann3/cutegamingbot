@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -20,6 +19,7 @@ from pr_groups_logic import (
     MAX_LIVE_SEEDS,
     PHOTO_HINTS,
     ST_ACCEPTING,
+    ST_FULFILLING,
     ST_LIVE,
     ST_PENDING,
     ST_REJECTED,
@@ -34,7 +34,7 @@ from pr_groups_logic import (
     weekly_seed_budget,
 )
 
-log = logging.getLogger("admin_pr_groups")
+QUEUE_STATUSES = (ST_PENDING, ST_ACCEPTING, ST_FULFILLING)
 router = APIRouter(prefix="/pr-groups", tags=["pr-groups"])
 _schema = False
 
@@ -44,6 +44,13 @@ def _as_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+async def _try_int(sql: str, *args: Any) -> int:
+    try:
+        return _as_int(await db.pool.fetchval(sql, *args))
+    except Exception:
+        return 0
 
 
 def _iso(value: Any) -> Optional[str]:
@@ -93,6 +100,19 @@ async def ensure_pr_schema() -> None:
             kind TEXT NOT NULL,
             payload JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS pr_gifts (
+            user_id BIGINT PRIMARY KEY,
+            amount INTEGER NOT NULL DEFAULT 0,
+            chat_id BIGINT,
+            claim_id BIGINT,
+            granted_at TIMESTAMPTZ,
+            last_bet INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS pr_player_bind (
+            user_id BIGINT PRIMARY KEY,
+            claim_id BIGINT NOT NULL,
+            bound_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         """
     )
@@ -184,10 +204,27 @@ async def _public_claim(row) -> dict[str, Any]:
         "SELECT COALESCE(chatbalance, 0)::bigint AS b FROM chat WHERE chat_id = $1",
         int(data["chat_id"]),
     )
+    gifts = await _try_int(
+        "SELECT COUNT(*) FROM pr_gifts WHERE claim_id = $1 AND amount > 0",
+        int(data["id"]),
+    )
+    newcomers = await _try_int(
+        "SELECT COUNT(*) FROM pr_player_bind WHERE claim_id = $1",
+        int(data["id"]),
+    )
+    live_until = data.get("live_until")
+    days_left = None
+    if live_until:
+        until = live_until
+        if isinstance(until, datetime):
+            if until.tzinfo is None:
+                until = until.replace(tzinfo=timezone.utc)
+            days_left = max(0, int((until - datetime.now(timezone.utc)).total_seconds() // 86400))
     return {
         "id": int(data["id"]),
         "status": data["status"],
         "role": data["role"],
+        "userId": _as_int(data.get("user_id")),
         "chatId": int(data["chat_id"]),
         "title": data.get("chat_title") or str(data["chat_id"]),
         "username": data.get("chat_username") or "",
@@ -212,12 +249,18 @@ async def _public_claim(row) -> dict[str, Any]:
         "poolLeft": _as_int(data.get("pool_left")),
         "giftSize": _as_int(data.get("gift_size")),
         "seedLock": _as_int(data.get("seed_lock")),
+        "seedApplied": bool(data.get("seed_applied")),
         "nikaOn": bool(data.get("nika_on")),
         "paid": _as_int(data.get("paid_kut")),
         "commission": _as_int(data.get("commission_seen")),
+        "gifts": gifts,
+        "newcomers": newcomers,
+        "daysLeft": days_left,
         "liveUntil": _iso(data.get("live_until")),
         "acceptedAt": _iso(data.get("accepted_at")),
         "createdAt": _iso(data.get("created_at")),
+        "updatedAt": _iso(data.get("updated_at")),
+        "confirmedAt": _iso(data.get("confirmed_at")),
         "rejectText": data.get("reject_text") or "",
         "chatBalance": _as_int(chat_row["b"]) if chat_row else 0,
         "alreadyKnown": bool(chat_row),
@@ -243,17 +286,21 @@ class SettingsBody(BaseModel):
 async def overview(admin=Depends(require_admin_session)):
     await ensure_pr_schema()
     pending = _as_int(await db.pool.fetchval("SELECT COUNT(*) FROM pr_claims WHERE status = $1", ST_PENDING))
+    seeding = _as_int(await db.pool.fetchval(
+        "SELECT COUNT(*) FROM pr_claims WHERE status = ANY($1::text[])",
+        [ST_ACCEPTING, ST_FULFILLING],
+    ))
     live = _as_int(await db.pool.fetchval("SELECT COUNT(*) FROM pr_claims WHERE status = 'live'"))
     money = await _money()
-    return {"pending": pending, "live": live, **money}
+    return {"pending": pending, "seeding": seeding, "inbox": pending, "live": live, **money}
 
 
 @router.get("/queue")
 async def queue(admin=Depends(require_admin_session)):
     await ensure_pr_schema()
     rows = await db.pool.fetch(
-        "SELECT * FROM pr_claims WHERE status = $1 ORDER BY created_at ASC",
-        ST_PENDING,
+        "SELECT * FROM pr_claims WHERE status = ANY($1::text[]) ORDER BY created_at ASC",
+        list(QUEUE_STATUSES),
     )
     return {"items": [await _public_claim(r) for r in rows]}
 
@@ -298,7 +345,10 @@ async def accept(claim_id: int, body: AcceptBody, admin=Depends(require_admin_se
         raise HTTPException(400, "Не хватает суммы, которую можно потратить")
     if body.seed > money["weeklyLeft"]:
         raise HTTPException(400, "Недельный бюджет посева")
-    pending = await db.pool.fetchrow("SELECT user_id FROM pr_claims WHERE id = $1 AND status = $2", int(claim_id), ST_PENDING)
+    pending = await db.pool.fetchrow(
+        "SELECT user_id, role FROM pr_claims WHERE id = $1 AND status = $2",
+        int(claim_id), ST_PENDING,
+    )
     if pending:
         live_now = _as_int(await db.pool.fetchval(
             "SELECT COUNT(*) FROM pr_claims WHERE user_id = $1 AND status = $2",
@@ -317,7 +367,22 @@ async def accept(claim_id: int, body: AcceptBody, admin=Depends(require_admin_se
     )
     if not row:
         raise HTTPException(404, "Заявка уже не в очереди")
-    return {"ok": True}
+    if pending:
+        await db.pool.execute(
+            "INSERT INTO pr_notices (user_id, kind, payload) VALUES ($1, $2, $3::jsonb)",
+            int(pending["user_id"]),
+            "accepting",
+            json.dumps(
+                {
+                    "termDays": int(body.termDays),
+                    "role": pending["role"] or "",
+                    "claimId": int(claim_id),
+                },
+                ensure_ascii=False,
+            ),
+        )
+    claim = await db.pool.fetchrow("SELECT * FROM pr_claims WHERE id = $1", int(claim_id))
+    return {"ok": True, "status": claim["status"] if claim else ST_ACCEPTING, "claim": await _public_claim(claim) if claim else None}
 
 
 @router.post("/claim/{claim_id}/reject")
@@ -348,7 +413,77 @@ async def reject(claim_id: int, body: RejectBody, admin=Depends(require_admin_se
         "INSERT INTO pr_notices (user_id, kind, payload) VALUES ($1, $2, $3::jsonb)",
         int(row["user_id"]), "rejected", json.dumps({"text": text, "canFix": True}, ensure_ascii=False),
     )
-    return {"ok": True}
+    return {"ok": True, "rejectText": text}
+
+
+@router.get("/people")
+async def people(q: str = "", admin=Depends(require_admin_session)):
+    await ensure_pr_schema()
+    needle = str(q or "").strip().lstrip("@")
+    like = f"%{needle}%"
+    rows = await db.pool.fetch(
+        """
+        SELECT c.user_id AS user_id,
+               COUNT(*) AS claims,
+               COUNT(*) FILTER (WHERE c.status = 'pending') AS pending,
+               COUNT(*) FILTER (WHERE c.status = ANY(ARRAY['accepting','fulfilling'])) AS seeding,
+               COUNT(*) FILTER (WHERE c.status = 'live') AS live,
+               COALESCE(SUM(c.paid_kut), 0) AS paid,
+               MAX(c.updated_at) AS updated_at
+          FROM pr_claims c
+          LEFT JOIN users u ON u.user_id = c.user_id
+         WHERE $1 = ''
+            OR c.user_id::text = $1
+            OR COALESCE(u.username, '') ILIKE $2
+            OR COALESCE(u.first_name, '') ILIKE $2
+            OR COALESCE(c.chat_title, '') ILIKE $2
+         GROUP BY c.user_id
+         ORDER BY MAX(c.updated_at) DESC
+         LIMIT 40
+        """,
+        needle, like,
+    )
+    items = []
+    for row in rows:
+        bit = await _user_bit(row["user_id"])
+        items.append({
+            **bit,
+            "claims": _as_int(row["claims"]),
+            "pending": _as_int(row["pending"]),
+            "seeding": _as_int(row["seeding"]),
+            "live": _as_int(row["live"]),
+            "paid": _as_int(row["paid"]),
+            "updatedAt": _iso(row["updated_at"]),
+        })
+    return {"items": items}
+
+
+@router.get("/people/{user_id}")
+async def person(user_id: int, admin=Depends(require_admin_session)):
+    await ensure_pr_schema()
+    rows = await db.pool.fetch(
+        "SELECT * FROM pr_claims WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 40",
+        int(user_id),
+    )
+    gift = None
+    try:
+        gift = await db.pool.fetchrow("SELECT * FROM pr_gifts WHERE user_id = $1", int(user_id))
+    except Exception:
+        gift = None
+    paid = _as_int(await db.pool.fetchval(
+        "SELECT COALESCE(SUM(paid_kut), 0) FROM pr_claims WHERE user_id = $1",
+        int(user_id),
+    ))
+    return {
+        "user": await _user_bit(user_id),
+        "paid": paid,
+        "gift": {
+            "amount": _as_int(gift["amount"]) if gift else 0,
+            "chatId": int(gift["chat_id"]) if gift and gift["chat_id"] else None,
+            "claimId": int(gift["claim_id"]) if gift and gift["claim_id"] else None,
+        },
+        "claims": [await _public_claim(r) for r in rows],
+    }
 
 
 @router.post("/claim/{claim_id}/nika")

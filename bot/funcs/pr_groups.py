@@ -14,6 +14,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 _SERVER = Path(__file__).resolve().parents[2] / "server"
@@ -477,6 +478,30 @@ def accepted_keyboard(*, owner: bool = False) -> InlineKeyboardMarkup:
     return keyboard_for("accepted_owner" if owner else "accepted", mine=True)
 
 
+def accepting_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("accepting", mine=True)
+
+
+def digest_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("digest", mine=True)
+
+
+def kicked_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("kicked", mine=True)
+
+
+def freeze_admin_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("freeze_admin", mine=True)
+
+
+def freeze_public_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("freeze_public", mine=True)
+
+
+def term_end_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("term_end", mine=True)
+
+
 def rejected_keyboard(*, can_fix: bool = False) -> InlineKeyboardMarkup:
     return keyboard_for("rejected_fix" if can_fix else "rejected")
 
@@ -857,6 +882,66 @@ async def get_session(user_id: int) -> Optional[dict[str, Any]]:
     if isinstance(extra, str):
         extra = json.loads(extra)
     return {"user_id": row["user_id"], "claim_id": row["claim_id"], "mode": row["mode"], "extra": extra or {}}
+
+
+async def remember_ui(user_id: int, chat_id: int, message_id: int) -> None:
+    session = await get_session(user_id) or {}
+    extra = dict(session.get("extra") or {})
+    extra["ui_chat"] = int(chat_id)
+    extra["ui_msg"] = int(message_id)
+    await set_session(
+        int(user_id),
+        claim_id=session.get("claim_id"),
+        mode=str(session.get("mode") or "hub"),
+        extra=extra,
+    )
+
+
+async def deliver_dm(bot, user_id: int, text: str, markup=None) -> None:
+    """Одно живое сообщение в личке: правим его, иначе удаляем старое и шлём новое."""
+    session = await get_session(user_id) or {}
+    extra = dict(session.get("extra") or {})
+    chat_id = extra.get("ui_chat") or int(user_id)
+    msg_id = extra.get("ui_msg")
+    if msg_id:
+        try:
+            await bot.edit_message_text(
+                text,
+                chat_id=int(chat_id),
+                message_id=int(msg_id),
+                reply_markup=markup,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            return
+        except TelegramBadRequest as err:
+            low = str(err).lower()
+            if "not modified" in low:
+                if markup is not None:
+                    try:
+                        await bot.edit_message_reply_markup(
+                            chat_id=int(chat_id), message_id=int(msg_id), reply_markup=markup,
+                        )
+                    except Exception:
+                        pass
+                return
+        except Exception:
+            pass
+        try:
+            await bot.delete_message(int(chat_id), int(msg_id))
+        except Exception:
+            pass
+    sent = await bot.send_message(
+        int(user_id), text, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True,
+    )
+    extra["ui_chat"] = int(sent.chat.id)
+    extra["ui_msg"] = int(sent.message_id)
+    await set_session(
+        int(user_id),
+        claim_id=session.get("claim_id"),
+        mode=str(session.get("mode") or "hub"),
+        extra=extra,
+    )
 
 
 async def clear_session(user_id: int) -> None:
@@ -1459,7 +1544,8 @@ async def flush_digest(bot, claim: dict[str, Any]) -> None:
     if until:
         left = max(0, int((until - _now()).total_seconds() // 86400))
     try:
-        await bot.send_message(
+        await deliver_dm(
+            bot,
             int(claim["user_id"]),
             text_digest(
                 newcomers=newcomers,
@@ -1468,8 +1554,7 @@ async def flush_digest(bot, claim: dict[str, Any]) -> None:
                 days_left=left,
                 title=str(claim.get("chat_title") or ""),
             ),
-            parse_mode="HTML",
-            disable_web_page_preview=True,
+            digest_keyboard(),
         )
     except Exception:
         log.debug("digest send failed", exc_info=True)
@@ -1720,6 +1805,14 @@ async def list_live() -> list[dict[str, Any]]:
     return [_row(r) for r in rows]
 
 
+async def has_open_fulfill() -> bool:
+    p = await pool()
+    return bool(await p.fetchval(
+        "SELECT 1 FROM pr_claims WHERE status = ANY($1::text[]) LIMIT 1",
+        [ST_ACCEPTING, ST_FULFILLING],
+    ))
+
+
 async def list_archive(limit: int = 40) -> list[dict[str, Any]]:
     p = await pool()
     rows = await p.fetch(
@@ -1744,34 +1837,45 @@ async def push_notice(user_id: int, kind: str, payload: Optional[dict] = None) -
 
 
 async def drain_notices(bot) -> None:
-    from pr_groups_logic import text_accepted, text_confirm_timeout, text_photos_expired, text_rejected
+    from pr_groups_logic import text_accepted, text_accepting, text_confirm_timeout, text_photos_expired, text_rejected
     p = await pool()
     rows = await p.fetch("SELECT * FROM pr_notices ORDER BY id ASC LIMIT 20")
     for row in rows:
         kind = row["kind"]
         payload = row["payload"] if isinstance(row["payload"], dict) else json.loads(row["payload"] or "{}")
         try:
-            if kind == "accepted":
-                await bot.send_message(
-                    int(row["user_id"]),
+            if kind == "accepting":
+                claim = None
+                claim_id = payload.get("claimId")
+                if claim_id:
+                    claim = await claim_by_id(int(claim_id))
+                role = str((claim or {}).get("role") or payload.get("role") or "")
+                days = int((claim or {}).get("term_days") or payload.get("termDays") or 14)
+                if claim and claim.get("status") == ST_LIVE:
+                    await deliver_dm(
+                        bot, int(row["user_id"]),
+                        text_accepted(days, role=role),
+                        accepted_keyboard(owner=role == ROLE_OWNER),
+                    )
+                else:
+                    await deliver_dm(bot, int(row["user_id"]), text_accepting(), accepting_keyboard())
+            elif kind == "accepted":
+                await deliver_dm(
+                    bot, int(row["user_id"]),
                     text_accepted(int(payload.get("termDays") or 14), role=str(payload.get("role") or "")),
-                    reply_markup=accepted_keyboard(owner=str(payload.get("role") or "") == ROLE_OWNER),
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
+                    accepted_keyboard(owner=str(payload.get("role") or "") == ROLE_OWNER),
                 )
             elif kind == "rejected":
                 can_fix = bool(payload.get("canFix"))
-                await bot.send_message(
-                    int(row["user_id"]),
+                await deliver_dm(
+                    bot, int(row["user_id"]),
                     text_rejected(str(payload.get("text") or ""), can_fix=can_fix),
-                    reply_markup=rejected_keyboard(can_fix=can_fix),
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
+                    rejected_keyboard(can_fix=can_fix),
                 )
             elif kind == "photos_expired":
-                await bot.send_message(int(row["user_id"]), text_photos_expired(), reply_markup=photos_expired_keyboard(), parse_mode="HTML", disable_web_page_preview=True)
+                await deliver_dm(bot, int(row["user_id"]), text_photos_expired(), photos_expired_keyboard())
             elif kind == "confirm_expired":
-                await bot.send_message(int(row["user_id"]), text_confirm_timeout(), reply_markup=confirm_timeout_keyboard(), parse_mode="HTML", disable_web_page_preview=True)
+                await deliver_dm(bot, int(row["user_id"]), text_confirm_timeout(), confirm_timeout_keyboard())
         except Exception:
             log.debug("notice fail", exc_info=True)
         await p.execute("DELETE FROM pr_notices WHERE id = $1", int(row["id"]))
@@ -1836,6 +1940,11 @@ async def housekeep(bot) -> None:
         until = claim.get("live_until")
         if until and until <= _now():
             await end_claim(bot, claim, reason="term")
+            try:
+                from pr_groups_logic import text_term_end
+                await deliver_dm(bot, int(claim["user_id"]), text_term_end(), term_end_keyboard())
+            except Exception:
+                log.debug("term end notice", exc_info=True)
             continue
         last = claim.get("last_digest_at") or claim.get("accepted_at")
         if last and (_now() - last).total_seconds() >= 86400:

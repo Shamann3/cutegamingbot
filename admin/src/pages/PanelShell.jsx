@@ -5,7 +5,7 @@ import EliteTopbar from '../components/EliteTopbar'
 import PanelBackdrop from '../components/PanelBackdrop'
 import GoldBackdrop from '../components/GoldBackdrop'
 import ToastHost from '../components/ToastHost'
-import { fetchAdminMe, fetchSupportStats, fetchTiktokCounts, logoutAdmin, registerUnauthorizedHandler } from '../lib/adminClient'
+import { fetchAdminMe, fetchPrOverview, fetchSupportStats, fetchTiktokCounts, logoutAdmin, registerUnauthorizedHandler } from '../lib/adminClient'
 import DashboardSection from './sections/DashboardSection'
 import SectionPlaceholder from './sections/SectionPlaceholder'
 import UsersSection from './sections/UsersSection'
@@ -180,6 +180,7 @@ export default function PanelShell({ onLogout }) {
   const [openTickets, setOpenTickets] = useState(0)
   const [tiktokPending, setTiktokPending] = useState(0)
   const [nikaCrisisCount, setNikaCrisisCount] = useState(0)
+  const [prPending, setPrPending] = useState(0)
   const handleNikaPulse = useCallback((pulse) => {
     const n = Number(pulse?.openCritical || 0) + Number(pulse?.starvingCount || 0)
     setNikaCrisisCount(pulse?.crisis ? Math.max(1, n) : 0)
@@ -187,7 +188,8 @@ export default function PanelShell({ onLogout }) {
   useEffect(() => {
     const hasSupport = navSections.some((s) => s.id === 'support')
     const hasTiktok = navSections.some((s) => s.id === 'tiktok')
-    if (!hasSupport && !hasTiktok) return
+    const hasPr = navSections.some((s) => s.id === 'prGroups')
+    if (!hasSupport && !hasTiktok && !hasPr) return
     let cancelled = false
     const load = () => {
       if (document.visibilityState !== 'visible') return
@@ -199,6 +201,11 @@ export default function PanelShell({ onLogout }) {
       if (hasTiktok) {
         fetchTiktokCounts()
           .then((d) => { if (!cancelled) setTiktokPending(d.pendingTotal || 0) })
+          .catch(() => {})
+      }
+      if (hasPr) {
+        fetchPrOverview()
+          .then((d) => { if (!cancelled) setPrPending(d.pending || 0) })
           .catch(() => {})
       }
     }
@@ -360,7 +367,7 @@ export default function PanelShell({ onLogout }) {
             onMusicVolumeChange={setMusicVolume}
             onToggleMusic={toggleMusicMute}
             onEnterGodMode={() => setGodMode(true)}
-            badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount }}
+            badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending }}
             accent={accent}
             onAccentChange={handleAccentChange}
             recentSectionIds={recentSections}

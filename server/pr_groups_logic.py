@@ -1193,6 +1193,10 @@ def text_accepted(term_days: int, *, role: str = "") -> str:
     return render_design(name, {"days": int(term_days or DEFAULT_TERM_DAYS)})
 
 
+def text_accepting() -> str:
+    return render_design("accepting")
+
+
 def text_digest(
     *,
     newcomers: int,

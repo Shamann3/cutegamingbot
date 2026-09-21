@@ -65,7 +65,8 @@
   color: #c9c2bc;
 }
 .prg-fields input,
-.prg-custom textarea {
+.prg-custom textarea,
+.prg-search {
   width: 100%;
   min-width: 0;
   border-radius: 10px;
@@ -102,14 +103,86 @@
 .prg-card .nika-id-line + .nika-id-line {
   margin-top: 0.15rem;
 }
+.prg-id-cap {
+  display: inline-block;
+  margin-right: 0.4rem;
+  color: #8d8680;
+  font-size: 0.78rem;
+}
+.prg-card-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+.prg-seed {
+  margin: 0.6rem 0 0.2rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+  background: rgba(154, 215, 168, 0.12);
+  color: #c6e6ce;
+}
+.prg-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.9rem;
+  margin: 0.75rem 0 0.2rem;
+}
+.prg-fact {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  min-width: 0;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.prg-fact dt {
+  color: #8d8680;
+  font-size: 0.8rem;
+}
+.prg-fact dd {
+  margin: 0;
+  text-align: right;
+  color: #eee;
+  word-break: break-word;
+}
 
 html.is-phone .prg-photos,
-html.is-phone .prg-fields {
+html.is-phone .prg-fields,
+html[data-viewport="phone"] .prg-photos,
+html[data-viewport="phone"] .prg-fields,
+html.is-phone .prg-facts,
+html[data-viewport="phone"] .prg-facts {
   grid-template-columns: minmax(0, 1fr);
 }
-html.is-phone .prg-actions {
+html.is-phone .prg-actions,
+html[data-viewport="phone"] .prg-actions,
+html.is-phone .prg-card-nav,
+html[data-viewport="phone"] .prg-card-nav {
   flex-direction: column;
 }
-html.is-phone .prg-actions .nika-btn {
+html.is-phone .prg-actions .nika-btn,
+html.is-phone .prg-card-nav .nika-btn,
+html[data-viewport="phone"] .prg-actions .nika-btn,
+html[data-viewport="phone"] .prg-card-nav .nika-btn {
   width: 100%;
 }
+html.is-phone .prg-page .nika-seg,
+html[data-viewport="phone"] .prg-page .nika-seg {
+  width: 100%;
+}
+html.is-phone .prg-page .nika-head,
+html[data-viewport="phone"] .prg-page .nika-head {
+  flex-direction: column;
+  align-items: stretch;
+}
+html.is-phone .prg-fact,
+html[data-viewport="phone"] .prg-fact {
+  flex-direction: column;
+  gap: 0.15rem;
+}
+html.is-phone .prg-fact dd,
+html[data-viewport="phone"] .prg-fact dd {
+  text-align: left;
+}
+
