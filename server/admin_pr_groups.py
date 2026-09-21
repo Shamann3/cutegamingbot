@@ -32,6 +32,7 @@ from pr_groups_logic import (
     reject_text_from,
     spendable_amount,
     weekly_seed_budget,
+    alter_claim_column_sql,
 )
 
 QUEUE_STATUSES = (ST_PENDING, ST_ACCEPTING, ST_FULFILLING)
@@ -118,7 +119,7 @@ async def ensure_pr_schema() -> None:
     )
     for col, spec in CLAIM_COLUMNS:
         try:
-            await db.pool.execute(f"ALTER TABLE pr_claims ADD COLUMN IF NOT EXISTS {col} {spec}")
+            await db.pool.execute(alter_claim_column_sql(col, spec))
         except Exception:
             pass
     _schema = True

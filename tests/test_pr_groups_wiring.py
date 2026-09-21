@@ -296,6 +296,7 @@ def test_gift_lock_hooks_exist():
     assert "text_not_creator" in handlers
     admin = (ROOT / "server" / "admin_pr_groups.py").read_text(encoding="utf-8")
     assert "CLAIM_COLUMNS" in admin
+    assert "alter_claim_column_sql" in admin
     assert "alreadyKnown" in admin
     assert "QUEUE_STATUSES" in admin
     assert "/people" in admin
@@ -323,6 +324,9 @@ def test_gift_lock_hooks_exist():
     assert "стол" not in handlers.lower()
     assert "deliver_dm" in core
     assert "remember_ui" in core
+    assert "claim_set_sql" in core
+    assert "alter_claim_column_sql" in core
+    assert "created_at = NOW() + INTERVAL '5 minutes'" in core
     assert "accepting_keyboard" in core
     assert "text_accepting" in logic
 

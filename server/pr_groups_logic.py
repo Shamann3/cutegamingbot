@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from html import escape
@@ -148,6 +149,39 @@ CLAIM_COLUMNS: tuple[tuple[str, str], ...] = (
     ("creator_id", "BIGINT"),
     ("joined_at", "TIMESTAMPTZ"),
 )
+
+_IDENT = re.compile(r"^[a-z_][a-z0-9_]*$")
+
+
+def sql_ident(name: str) -> str:
+    """Имя колонки в кавычках: freeze в Postgres — ключевое слово."""
+    key = str(name or "")
+    if not _IDENT.fullmatch(key):
+        raise ValueError(f"bad column {name!r}")
+    return f'"{key}"'
+
+
+def alter_claim_column_sql(name: str, spec: str) -> str:
+    return f"ALTER TABLE pr_claims ADD COLUMN IF NOT EXISTS {sql_ident(name)} {spec}"
+
+
+def claim_set_sql(fields: dict[str, Any], *, claim_id: int) -> tuple[str, list[Any]]:
+    sets: list[str] = []
+    args: list[Any] = []
+    i = 1
+    for key, value in fields.items():
+        ident = sql_ident(key)
+        if key == "photos" and not isinstance(value, str):
+            value = json.dumps(value, ensure_ascii=False)
+            sets.append(f"{ident} = ${i}::jsonb")
+        else:
+            sets.append(f"{ident} = ${i}")
+        args.append(value)
+        i += 1
+    args.append(int(claim_id))
+    sql = f"UPDATE pr_claims SET {', '.join(sets)}, updated_at = NOW() WHERE id = ${i} RETURNING *"
+    return sql, args
+
 
 # Кадры доказательств: тексты в pr_groups_design.PHOTO_STEPS.
 LINK_MODES = frozenset({"how", "how_public", "how_admin", "wait_link"})

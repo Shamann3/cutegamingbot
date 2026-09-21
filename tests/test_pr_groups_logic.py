@@ -218,10 +218,27 @@ def test_player_classes():
 def test_claim_schema_has_money_and_confirm_columns():
     from pr_groups_logic import CLAIM_COLUMNS, ST_FULFILLING, WEEK_SEED_STATUSES
     names = {name for name, _spec in CLAIM_COLUMNS}
-    for col in ("seed_applied", "confirm_token", "confirm_expires_at", "slot_hold_until", "last_digest_at"):
+    for col in ("seed_applied", "confirm_token", "confirm_expires_at", "slot_hold_until", "last_digest_at", "freeze"):
         assert col in names
     assert ST_FULFILLING == "fulfilling"
     assert "accepting" in WEEK_SEED_STATUSES
+
+
+def test_claim_sql_quotes_freeze():
+    from pr_groups_logic import alter_claim_column_sql, claim_set_sql, sql_ident
+
+    assert sql_ident("freeze") == '"freeze"'
+    alter = alter_claim_column_sql("freeze", "TEXT")
+    assert '"freeze"' in alter
+    assert "EXISTS freeze " not in alter
+    sql, args = claim_set_sql(
+        {"status": "live", "freeze": None, "nika_on": True},
+        claim_id=9,
+    )
+    assert '"freeze" = $2' in sql
+    assert '"status" = $1' in sql
+    assert "freeze =" not in sql.replace('"freeze" = $2', "")
+    assert args == ["live", None, True, 9]
 
 
 def test_broke_and_locks():

@@ -66,6 +66,8 @@ from pr_groups_logic import (  # noqa: E402
     weekly_seed_budget,
     MINE_STATUSES,
     claim_button_label,
+    claim_set_sql,
+    alter_claim_column_sql,
     moscow_day_start,
 )
 
@@ -606,7 +608,7 @@ async def ensure_schema() -> None:
     )
     for col, spec in CLAIM_COLUMNS:
         try:
-            await p.execute(f"ALTER TABLE pr_claims ADD COLUMN IF NOT EXISTS {col} {spec}")
+            await p.execute(alter_claim_column_sql(col, spec))
         except Exception:
             log.debug("pr alter %s", col, exc_info=True)
     await p.execute("CREATE INDEX IF NOT EXISTS pr_claims_user_idx ON pr_claims (user_id, status)")
@@ -982,23 +984,9 @@ async def create_claim(
 async def save_claim(claim_id: int, **fields: Any) -> Optional[dict[str, Any]]:
     if not fields:
         return await claim_by_id(claim_id)
-    sets = []
-    args: list[Any] = []
-    i = 1
-    for key, value in fields.items():
-        if key == "photos" and not isinstance(value, str):
-            value = json.dumps(value, ensure_ascii=False)
-            sets.append(f"{key} = ${i}::jsonb")
-        else:
-            sets.append(f"{key} = ${i}")
-        args.append(value)
-        i += 1
-    args.append(int(claim_id))
+    sql, args = claim_set_sql(fields, claim_id=int(claim_id))
     p = await pool()
-    row = await p.fetchrow(
-        f"UPDATE pr_claims SET {', '.join(sets)}, updated_at = NOW() WHERE id = ${i} RETURNING *",
-        *args,
-    )
+    row = await p.fetchrow(sql, *args)
     return _row(row)
 
 
@@ -1839,7 +1827,7 @@ async def push_notice(user_id: int, kind: str, payload: Optional[dict] = None) -
 async def drain_notices(bot) -> None:
     from pr_groups_logic import text_accepted, text_accepting, text_confirm_timeout, text_photos_expired, text_rejected
     p = await pool()
-    rows = await p.fetch("SELECT * FROM pr_notices ORDER BY id ASC LIMIT 20")
+    rows = await p.fetch("SELECT * FROM pr_notices ORDER BY created_at ASC, id ASC LIMIT 20")
     for row in rows:
         kind = row["kind"]
         payload = row["payload"] if isinstance(row["payload"], dict) else json.loads(row["payload"] or "{}")
@@ -1876,9 +1864,16 @@ async def drain_notices(bot) -> None:
                 await deliver_dm(bot, int(row["user_id"]), text_photos_expired(), photos_expired_keyboard())
             elif kind == "confirm_expired":
                 await deliver_dm(bot, int(row["user_id"]), text_confirm_timeout(), confirm_timeout_keyboard())
+            await p.execute("DELETE FROM pr_notices WHERE id = $1", int(row["id"]))
         except Exception:
-            log.debug("notice fail", exc_info=True)
-        await p.execute("DELETE FROM pr_notices WHERE id = $1", int(row["id"]))
+            log.exception("notice fail id=%s kind=%s", row["id"], kind)
+            try:
+                await p.execute(
+                    "UPDATE pr_notices SET created_at = NOW() + INTERVAL '5 minutes' WHERE id = $1",
+                    int(row["id"]),
+                )
+            except Exception:
+                pass
 
 
 async def housekeep(bot) -> None:
