@@ -348,7 +348,7 @@ SCREENS: dict[str, dict] = {
             b(
                 text="Это чужая группа",
                 icon="""<tg-emoji emoji-id='5388583647370565067'>🔥</tg-emoji>""",
-                color='success',
+                color='default',
                 go='reco',
             ),
             b(
@@ -396,7 +396,7 @@ SCREENS: dict[str, dict] = {
             b(
                 text="Это чужая группа",
                 icon="""<tg-emoji emoji-id='5388583647370565067'>🔥</tg-emoji>""",
-                color='success',
+                color='default',
                 go='reco',
             ),
             b(
@@ -740,7 +740,7 @@ SCREENS: dict[str, dict] = {
         """,
         buttons=[ b(
             text="Это чужая группа" , icon="""<tg-emoji emoji-id='5388583647370565067'>🔥</tg-emoji>""" ,
-            color='success',
+            color='default',
             go='reco' , ) , b(
             text="Я владелец группы" , icon="""<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji>""" ,
             go='owner' , ) , b(
@@ -1023,7 +1023,7 @@ SCREENS: dict[str, dict] = {
             b(
                 text="Это чужая группа",
                 icon="""<tg-emoji emoji-id='5388583647370565067'>🔥</tg-emoji>""",
-                color='success',
+                color='default',
                 go='reco',
             ),
             b(
