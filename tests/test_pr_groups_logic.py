@@ -46,13 +46,22 @@ from pr_groups_logic import (
 )
 
 
-def test_entry_is_short_and_honest():
+def test_entry_explains_commission_for_both_roles():
     html = text_entry()
+    assert "зарабат" in html.lower()
+    assert "узнавал" in html.lower()
     assert "35%" in html
     assert "комиссии" in html
     assert "14 дней" in html
     assert "проект" in html
     assert "подар" in html
+    assert "владел" in html.lower()
+    assert "чуж" in html.lower()
+    assert "карман" in html
+    assert "баланс группы" in html
+    assert "личный баланс" in html
+    assert "Кут - игры" not in html
+    assert "игры в Telegram" not in html
     assert "1." not in html
     assert "Начать" not in html
 
@@ -589,7 +598,11 @@ def test_design_file_drives_hub_and_buttons():
 
     hub = SCREENS["hub"]
     assert "Нажмите, кто вы" in hub["text"]
+    assert "зарабат" in hub["text"].lower()
+    assert "узнавал" in hub["text"].lower()
+    assert "комиссии" in hub["text"]
     assert "игры" in hub["text"].lower()
+    assert "Кут - игры" not in hub["text"]
     assert emoji_id(hub["emoji"]) == emoji_id(HUB)
     assert emoji_id(HUB) in text_entry()
     hub_gos = [btn.get("go") for row in iter_button_rows(hub["buttons"]) for btn in row]

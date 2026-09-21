@@ -10,6 +10,7 @@ import sys
 import asyncio
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
@@ -794,6 +795,29 @@ async def user_banned(user_id: int, chat_id: int) -> bool:
     return until is not None
 
 
+def json_session_extra(extra: Optional[dict] = None) -> str:
+    """Session extra is jsonb. Datetime/enum from chat inspect must not crash dumps."""
+    return json.dumps(_json_safe(extra or {}), ensure_ascii=False)
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return _json_safe(value.value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+    return str(value)
+
+
 async def set_session(user_id: int, *, claim_id: Optional[int], mode: str, extra: Optional[dict] = None) -> None:
     p = await pool()
     await p.execute(
@@ -803,7 +827,7 @@ async def set_session(user_id: int, *, claim_id: Optional[int], mode: str, extra
         ON CONFLICT (user_id) DO UPDATE SET
             claim_id = $2, mode = $3, extra = $4::jsonb, updated_at = NOW()
         """,
-        int(user_id), claim_id, mode, json.dumps(extra or {}, ensure_ascii=False),
+        int(user_id), claim_id, mode, json_session_extra(extra),
     )
 
 

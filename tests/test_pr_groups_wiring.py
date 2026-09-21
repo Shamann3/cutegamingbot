@@ -302,3 +302,26 @@ def test_gift_lock_hooks_exist():
     assert "стол" not in design.lower()
     assert "стол" not in core.lower()
     assert "стол" not in handlers.lower()
+
+
+def test_session_extra_json_serializes_datetime_and_enum():
+    import json
+    from datetime import datetime, timezone
+    from enum import Enum
+
+    from bot.funcs.pr_groups import json_session_extra
+
+    class Kind(str, Enum):
+        SUPERGROUP = "supergroup"
+
+    dumped = json_session_extra({
+        "joined_at": datetime(2026, 9, 21, 1, 28, 13, tzinfo=timezone.utc),
+        "type": Kind.SUPERGROUP,
+        "title": "Друзья",
+        "nested": {"when": datetime(2026, 9, 21, 1, 0, 0)},
+    })
+    payload = json.loads(dumped)
+    assert payload["title"] == "Друзья"
+    assert payload["type"] == "supergroup"
+    assert payload["joined_at"].startswith("2026-09-21T01:28:13")
+    assert "2026-09-21" in payload["nested"]["when"]
