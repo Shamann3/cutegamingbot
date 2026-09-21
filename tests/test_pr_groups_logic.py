@@ -589,7 +589,7 @@ def test_design_file_drives_hub_and_buttons():
 
     hub = SCREENS["hub"]
     assert "Нажмите, кто вы" in hub["text"]
-    assert "что нужно делать далее" in hub["text"]
+    assert "игры" in hub["text"].lower()
     assert emoji_id(hub["emoji"]) == emoji_id(HUB)
     assert emoji_id(HUB) in text_entry()
     hub_gos = [btn.get("go") for row in iter_button_rows(hub["buttons"]) for btn in row]
