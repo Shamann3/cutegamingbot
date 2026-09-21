@@ -231,6 +231,22 @@ def test_html_without_custom_emoji_keeps_inner():
     assert html_without_custom_emoji(raw) == "📣 <b>текст</b>"
 
 
+def test_need_photo_album_asks_one_at_a_time():
+    from pr_groups_logic import text_need_photo
+
+    html = text_need_photo("album").lower()
+    assert "одно" in html or "альбом" in html
+
+
+def test_deliver_dm_can_send_fresh_instead_of_edit():
+    import inspect
+    from bot.funcs.pr_groups import deliver_dm
+
+    param = inspect.signature(deliver_dm).parameters["fresh"]
+    assert param.default is False
+    assert param.kind is inspect.Parameter.KEYWORD_ONLY
+
+
 def test_claim_sql_quotes_freeze():
     from pr_groups_logic import alter_claim_column_sql, claim_set_sql, sql_ident
 

@@ -58,6 +58,7 @@ def test_wired_into_bot_and_panel():
     assert "on_undo" in handlers
     assert "looks_like_help" in handlers
     assert "_album_used" in handlers
+    assert "_replace" in handlers
     assert "_resume_claim_screen" in handlers
     assert "on_wait_link" in handlers
     assert "_resolve_group_and_begin" in handlers
@@ -335,8 +336,11 @@ def test_gift_lock_hooks_exist():
     assert "html_without_custom_emoji" in logic
     assert "markup_without_icons" in core
     assert "dispatch_pr_callback" in handlers
+    assert "fresh=True" in handlers
+    assert 'text_need_photo("album"' in handlers
     assert "'prg:':" in (ROOT / "bot" / "runtime" / "callback_registry_generated.py").read_text(encoding="utf-8")
     assert "if sent:" in core
+    assert "fresh: bool = False" in core
     assert "return True" in core
 
 

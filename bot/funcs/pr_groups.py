@@ -929,15 +929,20 @@ async def remember_ui(user_id: int, chat_id: int, message_id: int) -> None:
     )
 
 
-async def deliver_dm(bot, user_id: int, text: str, markup=None) -> bool:
-    """Одно живое сообщение в личке: правим его, иначе шлём новое и только потом удаляем старое."""
+async def deliver_dm(bot, user_id: int, text: str, markup=None, *, fresh: bool = False) -> bool:
+    """Одно живое сообщение в личке.
+
+    По умолчанию правим текущий экран. fresh=True — всегда новое сообщение,
+    старое бота удаляем только после успешной отправки. Сообщения игрока
+    (фото) не трогаем: так промпт оказывается под только что присланным кадром.
+    """
     session = await get_session(user_id) or {}
     extra = dict(session.get("extra") or {})
     chat_id = extra.get("ui_chat") or int(user_id)
     msg_id = extra.get("ui_msg")
 
     async def _edit_or_send(txt: str, mk) -> bool:
-        if msg_id:
+        if msg_id and not fresh:
             try:
                 await bot.edit_message_text(
                     txt,

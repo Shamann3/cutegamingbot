@@ -144,6 +144,12 @@ async def _push(uid: int, text: str, markup=None) -> None:
     await pr.deliver_dm(bot, int(uid), text, markup)
 
 
+async def _replace(uid: int, text: str, markup=None) -> bool:
+    """Новый промпт под сообщением игрока, старый экран бота — только после успеха."""
+    bot = await _bot()
+    return await pr.deliver_dm(bot, int(uid), text, markup, fresh=True)
+
+
 async def _edit(target: CallbackQuery | Message, text: str, markup=None) -> Message | None:
     bot = await _bot()
     uid = int(target.from_user.id)
@@ -972,21 +978,16 @@ def message_matches_photo(message: Message) -> bool:
     return bool(pr.image_file_id(message))
 
 
-async def _finish_photos(message: Message, uid: int, claim: dict, extra: dict) -> None:
+async def _finish_photos(uid: int, claim: dict, extra: dict) -> None:
     title = claim.get("chat_title") or extra.get("title") or ""
     username = claim.get("chat_username") or extra.get("username") or ""
     extra = _claim_extra(claim, extra)
     if claim["role"] == ROLE_OWNER:
         await pr.set_session(uid, claim_id=int(claim["id"]), mode="pending", extra=extra)
-        await message.answer(text_after_proofs_owner(), reply_markup=pr.after_owner_keyboard(), parse_mode="HTML")
+        await _replace(uid, text_after_proofs_owner(), pr.after_owner_keyboard())
         return
     await pr.set_session(uid, claim_id=int(claim["id"]), mode="wait_confirm", extra=extra)
-    await message.answer(
-        text_after_photos_reco(title),
-        reply_markup=pr.after_reco_keyboard(username),
-        parse_mode="HTML",
-        disable_web_page_preview=True,
-    )
+    await _replace(uid, text_after_photos_reco(title), pr.after_reco_keyboard(username))
 
 
 async def on_wait_photo(message: Message) -> None:
@@ -997,30 +998,31 @@ async def on_wait_photo(message: Message) -> None:
     claim = await pr.claim_by_id(int(session["claim_id"]))
     if not claim or claim["status"] != ST_PHOTOS:
         if claim and claim["status"] == ST_EXPIRED:
-            await _edit(message, text_photos_expired(), pr.photos_expired_keyboard())
+            await _replace(uid, text_photos_expired(), pr.photos_expired_keyboard())
             await pr.clear_session(uid)
         return
     have = len(claim.get("photos") or [])
     extra = dict(session.get("extra") or {})
+    intent = _path_intent(extra, session, claim)
     if looks_like_help(getattr(message, "text", None)):
-        await _edit(message, text_wait_photo(have, have, intent=_path_intent(extra, session, claim)), pr.photo_keyboard(have))
+        await _replace(uid, text_wait_photo(have, have, intent=intent), pr.photo_keyboard(have))
         return
     album_id = getattr(message, "media_group_id", None)
-    if album_id and _album_used.get(uid) == str(album_id):
+    if album_id:
+        first = _album_used.get(uid) != str(album_id)
+        _album_used[uid] = str(album_id)
+        if first:
+            await _replace(uid, text_need_photo("album", intent=intent), pr.need_photo_keyboard(have))
         return
     file_id = pr.image_file_id(message)
     if not file_id:
         kind = pr.photo_noise_kind(message)
-        await _edit(message, text_need_photo(kind, intent=_path_intent(extra, session, claim)), pr.need_photo_keyboard(have))
+        await _replace(uid, text_need_photo(kind, intent=intent), pr.need_photo_keyboard(have))
         return
     async with _photo_lock(uid):
         claim = await pr.claim_by_id(int(session["claim_id"]))
         if not claim or claim["status"] != ST_PHOTOS:
             return
-        if album_id:
-            if _album_used.get(uid) == str(album_id):
-                return
-            _album_used[uid] = str(album_id)
         before = len(claim.get("photos") or [])
         claim = await pr.add_photo(int(claim["id"]), file_id)
         have = len(claim.get("photos") or [])
@@ -1028,12 +1030,12 @@ async def on_wait_photo(message: Message) -> None:
         extra["n"] = have
         await pr.set_session(uid, claim_id=int(claim["id"]), mode="photos", extra=extra)
         if have == before:
-            await _edit(message, text_need_photo("dup", intent=_path_intent(extra, session, claim)), pr.need_photo_keyboard(have))
+            await _replace(uid, text_need_photo("dup", intent=_path_intent(extra, session, claim)), pr.need_photo_keyboard(have))
             return
         if have < PHOTOS_REQUIRED:
-            await _edit(message, text_wait_photo(have, have, intent=_path_intent(extra, session, claim)), pr.photo_keyboard(have))
+            await _replace(uid, text_wait_photo(have, have, intent=_path_intent(extra, session, claim)), pr.photo_keyboard(have))
             return
-    await _finish_photos(message, uid, claim, extra)
+        await _finish_photos(uid, claim, extra)
 
 
 @router.message(F.chat.type.in_({"group", "supergroup"}), F.text)
