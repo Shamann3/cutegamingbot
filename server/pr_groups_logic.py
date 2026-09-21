@@ -93,21 +93,24 @@ ST_BURNED = "burned"
 ST_ENDED = "ended"
 ST_ACCEPTING = "accepting"
 ST_FULFILLING = "fulfilling"
+ST_ENDING = "ending"
 
 OPEN_STATUSES = frozenset({
-    ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY, ST_PENDING, ST_ACCEPTING, ST_FULFILLING, ST_LIVE,
+    ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY, ST_PENDING, ST_ACCEPTING, ST_FULFILLING, ST_LIVE, ST_ENDING,
 })
 QUEUE_STATUSES = frozenset({ST_PENDING})
 LIVE_STATUSES = frozenset({ST_LIVE, ST_ACCEPTING, ST_FULFILLING})
 IN_PROGRESS_STATUSES = frozenset({
-    ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY, ST_PENDING, ST_ACCEPTING, ST_FULFILLING, ST_LIVE,
+    ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY, ST_PENDING, ST_ACCEPTING, ST_FULFILLING, ST_LIVE, ST_ENDING,
 })
 MINE_STATUSES = frozenset(
-    IN_PROGRESS_STATUSES | {ST_ENDED, ST_BURNED, ST_REJECTED, ST_EXPIRED}
+    IN_PROGRESS_STATUSES | {ST_ENDED, ST_BURNED, ST_REJECTED, ST_EXPIRED, ST_CANCELLED}
 )
 HOLD_GROUP_STATUSES = frozenset({
-    ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY, ST_PENDING, ST_ACCEPTING, ST_FULFILLING, ST_LIVE, ST_REJECTED,
+    ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY, ST_PENDING, ST_ACCEPTING, ST_FULFILLING, ST_LIVE, ST_ENDING, ST_REJECTED,
 })
+MONEY_UNWIND_STATUSES = frozenset({ST_LIVE, ST_ACCEPTING, ST_FULFILLING, ST_ENDING})
+CONFIRM_WAIT_STATUSES = frozenset({ST_WAIT_CONFIRM, ST_CONFIRM_RETRY})
 WEEK_SEED_STATUSES = frozenset({ST_ACCEPTING, ST_FULFILLING, ST_LIVE, ST_ENDED, ST_BURNED})
 
 # Общие ALTER-колонки: бот и админка поднимают одну и ту же схему.
@@ -754,8 +757,58 @@ def promoter_cut(commission: int, already_paid: int, commission_seen: int) -> in
 
 
 def looks_like_confirm(text: str) -> bool:
-    raw = " ".join(str(text or "").lower().split())
+    raw = " ".join(str(text or "").lower().replace("ё", "е").split())
+    raw = raw.strip(" .!?,…:;\"'«»")
     return raw in CONFIRM_WORDS
+
+
+def own_kut_amount(balance: int, gift_amount: int) -> int:
+    """Куты, которые не подарок: их можно снять, перевести и играть где угодно."""
+    return max(0, int(balance or 0) - max(0, int(gift_amount or 0)))
+
+
+def gift_covers_this_play(
+    *,
+    gift_chat_id: Any,
+    play_chat_id: Any,
+    solo: bool = True,
+    private: bool = False,
+) -> bool:
+    """Подарок можно тратить только в одиночной игре той группы, где его выдали."""
+    if private or not solo:
+        return False
+    try:
+        gift_chat = int(gift_chat_id or 0)
+        play_chat = int(play_chat_id or 0)
+    except (TypeError, ValueError):
+        return False
+    return gift_chat != 0 and gift_chat == play_chat
+
+
+def bet_fits_gift_lock(
+    *,
+    balance: int,
+    bet: int,
+    gift_amount: int,
+    gift_chat_id: Any,
+    play_chat_id: Any,
+    solo: bool = True,
+    private: bool = False,
+) -> bool:
+    """False — ставка задела бы подарок не там, где можно."""
+    need = max(0, int(bet or 0))
+    if need <= 0:
+        return True
+    gift = max(0, int(gift_amount or 0))
+    own = own_kut_amount(balance, gift)
+    if gift_covers_this_play(
+        gift_chat_id=gift_chat_id,
+        play_chat_id=play_chat_id,
+        solo=solo,
+        private=private,
+    ):
+        return own + gift >= need
+    return own >= need
 
 
 def photo_hint(index: int) -> str:
@@ -1221,6 +1274,31 @@ def text_confirm_expired() -> str:
 
 def text_wrong_group() -> str:
     return render_design("wrong_group")
+
+
+def text_confirm_not_needed() -> str:
+    return render_design("confirm_not_needed")
+
+
+def text_creator_typed_confirm() -> str:
+    return render_design("creator_typed_confirm")
+
+
+def text_drop_confirm(title: str) -> str:
+    return render_design("drop_confirm", {"name": escape(title or say("group"))})
+
+
+def text_dropped() -> str:
+    return render_design("dropped")
+
+
+def text_admin_ended(title: str, reason: str = "") -> str:
+    why = escape(str(reason or "").strip()) or "Проект снял эту группу."
+    return render_design("admin_ended", {"name": escape(title or say("group")), "reason": why})
+
+
+def text_group_blocked() -> str:
+    return render_design("group_blocked")
 
 
 def text_need_photos_first(*, intent: str = "") -> str:

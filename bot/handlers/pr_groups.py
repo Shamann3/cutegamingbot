@@ -21,9 +21,11 @@ if str(_SERVER) not in sys.path:
 from bot.funcs import pr_groups as pr
 from pr_groups_logic import (  # noqa: E402
     FIRST_NO_HOLD_HOURS,
+    IN_PROGRESS_STATUSES,
     LINK_MODES,
     MAX_LIVE_SEEDS,
     MAX_PENDING,
+    MONEY_UNWIND_STATUSES,
     PHOTOS_REQUIRED,
     ROLE_OWNER,
     ROLE_RECO,
@@ -53,10 +55,15 @@ from pr_groups_logic import (  # noqa: E402
     text_confirm_expired,
     text_confirm_no_first,
     text_confirm_no_second,
+    text_confirm_not_needed,
     text_confirm_prompt,
     text_confirm_yes,
+    text_creator_typed_confirm,
+    text_drop_confirm,
+    text_dropped,
     text_entry,
     text_earnings,
+    text_group_blocked,
     text_group_card,
     text_freeze_admin,
     text_freeze_public,
@@ -397,7 +404,7 @@ async def _resume_claim_screen(target, uid: int, claim: dict) -> None:
         await _edit(target, text_after_photos_reco(title), pr.after_reco_keyboard(extra["username"]))
         return
     await pr.set_session(uid, claim_id=int(claim["id"]), mode="view", extra=extra)
-    await _edit(target, text_resume_claim(title, status, claim.get("freeze")), pr.resume_keyboard(status))
+    await _edit(target, text_resume_claim(title, status, claim.get("freeze")), pr.resume_keyboard(status, claim))
 
 
 async def _try_advance(target, uid: int) -> None:
@@ -660,6 +667,9 @@ async def _begin_proofs(target, uid: int, info: dict) -> None:
     if await pr.user_banned(uid, int(info["chat_id"])):
         await _edit(target, text_banned_31(), pr.banned_keyboard())
         return
+    if await pr.chat_blocked(int(info["chat_id"])):
+        await _edit(target, text_group_blocked(), pr.group_blocked_keyboard())
+        return
     busy = await pr.group_busy(int(info["chat_id"]), except_user=uid)
     if busy:
         owner_took = int(busy.get("user_id") or 0) == int(info.get("creator_id") or -1)
@@ -731,6 +741,9 @@ async def _begin_proofs_dm(uid: int, info: dict) -> None:
         return
     if await pr.user_banned(uid, int(info["chat_id"])):
         await _send(text_banned_31(), pr.banned_keyboard())
+        return
+    if await pr.chat_blocked(int(info["chat_id"])):
+        await _send(text_group_blocked(), pr.group_blocked_keyboard())
         return
     busy = await pr.group_busy(int(info["chat_id"]), except_user=uid)
     if busy:
@@ -958,18 +971,92 @@ async def on_reco(cb: CallbackQuery) -> None:
 
 @router.callback_query(F.data == pr.PR_CANCEL)
 async def on_cancel(cb: CallbackQuery) -> None:
+    await _cancel_claim_cb(cb, None)
+
+
+@router.callback_query(F.data.startswith(pr.PR_CANCEL + ":"))
+async def on_cancel_id(cb: CallbackQuery) -> None:
+    claim_id = None
+    try:
+        claim_id = int((cb.data or "").split(":")[-1])
+    except Exception:
+        claim_id = None
+    await _cancel_claim_cb(cb, claim_id)
+
+
+async def _cancel_claim_cb(cb: CallbackQuery, claim_id: int | None) -> None:
+    try:
+        await cb.answer()
+    except Exception:
+        pass
+    uid = int(cb.from_user.id)
+    claim = None
+    if claim_id:
+        claim = await pr.claim_by_id(int(claim_id))
+        if claim and int(claim.get("user_id") or 0) != uid:
+            await _edit(cb, text_not_your_claim(), pr.hub_only_keyboard())
+            return
+    if not claim:
+        session = await pr.get_session(uid) or {}
+        if session.get("claim_id"):
+            claim = await pr.claim_by_id(int(session["claim_id"]))
+            if claim and int(claim.get("user_id") or 0) != uid:
+                claim = None
+    if not claim or str(claim.get("status") or "") not in IN_PROGRESS_STATUSES:
+        await pr.clear_session(uid)
+        await _edit(cb, text_cancelled(), pr.after_cancel_keyboard())
+        return
+    if str(claim.get("status") or "") in MONEY_UNWIND_STATUSES:
+        await pr.set_session(uid, claim_id=int(claim["id"]), mode="drop", extra=_claim_extra(claim))
+        await _edit(
+            cb,
+            text_drop_confirm(str(claim.get("chat_title") or "")),
+            pr.drop_confirm_keyboard(claim),
+        )
+        return
+    bot = await _bot()
+    await pr.drop_claim(bot, claim, reason="drop")
+    await pr.clear_session(uid)
+    await _edit(cb, text_cancelled(), pr.after_cancel_keyboard())
+
+
+@router.callback_query(F.data.startswith(pr.PR_DROP_YES))
+async def on_drop_yes(cb: CallbackQuery) -> None:
+    try:
+        await cb.answer()
+    except Exception:
+        pass
+    uid = int(cb.from_user.id)
+    try:
+        claim_id = int((cb.data or "")[len(pr.PR_DROP_YES):])
+    except Exception:
+        await _open_hub(cb)
+        return
+    claim = await pr.claim_by_id(claim_id)
+    if not claim or int(claim.get("user_id") or 0) != uid:
+        await _edit(cb, text_not_your_claim(), pr.hub_only_keyboard())
+        return
+    bot = await _bot()
+    await pr.drop_claim(bot, claim, reason="drop")
+    await pr.clear_session(uid)
+    await _edit(cb, text_dropped(), pr.dropped_keyboard())
+
+
+@router.callback_query(F.data == pr.PR_DROP_NO)
+async def on_drop_no(cb: CallbackQuery) -> None:
     try:
         await cb.answer()
     except Exception:
         pass
     uid = int(cb.from_user.id)
     session = await pr.get_session(uid) or {}
+    claim = None
     if session.get("claim_id"):
         claim = await pr.claim_by_id(int(session["claim_id"]))
-        if claim and claim["status"] in {ST_PHOTOS, ST_WAIT_CONFIRM, ST_CONFIRM_RETRY, ST_PENDING}:
-            await pr.cancel_claim(int(claim["id"]))
-    await pr.clear_session(uid)
-    await _edit(cb, text_cancelled(), pr.after_cancel_keyboard())
+    if claim and int(claim.get("user_id") or 0) == uid:
+        await _show_card(cb, uid, claim)
+        return
+    await _show_mine(cb, uid)
 
 
 def message_matches_photo(message: Message) -> bool:
@@ -1044,37 +1131,67 @@ async def on_confirm_command(message: Message) -> None:
         return
     uid = int(message.from_user.id)
     chat_id = int(message.chat.id)
-    claim = await pr.active_claim_for_user(uid)
-    if not claim or int(claim["chat_id"]) != chat_id:
-        if claim and int(claim["chat_id"]) != chat_id:
-            await message.reply(text_wrong_group(), parse_mode="HTML")
-        elif not claim:
+    bot = await _bot()
+    is_creator = False
+    try:
+        member = await bot.get_chat_member(chat_id, uid)
+        is_creator = member.status == ChatMemberStatus.CREATOR
+    except Exception:
+        is_creator = False
+    if is_creator:
+        await message.reply(
+            text_creator_typed_confirm(),
+            reply_markup=pr.owner_no_confirm_keyboard(),
+            parse_mode="HTML",
+        )
+        return
+    mine = await pr.claim_for_user_chat(uid, chat_id)
+    if mine:
+        role = str(mine.get("role") or "")
+        status = str(mine.get("status") or "")
+        if role == ROLE_OWNER:
+            await message.reply(
+                text_owner_no_confirm(),
+                reply_markup=pr.owner_no_confirm_keyboard(),
+                parse_mode="HTML",
+            )
             return
-        else:
-            await message.reply(text_not_your_claim(), parse_mode="HTML")
+        if status == ST_PHOTOS:
+            await message.reply(
+                text_need_photos_first(intent=ROLE_RECO),
+                reply_markup=pr.need_photos_first_keyboard(),
+                parse_mode="HTML",
+            )
+            return
+        if status not in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
+            await message.reply(
+                text_confirm_not_needed(),
+                reply_markup=pr.owner_no_confirm_keyboard(),
+                parse_mode="HTML",
+            )
+            return
+        token = int(mine.get("confirm_token") or 0) + 1
+        sent = await message.reply(
+            text_confirm_prompt(uid, message.from_user.first_name or pr.say("player")),
+            reply_markup=pr.confirm_keyboard(int(mine["id"]), token),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        await pr.save_claim(
+            int(mine["id"]),
+            confirm_token=token,
+            confirm_message_id=sent.message_id,
+            confirm_expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
+        )
         return
-    if claim["role"] != ROLE_RECO:
-        if claim["status"] in {ST_PENDING, ST_PHOTOS, ST_LIVE}:
-            await message.reply(text_owner_no_confirm(), reply_markup=pr.owner_no_confirm_keyboard(), parse_mode="HTML")
-        return
-    if claim["status"] == ST_PHOTOS:
-        await message.reply(text_need_photos_first(intent=ROLE_RECO), reply_markup=pr.need_photos_first_keyboard(), parse_mode="HTML")
-        return
-    if claim["status"] not in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}:
-        return
-    token = int(claim.get("confirm_token") or 0) + 1
-    sent = await message.reply(
-        text_confirm_prompt(uid, message.from_user.first_name or pr.say("player")),
-        reply_markup=pr.confirm_keyboard(int(claim["id"]), token),
-        parse_mode="HTML",
-        disable_web_page_preview=True,
-    )
-    await pr.save_claim(
-        int(claim["id"]),
-        confirm_token=token,
-        confirm_message_id=sent.message_id,
-        confirm_expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
-    )
+    waiting = await pr.claims_waiting_confirm(uid)
+    if waiting:
+        await message.reply(
+            text_wrong_group(),
+            reply_markup=pr.wrong_group_keyboard(waiting),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
 
 
 @router.callback_query(F.data.startswith(pr.PR_YES) | F.data.startswith(pr.PR_NO))
@@ -1366,6 +1483,15 @@ async def dispatch_pr_callback(cb: CallbackQuery) -> None:
     if data.startswith(pr.PR_YES) or data.startswith(pr.PR_NO):
         await on_confirm_click(cb)
         return
+    if data.startswith(pr.PR_DROP_YES):
+        await on_drop_yes(cb)
+        return
+    if data == pr.PR_DROP_NO:
+        await on_drop_no(cb)
+        return
+    if data == pr.PR_CANCEL or data.startswith(pr.PR_CANCEL + ":"):
+        await on_cancel_id(cb) if ":" in data[len(pr.PR_CANCEL):] else await on_cancel(cb)
+        return
     fn = {
         pr.PR_HUB: on_hub,
         pr.PR_START: on_start,
@@ -1421,10 +1547,23 @@ async def notify_rejected(user_id: int, html: str, *, can_fix: bool = False) -> 
 
 
 async def send_gift_notice(message: Message, user_id: int, name: str, amount: int) -> None:
+    html = text_gift(user_id, name, amount)
     try:
-        await message.answer(text_gift(user_id, name, amount), parse_mode="HTML", disable_web_page_preview=True)
+        await message.answer(html, parse_mode="HTML", disable_web_page_preview=True)
+        return
     except Exception:
         pass
+    try:
+        await message.answer(
+            pr.html_without_custom_emoji(html),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        try:
+            await message.answer(pr.html_without_custom_emoji(html))
+        except Exception:
+            pass
 
 
 async def send_gift_locked(message: Message) -> None:

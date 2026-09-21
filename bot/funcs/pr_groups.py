@@ -43,6 +43,7 @@ from pr_groups_logic import (  # noqa: E402
     ST_CANCELLED,
     ST_CONFIRM_RETRY,
     ST_ENDED,
+    ST_ENDING,
     ST_EXPIRED,
     ST_FULFILLING,
     ST_LIVE,
@@ -51,7 +52,11 @@ from pr_groups_logic import (  # noqa: E402
     ST_REJECTED,
     ST_WAIT_CONFIRM,
     WEEK_SEED_STATUSES,
+    CONFIRM_WAIT_STATUSES,
+    MONEY_UNWIND_STATUSES,
+    bet_fits_gift_lock,
     classify_player,
+    gift_covers_this_play,
     is_broke,
     is_new_class,
     left_days_hint,
@@ -105,6 +110,7 @@ ICON_OK = ICON_CHECK
 
 _GIFT_CLAW = ContextVar("pr_gift_claw", default=False)
 _fulfill_lock = asyncio.Lock()
+_gift_grant_locks: dict[int, asyncio.Lock] = {}
 
 log = logging.getLogger("pr_groups")
 
@@ -125,6 +131,8 @@ PR_PICK = "prg:g:"
 PR_OWNER = "prg:own"
 PR_RECO = "prg:rec"
 PR_CANCEL = "prg:x"
+PR_DROP_YES = "prg:z:"
+PR_DROP_NO = "prg:zn"
 PR_YES = "prgY:"
 PR_NO = "prgN:"
 PR_CONT = "prg:n:"
@@ -213,6 +221,8 @@ def _btn_visible(show: str | None, ctx: dict[str, Any]) -> bool:
         return status in {ST_WAIT_CONFIRM, ST_CONFIRM_RETRY}
     if flag == "pending":
         return status == ST_PENDING
+    if flag == "open":
+        return status in IN_PROGRESS_STATUSES
     return True
 
 
@@ -247,7 +257,9 @@ def _resolve_go(go: str, ctx: dict[str, Any]) -> tuple[str, str]:
         "open_group": ("url", f"https://t.me/{username}" if username else ""),
         "wrote": ("cb", PR_WROTE),
         "undo": ("cb", PR_UNDO),
-        "cancel": ("cb", PR_CANCEL),
+        "cancel": ("cb", f"{PR_CANCEL}:{cid}" if cid else PR_CANCEL),
+        "drop_yes": ("cb", f"{PR_DROP_YES}{cid}" if cid else ""),
+        "drop_no": ("cb", PR_DROP_NO),
         "more": ("cb", PR_HUB),
         "continue_photo": ("cb", f"{PR_CONT}{cid}" if cid else ""),
         "yes": ("cb", f"{PR_YES}{cid}:{token}"),
@@ -425,8 +437,13 @@ def card_keyboard(claim: dict[str, Any] | None = None) -> InlineKeyboardMarkup:
     )
 
 
-def resume_keyboard(status: str) -> InlineKeyboardMarkup:
-    return keyboard_for("resume", status=status)
+def resume_keyboard(status: str, claim: dict[str, Any] | None = None) -> InlineKeyboardMarkup:
+    data = claim or {}
+    return keyboard_for(
+        "resume",
+        status=str(status or data.get("status") or ""),
+        id=int(data.get("id") or 0),
+    )
 
 
 def confirm_keyboard(claim_id: int, token: int = 0) -> InlineKeyboardMarkup:
@@ -504,6 +521,35 @@ def need_photos_first_keyboard(have: int = 0) -> InlineKeyboardMarkup:
 
 def owner_no_confirm_keyboard() -> InlineKeyboardMarkup:
     return keyboard_for("owner_no_confirm", mine=True)
+
+
+def drop_confirm_keyboard(claim: dict[str, Any]) -> InlineKeyboardMarkup:
+    return keyboard_for("drop_confirm", id=int(claim.get("id") or 0))
+
+
+def dropped_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("dropped", mine=True)
+
+
+def admin_ended_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("admin_ended", mine=True)
+
+
+def group_blocked_keyboard() -> InlineKeyboardMarkup:
+    return keyboard_for("group_blocked", mine=True)
+
+
+def wrong_group_keyboard(rows: list[dict[str, Any]] | None = None) -> InlineKeyboardMarkup | None:
+    built: list[list[InlineKeyboardButton]] = []
+    for row in list(rows or [])[:8]:
+        uname = str(row.get("chat_username") or "").strip().lstrip("@")
+        if not uname:
+            continue
+        title = str(row.get("chat_title") or uname)[:28]
+        btn = _url(title, f"https://t.me/{uname}", ICON_OPEN or None)
+        if btn:
+            built.append([btn])
+    return InlineKeyboardMarkup(inline_keyboard=built) if built else None
 
 
 def accepted_keyboard(*, owner: bool = False) -> InlineKeyboardMarkup:
@@ -682,6 +728,16 @@ async def ensure_schema() -> None:
     )
     await p.execute(
         """
+        CREATE TABLE IF NOT EXISTS pr_chat_blocks (
+            chat_id BIGINT PRIMARY KEY,
+            until TIMESTAMPTZ NOT NULL,
+            reason TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    await p.execute(
+        """
         CREATE TABLE IF NOT EXISTS pr_sessions (
             user_id BIGINT PRIMARY KEY,
             claim_id BIGINT,
@@ -850,6 +906,77 @@ async def user_banned(user_id: int, chat_id: int) -> bool:
         int(user_id), int(chat_id),
     )
     return until is not None
+
+
+async def chat_block(chat_id: int) -> Optional[dict[str, Any]]:
+    p = await pool()
+    row = await p.fetchrow(
+        "SELECT * FROM pr_chat_blocks WHERE chat_id = $1 AND until > NOW()",
+        int(chat_id),
+    )
+    return dict(row) if row else None
+
+
+async def chat_blocked(chat_id: int) -> bool:
+    return await chat_block(chat_id) is not None
+
+
+async def set_chat_block(chat_id: int, *, days: int, reason: str = "") -> None:
+    days = max(1, int(days or 0))
+    p = await pool()
+    await p.execute(
+        """
+        INSERT INTO pr_chat_blocks (chat_id, until, reason, created_at)
+        VALUES ($1, NOW() + ($2 || ' days')::interval, $3, NOW())
+        ON CONFLICT (chat_id) DO UPDATE
+           SET until = EXCLUDED.until, reason = EXCLUDED.reason, created_at = NOW()
+        """,
+        int(chat_id), str(days), str(reason or ""),
+    )
+
+
+async def clear_chat_block(chat_id: int) -> None:
+    p = await pool()
+    await p.execute("DELETE FROM pr_chat_blocks WHERE chat_id = $1", int(chat_id))
+
+
+async def claims_waiting_confirm(user_id: int) -> list[dict[str, Any]]:
+    p = await pool()
+    rows = await p.fetch(
+        """
+        SELECT * FROM pr_claims
+         WHERE user_id = $1 AND status = ANY($2::text[])
+         ORDER BY updated_at DESC
+        """,
+        int(user_id), list(CONFIRM_WAIT_STATUSES),
+    )
+    return [_row(r) for r in rows]
+
+
+async def claim_for_user_chat(user_id: int, chat_id: int) -> Optional[dict[str, Any]]:
+    p = await pool()
+    return _row(await p.fetchrow(
+        """
+        SELECT * FROM pr_claims
+         WHERE user_id = $1 AND chat_id = $2 AND status = ANY($3::text[])
+         ORDER BY updated_at DESC
+         LIMIT 1
+        """,
+        int(user_id), int(chat_id), list(IN_PROGRESS_STATUSES),
+    ))
+
+
+async def wait_confirm_for_chat(chat_id: int) -> Optional[dict[str, Any]]:
+    p = await pool()
+    return _row(await p.fetchrow(
+        """
+        SELECT * FROM pr_claims
+         WHERE chat_id = $1 AND status = ANY($2::text[])
+         ORDER BY updated_at DESC
+         LIMIT 1
+        """,
+        int(chat_id), list(CONFIRM_WAIT_STATUSES),
+    ))
 
 
 def json_session_extra(extra: Optional[dict] = None) -> str:
@@ -1209,6 +1336,23 @@ async def _take_from_ladder(amount: int, bot=None) -> bool:
     return True
 
 
+async def _refund_to_ladder(amount: int, bot=None) -> None:
+    if int(amount or 0) <= 0:
+        return
+    from bot.config.config import TECH_CHAT_ID
+    from main import db
+    try:
+        if bot is not None:
+            await db.add_to_chatbalance(bot, TECH_CHAT_ID, int(amount))
+        else:
+            await db.pool.execute(
+                "UPDATE chat SET chatbalance = COALESCE(chatbalance, 0) + $2 WHERE chat_id = $1",
+                TECH_CHAT_ID, int(amount),
+            )
+    except Exception:
+        log.exception("ladder refund %s", amount)
+
+
 async def _give_to_chat(bot, chat_id: int, amount: int) -> None:
     from main import db
     if amount <= 0:
@@ -1282,15 +1426,33 @@ async def _fulfill_accept_locked(claim_id: int, *, bot) -> dict[str, Any]:
             seed_lock=split["table"],
         )
     until = claim.get("live_until") or (_now() + timedelta(days=term_days))
-    return await save_claim(
-        claim_id,
-        status=ST_LIVE,
-        accepted_at=claim.get("accepted_at") or _now(),
-        live_until=until,
-        term_days=term_days,
-        nika_on=bool(claim.get("nika_on")),
-        freeze=None,
+    done = await p.fetchrow(
+        """
+        UPDATE pr_claims
+           SET status = $2,
+               accepted_at = COALESCE(accepted_at, $3),
+               live_until = $4,
+               term_days = $5,
+               nika_on = $6,
+               freeze = NULL,
+               updated_at = NOW()
+         WHERE id = $1 AND status = $7
+     RETURNING *
+        """,
+        int(claim_id),
+        ST_LIVE,
+        claim.get("accepted_at") or _now(),
+        until,
+        term_days,
+        bool(claim.get("nika_on")),
+        ST_FULFILLING,
     )
+    if done:
+        return _row(done)
+    fresh = await claim_by_id(claim_id)
+    if fresh and fresh.get("status") in {ST_LIVE, ST_ENDING}:
+        return fresh
+    raise ValueError("Заявка снята до посева")
 
 
 async def accept_claim(
@@ -1401,7 +1563,24 @@ async def first_seen_ts(user_id: int) -> Optional[float]:
     return min(stamps) if stamps else None
 
 
+def _gift_user_lock(user_id: int) -> asyncio.Lock:
+    uid = int(user_id)
+    lock = _gift_grant_locks.get(uid)
+    if lock is None:
+        lock = asyncio.Lock()
+        _gift_grant_locks[uid] = lock
+    return lock
+
+
 async def maybe_grant_gift(bot, *, user_id: int, chat_id: int, name: str) -> Optional[int]:
+    """Один подарок за жизнь. Только живая группа, только новичок без своих кут."""
+    del name
+    uid = int(user_id)
+    async with _gift_user_lock(uid):
+        return await _maybe_grant_gift_locked(bot, user_id=uid, chat_id=int(chat_id))
+
+
+async def _maybe_grant_gift_locked(bot, *, user_id: int, chat_id: int) -> Optional[int]:
     claim = await live_claim_for_chat(chat_id)
     if not claim or claim.get("freeze"):
         return None
@@ -1434,35 +1613,103 @@ async def maybe_grant_gift(bot, *, user_id: int, chat_id: int, name: str) -> Opt
         return None
     if not await _take_from_ladder(size, bot=bot):
         return None
-    await _give_to_user(user_id, size, plain(say("history_gift")))
     p = await pool()
-    await p.execute(
+    ins = await p.fetchrow(
         """
         INSERT INTO pr_gifts (user_id, amount, chat_id, claim_id, granted_at)
         VALUES ($1, $2, $3, $4, NOW())
-        ON CONFLICT (user_id) DO UPDATE SET amount = pr_gifts.amount + $2
+        ON CONFLICT (user_id) DO NOTHING
+        RETURNING user_id
         """,
         int(user_id), size, int(chat_id), int(claim["id"]),
     )
-    await save_claim(int(claim["id"]), pool_left=int(claim["pool_left"]) - size)
-    return size
+    if not ins:
+        await _refund_to_ladder(size, bot)
+        return None
+    try:
+        await _give_to_user(user_id, size, plain(say("history_gift")))
+    except Exception:
+        log.exception("gift credit failed")
+        await p.execute("DELETE FROM pr_gifts WHERE user_id = $1 AND amount = $2", int(user_id), size)
+        await _refund_to_ladder(size, bot)
+        return None
+    took = await p.fetchrow(
+        """
+        UPDATE pr_claims
+           SET pool_left = pool_left - $2, updated_at = NOW()
+         WHERE id = $1
+           AND status = $3
+           AND COALESCE(pool_left, 0) >= $2
+           AND (freeze IS NULL OR freeze = '')
+     RETURNING pool_left
+        """,
+        int(claim["id"]), size, ST_LIVE,
+    )
+    if took:
+        return size
+    token = _GIFT_CLAW.set(True)
+    try:
+        current = await db.get_user_balance(int(user_id))
+        bal = int(current[0] if isinstance(current, tuple) else current or 0)
+        await p.execute("DELETE FROM pr_gifts WHERE user_id = $1", int(user_id))
+        claw = min(size, bal)
+        if claw > 0:
+            await db.update_user_balance(int(user_id), bal - claw)
+    except Exception:
+        log.exception("gift claw after pool miss")
+    finally:
+        _GIFT_CLAW.reset(token)
+    await _refund_to_ladder(size, bot)
+    return None
 
 
-async def consume_gift_bet(user_id: int, chat_id: int, bet: int) -> bool:
-    """Списать подарок на соло-ставку. False — ставка лезет в подарок не там."""
+async def consume_gift_bet(
+    user_id: int,
+    chat_id: int,
+    bet: int,
+    *,
+    solo: bool = True,
+    private: bool = False,
+) -> bool:
+    """Списать подарок на соло-ставку в своей группе. False — ставка лезет в подарок не там."""
     state = await gift_state(user_id)
     locked = int(state["amount"] or 0)
     if locked <= 0:
         return True
-    if int(state.get("chat_id") or 0) != int(chat_id):
+    from main import db
+    current = await db.get_user_balance(int(user_id))
+    bal = int(current[0] if isinstance(current, tuple) else current or 0)
+    if not bet_fits_gift_lock(
+        balance=bal,
+        bet=bet,
+        gift_amount=locked,
+        gift_chat_id=state.get("chat_id"),
+        play_chat_id=chat_id,
+        solo=solo,
+        private=private,
+    ):
         return False
+    if not gift_covers_this_play(
+        gift_chat_id=state.get("chat_id"),
+        play_chat_id=chat_id,
+        solo=solo,
+        private=private,
+    ):
+        return True
     take = min(locked, max(0, int(bet)))
+    if take <= 0:
+        return True
     p = await pool()
-    await p.execute(
-        "UPDATE pr_gifts SET amount = $2, last_bet = $3 WHERE user_id = $1",
-        int(user_id), locked - take, take,
+    row = await p.fetchrow(
+        """
+        UPDATE pr_gifts
+           SET amount = amount - $2, last_bet = $2
+         WHERE user_id = $1 AND amount >= $2 AND chat_id = $3
+     RETURNING amount
+        """,
+        int(user_id), take, int(chat_id),
     )
-    return True
+    return row is not None
 
 
 async def credit_gift_win(user_id: int, chat_id: int, net: int) -> None:
@@ -1605,53 +1852,85 @@ async def flush_digest(bot, claim: dict[str, Any]) -> None:
 
 async def end_claim(bot, claim: dict[str, Any], *, reason: str) -> None:
     from main import db
-    status = ST_ENDED if reason != "kicked" else ST_BURNED
-    chat_id = int(claim["chat_id"])
-    lock = int(claim.get("seed_lock") or 0)
-    nika_on = bool(claim.get("nika_on"))
-    if reason == "kicked" or not nika_on:
-        try:
-            bal = _as_int(await db.pool.fetchval(
-                "SELECT COALESCE(chatbalance, 0) FROM chat WHERE chat_id = $1", chat_id,
-            ))
-            take = min(lock, bal)
-            if take > 0:
-                await db.update_chat_balance_minus(chat_id, take)
-                from bot.config.config import TECH_CHAT_ID
-                await db.add_to_chatbalance(bot, TECH_CHAT_ID, take)
-        except Exception:
-            log.exception("return seed failed")
-        p = await pool()
-        gifts = await p.fetch(
-            "SELECT user_id, amount FROM pr_gifts WHERE claim_id = $1 AND amount > 0",
-            int(claim["id"]),
-        )
-        for g in gifts:
-            amt = _as_int(g["amount"])
-            uid = int(g["user_id"])
-            token = _GIFT_CLAW.set(True)
-            try:
-                current = await db.get_user_balance(uid)
-                bal = int(current[0] if isinstance(current, tuple) else current or 0)
-                claw = min(amt, bal)
-                await p.execute("UPDATE pr_gifts SET amount = 0, last_bet = 0 WHERE user_id = $1", uid)
-                if claw > 0:
-                    await db.update_user_balance(uid, bal - claw)
-                    from bot.config.config import TECH_CHAT_ID
-                    await db.add_to_chatbalance(bot, TECH_CHAT_ID, claw)
-            except Exception:
-                log.debug("claw gift failed", exc_info=True)
-            finally:
-                _GIFT_CLAW.reset(token)
-    await save_claim(
-        int(claim["id"]),
-        status=status,
-        ended_at=_now(),
-        seed_lock=0 if reason == "kicked" or not nika_on else claim.get("seed_lock"),
-        pool_left=0,
-        pending_pay=0,
-        freeze=None,
+    if reason == "kicked":
+        new_status = ST_BURNED
+    elif reason in {"drop", "admin", "user"}:
+        new_status = ST_CANCELLED
+    else:
+        new_status = ST_ENDED
+    cid = int(claim["id"])
+    p = await pool()
+    old = await p.fetchrow("SELECT * FROM pr_claims WHERE id = $1", cid)
+    if not old or str(old.get("status") or "") not in MONEY_UNWIND_STATUSES:
+        return
+    lock = _as_int(old.get("seed_lock"))
+    nika_on = bool(old.get("nika_on"))
+    chat_id = int(old["chat_id"])
+    moved = await p.fetchrow(
+        """
+        UPDATE pr_claims
+           SET status = $2,
+               ended_at = NOW(),
+               seed_lock = 0,
+               pool_left = 0,
+               pending_pay = 0,
+               freeze = NULL,
+               updated_at = NOW()
+         WHERE id = $1 AND status = $3
+     RETURNING id
+        """,
+        cid, new_status, old["status"],
     )
+    if not moved:
+        return
+    give_back = reason in {"kicked", "drop", "admin", "user"} or not nika_on
+    if not give_back:
+        return
+    try:
+        bal = _as_int(await db.pool.fetchval(
+            "SELECT COALESCE(chatbalance, 0) FROM chat WHERE chat_id = $1", chat_id,
+        ))
+        take = min(lock, bal)
+        if take > 0:
+            await db.update_chat_balance_minus(chat_id, take)
+            from bot.config.config import TECH_CHAT_ID
+            await db.add_to_chatbalance(bot, TECH_CHAT_ID, take)
+    except Exception:
+        log.exception("return seed failed")
+    gifts = await p.fetch(
+        "SELECT user_id, amount FROM pr_gifts WHERE claim_id = $1 AND amount > 0",
+        cid,
+    )
+    for g in gifts:
+        amt = _as_int(g["amount"])
+        uid = int(g["user_id"])
+        token = _GIFT_CLAW.set(True)
+        try:
+            current = await db.get_user_balance(uid)
+            bal = int(current[0] if isinstance(current, tuple) else current or 0)
+            claw = min(amt, bal)
+            await p.execute("UPDATE pr_gifts SET amount = 0, last_bet = 0 WHERE user_id = $1", uid)
+            if claw > 0:
+                await db.update_user_balance(uid, bal - claw)
+                from bot.config.config import TECH_CHAT_ID
+                await db.add_to_chatbalance(bot, TECH_CHAT_ID, claw)
+        except Exception:
+            log.debug("claw gift failed", exc_info=True)
+        finally:
+            _GIFT_CLAW.reset(token)
+
+
+async def drop_claim(bot, claim: dict[str, Any], *, reason: str = "drop") -> Optional[dict[str, Any]]:
+    """Снять заявку в любом открытом статусе. Посев и подарки не оставляем читить."""
+    async with _fulfill_lock:
+        fresh = await claim_by_id(int(claim["id"]))
+        if not fresh or str(fresh.get("status") or "") not in IN_PROGRESS_STATUSES:
+            return fresh
+        if str(fresh.get("status") or "") in MONEY_UNWIND_STATUSES:
+            await end_claim(bot, fresh, reason=reason)
+        else:
+            await cancel_claim(int(fresh["id"]))
+        return await claim_by_id(int(claim["id"]))
 
 
 async def try_quiet_nika(bot, claim: dict[str, Any]) -> int:
@@ -1880,7 +2159,15 @@ async def push_notice(user_id: int, kind: str, payload: Optional[dict] = None) -
 
 
 async def drain_notices(bot) -> None:
-    from pr_groups_logic import text_accepted, text_accepting, text_confirm_timeout, text_photos_expired, text_rejected
+    from pr_groups_logic import (
+        text_accepted,
+        text_accepting,
+        text_admin_ended,
+        text_confirm_timeout,
+        text_dropped,
+        text_photos_expired,
+        text_rejected,
+    )
     p = await pool()
     rows = await p.fetch("SELECT * FROM pr_notices ORDER BY created_at ASC, id ASC LIMIT 20")
     for row in rows:
@@ -1900,14 +2187,18 @@ async def drain_notices(bot) -> None:
                         bot, int(row["user_id"]),
                         text_accepted(days, role=role),
                         accepted_keyboard(owner=role == ROLE_OWNER),
+                        fresh=True,
                     )
                 else:
-                    sent = await deliver_dm(bot, int(row["user_id"]), text_accepting(), accepting_keyboard())
+                    sent = await deliver_dm(
+                        bot, int(row["user_id"]), text_accepting(), accepting_keyboard(), fresh=True,
+                    )
             elif kind == "accepted":
                 sent = await deliver_dm(
                     bot, int(row["user_id"]),
                     text_accepted(int(payload.get("termDays") or 14), role=str(payload.get("role") or "")),
                     accepted_keyboard(owner=str(payload.get("role") or "") == ROLE_OWNER),
+                    fresh=True,
                 )
             elif kind == "rejected":
                 can_fix = bool(payload.get("canFix"))
@@ -1915,11 +2206,23 @@ async def drain_notices(bot) -> None:
                     bot, int(row["user_id"]),
                     text_rejected(str(payload.get("text") or ""), can_fix=can_fix),
                     rejected_keyboard(can_fix=can_fix),
+                    fresh=True,
                 )
             elif kind == "photos_expired":
-                sent = await deliver_dm(bot, int(row["user_id"]), text_photos_expired(), photos_expired_keyboard())
+                sent = await deliver_dm(bot, int(row["user_id"]), text_photos_expired(), photos_expired_keyboard(), fresh=True)
             elif kind == "confirm_expired":
-                sent = await deliver_dm(bot, int(row["user_id"]), text_confirm_timeout(), confirm_timeout_keyboard())
+                sent = await deliver_dm(bot, int(row["user_id"]), text_confirm_timeout(), confirm_timeout_keyboard(), fresh=True)
+            elif kind == "admin_ended":
+                sent = await deliver_dm(
+                    bot, int(row["user_id"]),
+                    text_admin_ended(str(payload.get("title") or ""), str(payload.get("reason") or "")),
+                    admin_ended_keyboard(),
+                    fresh=True,
+                )
+            elif kind == "dropped":
+                sent = await deliver_dm(
+                    bot, int(row["user_id"]), text_dropped(), dropped_keyboard(), fresh=True,
+                )
             else:
                 sent = True
             if sent:
@@ -1954,6 +2257,13 @@ async def housekeep(bot) -> None:
                 })
         except Exception:
             log.exception("fulfill accept")
+    ending = await p.fetch("SELECT * FROM pr_claims WHERE status = $1", ST_ENDING)
+    for row in ending:
+        try:
+            async with _fulfill_lock:
+                await end_claim(bot, _row(row), reason="admin")
+        except Exception:
+            log.exception("end ending claim")
     await drain_notices(bot)
     photos = await p.fetch(
         """
@@ -1995,7 +2305,8 @@ async def housekeep(bot) -> None:
     for claim in lives:
         until = claim.get("live_until")
         if until and until <= _now():
-            await end_claim(bot, claim, reason="term")
+            async with _fulfill_lock:
+                await end_claim(bot, claim, reason="term")
             try:
                 from pr_groups_logic import text_term_end
                 await deliver_dm(bot, int(claim["user_id"]), text_term_end(), term_end_keyboard())

@@ -2022,72 +2022,84 @@ async def reject_if_bet_over_group_level(
     bet: int,
     *,
     is_free_play: bool = False,
+    is_solo: bool = True,
 ) -> bool:
     """Если ставка выше лимита уровня группы — отвечает и возвращает True.
 
     На бесплатные задания (is_free_play=True) система ★ не распространяется.
+    Подарочные куты: сначала сообщение о подарке, потом игра. Только соло в той группе.
     """
     try:
         if is_free_play:
             return False
-        cfg = get_settings()
-        if not cfg.get("enabled", True):
-            return False
         chat = getattr(message, "chat", None)
-        if chat is None or str(getattr(chat, "type", "") or "") == "private":
-            return False
-        chat_id = int(chat.id)
-        try:
-            from bot.funcs import pr_groups as _pr
-            from bot.handlers.pr_groups import send_gift_locked, send_gift_notice
-            uid = int(getattr(getattr(message, "from_user", None), "id", 0) or 0)
-            if uid and int(bet) > 0:
+        chat_type = str(getattr(chat, "type", "") or "")
+        is_private = chat is None or chat_type == "private"
+        chat_id = None if is_private or chat is None else int(chat.id)
+        uid = int(getattr(getattr(message, "from_user", None), "id", 0) or 0)
+        name = getattr(getattr(message, "from_user", None), "first_name", "") or "игрок"
+
+        if uid and int(bet) > 0 and is_solo and not is_private and chat_id:
+            try:
+                from bot.funcs import pr_groups as _pr
+                from bot.handlers.pr_groups import send_gift_notice
                 granted = await _pr.maybe_grant_gift(
                     getattr(message, "bot", None),
-                    user_id=uid, chat_id=chat_id,
-                    name=getattr(getattr(message, "from_user", None), "first_name", "") or "игрок",
+                    user_id=uid, chat_id=chat_id, name=name,
                 )
                 if granted:
-                    await send_gift_notice(
-                        message, uid,
-                        getattr(message.from_user, "first_name", "") or "игрок",
-                        int(granted),
-                    )
-                if not await _pr.consume_gift_bet(uid, chat_id, int(bet)):
-                    await send_gift_locked(message)
-                    return True
-        except Exception as _pr_exc:
-            print(f"[GBL] pr gift hook: {_pr_exc!r}")
-        atmo = 0.0
-        _db = None
-        try:
-            from main import db as _db
-            # подтягиваем актуальный уровень из chat перед проверкой лимита
-            await get_chat_level_async(chat_id, db=_db)
-            atmo = await resolve_atmosphere_pct(chat_id, db=_db)
-        except Exception:
+                    await send_gift_notice(message, uid, name, int(granted))
+            except Exception as _pr_exc:
+                print(f"[GBL] pr gift grant: {_pr_exc!r}")
+
+        cfg = get_settings()
+        cap_hit = False
+        cap = None
+        if cfg.get("enabled", True) and not is_private and chat_id is not None:
             atmo = 0.0
-        cap = effective_stake_cap(chat_id, atmosphere_pct=atmo, cfg=cfg)
-        if cap is None:
-            return False
-        if int(bet) <= int(cap):
-            return False
-        level = get_chat_level(chat_id)
-        cta = raise_cta_label(chat_id, cfg, atmosphere_pct=atmo) or "Поднять лимит"
-        text = (
-            f"{gbl_tg('⭐️')} <b>Ставка больше лимита</b>\n"
-            f"в группе сейчас лимит <b>до {cap}</b> · {stars_label(level)}\n"
-            f"поднять: напишите <b>бч</b> → «{cta}»\n"
-            f"<tg-spoiler>бесплатные задания — без этого лимита</tg-spoiler>"
-        )
-        try:
-            await message.reply(text, **GBL_MSG_KW)
-        except Exception:
-            await message.reply(
-                f"Лимит группы до {cap}.\nбч → «{cta}».",
-                disable_web_page_preview=True,
-            )
-        return True
+            try:
+                from main import db as _db
+                await get_chat_level_async(chat_id, db=_db)
+                atmo = await resolve_atmosphere_pct(chat_id, db=_db)
+            except Exception:
+                atmo = 0.0
+            cap = effective_stake_cap(chat_id, atmosphere_pct=atmo, cfg=cfg)
+            if cap is not None and int(bet) > int(cap):
+                cap_hit = True
+                level = get_chat_level(chat_id)
+                cta = raise_cta_label(chat_id, cfg, atmosphere_pct=atmo) or "Поднять лимит"
+                text = (
+                    f"{gbl_tg('⭐️')} <b>Ставка больше лимита</b>\n"
+                    f"в группе сейчас лимит <b>до {cap}</b> · {stars_label(level)}\n"
+                    f"поднять: напишите <b>бч</b> → «{cta}»\n"
+                    f"<tg-spoiler>бесплатные задания — без этого лимита</tg-spoiler>"
+                )
+                try:
+                    await message.reply(text, **GBL_MSG_KW)
+                except Exception:
+                    await message.reply(
+                        f"Лимит группы до {cap}.\nбч → «{cta}».",
+                        disable_web_page_preview=True,
+                    )
+
+        if uid and int(bet) > 0 and not cap_hit:
+            try:
+                from bot.funcs import pr_groups as _pr
+                from bot.handlers.pr_groups import send_gift_locked
+                if is_private or not is_solo:
+                    if await _pr.gift_blocks_other_spend(uid, int(bet)):
+                        await send_gift_locked(message)
+                        return True
+                elif chat_id is not None:
+                    if not await _pr.consume_gift_bet(
+                        uid, chat_id, int(bet), solo=is_solo, private=is_private,
+                    ):
+                        await send_gift_locked(message)
+                        return True
+            except Exception as _pr_exc:
+                print(f"[GBL] pr gift consume: {_pr_exc!r}")
+
+        return bool(cap_hit)
     except Exception as e:
         print(f"[GBL] stake reject failed: {e!r}")
         return False

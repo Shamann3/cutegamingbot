@@ -2222,6 +2222,18 @@ export async function togglePrNika(id) {
   return adminFetch(`/pr-groups/claim/${id}/nika`, { method: 'POST', body: {} })
 }
 
+export async function stopPrGroup(id, { days = 0, reason = '' } = {}) {
+  return adminFetch(`/pr-groups/claim/${id}/stop`, { method: 'POST', body: { days, reason } })
+}
+
+export async function blockPrChat(chatId, { days = 7, reason = '' } = {}) {
+  return adminFetch(`/pr-groups/chats/${chatId}/block`, { method: 'POST', body: { days, reason } })
+}
+
+export async function unblockPrChat(chatId) {
+  return adminFetch(`/pr-groups/chats/${chatId}/unblock`, { method: 'POST', body: {} })
+}
+
 export async function fetchPrSettings() {
   return adminFetch('/pr-groups/settings')
 }

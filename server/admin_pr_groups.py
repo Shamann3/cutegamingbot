@@ -16,9 +16,13 @@ from pr_groups_logic import (
     CLAIM_COLUMNS,
     DEFAULT_REJECT_REASONS,
     DEFAULT_TERM_DAYS,
+    IN_PROGRESS_STATUSES,
     MAX_LIVE_SEEDS,
+    MONEY_UNWIND_STATUSES,
     PHOTO_HINTS,
     ST_ACCEPTING,
+    ST_CANCELLED,
+    ST_ENDING,
     ST_FULFILLING,
     ST_LIVE,
     ST_PENDING,
@@ -115,6 +119,12 @@ async def ensure_pr_schema() -> None:
             claim_id BIGINT NOT NULL,
             bound_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS pr_chat_blocks (
+            chat_id BIGINT PRIMARY KEY,
+            until TIMESTAMPTZ NOT NULL,
+            reason TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
         """
     )
     for col, spec in CLAIM_COLUMNS:
@@ -205,6 +215,14 @@ async def _public_claim(row) -> dict[str, Any]:
         "SELECT COALESCE(chatbalance, 0)::bigint AS b FROM chat WHERE chat_id = $1",
         int(data["chat_id"]),
     )
+    block = None
+    try:
+        block = await db.pool.fetchrow(
+            "SELECT until, reason FROM pr_chat_blocks WHERE chat_id = $1 AND until > NOW()",
+            int(data["chat_id"]),
+        )
+    except Exception:
+        block = None
     gifts = await _try_int(
         "SELECT COUNT(*) FROM pr_gifts WHERE claim_id = $1 AND amount > 0",
         int(data["id"]),
@@ -265,6 +283,8 @@ async def _public_claim(row) -> dict[str, Any]:
         "rejectText": data.get("reject_text") or "",
         "chatBalance": _as_int(chat_row["b"]) if chat_row else 0,
         "alreadyKnown": bool(chat_row),
+        "blockedUntil": _iso(block["until"]) if block else None,
+        "blockReason": (block["reason"] or "") if block else "",
     }
 
 
@@ -281,6 +301,16 @@ class RejectBody(BaseModel):
 
 class SettingsBody(BaseModel):
     rejectReasons: list[dict[str, str]] = []
+
+
+class StopBody(BaseModel):
+    days: int = Field(default=0, ge=0, le=366)
+    reason: str = ""
+
+
+class BlockBody(BaseModel):
+    days: int = Field(default=7, ge=1, le=366)
+    reason: str = ""
 
 
 @router.get("/overview")
@@ -310,7 +340,8 @@ async def queue(admin=Depends(require_admin_session)):
 async def live(admin=Depends(require_admin_session)):
     await ensure_pr_schema()
     rows = await db.pool.fetch(
-        "SELECT * FROM pr_claims WHERE status = 'live' ORDER BY accepted_at DESC NULLS LAST"
+        "SELECT * FROM pr_claims WHERE status = ANY($1::text[]) ORDER BY accepted_at DESC NULLS LAST",
+        [ST_LIVE, ST_ENDING],
     )
     return {"items": [await _public_claim(r) for r in rows]}
 
@@ -501,6 +532,122 @@ async def toggle_nika(claim_id: int, admin=Depends(require_admin_session)):
     if not row:
         raise HTTPException(404, "Нет живой группы")
     return {"nikaOn": bool(row["nika_on"])}
+
+
+async def _set_chat_block(chat_id: int, *, days: int, reason: str) -> None:
+    days = max(1, int(days or 0))
+    await db.pool.execute(
+        """
+        INSERT INTO pr_chat_blocks (chat_id, until, reason, created_at)
+        VALUES ($1, NOW() + ($2 || ' days')::interval, $3, NOW())
+        ON CONFLICT (chat_id) DO UPDATE
+           SET until = EXCLUDED.until, reason = EXCLUDED.reason, created_at = NOW()
+        """,
+        int(chat_id), str(days), str(reason or ""),
+    )
+
+
+@router.post("/claim/{claim_id}/stop")
+async def stop_claim(claim_id: int, body: StopBody, admin=Depends(require_admin_session)):
+    await ensure_pr_schema()
+    row = await db.pool.fetchrow("SELECT * FROM pr_claims WHERE id = $1", int(claim_id))
+    if not row:
+        raise HTTPException(404, "Нет заявки")
+    status = str(row["status"] or "")
+    reason = str(body.reason or "").strip()
+    if int(body.days or 0) > 0:
+        await _set_chat_block(int(row["chat_id"]), days=int(body.days), reason=reason)
+    if status == ST_ENDING:
+        claim = await db.pool.fetchrow("SELECT * FROM pr_claims WHERE id = $1", int(claim_id))
+        return {"ok": True, "status": ST_ENDING, "claim": await _public_claim(claim) if claim else None}
+    if status in MONEY_UNWIND_STATUSES:
+        await db.pool.execute(
+            """
+            UPDATE pr_claims
+               SET status = $2, updated_at = NOW()
+             WHERE id = $1 AND status = ANY($3::text[])
+            """,
+            int(claim_id), ST_ENDING, list(MONEY_UNWIND_STATUSES),
+        )
+        await db.pool.execute(
+            "INSERT INTO pr_notices (user_id, kind, payload) VALUES ($1, $2, $3::jsonb)",
+            int(row["user_id"]),
+            "admin_ended",
+            json.dumps(
+                {
+                    "title": row["chat_title"] or str(row["chat_id"]),
+                    "reason": reason,
+                    "claimId": int(claim_id),
+                },
+                ensure_ascii=False,
+            ),
+        )
+    elif status in IN_PROGRESS_STATUSES:
+        await db.pool.execute(
+            """
+            UPDATE pr_claims
+               SET status = $2, ended_at = NOW(), updated_at = NOW()
+             WHERE id = $1 AND status = ANY($3::text[])
+            """,
+            int(claim_id), ST_CANCELLED, list(IN_PROGRESS_STATUSES - MONEY_UNWIND_STATUSES),
+        )
+        await db.pool.execute(
+            "INSERT INTO pr_notices (user_id, kind, payload) VALUES ($1, $2, $3::jsonb)",
+            int(row["user_id"]),
+            "admin_ended",
+            json.dumps(
+                {
+                    "title": row["chat_title"] or str(row["chat_id"]),
+                    "reason": reason,
+                    "claimId": int(claim_id),
+                },
+                ensure_ascii=False,
+            ),
+        )
+    if int(body.days or 0) > 0:
+        await _set_chat_block(int(row["chat_id"]), days=int(body.days), reason=reason)
+    claim = await db.pool.fetchrow("SELECT * FROM pr_claims WHERE id = $1", int(claim_id))
+    return {"ok": True, "status": claim["status"] if claim else status, "claim": await _public_claim(claim) if claim else None}
+
+
+@router.post("/chats/{chat_id}/block")
+async def block_chat(chat_id: int, body: BlockBody, admin=Depends(require_admin_session)):
+    await ensure_pr_schema()
+    await _set_chat_block(int(chat_id), days=int(body.days), reason=str(body.reason or "").strip())
+    live = await db.pool.fetch(
+        "SELECT * FROM pr_claims WHERE chat_id = $1 AND status = ANY($2::text[])",
+        int(chat_id), list(MONEY_UNWIND_STATUSES),
+    )
+    reason = str(body.reason or "").strip()
+    for row in live:
+        await db.pool.execute(
+            """
+            UPDATE pr_claims SET status = $2, updated_at = NOW()
+             WHERE id = $1 AND status = ANY($3::text[])
+            """,
+            int(row["id"]), ST_ENDING, list(MONEY_UNWIND_STATUSES),
+        )
+        await db.pool.execute(
+            "INSERT INTO pr_notices (user_id, kind, payload) VALUES ($1, $2, $3::jsonb)",
+            int(row["user_id"]),
+            "admin_ended",
+            json.dumps(
+                {
+                    "title": row["chat_title"] or str(row["chat_id"]),
+                    "reason": reason,
+                    "claimId": int(row["id"]),
+                },
+                ensure_ascii=False,
+            ),
+        )
+    return {"ok": True, "chatId": int(chat_id), "days": int(body.days)}
+
+
+@router.post("/chats/{chat_id}/unblock")
+async def unblock_chat(chat_id: int, admin=Depends(require_admin_session)):
+    await ensure_pr_schema()
+    await db.pool.execute("DELETE FROM pr_chat_blocks WHERE chat_id = $1", int(chat_id))
+    return {"ok": True, "chatId": int(chat_id)}
 
 
 @router.get("/settings")

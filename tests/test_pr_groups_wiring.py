@@ -342,6 +342,31 @@ def test_gift_lock_hooks_exist():
     assert "if sent:" in core
     assert "fresh: bool = False" in core
     assert "return True" in core
+    assert "pr_chat_blocks" in core
+    assert "PR_DROP_YES" in core
+    assert "prg:z:" in core
+    assert "drop_claim" in core
+    assert "wait_confirm_for_chat" in core
+    assert "wrong_group_keyboard" in core
+    assert "ST_ENDING" in core
+    assert "on_drop_yes" in handlers
+    assert "text_creator_typed_confirm" in handlers
+    assert "wrong_group_keyboard" in handlers
+    assert "text_group_blocked" in handlers
+    assert "stopPrGroup" in (ROOT / "admin" / "src" / "lib" / "adminClient.js").read_text(encoding="utf-8")
+    admin_api = (ROOT / "server" / "admin_pr_groups.py").read_text(encoding="utf-8")
+    assert "pr_chat_blocks" in admin_api
+    assert "/claim/{claim_id}/stop" in admin_api
+    assert "blockedUntil" in admin_api
+    ui = (ROOT / "admin" / "src" / "pages" / "sections" / "PrGroupsSection.jsx").read_text(encoding="utf-8")
+    assert "prg-kut-label" in ui
+    assert "<MoneyHint" in ui
+    assert ui.index("<MoneyHint") > ui.index("Всего кут")
+    assert "stopPrGroup" in ui
+    gbl = (ROOT / "bot" / "funcs" / "group_balance_level.py").read_text(encoding="utf-8")
+    assert "maybe_grant_gift" in gbl
+    assert "consume_gift_bet" in gbl
+    assert "cap_hit" in gbl
 
 
 def test_session_extra_json_serializes_datetime_and_enum():
@@ -365,3 +390,24 @@ def test_session_extra_json_serializes_datetime_and_enum():
     assert payload["type"] == "supergroup"
     assert payload["joined_at"].startswith("2026-09-21T01:28:13")
     assert "2026-09-21" in payload["nested"]["when"]
+
+
+def test_wrong_group_keyboard_one_url_per_button():
+    from bot.funcs.pr_groups import card_keyboard, drop_confirm_keyboard, wrong_group_keyboard
+
+    kb = wrong_group_keyboard([
+        {"chat_username": "alpha", "chat_title": "Альфа"},
+        {"chat_username": "beta", "chat_title": "Бета"},
+        {"chat_username": "", "chat_title": "без ссылки"},
+    ])
+    rows = kb.inline_keyboard
+    assert len(rows) == 2
+    assert all(len(row) == 1 for row in rows)
+    assert rows[0][0].url == "https://t.me/alpha"
+    assert rows[1][0].url == "https://t.me/beta"
+    drop = drop_confirm_keyboard({"id": 9, "chat_title": "Друзья"})
+    datas = [getattr(btn, "callback_data", "") or "" for row in drop.inline_keyboard for btn in row]
+    assert any(d.startswith("prg:z:9") for d in datas)
+    card = card_keyboard({"id": 4, "status": "live", "chat_username": "x"})
+    datas = [getattr(btn, "callback_data", "") or "" for row in card.inline_keyboard for btn in row]
+    assert "prg:x:4" in datas

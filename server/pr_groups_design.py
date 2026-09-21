@@ -29,11 +29,11 @@ ACTIONS = frozenset({
     "owner", "reco", "earnings", "groups", "add_bot", "cant", "check",
     "public", "admin", "open_group", "wrote", "undo", "cancel", "more",
     "continue_photo", "yes", "no_confirm", "back_hub", "back_tasks",
-    "back_how", "back_mine", "open_claim", "pick_group",
+    "back_how", "back_mine", "open_claim", "pick_group", "drop_yes", "drop_no",
 })
 WHEN = frozenset({
     "always", "live", "mine", "not_live", "reco", "no_public", "no_admin",
-    "have_photos", "has_username", "photos", "wait_confirm", "pending",
+    "have_photos", "has_username", "photos", "wait_confirm", "pending", "open",
 })
 COLORS = frozenset({"default", "primary", "success", "danger"})
 
@@ -234,6 +234,7 @@ STATUS = {
     "accepting": "посев идёт",
     "fulfilling": "посев идёт",
     "live": "идёт заработок",
+    "ending": "снимаем группу",
     "ended": "срок вышел",
     "rejected": "не приняли",
     "burned": "Кут убрали",
@@ -249,6 +250,7 @@ STATUS_SHORT = {
     "accepting": "посев",
     "fulfilling": "посев",
     "live": "идёт",
+    "ending": "снимаем",
     "ended": "срок",
     "rejected": "не приняли",
     "burned": "убрали",
@@ -1401,22 +1403,10 @@ SCREENS: dict[str, dict] = {
                 when='photos',
             ),
             b(
-                text="Снять заявку",
+                text="Снять группу",
                 icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
                 go='cancel',
-                when='photos',
-            ),
-            b(
-                text="Снять заявку",
-                icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
-                go='cancel',
-                when='wait_confirm',
-            ),
-            b(
-                text="Снять заявку",
-                icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
-                go='cancel',
-                when='pending',
+                when='open',
             ),
             b(
                 text="Назад",
@@ -1600,10 +1590,103 @@ SCREENS: dict[str, dict] = {
         text="""
         <b>Не та группа</b>
 
-        <blockquote><b><i>«Подтверждение» работает только в сданном чате.</i></b></blockquote>
+        <blockquote><b><i>«Подтверждение» пишут только в том чате, куда вы привели Кут. Кнопки ниже - эти группы. Одна кнопка - одна ссылка.</i></b></blockquote>
 
-        <i>Напишите его в той группе, куда добавляли Кут.</i>
+        <i>Откройте нужную группу и напишите там <code>подтверждение</code>.</i>
         """,
+    ),
+
+    'confirm_not_needed': msg(
+        emoji="""<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji>""",
+        text="""
+        <b>Здесь подтверждение уже не нужно</b>
+
+        <blockquote><b><i>Эта группа уже в работе. Слово «подтверждение» пишут только пока заявка ждёт ответ создателя.</i></b></blockquote>
+        """,
+    ),
+
+    'creator_typed_confirm': msg(
+        emoji="""<tg-emoji emoji-id='5442949339108366200'>🌟</tg-emoji>""",
+        text="""
+        <b>Вам писать это не нужно</b>
+
+        <blockquote><b><i>Вы создатель этой группы. Подтверждение пишет тот, кто привёл Кут. Вам нужно нажать <u>Да</u> или <u>Нет</u> под его сообщением, если оно уже есть.</i></b></blockquote>
+        """,
+    ),
+
+    'drop_confirm': msg(
+        emoji="""<tg-emoji emoji-id='5305629674058061875'>🐈‍⬛</tg-emoji>""",
+        text="""
+        <b>Снять «{name}»?</b>
+
+        <blockquote><b><i>Посевные куты с баланса группы вернутся. Подарочные куты у новичков сгорят. Новые начисления с этой группы остановятся. Уже выплаченное вам останется.</i></b></blockquote>
+
+        <i>Это нельзя отменить.</i>
+        """,
+        buttons=[
+            b(
+                text="Да, снять",
+                icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
+                color='danger',
+                go='drop_yes',
+            ),
+            b(
+                text="Оставить",
+                icon="""<tg-emoji emoji-id='5226660202035554522'>↩️</tg-emoji>""",
+                go='drop_no',
+            ),
+        ],
+    ),
+
+    'dropped': msg(
+        emoji="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
+        text="""
+        <b>Группу сняли</b>
+
+        <blockquote><b><i>Посевные куты вернулись. Подарки новичков сгорели. С этой группы больше ничего не капает.</i></b></blockquote>
+
+        <i>Другая группа - с главного меню.</i>
+        """,
+        buttons=[ b(
+            text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
+            when='mine' , ) , b(
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
+        ],
+    ),
+
+    'admin_ended': msg(
+        emoji="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
+        text="""
+        <b>Группу «{name}» сняли в проекте</b>
+
+        <blockquote><b><i>{reason} Посевные куты вернулись. Подарки новичков сгорели. Новые начисления с этой группы остановлены.</i></b></blockquote>
+
+        <i>Статус - в «Мои группы».</i>
+        """,
+        buttons=[ b(
+            text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
+            when='mine' , ) , b(
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
+        ],
+    ),
+
+    'group_blocked': msg(
+        emoji="""<tg-emoji emoji-id='5271929616896921139'>🪨</tg-emoji>""",
+        text="""
+        <b>Эту группу сейчас нельзя сдавать</b>
+
+        <blockquote><b><i>Проект закрыл приём этой группы на время. Другую группу сдать можно.</i></b></blockquote>
+
+        <i>Выберите другой чат.</i>
+        """,
+        buttons=[ b(
+            text="Мои группы" , icon="""<tg-emoji emoji-id='5458561205926908268'>👁</tg-emoji>""" , go='groups' ,
+            when='mine' , ) , b(
+            text="Назад, в главное меню" , icon="""<tg-emoji emoji-id='5375364347918827433'>👋</tg-emoji>""" ,
+            color='primary' , go='back_hub' , ) ,
+        ],
     ),
 
     'need_photos_first': msg(
@@ -1947,14 +2030,8 @@ SCREENS: dict[str, dict] = {
         <blockquote><b><i>Заявка не потерялась - продолжаем с того же шага.</i></b></blockquote>
         """,
         buttons=[b(
-            text="Снять заявку" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' ,
-            when='photos' , ) ,
-            b(
-                text="Снять заявку",
-                icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""",
-                go='cancel',
-                when='wait_confirm',
-            ),
+            text="Снять группу" , icon="""<tg-emoji emoji-id='5388711744770171046'>👋</tg-emoji>""" , go='cancel' ,
+            when='open' , ) ,
             b(
                 text="Мои группы",
                 icon="""<tg-emoji emoji-id='5192951739623447936'>👥</tg-emoji>""",

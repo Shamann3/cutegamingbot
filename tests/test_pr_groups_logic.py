@@ -295,7 +295,28 @@ def test_left_days_bands():
 def test_confirm_words():
     assert looks_like_confirm("Подтверждение")
     assert looks_like_confirm("подтвердить")
+    assert looks_like_confirm("подтвердить.")
+    assert looks_like_confirm("  ПОДТВЕРДИ  ")
     assert not looks_like_confirm("привет")
+
+
+def test_gift_lock_cannot_leave_gift_group():
+    from pr_groups_logic import bet_fits_gift_lock, gift_covers_this_play, own_kut_amount
+
+    assert own_kut_amount(20, 8) == 12
+    assert gift_covers_this_play(gift_chat_id=-100, play_chat_id=-100, solo=True, private=False)
+    assert not gift_covers_this_play(gift_chat_id=-100, play_chat_id=-200, solo=True, private=False)
+    assert not gift_covers_this_play(gift_chat_id=-100, play_chat_id=-100, solo=True, private=True)
+    assert not gift_covers_this_play(gift_chat_id=-100, play_chat_id=-100, solo=False, private=False)
+    assert bet_fits_gift_lock(balance=20, bet=15, gift_amount=8, gift_chat_id=-100, play_chat_id=-100)
+    assert not bet_fits_gift_lock(balance=20, bet=15, gift_amount=8, gift_chat_id=-100, play_chat_id=-200)
+    assert bet_fits_gift_lock(balance=20, bet=10, gift_amount=8, gift_chat_id=-100, play_chat_id=-200)
+    assert bet_fits_gift_lock(
+        balance=20, bet=5, gift_amount=8, gift_chat_id=-100, play_chat_id=-100, private=True,
+    )
+    assert not bet_fits_gift_lock(
+        balance=20, bet=15, gift_amount=8, gift_chat_id=-100, play_chat_id=-100, private=True,
+    )
 
 
 def test_parse_group_ref():
@@ -452,7 +473,12 @@ def test_each_pr_message_has_one_unique_premium_emoji():
         text_confirm_prompt,
         text_confirm_timeout,
         text_confirm_yes,
+        text_confirm_not_needed,
+        text_creator_typed_confirm,
         text_digest,
+        text_drop_confirm,
+        text_dropped,
+        text_admin_ended,
         text_earnings,
         text_entry,
         text_forward_no_group,
@@ -461,6 +487,7 @@ def test_each_pr_message_has_one_unique_premium_emoji():
         text_gift,
         text_gift_locked,
         text_group_busy,
+        text_group_blocked,
         text_group_card,
         text_group_not_found,
         text_how,
@@ -492,6 +519,12 @@ def test_each_pr_message_has_one_unique_premium_emoji():
         text_wait_photo,
         text_wrong_group,
         text_wrote_confirm,
+        text_confirm_not_needed,
+        text_creator_typed_confirm,
+        text_drop_confirm,
+        text_dropped,
+        text_admin_ended,
+        text_group_blocked,
     )
 
     live = {
@@ -567,6 +600,12 @@ def test_each_pr_message_has_one_unique_premium_emoji():
         text_not_creator(),
         text_confirm_expired(),
         text_wrong_group(),
+        text_confirm_not_needed(),
+        text_creator_typed_confirm(),
+        text_drop_confirm("Друзья"),
+        text_dropped(),
+        text_admin_ended("Друзья", "Проект снял эту группу."),
+        text_group_blocked(),
         text_need_photos_first(),
         text_term_end(),
         text_rejected("Мало людей", can_fix=True),

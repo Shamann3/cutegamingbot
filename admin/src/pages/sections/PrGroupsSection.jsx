@@ -8,6 +8,7 @@ import { CopyableId, CopyableUsername } from '../../components/Copyable'
 import { useIsPhone } from '../../lib/useIsDesktop'
 import {
   acceptPrGroup,
+  blockPrChat,
   fetchPrArchive,
   fetchPrClaim,
   fetchPrLive,
@@ -18,7 +19,9 @@ import {
   fetchPrSettings,
   rejectPrGroup,
   savePrSettings,
+  stopPrGroup,
   togglePrNika,
+  unblockPrChat,
 } from '../../lib/adminClient'
 
 const TABS = [
@@ -54,6 +57,7 @@ function statusLabel(status, freeze) {
     accepting: 'посев',
     fulfilling: 'посев',
     live: 'живая',
+    ending: 'снимаем',
     rejected: 'отказ',
     ended: 'срок вышел',
     burned: 'сгорела',
@@ -138,6 +142,8 @@ function Facts({ item }) {
     ['Подтверждена', when(item.confirmedAt)],
     ['Принята', when(item.acceptedAt)],
     ['Жива до', when(item.liveUntil)],
+    ['Приём закрыт до', item.blockedUntil ? when(item.blockedUntil) : 'нет'],
+    ['Почему закрыт', item.blockReason || '—'],
     ['Обновлена', when(item.updatedAt)],
   ]
   return (
@@ -159,6 +165,7 @@ function ClaimCard({ item, settings, onBack, onChanged, onItem, onOpenPerson, ca
   const [nikaOn, setNikaOn] = useState(Boolean(item.nikaOn))
   const [reasons, setReasons] = useState([])
   const [custom, setCustom] = useState('')
+  const [stopReason, setStopReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [viewer, setViewer] = useState(null)
   const wasSeed = useRef(item.status)
@@ -171,6 +178,7 @@ function ClaimCard({ item, settings, onBack, onChanged, onItem, onOpenPerson, ca
   const overBudget = seedNum > (item.money?.spendable || 0) || seedNum > (item.money?.weeklyLeft || 0)
   const seeding = SEEDING.has(item.status)
   const pending = item.status === 'pending'
+  const canStop = ['pending', 'live', 'accepting', 'fulfilling', 'photos', 'wait_confirm', 'confirm_retry', 'ending'].includes(item.status)
 
   useEffect(() => {
     const prev = wasSeed.current
@@ -252,7 +260,6 @@ function ClaimCard({ item, settings, onBack, onChanged, onItem, onOpenPerson, ca
         <p className="nika-help">Кадров ещё нет</p>
       )}
 
-      <MoneyHint money={item.money} rec={canDecide && pending ? rec : item.recommend} />
       <Facts item={item} />
 
       {canDecide && pending ? (
@@ -262,8 +269,9 @@ function ClaimCard({ item, settings, onBack, onChanged, onItem, onOpenPerson, ca
               Срок, дней
               <input value={term} onChange={(e) => setTerm(e.target.value.replace(/[^\d]/g, ''))} inputMode="numeric" />
             </label>
-            <label>
+            <label className="prg-kut-label">
               Всего кут
+              <MoneyHint money={item.money} rec={rec} />
               <input value={seed} onChange={(e) => setSeed(e.target.value.replace(/[^\d]/g, ''))} inputMode="numeric" />
             </label>
           </div>
@@ -302,7 +310,7 @@ function ClaimCard({ item, settings, onBack, onChanged, onItem, onOpenPerson, ca
               disabled={busy || overBudget}
               onClick={() => decide(
                 () => acceptPrGroup(item.id, { seed: seedNum, termDays: Number(term) || 14, nikaOn }),
-                'Принято, бот шлёт посев',
+                'Принято, бот шлёт посев и напишет в личку',
                 { stay: true },
               )}
             >
@@ -334,6 +342,75 @@ function ClaimCard({ item, settings, onBack, onChanged, onItem, onOpenPerson, ca
           >
             {item.nikaOn ? 'Тихий долив включён' : 'Тихий долив выкл'}
           </button>
+        </div>
+      ) : null}
+
+      {item.blockedUntil ? (
+        <p className="prg-flag is-warn">
+          Приём этой группы закрыт до {when(item.blockedUntil)}
+          {item.blockReason ? ` · ${item.blockReason}` : ''}
+        </p>
+      ) : null}
+
+      {canStop || item.chatId ? (
+        <div className="prg-stop">
+          {canStop ? (
+            <>
+              <label className="prg-stop-reason">
+                Почему снимаем
+                <input value={stopReason} onChange={(e) => setStopReason(e.target.value)} placeholder="Коротко, увидит заявитель" />
+              </label>
+              <button
+                type="button"
+                className="nika-btn nika-btn-danger"
+                disabled={busy}
+                onClick={() => decide(() => stopPrGroup(item.id, { days: 0, reason: stopReason }), 'Группу снимаем', { stay: true })}
+              >
+                Снять с программы
+              </button>
+              {[7, 14, 31].map((days) => (
+                <button
+                  key={days}
+                  type="button"
+                  className="nika-btn nika-btn-danger"
+                  disabled={busy}
+                  onClick={() => decide(
+                    () => stopPrGroup(item.id, { days, reason: stopReason }),
+                    `Сняли и закрыли на ${days} дн.`,
+                    { stay: true },
+                  )}
+                >
+                  Снять и закрыть на {days} дн.
+                </button>
+              ))}
+            </>
+          ) : null}
+          {item.blockedUntil ? (
+            <button
+              type="button"
+              className="nika-btn"
+              disabled={busy}
+              onClick={() => decide(() => unblockPrChat(item.chatId), 'Приём снова открыт', { stay: true })}
+            >
+              Открыть приём
+            </button>
+          ) : item.chatId && !canStop ? (
+            [7, 14, 31].map((days) => (
+              <button
+                key={`block-${days}`}
+                type="button"
+                className="nika-btn"
+                disabled={busy}
+                onClick={() => decide(
+                  () => blockPrChat(item.chatId, { days, reason: stopReason }),
+                  `Приём закрыт на ${days} дн.`,
+                  { stay: true },
+                )}
+              >
+                Закрыть приём на {days} дн.
+              </button>
+            ))
+          ) : null}
         </div>
       ) : null}
 
