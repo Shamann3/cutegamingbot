@@ -174,6 +174,7 @@ def test_every_pr_screen_has_back():
     entry_texts = _kb_texts(entry)
     assert "Я владелец группы" in entry_texts
     assert "Это чужая группа" in entry_texts
+    assert entry_texts.index("Это чужая группа") < entry_texts.index("Я владелец группы")
     assert "Начать" not in entry_texts
     assert "Заработки" not in entry_texts
     assert "Мои группы" not in entry_texts

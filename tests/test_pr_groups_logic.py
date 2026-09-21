@@ -50,6 +50,7 @@ def test_entry_explains_commission_for_both_roles():
     html = text_entry()
     assert "зарабат" in html.lower()
     assert "узнавал" in html.lower()
+    assert "рекоменд" in html.lower()
     assert "35%" in html
     assert "комиссии" in html
     assert "14 дней" in html
@@ -60,6 +61,7 @@ def test_entry_explains_commission_for_both_roles():
     assert "карман" in html
     assert "баланс группы" in html
     assert "личный баланс" in html
+    assert html.lower().find("чуж") < html.lower().find("владел")
     assert "Кут - игры" not in html
     assert "игры в Telegram" not in html
     assert "1." not in html
@@ -97,6 +99,7 @@ def test_how_tells_what_to_do_next():
     assert "1 из 3" in photo
     assert "Пришлите фото сюда" in photo
     assert "@CuteGamingBot" in photo
+    assert "Так чтобы было видно, что бот в чате отвечает." in text_wait_photo(1, 1)
     assert "Шаг 3 из 4" in photo
     assert "Шаг 3 из 5" in text_wait_photo(0, 0, intent="reco")
     second = text_wait_photo(1, 1)
@@ -598,6 +601,7 @@ def test_design_file_drives_hub_and_buttons():
 
     hub = SCREENS["hub"]
     assert "Нажмите, кто вы" in hub["text"]
+    assert "рекоменд" in hub["text"].lower()
     assert "зарабат" in hub["text"].lower()
     assert "узнавал" in hub["text"].lower()
     assert "комиссии" in hub["text"]
@@ -630,7 +634,7 @@ def test_words_drive_every_short_label():
     assert claim_status_label("live", "admin") == pause_label("admin")
     assert "<" not in TASKS_MENU_TEXT
     assert ">" not in TASKS_MENU_TEXT
-    assert TASKS_MENU_TEXT
+    assert TASKS_MENU_TEXT == "Рекомендация проекта"
     assert "5391270106464539040" in TASKS_MENU["icon"]
     assert WORDS["toast_check"]
     assert WORDS["history_gift"]
