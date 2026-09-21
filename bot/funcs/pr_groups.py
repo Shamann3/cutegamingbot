@@ -1263,13 +1263,13 @@ async def ladder_free() -> tuple[int, list[dict[str, Any]]]:
     return max(0, total), items
 
 
-async def money_view(member_count: int = 0) -> dict[str, Any]:
+async def money_view(member_count: int = 0, *, except_claim_id: Optional[int] = None) -> dict[str, Any]:
     ladder, items = await ladder_free()
     reserve = await nika_reserve()
     can = spendable_amount(ladder, reserve)
     rec_total = recommend_seed(member_count, can)
     split = recommend_split(rec_total, member_count)
-    week_used = await week_seed_used()
+    week_used = await week_seed_used(except_claim_id=except_claim_id)
     week_cap = weekly_seed_budget(can)
     return {
         "ladder": items,
@@ -1283,15 +1283,17 @@ async def money_view(member_count: int = 0) -> dict[str, Any]:
     }
 
 
-async def week_seed_used() -> int:
+async def week_seed_used(*, except_claim_id: Optional[int] = None) -> int:
     p = await pool()
     return _as_int(await p.fetchval(
         """
         SELECT COALESCE(SUM(seed_total), 0) FROM pr_claims
          WHERE status = ANY($1::text[])
            AND COALESCE(accepted_at, updated_at) >= NOW() - INTERVAL '7 days'
+           AND ($2::bigint IS NULL OR id <> $2)
         """,
         list(WEEK_SEED_STATUSES),
+        int(except_claim_id) if except_claim_id else None,
     ))
 
 
@@ -1400,7 +1402,7 @@ async def _fulfill_accept_locked(claim_id: int, *, bot) -> dict[str, Any]:
     members = int(claim.get("member_count") or 0)
     split = recommend_split(total, members)
     if not claim.get("seed_applied"):
-        view = await money_view(members)
+        view = await money_view(members, except_claim_id=int(claim_id))
         if total > int(view["spendable"]):
             await save_claim(claim_id, status=ST_ACCEPTING)
             raise ValueError("Не хватает spendable")

@@ -678,6 +678,16 @@ def weekly_seed_budget(spendable: int) -> int:
     return max(0, int(round(int(spendable or 0) * WEEKLY_SEED_PCT)))
 
 
+def weekly_left_for_claim(week_cap: int, week_used: int, reserved: int = 0) -> int:
+    """Сколько недели ещё свободно для этой заявки.
+
+    После «Принять» её seed_total уже сидит в week_used (accepting/fulfilling).
+    Без вычета reserved посев думает, что бюджет кончился, и крутит ошибку.
+    """
+    used = max(0, int(week_used or 0) - max(0, int(reserved or 0)))
+    return max(0, int(week_cap or 0) - used)
+
+
 def nika_step_amount(*, table_origin: int, chat_balance: int, already_topped: int) -> int:
     """До 20 кут или дыра до исходного баланса группы. Потолок срока — половина баланса группы."""
     origin = max(0, int(table_origin or 0))

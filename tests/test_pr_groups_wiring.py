@@ -346,6 +346,8 @@ def test_gift_lock_hooks_exist():
     assert "PR_DROP_YES" in core
     assert "prg:z:" in core
     assert "drop_claim" in core
+    assert "except_claim_id" in core
+    assert "AND ($2::bigint IS NULL OR id <> $2)" in core
     assert "wait_confirm_for_chat" in core
     assert "wrong_group_keyboard" in core
     assert "ST_ENDING" in core

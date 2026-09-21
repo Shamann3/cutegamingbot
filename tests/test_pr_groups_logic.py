@@ -176,6 +176,11 @@ def test_spendable_keeps_nika_reserve():
 
 def test_weekly_budget_is_15_percent():
     assert weekly_seed_budget(1000) == 150
+    from pr_groups_logic import weekly_left_for_claim
+    assert weekly_left_for_claim(150, 150, reserved=80) == 80
+    assert weekly_left_for_claim(150, 70, reserved=0) == 80
+    assert weekly_left_for_claim(150, 150, reserved=150) == 150
+    assert weekly_left_for_claim(150, 200, reserved=0) == 0
 
 
 def test_smart_split_covers_play_and_table():
