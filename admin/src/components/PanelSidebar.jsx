@@ -5,7 +5,6 @@ import { NAV_ICONS } from './NavIcons'
 import SessionTimer from './SessionTimer'
 import EpsilonLogo from './EpsilonLogo'
 import AccentPalette from './AccentPalette'
-import ColorChoice from './ColorChoice'
 import { useIsPhone } from '../lib/useIsDesktop'
 import { CopyableUsername } from './Copyable'
 
@@ -50,8 +49,6 @@ function SettingsControls({
 }) {
   return (
     <>
-      <AccentPalette value={accent} onChange={onAccentChange} />
-
       <SessionTimer compact onExpired={onSessionExpired} />
 
       <div className="panel-music-card">
@@ -314,7 +311,7 @@ export default function PanelSidebar({
               </div>
             </div>
 
-            <ColorChoice onChange={onAccentChange} />
+            <AccentPalette value={accent} onChange={onAccentChange} />
 
             <details ref={settingsRef} className="panel-sidebar-settings">
               <summary className="panel-sidebar-settings-sum">
@@ -334,9 +331,7 @@ export default function PanelSidebar({
           <>
             {/* ПК: Подсветка выше профиля */}
             <div className="panel-sidebar-settings panel-sidebar-settings-desktop">
-              <p className="panel-nav-group-label">Цвет кнопок</p>
               <div className="panel-sidebar-settings-body">
-                <ColorChoice onChange={onAccentChange} />
                 <AccentPalette value={accent} onChange={onAccentChange} />
               </div>
             </div>

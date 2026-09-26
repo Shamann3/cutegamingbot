@@ -94,6 +94,24 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
     onDone?.()
   }
 
+  const skipOnce = () => {
+    try {
+      sessionStorage.setItem(storageKey, '1')
+    } catch {
+      /* ignore */
+    }
+    onDone?.()
+  }
+
+  const hideForever = () => {
+    try {
+      localStorage.setItem(neverKey(storageKey), '1')
+    } catch {
+      /* ignore */
+    }
+    onDone?.()
+  }
+
   useEffect(() => {
     onStep?.(step)
   }, [step, onStep])
@@ -114,15 +132,19 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
           return
         }
         const rect = node.getBoundingClientRect()
-        const pad = 8
+        if (rect.height > 96 || rect.height < 8) {
+          setBox(null)
+          return
+        }
+        const pad = 6
         const top = rect.top - pad
         const height = rect.height + pad * 2
         setBox({
           top,
           left: Math.max(8, rect.left - pad),
-          width: Math.min(window.innerWidth - 16, rect.width + pad * 2),
+          width: Math.min(rect.width + pad * 2, window.innerWidth - 24),
           height,
-          below: top + height + 210 < window.innerHeight,
+          below: top + height + 220 < window.innerHeight,
         })
       })
     }
@@ -137,11 +159,22 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
     }
   }, [step, layoutKey])
 
-  const sheetStyle = box
-    ? (box.below
-      ? { top: box.top + box.height + 14, bottom: 'auto' }
-      : { top: 'auto', bottom: Math.max(16, window.innerHeight - box.top + 14) })
-    : undefined
+  const sheetStyle = (() => {
+    if (!box) return undefined
+    const gap = 12
+    const rightSpace = window.innerWidth - (box.left + box.width) - 16
+    if (rightSpace >= 260) {
+      return {
+        top: Math.min(Math.max(16, box.top), Math.max(16, window.innerHeight - 240)),
+        left: box.left + box.width + gap,
+        right: 'auto',
+        width: Math.min(360, rightSpace),
+        bottom: 'auto',
+      }
+    }
+    if (box.below) return { top: box.top + box.height + gap, bottom: 'auto', left: 16, right: 16, width: 'auto' }
+    return { top: 'auto', bottom: Math.max(16, window.innerHeight - box.top + gap), left: 16, right: 16, width: 'auto' }
+  })()
 
   return (
     <div className={`firstrun${box ? ' has-spot' : ''}`} role="dialog" aria-modal="true" aria-labelledby="firstrun-title">
@@ -161,7 +194,8 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
           ))}
         </div>
         <div className="firstrun-actions">
-          <button type="button" className="firstrun-skip" onClick={finish}>Пропустить</button>
+          <button type="button" className="firstrun-never" onClick={hideForever}>Не показывать больше</button>
+          <button type="button" className="firstrun-skip" onClick={skipOnce}>Пропустить сейчас</button>
           <button type="button" className="firstrun-next" onClick={last ? finish : () => setIndex((n) => n + 1)}>
             {last ? 'Понятно' : 'Дальше'}
           </button>
@@ -171,9 +205,30 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
   )
 }
 
+function neverKey(storageKey) {
+  return `${String(storageKey).replace(/\.v\d+$/, '')}.never`
+}
+
 export function firstRunSeen(storageKey) {
   try {
     return localStorage.getItem(storageKey) === '1'
+  } catch {
+    return true
+  }
+}
+
+export function firstRunNever(storageKey) {
+  try {
+    return localStorage.getItem(neverKey(storageKey)) === '1'
+  } catch {
+    return true
+  }
+}
+
+export function coachClosed(storageKey) {
+  try {
+    if (firstRunNever(storageKey) || firstRunSeen(storageKey)) return true
+    return sessionStorage.getItem(storageKey) === '1'
   } catch {
     return true
   }

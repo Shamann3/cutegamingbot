@@ -571,9 +571,24 @@
 
 .firstrun-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+}
+
+.firstrun-never {
+  flex: 1 0 100%;
+  appearance: none;
+  border: 1px solid rgba(244, 244, 244, 0.28);
+  background: transparent;
+  color: #f4f4f4;
+  border-radius: 999px;
+  min-height: 40px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
 }
 
 @media (min-width: 901px) {
@@ -1266,25 +1281,17 @@ html[data-viewport="desktop"] .elite-brand-slot {
 }
 
 .panel-nav-sublabel {
-  display: block !important;
-  margin-top: 2px;
-  font-size: 12px;
-  line-height: 1.3;
-  color: rgba(244, 244, 244, 0.62) !important;
-  white-space: normal;
+  display: none !important;
 }
 
-.panel-nav-item {
-  align-items: flex-start !important;
-  height: auto !important;
-}
-
-.color-choice {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 16px 0 8px;
-  min-width: 0;
+.accent-picker-panel.is-inline {
+  position: relative;
+  z-index: 1;
+  top: auto;
+  left: auto;
+  width: min(100%, 260px);
+  margin-top: 8px;
+  animation: none;
 }
 
 .color-choice p {

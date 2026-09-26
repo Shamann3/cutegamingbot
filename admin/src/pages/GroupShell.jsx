@@ -12,7 +12,7 @@ import {
 } from '../lib/adminClient'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { punishmentHours } from '../lib/gateRecovery'
-import FirstRun, { groupSteps, firstRunSeen } from '../components/FirstRun'
+import FirstRun, { groupSteps, coachClosed } from '../components/FirstRun'
 import PositionEditor from '../components/PositionEditor'
 import useDrawerSwipe from '../lib/useDrawerSwipe'
 import { useIsPhone } from '../lib/useIsDesktop'
@@ -75,7 +75,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   const [tab, setTab] = useState('overview')
   const [chapter, setChapter] = useState(false)
   const [lockOpen, setLockOpen] = useState(false)
-  const [coach, setCoach] = useState(() => !firstRunSeen('epsilon.onboard.group.v4'))
+  const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.group.v4'))
   const [railOpen, setRailOpen] = useState(false)
   const phone = useIsPhone()
   const [summary, setSummary] = useState(null)

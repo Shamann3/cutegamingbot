@@ -49,7 +49,7 @@ import { loadRecentSections, pushRecentSection } from '../lib/recentSections'
 import { useViewportMode, useIsPhone } from '../lib/useIsDesktop'
 import useDrawerSwipe from '../lib/useDrawerSwipe'
 import RightsSection from './sections/RightsSection'
-import FirstRun, { staffSteps, firstRunSeen } from '../components/FirstRun'
+import FirstRun, { staffSteps, coachClosed } from '../components/FirstRun'
 
 export default function PanelShell({ onLogout, onChangeDoor }) {
   const { lightMode, setLightMode } = usePerfMode()
@@ -96,7 +96,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [isProjectCreator, setIsProjectCreator] = useState(false)
   const [canBanfull, setCanBanfull] = useState(false)
   const [recentSections, setRecentSections] = useState(() => loadRecentSections())
-  const [coach, setCoach] = useState(() => !firstRunSeen('epsilon.onboard.staff.v4'))
+  const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.staff.v4'))
   const onCoachStep = useCallback((step) => {
     if (!phone) return
     setMobileNavOpen(Boolean(step?.openNav))

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchAdminAuthStatus } from '../lib/adminClient'
-import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
+import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccent } from '../lib/accentTheme'
 import { portraitFrom } from '../lib/gateRecovery'
 import EpsilonLogo from '../components/EpsilonLogo'
-import ColorChoice from '../components/ColorChoice'
+import AccentPalette from '../components/AccentPalette'
 
 function Door({ title, detail, open, onClick }) {
   return (
@@ -21,6 +21,7 @@ function Door({ title, detail, open, onClick }) {
 
 export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onGroupApply }) {
   const [personal, setPersonal] = useState(() => accentIsPersonal(loadStoredAccent()))
+  const [accent, setAccent] = useState(() => loadStoredAccent())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [portrait, setPortrait] = useState(null)
@@ -86,7 +87,17 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
           <EpsilonLogo size="sm" decorative />
           <h1 className="gate-title">Куда войти</h1>
           <p className="gate-lead">Два входа. Яркая кнопка открывает панель. Серая кнопка панель не открывает: она начинает заявку.</p>
-          <ColorChoice onChange={(next) => setPersonal(accentIsPersonal(next))} />
+          <p className="gate-lead">Любой цвет. Ведите пальцем по кругу или впишите код. Белый оставляет панель чёрно-белой.</p>
+          <AccentPalette
+            inline
+            value={accent}
+            onChange={(next) => {
+              const saved = persistAccent(next)
+              applyAccentToDocument(saved)
+              setAccent(saved)
+              setPersonal(accentIsPersonal(saved))
+            }}
+          />
         </header>
 
         {loading && (

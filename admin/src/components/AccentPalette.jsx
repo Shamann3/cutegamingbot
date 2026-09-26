@@ -80,9 +80,9 @@ function accentFromHex(hex, glow) {
   })
 }
 
-export default function AccentPalette({ value, onChange }) {
+export default function AccentPalette({ value, onChange, inline = false }) {
   const accent = normalizeAccent(value)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(inline)
   const [draft, setDraft] = useState(accent)
   const [hexText, setHexText] = useState(accent.hex)
   const [hexOk, setHexOk] = useState(true)
@@ -155,7 +155,7 @@ export default function AccentPalette({ value, onChange }) {
   }, [open, value])
 
   useLayoutEffect(() => {
-    if (!open) return undefined
+    if (!open || inline) return undefined
     placePanel()
     const id = window.requestAnimationFrame(() => {
       placePanel()
@@ -171,12 +171,12 @@ export default function AccentPalette({ value, onChange }) {
   }, [open, placePanel])
 
   useEffect(() => {
-    if (!open || !canvasRef.current) return
+    if ((!open && !inline) || !canvasRef.current) return
     paintWheel(canvasRef.current)
-  }, [open])
+  }, [open, inline])
 
   useEffect(() => {
-    if (!open) return undefined
+    if (!open || inline) return undefined
     const onKey = (e) => {
       if (e.key === 'Escape') closePalette()
     }
@@ -232,14 +232,13 @@ export default function AccentPalette({ value, onChange }) {
 
   const previewHex = parseHexInput(hexText) || draft.hex
 
-  const panel = open
-    ? createPortal(
+  const wheel = (
       <div
         ref={panelRef}
-        className="accent-picker-panel"
+        className={`accent-picker-panel${inline ? ' is-inline' : ''}`}
         role="dialog"
-        aria-label="Палитра подсветки"
-        style={{ top: pos.top, left: pos.left }}
+        aria-label="Палитра цвета"
+        style={inline ? undefined : { top: pos.top, left: pos.left }}
       >
         <div className="accent-wheel-wrap">
           <canvas
@@ -325,10 +324,12 @@ export default function AccentPalette({ value, onChange }) {
             />
           </div>
         </div>
-      </div>,
-      document.body,
-    )
-    : null
+      </div>
+  )
+
+  const panel = open && !inline ? createPortal(wheel, document.body) : null
+
+  if (inline) return wheel
 
   return (
     <div className="accent-picker-root" ref={rootRef}>
@@ -345,8 +346,8 @@ export default function AccentPalette({ value, onChange }) {
       >
         <span className="panel-accent-trigger-swatch" style={{ background: accent.hex }} aria-hidden />
         <span className="panel-accent-trigger-meta">
-          <strong>Цвет кнопок</strong>
-          <em>{accent.label === 'Свой' ? accent.hex : accent.label}</em>
+          <strong>Любой цвет</strong>
+          <em>{accent.hex}</em>
         </span>
         <span className="panel-accent-trigger-chevron" aria-hidden>{open ? '◂' : '▸'}</span>
       </button>
