@@ -82,7 +82,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: 34rem;
+  max-width: 40rem;
 }
 
 .gate-kicker {
@@ -1308,14 +1308,47 @@ html[data-viewport="desktop"] .elite-brand-slot {
   outline-offset: 3px;
 }
 
+.accent-picker-panel,
+.accent-picker-panel.is-inline {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  width: min(480px, calc(100vw - 24px));
+}
+
 .accent-picker-panel.is-inline {
   position: relative;
   z-index: 1;
   top: auto;
   left: auto;
-  width: min(100%, 260px);
   margin-top: 8px;
   animation: none;
+}
+
+.accent-wheel-wrap {
+  width: min(196px, 44vw);
+  height: min(196px, 44vw);
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.accent-wheel {
+  width: 100%;
+  height: 100%;
+}
+
+.accent-picker-side {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+}
+
+.accent-picker-side .accent-slider {
+  margin-bottom: 0;
 }
 
 .color-choice p {

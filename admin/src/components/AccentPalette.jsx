@@ -18,8 +18,8 @@ function paintWheel(canvas) {
   const size = WHEEL_SIZE
   canvas.width = size
   canvas.height = size
-  canvas.style.width = `${size}px`
-  canvas.style.height = `${size}px`
+  canvas.style.width = '100%'
+  canvas.style.height = '100%'
 
   const image = ctx.createImageData(size, size)
   const data = image.data
@@ -252,6 +252,7 @@ export default function AccentPalette({ value, onChange, inline = false }) {
           <span className="accent-wheel-knob" style={knobStyle} aria-hidden />
         </div>
 
+        <div className="accent-picker-side">
         <label className="accent-slider">
           <span>Яркость цвета</span>
           <strong>{Math.round(draft.v * 100)}%</strong>
@@ -323,6 +324,7 @@ export default function AccentPalette({ value, onChange, inline = false }) {
               aria-label="HEX-код цвета"
             />
           </div>
+        </div>
         </div>
       </div>
   )
