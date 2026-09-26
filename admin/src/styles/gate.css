@@ -1284,6 +1284,30 @@ html[data-viewport="desktop"] .elite-brand-slot {
   display: none !important;
 }
 
+.gate-sheet.is-color {
+  justify-content: flex-start;
+}
+
+.gate-color-btn {
+  appearance: none;
+  align-self: flex-start;
+  margin-top: 8px;
+  min-height: 48px;
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--gate-line);
+  background: transparent;
+  color: var(--gate-ink);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.gate-color-btn:focus-visible {
+  outline: 2px solid var(--gate-ink);
+  outline-offset: 3px;
+}
+
 .accent-picker-panel.is-inline {
   position: relative;
   z-index: 1;

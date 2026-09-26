@@ -22,6 +22,7 @@ function Door({ title, detail, open, onClick }) {
 export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onGroupApply }) {
   const [personal, setPersonal] = useState(() => accentIsPersonal(loadStoredAccent()))
   const [accent, setAccent] = useState(() => loadStoredAccent())
+  const [colorOpen, setColorOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [portrait, setPortrait] = useState(null)
@@ -82,22 +83,32 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   return (
     <div className={`gate-root${personal ? ' is-personal' : ''}`}>
       <div className="gate-frame" aria-hidden="true" />
-      <div className="gate-sheet">
+      <div className={`gate-sheet${colorOpen ? ' is-color' : ''}`}>
         <header className="gate-head">
           <EpsilonLogo size="sm" decorative />
-          <h1 className="gate-title">Куда войти</h1>
-          <p className="gate-lead">Два входа. Яркая кнопка открывает панель. Серая кнопка панель не открывает: она начинает заявку.</p>
-          <p className="gate-lead">Любой цвет. Ведите пальцем по кругу или впишите код. Белый оставляет панель чёрно-белой.</p>
-          <AccentPalette
-            inline
-            value={accent}
-            onChange={(next) => {
-              const saved = persistAccent(next)
-              applyAccentToDocument(saved)
-              setAccent(saved)
-              setPersonal(accentIsPersonal(saved))
-            }}
-          />
+          <h1 className="gate-title">Куда вам нужно войти?</h1>
+          <p className="gate-lead">Выберите один из вариантов</p>
+          <p className="gate-lead">По желанию вы можете выбрать любой цвет интерфейса для приятной работы</p>
+          <button
+            type="button"
+            className="gate-color-btn"
+            aria-expanded={colorOpen}
+            onClick={() => setColorOpen((open) => !open)}
+          >
+            {colorOpen ? 'Скрыть палитру' : 'Изменить цвет интерфейса'}
+          </button>
+          {colorOpen && (
+            <AccentPalette
+              inline
+              value={accent}
+              onChange={(next) => {
+                const saved = persistAccent(next)
+                applyAccentToDocument(saved)
+                setAccent(saved)
+                setPersonal(accentIsPersonal(saved))
+              }}
+            />
+          )}
         </header>
 
         {loading && (
