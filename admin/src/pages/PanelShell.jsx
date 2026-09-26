@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PANEL_SECTIONS, visibleSections } from '../constants/panelNav'
 import PanelSidebar from '../components/PanelSidebar'
 import EliteTopbar from '../components/EliteTopbar'
-import PanelBackdrop from '../components/PanelBackdrop'
-import GoldBackdrop from '../components/GoldBackdrop'
 import ToastHost from '../components/ToastHost'
 import { fetchAdminMe, fetchPrOverview, fetchSupportStats, fetchTiktokCounts, logoutAdmin, registerUnauthorizedHandler } from '../lib/adminClient'
 import DashboardSection from './sections/DashboardSection'
@@ -38,7 +36,6 @@ import ChronicleSection from './sections/ChronicleSection'
 import PanelAccessSection from './sections/PanelAccessSection'
 import CommandCenterSection from './sections/CommandCenterSection'
 import RulesGateModal from '../components/RulesGateModal'
-import CursorGlow from '../components/CursorGlow'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import { usePerfMode } from '../lib/perfMode'
 import { useMusicMode } from '../lib/musicMode'
@@ -49,13 +46,16 @@ import {
   persistAccent,
 } from '../lib/accentTheme'
 import { loadRecentSections, pushRecentSection } from '../lib/recentSections'
-import { useViewportMode } from '../lib/useIsDesktop'
-import FirstRun, { STAFF_STEPS, firstRunSeen } from '../components/FirstRun'
+import { useViewportMode, useIsPhone } from '../lib/useIsDesktop'
+import useDrawerSwipe from '../lib/useDrawerSwipe'
+import RightsSection from './sections/RightsSection'
+import FirstRun, { staffSteps, firstRunSeen } from '../components/FirstRun'
 
 export default function PanelShell({ onLogout, onChangeDoor }) {
   const { lightMode, setLightMode } = usePerfMode()
   const { volume: musicVolume, setVolume: setMusicVolume, toggleMute: toggleMusicMute } = useMusicMode()
   const viewport = useViewportMode()
+  const phone = useIsPhone()
   const [accent, setAccent] = useState(() => loadStoredAccent())
 
   useEffect(() => {
@@ -96,7 +96,16 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [isProjectCreator, setIsProjectCreator] = useState(false)
   const [canBanfull, setCanBanfull] = useState(false)
   const [recentSections, setRecentSections] = useState(() => loadRecentSections())
-  const [coach, setCoach] = useState(() => !firstRunSeen('epsilon.onboard.staff.v1'))
+  const [coach, setCoach] = useState(() => !firstRunSeen('epsilon.onboard.staff.v3'))
+  const onCoachStep = useCallback((step) => {
+    if (step?.openNav && phone) setMobileNavOpen(true)
+  }, [phone])
+  useDrawerSwipe({
+    enabled: phone,
+    open: mobileNavOpen,
+    onOpen: () => setMobileNavOpen(true),
+    onClose: () => setMobileNavOpen(false),
+  })
 
   useGlobalKeys({
     onEscape: () => setMobileNavOpen(false),
@@ -273,14 +282,17 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const isModeration = section === 'moderation'
   const isChronicle  = section === 'chronicle'
   const isPanelAccess = section === 'panelAccess'
+  const isRights = section === 'rights'
   const isSoftRestart = section === 'softRestart'
 
   return (
     <div className={`panel-shell panel-shell-${viewport}`} data-viewport={viewport}>
       {coach && (
         <FirstRun
-          storageKey="epsilon.onboard.staff.v1"
-          steps={STAFF_STEPS}
+          storageKey="epsilon.onboard.staff.v3"
+          steps={staffSteps(phone)}
+          layoutKey={mobileNavOpen ? 1 : 0}
+          onStep={onCoachStep}
           onDone={() => setCoach(false)}
         />
       )}
@@ -294,11 +306,11 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
       {flashKey > 0 && <div key={flashKey} className="section-flash" aria-hidden="true" />}
       <ToastHost />
       <PanelBackgroundMusic volume={musicVolume} />
-      <GoldBackdrop lightMode={lightMode} />
-      <PanelBackdrop active />
-      {!lightMode && <CursorGlow />}
 
       {/* Mobile: dimmer under fullscreen nav drawer */}
+      {phone && !mobileNavOpen && (
+        <button type="button" className="phone-edge" aria-label="Открыть разделы" onClick={() => setMobileNavOpen(true)} />
+      )}
       {mobileNavOpen && (
         <div
           className="panel-mobile-overlay"
@@ -358,7 +370,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                                       ? ' panel-layout-support'
                                       : isChronicle
                                         ? ' panel-layout-chronicle'
-                                        : isPanelAccess || isSoftRestart || isGroupsStudio || isNika || isGames
+                                        : isPanelAccess || isRights || isSoftRestart || isGroupsStudio || isNika || isGames
                                           ? ' panel-layout-security'
                                           : ' panel-layout-page'
           }`}
@@ -486,8 +498,9 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           )}
           {isChronicle && <ChronicleSection />}
           {isPanelAccess && <PanelAccessSection />}
+          {isRights && isProjectCreator && <RightsSection />}
           {isSoftRestart && isProjectCreator && <SoftRestartSection />}
-          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isSoftRestart && (
+          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isRights && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

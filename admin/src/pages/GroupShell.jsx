@@ -7,11 +7,15 @@ import {
   fetchGroupSummary,
   groupRealmAct,
   markGroupOfficial,
+  saveGroupPosition,
   searchGroupsStudio,
 } from '../lib/adminClient'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { punishmentHours } from '../lib/gateRecovery'
-import FirstRun, { GROUP_STEPS, firstRunSeen } from '../components/FirstRun'
+import FirstRun, { groupSteps, firstRunSeen } from '../components/FirstRun'
+import PositionEditor from '../components/PositionEditor'
+import useDrawerSwipe from '../lib/useDrawerSwipe'
+import { useIsPhone } from '../lib/useIsDesktop'
 
 const ACTIONS = [
   { id: 'mute', label: 'Мут', right: 'punish_mute', needsUntil: true },
@@ -36,12 +40,26 @@ function when(iso) {
   }
 }
 
+function roomLine(summary) {
+  const messages = summary?.messages30d
+  const writers = summary?.writers30d
+  if (messages == null) return 'За 30 дней цифр ещё нет.'
+  if (Number(messages) === 0) return 'За 30 дней в этом чате тишина.'
+  if (writers && Number(writers) > 0 && Number(messages) / Number(writers) >= 30) {
+    return 'Сообщений много, а пишут не все. Смотрите, кто сверху списка.'
+  }
+  return 'Чат говорит. Ниже те, кто пишет чаще.'
+}
+
 function tabsFor(rights, isCreator) {
   const has = (key) => isCreator || rights.has(key)
   const items = [{ id: 'overview', label: 'Обзор' }]
-  if (has('view_members') || [...rights].some((r) => r.startsWith('punish_'))) items.push({ id: 'people', label: 'Люди' })
+  if (has('view_members') || [...rights].some((item) => item.startsWith('punish_'))) {
+    items.push({ id: 'people', label: 'Люди' })
+  }
   if (has('view_archive')) items.push({ id: 'archive', label: 'Архив' })
   if (has('view_analytics')) items.push({ id: 'analytics', label: 'Аналитика' })
+  if (has('manage_positions')) items.push({ id: 'rights', label: 'Права' })
   items.push({ id: 'more', label: 'Ещё' })
   return items
 }
@@ -51,13 +69,15 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   const isCreator = Boolean(portrait?.isOwner)
   const groups = portrait?.groups || []
   const [chatId, setChatId] = useState(groups[0]?.chatId ?? null)
-  const current = groups.find((g) => g.chatId === chatId) || null
+  const current = groups.find((group) => group.chatId === chatId) || null
   const rights = useMemo(() => new Set(current?.rights || []), [current])
   const tabs = useMemo(() => tabsFor(rights, isCreator), [rights, isCreator])
   const [tab, setTab] = useState('overview')
   const [chapter, setChapter] = useState(false)
   const [lockOpen, setLockOpen] = useState(false)
-  const [coach, setCoach] = useState(() => !firstRunSeen('epsilon.onboard.group.v1'))
+  const [coach, setCoach] = useState(() => !firstRunSeen('epsilon.onboard.group.v3'))
+  const [railOpen, setRailOpen] = useState(false)
+  const phone = useIsPhone()
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -75,10 +95,19 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   const [appointUser, setAppointUser] = useState('')
   const [appointPos, setAppointPos] = useState('')
   const [appointReason, setAppointReason] = useState('')
+  const [savingId, setSavingId] = useState(null)
 
   const activeTab = tabs.some((item) => item.id === tab) ? tab : 'overview'
   const allowedActions = ACTIONS.filter((item) => isCreator || rights.has(item.right))
   const selectedAction = allowedActions.find((item) => item.id === action) || allowedActions[0]
+
+  const closeRail = useCallback(() => setRailOpen(false), [])
+  useDrawerSwipe({
+    enabled: phone,
+    open: railOpen,
+    onOpen: () => setRailOpen(true),
+    onClose: closeRail,
+  })
 
   const loadSummary = useCallback(async (id) => {
     if (!id) {
@@ -99,14 +128,25 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
 
   useEffect(() => { loadSummary(chatId) }, [chatId, loadSummary])
 
+  const loadPositions = useCallback(async (id) => {
+    if (!id) return
+    try {
+      const data = await fetchGroupPositions(id)
+      setPositions(data.positions || [])
+    } catch (err) {
+      setError(err.message || 'Должности не открылись')
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activeTab === 'rights' && chatId) loadPositions(chatId)
+  }, [activeTab, chatId, loadPositions])
+
   const openCreator = async () => {
     setChapter(true)
     setError('')
     try {
-      if (chatId) {
-        const data = await fetchGroupPositions(chatId)
-        setPositions(data.positions || [])
-      }
+      if (chatId) await loadPositions(chatId)
       const queue = await fetchGroupApplications()
       setApps(queue.items || [])
     } catch (err) {
@@ -136,12 +176,13 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
     try {
       await markGroupOfficial({
         chat_id: row.chat_id,
-        title: row.name || '',
+        title: row.name || String(row.chat_id),
         username: row.username || '',
         official: true,
       })
-      setNotice('Группа официальная. Вернитесь к дверям, чтобы увидеть её в списке.')
+      setNotice('Группа официальная. Вернитесь к дверям, чтобы она появилась в списке.')
       setChatId(row.chat_id)
+      setHits([])
     } catch (err) {
       setError(err.message || 'Не удалось отметить группу')
     }
@@ -149,29 +190,35 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
 
   const punish = async (event) => {
     event.preventDefault()
-    if (!chatId || !selectedAction) return
-    const uid = Number(String(userId).replace(/\D/g, ''))
-    if (!uid) {
-      setError('Нужен id человека')
+    const id = Number(userId)
+    if (!chatId || !id) {
+      setError('Укажите id человека')
       return
     }
-    const untilSec = selectedAction.needsUntil ? punishmentHours(hours) : null
-    if (selectedAction.needsUntil && untilSec == null) {
-      setError('Срок укажите в часах: от доли часа до года')
+    if (!reason.trim()) {
+      setError('Нужна причина')
       return
+    }
+    let until = null
+    if (selectedAction?.needsUntil) {
+      until = punishmentHours(hours)
+      if (until == null) {
+        setError('Укажите часы, больше нуля и не дольше года')
+        return
+      }
     }
     setActing(true)
     setError('')
-    setNotice('')
     try {
       await groupRealmAct({
         chat_id: chatId,
-        user_id: uid,
+        user_id: id,
         action: selectedAction.id,
-        until_sec: untilSec,
         reason: reason.trim(),
+        until_sec: until,
       })
-      setNotice('Действие записано в этот чат')
+      setNotice('Записано в этот чат')
+      setReason('')
       await loadSummary(chatId)
     } catch (err) {
       setError(err.message || 'Действие не прошло')
@@ -182,21 +229,22 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
 
   const appoint = async (event) => {
     event.preventDefault()
-    const uid = Number(String(appointUser).replace(/\D/g, ''))
-    if (!chatId || !uid || !appointPos) {
-      setError('Нужны группа, id человека и должность')
+    if (!chatId || !appointUser.trim() || !appointPos) {
+      setError('Нужны id человека и должность')
       return
     }
     setError('')
     try {
       const data = await appointGroupAdmin({
         chat_id: chatId,
-        user_id: uid,
+        user_id: Number(appointUser),
         position_id: Number(appointPos),
         reason: appointReason.trim(),
       })
-      setEntryKey(data.entryKey || '')
-      setNotice('Человек назначен. Ключ показан один раз.')
+      if (data.entryKey) setEntryKey(data.entryKey)
+      setNotice('Должность назначена. Ключ показан один раз.')
+      setAppointUser('')
+      setAppointReason('')
     } catch (err) {
       setError(err.message || 'Назначить не удалось')
     }
@@ -220,26 +268,55 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
     }
   }
 
+  const savePosition = async (row) => {
+    setSavingId(row.id)
+    setError('')
+    try {
+      await saveGroupPosition(row.id, { title: row.title.trim(), rights: row.rights || [] })
+      setNotice(`Должность «${row.title.trim()}» сохранена`)
+      await loadPositions(chatId)
+    } catch (err) {
+      setError(err.message || 'Должность не сохранилась')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const pickTab = (id) => {
+    setChapter(false)
+    setRailOpen(false)
+    setTab(id)
+  }
+
   const mods = summary?.moderation
+  const title = summary?.chat?.title || current?.title || 'Группа не выбрана'
 
   return (
     <div className={`realm-root${personal ? ' is-personal' : ''}`}>
       {coach && (
-        <FirstRun storageKey="epsilon.onboard.group.v1" steps={GROUP_STEPS} onDone={() => setCoach(false)} />
+        <FirstRun storageKey="epsilon.onboard.group.v3" steps={groupSteps(phone)} onDone={() => setCoach(false)} />
       )}
-      <header className="realm-top">
-        <button type="button" className="realm-back" onClick={onLeave}>Двери</button>
+      <header className="realm-top" data-coach="group-head">
+        <button type="button" className="realm-back" data-coach="doors" onClick={onLeave}>Двери</button>
         <div>
-          <h1>{summary?.chat?.title || current?.title || 'Группы'}</h1>
+          <h1>Панель администраторов групп</h1>
           <p className="realm-copy">
-            {current ? `${current.position}. В другой группе права другие.` : 'Отметьте официальную группу, чтобы выдать должность.'}
+            {title}
+            {current?.position ? ` · ${current.position}` : ''}
+            {chatId ? ` · ${fmt(summary?.messages30d)} сообщений за 30 дней` : ''}
+          </p>
+          <p className="realm-copy">{chatId ? roomLine(summary) : 'Отметьте официальную группу, чтобы выдать должность.'}</p>
+          <p className="realm-copy">
+            {phone
+              ? 'Вкладки внизу. Свайп вправо открывает полный список, влево закрывает.'
+              : 'Вкладки слева. Каждая показывает только эту группу.'}
           </p>
         </div>
       </header>
       <div className="realm-body">
-        <nav className="realm-rail" aria-label="Разделы группы">
+        <nav className="realm-rail" data-coach="tabs" aria-label="Разделы группы">
           {tabs.map((item) => (
-            <button key={item.id} type="button" className={activeTab === item.id && !chapter ? 'is-on' : ''} onClick={() => { setChapter(false); setTab(item.id) }}>
+            <button key={item.id} type="button" data-coach={item.id} className={activeTab === item.id && !chapter ? 'is-on' : ''} onClick={() => pickTab(item.id)}>
               {item.label}
             </button>
           ))}
@@ -252,9 +329,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
             </div>
           )}
           {notice && <p className="realm-note" role="status">{notice}</p>}
-          {entryKey && (
-            <p className="realm-alert">Личный ключ, один показ: {entryKey}</p>
-          )}
+          {entryKey && <p className="realm-alert">Личный ключ, один показ: {entryKey}</p>}
           {loading && (
             <div className="realm-load" role="status">
               <span />
@@ -267,36 +342,30 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
               <h2 className="realm-h">Администраторы</h2>
               <p className="realm-copy">Должность ниже создателя группы. Одобрить выше запрошенного нельзя. Отказ без причины не сохраняется.</p>
               <form className="realm-form" onSubmit={appoint}>
-                <label>Id человека<input inputMode="numeric" value={appointUser} onChange={(e) => setAppointUser(e.target.value)} /></label>
+                <label>Id человека<input inputMode="numeric" value={appointUser} onChange={(event) => setAppointUser(event.target.value)} /></label>
                 <label>
                   Должность
-                  <select value={appointPos} onChange={(e) => setAppointPos(e.target.value)}>
+                  <select value={appointPos} onChange={(event) => setAppointPos(event.target.value)}>
                     <option value="">Выберите</option>
-                    {positions.filter((p) => p.rank < 5).map((p) => (
-                      <option key={p.id} value={p.id}>{p.title}</option>
+                    {positions.filter((item) => item.rank < 5).map((item) => (
+                      <option key={item.id} value={item.id}>{item.title}</option>
                     ))}
                   </select>
                 </label>
-                <label>Причина<input value={appointReason} onChange={(e) => setAppointReason(e.target.value)} placeholder="После отказа или сразу" /></label>
+                <label>Зачем<input value={appointReason} onChange={(event) => setAppointReason(event.target.value)} /></label>
                 <button type="submit" className="realm-back">Назначить</button>
               </form>
-              <h3 className="realm-subhead">Заявки</h3>
               <ul className="realm-list">
                 {apps.map((item) => (
-                  <li key={item.id}>
-                    <div className="realm-row">
-                      <strong>{item.group} · {item.position}</strong>
-                      <span>{item.userId}</span>
-                    </div>
-                    <p className="realm-reason">{item.body}</p>
-                    <div className="realm-actions">
+                  <li key={item.id} className="realm-row">
+                    <strong>{item.position} · {item.userId}</strong>
+                    <span>
                       <button type="button" onClick={() => decide(item, true)}>Одобрить</button>
                       <button type="button" onClick={() => decide(item, false)}>Отказать</button>
-                    </div>
+                    </span>
                   </li>
                 ))}
               </ul>
-              {apps.length === 0 && <p className="realm-copy">Ожидающих заявок нет.</p>}
             </section>
           )}
 
@@ -318,7 +387,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
               )}
               {isCreator && (
                 <form className="realm-search" onSubmit={onSearch}>
-                  <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Найти чат и сделать официальным" aria-label="Найти группу" />
+                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Найти чат и сделать официальным" aria-label="Найти группу" />
                   <button type="submit">Найти</button>
                 </form>
               )}
@@ -350,7 +419,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
               </ul>
               {allowedActions.length > 0 && chatId && (
                 <form className="realm-form" onSubmit={punish}>
-                  <label>Id человека<input inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value)} /></label>
+                  <label>Id человека<input inputMode="numeric" value={userId} onChange={(event) => setUserId(event.target.value)} /></label>
                   <div className="realm-actions">
                     {allowedActions.map((item) => (
                       <button key={item.id} type="button" className={selectedAction?.id === item.id ? 'is-on' : ''} onClick={() => setAction(item.id)}>
@@ -359,9 +428,9 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
                     ))}
                   </div>
                   {selectedAction?.needsUntil && (
-                    <label>Часы<input inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} /></label>
+                    <label>Часы<input inputMode="decimal" value={hours} onChange={(event) => setHours(event.target.value)} /></label>
                   )}
-                  <label>Причина<input value={reason} onChange={(e) => setReason(e.target.value)} /></label>
+                  <label>Причина<input value={reason} onChange={(event) => setReason(event.target.value)} /></label>
                   <p className="realm-copy">Наказание проходит, только если человек младше вашей должности в этой группе. Старшего и равного система не пропустит.</p>
                   <button type="submit" className="realm-back" disabled={acting}>{acting ? 'Запись…' : 'Выполнить'}</button>
                 </form>
@@ -379,12 +448,9 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
               )}
               <ul className="realm-list">
                 {(mods?.recent || []).map((row, index) => (
-                  <li key={`${row.at}-${index}`}>
-                    <div className="realm-row">
-                      <strong>{row.action} · {row.target_user_id}</strong>
-                      <span>{when(row.at)}</span>
-                    </div>
-                    {row.reason ? <p className="realm-reason">{row.reason}</p> : null}
+                  <li key={`${row.at || index}-${row.user_id || index}`} className="realm-row">
+                    <strong>{row.action} · {row.target_id || row.user_id || '—'}</strong>
+                    <span>{when(row.at || row.created_at)}</span>
                   </li>
                 ))}
               </ul>
@@ -393,46 +459,73 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
 
           {!chapter && activeTab === 'analytics' && (
             <section>
+              <h2 className="realm-h">Этот чат</h2>
               <p className="realm-hero-num">{fmt(summary?.messages30d)}</p>
-              <p className="realm-copy">Сообщений за 30 дней · писали {fmt(summary?.writers30d)} · в базе участников {fmt(summary?.members)}</p>
+              <p className="realm-copy">{roomLine(summary)}</p>
+              <ul className="realm-list">
+                <li className="realm-row"><strong>Писали</strong><span>{fmt(summary?.writers30d)}</span></li>
+                <li className="realm-row"><strong>Участники в базе</strong><span>{fmt(summary?.members)}</span></li>
+                <li className="realm-row"><strong>Наказания за 30 дней</strong><span>{fmt(mods?.actions30d)}</span></li>
+              </ul>
+            </section>
+          )}
+
+          {!chapter && activeTab === 'rights' && (
+            <section>
+              <h2 className="realm-h">Права должностей</h2>
+              <p className="realm-copy">Название и права этой группы. Менять можно должность младше своей. Создателя группы права не теряют.</p>
+              <PositionEditor positions={positions} creator={isCreator} onSave={savePosition} savingId={savingId} />
             </section>
           )}
 
           {!chapter && activeTab === 'more' && (
-            <section className="realm-more">
-              <button type="button" className="realm-row" onClick={onLeave}><strong>К дверям</strong><span>Другой контур</span></button>
-              <a className="realm-row" href="https://t.me/CuteRules" target="_blank" rel="noreferrer"><strong>Правила</strong><span>t.me/CuteRules</span></a>
-              {isCreator && (
-                <button type="button" className="realm-row" onClick={openCreator}><strong>Администраторы</strong><span>Назначить и разобрать заявки</span></button>
-              )}
-              {!portrait?.staffCanEnter && (
-                <button type="button" className="realm-row is-locked" onClick={() => setLockOpen(true)}>
-                  <strong>Панель сотрудника</strong><span>Закрыто</span>
-                </button>
-              )}
+            <section>
+              <h2 className="realm-h">Ещё</h2>
+              <ul className="realm-list">
+                <li><a className="realm-row" href="https://t.me/CuteRules" target="_blank" rel="noreferrer"><strong>Правила</strong><span>t.me/CuteRules</span></a></li>
+                <li><button type="button" className="realm-row" onClick={onLeave}><strong>Двери</strong><span>вернуться к выбору панели</span></button></li>
+                {isCreator && (
+                  <li><button type="button" className="realm-row" onClick={openCreator}><strong>Администраторы</strong><span>назначить</span></button></li>
+                )}
+                {!portrait?.staffCanEnter && (
+                  <li>
+                    <button type="button" className="realm-row is-locked" onClick={() => setLockOpen((open) => !open)}>
+                      <strong>Панель сотрудника</strong>
+                      <span>закрыта</span>
+                    </button>
+                    {lockOpen && (
+                      <p className="realm-copy">Вы администратор группы, а не сотрудник проекта. Панель сотрудников Эпсилона открыта только команде проекта.</p>
+                    )}
+                    {onStaffApply && <button type="button" className="realm-back" onClick={onStaffApply}>Заявка в команду</button>}
+                  </li>
+                )}
+              </ul>
             </section>
           )}
         </main>
       </div>
-      <nav className="realm-tabbar" aria-label="Разделы">
+
+      {phone && !railOpen && (
+        <button type="button" className="phone-edge" aria-label="Открыть вкладки" onClick={() => setRailOpen(true)} />
+      )}
+      {phone && railOpen && (
+        <div className="realm-rail-sheet" role="dialog" aria-label="Вкладки">
+          {tabs.map((item) => (
+            <button key={item.id} type="button" className={activeTab === item.id ? 'is-on' : ''} onClick={() => pickTab(item.id)}>
+              {item.label}
+            </button>
+          ))}
+          <p>Смахните влево, чтобы закрыть</p>
+        </div>
+      )}
+
+      <nav className="realm-tabbar" data-coach="tabs" data-swipe-ignore aria-label="Вкладки группы">
         {tabs.map((item) => (
-          <button key={item.id} type="button" className={activeTab === item.id && !chapter ? 'is-on' : ''} onClick={() => { setChapter(false); setTab(item.id) }}>
+          <button key={item.id} type="button" data-coach={item.id} className={activeTab === item.id && !chapter ? 'is-on' : ''} onClick={() => pickTab(item.id)}>
             {item.label}
           </button>
         ))}
       </nav>
-      {lockOpen && (
-        <div className="firstrun" role="dialog" aria-modal="true">
-          <div className="firstrun-sheet">
-            <h2 className="firstrun-title">Вы администратор группы, а не сотрудник проекта</h2>
-            <p className="firstrun-body">Панель сотрудников Эпсилона открыта только команде проекта.</p>
-            <div className="firstrun-actions">
-              <button type="button" className="firstrun-skip" onClick={() => setLockOpen(false)}>Понятно</button>
-              <button type="button" className="firstrun-next" onClick={() => { setLockOpen(false); onStaffApply?.() }}>Заявка в команду</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

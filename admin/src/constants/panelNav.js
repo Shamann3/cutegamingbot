@@ -86,6 +86,11 @@ export const PANEL_SECTIONS = [
     blurb: 'Команда: заявки, сотрудники, зарплаты, смены и жалобы.',
   },
   {
+    id: 'rights', label: 'Rights', labelRu: 'Права', group: 'team',
+    creatorOnly: true,
+    blurb: 'Должности групп, их названия и полный сброс допуска.',
+  },
+  {
     id: 'support', label: 'Support', labelRu: 'Поддержка', group: 'team',
     blurb: 'Тикеты поддержки: переписка с игроками и статусы обращений.',
   },
@@ -157,7 +162,7 @@ export function visibleSections(
   return PANEL_SECTIONS.filter((s) => {
     if (s.ownerOnly && role !== 'owner') return false
     if (s.creatorOnly && !creatorOk) return false
-    if (allowedIds && !allowedIds.has(s.id)) return false
+    if (allowedIds && s.id !== 'rights' && !allowedIds.has(s.id)) return false
     if (s.permission && !perms.has(s.permission)) return false
     return true
   })

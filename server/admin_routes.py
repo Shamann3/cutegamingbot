@@ -1653,6 +1653,55 @@ async def staff_suspend_member(
     return {"ok": True}
 
 
+@router.post("/staff/members/{member_id}/purge")
+async def staff_purge_member(
+    member_id: int,
+    request: Request,
+    user_id: int = Depends(require_active_admin),
+):
+    """Убирает допуск целиком: панель сотрудника, места в группах и личный ключ."""
+    from staff_panel_rights import purge_allowed
+
+    blocked = purge_allowed(
+        actor_is_creator=sr_is_creator(user_id),
+        target_is_creator=sr_is_creator(member_id) or int(member_id) == int(PROJECT_CREATOR_ID),
+    )
+    if blocked:
+        raise HTTPException(status_code=403, detail=blocked)
+    if member_id == user_id:
+        raise HTTPException(status_code=400, detail="Себя убрать нельзя")
+
+    from db import db as app_db
+    from group_realm import drop_group_access
+
+    account = await app_db.pool.fetchrow(
+        "SELECT user_id FROM admin_accounts WHERE user_id = $1",
+        int(member_id),
+    )
+    staff_removed = False
+    if account:
+        await app_db.pool.execute(
+            """
+            UPDATE admin_accounts
+            SET status = 'suspended', role = 'moderator', force_reauth_at = NOW(), session_fingerprint = NULL
+            WHERE user_id = $1
+            """,
+            int(member_id),
+        )
+        staff_removed = await delete_suspended_member(int(member_id))
+    cleared = await drop_group_access(int(member_id))
+    if not staff_removed and cleared["seats"] == 0 and cleared["keys"] == 0:
+        raise HTTPException(status_code=404, detail="Этого человека нет ни в сотрудниках, ни в группах")
+    await log_admin_action(
+        user_id, "staff_purge",
+        target_type="staff",
+        target_id=str(member_id),
+        target_label="Допуск сброшен",
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True, "staffRemoved": staff_removed, "groups": cleared}
+
+
 @router.post("/staff/members/{member_id}/unsuspend")
 async def staff_unsuspend_member(
     member_id: int,

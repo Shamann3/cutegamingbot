@@ -159,12 +159,12 @@ export default function EliteTopbar({
       </div>
 
       <div className="elite-mobile-title">
-        <p className="elite-mobile-kicker">Epsilon</p>
         <h1 className="elite-mobile-section">{sectionTitle}</h1>
+        <p className="elite-where">Панель сотрудника. Весь проект, не одна группа.</p>
       </div>
 
       <div className="elite-topbar-actions">
-        <div className="elite-search-wrap" ref={wrapRef}>
+        <div className="elite-search-wrap" data-coach="search" ref={wrapRef}>
           <div className="elite-search">
             <SearchIcon />
             <input
@@ -227,7 +227,8 @@ export default function EliteTopbar({
           <button
             type="button"
             className={`elite-menu-btn${menuOpen ? ' elite-menu-btn-open' : ''}`}
-            aria-label={menuOpen ? 'Закрыть меню разделов' : 'Открыть меню разделов'}
+            data-coach="menu"
+            aria-label={menuOpen ? 'Закрыть разделы' : 'Открыть разделы'}
             aria-expanded={menuOpen}
             onClick={onOpenMenu}
           >

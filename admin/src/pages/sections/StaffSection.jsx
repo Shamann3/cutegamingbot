@@ -36,6 +36,7 @@ import {
   setMemberCurator,
   submitComplaintEvidence,
   suspendStaffMember,
+  purgeStaffMember,
   takeStaffComplaint,
   unsuspendStaffMember,
 } from '../../lib/adminClient'
@@ -601,7 +602,7 @@ function MemberManageModal({ member, members, canAssignRoles, onClose, onSaved }
 // Tab: Members
 // ---------------------------------------------------------------------------
 
-function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff }) {
+function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff, isProjectCreator = false }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [acting, setActing] = useState(null)
@@ -656,7 +657,20 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff }) {
       await deleteStaffMember(member.userId)
       await load()
     } catch (err) {
-      alert(err?.message || 'Не удалось удалить')
+      alert(err.message || 'Не удалось удалить')
+    } finally {
+      setActing(null)
+    }
+  }
+
+  const handlePurge = async (member) => {
+    if (!window.confirm(`Убрать допуск ${nameOf(member)}? Он выйдет из панели сотрудника и из групп. Снова войти можно только новой заявкой и новым ключом.`)) return
+    setActing(member.userId)
+    try {
+      await purgeStaffMember(member.userId)
+      await load()
+    } catch (err) {
+      alert(err.message || 'Сбросить допуск не удалось')
     } finally {
       setActing(null)
     }
@@ -718,6 +732,15 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff }) {
                         onClick={() => setManageMember(m)}
                       >
                         Управление
+                      </button>
+                    )}
+                    {isProjectCreator && !isSelf && (
+                      <button
+                        className="sec-btn sec-btn-sm sec-btn-danger"
+                        disabled={acting === m.userId}
+                        onClick={() => handlePurge(m)}
+                      >
+                        {acting === m.userId ? '…' : 'Убрать допуск'}
                       </button>
                     )}
                     {m.role !== 'owner' && m.status !== 'suspended' && !isSelf && (
@@ -1609,7 +1632,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
       {/* Каждая вкладка сама рендерит .sec-tab-body — без внешней обёртки,
           иначе вложенный overflow ломает прокрутку (Зарплаты и др.). */}
       {activeTab === 'applications' && <ApplicationsTab />}
-      {activeTab === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} />}
+      {activeTab === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} isProjectCreator={isProjectCreator} />}
       {activeTab === 'invites' && <InvitesTab />}
       {activeTab === 'salaries' && (
         <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} myUserId={myUserId} />

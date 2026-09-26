@@ -6,6 +6,14 @@
 from __future__ import annotations
 
 
+def purge_allowed(*, actor_is_creator: bool, target_is_creator: bool) -> str | None:
+    if not actor_is_creator:
+        return "Полный сброс допуска может сделать только создатель проекта"
+    if target_is_creator:
+        return "Создателя проекта убрать нельзя"
+    return None
+
+
 def column_granted(permissions: dict | None, column: str) -> bool:
     if not permissions:
         return False

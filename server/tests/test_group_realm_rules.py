@@ -1,5 +1,5 @@
-from group_realm import action_right, may_punish_rank, rights_allow
-from staff_panel_rights import column_granted
+from group_realm import action_right, editable_rights, may_edit_position, may_punish_rank, rights_allow
+from staff_panel_rights import column_granted, purge_allowed
 
 def test_local_actions_map_to_one_right():
     assert action_right("ban") == "punish_ban"
@@ -27,3 +27,18 @@ def test_players_ban_needs_explicit_banfull():
     assert not column_granted({"ban": True, "mute": True}, "banfull")
     assert not column_granted({"banfull": False}, "banfull")
     assert not column_granted(None, "banfull")
+
+
+def test_position_edit_stays_below_actor():
+    assert may_edit_position(5, 5, creator=True)
+    assert not may_edit_position(3, 3, creator=False)
+    assert may_edit_position(3, 1, creator=False)
+    assert editable_rights(5, ["punish_warn"], creator=False)[0] == "view_members"
+    assert "manage_positions" not in editable_rights(2, ["manage_positions", "punish_warn"], creator=False)
+    assert "manage_positions" in editable_rights(2, ["manage_positions", "punish_warn"], creator=True)
+
+
+def test_only_creator_can_purge_and_not_himself():
+    assert purge_allowed(actor_is_creator=True, target_is_creator=False) is None
+    assert purge_allowed(actor_is_creator=False, target_is_creator=False)
+    assert purge_allowed(actor_is_creator=True, target_is_creator=True)

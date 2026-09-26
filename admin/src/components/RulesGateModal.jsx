@@ -82,6 +82,13 @@ export default function RulesGateModal({ onAccepted }) {
           ) : null}
           <button
             type="button"
+            className="rules-gate-btn rules-gate-link"
+            onClick={() => window.open('https://t.me/CuteRules', '_blank', 'noopener,noreferrer')}
+          >
+            Открыть правила проекта
+          </button>
+          <button
+            type="button"
             className="rules-gate-btn"
             disabled={!unlocked || loading}
             onClick={handleAccept}

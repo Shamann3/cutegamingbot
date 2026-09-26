@@ -72,6 +72,23 @@ def rights_allow(rights: list[str] | set[str], action: str) -> bool:
     return bool(need) and need in set(rights or [])
 
 
+def may_edit_position(actor_rank: int, position_rank: int, *, creator: bool) -> bool:
+    """Создатель правит любую должность. Остальные — только строго младшую."""
+    if creator:
+        return True
+    return int(position_rank) < int(actor_rank)
+
+
+def editable_rights(rank: int, requested: list[str] | set[str], *, creator: bool) -> list[str]:
+    """Должность создателя группы всегда держит полный набор прав."""
+    if int(rank) >= 5:
+        return list(ALL_RIGHTS)
+    clean = _rights(requested)
+    if not creator:
+        clean = [item for item in clean if item != "manage_positions"]
+    return clean
+
+
 def may_punish_rank(actor_rank: int, target_rank: int, *, same_person: bool) -> str | None:
     """Наказать можно только того, кто строго младше в этой группе.
 
@@ -294,6 +311,12 @@ class OfficialBody(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class PositionEditBody(BaseModel):
+    title: str = Field(min_length=2, max_length=40)
+    rights: list[str] = Field(default_factory=list)
+    model_config = {"extra": "forbid"}
+
+
 class AppointBody(BaseModel):
     chat_id: int
     user_id: int = Field(ge=1)
@@ -468,9 +491,51 @@ async def group_official(body: OfficialBody, user_id: int = Depends(get_any_tele
     return {"ok": True, "chatId": int(body.chat_id), "official": bool(body.official)}
 
 
+async def _can_edit_positions(user_id: int, chat_id: int) -> dict | None:
+    if _is_creator(user_id):
+        return {"rank": 5, "creator": True}
+    access = await _access(user_id, chat_id)
+    if not access or "manage_positions" not in set(access["rights"]):
+        return None
+    return {"rank": int(access["rank"]), "creator": False}
+
+
+@router.get("/board")
+async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
+    _require_creator(user_id)
+    await ensure_tables()
+    groups = await seats_for(user_id)
+    payload = []
+    for group in groups:
+        rows = await db.pool.fetch(
+            """
+            SELECT id, title, rank, rights, accepting
+            FROM epsilon_positions
+            WHERE chat_id = $1
+            ORDER BY rank DESC, id
+            """,
+            int(group["chatId"]),
+        )
+        payload.append({
+            **group,
+            "positions": [
+                {
+                    "id": int(r["id"]),
+                    "title": r["title"],
+                    "rank": int(r["rank"]),
+                    "rights": _rights(r["rights"]),
+                    "accepting": bool(r["accepting"]),
+                }
+                for r in rows
+            ],
+        })
+    return {"groups": payload}
+
+
 @router.get("/positions/{chat_id}")
 async def group_positions(chat_id: int, user_id: int = Depends(get_any_telegram_user_id)):
-    _require_creator(user_id)
+    if not await _can_edit_positions(user_id, chat_id):
+        raise HTTPException(status_code=403, detail="Права должностей этой группы вам не открыты")
     await ensure_tables()
     rows = await db.pool.fetch(
         """
@@ -493,6 +558,63 @@ async def group_positions(chat_id: int, user_id: int = Depends(get_any_telegram_
             for r in rows
         ]
     }
+
+
+@router.post("/positions/{position_id}")
+async def edit_position(
+    position_id: int,
+    body: PositionEditBody,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    await ensure_tables()
+    row = await db.pool.fetchrow(
+        """
+        SELECT p.id, p.chat_id, p.rank
+        FROM epsilon_positions p
+        JOIN epsilon_official_groups g ON g.chat_id = p.chat_id AND g.is_official
+        WHERE p.id = $1
+        """,
+        int(position_id),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Такой должности нет")
+    actor = await _can_edit_positions(user_id, int(row["chat_id"]))
+    if not actor or not may_edit_position(actor["rank"], int(row["rank"]), creator=actor["creator"]):
+        raise HTTPException(status_code=403, detail="Эту должность может менять только тот, кто старше неё")
+    title = " ".join(body.title.split())
+    rights = editable_rights(int(row["rank"]), body.rights, creator=actor["creator"])
+    await db.pool.execute(
+        """
+        UPDATE epsilon_positions
+        SET title = $2, rights = $3::jsonb
+        WHERE id = $1
+        """,
+        int(position_id),
+        title,
+        json.dumps(rights),
+    )
+    return {"ok": True, "id": int(position_id), "title": title, "rights": rights}
+
+
+async def drop_group_access(user_id: int) -> dict:
+    """Снимает места и личный ключ. Следующий вход потребует новый ключ."""
+    await ensure_tables()
+    seats = await db.pool.execute(
+        "DELETE FROM epsilon_seats WHERE user_id = $1",
+        int(user_id),
+    )
+    keys = await db.pool.execute(
+        "DELETE FROM epsilon_group_keys WHERE user_id = $1",
+        int(user_id),
+    )
+
+    def _count(result: str) -> int:
+        try:
+            return int(str(result).split()[-1])
+        except (ValueError, IndexError):
+            return 0
+
+    return {"seats": _count(seats), "keys": _count(keys)}
 
 
 @router.post("/appoint")

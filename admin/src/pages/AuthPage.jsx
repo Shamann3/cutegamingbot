@@ -274,8 +274,10 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
           <div className="auth-logo-wrap">
             <EpsilonLogo className="auth-logo" size="lg" alt="Cute Epsilon" />
           </div>
-          <h1 className="auth-title">Panel</h1>
-          <p className="auth-subtitle">Защищённый доступ</p>
+          <h1 className="auth-title">{fortress ? 'Панель сотрудника' : 'Panel'}</h1>
+          <p className="auth-subtitle">
+            {fortress ? 'Сначала ключ входа, затем код из аутентификатора.' : 'Защищённый доступ'}
+          </p>
         </header>
 
         <AuthTabs mode={mode} onChange={handleTabChange} />

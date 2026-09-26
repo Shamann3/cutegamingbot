@@ -49,14 +49,14 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   useEffect(() => load(), [load])
 
   const staffDetail = portrait?.staffCanEnter
-    ? 'Ключ и код аутентификатора'
+    ? 'Команда проекта. Дальше ключ и код из аутентификатора.'
     : portrait?.applicationStatus === 'pending'
-      ? 'Заявка уже на рассмотрении'
-      : 'Нажатие откроет заявку в команду'
+      ? 'Заявка уже у создателя. Повторно отправлять не нужно.'
+      : 'Для команды проекта. Нажатие откроет заявку, не панель.'
 
   const groupDetail = portrait?.groupCanEnter
-    ? (portrait.groups.length > 1 ? 'Спросите, в какую группу войти' : 'Кабинет официальных групп')
-    : 'Нажатие откроет заявку в группу'
+    ? (portrait.groups.length > 1 ? 'Ваши группы. Дальше спросит, какую открыть.' : 'Кабинет этой группы: люди, архив, наказания.')
+    : 'Для администраторов групп. Нажатие откроет заявку, не панель.'
 
   const pressStaff = () => {
     if (!portrait) return
@@ -84,7 +84,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
         <header className="gate-head">
           <EpsilonLogo size="sm" decorative />
           <h1 className="gate-title">Куда войти</h1>
-          <p className="gate-lead">Две панели. У каждой свой допуск. Серая дверь в панель не пускает.</p>
+          <p className="gate-lead">Две разные панели. Светлая дверь открывает вход. Серая дверь панель не открывает: она ведёт в заявку.</p>
         </header>
 
         {loading && (
@@ -109,7 +109,6 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
 
         {!loading && !error && hold && (
           <div className="gate-hold" role="status">
-            <p className="gate-kicker">Панель сотрудника</p>
             <h2 className="gate-title">Заявка уже у создателя</h2>
             <p className="gate-lead">Вход откроется после одобрения. Повторно отправлять её не нужно.</p>
             <button type="button" className="gate-text" onClick={() => setHold(false)}>К дверям</button>

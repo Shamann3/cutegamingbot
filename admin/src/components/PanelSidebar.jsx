@@ -179,7 +179,10 @@ export default function PanelSidebar({
       {/* Mobile drawer chrome — на desktop скрыт CSS */}
       <div className="panel-sidebar-grab">
         <div className="panel-sidebar-drawer-head">
-          <h2 className="panel-sidebar-drawer-title">Меню</h2>
+          <div>
+            <h2 className="panel-sidebar-drawer-title">Разделы</h2>
+            <p className="panel-sidebar-swipe-hint">Нажмите раздел. Влево — закрыть список.</p>
+          </div>
           <button
             type="button"
             className="panel-sidebar-close"
@@ -213,12 +216,12 @@ export default function PanelSidebar({
           </div>
         </div>
         <div className="panel-brand-meta">
-          <p className="panel-brand-name">Epsilon</p>
-          <p className="panel-brand-tag">Управление</p>
+          <p className="panel-brand-name">Панель сотрудника</p>
+          <p className="panel-brand-tag">Весь проект</p>
         </div>
       </div>
 
-      <nav className="panel-sidebar-nav" aria-label="Навигация панели">
+      <nav className="panel-sidebar-nav" data-coach="nav" aria-label="Навигация панели">
         {!navQuery.trim() && recentItems.length > 0 && (
           <div className="panel-nav-group panel-nav-recent">
             <span className="panel-nav-group-label" aria-hidden="true">
@@ -391,8 +394,9 @@ export default function PanelSidebar({
         )}
 
         {onChangeDoor && (
-          <button type="button" className="panel-logout-btn" onClick={onChangeDoor}>
+          <button type="button" className="panel-logout-btn" data-coach="doors" onClick={onChangeDoor}>
             Двери
+            <span className="panel-logout-hint">выбор панели, без выхода</span>
           </button>
         )}
         <button type="button" className="panel-logout-btn" onClick={onLogout}>

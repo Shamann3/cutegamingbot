@@ -2292,3 +2292,15 @@ export async function groupRealmAct(body) {
 export async function checkGroupKey(key) {
   return adminFetch('/group-realm/key/check', { method: 'POST', body: { key } })
 }
+
+export async function fetchRightsBoard() {
+  return adminFetch('/group-realm/board')
+}
+
+export async function saveGroupPosition(positionId, body) {
+  return adminFetch(`/group-realm/positions/${encodeURIComponent(positionId)}`, { method: 'POST', body })
+}
+
+export async function purgeStaffMember(memberId) {
+  return adminFetch(`/staff/members/${memberId}/purge`, { method: 'POST', body: {} })
+}
