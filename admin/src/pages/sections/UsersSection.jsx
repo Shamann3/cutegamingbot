@@ -1376,17 +1376,16 @@ function CuteHistoryFeed({ userId, onOpenUser }) {
   )
 }
 
-export default function UsersSection({ initialUserId = null, onInitialUserConsumed, permissions = [], role = null, isProjectCreator = false }) {
+export default function UsersSection({ initialUserId = null, onInitialUserConsumed, role = null, isProjectCreator = false, canBanfull = false }) {
   const phone = useIsPhone()
   const isOwner = role === 'owner'
   // «Экспорт» и другие creator-only действия — не просто owner-роль (их может
   // быть несколько), а именно ЕДИНСТВЕННЫЙ создатель проекта (PROJECT_CREATOR_ID
   // на backend). Флаг приходит из /account через PanelShell.
   const isCreator = !!isProjectCreator
-  const perms = new Set(permissions)
   const canMutateEconomy = isOwner // обычные админы: всё видят, кут/предметы/ферму не меняют
-  const canBan = perms.has('moderate_ban')
-  const canUnban = perms.has('moderate_unban')
+  const canBan = Boolean(canBanfull)
+  const canUnban = Boolean(canBanfull)
   const canBalance = canMutateEconomy
   const canItems = canMutateEconomy
   const canFarmControl = canMutateEconomy
@@ -2483,13 +2482,25 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
               </div>
               )}
 
+              {!canBanfull && (
+              <div className="panel-users-action-block pu-action-tile">
+                <div className="pu-action-tile-top">
+                  <span className="pu-action-ico" aria-hidden>✕</span>
+                  <div>
+                    <p className="panel-users-action-title">Бан</p>
+                    <p className="pu-action-hint">Закрыт. Бан во всём проекте есть только у должности с правом банфулл.</p>
+                  </div>
+                </div>
+              </div>
+              )}
+
               {canBan && (
               <div className="panel-users-action-block pu-action-tile pu-action-tile-ban">
                 <div className="pu-action-tile-top">
                   <span className="pu-action-ico pu-action-ico-danger" aria-hidden>✕</span>
                   <div>
                     <p className="panel-users-action-title">Бан</p>
-                    <p className="pu-action-hint">Блокировка в боте</p>
+                    <p className="pu-action-hint">Блокировка во всём проекте. Право банфулл.</p>
                   </div>
                 </div>
                 <label className="pu-field">
@@ -2539,7 +2550,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   <span className="pu-action-ico pu-action-ico-ok" aria-hidden>✓</span>
                   <div>
                     <p className="panel-users-action-title">Разбан</p>
-                    <p className="pu-action-hint">Вернуть доступ</p>
+                    <p className="pu-action-hint">Снять блокировку во всём проекте. То же право банфулл.</p>
                   </div>
                 </div>
                 {hasProfile && profile.banned && profile.bannedReason && (

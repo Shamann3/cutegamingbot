@@ -60,6 +60,12 @@ export default function EntranceSeal({
     applyAccentToDocument(loadStoredAccent())
   }, [])
 
+  const finish = () => {
+    if (doneRef.current) return
+    doneRef.current = true
+    onFinished?.()
+  }
+
   useEffect(() => {
     const warm = new Image()
     warm.src = vivoEpsilonLogo
@@ -73,15 +79,13 @@ export default function EntranceSeal({
     const exit = reduced ? 200 : ENTRANCE_EXIT_MS
 
     const t1 = window.setTimeout(() => setPhase('out'), hold)
-    const t2 = window.setTimeout(() => {
-      if (doneRef.current) return
-      doneRef.current = true
-      onFinished?.()
-    }, hold + exit)
+    const t2 = window.setTimeout(finish, hold + exit)
+    const backup = window.setTimeout(finish, hold + exit + 4000)
 
     return () => {
       window.clearTimeout(t1)
       window.clearTimeout(t2)
+      window.clearTimeout(backup)
     }
   }, [holdMs, onFinished])
 
@@ -166,6 +170,9 @@ export default function EntranceSeal({
       </div>
 
       <div className="ent-flash" aria-hidden="true" />
+      <button type="button" className="ent-skip" onClick={finish}>
+        Войти сразу
+      </button>
     </div>
   )
 }

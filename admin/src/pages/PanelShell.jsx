@@ -50,8 +50,9 @@ import {
 } from '../lib/accentTheme'
 import { loadRecentSections, pushRecentSection } from '../lib/recentSections'
 import { useViewportMode } from '../lib/useIsDesktop'
+import FirstRun, { STAFF_STEPS, firstRunSeen } from '../components/FirstRun'
 
-export default function PanelShell({ onLogout }) {
+export default function PanelShell({ onLogout, onChangeDoor }) {
   const { lightMode, setLightMode } = usePerfMode()
   const { volume: musicVolume, setVolume: setMusicVolume, toggleMute: toggleMusicMute } = useMusicMode()
   const viewport = useViewportMode()
@@ -93,7 +94,9 @@ export default function PanelShell({ onLogout }) {
   const [godMode, setGodMode] = useState(false)
   const [projectCreatorId, setProjectCreatorId] = useState(null)
   const [isProjectCreator, setIsProjectCreator] = useState(false)
+  const [canBanfull, setCanBanfull] = useState(false)
   const [recentSections, setRecentSections] = useState(() => loadRecentSections())
+  const [coach, setCoach] = useState(() => !firstRunSeen('epsilon.onboard.staff.v1'))
 
   useGlobalKeys({
     onEscape: () => setMobileNavOpen(false),
@@ -137,6 +140,7 @@ export default function PanelShell({ onLogout }) {
         setMyUserId(me.userId || null)
         setProjectCreatorId(me.projectCreatorId ?? null)
         setIsProjectCreator(!!me.isProjectCreator)
+        setCanBanfull(!!me.canBanfull)
         // Окно правил при первом входе - кроме владельца.
         if (me.role !== 'owner' && !me.rulesAcceptedAt) {
           setNeedsRules(true)
@@ -273,6 +277,13 @@ export default function PanelShell({ onLogout }) {
 
   return (
     <div className={`panel-shell panel-shell-${viewport}`} data-viewport={viewport}>
+      {coach && (
+        <FirstRun
+          storageKey="epsilon.onboard.staff.v1"
+          steps={STAFF_STEPS}
+          onDone={() => setCoach(false)}
+        />
+      )}
       {/* Зарезервированная полоса под ✕ / меню Telegram + Dynamic Island */}
       <div className="panel-tg-chrome" aria-hidden="true" />
 
@@ -357,6 +368,7 @@ export default function PanelShell({ onLogout }) {
             activeSection={section}
             onNavigate={handleNavigate}
             onLogout={handleLogout}
+            onChangeDoor={onChangeDoor}
             onSessionExpired={handleSessionExpired}
             mobileOpen={mobileNavOpen}
             onClose={() => setMobileNavOpen(false)}
@@ -394,6 +406,7 @@ export default function PanelShell({ onLogout }) {
               permissions={permissions}
               role={role}
               isProjectCreator={isProjectCreator}
+              canBanfull={canBanfull}
             />
           )}
           {isAccounts && (

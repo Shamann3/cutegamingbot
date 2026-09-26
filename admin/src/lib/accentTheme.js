@@ -238,6 +238,18 @@ export function loadStoredAccent() {
   }
 }
 
+/** Человек сам менял палитру, и это не белый/серый.
+ *  Иначе крепость остаётся чёрно-белой. */
+export function accentIsPersonal(accent = loadStoredAccent()) {
+  try {
+    if (!localStorage.getItem(STORAGE_KEY)) return false
+  } catch {
+    return false
+  }
+  const a = normalizeAccent(accent)
+  return a.s >= 0.08
+}
+
 export function persistAccent(accent) {
   const resolved = normalizeAccent(accent)
   try {

@@ -98,6 +98,7 @@ export default function PanelSidebar({
   activeSection,
   onNavigate,
   onLogout,
+  onChangeDoor,
   onSessionExpired,
   mobileOpen = false,
   onClose,
@@ -389,6 +390,11 @@ export default function PanelSidebar({
           </>
         )}
 
+        {onChangeDoor && (
+          <button type="button" className="panel-logout-btn" onClick={onChangeDoor}>
+            Двери
+          </button>
+        )}
         <button type="button" className="panel-logout-btn" onClick={onLogout}>
           Выйти
         </button>

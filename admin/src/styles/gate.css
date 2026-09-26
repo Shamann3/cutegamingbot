@@ -1,0 +1,935 @@
+/* Двери Эпсилона и кабинет групп.
+   Чёрно-белая крепость. Личный цвет палитры включает .is-personal. */
+
+.gate-root,
+.realm-root {
+  --gate-ink: #f4f4f4;
+  --gate-muted: rgba(244, 244, 244, 0.52);
+  --gate-line: rgba(244, 244, 244, 0.16);
+  --gate-fill: #f4f4f4;
+  --gate-fill-ink: #0a0a0a;
+  --gate-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: #000;
+  color: var(--gate-ink);
+  font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+  scrollbar-color: rgba(255, 255, 255, 0.72) rgba(255, 255, 255, 0.1);
+}
+
+.gate-root.is-personal,
+.realm-root.is-personal {
+  --gate-ink: var(--e-accent, #f4f4f4);
+  --gate-muted: rgba(var(--e-accent-rgb, 244, 244, 244), 0.62);
+  --gate-line: rgba(var(--e-accent-rgb, 244, 244, 244), 0.34);
+  --gate-fill: var(--e-accent, #f4f4f4);
+  --gate-fill-ink: var(--e-accent-ink, #0a0a0a);
+}
+
+.gate-frame {
+  pointer-events: none;
+  position: fixed;
+  inset: max(12px, var(--tg-content-top, 0px)) max(12px, var(--tg-safe-right, 0px))
+    max(12px, var(--tg-content-bottom, 0px)) max(12px, var(--tg-safe-left, 0px));
+  border: 1px solid var(--gate-line);
+  border-radius: 28px;
+}
+
+.gate-frame::before,
+.gate-frame::after {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--gate-ink);
+  opacity: 0.85;
+}
+
+.gate-frame::before {
+  top: 10px;
+  left: 10px;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.gate-frame::after {
+  right: 10px;
+  bottom: 10px;
+  border-left: 0;
+  border-top: 0;
+}
+
+.gate-sheet {
+  position: relative;
+  z-index: 1;
+  width: min(920px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: calc(var(--tg-content-top, 0px) + 48px) 8px calc(var(--tg-content-bottom, 0px) + 48px);
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-height: 100%;
+  justify-content: center;
+}
+
+.gate-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 34rem;
+}
+
+.gate-kicker {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gate-muted);
+}
+
+.gate-title,
+.realm-top h1,
+.realm-h,
+.realm-empty h2 {
+  margin: 0;
+  font-size: clamp(32px, 5vw, 52px);
+  line-height: 0.95;
+  font-weight: 560;
+  letter-spacing: -0.04em;
+  color: var(--gate-ink);
+}
+
+.gate-lead,
+.realm-copy,
+.realm-empty p,
+.gate-status {
+  margin: 0;
+  max-width: 38rem;
+  color: var(--gate-muted);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.gate-status-error {
+  color: #f4f4f4;
+}
+
+.gate-doors {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 901px) {
+  .gate-doors {
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+}
+
+.gate-door {
+  appearance: none;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 210px;
+  padding: 22px 22px 18px;
+  border-radius: 22px;
+  border: 1px solid var(--gate-line);
+  background: transparent;
+  color: var(--gate-ink);
+  transition: transform 0.18s var(--gate-ease), background 0.18s var(--gate-ease), border-color 0.18s var(--gate-ease);
+}
+
+.gate-door:active {
+  transform: scale(0.985);
+}
+
+.gate-door.is-open {
+  background: var(--gate-fill);
+  color: var(--gate-fill-ink);
+  border-color: var(--gate-fill);
+}
+
+.gate-door.is-sealed {
+  color: var(--gate-muted);
+}
+
+.gate-door-index {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+}
+
+.gate-door-title {
+  font-size: clamp(26px, 3vw, 34px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-weight: 560;
+  color: inherit;
+}
+
+.gate-door-detail {
+  font-size: 14px;
+  line-height: 1.35;
+  max-width: 18rem;
+  color: inherit;
+  opacity: 0.72;
+}
+
+.gate-door-mark {
+  margin-top: auto;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.gate-text,
+.firstrun-skip,
+.firstrun-next,
+.realm-back {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  border-radius: 999px;
+  font: inherit;
+}
+
+.gate-recover {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.gate-recover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+}
+
+.ent-skip {
+  position: absolute;
+  z-index: 5;
+  right: 16px;
+  bottom: calc(var(--tg-content-bottom, 0px) + 16px);
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  min-height: 44px;
+  padding: 0 8px;
+}
+
+.gate-text,
+.firstrun-skip {
+  background: transparent;
+  color: var(--gate-muted);
+  padding: 12px 0;
+}
+
+.firstrun-next,
+.realm-back {
+  background: var(--gate-fill);
+  color: var(--gate-fill-ink);
+  padding: 12px 18px;
+  font-size: 14px;
+}
+
+.gate-rules {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--gate-ink);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.gate-rules a {
+  color: inherit;
+}
+
+.realm-root {
+  display: flex;
+  flex-direction: column;
+  padding:
+    calc(var(--tg-content-top, 0px) + 18px)
+    16px
+    calc(var(--tg-content-bottom, 0px) + 78px);
+}
+
+.realm-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.realm-top h1 {
+  font-size: clamp(28px, 4vw, 40px);
+}
+
+.realm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  flex: 1;
+}
+
+.realm-rail {
+  display: none;
+}
+
+.realm-main {
+  min-width: 0;
+}
+
+.realm-hero-label {
+  margin: 0 0 6px;
+  color: var(--gate-muted);
+  font-size: 13px;
+}
+
+.realm-hero-num {
+  margin: 0 0 8px;
+  font-size: clamp(64px, 12vw, 104px);
+  line-height: 0.85;
+  letter-spacing: -0.06em;
+  font-weight: 520;
+  font-variant-numeric: tabular-nums;
+}
+
+.realm-list {
+  list-style: none;
+  margin: 22px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.realm-list button,
+.realm-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  padding: 16px 0;
+  border: 0;
+  border-bottom: 1px solid var(--gate-line);
+  background: transparent;
+  color: var(--gate-ink);
+  text-align: left;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.realm-list button span,
+.realm-row span {
+  color: var(--gate-muted);
+  font-size: 13px;
+}
+
+.realm-list button.is-on strong {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.realm-row.is-locked {
+  opacity: 0.55;
+}
+
+.realm-empty h2 {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.realm-table {
+  margin-top: 22px;
+  border-top: 1px solid var(--gate-line);
+}
+
+.realm-table-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--gate-line);
+  font-variant-numeric: tabular-nums;
+}
+
+.realm-table-head {
+  color: var(--gate-muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.realm-block {
+  margin-top: 18px;
+}
+
+.realm-block h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--gate-muted);
+}
+
+.realm-block ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.realm-block li {
+  padding: 11px 0;
+  border-bottom: 1px solid var(--gate-line);
+}
+
+.realm-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+  padding: 8px 8px calc(var(--tg-content-bottom, 0px) + 8px);
+  background: rgba(0, 0, 0, 0.92);
+  border-top: 1px solid var(--gate-line);
+}
+
+.realm-tabbar button,
+.realm-rail button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--gate-muted);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 8px 2px;
+  cursor: pointer;
+}
+
+.realm-tabbar button.is-on,
+.realm-rail button.is-on {
+  color: var(--gate-ink);
+}
+
+@media (min-width: 901px) {
+  .realm-root {
+    padding: 28px 32px 28px;
+  }
+
+  .realm-body {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 28px;
+  }
+
+  .realm-rail {
+    display: flex;
+    flex-direction: column;
+    width: 180px;
+    flex: none;
+    padding-top: 8px;
+    border-right: 1px solid var(--gate-line);
+  }
+
+  .realm-rail button {
+    text-align: left;
+    font-size: 15px;
+    padding: 12px 16px 12px 0;
+  }
+
+  .realm-tabbar {
+    display: none;
+  }
+
+  .realm-main {
+    flex: 1;
+    padding-top: 8px;
+  }
+}
+
+.firstrun {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+  padding-bottom: calc(var(--tg-content-bottom, 0px) + 16px);
+}
+
+.firstrun-sheet {
+  width: min(440px, 100%);
+  background: #0a0a0a;
+  color: var(--gate-ink, #f4f4f4);
+  border: 1px solid var(--gate-line, rgba(244, 244, 244, 0.16));
+  border-radius: 24px;
+  padding: 22px 20px 16px;
+}
+
+.firstrun-kicker {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gate-muted, rgba(244, 244, 244, 0.52));
+}
+
+.firstrun-title {
+  margin: 0 0 8px;
+  font-size: 28px;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  font-weight: 560;
+}
+
+.firstrun-body {
+  margin: 0;
+  color: var(--gate-muted, rgba(244, 244, 244, 0.72));
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.firstrun-dots {
+  display: flex;
+  gap: 6px;
+  margin: 16px 0;
+}
+
+.firstrun-dots span {
+  width: 18px;
+  height: 2px;
+  background: rgba(244, 244, 244, 0.2);
+}
+
+.firstrun-dots span.is-on {
+  background: var(--gate-ink, #f4f4f4);
+}
+
+.firstrun-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (min-width: 901px) {
+  .firstrun {
+    align-items: center;
+  }
+}
+
+.auth-screen.auth-screen-fortress {
+  background: #000 !important;
+  color: var(--gate-ink, #f4f4f4);
+}
+
+.auth-screen.auth-screen-fortress .auth-card {
+  background: #000 !important;
+  border-color: rgba(244, 244, 244, 0.16) !important;
+  box-shadow: none !important;
+  backdrop-filter: none;
+}
+
+.auth-screen.auth-screen-fortress .auth-title,
+.auth-screen.auth-screen-fortress .auth-subtitle,
+.auth-screen.auth-screen-fortress .auth-label,
+.auth-screen.auth-screen-fortress .auth-form-lead {
+  color: #f4f4f4;
+}
+
+.auth-screen-fortress.is-personal .auth-title,
+.auth-screen-fortress.is-personal .auth-tab-active {
+  color: var(--e-accent);
+}
+
+.gate-auth-back {
+  position: absolute;
+  z-index: 5;
+  top: calc(var(--tg-content-top, 0px) + 14px);
+  left: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate-door,
+  .boot-sweep,
+  .realm-load span {
+    transition: none;
+    animation: none;
+  }
+}
+
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 18px;
+  padding: calc(var(--tg-content-top, 0px) + 36px) 28px calc(var(--tg-content-bottom, 0px) + 28px);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 100% 3px,
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(255, 255, 255, 0.05), transparent 58%),
+    #000;
+  color: #f4f4f4;
+  text-align: left;
+  cursor: pointer;
+  font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
+  overflow: hidden;
+}
+
+.boot.is-personal {
+  color: var(--e-accent, #f4f4f4);
+  background:
+    linear-gradient(rgba(var(--e-accent-rgb, 244, 244, 244), 0.08) 1px, transparent 1px) 0 0 / 100% 3px,
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(var(--e-accent-rgb, 244, 244, 244), 0.12), transparent 58%),
+    #000;
+}
+
+.boot-corner {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 1px solid currentColor;
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.boot-corner-tl { top: 18px; left: 18px; border-right: 0; border-bottom: 0; }
+.boot-corner-tr { top: 18px; right: 18px; border-left: 0; border-bottom: 0; }
+.boot-corner-bl { bottom: 18px; left: 18px; border-right: 0; border-top: 0; }
+.boot-corner-br { bottom: 18px; right: 18px; border-left: 0; border-top: 0; }
+
+.boot-stage {
+  width: min(440px, 100%);
+  margin-bottom: auto;
+  margin-top: 12vh;
+}
+
+.boot-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.boot-pct {
+  margin: 0;
+  font-size: clamp(84px, 22vw, 132px);
+  line-height: 0.82;
+  letter-spacing: -0.07em;
+  font-weight: 520;
+  font-variant-numeric: tabular-nums;
+}
+
+.boot-track {
+  height: 2px;
+  margin: 18px 0 20px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.boot.is-personal .boot-track {
+  background: rgba(var(--e-accent-rgb, 244, 244, 244), 0.22);
+}
+
+.boot-fill {
+  height: 100%;
+  width: 100%;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.boot-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.boot-log li {
+  display: grid;
+  grid-template-columns: 2rem 1fr auto;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.32;
+}
+
+.boot-log li.is-on {
+  opacity: 1;
+}
+
+.boot-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.boot-sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 16%;
+  background: linear-gradient(transparent, rgba(255, 255, 255, 0.09), transparent);
+  animation: bootSweep 2.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  pointer-events: none;
+}
+
+.boot.is-personal .boot-sweep {
+  background: linear-gradient(transparent, rgba(var(--e-accent-rgb, 244, 244, 244), 0.2), transparent);
+}
+
+@keyframes bootSweep {
+  from { top: -18%; }
+  to { top: 108%; }
+}
+
+.boot.is-still .boot-sweep {
+  animation: none;
+  opacity: 0;
+}
+
+.boot-skip {
+  color: rgba(244, 244, 244, 0.62);
+  font-size: 13px;
+  min-height: 44px;
+  display: flex;
+  align-items: flex-end;
+}
+
+@media (min-width: 901px) {
+  .boot-stage {
+    margin-top: 18vh;
+    margin-left: 8vw;
+  }
+
+  .boot-pct {
+    font-size: 148px;
+  }
+}
+
+.realm-load {
+  margin: 0 0 16px;
+}
+
+.realm-load span {
+  display: block;
+  height: 2px;
+  background: currentColor;
+  transform-origin: left center;
+  animation: realmLoad 0.85s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.realm-load p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gate-muted);
+}
+
+@keyframes realmLoad {
+  from { transform: scaleX(0.08); }
+  to { transform: scaleX(1); }
+}
+
+.realm-search,
+.realm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.realm-search {
+  flex-direction: row;
+}
+
+.realm-search input,
+.realm-form input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--gate-line);
+  background: #000;
+  color: var(--gate-ink);
+  font: inherit;
+  font-size: 16px;
+  padding: 0 12px;
+  caret-color: var(--gate-ink);
+}
+
+.realm-search button,
+.realm-actions button,
+.realm-form .realm-back {
+  min-height: 44px;
+}
+
+.realm-search button,
+.realm-actions button {
+  appearance: none;
+  border: 1px solid var(--gate-line);
+  background: transparent;
+  color: var(--gate-ink);
+  border-radius: 999px;
+  padding: 0 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.realm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.realm-actions button.is-on,
+.realm-search button {
+  background: var(--gate-fill);
+  color: var(--gate-fill-ink);
+  border-color: var(--gate-fill);
+}
+
+.realm-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--gate-muted);
+}
+
+.realm-form select,
+.realm-form textarea {
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--gate-line);
+  background: #000;
+  color: var(--gate-ink);
+  font: inherit;
+  font-size: 16px;
+  padding: 10px 12px;
+}
+
+.realm-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.realm-alert,
+.realm-note,
+.realm-reason {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.realm-alert { color: #f4f4f4; }
+.realm-note { color: var(--gate-ink); }
+.realm-reason { color: var(--gate-muted); padding: 0 0 8px; }
+
+.realm-subhead {
+  margin: 18px 0 0;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gate-muted);
+  font-weight: 600;
+}
+
+.gate-door:focus-visible,
+.realm-tabbar button:focus-visible,
+.realm-rail button:focus-visible,
+.realm-back:focus-visible,
+.firstrun-next:focus-visible,
+.realm-list button:focus-visible,
+.realm-search input:focus-visible,
+.realm-form input:focus-visible {
+  outline: 2px solid var(--gate-ink);
+  outline-offset: 3px;
+}
+
+.gate-root ::selection,
+.realm-root ::selection,
+.boot ::selection {
+  background: rgba(244, 244, 244, 0.28);
+  color: #000;
+}
+
+.panel-shell {
+  scrollbar-width: auto;
+  scrollbar-color: rgba(244, 244, 244, 0.72) rgba(255, 255, 255, 0.08);
+}
+
+html.is-phone .panel-shell,
+html[data-viewport="phone"] .panel-shell {
+  overflow-x: hidden !important;
+  overflow-y: scroll !important;
+  scrollbar-gutter: stable;
+}
+
+html.is-desktop .panel-layout > :not(.panel-shelf-sidebar):not(.elite-topbar):not(.elite-topbar-compact):not(.panel-users):not(.support-section):not(.panel-security),
+html[data-viewport="desktop"] .panel-layout > :not(.panel-shelf-sidebar):not(.elite-topbar):not(.elite-topbar-compact):not(.panel-users):not(.support-section):not(.panel-security) {
+  overflow-x: hidden !important;
+  overflow-y: scroll !important;
+  scrollbar-gutter: stable;
+}
+
+html.is-desktop .panel-users-body,
+html[data-viewport="desktop"] .panel-users-body,
+html.is-desktop .panel-security > .sec-tab-body,
+html[data-viewport="desktop"] .panel-security > .sec-tab-body,
+html.is-desktop .support-ticket-list,
+html[data-viewport="desktop"] .support-ticket-list,
+html.is-desktop .support-messages,
+html[data-viewport="desktop"] .support-messages,
+html.is-desktop .panel-sidebar-nav,
+html[data-viewport="desktop"] .panel-sidebar-nav {
+  overflow-x: hidden !important;
+  overflow-y: scroll !important;
+  scrollbar-gutter: stable;
+}
+
+.panel-shell ::selection {
+  background: rgba(244, 244, 244, 0.22);
+  color: #fff;
+}

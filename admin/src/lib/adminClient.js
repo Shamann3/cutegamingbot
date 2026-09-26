@@ -2252,3 +2252,43 @@ export async function fetchPrPerson(userId) {
 export async function savePrSettings(body) {
   return adminFetch('/pr-groups/settings', { method: 'PUT', body })
 }
+
+export async function fetchGroupOpen() {
+  return adminFetch('/group-realm/open')
+}
+
+export async function submitGroupApplication(body) {
+  return adminFetch('/group-realm/apply', { method: 'POST', body })
+}
+
+export async function markGroupOfficial(body) {
+  return adminFetch('/group-realm/official', { method: 'POST', body })
+}
+
+export async function fetchGroupPositions(chatId) {
+  return adminFetch(`/group-realm/positions/${encodeURIComponent(chatId)}`)
+}
+
+export async function appointGroupAdmin(body) {
+  return adminFetch('/group-realm/appoint', { method: 'POST', body })
+}
+
+export async function fetchGroupApplications() {
+  return adminFetch('/group-realm/applications')
+}
+
+export async function decideGroupApplication(body) {
+  return adminFetch('/group-realm/decide', { method: 'POST', body })
+}
+
+export async function fetchGroupSummary(chatId) {
+  return adminFetch(`/group-realm/summary/${encodeURIComponent(chatId)}`)
+}
+
+export async function groupRealmAct(body) {
+  return adminFetch('/group-realm/act', { method: 'POST', body })
+}
+
+export async function checkGroupKey(key) {
+  return adminFetch('/group-realm/key/check', { method: 'POST', body: { key } })
+}

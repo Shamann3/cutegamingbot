@@ -281,10 +281,12 @@ from admin_audit import list_admin_audit, list_admin_action_types, log_admin_act
 from ip_ban import add_ip_ban, list_ip_bans, remove_ip_ban
 from admin_tiktok import router as tiktok_router
 from admin_pr_groups import router as pr_groups_router
+from group_realm import router as group_realm_router
 
 router = APIRouter(prefix="/admin/api", tags=["admin"])
 router.include_router(tiktok_router)
 router.include_router(pr_groups_router)
+router.include_router(group_realm_router)
 logger = logging.getLogger(__name__)
 
 
@@ -956,15 +958,29 @@ async def admin_auth_status(
     verified = verify_admin_token(token) if token else None
 
     application = await get_latest_application(user_id) if account else None
+    role = account["role"] if account else None
+    account_status = account["status"] if account else None
+    is_owner = user_id in owner_user_ids()
+    staff_roles = {"owner", "senior_admin", "junior_admin", "moderator"}
+    staff_can_enter = is_owner or (account_status == "active" and role in staff_roles)
+    groups: list[dict] = []
+    try:
+        from group_realm import seats_for
+        groups = await seats_for(user_id)
+    except Exception:
+        groups = []
 
     return {
         "registered": account is not None,
         "authenticated": verified is not None and verified[0] == user_id,
         "userId": user_id,
-        "role": account["role"] if account else None,
-        "status": account["status"] if account else None,
+        "role": role,
+        "status": account_status,
         "applicationStatus": application["status"] if application else None,
-        "isOwner": user_id in owner_user_ids(),
+        "isOwner": is_owner,
+        "staffCanEnter": staff_can_enter,
+        "groupCanEnter": is_owner or len(groups) > 0,
+        "groups": groups,
     }
 
 
@@ -1340,6 +1356,8 @@ async def admin_me(user_id: int = Depends(require_active_admin)):
         raise HTTPException(status_code=403, detail="Админ-аккаунт не найден")
     account["projectCreatorId"] = int(PROJECT_CREATOR_ID)
     account["isProjectCreator"] = sr_is_creator(user_id)
+    from staff_panel_rights import actor_has_banfull
+    account["canBanfull"] = await actor_has_banfull(user_id)
     return account
 
 
@@ -3507,12 +3525,14 @@ async def admin_user_ban(
     request: Request,
     admin_id: int = Depends(require_active_admin),
 ):
-    # Бан — право moderate_ban; разбан (отмена чужого решения) — moderate_unban.
-    account = getattr(request.state, "admin_account", None) or {}
-    perms = set(account.get("permissions") or [])
-    needed = "moderate_ban" if body.banned else "moderate_unban"
-    if needed not in perms:
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    # Бан из «Игроков» закрывает человека во всём проекте — это банфулл.
+    # Право mute или ban этого не заменяет.
+    from staff_panel_rights import actor_has_banfull
+    if not await actor_has_banfull(admin_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Бан во всём проекте доступен только с правом банфулл",
+        )
 
     # И бан, и разбан требуют причину и доказательства.
     if not body.reason.strip():

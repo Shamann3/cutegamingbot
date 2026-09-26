@@ -59,6 +59,9 @@ export default function DashboardSection() {
         windowSeconds={stats?.windowSeconds}
         loading={loading}
       />
+      <p className="panel-shelf-muted" style={{ margin: '0 0 12px' }}>
+        Панель сотрудника держит проект: кто в сети, игроки, наказания и экономика. Группы открываются отдельной дверью.
+      </p>
 
       <StatShelfCard
         label="Игроки"

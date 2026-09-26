@@ -17,6 +17,7 @@ import GoldBackdrop from '../components/GoldBackdrop'
 import RegisterForm from '../components/RegisterForm'
 import ApplicationForm from '../components/ApplicationForm'
 import EpsilonLogo from '../components/EpsilonLogo'
+import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 
 function slideClassForMode(nextMode) {
   return nextMode === 'register' ? 'auth-form-from-right' : 'auth-form-from-left'
@@ -25,8 +26,8 @@ function slideClassForMode(nextMode) {
 // Метка сборки — временная, чтобы точно понять, свежий ли код загрузился на телефоне.
 const BUILD_TAG = 'v9-ident'
 
-export default function AuthPage({ displayName, onAuthenticated }) {
-  const [mode, setMode] = useState('login')
+export default function AuthPage({ displayName, onAuthenticated, initialMode = 'login', fortress = false, onBack }) {
+  const [mode, setMode] = useState(initialMode === 'register' ? 'register' : 'login')
   const [slideClass, setSlideClass] = useState('auth-form-from-left')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -37,7 +38,8 @@ export default function AuthPage({ displayName, onAuthenticated }) {
   // 'key' | 'totp' | 'application' | 'waiting'
   const [regStage, setRegStage] = useState('key')
   const [keyType, setKeyType] = useState(null)
-  const modeRef = useRef('login')
+  const modeRef = useRef(initialMode === 'register' ? 'register' : 'login')
+  const personal = fortress && accentIsPersonal(loadStoredAccent())
 
   const switchMode = useCallback((nextMode) => {
     if (nextMode !== modeRef.current) {
@@ -258,9 +260,14 @@ export default function AuthPage({ displayName, onAuthenticated }) {
   }
 
   return (
-    <div className="auth-screen">
-      <GoldBackdrop />
-      <PanelBackdrop active />
+    <div className={`auth-screen${fortress ? ' auth-screen-fortress' : ''}${personal ? ' is-personal' : ''}`}>
+      {fortress && onBack && (
+        <button type="button" className="gate-auth-back firstrun-next" onClick={onBack}>
+          К дверям
+        </button>
+      )}
+      {!fortress && <GoldBackdrop />}
+      {!fortress && <PanelBackdrop active />}
 
       <div className="auth-card">
         <header className="auth-header">
