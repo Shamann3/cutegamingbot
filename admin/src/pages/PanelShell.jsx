@@ -96,9 +96,10 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [isProjectCreator, setIsProjectCreator] = useState(false)
   const [canBanfull, setCanBanfull] = useState(false)
   const [recentSections, setRecentSections] = useState(() => loadRecentSections())
-  const [coach, setCoach] = useState(() => !firstRunSeen('epsilon.onboard.staff.v3'))
+  const [coach, setCoach] = useState(() => !firstRunSeen('epsilon.onboard.staff.v4'))
   const onCoachStep = useCallback((step) => {
-    if (step?.openNav && phone) setMobileNavOpen(true)
+    if (!phone) return
+    setMobileNavOpen(Boolean(step?.openNav))
   }, [phone])
   useDrawerSwipe({
     enabled: phone,
@@ -289,7 +290,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
     <div className={`panel-shell panel-shell-${viewport}`} data-viewport={viewport}>
       {coach && (
         <FirstRun
-          storageKey="epsilon.onboard.staff.v3"
+          storageKey="epsilon.onboard.staff.v4"
           steps={staffSteps(phone)}
           layoutKey={mobileNavOpen ? 1 : 0}
           onStep={onCoachStep}

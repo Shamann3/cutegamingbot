@@ -133,14 +133,46 @@ export function sectionBlurb(id) {
 /** Блоки сайдбара. Порядок здесь = порядок в меню.
  *  label: null — блок без подписи (для одинокой «Главной» сверху). */
 export const PANEL_GROUPS = [
-  { id: 'overview', label: null },
-  { id: 'people',   label: 'Игроки' },
-  { id: 'economy',  label: 'Экономика' },
-  { id: 'content',  label: 'Контент' },
+  { id: 'overview', label: 'С чего начать' },
+  { id: 'people',   label: 'Люди' },
+  { id: 'economy',  label: 'Деньги и группы' },
+  { id: 'content',  label: 'Игры и призы' },
   { id: 'team',     label: 'Команда' },
-  { id: 'insights', label: 'Аналитика' },
-  { id: 'system',   label: 'Система' },
+  { id: 'insights', label: 'Цифры' },
+  { id: 'system',   label: 'Настройки панели' },
 ]
+
+export const SECTION_HINTS = {
+  dashboard: 'Кто в игре и жив ли сервер',
+  users: 'Найти человека и открыть карточку',
+  accounts: 'Список аккаунтов',
+  moderation: 'Прошлые наказания',
+  economy: 'Цены и деньги игры',
+  market: 'Сделки игроков',
+  farm: 'Грядки и рост',
+  content: 'Предметы и крафт',
+  giveaways: 'Розыгрыши призов',
+  tiktok: 'Проверка видео и начисление',
+  botQuests: 'Задания в Telegram',
+  groupBalanceLevel: 'Уровни баланса группы',
+  groupsStudio: 'Все группы проекта',
+  nika: 'Балансы групп по дням',
+  prGroups: 'Новые группы и пиар',
+  games: 'Игры, ставки и комиссия',
+  achievements: 'Значки в профиле',
+  events: 'Игровые события',
+  broadcast: 'Сообщение многим людям',
+  staff: 'Сотрудники, смены и жалобы',
+  rights: 'Должности групп и сброс входа',
+  support: 'Письма от игроков',
+  analytics: 'Сводка по проекту',
+  logs: 'Что делала панель',
+  chronicle: 'Лента событий',
+  settings: 'Общие переключатели',
+  security: 'Входы, сессии и блокировки',
+  panelAccess: 'Какие страницы видит должность',
+  softRestart: 'Тихий перезапуск',
+}
 
 /** Секции, видимые с учётом прав и (опционально) матрицы panelSections с бэка. */
 export function visibleSections(

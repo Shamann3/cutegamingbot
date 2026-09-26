@@ -75,7 +75,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   const [tab, setTab] = useState('overview')
   const [chapter, setChapter] = useState(false)
   const [lockOpen, setLockOpen] = useState(false)
-  const [coach, setCoach] = useState(() => !firstRunSeen('epsilon.onboard.group.v3'))
+  const [coach, setCoach] = useState(() => !firstRunSeen('epsilon.onboard.group.v4'))
   const [railOpen, setRailOpen] = useState(false)
   const phone = useIsPhone()
   const [summary, setSummary] = useState(null)
@@ -180,7 +180,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
         username: row.username || '',
         official: true,
       })
-      setNotice('Группа официальная. Вернитесь к дверям, чтобы она появилась в списке.')
+      setNotice('Группа официальная. Нажмите «Сменить панель» и зайдите в неё снова, чтобы она появилась в списке.')
       setChatId(row.chat_id)
       setHits([])
     } catch (err) {
@@ -294,10 +294,10 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   return (
     <div className={`realm-root${personal ? ' is-personal' : ''}`}>
       {coach && (
-        <FirstRun storageKey="epsilon.onboard.group.v3" steps={groupSteps(phone)} onDone={() => setCoach(false)} />
+        <FirstRun storageKey="epsilon.onboard.group.v4" steps={groupSteps(phone)} onDone={() => setCoach(false)} />
       )}
       <header className="realm-top" data-coach="group-head">
-        <button type="button" className="realm-back" data-coach="doors" onClick={onLeave}>Двери</button>
+        <button type="button" className="realm-back" data-coach="doors" onClick={onLeave}>Сменить панель</button>
         <div>
           <h1>Панель администраторов групп</h1>
           <p className="realm-copy">
@@ -308,8 +308,8 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           <p className="realm-copy">{chatId ? roomLine(summary) : 'Отметьте официальную группу, чтобы выдать должность.'}</p>
           <p className="realm-copy">
             {phone
-              ? 'Вкладки внизу. Свайп вправо открывает полный список, влево закрывает.'
-              : 'Вкладки слева. Каждая показывает только эту группу.'}
+              ? 'Кнопки внизу — страницы этой группы. Свайп вправо открывает список, свайп влево плавно закрывает.'
+              : 'Слева страницы этой группы. Каждая показывает только этот чат.'}
           </p>
         </div>
       </header>
@@ -483,7 +483,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
               <h2 className="realm-h">Ещё</h2>
               <ul className="realm-list">
                 <li><a className="realm-row" href="https://t.me/CuteRules" target="_blank" rel="noreferrer"><strong>Правила</strong><span>t.me/CuteRules</span></a></li>
-                <li><button type="button" className="realm-row" onClick={onLeave}><strong>Двери</strong><span>вернуться к выбору панели</span></button></li>
+                <li><button type="button" className="realm-row" onClick={onLeave}><strong>Сменить панель</strong><span>выбор входа, без выхода из аккаунта</span></button></li>
                 {isCreator && (
                   <li><button type="button" className="realm-row" onClick={openCreator}><strong>Администраторы</strong><span>назначить</span></button></li>
                 )}
@@ -506,16 +506,16 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
       </div>
 
       {phone && !railOpen && (
-        <button type="button" className="phone-edge" aria-label="Открыть вкладки" onClick={() => setRailOpen(true)} />
+        <button type="button" className="phone-edge" aria-label="Открыть страницы" onClick={() => setRailOpen(true)} />
       )}
-      {phone && railOpen && (
-        <div className="realm-rail-sheet" role="dialog" aria-label="Вкладки">
+      {phone && (
+        <div className={`realm-rail-sheet${railOpen ? ' is-open' : ''}`} role="dialog" aria-label="Страницы группы" aria-hidden={!railOpen} inert={!railOpen}>
           {tabs.map((item) => (
             <button key={item.id} type="button" className={activeTab === item.id ? 'is-on' : ''} onClick={() => pickTab(item.id)}>
               {item.label}
             </button>
           ))}
-          <p>Смахните влево, чтобы закрыть</p>
+          <p>Свайп влево плавно закрывает список</p>
         </div>
       )}
 

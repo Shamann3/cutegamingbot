@@ -31,7 +31,7 @@ const PUNISH_ACTIONS = [
   ]},
   { group: 'Весь проект', items: [
     { id: 'warnfull', label: '⚠️ Варнфулл', needsUntil: true },
-    { id: 'banfull', label: '🚫 Банфулл', needsUntil: true },
+    { id: 'banfull', label: 'Запрет на весь проект', needsUntil: true },
     { id: 'bot_ban', label: '🤖 Бан в боте', needsUntil: false },
     { id: 'bot_unban', label: '🤖 Разбан в боте', needsUntil: false },
   ]},

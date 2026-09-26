@@ -263,7 +263,7 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
     <div className={`auth-screen${fortress ? ' auth-screen-fortress' : ''}${personal ? ' is-personal' : ''}`}>
       {fortress && onBack && (
         <button type="button" className="gate-auth-back firstrun-next" onClick={onBack}>
-          К дверям
+          К выбору панели
         </button>
       )}
       {!fortress && <GoldBackdrop />}

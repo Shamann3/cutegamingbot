@@ -40,7 +40,7 @@ export default function GroupKeyPage({ onBack, onPassed }) {
             {busy ? 'Проверка…' : 'Открыть кабинет'}
           </button>
         </form>
-        <button type="button" className="gate-text" onClick={onBack}>К дверям</button>
+        <button type="button" className="gate-text" onClick={onBack}>К выбору панели</button>
       </div>
     </div>
   )

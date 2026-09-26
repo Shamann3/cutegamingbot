@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getAdminInitials, getAdminProfile } from '../lib/adminProfile'
-import { groupSections } from '../constants/panelNav'
+import { groupSections, SECTION_HINTS } from '../constants/panelNav'
 import { NAV_ICONS } from './NavIcons'
 import SessionTimer from './SessionTimer'
 import EpsilonLogo from './EpsilonLogo'
 import AccentPalette from './AccentPalette'
+import ColorChoice from './ColorChoice'
 import { useIsPhone } from '../lib/useIsDesktop'
 import { CopyableUsername } from './Copyable'
 
@@ -180,8 +181,8 @@ export default function PanelSidebar({
       <div className="panel-sidebar-grab">
         <div className="panel-sidebar-drawer-head">
           <div>
-            <h2 className="panel-sidebar-drawer-title">Разделы</h2>
-            <p className="panel-sidebar-swipe-hint">Нажмите раздел. Влево — закрыть список.</p>
+            <h2 className="panel-sidebar-drawer-title">Страницы</h2>
+            <p className="panel-sidebar-swipe-hint">Нажмите название. Свайп влево плавно закрывает список.</p>
           </div>
           <button
             type="button"
@@ -222,10 +223,10 @@ export default function PanelSidebar({
       </div>
 
       <nav className="panel-sidebar-nav" data-coach="nav" aria-label="Навигация панели">
-        {!navQuery.trim() && recentItems.length > 0 && (
+        {!isPhone && !navQuery.trim() && recentItems.length > 0 && (
           <div className="panel-nav-group panel-nav-recent">
             <span className="panel-nav-group-label" aria-hidden="true">
-              Недавние
+              Недавно открывали
             </span>
             <div className="panel-nav-recent-row">
               {recentItems.map((item) => {
@@ -275,7 +276,9 @@ export default function PanelSidebar({
                   )}
                   <span className="panel-nav-text">
                     <span className="panel-nav-label">{item.labelRu}</span>
-                    <span className="panel-nav-sublabel">{item.label}</span>
+                    {SECTION_HINTS[item.id] && (
+                      <span className="panel-nav-sublabel">{SECTION_HINTS[item.id]}</span>
+                    )}
                   </span>
                   {count > 0 && (
                     <span className="panel-nav-badge" aria-label={`${count} новых`}>
@@ -311,9 +314,11 @@ export default function PanelSidebar({
               </div>
             </div>
 
+            <ColorChoice onChange={onAccentChange} />
+
             <details ref={settingsRef} className="panel-sidebar-settings">
               <summary className="panel-sidebar-settings-sum">
-                <span className="panel-sidebar-settings-label">Настройки</span>
+                <span className="panel-sidebar-settings-label">Ещё настройки</span>
                 <span className="panel-sidebar-settings-cue" aria-hidden="true">
                   <span className="panel-sidebar-settings-hint-closed">Открыть</span>
                   <span className="panel-sidebar-settings-hint-open">Свернуть</span>
@@ -329,7 +334,9 @@ export default function PanelSidebar({
           <>
             {/* ПК: Подсветка выше профиля */}
             <div className="panel-sidebar-settings panel-sidebar-settings-desktop">
+              <p className="panel-nav-group-label">Цвет кнопок</p>
               <div className="panel-sidebar-settings-body">
+                <ColorChoice onChange={onAccentChange} />
                 <AccentPalette value={accent} onChange={onAccentChange} />
               </div>
             </div>
@@ -395,8 +402,8 @@ export default function PanelSidebar({
 
         {onChangeDoor && (
           <button type="button" className="panel-logout-btn" data-coach="doors" onClick={onChangeDoor}>
-            Двери
-            <span className="panel-logout-hint">выбор панели, без выхода</span>
+            Сменить панель
+            <span className="panel-logout-hint">выбор панели, без выхода из аккаунта</span>
           </button>
         )}
         <button type="button" className="panel-logout-btn" onClick={onLogout}>

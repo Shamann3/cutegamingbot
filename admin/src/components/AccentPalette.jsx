@@ -345,7 +345,7 @@ export default function AccentPalette({ value, onChange }) {
       >
         <span className="panel-accent-trigger-swatch" style={{ background: accent.hex }} aria-hidden />
         <span className="panel-accent-trigger-meta">
-          <strong>Подсветка</strong>
+          <strong>Цвет кнопок</strong>
           <em>{accent.label === 'Свой' ? accent.hex : accent.label}</em>
         </span>
         <span className="panel-accent-trigger-chevron" aria-hidden>{open ? '◂' : '▸'}</span>

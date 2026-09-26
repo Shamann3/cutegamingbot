@@ -162,7 +162,7 @@ export default function GroupApplyPage({ onBack }) {
           </ul>
         )}
 
-        <button type="button" className="gate-text" onClick={onBack}>К дверям</button>
+        <button type="button" className="gate-text" onClick={onBack}>К выбору панели</button>
       </div>
     </div>
   )

@@ -3,6 +3,7 @@ import { fetchAdminAuthStatus } from '../lib/adminClient'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { portraitFrom } from '../lib/gateRecovery'
 import EpsilonLogo from '../components/EpsilonLogo'
+import ColorChoice from '../components/ColorChoice'
 
 function Door({ title, detail, open, onClick }) {
   return (
@@ -19,7 +20,7 @@ function Door({ title, detail, open, onClick }) {
 }
 
 export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onGroupApply }) {
-  const personal = accentIsPersonal(loadStoredAccent())
+  const [personal, setPersonal] = useState(() => accentIsPersonal(loadStoredAccent()))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [portrait, setPortrait] = useState(null)
@@ -84,7 +85,8 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
         <header className="gate-head">
           <EpsilonLogo size="sm" decorative />
           <h1 className="gate-title">Куда войти</h1>
-          <p className="gate-lead">Две разные панели. Светлая дверь открывает вход. Серая дверь панель не открывает: она ведёт в заявку.</p>
+          <p className="gate-lead">Два входа. Яркая кнопка открывает панель. Серая кнопка панель не открывает: она начинает заявку.</p>
+          <ColorChoice onChange={(next) => setPersonal(accentIsPersonal(next))} />
         </header>
 
         {loading && (
@@ -97,7 +99,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
         {!loading && error && (
           <div className="gate-recover" role="alert">
             <p className="gate-status gate-status-error">{error}</p>
-            <p className="gate-lead">Сверка не прошла. Панель можно открыть вручную: если допуска нет, она вернёт к дверям.</p>
+            <p className="gate-lead">Проверка не прошла. Панель можно открыть вручную: если доступа нет, она вернёт к выбору.</p>
             <div className="gate-recover-actions">
               <button type="button" className="firstrun-next" onClick={load}>Повторить сверку</button>
               <button type="button" className="gate-text" onClick={onStaffEnter}>Панель сотрудника</button>
@@ -111,7 +113,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
           <div className="gate-hold" role="status">
             <h2 className="gate-title">Заявка уже у создателя</h2>
             <p className="gate-lead">Вход откроется после одобрения. Повторно отправлять её не нужно.</p>
-            <button type="button" className="gate-text" onClick={() => setHold(false)}>К дверям</button>
+            <button type="button" className="gate-text" onClick={() => setHold(false)}>К выбору панели</button>
           </div>
         )}
 

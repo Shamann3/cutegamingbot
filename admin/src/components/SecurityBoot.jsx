@@ -2,47 +2,48 @@ import { useEffect, useRef, useState } from 'react'
 
 const GATE_LINES = [
   [
-    { at: 0.18, label: 'Канал связи' },
-    { at: 0.4, label: 'Кто входит' },
-    { at: 0.64, label: 'Два контура' },
-    { at: 0.86, label: 'Двери' },
+    { at: 0.18, label: 'Проверяем связь' },
+    { at: 0.4, label: 'Смотрим, кто вошёл' },
+    { at: 0.64, label: 'Две панели: сотрудник и группа' },
+    { at: 0.86, label: 'Сейчас будет выбор' },
   ],
   [
-    { at: 0.18, label: 'Линия уже жива' },
-    { at: 0.4, label: 'Допуск на месте' },
+    { at: 0.18, label: 'Вы уже входили' },
+    { at: 0.4, label: 'Доступ на месте' },
     { at: 0.64, label: 'Сотрудник или группа' },
-    { at: 0.86, label: 'Выбор входа' },
+    { at: 0.86, label: 'Можно выбирать' },
   ],
-  [
-    { at: 0.18, label: 'Повторная сверка' },
-    { at: 0.4, label: 'Сессия узнана' },
-    { at: 0.64, label: 'Контур не сброшен' },
-    { at: 0.86, label: 'Можно входить' },
-  ],
+]
+
+const CODE_LINES = [
+  { at: 0.16, label: 'кто_вошёл()' },
+  { at: 0.4, label: 'если сотрудник: открыть его страницы' },
+  { at: 0.66, label: 'если группа: открыть только этот чат' },
+  { at: 0.88, label: 'проверка закончена' },
 ]
 
 const STAFF_LINES = [
   [
-    { at: 0.28, label: 'Панель сотрудника' },
-    { at: 0.62, label: 'Разделы должности' },
-    { at: 0.9, label: 'Допуск' },
+    { at: 0.28, label: 'Открываем панель сотрудника' },
+    { at: 0.62, label: 'Страницы вашей должности' },
+    { at: 0.9, label: 'Готово' },
   ],
   [
-    { at: 0.28, label: 'Сотрудник узнан' },
-    { at: 0.62, label: 'Открыты только его разделы' },
-    { at: 0.9, label: 'Банфулл отдельно' },
+    { at: 0.28, label: 'Вас узнали' },
+    { at: 0.62, label: 'Закрытые страницы не показываем' },
+    { at: 0.9, label: 'Готово' },
   ],
 ]
 
 const GROUP_LINES = [
   [
-    { at: 0.28, label: 'Панель администраторов групп' },
-    { at: 0.62, label: 'Чат и должность' },
+    { at: 0.28, label: 'Открываем панель группы' },
+    { at: 0.62, label: 'Чат и ваша должность' },
     { at: 0.9, label: 'Младших можно наказать' },
   ],
   [
     { at: 0.28, label: 'Группа узнана' },
-    { at: 0.62, label: 'Права этого чата' },
+    { at: 0.62, label: 'Права только этого чата' },
     { at: 0.9, label: 'Старших система не пропустит' },
   ],
 ]
@@ -61,17 +62,20 @@ function nextTurn(kind) {
 
 export function bootScript(kind) {
   const turn = nextTurn(kind)
+  const code = turn % 3 === 2
+  if (code) {
+    return { title: 'Идёт проверка', steps: CODE_LINES, duration: 1700, code: true }
+  }
   if (kind === 'staff') {
     const steps = STAFF_LINES[turn % STAFF_LINES.length]
-    return { title: turn % 2 === 0 ? 'Контур сотрудника' : 'Повторный допуск', steps, duration: 1100 }
+    return { title: 'Открываем панель сотрудника', steps, duration: 1100, code: false }
   }
   if (kind === 'group') {
     const steps = GROUP_LINES[turn % GROUP_LINES.length]
-    return { title: turn % 2 === 0 ? 'Контур группы' : 'Чат на месте', steps, duration: 1100 }
+    return { title: 'Открываем панель группы', steps, duration: 1100, code: false }
   }
   const steps = GATE_LINES[turn % GATE_LINES.length]
-  const titles = ['Сверка контура', 'Вход уже знакомый', 'Контур держится']
-  return { title: titles[turn % titles.length], steps, duration: 2400 }
+  return { title: turn % 2 === 0 ? 'Проверяем вход' : 'Вас узнали', steps, duration: 1600, code: false }
 }
 
 export default function SecurityBoot({
@@ -155,19 +159,18 @@ export default function SecurityBoot({
         <div className="boot-track" aria-hidden="true">
           <div className="boot-fill" style={{ transform: `scaleX(${progress})` }} />
         </div>
-        <ol className="boot-log">
-          {script.steps.map((step, index) => {
+        <ol className={script.code ? 'boot-log boot-code' : 'boot-log'}>
+          {script.steps.map((step) => {
             const on = progress + 0.001 >= step.at
             return (
               <li key={step.label} className={on ? 'is-on' : ''}>
-                <span>{String(index + 1).padStart(2, '0')}</span>
                 <span>{step.label}</span>
-                <span>{on ? 'ок' : '···'}</span>
+                <span>{on ? 'готово' : 'ждём'}</span>
               </li>
             )
           })}
         </ol>
-        <p className="boot-live" role="status">Сверка {pct} из 100</p>
+        <p className="boot-live" role="status">{script.code ? 'Пишем проверку' : 'Проверка'} {pct} из 100</p>
       </div>
       <span className="boot-skip">Нажмите, чтобы войти сразу</span>
     </div>

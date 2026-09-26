@@ -160,7 +160,7 @@ export default function EliteTopbar({
 
       <div className="elite-mobile-title">
         <h1 className="elite-mobile-section">{sectionTitle}</h1>
-        <p className="elite-where">Панель сотрудника. Весь проект, не одна группа.</p>
+        <p className="elite-where">Панель сотрудника. Это весь проект, не одна группа.</p>
       </div>
 
       <div className="elite-topbar-actions">

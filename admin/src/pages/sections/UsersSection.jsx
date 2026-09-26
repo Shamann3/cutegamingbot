@@ -2488,7 +2488,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   <span className="pu-action-ico" aria-hidden>✕</span>
                   <div>
                     <p className="panel-users-action-title">Бан</p>
-                    <p className="pu-action-hint">Закрыт. Бан во всём проекте есть только у должности с правом банфулл.</p>
+                    <p className="pu-action-hint">Закрыто. Запретить человека во всём проекте может только должность, у которой есть это право.</p>
                   </div>
                 </div>
               </div>
@@ -2500,7 +2500,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   <span className="pu-action-ico pu-action-ico-danger" aria-hidden>✕</span>
                   <div>
                     <p className="panel-users-action-title">Бан</p>
-                    <p className="pu-action-hint">Блокировка во всём проекте. Право банфулл.</p>
+                    <p className="pu-action-hint">Запрет во всём проекте. Нужно отдельное право, обычный бан в чате его не даёт.</p>
                   </div>
                 </div>
                 <label className="pu-field">
@@ -2550,7 +2550,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                   <span className="pu-action-ico pu-action-ico-ok" aria-hidden>✓</span>
                   <div>
                     <p className="panel-users-action-title">Разбан</p>
-                    <p className="pu-action-hint">Снять блокировку во всём проекте. То же право банфулл.</p>
+                    <p className="pu-action-hint">Снять запрет во всём проекте. Нужно то же право, что и для запрета.</p>
                   </div>
                 </div>
                 {hasProfile && profile.banned && profile.bannedReason && (
