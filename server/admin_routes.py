@@ -6790,6 +6790,7 @@ async def admin_resolve_appeal(
 async def admin_moderation_logs(
     action_type: str | None = Query(None),
     player_id: int | None = Query(None),
+    chat_id: int | None = Query(None),
     sort_by: str = Query("date"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -6798,6 +6799,7 @@ async def admin_moderation_logs(
     return await list_moderation_logs(
         action_type=action_type,
         player_id=player_id,
+        chat_id=chat_id,
         sort_by=sort_by,
         limit=limit,
         offset=offset,

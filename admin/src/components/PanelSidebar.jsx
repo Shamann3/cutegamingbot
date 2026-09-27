@@ -110,6 +110,8 @@ export default function PanelSidebar({
   accent = null,
   onAccentChange,
   recentSectionIds = [],
+  brandName = 'Панель сотрудника',
+  brandTag = 'Весь проект',
 }) {
   const isPhone = useIsPhone()
   const { displayName, username, photoUrl } = getAdminProfile()
@@ -214,8 +216,8 @@ export default function PanelSidebar({
           </div>
         </div>
         <div className="panel-brand-meta">
-          <p className="panel-brand-name">Панель сотрудника</p>
-          <p className="panel-brand-tag">Весь проект</p>
+          <p className="panel-brand-name">{brandName}</p>
+          <p className="panel-brand-tag">{brandTag}</p>
         </div>
       </div>
 
@@ -401,9 +403,11 @@ export default function PanelSidebar({
             <span className="panel-logout-hint">выбор панели, без выхода из аккаунта</span>
           </button>
         )}
-        <button type="button" className="panel-logout-btn" onClick={onLogout}>
-          Выйти
-        </button>
+        {onLogout && (
+          <button type="button" className="panel-logout-btn" onClick={onLogout}>
+            Выйти
+          </button>
+        )}
       </div>
     </aside>
   )

@@ -59,10 +59,6 @@ export default function DashboardSection() {
         windowSeconds={stats?.windowSeconds}
         loading={loading}
       />
-      <p className="panel-shelf-muted" style={{ margin: '0 0 12px' }}>
-        Вы в панели сотрудника. Здесь весь проект: кто сейчас в игре, люди, наказания и деньги. Чтобы открыть одну группу, нажмите «Сменить панель».
-      </p>
-
       <StatShelfCard
         label="Игроки"
         value={stats?.players}

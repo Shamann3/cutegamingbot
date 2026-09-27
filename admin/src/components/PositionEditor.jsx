@@ -1,5 +1,26 @@
 import { useEffect, useState } from 'react'
-import { REALM_RIGHTS } from '../lib/realmRights'
+import { PAGE_RIGHTS, PUNISH_RIGHTS } from '../lib/realmRights'
+
+function RightList({ items, rights, locked, onToggle }) {
+  return (
+    <div className="realm-right-grid">
+      {items.map((item) => (
+        <label key={item.id} className="realm-check">
+          <input
+            type="checkbox"
+            checked={rights.has(item.id)}
+            disabled={locked}
+            onChange={(event) => onToggle(item.id, event.target.checked)}
+          />
+          <span>
+            <strong>{item.label}</strong>
+            <em>{item.hint}</em>
+          </span>
+        </label>
+      ))}
+    </div>
+  )
+}
 
 export default function PositionEditor({ positions, creator, onSave, savingId }) {
   const [drafts, setDrafts] = useState(positions || [])
@@ -13,7 +34,7 @@ export default function PositionEditor({ positions, creator, onSave, savingId })
   }
 
   if (!drafts.length) {
-    return <p className="realm-copy">Должностей в этой группе ещё нет. Сначала отметьте группу официальной.</p>
+    return <p className="realm-copy">Должностей пока нет. Создайте свою или отметьте группу официальной.</p>
   }
 
   return (
@@ -21,6 +42,13 @@ export default function PositionEditor({ positions, creator, onSave, savingId })
       {drafts.map((row) => {
         const locked = row.rank >= 5
         const rights = new Set(row.rights || [])
+        const pages = PAGE_RIGHTS.filter((item) => creator || item.id !== 'manage_positions')
+        const toggle = (rightId, on) => {
+          const next = new Set(rights)
+          if (on) next.add(rightId)
+          else next.delete(rightId)
+          patch(row.id, { rights: [...next] })
+        }
         return (
           <form
             key={row.id}
@@ -37,26 +65,20 @@ export default function PositionEditor({ positions, creator, onSave, savingId })
                 onChange={(event) => patch(row.id, { title: event.target.value })}
               />
             </label>
-            <p className="realm-copy">{locked ? 'Создатель группы. Права полные и не снимаются.' : `Ранг ${row.rank}. Наказать можно только тех, кто младше.`}</p>
-            {!locked && (
-              <div className="realm-right-grid">
-                {REALM_RIGHTS.filter((item) => creator || item.id !== 'manage_positions').map((item) => (
-                  <label key={item.id} className="realm-check">
-                    <input
-                      type="checkbox"
-                      checked={rights.has(item.id)}
-                      onChange={(event) => {
-                        const next = new Set(rights)
-                        if (event.target.checked) next.add(item.id)
-                        else next.delete(item.id)
-                        patch(row.id, { rights: [...next] })
-                      }}
-                    />
-                    {item.label}
-                  </label>
-                ))}
-              </div>
-            )}
+            <p className="realm-copy">
+              {locked
+                ? 'Создатель группы. Страницы и наказания полные, снять их нельзя.'
+                : `Ранг ${row.rank}. Обзор и «Ещё» есть всегда. Наказать можно только младшего.`}
+            </p>
+            <fieldset className="realm-rights-block" disabled={locked}>
+              <legend>Страницы кабинета</legend>
+              <RightList items={pages} rights={rights} locked={locked} onToggle={toggle} />
+            </fieldset>
+            <fieldset className="realm-rights-block" disabled={locked}>
+              <legend>Наказания в этом чате</legend>
+              <p className="realm-copy">Любое наказание само открывает страницу «Люди».</p>
+              <RightList items={PUNISH_RIGHTS} rights={rights} locked={locked} onToggle={toggle} />
+            </fieldset>
             <button type="submit" className="realm-back" disabled={savingId === row.id || row.title.trim().length < 2}>
               {savingId === row.id ? 'Запись…' : 'Сохранить должность'}
             </button>

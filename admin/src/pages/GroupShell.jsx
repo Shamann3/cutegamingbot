@@ -7,15 +7,21 @@ import {
   fetchGroupSummary,
   groupRealmAct,
   markGroupOfficial,
+  createGroupPosition,
   saveGroupPosition,
   searchGroupsStudio,
 } from '../lib/adminClient'
-import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
+import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccent } from '../lib/accentTheme'
 import { punishmentHours } from '../lib/gateRecovery'
 import FirstRun, { groupSteps, coachClosed } from '../components/FirstRun'
+import PanelSidebar from '../components/PanelSidebar'
+import EliteTopbar from '../components/EliteTopbar'
 import PositionEditor from '../components/PositionEditor'
+import TgPhoto from '../components/TgPhoto'
 import useDrawerSwipe from '../lib/useDrawerSwipe'
-import { useIsPhone } from '../lib/useIsDesktop'
+import { useIsPhone, useViewportMode } from '../lib/useIsDesktop'
+import { useMusicMode } from '../lib/musicMode'
+import { usePerfMode } from '../lib/perfMode'
 
 const ACTIONS = [
   { id: 'mute', label: 'Мут', right: 'punish_mute', needsUntil: true },
@@ -78,6 +84,10 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.group.v4'))
   const [railOpen, setRailOpen] = useState(false)
   const phone = useIsPhone()
+  const viewport = useViewportMode()
+  const { lightMode, setLightMode } = usePerfMode()
+  const { volume: musicVolume, setVolume: setMusicVolume, toggleMute: toggleMusicMute } = useMusicMode()
+  const [accent, setAccent] = useState(() => loadStoredAccent())
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -96,12 +106,38 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   const [appointPos, setAppointPos] = useState('')
   const [appointReason, setAppointReason] = useState('')
   const [savingId, setSavingId] = useState(null)
+  const [posQuery, setPosQuery] = useState('')
+  const [newTitle, setNewTitle] = useState('')
+  const [newRank, setNewRank] = useState('1')
 
   const activeTab = tabs.some((item) => item.id === tab) ? tab : 'overview'
   const allowedActions = ACTIONS.filter((item) => isCreator || rights.has(item.right))
   const selectedAction = allowedActions.find((item) => item.id === action) || allowedActions[0]
 
   const closeRail = useCallback(() => setRailOpen(false), [])
+  const onCoachStep = useCallback((step) => {
+    if (!phone) return
+    setRailOpen(Boolean(step?.openNav))
+  }, [phone])
+  useEffect(() => {
+    applyAccentToDocument(lightMode
+      ? { id: 'mono', label: 'Ч/Б', hex: '#C8C8C8', h: 0, s: 0, v: 0.78, glow: 28 }
+      : accent)
+  }, [accent, lightMode])
+  const navSections = useMemo(() => tabs.map((item) => ({
+    id: item.id,
+    label: item.label,
+    labelRu: item.label,
+    group: item.id === 'people' || item.id === 'archive'
+      ? 'people'
+      : item.id === 'rights'
+        ? 'team'
+        : item.id === 'more'
+          ? 'system'
+          : item.id === 'analytics'
+            ? 'insights'
+            : 'overview',
+  })), [tabs])
   useDrawerSwipe({
     enabled: phone,
     open: railOpen,
@@ -268,6 +304,25 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
     }
   }
 
+  const createPosition = async (event) => {
+    event.preventDefault()
+    if (!chatId) return
+    setError('')
+    try {
+      await createGroupPosition({
+        chat_id: Number(chatId),
+        title: newTitle.trim(),
+        rank: Number(newRank),
+        rights: ['view_members'],
+      })
+      setNewTitle('')
+      setNotice('Должность создана. Отметьте права наказаний и сохраните.')
+      await loadPositions(chatId)
+    } catch (err) {
+      setError(err.message || 'Должность не создалась')
+    }
+  }
+
   const savePosition = async (row) => {
     setSavingId(row.id)
     setError('')
@@ -292,33 +347,62 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   const title = summary?.chat?.title || current?.title || 'Группа не выбрана'
 
   return (
-    <div className={`realm-root${personal ? ' is-personal' : ''}`}>
+    <div className={`panel-shell panel-shell-${viewport}${personal ? ' is-personal' : ''}`} data-viewport={viewport}>
       {coach && (
-        <FirstRun storageKey="epsilon.onboard.group.v4" steps={groupSteps(phone)} onDone={() => setCoach(false)} />
+        <FirstRun
+          storageKey="epsilon.onboard.group.v4"
+          steps={groupSteps(phone)}
+          layoutKey={railOpen ? 1 : 0}
+          onStep={onCoachStep}
+          onDone={() => setCoach(false)}
+        />
       )}
-      <header className="realm-top" data-coach="group-head">
-        <button type="button" className="realm-back" data-coach="doors" onClick={onLeave}>Сменить панель</button>
-        <div>
-          <h1>Панель администраторов групп</h1>
-          <p className="realm-copy">
-            {chatId
-              ? `${title}${current?.position ? ` · ${current.position}` : ''} · ${fmt(summary?.messages30d)} сообщений за 30 дней`
-              : 'Группа ещё не выбрана. Её отмечает создатель проекта.'}
-          </p>
-          <p className="realm-copy">
-            {phone ? 'Страницы этой группы — кнопки внизу экрана.' : 'Страницы этой группы — список слева.'}
-          </p>
-        </div>
-      </header>
-      <div className="realm-body">
-        <nav className="realm-rail" data-coach="tabs" aria-label="Разделы группы">
-          {tabs.map((item) => (
-            <button key={item.id} type="button" data-coach={item.id} className={activeTab === item.id && !chapter ? 'is-on' : ''} onClick={() => pickTab(item.id)}>
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        <main className="realm-main">
+      {phone && !railOpen && (
+        <button type="button" className="phone-edge" aria-label="Открыть страницы" onClick={() => setRailOpen(true)} />
+      )}
+      {phone && railOpen && (
+        <div className="panel-mobile-overlay" aria-hidden="true" onClick={closeRail} />
+      )}
+      <main className="panel-shell-main">
+      <div className="panel-layout panel-layout-page">
+        <PanelSidebar
+          sections={navSections}
+          activeSection={activeTab}
+          onNavigate={pickTab}
+          onChangeDoor={onLeave}
+          mobileOpen={railOpen}
+          onClose={closeRail}
+          lightMode={lightMode}
+          onTogglePerf={() => setLightMode(!lightMode)}
+          musicVolume={musicVolume}
+          onMusicVolumeChange={setMusicVolume}
+          onToggleMusic={toggleMusicMute}
+          accent={accent}
+          onAccentChange={(next) => setAccent(persistAccent(next))}
+          brandName="Панель группы"
+          brandTag={chatId ? title : 'Одна группа'}
+        />
+        <EliteTopbar
+          sections={navSections}
+          activeSection={activeTab}
+          onNavigate={pickTab}
+          onOpenMenu={() => setRailOpen((open) => !open)}
+          menuOpen={railOpen}
+          compact
+          showSupport={false}
+          where={chatId
+            ? `${current?.position ? `${current.position} · ` : ''}${fmt(summary?.messages30d)} сообщений за 30 дней`
+            : 'Группа ещё не выбрана. Её отмечает создатель проекта.'}
+        />
+        <div className="realm-main">
+          <header className="realm-top">
+            <div>
+              <h1>{chatId ? title : 'Группа не выбрана'}</h1>
+              <p className="realm-copy">
+                {phone ? 'Страницы — кнопка меню справа сверху.' : 'Страницы этой группы — список слева.'}
+              </p>
+            </div>
+          </header>
           {error && (
             <div className="gate-recover" role="alert">
               <p className="realm-alert">{error}</p>
@@ -447,9 +531,17 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
               )}
               <ul className="realm-list">
                 {(mods?.recent || []).map((row, index) => (
-                  <li key={`${row.at || index}-${row.user_id || index}`} className="realm-row">
-                    <strong>{row.action} · {row.target_id || row.user_id || '—'}</strong>
-                    <span>{when(row.at || row.created_at)}</span>
+                  <li key={`${row.at || index}-${row.target_user_id || index}`} className="realm-archive-item">
+                    <div className="realm-row">
+                      <strong>{row.action} · {row.target_user_id || '—'}</strong>
+                      <span>{when(row.at || row.created_at)}</span>
+                    </div>
+                    {(row.reason || row.admin) && (
+                      <p className="realm-copy">{[row.admin, row.reason].filter(Boolean).join(' · ')}</p>
+                    )}
+                    {row.proofMediaId
+                      ? <TgPhoto fileId={row.proofMediaId} className="realm-proof" />
+                      : <p className="realm-copy">Фото доказательства нет.</p>}
                   </li>
                 ))}
               </ul>
@@ -472,8 +564,23 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           {!chapter && activeTab === 'rights' && (
             <section>
               <h2 className="realm-h">Права должностей</h2>
-              <p className="realm-copy">Название и права этой группы. Менять можно должность младше своей. Создателя группы права не теряют.</p>
-              <PositionEditor positions={positions} creator={isCreator} onSave={savePosition} savingId={savingId} />
+              <p className="realm-copy">У каждой должности два списка: какие страницы кабинета открыты и какие наказания в этом чате разрешены. Наказать можно только младшего.</p>
+              <label className="realm-field">Найти должность
+                <input value={posQuery} onChange={(event) => setPosQuery(event.target.value)} placeholder="Название" />
+              </label>
+              <form className="realm-form" onSubmit={createPosition}>
+                <label>Новая должность<input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} /></label>
+                <label>Ранг, от 1 до {isCreator ? 4 : Math.max(1, Number(current?.rank || 1) - 1)}
+                  <input inputMode="numeric" value={newRank} onChange={(event) => setNewRank(event.target.value)} />
+                </label>
+                <button type="submit" className="realm-back" disabled={newTitle.trim().length < 2}>Создать должность</button>
+              </form>
+              <PositionEditor
+                positions={positions.filter((row) => String(row.title || '').toLowerCase().includes(posQuery.trim().toLowerCase()))}
+                creator={isCreator}
+                onSave={savePosition}
+                savingId={savingId}
+              />
             </section>
           )}
 
@@ -501,30 +608,23 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
               </ul>
             </section>
           )}
-        </main>
+        </div>
       </div>
-
-      {phone && !railOpen && (
-        <button type="button" className="phone-edge" aria-label="Открыть страницы" onClick={() => setRailOpen(true)} />
-      )}
+      </main>
       {phone && (
-        <div className={`realm-rail-sheet${railOpen ? ' is-open' : ''}`} role="dialog" aria-label="Страницы группы" aria-hidden={!railOpen} inert={!railOpen}>
-          {tabs.map((item) => (
-            <button key={item.id} type="button" className={activeTab === item.id ? 'is-on' : ''} onClick={() => pickTab(item.id)}>
+        <nav className="realm-tabbar" aria-label="Страницы группы">
+          {navSections.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={activeTab === item.id && !chapter ? 'is-on' : ''}
+              onClick={() => pickTab(item.id)}
+            >
               {item.label}
             </button>
           ))}
-          <p>Свайп влево плавно закрывает список</p>
-        </div>
+        </nav>
       )}
-
-      <nav className="realm-tabbar" data-coach="tabs" data-swipe-ignore aria-label="Вкладки группы">
-        {tabs.map((item) => (
-          <button key={item.id} type="button" data-coach={item.id} className={activeTab === item.id && !chapter ? 'is-on' : ''} onClick={() => pickTab(item.id)}>
-            {item.label}
-          </button>
-        ))}
-      </nav>
     </div>
   )
 }

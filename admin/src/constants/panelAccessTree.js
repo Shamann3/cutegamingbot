@@ -2,7 +2,7 @@
  *  Ключи детей в API: `${parentId}.${tabId}` (например staff.salaries).
  */
 
-import { PANEL_SECTIONS, sectionBlurb } from './panelNav'
+import { PANEL_SECTIONS, sectionBlurb } from './panelNav.js'
 
 /** @typedef {{ id: string, label: string, blurb: string, ownerOnly?: boolean, selfOnly?: boolean }} AccessTab */
 

@@ -1,4 +1,12 @@
-from group_realm import action_right, editable_rights, may_edit_position, may_punish_rank, rights_allow
+from group_realm import (
+    ALL_RIGHTS,
+    action_right,
+    cabinet_pages,
+    editable_rights,
+    may_edit_position,
+    may_punish_rank,
+    rights_allow,
+)
 from staff_panel_rights import column_granted, purge_allowed
 
 def test_local_actions_map_to_one_right():
@@ -36,6 +44,26 @@ def test_position_edit_stays_below_actor():
     assert editable_rights(5, ["punish_warn"], creator=False)[0] == "view_members"
     assert "manage_positions" not in editable_rights(2, ["manage_positions", "punish_warn"], creator=False)
     assert "manage_positions" in editable_rights(2, ["manage_positions", "punish_warn"], creator=True)
+
+
+def test_cabinet_pages_follow_the_two_lists():
+    assert cabinet_pages(["view_archive"]) == ["overview", "archive", "more"]
+    people = cabinet_pages(["punish_mute"])
+    assert "people" in people
+    assert "archive" not in people
+    assert "rights" not in people
+    full = ["overview", "people", "archive", "analytics", "rights", "more"]
+    assert cabinet_pages([], creator=True) == full
+    assert cabinet_pages(ALL_RIGHTS) == full
+
+
+def test_junior_cannot_open_rights_page_by_asking():
+    saved = editable_rights(2, ["manage_positions", "view_archive", "punish_ban"], creator=False)
+    pages = cabinet_pages(saved)
+    assert "archive" in pages
+    assert "people" in pages
+    assert "rights" not in pages
+    assert "manage_positions" not in saved
 
 
 def test_only_creator_can_purge_and_not_himself():

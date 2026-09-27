@@ -88,7 +88,9 @@ export default function AccentPalette({ value, onChange, inline = false }) {
   const [hexOk, setHexOk] = useState(true)
   const [pos, setPos] = useState({ top: 0, left: 0 })
   const canvasRef = useRef(null)
+  const wrapRef = useRef(null)
   const dragging = useRef(false)
+  const [wheelPx, setWheelPx] = useState(WHEEL_SIZE)
   const rootRef = useRef(null)
   const panelRef = useRef(null)
   const triggerRef = useRef(null)
@@ -175,6 +177,19 @@ export default function AccentPalette({ value, onChange, inline = false }) {
     paintWheel(canvasRef.current)
   }, [open, inline])
 
+  useLayoutEffect(() => {
+    const node = wrapRef.current
+    if (!node || (!open && !inline)) return undefined
+    const measure = () => {
+      const next = node.getBoundingClientRect().width
+      if (next > 0) setWheelPx(next)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [open, inline])
+
   useEffect(() => {
     if (!open || inline) return undefined
     const onKey = (e) => {
@@ -222,10 +237,15 @@ export default function AccentPalette({ value, onChange, inline = false }) {
 
   const knobStyle = (() => {
     const rad = (draft.h * Math.PI) / 180
-    const r = draft.s * (WHEEL_RADIUS - 6)
+    const knob = 16
+    const disk = ((WHEEL_RADIUS - 1) / WHEEL_SIZE) * wheelPx
+    const reach = Math.max(0, disk - knob / 2 - 1)
+    const dist = clamp(draft.s, 0, 1) * reach
+    const x = (wheelPx / 2 + Math.cos(rad) * dist) / wheelPx
+    const y = (wheelPx / 2 + Math.sin(rad) * dist) / wheelPx
     return {
-      left: `${WHEEL_RADIUS + Math.cos(rad) * r}px`,
-      top: `${WHEEL_RADIUS + Math.sin(rad) * r}px`,
+      left: `${x * 100}%`,
+      top: `${y * 100}%`,
       background: draft.hex,
     }
   })()
@@ -240,7 +260,7 @@ export default function AccentPalette({ value, onChange, inline = false }) {
         aria-label="Палитра цвета"
         style={inline ? undefined : { top: pos.top, left: pos.left }}
       >
-        <div className="accent-wheel-wrap">
+        <div className="accent-wheel-wrap" ref={wrapRef}>
           <canvas
             ref={canvasRef}
             className="accent-wheel"

@@ -88,7 +88,7 @@ export const PANEL_SECTIONS = [
   {
     id: 'rights', label: 'Rights', labelRu: 'Права', group: 'team',
     creatorOnly: true,
-    blurb: 'Должности групп, их названия и полный сброс допуска.',
+    blurb: 'Страницы и наказания должностей группы, вкладки панели сотрудника.',
   },
   {
     id: 'support', label: 'Support', labelRu: 'Поддержка', group: 'team',
@@ -182,9 +182,7 @@ export function visibleSections(
   { myUserId = null, projectCreatorId = null, isProjectCreator = null } = {},
 ) {
   const perms = new Set(permissions)
-  const allowedIds = Array.isArray(panelSections) && panelSections.length > 0
-    ? new Set(panelSections)
-    : null
+  const allowedIds = Array.isArray(panelSections) ? new Set(panelSections) : null
   const creatorOk = isProjectCreator === true
     || (
       myUserId != null

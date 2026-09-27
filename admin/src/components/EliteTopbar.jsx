@@ -60,6 +60,8 @@ export default function EliteTopbar({
    *  Сама шапка всегда compact — поиск стоит как на «Игроки». */
   compact = true,
   welcome = false,
+  where = 'Панель сотрудника. Это весь проект, не одна группа.',
+  showSupport = true,
 }) {
   const { displayName } = getAdminProfile()
   const [query, setQuery] = useState('')
@@ -160,7 +162,7 @@ export default function EliteTopbar({
 
       <div className="elite-mobile-title">
         <h1 className="elite-mobile-section">{sectionTitle}</h1>
-        <p className="elite-where">Панель сотрудника. Это весь проект, не одна группа.</p>
+        <p className="elite-where">{where}</p>
       </div>
 
       <div className="elite-topbar-actions">
@@ -210,7 +212,7 @@ export default function EliteTopbar({
           )}
         </div>
 
-        <button
+        {showSupport && <button
           type="button"
           className="elite-icon-btn elite-support-btn"
           aria-label={openTickets > 0
@@ -221,7 +223,7 @@ export default function EliteTopbar({
         >
           <BellIcon />
           {openTickets > 0 && <span className="elite-bell-dot" aria-hidden="true" />}
-        </button>
+        </button>}
 
         {typeof onOpenMenu === 'function' && (
           <button

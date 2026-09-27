@@ -439,7 +439,8 @@ async def _moderation_counts(chat_id: int) -> Dict[str, Any]:
     try:
         rows = await db.pool.fetch(
             """
-            SELECT created_at, action_type, target_player_id, admin_name, reason
+            SELECT created_at, action_type, target_player_id, admin_name, reason,
+                   proof_media_id, evidence
             FROM staff_actions
             WHERE chat_id = $1
             ORDER BY created_at DESC NULLS LAST
@@ -454,6 +455,9 @@ async def _moderation_counts(chat_id: int) -> Dict[str, Any]:
                 "target_user_id": _iint(r["target_player_id"]),
                 "admin": r["admin_name"],
                 "reason": (r["reason"] or "")[:120],
+                "evidence": (r["evidence"] or "")[:300],
+                "hasProof": bool(r["proof_media_id"]),
+                "proofMediaId": r["proof_media_id"] or None,
             }
             for r in rows
         ]

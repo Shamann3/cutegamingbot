@@ -82,6 +82,7 @@ async def list_moderation_logs(
     *,
     action_type: str | None = None,
     player_id: int | None = None,
+    chat_id: int | None = None,
     sort_by: str = "date",
     limit: int = 50,
     offset: int = 0,
@@ -101,6 +102,11 @@ async def list_moderation_logs(
     if player_id and player_id > 0:
         conditions.append(f"target_player_id = ${idx}")
         params.append(player_id)
+        idx += 1
+
+    if chat_id:
+        conditions.append(f"chat_id = ${idx}")
+        params.append(int(chat_id))
         idx += 1
 
     order = "action_type ASC, created_at DESC, id DESC" if sort_by == "type" else "created_at DESC, id DESC"

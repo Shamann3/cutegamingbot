@@ -2016,10 +2016,11 @@ export async function fetchModeratorStats(period = 'week') {
   return adminRequest(`/moderation/moderator-stats?period=${period}`)
 }
 
-export async function fetchModerationLogs({ actionType = '', playerId = '', sortBy = 'date', limit = 50, offset = 0 } = {}) {
+export async function fetchModerationLogs({ actionType = '', playerId = '', chatId = '', sortBy = 'date', limit = 50, offset = 0 } = {}) {
   const p = new URLSearchParams({ limit, offset, sort_by: sortBy })
   if (actionType) p.set('action_type', actionType)
   if (playerId) p.set('player_id', playerId)
+  if (chatId) p.set('chat_id', chatId)
   return adminRequest(`/moderation/logs?${p}`)
 }
 
@@ -2295,6 +2296,10 @@ export async function checkGroupKey(key) {
 
 export async function fetchRightsBoard() {
   return adminFetch('/group-realm/board')
+}
+
+export async function createGroupPosition(body) {
+  return adminFetch('/group-realm/positions', { method: 'POST', body })
 }
 
 export async function saveGroupPosition(positionId, body) {

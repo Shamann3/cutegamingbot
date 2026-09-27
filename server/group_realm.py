@@ -67,6 +67,26 @@ def action_right(action: str) -> str | None:
     return ACTION_RIGHT.get((action or "").strip().lower())
 
 
+def cabinet_pages(rights: list[str] | set[str], *, creator: bool = False) -> list[str]:
+    """Страницы кабинета группы, которые открывает набор прав.
+
+    Обзор и «Ещё» есть всегда. «Люди» открываются и от любого наказания,
+    даже без отдельного права смотреть список.
+    """
+    have = set(rights or [])
+    pages = ["overview"]
+    if creator or "view_members" in have or any(str(item).startswith("punish_") for item in have):
+        pages.append("people")
+    if creator or "view_archive" in have:
+        pages.append("archive")
+    if creator or "view_analytics" in have:
+        pages.append("analytics")
+    if creator or "manage_positions" in have:
+        pages.append("rights")
+    pages.append("more")
+    return pages
+
+
 def rights_allow(rights: list[str] | set[str], action: str) -> bool:
     need = action_right(action)
     return bool(need) and need in set(rights or [])
@@ -317,6 +337,14 @@ class PositionEditBody(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class PositionCreateBody(BaseModel):
+    chat_id: int
+    title: str = Field(min_length=2, max_length=40)
+    rank: int = Field(ge=1, le=4)
+    rights: list[str] = Field(default_factory=list)
+    model_config = {"extra": "forbid"}
+
+
 class AppointBody(BaseModel):
     chat_id: int
     user_id: int = Field(ge=1)
@@ -558,6 +586,34 @@ async def group_positions(chat_id: int, user_id: int = Depends(get_any_telegram_
             for r in rows
         ]
     }
+
+
+@router.post("/positions")
+async def create_position(body: PositionCreateBody, user_id: int = Depends(get_any_telegram_user_id)):
+    await ensure_tables()
+    actor = await _can_edit_positions(user_id, int(body.chat_id))
+    if not actor or not may_edit_position(actor["rank"], int(body.rank), creator=actor["creator"]):
+        raise HTTPException(status_code=403, detail="Новая должность должна быть младше вашей")
+    official = await db.pool.fetchval(
+        "SELECT 1 FROM epsilon_official_groups WHERE chat_id = $1 AND is_official",
+        int(body.chat_id),
+    )
+    if not official:
+        raise HTTPException(status_code=404, detail="Свои должности есть только у официальной группы")
+    title = " ".join(body.title.split())
+    rights = editable_rights(int(body.rank), body.rights, creator=actor["creator"])
+    row = await db.pool.fetchrow(
+        """
+        INSERT INTO epsilon_positions (chat_id, title, rank, rights, accepting)
+        VALUES ($1, $2, $3, $4::jsonb, TRUE)
+        RETURNING id
+        """,
+        int(body.chat_id),
+        title,
+        int(body.rank),
+        json.dumps(rights),
+    )
+    return {"ok": True, "id": int(row["id"]), "title": title, "rank": int(body.rank), "rights": rights}
 
 
 @router.post("/positions/{position_id}")

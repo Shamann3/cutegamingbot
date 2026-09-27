@@ -310,14 +310,30 @@
 
 .realm-top {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   gap: 16px;
   margin-bottom: 22px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.realm-top > div {
+  flex: 1 1 16rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .realm-top h1 {
-  font-size: clamp(28px, 4vw, 40px);
+  font-size: clamp(26px, 3vw, 36px);
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+.realm-copy {
+  overflow-wrap: break-word;
+  max-width: 100%;
 }
 
 .realm-body {
@@ -334,6 +350,20 @@
 
 .realm-main {
   min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (min-width: 901px) {
+  .panel-layout > .realm-main {
+    grid-column: 2;
+    grid-row: 2;
+    min-height: 0;
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 4px 8px 28px;
+  }
 }
 
 .realm-hero-label {
@@ -377,8 +407,15 @@
   cursor: pointer;
 }
 
+.realm-list button strong,
+.realm-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .realm-list button span,
 .realm-row span {
+  flex-shrink: 0;
   color: var(--gate-muted);
   font-size: 13px;
 }
@@ -454,6 +491,47 @@
   padding: 8px 8px calc(var(--tg-content-bottom, 0px) + 8px);
   background: rgba(0, 0, 0, 0.92);
   border-top: 1px solid var(--gate-line);
+}
+
+.realm-archive-item {
+  padding: 12px 0 16px;
+  border-bottom: 1px solid var(--gate-line);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.realm-proof {
+  display: block;
+  width: min(100%, 280px);
+  max-height: 180px;
+  margin-top: 8px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+html.is-phone .realm-tabbar button,
+html[data-viewport="phone"] .realm-tabbar button {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.is-phone .panel-shell-main,
+html[data-viewport="phone"] .panel-shell-main {
+  padding-bottom: calc(var(--tg-content-bottom, 0px) + 76px) !important;
+}
+
+html.is-phone .arc-filters,
+html.is-phone .arc-search,
+html[data-viewport="phone"] .arc-filters,
+html[data-viewport="phone"] .arc-search {
+  margin-left: 0 !important;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .realm-tabbar button,
@@ -532,9 +610,10 @@
   position: fixed;
   z-index: 81;
   border-radius: 16px;
-  outline: 2px solid #fff;
-  outline-offset: 0;
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.78);
+  outline: none;
+  box-shadow:
+    inset 0 0 0 2px #fff,
+    0 0 0 9999px rgba(0, 0, 0, 0.78);
   pointer-events: none;
 }
 
@@ -556,6 +635,8 @@
 
 .firstrun-sheet {
   width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
   background: #0a0a0a;
   color: var(--gate-ink, #f4f4f4);
   border: 1px solid var(--gate-line, rgba(244, 244, 244, 0.16));
@@ -576,10 +657,11 @@
 
 .firstrun-title {
   margin: 0 0 8px;
-  font-size: 28px;
-  line-height: 1.05;
-  letter-spacing: -0.04em;
+  font-size: 26px;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
   font-weight: 560;
+  overflow-wrap: break-word;
 }
 
 .firstrun-body {
@@ -587,6 +669,7 @@
   color: var(--gate-muted, rgba(244, 244, 244, 0.72));
   font-size: 15px;
   line-height: 1.45;
+  overflow-wrap: break-word;
 }
 
 .firstrun-dots {
@@ -901,8 +984,12 @@
   background: transparent;
   color: var(--gate-ink);
   border-radius: 999px;
-  padding: 0 14px;
+  max-width: 100%;
+  padding: 8px 14px;
   font: inherit;
+  line-height: 1.2;
+  white-space: normal;
+  text-align: center;
   cursor: pointer;
 }
 
@@ -1085,10 +1172,82 @@ html[data-viewport="desktop"] .panel-sidebar-nav {
 .realm-right-grid {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+}
+
+.realm-rights-block {
+  margin: 12px 0;
+  padding: 8px 12px 4px;
+  border: 1px solid var(--gate-line);
+  border-radius: 14px;
+  min-width: 0;
+}
+
+.realm-rights-block legend,
+.realm-rights-block h3 {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.realm-check span {
+  min-width: 0;
+}
+
+.realm-check strong,
+.realm-check em {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.realm-check em {
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--gate-muted);
+}
+
+.realm-right-nested {
+  margin: 0 0 8px 28px;
+  min-width: 0;
+}
+
+.realm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  min-width: 0;
+}
+
+.realm-field input {
+  min-width: 0;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--gate-line);
+  background: #000;
+  color: var(--gate-ink);
+  font: inherit;
+  font-size: 16px;
+  padding: 0 12px;
 }
 
 .realm-in-panel {
   color: #f4f4f4;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.panel-shelf-page.realm-in-panel .panel-page-lead {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+
+.realm-form .realm-back {
+  width: 100%;
 }
 
 .panel-sidebar-swipe-hint {
@@ -1377,6 +1536,14 @@ html[data-viewport="desktop"] .elite-brand-slot {
   height: 100%;
 }
 
+.accent-wheel-knob {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  transform: translate(-50%, -50%);
+}
+
 .accent-picker-side {
   flex: 1 1 0;
   min-width: 0;
@@ -1471,10 +1638,21 @@ html[data-viewport="phone"] .gate-status {
 .firstrun-sheet,
 .firstrun-sheet.is-anchored {
   max-width: calc(100% - 24px);
-  max-height: min(46vh, 320px);
-  overflow-x: hidden;
-  overflow-y: auto;
+  max-height: calc(100vh - 24px);
+  overflow: hidden;
   box-sizing: border-box;
+}
+
+.firstrun-body {
+  min-height: 0;
+  overflow: auto;
+}
+
+.firstrun-actions,
+.firstrun-dots,
+.firstrun-focus,
+.firstrun-title {
+  flex: none;
 }
 
 .realm-tabbar {

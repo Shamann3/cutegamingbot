@@ -3,29 +3,27 @@ import { useEffect, useState } from 'react'
 export function staffSteps(phone) {
   return [
     {
-      title: phone ? 'Кнопка меню' : 'Главная',
+      title: phone ? 'Меню' : 'Страницы',
       body: phone
-        ? 'Белая рамка вокруг кнопки меню справа сверху. Нажмите её или смахните вправо. Откроется список страниц. Смахните влево, и список плавно закроется.'
-        : 'Белая рамка вокруг «Главная». Слева список страниц. Нажмите название, и откроется эта страница.',
-      target: phone ? '[data-coach="menu"]' : '[data-section="dashboard"]',
+        ? 'Кнопка справа сверху открывает страницы. Свайп вправо открывает список, свайп влево закрывает.'
+        : 'Слева страницы. Нажмите название.',
+      target: phone ? '[data-coach="menu"]' : '[data-coach="nav"]',
     },
     {
-      title: 'Поиск страницы',
-      body: phone
-        ? 'Белая рамка вокруг поля «Найти раздел». Напишите слово, например «игроки», и нажмите найденную строку.'
-        : 'Белая рамка вокруг поля поиска справа вверху. Напишите название страницы и нажмите Enter. С клавиатуры это Ctrl и K.',
+      title: 'Поиск',
+      body: 'Напишите название страницы и откройте её.',
       target: phone ? '.panel-sidebar-search' : '[data-coach="search"]',
       openNav: phone,
     },
     {
       title: 'Игроки',
-      body: 'Белая рамка вокруг «Игроки». Там карточки людей. Запретить человека во всём проекте можно только если у вашей должности есть это право.',
+      body: 'Карточки людей. Запрет на весь проект есть только у должности с этим правом.',
       target: '[data-section="users"]',
       openNav: phone,
     },
     {
       title: 'Сменить панель',
-      body: 'Белая рамка вокруг «Сменить панель». Она возвращает к выбору: панель сотрудника или панель группы. Из аккаунта вы не выходите.',
+      body: 'Возврат к выбору: сотрудник или группа. Из аккаунта вы не выходите.',
       target: '[data-coach="doors"]',
       openNav: phone,
     },
@@ -35,28 +33,113 @@ export function staffSteps(phone) {
 export function groupSteps(phone) {
   return [
     {
-      title: 'Где вы',
-      body: 'Рамка вокруг названия. Это панель одной группы: чат, ваша должность и сообщения за 30 дней.',
+      title: 'Эта группа',
+      body: 'Чат, ваша должность и сообщения за 30 дней.',
       target: '.realm-top h1',
     },
     {
-      title: 'Страницы группы',
+      title: 'Страницы',
       body: phone
-        ? 'Белая рамка вокруг кнопок внизу. Нажмите нужную. Свайп вправо открывает тот же список, свайп влево плавно его закрывает.'
-        : 'Белая рамка вокруг списка слева. Нажмите: обзор, люди, архив или цифры. Каждая страница про эту группу.',
-      target: phone ? '.realm-tabbar' : '.realm-rail',
+        ? 'Кнопка меню открывает страницы этой группы.'
+        : 'Слева страницы этой группы. Нажмите нужную.',
+      target: phone ? '[data-coach="menu"]' : '[data-coach="nav"]',
     },
     {
       title: 'Люди',
-      body: 'Нажмите кнопку «Люди». Наказать можно только того, кто в этом чате младше вас. Равного и старшего система не пропустит.',
-      target: '[data-coach="people"]',
+      body: 'Наказать можно только того, кто в этом чате младше вас.',
+      target: '[data-section="people"]',
+      openNav: phone,
     },
     {
-      title: 'Правила',
-      body: 'Нажмите «Ещё». Там ссылка на правила и кнопка «Сменить панель».',
-      target: '[data-coach="more"]',
+      title: 'Ещё',
+      body: 'Правила и кнопка «Сменить панель».',
+      target: '[data-section="more"]',
+      openNav: phone,
     },
   ]
+}
+
+const EDGE = 12
+
+function bringIntoView(node) {
+  node.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  let parent = node.parentElement
+  while (parent && parent !== document.body) {
+    const style = window.getComputedStyle(parent)
+    const scrollX = /(auto|scroll)/.test(style.overflowX)
+    const scrollY = /(auto|scroll)/.test(style.overflowY)
+    if (scrollX || scrollY) {
+      const parentRect = parent.getBoundingClientRect()
+      const rect = node.getBoundingClientRect()
+      if (scrollX && rect.left < parentRect.left + 8) parent.scrollLeft -= parentRect.left + 8 - rect.left
+      if (scrollX && rect.right > parentRect.right - 8) parent.scrollLeft += rect.right - (parentRect.right - 8)
+      if (scrollY && rect.top < parentRect.top + 8) parent.scrollTop -= parentRect.top + 8 - rect.top
+      if (scrollY && rect.bottom > parentRect.bottom - 8) parent.scrollTop += rect.bottom - (parentRect.bottom - 8)
+    }
+    parent = parent.parentElement
+  }
+}
+
+function spotFor(node) {
+  const rect = node.getBoundingClientRect()
+  const left = Math.max(EDGE, rect.left)
+  const top = Math.max(EDGE, rect.top)
+  const right = Math.min(window.innerWidth - EDGE, rect.right)
+  const bottom = Math.min(window.innerHeight - EDGE, rect.bottom)
+  const width = right - left
+  const height = bottom - top
+  if (width < 24 || height < 24) return null
+  return {
+    top,
+    left,
+    width,
+    height,
+    low: top + height / 2 > window.innerHeight * 0.55,
+  }
+}
+
+function blocksCard(card, spot) {
+  return !(card.right <= spot.left - 10 || card.left >= spot.right + 10 || card.bottom <= spot.top - 10 || card.top >= spot.bottom + 10)
+}
+
+function placeCard(box) {
+  const cardW = Math.min(320, window.innerWidth - EDGE * 2)
+  const cardH = 200
+  const maxRight = window.innerWidth - EDGE
+  const maxBottom = window.innerHeight - EDGE
+  if (window.innerWidth < 720) {
+    return box?.low
+      ? { top: EDGE, left: EDGE, right: EDGE, width: 'auto', bottom: 'auto' }
+      : { top: 'auto', bottom: EDGE, left: EDGE, right: EDGE, width: 'auto' }
+  }
+  if (!box) return { top: 'auto', bottom: EDGE, left: EDGE, right: EDGE, width: 'auto' }
+  const obstacles = [{
+    left: box.left,
+    top: box.top,
+    right: box.left + box.width,
+    bottom: box.top + box.height,
+  }]
+  document.querySelectorAll('.realm-top, .realm-search, .elite-topbar, .elite-search-wrap').forEach((node) => {
+    const rect = node.getBoundingClientRect()
+    if (rect.width > 8 && rect.height > 8) obstacles.push(rect)
+  })
+  const tries = [
+    [box.left + box.width + 16, maxBottom - cardH],
+    [box.left + box.width + 16, EDGE],
+    [maxRight - cardW, maxBottom - cardH],
+    [EDGE, maxBottom - cardH],
+  ]
+  for (const [rawLeft, rawTop] of tries) {
+    const left = Math.max(EDGE, Math.min(rawLeft, maxRight - cardW))
+    const top = Math.max(EDGE, Math.min(rawTop, maxBottom - cardH))
+    const card = { left, top, right: left + cardW, bottom: top + cardH }
+    if (card.right > maxRight || card.bottom > maxBottom) continue
+    if (obstacles.some((spot) => blocksCard(card, spot))) continue
+    return { top, left, width: cardW, right: 'auto', bottom: 'auto' }
+  }
+  const left = Math.max(EDGE, Math.min(box.left + box.width + 16, maxRight - cardW))
+  const top = Math.max(EDGE, maxBottom - cardH)
+  return { top, left, width: cardW, right: 'auto', bottom: 'auto' }
 }
 
 function onScreen(node) {
@@ -125,7 +208,7 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
         setBox(null)
         return
       }
-      node.scrollIntoView({ block: 'center', inline: 'center' })
+      bringIntoView(node)
       const scroller = node.closest('.realm-tabbar, .panel-sidebar-nav, .realm-rail-sheet')
       if (scroller) {
         const next = node.offsetLeft - (scroller.clientWidth - node.offsetWidth) / 2
@@ -136,25 +219,7 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
           setBox(null)
           return
         }
-        const rect = node.getBoundingClientRect()
-        const margin = 10
-        const left = Math.max(margin, rect.left - 6)
-        const top = Math.max(margin, rect.top - 6)
-        const right = Math.min(window.innerWidth - margin, rect.right + 6)
-        const bottom = Math.min(window.innerHeight - margin, rect.bottom + 6)
-        const width = right - left
-        const height = bottom - top
-        if (width < 28 || height < 28 || height > 180) {
-          setBox(null)
-          return
-        }
-        setBox({
-          top,
-          left,
-          width,
-          height,
-          low: top > window.innerHeight * 0.5,
-        })
+        setBox(spotFor(node))
       })
     }
     const soon = window.setTimeout(measure, 60)
@@ -168,28 +233,7 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
     }
   }, [step, layoutKey])
 
-  const sheetStyle = (() => {
-    const edge = 12
-    const stacked = (low) => (
-      low
-        ? { top: 'calc(var(--tg-content-top, 0px) + 12px)', bottom: 'auto', left: edge, right: edge, width: 'auto' }
-        : { top: 'auto', bottom: 'calc(var(--tg-content-bottom, 0px) + 12px)', left: edge, right: edge, width: 'auto' }
-    )
-    if (window.innerWidth < 720) return stacked(Boolean(box?.low))
-    if (!box) return undefined
-    const width = 320
-    const left = box.left + box.width + edge
-    if (left + width <= window.innerWidth - edge) {
-      return {
-        top: Math.min(Math.max(edge, box.top), Math.max(edge, window.innerHeight - 280)),
-        left,
-        right: 'auto',
-        width,
-        bottom: 'auto',
-      }
-    }
-    return stacked(box.low)
-  })()
+  const sheetStyle = placeCard(box)
 
   return (
     <div className={`firstrun${box ? ' has-spot' : ''}`} role="dialog" aria-modal="true" aria-labelledby="firstrun-title">
@@ -200,7 +244,7 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
         />
       )}
       <div className={`firstrun-sheet${box ? ' is-anchored' : ''}`} style={sheetStyle}>
-        <p className="firstrun-focus">Рамка показывает место. Это не ошибка экрана.</p>
+        <p className="firstrun-focus">Рамка показывает, куда нажать.</p>
         <h2 id="firstrun-title" className="firstrun-title">{step.title}</h2>
         <p className="firstrun-body">{step.body}</p>
         <div className="firstrun-dots" aria-hidden="true">

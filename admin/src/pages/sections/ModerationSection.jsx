@@ -529,7 +529,7 @@ function StatsBar({ items, total }) {
 // ---------------------------------------------------------------------------
 const PAGE_SIZE = 24
 const MAIN_TABS = [
-  { id: 'archive',  label: '📁 Архив' },
+  { id: 'archive',  label: 'Главный Архив' },
   { id: 'appeals',  label: '📬 Апелляции' },
   { id: 'stats',    label: '📊 Статистика' },
 ]
@@ -824,6 +824,8 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
   const [error, setError] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterPlayer, setFilterPlayer] = useState('')
+  const [filterChat, setFilterChat] = useState('')
+  const [chatInput, setChatInput] = useState('')
   const [sortBy, setSortBy] = useState('date')
   const [playerInput, setPlayerInput] = useState('')
   const [offset, setOffset] = useState(0)
@@ -837,6 +839,7 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
       const data = await fetchModerationLogs({
         actionType: opts.actionType ?? filterType,
         playerId: opts.playerId ?? filterPlayer,
+        chatId: opts.chatId ?? filterChat,
         sortBy: opts.sortBy ?? sortBy,
         limit: PAGE_SIZE,
         offset: opts.offset ?? offset,
@@ -844,7 +847,7 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
       setItems(data.items || []); setTotal(data.total || 0)
     } catch (e) { setError(e.message || 'Ошибка загрузки') }
     finally { setLoading(false) }
-  }, [filterType, filterPlayer, offset])
+  }, [filterType, filterPlayer, filterChat, offset])
 
   useEffect(() => { load() }, [load])
 
@@ -875,6 +878,14 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
     setFilterPlayer(pid); setOffset(0); load({ playerId:pid, offset:0 })
   }
   function clearPlayer() { setPlayerInput(''); setFilterPlayer(''); setOffset(0); load({ playerId:'', offset:0 }) }
+  function applyChatFilter() {
+    const id = parseInt(chatInput.trim(), 10)
+    const cid = Number.isNaN(id) ? '' : String(id)
+    setFilterChat(cid)
+    setOffset(0)
+    load({ chatId: cid, offset: 0 })
+  }
+  function clearChat() { setChatInput(''); setFilterChat(''); setOffset(0); load({ chatId: '', offset: 0 }) }
   function goPage(dir) { const next = Math.max(0, offset + dir * PAGE_SIZE); setOffset(next); load({ offset:next }) }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -892,8 +903,8 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
       <div className="arc-header">
         <div className="arc-header-row">
           <div className="arc-title-block">
-            <div className="arc-title">⚖ Архив модерации</div>
-            <div className="arc-subtitle">Муты · кики · баны · варны и снятия — с охватом и пруфами · {total.toLocaleString('ru-RU')} записей</div>
+            <div className="arc-title">Главный Архив</div>
+            <div className="arc-subtitle">Наказания всего проекта и официальных групп. Фото доказательства видно в деле. {total.toLocaleString('ru-RU')} записей</div>
           </div>
           {liveCount > 0 && (
             <button className="arc-live" onClick={() => { setLiveCount(0); load() }}>
@@ -926,6 +937,19 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
               <span className="arc-sort-label">Сортировка:</span>
               <button className={`arc-sort-btn${sortBy==='date'?' arc-sort-on':''}`} onClick={() => applySort('date')}>По дате</button>
               <button className={`arc-sort-btn${sortBy==='type'?' arc-sort-on':''}`} onClick={() => applySort('type')}>По типу</button>
+            </div>
+            <div className="arc-search">
+              <label className="arc-sort-label">Группа
+                <input
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  placeholder="Id чата"
+                  inputMode="numeric"
+                  aria-label="Архив одной группы"
+                />
+              </label>
+              <button type="button" className="arc-search-btn" onClick={applyChatFilter}>Показать группу</button>
+              {filterChat && <button type="button" className="arc-clear-btn" onClick={clearChat}>Все группы</button>}
             </div>
             <div className="arc-search">
               <UserLookupPreview

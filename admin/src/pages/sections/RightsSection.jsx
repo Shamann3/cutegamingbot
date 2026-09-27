@@ -1,6 +1,125 @@
-import { useCallback, useEffect, useState } from 'react'
-import { fetchRightsBoard, purgeStaffMember, saveGroupPosition } from '../../lib/adminClient'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { fetchPanelAccess, fetchRightsBoard, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
 import PositionEditor from '../../components/PositionEditor'
+
+const STAFF_GROUP_LABELS = {
+  overview: 'С чего начать',
+  people: 'Люди',
+  economy: 'Деньги и группы',
+  content: 'Игры и призы',
+  team: 'Команда',
+  insights: 'Цифры',
+  system: 'Настройки',
+}
+
+function StaffTabsEditor() {
+  const [pack, setPack] = useState(null)
+  const [role, setRole] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [busyKey, setBusyKey] = useState('')
+
+  const load = useCallback(async () => {
+    setError('')
+    try {
+      const data = await fetchPanelAccess()
+      setPack(data)
+      setRole((current) => current || data.roles?.[0]?.id || '')
+    } catch (err) {
+      setError(err.message || 'Вкладки панели не открылись')
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const groups = useMemo(() => {
+    const tree = pack?.tree || []
+    const order = Object.keys(STAFF_GROUP_LABELS)
+    const known = new Set(order)
+    const extra = [...new Set(tree.map((item) => item.group).filter((id) => id && !known.has(id)))]
+    return [...order, ...extra]
+      .map((id) => ({
+        id,
+        label: STAFF_GROUP_LABELS[id] || id,
+        items: tree.filter((item) => item.group === id),
+      }))
+      .filter((group) => group.items.length)
+  }, [pack])
+
+  const enabled = (key) => Boolean(pack?.roleDefaults?.[role]?.[key])
+
+  const toggle = async (key, next) => {
+    if (!role) return
+    setBusyKey(key)
+    setError('')
+    setNotice('')
+    setPack((current) => {
+      if (!current) return current
+      const roleDefaults = {
+        ...current.roleDefaults,
+        [role]: { ...(current.roleDefaults?.[role] || {}), [key]: next },
+      }
+      return { ...current, roleDefaults }
+    })
+    try {
+      await setPanelRoleDefault({ role, sectionId: key, enabled: next })
+      setNotice('Вкладки этой должности сохранены')
+    } catch (err) {
+      setError(err.message || 'Вкладка не сохранилась')
+      await load()
+    } finally {
+      setBusyKey('')
+    }
+  }
+
+  return (
+    <div>
+      <p className="realm-copy">Это страницы панели сотрудника для всей должности сразу. Владелец видит всё, его здесь нет. Внутренняя вкладка работает только если открыта сама страница. Исключение одному человеку по-прежнему ставится в «Админ панель».</p>
+      {error && <p className="realm-alert" role="alert">{error}</p>}
+      {notice && <p className="realm-note" role="status">{notice}</p>}
+      <div className="realm-actions">
+        {(pack?.roles || []).map((item) => (
+          <button key={item.id} type="button" className={item.id === role ? 'is-on' : ''} onClick={() => setRole(item.id)}>
+            {item.label}
+          </button>
+        ))}
+      </div>
+      {groups.map((group) => (
+        <section key={group.id} className="realm-rights-block">
+          <h3>{group.label}</h3>
+          {group.items.map((section) => (
+            <div key={section.id}>
+              <label className="realm-check">
+                <input
+                  type="checkbox"
+                  checked={enabled(section.id)}
+                  disabled={busyKey === section.id}
+                  onChange={(event) => toggle(section.id, event.target.checked)}
+                />
+                <span><strong>{section.label}</strong></span>
+              </label>
+              {enabled(section.id) && (section.children || []).length > 0 && (
+                <div className="realm-right-nested">
+                  {section.children.map((child) => (
+                    <label key={child.key} className="realm-check">
+                      <input
+                        type="checkbox"
+                        checked={enabled(child.key)}
+                        disabled={busyKey === child.key}
+                        onChange={(event) => toggle(child.key, event.target.checked)}
+                      />
+                      <span>{child.label}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </section>
+      ))}
+    </div>
+  )
+}
 
 export default function RightsSection() {
   const [groups, setGroups] = useState([])
@@ -10,6 +129,8 @@ export default function RightsSection() {
   const [savingId, setSavingId] = useState(null)
   const [purgeId, setPurgeId] = useState('')
   const [purging, setPurging] = useState(false)
+  const [chapter, setChapter] = useState('group')
+  const [posQuery, setPosQuery] = useState('')
 
   const load = useCallback(async () => {
     setError('')
@@ -67,7 +188,14 @@ export default function RightsSection() {
   return (
     <section className="panel-shelf-page realm-in-panel">
       <h1 className="panel-page-title">Права</h1>
-      <p className="panel-page-lead">Должности групп и полный сброс допуска. Вкладки панели сотрудника задаются в разделе «Админ панель».</p>
+      <p className="panel-page-lead">Сначала выберите, что выдаёте: страницы и наказания должности в группе или вкладки панели сотрудника.</p>
+      <div className="realm-actions">
+        <button type="button" className={chapter === 'group' ? 'is-on' : ''} onClick={() => setChapter('group')}>Должности группы</button>
+        <button type="button" className={chapter === 'staff' ? 'is-on' : ''} onClick={() => setChapter('staff')}>Вкладки сотрудника</button>
+      </div>
+      {chapter === 'staff' && <StaffTabsEditor />}
+      {chapter === 'group' && (
+      <>
       {error && <p className="realm-alert" role="alert">{error}</p>}
       {notice && <p className="realm-note" role="status">{notice}</p>}
       {groups.length > 0 && (
@@ -83,7 +211,17 @@ export default function RightsSection() {
         </ul>
       )}
       {current && (
-        <PositionEditor positions={current.positions || []} creator onSave={save} savingId={savingId} />
+        <>
+          <label className="realm-field">Найти должность в этой группе
+            <input value={posQuery} onChange={(event) => setPosQuery(event.target.value)} placeholder="Название" />
+          </label>
+          <PositionEditor
+            positions={(current.positions || []).filter((row) => String(row.title || '').toLowerCase().includes(posQuery.trim().toLowerCase()))}
+            creator
+            onSave={save}
+            savingId={savingId}
+          />
+        </>
       )}
       {!groups.length && !error && <p className="realm-copy">Официальных групп пока нет. Отметьте группу в панели администраторов.</p>}
       <form className="realm-form" onSubmit={purge}>
@@ -95,6 +233,8 @@ export default function RightsSection() {
         </label>
         <button type="submit" className="realm-back" disabled={purging}>{purging ? 'Снимаем…' : 'Убрать допуск'}</button>
       </form>
+      </>
+      )}
     </section>
   )
 }
