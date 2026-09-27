@@ -301,15 +301,12 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
         <div>
           <h1>Панель администраторов групп</h1>
           <p className="realm-copy">
-            {title}
-            {current?.position ? ` · ${current.position}` : ''}
-            {chatId ? ` · ${fmt(summary?.messages30d)} сообщений за 30 дней` : ''}
+            {chatId
+              ? `${title}${current?.position ? ` · ${current.position}` : ''} · ${fmt(summary?.messages30d)} сообщений за 30 дней`
+              : 'Группа ещё не выбрана. Её отмечает создатель проекта.'}
           </p>
-          <p className="realm-copy">{chatId ? roomLine(summary) : 'Отметьте официальную группу, чтобы выдать должность.'}</p>
           <p className="realm-copy">
-            {phone
-              ? 'Кнопки внизу — страницы этой группы. Свайп вправо открывает список, свайп влево плавно закрывает.'
-              : 'Слева страницы этой группы. Каждая показывает только этот чат.'}
+            {phone ? 'Страницы этой группы — кнопки внизу экрана.' : 'Страницы этой группы — список слева.'}
           </p>
         </div>
       </header>
@@ -407,6 +404,8 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           {!chapter && activeTab === 'people' && (
             <section>
               <h2 className="realm-h">Кто пишет</h2>
+              {!chatId && <p className="realm-copy">Сначала выберите группу. Тогда здесь появятся люди этого чата.</p>}
+              {chatId && (summary?.writers || []).length === 0 && <p className="realm-copy">За 30 дней список пишущих ещё пуст.</p>}
               <ul className="realm-list">
                 {(summary?.writers || []).map((person) => (
                   <li key={person.user_id}>

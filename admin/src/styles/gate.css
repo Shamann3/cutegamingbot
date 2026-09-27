@@ -16,6 +16,8 @@
   background: #000;
   color: var(--gate-ink);
   font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
   overflow-x: hidden;
   overflow-y: scroll;
   scrollbar-gutter: stable;
@@ -68,14 +70,16 @@
 .gate-sheet {
   position: relative;
   z-index: 1;
-  width: min(920px, calc(100% - 48px));
-  margin: 0 auto;
-  padding: calc(var(--tg-content-top, 0px) + 48px) 8px calc(var(--tg-content-bottom, 0px) + 48px);
+  width: min(920px, calc(100% - 24px));
+  margin: auto;
+  box-sizing: border-box;
+  padding: calc(var(--tg-content-top, 0px) + 28px) 4px calc(var(--tg-content-bottom, 0px) + 28px);
   display: flex;
   flex-direction: column;
-  gap: 28px;
-  min-height: 100%;
-  justify-content: center;
+  gap: 20px;
+  justify-content: flex-start;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .gate-head {
@@ -99,7 +103,7 @@
 .realm-empty h2 {
   margin: 0;
   font-size: clamp(32px, 5vw, 52px);
-  line-height: 0.95;
+  line-height: 1.15;
   font-weight: 560;
   letter-spacing: -0.04em;
   color: var(--gate-ink);
@@ -170,19 +174,22 @@
 }
 
 .gate-door-title {
-  font-size: clamp(26px, 3vw, 34px);
-  line-height: 1;
-  letter-spacing: -0.04em;
+  font-size: clamp(22px, 3vw, 34px);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
   font-weight: 560;
   color: inherit;
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 .gate-door-detail {
   font-size: 14px;
-  line-height: 1.35;
-  max-width: 18rem;
+  line-height: 1.4;
+  max-width: 100%;
   color: inherit;
   opacity: 0.72;
+  overflow-wrap: break-word;
 }
 
 .gate-door-mark {
@@ -210,11 +217,40 @@
   gap: 8px;
 }
 
+.gate-recover,
+.gate-recover-actions,
+.gate-head,
+.gate-doors,
+.realm-top,
+.realm-top > div,
+.realm-main,
+.realm-body {
+  max-width: 100%;
+  min-width: 0;
+}
+
 .gate-recover-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+
+.gate-recover-actions .gate-text,
+.gate-recover-actions .firstrun-next,
+.gate-color-btn,
+.realm-back {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
+}
+
+.gate-recover-actions .firstrun-next,
+.gate-recover-actions .gate-text {
+  width: 100%;
+  text-align: center;
 }
 
 .ent-skip {
@@ -1314,7 +1350,9 @@ html[data-viewport="desktop"] .elite-brand-slot {
   flex-direction: row;
   align-items: center;
   gap: 14px;
-  width: min(480px, calc(100vw - 24px));
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .accent-picker-panel.is-inline {
@@ -1327,8 +1365,9 @@ html[data-viewport="desktop"] .elite-brand-slot {
 }
 
 .accent-wheel-wrap {
-  width: min(196px, 44vw);
-  height: min(196px, 44vw);
+  width: min(168px, 42%);
+  aspect-ratio: 1;
+  height: auto;
   margin: 0;
   flex: 0 0 auto;
 }
@@ -1347,8 +1386,17 @@ html[data-viewport="desktop"] .elite-brand-slot {
   gap: 10px;
 }
 
-.accent-picker-side .accent-slider {
+.accent-picker-side .accent-slider,
+.accent-picker-side .accent-hex-field {
   margin-bottom: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.accent-picker-side .accent-slider span,
+.accent-picker-side .accent-hex-field-head {
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .color-choice p {
@@ -1378,14 +1426,62 @@ html[data-viewport="desktop"] .elite-brand-slot {
   outline-offset: 3px;
 }
 
+html.is-phone .panel-shell,
+html.is-phone .realm-root,
+html.is-phone .gate-root,
+html[data-viewport="phone"] .panel-shell,
+html[data-viewport="phone"] .realm-root,
+html[data-viewport="phone"] .gate-root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+html.is-phone .realm-root,
+html[data-viewport="phone"] .realm-root {
+  padding-left: 16px;
+  padding-right: 16px;
+  box-sizing: border-box;
+}
+
+html.is-phone .realm-top h1,
+html[data-viewport="phone"] .realm-top h1 {
+  font-size: 26px;
+  line-height: 1.15;
+  overflow-wrap: break-word;
+}
+
 html.is-phone .panel-shell-main,
 html.is-phone .realm-main,
-html.is-phone .realm-top h1,
 html.is-phone .realm-copy,
+html.is-phone .realm-h,
+html.is-phone .gate-lead,
+html.is-phone .gate-title,
+html.is-phone .gate-status,
 html[data-viewport="phone"] .panel-shell-main,
 html[data-viewport="phone"] .realm-main,
-html[data-viewport="phone"] .realm-top h1,
-html[data-viewport="phone"] .realm-copy {
-  overflow-wrap: anywhere;
+html[data-viewport="phone"] .realm-copy,
+html[data-viewport="phone"] .realm-h,
+html[data-viewport="phone"] .gate-lead,
+html[data-viewport="phone"] .gate-title,
+html[data-viewport="phone"] .gate-status {
+  overflow-wrap: break-word;
   max-width: 100%;
+}
+
+.firstrun-sheet,
+.firstrun-sheet.is-anchored {
+  max-width: calc(100% - 24px);
+  max-height: min(46vh, 320px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.realm-tabbar {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.realm-actions {
+  flex-wrap: wrap;
 }

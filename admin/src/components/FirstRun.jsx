@@ -36,8 +36,8 @@ export function groupSteps(phone) {
   return [
     {
       title: 'Где вы',
-      body: 'Белая рамка вокруг заголовка. Это панель одной группы. Под заголовком — название чата, ваша должность и сколько сообщений было за 30 дней.',
-      target: '[data-coach="group-head"]',
+      body: 'Рамка вокруг названия. Это панель одной группы: чат, ваша должность и сообщения за 30 дней.',
+      target: '.realm-top h1',
     },
     {
       title: 'Страницы группы',
@@ -47,8 +47,8 @@ export function groupSteps(phone) {
       target: phone ? '.realm-tabbar' : '.realm-rail',
     },
     {
-      title: 'Наказание',
-      body: 'Нажмите «Люди». Наказать можно только того, кто в этом чате младше вас. Равного и старшего система не пропустит.',
+      title: 'Люди',
+      body: 'Нажмите кнопку «Люди». Наказать можно только того, кто в этом чате младше вас. Равного и старшего система не пропустит.',
       target: '[data-coach="people"]',
     },
     {
@@ -125,26 +125,35 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
         setBox(null)
         return
       }
-      node.scrollIntoView({ block: 'center', inline: 'nearest' })
+      node.scrollIntoView({ block: 'center', inline: 'center' })
+      const scroller = node.closest('.realm-tabbar, .panel-sidebar-nav, .realm-rail-sheet')
+      if (scroller) {
+        const next = node.offsetLeft - (scroller.clientWidth - node.offsetWidth) / 2
+        scroller.scrollLeft = Math.max(0, next)
+      }
       window.requestAnimationFrame(() => {
         if (cancelled || !onScreen(node)) {
           setBox(null)
           return
         }
         const rect = node.getBoundingClientRect()
-        if (rect.height > 96 || rect.height < 8) {
+        const margin = 10
+        const left = Math.max(margin, rect.left - 6)
+        const top = Math.max(margin, rect.top - 6)
+        const right = Math.min(window.innerWidth - margin, rect.right + 6)
+        const bottom = Math.min(window.innerHeight - margin, rect.bottom + 6)
+        const width = right - left
+        const height = bottom - top
+        if (width < 28 || height < 28 || height > 180) {
           setBox(null)
           return
         }
-        const pad = 6
-        const top = rect.top - pad
-        const height = rect.height + pad * 2
         setBox({
           top,
-          left: Math.max(8, rect.left - pad),
-          width: Math.min(rect.width + pad * 2, window.innerWidth - 24),
+          left,
+          width,
           height,
-          below: top + height + 220 < window.innerHeight,
+          low: top > window.innerHeight * 0.5,
         })
       })
     }
@@ -160,20 +169,26 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
   }, [step, layoutKey])
 
   const sheetStyle = (() => {
+    const edge = 12
+    const stacked = (low) => (
+      low
+        ? { top: 'calc(var(--tg-content-top, 0px) + 12px)', bottom: 'auto', left: edge, right: edge, width: 'auto' }
+        : { top: 'auto', bottom: 'calc(var(--tg-content-bottom, 0px) + 12px)', left: edge, right: edge, width: 'auto' }
+    )
+    if (window.innerWidth < 720) return stacked(Boolean(box?.low))
     if (!box) return undefined
-    const gap = 12
-    const rightSpace = window.innerWidth - (box.left + box.width) - 16
-    if (rightSpace >= 260) {
+    const width = 320
+    const left = box.left + box.width + edge
+    if (left + width <= window.innerWidth - edge) {
       return {
-        top: Math.min(Math.max(16, box.top), Math.max(16, window.innerHeight - 240)),
-        left: box.left + box.width + gap,
+        top: Math.min(Math.max(edge, box.top), Math.max(edge, window.innerHeight - 280)),
+        left,
         right: 'auto',
-        width: Math.min(360, rightSpace),
+        width,
         bottom: 'auto',
       }
     }
-    if (box.below) return { top: box.top + box.height + gap, bottom: 'auto', left: 16, right: 16, width: 'auto' }
-    return { top: 'auto', bottom: Math.max(16, window.innerHeight - box.top + gap), left: 16, right: 16, width: 'auto' }
+    return stacked(box.low)
   })()
 
   return (
@@ -185,7 +200,7 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
         />
       )}
       <div className={`firstrun-sheet${box ? ' is-anchored' : ''}`} style={sheetStyle}>
-        <p className="firstrun-focus">Белая рамка показывает место. Это не ошибка экрана.</p>
+        <p className="firstrun-focus">Рамка показывает место. Это не ошибка экрана.</p>
         <h2 id="firstrun-title" className="firstrun-title">{step.title}</h2>
         <p className="firstrun-body">{step.body}</p>
         <div className="firstrun-dots" aria-hidden="true">
