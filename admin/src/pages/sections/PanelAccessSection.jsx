@@ -9,6 +9,7 @@ import { sectionBlurb } from '../../constants/panelNav'
 import { parseAccessKey } from '../../constants/panelAccessTree'
 import PanelAccessWizard from './PanelAccessWizard'
 import RightsSection from './RightsSection'
+import StaffPunishMatrix from '../../components/StaffPunishMatrix'
 
 const GROUP_LABELS = {
   overview: 'Обзор',
@@ -25,6 +26,11 @@ const BASE_TABS = [
   { id: 'defaults', label: 'Дефолты ролей' },
   { id: 'members', label: 'Администраторы' },
   { id: 'compare', label: 'Сравнение' },
+]
+
+const CREATOR_TABS = [
+  { id: 'punish', label: 'Наказания' },
+  { id: 'rights', label: 'Права групп' },
 ]
 
 function memberName(m) {
@@ -543,7 +549,7 @@ export default function PanelAccessSection({ isProjectCreator = false, initialTa
   const [selectedId, setSelectedId] = useState(null)
   const [roleTab, setRoleTab] = useState('senior_admin')
   const [viewTab, setViewTab] = useState(() => {
-    if (initialTab === 'rights' && isProjectCreator) return 'rights'
+    if (isProjectCreator && (initialTab === 'rights' || initialTab === 'punish')) return initialTab
     return initialTab && BASE_TABS.some((t) => t.id === initialTab) ? initialTab : 'wizard'
   })
   const [query, setQuery] = useState('')
@@ -554,13 +560,13 @@ export default function PanelAccessSection({ isProjectCreator = false, initialTa
 
   const tabs = useMemo(() => {
     if (!isProjectCreator) return BASE_TABS
-    return [...BASE_TABS, { id: 'rights', label: 'Права' }]
+    return [...BASE_TABS, ...CREATOR_TABS]
   }, [isProjectCreator])
 
   useEffect(() => {
     if (!initialTab) return
-    if (initialTab === 'rights' && !isProjectCreator) return
-    if (initialTab === 'rights' || BASE_TABS.some((t) => t.id === initialTab)) {
+    if ((initialTab === 'rights' || initialTab === 'punish') && !isProjectCreator) return
+    if (initialTab === 'rights' || initialTab === 'punish' || BASE_TABS.some((t) => t.id === initialTab)) {
       setViewTab(initialTab)
     }
   }, [initialTab, isProjectCreator])
@@ -1019,7 +1025,7 @@ export default function PanelAccessSection({ isProjectCreator = false, initialTa
           <h2 className="sec-title">Админ панель</h2>
           <p className="sec-subtitle">
             Разделы и внутренние вкладки для каждой роли и каждого администратора.
-            {isProjectCreator ? ' Вкладка «Права» — должности групп и сброс допуска.' : ''}
+            {isProjectCreator ? ' Вкладки «Наказания» и «Права групп» — матрица mute…banfull и должности групп.' : ''}
             {' '}Только владелец · изменения применяются сразу.
           </p>
         </div>
@@ -1212,6 +1218,12 @@ export default function PanelAccessSection({ isProjectCreator = false, initialTa
             onResetCell={compareResetCell}
             onSetRowForAll={compareSetRowForAll}
           />
+        )}
+
+        {isProjectCreator && viewTab === 'punish' && (
+          <div className="pa-pane pa-pane-punish">
+            <StaffPunishMatrix />
+          </div>
         )}
 
         {isProjectCreator && viewTab === 'rights' && (

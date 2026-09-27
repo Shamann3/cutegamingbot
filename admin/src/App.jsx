@@ -4,7 +4,6 @@ import { hasTelegramInitData, isAdminSessionValid, logoutAdmin } from './lib/adm
 import { initAdminTelegram } from './lib/telegram'
 import AuthPage from './pages/AuthPage'
 import PanelShell from './pages/PanelShell'
-import SplashPage from './pages/SplashPage'
 import EntranceSeal from './components/EntranceSeal'
 import GatePage from './pages/GatePage'
 import SecurityBoot from './components/SecurityBoot'
@@ -14,7 +13,7 @@ import GroupShell from './pages/GroupShell'
 import GroupKeyPage from './pages/GroupKeyPage'
 
 export default function App() {
-  const [screen, setScreen] = useState('splash')
+  const [screen, setScreen] = useState('gate')
   const [displayName, setDisplayName] = useState('admin')
   const [authMode, setAuthMode] = useState('login')
   const [groupPortrait, setGroupPortrait] = useState(null)
@@ -24,14 +23,9 @@ export default function App() {
   useEffect(() => {
     initAdminTelegram()
     setDisplayName(getAdminDisplayName())
-  }, [])
-
-  const finishSplash = useCallback(() => {
     if (!(isAdminSessionValid() || hasTelegramInitData())) {
       logoutAdmin()
     }
-    // Без лишнего промежуточного «скана» — сразу к выбору двери.
-    setScreen('gate')
   }, [])
 
   const finishAuth = useCallback(() => {
@@ -78,20 +72,6 @@ export default function App() {
     }
     setScreen('group-key')
   }, [openChannel])
-
-  if (screen === 'splash') {
-    return <SplashPage displayName={displayName} onFinished={finishSplash} />
-  }
-
-  if (screen === 'boot') {
-    return (
-      <SecurityBoot
-        personal={accentIsPersonal(loadStoredAccent())}
-        kind="gate"
-        onDone={() => setScreen('gate')}
-      />
-    )
-  }
 
   if (screen === 'channel' && channel) {
     return (

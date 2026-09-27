@@ -348,11 +348,13 @@ async def _fund_stats(chat_id: int) -> Dict[str, Any]:
     try:
         rows = await db.pool.fetch(
             """
-            SELECT created_at, user_id, game, pot, level, rate,
-                   commission, to_chat_balance, to_growth_fund, to_project
-            FROM growth_fund_ledger
-            WHERE chat_id = $1
-            ORDER BY created_at DESC NULLS LAST
+            SELECT l.created_at, l.user_id, l.game, l.pot, l.level, l.rate,
+                   l.commission, l.to_chat_balance, l.to_growth_fund, l.to_project,
+                   u.first_name, u.username
+            FROM growth_fund_ledger l
+            LEFT JOIN users u ON u.user_id = l.user_id
+            WHERE l.chat_id = $1
+            ORDER BY l.created_at DESC NULLS LAST
             LIMIT 25
             """,
             int(chat_id),
@@ -361,6 +363,8 @@ async def _fund_stats(chat_id: int) -> Dict[str, Any]:
             {
                 "at": r["created_at"].isoformat() if r["created_at"] else None,
                 "user_id": _iint(r["user_id"]),
+                "name": r["first_name"] or (str(r["user_id"]) if r["user_id"] else "—"),
+                "username": r["username"],
                 "game": r["game"],
                 "pot": _num(r["pot"]),
                 "level": _iint(r["level"]),

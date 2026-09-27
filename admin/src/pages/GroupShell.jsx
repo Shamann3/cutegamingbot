@@ -3,6 +3,7 @@ import {
   appointGroupAdmin,
   decideGroupApplication,
   fetchGroupApplications,
+  fetchGroupActivity,
   fetchGroupPositions,
   fetchGroupSummary,
   groupRealmAct,
@@ -17,17 +18,19 @@ import FirstRun, { groupSteps, coachClosed } from '../components/FirstRun'
 import PanelSidebar from '../components/PanelSidebar'
 import PhoneDock from '../components/PhoneDock'
 import EliteTopbar from '../components/EliteTopbar'
+import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import PositionEditor from '../components/PositionEditor'
 import ActivityBoard from '../components/ActivityBoard'
 import GroupArchive from '../components/GroupArchive'
 import ShiftDesk from '../components/ShiftDesk'
 import GroupGuard from '../components/GroupGuard'
+import GroupLookupPreview from '../components/GroupLookupPreview'
+import UserLookupPreview from '../components/UserLookupPreview'
 import { repeatCounts } from '../lib/shiftDesk'
 import useDrawerSwipe from '../lib/useDrawerSwipe'
 import { useGlobalKeys } from '../lib/useGlobalKeys'
 import { useIsPhone, useViewportMode } from '../lib/useIsDesktop'
 import { useMusicMode } from '../lib/musicMode'
-import { bumpMusicUnlock } from '../lib/musicUnlock'
 import { usePerfMode } from '../lib/perfMode'
 
 const ACTIONS = [
@@ -46,6 +49,16 @@ function fmt(n) {
   return new Intl.NumberFormat('ru-RU').format(Number(n))
 }
 
+function roleTone(title, isCreator) {
+  if (isCreator) return 'creator'
+  const t = String(title || '').toLowerCase()
+  if (t.includes('создател')) return 'creator'
+  if (t.includes('админ')) return 'admin'
+  if (t.includes('модер')) return 'mod'
+  if (t.includes('хелп') || t.includes('help')) return 'help'
+  return 'seat'
+}
+
 function tabsFor(rights, isCreator) {
   const has = (key) => isCreator || rights.has(key)
   const items = [{ id: 'overview', label: 'Обзор' }]
@@ -54,6 +67,7 @@ function tabsFor(rights, isCreator) {
   }
   if (has('view_archive')) items.push({ id: 'archive', label: 'Архив' })
   if (has('manage_positions')) items.push({ id: 'rights', label: 'Права' })
+  if (isCreator) items.push({ id: 'switches', label: 'Переключатели' })
   items.push({ id: 'more', label: 'Ещё' })
   return items
 }
@@ -74,16 +88,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   const phone = useIsPhone()
   const viewport = useViewportMode()
   const { lightMode, setLightMode } = usePerfMode()
-  const { volume: musicVolume, setVolume: setMusicVolume, toggleMute: toggleMusicMuteRaw } = useMusicMode()
-  const toggleMusicMute = useCallback(() => {
-    const wasMuted = musicVolume <= 0
-    toggleMusicMuteRaw()
-    if (wasMuted) bumpMusicUnlock()
-  }, [musicVolume, toggleMusicMuteRaw])
-  const onMusicVolumeChange = useCallback((next) => {
-    setMusicVolume(next)
-    if (next > 0) bumpMusicUnlock()
-  }, [setMusicVolume])
+  const { volume: musicVolume, setVolume: setMusicVolume, toggleMute: toggleMusicMute } = useMusicMode()
   const [accent, setAccent] = useState(() => loadStoredAccent())
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -93,32 +98,26 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState([])
   const [userId, setUserId] = useState('')
-  const [action, setAction] = useState('mute')
-  const [hours, setHours] = useState('1')
-  const [reason, setReason] = useState('')
   const [acting, setActing] = useState(false)
   const [positions, setPositions] = useState([])
   const [apps, setApps] = useState([])
   const [appointUser, setAppointUser] = useState('')
+  const [appointUserId, setAppointUserId] = useState(null)
   const [appointPos, setAppointPos] = useState('')
   const [appointReason, setAppointReason] = useState('')
   const [savingId, setSavingId] = useState(null)
   const [posQuery, setPosQuery] = useState('')
   const [newTitle, setNewTitle] = useState('')
   const [newRank, setNewRank] = useState('1')
+  const [peakHours, setPeakHours] = useState([])
 
   const activeTab = tabs.some((item) => item.id === tab) ? tab : 'overview'
   const allowedActions = ACTIONS.filter((item) => isCreator || rights.has(item.right))
-  const selectedAction = allowedActions.find((item) => item.id === action) || allowedActions[0]
 
   const closeRail = useCallback(() => setRailOpen(false), [])
   const onCoachStep = useCallback((step) => {
-    if (coach) {
-      setRailOpen(false)
-      return
-    }
     setRailOpen(Boolean(step?.openNav))
-  }, [coach])
+  }, [])
   useEffect(() => {
     applyAccentToDocument(lightMode
       ? { id: 'mono', label: 'Ч/Б', hex: '#C8C8C8', h: 0, s: 0, v: 0.78, glow: 28 }
@@ -132,7 +131,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
       ? 'people'
       : item.id === 'rights'
         ? 'team'
-        : item.id === 'more'
+        : item.id === 'more' || item.id === 'switches'
           ? 'system'
           : 'overview',
   })), [tabs])
@@ -193,6 +192,36 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
 
   useEffect(() => { loadSummary(chatId) }, [chatId, loadSummary])
 
+  useEffect(() => {
+    if (!chatId) {
+      setPeakHours([])
+      return undefined
+    }
+    let stop = false
+    fetchGroupActivity(chatId, { period: 'week' })
+      .then((data) => {
+        if (stop || data?.available === false) {
+          if (!stop) setPeakHours([])
+          return
+        }
+        const series = Array.isArray(data?.series) ? data.series : []
+        const ranked = [...series]
+          .map((point) => ({
+            date: point.date,
+            messages: Number(point.messages) || 0,
+            writers: Number(point.writers) || 0,
+          }))
+          .filter((point) => point.messages > 0)
+          .sort((a, b) => b.messages - a.messages)
+          .slice(0, 3)
+        setPeakHours(ranked)
+      })
+      .catch(() => {
+        if (!stop) setPeakHours([])
+      })
+    return () => { stop = true }
+  }, [chatId])
+
   const loadPositions = useCallback(async (id) => {
     if (!id) return
     try {
@@ -204,8 +233,8 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   }, [])
 
   useEffect(() => {
-    if (activeTab === 'rights' && chatId) loadPositions(chatId)
-  }, [activeTab, chatId, loadPositions])
+    if ((activeTab === 'rights' || chapter) && chatId) loadPositions(chatId)
+  }, [activeTab, chapter, chatId, loadPositions])
 
   const openCreator = async () => {
     setChapter(true)
@@ -220,7 +249,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   }
 
   const onSearch = async (event) => {
-    event.preventDefault()
+    event?.preventDefault?.()
     if (!query.trim()) {
       setError('Введите название, @username или id')
       return
@@ -253,66 +282,25 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
     }
   }
 
-  const punish = async (event) => {
-    event.preventDefault()
-    const id = Number(userId)
-    if (!chatId || !id) {
-      setError('Укажите id человека')
-      return
-    }
-    if (portrait?.userId != null && Number(portrait.userId) === id) {
-      setError('Вы не можете заблокировать самого себя')
-      return
-    }
-    if (!reason.trim()) {
-      setError('Нужна причина')
-      return
-    }
-    let until = null
-    if (selectedAction?.needsUntil) {
-      until = punishmentHours(hours)
-      if (until == null) {
-        setError('Укажите часы, больше нуля и не дольше года')
-        return
-      }
-    }
-    setActing(true)
-    setError('')
-    try {
-      const data = await groupRealmAct({
-        chat_id: chatId,
-        user_id: id,
-        action: selectedAction.id,
-        reason: reason.trim(),
-        until_sec: until,
-      })
-      setNotice(data?.receipt || 'Записано в архив официальной группы')
-      setReason('')
-      await loadSummary(chatId)
-    } catch (err) {
-      setError(err.message || 'Действие не прошло')
-    } finally {
-      setActing(false)
-    }
-  }
-
   const appoint = async (event) => {
     event.preventDefault()
-    if (!chatId || !appointUser.trim() || !appointPos) {
-      setError('Нужны id человека и должность')
+    const uid = Number(appointUserId || String(appointUser).replace(/\D/g, ''))
+    if (!chatId || !uid || !appointPos) {
+      setError('Нужны человек и должность')
       return
     }
     setError('')
     try {
       const data = await appointGroupAdmin({
         chat_id: chatId,
-        user_id: Number(appointUser),
+        user_id: uid,
         position_id: Number(appointPos),
         reason: appointReason.trim(),
       })
       if (data.entryKey) setEntryKey(data.entryKey)
       setNotice('Должность назначена. Ключ показан один раз.')
       setAppointUser('')
+      setAppointUserId(null)
       setAppointReason('')
     } catch (err) {
       setError(err.message || 'Назначить не удалось')
@@ -379,20 +367,11 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   const mods = summary?.moderation
   const repeats = useMemo(() => repeatCounts(mods?.recent), [mods])
   const canActivity = tabs.some((item) => item.id === 'activity')
-  const pickPerson = (id) => {
-    setUserId(String(id))
-    setChapter(false)
-    setRailOpen(false)
-    setTab('archive')
-    window.setTimeout(() => {
-      document.getElementById('g-arc-punish')?.scrollIntoView({ block: 'nearest' })
-    }, 80)
-  }
 
   const archiveAct = async ({ userId: raw, action: actId, hours: hrs, reason: why }) => {
-    const query = String(raw || '').trim()
-    const asNum = Number(query.replace(/^#/, ''))
-    const id = Number.isFinite(asNum) && String(asNum) === query.replace(/^#/, '') ? asNum : Number(query)
+    const queryText = String(raw || '').trim()
+    const asNum = Number(queryText.replace(/^#/, ''))
+    const id = Number.isFinite(asNum) && String(asNum) === queryText.replace(/^#/, '') ? asNum : Number(queryText)
     if (!chatId) throw new Error('Сначала выберите группу')
     if (!id || !Number.isFinite(id)) throw new Error('Укажите числовой id или выберите человека из подсказки')
     if (!String(why || '').trim()) throw new Error('Нужна причина')
@@ -422,10 +401,16 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
       setActing(false)
     }
   }
+
   const title = summary?.chat?.title || current?.title || 'Группа не выбрана'
+  const roleLabel = isCreator
+    ? (current?.position || 'Создатель')
+    : (current?.position || (chatId ? 'Группа' : 'Пусто'))
+  const roleClass = roleTone(roleLabel, isCreator)
 
   return (
     <div className={`panel-shell panel-shell-${viewport}${personal ? ' is-personal' : ''}`} data-viewport={viewport}>
+      <PanelBackgroundMusic volume={musicVolume} />
       {coach && (
         <FirstRun
           storageKey="epsilon.onboard.group.v4"
@@ -450,7 +435,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           lightMode={lightMode}
           onTogglePerf={() => setLightMode(!lightMode)}
           musicVolume={musicVolume}
-          onMusicVolumeChange={onMusicVolumeChange}
+          onMusicVolumeChange={setMusicVolume}
           onToggleMusic={toggleMusicMute}
           accent={accent}
           onAccentChange={(next) => setAccent(persistAccent(next))}
@@ -480,7 +465,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
               )}
             </div>
             <div className={`nika-status${chatId ? ' is-ok' : ''}`}>
-              <b>{current?.position || (chatId ? 'Группа' : 'Пусто')}</b>
+              <b className={`grp-role-badge is-${roleClass}`}>{roleLabel}</b>
               <span>{chatId ? `${fmt(summary?.messages30d)} за 30 дней` : 'её отмечает создатель'}</span>
             </div>
           </header>
@@ -500,12 +485,18 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           )}
 
           {chapter && isCreator && (
-            <section>
+            <section className="grp-appoint">
               <h2 className="realm-h">Администраторы</h2>
               <p className="realm-copy">Должность ниже создателя группы. Одобрить выше запрошенного нельзя. Отказ без причины не сохраняется.</p>
-              <form className="realm-form" onSubmit={appoint}>
-                <label>Id человека<input inputMode="numeric" value={appointUser} onChange={(event) => setAppointUser(event.target.value)} /></label>
-                <label>
+              <form className="realm-form grp-appoint-form" onSubmit={appoint}>
+                <UserLookupPreview
+                  value={appointUser}
+                  onChange={(v) => { setAppointUser(v); setAppointUserId(null) }}
+                  onResolved={(u) => setAppointUserId(u?.userId ?? u?.user_id ?? null)}
+                  placeholder="ID, @username или имя"
+                  label="Человек"
+                />
+                <label className="grp-appoint-pos">
                   Должность
                   <select value={appointPos} onChange={(event) => setAppointPos(event.target.value)}>
                     <option value="">Выберите</option>
@@ -533,42 +524,51 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
 
           {!chapter && activeTab === 'overview' && (
             <section>
-              {!canActivity && (
-                <>
-                  <p className="realm-hero-num">{fmt(summary?.messages30d)}</p>
-                  <p className="realm-copy">{chatId ? 'Сообщений за 30 дней в этом чате' : 'Группа не выбрана'}</p>
-                </>
+              <div className="act-bento grp-overview-stats">
+                <button type="button" className="is-on" onClick={() => canActivity && pickTab('activity')}>
+                  <strong>{fmt(summary?.writers30d ?? summary?.members)}</strong>
+                  <span>активных за 30 дней</span>
+                </button>
+                <button type="button" onClick={() => canActivity && pickTab('activity')}>
+                  <strong>{fmt(summary?.messages30d)}</strong>
+                  <span>сообщений за 30 дней</span>
+                </button>
+                <button type="button" onClick={() => canActivity && pickTab('activity')}>
+                  <strong>{fmt(summary?.members)}</strong>
+                  <span>участников в учёте</span>
+                </button>
+              </div>
+              {peakHours.length > 0 && (
+                <div className="grp-peak">
+                  <h3 className="realm-h">Пиковые дни</h3>
+                  <p className="realm-copy">Нажмите — откроется аналитика активности.</p>
+                  <div className="realm-actions e-seg">
+                    {peakHours.map((point) => (
+                      <button
+                        key={point.date}
+                        type="button"
+                        className="is-on"
+                        onClick={() => canActivity && pickTab('activity')}
+                      >
+                        {point.date}: {fmt(point.messages)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
               <ShiftDesk chatId={chatId} canActivity={canActivity} />
-              <GroupGuard chatId={chatId} creator={isCreator} />
-              {groups.length > 0 && (
+              {groups.length > 1 && (
                 <ul className="realm-list">
                   {groups.map((group) => (
                     <li key={group.chatId}>
                       <button type="button" className={group.chatId === chatId ? 'is-on' : ''} onClick={() => { setChapter(false); setChatId(group.chatId) }}>
                         <strong>{group.title}</strong>
-                        <span>{group.position}</span>
+                        <span className={`grp-role-badge is-${roleTone(group.position, false)}`}>{group.position}</span>
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
-              {isCreator && (
-                <form className="realm-search" onSubmit={onSearch}>
-                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Найти чат и сделать официальным" aria-label="Найти группу" />
-                  <button type="submit">Найти</button>
-                </form>
-              )}
-              <ul className="realm-list">
-                {hits.map((row) => (
-                  <li key={row.chat_id}>
-                    <button type="button" onClick={() => makeOfficial(row)}>
-                      <strong>{row.name || row.chat_id}</strong>
-                      <span>сделать официальной</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
             </section>
           )}
 
@@ -576,14 +576,18 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
             <section>
               <h2 className="realm-h">Активность</h2>
               <p className="realm-copy">Живые сообщения этого чата. Клетка — день или месяц. Наказать человека можно во вкладке «Архив».</p>
-              <ActivityBoard chatId={chatId} repeats={repeats} canPunish={allowedActions.length > 0} onPick={pickPerson} />
+              <ActivityBoard chatId={chatId} repeats={repeats} onOpenUser={(id) => setUserId(String(id))} />
             </section>
           )}
 
           {!chapter && activeTab === 'archive' && (
             <section>
               <h2 className="realm-h">Архив чата</h2>
-              <p className="realm-copy">Официальная группа Кьюта. {current?.position ? `Ваша должность: ${current.position}.` : ''} Наказания и снятие — здесь, с обязательной причиной.</p>
+              <p className="realm-copy">
+                Официальная группа Кьюта.
+                {current?.position ? ` Ваша должность: ${current.position}.` : ''}
+                {' '}Наказания и снятие — здесь, с обязательной причиной.
+              </p>
               {mods && (
                 <p className="realm-copy">
                   За 30 дней {fmt(mods.actions30d)} · муты {fmt(mods.mutes)} · баны {fmt(mods.bans)} · кики {fmt(mods.kicks)} · варны {fmt(mods.warns)}
@@ -596,14 +600,16 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
                 actions={allowedActions}
                 onAct={archiveAct}
                 seedQuery={userId}
+                onOpenUser={(id) => setUserId(String(id))}
               />
+              {acting && <p className="realm-copy">Запись…</p>}
             </section>
           )}
 
           {!chapter && activeTab === 'rights' && (
             <section>
               <h2 className="realm-h">Права должностей</h2>
-              <p className="realm-copy">У каждой должности два списка: какие страницы кабинета открыты и какие наказания в этом чате разрешены. Наказать можно только младшего.</p>
+              <p className="realm-copy">Страницы кабинета, наказания и права Telegram. Наказать можно только младшего. При правке сравниваем с должностью рангом ниже.</p>
               <label className="realm-field">Найти должность
                 <input value={posQuery} onChange={(event) => setPosQuery(event.target.value)} placeholder="Название" />
               </label>
@@ -623,11 +629,43 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
             </section>
           )}
 
+          {!chapter && activeTab === 'switches' && isCreator && (
+            <section>
+              <h2 className="realm-h">Переключатели проекта</h2>
+              <p className="realm-copy">Все выключатели группы и официальности — в одном месте. Видны только создателю.</p>
+              <GroupGuard chatId={chatId} creator={isCreator} />
+              <h3 className="realm-h">Официальная группа</h3>
+              <p className="realm-copy">Найти чат и отметить официальным для кабинета группы.</p>
+              <div className="guard-lookup">
+                <GroupLookupPreview
+                  value={query}
+                  onChange={setQuery}
+                  onResolved={(row) => {
+                    if (row) setHits([row])
+                  }}
+                  label="Найти чат"
+                  placeholder="Id, @username, ссылка или название"
+                />
+                <button type="button" className="realm-back" onClick={onSearch}>Найти</button>
+              </div>
+              <ul className="realm-list">
+                {hits.map((row) => (
+                  <li key={row.chat_id}>
+                    <button type="button" onClick={() => makeOfficial(row)}>
+                      <strong>{row.name || row.chat_id}</strong>
+                      <span>сделать официальной</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {!chapter && activeTab === 'more' && (
             <section>
               <h2 className="realm-h">Ещё</h2>
               <ul className="realm-list">
-                <li><a className="realm-row" href="https://t.me/CuteRules" target="_blank" rel="noreferrer"><strong>Правила</strong><span>t.me/CuteRules</span></a></li>
+                <li><a className="realm-row" href="https://t.me/CuteRules" target="_blank" rel="noreferrer" onClick={() => window.alert("Внимание: переход может закрыть панель — потом снова войдите в админку.")}><strong>Правила</strong><span>t.me/CuteRules · панель может закрыться</span></a></li>
                 <li><button type="button" className="realm-row" onClick={onLeave}><strong>Сменить панель</strong><span>выбор входа, без выхода из аккаунта</span></button></li>
                 {isCreator && (
                   <li><button type="button" className="realm-row" onClick={openCreator}><strong>Администраторы</strong><span>назначить</span></button></li>

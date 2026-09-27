@@ -82,10 +82,10 @@ function SettingsControls({
         type="button"
         className={`panel-perf-btn${lightMode ? ' panel-perf-btn-active' : ''}`}
         onClick={onTogglePerf}
-        title={lightMode ? 'Чёрно-белый режим с лёгкими анимациями' : 'Полный цвет и анимации'}
+        title={lightMode ? 'Максимальный интерфейс' : 'Оптимизировать интерфейс'}
       >
         <span aria-hidden="true">{lightMode ? '◈' : '⬡'}</span>
-        {lightMode ? 'Оптимизировать интерфейс' : 'Максимальный интерфейс'}
+        {lightMode ? 'Максимальный интерфейс' : 'Оптимизировать интерфейс'}
       </button>
     </>
   )
@@ -198,7 +198,7 @@ export default function PanelSidebar({
             </svg>
           </button>
         </div>
-        <label className="panel-sidebar-search">
+        <label className="panel-sidebar-search" data-coach="search">
           <span className="panel-sidebar-search-icon" aria-hidden="true">⌕</span>
           <input
             type="search"
@@ -393,10 +393,10 @@ export default function PanelSidebar({
                   type="button"
                   className={`panel-perf-btn${lightMode ? ' panel-perf-btn-active' : ''}`}
                   onClick={onTogglePerf}
-                  title={lightMode ? 'Чёрно-белый режим с лёгкими анимациями' : 'Полный цвет и анимации'}
+                  title={lightMode ? 'Максимальный интерфейс' : 'Оптимизировать интерфейс'}
                 >
                   <span aria-hidden="true">{lightMode ? '◈' : '⬡'}</span>
-                  {lightMode ? 'Оптимизировать интерфейс' : 'Максимальный интерфейс'}
+                  {lightMode ? 'Максимальный интерфейс' : 'Оптимизировать интерфейс'}
                 </button>
               </div>
             </div>

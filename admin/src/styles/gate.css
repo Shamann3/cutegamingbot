@@ -120,6 +120,20 @@
   line-height: 1.45;
 }
 
+.gate-brand-word {
+  display: inline;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  font-stretch: normal;
+  white-space: nowrap;
+  color: var(--e-accent, #f4f4f4);
+  background: linear-gradient(120deg, var(--e-accent, #fff) 0%, #fff 55%, var(--e-accent-bright, #ddd) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
 .gate-status-error {
   color: #f4f4f4;
 }
@@ -1262,7 +1276,6 @@ html[data-viewport="desktop"] .panel-sidebar-nav {
 .realm-switch-track {
   position: relative;
   flex: 0 0 auto;
-  margin-left: auto;
   width: 44px;
   height: 26px;
   border-radius: 999px;
@@ -1292,7 +1305,6 @@ html[data-viewport="desktop"] .panel-sidebar-nav {
 }
 
 .realm-switch-copy {
-  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -1713,9 +1725,7 @@ html[data-viewport="phone"] .realm-top h1 {
 .elite-mobile-section {
   font-family: Manrope, ui-sans-serif, system-ui, sans-serif !important;
   color: #f4f4f4 !important;
-  letter-spacing: normal !important;
-  font-weight: 700 !important;
-  font-stretch: normal !important;
+  letter-spacing: -0.03em !important;
 }
 
 .panel-brand-tag,
@@ -1843,14 +1853,26 @@ html[data-viewport="desktop"] .elite-brand-slot {
   outline-offset: 3px;
 }
 
+/* Floating palette stays compact column; gate inline picker can stay row */
+.accent-picker-panel:not(.is-inline) {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  width: min(248px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px) !important;
+}
+
 .accent-picker-panel.is-inline {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 12px;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+}
+
+.accent-picker-panel.is-inline {
   position: relative;
   z-index: 1;
   top: auto;
@@ -1859,27 +1881,8 @@ html[data-viewport="desktop"] .elite-brand-slot {
   animation: none;
 }
 
-.accent-picker-panel:not(.is-inline) {
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: stretch !important;
-  gap: 8px !important;
-  width: min(220px, calc(100vw - 28px)) !important;
-  max-width: min(220px, calc(100vw - 28px)) !important;
-  max-height: min(360px, calc(100dvh - 28px)) !important;
-  overflow: auto !important;
-  padding: 10px !important;
-  box-sizing: border-box !important;
-}
-
-.accent-picker-panel:not(.is-inline) .accent-wheel-wrap {
-  width: min(120px, 100%) !important;
-  margin: 0 auto !important;
-  flex: 0 0 auto !important;
-}
-
-.accent-picker-panel.is-inline .accent-wheel-wrap {
-  width: min(120px, 38%);
+.accent-wheel-wrap {
+  width: min(168px, 42%);
   aspect-ratio: 1;
   height: auto;
   margin: 0;
@@ -2028,25 +2031,8 @@ html[data-viewport="phone"] .gate-status {
   color: var(--gate-ink);
 }
 
-.guard-head {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  min-width: 0;
-}
-
-.guard-desk .panel-page-title,
-.guard-head .realm-h {
-  margin: 0;
-}
-
-.guard-desk .guard-head .realm-copy,
-.guard-head .realm-copy {
-  display: block;
-  overflow: visible;
-  -webkit-line-clamp: unset;
-  margin: 0;
-  overflow-wrap: anywhere;
+.guard-desk .panel-page-title {
+  margin-bottom: 0;
 }
 
 .guard-desk .realm-copy {
@@ -2060,35 +2046,6 @@ html[data-viewport="phone"] .gate-status {
 .guard-block {
   min-width: 0;
   max-width: 100%;
-}
-
-.guard-block-custom {
-  padding: 1.15rem 1.2rem 1.25rem;
-  border: 1px solid var(--gate-line, rgba(255, 255, 255, 0.12));
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-
-.guard-block-custom > h3:first-child {
-  margin: 0;
-  font-size: 1.12rem;
-  letter-spacing: 0.01em;
-}
-
-.guard-block-custom > .realm-copy {
-  margin: 0;
-  opacity: 0.88;
-}
-
-.guard-block-custom > .guard-field {
-  margin: 0.15rem 0 0.25rem;
-}
-
-.guard-block-custom .guard-groups {
-  margin-top: 0.35rem;
 }
 
 .guard-block h3,
@@ -2172,32 +2129,6 @@ html[data-viewport="phone"] .gate-status {
 .guard-hour strong {
   font-variant-numeric: tabular-nums;
   font-size: 1.15rem;
-}
-
-.guard-hour-manual {
-  display: inline-flex;
-  align-items: center;
-  margin: 0;
-}
-
-.guard-hour-input {
-  flex: 0 0 auto;
-  width: auto;
-  min-width: 7.5rem;
-  max-width: 10rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 
 .guard-desk .realm-switch:focus-visible,
@@ -2508,4 +2439,175 @@ html[data-viewport="desktop"] .grp-page.users-page .pu-tab-pane {
   color: #111 !important;
   border: 1px solid #f4f4f5 !important;
   border-radius: 10px !important;
+}
+
+/* Группа: бейдж должности без обрезки текста */
+.grp-role-badge {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  color: #111;
+  background: #e8e4df;
+}
+.grp-role-badge.is-creator {
+  background: linear-gradient(135deg, #f6d365, #fda085);
+  color: #1a1208;
+}
+.grp-role-badge.is-admin {
+  background: linear-gradient(135deg, #a18cd1, #fbc2eb);
+  color: #1a1020;
+}
+.grp-role-badge.is-mod {
+  background: linear-gradient(135deg, #84fab0, #8fd3f4);
+  color: #0c1a14;
+}
+.grp-role-badge.is-help {
+  background: linear-gradient(135deg, #cfd9df, #e2ebf0);
+  color: #1a1a1a;
+}
+.grp-role-badge.is-seat {
+  background: linear-gradient(135deg, #f5f7fa, #c3cfe2);
+  color: #151820;
+}
+
+.grp-page.nika-page .nika-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  overflow: visible;
+}
+.grp-page.nika-page .nika-status b.grp-role-badge {
+  display: inline-flex;
+  font-size: 0.78rem;
+}
+
+/* Назначение: select должности не обрезает текст */
+.grp-appoint-form {
+  display: grid;
+  gap: 0.75rem;
+}
+.grp-appoint-form .grp-appoint-pos,
+.grp-appoint-form label {
+  min-width: 0;
+  max-width: 100%;
+}
+.grp-appoint-form select {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  padding-right: 2rem;
+}
+
+/* Обзор: кликабельная статистика */
+.grp-overview-stats {
+  margin-bottom: 1rem;
+}
+.grp-overview-stats button {
+  cursor: pointer;
+  text-align: left;
+}
+.grp-peak {
+  margin: 0.5rem 0 1rem;
+}
+
+/* Защита: подзаголовок ближе к заголовку, тумблеры в одну линию */
+.guard-head {
+  margin: 0 0 0.35rem;
+}
+.guard-head .realm-h,
+.guard-head .panel-page-title {
+  margin: 0;
+}
+.guard-sub {
+  margin: 0.2rem 0 0 !important;
+  line-height: 1.35;
+}
+.guard-switch-stack .realm-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.guard-switch-stack .realm-switch-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.guard-switch-stack .realm-switch-track {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+.guard-desk .guard-head {
+  margin-bottom: 0.15rem;
+}
+.guard-desk .guard-block > .realm-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.guard-desk .guard-block > .realm-switch .realm-switch-track {
+  margin-left: auto;
+}
+.guard-hour-manual {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.guard-hour-num {
+  width: 4.2rem;
+  flex: 0 0 auto;
+  text-align: center;
+}
+.guard-lookup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0.55rem 0 0.85rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 16px;
+  border: 1px solid var(--gate-line, rgba(255,255,255,.1));
+  background: rgba(255, 255, 255, 0.03);
+}
+.guard-block-custom .guard-lookup {
+  margin-top: 0.75rem;
+}
+.glp-wrap .ulp-hits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.glp-wrap .ulp-hits button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }

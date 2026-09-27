@@ -33,26 +33,23 @@ export default function ExtrasHub({
 
   return (
     <section className="extras-hub" aria-label="Дополнительно">
-      <div className="extras-top-search extras-hub-search-strip">
-        <span className="extras-tab-pill">Дополнительно</span>
-        <label className="extras-hub-search extras-top-search-field">
-          <span className="extras-hub-search-icon" aria-hidden="true">⌕</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Найти раздел…"
-            aria-label="Найти раздел в дополнительно"
-            enterKeyHint="search"
-            autoComplete="off"
-          />
-        </label>
-      </div>
-
       <header className="extras-hub-head">
         <h1>Дополнительно</h1>
         <p>Все остальные разделы панели. Нажмите значок, чтобы открыть.</p>
       </header>
+
+      <label className="extras-hub-search">
+        <span className="extras-hub-search-icon" aria-hidden="true">⌕</span>
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Найти раздел…"
+          aria-label="Найти раздел в дополнительно"
+          enterKeyHint="search"
+          autoComplete="off"
+        />
+      </label>
 
       {groups.length === 0 && (
         <p className="extras-hub-empty" role="status">Ничего не найдено</p>

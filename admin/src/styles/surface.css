@@ -117,9 +117,7 @@ html[data-viewport="desktop"] .panel-layout-security {
 
 .panel-brand-name {
   font-size: 0.95rem !important;
-  font-weight: 700 !important;
-  letter-spacing: normal !important;
-  font-stretch: normal !important;
+  font-weight: 650 !important;
 }
 
 .panel-brand-tag,
@@ -416,4 +414,20 @@ html.is-phone .panel-shell,
 html[data-viewport="phone"] .panel-shell {
   overflow-x: hidden !important;
   overflow-y: auto !important;
+}
+
+
+/* craft card edge padding */
+.panel-shelf,
+.nika-panel,
+.g-arc-card,
+.arc-card {
+  padding-inline: max(14px, env(safe-area-inset-left, 0px)) !important;
+}
+.panel-shelf-label,
+.panel-page-title,
+.panel-users-subtitle,
+.nika-head-copy h1,
+.nika-head-copy h2 {
+  padding-inline: 2px;
 }

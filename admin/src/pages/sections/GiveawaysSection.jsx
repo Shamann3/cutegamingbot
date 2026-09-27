@@ -475,11 +475,11 @@ export default function GiveawaysSection() {
 
       <style>{`
         .admin-modal-sheet {
-          width: min(720px, 96vw);
-          max-height: min(92dvh, 900px);
+          width: min(28rem, 94vw);
+          max-height: min(88dvh, 760px);
           overflow: auto;
-          border-radius: 18px;
-          padding: 20px 22px;
+          border-radius: 16px;
+          padding: 1.1rem 1.2rem;
           box-sizing: border-box;
         }
         .admin-modal-sheet .admin-modal-field,
@@ -494,11 +494,12 @@ export default function GiveawaysSection() {
         }
         @media (max-width: 720px) {
           .admin-modal-sheet {
-            width: 100%;
-            max-height: 100dvh;
-            height: 100dvh;
-            border-radius: 0;
-            padding: 16px;
+            width: min(22rem, 94vw);
+            max-height: min(86dvh, 640px);
+            height: auto;
+            border-radius: 14px;
+            padding: 0.95rem 1rem;
+            margin: auto;
           }
         }
       `}</style>

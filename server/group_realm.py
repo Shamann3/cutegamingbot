@@ -32,7 +32,8 @@ ALL_RIGHTS = (
     "punish_warn",
     "punish_voice",
     "manage_positions",
-    # Права администратора Telegram-чата (без передачи владения).
+    # Права Telegram в чате (без передачи владения).
+    "can_manage_chat",
     "can_change_info",
     "can_delete_messages",
     "can_restrict_members",
@@ -40,8 +41,19 @@ ALL_RIGHTS = (
     "can_pin_messages",
     "can_manage_topics",
     "can_manage_video_chats",
+    "can_promote_members",
     "can_post_messages",
     "can_edit_messages",
+    "can_send_messages",
+    "can_send_photos",
+    "can_send_videos",
+    "can_send_audios",
+    "can_send_documents",
+    "can_send_voice_notes",
+    "can_send_video_notes",
+    "can_send_polls",
+    "can_send_other_messages",
+    "can_add_web_page_previews",
 )
 
 ACTION_RIGHT = {

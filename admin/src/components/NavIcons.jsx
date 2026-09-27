@@ -281,6 +281,7 @@ export const NAV_ICONS = {
   activity: Activity,
   archive: Moderation,
   rights: Rights,
+  switches: Settings,
   more: More,
   users: Players,
   accounts: Accounts,

@@ -374,12 +374,12 @@ tr:hover td {
     box-shadow var(--e-med) var(--e-ease) !important;
 }
 
+.gbl-tab-active,
 .grp-tab-active,
 .grp-subtab-active,
 .elite-tab-active,
 .panel-tab-active,
 .ach-tab-active,
-.gbl-tab-active,
 .sec-tab-active,
 .sr-tab-active,
 .sys-tab-active,
@@ -393,18 +393,24 @@ tr:hover td {
 .auth-tab-active,
 .pa-role-tab-active {
   background: var(--e-accent) !important;
-  color: var(--e-accent-ink, #fff) !important;
-  -webkit-text-fill-color: var(--e-accent-ink, #fff) !important;
+  color: var(--e-accent-on, var(--e-accent-ink, #fff)) !important;
+  -webkit-text-fill-color: var(--e-accent-on, var(--e-accent-ink, #fff)) !important;
   border-color: transparent !important;
   box-shadow:
     0 4px 18px -6px rgba(var(--e-accent-rgb), 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
   transition:
-    background 0.3s var(--e-ease),
-    color 0.3s var(--e-ease),
-    border-color 0.3s var(--e-ease),
-    box-shadow 0.35s var(--e-ease),
+    background 0.22s var(--e-ease),
+    border-color 0.22s var(--e-ease),
+    box-shadow 0.28s var(--e-ease),
     transform 0.18s var(--e-ease-spring) !important;
+}
+.gbl-tab,
+.gbl-tab-active {
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease !important;
 }
 
 /* Вкладки профиля игрока — линия снизу в цвете палитры */

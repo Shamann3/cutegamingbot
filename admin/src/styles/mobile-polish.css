@@ -240,6 +240,16 @@ html.panel-nav-open .panel-shelf-sidebar {
     padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px)) !important;
   }
 
+  .admin-modal.admin-modal-sheet {
+    width: min(22rem, 94vw) !important;
+    max-width: min(22rem, 94vw) !important;
+    max-height: min(86dvh, 640px) !important;
+    height: auto !important;
+    margin: 0 auto 12px !important;
+    border-radius: 14px !important;
+    align-self: center !important;
+  }
+
   /* ---------- Skeletons / empty ---------- */
   .panel-users-empty-hint,
   .support-empty-state,

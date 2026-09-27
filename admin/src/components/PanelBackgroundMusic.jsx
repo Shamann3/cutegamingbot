@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react'
 
-const TRACK_URL = `${import.meta.env.BASE_URL}track.mp3`
+const TRACK_CANDIDATES = [
+  `${import.meta.env.BASE_URL}track.wav`,
+  `${import.meta.env.BASE_URL}track.mp3`,
+]
 const FADE_MS = 900
 
 function runFade(audio, targetVolume, durationMs, cancelRef) {
@@ -38,14 +41,23 @@ export default function PanelBackgroundMusic({ volume = 0 }) {
   const volumeRef = useRef(volume)
 
   useEffect(() => {
-    const audio = new Audio(TRACK_URL)
+    const audio = new Audio()
     audio.loop = true
     audio.preload = 'auto'
     audio.volume = 0
+    let idx = 0
+    const tryNext = () => {
+      if (idx >= TRACK_CANDIDATES.length) return
+      audio.src = TRACK_CANDIDATES[idx]
+      idx += 1
+    }
+    audio.addEventListener('error', tryNext)
+    tryNext()
     audioRef.current = audio
 
     return () => {
       if (cancelFadeRef.current) cancelFadeRef.current()
+      audio.removeEventListener('error', tryNext)
       audio.pause()
       audio.removeAttribute('src')
       audio.load()

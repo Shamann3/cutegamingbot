@@ -39,11 +39,14 @@ import {
   purgeStaffMember,
   takeStaffComplaint,
   unsuspendStaffMember,
+  appointGroupAdmin,
+  fetchRightsBoard,
 } from '../../lib/adminClient'
 import AdminSelect from '../../components/AdminSelect'
 import CountUp from '../../components/CountUp'
 import { showToast } from '../../components/ToastHost'
 import { CopyableId, CopyableUsername } from '../../components/Copyable'
+import UserLookupPreview from '../../components/UserLookupPreview'
 import { APPLICATION_QUESTIONS, PAYOUT_OPTIONS } from '../../config/applicationQuestions'
 import PayrollSalariesTab from './payroll/SalariesTab'
 import PayrollBonusesTab from './payroll/BonusesTab'
@@ -1413,13 +1416,23 @@ function tokenStatus(t) {
   return TOKEN_STATUS.active
 }
 
-function InvitesTab() {
+function InvitesTab({ isProjectCreator = false }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(null)
   const [label, setLabel] = useState('')
   const [copiedId, setCopiedId] = useState(null)
   const copyTimerRef = useRef(null)
+
+  // Group-admin invite (appoint + show entry key)
+  const [groups, setGroups] = useState([])
+  const [gaUser, setGaUser] = useState('')
+  const [gaUserId, setGaUserId] = useState(null)
+  const [gaChatId, setGaChatId] = useState('')
+  const [gaPosId, setGaPosId] = useState('')
+  const [gaReason, setGaReason] = useState('')
+  const [gaKey, setGaKey] = useState('')
+  const [gaError, setGaError] = useState('')
 
   useEffect(() => () => clearTimeout(copyTimerRef.current), [])
 
@@ -1437,7 +1450,28 @@ function InvitesTab() {
 
   useEffect(() => { load() }, [load])
 
-  const handleCreate = async () => {
+  useEffect(() => {
+    if (!isProjectCreator) return undefined
+    let cancelled = false
+    fetchRightsBoard()
+      .then((data) => {
+        if (cancelled) return
+        const list = data.groups || []
+        setGroups(list)
+        if (list[0] && !gaChatId) setGaChatId(String(list[0].chatId))
+      })
+      .catch(() => { if (!cancelled) setGroups([]) })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isProjectCreator])
+
+  const gaPositions = useMemo(() => {
+    const g = groups.find((x) => String(x.chatId) === String(gaChatId))
+    return (g?.positions || []).filter((p) => Number(p.rank) < 5)
+  }, [groups, gaChatId])
+
+  const handleCreate = async (e) => {
+    e?.preventDefault?.()
     setBusy('create')
     try {
       await createInviteToken(label.trim())
@@ -1445,6 +1479,37 @@ function InvitesTab() {
       await load()
     } catch (err) {
       alert(err?.message || 'Ошибка')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const handleGroupAppoint = async (e) => {
+    e?.preventDefault?.()
+    setGaError('')
+    setGaKey('')
+    const uid = Number(gaUserId || String(gaUser).replace(/\D/g, ''))
+    const chatId = Number(gaChatId)
+    const positionId = Number(gaPosId)
+    if (!uid || !chatId || !positionId) {
+      setGaError('Выберите человека, группу и должность')
+      return
+    }
+    setBusy('ga')
+    try {
+      const res = await appointGroupAdmin({
+        chat_id: chatId,
+        user_id: uid,
+        position_id: positionId,
+        reason: gaReason.trim() || 'Инвайт из Стафф',
+      })
+      setGaKey(res?.entryKey || '')
+      setGaUser('')
+      setGaUserId(null)
+      setGaReason('')
+      setGaPosId('')
+    } catch (err) {
+      setGaError(err?.message || 'Не удалось выдать ключ админа группы')
     } finally {
       setBusy(null)
     }
@@ -1486,41 +1551,101 @@ function InvitesTab() {
   const activeCount = items.filter((t) => !t.revokedAt && !t.usedBy).length
 
   return (
-    <div className="sec-tab-body">
+    <div className="sec-tab-body staff-invites-tab">
       <p className="staff-hint">
-        Ключ для сотрудника проекта. Каждый получает свой уникальный инвайт в панель.
+        Два разных ключа: сотрудник проекта (вход в админ-панель) и админ официальной группы (вход в оболочку группы).
       </p>
 
-      <div className="sec-ipban-form">
+      <div className="sec-ipban-form staff-invite-block">
         <h3 className="sec-ipban-form-title">Ключ для сотрудника проекта</h3>
-        <div className="staff-complaint-form">
+        <form className="staff-complaint-form staff-invite-form" onSubmit={handleCreate}>
           <input
             className="sec-input staff-invite-label-input"
             type="text"
+            name="inviteLabel"
             autoComplete="off"
-            inputMode="text"
+            autoCorrect="off"
+            autoCapitalize="off"
             spellCheck={false}
+            inputMode="text"
             placeholder="Метка (для кого, например «для Сани»)"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !busy && handleCreate()}
+            disabled={busy === 'create'}
           />
-          <button className="sec-btn sec-btn-sm" disabled={busy === 'create'} onClick={handleCreate}>
+          <button type="submit" className="sec-btn sec-btn-sm" disabled={busy === 'create'}>
             {busy === 'create' ? '…' : 'Создать'}
           </button>
-        </div>
+        </form>
       </div>
 
-      <div className="sec-ipban-form staff-group-admin-invite">
+      <div className="sec-ipban-form staff-group-admin-invite staff-invite-block">
         <h3 className="sec-ipban-form-title">Ключ для админа группы</h3>
-        <p className="staff-hint">
-          Отдельного инвайта в панель для админов групп нет. Назначьте должность в разделе групп
-          (GroupShell → назначить) — личный ключ входа в оболочку группы выдаётся один раз после назначения или одобрения заявки.
-        </p>
+        {!isProjectCreator ? (
+          <p className="staff-hint">
+            Выдать ключ админа группы может только создатель проекта (назначение должности + личный ключ входа).
+          </p>
+        ) : (
+          <form className="staff-invite-form staff-ga-form" onSubmit={handleGroupAppoint}>
+            <UserLookupPreview
+              value={gaUser}
+              onChange={(v) => { setGaUser(v); setGaUserId(null) }}
+              onResolved={(u) => setGaUserId(u?.userId ?? u?.user_id ?? null)}
+              placeholder="ID, @username или имя"
+              label="Человек"
+            />
+            <label className="staff-ga-field">
+              <span>Группа</span>
+              <select
+                className="sec-input"
+                value={gaChatId}
+                onChange={(e) => { setGaChatId(e.target.value); setGaPosId('') }}
+              >
+                <option value="">Выберите группу</option>
+                {groups.map((g) => (
+                  <option key={g.chatId} value={g.chatId}>{g.title || g.chatId}</option>
+                ))}
+              </select>
+            </label>
+            <label className="staff-ga-field">
+              <span>Должность</span>
+              <select
+                className="sec-input"
+                value={gaPosId}
+                onChange={(e) => setGaPosId(e.target.value)}
+              >
+                <option value="">Выберите</option>
+                {gaPositions.map((p) => (
+                  <option key={p.id} value={p.id}>{p.title} (ранг {p.rank})</option>
+                ))}
+              </select>
+            </label>
+            <label className="staff-ga-field">
+              <span>Для чего?</span>
+              <input
+                className="sec-input"
+                type="text"
+                value={gaReason}
+                onChange={(e) => setGaReason(e.target.value)}
+                placeholder="Причина назначения"
+                autoComplete="off"
+              />
+            </label>
+            <button type="submit" className="sec-btn sec-btn-sm" disabled={busy === 'ga'}>
+              {busy === 'ga' ? '…' : 'Назначить и выдать ключ'}
+            </button>
+            {gaError && <p className="sec-error">{gaError}</p>}
+            {gaKey && (
+              <p className="realm-alert staff-ga-key" data-copyable="1">
+                Личный ключ (один показ): <code>{gaKey}</code>
+              </p>
+            )}
+          </form>
+        )}
       </div>
 
       <div className="sec-audit-filters">
-        <button className="sec-btn sec-btn-ghost" onClick={load}>Обновить</button>
+        <button type="button" className="sec-btn sec-btn-ghost" onClick={load}>Обновить</button>
         <span className="sec-audit-count">активных: {activeCount} / всего: {items.length}</span>
       </div>
 
@@ -1556,12 +1681,14 @@ function InvitesTab() {
                 {!t.usedBy && !t.revokedAt && (
                   <>
                     <button
+                      type="button"
                       className="sec-btn sec-btn-sm"
                       onClick={() => handleCopy(t)}
                     >
                       {copiedId === t.id ? 'Скопировано!' : 'Копировать'}
                     </button>
                     <button
+                      type="button"
                       className="sec-btn sec-btn-ghost sec-btn-sm"
                       disabled={busy === `rev-${t.id}`}
                       onClick={() => handleRevoke(t)}
@@ -1571,6 +1698,7 @@ function InvitesTab() {
                   </>
                 )}
                 <button
+                  type="button"
                   className="sec-btn sec-btn-danger sec-btn-sm"
                   disabled={busy === `del-${t.id}`}
                   onClick={() => handleDelete(t)}
@@ -1645,7 +1773,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
           иначе вложенный overflow ломает прокрутку (Зарплаты и др.). */}
       {activeTab === 'applications' && <ApplicationsTab />}
       {activeTab === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} isProjectCreator={isProjectCreator} />}
-      {activeTab === 'invites' && <InvitesTab />}
+      {activeTab === 'invites' && <InvitesTab isProjectCreator={isProjectCreator} />}
       {activeTab === 'salaries' && (
         <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} myUserId={myUserId} />
       )}

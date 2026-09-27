@@ -5,6 +5,21 @@
 """
 from __future__ import annotations
 
+# Столбцы наказаний, которыми управляет матрица в «Админ панель».
+PUNISH_COLUMNS: tuple[str, ...] = (
+    "mute",
+    "muteall",
+    "unmute",
+    "kick",
+    "kickall",
+    "warn",
+    "warnall",
+    "warnfull",
+    "ban",
+    "banall",
+    "banfull",
+)
+
 
 def purge_allowed(*, actor_is_creator: bool, target_is_creator: bool) -> str | None:
     if not actor_is_creator:
@@ -26,21 +41,42 @@ def column_granted(permissions: dict | None, column: str) -> bool:
     return False
 
 
-async def actor_has_banfull(user_id: int) -> bool:
+async def _rule_for_user(user_id: int):
     try:
         from bot.admins.mute import get_admin_account, get_staff_rule
     except Exception:
-        return False
+        return None, None
     try:
         account = await get_admin_account(int(user_id))
     except Exception:
-        return False
+        return None, None
     if not account or not account.role:
-        return False
+        return account, None
     try:
         rule = await get_staff_rule(account.role)
     except Exception:
+        return account, None
+    return account, rule
+
+
+async def actor_has_banfull(user_id: int) -> bool:
+    account, rule = await _rule_for_user(user_id)
+    if not account or not rule:
         return False
-    if not rule or not account.is_operational(rule):
+    if not account.is_operational(rule):
         return False
     return column_granted(rule.permissions, "banfull")
+
+
+async def actor_staff_perms(user_id: int) -> list[str]:
+    """Список включённых столбцов staff_rules для текущего сотрудника."""
+    account, rule = await _rule_for_user(user_id)
+    if not account or not rule:
+        return []
+    if not account.is_operational(rule):
+        return []
+    out: list[str] = []
+    for key, value in (rule.permissions or {}).items():
+        if bool(value):
+            out.append(str(key).strip().lower())
+    return out

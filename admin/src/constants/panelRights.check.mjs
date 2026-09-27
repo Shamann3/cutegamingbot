@@ -23,8 +23,8 @@ if (!untouched.some((item) => item.id === 'users')) {
 }
 
 const creator = visibleSections([], [], 'owner', { isProjectCreator: true })
-if (!creator.some((item) => item.id === 'rights')) {
-  throw new Error('creator must keep the rights page')
+if (!creator.some((item) => item.id === 'panelAccess')) {
+  throw new Error('creator must keep admin panel (rights merged)')
 }
 if (!creator.some((item) => item.id === 'groupGuard')) {
   throw new Error('creator must keep the guard page')

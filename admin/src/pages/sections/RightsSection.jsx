@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchPanelAccess, fetchRightsBoard, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
 import PositionEditor from '../../components/PositionEditor'
 import RightSwitch from '../../components/RightSwitch'
+import UserLookupPreview from '../../components/UserLookupPreview'
 
 const STAFF_GROUP_LABELS = {
   overview: 'С чего начать',
@@ -125,6 +126,7 @@ export default function RightsSection({ embedded = false } = {}) {
   const [notice, setNotice] = useState('')
   const [savingId, setSavingId] = useState(null)
   const [purgeId, setPurgeId] = useState('')
+  const [purgeQuery, setPurgeQuery] = useState('')
   const [purging, setPurging] = useState(false)
   const [chapter, setChapter] = useState('group')
   const [posQuery, setPosQuery] = useState('')
@@ -175,6 +177,7 @@ export default function RightsSection({ embedded = false } = {}) {
       await purgeStaffMember(id)
       setNotice('Допуск снят. Для входа нужна новая заявка и новый ключ.')
       setPurgeId('')
+      setPurgeQuery('')
     } catch (err) {
       setError(err.message || 'Сбросить допуск не удалось')
     } finally {
@@ -226,10 +229,13 @@ export default function RightsSection({ embedded = false } = {}) {
       <form className="realm-form" onSubmit={purge}>
         <h2 className="realm-h">Убрать допуск</h2>
         <p className="realm-copy">Кроме создателя проекта. Человек регистрируется заново и получает новый ключ.</p>
-        <label>
-          Id человека
-          <input inputMode="numeric" value={purgeId} onChange={(event) => setPurgeId(event.target.value)} />
-        </label>
+        <UserLookupPreview
+          value={purgeQuery}
+          onChange={(v) => { setPurgeQuery(v); setPurgeId('') }}
+          onResolved={(u) => setPurgeId(u ? String(u.userId ?? u.user_id ?? '') : '')}
+          placeholder="ID, @username или имя"
+          label="Человек"
+        />
         <button type="submit" className="realm-back" disabled={purging}>{purging ? 'Снимаем…' : 'Убрать допуск'}</button>
       </form>
       </>

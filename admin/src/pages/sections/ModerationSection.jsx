@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TgPhoto from '../../components/TgPhoto'
 import {
   deleteModerationLog, fetchAppealMessages, fetchAppeals, fetchModerationLogs,
+  setAdminUserBanned,
   fetchModeratorStats, fetchPlayerModerationHistory,
   getAdminToken, postModerationUnban, resolveAppeal, sendAppealMessage,
   takeAppeal, uploadAppealPhoto,
@@ -324,6 +325,41 @@ function CaseModal({ item, role, perms, onClose, onUnbanned, onOpenUser }) {
               </div>
             )}
             {unbanDone && <div className="case-actions"><span className="case-unban-done">Игрок разбанен</span></div>}
+            {(role === 'owner' || perms.has('moderate_ban') || perms.has('banfull')) && item.actionType !== 'ban' && !unbanDone && (
+              <div className="case-actions case-unban-form">
+                <label className="case-unban-label">
+                  Наказать из архива (бан проекта)
+                  <input
+                    className="case-unban-input"
+                    value={unbanReason}
+                    onChange={(e) => setUnbanReason(e.target.value)}
+                    placeholder="Причина обязательна"
+                    disabled={unbanLoading}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="case-unban-btn"
+                  style={{ borderColor: '#ef444450', color: '#ef4444', background: '#ef444418' }}
+                  disabled={unbanLoading || !unbanReason.trim()}
+                  onClick={async () => {
+                    const reason = unbanReason.trim()
+                    if (!reason) return
+                    if (!window.confirm(`Забанить ${item.targetName || item.targetId}?`)) return
+                    setUnbanLoading(true)
+                    try {
+                      await setAdminUserBanned(item.targetId, true, reason, '', '')
+                      setUnbanDone(true)
+                      onUnbanned?.(item.targetId)
+                    } catch (e) {
+                      alert(e.message || 'Ошибка бана')
+                    } finally { setUnbanLoading(false) }
+                  }}
+                >
+                  {unbanLoading ? '…' : 'Забанить из архива'}
+                </button>
+              </div>
+            )}
 
             {role === 'owner' && (
               <div className="case-delete-zone">
@@ -852,7 +888,7 @@ function AppealsTab({ role }) {
       )}
 
       {!loading && items.length > 0 && (
-        <div className="apl-grid">
+        <div className="apl-grid apl-grid-roomy">
           {items.map(item => (
             <AppealCard key={item.id} item={item} onUpdate={() => load()} />
           ))}
@@ -974,8 +1010,6 @@ export default function ModerationSection({
           )}
         </div>
 
-        {!loading && items.length > 0 && activeMainTab === 'archive' && <StatsBar items={items} total={total} />}
-
         {/* Главные табы */}
         <div className="arc-main-tabs">
           {mainTabs.map(t => (
@@ -1065,7 +1099,8 @@ export default function ModerationSection({
       )}
 
       <style>{`
-        .arc-shell { padding: 24px 28px; max-width: 1400px; }
+        .arc-shell { padding: 24px 28px; max-width: 1400px; max-height: 100%; overflow: hidden; display:flex; flex-direction:column; min-height:0; }
+        .arc-shell .arc-grid { overflow-y:auto; flex:1; min-height:0; }
         .arc-header { margin-bottom: 24px; }
         .arc-header-row { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap; }
         .arc-title { font-size:24px; font-weight:800; color:#f5e6c8; letter-spacing:0.02em; margin-bottom:4px; }
@@ -1096,7 +1131,7 @@ export default function ModerationSection({
         .arc-search-stack { flex-direction:column; align-items:stretch; max-width:320px; }
         .arc-field { display:flex; flex-direction:column; gap:4px; padding:2px 0; min-width:0; }
         .arc-field > span { font-size:11px; color:#4b5563; }
-        .arc-input { background:#0e0e18; border:1px solid #1e1e2e; border-radius:8px; color:#e2e8f0; padding:7px 12px; font-size:13px; min-width:0; flex:1; width:100%; box-sizing:border-box; outline:none; transition:border-color 0.2s; }
+        .arc-input { max-width:100%; min-width:0; overflow:hidden; text-overflow:ellipsis; background:#0e0e18; border:1px solid #1e1e2e; border-radius:8px; color:#e2e8f0; padding:7px 12px; font-size:13px; flex:1; width:100%; box-sizing:border-box; outline:none; transition:border-color 0.2s; }
         .arc-input:focus { border-color:#d4a84b80; }
         .arc-input::placeholder { color:#2d3748; }
         .arc-search-btn { background:#d4a84b18; border:1px solid #d4a84b60; color:#d4a84b; padding:7px 14px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; }
@@ -1182,6 +1217,7 @@ export default function ModerationSection({
         .case-backdrop-out { animation:case-fade-out 0.2s ease forwards; pointer-events:none; }
         @keyframes case-fade-in { from{opacity:0}to{opacity:1} }
         @keyframes case-fade-out { from{opacity:1}to{opacity:0} }
+        .case-modal-full { width:100%; height:100%; max-height:100dvh; border-radius:0; overflow-y:auto; -webkit-overflow-scrolling:touch; }
         .case-modal { background:#080810; border:1px solid #1e1e2e; border-radius:18px; width:min(960px, 96vw); height:92vh; max-height:92vh; overflow-y:auto; box-sizing:border-box; padding:0; box-shadow:0 40px 120px rgba(0,0,0,0.9); animation:case-slide-in 0.22s ease; display:flex; flex-direction:column; }
         .case-backdrop-out .case-modal { animation:case-slide-out 0.2s ease forwards; }
         @keyframes case-slide-in { from{opacity:0;transform:translateY(16px) scale(0.98)}to{opacity:1;transform:translateY(0) scale(1)} }

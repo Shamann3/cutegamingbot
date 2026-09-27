@@ -91,12 +91,6 @@ export const PANEL_SECTIONS = [
     blurb: 'Команда: заявки, сотрудники, зарплаты, смены и жалобы.',
   },
   {
-    id: 'rights', label: 'Rights', labelRu: 'Права', group: 'team',
-    creatorOnly: true,
-    navHidden: true,
-    blurb: 'Страницы и наказания должностей группы, вкладки панели сотрудника. Открывается во вкладке «Админ панель».',
-  },
-  {
     id: 'support', label: 'Support', labelRu: 'Поддержка', group: 'team',
     blurb: 'Тикеты поддержки: переписка с игроками и статусы обращений.',
   },
@@ -171,14 +165,14 @@ export const SECTION_HINTS = {
   events: 'Игровые события',
   broadcast: 'Сообщение многим людям',
   staff: 'Сотрудники, смены и жалобы',
-  rights: 'Должности групп — внутри «Админ панель»',
+  rights: 'Должности групп и сброс входа',
   support: 'Письма от игроков',
   analytics: 'Сводка по проекту',
   logs: 'Что делала панель',
   chronicle: 'Лента событий',
   settings: 'Общие переключатели',
   security: 'Входы, сессии и блокировки',
-  panelAccess: 'Страницы должности и права групп',
+  panelAccess: 'Вкладки панели, наказания staff_rules и должности групп',
   softRestart: 'Тихий перезапуск',
 }
 
@@ -198,11 +192,10 @@ export function visibleSections(
       && Number(myUserId) === Number(projectCreatorId)
     )
   return PANEL_SECTIONS.filter((s) => {
-    if (s.navHidden) return false
     if (s.ownerOnly && role !== 'owner') return false
     if (s.creatorOnly && !creatorOk) return false
-    if (allowedIds && s.id !== 'groupGuard' && !allowedIds.has(s.id)) return false
-    if (s.permission && !perms.has(s.permission)) return false
+    if (allowedIds && s.id !== 'groupGuard' && s.id !== 'panelAccess' && !allowedIds.has(s.id)) return false
+    if (s.permission && !perms.has(s.permission) && !(s.id === 'panelAccess' && creatorOk)) return false
     return true
   })
 }

@@ -164,14 +164,12 @@ html.is-phone .phone-dock-scroll,
 html[data-viewport="phone"] .phone-dock-scroll {
   flex: 1 1 auto;
   justify-content: space-evenly;
-  gap: clamp(2px, 1.2vw, 8px);
 }
 
 html.is-phone .phone-dock.is-crowded .phone-dock-scroll,
 html[data-viewport="phone"] .phone-dock.is-crowded .phone-dock-scroll {
   justify-content: flex-start;
   scroll-snap-type: x mandatory;
-  gap: clamp(2px, 1vw, 6px);
 }
 
 html.is-phone.panel-nav-open .phone-dock,
@@ -180,16 +178,16 @@ html[data-viewport="phone"].panel-nav-open .phone-dock {
 }
 
 .phone-dock button {
-  flex: 1 1 auto;
-  min-width: max(44px, fit-content);
-  max-width: none;
+  flex: 1 1 0;
+  min-width: 44px;
+  max-width: 72px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
   margin: 0;
-  padding: 0 2px;
+  padding: 0;
   border: 0;
   border-radius: 16px;
   background: transparent;
@@ -199,16 +197,19 @@ html[data-viewport="phone"].panel-nav-open .phone-dock {
 }
 
 .phone-dock.is-crowded .phone-dock-scroll button {
-  flex: 0 0 auto;
-  min-width: max(48px, fit-content);
-  max-width: none;
-  padding: 0 4px;
+  flex: 0 0 56px;
+  max-width: 56px;
   scroll-snap-align: center;
 }
 
 .phone-dock button.is-on {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
+  font-weight: 700;
+}
+
+.phone-dock button.is-on .phone-dock-label {
+  font-weight: 800;
 }
 
 .phone-dock-menu {
@@ -233,12 +234,12 @@ html[data-viewport="phone"].panel-nav-open .phone-dock {
 
 .phone-dock-label {
   max-width: 100%;
-  overflow: visible;
-  text-overflow: clip;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: clamp(7.5px, 2.15vw, 9px);
+  font-size: 9px;
   font-weight: 600;
-  line-height: 1.05;
+  line-height: 1;
   letter-spacing: -0.01em;
 }
 
@@ -494,6 +495,12 @@ html.is-desktop .phone-dock button.is-on,
 html[data-viewport="desktop"] .phone-dock button.is-on {
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
+  font-weight: 800;
+}
+
+html.is-desktop .phone-dock button.is-on .phone-dock-label,
+html[data-viewport="desktop"] .phone-dock button.is-on .phone-dock-label {
+  font-weight: 800;
 }
 
 html.is-desktop .phone-dock-menu,
@@ -507,45 +514,4 @@ html.is-desktop.panel-nav-open .phone-dock-menu,
 html[data-viewport="desktop"].panel-nav-open .phone-dock-menu {
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
-}
-
-/* Extras («Ещё»): one centered search + tab pill, ~24px from edges */
-html.is-phone .extras-top-search,
-html.is-phone .extras-hub-search-strip,
-html[data-viewport="phone"] .extras-top-search,
-html[data-viewport="phone"] .extras-hub-search-strip {
-  width: 100%;
-  max-width: none;
-  margin: 0 0 14px;
-  padding: 0 24px;
-  box-sizing: border-box;
-}
-
-html.is-phone .extras-tab-pill,
-html[data-viewport="phone"] .extras-tab-pill {
-  align-self: center;
-}
-
-html.is-phone .extras-hub-search,
-html.is-phone .extras-top-search-field,
-html[data-viewport="phone"] .extras-hub-search,
-html[data-viewport="phone"] .extras-top-search-field {
-  width: 100%;
-}
-
-html.is-phone .panel-layout > .extras-hub,
-html[data-viewport="phone"] .panel-layout > .extras-hub {
-  max-width: none;
-  width: 100%;
-}
-
-html.is-desktop .extras-top-search,
-html.is-desktop .extras-hub-search-strip,
-html[data-viewport="desktop"] .extras-top-search,
-html[data-viewport="desktop"] .extras-hub-search-strip {
-  max-width: 1120px;
-  margin-left: auto;
-  margin-right: auto;
-  padding-left: 24px;
-  padding-right: 24px;
 }

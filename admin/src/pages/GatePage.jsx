@@ -19,6 +19,10 @@ function Door({ title, detail, open, onClick }) {
   )
 }
 
+function CuteBrand() {
+  return <span className="gate-brand-word">CuteGamingBot</span>
+}
+
 export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onGroupApply }) {
   const [personal, setPersonal] = useState(() => accentIsPersonal(loadStoredAccent()))
   const [accent, setAccent] = useState(() => loadStoredAccent())
@@ -58,8 +62,8 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
       : 'Сюда заходят сотрудники Эпсилона. Для модерации нашего проекта. Нажатие откроет заявку.'
 
   const groupDetail = portrait?.groupCanEnter
-    ? 'Эта кнопка предназначается для администраторов официальных групп нашего проекта CuteGamingBot'
-    : 'Эта кнопка предназначается для администраторов официальных групп нашего проекта CuteGamingBot. Нажатие откроет заявку.'
+    ? <>Эта кнопка предназначается для администраторов официальных групп нашего проекта <CuteBrand /></>
+    : <>Эта кнопка предназначается для администраторов официальных групп нашего проекта <CuteBrand />. Нажатие откроет заявку.</>
 
   const pressStaff = () => {
     if (!portrait) return

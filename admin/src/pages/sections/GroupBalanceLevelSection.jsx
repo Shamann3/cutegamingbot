@@ -225,46 +225,48 @@ export default function GroupBalanceLevelSection() {
 
   return (
     <article className="panel-shelf panel-shelf-page gbl-page">
-      <div className="gbl-hero">
-        <p className="panel-shelf-label">Только создатель · умная экономика чата</p>
-        <h2 className="panel-page-title">Умный баланс группы</h2>
-        <p className="panel-page-lead">
-          Уровни, потолки ставок, живая группа и цены шагов — с подробным смыслом каждого параметра.
-          Игрок в «бч» сначала видит только сумму; условия и анализ — по кнопке.
-        </p>
-        <div className="gbl-hero-actions">
-          <button type="button" className="elite-btn elite-btn-primary" disabled={saving} onClick={onSave}>
-            {saving ? 'Сохраняю…' : 'Сохранить'}
-          </button>
-          <button type="button" className="elite-btn" disabled={saving} onClick={onReset}>
-            Сброс defaults
-          </button>
-          <button type="button" className="elite-btn" disabled={saving} onClick={load}>
-            Обновить
-          </button>
+      <div className="gbl-chrome">
+        <div className="gbl-hero">
+          <p className="panel-shelf-label">Только создатель · умная экономика чата</p>
+          <h2 className="panel-page-title">Умный баланс группы</h2>
+          <p className="panel-page-lead">
+            Уровни, потолки ставок, живая группа и цены шагов — с подробным смыслом каждого параметра.
+            Игрок в «бч» сначала видит только сумму; условия и анализ — по кнопке.
+          </p>
+          <div className="gbl-hero-actions">
+            <button type="button" className="elite-btn elite-btn-primary" disabled={saving} onClick={onSave}>
+              {saving ? 'Сохраняю…' : 'Сохранить'}
+            </button>
+            <button type="button" className="elite-btn" disabled={saving} onClick={onReset}>
+              Сброс defaults
+            </button>
+            <button type="button" className="elite-btn" disabled={saving} onClick={load}>
+              Обновить
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div className="gbl-tabs" role="tablist">
-        {[
-          ['guide', 'Как это работает'],
-          ['core', 'Ядро'],
-          ['levels', 'Уровни'],
-          ['society', 'Живая группа'],
-          ['health', 'Здоровье бч'],
-          ['badges', 'Метки'],
-          ['manual', 'Ручная выдача'],
-          ['log', 'Покупки'],
-        ].map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className={`gbl-tab${tab === id ? ' gbl-tab-active' : ''}`}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
+        <div className="gbl-tabs" role="tablist">
+          {[
+            ['guide', 'Как это работает'],
+            ['core', 'Ядро'],
+            ['levels', 'Уровни'],
+            ['society', 'Живая группа'],
+            ['health', 'Здоровье бч'],
+            ['badges', 'Метки'],
+            ['manual', 'Ручная выдача'],
+            ['log', 'Покупки'],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={`gbl-tab${tab === id ? ' gbl-tab-active' : ''}`}
+              onClick={() => setTab(id)}
+            >
+              <span className="gbl-tab-label">{label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="gbl-scroll">

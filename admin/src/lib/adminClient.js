@@ -2061,6 +2061,17 @@ export async function deleteInviteToken(tokenId) {
   return adminRequest(`/staff/invites/${tokenId}`, { method: 'DELETE' })
 }
 
+export async function fetchStaffPunishRights() {
+  return adminRequest('/staff/punish-rights')
+}
+
+export async function saveStaffPunishRights(role, permissions) {
+  return adminRequest(`/staff/punish-rights/${encodeURIComponent(role)}`, {
+    method: 'PUT',
+    body: { permissions },
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Group Post Campaigns
 // ---------------------------------------------------------------------------

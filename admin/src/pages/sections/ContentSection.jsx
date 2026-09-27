@@ -66,14 +66,20 @@ function ItemOption({ item }) {
   return `${item.emoji || '📦'} ${item.name} (#${item.id})`
 }
 
-export default function ContentSection({ role = null, panelTabs = null }) {
-  const [tab, setTab] = useState('crops')
+export default function ContentSection({ role = null, panelTabs = null, initialTab = null, onInitialTabConsumed } = {}) {
+  const [tab, setTab] = useState(() => initialTab || 'crops')
   const isDesktop = useIsDesktop()
   const canUseMap = role === 'owner' && isDesktop
   const TABS = useMemo(
     () => filterSectionTabs('content', contentTabs(canUseMap), panelTabs),
     [canUseMap, panelTabs],
   )
+
+  useEffect(() => {
+    if (!initialTab) return
+    setTab(initialTab)
+    onInitialTabConsumed?.()
+  }, [initialTab, onInitialTabConsumed])
 
   // If the map tab becomes unavailable (resize to mobile, or non-owner), leave it.
   useEffect(() => {

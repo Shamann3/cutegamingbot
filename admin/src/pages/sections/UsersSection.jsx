@@ -103,7 +103,7 @@ function EmptyHint({ children }) {
   return <p className="panel-users-empty-hint">{children}</p>
 }
 
-function PlayerIntelOverview({ intel, onOpenUser }) {
+function PlayerIntelOverview({ intel, onOpenUser, onOpenGroup, canOpenGroups = false }) {
   if (!intel) {
     return (
       <article className="panel-shelf panel-users-card pu-intel-card pu-intel-loading">
@@ -224,7 +224,13 @@ function PlayerIntelOverview({ intel, onOpenUser }) {
         {most ? (
           <div className="pu-intel-highlight">
             <span className="pu-intel-highlight-kicker">Самая активная группа</span>
-            <strong>{most.chatName}</strong>
+            {canOpenGroups && most.chatId && onOpenGroup ? (
+              <button type="button" className="pu-group-link" onClick={() => onOpenGroup(most.chatId)}>
+                <strong>{most.chatName}</strong>
+              </button>
+            ) : (
+              <strong>{most.chatName}</strong>
+            )}
             <em>{most.messages.toLocaleString('ru-RU')} сообщений</em>
           </div>
         ) : (
@@ -236,7 +242,13 @@ function PlayerIntelOverview({ intel, onOpenUser }) {
             {byChat.slice(0, 8).map((c) => (
               <li key={c.chatId}>
                 <div className="pu-intel-bar-meta">
-                  <span className="pu-intel-bar-name">{c.chatName}</span>
+                  {canOpenGroups && c.chatId && onOpenGroup ? (
+                    <button type="button" className="pu-group-link pu-intel-bar-name" onClick={() => onOpenGroup(c.chatId)}>
+                      {c.chatName}
+                    </button>
+                  ) : (
+                    <span className="pu-intel-bar-name">{c.chatName}</span>
+                  )}
                   <span className="pu-intel-bar-val">{c.messages.toLocaleString('ru-RU')}</span>
                 </div>
                 <div className="pu-intel-bar-track">
@@ -260,7 +272,13 @@ function PlayerIntelOverview({ intel, onOpenUser }) {
             {topLife.slice(0, 8).map((c) => (
               <li key={c.chatId}>
                 <div className="pu-intel-bar-meta">
-                  <span className="pu-intel-bar-name">{c.chatName}</span>
+                  {canOpenGroups && c.chatId && onOpenGroup ? (
+                    <button type="button" className="pu-group-link pu-intel-bar-name" onClick={() => onOpenGroup(c.chatId)}>
+                      {c.chatName}
+                    </button>
+                  ) : (
+                    <span className="pu-intel-bar-name">{c.chatName}</span>
+                  )}
                   <span className="pu-intel-bar-val">{c.messages.toLocaleString('ru-RU')} · {c.activeDays} дн.</span>
                 </div>
                 <div className="pu-intel-bar-track">
@@ -1383,6 +1401,8 @@ export default function UsersSection({
   myUserId = null,
   isProjectCreator = false,
   canBanfull = false,
+  canOpenGroups = false,
+  onOpenGroup,
 }) {
   const phone = useIsPhone()
   const isOwner = role === 'owner'
@@ -1640,19 +1660,56 @@ export default function UsersSection({
     if (!profile?.userId) return
     try {
       const data = await exportPlayerProfile(profile.userId)
-      const json = JSON.stringify(data, null, 2)
-      const blob = new Blob([json], { type: 'application/json' })
+      const lines = []
+      const push = (label, value) => {
+        if (value == null || value === '') return
+        lines.push(`${label}: ${value}`)
+      }
+      const prof = data.profile || profile
+      lines.push('Экспорт игрока Epsilon')
+      lines.push(`Дата: ${data.exportedAt || new Date().toLocaleString('ru-RU')}`)
+      lines.push('')
+      push('ID', prof.userId ?? profile.userId)
+      push('Имя', prof.displayName || profile.displayName)
+      push('Username', prof.username ? `@${String(prof.username).replace(/^@/, '')}` : '')
+      push('Баланс', `${Number(prof.balance ?? profile.balance ?? 0).toLocaleString('ru-RU')} кут`)
+      push('Бан', (prof.banned ?? profile.banned) ? 'да' : 'нет')
+      if (prof.bannedReason || profile.bannedReason) push('Причина бана', prof.bannedReason || profile.bannedReason)
+      lines.push('')
+      lines.push('— История аудита —')
+      for (const ev of (data.auditHistory || []).slice(0, 80)) {
+        const when = ev.createdAt || ev.at || ''
+        const kind = EVENT_LABELS[ev.eventType] || ev.eventType || 'событие'
+        const detail = ev.note || ev.details || ev.delta || ''
+        lines.push(`${when} · ${kind}${detail ? ` · ${typeof detail === 'object' ? JSON.stringify(detail) : detail}` : ''}`)
+      }
+      lines.push('')
+      lines.push('— Баны —')
+      for (const ban of (data.banHistory || []).slice(0, 40)) {
+        lines.push(`${ban.createdAt || ''} · ${ban.action || ban.type || 'бан'} · ${ban.reason || '—'}`)
+      }
+      lines.push('')
+      lines.push('— Заметки админов —')
+      for (const note of (data.adminNotes || []).slice(0, 40)) {
+        lines.push(`${note.createdAt || ''} · ${note.authorName || note.adminId || 'админ'}: ${note.text || note.body || ''}`)
+      }
+      lines.push('')
+      lines.push('— Игровые события (кратко) —')
+      for (const ev of (data.gameEvents || []).slice(0, 100)) {
+        lines.push(`${ev.createdAt || ''} · ${EVENT_LABELS[ev.eventType] || ev.eventType}`)
+      }
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `player_${profile.userId}_export.json`
+      a.download = `player_${profile.userId}_export.txt`
       a.click()
       URL.revokeObjectURL(url)
-      notifyAdmin('Экспорт скачан')
+      notifyAdmin('Экспорт скачан (текстовый)')
     } catch (e) {
       notifyAdmin(e.message || 'Ошибка экспорта', { error: true })
     }
-  }, [profile?.userId])
+  }, [profile])
 
   useEffect(() => {
     if (!initialUserId) return
@@ -1734,7 +1791,7 @@ export default function UsersSection({
         danger
         loading={actionLoading}
         onConfirm={() => {
-          if (myUserId != null && profile?.userId != null && Number(profile.userId) === Number(myUserId)) {
+          if (!isOwner && !isCreator && myUserId != null && profile?.userId != null && Number(profile.userId) === Number(myUserId)) {
             const msg = 'Вы не можете заблокировать самого себя'
             setPendingAction(null)
             setError(msg)
@@ -1949,7 +2006,7 @@ export default function UsersSection({
         )}
         {hasProfile && profileTab === 'intel' && (
           <div className="pu-tab-pane pu-tab-stack">
-            <PlayerIntelOverview intel={intel} onOpenUser={openRelatedUser} />
+            <PlayerIntelOverview intel={intel} onOpenUser={openRelatedUser} onOpenGroup={onOpenGroup} canOpenGroups={canOpenGroups} />
             <PlayerDossierPanel
               intel={intel}
               isOwner={isOwner}
@@ -2553,7 +2610,7 @@ export default function UsersSection({
                     !banReason.trim() || (!banEvidence.trim() && banPhotoIds.length === 0)
                   }
                   onClick={() => {
-                    if (myUserId != null && hasProfile && Number(profile.userId) === Number(myUserId)) {
+                    if (!isOwner && !isCreator && myUserId != null && hasProfile && Number(profile.userId) === Number(myUserId)) {
                       const msg = 'Вы не можете заблокировать самого себя'
                       setError(msg)
                       notifyAdmin(msg, { error: true })
@@ -2673,7 +2730,7 @@ export default function UsersSection({
             </div>
 
             <form
-              className="panel-users-search-form"
+              className="panel-users-search-form pu-cmp-search"
               onSubmit={(e) => { e.preventDefault(); handleLoadCompare() }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>

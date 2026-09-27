@@ -8,15 +8,12 @@ export function staffSteps(phone) {
         ? 'Главные разделы внизу. «Ещё» открывает Дополнительно — сетку остальных вкладок. Меню (ползунки): поиск и цвет.'
         : 'Вкладки внизу, по центру. «Ещё» — остальные разделы. Слева меню: поиск, цвет и выход.',
       target: '[data-coach="dock"]',
-      openNav: false,
     },
     {
       title: 'Поиск',
-      body: phone
-        ? 'Откройте меню (ползунки слева в доке) — там поиск раздела и цвет. Сейчас смотрите на нижнюю панель.'
-        : 'Напишите название страницы и откройте её.',
-      target: phone ? '[data-coach="dock"]' : '[data-coach="search"]',
-      openNav: false,
+      body: 'Напишите название страницы и откройте её.',
+      target: phone ? '.panel-sidebar-search' : '[data-coach="search"]',
+      openNav: phone,
     },
     {
       title: 'Дополнительно',
@@ -32,9 +29,9 @@ export function staffSteps(phone) {
     },
     {
       title: 'Сменить панель',
-      body: 'Возврат к выбору: сотрудник или группа. Из аккаунта вы не выходите. Кнопка в «Ещё» → Дополнительно.',
-      target: '[data-coach="dock"] [data-section="more"]',
-      openNav: false,
+      body: 'Возврат к выбору: сотрудник или группа. Из аккаунта вы не выходите.',
+      target: '[data-coach="doors"]',
+      openNav: true,
     },
   ]
 }
@@ -117,15 +114,8 @@ function placeCard(box) {
   const maxRight = window.innerWidth - EDGE
   const maxBottom = window.innerHeight - EDGE
   if (window.innerWidth < 720) {
-    // На телефоне карточка всегда в удобной зоне над доком — не уезжает вверх экрана.
-    const dockClear = 96
-    return {
-      top: 'auto',
-      bottom: Math.max(EDGE, dockClear),
-      left: EDGE,
-      right: EDGE,
-      width: 'auto',
-    }
+    // На телефоне карточка всегда снизу — не уезжает под Telegram chrome
+    return { top: 'auto', bottom: EDGE + 8, left: EDGE, right: EDGE, width: 'auto' }
   }
   if (!box) return { top: 'auto', bottom: EDGE, left: EDGE, right: EDGE, width: 'auto' }
   const obstacles = [{
@@ -221,11 +211,17 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
 
   useEffect(() => {
     let cancelled = false
+    let tries = 0
     const measure = () => {
       if (cancelled) return
       const node = visibleTarget(step?.target)
       if (!node) {
         setBox(null)
+        // Drawer ещё открывается — не застреваем: ещё попытки, потом идём дальше без рамки
+        if (step?.openNav && tries < 8) {
+          tries += 1
+          window.setTimeout(measure, 120)
+        }
         return
       }
       bringIntoView(node)
@@ -242,8 +238,8 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
         setBox(spotFor(node))
       })
     }
-    const soon = window.setTimeout(measure, 60)
-    const afterDrawer = window.setTimeout(measure, 520)
+    const soon = window.setTimeout(measure, step?.openNav ? 280 : 60)
+    const afterDrawer = window.setTimeout(measure, step?.openNav ? 700 : 520)
     window.addEventListener('resize', measure)
     return () => {
       cancelled = true

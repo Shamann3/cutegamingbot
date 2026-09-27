@@ -1,4 +1,6 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+
+const CLOSE_MS = 200
 
 export default function AdminActionModal({
   open,
@@ -24,11 +26,28 @@ export default function AdminActionModal({
   const titleId = useId()
   const dialogRef = useRef(null)
   const confirmRef = useRef(null)
+  const [visible, setVisible] = useState(open)
+  const [leaving, setLeaving] = useState(false)
   const reasonOk = !reasonRequired || String(reason || '').trim().length > 0
   const passwordOk = !passwordRequired || String(password || '').length > 0
 
   useEffect(() => {
-    if (!open) return undefined
+    if (open) {
+      setVisible(true)
+      setLeaving(false)
+      return undefined
+    }
+    if (!visible) return undefined
+    setLeaving(true)
+    const t = window.setTimeout(() => {
+      setVisible(false)
+      setLeaving(false)
+    }, CLOSE_MS)
+    return () => window.clearTimeout(t)
+  }, [open, visible])
+
+  useEffect(() => {
+    if (!visible || leaving) return undefined
     const prev = document.activeElement
     const t = window.setTimeout(() => {
       if (showPassword) {
@@ -45,21 +64,24 @@ export default function AdminActionModal({
         try { prev.focus() } catch { /* ignore */ }
       }
     }
-  }, [open, showReason, showPassword])
+  }, [visible, leaving, showReason, showPassword])
 
-  if (!open) return null
+  const requestClose = () => {
+    if (loading || leaving) return
+    onCancel?.()
+  }
+
+  if (!visible) return null
 
   return (
     <div
-      className="admin-modal-backdrop"
+      className={`admin-modal-backdrop${leaving ? ' is-leaving' : ''}`}
       role="presentation"
-      onClick={() => {
-        if (!loading) onCancel?.()
-      }}
+      onClick={requestClose}
     >
       <div
         ref={dialogRef}
-        className="admin-modal"
+        className={`admin-modal${leaving ? ' is-leaving' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -101,7 +123,7 @@ export default function AdminActionModal({
             className="panel-users-btn"
             data-modal-cancel
             disabled={loading}
-            onClick={() => onCancel?.()}
+            onClick={requestClose}
           >
             {cancelText}
           </button>

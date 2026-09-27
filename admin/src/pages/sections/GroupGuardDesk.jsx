@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { addGuardAllow, fetchGuardDesk, removeGuardAllow, saveGroupGuard, saveGuardPolicy } from '../../lib/adminClient'
 import RightSwitch from '../../components/RightSwitch'
+import GroupLookupPreview from '../../components/GroupLookupPreview'
 
 const KINDS = { link: 'Ссылка', flood: 'Флуд', captcha: 'Капча' }
 
@@ -90,8 +91,8 @@ export default function GroupGuardDesk() {
     <article className="panel-shelf panel-shelf-page guard-desk">
       <header className="guard-head">
         <h2 className="panel-page-title">Защита групп</h2>
-        <p className="realm-copy">
-          Один экран для всех официальных групп. Сначала общее правило. Ниже — группы, которым нужно своё, и люди, которых бот не удаляет.
+        <p className="realm-copy guard-sub">
+          Общее правило сверху. Ниже — своё для отдельных групп и люди, которых бот не удаляет.
         </p>
       </header>
       {error && <p className="realm-alert" role="alert">{error}</p>}
@@ -158,6 +159,22 @@ export default function GroupGuardDesk() {
               }}
               aria-label="Время утренней сводки"
             />
+            <input
+              className="guard-field guard-hour-num"
+              type="number"
+              min={0}
+              max={23}
+              inputMode="numeric"
+              value={Number(policy.morningHour) % 24}
+              disabled={!pack || !policy.morning || busy === 'policy'}
+              onChange={(event) => {
+                const hour = Number(event.target.value)
+                if (!Number.isFinite(hour) || hour < 0 || hour > 23) return
+                savePolicy({ ...policy, morningHour: Math.round(hour) })
+              }}
+              aria-label="Час сводки вручную, 0–23"
+              title="Час 0–23"
+            />
           </label>
           <button
             type="button"
@@ -167,20 +184,26 @@ export default function GroupGuardDesk() {
           >
             Позже
           </button>
-          <span>по времени сервера</span>
+          <span>по времени сервера · {hourLabel(policy.morningHour)}</span>
         </div>
       </section>
 
       <section className="guard-block guard-block-custom">
         <h3>Своё правило</h3>
         <p className="realm-copy">Группа из этого списка может отличаться от общего. «Как у всех» возвращает её обратно.</p>
-        <input
-          className="guard-field"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Id, @username, ссылка или название группы"
-          aria-label="Найти группу"
-        />
+        <div className="guard-lookup">
+          <GroupLookupPreview
+            value={query}
+            onChange={setQuery}
+            onResolved={(row) => {
+              if (!row) return
+              const id = Number(row.chat_id ?? row.chatId)
+              if (Number.isFinite(id)) setOpenId(id)
+            }}
+            label="Найти группу"
+            placeholder="Id, @username, ссылка t.me или название"
+          />
+        </div>
         {pack && shown.length === 0 && <p className="realm-copy">Таких групп нет.</p>}
         <ul className="guard-groups">
           {shown.map((item) => (

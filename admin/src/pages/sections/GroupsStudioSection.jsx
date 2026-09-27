@@ -162,12 +162,15 @@ const BALANCE_MAX = 500_000
 export default function GroupsStudioSection({
   onOpenUser,
   onOpenGroup,
+  initialChatId = null,
+  onInitialChatConsumed,
   canOpenGroups = true,
   role = null,
   permissions = [],
   canBanfull = false,
   isProjectCreator = false,
   myUserId = null,
+  staffPerms = null,
 } = {}) {
   const [tab, setTab] = useState('lookup')
   const [sub, setSub] = useState('overview')
@@ -193,10 +196,11 @@ export default function GroupsStudioSection({
     () => filterStaffPunishGroups({
       canBanfull,
       permissions,
+      staffPerms,
       role,
       isProjectCreator,
     }),
-    [canBanfull, permissions, role, isProjectCreator],
+    [canBanfull, permissions, staffPerms, role, isProjectCreator],
   )
 
   useEffect(() => {
@@ -246,6 +250,11 @@ export default function GroupsStudioSection({
     }
     openChat(chatId)
   }, [canOpenGroups, onOpenGroup, openChat])
+
+  useEffect(() => {
+    if (initialChatId == null) return
+    openChat(Number(initialChatId)).finally(() => onInitialChatConsumed?.())
+  }, [initialChatId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshChat = useCallback(async (chatId) => {
     await openChat(chatId, { preserveView: true })
@@ -607,7 +616,7 @@ export default function GroupsStudioSection({
                         <Stat label="Фонд обновлялся" value={shortWhen(fund?.pool_updated_at)} />
                       </div>
                       <div className="grp-card">
-                        <h3 className="grp-card-title">По играм</h3>
+                        <h3 className="grp-card-title grp-sticky-title">По играм</h3>
                         <MiniTable
                           columns={[
                             { key: 'game', label: 'Игра' },
@@ -620,7 +629,7 @@ export default function GroupsStudioSection({
                         />
                       </div>
                       <div className="grp-card">
-                        <h3 className="grp-card-title">Топ плательщиков комиссий</h3>
+                        <h3 className="grp-card-title grp-sticky-title">Топ плательщиков комиссий</h3>
                         <MiniTable
                           columns={[
                             {
@@ -649,7 +658,7 @@ export default function GroupsStudioSection({
                         />
                       </div>
                       <div className="grp-card">
-                        <h3 className="grp-card-title">Последние проводки</h3>
+                        <h3 className="grp-card-title grp-sticky-title">Последние проводки</h3>
                         <MiniTable
                           columns={[
                             { key: 'at', label: 'Когда', render: (r) => shortWhen(r.at) },
@@ -661,7 +670,19 @@ export default function GroupsStudioSection({
                               label: 'Игрок',
                               render: (r) => (
                                 r.user_id
-                                  ? <CopyableId value={r.user_id} />
+                                  ? (
+                                    <span>
+                                      <OpenUserLink
+                                        userId={r.user_id}
+                                        name={r.name || `Игрок ${r.user_id}`}
+                                        username={r.username}
+                                        onOpenUser={onOpenUser}
+                                        className="grp-inline-link"
+                                      />
+                                      {' '}
+                                      <IdentityBits userId={r.user_id} username={r.username} />
+                                    </span>
+                                  )
                                   : '—'
                               ),
                             },

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
 import SeedEconomySettings from '../../components/SeedEconomySettings'
+import MaintenanceToggle from '../../components/MaintenanceToggle'
 import {
   fetchEconomyOverview,
   fetchFarmOverview,
   fetchFarmUser,
+  fetchMaintenanceState,
   fetchOnlineSummary,
   globalFarmReset,
   resetFarmUserPlots,
@@ -75,6 +77,8 @@ export default function FarmSection({ onOpenUser, isProjectCreator = false, pane
   const [farmPeriod, setFarmPeriod] = useState('day')
   const [farmFocus, setFarmFocus] = useState(null)
   const [online, setOnline] = useState(null)
+  const [farmMaint, setFarmMaint] = useState(false)
+  const [farmMaintLoaded, setFarmMaintLoaded] = useState(false)
 
   const applySettings = useCallback((settings) => {
     if (!settings) return
@@ -112,6 +116,15 @@ export default function FarmSection({ onOpenUser, isProjectCreator = false, pane
   useEffect(() => {
     loadOverview()
   }, [loadOverview])
+
+  useEffect(() => {
+    if (!isProjectCreator) return
+    let stop = false
+    fetchMaintenanceState()
+      .then((data) => { if (!stop) { setFarmMaint(Boolean(data?.maintenance)); setFarmMaintLoaded(true) } })
+      .catch(() => { if (!stop) setFarmMaintLoaded(true) })
+    return () => { stop = true }
+  }, [isProjectCreator])
 
   useEffect(() => {
     let stop = false
@@ -386,7 +399,7 @@ export default function FarmSection({ onOpenUser, isProjectCreator = false, pane
       </article>
 
       <div className="panel-farm-analytics" aria-label="Сводка фермы">
-        <div className="panel-farm-analytics-periods" role="tablist" aria-label="Период">
+        <div className="panel-farm-analytics-periods e-seg" role="tablist" aria-label="Период">
           {[
             { id: 'day', label: 'День' },
             { id: 'month', label: 'Месяц' },
@@ -624,9 +637,15 @@ export default function FarmSection({ onOpenUser, isProjectCreator = false, pane
 
       {isProjectCreator && (
         <article className="panel-shelf panel-farm-danger">
-          <p className="panel-shelf-label">Осторожно</p>
-          <h3 className="panel-users-subtitle">Глобальный рестарт фермы</h3>
-          <p className="panel-shelf-muted">Очистит все грядки у всех игроков. Используй только при критической необходимости.</p>
+          <p className="panel-shelf-label">Только создатель</p>
+          <h3 className="panel-users-subtitle">Техработы и сброс</h3>
+          <p className="panel-shelf-muted">Закрыть игру для игроков или очистить все грядки. Пароль сброса: подсказка «бз3».</p>
+          {farmMaintLoaded && (
+            <MaintenanceToggle
+              initialEnabled={farmMaint}
+              onChange={(v) => setFarmMaint(Boolean(v))}
+            />
+          )}
           <button
             type="button"
             className="panel-users-btn panel-users-btn-danger"
@@ -635,7 +654,7 @@ export default function FarmSection({ onOpenUser, isProjectCreator = false, pane
               setGlobalResetOpen(true)
             }}
           >
-            Глобальный сброс
+            Очистить все фермы
           </button>
         </article>
       )}

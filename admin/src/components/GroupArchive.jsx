@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import TgPhoto from './TgPhoto'
 import UserLookupPreview from './UserLookupPreview'
+import OpenUserLink from './OpenUserLink'
 
 const LOOK = {
   ban: { label: 'Бан', color: '#ef4444' },
@@ -242,7 +243,7 @@ export default function GroupArchive({
                   <span aria-hidden="true">→</span>
                   <span>
                     <small>В чате</small>
-                    <strong>{player}</strong>
+                    <OpenUserLink userId={row.target_user_id} name={row.targetName} onOpenUser={onOpenUser} />
                   </span>
                 </span>
                 <span className={row.reason ? 'g-arc-reason' : 'g-arc-reason is-empty'}>
@@ -262,9 +263,17 @@ export default function GroupArchive({
                     <button
                       type="button"
                       className="realm-text-act"
-                      onClick={() => setUserId(String(row.target_user_id))}
+                      onClick={() => {
+                        setUserId(String(row.target_user_id))
+                        window.setTimeout(() => {
+                          document.getElementById('g-arc-punish')?.scrollIntoView({
+                            block: 'nearest',
+                            behavior: 'smooth',
+                          })
+                        }, 40)
+                      }}
                     >
-                      Подставить в форму
+                      Наказать
                     </button>
                   )}
                   {canUndo && row.target_user_id && (

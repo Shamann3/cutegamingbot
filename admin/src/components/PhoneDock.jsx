@@ -24,10 +24,8 @@ function SlidersIcon() {
 function shortLabel(text) {
   const raw = String(text || '').trim()
   if (!raw) return ''
-  // Keep full first word when short; only trim very long compound labels.
   const word = raw.split(/\s+/)[0]
-  if (word.length <= 10) return word
-  return `${word.slice(0, 9)}…`
+  return word.length > 8 ? `${word.slice(0, 7)}…` : word
 }
 
 /** Нижняя полоса в стиле CryptoBot: вкладки + меню (ползунки) справа на телефоне / слева на ПК. */

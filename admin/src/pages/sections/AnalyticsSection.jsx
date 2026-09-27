@@ -41,6 +41,20 @@ function fmtSeconds(s) {
 
 const PERIOD_LABELS = { hourly: 'Часовые', daily: 'Дневные', weekly: 'Недельные' }
 
+const SERIES_LABELS = {
+  accepted: 'Принято',
+  completed: 'Завершено',
+  planted: 'Посажено',
+  harvested: 'Собрано',
+  watered: 'Полито',
+  successes: 'Успехи',
+  fails: 'Провалы',
+}
+
+function seriesLabel(key) {
+  return SERIES_LABELS[key] || key
+}
+
 // ---------------------------------------------------------------------------
 // Reusable chart primitives
 // ---------------------------------------------------------------------------
@@ -59,8 +73,9 @@ function scaleY(v, min, max) {
   return PAD.top + CH - ((v - min) / range) * CH
 }
 
-function LineChart({ data, series, colors, yLabel = '', seriesLabels = {} }) {
+function LineChart({ data, series, colors, yLabel = '' }) {
   const [hover, setHover] = useState(null)
+  const [tipPos, setTipPos] = useState({ x: 0, y: 0 })
   if (!data || data.length === 0) return <EmptyChart />
   const allVals = series.flatMap((s) => data.map((d) => d[s] ?? 0))
   const yMax = Math.max(...allVals, 1)
@@ -70,7 +85,6 @@ function LineChart({ data, series, colors, yLabel = '', seriesLabels = {} }) {
   const accentColors = (colors?.length ? colors : ['var(--e-accent)', '#6BA3C9', '#D4B56A']).map(
     (c, i) => (i === 0 ? 'var(--e-accent)' : c),
   )
-  const labelOf = (s) => seriesLabels[s] || s
 
   return (
     <div className="analytics-chart-wrap">
@@ -79,6 +93,10 @@ function LineChart({ data, series, colors, yLabel = '', seriesLabels = {} }) {
         className="analytics-chart analytics-chart-interactive"
         aria-label={yLabel}
         onMouseLeave={() => setHover(null)}
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect()
+          setTipPos({ x: e.clientX - rect.left + 12, y: e.clientY - rect.top + 8 })
+        }}
       >
         {[0, 0.25, 0.5, 0.75, 1].map((t) => {
           const y = PAD.top + CH * (1 - t)
@@ -161,12 +179,12 @@ function LineChart({ data, series, colors, yLabel = '', seriesLabels = {} }) {
         )}
       </svg>
       {hover != null && data[hover] && (
-        <div className="analytics-chart-tooltip">
+        <div className="analytics-chart-tooltip" style={{ left: tipPos.x, top: tipPos.y, right: "auto" }}>
           <strong>{fmtDate(data[hover].day || data[hover].week)}</strong>
           {series.map((s, si) => (
             <span key={s}>
               <i style={{ background: accentColors[si % accentColors.length] }} />
-              {labelOf(s)}: {fmtNum(data[hover][s])}
+              {seriesLabel(s)}: {fmtNum(data[hover][s])}
             </span>
           ))}
         </div>
@@ -232,7 +250,7 @@ function BarChart({ data, valueKey, labelKey, colors, horizontal = false }) {
         {hover != null && data[hover] && (
           <div className="analytics-chart-tooltip">
             <strong>{String(data[hover][labelKey] || '')}</strong>
-            <span>{fmtNum(data[hover][valueKey])}</span>
+            <span>{seriesLabel(valueKey)}: {fmtNum(data[hover][valueKey])}</span>
           </div>
         )}
       </div>
@@ -275,7 +293,7 @@ function BarChart({ data, valueKey, labelKey, colors, horizontal = false }) {
       {hover != null && data[hover] && (
         <div className="analytics-chart-tooltip">
           <strong>{fmtDate(data[hover][labelKey])}</strong>
-          <span>{fmtNum(data[hover][valueKey])}</span>
+          <span>{seriesLabel(valueKey)}: {fmtNum(data[hover][valueKey])}</span>
         </div>
       )}
     </div>
@@ -379,7 +397,7 @@ function ChartLegend({ items }) {
 
 function DaysFilter({ value, onChange }) {
   return (
-    <div className="analytics-days-filter">
+    <div className="analytics-days-filter e-seg">
       {[7, 14, 30, 90].map((d) => (
         <button
           key={d}
@@ -438,7 +456,6 @@ function QuestsTab({ days, onDaysChange }) {
             <LineChart
               data={data.byDay}
               series={['accepted', 'completed']}
-              seriesLabels={{ accepted: 'Взято', completed: 'Выполнено' }}
               colors={['#6366f1', '#22c55e']}
             />
           </SectionCard>
@@ -564,7 +581,6 @@ function FarmTab({ days, onDaysChange }) {
             <LineChart
               data={data.byDay}
               series={['planted', 'harvested', 'watered']}
-              seriesLabels={{ planted: 'Посадка', harvested: 'Сбор', watered: 'Полив' }}
               colors={['#6366f1', '#22c55e', '#38bdf8']}
             />
           </SectionCard>
@@ -809,7 +825,6 @@ function CraftTab({ days, onDaysChange }) {
             <LineChart
               data={data.byDay}
               series={['successes', 'fails']}
-              seriesLabels={{ successes: 'Успех', fails: 'Провал' }}
               colors={['#22c55e', '#ef4444']}
             />
           </SectionCard>
@@ -905,9 +920,9 @@ function RetentionTab({ days, onDaysChange }) {
             </div>
           </SectionCard>
 
-          <SectionCard title="Удержание (из последних 35 дней)">
+          <SectionCard title="Retention (из последних 35 дней)">
             {data.retention.length === 0 ? (
-              <p className="analytics-hint">Нет достаточно данных game_events для расчёта удержания.</p>
+              <p className="analytics-hint">Нет достаточно данных game_events для расчёта retention.</p>
             ) : (
               <div className="analytics-retention-blocks">
                 {[
@@ -959,8 +974,8 @@ function RetentionTab({ days, onDaysChange }) {
                     <tr>
                       <th>Неделя</th>
                       <th>Зарегистрировалось</th>
-                      <th>Вернулись через 1 день</th>
-                      <th>Вернулись через 7 дней</th>
+                      <th>Вернулись D+1</th>
+                      <th>Вернулись D+7</th>
                     </tr>
                   </thead>
                   <tbody>

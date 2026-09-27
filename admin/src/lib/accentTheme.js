@@ -202,11 +202,11 @@ export function applyAccentToDocument(accent) {
   const a = normalizeAccent(accent)
   const { r, g, b } = hexToRgb(a.hex)
   const glow = a.glow / 100
-  const soft = 0.14 + glow * 0.28
-  const soft2 = 0.24 + glow * 0.38
-  const line = 0.42 + glow * 0.42
-  const glowPx = 22 + glow * 56
-  const glowAlpha = 0.14 + glow * 0.38
+  const soft = 0.22 + glow * 0.42
+  const soft2 = 0.34 + glow * 0.48
+  const line = 0.55 + glow * 0.4
+  const glowPx = 28 + glow * 72
+  const glowAlpha = 0.22 + glow * 0.48
   const ink = inkOnAccent(a.hex)
   const brightToward = relativeLuminance(a.hex) > 0.58 ? '#000000' : '#ffffff'
   const brightAmt = relativeLuminance(a.hex) > 0.58 ? 0.22 : 0.28
@@ -222,10 +222,18 @@ export function applyAccentToDocument(accent) {
   root.style.setProperty('--e-accent-ink', ink)
   root.style.setProperty('--e-accent-on', ink)
   root.style.setProperty('--e-accent-glow-strength', String(glow))
+  root.style.setProperty('--e-accent-wash', `rgba(${r}, ${g}, ${b}, ${(0.14 + glow * 0.28).toFixed(3)})`)
+  root.style.setProperty('--e-accent-ring', `rgba(${r}, ${g}, ${b}, ${(0.45 + glow * 0.35).toFixed(3)})`)
   root.style.setProperty('--ent-accent', a.hex)
   root.style.setProperty('--ent-accent-rgb', `${r}, ${g}, ${b}`)
   root.dataset.accent = a.id
   root.dataset.accentInk = ink === '#111111' ? 'dark' : 'light'
+  // Flash accent change visibility briefly on the shell wash
+  root.classList.add('accent-changing')
+  window.clearTimeout(root._accentFlashTimer)
+  root._accentFlashTimer = window.setTimeout(() => {
+    root.classList.remove('accent-changing')
+  }, 520)
 }
 
 export function loadStoredAccent() {

@@ -9,7 +9,7 @@ import {
   rgbToHsv,
 } from '../lib/accentTheme'
 
-const WHEEL_SIZE = 196
+const WHEEL_SIZE = 148
 const WHEEL_RADIUS = WHEEL_SIZE / 2
 
 function paintWheel(canvas) {
@@ -83,6 +83,7 @@ function accentFromHex(hex, glow) {
 export default function AccentPalette({ value, onChange, inline = false }) {
   const accent = normalizeAccent(value)
   const [open, setOpen] = useState(inline)
+  const [leaving, setLeaving] = useState(false)
   const [draft, setDraft] = useState(accent)
   const [hexText, setHexText] = useState(accent.hex)
   const [hexOk, setHexOk] = useState(true)
@@ -108,7 +109,7 @@ export default function AccentPalette({ value, onChange, inline = false }) {
     if (!btn) return
     const r = btn.getBoundingClientRect()
     const gap = 10
-    const pw = Math.min(280, window.innerWidth - 24)
+    const pw = Math.min(248, window.innerWidth - 24)
     const ph = Math.min(panel?.offsetHeight || 360, window.innerHeight - 24)
     let left = r.right + gap
     let top = r.top
@@ -117,7 +118,10 @@ export default function AccentPalette({ value, onChange, inline = false }) {
       left = Math.max(12, r.left - gap - pw)
     }
     left = Math.max(12, Math.min(left, window.innerWidth - pw - 12))
-    top = Math.max(12, Math.min(top, window.innerHeight - ph - 12))
+    if (top + ph > window.innerHeight - 12) {
+      top = Math.max(12, window.innerHeight - ph - 12)
+    }
+    top = Math.max(12, Math.min(top, window.innerHeight - Math.min(ph, window.innerHeight - 24) - 12))
     setPos({ top, left })
   }, [])
 
@@ -146,7 +150,11 @@ export default function AccentPalette({ value, onChange, inline = false }) {
 
   const closePalette = useCallback(() => {
     commitHex(hexTextRef.current, { silentInvalid: false })
-    setOpen(false)
+    setLeaving(true)
+    window.setTimeout(() => {
+      setOpen(false)
+      setLeaving(false)
+    }, 180)
   }, [commitHex])
 
   useEffect(() => {
@@ -256,7 +264,7 @@ export default function AccentPalette({ value, onChange, inline = false }) {
   const wheel = (
       <div
         ref={panelRef}
-        className={`accent-picker-panel${inline ? ' is-inline' : ''}`}
+        className={`accent-picker-panel${inline ? ' is-inline' : ''}${leaving ? ' is-leaving' : ''}`}
         role="dialog"
         aria-label="Палитра цвета"
         style={inline ? undefined : { top: pos.top, left: pos.left }}
@@ -350,11 +358,11 @@ export default function AccentPalette({ value, onChange, inline = false }) {
       </div>
   )
 
-  const panel = open && !inline ? createPortal(
+  const panel = (open || leaving) && !inline ? createPortal(
     <>
       <button
         type="button"
-        className="accent-picker-backdrop"
+        className={`accent-picker-backdrop${leaving ? ' is-leaving' : ''}`}
         aria-label="Закрыть палитру"
         onClick={closePalette}
       />
