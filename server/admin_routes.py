@@ -79,6 +79,7 @@ from admin_db import (
     get_admin_account,
     get_admin_totp_secret,
     get_dashboard_stats,
+    get_dashboard_live,
     get_latest_application,
     get_pending_registration,
     get_pending_registration_by_token,
@@ -3197,6 +3198,12 @@ async def admin_dashboard_stats(_user_id: int = Depends(require_admin_session)):
     stats = await get_dashboard_stats()
     stats.update(await get_online_summary())
     return stats
+
+
+@router.get("/dashboard/live")
+async def admin_dashboard_live(_user_id: int = Depends(require_admin_session)):
+    """Лёгкий realtime-снимок для главной (поллинг 1 Гц). Без online-сводки."""
+    return await get_dashboard_live()
 
 
 @router.get("/dashboard/online")

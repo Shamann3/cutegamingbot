@@ -1947,9 +1947,19 @@ async def get_dashboard_stats() -> dict:
 
 
 async def get_project_usage_stats() -> dict:
-    """Сводка использования проекта: новые пользователи, события бота, сообщения в официальных группах."""
+    """Сводка: новые пользователи, вызовы команд бота, сообщения в офиц. группах.
+
+    Периоды: day / week / month / year (+ previous).
+    Вызовы бота — из bot_command_day_counts (лёгкие дневные счётчики).
+    """
+    return await get_project_usage_stats_light(db.pool)
+
+
+async def get_project_usage_stats_light(pool) -> dict:
+    """Лёгкая сводка для live-поллинга (1 Гц). Без тяжёлых COUNT(*) по game_events."""
     empty = {
         "day": {"current": 0, "previous": 0},
+        "week": {"current": 0, "previous": 0},
         "month": {"current": 0, "previous": 0},
         "year": {"current": 0, "previous": 0},
     }
@@ -1960,36 +1970,65 @@ async def get_project_usage_stats() -> dict:
         "activeUsers": 0,
         "botEventsTotal": 0,
     }
+    if pool is None:
+        return out
+
+    # Вызовы команд — дневные счётчики (+ pending буфер)
     try:
-        out["activeUsers"] = int(
-            await db.pool.fetchval(
-                "SELECT COUNT(*)::int FROM users WHERE last_seen_at > NOW() - INTERVAL '1 day'"
-            )
-            or 0
+        from bot.runtime.bot_command_stats import (
+            ensure_bot_command_stats_schema,
+            fetch_bot_command_periods,
+        )
+        await ensure_bot_command_stats_schema(pool)
+        bot_periods = await fetch_bot_command_periods(pool)
+        out["botEvents"] = bot_periods
+        out["botEventsTotal"] = int(
+            (bot_periods.get("year") or {}).get("current") or 0
         )
     except Exception:
         pass
 
-    # Новые пользователи
+    # Новые пользователи — один запрос с week
     try:
-        row = await db.pool.fetchrow(
+        row = await pool.fetchrow(
             """
             SELECT
-              COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE)::int AS day_cur,
-              COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE - 1)::int AS day_prev,
               COUNT(*) FILTER (
-                WHERE created_at >= date_trunc('month', CURRENT_DATE)
+                WHERE (created_at AT TIME ZONE 'Europe/Moscow')::date = (NOW() AT TIME ZONE 'Europe/Moscow')::date
+              )::int AS day_cur,
+              COUNT(*) FILTER (
+                WHERE (created_at AT TIME ZONE 'Europe/Moscow')::date
+                    = (NOW() AT TIME ZONE 'Europe/Moscow')::date - 1
+              )::int AS day_prev,
+              COUNT(*) FILTER (
+                WHERE created_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')
+                                  AT TIME ZONE 'Europe/Moscow'
+              )::int AS week_cur,
+              COUNT(*) FILTER (
+                WHERE created_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')
+                                  AT TIME ZONE 'Europe/Moscow' - INTERVAL '7 days'
+                  AND created_at <  date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')
+                                  AT TIME ZONE 'Europe/Moscow'
+              )::int AS week_prev,
+              COUNT(*) FILTER (
+                WHERE created_at >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')
+                                  AT TIME ZONE 'Europe/Moscow'
               )::int AS month_cur,
               COUNT(*) FILTER (
-                WHERE created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
-                  AND created_at < date_trunc('month', CURRENT_DATE)
+                WHERE created_at >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')
+                                  AT TIME ZONE 'Europe/Moscow' - INTERVAL '1 month'
+                  AND created_at <  date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')
+                                  AT TIME ZONE 'Europe/Moscow'
               )::int AS month_prev,
               COUNT(*) FILTER (
-                WHERE created_at >= date_trunc('year', CURRENT_DATE)
+                WHERE created_at >= date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')
+                                  AT TIME ZONE 'Europe/Moscow'
               )::int AS year_cur,
               COUNT(*) FILTER (
-                WHERE created_at >= date_trunc('year', CURRENT_DATE) - INTERVAL '1 year'
-                  AND created_at < date_trunc('year', CURRENT_DATE)
+                WHERE created_at >= date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')
+                                  AT TIME ZONE 'Europe/Moscow' - INTERVAL '1 year'
+                  AND created_at <  date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')
+                                  AT TIME ZONE 'Europe/Moscow'
               )::int AS year_prev
             FROM users
             """
@@ -1997,67 +2036,44 @@ async def get_project_usage_stats() -> dict:
         if row:
             out["newUsers"] = {
                 "day": {"current": int(row["day_cur"] or 0), "previous": int(row["day_prev"] or 0)},
+                "week": {"current": int(row["week_cur"] or 0), "previous": int(row["week_prev"] or 0)},
                 "month": {"current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0)},
                 "year": {"current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0)},
             }
     except Exception:
         pass
 
-    # События бота (взаимодействия)
-    try:
-        row = await db.pool.fetchrow(
-            """
-            SELECT
-              COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE)::int AS day_cur,
-              COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE - 1)::int AS day_prev,
-              COUNT(*) FILTER (
-                WHERE created_at >= date_trunc('month', CURRENT_DATE)
-              )::int AS month_cur,
-              COUNT(*) FILTER (
-                WHERE created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
-                  AND created_at < date_trunc('month', CURRENT_DATE)
-              )::int AS month_prev,
-              COUNT(*) FILTER (
-                WHERE created_at >= date_trunc('year', CURRENT_DATE)
-              )::int AS year_cur,
-              COUNT(*) FILTER (
-                WHERE created_at >= date_trunc('year', CURRENT_DATE) - INTERVAL '1 year'
-                  AND created_at < date_trunc('year', CURRENT_DATE)
-              )::int AS year_prev
-            FROM game_events
-            """
-        )
-        if row:
-            out["botEvents"] = {
-                "day": {"current": int(row["day_cur"] or 0), "previous": int(row["day_prev"] or 0)},
-                "month": {"current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0)},
-                "year": {"current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0)},
-            }
-        total = await db.pool.fetchval("SELECT COUNT(*)::bigint FROM game_events")
-        out["botEventsTotal"] = int(total or 0)
-    except Exception:
-        out["botEventsTotal"] = int(out.get("botEventsTotal") or 0)
-
     # Сообщения в официальных группах
     try:
-        row = await db.pool.fetchrow(
+        row = await pool.fetchrow(
             """
             SELECT
-              COALESCE(SUM(c.text) FILTER (WHERE c.date = CURRENT_DATE), 0)::bigint AS day_cur,
-              COALESCE(SUM(c.text) FILTER (WHERE c.date = CURRENT_DATE - 1), 0)::bigint AS day_prev,
               COALESCE(SUM(c.text) FILTER (
-                WHERE c.date >= date_trunc('month', CURRENT_DATE)::date
+                WHERE c.date = (NOW() AT TIME ZONE 'Europe/Moscow')::date
+              ), 0)::bigint AS day_cur,
+              COALESCE(SUM(c.text) FILTER (
+                WHERE c.date = (NOW() AT TIME ZONE 'Europe/Moscow')::date - 1
+              ), 0)::bigint AS day_prev,
+              COALESCE(SUM(c.text) FILTER (
+                WHERE c.date >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date
+              ), 0)::bigint AS week_cur,
+              COALESCE(SUM(c.text) FILTER (
+                WHERE c.date >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '7 days')::date
+                  AND c.date <  date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date
+              ), 0)::bigint AS week_prev,
+              COALESCE(SUM(c.text) FILTER (
+                WHERE c.date >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date
               ), 0)::bigint AS month_cur,
               COALESCE(SUM(c.text) FILTER (
-                WHERE c.date >= (date_trunc('month', CURRENT_DATE) - INTERVAL '1 month')::date
-                  AND c.date < date_trunc('month', CURRENT_DATE)::date
+                WHERE c.date >= (date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 month')::date
+                  AND c.date <  date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date
               ), 0)::bigint AS month_prev,
               COALESCE(SUM(c.text) FILTER (
-                WHERE c.date >= date_trunc('year', CURRENT_DATE)::date
+                WHERE c.date >= date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
               ), 0)::bigint AS year_cur,
               COALESCE(SUM(c.text) FILTER (
-                WHERE c.date >= (date_trunc('year', CURRENT_DATE) - INTERVAL '1 year')::date
-                  AND c.date < date_trunc('year', CURRENT_DATE)::date
+                WHERE c.date >= (date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 year')::date
+                  AND c.date <  date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
               ), 0)::bigint AS year_prev
             FROM chatchange c
             JOIN epsilon_official_groups g ON g.chat_id = c.chat_id AND g.is_official
@@ -2066,14 +2082,63 @@ async def get_project_usage_stats() -> dict:
         if row:
             out["officialMessages"] = {
                 "day": {"current": int(row["day_cur"] or 0), "previous": int(row["day_prev"] or 0)},
+                "week": {"current": int(row["week_cur"] or 0), "previous": int(row["week_prev"] or 0)},
                 "month": {"current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0)},
                 "year": {"current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0)},
             }
     except Exception:
         pass
 
+    try:
+        out["activeUsers"] = int(
+            await pool.fetchval(
+                "SELECT COUNT(*)::int FROM users WHERE last_seen_at > NOW() - INTERVAL '1 day'"
+            )
+            or 0
+        )
+    except Exception:
+        pass
+
     return out
 
+
+_LIVE_CACHE: dict = {"at": 0.0, "payload": None}
+_LIVE_TTL = 0.85
+
+
+async def get_dashboard_live() -> dict:
+    """Ответ для 1Гц-поллинга: кэш 0.85с, botEvents всегда с pending."""
+    import time as _time
+    from datetime import datetime, timedelta, timezone
+
+    now = _time.monotonic()
+    cached = _LIVE_CACHE.get("payload")
+    if cached is not None and (now - float(_LIVE_CACHE.get("at") or 0)) < _LIVE_TTL:
+        # Подмешиваем свежий pending в botEvents без полного пересчёта
+        try:
+            from bot.runtime.bot_command_stats import fetch_bot_command_periods
+            bot = await fetch_bot_command_periods(db.pool)
+            usage = dict(cached.get("usage") or {})
+            usage["botEvents"] = bot
+            usage["botEventsTotal"] = int((bot.get("year") or {}).get("current") or 0)
+            return {**cached, "usage": usage}
+        except Exception:
+            return cached
+
+    usage = await get_project_usage_stats_light(db.pool)
+    players = 0
+    try:
+        players = int(await db.pool.fetchval("SELECT COUNT(*)::int FROM users") or 0)
+    except Exception:
+        pass
+    payload = {
+        "players": players,
+        "usage": usage,
+        "liveAt": datetime.now(timezone(timedelta(hours=3))).isoformat(),
+    }
+    _LIVE_CACHE["at"] = now
+    _LIVE_CACHE["payload"] = payload
+    return payload
 
 
 # ---------------------------------------------------------------------------

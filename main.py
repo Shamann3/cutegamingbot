@@ -41122,6 +41122,12 @@ if __name__ == "__main__":
         print(f"[MODERATION][WIRE][ERROR] {type(_wire_err).__name__}: {_wire_err}")
 
     try:
+        from bot.runtime.command_usage_mw import attach_bot_command_usage
+        attach_bot_command_usage(dp)
+    except Exception as _cmd_stats_err:
+        print(f"[CMD-STATS][WIRE][ERROR] {type(_cmd_stats_err).__name__}: {_cmd_stats_err}")
+
+    try:
         from bot.handlers.group_captcha import attach_group_captcha
         attach_group_captcha(dp)
     except Exception as _cap_err:

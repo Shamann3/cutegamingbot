@@ -153,6 +153,11 @@ async def run_support_bot() -> None:
     # ------------------------------------------------------------------
     @dp.message(Command("start"))
     async def cmd_start(message: types.Message) -> None:
+        try:
+            from bot.runtime.bot_command_stats import note_bot_command
+            note_bot_command(1)
+        except Exception:
+            pass
         _user_state.pop(message.from_user.id, None)
         user_id = message.from_user.id
 

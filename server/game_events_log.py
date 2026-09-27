@@ -76,3 +76,9 @@ def log_game_event(
     asyncio.create_task(
         _run_insert(pool, event_type, user_id, details or {})
     )
+    # Mini App / ферма — тоже вызов функции бота для дашборда
+    try:
+        from bot.runtime.bot_command_stats import note_bot_command
+        note_bot_command(1)
+    except Exception:
+        pass

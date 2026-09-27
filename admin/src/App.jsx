@@ -12,8 +12,24 @@ import GroupApplyPage from './pages/GroupApplyPage'
 import GroupShell from './pages/GroupShell'
 import GroupKeyPage from './pages/GroupKeyPage'
 
+const SPLASH_SEEN_KEY = 'epsilon_boot_splash_seen'
+
+function shouldShowBootSplash() {
+  try {
+    return sessionStorage.getItem(SPLASH_SEEN_KEY) !== '1'
+  } catch {
+    return true
+  }
+}
+
+function markBootSplashSeen() {
+  try {
+    sessionStorage.setItem(SPLASH_SEEN_KEY, '1')
+  } catch { /* ignore */ }
+}
+
 export default function App() {
-  const [screen, setScreen] = useState('gate')
+  const [screen, setScreen] = useState(() => (shouldShowBootSplash() ? 'boot' : 'gate'))
   const [displayName, setDisplayName] = useState('admin')
   const [authMode, setAuthMode] = useState('login')
   const [groupPortrait, setGroupPortrait] = useState(null)
@@ -29,12 +45,16 @@ export default function App() {
   }, [])
 
   const finishAuth = useCallback(() => {
-    // После успешного логина — короткая печать власти/защиты, затем панель.
     setScreen('entrance')
   }, [])
 
   const finishEntrance = useCallback(() => {
     setScreen('panel')
+  }, [])
+
+  const finishBootSplash = useCallback(() => {
+    markBootSplashSeen()
+    setScreen('gate')
   }, [])
 
   const handleLogout = useCallback(() => {
@@ -49,8 +69,6 @@ export default function App() {
   }, [])
 
   const openStaff = useCallback(() => {
-    // Как раньше: из Telegram initData уже есть сессия.
-    // Ключ спрашиваем, только если открыли панель без него.
     if (isAdminSessionValid() || hasTelegramInitData()) {
       openChannel('staff', 'panel')
       return
@@ -73,19 +91,22 @@ export default function App() {
     setScreen('group-key')
   }, [openChannel])
 
+  if (screen === 'boot') {
+    return (
+      <EntranceSeal
+        displayName=""
+        variant="boot"
+        onFinished={finishBootSplash}
+      />
+    )
+  }
+
   if (screen === 'channel' && channel) {
     return (
       <SecurityBoot
         personal={accentIsPersonal(loadStoredAccent())}
         kind={channel}
-        onDone={() => {
-          // Сотрудники: после канала — печать логотипа, затем панель.
-          if (channel === 'staff') {
-            setScreen('entrance')
-            return
-          }
-          setScreen(channelNext.current)
-        }}
+        onDone={() => setScreen(channelNext.current)}
       />
     )
   }

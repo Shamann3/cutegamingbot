@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import CountUp from '../../components/CountUp'
 import {
-  fetchDashboardServer,
+  fetchDashboardLive,
   fetchDashboardStats,
 } from '../../lib/adminClient'
 import { useIsPhone } from '../../lib/useIsDesktop'
 
 const PERIODS = [
   { id: 'day', label: 'День', now: 'сегодня', prev: 'вчера' },
+  { id: 'week', label: 'Неделя', now: 'эта неделя', prev: 'прошлая неделя' },
   { id: 'month', label: 'Месяц', now: 'этот месяц', prev: 'прошлый месяц' },
   { id: 'year', label: 'Год', now: 'этот год', prev: 'прошлый год' },
 ]
 
-const POLL_MS = 2500
+/** Обязательный realtime: 1 Гц. Нагрузка на сервер снимается кэшем + дневными счётчиками. */
+const LIVE_MS = 1000
 
 function fmt(n) {
   if (n == null || Number.isNaN(Number(n))) return '—'
@@ -43,7 +45,7 @@ function UsageCard({ title, pair, meta, loading }) {
   )
 }
 
-/** Главная сотрудника: общая статистика проекта, без онлайна фермы. */
+/** Главная сотрудника: realtime-статистика проекта. */
 export default function DashboardSection() {
   const phone = useIsPhone()
   const [stats, setStats] = useState(null)
@@ -51,54 +53,67 @@ export default function DashboardSection() {
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState('day')
   const [liveTick, setLiveTick] = useState(0)
-  const silentRef = useRef(false)
+  const inFlight = useRef(false)
 
-  const loadDashboard = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) setError('')
-    try {
-      const [statsData] = await Promise.all([
-        fetchDashboardStats(),
-        fetchDashboardServer().catch(() => null),
-      ])
-      setStats(statsData)
-      setLiveTick((n) => n + 1)
-    } catch (err) {
-      if (!silent) setError(err.message || 'Не удалось загрузить панель')
-    } finally {
-      setLoading(false)
-    }
+  const applyPayload = useCallback((data) => {
+    if (!data) return
+    setStats((prev) => ({
+      ...(prev || {}),
+      ...data,
+      usage: data.usage || prev?.usage || {},
+    }))
+    setLiveTick((n) => n + 1)
   }, [])
 
+  // Первый полный снимок (с online и т.п.)
   useEffect(() => {
-    loadDashboard({ silent: false })
-  }, [loadDashboard])
+    let cancelled = false
+    ;(async () => {
+      setError('')
+      try {
+        const data = await fetchDashboardStats()
+        if (!cancelled) applyPayload(data)
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Не удалось загрузить панель')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [applyPayload])
 
-  // Живые счётчики: пока главная открыта — опрашиваем API.
+  // Live 1 Гц — только лёгкий /dashboard/live
   useEffect(() => {
     let cancelled = false
     let timer = 0
 
     const tick = async () => {
-      if (cancelled || document.hidden) {
-        timer = window.setTimeout(tick, POLL_MS)
+      if (cancelled) return
+      if (document.hidden) {
+        timer = window.setTimeout(tick, LIVE_MS)
         return
       }
-      if (silentRef.current) {
-        timer = window.setTimeout(tick, POLL_MS)
+      if (inFlight.current) {
+        timer = window.setTimeout(tick, LIVE_MS)
         return
       }
-      silentRef.current = true
+      inFlight.current = true
       try {
-        await loadDashboard({ silent: true })
+        const data = await fetchDashboardLive()
+        if (!cancelled) applyPayload(data)
+      } catch {
+        // тихий fail — карточки остаются на последних цифрах
       } finally {
-        silentRef.current = false
-        if (!cancelled) timer = window.setTimeout(tick, POLL_MS)
+        inFlight.current = false
+        if (!cancelled) timer = window.setTimeout(tick, LIVE_MS)
       }
     }
 
-    timer = window.setTimeout(tick, POLL_MS)
+    timer = window.setTimeout(tick, LIVE_MS)
     const onVis = () => {
-      if (!document.hidden) loadDashboard({ silent: true })
+      if (!document.hidden && !inFlight.current) {
+        fetchDashboardLive().then(applyPayload).catch(() => {})
+      }
     }
     document.addEventListener('visibilitychange', onVis)
     return () => {
@@ -106,7 +121,7 @@ export default function DashboardSection() {
       window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVis)
     }
-  }, [loadDashboard])
+  }, [applyPayload])
 
   const usage = stats?.usage || {}
   const meta = PERIODS.find((item) => item.id === period) || PERIODS[0]
@@ -120,7 +135,7 @@ export default function DashboardSection() {
         <p className="panel-shelf-label">Обзор проекта</p>
         <h2 className="panel-page-title">Панель сотрудников CuteGamingBot</h2>
         <p className="panel-page-lead">
-          Сообщения в официальных группах, новые пользователи и вызовы бота — в реальном времени.
+          Вызовы команд бота, новые пользователи и сообщения в официальных группах — обновление каждую секунду.
         </p>
         {error && <p className="panel-shelf-error">{error}</p>}
 
@@ -141,13 +156,13 @@ export default function DashboardSection() {
       <div className="dash-bot-hero" aria-live="polite" data-live={liveTick}>
         <div className="dash-bot-hero-top">
           <span className="dash-bot-hero-kicker">Вызовы бота · все группы</span>
-          <span className="dash-bot-hero-live" title="Обновляется автоматически">
+          <span className="dash-bot-hero-live" title="Обновление каждую секунду">
             <span className="dash-bot-hero-live-dot" aria-hidden="true" />
-            live
+            1с
           </span>
         </div>
         <strong className="dash-bot-hero-value">
-          {loading ? '…' : <CountUp value={botNow} duration={700} />}
+          {loading ? '…' : <CountUp value={botNow} duration={450} />}
         </strong>
         <span className="dash-bot-hero-sub">
           {meta.now}

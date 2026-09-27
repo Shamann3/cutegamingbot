@@ -110,6 +110,15 @@ CREATE INDEX IF NOT EXISTS game_events_type_time_idx ON game_events (event_type,
 CREATE INDEX IF NOT EXISTS game_events_user_time_idx ON game_events (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS game_events_created_at_idx ON game_events (created_at DESC);
 
+-- Дневные счётчики вызовов команд бота (realtime-дашборд сотрудников)
+CREATE TABLE IF NOT EXISTS bot_command_day_counts (
+    day DATE PRIMARY KEY,
+    commands BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS bot_command_day_counts_day_idx
+    ON bot_command_day_counts (day DESC);
+
 -- Заметки администраторов о конкретных игроках
 CREATE TABLE IF NOT EXISTS player_admin_notes (
     id BIGSERIAL PRIMARY KEY,

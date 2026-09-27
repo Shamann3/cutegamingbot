@@ -1037,6 +1037,16 @@ export async function fetchDashboardStats() {
 
 
 
+/** Лёгкий realtime-снимок главной (поллинг ~1 Гц). */
+
+export async function fetchDashboardLive() {
+
+  return adminFetch('/dashboard/live')
+
+}
+
+
+
 export async function fetchOnlineSummary() {
 
   return adminFetch('/dashboard/online')
