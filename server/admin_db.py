@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 from asyncpg.exceptions import UniqueViolationError
 
 from db import db
 from farm_logic import now
+
+_log = logging.getLogger("cute-farm.admin-db")
 
 
 async def get_admin_account(user_id: int) -> dict | None:
@@ -1955,6 +1958,82 @@ async def get_project_usage_stats() -> dict:
     return await get_project_usage_stats_light(db.pool)
 
 
+async def _ensure_bot_command_counts_table(pool) -> None:
+    if pool is None:
+        return
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bot_command_day_counts (
+            day DATE PRIMARY KEY,
+            commands BIGINT NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS bot_command_day_counts_day_idx
+            ON bot_command_day_counts (day DESC);
+        """
+    )
+
+
+async def _fetch_bot_events_from_db(pool) -> dict:
+    """Читает bot_command_day_counts одним SQL — без импорта bot.runtime."""
+    empty = {
+        "day": {"current": 0, "previous": 0},
+        "week": {"current": 0, "previous": 0},
+        "month": {"current": 0, "previous": 0},
+        "year": {"current": 0, "previous": 0},
+    }
+    if pool is None:
+        return empty
+    await _ensure_bot_command_counts_table(pool)
+    row = await pool.fetchrow(
+        """
+        SELECT
+          COALESCE(SUM(commands) FILTER (
+            WHERE day = (NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS day_cur,
+          COALESCE(SUM(commands) FILTER (
+            WHERE day = (NOW() AT TIME ZONE 'Europe/Moscow')::date - 1
+          ), 0)::bigint AS day_prev,
+          COALESCE(SUM(commands) FILTER (
+            WHERE day >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date
+              AND day <  date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date + 7
+          ), 0)::bigint AS week_cur,
+          COALESCE(SUM(commands) FILTER (
+            WHERE day >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date - 7
+              AND day <  date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS week_prev,
+          COALESCE(SUM(commands) FILTER (
+            WHERE day >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date
+              AND day <  (date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow') + INTERVAL '1 month')::date
+          ), 0)::bigint AS month_cur,
+          COALESCE(SUM(commands) FILTER (
+            WHERE day >= (date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 month')::date
+              AND day <  date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS month_prev,
+          COALESCE(SUM(commands) FILTER (
+            WHERE day >= date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
+              AND day <  (date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow') + INTERVAL '1 year')::date
+          ), 0)::bigint AS year_cur,
+          COALESCE(SUM(commands) FILTER (
+            WHERE day >= (date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 year')::date
+              AND day <  date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS year_prev,
+          COALESCE(SUM(commands), 0)::bigint AS total_all
+        FROM bot_command_day_counts
+        WHERE day >= (date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 year')::date
+        """
+    )
+    if not row:
+        return empty
+    return {
+        "day": {"current": int(row["day_cur"] or 0), "previous": int(row["day_prev"] or 0)},
+        "week": {"current": int(row["week_cur"] or 0), "previous": int(row["week_prev"] or 0)},
+        "month": {"current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0)},
+        "year": {"current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0)},
+        "_total": int(row["total_all"] or 0),
+    }
+
+
 async def get_project_usage_stats_light(pool) -> dict:
     """Лёгкая сводка для live-поллинга (1 Гц). Без тяжёлых COUNT(*) по game_events."""
     empty = {
@@ -1973,20 +2052,14 @@ async def get_project_usage_stats_light(pool) -> dict:
     if pool is None:
         return out
 
-    # Вызовы команд — дневные счётчики (+ pending буфер)
+    # Вызовы команд — прямой SQL по bot_command_day_counts
     try:
-        from bot.runtime.bot_command_stats import (
-            ensure_bot_command_stats_schema,
-            fetch_bot_command_periods,
-        )
-        await ensure_bot_command_stats_schema(pool)
-        bot_periods = await fetch_bot_command_periods(pool)
-        out["botEvents"] = bot_periods
-        out["botEventsTotal"] = int(
-            (bot_periods.get("year") or {}).get("current") or 0
-        )
+        bot = await _fetch_bot_events_from_db(pool)
+        total = int(bot.pop("_total", 0) or 0)
+        out["botEvents"] = {k: bot[k] for k in ("day", "week", "month", "year")}
+        out["botEventsTotal"] = total or int((bot.get("year") or {}).get("current") or 0)
     except Exception:
-        pass
+        _log.exception("bot_command_day_counts read failed")
 
     # Новые пользователи — один запрос с week
     try:
@@ -2107,23 +2180,31 @@ _LIVE_TTL = 0.85
 
 
 async def get_dashboard_live() -> dict:
-    """Ответ для 1Гц-поллинга: кэш 0.85с, botEvents всегда с pending."""
+    """Ответ для 1Гц-поллинга. botEvents всегда свежие из БД; остальное кэш ~1с."""
     import time as _time
     from datetime import datetime, timedelta, timezone
 
     now = _time.monotonic()
     cached = _LIVE_CACHE.get("payload")
-    if cached is not None and (now - float(_LIVE_CACHE.get("at") or 0)) < _LIVE_TTL:
-        # Подмешиваем свежий pending в botEvents без полного пересчёта
+    use_cache = (
+        cached is not None
+        and (now - float(_LIVE_CACHE.get("at") or 0)) < _LIVE_TTL
+    )
+
+    if use_cache:
+        usage = dict(cached.get("usage") or {})
         try:
-            from bot.runtime.bot_command_stats import fetch_bot_command_periods
-            bot = await fetch_bot_command_periods(db.pool)
-            usage = dict(cached.get("usage") or {})
-            usage["botEvents"] = bot
-            usage["botEventsTotal"] = int((bot.get("year") or {}).get("current") or 0)
-            return {**cached, "usage": usage}
+            bot = await _fetch_bot_events_from_db(db.pool)
+            total = int(bot.pop("_total", 0) or 0)
+            usage["botEvents"] = {k: bot[k] for k in ("day", "week", "month", "year")}
+            usage["botEventsTotal"] = total or int((bot.get("year") or {}).get("current") or 0)
         except Exception:
-            return cached
+            _log.exception("live botEvents refresh failed")
+        return {
+            **cached,
+            "usage": usage,
+            "liveAt": datetime.now(timezone(timedelta(hours=3))).isoformat(),
+        }
 
     usage = await get_project_usage_stats_light(db.pool)
     players = 0

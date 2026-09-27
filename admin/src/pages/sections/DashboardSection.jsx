@@ -13,7 +13,6 @@ const PERIODS = [
   { id: 'year', label: 'Год', now: 'этот год', prev: 'прошлый год' },
 ]
 
-/** Обязательный realtime: 1 Гц. Нагрузка на сервер снимается кэшем + дневными счётчиками. */
 const LIVE_MS = 1000
 
 function fmt(n) {
@@ -53,26 +52,41 @@ export default function DashboardSection() {
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState('day')
   const [liveTick, setLiveTick] = useState(0)
+  const [liveOk, setLiveOk] = useState(true)
   const inFlight = useRef(false)
+  const failStreak = useRef(0)
 
   const applyPayload = useCallback((data) => {
-    if (!data) return
-    setStats((prev) => ({
-      ...(prev || {}),
-      ...data,
-      usage: data.usage || prev?.usage || {},
-    }))
+    if (!data || typeof data !== 'object') return
+    setStats((prev) => {
+      const nextUsage = data.usage && typeof data.usage === 'object'
+        ? {
+            ...(prev?.usage || {}),
+            ...data.usage,
+            botEvents: data.usage.botEvents || prev?.usage?.botEvents,
+            newUsers: data.usage.newUsers || prev?.usage?.newUsers,
+            officialMessages: data.usage.officialMessages || prev?.usage?.officialMessages,
+          }
+        : (prev?.usage || {})
+      return {
+        ...(prev || {}),
+        ...data,
+        usage: nextUsage,
+      }
+    })
     setLiveTick((n) => n + 1)
   }, [])
 
-  // Первый полный снимок (с online и т.п.)
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       setError('')
       try {
         const data = await fetchDashboardStats()
-        if (!cancelled) applyPayload(data)
+        if (!cancelled) {
+          applyPayload(data)
+          setLiveOk(true)
+        }
       } catch (err) {
         if (!cancelled) setError(err.message || 'Не удалось загрузить панель')
       } finally {
@@ -82,7 +96,6 @@ export default function DashboardSection() {
     return () => { cancelled = true }
   }, [applyPayload])
 
-  // Live 1 Гц — только лёгкий /dashboard/live
   useEffect(() => {
     let cancelled = false
     let timer = 0
@@ -100,19 +113,40 @@ export default function DashboardSection() {
       inFlight.current = true
       try {
         const data = await fetchDashboardLive()
-        if (!cancelled) applyPayload(data)
-      } catch {
-        // тихий fail — карточки остаются на последних цифрах
+        if (!cancelled) {
+          applyPayload(data)
+          failStreak.current = 0
+          setLiveOk(true)
+          setError('')
+        }
+      } catch (err) {
+        failStreak.current += 1
+        if (!cancelled && failStreak.current >= 3) {
+          setLiveOk(false)
+          // Fallback: полный stats, чтобы цифры не зависали на нулях
+          try {
+            const data = await fetchDashboardStats()
+            if (!cancelled) applyPayload(data)
+          } catch (statsErr) {
+            if (!cancelled) {
+              setError(statsErr.message || err.message || 'Статистика недоступна')
+            }
+          }
+        }
       } finally {
         inFlight.current = false
         if (!cancelled) timer = window.setTimeout(tick, LIVE_MS)
       }
     }
 
-    timer = window.setTimeout(tick, LIVE_MS)
+    timer = window.setTimeout(tick, 200)
     const onVis = () => {
       if (!document.hidden && !inFlight.current) {
-        fetchDashboardLive().then(applyPayload).catch(() => {})
+        fetchDashboardLive().then((data) => {
+          applyPayload(data)
+          setLiveOk(true)
+          failStreak.current = 0
+        }).catch(() => {})
       }
     }
     document.addEventListener('visibilitychange', onVis)
@@ -138,6 +172,9 @@ export default function DashboardSection() {
           Вызовы команд бота, новые пользователи и сообщения в официальных группах — обновление каждую секунду.
         </p>
         {error && <p className="panel-shelf-error">{error}</p>}
+        {!liveOk && !error && (
+          <p className="panel-shelf-error">Live-канал нестабилен — читаем полный снимок.</p>
+        )}
 
         <div className="dash-period e-seg" role="tablist" aria-label="Период">
           {PERIODS.map((item) => (
@@ -158,11 +195,11 @@ export default function DashboardSection() {
           <span className="dash-bot-hero-kicker">Вызовы бота · все группы</span>
           <span className="dash-bot-hero-live" title="Обновление каждую секунду">
             <span className="dash-bot-hero-live-dot" aria-hidden="true" />
-            1с
+            {liveOk ? '1с' : '…'}
           </span>
         </div>
         <strong className="dash-bot-hero-value">
-          {loading ? '…' : <CountUp value={botNow} duration={450} />}
+          {loading ? '…' : <CountUp key={`bot-${period}-${botNow}`} value={botNow} duration={400} />}
         </strong>
         <span className="dash-bot-hero-sub">
           {meta.now}

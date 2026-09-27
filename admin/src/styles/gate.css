@@ -165,7 +165,8 @@
   border: 1px solid var(--gate-line);
   background: transparent;
   color: var(--gate-ink);
-  transition: transform 0.18s var(--gate-ease), background 0.18s var(--gate-ease), border-color 0.18s var(--gate-ease);
+  -webkit-text-fill-color: var(--gate-ink);
+  transition: transform 0.18s var(--gate-ease), background 0.18s var(--gate-ease), border-color 0.18s var(--gate-ease), color 0.18s var(--gate-ease);
 }
 
 .gate-door:active {
@@ -174,12 +175,14 @@
 
 .gate-door.is-open {
   background: var(--gate-fill);
-  color: var(--gate-fill-ink);
+  color: var(--gate-fill-ink) !important;
+  -webkit-text-fill-color: var(--gate-fill-ink) !important;
   border-color: var(--gate-fill);
 }
 
 .gate-door.is-sealed {
-  color: var(--gate-muted);
+  color: var(--gate-muted) !important;
+  -webkit-text-fill-color: var(--gate-muted) !important;
 }
 
 .gate-door-index {
@@ -193,6 +196,7 @@
   letter-spacing: -0.03em;
   font-weight: 560;
   color: inherit;
+  -webkit-text-fill-color: inherit;
   max-width: 100%;
   overflow-wrap: break-word;
 }
@@ -202,7 +206,8 @@
   line-height: 1.4;
   max-width: 100%;
   color: inherit;
-  opacity: 0.72;
+  -webkit-text-fill-color: inherit;
+  opacity: 0.78;
   overflow-wrap: break-word;
 }
 
@@ -211,6 +216,14 @@
   font-size: 12px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+  color: inherit;
+  -webkit-text-fill-color: inherit;
+  opacity: 0.9;
+}
+
+/* Бренд внутри detail сохраняет градиент, не наследует fill-color двери */
+.gate-door .gate-brand-word {
+  -webkit-text-fill-color: transparent;
 }
 
 .gate-text,

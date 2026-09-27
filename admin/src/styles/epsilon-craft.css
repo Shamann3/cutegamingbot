@@ -1178,12 +1178,47 @@ html[data-viewport="phone"] .panel-layout-security:has(.sr-page) {
 }
 
 .gate-door-title,
-.gate-door-detail {
+.gate-door-detail,
+.gate-door-mark {
   letter-spacing: -0.01em !important;
   line-height: 1.25 !important;
   overflow-wrap: anywhere;
   word-break: break-word;
   hyphens: auto;
+  opacity: 1 !important;
+}
+.gate-door.is-open,
+.gate-door.is-open .gate-door-title,
+.gate-door.is-open .gate-door-detail,
+.gate-door.is-open .gate-door-mark {
+  color: var(--e-accent-ink, #0a0a0a) !important;
+  -webkit-text-fill-color: var(--e-accent-ink, #0a0a0a) !important;
+}
+.gate-door.is-sealed,
+.gate-door.is-sealed .gate-door-title,
+.gate-door.is-sealed .gate-door-detail,
+.gate-door.is-sealed .gate-door-mark {
+  color: #f4f4f5 !important;
+  -webkit-text-fill-color: #f4f4f5 !important;
+}
+.gate-door.is-open .gate-door-detail,
+.gate-door.is-sealed .gate-door-detail {
+  opacity: 0.78 !important;
+}
+.gate-door .gate-brand-word {
+  background: linear-gradient(120deg, #fff 20%, var(--e-accent-bright, #c4b5fd) 55%, #fff 90%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  color: transparent !important;
+  opacity: 1 !important;
+  font-weight: 650 !important;
+}
+.gate-door.is-open .gate-brand-word {
+  background: linear-gradient(120deg, #111 10%, #333 50%, #111 90%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
 }
 
 /* ——— Главная: без обрезки + поиск как фон панели ——— */

@@ -5,6 +5,9 @@ import { portraitFrom } from '../lib/gateRecovery'
 import EpsilonLogo from '../components/EpsilonLogo'
 import AccentPalette from '../components/AccentPalette'
 
+/** Доступ ещё не сверен — двери уже видны и кликабельны. */
+const GUEST_PORTRAIT = portraitFrom(null)
+
 function Door({ title, detail, open, onClick }) {
   return (
     <button
@@ -27,16 +30,16 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   const [personal, setPersonal] = useState(() => accentIsPersonal(loadStoredAccent()))
   const [accent, setAccent] = useState(() => loadStoredAccent())
   const [colorOpen, setColorOpen] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [checking, setChecking] = useState(true)
   const [error, setError] = useState('')
-  const [portrait, setPortrait] = useState(null)
+  const [portrait, setPortrait] = useState(GUEST_PORTRAIT)
   const [hold, setHold] = useState(false)
   const requestId = useRef(0)
 
   const load = useCallback(() => {
     const id = requestId.current + 1
     requestId.current = id
-    setLoading(true)
+    setChecking(true)
     setError('')
     fetchAdminAuthStatus()
       .then((status) => {
@@ -45,28 +48,28 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
       })
       .catch((err) => {
         if (requestId.current !== id) return
-        setPortrait(null)
+        // Двери остаются с гостевым портретом — не прячем карточки.
+        setPortrait(GUEST_PORTRAIT)
         setError(err.message || 'Не удалось сверить доступ')
       })
       .finally(() => {
-        if (requestId.current === id) setLoading(false)
+        if (requestId.current === id) setChecking(false)
       })
   }, [])
 
   useEffect(() => load(), [load])
 
-  const staffDetail = portrait?.staffCanEnter
+  const staffDetail = portrait.staffCanEnter
     ? 'Сюда заходят сотрудники Эпсилона. Для модерации нашего проекта'
-    : portrait?.applicationStatus === 'pending'
+    : portrait.applicationStatus === 'pending'
       ? 'Сюда заходят сотрудники Эпсилона. Заявка уже у создателя, повторно отправлять не нужно.'
       : 'Сюда заходят сотрудники Эпсилона. Для модерации нашего проекта. Нажатие откроет заявку.'
 
-  const groupDetail = portrait?.groupCanEnter
+  const groupDetail = portrait.groupCanEnter
     ? <>Эта кнопка предназначается для администраторов официальных групп нашего проекта <CuteBrand /></>
     : <>Эта кнопка предназначается для администраторов официальных групп нашего проекта <CuteBrand />. Нажатие откроет заявку.</>
 
   const pressStaff = () => {
-    if (!portrait) return
     if (portrait.staffCanEnter) {
       onStaffEnter()
       return
@@ -79,7 +82,6 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   }
 
   const pressGroup = () => {
-    if (!portrait) return
     if (portrait.groupCanEnter) onGroupEnter(portrait)
     else onGroupApply()
   }
@@ -107,7 +109,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
               value={accent}
               onChange={(next) => {
                 const saved = persistAccent(next)
-                applyAccentToDocument(saved)
+                applyAccentToDocument(saved, { flash: true })
                 setAccent(saved)
                 setPersonal(accentIsPersonal(saved))
               }}
@@ -115,17 +117,10 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
           )}
         </header>
 
-        {loading && (
-          <div className="realm-load" role="status">
-            <span />
-            <p>Сверка допуска</p>
-          </div>
-        )}
-
-        {!loading && error && (
+        {error && (
           <div className="gate-recover" role="alert">
             <p className="gate-status gate-status-error">{error}</p>
-            <p className="gate-lead">Проверка не прошла. Панель можно открыть вручную: если доступа нет, она вернёт к выбору.</p>
+            <p className="gate-lead">Сверка не прошла — двери всё равно доступны. Можно повторить или войти вручную.</p>
             <div className="gate-recover-actions">
               <button type="button" className="firstrun-next" onClick={load}>Повторить сверку</button>
               <button type="button" className="gate-text" onClick={onStaffEnter}>Панель сотрудника</button>
@@ -135,16 +130,14 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
           </div>
         )}
 
-        {!loading && !error && hold && (
+        {hold ? (
           <div className="gate-hold" role="status">
             <h2 className="gate-title">Заявка уже у создателя</h2>
             <p className="gate-lead">Вход откроется после одобрения. Повторно отправлять её не нужно.</p>
             <button type="button" className="gate-text" onClick={() => setHold(false)}>К выбору панели</button>
           </div>
-        )}
-
-        {!loading && !error && !hold && portrait && (
-          <div className="gate-doors">
+        ) : (
+          <div className="gate-doors" aria-busy={checking || undefined}>
             <Door
               title="Панель сотрудника"
               detail={staffDetail}

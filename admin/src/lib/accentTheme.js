@@ -197,7 +197,7 @@ export function resolveAccent(idOrHex) {
   return normalizeAccent(idOrHex)
 }
 
-export function applyAccentToDocument(accent) {
+export function applyAccentToDocument(accent, { flash = false } = {}) {
   if (typeof document === 'undefined') return
   const a = normalizeAccent(accent)
   const { r, g, b } = hexToRgb(a.hex)
@@ -228,12 +228,16 @@ export function applyAccentToDocument(accent) {
   root.style.setProperty('--ent-accent-rgb', `${r}, ${g}, ${b}`)
   root.dataset.accent = a.id
   root.dataset.accentInk = ink === '#111111' ? 'dark' : 'light'
-  // Flash accent change visibility briefly on the shell wash
-  root.classList.add('accent-changing')
+  // Flash только при ручной смене палитры — не на первом paint (иначе двери на мгновение «пустые»).
   window.clearTimeout(root._accentFlashTimer)
-  root._accentFlashTimer = window.setTimeout(() => {
+  if (flash) {
+    root.classList.add('accent-changing')
+    root._accentFlashTimer = window.setTimeout(() => {
+      root.classList.remove('accent-changing')
+    }, 900)
+  } else {
     root.classList.remove('accent-changing')
-  }, 900)
+  }
 }
 
 export function loadStoredAccent() {
