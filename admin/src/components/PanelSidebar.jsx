@@ -183,7 +183,7 @@ export default function PanelSidebar({
             <h2 className="panel-sidebar-drawer-title">{isPhone ? 'Меню' : 'Страницы'}</h2>
             <p className="panel-sidebar-swipe-hint">
               {isPhone
-                ? 'Разделы внизу экрана. Здесь поиск, цвет и выход.'
+                ? 'Главные вкладки внизу. Здесь поиск, цвет и выход.'
                 : 'Нажмите название. Свайп влево плавно закрывает список.'}
             </p>
           </div>
@@ -193,7 +193,9 @@ export default function PanelSidebar({
             aria-label="Закрыть меню"
             onClick={onClose}
           >
-            ✕
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
           </button>
         </div>
         <label className="panel-sidebar-search">

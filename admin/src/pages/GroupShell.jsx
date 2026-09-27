@@ -405,24 +405,26 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           brandName="Панель группы"
           brandTag={chatId ? title : 'Одна группа'}
         />
-        <EliteTopbar
-          sections={navSections}
-          activeSection={activeTab}
-          onNavigate={pickTab}
-          onOpenMenu={() => setRailOpen((open) => !open)}
-          menuOpen={railOpen}
-          compact
-          showSupport={false}
-          where={chatId
-            ? `${current?.position ? `${current.position} · ` : ''}${fmt(summary?.messages30d)} сообщений за 30 дней`
-            : 'Группа ещё не выбрана. Её отмечает создатель проекта.'}
-        />
+        {!phone && (
+          <EliteTopbar
+            sections={navSections}
+            activeSection={activeTab}
+            onNavigate={pickTab}
+            onOpenMenu={() => setRailOpen((open) => !open)}
+            menuOpen={railOpen}
+            compact
+            showSupport={false}
+            where={chatId
+              ? `${current?.position ? `${current.position} · ` : ''}${fmt(summary?.messages30d)} сообщений за 30 дней`
+              : 'Группа ещё не выбрана. Её отмечает создатель проекта.'}
+          />
+        )}
         <div className="grp-page nika-page realm-main">
           <header className="nika-head">
             <div className="nika-head-copy">
-              <h1>{chatId ? title : 'Группа не выбрана'}</h1>
+              <h1>{tabs.find((item) => item.id === activeTab)?.label || (chatId ? title : 'Группа не выбрана')}</h1>
               {!phone && (
-                <p>Страницы внизу экрана. Меню слева от вкладок.</p>
+                <p>Страницы внизу экрана. Меню — кнопка с ползунками в доке.</p>
               )}
             </div>
             <div className={`nika-status${chatId ? ' is-ok' : ''}`}>

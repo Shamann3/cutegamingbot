@@ -54,7 +54,7 @@ export default function ShiftDesk({ chatId, canActivity }) {
       {report?.available === false && (
         <p className="realm-copy">Счётчик не открылся. Вместо живых цифр нули не ставятся.</p>
       )}
-      <div className="act-figures">
+      <div className="act-figures act-bento">
         <p className={toneClass}>
           <strong>{fmt(current)}</strong>
           <span>{meta.now}</span>

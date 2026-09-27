@@ -34,7 +34,7 @@ html[data-viewport="phone"] .realm-main .nika-head-copy p {
   display: none !important;
 }
 
-/* Меню только в доке — без второго гамбургера в шапке */
+/* Меню только из дока — сверху на телефоне шапки нет */
 html.is-phone .elite-menu-btn,
 html[data-viewport="phone"] .elite-menu-btn {
   display: none !important;
@@ -43,15 +43,10 @@ html[data-viewport="phone"] .elite-menu-btn {
 html.is-phone .elite-topbar,
 html.is-phone .elite-topbar-compact,
 html[data-viewport="phone"] .elite-topbar,
-html[data-viewport="phone"] .elite-topbar-compact {
-  position: sticky !important;
-  top: 0;
-  z-index: 24;
-  background: #000 !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  padding-top: max(10px, env(safe-area-inset-top, 0px)) !important;
-  padding-bottom: 6px !important;
+html[data-viewport="phone"] .elite-topbar-compact,
+html.is-phone .panel-thumb-dock,
+html[data-viewport="phone"] .panel-thumb-dock {
+  display: none !important;
 }
 
 html.is-phone .elite-mobile-section,

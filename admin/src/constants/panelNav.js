@@ -220,3 +220,46 @@ export function groupSections(sections) {
 export function getSectionById(id) {
   return PANEL_SECTIONS.find((s) => s.id === id) ?? PANEL_SECTIONS[0]
 }
+
+/** Главные вкладки дока (порядок важен). Остальное — в «Дополнительно». */
+export const DOCK_PRIMARY_IDS = [
+  'dashboard',
+  'users',
+  'farm',
+  'support',
+  'market',
+  'analytics',
+]
+
+export const MORE_SECTION = {
+  id: 'more',
+  label: 'More',
+  labelRu: 'Ещё',
+  group: 'system',
+}
+
+/** Док: до 4 главных + «Дополнительно». extras — всё остальное для сетки. */
+export function splitDockSections(visible = []) {
+  const byId = new Map(visible.map((item) => [item.id, item]))
+  const primary = []
+  for (const id of DOCK_PRIMARY_IDS) {
+    const item = byId.get(id)
+    if (item) primary.push(item)
+    if (primary.length >= 4) break
+  }
+  const primaryIds = new Set(primary.map((item) => item.id))
+  const extras = visible.filter((item) => !primaryIds.has(item.id))
+  return {
+    dock: [...primary, MORE_SECTION],
+    extras,
+    primaryIds,
+  }
+}
+
+/** Активная ячейка дока: чужая вкладка подсвечивает «Дополнительно». */
+export function dockActiveId(sectionId, primaryIds) {
+  if (sectionId === 'more') return 'more'
+  if (primaryIds?.has(sectionId)) return sectionId
+  return 'more'
+}
+

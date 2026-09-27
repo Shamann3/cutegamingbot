@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { PANEL_SECTIONS, visibleSections } from '../constants/panelNav'
+import { PANEL_SECTIONS, visibleSections, splitDockSections, dockActiveId } from '../constants/panelNav'
 import PanelSidebar from '../components/PanelSidebar'
 import EliteTopbar from '../components/EliteTopbar'
 import ToastHost from '../components/ToastHost'
@@ -52,6 +52,7 @@ import RightsSection from './sections/RightsSection'
 import GroupGuardDesk from './sections/GroupGuardDesk'
 import FirstRun, { staffSteps, coachClosed } from '../components/FirstRun'
 import PhoneDock from '../components/PhoneDock'
+import ExtrasHub from '../components/ExtrasHub'
 
 export default function PanelShell({ onLogout, onChangeDoor }) {
   const { lightMode, setLightMode } = usePerfMode()
@@ -183,9 +184,17 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
     [permissions, panelSections, role, myUserId, projectCreatorId, isProjectCreator],
   )
 
+  const { dock: dockSections, extras: extraSections, primaryIds } = useMemo(
+    () => splitDockSections(navSections),
+    [navSections],
+  )
+
+  const isMore = section === 'more'
+
   // Если текущий раздел закрыли в матрице — уводим на первую доступную вкладку.
   useEffect(() => {
     if (!navSections.length) return
+    if (section === 'more') return
     if (!navSections.some((s) => s.id === section)) {
       setSection(navSections[0].id)
     }
@@ -198,6 +207,12 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [tiktokPending, setTiktokPending] = useState(0)
   const [nikaCrisisCount, setNikaCrisisCount] = useState(0)
   const [prPending, setPrPending] = useState(0)
+
+  const moreBadge = useMemo(() => {
+    const map = { tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending, support: openTickets }
+    return extraSections.reduce((sum, item) => sum + (Number(map[item.id]) || 0), 0)
+  }, [extraSections, tiktokPending, nikaCrisisCount, prPending, openTickets])
+
   const handleNikaPulse = useCallback((pulse) => {
     const n = Number(pulse?.openCritical || 0) + Number(pulse?.starvingCount || 0)
     setNikaCrisisCount(pulse?.crisis ? Math.max(1, n) : 0)
@@ -254,7 +269,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
     if (id !== section) setFlashKey((k) => k + 1)
     setSection(id)
     setMobileNavOpen(false)
-    setRecentSections(pushRecentSection(id))
+    if (id !== 'more') setRecentSections(pushRecentSection(id))
   }, [section])
 
   const currentSection = PANEL_SECTIONS.find((s) => s.id === section)
@@ -402,18 +417,33 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             recentSectionIds={recentSections}
           />
 
-          <EliteTopbar
-            sections={navSections}
-            activeSection={section}
-            onNavigate={handleNavigate}
-            openTickets={openTickets}
-            onOpenNotifications={() => handleNavigate('support')}
-            onOpenMenu={() => setMobileNavOpen((v) => !v)}
-            menuOpen={mobileNavOpen}
-            /* Та же компактная шапка/поиск, что на «Игроки» и остальных вкладках */
-            compact
-            welcome={isDashboard}
-          />
+          {!phone && (
+            <EliteTopbar
+              sections={navSections}
+              activeSection={section}
+              onNavigate={handleNavigate}
+              openTickets={openTickets}
+              onOpenNotifications={() => handleNavigate('support')}
+              onOpenMenu={() => setMobileNavOpen((v) => !v)}
+              menuOpen={mobileNavOpen}
+              compact
+              welcome={isDashboard}
+            />
+          )}
+
+          {phone && !isMore && (
+            <header className="craft-page-head">
+              <h1>{navSections.find((item) => item.id === section)?.labelRu || 'Панель'}</h1>
+            </header>
+          )}
+
+          {isMore && (
+            <ExtrasHub
+              sections={extraSections}
+              badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending }}
+              onOpen={handleNavigate}
+            />
+          )}
 
           {isDashboard && <DashboardSection />}
           {isUsers && (
@@ -506,16 +536,22 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isRights && isProjectCreator && <RightsSection />}
           {isGroupGuard && isProjectCreator && <GroupGuardDesk />}
           {isSoftRestart && isProjectCreator && <SoftRestartSection />}
-          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isRights && !isGroupGuard && !isSoftRestart && (
+          {!isMore && !isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isRights && !isGroupGuard && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>
       </main>
       <PhoneDock
-        sections={navSections}
-        activeSection={section}
+        sections={dockSections}
+        activeSection={dockActiveId(section, primaryIds)}
         onNavigate={handleNavigate}
-        badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending }}
+        badges={{
+          support: openTickets,
+          tiktok: tiktokPending,
+          nika: nikaCrisisCount,
+          prGroups: prPending,
+          more: moreBadge,
+        }}
         menuOpen={mobileNavOpen}
         onOpenMenu={() => setMobileNavOpen((open) => !open)}
       />

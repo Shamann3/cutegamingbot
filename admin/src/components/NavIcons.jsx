@@ -267,9 +267,10 @@ const Activity = () => (
 
 const More = () => (
   <Icon>
-    <circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none" />
-    <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
-    <circle cx="18" cy="12" r="1.3" fill="currentColor" stroke="none" />
+    <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+    <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+    <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+    <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
   </Icon>
 )
 

@@ -1,0 +1,994 @@
+/**
+ * EPSILON CRAFT — финальный визуальный слой (телефон + ПК).
+ * True black, floating dock, bento-метрики, полный экран на desktop.
+ * Подключается последним в main.jsx.
+ */
+
+:root {
+  --craft-void: #000000;
+  --craft-elev: #1c1c1e;
+  --craft-elev-2: #2c2c2e;
+  --craft-line: rgba(255, 255, 255, 0.08);
+  --craft-line-strong: rgba(255, 255, 255, 0.14);
+  --craft-text: #ffffff;
+  --craft-muted: #8e8e93;
+  --craft-soft: #aeaeb2;
+  --craft-r: 22px;
+  --craft-r-sm: 14px;
+  --craft-r-pill: 999px;
+  --craft-dock-h-phone: 72px;
+  --craft-dock-h-desk: 56px;
+  --craft-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --craft-spring: cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+
+/* ——— Shell: полный экран, без обрезки ——— */
+
+html.is-phone,
+html[data-viewport="phone"],
+html.is-desktop,
+html[data-viewport="desktop"] {
+  background: var(--craft-void) !important;
+}
+
+html.is-desktop .panel-shell,
+html[data-viewport="desktop"] .panel-shell {
+  min-height: 100dvh !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  background: var(--craft-void) !important;
+}
+
+html.is-desktop .panel-shell-main,
+html[data-viewport="desktop"] .panel-shell-main {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: calc(100dvh - var(--craft-dock-h-desk)) !important;
+  padding: 20px 28px calc(var(--craft-dock-h-desk) + 24px) !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+}
+
+html.is-desktop .panel-layout,
+html.is-desktop .panel-layout-page,
+html.is-desktop .panel-layout-dashboard,
+html.is-desktop .panel-layout-users,
+html.is-desktop .panel-layout-analytics,
+html.is-desktop .panel-layout-market,
+html[data-viewport="desktop"] .panel-layout,
+html[data-viewport="desktop"] .panel-layout-page {
+  width: 100% !important;
+  max-width: none !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 16px !important;
+  overflow: visible !important;
+}
+
+html.is-desktop .realm-main,
+html.is-desktop .grp-page,
+html.is-desktop .nika-page,
+html.is-desktop .analytics-section,
+html.is-desktop .panel-layout > .panel-shelf-page,
+html.is-desktop .panel-layout > .panel-users,
+html.is-desktop .panel-layout > .panel-market,
+html[data-viewport="desktop"] .realm-main {
+  width: 100% !important;
+  max-width: 1120px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  grid-column: 1 / -1 !important;
+}
+
+html.is-phone .panel-shell-main,
+html.is-phone .panel-shell:has(.panel-layout-users) .panel-shell-main,
+html.is-phone .panel-shell:has(.panel-layout-farm) .panel-shell-main,
+html[data-viewport="phone"] .panel-shell-main,
+html[data-viewport="phone"] .panel-shell:has(.panel-layout-users) .panel-shell-main {
+  padding: max(10px, env(safe-area-inset-top, 0px)) 16px calc(env(safe-area-inset-bottom, 0px) + var(--craft-dock-h-phone) + 16px) !important;
+  background: var(--craft-void) !important;
+}
+
+/* Телефон: сверху пусто. Навигация — док снизу + меню. */
+html.is-phone .elite-topbar,
+html.is-phone .elite-topbar-compact,
+html[data-viewport="phone"] .elite-topbar,
+html[data-viewport="phone"] .elite-topbar-compact,
+html.is-phone .phone-edge,
+html[data-viewport="phone"] .phone-edge {
+  display: none !important;
+}
+
+/* Заголовок живёт в контенте, не в шапке */
+.craft-page-head {
+  display: none;
+  margin: 0 0 14px;
+  padding: 0;
+}
+
+html.is-phone .craft-page-head,
+html[data-viewport="phone"] .craft-page-head {
+  display: block;
+}
+
+.craft-page-head h1 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 750;
+  letter-spacing: -0.05em;
+  line-height: 1.05;
+  color: var(--craft-text);
+}
+
+.craft-page-head p {
+  margin: 6px 0 0;
+  color: var(--craft-muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+/* Если у раздела уже есть свой nika-head — не дублируем */
+html.is-phone .panel-layout:has(.nika-head) > .craft-page-head,
+html[data-viewport="phone"] .panel-layout:has(.nika-head) > .craft-page-head {
+  display: none !important;
+}
+
+html.is-phone .elite-mobile-section,
+html[data-viewport="phone"] .elite-mobile-section,
+html.is-phone .realm-main .nika-head h1,
+html[data-viewport="phone"] .realm-main .nika-head h1,
+html.is-phone .nika-head h1,
+html[data-viewport="phone"] .nika-head h1 {
+  font-size: 2rem !important;
+  font-weight: 750 !important;
+  letter-spacing: -0.05em !important;
+  line-height: 1.05 !important;
+  color: var(--craft-text) !important;
+  margin: 0 !important;
+}
+
+html.is-phone .realm-main .nika-head,
+html[data-viewport="phone"] .realm-main .nika-head,
+html.is-phone .nika-head,
+html[data-viewport="phone"] .nika-head {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  margin: 0 0 16px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+html.is-phone .nika-head-copy p,
+html[data-viewport="phone"] .nika-head-copy p {
+  display: none !important;
+}
+
+html.is-phone .nika-status,
+html[data-viewport="phone"] .nika-status {
+  flex: 0 0 auto;
+  max-width: 42%;
+  text-align: right;
+}
+
+html.is-desktop .elite-topbar,
+html[data-viewport="desktop"] .elite-topbar {
+  width: 100% !important;
+  max-width: 1120px !important;
+  margin: 0 auto 8px !important;
+  grid-column: 1 / -1 !important;
+}
+
+/* ——— Surfaces ——— */
+
+html.is-phone .panel-shelf,
+html.is-phone .nika-panel,
+html.is-phone .g-arc-card,
+html.is-phone .arc-card,
+html.is-phone .panel-pulse-hero,
+html.is-phone .realm-main.nika-page > section,
+html.is-phone .act-figures > *,
+html.is-phone .shift-desk,
+html[data-viewport="phone"] .panel-shelf,
+html[data-viewport="phone"] .nika-panel,
+html[data-viewport="phone"] .realm-main.nika-page > section,
+html[data-viewport="phone"] .shift-desk {
+  background: var(--craft-elev) !important;
+  border-radius: var(--craft-r) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.act-bento {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.act-bento > * {
+  margin: 0 !important;
+  padding: 16px 14px !important;
+  background: var(--craft-elev) !important;
+  border-radius: var(--craft-r) !important;
+  border: 0 !important;
+  text-align: left !important;
+}
+
+.act-bento strong {
+  display: block;
+  font-size: 2rem !important;
+  font-weight: 750 !important;
+  letter-spacing: -0.045em !important;
+  color: var(--craft-text) !important;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.act-bento span {
+  display: block;
+  margin-top: 6px;
+  color: var(--craft-muted) !important;
+  font-size: 0.78rem !important;
+  line-height: 1.3;
+}
+
+.act-bento .is-on {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+.act-bento .is-good strong { color: #34c759 !important; }
+.act-bento .is-bad strong { color: #ff453a !important; }
+
+/* Period pills */
+
+.realm-actions,
+.act-board .realm-actions,
+.shift-desk .realm-actions {
+  display: flex !important;
+  gap: 4px !important;
+  padding: 4px !important;
+  margin: 0 0 14px !important;
+  background: var(--craft-elev) !important;
+  border-radius: var(--craft-r-pill) !important;
+  border: 0 !important;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.realm-actions::-webkit-scrollbar { display: none; }
+
+.realm-actions button {
+  flex: 1 1 0;
+  min-width: max-content;
+  margin: 0 !important;
+  padding: 10px 14px !important;
+  border: 0 !important;
+  border-radius: var(--craft-r-pill) !important;
+  background: transparent !important;
+  color: var(--craft-muted) !important;
+  font-weight: 600 !important;
+  font-size: 0.88rem !important;
+  box-shadow: none !important;
+}
+
+.realm-actions button.is-on {
+  background: var(--craft-elev-2) !important;
+  color: var(--craft-text) !important;
+}
+
+/* People list — без жирных кнопок */
+
+.act-people {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.act-people li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--craft-line);
+}
+
+.act-people li:last-child { border-bottom: 0; }
+
+.act-people-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 650;
+  color: var(--craft-text);
+  font-size: 0.98rem;
+}
+
+.act-people-count {
+  color: var(--craft-soft);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.act-people-go {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: rgba(var(--e-accent-rgb, 200, 175, 255), 0.95);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  padding: 6px 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.act-people-go:hover { color: #fff; }
+
+/* Day bars chart */
+
+.act-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 140px;
+  margin: 8px 0 4px;
+  padding: 8px 2px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.act-bars::-webkit-scrollbar { display: none; }
+
+.act-bars button {
+  flex: 1 1 0;
+  min-width: 10px;
+  max-width: 28px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.act-bars button > i {
+  display: block;
+  width: 100%;
+  min-height: 6px;
+  border-radius: 8px 8px 4px 4px;
+  background: #3a3a3c;
+  transition: background 160ms var(--craft-ease), box-shadow 160ms var(--craft-ease);
+}
+
+.act-bars button[data-level="1"] > i { background: rgba(255, 255, 255, 0.22); }
+.act-bars button[data-level="2"] > i { background: rgba(255, 255, 255, 0.4); }
+.act-bars button[data-level="3"] > i { background: rgba(255, 255, 255, 0.68); }
+.act-bars button[data-level="4"] > i { background: #fff; }
+
+.act-bars button.is-on > i {
+  box-shadow: 0 0 0 2px #fff;
+}
+
+html.is-personal .act-bars button[data-level="4"] > i,
+html.is-personal .act-bars button.is-on > i {
+  background: var(--e-accent, #c8afff);
+}
+
+/* Switches */
+
+.realm-switch {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 14px !important;
+  width: 100% !important;
+  margin: 0 0 18px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  text-align: left !important;
+  box-shadow: none !important;
+}
+
+.realm-switch-track {
+  position: relative !important;
+  flex: 0 0 52px !important;
+  width: 52px !important;
+  height: 32px !important;
+  border-radius: var(--craft-r-pill) !important;
+  background: #39393d !important;
+  transition: background 180ms var(--craft-ease) !important;
+  margin-left: auto;
+}
+
+.realm-switch-knob {
+  position: absolute !important;
+  top: 2px !important;
+  left: 2px !important;
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35) !important;
+  transition: transform 180ms var(--craft-spring) !important;
+}
+
+.realm-switch.is-on .realm-switch-track {
+  background: var(--e-accent, #c8afff) !important;
+}
+
+.realm-switch.is-on .realm-switch-knob {
+  transform: translateX(20px) !important;
+}
+
+.realm-switch-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.realm-switch-copy strong {
+  color: var(--craft-text) !important;
+  font-size: 1.02rem !important;
+  font-weight: 650 !important;
+}
+
+.realm-switch-copy em {
+  color: var(--craft-muted) !important;
+  font-style: normal !important;
+  font-size: 0.82rem !important;
+  line-height: 1.35 !important;
+}
+
+/* Dock — floating capsule */
+
+.phone-dock {
+  display: none;
+}
+
+html.is-phone .phone-dock,
+html[data-viewport="phone"] .phone-dock {
+  display: flex !important;
+  position: fixed !important;
+  z-index: 50 !important;
+  left: 14px !important;
+  right: 14px !important;
+  bottom: max(12px, env(safe-area-inset-bottom, 0px)) !important;
+  height: 66px !important;
+  padding: 7px 7px 7px 8px !important;
+  align-items: stretch !important;
+  gap: 6px !important;
+  border-radius: 28px !important;
+  background: rgba(22, 22, 24, 0.88) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 14px 36px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(24px) saturate(1.35) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.35) !important;
+  overflow: hidden !important;
+}
+
+html.is-phone .phone-dock-scroll,
+html[data-viewport="phone"] .phone-dock-scroll {
+  flex: 1 1 auto !important;
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: space-evenly !important;
+  gap: 2px !important;
+  min-width: 0 !important;
+  overflow-x: auto !important;
+  scrollbar-width: none !important;
+  mask-image: none !important;
+}
+
+html.is-phone .phone-dock button,
+html[data-viewport="phone"] .phone-dock button {
+  flex: 1 1 0 !important;
+  min-width: 52px !important;
+  max-width: 76px !important;
+  height: auto !important;
+  border-radius: 20px !important;
+  gap: 4px !important;
+  color: #7c7c82 !important;
+  background: transparent !important;
+  transition: background 160ms var(--craft-ease), color 160ms var(--craft-ease) !important;
+}
+
+html.is-phone .phone-dock button.is-on,
+html[data-viewport="phone"] .phone-dock button.is-on {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+}
+
+html.is-personal .phone-dock button.is-on {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.16) !important;
+  color: #fff !important;
+}
+
+html.is-phone .phone-dock-label,
+html[data-viewport="phone"] .phone-dock-label {
+  display: block !important;
+  font-size: 9px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.01em !important;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html.is-phone .phone-dock-mark,
+html[data-viewport="phone"] .phone-dock-mark {
+  display: none !important;
+}
+
+html.is-phone .phone-dock-menu,
+html[data-viewport="phone"] .phone-dock-menu {
+  flex: 0 0 50px !important;
+  width: 50px !important;
+  max-width: 50px !important;
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #fff !important;
+}
+
+html.is-phone .phone-dock-menu.is-on,
+html[data-viewport="phone"] .phone-dock-menu.is-on {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.22) !important;
+  color: #fff !important;
+}
+
+html.is-phone.panel-nav-open .phone-dock,
+html[data-viewport="phone"].panel-nav-open .phone-dock {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Desktop taskbar dock — full width, nothing clipped */
+
+html.is-desktop .phone-dock,
+html[data-viewport="desktop"] .phone-dock {
+  display: flex !important;
+  position: fixed !important;
+  z-index: 60 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: var(--craft-dock-h-desk) !important;
+  margin: 0 !important;
+  padding: 6px 16px 6px 64px !important;
+  border-radius: 0 !important;
+  border: 0 !important;
+  border-top: 1px solid var(--craft-line) !important;
+  background: rgba(12, 12, 14, 0.94) !important;
+  backdrop-filter: blur(22px) !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+html.is-desktop .phone-dock-scroll,
+html[data-viewport="desktop"] .phone-dock-scroll {
+  flex: 1 1 auto !important;
+  justify-content: center !important;
+  max-width: 100% !important;
+  gap: 4px !important;
+  overflow-x: auto !important;
+  mask-image: none !important;
+}
+
+html.is-desktop .phone-dock button,
+html[data-viewport="desktop"] .phone-dock button {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 64px !important;
+  max-width: 120px !important;
+  height: 42px !important;
+  padding: 0 12px !important;
+  border-radius: 12px !important;
+  gap: 4px !important;
+}
+
+html.is-desktop .phone-dock-label,
+html[data-viewport="desktop"] .phone-dock-label {
+  display: block !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  color: inherit;
+}
+
+html.is-desktop .phone-dock-mark {
+  display: none !important;
+}
+
+html.is-desktop .phone-dock button.is-on,
+html[data-viewport="desktop"] .phone-dock button.is-on {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #fff !important;
+}
+
+html.is-desktop .phone-dock-menu,
+html[data-viewport="desktop"] .phone-dock-menu {
+  position: absolute !important;
+  left: 12px !important;
+  top: 7px !important;
+  width: 42px !important;
+  min-width: 42px !important;
+  height: 42px !important;
+  border-radius: 12px !important;
+}
+
+html.is-desktop .panel-sidebar-mobile-open,
+html[data-viewport="desktop"] .panel-sidebar-mobile-open {
+  left: 16px !important;
+  bottom: calc(var(--craft-dock-h-desk) + 12px) !important;
+  width: min(26rem, calc(100vw - 32px)) !important;
+  height: min(78vh, 44rem) !important;
+  max-height: min(78vh, 44rem) !important;
+  border-radius: 22px !important;
+  background: rgba(18, 18, 20, 0.98) !important;
+  border: 1px solid rgba(var(--e-accent-rgb, 200, 175, 255), 0.28) !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 24px 60px rgba(0, 0, 0, 0.65) !important;
+  padding: 16px !important;
+  overflow: auto !important;
+}
+
+html.is-desktop .panel-mobile-overlay,
+html[data-viewport="desktop"] .panel-mobile-overlay {
+  background: rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+/* Mobile menu sheet */
+
+html.is-phone .panel-sidebar-mobile-open,
+html[data-viewport="phone"] .panel-sidebar-mobile-open {
+  border-radius: 28px 28px 0 0 !important;
+  background: #0c0c0e !important;
+  border: 1px solid rgba(var(--e-accent-rgb, 200, 175, 255), 0.22) !important;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.55) !important;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.panel-sidebar-drawer-title {
+  font-size: 1.85rem !important;
+  font-weight: 750 !important;
+  letter-spacing: -0.045em !important;
+  color: #fff !important;
+}
+
+.panel-sidebar-search {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  margin: 14px 0 18px !important;
+  padding: 12px 14px !important;
+  border-radius: 16px !important;
+  background: var(--craft-elev) !important;
+  border: 1px solid rgba(var(--e-accent-rgb, 200, 175, 255), 0.35) !important;
+  box-shadow: 0 0 0 1px rgba(var(--e-accent-rgb, 200, 175, 255), 0.08) !important;
+}
+
+.panel-sidebar-search input {
+  flex: 1 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #fff !important;
+  font-size: 1rem !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.panel-nav-item {
+  min-height: 48px !important;
+  border-radius: 14px !important;
+  padding: 10px 12px !important;
+  margin: 2px 0 !important;
+  color: #fff !important;
+  background: transparent !important;
+}
+
+.panel-nav-item-active {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.12) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--e-accent-rgb, 200, 175, 255), 0.55) !important;
+  color: #fff !important;
+}
+
+.panel-nav-group-label {
+  margin: 14px 4px 6px !important;
+  color: var(--craft-muted) !important;
+  font-size: 0.7rem !important;
+  font-weight: 650 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: none !important;
+}
+
+.panel-sidebar-account,
+.panel-sidebar-footer .panel-accent-row,
+.panel-sidebar-footer [class*="panel-"] {
+  border-radius: 16px !important;
+}
+
+/* Forms */
+
+.realm-form,
+.realm-search {
+  background: var(--craft-elev) !important;
+  border-radius: var(--craft-r) !important;
+  padding: 16px !important;
+  border: 0 !important;
+}
+
+.realm-form input,
+.realm-form select,
+.realm-search input,
+.realm-field input {
+  border-radius: 14px !important;
+  background: #2c2c2e !important;
+  border: 0 !important;
+  color: #fff !important;
+  min-height: 46px !important;
+  padding: 12px 14px !important;
+}
+
+.realm-back {
+  border-radius: 14px !important;
+  min-height: 46px !important;
+  background: #fff !important;
+  color: #111 !important;
+  font-weight: 700 !important;
+  border: 0 !important;
+}
+
+.realm-list button,
+.realm-row {
+  border-radius: 14px !important;
+}
+
+html.is-phone .realm-copy,
+html[data-viewport="phone"] .realm-copy {
+  color: var(--craft-muted) !important;
+  font-size: 0.88rem !important;
+  line-height: 1.4 !important;
+}
+
+html.is-phone .realm-h,
+html[data-viewport="phone"] .realm-h {
+  color: #fff !important;
+  font-size: 1.15rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.03em !important;
+}
+
+/* Sight heat dots */
+
+.sight-habit.is-weeks {
+  gap: 4px !important;
+  grid-template-rows: repeat(7, 12px) !important;
+  grid-auto-columns: 12px !important;
+}
+
+.sight-cell {
+  width: 12px !important;
+  height: 12px !important;
+  border-radius: 4px !important;
+}
+
+.sight-habit-wrap {
+  padding: 4px 0 8px;
+}
+
+/* Analytics / market full width on desktop */
+
+html.is-desktop .analytics-section,
+html.is-desktop .panel-market,
+html.is-desktop .panel-economy,
+html[data-viewport="desktop"] .analytics-section {
+  width: 100% !important;
+  max-width: 1200px !important;
+  margin-inline: auto !important;
+}
+
+html.is-desktop .panel-economy-dex-wrap,
+html.is-desktop .analytics-chart-wrap {
+  overflow-x: auto !important;
+  max-width: 100% !important;
+}
+
+html.is-phone .panel-economy-dex-wrap,
+html[data-viewport="phone"] .panel-economy-dex-wrap {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ——— Дополнительно: сетка приложений ——— */
+
+.extras-hub {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 0 12px;
+}
+
+.extras-hub-head {
+  margin: 0 0 16px;
+}
+
+.extras-hub-head h1 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 750;
+  letter-spacing: -0.05em;
+  line-height: 1.05;
+  color: #fff;
+}
+
+.extras-hub-head p {
+  margin: 8px 0 0;
+  color: var(--craft-muted, #8e8e93);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.extras-hub-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--craft-elev, #1c1c1e);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.extras-hub-search-icon {
+  color: var(--craft-muted, #8e8e93);
+  font-size: 1.05rem;
+}
+
+.extras-hub-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 1rem;
+  outline: none;
+}
+
+.extras-hub-empty {
+  color: var(--craft-muted, #8e8e93);
+  font-size: 0.92rem;
+}
+
+.extras-hub-group {
+  margin: 0 0 22px;
+}
+
+.extras-hub-group-label {
+  margin: 0 0 10px 4px;
+  color: var(--craft-muted, #8e8e93);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.extras-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 8px;
+}
+
+@media (min-width: 720px) {
+  .extras-hub-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px 10px;
+  }
+}
+
+.extras-hub-tile {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 4px 8px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 160ms var(--craft-ease, ease), transform 160ms var(--craft-ease, ease);
+}
+
+.extras-hub-tile:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.extras-hub-tile:active {
+  transform: scale(0.96);
+}
+
+.extras-hub-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  background: var(--craft-elev, #1c1c1e);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.extras-hub-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.extras-hub-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 99px;
+  background: #fff;
+  color: #111;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.extras-hub-name {
+  max-width: 100%;
+  padding: 0 2px;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+  color: #d1d1d6;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+html.is-personal .extras-hub-icon {
+  border-color: rgba(var(--e-accent-rgb, 200, 175, 255), 0.28);
+}
+
+html.is-personal .extras-hub-tile:hover .extras-hub-icon {
+  box-shadow: 0 0 0 1px rgba(var(--e-accent-rgb, 200, 175, 255), 0.35), 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .extras-hub-tile {
+    transition: none;
+  }
+}
+

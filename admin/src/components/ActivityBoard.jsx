@@ -23,6 +23,43 @@ function longLabel(iso, grain) {
   return `${Number(parts[2]) || ''} ${month}`.trim()
 }
 
+function levelOf(value, max) {
+  if (value == null || value <= 0 || max <= 0) return 0
+  const t = value / max
+  if (t < 0.25) return 1
+  if (t < 0.5) return 2
+  if (t < 0.75) return 3
+  return 4
+}
+
+function DayBars({ points = [], selected = '', onPick }) {
+  const max = Math.max(...points.map((p) => Number(p.value) || 0), 1)
+  return (
+    <div className="act-bars" role="list" aria-label="Сообщения по дням">
+      {points.map((point) => {
+        const value = Number(point.value) || 0
+        const on = selected && selected === point.date
+        const h = Math.max(6, Math.round((value / max) * 100))
+        return (
+          <button
+            key={point.date}
+            type="button"
+            role="listitem"
+            className={on ? 'is-on' : ''}
+            data-level={levelOf(value, max)}
+            title={`${point.label}: ${value}`}
+            aria-label={`${point.label}: ${value}`}
+            aria-pressed={on}
+            onClick={() => onPick?.(point.date)}
+          >
+            <i style={{ height: `${h}%` }} />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function ActivityBoard({ chatId, repeats = new Map(), canPunish = false, onPick }) {
   const [period, setPeriod] = useState('month')
   const [slice, setSlice] = useState('')
@@ -60,6 +97,12 @@ export default function ActivityBoard({ chatId, repeats = new Map(), canPunish =
   const series = report?.series || []
   const focus = slice || report?.focus || ''
   const grain = report?.grain || (period === 'year' ? 'month' : 'day')
+  const chartPoints = series.map((point) => ({
+    date: point.date,
+    label: longLabel(point.date, grain),
+    value: Number(point.messages) || 0,
+  }))
+  const useBars = grain === 'day' && chartPoints.length > 0 && chartPoints.length <= 40
 
   return (
     <section className="act-board">
@@ -82,7 +125,7 @@ export default function ActivityBoard({ chatId, repeats = new Map(), canPunish =
       )}
       {report && report.available !== false && (
         <>
-          <div className="act-figures">
+          <div className="act-bento">
             <button type="button" className={slice ? '' : 'is-on'} onClick={() => setSlice('')}>
               <strong>{fmt(slice ? report.messages : report.periodMessages)}</strong>
               <span>{slice ? 'сообщений в выбранной точке' : 'сообщений за период'}</span>
@@ -94,33 +137,41 @@ export default function ActivityBoard({ chatId, repeats = new Map(), canPunish =
           </div>
           <p className="realm-copy">
             {slice
-              ? `${longLabel(focus, grain)}. Нажмите клетку ещё раз или «весь период», чтобы вернуть общий счёт.`
-              : `Прошлый такой же отрезок: ${fmt(report.previousMessages)} сообщений. Нажмите клетку, чтобы увидеть этот день или месяц.`}
+              ? `${longLabel(focus, grain)}. Нажмите ещё раз или «весь период», чтобы вернуть общий счёт.`
+              : `Прошлый такой же отрезок: ${fmt(report.previousMessages)} сообщений. Нажмите столбец или клетку.`}
           </p>
-          <HabitGrid
-            caption={grain === 'month' ? 'Сетка месяцев: светлее — больше сообщений.' : 'Сетка дней: светлее — больше сообщений. Нажмите клетку, чтобы открыть этот день.'}
-            selected={slice}
-            onPick={(date) => setSlice(slice === date ? '' : date)}
-            points={series.map((point) => ({
-              date: point.date,
-              label: longLabel(point.date, grain),
-              value: Number(point.messages) || 0,
-            }))}
-          />
+          {useBars ? (
+            <DayBars
+              points={chartPoints}
+              selected={slice}
+              onPick={(date) => setSlice(slice === date ? '' : date)}
+            />
+          ) : (
+            <HabitGrid
+              caption={grain === 'month' ? 'Сетка месяцев: светлее — больше сообщений.' : 'Сетка дней: светлее — больше сообщений.'}
+              selected={slice}
+              onPick={(date) => setSlice(slice === date ? '' : date)}
+              points={chartPoints}
+            />
+          )}
           <h3 className="realm-h">Кто пишет</h3>
           {(report.people || []).length === 0 && <p className="realm-copy">За этот отрезок список пишущих пуст.</p>}
-          <ul className="realm-list">
+          <ul className="act-people">
             {(report.people || []).map((person) => {
               const times = repeats.get(Number(person.userId)) || 0
               return (
                 <li key={person.userId}>
-                  <div className="realm-row">
-                    <strong>{person.name}{times >= 2 ? ` · в архиве ${times}` : ''}</strong>
-                    <span>{fmt(person.messages)}</span>
-                  </div>
+                  <span className="act-people-name">
+                    {person.name}{times >= 2 ? ` · в архиве ${times}` : ''}
+                  </span>
+                  <span className="act-people-count">{fmt(person.messages)}</span>
                   {canPunish && (
-                    <button type="button" className="realm-text-act" onClick={() => onPick?.(String(person.userId))}>
-                      В форму
+                    <button
+                      type="button"
+                      className="act-people-go"
+                      onClick={() => onPick?.(String(person.userId))}
+                    >
+                      в форму
                     </button>
                   )}
                 </li>
