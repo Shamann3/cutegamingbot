@@ -233,7 +233,7 @@ export function applyAccentToDocument(accent) {
   window.clearTimeout(root._accentFlashTimer)
   root._accentFlashTimer = window.setTimeout(() => {
     root.classList.remove('accent-changing')
-  }, 520)
+  }, 900)
 }
 
 export function loadStoredAccent() {

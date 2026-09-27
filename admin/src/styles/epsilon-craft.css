@@ -686,7 +686,7 @@ html[data-viewport="phone"] .panel-sidebar-mobile-open {
   margin: 14px 0 18px !important;
   padding: 12px 14px !important;
   border-radius: 16px !important;
-  background: var(--craft-elev) !important;
+  background: transparent !important;
   border: 1px solid rgba(var(--e-accent-rgb, 200, 175, 255), 0.35) !important;
   box-shadow: 0 0 0 1px rgba(var(--e-accent-rgb, 200, 175, 255), 0.08) !important;
 }
@@ -1254,14 +1254,14 @@ html[data-viewport="phone"] .panel-layout-users > .dash-home.panel-users {
   gap: 0.55rem !important;
   padding: 0.55rem 1.05rem !important;
   border-radius: 999px !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  background: var(--craft-elev) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  background: transparent !important;
   box-shadow: none !important;
   box-sizing: border-box !important;
 }
 
 .elite-search:focus-within {
-  background: var(--craft-elev) !important;
+  background: transparent !important;
   border-color: rgba(var(--e-accent-rgb, 244, 244, 244), 0.45) !important;
 }
 
@@ -1301,4 +1301,161 @@ html[data-viewport="desktop"] .elite-topbar-actions {
   padding: 0 !important;
   background: transparent !important;
   border: 0 !important;
+}
+
+/* Поиск = цвет фона панели (без чужой «коробки») */
+.elite-search,
+.elite-search:focus-within,
+.panel-sidebar-search,
+.extras-hub-search,
+.realm-search,
+.grp-field input,
+.panel-users .panel-users-input {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.elite-search,
+.panel-sidebar-search,
+.extras-hub-search {
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+}
+.elite-search input,
+.panel-sidebar-search input,
+.extras-hub-search input {
+  background: transparent !important;
+}
+
+/* Overlay drawer: плавный fade */
+.panel-mobile-overlay {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  position: fixed;
+  inset: 0;
+  z-index: 310;
+  background: rgba(0, 0, 0, 0.55) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+  opacity: 0;
+  transition: opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: none !important;
+}
+.panel-mobile-overlay.is-shown {
+  opacity: 1;
+}
+
+/* Cyberpunk dashboard */
+.dash-bot-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.35rem;
+  padding: 1.35rem 1.1rem 1.2rem;
+  border-radius: 22px;
+  border: 1px solid rgba(var(--e-accent-rgb), 0.35);
+  background:
+    linear-gradient(135deg, rgba(var(--e-accent-rgb), 0.12), transparent 55%),
+    linear-gradient(180deg, #141418 0%, #0a0a0c 100%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 0 40px rgba(var(--e-accent-rgb), 0.18);
+  overflow: hidden;
+}
+.dash-bot-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 3px,
+      rgba(255, 255, 255, 0.015) 3px,
+      rgba(255, 255, 255, 0.015) 4px
+    );
+  opacity: 0.7;
+}
+.dash-bot-hero::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--e-accent), transparent);
+  box-shadow: 0 0 16px rgba(var(--e-accent-rgb), 0.65);
+}
+.dash-bot-hero-kicker {
+  position: relative;
+  z-index: 1;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(var(--e-accent-rgb), 0.9);
+  font-weight: 650;
+}
+.dash-bot-hero-value {
+  position: relative;
+  z-index: 1;
+  font-size: clamp(2.4rem, 7vw, 3.6rem);
+  font-weight: 780;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: #fff;
+  text-shadow:
+    0 0 24px rgba(var(--e-accent-rgb), 0.55),
+    0 0 2px rgba(255, 255, 255, 0.35);
+  font-variant-numeric: tabular-nums;
+}
+.dash-bot-hero-sub {
+  position: relative;
+  z-index: 1;
+  font-size: 0.78rem;
+  color: #8e8e93;
+  max-width: 22rem;
+  line-height: 1.35;
+}
+
+.dash-cyber-head {
+  border: 1px solid rgba(var(--e-accent-rgb), 0.18) !important;
+  box-shadow: 0 0 28px rgba(var(--e-accent-rgb), 0.08) !important;
+}
+.dash-cyber-stage {
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.03), transparent 40%),
+    var(--craft-elev) !important;
+}
+
+.dash-db-line {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  min-height: 4.2rem;
+  padding: 1.1rem 1.25rem !important;
+}
+.dash-db-line-text {
+  margin: 0;
+  width: 100%;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: #f2f2f2;
+  font-variant-numeric: tabular-nums;
+}
+.dash-db-line .panel-shelf-label,
+.dash-db-line .panel-stat-value {
+  display: none !important;
+}
+
+.dash-home.dash-cyber {
+  gap: 1.05rem;
 }

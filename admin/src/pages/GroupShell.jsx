@@ -19,6 +19,7 @@ import PanelSidebar from '../components/PanelSidebar'
 import PhoneDock from '../components/PhoneDock'
 import EliteTopbar from '../components/EliteTopbar'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
+import PanelDrawerOverlay from '../components/PanelDrawerOverlay'
 import PositionEditor from '../components/PositionEditor'
 import ActivityBoard from '../components/ActivityBoard'
 import GroupArchive from '../components/GroupArchive'
@@ -420,9 +421,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           onDone={() => setCoach(false)}
         />
       )}
-      {railOpen && (
-        <div className="panel-mobile-overlay" aria-hidden="true" onClick={closeRail} />
-      )}
+      <PanelDrawerOverlay open={railOpen} onClose={closeRail} />
       <main className="panel-shell-main">
       <div className="panel-layout panel-layout-page">
         <PanelSidebar

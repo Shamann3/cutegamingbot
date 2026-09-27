@@ -127,20 +127,46 @@ body,
 html.accent-changing .panel-shell::before {
   opacity: 1;
   background:
-    radial-gradient(ellipse 80% 60% at 50% 35%, rgba(var(--e-accent-rgb), 0.42), transparent 70%),
-    radial-gradient(ellipse 50% 40% at 90% 10%, rgba(var(--e-accent-rgb), 0.28), transparent 60%);
+    radial-gradient(ellipse 90% 70% at 50% 30%, rgba(var(--e-accent-rgb), 0.55), transparent 68%),
+    radial-gradient(ellipse 55% 45% at 85% 15%, rgba(var(--e-accent-rgb), 0.35), transparent 55%),
+    linear-gradient(180deg, rgba(var(--e-accent-rgb), 0.18), transparent 45%);
 }
 html.accent-changing .gate-root,
 html.accent-changing .panel-shell {
-  box-shadow: inset 0 0 0 3px var(--e-accent-ring, rgba(var(--e-accent-rgb), 0.55));
+  box-shadow:
+    inset 0 0 0 3px var(--e-accent-ring, rgba(var(--e-accent-rgb), 0.65)),
+    0 0 80px rgba(var(--e-accent-rgb), 0.25);
 }
 html.accent-changing .gate-door.is-open,
 html.accent-changing .phone-dock button.is-on,
 html.accent-changing .e-seg button.is-on,
-html.accent-changing .realm-back {
+html.accent-changing .realm-back,
+html.accent-changing .panel-nav-item-active,
+html.accent-changing .elite-search {
   border-color: var(--e-accent, #fff) !important;
   color: var(--e-accent, #fff);
-  box-shadow: 0 0 24px rgba(var(--e-accent-rgb), 0.35);
+  box-shadow: 0 0 28px rgba(var(--e-accent-rgb), 0.45);
+}
+html.accent-changing::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(var(--e-accent-rgb), 0.04) 2px,
+      rgba(var(--e-accent-rgb), 0.04) 3px
+    );
+  animation: accent-scan 0.9s var(--e-ease) both;
+}
+@keyframes accent-scan {
+  from { opacity: 0; }
+  30% { opacity: 1; }
+  to { opacity: 0; }
 }
 
 /* Скроллбары — заметные там, где есть overflow (Стафф, чаты, модалки…).
@@ -1454,9 +1480,9 @@ html.accent-changing .realm-back {
   gap: 0.55rem;
   width: min(16rem, 42vw);
   max-width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
-  background: var(--craft-elev, #1c1c1e);
+  background: transparent;
   padding: 0.52rem 1rem;
   box-sizing: border-box;
   overflow: hidden;
@@ -1470,7 +1496,7 @@ html.accent-changing .realm-back {
 .elite-search:focus-within {
   width: min(20rem, 56vw);
   border-color: var(--e-accent-line);
-  background: var(--craft-elev, #1c1c1e);
+  background: transparent;
   box-shadow: 0 0 0 3px rgba(var(--e-accent-rgb), 0.12);
 }
 

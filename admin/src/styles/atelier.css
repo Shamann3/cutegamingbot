@@ -499,14 +499,14 @@ tr:hover td {
 /* Поиск в шапке */
 .elite-search {
   border-radius: 999px !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  background: var(--craft-elev, #1c1c1e) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  background: transparent !important;
   box-shadow: none !important;
 }
 .elite-search:focus-within {
   border-color: var(--e-accent-line) !important;
   box-shadow: 0 0 0 3px var(--e-accent-soft) !important;
-  background: var(--craft-elev, #1c1c1e) !important;
+  background: transparent !important;
 }
 .elite-search-results {
   border-radius: var(--e-r-block) !important;

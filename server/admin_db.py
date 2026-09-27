@@ -1958,6 +1958,7 @@ async def get_project_usage_stats() -> dict:
         "botEvents": {k: dict(v) for k, v in empty.items()},
         "officialMessages": {k: dict(v) for k, v in empty.items()},
         "activeUsers": 0,
+        "botEventsTotal": 0,
     }
     try:
         out["activeUsers"] = int(
@@ -2032,8 +2033,10 @@ async def get_project_usage_stats() -> dict:
                 "month": {"current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0)},
                 "year": {"current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0)},
             }
+        total = await db.pool.fetchval("SELECT COUNT(*)::bigint FROM game_events")
+        out["botEventsTotal"] = int(total or 0)
     except Exception:
-        pass
+        out["botEventsTotal"] = int(out.get("botEventsTotal") or 0)
 
     # Сообщения в официальных группах
     try:

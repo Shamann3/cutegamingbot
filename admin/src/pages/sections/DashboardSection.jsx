@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import StatShelfCard from '../../components/StatShelfCard'
+import CountUp from '../../components/CountUp'
 import {
   fetchDashboardServer,
   fetchDashboardStats,
@@ -45,7 +45,6 @@ function UsageCard({ title, pair, meta, loading }) {
 export default function DashboardSection() {
   const phone = useIsPhone()
   const [stats, setStats] = useState(null)
-  const [server, setServer] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState('day')
@@ -53,12 +52,11 @@ export default function DashboardSection() {
   const loadDashboard = useCallback(async () => {
     setError('')
     try {
-      const [statsData, serverData] = await Promise.all([
+      const [statsData] = await Promise.all([
         fetchDashboardStats(),
-        fetchDashboardServer(),
+        fetchDashboardServer().catch(() => null),
       ])
       setStats(statsData)
-      setServer(serverData)
     } catch (err) {
       setError(err.message || 'Не удалось загрузить панель')
     } finally {
@@ -70,15 +68,15 @@ export default function DashboardSection() {
     loadDashboard()
   }, [loadDashboard])
 
-  const apiOk = Boolean(server?.ok) && !error
   const usage = stats?.usage || {}
   const meta = PERIODS.find((item) => item.id === period) || PERIODS[0]
+  const botTotal = Number(usage.botEventsTotal ?? usage.botEvents?.year?.current ?? 0)
 
   return (
-    <section className={`grp-page nika-page users-page panel-users dash-home${phone ? ' is-phone' : ' is-desktop'}`}>
-      <article className="panel-shelf panel-shelf-page panel-users-search dash-home-head">
+    <section className={`grp-page nika-page users-page panel-users dash-home dash-cyber${phone ? ' is-phone' : ' is-desktop'}`}>
+      <article className="panel-shelf panel-shelf-page panel-users-search dash-home-head dash-cyber-head">
         <p className="panel-shelf-label">Обзор проекта</p>
-        <h2 className="panel-page-title">Использование Epsilon</h2>
+        <h2 className="panel-page-title">Панель сотрудников CuteGamingBot</h2>
         <p className="panel-page-lead">
           Сообщения в официальных группах, новые пользователи и вызовы бота.
         </p>
@@ -98,7 +96,15 @@ export default function DashboardSection() {
         </div>
       </article>
 
-      <div className="panel-shelf panel-users-card dash-usage-stage">
+      <div className="dash-bot-hero" aria-live="polite">
+        <span className="dash-bot-hero-kicker">Вызовы бота · все группы</span>
+        <strong className="dash-bot-hero-value">
+          {loading ? '…' : <CountUp value={botTotal} />}
+        </strong>
+        <span className="dash-bot-hero-sub">сумма взаимодействий во всех чатах с ботом</span>
+      </div>
+
+      <div className="panel-shelf panel-users-card dash-usage-stage dash-cyber-stage">
         <div className="dash-usage-grid">
           <UsageCard
             title="Сообщения в официальных группах"
@@ -121,20 +127,11 @@ export default function DashboardSection() {
         </div>
       </div>
 
-      <StatShelfCard
-        label="Количество пользователей в базе данных"
-        value={stats?.players}
-        loading={loading}
-        area="players"
-        quiet
-      />
-
-      <article className="panel-shelf panel-shelf-server panel-shelf-quiet panel-users-card">
-        <p className="panel-shelf-label">Статус панели</p>
-        <p className="panel-server-title">
-          {loading && 'Проверка…'}
-          {!loading && apiOk && 'Всё в норме'}
-          {!loading && !apiOk && 'Есть сбой'}
+      <article className="panel-shelf panel-shelf-stat panel-shelf-players panel-shelf-quiet dash-db-line">
+        <p className="dash-db-line-text">
+          {loading
+            ? 'В базе данных … пользователей'
+            : `В базе данных ${fmt(stats?.players)} пользователей`}
         </p>
       </article>
     </section>

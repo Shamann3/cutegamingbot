@@ -37,6 +37,7 @@ import PanelAccessSection from './sections/PanelAccessSection'
 import CommandCenterSection from './sections/CommandCenterSection'
 import RulesGateModal from '../components/RulesGateModal'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
+import PanelDrawerOverlay from '../components/PanelDrawerOverlay'
 import { usePerfMode } from '../lib/perfMode'
 import { useMusicMode } from '../lib/musicMode'
 import { useGlobalKeys } from '../lib/useGlobalKeys'
@@ -349,13 +350,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
       {phone && !mobileNavOpen && (
         <button type="button" className="phone-edge" aria-label="Открыть разделы" onClick={() => setMobileNavOpen(true)} />
       )}
-      {mobileNavOpen && (
-        <div
-          className="panel-mobile-overlay"
-          aria-hidden="true"
-          onClick={() => setMobileNavOpen(false)}
-        />
-      )}
+      <PanelDrawerOverlay open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
 
       {isProjectCreator && (
         <NikaCrisisStrip
