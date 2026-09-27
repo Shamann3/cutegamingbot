@@ -29,17 +29,36 @@ function toneClass(current, previous) {
   return ''
 }
 
+function CollectingCopy() {
+  return (
+    <span className="dash-collecting">
+      <span className="dash-collecting-main">Идёт сбор данных</span>
+      <span className="dash-collecting-wait">пожалуйста подождите</span>
+    </span>
+  )
+}
+
 function UsageCard({ title, pair, meta, loading }) {
   const current = pair?.current
   const previous = pair?.previous
   return (
-    <button type="button" className={`dash-usage-card ${toneClass(current, previous)}`} disabled>
+    <button
+      type="button"
+      className={`dash-usage-card${loading ? ' is-collecting' : ''} ${loading ? '' : toneClass(current, previous)}`}
+      disabled
+    >
       <span className="dash-usage-label">{title}</span>
-      <strong className="dash-usage-value">{loading ? '…' : fmt(current)}</strong>
-      <span className="dash-usage-hint">
-        {meta.now}
-        {previous != null && !loading ? ` · ${meta.prev}: ${fmt(previous)}` : ''}
-      </span>
+      {loading ? (
+        <CollectingCopy />
+      ) : (
+        <>
+          <strong className="dash-usage-value">{fmt(current)}</strong>
+          <span className="dash-usage-hint">
+            {meta.now}
+            {previous != null ? ` · ${meta.prev}: ${fmt(previous)}` : ''}
+          </span>
+        </>
+      )}
     </button>
   )
 }
@@ -48,11 +67,9 @@ function UsageCard({ title, pair, meta, loading }) {
 export default function DashboardSection() {
   const phone = useIsPhone()
   const [stats, setStats] = useState(null)
-  const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState('day')
   const [liveTick, setLiveTick] = useState(0)
-  const [liveOk, setLiveOk] = useState(true)
   const inFlight = useRef(false)
   const failStreak = useRef(0)
 
@@ -74,23 +91,18 @@ export default function DashboardSection() {
         usage: nextUsage,
       }
     })
+    setLoading(false)
     setLiveTick((n) => n + 1)
   }, [])
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      setError('')
       try {
         const data = await fetchDashboardStats()
-        if (!cancelled) {
-          applyPayload(data)
-          setLiveOk(true)
-        }
-      } catch (err) {
-        if (!cancelled) setError(err.message || 'Не удалось загрузить панель')
-      } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) applyPayload(data)
+      } catch {
+        // Главный экран без ошибок — остаёмся в состоянии сбора / последних цифр.
       }
     })()
     return () => { cancelled = true }
@@ -116,21 +128,15 @@ export default function DashboardSection() {
         if (!cancelled) {
           applyPayload(data)
           failStreak.current = 0
-          setLiveOk(true)
-          setError('')
         }
-      } catch (err) {
+      } catch {
         failStreak.current += 1
         if (!cancelled && failStreak.current >= 3) {
-          setLiveOk(false)
-          // Fallback: полный stats, чтобы цифры не зависали на нулях
           try {
             const data = await fetchDashboardStats()
             if (!cancelled) applyPayload(data)
-          } catch (statsErr) {
-            if (!cancelled) {
-              setError(statsErr.message || err.message || 'Статистика недоступна')
-            }
+          } catch {
+            // тихо
           }
         }
       } finally {
@@ -142,11 +148,7 @@ export default function DashboardSection() {
     timer = window.setTimeout(tick, 200)
     const onVis = () => {
       if (!document.hidden && !inFlight.current) {
-        fetchDashboardLive().then((data) => {
-          applyPayload(data)
-          setLiveOk(true)
-          failStreak.current = 0
-        }).catch(() => {})
+        fetchDashboardLive().then(applyPayload).catch(() => {})
       }
     }
     document.addEventListener('visibilitychange', onVis)
@@ -162,6 +164,7 @@ export default function DashboardSection() {
   const botPair = usage.botEvents?.[period] || { current: 0, previous: 0 }
   const botNow = Number(botPair.current ?? 0)
   const botPrev = Number(botPair.previous ?? 0)
+  const collecting = loading || !stats
 
   return (
     <section className={`grp-page nika-page users-page panel-users dash-home dash-cyber${phone ? ' is-phone' : ' is-desktop'}`}>
@@ -171,10 +174,6 @@ export default function DashboardSection() {
         <p className="panel-page-lead">
           Вызовы команд бота, новые пользователи и сообщения в официальных группах — обновление каждую секунду.
         </p>
-        {error && <p className="panel-shelf-error">{error}</p>}
-        {!liveOk && !error && (
-          <p className="panel-shelf-error">Live-канал нестабилен — читаем полный снимок.</p>
-        )}
 
         <div className="dash-period e-seg" role="tablist" aria-label="Период">
           {PERIODS.map((item) => (
@@ -190,21 +189,29 @@ export default function DashboardSection() {
         </div>
       </article>
 
-      <div className="dash-bot-hero" aria-live="polite" data-live={liveTick}>
+      <div className={`dash-bot-hero${collecting ? ' is-collecting' : ''}`} aria-live="polite" data-live={liveTick}>
         <div className="dash-bot-hero-top">
           <span className="dash-bot-hero-kicker">Вызовы бота · все группы</span>
-          <span className="dash-bot-hero-live" title="Обновление каждую секунду">
-            <span className="dash-bot-hero-live-dot" aria-hidden="true" />
-            {liveOk ? '1с' : '…'}
-          </span>
+          {!collecting && (
+            <span className="dash-bot-hero-live" title="Обновление каждую секунду">
+              <span className="dash-bot-hero-live-dot" aria-hidden="true" />
+              1с
+            </span>
+          )}
         </div>
-        <strong className="dash-bot-hero-value">
-          {loading ? '…' : <CountUp key={`bot-${period}-${botNow}`} value={botNow} duration={400} />}
-        </strong>
-        <span className="dash-bot-hero-sub">
-          {meta.now}
-          {!loading ? ` · ${meta.prev}: ${fmt(botPrev)}` : ''}
-        </span>
+        {collecting ? (
+          <CollectingCopy />
+        ) : (
+          <>
+            <strong className="dash-bot-hero-value">
+              <CountUp key={`bot-${period}-${botNow}`} value={botNow} duration={400} />
+            </strong>
+            <span className="dash-bot-hero-sub">
+              {meta.now}
+              {` · ${meta.prev}: ${fmt(botPrev)}`}
+            </span>
+          </>
+        )}
       </div>
 
       <div className="panel-shelf panel-users-card dash-usage-stage dash-cyber-stage">
@@ -213,29 +220,33 @@ export default function DashboardSection() {
             title="Сообщения в официальных группах"
             pair={usage.officialMessages?.[period]}
             meta={meta}
-            loading={loading}
+            loading={collecting}
           />
           <UsageCard
             title="Новые пользователи"
             pair={usage.newUsers?.[period]}
             meta={meta}
-            loading={loading}
+            loading={collecting}
           />
           <UsageCard
             title="Вызовы бота"
             pair={usage.botEvents?.[period]}
             meta={meta}
-            loading={loading}
+            loading={collecting}
           />
         </div>
       </div>
 
       <article className="panel-shelf panel-shelf-stat panel-shelf-players panel-shelf-quiet dash-db-line">
-        <p className="dash-db-line-text">
-          {loading
-            ? 'В базе данных … пользователей'
-            : `В базе данных ${fmt(stats?.players)} пользователей`}
-        </p>
+        {collecting ? (
+          <div className="dash-db-line-text">
+            <CollectingCopy />
+          </div>
+        ) : (
+          <p className="dash-db-line-text">
+            {`В базе данных ${fmt(stats?.players)} пользователей`}
+          </p>
+        )}
       </article>
     </section>
   )
