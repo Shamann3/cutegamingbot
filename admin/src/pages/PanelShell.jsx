@@ -51,6 +51,7 @@ import useDrawerSwipe from '../lib/useDrawerSwipe'
 import RightsSection from './sections/RightsSection'
 import GroupGuardDesk from './sections/GroupGuardDesk'
 import FirstRun, { staffSteps, coachClosed } from '../components/FirstRun'
+import PhoneDock from '../components/PhoneDock'
 
 export default function PanelShell({ onLogout, onChangeDoor }) {
   const { lightMode, setLightMode } = usePerfMode()
@@ -99,9 +100,8 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [recentSections, setRecentSections] = useState(() => loadRecentSections())
   const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.staff.v4'))
   const onCoachStep = useCallback((step) => {
-    if (!phone) return
     setMobileNavOpen(Boolean(step?.openNav))
-  }, [phone])
+  }, [])
   useDrawerSwipe({
     enabled: phone,
     open: mobileNavOpen,
@@ -120,10 +120,12 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
     const prevShell = shell instanceof HTMLElement ? shell.style.overflow : ''
     const scrollY = shell instanceof HTMLElement ? shell.scrollTop : 0
 
-    document.body.style.overflow = 'hidden'
-    if (shell instanceof HTMLElement) {
-      shell.style.overflow = 'hidden'
-      shell.dataset.navLockScroll = String(scrollY)
+    if (phone) {
+      document.body.style.overflow = 'hidden'
+      if (shell instanceof HTMLElement) {
+        shell.style.overflow = 'hidden'
+        shell.dataset.navLockScroll = String(scrollY)
+      }
     }
     document.documentElement.classList.add('panel-nav-open')
 
@@ -134,10 +136,10 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
         shell.style.overflow = prevShell
         const y = Number(shell.dataset.navLockScroll || 0)
         delete shell.dataset.navLockScroll
-        shell.scrollTop = y
+        if (phone) shell.scrollTop = y
       }
     }
-  }, [mobileNavOpen])
+  }, [mobileNavOpen, phone])
 
   useEffect(() => {
     let cancelled = false
@@ -509,7 +511,14 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           )}
         </div>
       </main>
-
+      <PhoneDock
+        sections={navSections}
+        activeSection={section}
+        onNavigate={handleNavigate}
+        badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending }}
+        menuOpen={mobileNavOpen}
+        onOpenMenu={() => setMobileNavOpen((open) => !open)}
+      />
     </div>
   )
 }

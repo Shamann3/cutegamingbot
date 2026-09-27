@@ -3,9 +3,11 @@ import AdminActionModal from '../../components/AdminActionModal'
 import AdminSelect from '../../components/AdminSelect'
 import {
   cancelMarketListing,
+  fetchAnalyticsMarket,
   fetchMarketListings,
   fetchMarketOverview,
 } from '../../lib/adminClient'
+import { CandleChart, HexHeat } from '../../components/sight/SightCharts'
 
 function formatKut(value) {
   if (value == null) return '-'
@@ -19,6 +21,29 @@ function formatDate(iso) {
   } catch {
     return iso
   }
+}
+
+function candlesFromHistory(history) {
+  const ordered = [...(history || [])].reverse()
+  const buckets = new Map()
+  for (const row of ordered) {
+    const day = String(row.createdAt || '').slice(0, 10)
+    const price = Number(row.price)
+    if (!day || !Number.isFinite(price)) continue
+    const bucket = buckets.get(day) || []
+    bucket.push(price)
+    buckets.set(day, bucket)
+  }
+  return [...buckets.keys()].sort().map((day) => {
+    const prices = buckets.get(day)
+    return {
+      label: day,
+      low: Math.min(...prices),
+      high: Math.max(...prices),
+      open: prices[0],
+      close: prices[prices.length - 1],
+    }
+  })
 }
 
 function suspiciousLabel(reason) {
@@ -91,12 +116,17 @@ export default function MarketSection() {
   const [cancelTarget, setCancelTarget] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [offset, setOffset] = useState(0)
+  const [tape, setTape] = useState(null)
 
   const loadOverview = useCallback(async () => {
     setError('')
     try {
-      const data = await fetchMarketOverview()
+      const [data, market] = await Promise.all([
+        fetchMarketOverview(),
+        fetchAnalyticsMarket({ days: 30 }).catch(() => null),
+      ])
       setOverview(data)
+      setTape(market)
     } catch (err) {
       setError(err.message || 'Не удалось загрузить биржу')
     } finally {
@@ -230,6 +260,20 @@ export default function MarketSection() {
           </p>
         </article>
       </div>
+
+      {tape && (
+        <article className="panel-shelf panel-market-tape">
+          <p className="panel-shelf-label">Сделки за 30 дней</p>
+          <HexHeat
+            caption="Тепловая карта дней. Светлее сота — больше сделок."
+            points={(tape.volumeByDay || []).map((row) => ({ label: row.day, value: row.transactions }))}
+          />
+          <CandleChart
+            caption="Свечи цен реальных сделок: фитиль от самой дешёвой до самой дорогой за день, тело от первой сделки к последней. В одном дне разные предметы."
+            rows={candlesFromHistory(tape.history)}
+          />
+        </article>
+      )}
 
       {suspicious.length > 0 && (
         <article className="panel-shelf panel-market-suspicious">

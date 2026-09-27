@@ -1,0 +1,417 @@
+/* Вид всей панели Эпсилона: тёмный кабинет с карточками 12px,
+   крупной цифрой, тонкой таблицей и полями в одну строку.
+   Телефон — те же карточки столбиком, поля 44px. */
+
+.panel-shell,
+.panel-shell-main,
+.panel-shelf-sidebar,
+.realm-root,
+.gate-root {
+  background: #0c0c0c !important;
+  color: #f4f4f5;
+}
+
+.panel-shelf,
+.panel-users-card,
+.pu-hero-card,
+.pu-inv-card,
+.pu-tab-pane,
+.nika-panel,
+.g-arc-card,
+.arc-card,
+.analytics-section,
+.support-section,
+.panel-security,
+.panel-pulse-hero,
+.realm-main.nika-page > section {
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: #161616 !important;
+  box-shadow: none !important;
+  animation: none !important;
+  transform: none !important;
+}
+
+.panel-shelf-label,
+.pulse-hero-eyebrow,
+.pulse-hero-unit,
+.panel-stat-hint,
+.nika-head-copy p,
+.realm-copy {
+  color: #8d8d8d !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  font-size: 0.78rem !important;
+}
+
+.panel-stat-value,
+.pulse-hero-value,
+.act-figures strong {
+  font-size: 1.65rem !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.04em !important;
+  line-height: 1.05 !important;
+  font-variant-numeric: tabular-nums;
+  color: #fafafa !important;
+}
+
+.grp-page.nika-page .nika-head h1,
+.panel-page-title,
+.elite-greeting-title,
+.realm-main.nika-page .realm-h,
+.pulse-hero-figure {
+  font-size: 1.25rem !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.03em !important;
+  line-height: 1.2 !important;
+}
+
+.pulse-hero-wave,
+.pulse-hero-vitals,
+.panel-brand-halo,
+.panel-brand-ring {
+  display: none !important;
+}
+
+.panel-pulse-hero {
+  min-height: 0 !important;
+  padding: 14px 16px !important;
+}
+
+html.is-desktop .panel-layout-dashboard,
+html[data-viewport="desktop"] .panel-layout-dashboard {
+  grid-template-columns: 232px repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+html.is-desktop .panel-layout-page,
+html.is-desktop .panel-layout-users,
+html.is-desktop .panel-layout-staff,
+html.is-desktop .panel-layout-security,
+html.is-desktop .panel-layout-economy,
+html.is-desktop .panel-layout-farm,
+html.is-desktop .panel-layout-content,
+html.is-desktop .panel-layout-analytics,
+html.is-desktop .panel-layout-logs,
+html.is-desktop .panel-layout-settings,
+html.is-desktop .panel-layout-market,
+html.is-desktop .panel-layout-accounts,
+html.is-desktop .panel-layout-broadcast,
+html.is-desktop .panel-layout-events,
+html.is-desktop .panel-layout-chronicle,
+html.is-desktop .panel-layout-support,
+html[data-viewport="desktop"] .panel-layout-page,
+html[data-viewport="desktop"] .panel-layout-users,
+html[data-viewport="desktop"] .panel-layout-staff,
+html[data-viewport="desktop"] .panel-layout-security {
+  grid-template-columns: 232px minmax(0, 1fr) !important;
+  gap: 12px !important;
+}
+
+.panel-shelf-sidebar {
+  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 12px 10px !important;
+}
+
+.panel-brand-name {
+  font-size: 0.95rem !important;
+  font-weight: 650 !important;
+}
+
+.panel-brand-tag,
+.panel-nav-group-label {
+  color: #8d8d8d !important;
+  letter-spacing: 0.04em !important;
+  text-transform: none !important;
+  font-size: 0.72rem !important;
+}
+
+.panel-nav-item {
+  min-height: 34px !important;
+  border-radius: 8px !important;
+  padding: 6px 10px !important;
+  color: #c4c4c4 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.panel-nav-item-active {
+  background: #2a2a2a !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.elite-topbar,
+.elite-topbar-compact {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+.panel-shell table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.panel-shell th {
+  text-align: left;
+  font-weight: 550;
+  color: #8d8d8d;
+  font-size: 0.72rem;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+}
+
+.panel-shell td {
+  padding: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: #f4f4f5;
+  vertical-align: middle;
+}
+
+.panel-shell tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.panel-users-btn,
+.nika-btn,
+.sec-btn,
+.realm-main .realm-back,
+.realm-main .realm-form button[type="submit"] {
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  border-radius: 8px !important;
+  padding: 0 12px !important;
+  font-size: 0.82rem !important;
+  box-shadow: none !important;
+}
+
+.panel-shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+.panel-shell select {
+  height: 40px !important;
+  min-height: 40px !important;
+  max-height: 40px !important;
+  flex: 0 0 auto !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: #101010 !important;
+  color: #f4f4f5 !important;
+  box-sizing: border-box;
+}
+
+.panel-shell textarea {
+  flex: 0 0 auto !important;
+  min-height: 72px !important;
+  max-height: 8rem !important;
+  height: auto !important;
+  border-radius: 10px !important;
+  background: #101010 !important;
+  color: #f4f4f5 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.panel-shell input:focus,
+.panel-shell input:focus-visible,
+.panel-shell select:focus,
+.panel-shell select:focus-visible,
+.panel-shell textarea:focus,
+.panel-shell textarea:focus-visible {
+  outline: none !important;
+  border-color: rgba(255, 255, 255, 0.38) !important;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+}
+
+.act-figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.act-figures button,
+.act-figures p {
+  min-height: 0;
+  padding: 12px 14px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: #161616 !important;
+}
+
+.act-figures span {
+  display: block;
+  margin-top: 4px;
+  color: #8d8d8d;
+  font-size: 0.75rem;
+}
+
+.act-chart {
+  height: 148px;
+  margin-top: 12px;
+  padding: 10px 8px 0;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #101010;
+}
+
+.realm-main.nika-page .realm-actions,
+.users-toolbar .nika-seg,
+.nika-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #101010;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.realm-main.nika-page .realm-actions button,
+.nika-seg-btn,
+.nika-seg > button {
+  flex: 1 1 auto;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: #c4c4c4 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.realm-main.nika-page .realm-actions button.is-on,
+.nika-seg-btn.is-on,
+.nika-seg > button.is-on {
+  background: #2a2a2a !important;
+  color: #fff !important;
+}
+
+.arc-card {
+  min-height: 0 !important;
+  background: #161616 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: none !important;
+}
+
+.arc-card:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.realm-form,
+.realm-main.nika-page .realm-form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.realm-form label,
+.realm-main.nika-page .realm-form label {
+  flex: 0 0 auto !important;
+  width: 100%;
+}
+
+.realm-form input,
+.realm-main.nika-page input,
+.realm-main.nika-page select {
+  flex: 0 0 auto !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  max-height: 40px !important;
+}
+
+.realm-main.nika-page #realm-punish {
+  position: static;
+  margin-top: 12px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+html.is-phone .panel-shell-main,
+html[data-viewport="phone"] .panel-shell-main {
+  /* clearance задаёт phone-app / --thumb-dock-h */
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+  padding-top: 12px !important;
+}
+
+html.is-phone .panel-layout-dashboard,
+html[data-viewport="phone"] .panel-layout-dashboard {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+html.is-phone .panel-shelf,
+html.is-phone .nika-panel,
+html.is-phone .g-arc-card,
+html.is-phone .arc-card,
+html.is-phone .realm-main.nika-page > section,
+html[data-viewport="phone"] .panel-shelf,
+html[data-viewport="phone"] .nika-panel,
+html[data-viewport="phone"] .realm-main.nika-page > section {
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 12px !important;
+}
+
+html.is-phone .act-figures,
+html[data-viewport="phone"] .act-figures {
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+html.is-phone .panel-stat-value,
+html.is-phone .pulse-hero-value,
+html.is-phone .act-figures strong,
+html[data-viewport="phone"] .panel-stat-value,
+html[data-viewport="phone"] .pulse-hero-value,
+html[data-viewport="phone"] .act-figures strong {
+  font-size: 1.35rem !important;
+}
+
+html.is-phone .panel-shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+html.is-phone .panel-shell select,
+html[data-viewport="phone"] .panel-shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+html[data-viewport="phone"] .panel-shell select,
+html.is-phone .realm-form input,
+html[data-viewport="phone"] .realm-form input {
+  height: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+  font-size: 16px !important;
+}
+
+html.is-phone .panel-users-btn,
+html.is-phone .nika-btn,
+html.is-phone .sec-btn,
+html.is-phone .realm-back,
+html[data-viewport="phone"] .panel-users-btn,
+html[data-viewport="phone"] .nika-btn,
+html[data-viewport="phone"] .realm-back {
+  height: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+}
+
+html.is-phone .g-arc-grid,
+html.is-phone .arc-grid,
+html[data-viewport="phone"] .g-arc-grid {
+  grid-template-columns: 1fr !important;
+}
+
+html.is-phone .panel-shell,
+html[data-viewport="phone"] .panel-shell {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}

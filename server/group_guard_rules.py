@@ -42,6 +42,8 @@ def punish_receipt(position: str, action: str, warns: int | None) -> str:
         "unban": "Разбан",
         "kick": "Кик",
         "warn": "Варн",
+        "voice": "Голос",
+        "unvoice": "Голос снова",
     }
     act = names.get(action, "Наказание")
     line = f"{act} записан в архив официальной группы. Должность: {title}."

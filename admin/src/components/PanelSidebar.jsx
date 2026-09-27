@@ -180,8 +180,12 @@ export default function PanelSidebar({
       <div className="panel-sidebar-grab">
         <div className="panel-sidebar-drawer-head">
           <div>
-            <h2 className="panel-sidebar-drawer-title">Страницы</h2>
-            <p className="panel-sidebar-swipe-hint">Нажмите название. Свайп влево плавно закрывает список.</p>
+            <h2 className="panel-sidebar-drawer-title">{isPhone ? 'Меню' : 'Страницы'}</h2>
+            <p className="panel-sidebar-swipe-hint">
+              {isPhone
+                ? 'Разделы внизу экрана. Здесь поиск, цвет и выход.'
+                : 'Нажмите название. Свайп влево плавно закрывает список.'}
+            </p>
           </div>
           <button
             type="button"

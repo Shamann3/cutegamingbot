@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import OnlineAnalyticsChart from './OnlineAnalyticsChart'
+import { HabitGrid, PolarPlot } from './sight/SightCharts'
 import { fetchOnlineDay, fetchOnlineRange, fetchOnlineSummary } from '../lib/adminClient'
 
 const MODES = [
@@ -388,11 +389,29 @@ export default function OnlineAnalyticsShelf() {
         </div>
       )}
 
-      {(loading || (payload?.hasData && chartPoints.length > 0)) && (
+      {!loading && payload?.hasData && range.granularity === 'hour' && chartPoints.length > 0 && (
+        <PolarPlot
+          caption="Радар онлайна: дальше от центра — выше пик этого часа."
+          center={summary?.onlineNow != null ? summary.onlineNow.toLocaleString('ru-RU') : '—'}
+          points={chartPoints.map((point) => ({ label: point.label, value: point.peak }))}
+        />
+      )}
+      {!loading && payload?.hasData && range.granularity === 'day' && chartPoints.length > 0 && (
+        <HabitGrid
+          caption="Сетка дней: светлее клетка — выше пик онлайна."
+          points={chartPoints.map((point) => ({
+            date: String(point.id || '').replace(/^d-/, ''),
+            label: point.label,
+            value: point.peak,
+          }))}
+        />
+      )}
+
+      {loading && (
         <OnlineAnalyticsChart
           points={chartPoints}
           granularity={range.granularity}
-          loading={loading}
+          loading
         />
       )}
     </article>

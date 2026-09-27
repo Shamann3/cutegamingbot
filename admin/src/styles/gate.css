@@ -520,7 +520,7 @@ html[data-viewport="phone"] .realm-tabbar button {
 
 html.is-phone .panel-shell-main,
 html[data-viewport="phone"] .panel-shell-main {
-  padding-bottom: max(0.55rem, env(safe-area-inset-bottom, 0px), var(--tg-content-bottom, 0px)) !important;
+  /* нижний отступ — в phone-app / --thumb-dock-h */
 }
 
 html.is-phone .arc-filters,
@@ -958,12 +958,15 @@ html[data-viewport="phone"] .arc-search {
 
 .realm-search input,
 .realm-form input {
-  flex: 1;
+  flex: 0 0 auto;
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
   min-width: 0;
-  min-height: 44px;
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid var(--gate-line);
-  background: #000;
+  background: #111;
   color: var(--gate-ink);
   font: inherit;
   font-size: 16px;
@@ -1008,8 +1011,10 @@ html[data-viewport="phone"] .arc-search {
 
 .realm-form label {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
   font-size: 13px;
   color: var(--gate-muted);
 }
@@ -2188,14 +2193,12 @@ html[data-viewport="phone"] .panel-layout > .realm-main {
 }
 
 .realm-main.nika-page > section {
-  margin-top: 0.85rem;
-  padding: 1.05rem 1.05rem 1.15rem;
-  border-radius: 26px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 32%),
-    #111111;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 28px 52px -30px rgba(0, 0, 0, 0.92);
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #141414;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
 }
 
 .realm-main.nika-page .realm-h {
@@ -2309,7 +2312,9 @@ html[data-viewport="phone"] .panel-layout > .realm-main {
 .realm-main.nika-page .realm-search,
 .realm-main.nika-page .guard-tools {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
   gap: 0.55rem;
   margin-top: 0.75rem;
   min-width: 0;
@@ -2317,13 +2322,14 @@ html[data-viewport="phone"] .panel-layout > .realm-main {
 
 .realm-main.nika-page .realm-form label,
 .realm-main.nika-page .realm-field {
-  flex: 1 1 12rem;
+  flex: 0 0 auto;
+  width: 100%;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  color: #a39b96;
-  font-size: 0.78rem;
+  color: #8d8d8d;
+  font-size: 0.75rem;
 }
 
 .realm-main.nika-page input,
@@ -2331,12 +2337,15 @@ html[data-viewport="phone"] .panel-layout > .realm-main {
 .realm-main.nika-page .guard-field {
   width: 100%;
   max-width: 100%;
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
+  flex: 0 0 auto;
   box-sizing: border-box;
-  min-height: 44px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: #0b0b0b;
-  color: #f4f0ec;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #101010;
+  color: #f4f4f4;
   font: inherit;
   font-size: 16px;
   padding: 0 12px;
@@ -2391,15 +2400,13 @@ html[data-viewport="desktop"] .grp-page.users-page .pu-tab-pane {
 
 /* Наказание в группе остаётся у нижнего края, пока смотришь активность. */
 .realm-main.nika-page #realm-punish {
-  position: sticky;
-  bottom: 0.35rem;
-  z-index: 4;
-  margin-top: 0.9rem;
-  padding: 0.85rem;
-  border-radius: 18px;
-  background: #161616;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 -16px 36px rgba(0, 0, 0, 0.55);
+  position: static;
+  margin-top: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .realm-main.nika-page .realm-list .realm-back {

@@ -7,6 +7,7 @@ import {
   fetchAnalyticsRetention,
 } from '../../lib/adminClient'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
+import { CandleChart, HexHeat } from '../../components/sight/SightCharts'
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -112,8 +113,11 @@ function LineChart({ data, series, colors, yLabel = '' }) {
               width={Math.max(CW / data.length, 8)}
               height={CH}
               fill="transparent"
+              tabIndex={0}
               onMouseEnter={() => setHover(i)}
               onFocus={() => setHover(i)}
+              onPointerDown={() => setHover(i)}
+              onClick={() => setHover(i)}
               style={{ cursor: 'crosshair' }}
             />
           )
@@ -201,6 +205,8 @@ function BarChart({ data, valueKey, labelKey, colors, horizontal = false }) {
                 key={i}
                 onMouseEnter={() => setHover(i)}
                 onMouseLeave={() => setHover(null)}
+                onPointerDown={() => setHover(i)}
+                onClick={() => setHover(i)}
                 style={{ cursor: 'pointer' }}
               >
                 <text x={hleft - 6} y={y + barH / 2 + 4} textAnchor="end" fontSize={10} fill="#9ca3af">
@@ -248,7 +254,13 @@ function BarChart({ data, valueKey, labelKey, colors, horizontal = false }) {
           const color = palette[i % palette.length]
           const active = hover === i
           return (
-            <g key={i} onMouseEnter={() => setHover(i)} style={{ cursor: 'pointer' }}>
+            <g
+              key={i}
+              onMouseEnter={() => setHover(i)}
+              onPointerDown={() => setHover(i)}
+              onClick={() => setHover(i)}
+              style={{ cursor: 'pointer' }}
+            >
               <rect x={x} y={y} width={barW} height={bh} rx={3} fill={color} opacity={active ? 1 : 0.8} />
               {data.length <= 12 && (
                 <text x={x + barW / 2} y={H - 4} textAnchor="middle" fontSize={9} fill="#6b7280">
@@ -643,24 +655,23 @@ function MarketTab({ days, onDaysChange }) {
           </SectionCard>
 
           <SectionCard title="Объём сделок по дням">
-            <LineChart
-              data={data.volumeByDay}
-              series={['transactions']}
-              colors={['#f59e0b']}
+            <HexHeat
+              caption="Тепловая карта: светлее сота — больше сделок в этот день."
+              points={(data.volumeByDay || []).map((row) => ({ label: row.day, value: row.transactions }))}
             />
           </SectionCard>
 
           {itemIdFilter && data.priceChart.length > 0 && (
             <SectionCard title={`График цены: ${itemIdFilter}`}>
-              <ChartLegend items={[
-                { color: '#6366f1', label: 'Средняя цена' },
-                { color: '#22c55e', label: 'Мин' },
-                { color: '#ef4444', label: 'Макс' },
-              ]} />
-              <LineChart
-                data={data.priceChart}
-                series={['avgPrice', 'minPrice', 'maxPrice']}
-                colors={['#6366f1', '#22c55e', '#ef4444']}
+              <CandleChart
+                caption="Свеча дня: фитиль от минимума до максимума, тело от вчерашней средней цены к сегодняшней."
+                rows={(data.priceChart || []).map((row, index, list) => ({
+                  label: row.day,
+                  low: row.minPrice,
+                  high: row.maxPrice,
+                  open: index > 0 ? list[index - 1].avgPrice : row.avgPrice,
+                  close: row.avgPrice,
+                }))}
               />
             </SectionCard>
           )}

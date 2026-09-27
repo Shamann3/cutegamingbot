@@ -1,0 +1,103 @@
+import { useEffect, useRef } from 'react'
+import { NAV_ICONS } from './NavIcons'
+
+function FallbackIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+      <rect x="5" y="5" width="14" height="14" rx="3" />
+    </svg>
+  )
+}
+
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+      <line x1="4" y1="8" x2="20" y2="8" />
+      <line x1="4" y1="16" x2="20" y2="16" />
+      <circle cx="9" cy="8" r="2.1" />
+      <circle cx="15" cy="16" r="2.1" />
+    </svg>
+  )
+}
+
+function shortLabel(text) {
+  const raw = String(text || '').trim()
+  if (!raw) return ''
+  const word = raw.split(/\s+/)[0]
+  return word.length > 8 ? `${word.slice(0, 7)}…` : word
+}
+
+/** Нижняя полоса: на телефоне меню справа под большим пальцем; на ПК — слева, как у панели задач. */
+export default function PhoneDock({
+  sections = [],
+  activeSection,
+  onNavigate,
+  badges = {},
+  onOpenMenu,
+  menuOpen = false,
+}) {
+  const barRef = useRef(null)
+  const activeRef = useRef(null)
+  const crowded = sections.length > 5
+
+  useEffect(() => {
+    const bar = barRef.current
+    const node = activeRef.current
+    if (!bar || !node) return
+    const left = node.offsetLeft - (bar.clientWidth - node.offsetWidth) / 2
+    bar.scrollTo({ left: Math.max(0, left), behavior: 'smooth' })
+  }, [activeSection, sections.length])
+
+  if (!sections.length) return null
+
+  return (
+    <nav
+      className={`phone-dock${crowded ? ' is-crowded' : ''}`}
+      data-coach="dock"
+      aria-label="Вкладки"
+    >
+      <div className="phone-dock-scroll" ref={barRef}>
+      {sections.map((item) => {
+        const Icon = NAV_ICONS[item.id] || FallbackIcon
+        const on = item.id === activeSection
+        const count = Number(badges[item.id] || 0)
+        const mark = shortLabel(item.labelRu || item.label)
+        return (
+          <button
+            key={item.id}
+            type="button"
+            ref={on ? activeRef : null}
+            className={on ? 'is-on' : ''}
+            data-section={item.id}
+            aria-label={item.labelRu || item.label}
+            title={item.labelRu || item.label}
+            aria-current={on ? 'page' : undefined}
+            onClick={() => onNavigate(item.id)}
+          >
+            <span className="phone-dock-icon">
+              <Icon />
+              {count > 0 && (
+                <i className="phone-dock-badge">{count > 99 ? '99+' : count}</i>
+              )}
+            </span>
+            {mark && <span className="phone-dock-label">{mark}</span>}
+            <span className="phone-dock-mark" aria-hidden="true" />
+          </button>
+        )
+      })}
+      </div>
+      {typeof onOpenMenu === 'function' && (
+        <button
+          type="button"
+          className={`phone-dock-menu${menuOpen ? ' is-on' : ''}`}
+          data-coach="menu"
+          aria-expanded={menuOpen}
+          aria-label={menuOpen ? 'Закрыть меню' : 'Поиск, цвет и выход'}
+          onClick={onOpenMenu}
+        >
+          <MenuIcon />
+        </button>
+      )}
+    </nav>
+  )
+}

@@ -41,6 +41,8 @@ ACTION_RIGHT = {
     "warn": "punish_warn",
     "ban": "punish_ban",
     "unban": "punish_ban",
+    "voice": "punish_voice",
+    "unvoice": "punish_voice",
 }
 
 LOCAL_ACTIONS = frozenset(ACTION_RIGHT)

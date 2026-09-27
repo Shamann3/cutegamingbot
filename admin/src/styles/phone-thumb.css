@@ -2,7 +2,7 @@
 
 html.is-phone,
 html[data-viewport="phone"] {
-  --thumb-dock-h: 0px;
+  --thumb-dock-h: 108px;
 }
 
 /* Один скролл — сама оболочка. html/body режут по viewport,
@@ -35,14 +35,16 @@ html[data-viewport="phone"] .panel-shell:has(.panel-layout-farm) {
 
 html.is-phone .panel-shell-main,
 html.is-phone .panel-shell:has(.panel-layout-users) .panel-shell-main,
+html.is-phone .panel-shell:has(.panel-layout-farm) .panel-shell-main,
 html[data-viewport="phone"] .panel-shell-main,
-html[data-viewport="phone"] .panel-shell:has(.panel-layout-users) .panel-shell-main {
+html[data-viewport="phone"] .panel-shell:has(.panel-layout-users) .panel-shell-main,
+html[data-viewport="phone"] .panel-shell:has(.panel-layout-farm) .panel-shell-main {
   height: auto !important;
   max-height: none !important;
   min-height: 0 !important;
   overflow: visible !important;
   display: block !important;
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 2.4rem) !important;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--thumb-dock-h, 108px)) !important;
 }
 
 html.is-phone .panel-layout,
@@ -192,9 +194,11 @@ html[data-viewport="phone"] .elite-topbar-actions {
   overflow: visible;
 }
 html.is-phone .elite-menu-btn,
+html[data-viewport="phone"] .elite-menu-btn {
+  display: none !important;
+}
 html.is-phone .elite-icon-btn,
 html.is-phone .elite-support-btn,
-html[data-viewport="phone"] .elite-menu-btn,
 html[data-viewport="phone"] .elite-icon-btn,
 html[data-viewport="phone"] .elite-support-btn {
   display: inline-flex !important;

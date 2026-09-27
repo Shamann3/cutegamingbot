@@ -243,8 +243,44 @@ const TikTok = () => (
   </Icon>
 )
 
+const GroupGuard = () => (
+  <Icon>
+    <path d="M12 3.2l7 2.6v5.2c0 4.4-2.9 7.4-7 9-4.1-1.6-7-4.6-7-9V5.8l7-2.6z" />
+    <path d="M8.6 12.1l2.3 2.3 4.5-4.8" />
+  </Icon>
+)
+
+const Rights = () => (
+  <Icon>
+    <circle cx="8" cy="15" r="3.2" />
+    <path d="M11 15h8.2v2.2" />
+    <path d="M16.2 15v2.2" />
+  </Icon>
+)
+
+const Activity = () => (
+  <Icon>
+    <path d="M4 16.5l4.2-5.2 3.2 3.1L20 6.5" />
+    <path d="M14.5 6.5H20V12" />
+  </Icon>
+)
+
+const More = () => (
+  <Icon>
+    <circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" />
+    <circle cx="18" cy="12" r="1.3" fill="currentColor" stroke="none" />
+  </Icon>
+)
+
 export const NAV_ICONS = {
   dashboard: Dashboard,
+  overview: Dashboard,
+  groupGuard: GroupGuard,
+  activity: Activity,
+  archive: Moderation,
+  rights: Rights,
+  more: More,
   users: Players,
   accounts: Accounts,
   economy: Economy,

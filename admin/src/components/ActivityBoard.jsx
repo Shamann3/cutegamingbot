@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchGroupActivity } from '../lib/adminClient'
+import { HabitGrid } from './sight/SightCharts'
 
 const PERIODS = [
   { id: 'day', label: 'Сегодня' },
@@ -13,13 +14,6 @@ const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'и�
 function fmt(n) {
   if (n == null || Number.isNaN(Number(n))) return '—'
   return new Intl.NumberFormat('ru-RU').format(Number(n))
-}
-
-function shortLabel(iso, grain) {
-  const parts = String(iso || '').split('-')
-  const month = MONTHS[(Number(parts[1]) || 1) - 1] || ''
-  if (grain === 'month') return month
-  return String(Number(parts[2]) || '')
 }
 
 function longLabel(iso, grain) {
@@ -64,7 +58,6 @@ export default function ActivityBoard({ chatId, repeats = new Map(), canPunish =
   }
 
   const series = report?.series || []
-  const max = Math.max(1, ...series.map((point) => Number(point.messages) || 0))
   const focus = slice || report?.focus || ''
   const grain = report?.grain || (period === 'year' ? 'month' : 'day')
 
@@ -101,29 +94,19 @@ export default function ActivityBoard({ chatId, repeats = new Map(), canPunish =
           </div>
           <p className="realm-copy">
             {slice
-              ? `${longLabel(focus, grain)}. Нажмите столбец ещё раз или «весь период», чтобы вернуть общий счёт.`
-              : `Прошлый такой же отрезок: ${fmt(report.previousMessages)} сообщений. Нажмите столбец, чтобы увидеть этот день или месяц.`}
+              ? `${longLabel(focus, grain)}. Нажмите клетку ещё раз или «весь период», чтобы вернуть общий счёт.`
+              : `Прошлый такой же отрезок: ${fmt(report.previousMessages)} сообщений. Нажмите клетку, чтобы увидеть этот день или месяц.`}
           </p>
-          <div className="act-chart" role="list">
-            {series.map((point) => {
-              const on = slice === point.date
-              const height = Math.max(6, Math.round(((Number(point.messages) || 0) / max) * 100))
-              return (
-                <button
-                  key={point.date}
-                  type="button"
-                  role="listitem"
-                  className={on ? 'act-col is-on' : 'act-col'}
-                  aria-pressed={on}
-                  aria-label={`${longLabel(point.date, grain)}: ${fmt(point.messages)} сообщений`}
-                  onClick={() => setSlice(on ? '' : point.date)}
-                >
-                  <span className="act-bar" style={{ height: `${height}%` }} />
-                  <span className="act-tick">{shortLabel(point.date, grain)}</span>
-                </button>
-              )
-            })}
-          </div>
+          <HabitGrid
+            caption={grain === 'month' ? 'Сетка месяцев: светлее — больше сообщений.' : 'Сетка дней: светлее — больше сообщений. Нажмите клетку, чтобы открыть этот день.'}
+            selected={slice}
+            onPick={(date) => setSlice(slice === date ? '' : date)}
+            points={series.map((point) => ({
+              date: point.date,
+              label: longLabel(point.date, grain),
+              value: Number(point.messages) || 0,
+            }))}
+          />
           <h3 className="realm-h">Кто пишет</h3>
           {(report.people || []).length === 0 && <p className="realm-copy">За этот отрезок список пишущих пуст.</p>}
           <ul className="realm-list">
@@ -136,8 +119,8 @@ export default function ActivityBoard({ chatId, repeats = new Map(), canPunish =
                     <span>{fmt(person.messages)}</span>
                   </div>
                   {canPunish && (
-                    <button type="button" className="realm-back" onClick={() => onPick?.(String(person.userId))}>
-                      Наказать
+                    <button type="button" className="realm-text-act" onClick={() => onPick?.(String(person.userId))}>
+                      В форму
                     </button>
                   )}
                 </li>

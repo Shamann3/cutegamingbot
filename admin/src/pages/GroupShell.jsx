@@ -15,6 +15,7 @@ import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccen
 import { punishmentHours } from '../lib/gateRecovery'
 import FirstRun, { groupSteps, coachClosed } from '../components/FirstRun'
 import PanelSidebar from '../components/PanelSidebar'
+import PhoneDock from '../components/PhoneDock'
 import EliteTopbar from '../components/EliteTopbar'
 import PositionEditor from '../components/PositionEditor'
 import ActivityBoard from '../components/ActivityBoard'
@@ -23,6 +24,7 @@ import ShiftDesk from '../components/ShiftDesk'
 import GroupGuard from '../components/GroupGuard'
 import { repeatCounts } from '../lib/shiftDesk'
 import useDrawerSwipe from '../lib/useDrawerSwipe'
+import { useGlobalKeys } from '../lib/useGlobalKeys'
 import { useIsPhone, useViewportMode } from '../lib/useIsDesktop'
 import { useMusicMode } from '../lib/musicMode'
 import { usePerfMode } from '../lib/perfMode'
@@ -30,6 +32,8 @@ import { usePerfMode } from '../lib/perfMode'
 const ACTIONS = [
   { id: 'mute', label: 'Мут', right: 'punish_mute', needsUntil: true },
   { id: 'unmute', label: 'Размут', right: 'punish_mute', needsUntil: false },
+  { id: 'voice', label: 'Голос', right: 'punish_voice', needsUntil: true },
+  { id: 'unvoice', label: 'Голос снова', right: 'punish_voice', needsUntil: false },
   { id: 'kick', label: 'Кик', right: 'punish_kick', needsUntil: false },
   { id: 'warn', label: 'Варн', right: 'punish_warn', needsUntil: true },
   { id: 'ban', label: 'Бан', right: 'punish_ban', needsUntil: true },
@@ -99,9 +103,8 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
 
   const closeRail = useCallback(() => setRailOpen(false), [])
   const onCoachStep = useCallback((step) => {
-    if (!phone) return
     setRailOpen(Boolean(step?.openNav))
-  }, [phone])
+  }, [])
   useEffect(() => {
     applyAccentToDocument(lightMode
       ? { id: 'mono', label: 'Ч/Б', hex: '#C8C8C8', h: 0, s: 0, v: 0.78, glow: 28 }
@@ -125,6 +128,37 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
     onOpen: () => setRailOpen(true),
     onClose: closeRail,
   })
+  useGlobalKeys({
+    onEscape: () => setRailOpen(false),
+  })
+
+  useEffect(() => {
+    if (!railOpen) return undefined
+    const shell = document.querySelector('.panel-shell')
+    const prevBody = document.body.style.overflow
+    const prevShell = shell instanceof HTMLElement ? shell.style.overflow : ''
+    const scrollY = shell instanceof HTMLElement ? shell.scrollTop : 0
+
+    if (phone) {
+      document.body.style.overflow = 'hidden'
+      if (shell instanceof HTMLElement) {
+        shell.style.overflow = 'hidden'
+        shell.dataset.navLockScroll = String(scrollY)
+      }
+    }
+    document.documentElement.classList.add('panel-nav-open')
+
+    return () => {
+      document.body.style.overflow = prevBody
+      document.documentElement.classList.remove('panel-nav-open')
+      if (shell instanceof HTMLElement) {
+        shell.style.overflow = prevShell
+        const y = Number(shell.dataset.navLockScroll || 0)
+        delete shell.dataset.navLockScroll
+        if (phone) shell.scrollTop = y
+      }
+    }
+  }, [railOpen, phone])
 
   const loadSummary = useCallback(async (id) => {
     if (!id) {
@@ -349,10 +383,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           onDone={() => setCoach(false)}
         />
       )}
-      {phone && !railOpen && (
-        <button type="button" className="phone-edge" aria-label="Открыть страницы" onClick={() => setRailOpen(true)} />
-      )}
-      {phone && railOpen && (
+      {railOpen && (
         <div className="panel-mobile-overlay" aria-hidden="true" onClick={closeRail} />
       )}
       <main className="panel-shell-main">
@@ -390,9 +421,9 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           <header className="nika-head">
             <div className="nika-head-copy">
               <h1>{chatId ? title : 'Группа не выбрана'}</h1>
-              <p>
-                {phone ? 'Страницы открываются кнопкой меню, как в панели сотрудников.' : 'Страницы слева, как в панели сотрудников.'}
-              </p>
+              {!phone && (
+                <p>Страницы внизу экрана. Меню слева от вкладок.</p>
+              )}
             </div>
             <div className={`nika-status${chatId ? ' is-ok' : ''}`}>
               <b>{current?.position || (chatId ? 'Группа' : 'Пусто')}</b>
@@ -490,12 +521,12 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           {!chapter && activeTab === 'activity' && (
             <section>
               <h2 className="realm-h">Активность</h2>
-              <p className="realm-copy">Живые сообщения этого чата. Столбец — это день или месяц. Имя человека подставляет его id в наказание ниже.</p>
+              <p className="realm-copy">Живые сообщения этого чата. Клетка — день или месяц. Имя подставляет id в форму ниже.</p>
               <ActivityBoard chatId={chatId} repeats={repeats} canPunish={allowedActions.length > 0} onPick={pickPerson} />
               {allowedActions.length > 0 && chatId && (
                 <form id="realm-punish" className="realm-form" onSubmit={punish}>
                   <h3 className="realm-h">Наказать в этом чате</h3>
-                  <p className="realm-copy">Бан, мут и кик отсюда действуют только в этой группе. Старшего, равного и себя форма не отправит.</p>
+                  <p className="realm-copy">Бан, мут, голос и кик действуют только здесь. Старшего, равного и себя форма не отправит.</p>
                   <label>Id человека<input inputMode="numeric" value={userId} onChange={(event) => setUserId(event.target.value)} /></label>
                   <div className="realm-actions">
                     {allowedActions.map((item) => (
@@ -583,6 +614,13 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
         </div>
       </div>
       </main>
+      <PhoneDock
+        sections={navSections}
+        activeSection={activeTab}
+        onNavigate={pickTab}
+        menuOpen={railOpen}
+        onOpenMenu={() => setRailOpen((open) => !open)}
+      />
     </div>
   )
 }

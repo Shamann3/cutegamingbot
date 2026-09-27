@@ -1,0 +1,12 @@
+﻿BEFORE=1.98
+PROT_BEFORE=True
+target C:\Users\Asus\AppData\Roaming\Cursor\User\globalStorage\state.vscdb was=11.16GB removed=False
+missing C:\Users\Asus\AppData\Roaming\Cursor\User\globalStorage\state.vscdb.backup
+target C:\Users\Asus\AppData\Roaming\Cursor\User\globalStorage\state.vscdb-shm was=0GB removed=False
+target C:\Users\Asus\AppData\Roaming\Cursor\User\globalStorage\state.vscdb-wal was=0.01GB removed=False
+retry_rename failed - Cursor may be locking the file. Close Cursor and rerun.
+AFTER=1.98
+FREED=0
+PROT_AFTER=True
+STATE_AFTER=True
+DONE

@@ -3,11 +3,11 @@ import { useEffect, useState } from 'react'
 export function staffSteps(phone) {
   return [
     {
-      title: phone ? 'Меню' : 'Страницы',
+      title: 'Вкладки',
       body: phone
-        ? 'Кнопка справа сверху открывает страницы. Свайп вправо открывает список, свайп влево закрывает.'
-        : 'Слева страницы. Нажмите название.',
-      target: phone ? '[data-coach="menu"]' : '[data-coach="nav"]',
+        ? 'Вкладки внизу. Справа меню: поиск, цвет и выход. Если значков много, проведите по полосе.'
+        : 'Вкладки внизу, по центру. Наведите на значок — появится название. Слева меню: поиск, цвет и выход.',
+      target: '[data-coach="dock"]',
     },
     {
       title: 'Поиск',
@@ -18,14 +18,14 @@ export function staffSteps(phone) {
     {
       title: 'Игроки',
       body: 'Карточки людей. Запрет на весь проект есть только у должности с этим правом.',
-      target: '[data-section="users"]',
-      openNav: phone,
+      target: '[data-coach="dock"] [data-section="users"]',
+      openNav: false,
     },
     {
       title: 'Сменить панель',
       body: 'Возврат к выбору: сотрудник или группа. Из аккаунта вы не выходите.',
       target: '[data-coach="doors"]',
-      openNav: phone,
+      openNav: true,
     },
   ]
 }
@@ -38,23 +38,23 @@ export function groupSteps(phone) {
       target: '.nika-head h1',
     },
     {
-      title: 'Страницы',
+      title: 'Вкладки',
       body: phone
-        ? 'Кнопка меню открывает страницы этой группы.'
-        : 'Слева страницы этой группы. Нажмите нужную.',
-      target: phone ? '[data-coach="menu"]' : '[data-coach="nav"]',
+        ? 'Страницы этой группы внизу. Справа меню: поиск, цвет и выход.'
+        : 'Страницы этой группы внизу, по центру. Слева меню: поиск, цвет и выход.',
+      target: '[data-coach="dock"]',
     },
     {
       title: 'Активность',
-      body: 'Здесь сообщения за сегодня, месяц и год. Нажмите столбец, чтобы увидеть этот день.',
-      target: '[data-section="activity"]',
-      openNav: phone,
+      body: 'Здесь сообщения за сегодня, месяц и год. Нажмите клетку дня или месяца, чтобы открыть этот отрезок.',
+      target: '[data-coach="dock"] [data-section="activity"]',
+      openNav: false,
     },
     {
       title: 'Ещё',
       body: 'Правила и кнопка «Сменить панель».',
-      target: '[data-section="more"]',
-      openNav: phone,
+      target: '[data-coach="dock"] [data-section="more"]',
+      openNav: false,
     },
   ]
 }

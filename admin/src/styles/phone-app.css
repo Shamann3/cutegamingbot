@@ -1,0 +1,511 @@
+/* Телефон как приложение. На компьютере вкладки снизу, как панель задач. */
+
+html.is-phone,
+html[data-viewport="phone"] {
+  --phone-dock-clearance: 108px;
+  background: #000 !important;
+}
+
+html.is-desktop,
+html[data-viewport="desktop"] {
+  --phone-dock-clearance: 64px;
+}
+
+html.is-phone body,
+html[data-viewport="phone"] body,
+html.is-phone .panel-shell,
+html[data-viewport="phone"] .panel-shell,
+html.is-phone .panel-shell-main,
+html[data-viewport="phone"] .panel-shell-main {
+  background: #000 !important;
+}
+
+html.is-phone .phone-edge,
+html[data-viewport="phone"] .phone-edge {
+  display: none !important;
+}
+
+html.is-phone .elite-brand-slot,
+html[data-viewport="phone"] .elite-brand-slot,
+html.is-phone .elite-where,
+html[data-viewport="phone"] .elite-where,
+html.is-phone .realm-main .nika-head-copy p,
+html[data-viewport="phone"] .realm-main .nika-head-copy p {
+  display: none !important;
+}
+
+/* Меню только в доке — без второго гамбургера в шапке */
+html.is-phone .elite-menu-btn,
+html[data-viewport="phone"] .elite-menu-btn {
+  display: none !important;
+}
+
+html.is-phone .elite-topbar,
+html.is-phone .elite-topbar-compact,
+html[data-viewport="phone"] .elite-topbar,
+html[data-viewport="phone"] .elite-topbar-compact {
+  position: sticky !important;
+  top: 0;
+  z-index: 24;
+  background: #000 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding-top: max(10px, env(safe-area-inset-top, 0px)) !important;
+  padding-bottom: 6px !important;
+}
+
+html.is-phone .elite-mobile-section,
+html[data-viewport="phone"] .elite-mobile-section,
+html.is-phone .realm-main .nika-head h1,
+html[data-viewport="phone"] .realm-main .nika-head h1 {
+  font-size: 1.85rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.045em !important;
+  line-height: 1.05 !important;
+  color: #fff !important;
+}
+
+html.is-phone .elite-icon-btn,
+html.is-phone .elite-support-btn,
+html[data-viewport="phone"] .elite-icon-btn,
+html[data-viewport="phone"] .elite-support-btn {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+  border-radius: 50% !important;
+  background: #1c1c1e !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: #f4f4f5 !important;
+}
+
+html.is-phone .panel-shell-main,
+html.is-phone .panel-shell:has(.panel-layout-users) .panel-shell-main,
+html.is-phone .panel-shell:has(.panel-layout-farm) .panel-shell-main,
+html[data-viewport="phone"] .panel-shell-main,
+html[data-viewport="phone"] .panel-shell:has(.panel-layout-users) .panel-shell-main,
+html[data-viewport="phone"] .panel-shell:has(.panel-layout-farm) .panel-shell-main {
+  padding: 8px 14px calc(env(safe-area-inset-bottom, 0px) + var(--phone-dock-clearance, 108px)) !important;
+}
+
+html.is-phone .panel-shelf,
+html.is-phone .panel-users-card,
+html.is-phone .pu-hero-card,
+html.is-phone .pu-inv-card,
+html.is-phone .nika-panel,
+html.is-phone .g-arc-card,
+html.is-phone .arc-card,
+html.is-phone .panel-pulse-hero,
+html.is-phone .realm-main.nika-page > section,
+html.is-phone .act-figures button,
+html.is-phone .act-figures p,
+html[data-viewport="phone"] .panel-shelf,
+html[data-viewport="phone"] .panel-users-card,
+html[data-viewport="phone"] .nika-panel,
+html[data-viewport="phone"] .g-arc-card,
+html[data-viewport="phone"] .arc-card,
+html[data-viewport="phone"] .panel-pulse-hero,
+html[data-viewport="phone"] .realm-main.nika-page > section {
+  background: #1c1c1e !important;
+  border-radius: 22px !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+html.is-phone .panel-stat-value,
+html.is-phone .pulse-hero-value,
+html.is-phone .act-figures strong,
+html[data-viewport="phone"] .panel-stat-value,
+html[data-viewport="phone"] .pulse-hero-value,
+html[data-viewport="phone"] .act-figures strong {
+  font-size: 1.7rem !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.04em !important;
+}
+
+.phone-dock { display: none; }
+
+.phone-dock-scroll {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+}
+
+.phone-dock:not(.is-crowded) .phone-dock-scroll {
+  mask-image: none;
+}
+
+.phone-dock-scroll::-webkit-scrollbar { display: none; }
+
+html.is-phone .phone-dock,
+html[data-viewport="phone"] .phone-dock {
+  display: flex;
+  position: fixed;
+  z-index: 40;
+  left: 12px;
+  right: 12px;
+  bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  height: 62px;
+  margin: 0;
+  padding: 6px;
+  box-sizing: border-box;
+  align-items: stretch;
+  justify-content: space-evenly;
+  gap: 4px;
+  overflow: hidden;
+  border-radius: 24px;
+  background: rgba(28, 28, 30, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+html.is-phone .phone-dock-scroll,
+html[data-viewport="phone"] .phone-dock-scroll {
+  flex: 1 1 auto;
+  justify-content: space-evenly;
+}
+
+html.is-phone .phone-dock.is-crowded .phone-dock-scroll,
+html[data-viewport="phone"] .phone-dock.is-crowded .phone-dock-scroll {
+  justify-content: flex-start;
+  scroll-snap-type: x mandatory;
+}
+
+html.is-phone.panel-nav-open .phone-dock,
+html[data-viewport="phone"].panel-nav-open .phone-dock {
+  visibility: hidden;
+}
+
+.phone-dock button {
+  flex: 1 1 0;
+  min-width: 44px;
+  max-width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: #8e8e93;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.phone-dock.is-crowded .phone-dock-scroll button {
+  flex: 0 0 56px;
+  max-width: 56px;
+  scroll-snap-align: center;
+}
+
+.phone-dock button.is-on {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.phone-dock-menu {
+  flex: 0 0 48px !important;
+  width: 48px;
+  max-width: 48px !important;
+  min-width: 48px;
+}
+
+.phone-dock-icon {
+  position: relative;
+  display: flex;
+  width: 20px;
+  height: 20px;
+}
+
+.phone-dock-icon svg,
+.phone-dock-menu svg {
+  width: 20px;
+  height: 20px;
+}
+
+.phone-dock-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.phone-dock-mark {
+  width: 14px;
+  height: 2px;
+  border-radius: 99px;
+  background: transparent;
+}
+
+.phone-dock button.is-on .phone-dock-mark { background: #fff; }
+
+html.is-personal .phone-dock button.is-on .phone-dock-mark {
+  background: var(--e-accent, #fff);
+}
+
+.phone-dock-badge {
+  position: absolute;
+  top: -5px;
+  right: -8px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 99px;
+  background: #fff;
+  color: #111;
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+}
+
+.phone-dock button:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 1px;
+}
+
+.realm-text-act {
+  appearance: none;
+  margin: 4px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #a1a1aa;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+}
+
+.realm-text-act:hover,
+.realm-text-act:focus-visible {
+  color: #fff;
+}
+
+html.is-phone .panel-economy-dex-wrap,
+html[data-viewport="phone"] .panel-economy-dex-wrap,
+html.is-phone .panel-market-table,
+html[data-viewport="phone"] .panel-market-table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+html.is-phone .online-shelf-modes,
+html.is-phone .online-shelf-range,
+html[data-viewport="phone"] .online-shelf-modes,
+html[data-viewport="phone"] .online-shelf-range {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+}
+
+html.is-phone .online-shelf-modes button,
+html[data-viewport="phone"] .online-shelf-modes button {
+  min-height: 40px !important;
+  padding: 8px 12px !important;
+}
+
+html.is-desktop .panel-shell-main,
+html[data-viewport="desktop"] .panel-shell-main {
+  padding-bottom: var(--phone-dock-clearance, 64px) !important;
+}
+
+html.is-desktop .panel-shelf-sidebar,
+html[data-viewport="desktop"] .panel-shelf-sidebar {
+  display: none !important;
+}
+
+html.is-desktop .panel-sidebar-mobile-open,
+html[data-viewport="desktop"] .panel-sidebar-mobile-open {
+  display: flex !important;
+  position: fixed !important;
+  left: 12px !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: 64px !important;
+  width: min(22rem, calc(100vw - 24px)) !important;
+  height: min(72vh, 40rem) !important;
+  max-height: min(72vh, 40rem) !important;
+  z-index: 48 !important;
+  grid-column: auto !important;
+  grid-row: auto !important;
+  transform: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  overflow: auto !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(22, 22, 24, 0.98) !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55) !important;
+  animation: phone-menu-rise 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes phone-menu-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+html.is-desktop .panel-mobile-overlay,
+html[data-viewport="desktop"] .panel-mobile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+html.is-desktop .panel-layout-dashboard,
+html[data-viewport="desktop"] .panel-layout-dashboard {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+html.is-desktop .panel-layout-page,
+html.is-desktop .panel-layout-users,
+html.is-desktop .panel-layout-staff,
+html.is-desktop .panel-layout-security,
+html.is-desktop .panel-layout-economy,
+html.is-desktop .panel-layout-farm,
+html.is-desktop .panel-layout-content,
+html.is-desktop .panel-layout-analytics,
+html.is-desktop .panel-layout-logs,
+html.is-desktop .panel-layout-settings,
+html.is-desktop .panel-layout-market,
+html.is-desktop .panel-layout-accounts,
+html.is-desktop .panel-layout-broadcast,
+html.is-desktop .panel-layout-events,
+html.is-desktop .panel-layout-chronicle,
+html.is-desktop .panel-layout-support,
+html[data-viewport="desktop"] .panel-layout-page,
+html[data-viewport="desktop"] .panel-layout-users {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+html.is-desktop .elite-topbar,
+html.is-desktop .panel-pulse-hero,
+html.is-desktop .panel-shelf-online,
+html.is-desktop .panel-layout > .panel-shelf-page,
+html.is-desktop .panel-layout > .panel-security,
+html.is-desktop .panel-layout > .panel-users,
+html.is-desktop .panel-layout > .panel-accounts,
+html.is-desktop .panel-layout > .panel-economy,
+html.is-desktop .panel-layout > .panel-market,
+html.is-desktop .panel-layout > .panel-farm,
+html.is-desktop .panel-layout > .panel-content,
+html.is-desktop .panel-layout > .panel-broadcast,
+html.is-desktop .panel-layout > .panel-broadcast-wrap,
+html.is-desktop .panel-layout > .panel-logs,
+html.is-desktop .panel-layout > .panel-settings,
+html.is-desktop .panel-layout > .panel-events,
+html.is-desktop .panel-layout > .analytics-section,
+html.is-desktop .panel-layout > .support-section,
+html.is-desktop .panel-layout > .grp-page,
+html.is-desktop .panel-layout > .nika-page,
+html.is-desktop .panel-layout > .realm-main,
+html[data-viewport="desktop"] .elite-topbar,
+html[data-viewport="desktop"] .panel-layout > .realm-main {
+  grid-column: 1 / -1 !important;
+}
+
+html.is-desktop .phone-dock,
+html[data-viewport="desktop"] .phone-dock {
+  display: flex;
+  position: fixed;
+  z-index: 50;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 52px;
+  margin: 0;
+  padding: 4px 8px 6px 56px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  border-radius: 0;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 18, 18, 0.94);
+  box-shadow: none;
+  backdrop-filter: blur(18px);
+}
+
+html.is-desktop .phone-dock-scroll,
+html[data-viewport="desktop"] .phone-dock-scroll {
+  flex: 1 1 auto;
+  justify-content: safe center;
+  height: 100%;
+  max-width: 100%;
+  mask-image: none;
+}
+
+html.is-desktop .phone-dock button,
+html.is-desktop .phone-dock.is-crowded .phone-dock-scroll button,
+html[data-viewport="desktop"] .phone-dock button {
+  flex: 0 0 44px;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  height: 40px;
+  border-radius: 8px;
+  gap: 0;
+}
+
+html.is-desktop .phone-dock-label,
+html[data-viewport="desktop"] .phone-dock-label {
+  display: none;
+}
+
+html.is-desktop .phone-dock-mark,
+html[data-viewport="desktop"] .phone-dock-mark {
+  display: none;
+}
+
+html.is-desktop .phone-dock button:hover,
+html[data-viewport="desktop"] .phone-dock button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+html.is-desktop .phone-dock button.is-on,
+html[data-viewport="desktop"] .phone-dock button.is-on {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+html.is-desktop .phone-dock-menu,
+html[data-viewport="desktop"] .phone-dock-menu {
+  position: absolute;
+  left: 8px;
+  top: 6px;
+}
+
+html.is-desktop.panel-nav-open .phone-dock-menu,
+html[data-viewport="desktop"].panel-nav-open .phone-dock-menu {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}

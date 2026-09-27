@@ -230,7 +230,7 @@ export default function EliteTopbar({
             type="button"
             className={`elite-menu-btn${menuOpen ? ' elite-menu-btn-open' : ''}`}
             data-coach="menu"
-            aria-label={menuOpen ? 'Закрыть разделы' : 'Открыть разделы'}
+            aria-label={menuOpen ? 'Закрыть меню' : 'Поиск, цвет и выход'}
             aria-expanded={menuOpen}
             onClick={onOpenMenu}
           >

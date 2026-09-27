@@ -1395,6 +1395,25 @@ async def moderate_action(
             params["until_date"] = until_date
         return await _tg_api("restrictChatMember", **params)
 
+    async def _restrict_voice(target_chat: int, blocked: bool) -> Dict[str, Any]:
+        """Только голос и кружки: текст в чате остаётся."""
+        perms = {
+            "can_send_messages": True,
+            "can_send_audios": not blocked,
+            "can_send_documents": True,
+            "can_send_photos": True,
+            "can_send_videos": True,
+            "can_send_video_notes": not blocked,
+            "can_send_voice_notes": not blocked,
+            "can_send_polls": True,
+            "can_send_other_messages": True,
+            "can_add_web_page_previews": True,
+        }
+        params: Dict[str, Any] = {"chat_id": int(target_chat), "user_id": uid, "permissions": perms}
+        if blocked and until_date:
+            params["until_date"] = until_date
+        return await _tg_api("restrictChatMember", **params)
+
     async def _ban_chat(target_chat: int) -> Dict[str, Any]:
         params: Dict[str, Any] = {"chat_id": int(target_chat), "user_id": uid}
         if until_date:
@@ -1482,6 +1501,26 @@ async def moderate_action(
             try:
                 await db.pool.execute(
                     "DELETE FROM active_mutes WHERE user_id = $1 AND chat_id = $2",
+                    uid, cid,
+                )
+            except Exception:
+                pass
+        results.append(res)
+    elif action == "voice":
+        res = await _restrict_voice(cid, True)
+        ok = bool(res.get("ok"))
+        detail = res.get("description") or ""
+        if ok:
+            await _record_mute(cid, "voice")
+        results.append(res)
+    elif action == "unvoice":
+        res = await _restrict_voice(cid, False)
+        ok = bool(res.get("ok"))
+        detail = res.get("description") or ""
+        if ok:
+            try:
+                await db.pool.execute(
+                    "DELETE FROM active_mutes WHERE user_id = $1 AND chat_id = $2 AND scope = 'voice'",
                     uid, cid,
                 )
             except Exception:

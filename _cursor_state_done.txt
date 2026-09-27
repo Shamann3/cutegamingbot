@@ -1,0 +1,11 @@
+﻿BEFORE=2.04
+PROT_BEFORE=True
+removed state.vscdb was=11.16GB still=False
+missing state.vscdb.backup
+removed state.vscdb-shm was=0GB still=False
+removed state.vscdb-wal was=0.01GB still=False
+AFTER=13.21
+FREED=11.17
+PROT_AFTER=True
+STATE_AFTER=False
+DONE

@@ -12,6 +12,8 @@ from staff_panel_rights import column_granted, purge_allowed
 def test_local_actions_map_to_one_right():
     assert action_right("ban") == "punish_ban"
     assert action_right("mute") == "punish_mute"
+    assert action_right("voice") == "punish_voice"
+    assert action_right("unvoice") == "punish_voice"
     assert action_right("banfull") is None
 
 
@@ -19,6 +21,8 @@ def test_lower_role_cannot_ban():
     assert rights_allow(["punish_warn", "view_members"], "warn")
     assert not rights_allow(["punish_warn", "view_members"], "ban")
     assert not rights_allow(["punish_mute"], "banfull")
+    assert rights_allow(["punish_voice"], "voice")
+    assert not rights_allow(["punish_mute"], "voice")
 
 
 def test_punish_only_junior_rank():

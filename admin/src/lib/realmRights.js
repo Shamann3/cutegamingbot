@@ -10,7 +10,7 @@ export const PUNISH_RIGHTS = [
   { id: 'punish_ban', label: 'Бан в чате', hint: 'Только эта группа, не весь проект' },
   { id: 'punish_kick', label: 'Кик', hint: 'Убрать из этого чата' },
   { id: 'punish_warn', label: 'Варн', hint: 'Предупреждение в этом чате' },
-  { id: 'punish_voice', label: 'Голос', hint: 'Если бот пишет минуты голоса' },
+  { id: 'punish_voice', label: 'Голос', hint: 'Запретить голосовые и кружки, текст оставить' },
 ]
 
 export const REALM_RIGHTS = [...PAGE_RIGHTS, ...PUNISH_RIGHTS]
