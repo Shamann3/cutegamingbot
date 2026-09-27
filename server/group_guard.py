@@ -320,6 +320,7 @@ async def guard_desk() -> dict:
         rows = await db.pool.fetch(
             """
             SELECT g.chat_id, g.title,
+                   COALESCE(NULLIF(TRIM(g.username), ''), NULLIF(TRIM(ch.usernamechat), ''), '') AS username,
                    COALESCE(e.custom, FALSE) AS custom,
                    COALESCE(e.links, FALSE) AS links,
                    COALESCE(e.flood, FALSE) AS flood,
@@ -327,24 +328,42 @@ async def guard_desk() -> dict:
             FROM epsilon_official_groups g
             LEFT JOIN epsilon_guard e ON e.chat_id = g.chat_id
             LEFT JOIN group_captcha_settings c ON c.chat_id = g.chat_id
+            LEFT JOIN chat ch ON ch.chat_id = g.chat_id
             WHERE g.is_official
             ORDER BY COALESCE(e.custom, FALSE) DESC, g.title
             """
         )
     except Exception:
-        rows = await db.pool.fetch(
-            """
-            SELECT g.chat_id, g.title,
-                   COALESCE(e.custom, FALSE) AS custom,
-                   COALESCE(e.links, FALSE) AS links,
-                   COALESCE(e.flood, FALSE) AS flood,
-                   NULL::boolean AS captcha
-            FROM epsilon_official_groups g
-            LEFT JOIN epsilon_guard e ON e.chat_id = g.chat_id
-            WHERE g.is_official
-            ORDER BY COALESCE(e.custom, FALSE) DESC, g.title
-            """
-        )
+        try:
+            rows = await db.pool.fetch(
+                """
+                SELECT g.chat_id, g.title,
+                       COALESCE(NULLIF(TRIM(g.username), ''), '') AS username,
+                       COALESCE(e.custom, FALSE) AS custom,
+                       COALESCE(e.links, FALSE) AS links,
+                       COALESCE(e.flood, FALSE) AS flood,
+                       NULL::boolean AS captcha
+                FROM epsilon_official_groups g
+                LEFT JOIN epsilon_guard e ON e.chat_id = g.chat_id
+                WHERE g.is_official
+                ORDER BY COALESCE(e.custom, FALSE) DESC, g.title
+                """
+            )
+        except Exception:
+            rows = await db.pool.fetch(
+                """
+                SELECT g.chat_id, g.title,
+                       ''::text AS username,
+                       COALESCE(e.custom, FALSE) AS custom,
+                       COALESCE(e.links, FALSE) AS links,
+                       COALESCE(e.flood, FALSE) AS flood,
+                       NULL::boolean AS captcha
+                FROM epsilon_official_groups g
+                LEFT JOIN epsilon_guard e ON e.chat_id = g.chat_id
+                WHERE g.is_official
+                ORDER BY COALESCE(e.custom, FALSE) DESC, g.title
+                """
+            )
     groups = []
     for row in rows:
         own_captcha = policy["captcha"] if row["captcha"] is None else bool(row["captcha"])
@@ -355,9 +374,11 @@ async def guard_desk() -> dict:
             captcha=own_captcha,
             policy=policy,
         )
+        uname = str(row["username"] or "").lstrip("@").strip()
         groups.append({
             "chatId": int(row["chat_id"]),
             "title": row["title"] or str(row["chat_id"]),
+            "username": uname,
             "custom": bool(row["custom"]),
             **flags,
         })

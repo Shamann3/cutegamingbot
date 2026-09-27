@@ -2032,8 +2032,9 @@ export async function fetchModerationProof(logId) {
   return adminRequest(`/moderation/proof/${logId}`)
 }
 
-export async function postModerationUnban(userId) {
-  return adminRequest(`/moderation/unban/${userId}`, { method: 'POST' })
+export async function postModerationUnban(userId, reason = '') {
+  const body = reason ? { reason: String(reason).trim() } : {}
+  return adminRequest(`/moderation/unban/${userId}`, { method: 'POST', body })
 }
 
 // ---------------------------------------------------------------------------

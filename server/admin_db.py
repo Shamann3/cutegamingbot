@@ -1936,12 +1936,141 @@ async def get_dashboard_stats() -> dict:
         "SELECT COUNT(*)::int FROM market_listings WHERE status = 'active'"
     ) or 0
     admins = await db.pool.fetchval("SELECT COUNT(*)::int FROM admin_accounts") or 0
+    usage = await get_project_usage_stats()
     return {
         "players": players,
         "activePlots": active_plots,
         "marketListings": market_active,
         "adminAccounts": admins,
+        "usage": usage,
     }
+
+
+async def get_project_usage_stats() -> dict:
+    """Сводка использования проекта: новые пользователи, события бота, сообщения в официальных группах."""
+    empty = {
+        "day": {"current": 0, "previous": 0},
+        "month": {"current": 0, "previous": 0},
+        "year": {"current": 0, "previous": 0},
+    }
+    out = {
+        "newUsers": {k: dict(v) for k, v in empty.items()},
+        "botEvents": {k: dict(v) for k, v in empty.items()},
+        "officialMessages": {k: dict(v) for k, v in empty.items()},
+        "activeUsers": 0,
+    }
+    try:
+        out["activeUsers"] = int(
+            await db.pool.fetchval(
+                "SELECT COUNT(*)::int FROM users WHERE last_seen_at > NOW() - INTERVAL '1 day'"
+            )
+            or 0
+        )
+    except Exception:
+        pass
+
+    # Новые пользователи
+    try:
+        row = await db.pool.fetchrow(
+            """
+            SELECT
+              COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE)::int AS day_cur,
+              COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE - 1)::int AS day_prev,
+              COUNT(*) FILTER (
+                WHERE created_at >= date_trunc('month', CURRENT_DATE)
+              )::int AS month_cur,
+              COUNT(*) FILTER (
+                WHERE created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
+                  AND created_at < date_trunc('month', CURRENT_DATE)
+              )::int AS month_prev,
+              COUNT(*) FILTER (
+                WHERE created_at >= date_trunc('year', CURRENT_DATE)
+              )::int AS year_cur,
+              COUNT(*) FILTER (
+                WHERE created_at >= date_trunc('year', CURRENT_DATE) - INTERVAL '1 year'
+                  AND created_at < date_trunc('year', CURRENT_DATE)
+              )::int AS year_prev
+            FROM users
+            """
+        )
+        if row:
+            out["newUsers"] = {
+                "day": {"current": int(row["day_cur"] or 0), "previous": int(row["day_prev"] or 0)},
+                "month": {"current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0)},
+                "year": {"current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0)},
+            }
+    except Exception:
+        pass
+
+    # События бота (взаимодействия)
+    try:
+        row = await db.pool.fetchrow(
+            """
+            SELECT
+              COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE)::int AS day_cur,
+              COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE - 1)::int AS day_prev,
+              COUNT(*) FILTER (
+                WHERE created_at >= date_trunc('month', CURRENT_DATE)
+              )::int AS month_cur,
+              COUNT(*) FILTER (
+                WHERE created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
+                  AND created_at < date_trunc('month', CURRENT_DATE)
+              )::int AS month_prev,
+              COUNT(*) FILTER (
+                WHERE created_at >= date_trunc('year', CURRENT_DATE)
+              )::int AS year_cur,
+              COUNT(*) FILTER (
+                WHERE created_at >= date_trunc('year', CURRENT_DATE) - INTERVAL '1 year'
+                  AND created_at < date_trunc('year', CURRENT_DATE)
+              )::int AS year_prev
+            FROM game_events
+            """
+        )
+        if row:
+            out["botEvents"] = {
+                "day": {"current": int(row["day_cur"] or 0), "previous": int(row["day_prev"] or 0)},
+                "month": {"current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0)},
+                "year": {"current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0)},
+            }
+    except Exception:
+        pass
+
+    # Сообщения в официальных группах
+    try:
+        row = await db.pool.fetchrow(
+            """
+            SELECT
+              COALESCE(SUM(c.text) FILTER (WHERE c.date = CURRENT_DATE), 0)::bigint AS day_cur,
+              COALESCE(SUM(c.text) FILTER (WHERE c.date = CURRENT_DATE - 1), 0)::bigint AS day_prev,
+              COALESCE(SUM(c.text) FILTER (
+                WHERE c.date >= date_trunc('month', CURRENT_DATE)::date
+              ), 0)::bigint AS month_cur,
+              COALESCE(SUM(c.text) FILTER (
+                WHERE c.date >= (date_trunc('month', CURRENT_DATE) - INTERVAL '1 month')::date
+                  AND c.date < date_trunc('month', CURRENT_DATE)::date
+              ), 0)::bigint AS month_prev,
+              COALESCE(SUM(c.text) FILTER (
+                WHERE c.date >= date_trunc('year', CURRENT_DATE)::date
+              ), 0)::bigint AS year_cur,
+              COALESCE(SUM(c.text) FILTER (
+                WHERE c.date >= (date_trunc('year', CURRENT_DATE) - INTERVAL '1 year')::date
+                  AND c.date < date_trunc('year', CURRENT_DATE)::date
+              ), 0)::bigint AS year_prev
+            FROM chatchange c
+            JOIN epsilon_official_groups g ON g.chat_id = c.chat_id AND g.is_official
+            """
+        )
+        if row:
+            out["officialMessages"] = {
+                "day": {"current": int(row["day_cur"] or 0), "previous": int(row["day_prev"] or 0)},
+                "month": {"current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0)},
+                "year": {"current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0)},
+            }
+    except Exception:
+        pass
+
+    return out
+
 
 
 # ---------------------------------------------------------------------------

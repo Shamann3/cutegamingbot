@@ -27,16 +27,11 @@ export default function App() {
   }, [])
 
   const finishSplash = useCallback(() => {
-    // Сессия действительна, если ЛИБО есть валидный локальный токен (обычно ПК),
-    // ЛИБО приложение открыто из Telegram (есть initData). На телефоне Telegram
-    // WebView после перезагрузки теряет токен из памяти/localStorage, но всегда
-    // заново присылает initData, которым сервер аутентифицирует каждый запрос.
-    // Поэтому наличие initData = действующая сессия; если это не админ —
-    // сервер вернёт 403 на запросы панели, и PanelShell сам вернёт на вход.
     if (!(isAdminSessionValid() || hasTelegramInitData())) {
       logoutAdmin()
     }
-    setScreen('boot')
+    // Без лишнего промежуточного «скана» — сразу к выбору двери.
+    setScreen('gate')
   }, [])
 
   const finishAuth = useCallback(() => {

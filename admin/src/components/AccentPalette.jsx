@@ -108,14 +108,15 @@ export default function AccentPalette({ value, onChange, inline = false }) {
     if (!btn) return
     const r = btn.getBoundingClientRect()
     const gap = 10
-    const pw = panel?.offsetWidth || 236
-    const ph = panel?.offsetHeight || 380
+    const pw = Math.min(280, window.innerWidth - 24)
+    const ph = Math.min(panel?.offsetHeight || 360, window.innerHeight - 24)
     let left = r.right + gap
-    let top = r.top + r.height / 2 - ph / 2
+    let top = r.top
 
     if (left + pw > window.innerWidth - 12) {
       left = Math.max(12, r.left - gap - pw)
     }
+    left = Math.max(12, Math.min(left, window.innerWidth - pw - 12))
     top = Math.max(12, Math.min(top, window.innerHeight - ph - 12))
     setPos({ top, left })
   }, [])
@@ -349,7 +350,18 @@ export default function AccentPalette({ value, onChange, inline = false }) {
       </div>
   )
 
-  const panel = open && !inline ? createPortal(wheel, document.body) : null
+  const panel = open && !inline ? createPortal(
+    <>
+      <button
+        type="button"
+        className="accent-picker-backdrop"
+        aria-label="Закрыть палитру"
+        onClick={closePalette}
+      />
+      {wheel}
+    </>,
+    document.body,
+  ) : null
 
   if (inline) return wheel
 

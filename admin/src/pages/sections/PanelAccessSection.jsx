@@ -8,6 +8,7 @@ import {
 import { sectionBlurb } from '../../constants/panelNav'
 import { parseAccessKey } from '../../constants/panelAccessTree'
 import PanelAccessWizard from './PanelAccessWizard'
+import RightsSection from './RightsSection'
 
 const GROUP_LABELS = {
   overview: 'Обзор',
@@ -19,7 +20,7 @@ const GROUP_LABELS = {
   system: 'Система',
 }
 
-const TABS = [
+const BASE_TABS = [
   { id: 'wizard', label: 'Простая настройка' },
   { id: 'defaults', label: 'Дефолты ролей' },
   { id: 'members', label: 'Администраторы' },
@@ -535,18 +536,34 @@ const ComparePane = memo(function ComparePane({
   )
 })
 
-export default function PanelAccessSection() {
+export default function PanelAccessSection({ isProjectCreator = false, initialTab = null } = {}) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busyKeys, setBusyKeys] = useState(() => new Set())
   const [selectedId, setSelectedId] = useState(null)
   const [roleTab, setRoleTab] = useState('senior_admin')
-  const [viewTab, setViewTab] = useState('wizard')
+  const [viewTab, setViewTab] = useState(() => {
+    if (initialTab === 'rights' && isProjectCreator) return 'rights'
+    return initialTab && BASE_TABS.some((t) => t.id === initialTab) ? initialTab : 'wizard'
+  })
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
   const [helpOpen, setHelpOpen] = useState(false)
   const [expanded, setExpanded] = useState(() => new Set(['staff']))
   const pendingSeq = useRef(new Map())
+
+  const tabs = useMemo(() => {
+    if (!isProjectCreator) return BASE_TABS
+    return [...BASE_TABS, { id: 'rights', label: 'Права' }]
+  }, [isProjectCreator])
+
+  useEffect(() => {
+    if (!initialTab) return
+    if (initialTab === 'rights' && !isProjectCreator) return
+    if (initialTab === 'rights' || BASE_TABS.some((t) => t.id === initialTab)) {
+      setViewTab(initialTab)
+    }
+  }, [initialTab, isProjectCreator])
 
   const markBusy = useCallback((key) => {
     setBusyKeys((prev) => {
@@ -1002,7 +1019,8 @@ export default function PanelAccessSection() {
           <h2 className="sec-title">Админ панель</h2>
           <p className="sec-subtitle">
             Разделы и внутренние вкладки для каждой роли и каждого администратора.
-            Только владелец · изменения применяются сразу.
+            {isProjectCreator ? ' Вкладка «Права» — должности групп и сброс допуска.' : ''}
+            {' '}Только владелец · изменения применяются сразу.
           </p>
         </div>
         <button
@@ -1018,7 +1036,7 @@ export default function PanelAccessSection() {
       </header>
 
       <nav className="sec-tabs pa-view-tabs" aria-label="Разделы доступов">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -1194,6 +1212,12 @@ export default function PanelAccessSection() {
             onResetCell={compareResetCell}
             onSetRowForAll={compareSetRowForAll}
           />
+        )}
+
+        {isProjectCreator && viewTab === 'rights' && (
+          <div className="pa-pane pa-pane-rights">
+            <RightsSection embedded />
+          </div>
         )}
       </div>
 

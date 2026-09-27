@@ -1262,6 +1262,7 @@ html[data-viewport="desktop"] .panel-sidebar-nav {
 .realm-switch-track {
   position: relative;
   flex: 0 0 auto;
+  margin-left: auto;
   width: 44px;
   height: 26px;
   border-radius: 999px;
@@ -1291,6 +1292,7 @@ html[data-viewport="desktop"] .panel-sidebar-nav {
 }
 
 .realm-switch-copy {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -1711,7 +1713,9 @@ html[data-viewport="phone"] .realm-top h1 {
 .elite-mobile-section {
   font-family: Manrope, ui-sans-serif, system-ui, sans-serif !important;
   color: #f4f4f4 !important;
-  letter-spacing: -0.03em !important;
+  letter-spacing: normal !important;
+  font-weight: 700 !important;
+  font-stretch: normal !important;
 }
 
 .panel-brand-tag,
@@ -1839,18 +1843,14 @@ html[data-viewport="desktop"] .elite-brand-slot {
   outline-offset: 3px;
 }
 
-.accent-picker-panel,
 .accent-picker-panel.is-inline {
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-}
-
-.accent-picker-panel.is-inline {
   position: relative;
   z-index: 1;
   top: auto;
@@ -1859,8 +1859,27 @@ html[data-viewport="desktop"] .elite-brand-slot {
   animation: none;
 }
 
-.accent-wheel-wrap {
-  width: min(168px, 42%);
+.accent-picker-panel:not(.is-inline) {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+  width: min(220px, calc(100vw - 28px)) !important;
+  max-width: min(220px, calc(100vw - 28px)) !important;
+  max-height: min(360px, calc(100dvh - 28px)) !important;
+  overflow: auto !important;
+  padding: 10px !important;
+  box-sizing: border-box !important;
+}
+
+.accent-picker-panel:not(.is-inline) .accent-wheel-wrap {
+  width: min(120px, 100%) !important;
+  margin: 0 auto !important;
+  flex: 0 0 auto !important;
+}
+
+.accent-picker-panel.is-inline .accent-wheel-wrap {
+  width: min(120px, 38%);
   aspect-ratio: 1;
   height: auto;
   margin: 0;
@@ -2009,8 +2028,25 @@ html[data-viewport="phone"] .gate-status {
   color: var(--gate-ink);
 }
 
-.guard-desk .panel-page-title {
-  margin-bottom: 0;
+.guard-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.guard-desk .panel-page-title,
+.guard-head .realm-h {
+  margin: 0;
+}
+
+.guard-desk .guard-head .realm-copy,
+.guard-head .realm-copy {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .guard-desk .realm-copy {
@@ -2024,6 +2060,35 @@ html[data-viewport="phone"] .gate-status {
 .guard-block {
   min-width: 0;
   max-width: 100%;
+}
+
+.guard-block-custom {
+  padding: 1.15rem 1.2rem 1.25rem;
+  border: 1px solid var(--gate-line, rgba(255, 255, 255, 0.12));
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.guard-block-custom > h3:first-child {
+  margin: 0;
+  font-size: 1.12rem;
+  letter-spacing: 0.01em;
+}
+
+.guard-block-custom > .realm-copy {
+  margin: 0;
+  opacity: 0.88;
+}
+
+.guard-block-custom > .guard-field {
+  margin: 0.15rem 0 0.25rem;
+}
+
+.guard-block-custom .guard-groups {
+  margin-top: 0.35rem;
 }
 
 .guard-block h3,
@@ -2107,6 +2172,32 @@ html[data-viewport="phone"] .gate-status {
 .guard-hour strong {
   font-variant-numeric: tabular-nums;
   font-size: 1.15rem;
+}
+
+.guard-hour-manual {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+}
+
+.guard-hour-input {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 7.5rem;
+  max-width: 10rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .guard-desk .realm-switch:focus-visible,

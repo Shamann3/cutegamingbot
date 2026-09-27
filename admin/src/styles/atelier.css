@@ -143,8 +143,9 @@ article.panel-shelf,
   background: none !important;
   -webkit-text-fill-color: currentColor !important;
   color: var(--e-text) !important;
-  letter-spacing: -0.03em !important;
+  letter-spacing: normal !important;
   font-weight: 700 !important;
+  font-stretch: normal !important;
 }
 
 .sec-title,
@@ -594,6 +595,13 @@ tr:hover td {
 
 .panel-mobile-overlay {
   background: rgba(0, 0, 0, 0.58) !important;
+  transition: opacity 0.24s ease, background 0.24s ease;
+  animation: atelier-overlay-in 0.22s ease both;
+}
+
+@keyframes atelier-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .panel-sidebar-mobile-open {
@@ -722,7 +730,8 @@ tr:hover td {
 .elite-table th,
 table thead th {
   color: var(--e-accent-bright) !important;
-  background: linear-gradient(180deg, rgba(var(--e-accent-rgb), 0.1), #101010) !important;
+  background: #0a0a0a !important;
+  background-image: none !important;
 }
 
 .grp-table-wrap,

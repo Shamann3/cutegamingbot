@@ -282,7 +282,7 @@ export default function GiveawaysSection() {
 
       {form && (
         <div className="admin-modal-backdrop" role="presentation" onClick={() => setForm(null)}>
-          <div className="admin-modal" role="dialog" onClick={(e) => e.stopPropagation()}>
+          <div className="admin-modal admin-modal-sheet" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h3>{form.id ? 'Редактировать розыгрыш' : 'Новый розыгрыш'}</h3>
 
             <label className="admin-modal-field">
@@ -472,6 +472,36 @@ export default function GiveawaysSection() {
         onConfirm={confirmComplete}
         onCancel={() => setCompleteTarget(null)}
       />
+
+      <style>{`
+        .admin-modal-sheet {
+          width: min(720px, 96vw);
+          max-height: min(92dvh, 900px);
+          overflow: auto;
+          border-radius: 18px;
+          padding: 20px 22px;
+          box-sizing: border-box;
+        }
+        .admin-modal-sheet .admin-modal-field,
+        .admin-modal-sheet > label {
+          padding: 4px 2px;
+          box-sizing: border-box;
+        }
+        .admin-modal-sheet .admin-modal-field > span,
+        .admin-modal-sheet > label > span {
+          display: block;
+          padding: 0 2px 4px;
+        }
+        @media (max-width: 720px) {
+          .admin-modal-sheet {
+            width: 100%;
+            max-height: 100dvh;
+            height: 100dvh;
+            border-radius: 0;
+            padding: 16px;
+          }
+        }
+      `}</style>
     </div>
   )
 }

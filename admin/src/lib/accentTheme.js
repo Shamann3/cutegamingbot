@@ -202,11 +202,11 @@ export function applyAccentToDocument(accent) {
   const a = normalizeAccent(accent)
   const { r, g, b } = hexToRgb(a.hex)
   const glow = a.glow / 100
-  const soft = 0.08 + glow * 0.18
-  const soft2 = 0.16 + glow * 0.28
-  const line = 0.28 + glow * 0.35
-  const glowPx = 18 + glow * 48
-  const glowAlpha = 0.08 + glow * 0.28
+  const soft = 0.14 + glow * 0.28
+  const soft2 = 0.24 + glow * 0.38
+  const line = 0.42 + glow * 0.42
+  const glowPx = 22 + glow * 56
+  const glowAlpha = 0.14 + glow * 0.38
   const ink = inkOnAccent(a.hex)
   const brightToward = relativeLuminance(a.hex) > 0.58 ? '#000000' : '#ffffff'
   const brightAmt = relativeLuminance(a.hex) > 0.58 ? 0.22 : 0.28

@@ -1386,6 +1386,43 @@
   animation: pu-rise 0.4s var(--e-ease) both;
 }
 
+.users-transfers,
+.pu-transfers-panel.users-transfers {
+  padding-left: 0.85rem;
+  padding-right: 0.85rem;
+  box-sizing: border-box;
+}
+
+.users-transfers .pu-intel-transfers,
+.users-transfers .pu-intel-transfers-full,
+.users-transfers .pu-transfer-filters {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.users-transfers .pu-intel-transfers > li {
+  padding-left: 0.85rem;
+  padding-right: 0.85rem;
+}
+
+.users-farm-grid,
+.pu-farm-grid.users-farm-grid,
+.panel-users-plot-grid.users-farm-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(5.6rem, 1fr)) !important;
+  grid-auto-rows: minmax(4.4rem, auto) !important;
+  gap: 0.55rem !important;
+  max-height: none !important;
+  overflow: visible !important;
+  width: 100%;
+  align-content: start;
+}
+
+.users-farm-grid > .panel-users-plot {
+  width: 100%;
+  min-height: 4.4rem;
+}
+
 @media (max-width: 720px) {
   .pu-intel-thresholds {
     grid-template-columns: 1fr;

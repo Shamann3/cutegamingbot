@@ -39,6 +39,7 @@ import RulesGateModal from '../components/RulesGateModal'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import { usePerfMode } from '../lib/perfMode'
 import { useMusicMode } from '../lib/musicMode'
+import { bumpMusicUnlock } from '../lib/musicUnlock'
 import { useGlobalKeys } from '../lib/useGlobalKeys'
 import {
   applyAccentToDocument,
@@ -48,15 +49,24 @@ import {
 import { loadRecentSections, pushRecentSection } from '../lib/recentSections'
 import { useViewportMode, useIsPhone } from '../lib/useIsDesktop'
 import useDrawerSwipe from '../lib/useDrawerSwipe'
-import RightsSection from './sections/RightsSection'
 import GroupGuardDesk from './sections/GroupGuardDesk'
 import FirstRun, { staffSteps, coachClosed } from '../components/FirstRun'
 import PhoneDock from '../components/PhoneDock'
 import ExtrasHub from '../components/ExtrasHub'
+import ExtrasTopSearch from '../components/ExtrasTopSearch'
 
 export default function PanelShell({ onLogout, onChangeDoor }) {
   const { lightMode, setLightMode } = usePerfMode()
-  const { volume: musicVolume, setVolume: setMusicVolume, toggleMute: toggleMusicMute } = useMusicMode()
+  const { volume: musicVolume, setVolume: setMusicVolume, toggleMute: toggleMusicMuteRaw } = useMusicMode()
+  const toggleMusicMute = useCallback(() => {
+    const wasMuted = musicVolume <= 0
+    toggleMusicMuteRaw()
+    if (wasMuted) bumpMusicUnlock()
+  }, [musicVolume, toggleMusicMuteRaw])
+  const onMusicVolumeChange = useCallback((next) => {
+    setMusicVolume(next)
+    if (next > 0) bumpMusicUnlock()
+  }, [setMusicVolume])
   const viewport = useViewportMode()
   const phone = useIsPhone()
   const [accent, setAccent] = useState(() => loadStoredAccent())
@@ -98,15 +108,21 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [projectCreatorId, setProjectCreatorId] = useState(null)
   const [isProjectCreator, setIsProjectCreator] = useState(false)
   const [canBanfull, setCanBanfull] = useState(false)
+  const [panelAccessTab, setPanelAccessTab] = useState(null)
   const [recentSections, setRecentSections] = useState(() => loadRecentSections())
   const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.staff.v4'))
   const onCoachStep = useCallback((step) => {
+    // Во время обучения не открываем боковое меню — на телефоне это ломало 2-й шаг.
+    if (coach) {
+      setMobileNavOpen(false)
+      return
+    }
     setMobileNavOpen(Boolean(step?.openNav))
-  }, [])
+  }, [coach])
   useDrawerSwipe({
-    enabled: phone,
+    enabled: phone && !coach,
     open: mobileNavOpen,
-    onOpen: () => setMobileNavOpen(true),
+    onOpen: () => { if (!coach) setMobileNavOpen(true) },
     onClose: () => setMobileNavOpen(false),
   })
 
@@ -190,6 +206,15 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   )
 
   const isMore = section === 'more'
+  const inExtrasChild = useMemo(
+    () => extraSections.some((item) => item.id === section),
+    [extraSections, section],
+  )
+  const inExtras = isMore || inExtrasChild
+  const extrasTabLabel = useMemo(() => {
+    if (isMore) return 'Дополнительно'
+    return navSections.find((item) => item.id === section)?.labelRu || 'Дополнительно'
+  }, [isMore, navSections, section])
 
   // Если текущий раздел закрыли в матрице — уводим на первую доступную вкладку.
   useEffect(() => {
@@ -266,10 +291,14 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   }, [onLogout])
 
   const handleNavigate = useCallback((id) => {
-    if (id !== section) setFlashKey((k) => k + 1)
-    setSection(id)
+    // «Права» перенесены во вкладку «Админ панель» (creator-only).
+    const target = id === 'rights' ? 'panelAccess' : id
+    if (id === 'rights') setPanelAccessTab('rights')
+    else if (target === 'panelAccess') setPanelAccessTab(null)
+    if (target !== section) setFlashKey((k) => k + 1)
+    setSection(target)
     setMobileNavOpen(false)
-    if (id !== 'more') setRecentSections(pushRecentSection(id))
+    if (target !== 'more') setRecentSections(pushRecentSection(target))
   }, [section])
 
   const currentSection = PANEL_SECTIONS.find((s) => s.id === section)
@@ -301,7 +330,6 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const isModeration = section === 'moderation'
   const isChronicle  = section === 'chronicle'
   const isPanelAccess = section === 'panelAccess'
-  const isRights = section === 'rights'
   const isGroupGuard = section === 'groupGuard'
   const isSoftRestart = section === 'softRestart'
 
@@ -390,7 +418,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                                       ? ' panel-layout-support'
                                       : isChronicle
                                         ? ' panel-layout-chronicle'
-                                        : isPanelAccess || isRights || isSoftRestart || isGroupsStudio || isNika || isGames
+                                        : isPanelAccess || isSoftRestart || isGroupsStudio || isNika || isGames
                                           ? ' panel-layout-security'
                                           : ' panel-layout-page'
           }`}
@@ -408,7 +436,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             lightMode={lightMode}
             onTogglePerf={() => setLightMode(!lightMode)}
             musicVolume={musicVolume}
-            onMusicVolumeChange={setMusicVolume}
+            onMusicVolumeChange={onMusicVolumeChange}
             onToggleMusic={toggleMusicMute}
             onEnterGodMode={() => setGodMode(true)}
             badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending }}
@@ -428,13 +456,23 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               menuOpen={mobileNavOpen}
               compact
               welcome={isDashboard}
+              hideSearch={inExtras}
             />
           )}
 
-          {phone && !isMore && (
+          {phone && !isMore && !inExtrasChild && (
             <header className="craft-page-head">
               <h1>{navSections.find((item) => item.id === section)?.labelRu || 'Панель'}</h1>
             </header>
+          )}
+
+          {inExtrasChild && (
+            <ExtrasTopSearch
+              sections={navSections}
+              activeSection={section}
+              onNavigate={handleNavigate}
+              tabLabel={extrasTabLabel}
+            />
           )}
 
           {isMore && (
@@ -450,8 +488,8 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             <UsersSection
               initialUserId={usersInitialId}
               onInitialUserConsumed={() => setUsersInitialId(null)}
-              permissions={permissions}
               role={role}
+              myUserId={myUserId}
               isProjectCreator={isProjectCreator}
               canBanfull={canBanfull}
             />
@@ -464,10 +502,12 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               }}
             />
           )}
-          {isEconomy && <EconomySection />}
+          {isEconomy && <EconomySection onNavigate={handleNavigate} />}
           {isMarket && <MarketSection />}
           {isFarm && (
             <FarmSection
+              isProjectCreator={isProjectCreator}
+              panelTabs={panelTabs}
               onOpenUser={(userId) => {
                 setUsersInitialId(userId)
                 setSection('users')
@@ -487,6 +527,12 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isGroupBalanceLevel && role === 'owner' && <GroupBalanceLevelSection />}
           {isGroupsStudio && isProjectCreator && (
             <GroupsStudioSection
+              role={role}
+              permissions={permissions}
+              canBanfull={canBanfull}
+              isProjectCreator={isProjectCreator}
+              myUserId={myUserId}
+              canOpenGroups
               onOpenUser={(userId) => {
                 setUsersInitialId(userId)
                 setSection('users')
@@ -515,7 +561,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             />
           )}
           {isAnalytics && <AnalyticsSection panelTabs={panelTabs} />}
-          {isSettings && <SystemSection panelTabs={panelTabs} />}
+          {isSettings && <SystemSection panelTabs={panelTabs} isProjectCreator={isProjectCreator} />}
           {isEvents && <EventsSection panelTabs={panelTabs} />}
           {isSecurity && <SecuritySection panelTabs={panelTabs} />}
           {isStaff && <StaffSection role={role} permissions={permissions} myUserId={myUserId} panelTabs={panelTabs} isProjectCreator={isProjectCreator} />}
@@ -525,6 +571,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               role={role}
               permissions={permissions}
               panelTabs={panelTabs}
+              isProjectCreator={isProjectCreator}
               onOpenUser={(userId) => {
                 setUsersInitialId(userId)
                 setSection('users')
@@ -532,11 +579,15 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             />
           )}
           {isChronicle && <ChronicleSection />}
-          {isPanelAccess && <PanelAccessSection />}
-          {isRights && isProjectCreator && <RightsSection />}
+          {isPanelAccess && (
+            <PanelAccessSection
+              isProjectCreator={isProjectCreator}
+              initialTab={panelAccessTab}
+            />
+          )}
           {isGroupGuard && isProjectCreator && <GroupGuardDesk />}
           {isSoftRestart && isProjectCreator && <SoftRestartSection />}
-          {!isMore && !isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isRights && !isGroupGuard && !isSoftRestart && (
+          {!isMore && !isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isGroupGuard && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

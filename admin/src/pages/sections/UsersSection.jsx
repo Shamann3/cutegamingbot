@@ -452,7 +452,7 @@ function PlayerTransfersPanel({ userId, intel, onOpenUser }) {
   const cute = (intel?.cuteRecent?.items || []).filter((it) => it.kind === 'transfer' || it.cause === 'передача предметов')
 
   return (
-    <div className="pu-transfers-panel">
+    <div className="pu-transfers-panel users-transfers">
       <div className="pu-bento-head">
         <div>
           <p className="panel-shelf-label">История</p>
@@ -950,7 +950,7 @@ function FarmControlTab({ userId, profile, canControl, onChanged }) {
       )}
       {error && <p className="panel-shelf-error">{error}</p>}
 
-      <div className="panel-users-plot-grid pu-farm-grid">
+      <div className="panel-users-plot-grid pu-farm-grid users-farm-grid">
         {Array.from({ length: plotSlots }, (_, i) => {
           const plotId = i + 1
           const plot = plots.find((p) => Number(p.id) === plotId)
@@ -1376,7 +1376,14 @@ function CuteHistoryFeed({ userId, onOpenUser }) {
   )
 }
 
-export default function UsersSection({ initialUserId = null, onInitialUserConsumed, role = null, isProjectCreator = false, canBanfull = false }) {
+export default function UsersSection({
+  initialUserId = null,
+  onInitialUserConsumed,
+  role = null,
+  myUserId = null,
+  isProjectCreator = false,
+  canBanfull = false,
+}) {
   const phone = useIsPhone()
   const isOwner = role === 'owner'
   // «Экспорт» и другие creator-only действия — не просто owner-роль (их может
@@ -1384,8 +1391,9 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
   // на backend). Флаг приходит из /account через PanelShell.
   const isCreator = !!isProjectCreator
   const canMutateEconomy = isOwner // обычные админы: всё видят, кут/предметы/ферму не меняют
-  const canBan = Boolean(canBanfull)
-  const canUnban = Boolean(canBanfull)
+  // Бан во всём проекте из карточки — только banfull; owner/creator видят всё.
+  const canBan = isOwner || isCreator || Boolean(canBanfull)
+  const canUnban = canBan
   const canBalance = canMutateEconomy
   const canItems = canMutateEconomy
   const canFarmControl = canMutateEconomy
@@ -1726,6 +1734,13 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
         danger
         loading={actionLoading}
         onConfirm={() => {
+          if (myUserId != null && profile?.userId != null && Number(profile.userId) === Number(myUserId)) {
+            const msg = 'Вы не можете заблокировать самого себя'
+            setPendingAction(null)
+            setError(msg)
+            notifyAdmin(msg, { error: true })
+            return
+          }
           setPendingAction(null)
           runAction(() =>
             setAdminUserBanned(profile.userId, true, banReason, banEvidence, banPhotoIds[0] || ''),
@@ -2482,7 +2497,7 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
               </div>
               )}
 
-              {!canBanfull && (
+              {!canBan && (
               <div className="panel-users-action-block pu-action-tile">
                 <div className="pu-action-tile-top">
                   <span className="pu-action-ico" aria-hidden>✕</span>
@@ -2537,7 +2552,15 @@ export default function UsersSection({ initialUserId = null, onInitialUserConsum
                     !hasProfile || actionLoading || (hasProfile && profile.banned) ||
                     !banReason.trim() || (!banEvidence.trim() && banPhotoIds.length === 0)
                   }
-                  onClick={() => setPendingAction('ban')}
+                  onClick={() => {
+                    if (myUserId != null && hasProfile && Number(profile.userId) === Number(myUserId)) {
+                      const msg = 'Вы не можете заблокировать самого себя'
+                      setError(msg)
+                      notifyAdmin(msg, { error: true })
+                      return
+                    }
+                    setPendingAction('ban')
+                  }}
                 >
                   Забанить
                 </button>

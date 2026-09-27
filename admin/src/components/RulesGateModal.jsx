@@ -54,6 +54,14 @@ export default function RulesGateModal({ onAccepted }) {
     }
   }
 
+  const handleOpenRulesLink = () => {
+    const ok = window.confirm(
+      'Если открыть ссылку, панель может закрыться. Чтобы продолжить работу, нужно будет снова войти в админ-панель. Открыть правила?',
+    )
+    if (!ok) return
+    window.open('https://t.me/CuteRules', '_blank', 'noopener,noreferrer')
+  }
+
   return (
     <div className="rules-gate-backdrop" role="dialog" aria-modal="true">
       <div className="rules-gate">
@@ -80,10 +88,13 @@ export default function RulesGateModal({ onAccepted }) {
               Кнопка станет активной через {fmtTimer(remaining)}…
             </p>
           ) : null}
+          <p className="rules-gate-link-warn">
+            Внимание: переход по ссылке может закрыть панель — потом снова войдите в админку.
+          </p>
           <button
             type="button"
             className="rules-gate-btn rules-gate-link"
-            onClick={() => window.open('https://t.me/CuteRules', '_blank', 'noopener,noreferrer')}
+            onClick={handleOpenRulesLink}
           >
             Открыть правила проекта
           </button>

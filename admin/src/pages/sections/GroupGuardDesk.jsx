@@ -18,6 +18,29 @@ function hourLabel(hour) {
   return `${String(safe).padStart(2, '0')}:00`
 }
 
+/** Нормализация поиска: strip @, извлечь t.me/xxx, оставить id/текст. */
+function normalizeGroupQuery(raw) {
+  let text = String(raw || '').trim().toLowerCase()
+  if (!text) return ''
+  text = text.replace(/^@+/, '')
+  const tme = text.match(/(?:https?:\/\/)?(?:t\.me|telegram\.me)\/(?:c\/)?([+\w.-]+)/i)
+  if (tme) {
+    const token = tme[1].replace(/^@/, '')
+    if (/^\d+$/.test(token)) return `-100${token}`
+    return token.toLowerCase()
+  }
+  return text.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+}
+
+function groupMatchesQuery(item, query) {
+  const q = normalizeGroupQuery(query)
+  if (!q) return true
+  const title = String(item.title || '').toLowerCase()
+  const chatId = String(item.chatId ?? '')
+  const username = String(item.username || '').replace(/^@/, '').toLowerCase()
+  return title.includes(q) || chatId.includes(q) || (username && (username.includes(q) || `@${username}`.includes(q)))
+}
+
 export default function GroupGuardDesk() {
   const [pack, setPack] = useState(null)
   const [error, setError] = useState('')
@@ -41,9 +64,8 @@ export default function GroupGuardDesk() {
   const groups = pack?.groups || []
   const customCount = groups.filter((item) => item.custom).length
   const shown = useMemo(() => {
-    const text = query.trim().toLowerCase()
-    if (!text) return groups
-    return groups.filter((item) => `${item.title} ${item.chatId}`.toLowerCase().includes(text))
+    if (!query.trim()) return groups
+    return groups.filter((item) => groupMatchesQuery(item, query))
   }, [groups, query])
 
   const run = async (key, job) => {
@@ -66,10 +88,12 @@ export default function GroupGuardDesk() {
 
   return (
     <article className="panel-shelf panel-shelf-page guard-desk">
-      <h2 className="panel-page-title">Защита групп</h2>
-      <p className="realm-copy">
-        Один экран для всех официальных групп. Сначала общее правило. Ниже — группы, которым нужно своё, и люди, которых бот не удаляет.
-      </p>
+      <header className="guard-head">
+        <h2 className="panel-page-title">Защита групп</h2>
+        <p className="realm-copy">
+          Один экран для всех официальных групп. Сначала общее правило. Ниже — группы, которым нужно своё, и люди, которых бот не удаляет.
+        </p>
+      </header>
       {error && <p className="realm-alert" role="alert">{error}</p>}
       {notice && !error && <p className="realm-copy">{notice}</p>}
       {!pack && !error && <p className="realm-copy">Открываю правила…</p>}
@@ -118,7 +142,23 @@ export default function GroupGuardDesk() {
           >
             Раньше
           </button>
-          <strong>{hourLabel(policy.morningHour)}</strong>
+          <label className="guard-hour-manual">
+            <span className="visually-hidden">Час рассылки</span>
+            <input
+              className="guard-field guard-hour-input"
+              type="time"
+              step={3600}
+              value={hourLabel(policy.morningHour)}
+              disabled={!pack || !policy.morning || busy === 'policy'}
+              onChange={(event) => {
+                const raw = String(event.target.value || '')
+                const hour = Number(raw.split(':')[0])
+                if (!Number.isFinite(hour) || hour < 0 || hour > 23) return
+                savePolicy({ ...policy, morningHour: hour })
+              }}
+              aria-label="Время утренней сводки"
+            />
+          </label>
           <button
             type="button"
             className="realm-back"
@@ -131,14 +171,14 @@ export default function GroupGuardDesk() {
         </div>
       </section>
 
-      <section className="guard-block">
+      <section className="guard-block guard-block-custom">
         <h3>Своё правило</h3>
         <p className="realm-copy">Группа из этого списка может отличаться от общего. «Как у всех» возвращает её обратно.</p>
         <input
           className="guard-field"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Название группы"
+          placeholder="Id, @username, ссылка или название группы"
           aria-label="Найти группу"
         />
         {pack && shown.length === 0 && <p className="realm-copy">Таких групп нет.</p>}
@@ -146,7 +186,10 @@ export default function GroupGuardDesk() {
           {shown.map((item) => (
             <li key={item.chatId} className="guard-group">
               <h3>{item.title}</h3>
-              <p className="guard-meta">{item.custom ? 'Своё правило. ' : 'Как у всех. '}{ruleLine(item)}</p>
+              <p className="guard-meta">
+                {item.username ? `@${item.username} · ` : ''}#{item.chatId}
+                {' · '}{item.custom ? 'Своё правило. ' : 'Как у всех. '}{ruleLine(item)}
+              </p>
               <div className="guard-tools">
                 <button type="button" className="realm-back" onClick={() => setOpenId(openId === item.chatId ? null : item.chatId)}>
                   {openId === item.chatId ? 'Скрыть' : 'Изменить только эту'}
@@ -195,7 +238,7 @@ export default function GroupGuardDesk() {
       <section className="guard-block">
         <h3>Кого бот не удаляет</h3>
         <p className="realm-copy">
-          Должность защищает только в своей группе. Человек из этого списка может писать ссылки и не проходит капчу во всех официальных группах. Пометка нужна, чтобы потом вспомнить, зачем он здесь.
+          Должность защищает только в своей группе. Человек из этого списка может писать ссылки и не проходит капчу во всех официальных группах. Пометка нужна, чтобы потом вспомнить, для чего он здесь.
         </p>
         <form
           className="guard-tools"
@@ -226,8 +269,8 @@ export default function GroupGuardDesk() {
             className="guard-field"
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="Зачем исключение"
-            aria-label="Зачем исключение"
+            placeholder="для чего?"
+            aria-label="для чего?"
             maxLength={80}
           />
           <button type="submit" className="realm-back" disabled={busy === 'allow'}>Добавить</button>

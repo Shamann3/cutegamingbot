@@ -59,7 +59,7 @@ function scaleY(v, min, max) {
   return PAD.top + CH - ((v - min) / range) * CH
 }
 
-function LineChart({ data, series, colors, yLabel = '' }) {
+function LineChart({ data, series, colors, yLabel = '', seriesLabels = {} }) {
   const [hover, setHover] = useState(null)
   if (!data || data.length === 0) return <EmptyChart />
   const allVals = series.flatMap((s) => data.map((d) => d[s] ?? 0))
@@ -70,6 +70,7 @@ function LineChart({ data, series, colors, yLabel = '' }) {
   const accentColors = (colors?.length ? colors : ['var(--e-accent)', '#6BA3C9', '#D4B56A']).map(
     (c, i) => (i === 0 ? 'var(--e-accent)' : c),
   )
+  const labelOf = (s) => seriesLabels[s] || s
 
   return (
     <div className="analytics-chart-wrap">
@@ -165,7 +166,7 @@ function LineChart({ data, series, colors, yLabel = '' }) {
           {series.map((s, si) => (
             <span key={s}>
               <i style={{ background: accentColors[si % accentColors.length] }} />
-              {s}: {fmtNum(data[hover][s])}
+              {labelOf(s)}: {fmtNum(data[hover][s])}
             </span>
           ))}
         </div>
@@ -437,6 +438,7 @@ function QuestsTab({ days, onDaysChange }) {
             <LineChart
               data={data.byDay}
               series={['accepted', 'completed']}
+              seriesLabels={{ accepted: 'Взято', completed: 'Выполнено' }}
               colors={['#6366f1', '#22c55e']}
             />
           </SectionCard>
@@ -562,6 +564,7 @@ function FarmTab({ days, onDaysChange }) {
             <LineChart
               data={data.byDay}
               series={['planted', 'harvested', 'watered']}
+              seriesLabels={{ planted: 'Посадка', harvested: 'Сбор', watered: 'Полив' }}
               colors={['#6366f1', '#22c55e', '#38bdf8']}
             />
           </SectionCard>
@@ -806,6 +809,7 @@ function CraftTab({ days, onDaysChange }) {
             <LineChart
               data={data.byDay}
               series={['successes', 'fails']}
+              seriesLabels={{ successes: 'Успех', fails: 'Провал' }}
               colors={['#22c55e', '#ef4444']}
             />
           </SectionCard>
@@ -901,15 +905,15 @@ function RetentionTab({ days, onDaysChange }) {
             </div>
           </SectionCard>
 
-          <SectionCard title="Retention (из последних 35 дней)">
+          <SectionCard title="Удержание (из последних 35 дней)">
             {data.retention.length === 0 ? (
-              <p className="analytics-hint">Нет достаточно данных game_events для расчёта retention.</p>
+              <p className="analytics-hint">Нет достаточно данных game_events для расчёта удержания.</p>
             ) : (
               <div className="analytics-retention-blocks">
                 {[
-                  { day: 1, label: 'Day-1', color: '#6366f1' },
-                  { day: 7, label: 'Day-7', color: '#a78bfa' },
-                  { day: 30, label: 'Day-30', color: '#818cf8' },
+                  { day: 1, label: 'День 1', color: '#6366f1' },
+                  { day: 7, label: 'День 7', color: '#a78bfa' },
+                  { day: 30, label: 'День 30', color: '#818cf8' },
                 ].map(({ day, label, color }) => {
                   const r = data.retention.find((x) => x.day === day)
                   return (
@@ -955,8 +959,8 @@ function RetentionTab({ days, onDaysChange }) {
                     <tr>
                       <th>Неделя</th>
                       <th>Зарегистрировалось</th>
-                      <th>Вернулись D+1</th>
-                      <th>Вернулись D+7</th>
+                      <th>Вернулись через 1 день</th>
+                      <th>Вернулись через 7 дней</th>
                     </tr>
                   </thead>
                   <tbody>

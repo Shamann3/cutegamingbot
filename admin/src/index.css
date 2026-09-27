@@ -3338,6 +3338,40 @@ body {
   font-weight: 500;
 }
 
+.sys-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.sys-toggle-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sys-toggle-copy strong {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.sys-toggle-copy em {
+  display: block;
+  margin-top: 0.25rem;
+  font-style: normal;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--e-text-3, #94a3b8);
+}
+.sys-toggle-status {
+  margin: 0.65rem 0 0;
+  font-size: 0.82rem;
+  color: var(--e-text-3, #94a3b8);
+}
+.sys-toggle-status.is-active {
+  color: #f87171;
+}
+
 /* Meta bar */
 .sys-meta-bar {
   padding: 0 0.25rem;

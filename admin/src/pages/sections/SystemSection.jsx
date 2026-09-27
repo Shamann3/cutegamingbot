@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   fetchAllSettings,
   fetchSettingsHistory,
@@ -8,15 +8,8 @@ import {
 import { notifyAdmin } from '../../lib/notify'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
 
-// ---------------------------------------------------------------------------
-// Metadata
-// ---------------------------------------------------------------------------
-
-// Экономика и Ферма редактируются только в EconomySection/FarmSection теперь
-// (раньше те же поля можно было менять и здесь - без единого источника правды
-// и без истории для правок через Economy/Farm). Лейблы для них оставлены в
-// EXTRA_HISTORY_LABELS ниже, чтобы вкладка "История" продолжала показывать
-// человекочитаемые названия для старых и новых записей категорий economy/farm.
+// Экономика, ферма и семена редактируются в EconomySection / FarmSection.
+// Лейблы ниже — для вкладки «История».
 const EXTRA_HISTORY_LABELS = {
   defaultBalance: 'Стартовый баланс (кут)',
   plotPriceStep: 'Шаг цены грядки',
@@ -27,22 +20,15 @@ const EXTRA_HISTORY_LABELS = {
   waterIntervalSeconds: 'Интервал полива (сек)',
   wiltGraceSeconds: 'Засуха - отсрочка (сек)',
   waterCostPerUse: 'Расход воды за полив',
+  harvestSeedDropPercent: 'Шанс вернуть семя при сборе (%)',
+  dailySeedAmount: 'Ежедневное семя - количество',
+  starterTreeSeeds: 'Стартовый набор: семена дерева',
+  starterTobaccoSeeds: 'Стартовый набор: семена табака',
+  starterWater: 'Стартовый набор: вода',
+  starterAxe: 'Стартовый набор: топор',
 }
 
 const SETTING_GROUPS = [
-  {
-    id: 'seed',
-    label: 'Seed Economy',
-    emoji: '🌿',
-    fields: [
-      { key: 'harvestSeedDropPercent', label: 'Шанс вернуть семя при сборе (%)', type: 'int', hint: '0–100, 0 = выключено' },
-      { key: 'dailySeedAmount', label: 'Ежедневное семя - количество', type: 'int', hint: '1–50' },
-      { key: 'starterTreeSeeds', label: 'Стартовый набор: семена дерева', type: 'int', hint: '0 = не выдавать' },
-      { key: 'starterTobaccoSeeds', label: 'Стартовый набор: семена табака', type: 'int', hint: '0 = не выдавать' },
-      { key: 'starterWater', label: 'Стартовый набор: вода', type: 'int', hint: '0 = не выдавать' },
-      { key: 'starterAxe', label: 'Стартовый набор: топор', type: 'int', hint: '0 = не выдавать' },
-    ],
-  },
   {
     id: 'system',
     label: 'Система',
@@ -56,16 +42,12 @@ const SETTING_GROUPS = [
 const CATEGORY_LABELS = {
   economy: '💰 Экономика',
   farm: '🌱 Ферма',
-  seed: '🌿 Seed Economy',
+  seed: '🌿 Семена',
   system: '⚙️ Система',
 }
 
 const SETTING_LABELS = { ...EXTRA_HISTORY_LABELS }
 SETTING_GROUPS.forEach((g) => g.fields.forEach((f) => { SETTING_LABELS[f.key] = f.label }))
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function formatDate(iso) {
   if (!iso) return '-'
@@ -92,10 +74,6 @@ function displayValue(key, value) {
   }
   return String(value)
 }
-
-// ---------------------------------------------------------------------------
-// SettingGroup component
-// ---------------------------------------------------------------------------
 
 function SettingGroup({ group, effective, envDefaults, overrides, onSave, disabled }) {
   const [form, setForm] = useState({})
@@ -178,10 +156,6 @@ function SettingGroup({ group, effective, envDefaults, overrides, onSave, disabl
     </article>
   )
 }
-
-// ---------------------------------------------------------------------------
-// History tab
-// ---------------------------------------------------------------------------
 
 function HistoryTab({ refreshKey }) {
   const [data, setData] = useState(null)
@@ -278,19 +252,61 @@ function HistoryTab({ refreshKey }) {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
+/** Creator-only feature / maintenance switches. */
+function CreatorTogglesPanel({ maintenance, onToggleMaintenance, saving }) {
+  const on = Boolean(maintenance)
+  return (
+    <article className="panel-shelf sys-group creator-toggles">
+      <div className="sys-group-head">
+        <span className="sys-group-emoji">⏻</span>
+        <h3 className="sys-group-title">Выключатели</h3>
+      </div>
+      <p className="panel-shelf-muted" style={{ margin: '0 0 1rem' }}>
+        Только для создателя проекта. Каждый переключатель сразу меняет поведение для всех игроков.
+      </p>
+      <div className={`sys-toggle-row${on ? ' is-on' : ''}`}>
+        <div className="sys-toggle-copy">
+          <strong>Техработы всего сервера</strong>
+          <em>
+            Когда включено — игровой API отвечает режимом обслуживания: мини-приложение и игровые
+            эндпоинты недоступны игрокам. Админ-панель продолжает работать.
+          </em>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          className={`panel-toggle${on ? ' panel-toggle-on' : ''}`}
+          disabled={saving}
+          onClick={onToggleMaintenance}
+        >
+          <span className="panel-toggle-thumb" />
+        </button>
+      </div>
+      <p className={`sys-toggle-status${on ? ' is-active' : ''}`}>
+        {on ? 'Сейчас: сервер на техработах' : 'Сейчас: сервер открыт для игроков'}
+      </p>
+    </article>
+  )
+}
 
-const TABS = [
-  { id: 'seed', label: '🌿 Семена' },
+const BASE_TABS = [
   { id: 'system', label: '⚙️ Система' },
   { id: 'history', label: '📋 История' },
 ]
 
-export default function SystemSection({ panelTabs = null }) {
-  const tabs = filterSectionTabs('settings', TABS, panelTabs)
-  const [tab, setTab] = useState(tabs[0]?.id || 'seed')
+const TOGGLES_TAB = { id: 'toggles', label: '⏻ Выключатели' }
+
+export default function SystemSection({ panelTabs = null, isProjectCreator = false }) {
+  const tabs = useMemo(() => {
+    const base = filterSectionTabs('settings', BASE_TABS, panelTabs)
+    if (!isProjectCreator) return base
+    // Creator toggles always available to project creator (not role-tab gated).
+    const withoutDup = base.filter((t) => t.id !== 'toggles')
+    return [TOGGLES_TAB, ...withoutDup]
+  }, [panelTabs, isProjectCreator])
+
+  const [tab, setTab] = useState(tabs[0]?.id || 'system')
   const activeTab = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id
   const [settings, setSettings] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -313,6 +329,12 @@ export default function SystemSection({ panelTabs = null }) {
 
   useEffect(() => { loadSettings() }, [loadSettings])
 
+  useEffect(() => {
+    if (tabs.length && !tabs.some((t) => t.id === tab)) {
+      setTab(tabs[0].id)
+    }
+  }, [tabs, tab])
+
   const handleSave = useCallback(async (fields) => {
     try {
       const updated = await saveAllSettings(fields)
@@ -332,7 +354,7 @@ export default function SystemSection({ panelTabs = null }) {
       const newVal = !settings.maintenance
       await setMaintenanceState(newVal)
       setSettings((s) => ({ ...s, maintenance: newVal }))
-      notifyAdmin(newVal ? 'Режим обслуживания включён' : 'Режим обслуживания выключен')
+      notifyAdmin(newVal ? 'Техработы включены' : 'Игра снова доступна')
     } catch (e) {
       notifyAdmin(e.message || 'Ошибка', { error: true })
     } finally {
@@ -350,24 +372,9 @@ export default function SystemSection({ panelTabs = null }) {
         <p className="panel-shelf-label">Settings · Настройки</p>
         <h2 className="panel-page-title">Системные настройки</h2>
         <p className="panel-page-lead">
-          Единый экран конфигурации. Значения override .env без перезапуска сервера.
-          Экономика и ферма редактируются в разделах «Экономика» и «Ферма» — здесь только их история изменений.
+          Конфигурация сессии и история изменений. Экономика, ферма и семена — в своих разделах.
+          {isProjectCreator ? ' Выключатели обслуживания — только здесь, для создателя.' : ''}
         </p>
-
-        {settings && (
-          <div className={`sys-maintenance-bar ${settings.maintenance ? 'active' : ''}`}>
-            <span className="sys-maintenance-label">
-              {settings.maintenance ? '🔴 Режим обслуживания активен' : '🟢 Сервер работает нормально'}
-            </span>
-            <button
-              className={`panel-users-btn ${settings.maintenance ? 'panel-users-btn-success' : 'panel-users-btn-danger'}`}
-              onClick={handleMaintenanceToggle}
-              disabled={maintenanceSaving}
-            >
-              {maintenanceSaving ? '…' : settings.maintenance ? 'Выключить обслуживание' : 'Включить обслуживание'}
-            </button>
-          </div>
-        )}
       </article>
 
       {error && <p className="panel-shelf-error" style={{ margin: '0 1rem 1rem' }}>{error}</p>}
@@ -385,6 +392,7 @@ export default function SystemSection({ panelTabs = null }) {
         {tabs.map((t) => (
           <button
             key={t.id}
+            type="button"
             className={`sys-tab${activeTab === t.id ? ' active' : ''}`}
             onClick={() => setTab(t.id)}
           >
@@ -395,7 +403,17 @@ export default function SystemSection({ panelTabs = null }) {
 
       {loading && <p className="panel-shelf-muted" style={{ padding: '1rem' }}>Загрузка…</p>}
 
-      {!loading && settings && activeTab && activeTab !== 'history' && (
+      {!loading && settings && activeTab === 'toggles' && isProjectCreator && (
+        <div className="sys-content">
+          <CreatorTogglesPanel
+            maintenance={settings.maintenance}
+            onToggleMaintenance={handleMaintenanceToggle}
+            saving={maintenanceSaving}
+          />
+        </div>
+      )}
+
+      {!loading && settings && activeTab && activeTab !== 'history' && activeTab !== 'toggles' && (
         <div className="sys-content">
           {SETTING_GROUPS.filter((g) => g.id === activeTab).map((group) => (
             <SettingGroup

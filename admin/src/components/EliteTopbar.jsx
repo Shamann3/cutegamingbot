@@ -62,6 +62,8 @@ export default function EliteTopbar({
   welcome = false,
   where = 'Панель сотрудника. Это весь проект, не одна группа.',
   showSupport = true,
+  /** Скрыть поиск в шапке (вкладки «Ещё» — поиск в контенте). */
+  hideSearch = false,
 }) {
   const { displayName } = getAdminProfile()
   const [query, setQuery] = useState('')
@@ -100,6 +102,7 @@ export default function EliteTopbar({
   }, [])
 
   useEffect(() => {
+    if (hideSearch) return undefined
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
@@ -109,7 +112,7 @@ export default function EliteTopbar({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [hideSearch])
 
   const go = (id) => {
     onNavigate?.(id)
@@ -166,51 +169,53 @@ export default function EliteTopbar({
       </div>
 
       <div className="elite-topbar-actions">
-        <div className="elite-search-wrap" data-coach="search" ref={wrapRef}>
-          <div className="elite-search">
-            <SearchIcon />
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              placeholder="Поиск раздела…"
-              aria-label="Поиск раздела"
-              onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
-              onFocus={() => setOpen(true)}
-              onKeyDown={onKeyDown}
-            />
-            {!query && <kbd className="elite-kbd">⌘K</kbd>}
-          </div>
-
-          {open && query.trim() && (
-            <div className="elite-search-results" role="listbox">
-              {results.map((s, i) => {
-                const Icon = NAV_ICONS[s.id]
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    role="option"
-                    aria-selected={i === cursor}
-                    className={`elite-search-item${i === cursor ? ' elite-search-item-active' : ''}`}
-                    onMouseEnter={() => setCursor(i)}
-                    onClick={() => go(s.id)}
-                  >
-                    <span className="elite-search-item-icon">{Icon && <Icon />}</span>
-                    <span className="elite-search-item-label">{s.labelRu}</span>
-                    <span className="elite-search-item-sub">{s.label}</span>
-                    {s.id === activeSection && (
-                      <span className="elite-search-item-now">сейчас</span>
-                    )}
-                  </button>
-                )
-              })}
-              {!results.length && (
-                <p className="elite-search-empty">Ничего не найдено</p>
-              )}
+        {!hideSearch && (
+          <div className="elite-search-wrap" data-coach="search" ref={wrapRef}>
+            <div className="elite-search">
+              <SearchIcon />
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                placeholder="Поиск раздела…"
+                aria-label="Поиск раздела"
+                onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+                onFocus={() => setOpen(true)}
+                onKeyDown={onKeyDown}
+              />
+              {!query && <kbd className="elite-kbd">⌘K</kbd>}
             </div>
-          )}
-        </div>
+
+            {open && query.trim() && (
+              <div className="elite-search-results" role="listbox">
+                {results.map((s, i) => {
+                  const Icon = NAV_ICONS[s.id]
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      role="option"
+                      aria-selected={i === cursor}
+                      className={`elite-search-item${i === cursor ? ' elite-search-item-active' : ''}`}
+                      onMouseEnter={() => setCursor(i)}
+                      onClick={() => go(s.id)}
+                    >
+                      <span className="elite-search-item-icon">{Icon && <Icon />}</span>
+                      <span className="elite-search-item-label">{s.labelRu}</span>
+                      <span className="elite-search-item-sub">{s.label}</span>
+                      {s.id === activeSection && (
+                        <span className="elite-search-item-now">сейчас</span>
+                      )}
+                    </button>
+                  )
+                })}
+                {!results.length && (
+                  <p className="elite-search-empty">Ничего не найдено</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {showSupport && <button
           type="button"

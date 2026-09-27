@@ -103,7 +103,11 @@ export default function PanelBackgroundMusic({ volume = 0 }) {
       }).catch(() => {})
     }
     window.addEventListener('pointerdown', unlock, { passive: true })
-    return () => window.removeEventListener('pointerdown', unlock)
+    window.addEventListener('epsilon-music-unlock', unlock)
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('epsilon-music-unlock', unlock)
+    }
   }, [])
 
   return null

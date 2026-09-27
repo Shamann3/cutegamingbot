@@ -8,6 +8,7 @@ import {
 } from '../../lib/adminClient'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
 import UserLookupPreview from '../../components/UserLookupPreview'
+import OpenUserLink from '../../components/OpenUserLink'
 import { CopyableId, CopyableUsername } from '../../components/Copyable'
 
 const API_PREFIX = import.meta.env.VITE_ADMIN_API_PREFIX || '/admin/api'
@@ -105,15 +106,28 @@ function MiniHistory({ items, currentId, emptyText }) {
 // ---------------------------------------------------------------------------
 // Case modal
 // ---------------------------------------------------------------------------
-function CaseModal({ item, role, perms, onClose, onUnbanned }) {
+function CaseModal({ item, role, perms, onClose, onUnbanned, onOpenUser }) {
   const meta = actionMeta(item.actionType, item.scope)
   const [unbanLoading, setUnbanLoading] = useState(false)
   const [unbanDone, setUnbanDone] = useState(false)
+  const [unbanReason, setUnbanReason] = useState('')
+  const [closing, setClosing] = useState(false)
   const [playerHistory, setPlayerHistory] = useState([])
   const [playerHistoryLoading, setPlayerHistoryLoading] = useState(false)
   const [modHistory, setModHistory] = useState([])
   const [modHistoryLoading, setModHistoryLoading] = useState(false)
   const [tab, setTab] = useState('case') // 'case' | 'player' | 'mod'
+  const closeTimer = useRef(null)
+
+  const requestClose = useCallback(() => {
+    if (closing) return
+    setClosing(true)
+    closeTimer.current = window.setTimeout(() => onClose(), 200)
+  }, [closing, onClose])
+
+  useEffect(() => () => {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current)
+  }, [])
 
   useEffect(() => {
     if (!item.targetId) return
@@ -127,10 +141,6 @@ function CaseModal({ item, role, perms, onClose, onUnbanned }) {
   useEffect(() => {
     if (!item.adminId) return
     setModHistoryLoading(true)
-    fetchPlayerModerationHistory(item.adminId) // reuse endpoint filtered differently
-      // actually get all actions by this admin — we'll filter from full list
-      .catch(() => {})
-      .finally(() => setModHistoryLoading(false))
     fetchModerationLogs({ limit: 50 })
       .then(d => {
         const byMod = (d.items || []).filter(x => x.adminId === item.adminId)
@@ -141,35 +151,41 @@ function CaseModal({ item, role, perms, onClose, onUnbanned }) {
   }, [item.adminId])
 
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') onClose() }
+    const h = (e) => { if (e.key === 'Escape') requestClose() }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [onClose])
+  }, [requestClose])
 
   async function handleUnban() {
+    const reason = unbanReason.trim()
+    if (!reason) {
+      alert('Укажите причину разбана')
+      return
+    }
     if (!window.confirm(`Разбанить игрока ${item.targetName || item.targetId}?`)) return
     setUnbanLoading(true)
     try {
-      await postModerationUnban(item.targetId)
+      await postModerationUnban(item.targetId, reason)
       setUnbanDone(true)
       onUnbanned?.(item.targetId)
     } catch (e) {
       const msg = e.message || 'Ошибка разбана'
       alert(msg)
-      // если сервер говорит "не забанен" — тоже скрываем кнопку
       if (msg.includes('не забанен')) setUnbanDone(true)
     }
     finally { setUnbanLoading(false) }
   }
 
-  // кнопка видна только owner, только на бане, и только пока не разбанили в этой сессии
-  const canUnban = perms.has('moderate_unban') && item.actionType === 'ban' && !unbanDone
+  const canUnban = (role === 'owner' || perms.has('moderate_unban')) && item.actionType === 'ban' && !unbanDone
   const playerOffenseCount = playerHistory.filter(h => ['ban','mute','kick','warn'].includes(h.actionType)).length
   const isRecidivist = playerOffenseCount > 2
 
   return (
-    <div className="case-backdrop" onClick={onClose}>
-      <div className="case-modal" onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`case-backdrop${closing ? ' case-backdrop-out' : ''}`}
+      onClick={requestClose}
+    >
+      <div className="case-modal case-modal-full" onClick={(e) => e.stopPropagation()}>
 
         {/* Обложка */}
         <div className="case-cover" style={{ '--cc': meta.color, '--cb': meta.bg, '--cg': meta.glow }}>
@@ -190,7 +206,7 @@ function CaseModal({ item, role, perms, onClose, onUnbanned }) {
               <div className="case-date-val">{fmtDate(item.createdAt)}</div>
             </div>
           </div>
-          <button className="case-close-btn" onClick={onClose}>✕</button>
+          <button className="case-close-btn" onClick={requestClose}>✕</button>
         </div>
 
         {/* Табы */}
@@ -213,7 +229,12 @@ function CaseModal({ item, role, perms, onClose, onUnbanned }) {
               <div className="case-participants">
                 <div className="case-side case-side-left">
                   <div className="case-side-role">Модератор</div>
-                  <div className="case-side-name">{item.adminName || '—'}</div>
+                  <OpenUserLink
+                    userId={item.adminId}
+                    name={item.adminName}
+                    onOpenUser={onOpenUser}
+                    className="case-side-name case-user-link"
+                  />
                   <div className="case-side-id">ID: {item.adminId}</div>
                 </div>
                 <div className="case-divider">
@@ -223,7 +244,12 @@ function CaseModal({ item, role, perms, onClose, onUnbanned }) {
                 </div>
                 <div className="case-side case-side-right">
                   <div className="case-side-role">Нарушитель</div>
-                  <div className="case-side-name">{item.targetName || '—'}</div>
+                  <OpenUserLink
+                    userId={item.targetId}
+                    name={item.targetName}
+                    onOpenUser={onOpenUser}
+                    className="case-side-name case-user-link"
+                  />
                   <div className="case-side-id">ID: {item.targetId}</div>
                 </div>
               </div>
@@ -275,12 +301,23 @@ function CaseModal({ item, role, perms, onClose, onUnbanned }) {
             </div>
 
             {canUnban && (
-              <div className="case-actions">
+              <div className="case-actions case-unban-form">
+                <label className="case-unban-label">
+                  Причина разбана
+                  <input
+                    className="case-unban-input"
+                    value={unbanReason}
+                    onChange={(e) => setUnbanReason(e.target.value)}
+                    placeholder="Обязательно"
+                    maxLength={500}
+                    disabled={unbanLoading}
+                  />
+                </label>
                 <button
                   type="button"
                   className="panel-users-btn panel-users-btn-success"
                   onClick={handleUnban}
-                  disabled={unbanLoading}
+                  disabled={unbanLoading || !unbanReason.trim()}
                 >
                   {unbanLoading ? 'Разбаниваем...' : 'Разбанить игрока'}
                 </button>
@@ -297,8 +334,8 @@ function CaseModal({ item, role, perms, onClose, onUnbanned }) {
                     if (!window.confirm('Удалить запись из архива? Это действие нельзя отменить.')) return
                     try {
                       await deleteModerationLog(item.id)
-                      onUnbanned?.() // reuse to trigger reload
-                      onClose()
+                      onUnbanned?.()
+                      requestClose()
                     } catch (e) { alert(e.message || 'Ошибка удаления') }
                   }}
                 >
@@ -349,7 +386,14 @@ function CaseModal({ item, role, perms, onClose, onUnbanned }) {
               <div className="case-table">
                 <div className="case-row">
                   <span className="case-key">Имя</span>
-                  <span className="case-val">{item.adminName || '—'}</span>
+                  <span className="case-val">
+                    <OpenUserLink
+                      userId={item.adminId}
+                      name={item.adminName}
+                      onOpenUser={onOpenUser}
+                      className="case-user-link"
+                    />
+                  </span>
                 </div>
                 <div className="case-row">
                   <span className="case-key">Telegram ID</span>
@@ -471,24 +515,29 @@ function ModeratorStatsTab() {
                 <div className="mst-total-badge">{mod.total} дел</div>
               </div>
               <div className="mst-bars">
-                {[
-                  { label:'Баны',   val: mod.bans,   color:'#ef4444' },
-                  { label:'Муты',   val: mod.mutes,  color:'#f97316' },
-                  { label:'Кики',   val: mod.kicks,  color:'#a855f7' },
-                  { label:'Варны',  val: mod.warns,  color:'#eab308' },
-                  { label:'Снятия', val: (mod.unbans||0)+(mod.unmutes||0)+(mod.unwarns||0), color:'#22c55e' },
-                ].map(({ label, val, color }) => {
-                  const pct = mod.total > 0 ? Math.round((val / mod.total) * 100) : 0
-                  return val > 0 ? (
-                    <div key={label} className="mst-bar-row">
-                      <span className="mst-bar-label">{label}</span>
-                      <div className="mst-bar-track">
-                        <div className="mst-bar-fill" style={{ width: `${pct}%`, background: color }} />
+                {(() => {
+                  const bars = [
+                    { label:'Баны',   val: mod.bans || 0,   color:'#ef4444' },
+                    { label:'Муты',   val: mod.mutes || 0,  color:'#f97316' },
+                    { label:'Кики',   val: mod.kicks || 0,  color:'#a855f7' },
+                    { label:'Варны',  val: mod.warns || 0,  color:'#eab308' },
+                    { label:'Снятия', val: (mod.unbans||0)+(mod.unmutes||0)+(mod.unwarns||0), color:'#22c55e' },
+                  ]
+                  const maxVal = Math.max(...bars.map((b) => b.val), 1)
+                  const scale = Math.max(maxVal, 8)
+                  return bars.map(({ label, val, color }) => {
+                    const pct = Math.max(4, Math.min(100, Math.round((val / scale) * 100)))
+                    return val > 0 ? (
+                      <div key={label} className="mst-bar-row">
+                        <span className="mst-bar-label">{label}</span>
+                        <div className="mst-bar-track">
+                          <div className="mst-bar-fill" style={{ width: `${pct}%`, background: color }} />
+                        </div>
+                        <span className="mst-bar-val" style={{ color }}>{val}</span>
                       </div>
-                      <span className="mst-bar-val" style={{ color }}>{val}</span>
-                    </div>
-                  ) : null
-                })}
+                    ) : null
+                  })
+                })()}
               </div>
             </div>
           ))}
@@ -813,8 +862,19 @@ function AppealsTab({ role }) {
   )
 }
 
-export default function ModerationSection({ role, permissions = [], panelTabs = null, onOpenUser } = {}) {
-  const perms = new Set(permissions)
+export default function ModerationSection({
+  role,
+  permissions = [],
+  panelTabs = null,
+  onOpenUser,
+  isProjectCreator = false,
+} = {}) {
+  const isSuper = role === 'owner' || !!isProjectCreator
+  const casePerms = useMemo(() => {
+    const next = new Set(permissions || [])
+    if (isSuper) next.add('moderate_unban')
+    return next
+  }, [isSuper, permissions])
   const mainTabs = useMemo(() => filterSectionTabs('moderation', MAIN_TABS, panelTabs), [panelTabs])
   const [mainTab, setMainTab] = useState(mainTabs[0]?.id || 'archive')
   const activeMainTab = mainTabs.some((t) => t.id === mainTab) ? mainTab : mainTabs[0]?.id
@@ -894,9 +954,10 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
   return (
     <div className="arc-shell">
       {openCase && (
-        <CaseModal item={openCase} role={role} perms={perms}
+        <CaseModal item={openCase} role={role} perms={casePerms}
           onClose={() => setOpenCase(null)}
-          onUnbanned={() => { setOpenCase(null); load() }} />
+          onUnbanned={() => { setOpenCase(null); load() }}
+          onOpenUser={onOpenUser} />
       )}
 
       {/* Шапка */}
@@ -938,12 +999,14 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
               <button className={`arc-sort-btn${sortBy==='date'?' arc-sort-on':''}`} onClick={() => applySort('date')}>По дате</button>
               <button className={`arc-sort-btn${sortBy==='type'?' arc-sort-on':''}`} onClick={() => applySort('type')}>По типу</button>
             </div>
-            <div className="arc-search">
-              <label className="arc-sort-label">Группа
+            <div className="arc-search arc-search-stack">
+              <label className="arc-field">
+                <span>Группа / ID чата</span>
                 <input
+                  className="arc-input"
                   value={chatInput}
                   onChange={(event) => setChatInput(event.target.value)}
-                  placeholder="Id чата"
+                  placeholder="−100… или id"
                   inputMode="numeric"
                   aria-label="Архив одной группы"
                 />
@@ -1024,13 +1087,16 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
         .arc-main-tab-on { color:#d4a84b; border-bottom-color:#d4a84b; }
 
         /* Filters */
-        .arc-filters { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+        .arc-filters { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; width:100%; }
         .arc-tabs { display:flex; gap:6px; flex-wrap:wrap; }
         .arc-tab { padding:6px 16px; border-radius:20px; border:1px solid #1e1e2e; background:transparent; color:#6b7280; font-size:12px; font-weight:500; cursor:pointer; transition:all 0.2s; }
         .arc-tab:hover { border-color:#d4a84b60; color:#d4a84b; }
         .arc-tab-on { background:#d4a84b18; border-color:#d4a84b; color:#d4a84b; font-weight:700; }
-        .arc-search { display:flex; gap:6px; align-items:center; margin-left:auto; }
-        .arc-input { background:#0e0e18; border:1px solid #1e1e2e; border-radius:8px; color:#e2e8f0; padding:7px 12px; font-size:13px; width:190px; outline:none; transition:border-color 0.2s; }
+        .arc-search { display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap; width:100%; max-width:420px; min-width:0; }
+        .arc-search-stack { flex-direction:column; align-items:stretch; max-width:320px; }
+        .arc-field { display:flex; flex-direction:column; gap:4px; padding:2px 0; min-width:0; }
+        .arc-field > span { font-size:11px; color:#4b5563; }
+        .arc-input { background:#0e0e18; border:1px solid #1e1e2e; border-radius:8px; color:#e2e8f0; padding:7px 12px; font-size:13px; min-width:0; flex:1; width:100%; box-sizing:border-box; outline:none; transition:border-color 0.2s; }
         .arc-input:focus { border-color:#d4a84b80; }
         .arc-input::placeholder { color:#2d3748; }
         .arc-search-btn { background:#d4a84b18; border:1px solid #d4a84b60; color:#d4a84b; padding:7px 14px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; }
@@ -1112,10 +1178,14 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
         .mst-bar-val { font-size:12px; font-weight:700; width:24px; text-align:right; flex-shrink:0; }
 
         /* ===== CASE MODAL ===== */
-        .case-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(8px); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px; animation:fade-in 0.18s ease; }
-        @keyframes fade-in { from{opacity:0}to{opacity:1} }
-        .case-modal { background:#080810; border:1px solid #1e1e2e; border-radius:18px; max-width:680px; width:100%; max-height:88vh; overflow-y:auto; box-shadow:0 40px 120px rgba(0,0,0,0.9); animation:slide-up 0.22s ease; }
-        @keyframes slide-up { from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)} }
+        .case-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(8px); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px; animation:case-fade-in 0.2s ease; }
+        .case-backdrop-out { animation:case-fade-out 0.2s ease forwards; pointer-events:none; }
+        @keyframes case-fade-in { from{opacity:0}to{opacity:1} }
+        @keyframes case-fade-out { from{opacity:1}to{opacity:0} }
+        .case-modal { background:#080810; border:1px solid #1e1e2e; border-radius:18px; width:min(960px, 96vw); height:92vh; max-height:92vh; overflow-y:auto; box-sizing:border-box; padding:0; box-shadow:0 40px 120px rgba(0,0,0,0.9); animation:case-slide-in 0.22s ease; display:flex; flex-direction:column; }
+        .case-backdrop-out .case-modal { animation:case-slide-out 0.2s ease forwards; }
+        @keyframes case-slide-in { from{opacity:0;transform:translateY(16px) scale(0.98)}to{opacity:1;transform:translateY(0) scale(1)} }
+        @keyframes case-slide-out { from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(12px) scale(0.98)} }
 
         .case-cover { position:relative; padding:26px 24px 22px; background:var(--cb); border-bottom:1px solid #1e1e2e; border-radius:18px 18px 0 0; overflow:hidden; }
         .case-cover-glow { position:absolute; inset:0; background:radial-gradient(ellipse at 0% 0%, var(--cg) 0%, transparent 65%); pointer-events:none; }
@@ -1147,6 +1217,8 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
         .case-side-left { border-right:1px solid #1e1e2e; }
         .case-side-role { font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:#374151; font-weight:700; }
         .case-side-name { font-size:16px; font-weight:800; color:#f5e6c8; }
+        .case-user-link { background:none; border:none; padding:0; margin:0; cursor:pointer; text-align:inherit; font:inherit; color:#f5e6c8; text-decoration:underline; text-decoration-color:#d4a84b60; text-underline-offset:3px; }
+        .case-user-link:hover { color:#d4a84b; text-decoration-color:#d4a84b; }
         .case-side-id { font-size:11px; color:#2d3748; font-family:monospace; }
         .case-divider { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:0 14px; }
         .case-div-line { width:1px; flex:1; }
@@ -1165,11 +1237,15 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
         .case-proof-img { max-width:100%; max-height:380px; border-radius:8px; object-fit:contain; cursor:zoom-in; transition:opacity 0.15s; }
         .case-proof-img:hover { opacity:0.9; }
 
-        .case-actions { display:flex; justify-content:center; padding:4px 0; }
+        .case-actions { display:flex; flex-direction:column; align-items:stretch; gap:10px; padding:4px 0; }
+        .case-unban-form { max-width:420px; margin:0 auto; width:100%; }
+        .case-unban-label { display:flex; flex-direction:column; gap:6px; font-size:11px; color:#6b7280; font-weight:600; }
+        .case-unban-input { background:#0e0e18; border:1px solid #1e1e2e; border-radius:8px; color:#e2e8f0; padding:10px 12px; font-size:13px; outline:none; width:100%; box-sizing:border-box; }
+        .case-unban-input:focus { border-color:#22c55e60; }
         .case-unban-btn { background:#22c55e18; border:1px solid #22c55e50; color:#22c55e; padding:12px 36px; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; transition:all 0.2s; }
         .case-unban-btn:hover:not(:disabled) { background:#22c55e28; box-shadow:0 0 20px #22c55e25; }
         .case-unban-btn:disabled { opacity:0.5; cursor:not-allowed; }
-        .case-unban-done { color:#22c55e; font-size:14px; font-weight:700; }
+        .case-unban-done { color:#22c55e; font-size:14px; font-weight:700; text-align:center; }
         .case-delete-zone { border-top:1px solid #1a1a28; padding-top:16px; display:flex; justify-content:center; }
         .case-delete-btn { background:transparent; border:1px solid #374151; color:#4b5563; padding:8px 20px; border-radius:8px; font-size:12px; cursor:pointer; transition:all 0.2s; }
         .case-delete-btn:hover { border-color:#ef444460; color:#ef4444; background:#ef444410; }
@@ -1199,7 +1275,7 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
         .apl-grid { display:flex; flex-direction:column; gap:14px; }
         .apl-card { background:#0b0b14; border:1px solid #1a1a28; border-radius:12px; padding:18px; display:flex; flex-direction:column; gap:12px; transition:border-color 0.2s; }
         .apl-card:hover { border-color:var(--apl-color,#d4a84b); }
-        .apl-card-top { display:flex; align-items:center; justify-content:space-between; }
+        .apl-card-top { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
         .apl-badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
         .apl-date { font-size:11px; color:#4b5563; font-family:monospace; }
         .apl-player { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -1256,9 +1332,10 @@ export default function ModerationSection({ role, permissions = [], panelTabs = 
           .arc-stats { gap:0; }
           .arc-stat { padding:0 10px; }
           .mst-grid { grid-template-columns:1fr; }
-          .case-modal { max-height:92vh; border-radius:14px; }
-          .case-body { padding:16px; }
-          .case-cover { padding:18px; }
+          .case-backdrop { padding:0; align-items:stretch; }
+          .case-modal { width:100%; height:100%; max-height:100dvh; border-radius:0; }
+          .case-body { padding:16px; flex:1; overflow-y:auto; }
+          .case-cover { padding:18px; border-radius:0; }
           .case-cover-inner { flex-direction:column; }
           .case-participants { flex-direction:column; }
           .case-side-left { border-right:none; border-bottom:1px solid #1e1e2e; }

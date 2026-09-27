@@ -93,7 +93,8 @@ export const PANEL_SECTIONS = [
   {
     id: 'rights', label: 'Rights', labelRu: 'Права', group: 'team',
     creatorOnly: true,
-    blurb: 'Страницы и наказания должностей группы, вкладки панели сотрудника.',
+    navHidden: true,
+    blurb: 'Страницы и наказания должностей группы, вкладки панели сотрудника. Открывается во вкладке «Админ панель».',
   },
   {
     id: 'support', label: 'Support', labelRu: 'Поддержка', group: 'team',
@@ -170,14 +171,14 @@ export const SECTION_HINTS = {
   events: 'Игровые события',
   broadcast: 'Сообщение многим людям',
   staff: 'Сотрудники, смены и жалобы',
-  rights: 'Должности групп и сброс входа',
+  rights: 'Должности групп — внутри «Админ панель»',
   support: 'Письма от игроков',
   analytics: 'Сводка по проекту',
   logs: 'Что делала панель',
   chronicle: 'Лента событий',
   settings: 'Общие переключатели',
   security: 'Входы, сессии и блокировки',
-  panelAccess: 'Какие страницы видит должность',
+  panelAccess: 'Страницы должности и права групп',
   softRestart: 'Тихий перезапуск',
 }
 
@@ -197,9 +198,10 @@ export function visibleSections(
       && Number(myUserId) === Number(projectCreatorId)
     )
   return PANEL_SECTIONS.filter((s) => {
+    if (s.navHidden) return false
     if (s.ownerOnly && role !== 'owner') return false
     if (s.creatorOnly && !creatorOk) return false
-    if (allowedIds && s.id !== 'rights' && s.id !== 'groupGuard' && !allowedIds.has(s.id)) return false
+    if (allowedIds && s.id !== 'groupGuard' && !allowedIds.has(s.id)) return false
     if (s.permission && !perms.has(s.permission)) return false
     return true
   })

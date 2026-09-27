@@ -1,19 +1,52 @@
 import { useCallback, useEffect, useState } from 'react'
-import MaintenanceToggle from '../../components/MaintenanceToggle'
-import OnlineAnalyticsShelf from '../../components/OnlineAnalyticsShelf'
-import PulseHero from '../../components/PulseHero'
 import StatShelfCard from '../../components/StatShelfCard'
 import {
   fetchDashboardServer,
   fetchDashboardStats,
-  fetchOnlineSummary,
 } from '../../lib/adminClient'
 
+const PERIODS = [
+  { id: 'day', label: 'День', now: 'сегодня', prev: 'вчера' },
+  { id: 'month', label: 'Месяц', now: 'этот месяц', prev: 'прошлый месяц' },
+  { id: 'year', label: 'Год', now: 'этот год', prev: 'прошлый год' },
+]
+
+function fmt(n) {
+  if (n == null || Number.isNaN(Number(n))) return '—'
+  return new Intl.NumberFormat('ru-RU').format(Number(n))
+}
+
+function toneClass(current, previous) {
+  const a = Number(current)
+  const b = Number(previous)
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return ''
+  if (a > b) return 'is-good'
+  if (a < b) return 'is-bad'
+  return ''
+}
+
+function UsageCard({ title, pair, meta, loading }) {
+  const current = pair?.current
+  const previous = pair?.previous
+  return (
+    <button type="button" className={`dash-usage-card ${toneClass(current, previous)}`} disabled>
+      <span className="dash-usage-label">{title}</span>
+      <strong className="dash-usage-value">{loading ? '…' : fmt(current)}</strong>
+      <span className="dash-usage-hint">
+        {meta.now}
+        {previous != null && !loading ? ` · ${meta.prev}: ${fmt(previous)}` : ''}
+      </span>
+    </button>
+  )
+}
+
+/** Главная сотрудника: общая статистика проекта, без онлайна фермы. */
 export default function DashboardSection() {
   const [stats, setStats] = useState(null)
   const [server, setServer] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [period, setPeriod] = useState('day')
 
   const loadDashboard = useCallback(async () => {
     setError('')
@@ -31,88 +64,81 @@ export default function DashboardSection() {
     }
   }, [])
 
-  const refreshOnline = useCallback(async () => {
-    try {
-      const online = await fetchOnlineSummary()
-      setStats((prev) => (prev ? { ...prev, ...online } : online))
-    } catch {
-      // ignore
-    }
-  }, [])
-
   useEffect(() => {
     loadDashboard()
   }, [loadDashboard])
 
-  useEffect(() => {
-    const id = window.setInterval(refreshOnline, 5000)
-    return () => window.clearInterval(id)
-  }, [refreshOnline])
-
-  const apiOk = server?.ok && !error
+  const apiOk = Boolean(server?.ok) && !error
+  const usage = stats?.usage || {}
+  const meta = PERIODS.find((item) => item.id === period) || PERIODS[0]
 
   return (
-    <>
-      <PulseHero
-        onlineNow={stats?.onlineNow}
-        todayPeak={stats?.todayPeak}
-        windowSeconds={stats?.windowSeconds}
-        loading={loading}
-      />
+    <div className="dash-home">
+      <article className="panel-shelf panel-shelf-page dash-home-head">
+        <p className="panel-shelf-label">Обзор проекта</p>
+        <h2 className="panel-page-title">Использование Epsilon</h2>
+        <p className="panel-page-lead">
+          Активные пользователи, вызовы бота и сообщения в официальных группах.
+        </p>
+        {error && <p className="panel-shelf-error">{error}</p>}
+      </article>
+
+      <div className="dash-period e-seg" role="tablist" aria-label="Период">
+        {PERIODS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={period === item.id ? 'is-on' : ''}
+            onClick={() => setPeriod(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="dash-usage-grid">
+        <article className="panel-shelf dash-usage-active">
+          <p className="panel-shelf-label">Активные за сутки</p>
+          <p className="panel-stat-value">{loading ? '…' : fmt(usage.activeUsers)}</p>
+          <p className="panel-stat-hint">Заходили в проект за последние 24 часа</p>
+        </article>
+
+        <UsageCard
+          title="Вызовы бота"
+          pair={usage.botEvents?.[period]}
+          meta={meta}
+          loading={loading}
+        />
+        <UsageCard
+          title="Новые пользователи"
+          pair={usage.newUsers?.[period]}
+          meta={meta}
+          loading={loading}
+        />
+        <UsageCard
+          title="Сообщения в официальных группах"
+          pair={usage.officialMessages?.[period]}
+          meta={meta}
+          loading={loading}
+        />
+      </div>
+
       <StatShelfCard
-        label="Игроки"
+        label="Количество пользователей в базе данных"
         value={stats?.players}
-        hint="В базе"
         loading={loading}
         area="players"
         quiet
       />
 
       <article className="panel-shelf panel-shelf-server panel-shelf-quiet">
-        <p className="panel-shelf-label">Сервер</p>
+        <p className="panel-shelf-label">Статус панели</p>
         <p className="panel-server-title">
           {loading && 'Проверка…'}
-          {!loading && apiOk && 'API подключён'}
-          {!loading && !apiOk && 'Проблема с API'}
+          {!loading && apiOk && 'Всё в норме'}
+          {!loading && !apiOk && 'Есть сбой'}
         </p>
-
-        <ul className="panel-server-list">
-          <li className={server?.adminBotConfigured ? 'panel-server-ok' : 'panel-server-warn'}>
-            Admin-бот {server?.adminBotConfigured ? 'OK' : 'не настроен'}
-          </li>
-          <li className={server?.jwtConfigured ? 'panel-server-ok' : 'panel-server-warn'}>
-            JWT {server?.jwtConfigured ? 'OK' : 'не настроен'}
-          </li>
-          <li className={server?.maintenance ? 'panel-server-warn' : 'panel-server-ok'}>
-            Maintenance {server?.maintenance ? 'включён' : 'выключен'}
-          </li>
-          {!loading && stats && (
-            <>
-              <li className="panel-server-ok">Биржа: {stats.marketListings} лотов</li>
-              <li className="panel-server-ok">Админов: {stats.adminAccounts}</li>
-            </>
-          )}
-        </ul>
-
-        {error && <p className="panel-shelf-error">{error}</p>}
       </article>
-
-      <article className="panel-shelf panel-shelf-maintenance panel-shelf-quiet">
-        {!loading && server && (
-          <MaintenanceToggle
-            initialEnabled={server.maintenance}
-            onChange={(enabled) => setServer((prev) => ({ ...prev, maintenance: enabled }))}
-          />
-        )}
-        {loading && (
-          <div className="panel-maintenance">
-            <p className="panel-shelf-label">Техработы</p>
-            <p className="panel-shelf-muted">Загрузка…</p>
-          </div>
-        )}
-      </article>
-
-      <OnlineAnalyticsShelf />
-    </>
+    </div>
   )
 }

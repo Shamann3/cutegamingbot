@@ -13,4 +13,17 @@ export const PUNISH_RIGHTS = [
   { id: 'punish_voice', label: 'Голос', hint: 'Запретить голосовые и кружки, текст оставить' },
 ]
 
-export const REALM_RIGHTS = [...PAGE_RIGHTS, ...PUNISH_RIGHTS]
+/** Права администратора чата Telegram (без передачи владения). */
+export const TELEGRAM_ADMIN_RIGHTS = [
+  { id: 'can_change_info', label: 'Изменять профиль', hint: 'Название, фото и описание чата' },
+  { id: 'can_delete_messages', label: 'Удалять сообщения', hint: 'Удаление чужих сообщений в чате' },
+  { id: 'can_restrict_members', label: 'Ограничивать участников', hint: 'Мут, бан и ограничения в чате' },
+  { id: 'can_invite_users', label: 'Приглашать', hint: 'Ссылки-приглашения и добавление людей' },
+  { id: 'can_pin_messages', label: 'Закреплять', hint: 'Закреплённые сообщения' },
+  { id: 'can_manage_topics', label: 'Темы', hint: 'Управление темами форума' },
+  { id: 'can_manage_video_chats', label: 'Видеочаты', hint: 'Управление видеочатами' },
+  { id: 'can_post_messages', label: 'Публиковать', hint: 'Посты в канале (для каналов)' },
+  { id: 'can_edit_messages', label: 'Редактировать посты', hint: 'Правка чужих постов в канале' },
+]
+
+export const REALM_RIGHTS = [...PAGE_RIGHTS, ...PUNISH_RIGHTS, ...TELEGRAM_ADMIN_RIGHTS]

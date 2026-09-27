@@ -301,9 +301,9 @@
   margin: 0;
   font-family: "Cormorant Garamond", Georgia, serif;
   font-size: clamp(1.4rem, 4.2vw, 1.95rem);
-  font-weight: 650;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
   line-height: 1.15;
   color: var(--ent-accent-bright);
   text-shadow:
@@ -542,9 +542,9 @@
   margin: 0;
   font-family: "Cormorant Garamond", Georgia, serif !important;
   font-size: 1.05rem;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--e-accent-bright, #ff6a7a) !important;
   line-height: 1.1;
   white-space: nowrap;
@@ -780,12 +780,12 @@ body.perf-light .panel-brand-halo {
 
   .panel-brand-name {
     font-size: 0.98rem;
-    letter-spacing: 0.1em;
+    letter-spacing: normal;
   }
 
   .panel-brand-tag {
     font-size: 0.58rem;
-    letter-spacing: 0.06em;
+    letter-spacing: normal;
   }
 }
 

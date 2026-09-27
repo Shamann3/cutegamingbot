@@ -82,10 +82,10 @@ function SettingsControls({
         type="button"
         className={`panel-perf-btn${lightMode ? ' panel-perf-btn-active' : ''}`}
         onClick={onTogglePerf}
-        title={lightMode ? 'Чёрно-белый лёгкий режим' : 'Цветной HD — подсветка из палитры'}
+        title={lightMode ? 'Чёрно-белый режим с лёгкими анимациями' : 'Полный цвет и анимации'}
       >
         <span aria-hidden="true">{lightMode ? '◈' : '⬡'}</span>
-        {lightMode ? 'Ч/Б · лёгкий' : 'HD · цвет'}
+        {lightMode ? 'Оптимизировать интерфейс' : 'Максимальный интерфейс'}
       </button>
     </>
   )
@@ -393,10 +393,10 @@ export default function PanelSidebar({
                   type="button"
                   className={`panel-perf-btn${lightMode ? ' panel-perf-btn-active' : ''}`}
                   onClick={onTogglePerf}
-                  title={lightMode ? 'Чёрно-белый лёгкий режим' : 'Цветной HD — подсветка из палитры'}
+                  title={lightMode ? 'Чёрно-белый режим с лёгкими анимациями' : 'Полный цвет и анимации'}
                 >
                   <span aria-hidden="true">{lightMode ? '◈' : '⬡'}</span>
-                  {lightMode ? 'Ч/Б · лёгкий' : 'HD · цвет'}
+                  {lightMode ? 'Оптимизировать интерфейс' : 'Максимальный интерфейс'}
                 </button>
               </div>
             </div>

@@ -1,3 +1,5 @@
+import { useCallback, useRef, useState } from 'react'
+
 function finite(value) {
   const n = Number(value)
   return Number.isFinite(n) ? n : null
@@ -21,17 +23,71 @@ function levelOf(value, max) {
   return 4
 }
 
-function Frame({ caption, children, empty }) {
+function fmtTipValue(value) {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  return new Intl.NumberFormat('ru-RU').format(Number(value))
+}
+
+/** Общий плавающий тултип у курсора: дата/метка + значение. */
+export function SightTip({ tip }) {
+  if (!tip) return null
+  return (
+    <div
+      className="sight-tip"
+      style={{ left: tip.x, top: tip.y }}
+      role="tooltip"
+    >
+      <strong>{tip.label}</strong>
+      <span>{tip.valueText}</span>
+    </div>
+  )
+}
+
+export function useSightTip(rootRef) {
+  const [tip, setTip] = useState(null)
+
+  const show = useCallback((event, label, value) => {
+    const root = rootRef?.current
+    if (!root) return
+    const rect = root.getBoundingClientRect()
+    const pad = 10
+    let x = event.clientX - rect.left + 12
+    let y = event.clientY - rect.top - 8
+    const maxX = Math.max(pad, rect.width - 140)
+    const maxY = Math.max(pad, rect.height - 48)
+    x = Math.max(pad, Math.min(x, maxX))
+    y = Math.max(pad, Math.min(y, maxY))
+    setTip({
+      x,
+      y,
+      label: String(label || '—'),
+      valueText: fmtTipValue(value),
+    })
+  }, [rootRef])
+
+  const hide = useCallback(() => setTip(null), [])
+
+  return { tip, show, hide }
+}
+
+function Frame({ caption, children, empty, tip }) {
   return (
     <figure className="sight">
       {caption && <figcaption className="sight-caption">{caption}</figcaption>}
-      {empty ? <p className="sight-empty">За этот отрезок ряда нет</p> : children}
+      {empty ? <p className="sight-empty">За этот отрезок ряда нет</p> : (
+        <div className="sight-body">
+          {children}
+          <SightTip tip={tip} />
+        </div>
+      )}
     </figure>
   )
 }
 
 /** Часы или дни по кругу. Радиус точки — её величина, не случайное облако. */
 export function PolarPlot({ points = [], center = '—', caption }) {
+  const rootRef = useRef(null)
+  const { tip, show, hide } = useSightTip(rootRef)
   const rows = points
     .map((point) => ({ label: point.label || '', value: finite(point.value) }))
     .filter((point) => point.value != null)
@@ -42,31 +98,49 @@ export function PolarPlot({ points = [], center = '—', caption }) {
   const radius = 118
 
   return (
-    <Frame caption={caption} empty={!rows.length}>
-      <svg className="sight-polar" viewBox="0 0 320 320" role="img" aria-label={caption || 'Круговая диаграмма'}>
-        {[0.25, 0.5, 0.75, 1].map((step) => (
-          <circle key={step} cx={cx} cy={cy} r={radius * step} className="sight-ring" />
-        ))}
-        {rows.map((point, index) => {
-          const angle = -Math.PI / 2 + (index / rows.length) * Math.PI * 2
-          const x2 = cx + Math.cos(angle) * radius
-          const y2 = cy + Math.sin(angle) * radius
-          return <line key={point.label || index} x1={cx} y1={cy} x2={x2} y2={y2} className="sight-spoke" />
-        })}
-        {alive && rows.map((point, index) => {
-          if (point.value <= 0) return null
-          const angle = -Math.PI / 2 + (index / rows.length) * Math.PI * 2
-          const reach = (point.value / max) * radius
-          const x = cx + Math.cos(angle) * reach
-          const y = cy + Math.sin(angle) * reach
-          return (
-            <circle key={`d-${point.label || index}`} cx={x} cy={y} r={point.value === max ? 5 : 3.2} className="sight-dot">
-              <title>{`${point.label}: ${point.value}`}</title>
-            </circle>
-          )
-        })}
-        <text x={cx} y={cy + 6} textAnchor="middle" className="sight-center">{center}</text>
-      </svg>
+    <Frame caption={caption} empty={!rows.length} tip={tip}>
+      <div className="sight-body-inner" ref={rootRef}>
+        <svg
+          className="sight-polar"
+          viewBox="0 0 320 320"
+          role="img"
+          aria-label={caption || 'Круговая диаграмма'}
+          onPointerLeave={hide}
+        >
+          {[0.25, 0.5, 0.75, 1].map((step) => (
+            <circle key={step} cx={cx} cy={cy} r={radius * step} className="sight-ring" />
+          ))}
+          {rows.map((point, index) => {
+            const angle = -Math.PI / 2 + (index / rows.length) * Math.PI * 2
+            const x2 = cx + Math.cos(angle) * radius
+            const y2 = cy + Math.sin(angle) * radius
+            return <line key={point.label || index} x1={cx} y1={cy} x2={x2} y2={y2} className="sight-spoke" />
+          })}
+          {alive && rows.map((point, index) => {
+            if (point.value <= 0) return null
+            const angle = -Math.PI / 2 + (index / rows.length) * Math.PI * 2
+            const reach = (point.value / max) * radius
+            const x = cx + Math.cos(angle) * reach
+            const y = cy + Math.sin(angle) * reach
+            return (
+              <circle
+                key={`d-${point.label || index}`}
+                cx={x}
+                cy={y}
+                r={point.value === max ? 7 : 5}
+                className="sight-dot"
+                style={{ cursor: 'pointer' }}
+                onPointerEnter={(e) => show(e, point.label, point.value)}
+                onPointerMove={(e) => show(e, point.label, point.value)}
+                onPointerLeave={hide}
+              >
+                <title>{`${point.label}: ${fmtTipValue(point.value)}`}</title>
+              </circle>
+            )
+          })}
+          <text x={cx} y={cy + 6} textAnchor="middle" className="sight-center">{center}</text>
+        </svg>
+      </div>
     </Frame>
   )
 }
@@ -79,6 +153,8 @@ function weekdayLead(iso) {
 
 /** Сетка как календарь привычек: столбец — неделя, строка — день. Пустая клетка — не ноль в данных, а день вне ряда. */
 export function HabitGrid({ points = [], caption, selected = '', onPick }) {
+  const rootRef = useRef(null)
+  const { tip, show, hide } = useSightTip(rootRef)
   const rows = points
     .map((point) => ({
       date: String(point.date || ''),
@@ -95,11 +171,12 @@ export function HabitGrid({ points = [], caption, selected = '', onPick }) {
   ]
 
   return (
-    <Frame caption={caption} empty={!rows.length}>
-      <div className={`sight-habit-wrap${dated && cells.length > 21 ? ' is-scroll' : ''}`}>
+    <Frame caption={caption} empty={!rows.length} tip={tip}>
+      <div className={`sight-habit-wrap${dated && cells.length > 21 ? ' is-scroll' : ''}`} ref={rootRef}>
         <div
           className={`sight-habit${dated ? ' is-weeks' : ''}`}
           role="list"
+          onPointerLeave={hide}
         >
           {cells.map((cell) => {
             if (cell.pad) return <span key={cell.key} className="sight-cell is-pad" />
@@ -113,10 +190,12 @@ export function HabitGrid({ points = [], caption, selected = '', onPick }) {
                 role="listitem"
                 className={`sight-cell${on ? ' is-on' : ''}`}
                 data-level={level}
-                title={`${cell.label}: ${cell.value}`}
-                aria-label={`${cell.label}: ${cell.value}`}
+                aria-label={`${cell.label}: ${fmtTipValue(cell.value)}`}
                 aria-pressed={onPick ? on : undefined}
                 onClick={onPick ? () => onPick(cell.date) : undefined}
+                onPointerEnter={(e) => show(e, cell.label, cell.value)}
+                onPointerMove={(e) => show(e, cell.label, cell.value)}
+                onPointerLeave={hide}
               />
             )
           })}
@@ -135,6 +214,8 @@ function hexPoint(cx, cy, size) {
 
 /** Шестиугольники по дням. Яркость — число событий, не карта местности. */
 export function HexHeat({ points = [], caption }) {
+  const rootRef = useRef(null)
+  const { tip, show, hide } = useSightTip(rootRef)
   const rows = points
     .map((point) => ({ label: point.label || '', value: finite(point.value) }))
     .filter((point) => point.value != null)
@@ -147,25 +228,37 @@ export function HexHeat({ points = [], caption }) {
   const height = Math.ceil(Math.ceil(rows.length / cols) * dy + size * 2)
 
   return (
-    <Frame caption={caption} empty={!rows.length}>
-      <svg className="sight-hex" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={caption || 'Тепловая карта'}>
-        {rows.map((point, index) => {
-          const col = index % cols
-          const row = Math.floor(index / cols)
-          const cx = size + 4 + col * dx + (row % 2 ? dx / 2 : 0)
-          const cy = size + 4 + row * dy
-          return (
-            <polygon
-              key={`${point.label}-${index}`}
-              points={hexPoint(cx, cy, size - 1.2)}
-              className="sight-hex-cell"
-              data-level={levelOf(point.value, max)}
-            >
-              <title>{`${point.label}: ${point.value}`}</title>
-            </polygon>
-          )
-        })}
-      </svg>
+    <Frame caption={caption} empty={!rows.length} tip={tip}>
+      <div className="sight-body-inner" ref={rootRef}>
+        <svg
+          className="sight-hex"
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          aria-label={caption || 'Тепловая карта'}
+          onPointerLeave={hide}
+        >
+          {rows.map((point, index) => {
+            const col = index % cols
+            const row = Math.floor(index / cols)
+            const cx = size + 4 + col * dx + (row % 2 ? dx / 2 : 0)
+            const cy = size + 4 + row * dy
+            return (
+              <polygon
+                key={`${point.label}-${index}`}
+                points={hexPoint(cx, cy, size - 1.2)}
+                className="sight-hex-cell"
+                data-level={levelOf(point.value, max)}
+                style={{ cursor: 'pointer' }}
+                onPointerEnter={(e) => show(e, point.label, point.value)}
+                onPointerMove={(e) => show(e, point.label, point.value)}
+                onPointerLeave={hide}
+              >
+                <title>{`${point.label}: ${fmtTipValue(point.value)}`}</title>
+              </polygon>
+            )
+          })}
+        </svg>
+      </div>
     </Frame>
   )
 }

@@ -47,14 +47,18 @@ export const PANEL_SECTION_TABS = {
     { id: 'appeals', label: 'Апелляции', blurb: 'Разбор апелляций по банам.' },
     { id: 'stats', label: 'Статистика', blurb: 'Статистика модераторов.' },
   ],
+  farm: [
+    { id: 'plots', label: 'Грядки', blurb: 'Таймеры роста, полив и грядки игроков.' },
+    { id: 'seed', label: 'Семена', blurb: 'Дроп семян, ежедневная выдача и стартовый набор.' },
+  ],
   security: [
     { id: 'audit', label: 'Аудит', blurb: 'Журнал действий администраторов.' },
     { id: 'ipbans', label: 'IP-баны', blurb: 'Блокировки по IP.' },
     { id: 'sessions', label: 'Сессии', blurb: 'Сессии и принудительный перелогин 2FA.' },
   ],
   settings: [
-    { id: 'seed', label: 'Семена', blurb: 'Игровые настройки семян и экономики старта.' },
-    { id: 'system', label: 'Система', blurb: 'Системные флаги и обслуживание.' },
+    { id: 'system', label: 'Система', blurb: 'Системные флаги и таймаут сессии.' },
+    { id: 'toggles', label: 'Выключатели', blurb: 'Техработы и прочие флаги создателя.', ownerOnly: true },
     { id: 'history', label: 'История', blurb: 'История изменений настроек.' },
   ],
   events: [

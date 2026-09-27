@@ -1031,9 +1031,10 @@ export default function BroadcastSection({ panelTabs = null }) {
 
           {(audience === 'filtered' || audience === 'online') && (
             <div className="panel-economy-settings-form">
-              <label className="panel-market-check">
+              <label className="e-toggle">
                 <input type="checkbox" checked={excludeBanned} onChange={(e) => setExcludeBanned(e.target.checked)} />
-                Исключить забаненных
+                <span className="e-toggle-ui" />
+                <span className="e-toggle-text">Исключить забаненных</span>
               </label>
               {audience === 'filtered' && (
                 <>
@@ -1045,9 +1046,10 @@ export default function BroadcastSection({ panelTabs = null }) {
                     <span>Макс. баланс кут</span>
                     <input className="panel-users-input" value={maxBalance} onChange={(e) => setMaxBalance(e.target.value.replace(/[^\d]/g, ''))} />
                   </label>
-                  <label className="panel-market-check">
+                  <label className="e-toggle">
                     <input type="checkbox" checked={hasPlots} onChange={(e) => setHasPlots(e.target.checked)} />
-                    Только с активными грядками
+                    <span className="e-toggle-ui" />
+                    <span className="e-toggle-text">Только с активными грядками</span>
                   </label>
                   <label className="panel-economy-field">
                     <span>Username / имя</span>
@@ -1066,13 +1068,15 @@ export default function BroadcastSection({ panelTabs = null }) {
         <article className="panel-shelf">
           <p className="panel-shelf-label">Каналы</p>
           <div className="panel-broadcast-channels">
-            <label className="panel-market-check">
+            <label className="e-toggle">
               <input type="checkbox" checked={channelWebapp} onChange={(e) => setChannelWebapp(e.target.checked)} />
-              WebApp — toast в игре (мгновенно если онлайн)
+              <span className="e-toggle-ui" />
+              <span className="e-toggle-text">WebApp — toast в игре (мгновенно если онлайн)</span>
             </label>
-            <label className="panel-market-check">
+            <label className="e-toggle">
               <input type="checkbox" checked={channelTelegram} onChange={(e) => setChannelTelegram(e.target.checked)} />
-              Telegram — личное сообщение от игрового бота
+              <span className="e-toggle-ui" />
+              <span className="e-toggle-text">Telegram — личное сообщение от игрового бота</span>
             </label>
           </div>
           <label className="panel-economy-field">

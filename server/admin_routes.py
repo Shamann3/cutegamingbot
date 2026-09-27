@@ -6866,19 +6866,28 @@ async def admin_moderation_recent(
     return {"items": await get_recent_logs(limit)}
 
 
+class ModerationUnbanBody(BaseModel):
+    reason: str = Field(default="", max_length=500)
+    model_config = {"extra": "forbid"}
+
+
 @router.post("/moderation/unban/{user_id}")
 async def admin_moderation_unban(
     user_id: int,
     request: Request,
+    body: ModerationUnbanBody | None = None,
     admin_id: int = Depends(require_admin_permission("moderate_unban")),
 ):
     from admin_db import get_admin_account
 
     acc = await get_admin_account(admin_id)
     admin_name = (acc.get("firstName") or acc.get("username") or "") if acc else ""
+    reason = (body.reason if body else "") or ""
 
     try:
-        await unban_player(user_id, admin_user_id=admin_id, admin_name=admin_name)
+        await unban_player(
+            user_id, admin_user_id=admin_id, admin_name=admin_name, reason=reason
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -6886,6 +6895,7 @@ async def admin_moderation_unban(
         admin_id, "unban_user",
         target_type="player",
         target_id=str(user_id),
+        details={"reason": reason} if reason else None,
         ip=_get_client_ip(request),
     )
     return {"ok": True}

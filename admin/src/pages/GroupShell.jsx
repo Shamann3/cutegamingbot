@@ -27,6 +27,7 @@ import useDrawerSwipe from '../lib/useDrawerSwipe'
 import { useGlobalKeys } from '../lib/useGlobalKeys'
 import { useIsPhone, useViewportMode } from '../lib/useIsDesktop'
 import { useMusicMode } from '../lib/musicMode'
+import { bumpMusicUnlock } from '../lib/musicUnlock'
 import { usePerfMode } from '../lib/perfMode'
 
 const ACTIONS = [
@@ -73,7 +74,16 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   const phone = useIsPhone()
   const viewport = useViewportMode()
   const { lightMode, setLightMode } = usePerfMode()
-  const { volume: musicVolume, setVolume: setMusicVolume, toggleMute: toggleMusicMute } = useMusicMode()
+  const { volume: musicVolume, setVolume: setMusicVolume, toggleMute: toggleMusicMuteRaw } = useMusicMode()
+  const toggleMusicMute = useCallback(() => {
+    const wasMuted = musicVolume <= 0
+    toggleMusicMuteRaw()
+    if (wasMuted) bumpMusicUnlock()
+  }, [musicVolume, toggleMusicMuteRaw])
+  const onMusicVolumeChange = useCallback((next) => {
+    setMusicVolume(next)
+    if (next > 0) bumpMusicUnlock()
+  }, [setMusicVolume])
   const [accent, setAccent] = useState(() => loadStoredAccent())
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -103,8 +113,12 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
 
   const closeRail = useCallback(() => setRailOpen(false), [])
   const onCoachStep = useCallback((step) => {
+    if (coach) {
+      setRailOpen(false)
+      return
+    }
     setRailOpen(Boolean(step?.openNav))
-  }, [])
+  }, [coach])
   useEffect(() => {
     applyAccentToDocument(lightMode
       ? { id: 'mono', label: 'Ч/Б', hex: '#C8C8C8', h: 0, s: 0, v: 0.78, glow: 28 }
@@ -246,6 +260,10 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
       setError('Укажите id человека')
       return
     }
+    if (portrait?.userId != null && Number(portrait.userId) === id) {
+      setError('Вы не можете заблокировать самого себя')
+      return
+    }
     if (!reason.trim()) {
       setError('Нужна причина')
       return
@@ -365,10 +383,44 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
     setUserId(String(id))
     setChapter(false)
     setRailOpen(false)
-    setTab('activity')
+    setTab('archive')
     window.setTimeout(() => {
-      document.getElementById('realm-punish')?.scrollIntoView({ block: 'nearest' })
+      document.getElementById('g-arc-punish')?.scrollIntoView({ block: 'nearest' })
     }, 80)
+  }
+
+  const archiveAct = async ({ userId: raw, action: actId, hours: hrs, reason: why }) => {
+    const query = String(raw || '').trim()
+    const asNum = Number(query.replace(/^#/, ''))
+    const id = Number.isFinite(asNum) && String(asNum) === query.replace(/^#/, '') ? asNum : Number(query)
+    if (!chatId) throw new Error('Сначала выберите группу')
+    if (!id || !Number.isFinite(id)) throw new Error('Укажите числовой id или выберите человека из подсказки')
+    if (!String(why || '').trim()) throw new Error('Нужна причина')
+    const act = allowedActions.find((item) => item.id === actId)
+    if (!act) throw new Error('Нет права на это действие')
+    let until = null
+    if (act.needsUntil) {
+      until = punishmentHours(hrs)
+      if (until == null) throw new Error('Укажите часы, больше нуля и не дольше года')
+    }
+    setActing(true)
+    setError('')
+    try {
+      const data = await groupRealmAct({
+        chat_id: chatId,
+        user_id: id,
+        action: act.id,
+        reason: String(why).trim(),
+        until_sec: until,
+      })
+      setNotice(data?.receipt || 'Записано в архив официальной группы')
+      await loadSummary(chatId)
+    } catch (err) {
+      setError(err.message || 'Действие не прошло')
+      throw err
+    } finally {
+      setActing(false)
+    }
   }
   const title = summary?.chat?.title || current?.title || 'Группа не выбрана'
 
@@ -398,7 +450,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           lightMode={lightMode}
           onTogglePerf={() => setLightMode(!lightMode)}
           musicVolume={musicVolume}
-          onMusicVolumeChange={setMusicVolume}
+          onMusicVolumeChange={onMusicVolumeChange}
           onToggleMusic={toggleMusicMute}
           accent={accent}
           onAccentChange={(next) => setAccent(persistAccent(next))}
@@ -462,7 +514,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
                     ))}
                   </select>
                 </label>
-                <label>Зачем<input value={appointReason} onChange={(event) => setAppointReason(event.target.value)} /></label>
+                <label>для чего?<input value={appointReason} onChange={(event) => setAppointReason(event.target.value)} /></label>
                 <button type="submit" className="realm-back">Назначить</button>
               </form>
               <ul className="realm-list">
@@ -523,35 +575,15 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           {!chapter && activeTab === 'activity' && (
             <section>
               <h2 className="realm-h">Активность</h2>
-              <p className="realm-copy">Живые сообщения этого чата. Клетка — день или месяц. Имя подставляет id в форму ниже.</p>
+              <p className="realm-copy">Живые сообщения этого чата. Клетка — день или месяц. Наказать человека можно во вкладке «Архив».</p>
               <ActivityBoard chatId={chatId} repeats={repeats} canPunish={allowedActions.length > 0} onPick={pickPerson} />
-              {allowedActions.length > 0 && chatId && (
-                <form id="realm-punish" className="realm-form" onSubmit={punish}>
-                  <h3 className="realm-h">Наказать в этом чате</h3>
-                  <p className="realm-copy">Бан, мут, голос и кик действуют только здесь. Старшего, равного и себя форма не отправит.</p>
-                  <label>Id человека<input inputMode="numeric" value={userId} onChange={(event) => setUserId(event.target.value)} /></label>
-                  <div className="realm-actions">
-                    {allowedActions.map((item) => (
-                      <button key={item.id} type="button" className={selectedAction?.id === item.id ? 'is-on' : ''} onClick={() => setAction(item.id)}>
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                  {selectedAction?.needsUntil && (
-                    <label>Часы<input inputMode="decimal" value={hours} onChange={(event) => setHours(event.target.value)} /></label>
-                  )}
-                  <label>Причина<input value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-                  <p className="realm-copy">Причина обязательна. В чате с ботом её легко забыть, здесь без неё запись не уходит.</p>
-                  <button type="submit" className="realm-back" disabled={acting}>{acting ? 'Запись…' : 'Выполнить'}</button>
-                </form>
-              )}
             </section>
           )}
 
           {!chapter && activeTab === 'archive' && (
             <section>
               <h2 className="realm-h">Архив чата</h2>
-              <p className="realm-copy">Официальная группа Кьюта. {current?.position ? `Ваша должность: ${current.position}.` : ''}</p>
+              <p className="realm-copy">Официальная группа Кьюта. {current?.position ? `Ваша должность: ${current.position}.` : ''} Наказания и снятие — здесь, с обязательной причиной.</p>
               {mods && (
                 <p className="realm-copy">
                   За 30 дней {fmt(mods.actions30d)} · муты {fmt(mods.mutes)} · баны {fmt(mods.bans)} · кики {fmt(mods.kicks)} · варны {fmt(mods.warns)}
@@ -561,7 +593,9 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
                 rows={mods?.recent || []}
                 repeats={repeats}
                 watch={summary ? (mods?.watch ?? null) : undefined}
-                onPunish={allowedActions.length > 0 ? pickPerson : null}
+                actions={allowedActions}
+                onAct={archiveAct}
+                seedQuery={userId}
               />
             </section>
           )}

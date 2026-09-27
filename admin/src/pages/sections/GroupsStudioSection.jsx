@@ -12,30 +12,8 @@ import UserLookupPreview from '../../components/UserLookupPreview'
 import DurationUntil from '../../components/DurationUntil'
 import { CaptchaChatBlock, CaptchaOverviewBlock } from '../../components/CaptchaInsights'
 import { CopyableId, CopyableUsername, IdentityBits } from '../../components/Copyable'
-
-const PUNISH_ACTIONS = [
-  { group: 'В этой группе', items: [
-    { id: 'mute', label: '🔇 Мут', needsUntil: true },
-    { id: 'unmute', label: '🔊 Размут', needsUntil: false },
-    { id: 'kick', label: '👋 Кик', needsUntil: false },
-    { id: 'warn', label: '⚠️ Варн', needsUntil: true },
-    { id: 'ban', label: '🚫 Бан', needsUntil: true },
-    { id: 'unban', label: '✅ Разбан', needsUntil: false },
-  ]},
-  { group: 'Во всех официальных группах', items: [
-    { id: 'muteall', label: '🔇 Муталл', needsUntil: true },
-    { id: 'unmuteall', label: '🔊 Размуталл', needsUntil: false },
-    { id: 'warnall', label: '⚠️ Варналл', needsUntil: true },
-    { id: 'banall', label: '🚫 Баналл', needsUntil: true },
-    { id: 'unbanall', label: '✅ Разбаналл', needsUntil: false },
-  ]},
-  { group: 'Весь проект', items: [
-    { id: 'warnfull', label: '⚠️ Варнфулл', needsUntil: true },
-    { id: 'banfull', label: 'Запрет на весь проект', needsUntil: true },
-    { id: 'bot_ban', label: '🤖 Бан в боте', needsUntil: false },
-    { id: 'bot_unban', label: '🤖 Разбан в боте', needsUntil: false },
-  ]},
-]
+import OpenUserLink from '../../components/OpenUserLink'
+import { filterStaffPunishGroups, selfBanBlocked } from '../../lib/staffModerationActions'
 
 function fmt(n, digits = 0) {
   const v = Number(n) || 0
@@ -118,13 +96,13 @@ function PersonLine({ title, person, onOpen }) {
   return (
     <div className="grp-person">
       <span className="grp-person-role">{title}</span>
-      <strong
-        className={onOpen && person.user_id ? 'grp-person-link' : undefined}
-        onClick={() => person.user_id && onOpen?.(person.user_id)}
-        role={onOpen && person.user_id ? 'button' : undefined}
-      >
-        {person.name}
-      </strong>
+      <OpenUserLink
+        userId={person.user_id}
+        name={person.name}
+        username={person.username}
+        onOpenUser={onOpen}
+        className="grp-person-link"
+      />
       {uname ? <CopyableUsername value={uname} /> : null}
       <CopyableId value={person.user_id} label="id игрока" />
       {role ? <em className="grp-person-tag">{role}</em> : null}
@@ -132,23 +110,26 @@ function PersonLine({ title, person, onOpen }) {
   )
 }
 
-function RankRow({ item, metric, onOpen, index = 0 }) {
+function RankRow({ item, metric, onOpen, index = 0, canOpen = true }) {
+  const name = item.name || `Чат ${item.chat_id}`
+  const open = canOpen && typeof onOpen === 'function'
+  const Tag = open ? 'button' : 'div'
   return (
-    <button
-      type="button"
-      className="grp-rank-row"
+    <Tag
+      type={open ? 'button' : undefined}
+      className={`grp-rank-row${open ? '' : ' is-static'}`}
       style={{ animationDelay: `${index * 40}ms` }}
-      onClick={() => onOpen(item.chat_id)}
+      onClick={open ? () => onOpen(item.chat_id) : undefined}
     >
       <span className="grp-rank-idx">{index + 1}</span>
       <span className="grp-rank-body">
-        <span className="grp-rank-name">{item.name || `Чат ${item.chat_id}`}</span>
+        <span className={`grp-rank-name${open ? ' is-link' : ''}`}>{name}</span>
         <span className="grp-rank-meta">
           <IdentityBits chatId={item.chat_id} chatUsername={item.username} />
         </span>
       </span>
       <span className="grp-rank-metric">{metric}</span>
-    </button>
+    </Tag>
   )
 }
 
@@ -178,7 +159,16 @@ function MiniTable({ columns, rows, empty = 'Пусто' }) {
 
 const BALANCE_MAX = 500_000
 
-export default function GroupsStudioSection({ onOpenUser } = {}) {
+export default function GroupsStudioSection({
+  onOpenUser,
+  onOpenGroup,
+  canOpenGroups = true,
+  role = null,
+  permissions = [],
+  canBanfull = false,
+  isProjectCreator = false,
+  myUserId = null,
+} = {}) {
   const [tab, setTab] = useState('lookup')
   const [sub, setSub] = useState('overview')
   const [overview, setOverview] = useState(null)
@@ -198,6 +188,23 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
   const [modReason, setModReason] = useState('')
   const [modding, setModding] = useState(false)
   const [rawOpen, setRawOpen] = useState(false)
+
+  const punishGroups = useMemo(
+    () => filterStaffPunishGroups({
+      canBanfull,
+      permissions,
+      role,
+      isProjectCreator,
+    }),
+    [canBanfull, permissions, role, isProjectCreator],
+  )
+
+  useEffect(() => {
+    const flat = punishGroups.flatMap((g) => g.items)
+    if (!flat.some((a) => a.id === modAction)) {
+      setModAction(flat[0]?.id || 'mute')
+    }
+  }, [punishGroups, modAction])
 
   const loadOverview = useCallback(async () => {
     setLoading(true)
@@ -231,6 +238,15 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
     }
   }, [])
 
+  const openGroup = useCallback((chatId) => {
+    if (!canOpenGroups || chatId == null) return
+    if (typeof onOpenGroup === 'function') {
+      onOpenGroup(chatId)
+      return
+    }
+    openChat(chatId)
+  }, [canOpenGroups, onOpenGroup, openChat])
+
   const refreshChat = useCallback(async (chatId) => {
     await openChat(chatId, { preserveView: true })
   }, [openChat])
@@ -243,7 +259,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
       const data = await searchGroupsStudio(query.trim())
       const items = Array.isArray(data?.items) ? data.items : []
       setHits(items)
-      if (items.length === 1) await openChat(items[0].chat_id)
+      if (items.length === 1) await openGroup(items[0].chat_id)
       else if (!items.length) notifyAdmin('Ничего не найдено', { error: true })
     } catch (err) {
       notifyAdmin(String(err?.message || err), { error: true })
@@ -286,6 +302,11 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
     const uid = modUserId || Number(String(modUser).replace(/^@/, ''))
     if (!uid || !Number.isFinite(uid)) {
       notifyAdmin('Укажите игрока', { error: true })
+      return
+    }
+    const selfMsg = selfBanBlocked(modAction, myUserId, uid)
+    if (selfMsg) {
+      notifyAdmin(selfMsg, { error: true })
       return
     }
     setModding(true)
@@ -383,19 +404,23 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
               </button>
             </form>
             <div className="grp-hits">
-              {hits.map((h, i) => (
-                <button
-                  key={h.chat_id}
-                  type="button"
-                  className="grp-hit"
-                  style={{ animationDelay: `${i * 40}ms` }}
-                  onClick={() => openChat(h.chat_id)}
-                >
-                  <strong>{h.name}</strong>
-                  <span>{stars(h.level)} · бч {fmt(h.chatbalance)}</span>
-                  <CopyableId value={h.chat_id} label="id группы" />
-                </button>
-              ))}
+              {hits.map((h, i) => {
+                const open = canOpenGroups
+                const Tag = open ? 'button' : 'div'
+                return (
+                  <Tag
+                    key={h.chat_id}
+                    type={open ? 'button' : undefined}
+                    className={`grp-hit${open ? '' : ' is-static'}`}
+                    style={{ animationDelay: `${i * 40}ms` }}
+                    onClick={open ? () => openGroup(h.chat_id) : undefined}
+                  >
+                    <strong className={open ? 'grp-hit-name is-link' : 'grp-hit-name'}>{h.name}</strong>
+                    <span>{stars(h.level)} · бч {fmt(h.chatbalance)}</span>
+                    <CopyableId value={h.chat_id} label="id группы" />
+                  </Tag>
+                )
+              })}
             </div>
           </section>
         )}
@@ -410,7 +435,15 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
               <>
                 <div className="grp-detail-head">
                   <div>
-                    <h2 className="grp-detail-title">{chat.name || `Чат ${chat.chat_id}`}</h2>
+                    <h2 className="grp-detail-title">
+                      {canOpenGroups && chat.link ? (
+                        <a className="grp-detail-title-link" href={chat.link} target="_blank" rel="noreferrer">
+                          {chat.name || `Чат ${chat.chat_id}`}
+                        </a>
+                      ) : (
+                        chat.name || `Чат ${chat.chat_id}`
+                      )}
+                    </h2>
                     <p className="grp-help" style={{ marginBottom: '.45rem' }}>
                       Уровень {stars(chat.level)}
                       {detail.gbl?.badge_title ? ` · ${detail.gbl.badge_title}` : ''}
@@ -595,13 +628,13 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                               label: 'Игрок',
                               render: (r) => (
                                 <span>
-                                  <button
-                                    type="button"
+                                  <OpenUserLink
+                                    userId={r.user_id}
+                                    name={r.name || 'Игрок'}
+                                    username={r.username}
+                                    onOpenUser={onOpenUser}
                                     className="grp-inline-link"
-                                    onClick={() => r.user_id && onOpenUser?.(r.user_id)}
-                                  >
-                                    {r.name || 'Игрок'}
-                                  </button>
+                                  />
                                   {' '}
                                   <IdentityBits userId={r.user_id} username={r.username} />
                                 </span>
@@ -667,13 +700,13 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                               label: 'Кто',
                               render: (r) => (
                                 <span>
-                                  <button
-                                    type="button"
+                                  <OpenUserLink
+                                    userId={r.actor_user_id}
+                                    name={r.actor_name || '—'}
+                                    username={r.username}
+                                    onOpenUser={onOpenUser}
                                     className="grp-inline-link"
-                                    onClick={() => r.actor_user_id && onOpenUser?.(r.actor_user_id)}
-                                  >
-                                    {r.actor_name || '—'}
-                                  </button>
+                                  />
                                   {' '}
                                   <IdentityBits userId={r.actor_user_id} username={r.username} />
                                 </span>
@@ -698,7 +731,17 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                         <h3 className="grp-card-title">Админы Telegram ({(detail.admins || []).length})</h3>
                         <MiniTable
                           columns={[
-                            { key: 'name', label: 'Имя', render: (r) => `${r.name}${r.is_bot ? ' 🤖' : ''}` },
+                            { key: 'name', label: 'Имя', render: (r) => (
+                              <span>
+                                <OpenUserLink
+                                  userId={r.user_id}
+                                  name={`${r.name || '—'}${r.is_bot ? ' 🤖' : ''}`}
+                                  username={r.username}
+                                  onOpenUser={onOpenUser}
+                                  className="grp-inline-link"
+                                />
+                              </span>
+                            ) },
                             { key: 'status', label: 'Статус' },
                             { key: 'username', label: 'Username', render: (r) => r.username ? <CopyableUsername value={r.username} /> : '—' },
                             {
@@ -729,13 +772,13 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                               label: 'Имя',
                               render: (r) => (
                                 <span>
-                                  <button
-                                    type="button"
+                                  <OpenUserLink
+                                    userId={r.user_id}
+                                    name={r.name}
+                                    username={r.username}
+                                    onOpenUser={onOpenUser}
                                     className="grp-inline-link"
-                                    onClick={() => r.user_id && onOpenUser?.(r.user_id)}
-                                  >
-                                    {r.name}
-                                  </button>
+                                  />
                                   {' '}
                                   <IdentityBits userId={r.user_id} username={r.username} />
                                 </span>
@@ -772,9 +815,13 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                                 label: 'Кто',
                                 render: (r) => (
                                   <span>
-                                    <button type="button" className="grp-inline-link" onClick={() => r.user_id && onOpenUser?.(r.user_id)}>
-                                      {r.name || 'игрок'}
-                                    </button>
+                                    <OpenUserLink
+                                      userId={r.user_id}
+                                      name={r.name || 'игрок'}
+                                      username={r.username}
+                                      onOpenUser={onOpenUser}
+                                      className="grp-inline-link"
+                                    />
                                     {' '}
                                     <IdentityBits userId={r.user_id} username={r.username} />
                                   </span>
@@ -795,9 +842,13 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                                 label: 'Кто',
                                 render: (r) => (
                                   <span>
-                                    <button type="button" className="grp-inline-link" onClick={() => r.user_id && onOpenUser?.(r.user_id)}>
-                                      {r.name || 'игрок'}
-                                    </button>
+                                    <OpenUserLink
+                                      userId={r.user_id}
+                                      name={r.name || 'игрок'}
+                                      username={r.username}
+                                      onOpenUser={onOpenUser}
+                                      className="grp-inline-link"
+                                    />
                                     {' '}
                                     <IdentityBits userId={r.user_id} username={r.username} />
                                   </span>
@@ -923,7 +974,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                         />
 
                         <div className="punish-groups">
-                          {PUNISH_ACTIONS.map((g) => (
+                          {punishGroups.map((g) => (
                             <div key={g.group} className="punish-group">
                               <span className="punish-group-label">{g.group}</span>
                               <div className="punish-actions">
@@ -940,6 +991,9 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
                               </div>
                             </div>
                           ))}
+                          {!punishGroups.length && (
+                            <p className="grp-help">Нет доступных действий модерации для вашей должности.</p>
+                          )}
                         </div>
 
                         {['mute', 'muteall', 'ban', 'banall', 'banfull', 'warn', 'warnall', 'warnfull'].includes(modAction) ? (
@@ -1005,7 +1059,7 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
             </p>
             <CaptchaOverviewBlock
               data={overview?.captcha}
-              onOpenChat={openChat}
+              onOpenChat={canOpenGroups ? openGroup : undefined}
               onOpenUser={onOpenUser}
             />
           </section>
@@ -1016,19 +1070,19 @@ export default function GroupsStudioSection({ onOpenUser } = {}) {
             <div className="grp-card">
               <h3 className="grp-card-title">Топ по комиссиям</h3>
               {(overview?.top_commission || []).map((it, i) => (
-                <RankRow key={`c-${it.chat_id}`} item={it} metric={fmt(it.commission)} onOpen={openChat} index={i} />
+                <RankRow key={`c-${it.chat_id}`} item={it} metric={fmt(it.commission)} onOpen={openGroup} canOpen={canOpenGroups} index={i} />
               ))}
             </div>
             <div className="grp-card">
               <h3 className="grp-card-title">Топ в дом проекта</h3>
               {(overview?.top_project || []).map((it, i) => (
-                <RankRow key={`p-${it.chat_id}`} item={it} metric={fmt(it.to_project)} onOpen={openChat} index={i} />
+                <RankRow key={`p-${it.chat_id}`} item={it} metric={fmt(it.to_project)} onOpen={openGroup} canOpen={canOpenGroups} index={i} />
               ))}
             </div>
             <div className="grp-card">
               <h3 className="grp-card-title">Топ по бч</h3>
               {(overview?.top_balance || []).map((it, i) => (
-                <RankRow key={`b-${it.chat_id}`} item={it} metric={fmt(it.chatbalance)} onOpen={openChat} index={i} />
+                <RankRow key={`b-${it.chat_id}`} item={it} metric={fmt(it.chatbalance)} onOpen={openGroup} canOpen={canOpenGroups} index={i} />
               ))}
             </div>
             <p className="grp-help">{overview?.hint}</p>

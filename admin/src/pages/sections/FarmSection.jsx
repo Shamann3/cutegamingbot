@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
+import SeedEconomySettings from '../../components/SeedEconomySettings'
 import {
+  fetchEconomyOverview,
   fetchFarmOverview,
   fetchFarmUser,
+  fetchOnlineSummary,
   globalFarmReset,
   resetFarmUserPlots,
+  saveEconomySettings,
   saveFarmSettings,
   searchAdminUsers,
 } from '../../lib/adminClient'
@@ -12,6 +16,14 @@ import { parseRequiredIntFields } from '../../lib/formNumbers'
 import { notifyAdmin } from '../../lib/notify'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import { IdentityBits } from '../../components/Copyable'
+import { filterSectionTabs } from '../../constants/panelAccessTree'
+
+const FARM_TABS = [
+  { id: 'plots', label: '🌱 Грядки' },
+  { id: 'seed', label: '🌿 Семена' },
+]
+
+const GLOBAL_RESET_PASSWORD = 'legehdarg341234123412'
 
 function formatSec(sec) {
   if (sec == null) return '-'
@@ -32,7 +44,10 @@ const PLOT_STATUS_LABEL = {
   WITHERED: 'Засохло',
 }
 
-export default function FarmSection({ onOpenUser } = {}) {
+export default function FarmSection({ onOpenUser, isProjectCreator = false, panelTabs = null } = {}) {
+  const tabs = filterSectionTabs('farm', FARM_TABS, panelTabs)
+  const [tab, setTab] = useState(tabs[0]?.id || 'plots')
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0]?.id || 'plots')
   const [overview, setOverview] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -43,6 +58,7 @@ export default function FarmSection({ onOpenUser } = {}) {
   const [tobaccoGrow, setTobaccoGrow] = useState('')
   const [maxPlots, setMaxPlots] = useState('')
   const [plotPriceStep, setPlotPriceStep] = useState('')
+  const [clearCost, setClearCost] = useState('')
   const [waterInterval, setWaterInterval] = useState('')
   const [wiltGrace, setWiltGrace] = useState('')
   const [waterCost, setWaterCost] = useState('')
@@ -55,6 +71,10 @@ export default function FarmSection({ onOpenUser } = {}) {
   const [resettingPlot, setResettingPlot] = useState(null)
   const [globalResetOpen, setGlobalResetOpen] = useState(false)
   const [globalResetting, setGlobalResetting] = useState(false)
+  const [globalResetPassword, setGlobalResetPassword] = useState('')
+  const [farmPeriod, setFarmPeriod] = useState('day')
+  const [farmFocus, setFarmFocus] = useState(null)
+  const [online, setOnline] = useState(null)
 
   const applySettings = useCallback((settings) => {
     if (!settings) return
@@ -65,14 +85,23 @@ export default function FarmSection({ onOpenUser } = {}) {
     setWaterInterval(String(settings.waterIntervalSeconds ?? ''))
     setWiltGrace(String(settings.wiltGraceSeconds ?? ''))
     setWaterCost(String(settings.waterCostPerUse ?? ''))
+    if (settings.clearCost != null) {
+      setClearCost(String(settings.clearCost))
+    }
   }, [])
 
   const loadOverview = useCallback(async () => {
     setError('')
     try {
-      const data = await fetchFarmOverview()
+      const [data, economy] = await Promise.all([
+        fetchFarmOverview(),
+        fetchEconomyOverview().catch(() => null),
+      ])
       setOverview(data)
-      applySettings(data.settings)
+      applySettings({
+        ...data.settings,
+        clearCost: data.settings?.clearCost ?? economy?.settings?.clearCost,
+      })
     } catch (err) {
       setError(err.message || 'Не удалось загрузить ферму')
     } finally {
@@ -84,12 +113,28 @@ export default function FarmSection({ onOpenUser } = {}) {
     loadOverview()
   }, [loadOverview])
 
+  useEffect(() => {
+    let stop = false
+    const tick = () => {
+      fetchOnlineSummary()
+        .then((data) => { if (!stop) setOnline(data) })
+        .catch(() => {})
+    }
+    tick()
+    const id = window.setInterval(tick, 8000)
+    return () => {
+      stop = true
+      window.clearInterval(id)
+    }
+  }, [])
+
   const handleSaveSettings = async () => {
     setError('')
     setInfo('')
-    let payload
+    let farmPayload
+    let economyPayload
     try {
-      payload = parseRequiredIntFields(
+      farmPayload = parseRequiredIntFields(
         {
           treeGrowSeconds: treeGrow,
           tobaccoGrowSeconds: tobaccoGrow,
@@ -109,6 +154,10 @@ export default function FarmSection({ onOpenUser } = {}) {
           waterCostPerUse: 'Вода за полив (шт.)',
         },
       )
+      economyPayload = parseRequiredIntFields(
+        { clearCost },
+        { clearCost: 'Очистка засохшей грядки' },
+      )
     } catch (err) {
       const message = err.message || 'Проверьте поля настроек'
       setError(message)
@@ -118,11 +167,14 @@ export default function FarmSection({ onOpenUser } = {}) {
 
     setSaving(true)
     try {
-      const settings = await saveFarmSettings(payload)
-      const message = `Сохранено. Макс. грядок: ${settings.maxPlots ?? payload.maxPlots}`
+      const [settings] = await Promise.all([
+        saveFarmSettings(farmPayload),
+        saveEconomySettings(economyPayload),
+      ])
+      const message = `Сохранено. Макс. грядок: ${settings.maxPlots ?? farmPayload.maxPlots}`
       setInfo(message)
       notifyAdmin(message)
-      applySettings(settings)
+      applySettings({ ...settings, clearCost: economyPayload.clearCost })
       await loadOverview()
     } catch (err) {
       const message = err.message || 'Ошибка сохранения'
@@ -215,12 +267,19 @@ export default function FarmSection({ onOpenUser } = {}) {
   }
 
   const confirmGlobalReset = async () => {
+    if (globalResetPassword !== GLOBAL_RESET_PASSWORD) {
+      const message = 'Неверный пароль'
+      setError(message)
+      notifyAdmin(message, { error: true })
+      return
+    }
     setGlobalResetting(true)
     setError('')
     setInfo('')
     try {
       const result = await globalFarmReset()
       setGlobalResetOpen(false)
+      setGlobalResetPassword('')
       setInfo(`Глобальный сброс: ${result.plotsReset} грядок очищено`)
       notifyAdmin(`Глобальный сброс: ${result.plotsReset} грядок`)
       if (playerFarm?.userId) await loadPlayer(playerFarm.userId)
@@ -248,6 +307,27 @@ export default function FarmSection({ onOpenUser } = {}) {
   const crops = overview?.crops || []
   const env = overview?.settings?.envDefaults
 
+  const farmAnalytics = useMemo(() => {
+    const s = stats || {}
+    return [
+      { id: 'growing', label: 'Растёт', value: s.growing, target: 'stats' },
+      { id: 'ready', label: 'Готово', value: s.ready, target: 'stats' },
+      { id: 'withered', label: 'Засохло', value: s.withered, target: 'stats' },
+      { id: 'empty', label: 'Пусто', value: s.empty, target: 'stats' },
+      { id: 'harvests', label: 'Урожаев', value: s.harvests ?? s.ready, target: 'player' },
+      { id: 'crops', label: 'Культур', value: crops.length, target: 'crops' },
+    ]
+  }, [stats, crops.length])
+
+  const focusSection = (target, id) => {
+    setFarmFocus((prev) => (prev === id ? null : id))
+    if (activeTab !== 'plots') setTab('plots')
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-farm-section="${target}"]`)
+      el?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
+    })
+  }
+
   return (
     <div className="panel-farm">
       <AdminActionModal
@@ -273,21 +353,102 @@ export default function FarmSection({ onOpenUser } = {}) {
         confirmText="Сбросить всё"
         danger
         loading={globalResetting}
+        showPassword
+        passwordRequired
+        password={globalResetPassword}
+        onPasswordChange={setGlobalResetPassword}
+        passwordHint="бз3"
         onConfirm={confirmGlobalReset}
         onCancel={() => {
-          if (!globalResetting) setGlobalResetOpen(false)
+          if (!globalResetting) {
+            setGlobalResetOpen(false)
+            setGlobalResetPassword('')
+          }
         }}
       />
 
       <article className="panel-shelf panel-shelf-page">
         <p className="panel-shelf-label">Farm · Ферма</p>
         <h2 className="panel-page-title">Управление фермой</h2>
-        <p className="panel-page-lead">Рост культур, полив, грядки игроков</p>
+        <p className="panel-page-lead">Рост культур, полив, грядки игроков и настройки семян</p>
         {error && <p className="panel-shelf-error">{error}</p>}
         {info && <p className="panel-users-info">{info}</p>}
       </article>
 
-      <div className="panel-economy-stats">
+      <article className="panel-shelf panel-farm-online" aria-live="polite">
+        <p className="panel-shelf-label">Онлайн на ферме</p>
+        <p className="panel-stat-value">
+          {online?.onlineNow != null ? Number(online.onlineNow).toLocaleString('ru-RU') : '—'}
+        </p>
+        <p className="panel-stat-hint">
+          Пик сегодня: {online?.todayPeak != null ? Number(online.todayPeak).toLocaleString('ru-RU') : '—'}
+        </p>
+      </article>
+
+      <div className="panel-farm-analytics" aria-label="Сводка фермы">
+        <div className="panel-farm-analytics-periods" role="tablist" aria-label="Период">
+          {[
+            { id: 'day', label: 'День' },
+            { id: 'month', label: 'Месяц' },
+            { id: 'year', label: 'Год' },
+          ].map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="tab"
+              aria-selected={farmPeriod === p.id}
+              className={`panel-farm-analytics-period${farmPeriod === p.id ? ' is-on' : ''}`}
+              onClick={() => setFarmPeriod(p.id)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <p className="panel-shelf-muted" style={{ margin: 0 }}>
+          Снимок сейчас — по периодам история пока не копится в API.
+        </p>
+        <div className="panel-farm-analytics-cards">
+          {farmAnalytics.map((card) => (
+            <button
+              key={card.id}
+              type="button"
+              className={`panel-farm-analytics-card${farmFocus === card.id ? ' is-on' : ''}`}
+              onClick={() => focusSection(card.target, card.id)}
+            >
+              <strong>{loading ? '…' : (card.value ?? '—')}</strong>
+              <span>{card.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tabs.length > 1 && (
+        <div className="sys-tabs">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`sys-tab${activeTab === t.id ? ' active' : ''}`}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'seed' && (
+        <div className="sys-content">
+          <SeedEconomySettings />
+        </div>
+      )}
+
+      {activeTab === 'plots' && (
+        <>
+      <div
+        className={`panel-economy-stats${farmFocus && ['growing', 'ready', 'withered', 'empty'].includes(farmFocus) ? ' panel-farm-highlight' : ''}`}
+        data-farm-section="stats"
+      >
         <article className="panel-shelf panel-economy-stat">
           <p className="panel-shelf-label">Грядок всего</p>
           <p className="panel-economy-stat-value">{loading ? '…' : stats?.totalPlots ?? '-'}</p>
@@ -337,6 +498,11 @@ export default function FarmSection({ onOpenUser } = {}) {
               <span className="panel-shelf-muted">#2 = 1×шаг, #3 = 2×шаг …</span>
             </label>
             <label className="panel-economy-field">
+              <span>Очистка засохшей грядки</span>
+              <input className="panel-users-input" value={clearCost} onChange={(e) => setClearCost(e.target.value.replace(/[^\d]/g, ''))} disabled={loading || saving} />
+              <span className="panel-shelf-muted">кут за очистку</span>
+            </label>
+            <label className="panel-economy-field">
               <span>Интервал полива (сек)</span>
               <input className="panel-users-input" value={waterInterval} onChange={(e) => setWaterInterval(e.target.value.replace(/[^\d]/g, ''))} disabled={loading || saving} />
               <span className="panel-shelf-muted">{formatSec(waterInterval)}</span>
@@ -384,7 +550,10 @@ export default function FarmSection({ onOpenUser } = {}) {
           </ul>
         </article>
 
-        <article className="panel-shelf">
+        <article
+          className={`panel-shelf${farmFocus === 'crops' ? ' panel-farm-highlight' : ''}`}
+          data-farm-section="crops"
+        >
           <p className="panel-shelf-label">Культуры</p>
           <ul className="panel-economy-craft-list">
             {crops.map((crop) => (
@@ -399,9 +568,12 @@ export default function FarmSection({ onOpenUser } = {}) {
         </article>
       </div>
 
-      <article className="panel-shelf">
+      <article
+        className={`panel-shelf${farmFocus === 'harvests' ? ' panel-farm-highlight' : ''}`}
+        data-farm-section="player"
+      >
         <p className="panel-shelf-label">Грядки игрока</p>
-        <form className="panel-users-search-form" onSubmit={handlePlayerSearch}>
+        <form className="panel-users-search-form panel-farm-search" onSubmit={handlePlayerSearch}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <UserLookupPreview
               label="Игрок"
@@ -450,14 +622,25 @@ export default function FarmSection({ onOpenUser } = {}) {
         )}
       </article>
 
-      <article className="panel-shelf panel-farm-danger">
-        <p className="panel-shelf-label">Осторожно</p>
-        <h3 className="panel-users-subtitle">Глобальный рестарт фермы</h3>
-        <p className="panel-shelf-muted">Очистит все грядки у всех игроков. Используй только при критической необходимости.</p>
-        <button type="button" className="panel-users-btn panel-users-btn-danger" onClick={() => setGlobalResetOpen(true)}>
-          Глобальный сброс
-        </button>
-      </article>
+      {isProjectCreator && (
+        <article className="panel-shelf panel-farm-danger">
+          <p className="panel-shelf-label">Осторожно</p>
+          <h3 className="panel-users-subtitle">Глобальный рестарт фермы</h3>
+          <p className="panel-shelf-muted">Очистит все грядки у всех игроков. Используй только при критической необходимости.</p>
+          <button
+            type="button"
+            className="panel-users-btn panel-users-btn-danger"
+            onClick={() => {
+              setGlobalResetPassword('')
+              setGlobalResetOpen(true)
+            }}
+          >
+            Глобальный сброс
+          </button>
+        </article>
+      )}
+        </>
+      )}
     </div>
   )
 }

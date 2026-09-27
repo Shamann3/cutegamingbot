@@ -13,6 +13,11 @@ export default function AdminActionModal({
   onReasonChange,
   reasonPlaceholder = 'Сообщение игроку в боте',
   reasonRequired = false,
+  showPassword = false,
+  password = '',
+  onPasswordChange,
+  passwordHint = '',
+  passwordRequired = false,
   onConfirm,
   onCancel,
 }) {
@@ -20,12 +25,15 @@ export default function AdminActionModal({
   const dialogRef = useRef(null)
   const confirmRef = useRef(null)
   const reasonOk = !reasonRequired || String(reason || '').trim().length > 0
+  const passwordOk = !passwordRequired || String(password || '').length > 0
 
   useEffect(() => {
     if (!open) return undefined
     const prev = document.activeElement
     const t = window.setTimeout(() => {
-      if (showReason) {
+      if (showPassword) {
+        dialogRef.current?.querySelector('input[type="password"]')?.focus()
+      } else if (showReason) {
         dialogRef.current?.querySelector('textarea')?.focus()
       } else {
         confirmRef.current?.focus()
@@ -37,7 +45,7 @@ export default function AdminActionModal({
         try { prev.focus() } catch { /* ignore */ }
       }
     }
-  }, [open, showReason])
+  }, [open, showReason, showPassword])
 
   if (!open) return null
 
@@ -74,6 +82,19 @@ export default function AdminActionModal({
             />
           </label>
         )}
+        {showPassword && (
+          <label className="admin-modal-field">
+            <span>Пароль{passwordHint ? ` · ${passwordHint}` : ''}</span>
+            <input
+              type="password"
+              className="panel-users-input"
+              value={password}
+              onChange={(e) => onPasswordChange?.(e.target.value)}
+              disabled={loading}
+              autoComplete="off"
+            />
+          </label>
+        )}
         <div className="admin-modal-actions">
           <button
             type="button"
@@ -89,7 +110,7 @@ export default function AdminActionModal({
             type="button"
             className={`panel-users-btn${danger ? ' panel-users-btn-danger' : ' panel-users-btn-primary'}`}
             data-modal-confirm
-            disabled={loading || !reasonOk}
+            disabled={loading || !reasonOk || !passwordOk}
             onClick={() => onConfirm?.()}
           >
             {loading ? '…' : confirmText}

@@ -8,12 +8,15 @@ export function staffSteps(phone) {
         ? 'Главные разделы внизу. «Ещё» открывает Дополнительно — сетку остальных вкладок. Меню (ползунки): поиск и цвет.'
         : 'Вкладки внизу, по центру. «Ещё» — остальные разделы. Слева меню: поиск, цвет и выход.',
       target: '[data-coach="dock"]',
+      openNav: false,
     },
     {
       title: 'Поиск',
-      body: 'Напишите название страницы и откройте её.',
-      target: phone ? '.panel-sidebar-search' : '[data-coach="search"]',
-      openNav: phone,
+      body: phone
+        ? 'Откройте меню (ползунки слева в доке) — там поиск раздела и цвет. Сейчас смотрите на нижнюю панель.'
+        : 'Напишите название страницы и откройте её.',
+      target: phone ? '[data-coach="dock"]' : '[data-coach="search"]',
+      openNav: false,
     },
     {
       title: 'Дополнительно',
@@ -29,9 +32,9 @@ export function staffSteps(phone) {
     },
     {
       title: 'Сменить панель',
-      body: 'Возврат к выбору: сотрудник или группа. Из аккаунта вы не выходите.',
-      target: '[data-coach="doors"]',
-      openNav: true,
+      body: 'Возврат к выбору: сотрудник или группа. Из аккаунта вы не выходите. Кнопка в «Ещё» → Дополнительно.',
+      target: '[data-coach="dock"] [data-section="more"]',
+      openNav: false,
     },
   ]
 }
@@ -114,9 +117,15 @@ function placeCard(box) {
   const maxRight = window.innerWidth - EDGE
   const maxBottom = window.innerHeight - EDGE
   if (window.innerWidth < 720) {
-    return box?.low
-      ? { top: EDGE, left: EDGE, right: EDGE, width: 'auto', bottom: 'auto' }
-      : { top: 'auto', bottom: EDGE, left: EDGE, right: EDGE, width: 'auto' }
+    // На телефоне карточка всегда в удобной зоне над доком — не уезжает вверх экрана.
+    const dockClear = 96
+    return {
+      top: 'auto',
+      bottom: Math.max(EDGE, dockClear),
+      left: EDGE,
+      right: EDGE,
+      width: 'auto',
+    }
   }
   if (!box) return { top: 'auto', bottom: EDGE, left: EDGE, right: EDGE, width: 'auto' }
   const obstacles = [{

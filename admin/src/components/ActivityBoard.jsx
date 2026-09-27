@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchGroupActivity } from '../lib/adminClient'
-import { HabitGrid } from './sight/SightCharts'
+import { HabitGrid, SightTip, useSightTip } from './sight/SightCharts'
 
 const PERIODS = [
   { id: 'day', label: 'Сегодня' },
@@ -33,29 +33,41 @@ function levelOf(value, max) {
 }
 
 function DayBars({ points = [], selected = '', onPick }) {
+  const rootRef = useRef(null)
+  const { tip, show, hide } = useSightTip(rootRef)
   const max = Math.max(...points.map((p) => Number(p.value) || 0), 1)
   return (
-    <div className="act-bars" role="list" aria-label="Сообщения по дням">
-      {points.map((point) => {
-        const value = Number(point.value) || 0
-        const on = selected && selected === point.date
-        const h = Math.max(6, Math.round((value / max) * 100))
-        return (
-          <button
-            key={point.date}
-            type="button"
-            role="listitem"
-            className={on ? 'is-on' : ''}
-            data-level={levelOf(value, max)}
-            title={`${point.label}: ${value}`}
-            aria-label={`${point.label}: ${value}`}
-            aria-pressed={on}
-            onClick={() => onPick?.(point.date)}
-          >
-            <i style={{ height: `${h}%` }} />
-          </button>
-        )
-      })}
+    <div className="act-bars-wrap" ref={rootRef}>
+      <div
+        className="act-bars"
+        role="list"
+        aria-label="Сообщения по дням"
+        onPointerLeave={hide}
+      >
+        {points.map((point) => {
+          const value = Number(point.value) || 0
+          const on = selected && selected === point.date
+          const h = Math.max(6, Math.round((value / max) * 100))
+          return (
+            <button
+              key={point.date}
+              type="button"
+              role="listitem"
+              className={on ? 'is-on' : ''}
+              data-level={levelOf(value, max)}
+              aria-label={`${point.label}: ${fmt(value)}`}
+              aria-pressed={on}
+              onClick={() => onPick?.(point.date)}
+              onPointerEnter={(e) => show(e, point.label, value)}
+              onPointerMove={(e) => show(e, point.label, value)}
+              onPointerLeave={hide}
+            >
+              <i style={{ height: `${h}%` }} />
+            </button>
+          )
+        })}
+      </div>
+      <SightTip tip={tip} />
     </div>
   )
 }

@@ -1488,14 +1488,18 @@ function InvitesTab() {
   return (
     <div className="sec-tab-body">
       <p className="staff-hint">
-        Каждый админ получает свой уникальный ключ.
+        Ключ для сотрудника проекта. Каждый получает свой уникальный инвайт в панель.
       </p>
 
       <div className="sec-ipban-form">
-        <h3 className="sec-ipban-form-title">Создать инвайт</h3>
+        <h3 className="sec-ipban-form-title">Ключ для сотрудника проекта</h3>
         <div className="staff-complaint-form">
           <input
-            className="sec-input"
+            className="sec-input staff-invite-label-input"
+            type="text"
+            autoComplete="off"
+            inputMode="text"
+            spellCheck={false}
             placeholder="Метка (для кого, например «для Сани»)"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
@@ -1505,6 +1509,14 @@ function InvitesTab() {
             {busy === 'create' ? '…' : 'Создать'}
           </button>
         </div>
+      </div>
+
+      <div className="sec-ipban-form staff-group-admin-invite">
+        <h3 className="sec-ipban-form-title">Ключ для админа группы</h3>
+        <p className="staff-hint">
+          Отдельного инвайта в панель для админов групп нет. Назначьте должность в разделе групп
+          (GroupShell → назначить) — личный ключ входа в оболочку группы выдаётся один раз после назначения или одобрения заявки.
+        </p>
       </div>
 
       <div className="sec-audit-filters">

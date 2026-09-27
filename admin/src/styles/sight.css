@@ -3,6 +3,55 @@
   min-width: 0;
 }
 
+.sight-body,
+.sight-body-inner,
+.act-bars-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.sight-tip {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 5.5rem;
+  max-width: 11rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(12, 12, 14, 0.94);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  transform: translateY(-100%);
+  animation: sight-tip-in 0.14s ease both;
+}
+
+.sight-tip strong {
+  color: #f4f4f5;
+  font-size: 0.74rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.sight-tip span {
+  color: #a1a1aa;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+html.is-personal .sight-tip {
+  border-color: rgba(var(--e-accent-rgb, 200, 175, 255), 0.35);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45), 0 0 18px rgba(var(--e-accent-rgb, 200, 175, 255), 0.18);
+}
+
+@keyframes sight-tip-in {
+  from { opacity: 0; transform: translateY(calc(-100% + 4px)); }
+  to { opacity: 1; transform: translateY(-100%); }
+}
+
 .sight-caption,
 .sight-empty {
   margin: 0 0 8px;

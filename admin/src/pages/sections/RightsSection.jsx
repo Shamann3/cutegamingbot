@@ -118,7 +118,7 @@ function StaffTabsEditor() {
   )
 }
 
-export default function RightsSection() {
+export default function RightsSection({ embedded = false } = {}) {
   const [groups, setGroups] = useState([])
   const [chatId, setChatId] = useState(null)
   const [error, setError] = useState('')
@@ -183,9 +183,11 @@ export default function RightsSection() {
   }
 
   return (
-    <section className="panel-shelf-page realm-in-panel">
-      <h1 className="panel-page-title">Права</h1>
-      <p className="panel-page-lead">Сначала выберите, что выдаёте: страницы и наказания должности в группе или вкладки панели сотрудника.</p>
+    <section className={embedded ? 'realm-in-panel pa-rights-embed' : 'panel-shelf-page realm-in-panel'}>
+      {!embedded && <h1 className="panel-page-title">Права</h1>}
+      <p className={embedded ? 'pa-hint' : 'panel-page-lead'}>
+        Сначала выберите, что выдаёте: страницы и наказания должности в группе или вкладки панели сотрудника.
+      </p>
       <div className="realm-actions">
         <button type="button" className={chapter === 'group' ? 'is-on' : ''} onClick={() => setChapter('group')}>Должности группы</button>
         <button type="button" className={chapter === 'staff' ? 'is-on' : ''} onClick={() => setChapter('staff')}>Вкладки сотрудника</button>

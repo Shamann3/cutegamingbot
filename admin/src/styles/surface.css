@@ -117,7 +117,9 @@ html[data-viewport="desktop"] .panel-layout-security {
 
 .panel-brand-name {
   font-size: 0.95rem !important;
-  font-weight: 650 !important;
+  font-weight: 700 !important;
+  letter-spacing: normal !important;
+  font-stretch: normal !important;
 }
 
 .panel-brand-tag,

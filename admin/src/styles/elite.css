@@ -1004,6 +1004,23 @@ body,
   overflow: visible;
 }
 
+.accent-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 11990;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.35);
+  cursor: default;
+  animation: accent-backdrop-in 0.2s ease both;
+}
+
+@keyframes accent-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .accent-wheel-wrap {
   position: relative;
   width: 196px;
@@ -3065,6 +3082,13 @@ body,
     top: var(--tg-content-top, 0px) !important;
     z-index: 310;
     background: rgba(0, 0, 0, 0.62);
+    transition: opacity 0.24s ease;
+    animation: panel-overlay-in 0.22s ease both;
+  }
+
+  @keyframes panel-overlay-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 
   .panel-shelf-sidebar {
@@ -7221,7 +7245,7 @@ body,
   flex: 1 1 auto;
   min-height: 0;
   overflow-x: hidden;
-  overflow-y: scroll;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -7993,6 +8017,23 @@ body,
 .grp-hit code { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: #777; font-size: .72rem; }
 .grp-detail-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; flex-wrap: wrap; margin-bottom: .9rem; }
 .grp-detail-title { margin: .1rem 0 .25rem; font-size: 1.35rem; color: #f5f5f5; letter-spacing: -.02em; }
+.grp-detail-title-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(255, 255, 255, 0.28);
+}
+.grp-detail-title-link:hover {
+  color: var(--e-accent-bright, #fff);
+  border-bottom-color: rgba(var(--e-accent-rgb, 255, 255, 255), 0.55);
+}
+.grp-hit-name.is-link,
+.grp-rank-name.is-link {
+  color: #f2f2f2;
+}
+.grp-rank-row.is-static,
+.grp-hit.is-static {
+  cursor: default;
+}
 .grp-detail-actions { display: flex; gap: .4rem; }
 .grp-id-row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .grp-id-row code { color: #9a9a9a; font-size: .78rem; }
@@ -8123,7 +8164,8 @@ body,
 .grp-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
 .grp-table th {
   position: sticky; top: 0; text-align: left; padding: .55rem .65rem; color: #888; font-weight: 550;
-  background: #121212; border-bottom: 1px solid rgba(255,255,255,.08);
+  background: #0a0a0a; border-bottom: 1px solid rgba(255,255,255,.08);
+  z-index: 2;
 }
 .grp-table td {
   padding: .5rem .65rem; color: #d4d4d4; border-bottom: 1px solid rgba(255,255,255,.04);

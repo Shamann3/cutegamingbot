@@ -3,9 +3,7 @@ import AdminActionModal from '../../components/AdminActionModal'
 import AdminSelect from '../../components/AdminSelect'
 import {
   bulkGrantKut,
-  fetchEconomyDex,
   fetchEconomyOverview,
-  patchEconomyDexItem,
   saveEconomySettings,
 } from '../../lib/adminClient'
 import { parseRequiredIntFields } from '../../lib/formNumbers'
@@ -17,101 +15,15 @@ function formatKut(value) {
   return Number(value).toLocaleString('ru-RU')
 }
 
-function DexRow({ item, onSaved }) {
-  const [price, setPrice] = useState(String(item.price ?? 0))
-  const [dis, setDis] = useState(String(item.dis ?? 0))
-  const [remains, setRemains] = useState(String(item.remains ?? 0))
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    setPrice(String(item.price ?? 0))
-    setDis(String(item.dis ?? 0))
-    setRemains(String(item.remains ?? 0))
-  }, [item])
-
-  const handleSave = async () => {
-    setSaving(true)
-    setError('')
-    try {
-      const updated = await patchEconomyDexItem(item.id, {
-        price: Number(price),
-        dis: Number(dis),
-        remains: Number(remains),
-      })
-      onSaved?.(updated)
-      setPrice(String(updated.price ?? 0))
-      setDis(String(updated.dis ?? 0))
-      setRemains(String(updated.remains ?? 0))
-      notifyAdmin(`Dex «${updated.name ?? updated.id}» обновлён`)
-    } catch (err) {
-      const message = err.message || 'Ошибка сохранения'
-      setError(message)
-      notifyAdmin(message, { error: true })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <tr>
-      <td className="panel-economy-dex-id">{item.id}</td>
-      <td>
-        {item.emoji} {item.name}
-      </td>
-      <td>
-        <input
-          className="panel-economy-dex-input"
-          value={price}
-          onChange={(e) => setPrice(e.target.value.replace(/[^\d]/g, ''))}
-          disabled={saving}
-        />
-      </td>
-      <td>
-        <input
-          className="panel-economy-dex-input"
-          value={dis}
-          onChange={(e) => setDis(e.target.value.replace(/[^\d]/g, ''))}
-          disabled={saving}
-        />
-      </td>
-      <td className="panel-economy-dex-effective">{formatKut(item.effectivePrice)}</td>
-      <td>
-        <input
-          className="panel-economy-dex-input"
-          value={remains}
-          onChange={(e) => setRemains(e.target.value.replace(/[^\d]/g, ''))}
-          disabled={saving}
-        />
-      </td>
-      <td>
-        <button
-          type="button"
-          className="panel-users-btn"
-          disabled={saving}
-          onClick={handleSave}
-        >
-          {saving ? '…' : 'OK'}
-        </button>
-        {error && <span className="panel-economy-inline-error">{error}</span>}
-      </td>
-    </tr>
-  )
-}
-
-export default function EconomySection() {
+export default function EconomySection({ onNavigate } = {}) {
   const [overview, setOverview] = useState(null)
-  const [dex, setDex] = useState({ items: [], total: 0 })
-  const [dexQuery, setDexQuery] = useState('')
   const [loading, setLoading] = useState(true)
-  const [dexLoading, setDexLoading] = useState(false)
   const [savingSettings, setSavingSettings] = useState(false)
   const [granting, setGranting] = useState(false)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
 
   const [defaultBalance, setDefaultBalance] = useState('')
-  const [clearCost, setClearCost] = useState('')
 
   const [grantDelta, setGrantDelta] = useState('')
   const [grantTarget, setGrantTarget] = useState('all')
@@ -123,7 +35,6 @@ export default function EconomySection() {
     const s = data?.settings
     if (s) {
       setDefaultBalance(String(s.defaultBalance ?? ''))
-      setClearCost(String(s.clearCost ?? ''))
     }
   }, [])
 
@@ -139,22 +50,9 @@ export default function EconomySection() {
     }
   }, [applyOverview])
 
-  const loadDex = useCallback(async (query) => {
-    setDexLoading(true)
-    try {
-      const data = await fetchEconomyDex({ q: (query ?? '').trim() })
-      setDex(data)
-    } catch (err) {
-      setError(err.message || 'Не удалось загрузить dex')
-    } finally {
-      setDexLoading(false)
-    }
-  }, [])
-
   useEffect(() => {
     loadOverview()
-    loadDex('')
-  }, [loadOverview, loadDex])
+  }, [loadOverview])
 
   const handleSaveSettings = async () => {
     setError('')
@@ -162,14 +60,8 @@ export default function EconomySection() {
     let payload
     try {
       payload = parseRequiredIntFields(
-        {
-          defaultBalance,
-          clearCost,
-        },
-        {
-          defaultBalance: 'Стартовый баланс',
-          clearCost: 'Стоимость очистки',
-        },
+        { defaultBalance },
+        { defaultBalance: 'Стартовый баланс' },
       )
     } catch (err) {
       const message = err.message || 'Проверьте поля настроек'
@@ -236,7 +128,6 @@ export default function EconomySection() {
   }
 
   const stats = overview?.stats
-  const plots = overview?.plots || []
   const craft = overview?.craftRecipes || []
   const envDefaults = overview?.settings?.envDefaults
 
@@ -260,7 +151,7 @@ export default function EconomySection() {
       <article className="panel-shelf panel-shelf-page panel-economy-head">
         <p className="panel-shelf-label">Economy · Экономика</p>
         <h2 className="panel-page-title">Экономика игры</h2>
-        <p className="panel-page-lead">Баланс кут, магазин dex, грядки и массовые ивенты</p>
+        <p className="panel-page-lead">Баланс, стартовые кут и массовые ивенты</p>
         {error && <p className="panel-shelf-error">{error}</p>}
         {info && <p className="panel-users-info">{info}</p>}
       </article>
@@ -283,19 +174,19 @@ export default function EconomySection() {
           <p className="panel-economy-stat-value">
             {loading ? '…' : `${stats?.shopInStock ?? 0} / ${stats?.dexItems ?? 0}`}
           </p>
-          <p className="panel-shelf-muted">В продаже / всего в dex</p>
+          <p className="panel-shelf-muted">В продаже / всего в каталоге</p>
         </article>
       </div>
 
       <div className="panel-economy-grid-2">
         <article className="panel-shelf">
           <p className="panel-shelf-label">Настройки</p>
-          <h3 className="panel-users-subtitle">Стартовый баланс и цены</h3>
+          <h3 className="panel-users-subtitle">Стартовый баланс</h3>
           <p className="panel-shelf-muted">
-            Env: balance {envDefaults?.defaultBalance}, очистка {envDefaults?.clearCost}
+            Env: balance {envDefaults?.defaultBalance}
           </p>
           <p className="panel-shelf-muted">
-            Шаг цены грядки: {overview?.settings?.plotPriceStep ?? '-'} кут — редактируется в разделе «Ферма»
+            Цены грядок и очистка — в разделе «Ферма»
           </p>
           <div className="panel-economy-settings-form">
             <label className="panel-economy-field">
@@ -304,15 +195,6 @@ export default function EconomySection() {
                 className="panel-users-input"
                 value={defaultBalance}
                 onChange={(e) => setDefaultBalance(e.target.value.replace(/[^\d]/g, ''))}
-                disabled={loading || savingSettings}
-              />
-            </label>
-            <label className="panel-economy-field">
-              <span>Очистка засохшей грядки (CLEAR_COST)</span>
-              <input
-                className="panel-users-input"
-                value={clearCost}
-                onChange={(e) => setClearCost(e.target.value.replace(/[^\d]/g, ''))}
                 disabled={loading || savingSettings}
               />
             </label>
@@ -391,19 +273,10 @@ export default function EconomySection() {
       <div className="panel-economy-grid-2">
         <article className="panel-shelf">
           <p className="panel-shelf-label">Грядки</p>
-          <h3 className="panel-users-subtitle">Стоимость покупки</h3>
-          <p className="panel-shelf-muted">#1 бесплатна при регистрации</p>
-          <ul className="panel-economy-plot-list panel-farm-plot-preview">
-            {plots.map((row) => (
-              <li key={row.plotId}>
-                <span>Грядка #{row.plotId}</span>
-                <strong>{formatKut(row.price)} кут</strong>
-              </li>
-            ))}
-            {!loading && plots.length === 0 && (
-              <li className="panel-shelf-muted">Нет данных</li>
-            )}
-          </ul>
+          <h3 className="panel-users-subtitle">Цены и очистка</h3>
+          <p className="panel-shelf-muted">
+            Стоимость покупки грядки и очистка засохшей — во вкладке «Ферма». Здесь только баланс и ивенты.
+          </p>
         </article>
 
         <article className="panel-shelf">
@@ -451,65 +324,19 @@ export default function EconomySection() {
       </article>
 
       <article className="panel-shelf panel-economy-dex">
-        <p className="panel-shelf-label">Каталог dex · магазин</p>
-        <form
-          className="panel-users-search-form"
-          onSubmit={(e) => {
-            e.preventDefault()
-            loadDex(dexQuery)
-          }}
-        >
-          <input
-            className="panel-users-input"
-            value={dexQuery}
-            onChange={(e) => setDexQuery(e.target.value)}
-            placeholder="Поиск по имени или id"
-            disabled={dexLoading}
-          />
-          <button type="submit" className="panel-users-btn" disabled={dexLoading}>
-            {dexLoading ? '…' : 'Найти'}
-          </button>
-        </form>
-        <p className="panel-shelf-muted">
-          price базовая цена, dis цена со скидкой (если &gt; 0). Всего: {dex.total}
+        <p className="panel-shelf-label">Каталог предметов</p>
+        <p className="panel-page-lead" style={{ margin: '6px 0 12px' }}>
+          Каталог предметов перенесён в Контент → Предметы
         </p>
-        <div className="panel-economy-dex-wrap">
-          <table className="panel-economy-dex-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Предмет</th>
-                <th>price</th>
-                <th>dis</th>
-                <th>итого</th>
-                <th>remains</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {dex.items.map((item) => (
-                <DexRow
-                  key={item.id}
-                  item={item}
-                  onSaved={(updated) => {
-                    setDex((prev) => ({
-                      ...prev,
-                      items: prev.items.map((row) =>
-                        row.id === updated.id
-                          ? { ...row, ...updated, effectivePrice: updated.effectivePrice }
-                          : row,
-                      ),
-                    }))
-                    setInfo(`Dex #${updated.id} обновлён`)
-                  }}
-                />
-              ))}
-            </tbody>
-          </table>
-          {!dexLoading && dex.items.length === 0 && (
-            <p className="panel-shelf-muted panel-economy-dex-empty">Ничего не найдено</p>
-          )}
-        </div>
+        {typeof onNavigate === 'function' && (
+          <button
+            type="button"
+            className="panel-users-btn panel-users-btn-primary"
+            onClick={() => onNavigate('content')}
+          >
+            Открыть Контент → Предметы
+          </button>
+        )}
       </article>
     </div>
   )

@@ -501,7 +501,6 @@ html.is-phone .tt-tab,
 html.is-phone .bq-tab,
 html.is-phone .bq-pill,
 html.is-phone .ach-tab,
-html.is-phone .gbl-tab,
 html.is-phone .panel-logs-tab,
 html[data-viewport="phone"] .sec-tab,
 html[data-viewport="phone"] .tt-tab,
@@ -513,6 +512,27 @@ html[data-viewport="phone"] .ach-tab {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+html.is-phone .gbl-tabs,
+html[data-viewport="phone"] .gbl-tabs {
+  display: flex;
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  gap: 0.35rem;
+}
+
+html.is-phone .gbl-tab,
+html[data-viewport="phone"] .gbl-tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  overflow: visible;
+  max-width: none;
+  text-overflow: unset;
+  min-height: 44px;
 }
 
 html.is-phone .panel-shelf,

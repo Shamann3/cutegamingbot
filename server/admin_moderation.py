@@ -244,7 +244,9 @@ async def get_proof_url(log_id: int) -> str:
     raise RuntimeError(f"Telegram getFile error: {last_error}")
 
 
-async def unban_player(user_id: int, *, admin_user_id: int, admin_name: str = "") -> None:
+async def unban_player(
+    user_id: int, *, admin_user_id: int, admin_name: str = "", reason: str = ""
+) -> None:
     """Снимает бан + пишет лог unban в staff_actions.
 
     Сам разбан (UPDATE users, audit_events, уведомление игроку, инвалидация
@@ -275,9 +277,9 @@ async def unban_player(user_id: int, *, admin_user_id: int, admin_name: str = ""
         INSERT INTO staff_actions
             (admin_user_id, admin_name, action_type, target_player_id,
              target_name, reason, evidence, chat_id, scope)
-        VALUES ($1, $2, 'unban', $3, $4, '', '', 0, 'full')
+        VALUES ($1, $2, 'unban', $3, $4, $5, '', 0, 'full')
         """,
-        admin_user_id, admin_name, user_id, target_name,
+        admin_user_id, admin_name, user_id, target_name, (reason or "")[:500],
     )
 
 
