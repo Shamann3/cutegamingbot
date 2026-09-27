@@ -192,7 +192,7 @@ html[data-viewport="desktop"] .panel-layout-security {
   box-shadow: none !important;
 }
 
-.panel-shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+.panel-shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),
 .panel-shell select {
   height: 40px !important;
   min-height: 40px !important;
@@ -206,17 +206,72 @@ html[data-viewport="desktop"] .panel-layout-security {
 }
 
 .panel-shell .elite-search input,
+.panel-shell .elite-search .elite-search-field,
 .panel-shell .panel-sidebar-search input,
-.panel-shell .extras-hub-search input {
+.panel-shell .panel-sidebar-search .panel-sidebar-search-field,
+.panel-shell .extras-hub-search input,
+.panel-shell .extras-hub-search .extras-hub-search-field {
+  all: unset !important;
+  display: block !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  color: #f4f4f5 !important;
+  font: inherit !important;
+  font-size: 0.82rem !important;
+  line-height: 1.2 !important;
+  caret-color: #fff !important;
+  -webkit-text-fill-color: #f4f4f5 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
-  flex: 1 1 auto !important;
-  border: 0 !important;
-  background: transparent !important;
   border-radius: 0 !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+}
+
+.panel-shell .elite-search .elite-search-field::placeholder,
+.panel-shell .panel-sidebar-search .panel-sidebar-search-field::placeholder,
+.panel-shell .panel-sidebar-search input::placeholder,
+.panel-shell .extras-hub-search .extras-hub-search-field::placeholder,
+.panel-shell .extras-hub-search input::placeholder {
+  color: rgba(255, 255, 255, 0.38) !important;
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.38) !important;
+  opacity: 1 !important;
+}
+
+.panel-shell .elite-search .elite-search-field:focus,
+.panel-shell .elite-search .elite-search-field:focus-visible,
+.panel-shell .panel-sidebar-search input:focus,
+.panel-shell .panel-sidebar-search input:focus-visible,
+.panel-shell .panel-sidebar-search .panel-sidebar-search-field:focus,
+.panel-shell .panel-sidebar-search .panel-sidebar-search-field:focus-visible,
+.panel-shell .extras-hub-search input:focus,
+.panel-shell .extras-hub-search input:focus-visible,
+.panel-shell .extras-hub-search .extras-hub-search-field:focus,
+.panel-shell .extras-hub-search .extras-hub-search-field:focus-visible {
+  all: unset !important;
+  display: block !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  color: #fff !important;
+  font: inherit !important;
+  font-size: 0.82rem !important;
+  caret-color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+  background: transparent !important;
+  border: 0 !important;
   box-shadow: none !important;
+  outline: none !important;
   padding: 0 !important;
+  margin: 0 !important;
 }
 
 .panel-shell textarea {
@@ -230,8 +285,8 @@ html[data-viewport="desktop"] .panel-layout-security {
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
-.panel-shell input:focus,
-.panel-shell input:focus-visible,
+.panel-shell input:not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field):focus,
+.panel-shell input:not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field):focus-visible,
 .panel-shell select:focus,
 .panel-shell select:focus-visible,
 .panel-shell textarea:focus,
@@ -239,18 +294,6 @@ html[data-viewport="desktop"] .panel-layout-security {
   outline: none !important;
   border-color: rgba(255, 255, 255, 0.38) !important;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
-}
-
-.panel-shell .elite-search input:focus,
-.panel-shell .elite-search input:focus-visible,
-.panel-shell .panel-sidebar-search input:focus,
-.panel-shell .panel-sidebar-search input:focus-visible,
-.panel-shell .extras-hub-search input:focus,
-.panel-shell .extras-hub-search input:focus-visible {
-  border: 0 !important;
-  box-shadow: none !important;
-  outline: none !important;
-  background: transparent !important;
 }
 
 .act-figures {

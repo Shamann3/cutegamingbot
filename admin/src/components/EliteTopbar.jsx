@@ -82,12 +82,16 @@ export default function EliteTopbar({
   const sectionTitle = activeMeta?.labelRu || 'Панель'
 
   const results = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = query.trim().toLowerCase().replace(/ё/g, 'е')
     if (!q) return []
     return sections
-      .filter((s) =>
-        s.labelRu.toLowerCase().includes(q) || s.label.toLowerCase().includes(q))
-      .slice(0, 6)
+      .filter((s) => {
+        const ru = (s.labelRu || '').toLowerCase().replace(/ё/g, 'е')
+        const en = (s.label || '').toLowerCase()
+        const id = (s.id || '').toLowerCase()
+        return ru.includes(q) || en.includes(q) || id.includes(q)
+      })
+      .slice(0, 8)
   }, [query, sections])
 
   // Курсор сбрасываем при смене выдачи, иначе он мог указывать за её пределы.
@@ -175,7 +179,13 @@ export default function EliteTopbar({
               <SearchIcon />
               <input
                 ref={inputRef}
+                className="elite-search-field"
                 type="text"
+                inputMode="search"
+                enterKeyHint="search"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
                 value={query}
                 placeholder="Поиск раздела…"
                 aria-label="Поиск раздела"

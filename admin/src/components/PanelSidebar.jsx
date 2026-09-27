@@ -168,16 +168,17 @@ export default function PanelSidebar({
 
   const navGroups = useMemo(() => {
     const groups = groupSections(sections)
-    const q = navQuery.trim().toLowerCase()
+    const q = navQuery.trim().toLowerCase().replace(/ё/g, 'е')
     if (!q) return groups
     return groups
       .map((group) => ({
         ...group,
-        items: group.items.filter(
-          (item) =>
-            item.labelRu.toLowerCase().includes(q) ||
-            item.label.toLowerCase().includes(q),
-        ),
+        items: group.items.filter((item) => {
+          const ru = (item.labelRu || '').toLowerCase().replace(/ё/g, 'е')
+          const en = (item.label || '').toLowerCase()
+          const id = (item.id || '').toLowerCase()
+          return ru.includes(q) || en.includes(q) || id.includes(q)
+        }),
       }))
       .filter((group) => group.items.length > 0)
   }, [sections, navQuery])
@@ -256,13 +257,17 @@ export default function PanelSidebar({
         <label className="panel-sidebar-search" data-coach="search">
           <span className="panel-sidebar-search-icon" aria-hidden="true">⌕</span>
           <input
-            type="search"
+            className="panel-sidebar-search-field"
+            type="text"
+            inputMode="search"
             value={navQuery}
             onChange={(e) => setNavQuery(e.target.value)}
             placeholder="Найти раздел…"
             aria-label="Поиск раздела в меню"
             enterKeyHint="search"
             autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
         </label>
       </div>

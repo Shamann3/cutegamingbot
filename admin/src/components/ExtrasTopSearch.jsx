@@ -25,12 +25,16 @@ export default function ExtrasTopSearch({
   const inputRef = useRef(null)
 
   const results = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = query.trim().toLowerCase().replace(/ё/g, 'е')
     if (!q) return []
     return sections
-      .filter((s) =>
-        s.labelRu.toLowerCase().includes(q) || s.label.toLowerCase().includes(q))
-      .slice(0, 6)
+      .filter((s) => {
+        const ru = (s.labelRu || '').toLowerCase().replace(/ё/g, 'е')
+        const en = (s.label || '').toLowerCase()
+        const id = (s.id || '').toLowerCase()
+        return ru.includes(q) || en.includes(q) || id.includes(q)
+      })
+      .slice(0, 8)
   }, [query, sections])
 
   useEffect(() => { setCursor(0) }, [results.length])
@@ -87,7 +91,9 @@ export default function ExtrasTopSearch({
         </span>
         <input
           ref={inputRef}
-          type="search"
+          className="extras-hub-search-field"
+          type="text"
+          inputMode="search"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
@@ -96,6 +102,8 @@ export default function ExtrasTopSearch({
           aria-label="Поиск раздела"
           enterKeyHint="search"
           autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
         />
       </label>
 

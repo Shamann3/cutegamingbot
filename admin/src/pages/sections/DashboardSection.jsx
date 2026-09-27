@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import CountUp from '../../components/CountUp'
 import {
   fetchDashboardServer,
@@ -11,6 +11,8 @@ const PERIODS = [
   { id: 'month', label: 'Месяц', now: 'этот месяц', prev: 'прошлый месяц' },
   { id: 'year', label: 'Год', now: 'этот год', prev: 'прошлый год' },
 ]
+
+const POLL_MS = 2500
 
 function fmt(n) {
   if (n == null || Number.isNaN(Number(n))) return '—'
@@ -48,29 +50,69 @@ export default function DashboardSection() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState('day')
+  const [liveTick, setLiveTick] = useState(0)
+  const silentRef = useRef(false)
 
-  const loadDashboard = useCallback(async () => {
-    setError('')
+  const loadDashboard = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setError('')
     try {
       const [statsData] = await Promise.all([
         fetchDashboardStats(),
         fetchDashboardServer().catch(() => null),
       ])
       setStats(statsData)
+      setLiveTick((n) => n + 1)
     } catch (err) {
-      setError(err.message || 'Не удалось загрузить панель')
+      if (!silent) setError(err.message || 'Не удалось загрузить панель')
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    loadDashboard()
+    loadDashboard({ silent: false })
+  }, [loadDashboard])
+
+  // Живые счётчики: пока главная открыта — опрашиваем API.
+  useEffect(() => {
+    let cancelled = false
+    let timer = 0
+
+    const tick = async () => {
+      if (cancelled || document.hidden) {
+        timer = window.setTimeout(tick, POLL_MS)
+        return
+      }
+      if (silentRef.current) {
+        timer = window.setTimeout(tick, POLL_MS)
+        return
+      }
+      silentRef.current = true
+      try {
+        await loadDashboard({ silent: true })
+      } finally {
+        silentRef.current = false
+        if (!cancelled) timer = window.setTimeout(tick, POLL_MS)
+      }
+    }
+
+    timer = window.setTimeout(tick, POLL_MS)
+    const onVis = () => {
+      if (!document.hidden) loadDashboard({ silent: true })
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVis)
+    }
   }, [loadDashboard])
 
   const usage = stats?.usage || {}
   const meta = PERIODS.find((item) => item.id === period) || PERIODS[0]
-  const botTotal = Number(usage.botEventsTotal ?? usage.botEvents?.year?.current ?? 0)
+  const botPair = usage.botEvents?.[period] || { current: 0, previous: 0 }
+  const botNow = Number(botPair.current ?? 0)
+  const botPrev = Number(botPair.previous ?? 0)
 
   return (
     <section className={`grp-page nika-page users-page panel-users dash-home dash-cyber${phone ? ' is-phone' : ' is-desktop'}`}>
@@ -78,7 +120,7 @@ export default function DashboardSection() {
         <p className="panel-shelf-label">Обзор проекта</p>
         <h2 className="panel-page-title">Панель сотрудников CuteGamingBot</h2>
         <p className="panel-page-lead">
-          Сообщения в официальных группах, новые пользователи и вызовы бота.
+          Сообщения в официальных группах, новые пользователи и вызовы бота — в реальном времени.
         </p>
         {error && <p className="panel-shelf-error">{error}</p>}
 
@@ -96,12 +138,21 @@ export default function DashboardSection() {
         </div>
       </article>
 
-      <div className="dash-bot-hero" aria-live="polite">
-        <span className="dash-bot-hero-kicker">Вызовы бота · все группы</span>
+      <div className="dash-bot-hero" aria-live="polite" data-live={liveTick}>
+        <div className="dash-bot-hero-top">
+          <span className="dash-bot-hero-kicker">Вызовы бота · все группы</span>
+          <span className="dash-bot-hero-live" title="Обновляется автоматически">
+            <span className="dash-bot-hero-live-dot" aria-hidden="true" />
+            live
+          </span>
+        </div>
         <strong className="dash-bot-hero-value">
-          {loading ? '…' : <CountUp value={botTotal} />}
+          {loading ? '…' : <CountUp value={botNow} duration={700} />}
         </strong>
-        <span className="dash-bot-hero-sub">сумма взаимодействий во всех чатах с ботом</span>
+        <span className="dash-bot-hero-sub">
+          {meta.now}
+          {!loading ? ` · ${meta.prev}: ${fmt(botPrev)}` : ''}
+        </span>
       </div>
 
       <div className="panel-shelf panel-users-card dash-usage-stage dash-cyber-stage">

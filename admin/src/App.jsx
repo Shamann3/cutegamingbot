@@ -78,7 +78,14 @@ export default function App() {
       <SecurityBoot
         personal={accentIsPersonal(loadStoredAccent())}
         kind={channel}
-        onDone={() => setScreen(channelNext.current)}
+        onDone={() => {
+          // Сотрудники: после канала — печать логотипа, затем панель.
+          if (channel === 'staff') {
+            setScreen('entrance')
+            return
+          }
+          setScreen(channelNext.current)
+        }}
       />
     )
   }

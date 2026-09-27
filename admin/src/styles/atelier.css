@@ -284,7 +284,7 @@ button.elite-btn-primary {
 
 /* ---------- Поля ввода ---------- */
 
-input:not([type='range']):not([type='checkbox']):not([type='radio']),
+input:not([type='range']):not([type='checkbox']):not([type='radio']):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),
 select,
 textarea,
 .grp-search input,
@@ -302,8 +302,11 @@ textarea,
 
 /* Капсула поиска — без второго «поля» внутри */
 .elite-search input,
+.elite-search .elite-search-field,
 .panel-sidebar-search input,
-.extras-hub-search input {
+.panel-sidebar-search .panel-sidebar-search-field,
+.extras-hub-search input,
+.extras-hub-search .extras-hub-search-field {
   border: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
@@ -311,7 +314,7 @@ textarea,
   outline: none !important;
 }
 
-input:not([type='range']):focus,
+input:not([type='range']):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field):focus,
 select:focus,
 textarea:focus {
   outline: none !important;
@@ -321,10 +324,16 @@ textarea:focus {
 
 .elite-search input:focus,
 .elite-search input:focus-visible,
+.elite-search .elite-search-field:focus,
+.elite-search .elite-search-field:focus-visible,
 .panel-sidebar-search input:focus,
 .panel-sidebar-search input:focus-visible,
+.panel-sidebar-search .panel-sidebar-search-field:focus,
+.panel-sidebar-search .panel-sidebar-search-field:focus-visible,
 .extras-hub-search input:focus,
-.extras-hub-search input:focus-visible {
+.extras-hub-search input:focus-visible,
+.extras-hub-search .extras-hub-search-field:focus,
+.extras-hub-search .extras-hub-search-field:focus-visible {
   border: 0 !important;
   box-shadow: none !important;
   outline: none !important;

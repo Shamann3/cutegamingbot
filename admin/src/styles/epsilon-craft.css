@@ -1414,6 +1414,41 @@ html[data-viewport="desktop"] .elite-topbar-actions {
   color: rgba(var(--e-accent-rgb), 0.9);
   font-weight: 650;
 }
+.dash-bot-hero-top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+.dash-bot-hero-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--e-accent-rgb), 0.4);
+  background: rgba(var(--e-accent-rgb), 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.dash-bot-hero-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--e-accent-bright, var(--e-accent));
+  box-shadow: 0 0 8px rgba(var(--e-accent-rgb), 0.9);
+  animation: dash-live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes dash-live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
+}
 .dash-bot-hero-value {
   position: relative;
   z-index: 1;
@@ -1475,42 +1510,84 @@ html[data-viewport="desktop"] .elite-topbar-actions {
 }
 
 /* ——— Поиск: одна капсула, без «квадрата» внутри ——— */
-.panel-shell .elite-search input,
-.panel-shell .elite-search input:focus,
-.panel-shell .elite-search input:focus-visible,
-.panel-shell .elite-search input:not(:placeholder-shown),
-.panel-shell .panel-sidebar-search input,
-.panel-shell .panel-sidebar-search input:focus,
-.panel-shell .panel-sidebar-search input:focus-visible,
-.panel-shell .extras-hub-search input,
-.panel-shell .extras-hub-search input:focus,
-html.is-phone .panel-shell-main .elite-search input,
-html[data-viewport="phone"] .panel-shell-main .elite-search input,
-html.is-phone .panel-shell-main .panel-sidebar-search input,
-html[data-viewport="phone"] .panel-shell-main .panel-sidebar-search input {
-  appearance: none !important;
-  -webkit-appearance: none !important;
-  border: 0 !important;
-  outline: 0 !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  background-color: transparent !important;
-  border-radius: 0 !important;
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  flex: 1 1 auto !important;
-  width: 100% !important;
-  min-width: 0 !important;
-}
-
 .panel-shell .elite-search,
 .panel-shell .panel-sidebar-search,
 .panel-shell .extras-hub-search {
   background: transparent !important;
   background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.panel-shell .elite-search-wrap {
+  overflow: visible !important;
+  z-index: 50;
+}
+
+.panel-shell .elite-search-results {
+  z-index: 520 !important;
+}
+
+.panel-shell .elite-search input,
+.panel-shell .elite-search .elite-search-field,
+.panel-shell .elite-search input:focus,
+.panel-shell .elite-search input:focus-visible,
+.panel-shell .elite-search .elite-search-field:focus,
+.panel-shell .elite-search .elite-search-field:focus-visible,
+.panel-shell .elite-search input:not(:placeholder-shown),
+.panel-shell .elite-search .elite-search-field:not(:placeholder-shown),
+.panel-shell .panel-sidebar-search input,
+.panel-shell .panel-sidebar-search .panel-sidebar-search-field,
+.panel-shell .panel-sidebar-search input:focus,
+.panel-shell .panel-sidebar-search input:focus-visible,
+.panel-shell .panel-sidebar-search .panel-sidebar-search-field:focus,
+.panel-shell .panel-sidebar-search .panel-sidebar-search-field:focus-visible,
+.panel-shell .extras-hub-search input,
+.panel-shell .extras-hub-search .extras-hub-search-field,
+.panel-shell .extras-hub-search input:focus,
+.panel-shell .extras-hub-search input:focus-visible,
+.panel-shell .extras-hub-search .extras-hub-search-field:focus,
+.panel-shell .extras-hub-search .extras-hub-search-field:focus-visible,
+html.is-phone .panel-shell-main .elite-search input,
+html.is-phone .panel-shell-main .elite-search .elite-search-field,
+html[data-viewport="phone"] .panel-shell-main .elite-search input,
+html[data-viewport="phone"] .panel-shell-main .elite-search .elite-search-field,
+html.is-phone .panel-shell-main .panel-sidebar-search input,
+html.is-phone .panel-shell-main .panel-sidebar-search .panel-sidebar-search-field,
+html[data-viewport="phone"] .panel-shell-main .panel-sidebar-search input,
+html[data-viewport="phone"] .panel-shell-main .panel-sidebar-search .panel-sidebar-search-field {
+  all: unset !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  color: #f4f4f5 !important;
+  -webkit-text-fill-color: #f4f4f5 !important;
+  font: inherit !important;
+  font-size: 0.82rem !important;
+  line-height: 1.25 !important;
+  caret-color: #fff !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+}
+
+.panel-shell .elite-search .elite-search-field::placeholder,
+.panel-shell .panel-sidebar-search .panel-sidebar-search-field::placeholder,
+.panel-shell .extras-hub-search .extras-hub-search-field::placeholder {
+  color: rgba(255, 255, 255, 0.38) !important;
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.38) !important;
+  opacity: 1 !important;
 }
 
 /* Overlay всегда ловит клик снаружи */

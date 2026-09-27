@@ -19,14 +19,15 @@ export default function ExtrasHub({
   const [query, setQuery] = useState('')
 
   const groups = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = query.trim().toLowerCase().replace(/ё/g, 'е')
     const list = q
-      ? sections.filter(
-        (item) =>
-          item.labelRu.toLowerCase().includes(q)
-          || item.label.toLowerCase().includes(q)
-          || (SECTION_HINTS[item.id] || '').toLowerCase().includes(q),
-      )
+      ? sections.filter((item) => {
+        const ru = (item.labelRu || '').toLowerCase().replace(/ё/g, 'е')
+        const en = (item.label || '').toLowerCase()
+        const id = (item.id || '').toLowerCase()
+        const hint = (SECTION_HINTS[item.id] || '').toLowerCase().replace(/ё/g, 'е')
+        return ru.includes(q) || en.includes(q) || id.includes(q) || hint.includes(q)
+      })
       : sections
     return groupSections(list)
   }, [sections, query])
@@ -41,13 +42,17 @@ export default function ExtrasHub({
       <label className="extras-hub-search">
         <span className="extras-hub-search-icon" aria-hidden="true">⌕</span>
         <input
-          type="search"
+          className="extras-hub-search-field"
+          type="text"
+          inputMode="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Найти раздел…"
           aria-label="Найти раздел в дополнительно"
           enterKeyHint="search"
           autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
         />
       </label>
 
