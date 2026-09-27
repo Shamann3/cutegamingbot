@@ -2286,6 +2286,51 @@ export async function fetchGroupSummary(chatId) {
   return adminFetch(`/group-realm/summary/${encodeURIComponent(chatId)}`)
 }
 
+export async function fetchGroupGuard(chatId) {
+  return adminFetch(`/group-realm/guard/${encodeURIComponent(chatId)}`)
+}
+
+export async function saveGroupGuard(chatId, body) {
+  return adminFetch(`/group-realm/guard/${encodeURIComponent(chatId)}`, {
+    method: 'PUT',
+    body: { chat_id: chatId, ...body },
+  })
+}
+
+export async function fetchGuardDesk() {
+  return adminFetch('/group-realm/guard-desk')
+}
+
+export async function saveGuardPolicy(body) {
+  return adminFetch('/group-realm/guard-policy', {
+    method: 'PUT',
+    body: {
+      captcha: Boolean(body.captcha),
+      links: Boolean(body.links),
+      flood: Boolean(body.flood),
+      morning: Boolean(body.morning),
+      morning_hour: Number(body.morningHour),
+    },
+  })
+}
+
+export async function addGuardAllow(userId, note) {
+  return adminFetch('/group-realm/guard-allow', {
+    method: 'POST',
+    body: { user_id: Number(userId), note },
+  })
+}
+
+export async function removeGuardAllow(userId) {
+  return adminFetch(`/group-realm/guard-allow/${encodeURIComponent(userId)}`, { method: 'DELETE' })
+}
+
+export async function fetchGroupActivity(chatId, { period = 'month', slice = '' } = {}) {
+  const query = new URLSearchParams({ period })
+  if (slice) query.set('slice', slice)
+  return adminFetch(`/group-realm/activity/${encodeURIComponent(chatId)}?${query}`)
+}
+
 export async function groupRealmAct(body) {
   return adminFetch('/group-realm/act', { method: 'POST', body })
 }

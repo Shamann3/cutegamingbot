@@ -70,21 +70,76 @@ def action_right(action: str) -> str | None:
 def cabinet_pages(rights: list[str] | set[str], *, creator: bool = False) -> list[str]:
     """Страницы кабинета группы, которые открывает набор прав.
 
-    Обзор и «Ещё» есть всегда. «Люди» открываются и от любого наказания,
-    даже без отдельного права смотреть список.
+    Обзор и «Ещё» есть всегда. «Активность» открывается от списка людей,
+    от цифр или от любого наказания.
     """
     have = set(rights or [])
     pages = ["overview"]
-    if creator or "view_members" in have or any(str(item).startswith("punish_") for item in have):
-        pages.append("people")
+    sees_activity = (
+        creator
+        or "view_members" in have
+        or "view_analytics" in have
+        or any(str(item).startswith("punish_") for item in have)
+    )
+    if sees_activity:
+        pages.append("activity")
     if creator or "view_archive" in have:
         pages.append("archive")
-    if creator or "view_analytics" in have:
-        pages.append("analytics")
     if creator or "manage_positions" in have:
         pages.append("rights")
     pages.append("more")
     return pages
+
+
+def activity_window(period: str, today):
+    """Начало, конец и шаг графика: день, неделя, календарный месяц или год."""
+    from datetime import timedelta
+
+    name = period if period in {"day", "week", "month", "year"} else "month"
+    if name == "day":
+        return today, today, "day"
+    if name == "week":
+        return today - timedelta(days=6), today, "day"
+    if name == "year":
+        return today.replace(month=1, day=1), today, "month"
+    return today.replace(day=1), today, "day"
+
+
+def previous_window(period: str, start, end):
+    """Такой же прошлый отрезок, чтобы сравнить с текущим без выдуманных процентов."""
+    from datetime import timedelta
+
+    if period == "day":
+        day = start - timedelta(days=1)
+        return day, day
+    if period == "week":
+        return start - timedelta(days=7), start - timedelta(days=1)
+    if period == "year":
+        return start.replace(year=start.year - 1), end.replace(year=end.year - 1)
+    previous_end = start - timedelta(days=1)
+    return previous_end.replace(day=1), previous_end
+
+
+def activity_buckets(start, end, grain: str) -> list:
+    """Все точки графика, включая дни и месяцы без сообщений."""
+    from datetime import timedelta
+
+    points = []
+    if grain == "month":
+        cursor = start.replace(day=1)
+        last = end.replace(day=1)
+        while cursor <= last:
+            points.append(cursor)
+            month = cursor.month + 1
+            year = cursor.year + (1 if month > 12 else 0)
+            next_month = 1 if month > 12 else month
+            cursor = cursor.replace(year=year, month=next_month, day=1)
+        return points
+    cursor = start
+    while cursor <= end:
+        points.append(cursor)
+        cursor += timedelta(days=1)
+    return points
 
 
 def rights_allow(rights: list[str] | set[str], action: str) -> bool:
@@ -516,6 +571,8 @@ async def group_official(body: OfficialBody, user_id: int = Depends(get_any_tele
     )
     if body.official:
         await _seed_positions(int(body.chat_id))
+        from group_guard import apply_policy_to_chat
+        await apply_policy_to_chat(int(body.chat_id), int(user_id))
     return {"ok": True, "chatId": int(body.chat_id), "official": bool(body.official)}
 
 
@@ -811,15 +868,167 @@ async def group_decide(body: DecideBody, user_id: int = Depends(get_any_telegram
     return {"ok": True, "status": "approved", "entryKey": entry_key}
 
 
+async def load_activity(chat_id: int, period: str, today, slice_day=None) -> dict:
+    """Сообщения чата из chatchange. Если таблица не ответила — цифр нет, нулей нет."""
+    name = period if period in {"day", "week", "month", "year"} else "month"
+    start, end, grain = activity_window(name, today)
+    focus_start, focus_end = start, end
+    if slice_day is not None:
+        if grain == "day" and start <= slice_day <= end:
+            focus_start = focus_end = slice_day
+        elif grain == "month":
+            month_start = slice_day.replace(day=1)
+            if start.replace(day=1) <= month_start <= end.replace(day=1):
+                next_month = month_start.month + 1
+                year = month_start.year + (1 if next_month > 12 else 0)
+                next_month = 1 if next_month > 12 else next_month
+                month_end = month_start.replace(year=year, month=next_month, day=1)
+                from datetime import timedelta
+                focus_start = month_start
+                focus_end = min(end, month_end - timedelta(days=1))
+
+    async def _totals(range_start, range_end):
+        row = await db.pool.fetchrow(
+            """
+            SELECT coalesce(sum(text), 0)::bigint AS messages,
+                   count(DISTINCT user_id)::int AS writers
+            FROM chatchange
+            WHERE chat_id = $1 AND date >= $2 AND date <= $3
+            """,
+            int(chat_id),
+            range_start,
+            range_end,
+        )
+        return int(row["messages"]), int(row["writers"])
+
+    messages, writers = await _totals(focus_start, focus_end)
+    period_messages, period_writers = await _totals(start, end)
+    prev_start, prev_end = previous_window(name, start, end)
+    previous_messages, _previous_writers = await _totals(prev_start, prev_end)
+    if grain == "month":
+        series_rows = await db.pool.fetch(
+            """
+            SELECT to_char(date_trunc('month', date), 'YYYY-MM-01') AS bucket,
+                   coalesce(sum(text), 0)::bigint AS messages,
+                   count(DISTINCT user_id)::int AS writers
+            FROM chatchange
+            WHERE chat_id = $1 AND date >= $2 AND date <= $3
+            GROUP BY 1
+            ORDER BY 1
+            """,
+            int(chat_id),
+            start,
+            end,
+        )
+    else:
+        series_rows = await db.pool.fetch(
+            """
+            SELECT date::text AS bucket,
+                   coalesce(sum(text), 0)::bigint AS messages,
+                   count(DISTINCT user_id)::int AS writers
+            FROM chatchange
+            WHERE chat_id = $1 AND date >= $2 AND date <= $3
+            GROUP BY date
+            ORDER BY date
+            """,
+            int(chat_id),
+            start,
+            end,
+        )
+    counts = {
+        str(row["bucket"])[:10]: (int(row["messages"]), int(row["writers"]))
+        for row in series_rows
+    }
+    series = []
+    for bucket in activity_buckets(start, end, grain):
+        key = bucket.isoformat()
+        got = counts.get(key, (0, 0))
+        series.append({"date": key, "messages": got[0], "writers": got[1]})
+    people_rows = await db.pool.fetch(
+        """
+        SELECT c.user_id, coalesce(sum(c.text), 0)::bigint AS messages,
+               max(u.first_name) AS first_name, max(u.username) AS username
+        FROM chatchange c
+        LEFT JOIN users u ON u.user_id = c.user_id
+        WHERE c.chat_id = $1 AND c.date >= $2 AND c.date <= $3
+        GROUP BY c.user_id
+        ORDER BY messages DESC
+        LIMIT 15
+        """,
+        int(chat_id),
+        focus_start,
+        focus_end,
+    )
+    return {
+        "available": True,
+        "period": name,
+        "grain": grain,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "focus": focus_start.isoformat(),
+        "messages": messages,
+        "writers": writers,
+        "periodMessages": period_messages,
+        "periodWriters": period_writers,
+        "previousMessages": previous_messages,
+        "series": series,
+        "people": [
+            {
+                "userId": int(row["user_id"]),
+                "name": row["first_name"] or str(row["user_id"]),
+                "username": row["username"],
+                "messages": int(row["messages"]),
+            }
+            for row in people_rows
+        ],
+    }
+
+
+@router.get("/activity/{chat_id}")
+async def group_activity(
+    chat_id: int,
+    period: str = "month",
+    slice: str | None = None,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    access = await _access(user_id, chat_id)
+    if not access:
+        raise HTTPException(status_code=403, detail="В этой группе у вас нет должности")
+    pages = cabinet_pages(access["rights"], creator=bool(access.get("isCreator")))
+    if "activity" not in pages:
+        raise HTTPException(status_code=403, detail="Должность не открывает активность")
+    from datetime import date
+
+    chosen = None
+    if slice:
+        try:
+            chosen = date.fromisoformat(slice[:10])
+        except ValueError:
+            chosen = None
+    try:
+        return await load_activity(int(chat_id), period, date.today(), chosen)
+    except Exception:
+        return {
+            "available": False,
+            "period": period if period in {"day", "week", "month", "year"} else "month",
+            "messages": None,
+            "writers": None,
+            "previousMessages": None,
+            "series": [],
+            "people": [],
+        }
+
+
 @router.get("/summary/{chat_id}")
 async def group_summary(chat_id: int, user_id: int = Depends(get_any_telegram_user_id)):
     access = await _access(user_id, chat_id)
     if not access:
         raise HTTPException(status_code=403, detail="В этой группе у вас нет должности")
-    from admin_groups import _activity_hint, _moderation_counts
+    from admin_groups import _activity_hint, _moderation_counts, chat_warn_watch
 
     activity = await _activity_hint(int(chat_id))
     mods = await _moderation_counts(int(chat_id))
+    watch = await chat_warn_watch(int(chat_id))
     return {
         "chat": access,
         "messages30d": activity.get("messages_30d"),
@@ -833,6 +1042,7 @@ async def group_summary(chat_id: int, user_id: int = Depends(get_any_telegram_us
             "warns": mods.get("warns"),
             "kicks": mods.get("kicks"),
             "recent": mods.get("recent") or [],
+            "watch": watch,
         },
     }
 
@@ -866,7 +1076,132 @@ async def group_act(body: ActBody, user_id: int = Depends(get_any_telegram_user_
         reason=body.reason.strip(),
         admin_id=int(user_id),
     )
-    return {"ok": True, "result": result}
+    warns = None
+    if action == "warn":
+        try:
+            warns = await db.pool.fetchval(
+                """
+                SELECT count(*)::int FROM active_warns
+                WHERE user_id = $1 AND chat_id = $2
+                  AND coalesce(mode, 'chat') = 'chat'
+                  AND (expires_at IS NULL OR expires_at > now())
+                """,
+                int(body.user_id),
+                int(body.chat_id),
+            )
+        except Exception:
+            warns = None
+    from group_guard_rules import punish_receipt
+    receipt = punish_receipt(access.get("position") or "", action, int(warns) if warns is not None else None)
+    return {"ok": True, "result": result, "receipt": receipt}
+
+
+class GuardBody(BaseModel):
+    chat_id: int
+    captcha: bool = False
+    links: bool = False
+    flood: bool = False
+    follow: bool = False
+    model_config = {"extra": "forbid"}
+
+
+class PolicyBody(BaseModel):
+    captcha: bool = True
+    links: bool = False
+    flood: bool = False
+    morning: bool = True
+    morning_hour: int = 9
+    model_config = {"extra": "forbid"}
+
+
+class AllowBody(BaseModel):
+    user_id: int
+    note: str = ""
+    model_config = {"extra": "forbid"}
+
+
+@router.get("/guard-desk")
+async def group_guard_desk(user_id: int = Depends(get_any_telegram_user_id)):
+    _require_creator(user_id)
+    from group_guard import guard_desk
+    return await guard_desk()
+
+
+@router.put("/guard-policy")
+async def group_guard_policy(body: PolicyBody, user_id: int = Depends(get_any_telegram_user_id)):
+    _require_creator(user_id)
+    from group_guard import guard_desk, set_policy
+    try:
+        await set_policy(
+            {
+                "captcha": body.captcha,
+                "links": body.links,
+                "flood": body.flood,
+                "morning": body.morning,
+                "morningHour": body.morning_hour,
+            },
+            int(user_id),
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Час лички — от 0 до 23")
+    return await guard_desk()
+
+
+@router.post("/guard-allow")
+async def group_guard_allow(body: AllowBody, user_id: int = Depends(get_any_telegram_user_id)):
+    _require_creator(user_id)
+    from group_guard import add_allow, guard_desk
+    try:
+        await add_allow(int(body.user_id), body.note)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Нужен id человека и короткая пометка, зачем он в исключениях")
+    return await guard_desk()
+
+
+@router.delete("/guard-allow/{target_id}")
+async def group_guard_allow_remove(target_id: int, user_id: int = Depends(get_any_telegram_user_id)):
+    _require_creator(user_id)
+    from group_guard import guard_desk, remove_allow
+    await remove_allow(int(target_id))
+    return await guard_desk()
+
+
+@router.get("/guard/{chat_id}")
+async def group_guard_get(chat_id: int, user_id: int = Depends(get_any_telegram_user_id)):
+    access = await _access(user_id, chat_id)
+    if not access:
+        raise HTTPException(status_code=403, detail="В этой группе у вас нет должности")
+    from group_guard import guard_view
+    data = await guard_view(int(chat_id))
+    data["canEdit"] = _is_creator(user_id)
+    data["position"] = access.get("position") or ""
+    return data
+
+
+@router.put("/guard/{chat_id}")
+async def group_guard_put(chat_id: int, body: GuardBody, user_id: int = Depends(get_any_telegram_user_id)):
+    if int(body.chat_id) != int(chat_id):
+        raise HTTPException(status_code=400, detail="Чат не совпал")
+    _require_creator(user_id)
+    official = await db.pool.fetchval(
+        "SELECT 1 FROM epsilon_official_groups WHERE chat_id = $1 AND is_official",
+        int(chat_id),
+    )
+    if not official:
+        raise HTTPException(status_code=404, detail="Защита включается только в официальной группе")
+    from group_guard import follow_policy, set_guard
+    if body.follow:
+        data = await follow_policy(int(chat_id), int(user_id))
+    else:
+        data = await set_guard(
+            int(chat_id),
+            links=body.links,
+            flood=body.flood,
+            captcha=body.captcha,
+            updated_by=int(user_id),
+        )
+    data["canEdit"] = True
+    return data
 
 
 @router.post("/key/check")

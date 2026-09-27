@@ -6,6 +6,11 @@ export const PANEL_SECTIONS = [
     blurb: 'Обзор панели: статус сервера, быстрые метрики и входная точка.',
   },
   {
+    id: 'groupGuard', label: 'Group guard', labelRu: 'Защита', group: 'official',
+    creatorOnly: true,
+    blurb: 'Общие правила официальных групп, свои правила чата и люди, которых бот не удаляет.',
+  },
+  {
     id: 'users', label: 'Players', labelRu: 'Игроки', group: 'people', permission: 'view_players',
     blurb: 'Поиск игроков, профиль, баланс, предметы, баны и правки аккаунта.',
   },
@@ -134,6 +139,7 @@ export function sectionBlurb(id) {
  *  label: null — блок без подписи (для одинокой «Главной» сверху). */
 export const PANEL_GROUPS = [
   { id: 'overview', label: 'С чего начать' },
+  { id: 'official', label: 'Официальные группы' },
   { id: 'people',   label: 'Люди' },
   { id: 'economy',  label: 'Деньги и группы' },
   { id: 'content',  label: 'Игры и призы' },
@@ -144,6 +150,7 @@ export const PANEL_GROUPS = [
 
 export const SECTION_HINTS = {
   dashboard: 'Кто в игре и жив ли сервер',
+  groupGuard: 'Правила чатов и исключения',
   users: 'Найти человека и открыть карточку',
   accounts: 'Список аккаунтов',
   moderation: 'Прошлые наказания',
@@ -192,7 +199,7 @@ export function visibleSections(
   return PANEL_SECTIONS.filter((s) => {
     if (s.ownerOnly && role !== 'owner') return false
     if (s.creatorOnly && !creatorOk) return false
-    if (allowedIds && s.id !== 'rights' && !allowedIds.has(s.id)) return false
+    if (allowedIds && s.id !== 'rights' && s.id !== 'groupGuard' && !allowedIds.has(s.id)) return false
     if (s.permission && !perms.has(s.permission)) return false
     return true
   })

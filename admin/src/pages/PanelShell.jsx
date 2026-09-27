@@ -49,6 +49,7 @@ import { loadRecentSections, pushRecentSection } from '../lib/recentSections'
 import { useViewportMode, useIsPhone } from '../lib/useIsDesktop'
 import useDrawerSwipe from '../lib/useDrawerSwipe'
 import RightsSection from './sections/RightsSection'
+import GroupGuardDesk from './sections/GroupGuardDesk'
 import FirstRun, { staffSteps, coachClosed } from '../components/FirstRun'
 
 export default function PanelShell({ onLogout, onChangeDoor }) {
@@ -284,6 +285,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const isChronicle  = section === 'chronicle'
   const isPanelAccess = section === 'panelAccess'
   const isRights = section === 'rights'
+  const isGroupGuard = section === 'groupGuard'
   const isSoftRestart = section === 'softRestart'
 
   return (
@@ -500,8 +502,9 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isChronicle && <ChronicleSection />}
           {isPanelAccess && <PanelAccessSection />}
           {isRights && isProjectCreator && <RightsSection />}
+          {isGroupGuard && isProjectCreator && <GroupGuardDesk />}
           {isSoftRestart && isProjectCreator && <SoftRestartSection />}
-          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isRights && !isSoftRestart && (
+          {!isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isRights && !isGroupGuard && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

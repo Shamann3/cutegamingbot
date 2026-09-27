@@ -77,6 +77,11 @@ async def _tick() -> None:
     await _fire_giveaway_draws()
 
     await _fire_group_post_campaigns()
+    try:
+        from group_guard import send_morning_if_due
+        await send_morning_if_due()
+    except Exception:
+        logger.exception("morning shift skipped")
 
     await _advance_recurring_quests()
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchPanelAccess, fetchRightsBoard, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
 import PositionEditor from '../../components/PositionEditor'
+import RightSwitch from '../../components/RightSwitch'
 
 const STAFF_GROUP_LABELS = {
   overview: 'С чего начать',
@@ -10,6 +11,7 @@ const STAFF_GROUP_LABELS = {
   team: 'Команда',
   insights: 'Цифры',
   system: 'Настройки',
+  official: 'Официальные группы',
 }
 
 function StaffTabsEditor() {
@@ -89,27 +91,22 @@ function StaffTabsEditor() {
           <h3>{group.label}</h3>
           {group.items.map((section) => (
             <div key={section.id}>
-              <label className="realm-check">
-                <input
-                  type="checkbox"
-                  checked={enabled(section.id)}
-                  disabled={busyKey === section.id}
-                  onChange={(event) => toggle(section.id, event.target.checked)}
-                />
-                <span><strong>{section.label}</strong></span>
-              </label>
+              <RightSwitch
+                on={enabled(section.id)}
+                disabled={busyKey === section.id}
+                title={section.label}
+                onChange={(next) => toggle(section.id, next)}
+              />
               {enabled(section.id) && (section.children || []).length > 0 && (
                 <div className="realm-right-nested">
                   {section.children.map((child) => (
-                    <label key={child.key} className="realm-check">
-                      <input
-                        type="checkbox"
-                        checked={enabled(child.key)}
-                        disabled={busyKey === child.key}
-                        onChange={(event) => toggle(child.key, event.target.checked)}
-                      />
-                      <span>{child.label}</span>
-                    </label>
+                    <RightSwitch
+                      key={child.key}
+                      on={enabled(child.key)}
+                      disabled={busyKey === child.key}
+                      title={child.label}
+                      onChange={(next) => toggle(child.key, next)}
+                    />
                   ))}
                 </div>
               )}

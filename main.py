@@ -41128,6 +41128,12 @@ if __name__ == "__main__":
         print(f"[CAPTCHA][WIRE][ERROR] {type(_cap_err).__name__}: {_cap_err}")
 
     try:
+        from bot.handlers.group_guard import attach_group_guard
+        attach_group_guard(dp)
+    except Exception as _guard_err:
+        print(f"[GUARD][WIRE][ERROR] {type(_guard_err).__name__}: {_guard_err}")
+
+    try:
         from bot.handlers.tiktok_earn import attach_tiktok_earn
         attach_tiktok_earn(dp)
     except Exception as _tt_err:

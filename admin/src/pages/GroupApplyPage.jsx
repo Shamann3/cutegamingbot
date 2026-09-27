@@ -5,7 +5,7 @@ import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 const RIGHT_LABEL = {
   view_members: 'участники',
   view_archive: 'архив',
-  view_analytics: 'аналитика',
+  view_analytics: 'цифры',
   punish_mute: 'мут',
   punish_ban: 'бан',
   punish_kick: 'кик',

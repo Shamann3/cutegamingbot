@@ -1134,6 +1134,7 @@ _schema_ready = False
 _passed_cache: Dict[Tuple[int, int], float] = {}
 _not_passed_cache: Dict[Tuple[int, int], float] = {}
 _disabled_cache: Dict[int, Tuple[bool, float]] = {}
+_guard_allow_cache: Dict[int, Tuple[bool, float]] = {}
 _live_challenges: Dict[int, Dict[str, Any]] = {}
 _live_by_user: Dict[Tuple[int, int], int] = {}
 _CACHE_TTL = 90.0
@@ -1351,9 +1352,30 @@ async def has_passed(pool, chat_id: int, user_id: int) -> bool:
     return False
 
 
+async def _guard_exception(pool, user_id: int) -> bool:
+    """Человек из списка создателя не проходит капчу. Кэш на полминуты."""
+    now = time.monotonic()
+    hit = _guard_allow_cache.get(int(user_id))
+    if hit and now - hit[1] < 30:
+        return hit[0]
+    try:
+        allowed = bool(await pool.fetchval(
+            "SELECT 1 FROM epsilon_guard_allow WHERE user_id = $1",
+            int(user_id),
+        ))
+    except Exception:
+        allowed = False
+    if len(_guard_allow_cache) > 4000:
+        _guard_allow_cache.clear()
+    _guard_allow_cache[int(user_id)] = (allowed, now)
+    return allowed
+
+
 async def user_needs_captcha(pool, chat_id: int, user_id: int) -> bool:
     """Один кэш/один SQL вместо пары запросов на каждое сообщение."""
     if pool is None:
+        return False
+    if await _guard_exception(pool, int(user_id)):
         return False
     if cached_disabled(chat_id) is True:
         return False

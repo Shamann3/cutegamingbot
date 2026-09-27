@@ -34,7 +34,7 @@ export function groupSteps(phone) {
   return [
     {
       title: 'Эта группа',
-      body: 'Чат, ваша должность и сообщения за 30 дней.',
+      body: 'Чат и должность. Ниже смена: сегодня против вчера.',
       target: '.realm-top h1',
     },
     {
@@ -45,9 +45,9 @@ export function groupSteps(phone) {
       target: phone ? '[data-coach="menu"]' : '[data-coach="nav"]',
     },
     {
-      title: 'Люди',
-      body: 'Наказать можно только того, кто в этом чате младше вас.',
-      target: '[data-section="people"]',
+      title: 'Активность',
+      body: 'Здесь сообщения за сегодня, месяц и год. Нажмите столбец, чтобы увидеть этот день.',
+      target: '[data-section="activity"]',
       openNav: phone,
     },
     {

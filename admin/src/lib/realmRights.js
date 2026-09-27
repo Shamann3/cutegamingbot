@@ -1,7 +1,7 @@
 export const PAGE_RIGHTS = [
-  { id: 'view_members', label: 'Люди', hint: 'Кто пишет в этом чате' },
-  { id: 'view_archive', label: 'Архив', hint: 'Наказания и фото этой группы' },
-  { id: 'view_analytics', label: 'Аналитика', hint: 'Сообщения за 30 дней' },
+  { id: 'view_members', label: 'Кто пишет', hint: 'Имена и число сообщений на странице «Активность»' },
+  { id: 'view_archive', label: 'Архив', hint: 'Карточки наказаний и фото этой группы' },
+  { id: 'view_analytics', label: 'Цифры', hint: 'Сообщения за день, месяц и год на той же странице' },
   { id: 'manage_positions', label: 'Права', hint: 'Менять должности младше своей' },
 ]
 

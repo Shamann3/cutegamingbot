@@ -1,22 +1,19 @@
 import { useEffect, useState } from 'react'
 import { PAGE_RIGHTS, PUNISH_RIGHTS } from '../lib/realmRights'
+import RightSwitch from './RightSwitch'
 
 function RightList({ items, rights, locked, onToggle }) {
   return (
     <div className="realm-right-grid">
       {items.map((item) => (
-        <label key={item.id} className="realm-check">
-          <input
-            type="checkbox"
-            checked={rights.has(item.id)}
-            disabled={locked}
-            onChange={(event) => onToggle(item.id, event.target.checked)}
-          />
-          <span>
-            <strong>{item.label}</strong>
-            <em>{item.hint}</em>
-          </span>
-        </label>
+        <RightSwitch
+          key={item.id}
+          on={rights.has(item.id)}
+          disabled={locked}
+          title={item.label}
+          hint={item.hint}
+          onChange={(next) => onToggle(item.id, next)}
+        />
       ))}
     </div>
   )
@@ -76,7 +73,7 @@ export default function PositionEditor({ positions, creator, onSave, savingId })
             </fieldset>
             <fieldset className="realm-rights-block" disabled={locked}>
               <legend>Наказания в этом чате</legend>
-              <p className="realm-copy">Любое наказание само открывает страницу «Люди».</p>
+              <p className="realm-copy">Любое наказание само открывает страницу «Активность».</p>
               <RightList items={PUNISH_RIGHTS} rights={rights} locked={locked} onToggle={toggle} />
             </fieldset>
             <button type="submit" className="realm-back" disabled={savingId === row.id || row.title.trim().length < 2}>

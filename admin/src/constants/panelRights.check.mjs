@@ -26,6 +26,9 @@ const creator = visibleSections([], [], 'owner', { isProjectCreator: true })
 if (!creator.some((item) => item.id === 'rights')) {
   throw new Error('creator must keep the rights page')
 }
+if (!creator.some((item) => item.id === 'groupGuard')) {
+  throw new Error('creator must keep the guard page')
+}
 
 const tabs = filterSectionTabs('staff', [{ id: 'salaries' }, { id: 'applications' }], {
   staff: ['salaries'],

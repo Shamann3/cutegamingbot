@@ -17,7 +17,11 @@ import FirstRun, { groupSteps, coachClosed } from '../components/FirstRun'
 import PanelSidebar from '../components/PanelSidebar'
 import EliteTopbar from '../components/EliteTopbar'
 import PositionEditor from '../components/PositionEditor'
-import TgPhoto from '../components/TgPhoto'
+import ActivityBoard from '../components/ActivityBoard'
+import GroupArchive from '../components/GroupArchive'
+import ShiftDesk from '../components/ShiftDesk'
+import GroupGuard from '../components/GroupGuard'
+import { repeatCounts } from '../lib/shiftDesk'
 import useDrawerSwipe from '../lib/useDrawerSwipe'
 import { useIsPhone, useViewportMode } from '../lib/useIsDesktop'
 import { useMusicMode } from '../lib/musicMode'
@@ -37,34 +41,13 @@ function fmt(n) {
   return new Intl.NumberFormat('ru-RU').format(Number(n))
 }
 
-function when(iso) {
-  if (!iso) return ''
-  try {
-    return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-  } catch {
-    return ''
-  }
-}
-
-function roomLine(summary) {
-  const messages = summary?.messages30d
-  const writers = summary?.writers30d
-  if (messages == null) return 'За 30 дней цифр ещё нет.'
-  if (Number(messages) === 0) return 'За 30 дней в этом чате тишина.'
-  if (writers && Number(writers) > 0 && Number(messages) / Number(writers) >= 30) {
-    return 'Сообщений много, а пишут не все. Смотрите, кто сверху списка.'
-  }
-  return 'Чат говорит. Ниже те, кто пишет чаще.'
-}
-
 function tabsFor(rights, isCreator) {
   const has = (key) => isCreator || rights.has(key)
   const items = [{ id: 'overview', label: 'Обзор' }]
-  if (has('view_members') || [...rights].some((item) => item.startsWith('punish_'))) {
-    items.push({ id: 'people', label: 'Люди' })
+  if (has('view_members') || has('view_analytics') || [...rights].some((item) => item.startsWith('punish_'))) {
+    items.push({ id: 'activity', label: 'Активность' })
   }
   if (has('view_archive')) items.push({ id: 'archive', label: 'Архив' })
-  if (has('view_analytics')) items.push({ id: 'analytics', label: 'Аналитика' })
   if (has('manage_positions')) items.push({ id: 'rights', label: 'Права' })
   items.push({ id: 'more', label: 'Ещё' })
   return items
@@ -128,15 +111,13 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
     id: item.id,
     label: item.label,
     labelRu: item.label,
-    group: item.id === 'people' || item.id === 'archive'
+    group: item.id === 'activity' || item.id === 'archive'
       ? 'people'
       : item.id === 'rights'
         ? 'team'
         : item.id === 'more'
           ? 'system'
-          : item.id === 'analytics'
-            ? 'insights'
-            : 'overview',
+          : 'overview',
   })), [tabs])
   useDrawerSwipe({
     enabled: phone,
@@ -246,14 +227,14 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
     setActing(true)
     setError('')
     try {
-      await groupRealmAct({
+      const data = await groupRealmAct({
         chat_id: chatId,
         user_id: id,
         action: selectedAction.id,
         reason: reason.trim(),
         until_sec: until,
       })
-      setNotice('Записано в этот чат')
+      setNotice(data?.receipt || 'Записано в архив официальной группы')
       setReason('')
       await loadSummary(chatId)
     } catch (err) {
@@ -344,6 +325,17 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
   }
 
   const mods = summary?.moderation
+  const repeats = useMemo(() => repeatCounts(mods?.recent), [mods])
+  const canActivity = tabs.some((item) => item.id === 'activity')
+  const pickPerson = (id) => {
+    setUserId(String(id))
+    setChapter(false)
+    setRailOpen(false)
+    setTab('activity')
+    window.setTimeout(() => {
+      document.getElementById('realm-punish')?.scrollIntoView({ block: 'nearest' })
+    }, 80)
+  }
   const title = summary?.chat?.title || current?.title || 'Группа не выбрана'
 
   return (
@@ -452,8 +444,14 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
 
           {!chapter && activeTab === 'overview' && (
             <section>
-              <p className="realm-hero-num">{fmt(summary?.messages30d)}</p>
-              <p className="realm-copy">{chatId ? 'Сообщений за 30 дней в этом чате' : 'Группа не выбрана'}</p>
+              {!canActivity && (
+                <>
+                  <p className="realm-hero-num">{fmt(summary?.messages30d)}</p>
+                  <p className="realm-copy">{chatId ? 'Сообщений за 30 дней в этом чате' : 'Группа не выбрана'}</p>
+                </>
+              )}
+              <ShiftDesk chatId={chatId} canActivity={canActivity} />
+              <GroupGuard chatId={chatId} creator={isCreator} />
               {groups.length > 0 && (
                 <ul className="realm-list">
                   {groups.map((group) => (
@@ -485,23 +483,15 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
             </section>
           )}
 
-          {!chapter && activeTab === 'people' && (
+          {!chapter && activeTab === 'activity' && (
             <section>
-              <h2 className="realm-h">Кто пишет</h2>
-              {!chatId && <p className="realm-copy">Сначала выберите группу. Тогда здесь появятся люди этого чата.</p>}
-              {chatId && (summary?.writers || []).length === 0 && <p className="realm-copy">За 30 дней список пишущих ещё пуст.</p>}
-              <ul className="realm-list">
-                {(summary?.writers || []).map((person) => (
-                  <li key={person.user_id}>
-                    <button type="button" className="realm-row" onClick={() => setUserId(String(person.user_id))}>
-                      <strong>{person.name}</strong>
-                      <span>{fmt(person.messages)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <h2 className="realm-h">Активность</h2>
+              <p className="realm-copy">Живые сообщения этого чата. Столбец — это день или месяц. Имя человека подставляет его id в наказание ниже.</p>
+              <ActivityBoard chatId={chatId} repeats={repeats} canPunish={allowedActions.length > 0} onPick={pickPerson} />
               {allowedActions.length > 0 && chatId && (
-                <form className="realm-form" onSubmit={punish}>
+                <form id="realm-punish" className="realm-form" onSubmit={punish}>
+                  <h3 className="realm-h">Наказать в этом чате</h3>
+                  <p className="realm-copy">Бан, мут и кик отсюда действуют только в этой группе. Старшего, равного и себя форма не отправит.</p>
                   <label>Id человека<input inputMode="numeric" value={userId} onChange={(event) => setUserId(event.target.value)} /></label>
                   <div className="realm-actions">
                     {allowedActions.map((item) => (
@@ -514,7 +504,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
                     <label>Часы<input inputMode="decimal" value={hours} onChange={(event) => setHours(event.target.value)} /></label>
                   )}
                   <label>Причина<input value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-                  <p className="realm-copy">Наказание проходит, только если человек младше вашей должности в этой группе. Старшего и равного система не пропустит.</p>
+                  <p className="realm-copy">Причина обязательна. В чате с ботом её легко забыть, здесь без неё запись не уходит.</p>
                   <button type="submit" className="realm-back" disabled={acting}>{acting ? 'Запись…' : 'Выполнить'}</button>
                 </form>
               )}
@@ -524,40 +514,18 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           {!chapter && activeTab === 'archive' && (
             <section>
               <h2 className="realm-h">Архив чата</h2>
+              <p className="realm-copy">Официальная группа Кьюта. {current?.position ? `Ваша должность: ${current.position}.` : ''}</p>
               {mods && (
                 <p className="realm-copy">
                   За 30 дней {fmt(mods.actions30d)} · муты {fmt(mods.mutes)} · баны {fmt(mods.bans)} · кики {fmt(mods.kicks)} · варны {fmt(mods.warns)}
                 </p>
               )}
-              <ul className="realm-list">
-                {(mods?.recent || []).map((row, index) => (
-                  <li key={`${row.at || index}-${row.target_user_id || index}`} className="realm-archive-item">
-                    <div className="realm-row">
-                      <strong>{row.action} · {row.target_user_id || '—'}</strong>
-                      <span>{when(row.at || row.created_at)}</span>
-                    </div>
-                    {(row.reason || row.admin) && (
-                      <p className="realm-copy">{[row.admin, row.reason].filter(Boolean).join(' · ')}</p>
-                    )}
-                    {row.proofMediaId
-                      ? <TgPhoto fileId={row.proofMediaId} className="realm-proof" />
-                      : <p className="realm-copy">Фото доказательства нет.</p>}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {!chapter && activeTab === 'analytics' && (
-            <section>
-              <h2 className="realm-h">Этот чат</h2>
-              <p className="realm-hero-num">{fmt(summary?.messages30d)}</p>
-              <p className="realm-copy">{roomLine(summary)}</p>
-              <ul className="realm-list">
-                <li className="realm-row"><strong>Писали</strong><span>{fmt(summary?.writers30d)}</span></li>
-                <li className="realm-row"><strong>Участники в базе</strong><span>{fmt(summary?.members)}</span></li>
-                <li className="realm-row"><strong>Наказания за 30 дней</strong><span>{fmt(mods?.actions30d)}</span></li>
-              </ul>
+              <GroupArchive
+                rows={mods?.recent || []}
+                repeats={repeats}
+                watch={summary ? (mods?.watch ?? null) : undefined}
+                onPunish={allowedActions.length > 0 ? pickPerson : null}
+              />
             </section>
           )}
 

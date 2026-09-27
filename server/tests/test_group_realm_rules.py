@@ -49,19 +49,37 @@ def test_position_edit_stays_below_actor():
 def test_cabinet_pages_follow_the_two_lists():
     assert cabinet_pages(["view_archive"]) == ["overview", "archive", "more"]
     people = cabinet_pages(["punish_mute"])
-    assert "people" in people
+    assert "activity" in people
     assert "archive" not in people
     assert "rights" not in people
-    full = ["overview", "people", "archive", "analytics", "rights", "more"]
+    assert "analytics" not in people
+    assert "activity" in cabinet_pages(["view_analytics"])
+    full = ["overview", "activity", "archive", "rights", "more"]
     assert cabinet_pages([], creator=True) == full
     assert cabinet_pages(ALL_RIGHTS) == full
+
+
+def test_activity_windows_cover_day_month_and_year():
+    from datetime import date
+
+    from group_realm import activity_buckets, activity_window, previous_window
+
+    today = date(2026, 9, 27)
+    assert activity_window("day", today) == (today, today, "day")
+    start, end, grain = activity_window("month", today)
+    assert start == date(2026, 9, 1) and end == today and grain == "day"
+    assert len(activity_buckets(start, end, grain)) == 27
+    year_start, year_end, year_grain = activity_window("year", today)
+    assert year_start == date(2026, 1, 1) and year_grain == "month"
+    assert len(activity_buckets(year_start, year_end, year_grain)) == 9
+    assert previous_window("day", today, today) == (date(2026, 9, 26), date(2026, 9, 26))
 
 
 def test_junior_cannot_open_rights_page_by_asking():
     saved = editable_rights(2, ["manage_positions", "view_archive", "punish_ban"], creator=False)
     pages = cabinet_pages(saved)
     assert "archive" in pages
-    assert "people" in pages
+    assert "activity" in pages
     assert "rights" not in pages
     assert "manage_positions" not in saved
 

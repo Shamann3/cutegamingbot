@@ -439,22 +439,26 @@ async def _moderation_counts(chat_id: int) -> Dict[str, Any]:
     try:
         rows = await db.pool.fetch(
             """
-            SELECT created_at, action_type, target_player_id, admin_name, reason,
-                   proof_media_id, evidence
-            FROM staff_actions
-            WHERE chat_id = $1
-            ORDER BY created_at DESC NULLS LAST
-            LIMIT 20
+            SELECT s.id, s.created_at, s.action_type, s.target_player_id, s.admin_name, s.reason,
+                   s.proof_media_id, s.evidence,
+                   u.first_name AS target_name, u.username AS target_username
+            FROM staff_actions s
+            LEFT JOIN users u ON u.user_id = s.target_player_id
+            WHERE s.chat_id = $1
+            ORDER BY s.created_at DESC NULLS LAST
+            LIMIT 40
             """,
             int(chat_id),
         )
         out["recent"] = [
             {
+                "id": _iint(r["id"]),
                 "at": r["created_at"].isoformat() if r["created_at"] else None,
                 "action": r["action_type"],
                 "target_user_id": _iint(r["target_player_id"]),
+                "targetName": r["target_name"] or None,
                 "admin": r["admin_name"],
-                "reason": (r["reason"] or "")[:120],
+                "reason": (r["reason"] or "")[:400],
                 "evidence": (r["evidence"] or "")[:300],
                 "hasProof": bool(r["proof_media_id"]),
                 "proofMediaId": r["proof_media_id"] or None,
@@ -464,6 +468,40 @@ async def _moderation_counts(chat_id: int) -> Dict[str, Any]:
     except Exception:
         pass
     return out
+
+
+async def chat_warn_watch(chat_id: int):
+    """Активные варны этого чата. None — таблица не ответила, [] — никого нет.
+
+    Три предупреждения в одной группе — лимит, после него система банит.
+    """
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT w.user_id,
+                   count(*)::int AS warns,
+                   max(u.first_name) AS name
+            FROM active_warns w
+            LEFT JOIN users u ON u.user_id = w.user_id
+            WHERE w.chat_id = $1
+              AND coalesce(w.mode, 'chat') = 'chat'
+              AND (w.expires_at IS NULL OR w.expires_at > now())
+            GROUP BY w.user_id
+            ORDER BY warns DESC, w.user_id
+            LIMIT 15
+            """,
+            int(chat_id),
+        )
+    except Exception:
+        return None
+    return [
+        {
+            "userId": _iint(r["user_id"]),
+            "name": r["name"] or None,
+            "warns": int(r["warns"] or 0),
+        }
+        for r in rows
+    ]
 
 
 async def _activity_hint(chat_id: int) -> Dict[str, Any]:
