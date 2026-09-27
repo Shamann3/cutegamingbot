@@ -453,8 +453,8 @@ body {
 
 .panel-layout-dashboard {
   display: grid;
-  grid-template-columns: minmax(12.5rem, 15%) repeat(3, minmax(0, 1fr));
-  grid-template-rows: minmax(14rem, auto) minmax(8rem, auto) minmax(17rem, auto);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 0.85rem;
   align-content: start;
 }

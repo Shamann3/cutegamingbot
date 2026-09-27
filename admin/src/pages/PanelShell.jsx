@@ -368,11 +368,9 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
       <main className="panel-shell-main">
         <div
           className={`panel-layout${
-            isDashboard
-              ? ' panel-layout-dashboard'
-              : isUsers
-                ? ' panel-layout-users'
-                : isAccounts
+            isDashboard || isUsers
+              ? ' panel-layout-users'
+              : isAccounts
                   ? ' panel-layout-accounts'
                   : isEconomy
                   ? ' panel-layout-economy'

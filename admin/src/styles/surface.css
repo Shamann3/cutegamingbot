@@ -80,7 +80,7 @@
 
 html.is-desktop .panel-layout-dashboard,
 html[data-viewport="desktop"] .panel-layout-dashboard {
-  grid-template-columns: 232px repeat(3, minmax(0, 1fr)) !important;
+  grid-template-columns: minmax(0, 1fr) !important;
   gap: 12px !important;
 }
 

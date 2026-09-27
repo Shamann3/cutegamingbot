@@ -1656,8 +1656,8 @@ html.is-phone .elite-topbar,
 html.is-phone .elite-topbar-compact,
 html[data-viewport="phone"] .elite-topbar,
 html[data-viewport="phone"] .elite-topbar-compact {
-  background: #000 !important;
-  border-bottom: 1px solid rgba(244, 244, 244, 0.16) !important;
+  background: transparent !important;
+  border-bottom: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
 }
@@ -1790,12 +1790,12 @@ html.is-phone .elite-topbar,
 html.is-phone .elite-topbar-compact,
 html[data-viewport="phone"] .elite-topbar,
 html[data-viewport="phone"] .elite-topbar-compact {
-  background: #000 !important;
-  border-bottom: 1px solid rgba(244, 244, 244, 0.16) !important;
+  background: transparent !important;
+  border-bottom: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .elite-mobile-title,
@@ -2145,7 +2145,9 @@ html[data-viewport="phone"] .gate-status {
 
 /* Игроки: страница сама крутится. Внутренний блок больше не обрезает карточку. */
 html.is-desktop .panel-layout-users > .users-page.panel-users,
-html[data-viewport="desktop"] .panel-layout-users > .users-page.panel-users {
+html[data-viewport="desktop"] .panel-layout-users > .users-page.panel-users,
+html.is-desktop .panel-layout-users > .dash-home.panel-users,
+html[data-viewport="desktop"] .panel-layout-users > .dash-home.panel-users {
   display: block !important;
   height: 100% !important;
   max-height: 100% !important;

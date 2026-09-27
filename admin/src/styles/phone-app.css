@@ -381,7 +381,7 @@ html[data-viewport="desktop"] .panel-mobile-overlay {
 
 html.is-desktop .panel-layout-dashboard,
 html[data-viewport="desktop"] .panel-layout-dashboard {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  grid-template-columns: minmax(0, 1fr) !important;
 }
 
 html.is-desktop .panel-layout-page,

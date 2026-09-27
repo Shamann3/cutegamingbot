@@ -4,6 +4,7 @@ import {
   fetchDashboardServer,
   fetchDashboardStats,
 } from '../../lib/adminClient'
+import { useIsPhone } from '../../lib/useIsDesktop'
 
 const PERIODS = [
   { id: 'day', label: 'День', now: 'сегодня', prev: 'вчера' },
@@ -42,6 +43,7 @@ function UsageCard({ title, pair, meta, loading }) {
 
 /** Главная сотрудника: общая статистика проекта, без онлайна фермы. */
 export default function DashboardSection() {
+  const phone = useIsPhone()
   const [stats, setStats] = useState(null)
   const [server, setServer] = useState(null)
   const [error, setError] = useState('')
@@ -73,54 +75,50 @@ export default function DashboardSection() {
   const meta = PERIODS.find((item) => item.id === period) || PERIODS[0]
 
   return (
-    <div className="dash-home">
-      <article className="panel-shelf panel-shelf-page dash-home-head">
+    <section className={`grp-page nika-page users-page panel-users dash-home${phone ? ' is-phone' : ' is-desktop'}`}>
+      <article className="panel-shelf panel-shelf-page panel-users-search dash-home-head">
         <p className="panel-shelf-label">Обзор проекта</p>
         <h2 className="panel-page-title">Использование Epsilon</h2>
         <p className="panel-page-lead">
-          Активные пользователи, вызовы бота и сообщения в официальных группах.
+          Сообщения в официальных группах, новые пользователи и вызовы бота.
         </p>
         {error && <p className="panel-shelf-error">{error}</p>}
+
+        <div className="dash-period e-seg" role="tablist" aria-label="Период">
+          {PERIODS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={period === item.id ? 'is-on' : ''}
+              onClick={() => setPeriod(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </article>
 
-      <div className="dash-period e-seg" role="tablist" aria-label="Период">
-        {PERIODS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={period === item.id ? 'is-on' : ''}
-            onClick={() => setPeriod(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="dash-usage-grid">
-        <article className="panel-shelf dash-usage-active">
-          <p className="panel-shelf-label">Активные за сутки</p>
-          <p className="panel-stat-value">{loading ? '…' : fmt(usage.activeUsers)}</p>
-          <p className="panel-stat-hint">Заходили в проект за последние 24 часа</p>
-        </article>
-
-        <UsageCard
-          title="Вызовы бота"
-          pair={usage.botEvents?.[period]}
-          meta={meta}
-          loading={loading}
-        />
-        <UsageCard
-          title="Новые пользователи"
-          pair={usage.newUsers?.[period]}
-          meta={meta}
-          loading={loading}
-        />
-        <UsageCard
-          title="Сообщения в официальных группах"
-          pair={usage.officialMessages?.[period]}
-          meta={meta}
-          loading={loading}
-        />
+      <div className="panel-shelf panel-users-card dash-usage-stage">
+        <div className="dash-usage-grid">
+          <UsageCard
+            title="Сообщения в официальных группах"
+            pair={usage.officialMessages?.[period]}
+            meta={meta}
+            loading={loading}
+          />
+          <UsageCard
+            title="Новые пользователи"
+            pair={usage.newUsers?.[period]}
+            meta={meta}
+            loading={loading}
+          />
+          <UsageCard
+            title="Вызовы бота"
+            pair={usage.botEvents?.[period]}
+            meta={meta}
+            loading={loading}
+          />
+        </div>
       </div>
 
       <StatShelfCard
@@ -131,7 +129,7 @@ export default function DashboardSection() {
         quiet
       />
 
-      <article className="panel-shelf panel-shelf-server panel-shelf-quiet">
+      <article className="panel-shelf panel-shelf-server panel-shelf-quiet panel-users-card">
         <p className="panel-shelf-label">Статус панели</p>
         <p className="panel-server-title">
           {loading && 'Проверка…'}
@@ -139,6 +137,6 @@ export default function DashboardSection() {
           {!loading && !apiOk && 'Есть сбой'}
         </p>
       </article>
-    </div>
+    </section>
   )
 }

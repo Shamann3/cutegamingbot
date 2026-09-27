@@ -183,7 +183,6 @@ export default function EliteTopbar({
                 onFocus={() => setOpen(true)}
                 onKeyDown={onKeyDown}
               />
-              {!query && <kbd className="elite-kbd">⌘K</kbd>}
             </div>
 
             {open && query.trim() && (
