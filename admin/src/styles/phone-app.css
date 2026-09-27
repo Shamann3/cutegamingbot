@@ -344,7 +344,7 @@ html[data-viewport="desktop"] .panel-sidebar-mobile-open {
   width: min(22rem, calc(100vw - 24px)) !important;
   height: min(72vh, 40rem) !important;
   max-height: min(72vh, 40rem) !important;
-  z-index: 48 !important;
+  z-index: 420 !important;
   grid-column: auto !important;
   grid-row: auto !important;
   transform: none !important;
@@ -372,11 +372,13 @@ html[data-viewport="desktop"] .panel-sidebar-mobile-open {
 
 html.is-desktop .panel-mobile-overlay,
 html[data-viewport="desktop"] .panel-mobile-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 44;
-  background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(2px);
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 400 !important;
+  background: rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+  pointer-events: auto !important;
 }
 
 html.is-desktop .panel-layout-dashboard,

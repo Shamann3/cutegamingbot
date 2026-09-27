@@ -350,7 +350,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
       {phone && !mobileNavOpen && (
         <button type="button" className="phone-edge" aria-label="Открыть разделы" onClick={() => setMobileNavOpen(true)} />
       )}
-      <PanelDrawerOverlay open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+      <PanelDrawerOverlay open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} ms={700} />
 
       {isProjectCreator && (
         <NikaCrisisStrip

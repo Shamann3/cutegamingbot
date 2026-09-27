@@ -7,6 +7,9 @@ import EpsilonLogo from './EpsilonLogo'
 import AccentPalette from './AccentPalette'
 import { useIsPhone } from '../lib/useIsDesktop'
 import { CopyableUsername } from './Copyable'
+import { telegramDissolve } from '../lib/telegramDissolve'
+
+const DISSOLVE_MS = 700
 
 function SpeakerIcon({ muted }) {
   return (
@@ -118,10 +121,45 @@ export default function PanelSidebar({
   const initials = getAdminInitials(displayName)
   const [navQuery, setNavQuery] = useState('')
   const settingsRef = useRef(null)
+  const asideRef = useRef(null)
+  const [visuallyOpen, setVisuallyOpen] = useState(mobileOpen)
+  const [dissolving, setDissolving] = useState(false)
+  const dissolvingRef = useRef(false)
 
   const closeSettings = () => {
     if (isPhone && settingsRef.current?.open) settingsRef.current.open = false
   }
+
+  // Закрытие: испарение на частицы (как удаление сообщения в Telegram), ≤0.7с
+  useEffect(() => {
+    const el = asideRef.current
+    if (mobileOpen) {
+      dissolvingRef.current = false
+      setDissolving(false)
+      setVisuallyOpen(true)
+      if (el) {
+        el.style.visibility = ''
+        el.style.pointerEvents = ''
+        el.style.opacity = ''
+      }
+      return undefined
+    }
+    if (!visuallyOpen) return undefined
+    if (dissolvingRef.current) return undefined
+    dissolvingRef.current = true
+    setDissolving(true)
+    let cancelled = false
+    ;(async () => {
+      await telegramDissolve(el, { duration: DISSOLVE_MS })
+      if (cancelled) return
+      setVisuallyOpen(false)
+      setDissolving(false)
+      dissolvingRef.current = false
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [mobileOpen, visuallyOpen])
 
   const goTo = (id) => {
     closeSettings()
@@ -161,6 +199,22 @@ export default function PanelSidebar({
     return undefined
   }, [mobileOpen, isPhone])
 
+  // Клик вне панели (сотрудники и админы) — закрыть. Overlay тоже закрывает;
+  // этот слушатель ловит случаи, когда клик прошёл мимо dimmer.
+  useEffect(() => {
+    if (!mobileOpen || typeof onClose !== 'function') return undefined
+    const onPointer = (event) => {
+      if (dissolvingRef.current) return
+      const root = event.target?.closest?.('.panel-shelf-sidebar, .panel-dissolve-canvas')
+      const dock = event.target?.closest?.('.phone-dock, .phone-edge, .elite-menu-btn')
+      const palette = event.target?.closest?.('.accent-picker-panel, .accent-picker-root, .accent-wheel-wrap')
+      if (root || dock || palette) return
+      onClose()
+    }
+    document.addEventListener('pointerdown', onPointer, true)
+    return () => document.removeEventListener('pointerdown', onPointer, true)
+  }, [mobileOpen, onClose])
+
   const settingsProps = {
     accent,
     onAccentChange,
@@ -174,7 +228,8 @@ export default function PanelSidebar({
 
   return (
     <aside
-      className={`panel-shelf panel-shelf-sidebar${mobileOpen ? ' panel-sidebar-mobile-open' : ''}`}
+      ref={asideRef}
+      className={`panel-shelf panel-shelf-sidebar${visuallyOpen ? ' panel-sidebar-mobile-open' : ''}${dissolving ? ' is-dissolving' : ''}`}
     >
       {/* Mobile drawer chrome — на desktop скрыт CSS */}
       <div className="panel-sidebar-grab">

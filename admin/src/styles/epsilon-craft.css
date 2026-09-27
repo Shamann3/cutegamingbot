@@ -645,6 +645,7 @@ html[data-viewport="desktop"] .panel-sidebar-mobile-open {
   width: min(26rem, calc(100vw - 32px)) !important;
   height: min(78vh, 44rem) !important;
   max-height: min(78vh, 44rem) !important;
+  z-index: 420 !important;
   border-radius: 22px !important;
   background: rgba(18, 18, 20, 0.98) !important;
   border: 1px solid rgba(var(--e-accent-rgb, 200, 175, 255), 0.28) !important;
@@ -657,8 +658,10 @@ html[data-viewport="desktop"] .panel-sidebar-mobile-open {
 
 html.is-desktop .panel-mobile-overlay,
 html[data-viewport="desktop"] .panel-mobile-overlay {
+  z-index: 400 !important;
   background: rgba(0, 0, 0, 0.5) !important;
   backdrop-filter: blur(4px) !important;
+  pointer-events: auto !important;
 }
 
 /* Mobile menu sheet */
@@ -1325,25 +1328,36 @@ html[data-viewport="desktop"] .elite-topbar-actions {
   background: transparent !important;
 }
 
-/* Overlay drawer: плавный fade */
+/* Overlay drawer: плавный fade — всегда выше контента, ниже открытой панели */
 .panel-mobile-overlay {
-  appearance: none;
-  border: 0;
-  padding: 0;
-  margin: 0;
+  appearance: none !important;
+  border: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
   cursor: pointer;
-  position: fixed;
-  inset: 0;
-  z-index: 310;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 400 !important;
   background: rgba(0, 0, 0, 0.55) !important;
   backdrop-filter: blur(6px) !important;
   -webkit-backdrop-filter: blur(6px) !important;
   opacity: 0;
-  transition: opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: auto !important;
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1) !important;
   animation: none !important;
 }
 .panel-mobile-overlay.is-shown {
-  opacity: 1;
+  opacity: 1 !important;
+}
+
+.panel-dissolve-canvas {
+  pointer-events: none !important;
+  z-index: 430 !important;
+}
+
+.panel-shelf-sidebar.is-dissolving,
+.panel-sidebar-mobile-open.is-dissolving {
+  transition: none !important;
 }
 
 /* Cyberpunk dashboard */
@@ -1458,4 +1472,55 @@ html[data-viewport="desktop"] .elite-topbar-actions {
 
 .dash-home.dash-cyber {
   gap: 1.05rem;
+}
+
+/* ——— Поиск: одна капсула, без «квадрата» внутри ——— */
+.panel-shell .elite-search input,
+.panel-shell .elite-search input:focus,
+.panel-shell .elite-search input:focus-visible,
+.panel-shell .elite-search input:not(:placeholder-shown),
+.panel-shell .panel-sidebar-search input,
+.panel-shell .panel-sidebar-search input:focus,
+.panel-shell .panel-sidebar-search input:focus-visible,
+.panel-shell .extras-hub-search input,
+.panel-shell .extras-hub-search input:focus,
+html.is-phone .panel-shell-main .elite-search input,
+html[data-viewport="phone"] .panel-shell-main .elite-search input,
+html.is-phone .panel-shell-main .panel-sidebar-search input,
+html[data-viewport="phone"] .panel-shell-main .panel-sidebar-search input {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border-radius: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.panel-shell .elite-search,
+.panel-shell .panel-sidebar-search,
+.panel-shell .extras-hub-search {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Overlay всегда ловит клик снаружи */
+.panel-mobile-overlay {
+  z-index: 400 !important;
+  pointer-events: auto !important;
+}
+.panel-mobile-overlay.is-shown {
+  opacity: 1 !important;
+}
+.panel-sidebar-mobile-open {
+  z-index: 420 !important;
 }

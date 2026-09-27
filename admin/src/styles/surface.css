@@ -205,6 +205,20 @@ html[data-viewport="desktop"] .panel-layout-security {
   box-sizing: border-box;
 }
 
+.panel-shell .elite-search input,
+.panel-shell .panel-sidebar-search input,
+.panel-shell .extras-hub-search input {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  flex: 1 1 auto !important;
+  border: 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
 .panel-shell textarea {
   flex: 0 0 auto !important;
   min-height: 72px !important;
@@ -225,6 +239,18 @@ html[data-viewport="desktop"] .panel-layout-security {
   outline: none !important;
   border-color: rgba(255, 255, 255, 0.38) !important;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+}
+
+.panel-shell .elite-search input:focus,
+.panel-shell .elite-search input:focus-visible,
+.panel-shell .panel-sidebar-search input:focus,
+.panel-shell .panel-sidebar-search input:focus-visible,
+.panel-shell .extras-hub-search input:focus,
+.panel-shell .extras-hub-search input:focus-visible {
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  background: transparent !important;
 }
 
 .act-figures {

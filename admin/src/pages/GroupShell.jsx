@@ -421,7 +421,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           onDone={() => setCoach(false)}
         />
       )}
-      <PanelDrawerOverlay open={railOpen} onClose={closeRail} />
+      <PanelDrawerOverlay open={railOpen} onClose={closeRail} ms={700} />
       <main className="panel-shell-main">
       <div className="panel-layout panel-layout-page">
         <PanelSidebar

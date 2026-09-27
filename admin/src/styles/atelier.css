@@ -300,12 +300,35 @@ textarea,
     box-shadow var(--e-fast) var(--e-ease) !important;
 }
 
+/* Капсула поиска — без второго «поля» внутри */
+.elite-search input,
+.panel-sidebar-search input,
+.extras-hub-search input {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  outline: none !important;
+}
+
 input:not([type='range']):focus,
 select:focus,
 textarea:focus {
   outline: none !important;
   border-color: var(--e-accent-line) !important;
   box-shadow: 0 0 0 3px var(--e-accent-soft) !important;
+}
+
+.elite-search input:focus,
+.elite-search input:focus-visible,
+.panel-sidebar-search input:focus,
+.panel-sidebar-search input:focus-visible,
+.extras-hub-search input:focus,
+.extras-hub-search input:focus-visible {
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  background: transparent !important;
 }
 
 /* ---------- Таблицы ---------- */
