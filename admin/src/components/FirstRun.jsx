@@ -35,7 +35,7 @@ export function groupSteps(phone) {
     {
       title: 'Эта группа',
       body: 'Чат и должность. Ниже смена: сегодня против вчера.',
-      target: '.realm-top h1',
+      target: '.nika-head h1',
     },
     {
       title: 'Страницы',
@@ -198,6 +198,11 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
   useEffect(() => {
     onStep?.(step)
   }, [step, onStep])
+
+  useEffect(() => {
+    document.documentElement.classList.add('is-coaching')
+    return () => document.documentElement.classList.remove('is-coaching')
+  }, [])
 
   useEffect(() => {
     let cancelled = false

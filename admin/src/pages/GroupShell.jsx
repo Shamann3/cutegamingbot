@@ -386,13 +386,17 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
             ? `${current?.position ? `${current.position} · ` : ''}${fmt(summary?.messages30d)} сообщений за 30 дней`
             : 'Группа ещё не выбрана. Её отмечает создатель проекта.'}
         />
-        <div className="realm-main">
-          <header className="realm-top">
-            <div>
+        <div className="grp-page nika-page realm-main">
+          <header className="nika-head">
+            <div className="nika-head-copy">
               <h1>{chatId ? title : 'Группа не выбрана'}</h1>
-              <p className="realm-copy">
-                {phone ? 'Страницы — кнопка меню справа сверху.' : 'Страницы этой группы — список слева.'}
+              <p>
+                {phone ? 'Страницы открываются кнопкой меню, как в панели сотрудников.' : 'Страницы слева, как в панели сотрудников.'}
               </p>
+            </div>
+            <div className={`nika-status${chatId ? ' is-ok' : ''}`}>
+              <b>{current?.position || (chatId ? 'Группа' : 'Пусто')}</b>
+              <span>{chatId ? `${fmt(summary?.messages30d)} за 30 дней` : 'её отмечает создатель'}</span>
             </div>
           </header>
           {error && (
@@ -579,20 +583,6 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
         </div>
       </div>
       </main>
-      {phone && (
-        <nav className="realm-tabbar" aria-label="Страницы группы">
-          {navSections.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={activeTab === item.id && !chapter ? 'is-on' : ''}
-              onClick={() => pickTab(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-      )}
     </div>
   )
 }

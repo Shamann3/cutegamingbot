@@ -32,7 +32,7 @@ html.panel-nav-open body {
 html.panel-nav-open .panel-shell {
   overflow: hidden !important;
   overscroll-behavior: none !important;
-  touch-action: none;
+  touch-action: auto;
 }
 
 html.panel-nav-open .panel-shelf-sidebar {

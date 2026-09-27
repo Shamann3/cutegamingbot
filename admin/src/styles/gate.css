@@ -520,7 +520,7 @@ html[data-viewport="phone"] .realm-tabbar button {
 
 html.is-phone .panel-shell-main,
 html[data-viewport="phone"] .panel-shell-main {
-  padding-bottom: calc(var(--tg-content-bottom, 0px) + 76px) !important;
+  padding-bottom: max(0.55rem, env(safe-area-inset-bottom, 0px), var(--tg-content-bottom, 0px)) !important;
 }
 
 html.is-phone .arc-filters,
@@ -2114,4 +2114,300 @@ html[data-viewport="phone"] .gate-status {
 .guard-open {
   min-width: 0;
   max-width: 100%;
+}
+
+/* Игроки: страница сама крутится. Внутренний блок больше не обрезает карточку. */
+html.is-desktop .panel-layout-users > .users-page.panel-users,
+html[data-viewport="desktop"] .panel-layout-users > .users-page.panel-users {
+  display: block !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+html.is-desktop .grp-page.nika-page.users-page .panel-users-body,
+html[data-viewport="desktop"] .grp-page.nika-page.users-page .panel-users-body {
+  display: flex !important;
+  flex: none !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+/* Обучение не глушит жест. Список вкладок листается, карточка не занимает экран. */
+html.panel-nav-open .panel-shell {
+  touch-action: auto !important;
+}
+
+html.panel-nav-open .panel-sidebar-nav,
+html.is-coaching .panel-sidebar-nav {
+  touch-action: pan-y !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+html.is-coaching .firstrun-sheet,
+html.is-coaching .firstrun-sheet.is-anchored {
+  max-height: min(220px, 36vh);
+  overflow: auto;
+}
+
+html.is-phone.is-coaching .firstrun-title,
+html[data-viewport="phone"].is-coaching .firstrun-title {
+  font-size: 1.15rem;
+}
+
+/* Кабинет группы — тот же каркас, что Ника и Игроки. */
+.panel-layout > .realm-main {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+  min-height: 0 !important;
+  height: 100%;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.15rem 0.2rem 1.4rem;
+  box-sizing: border-box;
+}
+
+html.is-phone .panel-layout > .realm-main,
+html[data-viewport="phone"] .panel-layout > .realm-main {
+  grid-column: 1 !important;
+  grid-row: auto !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.realm-main.nika-page > section {
+  margin-top: 0.85rem;
+  padding: 1.05rem 1.05rem 1.15rem;
+  border-radius: 26px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 32%),
+    #111111;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 28px 52px -30px rgba(0, 0, 0, 0.92);
+}
+
+.realm-main.nika-page .realm-h {
+  margin: 0;
+  font-size: 1.22rem;
+  letter-spacing: -0.035em;
+  color: #fff;
+  font-weight: 700;
+}
+
+.realm-main.nika-page .realm-copy,
+.realm-main.nika-page .realm-note {
+  margin: 0.45rem 0 0;
+  color: #a39b96;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.realm-main.nika-page .realm-back,
+.realm-main.nika-page .realm-search button,
+.realm-main.nika-page .realm-form button[type="submit"] {
+  min-height: 44px;
+  padding: 0.45rem 0.9rem;
+  border-radius: 10px !important;
+  border: 1px solid #f4f4f5 !important;
+  background: #f4f4f5 !important;
+  color: #111 !important;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.realm-main.nika-page .realm-back:disabled,
+.realm-main.nika-page .realm-form button[type="submit"]:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+
+.realm-main.nika-page .realm-actions,
+.realm-main.nika-page .act-periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  margin-top: 0.75rem;
+  padding: 0.28rem;
+  border-radius: 10px;
+  background: #1c1c1e;
+}
+
+.realm-main.nika-page .realm-actions button,
+.realm-main.nika-page .act-periods button {
+  flex: 1 1 auto;
+  min-height: 40px;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: #c4bbb4 !important;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 620;
+  padding: 0.45rem 0.8rem !important;
+  cursor: pointer;
+}
+
+.realm-main.nika-page .realm-actions button.is-on,
+.realm-main.nika-page .act-periods button.is-on {
+  background: #3a3a3c !important;
+  color: #fff !important;
+}
+
+.realm-main.nika-page .realm-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.realm-main.nika-page .realm-list > li,
+.realm-main.nika-page .realm-row {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.realm-main.nika-page .realm-list button,
+.realm-main.nika-page a.realm-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.35rem 0.7rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.65rem 0.75rem;
+  border: 0;
+  border-radius: 14px;
+  background: #0b0b0b;
+  color: #f4f0ec;
+  text-align: left;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.realm-main.nika-page .realm-list button.is-on {
+  outline: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.realm-main.nika-page .realm-form,
+.realm-main.nika-page .realm-search,
+.realm-main.nika-page .guard-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+  min-width: 0;
+}
+
+.realm-main.nika-page .realm-form label,
+.realm-main.nika-page .realm-field {
+  flex: 1 1 12rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: #a39b96;
+  font-size: 0.78rem;
+}
+
+.realm-main.nika-page input,
+.realm-main.nika-page select,
+.realm-main.nika-page .guard-field {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #0b0b0b;
+  color: #f4f0ec;
+  font: inherit;
+  font-size: 16px;
+  padding: 0 12px;
+}
+
+.realm-main.nika-page .g-arc-grid {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 901px) {
+  .realm-main.nika-page .g-arc-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+}
+
+/* Игрок: вкладки остаются сверху, пока листаешь карточку. Лишние уезжают вбок, не вниз. */
+html.is-desktop .grp-page.users-page .users-toolbar,
+html[data-viewport="desktop"] .grp-page.users-page .users-toolbar {
+  position: sticky !important;
+  top: 0;
+  z-index: 6;
+  margin: 0 0 0.65rem;
+  padding: 0.35rem 0 0.45rem;
+  background: #050505;
+}
+
+html.is-desktop .grp-page.users-page .users-toolbar .nika-seg,
+html[data-viewport="desktop"] .grp-page.users-page .users-toolbar .nika-seg {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+html.is-desktop .grp-page.users-page .users-toolbar .nika-seg-btn,
+html[data-viewport="desktop"] .grp-page.users-page .users-toolbar .nika-seg-btn {
+  flex: 0 0 auto;
+}
+
+html.is-desktop .grp-page.users-page .pu-profile-layout,
+html.is-desktop .grp-page.users-page .pu-hero-card,
+html.is-desktop .grp-page.users-page .panel-users-right,
+html.is-desktop .grp-page.users-page .pu-tab-pane,
+html[data-viewport="desktop"] .grp-page.users-page .pu-profile-layout,
+html[data-viewport="desktop"] .grp-page.users-page .pu-hero-card,
+html[data-viewport="desktop"] .grp-page.users-page .panel-users-right,
+html[data-viewport="desktop"] .grp-page.users-page .pu-tab-pane {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+/* Наказание в группе остаётся у нижнего края, пока смотришь активность. */
+.realm-main.nika-page #realm-punish {
+  position: sticky;
+  bottom: 0.35rem;
+  z-index: 4;
+  margin-top: 0.9rem;
+  padding: 0.85rem;
+  border-radius: 18px;
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 -16px 36px rgba(0, 0, 0, 0.55);
+}
+
+.realm-main.nika-page .realm-list .realm-back {
+  width: auto;
+  margin-top: 0.35rem;
+  justify-content: center;
+  background: #f4f4f5 !important;
+  color: #111 !important;
+  border: 1px solid #f4f4f5 !important;
+  border-radius: 10px !important;
 }
