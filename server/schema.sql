@@ -119,11 +119,13 @@ CREATE TABLE IF NOT EXISTS bot_command_day_counts (
 CREATE INDEX IF NOT EXISTS bot_command_day_counts_day_idx
     ON bot_command_day_counts (day DESC);
 
--- Дневной оборот кут в играх (сколько кут разыграли пользователи)
+-- Дневной оборот кут в системе (ставки и выплаты по играм)
 CREATE TABLE IF NOT EXISTS bot_game_wager_day_totals (
     day DATE PRIMARY KEY,
     kut BIGINT NOT NULL DEFAULT 0,
     plays BIGINT NOT NULL DEFAULT 0,
+    kut_lost BIGINT NOT NULL DEFAULT 0,
+    kut_won BIGINT NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS bot_game_wager_day_totals_day_idx

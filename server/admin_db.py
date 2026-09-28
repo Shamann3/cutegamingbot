@@ -1974,8 +1974,12 @@ async def _ensure_bot_command_counts_table(pool) -> None:
     )
 
 
+_wager_schema_ready = False
+
+
 async def _ensure_game_wager_table(pool) -> None:
-    if pool is None:
+    global _wager_schema_ready
+    if pool is None or _wager_schema_ready:
         return
     await pool.execute(
         """
@@ -1985,10 +1989,70 @@ async def _ensure_game_wager_table(pool) -> None:
             plays BIGINT NOT NULL DEFAULT 0,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        ALTER TABLE bot_game_wager_day_totals ADD COLUMN IF NOT EXISTS kut_lost BIGINT NOT NULL DEFAULT 0;
+        ALTER TABLE bot_game_wager_day_totals ADD COLUMN IF NOT EXISTS kut_won  BIGINT NOT NULL DEFAULT 0;
         CREATE INDEX IF NOT EXISTS bot_game_wager_day_totals_day_idx
             ON bot_game_wager_day_totals (day DESC);
         """
     )
+    _wager_schema_ready = True
+    # Бэкфилл может занять секунды — не держим на нём поллинг главной.
+    import asyncio as _asyncio
+    try:
+        _asyncio.get_running_loop().create_task(_backfill_game_wager(pool))
+    except RuntimeError:
+        await _backfill_game_wager(pool)
+
+
+# Названия игр в cutehistory.cause — те же, что у счётчика в боте.
+_GAME_CAUSE_WORDS = (
+    "шашки", "мемори", "бинго", "фортуна", "кости", "дуэль",
+    "орел", "орёл", "решка", "кнб", "мины", "крестики", "нолики",
+    "башня", "риск", "плиты", "бомбы", "трейд", "шарик", "провода",
+    "слоты", "баскетбол", "футбол", "боулинг", "дартс", "куб",
+    "рулетка", "слова", "инлайн кн",
+)
+
+# Скан ограничен хвостом cutehistory по первичному ключу.
+_WAGER_BACKFILL_ROWS = 400_000
+
+
+async def _backfill_game_wager(pool) -> None:
+    """Одноразово поднимает историю оборота из хвоста cutehistory.
+
+    Без этого карточка показывала бы ноль до первой сыгранной партии.
+    """
+    try:
+        empty = await pool.fetchval(
+            "SELECT NOT EXISTS (SELECT 1 FROM bot_game_wager_day_totals)"
+        )
+        if not empty:
+            return
+        patterns = [f"%{word}%" for word in _GAME_CAUSE_WORDS]
+        await pool.execute(
+            r"""
+            INSERT INTO bot_game_wager_day_totals (day, kut, plays, kut_lost, kut_won, updated_at)
+            SELECT to_date(split_part(h.data, ' ', 2), 'DD.MM.YYYY')                 AS day,
+                   COALESCE(SUM(COALESCE(h."-", 0) + COALESCE(h."+", 0)), 0)::bigint AS kut,
+                   COUNT(*)::bigint                                                  AS plays,
+                   COALESCE(SUM(COALESCE(h."-", 0)), 0)::bigint                      AS kut_lost,
+                   COALESCE(SUM(COALESCE(h."+", 0)), 0)::bigint                      AS kut_won,
+                   NOW()
+            FROM cutehistory h
+            WHERE h.id > GREATEST((SELECT COALESCE(MAX(id), 0) FROM cutehistory) - $1::bigint, 0)
+              AND h.data ~ '^[0-9]{2}:[0-9]{2} [0-9]{2}\.[0-9]{2}\.[0-9]{4}$'
+              AND h.cause ILIKE ANY ($2::text[])
+              AND h.cause NOT ILIKE '%перевод%'
+              AND h.cause NOT ILIKE '%sypher%'
+            GROUP BY 1
+            ON CONFLICT (day) DO NOTHING
+            """,
+            _WAGER_BACKFILL_ROWS,
+            patterns,
+            timeout=25,
+        )
+    except Exception:
+        _log.exception("backfill bot_game_wager_day_totals failed")
 
 
 async def _fetch_game_wager_from_db(pool) -> dict:
@@ -2034,7 +2098,35 @@ async def _fetch_game_wager_from_db(pool) -> dict:
           COALESCE(SUM(kut) FILTER (
             WHERE day >= (date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 year')::date
               AND day <  date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
-          ), 0)::bigint AS year_prev
+          ), 0)::bigint AS year_prev,
+          COALESCE(SUM(kut_lost) FILTER (
+            WHERE day = (NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS day_lost,
+          COALESCE(SUM(kut_won) FILTER (
+            WHERE day = (NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS day_won,
+          COALESCE(SUM(kut_lost) FILTER (
+            WHERE day >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date
+              AND day <  date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date + 7
+          ), 0)::bigint AS week_lost,
+          COALESCE(SUM(kut_won) FILTER (
+            WHERE day >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date
+              AND day <  date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date + 7
+          ), 0)::bigint AS week_won,
+          COALESCE(SUM(kut_lost) FILTER (
+            WHERE day >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date
+              AND day <  (date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow') + INTERVAL '1 month')::date
+          ), 0)::bigint AS month_lost,
+          COALESCE(SUM(kut_won) FILTER (
+            WHERE day >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date
+              AND day <  (date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow') + INTERVAL '1 month')::date
+          ), 0)::bigint AS month_won,
+          COALESCE(SUM(kut_lost) FILTER (
+            WHERE day >= date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS year_lost,
+          COALESCE(SUM(kut_won) FILTER (
+            WHERE day >= date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS year_won
         FROM bot_game_wager_day_totals
         WHERE day >= (date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 year')::date
         """
@@ -2042,10 +2134,22 @@ async def _fetch_game_wager_from_db(pool) -> dict:
     if not row:
         return empty
     return {
-        "day": {"current": int(row["day_cur"] or 0), "previous": int(row["day_prev"] or 0)},
-        "week": {"current": int(row["week_cur"] or 0), "previous": int(row["week_prev"] or 0)},
-        "month": {"current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0)},
-        "year": {"current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0)},
+        "day": {
+            "current": int(row["day_cur"] or 0), "previous": int(row["day_prev"] or 0),
+            "lost": int(row["day_lost"] or 0), "won": int(row["day_won"] or 0),
+        },
+        "week": {
+            "current": int(row["week_cur"] or 0), "previous": int(row["week_prev"] or 0),
+            "lost": int(row["week_lost"] or 0), "won": int(row["week_won"] or 0),
+        },
+        "month": {
+            "current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0),
+            "lost": int(row["month_lost"] or 0), "won": int(row["month_won"] or 0),
+        },
+        "year": {
+            "current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0),
+            "lost": int(row["year_lost"] or 0), "won": int(row["year_won"] or 0),
+        },
     }
 
 
@@ -2165,6 +2269,12 @@ async def _fetch_messages_periods(pool, *, official_only: bool) -> dict:
     }
 
 
+# Скан users/chatchange держим на отдельном кэше — счётчики бота всё равно
+# сбрасываются пачками, а сканировать таблицы каждую секунду незачем.
+_HEAVY_CACHE: dict = {"at": 0.0, "data": None}
+_HEAVY_TTL = 3.0
+
+
 async def get_project_usage_stats_light(pool) -> dict:
     """Лёгкая сводка для live-поллинга (1 Гц). Без тяжёлых COUNT(*) по game_events."""
     empty = {
@@ -2199,6 +2309,17 @@ async def get_project_usage_stats_light(pool) -> dict:
         out["gameWager"] = await _fetch_game_wager_from_db(pool)
     except Exception:
         _log.exception("bot_game_wager_day_totals read failed")
+
+    # Тяжёлые агрегаты (users, chatchange) живут отдельным кэшем: счётчики
+    # сообщений в боте всё равно сбрасываются пачками, поэтому скан таблицы
+    # каждую секунду не даёт новых цифр, а нагрузку создаёт.
+    import time as _time
+
+    now_mono = _time.monotonic()
+    heavy = _HEAVY_CACHE.get("data")
+    if heavy is not None and (now_mono - float(_HEAVY_CACHE.get("at") or 0)) < _HEAVY_TTL:
+        out.update(heavy)
+        return out
 
     # Новые пользователи — один запрос с week
     try:
@@ -2342,11 +2463,20 @@ async def get_project_usage_stats_light(pool) -> dict:
     except Exception:
         pass
 
+    _HEAVY_CACHE["at"] = now_mono
+    _HEAVY_CACHE["data"] = {
+        "newUsers": out["newUsers"],
+        "allMessages": out["allMessages"],
+        "officialMessages": out["officialMessages"],
+        "activeUsers": out["activeUsers"],
+    }
     return out
 
 
 _LIVE_CACHE: dict = {"at": 0.0, "payload": None}
-_LIVE_TTL = 0.85
+# На каждом поллинге заново читаются только крошечные дневные счётчики
+# (вызовы бота и оборот кут). Всё остальное пересчитывается раз в несколько секунд.
+_LIVE_TTL = 3.0
 
 
 async def get_dashboard_live() -> dict:

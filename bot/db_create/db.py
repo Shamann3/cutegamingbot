@@ -7463,7 +7463,7 @@ class Database:
 
         try:
             from bot.runtime.bot_command_stats import note_game_cause_amount
-            note_game_cause_amount(cause, amount)
+            note_game_cause_amount(cause, amount, won=True)
         except Exception:
             pass
 

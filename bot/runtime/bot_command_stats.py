@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS bot_game_wager_day_totals (
     plays BIGINT NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE bot_game_wager_day_totals ADD COLUMN IF NOT EXISTS kut_lost BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE bot_game_wager_day_totals ADD COLUMN IF NOT EXISTS kut_won  BIGINT NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS bot_game_wager_day_totals_day_idx
     ON bot_game_wager_day_totals (day DESC);
 """
@@ -72,8 +74,11 @@ def note_bot_command(n: int = 1, *, day: date | None = None) -> None:
     _schedule_flush()
 
 
-def note_game_wager(amount, *, day: date | None = None) -> None:
-    """Синхронно +amount кут к обороту игр за день. Не блокирует, не await."""
+def note_game_wager(amount, *, won: bool = False, day: date | None = None) -> None:
+    """Синхронно +amount кут к обороту за день. Не блокирует, не await.
+
+    Буфер на день: [оборот, число операций, проиграно, выиграно].
+    """
     try:
         value = int(abs(float(amount)))
     except (TypeError, ValueError):
@@ -83,10 +88,11 @@ def note_game_wager(amount, *, day: date | None = None) -> None:
     d = day or _today_msk()
     bucket = _pending_wager.get(d)
     if bucket is None:
-        _pending_wager[d] = [value, 1]
-    else:
-        bucket[0] += value
-        bucket[1] += 1
+        bucket = [0, 0, 0, 0]
+        _pending_wager[d] = bucket
+    bucket[0] += value
+    bucket[1] += 1
+    bucket[3 if won else 2] += value
     _schedule_flush()
 
 
@@ -130,17 +136,68 @@ async def ensure_bot_command_stats_schema(pool) -> None:
     except Exception:
         logger.exception("ensure bot_command_day_counts failed")
 
+    await backfill_game_wager_totals(pool)
+
+
+# Хвост cutehistory для одноразового бэкфилла — скан ограничен по PK.
+_WAGER_BACKFILL_ROWS = 400_000
+
+_WAGER_BACKFILL_SQL = """
+INSERT INTO bot_game_wager_day_totals (day, kut, plays, kut_lost, kut_won, updated_at)
+SELECT to_date(split_part(h.data, ' ', 2), 'DD.MM.YYYY')                       AS day,
+       COALESCE(SUM(COALESCE(h."-", 0) + COALESCE(h."+", 0)), 0)::bigint       AS kut,
+       COUNT(*)::bigint                                                        AS plays,
+       COALESCE(SUM(COALESCE(h."-", 0)), 0)::bigint                            AS kut_lost,
+       COALESCE(SUM(COALESCE(h."+", 0)), 0)::bigint                            AS kut_won
+     , NOW()
+FROM cutehistory h
+WHERE h.id > GREATEST((SELECT COALESCE(MAX(id), 0) FROM cutehistory) - $1::bigint, 0)
+  AND h.data ~ '^[0-9]{2}:[0-9]{2} [0-9]{2}\\.[0-9]{2}\\.[0-9]{4}$'
+  AND h.cause ILIKE ANY ($2::text[])
+  AND h.cause NOT ILIKE '%перевод%'
+  AND h.cause NOT ILIKE '%sypher%'
+GROUP BY 1
+ON CONFLICT (day) DO NOTHING
+"""
+
+_wager_backfill_done = False
+
+
+async def backfill_game_wager_totals(pool) -> None:
+    """Одноразово поднимает историю оборота из хвоста cutehistory.
+
+    Нужен, чтобы карточка не показывала ноль до первой сыгранной партии.
+    Скан ограничен последними _WAGER_BACKFILL_ROWS строками по первичному ключу.
+    """
+    global _wager_backfill_done
+    if _wager_backfill_done or pool is None:
+        return
+    _wager_backfill_done = True
+    try:
+        async with pool.acquire() as conn:
+            empty = await conn.fetchval(
+                "SELECT NOT EXISTS (SELECT 1 FROM bot_game_wager_day_totals)"
+            )
+            if not empty:
+                return
+            patterns = [f"%{word}%" for word in _GAME_CAUSE_WORDS]
+            await conn.execute(
+                _WAGER_BACKFILL_SQL, _WAGER_BACKFILL_ROWS, patterns, timeout=25,
+            )
+    except Exception:
+        logger.exception("backfill bot_game_wager_day_totals failed")
+
 
 def _requeue(commands: dict[date, int], wagers: dict[date, list[int]]) -> None:
     for d, n in commands.items():
         _pending[d] = _pending.get(d, 0) + n
-    for d, (kut, plays) in wagers.items():
+    for d, values in wagers.items():
         bucket = _pending_wager.get(d)
         if bucket is None:
-            _pending_wager[d] = [kut, plays]
+            _pending_wager[d] = list(values)
         else:
-            bucket[0] += kut
-            bucket[1] += plays
+            for i, v in enumerate(values):
+                bucket[i] += v
 
 
 async def flush_bot_command_counts(pool=None) -> None:
@@ -181,21 +238,26 @@ async def flush_bot_command_counts(pool=None) -> None:
                             d,
                             int(n),
                         )
-                    for d, (kut, plays) in wager_snapshot.items():
+                    for d, (kut, plays, lost, won) in wager_snapshot.items():
                         if kut <= 0:
                             continue
                         await conn.execute(
                             """
-                            INSERT INTO bot_game_wager_day_totals (day, kut, plays, updated_at)
-                            VALUES ($1, $2, $3, NOW())
+                            INSERT INTO bot_game_wager_day_totals
+                                (day, kut, plays, kut_lost, kut_won, updated_at)
+                            VALUES ($1, $2, $3, $4, $5, NOW())
                             ON CONFLICT (day) DO UPDATE SET
                               kut = bot_game_wager_day_totals.kut + EXCLUDED.kut,
                               plays = bot_game_wager_day_totals.plays + EXCLUDED.plays,
+                              kut_lost = bot_game_wager_day_totals.kut_lost + EXCLUDED.kut_lost,
+                              kut_won = bot_game_wager_day_totals.kut_won + EXCLUDED.kut_won,
                               updated_at = NOW()
                             """,
                             d,
                             int(kut),
                             int(plays),
+                            int(lost),
+                            int(won),
                         )
         except Exception:
             logger.exception("flush bot stats counters failed — requeue")
@@ -312,36 +374,44 @@ async def fetch_bot_command_periods(pool) -> dict:
 
 
 async def fetch_game_wager_periods(pool) -> dict:
-    """Оборот кут в играх: day/week/month/year (+ previous). Учитывает буфер."""
+    """Оборот кут: day/week/month/year (+ previous, проиграно, выиграно)."""
     out = _empty_periods()
     if pool is None:
         return out
     await ensure_bot_command_stats_schema(pool)
     today = _today_msk()
     since = date(today.year - 1, 1, 1)
-    by_day: dict[date, int] = {}
+    total_by_day: dict[date, int] = {}
+    lost_by_day: dict[date, int] = {}
+    won_by_day: dict[date, int] = {}
     try:
         rows = await pool.fetch(
             """
-            SELECT day, kut::bigint AS kut
+            SELECT day, kut::bigint AS kut, kut_lost::bigint AS lost, kut_won::bigint AS won
             FROM bot_game_wager_day_totals
             WHERE day >= $1
             """,
             since,
         )
         for r in rows:
-            by_day[r["day"]] = int(r["kut"] or 0)
+            total_by_day[r["day"]] = int(r["kut"] or 0)
+            lost_by_day[r["day"]] = int(r["lost"] or 0)
+            won_by_day[r["day"]] = int(r["won"] or 0)
     except Exception:
         logger.exception("fetch bot_game_wager_day_totals failed")
         return out
 
     for d, bucket in list(_pending_wager.items()):
-        by_day[d] = by_day.get(d, 0) + int(bucket[0])
+        total_by_day[d] = total_by_day.get(d, 0) + int(bucket[0])
+        lost_by_day[d] = lost_by_day.get(d, 0) + int(bucket[2])
+        won_by_day[d] = won_by_day.get(d, 0) + int(bucket[3])
 
     for key, (cs, ce, ps, pe) in _period_bounds(today).items():
         out[key] = {
-            "current": _sum_range(by_day, cs, ce),
-            "previous": _sum_range(by_day, ps, pe),
+            "current": _sum_range(total_by_day, cs, ce),
+            "previous": _sum_range(total_by_day, ps, pe),
+            "lost": _sum_range(lost_by_day, cs, ce),
+            "won": _sum_range(won_by_day, cs, ce),
         }
     return out
 
@@ -372,10 +442,10 @@ def is_game_cause(cause: Any) -> bool:
     return any(word in text for word in _GAME_CAUSE_WORDS)
 
 
-def note_game_cause_amount(cause: Any, amount) -> None:
+def note_game_cause_amount(cause: Any, amount, *, won: bool = False) -> None:
     """Хук для cutehistory: считает оборот, только если cause — игровой."""
     if is_game_cause(cause):
-        note_game_wager(amount)
+        note_game_wager(amount, won=won)
 
 
 

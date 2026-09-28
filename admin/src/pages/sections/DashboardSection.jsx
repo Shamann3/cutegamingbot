@@ -21,6 +21,29 @@ function fmt(n) {
   return new Intl.NumberFormat('ru-RU').format(Number(n))
 }
 
+const COMPACT_STEPS = [
+  { at: 1e12, unit: 'трлн' },
+  { at: 1e9, unit: 'млрд' },
+  { at: 1e6, unit: 'млн' },
+  { at: 1e3, unit: 'тыс' },
+]
+
+/** Короткая запись — чтобы миллионные суммы не распирали карточку. */
+function fmtCompact(n) {
+  const value = Number(n)
+  if (!Number.isFinite(value)) return '—'
+  const abs = Math.abs(value)
+  const step = COMPACT_STEPS.find((item) => abs >= item.at)
+  if (!step) return new Intl.NumberFormat('ru-RU').format(value)
+  const scaled = value / step.at
+  const digits = Math.abs(scaled) >= 100 ? 0 : 1
+  const text = new Intl.NumberFormat('ru-RU', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: digits,
+  }).format(scaled)
+  return `${text} ${step.unit}`
+}
+
 function toneClass(current, previous) {
   const a = Number(current)
   const b = Number(previous)
@@ -39,12 +62,12 @@ function CollectingCopy() {
   )
 }
 
-function UsageCard({ title, pair, meta, loading, suffix }) {
-  const current = pair?.current
+function UsageCard({ title, pair, meta, loading, suffix, period, split }) {
+  const current = Number(pair?.current ?? 0)
   const previous = pair?.previous
   return (
     <div
-      className={`dash-usage-card${loading ? ' is-collecting' : ''} ${loading ? '' : toneClass(current, previous)}`}
+      className={`dash-usage-card${loading ? ' is-collecting' : ''}${split ? ' has-split' : ''} ${loading ? '' : toneClass(current, previous)}`}
     >
       <span className="dash-usage-label">{title}</span>
       {loading ? (
@@ -52,13 +75,25 @@ function UsageCard({ title, pair, meta, loading, suffix }) {
       ) : (
         <>
           <strong className="dash-usage-value">
-            {fmt(current)}
+            <CountUp key={`${title}-${period}`} value={current} duration={400} />
             {suffix ? <span className="dash-usage-unit">{suffix}</span> : null}
           </strong>
           <span className="dash-usage-hint">
             {meta.now}
-            {previous != null ? ` · ${meta.prev}: ${fmt(previous)}` : ''}
+            {previous != null ? ` · ${meta.prev}: ${fmtCompact(previous)}` : ''}
           </span>
+          {split && (
+            <div className="dash-usage-split">
+              <span className="dash-usage-split-item is-lost">
+                <span className="dash-usage-split-key">проиграно</span>
+                <span className="dash-usage-split-val">{fmtCompact(split.lost)}</span>
+              </span>
+              <span className="dash-usage-split-item is-won">
+                <span className="dash-usage-split-key">выиграно</span>
+                <span className="dash-usage-split-val">{fmtCompact(split.won)}</span>
+              </span>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -174,6 +209,7 @@ export default function DashboardSection() {
   const usage = stats?.usage || {}
   const meta = PERIODS.find((item) => item.id === period) || PERIODS[0]
   const botPair = usage.botEvents?.[period] || { current: 0, previous: 0 }
+  const wagerPair = usage.gameWager?.[period] || { current: 0, previous: 0, lost: 0, won: 0 }
   const botNow = Number(botPair.current ?? 0)
   const botPrev = Number(botPair.previous ?? 0)
   const collecting = loading || !stats
@@ -216,7 +252,7 @@ export default function DashboardSection() {
         ) : (
           <>
             <strong className="dash-bot-hero-value">
-              <CountUp key={`bot-${period}-${botNow}`} value={botNow} duration={400} />
+              <CountUp key={`bot-${period}`} value={botNow} duration={400} />
             </strong>
             <span className="dash-bot-hero-sub">
               {meta.now}
@@ -226,26 +262,38 @@ export default function DashboardSection() {
         )}
       </div>
 
-      <div className="panel-shelf panel-users-card dash-usage-stage dash-cyber-stage">
+      <div className="panel-shelf panel-users-card dash-usage-stage dash-cyber-stage" data-live={liveTick}>
+        {!collecting && (
+          <div className="dash-usage-livebar">
+            <span className="dash-bot-hero-live" title="Обновление каждую секунду">
+              <span className="dash-bot-hero-live-dot" aria-hidden="true" />
+              1с
+            </span>
+          </div>
+        )}
         <div className="dash-usage-grid">
           <UsageCard
-            title="Сообщения · все группы бота"
+            title="Сообщения во всех группах с ботом"
             pair={usage.allMessages?.[period]}
             meta={meta}
             loading={collecting}
+            period={period}
           />
           <UsageCard
-            title="Разыграно в играх"
-            pair={usage.gameWager?.[period]}
+            title="Оборот кут в системе"
+            pair={wagerPair}
             meta={meta}
             loading={collecting}
+            period={period}
             suffix=" кут"
+            split={{ lost: wagerPair.lost ?? 0, won: wagerPair.won ?? 0 }}
           />
           <UsageCard
-            title="Сообщения · официальные группы"
+            title="Сообщения во всех официальных группах проекта"
             pair={usage.officialMessages?.[period]}
             meta={meta}
             loading={collecting}
+            period={period}
           />
         </div>
       </div>

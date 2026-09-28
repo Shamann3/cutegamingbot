@@ -2,13 +2,17 @@ import { useEffect, useRef } from 'react'
 
 const GLYPHS = 'アイウエオカキクケコサシスセソタチツテトナニヌネノ0123456789ΣΔΛΞΨΩ<>/{}[]=+*#$'
 const FONT_SIZE = 15
-const FPS = 24
 
 /**
- * Матричный «дождь кода» на фоне экрана загрузки.
- * Один canvas, ~24 fps, цвет берётся из акцента палитры.
+ * Матричный «дождь кода» на фоне.
+ * Один canvas, ограниченный fps, пауза во вкладке в фоне.
+ * Цвет берётся из акцента палитры.
  */
-export default function MatrixRain({ paused = false }) {
+export default function MatrixRain({
+  paused = false,
+  className = 'ent-matrix',
+  fps = 24,
+}) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -26,10 +30,9 @@ export default function MatrixRain({ paused = false }) {
     let height = 0
     let columns = 0
     let drops = []
-    let dpr = 1
 
     const resize = () => {
-      dpr = Math.min(window.devicePixelRatio || 1, 2)
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
       width = canvas.clientWidth || window.innerWidth
       height = canvas.clientHeight || window.innerHeight
       canvas.width = Math.floor(width * dpr)
@@ -38,10 +41,9 @@ export default function MatrixRain({ paused = false }) {
       ctx.font = `${FONT_SIZE}px "SFMono-Regular", "JetBrains Mono", Menlo, monospace`
       ctx.textBaseline = 'top'
       const nextColumns = Math.max(1, Math.floor(width / FONT_SIZE))
-      drops = Array.from({ length: nextColumns }, (_, i) => {
-        const prev = drops[i]
-        return prev != null ? prev : -Math.random() * (height / FONT_SIZE)
-      })
+      drops = Array.from({ length: nextColumns }, (_, i) => (
+        drops[i] != null ? drops[i] : -Math.random() * (height / FONT_SIZE)
+      ))
       columns = nextColumns
       ctx.clearRect(0, 0, width, height)
     }
@@ -51,10 +53,11 @@ export default function MatrixRain({ paused = false }) {
 
     let raf = 0
     let last = 0
-    const frameMs = 1000 / FPS
+    const frameMs = 1000 / Math.max(1, fps)
 
     const draw = (now) => {
       raf = window.requestAnimationFrame(draw)
+      if (document.hidden) return
       if (now - last < frameMs) return
       last = now
 
@@ -62,20 +65,16 @@ export default function MatrixRain({ paused = false }) {
       ctx.fillRect(0, 0, width, height)
 
       for (let i = 0; i < columns; i += 1) {
-        const glyph = GLYPHS[(Math.random() * GLYPHS.length) | 0]
         const x = i * FONT_SIZE
         const y = drops[i] * FONT_SIZE
 
         ctx.fillStyle = `rgba(${accentRgb}, 0.92)`
-        ctx.fillText(glyph, x, y)
+        ctx.fillText(GLYPHS[(Math.random() * GLYPHS.length) | 0], x, y)
         ctx.fillStyle = `rgba(${accentRgb}, 0.22)`
         ctx.fillText(GLYPHS[(Math.random() * GLYPHS.length) | 0], x, y - FONT_SIZE)
 
-        if (y > height && Math.random() > 0.975) {
-          drops[i] = 0
-        } else {
-          drops[i] += 1
-        }
+        if (y > height && Math.random() > 0.975) drops[i] = 0
+        else drops[i] += 1
       }
     }
 
@@ -85,9 +84,9 @@ export default function MatrixRain({ paused = false }) {
       window.cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)
     }
-  }, [paused])
+  }, [paused, fps])
 
   if (paused) return null
 
-  return <canvas ref={canvasRef} className="ent-matrix" aria-hidden="true" />
+  return <canvas ref={canvasRef} className={className} aria-hidden="true" />
 }

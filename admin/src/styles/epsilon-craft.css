@@ -1566,6 +1566,82 @@ html[data-viewport="desktop"] .elite-topbar-actions {
   color: var(--e-text-3, #8e8e93);
 }
 
+/* Карточки не должны распираться длинными числами */
+.dash-usage-card {
+  min-width: 0;
+  overflow: hidden;
+  container-type: inline-size;
+}
+.dash-usage-card .dash-usage-label,
+.dash-usage-card .dash-usage-hint {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.dash-usage-card .dash-usage-value {
+  min-width: 0;
+  max-width: 100%;
+  font-size: clamp(1.1rem, 4.6cqw, 1.55rem);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-usage-livebar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.55rem;
+}
+
+/* Оборот: проиграно слева снизу, выиграно справа снизу */
+.dash-usage-card.has-split {
+  position: relative;
+  padding-bottom: 2.5rem;
+}
+.dash-usage-split {
+  position: absolute;
+  left: 0.7rem;
+  right: 0.7rem;
+  bottom: 0.62rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.dash-usage-split-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+  flex: 1 1 0;
+  overflow: hidden;
+}
+.dash-usage-split-item.is-won {
+  align-items: flex-end;
+  text-align: right;
+}
+.dash-usage-split-key {
+  font-size: 0.56rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--e-text-3, #6f6f75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.dash-usage-split-val {
+  font-size: clamp(0.62rem, 3.2cqw, 0.82rem);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.dash-usage-split-item.is-lost .dash-usage-split-val { color: #fca5a5; }
+.dash-usage-split-item.is-won .dash-usage-split-val { color: #86efac; }
+
 /* Центральная карточка — акцент проекта */
 .dash-usage-stage .dash-usage-grid > .dash-usage-card:nth-child(2) {
   border-color: rgba(var(--e-accent-rgb), 0.28) !important;

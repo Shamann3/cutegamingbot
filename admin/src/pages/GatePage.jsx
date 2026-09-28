@@ -4,17 +4,30 @@ import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccen
 import { portraitFrom } from '../lib/gateRecovery'
 import EpsilonLogo from '../components/EpsilonLogo'
 import AccentPalette from '../components/AccentPalette'
+import MatrixRain from '../components/MatrixRain'
 
 /** Доступ ещё не сверен — двери уже видны и кликабельны. */
 const GUEST_PORTRAIT = portraitFrom(null)
 
-function Door({ title, detail, open, onClick }) {
+/** Слабое устройство или запрошен покой — фон без анимации. */
+function detectCalmGate() {
+  if (typeof window === 'undefined') return true
+  try {
+    if (localStorage.getItem('cf_admin_perf') === '1') return true
+  } catch { /* ignore */ }
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return true
+  return (navigator.hardwareConcurrency || 4) <= 2
+}
+
+function Door({ title, detail, open, onClick, order = 0 }) {
   return (
     <button
       type="button"
-      className={`gate-door${open ? ' is-open' : ' is-sealed'}`}
+      className={`gate-door gate-rise${open ? ' is-open' : ' is-sealed'}`}
+      style={{ '--rise': order }}
       onClick={onClick}
     >
+      <span className="gate-door-sheen" aria-hidden="true" />
       <span className="gate-door-title">{title}</span>
       <span className="gate-door-detail">{detail}</span>
       <span className="gate-door-mark">{open ? 'Войти' : 'Закрыто'}</span>
@@ -34,6 +47,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   const [error, setError] = useState('')
   const [portrait, setPortrait] = useState(GUEST_PORTRAIT)
   const [hold, setHold] = useState(false)
+  const [calm] = useState(detectCalmGate)
   const requestId = useRef(0)
 
   const load = useCallback(() => {
@@ -87,17 +101,22 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   }
 
   return (
-    <div className={`gate-root${personal ? ' is-personal' : ''}`}>
+    <div className={`gate-root gate-anim${personal ? ' is-personal' : ''}`}>
+      <MatrixRain className="gate-matrix" paused={calm} fps={16} />
+      <div className="gate-veil" aria-hidden="true" />
       <div className="gate-frame" aria-hidden="true" />
       <div className={`gate-sheet${colorOpen ? ' is-color' : ''}`}>
         <header className="gate-head">
-          <EpsilonLogo size="sm" decorative />
-          <h1 className="gate-title">Куда вам нужно войти?</h1>
-          <p className="gate-lead">Выберите один из вариантов</p>
-          <p className="gate-lead">По желанию вы можете выбрать любой цвет интерфейса для приятной работы</p>
+          <span className="gate-rise gate-logo-slot" style={{ '--rise': 0 }}>
+            <EpsilonLogo size="sm" decorative />
+          </span>
+          <h1 className="gate-title gate-rise" style={{ '--rise': 1 }}>Куда вам нужно войти?</h1>
+          <p className="gate-lead gate-rise" style={{ '--rise': 2 }}>Выберите один из вариантов</p>
+          <p className="gate-lead gate-rise" style={{ '--rise': 3 }}>По желанию вы можете выбрать любой цвет интерфейса для приятной работы</p>
           <button
             type="button"
-            className="gate-color-btn"
+            className="gate-color-btn gate-rise"
+            style={{ '--rise': 4 }}
             aria-expanded={colorOpen}
             onClick={() => setColorOpen((open) => !open)}
           >
@@ -143,12 +162,14 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
               detail={staffDetail}
               open={portrait.staffCanEnter}
               onClick={pressStaff}
+              order={5}
             />
             <Door
               title="Панель администратора"
               detail={groupDetail}
               open={portrait.groupCanEnter}
               onClick={pressGroup}
+              order={6}
             />
           </div>
         )}
