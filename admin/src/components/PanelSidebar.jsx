@@ -120,15 +120,10 @@ export default function PanelSidebar({
   const { displayName, username, photoUrl } = getAdminProfile()
   const initials = getAdminInitials(displayName)
   const [navQuery, setNavQuery] = useState('')
-  const settingsRef = useRef(null)
   const asideRef = useRef(null)
   const [visuallyOpen, setVisuallyOpen] = useState(mobileOpen)
   const [dissolving, setDissolving] = useState(false)
   const dissolvingRef = useRef(false)
-
-  const closeSettings = () => {
-    if (isPhone && settingsRef.current?.open) settingsRef.current.open = false
-  }
 
   // Закрытие: испарение на частицы (как удаление сообщения в Telegram), ≤0.7с
   useEffect(() => {
@@ -162,7 +157,6 @@ export default function PanelSidebar({
   }, [mobileOpen, visuallyOpen])
 
   const goTo = (id) => {
-    closeSettings()
     onNavigate(id)
   }
 
@@ -195,7 +189,6 @@ export default function PanelSidebar({
     if (!isPhone) return undefined
     if (!mobileOpen) {
       setNavQuery('')
-      closeSettings()
     }
     return undefined
   }, [mobileOpen, isPhone])
@@ -239,8 +232,8 @@ export default function PanelSidebar({
             <h2 className="panel-sidebar-drawer-title">{isPhone ? 'Меню' : 'Страницы'}</h2>
             <p className="panel-sidebar-swipe-hint">
               {isPhone
-                ? 'Главные вкладки внизу. Здесь поиск, цвет и выход.'
-                : 'Нажмите название. Свайп влево плавно закрывает список.'}
+                ? 'Все разделы здесь. Настройки — внизу этого меню.'
+                : 'Нажмите название раздела.'}
             </p>
           </div>
           <button
@@ -379,21 +372,13 @@ export default function PanelSidebar({
               </div>
             </div>
 
-            <AccentPalette value={accent} onChange={onAccentChange} />
-
-            <details ref={settingsRef} className="panel-sidebar-settings">
-              <summary className="panel-sidebar-settings-sum">
-                <span className="panel-sidebar-settings-label">Ещё настройки</span>
-                <span className="panel-sidebar-settings-cue" aria-hidden="true">
-                  <span className="panel-sidebar-settings-hint-closed">Открыть</span>
-                  <span className="panel-sidebar-settings-hint-open">Свернуть</span>
-                  <span className="panel-sidebar-settings-chevron">▾</span>
-                </span>
-              </summary>
+            <div className="panel-sidebar-settings panel-sidebar-settings-pin">
+              <p className="panel-sidebar-settings-label">Настройки</p>
               <div className="panel-sidebar-settings-body">
+                <AccentPalette value={accent} onChange={onAccentChange} />
                 <SettingsControls {...settingsProps} />
               </div>
-            </details>
+            </div>
           </>
         ) : (
           <>

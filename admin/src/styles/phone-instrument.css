@@ -595,3 +595,239 @@ html[data-viewport="desktop"] .panel-shell .panel-layout > .arc-shell {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* Рабочая зона несёт цвет пользователя и тает в чёрный фон. */
+html.is-desktop .panel-shell .panel-shell-main,
+html[data-viewport="desktop"] .panel-shell .panel-shell-main,
+html.is-phone .panel-shell .panel-shell-main,
+html[data-viewport="phone"] .panel-shell .panel-shell-main {
+  background:
+    radial-gradient(88% 42% at 50% -8%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.34), transparent 58%),
+    linear-gradient(180deg, rgba(var(--e-accent-rgb, 200, 175, 255), 0.14) 0%, rgba(16, 16, 18, 0.96) 34%, #050505 100%) !important;
+  box-shadow: inset 0 1px 0 rgba(var(--e-accent-rgb, 200, 175, 255), 0.28);
+}
+
+html.is-phone .phone-dock.is-tabs-menu,
+html[data-viewport="phone"] .phone-dock.is-tabs-menu {
+  padding: 8px !important;
+}
+
+html.is-phone .phone-dock-all,
+html[data-viewport="phone"] .phone-dock-all {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 50px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  padding: 0 16px !important;
+  border: 0 !important;
+  border-radius: 20px !important;
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.16) !important;
+  color: #fff !important;
+  font: inherit !important;
+  cursor: pointer;
+}
+
+html.is-phone .phone-dock-all span,
+html[data-viewport="phone"] .phone-dock-all span {
+  font-size: 15px !important;
+  font-weight: 750 !important;
+  letter-spacing: -0.03em !important;
+}
+
+html.is-phone .phone-dock-all b,
+html[data-viewport="phone"] .phone-dock-all b {
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  color: rgba(255, 255, 255, 0.72) !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.is-phone .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html[data-viewport="phone"] .panel-shelf-sidebar.panel-sidebar-mobile-open {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+}
+
+html.is-phone .panel-sidebar-mobile-open .panel-sidebar-nav,
+html[data-viewport="phone"] .panel-sidebar-mobile-open .panel-sidebar-nav {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+}
+
+html.is-phone .panel-sidebar-mobile-open .panel-sidebar-footer,
+html[data-viewport="phone"] .panel-sidebar-mobile-open .panel-sidebar-footer {
+  flex: 0 0 auto !important;
+  margin-top: auto !important;
+}
+
+html.is-phone .panel-sidebar-settings-pin,
+html[data-viewport="phone"] .panel-sidebar-settings-pin {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-top: 12px;
+  padding: 12px 0 4px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), #000 18px);
+}
+
+.role-ladder {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 18px;
+}
+
+.role-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  min-height: 76px;
+  padding: 14px 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(var(--e-accent-rgb, 200, 175, 255), 0.16), rgba(28, 28, 30, 0.96) 46%);
+  color: #fff;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.role-card strong {
+  font-size: 1.15rem;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+}
+
+.role-card span,
+.role-card-rank {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.82rem;
+}
+
+.role-card-rank {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.focus-dim {
+  position: fixed;
+  inset: 0;
+  z-index: 820;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.62);
+  animation: focusDimIn 0.2s ease both;
+}
+
+.focus-sheet {
+  width: 100%;
+  max-height: min(92dvh, 920px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 28px 28px 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    radial-gradient(80% 36% at 50% 0%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.22), transparent 60%),
+    #111113;
+  color: #fff;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  animation: focusSheetIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.focus-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 16px 12px;
+  flex-shrink: 0;
+}
+
+.focus-sheet-head h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+}
+
+.focus-sheet-head p {
+  margin: 6px 0 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.focus-sheet-close {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.focus-sheet-body {
+  overflow-y: auto;
+  padding: 4px 16px max(24px, env(safe-area-inset-bottom));
+  min-height: 0;
+}
+
+.focus-sheet .g-arc-proof {
+  max-height: none;
+  height: auto;
+  object-fit: contain;
+  border-radius: 16px;
+}
+
+@keyframes focusDimIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes focusSheetIn {
+  from { transform: translate3d(0, 24px, 0); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (min-width: 901px) {
+  .focus-dim {
+    align-items: center;
+    padding: 28px;
+  }
+
+  .focus-sheet {
+    width: min(720px, 100%);
+    max-height: min(86dvh, 860px);
+    border-radius: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focus-dim,
+  .focus-sheet,
+  .gate-stage {
+    animation: none !important;
+  }
+}

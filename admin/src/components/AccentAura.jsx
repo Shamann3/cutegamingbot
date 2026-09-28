@@ -1,28 +1,33 @@
 import { useState } from 'react'
 import MatrixRain from './MatrixRain'
+import { usePerfMode } from '../lib/perfMode'
 
-function deviceIsCalm() {
+function deviceIsStill() {
   if (typeof window === 'undefined') return true
-  try {
-    if (localStorage.getItem('cf_admin_perf') === '1') return true
-  } catch { /* ignore */ }
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return true
   return (navigator.hardwareConcurrency || 4) <= 2
 }
 
 /**
- * Фон панелей: мягкий градиент выбранного цвета сверху
- * и редкий дождь символов в верхней полосе. На слабых
- * устройствах остаётся только градиент — он ничего не считает.
+ * Фон панелей: градиент выбранного цвета и редкий дождь символов сверху.
+ * В режиме оптимизации дождь остаётся, но колонок почти нет.
+ * На слабом железе и при «уменьшить движение» остаётся только градиент.
  */
 export default function AccentAura() {
-  const [calm] = useState(deviceIsCalm)
+  const { lightMode } = usePerfMode()
+  const [still] = useState(deviceIsStill)
+  const sparse = lightMode || still
   return (
     <div className="accent-aura" aria-hidden="true">
       <div className="accent-aura-wash" />
-      {calm ? null : (
+      {still ? null : (
         <div className="accent-aura-slot">
-          <MatrixRain className="accent-aura-rain" fps={18} prewarm={6} />
+          <MatrixRain
+            className="accent-aura-rain"
+            density={sparse ? 0.1 : 1}
+            fps={sparse ? 10 : 18}
+            prewarm={sparse ? 2 : 6}
+          />
         </div>
       )}
     </div>

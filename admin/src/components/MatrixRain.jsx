@@ -23,6 +23,7 @@ export default function MatrixRain({
   className = 'ent-matrix',
   fps = 30,
   prewarm = 0,
+  density = 1,
 }) {
   const canvasRef = useRef(null)
 
@@ -46,7 +47,9 @@ export default function MatrixRain({
     let width = 0
     let height = 0
     let cell = 16
+    let columnGap = 16
     let columns = []
+    const span = Math.max(0.06, Math.min(1, Number(density) || 1))
 
     const warmFrames = Math.max(0, Math.floor(prewarm))
     let warmed = false
@@ -79,7 +82,7 @@ export default function MatrixRain({
 
       for (let i = 0; i < columns.length; i += 1) {
         const col = columns[i]
-        const x = i * cell
+        const x = i * columnGap
         const y = col.y * cell
 
         // Глиф меняется не каждый кадр — иначе колонка «кипит» и мельтешит.
@@ -112,7 +115,9 @@ export default function MatrixRain({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.font = `${cell - 2}px "SFMono-Regular", "JetBrains Mono", Menlo, monospace`
       ctx.textBaseline = 'top'
-      const count = Math.max(1, Math.ceil(width / cell))
+      const full = Math.max(1, Math.ceil(width / cell))
+      const count = Math.max(1, Math.round(full * span))
+      columnGap = width / count
       const next = new Array(count)
       for (let i = 0; i < count; i += 1) next[i] = columns[i] || makeColumn(true)
       columns = next
@@ -152,7 +157,7 @@ export default function MatrixRain({
       window.cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)
     }
-  }, [paused, fps, prewarm])
+  }, [paused, fps, prewarm, density])
 
   if (paused) return null
 

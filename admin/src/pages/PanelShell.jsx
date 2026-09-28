@@ -64,22 +64,8 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [accent, setAccent] = useState(() => loadStoredAccent())
 
   useEffect(() => {
-    if (lightMode) {
-      // Лёгкий / чёрно-белый режим — монохром, без цветной подсветки
-      applyAccentToDocument({
-        id: 'mono',
-        label: 'Ч/Б',
-        hex: '#C8C8C8',
-        h: 0,
-        s: 0,
-        v: 0.78,
-        glow: 28,
-      })
-    } else {
-      // HD — цвет пользователя
-      applyAccentToDocument(accent)
-    }
-  }, [accent, lightMode])
+    applyAccentToDocument(accent)
+  }, [accent])
 
   const handleAccentChange = useCallback((next) => {
     const saved = persistAccent(next)
@@ -110,7 +96,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
     setMobileNavOpen(Boolean(step?.openNav))
   }, [])
   useDrawerSwipe({
-    enabled: phone,
+    enabled: false,
     open: mobileNavOpen,
     onOpen: () => setMobileNavOpen(true),
     onClose: () => setMobileNavOpen(false),
@@ -351,9 +337,6 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
       <PanelBackgroundMusic volume={musicVolume} />
 
       {/* Mobile: dimmer under fullscreen nav drawer */}
-      {phone && !mobileNavOpen && (
-        <button type="button" className="phone-edge" aria-label="Открыть разделы" onClick={() => setMobileNavOpen(true)} />
-      )}
       <PanelDrawerOverlay open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} ms={700} />
 
       {isProjectCreator && (
@@ -598,6 +581,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
         }}
         menuOpen={mobileNavOpen}
         onOpenMenu={() => setMobileNavOpen((open) => !open)}
+        tabsInMenu={phone}
       />
     </div>
     </MetricSheetProvider>

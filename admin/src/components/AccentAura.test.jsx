@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import AccentAura from './AccentAura'
 
 vi.mock('./MatrixRain', () => ({
-  default: () => <div data-testid="rain" />,
+  default: ({ density }) => <div data-testid="rain" data-density={String(density)} />,
 }))
 
 function media(matches) {
@@ -35,10 +35,11 @@ describe('AccentAura', () => {
     expect(queryByTestId('rain')).toBeNull()
   })
 
-  it('в режиме оптимизации дождя нет', () => {
+  it('в режиме оптимизации дождь остаётся, но очень редкий', () => {
     media(false)
+    Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, value: 8 })
     localStorage.setItem('cf_admin_perf', '1')
-    const { queryByTestId } = render(<AccentAura />)
-    expect(queryByTestId('rain')).toBeNull()
+    const { getByTestId } = render(<AccentAura />)
+    expect(getByTestId('rain').dataset.density).toBe('0.1')
   })
 })

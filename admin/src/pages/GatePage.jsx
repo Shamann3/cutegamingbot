@@ -6,16 +6,14 @@ import EpsilonLogo from '../components/EpsilonLogo'
 import AccentPalette from '../components/AccentPalette'
 import MatrixRain from '../components/MatrixRain'
 import { useOutsideDismiss } from '../lib/outsideDismiss'
+import { usePerfMode } from '../lib/perfMode'
 
 /** Доступ ещё не сверен — двери уже видны и кликабельны. */
 const GUEST_PORTRAIT = portraitFrom(null)
 
-/** Слабое устройство или запрошен покой — фон без анимации. */
-function detectCalmGate() {
+/** Слабое устройство или системный покой — дождь не считаем совсем. */
+function detectStillGate() {
   if (typeof window === 'undefined') return true
-  try {
-    if (localStorage.getItem('cf_admin_perf') === '1') return true
-  } catch { /* ignore */ }
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return true
   return (navigator.hardwareConcurrency || 4) <= 2
 }
@@ -48,7 +46,9 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   const [error, setError] = useState('')
   const [portrait, setPortrait] = useState(GUEST_PORTRAIT)
   const [hold, setHold] = useState(false)
-  const [calm] = useState(detectCalmGate)
+  const [still] = useState(detectStillGate)
+  const { lightMode, setLightMode } = usePerfMode()
+  const sparse = lightMode && !still
   const requestId = useRef(0)
   const paletteRef = useRef(null)
 
@@ -108,10 +108,17 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
 
   return (
     <div className={`gate-root gate-anim${personal ? ' is-personal' : ''}`}>
-      <MatrixRain className="gate-matrix" paused={calm} fps={30} prewarm={40} />
+      <MatrixRain
+        className="gate-matrix"
+        paused={still}
+        density={sparse ? 0.08 : 1}
+        fps={sparse ? 10 : 28}
+        prewarm={sparse ? 3 : 36}
+      />
       <div className="gate-veil" aria-hidden="true" />
       <div className="gate-frame" aria-hidden="true" />
       <div className={`gate-sheet${colorOpen ? ' is-color' : ''}`}>
+        <div className="gate-stage">
         <header className="gate-head">
           <span className="gate-rise gate-logo-slot" style={{ '--rise': 0 }}>
             <EpsilonLogo size="sm" decorative />
@@ -120,14 +127,24 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
           <p className="gate-lead gate-rise" style={{ '--rise': 2 }}>Выберите один из вариантов</p>
           <p className="gate-lead gate-rise" style={{ '--rise': 3 }}>По желанию вы можете выбрать любой цвет интерфейса для приятной работы</p>
           <div className="gate-palette-slot gate-rise" style={{ '--rise': 4 }} ref={paletteRef}>
+            <div className="gate-tools">
             <button
               type="button"
               className="gate-color-btn"
               aria-expanded={colorOpen}
               onClick={() => setColorOpen((open) => !open)}
             >
-              {colorOpen ? 'Скрыть палитру' : 'Изменить цвет интерфейса'}
+              {colorOpen ? 'Скрыть палитру' : 'Цвет интерфейса'}
             </button>
+            <button
+              type="button"
+              className={`gate-color-btn gate-perf-btn${lightMode ? ' is-on' : ''}`}
+              aria-pressed={lightMode}
+              onClick={() => setLightMode(!lightMode)}
+            >
+              {lightMode ? 'Обычный режим' : 'Оптимизировать'}
+            </button>
+            </div>
             {colorOpen && (
               <div className="gate-palette-pop">
                 <AccentPalette
@@ -182,6 +199,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
             />
           </div>
         )}
+        </div>
       </div>
     </div>
   )

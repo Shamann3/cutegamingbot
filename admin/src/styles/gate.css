@@ -58,6 +58,15 @@
   to   { opacity: 0.34; }
 }
 
+body.perf-light .gate-matrix {
+  animation-name: gateMatrixLite;
+}
+
+@keyframes gateMatrixLite {
+  from { opacity: 0; }
+  to { opacity: 0.12; }
+}
+
 /* Мягкое затемнение поверх дождя, чтобы текст оставался читаемым */
 .gate-veil {
   position: fixed;
@@ -2032,19 +2041,50 @@ html[data-viewport="desktop"] .elite-brand-slot {
   justify-content: flex-start;
 }
 
+.gate-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 18px 18px;
+  border-radius: 28px;
+  border: 1px solid rgba(var(--e-accent-rgb, 200, 175, 255), 0.28);
+  background:
+    radial-gradient(90% 46% at 50% 0%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.26), transparent 62%),
+    linear-gradient(180deg, rgba(28, 28, 30, 0.94), rgba(8, 8, 10, 0.9));
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.45);
+}
+
+.gate-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
 .gate-color-btn {
   appearance: none;
   align-self: flex-start;
-  margin-top: 8px;
+  margin-top: 0;
   min-height: 48px;
   padding: 12px 18px;
   border-radius: 999px;
   border: 1px solid var(--gate-line);
-  background: transparent;
+  background: rgba(0, 0, 0, 0.28);
   color: var(--gate-ink);
   font: inherit;
   font-size: 15px;
   cursor: pointer;
+}
+
+.gate-perf-btn.is-on {
+  background: var(--gate-fill);
+  color: var(--gate-fill-ink);
+  border-color: transparent;
+}
+
+.gate-door.is-sealed {
+  background:
+    linear-gradient(180deg, rgba(var(--e-accent-rgb, 200, 175, 255), 0.12), rgba(22, 22, 24, 0.92) 48%);
 }
 
 .gate-color-btn:focus-visible {

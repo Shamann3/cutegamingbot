@@ -131,10 +131,8 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
     setRailOpen(Boolean(step?.openNav))
   }, [])
   useEffect(() => {
-    applyAccentToDocument(lightMode
-      ? { id: 'mono', label: 'Ч/Б', hex: '#C8C8C8', h: 0, s: 0, v: 0.78, glow: 28 }
-      : accent)
-  }, [accent, lightMode])
+    applyAccentToDocument(accent)
+  }, [accent])
   const navSections = useMemo(() => tabs.map((item) => ({
     id: item.id,
     label: item.label,
@@ -148,7 +146,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
           : 'overview',
   })), [tabs])
   useDrawerSwipe({
-    enabled: phone,
+    enabled: false,
     open: railOpen,
     onOpen: () => setRailOpen(true),
     onClose: closeRail,
@@ -730,6 +728,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
         onNavigate={pickTab}
         menuOpen={railOpen}
         onOpenMenu={() => setRailOpen((open) => !open)}
+        tabsInMenu={phone}
       />
     </div>
   )

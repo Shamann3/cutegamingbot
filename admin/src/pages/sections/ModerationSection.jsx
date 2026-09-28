@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import TgPhoto from '../../components/TgPhoto'
 import {
   deleteModerationLog, fetchAppealMessages, fetchAppeals, fetchModerationLogs,
@@ -154,7 +155,12 @@ function CaseModal({ item, role, perms, onClose, onUnbanned, onOpenUser }) {
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') requestClose() }
     window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', h)
+      document.body.style.overflow = prev
+    }
   }, [requestClose])
 
   async function handleUnban() {
@@ -181,12 +187,18 @@ function CaseModal({ item, role, perms, onClose, onUnbanned, onOpenUser }) {
   const playerOffenseCount = playerHistory.filter(h => ['ban','mute','kick','warn'].includes(h.actionType)).length
   const isRecidivist = playerOffenseCount > 2
 
-  return (
+  return createPortal(
     <div
       className={`case-backdrop${closing ? ' case-backdrop-out' : ''}`}
       onClick={requestClose}
     >
-      <div className="case-modal case-modal-full" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="case-modal case-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Дело ${item.id}`}
+        onClick={(e) => e.stopPropagation()}
+      >
 
         {/* Обложка */}
         <div className="case-cover" style={{ '--cc': meta.color, '--cb': meta.bg, '--cg': meta.glow }}>
@@ -452,7 +464,8 @@ function CaseModal({ item, role, perms, onClose, onUnbanned, onOpenUser }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -1213,17 +1226,21 @@ export default function ModerationSection({
         .mst-bar-val { font-size:12px; font-weight:700; width:24px; text-align:right; flex-shrink:0; }
 
         /* ===== CASE MODAL ===== */
-        .case-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(8px); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px; animation:case-fade-in 0.2s ease; }
+        .case-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:800; display:flex; align-items:flex-end; justify-content:center; padding:0; animation:case-fade-in 0.2s ease; }
         .case-backdrop-out { animation:case-fade-out 0.2s ease forwards; pointer-events:none; }
         @keyframes case-fade-in { from{opacity:0}to{opacity:1} }
         @keyframes case-fade-out { from{opacity:1}to{opacity:0} }
-        .case-modal-full { width:100%; height:100%; max-height:100dvh; border-radius:0; overflow-y:auto; -webkit-overflow-scrolling:touch; }
-        .case-modal { background:#080810; border:1px solid #1e1e2e; border-radius:18px; width:min(960px, 96vw); height:92vh; max-height:92vh; overflow-y:auto; box-sizing:border-box; padding:0; box-shadow:0 40px 120px rgba(0,0,0,0.9); animation:case-slide-in 0.22s ease; display:flex; flex-direction:column; }
+        .case-modal { background:#111113; border:1px solid rgba(255,255,255,0.1); border-radius:28px 28px 0 0; width:100%; height:min(92dvh, 920px); max-height:min(92dvh, 920px); overflow:hidden; box-sizing:border-box; padding:0; box-shadow:0 24px 80px rgba(0,0,0,0.55); animation:case-slide-in 0.28s cubic-bezier(0.22,1,0.36,1); display:flex; flex-direction:column; }
+        @media (min-width: 901px) {
+          .case-backdrop { align-items:center; padding:28px; }
+          .case-modal { width:min(760px, 100%); height:min(86dvh, 860px); max-height:min(86dvh, 860px); border-radius:28px; }
+        }
         .case-backdrop-out .case-modal { animation:case-slide-out 0.2s ease forwards; }
         @keyframes case-slide-in { from{opacity:0;transform:translateY(16px) scale(0.98)}to{opacity:1;transform:translateY(0) scale(1)} }
         @keyframes case-slide-out { from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(12px) scale(0.98)} }
 
-        .case-cover { position:relative; padding:26px 24px 22px; background:var(--cb); border-bottom:1px solid #1e1e2e; border-radius:18px 18px 0 0; overflow:hidden; }
+        .case-cover, .case-tabs { flex-shrink: 0; }
+        .case-cover { position:relative; padding:26px 24px 22px; background:var(--cb); border-bottom:1px solid #1e1e2e; border-radius:28px 28px 0 0; overflow:hidden; }
         .case-cover-glow { position:absolute; inset:0; background:radial-gradient(ellipse at 0% 0%, var(--cg) 0%, transparent 65%); pointer-events:none; }
         .case-cover-inner { position:relative; display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding-right:40px; }
         .case-cover-left { display:flex; flex-direction:column; gap:6px; }
@@ -1243,7 +1260,7 @@ export default function ModerationSection({
         .case-tab-on { color:#d4a84b; border-bottom-color:#d4a84b; font-weight:700; }
         .case-tab-badge { background:#ef4444; color:#fff; font-size:10px; font-weight:800; padding:1px 6px; border-radius:10px; }
 
-        .case-body { padding:22px 24px; display:flex; flex-direction:column; gap:20px; }
+        .case-body { padding:22px 24px max(28px, env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:20px; flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; }
         .case-block { display:flex; flex-direction:column; gap:10px; }
         .case-block-title { font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:#374151; font-weight:700; border-bottom:1px solid #1a1a28; padding-bottom:7px; display:flex; align-items:center; gap:8px; }
         .case-rec-badge { font-size:10px; color:#f97316; background:#f9731615; border:1px solid #f9731630; padding:2px 8px; border-radius:8px; font-weight:700; }
@@ -1264,13 +1281,14 @@ export default function ModerationSection({
         .case-row { display:flex; align-items:flex-start; gap:16px; padding:11px 18px; border-bottom:1px solid #1a1a28; }
         .case-row:last-child { border-bottom:none; }
         .case-key { font-size:12px; color:#374151; font-weight:600; width:100px; flex-shrink:0; padding-top:1px; }
-        .case-val { font-size:13px; color:#d1d5db; line-height:1.5; }
+        .case-val { font-size:13px; color:#d1d5db; line-height:1.5; min-width:0; overflow-wrap:anywhere; white-space:pre-wrap; }
 
         .case-proof-box { background:#0e0e18; border:1px solid #1e1e2e; border-radius:10px; padding:16px; min-height:80px; display:flex; align-items:center; justify-content:center; }
         .case-no-proof { font-size:13px; color:#2d3748; }
         .case-proof-loading { font-size:13px; color:#4b5563; }
         .case-proof-err { font-size:13px; color:#ef4444; }
-        .case-proof-img { max-width:100%; max-height:380px; border-radius:8px; object-fit:contain; cursor:zoom-in; transition:opacity 0.15s; }
+        .case-proof-box { overflow:visible; }
+        .case-proof-img { width:100%; max-width:100%; height:auto; max-height:none; border-radius:12px; object-fit:contain; cursor:zoom-in; }
         .case-proof-img:hover { opacity:0.9; }
 
         .case-actions { display:flex; flex-direction:column; align-items:stretch; gap:10px; padding:4px 0; }
@@ -1368,10 +1386,10 @@ export default function ModerationSection({
           .arc-stats { gap:0; }
           .arc-stat { padding:0 10px; }
           .mst-grid { grid-template-columns:1fr; }
-          .case-backdrop { padding:0; align-items:stretch; }
-          .case-modal { width:100%; height:100%; max-height:100dvh; border-radius:0; }
-          .case-body { padding:16px; flex:1; overflow-y:auto; }
-          .case-cover { padding:18px; border-radius:0; }
+          .case-backdrop { padding:0; align-items:flex-end; }
+          .case-modal { width:100%; height:min(92dvh, 920px); max-height:min(92dvh, 920px); border-radius:28px 28px 0 0; }
+          .case-body { padding:16px 16px max(24px, env(safe-area-inset-bottom)); }
+          .case-cover { padding:18px; border-radius:28px 28px 0 0; }
           .case-cover-inner { flex-direction:column; }
           .case-participants { flex-direction:column; }
           .case-side-left { border-right:none; border-bottom:1px solid #1e1e2e; }

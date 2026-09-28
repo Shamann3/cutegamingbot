@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchPanelAccess, fetchRightsBoard, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
+import FocusWindow from '../../components/FocusWindow'
 import PositionEditor from '../../components/PositionEditor'
 import RightSwitch from '../../components/RightSwitch'
 import UserLookupPreview from '../../components/UserLookupPreview'
@@ -18,6 +19,7 @@ const STAFF_GROUP_LABELS = {
 function StaffTabsEditor() {
   const [pack, setPack] = useState(null)
   const [role, setRole] = useState('')
+  const [open, setOpen] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busyKey, setBusyKey] = useState('')
@@ -80,41 +82,60 @@ function StaffTabsEditor() {
       <p className="realm-copy">Это страницы панели сотрудника для всей должности сразу. Владелец видит всё, его здесь нет. Внутренняя вкладка работает только если открыта сама страница. Исключение одному человеку по-прежнему ставится в «Админ панель».</p>
       {error && <p className="realm-alert" role="alert">{error}</p>}
       {notice && <p className="realm-note" role="status">{notice}</p>}
-      <div className="realm-actions">
-        {(pack?.roles || []).map((item) => (
-          <button key={item.id} type="button" className={item.id === role ? 'is-on' : ''} onClick={() => setRole(item.id)}>
-            {item.label}
-          </button>
-        ))}
+      <div className="role-ladder">
+        {(pack?.roles || []).map((item) => {
+          const packOn = pack?.roleDefaults?.[item.id] || {}
+          const count = Object.values(packOn).filter(Boolean).length
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className="role-card is-staff"
+              onClick={() => { setRole(item.id); setOpen(true) }}
+            >
+              <span className="role-card-rank">Панель сотрудника</span>
+              <strong>{item.label}</strong>
+              <span>{count} открытых вкладок · нажать, чтобы настроить</span>
+            </button>
+          )
+        })}
       </div>
-      {groups.map((group) => (
-        <section key={group.id} className="realm-rights-block">
-          <h3>{group.label}</h3>
-          {group.items.map((section) => (
-            <div key={section.id}>
-              <RightSwitch
-                on={enabled(section.id)}
-                disabled={busyKey === section.id}
-                title={section.label}
-                onChange={(next) => toggle(section.id, next)}
-              />
-              {enabled(section.id) && (section.children || []).length > 0 && (
-                <div className="realm-right-nested">
-                  {section.children.map((child) => (
-                    <RightSwitch
-                      key={child.key}
-                      on={enabled(child.key)}
-                      disabled={busyKey === child.key}
-                      title={child.label}
-                      onChange={(next) => toggle(child.key, next)}
-                    />
-                  ))}
+      {open && role && (
+        <FocusWindow
+          title={(pack?.roles || []).find((item) => item.id === role)?.label || 'Должность'}
+          subtitle="Вкладки этой должности в панели сотрудника. Владелец видит всё."
+          onClose={() => setOpen(false)}
+        >
+          {groups.map((group) => (
+            <section key={group.id} className="realm-rights-block">
+              <h3>{group.label}</h3>
+              {group.items.map((section) => (
+                <div key={section.id}>
+                  <RightSwitch
+                    on={enabled(section.id)}
+                    disabled={busyKey === section.id}
+                    title={section.label}
+                    onChange={(next) => toggle(section.id, next)}
+                  />
+                  {enabled(section.id) && (section.children || []).length > 0 && (
+                    <div className="realm-right-nested">
+                      {section.children.map((child) => (
+                        <RightSwitch
+                          key={child.key}
+                          on={enabled(child.key)}
+                          disabled={busyKey === child.key}
+                          title={child.label}
+                          onChange={(next) => toggle(child.key, next)}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              ))}
+            </section>
           ))}
-        </section>
-      ))}
+        </FocusWindow>
+      )}
     </div>
   )
 }

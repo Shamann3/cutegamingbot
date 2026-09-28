@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import FocusWindow from './FocusWindow'
 import TgPhoto from './TgPhoto'
 import UserLookupPreview from './UserLookupPreview'
 import OpenUserLink from './OpenUserLink'
@@ -258,38 +259,47 @@ export default function GroupArchive({
                 </span>
               </button>
               {open && (
-                <div className="g-arc-tools">
-                  {row.target_user_id && (
-                    <button
-                      type="button"
-                      className="realm-text-act"
-                      onClick={() => {
-                        setUserId(String(row.target_user_id))
-                        window.setTimeout(() => {
-                          document.getElementById('g-arc-punish')?.scrollIntoView({
-                            block: 'nearest',
-                            behavior: 'smooth',
-                          })
-                        }, 40)
-                      }}
-                    >
-                      Наказать
-                    </button>
-                  )}
-                  {canUndo && row.target_user_id && (
-                    <button
-                      type="button"
-                      className="realm-back"
-                      disabled={busy}
-                      onClick={() => quick(row.target_user_id, undo.id)}
-                    >
-                      {undo.label}
-                    </button>
-                  )}
-                </div>
+                <FocusWindow
+                  title={look.label}
+                  subtitle={when(row.at || row.created_at)}
+                  onClose={() => setOpenId(null)}
+                >
+                  <p className="realm-copy">{row.reason || 'Причина не указана'}</p>
+                  <div className="g-arc-tools">
+                    {row.target_user_id && (
+                      <button
+                        type="button"
+                        className="realm-text-act"
+                        onClick={() => {
+                          setOpenId(null)
+                          setUserId(String(row.target_user_id))
+                          window.setTimeout(() => {
+                            document.getElementById('g-arc-punish')?.scrollIntoView({
+                              block: 'nearest',
+                              behavior: 'smooth',
+                            })
+                          }, 40)
+                        }}
+                      >
+                        Наказать
+                      </button>
+                    )}
+                    {canUndo && row.target_user_id && (
+                      <button
+                        type="button"
+                        className="realm-back"
+                        disabled={busy}
+                        onClick={() => quick(row.target_user_id, undo.id)}
+                      >
+                        {undo.label}
+                      </button>
+                    )}
+                  </div>
+                  {row.proofMediaId
+                    ? <TgPhoto fileId={row.proofMediaId} className="g-arc-proof" />
+                    : <p className="realm-copy">Фото доказательства нет.</p>}
+                </FocusWindow>
               )}
-              {open && row.proofMediaId && <TgPhoto fileId={row.proofMediaId} className="g-arc-proof" />}
-              {open && !row.proofMediaId && <p className="realm-copy">Фото доказательства нет.</p>}
               <span className="g-arc-stripe" style={{ background: look.color }} />
             </article>
           )
