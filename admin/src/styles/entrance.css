@@ -63,6 +63,69 @@
   to   { opacity: 1; }
 }
 
+/* Матричный дождь кода — фон этапа загрузки */
+.ent-matrix {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  mix-blend-mode: screen;
+  mask-image: radial-gradient(ellipse 78% 70% at 50% 46%, transparent 16%, #000 62%);
+  -webkit-mask-image: radial-gradient(ellipse 78% 70% at 50% 46%, transparent 16%, #000 62%);
+  animation: entMatrixIn 1.1s 0.15s var(--ent-ease-soft) both;
+}
+
+@keyframes entMatrixIn {
+  from { opacity: 0; }
+  to   { opacity: 0.5; }
+}
+
+/* «Печать кода» под подписью */
+.ent-trace {
+  margin: 0.9rem auto 0;
+  width: max-content;
+  max-width: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-height: 7.4em;
+  font-family: "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  color: var(--ent-mute);
+  text-align: left;
+  white-space: pre;
+  opacity: 0;
+  animation: entFade 0.5s 1.0s ease both;
+}
+
+.ent-trace-line {
+  display: block;
+}
+
+.ent-trace-line:first-child {
+  color: var(--ent-ink);
+}
+
+.ent-trace-caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 0.15em;
+  vertical-align: -0.15em;
+  background: var(--ent-ink);
+  animation: entCaret 0.9s steps(1, end) infinite;
+}
+
+@keyframes entCaret {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
 .ent-vignette {
   position: absolute;
   inset: 0;
@@ -627,11 +690,15 @@
 body.perf-light .ent-grid,
 body.perf-light .ent-stamp,
 body.perf-light .ent-flash,
+body.perf-light .ent-matrix,
+body.perf-light .ent-trace,
 body.perf-light .ent-ring--a,
 body.perf-light .ent-ring--b,
 .ent-root--lite .ent-grid,
 .ent-root--lite .ent-stamp,
 .ent-root--lite .ent-flash,
+.ent-root--lite .ent-matrix,
+.ent-root--lite .ent-trace,
 .ent-root--lite .ent-ring--a,
 .ent-root--lite .ent-ring--b {
   animation: none !important;
@@ -685,10 +752,16 @@ body.perf-light .panel-brand-halo,
   .ent-grid,
   .ent-stamp,
   .ent-flash,
+  .ent-matrix,
+  .ent-trace,
   .ent-ring--a,
   .ent-ring--b {
     animation: none !important;
     opacity: 0 !important;
+  }
+
+  .ent-trace-caret {
+    animation: none !important;
   }
 
   .ent-ring--c {

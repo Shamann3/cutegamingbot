@@ -7461,6 +7461,12 @@ class Database:
         except Exception as e:
             print(f"[ERROR] Ошибка при записи данных с плюсом в таблицу cutehistory: {e}")
 
+        try:
+            from bot.runtime.bot_command_stats import note_game_cause_amount
+            note_game_cause_amount(cause, amount)
+        except Exception:
+            pass
+
     async def cutehistory_minus(self , user_id , amount , cause , chat_id=None):
         """
         Записывает данные с минусом в таблицу cutehistory.
@@ -7494,6 +7500,12 @@ class Database:
                 await connection.execute(query , user_id , amount , cause , formatted_date , first_name , username, balance, chat_id)
         except Exception as e:
             print(f"[ERROR] Ошибка при записи данных с минусом в таблицу cutehistory: {e}")
+
+        try:
+            from bot.runtime.bot_command_stats import note_game_cause_amount
+            note_game_cause_amount(cause, amount)
+        except Exception:
+            pass
 
     async def transfer_currency(
         self,

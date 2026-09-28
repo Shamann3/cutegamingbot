@@ -1974,6 +1974,81 @@ async def _ensure_bot_command_counts_table(pool) -> None:
     )
 
 
+async def _ensure_game_wager_table(pool) -> None:
+    if pool is None:
+        return
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bot_game_wager_day_totals (
+            day DATE PRIMARY KEY,
+            kut BIGINT NOT NULL DEFAULT 0,
+            plays BIGINT NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS bot_game_wager_day_totals_day_idx
+            ON bot_game_wager_day_totals (day DESC);
+        """
+    )
+
+
+async def _fetch_game_wager_from_db(pool) -> dict:
+    """Оборот кут в играх по периодам — прямой SQL по дневным счётчикам."""
+    empty = {
+        "day": {"current": 0, "previous": 0},
+        "week": {"current": 0, "previous": 0},
+        "month": {"current": 0, "previous": 0},
+        "year": {"current": 0, "previous": 0},
+    }
+    if pool is None:
+        return empty
+    await _ensure_game_wager_table(pool)
+    row = await pool.fetchrow(
+        """
+        SELECT
+          COALESCE(SUM(kut) FILTER (
+            WHERE day = (NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS day_cur,
+          COALESCE(SUM(kut) FILTER (
+            WHERE day = (NOW() AT TIME ZONE 'Europe/Moscow')::date - 1
+          ), 0)::bigint AS day_prev,
+          COALESCE(SUM(kut) FILTER (
+            WHERE day >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date
+              AND day <  date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date + 7
+          ), 0)::bigint AS week_cur,
+          COALESCE(SUM(kut) FILTER (
+            WHERE day >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date - 7
+              AND day <  date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS week_prev,
+          COALESCE(SUM(kut) FILTER (
+            WHERE day >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date
+              AND day <  (date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow') + INTERVAL '1 month')::date
+          ), 0)::bigint AS month_cur,
+          COALESCE(SUM(kut) FILTER (
+            WHERE day >= (date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 month')::date
+              AND day <  date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS month_prev,
+          COALESCE(SUM(kut) FILTER (
+            WHERE day >= date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
+              AND day <  (date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow') + INTERVAL '1 year')::date
+          ), 0)::bigint AS year_cur,
+          COALESCE(SUM(kut) FILTER (
+            WHERE day >= (date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 year')::date
+              AND day <  date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS year_prev
+        FROM bot_game_wager_day_totals
+        WHERE day >= (date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 year')::date
+        """
+    )
+    if not row:
+        return empty
+    return {
+        "day": {"current": int(row["day_cur"] or 0), "previous": int(row["day_prev"] or 0)},
+        "week": {"current": int(row["week_cur"] or 0), "previous": int(row["week_prev"] or 0)},
+        "month": {"current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0)},
+        "year": {"current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0)},
+    }
+
+
 async def _fetch_bot_events_from_db(pool) -> dict:
     """Читает bot_command_day_counts одним SQL — без импорта bot.runtime."""
     empty = {
@@ -2034,6 +2109,62 @@ async def _fetch_bot_events_from_db(pool) -> dict:
     }
 
 
+async def _fetch_messages_periods(pool, *, official_only: bool) -> dict:
+    """Запасной путь: простой SUM по chatchange (по одному запросу на срез)."""
+    join = (
+        "JOIN epsilon_official_groups g ON g.chat_id = c.chat_id AND g.is_official"
+        if official_only
+        else ""
+    )
+    row = await pool.fetchrow(
+        f"""
+        SELECT
+          COALESCE(SUM(c.text) FILTER (
+            WHERE c.date = (NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS day_cur,
+          COALESCE(SUM(c.text) FILTER (
+            WHERE c.date = (NOW() AT TIME ZONE 'Europe/Moscow')::date - 1
+          ), 0)::bigint AS day_prev,
+          COALESCE(SUM(c.text) FILTER (
+            WHERE c.date >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS week_cur,
+          COALESCE(SUM(c.text) FILTER (
+            WHERE c.date >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '7 days')::date
+              AND c.date <  date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS week_prev,
+          COALESCE(SUM(c.text) FILTER (
+            WHERE c.date >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS month_cur,
+          COALESCE(SUM(c.text) FILTER (
+            WHERE c.date >= (date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 month')::date
+              AND c.date <  date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS month_prev,
+          COALESCE(SUM(c.text) FILTER (
+            WHERE c.date >= date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS year_cur,
+          COALESCE(SUM(c.text) FILTER (
+            WHERE c.date >= (date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 year')::date
+              AND c.date <  date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
+          ), 0)::bigint AS year_prev
+        FROM chatchange c
+        {join}
+        """
+    )
+    if not row:
+        return {
+            "day": {"current": 0, "previous": 0},
+            "week": {"current": 0, "previous": 0},
+            "month": {"current": 0, "previous": 0},
+            "year": {"current": 0, "previous": 0},
+        }
+    return {
+        "day": {"current": int(row["day_cur"] or 0), "previous": int(row["day_prev"] or 0)},
+        "week": {"current": int(row["week_cur"] or 0), "previous": int(row["week_prev"] or 0)},
+        "month": {"current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0)},
+        "year": {"current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0)},
+    }
+
+
 async def get_project_usage_stats_light(pool) -> dict:
     """Лёгкая сводка для live-поллинга (1 Гц). Без тяжёлых COUNT(*) по game_events."""
     empty = {
@@ -2045,7 +2176,9 @@ async def get_project_usage_stats_light(pool) -> dict:
     out = {
         "newUsers": {k: dict(v) for k, v in empty.items()},
         "botEvents": {k: dict(v) for k, v in empty.items()},
+        "allMessages": {k: dict(v) for k, v in empty.items()},
         "officialMessages": {k: dict(v) for k, v in empty.items()},
+        "gameWager": {k: dict(v) for k, v in empty.items()},
         "activeUsers": 0,
         "botEventsTotal": 0,
     }
@@ -2060,6 +2193,12 @@ async def get_project_usage_stats_light(pool) -> dict:
         out["botEventsTotal"] = total or int((bot.get("year") or {}).get("current") or 0)
     except Exception:
         _log.exception("bot_command_day_counts read failed")
+
+    # Оборот кут в играх
+    try:
+        out["gameWager"] = await _fetch_game_wager_from_db(pool)
+    except Exception:
+        _log.exception("bot_game_wager_day_totals read failed")
 
     # Новые пользователи — один запрос с week
     try:
@@ -2116,51 +2255,82 @@ async def get_project_usage_stats_light(pool) -> dict:
     except Exception:
         pass
 
-    # Сообщения в официальных группах
+    # Сообщения: все группы бота + отдельно официальные группы — один проход
     try:
         row = await pool.fetchrow(
             """
+            WITH bounds AS (
+              SELECT
+                (NOW() AT TIME ZONE 'Europe/Moscow')::date                                        AS today,
+                date_trunc('week',  NOW() AT TIME ZONE 'Europe/Moscow')::date                     AS week_s,
+                date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date                     AS month_s,
+                date_trunc('year',  NOW() AT TIME ZONE 'Europe/Moscow')::date                     AS year_s,
+                (date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 month')::date AS month_ps,
+                (date_trunc('year',  NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 year')::date  AS year_ps
+            ),
+            src AS (
+              SELECT c.text::bigint                     AS n,
+                     (g.chat_id IS NOT NULL)            AS official,
+                     (c.date::date = b.today)           AS is_day_cur,
+                     (c.date::date = b.today - 1)       AS is_day_prev,
+                     (c.date::date >= b.week_s)         AS is_week_cur,
+                     (c.date::date >= b.week_s - 7
+                      AND c.date::date < b.week_s)      AS is_week_prev,
+                     (c.date::date >= b.month_s)        AS is_month_cur,
+                     (c.date::date >= b.month_ps
+                      AND c.date::date < b.month_s)     AS is_month_prev,
+                     (c.date::date >= b.year_s)         AS is_year_cur,
+                     (c.date::date >= b.year_ps
+                      AND c.date::date < b.year_s)      AS is_year_prev
+              FROM chatchange c
+              CROSS JOIN bounds b
+              LEFT JOIN epsilon_official_groups g
+                     ON g.chat_id = c.chat_id AND g.is_official
+              WHERE c.date::date >= b.year_ps
+            )
             SELECT
-              COALESCE(SUM(c.text) FILTER (
-                WHERE c.date = (NOW() AT TIME ZONE 'Europe/Moscow')::date
-              ), 0)::bigint AS day_cur,
-              COALESCE(SUM(c.text) FILTER (
-                WHERE c.date = (NOW() AT TIME ZONE 'Europe/Moscow')::date - 1
-              ), 0)::bigint AS day_prev,
-              COALESCE(SUM(c.text) FILTER (
-                WHERE c.date >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date
-              ), 0)::bigint AS week_cur,
-              COALESCE(SUM(c.text) FILTER (
-                WHERE c.date >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '7 days')::date
-                  AND c.date <  date_trunc('week', NOW() AT TIME ZONE 'Europe/Moscow')::date
-              ), 0)::bigint AS week_prev,
-              COALESCE(SUM(c.text) FILTER (
-                WHERE c.date >= date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date
-              ), 0)::bigint AS month_cur,
-              COALESCE(SUM(c.text) FILTER (
-                WHERE c.date >= (date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 month')::date
-                  AND c.date <  date_trunc('month', NOW() AT TIME ZONE 'Europe/Moscow')::date
-              ), 0)::bigint AS month_prev,
-              COALESCE(SUM(c.text) FILTER (
-                WHERE c.date >= date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
-              ), 0)::bigint AS year_cur,
-              COALESCE(SUM(c.text) FILTER (
-                WHERE c.date >= (date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow') - INTERVAL '1 year')::date
-                  AND c.date <  date_trunc('year', NOW() AT TIME ZONE 'Europe/Moscow')::date
-              ), 0)::bigint AS year_prev
-            FROM chatchange c
-            JOIN epsilon_official_groups g ON g.chat_id = c.chat_id AND g.is_official
+              COALESCE(SUM(n) FILTER (WHERE is_day_cur), 0)::bigint     AS all_day_cur,
+              COALESCE(SUM(n) FILTER (WHERE is_day_prev), 0)::bigint    AS all_day_prev,
+              COALESCE(SUM(n) FILTER (WHERE is_week_cur), 0)::bigint    AS all_week_cur,
+              COALESCE(SUM(n) FILTER (WHERE is_week_prev), 0)::bigint   AS all_week_prev,
+              COALESCE(SUM(n) FILTER (WHERE is_month_cur), 0)::bigint   AS all_month_cur,
+              COALESCE(SUM(n) FILTER (WHERE is_month_prev), 0)::bigint  AS all_month_prev,
+              COALESCE(SUM(n) FILTER (WHERE is_year_cur), 0)::bigint    AS all_year_cur,
+              COALESCE(SUM(n) FILTER (WHERE is_year_prev), 0)::bigint   AS all_year_prev,
+              COALESCE(SUM(n) FILTER (WHERE official AND is_day_cur), 0)::bigint    AS off_day_cur,
+              COALESCE(SUM(n) FILTER (WHERE official AND is_day_prev), 0)::bigint   AS off_day_prev,
+              COALESCE(SUM(n) FILTER (WHERE official AND is_week_cur), 0)::bigint   AS off_week_cur,
+              COALESCE(SUM(n) FILTER (WHERE official AND is_week_prev), 0)::bigint  AS off_week_prev,
+              COALESCE(SUM(n) FILTER (WHERE official AND is_month_cur), 0)::bigint  AS off_month_cur,
+              COALESCE(SUM(n) FILTER (WHERE official AND is_month_prev), 0)::bigint AS off_month_prev,
+              COALESCE(SUM(n) FILTER (WHERE official AND is_year_cur), 0)::bigint   AS off_year_cur,
+              COALESCE(SUM(n) FILTER (WHERE official AND is_year_prev), 0)::bigint  AS off_year_prev
+            FROM src
             """
         )
         if row:
+            out["allMessages"] = {
+                "day": {"current": int(row["all_day_cur"] or 0), "previous": int(row["all_day_prev"] or 0)},
+                "week": {"current": int(row["all_week_cur"] or 0), "previous": int(row["all_week_prev"] or 0)},
+                "month": {"current": int(row["all_month_cur"] or 0), "previous": int(row["all_month_prev"] or 0)},
+                "year": {"current": int(row["all_year_cur"] or 0), "previous": int(row["all_year_prev"] or 0)},
+            }
             out["officialMessages"] = {
-                "day": {"current": int(row["day_cur"] or 0), "previous": int(row["day_prev"] or 0)},
-                "week": {"current": int(row["week_cur"] or 0), "previous": int(row["week_prev"] or 0)},
-                "month": {"current": int(row["month_cur"] or 0), "previous": int(row["month_prev"] or 0)},
-                "year": {"current": int(row["year_cur"] or 0), "previous": int(row["year_prev"] or 0)},
+                "day": {"current": int(row["off_day_cur"] or 0), "previous": int(row["off_day_prev"] or 0)},
+                "week": {"current": int(row["off_week_cur"] or 0), "previous": int(row["off_week_prev"] or 0)},
+                "month": {"current": int(row["off_month_cur"] or 0), "previous": int(row["off_month_prev"] or 0)},
+                "year": {"current": int(row["off_year_cur"] or 0), "previous": int(row["off_year_prev"] or 0)},
             }
     except Exception:
-        pass
+        _log.exception("chatchange combined read failed — fallback")
+        try:
+            out["allMessages"] = await _fetch_messages_periods(pool, official_only=False)
+        except Exception:
+            _log.exception("chatchange all-groups read failed")
+        try:
+            out["officialMessages"] = await _fetch_messages_periods(pool, official_only=True)
+        except Exception:
+            _log.exception("chatchange official read failed")
 
     try:
         out["activeUsers"] = int(
@@ -2200,6 +2370,10 @@ async def get_dashboard_live() -> dict:
             usage["botEventsTotal"] = total or int((bot.get("year") or {}).get("current") or 0)
         except Exception:
             _log.exception("live botEvents refresh failed")
+        try:
+            usage["gameWager"] = await _fetch_game_wager_from_db(db.pool)
+        except Exception:
+            _log.exception("live gameWager refresh failed")
         return {
             **cached,
             "usage": usage,

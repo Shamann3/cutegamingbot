@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { hasTelegramInitData, isAdminSessionValid } from '../lib/adminClient'
 import { vivoEpsilonLogo } from './EpsilonLogo'
 import { applyAccentToDocument, loadStoredAccent } from '../lib/accentTheme'
+import MatrixRain from './MatrixRain'
 
 /**
  * Жёсткий таймлайн на 6.0с:
@@ -35,6 +36,47 @@ function resolveEntranceLogoTint() {
   const bright = getComputedStyle(root).getPropertyValue('--e-accent-bright').trim()
   const base = getComputedStyle(root).getPropertyValue('--e-accent').trim()
   return bright || base || '#9ecbb4'
+}
+
+const TRACE_LINES = [
+  '$ epsilon --boot --secure',
+  '> палитра проекта ......... ok',
+  '> сессия сотрудника ....... ok',
+  '> вызовы бота ............. sync',
+  '> сообщения групп ......... sync',
+  '> оборот кут в играх ...... sync',
+  '> realtime 1 Hz ........... ready',
+]
+
+/** Построчная «печать кода» — заполняет время визуальной загрузки. */
+function ConsoleTrace({ durationMs }) {
+  const script = useMemo(() => TRACE_LINES.join('\n'), [])
+  const [typed, setTyped] = useState(0)
+
+  useEffect(() => {
+    const total = script.length
+    const step = Math.max(12, Math.floor(durationMs / Math.max(total, 1)))
+    let i = 0
+    const timer = window.setInterval(() => {
+      i += 1
+      setTyped(i)
+      if (i >= total) window.clearInterval(timer)
+    }, step)
+    return () => window.clearInterval(timer)
+  }, [script, durationMs])
+
+  const visible = script.slice(0, typed).split('\n')
+
+  return (
+    <pre className="ent-trace" aria-hidden="true">
+      {visible.map((line, index) => (
+        <span className="ent-trace-line" key={TRACE_LINES[index] || index}>
+          {line}
+          {index === visible.length - 1 ? <i className="ent-trace-caret" /> : null}
+        </span>
+      ))}
+    </pre>
+  )
 }
 
 /**
@@ -109,6 +151,7 @@ export default function EntranceSeal({
       aria-label={greeting}
     >
       <div className="ent-void" aria-hidden="true" />
+      <MatrixRain paused={lite} />
       <div className="ent-vignette" aria-hidden="true" />
       <div className="ent-grid" aria-hidden="true" />
 
@@ -166,13 +209,11 @@ export default function EntranceSeal({
             <span className="ent-meta-dot" />
             <span>Поддержка</span>
           </div>
+          {!lite && <ConsoleTrace durationMs={holdMs} />}
         </div>
       </div>
 
       <div className="ent-flash" aria-hidden="true" />
-      <button type="button" className="ent-skip" onClick={finish}>
-        Войти сразу
-      </button>
     </div>
   )
 }

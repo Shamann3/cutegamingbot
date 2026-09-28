@@ -5,6 +5,7 @@ import {
   fetchDashboardStats,
 } from '../../lib/adminClient'
 import { useIsPhone } from '../../lib/useIsDesktop'
+import { awaitDashboardStats, readDashboardSnapshot } from '../../lib/dashboardPrefetch'
 
 const PERIODS = [
   { id: 'day', label: 'День', now: 'сегодня', prev: 'вчера' },
@@ -38,36 +39,38 @@ function CollectingCopy() {
   )
 }
 
-function UsageCard({ title, pair, meta, loading }) {
+function UsageCard({ title, pair, meta, loading, suffix }) {
   const current = pair?.current
   const previous = pair?.previous
   return (
-    <button
-      type="button"
+    <div
       className={`dash-usage-card${loading ? ' is-collecting' : ''} ${loading ? '' : toneClass(current, previous)}`}
-      disabled
     >
       <span className="dash-usage-label">{title}</span>
       {loading ? (
         <CollectingCopy />
       ) : (
         <>
-          <strong className="dash-usage-value">{fmt(current)}</strong>
+          <strong className="dash-usage-value">
+            {fmt(current)}
+            {suffix ? <span className="dash-usage-unit">{suffix}</span> : null}
+          </strong>
           <span className="dash-usage-hint">
             {meta.now}
             {previous != null ? ` · ${meta.prev}: ${fmt(previous)}` : ''}
           </span>
         </>
       )}
-    </button>
+    </div>
   )
 }
 
 /** Главная сотрудника: realtime-статистика проекта. */
 export default function DashboardSection() {
   const phone = useIsPhone()
-  const [stats, setStats] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const primed = readDashboardSnapshot()
+  const [stats, setStats] = useState(primed)
+  const [loading, setLoading] = useState(!primed)
   const [period, setPeriod] = useState('day')
   const [liveTick, setLiveTick] = useState(0)
   const inFlight = useRef(false)
@@ -82,7 +85,9 @@ export default function DashboardSection() {
             ...data.usage,
             botEvents: data.usage.botEvents || prev?.usage?.botEvents,
             newUsers: data.usage.newUsers || prev?.usage?.newUsers,
+            allMessages: data.usage.allMessages || prev?.usage?.allMessages,
             officialMessages: data.usage.officialMessages || prev?.usage?.officialMessages,
+            gameWager: data.usage.gameWager || prev?.usage?.gameWager,
           }
         : (prev?.usage || {})
       return {
@@ -98,6 +103,13 @@ export default function DashboardSection() {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
+      // Сначала — то, что успели прогреть на экране загрузки.
+      try {
+        const warmed = await awaitDashboardStats()
+        if (!cancelled && warmed) applyPayload(warmed)
+      } catch {
+        // Главный экран без ошибок.
+      }
       try {
         const data = await fetchDashboardStats()
         if (!cancelled) applyPayload(data)
@@ -172,7 +184,7 @@ export default function DashboardSection() {
         <p className="panel-shelf-label">Обзор проекта</p>
         <h2 className="panel-page-title">Панель сотрудников CuteGamingBot</h2>
         <p className="panel-page-lead">
-          Вызовы команд бота, новые пользователи и сообщения в официальных группах — обновление каждую секунду.
+          Вызовы бота, сообщения в группах и оборот кут в играх — обновление каждую секунду.
         </p>
 
         <div className="dash-period e-seg" role="tablist" aria-label="Период">
@@ -217,20 +229,21 @@ export default function DashboardSection() {
       <div className="panel-shelf panel-users-card dash-usage-stage dash-cyber-stage">
         <div className="dash-usage-grid">
           <UsageCard
-            title="Сообщения в официальных группах"
+            title="Сообщения · все группы бота"
+            pair={usage.allMessages?.[period]}
+            meta={meta}
+            loading={collecting}
+          />
+          <UsageCard
+            title="Разыграно в играх"
+            pair={usage.gameWager?.[period]}
+            meta={meta}
+            loading={collecting}
+            suffix=" кут"
+          />
+          <UsageCard
+            title="Сообщения · официальные группы"
             pair={usage.officialMessages?.[period]}
-            meta={meta}
-            loading={collecting}
-          />
-          <UsageCard
-            title="Новые пользователи"
-            pair={usage.newUsers?.[period]}
-            meta={meta}
-            loading={collecting}
-          />
-          <UsageCard
-            title="Вызовы бота"
-            pair={usage.botEvents?.[period]}
             meta={meta}
             loading={collecting}
           />

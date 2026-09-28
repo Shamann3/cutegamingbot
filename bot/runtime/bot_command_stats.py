@@ -24,10 +24,20 @@ CREATE TABLE IF NOT EXISTS bot_command_day_counts (
 );
 CREATE INDEX IF NOT EXISTS bot_command_day_counts_day_idx
     ON bot_command_day_counts (day DESC);
+
+CREATE TABLE IF NOT EXISTS bot_game_wager_day_totals (
+    day DATE PRIMARY KEY,
+    kut BIGINT NOT NULL DEFAULT 0,
+    plays BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS bot_game_wager_day_totals_day_idx
+    ON bot_game_wager_day_totals (day DESC);
 """
 
-# Буфер: day → pending increment (event-loop single-threaded)
+# Буферы: day → pending increment (event-loop single-threaded)
 _pending: dict[date, int] = {}
+_pending_wager: dict[date, list[int]] = {}
 _flush_lock = asyncio.Lock()
 _flush_task: Optional[asyncio.Task] = None
 _schema_ready = False
@@ -39,29 +49,52 @@ def _today_msk() -> date:
     return datetime.now(MSK).date()
 
 
+def _schedule_flush() -> None:
+    """Ставит flush на ближайший тик и поддерживает фоновый цикл."""
+    global _flush_task
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    pending_total = sum(_pending.values()) + len(_pending_wager)
+    if pending_total >= _FLUSH_THRESHOLD:
+        loop.create_task(flush_bot_command_counts())
+    if _flush_task is None or _flush_task.done():
+        _flush_task = loop.create_task(_flush_loop())
+
+
 def note_bot_command(n: int = 1, *, day: date | None = None) -> None:
     """Синхронно +N в буфер. Не блокирует, не await."""
     if n <= 0:
         return
     d = day or _today_msk()
     _pending[d] = _pending.get(d, 0) + int(n)
+    _schedule_flush()
+
+
+def note_game_wager(amount, *, day: date | None = None) -> None:
+    """Синхронно +amount кут к обороту игр за день. Не блокирует, не await."""
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
+        value = int(abs(float(amount)))
+    except (TypeError, ValueError):
         return
-    total_pending = sum(_pending.values())
-    if total_pending >= _FLUSH_THRESHOLD:
-        loop.create_task(flush_bot_command_counts())
-    global _flush_task
-    if _flush_task is None or _flush_task.done():
-        _flush_task = loop.create_task(_flush_loop())
+    if value <= 0:
+        return
+    d = day or _today_msk()
+    bucket = _pending_wager.get(d)
+    if bucket is None:
+        _pending_wager[d] = [value, 1]
+    else:
+        bucket[0] += value
+        bucket[1] += 1
+    _schedule_flush()
 
 
 async def _flush_loop() -> None:
     try:
         while True:
             await asyncio.sleep(_FLUSH_INTERVAL_SEC)
-            if not _pending:
+            if not _pending and not _pending_wager:
                 # Тихий выход — перезапустится при следующем note
                 return
             await flush_bot_command_counts()
@@ -98,23 +131,36 @@ async def ensure_bot_command_stats_schema(pool) -> None:
         logger.exception("ensure bot_command_day_counts failed")
 
 
+def _requeue(commands: dict[date, int], wagers: dict[date, list[int]]) -> None:
+    for d, n in commands.items():
+        _pending[d] = _pending.get(d, 0) + n
+    for d, (kut, plays) in wagers.items():
+        bucket = _pending_wager.get(d)
+        if bucket is None:
+            _pending_wager[d] = [kut, plays]
+        else:
+            bucket[0] += kut
+            bucket[1] += plays
+
+
 async def flush_bot_command_counts(pool=None) -> None:
-    """Сброс буфера в БД. При ошибке дельты возвращаются в буфер."""
-    global _pending
-    if not _pending:
+    """Сброс буферов в БД. При ошибке дельты возвращаются в буфер."""
+    global _pending, _pending_wager
+    if not _pending and not _pending_wager:
         return
     async with _flush_lock:
-        if not _pending:
+        if not _pending and not _pending_wager:
             return
         snapshot = _pending
+        wager_snapshot = _pending_wager
         _pending = {}
+        _pending_wager = {}
 
         if pool is None:
             pool = _resolve_pool()
         if pool is None:
             # Вернём — попробуем позже
-            for d, n in snapshot.items():
-                _pending[d] = _pending.get(d, 0) + n
+            _requeue(snapshot, wager_snapshot)
             return
 
         await ensure_bot_command_stats_schema(pool)
@@ -135,12 +181,25 @@ async def flush_bot_command_counts(pool=None) -> None:
                             d,
                             int(n),
                         )
-            # Инвалидация live-кэша не здесь — кэш живёт в admin_db
-            pass
+                    for d, (kut, plays) in wager_snapshot.items():
+                        if kut <= 0:
+                            continue
+                        await conn.execute(
+                            """
+                            INSERT INTO bot_game_wager_day_totals (day, kut, plays, updated_at)
+                            VALUES ($1, $2, $3, NOW())
+                            ON CONFLICT (day) DO UPDATE SET
+                              kut = bot_game_wager_day_totals.kut + EXCLUDED.kut,
+                              plays = bot_game_wager_day_totals.plays + EXCLUDED.plays,
+                              updated_at = NOW()
+                            """,
+                            d,
+                            int(kut),
+                            int(plays),
+                        )
         except Exception:
-            logger.exception("flush bot_command_day_counts failed — requeue")
-            for d, n in snapshot.items():
-                _pending[d] = _pending.get(d, 0) + n
+            logger.exception("flush bot stats counters failed — requeue")
+            _requeue(snapshot, wager_snapshot)
 
 
 def _resolve_pool():
@@ -252,7 +311,74 @@ async def fetch_bot_command_periods(pool) -> dict:
     return out
 
 
+async def fetch_game_wager_periods(pool) -> dict:
+    """Оборот кут в играх: day/week/month/year (+ previous). Учитывает буфер."""
+    out = _empty_periods()
+    if pool is None:
+        return out
+    await ensure_bot_command_stats_schema(pool)
+    today = _today_msk()
+    since = date(today.year - 1, 1, 1)
+    by_day: dict[date, int] = {}
+    try:
+        rows = await pool.fetch(
+            """
+            SELECT day, kut::bigint AS kut
+            FROM bot_game_wager_day_totals
+            WHERE day >= $1
+            """,
+            since,
+        )
+        for r in rows:
+            by_day[r["day"]] = int(r["kut"] or 0)
+    except Exception:
+        logger.exception("fetch bot_game_wager_day_totals failed")
+        return out
+
+    for d, bucket in list(_pending_wager.items()):
+        by_day[d] = by_day.get(d, 0) + int(bucket[0])
+
+    for key, (cs, ce, ps, pe) in _period_bounds(today).items():
+        out[key] = {
+            "current": _sum_range(by_day, cs, ce),
+            "previous": _sum_range(by_day, ps, pe),
+        }
+    return out
+
+
 # ─── Detection helpers (shared with middleware) ─────────────────────────────
+
+# Названия игр, встречающиеся в cause у cutehistory (+/-).
+# Переводы, донаты и служебные списания сюда намеренно не попадают.
+_GAME_CAUSE_WORDS = (
+    "шашки", "мемори", "бинго", "фортуна", "кости", "дуэль",
+    "орел", "орёл", "решка", "кнб", "мины", "крестики", "нолики",
+    "башня", "риск", "плиты", "бомбы", "трейд", "шарик", "провода",
+    "слоты", "баскетбол", "футбол", "боулинг", "дартс", "куб",
+    "рулетка", "слова", "инлайн кн",
+)
+
+
+def is_game_cause(cause: Any) -> bool:
+    """True, если запись в cutehistory относится к игре (ставка или выплата)."""
+    try:
+        text = str(cause or "").strip().lower()
+    except Exception:
+        return False
+    if not text:
+        return False
+    if "перевод" in text or "sypher" in text:
+        return False
+    return any(word in text for word in _GAME_CAUSE_WORDS)
+
+
+def note_game_cause_amount(cause: Any, amount) -> None:
+    """Хук для cutehistory: считает оборот, только если cause — игровой."""
+    if is_game_cause(cause):
+        note_game_wager(amount)
+
+
+
 
 _BOT_COMMAND_EXACT = frozenset({
     "топ", "стата", "статистика", "вся стата", "вся статистика",

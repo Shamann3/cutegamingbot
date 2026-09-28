@@ -8,6 +8,7 @@ import EntranceSeal from './components/EntranceSeal'
 import GatePage from './pages/GatePage'
 import SecurityBoot from './components/SecurityBoot'
 import { accentIsPersonal, loadStoredAccent } from './lib/accentTheme'
+import { primeDashboardStats } from './lib/dashboardPrefetch'
 import GroupApplyPage from './pages/GroupApplyPage'
 import GroupShell from './pages/GroupShell'
 import GroupKeyPage from './pages/GroupKeyPage'
@@ -43,6 +44,14 @@ export default function App() {
       logoutAdmin()
     }
   }, [])
+
+  // Статистика главной готовится уже на визуальной загрузке —
+  // к моменту входа в панель цифры есть в памяти.
+  useEffect(() => {
+    if (screen !== 'boot' && screen !== 'entrance' && screen !== 'channel') return
+    if (!(isAdminSessionValid() || hasTelegramInitData())) return
+    primeDashboardStats()
+  }, [screen])
 
   const finishAuth = useCallback(() => {
     setScreen('entrance')

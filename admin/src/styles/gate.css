@@ -280,21 +280,6 @@
   text-align: center;
 }
 
-.ent-skip {
-  position: absolute;
-  z-index: 5;
-  right: 16px;
-  bottom: calc(var(--tg-content-bottom, 0px) + 16px);
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.72);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  min-height: 44px;
-  padding: 0 8px;
-}
 
 .gate-text,
 .firstrun-skip {
